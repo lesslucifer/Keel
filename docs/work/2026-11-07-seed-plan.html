@@ -165,7 +165,8 @@ flowchart LR
   W3 --> W4["W4 manual review"]
   W1 --> W5["W5 doc governance"]
   W4 --> W6["W6 skills + init"]
-  W5 --> W6
+  W5 --> W8["W8 doc tier + distillation"]
+  W8 --> W6
   W6 --> W7["W7 plugin packaging + self-hosting"]
 </pre>
 <div class="caption">W5 can run in parallel with W2–W4. Keel is ungated until W7 turns its own gates on.</div>
@@ -212,7 +213,7 @@ flowchart LR
       <p data-item="wu-summary">Skills <code>workflow</code> (levels, sign order, waivers, testing charter), <code>plan</code>, <code>code-review</code> (+ <code>rubric.md</code> universal principles and a project-local rubric file), <code>distill</code> (tiers, KBs, archive), <code>router</code> and the <code>project-router</code> template, and <code>init</code> (config, T0 block, Codex symlinks, docs skeleton, <code>hooks install</code>, <code>mr setup</code> hand-off).</p>
       <p data-item="wu-maps-to">UC-INIT-1, UC-REV-1, UC-ROUTE-1</p>
       <p data-item="wu-expected">Running <code>init</code> twice on a fixture repo produces the same tree. Every CLI command a skill names exists, and a test greps the skills for that.</p>
-      <p data-item="wu-deps">W4, W5</p>
+      <p data-item="wu-deps">W4, W8</p>
     </div>
     <div class="card" data-wu="E-SEED.W7">
       <h3 id="w7">E-SEED.W7 · Packaging + self-hosting</h3>
@@ -220,6 +221,13 @@ flowchart LR
       <p data-item="wu-maps-to">UC-INIT-1 · all UCs (packaging)</p>
       <p data-item="wu-expected">The plugin installs from the local marketplace into a scratch repo, its hooks fire, and Keel's own next commit on main is refused.</p>
       <p data-item="wu-deps">W6</p>
+    </div>
+    <div class="card" data-wu="E-SEED.W8">
+      <h3 id="w8">E-SEED.W8 · Doc tier &amp; distillation</h3>
+      <p data-item="wu-summary">Classifies each governed doc into its T0-T3 tier and enforces the distillation checklist (what a tracked doc must be absorbed into before archive). Where W5's verify-doc checks a doc's checklist by artifact type, W8 adds the tier assignment and the archive/absorption check.</p>
+      <p data-item="wu-maps-to">UC-DOC-3</p>
+      <p data-item="wu-expected">A fixture doc tree where a T3 doc wrongly left tracked is flagged, and an untracked, unabsorbed doc trips the same check.</p>
+      <p data-item="wu-deps">W5</p>
     </div>
   </div>
 </div>
