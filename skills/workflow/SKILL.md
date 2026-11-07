@@ -90,7 +90,7 @@ note between tips is a bypass: always use the writer.
 | `doc/v1` | every changed doc (under `docs.root`, or T0) listed with its tier; archived T3 docs carry `distilled_to` | `keel notes write doc [--distill <t3>=<doc>[,<doc>] \| <t3>=none: <why>]` |
 | `cr/v1` | an independent review judged exactly this diff's code paths: `verdict`, `blockers`, `importants`, `code_diff_hash`; optional `walk_waivers` | the `code-review` skill, via `keel notes write cr --verdict PASS\|FAIL` |
 | `mr/v1` | a listed human attested this tip: `signer`, `tier`, `report` + `report_hash`, `change_hash`, `sig` when key-backed | the human: `keel mr confirm` |
-| `dod/v1` | the gate ran green here | `keel verify-dod` on a green wu/epic, only |
+| `dod/v1` | the gate ran green here | `keel verify-dod` on a green, non-exempt wu/epic, only |
 
 Test judgment (stdin of `keel notes write test`; `files` must be changed in
 the range and declare tests; give `files` + `covers`, or `waived`):
@@ -128,7 +128,7 @@ keel lint                               # check.lint only
 | 7 | `7·walk`: every first-parent seam since the base passes its own gate (merges as WUs, plain commits as standalone); back-merges skipped; octopus refused | epic |
 | 8 | `8·manual-review`: a valid `mr/v1` from a signer in this checkout's `.mr-allowed`, bound to tip, base, level, diff and the report's bytes; signature verified for key-backed signers. Never exempt, never waivable, boundary-only (the walk never re-judges a seam's sign-off) | wu, epic |
 
-Green ⇒ exit 0 and, for wu/epic, the `dod/v1` receipt. Red ⇒ exit 1, one
+Green ⇒ exit 0 and, for a non-exempt wu/epic, the `dod/v1` receipt. Red ⇒ exit 1, one
 `FAIL <check> … fix -> …` block per failure, nothing written. Do what the
 `fix ->` line says; never bypass.
 
