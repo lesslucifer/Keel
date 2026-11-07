@@ -61,7 +61,7 @@ flowchart LR
     HH["harness hooks: PostToolUse + Stop → keel verify-doc"]
   end
   subgraph CLI["keel CLI — the enforcement"]
-    G0["gate0 · lint (cached by tree content)"]
+    G0["check · lint (cached by tree content)"]
     NW["notes write"]
     PF["preflight"]
     VD["verify-dod (checks 1–8 + walk)"]
@@ -94,10 +94,12 @@ flowchart LR
   <thead><tr><th><code>.keel/config.toml</code> key</th><th>Replaces in Trawler</th><th>Example</th></tr></thead>
   <tbody>
     <tr><td><code>code_paths</code></td><td><code>notes::is_code</code> prefixes</td><td><code>["src/", "tests/"]</code></td></tr>
+    <tr><td><code>infra_paths</code> (optional)</td><td>nothing: Trawler exempts every non-code path (<code>is_gated</code>)</td><td><code>["docs/**", "*.md"]</code> (only these non-code paths are exempt)</td></tr>
     <tr><td><code>rule_bearing</code></td><td><code>is_rule_bearing</code> (T0 + flat T1)</td><td><code>["CLAUDE.md", "docs/*.html"]</code></td></tr>
-    <tr><td><code>gate0.lint</code> · <code>gate0.test</code></td><td><code>cargo fmt</code> · <code>clippy</code> · <code>nextest</code></td><td><code>"ruff check ."</code> · <code>"pytest -q"</code></td></tr>
+    <tr><td><code>check.lint</code> · <code>check.test</code></td><td><code>cargo fmt</code> · <code>clippy</code> · <code>nextest</code> (Trawler's gate0)</td><td><code>"ruff check ."</code> · <code>"pytest -q"</code></td></tr>
     <tr><td><code>tests.adapter</code> (+ regex fallback)</td><td>Rust <code>#[test]</code> counting in <code>notes write</code></td><td><code>"python"</code></td></tr>
     <tr><td><code>branches.main</code></td><td>hard-coded <code>main</code></td><td><code>"main"</code></td></tr>
+    <tr><td><code>branches.epic_prefix</code> · <code>branches.wu_prefix</code></td><td>hard-coded <code>epic/</code> · <code>wu/</code></td><td><code>"epic/"</code> · <code>"wu/"</code> (the defaults)</td></tr>
     <tr><td><code>docs.root</code></td><td>hard-coded <code>docs/</code></td><td><code>"docs/"</code></td></tr>
   </tbody>
 </table>
@@ -112,7 +114,7 @@ flowchart LR
       <tr><td><span class="badge id">UC-GATE-1</span></td><td>A non-merge commit on main is refused with branch guidance.</td></tr>
       <tr><td><span class="badge id">UC-GATE-2</span></td><td>A <code>--no-ff</code> merge of a WU into its epic, or of an epic into main, is refused unless every required note is present, parses, and is bound to the exact diff. On green, a <code>dod/v1</code> receipt is written.</td></tr>
       <tr><td><span class="badge id">UC-GATE-3</span></td><td>The epic gate walks every first-parent seam again. A fast-forward or a <code>--no-verify</code> merge turns the epic gate red, and only a <code>walk_waivers</code> entry with a reason overrides one seam.</td></tr>
-      <tr><td><span class="badge id">UC-GATE-4</span></td><td>Gate 0 runs the configured lint and test commands. It proves every merged tree and every pushed tree, and skips a tree whose content already passed.</td></tr>
+      <tr><td><span class="badge id">UC-GATE-4</span></td><td><code>keel check</code> runs the configured lint and test commands. It proves every merged tree and every pushed tree, and skips a tree whose content already passed.</td></tr>
       <tr><td><span class="badge id">UC-GATE-5</span></td><td>Diffs that touch only docs or infra are exempt from test, cr and doc evidence. They are never exempt from the human sign-off or the epic's tracked-doc layout.</td></tr>
       <tr><td><span class="badge id">UC-NOTE-1</span></td><td><code>notes write</code> derives the range, the identity, the doc tiers and the test counts from the tree. It refuses a judgment the diff contradicts.</td></tr>
       <tr><td><span class="badge id">UC-MR-1</span></td><td>Every WU tip and every epic tip needs an <code>mr/v1</code> note from a listed signer that attests the result report's bytes. The note is signed last: <code>mr confirm</code> refuses while test, doc or cr evidence is missing. A key-backed signer's signature verifies offline.</td></tr>
@@ -160,7 +162,7 @@ flowchart LR
 <div class="diagram" data-c="wu-graph">
 <pre class="mermaid">
 flowchart LR
-  W1["W1 CLI core + Gate 0 + hooks"] --> W2["W2 notes"]
+  W1["W1 CLI core + check + hooks"] --> W2["W2 notes"]
   W2 --> W3["W3 merge gate"]
   W3 --> W4["W4 manual review"]
   W1 --> W5["W5 doc governance"]
@@ -174,10 +176,10 @@ flowchart LR
 <div data-item="wu-summaries" data-c="wu-summaries">
   <div class="cards">
     <div class="card" data-wu="E-SEED.W1">
-      <h3 id="w1">E-SEED.W1 · CLI core, Gate 0, hooks</h3>
-      <p data-item="wu-summary">The <code>keel</code> binary, which loads <code>.keel/config.toml</code>. <code>keel lint</code> and <code>keel gate0</code> run the configured commands and cache by tree content (DEC-11/54). <code>keel hooks install</code> writes the tracked hooks and sets <code>core.hooksPath</code>. pre-commit makes main merge-only, and post-checkout handles <code>.gitworktreecopy</code> and <code>merge.ff=false</code>.</p>
+      <h3 id="w1">E-SEED.W1 · CLI core, check, hooks</h3>
+      <p data-item="wu-summary">The <code>keel</code> binary, which loads <code>.keel/config.toml</code>. <code>keel lint</code> and <code>keel check</code> (named <code>gate0</code> until the W3 follow-up rename) run the configured commands and cache by tree content (DEC-11/54). <code>keel hooks install</code> writes the hooks into the git dir (untracked, since the hook-tampering fix from the W4 review) and sets <code>core.hooksPath</code>. pre-commit makes main merge-only, and post-checkout handles <code>.gitworktreecopy</code> and <code>merge.ff=false</code>.</p>
       <p data-item="wu-maps-to">UC-GATE-1, UC-GATE-4</p>
-      <p data-item="wu-expected">In a fixture repo, a second <code>gate0</code> run on an unchanged tree is skipped and a commit on main is refused. Repos with no config get a clear refusal.</p>
+      <p data-item="wu-expected">In a fixture repo, a second <code>keel check</code> run on an unchanged tree is skipped and a commit on main is refused. Repos with no config get a clear refusal.</p>
       <p data-item="wu-deps">none</p>
     </div>
     <div class="card" data-wu="E-SEED.W2">
@@ -189,8 +191,8 @@ flowchart LR
     </div>
     <div class="card" data-wu="E-SEED.W3">
       <h3 id="w3">E-SEED.W3 · Merge gate</h3>
-      <p data-item="wu-summary"><code>keel verify-dod wu|epic|commit|hook|range</code>: checks 1–7 (notes, manifest, review, review base, diff binding, doc note + tier layout, epic walk + <code>walk_waivers</code>), the docs/infra exemption, the <code>dod/v1</code> receipt, and <code>keel preflight</code>. The pre-merge-commit hook also runs <code>gate0 merge</code>. The pre-push hook runs <code>gate0 push</code>, the range check and the notes sync.</p>
-      <p data-item="wu-maps-to">UC-GATE-2, UC-GATE-3, UC-GATE-5, UC-DOC-3</p>
+      <p data-item="wu-summary"><code>keel verify-dod wu|epic|commit|hook|range</code>: checks 1–7 (notes, manifest, review, review base, diff binding, doc note, epic walk + <code>walk_waivers</code>; check 6's tier layout was deferred to W8), the docs/infra exemption (optionally narrowed by <code>infra_paths</code>), the <code>dod/v1</code> receipt, and <code>keel preflight</code>. Merge levels follow <code>branches.epic_prefix</code> / <code>branches.wu_prefix</code>. The pre-merge-commit hook also runs <code>keel check</code> on the merged tree of an epic → main merge. The pre-push hook runs <code>keel check</code> on every pushed tree, the range check and the notes sync.</p>
+      <p data-item="wu-maps-to">UC-GATE-2, UC-GATE-3, UC-GATE-5, UC-DOC-3 (changed docs accounted for; the tracked-T3 half is W8)</p>
       <p data-item="wu-expected">Each check has a red fixture with the expected <code>check id → fix</code> block and a green fixture. A fast-forward-smuggled seam is red at the epic gate.</p>
       <p data-item="wu-deps">W2</p>
     </div>
