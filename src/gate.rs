@@ -1,4 +1,4 @@
-//! `keel verify-dod` + `keel preflight`: the merge gate (UC-GATE-2/3/5, UC-DOC-3 in part).
+//! `keel verify-dod` + `keel preflight`: the merge gate (UC-GATE-2/3/5, UC-DOC-3).
 //! Ported from Trawler's xtask gate: same check ids, same `FAIL / fix ->` blocks, no cargo.
 use crate::notes::{self, CrNote, DocNote, DodNote, TestNote};
 use crate::{gate0, git, Config};
@@ -104,7 +104,7 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
 /// Checks 1-2 (paperwork, all the preflight reads) or 1-6 on the tip itself.
 fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: bool) -> Result<(), String> {
     let review = full && r.level != Level::Commit;
-    let docs: Vec<&String> = names.iter().filter(|n| n.starts_with(&cfg.docs.root)).collect();
+    let docs = notes::doc_paths(repo, cfg, &r.base, &r.tip, names)?;
     let test = read::<TestNote>(repo, r, "test", true);
     let cr = if review { read::<CrNote>(repo, r, "cr", true) } else { None };
     let doc = if full { read::<DocNote>(repo, r, "doc", r.level != Level::Commit || !docs.is_empty()) } else { None };
@@ -146,13 +146,35 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
         }
     }
 
-    // 6·doc-note: every changed doc listed, nothing phantom. Tier layout is W8's.
     if let Some(doc) = &doc {
-        for p in docs.iter().filter(|p| !doc.paths.contains(p)) {
-            r.fail("6·doc-note", format!("{p} changed in the range but is not in doc/v1"), "keel notes write doc   (on the tip)");
-        }
-        for p in doc.paths.iter().filter(|p| !docs.contains(p)) {
-            r.fail("6·doc-note", format!("doc/v1 lists {p} but the range does not touch it"), "keel notes write doc   (on the tip)");
+        doc_note(repo, cfg, r, &docs, doc);
+    }
+    Ok(())
+}
+
+/// 6·doc-note: every doc listed with its config tier, nothing phantom, archived T3 with lineage.
+fn doc_note(repo: &Path, cfg: &Config, r: &mut Report, docs: &[String], doc: &DocNote) {
+    for (what, fix) in notes::doc_problems(repo, cfg, &r.tip, docs, &doc.changes) {
+        r.fail("6·doc-note", what, fix);
+    }
+}
+
+/// 6·doc-note at an epic tip (UC-DOC-3): nothing tracked under docs.root outside T0-T2.
+fn tracked_layout(repo: &Path, cfg: &Config, r: &mut Report) -> Result<(), String> {
+    let root = cfg.docs.root.trim_end_matches('/');
+    for p in git(repo, &["ls-tree", "-r", "--name-only", &r.tip, "--", root], &[])?.lines() {
+        match notes::tier_of(cfg, p) {
+            Some("T3") => r.fail(
+                "6·doc-note",
+                format!("{p} is a T3 working doc still tracked at the epic tip"),
+                format!("distill it, git rm it (keep the file in {root}/.archive/, gitignored), then keel notes write doc --distill {p}=<T1/T2 doc>"),
+            ),
+            None => r.fail(
+                "6·doc-note",
+                format!("{p} is tracked under {root}/ but matches no docs.tiers pattern"),
+                "add a glob for it under [docs.tiers] in .keel/config.toml, or move or archive it",
+            ),
+            _ => {}
         }
     }
     Ok(())
@@ -163,8 +185,17 @@ fn verify(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) 
     // UC-GATE-5 never exempts these: W4's 8·manual-review and W8's tier layout go here.
     if !r.exempt {
         check_tip(repo, cfg, &mut r, &names, true)?;
+    } else {
+        // An archive commit is docs-only by nature; exempting it would leave distillation unchecked.
+        let docs = notes::doc_paths(repo, cfg, &r.base, &r.tip, &names)?;
+        if notes::archives_t3(repo, cfg, &r.tip, &docs) {
+            if let Some(doc) = read::<DocNote>(repo, &mut r, "doc", true) {
+                doc_note(repo, cfg, &mut r, &docs, &doc);
+            }
+        }
     }
     if level == Level::Epic {
+        tracked_layout(repo, cfg, &mut r)?;
         walk(repo, cfg, &mut r, target)?;
     }
     r.exempt &= r.failures.is_empty();
