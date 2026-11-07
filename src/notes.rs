@@ -40,7 +40,7 @@ pub struct DocNote {
     pub schema: String, // "doc/v1"
     #[serde(flatten)]
     pub id: Identity,
-    /// Paths under docs.root changed in the range (tier classification is W5).
+    /// Paths under docs.root changed in the range (tier classification is W8).
     pub paths: Vec<String>,
 }
 
@@ -54,9 +54,18 @@ pub struct CrNote {
     pub importants: u32,
     /// git blob hash of `git diff base tip -- <code_paths>`: binds the verdict to the code reviewed.
     pub code_diff_hash: String,
+    /// Epic tips only: seams of the epic walk waived on the record (edited in by hand).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub walk_waivers: Vec<WalkWaiver>,
 }
 
-// Written by W4 / W3; schema only.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WalkWaiver {
+    pub seam: String,
+    pub why: String,
+}
+
+// Written by W4; schema only.
 #[derive(Serialize, Deserialize, Debug)]
 #[allow(dead_code)]
 pub struct MrNote {
@@ -66,12 +75,15 @@ pub struct MrNote {
     pub signer: String,
 }
 
+/// The merge gate's receipt, written on green.
 #[derive(Serialize, Deserialize, Debug)]
-#[allow(dead_code)]
 pub struct DodNote {
     pub schema: String, // "dod/v1"
     #[serde(flatten)]
     pub id: Identity,
+    pub level: String,
+    pub checks: Vec<String>,
+    /// git blob hash of the full `git diff base tip`.
     pub diff_hash: String,
 }
 
@@ -100,16 +112,23 @@ struct Range {
     names: Vec<String>,
 }
 
-fn range(repo: &Path, cfg: &Config) -> Result<Range, String> {
-    let tip = git(repo, &["rev-parse", "HEAD"], &[])?;
-    let base = git(repo, &["merge-base", &cfg.branches.main, "HEAD"], &[])?;
-    if base == tip {
-        return refuse(
-            format!("HEAD is already on '{}'; the range since the merge-base is empty", cfg.branches.main),
-            "write notes from the work branch, with commits not yet merged",
-        );
+/// The ref a range is measured against, shared by the writer and the gate so both
+/// judge one range: `--target R`, else a `wu/<e>/..` tip's `epic/<e>`, else main.
+pub(crate) fn target(cfg: &Config, tip_ref: &str, args: &[&str]) -> String {
+    if let Some(t) = args.windows(2).find(|w| w[0] == "--target") {
+        return t[1].to_string();
     }
-    let names = git(repo, &["diff", "--name-only", &base, &tip], &[])?.lines().map(String::from).collect();
+    match tip_ref.strip_prefix("wu/").and_then(|r| r.split_once('/')) {
+        Some((epic, _)) if !epic.is_empty() => format!("epic/{epic}"),
+        _ => cfg.branches.main.clone(),
+    }
+}
+
+pub(crate) fn names(repo: &Path, base: &str, tip: &str) -> Result<Vec<String>, String> {
+    Ok(git(repo, &["diff", "--name-only", base, tip], &[])?.lines().map(String::from).collect())
+}
+
+pub(crate) fn identity(repo: &Path, tip: String, base: String, branch: Option<String>) -> Result<Identity, String> {
     // "Name <email> 1700000000 +0100"
     let ident = git(repo, &["var", "GIT_COMMITTER_IDENT"], &[])?;
     let (who, ts) = ident.split_once("> ").ok_or("keel: cannot parse committer identity")?;
@@ -118,8 +137,34 @@ fn range(repo: &Path, cfg: &Config) -> Result<Range, String> {
         .next()
         .and_then(|t| t.parse().ok())
         .ok_or("keel: bad committer timestamp")?;
+    Ok(Identity { tip, base, branch, committer: format!("{who}>"), timestamp })
+}
+
+fn range(repo: &Path, cfg: &Config, args: &[&str]) -> Result<Range, String> {
     let branch = git(repo, &["symbolic-ref", "--short", "-q", "HEAD"], &[]).ok();
-    Ok(Range { id: Identity { tip, base, branch, committer: format!("{who}>"), timestamp }, names })
+    let target = target(cfg, branch.as_deref().unwrap_or("HEAD"), args);
+    let tip = git(repo, &["rev-parse", "HEAD"], &[])?;
+    let base = git(repo, &["merge-base", &target, "HEAD"], &[])?;
+    if base == tip {
+        return refuse(
+            format!("HEAD is already on '{target}'; the range since the merge-base is empty"),
+            "write notes from the work branch, with commits not yet merged (or pass --target <ref>)",
+        );
+    }
+    let names = names(repo, &base, &tip)?;
+    Ok(Range { id: identity(repo, tip, base, branch)?, names })
+}
+
+/// A path the gate treats as code (and cr binds). Every path is code when code_paths is empty.
+pub(crate) fn is_code(cfg: &Config, path: &str) -> bool {
+    cfg.code_paths.is_empty() || cfg.code_paths.iter().any(|p| path.starts_with(p.as_str()))
+}
+
+/// One function for the writer (W2) and check 5 (W3), so the two can never disagree.
+pub(crate) fn code_diff_hash(repo: &Path, cfg: &Config, base: &str, tip: &str) -> Result<String, String> {
+    let mut a = vec!["diff", base, tip, "--"];
+    a.extend(cfg.code_paths.iter().map(String::as_str));
+    hash_blob(repo, &git(repo, &a, &[])?)
 }
 
 fn count_tests(adapter: &str, body: &str, pattern: Option<&str>) -> Result<u32, String> {
@@ -194,14 +239,14 @@ fn layer(repo: &Path, cfg: &Config, r: &Range, name: &str, j: &JLayer) -> Result
     Ok(Layer::Counted { count, covers: covers.into(), files: j.files.clone(), languages })
 }
 
-fn store<T: Serialize>(repo: &Path, kind: &str, tip: &str, note: &T) -> Result<(), String> {
+pub(crate) fn store<T: Serialize>(repo: &Path, kind: &str, tip: &str, note: &T) -> Result<(), String> {
     let json = serde_json::to_string(note).map_err(|e| e.to_string())?;
     git(repo, &["notes", &format!("--ref={kind}"), "add", "-f", "-m", &json, tip], &[])?;
     println!("wrote refs/notes/{kind} on {}", &tip[..8]);
     Ok(())
 }
 
-fn hash_blob(repo: &Path, data: &str) -> Result<String, String> {
+pub(crate) fn hash_blob(repo: &Path, data: &str) -> Result<String, String> {
     let mut h = Command::new("git")
         .args(["hash-object", "--stdin"])
         .current_dir(repo)
@@ -216,7 +261,7 @@ fn hash_blob(repo: &Path, data: &str) -> Result<String, String> {
 
 /// `args` are the flags after `notes write <kind>`.
 pub fn write(repo: &Path, cfg: &Config, kind: &str, args: &[&str]) -> Result<i32, String> {
-    let r = range(repo, cfg)?;
+    let r = range(repo, cfg, args)?;
     let tip = r.id.tip.clone();
     match kind {
         "test" => {
@@ -249,10 +294,16 @@ pub fn write(repo: &Path, cfg: &Config, kind: &str, args: &[&str]) -> Result<i32
             if verdict == "PASS" && blockers + importants > 0 {
                 return refuse("PASS claimed with verified blockers/importants".into(), "record FAIL, or fix the findings first");
             }
-            let mut a = vec!["diff", r.id.base.as_str(), tip.as_str(), "--"];
-            a.extend(cfg.code_paths.iter().map(String::as_str));
-            let code_diff_hash = hash_blob(repo, &git(repo, &a, &[])?)?;
-            let note = CrNote { schema: "cr/v1".into(), id: r.id, verdict: verdict.into(), blockers, importants, code_diff_hash };
+            let code_diff_hash = code_diff_hash(repo, cfg, &r.id.base, &tip)?;
+            let note = CrNote {
+                schema: "cr/v1".into(),
+                id: r.id,
+                verdict: verdict.into(),
+                blockers,
+                importants,
+                code_diff_hash,
+                walk_waivers: vec![],
+            };
             store(repo, "cr", &tip, &note)?;
         }
         _ => return Err("usage: keel notes write <test|doc|cr>".into()),
