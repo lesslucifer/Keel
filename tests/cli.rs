@@ -74,6 +74,32 @@ fn commit_on_main_is_refused_but_a_branch_is_fine() {
 }
 
 #[test]
+fn new_worktree_is_seeded_from_gitworktreecopy() {
+    let d = repo(true);
+    let p = d.path();
+    std::fs::write(p.join(".gitworktreecopy"), "# comment\n\nsecret.env\nnested/trust.txt\n").unwrap();
+    std::fs::write(p.join("secret.env"), "TOKEN=abc").unwrap();
+    std::fs::create_dir(p.join("nested")).unwrap();
+    std::fs::write(p.join("nested/trust.txt"), "trusted").unwrap();
+    std::fs::write(p.join("a"), "a").unwrap();
+    git(p, &["add", "a"]);
+    git(p, &["commit", "-qm", "base"]);
+    assert!(keel(p, &["hooks", "install"]).status.success());
+
+    let w = TempDir::new().unwrap();
+    assert!(run("git", p, &["worktree", "add", "-q", "-b", "feature", w.path().to_str().unwrap()])
+        .status
+        .success());
+
+    assert_eq!(std::fs::read_to_string(w.path().join("secret.env")).unwrap(), "TOKEN=abc");
+    assert_eq!(std::fs::read_to_string(w.path().join("nested/trust.txt")).unwrap(), "trusted");
+    assert_eq!(
+        run("git", w.path(), &["config", "--local", "--get", "merge.ff"]).stdout.as_slice(),
+        b"false\n"
+    );
+}
+
+#[test]
 fn missing_config_points_at_init() {
     let d = repo(false);
     for cmd in ["lint", "gate0"] {
