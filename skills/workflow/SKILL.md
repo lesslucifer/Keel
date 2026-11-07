@@ -1,6 +1,6 @@
 ---
 name: workflow
-description: Keel's workflow standard - how work is planned, tested, gated and merged in a Keel project (epic -> working unit -> commit, one hook-enforced gate per level, completeness proven from git notes, never from an agent's word). Use before starting any epic, WU or commit in a repo with .keel/config.toml; when writing test/doc notes, staging a sign-off, merging, waiving a test layer or a walk seam, or when a keel gate prints FAIL. Also holds the testing charter (epic -> e2e, WU -> integration, commit -> unit).
+description: Keel's workflow standard - how work is planned, tested, gated and merged in a Keel project (epic -> working unit -> commit, one hook-enforced gate per level, completeness proven from git notes, never from an agent's word). Use before starting any epic, WU or commit in a repo with .keel/config.toml; when writing test/doc notes, staging a sign-off, merging, waiving a test layer or a walk seam, or when a Keel gate prints FAIL. Also holds the testing charter (epic -> e2e, WU -> integration, commit -> unit).
 ---
 
 # Keel workflow
