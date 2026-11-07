@@ -64,8 +64,13 @@ fn commit_on_main_is_refused_but_a_branch_is_fine() {
     let d = repo(true);
     let p = d.path();
     assert!(keel(p, &["hooks", "install"]).status.success());
+    // A no-op hook at the old in-tree path is just content now - it never runs.
+    std::fs::create_dir_all(p.join(".keel/hooks")).unwrap();
+    std::fs::write(p.join(".keel/hooks/pre-commit"), "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(p.join(".keel/hooks/pre-commit"), std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .unwrap();
     std::fs::write(p.join("a"), "a").unwrap();
-    git(p, &["add", "a"]);
+    git(p, &["add", "a", ".keel/hooks"]);
     let c = run("git", p, &["commit", "-qm", "x"]);
     assert!(!c.status.success());
     assert!(text(&c).contains("merge-only"), "{}", text(&c));
@@ -166,7 +171,7 @@ fn notes_round_trip_on_a_fixture_tip() {
     assert_eq!(n["e2e"]["waived"], "no ui");
 
     assert!(keel(p, &["notes", "write", "doc"]).status.success());
-    assert_eq!(note(p, "doc")["paths"], serde_json::json!(["docs/a.html"]));
+    assert_eq!(note(p, "doc")["changes"], serde_json::json!([{"path": "docs/a.html", "tier": "T1"}]));
 
     assert!(keel(p, &["notes", "write", "cr", "--verdict", "PASS"]).status.success());
     assert_eq!(note(p, "cr")["verdict"], "PASS");

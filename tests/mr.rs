@@ -193,9 +193,16 @@ fn a_branch_cannot_weaken_the_policy_that_judges_its_own_merge() {
 fn an_epic_report_edited_after_signing_is_rehashed_and_red() {
     let (d, _k) = fixture();
     let p = d.path();
-    // The epic report is archived out of git by gate time: an untracked local file.
+    // The walk sees "wu a" as a direct commit below the tip: commit-level notes.
+    notes_with(p, &["test", "doc"], r#"{"unit":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
+    // Epic close (W8, UC-DOC-3): no T3 doc tracked at the tip, so the WU report is distilled + archived...
+    git(p, &["rm", "-q", "docs/work/a-result.html"]);
+    write(p, "docs/decisions/a.html", "<p>why a</p>");
+    commit(p, "distill + archive wu a's report");
+    // ...and the epic report is archived out of git by gate time: an untracked local file.
     write(p, "docs/work/e-result.html", "<p>epic e: done</p>");
-    notes_with(p, &["test", "doc", "cr"], r#"{"e2e":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
+    notes_with(p, &["test", "cr"], r#"{"e2e":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
+    ok(keel(p, &["notes", "write", "doc", "--distill", "docs/work/a-result.html=docs/decisions/a.html"]));
     let epic = ["verify-dod", "epic", "wu/e/a"];
     ok(keel(p, &["mr", "confirm", "epic", "--report", "docs/work/e-result.html"]));
     ok(keel(p, &epic));
