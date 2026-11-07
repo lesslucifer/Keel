@@ -1,3 +1,5 @@
+mod notes;
+
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -14,6 +16,13 @@ struct Config {
     gate0: Gate0,
     branches: Branches,
     docs: Docs,
+    #[serde(default)]
+    tests: TestsCfg,
+}
+#[derive(Deserialize, Default)]
+struct TestsCfg {
+    adapter: Option<String>,
+    pattern: Option<String>,
 }
 #[derive(Deserialize)]
 struct Gate0 {
@@ -176,7 +185,8 @@ fn run() -> Result<i32, String> {
         ["lint"] => lint(&repo, &load_config(&repo)?),
         ["gate0"] => gate0(&repo, &load_config(&repo)?),
         ["hook", "pre-commit"] => pre_commit(&repo, &load_config(&repo)?),
-        _ => Err("usage: keel <lint | gate0 | hooks install>".into()),
+        ["notes", "write", kind, rest @ ..] => notes::write(&repo, &load_config(&repo)?, kind, rest),
+        _ => Err("usage: keel <lint | gate0 | hooks install | notes write <test|doc|cr>>".into()),
     }
 }
 
