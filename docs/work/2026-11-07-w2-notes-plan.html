@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6aee91409f34851f0dfafd5d" data-artifact="wu-plan" data-status="draft">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED.W2 WU plan: notes</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED.W2 — Notes</h1>
+      <p>Versioned git-notes schemas and <code>keel notes write</code>, derived automatically from the tree rather than hand-typed by the agent.</p>
+      <div class="meta">Draft v1 · 2026-11-07 · Keel · T2 WU plan · epic: <a href="2026-11-07-seed-plan.html">E-SEED</a> · status: draft, awaiting owner sign-off</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="requirement">Requirement</h2>
+<div data-item="requirement" data-c="requirement-body">
+  <p>Keel needs a tamper-evident record, attached to commits, of what testing and doc work actually happened — so the merge gate (W3) and manual review (W4) have something to check instead of trusting a claim. This WU builds the schemas and the one write path (<code>keel notes write</code>); it does not build the gate that reads them back (W3) or the signer flow (W4).</p>
+  <p>Builds on E-SEED.W1, already merged to main: the <code>keel</code> binary, <code>.keel/config.toml</code> loading (<code>Config</code> struct, <code>load_config()</code>), the <code>git()</code>/<code>repo_root()</code> helpers, and the command dispatch in <code>run()</code>. This WU extends that dispatch, it doesn't replace it.</p>
+  <p><b>Note on provenance:</b> a worker already built and tested this WU once; it was reverted off <code>main</code> (not deleted — the commits are still reachable in history at <code>1b79099</code>) because it shipped without this plan doc being reviewed first. This plan describes that same design so you can approve, amend, or reject it before it's re-merged. Nothing below is hypothetical — it's a description of working, tested code, pending your sign-off.</p>
+</div>
+
+<h2 id="scope">Scope</h2>
+<div data-c="scope-body">
+  <ul>
+    <li>Schema structs (serde → JSON), one per kind: <code>test/v1</code>, <code>doc/v1</code>, <code>cr/v1</code>, plus <code>mr/v1</code> and <code>dod/v1</code> defined as structs only (no write command — those belong to W3/W4).</li>
+    <li>A shared identity block on every note: <code>tip</code>, <code>base</code>, <code>branch</code>, <code>committer</code> (<code>Name &lt;email&gt;</code>), <code>timestamp</code>. (Trawler's notes carry epic/WU ids too; cut here since nothing in W2 reads them — later WUs can add fields without breaking <code>/v1</code> readers, since nothing exists yet to break.)</li>
+    <li>Range: <code>git merge-base &lt;branches.main&gt; HEAD</code> → <code>HEAD</code>. Refuses to run if HEAD already <i>is</i> the merge-base (nothing unmerged to note).</li>
+    <li>Storage: <code>git notes --ref=&lt;kind&gt; add -f</code> on the note commands HEAD → <code>refs/notes/{test,doc,cr}</code>, one JSON line per note. Ref naming matches Trawler.</li>
+    <li><code>keel notes write doc</code>: records which paths under <code>docs.root</code> changed in the range. No tier classification — that's W5's job, this WU just lists changed paths.</li>
+    <li><code>keel notes write test</code>: reads a JSON judgment on stdin, e.g. <code>{"unit":{"files":[...],"covers":"..."},"e2e":{"waived":"..."}}</code>. Layers are <code>unit</code>/<code>integration</code>/<code>e2e</code>; unknown keys rejected. Refuses when: a claimed file wasn't touched in the range; a claimed file is missing at the tip; a claimed file has zero detected tests; the file's type has no counting adapter and no config fallback; a layer has both <code>files</code> and a waiver; a layer has files but no <code>covers</code> sentence; the judgment claims no layer at all.</li>
+    <li>Test counting adapters, by file extension: Rust (<code>#[test]</code>/<code>#[tokio::test]</code> lines), TS/JS (<code>it(</code>/<code>test(</code>/<code>.each(</code>), Python (<code>def test_</code>), Go (<code>func Test</code>). Anything else falls back to a config regex (<code>[tests]</code> table: <code>adapter</code> to force one adapter repo-wide, or <code>pattern</code> for the regex fallback). This is deliberately a flat per-extension table, not a per-file override — a polyglot repo leaves <code>adapter</code> unset and relies on extension detection.</li>
+    <li><code>keel notes write cr --verdict PASS|FAIL [--blockers N] [--importants N]</code>: refuses <code>PASS</code> with blockers/importants above zero. Flags only, no findings detail or fleet data — W2 has no code-review agent to wire up yet.</li>
+  </ul>
+</div>
+
+<h2 id="maps-to">Maps to</h2>
+<p data-item="maps-to">UC-NOTE-1 — "notes write derives the range, the identity, the doc tiers and the test counts from the tree. It refuses a judgment the diff contradicts."</p>
+
+<h2 id="non-goals">Explicitly not this WU</h2>
+<div data-c="non-goals-body">
+  <ul>
+    <li><code>keel verify-dod</code>, merge gate logic — W3.</li>
+    <li><code>keel mr</code>, signer flow — W4.</li>
+    <li><code>keel verify-doc</code>, doc tier classification — W5 (parallel, separate WU-plan doc).</li>
+    <li>No changes to Trawler. No changes to <code>docs/work/2026-11-07-seed-plan.html</code>.</li>
+  </ul>
+</div>
+
+<h2 id="expected">Expected result</h2>
+<div data-item="expected" data-c="expected-body">
+  <p>Per the epic plan: notes written on a fixture tip parse back (round-trip), and a judgment claiming a test layer the diff has no tests for is refused.</p>
+</div>
+
+<h2 id="test-plan">Test plan</h2>
+<div data-item="test-plan" data-c="test-plan-body">
+  <ul>
+    <li><b>Round trip:</b> write test/doc/cr notes on a fixture tip, read them back via <code>git notes show</code>, assert they parse and match.</li>
+    <li><b>False claim refused:</b> a judgment naming an untouched file, and one naming a touched file with zero detected tests — assert both are refused and no note is written.</li>
+    <li><b>CR gate:</b> <code>PASS</code> with <code>--blockers 1</code> is refused.</li>
+  </ul>
+</div>
+
+<h2 id="open-points">Open points for the owner</h2>
+<div class="callout" data-c="open-points-body">
+  <table>
+    <thead><tr><th>#</th><th>Point</th><th>Proposed</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>The epic plan's config table implies a <code>diff_sha256</code> binding for cr notes. This WU uses a git blob hash over <code>code_paths</code> instead (no new sha256 dependency).</td><td>Accept for W2; W3 can switch to sha256 if the merge gate needs it, since nothing downstream reads this field yet.</td></tr>
+      <tr><td>2</td><td>Test judgment arrives as JSON on stdin, not a CLI flag per field.</td><td>Accept — matches the JSON note format, keeps the CLI surface small.</td></tr>
+      <tr><td>3</td><td><code>notes write</code> cannot run with HEAD on the main branch itself (empty range).</td><td>Accept — matches the branch model (work happens off main).</td></tr>
+    </tbody>
+  </table>
+</div>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
