@@ -38,6 +38,20 @@ struct Branches {
 #[derive(Deserialize)]
 struct Docs {
     root: String,
+    /// Glob lists per tier; None = Trawler's layout under `root` (notes::tier_of).
+    tiers: Option<Tiers>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Tiers {
+    #[serde(rename = "T0", default)]
+    t0: Vec<String>,
+    #[serde(rename = "T1", default)]
+    t1: Vec<String>,
+    #[serde(rename = "T2", default)]
+    t2: Vec<String>,
+    #[serde(rename = "T3", default)]
+    t3: Vec<String>,
 }
 
 fn load_config(repo: &Path) -> Result<Config, String> {
