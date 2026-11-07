@@ -54,6 +54,11 @@ const EPIC_TESTS: &str = r#"{"e2e":{"waived":"no e2e harness in the fixture"}}"#
 
 /// main (one commit) → epic/e → wu/e/a adding code, a python test and a doc. HEAD on wu/e/a.
 fn fixture() -> TempDir {
+    fixture_with("", "", "epic/e", "wu/e/a")
+}
+
+/// `fixture` with extra top-level and `[branches]` config lines and its own branch names.
+fn fixture_with(top: &str, branches: &str, epic: &str, wu: &str) -> TempDir {
     let d = TempDir::new().unwrap();
     let p = d.path();
     git(p, &["init", "-q", "-b", "main"]);
@@ -62,14 +67,14 @@ fn fixture() -> TempDir {
     write(
         p,
         ".keel/config.toml",
-        "code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
+        &format!("{top}code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n{branches}[docs]\nroot = \"docs/\"\n"),
     );
     // An identity-tier signer (local, git-ignored roster) so green paths can sign off (check 8).
     assert!(keel(p, &["mr", "setup", "--as", "t"]).status.success());
     write(p, "README", "x");
     commit(p, "base");
-    git(p, &["switch", "-q", "-c", "epic/e"]);
-    git(p, &["switch", "-q", "-c", "wu/e/a"]);
+    git(p, &["switch", "-q", "-c", epic]);
+    git(p, &["switch", "-q", "-c", wu]);
     write(p, "src/a.py", "def a():\n    return 1\n");
     write(p, "tests/test_a.py", "def test_a():\n    pass\n");
     write(p, "docs/a.html", "<p>a</p>");
@@ -182,6 +187,58 @@ fn docs_only_wu_is_exempt_but_still_needs_its_sign_off() {
     let o = keel(p, &["verify-dod", "wu", "wu/e/docs"]);
     assert!(o.status.success() && text(&o).contains("exempt"), "{}", text(&o));
     assert!(!run("git", p, &["notes", "--ref=dod", "show", "HEAD"], "").status.success());
+}
+
+/// Branch `branch` off epic/e changing one `file`; the unsigned wu gate's output.
+fn exempt_run(p: &Path, branch: &str, file: &str) -> String {
+    git(p, &["switch", "-q", "-c", branch, "epic/e"]);
+    write(p, file, "x");
+    commit(p, file);
+    let o = keel(p, &["verify-dod", "wu", branch]);
+    assert!(!o.status.success(), "no sign-off yet: {}", text(&o));
+    text(&o)
+}
+
+#[test]
+fn infra_paths_narrows_the_exemption_and_unset_keeps_everything_outside_code_paths() {
+    let d = fixture();
+    let t = exempt_run(d.path(), "wu/e/mk", "Makefile");
+    assert!(t.contains("8·manual-review") && !t.contains("1·notes"), "default: Makefile is infra: {t}");
+
+    let d = fixture_with("infra_paths = [\"docs/**\"]\n", "", "epic/e", "wu/e/a");
+    let t = exempt_run(d.path(), "wu/e/mk", "Makefile");
+    assert!(t.contains("1·notes"), "narrowed: Makefile now needs evidence: {t}");
+    let t = exempt_run(d.path(), "wu/e/docs", "docs/only.html");
+    assert!(t.contains("8·manual-review") && !t.contains("1·notes"), "docs/** still exempt: {t}");
+}
+
+#[test]
+fn custom_branch_prefixes_get_the_same_gating() {
+    let d = fixture_with("", "epic_prefix = \"release/\"\nwu_prefix = \"task/\"\n", "release/e", "task/e/a");
+    let p = d.path();
+    // Move the epic ahead so a wrongly inferred target (main) would give a different base.
+    git(p, &["switch", "-q", "release/e"]);
+    write(p, "NOTES", "epic work");
+    commit(p, "epic moves");
+    git(p, &["switch", "-q", "task/e/a"]);
+    git(p, &["rebase", "-q", "release/e"]);
+
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    git(p, &["switch", "-q", "release/e"]);
+    let m = run("git", p, &["merge", "--no-ff", "-m", "merge task", "task/e/a"], "");
+    assert_red(&m, "1·notes"); // release/* is detected as an epic: the merge is wu-gated
+    let _ = run("git", p, &["merge", "--abort"], "");
+
+    git(p, &["switch", "-q", "task/e/a"]);
+    bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
+    let o = keel(p, &["verify-dod", "wu", "task/e/a"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let base = note(p, "dod", "task/e/a")["base"].as_str().unwrap().to_string();
+    assert_eq!(base, git(p, &["rev-parse", "release/e"]), "task/e/* is measured against release/e");
+    git(p, &["switch", "-q", "release/e"]);
+    let m = run("git", p, &["merge", "--no-ff", "-m", "merge task", "task/e/a"], "");
+    assert!(m.status.success(), "{}", text(&m));
 }
 
 #[test]
