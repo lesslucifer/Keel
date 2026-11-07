@@ -153,8 +153,8 @@ flowchart LR
   </table>
 </div>
 
-<h2 id="wu-process">Per-WU process — plan review before work starts</h2>
-<div class="callout warn" data-c="wu-process-body"><b>No WU starts without a reviewed WU-plan doc.</b> For each working unit below, before any worker is dispatched the router creates a real htmldoc artifact at <code>docs/work/&lt;date&gt;-&lt;wu-id&gt;-plan.html</code> (<code>data-artifact="wu-plan"</code>, the checklist <code>keel verify-doc</code> enforces once W5 lands: requirement, maps-to, expected, test-plan). The owner opens and reviews that doc and gives explicit sign-off referencing it by name. A chat summary and a one-word "go" are not sign-off. This applies even though E-SEED itself runs ungated (Q12) and even though the epic plan here was already accepted — epic-level approval never stands in for per-WU sign-off. A worker is launched only after the owner confirms that WU's plan doc, and a WU's work is not merged to main until that confirmation happened first (not retroactively).</div>
+<h2 id="wu-process">Per-WU process — plan doc first, review asynchronous</h2>
+<div class="callout warn" data-c="wu-process-body"><b>Every WU gets a plan doc, but the plan doc does not gate dispatch.</b> For each working unit below, the router creates a real htmldoc artifact at <code>docs/work/&lt;date&gt;-&lt;wu-id&gt;-plan.html</code> (<code>data-artifact="wu-plan"</code>, the checklist <code>keel verify-doc</code> enforces once W5 lands: requirement, maps-to, expected, test-plan) for the record and for later distillation. A worker is dispatched as soon as that doc exists and the WU's dependencies are met; it does not wait for owner sign-off. The owner reviews plan docs and results asynchronously through the htmldoc comment flow, and the router applies requested changes as follow-up work rather than blocking dispatch on them. E-SEED itself still runs ungated (Q12).</div>
 
 <h2 id="wus">Working units</h2>
 <div class="diagram" data-c="wu-graph">
