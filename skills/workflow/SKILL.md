@@ -28,7 +28,9 @@ skeleton, hooks), then follow the bootstrap and `keel mr setup` lines it prints.
   Git is the registry — no tracker file.
 - **Branch names carry the target.** A tip named `wu/<e>/<slug>` is measured
   against `epic/<e>`; anything else against `branches.main`, unless `--target R`
-  is passed. Keep the naming exact or pass `--target` everywhere.
+  is passed. Keep the naming exact or pass `--target` everywhere. The `epic/`
+  and `wu/` prefixes are `branches.epic_prefix` / `branches.wu_prefix` in
+  `.keel/config.toml`; this skill's examples use the defaults.
 - **Main is merge-only**: the pre-commit hook refuses every non-merge commit on
   `branches.main`. All work, docs included, starts on an `epic/*` or `wu/*`
   branch.
@@ -41,6 +43,8 @@ skeleton, hooks), then follow the bootstrap and `keel mr setup` lines it prints.
   `code_paths` (every path, when the list is empty). A diff touching no code path
   is **exempt** from test, cr and doc evidence — never from the human sign-off
   (check 8) or the epic's tracked-doc layout, and never when it archives a T3 doc.
+  When `infra_paths` (globs) is set, only paths matching it count as infra: a
+  diff is exempt only if every path is outside `code_paths` and matches it.
 
 ## 2 · Lifecycle and sign order
 
@@ -108,13 +112,13 @@ keel verify-dod commit <sha>            # standalone commit
 keel verify-dod hook                    # what pre-merge-commit runs
 keel verify-dod range <old> <new>       # what pre-push runs on main/epic updates
 keel preflight <wu|epic> <tip>          # the review's first step (0·tree + checks 1-2)
-keel gate0                              # gate0.lint + gate0.test, cached by tree content
-keel lint                               # gate0.lint only
+keel check                              # check.lint + check.test, cached by tree content
+keel lint                               # check.lint only
 ```
 
 | # | Check | Levels |
 |---|---|---|
-| 0 | `0·tree` (preflight only): checkout is the tip, nothing uncommitted, gate0 green | preflight |
+| 0 | `0·tree` (preflight only): checkout is the tip, nothing uncommitted, `keel check` green | preflight |
 | 1 | `1·notes`: required notes present, JSON, declaring `<kind>/v1` | all |
 | 2 | `2·manifest`: the level's layer (commit ⇒ unit, WU ⇒ integration, epic ⇒ e2e) counted or waived; every note names this tip | all |
 | 3 | `3·review`: `cr/v1` verdict PASS | wu, epic |
@@ -167,10 +171,10 @@ branch can ship or merge in a neutered hook. Never commit hooks.
 
 | Hook | Enforces |
 |---|---|
-| `pre-commit` | refuses non-merge commits on `branches.main` (merge-only). Runs no lint — run `keel lint` / `keel gate0` yourself |
+| `pre-commit` | refuses non-merge commits on `branches.main` (merge-only). Runs no lint — run `keel lint` / `keel check` yourself |
 | `commit-msg` | a staged change to a `rule_bearing` path needs a `Reviewed-By` trailer naming a listed signer; merge commits skipped |
-| `pre-merge-commit` | `keel verify-dod hook`, judged by the target's **committed** `.keel/config.toml`: into `epic/*` ⇒ wu gate, into main ⇒ epic gate then gate0 on the merged tree; other targets ungated; a back-merge of landed history into an epic passes; an octopus or an unknowable merge head (`git pull`) is refused — fetch, then `git merge --no-ff <branch>` |
-| `pre-push` | gate0 on every pushed tree (clean HEAD in place, others in a scratch worktree) · `verify-dod range` on main/`epic/*` updates · pushes `refs/notes/*` |
+| `pre-merge-commit` | `keel verify-dod hook`, judged by the target's **committed** `.keel/config.toml`: into `epic/*` ⇒ wu gate, into main ⇒ epic gate then `keel check` on the merged tree; other targets ungated; a back-merge of landed history into an epic passes; an octopus or an unknowable merge head (`git pull`) is refused — fetch, then `git merge --no-ff <branch>` |
+| `pre-push` | `keel check` on every pushed tree (clean HEAD in place, others in a scratch worktree) · `verify-dod range` on main/`epic/*` updates · pushes `refs/notes/*` |
 | `post-checkout` | heals `merge.ff=false` · copies `.gitworktreecopy` entries into a new worktree |
 | `verify-doc-post` · `verify-doc-stop` | harness hooks (PostToolUse / Stop): `keel verify-doc` on each written doc / every doc at turn end (skill `plan`) |
 
