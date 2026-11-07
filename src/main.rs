@@ -1,5 +1,4 @@
 mod notes;
-mod verify_doc;
 
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -134,36 +133,6 @@ command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it 
 exec keel hook pre-commit
 "#;
 
-// Harness hooks. Claude names the edited file in tool_input.file_path; Codex's
-// apply_patch carries patch text in tool_input.command, whose "*** Add/Update File:"
-// headers name the targets. Red -> exit 2 + stderr (fed back / turn refused). Needs jq.
-// ponytail: the Codex shape is best-effort (Trawler's), not verified against Codex docs.
-const DOC_POST: &str = r#"#!/bin/sh
-command -v keel >/dev/null 2>&1 || exit 0
-paths=$(jq -r 'if (.tool_input.file_path? // "") != "" then .tool_input.file_path
-  else (.tool_input.command? // "") | split("\n")[]
-    | select(test("^\\*\\*\\* (Add|Update|Delete) File: |^\\*\\*\\* Move to: "))
-    | sub("^\\*\\*\\* (Add|Update|Delete) File: |^\\*\\*\\* Move to: "; "")
-  end' 2>/dev/null) || exit 0
-IFS='
-'
-set --
-for p in $paths; do
-  case "$p" in *.html) [ -f "$p" ] && set -- "$@" "$p" ;; esac
-done
-[ $# -gt 0 ] || exit 0
-out=$(keel verify-doc "$@" 2>&1) && exit 0
-printf '%s\n' "$out" >&2
-exit 2
-"#;
-
-const DOC_STOP: &str = r#"#!/bin/sh
-command -v keel >/dev/null 2>&1 || exit 0
-out=$(keel verify-doc 2>&1) && exit 0
-printf 'A doc is red - fix it before ending the turn:\n%s\n' "$out" >&2
-exit 2
-"#;
-
 const POST_CHECKOUT: &str = r#"#!/bin/sh
 # post-checkout: seed new worktrees from .gitworktreecopy, heal merge.ff=false.
 [ "$(git config --local --get merge.ff)" = "false" ] || git config --local merge.ff false
@@ -183,12 +152,7 @@ fn hooks_install(repo: &Path) -> Result<i32, String> {
     use std::os::unix::fs::PermissionsExt;
     let dir = repo.join(HOOKS_DIR);
     std::fs::create_dir_all(&dir).map_err(|e| format!("keel: mkdir {}: {e}", dir.display()))?;
-    for (name, body) in [
-        ("pre-commit", PRE_COMMIT),
-        ("post-checkout", POST_CHECKOUT),
-        ("verify-doc-post", DOC_POST),
-        ("verify-doc-stop", DOC_STOP),
-    ] {
+    for (name, body) in [("pre-commit", PRE_COMMIT), ("post-checkout", POST_CHECKOUT)] {
         let p = dir.join(name);
         std::fs::write(&p, body).map_err(|e| format!("keel: write {}: {e}", p.display()))?;
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755))
@@ -212,26 +176,6 @@ fn pre_commit(repo: &Path, cfg: &Config) -> Result<i32, String> {
     Ok(0)
 }
 
-/// No paths: every html doc under docs.root (tracked or untracked, not ignored).
-fn verify_doc(repo: &Path, paths: &[&str]) -> Result<i32, String> {
-    let files: Vec<String> = if paths.is_empty() {
-        let glob = format!("{}/*.html", load_config(repo)?.docs.root.trim_end_matches('/'));
-        let ls = git(repo, &["ls-files", "--cached", "--others", "--exclude-standard", "--", &glob], &[])?;
-        ls.lines().map(|l| repo.join(l).to_string_lossy().into_owned()).collect()
-    } else {
-        paths.iter().map(|s| s.to_string()).collect()
-    };
-    let mut red = false;
-    for f in &files {
-        let errs = verify_doc::verify(Path::new(f));
-        for e in &errs {
-            eprintln!("{f}: {e}");
-        }
-        red |= !errs.is_empty();
-    }
-    Ok(red as i32)
-}
-
 fn run() -> Result<i32, String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -242,8 +186,7 @@ fn run() -> Result<i32, String> {
         ["gate0"] => gate0(&repo, &load_config(&repo)?),
         ["hook", "pre-commit"] => pre_commit(&repo, &load_config(&repo)?),
         ["notes", "write", kind, rest @ ..] => notes::write(&repo, &load_config(&repo)?, kind, rest),
-        ["verify-doc", paths @ ..] => verify_doc(&repo, paths),
-        _ => Err("usage: keel <lint | gate0 | verify-doc | hooks install | notes write <test|doc|cr>>".into()),
+        _ => Err("usage: keel <lint | gate0 | hooks install | notes write <test|doc|cr>>".into()),
     }
 }
 
