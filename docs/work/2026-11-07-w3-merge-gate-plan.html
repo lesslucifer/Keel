@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6aee9c499f34851f0dfafe43" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED.W3 WU plan: merge gate</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED.W3 — Merge gate</h1>
+      <p><code>keel verify-dod</code>, <code>keel preflight</code>, the <code>dod/v1</code> receipt, and the pre-merge-commit and pre-push hooks. These refuse a merge or a push when the evidence W2 writes is missing, stale, or does not match the diff.</p>
+      <div class="meta">v1 · 2026-11-07 · Keel · T2 WU plan · epic: <a href="2026-11-07-seed-plan.html">E-SEED</a> · status: ready (dispatch does not wait on sign-off; the owner reviews asynchronously)</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="requirement">Requirement</h2>
+<div data-item="requirement" data-c="requirement-body">
+  <p>W2 writes <code>test/v1</code>, <code>doc/v1</code> and <code>cr/v1</code> notes, but nothing reads them back yet. Until something does, a merge is not gated on any of it. This WU builds the reader: a gate that a <code>--no-ff</code> merge has to pass, an epic gate that re-checks every seam so a fast-forward or <code>--no-verify</code> merge cannot slip through, and a <code>dod/v1</code> receipt written on green.</p>
+  <p>It builds on what is already merged: W1's <code>Config</code>, <code>git()</code>, <code>gate0()</code> and <code>hooks_install()</code>, W2's note structs and <code>notes::store</code>, and the binding hash W2 already puts on <code>cr/v1</code>. The port follows Trawler's <code>xtask/src/gate.rs</code>, <code>lib.rs</code> (verify-dod modes and the hook entry), <code>preflight.rs</code> and <code>.cargo-husky/hooks/pre-{merge-commit,push}</code>. It keeps their structure but drops the cargo calls, Trawler's paths and the design-pack checks.</p>
+</div>
+
+<h2 id="scope">Scope</h2>
+<div data-c="scope-body">
+  <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  M["git merge --no-ff X"] --> PMC["pre-merge-commit → keel verify-dod hook"]
+  PMC -->|"HEAD = branches.main"| E["epic gate: tip = merge head, target = HEAD"]
+  PMC -->|"HEAD = epic/*"| W["WU gate: tip = merge head, target = HEAD"]
+  PMC -->|other branch| U["ungated"]
+  W --> C["checks 1–6 on the tip"]
+  E --> C
+  E --> WK["7·walk: every first-parent seam base..tip re-verified (WU seam → WU checks, plain commit → commit checks)"]
+  WK --> WV{"seam red?"}
+  WV -->|"walk_waivers entry on epic cr note"| WAIVED["recorded as waived"]
+  WV -->|no waiver| RED
+  C -->|any FAIL| RED["refused: check id + fix → line"]
+  C -->|all green| R["dod/v1 receipt on the tip"]
+  E -->|green| G0["gate0 on the merged tree"]
+</pre>
+  <div class="caption">The hook decides the level from the branch being merged into. The tip and walk checks are shared by every mode.</div>
+  </div>
+  <table data-c="checks-table">
+    <thead><tr><th>Check id</th><th>Runs at</th><th>Red when</th></tr></thead>
+    <tbody>
+      <tr><td><code>1·notes</code></td><td>commit · wu · epic</td><td>A required note is missing, is not JSON, or declares the wrong schema. <code>test/v1</code> is always required. <code>cr/v1</code> is required at wu/epic. <code>doc/v1</code> is required at wu/epic, and at commit level when the commit touches <code>docs.root</code>.</td></tr>
+      <tr><td><code>2·manifest</code></td><td>commit · wu · epic</td><td>The test note lacks the layer for its level (commit → <code>unit</code>, wu → <code>integration</code>, epic → <code>e2e</code>; counted or waived), or any note's identity <code>tip</code> is not the commit it is attached to (for example, a note copied over by <code>git notes copy</code>).</td></tr>
+      <tr><td><code>3·review</code></td><td>wu · epic</td><td><code>cr/v1</code> verdict is not <code>PASS</code>.</td></tr>
+      <tr><td><code>4·review-base</code></td><td>wu · epic</td><td><code>cr.base</code> ≠ current merge-base of tip and target (the target moved since the review).</td></tr>
+      <tr><td><code>5·diff-binding</code></td><td>wu · epic</td><td><code>cr.code_diff_hash</code> ≠ hash of <code>git diff base tip -- code_paths</code>. This is the same function W2's writer uses, moved into one shared helper.</td></tr>
+      <tr><td><code>6·doc-note</code></td><td>commit · wu · epic</td><td>A doc under <code>docs.root</code> changed in the range but is not listed in <code>doc/v1</code> <code>paths</code>, or <code>paths</code> lists a doc the range doesn't touch. <b>No tier check</b> (see open point 1).</td></tr>
+      <tr><td><code>7·walk</code></td><td>epic</td><td>A first-parent seam in <code>base..tip</code> fails its own gate. A 2-parent merge is checked as a WU (tip = parent 2, target = parent 1). A plain commit is checked as a commit (target = its parent). An octopus merge is always red. Seams that are already landed history (parent 2 reachable from parent 1 or from the target, i.e. a back-merge) are skipped. A failure is reported as <code>7·walk·&lt;inner id&gt;</code>.</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>Modes</b>, following Trawler's <code>verify-dod</code>:
+      <ul>
+        <li><code>wu &lt;tip&gt; [--target R]</code>: target is <code>--target</code>, otherwise <code>epic/&lt;e&gt;</code> when the tip is <code>wu/&lt;e&gt;/…</code>, otherwise <code>branches.main</code>.</li>
+        <li><code>epic &lt;tip&gt; [--target R]</code>: target defaults to <code>branches.main</code>.</li>
+        <li><code>commit &lt;sha&gt;</code>: target is <code>sha^</code>.</li>
+        <li><code>hook</code>: the tip is <code>MERGE_HEAD</code>, or the <code>GIT_REFLOG_ACTION</code> rev, because pre-merge-commit fires before MERGE_HEAD exists. Target = <code>HEAD</code>, and the level comes from HEAD's branch. Two or more merge heads are refused. Merging landed history back into an epic is skipped.</li>
+        <li><code>range &lt;old&gt; &lt;new&gt;</code>: checks each first-parent plain commit as a commit. This is what pre-push runs.</li>
+      </ul>
+    </li>
+    <li><b>Range resolution is shared with the writer.</b> <code>keel notes write</code> now resolves its range with the same target rule (<code>--target</code> flag, then <code>wu/&lt;e&gt;/</code> → <code>epic/&lt;e&gt;</code>, then main). Before this WU it always measured from <code>branches.main</code>, so a WU's <code>cr.base</code> would never equal the merge-base the WU gate computes against its epic. Trawler uses one resolver for both for exactly this reason. A commit-level note is written with <code>--target HEAD^</code>.</li>
+    <li><b>Docs/infra exemption (UC-GATE-5).</b> A range is <i>gated</i> when any changed path is under <code>code_paths</code>. Otherwise it is exempt from checks 1–6: no test, cr or doc evidence is demanded, and no receipt is written, as in Trawler. So "infra" means "everything outside <code>code_paths</code>". This is Trawler's own rule (<code>is_gated</code> = any code path), with Keel's config in place of Trawler's hard-coded prefixes. An empty <code>code_paths</code> makes every path code. The gate never silently exempts everything, and this matches W2, whose cr hash covers the whole diff when <code>code_paths</code> is empty. In the code, the exempt early return comes <i>after</i> a marked slot where W4's check 8 (mr/v1) and W8's tier layout will go. UC-GATE-5 never exempts those two. The epic walk runs even on an exempt epic, because each seam judges its own diff.</li>
+    <li><b><code>walk_waivers</code></b>: an optional list on the <i>epic tip's</i> <code>cr/v1</code> note, <code>"walk_waivers": [{"seam": "&lt;sha or prefix&gt;", "why": "&lt;reason&gt;"}]</code>. This is Trawler's shape and location. A seam sha is matched by prefix in either direction, and a blank <code>why</code> never waives. A waived seam is printed as waived and does not block. The tip's own checks still run. A red seam's fix line names the exact <code>git notes --ref=cr edit</code> step and warns against <code>--no-verify</code>. The field is added to <code>CrNote</code> with <code>#[serde(default)]</code>, so existing notes still parse. It is not written by <code>notes write cr</code>: it is an on-the-record manual edit, as in Trawler.</li>
+    <li><b><code>dod/v1</code> receipt</b>: written to <code>refs/notes/dod</code> on a green, non-exempt <code>wu</code>/<code>epic</code>/<code>hook</code> run. It holds the identity block (tip, base, branch, committer, timestamp), <code>level</code>, <code>checks</code> (the receipt names of the checks that level ran), and <code>diff_hash</code> (blob hash of the full <code>base..tip</code> diff). W2's schema-only <code>DodNote</code> gains <code>level</code> and <code>checks</code>. <code>commit</code> and <code>range</code> write no receipt, as in Trawler.</li>
+    <li><b><code>keel preflight wu|epic &lt;tip&gt; [--target R]</code></b>: run before a review starts. It fails under <code>0·tree</code> when the checkout is not on the tip, has uncommitted tracked changes, or fails <code>gate0</code>. It then runs only checks 1 and 2 against the test note. It doesn't ask for cr or doc notes, because the review is what writes them. An exempt diff passes with no notes. It writes nothing.</li>
+    <li><b>Hooks</b> (added to <code>keel hooks install</code>; both fail closed when <code>keel</code> is missing, like pre-commit):
+      <ul>
+        <li><code>pre-merge-commit</code> → <code>keel verify-dod hook</code>. On an epic → main merge it also runs <code>gate0</code> on the merged tree after the gate is green (Trawler DEC-74).</li>
+        <li><code>pre-push</code> → <code>keel hook pre-push &lt;remote&gt;</code>, reading git's refspec lines on stdin. It runs three steps. (1) <b>gate0 push</b>: every pushed tree is proven, by <code>gate0</code> in place when it is the clean HEAD's tree, otherwise in a scratch worktree at that sha. (2) <b>range check</b>: <code>verify-dod range remote_sha local_sha</code> for updates to <code>branches.main</code> or <code>epic/*</code>. New branches and deletions are skipped. (3) <b>notes sync</b>: <code>git push --no-verify &lt;remote&gt; refs/notes/*</code>, because a plain <code>git push</code> never sends notes refs, so evidence would stay on one machine. A failed sync only warns, as in Trawler.</li>
+      </ul>
+    </li>
+    <li>Refusals print one block per failure in Trawler's format, <code>FAIL  &lt;check id&gt;  &lt;what&gt;</code> followed by <code>fix -&gt; &lt;fix&gt;</code>, and exit 1.</li>
+  </ul>
+</div>
+
+<h2 id="maps-to">Maps to</h2>
+<p data-item="maps-to">UC-GATE-2 (a <code>--no-ff</code> merge is refused unless every required note is present, parses, and is bound to the exact diff; green writes <code>dod/v1</code>) · UC-GATE-3 (the epic gate re-walks every first-parent seam; a fast-forward or <code>--no-verify</code> merge turns it red; only a <code>walk_waivers</code> entry with a reason overrides one seam) · UC-GATE-5 (docs/infra-only diffs are exempt from test, cr and doc evidence) · UC-DOC-3 (partially: "every changed doc is accounted for in <code>doc/v1</code>"; "no T3 doc is tracked at an epic tip" is W8).</p>
+
+<h2 id="non-goals">Explicitly not this WU</h2>
+<div data-c="non-goals-body">
+  <ul>
+    <li><code>keel mr</code>, <code>mr/v1</code> writing or reading, check 8, the <code>.mr-allowed</code> trust store, and the commit-msg <code>Reviewed-By</code> trailer: all W4. No check here needs <code>mr/v1</code> yet.</li>
+    <li>T0–T3 tier classification, tier-layout validation, and the "no tracked T3 doc at an epic tip" rule: W8.</li>
+    <li>Trawler's design-pack checks (<code>9·design</code>, <code>components·unbuilt</code>, <code>6·run-closed</code>, <code>6·retirement-order</code>) and its <code>3·review-nits</code> (<code>cr/v1</code> has no nits list yet). <code>dod list</code> and <code>tally</code> recording.</li>
+    <li>Trawler's machine-refusal paths in gate0, and per-worktree hook drift detection (<code>hooks::refusal</code>).</li>
+    <li>No changes to Trawler, the seed plan, or the W2/W5 plan docs.</li>
+  </ul>
+</div>
+
+<h2 id="expected">Expected result</h2>
+<div data-item="expected" data-c="expected-body">
+  <p>Per the epic plan, each check has a red fixture that prints the expected <code>check id → fix</code> block, and a green fixture. A seam smuggled in by fast-forward is red at the epic gate. In practice: a real <code>git merge --no-ff</code> of an unblessed WU into its epic is refused by the installed hook, the same merge passes once notes are written and leaves a <code>dod/v1</code> receipt on the WU tip, and a push syncs notes refs to the remote.</p>
+</div>
+
+<h2 id="test-plan">Test plan</h2>
+<div data-item="test-plan" data-c="test-plan-body">
+  <p>New <code>tests/verify_dod.rs</code>, following <code>tests/cli.rs</code>: a temp git repo, the real <code>keel</code> binary, and notes written through <code>keel notes write</code>. Tampering is done by editing the note JSON in place.</p>
+  <ul>
+    <li><b>Green WU + receipt:</b> a blessed <code>wu/e/a</code> → <code>verify-dod wu</code> exits 0. The <code>dod/v1</code> note parses, with level, checks and tip. <code>preflight wu</code> is green on the tip.</li>
+    <li><b>1·notes:</b> the cr note is missing → red, and the output names <code>1·notes</code> with a <code>fix -&gt;</code> line. The preflight on a tip with no test note is red too.</li>
+    <li><b>2·manifest:</b> a WU test note with only a <code>unit</code> layer → red.</li>
+    <li><b>3·review:</b> <code>--verdict FAIL</code> → red.</li>
+    <li><b>4·review-base:</b> <code>cr.base</code> edited to another sha → red.</li>
+    <li><b>5·diff-binding:</b> <code>cr.code_diff_hash</code> edited → red.</li>
+    <li><b>6·doc-note:</b> a doc changed by the WU and dropped from <code>doc/v1</code> <code>paths</code> → red.</li>
+    <li><b>7·walk:</b> an epic with one green <code>--no-ff</code> seam passes. A second WU merged by fast-forward (its code commit has no notes) turns the epic red with <code>7·walk·1·notes</code>. A <code>walk_waivers</code> entry for that seam on the epic's cr note turns it green and marks it waived.</li>
+    <li><b>Exemption:</b> a docs-only WU with no notes is exempt and writes no receipt.</li>
+    <li><b>Hooks end to end:</b> after <code>hooks install</code>, a <code>git merge --no-ff</code> of an unblessed WU into its epic is refused. Once the WU is blessed, the merge lands and the WU tip carries <code>dod/v1</code>. Pushing to a bare remote delivers <code>refs/notes/*</code>. A push of an epic carrying a noteless code commit is refused by the range check.</li>
+  </ul>
+</div>
+
+<h2 id="open-points">Open points for the owner</h2>
+<div class="callout" data-c="open-points-body">
+  <table>
+    <thead><tr><th>#</th><th>Point</th><th>Decided here</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><b>Scope conflict, check 6 vs W8.</b> The W3 card says check 6 is "doc note + tier layout", but the later E-SEED.W8 card owns T0–T3 tier classification.</td><td>Check 6 verifies that a doc note is present and lists the changed doc paths for the range, with no missing and no phantom entries. W2's <code>notes write doc</code> already produces that. Full tier-layout validation (T0–T3, the "no tracked T3 at an epic tip" half of UC-DOC-3) is deferred to W8 and not implemented here. Check 6 will need extending once W8 lands.</td></tr>
+      <tr><td>2</td><td>What counts as "infra" for the UC-GATE-5 exemption.</td><td>Everything outside <code>code_paths</code>, the same as Trawler's <code>is_gated</code>. It needs no new config key. An empty <code>code_paths</code> means every path is code, so nothing is exempt by accident. If you want a separate <code>infra_paths</code> list (for example, so a <code>Dockerfile</code> counts as code), say so.</td></tr>
+      <tr><td>3</td><td>Exemption vs the checks W4/W8 add. UC-GATE-5 says docs/infra diffs are never exempt from human sign-off or the epic tracked-doc layout, but neither check exists yet.</td><td>The exempt early return sits after a marked slot in <code>verify()</code>. W4's check 8 and W8's layout check go in that slot and run before the return. The epic walk already runs on exempt epics.</td></tr>
+      <tr><td>4</td><td><code>walk_waivers</code> format and home.</td><td>On the epic tip's <code>cr/v1</code> note as <code>[{seam, why}]</code>, matched by sha prefix, with a non-blank reason required. This is Trawler's design, kept so the waiver sits beside the epic's review verdict. Written by hand-editing the note (<code>git notes --ref=cr edit</code>), not by a CLI flag.</td></tr>
+      <tr><td>5</td><td>Branch naming. The hook gates "merge into <code>branches.main</code>" as epic and "merge into <code>epic/*</code>" as WU, and <code>wu/&lt;e&gt;/…</code> → <code>epic/&lt;e&gt;</code> is the default target. Keel's config only names <code>branches.main</code>.</td><td>Trawler's <code>epic/*</code> / <code>wu/&lt;e&gt;/*</code> convention is hard-coded for now. Merges into any other branch are ungated, and <code>--target</code> overrides inference. If adopters need other names, a <code>branches.epic_prefix</code> key is a small follow-up (probably W6, alongside the workflow skill that names the branches).</td></tr>
+      <tr><td>6</td><td>W2's <code>notes write</code> changed behavior. It now measures from the same target the gate uses (<code>--target</code>, then <code>wu/&lt;e&gt;</code> → <code>epic/&lt;e&gt;</code>, then main) rather than always from main.</td><td>Needed: otherwise no WU's <code>cr.base</code> could ever match its WU gate once the epic has moved past main. Branches not named <code>wu/…</code> behave exactly as before.</td></tr>
+      <tr><td>7</td><td>A fast-forward whose last smuggled commit <i>becomes</i> the epic tip is not walked. The walk skips the tip itself, because the epic's own checks (e2e layer, a review over the whole epic diff) cover its bytes. This matches Trawler.</td><td>Accepted as Trawler has it. The epic workflow closes with a result-doc commit, so the tip is normally a docs commit. Closing this fully would need either a separate commit-level note slot or a rule that the epic tip must not be a code commit. Say if you want the latter.</td></tr>
+      <tr><td>8</td><td><code>gate0 push</code> scope. Trawler proves non-HEAD pushed trees in a scratch worktree, and so does this port. The scratch worktree's gate0 cache is thrown away afterwards, so a re-push of a non-HEAD sha re-runs gate0.</td><td>Accepted. The common case (pushing the clean HEAD) uses the normal cache.</td></tr>
+      <tr><td>9</td><td>Notes sync only pushes. Nothing fetches <code>refs/notes/*</code> into a fresh clone (a plain fetch doesn't), and a non-fast-forward notes ref on the remote only warns.</td><td>Same as Trawler. Fetch-side refspec setup belongs with <code>init</code> (W6).</td></tr>
+      <tr><td>10</td><td>Trawler's identity check compares epic/wu ids across notes. Keel's identity block has no ids (W2 cut them).</td><td>Here, identity means that each note's <code>tip</code> equals the commit it sits on. Reported under <code>2·manifest</code>.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
