@@ -1,4 +1,5 @@
 mod gate;
+mod init;
 mod mr;
 mod notes;
 mod verify_doc;
@@ -68,7 +69,7 @@ fn load_config(repo: &Path) -> Result<Config, String> {
     let path = repo.join(".keel/config.toml");
     let text = std::fs::read_to_string(&path).map_err(|_| {
         format!(
-            "keel: no .keel/config.toml in {}\n  run `keel init` (coming soon) to create one",
+            "keel: no .keel/config.toml in {}\n  run `keel init` to create one",
             repo.display()
         )
     })?;
@@ -363,6 +364,7 @@ fn run() -> Result<i32, String> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let repo = repo_root()?;
     match args.as_slice() {
+        ["init"] => init::run(&repo),
         ["hooks", "install"] => hooks_install(&repo),
         ["lint"] => lint(&repo, &load_config(&repo)?),
         ["gate0"] => gate0(&repo, &load_config(&repo)?),
@@ -375,7 +377,7 @@ fn run() -> Result<i32, String> {
         ["verify-dod", rest @ ..] => gate::verify_dod(&repo, &load_config(&repo)?, rest),
         ["preflight", rest @ ..] => gate::preflight_cmd(&repo, &load_config(&repo)?, rest),
         ["mr", rest @ ..] => mr::run(&repo, &load_config(&repo)?, rest),
-        _ => Err("usage: keel <lint | gate0 | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install | notes write <test|doc|cr>>".into()),
+        _ => Err("usage: keel <init | lint | gate0 | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install | notes write <test|doc|cr>>".into()),
     }
 }
 
