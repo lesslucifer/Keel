@@ -29,6 +29,7 @@ Source (lineage): a router session on the Trawler project (a Rust + Tauri app ru
 - A12 Kept: stating readings ("pic" = packaging epic, "1990" = 1.99.0) and structured questions for mixed replies.
 - A13 Several WUs' full command sets in one message; asks sent mid-task were missed ("my attention is limited, one task at a time") → owner queue, one current task in full, `Up next` one line each, next task sent when the watcher fires.
 - A14 Re-asks and reminders pointed back, statuses carried other WUs and forwarded worker reports; the owner lost the thread ("give me the detailed information of that task again … I can't remember things from the past, you sent me a ton of messages") → attention is the first principle: every message self-contained for its one task (read-first, cd command, what they will see, how done is detected); re-asks re-send it in full; digest reports, never forward.
+- A15 (Keel, 2026-11-07) Gave the owner a relative markdown link (`[<name>.html](docs/work/<name>.html)`) to a file in the `Keel-E-SEED` worktree while the owner's editor had `Keel` (on main) open; the link resolved against the open workspace root and led nowhere ("I am working in this router session only so [a] relative link [to a] doc is meaningless. I don't know where to open it") → a file outside the owner's open workspace root gets its full absolute path as plain text, never a relative link.
 
 ## B. Accuracy
 - B1 "Don't sign W6" for a bug in W4's code, withdrawn → find the commit/WU holding the defect first.

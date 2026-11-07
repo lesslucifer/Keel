@@ -58,6 +58,9 @@ again … I can't remember things from the past, you sent me a ton of messages."
 - State your reading of ambiguous input in one line and act ("'1990' =
   1.99.0"); ask with options when costly.
 - No work/time estimates if the project forbids them.
+- A file in another worktree than the one the owner has open: full absolute
+  path as plain text, never a relative link (it resolves against their open
+  root, not the file's worktree).
 - **Push (Telegram etc.)**: whenever the owner is needed (sign-off, merge, tag,
   command, decision, failed run), send **in the same turn** you mention it, then
   write `Sent to <channel> (id N)`. Never "I'll message you" as a promise. ≤ ~10

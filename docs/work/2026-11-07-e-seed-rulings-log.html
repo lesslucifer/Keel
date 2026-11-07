@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6aef08399f34851f0dfb0678">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED rulings log</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED rulings log</h1>
+      <p>Every owner ruling made during E-SEED, one row each, so a router or worker can re-read them at session start and carry them into briefs (router skill, "Decisions": "Record rulings in the rulings log and next briefs").</p>
+      <div class="meta">v1 · 2026-11-07 · Keel · epic: <a href="2026-11-07-seed-plan.html">E-SEED</a> · append-only</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="how">How to use this log</h2>
+<div class="callout" data-c="how-body"><b>Append-only.</b> Add a new row at the bottom for each ruling: date, WU or topic, the decision, and where it is recorded (doc row, htmldoc comment id). Never edit or delete a past row; if a ruling is reversed, add a new row that names the one it replaces. The epic-level questions decided before this log existed (Q1 onward) stay in the seed plan's decisions table and are not copied here.</div>
+
+<h2 id="rulings">Rulings</h2>
+<table data-c="rulings-table">
+  <tr><th>#</th><th>Date</th><th>WU / topic</th><th>Ruling</th><th>Recorded in</th></tr>
+  <tr><td>R1</td><td>2026-11-07</td><td>Branch / worktree convention</td><td>The main repo folder (<code>/Users/nguyenvanluong/Documents/proj/misc/Keel</code>) always stays on <code>main</code>. Epic work happens in separate worktrees (for example <code>Keel-E-SEED</code> on <code>epic/E-SEED</code>, <code>Keel-router</code> on <code>epic/E-ROUTER</code>), never in the main folder.</td><td>Owner, in the router session. No doc row or htmldoc comment holds it. <code>.claude/agents/router.md</code> records the related rule that epic work lands on <code>epic/&lt;name&gt;</code>, never on main.</td></tr>
+  <tr><td>R2</td><td>2026-11-07</td><td>W3 · UC-GATE-4</td><td>Option (a): the code stays as is. <code>keel check</code> runs on the merged tree only at epic → main merges; a WU → epic merge checks notes only (Trawler DEC-74). The UC-GATE-4 spec text was reworded to match the code.</td><td><a href="2026-11-07-seed-plan.html">Seed plan</a> UC-GATE-4 row; comment <code>6aeedabc9f34851f0dfb02d6</code> (resolved)</td></tr>
+  <tr><td>R3</td><td>2026-11-07</td><td>W3 · point 2, infra exemption</td><td>What counts as infra should be configurable by folder/glob. Built as an optional <code>infra_paths</code> glob list that can only narrow the exemption.</td><td><a href="2026-11-07-w3-merge-gate-plan.html">W3 plan</a> row 2; comment <code>6aeecb3d9f34851f0dfb0187</code> (resolved)</td></tr>
+  <tr><td>R4</td><td>2026-11-07</td><td>W3 · point 5, branch naming</td><td>Branch prefixes are configurable with defaults: <code>branches.epic_prefix</code> (<code>"epic/"</code>) and <code>branches.wu_prefix</code> (<code>"wu/"</code>).</td><td>W3 plan row 5; comment <code>6aeecb679f34851f0dfb018c</code> (resolved)</td></tr>
+  <tr><td>R5</td><td>2026-11-07</td><td>W3 · <code>gate0</code> naming</td><td>"gate 0" was misleading; renamed to <code>check</code> everywhere (<code>keel check</code>, <code>[check]</code>, <code>keel-check-green</code>), with no backward compatibility for <code>[gate0]</code>.</td><td>W3 plan row 11; comment <code>6aeecb909f34851f0dfb0193</code> (resolved)</td></tr>
+  <tr><td>R6</td><td>2026-11-07</td><td>W3 · point 7, epic tip</td><td>No rule restricting the epic tip will be added; the epic tip may be any commit.</td><td>W3 plan row 7 ("Confirmed by owner")</td></tr>
+  <tr><td>R7</td><td>2026-11-07</td><td>W3 · point 9, notes fetch on init</td><td>Deferred to a future WU, explicitly not W6. <code>keel init</code> sets up no <code>refs/notes/*</code> fetch; a fresh clone still fetches notes by hand.</td><td>W3 plan row 9 ("Deferred (owner decision)")</td></tr>
+  <tr><td>R8</td><td>2026-11-07</td><td>W4 · point 1, agent can sign</td><td>Accepted as an explicit E-SEED limitation (security review H1): "signed" means a key listed in <code>.mr-allowed</code> signed, not that a human reviewed. Owner follow-up: settled, no change; a passphrase-protected signing key is assumed and recommended (it only helps while the key is not loaded into ssh-agent).</td><td><a href="2026-11-07-w4-manual-review-plan.html">W4 plan</a> row 1; comment <code>6aeefa939f34851f0dfb0549</code> (resolved)</td></tr>
+  <tr><td>R9</td><td>2026-11-07</td><td>W4 · point 7, native commit signing</td><td>Deferred, as recommended. Rule-bearing commits keep the <code>Reviewed-By</code> trailer only; the WU's <code>mr/v1</code> signature covers the whole diff.</td><td>W4 plan row 7 ("Owner-confirmed (2026-11-07): deferred")</td></tr>
+  <tr><td>R10</td><td>2026-11-07</td><td>W4 · point 9, sign-last strength</td><td>Keep it strict, as built: <code>mr confirm</code> demands the whole gate (checks 1–7, epic walk included).</td><td>W4 plan row 9 ("Owner-confirmed (2026-11-07): keep it strict")</td></tr>
+  <tr><td>R11</td><td>2026-11-07</td><td>W4 · point 11, which report</td><td>Drop the fixed/inferred report path, make the report requirement configurable, and treat the report as a receipt. Not done in W4; deferred to the new WU E-SEED.W9. W9 open point 1 still asks the owner to confirm its reading of "receipt".</td><td>W4 plan row 11; comment <code>6aeefb5a9f34851f0dfb055a</code> (resolved); <a href="2026-11-07-w9-mr-report-and-hooks-followup-plan.html">W9 plan</a></td></tr>
+  <tr><td>R12</td><td>2026-11-07</td><td>W4 · point 13, DEC numbers</td><td>The row's claim that DEC-27 has no record was corrected (its record is in Trawler's <code>workflow-gates.html</code>). Closed with no action: the seed plan's distillation plan already re-records DEC-9, 10 and 27 in Keel.</td><td>W4 plan row 13 ("Closed (owner, 2026-11-07)"); comment <code>6aeefb7c9f34851f0dfb055f</code> (resolved)</td></tr>
+  <tr><td>R13</td><td>2026-11-07</td><td>W4 · point 17, check 8 scope</td><td>Keep it as Trawler has it: check 8 runs only in <code>pre-merge-commit</code>, not <code>pre-push</code> (security review H4).</td><td>W4 plan row 17 ("Decided (owner)")</td></tr>
+  <tr><td>R14</td><td>2026-11-07</td><td>W4 · point 19, hook tampering follow-up</td><td>Accept the current behavior as-is for now (the original hole is fixed by <code>0412b3c</code>). The remaining hook-coexistence questions are deferred to E-SEED.W9, since a further fix may conflict with other git-based hooks.</td><td>W4 plan row 19; comment <code>6aeefc7b9f34851f0dfb0572</code> (resolved)</td></tr>
+  <tr><td>R15</td><td>2026-11-07</td><td>W4 · point 20, M3 and L1–L5</td><td>Skipped, not pursued. These security-review findings will not be triaged or tracked further; their content cannot be recovered, and the owner accepted the risk of leaving them unaddressed.</td><td>W4 plan row 20; comment <code>6aeefce39f34851f0dfb057b</code> (resolved)</td></tr>
+  <tr><td>R16</td><td>2026-11-07</td><td>W4 · point 21, commit-msg <code>rule_bearing</code> source</td><td>"Owner decision (informed, 2026-11-07): accepted as a permanent, known gap. Not scheduled for a fix." <code>keel hook commit-msg</code> loads <code>.keel/config.toml</code> from the working tree, not <code>HEAD</code>, so a commit touching rule-bearing files can land with no <code>Reviewed-By</code> trailer if <code>rule_bearing</code> is transiently edited in the uncommitted working tree. Nothing downstream re-checks per-commit trailers (not the WU merge, not 7·walk, not the epic merge), so for such a commit UC-MR-2's per-commit guarantee does not hold; the WU/epic sign-off is the only human attestation over it.</td><td>W4 plan row 21; comment <code>6aeefcf79f34851f0dfb0580</code> (resolved)</td></tr>
+  <tr><td>R17</td><td>2026-11-07</td><td>Router · talking to the owner</td><td>A file in a worktree other than the one the owner has open is referenced by its full absolute path as plain text, never by a relative link (a relative link resolves against the owner's open workspace root, not the file's worktree).</td><td>Owner report in the router session; <code>skills/router/references/lessons.md</code> A15 and <code>skills/router/SKILL.md</code> "Talking to the owner"</td></tr>
+</table>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
