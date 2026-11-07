@@ -76,7 +76,7 @@ fn fixture() -> (TempDir, TempDir) {
     write(
         p,
         ".keel/config.toml",
-        "code_paths = [\"src/\", \"tests/\"]\nrule_bearing = [\"CLAUDE.md\", \"docs/*.html\"]\n[gate0]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
+        "code_paths = [\"src/\", \"tests/\"]\nrule_bearing = [\"CLAUDE.md\", \"docs/*.html\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
     );
     let o = ok(keel(p, &["mr", "setup", "--as", "vu", "--key", key.to_str().unwrap()]));
     assert!(text(&o).contains("probe signature verified"), "{}", text(&o));

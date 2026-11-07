@@ -1,7 +1,7 @@
 //! `keel verify-dod` + `keel preflight`: the merge gate (UC-GATE-2/3/5, UC-DOC-3).
 //! Ported from Trawler's xtask gate: same check ids, same `FAIL / fix ->` blocks, no cargo.
 use crate::notes::{self, CrNote, DocNote, DodNote, TestNote};
-use crate::{gate0, git, mr, Config};
+use crate::{check, git, mr, Config};
 use serde::de::DeserializeOwned;
 use std::path::Path;
 
@@ -348,9 +348,9 @@ fn hook(repo: &Path, cfg: &Config) -> Result<i32, String> {
             if code != 0 || level == Level::Wu {
                 return Ok(code);
             }
-            let code = gate0(repo, cfg)?; // the merged tree, before it lands on main
+            let code = check(repo, cfg)?; // the merged tree, before it lands on main
             if code != 0 {
-                eprintln!("merge refused - the merged tree fails gate0; git merge --abort, fix it on the epic, merge again");
+                eprintln!("merge refused - the merged tree fails keel check; git merge --abort, fix it on the epic, merge again");
             }
             Ok(code)
         }
@@ -376,7 +376,7 @@ pub(crate) fn range(repo: &Path, cfg: &Config, old: &str, new: &str) -> Result<i
     Ok(red as i32)
 }
 
-/// Before a review starts: right checkout, clean tree, gate0 green, checks 1-2 on the test note.
+/// Before a review starts: right checkout, clean tree, check green, checks 1-2 on the test note.
 fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> Result<i32, String> {
     let (mut r, names) = open(repo, cfg, level, tip_ref, target)?;
     if r.exempt {
@@ -387,8 +387,8 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
         r.fail("0·tree", format!("the checkout is not on the tip {}", short(&r.tip)), format!("git checkout {tip_ref}, then preflight again"));
     } else if !git(repo, &["status", "--porcelain", "--untracked-files=no"], &[])?.is_empty() {
         r.fail("0·tree", "the working tree has uncommitted changes".into(), "commit or stash them, then preflight again");
-    } else if gate0(repo, cfg)? != 0 {
-        r.fail("0·tree", "gate0 is red on the tip".into(), "get lint and tests green before the review runs");
+    } else if check(repo, cfg)? != 0 {
+        r.fail("0·tree", "keel check is red on the tip".into(), "get lint and tests green before the review runs");
     }
     check_tip(repo, cfg, &mut r, &names, false)?;
     print(&r, "preflight");

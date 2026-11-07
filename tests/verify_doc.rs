@@ -43,7 +43,7 @@ fn repo() -> TempDir {
     let p = d.path();
     run("git", p, &["init", "-q", "-b", "main"], "");
     std::fs::create_dir_all(p.join(".keel")).unwrap();
-    std::fs::write(p.join(".keel/config.toml"), "[gate0]\nlint=\"true\"\ntest=\"true\"\n[branches]\nmain=\"main\"\n[docs]\nroot=\"docs/\"\n").unwrap();
+    std::fs::write(p.join(".keel/config.toml"), "[check]\nlint=\"true\"\ntest=\"true\"\n[branches]\nmain=\"main\"\n[docs]\nroot=\"docs/\"\n").unwrap();
     std::fs::create_dir(p.join("docs")).unwrap();
     d
 }

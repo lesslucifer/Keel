@@ -34,7 +34,7 @@ fn repo(with_config: bool) -> TempDir {
         // the test command appends a line to runs.log so we can count real runs
         std::fs::write(
             p.join(".keel/config.toml"),
-            "[gate0]\nlint = \"true\"\ntest = \"echo x >> runs.log\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
+            "[check]\nlint = \"true\"\ntest = \"echo x >> runs.log\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
         )
         .unwrap();
         std::fs::write(p.join(".gitignore"), "runs.log\n").unwrap();
@@ -47,15 +47,15 @@ fn runs(p: &Path) -> usize {
 }
 
 #[test]
-fn second_gate0_run_on_unchanged_tree_is_skipped() {
+fn second_check_run_on_unchanged_tree_is_skipped() {
     let d = repo(true);
     let p = d.path();
-    assert!(keel(p, &["gate0"]).status.success());
-    let second = keel(p, &["gate0"]);
+    assert!(keel(p, &["check"]).status.success());
+    let second = keel(p, &["check"]);
     assert!(text(&second).contains("skipped"), "{}", text(&second));
     assert_eq!(runs(p), 1);
     std::fs::write(p.join("new.txt"), "change").unwrap();
-    keel(p, &["gate0"]);
+    keel(p, &["check"]);
     assert_eq!(runs(p), 2);
 }
 
@@ -107,7 +107,7 @@ fn new_worktree_is_seeded_from_gitworktreecopy() {
 #[test]
 fn missing_config_points_at_init() {
     let d = repo(false);
-    for cmd in ["lint", "gate0"] {
+    for cmd in ["lint", "check"] {
         let o = keel(d.path(), &[cmd]);
         assert!(!o.status.success());
         assert!(text(&o).contains("keel init"), "{}", text(&o));
