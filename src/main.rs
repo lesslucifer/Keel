@@ -63,6 +63,17 @@ fn load_config(repo: &Path) -> Result<Config, String> {
     toml::from_str(&text).map_err(|e| format!("keel: bad .keel/config.toml: {e}"))
 }
 
+/// The merge gate's policy: `.keel/config.toml` as committed at HEAD, never the working tree.
+/// pre-merge-commit runs with the merge already in the tree and index but before the merge commit
+/// exists, so HEAD is still the target's tip - the incoming branch cannot rewrite the policy that
+/// judges its own merge (e.g. rename `branches.main` to no-op the gate, or drop `key` from `mr.tiers`).
+fn load_config_at_head(repo: &Path) -> Result<Config, String> {
+    let text = git(repo, &["show", "HEAD:.keel/config.toml"], &[]).map_err(|_| {
+        "keel: merge refused - the target (HEAD) has no committed .keel/config.toml, so there is no policy to judge this merge\n  fix -> land .keel/config.toml on the target first, outside the gated merge".to_string()
+    })?;
+    toml::from_str(&text).map_err(|e| format!("keel: bad .keel/config.toml at HEAD: {e}"))
+}
+
 fn git(repo: &Path, args: &[&str], envs: &[(&str, &Path)]) -> Result<String, String> {
     let mut c = Command::new("git");
     c.args(args).current_dir(repo);
@@ -341,6 +352,7 @@ fn run() -> Result<i32, String> {
         ["hook", "pre-push", remote, ..] => pre_push(&repo, &load_config(&repo)?, remote),
         ["notes", "write", kind, rest @ ..] => notes::write(&repo, &load_config(&repo)?, kind, rest),
         ["verify-doc", paths @ ..] => verify_doc(&repo, paths),
+        ["verify-dod", "hook"] => gate::verify_dod(&repo, &load_config_at_head(&repo)?, &["hook"]),
         ["verify-dod", rest @ ..] => gate::verify_dod(&repo, &load_config(&repo)?, rest),
         ["preflight", rest @ ..] => gate::preflight_cmd(&repo, &load_config(&repo)?, rest),
         ["mr", rest @ ..] => mr::run(&repo, &load_config(&repo)?, rest),

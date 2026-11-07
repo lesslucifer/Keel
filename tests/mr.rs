@@ -93,6 +93,10 @@ fn fixture() -> (TempDir, TempDir) {
 }
 
 fn notes(p: &Path, kinds: &[&str]) {
+    notes_with(p, kinds, r#"{"integration":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
+}
+
+fn notes_with(p: &Path, kinds: &[&str], judgment: &str) {
     for k in kinds {
         let mut c = Command::new(env!("CARGO_BIN_EXE_keel"));
         c.current_dir(p).args(["notes", "write", k]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -101,7 +105,6 @@ fn notes(p: &Path, kinds: &[&str]) {
         }
         let mut ch = c.spawn().unwrap();
         use std::io::Write;
-        let judgment = r#"{"integration":{"files":["tests/test_a.py"],"covers":"a works"}}"#;
         ch.stdin.take().unwrap().write_all(if *k == "test" { judgment.as_bytes() } else { b"" }).unwrap();
         assert!(ch.wait_with_output().unwrap().status.success(), "notes write {k}");
     }
@@ -120,6 +123,10 @@ fn key_signed_confirm_lets_the_merge_through() {
 
     ok(keel(p, &["hooks", "install"]));
     git(p, &["switch", "-q", "epic/e"]);
+    // H3: git pull hides the merge head from the hook (GIT_REFLOG_ACTION="pull ..."): refused, not waved through.
+    let o = run("git", p, &["pull", "--no-ff", "--no-rebase", "--no-edit", ".", "wu/e/a"]);
+    assert!(!o.status.success() && text(&o).contains("cannot determine what is being merged"), "{}", text(&o));
+    git(p, &["merge", "--abort"]);
     ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"]));
     let dod = git(p, &["notes", "--ref=dod", "show", "wu/e/a"]);
     assert!(dod.contains("manual-review"), "{dod}");
@@ -153,6 +160,50 @@ fn confirm_refuses_before_cr_and_for_an_unlisted_signer() {
     // Re-listed as an identity tier: listed is all that tier proves, so it is green again.
     std::fs::write(p.join(".mr-allowed"), "username: vu\n").unwrap();
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    // A tracked roster is refused, and the fix says to delete it and rebuild, not merely untrack it.
+    git(p, &["add", "-f", ".mr-allowed"]);
+    assert_red8(p, "rm .mr-allowed");
+    assert_red8(p, "rebuild your own roster from scratch with keel mr setup");
+}
+
+#[test]
+fn a_branch_cannot_weaken_the_policy_that_judges_its_own_merge() {
+    let (d, _k) = fixture();
+    let p = d.path();
+    // vu holds a key, and is also listed as a plain username.
+    let roster = std::fs::read_to_string(p.join(".mr-allowed")).unwrap();
+    std::fs::write(p.join(".mr-allowed"), format!("{roster}username: vu\n")).unwrap();
+    // The WU drops `key` from the accepted tiers, so its own working tree lets vu sign off unsigned.
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    write(p, ".keel/config.toml", &format!("{cfg}[mr]\ntiers = [\"username\"]\n"));
+    commit(p, "weaken the mr policy");
+    notes(p, &["test", "doc", "cr"]);
+    ok(keel(p, &["mr", "confirm", "wu"]));
+    assert!(mr_note(p, "wu/e/a").unwrap().get("sig").is_none(), "signed off on the username tier");
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"])); // green under the branch's own policy
+
+    // The merge hook judges by the target's committed policy, where vu is key-backed.
+    ok(keel(p, &["hooks", "install"]));
+    git(p, &["switch", "-q", "epic/e"]);
+    let o = run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"]);
+    assert!(!o.status.success() && text(&o).contains("carries no signature"), "{}", text(&o));
+}
+
+#[test]
+fn an_epic_report_edited_after_signing_is_rehashed_and_red() {
+    let (d, _k) = fixture();
+    let p = d.path();
+    // The epic report is archived out of git by gate time: an untracked local file.
+    write(p, "docs/work/e-result.html", "<p>epic e: done</p>");
+    notes_with(p, &["test", "doc", "cr"], r#"{"e2e":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
+    let epic = ["verify-dod", "epic", "wu/e/a"];
+    ok(keel(p, &["mr", "confirm", "epic", "--report", "docs/work/e-result.html"]));
+    ok(keel(p, &epic));
+
+    write(p, "docs/work/e-result.html", "<p>epic e: done (and something the signer never read)</p>");
+    let o = keel(p, &epic);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("8·manual-review") && t.contains("differs from the bytes"), "{t}");
 }
 
 #[test]
