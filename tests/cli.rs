@@ -108,3 +108,88 @@ fn missing_config_points_at_init() {
         assert!(text(&o).contains("keel init"), "{}", text(&o));
     }
 }
+
+fn keel_stdin(d: &Path, a: &[&str], input: &str) -> Output {
+    use std::io::Write;
+    let mut c = Command::new(env!("CARGO_BIN_EXE_keel"))
+        .args(a)
+        .current_dir(d)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    c.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    c.wait_with_output().unwrap()
+}
+
+/// main has one commit; branch `work` adds a python test file (2 tests) and a doc.
+fn notes_fixture() -> TempDir {
+    let d = repo(true);
+    let p = d.path();
+    std::fs::write(p.join("README"), "x").unwrap();
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "base"]);
+    git(p, &["switch", "-q", "-c", "work"]);
+    std::fs::create_dir_all(p.join("tests")).unwrap();
+    std::fs::create_dir_all(p.join("docs")).unwrap();
+    std::fs::write(p.join("tests/test_a.py"), "def test_one():\n    pass\n\ndef test_two():\n    pass\n").unwrap();
+    std::fs::write(p.join("docs/a.html"), "<p>a</p>").unwrap();
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "work"]);
+    d
+}
+
+fn note(p: &Path, kind: &str) -> serde_json::Value {
+    let o = run("git", p, &["notes", &format!("--ref={kind}"), "show", "HEAD"]);
+    assert!(o.status.success(), "{}", text(&o));
+    serde_json::from_slice(&o.stdout).unwrap()
+}
+
+#[test]
+fn notes_round_trip_on_a_fixture_tip() {
+    let d = notes_fixture();
+    let p = d.path();
+    let head = String::from_utf8(run("git", p, &["rev-parse", "HEAD"]).stdout).unwrap();
+    let o = keel_stdin(
+        p,
+        &["notes", "write", "test"],
+        r#"{"unit":{"files":["tests/test_a.py"],"covers":"a"},"e2e":{"waived":"no ui"}}"#,
+    );
+    assert!(o.status.success(), "{}", text(&o));
+    let n = note(p, "test");
+    assert_eq!(n["schema"], "test/v1");
+    assert_eq!(n["tip"].as_str().unwrap(), head.trim());
+    assert_eq!(n["branch"], "work");
+    assert_eq!(n["unit"]["count"], 2);
+    assert_eq!(n["unit"]["languages"]["python"], 2);
+    assert_eq!(n["e2e"]["waived"], "no ui");
+
+    assert!(keel(p, &["notes", "write", "doc"]).status.success());
+    assert_eq!(note(p, "doc")["paths"], serde_json::json!(["docs/a.html"]));
+
+    assert!(keel(p, &["notes", "write", "cr", "--verdict", "PASS"]).status.success());
+    assert_eq!(note(p, "cr")["verdict"], "PASS");
+}
+
+#[test]
+fn claiming_a_layer_the_diff_has_no_tests_for_is_refused() {
+    let d = notes_fixture();
+    let p = d.path();
+    for j in [
+        r#"{"integration":{"files":["README"],"covers":"x"}}"#, // untouched by the range
+        r#"{"integration":{"files":["docs/a.html"],"covers":"x"}}"#, // touched, declares no tests
+    ] {
+        let o = keel_stdin(p, &["notes", "write", "test"], j);
+        assert!(!o.status.success(), "{j}");
+        assert!(text(&o).contains("refused"), "{}", text(&o));
+    }
+    assert!(!run("git", p, &["notes", "--ref=test", "show", "HEAD"]).status.success(), "no note written");
+}
+
+#[test]
+fn pass_with_blockers_is_refused() {
+    let d = notes_fixture();
+    let o = keel(d.path(), &["notes", "write", "cr", "--verdict", "PASS", "--blockers", "1"]);
+    assert!(!o.status.success() && text(&o).contains("refused"));
+}
