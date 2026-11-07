@@ -50,20 +50,6 @@ fn write(repo: &Path, rel: &str, body: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn symlink(repo: &Path, rel: &str, target: &str) -> Result<(), String> {
-    let p = repo.join(rel);
-    match std::fs::read_link(&p) {
-        Ok(t) if t == Path::new(target) => println!("  unchanged {rel} -> {target}"),
-        _ if p.symlink_metadata().is_ok() => println!("  kept      {rel} (exists and is not a symlink to {target})"),
-        _ => {
-            std::fs::create_dir_all(p.parent().unwrap()).map_err(|e| format!("keel: mkdir for {rel}: {e}"))?;
-            std::os::unix::fs::symlink(target, &p).map_err(|e| format!("keel: symlink {rel}: {e}"))?;
-            println!("  created   {rel} -> {target}");
-        }
-    }
-    Ok(())
-}
-
 /// Append `line` to .gitignore unless present - additive, never rewrites the file.
 fn ignore(repo: &Path, line: &str) -> Result<(), String> {
     let p = repo.join(".gitignore");
@@ -85,7 +71,6 @@ pub fn run(repo: &Path) -> Result<i32, String> {
     write(repo, ".keel/config.toml", &config(repo))?;
     write(repo, "AGENTS.md", AGENTS)?;
     write(repo, ".claude/skills/project-router/SKILL.md", PROJECT_ROUTER)?;
-    symlink(repo, ".agents/skills", "../.claude/skills")?;
     write(repo, ".codex/hooks.json", CODEX_HOOKS)?;
     for d in ["docs/use-cases", "docs/decisions", "docs/work"] {
         std::fs::create_dir_all(repo.join(d)).map_err(|e| format!("keel: mkdir {d}: {e}"))?;
@@ -103,7 +88,7 @@ pub fn run(repo: &Path) -> Result<i32, String> {
     println!(
         "next:\n  1. review .keel/config.toml (check commands, code_paths) and AGENTS.md; fill in .claude/skills/project-router/SKILL.md\n  \
          2. land the policy on main once, before any gated merge (main is merge-only from now on):\n     \
-         git add .keel AGENTS.md .claude .agents .codex .gitignore && git commit --no-verify -m \"keel init\"\n  \
+         git add .keel AGENTS.md .claude .codex .gitignore && git commit --no-verify -m \"keel init\"\n  \
          3. the human owner registers as signer (never an agent): keel mr setup --as <identity> [--key ~/.ssh/<key>.pub]"
     );
     Ok(0)

@@ -55,7 +55,8 @@ fn init_twice_produces_the_same_tree_and_keeps_user_edits() {
     for f in [".keel/config.toml", "AGENTS.md", ".codex/hooks.json", ".claude/skills/project-router/SKILL.md", "docs/work"] {
         assert!(after_first.contains_key(f), "missing {f}");
     }
-    assert_eq!(after_first[".agents/skills"], "-> ../.claude/skills");
+    // W6 #1/#5: skills live only in .claude/skills; no .agents/skills Codex symlink
+    assert!(!after_first.contains_key(".agents"), "init must not create .agents");
     assert!(after_first[".keel/config.toml"].contains("test = \"pytest -q\""));
     let hooks = Command::new("git").args(["config", "core.hooksPath"]).current_dir(p).output().unwrap();
     assert!(String::from_utf8_lossy(&hooks.stdout).trim().ends_with("keel-hooks"));
