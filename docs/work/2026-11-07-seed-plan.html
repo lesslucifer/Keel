@@ -170,6 +170,7 @@ flowchart LR
   W5 --> W8["W8 doc tier + distillation"]
   W8 --> W6
   W6 --> W7["W7 plugin packaging + self-hosting"]
+  W4 --> W9["W9 mr report binding + hooks follow-up"]
 </pre>
 <div class="caption">W5 can run in parallel with W2–W4. Keel is ungated until W7 turns its own gates on.</div>
 </div>
@@ -230,6 +231,13 @@ flowchart LR
       <p data-item="wu-maps-to">UC-DOC-3</p>
       <p data-item="wu-expected">A fixture doc tree where a T3 doc wrongly left tracked is flagged, and an untracked, unabsorbed doc trips the same check.</p>
       <p data-item="wu-deps">W5</p>
+    </div>
+    <div class="card" data-wu="E-SEED.W9">
+      <h3 id="w9">E-SEED.W9 · mr report binding + hooks follow-up</h3>
+      <p data-item="wu-summary">Deferred out of W4 by the owner (W4 open points 11 and 19). Drops the fixed or inferred report path from <code>keel mr confirm</code>, makes the report requirement configurable (<code>[mr] report</code>), and treats the report as a receipt. Also settles how Keel's <code>core.hooksPath</code> install coexists with other git hook tooling. The original hook-tampering hole is already fixed (<code>0412b3c</code>). Plan: <a href="2026-11-07-w9-mr-report-and-hooks-followup-plan.html">W9 WU plan</a>.</p>
+      <p data-item="wu-maps-to">UC-MR-1 (amended), UC-GATE-1, UC-GATE-2</p>
+      <p data-item="wu-expected">With no <code>[mr] report</code> key, W4's behavior is unchanged. With <code>"none"</code>, a WU signs off and merges without a result report. The report is found by its <code>data-artifact</code>, not its file name. The hook-coexistence option the owner picks is enforced.</p>
+      <p data-item="wu-deps">W4</p>
     </div>
   </div>
 </div>
