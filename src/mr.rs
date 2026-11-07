@@ -43,7 +43,7 @@ fn read_allowed(repo: &Path, cfg: &Config) -> Result<Vec<Entry>, String> {
     }
     if git(repo, &["ls-files", "--error-unmatch", "--", ALLOWED], &[]).is_ok() {
         return Err(format!(
-            "{ALLOWED} is tracked by git - a trust store a branch can rewrite trusts whoever wrote the branch\n  fix -> git rm --cached {ALLOWED} && commit; keel mr setup keeps it ignored via .git/info/exclude"
+            "{ALLOWED} is tracked by git - a trust store a branch can rewrite trusts whoever wrote the branch, and checking out that branch has already overwritten your local roster with its copy\n  fix -> do not trust the file on disk: git rm --cached {ALLOWED} && rm {ALLOWED}, commit the removal, then rebuild your own roster from scratch with keel mr setup --as <identity> [--key <path>]"
         ));
     }
     let text = match std::fs::read_to_string(repo.join(ALLOWED)) {
@@ -77,6 +77,11 @@ fn read_allowed(repo: &Path, cfg: &Config) -> Result<Vec<Entry>, String> {
 }
 
 /// The tier that authorises `id`; `key` wins, so a key holder can never sign off unsigned.
+///
+/// Accepted limitation (owner decision, E-SEED W4 review H1): "signed" means "a key/identity listed
+/// in this checkout's roster signed", not "a human reviewed". An agent with filesystem access can add
+/// itself to `.mr-allowed` and sign with an agent-usable key; nothing here can tell. E-SEED runs
+/// ungated until W7 (epic Q12), so this is revisited before Keel gates its own real work or ships.
 fn tier_of<'a>(allowed: &'a [Entry], id: &str) -> Option<&'a str> {
     let mine = || allowed.iter().filter(|e| e.identity == id);
     mine().find(|e| e.key.is_some()).or_else(|| mine().next()).map(|e| e.tier.as_str())

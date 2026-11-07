@@ -276,6 +276,7 @@ pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, r
 }
 
 /// pre-merge-commit: tip = the merge head, target = HEAD, level from HEAD's branch.
+/// `cfg` is HEAD's committed config (main.rs `load_config_at_head`), not the merged tree's.
 fn hook(repo: &Path, cfg: &Config) -> Result<i32, String> {
     let branch = git(repo, &["symbolic-ref", "--short", "-q", "HEAD"], &[]).unwrap_or_default();
     let level = if branch == cfg.branches.main {
@@ -299,7 +300,14 @@ fn hook(repo: &Path, cfg: &Config) -> Result<i32, String> {
         }
     }
     match heads.as_slice() {
-        [] => Ok(0),
+        // Fail closed: e.g. `git pull` sets GIT_REFLOG_ACTION to "pull ...", so the heads are unknowable.
+        [] => {
+            eprintln!(
+                "merge refused - cannot determine what is being merged into {branch} (no MERGE_HEAD, GIT_REFLOG_ACTION={:?}), so the gate cannot judge it\n  fix -> git merge --abort, then merge the branch directly: git merge --no-ff <branch>   (fetch first instead of git pull)",
+                std::env::var("GIT_REFLOG_ACTION").unwrap_or_default()
+            );
+            Ok(1)
+        }
         [tip] if level == Level::Wu && is_ancestor(repo, tip, &cfg.branches.main) => {
             println!("back-merge of landed history {} - not a WU seam, gate not required", short(tip));
             Ok(0)
