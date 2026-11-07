@@ -28,7 +28,9 @@ skeleton, hooks), then follow the bootstrap and `keel mr setup` lines it prints.
   Git is the registry — no tracker file.
 - **Branch names carry the target.** A tip named `wu/<e>/<slug>` is measured
   against `epic/<e>`; anything else against `branches.main`, unless `--target R`
-  is passed. Keep the naming exact or pass `--target` everywhere.
+  is passed. Keep the naming exact or pass `--target` everywhere. The `epic/`
+  and `wu/` prefixes are `branches.epic_prefix` / `branches.wu_prefix` in
+  `.keel/config.toml`; this skill's examples use the defaults.
 - **Main is merge-only**: the pre-commit hook refuses every non-merge commit on
   `branches.main`. All work, docs included, starts on an `epic/*` or `wu/*`
   branch.
@@ -41,6 +43,8 @@ skeleton, hooks), then follow the bootstrap and `keel mr setup` lines it prints.
   `code_paths` (every path, when the list is empty). A diff touching no code path
   is **exempt** from test, cr and doc evidence — never from the human sign-off
   (check 8) or the epic's tracked-doc layout, and never when it archives a T3 doc.
+  When `infra_paths` (globs) is set, only paths matching it count as infra: a
+  diff is exempt only if every path is outside `code_paths` and matches it.
 
 ## 2 · Lifecycle and sign order
 

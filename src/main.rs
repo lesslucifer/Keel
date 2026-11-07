@@ -14,6 +14,13 @@ struct Config {
     code_paths: Vec<String>,
     #[serde(default)]
     rule_bearing: Vec<String>,
+    /// UC-GATE-5 exemption scope, as globs (`*` within a segment, `**` across, `?` one char;
+    /// same matcher as `docs.tiers`). A range is exempt from checks 1-6 when every changed path
+    /// is exempt infra. Unset (default): infra = every path outside `code_paths`. Set: a path is
+    /// exempt only if it matches one of these globs AND is outside `code_paths` - this narrows
+    /// the exemption, so e.g. `["docs/**", "*.md"]` gates a changed `Makefile` that the default
+    /// would have let through. It can never widen it: a code path is never exempt.
+    infra_paths: Option<Vec<String>>,
     check: Check,
     branches: Branches,
     docs: Docs,
@@ -45,6 +52,18 @@ struct Check {
 #[derive(Deserialize)]
 struct Branches {
     main: String,
+    /// Epic branches (`<epic_prefix><slug>`): a merge into one is a WU merge.
+    #[serde(default = "epic_prefix")]
+    epic_prefix: String,
+    /// WU branches (`<wu_prefix><epic-slug>/<slug>`), measured against `<epic_prefix><epic-slug>`.
+    #[serde(default = "wu_prefix")]
+    wu_prefix: String,
+}
+fn epic_prefix() -> String {
+    "epic/".into()
+}
+fn wu_prefix() -> String {
+    "wu/".into()
 }
 #[derive(Deserialize)]
 struct Docs {
@@ -214,7 +233,7 @@ fn pre_push(repo: &Path, cfg: &Config, remote: &str) -> Result<i32, String> {
     for line in refspecs.lines() {
         let [_, local, rref, rsha] = line.split_whitespace().collect::<Vec<_>>()[..] else { continue };
         let branch = rref.strip_prefix("refs/heads/").unwrap_or("");
-        let gated = branch == cfg.branches.main || branch.starts_with("epic/");
+        let gated = branch == cfg.branches.main || branch.starts_with(cfg.branches.epic_prefix.as_str());
         if gated && local != ZERO_SHA && rsha != ZERO_SHA && gate::range(repo, cfg, rsha, local)? != 0 {
             return Ok(1);
         }

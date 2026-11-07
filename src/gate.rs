@@ -64,8 +64,8 @@ fn open(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) ->
     let tip = git(repo, &["rev-parse", &format!("{tip_ref}^{{commit}}")], &[])?;
     let base = git(repo, &["merge-base", target, &tip], &[])?;
     let names = notes::names(repo, &base, &tip)?;
-    // UC-GATE-5: docs/infra = anything outside code_paths.
-    let exempt = !names.iter().any(|n| notes::is_code(cfg, n));
+    // UC-GATE-5: exempt when every changed path is docs/infra (notes::is_infra).
+    let exempt = names.iter().all(|n| notes::is_infra(cfg, n));
     let r = Report { level, tip_ref: tip_ref.into(), tip, base, exempt, failures: vec![], waived: vec![] };
     Ok((r, names))
 }
@@ -312,7 +312,7 @@ fn hook(repo: &Path, cfg: &Config) -> Result<i32, String> {
     let branch = git(repo, &["symbolic-ref", "--short", "-q", "HEAD"], &[]).unwrap_or_default();
     let level = if branch == cfg.branches.main {
         Level::Epic
-    } else if branch.starts_with("epic/") {
+    } else if branch.starts_with(cfg.branches.epic_prefix.as_str()) {
         Level::Wu
     } else {
         return Ok(0); // merges into other branches are ungated
