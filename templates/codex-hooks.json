@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|apply_patch",
+        "hooks": [
+          { "type": "command", "command": "d=$(git rev-parse --git-common-dir) && sh \"$d/keel-hooks/verify-doc-post\"" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "d=$(git rev-parse --git-common-dir) && sh \"$d/keel-hooks/verify-doc-stop\"" }
+        ]
+      }
+    ]
+  }
+}
