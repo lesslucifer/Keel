@@ -97,8 +97,10 @@ fn stop_refuses_a_red_doc_and_post_hook_reads_claude_and_codex_payloads() {
     let d = repo();
     let p = d.path();
     assert!(keel(p, &["hooks", "install"]).status.success());
-    let stop = p.join(".keel/hooks/verify-doc-stop");
-    let post = p.join(".keel/hooks/verify-doc-post");
+    let hooks = run("git", p, &["config", "core.hooksPath"], "").stdout;
+    let hooks = Path::new(std::str::from_utf8(&hooks).unwrap().trim()).to_owned();
+    let stop = hooks.join("verify-doc-stop");
+    let post = hooks.join("verify-doc-post");
     let bad = doc("ready", "expected", r#"<a href="gone.html">bad</a>"#);
     std::fs::write(p.join("docs/a.html"), &bad).unwrap();
 

@@ -152,7 +152,12 @@ fn each_missing_or_tampered_piece_of_evidence_is_red_with_its_check_id() {
         }),
         ("6·doc-note", |p| {
             bless(p, WU_TESTS, "PASS");
-            edit_note(p, "doc", "HEAD", |n| n["paths"] = json!([]));
+            edit_note(p, "doc", "HEAD", |n| n["changes"] = json!([]));
+        }),
+        ("6·doc-note", |p| {
+            // misclassified: docs/a.html is T1 by the default tiers
+            bless(p, WU_TESTS, "PASS");
+            edit_note(p, "doc", "HEAD", |n| n["changes"][0]["tier"] = json!("T3"));
         }),
     ];
     for (check, tamper) in cases {
@@ -213,6 +218,33 @@ fn epic_walk_catches_a_fast_forward_smuggled_seam_unless_waived() {
     assert!(o.status.success() && text(&o).contains("WAIVED"), "{}", text(&o));
 }
 
+/// The W4-review hole: a branch shipping no-op hooks at the old tracked path must not
+/// neuter the gate judging its own merge - the installed hooks live in the git dir.
+#[test]
+fn a_branch_shipping_neutered_hooks_cannot_skip_the_merge_gate() {
+    let d = fixture();
+    let p = d.path();
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    let hooks = git(p, &["config", "core.hooksPath"]);
+    let common = git(p, &["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+    let common = std::fs::canonicalize(common).unwrap();
+    assert!(Path::new(&hooks).is_absolute() && Path::new(&hooks).starts_with(&common), "{hooks}");
+    assert!(git(p, &["ls-files", "--others", "--cached", ".keel/hooks"]).is_empty());
+
+    for h in ["pre-merge-commit", "pre-commit", "pre-push"] {
+        write(p, &format!(".keel/hooks/{h}"), "#!/bin/sh\nexit 0\n");
+        std::fs::set_permissions(p.join(".keel/hooks").join(h), std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+    }
+    commit(p, "neuter the gate");
+    git(p, &["switch", "-q", "epic/e"]);
+    let m = run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"], "");
+    assert_red(&m, "1·notes");
+    assert!(p.join(".keel/hooks/pre-merge-commit").exists(), "the neutered hook was in the merged tree");
+    let _ = run("git", p, &["merge", "--abort"], "");
+    assert_eq!(git(p, &["rev-list", "--count", "epic/e"]), "1", "nothing landed");
+}
+
 #[test]
 fn hooks_refuse_an_unblessed_merge_then_land_it_and_push_syncs_notes() {
     let d = fixture();
@@ -244,4 +276,67 @@ fn hooks_refuse_an_unblessed_merge_then_land_it_and_push_syncs_notes() {
     commit(p, "noteless code straight on the epic");
     let push = run("git", p, &["push", "-q", "origin", "epic/e"], "");
     assert_red(&push, "1·notes");
+}
+
+#[test]
+fn doc_note_records_tiers_from_config_globs_and_refuses_an_unclassified_doc() {
+    let d = fixture();
+    let p = d.path();
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    write(p, ".keel/config.toml", &format!("{cfg}[docs.tiers]\nT1 = [\"docs/*\"]\nT2 = [\"docs/kb/**\"]\nT3 = [\"docs/scratch/**\"]\n"));
+    write(p, "docs/kb/x.html", "x");
+    write(p, "docs/scratch/y.html", "y");
+    commit(p, "tiered docs");
+    let o = keel(p, &["notes", "write", "doc"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(
+        note(p, "doc", "HEAD")["changes"],
+        json!([
+            {"path": "docs/a.html", "tier": "T1"},
+            {"path": "docs/kb/x.html", "tier": "T2"},
+            {"path": "docs/scratch/y.html", "tier": "T3"}
+        ])
+    );
+    write(p, "docs/img/z.png", "z");
+    commit(p, "an untiered doc");
+    let o = keel(p, &["notes", "write", "doc"]);
+    assert!(!o.status.success() && text(&o).contains("docs/img/z.png matches no docs.tiers"), "{}", text(&o));
+}
+
+#[test]
+fn epic_tip_rejects_a_tracked_t3_doc_and_an_archive_without_lineage() {
+    let d = fixture();
+    let p = d.path();
+    write(p, "docs/work/plan.html", "<p>plan</p>");
+    commit(p, "wu plan");
+    bless(p, WU_TESTS, "PASS");
+    git(p, &["switch", "-q", "epic/e"]);
+    git(p, &["merge", "-q", "--no-ff", "-m", "merge wu a", "wu/e/a"]);
+    write(p, "docs/result.html", "<p>result</p>");
+    commit(p, "close epic");
+    bless(p, EPIC_TESTS, "PASS");
+    let o = keel(p, &["verify-dod", "epic", "epic/e"]);
+    assert_red(&o, "6·doc-note");
+    assert!(text(&o).contains("docs/work/plan.html is a T3 working doc still tracked"), "{}", text(&o));
+
+    // Archive at the epic tip: created and deleted inside the range, so it nets out of the diff.
+    git(p, &["rm", "-q", "docs/work/plan.html"]);
+    write(p, "docs/decisions/d.html", "<p>why</p>");
+    commit(p, "distill + archive the plan");
+    for (args, input) in [(&["notes", "write", "test"][..], EPIC_TESTS), (&["notes", "write", "cr", "--verdict", "PASS"][..], "")] {
+        assert!(run(env!("CARGO_BIN_EXE_keel"), p, args, input).status.success());
+    }
+    let o = keel(p, &["notes", "write", "doc"]);
+    assert!(!o.status.success() && text(&o).contains("without distillation lineage"), "{}", text(&o));
+    let o = keel(p, &["notes", "write", "doc", "--distill", "docs/work/plan.html=docs/decisions/d.html"]);
+    assert!(o.status.success(), "{}", text(&o));
+    sign(p, "epic", "docs/result.html");
+    let o = keel(p, &["verify-dod", "epic", "epic/e"]);
+    assert!(o.status.success(), "{}", text(&o));
+
+    edit_note(p, "doc", "HEAD", |n| {
+        let plan = n["changes"].as_array_mut().unwrap().iter_mut().find(|c| c["path"] == "docs/work/plan.html").unwrap();
+        plan.as_object_mut().unwrap().remove("distilled_to");
+    });
+    assert_red(&keel(p, &["verify-dod", "epic", "epic/e"]), "6·doc-note");
 }

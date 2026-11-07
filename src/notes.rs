@@ -40,8 +40,24 @@ pub struct DocNote {
     pub schema: String, // "doc/v1"
     #[serde(flatten)]
     pub id: Identity,
-    /// Paths under docs.root changed in the range (tier classification is W8).
-    pub paths: Vec<String>,
+    /// One entry per path of `doc_paths` (UC-DOC-3).
+    pub changes: Vec<DocChange>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DocChange {
+    pub path: String,
+    pub tier: String,
+    /// Archived T3 docs only: the T1/T2 docs that absorbed it, or "none: <why>".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distilled_to: Option<DistilledTo>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+pub enum DistilledTo {
+    Paths(Vec<String>),
+    DeadEnd(String),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -171,6 +187,118 @@ pub(crate) fn is_code(cfg: &Config, path: &str) -> bool {
     cfg.code_paths.is_empty() || cfg.code_paths.iter().any(|p| path.starts_with(p.as_str()))
 }
 
+/// `*` = within one segment, `**` = any depth, `?` = one char.
+fn glob(pattern: &str, path: &str) -> bool {
+    let mut re = String::from("^");
+    let mut chars = pattern.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '*' if chars.peek() == Some(&'*') => {
+                chars.next();
+                re.push_str(".*");
+            }
+            '*' => re.push_str("[^/]*"),
+            '?' => re.push_str("[^/]"),
+            c => re.push_str(&regex::escape(&c.to_string())),
+        }
+    }
+    re.push('$');
+    regex::Regex::new(&re).is_ok_and(|r| r.is_match(path))
+}
+
+/// T0-T3 by `docs.tiers` globs (default: Trawler's layout under docs.root).
+/// T3 is tried first: a broad T1 glob must never hide a working doc from the archive check.
+pub(crate) fn tier_of(cfg: &Config, path: &str) -> Option<&'static str> {
+    let r = format!("{}/", cfg.docs.root.trim_end_matches('/'));
+    let default;
+    let t = match &cfg.docs.tiers {
+        Some(t) => t,
+        None => {
+            default = crate::Tiers {
+                t0: vec!["AGENTS.md".into(), "CLAUDE.md".into()],
+                t1: vec![format!("{r}*")],
+                t2: ["use-cases", "decisions", "backlog"].map(|d| format!("{r}{d}/**")).to_vec(),
+                t3: vec![format!("{r}work/**"), format!("{r}.archive/**")],
+            };
+            &default
+        }
+    };
+    let tier = [("T3", &t.t3), ("T2", &t.t2), ("T1", &t.t1), ("T0", &t.t0)]
+        .into_iter()
+        .find(|(_, globs)| globs.iter().any(|g| glob(g, path)))
+        .map(|(name, _)| name);
+    tier
+}
+
+pub(crate) fn at_tip(repo: &Path, tip: &str, path: &str) -> bool {
+    git(repo, &["cat-file", "-e", &format!("{tip}:{path}")], &[]).is_ok()
+}
+
+fn archived(repo: &Path, cfg: &Config, tip: &str, path: &str) -> bool {
+    tier_of(cfg, path) == Some("T3") && !at_tip(repo, tip, path)
+}
+
+/// The docs doc/v1 must account for: changed paths under docs.root or in T0, plus T3
+/// docs deleted anywhere in the range - one created and archived inside it nets out
+/// of the endpoint diff, but its lineage is still owed. Shared by the writer and check 6.
+pub(crate) fn doc_paths(repo: &Path, cfg: &Config, base: &str, tip: &str, names: &[String]) -> Result<Vec<String>, String> {
+    let mut v: Vec<String> =
+        names.iter().filter(|n| n.starts_with(&cfg.docs.root) || tier_of(cfg, n) == Some("T0")).cloned().collect();
+    let gone = git(repo, &["log", "--diff-filter=D", "--name-only", "--format=", &format!("{base}..{tip}")], &[])?;
+    for p in gone.lines().filter(|p| !p.is_empty()) {
+        if !v.iter().any(|x| x == p) && archived(repo, cfg, tip, p) {
+            v.push(p.into());
+        }
+    }
+    Ok(v)
+}
+
+pub(crate) fn archives_t3(repo: &Path, cfg: &Config, tip: &str, docs: &[String]) -> bool {
+    docs.iter().any(|p| archived(repo, cfg, tip, p))
+}
+
+const REWRITE: &str = "keel notes write doc   (on the tip)";
+
+/// Check 6 and the doc writer's refusals: (what, fix) per problem; empty = green.
+pub(crate) fn doc_problems(repo: &Path, cfg: &Config, tip: &str, docs: &[String], changes: &[DocChange]) -> Vec<(String, String)> {
+    let mut out = vec![];
+    for p in docs.iter().filter(|p| !changes.iter().any(|c| &c.path == *p)) {
+        out.push((format!("{p} changed in the range but is not in doc/v1"), REWRITE.into()));
+    }
+    for c in changes {
+        let p = &c.path;
+        if !docs.contains(p) {
+            out.push((format!("doc/v1 lists {p} but the range does not touch it"), REWRITE.into()));
+            continue;
+        }
+        let Some(tier) = tier_of(cfg, p) else {
+            out.push((format!("{p} matches no docs.tiers pattern"), "add a glob for it under [docs.tiers] in .keel/config.toml, or move it".into()));
+            continue;
+        };
+        if c.tier != tier {
+            out.push((format!("{p} is tier {tier} by docs.tiers, doc/v1 says {}", c.tier), REWRITE.into()));
+        }
+        if tier != "T3" || at_tip(repo, tip, p) {
+            continue;
+        }
+        let why = match &c.distilled_to {
+            Some(DistilledTo::DeadEnd(s)) if s.strip_prefix("none:").is_some_and(|w| !w.trim().is_empty()) => None,
+            Some(DistilledTo::Paths(ts)) if !ts.is_empty() => ts
+                .iter()
+                .find(|t| !matches!(tier_of(cfg, t), Some("T1" | "T2")) || !at_tip(repo, tip, t))
+                .map(|t| format!("with distilled_to {t}, which is not a T1/T2 doc tracked at the tip")),
+            _ => Some("without distillation lineage (distilled_to)".into()),
+        };
+        if let Some(why) = why {
+            out.push((
+                format!("{p} is archived {why}"),
+                format!("distill it into a T1/T2 doc, then keel notes write doc --distill {p}=<doc>[,<doc>]   (or =none: <why nothing survives>)"),
+            ));
+        }
+    }
+    out
+}
+
 /// One function for the writer (W2) and check 5 (W3), so the two can never disagree.
 pub(crate) fn code_diff_hash(repo: &Path, cfg: &Config, base: &str, tip: &str) -> Result<String, String> {
     let mut a = vec!["diff", base, tip, "--"];
@@ -289,8 +417,33 @@ pub fn write(repo: &Path, cfg: &Config, kind: &str, args: &[&str]) -> Result<i32
             store(repo, "test", &tip, &TestNote { schema: "test/v1".into(), id: r.id, unit, integration, e2e })?;
         }
         "doc" => {
-            let paths = r.names.iter().filter(|n| n.starts_with(&cfg.docs.root)).cloned().collect();
-            store(repo, "doc", &tip, &DocNote { schema: "doc/v1".into(), id: r.id, paths })?;
+            let docs = doc_paths(repo, cfg, &r.id.base, &tip, &r.names)?;
+            let mut distill = BTreeMap::new();
+            for v in args.windows(2).filter(|w| w[0] == "--distill").map(|w| w[1]) {
+                let (p, to) = v.split_once('=').ok_or("usage: --distill <t3-path>=<doc>[,<doc>] | <t3-path>=none: <why>")?;
+                distill.insert(p, to);
+            }
+            let changes: Vec<DocChange> = docs
+                .iter()
+                .map(|p| DocChange {
+                    path: p.clone(),
+                    tier: tier_of(cfg, p).unwrap_or("?").into(),
+                    distilled_to: archived(repo, cfg, &tip, p).then(|| distill.remove(p.as_str())).flatten().map(|to| {
+                        if to.starts_with("none:") {
+                            DistilledTo::DeadEnd(to.into())
+                        } else {
+                            DistilledTo::Paths(to.split(',').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect())
+                        }
+                    }),
+                })
+                .collect();
+            if let Some(p) = distill.keys().next() {
+                return refuse(format!("--distill names {p}, which is not a T3 doc archived in this range"), "--distill only the T3 docs this range git rm's");
+            }
+            if let Some((what, fix)) = doc_problems(repo, cfg, &tip, &docs, &changes).into_iter().next() {
+                return refuse(what, &fix);
+            }
+            store(repo, "doc", &tip, &DocNote { schema: "doc/v1".into(), id: r.id, changes })?;
         }
         "cr" => {
             let flag = |k: &str| args.windows(2).find(|w| w[0] == k).map(|w| w[1]);
