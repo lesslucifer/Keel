@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6aee9f5c9f34851f0dfafe7d" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED.W4 WU plan: manual review</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED.W4 — Manual review</h1>
+      <p><code>keel mr setup|commit|confirm</code>, the local <code>.mr-allowed</code> trust store, an <code>ssh-keygen -Y</code> signature on every WU and epic tip that verifies offline, gate check <code>8·manual-review</code>, and the commit-msg <code>Reviewed-By</code> check.</p>
+      <div class="meta">v1 · 2026-11-07 · Keel · T2 WU plan · epic: <a href="2026-11-07-seed-plan.html">E-SEED</a> · depends on: <a href="2026-11-07-w3-merge-gate-plan.html">W3 merge gate</a> · status: ready (dispatch does not wait on sign-off; the owner reviews asynchronously)</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="requirement">Requirement</h2>
+<div data-item="requirement" data-c="requirement-body">
+  <p>W3's gate proves the machine evidence (tests, docs, a bound review). Nothing yet proves that a human read the result and said yes. This WU adds that sign-off. A WU or epic tip cannot merge without an <code>mr/v1</code> note from a signer the local owner trusts. The note attests the exact change and the exact bytes of the result report. For a key-backed signer it carries an SSH signature that anyone can check offline with stock <code>ssh-keygen</code>. A commit that edits the rules the agent works under needs a <code>Reviewed-By</code> trailer from a listed signer.</p>
+  <p>This is a port of Trawler's <code>xtask/src/mr.rs</code>, its check 8 in <code>gate.rs</code> (<code>check_manual_review</code> / <code>check_attested_report</code>), the commit-msg hook, and the decisions behind them: DEC-9 (SSH signature against a key entry), DEC-10 (mr always at WU tips, attests the result report, <code>.mr-allowed</code> leaves git, commit check narrows to rule-bearing files, boundary-only enforcement) and DEC-27 (sign last). It drops Trawler's interactive wizard, the Secure Enclave signer, the FIDO2 key generation, and native <code>gpgsig</code> commit signing (see open point 7).</p>
+</div>
+
+<h2 id="scope">Scope</h2>
+<div data-c="scope-body">
+  <div class="diagram" data-c="flow-diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant H as Human (owner)
+  participant K as keel mr confirm
+  participant G as gate checks 1–7
+  participant S as ssh-keygen -Y sign
+  participant N as refs/notes/mr
+  participant M as pre-merge-commit (verify-dod)
+  H->>K: keel mr confirm wu [tip] --as vu [--report R]
+  K->>K: signer listed in .mr-allowed (untracked)? else refuse
+  K->>G: sign last: checks 1–7 green on the tip?
+  G-->>K: any FAIL → refuse, write nothing
+  K->>K: payload = level · base · tip · change hash · report path · report hash
+  K->>S: sign payload, namespace keel-mr, key = keel.signingkey
+  S-->>K: armored SSH SIGNATURE
+  K->>K: self-verify against .mr-allowed (wrong key → refuse)
+  K->>N: mr/v1 note on the tip (signer, tier, hashes, sig)
+  H->>M: git merge --no-ff
+  M->>M: checks 1–7, then 8: recompute payload from the repo, ssh-keygen -Y verify against .mr-allowed, re-hash the report
+  M-->>H: green → dod/v1 receipt · red → FAIL 8·manual-review + fix
+</pre>
+  <div class="caption">Sign and verify. The verifier never trusts a hash written in the note: it recomputes base, tip and change hash from the repo and only takes the report hash from the note, which the signature covers and which is re-checked against the report's bytes.</div>
+  </div>
+
+<h3 id="trust-store">The <code>.mr-allowed</code> trust store</h3>
+  <p>A plain text file at the worktree root, one entry per line. It is local and never committed. <code>keel mr setup</code> adds <code>.mr-allowed</code> to <code>.git/info/exclude</code>, and every reader refuses to run while the file is tracked, because a trust store that a branch can rewrite trusts whoever wrote the branch. To share it into new worktrees, list it in <code>.gitworktreecopy</code>.</p>
+<pre data-c="allowed-format"><code># comments and blank lines are ignored
+email: owner@example.com
+username: vuluu
+key: vuluu ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... optional-comment</code></pre>
+  <table data-c="tiers-table">
+    <thead><tr><th>Tier</th><th>Line</th><th>What it proves</th></tr></thead>
+    <tbody>
+      <tr><td><code>email</code></td><td><code>email: &lt;identity&gt;</code></td><td>Nothing cryptographic. The identity is listed, so a note or trailer naming it counts. Anyone who can write a note can forge it. Kept for Trawler parity and low-ceremony projects.</td></tr>
+      <tr><td><code>username</code></td><td><code>username: &lt;identity&gt;</code></td><td>Same as <code>email</code>; only the label differs.</td></tr>
+      <tr><td><code>key</code></td><td><code>key: &lt;identity&gt; &lt;keytype&gt; &lt;base64&gt; [comment]</code></td><td>The identity's <code>mr/v1</code> notes must carry an SSH signature that verifies against one of its listed public keys. Any key OpenSSH can sign with works: an ssh-agent key, a file key, a FIDO2 <code>sk-</code> key.</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>Identities</b> are restricted to <code>[A-Za-z0-9@._+-]</code>. That keeps them out of <code>allowed_signers</code> pattern syntax (<code>*</code>, <code>?</code>, <code>,</code>, <code>!</code>, quotes), since an identity is written as a principal there. A malformed line is a hard error that names the line number. It is never skipped silently.</li>
+    <li><b>Key wins.</b> If an identity has any <code>key</code> entry, its notes must be signed, even if it is also listed under <code>email</code> or <code>username</code>. The tier written in a note is informational only. The gate derives authority from the roster, so a weaker claimed tier does not get around the signature (Trawler DEC-9 rule, which Keel also applies to notes; see open point 4).</li>
+    <li><b>Configurable tiers (Q10).</b> New optional config key <code>[mr] tiers = ["email", "username", "key"]</code> (that list is the default). Lines whose tier is not in the list authorise nothing. A project that wants only unforgeable sign-off sets <code>tiers = ["key"]</code>. Adding a future tier means adding code for it plus one list entry; the <code>&lt;tier&gt;: …</code> line format does not change. An unknown tier name in the config is an error.</li>
+  </ul>
+
+<h3 id="signature">The signature</h3>
+  <p>The signed bytes are a fixed, newline-terminated text with one field per line:</p>
+<pre data-c="payload-format"><code>keel-mr/v1
+level: wu|epic
+base: &lt;merge-base sha&gt;
+tip: &lt;tip commit sha&gt;
+change: &lt;git blob hash of `git diff --no-color --no-ext-diff base tip`&gt;
+report: &lt;report path&gt;
+report_hash: &lt;git blob id of the report's exact bytes&gt;</code></pre>
+  <ul>
+    <li>Signed with <code>ssh-keygen -Y sign -n keel-mr -f &lt;keel.signingkey&gt;</code>, payload on stdin. A <code>.pub</code> path signs through ssh-agent. A private-key path signs directly.</li>
+    <li>Verified with <code>ssh-keygen -Y verify -f &lt;allowed_signers&gt; -I &lt;signer&gt; -n keel-mr -s &lt;sig&gt;</code>. The <code>allowed_signers</code> file is generated per check from the signer's <code>key</code> entries only. It is written into the git dir and deleted afterwards. No network, agent or private key is needed: verification works offline.</li>
+    <li>This is Trawler's scheme (DEC-10: a signature over the change hash plus the report hash, namespace-separated) made stricter in three ways. The <b>tip sha</b> and <b>base sha</b> are inside the signed bytes, so a signature cannot be replayed onto another commit or another range. The <b>level</b> is inside. A <b>header line</b> versions the format. The namespace <code>keel-mr</code> stops a Keel signature from being accepted as a git commit signature (<code>git</code> namespace) or anything else.</li>
+    <li>Hashes are git object ids (via <code>git hash-object</code> / <code>git rev-parse</code>) rather than Trawler's <code>shasum -a 256</code>. That needs no new dependency or external tool and matches W2's <code>code_diff_hash</code>. The tip binding relies on git's object hash in any case (see open point 3).</li>
+  </ul>
+
+<h3 id="commands">Commands</h3>
+  <table data-c="commands-table">
+    <thead><tr><th>Command</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>keel mr setup --as &lt;id&gt; [--key &lt;path&gt;]</code></td><td>Refuses a tracked <code>.mr-allowed</code> and makes sure the file is git-ignored (<code>.git/info/exclude</code>). With <code>--key</code>, it reads the public key (<code>&lt;path&gt;</code> if it ends in <code>.pub</code>, else <code>&lt;path&gt;.pub</code>), appends <code>key: &lt;id&gt; &lt;pubkey&gt;</code> (idempotent), sets <code>git config --local keel.signingkey &lt;path&gt;</code>, then <b>proves the key can sign</b>: a probe payload is signed and verified against the roster, which catches an empty ssh-agent or a missing private half. Without <code>--key</code>, it adds an <code>email:</code> (identity contains <code>@</code>) or <code>username:</code> entry, or just reports the tier if the identity is already listed. A tier outside <code>mr.tiers</code> is refused.</td></tr>
+      <tr><td><code>keel mr commit -m &lt;msg&gt; [--as &lt;id&gt;]</code></td><td>Commits the staged changes with <code>Reviewed-By: &lt;tier&gt; &lt;id&gt;</code> appended as a trailer, after checking that <code>&lt;id&gt;</code> is listed. <code>--as</code> may be omitted when the roster holds exactly one identity.</td></tr>
+      <tr><td><code>keel mr confirm &lt;wu|epic&gt; [&lt;tip&gt;] [--as &lt;id&gt;] [--target R] [--report P]</code></td><td>Tip defaults to the current branch. Target follows the gate's rule (<code>--target</code>, else <code>wu/&lt;e&gt;/…</code> → <code>epic/&lt;e&gt;</code>, else main). Steps: (1) the signer must be listed. (2) <b>Sign last (DEC-27)</b>: the tip must already pass the gate's checks 1–7 for that level (notes present, PASS, bound to this diff, doc note complete, and for an epic the walk). Any FAIL is printed in the gate's own format and nothing is written. (3) The report is <code>--report</code>, else the single <code>*-result.html</code> under <code>docs.root</code> changed in the range, else refuse. For a WU the report must be tracked at the tip; an epic report may be an untracked local file (it is archived by then, Trawler DEC-3/10). (4) A key-backed signer signs the payload, the signature is self-verified against the roster before anything is written, and the <code>mr/v1</code> note is stored. An identity-tier signer gets an unsigned note.</td></tr>
+      <tr><td><code>keel hook commit-msg &lt;file&gt;</code></td><td>Installed as the <code>commit-msg</code> hook by <code>keel hooks install</code>. If the staged diff (<code>--no-renames</code>, so moving a rule-bearing file out also counts) touches a <code>rule_bearing</code> path, the message must carry a <code>Reviewed-By</code> trailer whose identity (last token) is listed. Merge commits are skipped: their content was already authorised on the branch (Trawler parity). Fails closed when <code>keel</code> is missing.</td></tr>
+    </tbody>
+  </table>
+  <p><code>rule_bearing</code> entries ending in <code>/</code> are prefixes, like <code>code_paths</code>. Other entries are globs, where <code>*</code> and <code>?</code> stay within one path segment and <code>**</code> crosses segments. So the example <code>["CLAUDE.md", "docs/*.html"]</code> means T0 plus flat T1, as in Trawler's <code>is_rule_bearing</code>.</p>
+
+<h3 id="mr-note"><code>mr/v1</code> note</h3>
+  <p>JSON in <code>refs/notes/mr</code> on the tip, using the shared identity block like the other notes. Fields: <code>tip</code>, <code>base</code>, <code>branch</code>, <code>committer</code>, <code>timestamp</code>, <code>level</code>, <code>signer</code>, <code>tier</code>, <code>report</code>, <code>report_hash</code>, <code>change_hash</code>, and <code>sig</code> (the armored <code>SSH SIGNATURE</code>, present only for a key-backed signer). W2's schema-only <code>MrNote</code> gains these fields.</p>
+
+<h3 id="check-8">Check <code>8·manual-review</code></h3>
+  <p>This check runs at the top level of every <code>wu</code>/<code>epic</code> verify-dod run (direct and through the hook) and is red on the first cause found. Each cause has its own sentence and its own fix (Trawler E-GATETRUTH.W3):</p>
+  <table data-c="check8-table">
+    <thead><tr><th>Red when</th><th>Catches</th></tr></thead>
+    <tbody>
+      <tr><td>No <code>mr/v1</code> note on the tip</td><td>No sign-off, or a tip amended after signing (git notes stay on the old commit)</td></tr>
+      <tr><td>The note does not parse or declares another schema</td><td>A hand-mangled note</td></tr>
+      <tr><td>The note's <code>tip</code> ≠ the tip, its <code>level</code> ≠ the gate level, or its <code>base</code> ≠ the current merge-base</td><td>A note copied onto an amended commit, a WU note reused for an epic, or a target that moved since signing</td></tr>
+      <tr><td>The note's <code>change_hash</code> ≠ the recomputed hash of <code>base..tip</code></td><td>A diff that changed (on every tier, including unsigned ones)</td></tr>
+      <tr><td><code>.mr-allowed</code> is tracked or malformed</td><td>A trust store a branch could rewrite</td></tr>
+      <tr><td>The signer is not listed (under an accepted tier) in <i>this checkout's</i> roster; the message names the roster path</td><td>An unlisted signer. The roster is per-checkout by design, so this is distinct from a bad signature (Trawler DEC-10)</td></tr>
+      <tr><td>The signer is key-backed and the note has no <code>sig</code>, or <code>ssh-keygen -Y verify</code> fails over the recomputed payload</td><td>A forged plain note for a key identity, a forged <code>report_hash</code>, a signature by an unlisted key, or any field drift</td></tr>
+      <tr><td>The report's bytes now hash differently from <code>report_hash</code>. WU: the blob at the tip, which must be tracked. Epic: the blob at the tip if tracked, else the local file if present, else the signature alone attests it.</td><td>A tampered report</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><b>Never exempt.</b> UC-GATE-5's docs/infra exemption still skips checks 1–6, but check 8 runs after them in <code>gate::run</code>, so a docs-only WU or epic still needs its sign-off. W3 left its slot in <code>verify()</code>. Check 8 is wired one level up in <code>run()</code> instead, because <code>verify()</code> is re-entered by the epic walk for every seam, and the walk must <b>not</b> re-judge seam sign-offs (next point). <code>verify()</code> stays checks 1–7, which is exactly what <code>mr confirm</code> needs for sign-last.</li>
+    <li><b>Boundary-only (Trawler DEC-9/10).</b> The epic walk never re-checks a WU seam's <code>mr/v1</code>. The roster is local and mutable, so re-judging old seams would turn authorised history red after a key rotation, and on every fresh clone. The WU's sign-off was judged when its merge hook ran, and the epic tip's own check 8 always runs.</li>
+    <li>The <code>dod/v1</code> receipt's <code>checks</code> list for wu/epic gains <code>manual-review</code>. Commit level (<code>verify-dod commit</code>, <code>range</code>, pre-push) does not run check 8.</li>
+  </ul>
+</div>
+
+<h2 id="maps-to">Maps to</h2>
+<p data-item="maps-to">UC-MR-1 (every WU and epic tip needs an <code>mr/v1</code> from a listed signer that attests the result report's bytes. It is signed last: <code>mr confirm</code> refuses while test, doc or cr evidence is missing. A key-backed signature verifies offline) · UC-MR-2 (a commit that touches a rule-bearing path needs a <code>Reviewed-By</code> trailer from a listed signer) · UC-GATE-5 (the half that never exempts the human sign-off).</p>
+
+<h2 id="non-goals">Explicitly not this WU</h2>
+<div data-c="non-goals-body">
+  <ul>
+    <li>T0–T3 tier classification and the epic tracked-doc layout: W8.</li>
+    <li>Trawler's setup wizard and identity picker, the Secure Enclave signer (<code>trawler-signer</code>, <code>gpg.ssh.program</code>), FIDO2 key generation, and the macOS Touch ID prompt text. Users create keys with plain <code>ssh-keygen</code> and point <code>mr setup --key</code> at them.</li>
+    <li>Native <code>git commit -S</code> signing of rule-bearing commits, and verifying those signatures at pre-push (open point 7).</li>
+    <li>Fetching or syncing <code>.mr-allowed</code> between machines. It is local by design.</li>
+    <li>No changes to Trawler, the seed plan, or the W2/W3/W5 plan docs.</li>
+  </ul>
+</div>
+
+<h2 id="expected">Expected result</h2>
+<div data-item="expected" data-c="expected-body">
+  <p>Per the epic card: with a throwaway test key, <code>mr confirm</code> followed by a real <code>git merge --no-ff</code> through the installed hook is green and leaves a <code>dod/v1</code> receipt. A tampered report, an amended tip, an unlisted signer, and a confirm before the cr note are each red, either as a refused confirm that writes nothing or as <code>FAIL 8·manual-review</code> with a <code>fix -&gt;</code> line. A commit that touches a rule-bearing path without a listed trailer is refused by the commit-msg hook, and <code>keel mr commit</code> gets it through.</p>
+</div>
+
+<h2 id="test-plan">Test plan</h2>
+<div data-item="test-plan" data-c="test-plan-body">
+  <p>New <code>tests/mr.rs</code>, in the same style as <code>tests/verify_dod.rs</code>: a temp git repo, the real <code>keel</code> binary, and an ed25519 key with no passphrase generated by <code>ssh-keygen</code> in the temp dir. <code>SSH_AUTH_SOCK</code> is removed so the test never reaches a real agent. Lean, following Trawler's <code>suite/mr.rs</code>:</p>
+  <ul>
+    <li><b>Green:</b> <code>mr setup --key</code> → bless (test/doc/cr) → <code>mr confirm wu</code> writes a signed note → <code>git merge --no-ff</code> with hooks installed lands and writes <code>dod/v1</code>.</li>
+    <li><b>Confirm before cr + unlisted signer:</b> with only test and doc notes, <code>confirm</code> is refused and writes no note. After cr, <code>confirm --as ghost</code> is refused and writes no note. After a valid confirm, dropping the signer's key line from <code>.mr-allowed</code> turns check 8 red, naming the roster.</li>
+    <li><b>Tampered report + amended tip:</b> forging <code>report_hash</code> in the note → signature red. Changing the tracked report and amending → no note on the new tip → red. Copying the old note onto the amended tip → red (tip mismatch). Each is <code>8·manual-review</code> with a fix line.</li>
+    <li><b>commit-msg:</b> a commit touching <code>docs/rules.html</code> (rule-bearing) without a trailer is refused. The same change goes through via <code>keel mr commit</code>, and a non-rule-bearing commit is untouched.</li>
+  </ul>
+  <p><code>tests/verify_dod.rs</code> is updated: every green path now signs (identity tier, set up in the fixture), and the docs-only test asserts that an exempt WU is red on <code>8·manual-review</code> until signed, then exempt-green (the UC-GATE-5 rule).</p>
+</div>
+
+<h2 id="open-points">Open points for the owner</h2>
+<div class="callout warn" data-c="open-points-body">
+  <table>
+    <thead><tr><th>#</th><th>Point</th><th>Decided here</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><b>The biggest caveat: an ssh-agent key is usable by the AI agent too.</b> Any process with <code>SSH_AUTH_SOCK</code>, including a coding agent on the same machine, can ask the agent to sign. It can also edit the local <code>.mr-allowed</code> and add its own key. The signature proves "a listed key signed this exact change", not "a human pressed a button".</td><td>Accepted as Trawler has it: Trawler's guarantee came from Secure Enclave / FIDO2 keys that need a physical touch, which is out of scope here (Q10: "any ssh-agent key"). The <code>mr setup</code> output and the skills (W6) should tell the owner to use a <b>FIDO2 <code>sk-</code> key</b> or <code>ssh-add -c</code> (agent confirmation per use), and to keep the agent out of the trust store. If you want Keel to <i>refuse</i> non-<code>sk-</code> keys (or warn), that is a one-line rule in <code>mr setup</code>.</td></tr>
+      <tr><td>2</td><td><b>Exact signed bytes.</b> Trawler signs <code>change_hash\nreport_sha256</code>.</td><td>Keel signs a versioned, labelled payload that also carries level, base sha and tip sha (see <a href="#signature">the signature</a>). The extra fields only make the signature narrower. They block replay onto another commit, range or level.</td></tr>
+      <tr><td>3</td><td><b>Hash function.</b> Trawler uses sha256 (<code>shasum</code>). Keel uses git object ids (SHA-1 with collision detection in modern git, or SHA-256 in a sha256 repo).</td><td>Kept git's hash: it needs no dependency or external tool, and it is consistent with W2/W3. The tip sha binding is only as strong as git's own commit hash anyway. <code>ssh-keygen</code> itself hashes the payload with SHA-512. To harden this, add the <code>sha2</code> crate and hash the diff and report with SHA-256. The format header <code>keel-mr/v1</code> would become <code>/v2</code>.</td></tr>
+      <tr><td>4</td><td><b>Plain note for a key-backed identity.</b> Trawler's <code>authorisation()</code> accepts an unsigned note from an identity that is listed with a key (it falls through to <code>match_tier</code>), which lets anyone forge sign-off for a key holder.</td><td>Closed in Keel: if the roster lists any <code>key</code> for the signer, the note must carry a verifying signature. Authority always comes from the roster, never from the tier written in the note.</td></tr>
+      <tr><td>5</td><td><b>Identity tiers are forgeable by design.</b> An <code>email</code>/<code>username</code> sign-off is a string match.</td><td>Kept for Trawler parity, and used by the verify-dod fixtures. <code>[mr] tiers = ["key"]</code> makes a project key-only. Should the default be <code>["key"]</code>? I left it at all three, per Q10's "as in Trawler".</td></tr>
+      <tr><td>6</td><td><b>Signing key location.</b> Trawler sets <code>user.signingkey</code> and <code>gpg.format=ssh</code>.</td><td>Keel uses its own <code>keel.signingkey</code> (local git config), so it never clobbers a user's GPG commit-signing setup. <code>mr confirm</code> self-verifies before writing, so a key that does not match the roster is refused immediately rather than at merge time.</td></tr>
+      <tr><td>7</td><td><b>Rule-bearing commits get a trailer, not a signature.</b> Trawler (DEC-9) also signs those commits natively (<code>git commit -S</code>) and verifies <code>gpgsig</code> at pre-push. Without that, a key-backed identity's trailer is as forgeable as an email one, and <code>--no-verify</code> skips the hook.</td><td>Deferred. UC-MR-2 asks only for the trailer, and every rule-bearing change still crosses a signed WU boundary (the WU <code>mr/v1</code> covers the whole diff). Porting it means about 3 lines in <code>mr commit</code> (<code>-c gpg.format=ssh -c user.signingkey=… commit -S</code>) plus a check in <code>verify-dod range</code> using <code>git verify-commit</code> against a generated <code>allowed_signers</code>. Say if you want it.</td></tr>
+      <tr><td>8</td><td><b>Check 8's placement</b> versus W3's marked slot in <code>verify()</code>.</td><td>Wired in <code>gate::run()</code> (every top-level wu/epic run, the hook included), because <code>verify()</code> is reused by the walk and by <code>mr confirm</code>'s sign-last check, and neither may run check 8. The never-exempt property holds: <code>exempt</code> is recomputed after check 8.</td></tr>
+      <tr><td>9</td><td><b>Sign-last strength.</b> DEC-27 lists test, doc and a diff-bound cr PASS.</td><td><code>mr confirm</code> demands the whole gate (checks 1–7, the epic walk included). That covers DEC-27 and also refuses to ask a human to sign a tip that will be refused at merge anyway. An exempt docs-only tip owes no notes and signs directly, as in Trawler (<code>Gated::No</code>).</td></tr>
+      <tr><td>10</td><td><b>Base must match.</b> Trawler verifies over the note's own base. Keel also requires note base = current merge-base.</td><td>Same rule as check 4 for the review. A WU's merge-base with its epic is stable while the epic only moves forward, so this only bites after a back-merge or rebase, where re-signing is right.</td></tr>
+      <tr><td>11</td><td><b>Which report.</b> Keel has no fixed report path, and the epic report is archived out of git by gate time.</td><td><code>--report</code>, else the single changed <code>*-result.html</code> under <code>docs.root</code>. WU reports must be tracked at the tip. An epic report is re-hashed when it can be found (tip blob, then the local file); otherwise the signed hash alone attests it, as in Trawler. W8's archive layout may want to pin the epic location.</td></tr>
+      <tr><td>12</td><td><b>commit-msg gaps</b> inherited from Trawler: <code>git commit --amend</code> only sees newly staged changes, so amending a rule-bearing commit's message to drop the trailer passes. A cherry-pick is checked like any commit.</td><td>Accepted. The WU boundary signature covers the content either way.</td></tr>
+      <tr><td>13</td><td><b>DEC numbers.</b> I found DEC-9 and DEC-10 in Trawler's <code>docs/decisions/workflow-gates.html</code>. DEC-27 has no record file there; the decisions index and <code>workflow.html</code> cite it as "the human signature goes last: mr confirm refuses a tip lacking test, doc or a diff-bound cr PASS, because every binding pins the diff and a later tree change orphans it".</td><td>Interpreted from that line and from <code>mr.rs</code>'s <code>sign_last()</code>/<code>unready_reasons()</code>. Keel's own <code>docs/decisions/</code> (distillation) should record all three with lineage.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
