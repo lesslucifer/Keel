@@ -140,13 +140,14 @@ struct Range {
 }
 
 /// The ref a range is measured against, shared by the writer and the gate so both
-/// judge one range: `--target R`, else a `wu/<e>/..` tip's `epic/<e>`, else main.
+/// judge one range: `--target R`, else a `<wu_prefix><e>/..` tip's `<epic_prefix><e>`, else main.
 pub(crate) fn target(cfg: &Config, tip_ref: &str, args: &[&str]) -> String {
     if let Some(t) = args.windows(2).find(|w| w[0] == "--target") {
         return t[1].to_string();
     }
-    match tip_ref.strip_prefix("wu/").and_then(|r| r.split_once('/')) {
-        Some((epic, _)) if !epic.is_empty() => format!("epic/{epic}"),
+    let b = &cfg.branches;
+    match tip_ref.strip_prefix(b.wu_prefix.as_str()).and_then(|r| r.split_once('/')) {
+        Some((epic, _)) if !epic.is_empty() => format!("{}{epic}", b.epic_prefix),
         _ => cfg.branches.main.clone(),
     }
 }
@@ -185,6 +186,11 @@ fn range(repo: &Path, cfg: &Config, args: &[&str]) -> Result<Range, String> {
 /// A path the gate treats as code (and cr binds). Every path is code when code_paths is empty.
 pub(crate) fn is_code(cfg: &Config, path: &str) -> bool {
     cfg.code_paths.is_empty() || cfg.code_paths.iter().any(|p| path.starts_with(p.as_str()))
+}
+
+/// UC-GATE-5 docs/infra: outside code_paths and, when `infra_paths` is set, matching one of its globs.
+pub(crate) fn is_infra(cfg: &Config, path: &str) -> bool {
+    !is_code(cfg, path) && cfg.infra_paths.as_ref().is_none_or(|g| g.iter().any(|p| glob(p, path)))
 }
 
 /// `*` = within one segment, `**` = any depth, `?` = one char.
