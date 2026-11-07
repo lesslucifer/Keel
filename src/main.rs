@@ -1,3 +1,4 @@
+mod gate;
 mod notes;
 mod verify_doc;
 
@@ -8,7 +9,7 @@ use std::process::{Command, Stdio};
 const HOOKS_DIR: &str = ".keel/hooks";
 
 #[derive(Deserialize)]
-#[allow(dead_code)] // code_paths / rule_bearing / docs.root are consumed by later WUs
+#[allow(dead_code)] // rule_bearing is consumed by W4
 struct Config {
     #[serde(default)]
     code_paths: Vec<String>,
@@ -35,7 +36,6 @@ struct Branches {
     main: String,
 }
 #[derive(Deserialize)]
-#[allow(dead_code)]
 struct Docs {
     root: String,
 }
@@ -129,9 +129,85 @@ fn gate0(repo: &Path, cfg: &Config) -> Result<i32, String> {
     }
 }
 
+const ZERO_SHA: &str = "0000000000000000000000000000000000000000";
+
+/// pre-push gate0: every pushed tree proven - in place when it is the clean HEAD's
+/// tree, else in a scratch worktree at that sha. `refspecs` is git's pre-push stdin.
+fn gate0_push(repo: &Path, cfg: &Config, refspecs: &str) -> Result<i32, String> {
+    let clean = git(repo, &["status", "--porcelain"], &[])?.is_empty();
+    let head_tree = if clean { git(repo, &["rev-parse", "HEAD^{tree}"], &[]).ok() } else { None };
+    let mut seen = std::collections::BTreeSet::new();
+    for line in refspecs.lines() {
+        let [_, sha, rref, _] = line.split_whitespace().collect::<Vec<_>>()[..] else { continue };
+        if sha == ZERO_SHA || rref.starts_with("refs/notes/") {
+            continue;
+        }
+        let tree = git(repo, &["rev-parse", &format!("{sha}^{{tree}}")], &[])?;
+        if !seen.insert(tree.clone()) {
+            continue;
+        }
+        let code = if head_tree.as_ref() == Some(&tree) {
+            gate0(repo, cfg)?
+        } else {
+            // ponytail: the scratch worktree's gate0 cache dies with it; re-pushing a non-HEAD sha re-runs gate0.
+            let dir = git_dir(repo)?.join("keel-push-proof");
+            let d = dir.to_string_lossy();
+            let _ = git(repo, &["worktree", "remove", "--force", &d], &[]);
+            git(repo, &["worktree", "add", "-q", "--detach", &d, sha], &[])?;
+            let code = load_config(&dir).and_then(|c| gate0(&dir, &c));
+            let _ = git(repo, &["worktree", "remove", "--force", &d], &[]);
+            code?
+        };
+        if code != 0 {
+            eprintln!("push refused - {} fails gate0", &sha[..10]);
+            return Ok(code);
+        }
+    }
+    Ok(0)
+}
+
+/// pre-push: gate0 on every pushed tree, the range check on main/epic updates, then notes sync.
+fn pre_push(repo: &Path, cfg: &Config, remote: &str) -> Result<i32, String> {
+    use std::io::Read;
+    let mut refspecs = String::new();
+    std::io::stdin().read_to_string(&mut refspecs).map_err(|e| e.to_string())?;
+    let code = gate0_push(repo, cfg, &refspecs)?;
+    if code != 0 {
+        return Ok(code);
+    }
+    for line in refspecs.lines() {
+        let [_, local, rref, rsha] = line.split_whitespace().collect::<Vec<_>>()[..] else { continue };
+        let branch = rref.strip_prefix("refs/heads/").unwrap_or("");
+        let gated = branch == cfg.branches.main || branch.starts_with("epic/");
+        if gated && local != ZERO_SHA && rsha != ZERO_SHA && gate::range(repo, cfg, rsha, local)? != 0 {
+            return Ok(1);
+        }
+    }
+    // A plain push never sends notes refs: without this the evidence stays on one machine.
+    let refs = git(repo, &["for-each-ref", "--format=%(refname)", "refs/notes"], &[])?;
+    if !refs.is_empty() {
+        let mut a = vec!["push", "--no-verify", "--quiet", remote];
+        a.extend(refs.lines());
+        if git(repo, &a, &[]).is_err() {
+            eprintln!("keel pre-push: warning - notes sync to {remote} failed");
+        }
+    }
+    Ok(0)
+}
+
 const PRE_COMMIT: &str = r#"#!/bin/sh
 command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
 exec keel hook pre-commit
+"#;
+
+const PRE_MERGE_COMMIT: &str = r#"#!/bin/sh
+command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
+exec keel verify-dod hook
+"#;
+
+const PRE_PUSH: &str = r#"#!/bin/sh
+command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
+exec keel hook pre-push "$1"
 "#;
 
 // Harness hooks. Claude names the edited file in tool_input.file_path; Codex's
@@ -185,6 +261,8 @@ fn hooks_install(repo: &Path) -> Result<i32, String> {
     std::fs::create_dir_all(&dir).map_err(|e| format!("keel: mkdir {}: {e}", dir.display()))?;
     for (name, body) in [
         ("pre-commit", PRE_COMMIT),
+        ("pre-merge-commit", PRE_MERGE_COMMIT),
+        ("pre-push", PRE_PUSH),
         ("post-checkout", POST_CHECKOUT),
         ("verify-doc-post", DOC_POST),
         ("verify-doc-stop", DOC_STOP),
@@ -241,9 +319,12 @@ fn run() -> Result<i32, String> {
         ["lint"] => lint(&repo, &load_config(&repo)?),
         ["gate0"] => gate0(&repo, &load_config(&repo)?),
         ["hook", "pre-commit"] => pre_commit(&repo, &load_config(&repo)?),
+        ["hook", "pre-push", remote, ..] => pre_push(&repo, &load_config(&repo)?, remote),
         ["notes", "write", kind, rest @ ..] => notes::write(&repo, &load_config(&repo)?, kind, rest),
         ["verify-doc", paths @ ..] => verify_doc(&repo, paths),
-        _ => Err("usage: keel <lint | gate0 | verify-doc | hooks install | notes write <test|doc|cr>>".into()),
+        ["verify-dod", rest @ ..] => gate::verify_dod(&repo, &load_config(&repo)?, rest),
+        ["preflight", rest @ ..] => gate::preflight_cmd(&repo, &load_config(&repo)?, rest),
+        _ => Err("usage: keel <lint | gate0 | verify-doc | verify-dod | preflight | hooks install | notes write <test|doc|cr>>".into()),
     }
 }
 
