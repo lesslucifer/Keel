@@ -68,8 +68,8 @@ reasons).
 
 **WU result** — `outcome` (delivered / deviated / dropped against the
 requirement) · `deviations` (every difference from the plan, with why, or
-"none") · `evidence` (tests added, docs touched, tips; the review's verdict and
-its nits with their dispositions) · `distillation` (what went to T2/T1, or
+"none") · `evidence` (tests added, docs touched, commits; the review runs after
+the report is committed, so its verdict and nits live on the cr note, not here) · `distillation` (what went to T2/T1, or
 "nothing citable") · `follow-ups` (or "none").
 
 **Epic result** — `outcome` (against intent, use cases, expected) ·
