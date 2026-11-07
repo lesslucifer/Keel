@@ -198,6 +198,33 @@ fn epic_walk_catches_a_fast_forward_smuggled_seam_unless_waived() {
     assert!(o.status.success() && text(&o).contains("WAIVED"), "{}", text(&o));
 }
 
+/// The W4-review hole: a branch shipping no-op hooks at the old tracked path must not
+/// neuter the gate judging its own merge - the installed hooks live in the git dir.
+#[test]
+fn a_branch_shipping_neutered_hooks_cannot_skip_the_merge_gate() {
+    let d = fixture();
+    let p = d.path();
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    let hooks = git(p, &["config", "core.hooksPath"]);
+    let common = git(p, &["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+    let common = std::fs::canonicalize(common).unwrap();
+    assert!(Path::new(&hooks).is_absolute() && Path::new(&hooks).starts_with(&common), "{hooks}");
+    assert!(git(p, &["ls-files", "--others", "--cached", ".keel/hooks"]).is_empty());
+
+    for h in ["pre-merge-commit", "pre-commit", "pre-push"] {
+        write(p, &format!(".keel/hooks/{h}"), "#!/bin/sh\nexit 0\n");
+        std::fs::set_permissions(p.join(".keel/hooks").join(h), std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+    }
+    commit(p, "neuter the gate");
+    git(p, &["switch", "-q", "epic/e"]);
+    let m = run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"], "");
+    assert_red(&m, "1·notes");
+    assert!(p.join(".keel/hooks/pre-merge-commit").exists(), "the neutered hook was in the merged tree");
+    let _ = run("git", p, &["merge", "--abort"], "");
+    assert_eq!(git(p, &["rev-list", "--count", "epic/e"]), "1", "nothing landed");
+}
+
 #[test]
 fn hooks_refuse_an_unblessed_merge_then_land_it_and_push_syncs_notes() {
     let d = fixture();

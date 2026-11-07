@@ -6,8 +6,6 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-const HOOKS_DIR: &str = ".keel/hooks";
-
 #[derive(Deserialize)]
 #[allow(dead_code)] // rule_bearing is consumed by W4
 struct Config {
@@ -257,7 +255,10 @@ exit 0
 
 fn hooks_install(repo: &Path) -> Result<i32, String> {
     use std::os::unix::fs::PermissionsExt;
-    let dir = repo.join(HOOKS_DIR);
+    // Inside the COMMON git dir: never tracked, so no branch can ship (or merge in) a
+    // neutered hook, and every worktree of this repo shares the one install.
+    let common = repo.join(git(repo, &["rev-parse", "--git-common-dir"], &[])?); // join keeps an absolute path as-is
+    let dir = common.canonicalize().unwrap_or(common).join("keel-hooks");
     std::fs::create_dir_all(&dir).map_err(|e| format!("keel: mkdir {}: {e}", dir.display()))?;
     for (name, body) in [
         ("pre-commit", PRE_COMMIT),
@@ -272,9 +273,13 @@ fn hooks_install(repo: &Path) -> Result<i32, String> {
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755))
             .map_err(|e| e.to_string())?;
     }
-    // Relative: git resolves it per worktree, so each runs the hooks its branch carries.
-    git(repo, &["config", "--local", "core.hooksPath", HOOKS_DIR], &[])?;
-    println!("hooks installed - core.hooksPath = {HOOKS_DIR} (commit the directory so it is tracked)");
+    // Absolute: a relative hooksPath resolves against the worktree, i.e. against branch content.
+    let d = dir.to_string_lossy();
+    git(repo, &["config", "--local", "core.hooksPath", &d], &[])?;
+    println!(
+        "hooks installed - core.hooksPath = {d}\n  lives in the git dir, outside repo content - never commit hooks; \
+         install once per repo (every worktree of it already shares this install)"
+    );
     Ok(0)
 }
 

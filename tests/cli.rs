@@ -64,8 +64,13 @@ fn commit_on_main_is_refused_but_a_branch_is_fine() {
     let d = repo(true);
     let p = d.path();
     assert!(keel(p, &["hooks", "install"]).status.success());
+    // A no-op hook at the old in-tree path is just content now - it never runs.
+    std::fs::create_dir_all(p.join(".keel/hooks")).unwrap();
+    std::fs::write(p.join(".keel/hooks/pre-commit"), "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(p.join(".keel/hooks/pre-commit"), std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .unwrap();
     std::fs::write(p.join("a"), "a").unwrap();
-    git(p, &["add", "a"]);
+    git(p, &["add", "a", ".keel/hooks"]);
     let c = run("git", p, &["commit", "-qm", "x"]);
     assert!(!c.status.success());
     assert!(text(&c).contains("merge-only"), "{}", text(&c));
