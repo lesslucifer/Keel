@@ -62,7 +62,7 @@ fn fixture() -> TempDir {
     write(
         p,
         ".keel/config.toml",
-        "code_paths = [\"src/\", \"tests/\"]\n[gate0]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
+        "code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
     );
     // An identity-tier signer (local, git-ignored roster) so green paths can sign off (check 8).
     assert!(keel(p, &["mr", "setup", "--as", "t"]).status.success());

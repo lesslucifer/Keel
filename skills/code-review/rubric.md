@@ -58,7 +58,7 @@ lint.
 
 ## Exclusions — never report
 
-- Anything `gate0` already catches: formatting, the configured lint policy,
+- Anything `keel check` already catches: formatting, the configured lint policy,
   failing tests. Such a finding is itself a process bug.
 - Pre-existing issues the reviewed diff neither introduces nor worsens.
 - Pure taste with no dimension or principle behind it.

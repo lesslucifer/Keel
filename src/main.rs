@@ -14,7 +14,7 @@ struct Config {
     code_paths: Vec<String>,
     #[serde(default)]
     rule_bearing: Vec<String>,
-    gate0: Gate0,
+    check: Check,
     branches: Branches,
     docs: Docs,
     #[serde(default)]
@@ -38,7 +38,7 @@ struct TestsCfg {
     pattern: Option<String>,
 }
 #[derive(Deserialize)]
-struct Gate0 {
+struct Check {
     lint: String,
     test: String,
 }
@@ -138,7 +138,7 @@ fn tree_key(repo: &Path) -> Result<String, String> {
 }
 
 fn lint(repo: &Path, cfg: &Config) -> Result<i32, String> {
-    Ok(if sh(repo, &cfg.gate0.lint)? {
+    Ok(if sh(repo, &cfg.check.lint)? {
         0
     } else {
         eprintln!("keel lint: red");
@@ -146,30 +146,30 @@ fn lint(repo: &Path, cfg: &Config) -> Result<i32, String> {
     })
 }
 
-fn gate0(repo: &Path, cfg: &Config) -> Result<i32, String> {
+fn check(repo: &Path, cfg: &Config) -> Result<i32, String> {
     // The cache vouches for a tree + the exact commands, never a bare verdict.
     // Lives in the git dir: per-checkout, never synced, never tracked.
-    let key = format!("{}\n{}\n{}", tree_key(repo)?, cfg.gate0.lint, cfg.gate0.test);
-    let cache = git_dir(repo)?.join("keel-gate0-green");
+    let key = format!("{}\n{}\n{}", tree_key(repo)?, cfg.check.lint, cfg.check.test);
+    let cache = git_dir(repo)?.join("keel-check-green");
     if std::fs::read_to_string(&cache).ok().as_deref() == Some(key.as_str()) {
-        println!("gate0 skipped - tree unchanged since last green");
+        println!("check skipped - tree unchanged since last green");
         return Ok(0);
     }
-    if sh(repo, &cfg.gate0.lint)? && sh(repo, &cfg.gate0.test)? {
+    if sh(repo, &cfg.check.lint)? && sh(repo, &cfg.check.test)? {
         std::fs::write(&cache, key).map_err(|e| format!("keel: write cache: {e}"))?;
-        println!("gate0 green - cached");
+        println!("check green - cached");
         Ok(0)
     } else {
-        eprintln!("gate0 red - lint/tests failed; not cached");
+        eprintln!("check red - lint/tests failed; not cached");
         Ok(1)
     }
 }
 
 const ZERO_SHA: &str = "0000000000000000000000000000000000000000";
 
-/// pre-push gate0: every pushed tree proven - in place when it is the clean HEAD's
+/// pre-push check: every pushed tree proven - in place when it is the clean HEAD's
 /// tree, else in a scratch worktree at that sha. `refspecs` is git's pre-push stdin.
-fn gate0_push(repo: &Path, cfg: &Config, refspecs: &str) -> Result<i32, String> {
+fn check_push(repo: &Path, cfg: &Config, refspecs: &str) -> Result<i32, String> {
     let clean = git(repo, &["status", "--porcelain"], &[])?.is_empty();
     let head_tree = if clean { git(repo, &["rev-parse", "HEAD^{tree}"], &[]).ok() } else { None };
     let mut seen = std::collections::BTreeSet::new();
@@ -183,31 +183,31 @@ fn gate0_push(repo: &Path, cfg: &Config, refspecs: &str) -> Result<i32, String> 
             continue;
         }
         let code = if head_tree.as_ref() == Some(&tree) {
-            gate0(repo, cfg)?
+            check(repo, cfg)?
         } else {
-            // ponytail: the scratch worktree's gate0 cache dies with it; re-pushing a non-HEAD sha re-runs gate0.
+            // ponytail: the scratch worktree's check cache dies with it; re-pushing a non-HEAD sha re-runs check.
             let dir = git_dir(repo)?.join("keel-push-proof");
             let d = dir.to_string_lossy();
             let _ = git(repo, &["worktree", "remove", "--force", &d], &[]);
             git(repo, &["worktree", "add", "-q", "--detach", &d, sha], &[])?;
-            let code = load_config(&dir).and_then(|c| gate0(&dir, &c));
+            let code = load_config(&dir).and_then(|c| check(&dir, &c));
             let _ = git(repo, &["worktree", "remove", "--force", &d], &[]);
             code?
         };
         if code != 0 {
-            eprintln!("push refused - {} fails gate0", &sha[..10]);
+            eprintln!("push refused - {} fails check", &sha[..10]);
             return Ok(code);
         }
     }
     Ok(0)
 }
 
-/// pre-push: gate0 on every pushed tree, the range check on main/epic updates, then notes sync.
+/// pre-push: check on every pushed tree, the range check on main/epic updates, then notes sync.
 fn pre_push(repo: &Path, cfg: &Config, remote: &str) -> Result<i32, String> {
     use std::io::Read;
     let mut refspecs = String::new();
     std::io::stdin().read_to_string(&mut refspecs).map_err(|e| e.to_string())?;
-    let code = gate0_push(repo, cfg, &refspecs)?;
+    let code = check_push(repo, cfg, &refspecs)?;
     if code != 0 {
         return Ok(code);
     }
@@ -367,7 +367,7 @@ fn run() -> Result<i32, String> {
         ["init"] => init::run(&repo),
         ["hooks", "install"] => hooks_install(&repo),
         ["lint"] => lint(&repo, &load_config(&repo)?),
-        ["gate0"] => gate0(&repo, &load_config(&repo)?),
+        ["check"] => check(&repo, &load_config(&repo)?),
         ["hook", "pre-commit"] => pre_commit(&repo, &load_config(&repo)?),
         ["hook", "commit-msg", file] => mr::commit_msg(&repo, &load_config(&repo)?, file),
         ["hook", "pre-push", remote, ..] => pre_push(&repo, &load_config(&repo)?, remote),
@@ -377,7 +377,7 @@ fn run() -> Result<i32, String> {
         ["verify-dod", rest @ ..] => gate::verify_dod(&repo, &load_config(&repo)?, rest),
         ["preflight", rest @ ..] => gate::preflight_cmd(&repo, &load_config(&repo)?, rest),
         ["mr", rest @ ..] => mr::run(&repo, &load_config(&repo)?, rest),
-        _ => Err("usage: keel <init | lint | gate0 | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install | notes write <test|doc|cr>>".into()),
+        _ => Err("usage: keel <init | lint | check | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install | notes write <test|doc|cr>>".into()),
     }
 }
 

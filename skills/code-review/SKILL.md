@@ -39,7 +39,7 @@ note pins the code it judged, so anything fixed after the verdict buys the
 fleet again. It refuses on exactly:
 
 - **`0·tree`** — `HEAD` is not the tip, the tree has uncommitted changes, or
-  `keel gate0` (the configured lint + test, skipped when this exact tree content
+  `keel check` (the configured lint + test, skipped when this exact tree content
   already passed) is red.
 - **`1·notes` / `2·manifest`** — the tip's `test/v1` note (the one the finders
   read) is missing, malformed, lacks the level's layer, or names another tip.
@@ -51,7 +51,7 @@ nothing. An **exempt** diff (no code path) prints `exempt`: report that and
 stop.
 
 **WU and epic scopes only.** For any other scope (recent commits, a single
-ref, a standalone commit) there is no note to orphan: run `keel gate0` yourself
+ref, a standalone commit) there is no note to orphan: run `keel check` yourself
 and go on.
 
 ## 3 · Find — two or three isolated finders, in parallel
@@ -116,7 +116,7 @@ Refuted findings are dropped; mention them in one line to the caller.
 
 - Match the trigger's `--waive` declarations against verified findings; record
   each with its reason (cite a `docs/decisions/` record where one applies).
-- **PASS** = gate0 green and zero verified **blockers or importants** left
+- **PASS** = `keel check` green and zero verified **blockers or importants** left
   unwaived. Anything else is **FAIL**. Evidence is written either way.
 - **A verified nit never fails the review and is never silently dropped**:
   each gets **exactly one** disposition — `fixed: "<what changed>"` (the fix is
@@ -144,7 +144,7 @@ git notes --ref=cr show "$HEAD_R" \
 ```
 
 - `NITS`: `[{"finding": "<summary>", "fixed": "<what changed>"} | {"finding": "<summary>", "waived": "<reason>"}]`
-- `FLEET`: `{"dimensions": [...], "finders": n, "verifiers": n, "verifier_model": "<id>", "candidates": {"blocker": n, "important": n, "nit": n}, "by_finder": {"correctness": {"found": n, "verified": n}, ...}, "stage_seconds": {"gate0": n, "finders": n, "verifiers": n, "total": n}, "waivers": [{"finding": "...", "reason": "..."}]}`
+- `FLEET`: `{"dimensions": [...], "finders": n, "verifiers": n, "verifier_model": "<id>", "candidates": {"blocker": n, "important": n, "nit": n}, "by_finder": {"correctness": {"found": n, "verified": n}, ...}, "stage_seconds": {"check": n, "finders": n, "verifiers": n, "total": n}, "waivers": [{"finding": "...", "reason": "..."}]}`
 
 Write what you observed and omit what you did not: an absent row is a stage
 nobody timed, never a zero. A dimension not spawned has no `by_finder` row.

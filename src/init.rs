@@ -8,8 +8,8 @@ const AGENTS: &str = include_str!("../templates/AGENTS.md");
 const CODEX_HOOKS: &str = include_str!("../templates/codex-hooks.json");
 const PROJECT_ROUTER: &str = include_str!("../skills/router/references/project-router-template.md");
 
-/// gate0 commands by the first manifest found; else a command that fails until configured.
-fn gate0_for(repo: &Path) -> (&'static str, &'static str) {
+/// check commands by the first manifest found; else a command that fails until configured.
+fn check_for(repo: &Path) -> (&'static str, &'static str) {
     let has = |f: &str| repo.join(f).exists();
     if has("Cargo.toml") {
         ("cargo clippy --all-targets -- -D warnings", "cargo test")
@@ -21,14 +21,14 @@ fn gate0_for(repo: &Path) -> (&'static str, &'static str) {
         ("go vet ./...", "go test ./...")
     } else {
         (
-            "echo 'keel: set gate0.lint in .keel/config.toml' >&2; exit 1",
-            "echo 'keel: set gate0.test in .keel/config.toml' >&2; exit 1",
+            "echo 'keel: set check.lint in .keel/config.toml' >&2; exit 1",
+            "echo 'keel: set check.test in .keel/config.toml' >&2; exit 1",
         )
     }
 }
 
 fn config(repo: &Path) -> String {
-    let (lint, test) = gate0_for(repo);
+    let (lint, test) = check_for(repo);
     let has_branch = |b: &str| git(repo, &["rev-parse", "--verify", "-q", &format!("refs/heads/{b}")], &[]).is_ok();
     let main = if has_branch("master") && !has_branch("main") { "master" } else { "main" };
     // Debug-quoting gives a valid TOML basic string for these ASCII values.
@@ -101,7 +101,7 @@ pub fn run(repo: &Path) -> Result<i32, String> {
         println!("warning: keel is not on PATH - the hooks call it; install: cargo install keel (or a release binary)");
     }
     println!(
-        "next:\n  1. review .keel/config.toml (gate0 commands, code_paths) and AGENTS.md; fill in .claude/skills/project-router/SKILL.md\n  \
+        "next:\n  1. review .keel/config.toml (check commands, code_paths) and AGENTS.md; fill in .claude/skills/project-router/SKILL.md\n  \
          2. land the policy on main once, before any gated merge (main is merge-only from now on):\n     \
          git add .keel AGENTS.md .claude .agents .codex .gitignore && git commit --no-verify -m \"keel init\"\n  \
          3. the human owner registers as signer (never an agent): keel mr setup --as <identity> [--key ~/.ssh/<key>.pub]"

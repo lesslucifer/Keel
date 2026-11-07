@@ -94,7 +94,7 @@ and the `git merge --no-ff`.
 | based on base | `git merge-base --is-ancestor <base> HEAD` |
 | notes written / report exists | `git notes --ref=<test\|doc\|cr\|mr\|dod> show <tip>` · `ls <path>` on that branch |
 | gates green | `keel verify-dod <wu\|epic> <tip>` (read-only on red; it writes the receipt only on green) · `keel verify-doc <doc>` |
-| lint/CI clean | `keel gate0`, or `gh run view <id> --json ...` |
+| lint/CI clean | `keel check`, or `gh run view <id> --json ...` |
 | owner signed/merged | read the `mr` note / target log; a merge is done only when `MERGE_HEAD` is gone and the tip is the merge |
 | third-party tool does X | read its source/docs at the pinned version; a reviewer's PLAUSIBLE is a lead, not a fact |
 

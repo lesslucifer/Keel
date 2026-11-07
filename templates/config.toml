@@ -9,7 +9,7 @@ code_paths = ["src/", "tests/"]
 # A trailing / is a prefix; otherwise a glob (* and ? within a segment, ** across).
 rule_bearing = ["AGENTS.md", "docs/*.html"]
 
-[gate0]
+[check]
 lint = {{LINT}}
 test = {{TEST}}
 
