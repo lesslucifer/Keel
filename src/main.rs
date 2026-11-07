@@ -1,4 +1,5 @@
 mod gate;
+mod mr;
 mod notes;
 mod verify_doc;
 
@@ -9,7 +10,6 @@ use std::process::{Command, Stdio};
 const HOOKS_DIR: &str = ".keel/hooks";
 
 #[derive(Deserialize)]
-#[allow(dead_code)] // rule_bearing is consumed by W4
 struct Config {
     #[serde(default)]
     code_paths: Vec<String>,
@@ -20,6 +20,18 @@ struct Config {
     docs: Docs,
     #[serde(default)]
     tests: TestsCfg,
+    #[serde(default)]
+    mr: MrCfg,
+}
+/// Signer tiers this project accepts from .mr-allowed (Q10: configurable, Trawler's three by default).
+#[derive(Deserialize)]
+struct MrCfg {
+    tiers: Vec<String>,
+}
+impl Default for MrCfg {
+    fn default() -> Self {
+        MrCfg { tiers: mr::KNOWN_TIERS.iter().map(|t| t.to_string()).collect() }
+    }
 }
 #[derive(Deserialize, Default)]
 struct TestsCfg {
@@ -205,6 +217,11 @@ command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it 
 exec keel verify-dod hook
 "#;
 
+const COMMIT_MSG: &str = r#"#!/bin/sh
+command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
+exec keel hook commit-msg "$1"
+"#;
+
 const PRE_PUSH: &str = r#"#!/bin/sh
 command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
 exec keel hook pre-push "$1"
@@ -261,6 +278,7 @@ fn hooks_install(repo: &Path) -> Result<i32, String> {
     std::fs::create_dir_all(&dir).map_err(|e| format!("keel: mkdir {}: {e}", dir.display()))?;
     for (name, body) in [
         ("pre-commit", PRE_COMMIT),
+        ("commit-msg", COMMIT_MSG),
         ("pre-merge-commit", PRE_MERGE_COMMIT),
         ("pre-push", PRE_PUSH),
         ("post-checkout", POST_CHECKOUT),
@@ -319,12 +337,14 @@ fn run() -> Result<i32, String> {
         ["lint"] => lint(&repo, &load_config(&repo)?),
         ["gate0"] => gate0(&repo, &load_config(&repo)?),
         ["hook", "pre-commit"] => pre_commit(&repo, &load_config(&repo)?),
+        ["hook", "commit-msg", file] => mr::commit_msg(&repo, &load_config(&repo)?, file),
         ["hook", "pre-push", remote, ..] => pre_push(&repo, &load_config(&repo)?, remote),
         ["notes", "write", kind, rest @ ..] => notes::write(&repo, &load_config(&repo)?, kind, rest),
         ["verify-doc", paths @ ..] => verify_doc(&repo, paths),
         ["verify-dod", rest @ ..] => gate::verify_dod(&repo, &load_config(&repo)?, rest),
         ["preflight", rest @ ..] => gate::preflight_cmd(&repo, &load_config(&repo)?, rest),
-        _ => Err("usage: keel <lint | gate0 | verify-doc | verify-dod | preflight | hooks install | notes write <test|doc|cr>>".into()),
+        ["mr", rest @ ..] => mr::run(&repo, &load_config(&repo)?, rest),
+        _ => Err("usage: keel <lint | gate0 | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install | notes write <test|doc|cr>>".into()),
     }
 }
 

@@ -1,7 +1,7 @@
 //! `keel verify-dod` + `keel preflight`: the merge gate (UC-GATE-2/3/5, UC-DOC-3 in part).
 //! Ported from Trawler's xtask gate: same check ids, same `FAIL / fix ->` blocks, no cargo.
 use crate::notes::{self, CrNote, DocNote, DodNote, TestNote};
-use crate::{gate0, git, Config};
+use crate::{gate0, git, mr, Config};
 use serde::de::DeserializeOwned;
 use std::path::Path;
 
@@ -24,8 +24,8 @@ impl Level {
     fn checks(self) -> &'static [&'static str] {
         match self {
             Level::Commit => &["notes", "manifest", "doc-note"],
-            Level::Wu => &["notes", "manifest", "review", "review-base", "diff-binding", "doc-note"],
-            Level::Epic => &["notes", "manifest", "review", "review-base", "diff-binding", "doc-note", "walk"],
+            Level::Wu => &["notes", "manifest", "review", "review-base", "diff-binding", "doc-note", "manual-review"],
+            Level::Epic => &["notes", "manifest", "review", "review-base", "diff-binding", "doc-note", "walk", "manual-review"],
         }
     }
 }
@@ -160,7 +160,8 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
 
 fn verify(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> Result<Report, String> {
     let (mut r, names) = open(repo, cfg, level, tip_ref, target)?;
-    // UC-GATE-5 never exempts these: W4's 8·manual-review and W8's tier layout go here.
+    // UC-GATE-5 never exempts these: W8's tier layout goes here. W4's 8·manual-review runs in
+    // `run()` instead - this fn is re-entered per walk seam and by mr confirm, neither of which may judge it.
     if !r.exempt {
         check_tip(repo, cfg, &mut r, &names, true)?;
     }
@@ -221,7 +222,7 @@ fn print(r: &Report, what: &str) {
         println!("WAIVED {w}");
     }
     if r.exempt {
-        println!("{what} {} exempt on {} - docs/infra-only, gate not required", r.level.name(), short(&r.tip));
+        println!("{what} {} exempt on {} - docs/infra-only, test/cr/doc evidence not required", r.level.name(), short(&r.tip));
     } else if r.failures.is_empty() {
         println!("{what} {} green on {} (checks: {})", r.level.name(), short(&r.tip), r.level.checks().join(", "));
     } else {
@@ -234,7 +235,15 @@ fn print(r: &Report, what: &str) {
 
 /// Verify, print, and on a full green wu/epic write the dod/v1 receipt.
 fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> Result<i32, String> {
-    let r = verify(repo, cfg, level, tip_ref, target)?;
+    let mut r = verify(repo, cfg, level, tip_ref, target)?;
+    // 8·manual-review: never exempt (UC-GATE-5), and only at the merge boundary - the walk never
+    // re-judges a seam's sign-off against today's local roster (Trawler DEC-9/10).
+    if level != Level::Commit {
+        if let Err((what, fix)) = mr::manual_review(repo, cfg, level.name(), &r.tip, &r.base) {
+            r.fail("8·manual-review", what, fix);
+        }
+        r.exempt &= r.failures.is_empty();
+    }
     print(&r, "verify-dod");
     if !r.failures.is_empty() {
         return Ok(1);
@@ -252,6 +261,18 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> 
         notes::store(repo, "dod", &r.tip, &note)?;
     }
     Ok(0)
+}
+
+/// mr confirm's sign-last rule (Trawler DEC-27): checks 1-7 must already be green on the tip.
+/// Red -> the failures are printed and `None`; green -> `(tip, base)` of the range to sign.
+pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, rest: &[&str]) -> Result<Option<(String, String)>, String> {
+    let level = if epic { Level::Epic } else { Level::Wu };
+    let r = verify(repo, cfg, level, tip_ref, &target_of(cfg, level, tip_ref, rest))?;
+    if !r.failures.is_empty() {
+        print(&r, "mr confirm");
+        return Ok(None);
+    }
+    Ok(Some((r.tip, r.base)))
 }
 
 /// pre-merge-commit: tip = the merge head, target = HEAD, level from HEAD's branch.
