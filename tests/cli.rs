@@ -166,7 +166,7 @@ fn notes_round_trip_on_a_fixture_tip() {
     assert_eq!(n["e2e"]["waived"], "no ui");
 
     assert!(keel(p, &["notes", "write", "doc"]).status.success());
-    assert_eq!(note(p, "doc")["paths"], serde_json::json!(["docs/a.html"]));
+    assert_eq!(note(p, "doc")["changes"], serde_json::json!([{"path": "docs/a.html", "tier": "T1"}]));
 
     assert!(keel(p, &["notes", "write", "cr", "--verdict", "PASS"]).status.success());
     assert_eq!(note(p, "cr")["verdict"], "PASS");
