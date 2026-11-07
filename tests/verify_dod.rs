@@ -64,6 +64,8 @@ fn fixture() -> TempDir {
         ".keel/config.toml",
         "code_paths = [\"src/\", \"tests/\"]\n[gate0]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
     );
+    // An identity-tier signer (local, git-ignored roster) so green paths can sign off (check 8).
+    assert!(keel(p, &["mr", "setup", "--as", "t"]).status.success());
     write(p, "README", "x");
     commit(p, "base");
     git(p, &["switch", "-q", "-c", "epic/e"]);
@@ -85,6 +87,12 @@ fn bless(p: &Path, tests: &str, verdict: &str) {
         let o = run(env!("CARGO_BIN_EXE_keel"), p, args, input);
         assert!(o.status.success(), "{args:?}: {}", text(&o));
     }
+}
+
+/// The human sign-off on HEAD, signed last (after bless).
+fn sign(p: &Path, level: &str, report: &str) {
+    let o = keel(p, &["mr", "confirm", level, "--as", "t", "--report", report]);
+    assert!(o.status.success(), "mr confirm: {}", text(&o));
 }
 
 fn note(p: &Path, kind: &str, rev: &str) -> Value {
@@ -110,6 +118,7 @@ fn green_wu_writes_a_parsable_receipt_and_preflight_is_green() {
     bless(p, WU_TESTS, "PASS");
     let pf = keel(p, &["preflight", "wu", "wu/e/a"]);
     assert!(pf.status.success(), "{}", text(&pf));
+    sign(p, "wu", "docs/a.html");
     let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
     assert!(o.status.success(), "{}", text(&o));
     let dod = note(p, "dod", "wu/e/a");
@@ -117,6 +126,7 @@ fn green_wu_writes_a_parsable_receipt_and_preflight_is_green() {
     assert_eq!(dod["level"], "wu");
     assert_eq!(dod["tip"].as_str().unwrap(), git(p, &["rev-parse", "wu/e/a"]));
     assert!(dod["checks"].as_array().unwrap().contains(&json!("diff-binding")));
+    assert!(dod["checks"].as_array().unwrap().contains(&json!("manual-review")));
 }
 
 type Tamper = fn(&Path);
@@ -155,12 +165,15 @@ fn each_missing_or_tampered_piece_of_evidence_is_red_with_its_check_id() {
 }
 
 #[test]
-fn docs_only_wu_is_exempt_and_writes_no_receipt() {
+fn docs_only_wu_is_exempt_but_still_needs_its_sign_off() {
     let d = fixture();
     let p = d.path();
     git(p, &["switch", "-q", "-c", "wu/e/docs", "epic/e"]);
     write(p, "docs/only.html", "<p>docs</p>");
     commit(p, "docs only");
+    // UC-GATE-5: exempt from test/cr/doc evidence, never from the human sign-off.
+    assert_red(&keel(p, &["verify-dod", "wu", "wu/e/docs"]), "8·manual-review");
+    sign(p, "wu", "docs/only.html");
     let o = keel(p, &["verify-dod", "wu", "wu/e/docs"]);
     assert!(o.status.success() && text(&o).contains("exempt"), "{}", text(&o));
     assert!(!run("git", p, &["notes", "--ref=dod", "show", "HEAD"], "").status.success());
@@ -176,6 +189,7 @@ fn epic_walk_catches_a_fast_forward_smuggled_seam_unless_waived() {
     write(p, "docs/result.html", "<p>result</p>");
     commit(p, "close epic");
     bless(p, EPIC_TESTS, "PASS");
+    sign(p, "epic", "docs/result.html");
     let o = keel(p, &["verify-dod", "epic", "epic/e"]);
     assert!(o.status.success(), "a --no-ff, blessed seam walks green: {}", text(&o));
 
@@ -194,6 +208,7 @@ fn epic_walk_catches_a_fast_forward_smuggled_seam_unless_waived() {
     edit_note(p, "cr", "HEAD", |n| n["walk_waivers"] = json!([{"seam": &smuggled[..12], "why": "   "}]));
     assert_red(&keel(p, &["verify-dod", "epic", "epic/e"]), "7·walk·1·notes"); // a blank why never waives
     edit_note(p, "cr", "HEAD", |n| n["walk_waivers"] = json!([{"seam": &smuggled[..12], "why": "hotfix, reviewed live"}]));
+    sign(p, "epic", "docs/result.html");
     let o = keel(p, &["verify-dod", "epic", "epic/e"]);
     assert!(o.status.success() && text(&o).contains("WAIVED"), "{}", text(&o));
 }
@@ -211,6 +226,7 @@ fn hooks_refuse_an_unblessed_merge_then_land_it_and_push_syncs_notes() {
 
     git(p, &["switch", "-q", "wu/e/a"]);
     bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
     git(p, &["switch", "-q", "epic/e"]);
     let m = run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"], "");
     assert!(m.status.success(), "{}", text(&m));

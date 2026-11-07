@@ -65,14 +65,25 @@ pub struct WalkWaiver {
     pub why: String,
 }
 
-// Written by W4; schema only.
+/// The human sign-off (W4, `keel mr confirm`). Check 8 rebuilds the signed payload from the repo;
+/// only `signer`, `report` and the signed `report_hash` are taken from here.
 #[derive(Serialize, Deserialize, Debug)]
-#[allow(dead_code)]
 pub struct MrNote {
     pub schema: String, // "mr/v1"
     #[serde(flatten)]
     pub id: Identity,
+    pub level: String, // wu | epic
     pub signer: String,
+    /// Informational: authority is re-derived from .mr-allowed at check time.
+    pub tier: String,
+    pub report: String,
+    /// git blob id of the attested report's bytes.
+    pub report_hash: String,
+    /// git blob hash of the full `git diff base tip`.
+    pub change_hash: String,
+    /// Armored SSH SIGNATURE (namespace keel-mr), key-backed signers only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sig: Option<String>,
 }
 
 /// The merge gate's receipt, written on green.
