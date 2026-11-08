@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="f47f3b4a5580a25ebfc40bfd">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — Decisions: the router</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>Decisions: the router</h1>
+      <p>Why Keel's router has the posture, worker model and enforcement it has, and how E-ROUTER itself was run.</p>
+      <div class="meta">T2 · decisions · append-only · 2026-11-08 · Keel · DEC-30 – DEC-35 · distilled from E-ROUTER (plan questions Q1–Q9, owner rulings 2026-11-08, close review)</div>
+    </div>
+  </header>
+  <main>
+    <p data-c="how-to-read">Append-only. A reversal marks the old record <em>superseded by DEC-m</em> and adds a new one. "Lineage" names the E-ROUTER plan question or owner ruling (the plan, <code>docs/work/2026-11-07-router-plan.html</code>, is archived out of git; <code>git show 9787799:docs/work/2026-11-07-router-plan.html</code> recovers it) or the Trawler skill it ports. The contracts are in <a href="../use-cases/router.html">use-cases/router.html</a>; the standard itself is the <code>keel-router</code> skill.</p>
+
+    <h3 id="dec-30">DEC-30 · The router has no general shell: a whitelist, a launcher and one fail-closed guard</h3>
+    <table data-c="dec-30">
+      <tr><th>Context</th><td>The router reads untrusted text: the owner-facing chat and worker reports, one of which already carried an injected "stop and summarize" (lessons K1). Trawler's router ran git/gh/ps and spawned <code>claude</code> itself. The owner's own <code>.claude/agents/router.md</code> gave it no Bash at all.</td></tr>
+      <tr><th>Choice</th><td>Bash only for read-only <code>git status|log|diff|show</code>, <code>git branch -v/-a</code> variants, <code>gh pr view|list|status</code>, <code>ps aux|-ef</code>, and the two shapes of one committed launcher (<code>scripts/router-worker.sh spawn|resume</code>); <code>Write</code> only worker briefs; no <code>Edit</code>, <code>Monitor</code>, direct <code>claude</code> or <code>kill</code>. Enforced in Keel by <code>"agent": "router"</code> in <code>.claude/settings.json</code>, the agent file's <code>tools:</code>, and <code>scripts/router-guard.jq</code> run as the single <code>PreToolUse</code> hook on every tool for <code>agent_type == "router"</code>, fail-closed (a jq error denies). The guard judges a command only after reducing it to plain words (a character whitelist), denies <code>--ou*</code>, gives gh only named query flags and bare words, caps length at 1000, and allows only the agent file's tools and the inline keel skills. The guard is the one source of the whitelist; <code>tests/router.rs</code> ties <code>permissions.allow</code> and <code>router.md</code> to it. <code>keel init</code> ships the skill, not the enforcement or the launcher: a project commits its own.</td></tr>
+      <tr><th>Rejected</th><td>A worker spawning on the router's behalf (owner chose to loosen the router's own whitelist by exactly the launcher shapes). Substring deny-lists on raw shell text and per-tool hooks keyed on the router's agent type alone: the close review bypassed both (DEC-35 consequences).</td></tr>
+      <tr><th>Consequences</th><td>The router cannot edit the launcher, the guard or the settings; only a reviewed worker commit can (<code>scripts/</code> and <code>.claude/agents/</code> are outside the cr gate's <code>code_paths</code>, but the guard and launcher are tested in <code>tests/</code>). Enforcement exists only in a checkout holding these files (lessons K11).</td></tr>
+      <tr><th>Lineage</th><td>Q2 (amended) and the owner's Q2 ruling 2026-11-08; hardened by the E-ROUTER close review (lessons K10).</td></tr>
+    </table>
+
+    <h3 id="dec-31">DEC-31 · Headless workers are the standard; an enforced router has no Agent tool</h3>
+    <table data-c="dec-31">
+      <tr><th>Context</th><td>Q3 first answered "both modes, Agent-tool primary, headless for long fleets". In-session subagents die with the router session and are invisible to <code>ps</code>; the router also kept falling back to them for build work (lessons K4). The close review then showed an <code>Agent</code> subagent reports its own agent type, so it runs outside any hook keyed on the router's, in the router's checkout, with full tools.</td></tr>
+      <tr><th>Choice</th><td>Headless <code>claude -p</code> sessions, started only through the launcher (fixed prompt naming a brief, <code>--agent worker --permission-mode acceptEdits --max-budget-usd 25</code>, explicit model), are the standard worker mode. Keel's router has no <code>Agent</code>, <code>SendMessage</code> or <code>TaskStop</code>: every worker, checker and watcher is headless. The skill keeps the in-session recipe for projects that do not enforce the posture.</td></tr>
+      <tr><th>Consequences</th><td>The router's helper work (verify, watch, review) costs a headless spawn into a sibling worktree. Two launcher issues stay open: a branch without <code>.claude/agents/worker.md</code> cannot host a worker, and whether a worker stalls on Bash outside its allowlist under <code>acceptEdits</code> is unverified (<a href="../backlog/e-router-v2.html">backlog e-router-v2</a> R1, R2).</td></tr>
+      <tr><th>Lineage</th><td>Q3 (overridden by the owner 2026-11-08); E-ROUTER close review (Agent removed).</td></tr>
+    </table>
+
+    <h3 id="dec-32">DEC-32 · The router writes worker briefs itself</h3>
+    <table data-c="dec-32">
+      <tr><th>Context</th><td>UC-ROUTE-3 forbids the router authoring substance for a worker to paste. W1's first draft stretched it to briefs and had a worker write them.</td></tr>
+      <tr><th>Choice</th><td>A brief is dispatch mechanics, like an <code>Agent</code> prompt: the router writes it directly (<code>&lt;router checkout&gt;/.router/briefs/&lt;name&gt;.md</code>, the only path it may <code>Write</code>). UC-ROUTE-3 covers content: doc prose, comment replies, status and "done" claims.</td></tr>
+      <tr><th>Consequences</th><td>A brief is prompt text for a worker with edit and Bash power; the router must not paste untrusted report text into one (residual risk, DEC-33).</td></tr>
+      <tr><th>Lineage</th><td>Owner ruling 2026-11-08 ("who writes worker briefs"); corrects <code>4b6db50</code> (lessons K8).</td></tr>
+    </table>
+
+    <h3 id="dec-33">DEC-33 · Accepted risk: workers inherit the owner's broad allowlist</h3>
+    <table data-c="dec-33">
+      <tr><th>Context</th><td>Headless workers run under the user-level <code>~/.claude/settings.json</code>, whose Bash allowlist includes <code>rm</code>, <code>kill</code>, <code>curl</code>, <code>python3</code> and <code>claude</code> (with <code>--dangerously-skip-permissions</code>). An independent security review raised it; the owner was shown the account-compromise severity.</td></tr>
+      <tr><th>Choice</th><td>Accepted for now, not mitigated ("accept the risk for now"). Same for brief content: a compromised or injected router can still write a brief that a worker carries out in its own worktree. The launcher's fixed flags, the budget cap, the worktree refusals and the owner's merge sign-off bound the blast radius; they do not prevent a bad brief from running.</td></tr>
+      <tr><th>Consequences</th><td>Revisit when workers read untrusted input (backlog e-router-v2 R4). Hardening the router (DEC-30) narrows what injected text can do directly; it does not make workers safe.</td></tr>
+      <tr><th>Lineage</th><td>Owner ruling 2026-11-08 ("worker permissions"); plan threat-model rows "workers' broad inherited Bash allowlist" and "brief content".</td></tr>
+    </table>
+
+    <h3 id="dec-34">DEC-34 · E-ROUTER's WUs ran ungated; its close carries walk waivers</h3>
+    <table data-c="dec-34">
+      <tr><th>Context</th><td>Q1: E-ROUTER needed E-SEED's W7 packaging on main to prove invocation, and asked whether to wait for it and run fully gated (default A) or start ungated.</td></tr>
+      <tr><th>Choice</th><td>Owner answer, option C: start W1–W2 ungated at once and merge main in later; W3, W4, the headless-launcher WU and the launcher brief-fix WU ran the same way. WUs were plain commits on <code>wu/E-ROUTER/&lt;slug&gt;</code>, merged <code>--no-ff</code> into the epic by their worker, with no test/doc/cr notes and no sign-off. Main was merged in at <code>888bb54</code> after E-SEED closed.</td></tr>
+      <tr><th>Consequences</th><td>The epic's code (one <code>src/init.rs</code> list, tests) and its security surface (launcher, router hooks, agent files) had no independent review until the close. The close ran one over the whole epic (base <code>e5a04cf</code>), fixed its 4 blockers and 7 importants with regression tests (<code>838f78d</code>, <code>67b0de5</code>), and waived the three WU seams that change code paths (<code>1002f5b</code> W2, <code>0e9da4e</code> W3, <code>ba239f4</code> W4) on the epic tip's <code>cr</code> note, citing this record. Seams touching no code path are exempt and need no waiver.</td></tr>
+      <tr><th>Lineage</th><td>Q1 option C, owner, 2026-11-08 (stated in the plan's W2–W4 cards and Keel's project-router as "ungated (owner ruling)"; first full record here).</td></tr>
+    </table>
+
+    <h3 id="dec-35">DEC-35 · Router skill shape: the remaining plan defaults</h3>
+    <table data-c="dec-35">
+      <tr><th>Context</th><td>The plan's Q4–Q9 each carried a default that applied if unanswered; none was overridden.</td></tr>
+      <tr><th>Choice</th><td>Q4: a generic push channel, Telegram as the worked example, its token/access files never touched. Q5: Trawler incident details stay in <code>lessons.md</code> as lineage, plus a Keel section (K1–K11). Q6: <code>worker-ops.md</code> stays macOS/zsh-first, labelled. Q7: moot, E-SEED distilled before E-ROUTER closed. Q8: Claude Code only until Codex has a skill path. Q9: the skill is <code>keel-router</code> (DEC-2's prefix), <code>project-router</code> unprefixed. The plugin and the <code>keel:router</code> name are moot under DEC-2.</td></tr>
+      <tr><th>Consequences</th><td>The close review's two bypasses (quote-reassembled <code>--output</code>; <code>Agent</code> subagents outside the hooks) and the PUSHED watch probe that fired before any push are recorded as lessons K10 and as UC-ROUTE-6's failure cases.</td></tr>
+      <tr><th>Lineage</th><td>E-ROUTER plan Q4–Q9 (defaults); W4 card (DEC-2 adaptation).</td></tr>
+    </table>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
