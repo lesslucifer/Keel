@@ -177,6 +177,18 @@ fn embedding_is_complete_and_prefixed() {
         assert!(n.starts_with("keel-"), "{n}");
         assert!(src[&format!("{n}/SKILL.md")].contains(&format!("\nname: {n}\n")), "{n} frontmatter name");
     }
+    // what Claude Code needs to list and trigger a skill: a closed frontmatter block with name and
+    // a one-line description of at most 1024 chars (project-router's template included)
+    for f in src.keys().filter(|f| f.ends_with("/SKILL.md") || f.ends_with("project-router-template.md")) {
+        let fm = src[f].strip_prefix("---\n").and_then(|b| b.split_once("\n---\n")).map(|(fm, _)| fm);
+        let fm = fm.unwrap_or_else(|| panic!("{f}: no closed --- frontmatter at the top"));
+        let field = |k: &str| fm.lines().find_map(|l| l.strip_prefix(k)).map(str::trim).unwrap_or("");
+        assert!(!field("name:").is_empty(), "{f}: frontmatter has no name");
+        let d = field("description:");
+        // a block scalar (`>` / `|`) would hide the real description from the length check below
+        assert!(!d.starts_with(['>', '|']), "{f}: description must be a one-line scalar, not a block scalar");
+        assert!(!d.is_empty() && d.len() <= 1024, "{f}: frontmatter description empty or over 1024 chars ({})", d.len());
+    }
     let agents = std::fs::read_to_string(root.join("templates/AGENTS.md")).unwrap();
     for (f, body) in src.iter().chain([(&"templates/AGENTS.md".to_string(), &agents)]) {
         // a match right after "-" is keel-X / project-router, not a bare name
@@ -186,6 +198,46 @@ fn embedding_is_complete_and_prefixed() {
     for f in std::fs::read_dir(root.join("src")).unwrap() {
         let body = std::fs::read_to_string(f.unwrap().path()).unwrap();
         assert!(!body.contains("cargo install keel"), "wrong install hint");
+    }
+}
+
+/// UC-ROUTE-4 (E-ROUTER.W4): the router skill ships exactly the references SKILL.md names,
+/// including the three recovered from Trawler's trawler-router (W2) and a Keel lessons section
+/// (W4); no Trawler-only token appears outside lineage. Capitalised "Trawler" is allowed: it is
+/// the source project's name in citations. "(Trawler: …)" evidence, "Trawler's `trawler-router/…`"
+/// source pointers and lessons.md's Trawler sections are lineage and are not scanned.
+#[test]
+fn router_skill_is_complete() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = root.join("skills/keel-router");
+    let skill = std::fs::read_to_string(dir.join("SKILL.md")).unwrap();
+    let named: std::collections::BTreeSet<String> =
+        regex::Regex::new(r"references/([a-z0-9-]+\.md)").unwrap().captures_iter(&skill).map(|c| c[1].to_string()).collect();
+    let shipped: std::collections::BTreeSet<String> =
+        std::fs::read_dir(dir.join("references")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    assert_eq!(named, shipped, "SKILL.md names a missing reference (left only) or a reference is orphaned (right only)");
+    for r in ["brief-skeleton.md", "commands.md", "review-checklists.md", "lessons.md", "messages.md", "worker-ops.md"] {
+        assert!(shipped.contains(r), "references/{r} missing");
+    }
+    let lessons = std::fs::read_to_string(dir.join("references/lessons.md")).unwrap();
+    let keel = lessons.split_once("\n## K. Keel").map(|(_, k)| k.split("\n## ").next().unwrap()).expect("lessons.md has no '## K. Keel' section");
+    assert!(regex::Regex::new(r"\n- K\d").unwrap().find_iter(keel).count() >= 5, "Keel section has fewer than 5 lessons");
+
+    let token = regex::Regex::new(r"(?i:xtask|tauri)|\btrawler|\b(?:7420|7421|4445)\b").unwrap();
+    let lineage = regex::Regex::new(r"\(Trawler[^)\n]*\)|Trawler's `trawler-router/[^`\n]*`").unwrap();
+    let mut src = BTreeMap::new();
+    files(&root.join("skills"), &root.join("skills"), &mut src);
+    src.insert("keel-router/references/lessons.md".into(), keel.to_string());
+    let keel_state = regex::Regex::new(r"(?:epic|wu)/E-ROUTER|\b2d7e18d\b|scripts/router-worker\.sh").unwrap();
+    for (f, body) in &src {
+        let scrubbed = lineage.replace_all(body, "");
+        let hit = token.find(&scrubbed);
+        assert!(hit.is_none(), "{f}: Trawler-only token {:?} outside lineage", hit.map(|m| m.as_str()));
+        // Keel's own state (its epic branches, its commits) goes stale in a shipped skill: lessons.md only
+        if !f.ends_with("lessons.md") {
+            let hit = keel_state.find(body);
+            assert!(hit.is_none(), "{f}: Keel-only fact {:?} in the shipped skill (belongs in project-router or lessons)", hit.map(|m| m.as_str()));
+        }
     }
 }
 
@@ -335,13 +387,15 @@ fn self_hosting_clone_is_gated_and_init_is_a_noop() {
     let o = keel_in(&c, &["init"], "");
     let t = text(&o);
     assert!(o.status.success(), "{t}");
-    // Keel's rule_bearing differs from the default by design, so config is the one expected "kept"
-    // every status line (after the header, up to "hooks installed") is unchanged, or the one expected config "kept"
+    // Keel's rule_bearing differs from the default by design, and its project-router is filled in
+    // (E-ROUTER.W3), so those two are the expected "kept"; every other status line (after the
+    // header, up to "hooks installed") is unchanged
+    let kept = ["  kept      .keel/config.toml", "  kept      .claude/skills/project-router/SKILL.md"];
     for l in t.lines().skip(1).take_while(|l| !l.starts_with("hooks installed")) {
-        assert!(l.starts_with("  unchanged") || l.starts_with("  kept      .keel/config.toml"), "init is not a no-op on Keel's own tree: {l:?}\n{t}");
+        assert!(l.starts_with("  unchanged") || kept.iter().any(|k| l.starts_with(k)), "init is not a no-op on Keel's own tree: {l:?}\n{t}");
     }
     assert!(t.contains("hooks installed"), "{t}");
-    assert!(t.contains("kept      .keel/config.toml"), "{t}");
+    assert!(kept.iter().all(|k| t.contains(k)), "{t}");
     assert!(git_in(&c, &["status", "--porcelain"]).stdout.is_empty(), "init dirtied the tree");
 
     let o = git_in(&c, &["commit", "--allow-empty", "-q", "-m", "direct"]);

@@ -1,3 +1,4 @@
+.router/
 target/
 docs/.archive/
 .claude/worktrees/

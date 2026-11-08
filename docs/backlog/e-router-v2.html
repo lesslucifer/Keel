@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="43413cc88e0e57bc5d6dc4e4">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — Backlog: E-ROUTER v2</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>Backlog: E-ROUTER v2</h1>
+      <p>Router work deferred at E-ROUTER's close: open launcher issues, gate coverage of the router's security files, the epic e2e, and the accepted worker risk.</p>
+      <div class="meta">T2 · backlog · living · 2026-11-08 · Keel · R1 – R6 · distilled from E-ROUTER (plan, worker-ops open issues, close review)</div>
+    </div>
+  </header>
+  <main>
+    <p data-c="how-to-read">Each row names the source it was deferred from. E-ROUTER's plan is archived out of git; <code>git show 9787799:docs/work/2026-11-07-router-plan.html</code> recovers it. Why things are as they are: <a href="../decisions/router.html">decisions/router.html</a>.</p>
+
+    <h2 id="r1">R1 · Worker persona missing in branches without it</h2>
+    <p data-c="r1"><code>--agent worker</code> fails ("--agent 'worker' not found") when the launcher spawns into a worktree whose branch does not track <code>.claude/agents/worker.md</code> (smoke run into <code>Keel-E-SEED</code>). Once E-ROUTER is on main every new branch carries it; branches cut earlier do not. The intended fix branch <code>wu/E-ROUTER/worker-persona-copy</code> (worktree <code>Keel-router-dev</code>) has no commits of its own. Options: the launcher passes the persona inline or copies it in like the brief, or refuses early with a clear message. Source: worker-ops open issue 2.</p>
+
+    <h2 id="r2">R2 · Do headless workers stall under acceptEdits?</h2>
+    <p data-c="r2">Unverified whether a worker's Bash outside its allowlist stalls under <code>--permission-mode acceptEdits</code> (a headless session cannot answer a prompt). If it does, widen the worker's mode or the worker allowlist, never the router's (DEC-30). Since the router now has no <code>Agent</code> fallback (DEC-31), a stall blocks all helper work: prove it with a real worker before relying on the mode for a long fleet. Source: worker-ops open issue 3; plan rulings "not verified".</p>
+
+    <h2 id="r3">R3 · Put the router's security files under a gate</h2>
+    <p data-c="r3"><code>scripts/router-guard.jq</code>, <code>scripts/router-worker.sh</code> and <code>.claude/agents/</code> are neither <code>code_paths</code> nor <code>rule_bearing</code> in <code>.keel/config.toml</code>, so a commit changing them needs no review and no Reviewed-By; only <code>tests/router.rs</code> (a code path) guards their behaviour. Add them to <code>rule_bearing</code> (a <code>.keel/</code> change: owner's <code>keel mr commit</code>). Related: Keel's own clone had no <code>keel hooks install</code> through E-ROUTER, so no commit-msg or merge hook ran on any of its commits. Source: E-ROUTER close review.</p>
+
+    <h2 id="r4">R4 · Revisit the accepted worker risk</h2>
+    <p data-c="r4">Workers inherit the owner's user-level allowlist (<code>rm</code>, <code>kill</code>, <code>curl</code>, <code>claude --dangerously-skip-permissions</code>) and run any brief the router writes (DEC-33). Revisit before workers read untrusted input: a worker-scoped allowlist in <code>.claude/settings.json</code>, or a dedicated permission mode in the launcher. Source: plan ruling "worker permissions".</p>
+
+    <h2 id="r5">R5 · Epic e2e for the router</h2>
+    <p data-c="r5">The plan's e2e (a scratch repo after <code>keel init</code>; a fresh session asked to "be the router for a new epic" loads <code>keel-router</code> and <code>project-router</code>, cuts and pushes the epic branch before any plan, stages rather than runs <code>keel mr confirm</code> with a watcher armed; refusals for a plan before the branch and for the router running <code>keel mr</code>) was never automated. W4 ran its try-recipe once by hand (skills listed and picked); <code>tests/init.rs</code> and <code>tests/router.rs</code> cover the installed files and the enforcement. Like <a href="e-seed-v2.html#b3">B3</a>: until built, an E-ROUTER-style epic <code>test/v1</code> waives its e2e layer.</p>
+
+    <h2 id="r6">R6 · Smaller follow-ups</h2>
+    <table data-c="r6">
+      <tr><th>Item</th><th>Source</th></tr>
+      <tr><td>Ship the enforcement with <code>keel init</code> (launcher, guard, agent files, settings) or keep it per project: decide; today the skill tells adopters it is theirs to commit</td><td>close review (altitude)</td></tr>
+      <tr><td>Launcher leaves one <code>.router-brief.*</code> dir per run in the worker's worktree until the worktree is removed</td><td>launcher <code>ponytail:</code> comment</td></tr>
+      <tr><td>The launcher's live-run check reads <code>&lt;name&gt;.pid</code> then launches (not atomic); two launches in the same second collide on the run dir and the second dies</td><td>close review re-check</td></tr>
+      <tr><td><code>.router/runs/</code> keeps one read-only dir per run and resume scans them all (about 1 ms per dir measured)</td><td>close review (refuted as a defect, kept as a note)</td></tr>
+    </table>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

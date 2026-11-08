@@ -1,5 +1,41 @@
 {
+  "agent": "router",
+  "permissions": {
+    "allow": [
+      "Bash(gh pr list *)",
+      "Bash(gh pr status *)",
+      "Bash(gh pr view *)",
+      "Bash(git branch --all -v)",
+      "Bash(git branch --all)",
+      "Bash(git branch -a -v)",
+      "Bash(git branch -a)",
+      "Bash(git branch -av)",
+      "Bash(git branch -v)",
+      "Bash(git branch -va)",
+      "Bash(git branch -vv)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git status *)",
+      "Bash(ps -ef)",
+      "Bash(ps aux)",
+      "Bash(scripts/router-worker.sh resume *)",
+      "Bash(scripts/router-worker.sh spawn *)"
+    ]
+  },
   "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -c -f \"$CLAUDE_PROJECT_DIR/scripts/router-guard.jq\" || { echo 'router guard: jq failed (missing jq or guard file?) - tool call denied' >&2; exit 2; }",
+            "timeout": 10,
+            "statusMessage": "router guard"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
