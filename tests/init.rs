@@ -177,6 +177,16 @@ fn embedding_is_complete_and_prefixed() {
         assert!(n.starts_with("keel-"), "{n}");
         assert!(src[&format!("{n}/SKILL.md")].contains(&format!("\nname: {n}\n")), "{n} frontmatter name");
     }
+    // what Claude Code needs to list and trigger a skill: a closed frontmatter block with name and
+    // a one-line description of at most 1024 chars (project-router's template included)
+    for f in src.keys().filter(|f| f.ends_with("/SKILL.md") || f.ends_with("project-router-template.md")) {
+        let fm = src[f].strip_prefix("---\n").and_then(|b| b.split_once("\n---\n")).map(|(fm, _)| fm);
+        let fm = fm.unwrap_or_else(|| panic!("{f}: no closed --- frontmatter at the top"));
+        let field = |k: &str| fm.lines().find_map(|l| l.strip_prefix(k)).map(str::trim).unwrap_or("");
+        assert!(!field("name:").is_empty(), "{f}: frontmatter has no name");
+        let d = field("description:");
+        assert!(!d.is_empty() && d.len() <= 1024, "{f}: frontmatter description empty or over 1024 chars ({})", d.len());
+    }
     let agents = std::fs::read_to_string(root.join("templates/AGENTS.md")).unwrap();
     for (f, body) in src.iter().chain([(&"templates/AGENTS.md".to_string(), &agents)]) {
         // a match right after "-" is keel-X / project-router, not a bare name
@@ -186,6 +196,40 @@ fn embedding_is_complete_and_prefixed() {
     for f in std::fs::read_dir(root.join("src")).unwrap() {
         let body = std::fs::read_to_string(f.unwrap().path()).unwrap();
         assert!(!body.contains("cargo install keel"), "wrong install hint");
+    }
+}
+
+/// UC-ROUTE-4 (E-ROUTER.W4): the router skill ships exactly the references SKILL.md names,
+/// including the three recovered from Trawler's trawler-router (W2) and a Keel lessons section
+/// (W4); no Trawler-only token appears outside lineage. Capitalised "Trawler" is allowed: it is
+/// the source project's name in citations. "(Trawler: …)" evidence, "Trawler's `trawler-router/…`"
+/// source pointers and lessons.md's Trawler sections are lineage and are not scanned.
+#[test]
+fn router_skill_is_complete() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = root.join("skills/keel-router");
+    let skill = std::fs::read_to_string(dir.join("SKILL.md")).unwrap();
+    let named: std::collections::BTreeSet<String> =
+        regex::Regex::new(r"references/([a-z0-9-]+\.md)").unwrap().captures_iter(&skill).map(|c| c[1].to_string()).collect();
+    let shipped: std::collections::BTreeSet<String> =
+        std::fs::read_dir(dir.join("references")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    assert_eq!(named, shipped, "SKILL.md names a missing reference (left only) or a reference is orphaned (right only)");
+    for r in ["brief-skeleton.md", "commands.md", "review-checklists.md", "lessons.md", "messages.md", "worker-ops.md"] {
+        assert!(shipped.contains(r), "references/{r} missing");
+    }
+    let lessons = std::fs::read_to_string(dir.join("references/lessons.md")).unwrap();
+    let keel = lessons.split_once("\n## K. Keel").map(|(_, k)| k.split("\n## ").next().unwrap()).expect("lessons.md has no '## K. Keel' section");
+    assert!(keel.matches("\n- K").count() >= 5, "Keel section has fewer than 5 lessons");
+
+    let token = regex::Regex::new(r"(?i:xtask|tauri)|\btrawler|\b(?:7420|7421|4445)\b").unwrap();
+    let lineage = regex::Regex::new(r"\(Trawler[^)]*\)|Trawler's `trawler-router/[^`]*`").unwrap();
+    let mut src = BTreeMap::new();
+    files(&root.join("skills"), &root.join("skills"), &mut src);
+    src.insert("keel-router/references/lessons.md".into(), keel.to_string());
+    for (f, body) in &src {
+        let scrubbed = lineage.replace_all(body, "");
+        let hit = token.find(&scrubbed);
+        assert!(hit.is_none(), "{f}: Trawler-only token {:?} outside lineage", hit.map(|m| m.as_str()));
     }
 }
 
