@@ -251,22 +251,22 @@ fn pre_push(repo: &Path, cfg: &Config, remote: &str) -> Result<i32, String> {
 }
 
 const PRE_COMMIT: &str = r#"#!/bin/sh
-command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
+command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install --git https://github.com/lesslucifer/Keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
 exec keel hook pre-commit
 "#;
 
 const PRE_MERGE_COMMIT: &str = r#"#!/bin/sh
-command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
+command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install --git https://github.com/lesslucifer/Keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
 exec keel verify-dod hook
 "#;
 
 const COMMIT_MSG: &str = r#"#!/bin/sh
-command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
+command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install --git https://github.com/lesslucifer/Keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
 exec keel hook commit-msg "$1"
 "#;
 
 const PRE_PUSH: &str = r#"#!/bin/sh
-command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
+command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install --git https://github.com/lesslucifer/Keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
 exec keel hook pre-push "$1"
 "#;
 
@@ -383,7 +383,11 @@ fn run() -> Result<i32, String> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let repo = repo_root()?;
     match args.as_slice() {
-        ["init"] => init::run(&repo),
+        ["init", flags @ ..] => match flags {
+            [] => init::run(&repo, false),
+            ["--force"] | ["-f"] => init::run(&repo, true),
+            _ => Err("usage: keel init [--force | -f]".into()),
+        },
         ["hooks", "install"] => hooks_install(&repo),
         ["lint"] => lint(&repo, &load_config(&repo)?),
         ["check"] => check(&repo, &load_config(&repo)?),
@@ -396,7 +400,7 @@ fn run() -> Result<i32, String> {
         ["verify-dod", rest @ ..] => gate::verify_dod(&repo, &load_config(&repo)?, rest),
         ["preflight", rest @ ..] => gate::preflight_cmd(&repo, &load_config(&repo)?, rest),
         ["mr", rest @ ..] => mr::run(&repo, &load_config(&repo)?, rest),
-        _ => Err("usage: keel <init | lint | check | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install | notes write <test|doc|cr>>".into()),
+        _ => Err("usage: keel <init [-f] | lint | check | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install | notes write <test|doc|cr>>".into()),
     }
 }
 

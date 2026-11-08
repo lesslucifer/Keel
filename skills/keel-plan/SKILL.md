@@ -1,12 +1,12 @@
 ---
-name: plan
+name: keel-plan
 description: How to write the four governed docs of Keel's workflow - epic plan, WU plan, WU result report, epic result report - as htmldoc HTML with the data-artifact / data-status / data-item / data-wu markup that keel verify-doc checks at authoring time. Use before writing or editing any plan or result doc under docs/work/, when a verify-doc hook reports a red doc, or when collapsing a one-WU epic's docs.
 ---
 
 # Plans and result reports
 
 Every epic produces two governed docs and every WU two more. All are **T3**
-working docs (skill `distill`), HTML via the **htmldoc** skill, named
+working docs (skill `keel-distill`), HTML via the **htmldoc** skill, named
 `docs/work/YYYY-MM-DD-<slug>-plan.html` / `…-result.html`, and distilled then
 archived like any T3 doc.
 
@@ -107,7 +107,7 @@ the checkpoint. Manual runs work anytime.
 
 This is the only place a document's **form** is checked. The merge reads doc
 **facts** instead: every changed doc listed in `doc/v1`, and the result report's
-bytes matching the human's `mr/v1` signature (skill `workflow`, checks 6 and 8).
+bytes matching the human's `mr/v1` signature (skill `keel-workflow`, checks 6 and 8).
 Depth of content is judgment — the owner's comment round and the reviews read
 these docs.
 

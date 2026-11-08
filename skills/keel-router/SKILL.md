@@ -1,5 +1,5 @@
 ---
-name: router
+name: keel-router
 description: Act as a ROUTER (coordinator, dispatcher, "intermediate layer") between one human owner and several worker agent sessions, usually one per git worktree, in a Keel project. Use when the user asks you to be a router or coordinator over multiple Claude/Codex sessions, agents or worktrees, to manage a fleet of workers, relay their questions and sign-offs, stage keel mr / merge / push commands for the owner, start or retire worker sessions, watch CI or releases, or keep the owner informed through a push channel (Telegram etc.). Project-agnostic; load the project's project-router skill too when it exists.
 ---
 
@@ -77,7 +77,7 @@ again … I can't remember things from the past, you sent me a ton of messages."
 
 The owner may already have signed, merged, pushed, tagged: read branch, tip,
 notes, `origin/*`, tags, latest runs first; check what the workflow really
-requires (skill `workflow`) before prescribing an order. An ask has: what + why
+requires (skill `keel-workflow`) before prescribing an order. An ask has: what + why
 · **Doc only** or **try in the real app** (steps + a helper that was run and
 tested; restore steps for real state) · `cd <abs wt> && open <doc>` (file exists
 on that branch now) · full sha + gate state + what had no independent review ·
