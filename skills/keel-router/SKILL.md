@@ -207,7 +207,7 @@ you used and why when it is not the standard.
 | spawn | `Agent` (`name`, explicit `model`) | `scripts/router-worker.sh spawn …` |
 | reach | `SendMessage` to its name (resumes it after it finished) | `scripts/router-worker.sh resume …` |
 | report | its `SubagentHandback`, delivered to you | Read `.router/out/<name>.out` |
-| survives | this router session only | reboot or compaction of the router |
+| survives | this router session only | router session ending or compacting (process runs on independently); NOT a machine reboot: brief + run dir on disk survive, the process does not, so relaunch from the brief |
 
 - **One fresh worker per phase** (plan, build, notes step, fix round, close).
   Find a way yourself before handing the owner mechanics.
