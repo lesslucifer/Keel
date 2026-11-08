@@ -152,8 +152,17 @@ pub(crate) fn target(cfg: &Config, tip_ref: &str, args: &[&str]) -> String {
     }
 }
 
-pub(crate) fn names(repo: &Path, base: &str, tip: &str) -> Result<Vec<String>, String> {
-    Ok(git(repo, &["diff", "--name-only", base, tip], &[])?.lines().map(String::from).collect())
+/// Paths from a `-z` listing: raw bytes, never C-quoted (a plain listing quotes non-ASCII paths).
+pub(crate) fn zpaths(out: &str) -> Vec<String> {
+    out.split('\0').map(|s| s.trim_matches('\n')).filter(|s| !s.is_empty()).map(String::from).collect()
+}
+
+/// Paths changed base..tip within `pathspecs` (none = all). No rename pairing: moving a file out of
+/// a path is a change to that path.
+pub(crate) fn names(repo: &Path, base: &str, tip: &str, pathspecs: &[String]) -> Result<Vec<String>, String> {
+    let mut a = vec!["diff", "--name-only", "--no-renames", "-z", base, tip, "--"];
+    a.extend(pathspecs.iter().map(String::as_str));
+    Ok(zpaths(&git(repo, &a, &[])?))
 }
 
 pub(crate) fn identity(repo: &Path, tip: String, base: String, branch: Option<String>) -> Result<Identity, String> {
@@ -179,18 +188,16 @@ fn range(repo: &Path, cfg: &Config, args: &[&str]) -> Result<Range, String> {
             "write notes from the work branch, with commits not yet merged (or pass --target <ref>)",
         );
     }
-    let names = names(repo, &base, &tip)?;
+    let names = names(repo, &base, &tip, &[])?;
     Ok(Range { id: identity(repo, tip, base, branch)?, names })
 }
 
-/// A path the gate treats as code (and cr binds). Every path is code when code_paths is empty.
-pub(crate) fn is_code(cfg: &Config, path: &str) -> bool {
-    cfg.code_paths.is_empty() || cfg.code_paths.iter().any(|p| path.starts_with(p.as_str()))
-}
-
-/// UC-GATE-5 docs/infra: outside code_paths and, when `infra_paths` is set, matching one of its globs.
-pub(crate) fn is_infra(cfg: &Config, path: &str) -> bool {
-    !is_code(cfg, path) && cfg.infra_paths.as_ref().is_none_or(|g| g.iter().any(|p| glob(p, path)))
+/// UC-GATE-5 docs/infra-only: the range changes nothing under `code_paths` - git pathspecs, the very
+/// diff cr binds (empty = every path is code) - and, when `infra_paths` is set, every changed path
+/// matches one of its globs.
+pub(crate) fn exempt(repo: &Path, cfg: &Config, base: &str, tip: &str, names: &[String]) -> Result<bool, String> {
+    Ok(self::names(repo, base, tip, &cfg.code_paths)?.is_empty()
+        && cfg.infra_paths.as_ref().is_none_or(|g| names.iter().all(|n| g.iter().any(|p| glob(p, n)))))
 }
 
 /// `*` = within one segment, `**` = any depth, `?` = one char.
@@ -250,10 +257,10 @@ fn archived(repo: &Path, cfg: &Config, tip: &str, path: &str) -> bool {
 pub(crate) fn doc_paths(repo: &Path, cfg: &Config, base: &str, tip: &str, names: &[String]) -> Result<Vec<String>, String> {
     let mut v: Vec<String> =
         names.iter().filter(|n| n.starts_with(&cfg.docs.root) || tier_of(cfg, n) == Some("T0")).cloned().collect();
-    let gone = git(repo, &["log", "--diff-filter=D", "--name-only", "--format=", &format!("{base}..{tip}")], &[])?;
-    for p in gone.lines().filter(|p| !p.is_empty()) {
-        if !v.iter().any(|x| x == p) && archived(repo, cfg, tip, p) {
-            v.push(p.into());
+    let gone = git(repo, &["log", "--no-renames", "-z", "--diff-filter=D", "--name-only", "--format=", &format!("{base}..{tip}")], &[])?;
+    for p in zpaths(&gone) {
+        if !v.contains(&p) && archived(repo, cfg, tip, &p) {
+            v.push(p);
         }
     }
     Ok(v)
@@ -307,8 +314,14 @@ pub(crate) fn doc_problems(repo: &Path, cfg: &Config, tip: &str, docs: &[String]
 
 /// One function for the writer (W2) and check 5 (W3), so the two can never disagree.
 pub(crate) fn code_diff_hash(repo: &Path, cfg: &Config, base: &str, tip: &str) -> Result<String, String> {
-    let mut a = vec!["diff", base, tip, "--"];
-    a.extend(cfg.code_paths.iter().map(String::as_str));
+    diff_hash(repo, base, tip, &cfg.code_paths)
+}
+
+/// git blob hash of `git diff base tip -- <pathspecs>` (none = the full diff), independent of the
+/// local diff config so every machine hashes the same bytes (cr, dod and mr bindings).
+pub(crate) fn diff_hash(repo: &Path, base: &str, tip: &str, pathspecs: &[String]) -> Result<String, String> {
+    let mut a = vec!["diff", "--no-color", "--no-ext-diff", "--no-textconv", base, tip, "--"];
+    a.extend(pathspecs.iter().map(String::as_str));
     hash_blob(repo, &git(repo, &a, &[])?)
 }
 
@@ -387,7 +400,7 @@ fn layer(repo: &Path, cfg: &Config, r: &Range, name: &str, j: &JLayer) -> Result
 pub(crate) fn store<T: Serialize>(repo: &Path, kind: &str, tip: &str, note: &T) -> Result<(), String> {
     let json = serde_json::to_string(note).map_err(|e| e.to_string())?;
     git(repo, &["notes", &format!("--ref={kind}"), "add", "-f", "-m", &json, tip], &[])?;
-    println!("wrote refs/notes/{kind} on {}", &tip[..8]);
+    println!("wrote refs/notes/{kind} on {}", tip.get(..8).unwrap_or(tip));
     Ok(())
 }
 
@@ -401,7 +414,11 @@ pub(crate) fn hash_blob(repo: &Path, data: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
     h.stdin.take().unwrap().write_all(data.as_bytes()).map_err(|e| e.to_string())?;
     let out = h.wait_with_output().map_err(|e| e.to_string())?;
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    let id = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if !out.status.success() || id.is_empty() {
+        return Err("keel: git hash-object --stdin failed".into());
+    }
+    Ok(id)
 }
 
 /// `args` are the flags after `notes write <kind>`.

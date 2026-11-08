@@ -144,11 +144,14 @@ fn git_dir(repo: &Path) -> Result<PathBuf, String> {
     git(repo, &["rev-parse", "--absolute-git-dir"], &[]).map(PathBuf::from)
 }
 
-/// Git tree hash of the working tree (tracked + untracked, minus ignored),
-/// built in a throwaway index so the real index is untouched.
+/// Git tree hash of the working tree: every tracked file (even one .gitignore matches) plus the
+/// untracked, non-ignored ones - built in a copy of the real index, which stays untouched.
+/// ponytail: untracked ignored files (build output, a local .env) are outside the key; a check that
+/// reads one is not vouched for by its tree - track it (git add -f) to make it count.
 fn tree_key(repo: &Path) -> Result<String, String> {
     let idx = git_dir(repo)?.join("keel-tmp-index");
     let _ = std::fs::remove_file(&idx);
+    let _ = std::fs::copy(repo.join(git(repo, &["rev-parse", "--git-path", "index"], &[])?), &idx);
     let e = [("GIT_INDEX_FILE", idx.as_path())];
     git(repo, &["add", "-A"], &e)?;
     let tree = git(repo, &["write-tree"], &e);
@@ -214,7 +217,7 @@ fn check_push(repo: &Path, cfg: &Config, refspecs: &str) -> Result<i32, String> 
             code?
         };
         if code != 0 {
-            eprintln!("push refused - {} fails check", &sha[..10]);
+            eprintln!("push refused - {} fails check", sha.get(..10).unwrap_or(sha));
             return Ok(code);
         }
     }
@@ -234,7 +237,7 @@ fn pre_push(repo: &Path, cfg: &Config, remote: &str) -> Result<i32, String> {
         let [_, local, rref, rsha] = line.split_whitespace().collect::<Vec<_>>()[..] else { continue };
         let branch = rref.strip_prefix("refs/heads/").unwrap_or("");
         let gated = branch == cfg.branches.main || branch.starts_with(cfg.branches.epic_prefix.as_str());
-        if gated && local != ZERO_SHA && rsha != ZERO_SHA && gate::range(repo, cfg, rsha, local)? != 0 {
+        if gated && local != ZERO_SHA && rsha != ZERO_SHA && gate::range(repo, cfg, rsha, local, branch)? != 0 {
             return Ok(1);
         }
     }

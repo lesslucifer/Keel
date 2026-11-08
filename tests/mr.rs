@@ -264,4 +264,10 @@ fn rule_bearing_commit_needs_a_listed_reviewed_by_trailer() {
     assert!(!o.status.success(), "an unlisted trailer is refused: {}", text(&o));
     ok(keel(p, &["mr", "commit", "-m", "tighten a rule", "--as", "vu"]));
     assert!(git(p, &["log", "-1", "--format=%B"]).contains("Reviewed-By: key vu"));
+
+    // A plain listing quotes a non-ASCII path; the hook must still see it as docs/*.html.
+    write(p, "docs/règle.html", "<p>a rule</p>");
+    git(p, &["add", "-A"]);
+    let o = run("git", p, &["commit", "-qm", "loosen a rule"]);
+    assert!(!o.status.success() && text(&o).contains("docs/règle.html"), "{}", text(&o));
 }

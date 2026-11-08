@@ -63,9 +63,8 @@ fn is_ancestor(repo: &Path, commit: &str, of: &str) -> bool {
 fn open(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> Result<(Report, Vec<String>), String> {
     let tip = git(repo, &["rev-parse", &format!("{tip_ref}^{{commit}}")], &[])?;
     let base = git(repo, &["merge-base", target, &tip], &[])?;
-    let names = notes::names(repo, &base, &tip)?;
-    // UC-GATE-5: exempt when every changed path is docs/infra (notes::is_infra).
-    let exempt = names.iter().all(|n| notes::is_infra(cfg, n));
+    let names = notes::names(repo, &base, &tip, &[])?;
+    let exempt = notes::exempt(repo, cfg, &base, &tip, &names)?;
     let r = Report { level, tip_ref: tip_ref.into(), tip, base, exempt, failures: vec![], waived: vec![] };
     Ok((r, names))
 }
@@ -162,8 +161,8 @@ fn doc_note(repo: &Path, cfg: &Config, r: &mut Report, docs: &[String], doc: &Do
 /// 6·doc-note at an epic tip (UC-DOC-3): nothing tracked under docs.root outside T0-T2.
 fn tracked_layout(repo: &Path, cfg: &Config, r: &mut Report) -> Result<(), String> {
     let root = cfg.docs.root.trim_end_matches('/');
-    for p in git(repo, &["ls-tree", "-r", "--name-only", &r.tip, "--", root], &[])?.lines() {
-        match notes::tier_of(cfg, p) {
+    for p in notes::zpaths(&git(repo, &["ls-tree", "-r", "-z", "--name-only", &r.tip, "--", root], &[])?) {
+        match notes::tier_of(cfg, &p) {
             Some("T3") => r.fail(
                 "6·doc-note",
                 format!("{p} is a T3 working doc still tracked at the epic tip"),
@@ -280,7 +279,7 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> 
         return Ok(1);
     }
     if !r.exempt && level != Level::Commit {
-        let diff_hash = notes::hash_blob(repo, &git(repo, &["diff", &r.base, &r.tip], &[])?)?;
+        let diff_hash = notes::diff_hash(repo, &r.base, &r.tip, &[])?;
         let branch = (r.tip_ref != r.tip).then(|| r.tip_ref.clone());
         let note = DodNote {
             schema: "dod/v1".into(),
@@ -361,16 +360,41 @@ fn hook(repo: &Path, cfg: &Config) -> Result<i32, String> {
     }
 }
 
-/// Every first-parent plain commit in old..new must pass the commit gate (pre-push).
-pub(crate) fn range(repo: &Path, cfg: &Config, old: &str, new: &str) -> Result<i32, String> {
+/// pre-push: every first-parent seam in old..new of `branch` passes its own gate - a plain commit
+/// the commit gate, a merge its level's gate (into main: epic, else wu) and sign-off. A `--no-commit`
+/// merge never ran pre-merge-commit and a `--ff-only` one made no merge commit, so this is the last gate.
+pub(crate) fn range(repo: &Path, cfg: &Config, old: &str, new: &str, branch: &str) -> Result<i32, String> {
+    let merges = if branch == cfg.branches.main { Level::Epic } else { Level::Wu };
     let mut red = false;
     for line in git(repo, &["rev-list", "--first-parent", "--parents", &format!("{old}..{new}")], &[])?.lines() {
-        if let [c, first] = line.split_whitespace().collect::<Vec<_>>().as_slice() {
-            let r = verify(repo, cfg, Level::Commit, c, first)?;
-            if !r.failures.is_empty() {
-                print(&r, "verify-dod");
-                red = true;
+        let p: Vec<&str> = line.split_whitespace().collect();
+        let r = match p.as_slice() {
+            [c, first] => verify(repo, cfg, Level::Commit, c, first)?,
+            // Already landed on the remote branch, or a back-merge of main into an epic: not a seam.
+            [_, main, wu]
+                if is_ancestor(repo, wu, main)
+                    || is_ancestor(repo, wu, old)
+                    || (merges == Level::Wu && is_ancestor(repo, wu, &cfg.branches.main)) =>
+            {
+                continue
             }
+            [_, main, wu] => {
+                let mut r = verify(repo, cfg, merges, wu, main)?;
+                if let Err((what, fix)) = mr::manual_review(repo, cfg, merges.name(), &r.tip, &r.base) {
+                    r.fail("8·manual-review", what, fix);
+                }
+                r
+            }
+            [m, ..] if p.len() > 3 => {
+                eprintln!("push refused - {} is an octopus merge; parents beyond the second were never gated", short(m));
+                red = true;
+                continue;
+            }
+            _ => continue,
+        };
+        if !r.failures.is_empty() {
+            print(&r, "verify-dod");
+            red = true;
         }
     }
     Ok(red as i32)
@@ -414,7 +438,7 @@ pub fn verify_dod(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, Strin
     match args {
         ["commit", sha] => run(repo, cfg, Level::Commit, sha, &format!("{sha}^")),
         ["hook"] => hook(repo, cfg),
-        ["range", old, new] => range(repo, cfg, old, new),
+        ["range", old, new] => range(repo, cfg, old, new, new),
         [lvl, tip, rest @ ..] => {
             let level = level_of(lvl)?;
             run(repo, cfg, level, tip, &target_of(cfg, level, tip, rest))

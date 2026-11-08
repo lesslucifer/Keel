@@ -198,3 +198,24 @@ fn pass_with_blockers_is_refused() {
     let o = keel(d.path(), &["notes", "write", "cr", "--verdict", "PASS", "--blockers", "1"]);
     assert!(!o.status.success() && text(&o).contains("refused"));
 }
+
+/// cr blocker 2: a tracked file that .gitignore matches is still part of the tree check vouches for.
+#[test]
+fn check_cache_key_covers_a_tracked_file_that_gitignore_matches() {
+    let d = repo(true);
+    let p = d.path();
+    std::fs::write(
+        p.join(".keel/config.toml"),
+        "[check]\nlint = \"true\"\ntest = \"grep -q ok conf.txt\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
+    )
+    .unwrap();
+    std::fs::write(p.join(".gitignore"), "conf.txt\n").unwrap();
+    std::fs::write(p.join("conf.txt"), "ok").unwrap();
+    git(p, &["add", "-A"]);
+    git(p, &["add", "-f", "conf.txt"]);
+    git(p, &["commit", "-qm", "base"]);
+    assert!(keel(p, &["check"]).status.success());
+    std::fs::write(p.join("conf.txt"), "bad").unwrap();
+    let o = keel(p, &["check"]);
+    assert!(!o.status.success() && !text(&o).contains("skipped"), "{}", text(&o));
+}

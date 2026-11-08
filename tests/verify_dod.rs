@@ -397,3 +397,110 @@ fn epic_tip_rejects_a_tracked_t3_doc_and_an_archive_without_lineage() {
     });
     assert_red(&keel(p, &["verify-dod", "epic", "epic/e"]), "6·doc-note");
 }
+
+/// cr blocker 1: `git merge --no-commit` skips pre-merge-commit, and `--ff-only` makes no merge
+/// commit, so the push range is the only gate left - it must judge merge seams, not skip them.
+#[test]
+fn push_of_a_fast_forwarded_no_commit_wu_merge_is_gated() {
+    let d = fixture();
+    let p = d.path();
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    let remote = TempDir::new().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(p, &["remote", "add", "origin", remote.path().to_str().unwrap()]);
+    git(p, &["push", "-q", "origin", "main"]);
+
+    git(p, &["switch", "-q", "epic/e"]);
+    git(p, &["merge", "-q", "--no-ff", "--no-commit", "wu/e/a"]);
+    git(p, &["commit", "-qm", "merge wu a, never gated"]);
+    git(p, &["switch", "-q", "main"]);
+    git(p, &["merge", "-q", "--ff-only", "epic/e"]);
+    let push = run("git", p, &["push", "-q", "origin", "main"], "");
+    assert_red(&push, "1·notes");
+    assert_ne!(git(remote.path(), &["rev-parse", "main"]), git(p, &["rev-parse", "main"]), "nothing landed");
+}
+
+/// `keel verify-dod commit HEAD` after one commit on wu/e/a; `cfg` replaces the fixture config.
+fn commit_gate(p: &Path, cfg: Option<&str>, change: impl FnOnce(&Path)) -> Output {
+    if let Some(c) = cfg {
+        write(p, ".keel/config.toml", c);
+    }
+    change(p);
+    git(p, &["add", "-A", "src", "tests", "docs"]);
+    git(p, &["commit", "-qm", "change"]);
+    keel(p, &["verify-dod", "commit", "HEAD"])
+}
+
+/// cr blocker 3: a rename out of code_paths and a quoted non-ASCII path both still count as code.
+#[test]
+fn renamed_and_non_ascii_code_paths_are_not_docs_only() {
+    let (d, e) = (fixture(), fixture());
+    let moved = commit_gate(d.path(), None, |p| {
+        git(p, &["mv", "src/a.py", "docs/a.py"]);
+    });
+    let quoted = commit_gate(e.path(), None, |p| write(p, "src/é.py", "def e():\n    pass\n"));
+    let red = |o: &Output| !o.status.success() && text(o).contains("1·notes");
+    assert!(red(&moved) && red(&quoted), "rename: {}\nnon-ASCII: {}", text(&moved), text(&quoted));
+}
+
+/// cr blocker 4: code_paths are git pathspecs for both the exemption and the cr binding.
+#[test]
+fn code_paths_pathspec_globs_gate_and_bind_the_same_files() {
+    let cfg = "code_paths = [\"*.py\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n";
+    let d = fixture();
+    let o = commit_gate(d.path(), Some(cfg), |p| write(p, "src/b.py", "def b():\n    return 2\n"));
+    assert_red(&o, "1·notes");
+}
+
+/// cr blocker 5a: a non-ASCII T3 doc created and archived inside the range still owes its lineage.
+#[test]
+fn a_non_ascii_archived_t3_doc_needs_distillation_lineage() {
+    let d = fixture();
+    let p = d.path();
+    write(p, "docs/work/plán.html", "<p>plan</p>");
+    commit(p, "plan");
+    git(p, &["rm", "-q", "docs/work/plán.html"]);
+    write(p, "docs/decisions/d.html", "<p>why</p>");
+    commit(p, "distill + archive the plan");
+    for (args, input) in [(&["notes", "write", "test"][..], WU_TESTS), (&["notes", "write", "cr", "--verdict", "PASS"][..], "")] {
+        assert!(run(env!("CARGO_BIN_EXE_keel"), p, args, input).status.success());
+    }
+    let o = keel(p, &["notes", "write", "doc"]);
+    assert!(!o.status.success() && text(&o).contains("docs/work/plán.html is archived without distillation lineage"), "{}", text(&o));
+    let o = keel(p, &["notes", "write", "doc", "--distill", "docs/work/plán.html=docs/decisions/d.html"]);
+    assert!(o.status.success(), "{}", text(&o));
+    edit_note(p, "doc", "HEAD", |n| {
+        let plan = n["changes"].as_array_mut().unwrap().iter_mut().find(|c| c["path"] == "docs/work/plán.html").unwrap();
+        plan.as_object_mut().unwrap().remove("distilled_to");
+    });
+    assert_red(&keel(p, &["verify-dod", "wu", "wu/e/a"]), "6·doc-note");
+}
+
+/// cr blocker 5b: a non-ASCII T1 doc tracked at the epic tip is a T1 doc, not an untiered one.
+#[test]
+fn a_non_ascii_t1_doc_at_the_epic_tip_is_green() {
+    let d = fixture();
+    let p = d.path();
+    bless(p, WU_TESTS, "PASS");
+    git(p, &["switch", "-q", "epic/e"]);
+    git(p, &["merge", "-q", "--no-ff", "-m", "merge wu a", "wu/e/a"]);
+    write(p, "docs/résultat.html", "<p>result</p>");
+    commit(p, "close epic");
+    bless(p, EPIC_TESTS, "PASS");
+    sign(p, "epic", "docs/résultat.html");
+    let o = keel(p, &["verify-dod", "epic", "epic/e"]);
+    assert!(o.status.success(), "{}", text(&o));
+}
+
+/// cr important: the cr binding is the same bytes whatever the local diff config.
+#[test]
+fn diff_binding_ignores_local_diff_color_and_external_diff() {
+    let d = fixture();
+    let p = d.path();
+    bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
+    git(p, &["config", "color.diff", "always"]);
+    git(p, &["config", "diff.external", "false"]);
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    assert!(o.status.success(), "{}", text(&o));
+}

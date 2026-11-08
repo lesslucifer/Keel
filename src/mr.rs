@@ -99,7 +99,7 @@ fn payload(level: &str, base: &str, tip: &str, change: &str, report: &str, repor
 
 /// git blob hash of the full `base..tip` diff.
 fn change_hash(repo: &Path, base: &str, tip: &str) -> Result<String, String> {
-    notes::hash_blob(repo, &git(repo, &["diff", "--no-color", "--no-ext-diff", base, tip], &[])?)
+    notes::diff_hash(repo, base, tip, &[])
 }
 
 /// git blob id of the report's exact bytes: the blob at the tip, else (epic only - archived out of
@@ -160,7 +160,7 @@ fn verify(repo: &Path, id: &str, keys: &[&str], data: &str, sig: &str) -> bool {
     ok
 }
 
-/// `rule_bearing` entry: a trailing `/` is a prefix (like code_paths); otherwise a glob where
+/// `rule_bearing` entry: a trailing `/` is a prefix; otherwise a glob where
 /// `*`/`?` stay inside one path segment and `**` crosses segments.
 fn rule_bearing(cfg: &Config, path: &str) -> bool {
     cfg.rule_bearing.iter().any(|p| {
@@ -311,7 +311,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     let report = match flag(args, "--report") {
         Some(r) => r.to_string(),
         None => {
-            let found: Vec<String> = notes::names(repo, &base, &tip)?
+            let found: Vec<String> = notes::names(repo, &base, &tip, &[])?
                 .into_iter()
                 .filter(|n| n.starts_with(&cfg.docs.root) && n.ends_with("-result.html"))
                 .collect();
@@ -421,8 +421,8 @@ pub fn commit_msg(repo: &Path, cfg: &Config, msg_file: &str) -> Result<i32, Stri
     if git(repo, &["rev-parse", "--verify", "-q", "MERGE_HEAD"], &[]).is_ok() {
         return Ok(0);
     }
-    let staged = git(repo, &["diff", "--cached", "--name-only", "--no-renames"], &[])?;
-    let hits: Vec<&str> = staged.lines().filter(|p| rule_bearing(cfg, p)).collect();
+    let staged = notes::zpaths(&git(repo, &["diff", "--cached", "--name-only", "--no-renames", "-z"], &[])?);
+    let hits: Vec<&str> = staged.iter().map(String::as_str).filter(|p| rule_bearing(cfg, p)).collect();
     if hits.is_empty() {
         return Ok(0);
     }
