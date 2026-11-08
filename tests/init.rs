@@ -315,3 +315,39 @@ fn worktrees_path_is_ignored_and_configurable() {
     let g = std::fs::read_to_string(d.path().join(".gitignore")).unwrap();
     assert!(g.lines().any(|l| l == "wt/") && !g.contains(".claude/worktrees"), "{g}");
 }
+
+fn git_in(d: &Path, a: &[&str]) -> Output {
+    Command::new("git").args(a).current_dir(d).env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t").output().unwrap()
+}
+
+/// Keel gates itself (Q12): a clone of committed HEAD with hooks installed refuses a direct commit
+/// on main and an evidence-less merge, and `keel init` over it changes nothing (the committed
+/// .claude/skills/keel-* equal the embedded copies).
+#[test]
+fn self_hosting_clone_is_gated_and_init_is_a_noop() {
+    let root = env!("CARGO_MANIFEST_DIR");
+    let d = TempDir::new().unwrap();
+    let c = d.path().join("c");
+    assert!(Command::new("git").args(["clone", "-q", root, c.to_str().unwrap()]).status().unwrap().success());
+    assert!(git_in(&c, &["checkout", "-q", "-B", "main"]).status.success());
+    assert!(keel(&c, &["hooks", "install"]).status.success());
+
+    let o = keel_in(&c, &["init"], "");
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(!t.contains("created") && !t.contains("differs") && !t.contains("updated") && !t.contains("merged"), "init is not a no-op on Keel's own tree:\n{t}");
+    assert!(t.contains("kept      .keel/config.toml") || t.contains("unchanged .keel/config.toml"), "{t}");
+    assert!(git_in(&c, &["status", "--porcelain"]).stdout.is_empty(), "init dirtied the tree");
+
+    let o = git_in(&c, &["commit", "--allow-empty", "-q", "-m", "direct"]);
+    assert!(!o.status.success(), "a direct commit on main must be refused");
+    assert!(String::from_utf8_lossy(&o.stderr).to_lowercase().contains("merge"), "{}", String::from_utf8_lossy(&o.stderr));
+
+    assert!(git_in(&c, &["checkout", "-q", "-b", "feat"]).status.success());
+    std::fs::write(c.join("x.txt"), "x").unwrap();
+    assert!(git_in(&c, &["add", "x.txt"]).status.success());
+    assert!(git_in(&c, &["commit", "-q", "--no-verify", "-m", "feat"]).status.success());
+    assert!(git_in(&c, &["checkout", "-q", "main"]).status.success());
+    let o = git_in(&c, &["merge", "--no-ff", "-m", "m", "feat"]);
+    assert!(!o.status.success(), "an evidence-less merge into main must be refused");
+}
