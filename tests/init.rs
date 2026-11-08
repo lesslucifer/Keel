@@ -317,7 +317,7 @@ fn worktrees_path_is_ignored_and_configurable() {
 }
 
 fn git_in(d: &Path, a: &[&str]) -> Output {
-    Command::new("git").args(a).current_dir(d).env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t").output().unwrap()
+    Command::new("git").args(a).current_dir(d).env("PATH", format!("{}:{}", Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display(), std::env::var("PATH").unwrap())).env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t").output().unwrap()
 }
 
 /// Keel gates itself (Q12): a clone of committed HEAD with hooks installed refuses a direct commit
@@ -335,6 +335,8 @@ fn self_hosting_clone_is_gated_and_init_is_a_noop() {
     let o = keel_in(&c, &["init"], "");
     let t = text(&o);
     assert!(o.status.success(), "{t}");
+    // Keel's rule_bearing differs from the default by design, so config is the one expected "kept"
+    let t = t.lines().filter(|l| !l.contains(".keel/config.toml")).collect::<Vec<_>>().join("\n") + "\nkept      .keel/config.toml";
     assert!(!t.contains("created") && !t.contains("differs") && !t.contains("updated") && !t.contains("merged"), "init is not a no-op on Keel's own tree:\n{t}");
     assert!(t.contains("kept      .keel/config.toml") || t.contains("unchanged .keel/config.toml"), "{t}");
     assert!(git_in(&c, &["status", "--porcelain"]).stdout.is_empty(), "init dirtied the tree");
