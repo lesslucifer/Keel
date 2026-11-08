@@ -9,6 +9,7 @@
 # .router/runs/<name>-<ts>-<mode>/ (sha256 + path printed so the router can verify), and the worker reads a copy
 # of it inside its own worktree (<worktree>/.router-brief.XXXXXX/brief.md, git-ignored).
 # resume must name the same worktree the session was spawned in (recorded in the spawn's run dir).
+# One live run per name; each run truncates .router/out/<name>.out, so it holds only that run's report.
 set -eu
 die() { echo "router-worker: $*" >&2; exit 2; }
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
@@ -35,6 +36,10 @@ main=$(cd "$main" 2>/dev/null && pwd -P) || die "cannot resolve main checkout"
 f=$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)/$(basename "$file")
 case "$f" in "$B"/*.md) [ -f "$f" ] && [ ! -L "$f" ] || die "no such regular file (symlinks refused)";; *) die "file must be a .md under $B";; esac
 mkdir -p "$O" "$ROOT/.router/runs"
+# one live run per name: a second spawn/resume would interleave <name>.out and orphan the pid
+p=$(cat "$O/$name.pid" 2>/dev/null) || p=
+if [ -n "$p" ] && ps -o stat=,command= -p "$p" 2>/dev/null | grep -v '^ *Z' | grep -qF -- " -n $name "; then
+  die "worker $name is still running (pid $p); wait for it to exit"; fi
 if [ "$mode" = resume ]; then
   ok=
   for d in "$ROOT"/.router/runs/*/; do
@@ -52,7 +57,8 @@ echo "$sha" > "$R/sha256"; chmod 444 "$R"/*; chmod 555 "$R"
 # A session may only read its own worktree, so the worker gets a copy inside it, in a fresh
 # random-named dir (mktemp -d: never an existing path or symlink) that ignores itself in git.
 # Copy-in, not --add-dir "$R": the worker gets no tool access to the router's .router/runs/.
-# ponytail: one .router-brief.* dir per run is left in the target; `git clean -fdX` removes them.
+# ponytail: one .router-brief.* dir per run is left in the target until the worktree is removed
+# (or `rm -rf .router-brief.*` there); add cleanup if a worktree lives across many runs.
 in=$(mktemp -d "$wt/.router-brief.XXXXXX") || die "cannot create brief dir in $wt"
 echo '*' > "$in/.gitignore"; cp "$R/brief.md" "$in/brief.md"; chmod 444 "$in/brief.md"
 snap="$R/brief.md" f="$in/brief.md"
@@ -65,7 +71,7 @@ else
 fi
 cd "$wt"
 nohup "$C" -p "$prompt" "$@" -n "$name" --model "$model" --agent worker --permission-mode acceptEdits --max-budget-usd 25 \
-  >> "$O/$name.out" 2>&1 < /dev/null &
+  > "$O/$name.out" 2>&1 < /dev/null &
 pid=$!; echo "$pid" > "$O/$name.pid"
 # survive a 2s startup window (poll 0.2s); an early exit reports its real exit code.
 # alive() excludes zombies: an exited-but-unreaped child still answers `ps -p`.

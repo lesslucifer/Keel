@@ -185,6 +185,8 @@ fn embedding_is_complete_and_prefixed() {
         let field = |k: &str| fm.lines().find_map(|l| l.strip_prefix(k)).map(str::trim).unwrap_or("");
         assert!(!field("name:").is_empty(), "{f}: frontmatter has no name");
         let d = field("description:");
+        // a block scalar (`>` / `|`) would hide the real description from the length check below
+        assert!(!d.starts_with(['>', '|']), "{f}: description must be a one-line scalar, not a block scalar");
         assert!(!d.is_empty() && d.len() <= 1024, "{f}: frontmatter description empty or over 1024 chars ({})", d.len());
     }
     let agents = std::fs::read_to_string(root.join("templates/AGENTS.md")).unwrap();
@@ -219,17 +221,23 @@ fn router_skill_is_complete() {
     }
     let lessons = std::fs::read_to_string(dir.join("references/lessons.md")).unwrap();
     let keel = lessons.split_once("\n## K. Keel").map(|(_, k)| k.split("\n## ").next().unwrap()).expect("lessons.md has no '## K. Keel' section");
-    assert!(keel.matches("\n- K").count() >= 5, "Keel section has fewer than 5 lessons");
+    assert!(regex::Regex::new(r"\n- K\d").unwrap().find_iter(keel).count() >= 5, "Keel section has fewer than 5 lessons");
 
     let token = regex::Regex::new(r"(?i:xtask|tauri)|\btrawler|\b(?:7420|7421|4445)\b").unwrap();
-    let lineage = regex::Regex::new(r"\(Trawler[^)]*\)|Trawler's `trawler-router/[^`]*`").unwrap();
+    let lineage = regex::Regex::new(r"\(Trawler[^)\n]*\)|Trawler's `trawler-router/[^`\n]*`").unwrap();
     let mut src = BTreeMap::new();
     files(&root.join("skills"), &root.join("skills"), &mut src);
     src.insert("keel-router/references/lessons.md".into(), keel.to_string());
+    let keel_state = regex::Regex::new(r"(?:epic|wu)/E-ROUTER|\b2d7e18d\b|scripts/router-worker\.sh").unwrap();
     for (f, body) in &src {
         let scrubbed = lineage.replace_all(body, "");
         let hit = token.find(&scrubbed);
         assert!(hit.is_none(), "{f}: Trawler-only token {:?} outside lineage", hit.map(|m| m.as_str()));
+        // Keel's own state (its epic branches, its commits) goes stale in a shipped skill: lessons.md only
+        if !f.ends_with("lessons.md") {
+            let hit = keel_state.find(body);
+            assert!(hit.is_none(), "{f}: Keel-only fact {:?} in the shipped skill (belongs in project-router or lessons)", hit.map(|m| m.as_str()));
+        }
     }
 }
 

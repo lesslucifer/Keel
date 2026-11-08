@@ -27,7 +27,7 @@ Under the router posture a read-only verify worker runs this block and reports
 raw output; the router itself runs only the whitelisted lines (marked `[R]`,
 one command per call).
 ```sh
-git log -1 --format=%H wu/$E/$W                                     # [R] = the claimed tip
+git log -1 --format=%H wu/<E>/<W>          # [R] = the claimed tip (type the values: the whitelist refuses $)
 cd $WT && git branch --show-current && git rev-parse HEAD && git status --short | head -3
 git -C $WT merge-base --is-ancestor epic/$E $T && echo based-on-epic
 for r in test doc cr mr dod; do echo "$r: $(git -C $WT log -1 --notes=$r --format=%N $T 2>/dev/null | head -c 120)"; done
@@ -69,10 +69,13 @@ action". Ready-to-run forms:
 ```sh
 until [ -n "$(git -C $WT log -1 --notes=mr --format=%N $T 2>/dev/null)" ]; do sleep 20; done; echo "SIGNED $T"       # keel mr confirm
 until [ "$(git -C $WT rev-parse HEAD)" != $T ]; do sleep 20; done; echo COMMITTED                                  # keel mr commit
-until git -C $EWT merge-base --is-ancestor $T epic/$E && [ ! -e "$(git -C $EWT rev-parse --git-path MERGE_HEAD)" ]; do sleep 20; done; echo MERGED
-until [ "$(git -C $MAIN ls-remote origin refs/heads/main | cut -f1)" = "$(git -C $MAIN rev-parse main)" ]; do sleep 30; done; echo PUSHED
+until git -C $EWT merge-base --is-ancestor $T epic/$E && [ ! -e "$(git -C $EWT rev-parse --path-format=absolute --git-path MERGE_HEAD)" ]; do sleep 20; done; echo MERGED
+until git -C $MAIN fetch -q origin main && git -C $MAIN merge-base --is-ancestor $T origin/main; do sleep 30; done; echo PUSHED
 ```
 For an epic, the MERGED probe is `git -C $MAIN merge-base --is-ancestor $T main`.
+PUSHED is true only once origin's main contains `$T`, so it is safe to arm when
+the action is staged (an equality check against local `main` fires at once, and
+one against `$T` never fires: the `--no-ff` merge pushes a new commit).
 
 ## Worker: worktree for a parallel WU
 ```sh

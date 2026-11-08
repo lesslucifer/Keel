@@ -21,34 +21,17 @@
       "Bash(ps aux)",
       "Bash(scripts/router-worker.sh resume *)",
       "Bash(scripts/router-worker.sh spawn *)"
-    ],
-    "deny": [
-      "Bash(git diff *--output*)",
-      "Bash(git log *--output*)",
-      "Bash(git show *--output*)"
     ]
   },
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "jq -c 'if .agent_type == \"router\" and .tool_name == \"Bash\" then ((.tool_input.command // \"\") | gsub(\"^\\\\s+|\\\\s+$\"; \"\")) as $c | if ($c | test(\"[;&|<>$`()\\\\\\\\\\\\n\\\\r]\")) or ($c | test(\"--output\")) or (($c | test(\"^scripts/router-worker\")) and ($c | test(\"\\\\.\\\\.\"))) or (($c | test(\"^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)( .*)?|ps (aux|-ef)|scripts/router-worker\\\\.sh (spawn|resume) [A-Za-z0-9._/ -]+)$\")) | not) then {hookSpecificOutput: {hookEventName: \"PreToolUse\", permissionDecision: \"deny\", permissionDecisionReason: \"router Bash whitelist: git status/log/diff/show, git branch -v/-a, gh pr view/list/status, ps aux/-ef, and scripts/router-worker.sh spawn|resume only (single command, no pipes/redirects/substitution). Delegate anything else to a worker.\"}} else empty end else empty end '",
+            "command": "jq -c -f \"$CLAUDE_PROJECT_DIR/scripts/router-guard.jq\" || { echo 'router guard: jq failed (missing jq or guard file?) - tool call denied' >&2; exit 2; }",
             "timeout": 10,
-            "statusMessage": "router Bash whitelist check"
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "jq -c 'if .agent_type == \"router\" then .cwd as $d | (.tool_input.file_path // \"\") as $p | if .tool_name == \"Write\" and ($p | startswith($d + \"/.router/briefs/\")) and ($p | ltrimstr($d + \"/.router/briefs/\") | test(\"^[A-Za-z0-9_-][A-Za-z0-9._-]*\\\\.md$\")) then empty else {hookSpecificOutput: {hookEventName: \"PreToolUse\", permissionDecision: \"deny\", permissionDecisionReason: \"router may Write only worker briefs: <checkout>/.router/briefs/<name>.md (no Edit, no other path). Delegate anything else to a worker.\"}} end else empty end'",
-            "timeout": 10,
-            "statusMessage": "router Write whitelist check"
+            "statusMessage": "router guard"
           }
         ]
       }

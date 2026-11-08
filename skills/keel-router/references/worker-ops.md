@@ -18,8 +18,10 @@ and E-SEED's first W7 packaging work ended up stranded on such a branch
 
 ## Mode 1: in-session subagent (`Agent` + `SendMessage`)
 
-For short one-shot read-only checks, reviews and watches; also the stopgap when
-the headless launcher has an open defect (below).
+Only where the project does not enforce the router posture: a subagent runs
+outside any hook keyed on the router's agent type, with full tools, so an
+enforced router has no `Agent` tool (SKILL.md "The router posture"). There, for
+short one-shot read-only checks, reviews and watches.
 - **Spawn**: `Agent` with `name` (`<epic>-<purpose>`, e.g. `e-router-fix-verify`;
   the name is its address), `model` set explicitly (`opus|sonnet|haiku|fable`),
   `description`, and `prompt` = the full brief (worktree, branch, tip, job, hard
@@ -38,30 +40,30 @@ the headless launcher has an open defect (below).
   rules allow, since it cuts the turn. Its worktree is removed by a worker after
   the merge.
 - **Limits**: dies with the router session (reboot, exit); not visible to `ps`;
-  all of them share the router's permission mode. Say so when it is used as a
-  stopgap so it isn't mistaken for the standard.
+  all of them share the router's permission mode. Say so when it is used, so it
+  isn't mistaken for the standard.
 
 ## Mode 2: headless `claude -p` via the launcher (standard)
 
 The router never types `claude`. A committed launcher validates every argument,
 passes a fixed prompt naming a brief file, and fixed flags
-(`--agent worker --permission-mode acceptEdits --max-budget-usd 25`). Keel's is
-`scripts/router-worker.sh` (on `epic/E-ROUTER`); the project-router skill names
-a project's own. `ROOT` = the checkout holding the launcher; its `.router/` is
-git-ignored and durable (`briefs/`, `runs/`, `out/`), unlike `/tmp`.
+(`--agent worker --permission-mode acceptEdits --max-budget-usd 25`). `keel init`
+ships no launcher: a project commits its own and its project-router skill names
+it (`<launcher>` below). `ROOT` = the checkout holding the launcher; its
+`.router/` is git-ignored and durable (`briefs/`, `runs/`, `out/`), unlike `/tmp`.
 
-Prerequisites: the router runs in the checkout that holds the launcher (the
-hook allows the relative `scripts/router-worker.sh` only); `claude` at
-`$HOME/.local/bin/claude` or `ROUTER_CLAUDE`; the target worktree is a
-registered `git worktree` other than the router's own checkout and the main
-checkout (the launcher refuses both); the target's branch carries
-`.claude/agents/worker.md` (open issue 2).
+Prerequisites: the router runs in the checkout that holds the launcher (an
+enforced whitelist allows only its relative path); `claude` where the launcher
+expects it; the target worktree is a registered `git worktree` other than the
+router's own checkout and the main checkout (the launcher refuses both); the
+target's branch carries the worker persona (`.claude/agents/worker.md`,
+pitfall 2).
 
 - **Brief**: you write it yourself (`Write`) to `<ROOT>/.router/briefs/<name>.md`
   (regular file, no symlink). A brief is dispatch mechanics, like an `Agent`
   prompt, not authored substance (owner ruling 2026-11-08; SKILL.md
   "Substance comes from workers"). It is the only file you write.
-- **Spawn**: `scripts/router-worker.sh spawn <name> <worktree> .router/briefs/<name>.md <model>`
+- **Spawn**: `<launcher> spawn <name> <worktree> .router/briefs/<name>.md <model>`
   (`<name>` matches `[a-z0-9][a-z0-9-]{0,40}`; model `opus|sonnet|haiku|fable`).
   Prints `RUNNING name=… pid=… session=<uuid> out=… snapshot=… brief=… sha256=… worktree=…`,
   or `DEAD name=… exit=<code> …` plus the output tail. Record the session uuid.
@@ -70,54 +72,49 @@ checkout (the launcher refuses both); the target's branch carries
 - **Alive**: `ps aux` and look for the pid in `.router/out/<name>.pid` (`Read`)
   or `-n <name>`; the args show `--model`.
 - **Report**: when the process is gone, `Read` `.router/out/<name>.out`; the
-  final message is the worker's report.
+  final message is the worker's report. Each run of a name truncates it, and the
+  launcher refuses a second live run of the same name.
 - **Follow-up**: you write `.router/briefs/<name>-r<n>.md`; then
-  `scripts/router-worker.sh resume <name> <session-uuid> <same worktree> .router/briefs/<name>-r<n>.md <model>`
+  `<launcher> resume <name> <session-uuid> <same worktree> .router/briefs/<name>-r<n>.md <model>`
   (the launcher refuses a different worktree than the spawn's).
 - **Retire**: none needed — a `-p` run exits when its run ends. A hung or
   mid-turn one needs the owner (or an owner-approved worker) to
   `kill <pid>`; the router has no `kill` (lessons D2).
 
-**Headless: open issues (2026-11-08) — check each is fixed before relying on
-this mode; until then use Mode 1 for real work:**
-1. *Brief not readable.* The snapshot sits under `<ROOT>/.router/runs/…`,
-   outside the worker's worktree; a headless worker cannot approve that read
-   (run `persona-fix`: `Read` and `cat` both refused, no work done).
-   **Fixed 2026-11-08** (`wu/E-ROUTER/launcher-brief-fix`): the launcher copies
-   the brief into `<worktree>/.router-brief.XXXXXX/brief.md` (self-ignoring)
-   and prints it as `brief=`; proven by real run `brief-fix-proof` (lessons K5).
-2. *Persona missing.* `--agent worker` fails ("--agent 'worker' not found") in
-   a worktree whose branch does not track `.claude/agents/worker.md` (run
-   `smoketest` into `Keel-E-SEED`). Not fixed: the
-   `wu/E-ROUTER/worker-persona-copy` branch has no commits of its own;
-   until then spawn only into a worktree whose branch tracks the file.
+**Headless pitfalls (found 2026-11-08; prove a spawn path with a real spawn,
+lessons K5):**
+1. *Brief not readable.* A headless session reads only its own working
+   directories and cannot approve anything else, so a brief kept outside the
+   worker's worktree is unreadable. The launcher copies the brief into
+   `<worktree>/.router-brief.XXXXXX/brief.md` (self-ignoring) and names it as
+   `brief=`; keep the router's read-only snapshot as the evidence.
+2. *Persona missing.* `--agent worker` fails ("--agent 'worker' not found") in a
+   worktree whose branch does not track the persona file: spawn only into a
+   branch that tracks it.
 3. *Unverified*: whether a worker's Bash outside its allowlist stalls under
    `acceptEdits` (it cannot answer a prompt). If it does, widen the worker's
    mode or allowlist, never the router's.
 
 ## Watch every staged owner action
 
-Under the router posture you don't run shell loops; a watch worker (Mode 1,
-cheap explicit model) runs one background `until <probe>; do sleep N; done;
+Under the router posture you don't run shell loops; a watch worker (headless
+where the posture is enforced, else Mode 1; cheap explicit model) runs one background `until <probe>; do sleep N; done;
 echo <EVENT>` per action (no inner `&`, no `( … ) &`, never a foreground
 `sleep`) and reports when it fires. `Monitor` is for a stream of events (it
 expires after at most 30 min and can replay handled events: re-arm, dedupe).
-Examples from Keel's 2026-11-08 router session: `e-router-push-watch` watched a
-push; `w7v2-comment-check` / `w10-comment-check` checked plan-doc comments.
 
 | Owner action | Probe succeeds when |
 |---|---|
 | signs a WU/epic (`keel mr confirm`) | `[ -n "$(git log -1 --notes=mr --format=%N <tip> 2>/dev/null)" ]` (the router may run the inner `git log` itself: whitelisted) |
 | gate green after signing | `keel verify-dod wu <tip> --target epic/<E>` (or `epic <tip>`) exits 0 (writes the `dod` receipt) |
 | commits | `[ "$(git rev-parse <branch>)" != <old tip> ]` |
-| merges | `git merge-base --is-ancestor <tip> <target>` and no `.git/MERGE_HEAD` |
-| pushes · tags | `[ "$(git ls-remote origin refs/heads/<b> \| cut -f1)" = <tip> ]` · `[ -n "$(git ls-remote --tags origin <tag>)" ]` |
+| merges | `git merge-base --is-ancestor <tip> <target>` and no `MERGE_HEAD` (`git rev-parse --path-format=absolute --git-path MERGE_HEAD`) |
+| pushes · tags | `git fetch -q origin <b> && git merge-base --is-ancestor <tip> origin/<b>` (ancestry, not equality: a `--no-ff` merge pushes a new commit; same probe as `commands.md` PUSHED) · `[ -n "$(git ls-remote --tags origin <tag>)" ]` |
 | publishes a draft | `[ "$(gh release view <tag> --json isDraft -q .isDraft)" = false ]` |
 | comments on / resolves an htmldoc doc | open count ≠ last seen (below) |
 
 htmldoc open-comment count (`SERVER` per the htmldoc skill, `<id>` = the doc's
-`data-htmldoc-id`; checked against the E-ROUTER plan, id
-`6aeede8d9f34851f0dfb0322`, on 2026-11-08):
+`data-htmldoc-id`; checked against a real plan doc on 2026-11-08):
 ```sh
 until n=$(curl -fsS "$SERVER/api/docs/<id>/comments" | jq '[.[]|select(.status=="open")]|length') && [ "$n" != <last> ]; do sleep 120; done; echo "COMMENTS open=$n"
 ```

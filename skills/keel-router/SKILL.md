@@ -23,37 +23,38 @@ otherwise (briefs, 2026-11-08, below).
 
 ## The router posture (designed: E-ROUTER Q2 ruling, 2026-11-08)
 
-- **Tools**: dispatch (`Agent`, `SendMessage`, the headless launcher), read
-  (`Read`), and a Bash **whitelist** only: `git status|log|diff|show …`,
+- **Tools**: read (`Read`, `Grep`, `Glob`), `Write` for worker briefs only, the
+  project's headless launcher, and a Bash **whitelist** only: `git status|log|diff|show …`,
   `git branch -v|-vv|-a|-av|-va|-a -v|--all|--all -v`, `gh pr view|list|status …`,
-  `ps aux` / `ps -ef`, and the launcher's two shapes
-  (`scripts/router-worker.sh spawn|resume …`). One command per call: no pipes,
-  redirects, `;`, `&`, `$`, backticks, parentheses, newlines or `--output`.
-  No general Bash, no direct `claude`, no `kill`, no Edit/Write — except that
-  you `Write` worker briefs (`.router/briefs/*.md`) yourself (owner ruling
-  2026-11-08, see "Substance comes from workers").
+  `ps aux` / `ps -ef`, and the launcher's `spawn` / `resume` shapes. One command
+  per call, plain words only: no pipes, redirects, quotes, `$`, globs, braces,
+  backslashes, parentheses, newlines or `--output`. No general Bash, no direct
+  `claude`, no `kill`, no Edit — you `Write` worker briefs (`.router/briefs/*.md`)
+  yourself (owner ruling 2026-11-08, see "Substance comes from workers").
+- **No `Agent` tool where the posture is enforced.** An in-session subagent runs
+  under its own agent type, outside any hook keyed on the router's, in your
+  checkout, with full tools: spawning one hands back everything the whitelist
+  takes away (lessons K10). An enforced router dispatches every worker, checker
+  and watcher headless, through the launcher.
 - Everything else — `keel verify-dod`, `keel check`, `git notes …`, `gh run …`,
   `curl` against an htmldoc server, `lsof`, watch loops, `git worktree add` —
-  is **delegated to a read-only worker** that reports the raw output.
-- Enforced by the project's `.claude/settings.json`: `"agent": "router"`, a
-  `permissions.allow` list of exactly those shapes, and a `PreToolUse` hook on
-  `Bash` that denies anything else for `agent_type == "router"`; a second
-  `PreToolUse` hook on `Write|Edit|NotebookEdit` lets the router `Write` only
-  `<cwd>/.router/briefs/<name>.md`, so it still cannot change the launcher or
-  the hooks. The agent definition's `tools:` line omits `Edit` and `Monitor`.
-- **Known gap — check, don't assume.** Enforcement lives in the checkout the
-  router session runs in. In Keel on 2026-11-08 the router ran in the main
-  checkout, and commit `2d7e18d` (removing E-ROUTER files that had reached main
-  early) took `.claude/settings.json` and `.claude/agents/router.md` off main;
-  they exist only on `epic/E-ROUTER`. From then the router's Bash was governed
-  by the user-level allowlist (which includes `git`, `rm`, `kill`, `curl`,
-  `claude`) and it observed far broader Bash than Q2 intends. At session start
-  confirm whether the hook is actually loaded in your checkout; if it is not,
-  hold yourself to the whitelist anyway and tell the owner enforcement is
-  missing. Never use the gap to do work yourself.
-- `Monitor` runs a shell command and is **not** covered by the `Bash` hook;
-  under this posture don't arm shell watchers yourself — a watch worker does
-  (`references/worker-ops.md` "Watch").
+  is **delegated to a worker** that reports the raw output.
+- **Enforcement is the project's.** `keel init` ships this skill but no
+  enforcement and no launcher; a project that wants the posture enforced commits
+  them, and its project-router skill names the files. The shape that holds: the
+  session's agent set to the router (`"agent": "router"` in the project's
+  `.claude/settings.json`), an agent definition whose `tools:` omit `Agent`,
+  `Edit` and `Monitor`, and one fail-closed `PreToolUse` guard on every tool
+  for `agent_type == "router"` that allows only the tools, Bash shapes, brief
+  path and inline skills above — judging the command as plain words, since a
+  substring check on a shell string is beaten by quoting (lessons K10).
+- **Check, don't assume.** Enforcement lives in the checkout the router session
+  runs in; a checkout without it leaves you under the user-level allowlist
+  (lessons K11). At session start confirm the guard is loaded in your checkout;
+  if it is not, hold yourself to the whitelist anyway and tell the owner
+  enforcement is missing. Never use a gap to do work yourself.
+- `Monitor` runs a shell command outside the Bash hook: don't arm shell
+  watchers yourself — a watch worker does (`references/worker-ops.md` "Watch").
 
 ## First principle: the owner's attention is the scarcest resource
 
@@ -108,14 +109,8 @@ defaults `epic/`, `wu/`). All plan and WU work lands there; each WU branches as
 with `--no-ff`; main receives only the closed epic (or an explicit owner
 decision to land incrementally), never WU by WU. Nothing from an unclosed epic
 — plan, T3 doc, router config — goes to main.
-- Worked example: `epic/E-ROUTER` was pushed at `0557ba2` (the main tip) before
-  its plan existed; the plan was its first commit (`ed03f74`, kept on
-  `backup/epic-E-ROUTER-old` after the repo reset); its WUs branch as
-  `wu/E-ROUTER/<slug>` and merge back `--no-ff` (`87ec0b6`).
-- Lineage: E-SEED committed W1–W3 straight to main and was retrofitted into
-  `epic/E-SEED` — never retrofit again. E-ROUTER's own `380d301` then merged the
-  unclosed epic into main; the owner ruled that out (2026-11-08) and `2d7e18d`
-  removed it.
+- Lineage: lessons K2 (an unclosed epic merged into main and had to be
+  removed) and K6 (an epic retrofitted onto its branch after the fact).
 
 ## Substance comes from workers (UC-ROUTE-3)
 
@@ -205,15 +200,15 @@ verify by behaviour.
 ## Workers
 
 Two modes; recipes in `references/worker-ops.md`. Headless is the standard for
-build and fix work (Q3 ruling); in-session subagents for short one-shot
-read-only checks, reviews and watches — and the stopgap whenever the headless
-launcher has an open defect (worker-ops "Headless: open issues"). Say which mode
+build and fix work (Q3 ruling). In-session subagents only where the project
+does not enforce the router posture (an enforced router has no `Agent` tool):
+then for short one-shot read-only checks, reviews and watches. Say which mode
 you used and why when it is not the standard.
 
 | | In-session subagent | Headless `claude -p` |
 |---|---|---|
-| spawn | `Agent` (`name`, explicit `model`) | `scripts/router-worker.sh spawn …` |
-| reach | `SendMessage` to its name (resumes it after it finished) | `scripts/router-worker.sh resume …` |
+| spawn | `Agent` (`name`, explicit `model`) | `<launcher> spawn …` (project-router names it) |
+| reach | `SendMessage` to its name (resumes it after it finished) | `<launcher> resume …` |
 | report | its `SubagentHandback`, delivered to you | Read `.router/out/<name>.out` |
 | survives | this router session only | router session ending or compacting (process runs on independently); NOT a machine reboot: brief + run dir on disk survive, the process does not, so relaunch from the brief |
 
