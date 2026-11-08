@@ -28,6 +28,9 @@ wt=$(cd "$wt" 2>/dev/null && pwd -P) || die "no such worktree"
 git -C "$ROOT" worktree list --porcelain | grep -Fxq "worktree $wt" || die "not a registered worktree of this repo"
 top=$(cd "$(git rev-parse --show-toplevel)" && pwd -P) || die "not in a git repo"
 [ "$wt" != "$ROOT" ] && [ "$wt" != "$top" ] || die "worker may not run in the router's own checkout ($wt)"
+main=$(git -C "$ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')
+main=$(cd "$main" 2>/dev/null && pwd -P) || die "cannot resolve main checkout"
+[ "$wt" != "$main" ] || die "worker may not run in the repository's main checkout ($wt)"
 f=$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)/$(basename "$file")
 case "$f" in "$B"/*.md) [ -f "$f" ] && [ ! -L "$f" ] || die "no such regular file (symlinks refused)";; *) die "file must be a .md under $B";; esac
 mkdir -p "$O" "$ROOT/.router/runs"
