@@ -20,7 +20,10 @@ def skills: ["keel-router", "project-router", "keel-workflow", "keel-plan", "kee
 # catches git's abbreviated long options. gh takes only named query flags and bare
 # words without ":" - no -R/--repo (also inside a -dR cluster), no URL argument (both
 # point gh at any host), no -q/--jq/-t/--template (gh's jq reads the environment), no --web.
-def gh_args: "( (--?(json|state|limit|author|base|head|label|search|L|s|A|B|H|l|S)[ =][A-Za-z0-9._,/-]+|[A-Za-z0-9][A-Za-z0-9._/-]*))*";
+# Each flag token must mean to gh (pflag) what it means here: a long name only after "--"
+# (gh reads "-label" as -l with value "abel"), a short one only as one letter, and a
+# value never starting with "-" (so it can never be read as, or hide, a flag of its own).
+def gh_args: "( ((--(json|state|limit|author|base|head|label|search)|-(L|s|A|B|H|l|S))[ =][A-Za-z0-9._,/][A-Za-z0-9._,/-]*|[A-Za-z0-9][A-Za-z0-9._/-]*))*";
 def bash_ok:
   test("^[A-Za-z0-9 ._/:=@%,+^~-]*$")
   and (test("--ou") | not)

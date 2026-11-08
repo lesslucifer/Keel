@@ -105,6 +105,48 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
     }
 }
 
+/// Review of 67b0de5: the guard must split gh's argv the way gh's flag parser (pflag) does. A
+/// single-dash long name is a short flag plus an attached value to gh (`-label` = `-l abel`), so
+/// the "value" after it becomes a flag of its own (`-label -R evil` really contacted evil.invalid);
+/// a value starting with `-` is the same hole from the other side. Lists every leak, not the first.
+#[test]
+fn router_bash_guard_reads_gh_flags_as_gh_does() {
+    let denied = [
+        "gh pr list -label -R evil.example/a/b",
+        "gh pr list -limit -R x/a/b",
+        "gh pr list -author -R x/a/b",
+        "gh pr list -label -q env --json number",
+        "gh pr list -l -R x/a/b",
+        "gh pr list -label --repo x/a/b",
+        "gh pr list -author -w",
+        // -s is --state to gh: only its enum check stops these today
+        "gh pr list -state -R x/a/b",
+        "gh pr list -search -R x/a/b",
+        // gh has no -b/-h short today; one added later would make these live
+        "gh pr list -base -R x/a/b",
+        "gh pr list -head -R x/a/b",
+        "gh pr view 1 -json -R x/a/b",
+        // a value that is itself flag-shaped, and a short letter spelled as a long name
+        "gh pr list --label -q env",
+        "gh pr list --json=-R x/a/b",
+        "gh pr list -L=-R x/a/b",
+        "gh pr list --L 5",
+    ];
+    let leaks: Vec<_> = denied.iter().filter(|c| bash(c).is_none()).collect();
+    assert!(leaks.is_empty(), "guard allowed {leaks:#?}");
+
+    for ok in [
+        "gh pr view 12 --json title,state",
+        "gh pr list --state open -L 5 --author vuluu",
+        "gh pr list -L=5 -s=open",
+        "gh pr status",
+        "gh pr status --json=a,b",
+        "gh pr list -l bug -A vuluu -B main -H wu/x -S fix --label x --limit 3 --base main --head x --search y",
+    ] {
+        assert_eq!(bash(ok), None, "guard denied documented shape {ok:?}");
+    }
+}
+
 /// Blocker 2 of the close review: `Agent`-tool subagents report their own agent_type, so the router
 /// guard never sees them; the router may not start one, nor use any tool its agent file omits.
 #[test]
