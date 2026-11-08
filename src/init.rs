@@ -14,10 +14,13 @@ const SKILLS: &[(&str, &str)] = &[
     ("keel-code-review/rubric.md", include_str!("../skills/keel-code-review/rubric.md")),
     ("keel-distill/SKILL.md", include_str!("../skills/keel-distill/SKILL.md")),
     ("keel-router/SKILL.md", include_str!("../skills/keel-router/SKILL.md")),
+    ("keel-router/references/brief-skeleton.md", include_str!("../skills/keel-router/references/brief-skeleton.md")),
+    ("keel-router/references/commands.md", include_str!("../skills/keel-router/references/commands.md")),
     ("keel-router/references/lessons.md", include_str!("../skills/keel-router/references/lessons.md")),
     ("keel-router/references/messages.md", include_str!("../skills/keel-router/references/messages.md")),
     ("keel-router/references/worker-ops.md", include_str!("../skills/keel-router/references/worker-ops.md")),
     ("keel-router/references/project-router-template.md", include_str!("../skills/keel-router/references/project-router-template.md")),
+    ("keel-router/references/review-checklists.md", include_str!("../skills/keel-router/references/review-checklists.md")),
 ];
 
 const POST_CMD: &str = r##"f="$(git rev-parse --git-common-dir 2>/dev/null)/keel-hooks/verify-doc-post"; [ -f "$f" ] || exit 0; sh "$f""##;

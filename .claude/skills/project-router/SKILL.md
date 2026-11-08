@@ -29,16 +29,17 @@ disagrees with this file, they win — fix this file.
 | `git merge --no-ff`, `git push`, tags, `<CI dispatch, secret uploads>` | owner |
 
 ## Sign-off sequences
-- **WU**: worker gates (notes, preflight, cr PASS, verify-dod red only on `8·manual-review`) → router verifies → owner `keel mr confirm wu <tip> --as <id>` → owner `git switch epic/<slug> && git merge --no-ff <wu branch>` → router verifies → next worker.
-- **WU with a rule-bearing doc** (`rule_bearing` in config): only that doc staged → owner `keel mr commit -m $'…' --as <id>` → a fresh worker writes notes and runs the review on the new tip → owner confirms and merges.
-- **Epic close**: `<project-specific steps; default per the keel-workflow skill: distill → archive → epic notes → preflight epic → epic review vs main → owner confirm epic --report docs/.archive/<…>-result.html → owner merge into main → owner push>`.
+Default per the keel-workflow skill; exact owner commands in the keel-router skill's `references/commands.md`. Record only where this project differs:
+- **WU**: `<default: worker gates → router verifies → owner keel mr confirm wu <tip> --as <id> --target epic/<E> → owner merge --no-ff into the epic → next worker>`.
+- **WU with a rule-bearing file**: `<default: only that file staged → owner keel mr commit → fresh worker re-gates the new tip → owner confirms and merges>`.
+- **Epic close**: `<project-specific steps, or "default">`.
 
 ## What no gate reviews
-The cr gate covers only `code_paths` (`<list them>`). Before the owner signs a WU touching any of these, run an independent review: `<e.g. CI workflows, build scripts, lockfiles, native/FFI code, release config>`.
+The cr gate covers only `code_paths` (`<list them>`). Before the owner signs a WU touching any of these, run an independent review (checklists: the keel-router skill's `references/review-checklists.md`): `<e.g. CI workflows, build scripts, lockfiles, native/FFI code, release config>`.
 
 ## Workers
 - Spawn with `<absolute agent CLI path>`, always `--model <model id>`, `--permission-mode <mode>`; names `<project>-<area>-<phase>`; briefs in `<durable briefs dir>`.
-- Brief skeleton: worktree/branch/tip and first commands · owner rulings · what to read · the job · hard rules (never run `keel mr`, push, tag; never amend a gated branch; never copy a gate note; report denials verbatim; `<project's machine-safety rules>`) · report to the router's current name: what, doc, full sha, ordered cd-prefixed owner commands, gate state, what had no independent review.
+- Briefs: the keel-router skill's `references/brief-skeleton.md`; this project adds these hard rules: `<machine-safety rules: temp HOME, held ports, real data dirs>`.
 
 ## Never touch
 `<real user data dirs, system settings, keys the owner holds alone>`.

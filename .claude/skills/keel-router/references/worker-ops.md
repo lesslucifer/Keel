@@ -106,7 +106,7 @@ push; `w7v2-comment-check` / `w10-comment-check` checked plan-doc comments.
 | Owner action | Probe succeeds when |
 |---|---|
 | signs a WU/epic (`keel mr confirm`) | `[ -n "$(git log -1 --notes=mr --format=%N <tip> 2>/dev/null)" ]` (the router may run the inner `git log` itself: whitelisted) |
-| gate green after signing | `keel verify-dod <wu\|epic> <tip>` exits 0 (writes the `dod` receipt) |
+| gate green after signing | `keel verify-dod wu <tip> --target epic/<E>` (or `epic <tip>`) exits 0 (writes the `dod` receipt) |
 | commits | `[ "$(git rev-parse <branch>)" != <old tip> ]` |
 | merges | `git merge-base --is-ancestor <tip> <target>` and no `.git/MERGE_HEAD` |
 | pushes · tags | `[ "$(git ls-remote origin refs/heads/<b> \| cut -f1)" = <tip> ]` · `[ -n "$(git ls-remote --tags origin <tag>)" ]` |
