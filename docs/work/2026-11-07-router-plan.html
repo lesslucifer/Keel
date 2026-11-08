@@ -194,8 +194,8 @@ flowchart LR
     <thead><tr><th>#</th><th>Question</th><th>Options · <b>default</b></th></tr></thead>
     <tbody>
       <tr><td>Q1</td><td>W7 (plugin manifest, Keel's config, project-router) is only on the unmerged branch <code>worktree-agent-a6381e6d3c5019ecc</code> @ <code>ef33902</code>. E-ROUTER cannot prove invocation without it. Also decides whether E-ROUTER runs gated.</td><td><b>A: E-SEED lands W7 on main first; then merge main into <code>epic/E-ROUTER</code> and run E-ROUTER fully gated</b> (its first gated epic) · B: merge the W7 branch into <code>epic/E-ROUTER</code> now (couples the two epics) · C: start W1–W2 ungated now, merge main later</td></tr>
-      <tr><td>Q2</td><td>Your <code>.claude/agents/router.md</code> (untracked) gives the router no Bash and delegates even verification; the skill has the router run read-only git/gh/ps itself and spawn workers. Which is Keel's router posture, and where does it live?</td><td><b>A: skill adopts your strict posture (no Bash; a read-only verifier worker runs the checks), keeps the rest; <code>router.md</code> becomes a tracked thin wrapper that loads <code>keel:router</code></b> · B: skill keeps Trawler's posture, <code>router.md</code> stays a separate owner-local override · C: drop <code>router.md</code></td></tr>
-      <tr><td>Q3</td><td>Worker model: Trawler used headless <code>claude -p</code> processes, <code>ps</code> checks and a cron heartbeat; this session uses in-session <code>Agent</code> subagents + <code>SendMessage</code>.</td><td><b>A: document both, <code>Agent</code>-tool primary, headless for long fleets</b> · B: <code>Agent</code>-tool only (loses reboot/durable-brief lessons) · C: headless only</td></tr>
+      <tr><td>Q2 <a href="#rulings">(amended 2026-11-08)</a></td><td>Your <code>.claude/agents/router.md</code> (untracked) gives the router no Bash and delegates even verification; the skill has the router run read-only git/gh/ps itself and spawn workers. Which is Keel's router posture, and where does it live?</td><td><b>A: skill adopts your strict posture (no Bash; a read-only verifier worker runs the checks), keeps the rest; <code>router.md</code> becomes a tracked thin wrapper that loads <code>keel:router</code></b> · B: skill keeps Trawler's posture, <code>router.md</code> stays a separate owner-local override · C: drop <code>router.md</code></td></tr>
+      <tr><td>Q3 <a href="#rulings">(overridden 2026-11-08)</a></td><td>Worker model: Trawler used headless <code>claude -p</code> processes, <code>ps</code> checks and a cron heartbeat; this session uses in-session <code>Agent</code> subagents + <code>SendMessage</code>.</td><td><b>A: document both, <code>Agent</code>-tool primary, headless for long fleets</b> · B: <code>Agent</code>-tool only (loses reboot/durable-brief lessons) · C: headless only</td></tr>
       <tr><td>Q4</td><td>Push channel: keep the Telegram material?</td><td><b>A: generic "push channel" rules, Telegram plugin as the worked example (token/access files never touched)</b> · B: drop push entirely · C: Telegram-specific</td></tr>
       <tr><td>Q5</td><td>Trawler incident details in <code>lessons.md</code> (ports, rpm, WiX…) — keep as evidence (W6's choice) or scrub?</td><td><b>A: keep as lineage, add a Keel section</b> · B: generalise every row</td></tr>
       <tr><td>Q6</td><td><code>worker-ops.md</code> is macOS/zsh only.</td><td><b>A: keep macOS-first, label it, keep the pitfalls table</b> · B: make every recipe POSIX-portable</td></tr>
@@ -204,6 +204,43 @@ flowchart LR
       <tr><td>Q9</td><td>Skill name: Trawler's is <code>router-agent</code>, Keel's is <code>router</code> (invoked <code>keel:router</code>).</td><td><b>A: keep <code>router</code></b> · B: rename to <code>router-agent</code> for lineage</td></tr>
     </tbody>
   </table>
+</div>
+
+<h2 id="rulings">Rulings — Q2 and Q3 (owner override, 2026-11-08)</h2>
+<div data-item="rulings" data-c="rulings-body">
+  <p>Recorded as amendments to the Q2 and Q3 rows above. Why: the owner instructed this mid-session on 2026-11-08, overriding the earlier Q3 answer ("both, Agent-tool primary, headless for long fleets") and, when asked, choosing to loosen the router's own Bash whitelist rather than have a worker spawn on the router's behalf. Note: the table above carries no recorded answers; the earlier Q2/Q3 answers existed only in session instructions, so this section is their first written record.</p>
+  <table>
+    <thead><tr><th>#</th><th>Ruling</th></tr></thead>
+    <tbody>
+      <tr data-c="ruling-q3"><td>Q3</td><td><b>Headless <code>claude -p</code> sessions are the primary and standard worker mode.</b> Agent-tool subagents may still be used for short one-shot read-only checks and reviews, but not as the default for build or fix work. Supersedes "both — Agent-tool primary, headless for long fleets".</td></tr>
+      <tr data-c="ruling-q2"><td>Q2</td><td><b>The router's Bash whitelist is loosened by exactly two command shapes, both through one committed launcher, <code>scripts/router-worker.sh</code>.</b> Everything else stays as before: read-only <code>git status/log/diff/show</code>, <code>git branch -v/-a</code> variants, <code>gh pr view/list/status</code>, <code>ps aux</code>/<code>ps -ef</code>. The router gets no general Bash, no direct <code>claude</code>, and no kill.</td></tr>
+    </tbody>
+  </table>
+  <h3 id="q2-shapes">New allowed command shapes</h3>
+  <table>
+    <thead><tr><th>Need</th><th>Exact shape (single command; hook rejects <code>;&amp;|&lt;&gt;$`()\</code>, newlines, <code>--output</code>, and <code>..</code> in these two shapes)</th></tr></thead>
+    <tbody>
+      <tr><td>Spawn</td><td><code>scripts/router-worker.sh spawn &lt;name&gt; &lt;worktree&gt; &lt;brief.md&gt; &lt;model&gt;</code></td></tr>
+      <tr><td>Resume / continue</td><td><code>scripts/router-worker.sh resume &lt;name&gt; &lt;session-uuid&gt; &lt;worktree&gt; &lt;note.md&gt; &lt;model&gt;</code></td></tr>
+      <tr><td>Poll</td><td>no new shape: <code>ps aux</code>/<code>ps -ef</code> (alive), the Read tool on <code>.router/out/&lt;name&gt;.out</code> (output; the final message is the worker's report)</td></tr>
+      <tr><td>Retire</td><td>none. A headless <code>-p</code> process exits by itself when its run ends, so there is no idle process to retire. A hung or mid-turn session still needs the owner (or a worker) to kill it: lessons D2 stands.</td></tr>
+    </tbody>
+  </table>
+  <p>Resume syntax, verified against the installed claude 2.1.288: <code>claude -p "&lt;prompt&gt;" --resume &lt;session-id&gt;</code> (the spawn pins the id with <code>--session-id &lt;uuid&gt;</code>, which the launcher prints). Tested end to end: a resumed session recalled a word from its first run.</p>
+  <h3 id="q2-threat">Threat model and mitigations</h3>
+  <p>Risk: the router reads an untrusted owner-facing chat and worker reports that have already carried injected instructions (a fake "stop and summarize" inside a subagent report). If the router can start <code>claude</code>, injected text could try to turn that into arbitrary code execution, since a spawned session has Bash and edit tools.</p>
+  <table>
+    <thead><tr><th>Attack</th><th>Mitigation</th></tr></thead>
+    <tbody>
+      <tr><td>Attacker-chosen prompt or flags to <code>claude -p</code> (<code>--dangerously-skip-permissions</code>, <code>--settings</code>, <code>--permission-mode bypassPermissions</code>)</td><td>The router never types <code>claude</code>. The hook allows only the launcher; the launcher's prompt is fixed text naming a file, and its flags are fixed (<code>--agent worker --permission-mode acceptEdits --max-budget-usd 25</code>). Each argument is validated: name <code>[a-z0-9-]</code>, uuid, model enum, so none can start with <code>-</code>.</td></tr>
+      <tr><td>Shell injection through arguments</td><td>The hook denies metacharacters and anything outside <code>[A-Za-z0-9._/ -]</code>; the launcher is <code>sh</code> with every expansion quoted; no <code>eval</code>.</td></tr>
+      <tr><td>Brief or note pointing at an attacker file, or <code>/etc</code>, or a symlink out</td><td>Launcher resolves the real path and requires <code>&lt;repo&gt;/.router/briefs/*.md</code>; the worktree must be a registered <code>git worktree</code> of this repo.</td></tr>
+      <tr><td>Editing the launcher or the hook</td><td>The router has no Edit or Write and no Bash outside the whitelist, so it cannot change either; only a worker commit can, which the owner reviews (these paths are outside any code gate: add <code>scripts/</code> and <code>.claude/</code> to "what no gate reviews", W3).</td></tr>
+      <tr><td>A worker spawned with the router's own persona or hook</td><td>The repo's <code>"agent": "router"</code> setting would make every session in a worktree a router; the launcher passes <code>--agent worker</code> (<code>.claude/agents/worker.md</code>). Verified: the spawned session ran Bash.</td></tr>
+      <tr><td>Brief content written by a compromised worker</td><td><b>Residual risk, not removed.</b> A brief is prompt text for another worker with edit and Bash power; briefs are authored by workers, not the router, and the router is not to paste untrusted report text into one (UC-ROUTE-3). The launcher, the budget cap and the owner's merge sign-off bound the blast radius; they do not prevent a bad brief from running.</td></tr>
+    </tbody>
+  </table>
+  <p>Not verified: whether worker Bash commands outside the worktree's allowlist stall under <code>acceptEdits</code> (a headless session cannot answer prompts). If workers stall, widen the launcher's mode or the worker allowlist in <code>.claude/settings.json</code>, not the router's.</p>
 </div>
 
   </main>
