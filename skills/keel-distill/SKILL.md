@@ -1,5 +1,5 @@
 ---
-name: distill
+name: keel-distill
 description: Keel's documentation tiers (T0-T4) and the distillation process - before a T3 working doc (plan, result, scratch) is archived out of git, absorb its durable truth into the right T1/T2 doc, then git rm it, record the lineage with keel notes write doc --distill, and verify with keel verify-dod. Use when deciding where a new doc goes, when a WU or epic finishes (done = distilled), at epic close, or when check 6·doc-note reports an undistilled or still-tracked T3 doc.
 ---
 

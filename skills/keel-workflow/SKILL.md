@@ -1,5 +1,5 @@
 ---
-name: workflow
+name: keel-workflow
 description: Keel's workflow standard - how work is planned, tested, gated and merged in a Keel project (epic -> working unit -> commit, one hook-enforced gate per level, completeness proven from git notes, never from an agent's word). Use before starting any epic, WU or commit in a repo with .keel/config.toml; when writing test/doc notes, staging a sign-off, merging, waiving a test layer or a walk seam, or when a Keel gate prints FAIL. Also holds the testing charter (epic -> e2e, WU -> integration, commit -> unit).
 ---
 
@@ -17,7 +17,7 @@ skeleton, hooks), then follow the bootstrap and `keel mr setup` lines it prints.
 
 ## 1 · Levels, branches, ids
 
-| Level | Branch | Plan artifact (skill `plan`) | Gate | Evidence on the gated tip |
+| Level | Branch | Plan artifact (skill `keel-plan`) | Gate | Evidence on the gated tip |
 |---|---|---|---|---|
 | Epic | `epic/<slug>` off main | epic plan, WU summaries included | verify-dod **epic**, at the merge into main | `test/v1` (e2e) · `cr/v1` PASS · `doc/v1` · `mr/v1` · `dod/v1` |
 | WU | `wu/<epic-slug>/<slug>` off its epic | WU plan doc, before code | verify-dod **wu**, at the merge into the epic | `test/v1` (integration) · `cr/v1` PASS · `doc/v1` · `mr/v1` · `dod/v1` |
@@ -55,9 +55,9 @@ preference:
 
 | # | Step | Command |
 |---|---|---|
-| 1 | the work, its tests, its docs, the result report (skill `plan`) — all committed | — |
+| 1 | the work, its tests, its docs, the result report (skill `keel-plan`) — all committed | — |
 | 2 | test + doc notes on the tip | `keel notes write test < judgment.json` · `keel notes write doc` |
-| 3 | preflight, then the code review → `cr/v1` PASS on the code paths | `keel preflight wu <tip>` · skill `code-review` |
+| 3 | preflight, then the code review → `cr/v1` PASS on the code paths | `keel preflight wu <tip>` · skill `keel-code-review` |
 | 4 | check: red **only** on `8·manual-review` | `keel verify-dod wu <tip>` |
 | 5 | **the human** signs last | `keel mr confirm wu <tip> --as <id>` |
 | 6 | the human merges | `git switch epic/<slug> && git merge --no-ff wu/<slug>/<x>` |
@@ -88,7 +88,7 @@ note between tips is a bypass: always use the writer.
 |---|---|---|
 | `test/v1` | per layer (`unit`, `integration`, `e2e`): `count`, `covers`, `files`, `languages` — or `waived` | `keel notes write test` reads the judgment on stdin; counts come from the named files at the tip via `tests.adapter` (rust, ts, python, go, regex), never typed |
 | `doc/v1` | every changed doc (under `docs.root`, or T0) listed with its tier; archived T3 docs carry `distilled_to` | `keel notes write doc [--distill <t3>=<doc>[,<doc>] \| <t3>=none: <why>]` |
-| `cr/v1` | an independent review judged exactly this diff's code paths: `verdict`, `blockers`, `importants`, `code_diff_hash`; optional `walk_waivers` | the `code-review` skill, via `keel notes write cr --verdict PASS\|FAIL` |
+| `cr/v1` | an independent review judged exactly this diff's code paths: `verdict`, `blockers`, `importants`, `code_diff_hash`; optional `walk_waivers` | the `keel-code-review` skill, via `keel notes write cr --verdict PASS\|FAIL` |
 | `mr/v1` | a listed human attested this tip: `signer`, `tier`, `report` + `report_hash`, `change_hash`, `sig` when key-backed | the human: `keel mr confirm` |
 | `dod/v1` | the gate ran green here | `keel verify-dod` on a green, non-exempt wu/epic, only |
 
@@ -176,7 +176,7 @@ branch can ship or merge in a neutered hook. Never commit hooks.
 | `pre-merge-commit` | `keel verify-dod hook`, judged by the target's **committed** `.keel/config.toml`: into `epic/*` ⇒ wu gate, into main ⇒ epic gate then `keel check` on the merged tree; other targets ungated; a back-merge of landed history into an epic passes; an octopus or an unknowable merge head (`git pull`) is refused — fetch, then `git merge --no-ff <branch>` |
 | `pre-push` | `keel check` on every pushed tree (clean HEAD in place, others in a scratch worktree) · `verify-dod range` on main/`epic/*` updates · pushes `refs/notes/*` |
 | `post-checkout` | heals `merge.ff=false` · copies `.gitworktreecopy` entries into a new worktree |
-| `verify-doc-post` · `verify-doc-stop` | harness hooks (PostToolUse / Stop): `keel verify-doc` on each written doc / every doc at turn end (skill `plan`) |
+| `verify-doc-post` · `verify-doc-stop` | harness hooks (PostToolUse / Stop): `keel verify-doc` on each written doc / every doc at turn end (skill `keel-plan`) |
 
 - **Conflicts**: completing a conflicted merge with `git commit` never runs
   pre-merge-commit (and on main pre-commit refuses it). Resolve conflicts by

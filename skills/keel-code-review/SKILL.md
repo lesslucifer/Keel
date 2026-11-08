@@ -1,5 +1,5 @@
 ---
-name: code-review
+name: keel-code-review
 description: Run Keel's multi-agent code review - a read-only run over a caller-supplied scope; mechanical preflight (keel preflight), two or three isolated finders over the diff's code paths (from .keel/config.toml), adversarial verifiers, a severity-decided verdict, and a cr/v1 note bound to the reviewed code. The review judges code and nothing else; a diff that changes no code path asks for no review. Use when a WU or epic completes, before its sign-off and merge, or to review recent commits. The caller defines the scope (WU vs its epic, epic vs main, or recent commits) - never assume a base.
 ---
 
