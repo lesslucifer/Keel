@@ -17,12 +17,14 @@ def skills: ["keel-router", "project-router", "keel-workflow", "keel-plan", "kee
 # Plain words only: no quote, escape, glob, brace, substitution, redirect, separator or
 # control character survives this set, so the string judged here is the argv the shell
 # builds (a quoted "--out""put=" once slipped past a substring check). "--ou" also
-# catches git's abbreviated long options; -R/--repo would point gh at any host.
+# catches git's abbreviated long options. gh takes only named query flags and bare
+# words without ":" - no -R/--repo (also inside a -dR cluster), no URL argument (both
+# point gh at any host), no -q/--jq/-t/--template (gh's jq reads the environment), no --web.
+def gh_args: "( (--?(json|state|limit|author|base|head|label|search|L|s|A|B|H|l|S)[ =][A-Za-z0-9._,/-]+|[A-Za-z0-9][A-Za-z0-9._/-]*))*";
 def bash_ok:
   test("^[A-Za-z0-9 ._/:=@%,+^~-]*$")
   and (test("--ou") | not)
-  and (test("(^| )(-R|--repo)") | not)
-  and test("^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)( .*)?|ps (aux|-ef)|scripts/router-worker\\.sh (spawn|resume) [A-Za-z0-9._/ -]+)$")
+  and test("^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)" + gh_args + "|ps (aux|-ef)|scripts/router-worker\\.sh (spawn|resume) [A-Za-z0-9._/ -]+)$")
   and ((test("^scripts/") and test("\\.\\.")) | not);
 
 if .agent_type != "router" then empty

