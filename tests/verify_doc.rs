@@ -49,11 +49,22 @@ fn repo() -> TempDir {
 }
 
 #[test]
-fn seed_plan_verifies_green() {
-    let plan = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/work/2026-11-07-seed-plan.html");
+fn complete_epic_plan_is_green_and_each_wu_block_needs_its_sub_items() {
     let d = repo();
-    let o = keel(d.path(), &["verify-doc", plan.to_str().unwrap()]);
+    let p = d.path();
+    let items: String = ["intent", "use-cases", "expected", "non-goals", "wu-summaries", "e2e-plan", "distillation-plan", "open-questions"]
+        .map(|i| format!(r#"<p data-item="{i}">x</p>"#))
+        .concat();
+    let plan = |subs: &[&str]| {
+        let wu: String = subs.iter().map(|i| format!(r#"<p data-item="{i}">x</p>"#)).collect();
+        format!(r#"<html data-artifact="epic-plan" data-status="ready"><body>{items}<section data-wu="W1">{wu}</section></body></html>"#)
+    };
+    std::fs::write(p.join("docs/e.html"), plan(&["wu-summary", "wu-maps-to", "wu-expected", "wu-deps"])).unwrap();
+    let o = keel(p, &["verify-doc", "docs/e.html"]);
     assert!(o.status.success(), "{}", text(&o));
+    std::fs::write(p.join("docs/e.html"), plan(&["wu-summary", "wu-maps-to", "wu-expected"])).unwrap();
+    let t = text(&keel(p, &["verify-doc", "docs/e.html"]));
+    assert!(t.contains("data-wu W1: missing or empty \"wu-deps\""), "{t}");
 }
 
 #[test]
