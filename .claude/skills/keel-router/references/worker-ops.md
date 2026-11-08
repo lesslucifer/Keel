@@ -63,7 +63,7 @@ checkout (the launcher refuses both); the target's branch carries
   "Substance comes from workers"). It is the only file you write.
 - **Spawn**: `scripts/router-worker.sh spawn <name> <worktree> .router/briefs/<name>.md <model>`
   (`<name>` matches `[a-z0-9][a-z0-9-]{0,40}`; model `opus|sonnet|haiku|fable`).
-  Prints `RUNNING name=… pid=… session=<uuid> out=… snapshot=… sha256=… worktree=…`,
+  Prints `RUNNING name=… pid=… session=<uuid> out=… snapshot=… brief=… sha256=… worktree=…`,
   or `DEAD name=… exit=<code> …` plus the output tail. Record the session uuid.
   `Read` the snapshot and confirm it is the brief you wrote. Announce the
   worker only after `RUNNING`.
@@ -82,13 +82,15 @@ checkout (the launcher refuses both); the target's branch carries
 this mode; until then use Mode 1 for real work:**
 1. *Brief not readable.* The snapshot sits under `<ROOT>/.router/runs/…`,
    outside the worker's worktree; a headless worker cannot approve that read
-   (run `persona-fix`: `Read` and `cat` both refused, no work done). The owner
-   is applying the fix (the worker suggested `--add-dir` on the run dir, or
-   copying the brief into the worktree).
+   (run `persona-fix`: `Read` and `cat` both refused, no work done).
+   **Fixed 2026-11-08** (`wu/E-ROUTER/launcher-brief-fix`): the launcher copies
+   the brief into `<worktree>/.router-brief.XXXXXX/brief.md` (self-ignoring)
+   and prints it as `brief=`; proven by real run `brief-fix-proof` (lessons K5).
 2. *Persona missing.* `--agent worker` fails ("--agent 'worker' not found") in
    a worktree whose branch does not track `.claude/agents/worker.md` (run
-   `smoketest` into `Keel-E-SEED`). Fix in flight on
-   `wu/E-ROUTER/worker-persona-copy`.
+   `smoketest` into `Keel-E-SEED`). Not fixed: the
+   `wu/E-ROUTER/worker-persona-copy` branch has no commits of its own;
+   until then spawn only into a worktree whose branch tracks the file.
 3. *Unverified*: whether a worker's Bash outside its allowlist stalls under
    `acceptEdits` (it cannot answer a prompt). If it does, widen the worker's
    mode or allowlist, never the router's.
