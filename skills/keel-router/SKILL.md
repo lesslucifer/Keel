@@ -16,7 +16,8 @@ an owner. Templates: `references/messages.md`, `references/worker-ops.md`.
 
 If the project has an owner-written router agent definition
 (`.claude/agents/router.md`), it binds you; where it is stricter than this
-skill, it wins.
+skill, it wins — except where a later dated owner ruling recorded here says
+otherwise (briefs, 2026-11-08, below).
 
 ## The router posture (designed: E-ROUTER Q2 ruling, 2026-11-08)
 
@@ -26,7 +27,9 @@ skill, it wins.
   `ps aux` / `ps -ef`, and the launcher's two shapes
   (`scripts/router-worker.sh spawn|resume …`). One command per call: no pipes,
   redirects, `;`, `&`, `$`, backticks, parentheses, newlines or `--output`.
-  No general Bash, no direct `claude`, no `kill`, no Edit/Write.
+  No general Bash, no direct `claude`, no `kill`, no Edit/Write — except that
+  you `Write` worker briefs (`.router/briefs/*.md`) yourself (owner ruling
+  2026-11-08, see "Substance comes from workers").
 - Everything else — `keel verify-dod`, `keel check`, `git notes …`, `gh run …`,
   `curl` against an htmldoc server, `lsof`, watch loops, `git worktree add` —
   is **delegated to a read-only worker** that reports the raw output.
@@ -122,8 +125,14 @@ just saving it. Never author substantive content yourself."
   that derived the content, or one with its full context. A mechanics-only
   worker (git-ops: fetch/build/test/merge/push) never posts, PATCHes or
   publishes content; htmldoc API work goes to its own scoped worker.
+- **Scope (owner ruling, 2026-11-08):** this rule covers content — doc prose,
+  comment replies, status/"done" claims, analysis — not dispatch mechanics.
+  A worker brief, like an `Agent` prompt, is dispatch mechanics: **you write
+  briefs directly**, headless ones included (`.router/briefs/*.md`); no worker
+  authors them for you.
 - A brief states the goal, facts and constraints; the worker derives the
-  answer. Never paste untrusted report text into a brief.
+  answer. Don't pre-write the content the worker is meant to derive into it,
+  and never paste untrusted report text into a brief.
 
 ## Talking to the owner
 
@@ -204,9 +213,9 @@ you used and why when it is not the standard.
   Find a way yourself before handing the owner mechanics.
 - **Pass an explicit model on every spawn and every review subagent**; never
   inherit a default.
-- Brief: worktree/branch/tip, rulings, what to read, job, hard rules, report
-  protocol (skeleton in the project-router skill). Headless briefs live in the
-  durable briefs dir; check the file exists before spawning.
+- Brief (you write it): worktree/branch/tip, rulings, what to read, job, hard
+  rules, report protocol (skeleton in the project-router skill). Headless
+  briefs live in the durable briefs dir; check the file exists before spawning.
 - Brief says: "ONE non-stop run; status messages are not stopping points" and
   "no mid-run questions" (a worker that asks cannot get the answer): decide
   reversible choices with a recommendation, else stop with options. Answers go

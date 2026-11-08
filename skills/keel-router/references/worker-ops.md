@@ -57,19 +57,21 @@ registered `git worktree` other than the router's own checkout and the main
 checkout (the launcher refuses both); the target's branch carries
 `.claude/agents/worker.md` (open issue 2).
 
-- **Brief**: a worker writes it to `<ROOT>/.router/briefs/<name>.md` (regular
-  file, no symlink); you `Read` it before spawning.
+- **Brief**: you write it yourself (`Write`) to `<ROOT>/.router/briefs/<name>.md`
+  (regular file, no symlink). A brief is dispatch mechanics, like an `Agent`
+  prompt, not authored substance (owner ruling 2026-11-08; SKILL.md
+  "Substance comes from workers"). It is the only file you write.
 - **Spawn**: `scripts/router-worker.sh spawn <name> <worktree> .router/briefs/<name>.md <model>`
   (`<name>` matches `[a-z0-9][a-z0-9-]{0,40}`; model `opus|sonnet|haiku|fable`).
   Prints `RUNNING name=… pid=… session=<uuid> out=… snapshot=… sha256=… worktree=…`,
   or `DEAD name=… exit=<code> …` plus the output tail. Record the session uuid.
-  `Read` the snapshot and confirm it is the brief you reviewed. Announce the
+  `Read` the snapshot and confirm it is the brief you wrote. Announce the
   worker only after `RUNNING`.
 - **Alive**: `ps aux` and look for the pid in `.router/out/<name>.pid` (`Read`)
   or `-n <name>`; the args show `--model`.
 - **Report**: when the process is gone, `Read` `.router/out/<name>.out`; the
   final message is the worker's report.
-- **Follow-up**: a worker writes `.router/briefs/<name>-r<n>.md`; then
+- **Follow-up**: you write `.router/briefs/<name>-r<n>.md`; then
   `scripts/router-worker.sh resume <name> <session-uuid> <same worktree> .router/briefs/<name>-r<n>.md <model>`
   (the launcher refuses a different worktree than the spawn's).
 - **Retire**: none needed — a `-p` run exits when its run ends. A hung or
