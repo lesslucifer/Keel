@@ -198,3 +198,14 @@ fn pass_with_blockers_is_refused() {
     let o = keel(d.path(), &["notes", "write", "cr", "--verdict", "PASS", "--blockers", "1"]);
     assert!(!o.status.success() && text(&o).contains("refused"));
 }
+
+#[test]
+fn version_works_outside_any_repo() {
+    let d = TempDir::new().unwrap();
+    let o = keel(d.path(), &["--version"]);
+    assert!(o.status.success());
+    let t = text(&o);
+    assert!(t.starts_with(&format!("keel {}\n", env!("CARGO_PKG_VERSION"))), "{t}");
+    assert!(t.contains("Keel:"), "{t}");
+    assert!(keel(d.path(), &["-V"]).status.success());
+}
