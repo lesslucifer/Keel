@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af067fa9f34851f0dfb1eae">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — Use cases: router</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>Use cases: router</h1>
+      <p>What a router session coordinating worker sessions must and must not do.</p>
+      <div class="meta">T2 · use-cases · current truth (updated in place) · 2026-11-08 · Keel · distilled from E-SEED (W6)</div>
+    </div>
+  </header>
+  <main>
+    <p data-c="how-to-read">The standard itself is the <code>keel-router</code> skill (<code>skills/keel-router/</code>); this file holds only the contract. E-ROUTER adds its UC-ROUTE entries here.</p>
+
+    <h2 id="uc-route">UC-ROUTE · routing</h2>
+    <h3 id="uc-route-1"><span class="badge id">UC-ROUTE-1</span> the router coordinates, the owner acts</h3>
+    <table data-c="uc-route-1-table">
+      <tr><th>Trigger</th><td>A router session coordinating worker sessions on a Keel project.</td></tr>
+      <tr><th>Expected</th><td>It verifies workers' claims against the repo, stages the owner's commands (sign-off, merge, push) for the owner to run, and never signs (<code>keel mr</code>), merges or pushes for the owner.</td></tr>
+      <tr><th>Failure</th><td>The router runs <code>keel mr</code> itself, merges or pushes; or relays a worker claim it did not check.</td></tr>
+    </table>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

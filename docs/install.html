@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installing Keel</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem}pre{background:#f4f4f4;padding:.6rem;overflow-x:auto}</style>
+</head>
+<body>
+<h1>Installing Keel</h1>
+<p>Keel is one binary, <code>keel</code>. It carries the gate and the rules (the skills). There is no Claude Code plugin or marketplace entry. Unix only (macOS, Linux): the CLI and its hooks use <code>sh</code> and Unix file permissions.</p>
+
+<h2>1. Install the binary</h2>
+<pre>cargo install --git https://github.com/lesslucifer/Keel</pre>
+<p>GitHub Releases and npm (<code>@lesslucifer/keel</code>) arrive with the release pipeline (W10). Do not run <code>cargo install keel</code>: that is an unrelated crate.</p>
+<p><strong>Name clash.</strong> The npm package <code>keel</code> (keel.so) also installs a binary called <code>keel</code>. With both installed you get whichever is first on <code>PATH</code>. This is an accepted risk (owner ruling, R25) and is not detected by the check below. If <code>keel init</code> prints something unfamiliar, run <code>which -a keel</code>.</p>
+
+<h2>2. Check PATH</h2>
+<p>Claude Code hooks see the login shell's <code>PATH</code>, so check that one:</p>
+<pre>sh -lc 'command -v keel'</pre>
+<p>Without <code>keel</code> on <code>PATH</code> the harness hooks exit 0 silently (they do nothing), and the git hooks refuse and tell you how to install.</p>
+
+<h2>3. Adopt a repo</h2>
+<pre>cd your-repo
+keel init
+git add .keel AGENTS.md .claude/skills .claude/settings.json .codex .gitignore
+git commit --no-verify -m "keel init"   # once, to land the policy on main
+keel hooks install                       # once per clone (hooks live in the git dir, untracked)
+keel mr setup --as &lt;identity&gt;            # the human owner only</pre>
+<p><code>keel init</code> writes the config, <code>AGENTS.md</code>, the five skills into <code>.claude/skills/keel-*</code>, a <code>project-router</code> template, <code>.codex/hooks.json</code>, and merges two hooks (PostToolUse <code>Write|Edit</code> and Stop) into <code>.claude/settings.json</code>, keeping every other key. The merged hooks call the scripts that <code>hooks install</code> writes into the git common dir, and exit 0 when they are absent, so a clone that never ran <code>hooks install</code> is not broken. It also adds the worktrees directory (<code>[paths] worktrees</code> in <code>.keel/config.toml</code>, default <code>.claude/worktrees/</code>) to <code>.gitignore</code>.</p>
+
+<h2>4. Upgrade</h2>
+<p>Install a newer binary, then re-run <code>keel init</code> in each project and commit the result. For each skill file that differs from the new binary's copy, init asks <code>Overwrite? [y/N]</code> (default no) and says whether the file is committed or has uncommitted changes. Missing files are created without asking. Files you added inside a <code>keel-*</code> directory are left alone and listed as <code>extra</code>.</p>
+<p>Pass <code>-f</code> / <code>--force</code> to overwrite every differing skill file without asking. Scripts and CI must pass <code>-f</code>: without it init reads answers from stdin, treats end-of-file as "no", keeps the file and exits 0, so an unattended run never updates anything. <code>-f</code> only touches <code>.claude/skills/keel-*</code>; <code>.keel/config.toml</code>, <code>AGENTS.md</code>, <code>.codex/hooks.json</code> and <code>project-router</code> are project-owned and are never overwritten.</p>
+</body>
+</html>
