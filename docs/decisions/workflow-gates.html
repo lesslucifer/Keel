@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af067fb9f34851f0dfb1eb2">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — Decisions: workflow gates</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>Decisions: workflow gates</h1>
+      <p>Why the notes, the merge gate, the human sign-off, the code review contract and the doc tiers are the way they are. Check here before "fixing" anything that looks deliberate.</p>
+      <div class="meta">T2 · decisions · append-only · 2026-11-08 · Keel · DEC-13 – DEC-29 · distilled from E-SEED (W2–W8 open points, rulings R2–R24)</div>
+    </div>
+  </header>
+  <main>
+    <p data-c="how-to-read">Append-only. A reversal marks the old record <em>superseded by DEC-m</em> and adds a new one. Check ids (<code>1·notes</code> … <code>8·manual-review</code>) are the ones <code>src/gate.rs</code> prints.</p>
+
+    <h2 id="notes">Notes</h2>
+    <h3 id="dec-13">DEC-13 · Schemas start at /v1, with no legacy readers</h3>
+    <table data-c="dec-13">
+      <tr><th>Context</th><td>Trawler's gate kept a reader for every schema it ever shipped (cr/v2…v5, design data inside cr/v3).</td></tr>
+      <tr><th>Choice</th><td>Every Keel note (<code>test</code>, <code>doc</code>, <code>cr</code>, <code>mr</code>, <code>dod</code>) starts at <code>/v1</code>, shares one identity block (tip, base, branch, committer, timestamp) and has no legacy readers. Until a release, a schema is changed in place (doc/v1 <code>paths</code> became <code>changes</code>). The identity has no epic/WU ids: the epic and WU are inferred from branch names, and <code>2·manifest</code> only checks that each note's tip is the commit it sits on.</td></tr>
+      <tr><th>Consequences</th><td>A note copied onto another commit is caught; a note meant for a different WU on the right commit is not.</td></tr>
+      <tr><th>Lineage</th><td>Seed plan; W2 scope; W3 open point 10; W8 open point 10.</td></tr>
+    </table>
+
+    <h3 id="dec-14">DEC-14 · Evidence is derived from the tree, bound by git hashes</h3>
+    <table data-c="dec-14">
+      <tr><th>Choice</th><td><code>keel notes write</code> computes range, identity, tiers and test counts itself; the agent supplies only a judgment (JSON on stdin for <code>test</code>, flags for <code>cr</code>). The cr binding is the git blob hash of <code>git diff base tip -- code_paths</code>, one shared function for writer and gate. Writing from main (an empty range) is refused.</td></tr>
+      <tr><th>Rejected</th><td>sha256 (<code>diff_sha256</code>): a new dependency for no gain while git's own object hash binds the tip anyway (hardening in <a href="../backlog/e-seed-v2.html#b7">backlog B7</a>).</td></tr>
+      <tr><th>Lineage</th><td>W2 open points 1–3; Trawler DEC-44.</td></tr>
+    </table>
+
+    <h2 id="gate">Merge gate</h2>
+    <h3 id="dec-15">DEC-15 · One range resolver; configurable branch prefixes</h3>
+    <table data-c="dec-15">
+      <tr><th>Choice</th><td>The note writer and the gate resolve the target the same way: <code>--target</code>, else <code>&lt;wu_prefix&gt;&lt;e&gt;/…</code> → <code>&lt;epic_prefix&gt;&lt;e&gt;</code>, else <code>branches.main</code>. <code>branches.epic_prefix</code> / <code>wu_prefix</code> default to <code>epic/</code> / <code>wu/</code> and drive hook level detection and the pre-push range check. Merges into other branches are ungated.</td></tr>
+      <tr><th>Consequences</th><td>A WU's <code>cr.base</code> equals the merge-base its WU gate computes against the epic (it never could when the writer measured from main).</td></tr>
+      <tr><th>Lineage</th><td>W3 open points 5, 6; R4.</td></tr>
+    </table>
+
+    <h3 id="dec-16">DEC-16 · The docs/infra exemption, and what it never covers</h3>
+    <table data-c="dec-16">
+      <tr><th>Choice</th><td>A range is gated when any changed path is under <code>code_paths</code> (empty = everything is code). Otherwise it is exempt from test, cr and doc evidence and writes no receipt. Optional <code>infra_paths</code> globs can only narrow the exemption. Never exempt: check 8 (sign-off), the epic tracked-doc layout, and the lineage of a T3 doc the range archives (an archive commit is always docs-only, so exempting it would make the distillation check unreachable).</td></tr>
+      <tr><th>Rejected</th><td>A config flag to exempt archive commits.</td></tr>
+      <tr><th>Lineage</th><td>W3 open points 2, 3; R3; R24; W8 open point 7; Trawler <code>is_gated</code>.</td></tr>
+    </table>
+
+    <h3 id="dec-17">DEC-17 · keel check: where trees are proven</h3>
+    <table data-c="dec-17">
+      <tr><th>Choice</th><td>Renamed from "gate0" to <code>check</code> everywhere (<code>keel check</code>, <code>[check]</code>, <code>keel-check-green</code>), with no compatibility for <code>[gate0]</code>. It runs at preflight, on the merged tree of an epic → main merge, and on every pushed tree; a WU → epic merge checks notes only. Results are cached by tree content. The pre-commit hook only enforces merge-only main and runs no lint.</td></tr>
+      <tr><th>Consequences</th><td>Two WUs green alone but red together are caught at the epic's preflight, its merge into main, or a push, not at the second WU merge. A non-HEAD pushed tree is proven in a scratch worktree whose cache is discarded.</td></tr>
+      <tr><th>Lineage</th><td>R2 (option a: spec reworded to match code); R5; W3 open point 8; W6 open point 9; Trawler DEC-74, DEC-11/54 (cache).</td></tr>
+    </table>
+
+    <h3 id="dec-18">DEC-18 · The epic walk and walk_waivers</h3>
+    <table data-c="dec-18">
+      <tr><th>Choice</th><td>The epic gate re-verifies every first-parent seam. A red seam is overridden only by <code>walk_waivers: [{seam, why}]</code> hand-edited onto the epic tip's cr note (<code>git notes --ref=cr edit</code>), matched by sha prefix, blank reason never waives. The epic tip itself is not walked (its epic-level checks cover it) and no rule restricts what the epic tip may be.</td></tr>
+      <tr><th>Rejected</th><td>A CLI flag for waivers; a rule that the epic tip must not be a code commit.</td></tr>
+      <tr><th>Lineage</th><td>W3 open points 4, 7; R6; Trawler's walk.</td></tr>
+    </table>
+
+    <h3 id="dec-19">DEC-19 · Notes sync is push-only</h3>
+    <table data-c="dec-19">
+      <tr><th>Choice</th><td>pre-push pushes <code>refs/notes/*</code> (a failed sync only warns). Nothing configures a notes fetch: a fresh clone runs <code>git fetch origin 'refs/notes/*:refs/notes/*'</code> by hand. Fetch setup in init is deferred (<a href="../backlog/e-seed-v2.html#b6">backlog B6</a>).</td></tr>
+      <tr><th>Lineage</th><td>W3 open point 9; R7.</td></tr>
+    </table>
+
+    <h2 id="sign-off">Human sign-off</h2>
+    <h3 id="dec-20">DEC-20 · Trust model: a local roster; "signed" means a listed key signed</h3>
+    <table data-c="dec-20">
+      <tr><th>Choice</th><td><code>.mr-allowed</code> lives at the worktree root, untracked (git-ignored via <code>.git/info/exclude</code>); every reader refuses while it is tracked, and the fix is to delete it and rebuild with <code>keel mr setup</code>. Tiers <code>email</code> / <code>username</code> / <code>key</code>, configurable via <code>[mr] tiers</code> (default all three). If an identity has any key entry, its notes must carry a verifying signature, whatever tier the note claims. Identities are limited to <code>[A-Za-z0-9@._+-]</code>.</td></tr>
+      <tr><th>Accepted limitation</th><td>Any process with <code>SSH_AUTH_SOCK</code> or filesystem access (including an AI agent) can sign with a loaded key or add itself to the roster. "Signed" proves a listed key signed this exact change, not that a human reviewed it. A passphrase-protected key is assumed and recommended; it only helps while the key is not loaded into ssh-agent.</td></tr>
+      <tr><th>Lineage</th><td>Q10; R8 (security review H1); W4 open points 1, 4, 5, 16; Trawler DEC-9, DEC-10.</td></tr>
+    </table>
+
+    <h3 id="dec-21">DEC-21 · The signature payload</h3>
+    <table data-c="dec-21">
+      <tr><th>Choice</th><td><code>ssh-keygen -Y sign -n keel-mr</code> over a versioned text: <code>keel-mr/v1</code>, level, base, tip, change hash (blob hash of the full diff), report path, report hash. Hashes are git object ids. The key comes from <code>git config keel.signingkey</code> (never <code>user.signingkey</code>). mr confirm self-verifies against the roster before writing. The verifier recomputes base, tip and change from the repo and trusts only the signed report hash, re-checked against the report's bytes.</td></tr>
+      <tr><th>Rejected</th><td>Trawler's bare <code>change_hash\nreport_sha256</code> (replayable onto another commit, range or level); sha256 via a new crate.</td></tr>
+      <tr><th>Lineage</th><td>W4 open points 2, 3, 6, 10; Trawler DEC-10.</td></tr>
+    </table>
+
+    <h3 id="dec-22">DEC-22 · Sign last, strictly; check 8 at the boundary only</h3>
+    <table data-c="dec-22">
+      <tr><th>Choice</th><td><code>keel mr confirm</code> refuses unless the tip passes checks 1–7 for its level (the epic walk included), so a human is never asked to sign a tip the merge would refuse. Check 8 runs in <code>gate::run()</code> on every top-level wu/epic run, never inside <code>verify()</code>: the walk re-enters <code>verify()</code> per seam and must not re-judge old seam sign-offs (the roster is local and mutable). Check 8 runs at pre-merge-commit only, not pre-push. The report is <code>--report</code> or the single changed <code>*-result.html</code>; reworking that is deferred (<a href="../backlog/e-seed-v2.html#b2">backlog B2</a>).</td></tr>
+      <tr><th>Lineage</th><td>R10; R11; R13 (security review H4); W4 open points 8, 9, 11, 17; Trawler DEC-27, DEC-9/10 (boundary-only).</td></tr>
+    </table>
+
+    <h3 id="dec-23">DEC-23 · The merge boundary judges by the target's policy and untracked hooks</h3>
+    <table data-c="dec-23">
+      <tr><th>Context</th><td>pre-merge-commit runs with the incoming branch already in the working tree. A branch could rewrite <code>.keel/config.toml</code> (H2) or ship a no-op <code>.keel/hooks/pre-merge-commit</code> that git would run for its own merge.</td></tr>
+      <tr><th>Choice</th><td>The hook loads the config from <code>HEAD:.keel/config.toml</code> (the target's committed policy; no committed config → refuse). Empty merge heads on a gated branch are refused (H3). Hooks are written to <code>&lt;git-common-dir&gt;/keel-hooks/</code>, untracked, with an absolute <code>core.hooksPath</code>; the hooks are thin <code>exec keel …</code> shims, so drift is small.</td></tr>
+      <tr><th>Reverses</th><td>Trawler DEC-72 ("git runs the tracked hooks", relative tracked <code>core.hooksPath</code>, plus a guard refusing a checkout whose hooksPath is not its own). Keel did not carry that guard over. Coexistence with other hook managers (Keel overrides any existing <code>core.hooksPath</code>; a tool that resets it silently disables Keel) is open (<a href="../backlog/e-seed-v2.html#b2">backlog B2</a>).</td></tr>
+      <tr><th>Lineage</th><td>W4 open points 14, 15, 19; R14; commit 0412b3c.</td></tr>
+    </table>
+
+    <h3 id="dec-24">DEC-24 · Rule-bearing commits: a trailer, not a signature; known gaps accepted</h3>
+    <table data-c="dec-24">
+      <tr><th>Choice</th><td>A commit touching <code>rule_bearing</code> needs a listed <code>Reviewed-By</code> trailer (<code>keel mr commit</code>); the WU's mr/v1 signature covers the whole diff. Native <code>git commit -S</code> signing is deferred (<a href="../backlog/e-seed-v2.html#b7">backlog B7</a>). <code>rule_bearing</code> entries ending in <code>/</code> are prefixes, others globs.</td></tr>
+      <tr><th>Accepted gaps</th><td>(1) Permanent, not scheduled: the commit-msg hook reads <code>rule_bearing</code> from the working-tree config, so a transient uncommitted edit lets a rule-bearing commit land without a trailer, and nothing downstream re-checks trailers. (2) <code>git commit --amend</code> sees only newly staged changes; cherry-picks are checked like any commit.</td></tr>
+      <tr><th>Lineage</th><td>R9; R16; W4 open points 7, 12, 21; Trawler DEC-9.</td></tr>
+    </table>
+
+    <h3 id="dec-25">DEC-25 · W4 security review M3 and L1–L5 are not pursued</h3>
+    <table data-c="dec-25">
+      <tr><th>Choice</th><td>Not triaged or tracked further: the report holding their details is unavailable, and the owner accepted the risk.</td></tr>
+      <tr><th>Lineage</th><td>R15; W4 open point 20.</td></tr>
+    </table>
+
+    <h2 id="review">Code review</h2>
+    <h3 id="dec-26">DEC-26 · Review scope, nits and modules</h3>
+    <table data-c="dec-26">
+      <tr><th>Choice</th><td>A standalone code commit gets no review of its own; the epic review covers it (Trawler DEC-51 not restored). Nits and the fleet bill are added to the cr note by the code-review skill's jq step only; no CLI flag, validation or disposition check will be built. <code>[review] modules</code> globs define a module for the altitude finder (each <code>*</code> match is one module) and <code>[review] rubric</code> points at an optional project-local rubric; only the skill reads <code>[review]</code>. The shipped rubric holds dimensions, severities, principles P1–P5 in general form and the DEC-50 corpus numbers as lineage; project instances go in the project rubric.</td></tr>
+      <tr><th>Lineage</th><td>Q11; R20 (superseded by R22); R21; R22; W6 open points 6, 7, 8, 11; Trawler DEC-50, DEC-51.</td></tr>
+    </table>
+
+    <h2 id="docs">Documentation</h2>
+    <h3 id="dec-27">DEC-27 · Doc tiers by config globs; archiving needs lineage</h3>
+    <table data-c="dec-27">
+      <tr><th>Choice</th><td>Tiers come from <code>[docs.tiers]</code> globs (default: Trawler's layout under docs.root, design-rules dropped), matched T3 → T2 → T1 → T0 so a broad glob never hides a working doc. "Archived" means deleted in the range and absent at the tip; the local copy in gitignored <code>docs/.archive/</code> is not checked. An archived T3 doc needs <code>distilled_to</code>: T1/T2 docs tracked at the tip (not necessarily changed in the same range), or <code>"none: &lt;why&gt;"</code>. A doc matching no glob is red. The doc set includes T0 files, so an AGENTS.md edit needs a doc note. Only verify-dod enforces this; verify-doc has no range or tip.</td></tr>
+      <tr><th>Rejected</th><td>A per-doc <code>data-tier</code> tag (a T3 doc could relabel itself to escape archiving). Trawler's <code>t2_waived</code> and <code>distills</code> sentence (judgment text the gate can only check for non-emptiness).</td></tr>
+      <tr><th>Lineage</th><td>W8 open points 1–9, 11; R23; Trawler documentation-system (DEC-29 retired set).</td></tr>
+    </table>
+
+    <h3 id="dec-28">DEC-28 · verify-doc: drafts fully silent</h3>
+    <table data-c="dec-28">
+      <tr><th>Choice</th><td>A draft (or status-less) governed doc is silent on its checklist <em>and</em> its relative links, unlike Trawler. Checklists are keyed by <code>data-artifact</code>; collapsed roles need the union. The Codex <code>apply_patch</code> payload parsing in verify-doc-post is ported from Trawler, not verified against Codex docs (<a href="../backlog/e-seed-v2.html#b7">backlog B7</a>).</td></tr>
+      <tr><th>Lineage</th><td>W5 open points 3, 4; Trawler DEC-4.</td></tr>
+    </table>
+
+    <h3 id="dec-29">DEC-29 · Conflicted merges are handled by the workflow, not the CLI</h3>
+    <table data-c="dec-29">
+      <tr><th>Context</th><td>Finishing a conflicted merge with <code>git commit</code> never runs pre-merge-commit. On main pre-commit refuses it; into an epic it lands ungated until the epic walk re-checks the seam.</td></tr>
+      <tr><th>Choice</th><td>The workflow skill says: resolve conflicts by merging the target into the work branch first, so the gated merge is clean. Porting Trawler's MERGE_HEAD branch in pre-commit is a possible follow-up (<a href="../backlog/e-seed-v2.html#b7">backlog B7</a>).</td></tr>
+      <tr><th>Lineage</th><td>W6 open point 10.</td></tr>
+    </table>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

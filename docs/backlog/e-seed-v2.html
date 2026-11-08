@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af067fd9f34851f0dfb1eb8">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — Backlog: E-SEED v2</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>Backlog: E-SEED v2</h1>
+      <p>Work deferred when E-SEED closed with W1–W8 (W7 v2 last), for a future "E-SEED v2" epic to absorb.</p>
+      <div class="meta">T2 · backlog · living (strike a row when an epic absorbs it) · 2026-11-08 · Keel</div>
+    </div>
+  </header>
+  <main>
+    <p data-c="how-to-read">Each row names the source it was deferred from. The E-SEED working docs are archived out of git; <code>git show 0c8baea:docs/work/&lt;file&gt;</code> recovers any of them.</p>
+
+    <h2 id="b1">B1 · E-SEED.W10 release pipeline (parked branch)</h2>
+    <table data-c="b1">
+      <tr><th>What</th><td>Prebuilt Unix binaries (aarch64/x86_64 macOS, aarch64/x86_64 Linux musl) from one cargo-dist config: tag-triggered GitHub Release with shell installer, npm wrapper <code>@lesslucifer/keel</code>, Homebrew formula pushed to <code>lesslucifer/homebrew-tap</code> (<code>brew install lesslucifer/tap/keel</code>), plus <code>keel --version</code>/<code>-V</code> working outside a repo. No crates.io, no Windows, no signing/notarization. Release CI is a signal, never a gate. The owner tags; agents never do.</td></tr>
+      <tr><th>State</th><td>Implemented but never reviewed, signed or merged, on the parked branch <code>wu/E-SEED/w10-release-pipeline</code> (tip <code>4a22316</code>, two commits on top of epic/E-SEED <code>0c8baea</code>: <code>9b01d61</code> keel --version, <code>4a22316</code> cargo-dist 0.34.0 config, <code>.github/workflows/release.yml</code>, install.html channels, plan corrections). Its plan doc was <code>docs/work/2026-11-07-w10-release-pipeline-plan.html</code> (htmldoc id <code>6aef41b69f34851f0dfb0af6</code>); the branch still tracks its own, newer copy.</td></tr>
+      <tr><th>Owner prerequisites</th><td>npm account owning the <code>@lesslucifer</code> scope and an <code>NPM_TOKEN</code> repo secret; the public repo <code>lesslucifer/homebrew-tap</code> (name and personal-account location settled 2026-11-08) and a fine-grained <code>HOMEBREW_TAP_TOKEN</code> secret on lesslucifer/Keel; Actions write permission for releases.</td></tr>
+      <tr><th>Resuming</th><td>Merge the branch into the E-SEED v2 epic (never rebase it). Expect a modify/delete conflict on the W10 plan doc, which main no longer tracks: keep it as v2's T3 plan or drop it. Open plan points: in-binary install hints (5), npm devDependency route not supported (6), npm EEXIST with keel.so's bin (7, accepted).</td></tr>
+    </table>
+
+    <h2 id="b2">B2 · E-SEED.W9 report binding and hook coexistence</h2>
+    <table data-c="b2">
+      <tr><th>Report binding</th><td>Owner direction (R11): drop the fixed/inferred report path, make the requirement configurable, treat the report as a receipt. Proposed: <code>[mr] report = "required" | "optional" | "none"</code> (default required); find the report by <code>data-artifact</code> role (<code>wu-result</code>/<code>epic-result</code>), not <code>*-result.html</code>; a missing required report is a named gate failure; optional report fields with payload header <code>keel-mr/v2</code>; dod/v1 names the attested report; amend UC-MR-1. Unanswered: meaning of "receipt" (1), one policy or per level (2), finding the archived epic report (3), schema version (4).</td></tr>
+      <tr><th>Hook coexistence</th><td><code>keel hooks install</code> overrides any existing <code>core.hooksPath</code> (other hook managers stop silently) and nothing notices when another tool resets it (Keel stops silently). Proposed: refuse install over a foreign hooksPath or non-sample <code>.git/hooks</code> unless <code>--force</code>, and a DEC-72-style guard that makes verify-dod/preflight refuse (check warns) when <code>core.hooksPath</code> is not Keel's. Chaining other hooks rejected unless needed (re-imports branch-controlled code). Owner decision pending (W9 open point 5). The DEC-72 reversal itself is recorded: <a href="../decisions/workflow-gates.html#dec-23">DEC-23</a>.</td></tr>
+      <tr><th>Source</th><td>W4 open points 11, 19; R11; R14; W9 plan (never started).</td></tr>
+    </table>
+
+    <h2 id="b3">B3 · Epic e2e per fixture language</h2>
+    <p data-c="b3">The seed plan's expected result: one hermetic e2e per fixture language (a Python repo with no Rust, then a second language) running init → epic + WU → notes → preflight → cr fixture → mr confirm with a test key → merges, plus the four refusals (edit after cr → check 5, skip mr → check 8, ff-merge a WU → walk, commit on main → pre-commit). Not built in E-SEED; integration tests cover each piece. Until built, an epic-level <code>test/v1</code> needs its e2e layer waived.</p>
+
+    <h2 id="b4">B4 · T1 architecture doc</h2>
+    <p data-c="b4">The seed plan's distillation plan named <code>docs/architecture.html</code> (T1): the CLI (with embedded skills) / adopting-project split, the config surface and the note set. Not written at E-SEED close: flat <code>docs/*.html</code> is rule-bearing, so it must land as a <code>keel mr commit</code> with the owner's Reviewed-By.</p>
+
+    <h2 id="b5">B5 · Re-record the remaining Trawler decisions</h2>
+    <p data-c="b5">The distillation plan committed to re-recording Trawler DEC-2, 3, 4, 6, 7, 8, 9, 10, 11, 27, 43, 44, 45, 47, 50, 51, 52, 54, 72, 74, 83 in Keel with "lineage: Trawler DEC-n". Keel's records cite most of them by lineage (see the <a href="../decisions/decisions-index.html#trawler-lineage">decision index</a>); full generalised records of DEC-2, 3, 6, 7, 8, 43, 45, 47 need Trawler's <code>docs/decisions/workflow-gates.html</code> as source.</p>
+
+    <h2 id="b6">B6 · Notes fetch on init</h2>
+    <p data-c="b6">keel init sets up no <code>refs/notes/*</code> fetch refspec, so a fresh clone fetches notes by hand. Deferred by the owner to a future WU, explicitly not W6 (R7, W3 open point 9).</p>
+
+    <h2 id="b7">B7 · Smaller deferred follow-ups</h2>
+    <table data-c="b7">
+      <tr><th>Item</th><th>Source</th></tr>
+      <tr><td><code>.keel/skills.lock</code> so init can tell a hand edit from an upstream update</td><td>W7 v2 open point 4</td></tr>
+      <tr><td>init and hook shims run <code>keel --version</code> and warn when it is not Keel's (keel.so collision); needs B1</td><td>W7 v2 open point 12</td></tr>
+      <tr><td>Guard <code>.codex/hooks.json</code> commands like the settings hooks (<code>[ -f ] || exit 0</code>)</td><td>W7 v2 open point 16</td></tr>
+      <tr><td>Validate verify-doc-post's Codex <code>apply_patch</code> payload parsing against real Codex output</td><td>W5 open point 3</td></tr>
+      <tr><td>SHA-256 for change/report hashes (payload <code>keel-mr/v2</code>)</td><td>W4 open point 3</td></tr>
+      <tr><td>Native SSH signing of rule-bearing commits, verified at pre-push</td><td>W4 open point 7, R9</td></tr>
+      <tr><td>pre-commit runs <code>keel lint</code></td><td>W6 open point 9</td></tr>
+      <tr><td>pre-commit runs the merge gate when MERGE_HEAD exists (conflicted merges)</td><td>W6 open point 10</td></tr>
+    </table>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
