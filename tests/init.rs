@@ -336,9 +336,10 @@ fn self_hosting_clone_is_gated_and_init_is_a_noop() {
     let t = text(&o);
     assert!(o.status.success(), "{t}");
     // Keel's rule_bearing differs from the default by design, so config is the one expected "kept"
-    let t = t.lines().filter(|l| !l.contains(".keel/config.toml")).collect::<Vec<_>>().join("\n") + "\nkept      .keel/config.toml";
-    assert!(!t.contains("created") && !t.contains("differs") && !t.contains("updated") && !t.contains("merged"), "init is not a no-op on Keel's own tree:\n{t}");
-    assert!(t.contains("kept      .keel/config.toml") || t.contains("unchanged .keel/config.toml"), "{t}");
+    for l in t.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        assert!(l.starts_with("unchanged") || l.starts_with("kept      .keel/config.toml") || l.contains("hooks installed"), "init is not a no-op on Keel's own tree: {l:?}\n{t}");
+    }
+    assert!(t.contains("kept      .keel/config.toml"), "{t}");
     assert!(git_in(&c, &["status", "--porcelain"]).stdout.is_empty(), "init dirtied the tree");
 
     let o = git_in(&c, &["commit", "--allow-empty", "-q", "-m", "direct"]);

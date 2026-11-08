@@ -72,6 +72,7 @@ fn write(repo: &Path, rel: &str, body: &str) -> Result<(), String> {
 
 /// Append `line` to .gitignore unless present - additive, never rewrites the file.
 fn ignore(repo: &Path, line: &str) -> Result<(), String> {
+    let line = line.trim();
     let p = repo.join(".gitignore");
     let mut body = std::fs::read_to_string(&p).unwrap_or_default();
     if body.lines().any(|l| l.trim() == line) {
