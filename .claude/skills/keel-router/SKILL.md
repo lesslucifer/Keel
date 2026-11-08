@@ -12,7 +12,9 @@ who runs what, sign-off sequences, what no gate reviews, the launcher path) live
 in the project's `project-router` skill — `keel init` writes a template for it
 from `references/project-router-template.md`. Each rule traces to a real
 failure: `references/lessons.md`; *(inference)* = generalised, not ordered by
-an owner. Templates: `references/messages.md`, `references/worker-ops.md`.
+an owner. Templates: `references/messages.md`, `references/worker-ops.md`,
+`references/brief-skeleton.md`, `references/commands.md`,
+`references/review-checklists.md`.
 
 If the project has an owner-written router agent definition
 (`.claude/agents/router.md`), it binds you; where it is stricter than this
@@ -169,9 +171,12 @@ ordered `cd <abs> && <cmd>` (multi-line messages as `$'l1\n\nl2'`, `\'` for
 apostrophes) · what happens next · the closing line. Never change a worktree's
 branch while an ask reads files from it.
 
-**Keel pre-sign check** (a worker runs it): `keel verify-dod wu <tip>` (or
-`epic`) is red **only** on `8·manual-review`; then the ask stages
-`keel mr confirm wu <tip> --as <id>` and the `git merge --no-ff`.
+**Keel pre-sign check** (a worker runs it): `keel verify-dod wu <tip> --target
+epic/<E>` (or `epic <tip>`) is red **only** on `8·manual-review`; then the ask
+stages `keel mr confirm wu <tip> --as <id> --target epic/<E>` and the
+`git merge --no-ff`. With a sha, `--target` is required: only a `wu/<E>/…`
+branch name lets the epic be inferred, a sha is measured against main
+(`references/commands.md`).
 
 ## Verify every worker claim (read-only) before relaying
 
@@ -183,7 +188,7 @@ reports raw output (it re-derives; it is not told what result to expect).
 | ready at tip X on B | `git log -1 --format=%H <B>` = X; worker: `git status --short` empty in its worktree |
 | based on base | worker: `git merge-base --is-ancestor <base> <tip>` |
 | notes written / report exists | `git log -1 --notes=<test\|doc\|cr\|mr\|dod> --format=%N <tip>` (empty = none) · `git show <B>:<path>` |
-| gates green | worker: `keel verify-dod <wu\|epic> <tip>` (read-only on red; writes the receipt only on green) · `keel verify-doc <doc>` |
+| gates green | worker: `keel verify-dod <wu\|epic> <tip>`, `--target epic/<E>` for a WU (read-only on red; writes the receipt only on green) · `keel verify-doc <doc>` |
 | lint/CI clean | worker: `keel check`, or `gh run view <id> --json ...` |
 | owner signed/merged | `mr` note on the tip / target log; a merge is done only when `MERGE_HEAD` is gone and the tip is the merge |
 | doc comments addressed | worker: open-comment count on the doc's htmldoc id is 0 (`references/worker-ops.md`) |
@@ -214,7 +219,7 @@ you used and why when it is not the standard.
 - **Pass an explicit model on every spawn and every review subagent**; never
   inherit a default.
 - Brief (you write it): worktree/branch/tip, rulings, what to read, job, hard
-  rules, report protocol (skeleton in the project-router skill). Headless
+  rules, report protocol (`references/brief-skeleton.md`). Headless
   briefs live in the durable briefs dir; check the file exists before spawning.
 - Brief says: "ONE non-stop run; status messages are not stopping points" and
   "no mid-run questions" (a worker that asks cannot get the answer): decide
@@ -253,7 +258,8 @@ The cr gate sees only `code_paths`. For code no gate reviews (paths outside
 `code_paths`, listed in the project-router skill), process-exit/data-loss paths,
 unsafe/FFI, signing keys, release/CI workflows, and tests that could touch real
 data: a read-only subagent on the strongest model (explicit), fresh per round;
-hold the sign-off until it is in and say why. Triage: blocker/high → fix round
+hold the sign-off until it is in and say why. Checklists:
+`references/review-checklists.md`. Triage: blocker/high → fix round
 (fresh worker, new tip, re-gate); medium → recommend fixing now, option 2 "sign
 and record"; low → follow-ups. Re-review security paths until a round finds
 nothing above low.

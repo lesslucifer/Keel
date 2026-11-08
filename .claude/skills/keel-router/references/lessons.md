@@ -40,6 +40,7 @@ Source (lineage): a router session on the Trawler project (a Rust + Tauri app ru
 - B6 Checked a merge while hooks still ran → done = `.git/MERGE_HEAD` gone and tip is the merge.
 - B7 22+ workers, 4 reviews and the router ran on Sonnet ("they should use opus 5.5") → explicit `--model`; Opus re-reviews of non-gated work found 4 release defects.
 - B8 Said "I can't start sessions" ("Find ways for YOU to do that") → probe the CLI first (`claude -p -n` works).
+- B9 A back-merge of main into a WU (E-PKG2.W5 round 1) silently dropped a guard in a conflicted file → per conflicted file compare the result with both parents (`review-checklists.md` F).
 
 ## C. Workers
 - C1 Headless workers asked questions and exited; router claimed they would "go with recommendations" → no mid-run questions; answers in the next brief.
@@ -53,6 +54,8 @@ Source (lineage): a router session on the Trawler project (a Rust + Tauri app ru
 - C9 Hotfix landed as a one-epic collapse straight to main; owner wanted an epic with parallel WUs, main only after green → ask or default to that.
 - C10 The owner had to say "done" after every sign/merge/push/tag; the router idled until told → watcher per staged action, same turn; 10-minute heartbeat.
 - C11 A worker was announced as spawned but never started (`command -v claude` empty) → absolute claude path; announce only after `ps` shows it.
+- C12 Two parallel workers both took DEC-77 → a worker allocating a shared number (decision, rule, use case) checks every branch first; the router assigns the number in the brief.
+- C13 Workers died (reboot) or idled out and nobody noticed for hours → the heartbeat checks every worker and relaunches a dead or stalled one from its brief.
 
 ## D. Permissions
 - D1 Router merged twice, then "Merge Without Review" was denied → the owner merges; check capability before promising automation.
@@ -78,3 +81,26 @@ Source (lineage): a router session on the Trawler project (a Rust + Tauri app ru
 
 ## H. Context
 - H1 Two compactions, three names; pushes stopped ~13 h after the second → re-read the communication rules and re-arm watchers after every summary *(inference)*.
+
+## Index: Trawler `failure-modes.md`
+Trawler's `trawler-router` kept a one-line-per-incident table (30 rows). Its generic rows are folded in above; this maps each to its lesson. Rows 10–21 and 24 (Windows CI layers, a cancelled macOS job, rpm/WiX versions, ports 4445/7420, `keep-capturing.json`, macOS login items, a downloaded actionlint, a slow vitest file) are Trawler's own; where generic, their rules survive in B2, B3, D2, F1–F2 and G1–G3.
+
+| Trawler # | Failure | Lesson |
+|---|---|---|
+| 1 | router's merge denied "Merge Without Review" | D1 |
+| 2 | worker's cr note copy denied | D2 |
+| 3 | literal `\n` in `mr commit` | E1 |
+| 4 | owner's report "does not exist" (branch switched under an ask) | B5 |
+| 5 | worker can't switch to the epic (router's temp worktree held it) | C8 |
+| 6 | headless worker exits after a question or status | C1, C2 |
+| 7 | brief not found | C3 |
+| 8 | briefs gone after reboot | C4 |
+| 9 | workers, reviewers, router on a weaker model | B7 |
+| 22 | DEC number clash | C12 |
+| 23 | back-merge dropped a guard | B9 |
+| 25 | owner already merged/pushed/tagged | A10 |
+| 26 | router asked the owner for a run id | A9 |
+| 27 | watcher fired at once | E2 |
+| 28 | owner had to say "done" after each action | C10 |
+| 29 | announced worker never started | C11 |
+| 30 | worker dead or stalled unnoticed | C13 |

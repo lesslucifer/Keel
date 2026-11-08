@@ -8,7 +8,7 @@
 **Gate state:** <green> · **Not independently reviewed:** <paths | none>
 **Read first:** cd <abs worktree> && open <result report>
 **Run in order:**
-1. cd <abs> && keel mr confirm wu <tip> --as <id>
+1. cd <abs> && keel mr confirm wu <tip> --as <id> --target epic/<slug>
 2. cd <abs> && git switch epic/<slug> && git merge --no-ff <wu branch>
 **Watching:** <probe that detects done> · **Up next:** <one line per queued task>
 **What you need to do now:** <this one task>
