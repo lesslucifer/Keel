@@ -6,7 +6,8 @@
 #   router-worker.sh resume <name> <session-uuid> <worktree> <note.md> <model>
 # brief/note must be a regular (non-symlink) .md file under <repo>/.router/briefs/; worktree must be a registered
 # git worktree OTHER than the router's own checkout. The file is copied to a read-only snapshot
-# .router/runs/<name>-<ts>-<mode>/ and the worker reads the snapshot; sha256 + path are printed so the router can verify.
+# .router/runs/<name>-<ts>-<mode>/ (sha256 + path printed so the router can verify), and the worker reads a copy
+# of it inside its own worktree (<worktree>/.router-brief.XXXXXX/brief.md, git-ignored).
 # resume must name the same worktree the session was spawned in (recorded in the spawn's run dir).
 set -eu
 die() { echo "router-worker: $*" >&2; exit 2; }
@@ -48,7 +49,13 @@ cp "$f" "$R/brief.md"
 printf '%s\n' "$sid" > "$R/session"; printf '%s\n' "$name" > "$R/name"; printf '%s\n' "$wt" > "$R/worktree"
 sha=$(shasum -a 256 "$R/brief.md" | cut -d' ' -f1)
 echo "$sha" > "$R/sha256"; chmod 444 "$R"/*; chmod 555 "$R"
-f="$R/brief.md"
+# A session may only read its own worktree, so the worker gets a copy inside it, in a fresh
+# random-named dir (mktemp -d: never an existing path or symlink) that ignores itself in git.
+# Copy-in, not --add-dir "$R": the worker gets no tool access to the router's .router/runs/.
+# ponytail: one .router-brief.* dir per run is left in the target; `git clean -fdX` removes them.
+in=$(mktemp -d "$wt/.router-brief.XXXXXX") || die "cannot create brief dir in $wt"
+echo '*' > "$in/.gitignore"; cp "$R/brief.md" "$in/brief.md"; chmod 444 "$in/brief.md"
+snap="$R/brief.md" f="$in/brief.md"
 if [ "$mode" = spawn ]; then
   prompt="You are a fresh worker session. Read $f in full and do exactly what it says, in ONE non-stop run (status messages are not stopping points; stop only at your final self-contained report). First action: git branch --show-current, git log --oneline -6, git status --short."
   set -- --session-id "$sid"
@@ -64,5 +71,5 @@ pid=$!; echo "$pid" > "$O/$name.pid"
 # alive() excludes zombies: an exited-but-unreaped child still answers `ps -p`.
 alive() { st=$(ps -o stat= -p "$pid" 2>/dev/null) || return 1; case "$st" in Z*|"") return 1;; esac; }
 n=0; while [ $n -lt 10 ] && alive; do sleep 0.2; n=$((n+1)); done
-if alive; then echo "RUNNING name=$name pid=$pid session=$sid out=$O/$name.out snapshot=$f sha256=$sha worktree=$wt"
-else rc=0; wait "$pid" || rc=$?; echo "DEAD name=$name exit=$rc session=$sid snapshot=$f sha256=$sha"; tail -5 "$O/$name.out"; exit 1; fi
+if alive; then echo "RUNNING name=$name pid=$pid session=$sid out=$O/$name.out snapshot=$snap brief=$f sha256=$sha worktree=$wt"
+else rc=0; wait "$pid" || rc=$?; echo "DEAD name=$name exit=$rc session=$sid snapshot=$snap brief=$f sha256=$sha"; tail -5 "$O/$name.out"; exit 1; fi
