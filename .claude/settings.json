@@ -40,6 +40,17 @@
             "statusMessage": "router Bash whitelist check"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -c 'if .agent_type == \"router\" then .cwd as $d | (.tool_input.file_path // \"\") as $p | if .tool_name == \"Write\" and ($p | startswith($d + \"/.router/briefs/\")) and ($p | ltrimstr($d + \"/.router/briefs/\") | test(\"^[A-Za-z0-9_-][A-Za-z0-9._-]*\\\\.md$\")) then empty else {hookSpecificOutput: {hookEventName: \"PreToolUse\", permissionDecision: \"deny\", permissionDecisionReason: \"router may Write only worker briefs: <checkout>/.router/briefs/<name>.md (no Edit, no other path). Delegate anything else to a worker.\"}} end else empty end'",
+            "timeout": 10,
+            "statusMessage": "router Write whitelist check"
+          }
+        ]
       }
     ],
     "PostToolUse": [
