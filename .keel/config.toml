@@ -1,0 +1,46 @@
+# Keel policy (written by `keel init`). The merge gate judges a merge by this file
+# as committed on the target branch, so a branch cannot change its own rules.
+
+# Path prefixes the gate treats as code (cr binds them). A diff touching none is
+# docs/infra-only and exempt from test/cr/doc evidence. Adjust to your layout.
+code_paths = ["src/", "tests/"]
+
+# Optional: narrow that exemption to paths matching these globs (and outside
+# code_paths). Unset = every non-code path is docs/infra.
+# infra_paths = ["docs/**", "*.md"]
+
+# Commits touching these need a Reviewed-By trailer (`keel mr commit`).
+# A trailing / is a prefix; otherwise a glob (* and ? within a segment, ** across).
+rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json"]
+
+[check]
+lint = "cargo clippy --all-targets -- -D warnings"
+test = "cargo test"
+
+[branches]
+main = "main"
+epic_prefix = "epic/"   # epic branches: <epic_prefix><slug>
+wu_prefix = "wu/"       # WU branches: <wu_prefix><epic-slug>/<slug>, measured against its epic
+
+[paths]
+worktrees = ".claude/worktrees/"   # where Claude Code creates agent worktrees; init gitignores it
+
+[docs]
+root = "docs/"
+
+[docs.tiers]
+T0 = ["AGENTS.md", "CLAUDE.md"]
+T1 = ["docs/*"]
+T2 = ["docs/use-cases/**", "docs/decisions/**", "docs/backlog/**"]
+T3 = ["docs/work/**", "docs/.archive/**"]
+
+[tests]
+# adapter = "python"   # rust | ts | python | go | regex; default: by file extension
+# pattern = "..."      # test-declaration regex, for the regex adapter
+
+[mr]
+tiers = ["email", "username", "key"]   # accepted .mr-allowed tiers; ["key"] = signatures only
+
+[review]   # read by the keel-code-review skill, not by the CLI
+modules = ["src/*"]          # each match of a glob's * is one module (altitude finder)
+rubric = ".keel/rubric.md"   # optional project-local rubric

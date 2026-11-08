@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af067fc9f34851f0dfb1eb4">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — Decisions: distribution and adoption</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>Decisions: distribution and adoption</h1>
+      <p>Why Keel is one CLI that carries its own rules, how a project adopts it, and how Keel itself is run.</p>
+      <div class="meta">T2 · decisions · append-only · 2026-11-08 · Keel · DEC-1 – DEC-12 · distilled from E-SEED (seed plan Q1–Q14, rulings R1–R25, W5–W7 open points)</div>
+    </div>
+  </header>
+  <main>
+    <p data-c="how-to-read">Append-only. A reversal marks the old record <em>superseded by DEC-m</em> and adds a new one. "Lineage" names where the decision was first made (E-SEED seed plan question, rulings-log row, WU open point; the working docs are archived out of git, history keeps them) or the Trawler decision it ports.</p>
+
+    <h3 id="dec-1">DEC-1 · One project-agnostic Rust CLI, extracted from Trawler</h3>
+    <table data-c="dec-1">
+      <tr><th>Context</th><td>Trawler's epic → WU → commit workflow (notes, gates, review, sign-off, distillation) was hard-wired to one Rust repo (cargo xtask, fixed paths). Each new project would otherwise copy it by hand and drift.</td></tr>
+      <tr><th>Choice</th><td>Keel (<code>~/Documents/proj/misc/Keel</code>, public GitHub repo) is a Rust port of the xtask code and its tests, with every Trawler/cargo assumption moved into <code>.keel/config.toml</code>. One profile, every gate (the collapse rule covers small work). Test counting by per-extension adapters (Rust, TS/JS, Python, Go) plus a config regex. Trawler itself moves onto Keel in a separate Trawler epic after Keel's first release; E-SEED changed no Trawler file.</td></tr>
+      <tr><th>Consequences</th><td>The config and the test adapters are the only per-language surface.</td></tr>
+      <tr><th>Lineage</th><td>E-SEED Q1, Q2, Q5, Q7, Q13, Q14.</td></tr>
+    </table>
+
+    <h3 id="dec-2">DEC-2 · The rules ship inside the binary; no Claude Code plugin</h3>
+    <table data-c="dec-2">
+      <tr><th>Context</th><td>E-SEED Q4 first put the adopting project's rules in a Claude Code plugin's skills. That meant a second install step, a second version (plugin skills against the binary's gate) and rules the project does not control.</td></tr>
+      <tr><th>Choice</th><td>The skills are embedded in <code>keel</code> (<code>include_str!</code>, one list in <code>src/init.rs</code>) and <code>keel init</code> writes them into the project's <code>.claude/skills/keel-*</code>, committed and versioned with the project's gate. Never user-level <code>~/.claude/skills</code>. Skill directories carry a <code>keel-</code> prefix (avoids the built-in <code>code-review</code> collision); source directories have the same names as install directories. <code>project-router</code> stays unprefixed and project-owned.</td></tr>
+      <tr><th>Rejected</th><td>Plugin / marketplace distribution (original Q4). Symlinking Keel's own <code>.claude/skills/keel-*</code> to <code>skills/</code> (untested whether Claude Code loads symlinked skills).</td></tr>
+      <tr><th>Consequences</th><td>Keel's repo holds its skills twice (<code>skills/</code> source, <code>.claude/skills/</code> copy); a self-hosting test fails when they drift.</td></tr>
+      <tr><th>Lineage</th><td>R25 (reverses Q4); W7 v2 open points 9, 10, 15. Supersedes the plugin-based W7 plan (orphaned branch <code>worktree-agent-a6381e6d3c5019ecc</code>).</td></tr>
+    </table>
+
+    <h3 id="dec-3">DEC-3 · init never clobbers; skill upgrades ask per file</h3>
+    <table data-c="dec-3">
+      <tr><th>Context</th><td>UC-INIT-1 requires idempotence and never overwriting an edited file without asking, while a re-run init is also the upgrade path for skills.</td></tr>
+      <tr><th>Choice</th><td>Project-owned files (config, AGENTS.md, .codex/hooks.json, project-router): create if missing, otherwise keep and report. <code>keel-*</code> skill files: missing → created; differing → one <code>[y/N]</code> prompt per file on every run, TTY or not; end of input = N (keep, print "differs", exit 0); <code>-f</code>/<code>--force</code> overwrites without asking. Files no longer shipped or added by the user are reported as extra, never deleted. AGENTS.md is outside the upgrade flow (Claude Code only for now). <code>.gitignore</code> lines are appended, never rewritten.</td></tr>
+      <tr><th>Rejected</th><td>A three-tier <code>--yes</code>/<code>--no</code>/TTY design; a <code>.keel/skills.lock</code> to tell hand edits from upstream updates (possible later, <a href="../backlog/e-seed-v2.html#b7">backlog B7</a>); non-zero exit when a prompt cannot be answered.</td></tr>
+      <tr><th>Consequences</th><td>CI and scripts must pass <code>-f</code> to update skills.</td></tr>
+      <tr><th>Lineage</th><td>W6 open point 4; W7 v2 open points 2–5, 14; R25 (5).</td></tr>
+    </table>
+
+    <h3 id="dec-4">DEC-4 · One AGENTS.md as T0; skills only in .claude/skills</h3>
+    <table data-c="dec-4">
+      <tr><th>Context</th><td>Trawler kept CLAUDE.md plus <code>.agents/skills</code> symlinks for Codex (Trawler DEC-52).</td></tr>
+      <tr><th>Choice</th><td>init writes a single <code>AGENTS.md</code> as the T0 file, no CLAUDE.md (Claude Code 2.1.277+ reads AGENTS.md when no CLAUDE.md exists; Codex reads it natively); it warns when a CLAUDE.md exists. Skills live only in <code>.claude/skills</code>: no <code>.agents/skills</code> symlink, no Codex skills parity. <code>.codex/hooks.json</code> is still written as a real file calling the installed scripts (unguarded, as the template has it).</td></tr>
+      <tr><th>Rejected</th><td>The <code>.agents/skills → ../.claude/skills</code> symlink: Claude Code does not read <code>.agents/skills/</code> (docs plus a live test).</td></tr>
+      <tr><th>Lineage</th><td>Q8 (changed from the proposed default); R18; W6 open points 1, 5; W7 v2 open point 16; Trawler DEC-52.</td></tr>
+    </table>
+
+    <h3 id="dec-5">DEC-5 · Harness hooks are merged into settings.json, guarded, fail-open</h3>
+    <table data-c="dec-5">
+      <tr><th>Context</th><td>Without a plugin, the PostToolUse/Stop doc-verification hooks must come from the project's own <code>.claude/settings.json</code>, which may already hold user settings (Keel's own has the router agent and a permission whitelist).</td></tr>
+      <tr><th>Choice</th><td>A JSON merge, never an overwrite: a hook group is appended only if its exact command is absent anywhere under that event; invalid JSON is left untouched with a warning; key order kept (serde_json <code>preserve_order</code>, pulls in <code>foldhash</code>). Each command is guarded: it runs <code>&lt;git-common-dir&gt;/keel-hooks/verify-doc-*</code> only if present, else exits 0. The scripts themselves exit 0 when keel is not on PATH; git hooks fail closed instead.</td></tr>
+      <tr><th>Consequences</th><td>A committed settings file is inert until <code>keel hooks install</code> runs; a missing binary never breaks a session (making the harness hooks loud is a one-line change).</td></tr>
+      <tr><th>Lineage</th><td>W7 v2 §3, open points 8, 11; W5 open point 2.</td></tr>
+    </table>
+
+    <h3 id="dec-6">DEC-6 · Install channels and the binary name</h3>
+    <table data-c="dec-6">
+      <tr><th>Context</th><td>Q3: adopters get prebuilt binaries plus cargo install, and init prints the install line. The crates.io name <code>keel</code> is taken by an unrelated crate; the npm package <code>keel</code> (keel.so) also installs a <code>keel</code> binary.</td></tr>
+      <tr><th>Choice</th><td>Today: <code>cargo install --git https://github.com/lesslucifer/Keel</code>, the only hint the CLI prints (never <code>cargo install keel</code>). Planned: GitHub Releases, shell installer, npm <code>@lesslucifer/keel</code> and a Homebrew tap from one cargo-dist config (deferred, <a href="../backlog/e-seed-v2.html#b1">backlog B1</a>). No crates.io publish. The binary stays <code>keel</code>: the PATH collision with keel.so is an accepted risk, stated in <code>docs/install.html</code>.</td></tr>
+      <tr><th>Lineage</th><td>Q3 (refined by R25); R25 (3), (4); W7 v2 open point 12.</td></tr>
+    </table>
+
+    <h3 id="dec-7">DEC-7 · Unix only</h3>
+    <table data-c="dec-7">
+      <tr><th>Choice</th><td>No Windows support and no Windows work unit: the CLI uses Unix permissions, <code>sh -c</code> and <code>#!/bin/sh</code> hooks.</td></tr>
+      <tr><th>Lineage</th><td>Seed plan non-goals; owner ruling 2026-11-08 (W7 v2).</td></tr>
+    </table>
+
+    <h3 id="dec-8">DEC-8 · Bootstrapping: the policy lands once, ungated</h3>
+    <table data-c="dec-8">
+      <tr><th>Context</th><td>After init, pre-commit refuses commits on main and the merge gate refuses a target with no committed config, so the config can land neither directly nor by merge. Keel had the same problem for itself.</td></tr>
+      <tr><th>Choice</th><td>For adopters, init prints a one-time <code>git commit --no-verify -m "keel init"</code> on main. For Keel, E-SEED ran on branches without gates and W7 was the last ungated merge, carrying Keel's own init output; the owner then installs the hooks (install, push, <code>keel init</code>, refused-commit probe, <code>keel mr setup</code>). Rollback: <code>git config --unset core.hooksPath</code>.</td></tr>
+      <tr><th>Consequences</th><td>E-SEED's own seams carry no notes, so its epic gate needs <code>walk_waivers</code> on the record.</td></tr>
+      <tr><th>Lineage</th><td>Q12; W6 open point 3; W7 v2 open point 1.</td></tr>
+    </table>
+
+    <h3 id="dec-9">DEC-9 · Config defaults and Keel's own policy</h3>
+    <table data-c="dec-9">
+      <tr><th>Choice</th><td><code>code_paths</code> defaults to <code>["src/", "tests/"]</code>; check commands are detected per language, otherwise a command that fails ("a gate that passes on nothing would be worse"). <code>[paths] worktrees</code> (default <code>.claude/worktrees/</code>) is gitignored by init so <code>git add .claude</code> cannot sweep in agent worktrees. The docs skeleton is directories only (no index docs: an htmldoc needs a server-minted id; no <code>.gitkeep</code>: a tracked T3 file). Keel's own <code>rule_bearing</code> adds <code>skills/</code>, <code>templates/</code>, <code>.keel/</code>, <code>.claude/skills/</code>, <code>.claude/settings.json</code> to the default, so init on Keel reports <code>kept .keel/config.toml</code> by design.</td></tr>
+      <tr><th>Lineage</th><td>W6 open points 12, 13; W7 v2 open points 7, 13.</td></tr>
+    </table>
+
+    <h3 id="dec-10">DEC-10 · Docs: HTML only; plans do not gate dispatch</h3>
+    <table data-c="dec-10">
+      <tr><th>Choice</th><td>Project docs are HTML via htmldoc, never markdown (AGENTS.md and skill files are infrastructure). Every WU gets a plan doc for the record and for distillation, but a worker is dispatched once the doc exists and dependencies are met; the owner reviews plans and results asynchronously through htmldoc comments. Owner rulings during an epic go into an append-only rulings log and then into this KB at close.</td></tr>
+      <tr><th>Rejected</th><td>A per-WU plan-review gate before dispatch (tried early in E-SEED, then dropped).</td></tr>
+      <tr><th>Lineage</th><td>Q6; seed plan "Per-WU process".</td></tr>
+    </table>
+
+    <h3 id="dec-11">DEC-11 · What the extraction left out</h3>
+    <table data-c="dec-11">
+      <tr><th>Choice</th><td>Deferred to later optional work: the design pack (design flow, component design, design-review, gate check 9; tied to a React registry), <code>tally --fleet</code> and <code>debug serve</code> (the <code>fleet</code> block stays optional on cr/v1), the Secure Enclave signer (any ssh-agent key signs). Never: CI as a gate (a signal only, Trawler DEC-83), legacy schema readers.</td></tr>
+      <tr><th>Lineage</th><td>Q9; seed plan non-goals and Trawler inventory.</td></tr>
+    </table>
+
+    <h3 id="dec-12">DEC-12 · Repo conventions: worktrees, and nothing unclosed on main</h3>
+    <table data-c="dec-12">
+      <tr><th>Choice</th><td>The main repo folder always stays on <code>main</code>; epic work happens in separate worktrees. No T3 doc, epic plan, or anything from an unclosed epic ever lands on main: an epic reaches main only at close, after its T3 docs are distilled and archived, as one epic merge. A file in another worktree is referred to the owner by full absolute path, never a relative link.</td></tr>
+      <tr><th>Consequences</th><td>Epics landing in sequence conflict on <code>.claude/settings.json</code> and <code>.gitignore</code>; take the settings that hold the router config and re-run <code>keel init</code> on top.</td></tr>
+      <tr><th>Lineage</th><td>R1; R17; owner ruling 2026-11-08 (W7 v2 open point 6); W7 v2 open point 19.</td></tr>
+    </table>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

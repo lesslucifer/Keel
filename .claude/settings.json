@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"$(git rev-parse --git-common-dir 2>/dev/null)/keel-hooks/verify-doc-post\"; [ -f \"$f\" ] || exit 0; sh \"$f\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"$(git rev-parse --git-common-dir 2>/dev/null)/keel-hooks/verify-doc-stop\"; [ -f \"$f\" ] || exit 0; sh \"$f\""
+          }
+        ]
+      }
+    ]
+  }
+}
