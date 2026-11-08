@@ -335,13 +335,15 @@ fn self_hosting_clone_is_gated_and_init_is_a_noop() {
     let o = keel_in(&c, &["init"], "");
     let t = text(&o);
     assert!(o.status.success(), "{t}");
-    // Keel's rule_bearing differs from the default by design, so config is the one expected "kept"
-    // every status line (after the header, up to "hooks installed") is unchanged, or the one expected config "kept"
+    // Keel's rule_bearing differs from the default by design, and its project-router is filled in
+    // (E-ROUTER.W3), so those two are the expected "kept"; every other status line (after the
+    // header, up to "hooks installed") is unchanged
+    let kept = ["  kept      .keel/config.toml", "  kept      .claude/skills/project-router/SKILL.md"];
     for l in t.lines().skip(1).take_while(|l| !l.starts_with("hooks installed")) {
-        assert!(l.starts_with("  unchanged") || l.starts_with("  kept      .keel/config.toml"), "init is not a no-op on Keel's own tree: {l:?}\n{t}");
+        assert!(l.starts_with("  unchanged") || kept.iter().any(|k| l.starts_with(k)), "init is not a no-op on Keel's own tree: {l:?}\n{t}");
     }
     assert!(t.contains("hooks installed"), "{t}");
-    assert!(t.contains("kept      .keel/config.toml"), "{t}");
+    assert!(kept.iter().all(|k| t.contains(k)), "{t}");
     assert!(git_in(&c, &["status", "--porcelain"]).stdout.is_empty(), "init dirtied the tree");
 
     let o = git_in(&c, &["commit", "--allow-empty", "-q", "-m", "direct"]);

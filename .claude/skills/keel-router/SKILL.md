@@ -37,7 +37,10 @@ otherwise (briefs, 2026-11-08, below).
   is **delegated to a read-only worker** that reports the raw output.
 - Enforced by the project's `.claude/settings.json`: `"agent": "router"`, a
   `permissions.allow` list of exactly those shapes, and a `PreToolUse` hook on
-  `Bash` that denies anything else for `agent_type == "router"`.
+  `Bash` that denies anything else for `agent_type == "router"`; a second
+  `PreToolUse` hook on `Write|Edit|NotebookEdit` lets the router `Write` only
+  `<cwd>/.router/briefs/<name>.md`, so it still cannot change the launcher or
+  the hooks. The agent definition's `tools:` line omits `Edit` and `Monitor`.
 - **Known gap — check, don't assume.** Enforcement lives in the checkout the
   router session runs in. In Keel on 2026-11-08 the router ran in the main
   checkout, and commit `2d7e18d` (removing E-ROUTER files that had reached main
