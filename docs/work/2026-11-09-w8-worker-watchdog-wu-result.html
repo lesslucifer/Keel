@@ -43,12 +43,13 @@
     <li>It refuses bad input with exit 2.</li>
     <li>jq accepts the guard change.</li>
   </ul>
-  <p>Four mutations confirm that the test is not vacuous. Each one makes the test fail:</p>
+  <p>Six mutations confirm that the test is not vacuous. Each one makes the test fail:</p>
   <ul>
     <li>Forcing <code>busy()</code> false: the busy case prints <code>STALLED</code> while it should still be blocked.</li>
     <li>Ignoring subagent transcripts: the case with a fresh subagent prints <code>STALLED</code> early.</li>
     <li>Forcing the <code>live</code> loop off: <code>EXITED</code> comes back while the worker is held alive.</li>
     <li>Reporting <code>STALLED</code> on the first quiet poll: it arrives inside the first 2s poll.</li>
+    <li>Dropping <code>busy()</code>'s <code>-c</code> test, or its shell-name test: the idle stub's long-lived non-<code>&lt;shell&gt; -c</code> children are counted as busy, as an MCP server would be, and <code>STALLED</code> never arrives.</li>
   </ul>
   <p><b>Not verified:</b> whether a background command's exit actually wakes an <em>idle</em> router session in this environment. A worker cannot test that. It needs the router's own interactive session (see Follow-ups).</p>
 </div>
@@ -109,6 +110,7 @@
         <li>The two-quiet-polls rule was untested.</li>
       </ul>
       Two nits were fixed with them: <code>since=</code> now names the newest transcript, and the pid-file case reuses worker 3. The waived nits and their reasons are recorded on the <code>cr/v1</code> note.</li>
+    <li>Review round 3 (<code>cr/v1</code> FAIL on <code>f8c19c2</code>) found 1 important, fixed in the next code commit: <code>busy()</code>'s exclusion of non-shell children was untested. The idle stub now holds a subshell piped to <code>cut -c</code>. The 3 nits from that round were fixed with it: one batched <code>stat</code> per poll, refusing an empty <code>stall-min</code>, and testing the no-recorded-run refusal.</li>
     <li>Docs touched: this report and the WU plan.</li>
   </ul>
 </div>
