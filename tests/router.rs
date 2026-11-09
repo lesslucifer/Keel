@@ -233,7 +233,8 @@ struct Launcher {
 
 /// A repo whose main checkout holds the launcher, two linked worktrees, and a stub claude that
 /// prints its argv (joined, then each argument bracketed so boundaries are visible) and stays alive
-/// until `wait_exit` releases it, so the launcher's startup window never races a timer (30 s cap).
+/// until `wait_exit` releases it, so the launcher's startup window never races a timer; it also
+/// exits once the test's temp dir is gone (a failed test) and after 30 s at most.
 fn launcher() -> Launcher {
     let d = TempDir::new().unwrap();
     let base = d.path().canonicalize().unwrap();
@@ -250,7 +251,7 @@ fn launcher() -> Launcher {
     git(&main, &["worktree", "add", "-q", "../wt2", "-b", "w2"]);
     let stub = base.join("claude");
     std::fs::write(&stub, "#!/bin/sh\necho \"stub $*\"\nprintf '[%s]' \"$@\"; echo\n\
-         n=0; while [ ! -e \"$STUB_RELEASE\" ] && [ $n -lt 600 ]; do sleep 0.05; n=$((n+1)); done\n").unwrap();
+         n=0; while [ ! -e \"$STUB_RELEASE\" ] && [ -d \"${STUB_RELEASE%/*}\" ] && [ $n -lt 600 ]; do sleep 0.05; n=$((n+1)); done\n").unwrap();
     std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub, release: base.join("release"), _d: d }
 }
@@ -368,18 +369,21 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
     };
     let allow: Vec<String> = WORKER_GRANTS.iter().flat_map(|c| [format!("Bash({c})"), format!("Bash({c} *)")]).collect();
     let deny: Vec<String> = WORKER_DENIES.map(String::from).to_vec();
-    // every worker, spawned or resumed, gets exactly the fixed lists and one mode; returns that mode
+    // every worker, spawned or resumed, gets exactly these options once each, the fixed lists and one
+    // mode; returns that mode. An extra `--allowedTools Bash(*)` or a bypass flag fails here.
     let mode_of = |name: &str| {
         let a = argv(name);
+        let flags: Vec<&str> = a.iter().map(String::as_str).filter(|x| x.starts_with('-')).collect();
+        let start = if flags.contains(&"--resume") { "--resume" } else { "--session-id" };
+        let expected = ["-p", start, "--allowedTools", "--disallowedTools", "-n", "--model", "--agent", "--permission-mode", "--max-budget-usd"];
+        assert_eq!(flags, expected, "{name}: options in {a:?}");
         let list = |flag: &str| -> Vec<String> {
             let i = a.iter().position(|x| x == flag).unwrap_or_else(|| panic!("{name}: no {flag} in {a:?}"));
             a[i + 1..].iter().take_while(|x| !x.starts_with('-')).cloned().collect()
         };
         assert_eq!(list("--allowedTools"), allow, "{name}: allow list");
         assert_eq!(list("--disallowedTools"), deny, "{name}: deny list");
-        let modes: Vec<&String> = a.windows(2).filter(|w| w[0] == "--permission-mode").map(|w| &w[1]).collect();
-        assert_eq!(modes.len(), 1, "{name}: {a:?}");
-        modes[0].clone()
+        a[a.iter().position(|x| x == "--permission-mode").unwrap() + 1].clone()
     };
     let run_dir_mode = |name: &str, kind: &str| {
         let runs = std::fs::read_dir(l.main.join(".router/runs")).unwrap();
