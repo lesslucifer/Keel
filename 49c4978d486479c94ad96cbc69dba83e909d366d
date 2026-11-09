@@ -1,0 +1,1 @@
+{"schema":"cr/v1","tip":"49c4978d486479c94ad96cbc69dba83e909d366d","base":"07b49400338e9927cbe785aa8de0427df652e133","branch":"wu/E-ROUTERFIX/w1-worker-permissions","committer":"vuluu <quangvu.luu92@gmail.com>","timestamp":1794204987,"verdict":"FAIL","blockers":0,"importants":2,"code_diff_hash":"7d08ab6da85b19fc9c26bd38b4613aba8842c27d"}
