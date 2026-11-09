@@ -9,7 +9,7 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>E-ROUTERFIX · Headless workers can build, test and gate</h1>
-      <p>Epic plan for <code>epic/E-ROUTERFIX</code>, collapsed with the W1 plan: a router/meta-tooling hotfix. It gives launcher-spawned workers the <code>cargo</code>/<code>keel</code> commands their work needs, and lets the router choose a worker's permission mode per task. W2 was added later and has its own plan. It lets the router subscribe to a worker's exit notice. W3 seeds new worktrees with the signer list, and W4 brings in E-SEED2.W8's worker watchdog.</p>
+      <p>Epic plan for <code>epic/E-ROUTERFIX</code>, collapsed with the W1 plan: a router/meta-tooling hotfix. It gives launcher-spawned workers the <code>cargo</code>/<code>keel</code> commands their work needs, and lets the router choose a worker's permission mode per task. W2 was added later and has its own plan. It lets the router subscribe to a worker's exit notice. W3 seeds new worktrees with the signer list, and W4 brings in E-SEED2.W8's worker watchdog. W5 is the epic's e2e across all four.</p>
       <div class="meta">T3 · epic plan + WU plan · 2026-11-09 · Keel · branch <code>epic/E-ROUTERFIX</code> off <code>main</code> <code>296fa97</code></div>
     </div>
   </header>
@@ -112,6 +112,13 @@
   <p data-item="wu-expected">W8's <code>wait_blocks_until_the_worker_exits_or_stalls</code>, W2's subscription test and the guard's tool and shape tests all pass together in <code>tests/router.rs</code>. The guard allows <code>spawn|resume|wait</code> and the subscribe-only <code>SendMessage</code>.</p>
   <p data-item="wu-deps">W2 (merged). It touches <code>scripts/router-worker.sh</code> and <code>tests/router.rs</code> beside W1, and whichever merges second resolves the conflict.</p>
 </div>
+<div data-wu="E-ROUTERFIX.W5" data-c="wu-w5">
+  <h3 id="w5">E-ROUTERFIX.W5 · The epic's e2e <span class="badge id">wu/E-ROUTERFIX/w5-epic-e2e</span></h3>
+  <p data-item="wu-summary">Added after W1–W4 were merged, on the owner's request. One hermetic test in <code>tests/router.rs</code> drives the epic's full flow across all four WUs, in a scratch clone of Keel's own tree: a new worktree is seeded with the signer list (W3), the router's spawn passes the guard as <code>.claude/settings.json</code> wires it and starts a granted worker in <code>plan</code> mode (W1), the router's subscription to that worker's name passes the guard and content does not (W2), and <code>wait</code> reports the worker first <code>STALLED</code> and then <code>EXITED</code> (W4). Its own plan is <a href="2026-11-09-e-routerfix-w5-plan.html">2026-11-09-e-routerfix-w5-plan.html</a>.</p>
+  <p data-item="wu-maps-to">E-ROUTERFIX <a href="#e2e-plan">E2E plan</a> · the testing charter's epic layer · UC-ROUTE-5 and UC-ROUTE-6 (asserted, unchanged).</p>
+  <p data-item="wu-expected">The e2e passes on the WU tip, and each behaviour it claims goes red when broken once locally (red/green pairs in the W5 result).</p>
+  <p data-item="wu-deps">W1, W2, W3, W4 (all merged).</p>
+</div>
 </div>
 
 <h2 id="wu-plan">W1 plan</h2>
@@ -122,13 +129,24 @@
   <tbody>
     <tr><td>unit (each commit)</td><td><code>tests/router.rs</code>, hermetic: it drives the launcher with the existing stub <code>claude</code>, which echoes its argv. (1) The default spawn's argv holds <code>--permission-mode acceptEdits</code> and each allow/deny entry, and holds no <code>Bash(cargo run</code> on the allow side. (2) <code>--permission-mode plan</code> reaches argv and the run dir's <code>permission-mode</code> file. (3) <code>bypassPermissions</code>, <code>dontAsk</code>, <code>default</code>, a missing value and <code>--bogus x</code> are each refused with "permission mode must be", or with the usage line, and no <code>.pid</code> is written. (4) Resume accepts the option and does not inherit it. (5) The guard allows the router the spawn shape with the option and still denies <code>cargo test</code> and <code>keel preflight</code>.</td></tr>
     <tr><td>integration (WU)</td><td>The same file's launcher scenario run end to end: router command → guard → launcher → stub argv. That is the WU's bounded contract. Nothing beyond a real <code>claude</code> remains outside it.</td></tr>
-    <tr><td>e2e (epic)</td><td>Same as the WU integration test (one-WU epic; layers are additive, the same test serves both). See <a href="#e2e-plan">E2E plan</a>.</td></tr>
+    <tr><td>e2e (epic)</td><td>Not this WU's test any more: the epic grew to five WUs, and its e2e is W5's (see <a href="#e2e-plan">E2E plan</a>). W1's launcher scenario stays W1's integration test.</td></tr>
   </tbody>
 </table>
 
 <h2 id="e2e-plan">E2E plan</h2>
 <div data-item="e2e-plan" data-c="e2e-plan-body">
-  <p>The gating e2e is the hermetic launcher scenario in <code>tests/router.rs</code>. Real <code>claude</code> is non-deterministic and costs money, so it cannot be a test under the charter. Live evidence, recorded in the WU result and not gating: one dogfood worker started through the <b>WU branch's</b> launcher. Its brief runs <code>cargo test</code>, <code>keel preflight</code> and <code>keel verify-doc</code>, then tries <code>keel mr --help</code> and expects a refusal, and its <code>.out</code> is quoted. Whoever runs it uses the launcher in the WU worktree, because the router's own launcher only gets the fix after the epic merges (open point 1). No waiver intended.</p>
+  <p><b>The full flow</b> is one worker's life as the router sees it, in a fresh worktree of Keel's own tree: the worktree is created (W3 seeds <code>.mr-allowed</code> into it), the router spawns a worker there in <code>plan</code> mode (W1), subscribes to its end (W2), arms <code>wait</code>, hears <code>STALLED</code> while the worker idles, and hears <code>EXITED</code> once it ends (W4). W5 builds it as one test, <code>tests/router.rs</code> <code>epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end</code>.</p>
+  <table data-c="e2e-seams">
+    <thead><tr><th>Seam</th><th>Real in the test</th><th>Asserted there</th></tr></thead>
+    <tbody>
+      <tr><td>Worktree creation (W3)</td><td>A scratch <code>git clone</code> of Keel's committed tree with the working tree's epic files laid over it, the built <code>keel</code>'s <code>hooks install</code>, git's <code>post-checkout</code></td><td>The new worktree holds the main checkout's <code>.mr-allowed</code></td></tr>
+      <tr><td>Router → guard (W1, W2, W4)</td><td>Every router call is piped through the PreToolUse command of the clone's <code>.claude/settings.json</code>, which runs the clone's <code>router-guard.jq</code></td><td>Spawn with <code>--permission-mode plan</code>, the subscription and <code>wait</code> are allowed. <code>cargo test</code>, <code>keel mr</code> and a <code>SendMessage</code> with content are denied</td></tr>
+      <tr><td>Guard → launcher (W1, W4)</td><td>The exact command string the guard allowed, run as argv by <code>sh</code> in the clone</td><td><code>RUNNING … permission-mode=plan</code>; the stall and exit lines</td></tr>
+      <tr><td>Launcher → <code>claude -p</code> (W1, W2)</td><td>The stub <code>claude</code> (<code>ROUTER_CLAUDE</code>) records its argv</td><td>The fixed grant and deny lists, <code>--permission-mode plan</code>, and <code>-n &lt;name&gt;</code> equal to the subscription's <code>to</code></td></tr>
+      <tr><td>Worker → transcript (W4)</td><td>A transcript under a temp <code>CLAUDE_CONFIG_DIR</code>, in a project dir no naming rule produces</td><td><code>STALLED … since=&lt;that transcript&gt;</code></td></tr>
+    </tbody>
+  </table>
+  <p><b>Where it stops being hermetic, and why.</b> Real <code>claude</code> is excluded: it is non-deterministic and paid, so it cannot be a test under the charter. That leaves three harness facts outside every test: that Claude Code enforces <code>--allowedTools</code>/<code>--disallowedTools</code> and <code>--permission-mode</code> on the worker, that it delivers the <code>notify_when_idle</code> notice, and that a background <code>wait</code> wakes an idle session. These stay evidence only: the owner-run live probes in the W1, W2 and W4 results. The e2e proves everything up to the harness's input: the argv it is given and the guard decisions it obeys. No waiver intended.</p>
 </div>
 
 <h2 id="distillation-plan">Distillation plan</h2>
@@ -142,7 +160,8 @@
     <tr><td>W2: subscribe-only <code>SendMessage</code>, why the router never sends text, live probe outcome</td><td>DEC-36 in <a href="../decisions/router.html">decisions/router.html</a>, plus UC-ROUTE-5 and UC-ROUTE-6 in <a href="../use-cases/router.html">use-cases/router.html</a>. The "Notify" step goes in <code>worker-ops.md</code> (rule-bearing, owner's <code>keel mr commit</code>).</td></tr>
     <tr><td>W3: <code>.gitworktreecopy</code> seeds <code>.mr-allowed</code></td><td>The tracked file itself, plus <code>.claude/skills/project-router/SKILL.md</code>'s "Owner identity" row, which still says there is no <code>.gitworktreecopy</code> (rule-bearing, owner's <code>keel mr commit</code>)</td></tr>
     <tr><td>W4: <code>wait</code> for exit or stall, beside the subscription</td><td>DEC-36 amended, UC-ROUTE-5 and UC-ROUTE-6. The "Watch" step goes in <code>worker-ops.md</code> (rule-bearing, owner's <code>keel mr commit</code>).</td></tr>
-    <tr><td>This plan, the W1 result, and the W2, W3 and W4 plans and results</td><td>Archived out of git at close</td></tr>
+    <tr><td>W5: what the epic e2e covers and what stays live evidence</td><td>Its test name in <a href="../use-cases/router.html">use-cases/router.html</a> UC-ROUTE-5's tests, if UC-ROUTE lists them there; otherwise nothing durable</td></tr>
+    <tr><td>This plan, the W1 result, and the W2, W3, W4 and W5 plans and results</td><td>Archived out of git at close</td></tr>
   </tbody>
 </table>
 
