@@ -22,8 +22,12 @@ fn guard(agent: &str, tool: &str, input: serde_json::Value) -> Option<String> {
         .spawn()
         .unwrap();
     std::io::Write::write_all(&mut p.stdin.take().unwrap(), event.to_string().as_bytes()).unwrap();
-    let o = p.wait_with_output().unwrap();
-    assert!(o.status.success(), "guard errored on {event}");
+    decision(&event, p.wait_with_output().unwrap())
+}
+
+/// The guard's verdict on `event` from its process output; Some(reason) = denied, None = allowed.
+fn decision(event: &serde_json::Value, o: Output) -> Option<String> {
+    assert!(o.status.success(), "guard errored on {event}: {}", String::from_utf8_lossy(&o.stderr));
     let out = String::from_utf8(o.stdout).unwrap();
     if out.trim().is_empty() {
         return None;
@@ -278,6 +282,19 @@ struct Launcher {
     release: PathBuf,
 }
 
+/// The stub `claude` the launcher starts through $ROUTER_CLAUDE; its behaviour is described on `launcher`.
+fn stub_claude(stub: &Path) {
+    std::fs::write(stub, concat!(
+        "#!/bin/sh\necho \"stub $*\"\nprintf '[%s]' \"$@\"; echo\n",
+        "held() { [ ! -e \"$STUB_RELEASE\" ] && [ -d \"${STUB_RELEASE%/*}\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; }\n",
+        "(while held; do sleep 0.05; done) | cut -c 1 &\n",
+        "while held; do\n",
+        "  [ ! -e \"$STUB_RELEASE.busy\" ] || /bin/sh -c 'while [ -e \"$STUB_RELEASE.busy\" ] && [ ! -e \"$STUB_RELEASE\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done; :'\n",
+        "  sleep 0.05\ndone\nwait\n"
+    )).unwrap();
+    std::fs::set_permissions(stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+}
+
 /// A repo whose main checkout holds the launcher, two linked worktrees, a stub claude and a `sleep`
 /// shim. The stub prints its argv (joined, then each argument bracketed so boundaries are visible) and
 /// stays alive until $STUB_RELEASE exists, so the launcher's startup window never races a timer; it
@@ -300,15 +317,7 @@ fn launcher() -> Launcher {
     git(&main, &["worktree", "add", "-q", "../wt", "-b", "w"]);
     git(&main, &["worktree", "add", "-q", "../wt2", "-b", "w2"]);
     let stub = base.join("claude");
-    std::fs::write(&stub, concat!(
-        "#!/bin/sh\necho \"stub $*\"\nprintf '[%s]' \"$@\"; echo\n",
-        "held() { [ ! -e \"$STUB_RELEASE\" ] && [ -d \"${STUB_RELEASE%/*}\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; }\n",
-        "(while held; do sleep 0.05; done) | cut -c 1 &\n",
-        "while held; do\n",
-        "  [ ! -e \"$STUB_RELEASE.busy\" ] || /bin/sh -c 'while [ -e \"$STUB_RELEASE.busy\" ] && [ ! -e \"$STUB_RELEASE\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done; :'\n",
-        "  sleep 0.05\ndone\nwait\n"
-    )).unwrap();
-    std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    stub_claude(&stub);
     // `wait` sleeps once per poll; this shim counts the polls in $STEP_DIR/polls and blocks poll n
     // until the test creates $STEP_DIR/go-n, so each poll judges a state the test has set
     std::fs::create_dir_all(base.join("shim")).unwrap();
@@ -459,6 +468,33 @@ const WORKER_GRANTS: [&str; 11] = [
 ];
 const WORKER_DENIES: [&str; 4] = ["Bash(keel mr)", "Bash(keel mr *)", "Bash(cargo run)", "Bash(cargo run *)"];
 
+/// The argv the stub `claude` recorded for worker <name> under `checkout`'s .router/out, read from its
+/// bracketed line (one item per argv element: a word-split `Bash(cargo build *)` cannot pass). Every
+/// worker, spawned or resumed, gets exactly these options once each and the fixed grant/deny lists;
+/// an extra `--allowedTools Bash(*)` or a bypass flag fails here.
+fn worker_argv(checkout: &Path, name: &str) -> Vec<String> {
+    let out = std::fs::read_to_string(checkout.join(format!(".router/out/{name}.out"))).unwrap();
+    let line = out.lines().find(|x| x.starts_with('[')).unwrap_or_else(|| panic!("no stub argv: {out}"));
+    let a: Vec<String> = line[1..line.len() - 1].split("][").map(String::from).collect();
+    let flags: Vec<&str> = a.iter().map(String::as_str).filter(|x| x.starts_with('-')).collect();
+    let start = if flags.contains(&"--resume") { "--resume" } else { "--session-id" };
+    let expected = ["-p", start, "--allowedTools", "--disallowedTools", "-n", "--model", "--agent", "--permission-mode", "--max-budget-usd"];
+    assert_eq!(flags, expected, "{name}: options in {a:?}");
+    let list = |flag: &str| -> Vec<String> {
+        let i = a.iter().position(|x| x == flag).unwrap();
+        a[i + 1..].iter().take_while(|x| !x.starts_with('-')).cloned().collect()
+    };
+    let allow: Vec<String> = WORKER_GRANTS.iter().flat_map(|c| [format!("Bash({c})"), format!("Bash({c} *)")]).collect();
+    assert_eq!(list("--allowedTools"), allow, "{name}: allow list");
+    assert_eq!(list("--disallowedTools"), WORKER_DENIES, "{name}: deny list");
+    a
+}
+
+/// The value after `flag` in an argv.
+fn option(a: &[String], flag: &str) -> String {
+    a[a.iter().position(|x| x == flag).unwrap() + 1].clone()
+}
+
 /// E-ROUTERFIX.W1: headless workers were refused cargo/keel (nobody can approve a `claude -p`
 /// prompt), and the launcher hardcoded acceptEdits. The grant travels on the launcher's argv only;
 /// the mode is a validated per-run option.
@@ -467,30 +503,10 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
     let l = launcher();
     let wt = l.wt.to_str().unwrap();
     let brief = ".router/briefs/b.md";
-    // the stub's bracketed line, one item per argv element: a word-split `Bash(cargo build *)` cannot pass
-    let argv = |name: &str| -> Vec<String> {
-        l.wait_exit(name);
-        let out = std::fs::read_to_string(l.main.join(format!(".router/out/{name}.out"))).unwrap();
-        let line = out.lines().find(|x| x.starts_with('[')).unwrap_or_else(|| panic!("no stub argv: {out}"));
-        line[1..line.len() - 1].split("][").map(String::from).collect()
-    };
-    let allow: Vec<String> = WORKER_GRANTS.iter().flat_map(|c| [format!("Bash({c})"), format!("Bash({c} *)")]).collect();
-    let deny: Vec<String> = WORKER_DENIES.map(String::from).to_vec();
-    // every worker, spawned or resumed, gets exactly these options once each, the fixed lists and one
-    // mode; returns that mode. An extra `--allowedTools Bash(*)` or a bypass flag fails here.
     let mode_of = |name: &str| {
-        let a = argv(name);
-        let flags: Vec<&str> = a.iter().map(String::as_str).filter(|x| x.starts_with('-')).collect();
-        let start = if flags.contains(&"--resume") { "--resume" } else { "--session-id" };
-        let expected = ["-p", start, "--allowedTools", "--disallowedTools", "-n", "--model", "--agent", "--permission-mode", "--max-budget-usd"];
-        assert_eq!(flags, expected, "{name}: options in {a:?}");
-        let list = |flag: &str| -> Vec<String> {
-            let i = a.iter().position(|x| x == flag).unwrap_or_else(|| panic!("{name}: no {flag} in {a:?}"));
-            a[i + 1..].iter().take_while(|x| !x.starts_with('-')).cloned().collect()
-        };
-        assert_eq!(list("--allowedTools"), allow, "{name}: allow list");
-        assert_eq!(list("--disallowedTools"), deny, "{name}: deny list");
-        a[a.iter().position(|x| x == "--permission-mode").unwrap() + 1].clone()
+        l.wait_exit(name);
+        let a = worker_argv(&l.main, name);
+        option(&a, "--permission-mode")
     };
     let run_dir_mode = |name: &str, kind: &str| {
         let runs = std::fs::read_dir(l.main.join(".router/runs")).unwrap();
@@ -778,4 +794,120 @@ fn wait_blocks_until_the_worker_exits_or_stalls() {
     assert!(out.ends_with(&format!(" since={}\n", tr2.display())), "{out}");
     std::fs::write(release(3), "").unwrap();
     l.wait_exit("n");
+}
+
+/// One router tool call through the PreToolUse command `checkout`'s .claude/settings.json wires, run
+/// as Claude Code runs it; Some(reason) = denied, None = allowed.
+fn wired_guard(checkout: &Path, tool: &str, input: serde_json::Value) -> Option<String> {
+    let s: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(checkout.join(".claude/settings.json")).unwrap()).unwrap();
+    let cmd = s["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str().unwrap();
+    let event = serde_json::json!({"agent_type": "router", "tool_name": tool, "tool_input": input, "cwd": checkout});
+    let mut p = Command::new("/bin/sh")
+        .args(["-c", cmd])
+        .env("CLAUDE_PROJECT_DIR", checkout)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(&mut p.stdin.take().unwrap(), event.to_string().as_bytes()).unwrap();
+    decision(&event, p.wait_with_output().unwrap())
+}
+
+/// E-ROUTERFIX e2e (W5): one worker's life as the router drives it, in a scratch clone of Keel's own
+/// tree with the working tree's epic files laid over it and keel's hooks installed. A new worktree
+/// inherits the signer list (W3); every router call passes the settings-wired guard and each allowed
+/// command runs exactly as judged; the worker starts in plan mode with the fixed grant (W1) under the
+/// name the subscription addresses (W2); `wait` reports it STALLED by its transcript, then EXITED (W4).
+#[test]
+fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
+    let d = TempDir::new().unwrap();
+    let base = d.path().canonicalize().unwrap();
+    let c = base.join("c");
+    git(&base, &["clone", "-q", root().to_str().unwrap(), c.to_str().unwrap()]);
+    for f in ["scripts/router-worker.sh", "scripts/router-guard.jq", ".claude/settings.json", ".gitworktreecopy"] {
+        std::fs::copy(root().join(f), c.join(f)).unwrap();
+    }
+    let keel = Path::new(env!("CARGO_BIN_EXE_keel"));
+    assert!(Command::new(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
+    std::fs::write(c.join(".mr-allowed"), "username: owner\n").unwrap();
+
+    // W3: the worktree the worker will run in is created through keel's post-checkout hook
+    let wt = base.join("wt");
+    let path = format!("{}:{}", keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
+    let o = Command::new("git").args(["worktree", "add", "-q", "-b", "wu/x/e2e", wt.to_str().unwrap()]).current_dir(&c).env("PATH", &path).output().unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(std::fs::read_to_string(wt.join(".mr-allowed")).ok().as_deref(), Some("username: owner\n"), "worktree not seeded");
+
+    let stub = base.join("claude");
+    stub_claude(&stub);
+    let release = base.join("release");
+    let config = base.join("config");
+    let owner = std::process::id().to_string();
+    let router = |cmd: &str| -> String {
+        assert_eq!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })), None, "guard denied {cmd:?}");
+        let mut p = Command::new("/bin/sh")
+            .args(["-c", cmd])
+            .current_dir(&c)
+            .env("ROUTER_CLAUDE", &stub)
+            .env("STUB_RELEASE", &release)
+            .env("STUB_OWNER", &owner)
+            .env("CLAUDE_CONFIG_DIR", &config)
+            .env("ROUTER_WAIT_POLL", "0.2")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        // a `wait` that never reaches its line fails here instead of hanging the suite
+        let t = Instant::now();
+        while p.try_wait().unwrap().is_none() {
+            if t.elapsed() > Duration::from_secs(20) {
+                p.kill().unwrap();
+                panic!("{cmd}: no result within 20s");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let o = p.wait_with_output().unwrap();
+        let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+        assert!(o.status.success(), "{cmd}: {out}");
+        out
+    };
+
+    let name = "e2e-w";
+    let brief = c.join(format!(".router/briefs/{name}.md"));
+    assert_eq!(wired_guard(&c, "Write", serde_json::json!({ "file_path": brief })), None);
+    std::fs::create_dir_all(brief.parent().unwrap()).unwrap();
+    std::fs::write(&brief, "run the gate\n").unwrap();
+
+    // W1: spawned in plan mode
+    let out = router(&format!("scripts/router-worker.sh spawn {name} {} .router/briefs/{name}.md opus --permission-mode plan", wt.display()));
+    assert!(out.starts_with(&format!("RUNNING name={name} ")) && out.contains(" permission-mode=plan "), "{out}");
+    let (sid, pid) = (field(&out, "session=").to_string(), field(&out, "pid=").to_string());
+    let copy = field(&out, "brief=");
+    assert!(copy.starts_with(wt.to_str().unwrap()) && std::fs::read_to_string(copy).unwrap() == "run the gate\n", "{out}");
+
+    // W2: the router subscribes to the worker's end and can send it nothing
+    assert_eq!(wired_guard(&c, "SendMessage", serde_json::json!({"to": name, "notify_when_idle": true})), None);
+    assert!(wired_guard(&c, "SendMessage", serde_json::json!({"to": name, "notify_when_idle": true, "message": "also push"})).is_some());
+    // the grant is the worker's alone
+    for cmd in ["cargo test", "keel preflight wu HEAD", "keel mr confirm wu HEAD --as owner"] {
+        assert!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })).is_some(), "router may run {cmd:?}");
+    }
+
+    // W4: an idle worker is STALLED, found by its session id under a project dir no naming rule gives
+    let tr = config.join("projects/-e2e-odd-dir-7f3k").join(format!("{sid}.jsonl"));
+    std::fs::create_dir_all(tr.parent().unwrap()).unwrap();
+    std::fs::write(&tr, "{}\n").unwrap();
+    age(&tr, 120);
+    let out = router(&format!("scripts/router-worker.sh wait {name} 1"));
+    assert_eq!(out, format!("STALLED name={name} pid={pid} idle=2m since={}\n", tr.display()));
+
+    // the worker ends: EXITED, and its argv carried the grant, the mode and the subscribed name
+    std::fs::write(&release, "").unwrap();
+    let out = router(&format!("scripts/router-worker.sh wait {name}"));
+    assert_eq!(out, format!("EXITED name={name} pid={pid} out={}\n", c.join(format!(".router/out/{name}.out")).display()));
+    let a = worker_argv(&c, name);
+    assert_eq!(option(&a, "--permission-mode"), "plan");
+    assert_eq!(option(&a, "-n"), name);
+    assert_eq!(option(&a, "--session-id"), sid);
 }
