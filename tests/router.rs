@@ -97,18 +97,31 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "scripts/router-worker.sh wait e-x-w1".into(),
         "scripts/router-worker.sh wait e-x-w1 30".into(),
     ];
-    // every permissions.allow entry is a shape the guard accepts (one source of truth, no drift)
+    // permissions.allow serves workers and the router alike: every router entry is a shape the guard
+    // accepts (one source of truth, no drift); every worker-only entry is one it refuses the router.
+    // `wait` is a router entry (E-SEED2.W8: the router arms it after a spawn); cargo/keel are
+    // worker-only, and these shapes stay refused whether or not settings lists them yet.
+    let mut worker_only: Vec<String> =
+        ["cargo test", "cargo build", "keel notes write test", "keel preflight wu HEAD", "keel check"].map(String::from).to_vec();
     for a in settings()["permissions"]["allow"].as_array().unwrap() {
         let a = a.as_str().unwrap().strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
-        allowed.push(match a.strip_suffix(" *") {
+        let cmd = match a.strip_suffix(" *") {
             Some(p) if p.ends_with(" wait") => format!("{p} n 15"),
             Some(p) if p.starts_with("scripts/") => format!("{p} n /w .router/briefs/n.md opus"),
             Some(p) => format!("{p} HEAD"),
             None => a.to_string(),
-        });
+        };
+        if ["cargo ", "keel "].iter().any(|w| a.starts_with(w)) {
+            worker_only.push(cmd);
+        } else {
+            allowed.push(cmd);
+        }
     }
     for ok in &allowed {
         assert_eq!(bash(ok), None, "guard denied documented shape {ok:?}");
+    }
+    for w in &worker_only {
+        assert!(bash(w).is_some(), "guard allowed worker-only {w:?} to the router");
     }
 }
 
