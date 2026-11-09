@@ -219,3 +219,14 @@ fn check_cache_key_covers_a_tracked_file_that_gitignore_matches() {
     let o = keel(p, &["check"]);
     assert!(!o.status.success() && !text(&o).contains("skipped"), "{}", text(&o));
 }
+
+#[test]
+fn version_works_outside_any_repo() {
+    let d = TempDir::new().unwrap();
+    let o = keel(d.path(), &["--version"]);
+    assert!(o.status.success());
+    let t = text(&o);
+    assert!(t.starts_with(&format!("keel {}\n", env!("CARGO_PKG_VERSION"))), "{t}");
+    assert!(t.contains("Keel:"), "{t}");
+    assert!(keel(d.path(), &["-V"]).status.success());
+}

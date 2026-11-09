@@ -384,6 +384,10 @@ fn verify_doc(repo: &Path, paths: &[&str]) -> Result<i32, String> {
 fn run() -> Result<i32, String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    if let ["--version" | "-V"] = args.as_slice() {
+        println!("keel {}\nKeel: merge-gate workflow CLI (not keel.so)", env!("CARGO_PKG_VERSION"));
+        return Ok(0);
+    }
     let repo = repo_root()?;
     match args.as_slice() {
         ["init", flags @ ..] => match flags {
