@@ -837,7 +837,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let path = format!("{}:{}", keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
     let o = Command::new("git").args(["worktree", "add", "-q", "-b", "wu/x/e2e", wt.to_str().unwrap()]).current_dir(&c).env("PATH", &path).output().unwrap();
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    assert_eq!(std::fs::read_to_string(wt.join(".mr-allowed")).unwrap(), "username: owner\n", "worktree not seeded");
+    assert_eq!(std::fs::read_to_string(wt.join(".mr-allowed")).ok().as_deref(), Some("username: owner\n"), "worktree not seeded");
 
     let stub = base.join("claude");
     stub_claude(&stub);
