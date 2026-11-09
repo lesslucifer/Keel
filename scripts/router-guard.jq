@@ -27,7 +27,7 @@ def gh_args: "( ((--(json|state|limit|author|base|head|label|search)|-(L|s|A|B|H
 def bash_ok:
   test("^[A-Za-z0-9 ._/:=@%,+^~-]*$")
   and (test("--ou") | not)
-  and test("^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)" + gh_args + "|ps (aux|-ef)|scripts/router-worker\\.sh ((spawn|resume) [A-Za-z0-9._/ -]+|wait [a-z0-9][a-z0-9-]*( [0-9]+)?))$")
+  and test("^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)" + gh_args + "|ps (aux|-ef)|scripts/router-worker\\.sh (spawn|resume|wait) [A-Za-z0-9._/ -]+)$")
   and ((test("^scripts/") and test("\\.\\.")) | not);
 
 if .agent_type != "router" then empty

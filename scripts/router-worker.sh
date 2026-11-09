@@ -22,11 +22,13 @@ set -eu
 die() { echo "router-worker: $*" >&2; exit 2; }
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
 B="$ROOT/.router/briefs" O="$ROOT/.router/out"
+# the one worker-name rule: spawn, resume and wait all check it here, and the guard does not repeat it
+valid_name() { expr "$1" : '^[a-z0-9][a-z0-9-]\{0,40\}$' >/dev/null || die "bad name"; }
 live() { ps -o stat=,command= -p "$1" 2>/dev/null | grep -v '^ *Z' | grep -qF -- " -n $name "; }
 if [ "${1:-}" = wait ]; then
   [ $# -eq 2 ] || [ $# -eq 3 ] || die "wait <name> [<stall-min>]"
   name=$2 stall=${3-15}
-  expr "$name" : '^[a-z0-9][a-z0-9-]\{0,40\}$' >/dev/null || die "bad name"
+  valid_name "$name"
   expr "$stall" : '^[1-9][0-9]\{0,3\}$' >/dev/null || die "stall-min must be 1-9999"
   pid=$(cat "$O/$name.pid" 2>/dev/null) || die "no worker $name ($O/$name.pid missing)"
   run=
@@ -62,7 +64,7 @@ mode=${1:-}; [ $# -ge 1 ] && shift
 case "$mode" in spawn) [ $# -eq 4 ] || die "spawn <name> <worktree> <brief.md> <model>";;
   resume) [ $# -eq 5 ] || die "resume <name> <uuid> <worktree> <note.md> <model>";; *) die "spawn|resume|wait";; esac
 name=$1; shift
-expr "$name" : '^[a-z0-9][a-z0-9-]\{0,40\}$' >/dev/null || die "bad name"
+valid_name "$name"
 if [ "$mode" = resume ]; then sid=$1; shift
   expr "$sid" : '^[0-9a-f]\{8\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{12\}$' >/dev/null || die "bad session id"
 else sid=$(uuidgen | tr 'A-F' 'a-f'); fi

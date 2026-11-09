@@ -69,9 +69,8 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "gh pr view 1 --web",
         "scripts/router-worker.sh spawn a ../x .router/briefs/a.md opus",
         "scripts/router-worker.sh wait ../x",
-        "scripts/router-worker.sh wait n 15 x",
-        "scripts/router-worker.sh wait n -1",
-        "scripts/router-worker.sh wait N",
+        "scripts/router-worker.sh wait n;id",
+        "scripts/router-worker.sh wait $(id)",
         "rm -rf x",
         "claude -p hi",
         "kill 1",
@@ -277,7 +276,7 @@ fn launcher() -> Launcher {
         "held() { [ ! -e \"$STUB_RELEASE\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; }\n",
         "(while held; do sleep 0.05; done) | cut -c 1 &\n",
         "while held; do\n",
-        "  [ ! -e \"$STUB_RELEASE.busy\" ] || sh -c 'while [ -e \"$STUB_RELEASE.busy\" ] && [ ! -e \"$STUB_RELEASE\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done; :'\n",
+        "  [ ! -e \"$STUB_RELEASE.busy\" ] || /bin/sh -c 'while [ -e \"$STUB_RELEASE.busy\" ] && [ ! -e \"$STUB_RELEASE\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done; :'\n",
         "  sleep 0.05\ndone\nwait\n"
     )).unwrap();
     std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
@@ -523,6 +522,9 @@ fn wait_blocks_until_the_worker_exits_or_stalls() {
         (vec!["wait"], "wait <name>"),
         (vec!["wait", "n", "1", "x"], "wait <name>"),
         (vec!["wait", "-n"], "bad name"),
+        (vec!["wait", "N"], "bad name"),
+        (vec!["wait", "n", "-1"], "stall-min"),
+        (vec!["wait", "n", "10000"], "stall-min"),
         (vec!["wait", "n", "0"], "stall-min"),
         (vec!["wait", "n", "x"], "stall-min"),
         (vec!["wait", "n", ""], "stall-min"),
