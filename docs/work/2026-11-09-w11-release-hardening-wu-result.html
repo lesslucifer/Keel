@@ -29,7 +29,7 @@
 <h2 id="deviations">Deviations</h2>
 <ul data-item="deviations" data-c="deviations">
   <li><code>.claude/skills/project-router/SKILL.md</code> could not be written: the harness refused the write. Its change is a <code>git apply</code>-ready patch, <code>target/w11-project-router-skill.patch</code>.</li>
-  <li><code>docs/install.html</code> is also kept as a patch, <code>target/w11-install.patch</code>, and is not staged at this tip. <code>keel preflight</code> requires a clean tree, and the notes must bind a committed tip. Both patches pass <code>git apply --check</code> against this tip.</li>
+  <li><code>docs/install.html</code> is not committed at this tip. It is staged in the worktree after the notes and preflight, because <code>keel preflight</code> requires a clean tree. A backup patch is at <code>target/w11-install.patch</code>. Both patches pass <code>git apply --check</code> against this tip.</li>
   <li>The raw independent-review output in the router checkout was not readable (permission denied), so the brief's summary of F1–F12 was used.</li>
 </ul>
 
@@ -48,9 +48,15 @@
 </div>
 
 <h2 id="owner-steps">Owner steps, in order</h2>
-<p>Run these in this worktree with the tip checked out and a clean tree.</p>
+<p>Run these in this worktree on <code>wu/E-SEED2/w11-release-hardening</code>. The rule-bearing sets come first. That way nothing is left staged when the regenerated <code>release.yml</code> is committed.</p>
 <ol data-c="owner-steps">
-  <li><b>Regenerate the workflow.</b> The dist config changed, so <code>release.yml</code> is regenerated here rather than hand-edited.
+  <li><b>Commit the first rule-bearing set (F11).</b> <code>docs/install.html</code> is already staged on its own. A backup patch is at <code>target/w11-install.patch</code>.
+    <pre>keel mr commit -m "docs(E-SEED2.W11): install.html - shell installer edits shell profiles; INSTALLER_NO_MODIFY_PATH=1 opt-out (F11)" --as vuluu</pre></li>
+  <li><b>Commit the second rule-bearing set (F12).</b>
+    <pre>git apply target/w11-project-router-skill.patch
+git add .claude/skills/project-router/SKILL.md
+keel mr commit -m "docs(E-SEED2.W11): project-router - what a stable tag, a prerelease tag and a pull request run (F12)" --as vuluu</pre></li>
+  <li><b>Regenerate the workflow.</b> The dist config changed, so <code>release.yml</code> is regenerated here rather than hand-edited. Start from a clean tree.
     <ol>
       <li><code>dist --version</code> should print 0.34.0.</li>
       <li>Run <code>dist generate</code>. Then <code>git diff .github/</code> should show only two kinds of change: <code>uses: actions/…@&lt;sha&gt;</code> lines, and <code>runs-on: "ubuntu-24.04"</code> lines.</li>
@@ -62,14 +68,6 @@ git commit -m "ci(E-SEED2.W11): regenerate release.yml (action pins, ubuntu-24.0
       <li>Check that the committed file matches what dist generates: <code>dist generate --mode=ci &amp;&amp; git diff --exit-code .github/</code> should exit 0.</li>
       <li>Optional licence check: <code>dist build --artifacts=local --target=aarch64-apple-darwin</code>, then list the archive under <code>target/distrib/</code> and look for <code>LICENSE</code>.</li>
     </ol></li>
-  <li><b>Commit the first rule-bearing set (F11).</b>
-    <pre>git apply target/w11-install.patch
-git add docs/install.html
-keel mr commit -m "docs(E-SEED2.W11): install.html - shell installer edits shell profiles; INSTALLER_NO_MODIFY_PATH=1 opt-out (F11)" --as vuluu</pre></li>
-  <li><b>Commit the second rule-bearing set (F12).</b>
-    <pre>git apply target/w11-project-router-skill.patch
-git add .claude/skills/project-router/SKILL.md
-keel mr commit -m "docs(E-SEED2.W11): project-router - what a stable tag, a prerelease tag and a pull request run (F12)" --as vuluu</pre></li>
   <li><b>Re-gate the new tip.</b> A fresh worker re-writes <code>test/v1</code> and <code>doc/v1</code> on the new tip, runs <code>keel preflight wu &lt;tip&gt; --target epic/E-SEED2</code>, and then runs the code review. The router dispatches an independent review of the regenerated <code>.github/</code> diff, which no gate reviews. Then the owner runs <code>keel mr confirm wu &lt;tip&gt; --as vuluu --target epic/E-SEED2</code> and merges <code>--no-ff</code>.</li>
   <li><b>GitHub and npm setup before the first stable tag.</b> These are recorded in DEC-38:
     <ul>
