@@ -1,6 +1,6 @@
 //! The router's enforcement surface (E-ROUTER close review): the PreToolUse guard
 //! `scripts/router-guard.jq` as `.claude/settings.json` wires it, the headless launcher
-//! `scripts/router-worker.sh` (with a stub `claude`), and the shipped PUSHED watch probe.
+//! `scripts/router-worker.sh` (with a stub `claude`) including its `wait` mode, and the shipped PUSHED watch probe.
 //! Needs `jq`, `sh`, `uuidgen` and `shasum` on PATH, as the guard and launcher do.
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -68,6 +68,10 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "gh pr list --json number -q env",
         "gh pr view 1 --web",
         "scripts/router-worker.sh spawn a ../x .router/briefs/a.md opus",
+        "scripts/router-worker.sh wait ../x",
+        "scripts/router-worker.sh wait n 15 x",
+        "scripts/router-worker.sh wait n -1",
+        "scripts/router-worker.sh wait N",
         "rm -rf x",
         "claude -p hi",
         "kill 1",
@@ -90,11 +94,14 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "gh pr status".into(),
         "scripts/router-worker.sh spawn e-x-w1 /Users/o/Keel-x .router/briefs/e-x-w1.md opus".into(),
         "scripts/router-worker.sh resume e-x-w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b /Users/o/Keel-x .router/briefs/e-x-w1-r1.md sonnet".into(),
+        "scripts/router-worker.sh wait e-x-w1".into(),
+        "scripts/router-worker.sh wait e-x-w1 30".into(),
     ];
     // every permissions.allow entry is a shape the guard accepts (one source of truth, no drift)
     for a in settings()["permissions"]["allow"].as_array().unwrap() {
         let a = a.as_str().unwrap().strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
         allowed.push(match a.strip_suffix(" *") {
+            Some(p) if p.ends_with(" wait") => format!("{p} n 15"),
             Some(p) if p.starts_with("scripts/") => format!("{p} n /w .router/briefs/n.md opus"),
             Some(p) => format!("{p} HEAD"),
             None => a.to_string(),
@@ -231,7 +238,8 @@ struct Launcher {
 }
 
 /// A repo whose main checkout holds the launcher, two linked worktrees, and a stub claude that
-/// prints its argv and sleeps $STUB_SLEEP seconds.
+/// prints its argv and sleeps $STUB_SLEEP seconds (in a `sh -c` child, as a Bash tool command runs, when
+/// $STUB_BUSY is set).
 fn launcher() -> Launcher {
     let d = TempDir::new().unwrap();
     let base = d.path().canonicalize().unwrap();
@@ -247,22 +255,36 @@ fn launcher() -> Launcher {
     git(&main, &["worktree", "add", "-q", "../wt", "-b", "w"]);
     git(&main, &["worktree", "add", "-q", "../wt2", "-b", "w2"]);
     let stub = base.join("claude");
-    std::fs::write(&stub, "#!/bin/sh\necho \"stub $*\"\nsleep \"${STUB_SLEEP:-3}\"\n").unwrap();
+    std::fs::write(&stub, "#!/bin/sh\necho \"stub $*\"\nif [ -n \"${STUB_BUSY:-}\" ]; then sh -c \"sleep ${STUB_SLEEP:-3}; :\"; else sleep \"${STUB_SLEEP:-3}\"; fi\n").unwrap();
     std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub, _d: d }
 }
 
 impl Launcher {
     fn run(&self, args: &[&str], sleep: &str) -> (bool, String) {
+        self.run_env(args, &[("STUB_SLEEP", sleep)])
+    }
+
+    fn run_env(&self, args: &[&str], env: &[(&str, &str)]) -> (bool, String) {
         let o = Command::new("sh")
             .arg("scripts/router-worker.sh")
             .args(args)
             .current_dir(&self.main)
             .env("ROUTER_CLAUDE", &self.stub)
-            .env("STUB_SLEEP", sleep)
+            .env("CLAUDE_CONFIG_DIR", self.main.parent().unwrap().join("config"))
+            .env("ROUTER_WAIT_POLL", "0.2")
+            .envs(env.iter().copied())
             .output()
             .unwrap();
         (o.status.success(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
+    }
+
+    /// The session transcript `wait` reads for this spawn, under the stubbed CLAUDE_CONFIG_DIR.
+    fn transcript(&self, wt: &Path, sid: &str) -> PathBuf {
+        let enc: String = wt.to_str().unwrap().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+        let dir = self.main.parent().unwrap().join("config/projects").join(enc);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join(format!("{sid}.jsonl"))
     }
 
     /// Wait (bounded) until the worker recorded in <name>.pid has exited.
@@ -361,4 +383,69 @@ fn pushed_probe_fires_only_after_the_merge_reaches_origin() {
     assert!(!fires(), "PUSHED fired before the push");
     git(&main, &["push", "-q", "origin", "main"]);
     assert!(fires(), "PUSHED did not fire after the push");
+}
+
+fn age(path: &Path, secs: u64) {
+    let f = std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap();
+    f.set_modified(std::time::SystemTime::now() - Duration::from_secs(secs)).unwrap();
+}
+
+/// E-SEED2.W8: `wait <name> [<stall-min>]` blocks while the worker runs and returns one line when it
+/// exits (EXITED) or stalls (STALLED: no `sh -c` child and a transcript idle past the threshold, or the
+/// pid file when no transcript exists); a worker running a command is never stalled. Bad input exits 2.
+#[test]
+fn wait_blocks_until_the_worker_exits_or_stalls() {
+    let l = launcher();
+    let wt = l.wt.to_str().unwrap();
+    let brief = ".router/briefs/b.md";
+    for (args, why) in [
+        (vec!["wait"], "wait <name>"),
+        (vec!["wait", "n", "1", "x"], "wait <name>"),
+        (vec!["wait", "-n"], "bad name"),
+        (vec!["wait", "n", "0"], "stall-min"),
+        (vec!["wait", "n", "x"], "stall-min"),
+        (vec!["wait", "ghost"], "no worker ghost"),
+    ] {
+        let (ok, out) = l.run_env(&args, &[]);
+        assert!(!ok && out.contains(why), "{args:?} not refused for {why}: {out}");
+    }
+
+    // exits: blocks for the live worker, returns once it is gone
+    let (ok, out) = l.run(&["spawn", "n", wt, brief, "haiku"], "5");
+    assert!(ok, "{out}");
+    let sid = field(&out, "session=").to_string();
+    let pid = field(&out, "pid=").to_string();
+    let t = Instant::now();
+    let (ok, out) = l.run_env(&["wait", "n"], &[]);
+    assert!(ok && out.starts_with(&format!("EXITED name=n pid={pid} ")), "{out}");
+    assert!(t.elapsed() >= Duration::from_secs(1) && t.elapsed() < Duration::from_secs(10), "{:?}", t.elapsed());
+    assert!(!Command::new("kill").args(["-0", &pid]).stderr(Stdio::null()).status().unwrap().success(), "returned while alive");
+    assert_eq!(l.run_env(&["wait", "n"], &[]).1.lines().count(), 1, "an exited worker returns at once, one line");
+
+    // stalls: transcript idle 2 min past a 1 min threshold
+    let tr = l.transcript(&l.wt, &sid);
+    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "haiku"], "6");
+    assert!(ok, "{out}");
+    age(&tr, 120);
+    let (ok, out) = l.run_env(&["wait", "n", "1"], &[]);
+    assert!(ok && out.starts_with("STALLED name=n ") && out.contains(" idle=2m ") && out.contains(tr.to_str().unwrap()), "{out}");
+    assert!(field(&out, "pid=") != pid);
+    l.wait_exit("n");
+
+    // a worker running a command is busy, not stalled, however old its transcript
+    let (ok, out) = l.run_env(&["resume", "n", &sid, wt, brief, "haiku"], &[("STUB_SLEEP", "3"), ("STUB_BUSY", "1")]);
+    assert!(ok, "{out}");
+    age(&tr, 120);
+    let (ok, out) = l.run_env(&["wait", "n", "1"], &[]);
+    assert!(ok && out.starts_with("EXITED name=n "), "{out}");
+
+    // no transcript: the pid file's age stands in
+    std::fs::remove_file(&tr).unwrap();
+    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "haiku"], "6");
+    assert!(ok, "{out}");
+    age(&l.main.join(".router/out/n.pid"), 120);
+    let (ok, out) = l.run_env(&["wait", "n", "1"], &[]);
+    assert!(ok && out.starts_with("STALLED name=n ") && out.contains("n.pid"), "{out}");
+    l.wait_exit("n");
+    assert!(std::fs::read_to_string(l.main.join(".router/out/n.out")).unwrap().starts_with("stub "), "wait touched n.out");
 }
