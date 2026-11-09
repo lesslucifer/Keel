@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af12c6e9f34851f0dfb1fe1" data-artifact="epic-plan wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-ROUTERFIX epic plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-ROUTERFIX · Headless workers can build, test and gate</h1>
+      <p>Collapsed epic + WU plan (one WU) for <code>epic/E-ROUTERFIX</code>: a router/meta-tooling hotfix. It gives launcher-spawned workers the <code>cargo</code>/<code>keel</code> commands their work needs, and lets the router choose a worker's permission mode per task.</p>
+      <div class="meta">T3 · epic plan + WU plan · 2026-11-09 · Keel · branch <code>epic/E-ROUTERFIX</code> off <code>main</code> <code>296fa97</code></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="intent">Intent</h2>
+<p data-item="intent" data-c="intent-body">Headless workers started by <code>scripts/router-worker.sh</code> cannot run <code>cargo</code> or <code>keel</code>. Three separate workers this session got "requires approval" on <code>cargo</code>/<code>keel</code>, and that answer is a refusal, because a <code>claude -p</code> session has nobody to approve. A worker therefore cannot run its own tests, write its <code>test/v1</code>/<code>doc/v1</code> notes, run <code>keel preflight</code> or run the code review. That is the workflow every WU has to follow. The launcher also hardcodes <code>--permission-mode acceptEdits</code>, so the router has no way to start a read-only checker in a stricter mode. This epic gives every launcher-spawned worker a fixed, narrow grant for <code>cargo</code> and <code>keel</code>, and it explicitly denies the owner-only <code>keel mr</code>. It also adds an optional, validated <code>--permission-mode</code> to the launcher. Why now: backlog <a href="../backlog/e-router-v2.html">e-router-v2</a> R2 asked whether workers stall under <code>acceptEdits</code>. Real runs answered it: they are refused. Every multi-worker epic is currently blocked at its gate steps.</p>
+
+<h2 id="findings">Findings (re-derived, not assumed)</h2>
+<table data-c="findings-table">
+  <thead><tr><th>#</th><th>Fact</th><th>Source</th></tr></thead>
+  <tbody>
+    <tr><td>F1</td><td>A worker's Bash allowlist is the union of the owner's user-level <code>~/.claude/settings.json</code> (DEC-33: <code>git</code>, <code>rm</code>, <code>curl</code>, <code>python3</code>, <code>claude</code>…) and the project <code>.claude/settings.json</code>. Neither list has <code>cargo</code> or <code>keel</code>. This run reproduced it: <code>cargo --version</code> and <code>keel --help</code> were both refused, while <code>git push</code> and <code>git worktree add</code> ran.</td><td><a href="../decisions/router.html">decisions/router.html</a> DEC-33; this planning run</td></tr>
+    <tr><td>F2</td><td>The project <code>permissions.allow</code> is the <b>router's</b> list (<code>"agent": "router"</code>), shaped to the guard's whitelist. <code>tests/router.rs</code> asserts that every entry passes <code>router-guard.jq</code>, so adding a <code>cargo</code> entry on <code>main</code> as it stands turns <code>cargo test</code> red.</td><td><code>.claude/settings.json</code>, <code>tests/router.rs</code> <code>router_bash_guard_judges_plain_words…</code></td></tr>
+    <tr><td>F3</td><td><code>.claude/settings.json</code> is <code>rule_bearing</code> (only <code>keel mr commit</code> may change it), and Claude Code refuses a headless worker's write to it, with no exceptions found. A fix placed there can never be made by a worker.</td><td><code>.keel/config.toml</code>; a worker run this session</td></tr>
+    <tr><td>F4</td><td>The guard denies <code>cargo</code>/<code>keel</code> to <code>agent_type == "router"</code> whatever the allow rules say, because its Bash whitelist is closed and a hook deny beats any allow. Any worker grant is therefore safe for the router, wherever it lives.</td><td><code>scripts/router-guard.jq</code> <code>bash_ok</code></td></tr>
+    <tr><td>F5</td><td>The guard's launcher shape <code>scripts/router-worker.sh (spawn|resume) [A-Za-z0-9._/ -]+</code> already admits a trailing <code>--permission-mode plan</code>, so the guard needs no change. The launcher is the only place a mode value is judged.</td><td><code>scripts/router-guard.jq</code></td></tr>
+    <tr><td>F6</td><td>Workers already run <code>cargo</code> indirectly: <code>git push</code> fires the pre-push hook, and its <code>keel check</code> runs <code>cargo clippy</code> + <code>cargo test</code>. A hook is a git subprocess, not a tool call. It proves a pushed tree green; it does not let a worker iterate, write notes or run <code>keel preflight</code>.</td><td><code>src/main.rs</code> <code>pre_push</code>/<code>check</code></td></tr>
+    <tr><td>F7</td><td><code>epic/E-SEED2</code> <code>8a14f24</code> prepared a <code>settings.json</code> worker allow-list (its test splits allow entries into router entries and worker-only <code>cargo</code>/<code>keel</code>/<code>wait</code> entries). E-SEED2.W7 edits the same launcher lines (model check, maybe an effort argument) and the same skill text.</td><td><code>epic/E-SEED2</code> history and plan</td></tr>
+  </tbody>
+</table>
+
+<h2 id="design">Design</h2>
+<div class="callout" data-c="design-choice"><b>Worker grants live on the launcher's command line, not in <code>.claude/settings.json</code>.</b> The launcher adds a fixed <code>--allowedTools</code> list and a fixed <code>--disallowedTools</code> list to its <code>claude -p</code> call. The grant then reaches exactly the processes the launcher starts. It never reaches the router, the owner's interactive session in this repo, or another agent, and it lives in a file a worker can edit. That rules out <code>settings.json</code> (F2, F3).</div>
+
+<table data-c="grant-table">
+  <thead><tr><th>List</th><th>Entries (each <code>Bash(…)</code>; bare and <code>" *"</code> forms both listed, so a no-argument call matches too)</th><th>Why not more</th></tr></thead>
+  <tbody>
+    <tr><td>allow · cargo</td><td><code>cargo build</code>, <code>cargo test</code>, <code>cargo check</code>, <code>cargo clippy</code>, <code>cargo fmt</code></td><td>No <code>cargo run</code>: <code>cargo run -- mr</code> is <code>keel mr</code>. No <code>install</code>/<code>publish</code>/<code>add</code>/<code>update</code>: those touch the machine, the registry or the dependency set.</td></tr>
+    <tr><td>allow · keel</td><td><code>keel preflight</code>, <code>keel verify-doc</code>, <code>keel verify-dod</code>, <code>keel notes write</code>, <code>keel lint</code>, <code>keel check</code></td><td>Exactly the subcommands a WU's gate steps use (<code>src/main.rs</code> dispatch). No <code>init</code> or <code>hooks install</code>: they write into the shared git common dir. No <code>hook …</code>: git invokes those.</td></tr>
+    <tr><td>deny</td><td><code>keel mr</code>, <code>keel mr *</code>, <code>cargo run</code>, <code>cargo run *</code></td><td><code>mr</code> is the owner's manual review (AGENTS.md). A deny also beats the user-level allowlist.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout warn" data-c="ceiling"><b>Known ceiling, recorded as a DEC rather than hidden.</b> <code>cargo test</code> runs code the worker wrote (tests, <code>build.rs</code>), so the grant amounts to code execution in the worktree. That is the same class as DEC-33's accepted risk. The <code>keel mr</code> deny states intent; it is not a sandbox.</div>
+
+<p data-c="mode-design"><b>Permission mode:</b> spawn and resume take an optional trailing <code>--permission-mode &lt;m&gt;</code> after their positional arguments. Accepted values are <code>acceptEdits</code> (the default when omitted, so today's behaviour is unchanged) and <code>plan</code> (read-only checkers and reviewers). Anything else is refused with a message naming the set, including <code>bypassPermissions</code>, <code>dontAsk</code>, <code>default</code>, a missing value and an unknown option. The launcher, not the guard, is the boundary that keeps <code>bypassPermissions</code> out of the router's reach (F5). The chosen mode is written to the run dir (<code>permission-mode</code>) and printed on the <code>RUNNING</code> line. A resume does not inherit the mode: each run states its own or gets the default. A named option, not a sixth positional, so it composes with E-SEED2.W7's possible effort argument.</p>
+
+<div class="diagram" data-c="flow-diagram">
+<pre class="mermaid">flowchart LR
+  R[router session] -- "spawn … opus [--permission-mode plan]" --> G{router-guard.jq}
+  G -- shape ok --> L[router-worker.sh]
+  L -- "mode ∈ {acceptEdits, plan}?" --> X[refuse]
+  L -- "claude -p --permission-mode m --allowedTools cargo/keel list --disallowedTools keel mr, cargo run" --> W[worker]
+  W --> T[cargo test · keel preflight · keel notes write]
+  R -. "cargo / keel" .-> G2[guard: deny]</pre>
+<div class="caption">Grants travel only on the launcher's command line. The router keeps its closed whitelist.</div>
+</div>
+
+<h2 id="use-cases">Use cases</h2>
+<p data-item="use-cases" data-c="use-cases-body">Changes <a href="../use-cases/router.html">UC-ROUTE</a> (worker modes and launcher). The launcher contract gains the worker grant lists and the optional <code>--permission-mode</code>. No product (<code>UC-GATE</code>/<code>UC-MR</code>/…) contract changes.</p>
+
+<h2 id="expected">Expected</h2>
+<ul data-item="expected" data-c="expected-list">
+  <li>In <code>tests/router.rs</code>, the stub <code>claude</code>'s recorded argv for a plain spawn shows <code>--permission-mode acceptEdits</code>, every allow entry from the table and every deny entry. A spawn with <code>--permission-mode plan</code> shows <code>plan</code>.</li>
+  <li><code>scripts/router-worker.sh spawn … opus --permission-mode bypassPermissions</code> (and <code>dontAsk</code>, a missing value, an unknown option) exits non-zero with a "permission mode must be" message, and nothing starts.</li>
+  <li>The guard still allows the router <code>scripts/router-worker.sh spawn n /w .router/briefs/n.md opus --permission-mode plan</code> and still denies it <code>cargo test</code> and <code>keel preflight</code>.</li>
+  <li><code>.claude/settings.json</code> is unchanged by this epic. <code>cargo test</code> is green.</li>
+  <li>Live (owner-run, evidence only, not a gate): a worker spawned through the new launcher runs <code>cargo test</code>, <code>keel preflight</code> and <code>keel verify-doc</code> without "requires approval". Its <code>keel mr --help</code> is refused.</li>
+</ul>
+
+<h2 id="non-goals">Non-goals</h2>
+<ul data-item="non-goals" data-c="non-goals-list">
+  <li>Touching <code>.claude/settings.json</code> or the router's posture (DEC-30). The guard is unchanged.</li>
+  <li>Revisiting DEC-33 (workers' inherited user-level allowlist), or moving <code>git</code> grants into the repo.</li>
+  <li><code>bypassPermissions</code> for workers in any form. Also <code>auto</code> mode (open question 3).</li>
+  <li>Backlog e-router-v2 R1 (persona missing), R3 (gating the router's security files) and the rest. E-SEED2.W7's opus-only policy.</li>
+</ul>
+
+<h2 id="wus">Working units</h2>
+<div data-item="wu-summaries" data-c="wu-summaries">
+<div data-wu="E-ROUTERFIX.W1" data-c="wu-w1">
+  <h3 id="w1">E-ROUTERFIX.W1 · Worker grants and permission mode in the launcher <span class="badge id">wu/E-ROUTERFIX/w1-worker-permissions</span></h3>
+  <p data-item="wu-summary">In <code>scripts/router-worker.sh</code>, parse an optional trailing <code>--permission-mode acceptEdits|plan</code> on spawn and resume (default <code>acceptEdits</code>), record it in the run dir and on the <code>RUNNING</code> line, and pass it plus the fixed <code>--allowedTools</code>/<code>--disallowedTools</code> lists from the grant table to <code>claude -p</code>. Extend <code>tests/router.rs</code> to cover the argv, the refusals and the guard shape. Add a DEC to <code>decisions/router.html</code> and update UC-ROUTE. Strike R2 in the backlog. The skill text that describes "fixed flags" goes in one staged rule-bearing commit for the owner.</p>
+  <p data-item="wu-maps-to">E-ROUTERFIX intent (both problems) · UC-ROUTE (launcher contract) · backlog e-router-v2 R2.</p>
+  <p data-item="wu-expected">Every bullet of <a href="#expected">Expected</a> holds on the WU tip.</p>
+  <p data-item="wu-deps">none (coordinate with E-SEED2.W7 on the launcher; open point 4)</p>
+</div>
+</div>
+
+<h2 id="wu-plan">W1 plan</h2>
+<p data-item="requirement" data-c="w1-requirement">Every worker spawned or resumed through <code>scripts/router-worker.sh</code> runs under a launcher-validated permission mode (<code>acceptEdits</code> by default, or <code>plan</code>; anything else refused). Every such worker is allowed exactly the grant table's <code>cargo</code>/<code>keel</code> commands and denied <code>keel mr</code> and <code>cargo run</code>.</p>
+<p data-item="maps-to" data-c="w1-maps-to">E-ROUTERFIX.W1 → intent problems 1 and 2 · UC-ROUTE launcher contract · backlog e-router-v2 R2.</p>
+<table data-item="test-plan" data-c="w1-test-plan">
+  <thead><tr><th>Level</th><th>Test</th></tr></thead>
+  <tbody>
+    <tr><td>unit (each commit)</td><td><code>tests/router.rs</code>, hermetic: it drives the launcher with the existing stub <code>claude</code>, which echoes its argv. (1) The default spawn's argv holds <code>--permission-mode acceptEdits</code> and each allow/deny entry, and holds no <code>Bash(cargo run</code> on the allow side. (2) <code>--permission-mode plan</code> reaches argv and the run dir's <code>permission-mode</code> file. (3) <code>bypassPermissions</code>, <code>dontAsk</code>, <code>default</code>, a missing value and <code>--bogus x</code> are each refused with "permission mode must be", or with the usage line, and no <code>.pid</code> is written. (4) Resume accepts the option and does not inherit it. (5) The guard allows the router the spawn shape with the option and still denies <code>cargo test</code> and <code>keel preflight</code>.</td></tr>
+    <tr><td>integration (WU)</td><td>The same file's launcher scenario run end to end: router command → guard → launcher → stub argv. That is the WU's bounded contract. Nothing beyond a real <code>claude</code> remains outside it.</td></tr>
+    <tr><td>e2e (epic)</td><td>Same as the WU integration test (one-WU epic; layers are additive, the same test serves both). See <a href="#e2e-plan">E2E plan</a>.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="e2e-plan">E2E plan</h2>
+<div data-item="e2e-plan" data-c="e2e-plan-body">
+  <p>The gating e2e is the hermetic launcher scenario in <code>tests/router.rs</code>. Real <code>claude</code> is non-deterministic and costs money, so it cannot be a test under the charter. Live evidence, recorded in the WU result and not gating: one dogfood worker started through the <b>WU branch's</b> launcher. Its brief runs <code>cargo test</code>, <code>keel preflight</code> and <code>keel verify-doc</code>, then tries <code>keel mr --help</code> and expects a refusal, and its <code>.out</code> is quoted. Whoever runs it uses the launcher in the WU worktree, because the router's own launcher only gets the fix after the epic merges (open point 1). No waiver intended.</p>
+</div>
+
+<h2 id="distillation-plan">Distillation plan</h2>
+<table data-item="distillation-plan" data-c="distillation-table">
+  <thead><tr><th>Truth</th><th>Absorbed by</th></tr></thead>
+  <tbody>
+    <tr><td>Grants on the launcher, not in settings; the grant table's rationale; the code-execution ceiling</td><td>New DEC in <a href="../decisions/router.html">decisions/router.html</a> (linked from <code>decisions-index.html</code>), lineage to DEC-33</td></tr>
+    <tr><td>Launcher contract: optional <code>--permission-mode</code>, grant lists</td><td><a href="../use-cases/router.html">use-cases/router.html</a> UC-ROUTE</td></tr>
+    <tr><td>R2 answered (refused, not stalled; fixed here)</td><td><a href="../backlog/e-router-v2.html">backlog/e-router-v2.html</a> R2 struck with a pointer to the DEC</td></tr>
+    <tr><td>"Fixed flags" wording</td><td><code>skills/keel-router/references/worker-ops.md</code> (mode 2 and open issue 3) and its <code>.claude/skills/</code> copy, plus <code>.claude/skills/project-router/SKILL.md</code> "Workers": rule-bearing, owner's <code>keel mr commit</code></td></tr>
+    <tr><td>This plan and the W1 result</td><td>Archived out of git at close</td></tr>
+  </tbody>
+</table>
+
+<h2 id="open-points">Open points (decided here, owner may override)</h2>
+<table data-c="open-points-table">
+  <thead><tr><th>#</th><th>Point</th><th>What was decided here</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><b>Bootstrapping.</b> W1's own worker is spawned by the router's current launcher, so it has no <code>cargo</code>/<code>keel</code>. It cannot run <code>cargo test</code> directly, <code>keel notes write test|doc</code>, <code>keel preflight</code> or the code review, all of which W1 needs. The fix goes live for router spawns only once the epic is on the router's checkout. Of the gate steps, a worker today can only edit, commit and push, and the push's pre-push hook runs clippy + <code>cargo test</code> (F6). Neither a worker nor the router can grant itself more: a worker cannot write <code>.claude/settings.json</code> or <code>~/.claude/settings.json</code>, and the router's guard admits only the router's own launcher.</td><td><b>Default (A): the owner does one thing personally, before W1's worker is spawned.</b> Add these temporary entries to the user-level <code>~/.claude/settings.json</code> <code>permissions.allow</code> (narrow, identical to the grant table): <code>Bash(cargo build)</code> <code>Bash(cargo build *)</code> <code>Bash(cargo test)</code> <code>Bash(cargo test *)</code> <code>Bash(cargo check)</code> <code>Bash(cargo check *)</code> <code>Bash(cargo clippy)</code> <code>Bash(cargo clippy *)</code> <code>Bash(cargo fmt)</code> <code>Bash(cargo fmt *)</code> <code>Bash(keel preflight)</code> <code>Bash(keel preflight *)</code> <code>Bash(keel verify-doc)</code> <code>Bash(keel verify-doc *)</code> <code>Bash(keel verify-dod)</code> <code>Bash(keel verify-dod *)</code> <code>Bash(keel notes write *)</code> <code>Bash(keel lint)</code> <code>Bash(keel check)</code>, and to <code>permissions.deny</code>: <code>Bash(keel mr)</code> <code>Bash(keel mr *)</code>. The router stays closed, because its guard denies these anyway (F4). W1 then runs the normal flow: tests, notes, preflight, review worker. Remove the entries after the epic merges to <code>main</code>, then spawn one dogfood worker through the router's launcher to confirm the grant now comes from the launcher alone. <b>Fallback (B), if the owner declines A:</b> W1's worker implements, commits and pushes (the hook proves the tests), then ends its report with the exact <code>cargo test</code>, <code>keel notes write test …</code>, <code>keel notes write doc …</code> and <code>keel preflight</code> lines. The owner runs them in a shell in the W1 worktree, and the review worker's brief is given the preflight output to read instead of running it.</td></tr>
+    <tr><td>2</td><td>Where the grants live (launcher vs <code>settings.json</code>)</td><td>Launcher (Design). <code>settings.json</code> is shared with the router, rule-bearing and unwritable by workers.</td></tr>
+    <tr><td>3</td><td>Accepted modes</td><td><code>acceptEdits</code> | <code>plan</code>. <code>bypassPermissions</code> is never router-requestable. <code>dontAsk</code>/<code>default</code> add nothing headless.</td></tr>
+    <tr><td>4</td><td><b>Overlap with E-SEED2.</b> (a) <code>8a14f24</code> prepares a <code>settings.json</code> worker allow-list (F7). (b) E-SEED2.W7 edits the same launcher lines and skill text.</td><td>(a) E-SEED2 does not land a <code>settings.json</code> worker allow-list. Its test split is harmless with no such entries (its commit says it passes either way). (b) Whichever epic merges to <code>main</code> second merges <code>main</code> into its branch and keeps both changes. The named <code>--permission-mode</code> option is chosen so a W7 effort option composes with it.</td></tr>
+    <tr><td>5</td><td>Skill text edits are rule-bearing; a headless worker may also be refused writes under <code>.claude/skills/</code></td><td>W1's worker edits <code>skills/keel-router/…</code>, mirrors the edit into <code>.claude/skills/</code> where it can, and stages everything uncommitted. It prints <code>keel mr commit -m "&lt;msg&gt;" --as &lt;id&gt;</code> for the owner. Any file it was refused is listed with the exact replacement text.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="open-questions">Open questions</h2>
+<ol data-item="open-questions" data-c="open-questions-list">
+  <li><b>Bootstrapping (open point 1).</b> Default: option A, the owner adds the temporary user-level allow/deny entries listed there before W1 is spawned and removes them after the epic merges. Override: option B, the owner runs the four gate commands personally.</li>
+  <li><b>Should the grant include more <code>cargo</code> subcommands</b> (<code>cargo doc</code>, <code>cargo tree</code>, <code>cargo metadata</code>)? Default: no. Add one when a brief needs it.</li>
+  <li><b><code>auto</code> mode.</b> Default: not accepted. It hands the approval to a classifier rather than a fixed list, and this CLI/account has not confirmed it exists. Add it when a task needs it and <code>claude --help</code> lists it.</li>
+  <li><b>Ordering with E-SEED2.</b> Default: E-ROUTERFIX merges first. It is small and it unblocks E-SEED2's own workers.</li>
+</ol>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
