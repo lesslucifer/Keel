@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>Decisions: the router</h1>
       <p>Why Keel's router has the posture, worker model and enforcement it has, and how E-ROUTER itself was run.</p>
-      <div class="meta">T2 · decisions · append-only · 2026-11-08 · Keel · DEC-30 – DEC-35 · distilled from E-ROUTER (plan questions Q1–Q9, owner rulings 2026-11-08, close review)</div>
+      <div class="meta">T2 · decisions · append-only · 2026-11-08 · Keel · DEC-30 – DEC-36 · distilled from E-ROUTER (plan questions Q1–Q9, owner rulings 2026-11-08, close review)</div>
     </div>
   </header>
   <main>
@@ -63,6 +63,15 @@
       <tr><th>Choice</th><td>Q4: a generic push channel, Telegram as the worked example, its token/access files never touched. Q5: Trawler incident details stay in <code>lessons.md</code> as lineage, plus a Keel section (K1–K11). Q6: <code>worker-ops.md</code> stays macOS/zsh-first, labelled. Q7: moot, E-SEED distilled before E-ROUTER closed. Q8: Claude Code only until Codex has a skill path. Q9: the skill is <code>keel-router</code> (DEC-2's prefix), <code>project-router</code> unprefixed. The plugin and the <code>keel:router</code> name are moot under DEC-2.</td></tr>
       <tr><th>Consequences</th><td>The close review's two bypasses (quote-reassembled <code>--output</code>; <code>Agent</code> subagents outside the hooks) and the PUSHED watch probe that fired before any push are recorded as lessons K10 and as UC-ROUTE-6's failure cases.</td></tr>
       <tr><th>Lineage</th><td>E-ROUTER plan Q4–Q9 (defaults); W4 card (DEC-2 adaptation).</td></tr>
+    </table>
+
+    <h3 id="dec-36">DEC-36 · The router may subscribe to a worker's end, never message it</h3>
+    <table data-c="dec-36">
+      <tr><th>Context</th><td>Without <code>Monitor</code> or shell loops, the router learned that a headless worker ended only from a watch worker or the owner. Claude Code's cross-session <code>SendMessage</code> takes <code>notify_when_idle: true</code> with the message omitted: a one-shot notice when the target session next goes idle or exits. A live probe (E-ROUTERFIX.W2, 2026-11-09) subscribed a headless session to a launcher-spawned haiku worker by its <code>-n</code> name. The notice <code>[Cross-session idle notice] "probe-notify" … is idle now</code> was enqueued in the subscriber's queue at the second the worker exited. The subscriber was a headless session still mid-turn, and it did not see the notice during that turn. As soon as that turn ended, the queued notice started a new turn in the same session, and the notice arrived.</td></tr>
+      <tr><th>Choice</th><td>The router's tools gain <code>ListAgents</code> and <code>SendMessage</code>. The guard allows <code>SendMessage</code> only as a pure subscription: <code>to</code> a string, <code>notify_when_idle</code> exactly <code>true</code>, <code>message</code> absent or empty, and no other key besides the local <code>summary</code> label. The router subscribes right after a spawn or resume prints <code>RUNNING</code>.</td></tr>
+      <tr><th>Rejected</th><td>Letting the router message workers: a worker has edit and Bash power, so router text would be a second brief with no snapshot or sha256 (DEC-32). Allow-listing keys by deny-list: a future content-bearing parameter would ride along.</td></tr>
+      <tr><th>Consequences</th><td>The notice carries a worker-written snippet (<code>Its harness reports: «…»</code>), so it is untrusted text, the same class as <code>.router/out/&lt;name&gt;.out</code>. The <code>.out</code> file stays the report of record. A router busy with a turn sees the notice only when that turn ends. The heartbeat stays, for a worker that hangs without exiting.</td></tr>
+      <tr><th>Lineage</th><td>E-ROUTERFIX.W2 (plan, result, live probe); amends DEC-30's tool list.</td></tr>
     </table>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>

@@ -5,7 +5,8 @@ a brief that says "ONE non-stop run, no mid-run questions". Tool names below
 were checked on 2026-11-08 against Claude Code 2.1.288 (`Agent`, `SendMessage`,
 `TaskStop`, `Monitor`, `ToolSearch` load; `CronCreate` and `ListAgents` did not
 load via `ToolSearch` from a subagent session — re-check in yours with
-`ToolSearch` before relying on any of them).
+`ToolSearch` before relying on any of them). On 2026-11-09 a headless `-p`
+session had both `SendMessage` (with `notify_when_idle`) and `ListAgents`.
 
 ## Worktree for a WU (either mode)
 
@@ -69,9 +70,17 @@ pitfall 2).
   or `DEAD name=… exit=<code> …` plus the output tail. Record the session uuid.
   `Read` the snapshot and confirm it is the brief you wrote. Announce the
   worker only after `RUNNING`.
+- **Notify**: right after `RUNNING`, subscribe to the worker's end:
+  `SendMessage({to: "<name>", notify_when_idle: true})` with no `message` (the
+  worker runs as `-n <name>`; an enforced router guard allows only this
+  contentless shape, never text to a worker). One `[Cross-session idle notice]`
+  is queued for you when it exits. It reaches you when your current turn ends, as
+  a new turn (verified 2026-11-09), and never in the middle of a turn. It quotes a
+  worker-written snippet: untrusted, and not the report. Keep the heartbeat for
+  workers that hang without exiting.
 - **Alive**: `ps aux` and look for the pid in `.router/out/<name>.pid` (`Read`)
-  or `-n <name>`; the args show `--model`.
-- **Report**: when the process is gone, `Read` `.router/out/<name>.out`; the
+  or `-n <name>`; the args show `--model`. `ListAgents` lists a live worker by name.
+- **Report**: when the notice arrives or the process is gone, `Read` `.router/out/<name>.out`; the
   final message is the worker's report. Each run of a name truncates it, and the
   launcher refuses a second live run of the same name.
 - **Follow-up**: you write `.router/briefs/<name>-r<n>.md`; then

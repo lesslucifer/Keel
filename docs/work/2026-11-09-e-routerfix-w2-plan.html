@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af146619f34851f0dfb1ff6" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-ROUTERFIX.W2 plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-ROUTERFIX.W2 · Router subscribes to a worker's end</h1>
+      <p>The WU plan for <code>wu/E-ROUTERFIX/w2-router-notify</code>. The router can ask to be notified when a headless worker exits, and it can never send that worker text.</p>
+      <div class="meta">T3 · WU plan · 2026-11-09 · Keel · off <code>epic/E-ROUTERFIX</code> <code>07b4940</code> · epic plan <a href="2026-11-09-e-routerfix-plan.html#w2">E-ROUTERFIX</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="why">Why</h2>
+<p data-c="why">The enforced router has no <code>Monitor</code>, no shell loops and no <code>Agent</code> (DEC-30, DEC-31). It currently learns that a worker has ended only through a watch worker, the 10-minute heartbeat or the owner. Claude Code's cross-session <code>SendMessage</code> takes <code>notify_when_idle: true</code> with the message omitted. That is a pure subscription: one notice when the target session next goes idle or exits, at no cost to the target. Earlier research saw the idle-to-worker direction work live. The direction this WU needs, the router hearing about a worker's exit, had not been observed.</p>
+
+<h2 id="findings">Findings (from the tool's real schema)</h2>
+<table data-c="findings">
+  <thead><tr><th>#</th><th>Fact</th></tr></thead>
+  <tbody>
+    <tr><td>F1</td><td><code>SendMessage</code> parameters: <code>to</code> (required), <code>message</code> (string or a protocol object, default <code>""</code>), <code>notify_when_idle</code> (boolean), <code>summary</code> (a label for the sender's own transcript, not transmitted). With the message omitted, it is a pure subscription. <code>notify_when_idle</code> works from the main conversation only, and the enforced router is a main conversation (<code>"agent": "router"</code>).</td></tr>
+    <tr><td>F2</td><td><code>ListAgents</code> takes no usable parameters (<code>channel</code>/<code>q</code> are "not available in this build"). It is read-only.</td></tr>
+    <tr><td>F3</td><td>A launcher worker runs as <code>claude -p … -n &lt;name&gt;</code>, and <code>&lt;name&gt;</code> is its <code>SendMessage</code> address (confirmed live: <code>to: "probe-notify"</code> resolved).</td></tr>
+    <tr><td>F4</td><td>A worker is a full-tool session. Router text delivered to it would act as a second brief, with no snapshot or sha256 (DEC-32). So the guard must refuse any message content, not just discourage it.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="requirement">Requirement</h2>
+<p data-item="requirement" data-c="requirement">For <code>agent_type == "router"</code>, the guard allows <code>ListAgents</code>, and allows <code>SendMessage</code> only when its input is an object with a string <code>to</code>, <code>notify_when_idle</code> exactly <code>true</code>, <code>message</code> absent or empty, and no key outside <code>to</code>/<code>notify_when_idle</code>/<code>message</code>/<code>summary</code>. It denies every other <code>SendMessage</code>, and the router's <code>tools:</code> line lists both tools.</p>
+<p data-item="maps-to" data-c="maps-to">E-ROUTERFIX.W2 (epic plan summary) → UC-ROUTE-6 (the posture's tool list), UC-ROUTE-5 (the launcher worker recipe gains "subscribe after <code>RUNNING</code>") · new DEC-36.</p>
+
+<h2 id="design">Design</h2>
+<ul data-c="design">
+  <li><code>scripts/router-guard.jq</code>: <code>tools</code> gains <code>SendMessage</code> and <code>ListAgents</code>. A new <code>SendMessage</code> branch implements the requirement. Keys are an allow-list, so a content-bearing parameter added later is denied by default.</li>
+  <li><code>.claude/agents/router.md</code>: the <code>tools:</code> line gains both tools (<code>tests/router.rs</code> asserts it equals the guard's list), plus one posture bullet.</li>
+  <li><code>scripts/router-worker.sh</code>: the header comment names the subscribe step. The code is unchanged.</li>
+  <li><code>skills/keel-router/references/worker-ops.md</code> (and its <code>.claude/skills/</code> copy): a "Notify" step in Mode 2. This is rule-bearing and goes in the owner's <code>keel mr commit</code>.</li>
+</ul>
+
+<h2 id="expected">Expected</h2>
+<ul data-item="expected" data-c="expected">
+  <li>The guard returns nothing (allow) for <code>{"to":"e-x-w1","notify_when_idle":true}</code>, and for the same input plus <code>"message":""</code> and a <code>summary</code>.</li>
+  <li>The guard denies a non-empty message, a protocol-object message, <code>notify_when_idle</code> false, missing or a string, a missing <code>to</code>, an unknown key, and a non-object input.</li>
+  <li>The guard allows <code>ListAgents</code>. Other agent types still pass untouched.</li>
+  <li>Live (evidence, not a gate): a launcher-spawned haiku worker, subscribed right after <code>RUNNING</code>, produces an idle notice for the subscriber when it exits. The actual outcome is recorded either way.</li>
+</ul>
+
+<h2 id="test-plan">Test plan</h2>
+<table data-item="test-plan" data-c="test-plan">
+  <thead><tr><th>Level</th><th>Test</th></tr></thead>
+  <tbody>
+    <tr><td>unit (each commit)</td><td><code>tests/router.rs</code> <code>router_guard_allows_send_message_only_as_a_contentless_idle_subscription</code> runs the real guard file through <code>jq</code> on each allowed and denied shape in Expected, plus <code>ListAgents</code> and a worker's unrestricted <code>SendMessage</code>. The existing <code>router_guard_confines_the_router_to_its_tools…</code> keeps a bare <code>SendMessage {}</code> denied and keeps <code>router.md</code> equal to the guard's tool list.</td></tr>
+    <tr><td>integration (WU)</td><td>The same guard tests are the WU's bounded contract: they feed the PreToolUse JSON that <code>.claude/settings.json</code> pipes into the guard file. <code>settings_run_the_guard_on_every_tool_and_fail_closed</code> still proves the wiring. Nothing beyond Claude Code itself is outside them.</td></tr>
+    <tr><td>e2e (epic)</td><td>Covered by the epic's e2e plan. The live probe is evidence, not a test: real <code>claude</code> is non-deterministic and paid.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="open-points">Open points (decided here, owner may override)</h2>
+<table data-c="open-points">
+  <thead><tr><th>#</th><th>Point</th><th>Decided</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Restrict <code>to</code> to the launcher's name shape?</td><td>No. The subscription carries nothing, so subscribing to any session is harmless. The protection is on content.</td></tr>
+    <tr><td>2</td><td>Allow <code>summary</code>?</td><td>Yes. It is a label in the router's own transcript and is not transmitted (F1).</td></tr>
+    <tr><td>3</td><td>The router's <code>permissions.allow</code> in <code>.claude/settings.json</code></td><td>Unchanged (rule-bearing). If Claude Code asks the interactive owner to approve <code>SendMessage</code>, the owner approves it once.</td></tr>
+  </tbody>
+</table>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
