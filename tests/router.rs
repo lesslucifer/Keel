@@ -231,7 +231,8 @@ struct Launcher {
 }
 
 /// A repo whose main checkout holds the launcher, two linked worktrees, and a stub claude that
-/// prints its argv and sleeps $STUB_SLEEP seconds.
+/// prints its argv (joined, then each argument bracketed so boundaries are visible) and sleeps
+/// $STUB_SLEEP seconds.
 fn launcher() -> Launcher {
     let d = TempDir::new().unwrap();
     let base = d.path().canonicalize().unwrap();
@@ -247,7 +248,7 @@ fn launcher() -> Launcher {
     git(&main, &["worktree", "add", "-q", "../wt", "-b", "w"]);
     git(&main, &["worktree", "add", "-q", "../wt2", "-b", "w2"]);
     let stub = base.join("claude");
-    std::fs::write(&stub, "#!/bin/sh\necho \"stub $*\"\nsleep \"${STUB_SLEEP:-3}\"\n").unwrap();
+    std::fs::write(&stub, "#!/bin/sh\necho \"stub $*\"\nprintf '[%s]' \"$@\"; echo\nsleep \"${STUB_SLEEP:-3}\"\n").unwrap();
     std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub, _d: d }
 }
@@ -356,7 +357,7 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
     let argv = |name: &str| {
         l.wait_exit(name);
         let out = std::fs::read_to_string(l.main.join(format!(".router/out/{name}.out"))).unwrap();
-        out.lines().find(|x| x.starts_with("stub ")).unwrap_or_else(|| panic!("no stub argv: {out}")).to_string()
+        out.lines().find(|x| x.starts_with('[')).unwrap_or_else(|| panic!("no stub argv: {out}")).to_string()
     };
     let run_dir_mode = |name: &str, kind: &str| {
         let runs = std::fs::read_dir(l.main.join(".router/runs")).unwrap();
@@ -398,28 +399,30 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
     assert!(ok && out.contains("permission-mode=plan"), "{out}");
     let sid = field(&out, "session=").to_string();
 
+    // one argv element per rule: a word-split `Bash(cargo build *)` would not match its bracket
     let d = argv("d");
-    assert!(d.contains("--permission-mode acceptEdits"), "{d}");
-    let (allow, deny) = d.split_once(" --disallowedTools ").unwrap_or_else(|| panic!("no deny list: {d}"));
-    let allow = allow.split_once(" --allowedTools ").unwrap_or_else(|| panic!("no allow list: {d}")).1;
+    assert!(d.contains("[--permission-mode][acceptEdits]"), "{d}");
+    let (allow, deny) = d.split_once("[--disallowedTools]").unwrap_or_else(|| panic!("no deny list: {d}"));
+    let allow = allow.split_once("[--allowedTools]").unwrap_or_else(|| panic!("no allow list: {d}")).1;
     for c in WORKER_GRANTS {
-        assert!(allow.contains(&format!("Bash({c}) ")) && allow.contains(&format!("Bash({c} *)")), "{c} not granted: {d}");
+        assert!(allow.contains(&format!("[Bash({c})]")) && allow.contains(&format!("[Bash({c} *)]")), "{c} not granted: {d}");
     }
     assert!(!allow.contains("Bash(cargo run") && !allow.contains("Bash(keel mr"), "{allow}");
+    let deny = deny.split_once("[-").map_or(deny, |(list, _)| list);
     for x in WORKER_DENIES {
-        assert!(deny.contains(x), "{x} not denied: {d}");
+        assert!(deny.contains(&format!("[{x}]")), "{x} not denied: {d}");
     }
-    assert!(argv("p").contains("--permission-mode plan"));
+    assert!(argv("p").contains("[--permission-mode][plan]"));
     assert_eq!(run_dir_mode("d", "spawn"), ["acceptEdits"]);
     assert_eq!(run_dir_mode("p", "spawn"), ["plan"]);
 
     // a resume states its own mode or gets the default; it never inherits the spawn's plan
     let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus"], "3");
     assert!(ok && out.contains("permission-mode=acceptEdits"), "{out}");
-    assert!(argv("p").contains("--permission-mode acceptEdits"));
+    assert!(argv("p").contains("[--permission-mode][acceptEdits]"));
     let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus", "--permission-mode", "plan"], "3");
     assert!(ok && out.contains("permission-mode=plan"), "{out}");
-    assert!(argv("p").contains("--permission-mode plan"));
+    assert!(argv("p").contains("[--permission-mode][plan]"));
     let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus", "--permission-mode", "bypassPermissions"], "0");
     assert!(!ok && out.contains("permission mode must be"), "{out}");
     assert_eq!(run_dir_mode("p", "resume"), ["acceptEdits", "plan"]);
