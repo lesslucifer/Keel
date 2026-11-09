@@ -846,7 +846,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let owner = std::process::id().to_string();
     let router = |cmd: &str| -> String {
         assert_eq!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })), None, "guard denied {cmd:?}");
-        let o = Command::new("/bin/sh")
+        let mut p = Command::new("/bin/sh")
             .args(["-c", cmd])
             .current_dir(&c)
             .env("ROUTER_CLAUDE", &stub)
@@ -854,8 +854,20 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
             .env("STUB_OWNER", &owner)
             .env("CLAUDE_CONFIG_DIR", &config)
             .env("ROUTER_WAIT_POLL", "0.2")
-            .output()
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .unwrap();
+        // a `wait` that never reaches its line fails here instead of hanging the suite
+        let t = Instant::now();
+        while p.try_wait().unwrap().is_none() {
+            if t.elapsed() > Duration::from_secs(20) {
+                p.kill().unwrap();
+                panic!("{cmd}: no result within 20s");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let o = p.wait_with_output().unwrap();
         let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
         assert!(o.status.success(), "{cmd}: {out}");
         out
