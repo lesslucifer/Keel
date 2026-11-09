@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="9e27c4d18b05a3f61c7d2e80" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED2.W11 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED2.W11 · Release hardening — result</h1>
+      <p>Findings F1–F12 from the independent review of W1, each fixed, configured, assigned to the owner or accepted. Two rule-bearing edits and a regenerated <code>release.yml</code> wait on the owner.</p>
+      <div class="meta">T3 · WU result · 2026-11-09 · Keel · branch <code>wu/E-SEED2/w11-release-hardening</code> · <a href="2026-11-09-w11-release-hardening-wu-plan.html">W11 plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome">Delivered against the requirement, with three owner steps still open. Every finding has a state that is recorded in DEC-38, as the <a href="2026-11-09-w11-release-hardening-wu-plan.html#findings">plan's findings table</a> sets out:</p>
+<ul data-c="outcome-list">
+  <li>F1 is fixed: MIT licence, <code>Cargo.toml</code> <code>license</code> and <code>LICENSE</code>.</li>
+  <li>F4 and F10 are fixed in <code>dist-workspace.toml</code>, but take effect only once the owner runs <code>dist generate</code>.</li>
+  <li>F2, F3, F5, F6 and F7 are accepted risks, because dist 0.34.0 hardcodes each of them. Their owner setup tasks are recorded alongside.</li>
+  <li>F9 is an owner task.</li>
+  <li>F11 and F12 are written but not committed: they change rule-bearing files and wait for the owner's <code>keel mr commit</code>.</li>
+  <li>DEC-38's F12 correction is committed, because <code>docs/decisions/</code> is not rule-bearing.</li>
+</ul>
+
+<h2 id="deviations">Deviations</h2>
+<ul data-item="deviations" data-c="deviations">
+  <li><code>.claude/skills/project-router/SKILL.md</code> could not be written: the harness refused the write. Its change is a <code>git apply</code>-ready patch, <code>target/w11-project-router-skill.patch</code>.</li>
+  <li><code>docs/install.html</code> is also kept as a patch, <code>target/w11-install.patch</code>, and is not staged at this tip. <code>keel preflight</code> requires a clean tree, and the notes must bind a committed tip. Both patches pass <code>git apply --check</code> against this tip.</li>
+  <li>The raw independent-review output in the router checkout was not readable (permission denied), so the brief's summary of F1–F12 was used.</li>
+</ul>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+  <p><b>Commits</b> on <code>epic/E-SEED2</code> <code>b7201c6</code>:</p>
+  <ul>
+    <li><code>b4669eb</code>: the plan, and the W11 block in the epic plan.</li>
+    <li><code>aad7c9c</code>: the licence, the dist config and <code>tests/release.rs</code>.</li>
+    <li><code>b6b555a</code>: DEC-38.</li>
+    <li>This report.</li>
+  </ul>
+  <p><b>Tests.</b> <code>tests/release.rs</code> is the integration layer and has 5 tests: the licence is MIT and dist ships it; both publish jobs keep their prerelease guard and <code>publish-prereleases</code> is not enabled; the four actions are pinned to 40-hex commits; the Linux runners are <code>ubuntu-24.04</code>; and a check that the job-block helper stops at the next job. The full <code>cargo test</code> run is green with 63 tests, and <code>cargo clippy --all-targets -- -D warnings</code> is green.</p>
+  <p><b>Verification of dist 0.34.0.</b> Read against its source at tag <code>v0.34.0</code>. <code>dist</code> was not run. File and line references are in the plan.</p>
+  <p><b>Docs touched:</b> the epic plan, the W11 plan, this report, and <code>decisions/distribution.html</code> (DEC-38). Two more changes are pending as patches: <code>install.html</code> and project-router.</p>
+</div>
+
+<h2 id="owner-steps">Owner steps, in order</h2>
+<p>Run these in this worktree with the tip checked out and a clean tree.</p>
+<ol data-c="owner-steps">
+  <li><b>Regenerate the workflow.</b> The dist config changed, so <code>release.yml</code> is regenerated here rather than hand-edited.
+    <ol>
+      <li><code>dist --version</code> should print 0.34.0.</li>
+      <li>Run <code>dist generate</code>. Then <code>git diff .github/</code> should show only two kinds of change: <code>uses: actions/…@&lt;sha&gt;</code> lines, and <code>runs-on: "ubuntu-24.04"</code> lines.</li>
+      <li><code>dist plan</code> should be green, with four targets and the shell, npm and Homebrew installers.</li>
+      <li><code>dist plan --tag=v9.9.9</code> is expected to fail, because no package has version 9.9.9.</li>
+      <li>Commit the regenerated file. <code>.github/</code> is neither a code path nor rule-bearing, so this is a plain commit with no trailer:
+        <pre>git add .github/workflows/release.yml
+git commit -m "ci(E-SEED2.W11): regenerate release.yml (action pins, ubuntu-24.04)"</pre></li>
+      <li>Check that the committed file matches what dist generates: <code>dist generate --mode=ci &amp;&amp; git diff --exit-code .github/</code> should exit 0.</li>
+      <li>Optional licence check: <code>dist build --artifacts=local --target=aarch64-apple-darwin</code>, then list the archive under <code>target/distrib/</code> and look for <code>LICENSE</code>.</li>
+    </ol></li>
+  <li><b>Commit the first rule-bearing set (F11).</b>
+    <pre>git apply target/w11-install.patch
+git add docs/install.html
+keel mr commit -m "docs(E-SEED2.W11): install.html - shell installer edits shell profiles; INSTALLER_NO_MODIFY_PATH=1 opt-out (F11)" --as vuluu</pre></li>
+  <li><b>Commit the second rule-bearing set (F12).</b>
+    <pre>git apply target/w11-project-router-skill.patch
+git add .claude/skills/project-router/SKILL.md
+keel mr commit -m "docs(E-SEED2.W11): project-router - what a stable tag, a prerelease tag and a pull request run (F12)" --as vuluu</pre></li>
+  <li><b>Re-gate the new tip.</b> A fresh worker re-writes <code>test/v1</code> and <code>doc/v1</code> on the new tip, runs <code>keel preflight wu &lt;tip&gt; --target epic/E-SEED2</code>, and then runs the code review. The router dispatches an independent review of the regenerated <code>.github/</code> diff, which no gate reviews. Then the owner runs <code>keel mr confirm wu &lt;tip&gt; --as vuluu --target epic/E-SEED2</code> and merges <code>--no-ff</code>.</li>
+  <li><b>GitHub and npm setup before the first stable tag.</b> These are recorded in DEC-38:
+    <ul>
+      <li>a tag ruleset, so only the owner can create tags;</li>
+      <li><code>HOMEBREW_TAP_TOKEN</code> fine-grained, limited to the tap, with Contents read-write only;</li>
+      <li>one commit (a README) in <code>lesslucifer/homebrew-tap</code>;</li>
+      <li><code>NPM_TOKEN</code> a granular publish token with an expiry and a rotation reminder.</li>
+    </ul></li>
+</ol>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">DEC-38 (T2) has absorbed the corrected trigger and prerelease text, the pins and runners, the accepted risks with their upgrade path, the release rule, and the owner setup tasks. <code>install.html</code> (T1) and project-router absorb F11 and F12 once the owner commits them. The plan and this report are archived at epic close.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<ul data-item="follow-ups" data-c="follow-ups">
+  <li>Revisit the accepted risks at every dist upgrade: per-job permissions, a checksummed dist install, the Node version, and npm trusted publishing (DEC-38).</li>
+  <li><code>tests/release.rs</code> checks the dist config, not the generated <code>uses:</code> lines. The owner's <code>dist plan</code> and <code>dist generate --mode=ci</code> check catch a stale <code>release.yml</code>.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
