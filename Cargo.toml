@@ -3,6 +3,7 @@ name = "keel"
 version = "0.1.0"
 edition = "2021"
 repository = "https://github.com/lesslucifer/Keel"
+license = "MIT"
 description = "Keel: a merge gate and workflow rules for AI-written code"
 homepage = "https://github.com/lesslucifer/Keel"
 
