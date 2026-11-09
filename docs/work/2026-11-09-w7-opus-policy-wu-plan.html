@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af0a12f9f34851f0dfb1fb7" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED2.W7 opus-only worker policy</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED2.W7 · Opus-only worker policy</h1>
+      <p>The launcher starts workers on <code>opus</code> only, with an effort of <code>medium</code> or <code>high</code>. A new router DEC and project-router record the owner's ruling of 2026-11-09. The shipped keel-router skill stays generic and points at the project's policy.</p>
+      <div class="meta">T3 · WU plan · 2026-11-09 · Keel · branch <code>wu/E-SEED2/w7-opus-policy</code> off <code>epic/E-SEED2</code> <code>ef9ee75</code> · epic plan <a href="2026-11-09-e-seed2-epic-plan.html#w7">E-SEED2 W7</a> · <span class="badge approval">owner ruling 2026-11-09</span></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="requirement">Requirement</h2>
+<p data-item="requirement" data-c="requirement-body"><code>scripts/router-worker.sh spawn|resume</code> accepts only the model <code>opus</code> and refuses any other model with a message naming the opus-only policy. It takes an optional <code>--effort medium|high</code> (default <code>high</code>) and passes it to <code>claude -p</code> as <code>--effort</code>. Any other effort value is refused. After this WU, no tracked file outside <code>docs/work/</code> and the lessons' history offers a non-opus worker model.</p>
+
+<h2 id="maps-to">Maps to</h2>
+<p data-item="maps-to" data-c="maps-to-body">Epic <a href="2026-11-09-e-seed2-epic-plan.html#w7">E-SEED2.W7</a> (open point 6, open question 7) · UC-ROUTE, worker modes and launcher (<a href="../use-cases/router.html">use-cases/router.html</a>) · lessons B7 ("they should use opus 5.5") · amends <a href="../decisions/router.html#dec-31">DEC-31</a> ("explicit model") and <a href="../decisions/router.html#dec-37">DEC-37</a> (launcher options).</p>
+
+<h2 id="expected">Expected result</h2>
+<ul data-item="expected" data-c="expected-list">
+  <li><code>router-worker.sh spawn n &lt;wt&gt; &lt;brief&gt; sonnet</code>, <code>haiku</code>, <code>fable</code> and <code>gpt</code> each exit 2 with <code>model must be opus (worker policy, DEC-39)</code>. <code>resume</code> refuses the same way.</li>
+  <li><code>… opus --effort medium</code> and <code>… opus --effort high</code> start a worker. Its argv carries <code>--model opus --effort &lt;level&gt;</code>, the run dir holds an <code>effort</code> file, and the <code>RUNNING</code> line shows <code>effort=&lt;level&gt;</code>. With no <code>--effort</code>, the effort is <code>high</code>. <code>--effort low</code>, <code>max</code> or a missing value is refused. The option combines with <code>--permission-mode</code> in either order, at most once each.</li>
+  <li>The router guard is unchanged. Its launcher shape (<code>[A-Za-z0-9._/ -]+</code>, <code>scripts/router-guard.jq:30</code>) already admits <code>--effort high</code>.</li>
+  <li><code>git grep -n -i -E "sonnet|haiku|fable"</code> outside <code>docs/work/</code> hits only <code>lessons.md</code> B7 (history) and the refusal tests in <code>tests/router.rs</code>.</li>
+  <li>The new DEC is in <code>docs/decisions/router.html</code> and the index. project-router "Workers" states opus with medium/high effort. The keel-router skill and its <code>.claude/skills/</code> mirror defer to "the project's model policy".</li>
+</ul>
+
+<h2 id="findings">Findings the plan rests on</h2>
+<table data-c="findings-table">
+  <thead><tr><th>#</th><th>Finding</th><th>Source</th></tr></thead>
+  <tbody>
+    <tr><td>F1</td><td>The launcher's model check is <code>case "$model" in opus|sonnet|haiku|fable)</code>, and it passes <code>--model "$model"</code> with no effort flag.</td><td><code>scripts/router-worker.sh:82</code>, <code>:136</code></td></tr>
+    <tr><td>F2</td><td><b>Effort flag: the CLI has one.</b> The Claude Code CLI reference lists <code>--effort</code>, with the options <code>low</code>, <code>medium</code>, <code>high</code>, <code>xhigh</code>, <code>max</code> and <code>ultracode</code>; the available levels depend on the model. The flag overrides <code>effortLevel</code> for the session and does not persist. The installed CLI is v2.1.288: the path <code>~/.local/share/claude/versions/2.1.288</code> appeared in a sandbox refusal. Running <code>claude --help</code> was refused in this session ("This command requires approval"), so the flag is confirmed from the docs and not from the binary. The build WU's first step confirms it from the binary (open point 2).</td><td>code.claude.com/docs/en/cli-reference (fetched 2026-11-09)</td></tr>
+    <tr><td>F3</td><td>Files that offer a non-opus worker model, or a model without effort: <code>scripts/router-worker.sh</code> (:5–6 usage, :82 check); <code>.claude/skills/project-router/SKILL.md:41</code> ("strongest model") and <code>:65</code> (<code>opus|sonnet|haiku|fable</code>); <code>skills/keel-router/SKILL.md:217</code> ("explicit model"); <code>references/worker-ops.md:3</code>, <code>:27</code> (Agent <code>model</code> <code>opus|sonnet|haiku|fable</code>), <code>:72–73</code> (launcher <code>opus|sonnet|haiku|fable</code>), <code>:92</code>, <code>:118</code> ("cheap explicit model"); <code>references/brief-skeleton.md:11</code> (<code>(&lt;model&gt;)</code>); <code>references/project-router-template.md:41</code> (<code>--model</code> only); all of these mirrored byte-identical under <code>.claude/skills/keel-router/</code>; <code>docs/decisions/router.html</code> DEC-31 ("explicit model"); <code>tests/router.rs:99</code> (<code>sonnet</code> in a guard shape), <code>:429–447</code>, <code>:703</code>, <code>:718</code>, <code>:786</code> (<code>haiku</code> spawns). <code>lessons.md:41</code> (B7) is history and stays. "Strongest model" in <code>review-checklists.md:4</code>, <code>messages.md:36</code> and <code>SKILL.md:258</code> is generic and stays.</td><td><code>git grep</code> at <code>ef9ee75</code></td></tr>
+    <tr><td>F4</td><td><code>rule_bearing</code> is <code>["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json"]</code>. In that list <code>*</code> matches within one path segment only, so <code>docs/decisions/router.html</code> and <code>docs/decisions/decisions-index.html</code> are <b>not</b> rule-bearing. The epic card's "All rule-bearing" is wrong for those two files and for <code>scripts/</code>.</td><td><code>.keel/config.toml:12–14</code></td></tr>
+    <tr><td>F5</td><td>The next free DEC id is DEC-39 (decision index). No live branch has minted it yet. W2 runs in parallel and may also want a DEC.</td><td><code>docs/decisions/decisions-index.html:13</code>; <code>git grep</code> on main, the epic and the W2, W9 and W11 branches</td></tr>
+  </tbody>
+</table>
+
+<h2 id="changes">Changes</h2>
+<table data-c="changes-table">
+  <thead><tr><th>File</th><th>Change</th><th>Rule-bearing</th></tr></thead>
+  <tbody>
+    <tr><td><code>scripts/router-worker.sh</code></td><td>The model check becomes <code>opus</code> only, and the refusal names the policy. Option parsing becomes a loop over at most two pairs, <code>--permission-mode acceptEdits|plan</code> and <code>--effort medium|high</code>, each allowed once and in either order. A repeated option, an unknown option or a missing value is refused. The default effort is <code>high</code> and a resume does not inherit it. The effort is written to <code>$R/effort</code>, printed on <code>RUNNING</code>, and passed as <code>--effort "$effort"</code> right after <code>--model</code>. The header comment and usage strings are updated to match.</td><td>no (outside the gates, backlog R3)</td></tr>
+    <tr><td><code>tests/router.rs</code></td><td>The refusal table gains <code>sonnet</code>, <code>haiku</code> and <code>fable</code> → <code>"model must be opus"</code>, plus <code>--effort low</code>, <code>--effort</code> with no value and a repeated <code>--effort</code>. Every <code>haiku</code> spawn or resume becomes <code>opus</code>, and the guard-shape example at :99 becomes <code>opus --effort medium</code>. <code>worker_argv</code> expects <code>--effort</code> after <code>--model</code>. The grant test asserts <code>effort=high</code> by default and <code>effort=medium</code> when passed, in the argv, the run dir and the RUNNING line, together with <code>--permission-mode plan</code> in both orders. The e2e spawns with <code>--effort high</code>.</td><td>no (code path: the cr gate reviews it)</td></tr>
+    <tr><td><code>docs/decisions/router.html</code> + <code>decisions-index.html</code></td><td>New <b>DEC-39 · Workers run on opus; effort medium or high, set by the launcher</b>. Context: lessons B7 and the owner ruling. Choice: opus only, medium for mechanical work, high for design, review and debugging, default high. Rejected: a per-project config key (YAGNI, one project), keeping four models with a documentary policy. Consequences: the skill stays generic, the guard is unchanged, and the effort levels depend on the model. Lineage: the owner ruling of 2026-11-09, which amends DEC-31's "explicit model" and DEC-37's options. The index range becomes DEC-30 – DEC-39 and "next free id" becomes DEC-40. If W2 lands a DEC-39 first, this record takes the next free id.</td><td>no (F4)</td></tr>
+    <tr><td><code>.claude/skills/project-router/SKILL.md</code></td><td>"Workers": <code>opus</code> only, <code>--effort medium|high</code> (medium for mechanical work, high for design, review and debugging; default high), citing DEC-39. "Who runs what": the independent reviewer runs on <code>opus</code> at effort high.</td><td><b>yes</b></td></tr>
+    <tr><td><code>skills/keel-router/SKILL.md</code>, <code>references/worker-ops.md</code>, <code>references/brief-skeleton.md</code>, <code>references/project-router-template.md</code></td><td>"Explicit model" becomes "an explicit model and effort, from the project's model policy (project-router)". The enumerations at worker-ops :27 and :73 are replaced by a pointer to that policy. The brief header becomes <code>(&lt;model&gt;, effort &lt;level&gt;)</code>. The template's spawn line gains an effort slot. Heartbeat and <code>ps</code> checks read <code>--effort</code> next to <code>--model</code>.</td><td><b>yes</b> (ships in the binary)</td></tr>
+    <tr><td><code>.claude/skills/keel-router/**</code></td><td>Byte-identical mirror of the four files above.</td><td><b>yes</b></td></tr>
+  </tbody>
+</table>
+
+<h2 id="commits">Commit sequence</h2>
+<ol data-c="commit-sequence">
+  <li><code>docs(E-SEED2.W7): WU plan</code>: this doc (worker).</li>
+  <li><code>docs(E-SEED2.W7): backlog R8</code>: router↔worker messaging, deferred (worker; this phase).</li>
+  <li><code>feat(E-SEED2.W7): launcher opus-only, --effort medium|high</code>: <code>scripts/router-worker.sh</code> + <code>tests/router.rs</code> in one commit, so the unit tests land with the code (worker).</li>
+  <li><code>docs(E-SEED2.W7): DEC-39 opus-only workers</code>: <code>router.html</code> + the index (worker).</li>
+  <li><b>Owner</b> <code>keel mr commit</code>: the rule-bearing skill text, with only these files staged: project-router, <code>skills/keel-router/*</code> and the <code>.claude/skills/keel-router/*</code> mirror. Staged command:<br><code>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-SEED2-w7-opus-policy &amp;&amp; keel mr commit -m "docs(E-SEED2.W7): skills - opus-only workers, effort from the project's policy (DEC-39)" --as vuluu</code></li>
+  <li>WU result (worker, fresh session after the owner commit), then <code>test/v1</code> + <code>doc/v1</code> notes, <code>keel preflight</code>, keel-code-review → <code>cr/v1</code>, and an independent review of <code>scripts/</code> and the skill text (project-router "What no gate reviews"). Then <b>owner</b> <code>keel mr confirm wu &lt;tip&gt; --as vuluu --target epic/E-SEED2</code> and the owner's <code>--no-ff</code> merge.</li>
+</ol>
+
+<h2 id="test-plan">Test plan</h2>
+<div data-item="test-plan" data-c="test-plan-body">
+  <p><b>Unit (commit 3):</b> <code>tests/router.rs</code> <code>launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name</code> covers the refusals: non-opus models by name, plus a bad, missing or repeated <code>--effort</code>. <code>launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode</code> covers effort in the argv, the run dir and the RUNNING line: the default, an explicit value, and both option orders. <code>worker_argv</code> pins the option list including <code>--effort</code>. All of these run against the existing stub <code>claude</code>, so they are hermetic.</p>
+  <p><b>Integration (WU):</b> <code>epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end</code> spawns through the wired guard with <code>opus --effort high --permission-mode plan</code>. This proves that the guard admits the new shape and that the launcher passes it through end to end.</p>
+  <p><b>Doc checks:</b> <code>keel verify-doc</code> on <code>router.html</code> and the index. The grep in Expected is run and its output recorded in the WU result.</p>
+  <p><b>Waivers:</b> none at WU level. The epic e2e (W3) does not touch the router.</p>
+</div>
+
+<h2 id="open-points">Open points (decided here, owner may override)</h2>
+<table data-c="open-points-table">
+  <thead><tr><th>#</th><th>Point</th><th>What was decided here</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Open question 7 (the effort flag)</td><td>The CLI has <code>--effort</code> (F2), so the launcher enforces the effort and the policy is not only documentary.</td></tr>
+    <tr><td>2</td><td>F2 is confirmed from the docs, not from the installed binary (running <code>claude --help</code> was refused)</td><td>The build worker's first step is to run <code>~/.local/bin/claude --help</code>. If that is refused too, the owner runs it once. If the binary lacks <code>--effort</code>, the effort falls back to documentary: the brief states it and the launcher keeps only the opus check.</td></tr>
+    <tr><td>3</td><td>Default effort when <code>--effort</code> is omitted</td><td><code>high</code>. An omission errs toward depth. Mechanical work opts down with <code>--effort medium</code>. Making the option required was rejected, because it would break every existing spawn line for no gain.</td></tr>
+    <tr><td>4</td><td>Effort levels allowed</td><td><code>medium|high</code> only, per the ruling. <code>xhigh</code>, <code>max</code> and <code>ultracode</code> are refused until the owner widens the policy.</td></tr>
+    <tr><td>5</td><td>Where the policy lives</td><td>Per epic open point 6: in the Keel project (launcher, DEC-39, project-router). The shipped skill only says "explicit model and effort, per the project's policy". No config key, because there is one project.</td></tr>
+    <tr><td>6</td><td>Rule-bearing scope (F4)</td><td>One owner <code>keel mr commit</code> for the skill text, with all files in one commit because they are one change. The DEC, the launcher and the tests are ordinary worker commits.</td></tr>
+    <tr><td>7</td><td>DEC id race with W2 (F5)</td><td>W7 takes DEC-39 and bumps "next free" to DEC-40 in the index. Whichever of W2 and W7 merges second renumbers on its merge from the epic.</td></tr>
+    <tr><td>8</td><td><code>model must be</code> message wording</td><td><code>model must be opus (worker policy, DEC-39)</code>. The existing <code>"model must be"</code> test substring still matches.</td></tr>
+  </tbody>
+</table>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
