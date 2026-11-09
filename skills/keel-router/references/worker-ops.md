@@ -48,7 +48,12 @@ short one-shot read-only checks, reviews and watches.
 
 The router never types `claude`. A committed launcher validates every argument,
 passes a fixed prompt naming a brief file, and fixed flags
-(`--agent worker --permission-mode acceptEdits --max-budget-usd 25`). `keel init`
+(`--agent worker --max-budget-usd 25`, plus a fixed allow list of the gate
+commands a worker needs: build, test, lint, `keel preflight|verify-doc|verify-dod|notes write|check`,
+and a fixed deny list: `keel mr` and anything that reaches it). The permission mode is
+the one validated choice: `acceptEdits` by default, `plan` for read-only checkers,
+nothing else (never `bypassPermissions`). Grants travel on the launcher's command
+line only, never in the settings the router shares, so they never reach the router. `keel init`
 ships no launcher: a project commits its own and its project-router skill names
 it (`<launcher>` below). `ROOT` = the checkout holding the launcher; its
 `.router/` is git-ignored and durable (`briefs/`, `runs/`, `out/`), unlike `/tmp`.
@@ -64,9 +69,9 @@ pitfall 2).
   (regular file, no symlink). A brief is dispatch mechanics, like an `Agent`
   prompt, not authored substance (owner ruling 2026-11-08; SKILL.md
   "Substance comes from workers"). It is the only file you write.
-- **Spawn**: `<launcher> spawn <name> <worktree> .router/briefs/<name>.md <model>`
+- **Spawn**: `<launcher> spawn <name> <worktree> .router/briefs/<name>.md <model> [--permission-mode plan]`
   (`<name>` matches `[a-z0-9][a-z0-9-]{0,40}`; model `opus|sonnet|haiku|fable`).
-  Prints `RUNNING name=… pid=… session=<uuid> out=… snapshot=… brief=… sha256=… worktree=…`,
+  Prints `RUNNING name=… pid=… session=<uuid> permission-mode=… out=… snapshot=… brief=… sha256=… worktree=…`,
   or `DEAD name=… exit=<code> …` plus the output tail. Record the session uuid.
   `Read` the snapshot and confirm it is the brief you wrote. Announce the
   worker only after `RUNNING`.
@@ -84,8 +89,9 @@ pitfall 2).
   final message is the worker's report. Each run of a name truncates it, and the
   launcher refuses a second live run of the same name.
 - **Follow-up**: you write `.router/briefs/<name>-r<n>.md`; then
-  `<launcher> resume <name> <session-uuid> <same worktree> .router/briefs/<name>-r<n>.md <model>`
-  (the launcher refuses a different worktree than the spawn's).
+  `<launcher> resume <name> <session-uuid> <same worktree> .router/briefs/<name>-r<n>.md <model> [--permission-mode plan]`
+  (the launcher refuses a different worktree than the spawn's; a resume does not
+  inherit the spawn's mode).
 - **Retire**: none needed — a `-p` run exits when its run ends. A hung or
   mid-turn one needs the owner (or an owner-approved worker) to
   `kill <pid>`; the router has no `kill` (lessons D2).
@@ -100,9 +106,11 @@ lessons K5):**
 2. *Persona missing.* `--agent worker` fails ("--agent 'worker' not found") in a
    worktree whose branch does not track the persona file: spawn only into a
    branch that tracks it.
-3. *Unverified*: whether a worker's Bash outside its allowlist stalls under
-   `acceptEdits` (it cannot answer a prompt). If it does, widen the worker's
-   mode or allowlist, never the router's.
+3. *Refused, not stalled.* A worker's Bash outside its allowlist is refused
+   ("requires approval": a headless session cannot answer a prompt), so a
+   worker without the gate commands cannot test, write notes or preflight. The
+   launcher's fixed allow list grants them; widen it there, never in the
+   router's settings and never the router's whitelist.
 
 ## Watch every staged owner action
 
