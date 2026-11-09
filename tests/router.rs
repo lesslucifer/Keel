@@ -586,6 +586,25 @@ fn wait_blocks_until_the_worker_exits_or_stalls() {
     let out = w.line();
     assert!(out.starts_with("STALLED name=n ") && out.ends_with(&format!(" idle=2m since={}\n", sub.display())), "{out}");
 
+    // thresholds are minutes, 15 by default: 30s is no 1-minute stall, 10 min no default stall
+    for (args, under, over, idle) in [(vec!["wait", "n", "1"], 30, 120, "2m"), (vec!["wait", "n"], 600, 960, "16m")] {
+        age(&tr, under);
+        age(&sub, under);
+        let mut w = l.wait_stepped(&args, idle);
+        for n in 1..=2 {
+            w.at(n);
+            w.go(n);
+        }
+        w.at(3);
+        age(&tr, over);
+        age(&sub, over);
+        w.go(3);
+        w.at(4);
+        w.go(4);
+        let out = w.line();
+        assert!(out.starts_with("STALLED name=n ") && out.contains(&format!(" idle={idle} ")), "{out}");
+    }
+
     // no transcript: the pid file's age stands in
     std::fs::remove_file(&tr).unwrap();
     std::fs::remove_dir_all(tr.with_extension("")).unwrap();
