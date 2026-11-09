@@ -1,6 +1,6 @@
 //! The router's enforcement surface (E-ROUTER close review): the PreToolUse guard
 //! `scripts/router-guard.jq` as `.claude/settings.json` wires it, the headless launcher
-//! `scripts/router-worker.sh` (with a stub `claude`), and the shipped PUSHED watch probe.
+//! `scripts/router-worker.sh` (with a stub `claude`) including its `wait` mode, and the shipped PUSHED watch probe.
 //! Needs `jq`, `sh`, `uuidgen` and `shasum` on PATH, as the guard and launcher do.
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -68,6 +68,9 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "gh pr list --json number -q env",
         "gh pr view 1 --web",
         "scripts/router-worker.sh spawn a ../x .router/briefs/a.md opus",
+        "scripts/router-worker.sh wait ../x",
+        "scripts/router-worker.sh wait n;id",
+        "scripts/router-worker.sh wait $(id)",
         "rm -rf x",
         "claude -p hi",
         "kill 1",
@@ -90,18 +93,34 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "gh pr status".into(),
         "scripts/router-worker.sh spawn e-x-w1 /Users/o/Keel-x .router/briefs/e-x-w1.md opus".into(),
         "scripts/router-worker.sh resume e-x-w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b /Users/o/Keel-x .router/briefs/e-x-w1-r1.md sonnet".into(),
+        "scripts/router-worker.sh wait e-x-w1".into(),
+        "scripts/router-worker.sh wait e-x-w1 30".into(),
     ];
-    // every permissions.allow entry is a shape the guard accepts (one source of truth, no drift)
+    // permissions.allow serves workers and the router alike: every router entry is a shape the guard
+    // accepts (one source of truth, no drift); every worker-only entry is one it refuses the router.
+    // `wait` is a router entry (E-SEED2.W8: the router arms it after a spawn); cargo/keel are
+    // worker-only, and these shapes stay refused whether or not settings lists them yet.
+    let mut worker_only: Vec<String> =
+        ["cargo test", "cargo build", "keel notes write test", "keel preflight wu HEAD", "keel check"].map(String::from).to_vec();
     for a in settings()["permissions"]["allow"].as_array().unwrap() {
         let a = a.as_str().unwrap().strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
-        allowed.push(match a.strip_suffix(" *") {
+        let cmd = match a.strip_suffix(" *") {
+            Some(p) if p.ends_with(" wait") => format!("{p} n 15"),
             Some(p) if p.starts_with("scripts/") => format!("{p} n /w .router/briefs/n.md opus"),
             Some(p) => format!("{p} HEAD"),
             None => a.to_string(),
-        });
+        };
+        if ["cargo ", "keel "].iter().any(|w| a.starts_with(w)) {
+            worker_only.push(cmd);
+        } else {
+            allowed.push(cmd);
+        }
     }
     for ok in &allowed {
         assert_eq!(bash(ok), None, "guard denied documented shape {ok:?}");
+    }
+    for w in &worker_only {
+        assert!(bash(w).is_some(), "guard allowed worker-only {w:?} to the router");
     }
 }
 
@@ -258,8 +277,12 @@ struct Launcher {
     stub: PathBuf,
 }
 
-/// A repo whose main checkout holds the launcher, two linked worktrees, and a stub claude that
-/// prints its argv and sleeps $STUB_SLEEP seconds.
+/// A repo whose main checkout holds the launcher, two linked worktrees, a stub claude and a `sleep`
+/// shim. The stub prints its argv and sleeps $STUB_SLEEP seconds, or, when $STUB_RELEASE is set, runs
+/// until that file exists or the test process ($STUB_OWNER) is gone (so a panicking test leaks no stub
+/// past the test binary). While held it keeps a subshell piped to `cut -c` (long-lived children that
+/// are not `<shell> -c`, as an MCP server is), and runs a `sh -c` child, as a Bash tool command runs,
+/// while $STUB_RELEASE.busy exists.
 fn launcher() -> Launcher {
     let d = TempDir::new().unwrap();
     let base = d.path().canonicalize().unwrap();
@@ -275,22 +298,76 @@ fn launcher() -> Launcher {
     git(&main, &["worktree", "add", "-q", "../wt", "-b", "w"]);
     git(&main, &["worktree", "add", "-q", "../wt2", "-b", "w2"]);
     let stub = base.join("claude");
-    std::fs::write(&stub, "#!/bin/sh\necho \"stub $*\"\nsleep \"${STUB_SLEEP:-3}\"\n").unwrap();
+    std::fs::write(&stub, concat!(
+        "#!/bin/sh\necho \"stub $*\"\n",
+        "if [ -z \"${STUB_RELEASE:-}\" ]; then sleep \"${STUB_SLEEP:-3}\"; exit; fi\n",
+        "held() { [ ! -e \"$STUB_RELEASE\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; }\n",
+        "(while held; do sleep 0.05; done) | cut -c 1 &\n",
+        "while held; do\n",
+        "  [ ! -e \"$STUB_RELEASE.busy\" ] || /bin/sh -c 'while [ -e \"$STUB_RELEASE.busy\" ] && [ ! -e \"$STUB_RELEASE\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done; :'\n",
+        "  sleep 0.05\ndone\nwait\n"
+    )).unwrap();
     std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    // `wait` sleeps once per poll; this shim counts the polls in $STEP_DIR/polls and blocks poll n
+    // until the test creates $STEP_DIR/go-n, so each poll judges a state the test has set
+    std::fs::create_dir_all(base.join("shim")).unwrap();
+    std::fs::write(base.join("shim/sleep"), concat!(
+        "#!/bin/sh\nn=$(( $(cat \"$STEP_DIR/polls\" 2>/dev/null || echo 0) + 1 ))\n",
+        "echo \"$n\" > \"$STEP_DIR/polls.tmp\" && mv \"$STEP_DIR/polls.tmp\" \"$STEP_DIR/polls\"\n",
+        "while [ ! -e \"$STEP_DIR/go-$n\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do /bin/sleep 0.02; done\n"
+    )).unwrap();
+    std::fs::set_permissions(base.join("shim/sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub, _d: d }
 }
 
 impl Launcher {
     fn run(&self, args: &[&str], sleep: &str) -> (bool, String) {
-        let o = Command::new("sh")
-            .arg("scripts/router-worker.sh")
+        self.run_env(args, &[("STUB_SLEEP", sleep)])
+    }
+
+    fn cmd(&self, args: &[&str], env: &[(&str, &str)]) -> Command {
+        let mut c = Command::new("sh");
+        c.arg("scripts/router-worker.sh")
             .args(args)
             .current_dir(&self.main)
             .env("ROUTER_CLAUDE", &self.stub)
-            .env("STUB_SLEEP", sleep)
-            .output()
-            .unwrap();
+            .env("CLAUDE_CONFIG_DIR", self.main.parent().unwrap().join("config"))
+            .env("ROUTER_WAIT_POLL", "0.2")
+            .envs(env.iter().copied());
+        c
+    }
+
+    fn run_env(&self, args: &[&str], env: &[(&str, &str)]) -> (bool, String) {
+        let o = self.cmd(args, env).output().unwrap();
         (o.status.success(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
+    }
+
+    /// Start `wait` in the background, as the router runs it, its polls stepped by the test.
+    fn wait_stepped(&self, args: &[&str], k: &str) -> Stepped {
+        let base = self.main.parent().unwrap();
+        let dir = base.join(format!("steps-{k}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = format!("{}:{}", base.join("shim").display(), std::env::var("PATH").unwrap());
+        let owner = std::process::id().to_string();
+        let env = [("STEP_DIR", dir.to_str().unwrap()), ("STUB_OWNER", owner.as_str()), ("PATH", path.as_str())];
+        let child = self.cmd(args, &env).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        Stepped { child, dir }
+    }
+
+    /// Spawn or resume worker n, held alive until `release` is created; returns the launcher's line.
+    fn hold(&self, args: &[&str], release: &Path) -> String {
+        let owner = std::process::id().to_string();
+        let (ok, out) = self.run_env(args, &[("STUB_RELEASE", release.to_str().unwrap()), ("STUB_OWNER", owner.as_str())]);
+        assert!(ok && out.starts_with("RUNNING"), "{out}");
+        out
+    }
+
+    /// The session transcript `wait` reads for this spawn, under the stubbed CLAUDE_CONFIG_DIR.
+    fn transcript(&self, wt: &Path, sid: &str) -> PathBuf {
+        let enc: String = wt.to_str().unwrap().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+        let dir = self.main.parent().unwrap().join("config/projects").join(enc);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join(format!("{sid}.jsonl"))
     }
 
     /// Wait (bounded) until the worker recorded in <name>.pid has exited.
@@ -389,4 +466,196 @@ fn pushed_probe_fires_only_after_the_merge_reaches_origin() {
     assert!(!fires(), "PUSHED fired before the push");
     git(&main, &["push", "-q", "origin", "main"]);
     assert!(fires(), "PUSHED did not fire after the push");
+}
+
+fn age(path: &Path, secs: u64) {
+    let f = std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap();
+    f.set_modified(std::time::SystemTime::now() - Duration::from_secs(secs)).unwrap();
+}
+
+/// Bounded wait for a condition another process brings about.
+fn until(what: &str, mut cond: impl FnMut() -> bool) {
+    let t = Instant::now();
+    while !cond() {
+        assert!(t.elapsed() < Duration::from_secs(10), "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Whether `pid` has a `<shell> -c` child, i.e. the stub is busy.
+fn has_shell_child(pid: &str) -> bool {
+    let o = Command::new("ps").args(["-A", "-o", "ppid=,command="]).output().unwrap();
+    String::from_utf8(o.stdout).unwrap().lines().any(|l| {
+        let w: Vec<&str> = l.split_whitespace().collect();
+        w.len() > 2 && w[0] == pid && w[1].ends_with("sh") && w[2] == "-c"
+    })
+}
+
+struct Stepped {
+    child: std::process::Child,
+    dir: PathBuf,
+}
+
+impl Stepped {
+    /// Block until `wait` has judged poll n and is sleeping; panics with its line if it returned instead.
+    fn at(&mut self, n: u32) {
+        let polls = || std::fs::read_to_string(self.dir.join("polls")).ok().and_then(|s| s.trim().parse::<u32>().ok());
+        let t = Instant::now();
+        while polls() != Some(n) {
+            if self.child.try_wait().unwrap().is_some() {
+                let mut out = String::new();
+                std::io::Read::read_to_string(self.child.stdout.as_mut().unwrap(), &mut out).unwrap();
+                panic!("wait returned before poll {n}: {out}");
+            }
+            assert!(t.elapsed() < Duration::from_secs(10), "wait never reached poll {n}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn go(&self, n: u32) {
+        std::fs::write(self.dir.join(format!("go-{n}")), "").unwrap();
+    }
+
+    /// The one line `wait` prints once released from its last poll.
+    fn line(mut self) -> String {
+        let t = Instant::now();
+        while self.child.try_wait().unwrap().is_none() {
+            if t.elapsed() > Duration::from_secs(10) {
+                self.child.kill().unwrap();
+                panic!("wait never returned");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let o = self.child.wait_with_output().unwrap();
+        assert!(o.status.success(), "{o:?}");
+        String::from_utf8(o.stdout).unwrap()
+    }
+}
+
+/// E-SEED2.W8: `wait <name> [<stall-min>]` blocks while the worker runs and returns one line when it
+/// exits (EXITED) or stalls (STALLED: on two polls running, no `sh -c` child and every transcript of its
+/// newest run, main and subagent, idle past the threshold, naming the newest; the pid file when no
+/// transcript exists). Polls are stepped through the `sleep` shim, so each judges a state the test set.
+/// Bad input exits 2.
+#[test]
+fn wait_blocks_until_the_worker_exits_or_stalls() {
+    let l = launcher();
+    let wt = l.wt.to_str().unwrap();
+    let brief = ".router/briefs/b.md";
+    let base = l.main.parent().unwrap().to_path_buf();
+    let release = |k: u8| base.join(format!("release-{k}"));
+    std::fs::create_dir_all(l.main.join(".router/out")).unwrap();
+    std::fs::write(l.main.join(".router/out/orphan.pid"), "1\n").unwrap();
+    for (args, why) in [
+        (vec!["wait"], "wait <name>"),
+        (vec!["wait", "n", "1", "x"], "wait <name>"),
+        (vec!["wait", "-n"], "bad name"),
+        (vec!["wait", "N"], "bad name"),
+        (vec!["wait", "n", "-1"], "stall-min"),
+        (vec!["wait", "n", "10000"], "stall-min"),
+        (vec!["wait", "n", "0"], "stall-min"),
+        (vec!["wait", "n", "x"], "stall-min"),
+        (vec!["wait", "n", ""], "stall-min"),
+        (vec!["wait", "ghost"], "no worker ghost"),
+        (vec!["wait", "orphan"], "no recorded run for orphan"),
+    ] {
+        let (ok, out) = l.run_env(&args, &[]);
+        assert!(!ok && out.contains(why), "{args:?} not refused for {why}: {out}");
+    }
+
+    // exits: still waiting while the worker lives, EXITED once it is gone
+    let out = l.hold(&["spawn", "n", wt, brief, "haiku"], &release(1));
+    let sid = field(&out, "session=").to_string();
+    let pid = field(&out, "pid=").to_string();
+    let mut w = l.wait_stepped(&["wait", "n"], "exit");
+    w.at(1);
+    std::fs::write(release(1), "").unwrap();
+    l.wait_exit("n");
+    w.go(1);
+    let out = w.line();
+    assert!(out.starts_with(&format!("EXITED name=n pid={pid} ")) && out.lines().count() == 1, "{out}");
+    let (ok, out) = l.run_env(&["wait", "n"], &[]);
+    assert!(ok && out.starts_with("EXITED name=n ") && out.lines().count() == 1, "an exited worker returns at once: {out}");
+
+    // quiet, then busy (a command ran), then quiet: the busy poll resets, so STALLED needs two more
+    let tr = l.transcript(&l.wt, &sid);
+    let out = l.hold(&["resume", "n", &sid, wt, brief, "haiku"], &release(2));
+    let pid = field(&out, "pid=").to_string();
+    age(&tr, 120);
+    let busy = base.join("release-2.busy");
+    let mut w = l.wait_stepped(&["wait", "n", "1"], "busy");
+    w.at(1);
+    std::fs::write(&busy, "").unwrap();
+    until("busy stub", || has_shell_child(&pid));
+    w.go(1);
+    w.at(2);
+    std::fs::remove_file(&busy).unwrap();
+    until("idle stub", || !has_shell_child(&pid));
+    age(&tr, 120);
+    w.go(2);
+    w.at(3);
+    w.go(3);
+    let out = w.line();
+    assert!(out.starts_with(&format!("STALLED name=n pid={pid} idle=2m since={}\n", tr.display())), "{out}");
+
+    // quiet, then a subagent writes, then quiet: the fresh poll resets; the newest transcript is named
+    let sub = tr.with_extension("").join("subagents/agent-a.jsonl");
+    std::fs::create_dir_all(sub.parent().unwrap()).unwrap();
+    age(&tr, 180);
+    let mut w = l.wait_stepped(&["wait", "n", "1"], "fresh");
+    w.at(1);
+    std::fs::write(&sub, "{}\n").unwrap();
+    w.go(1);
+    w.at(2);
+    age(&sub, 120);
+    w.go(2);
+    w.at(3);
+    w.go(3);
+    let out = w.line();
+    assert!(out.starts_with("STALLED name=n ") && out.ends_with(&format!(" idle=2m since={}\n", sub.display())), "{out}");
+
+    // thresholds are minutes, 15 by default: 30s is no 1-minute stall, 10 min no default stall
+    for (args, under, over, idle) in [(vec!["wait", "n", "1"], 30, 120, "2m"), (vec!["wait", "n"], 600, 960, "16m")] {
+        age(&tr, under);
+        age(&sub, under);
+        let mut w = l.wait_stepped(&args, idle);
+        for n in 1..=2 {
+            w.at(n);
+            w.go(n);
+        }
+        w.at(3);
+        age(&tr, over);
+        age(&sub, over);
+        w.go(3);
+        w.at(4);
+        w.go(4);
+        let out = w.line();
+        assert!(out.starts_with("STALLED name=n ") && out.contains(&format!(" idle={idle} ")), "{out}");
+    }
+
+    // no transcript: the pid file's age stands in
+    std::fs::remove_file(&tr).unwrap();
+    std::fs::remove_dir_all(tr.with_extension("")).unwrap();
+    age(&l.main.join(".router/out/n.pid"), 120);
+    let mut w = l.wait_stepped(&["wait", "n", "1"], "pid");
+    w.at(1);
+    w.go(1);
+    let out = w.line();
+    assert!(out.starts_with("STALLED name=n ") && out.contains("since=") && out.trim_end().ends_with("n.pid"), "{out}");
+    std::fs::write(release(2), "").unwrap();
+    l.wait_exit("n");
+    assert!(std::fs::read_to_string(l.main.join(".router/out/n.out")).unwrap().starts_with("stub "), "wait touched n.out");
+
+    // a name spawned again (new session, other worktree) is judged by its newest run only
+    let out = l.hold(&["spawn", "n", l.wt2.to_str().unwrap(), brief, "haiku"], &release(3));
+    let tr2 = l.transcript(&l.wt2, field(&out, "session="));
+    std::fs::write(&tr, "{}\n").unwrap();
+    age(&tr2, 120);
+    let mut w = l.wait_stepped(&["wait", "n", "1"], "newest");
+    w.at(1);
+    w.go(1);
+    let out = w.line();
+    assert!(out.ends_with(&format!(" since={}\n", tr2.display())), "{out}");
+    std::fs::write(release(3), "").unwrap();
+    l.wait_exit("n");
 }
