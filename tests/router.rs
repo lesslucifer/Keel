@@ -91,17 +91,27 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "scripts/router-worker.sh spawn e-x-w1 /Users/o/Keel-x .router/briefs/e-x-w1.md opus".into(),
         "scripts/router-worker.sh resume e-x-w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b /Users/o/Keel-x .router/briefs/e-x-w1-r1.md sonnet".into(),
     ];
-    // every permissions.allow entry is a shape the guard accepts (one source of truth, no drift)
+    // permissions.allow serves workers and the router alike: every router entry is a shape the guard
+    // accepts (one source of truth, no drift); every worker-only entry is one it refuses the router
+    let mut worker_only = vec![];
     for a in settings()["permissions"]["allow"].as_array().unwrap() {
         let a = a.as_str().unwrap().strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
-        allowed.push(match a.strip_suffix(" *") {
+        let cmd = match a.strip_suffix(" *") {
             Some(p) if p.starts_with("scripts/") => format!("{p} n /w .router/briefs/n.md opus"),
             Some(p) => format!("{p} HEAD"),
             None => a.to_string(),
-        });
+        };
+        if ["cargo ", "keel ", "scripts/router-worker.sh wait"].iter().any(|w| a.starts_with(w)) {
+            worker_only.push(cmd);
+        } else {
+            allowed.push(cmd);
+        }
     }
     for ok in &allowed {
         assert_eq!(bash(ok), None, "guard denied documented shape {ok:?}");
+    }
+    for w in &worker_only {
+        assert!(bash(w).is_some(), "guard allowed worker-only {w:?} to the router");
     }
 }
 
