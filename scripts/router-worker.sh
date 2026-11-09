@@ -33,8 +33,9 @@ if [ "${1:-}" = wait ]; then
   for d in "$ROOT"/.router/runs/*/; do [ "$(cat "${d}name" 2>/dev/null)" = "$name" ] && run=$d; done
   [ -n "$run" ] || die "no recorded run for $name"
   t="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$(sed 's/[^A-Za-z0-9]/-/g' "${run}worktree")/$(cat "${run}session").jsonl"
-  if stat -c %Y / >/dev/null 2>&1; then mtime() { stat -c %Y "$@"; }; else mtime() { stat -f %m "$@"; }; fi
-  # subagent turns land in <session>/subagents/*.jsonl and leave <session>.jsonl untouched
+  if stat -c %Y / >/dev/null 2>&1; then mtime() { stat -c '%Y %n' "$@"; }; else mtime() { stat -f '%m %N' "$@"; }; fi
+  # "<mtime> <path>" of the newest transcript; subagent turns land in <session>/subagents/*.jsonl
+  # and leave <session>.jsonl untouched
   seen() { for f in "$t" "${t%.jsonl}"/subagents/*.jsonl; do [ ! -f "$f" ] || mtime "$f"; done | sort -n | tail -1; }
   # a running Bash tool command is a `<shell> -c` child; MCP servers (also children) are not
   busy() { ps -A -o ppid=,command= | awk -v p="$pid" '$1 == p && $2 ~ /(^|\/)[a-z]*sh$/ && $3 == "-c" { f = 1 } END { exit !f }'; }
@@ -44,9 +45,9 @@ if [ "${1:-}" = wait ]; then
   while live "$pid"; do
     if busy; then quiet=0
     else
-      at=$(seen) src=$t
-      [ -n "$at" ] || { at=$(mtime "$O/$name.pid"); src=$O/$name.pid; }
-      idle=$(( $(date +%s) - at ))
+      at=$(seen)
+      [ -n "$at" ] || at=$(mtime "$O/$name.pid")
+      src=${at#* } idle=$(( $(date +%s) - ${at%% *} ))
       if [ "$idle" -lt $((stall * 60)) ]; then quiet=0
       elif [ "$quiet" -eq 1 ]; then echo "STALLED name=$name pid=$pid idle=$((idle / 60))m since=$src"; exit 0
       else quiet=1; fi
