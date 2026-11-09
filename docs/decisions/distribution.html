@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>Decisions: distribution and adoption</h1>
       <p>Why Keel is one CLI that carries its own rules, how a project adopts it, and how Keel itself is run.</p>
-      <div class="meta">T2 · decisions · append-only · 2026-11-08 · Keel · DEC-1 – DEC-12 · distilled from E-SEED (seed plan Q1–Q14, rulings R1–R25, W5–W7 open points)</div>
+      <div class="meta">T2 · decisions · append-only · 2026-11-08 · Keel · DEC-1 – DEC-12, DEC-38 · distilled from E-SEED and E-SEED2 (seed plan Q1–Q14, rulings R1–R25, W5–W7 open points)</div>
     </div>
   </header>
   <main>
@@ -103,6 +103,14 @@
       <tr><th>Choice</th><td>The main repo folder always stays on <code>main</code>; epic work happens in separate worktrees. No T3 doc, epic plan, or anything from an unclosed epic ever lands on main: an epic reaches main only at close, after its T3 docs are distilled and archived, as one epic merge. A file in another worktree is referred to the owner by full absolute path, never a relative link.</td></tr>
       <tr><th>Consequences</th><td>Epics landing in sequence conflict on <code>.claude/settings.json</code> and <code>.gitignore</code>; take the settings that hold the router config and re-run <code>keel init</code> on top.</td></tr>
       <tr><th>Lineage</th><td>R1; R17; owner ruling 2026-11-08 (W7 v2 open point 6); W7 v2 open point 19.</td></tr>
+    </table>
+
+    <h3 id="dec-38">DEC-38 · Release pipeline: one cargo-dist config, tag-triggered, CI a signal</h3>
+    <table data-c="dec-38">
+      <tr><th>Context</th><td>DEC-6 planned prebuilt channels. Adopters without a Rust toolchain need a binary; the crates.io and npm <code>keel</code> names are taken.</td></tr>
+      <tr><th>Choice</th><td>cargo-dist (pinned in <code>dist-workspace.toml</code>) builds four Unix targets (macOS and Linux musl, arm64 and x86_64) and three installers: shell (into <code>$CARGO_HOME/bin</code>, no updater), npm <code>@lesslucifer/keel</code>, Homebrew formula in <code>lesslucifer/homebrew-tap</code>. <code>.github/workflows/release.yml</code> is dist-generated and never hand-edited: change the config, re-run <code>dist generate</code>. A tag whose version equals <code>Cargo.toml</code>'s triggers it; only the owner tags. A prerelease tag (<code>v0.1.0-rc.1</code>) builds and publishes a GitHub prerelease but skips npm and Homebrew; the shell installer's <code>releases/latest</code> URL ignores prereleases. Secrets are referenced by name only: <code>NPM_TOKEN</code>, <code>HOMEBREW_TAP_TOKEN</code>. <code>keel --version</code> works outside a repo and names Keel, so an installer smoke check and the keel.so clash are both answerable. The git hook shims print the <code>cargo install --git</code> line plus a pointer to <code>docs/install.html</code>.</td></tr>
+      <tr><th>Consequences</th><td>Release CI is a signal, never a gate (DEC-11). <code>.github/</code>, <code>dist-workspace.toml</code> and <code>Cargo.toml</code> are neither code paths nor rule-bearing: the router dispatches an independent review for them (project-router "What no gate reviews"). npm and Homebrew are first exercised by the first stable tag.</td></tr>
+      <tr><th>Lineage</th><td>E-SEED.W10 (parked, <code>4a22316</code>); E-SEED2.W1; backlog e-seed-v2 B1; W10 open points 5–8.</td></tr>
     </table>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
