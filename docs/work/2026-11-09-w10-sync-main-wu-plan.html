@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="a3f07c51d9e24b8613c0e7f2" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED2.W10 plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED2.W10 · Sync main into the epic — plan</h1>
+      <p>Bring the closed E-ROUTERFIX (<code>main</code> <code>0dad93f</code>) into <code>epic/E-SEED2</code> and mark W8 done. Owner ruling 2026-11-09: nothing else.</p>
+      <div class="meta">T3 · WU plan · 2026-11-09 · Keel · branch <code>wu/E-SEED2/w10-sync-main</code> off <code>cdcce2f</code> · epic <a href="2026-11-09-e-seed2-epic-plan.html#w10">E-SEED2 plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="requirement">Requirement</h2>
+<p data-item="requirement" data-c="requirement">After this WU merges, <code>epic/E-SEED2</code> contains <code>main</code> at <code>0dad93f</code> through a <code>--no-ff</code> merge, its <code>cargo test</code> and <code>cargo clippy</code> are green, and the epic plan shows W8 done.</p>
+
+<h2 id="maps-to">Maps to</h2>
+<p data-item="maps-to" data-c="maps-to">E-SEED2 (summary block W10) · epic upkeep per keel-workflow ("merge main into the epic if it moved") · no use case changed.</p>
+
+<h2 id="expected">Expected</h2>
+<p data-item="expected" data-c="expected">The WU tip descends from both <code>1941842</code> and <code>0dad93f</code>; the epic plan's W8 block carries a done badge and status line; no file outside the merge and these two T3 docs changes.</p>
+
+<h2 id="test-plan">Test plan</h2>
+<div data-item="test-plan" data-c="test-plan">
+  <ul>
+    <li><b>Integration: waived.</b> This WU adds no code. The code in its diff against the epic (<code>tests/init.rs</code>, <code>tests/router.rs</code>) is E-ROUTERFIX's, already gated and reviewed on <code>main</code>. The full <code>cargo test</code> suite is the check: it passes on the merged tree.</li>
+    <li><b>Unit: none.</b> No code is added or changed by this WU.</li>
+    <li><code>cargo clippy</code> green; <code>keel verify-doc</code> green over the changed docs.</li>
+  </ul>
+</div>
+
+<h2 id="choices">Choices made here (reversible, owner may override)</h2>
+<table data-c="choices-table">
+  <thead><tr><th>#</th><th>Point</th><th>What was decided</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>WU id</td><td>W10. W9 belongs to the parked <code>wu/E-SEED2/w9-router-followups</code>. Reversible: rename the branch before its merge.</td></tr>
+    <tr><td>2</td><td>Reuse <code>cdcce2f</code> as the sync merge</td><td>Checked before use: its parents are <code>1941842</code> and <code>0dad93f</code>, the E-SEED2 T3 docs are byte-identical to <code>1941842</code>, and <code>cargo test</code> is green. The branch starts at it, so the parked W9 branch is untouched.</td></tr>
+    <tr><td>3</td><td>How W8 is marked done</td><td>keel-plan defines no done markup and rejects unknown <code>data-item</code> tags, so W8's block gets a <code>badge done</code> and an untagged status paragraph.</td></tr>
+    <tr><td>4</td><td>Integration layer</td><td>Waived with the reason above. The diff is not exempt, because <code>tests/</code> is a code path.</td></tr>
+    <tr><td>5</td><td>Distillation</td><td>Nothing new. E-ROUTERFIX already distilled W8 into DEC-36 and UC-ROUTE.</td></tr>
+  </tbody>
+</table>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
