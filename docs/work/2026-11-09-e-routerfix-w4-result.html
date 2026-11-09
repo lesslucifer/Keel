@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af178d09f34851f0dfb200d" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-ROUTERFIX.W4 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-ROUTERFIX.W4 · Result</h1>
+      <p>E-SEED2.W8's worker watchdog (<code>scripts/router-worker.sh wait</code>) now lives in this epic, beside W2's subscription, and both are distilled into DEC-36 and UC-ROUTE.</p>
+      <div class="meta">T3 · WU result · 2026-11-09 · Keel · <code>wu/E-ROUTERFIX/w4-worker-watchdog</code> · plan <a href="2026-11-09-e-routerfix-plan.html#w4">epic plan, W4 block</a> · W8's own plan and result came along: <a href="2026-11-09-w8-worker-watchdog-wu-result.html">W8 result</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome"><b>Delivered against the plan.</b> <code>wu/E-SEED2/w8-worker-watchdog</code> at <code>8e8f1a6</code> was merged into this WU unchanged (<code>f87e621</code>). Git merged it with no conflict against W2: W2's lines in <code>scripts/router-guard.jq</code> (the tool list and the <code>SendMessage</code> branch), <code>scripts/router-worker.sh</code> (a comment) and <code>tests/router.rs</code> (a new test) are separate hunks from W8's. W8's commits are byte-identical in both epics, so <code>main</code> sees them once, whichever epic lands first, and E-SEED2 needs no revert. The merge also brings E-SEED2's <code>2183539</code> (its epic plan doc) and <code>8a14f24</code> (the guard test's router/worker-only split of <code>permissions.allow</code>), which W8 already contained.</p>
+<p data-c="reconcile"><b>How the two mechanisms split the work</b> (DEC-36, amended). The subscription is free and covers a clean exit, as a notice at the router's next turn end. <code>wait</code> covers both exit and stall, and its end wakes the router as a background command. The heartbeat's per-worker <code>ps</code> check becomes the fallback for a worker with no <code>wait</code> armed.</p>
+
+<h2 id="live">Live probe: does a background <code>wait</code> wake the session?</h2>
+<p data-c="live">W8 left this one item unconfirmed, because a worker cannot test it. <b>Confirmed on 2026-11-09 from an interactive session, with that session idle.</b></p>
+<table data-c="live-probe">
+  <thead><tr><th>Step</th><th>What happened (literal)</th></tr></thead>
+  <tbody>
+    <tr><td>Stub worker</td><td><code>/bin/sh -c 'sleep 75; :' stub -n probe-wait --model x</code> started at 07:44:46Z, pid 48986, written to <code>.router/out/probe-wait.pid</code>. A run dir <code>.router/runs/probe-wait-20261109-spawn/</code> held <code>name</code>, <code>worktree</code> and <code>session</code>. <code>live()</code> recognises the stub through its <code>-n probe-wait</code> argv, so no real <code>claude</code> was spent.</td></tr>
+    <tr><td>Arm</td><td><code>scripts/router-worker.sh wait probe-wait 30</code> run as a background Bash command (<code>run_in_background: true</code>). The session then ended its turn and sat idle, with no further tool calls.</td></tr>
+    <tr><td>Event</td><td>The command printed <code>EXITED name=probe-wait pid=48986 out=…/.router/out/probe-wait.out</code> and exited 0 at 07:46:00Z, which is within one poll of the stub's exit.</td></tr>
+    <tr><td>Wake</td><td>A background-task notification ("Background command … completed (exit code 0)") started a new turn in the idle session. The turn's first command logged 07:46:04Z, and <code>ps -p 48986</code> showed the stub gone.</td></tr>
+  </tbody>
+</table>
+<div class="callout" data-c="live-verdict"><b>Verdict.</b> An idle session wakes on its own when a background <code>wait</code> ends. The router can therefore rely on <code>wait</code> to hear of both an exit and a stall without anyone asking it. This used the same harness mechanism the router's Bash tool uses. Not exercised: a <code>STALLED</code> end live (its logic is the hermetic test's), and a router busy mid-turn, where the notification waits for the turn to end, as W2 saw for the subscription.</div>
+
+<h2 id="evidence">Evidence</h2>
+<ul data-item="evidence" data-c="evidence">
+  <li><b>Back-merge of the epic after W1 and W3 landed</b> (<code>804a5f0</code>). There were four conflicts. In <code>scripts/router-worker.sh</code>, both changes are kept: W1's optional <code>--permission-mode</code> on spawn and resume, with its argument-count check, and W8's <code>wait</code>, which now appears in the usage text and the mode refusal. In <code>tests/router.rs</code>, W1 and W8 had each rebuilt the stub <code>claude</code> and the <code>Launcher</code> helper differently, so one stub now serves both. It prints its argv both joined and bracketed, as W1's argv checks need. It is held until <code>$STUB_RELEASE</code> exists, the temp dir is gone, or the test process is gone. It keeps W8's long-lived non-shell child and runs a <code>sh -c</code> busy child on demand. The <code>Launcher</code> keeps W1's <code>run</code>/<code>wait_exit</code> and W8's <code>cmd</code>/<code>run_env</code>/<code>hold</code>/<code>wait_stepped</code>/<code>transcript</code>, and <code>cmd</code> sets the default hold. In <code>docs/use-cases/router.html</code> UC-ROUTE-5, W1's grant text is kept and <code>wait</code> is added: the sentence, the test name and two failure cases. In <code>decisions-index.html</code>, the range is DEC-30 – DEC-37 with both topics.</li>
+  <li>On the back-merged tree: <code>cargo test --no-fail-fast</code> gives 54 passed, 0 failed. The router suite is 9/9 in 3 repeated runs, with no stub process left behind. It includes W1's <code>launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode</code>, W2's <code>router_guard_allows_send_message_only_as_a_contentless_idle_subscription</code> and W8's <code>wait_blocks_until_the_worker_exits_or_stalls</code>, together. <code>cargo clippy --all-targets -- -D warnings</code> is clean. <code>keel verify-doc</code> exits 0.</li>
+  <li>W8's own gate evidence stays on <code>8e8f1a6</code>: <code>cr/v1</code> PASS after seven review rounds, 17 mutations each failing the test, <code>mr/v1</code> by the owner. This WU's review judges the merged diff against <code>epic/E-ROUTERFIX</code>.</li>
+  <li><b>Review on <code>506930d</code>: FAIL, 1 important</b>, fixed in the next code commit. To find a worker's transcript, <code>wait</code> rebuilt Claude Code's project-dir name with <code>sed 's/[^A-Za-z0-9]/-/g'</code>, and the test helper copied that rule. The installed CLI also cuts a name longer than 200 characters and adds a hash, and it encodes non-ASCII per UTF-16 unit. With a long or non-ASCII worktree path, <code>wait</code> therefore found no transcript, fell back to the pid file's mtime, and reported an active worker as <code>STALLED</code>. <code>wait</code> now matches <code>projects/*/&lt;session&gt;.jsonl</code> and <code>projects/*/&lt;session&gt;/subagents/*.jsonl</code> by the unique session id. The test now stores transcripts under a dir name that no rule produces. It was red before the fix ("wait never returned") and green after, in 3 runs. On this machine the glob finds the live session's newest transcript in 5 ms. All 6 other candidates were refuted. These include a background Bash child keeping a worker busy, which is DEC-36's definition with the heartbeat as fallback, and the settings entry, which is an owner follow-up.</li>
+  <li>Docs: <code>docs/decisions/router.html</code> DEC-36 amended (choice, consequences, lineage) with no new id, because W1 holds DEC-37 and E-SEED2 mints from DEC-37. Also <code>docs/use-cases/router.html</code> UC-ROUTE-5 (arm <code>wait</code> after <code>RUNNING</code>, failure cases, test name) and UC-ROUTE-6 (the launcher's three shapes), plus the <code>decisions-index.html</code> range line.</li>
+</ul>
+
+<h2 id="deviations">Deviations</h2>
+<ul data-item="deviations" data-c="deviations">
+  <li>The "Wait" step in <code>skills/keel-router/references/worker-ops.md</code> and its <code>.claude/skills/</code> mirror is rule-bearing. It is parked as <code>.router/w4-worker-ops-wait.patch</code> (in the epic checkout) for the owner's <code>keel mr commit</code>.</li>
+  <li>W8 planned a Telegram push and a watchdog worker. Neither is built; W8's own result records why (the router's brief chose <code>wait</code>).</li>
+</ul>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">DEC-36 (<a href="../decisions/router.html#dec-36">decisions/router.html</a>) and UC-ROUTE-5/6 (<a href="../use-cases/router.html">use-cases/router.html</a>) hold the truth. W8's plan and result, and E-SEED2's epic plan, are T3 scratch that archives with whichever epic closes first.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<ol data-item="follow-ups" data-c="follow-ups">
+  <li>Owner: apply <code>.router/w4-worker-ops-wait.patch</code> with <code>keel mr commit</code>.</li>
+  <li>Owner or the E-SEED2 session: mark W8 in E-SEED2's epic plan as "moved to E-ROUTERFIX.W4". The commits stay in both epics, so no revert is needed.</li>
+  <li>W8's risk note stands: each headless worker loads the Telegram channel plugin, and two pollers on one bot token conflict. A later WU can start workers with that plugin disabled.</li>
+  <li>Owner: <code>.claude/settings.json</code> <code>permissions.allow</code> has no <code>Bash(scripts/router-worker.sh wait *)</code>, so an interactive router is prompted each time it arms <code>wait</code>. The guard test already maps that entry to a valid <code>wait</code> shape. Adding it is a rule-bearing <code>keel mr commit</code>.</li>
+  <li>Review nit, waived on <code>be4deee</code>: the wait test pins the default <code>stall-min</code> only to the range 11–16. An idle time of 899 s under and 901 s over would pin it to exactly 15.</li>
+</ol>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

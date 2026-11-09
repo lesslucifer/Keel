@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af0a12c9f34851f0dfb1fae" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED2.W8 worker watchdog</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED2.W8 · Worker watchdog with Telegram push</h1>
+      <p>A headless watchdog worker polls the other running workers and messages the owner on Telegram when one finishes or stalls, so the router no longer has to be asked.</p>
+      <div class="meta">T3 · WU plan · 2026-11-09 · Keel · branch <code>wu/E-SEED2/w8-worker-watchdog</code> off <code>epic/E-SEED2</code> <code>2183539</code> · epic plan <a href="2026-11-09-e-seed2-epic-plan.html#w8">E-SEED2 W8</a> · <span class="badge approval">scope flagged</span></div>
+    </div>
+  </header>
+  <main>
+
+<p class="callout warn" data-c="scope-flag"><b>Scope flag.</b> This is router/meta-tooling. It properly belongs with E-ROUTER's backlog (<a href="../backlog/e-router-v2.html">e-router-v2.html</a>), not an E-SEED product feature. The owner asked for it under E-SEED2 explicitly; it proceeds here and a cross-reference row goes into the E-ROUTER v2 backlog at distillation.</p>
+
+<h2 id="requirement">Requirement</h2>
+<p data-item="requirement" data-c="requirement-body"><code>scripts/router-watch.sh</code>, given the router's <code>.router/out</code> directory, one or more worker names and a stall threshold, blocks until the first watched worker finishes (its pid is gone or a zombie) or stalls (its session transcript has not changed for longer than the threshold), prints exactly one event line naming the worker, and exits 0; a watchdog worker running it in a re-armed background loop sends one Telegram message to the owner per event.</p>
+
+<h2 id="maps-to">Maps to</h2>
+<p data-item="maps-to" data-c="maps-to-body">Epic <a href="2026-11-09-e-seed2-epic-plan.html#w8">E-SEED2.W8</a> · UC-ROUTE (new behaviour: proactive worker status; <a href="../use-cases/router.html#uc-route">use-cases/router.html</a>) · generalises the keel-router skill's existing "watch worker" pattern (one background <code>until &lt;probe&gt;; do sleep N; done; echo &lt;EVENT&gt;</code>) from owner actions to workers.</p>
+
+<h2 id="design">Design</h2>
+<div class="diagram" data-c="design-diagram">
+<pre class="mermaid">
+sequenceDiagram
+  participant R as Router
+  participant L as router-worker.sh
+  participant W as Watchdog worker (opus, medium)
+  participant S as router-watch.sh
+  participant T as Telegram reply tool
+  R->>L: spawn e-seed2-watchdog (brief: names, chat id, out dir)
+  L->>W: claude -p
+  loop until every watched worker has finished
+    W->>S: background Bash: router-watch.sh OUT names… --stall-min 15
+    S-->>W: FINISHED name=… | STALLED name=… idle=…m
+    W->>T: reply(chat_id, "&lt;event&gt; + last 5 lines of .out")
+    W->>W: drop finished name (stalled: mark, keep watching), re-arm
+  end
+  W-->>R: final report (.router/out/e-seed2-watchdog.out)
+</pre>
+<div class="caption">The shell loop does the polling, so the model only wakes on an event.</div>
+</div>
+<table data-c="design-table">
+  <thead><tr><th>Piece</th><th>Choice</th></tr></thead>
+  <tbody>
+    <tr><td>Finished probe</td><td>Same predicate as the launcher's one-live-run check: <code>&lt;name&gt;.pid</code> read, <code>ps -o stat=,command= -p $pid</code> not a zombie and its command contains <code> -n &lt;name&gt; </code>; otherwise finished.</td></tr>
+    <tr><td>Stall probe</td><td>Not <code>.out</code>: <code>claude -p</code> with text output writes <code>.out</code> only at exit, so its mtime never moves while the worker runs. The session transcript does, on every turn: <code>~/.claude/projects/&lt;worktree path with / → -&gt;/&lt;session&gt;.jsonl</code>, with the session id from the newest <code>.router/runs/&lt;name&gt;-*/session</code> and the worktree from its <code>worktree</code> file. Idle longer than <code>--stall-min</code> (default 15) ⇒ <code>STALLED</code>. Missing transcript ⇒ fall back to the newest mtime under the worktree.</td></tr>
+    <tr><td>Push</td><td>The Telegram channel plugin's <code>reply</code> tool, available in headless workers (it is loaded in this worker's own session). The watchdog never reads the bot token or access files (project-router "Never touch").</td></tr>
+    <tr><td>Paths</td><td>A worker may only read its own worktree, so the out dir is an explicit argument to the script (absolute path to the router checkout's <code>.router/out</code>), never derived from <code>$0</code>.</td></tr>
+    <tr><td>Model</td><td><code>opus</code>, medium effort (W7 ruling); the shell loop keeps token use near zero between events.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="expected">Expected result</h2>
+<div data-item="expected" data-c="expected-body">
+  <ul>
+    <li>With a fake worker (a <code>sh -c 'sleep 60' -n fake</code>-shaped process whose pid is in <code>fake.pid</code>), killing it makes <code>router-watch.sh OUT fake</code> print <code>FINISHED name=fake</code> within one poll interval and exit 0.</li>
+    <li>With a live fake worker and a transcript file older than the threshold, it prints <code>STALLED name=fake idle=&lt;m&gt;m</code> once and exits 0.</li>
+    <li>With two names, the first event wins and names only that worker.</li>
+    <li>Bad name, missing out dir, or non-numeric threshold ⇒ exit 2 with a message, before any polling.</li>
+    <li>A real run: the watchdog worker watching two headless workers sends one Telegram message per event and its final report lists every event it sent.</li>
+    <li>keel-router <code>worker-ops.md</code> "Watch" section and project-router "Workers" describe the watchdog; a struck cross-reference row exists in <code>e-router-v2.html</code>.</li>
+  </ul>
+</div>
+
+<h2 id="test-plan">Test plan</h2>
+<div data-item="test-plan" data-c="test-plan-body">
+  <table>
+    <thead><tr><th>Level</th><th>What</th></tr></thead>
+    <tbody>
+      <tr><td>Unit</td><td>The script is a single shell file with no callable seam below the process boundary; its probes are exercised one per test at the integration level, which is the smallest level that can run them. Named waiver: no separate unit layer, for that reason.</td></tr>
+      <tr><td>Integration</td><td><code>tests/router.rs</code> (the existing launcher test file; the cr gate covers it): temp dir as out dir, fake worker process, short poll interval via an env override (<code>ROUTER_WATCH_POLL</code>, seconds) and a fixture transcript with a set mtime. Cases: finished, zombie counted as finished, stalled, transcript missing ⇒ worktree-mtime fallback, first-of-two wins, each argument refusal. Deterministic: no real <code>claude</code>, no network, every sleep bounded.</td></tr>
+      <tr><td>E2E</td><td>One recorded real run (router spawns the watchdog plus two short workers; owner confirms receipt of the Telegram messages). Not hermetic — Telegram and real sessions — so recorded as WU evidence and waived as an automated layer for that reason.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2 id="open-points">Open points</h2>
+<table data-c="open-points-table">
+  <thead><tr><th>#</th><th>Point</th><th>What was decided here</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><b>Scope:</b> router/meta-tooling, properly E-ROUTER v2 backlog, not an E-SEED product feature.</td><td>Tracked here by explicit owner request; cross-reference row in <code>e-router-v2.html</code> at distillation.</td></tr>
+    <tr><td>2</td><td><b>Push channel:</b> native cross-session tools the router tried (<code>ScheduleWakeup</code>, <code>ListAgents</code>) are not available in this environment.</td><td>Telegram channel <code>reply</code> tool is the only real push channel: the watchdog polls, then messages the owner directly on finish or stall.</td></tr>
+    <tr><td>3</td><td>Telegram <code>chat_id</code>.</td><td>The owner (or router) puts it in the watchdog's brief; the watchdog never reads the plugin's access files to find it.</td></tr>
+    <tr><td>4</td><td>Several sessions loading the Telegram plugin at once may contend for inbound polling.</td><td>The watchdog only sends; it ignores inbound messages. If sends fail under contention, it records the event in its report and the router relays.</td></tr>
+    <tr><td>5</td><td>Stall signal.</td><td>Transcript mtime, threshold 15 min default (<code>.out</code> cannot signal a stall, see Design). On <code>STALLED</code> the watchdog reports and keeps watching that worker; it never kills or resumes it — that stays the router's call.</td></tr>
+    <tr><td>6</td><td>Where the watchdog runs.</td><td>Spawned through the existing launcher into any non-router worktree (e.g. this WU's); no new launcher mode. If read access to the router's <code>.router/out</code> or <code>~/.claude/projects</code> is refused in a headless session (see R2 in the E-ROUTER v2 backlog: unverified permission stalls), add an <code>--add-dir</code> to the launcher for the watchdog only — decided in the WU, recorded in its result.</td></tr>
+    <tr><td>7</td><td>Stop condition.</td><td>Exit when every watched worker has finished; a hard ceiling from <code>--max-budget-usd 25</code> applies anyway.</td></tr>
+  </tbody>
+</table>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
