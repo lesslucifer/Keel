@@ -330,6 +330,107 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
     assert!(log.contains(&format!("--resume {sid}")), "{log}");
 }
 
+const WORKER_GRANTS: [&str; 11] = [
+    "cargo build",
+    "cargo test",
+    "cargo check",
+    "cargo clippy",
+    "cargo fmt",
+    "keel preflight",
+    "keel verify-doc",
+    "keel verify-dod",
+    "keel notes write",
+    "keel lint",
+    "keel check",
+];
+const WORKER_DENIES: [&str; 4] = ["Bash(keel mr)", "Bash(keel mr *)", "Bash(cargo run)", "Bash(cargo run *)"];
+
+/// E-ROUTERFIX.W1: headless workers were refused cargo/keel (nobody can approve a `claude -p`
+/// prompt), and the launcher hardcoded acceptEdits. The grant travels on the launcher's argv only;
+/// the mode is a validated per-run option.
+#[test]
+fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
+    let l = launcher();
+    let wt = l.wt.to_str().unwrap();
+    let brief = ".router/briefs/b.md";
+    let argv = |name: &str| {
+        l.wait_exit(name);
+        let out = std::fs::read_to_string(l.main.join(format!(".router/out/{name}.out"))).unwrap();
+        out.lines().find(|x| x.starts_with("stub ")).unwrap_or_else(|| panic!("no stub argv: {out}")).to_string()
+    };
+    let run_dir_mode = |name: &str, kind: &str| {
+        let runs = std::fs::read_dir(l.main.join(".router/runs")).unwrap();
+        let mut modes: Vec<String> = runs
+            .map(|e| e.unwrap().path())
+            .filter(|p| {
+                let f = p.file_name().unwrap().to_str().unwrap();
+                f.starts_with(&format!("{name}-")) && f.ends_with(&format!("-{kind}"))
+            })
+            .map(|p| std::fs::read_to_string(p.join("permission-mode")).unwrap().trim().to_string())
+            .collect();
+        modes.sort();
+        modes
+    };
+
+    for (i, (extra, why)) in [
+        (vec!["--permission-mode", "bypassPermissions"], "permission mode must be"),
+        (vec!["--permission-mode", "dontAsk"], "permission mode must be"),
+        (vec!["--permission-mode", "default"], "permission mode must be"),
+        (vec!["--permission-mode", ""], "permission mode must be"),
+        (vec!["--permission-mode"], "[--permission-mode acceptEdits|plan]"),
+        (vec!["--bogus", "x"], "[--permission-mode acceptEdits|plan]"),
+        (vec!["--permission-mode", "plan", "x"], "[--permission-mode acceptEdits|plan]"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let name = format!("r{i}");
+        let mut args = vec!["spawn", &name, wt, brief, "opus"];
+        args.extend(&extra);
+        let (ok, out) = l.run(&args, "0");
+        assert!(!ok && out.contains(why), "{extra:?} not refused for {why}: {out}");
+        assert!(!l.main.join(format!(".router/out/{name}.pid")).exists(), "{extra:?} started a worker");
+    }
+
+    let (ok, out) = l.run(&["spawn", "d", wt, brief, "opus"], "3");
+    assert!(ok && out.contains("permission-mode=acceptEdits"), "{out}");
+    let (ok, out) = l.run(&["spawn", "p", wt, brief, "opus", "--permission-mode", "plan"], "3");
+    assert!(ok && out.contains("permission-mode=plan"), "{out}");
+    let sid = field(&out, "session=").to_string();
+
+    let d = argv("d");
+    assert!(d.contains("--permission-mode acceptEdits"), "{d}");
+    let (allow, deny) = d.split_once(" --disallowedTools ").unwrap_or_else(|| panic!("no deny list: {d}"));
+    let allow = allow.split_once(" --allowedTools ").unwrap_or_else(|| panic!("no allow list: {d}")).1;
+    for c in WORKER_GRANTS {
+        assert!(allow.contains(&format!("Bash({c}) ")) && allow.contains(&format!("Bash({c} *)")), "{c} not granted: {d}");
+    }
+    assert!(!allow.contains("Bash(cargo run") && !allow.contains("Bash(keel mr"), "{allow}");
+    for x in WORKER_DENIES {
+        assert!(deny.contains(x), "{x} not denied: {d}");
+    }
+    assert!(argv("p").contains("--permission-mode plan"));
+    assert_eq!(run_dir_mode("d", "spawn"), ["acceptEdits"]);
+    assert_eq!(run_dir_mode("p", "spawn"), ["plan"]);
+
+    // a resume states its own mode or gets the default; it never inherits the spawn's plan
+    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus"], "3");
+    assert!(ok && out.contains("permission-mode=acceptEdits"), "{out}");
+    assert!(argv("p").contains("--permission-mode acceptEdits"));
+    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus", "--permission-mode", "plan"], "3");
+    assert!(ok && out.contains("permission-mode=plan"), "{out}");
+    assert!(argv("p").contains("--permission-mode plan"));
+    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus", "--permission-mode", "bypassPermissions"], "0");
+    assert!(!ok && out.contains("permission mode must be"), "{out}");
+    assert_eq!(run_dir_mode("p", "resume"), ["acceptEdits", "plan"]);
+
+    // router side: the guard admits the option on the launcher shape, and the grant never reaches it
+    assert_eq!(bash("scripts/router-worker.sh spawn n /w .router/briefs/n.md opus --permission-mode plan"), None);
+    for c in WORKER_GRANTS {
+        assert!(bash(&format!("{c} x")).is_some(), "router may run {c}");
+    }
+}
+
 /// Blockers 3-4 of the close review: the shipped PUSHED probe fired before anything was pushed
 /// (equality with local main), and worker-ops' variant never fired for an epic (equality with the
 /// signed tip, which a --no-ff merge does not push). It must be false when staged, false when merged
