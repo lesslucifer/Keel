@@ -9,7 +9,7 @@ def deny($why): {hookSpecificOutput: {hookEventName: "PreToolUse", permissionDec
 
 # Must equal the tools: line of .claude/agents/router.md (tests/router.rs). No Agent:
 # a subagent runs under its own agent_type, outside this guard, with full tools.
-def tools: ["Read", "Grep", "Glob", "Write", "Bash", "Skill", "ToolSearch", "TodoWrite", "AskUserQuestion"];
+def tools: ["Read", "Grep", "Glob", "Write", "Bash", "Skill", "ToolSearch", "TodoWrite", "AskUserQuestion", "SendMessage", "ListAgents"];
 
 # Skills that run inline; a skill that forks a subagent would escape the guard like Agent.
 def skills: ["keel-router", "project-router", "keel-workflow", "keel-plan", "keel-distill"];
@@ -44,4 +44,12 @@ elif .tool_name == "Write" then
     then empty else deny("Write only worker briefs: <checkout>/.router/briefs/<name>.md") end
 elif .tool_name == "Skill" then
   if (.tool_input.skill // "" | IN(skills[])) then empty else deny("Skill only \(skills | join(", "))") end
+# Subscribe only: one idle/exit notice from a worker, never content. A worker is a full-tool session,
+# so any text the router sent it would be an instruction outside the brief the launcher snapshots.
+# Unknown keys are denied too, so a future content-bearing parameter cannot ride along.
+elif .tool_name == "SendMessage" then
+  .tool_input as $i
+  | if ($i | type) == "object" and ($i.to | type) == "string" and $i.notify_when_idle == true
+       and (($i.message // "") == "") and ($i | keys - ["to", "notify_when_idle", "message", "summary"] | length) == 0
+    then empty else deny("SendMessage only as a pure subscription: {to, notify_when_idle: true}, no message") end
 else empty end
