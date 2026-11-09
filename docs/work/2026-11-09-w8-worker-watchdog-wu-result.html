@@ -22,7 +22,7 @@
     <li><code>router-worker.sh wait &lt;name&gt; [&lt;stall-min&gt;]</code> (default 15) blocks while the worker named by <code>.router/out/&lt;name&gt;.pid</code> is alive. It uses the same predicate as the launcher's one-live-run check, now the shared <code>live()</code>. It prints exactly one line and exits 0:
       <ul>
         <li><code>EXITED name= pid= out=</code> when the worker exits.</li>
-        <li><code>STALLED name= pid= idle=&lt;m&gt;m since=&lt;file&gt;</code> when two things hold on two consecutive polls: the worker has no <code>&lt;shell&gt; -c</code> child (that is, no Bash-tool command is running), and none of its session transcripts has changed for at least the threshold. That means the main <code>&lt;session&gt;.jsonl</code> and every <code>&lt;session&gt;/subagents/*.jsonl</code>.</li>
+        <li><code>STALLED name= pid= idle=&lt;m&gt;m since=&lt;newest file&gt;</code> when two things hold on two consecutive polls: the worker has no <code>&lt;shell&gt; -c</code> child (that is, no Bash-tool command is running), and none of its session transcripts has changed for at least the threshold. That means the main <code>&lt;session&gt;.jsonl</code> and every <code>&lt;session&gt;/subagents/*.jsonl</code>.</li>
       </ul>
       Bad input exits 2. The command only reads files. It never writes <code>&lt;name&gt;.out</code>.</li>
     <li>The router guard (<code>scripts/router-guard.jq</code>) now also allows <code>scripts/router-worker.sh wait &lt;name&gt;</code> and <code>scripts/router-worker.sh wait &lt;name&gt; &lt;digits&gt;</code>.</li>
@@ -43,11 +43,12 @@
     <li>It refuses bad input with exit 2.</li>
     <li>jq accepts the guard change.</li>
   </ul>
-  <p>Three mutations confirm that the test is not vacuous. Each one makes the test fail:</p>
+  <p>Four mutations confirm that the test is not vacuous. Each one makes the test fail:</p>
   <ul>
     <li>Forcing <code>busy()</code> false: the busy case prints <code>STALLED</code> while it should still be blocked.</li>
     <li>Ignoring subagent transcripts: the case with a fresh subagent prints <code>STALLED</code> early.</li>
     <li>Forcing the <code>live</code> loop off: <code>EXITED</code> comes back while the worker is held alive.</li>
+    <li>Reporting <code>STALLED</code> on the first quiet poll: it arrives inside the first 2s poll.</li>
   </ul>
   <p><b>Not verified:</b> whether a background command's exit actually wakes an <em>idle</em> router session in this environment. A worker cannot test that. It needs the router's own interactive session (see Follow-ups).</p>
 </div>
@@ -101,6 +102,13 @@
       </ul>
     </li>
     <li>The tests are hermetic: a temporary repo, <code>CLAUDE_CONFIG_DIR</code> pointed at a temporary directory, a stub <code>claude</code>, and <code>ROUTER_WAIT_POLL=0.2</code>.</li>
+    <li>Review round 2 (<code>cr/v1</code> FAIL on <code>f059fa5</code>) found 3 importants, all fixed in the next code commit:
+      <ul>
+        <li>A panicking test leaked its stub worker forever. Stubs now exit when the test process is gone. A directory-exists guard was tried first and found unreliable, because the launcher's read-only run directories make <code>TempDir</code> cleanup stop partway.</li>
+        <li>The exited-worker check was weak.</li>
+        <li>The two-quiet-polls rule was untested.</li>
+      </ul>
+      Two nits were fixed with them: <code>since=</code> now names the newest transcript, and the pid-file case reuses worker 3. The waived nits and their reasons are recorded on the <code>cr/v1</code> note.</li>
     <li>Docs touched: this report and the WU plan.</li>
   </ul>
 </div>
