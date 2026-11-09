@@ -34,23 +34,30 @@
     <li>Subagent turns are written to <code>&lt;session&gt;/subagents/agent-*.jsonl</code>. The main transcript stays untouched while a subagent runs. The review found this; see Evidence.</li>
     <li>A real headless worker has a long-lived MCP child: the Telegram plugin's <code>bun</code>. So "no child process" could never be true for a real worker. The stall probe therefore ignores that kind of child and counts only <code>&lt;shell&gt; -c</code> children. On this machine those are <code>/bin/zsh -c source …/shell-snapshots/…</code>, which is how a Bash tool command runs.</li>
   </ul>
-  <p><b>Verified</b> by the integration test, against a real stub process:</p>
+  <p><b>Verified</b> by the integration test, against a real stub worker process. A <code>sleep</code> shim on <code>wait</code>'s PATH steps its polls one at a time, so each poll judges a state the test has set and nothing depends on the wall clock. What it checks:</p>
   <ul>
-    <li><code>wait</code> blocks while the worker runs and returns <code>EXITED</code> only after its pid is gone.</li>
-    <li>It returns <code>STALLED</code> on an idle transcript, but not while a subagent transcript is still fresh.</li>
-    <li>It falls back to the pid file when there is no transcript.</li>
-    <li>It does not stall while the worker has a <code>sh -c</code> child running.</li>
-    <li>It refuses bad input with exit 2.</li>
+    <li><code>EXITED</code> comes only after the worker's pid is gone. An already-exited worker returns at once with exit 0.</li>
+    <li><code>STALLED</code> needs two consecutive quiet polls. A busy poll in between (a <code>sh -c</code> child) resets the count, and so does a fresh transcript.</li>
+    <li>Subagent transcripts count as activity.</li>
+    <li>The newest transcript is named in <code>since=</code>. With no transcript, the pid file is used instead.</li>
+    <li>Long-lived non-<code>&lt;shell&gt; -c</code> children, which is what an MCP server is, are not counted as busy.</li>
+    <li>When a name is spawned again, only its newest run is judged.</li>
+    <li>Eight bad inputs exit 2.</li>
     <li>jq accepts the guard change.</li>
   </ul>
-  <p>Six mutations confirm that the test is not vacuous. Each one makes the test fail:</p>
+  <p>Nine mutations of the script each make the test fail, so the test is not vacuous:</p>
   <ul>
-    <li>Forcing <code>busy()</code> false: the busy case prints <code>STALLED</code> while it should still be blocked.</li>
-    <li>Ignoring subagent transcripts: the case with a fresh subagent prints <code>STALLED</code> early.</li>
-    <li>Forcing the <code>live</code> loop off: <code>EXITED</code> comes back while the worker is held alive.</li>
-    <li>Reporting <code>STALLED</code> on the first quiet poll: it arrives inside the first 2s poll.</li>
-    <li>Dropping <code>busy()</code>'s <code>-c</code> test, or its shell-name test: the idle stub's long-lived non-<code>&lt;shell&gt; -c</code> children are counted as busy, as an MCP server would be, and <code>STALLED</code> never arrives.</li>
+    <li><code>busy()</code> always false.</li>
+    <li>Dropping <code>busy()</code>'s <code>-c</code> test.</li>
+    <li>Dropping <code>busy()</code>'s shell-name test.</li>
+    <li>Reporting <code>STALLED</code> on the first quiet poll.</li>
+    <li>No quiet reset on a busy poll.</li>
+    <li>No quiet reset on a fresh transcript.</li>
+    <li>Picking the first matching run directory instead of the newest.</li>
+    <li>Ignoring subagent transcripts.</li>
+    <li>The <code>live</code> loop off.</li>
   </ul>
+  <p>No stub process is left running after a failing run.</p>
   <p><b>Not verified:</b> whether a background command's exit actually wakes an <em>idle</em> router session in this environment. A worker cannot test that. It needs the router's own interactive session (see Follow-ups).</p>
 </div>
 
@@ -72,7 +79,7 @@
 <h2 id="evidence">Evidence</h2>
 <div data-item="evidence" data-c="evidence-body">
   <ul>
-    <li><code>cargo test --test router</code>: 7 passed, 0 failed, including the new test, in 5 repeated runs (3 serial, 2 parallel) after the fix round. Mutation results are under Outcome.</li>
+    <li><code>cargo test --test router</code>: 7 passed, 0 failed, in 3 repeated runs (2 serial, 1 parallel) after review round 4. The <code>wait</code> test takes about 8s. Mutation results are under Outcome.</li>
     <li>Review round 1 (<code>cr/v1</code> FAIL on <code>f071357</code>) found 5 importants, all fixed in <code>398647e</code>:
       <ul>
         <li><code>wait</code> ignored subagent transcripts.</li>
@@ -111,6 +118,7 @@
       </ul>
       Two nits were fixed with them: <code>since=</code> now names the newest transcript, and the pid-file case reuses worker 3. The waived nits and their reasons are recorded on the <code>cr/v1</code> note.</li>
     <li>Review round 3 (<code>cr/v1</code> FAIL on <code>f8c19c2</code>) found 1 important, fixed in the next code commit: <code>busy()</code>'s exclusion of non-shell children was untested. The idle stub now holds a subshell piped to <code>cut -c</code>. The 3 nits from that round were fixed with it: one batched <code>stat</code> per poll, refusing an empty <code>stall-min</code>, and testing the no-recorded-run refusal.</li>
+    <li>Review round 4 (<code>cr/v1</code> FAIL on <code>8ca9168</code>) found 3 test gaps. Neither quiet reset was tested, the newest-run choice was untested, and the 2s-poll case ordered events by wall clock. All three are closed by the stepped <code>sleep</code> shim, which also removed every observation window from the test.</li>
     <li>Docs touched: this report and the WU plan.</li>
   </ul>
 </div>
