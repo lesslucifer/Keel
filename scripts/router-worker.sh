@@ -1,31 +1,86 @@
 #!/bin/sh
 # Router-only launcher for headless `claude -p` workers (E-ROUTER Q2/Q3 override, 2026-11-08).
-# The router's Bash hook allows ONLY this script's two shapes; every argument is validated
+# The router's Bash hook allows ONLY this script's three shapes; every argument is validated
 # here, and the prompt is fixed text, so no untrusted string ever reaches `claude -p`.
-#   router-worker.sh spawn  <name> <worktree> <brief.md> <model>
-#   router-worker.sh resume <name> <session-uuid> <worktree> <note.md> <model>
+#   router-worker.sh spawn  <name> <worktree> <brief.md> <model> [--permission-mode acceptEdits|plan]
+#   router-worker.sh resume <name> <session-uuid> <worktree> <note.md> <model> [--permission-mode acceptEdits|plan]
+#   router-worker.sh wait   <name> [<stall-min>]
+# The mode defaults to acceptEdits per run (a resume does not inherit it). Every worker gets the fixed
+# cargo/keel grant below and is denied `keel mr` and `cargo run`; the grant never reaches the router.
+# wait (run by the router as a background Bash command, so its exit wakes the router) blocks
+# until the worker exits (EXITED) or stalls (STALLED: on two polls running, no Bash-tool shell
+# child and its session transcript untouched for <stall-min> minutes, default 15), prints that one
+# line, exits 0. It only reads; the transcript is ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/
+# */<session>.jsonl plus */<session>/subagents/*.jsonl, falling back to the
+# pid file's mtime when none exists. Poll: ROUTER_WAIT_POLL s. A background Bash command is killed
+# at its timeout (max 2h): the router then wakes without a line and re-arms.
 # brief/note must be a regular (non-symlink) .md file under <repo>/.router/briefs/; worktree must be a registered
 # git worktree OTHER than the router's own checkout. The file is copied to a read-only snapshot
 # .router/runs/<name>-<ts>-<mode>/ (sha256 + path printed so the router can verify), and the worker reads a copy
 # of it inside its own worktree (<worktree>/.router-brief.XXXXXX/brief.md, git-ignored).
 # resume must name the same worktree the session was spawned in (recorded in the spawn's run dir).
 # One live run per name; each run truncates .router/out/<name>.out, so it holds only that run's report.
+# The worker runs as `-n <name>`: after RUNNING the router subscribes to its end with
+# SendMessage {to: <name>, notify_when_idle: true} and no message (the only shape the router guard allows).
 set -eu
 die() { echo "router-worker: $*" >&2; exit 2; }
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
 B="$ROOT/.router/briefs" O="$ROOT/.router/out"
+# the one worker-name rule: spawn, resume and wait all check it here, and the guard does not repeat it
+valid_name() { expr "$1" : '^[a-z0-9][a-z0-9-]\{0,40\}$' >/dev/null || die "bad name"; }
+live() { ps -o stat=,command= -p "$1" 2>/dev/null | grep -v '^ *Z' | grep -qF -- " -n $name "; }
+if [ "${1:-}" = wait ]; then
+  [ $# -eq 2 ] || [ $# -eq 3 ] || die "wait <name> [<stall-min>]"
+  name=$2 stall=${3-15}
+  valid_name "$name"
+  expr "$stall" : '^[1-9][0-9]\{0,3\}$' >/dev/null || die "stall-min must be 1-9999"
+  pid=$(cat "$O/$name.pid" 2>/dev/null) || die "no worker $name ($O/$name.pid missing)"
+  run=
+  for d in "$ROOT"/.router/runs/*/; do [ "$(cat "${d}name" 2>/dev/null)" = "$name" ] && run=$d; done
+  [ -n "$run" ] || die "no recorded run for $name"
+  # found by the unique session id under any project dir: Claude Code's dir name (worktree path with
+  # non-alnum -> -, truncated past 200 chars plus a hash) is not re-derived here
+  P="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" sid=$(cat "${run}session")
+  if stat -c %Y / >/dev/null 2>&1; then mtime() { stat -c '%Y %n' "$@"; }; else mtime() { stat -f '%m %N' "$@"; }; fi
+  # "<mtime> <path>" of the newest transcript; subagent turns land in <session>/subagents/*.jsonl
+  # and leave <session>.jsonl untouched
+  seen() { mtime "$P"/*/"$sid".jsonl "$P"/*/"$sid"/subagents/*.jsonl 2>/dev/null | sort -n | tail -1; }
+  # a running Bash tool command is a `<shell> -c` child; MCP servers (also children) are not
+  busy() { ps -A -o ppid=,command= | awk -v p="$pid" '$1 == p && $2 ~ /(^|\/)[a-z]*sh$/ && $3 == "-c" { f = 1 } END { exit !f }'; }
+  # quiet must hold on two consecutive polls: a command that just ended leaves the transcript
+  # stale until its result is written, and the worker may be exiting
+  quiet=0
+  while live "$pid"; do
+    if busy; then quiet=0
+    else
+      at=$(seen)
+      [ -n "$at" ] || at=$(mtime "$O/$name.pid")
+      src=${at#* } idle=$(( $(date +%s) - ${at%% *} ))
+      if [ "$idle" -lt $((stall * 60)) ]; then quiet=0
+      elif [ "$quiet" -eq 1 ]; then echo "STALLED name=$name pid=$pid idle=$((idle / 60))m since=$src"; exit 0
+      else quiet=1; fi
+    fi
+    sleep "${ROUTER_WAIT_POLL:-10}"
+  done
+  echo "EXITED name=$name pid=$pid out=$O/$name.out"; exit 0
+fi
 C=${ROUTER_CLAUDE:-$HOME/.local/bin/claude}
 [ -x "$C" ] || die "claude not found at $C (set ROUTER_CLAUDE)"
 mode=${1:-}; [ $# -ge 1 ] && shift
-case "$mode" in spawn) [ $# -eq 4 ] || die "spawn <name> <worktree> <brief.md> <model>";;
-  resume) [ $# -eq 5 ] || die "resume <name> <uuid> <worktree> <note.md> <model>";; *) die "spawn|resume";; esac
+case "$mode" in spawn) n=4 usage="spawn <name> <worktree> <brief.md> <model>";;
+  resume) n=5 usage="resume <name> <uuid> <worktree> <note.md> <model>";; *) die "spawn|resume|wait";; esac
+usage="$usage [--permission-mode acceptEdits|plan]"
+[ $# -eq $n ] || [ $# -eq $((n + 2)) ] || die "$usage"
 name=$1; shift
-expr "$name" : '^[a-z0-9][a-z0-9-]\{0,40\}$' >/dev/null || die "bad name"
+valid_name "$name"
 if [ "$mode" = resume ]; then sid=$1; shift
   expr "$sid" : '^[0-9a-f]\{8\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{12\}$' >/dev/null || die "bad session id"
 else sid=$(uuidgen | tr 'A-F' 'a-f'); fi
-wt=$1 file=$2 model=$3
+wt=$1 file=$2 model=$3; shift 3
+pm=acceptEdits
+if [ $# -gt 0 ]; then [ "$1" = --permission-mode ] || die "$usage"; pm=$2; fi
 case "$model" in opus|sonnet|haiku|fable) ;; *) die "model must be opus|sonnet|haiku|fable";; esac
+case "$pm" in acceptEdits|plan) ;; *) die "permission mode must be acceptEdits|plan";; esac
 wt=$(cd "$wt" 2>/dev/null && pwd -P) || die "no such worktree"
 git -C "$ROOT" worktree list --porcelain | grep -Fxq "worktree $wt" || die "not a registered worktree of this repo"
 top=$(cd "$(git rev-parse --show-toplevel)" && pwd -P) || die "not in a git repo"
@@ -38,7 +93,7 @@ case "$f" in "$B"/*.md) [ -f "$f" ] && [ ! -L "$f" ] || die "no such regular fil
 mkdir -p "$O" "$ROOT/.router/runs"
 # one live run per name: a second spawn/resume would interleave <name>.out and orphan the pid
 p=$(cat "$O/$name.pid" 2>/dev/null) || p=
-if [ -n "$p" ] && ps -o stat=,command= -p "$p" 2>/dev/null | grep -v '^ *Z' | grep -qF -- " -n $name "; then
+if [ -n "$p" ] && live "$p"; then
   die "worker $name is still running (pid $p); wait for it to exit"; fi
 if [ "$mode" = resume ]; then
   ok=
@@ -52,6 +107,7 @@ R="$ROOT/.router/runs/$name-$(date +%Y%m%d%H%M%S)-$mode"
 mkdir "$R" || die "run dir exists"
 cp "$f" "$R/brief.md"
 printf '%s\n' "$sid" > "$R/session"; printf '%s\n' "$name" > "$R/name"; printf '%s\n' "$wt" > "$R/worktree"
+printf '%s\n' "$pm" > "$R/permission-mode"
 sha=$(shasum -a 256 "$R/brief.md" | cut -d' ' -f1)
 echo "$sha" > "$R/sha256"; chmod 444 "$R"/*; chmod 555 "$R"
 # A session may only read its own worktree, so the worker gets a copy inside it, in a fresh
@@ -69,13 +125,20 @@ else
   prompt="Continue your work. Read $f in full and do exactly what it says, then end with a final self-contained report."
   set -- --resume "$sid"
 fi
+# No `cargo run` (`cargo run -- mr` is keel mr) and no install/publish/add/update; no keel init or
+# hooks install (they write the shared git dir). A deny also beats the owner's user-level allowlist.
+set -- "$@" --allowedTools
+for c in "cargo build" "cargo test" "cargo check" "cargo clippy" "cargo fmt" "keel preflight" \
+  "keel verify-doc" "keel verify-dod" "keel notes write" "keel lint" "keel check"; do
+  set -- "$@" "Bash($c)" "Bash($c *)"; done
+set -- "$@" --disallowedTools "Bash(keel mr)" "Bash(keel mr *)" "Bash(cargo run)" "Bash(cargo run *)"
 cd "$wt"
-nohup "$C" -p "$prompt" "$@" -n "$name" --model "$model" --agent worker --permission-mode acceptEdits --max-budget-usd 25 \
+nohup "$C" -p "$prompt" "$@" -n "$name" --model "$model" --agent worker --permission-mode "$pm" --max-budget-usd 25 \
   > "$O/$name.out" 2>&1 < /dev/null &
 pid=$!; echo "$pid" > "$O/$name.pid"
 # survive a 2s startup window (poll 0.2s); an early exit reports its real exit code.
 # alive() excludes zombies: an exited-but-unreaped child still answers `ps -p`.
 alive() { st=$(ps -o stat= -p "$pid" 2>/dev/null) || return 1; case "$st" in Z*|"") return 1;; esac; }
 n=0; while [ $n -lt 10 ] && alive; do sleep 0.2; n=$((n+1)); done
-if alive; then echo "RUNNING name=$name pid=$pid session=$sid out=$O/$name.out snapshot=$snap brief=$f sha256=$sha worktree=$wt"
+if alive; then echo "RUNNING name=$name pid=$pid session=$sid permission-mode=$pm out=$O/$name.out snapshot=$snap brief=$f sha256=$sha worktree=$wt"
 else rc=0; wait "$pid" || rc=$?; echo "DEAD name=$name exit=$rc session=$sid snapshot=$snap brief=$f sha256=$sha"; tail -5 "$O/$name.out"; exit 1; fi

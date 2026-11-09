@@ -66,7 +66,7 @@ flowchart LR
   W6 --> W4
   W5[W5 Trawler re-records]
   W7[W7 opus worker policy]
-  W8[W8 worker watchdog]
+  W8[W8 worker watchdog - done] --> W10[W10 sync main]
 </pre>
 <div class="caption">WU dependencies. W1 and W8 start now in parallel; W5 and W7 can start any time.</div>
 </div>
@@ -130,11 +130,20 @@ flowchart LR
 </div>
 
 <div data-wu="E-SEED2.W8" data-c="wu-w8">
-  <h3 id="w8">E-SEED2.W8 · Worker watchdog with Telegram push <span class="badge approval">scope flagged</span></h3>
+  <h3 id="w8">E-SEED2.W8 · Worker watchdog with Telegram push <span class="badge approval">scope flagged</span> <span class="badge done">done</span></h3>
+  <p data-c="w8-status"><b>Status: done.</b> Delivered on <code>epic/E-SEED2</code> by the WU merge <code>1941842</code> (design deviated to <code>router-worker.sh wait</code>; see the <a href="2026-11-09-w8-worker-watchdog-wu-result.html">W8 result</a>). Carried unchanged to <code>main</code> by E-ROUTERFIX.W4 (<code>0dad93f</code>) and synced back into this epic by W10.</p>
   <p data-item="wu-summary">A watchdog headless worker that watches other running workers' <code>.router/runs/</code> <code>.pid</code> and <code>.router/out/&lt;name&gt;.out</code> files on an interval and pushes a proactive update to the owner when a watched worker finishes (pid gone) or stalls (<code>.out</code> unchanged past a threshold). Polling is a cheap shell loop (<code>scripts/router-watch.sh</code>) so the model wakes only on an event; the push goes through the already-configured Telegram channel's <code>reply</code> tool, never by reading the bot token. Scope flag: this is router meta-tooling that belongs with <a href="../backlog/e-router-v2.html">E-ROUTER v2</a>; tracked here by explicit owner request.</p>
   <p data-item="wu-maps-to">UC-ROUTE (new: proactive worker status) · E-ROUTER v2 backlog (cross-reference row added).</p>
   <p data-item="wu-expected">A fake worker (a <code>sleep</code> with a pid file and an <code>.out</code>) exiting produces exactly one "finished" event; a frozen <code>.out</code> produces one "stalled" event; the watchdog worker sends one Telegram message per event.</p>
   <p data-item="wu-deps">none (follows W7's model policy once landed)</p>
+</div>
+
+<div data-wu="E-SEED2.W10" data-c="wu-w10">
+  <h3 id="w10">E-SEED2.W10 · Sync main into the epic <span class="badge approval">owner ruling 2026-11-09</span></h3>
+  <p data-item="wu-summary">Bring <code>main</code> at <code>0dad93f</code> (closed E-ROUTERFIX, which carried W8 to main) into <code>epic/E-SEED2</code> through the existing <code>--no-ff</code> merge <code>cdcce2f</code> (parents <code>1941842</code>, <code>0dad93f</code>), and mark W8 done. Nothing else: the E-ROUTERFIX follow-ups on the parked <code>wu/E-SEED2/w9-router-followups</code> (which owns the id W9) are on hold.</p>
+  <p data-item="wu-maps-to">Epic upkeep (keel-workflow "merge main into the epic if it moved") · no use case changed.</p>
+  <p data-item="wu-expected"><code>epic/E-SEED2</code> contains <code>0dad93f</code>; <code>cargo test</code> and <code>cargo clippy</code> green on the merged tree; W8 shows as done in this plan.</p>
+  <p data-item="wu-deps">W8 (done)</p>
 </div>
 
 </div>
@@ -174,6 +183,7 @@ flowchart LR
     <tr><td>8</td><td><b>Watchdog push channel.</b> Native cross-session tools the router tried (<code>ScheduleWakeup</code>, <code>ListAgents</code>) are not available in this environment.</td><td>The only real push channel is the configured Telegram channel: the watchdog polls, then calls the Telegram <code>reply</code> tool to message the owner on finish or stall.</td></tr>
     <tr><td>9</td><td>Release-related small item (init/shims check <code>keel --version</code>)</td><td>Stays in W6 with a dependency on W1.</td></tr>
     <tr><td>10</td><td>Native SSH signing (B7)</td><td>Not in this epic; stays in the backlog.</td></tr>
+    <tr><td>11</td><td>Main sync after E-ROUTERFIX closed</td><td>W10, owner ruling 2026-11-09; its choices are in the <a href="2026-11-09-w10-sync-main-wu-plan.html">W10 WU plan</a>.</td></tr>
   </tbody>
 </table>
 
