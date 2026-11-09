@@ -1,0 +1,1 @@
+{"schema":"cr/v1","tip":"506930d8226e15f85b09747e68ef6468159bbd4e","base":"804a5f00ab5cc4bfc0794796d66cfc7782c47067","branch":"wu/E-ROUTERFIX/w4-worker-watchdog","committer":"vuluu <quangvu.luu92@gmail.com>","timestamp":1794211574,"verdict":"FAIL","blockers":0,"importants":1,"code_diff_hash":"a84f88c2846b2f44c067fa75c766ad06aa6e5a58"}
