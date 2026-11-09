@@ -253,25 +253,22 @@ fn pre_push(repo: &Path, cfg: &Config, remote: &str) -> Result<i32, String> {
     Ok(0)
 }
 
-const PRE_COMMIT: &str = r#"#!/bin/sh
-command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install --git https://github.com/lesslucifer/Keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
-exec keel hook pre-commit
-"#;
+macro_rules! git_shim {
+    ($exec:literal) => {
+        concat!(
+            "#!/bin/sh\n",
+            r#"command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install --git https://github.com/lesslucifer/Keel) or run: git config --unset core.hooksPath" >&2; echo "keel: prebuilt binaries, npm and Homebrew: https://github.com/lesslucifer/Keel/blob/main/docs/install.html" >&2; exit 1; }"#,
+            "\nexec keel ",
+            $exec,
+            "\n"
+        )
+    };
+}
 
-const PRE_MERGE_COMMIT: &str = r#"#!/bin/sh
-command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install --git https://github.com/lesslucifer/Keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
-exec keel verify-dod hook
-"#;
-
-const COMMIT_MSG: &str = r#"#!/bin/sh
-command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install --git https://github.com/lesslucifer/Keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
-exec keel hook commit-msg "$1"
-"#;
-
-const PRE_PUSH: &str = r#"#!/bin/sh
-command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install --git https://github.com/lesslucifer/Keel) or run: git config --unset core.hooksPath" >&2; exit 1; }
-exec keel hook pre-push "$1"
-"#;
+const PRE_COMMIT: &str = git_shim!("hook pre-commit");
+const PRE_MERGE_COMMIT: &str = git_shim!("verify-dod hook");
+const COMMIT_MSG: &str = git_shim!(r#"hook commit-msg "$1""#);
+const PRE_PUSH: &str = git_shim!(r#"hook pre-push "$1""#);
 
 // Harness hooks. Claude names the edited file in tool_input.file_path; Codex's
 // apply_patch carries patch text in tool_input.command, whose "*** Add/Update File:"
@@ -384,6 +381,10 @@ fn verify_doc(repo: &Path, paths: &[&str]) -> Result<i32, String> {
 fn run() -> Result<i32, String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    if let ["--version" | "-V"] = args.as_slice() {
+        println!("keel {}\nKeel: merge-gate workflow CLI (not keel.so)", env!("CARGO_PKG_VERSION"));
+        return Ok(0);
+    }
     let repo = repo_root()?;
     match args.as_slice() {
         ["init", flags @ ..] => match flags {
@@ -412,4 +413,27 @@ fn main() {
         eprintln!("{e}");
         1
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{COMMIT_MSG, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
+
+    #[test]
+    fn git_shims_guard_a_missing_keel_with_both_install_hints_then_exec_their_hook() {
+        for (shim, exec) in [
+            (PRE_COMMIT, "exec keel hook pre-commit\n"),
+            (PRE_MERGE_COMMIT, "exec keel verify-dod hook\n"),
+            (COMMIT_MSG, "exec keel hook commit-msg \"$1\"\n"),
+            (PRE_PUSH, "exec keel hook pre-push \"$1\"\n"),
+        ] {
+            let lines: Vec<&str> = shim.lines().collect();
+            assert_eq!(lines.len(), 3, "{shim}");
+            assert_eq!(lines[0], "#!/bin/sh");
+            assert!(lines[1].starts_with("command -v keel >/dev/null 2>&1 || {") && lines[1].ends_with("exit 1; }"), "{shim}");
+            assert!(lines[1].contains("cargo install --git https://github.com/lesslucifer/Keel"), "{shim}");
+            assert!(lines[1].contains("https://github.com/lesslucifer/Keel/blob/main/docs/install.html"), "{shim}");
+            assert!(shim.ends_with(exec), "{shim}");
+        }
+    }
 }

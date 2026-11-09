@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="f4fa5e2ff33a1fd523429b40" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED2.W1 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED2.W1 · Resume the W10 release pipeline — result</h1>
+      <p>The parked release pipeline is on the WU branch, synced with the epic, reviewed, and distilled; the first real release waits on owner prerequisites and an owner-run <code>dist</code> check.</p>
+      <div class="meta">T3 · WU result · 2026-11-09 · Keel · branch <code>wu/E-SEED2/w1-release-pipeline</code> · target <code>epic/E-SEED2</code> <code>78fe6ea</code> · plan <a href="2026-11-09-w1-release-pipeline-wu-plan.html">W1 WU plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome">Delivered, with one deviation (the <code>dist</code> re-verification is handed to the owner). <code>4a22316</code> is merged without a rebase (<code>1c21bc8</code>), the epic is merged in (<code>b1c968b</code>, clean), main's and the branch's <code>tests/cli.rs</code> tests all run (main 8 + branch 1 + this WU 1 = 10). <code>keel --version</code> / <code>-V</code> work outside a repo. The cargo-dist config names the four Unix targets and the shell, npm and Homebrew installers. Git hook shims now name <code>docs/install.html</code> next to the <code>cargo install --git</code> line (old open point 5).</p>
+
+<h2 id="deviations">Deviations</h2>
+<div data-item="deviations" data-c="deviations">
+  <ul>
+    <li><b><code>dist plan</code> / <code>dist generate</code> not run.</b> <code>dist</code> is installed (<code>~/.cargo/bin/dist</code>) but this worker has no grant to run it. The workflow was reviewed statically: header and installer URL say 0.34.0, matching <code>cargo-dist-version</code>. Owner runs, before the first tag: <code>dist --version</code>, <code>dist plan</code>, <code>dist generate --mode=ci &amp;&amp; git diff --exit-code .github/</code>.</li>
+    <li><b><code>docs/install.html</code> is not re-committed through <code>keel mr commit</code>.</b> Its channel change is already in <code>4a22316</code>, without a <code>Reviewed-By</code> trailer. Rewriting that commit is forbidden, and a cosmetic re-edit only to get a trailer would be noise. The owner reviews <code>git diff 296fa97 HEAD -- docs/install.html</code> before the WU sign-off (plan open point 10).</li>
+    <li><b>Pipeline evidence:</b> a prerelease tag proves the build and the GitHub prerelease only, because npm and Homebrew skip prereleases (<code>release.yml</code> lines 291 and 335). The plan's test plan now says so.</li>
+  </ul>
+</div>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+  <ul>
+    <li>Commits since the plan: <code>1c21bc8</code> (merge of <code>4a22316</code>), <code>b1c968b</code> (merge of <code>epic/E-SEED2</code> <code>78fe6ea</code>), <code>0d15b9b</code> (hook shims), <code>2f96564</code> (plan update), <code>6a45b8d</code> (DEC-38, backlog B1), and this result.</li>
+    <li>Unit: <code>src/main.rs</code> <code>git_shims_guard_a_missing_keel_with_both_install_hints_then_exec_their_hook</code>.</li>
+    <li>Integration (<code>tests/cli.rs</code>): <code>version_works_outside_any_repo</code> (from <code>9b01d61</code>) and <code>installed_git_hook_without_keel_on_path_refuses_and_points_to_install_channels</code>.</li>
+    <li><code>cargo test</code> green (2 + 10 + 9 + 6 + 10 + 5 + 16). <code>cargo clippy --all-targets -- -D warnings</code> green.</li>
+    <li>Pipeline review (static): secrets referenced by name only (<code>GITHUB_TOKEN</code>, <code>NPM_TOKEN</code>, <code>HOMEBREW_TAP_TOKEN</code>). The install.html channel commands match the config: <code>keel-installer.sh</code>, <code>@lesslucifer/keel</code>, <code>lesslucifer/tap/keel</code>, <code>$CARGO_HOME/bin</code>. Low findings: no <code>license</code> (follow-up), npm job on Node 20.x (dist-generated, EOL), <code>pull_request</code> trigger runs <code>dist plan</code> on PRs (harmless). The release run URL is not available yet because no tag exists.</li>
+    <li>Docs touched: the W1 plan and this result (T3), <code>docs/decisions/distribution.html</code> and <code>decisions-index.html</code> (T2), <code>docs/backlog/e-seed-v2.html</code> (T2). The merges bring <code>docs/install.html</code> (T1) and the epic's T2/T3 docs.</li>
+  </ul>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">DEC-38 in <a href="../decisions/distribution.html#dec-38">decisions/distribution.html</a> (release pipeline, prerelease behaviour, CI a signal, what no gate reviews). Index row and next free id updated. Backlog B1 is marked absorbed. <code>docs/install.html</code> (T1) already carries the channels. Project-router's "What no gate reviews" gains <code>.github/</code>: this is staged for the owner's <code>keel mr commit</code> because it is rule-bearing.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<div data-item="follow-ups" data-c="follow-ups">
+  <ul>
+    <li>Owner prerequisites before the first stable tag: npm scope <code>@lesslucifer</code> + <code>NPM_TOKEN</code>; public <code>lesslucifer/homebrew-tap</code> + <code>HOMEBREW_TAP_TOKEN</code>; Actions write permission; a licence choice (<code>license</code> in <code>Cargo.toml</code> + LICENSE file), then <code>dist generate</code>.</li>
+    <li>Owner <code>dist</code> check (see Deviations), then a prerelease tag whose version matches <code>Cargo.toml</code> (<code>v0.1.0-rc.1</code> needs <code>version = "0.1.0-rc.1"</code>; otherwise tag <code>v0.1.0</code>). The run URL is evidence for the epic result.</li>
+    <li><code>keel init</code>'s not-on-PATH warning (<code>src/init.rs</code>) still prints only the <code>cargo install --git</code> line. It is left for W6, which owns the init/shim <code>--version</code> checks.</li>
+  </ul>
+</div>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

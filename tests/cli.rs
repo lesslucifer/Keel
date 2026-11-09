@@ -219,3 +219,27 @@ fn check_cache_key_covers_a_tracked_file_that_gitignore_matches() {
     let o = keel(p, &["check"]);
     assert!(!o.status.success() && !text(&o).contains("skipped"), "{}", text(&o));
 }
+
+#[test]
+fn version_works_outside_any_repo() {
+    let d = TempDir::new().unwrap();
+    let o = keel(d.path(), &["--version"]);
+    assert!(o.status.success());
+    let t = text(&o);
+    assert!(t.starts_with(&format!("keel {}\n", env!("CARGO_PKG_VERSION"))), "{t}");
+    assert!(t.contains("Keel:"), "{t}");
+    assert!(keel(d.path(), &["-V"]).status.success());
+}
+
+#[test]
+fn installed_git_hook_without_keel_on_path_refuses_and_points_to_install_channels() {
+    let d = repo(false);
+    let p = d.path();
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    let hooks = String::from_utf8(run("git", p, &["config", "core.hooksPath"]).stdout).unwrap();
+    let o = Command::new(Path::new(hooks.trim()).join("pre-commit")).current_dir(p).env("PATH", "/usr/bin:/bin").output().unwrap();
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    let t = text(&o);
+    assert!(t.contains("cargo install --git https://github.com/lesslucifer/Keel"), "{t}");
+    assert!(t.contains("https://github.com/lesslucifer/Keel/blob/main/docs/install.html"), "{t}");
+}

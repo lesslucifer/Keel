@@ -11,8 +11,12 @@
 <p>Keel is one binary, <code>keel</code>. It carries the gate and the rules (the skills). There is no Claude Code plugin or marketplace entry. Unix only (macOS, Linux): the CLI and its hooks use <code>sh</code> and Unix file permissions.</p>
 
 <h2>1. Install the binary</h2>
-<pre>cargo install --git https://github.com/lesslucifer/Keel</pre>
-<p>GitHub Releases and npm (<code>@lesslucifer/keel</code>) arrive with the release pipeline (W10). Do not run <code>cargo install keel</code>: that is an unrelated crate.</p>
+<p>Pick one channel (prebuilt binaries for macOS and Linux, arm64 and x86_64; stable releases only, from tags <code>vX.Y.Z</code>):</p>
+<pre>curl --proto '=https' --tlsv1.2 -LsSf https://github.com/lesslucifer/Keel/releases/latest/download/keel-installer.sh | sh   # shell installer, no Rust or Node needed
+npm i -g @lesslucifer/keel                                                                                              # npm, global install
+brew install lesslucifer/tap/keel                                                                                       # Homebrew
+cargo install --git https://github.com/lesslucifer/Keel                                                                # from source, needs a Rust toolchain</pre>
+<p>The shell installer puts <code>keel</code> in <code>$CARGO_HOME/bin</code> (default <code>~/.cargo/bin</code>). Install npm globally: a project-local <code>npm i -D</code> leaves <code>keel</code> off the <code>PATH</code> that git and Claude Code hooks see. Confirm with <code>keel --version</code>, which prints <code>keel &lt;version&gt;</code> and a line saying it is the merge-gate CLI, not keel.so. Do not run <code>cargo install keel</code>: that is an unrelated crate.</p>
 <p><strong>Name clash.</strong> The npm package <code>keel</code> (keel.so) also installs a binary called <code>keel</code>. With both installed you get whichever is first on <code>PATH</code>. This is an accepted risk (owner ruling, R25) and is not detected by the check below. If <code>keel init</code> prints something unfamiliar, run <code>which -a keel</code>.</p>
 
 <h2>2. Check PATH</h2>
