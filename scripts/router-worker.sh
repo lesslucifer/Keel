@@ -6,10 +6,12 @@
 #   router-worker.sh resume <name> <session-uuid> <worktree> <note.md> <model>
 #   router-worker.sh wait   <name> [<stall-min>]
 # wait (run by the router as a background Bash command, so its exit wakes the router) blocks
-# until the worker exits (EXITED) or stalls (STALLED: no Bash-tool shell child and its session
-# transcript untouched for <stall-min> minutes, default 15), prints that one line, exits 0. It
-# only reads; the transcript is ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/<worktree, non-alnum
-# -> ->/<session>.jsonl, falling back to the pid file's mtime when absent. Poll: ROUTER_WAIT_POLL s.
+# until the worker exits (EXITED) or stalls (STALLED: on two polls running, no Bash-tool shell
+# child and its session transcript untouched for <stall-min> minutes, default 15), prints that one
+# line, exits 0. It only reads; the transcript is ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/
+# <worktree, non-alnum -> ->/<session>.jsonl plus <session>/subagents/*.jsonl, falling back to the
+# pid file's mtime when none exists. Poll: ROUTER_WAIT_POLL s. A background Bash command is killed
+# at its timeout (max 2h): the router then wakes without a line and re-arms.
 # brief/note must be a regular (non-symlink) .md file under <repo>/.router/briefs/; worktree must be a registered
 # git worktree OTHER than the router's own checkout. The file is copied to a read-only snapshot
 # .router/runs/<name>-<ts>-<mode>/ (sha256 + path printed so the router can verify), and the worker reads a copy
@@ -31,14 +33,23 @@ if [ "${1:-}" = wait ]; then
   for d in "$ROOT"/.router/runs/*/; do [ "$(cat "${d}name" 2>/dev/null)" = "$name" ] && run=$d; done
   [ -n "$run" ] || die "no recorded run for $name"
   t="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$(sed 's/[^A-Za-z0-9]/-/g' "${run}worktree")/$(cat "${run}session").jsonl"
-  mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+  if stat -c %Y / >/dev/null 2>&1; then mtime() { stat -c %Y "$@"; }; else mtime() { stat -f %m "$@"; }; fi
+  # subagent turns land in <session>/subagents/*.jsonl and leave <session>.jsonl untouched
+  seen() { for f in "$t" "${t%.jsonl}"/subagents/*.jsonl; do [ ! -f "$f" ] || mtime "$f"; done | sort -n | tail -1; }
   # a running Bash tool command is a `<shell> -c` child; MCP servers (also children) are not
   busy() { ps -A -o ppid=,command= | awk -v p="$pid" '$1 == p && $2 ~ /(^|\/)[a-z]*sh$/ && $3 == "-c" { f = 1 } END { exit !f }'; }
+  # quiet must hold on two consecutive polls: a command that just ended leaves the transcript
+  # stale until its result is written, and the worker may be exiting
+  quiet=0
   while live "$pid"; do
-    if ! busy; then
-      [ -f "$t" ] && src=$t || src=$O/$name.pid
-      idle=$(( $(date +%s) - $(mtime "$src") ))
-      [ "$idle" -lt $((stall * 60)) ] || { echo "STALLED name=$name pid=$pid idle=$((idle / 60))m since=$src"; exit 0; }
+    if busy; then quiet=0
+    else
+      at=$(seen) src=$t
+      [ -n "$at" ] || { at=$(mtime "$O/$name.pid"); src=$O/$name.pid; }
+      idle=$(( $(date +%s) - at ))
+      if [ "$idle" -lt $((stall * 60)) ]; then quiet=0
+      elif [ "$quiet" -eq 1 ]; then echo "STALLED name=$name pid=$pid idle=$((idle / 60))m since=$src"; exit 0
+      else quiet=1; fi
     fi
     sleep "${ROUTER_WAIT_POLL:-10}"
   done

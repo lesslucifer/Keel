@@ -238,8 +238,8 @@ struct Launcher {
 }
 
 /// A repo whose main checkout holds the launcher, two linked worktrees, and a stub claude that
-/// prints its argv and sleeps $STUB_SLEEP seconds (in a `sh -c` child, as a Bash tool command runs, when
-/// $STUB_BUSY is set).
+/// prints its argv and sleeps $STUB_SLEEP seconds, or, when $STUB_RELEASE is set, runs until that file
+/// exists (inside a `sh -c` child, as a Bash tool command runs, when $STUB_BUSY is set too).
 fn launcher() -> Launcher {
     let d = TempDir::new().unwrap();
     let base = d.path().canonicalize().unwrap();
@@ -255,7 +255,11 @@ fn launcher() -> Launcher {
     git(&main, &["worktree", "add", "-q", "../wt", "-b", "w"]);
     git(&main, &["worktree", "add", "-q", "../wt2", "-b", "w2"]);
     let stub = base.join("claude");
-    std::fs::write(&stub, "#!/bin/sh\necho \"stub $*\"\nif [ -n \"${STUB_BUSY:-}\" ]; then sh -c \"sleep ${STUB_SLEEP:-3}; :\"; else sleep \"${STUB_SLEEP:-3}\"; fi\n").unwrap();
+    std::fs::write(&stub, concat!(
+        "#!/bin/sh\necho \"stub $*\"\nhold='while [ ! -e \"$STUB_RELEASE\" ]; do sleep 0.05; done'\n",
+        "if [ -z \"${STUB_RELEASE:-}\" ]; then sleep \"${STUB_SLEEP:-3}\"\n",
+        "elif [ -n \"${STUB_BUSY:-}\" ]; then sh -c \"$hold; :\"\nelse eval \"$hold\"; fi\n"
+    )).unwrap();
     std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub, _d: d }
 }
@@ -265,18 +269,35 @@ impl Launcher {
         self.run_env(args, &[("STUB_SLEEP", sleep)])
     }
 
-    fn run_env(&self, args: &[&str], env: &[(&str, &str)]) -> (bool, String) {
-        let o = Command::new("sh")
-            .arg("scripts/router-worker.sh")
+    fn cmd(&self, args: &[&str], env: &[(&str, &str)]) -> Command {
+        let mut c = Command::new("sh");
+        c.arg("scripts/router-worker.sh")
             .args(args)
             .current_dir(&self.main)
             .env("ROUTER_CLAUDE", &self.stub)
             .env("CLAUDE_CONFIG_DIR", self.main.parent().unwrap().join("config"))
             .env("ROUTER_WAIT_POLL", "0.2")
-            .envs(env.iter().copied())
-            .output()
-            .unwrap();
+            .envs(env.iter().copied());
+        c
+    }
+
+    fn run_env(&self, args: &[&str], env: &[(&str, &str)]) -> (bool, String) {
+        let o = self.cmd(args, env).output().unwrap();
         (o.status.success(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
+    }
+
+    /// Start `wait` in the background, as the router runs it.
+    fn wait_bg(&self, args: &[&str]) -> std::process::Child {
+        self.cmd(args, &[]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap()
+    }
+
+    /// Spawn or resume worker n, held alive until `release` is created.
+    fn hold(&self, args: &[&str], release: &Path, busy: bool) -> String {
+        let r = release.to_str().unwrap();
+        let env: &[(&str, &str)] = if busy { &[("STUB_RELEASE", r), ("STUB_BUSY", "1")] } else { &[("STUB_RELEASE", r)] };
+        let (ok, out) = self.run_env(args, env);
+        assert!(ok && out.starts_with("RUNNING"), "{out}");
+        out
     }
 
     /// The session transcript `wait` reads for this spawn, under the stubbed CLAUDE_CONFIG_DIR.
@@ -390,14 +411,41 @@ fn age(path: &Path, secs: u64) {
     f.set_modified(std::time::SystemTime::now() - Duration::from_secs(secs)).unwrap();
 }
 
+/// A background `wait` still running after 1s (5 polls), i.e. it judged the worker live and not stalled.
+fn blocked(w: &mut std::process::Child) {
+    std::thread::sleep(Duration::from_secs(1));
+    if w.try_wait().unwrap().is_some() {
+        let mut out = String::new();
+        std::io::Read::read_to_string(w.stdout.as_mut().unwrap(), &mut out).unwrap();
+        panic!("wait returned early: {out}");
+    }
+}
+
+/// The one line a background `wait` prints, bounded: it must return within 10s of being due.
+fn line(mut w: std::process::Child) -> String {
+    let t = Instant::now();
+    while w.try_wait().unwrap().is_none() {
+        if t.elapsed() > Duration::from_secs(10) {
+            w.kill().unwrap();
+            panic!("wait never returned");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let o = w.wait_with_output().unwrap();
+    assert!(o.status.success(), "{o:?}");
+    String::from_utf8(o.stdout).unwrap()
+}
+
 /// E-SEED2.W8: `wait <name> [<stall-min>]` blocks while the worker runs and returns one line when it
-/// exits (EXITED) or stalls (STALLED: no `sh -c` child and a transcript idle past the threshold, or the
-/// pid file when no transcript exists); a worker running a command is never stalled. Bad input exits 2.
+/// exits (EXITED) or stalls (STALLED: on two polls running, no `sh -c` child and every transcript, main
+/// and subagent, idle past the threshold; the pid file when no transcript exists). A worker running a
+/// command, or whose subagent is still writing, is never stalled. Bad input exits 2.
 #[test]
 fn wait_blocks_until_the_worker_exits_or_stalls() {
     let l = launcher();
     let wt = l.wt.to_str().unwrap();
     let brief = ".router/briefs/b.md";
+    let release = |k: u8| l.main.parent().unwrap().join(format!("release-{k}"));
     for (args, why) in [
         (vec!["wait"], "wait <name>"),
         (vec!["wait", "n", "1", "x"], "wait <name>"),
@@ -411,41 +459,49 @@ fn wait_blocks_until_the_worker_exits_or_stalls() {
     }
 
     // exits: blocks for the live worker, returns once it is gone
-    let (ok, out) = l.run(&["spawn", "n", wt, brief, "haiku"], "5");
-    assert!(ok, "{out}");
+    let out = l.hold(&["spawn", "n", wt, brief, "haiku"], &release(1), false);
     let sid = field(&out, "session=").to_string();
     let pid = field(&out, "pid=").to_string();
-    let t = Instant::now();
-    let (ok, out) = l.run_env(&["wait", "n"], &[]);
-    assert!(ok && out.starts_with(&format!("EXITED name=n pid={pid} ")), "{out}");
-    assert!(t.elapsed() >= Duration::from_secs(1) && t.elapsed() < Duration::from_secs(10), "{:?}", t.elapsed());
+    let mut w = l.wait_bg(&["wait", "n"]);
+    blocked(&mut w);
+    std::fs::write(release(1), "").unwrap();
+    let out = line(w);
+    assert!(out.starts_with(&format!("EXITED name=n pid={pid} ")) && out.lines().count() == 1, "{out}");
     assert!(!Command::new("kill").args(["-0", &pid]).stderr(Stdio::null()).status().unwrap().success(), "returned while alive");
     assert_eq!(l.run_env(&["wait", "n"], &[]).1.lines().count(), 1, "an exited worker returns at once, one line");
 
-    // stalls: transcript idle 2 min past a 1 min threshold
-    let tr = l.transcript(&l.wt, &sid);
-    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "haiku"], "6");
-    assert!(ok, "{out}");
-    age(&tr, 120);
-    let (ok, out) = l.run_env(&["wait", "n", "1"], &[]);
-    assert!(ok && out.starts_with("STALLED name=n ") && out.contains(" idle=2m ") && out.contains(tr.to_str().unwrap()), "{out}");
-    assert!(field(&out, "pid=") != pid);
-    l.wait_exit("n");
-
     // a worker running a command is busy, not stalled, however old its transcript
-    let (ok, out) = l.run_env(&["resume", "n", &sid, wt, brief, "haiku"], &[("STUB_SLEEP", "3"), ("STUB_BUSY", "1")]);
-    assert!(ok, "{out}");
+    let tr = l.transcript(&l.wt, &sid);
+    l.hold(&["resume", "n", &sid, wt, brief, "haiku"], &release(2), true);
     age(&tr, 120);
-    let (ok, out) = l.run_env(&["wait", "n", "1"], &[]);
-    assert!(ok && out.starts_with("EXITED name=n "), "{out}");
+    let mut w = l.wait_bg(&["wait", "n", "1"]);
+    blocked(&mut w);
+    std::fs::write(release(2), "").unwrap();
+    assert!(line(w).starts_with("EXITED name=n "));
+
+    // stalls only once the subagent transcripts are idle too
+    l.hold(&["resume", "n", &sid, wt, brief, "haiku"], &release(3), false);
+    age(&tr, 120);
+    let sub = tr.with_extension("").join("subagents/agent-a.jsonl");
+    std::fs::create_dir_all(sub.parent().unwrap()).unwrap();
+    std::fs::write(&sub, "{}\n").unwrap();
+    let mut w = l.wait_bg(&["wait", "n", "1"]);
+    blocked(&mut w);
+    age(&sub, 120);
+    let out = line(w);
+    assert!(out.starts_with("STALLED name=n ") && out.contains(" idle=2m ") && out.contains(tr.to_str().unwrap()), "{out}");
+    assert!(field(&out, "pid=") != pid);
+    std::fs::write(release(3), "").unwrap();
+    l.wait_exit("n");
 
     // no transcript: the pid file's age stands in
     std::fs::remove_file(&tr).unwrap();
-    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "haiku"], "6");
-    assert!(ok, "{out}");
+    std::fs::remove_dir_all(tr.with_extension("")).unwrap();
+    l.hold(&["resume", "n", &sid, wt, brief, "haiku"], &release(4), false);
     age(&l.main.join(".router/out/n.pid"), 120);
-    let (ok, out) = l.run_env(&["wait", "n", "1"], &[]);
-    assert!(ok && out.starts_with("STALLED name=n ") && out.contains("n.pid"), "{out}");
+    let out = line(l.wait_bg(&["wait", "n", "1"]));
+    assert!(out.starts_with("STALLED name=n ") && out.contains("n.pid"), "{out}");
+    std::fs::write(release(4), "").unwrap();
     l.wait_exit("n");
     assert!(std::fs::read_to_string(l.main.join(".router/out/n.out")).unwrap().starts_with("stub "), "wait touched n.out");
 }
