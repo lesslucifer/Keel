@@ -119,7 +119,17 @@
       Two nits were fixed with them: <code>since=</code> now names the newest transcript, and the pid-file case reuses worker 3. The waived nits and their reasons are recorded on the <code>cr/v1</code> note.</li>
     <li>Review round 3 (<code>cr/v1</code> FAIL on <code>f8c19c2</code>) found 1 important, fixed in the next code commit: <code>busy()</code>'s exclusion of non-shell children was untested. The idle stub now holds a subshell piped to <code>cut -c</code>. The 3 nits from that round were fixed with it: one batched <code>stat</code> per poll, refusing an empty <code>stall-min</code>, and testing the no-recorded-run refusal.</li>
     <li>Review round 4 (<code>cr/v1</code> FAIL on <code>8ca9168</code>) found 3 test gaps. Neither quiet reset was tested, the newest-run choice was untested, and the 2s-poll case ordered events by wall clock. All three are closed by the stepped <code>sleep</code> shim, which also removed every observation window from the test.</li>
-    <li>Docs touched: this report and the WU plan.</li>
+    <li>Review round 5 (<code>cr/v1</code> on <code>0cd95cc</code>) was PASS: 0 blockers, 0 importants, and 3 waived nits recorded on the note.</li>
+    <li><b>Back-merge of <code>epic/E-SEED2</code></b> (merge <code>f4e3ca3</code>). Epic commit <code>8a14f24</code> split the guard test's <code>permissions.allow</code> loop into router entries, which the guard must accept, and worker-only entries, which it must refuse to the router. That commit counted <code>scripts/router-worker.sh wait</code> as worker-only, which contradicts this WU. The owner ruled that <code>wait</code> is a router entry. The resolution:
+      <ul>
+        <li>The epic's split is kept.</li>
+        <li><code>wait</code> is a router entry, mapped to a valid <code>wait n 15</code>.</li>
+        <li>Worker-only is now <code>cargo</code> and <code>keel</code>.</li>
+        <li>The worker-only list is seeded with fixed <code>cargo</code>/<code>keel</code> shapes. The epic's intent is therefore asserted even before <code>.claude/settings.json</code> lists any worker entry; without that, the loop would check nothing today.</li>
+      </ul>
+      Two guard mutations make the test fail, one per intent: letting the router run <code>cargo</code>/<code>keel</code>, and refusing <code>wait</code> to the router.</li>
+    <li>Preflight and the gate run with an explicit <code>--target epic/E-SEED2</code>. Without it, <code>keel</code> measured this branch against <code>main</code> and reported false reds.</li>
+    <li>Docs touched: this report, the WU plan, and (through the back-merge) nothing else.</li>
   </ul>
 </div>
 
