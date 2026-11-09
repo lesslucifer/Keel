@@ -22,7 +22,7 @@
     <li><code>router-worker.sh wait &lt;name&gt; [&lt;stall-min&gt;]</code> (default 15) blocks while the worker named by <code>.router/out/&lt;name&gt;.pid</code> is alive. It uses the same predicate as the launcher's one-live-run check, now the shared <code>live()</code>. It prints exactly one line and exits 0:
       <ul>
         <li><code>EXITED name= pid= out=</code> when the worker exits.</li>
-        <li><code>STALLED name= pid= idle=&lt;m&gt;m since=&lt;file&gt;</code> when two things hold together: the worker has no <code>&lt;shell&gt; -c</code> child (that is, no Bash-tool command is running), and its session transcript has been untouched for at least the threshold.</li>
+        <li><code>STALLED name= pid= idle=&lt;m&gt;m since=&lt;file&gt;</code> when two things hold on two consecutive polls: the worker has no <code>&lt;shell&gt; -c</code> child (that is, no Bash-tool command is running), and none of its session transcripts has changed for at least the threshold. That means the main <code>&lt;session&gt;.jsonl</code> and every <code>&lt;session&gt;/subagents/*.jsonl</code>.</li>
       </ul>
       Bad input exits 2. The command only reads files. It never writes <code>&lt;name&gt;.out</code>.</li>
     <li>The router guard (<code>scripts/router-guard.jq</code>) now also allows <code>scripts/router-worker.sh wait &lt;name&gt;</code> and <code>scripts/router-worker.sh wait &lt;name&gt; &lt;digits&gt;</code>.</li>
@@ -31,20 +31,23 @@
   <p>Checked against the live machine, using read-only probes from inside this worker:</p>
   <ul>
     <li>The transcript path encoding is right. The path is <code>~/.claude/projects/&lt;worktree with every non-alphanumeric character → -&gt;/&lt;session&gt;.jsonl</code>. The <code>--session-id</code> that the launcher passed this worker names exactly the <code>.jsonl</code> file that grows on every turn.</li>
+    <li>Subagent turns are written to <code>&lt;session&gt;/subagents/agent-*.jsonl</code>. The main transcript stays untouched while a subagent runs. The review found this; see Evidence.</li>
     <li>A real headless worker has a long-lived MCP child: the Telegram plugin's <code>bun</code>. So "no child process" could never be true for a real worker. The stall probe therefore ignores that kind of child and counts only <code>&lt;shell&gt; -c</code> children. On this machine those are <code>/bin/zsh -c source …/shell-snapshots/…</code>, which is how a Bash tool command runs.</li>
   </ul>
   <p><b>Verified</b> by the integration test, against a real stub process:</p>
   <ul>
     <li><code>wait</code> blocks while the worker runs and returns <code>EXITED</code> only after its pid is gone.</li>
-    <li>It returns <code>STALLED</code> on an idle transcript, and also falls back to the pid file when there is no transcript.</li>
+    <li>It returns <code>STALLED</code> on an idle transcript, but not while a subagent transcript is still fresh.</li>
+    <li>It falls back to the pid file when there is no transcript.</li>
     <li>It does not stall while the worker has a <code>sh -c</code> child running.</li>
     <li>It refuses bad input with exit 2.</li>
     <li>jq accepts the guard change.</li>
   </ul>
-  <p>Two mutations confirm that the test is not vacuous:</p>
+  <p>Three mutations confirm that the test is not vacuous. Each one makes the test fail:</p>
   <ul>
-    <li>Forcing <code>busy()</code> false makes the busy case print <code>STALLED</code>, and the test fails.</li>
-    <li>Forcing the <code>live</code> loop off makes <code>EXITED</code> return at once, and the elapsed-time assertion fails.</li>
+    <li>Forcing <code>busy()</code> false: the busy case prints <code>STALLED</code> while it should still be blocked.</li>
+    <li>Ignoring subagent transcripts: the case with a fresh subagent prints <code>STALLED</code> early.</li>
+    <li>Forcing the <code>live</code> loop off: <code>EXITED</code> comes back while the worker is held alive.</li>
   </ul>
   <p><b>Not verified:</b> whether a background command's exit actually wakes an <em>idle</em> router session in this environment. A worker cannot test that. It needs the router's own interactive session (see Follow-ups).</p>
 </div>
@@ -56,6 +59,7 @@
     <tbody>
       <tr><td><code>scripts/router-watch.sh</code> plus a Telegram-pushing watchdog worker</td><td>A <code>wait</code> mode in <code>router-worker.sh</code>, run by the router in the background. There is no watchdog worker and no Telegram send.</td><td>The router's brief, following a research pass that ranked this option first. It reuses Claude Code's background-command wake-up instead of adding a new channel. No written copy of that research was found in <code>docs/work/</code> or in git.</td></tr>
       <tr><td>Stall probe: transcript idle only, falling back to the newest mtime under the worktree</td><td>Transcript idle <em>and</em> no Bash-tool shell child. When there is no transcript, the fallback is the pid file's mtime.</td><td>The brief specifies "idle transcript + no child process". The live <code>ps</code> showed MCP children, which forced the refinement to count only shell children. The pid-file fallback measures "no sign of life since spawn" and is the shortest probe with an honest meaning.</td></tr>
+      <tr><td>Stall on a single quiet poll</td><td>Two consecutive quiet polls</td><td>Review round 1 reproduced a check-then-act race: a command that has just ended leaves the transcript stale until Claude writes the result. The same race made the test flaky (2 of 6 serial runs failed).</td></tr>
       <tr><td>Several names, first event wins</td><td>One name per <code>wait</code></td><td>The router can arm one background <code>wait</code> per worker. Each exit wakes it separately.</td></tr>
       <tr><td>The <code>.claude/settings.json</code> allowlist for <code>cargo</code> and <code>keel</code> goes on this branch</td><td>Not committed. The owner fixed the allow-list and <code>PATH</code> on the machine instead.</td><td>Writing the file from the worker was refused, because it needs a permission grant.</td></tr>
       <tr><td>keel-router <code>worker-ops.md</code> "Watch" and project-router "Workers" describe the watchdog</td><td>Not edited</td><td>Both files are rule-bearing (<code>skills/</code>, <code>.claude/skills/</code>). A commit to them needs a <code>keel mr commit</code> trailer, which only the owner can produce. They also should not describe a mode whose wake-up is still unconfirmed.</td></tr>
@@ -66,7 +70,14 @@
 <h2 id="evidence">Evidence</h2>
 <div data-item="evidence" data-c="evidence-body">
   <ul>
-    <li><code>cargo test --test router</code>: 7 passed, 0 failed, including the new test. Mutation results are under Outcome.</li>
+    <li><code>cargo test --test router</code>: 7 passed, 0 failed, including the new test, in 5 repeated runs (3 serial, 2 parallel) after the fix round. Mutation results are under Outcome.</li>
+    <li>Review round 1 (<code>cr/v1</code> FAIL on <code>f071357</code>) found 5 importants, all fixed in <code>398647e</code>:
+      <ul>
+        <li><code>wait</code> ignored subagent transcripts.</li>
+        <li>The live/busy race.</li>
+        <li>A test synchronized by sleep length, which also idled waiting for the stub to exit and never proved the busy case blocked. The stub is now held until a release file appears, and <code>wait</code> runs in the background so the test can check it is still blocked.</li>
+      </ul>
+    </li>
     <li>Commit <code>df67f7a</code> changes three files:
       <ul>
         <li><code>scripts/router-worker.sh</code>: the <code>wait</code> mode, and <code>live()</code> shared with the one-live-run check.</li>
@@ -90,7 +101,7 @@
       </ul>
     </li>
     <li>The tests are hermetic: a temporary repo, <code>CLAUDE_CONFIG_DIR</code> pointed at a temporary directory, a stub <code>claude</code>, and <code>ROUTER_WAIT_POLL=0.2</code>.</li>
-    <li>Docs touched: this report only.</li>
+    <li>Docs touched: this report and the WU plan.</li>
   </ul>
 </div>
 
@@ -108,6 +119,7 @@
 "Bash(scripts/router-worker.sh wait *)"</pre>
       The last entry is for the router. It maps to <code>wait n 15</code> in that test, and the mapping is already there.</li>
     <li><b>Confirm the wake-up</b> from the router's interactive session. While the router is idle, arm <code>scripts/router-worker.sh wait &lt;short-worker&gt;</code> with <code>run_in_background: true</code>, then check whether the router takes a turn on its own when the worker exits. If it does not, the plan's Telegram watchdog design is the fallback.</li>
+    <li><b>Router skill usage.</b> Document <code>wait</code> in the keel-router skill (rule-bearing). Arm it with a long Bash <code>timeout</code> (at most 2 h). A timeout wakes the router without an <code>EXITED</code> or <code>STALLED</code> line, and the router then re-arms.</li>
     <li><b>Risk: Telegram dual poller.</b> Every headless worker started with the user's plugins loads the Telegram channel plugin. This worker's own process tree has <code>bun run --cwd …/telegram/0.0.7</code> as a child. Each instance long-polls <code>getUpdates</code> with the same bot token. Telegram allows only one poller per token: the others get <code>409 Conflict</code>, and whichever poller wins can consume an owner message that was meant for the owner's session. A follow-up WU could start workers with that plugin disabled (a launcher flag or per-worker settings), or allow send-only use. The launcher itself is not changed here.</li>
   </ol>
 </div>
