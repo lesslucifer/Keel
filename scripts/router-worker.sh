@@ -12,6 +12,8 @@
 # of it inside its own worktree (<worktree>/.router-brief.XXXXXX/brief.md, git-ignored).
 # resume must name the same worktree the session was spawned in (recorded in the spawn's run dir).
 # One live run per name; each run truncates .router/out/<name>.out, so it holds only that run's report.
+# The worker runs as `-n <name>`: after RUNNING the router subscribes to its end with
+# SendMessage {to: <name>, notify_when_idle: true} and no message (the only shape the router guard allows).
 set -eu
 die() { echo "router-worker: $*" >&2; exit 2; }
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)

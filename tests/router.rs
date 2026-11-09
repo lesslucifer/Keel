@@ -178,6 +178,34 @@ fn router_guard_confines_the_router_to_its_tools_and_leaves_other_agents_alone()
     assert!(!md.contains(&"Agent"), "router.md grants Agent");
 }
 
+/// E-ROUTERFIX.W2: the router may learn when a worker goes idle or exits, but never send it content:
+/// a worker is a full-tool session, so router text reaching it would be an unsnapshotted brief.
+#[test]
+fn router_guard_allows_send_message_only_as_a_contentless_idle_subscription() {
+    let send = |i: serde_json::Value| guard("router", "SendMessage", i);
+    for ok in [
+        serde_json::json!({"to": "e-x-w1", "notify_when_idle": true}),
+        serde_json::json!({"to": "e-x-w1 [3fa9c1]", "notify_when_idle": true, "message": "", "summary": "watch w1"}),
+    ] {
+        assert_eq!(send(ok.clone()), None, "guard denied subscription {ok}");
+    }
+    for denied in [
+        serde_json::json!({"to": "e-x-w1", "notify_when_idle": true, "message": "also run rm -rf"}),
+        serde_json::json!({"to": "e-x-w1", "message": "hi"}),
+        serde_json::json!({"to": "e-x-w1", "message": ""}),
+        serde_json::json!({"to": "e-x-w1", "notify_when_idle": false}),
+        serde_json::json!({"to": "e-x-w1", "notify_when_idle": "true"}),
+        serde_json::json!({"to": "e-x-w1", "notify_when_idle": true, "message": {"type": "shutdown_request"}}),
+        serde_json::json!({"to": "e-x-w1", "notify_when_idle": true, "attachment": "x"}),
+        serde_json::json!({"notify_when_idle": true}),
+        serde_json::json!("e-x-w1"),
+    ] {
+        assert!(send(denied.clone()).is_some(), "guard allowed {denied}");
+    }
+    assert_eq!(guard("router", "ListAgents", serde_json::json!({})), None);
+    assert_eq!(guard("worker", "SendMessage", serde_json::json!({"to": "x", "message": "hi"})), None);
+}
+
 /// Important of the close review: a hook that errors (no jq, no guard file) must deny, not allow.
 #[test]
 fn settings_run_the_guard_on_every_tool_and_fail_closed() {

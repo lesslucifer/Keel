@@ -9,7 +9,7 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>E-ROUTERFIX · Headless workers can build, test and gate</h1>
-      <p>Collapsed epic + WU plan (one WU) for <code>epic/E-ROUTERFIX</code>: a router/meta-tooling hotfix. It gives launcher-spawned workers the <code>cargo</code>/<code>keel</code> commands their work needs, and lets the router choose a worker's permission mode per task.</p>
+      <p>Epic plan for <code>epic/E-ROUTERFIX</code>, collapsed with the W1 plan: a router/meta-tooling hotfix. It gives launcher-spawned workers the <code>cargo</code>/<code>keel</code> commands their work needs, and lets the router choose a worker's permission mode per task. W2 was added later and has its own plan. It lets the router subscribe to a worker's exit notice.</p>
       <div class="meta">T3 · epic plan + WU plan · 2026-11-09 · Keel · branch <code>epic/E-ROUTERFIX</code> off <code>main</code> <code>296fa97</code></div>
     </div>
   </header>
@@ -68,12 +68,13 @@
   <li><code>scripts/router-worker.sh spawn … opus --permission-mode bypassPermissions</code> (and <code>dontAsk</code>, a missing value, an unknown option) exits non-zero with a "permission mode must be" message, and nothing starts.</li>
   <li>The guard still allows the router <code>scripts/router-worker.sh spawn n /w .router/briefs/n.md opus --permission-mode plan</code> and still denies it <code>cargo test</code> and <code>keel preflight</code>.</li>
   <li><code>.claude/settings.json</code> is unchanged by this epic. <code>cargo test</code> is green.</li>
+  <li>W2: the router guard allows <code>SendMessage</code> only as <code>{to, notify_when_idle: true}</code> with no message, and allows <code>ListAgents</code>. <code>tests/router.rs</code> <code>router_guard_allows_send_message_only_as_a_contentless_idle_subscription</code> passes.</li>
   <li>Live (owner-run, evidence only, not a gate): a worker spawned through the new launcher runs <code>cargo test</code>, <code>keel preflight</code> and <code>keel verify-doc</code> without "requires approval". Its <code>keel mr --help</code> is refused.</li>
 </ul>
 
 <h2 id="non-goals">Non-goals</h2>
 <ul data-item="non-goals" data-c="non-goals-list">
-  <li>Touching <code>.claude/settings.json</code> or the router's posture (DEC-30). The guard is unchanged.</li>
+  <li>Touching <code>.claude/settings.json</code> or the router's posture (DEC-30). W1 leaves the guard unchanged. W2 changes it only to add the subscribe-only <code>SendMessage</code> and <code>ListAgents</code>.</li>
   <li>Revisiting DEC-33 (workers' inherited user-level allowlist), or moving <code>git</code> grants into the repo.</li>
   <li><code>bypassPermissions</code> for workers in any form. Also <code>auto</code> mode (open question 3).</li>
   <li>Backlog e-router-v2 R1 (persona missing), R3 (gating the router's security files) and the rest. E-SEED2.W7's opus-only policy.</li>
@@ -87,6 +88,13 @@
   <p data-item="wu-maps-to">E-ROUTERFIX intent (both problems) · UC-ROUTE (launcher contract) · backlog e-router-v2 R2.</p>
   <p data-item="wu-expected">Every bullet of <a href="#expected">Expected</a> holds on the WU tip.</p>
   <p data-item="wu-deps">none (coordinate with E-SEED2.W7 on the launcher; open point 4)</p>
+</div>
+<div data-wu="E-ROUTERFIX.W2" data-c="wu-w2">
+  <h3 id="w2">E-ROUTERFIX.W2 · Router subscribes to a worker's end <span class="badge id">wu/E-ROUTERFIX/w2-router-notify</span></h3>
+  <p data-item="wu-summary">Added after W1 was planned. The router gets <code>SendMessage</code> and <code>ListAgents</code>. <code>scripts/router-guard.jq</code> allows <code>SendMessage</code> only as a contentless <code>notify_when_idle</code> subscription, so the router hears when a headless worker exits and never sends it text. The launcher comment and <code>worker-ops.md</code> document subscribe-after-<code>RUNNING</code>. A live probe records whether the exit notice really arrives. Its own plan is <a href="2026-11-09-e-routerfix-w2-plan.html">2026-11-09-e-routerfix-w2-plan.html</a>.</p>
+  <p data-item="wu-maps-to">E-ROUTERFIX intent (router coordination of headless workers) · UC-ROUTE-5 and UC-ROUTE-6 · new DEC-36.</p>
+  <p data-item="wu-expected">The guard admits <code>{to, notify_when_idle: true}</code> with no message and denies every content-bearing or unknown-key <code>SendMessage</code>. <code>router.md</code>'s <code>tools:</code> line equals the guard's list, and <code>tests/router.rs</code> is green.</p>
+  <p data-item="wu-deps">none. It touches <code>tests/router.rs</code> beside W1, and whichever merges second resolves the conflict.</p>
 </div>
 </div>
 
@@ -115,7 +123,8 @@
     <tr><td>Launcher contract: optional <code>--permission-mode</code>, grant lists</td><td><a href="../use-cases/router.html">use-cases/router.html</a> UC-ROUTE</td></tr>
     <tr><td>R2 answered (refused, not stalled; fixed here)</td><td><a href="../backlog/e-router-v2.html">backlog/e-router-v2.html</a> R2 struck with a pointer to the DEC</td></tr>
     <tr><td>"Fixed flags" wording</td><td><code>skills/keel-router/references/worker-ops.md</code> (mode 2 and open issue 3) and its <code>.claude/skills/</code> copy, plus <code>.claude/skills/project-router/SKILL.md</code> "Workers": rule-bearing, owner's <code>keel mr commit</code></td></tr>
-    <tr><td>This plan and the W1 result</td><td>Archived out of git at close</td></tr>
+    <tr><td>W2: subscribe-only <code>SendMessage</code>, why the router never sends text, live probe outcome</td><td>DEC-36 in <a href="../decisions/router.html">decisions/router.html</a>, plus UC-ROUTE-5 and UC-ROUTE-6 in <a href="../use-cases/router.html">use-cases/router.html</a>. The "Notify" step goes in <code>worker-ops.md</code> (rule-bearing, owner's <code>keel mr commit</code>).</td></tr>
+    <tr><td>This plan, the W1 result, and the W2 plan and result</td><td>Archived out of git at close</td></tr>
   </tbody>
 </table>
 
