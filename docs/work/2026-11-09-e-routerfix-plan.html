@@ -9,7 +9,7 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>E-ROUTERFIX · Headless workers can build, test and gate</h1>
-      <p>Epic plan for <code>epic/E-ROUTERFIX</code>, collapsed with the W1 plan: a router/meta-tooling hotfix. It gives launcher-spawned workers the <code>cargo</code>/<code>keel</code> commands their work needs, and lets the router choose a worker's permission mode per task. W2 was added later and has its own plan. It lets the router subscribe to a worker's exit notice.</p>
+      <p>Epic plan for <code>epic/E-ROUTERFIX</code>, collapsed with the W1 plan: a router/meta-tooling hotfix. It gives launcher-spawned workers the <code>cargo</code>/<code>keel</code> commands their work needs, and lets the router choose a worker's permission mode per task. W2 was added later and has its own plan. It lets the router subscribe to a worker's exit notice. W3 seeds new worktrees with the signer list, and W4 brings in E-SEED2.W8's worker watchdog.</p>
       <div class="meta">T3 · epic plan + WU plan · 2026-11-09 · Keel · branch <code>epic/E-ROUTERFIX</code> off <code>main</code> <code>296fa97</code></div>
     </div>
   </header>
@@ -69,6 +69,8 @@
   <li>The guard still allows the router <code>scripts/router-worker.sh spawn n /w .router/briefs/n.md opus --permission-mode plan</code> and still denies it <code>cargo test</code> and <code>keel preflight</code>.</li>
   <li><code>.claude/settings.json</code> is unchanged by this epic. <code>cargo test</code> is green.</li>
   <li>W2: the router guard allows <code>SendMessage</code> only as <code>{to, notify_when_idle: true}</code> with no message, and allows <code>ListAgents</code>. <code>tests/router.rs</code> <code>router_guard_allows_send_message_only_as_a_contentless_idle_subscription</code> passes.</li>
+  <li>W3: a new worktree of Keel's own tree gets the main checkout's <code>.mr-allowed</code> (<code>tests/init.rs</code> <code>self_hosting_new_worktree_inherits_the_signer_list</code>).</li>
+  <li>W4: <code>scripts/router-worker.sh wait</code> prints one <code>EXITED</code> or <code>STALLED</code> line, and the guard allows it to the router beside the subscription (<code>tests/router.rs</code> <code>wait_blocks_until_the_worker_exits_or_stalls</code>).</li>
   <li>Live (owner-run, evidence only, not a gate): a worker spawned through the new launcher runs <code>cargo test</code>, <code>keel preflight</code> and <code>keel verify-doc</code> without "requires approval". Its <code>keel mr --help</code> is refused.</li>
 </ul>
 
@@ -95,6 +97,20 @@
   <p data-item="wu-maps-to">E-ROUTERFIX intent (router coordination of headless workers) · UC-ROUTE-5 and UC-ROUTE-6 · new DEC-36.</p>
   <p data-item="wu-expected">The guard admits <code>{to, notify_when_idle: true}</code> with no message and denies every content-bearing or unknown-key <code>SendMessage</code>. <code>router.md</code>'s <code>tools:</code> line equals the guard's list, and <code>tests/router.rs</code> is green.</p>
   <p data-item="wu-deps">none. It touches <code>tests/router.rs</code> beside W1, and whichever merges second resolves the conflict.</p>
+</div>
+<div data-wu="E-ROUTERFIX.W3" data-c="wu-w3">
+  <h3 id="w3">E-ROUTERFIX.W3 · New worktrees inherit the signer list <span class="badge id">wu/E-ROUTERFIX/w3-worktree-seed</span></h3>
+  <p data-item="wu-summary">Added on the owner's request after W2 (W2 follow-up 2). A tracked <code>.gitworktreecopy</code> lists <code>.mr-allowed</code>, so keel's <code>post-checkout</code> hook copies the main checkout's signer list into every new worktree. W2's first <code>keel mr commit</code> was refused because the new worktree had no <code>.mr-allowed</code>. The hook reads <code>.gitworktreecopy</code> from the main checkout, so the seeding starts once this epic is on <code>main</code> and the hooks are installed. It copies only what the main checkout's <code>.mr-allowed</code> holds.</p>
+  <p data-item="wu-maps-to">E-ROUTERFIX intent (workers and the owner can run the gate in fresh worktrees) · keel-workflow's <code>.mr-allowed</code>/<code>.gitworktreecopy</code> contract (unchanged).</p>
+  <p data-item="wu-expected"><code>tests/init.rs</code> <code>self_hosting_new_worktree_inherits_the_signer_list</code>: a clone of Keel's own tree, with hooks installed and an untracked <code>.mr-allowed</code>, seeds that file into a new worktree. It is red without the tracked <code>.gitworktreecopy</code>.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+<div data-wu="E-ROUTERFIX.W4" data-c="wu-w4">
+  <h3 id="w4">E-ROUTERFIX.W4 · Worker watchdog, moved from E-SEED2.W8 <span class="badge id">wu/E-ROUTERFIX/w4-worker-watchdog</span></h3>
+  <p data-item="wu-summary">Moved here by the owner on 2026-11-09. E-SEED2's own plan flagged it as router meta-tooling (its open point 7). <code>wu/E-SEED2/w8-worker-watchdog</code> (<code>8e8f1a6</code>, gated in E-SEED2 with <code>cr/v1</code> PASS and <code>mr/v1</code>) is merged as is into this WU. That keeps the commits identical, so E-SEED2, which also merged them, needs no revert, and <code>main</code> sees them once. It adds <code>scripts/router-worker.sh wait &lt;name&gt; [&lt;stall-min&gt;]</code>, which the router runs as a background Bash command. That command ends with one <code>EXITED</code> or <code>STALLED</code> line, and its exit wakes the router. It also carries E-SEED2's <code>8a14f24</code> guard-test split and E-SEED2's epic plan doc, both already on <code>epic/E-SEED2</code>. This WU reconciles <code>wait</code> with W2's subscription. The notice covers a clean exit; <code>wait</code> adds the stall case and replaces the heartbeat's per-worker <code>ps</code> poll. It also distils both into UC-ROUTE and DEC-36.</p>
+  <p data-item="wu-maps-to">E-ROUTERFIX intent (router coordination of headless workers) · UC-ROUTE-5 and UC-ROUTE-6 · DEC-36 (amended, no new id: E-SEED2 mints from DEC-37 and W1 holds DEC-37).</p>
+  <p data-item="wu-expected">W8's <code>wait_blocks_until_the_worker_exits_or_stalls</code>, W2's subscription test and the guard's tool and shape tests all pass together in <code>tests/router.rs</code>. The guard allows <code>spawn|resume|wait</code> and the subscribe-only <code>SendMessage</code>.</p>
+  <p data-item="wu-deps">W2 (merged). It touches <code>scripts/router-worker.sh</code> and <code>tests/router.rs</code> beside W1, and whichever merges second resolves the conflict.</p>
 </div>
 </div>
 
@@ -124,7 +140,9 @@
     <tr><td>R2 answered (refused, not stalled; fixed here)</td><td><a href="../backlog/e-router-v2.html">backlog/e-router-v2.html</a> R2 struck with a pointer to the DEC</td></tr>
     <tr><td>"Fixed flags" wording</td><td><code>skills/keel-router/references/worker-ops.md</code> (mode 2 and open issue 3) and its <code>.claude/skills/</code> copy, plus <code>.claude/skills/project-router/SKILL.md</code> "Workers": rule-bearing, owner's <code>keel mr commit</code></td></tr>
     <tr><td>W2: subscribe-only <code>SendMessage</code>, why the router never sends text, live probe outcome</td><td>DEC-36 in <a href="../decisions/router.html">decisions/router.html</a>, plus UC-ROUTE-5 and UC-ROUTE-6 in <a href="../use-cases/router.html">use-cases/router.html</a>. The "Notify" step goes in <code>worker-ops.md</code> (rule-bearing, owner's <code>keel mr commit</code>).</td></tr>
-    <tr><td>This plan, the W1 result, and the W2 plan and result</td><td>Archived out of git at close</td></tr>
+    <tr><td>W3: <code>.gitworktreecopy</code> seeds <code>.mr-allowed</code></td><td>The tracked file itself, plus <code>.claude/skills/project-router/SKILL.md</code>'s "Owner identity" row, which still says there is no <code>.gitworktreecopy</code> (rule-bearing, owner's <code>keel mr commit</code>)</td></tr>
+    <tr><td>W4: <code>wait</code> for exit or stall, beside the subscription</td><td>DEC-36 amended, UC-ROUTE-5 and UC-ROUTE-6. The "Watch" step goes in <code>worker-ops.md</code> (rule-bearing, owner's <code>keel mr commit</code>).</td></tr>
+    <tr><td>This plan, the W1 result, and the W2, W3 and W4 plans and results</td><td>Archived out of git at close</td></tr>
   </tbody>
 </table>
 

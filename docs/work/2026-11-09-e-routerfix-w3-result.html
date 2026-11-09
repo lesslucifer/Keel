@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af178cf9f34851f0dfb200b" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-ROUTERFIX.W3 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-ROUTERFIX.W3 · Result</h1>
+      <p>New worktrees of Keel's own tree inherit the main checkout's signer list (<code>.mr-allowed</code>), so the first <code>keel mr</code> in a fresh worktree is no longer refused for want of one.</p>
+      <div class="meta">T3 · WU result · 2026-11-09 · Keel · <code>wu/E-ROUTERFIX/w3-worktree-seed</code> · plan <a href="2026-11-09-e-routerfix-plan.html#w3">epic plan, W3 block</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome"><b>Delivered against the plan.</b> A tracked <code>.gitworktreecopy</code> lists <code>.mr-allowed</code>. keel's <code>post-checkout</code> hook (<code>src/main.rs</code> <code>POST_CHECKOUT</code>, unchanged) copies each listed file from the main checkout into a new worktree when the file exists there and the new worktree has no copy of its own.</p>
+<div class="callout warn" data-c="limits"><b>Two preconditions sit outside this WU.</b> (1) The hook reads <code>.gitworktreecopy</code> from the <b>main checkout</b>, which is on <code>main</code>. The seeding therefore starts when this epic lands on <code>main</code>. Until then, the owner can place the same one-line file, untracked, in the main checkout. (2) keel's hooks are not installed in this repo (empty <code>core.hooksPath</code>, no <code>keel-hooks</code> in the common git dir), so no hook runs at all until <code>keel hooks install</code>. Also, the main checkout's <code>.mr-allowed</code> is empty today, so the seeded copy would be empty until the owner runs <code>keel mr setup</code> there.</div>
+
+<h2 id="evidence">Evidence</h2>
+<ul data-item="evidence" data-c="evidence">
+  <li>New <code>tests/init.rs</code> <code>self_hosting_new_worktree_inherits_the_signer_list</code>. It clones Keel's own committed tree, installs hooks, writes an untracked <code>.mr-allowed</code>, runs <code>git worktree add</code>, and asserts that the new worktree holds the same bytes. The hook's general behaviour stays covered by <code>tests/cli.rs</code> <code>new_worktree_is_seeded_from_gitworktreecopy</code>.</li>
+  <li>Red before the tracked file was committed (the clone had no <code>.gitworktreecopy</code>, so the test failed with <code>NotFound</code> reading <code>w/.mr-allowed</code>). Green after: <code>cargo test --test init self_hosting</code> gave 2 passed.</li>
+</ul>
+
+<h2 id="deviations">Deviations</h2>
+<ul data-item="deviations" data-c="deviations">
+  <li><code>.claude/skills/project-router/SKILL.md</code>'s "Owner identity" row still says "there is no <code>.gitworktreecopy</code>". That file is rule-bearing, so the one-clause fix is parked as <code>.router/w3-project-router.patch</code> for the owner's <code>keel mr commit</code>.</li>
+</ul>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">The truth is the tracked file and its test. The skill text is already generic (keel-workflow: "List it in <code>.gitworktreecopy</code> to seed new worktrees"). The only stale statement is the project-router row above.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<ol data-item="follow-ups" data-c="follow-ups">
+  <li>Owner: <code>keel hooks install</code> (once, from any checkout) and <code>keel mr setup</code> in the main checkout, so that it lists <code>username: vuluu</code>.</li>
+  <li>Owner: apply <code>.router/w3-project-router.patch</code> with <code>keel mr commit</code>.</li>
+  <li>Backlog candidate (keel product): <code>keel mr confirm</code>/<code>verify-dod</code> with a bare SHA tip infers <code>main</code> as the target and reports a false <code>4·review-base</code> red. W2 and E-SEED2.W8 both hit it. Resolve the tip's branch, or refuse without <code>--target</code>.</li>
+</ol>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
