@@ -228,11 +228,12 @@ struct Launcher {
     wt: PathBuf,
     wt2: PathBuf,
     stub: PathBuf,
+    release: PathBuf,
 }
 
 /// A repo whose main checkout holds the launcher, two linked worktrees, and a stub claude that
-/// prints its argv (joined, then each argument bracketed so boundaries are visible) and sleeps
-/// $STUB_SLEEP seconds.
+/// prints its argv (joined, then each argument bracketed so boundaries are visible) and stays alive
+/// until `wait_exit` releases it, so the launcher's startup window never races a timer (30 s cap).
 fn launcher() -> Launcher {
     let d = TempDir::new().unwrap();
     let base = d.path().canonicalize().unwrap();
@@ -248,32 +249,36 @@ fn launcher() -> Launcher {
     git(&main, &["worktree", "add", "-q", "../wt", "-b", "w"]);
     git(&main, &["worktree", "add", "-q", "../wt2", "-b", "w2"]);
     let stub = base.join("claude");
-    std::fs::write(&stub, "#!/bin/sh\necho \"stub $*\"\nprintf '[%s]' \"$@\"; echo\nsleep \"${STUB_SLEEP:-3}\"\n").unwrap();
+    std::fs::write(&stub, "#!/bin/sh\necho \"stub $*\"\nprintf '[%s]' \"$@\"; echo\n\
+         n=0; while [ ! -e \"$STUB_RELEASE\" ] && [ $n -lt 600 ]; do sleep 0.05; n=$((n+1)); done\n").unwrap();
     std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub, _d: d }
+    Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub, release: base.join("release"), _d: d }
 }
 
 impl Launcher {
-    fn run(&self, args: &[&str], sleep: &str) -> (bool, String) {
+    fn run(&self, args: &[&str]) -> (bool, String) {
         let o = Command::new("sh")
             .arg("scripts/router-worker.sh")
             .args(args)
             .current_dir(&self.main)
             .env("ROUTER_CLAUDE", &self.stub)
-            .env("STUB_SLEEP", sleep)
+            .env("STUB_RELEASE", &self.release)
             .output()
             .unwrap();
         (o.status.success(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
     }
 
-    /// Wait (bounded) until the worker recorded in <name>.pid has exited.
+    /// Release every held stub, wait (bounded) until the worker recorded in <name>.pid has exited,
+    /// then re-arm the hold for the next run.
     fn wait_exit(&self, name: &str) {
+        std::fs::write(&self.release, "").unwrap();
         let pid = std::fs::read_to_string(self.main.join(format!(".router/out/{name}.pid"))).unwrap();
         let t = Instant::now();
         while Command::new("kill").args(["-0", pid.trim()]).stderr(Stdio::null()).status().unwrap().success() {
             assert!(t.elapsed() < Duration::from_secs(20), "stub worker never exited");
             std::thread::sleep(Duration::from_millis(100));
         }
+        std::fs::remove_file(&self.release).unwrap();
     }
 }
 
@@ -297,32 +302,32 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
         (vec!["spawn", "n", wt, brief, "gpt"], "model must be"),
         (vec!["spawn", "n", wt, "scripts/router-worker.sh", "opus"], "file must be a .md under"),
     ] {
-        let (ok, out) = l.run(&args, "0");
+        let (ok, out) = l.run(&args);
         assert!(!ok && out.contains(why), "{args:?} not refused for {why}: {out}");
     }
     std::os::unix::fs::symlink(l.main.join(".router/briefs/b.md"), l.main.join(".router/briefs/s.md")).unwrap();
-    let (ok, out) = l.run(&["spawn", "n", wt, ".router/briefs/s.md", "opus"], "0");
+    let (ok, out) = l.run(&["spawn", "n", wt, ".router/briefs/s.md", "opus"]);
     assert!(!ok && out.contains("symlinks refused"), "{out}");
 
-    let (ok, out) = l.run(&["spawn", "n", wt, brief, "haiku"], "4");
+    let (ok, out) = l.run(&["spawn", "n", wt, brief, "haiku"]);
     assert!(ok && out.starts_with("RUNNING"), "{out}");
     let sid = field(&out, "session=").to_string();
     let copy = field(&out, "brief=").to_string();
     assert!(copy.starts_with(wt) && std::fs::read_to_string(&copy).unwrap() == "do the thing\n", "{out}");
 
     // a second run under a live name is refused, spawn or resume
-    let (ok, out) = l.run(&["spawn", "n", wt2, brief, "haiku"], "0");
+    let (ok, out) = l.run(&["spawn", "n", wt2, brief, "haiku"]);
     assert!(!ok && out.contains("still running"), "{out}");
-    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "haiku"], "0");
+    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "haiku"]);
     assert!(!ok && out.contains("still running"), "{out}");
     l.wait_exit("n");
 
     // resume is bound to the spawn's name, session and worktree
-    let (ok, out) = l.run(&["resume", "n", &sid, wt2, brief, "haiku"], "0");
+    let (ok, out) = l.run(&["resume", "n", &sid, wt2, brief, "haiku"]);
     assert!(!ok && out.contains("was spawned in"), "{out}");
-    let (ok, out) = l.run(&["resume", "m", &sid, wt, brief, "haiku"], "0");
+    let (ok, out) = l.run(&["resume", "m", &sid, wt, brief, "haiku"]);
     assert!(!ok && out.contains("no recorded spawn"), "{out}");
-    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "haiku"], "3");
+    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "haiku"]);
     assert!(ok && out.starts_with("RUNNING"), "{out}");
     l.wait_exit("n");
 
@@ -405,14 +410,14 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
         let name = format!("r{i}");
         let mut args = vec!["spawn", &name, wt, brief, "opus"];
         args.extend(&extra);
-        let (ok, out) = l.run(&args, "0");
+        let (ok, out) = l.run(&args);
         assert!(!ok && out.contains(why), "{extra:?} not refused for {why}: {out}");
         assert!(!l.main.join(format!(".router/out/{name}.pid")).exists(), "{extra:?} started a worker");
     }
 
-    let (ok, out) = l.run(&["spawn", "d", wt, brief, "opus"], "3");
+    let (ok, out) = l.run(&["spawn", "d", wt, brief, "opus"]);
     assert!(ok && out.contains("permission-mode=acceptEdits"), "{out}");
-    let (ok, out) = l.run(&["spawn", "p", wt, brief, "opus", "--permission-mode", "plan"], "3");
+    let (ok, out) = l.run(&["spawn", "p", wt, brief, "opus", "--permission-mode", "plan"]);
     assert!(ok && out.contains("permission-mode=plan"), "{out}");
     let sid = field(&out, "session=").to_string();
 
@@ -422,13 +427,13 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
     assert_eq!(run_dir_mode("p", "spawn"), ["plan"]);
 
     // a resume states its own mode or gets the default; it never inherits the spawn's plan
-    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus"], "3");
+    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus"]);
     assert!(ok && out.contains("permission-mode=acceptEdits"), "{out}");
     assert_eq!(mode_of("p"), "acceptEdits");
-    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus", "--permission-mode", "plan"], "3");
+    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus", "--permission-mode", "plan"]);
     assert!(ok && out.contains("permission-mode=plan"), "{out}");
     assert_eq!(mode_of("p"), "plan");
-    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus", "--permission-mode", "bypassPermissions"], "0");
+    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus", "--permission-mode", "bypassPermissions"]);
     assert!(!ok && out.contains("permission mode must be"), "{out}");
     assert_eq!(run_dir_mode("p", "resume"), ["acceptEdits", "plan"]);
 
