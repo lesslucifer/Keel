@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af1cd8f9f34851f0dfb2015" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED2.W2 WU plan: report binding and hook coexistence</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED2.W2 · Report binding and hook coexistence</h1>
+      <p>Builds the never-started E-SEED.W9: a configurable result-report requirement for the human sign-off, reports found by role instead of file name, SHA-256 sign-off hashes, and Keel's hooks that refuse to clobber or be silently clobbered.</p>
+      <div class="meta">T3 · WU plan · 2026-11-09 · Keel · branch <code>wu/E-SEED2/w2-report-binding</code> off <code>epic/E-SEED2</code> <code>ef9ee75</code> · epic <a href="2026-11-09-e-seed2-epic-plan.html#w2">E-SEED2 plan</a> · runs in parallel with W7 (owner ruling 2026-11-09, option A) · open questions 1–5 proceed on their defaults (owner ruling 2026-11-09)</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="requirement">Requirement</h2>
+<p data-item="requirement" data-c="requirement">Whether a WU or epic sign-off must attest a result report is set by <code>[mr] report = "required" | "optional" | "none"</code> in the target's committed <code>.keel/config.toml</code> (default <code>"required"</code>). The report is found by its <code>data-artifact</code> role, with <code>--report</code> as an override. A required report that is missing is refused at <code>keel mr confirm</code> before signing and is a named <code>8·manual-review</code> failure with a <code>fix -&gt;</code> line at the merge. The signed payload is <code>keel-mr/v2</code> with SHA-256 change and report hashes, and <code>dod/v1</code> names the attested report. <code>keel hooks install</code> refuses to replace a foreign <code>core.hooksPath</code> or non-sample <code>.git/hooks</code> without <code>--force</code>, and <code>keel preflight</code> and <code>keel verify-dod wu|epic</code> refuse while <code>core.hooksPath</code> is not Keel's (<code>keel check</code> warns).</p>
+
+<h2 id="maps-to">Maps to</h2>
+<p data-item="maps-to" data-c="maps-to">E-SEED2 (summary block W2) · backlog <a href="../backlog/e-seed-v2.html">B2</a> (report binding, hook coexistence) and B7 (SHA-256 hashes) · <a href="../use-cases/workflow.html">UC-MR-1</a> amended · UC-GATE-1/2 amended, UC-GATE-6 new · <a href="../decisions/workflow-gates.html">DEC-23</a> amended (its open coexistence question closes) · source: the E-SEED.W9 plan (never started; archived, recovered from commit <code>669ce4c</code>).</p>
+
+<h2 id="expected">Expected</h2>
+<div data-item="expected" data-c="expected">
+<ul>
+  <li>Every existing <code>tests/mr.rs</code> and <code>tests/verify_dod.rs</code> scenario passes with no <code>[mr] report</code> key. The only fixture changes are a <code>data-artifact</code> on the fixture result doc and a <code>keel hooks install</code> before gate commands (see <a href="#risks">risks</a>).</li>
+  <li><code>report = "none"</code>: a WU with no result doc signs and merges green. Its <code>mr/v1</code> note has no <code>report</code> or <code>report_hash</code> field.</li>
+  <li><code>report = "required"</code>: a WU with no <code>wu-result</code> doc is refused at <code>mr confirm</code> and writes no note. A hand-written note with no report is red at the merge as <code>8·manual-review</code>, with a <code>fix -&gt;</code> line.</li>
+  <li>A <code>wu-result</code> doc with any file name (e.g. <code>docs/work/outcome.html</code>) is found and attested. An ungoverned <code>x-result.html</code> is not attested.</li>
+  <li>A WU branch that sets <code>report = "none"</code> on itself is still judged at the merge hook by the epic's committed <code>"required"</code>.</li>
+  <li><code>mr/v1</code> <code>change_hash</code> and <code>report_hash</code> read <code>sha256:&lt;64 hex&gt;</code>. The <code>dod/v1</code> receipt of a merge whose sign-off attested a report names that report and its hash.</li>
+  <li><code>keel hooks install</code> after <code>git config core.hooksPath .husky</code>, or with a hand-written <code>.git/hooks/pre-commit</code>, exits non-zero, names what it would replace, and changes nothing. With <code>--force</code> it installs.</li>
+  <li>After another tool resets <code>core.hooksPath</code> (or unsets it), <code>keel preflight</code> and <code>keel verify-dod wu|epic</code> are red with <code>keel hooks install</code> as the fix, and <code>keel check</code> prints a warning but keeps its exit code.</li>
+  <li><code>cargo test</code> and <code>cargo clippy --all-targets -- -D warnings</code> are green.</li>
+</ul>
+</div>
+
+<h2 id="today">The code as it is now</h2>
+<table data-c="today-table">
+  <thead><tr><th>Where</th><th>Today (base <code>ef9ee75</code>)</th><th>W2 change</th></tr></thead>
+  <tbody>
+    <tr><td><code>src/main.rs</code> <code>MrCfg</code></td><td>Holds only <code>tiers</code>. <code>Default</code> is the three known tiers.</td><td>Add <code>report: ReportPolicy</code> (serde, lowercase, default <code>Required</code>). An unknown value is a config error that names the key and the three values.</td></tr>
+    <tr><td><code>src/mr.rs</code> <code>confirm()</code></td><td>Uses <code>--report</code>. Otherwise it needs exactly one changed file under <code>docs.root</code> ending in <code>-result.html</code>, and anything else is a usage <code>Err</code>. A report is always required.</td><td>Find the report by role. Apply the policy after <code>sign_ready</code>. Refuse with a <code>FAIL</code>/<code>fix -&gt;</code> block (exit 1, no note written). The suffix filter is deleted.</td></tr>
+    <tr><td><code>src/mr.rs</code> <code>payload()</code></td><td><code>keel-mr/v1</code>. Always has <code>report:</code> and <code>report_hash:</code> lines.</td><td><code>keel-mr/v2</code>. Both lines are left out when there is no report, so the signature never covers a placeholder.</td></tr>
+    <tr><td><code>src/mr.rs</code> <code>change_hash()</code>, <code>report_hash()</code></td><td>Git blob ids (SHA-1): <code>git hash-object --stdin</code> of the diff, and <code>ls-tree</code> or <code>hash-object --no-filters</code> for the report.</td><td><code>sha256:&lt;hex&gt;</code> over the same bytes: the diff text, the blob content at the tip (<code>git cat-file blob</code>), or the raw local file for an epic.</td></tr>
+    <tr><td><code>src/mr.rs</code> <code>manual_review()</code> (check 8)</td><td>Rebuilds the payload from the note's <code>report</code> and <code>report_hash</code>, then re-hashes the report at the note's path.</td><td>Reads the policy from the <code>cfg</code> it is given (HEAD's config on the hook). <code>required</code> with no report in the note is red. A report in the note is always re-hashed, whatever the policy.</td></tr>
+    <tr><td><code>src/notes.rs</code> <code>MrNote</code>, <code>DodNote</code></td><td><code>report</code> and <code>report_hash</code> are mandatory <code>String</code>s. <code>DodNote</code> names no report.</td><td>Both become <code>Option</code> (<code>skip_serializing_if</code>). <code>DodNote</code> gains optional <code>report</code> and <code>report_hash</code>, copied from the verified <code>mr/v1</code>.</td></tr>
+    <tr><td><code>src/gate.rs</code> <code>run()</code></td><td>Runs check 8 and writes <code>dod/v1</code> on green.</td><td><code>manual_review</code> returns the attested report on success, and <code>run()</code> writes it into <code>dod/v1</code>. Guard D runs first for <code>wu|epic</code> and is a failure named <code>0·hooks</code>.</td></tr>
+    <tr><td><code>src/verify_doc.rs</code></td><td>Reads the root <code>data-artifact</code> for the checklist. Nothing outside the module can call it.</td><td>A <code>pub fn artifact(html) -&gt; Option&lt;String&gt;</code> reuses the same tag scanner. The report lookup calls it.</td></tr>
+    <tr><td><code>src/main.rs</code> <code>hooks_install()</code></td><td>Writes the shims into <code>&lt;common&gt;/keel-hooks/</code> and overwrites <code>core.hooksPath</code> without reading it. <code>init</code> calls it with <code>?</code>.</td><td>Reads the effective <code>core.hooksPath</code> and lists <code>&lt;common&gt;/hooks/*</code> that are not <code>*.sample</code>. Anything foreign is refused unless <code>keel hooks install --force</code>. A re-install over Keel's own path is a no-op.</td></tr>
+    <tr><td><code>src/gate.rs</code> <code>preflight()</code>, <code>verify_dod()</code>; <code>src/main.rs</code> <code>["check"]</code></td><td>Never read <code>core.hooksPath</code>.</td><td>One helper, <code>hooks_problem(repo) -&gt; Option&lt;String&gt;</code>. Preflight and <code>verify-dod wu|epic</code> refuse. The <code>keel check</code> dispatch arm warns. <code>check()</code> itself is not touched, because preflight, the hook and pre-push call it.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="report-flow">How the report is found</h2>
+<div class="diagram" data-c="report-flow">
+<pre class="mermaid">
+flowchart TD
+  A[mr confirm wu|epic] --> B{sign_ready: checks 1-7 green?}
+  B -- no --> R0[refused: sign last]
+  B -- yes --> P{"[mr] report"}
+  P -- none --> N{--report given?}
+  N -- yes --> R1[refused: policy none attests nothing]
+  N -- no --> S[sign: payload v2 without report lines]
+  P -- required/optional --> O{--report given?}
+  O -- yes --> H[hash it]
+  O -- no --> F[candidates: docs.root html whose data-artifact has the level role]
+  F --> C{how many}
+  C -- one --> H
+  C -- several --> R2[refused: lists them, fix: --report]
+  C -- zero, required --> R3[refused: no wu-result / epic-result, fix: write it]
+  C -- zero, optional --> S
+  H --> S2[sign: payload v2 with report + sha256]
+</pre>
+<div class="caption">Report lookup and policy in <code>keel mr confirm</code>. Candidates for a WU are the docs changed in <code>base..tip</code> and present at the tip. An epic adds the untracked docs under <code>docs.root</code>, including ignored ones, because <code>docs/.archive/</code> is gitignored.</div>
+</div>
+
+<h2 id="use-case-amendments">Use-case amendments (distilled at WU end)</h2>
+<table data-c="uc-amendments">
+  <thead><tr><th>Contract</th><th>New text (substance)</th></tr></thead>
+  <tbody>
+    <tr><td>UC-MR-1</td><td>The note attests the change hash. It also attests the result report's bytes when <code>[mr] report</code> asks for one. The report is the doc whose <code>data-artifact</code> carries the level's role (<code>wu-result</code>, <code>epic-result</code>), or the one named by <code>--report</code>. A missing required report is refused before signing and is red at the merge with a fix. The payload is <code>keel-mr/v2</code>, with SHA-256 hashes.</td></tr>
+    <tr><td>UC-GATE-2</td><td>The <code>dod/v1</code> receipt names the report the sign-off attested, if there was one.</td></tr>
+    <tr><td>UC-GATE-6 (new)</td><td>The hooks git runs are Keel's. <code>hooks install</code> refuses to replace another hook setup without <code>--force</code>. <code>preflight</code> and <code>verify-dod wu|epic</code> refuse while <code>core.hooksPath</code> is unset or foreign, and <code>check</code> warns. Failure: a gate that is silently not running.</td></tr>
+    <tr><td>UC-INIT-1</td><td>On a repo with another hook manager, <code>init</code> still writes its files. It then stops with the hooks refusal and its <code>--force</code> fix.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="test-plan">Test plan</h2>
+<div data-item="test-plan" data-c="test-plan">
+<p><b>Integration (the WU contract).</b> These go in <code>tests/mr.rs</code>, <code>tests/verify_dod.rs</code> and <code>tests/init.rs</code>, in the existing fixture style: a temp repo, the real <code>keel</code> binary first on <code>PATH</code>, a throwaway ed25519 key, <code>SSH_AUTH_SOCK</code> removed, and no network.</p>
+<table>
+  <thead><tr><th>#</th><th>Scenario</th><th>Asserts</th></tr></thead>
+  <tbody>
+    <tr><td>I1</td><td>Policy matrix at WU level: required / optional / none × result doc present / absent</td><td><code>mr confirm</code> exit code and note presence; whether the note has <code>report</code>; check 8 green or red, with the named failure</td></tr>
+    <tr><td>I2</td><td>Found by role: <code>docs/work/outcome.html</code> with <code>data-artifact="wu-result"</code>; an ungoverned <code>x-result.html</code>; two <code>wu-result</code> docs; a collapsed <code>epic-result wu-result</code> doc</td><td>The first is attested. The second is not a candidate. Two are refused, the message names both, and the fix is <code>--report</code>. The collapsed doc counts for both levels.</td></tr>
+    <tr><td>I3</td><td>Policy from HEAD: the WU sets <code>report = "none"</code>, signs with no report, and merges into an epic whose committed policy is <code>"required"</code></td><td>The merge is refused at the hook with <code>8·manual-review</code></td></tr>
+    <tr><td>I4</td><td>Tamper: under <code>"optional"</code>, a forged <code>report_hash</code>; the existing epic-report-edited-after-signing test</td><td>Both red</td></tr>
+    <tr><td>I5</td><td>Epic report: one untracked <code>epic-result</code> in the ignored <code>docs/.archive/</code>; then a second one</td><td>One is found with no <code>--report</code>. Two are refused, listing both.</td></tr>
+    <tr><td>I6</td><td>Hash format: a fresh sign-off; then a note written with the old blob-id format</td><td><code>change_hash</code> and <code>report_hash</code> match <code>^sha256:[0-9a-f]{64}$</code>. The old-format note is red, because there are no legacy readers (DEC-13).</td></tr>
+    <tr><td>I7</td><td><code>dod/v1</code> after a green WU merge, with and without a report</td><td><code>report</code> and <code>report_hash</code> equal the <code>mr/v1</code> values, and are absent when the note has none</td></tr>
+    <tr><td>I8</td><td><code>hooks install</code> over <code>core.hooksPath=.husky</code>; over a non-sample <code>.git/hooks/pre-commit</code>; over only <code>*.sample</code>; a second install; <code>--force</code></td><td>The first two are refused (exit 1) with the conflict named and <code>core.hooksPath</code> unchanged. Sample-only and re-install pass. <code>--force</code> installs.</td></tr>
+    <tr><td>I9</td><td>Guard: after <code>git config core.hooksPath .husky</code>, and after <code>--unset</code></td><td><code>preflight wu</code> and <code>verify-dod wu</code> are red, naming <code>0·hooks</code> and <code>keel hooks install</code>. <code>keel check</code> is exit 0 with a warning on stderr.</td></tr>
+    <tr><td>I10</td><td><code>keel init</code> in a repo whose <code>core.hooksPath</code> is foreign</td><td>The files are written, the exit is non-zero, the hooks refusal is printed with its <code>--force</code> fix, and <code>core.hooksPath</code> is unchanged</td></tr>
+  </tbody>
+</table>
+<p><b>Unit (one or more per code commit, in <code>#[cfg(test)]</code> modules).</b> <code>[mr] report</code> parses its three values and rejects a fourth, naming the key. <code>verify_doc::artifact</code> reads a root <code>data-artifact</code> and returns none for an ungoverned doc. <code>payload()</code> v2 leaves out the report lines exactly when there is no report. The SHA-256 helper matches the FIPS 180-2 <code>"abc"</code> vector. The foreign-hooks classifier treats sample-only as clean and anything else as foreign. <code>hooks_problem</code> passes for Keel's path and fails for a foreign or unset one.</p>
+<p><b>E2E.</b> Waived for this WU. The epic-level e2e is W3's <code>e2e_python</code>, which depends on W2 and asserts the final report policy.</p>
+</div>
+
+<h2 id="commits">Commit sequence</h2>
+<table data-c="commit-sequence">
+  <thead><tr><th>#</th><th>Commit</th><th>Tests it carries</th><th>Gate</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td><code>docs(E-SEED2.W2): WU plan</code> (this doc)</td><td>none (doc only)</td><td>agent</td></tr>
+    <tr><td>1</td><td><code>[mr] report</code> config key and <code>verify_doc::artifact</code></td><td>unit: parse / reject, artifact read</td><td>agent</td></tr>
+    <tr><td>2</td><td>Report policy and lookup by role in <code>mr confirm</code> and check 8. <code>MrNote</code> optional fields, payload <code>keel-mr/v2</code>, suffix filter deleted, fixture result doc gets <code>data-artifact</code>.</td><td>unit: payload v2 · integration I1–I5</td><td>agent</td></tr>
+    <tr><td>3</td><td>SHA-256 change and report hashes, <code>sha256:</code> prefix (adds the <code>sha2</code> crate)</td><td>unit: <code>"abc"</code> vector · integration I6</td><td>agent</td></tr>
+    <tr><td>4</td><td><code>dod/v1</code> names the attested report</td><td>integration I7</td><td>agent</td></tr>
+    <tr><td>5</td><td><code>hooks install</code> refuses to clobber, <code>--force</code>, <code>init</code> stops on the refusal</td><td>unit: classifier · integration I8, I10</td><td>agent</td></tr>
+    <tr><td>6</td><td>Guard D in <code>preflight</code> and <code>verify-dod wu|epic</code> (<code>0·hooks</code>), warning in <code>keel check</code>. Gate-command fixtures run <code>keel hooks install</code>.</td><td>unit: <code>hooks_problem</code> · integration I9</td><td>agent</td></tr>
+    <tr><td>7</td><td>T2 distillation: UC-MR-1, UC-GATE-2, UC-GATE-6, UC-INIT-1 in <code>use-cases/workflow.html</code>; a new report-policy DEC and DEC-23 amended in <code>decisions/workflow-gates.html</code> plus the index; backlog B2 and the B7 SHA-256 row struck</td><td>none (docs, T2)</td><td>agent</td></tr>
+    <tr><td>8</td><td>Rule-bearing text: <code>skills/keel-workflow/SKILL.md</code> (§2, §3 notes table, check 8 row, §6 sign-off table, hooks section) and <code>skills/keel-plan/SKILL.md</code> (result-report rows), their <code>.claude/skills/</code> copies, and <code>templates/config.toml</code> (<code>[mr] report</code> line). Keel's own <code>.keel/config.toml</code> stays without the key (default required).</td><td>none (rule text). <code>tests/init.rs</code> <code>embedding_is_complete_and_prefixed</code> and <code>every_keel_command_a_skill_names_exists</code> still run.</td><td><b>owner</b>: staged <code>keel mr commit -m "…" --as vuluu</code></td></tr>
+    <tr><td>9</td><td>WU result report (<code>data-artifact="wu-result"</code>)</td><td>none (doc)</td><td>agent, then the notes, preflight, cr, and the owner's <code>keel mr confirm wu</code></td></tr>
+  </tbody>
+</table>
+
+<h2 id="open-questions">Open questions 1–5: defaults applied (owner ruling 2026-11-09)</h2>
+<table data-c="open-questions-applied">
+  <thead><tr><th>#</th><th>Question</th><th>Default applied</th><th>Consequence</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>What "the report is a receipt" means</td><td>The report is evidence like the other notes. The policy can require it, a missing one is a named failure, and the attested report is named in both <code>mr/v1</code> and <code>dod/v1</code>.</td><td>No new note kind. <code>dod/v1</code> gains two optional fields. The report does not replace <code>dod/v1</code> and is not merged into it.</td></tr>
+    <tr><td>2</td><td>One policy or one per level</td><td>A single <code>[mr] report</code> for both levels</td><td>A project that wants WU reports but no epic report cannot say so. The table form (<code>{ wu = …, epic = … }</code>) can be added later without breaking the string form.</td></tr>
+    <tr><td>3</td><td>Finding the archived epic report</td><td>Exactly one untracked <code>epic-result</code> doc under <code>docs.root</code> (gitignored ones included), else <code>--report</code></td><td><code>docs/.archive/</code> keeps every past epic's report, so from a checkout's second epic on there are usually several candidates. The lookup then refuses and lists them, and the owner passes <code>--report</code>. In practice the default only saves typing on a checkout's first epic. Narrowing the candidates (for example by the epic id in the file name) is a follow-up, not built.</td></tr>
+    <tr><td>4</td><td>Schema version</td><td>Payload header <code>keel-mr/v2</code>. The note schema stays <code>mr/v1</code>, changed in place, and <code>dod/v1</code> likewise.</td><td>There are no legacy readers (DEC-13). Any <code>mr/v1</code> note signed by a binary older than W2 is red under the new binary (wrong payload and hash format), so that tip must be signed again. This hits any WU (W7 included) that is signed before W2 lands and merged with a W2 binary. Owner action: sign with the binary that will run the merge hook.</td></tr>
+    <tr><td>5</td><td>Hooks coexistence</td><td>Options B + D. Install refuses to clobber without <code>--force</code>. The guard refuses in <code>preflight</code> and <code>verify-dod wu|epic</code> and warns in <code>check</code>. Chaining (C) is rejected.</td><td>Keel does not run alongside another hook manager: the owner picks one, or uses <code>--force</code> and loses the other tool's hooks. Turning a hook manager on later is caught at the next preflight or gate command, not at the moment it happens. DEC-23's "coexistence is open" sentence is replaced by this decision.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="choices">Choices made here (reversible, owner may override)</h2>
+<table data-c="choices-table">
+  <thead><tr><th>#</th><th>Point</th><th>What was decided here</th></tr></thead>
+  <tbody>
+    <tr><td>A</td><td>How to compute SHA-256</td><td>Add the <code>sha2</code> crate (RustCrypto). Git 2.50.1's <code>hash-object</code> has no <code>--object-format</code> option (checked with <code>git hash-object -h</code>), and the shell tools differ by platform (<code>shasum</code>, <code>sha256sum</code>). Values carry a <code>sha256:</code> prefix, so the algorithm is named in the data.</td></tr>
+    <tr><td>B</td><td>SHA-256 scope</td><td>Only the <code>mr/v1</code> <code>change_hash</code> and <code>report_hash</code> (backlog B7 names exactly these). <code>cr/v1</code> <code>code_diff_hash</code> and <code>dod/v1</code> <code>diff_hash</code> stay git blob ids. They are unsigned bindings, and changing them would make every in-flight cr note stale.</td></tr>
+    <tr><td>C</td><td>Guard on an unset <code>core.hooksPath</code></td><td>Refuse, as for a foreign one. This matches Trawler DEC-72 and catches a clone where hooks were never installed. Cost: test fixtures that run <code>preflight</code> or <code>verify-dod wu|epic</code> must install hooks first. The weaker alternative is to refuse only a foreign value and warn when it is unset.</td></tr>
+    <tr><td>D</td><td>Where the guard does not run</td><td><code>verify-dod hook</code>, <code>verify-dod range</code> (pre-push) and <code>verify-dod commit</code> skip it: the first two run from Keel's own hooks by construction, and the commit gate runs only inside the walk. <code>check()</code> stays guard-free, and only the <code>keel check</code> command warns.</td></tr>
+    <tr><td>E</td><td><code>keel init -f</code> and the hooks</td><td><code>init</code>'s <code>-f</code> (overwrite skills) does not imply <code>hooks install --force</code>. Replacing another tool's hooks is a separate, explicit act.</td></tr>
+    <tr><td>F</td><td><code>[mr] report = "none"</code> plus <code>--report</code></td><td>Refused, because the policy says nothing is attested. A report already in a note is still re-hashed by check 8.</td></tr>
+    <tr><td>G</td><td>What counts as "non-sample" hooks</td><td>Any entry in <code>&lt;git-common-dir&gt;/hooks/</code> whose name does not end in <code>.sample</code>. A foreign <code>core.hooksPath</code> is any effective value (local, global or system) other than Keel's canonical <code>keel-hooks</code> path.</td></tr>
+    <tr><td>H</td><td>New DEC ids</td><td>Minted at commit 7, from the next free id after checking every live branch. The index says DEC-39 today, and W7 runs in parallel and mints a router DEC.</td></tr>
+    <tr><td>I</td><td>Rule-bearing text</td><td>The skill and template edits land as one owner <code>keel mr commit</code> (commit 8), staged and printed, never run by the agent.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="risks">Risks</h2>
+<ul data-c="risks">
+  <li><b>Existing sign-offs go red.</b> See open question 4. Mitigation: the WU result and the staged commands tell the owner to re-sign with the new binary any tip already signed before W2.</li>
+  <li><b>Fixture churn.</b> Choice C (refusing an unset <code>core.hooksPath</code>) means <code>tests/mr.rs</code>, <code>tests/verify_dod.rs</code> and <code>tests/cli.rs</code> fixtures call <code>keel hooks install</code> before gate commands. Every later fixture <code>git commit</code> then runs Keel's pre-commit and commit-msg shims, using the test binary first on <code>PATH</code>. A fixture that commits on <code>main</code> after install would be refused, so the install goes after the fixture's base commit.</li>
+  <li><b>Fixture result doc.</b> The <code>tests/mr.rs</code> fixture's <code>&lt;p&gt;wu a: done&lt;/p&gt;</code> has no <code>data-artifact</code>, so the role lookup would not find it. It becomes a minimal <code>&lt;html data-artifact="wu-result"&gt;</code> doc, which is the one change to the "existing tests pass unchanged" claim.</li>
+  <li><b>Merge with W1/W11 on <code>src/main.rs</code>.</b> W1 and W11 are already on the epic base (<code>ef9ee75</code>), so there is no pending conflict. W6 later shares the hook code (it depends on W2).</li>
+  <li><b>Lossy diff text.</b> <code>change_hash</code> keeps hashing the diff text exactly as <code>git()</code> returns it today (lossy UTF-8, trimmed). Only the hash function changes, so every machine still hashes the same bytes.</li>
+  <li><b>This repo's own gate.</b> Keel's checkout has <code>core.hooksPath</code> set to its <code>keel-hooks</code>, so guard D is green here. A worker in a fresh clone without hooks would be refused at preflight. That is the intended behaviour, and the fix line says so.</li>
+</ul>
+
+<h2 id="non-goals">Not this WU</h2>
+<ul data-c="not-this-wu">
+  <li>Chaining other tools' hooks (option C), a per-level report policy, or narrowing the epic-report candidates. These are follow-ups if the owner asks.</li>
+  <li>SHA-256 for <code>cr/v1</code> and <code>dod/v1</code> bindings, native SSH signing of rule-bearing commits (B7, stays backlog), and the notes fetch refspec (W6).</li>
+  <li>Re-recording Trawler DEC-72 in full: W5 does that. W2 only amends DEC-23, which already records the reversal.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
