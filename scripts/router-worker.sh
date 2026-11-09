@@ -11,7 +11,7 @@
 # until the worker exits (EXITED) or stalls (STALLED: on two polls running, no Bash-tool shell
 # child and its session transcript untouched for <stall-min> minutes, default 15), prints that one
 # line, exits 0. It only reads; the transcript is ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/
-# <worktree, non-alnum -> ->/<session>.jsonl plus <session>/subagents/*.jsonl, falling back to the
+# */<session>.jsonl plus */<session>/subagents/*.jsonl, falling back to the
 # pid file's mtime when none exists. Poll: ROUTER_WAIT_POLL s. A background Bash command is killed
 # at its timeout (max 2h): the router then wakes without a line and re-arms.
 # brief/note must be a regular (non-symlink) .md file under <repo>/.router/briefs/; worktree must be a registered
@@ -38,11 +38,13 @@ if [ "${1:-}" = wait ]; then
   run=
   for d in "$ROOT"/.router/runs/*/; do [ "$(cat "${d}name" 2>/dev/null)" = "$name" ] && run=$d; done
   [ -n "$run" ] || die "no recorded run for $name"
-  t="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$(sed 's/[^A-Za-z0-9]/-/g' "${run}worktree")/$(cat "${run}session").jsonl"
+  # found by the unique session id under any project dir: Claude Code's dir name (worktree path with
+  # non-alnum -> -, truncated past 200 chars plus a hash) is not re-derived here
+  P="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" sid=$(cat "${run}session")
   if stat -c %Y / >/dev/null 2>&1; then mtime() { stat -c '%Y %n' "$@"; }; else mtime() { stat -f '%m %N' "$@"; }; fi
   # "<mtime> <path>" of the newest transcript; subagent turns land in <session>/subagents/*.jsonl
   # and leave <session>.jsonl untouched
-  seen() { mtime "$t" "${t%.jsonl}"/subagents/*.jsonl 2>/dev/null | sort -n | tail -1; }
+  seen() { mtime "$P"/*/"$sid".jsonl "$P"/*/"$sid"/subagents/*.jsonl 2>/dev/null | sort -n | tail -1; }
   # a running Bash tool command is a `<shell> -c` child; MCP servers (also children) are not
   busy() { ps -A -o ppid=,command= | awk -v p="$pid" '$1 == p && $2 ~ /(^|\/)[a-z]*sh$/ && $3 == "-c" { f = 1 } END { exit !f }'; }
   # quiet must hold on two consecutive polls: a command that just ended leaves the transcript

@@ -365,10 +365,13 @@ impl Launcher {
         out
     }
 
-    /// The session transcript `wait` reads for this spawn, under the stubbed CLAUDE_CONFIG_DIR.
+    /// The session transcript `wait` reads for this spawn, under the stubbed CLAUDE_CONFIG_DIR. Claude
+    /// Code names the project dir after the worktree, but truncates a long name and appends a hash, and
+    /// encodes non-ASCII per UTF-16 unit; the dir here matches no re-derivable rule, so `wait` must find
+    /// the transcript by its unique session id alone.
     fn transcript(&self, wt: &Path, sid: &str) -> PathBuf {
         let enc: String = wt.to_str().unwrap().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
-        let dir = self.main.parent().unwrap().join("config/projects").join(enc);
+        let dir = self.main.parent().unwrap().join("config/projects").join(format!("{}-1k9x2q", &enc[..enc.len().min(20)]));
         std::fs::create_dir_all(&dir).unwrap();
         dir.join(format!("{sid}.jsonl"))
     }
