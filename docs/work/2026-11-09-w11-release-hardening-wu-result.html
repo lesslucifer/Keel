@@ -41,6 +41,8 @@
     <li><code>aad7c9c</code>: the licence, the dist config and <code>tests/release.rs</code>.</li>
     <li><code>b6b555a</code>: DEC-38.</li>
     <li>This report.</li>
+    <li><code>cd01ebd</code>, <code>0de8e0d</code>, <code>54407c3</code>: the owner's F11 and F12 commits and the regenerated <code>release.yml</code>.</li>
+    <li><code>50afdb5</code>: DEC-38, fix round 1. This report's fix round 1 section.</li>
   </ul>
   <p><b>Tests.</b> <code>tests/release.rs</code> is the integration layer and has 5 tests: the licence is MIT and dist ships it; both publish jobs keep their prerelease guard and <code>publish-prereleases</code> is not enabled; the four actions are pinned to 40-hex commits; the Linux runners are <code>ubuntu-24.04</code>; and a check that the job-block helper stops at the next job. The full <code>cargo test</code> run is green with 63 tests, and <code>cargo clippy --all-targets -- -D warnings</code> is green.</p>
   <p><b>Verification of dist 0.34.0.</b> Read against its source at tag <code>v0.34.0</code>. <code>dist</code> was not run. File and line references are in the plan.</p>
@@ -74,9 +76,22 @@ git commit -m "ci(E-SEED2.W11): regenerate release.yml (action pins, ubuntu-24.0
       <li>a tag ruleset, so only the owner can create tags;</li>
       <li><code>HOMEBREW_TAP_TOKEN</code> fine-grained, limited to the tap, with Contents read-write only;</li>
       <li>one commit (a README) in <code>lesslucifer/homebrew-tap</code>;</li>
-      <li><code>NPM_TOKEN</code> a granular publish token with an expiry and a rotation reminder.</li>
+      <li>the npm user or org <code>lesslucifer</code> owning <code>@lesslucifer</code>;</li>
+      <li><code>NPM_TOKEN</code> a granular read-write token with bypass-2FA, an expiry and a rotation reminder, scoped to <code>@lesslucifer</code> and narrowed to <code>@lesslucifer/keel</code> after the first publish.</li>
     </ul></li>
 </ol>
+
+<h2 id="fix-round-1">Fix round 1</h2>
+<p data-c="fix-round-1">Owner ruling 2026-11-09: fix the independent review of <code>54407c3</code> (M1, L1–L6) before sign-off. Only DEC-38 and this report changed, with no code path, test or workflow edits. Every <code>release.yml</code> claim was checked against the file at <code>54407c3</code>. The raw review output was unreadable (permission denied), so the brief's summary was used.</p>
+<ul data-c="fix-round-1-list">
+  <li><b>M1.</b> The owner setup now requires the npm user or org <code>lesslucifer</code> to own the scope. The token is read-write and scope-wide until the first publish, then narrowed to the package. It needs bypass-2FA, because <code>npm publish --access public</code> runs with no OTP (release.yml:350), and an expiry and a rotation reminder. A <b>Recovery</b> paragraph covers a failed npm job after <code>gh release create</code> (release.yml:279): fix the token, then "Re-run failed jobs", and never re-tag. The help for <code>npm token</code> in local npm 11.16.0 confirms the <code>expires</code>, <code>packages</code>, <code>scopes</code>, <code>packages-and-scopes-permission</code> and <code>bypass-2fa</code> options. Two claims stay <b>unverified</b> and are marked so in DEC-38: that a package-limited token cannot name an unpublished package, and that npm's 2025 rules make bypass-2FA mandatory for CI. The <code>EOTP</code> code was not checked either. No network was used.</li>
+  <li><b>L1.</b> The <code>curl | sh</code> risk now covers dist in <code>plan</code> (release.yml:67) and in every build job (<code>matrix.install_dist.run</code>, release.yml:131). It also covers the unpinned rustup installer in containerised build jobs without Rust (release.yml:124–127). All of these run beside <code>contents: write</code> (release.yml:17–18). The matrix value is computed by dist at plan time and is not visible in the file. That it is the same <code>curl | sh</code> line is the reviewer's reading and was not run.</li>
+  <li><b>L2.</b> The Homebrew risk now names <code>brew update</code> and <code>brew style</code> (release.yml:318, 320), and <code>GH_TOKEN</code> in that job's env (release.yml:287).</li>
+  <li><b>L3.</b> The Node <code>20.x</code> risk (release.yml:345) now notes that Node 20 is end-of-life since April 2026 and runs only <code>npm publish</code>.</li>
+  <li><b>L4.</b> LICENSE is said to ship in the archives, the npm package and the Homebrew install, and the shell installer copies only binaries.</li>
+  <li><b>L5.</b> "Revisit at every dist upgrade" now includes re-resolving the action pins, because the bare shas carry no version comment for Dependabot or Renovate.</li>
+  <li><b>L6.</b> One line added: macOS keeps dist's default runners, and <code>x86_64-apple-darwin</code> builds on <code>macos-15-intel</code> (from the W11 plan's dist 0.34.0 reading; the runtime matrix is not in the file).</li>
+</ul>
 
 <h2 id="distillation">Distillation</h2>
 <p data-item="distillation" data-c="distillation">DEC-38 (T2) has absorbed the corrected trigger and prerelease text, the pins and runners, the accepted risks with their upgrade path, the release rule, and the owner setup tasks. <code>install.html</code> (T1) and project-router absorb F11 and F12 once the owner commits them. The plan and this report are archived at epic close.</p>
