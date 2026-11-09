@@ -45,7 +45,7 @@
     <li>Eight bad inputs exit 2.</li>
     <li>jq accepts the guard change.</li>
   </ul>
-  <p>Nine mutations of the script each make the test fail, so the test is not vacuous:</p>
+  <p>Fourteen mutations each make the test fail, so the test is not vacuous. They cover the script, the guard, and the test's own guard-classification checks:</p>
   <ul>
     <li><code>busy()</code> always false.</li>
     <li>Dropping <code>busy()</code>'s <code>-c</code> test.</li>
@@ -56,6 +56,11 @@
     <li>Picking the first matching run directory instead of the newest.</li>
     <li>Ignoring subagent transcripts.</li>
     <li>The <code>live</code> loop off.</li>
+    <li><code>busy()</code> accepting only bare shell names. A real busy child is <code>/bin/zsh -c</code>, and the stub's busy child is now <code>/bin/sh -c</code>.</li>
+    <li><code>wait</code> skipping the name rule.</li>
+    <li>An unbounded <code>stall-min</code>.</li>
+    <li>The guard letting the router run <code>cargo</code>/<code>keel</code>.</li>
+    <li>The guard refusing <code>wait</code> to the router.</li>
   </ul>
   <p>No stub process is left running after a failing run.</p>
   <p><b>Not verified:</b> whether a background command's exit actually wakes an <em>idle</em> router session in this environment. A worker cannot test that. It needs the router's own interactive session (see Follow-ups).</p>
@@ -129,7 +134,13 @@
       </ul>
       Two guard mutations make the test fail, one per intent: letting the router run <code>cargo</code>/<code>keel</code>, and refusing <code>wait</code> to the router.</li>
     <li>Preflight and the gate run with an explicit <code>--target epic/E-SEED2</code>. Without it, <code>keel</code> measured this branch against <code>main</code> and reported false reds.</li>
-    <li>Docs touched: this report, the WU plan, and (through the back-merge) nothing else.</li>
+    <li>Review round 6 (<code>cr/v1</code> FAIL on <code>6276d36</code>, the first tip after the merge) found 2 importants, fixed in the next code commit:
+      <ul>
+        <li><code>busy()</code>'s absolute-path branch was untested.</li>
+        <li>The worker-name rule was duplicated in <code>wait</code>, spawn/resume and the guard. It now lives in one place, <code>valid_name()</code> in the script. The guard's <code>wait</code> branch takes the same loose shape as spawn/resume, and the script validates the arguments.</li>
+      </ul>
+    </li>
+    <li>Docs touched: this report and the WU plan.</li>
   </ul>
 </div>
 
