@@ -240,7 +240,9 @@ struct Launcher {
 /// A repo whose main checkout holds the launcher, two linked worktrees, and a stub claude that
 /// prints its argv and sleeps $STUB_SLEEP seconds, or, when $STUB_RELEASE is set, runs until that file
 /// exists or the test process ($STUB_OWNER) is gone, so a panicking test leaks no stub past the test
-/// binary (inside a `sh -c` child, as a Bash tool command runs, when $STUB_BUSY is set too).
+/// binary. It holds inside a `sh -c` child, as a Bash tool command runs, when $STUB_BUSY is set too;
+/// otherwise in a subshell piped to `cut -c`: long-lived children that are not `<shell> -c`, as an MCP
+/// server is.
 fn launcher() -> Launcher {
     let d = TempDir::new().unwrap();
     let base = d.path().canonicalize().unwrap();
@@ -259,7 +261,7 @@ fn launcher() -> Launcher {
     std::fs::write(&stub, concat!(
         "#!/bin/sh\necho \"stub $*\"\nhold='while [ ! -e \"$STUB_RELEASE\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done'\n",
         "if [ -z \"${STUB_RELEASE:-}\" ]; then sleep \"${STUB_SLEEP:-3}\"\n",
-        "elif [ -n \"${STUB_BUSY:-}\" ]; then sh -c \"$hold; :\"\nelse eval \"$hold\"; fi\n"
+        "elif [ -n \"${STUB_BUSY:-}\" ]; then sh -c \"$hold; :\"\nelse eval \"$hold\" | cut -c 1; fi\n"
     )).unwrap();
     std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub, _d: d }
@@ -450,12 +452,16 @@ fn wait_blocks_until_the_worker_exits_or_stalls() {
     let wt = l.wt.to_str().unwrap();
     let brief = ".router/briefs/b.md";
     let release = |k: u8| l.main.parent().unwrap().join(format!("release-{k}"));
+    std::fs::create_dir_all(l.main.join(".router/out")).unwrap();
+    std::fs::write(l.main.join(".router/out/orphan.pid"), "1\n").unwrap();
     for (args, why) in [
         (vec!["wait"], "wait <name>"),
         (vec!["wait", "n", "1", "x"], "wait <name>"),
         (vec!["wait", "-n"], "bad name"),
         (vec!["wait", "n", "0"], "stall-min"),
         (vec!["wait", "n", "x"], "stall-min"),
+        (vec!["wait", "n", ""], "stall-min"),
+        (vec!["wait", "orphan"], "no recorded run for orphan"),
         (vec!["wait", "ghost"], "no worker ghost"),
     ] {
         let (ok, out) = l.run_env(&args, &[]);

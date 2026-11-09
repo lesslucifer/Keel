@@ -25,7 +25,7 @@ B="$ROOT/.router/briefs" O="$ROOT/.router/out"
 live() { ps -o stat=,command= -p "$1" 2>/dev/null | grep -v '^ *Z' | grep -qF -- " -n $name "; }
 if [ "${1:-}" = wait ]; then
   [ $# -eq 2 ] || [ $# -eq 3 ] || die "wait <name> [<stall-min>]"
-  name=$2 stall=${3:-15}
+  name=$2 stall=${3-15}
   expr "$name" : '^[a-z0-9][a-z0-9-]\{0,40\}$' >/dev/null || die "bad name"
   expr "$stall" : '^[1-9][0-9]\{0,3\}$' >/dev/null || die "stall-min must be 1-9999"
   pid=$(cat "$O/$name.pid" 2>/dev/null) || die "no worker $name ($O/$name.pid missing)"
@@ -36,7 +36,7 @@ if [ "${1:-}" = wait ]; then
   if stat -c %Y / >/dev/null 2>&1; then mtime() { stat -c '%Y %n' "$@"; }; else mtime() { stat -f '%m %N' "$@"; }; fi
   # "<mtime> <path>" of the newest transcript; subagent turns land in <session>/subagents/*.jsonl
   # and leave <session>.jsonl untouched
-  seen() { for f in "$t" "${t%.jsonl}"/subagents/*.jsonl; do [ ! -f "$f" ] || mtime "$f"; done | sort -n | tail -1; }
+  seen() { mtime "$t" "${t%.jsonl}"/subagents/*.jsonl 2>/dev/null | sort -n | tail -1; }
   # a running Bash tool command is a `<shell> -c` child; MCP servers (also children) are not
   busy() { ps -A -o ppid=,command= | awk -v p="$pid" '$1 == p && $2 ~ /(^|\/)[a-z]*sh$/ && $3 == "-c" { f = 1 } END { exit !f }'; }
   # quiet must hold on two consecutive polls: a command that just ended leaves the transcript
