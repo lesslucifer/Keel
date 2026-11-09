@@ -56,12 +56,10 @@ The cr gate covers only `code_paths = ["src/", "tests/"]`. Before the owner
 signs a WU touching any of these, run an independent review (checklists: the
 keel-router skill's `references/review-checklists.md`):
 - rule-bearing but outside `code_paths`: `skills/`, `templates/` (both embedded into the `keel` binary by `include_str!`, so they ship), `.keel/`, `.claude/skills/`, `.claude/settings.json` (the router hooks and allowlist), `AGENTS.md`, `docs/*.html`;
-- neither code nor rule-bearing: `scripts/` (the router launcher and `router-guard.jq`: the security path; tested by `tests/router.rs`, which the cr gate does cover), `.claude/agents/` (router/worker personas and tool lists), `.codex/`, `Cargo.toml` / `Cargo.lock`, `.gitignore`.
+- neither code nor rule-bearing: `scripts/` (the router launcher and `router-guard.jq`: the security path; tested by `tests/router.rs`, which the cr gate does cover), `.claude/agents/` (router/worker personas and tool lists), `.codex/`, `Cargo.toml` / `Cargo.lock`, `.gitignore`, `.github/` (the dist-generated release workflow: a tag publishes to GitHub Releases, npm and Homebrew with repo secrets; checklist D) and `dist-workspace.toml` (its source; `release.yml` is regenerated from it, never hand-edited, DEC-38).
 
 Keel has no `hooks/` or `.claude-plugin/` directory (W7 v2 dropped the plugin;
-the git hooks are strings in `src/main.rs`, so the cr gate covers them) and no
-`.github/` on `main` or `epic/E-ROUTER`; when W10's `.github/workflows/release.yml`
-lands, add it here (checklist D).
+the git hooks are strings in `src/main.rs`, so the cr gate covers them).
 
 ## Workers
 - Standard: headless, `scripts/router-worker.sh spawn <name> <worktree> .router/briefs/<name>.md <model>` from `Keel-router`. The launcher runs `$HOME/.local/bin/claude` (`/Users/nguyenvanluong/.local/bin/claude`, or `ROUTER_CLAUDE`) with fixed `--agent worker --max-budget-usd 25`, a fixed `--allowedTools` grant (`cargo build|test|check|clippy|fmt`, `keel preflight|verify-doc|verify-dod|notes write|lint|check`) and a fixed `--disallowedTools` deny (`keel mr`, `cargo run`) on the `claude -p` line only (DEC-37); `--permission-mode acceptEdits` by default, or `plan` via a trailing `--permission-mode plan` on spawn/resume (anything else refused, a resume never inherits it); always an explicit model (`opus|sonnet|haiku|fable`); never into the router's own checkout or the main checkout (the launcher refuses both). The router has no `Agent`-tool fallback (the guard denies it, E-ROUTER close review): checkers and watchers are headless workers too. Open launcher issue: worker persona missing in branches without `.claude/agents/worker.md` (backlog `docs/backlog/e-router-v2.html`).
