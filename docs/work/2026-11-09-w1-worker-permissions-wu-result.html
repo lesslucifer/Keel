@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="d523a2ca92b31a2590b0e282" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-ROUTERFIX.W1 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-ROUTERFIX.W1 · Worker grants and permission mode in the launcher: result</h1>
+      <p>WU result for <code>wu/E-ROUTERFIX/w1-worker-permissions</code>, measured against <a href="2026-11-09-e-routerfix-plan.html">the collapsed E-ROUTERFIX plan</a> (W1 block and W1 plan).</p>
+      <div class="meta">T3 · wu-result · 2026-11-09 · Keel · branch wu/E-ROUTERFIX/w1-worker-permissions off epic/E-ROUTERFIX 07b4940</div>
+    </div>
+  </header>
+  <main>
+    <h2 id="outcome">Outcome</h2>
+    <p data-item="outcome" data-c="outcome"><b>Delivered.</b> <code>scripts/router-worker.sh</code> now passes the grant table to every <code>claude -p</code> it starts. The allow list (<code>--allowedTools</code>) holds <code>Bash(c)</code> and <code>Bash(c *)</code> for <code>cargo build|test|check|clippy|fmt</code> and <code>keel preflight|verify-doc|verify-dod|notes write|lint|check</code>. The deny list (<code>--disallowedTools</code>) holds <code>keel mr</code> and <code>cargo run</code>, bare and <code>" *"</code>. <code>spawn</code> and <code>resume</code> take an optional trailing <code>--permission-mode acceptEdits|plan</code>. It defaults to <code>acceptEdits</code> on every run and is never inherited by a resume. It is written to the run dir's <code>permission-mode</code> file and printed on the <code>RUNNING</code> line. <code>bypassPermissions</code>, <code>dontAsk</code>, <code>default</code> and an empty value are refused with "permission mode must be". A missing value, an unknown option or an extra argument is refused with the usage line. In every refusal nothing starts. <code>.claude/settings.json</code> and <code>scripts/router-guard.jq</code> are unchanged, as the plan's F4/F5 and non-goals require. Every bullet of the plan's Expected holds on the tip, except the live bullet, which is evidence only and could not be run from this session (see Deviations).</p>
+
+    <h2 id="deviations">Deviations</h2>
+    <ul data-item="deviations" data-c="deviations">
+      <li><b>Live dogfood not run.</b> The plan marks it owner-run and not gating. This worker built a probe that would have isolated the grant from the owner's user-level allowlist: a <code>ROUTER_CLAUDE</code> wrapper adding <code>--setting-sources project,local</code>, and a brief running <code>cargo test</code>, <code>keel verify-doc</code>, <code>keel preflight</code>, <code>keel mr --help</code> and <code>cargo run -- mr --help</code>. Its own session was refused <code>sh scripts/router-worker.sh …</code> ("requires approval"; nobody can approve headless), so the probe never ran. The exact commands are in Follow-ups.</li>
+      <li><b>Skill text not staged in the WU tree.</b> Plan open point 5 said to stage the rule-bearing "fixed flags" edits uncommitted on the WU. Staged changes would dirty the gated tip's tree. An owner's <code>keel mr commit</code> on this branch would also move the tip after its test/doc/cr notes, which orphans them. Instead, the edit is a patch file, untracked and outside the diff, for one exempt (no code path) rule-bearing commit on <code>epic/E-ROUTERFIX</code> after this WU merges. See Follow-ups.</li>
+      <li><b>The brief asked to "update <code>scripts/router-guard.jq</code>"</b>. The plan (F5, non-goals) keeps the guard unchanged, and the plan wins. The new test asserts that the guard already admits the router's spawn shape with <code>--permission-mode plan</code>, and that it still denies every granted <code>cargo</code>/<code>keel</code> command.</li>
+      <li><b>Decision id DEC-37, not DEC-36.</b> DEC-36 is minted on <code>wu/E-ROUTERFIX/w2-router-notify</code>. The decisions index on this branch lists <code>DEC-30 – DEC-35, DEC-37</code> and next free DEC-38. Merging W2 conflicts on that index row; keep both ranges. E-SEED2 plans Trawler re-records "DEC-37 onward" without pinning numbers, so it must renumber from DEC-38 when it merges main.</li>
+      <li><b>Worktree path.</b> This worker's session was spawned in <code>Keel-E-SEED2</code>, and Claude Code refused it any path outside that checkout. The WU worktree was created at the briefed path (<code>Keel-E-ROUTERFIX-w1-worker-permissions</code>), worked from the session scratchpad via <code>git worktree move</code>, and moved back to the briefed path at the end.</li>
+    </ul>
+
+    <h2 id="evidence">Evidence</h2>
+    <div data-item="evidence" data-c="evidence">
+      <ul>
+        <li>Commits: <code>bf35058</code> (launcher and test), <code>a17c0b8</code> (T2 docs), then this report.</li>
+        <li>Test: <code>tests/router.rs</code> <code>launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode</code> (hermetic: temp repo, stub <code>claude</code> echoing its argv). It covers the plan's test points 1–5. (1) Default argv holds <code>--permission-mode acceptEdits</code> and every allow and deny entry, and no <code>cargo run</code> / <code>keel mr</code> on the allow side. (2) <code>plan</code> reaches argv and the run dir. (3) Seven refused shapes leave no <code>.pid</code>. (4) A resume gets the default unless it states <code>plan</code>, and refuses <code>bypassPermissions</code>. (5) The guard allows the router's spawn shape with the option and denies each granted command to the router. It is the WU's integration layer (router command shape → guard → launcher → argv) and its unit layer.</li>
+        <li><code>cargo test</code>: 51 passed, 0 failed (router 7/7). <code>cargo clippy --all-targets -- -D warnings</code>: clean.</li>
+        <li>Docs: <code>docs/decisions/router.html</code> (DEC-37), <code>docs/decisions/decisions-index.html</code>, <code>docs/use-cases/router.html</code> (UC-ROUTE-5), <code>docs/backlog/e-router-v2.html</code> (R2 struck), <code>docs/backlog/backlog-index.html</code>, this report.</li>
+      </ul>
+    </div>
+
+    <h2 id="distillation">Distillation</h2>
+    <p data-item="distillation" data-c="distillation">DEC-37 in <a href="../decisions/router.html#dec-37">decisions/router.html</a> records the choice: grants on the launcher, not in settings. It also holds the grant table's rationale, what was rejected, and the code-execution ceiling, with lineage to DEC-31 and DEC-33. <a href="../use-cases/router.html#uc-route-5">UC-ROUTE-5</a> carries the launcher contract: the grant and deny lists, the optional <code>--permission-mode</code>, and the new failure cases. <a href="../backlog/e-router-v2.html#r2">Backlog R2</a> is struck, with a pointer to DEC-37. The skill's "fixed flags" wording is pending the owner's rule-bearing commit (Follow-ups).</p>
+
+    <h2 id="follow-ups">Follow-ups</h2>
+    <ol data-item="follow-ups" data-c="follow-ups">
+      <li><b>Live probe (owner, evidence only).</b> In the WU worktree, write the probe brief to <code>.router/briefs/routerfix-live.md</code>. It runs <code>cargo test --test router</code>, <code>keel verify-doc docs/decisions/router.html</code>, <code>keel preflight wu HEAD --target epic/E-ROUTERFIX</code>, <code>keel mr --help</code> and <code>cargo run -- mr --help</code>, each as its own call, then reports ran/refused per command. Then run <code>ROUTER_CLAUDE=&lt;wrapper&gt; scripts/router-worker.sh spawn routerfix-live &lt;a throwaway worktree&gt; .router/briefs/routerfix-live.md sonnet</code>. The wrapper is <code>exec "$HOME/.local/bin/claude" --setting-sources project,local "$@"</code>; it hides the user-level allowlist so the launcher is the only grant. Expected: the first three run, the last two are refused.</li>
+      <li><b>Rule-bearing skill text (owner).</b> After this WU merges, apply <code>skills-fixed-flags.patch</code> (untracked at the WU worktree root) on <code>epic/E-ROUTERFIX</code>. It updates <code>skills/keel-router/references/worker-ops.md</code> (mode 2 flags and open issue 3), its <code>.claude/skills/</code> copy, and <code>.claude/skills/project-router/SKILL.md</code> "Workers". Commit it with <code>keel mr commit -m "&lt;msg&gt;" --as &lt;id&gt;</code>.</li>
+      <li><b>Remove the temporary user-level entries</b> after the epic reaches main (plan open point 1).</li>
+      <li><code>cargo fmt --check</code> reports drift in <code>src/gate.rs</code>, which this WU does not touch. It predates the WU; it is left alone.</li>
+    </ol>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
