@@ -67,6 +67,7 @@ flowchart LR
   W5[W5 Trawler re-records]
   W7[W7 opus worker policy]
   W8[W8 worker watchdog - done] --> W10[W10 sync main]
+  W1 --> W11[W11 release hardening]
 </pre>
 <div class="caption">WU dependencies. W1 and W8 start now in parallel; W5 and W7 can start any time.</div>
 </div>
@@ -146,6 +147,14 @@ flowchart LR
   <p data-item="wu-deps">W8 (done)</p>
 </div>
 
+<div data-wu="E-SEED2.W11" data-c="wu-w11">
+  <h3 id="w11">E-SEED2.W11 · Release hardening <span class="badge approval">owner ruling 2026-11-09</span></h3>
+  <p data-item="wu-summary">Close the independent review of W1 (<code>6daabc8</code>, findings F1–F12) before the first stable tag. The owner ruled MIT for the licence: set <code>license = "MIT"</code> in <code>Cargo.toml</code> and add a <code>LICENSE</code> file. Make every other fix that dist 0.34.0 supports through <code>dist-workspace.toml</code>: action commit pins and Ubuntu 24.04 runners. The owner regenerates <code>release.yml</code> with <code>dist generate</code>, because agents cannot run <code>dist</code>. Correct what DEC-38, project-router and install.html say about prerelease tags, triggers and profile edits. Record every finding dist cannot fix as an accepted risk in DEC-38, or as an owner setup task on GitHub or npm. No stable tag until this WU merges; prerelease tags stay safe because they skip npm and Homebrew.</p>
+  <p data-item="wu-maps-to">DEC-38 (release pipeline) · install channels (<code>docs/install.html</code>) · independent review of W1, F1–F12.</p>
+  <p data-item="wu-expected"><code>Cargo.toml</code> declares MIT and <code>LICENSE</code> exists, and dist auto-includes it in archives and installers. <code>dist-workspace.toml</code> pins the four actions to commit shas and moves Linux runners to 24.04. <code>tests/release.rs</code> locks the licence, the pins and the rule that prereleases are never published. Each of F1–F12 is fixed, configured, assigned to the owner or accepted, and recorded in DEC-38.</p>
+  <p data-item="wu-deps">W1 (merged, <code>b7201c6</code>)</p>
+</div>
+
 </div>
 
 <h2 id="e2e-plan">E2E plan</h2>
@@ -165,6 +174,7 @@ flowchart LR
     <tr><td>W6</td><td><code>use-cases/workflow.html</code> UC-INIT</td></tr>
     <tr><td>W7</td><td><code>decisions/router.html</code> (new DEC), project-router skill</td></tr>
     <tr><td>W8</td><td><code>use-cases/router.html</code> UC-ROUTE, <code>decisions/router.html</code>, a struck cross-reference row in <code>backlog/e-router-v2.html</code></td></tr>
+    <tr><td>W11</td><td><code>decisions/distribution.html</code> DEC-38 (pins, runners, accepted risks, owner setup tasks, corrected trigger and prerelease text); <code>docs/install.html</code> (profile edits); project-router "what no gate reviews"</td></tr>
     <tr><td>all</td><td>rows of <code>backlog/e-seed-v2.html</code> struck; this plan and every WU plan/result archived out of git at close</td></tr>
   </tbody>
 </table>
