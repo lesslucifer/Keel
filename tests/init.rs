@@ -410,3 +410,19 @@ fn self_hosting_clone_is_gated_and_init_is_a_noop() {
     let o = git_in(&c, &["merge", "--no-ff", "-m", "m", "feat"]);
     assert!(!o.status.success(), "an evidence-less merge into main must be refused");
 }
+
+/// E-ROUTERFIX.W3: Keel's own tree lists `.mr-allowed` in `.gitworktreecopy`, so a new worktree
+/// inherits the main checkout's signer list and its first `keel mr` is not refused for want of one.
+#[test]
+fn self_hosting_new_worktree_inherits_the_signer_list() {
+    let root = env!("CARGO_MANIFEST_DIR");
+    let d = TempDir::new().unwrap();
+    let c = d.path().join("c");
+    assert!(Command::new("git").args(["clone", "-q", root, c.to_str().unwrap()]).status().unwrap().success());
+    assert!(keel(&c, &["hooks", "install"]).status.success());
+    std::fs::write(c.join(".mr-allowed"), "username: owner\n").unwrap();
+
+    let w = d.path().join("w");
+    assert!(git_in(&c, &["worktree", "add", "-q", "-b", "wu/x/y", w.to_str().unwrap()]).status.success());
+    assert_eq!(std::fs::read_to_string(w.join(".mr-allowed")).unwrap(), "username: owner\n");
+}
