@@ -354,10 +354,27 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
     let l = launcher();
     let wt = l.wt.to_str().unwrap();
     let brief = ".router/briefs/b.md";
-    let argv = |name: &str| {
+    // the stub's bracketed line, one item per argv element: a word-split `Bash(cargo build *)` cannot pass
+    let argv = |name: &str| -> Vec<String> {
         l.wait_exit(name);
         let out = std::fs::read_to_string(l.main.join(format!(".router/out/{name}.out"))).unwrap();
-        out.lines().find(|x| x.starts_with('[')).unwrap_or_else(|| panic!("no stub argv: {out}")).to_string()
+        let line = out.lines().find(|x| x.starts_with('[')).unwrap_or_else(|| panic!("no stub argv: {out}"));
+        line[1..line.len() - 1].split("][").map(String::from).collect()
+    };
+    let allow: Vec<String> = WORKER_GRANTS.iter().flat_map(|c| [format!("Bash({c})"), format!("Bash({c} *)")]).collect();
+    let deny: Vec<String> = WORKER_DENIES.map(String::from).to_vec();
+    // every worker, spawned or resumed, gets exactly the fixed lists and one mode; returns that mode
+    let mode_of = |name: &str| {
+        let a = argv(name);
+        let list = |flag: &str| -> Vec<String> {
+            let i = a.iter().position(|x| x == flag).unwrap_or_else(|| panic!("{name}: no {flag} in {a:?}"));
+            a[i + 1..].iter().take_while(|x| !x.starts_with('-')).cloned().collect()
+        };
+        assert_eq!(list("--allowedTools"), allow, "{name}: allow list");
+        assert_eq!(list("--disallowedTools"), deny, "{name}: deny list");
+        let modes: Vec<&String> = a.windows(2).filter(|w| w[0] == "--permission-mode").map(|w| &w[1]).collect();
+        assert_eq!(modes.len(), 1, "{name}: {a:?}");
+        modes[0].clone()
     };
     let run_dir_mode = |name: &str, kind: &str| {
         let runs = std::fs::read_dir(l.main.join(".router/runs")).unwrap();
@@ -399,30 +416,18 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
     assert!(ok && out.contains("permission-mode=plan"), "{out}");
     let sid = field(&out, "session=").to_string();
 
-    // one argv element per rule: a word-split `Bash(cargo build *)` would not match its bracket
-    let d = argv("d");
-    assert!(d.contains("[--permission-mode][acceptEdits]"), "{d}");
-    let (allow, deny) = d.split_once("[--disallowedTools]").unwrap_or_else(|| panic!("no deny list: {d}"));
-    let allow = allow.split_once("[--allowedTools]").unwrap_or_else(|| panic!("no allow list: {d}")).1;
-    for c in WORKER_GRANTS {
-        assert!(allow.contains(&format!("[Bash({c})]")) && allow.contains(&format!("[Bash({c} *)]")), "{c} not granted: {d}");
-    }
-    assert!(!allow.contains("Bash(cargo run") && !allow.contains("Bash(keel mr"), "{allow}");
-    let deny = deny.split_once("[-").map_or(deny, |(list, _)| list);
-    for x in WORKER_DENIES {
-        assert!(deny.contains(&format!("[{x}]")), "{x} not denied: {d}");
-    }
-    assert!(argv("p").contains("[--permission-mode][plan]"));
+    assert_eq!(mode_of("d"), "acceptEdits");
+    assert_eq!(mode_of("p"), "plan");
     assert_eq!(run_dir_mode("d", "spawn"), ["acceptEdits"]);
     assert_eq!(run_dir_mode("p", "spawn"), ["plan"]);
 
     // a resume states its own mode or gets the default; it never inherits the spawn's plan
     let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus"], "3");
     assert!(ok && out.contains("permission-mode=acceptEdits"), "{out}");
-    assert!(argv("p").contains("[--permission-mode][acceptEdits]"));
+    assert_eq!(mode_of("p"), "acceptEdits");
     let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus", "--permission-mode", "plan"], "3");
     assert!(ok && out.contains("permission-mode=plan"), "{out}");
-    assert!(argv("p").contains("[--permission-mode][plan]"));
+    assert_eq!(mode_of("p"), "plan");
     let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus", "--permission-mode", "bypassPermissions"], "0");
     assert!(!ok && out.contains("permission mode must be"), "{out}");
     assert_eq!(run_dir_mode("p", "resume"), ["acceptEdits", "plan"]);
