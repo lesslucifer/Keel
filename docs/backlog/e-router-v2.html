@@ -55,6 +55,7 @@
       <tr><td>Test nits (waived, fix when touching the code): <code>tests/router.rs</code> e2e's <code>PATH</code> prefix for <code>git worktree add</code> is inert; <code>wired_guard</code> duplicates the spawn head of the other guard helper; the <code>wait</code> test pins the default stall-min to the range 11–16, not exactly 15 (899 s / 901 s would)</td><td>W5 and W4 reviews</td></tr>
       <tr><td><code>cargo fmt --check</code> reports drift in <code>src/gate.rs</code>, predating this epic</td><td>W1 result</td></tr>
       <tr><td>Optional live checks: break the guard wiring by hand (clone's PreToolUse command → <code>cat &gt;/dev/null</code>) and see the e2e's denials go red; watch an interactive router wake on the idle notice, after which the heartbeat can drop its per-worker <code>ps</code> check</td><td>W5, W2 results</td></tr>
+      <tr><td><b>Owner-action watch kinds beyond git</b> (follow-up to row 1): <code>scripts/router-watch.sh</code> covers commit, signed, merged, pushed and tagged only. A draft release published, a CI run finished and htmldoc comments need <code>gh release</code>/<code>gh run</code>/<code>curl</code>, outside the router's whitelist; they stay with read-only workers. Options: <code>gh</code>-backed kinds in the script with fixed argv, or keep them worker-run</td><td>E-SEED2.W12 plan, D5</td></tr>
     </table>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
