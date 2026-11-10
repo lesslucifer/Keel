@@ -56,7 +56,9 @@
     <tr><td><code>5c0ed88</code></td><td>Review r1 F5 (code): the old-format note names its cause</td><td>agent</td></tr>
     <tr><td><code>dc8546b</code></td><td>Review r1 F2, F4, F6 (T2 docs)</td><td>agent</td></tr>
     <tr><td><code>640cb4d</code></td><td>Review r1 F1, F3, F5 (rule text, <code>install.html</code>)</td><td>owner</td></tr>
-    <tr><td>this commit</td><td>This report</td><td>agent</td></tr>
+    <tr><td><code>0459397</code></td><td>This report</td><td>agent</td></tr>
+    <tr><td><code>a104a19</code>, <code>7402b33</code>, <code>6bc2394</code></td><td>Code-review r1 F1–F4 and nits (code)</td><td>agent</td></tr>
+    <tr><td>this commit</td><td>Code-review r1: DEC-23/DEC-40, UC-MR-1/UC-GATE-6, backlog, plan open question 3, this report</td><td>agent</td></tr>
   </table>
   <p><b>Integration tests (I1–I10).</b> Red/green was checked by running the tip's <code>tests/</code> against the base <code>ef9ee75</code> source, copied by <code>git archive</code> under <code>target/</code>. Every test below is red on the base and green at the tip.</p>
   <table data-c="tests-table">
@@ -90,7 +92,17 @@
     <li><code>hooks_problem_passes_for_keels_path_and_fails_for_a_foreign_or_unset_one</code></li>
     <li><code>a_pre_sha256_change_hash_names_the_old_format_not_a_changed_diff</code></li>
   </ul>
-  <p>The full <code>cargo test --locked</code> run is green with 81 tests, and <code>cargo clippy --all-targets -- -D warnings</code> is green. The e2e layer is waived to W3's <code>e2e_python</code>, as the plan states.</p>
+  <h3 id="code-review-r1">Code-review r1 round</h3>
+  <p>Each regression test was run against the <code>0459397</code> source (src reverted, new tests kept) and is red there, green at the tip.</p>
+  <table data-c="cr-r1-table">
+    <tr><th>Finding</th><th>Test</th><th>Red at 0459397</th><th>Fix</th><th>Commit</th></tr>
+    <tr><td>F1 trailing <code>/</code> on <code>core.hooksPath</code></td><td><code>a_trailing_slash_on_keels_hooks_path_is_a_reinstall_not_a_foreign_setup</code> (<code>tests/cli.rs</code>); unit <code>hook_conflicts_…</code> extended</td><td><code>hooks install</code> refused "another hook setup is in place"</td><td>one <code>is_keel_path</code> (component-wise) for install and guard D</td><td><code>a104a19</code></td></tr>
+    <tr><td>F2 stale epic report</td><td><code>an_earlier_epics_attested_report_is_never_picked_for_this_epic</code> (<code>tests/mr.rs</code>)</td><td>confirm attested the earlier report ("wrote refs/notes/mr")</td><td>untracked candidates exclude reports an <code>mr/v1</code> note on a commit the base contains attests (DEC-40)</td><td><code>7402b33</code></td></tr>
+    <tr><td>F3 role split duplicated</td><td><code>the_result_role_a_sign_off_attests_is_one_the_checklist_knows</code> (unit)</td><td>does not compile: no <code>verify_doc::result_role</code></td><td><code>result_role</code>, <code>has_role</code> live in <code>verify_doc</code>; <code>mr.rs</code> uses them</td><td><code>7402b33</code></td></tr>
+    <tr><td>F4 two root finders</td><td><code>a_stray_closing_html_before_the_root_neither_hides_the_checklist_nor_the_role</code> (unit)</td><td><code>verify()</code> returned no errors</td><td>one <code>root()</code> for <code>artifact()</code> and <code>verify()</code></td><td><code>7402b33</code></td></tr>
+  </table>
+  <p>Same bug class elsewhere: the report lookup filtered changed paths with a raw <code>starts_with(docs.root)</code> (a root without <code>/</code> matched sibling dirs); it now passes docs.root as a git pathspec (<code>7402b33</code>). Nits: <code>MrNote</code> hash comments and the <code>diff_hash</code> binding list (<code>6bc2394</code>); the per-doc <code>git show</code> is a follow-up.</p>
+  <p>The full <code>cargo test --locked</code> run is green with 81 tests before this round, and <code>cargo clippy --all-targets -- -D warnings</code> is green. The e2e layer is waived to W3's <code>e2e_python</code>, as the plan states.</p>
   <p><b>Docs touched:</b></p>
   <ul>
     <li>T2: <code>use-cases/workflow.html</code> and its index, <code>decisions/workflow-gates.html</code> and the decision index, and <code>backlog/e-seed-v2.html</code>.</li>
@@ -105,6 +117,7 @@
   <li><b>Independent review r1</b> at <code>564a4a2</code> returned FIX: F1 (medium, <code>install.html</code>) and F2–F6 (low). Owner ruling A: fix F1–F5, which landed in <code>5c0ed88</code>, <code>dc8546b</code> and <code>640cb4d</code>, and record F6 (lockfile currency and yanked status cannot be checked offline) as a backlog B7 row.</li>
   <li><b>Independent review r2</b> at <code>640cb4d</code> returned PASS. Its two low findings are recorded under <a href="#follow-ups">follow-ups</a> as N1 and N2.</li>
   <li><b>An earlier read-only check</b> (2026-11-09) found that closing the epic does not re-judge sign-offs on WUs already merged. The exposure is a sign, merge and push done with different installed <code>keel</code> binaries.</li>
+  <li><b>keel-code-review r1</b> on <code>ef9ee75..0459397</code> returned FAIL with four important findings, fixed in <a href="#code-review-r1">the code-review r1 round</a>.</li>
   <li>The keel-code-review verdict on this tip lives on its <code>cr/v1</code> note, not here.</li>
 </ul>
 
@@ -129,6 +142,8 @@
 
 <h2 id="follow-ups">Follow-ups</h2>
 <ul data-item="follow-ups" data-c="follow-ups">
+  <li><b>Skill text after the code-review r1 bound (owner, optional).</b> keel-workflow §2 says <code>--report</code> can be left out "only while the epic's report is the one untracked <code>epic-result</code> doc … usually a checkout's first epic". The bound now drops reports an earlier merged sign-off attests, so that wording is stricter than the code. It is still safe to follow, so it was not changed here; relaxing it is a rule-bearing <code>keel mr commit</code>.</li>
+  <li><b>One <code>git show</code> per changed html doc</b> in the report lookup (code-review r1 nit). The count is bounded by the docs a range changes; batching through <code>git cat-file --batch</code> waits until that count matters.</li>
   <li><b>N1 (review r2, low).</b> In <code>src/mr.rs</code>, an old-format note prints two overlapping fix lines: the cause line and the shared fix line.</li>
   <li><b>N2 (review r2, low).</b> In <code>skills/keel-workflow/SKILL.md</code>, the §7 paragraph is re-wrapped unevenly. The fix is rule-bearing, so it needs an owner <code>keel mr commit</code>.</li>
   <li><b>Backlog B7</b> gains the row for checking <code>Cargo.lock</code> currency and yanked status, which needs the network (review r1 F6). Native SSH signing of rule-bearing commits stays in B7.</li>
@@ -136,7 +151,7 @@
   <li><b>Not built</b> (in the plan's "not this WU"):
     <ul>
       <li>a per-level report policy;</li>
-      <li>narrowing the epic-report candidates;</li>
+      <li>narrowing the epic-report candidates beyond the code-review r1 bound (DEC-40 states its ceiling);</li>
       <li>chaining other tools' hooks;</li>
       <li>SHA-256 for the <code>cr/v1</code> and <code>dod/v1</code> bindings.</li>
     </ul></li>
