@@ -290,9 +290,10 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
     assert_eq!(run(root(), empty.path().to_str().unwrap()).status.code(), Some(2), "missing jq must block");
 }
 
-/// Layered on `common::cmd`: every git a test runs, directly or under a script, reads only the
-/// repo's own config: no user or system setting (tag.gpgSign, log.showSignature, core.quotePath,
-/// ...) can change what it does, and no inherited GIT_TRACE* writes to its stderr.
+/// Layered on `common::cmd` for the git W12's tests run (`git()`, the PUSHED probe, the e2e worktree
+/// add, `Watcher::cmd` and the watch under it): only the repo's own config is read, so no user or
+/// system setting (tag.gpgSign, log.showSignature, core.quotePath, ...) can change what it does, and
+/// no inherited GIT_TRACE* writes to its stderr.
 fn hermetic(c: &mut Command) -> &mut Command {
     let set: Vec<std::ffi::OsString> = c.get_envs().map(|(k, _)| k.to_owned()).collect();
     for k in std::env::vars_os().map(|(k, _)| k).chain(set) {
@@ -344,12 +345,12 @@ fn stub_claude(stub: &Path) {
 }
 
 /// `wait` and `router-watch.sh` sleep once per poll; this `<base>/shim/sleep` counts the polls in
-/// $STEP_DIR/polls and blocks poll n until the test creates $STEP_DIR/go-n, so each poll judges a
-/// state the test has set. It ends with its caller or the test process.
+/// $STEP_DIR/polls (its argument, one per line, in $STEP_DIR/sleeps) and blocks poll n until the test
+/// creates $STEP_DIR/go-n, so each poll judges a state the test has set. It ends with its caller or the test process.
 fn sleep_shim(base: &Path) {
     std::fs::create_dir_all(base.join("shim")).unwrap();
     std::fs::write(base.join("shim/sleep"), concat!(
-        "#!/bin/sh\nn=$(( $(cat \"$STEP_DIR/polls\" 2>/dev/null || echo 0) + 1 ))\n",
+        "#!/bin/sh\necho \"$1\" >> \"$STEP_DIR/sleeps\"\nn=$(( $(cat \"$STEP_DIR/polls\" 2>/dev/null || echo 0) + 1 ))\n",
         "echo \"$n\" > \"$STEP_DIR/polls.tmp\" && mv \"$STEP_DIR/polls.tmp\" \"$STEP_DIR/polls\"\n",
         "while [ ! -e \"$STEP_DIR/go-$n\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null && kill -0 \"$PPID\" 2>/dev/null; do /bin/sleep 0.02; done\n"
     )).unwrap();
@@ -919,18 +920,11 @@ impl Stepped {
                 std::io::Read::read_to_string(self.child.stdout.as_mut().unwrap(), &mut out).unwrap();
                 panic!("wait returned before poll {n}: {out}");
             }
-            if t.elapsed() > BOUND {
-                self.reap();
-                panic!("wait never reached poll {n}");
-            }
+            assert!(t.elapsed() < BOUND, "wait never reached poll {n}");
             std::thread::sleep(Duration::from_millis(10));
         }
     }
 
-    fn reap(&mut self) {
-        self.child.kill().unwrap();
-        self.child.wait().unwrap();
-    }
 
     fn go(&self, n: u32) {
         std::fs::write(self.dir.join(format!("go-{n}")), "").unwrap();
@@ -943,17 +937,31 @@ impl Stepped {
         String::from_utf8(o.stdout).unwrap()
     }
 
-    /// Everything the process left once released from its last poll; killed and reaped after BOUND.
+    /// Everything the process left once released from its last poll; panics after BOUND.
     fn output(mut self) -> Output {
         let t = Instant::now();
         while self.child.try_wait().unwrap().is_none() {
-            if t.elapsed() > BOUND {
-                self.reap();
-                panic!("wait never returned");
-            }
+            assert!(t.elapsed() < BOUND, "wait never returned");
             std::thread::sleep(Duration::from_millis(10));
         }
-        self.child.wait_with_output().unwrap()
+        let read = |p: Option<&mut dyn std::io::Read>| {
+            let mut b = Vec::new();
+            if let Some(p) = p {
+                p.read_to_end(&mut b).unwrap();
+            }
+            b
+        };
+        let stdout = read(self.child.stdout.as_mut().map(|p| p as &mut dyn std::io::Read));
+        let stderr = read(self.child.stderr.as_mut().map(|p| p as &mut dyn std::io::Read));
+        Output { status: self.child.wait().unwrap(), stdout, stderr }
+    }
+}
+
+/// However a test ends, its watch (or `wait`) and the `sleep` shim under it end with it.
+impl Drop for Stepped {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -1203,7 +1211,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
 }
 
 /// A checkout holding scripts/router-watch.sh, cloned from a bare `origin.git` file remote (no
-/// network), plus the stepped `sleep` shim.
+/// network), plus the stepped `sleep` shim and a `date` shim that prints $STEP_DIR/now when it exists.
 struct Watcher {
     _d: TempDir,
     base: PathBuf,
@@ -1222,6 +1230,8 @@ fn watcher() -> Watcher {
     git(&main, &["commit", "-qm", "base"]);
     git(&main, &["push", "-q", "origin", "main"]);
     sleep_shim(&base);
+    std::fs::write(base.join("shim/date"), "#!/bin/sh\n[ -e \"$STEP_DIR/now\" ] && exec cat \"$STEP_DIR/now\"\nexec /bin/date \"$@\"\n").unwrap();
+    std::fs::set_permissions(base.join("shim/date"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     Watcher { _d: d, base, main }
 }
 
@@ -1281,21 +1291,12 @@ impl Watcher {
     /// One run to its end with polls 1..=go pre-released: (exit code, stdout, stderr, polls taken).
     /// A run still going after BOUND (it polled past `go`) is killed and fails the test.
     fn run(&self, args: &[&str], k: &str, go: u32, env: &[(&str, &str)]) -> (Option<i32>, String, String, u32) {
-        let (mut c, dir) = self.cmd(args, k, env);
+        let dir = self.base.join(format!("steps-{k}"));
+        std::fs::create_dir_all(&dir).unwrap();
         for n in 1..=go {
             std::fs::write(dir.join(format!("go-{n}")), "").unwrap();
         }
-        let mut child = c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
-        let t = Instant::now();
-        while child.try_wait().unwrap().is_none() {
-            if t.elapsed() > BOUND {
-                child.kill().unwrap();
-                child.wait().unwrap();
-                panic!("watch {args:?} never returned");
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        let o = child.wait_with_output().unwrap();
+        let o = self.armed_env(args, k, env).output();
         let polls = std::fs::read_to_string(dir.join("polls")).map_or(0, |s| s.trim().parse().unwrap());
         (o.status.code(), String::from_utf8(o.stdout).unwrap(), String::from_utf8(o.stderr).unwrap(), polls)
     }
@@ -1459,7 +1460,7 @@ fn watch_signed_and_merged_report_the_note_and_how_the_tip_landed() {
     let y = w.commit(&["y"], "y");
     git(&w.main, &["switch", "-q", "main"]);
     git(&w.main, &["merge", "-q", "--ff-only", "wu/y"]);
-    let (_, out, _, polls) = w.run(&["merged", &y, "main"], "ff", 0, &[]);
+    let (_, out, _, polls) = w.run(&["merged", &y[..7], "main"], "ff", 0, &[]);
     assert_eq!((out, polls), (format!("MERGED tip={y} target=main at={y} how=ff\n"), 0));
 
     git(&w.main, &["switch", "-q", "-c", "wu/z"]);
@@ -1501,7 +1502,9 @@ fn watch_pushed_waits_on_a_local_only_branch_without_reporting_unreachable() {
     }
     git(&w.main, &["push", "-q", "origin", "wu/local"]);
     s.go(6);
+    let dir = s.dir.clone();
     assert_eq!(s.line(), format!("PUSHED tip={t} branch=wu/local origin={t}\n"));
+    assert_eq!(std::fs::read_to_string(dir.join("sleeps")).unwrap(), "60\n".repeat(6), "pushed polls every 60 s by default");
 }
 
 /// The test harness itself: a watch that polls more than the test released fails the test in
@@ -1510,17 +1513,18 @@ fn watch_pushed_waits_on_a_local_only_branch_without_reporting_unreachable() {
 fn watcher_run_is_bounded_when_the_watch_outpolls_its_releases() {
     let w = watcher();
     let t = w.sha("HEAD");
+    let msg = |e: Box<dyn std::any::Any + Send>| e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|m| m.to_string())).unwrap();
     let e = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.run(&["signed", &t], "unreleased", 0, &[]))).unwrap_err();
-    assert!(e.downcast_ref::<String>().is_some_and(|m| m.contains("never returned")));
+    assert!(msg(e).contains("never returned"));
     let mut at = w.armed(&["signed", &t], "unreleased-at");
     let out = w.armed(&["signed", &t], "unreleased-output");
     std::thread::scope(|sc| {
         let a = sc.spawn(|| std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| at.at(2))).unwrap_err());
         let o = sc.spawn(|| std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| out.output())).unwrap_err());
-        let msg = |e: Box<dyn std::any::Any + Send>| e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|m| m.to_string())).unwrap();
         assert!(msg(a.join().unwrap()).contains("never reached poll 2"));
         assert!(msg(o.join().unwrap()).contains("never returned"));
     });
+    drop(at);
     let shim = w.base.join("shim/sleep");
     let shim = shim.to_str().unwrap();
     until("the sleep shim to exit", || {
@@ -1581,7 +1585,9 @@ fn watch_pushed_and_tagged_fire_on_origin_only() {
     s.at(2);
     git(&w.main, &["push", "-q", "origin", "v1"]);
     s.go(2);
+    let dir = s.dir.clone();
     assert_eq!(s.line(), format!("TAGGED tag=v1 object={} commit={t}\n", w.sha("v1")));
+    assert_eq!(std::fs::read_to_string(dir.join("sleeps")).unwrap(), "60\n60\n", "tagged polls every 60 s by default");
 
     git(&w.main, &["tag", "v2", &base]);
     git(&w.main, &["push", "-q", "origin", "v2"]);
@@ -1660,4 +1666,44 @@ fn watch_times_out_and_reports_an_unreachable_origin() {
     let out = s.line();
     assert_eq!(out, "UNREACHABLE kind=pushed remote=origin error=fatal: spy refuses fetch\n");
     assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "9", "a missing branch did not reset the count");
+
+    // review r5: tagged resets its count on a good ls-remote too (the tag is not there yet)
+    let (good, bad) = (w.base.join("origin.git"), w.base.join("missing.git"));
+    git(&w.main, &["remote", "set-url", "origin", bad.to_str().unwrap()]);
+    let mut s = w.armed(&["tagged", "v9"], "tagged-reset");
+    for n in 1..=3 {
+        s.go(n);
+    }
+    s.at(4);
+    git(&w.main, &["remote", "set-url", "origin", good.to_str().unwrap()]);
+    s.go(4);
+    s.at(5);
+    git(&w.main, &["remote", "set-url", "origin", bad.to_str().unwrap()]);
+    for n in 5..=9 {
+        s.go(n);
+    }
+    let dir = s.dir.clone();
+    let out = s.line();
+    assert!(out.starts_with("UNREACHABLE kind=tagged "), "{out}");
+    assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "9", "tagged did not reset the count on success");
+}
+
+/// E-SEED2.W12 review r5: by default a watch polls every 15 s and gives up with TIMEOUT once 6600 s
+/// (110 min) have passed, reported in whole minutes; the clock is the `date` shim.
+#[test]
+fn watch_polls_at_its_default_pace_and_times_out_in_minutes() {
+    let w = watcher();
+    let t = w.sha("HEAD");
+    let dir = w.base.join("steps-pace");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("now"), "1000").unwrap();
+    let mut s = w.armed(&["signed", &t], "pace");
+    s.at(1);
+    std::fs::write(dir.join("now"), "7599").unwrap();
+    s.go(1);
+    s.at(2);
+    std::fs::write(dir.join("now"), "7600").unwrap();
+    s.go(2);
+    assert_eq!(s.line(), "TIMEOUT kind=signed waited=110m\n");
+    assert_eq!(std::fs::read_to_string(dir.join("sleeps")).unwrap(), "15\n15\n");
 }
