@@ -513,9 +513,10 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
         assert!(!l.main.join(".router/out/q.pid").exists(), "{what}: started a worker");
     }
 
-    // an uncommitted edit cannot widen the committed policy
+    // an uncommitted edit, even staged, cannot widen the committed policy
     l.commit_config(Some("[router]   # comment\nworker_model = \"opus\"  # trailing\n\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n[next]\nx = 1\n"));
     std::fs::write(l.main.join(".keel/config.toml"), "[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"max\"]\nworker_default_effort = \"max\"\n").unwrap();
+    git(&l.main, &["add", ".keel"]);
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
     assert!(!ok && out.contains("model must be opus"), "{out}");
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus", "--effort", "max"]);
@@ -545,6 +546,23 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
     assert!(ok && out.contains(" effort=max "), "{out}");
     l.wait_exit("q");
     assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "max");
+
+    // the default is worker_default_effort, not the list's first entry: a bare spawn and a bare
+    // resume of a session spawned at high both run at medium; read from HEAD on a branch other than main
+    git(&l.main, &["checkout", "-qb", "router"]);
+    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"medium\"]\nworker_default_effort = \"medium\"\n"));
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
+    assert!(ok && out.contains(" effort=medium "), "{out}");
+    l.wait_exit("q");
+    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "medium");
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "high"]);
+    assert!(ok && out.contains(" effort=high "), "{out}");
+    let sid = field(&out, "session=").to_string();
+    l.wait_exit("q");
+    let (ok, out) = l.run(&["resume", "q", &sid, wt, brief, "sonnet"]);
+    assert!(ok && out.contains(" effort=medium "), "{out}");
+    l.wait_exit("q");
+    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "medium");
 }
 
 /// DEC-39: the repo's committed worker policy is opus at medium or high effort, medium by default.
