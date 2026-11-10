@@ -3,7 +3,7 @@
 # command (run_in_background, timeout 7200000), so its exit wakes the router with what landed:
 #   router-watch.sh commit <branch> <old-tip> [<path>...]  COMMITTED | COMMITTED-PARTIAL | REWRITTEN | DELETED
 #   router-watch.sh signed <tip>                           SIGNED + the mr note, indented
-#   router-watch.sh merged <tip> <target-branch>           MERGED ... how=no-ff|ff|contained
+#   router-watch.sh merged <tip> <target-branch>           MERGED ... how=no-ff|ff|contained | DELETED target=<b>
 #   router-watch.sh pushed <tip> <branch>                  PUSHED (git ls-remote + fetch origin, then ancestry)
 #   router-watch.sh tagged <tag> [<sha>]                   TAGGED | TAGGED-MISMATCH (git ls-remote origin)
 # It checks at once (the owner may already have acted), then once per poll until the state holds:
@@ -49,8 +49,10 @@ case "$kind" in
     [ $# -eq 1 ] || want=$(sha "$2");;
 esac
 
-# detail lines carry commit and note text verbatim but for control characters (CR, ESC, BEL)
-clean() { LC_ALL=C sed 's/[[:cntrl:]]/?/g'; }
+# detail lines carry commit and note text verbatim but for control characters: C0 and DEL, UTF-8 C1
+# (U+0080-009F), line/paragraph separators and bidi overrides (U+2028-202E, U+2066-2069)
+c1=$(printf '\302[\200-\237]') sep=$(printf '\342\200[\250-\256]') iso=$(printf '\342\201[\246-\251]')
+clean() { LC_ALL=C sed "s/[[:cntrl:]]/?/g; s/$c1/?/g; s/$sep/?/g; s/$iso/?/g"; }
 
 # ponytail: a stalled http transfer aborts after 120s; ssh has no bound short of the 2h background ceiling
 net() { g -c http.lowSpeedLimit=1 -c http.lowSpeedTime=120 "$@"; }
@@ -67,7 +69,8 @@ check_commit() {
   new=$(g rev-parse --verify --quiet "refs/heads/$b") || { echo "DELETED branch=$b from=$old"; return 0; }
   [ "$new" != "$old" ] || return 1
   if ! g merge-base --is-ancestor "$old" "$new" 2>/dev/null; then echo "REWRITTEN branch=$b from=$old to=$new"; return 0; fi
-  landed=$(g diff --name-only --no-renames "$old" "$new")
+  st=$(g diff --name-status --no-renames "$old" "$new")
+  landed=$(printf '%s\n' "$st" | cut -f2-)
   missing= k=0
   for p; do
     if printf '%s\n' "$landed" | grep -Fxq -- "$p"; then k=$((k + 1)); else missing="$missing  missing $p
@@ -83,7 +86,7 @@ check_commit() {
   echo "$word branch=$b from=$old to=$new commits=$(g rev-list --count "$old..$new") expected=$k/$#"
   g log --reverse --format='%H%x1f%(trailers:key=Reviewed-By,valueonly,unfold,separator=%x2C)%x1f%s' "$old..$new" |
     while IFS=$(printf '\037') read -r c r s; do echo "  commit $c reviewed-by=${r:-none} $s"; done | clean
-  g diff --name-status --no-renames "$old" "$new" | while IFS='	' read -r st p; do echo "  landed $st $p"; done
+  [ -z "$st" ] || printf '%s\n' "$st" | while IFS='	' read -r s p; do echo "  landed $s $p"; done
   printf '%s' "$missing"; [ -z "$unexpected" ] || printf '%s\n' "$unexpected"
 }
 
@@ -94,8 +97,8 @@ check_signed() {
 }
 
 check_merged() {
-  g merge-base --is-ancestor "$t" "refs/heads/$b" || return 1
-  at=$(g rev-parse "refs/heads/$b")
+  at=$(g rev-parse --verify --quiet "refs/heads/$b") || { echo "DELETED target=$b"; return 0; }
+  g merge-base --is-ancestor "$t" "$at" || return 1
   if [ "$at" = "$t" ]; then how=ff
   elif [ "$(g rev-parse --verify --quiet "$at^2")" = "$t" ]; then how=no-ff
   else how=contained; fi
@@ -104,8 +107,10 @@ check_merged() {
 
 check_pushed() {
   if ! out=$(net ls-remote --heads origin "refs/heads/$b" 2>&1); then net_fail "$out"; return 1; fi
-  printf '%s\n' "$out" | awk -v r="refs/heads/$b" '$2 == r { f = 1 } END { exit !f }' || { fails=0; return 1; }
-  if ! err=$(net -c remote.origin.followRemoteHEAD=never fetch -q --no-tags --no-write-fetch-head --no-auto-maintenance --no-recurse-submodules origin -- "+refs/heads/$b:refs/remotes/origin/$b" 2>&1); then net_fail "$err"; return 1; fi
+  r=$(printf '%s\n' "$out" | awk -v r="refs/heads/$b" '$2 == r { print $1 }')
+  [ -n "$r" ] || { fails=0; return 1; }
+  if [ "$(g rev-parse --verify --quiet "refs/remotes/origin/$b")" != "$r" ] &&
+    ! err=$(net -c remote.origin.followRemoteHEAD=never fetch -q --no-tags --no-write-fetch-head --no-auto-maintenance --no-recurse-submodules origin -- "+refs/heads/$b:refs/remotes/origin/$b" 2>&1); then net_fail "$err"; return 1; fi
   fails=0
   g merge-base --is-ancestor "$t" "refs/remotes/origin/$b" 2>/dev/null || return 1
   echo "PUSHED tip=$t branch=$b origin=$(g rev-parse "refs/remotes/origin/$b")"

@@ -288,9 +288,18 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
     assert_eq!(run(root(), empty.path().to_str().unwrap()).status.code(), Some(2), "missing jq must block");
 }
 
+/// Every git a test runs, directly or under a script, reads only the repo's own config: no user or
+/// system setting (tag.gpgSign, log.showSignature, core.quotePath, ...) can change what it does.
+fn hermetic(c: &mut Command) -> &mut Command {
+    c.env("GIT_CONFIG_GLOBAL", "/dev/null").env("GIT_CONFIG_NOSYSTEM", "1")
+}
+
+/// Upper bound on any wait for another process; a hung script fails the test instead of hanging it.
+const BOUND: Duration = Duration::from_secs(10);
+
 fn git(d: &Path, a: &[&str]) -> Output {
-    let o = Command::new("git")
-        .args(["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false"])
+    let o = hermetic(&mut Command::new("git"))
+        .args(["-c", "core.hooksPath=/dev/null"])
         .args(a)
         .current_dir(d)
         .env("GIT_AUTHOR_NAME", "t")
@@ -327,13 +336,13 @@ fn stub_claude(stub: &Path) {
 
 /// `wait` and `router-watch.sh` sleep once per poll; this `<base>/shim/sleep` counts the polls in
 /// $STEP_DIR/polls and blocks poll n until the test creates $STEP_DIR/go-n, so each poll judges a
-/// state the test has set.
+/// state the test has set. It ends with its caller or the test process.
 fn sleep_shim(base: &Path) {
     std::fs::create_dir_all(base.join("shim")).unwrap();
     std::fs::write(base.join("shim/sleep"), concat!(
         "#!/bin/sh\nn=$(( $(cat \"$STEP_DIR/polls\" 2>/dev/null || echo 0) + 1 ))\n",
         "echo \"$n\" > \"$STEP_DIR/polls.tmp\" && mv \"$STEP_DIR/polls.tmp\" \"$STEP_DIR/polls\"\n",
-        "while [ ! -e \"$STEP_DIR/go-$n\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do /bin/sleep 0.02; done\n"
+        "while [ ! -e \"$STEP_DIR/go-$n\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null && kill -0 \"$PPID\" 2>/dev/null; do /bin/sleep 0.02; done\n"
     )).unwrap();
     std::fs::set_permissions(base.join("shim/sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
@@ -648,7 +657,7 @@ fn age(path: &Path, secs: u64) {
 fn until(what: &str, mut cond: impl FnMut() -> bool) {
     let t = Instant::now();
     while !cond() {
-        assert!(t.elapsed() < Duration::from_secs(10), "timed out waiting for {what}");
+        assert!(t.elapsed() < BOUND, "timed out waiting for {what}");
         std::thread::sleep(Duration::from_millis(10));
     }
 }
@@ -678,7 +687,7 @@ impl Stepped {
                 std::io::Read::read_to_string(self.child.stdout.as_mut().unwrap(), &mut out).unwrap();
                 panic!("wait returned before poll {n}: {out}");
             }
-            assert!(t.elapsed() < Duration::from_secs(10), "wait never reached poll {n}");
+            assert!(t.elapsed() < BOUND, "wait never reached poll {n}");
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -691,8 +700,9 @@ impl Stepped {
     fn line(mut self) -> String {
         let t = Instant::now();
         while self.child.try_wait().unwrap().is_none() {
-            if t.elapsed() > Duration::from_secs(10) {
+            if t.elapsed() > BOUND {
                 self.child.kill().unwrap();
+                self.child.wait().unwrap();
                 panic!("wait never returned");
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -990,7 +1000,8 @@ impl Watcher {
         let dir = self.base.join(format!("steps-{k}"));
         std::fs::create_dir_all(&dir).unwrap();
         let mut c = Command::new("scripts/router-watch.sh");
-        c.args(args)
+        hermetic(&mut c)
+            .args(args)
             .current_dir(&self.main)
             .env("PATH", format!("{}:{}", self.base.join("shim").display(), std::env::var("PATH").unwrap()))
             .env("STEP_DIR", &dir)
@@ -1000,12 +1011,30 @@ impl Watcher {
     }
 
     fn armed(&self, args: &[&str], k: &str) -> Stepped {
-        let (mut c, dir) = self.cmd(args, k, &[]);
+        self.armed_env(args, k, &[])
+    }
+
+    fn armed_env(&self, args: &[&str], k: &str, env: &[(&str, &str)]) -> Stepped {
+        let (mut c, dir) = self.cmd(args, k, env);
         Stepped { child: c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap(), dir }
     }
 
+    /// A `git` on $PATH (with the `sleep` shim) ahead of the real one that logs each call to <base>/spy.log and, when
+    /// $GIT_SPY_FAIL is 1, fails every fetch: returns that PATH and the log.
+    fn spy(&self) -> (String, PathBuf) {
+        let real = String::from_utf8(Command::new("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
+        let dir = self.base.join("spy");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("git"), format!(
+            "#!/bin/sh\necho \"$*\" >> \"$GIT_SPY_LOG\"\ncase \"$GIT_SPY_FAIL $*\" in 1*\" fetch \"*) echo 'fatal: spy refuses fetch' >&2; exit 128;; esac\nexec {} \"$@\"\n",
+            real.trim()
+        )).unwrap();
+        std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        (format!("{}:{}:{}", dir.display(), self.base.join("shim").display(), std::env::var("PATH").unwrap()), self.base.join("spy.log"))
+    }
+
     /// One run to its end with polls 1..=go pre-released: (exit code, stdout, stderr, polls taken).
-    /// A run still going 10 s on (it polled past `go`) is killed and fails the test.
+    /// A run still going after BOUND (it polled past `go`) is killed and fails the test.
     fn run(&self, args: &[&str], k: &str, go: u32, env: &[(&str, &str)]) -> (Option<i32>, String, String, u32) {
         let (mut c, dir) = self.cmd(args, k, env);
         for n in 1..=go {
@@ -1014,8 +1043,9 @@ impl Watcher {
         let mut child = c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
         let t = Instant::now();
         while child.try_wait().unwrap().is_none() {
-            if t.elapsed() > Duration::from_secs(10) {
+            if t.elapsed() > BOUND {
                 child.kill().unwrap();
+                child.wait().unwrap();
                 panic!("watch {args:?} never returned");
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -1024,6 +1054,20 @@ impl Watcher {
         let polls = std::fs::read_to_string(dir.join("polls")).map_or(0, |s| s.trim().parse().unwrap());
         (o.status.code(), String::from_utf8(o.stdout).unwrap(), String::from_utf8(o.stderr).unwrap(), polls)
     }
+}
+
+/// E-SEED2.W12 review r3: git under a test ignores whatever global or system config the environment
+/// points at, so a user's tag.gpgSign (or any other setting) cannot change a test's outcome.
+#[test]
+fn hermetic_git_ignores_global_and_system_config() {
+    let d = TempDir::new().unwrap();
+    let hostile = d.path().join("gitconfig");
+    std::fs::write(&hostile, "[tag]\n\tgpgSign = true\n").unwrap();
+    let mut c = Command::new("git");
+    c.args(["config", "--list", "--show-origin"]).current_dir(d.path()).env("GIT_CONFIG_GLOBAL", &hostile).env("GIT_CONFIG_SYSTEM", &hostile);
+    let o = hermetic(&mut c).output().unwrap();
+    let list = String::from_utf8(o.stdout).unwrap();
+    assert!(o.status.success() && !list.contains("gpgsign"), "{list}");
 }
 
 /// E-SEED2.W12: every argument router-watch.sh cannot validate is refused with exit 2 before its
@@ -1119,11 +1163,12 @@ fn watch_commit_reports_what_landed_against_what_was_staged() {
     assert_eq!(out, format!("COMMITTED branch=main from={d2} to={f} commits=1 expected=0/0\n  commit {f} reviewed-by=username vuluu? f ?[2Jx?y\n  landed A f\n"));
 
     // a net-empty range with staged paths: every path missing, no stray line
-    w.commit(&["e"], "e");
+    let e = w.commit(&["e"], "e");
     git(&w.main, &["rm", "-q", "e"]);
     git(&w.main, &["commit", "-qm", "drop e"]);
+    let de = w.sha("HEAD");
     let (_, out, _, _) = w.run(&["commit", "main", &f, "e"], "empty", 0, &[]);
-    assert!(out.starts_with("COMMITTED-PARTIAL ") && out.contains(" expected=0/1\n") && out.ends_with("  missing e\n") && !out.contains("unexpected"), "{out}");
+    assert_eq!(out, format!("COMMITTED-PARTIAL branch=main from={f} to={de} commits=2 expected=0/1\n  commit {e} reviewed-by=none e\n  commit {de} reviewed-by=none drop e\n  missing e\n"));
 
     // a branch deleted mid-watch is DELETED, not a rewrite
     git(&w.main, &["branch", "wu/gone"]);
@@ -1143,9 +1188,9 @@ fn watch_signed_and_merged_report_the_note_and_how_the_tip_landed() {
     let t = w.sha("HEAD");
     let mut s = w.armed(&["signed", &t], "signed");
     s.at(1);
-    git(&w.main, &["notes", "--ref=mr", "add", "-m", "level: wu\nby: vu\rluu\x1b]0;x\x07", &t]);
+    git(&w.main, &["notes", "--ref=mr", "add", "-m", "level: wu\nby: vu\rluu\x1b]0;x\x07\x7f\nu: \u{7e}\u{80}\u{9b}\u{9f}\u{a0}\u{e9}|\u{2027}\u{2028}\u{2029}\u{202e}\u{202f}|\u{2065}\u{2066}\u{2069}\u{206a}", &t]);
     s.go(1);
-    assert_eq!(s.line(), format!("SIGNED tip={t}\n  level: wu\n  by: vu?luu?]0;x?\n"));
+    assert_eq!(s.line(), format!("SIGNED tip={t}\n  level: wu\n  by: vu?luu?]0;x??\n  u: ~???\u{a0}\u{e9}|\u{2027}???\u{202f}|\u{2065}??\u{206a}\n"));
 
     git(&w.main, &["switch", "-q", "-c", "wu/x"]);
     let x = w.commit(&["x"], "x");
@@ -1172,6 +1217,19 @@ fn watch_signed_and_merged_report_the_note_and_how_the_tip_landed() {
     let (_, out, _, _) = w.run(&["merged", &z, "main"], "contained", 0, &[]);
     assert_eq!(out, format!("MERGED tip={z} target=main at={} how=contained\n", w.sha("main")));
 
+    // review r3 (owner ruling V1-A): a target deleted mid-watch ends the watch at once, quietly
+    git(&w.main, &["branch", "epic/gone"]);
+    git(&w.main, &["switch", "-q", "-c", "wu/v"]);
+    let v = w.commit(&["v"], "v");
+    git(&w.main, &["switch", "-q", "main"]);
+    let mut s = w.armed(&["merged", &v, "epic/gone"], "target-deleted");
+    s.at(1);
+    git(&w.main, &["branch", "-q", "-D", "epic/gone"]);
+    s.go(1);
+    let dir = s.dir.clone();
+    let o = s.child.wait_with_output().unwrap();
+    assert_eq!((o.status.code(), String::from_utf8(o.stdout).unwrap(), String::from_utf8(o.stderr).unwrap()), (Some(0), "DELETED target=epic/gone\n".into(), String::new()));
+    assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "1");
 }
 
 /// E-SEED2.W12 review r1: a branch that exists only locally is "not pushed yet", never a network
@@ -1193,13 +1251,19 @@ fn watch_pushed_waits_on_a_local_only_branch_without_reporting_unreachable() {
 }
 
 /// The test harness itself: a watch that polls more than the test released fails the test in
-/// bounded time instead of hanging `cargo test`.
+/// bounded time instead of hanging `cargo test`, and leaves no `sleep` shim behind.
 #[test]
-#[should_panic(expected = "never returned")]
 fn watcher_run_is_bounded_when_the_watch_outpolls_its_releases() {
     let w = watcher();
     let t = w.sha("HEAD");
-    w.run(&["signed", &t], "unreleased", 0, &[]);
+    let e = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.run(&["signed", &t], "unreleased", 0, &[]))).unwrap_err();
+    assert!(e.downcast_ref::<String>().is_some_and(|m| m.contains("never returned")));
+    let shim = w.base.join("shim/sleep");
+    let shim = shim.to_str().unwrap();
+    until("the sleep shim to exit", || {
+        let o = Command::new("ps").args(["-A", "-o", "command="]).output().unwrap();
+        !String::from_utf8_lossy(&o.stdout).contains(shim)
+    });
 }
 
 /// E-SEED2.W12: `pushed` fires only once origin holds the tip (not on the local merge); `tagged` fires
@@ -1239,6 +1303,13 @@ fn watch_pushed_and_tagged_fire_on_origin_only() {
     assert_eq!(changed, [format!("refs/remotes/origin/main {o}")], "pushed wrote more than its ref:\n{after}");
     let gitdir = w.main.join(".git");
     assert!(!gitdir.join("FETCH_HEAD").exists(), "pushed wrote FETCH_HEAD");
+
+    // origin/<b> already at origin's tip: no fetch
+    let (path, log) = w.spy();
+    let (_, out, _, _) = w.run(&["pushed", &m, "main"], "no-fetch", 0, &[("PATH", &path), ("GIT_SPY_LOG", log.to_str().unwrap())]);
+    assert_eq!(out, format!("PUSHED tip={m} branch=main origin={o}\n"));
+    let calls = std::fs::read_to_string(&log).unwrap();
+    assert!(calls.contains("ls-remote") && !calls.contains("fetch"), "{calls}");
 
     let mut s = w.armed(&["tagged", "v1", &t], "tagged");
     s.at(1);
@@ -1292,4 +1363,36 @@ fn watch_times_out_and_reports_an_unreachable_origin() {
     let out = s.line();
     assert!(out.starts_with("UNREACHABLE kind=pushed "), "{out}");
     assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "9", "the count did not reset on success");
+
+    // review r3: a poll whose ls-remote works but whose fetch fails is a failed attempt; a poll that
+    // finds the branch missing on origin is a good one and resets the count
+    git(&w.main, &["remote", "set-url", "origin", w.base.join("origin.git").to_str().unwrap()]);
+    git(&w.main, &["push", "-q", "origin", "main"]);
+    let tip = w.sha("main");
+    let other = w.base.join("other-f");
+    git(&w.base, &["clone", "-q", w.base.join("origin.git").to_str().unwrap(), other.to_str().unwrap()]);
+    git(&other, &["commit", "-q", "--allow-empty", "-m", "ahead"]);
+    git(&other, &["push", "-q", "origin", "HEAD:refs/heads/wu/f"]);
+    git(&w.main, &["fetch", "-q", "origin", "wu/f"]);
+    git(&other, &["commit", "-q", "--allow-empty", "-m", "ahead2"]);
+    git(&other, &["push", "-q", "origin", "HEAD:refs/heads/wu/f"]);
+    let (path, _) = w.spy();
+    let log = w.base.join("spy.log");
+    let env = [("PATH", path.as_str()), ("GIT_SPY_LOG", log.to_str().unwrap()), ("GIT_SPY_FAIL", "1")];
+    let mut s = w.armed_env(&["pushed", &tip, "wu/f"], "fetch-fails", &env);
+    for n in 1..=3 {
+        s.go(n);
+    }
+    s.at(4);
+    git(&other, &["push", "-q", "origin", "--delete", "wu/f"]);
+    s.go(4);
+    s.at(5);
+    git(&other, &["push", "-q", "origin", "HEAD:refs/heads/wu/f"]);
+    for n in 5..=9 {
+        s.go(n);
+    }
+    let dir = s.dir.clone();
+    let out = s.line();
+    assert_eq!(out, "UNREACHABLE kind=pushed remote=origin error=fatal: spy refuses fetch\n");
+    assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "9", "a missing branch did not reset the count");
 }
