@@ -330,12 +330,41 @@ done < "$main/.gitworktreecopy"
 exit 0
 "#;
 
-fn hooks_install(repo: &Path) -> Result<i32, String> {
-    use std::os::unix::fs::PermissionsExt;
-    // Inside the COMMON git dir: never tracked, so no branch can ship (or merge in) a
-    // neutered hook, and every worktree of this repo shares the one install.
+/// Keel's hooks dir: inside the COMMON git dir, so it is never tracked - no branch can ship (or merge
+/// in) a neutered hook - and every worktree of this repo shares the one install.
+fn keel_hooks_dir(repo: &Path) -> Result<PathBuf, String> {
     let common = repo.join(git(repo, &["rev-parse", "--git-common-dir"], &[])?); // join keeps an absolute path as-is
-    let dir = common.canonicalize().unwrap_or(common).join("keel-hooks");
+    Ok(common.canonicalize().unwrap_or(common).join("keel-hooks"))
+}
+
+/// What installing Keel's hooks would stop git from running: a `core.hooksPath` (any scope) other
+/// than Keel's, else every entry of `<common>/hooks/` that is not a `*.sample`. Empty = nothing.
+fn hook_conflicts(hooks_path: Option<&str>, keel: &str, hooks_dir: &str, entries: &[String]) -> Vec<String> {
+    match hooks_path {
+        Some(h) if h == keel => vec![],
+        Some(h) => vec![format!("core.hooksPath = {h}")],
+        None => entries.iter().filter(|n| !n.ends_with(".sample")).map(|n| format!("{hooks_dir}/{n}")).collect(),
+    }
+}
+
+fn hooks_install(repo: &Path, force: bool) -> Result<i32, String> {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = keel_hooks_dir(repo)?;
+    if !force {
+        let current = git(repo, &["config", "--get", "core.hooksPath"], &[]).ok();
+        let own = dir.parent().unwrap_or(&dir).join("hooks");
+        let entries: Vec<String> = std::fs::read_dir(&own)
+            .map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
+            .unwrap_or_default();
+        let conflicts = hook_conflicts(current.as_deref(), &dir.to_string_lossy(), &own.to_string_lossy(), &entries);
+        if !conflicts.is_empty() {
+            eprintln!(
+                "keel hooks install: refused - another hook setup is in place, and installing Keel's would stop git running it:\n    {}\n  fix -> keel hooks install --force   (replaces it; Keel does not chain other tools' hooks - move what they did into .keel/config.toml [check] or drop it)",
+                conflicts.join("\n    ")
+            );
+            return Ok(1);
+        }
+    }
     std::fs::create_dir_all(&dir).map_err(|e| format!("keel: mkdir {}: {e}", dir.display()))?;
     for (name, body) in [
         ("pre-commit", PRE_COMMIT),
@@ -407,7 +436,8 @@ fn run() -> Result<i32, String> {
             ["--force"] | ["-f"] => init::run(&repo, true),
             _ => Err("usage: keel init [--force | -f]".into()),
         },
-        ["hooks", "install"] => hooks_install(&repo),
+        ["hooks", "install"] => hooks_install(&repo, false),
+        ["hooks", "install", "--force"] => hooks_install(&repo, true),
         ["lint"] => lint(&repo, &load_config(&repo)?),
         ["check"] => check(&repo, &load_config(&repo)?),
         ["hook", "pre-commit"] => pre_commit(&repo, &load_config(&repo)?),
@@ -419,7 +449,7 @@ fn run() -> Result<i32, String> {
         ["verify-dod", rest @ ..] => gate::verify_dod(&repo, &load_config(&repo)?, rest),
         ["preflight", rest @ ..] => gate::preflight_cmd(&repo, &load_config(&repo)?, rest),
         ["mr", rest @ ..] => mr::run(&repo, &load_config(&repo)?, rest),
-        _ => Err("usage: keel <init [-f] | lint | check | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install | notes write <test|doc|cr>>".into()),
+        _ => Err("usage: keel <init [-f] | lint | check | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install [--force] | notes write <test|doc|cr>>".into()),
     }
 }
 
@@ -432,7 +462,19 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, ReportPolicy, COMMIT_MSG, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
+    use super::{hook_conflicts, Config, ReportPolicy, COMMIT_MSG, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
+
+    #[test]
+    fn hook_conflicts_treat_sample_only_as_clean_and_anything_else_as_foreign() {
+        let names = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let keel = "/r/.git/keel-hooks";
+        let samples = names(&["pre-commit.sample", "pre-push.sample"]);
+        assert!(hook_conflicts(None, keel, "/r/.git/hooks", &samples).is_empty());
+        assert!(hook_conflicts(None, keel, "/r/.git/hooks", &[]).is_empty());
+        assert!(hook_conflicts(Some(keel), keel, "/r/.git/hooks", &names(&["pre-commit"])).is_empty(), "Keel's own path: a re-install");
+        assert_eq!(hook_conflicts(None, keel, "/r/.git/hooks", &names(&["pre-commit.sample", "pre-commit", "husky.sh"])), ["/r/.git/hooks/pre-commit", "/r/.git/hooks/husky.sh"]);
+        assert_eq!(hook_conflicts(Some(".husky"), keel, "/r/.git/hooks", &samples), ["core.hooksPath = .husky"]);
+    }
 
     const BASE: &str = "[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n";
 
