@@ -38,7 +38,7 @@ Default per the keel-workflow skill; exact owner commands in the keel-router ski
 The cr gate covers only `code_paths` (`<list them>`). Before the owner signs a WU touching any of these, run an independent review (checklists: the keel-router skill's `references/review-checklists.md`): `<e.g. CI workflows, build scripts, lockfiles, native/FFI code, release config>`.
 
 ## Workers
-- Spawn with `<absolute agent CLI path>`, always `--model <model id>`, `--permission-mode <mode>`; names `<project>-<area>-<phase>`; briefs in `<durable briefs dir>`.
+- Spawn with `<absolute agent CLI path>`, always `--model <model id>` and `--effort <level>` from `<policy source, e.g. a config section the launcher reads>`, `--permission-mode <mode>`; names `<project>-<area>-<phase>`; briefs in `<durable briefs dir>`.
 - Briefs: the keel-router skill's `references/brief-skeleton.md`; this project adds these hard rules: `<machine-safety rules: temp HOME, held ports, real data dirs>`.
 
 ## Never touch
