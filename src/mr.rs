@@ -465,7 +465,7 @@ pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, b
     }
     let change = change_hash(repo, base, tip).map_err(|e| (e, "fix the repo state, then re-run".into()))?;
     if n.change_hash != change {
-        return again(format!("the diff {}..{t} changed since the sign-off", short(base)));
+        return again(stale_change(&n.change_hash, &format!("{}..{t}", short(base))));
     }
     let attested = match (&n.report, &n.report_hash) {
         (Some(r), Some(h)) => Some((r.as_str(), h.as_str())),
@@ -505,6 +505,14 @@ pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, b
         Ok(Some(h)) if h != hash => again(format!("{path} differs from the bytes the mr/v1 note attests")),
         Err(e) => again(e),
         _ => Ok(Some((path.to_string(), hash.to_string()))),
+    }
+}
+
+fn stale_change(signed: &str, range: &str) -> String {
+    if signed.starts_with("sha256:") {
+        format!("the diff {range} changed since the sign-off")
+    } else {
+        format!("the sign-off on {range} was signed by a keel older than the SHA-256 sign-off format; re-sign with keel mr confirm")
     }
 }
 
@@ -553,7 +561,15 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{has_role, payload, sha256};
+    use super::{has_role, payload, sha256, stale_change};
+
+    #[test]
+    fn a_pre_sha256_change_hash_names_the_old_format_not_a_changed_diff() {
+        assert_eq!(stale_change("sha256:00", "b..t"), "the diff b..t changed since the sign-off");
+        let old = stale_change("9daeafb9864cf43055ae93beb0afd6c7d144bfa4", "b..t");
+        assert!(old.contains("older than the SHA-256 sign-off format") && old.contains("keel mr confirm"), "{old}");
+        assert!(!old.contains("changed since"));
+    }
 
     #[test]
     fn sha256_matches_the_fips_180_2_abc_vector() {

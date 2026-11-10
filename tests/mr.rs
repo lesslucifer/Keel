@@ -297,7 +297,7 @@ fn rule_bearing_commit_needs_a_listed_reviewed_by_trailer() {
 }
 
 /// I6: sign-off hashes are SHA-256; a pre-W2 note (keel-mr/v1 payload, git blob-id hashes) has no
-/// legacy reader, so it is red at verify-dod wu and at the WU merge hook.
+/// legacy reader, so it is red at verify-dod wu and at the WU merge hook, naming the old format as the cause.
 #[test]
 fn sign_off_hashes_are_sha256_and_a_pre_w2_note_is_red() {
     let (d, k) = fixture();
@@ -322,7 +322,8 @@ fn sign_off_hashes_are_sha256_and_a_pre_w2_note_is_red() {
     n["report_hash"] = json!(report);
     n["sig"] = json!(std::fs::read_to_string(k.path().join("payload.sig")).unwrap());
     put_note(p, "HEAD", &n);
-    assert_red8(p, "changed since the sign-off");
+    assert_red8(p, "signed by a keel older than the SHA-256 sign-off format");
+    assert!(!text(&keel(p, &["verify-dod", "wu", "wu/e/a"])).contains("changed since the sign-off"));
 
     ok(keel(p, &["hooks", "install"]));
     git(p, &["switch", "-q", "epic/e"]);
