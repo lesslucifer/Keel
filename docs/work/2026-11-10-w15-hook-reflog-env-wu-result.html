@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="7b3f91c0d2e84a6519c0fa37" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED2.W15 result: hook env strip</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED2.W15 result: a check's fixtures never inherit the hook's git env</h1>
+      <div class="meta">T3 · wu-result · tracked at the W15 tip, archived at the epic re-gate (distilled to backlog B14) · 2026-11-10 · branch wu/E-SEED2/w15-hook-reflog-env · owner ruling 2026-11-10: every code review waived, no plan doc</div>
+    </div>
+  </header>
+  <main>
+    <p data-item="outcome"><b>Delivered.</b> The second merge of <code>epic/E-SEED2</code> into main <code>0dad93f</code> was refused because six <code>tests/mr.rs</code> fixtures failed under the hook's <code>keel check</code> with <code>git rev-parse epic/E-SEED2^{commit}</code>. Git exports <code>GIT_REFLOG_ACTION="merge epic/E-SEED2"</code> to its hooks. A fixture's own <code>git merge</code> keeps a value it inherits, and the fixture's pre-merge-commit keel then reads it (<code>src/gate.rs</code> <code>verify-dod hook</code>) as the merge source. Keel's child spawns (<code>no_git_env(.., false)</code>, which covers check commands) and the tests' <code>common::cmd</code> now also strip <code>GIT_HOOK_ENV</code>: the reflog action, the editor, and the author and committer name, email and date. A probe hook observed git exporting all of these to its hooks.</p>
+    <p data-item="deviations">The owner waived the plan doc and every code review, so the <code>cr/v1</code> PASS records that waiver. <code>GIT_EXEC_PATH</code> is also exported to hooks but is not stripped: it only points at the running git's own helpers. Keel's own git calls keep the hook env.</p>
+    <div data-item="evidence">
+      <p>Commit <code>8cc6c4e</code>, which changes <code>src/main.rs</code>, <code>tests/cli.rs</code>, <code>tests/common/mod.rs</code> and <code>docs/backlog/e-seed-v2.html</code>.</p>
+      <ul>
+        <li>New regression test <code>check_does_not_pass_the_hooks_git_env_to_its_test_command</code>: <code>keel check</code> is run with every <code>GIT_HOOK_ENV</code> variable set, and the test command must see none of them. It was red on the old <code>src/main.rs</code> (<code>GIT_REFLOG_ACTION reached the test command</code>) and is green with the fix.</li>
+        <li>The unit test <code>no_git_env_removes_every_local_var…</code> now covers the hook list. <code>the_test_strip_list_equals_keels</code> locks the test copy of the list to keel's.</li>
+        <li>Full <code>cargo test</code> and <code>keel lint</code> are green.</li>
+        <li><b>Acceptance, red:</b> in a scratch clone with keel from <code>bf23a3c</code> installed as the hooks and main at <code>0dad93f</code>, the real <code>git merge --no-ff epic/E-SEED2</code> reproduced the owner's six failures and was refused. The green run on the W15 tip, merged into the epic in the scratch clone, is reported to the router with raw output.</li>
+      </ul>
+    </div>
+    <p data-item="distillation">Backlog <code>docs/backlog/e-seed-v2.html</code> B14, row "Second refusal (E-SEED2.W15)".</p>
+    <p data-item="follow-ups">None beyond B14. Any future gate that reads a hook variable must also add that variable to <code>GIT_HOOK_ENV</code>.</p>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
