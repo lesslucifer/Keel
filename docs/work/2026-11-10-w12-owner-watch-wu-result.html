@@ -42,6 +42,13 @@
       <li>In <code>tests/router.rs</code>, every spawn now goes through W13's <code>common::cmd</code>, and <code>hermetic()</code> adds the global and system config isolation on top (<code>2f4b6ff</code>).</li>
     </ul></li>
   <li><b>Author identity of <code>8fe2fe1</code> and <code>c985a27</code>.</b> Both commits are authored as <code>t &lt;t@t&gt;</code>. During the run, test fixtures that inherited a hook's <code>GIT_DIR</code> wrote <code>user.name</code>/<code>user.email</code> = <code>t</code> into the shared <code>.git/config</code> (the incident W13 fixes). Owner ruling 2026-11-10: they stay as they are, with no history rewrite. Every later W12 commit carries the owner's identity.</li>
+  <li><b>Code-review fix round 3.</b> keel-code-review over <code>cf7ee21..7c26a43</code> returned FAIL with two important findings. I1: the <code>landed</code> and <code>unexpected</code> detail lines bypassed <code>clean()</code>. Under the user's <code>core.quotePath=false</code>, a committed file name containing U+202E, U+2028 or C1 therefore reached the router raw. Both lines now go through <code>clean</code>. I2: no test ran the sha-less <code>tagged &lt;tag&gt;</code> to <code>TAGGED</code>; one does now. The verified nits are also fixed:
+    <ul>
+      <li>A <code>test</code> note on the tip must not fire <code>SIGNED</code>.</li>
+      <li><code>hermetic()</code> strips the <code>GIT_TRACE*</code> variables.</li>
+      <li><code>Stepped::at</code> and <code>Stepped::output</code> kill and reap the watch on timeout.</li>
+    </ul>
+    Two efficiency candidates were refuted. The 10 s bound is not on the critical path, and <code>Watcher::run</code> has a different contract from <code>Stepped::line</code>. Each new branch has its own mutant in the sweep. The same-class audit found that every line printed outside <code>clean</code> carries only shas, counts, the router's own guard-whitelisted arguments, or the <code>tr</code>-filtered UNREACHABLE error.</li>
 </ul>
 
 <h2 id="evidence">Evidence</h2>
@@ -60,6 +67,7 @@
     <li><code>dabcec8</code>, <code>dbea1c6</code> and <code>8fe2fe1</code>: code-review fix round 2.</li>
     <li><code>73cbe78</code> (owner, Reviewed-By): the back-merge of the epic, including the worker-ops <code>DELETED target=</code> row and the <code>ls-remote</code> step.</li>
     <li><code>2f4b6ff</code>: the W12 test spawns go through <code>common::cmd</code>.</li>
+    <li><code>c67f1ac</code> and <code>f0016e2</code>: code-review fix round 3.</li>
     <li>This report.</li>
   </ul>
   <p><b>Reviews.</b> The independent review r1 at <code>b997c0a</code> returned FIX, and it was fixed as described above. The independent review r2 at <code>f387c3b</code> returned PASS, with low follow-ups N1–N3. keel-code-review at <code>ab9d66e</code> returned FAIL and was fixed in <code>d9bd7da</code>, together with N1 and N2. keel-code-review at <code>e3c6f69</code> returned FAIL (V1, V2 and nits). Round 2 fixed them, together with N3.</p>
