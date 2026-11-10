@@ -14,6 +14,8 @@
 # Only `git fetch` writes: refs/remotes/origin/<branch> and objects (no tags, no FETCH_HEAD, no
 # maintenance). The remote is always origin. Detail lines are untrusted text, control characters as ?.
 set -eu
+# bytes, not characters: an invalid UTF-8 byte in a note or a git error must not stop sed or tr
+export LC_ALL=C
 die() { echo "router-watch: $*" >&2; exit 2; }
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
 g() { git -C "$ROOT" "$@"; }
@@ -52,7 +54,7 @@ esac
 # detail lines carry commit and note text verbatim but for control characters: C0 and DEL, UTF-8 C1
 # (U+0080-009F), line/paragraph separators and bidi overrides (U+2028-202E, U+2066-2069)
 c1=$(printf '\302[\200-\237]') sep=$(printf '\342\200[\250-\256]') iso=$(printf '\342\201[\246-\251]')
-clean() { LC_ALL=C sed "s/[[:cntrl:]]/?/g; s/$c1/?/g; s/$sep/?/g; s/$iso/?/g"; }
+clean() { sed "s/[[:cntrl:]]/?/g; s/$c1/?/g; s/$sep/?/g; s/$iso/?/g"; }
 
 # ponytail: a stalled http transfer aborts after 120s; ssh has no bound short of the 2h background ceiling
 net() { g -c http.lowSpeedLimit=1 -c http.lowSpeedTime=120 "$@"; }

@@ -1284,7 +1284,7 @@ impl Watcher {
         let dir = self.base.join("spy");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("git"), format!(
-            "#!/bin/sh\necho \"$*\" >> \"$GIT_SPY_LOG\"\ncase \"$GIT_SPY_FAIL $*\" in 1*\" fetch \"*) printf 'fatal: spy refuses fetch\\nspy: last line\\n' >&2; exit 128;; esac\nexec {} \"$@\"\n",
+            "#!/bin/sh\necho \"$*\" >> \"$GIT_SPY_LOG\"\ncase \"$GIT_SPY_FAIL $*\" in 1*\" fetch \"*) printf 'fatal: spy refuses fetch\\nspy: last\\377line\\n' >&2; exit 128;; esac\nexec {} \"$@\"\n",
             real.trim()
         )).unwrap();
         std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
@@ -1456,6 +1456,14 @@ fn watch_signed_and_merged_report_the_note_and_how_the_tip_landed() {
     git(&w.main, &["notes", "--ref=mr", "add", "-m", "level: wu\nby: vu\rluu\x1b]0;x\x07\x7f\nu: \u{7e}\u{80}\u{9b}\u{9f}\u{a0}\u{e9}|\u{2027}\u{2028}\u{2029}\u{202e}\u{202f}|\u{2065}\u{2066}\u{2069}\u{206a}", &t]);
     s.go(1);
     assert_eq!(s.line(), format!("SIGNED tip={t}\n  level: wu\n  by: vu?luu?]0;x??\n  u: ~???\u{a0}\u{e9}|\u{2027}???\u{202f}|\u{2065}??\u{206a}\n"));
+
+    // review r8: a note with an invalid UTF-8 byte, under the router's UTF-8 locale: one SIGNED, exit 0
+    let u = w.commit(&["u"], "u");
+    let note = w.base.join("bad-note");
+    std::fs::write(&note, b"by: a\xffb\n").unwrap();
+    git(&w.main, &["notes", "--ref=mr", "add", "-F", note.to_str().unwrap(), &u]);
+    let o = w.armed_env(&["signed", &u], "bad-byte", &[("LC_ALL", "en_US.UTF-8")]).output();
+    assert_eq!((o.status.code(), o.stdout), (Some(0), [format!("SIGNED tip={u}\n").as_bytes(), b"  by: a\xffb\n"].concat()));
 
     git(&w.main, &["switch", "-q", "-c", "wu/x"]);
     let x = w.commit(&["x"], "x");
@@ -1658,7 +1666,7 @@ fn watch_times_out_and_reports_an_unreachable_origin() {
     git(&other, &["commit", "-q", "--allow-empty", "-m", "ahead2"]);
     git(&other, &["push", "-q", "origin", "HEAD:refs/heads/wu/f"]);
     let (path, log) = w.spy();
-    let env = [("PATH", path.as_str()), ("GIT_SPY_LOG", log.to_str().unwrap()), ("GIT_SPY_FAIL", "1")];
+    let env = [("PATH", path.as_str()), ("GIT_SPY_LOG", log.to_str().unwrap()), ("GIT_SPY_FAIL", "1"), ("LC_ALL", "en_US.UTF-8")];
     let mut s = w.armed_env(&["pushed", &tip, "wu/f"], "fetch-fails", &env);
     for n in 1..=3 {
         s.go(n);
@@ -1673,7 +1681,7 @@ fn watch_times_out_and_reports_an_unreachable_origin() {
     }
     let dir = s.dir.clone();
     let out = s.line();
-    assert_eq!(out, "UNREACHABLE kind=pushed remote=origin error=spy: last line\n", "the error is git's last line");
+    assert_eq!(out, "UNREACHABLE kind=pushed remote=origin error=spy: last line\n", "the error is git's whole last line, an invalid byte as a space");
     let calls = std::fs::read_to_string(&log).unwrap();
     let fetches: Vec<&str> = calls.lines().filter(|l| l.contains(" fetch ")).collect();
     assert!(!fetches.is_empty() && fetches.iter().all(|l| ["--no-tags", "--no-write-fetch-head", "--no-auto-maintenance", "--no-recurse-submodules"].iter().all(|f| l.contains(f))), "{fetches:?}");
