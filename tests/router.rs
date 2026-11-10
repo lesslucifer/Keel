@@ -1440,8 +1440,8 @@ fn watch_commit_reports_what_landed_against_what_was_staged() {
     git(&w.main, &["config", "core.quotePath", "false"]);
     let h = w.sha("HEAD");
     let hh = w.commit(&["e\u{202e}v\u{2028}l\u{9b}"], "h");
-    let (_, out, _, _) = w.run(&["commit", "main", &h, "x"], "hostile-path", 0, &[]);
-    assert_eq!(out, format!("COMMITTED-PARTIAL branch=main from={h} to={hh} commits=1 expected=0/1\n  commit {hh} reviewed-by=none h\n  landed A e?v?l?\n  missing x\n  unexpected e?v?l?\n"));
+    let (_, out, _, _) = w.run(&["commit", "main", &h, "x\x1b[2J"], "hostile-path", 0, &[]);
+    assert_eq!(out, format!("COMMITTED-PARTIAL branch=main from={h} to={hh} commits=1 expected=0/1\n  commit {hh} reviewed-by=none h\n  landed A e?v?l?\n  missing x?[2J\n  unexpected e?v?l?\n"));
 }
 
 /// E-SEED2.W12: `signed` fires on the mr note and prints its payload; `merged` fires once the tip is in
@@ -1674,8 +1674,12 @@ fn watch_times_out_and_reports_an_unreachable_origin() {
     let dir = s.dir.clone();
     let out = s.line();
     assert_eq!(out, "UNREACHABLE kind=pushed remote=origin error=spy: last line\n", "the error is git's last line");
-    let fetches: Vec<String> = std::fs::read_to_string(&log).unwrap().lines().filter(|l| l.contains(" fetch ")).map(String::from).collect();
+    let calls = std::fs::read_to_string(&log).unwrap();
+    let fetches: Vec<&str> = calls.lines().filter(|l| l.contains(" fetch ")).collect();
     assert!(!fetches.is_empty() && fetches.iter().all(|l| ["--no-tags", "--no-write-fetch-head", "--no-auto-maintenance", "--no-recurse-submodules"].iter().all(|f| l.contains(f))), "{fetches:?}");
+    let network: Vec<&str> = calls.lines().filter(|l| l.contains(" fetch ") || l.contains(" ls-remote ")).collect();
+    assert!(network.iter().any(|l| l.contains(" ls-remote ")), "{calls}");
+    assert!(network.iter().all(|l| l.contains("-c http.lowSpeedLimit=1 -c http.lowSpeedTime=120 ")), "a network call without the http stall bound: {network:?}");
     assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "9", "a missing branch did not reset the count");
 
     // review r5: tagged resets its count on a good ls-remote too (the tag is not there yet)

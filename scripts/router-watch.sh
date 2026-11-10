@@ -87,7 +87,7 @@ check_commit() {
   g log --reverse --format='%H%x1f%(trailers:key=Reviewed-By,valueonly,unfold,separator=%x2C)%x1f%s' "$old..$new" |
     while IFS=$(printf '\037') read -r c r s; do echo "  commit $c reviewed-by=${r:-none} $s"; done | clean
   [ -z "$st" ] || printf '%s\n' "$st" | while IFS='	' read -r s p; do echo "  landed $s $p"; done | clean
-  printf '%s' "$missing"; [ -z "$unexpected" ] || printf '%s\n' "$unexpected" | clean
+  printf '%s' "$missing" | clean; [ -z "$unexpected" ] || printf '%s\n' "$unexpected" | clean
 }
 
 check_signed() {
