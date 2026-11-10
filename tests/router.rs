@@ -7,6 +7,8 @@ use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
+mod common;
+
 fn root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
@@ -119,7 +121,7 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "gh pr list --state open -L 5 --author vuluu".into(),
         "gh pr status".into(),
         "scripts/router-worker.sh spawn e-x-w1 /Users/o/Keel-x .router/briefs/e-x-w1.md opus".into(),
-        "scripts/router-worker.sh resume e-x-w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b /Users/o/Keel-x .router/briefs/e-x-w1-r1.md sonnet".into(),
+        "scripts/router-worker.sh resume e-x-w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b /Users/o/Keel-x .router/briefs/e-x-w1-r1.md opus --effort high".into(),
         "scripts/router-worker.sh wait e-x-w1".into(),
         "scripts/router-worker.sh wait e-x-w1 30".into(),
         "scripts/router-watch.sh commit wu/E-SEED2/w12-owner-watch fa5a25d16d953d5858c35b58e6025a6a7903ff8b skills/keel-router/SKILL.md .claude/skills/keel-router/SKILL.md".into(),
@@ -267,7 +269,7 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
     assert!(pre[0].get("matcher").is_none(), "the guard must see every tool");
     let cmd = pre[0]["hooks"][0]["command"].as_str().unwrap().to_string();
     let run = |dir: &Path, path: &str| {
-        let mut p = Command::new("/bin/sh")
+        let mut p = common::cmd("/bin/sh")
             .args(["-c", &cmd])
             .env("CLAUDE_PROJECT_DIR", dir)
             .env("PATH", path)
@@ -298,7 +300,7 @@ fn hermetic(c: &mut Command) -> &mut Command {
 const BOUND: Duration = Duration::from_secs(10);
 
 fn git(d: &Path, a: &[&str]) -> Output {
-    let o = hermetic(&mut Command::new("git"))
+    let o = hermetic(&mut common::cmd("git"))
         .args(["-c", "core.hooksPath=/dev/null"])
         .args(a)
         .current_dir(d)
@@ -363,6 +365,8 @@ fn launcher() -> Launcher {
     std::fs::copy(root().join("scripts/router-worker.sh"), main.join("scripts/router-worker.sh")).unwrap();
     std::fs::write(main.join(".gitignore"), ".router/\n").unwrap();
     std::fs::write(main.join(".router/briefs/b.md"), "do the thing\n").unwrap();
+    std::fs::create_dir_all(main.join(".keel")).unwrap();
+    std::fs::write(main.join(".keel/config.toml"), git(root(), &["show", "HEAD:.keel/config.toml"]).stdout).unwrap();
     git(&main, &["init", "-q", "-b", "main"]);
     git(&main, &["add", "."]);
     git(&main, &["commit", "-qm", "base"]);
@@ -380,7 +384,7 @@ impl Launcher {
     }
 
     fn cmd(&self, args: &[&str], env: &[(&str, &str)]) -> Command {
-        let mut c = Command::new("sh");
+        let mut c = common::cmd("sh");
         c.arg("scripts/router-worker.sh")
             .args(args)
             .current_dir(&self.main)
@@ -429,6 +433,17 @@ impl Launcher {
         dir.join(format!("{sid}.jsonl"))
     }
 
+    /// Commit `config` as the main checkout's .keel/config.toml (None: remove it), the HEAD the launcher reads.
+    fn commit_config(&self, config: Option<&str>) {
+        let f = self.main.join(".keel/config.toml");
+        match config {
+            Some(c) => std::fs::write(&f, c).unwrap(),
+            None => std::fs::remove_file(&f).unwrap(),
+        }
+        git(&self.main, &["add", "-A", ".keel"]);
+        git(&self.main, &["commit", "-qm", "config"]);
+    }
+
     /// Release every held stub, wait (bounded) until the worker recorded in <name>.pid has exited,
     /// then re-arm the hold for the next run.
     fn wait_exit(&self, name: &str) {
@@ -460,7 +475,11 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
         (vec!["spawn", "n", main, brief, "opus"], "may not run in"),
         (vec!["spawn", "n", "/tmp", brief, "opus"], "not a registered worktree"),
         (vec!["spawn", "-n", wt, brief, "opus"], "bad name"),
-        (vec!["spawn", "n", wt, brief, "gpt"], "model must be"),
+        (vec!["spawn", "n", wt, brief, "gpt"], "model must be opus ([router] worker_model in .keel/config.toml)"),
+        (vec!["spawn", "n", wt, brief, "sonnet"], "model must be opus ([router] worker_model in .keel/config.toml)"),
+        (vec!["spawn", "n", wt, brief, "haiku"], "model must be opus ([router] worker_model in .keel/config.toml)"),
+        (vec!["spawn", "n", wt, brief, "fable"], "model must be opus ([router] worker_model in .keel/config.toml)"),
+        (vec!["resume", "n", "0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b", wt, brief, "sonnet"], "model must be opus"),
         (vec!["spawn", "n", wt, "scripts/router-worker.sh", "opus"], "file must be a .md under"),
     ] {
         let (ok, out) = l.run(&args);
@@ -470,31 +489,192 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
     let (ok, out) = l.run(&["spawn", "n", wt, ".router/briefs/s.md", "opus"]);
     assert!(!ok && out.contains("symlinks refused"), "{out}");
 
-    let (ok, out) = l.run(&["spawn", "n", wt, brief, "haiku"]);
+    let (ok, out) = l.run(&["spawn", "n", wt, brief, "opus"]);
     assert!(ok && out.starts_with("RUNNING"), "{out}");
     let sid = field(&out, "session=").to_string();
     let copy = field(&out, "brief=").to_string();
     assert!(copy.starts_with(wt) && std::fs::read_to_string(&copy).unwrap() == "do the thing\n", "{out}");
 
     // a second run under a live name is refused, spawn or resume
-    let (ok, out) = l.run(&["spawn", "n", wt2, brief, "haiku"]);
+    let (ok, out) = l.run(&["spawn", "n", wt2, brief, "opus"]);
     assert!(!ok && out.contains("still running"), "{out}");
-    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "haiku"]);
+    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "opus"]);
     assert!(!ok && out.contains("still running"), "{out}");
     l.wait_exit("n");
 
     // resume is bound to the spawn's name, session and worktree
-    let (ok, out) = l.run(&["resume", "n", &sid, wt2, brief, "haiku"]);
+    let (ok, out) = l.run(&["resume", "n", &sid, wt2, brief, "opus"]);
     assert!(!ok && out.contains("was spawned in"), "{out}");
-    let (ok, out) = l.run(&["resume", "m", &sid, wt, brief, "haiku"]);
+    let (ok, out) = l.run(&["resume", "m", &sid, wt, brief, "opus"]);
     assert!(!ok && out.contains("no recorded spawn"), "{out}");
-    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "haiku"]);
+    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "opus"]);
     assert!(ok && out.starts_with("RUNNING"), "{out}");
     l.wait_exit("n");
 
     let log = std::fs::read_to_string(l.main.join(".router/out/n.out")).unwrap();
     assert_eq!(log.matches("stub ").count(), 1, "n.out must hold only the latest run:\n{log}");
     assert!(log.contains(&format!("--resume {sid}")), "{log}");
+
+    // E-SEED2.W7 (DEC-39): the policy is [router] in .keel/config.toml as committed at HEAD; anything
+    // the launcher's narrow reader does not accept refuses the run and starts nothing
+    let ok_policy = "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n";
+    let mut policy_refusals = vec![(None, "absent".to_string())];
+    for (bad, what) in [
+        ("code_paths = [\"src/\"]\n", "no [router]"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\n", "missing key"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"max\"\n", "default not in list"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"ultracode\"]\nworker_default_effort = \"medium\"\n", "unknown level"),
+        ("[router]\nworker_model = opus\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n", "unquoted"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\" \"high\"]\nworker_default_effort = \"medium\"\n", "list without comma"),
+        (&format!("{ok_policy}worker_model = \"opus\"\n"), "repeated key"),
+        (&format!("{ok_policy}worker_extra = \"x\"\n"), "unknown key"),
+        ("[router]\nworker_model = \"opus\"\n[other]\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n", "key outside the section"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\n[other]\nworker_default_effort = \"medium\"\n", "key after another section"),
+        (&ok_policy.replace('\n', "\r\n"), "CRLF"),
+        (&ok_policy.replace("worker_model = ", "worker_model\t=\t"), "tabs around ="),
+        (&ok_policy.replace("\"opus\"", "'opus'"), "single quotes"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = []\nworker_default_effort = \"medium\"\n", "empty array"),
+        (&ok_policy.replace("\"high\"]", "\"high\",]"), "trailing comma"),
+        (&ok_policy.replace("[\"medium\", \"high\"]", "[\n  \"medium\",\n  \"high\",\n]"), "multi-line array"),
+        (&format!("{ok_policy}[router.x]\ny = 1\n"), "[router.x]"),
+        (&format!("{ok_policy}[[router]]\n"), "[[router]]"),
+        (&format!("{ok_policy}[ router ]\n"), "spaced header"),
+        (&format!("{ok_policy}[\"router\"]\n"), "quoted header"),
+        (&format!("  {ok_policy}"), "indented header"),
+        (&format!("{ok_policy}  [router]\n"), "indented second header"),
+        (&format!("{ok_policy}[router]\n"), "duplicate section"),
+        ("[router]\nworker_model = \"opus\"\n[review]\nx = 1\n[router]\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n", "split section"),
+        (&ok_policy.replace("[router]\n", "[router]\t\n"), "trailing tab on header"),
+        (&ok_policy.replace("[router]\n", "[router] \n"), "trailing space on header"),
+        (&ok_policy.replace("\"opus\"", "\"--dangerously-skip-permissions\""), "model starting with -"),
+        (&ok_policy.replace("\"opus\"", "\"4opus\""), "model starting with a digit"),
+        (&ok_policy.replace("worker_default_effort = \"medium\"", "worker_default_effort = \"-medium\""), "effort starting with -"),
+        ("[router]\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n", "missing worker_model"),
+        (&ok_policy.replace("[router]\n", "[router]# c\n"), "no space before the header's comment"),
+        (&format!("{ok_policy}\t[router]\n"), "tab-indented second header"),
+        (&format!("{ok_policy}[\trouter]\n"), "tab inside a second header"),
+        (&format!("{ok_policy}[router\t]\n"), "tab before a second header's ]"),
+        (&ok_policy.replace("worker_model", "  worker_model"), "indented worker_model"),
+        (&ok_policy.replace("worker_default_effort", "  worker_default_effort"), "indented worker_default_effort"),
+        (&ok_policy.replace("worker_efforts", "  worker_efforts"), "indented worker_efforts"),
+        (&ok_policy.replace("\"opus\"", "\"opus\" x"), "junk after worker_model"),
+        (&ok_policy.replace("= \"medium\"\n", "= \"medium\" x\n"), "junk after worker_default_effort"),
+        (&ok_policy.replace("\"high\"]", "\"high\"] x"), "junk after worker_efforts"),
+        (&ok_policy.replace("worker_model = ", "worker_model  =  "), "two spaces around = (model)"),
+        (&ok_policy.replace("worker_default_effort = ", "worker_default_effort  =  "), "two spaces around = (default)"),
+        (&ok_policy.replace("worker_efforts = ", "worker_efforts  =  "), "two spaces around = (efforts)"),
+        (&ok_policy.replace("worker_efforts = ", "worker_efforts= "), "no space before = (efforts)"),
+        (&format!("{ok_policy}worker_default_effort = \"medium\"\n"), "repeated worker_default_effort"),
+        (&format!("{ok_policy}worker_efforts = [\"medium\", \"high\"]\n"), "repeated worker_efforts"),
+        (&ok_policy.replace("\"opus\"", "\"opus x\""), "model with a space"),
+        (&ok_policy.replace("\"opus\"", "\"opUs\""), "model with a capital"),
+        (&ok_policy.replace("= \"medium\"\n", "= \"medium high\"\n"), "default with a space"),
+        (&ok_policy.replace("[\"medium\", \"high\"]", "[\"medium high\"]"), "list entry with a space"),
+        (&ok_policy.replace("\"high\"]", "\"high medium\"]"), "later list entry with a space"),
+        (&ok_policy.replace("\"medium\", \"high\"", "\"medium\",  \"high\""), "two spaces after a comma"),
+        (&ok_policy.replace("\"high\"]", "\"below\"]"), "level word below"),
+        (&ok_policy.replace("\"high\"]", "\"highest\"]"), "level word highest"),
+    ] {
+        policy_refusals.push((Some(bad.to_string()), what.to_string()));
+    }
+    for (config, what) in policy_refusals {
+        l.commit_config(config.as_deref());
+        let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus"]);
+        assert!(!ok && out.contains("no worker policy: [router] worker_model / worker_efforts / worker_default_effort in .keel/config.toml at HEAD of"), "{what}: {out}");
+        assert!(!l.main.join(".router/out/q.pid").exists(), "{what}: started a worker");
+    }
+
+    // an uncommitted edit, even staged, cannot widen the committed policy
+    l.commit_config(Some("[router]   # comment\nworker_model = \"opus\"  # trailing\n\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n[next]\nx = 1\n"));
+    std::fs::write(l.main.join(".keel/config.toml"), "[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"max\"]\nworker_default_effort = \"max\"\n").unwrap();
+    git(&l.main, &["add", ".keel"]);
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
+    assert!(!ok && out.contains("model must be opus"), "{out}");
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus", "--effort", "max"]);
+    assert!(!ok && out.contains("effort must be one of: medium high"), "{out}");
+
+    // the launcher enforces whatever the committed policy says; it hardcodes no model
+    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\"]\nworker_default_effort = \"high\"\n"));
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus"]);
+    assert!(!ok && out.contains("model must be sonnet ([router] worker_model"), "{out}");
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
+    assert!(ok && out.contains(" effort=high "), "{out}");
+    l.wait_exit("q");
+
+    // the accepted efforts are the committed list, not a built-in one: narrowed, medium is refused;
+    // widened, max is accepted on spawn and resume
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "medium"]);
+    assert!(!ok && out.contains("effort must be one of: high ("), "{out}");
+    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"max\"]\nworker_default_effort = \"high\"\n"));
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "max"]);
+    assert!(ok && out.contains(" effort=max "), "{out}");
+    let sid = field(&out, "session=").to_string();
+    l.wait_exit("q");
+    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "max");
+    let (ok, out) = l.run(&["resume", "q", &sid, wt, brief, "sonnet", "--effort", "medium"]);
+    assert!(!ok && out.contains("effort must be one of: high max ("), "{out}");
+    let (ok, out) = l.run(&["resume", "q", &sid, wt, brief, "sonnet", "--effort", "max"]);
+    assert!(ok && out.contains(" effort=max "), "{out}");
+    l.wait_exit("q");
+    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "max");
+
+    // the default is worker_default_effort, not the list's first entry: a bare spawn and a bare
+    // resume of a session spawned at high both run at medium; read from HEAD on a branch other than main
+    git(&l.main, &["checkout", "-qb", "router"]);
+    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"medium\"]\nworker_default_effort = \"medium\"\n"));
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
+    assert!(ok && out.contains(" effort=medium "), "{out}");
+    l.wait_exit("q");
+    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "medium");
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "high"]);
+    assert!(ok && out.contains(" effort=high "), "{out}");
+    let sid = field(&out, "session=").to_string();
+    l.wait_exit("q");
+    let (ok, out) = l.run(&["resume", "q", &sid, wt, brief, "sonnet"]);
+    assert!(ok && out.contains(" effort=medium "), "{out}");
+    l.wait_exit("q");
+    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "medium");
+
+    // every level word is accepted when committed: low and xhigh, as the default and as --effort (review r5 V1)
+    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"low\", \"xhigh\"]\nworker_default_effort = \"low\"\n"));
+    for (extra, effort) in [(vec![], "low"), (vec!["--effort", "xhigh"], "xhigh")] {
+        let mut args = vec!["spawn", "q", wt, brief, "sonnet"];
+        args.extend(&extra);
+        let (ok, out) = l.run(&args);
+        assert!(ok && out.contains(&format!(" effort={effort} ")), "{out}");
+        l.wait_exit("q");
+        assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), effort);
+    }
+
+    // the reader's accepted edges in one policy: a tab before the header's comment, a dotted and
+    // hyphenated model, trailing blanks after a value, a three-entry list, and indented or similarly
+    // named headers that end the section
+    l.commit_config(Some("[router]\t# c\nworker_model = \"opus-4.5\" \t\nworker_efforts = [\"low\", \"medium\", \"xhigh\"]\nworker_default_effort = \"low\"\n\t[next]\nx = 1\n  [routers]\ny = 2\n"));
+    for effort in ["low", "medium", "xhigh"] {
+        let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus-4.5", "--effort", effort]);
+        assert!(ok && out.contains(&format!(" effort={effort} ")), "{out}");
+        l.wait_exit("q");
+    }
+    // an effort matches a whole list entry, never part of one
+    for part in ["med", "igh", "low medium"] {
+        let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus-4.5", "--effort", part]);
+        assert!(!ok && out.contains("effort must be one of: low medium xhigh ("), "{part}: {out}");
+    }
+}
+
+/// DEC-39: the repo's committed worker policy is opus at medium or high effort, medium by default.
+#[test]
+fn committed_worker_policy_is_opus_at_medium_or_high_effort() {
+    let o = git(root(), &["show", "HEAD:.keel/config.toml"]);
+    let config = String::from_utf8(o.stdout).unwrap();
+    let section: Vec<&str> = config
+        .lines()
+        .skip_while(|l| !l.starts_with("[router]"))
+        .skip(1)
+        .take_while(|l| !l.starts_with('['))
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    assert_eq!(section, ["worker_model = \"opus\"", "worker_efforts = [\"medium\", \"high\"]", "worker_default_effort = \"medium\""]);
 }
 
 const WORKER_GRANTS: [&str; 11] = [
@@ -522,7 +702,7 @@ fn worker_argv(checkout: &Path, name: &str) -> Vec<String> {
     let a: Vec<String> = line[1..line.len() - 1].split("][").map(String::from).collect();
     let flags: Vec<&str> = a.iter().map(String::as_str).filter(|x| x.starts_with('-')).collect();
     let start = if flags.contains(&"--resume") { "--resume" } else { "--session-id" };
-    let expected = ["-p", start, "--allowedTools", "--disallowedTools", "-n", "--model", "--agent", "--permission-mode", "--max-budget-usd"];
+    let expected = ["-p", start, "--allowedTools", "--disallowedTools", "-n", "--model", "--effort", "--agent", "--permission-mode", "--max-budget-usd"];
     assert_eq!(flags, expected, "{name}: options in {a:?}");
     let list = |flag: &str| -> Vec<String> {
         let i = a.iter().position(|x| x == flag).unwrap();
@@ -552,19 +732,21 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
         let a = worker_argv(&l.main, name);
         option(&a, "--permission-mode")
     };
-    let run_dir_mode = |name: &str, kind: &str| {
+    let run_dir = |name: &str, kind: &str, file: &str| {
         let runs = std::fs::read_dir(l.main.join(".router/runs")).unwrap();
-        let mut modes: Vec<String> = runs
+        let mut values: Vec<String> = runs
             .map(|e| e.unwrap().path())
             .filter(|p| {
                 let f = p.file_name().unwrap().to_str().unwrap();
                 f.starts_with(&format!("{name}-")) && f.ends_with(&format!("-{kind}"))
             })
-            .map(|p| std::fs::read_to_string(p.join("permission-mode")).unwrap().trim().to_string())
+            .map(|p| std::fs::read_to_string(p.join(file)).unwrap().trim().to_string())
             .collect();
-        modes.sort();
-        modes
+        values.sort();
+        values
     };
+    let run_dir_mode = |name: &str, kind: &str| run_dir(name, kind, "permission-mode");
+    let run_dir_effort = |name: &str, kind: &str| run_dir(name, kind, "effort");
 
     for (i, (extra, why)) in [
         (vec!["--permission-mode", "bypassPermissions"], "permission mode must be"),
@@ -574,6 +756,16 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
         (vec!["--permission-mode"], "[--permission-mode acceptEdits|plan]"),
         (vec!["--bogus", "x"], "[--permission-mode acceptEdits|plan]"),
         (vec!["--permission-mode", "plan", "x"], "[--permission-mode acceptEdits|plan]"),
+        (vec!["--effort", "low"], "effort must be one of: medium high ([router] worker_efforts in .keel/config.toml)"),
+        (vec!["--effort", "max"], "effort must be one of: medium high"),
+        (vec!["--effort", "ultracode"], "effort must be one of: medium high"),
+        (vec!["--effort", "medium high"], "effort must be one of: medium high"),
+        (vec!["--effort", ""], "effort must be one of: medium high"),
+        (vec!["--effort"], "[--effort <level>]"),
+        (vec!["--effort", "high", "--effort", "high"], "[--effort <level>]"),
+        (vec!["--permission-mode", "plan", "--permission-mode", "plan"], "[--effort <level>]"),
+        (vec!["--permission-mode", "plan", "--effort"], "[--effort <level>]"),
+        (vec!["--effort", "high", "--permission-mode", "plan", "x", "y"], "[--effort <level>]"),
     ]
     .into_iter()
     .enumerate()
@@ -608,8 +800,41 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
     assert!(!ok && out.contains("permission mode must be"), "{out}");
     assert_eq!(run_dir_mode("p", "resume"), ["acceptEdits", "plan"]);
 
+    // E-SEED2.W7: effort is medium by default, high when asked, in either order with the mode; it
+    // lands on the RUNNING line, in the run dir and after --model on the argv; a resume does not inherit it
+    let effort_of = |name: &str| {
+        l.wait_exit(name);
+        let a = worker_argv(&l.main, name);
+        assert_eq!(option(&a, "--model"), "opus");
+        (option(&a, "--effort"), option(&a, "--permission-mode"))
+    };
+    let mut sids = std::collections::HashMap::new();
+    for (name, extra, effort, mode) in [
+        ("e1", vec![], "medium", "acceptEdits"),
+        ("e2", vec!["--effort", "high"], "high", "acceptEdits"),
+        ("e3", vec!["--effort", "high", "--permission-mode", "plan"], "high", "plan"),
+        ("e4", vec!["--permission-mode", "plan", "--effort", "medium"], "medium", "plan"),
+    ] {
+        let mut args = vec!["spawn", name, wt, brief, "opus"];
+        args.extend(&extra);
+        let (ok, out) = l.run(&args);
+        assert!(ok && out.contains(&format!(" permission-mode={mode} effort={effort} ")), "{extra:?}: {out}");
+        sids.insert(name, field(&out, "session=").to_string());
+        assert_eq!(effort_of(name), (effort.to_string(), mode.to_string()), "{extra:?}");
+        assert_eq!(run_dir_effort(name, "spawn"), [effort], "{extra:?}");
+    }
+    let sid = sids["e2"].clone();
+    let (ok, out) = l.run(&["resume", "e2", &sid, wt, brief, "opus"]);
+    assert!(ok && out.contains(" effort=medium "), "{out}");
+    assert_eq!(effort_of("e2").0, "medium");
+    assert_eq!(run_dir_effort("e2", "spawn"), ["high"]);
+    assert_eq!(run_dir_effort("e2", "resume"), ["medium"]);
+    let (ok, out) = l.run(&["resume", "e2", &sid, wt, brief, "opus", "--effort", "low"]);
+    assert!(!ok && out.contains("effort must be one of"), "{out}");
+
     // router side: the guard admits the option on the launcher shape, and the grant never reaches it
     assert_eq!(bash("scripts/router-worker.sh spawn n /w .router/briefs/n.md opus --permission-mode plan"), None);
+    assert_eq!(bash("scripts/router-worker.sh spawn n /w .router/briefs/n.md opus --effort high --permission-mode plan"), None);
     for c in WORKER_GRANTS {
         assert!(bash(&format!("{c} x")).is_some(), "router may run {c}");
     }
@@ -639,7 +864,7 @@ fn pushed_probe_fires_only_after_the_merge_reaches_origin() {
     git(&main, &["commit", "-q", "--allow-empty", "-m", "epic work"]);
     let t = String::from_utf8(git(&main, &["rev-parse", "HEAD"]).stdout).unwrap().trim().to_string();
     git(&main, &["switch", "-q", "main"]);
-    let fires = || hermetic(&mut Command::new("sh")).args(["-c", probe]).env("MAIN", &main).env("T", &t).output().unwrap().status.success();
+    let fires = || hermetic(&mut common::cmd("sh")).args(["-c", probe]).env("MAIN", &main).env("T", &t).output().unwrap().status.success();
 
     assert!(!fires(), "PUSHED fired when the action was only staged");
     git(&main, &["merge", "-q", "--no-ff", "-m", "merge epic", "epic/E-X"]);
@@ -745,7 +970,7 @@ fn wait_blocks_until_the_worker_exits_or_stalls() {
     }
 
     // exits: still waiting while the worker lives, EXITED once it is gone
-    let out = l.hold(&["spawn", "n", wt, brief, "haiku"], &release(1));
+    let out = l.hold(&["spawn", "n", wt, brief, "opus"], &release(1));
     let sid = field(&out, "session=").to_string();
     let pid = field(&out, "pid=").to_string();
     let mut w = l.wait_stepped(&["wait", "n"], "exit");
@@ -760,7 +985,7 @@ fn wait_blocks_until_the_worker_exits_or_stalls() {
 
     // quiet, then busy (a command ran), then quiet: the busy poll resets, so STALLED needs two more
     let tr = l.transcript(&l.wt, &sid);
-    let out = l.hold(&["resume", "n", &sid, wt, brief, "haiku"], &release(2));
+    let out = l.hold(&["resume", "n", &sid, wt, brief, "opus"], &release(2));
     let pid = field(&out, "pid=").to_string();
     age(&tr, 120);
     let busy = base.join("release-2.busy");
@@ -828,7 +1053,7 @@ fn wait_blocks_until_the_worker_exits_or_stalls() {
     assert!(std::fs::read_to_string(l.main.join(".router/out/n.out")).unwrap().starts_with("stub "), "wait touched n.out");
 
     // a name spawned again (new session, other worktree) is judged by its newest run only
-    let out = l.hold(&["spawn", "n", l.wt2.to_str().unwrap(), brief, "haiku"], &release(3));
+    let out = l.hold(&["spawn", "n", l.wt2.to_str().unwrap(), brief, "opus"], &release(3));
     let tr2 = l.transcript(&l.wt2, field(&out, "session="));
     std::fs::write(&tr, "{}\n").unwrap();
     age(&tr2, 120);
@@ -847,7 +1072,7 @@ fn wired_guard(checkout: &Path, tool: &str, input: serde_json::Value) -> Option<
     let s: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(checkout.join(".claude/settings.json")).unwrap()).unwrap();
     let cmd = s["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str().unwrap();
     let event = serde_json::json!({"agent_type": "router", "tool_name": tool, "tool_input": input, "cwd": checkout});
-    let mut p = Command::new("/bin/sh")
+    let mut p = common::cmd("/bin/sh")
         .args(["-c", cmd])
         .env("CLAUDE_PROJECT_DIR", checkout)
         .stdin(Stdio::piped())
@@ -874,13 +1099,13 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
         std::fs::copy(root().join(f), c.join(f)).unwrap();
     }
     let keel = Path::new(env!("CARGO_BIN_EXE_keel"));
-    assert!(Command::new(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
+    assert!(common::cmd(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
     std::fs::write(c.join(".mr-allowed"), "username: owner\n").unwrap();
 
     // W3: the worktree the worker will run in is created through keel's post-checkout hook
     let wt = base.join("wt");
     let path = format!("{}:{}", keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
-    let o = hermetic(&mut Command::new("git")).args(["worktree", "add", "-q", "-b", "wu/x/e2e", wt.to_str().unwrap()]).current_dir(&c).env("PATH", &path).output().unwrap();
+    let o = hermetic(&mut common::cmd("git")).args(["worktree", "add", "-q", "-b", "wu/x/e2e", wt.to_str().unwrap()]).current_dir(&c).env("PATH", &path).output().unwrap();
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     assert_eq!(std::fs::read_to_string(wt.join(".mr-allowed")).ok().as_deref(), Some("username: owner\n"), "worktree not seeded");
 
@@ -891,7 +1116,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let owner = std::process::id().to_string();
     let router = |cmd: &str| -> String {
         assert_eq!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })), None, "guard denied {cmd:?}");
-        let mut p = Command::new("/bin/sh")
+        let mut p = common::cmd("/bin/sh")
             .args(["-c", cmd])
             .current_dir(&c)
             .env("ROUTER_CLAUDE", &stub)
@@ -925,8 +1150,8 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     std::fs::write(&brief, "run the gate\n").unwrap();
 
     // W1: spawned in plan mode
-    let out = router(&format!("scripts/router-worker.sh spawn {name} {} .router/briefs/{name}.md opus --permission-mode plan", wt.display()));
-    assert!(out.starts_with(&format!("RUNNING name={name} ")) && out.contains(" permission-mode=plan "), "{out}");
+    let out = router(&format!("scripts/router-worker.sh spawn {name} {} .router/briefs/{name}.md opus --effort high --permission-mode plan", wt.display()));
+    assert!(out.starts_with(&format!("RUNNING name={name} ")) && out.contains(" permission-mode=plan effort=high "), "{out}");
     let (sid, pid) = (field(&out, "session=").to_string(), field(&out, "pid=").to_string());
     let copy = field(&out, "brief=");
     assert!(copy.starts_with(wt.to_str().unwrap()) && std::fs::read_to_string(copy).unwrap() == "run the gate\n", "{out}");
@@ -953,6 +1178,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     assert_eq!(out, format!("EXITED name={name} pid={pid} out={}\n", c.join(format!(".router/out/{name}.out")).display()));
     let a = worker_argv(&c, name);
     assert_eq!(option(&a, "--permission-mode"), "plan");
+    assert_eq!(option(&a, "--effort"), "high");
     assert_eq!(option(&a, "-n"), name);
     assert_eq!(option(&a, "--session-id"), sid);
 }

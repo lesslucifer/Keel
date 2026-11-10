@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="7c3e19a4b58d02f6e1a97c4d" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED2.W7 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED2.W7 · Opus-only worker policy — result</h1>
+      <p>The worker policy lives in <code>.keel/config.toml</code> <code>[router]</code> (<code>opus</code>, effort <code>medium</code> or <code>high</code>, default <code>medium</code>). <code>scripts/router-worker.sh spawn|resume</code> reads it from the router checkout's committed HEAD, refuses anything else, and passes <code>--effort</code> to <code>claude -p</code>. DEC-39 records the decision; the skills defer to the project's policy.</p>
+      <div class="meta">T3 · WU result · 2026-11-10 · Keel · branch <code>wu/E-SEED2/w7-opus-policy</code> off <code>epic/E-SEED2</code> <code>ef9ee75</code> · plan <a href="2026-11-09-w7-opus-policy-wu-plan.html">W7 WU plan</a> · <span class="badge approval">review r2 PASS · code review r3 C1, r4 D1 and r5 V1 fixed</span></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<div data-item="outcome" data-c="outcome-body">
+  <p><b>Delivered</b> against the requirement in plan r2:</p>
+  <ul>
+    <li><code>.keel/config.toml</code> holds <code>[router]</code> with <code>worker_model = "opus"</code>, <code>worker_efforts = ["medium", "high"]</code> and <code>worker_default_effort = "medium"</code> (owner commit <code>5229bdf</code>).</li>
+    <li>The launcher reads that section from <code>git show HEAD:.keel/config.toml</code> in the router checkout, with a fail-closed grammar. It refuses a model other than <code>worker_model</code>, an <code>--effort</code> outside <code>worker_efforts</code>, a missing, repeated or unknown option, and an absent or malformed policy (<code>no worker policy</code>, exit 2, nothing started). An omitted <code>--effort</code> takes the default. The effort goes into argv after <code>--model</code>, into the run dir and onto the <code>RUNNING</code> line. <code>--effort</code> and <code>--permission-mode</code> combine in either order.</li>
+    <li><b>Effort flag confirmed:</b> on 2026-11-10 the owner confirmed that the installed <code>claude --help</code> lists <code>--effort &lt;level&gt;</code> ("Effort level for the current session"). Plan open point 2 is closed: the launcher enforces the effort, not only the docs.</li>
+    <li>DEC-39 is in <a href="../decisions/router.html#dec-39">decisions/router.html</a> and the index. project-router points at <code>[router]</code>; keel-router and its <code>.claude/skills/</code> mirror defer to "the project's model policy".</li>
+    <li>The router guard and <code>src/</code> are unchanged.</li>
+  </ul>
+</div>
+
+<h2 id="deviations">Deviations</h2>
+<ul data-item="deviations" data-c="deviations-list">
+  <li><b>Word grammar is narrower than the plan.</b> The plan allowed policy words <code>[a-z0-9.-]+</code>. After review r1 (F2–F4) the reader requires a leading letter (<code>[a-z][a-z0-9.-]*</code>) and refuses a second or non-exact <code>[router]</code> header. DEC-39's Choice now states that grammar (r2 N1).</li>
+  <li><b>Grep check wider than "B7 and the refusal tests".</b> <code>git grep -n -i -E "sonnet|haiku|fable"</code> outside <code>docs/work/</code> also hits <code>lessons.md</code> K5 (history), the Context rows of DEC-36 (an earlier experiment with a haiku worker) and DEC-39 (what the launcher used to accept) in <code>docs/decisions/router.html</code>, and the fixture tests that commit a <code>sonnet</code> policy to prove the launcher enforces whatever the config says. None of them offers a non-opus model to a worker.</li>
+  <li><b>Residual risk accepted (review r1 F1, medium).</b> The launcher trusts the router checkout's HEAD; whoever can commit there can change the policy. The owner ruled it an accepted residual risk of the DEC-33 class, tracked by backlog R4; DEC-39 states it (<code>842b304</code>).</li>
+  <li><b>Layer labels.</b> The plan called the launcher tests "unit" and the router e2e "integration". All of them live in <code>tests/router.rs</code> and drive the real script against a stub <code>claude</code> in scratch git repos, so the <code>test</code> note records <code>tests/router.rs</code> as the WU's integration layer.</li>
+</ul>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence-body">
+  <p><b>Commits</b> (on <code>epic/E-SEED2</code> <code>ef9ee75</code>):</p>
+  <table data-c="commits-table">
+    <thead><tr><th>Commit</th><th>Subject</th><th>By</th></tr></thead>
+    <tbody>
+      <tr><td><code>ada8201</code></td><td>WU plan r1</td><td>worker</td></tr>
+      <tr><td><code>026bfc7</code></td><td>backlog R8: router–worker messaging redesign deferred</td><td>worker</td></tr>
+      <tr><td><code>486e72f</code></td><td>WU plan r2: default medium, policy in <code>[router]</code></td><td>worker</td></tr>
+      <tr><td><code>6879307</code></td><td>DEC-39</td><td>worker</td></tr>
+      <tr><td><code>5229bdf</code></td><td><code>[router]</code> config; skills defer to it</td><td>owner, <code>keel mr commit</code></td></tr>
+      <tr><td><code>a87024e</code></td><td>launcher enforces the policy, <code>--effort</code>; tests</td><td>worker</td></tr>
+      <tr><td><code>92bd3bc</code></td><td>reader refuses a second or non-exact header and values not starting with a letter (r1 F2–F4)</td><td>worker</td></tr>
+      <tr><td><code>842b304</code></td><td>DEC-39 residual risk; R8 cites tests by name (r1 F1, F7)</td><td>worker</td></tr>
+      <tr><td><code>8fc3cf6</code></td><td>project-router router checkout; keel-router spawn line (r1 F5, F6)</td><td>owner, <code>keel mr commit</code></td></tr>
+      <tr><td><code>b60c069</code></td><td>DEC-39 leading-letter wording; R8 cites the guard's SendMessage branch, not line numbers (r2 N1, N4)</td><td>worker</td></tr>
+      <tr><td><code>6e924af</code></td><td>WU result</td><td>worker</td></tr>
+      <tr><td><code>9bbbb29</code></td><td>tests: accepted efforts come from the committed list (code review C1); nits C2, E4, E6</td><td>worker</td></tr>
+      <tr><td><code>35d2782</code></td><td>WU result: code review C1</td><td>worker</td></tr>
+      <tr><td><code>272e7e6</code></td><td>tests: the default is <code>worker_default_effort</code>, not the list's first entry (code review D1); staged edit and non-main HEAD</td><td>worker</td></tr>
+      <tr><td><code>7e0b570</code></td><td>WU result: code review D1</td><td>worker</td></tr>
+      <tr><td><code>8b266c3</code></td><td>tests: <code>low</code> and <code>xhigh</code> accepted when committed (code review V1); mutant-sweep cases. Its subject says "23 more" edges; the commit adds 25 refused policies and 2 accepted ones</td><td>worker</td></tr>
+    </tbody>
+  </table>
+  <p><b>Tests</b> (<code>tests/router.rs</code>, run 2026-11-10): <code>cargo test --test router</code> at <code>b60c069</code> → 11 passed.</p>
+  <ul>
+    <li><b>Red with the epic's launcher</b> (<code>scripts/router-worker.sh</code> from <code>ef9ee75</code>, new tests): <code>launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name</code>, <code>launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode</code> and <code>epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end</code> FAILED; 8 passed.</li>
+    <li><b>Red with the pre-fix reader</b> (launcher from <code>a87024e</code>): <code>launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name</code> FAILED at the r1 F2–F4 cases.</li>
+    <li><b>Red with a hard-coded accept list</b> (code review C1): the launcher's accept check temporarily changed to <code>case " medium high "</code> in the worktree only. <code>launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name</code> FAILED at <code>tests/router.rs:535</code> (a committed <code>["high"]</code> policy did not refuse <code>--effort medium</code>). With the file restored (<code>git diff --stat scripts/</code> empty) it passed, and <code>cargo test --test router</code> at <code>9bbbb29</code> → 11 passed.</li>
+    <li><b>Mutant round</b> (code review D1, at <code>272e7e6</code>). Each mutant was applied to <code>scripts/router-worker.sh</code> in the worktree only, then <code>cargo test --test router</code> ran, then the file was restored (<code>git diff --stat scripts/</code> empty). Every mutant went red, and the restored launcher passed (11 passed).
+      <table data-c="mutants-table">
+        <thead><tr><th>Behaviour</th><th>Mutant</th><th>Red at</th></tr></thead>
+        <tbody>
+          <tr><td>Default is <code>worker_default_effort</code> (D1, survived before)</td><td><code>effort=${policy_efforts%% *}</code>; and the same on resume only</td><td><code>:555</code> bare spawn; <code>:563</code> bare resume</td></tr>
+          <tr><td>Default, other wrong picks</td><td>last entry; hard-coded <code>medium</code></td><td><code>:724</code> (e1); <code>:530</code></td></tr>
+          <tr><td>Resume does not inherit</td><td>resume reads the spawn run dir's effort</td><td><code>:563</code>, <code>:731</code></td></tr>
+          <tr><td>Accepted efforts are the committed list</td><td>fixed <code>medium high max</code>; list ∩ built-in <code>medium|high</code>; that only on resume</td><td><code>:523</code>; <code>:539</code> widened spawn <code>max</code>; <code>:546</code> widened resume <code>max</code></td></tr>
+          <tr><td>Policy read from HEAD only</td><td>reads the index (survived before: the uncommitted edit was unstaged); reads <code>main:</code> (survived before: the fixture's HEAD was <code>main</code>)</td><td><code>:521</code>; <code>:555</code></td></tr>
+          <tr><td>Model is <code>worker_model</code></td><td>hard-coded <code>opus</code></td><td><code>:528</code></td></tr>
+          <tr><td>Policy refusals</td><td>default-in-list check dropped; CLI-level whitelist dropped</td><td><code>:512</code>; <code>:512</code></td></tr>
+          <tr><td>Effort reaches argv</td><td><code>--effort "$policy_default"</code></td><td><code>:542</code>, <code>:726</code>, <code>:1083</code></td></tr>
+          <tr><td>Effort word charset</td><td>charset guard dropped (<code>"medium high"</code> matches the list)</td><td><code>:680</code></td></tr>
+        </tbody>
+      </table>
+    </li>
+    <li><b>Exhaustive sweep</b> (code review V1, at <code>8b266c3</code>). Each line of the policy reader (awk program and shell checks, <code>scripts/router-worker.sh</code> lines 95–122) and of the effort flow (lines 82, 150, 176, 183) got mutants. For every alternative in each regex or <code>case</code> (each level word, charset class, anchor, quantifier, separator), the sweep dropped, narrowed or widened it. That made 104 mutants. Each was applied in the worktree only, then <code>cargo test --test router</code> ran, then the file was restored (<code>git diff --stat scripts/</code> empty at the end). Result: <b>91 killed, 13 equivalent, 0 surviving</b>. The V1 cases and the first sweep cases were written before the run. Four non-equivalent mutants still survived it: an uppercase letter after the model's first one, spacing around <code>=</code> on the default key, a space inside a later list entry, and <code>worker_efforts= [</code> (with that spacing the fixed <code>substr</code> lands exactly on the list). Each got a case that kills it, and the sweep re-ran those mutants red.
+      <table data-c="sweep-table">
+        <thead><tr><th>Lines</th><th>Mutants</th><th>Killed</th><th>Equivalent (why)</th></tr></thead>
+        <tbody>
+          <tr><td>95 source</td><td>3</td><td>2 (worktree read, <code>main:</code> read)</td><td>1: <code>2&gt;/dev/null</code> dropped only adds a git diagnostic to stderr</td></tr>
+          <tr><td>96–100 header detection</td><td>3</td><td>3 (an indented or tab-indented <code>[next]</code> must end the section)</td><td>—</td></tr>
+          <tr><td>97 <code>[router]</code> header</td><td>6</td><td>6 (incl. <code>[router]\t# c</code> accepted, <code>[router]# c</code> refused)</td><td>—</td></tr>
+          <tr><td>98 duplicate header</td><td>2</td><td>2</td><td>—</td></tr>
+          <tr><td>99 other router-named headers</td><td>14</td><td>14 (incl. a tab before, inside or after <code>router</code>; <code>[routers]</code> accepted)</td><td>—</td></tr>
+          <tr><td>102–104 section, comments, blanks</td><td>8</td><td>5 (incl. a trailing <code>" \t"</code>)</td><td>3: the comment strip's leading <code>[ \t]*</code> dropped or narrowed, and its <code>$</code> dropped. The next <code>sub</code> strips trailing blanks, and <code>.*</code> already reaches the line end</td></tr>
+          <tr><td>105 <code>worker_model</code></td><td>11</td><td>11 (anchors, spacing, repeat, <code>opus-4.5</code> accepted, <code>opus x</code> and <code>opUs</code> refused)</td><td>—</td></tr>
+          <tr><td>106 <code>worker_default_effort</code></td><td>8</td><td>6</td><td>2: first-char widened, rest narrowed. The default must equal a list entry, and every entry must be a level word, all <code>[a-z]</code></td></tr>
+          <tr><td>107 <code>worker_efforts</code></td><td>14</td><td>9 (incl. a three-entry list, <code>worker_efforts= [</code>, a space inside a later entry)</td><td>5: <code>^</code> or <code>$</code> dropped (any extra text shifts the fixed <code>substr</code>, which puts <code>[</code> or <code>]</code> into an entry, and the level check then fails); entry first char widened or rest narrowed (entries must be <code>[a-z]</code> level words); <code>length - 20</code> (it trims only the closing quote, which <code>gsub</code> removes anyway)</td></tr>
+          <tr><td>110–114 unquote, split, level check, verdict</td><td>21</td><td>21 (each level word dropped, <code>low</code> and <code>xhigh</code> by V1; anchors by <code>below</code>/<code>highest</code>; missing <code>worker_model</code>)</td><td>—</td></tr>
+          <tr><td>119–122 model and effort checks</td><td>10</td><td>8 (an effort must match a whole entry: <code>med</code>, <code>igh</code> refused)</td><td>2: <code>""</code> dropped, charset narrowed to <code>[a-z]</code>. Line 122 refuses any word that is not a whole entry, and entries are single-spaced <code>[a-z]</code> level words</td></tr>
+          <tr><td>82, 150, 176, 183 effort flow</td><td>4</td><td>4</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </li>
+    <li><code>committed_worker_policy_is_opus_at_medium_or_high_effort</code> pins the repo's committed <code>[router]</code> values.</li>
+  </ul>
+  <p><b>Reviews.</b> Independent review r1 → FIX (F1 medium, F2–F7 low). Owner ruling A: F1 accepted as residual risk (DEC-33 class, R4); F2–F7 fixed in <code>92bd3bc</code>, <code>842b304</code> and owner <code>8fc3cf6</code>. Independent review r2 at <code>8fc3cf6</code> → PASS, nothing above low; lows N1–N5. N1 and N4 fixed in <code>b60c069</code>; N2, N3, N5 are follow-ups below. keel-code-review over <code>ef9ee75..6e924af</code> → FAIL on <b>C1</b> (important): no test proved the accepted efforts come from the committed policy, so a launcher with a hard-coded <code>medium|high</code> list passed. Fixed in <code>9bbbb29</code> with tests only (no launcher change). A committed <code>["high"]</code> policy refuses <code>--effort medium</code>. A committed <code>["high", "max"]</code> policy accepts <code>--effort max</code> on spawn and resume, which reaches argv, and its resume refuses <code>medium</code>. The same commit fixes nits C2 (the launcher fixture now reads the config from <code>HEAD</code>, like the pin test), E4 (one run-dir reader for mode and effort) and E6 (the resume check reuses <code>e2</code>'s session instead of a duplicate spawn). keel-code-review over <code>ef9ee75..35d2782</code> → FAIL on <b>D1</b> (important): every committed test policy had its default first in the list, so a launcher defaulting to the first entry passed. Fixed in <code>272e7e6</code> with tests only. Under a committed <code>["high", "medium"]</code> policy with default <code>medium</code>, a bare spawn and a bare resume of a session spawned at <code>high</code> both run at <code>medium</code>. The same commit stages the widening edit and moves the fixture's HEAD off <code>main</code>, which kills an index-reading launcher and a <code>main:</code>-reading launcher. keel-code-review over <code>ef9ee75..7e0b570</code> → FAIL on <b>V1</b> (important): no committed test list held <code>low</code> or <code>xhigh</code>, so a level check narrowed to <code>medium|high|max</code> passed. Fixed in <code>8b266c3</code> with tests only. A committed <code>["low", "xhigh"]</code> policy with default <code>low</code> runs a bare spawn at <code>low</code> and <code>--effort xhigh</code> at <code>xhigh</code>. To end the one-branch-per-round cycle, the same commit adds the cases from the exhaustive sweep above. The gate's verdict lives on the <code>cr</code> note.</p>
+  <p><b>Docs touched:</b> <a href="../decisions/router.html">decisions/router.html</a> (DEC-39), <a href="../decisions/decisions-index.html">decisions-index.html</a>, <a href="../backlog/e-router-v2.html">backlog/e-router-v2.html</a> (R8), <a href="../backlog/backlog-index.html">backlog-index.html</a>, the W7 plan and this report.</p>
+  <p><b>Process note.</b> Some <code>.claude/skills/*</code> edits on this branch were written by earlier workers past a <code>.claude/</code> write prompt by unrecorded means. The owner committed them, and review r2 judged their content.</p>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation-body">Done in the WU: the decision is in T2 <a href="../decisions/router.html#dec-39">DEC-39</a>, the deferred messaging work in T2 backlog <a href="../backlog/e-router-v2.html#r8">R8</a>, the policy values in <code>.keel/config.toml</code> (T4, pinned by a test), and the operating rule in project-router. Nothing else citable remains in the W7 plan or this report; both archive at epic close.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<ul data-item="follow-ups" data-c="follow-ups-list">
+  <li><b>To W12</b> (it edits project-router, which is rule-bearing): review r2 <b>N2</b> — the worktree table misses <code>Keel-E-SEED2-w12-owner-watch</code>; <b>N3</b> — "Owner identity" and "Shared resources" carry stale dated facts (<code>Keel-E-SEED-close</code> is gone; keel-hooks are now installed); <b>N5</b> — "a trailing <code>--permission-mode plan</code>" should say the options come in either order.</li>
+  <li>Backlog R4: the router checkout's HEAD is the policy's trust root (accepted residual risk, r1 F1).</li>
+  <li>Backlog R8: router–worker messaging redesign, including the SendMessage guard denial.</li>
+  <li>DEC id race with W2: resolved without renumbering. W2 merged first with DEC-40, and W7 took the epic in merge <code>7531b96</code>. The index keeps both rows, DEC-39 under router and DEC-40 under workflow-gates, and its next free id is DEC-41.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

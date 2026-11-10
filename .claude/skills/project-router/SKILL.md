@@ -15,29 +15,29 @@ fix this file.
 | Thing | Value |
 |---|---|
 | Main checkout | `/Users/nguyenvanluong/Documents/proj/misc/Keel` (first row of `git worktree list`), branch `main` (`[branches] main`), merge-only: it stays on `main` and receives only closed epics (DEC-12) |
-| Worktrees | siblings of the main checkout: `../Keel-<epic>` per epic (`Keel-E-SEED*` for E-SEED, `Keel-router` for E-ROUTER), `../Keel-<epic>-<wu-slug>` per parallel WU (e.g. `Keel-router-w1-core-skill`). `.claude/worktrees/` (`[paths] worktrees`) is only for `Agent`-tool isolation worktrees, never WU work |
+| Worktrees | siblings of the main checkout: `../Keel-<epic>` per epic (e.g. `Keel-E-SEED2`), `../Keel-<epic>-<wu-slug>` per parallel WU (e.g. `Keel-E-SEED2-w7-opus-policy`). `.claude/worktrees/` (`[paths] worktrees`) is only for `Agent`-tool isolation worktrees, never WU work |
 | Branches | `epic/<E>` and `wu/<E>/<slug>` (`[branches] epic_prefix = "epic/"`, `wu_prefix = "wu/"`); a WU merges `--no-ff` into its epic, the epic `--no-ff` into `main` |
 | Remote | `origin` = `https://github.com/lesslucifer/Keel.git` |
 | Owner identity | `--as vuluu` (tier `username`; `[mr] tiers = ["email", "username", "key"]`). Proven: the E-SEED epic `mr` note on `9a8f255` has `"signer":"vuluu","tier":"username"`. `.mr-allowed` is untracked (in the shared `.git/info/exclude`) and per checkout. `.gitworktreecopy` lists it, so keel's post-checkout hook copies the main checkout's `.mr-allowed` into each new worktree (observed 2026-11-10 when `Keel-E-SEED2-w12-owner-watch` was created). Where `keel mr` refuses for lack of it, the owner runs `keel mr setup` there; nobody else edits `.mr-allowed` |
-| Router checkout | the router runs in the checkout holding `scripts/router-worker.sh` (launcher), `scripts/router-watch.sh` (read-only owner-action watch, E-SEED2.W12), `scripts/router-guard.jq` (the one router guard, run fail-closed on every tool by `.claude/settings.json`) and `.claude/agents/router.md`. On 2026-11-10 `main` (`0dad93f`) holds the launcher, the guard and the agent files; `router-watch.sh` reaches `main` with E-SEED2 |
+| Router checkout | the router runs in the checkout holding `scripts/router-worker.sh` (launcher), `scripts/router-watch.sh` (read-only owner-action watch, E-SEED2.W12), `scripts/router-guard.jq` (the one router guard, run fail-closed on every tool by `.claude/settings.json`) and `.claude/agents/router.md`. Since E-ROUTER and E-ROUTERFIX merged into `main` (`0dad93f`), that is the main checkout `/Users/nguyenvanluong/Documents/proj/misc/Keel`, which also holds `.router/` (git-ignored). `main`'s launcher predates DEC-39: it takes no `--effort`, reads no `[router]` policy and has no `router-watch.sh` until E-SEED2 merges |
 | Shared resources | one git common dir (`Keel/.git`) for every worktree: the notes refs (`test`, `doc`, `cr`, `mr`, `dod`), `info/exclude`, and `keel-hooks/` (installed: `core.hooksPath` = `/Users/nguyenvanluong/Documents/proj/misc/Keel/.git/keel-hooks`, checked 2026-11-10). A branch is checked out in one worktree only: merge into `epic/<E>` inside the worktree that has it checked out. No ports or app data: Keel is a CLI and its tests run in temp dirs |
 
 Worktrees on 2026-11-10 (snapshot; `git worktree list` wins):
 
 | Path (under `/Users/nguyenvanluong/Documents/proj/misc/`) | Branch | State |
 |---|---|---|
-| `Keel` | `main` | main checkout, `0dad93f` (E-ROUTERFIX merged) |
+| `Keel` | `main` | main checkout, `0dad93f` (E-ROUTERFIX merged); the router's checkout (`.router/` lives here) |
 | `Keel-E-SEED2` | `epic/E-SEED2` | E-SEED2 epic |
 | `Keel-E-SEED2-w1-release-pipeline` | `wu/E-SEED2/w11-release-hardening` | E-SEED2.W11, merged into the epic |
 | `Keel-E-SEED2-w12-owner-watch` | `wu/E-SEED2/w12-owner-watch` | E-SEED2.W12 (owner-action watch) |
-| `Keel-E-SEED2-w2-report-binding` | `wu/E-SEED2/w2-report-binding` | E-SEED2.W2 |
-| `Keel-E-SEED2-w7-opus-policy` | `wu/E-SEED2/w7-opus-policy` | E-SEED2.W7 |
+| `Keel-E-SEED2-w2-report-binding` | `wu/E-SEED2/w2-report-binding` | E-SEED2 WU |
+| `Keel-E-SEED2-w7-opus-policy` | `wu/E-SEED2/w7-opus-policy` | E-SEED2.W7 (DEC-39 worker policy) |
 
 ## Who runs what
 | Action | Who |
 |---|---|
 | Plans, code, tests, results, distillation, `keel notes write`, `keel preflight`, `keel verify-dod`, the keel-code-review skill, `git worktree add` | worker |
-| Independent read-only review of what no gate reviews (below); reading CI runs and git state beyond the router's whitelist | read-only worker on the strongest model, dispatched by the router |
+| Independent read-only review of what no gate reviews (below); reading CI runs and git state beyond the router's whitelist | read-only worker on `opus` at `--effort high`, dispatched by the router |
 | Briefs (`<router checkout>/.router/briefs/<name>.md`), spawning via the launcher, whitelisted git/gh/ps reads | router (posture: `.claude/agents/router.md`; no `Agent` tool, so every worker, checker and watcher is headless) |
 | `keel mr commit` / `keel mr confirm` | **owner only** — the router stages, never runs |
 | Epic → `main` merge, `git push`, tags, release dispatch | owner |
@@ -61,9 +61,9 @@ Keel has no `hooks/` or `.claude-plugin/` directory (W7 v2 dropped the plugin;
 the git hooks are strings in `src/main.rs`, so the cr gate covers them).
 
 ## Workers
-- Standard: headless, `scripts/router-worker.sh spawn <name> <worktree> .router/briefs/<name>.md <model>` from the router checkout. The launcher runs `$HOME/.local/bin/claude` (`/Users/nguyenvanluong/.local/bin/claude`, or `ROUTER_CLAUDE`) with fixed `--agent worker --max-budget-usd 25`, a fixed `--allowedTools` grant (`cargo build|test|check|clippy|fmt`, `keel preflight|verify-doc|verify-dod|notes write|lint|check`) and a fixed `--disallowedTools` deny (`keel mr`, `cargo run`) on the `claude -p` line only (DEC-37); `--permission-mode acceptEdits` by default, or `plan` via an optional `--permission-mode plan` on spawn/resume (anything else refused, a resume never inherits it); always an explicit model (`opus|sonnet|haiku|fable`); never into the router's own checkout or the main checkout (the launcher refuses both). The router has no `Agent`-tool fallback (the guard denies it, E-ROUTER close review): checkers are headless workers too. Owner actions (commit, sign, merge, push, tag) are watched by the router itself: `scripts/router-watch.sh <kind> <args>` as a background Bash command, `timeout: 7200000` (keel-router `references/worker-ops.md` "Watch"). Open launcher issue: worker persona missing in branches without `.claude/agents/worker.md` (backlog `docs/backlog/e-router-v2.html`).
+- Standard: headless, `scripts/router-worker.sh spawn <name> <worktree> .router/briefs/<name>.md opus [--effort high]` from the main checkout `/Users/nguyenvanluong/Documents/proj/misc/Keel`. The launcher runs `$HOME/.local/bin/claude` (`/Users/nguyenvanluong/.local/bin/claude`, or `ROUTER_CLAUDE`) with fixed `--agent worker --max-budget-usd 25`, a fixed `--allowedTools` grant (`cargo build|test|check|clippy|fmt`, `keel preflight|verify-doc|verify-dod|notes write|lint|check`) and a fixed `--disallowedTools` deny (`keel mr`, `cargo run`) on the `claude -p` line only (DEC-37); `--permission-mode acceptEdits` by default, or `plan` via a trailing `--permission-mode plan` on spawn/resume (anything else refused, a resume never inherits it); model and effort from `.keel/config.toml` `[router]` (DEC-39): currently `opus`, `--effort medium` by default, `--effort high` for design, review and debugging; the launcher reads that policy from the router checkout's HEAD and refuses any other model or effort, and a resume never inherits the effort; never into the router's own checkout or the main checkout (the launcher refuses both). The router has no `Agent`-tool fallback (the guard denies it, E-ROUTER close review): checkers are headless workers too. Owner actions (commit, sign, merge, push, tag) are watched by the router itself: `scripts/router-watch.sh <kind> <args>` as a background Bash command, `timeout: 7200000` (keel-router `references/worker-ops.md` "Watch"). Open launcher issue: worker persona missing in branches without `.claude/agents/worker.md` (backlog `docs/backlog/e-router-v2.html`).
 - Names: lowercase `<epic>-<area>-<phase>`, e.g. `e-router-w2-kickoff`, `e-seed-close-gates` (the launcher requires `[a-z0-9][a-z0-9-]{0,40}`).
-- Briefs: `<router checkout>/.router/briefs/` (git-ignored, durable; run snapshots in `.router/runs/`, output in `.router/out/<name>.out`); skeleton in the keel-router skill's `references/brief-skeleton.md`. Keel's hard rules: never run `keel init` or `keel hooks install` in a real checkout to test them (they write into the shared git common dir) — use a scratch clone; never push; never edit `.mr-allowed`.
+- Briefs: `Keel/.router/briefs/` in the main checkout (git-ignored, durable; run snapshots in `.router/runs/`, output in `.router/out/<name>.out`); skeleton in the keel-router skill's `references/brief-skeleton.md`. Keel's hard rules: never run `keel init` or `keel hooks install` in a real checkout to test them (they write into the shared git common dir) — use a scratch clone; never push; never edit `.mr-allowed`.
 
 ## Never touch
 Every checkout's `.mr-allowed`; `~/.claude/settings.json` and other user-level

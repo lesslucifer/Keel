@@ -69,6 +69,7 @@ flowchart LR
   W8[W8 worker watchdog - done] --> W10[W10 sync main]
   W1 --> W11[W11 release hardening]
   W12[W12 owner-action watch]
+  W13[W13 hook env leak]
 </pre>
 <div class="caption">WU dependencies. W1 and W8 start now in parallel; W5, W7 and W12 can start any time.</div>
 </div>
@@ -164,6 +165,14 @@ flowchart LR
   <p data-item="wu-deps">none (touches <code>tests/router.rs</code> and <code>router-guard.jq</code>, as W7 may: whichever merges second merges the epic in first)</p>
 </div>
 
+<div data-wu="E-SEED2.W13" data-c="wu-w13">
+  <h3 id="w13">E-SEED2.W13 · Hook environment leak <span class="badge approval">owner ruling 2026-11-10</span></h3>
+  <p data-item="wu-summary">On 2026-11-10, a <code>git push</code> from a linked worktree ran <code>keel check</code>, and <code>cargo test</code> inherited the absolute <code>GIT_DIR</code> that git exports to hooks. The test fixtures then wrote into the real repository: <code>core.bare</code>, the user identity, a moved <code>epic/E-SEED2</code>, a branch <code>work</code>, a note, and the installed hooks. The fix has three parts. (1) <code>sh()</code> and <code>git()</code> strip the variables in <code>git rev-parse --local-env-vars</code>; <code>git()</code> keeps <code>GIT_INDEX_FILE</code>, which the commit hooks need. This also corrects <code>check_push</code>'s scratch-worktree proof. (2) Every test spawn helper strips the same variables, and the two <code>git clone</code> calls get a <code>current_dir</code>. (3) <code>keel mr confirm</code> refuses a tip that is already an ancestor of its target, instead of signing the empty range over a valid note. Plan: <a href="2026-11-10-w13-hook-env-wu-plan.html">W13 WU plan</a>.</p>
+  <p data-item="wu-maps-to">Owner ruling 2026-11-10 · UC-GATE (pre-push, <code>keel check</code>) · UC-MR-1 · testing charter "Hermetic".</p>
+  <p data-item="wu-expected"><code>keel check</code> with <code>GIT_DIR</code> pointed at a second temp repo uses its own repo and leaves the second byte-identical. A pre-push run from a linked worktree checks the pushed sha. A pathspec commit of a rule-bearing path is still refused without a trailer. <code>mr confirm</code> on an already-merged tip exits 1 and leaves the note unchanged.</p>
+  <p data-item="wu-deps">none (W12 takes up the test helper after it back-merges the epic)</p>
+</div>
+
 </div>
 
 <h2 id="e2e-plan">E2E plan</h2>
@@ -185,6 +194,7 @@ flowchart LR
     <tr><td>W8</td><td><code>use-cases/router.html</code> UC-ROUTE, <code>decisions/router.html</code>, a struck cross-reference row in <code>backlog/e-router-v2.html</code></td></tr>
     <tr><td>W11</td><td><code>decisions/distribution.html</code> DEC-38 (pins, runners, accepted risks, owner setup tasks, corrected trigger and prerelease text); <code>docs/install.html</code> (profile edits); project-router "what no gate reviews"</td></tr>
     <tr><td>W12</td><td><code>decisions/router.html</code> (new DEC: the router watches owner actions through a committed read-only probe script, which amends DEC-30's whitelist); <code>use-cases/router.html</code> UC-ROUTE-1/6; <code>backlog/e-router-v2.html</code> R7 rows 1 and 4 struck, plus a follow-up row for <code>gh</code>-backed kinds; keel-router skill and project-router (rule-bearing, owner commits)</td></tr>
+    <tr><td>W13</td><td><code>decisions/workflow-gates.html</code> (DEC-41: keel never forwards git's local env); <code>use-cases/workflow.html</code> UC-MR-1 (refuses a landed tip), UC-GATE (pre-push proves the pushed sha)</td></tr>
     <tr><td>all</td><td>rows of <code>backlog/e-seed-v2.html</code> struck; this plan and every WU plan/result archived out of git at close</td></tr>
   </tbody>
 </table>
@@ -211,7 +221,7 @@ flowchart LR
 <ol data-item="open-questions" data-c="open-questions-list">
   <li><b>W2 · "receipt" meaning.</b> Default: the report is evidence like the other notes — required by policy, named when missing, named in <code>mr/v1</code> and <code>dod/v1</code>.</li>
   <li><b>W2 · one policy or per level?</b> Default: a single <code>[mr] report</code> for both levels.</li>
-  <li><b>W2 · finding the archived epic report.</b> Default: exactly one untracked <code>data-artifact="epic-result"</code> doc under <code>docs.root</code>, else <code>--report</code>.</li>
+  <li><b>W2 · finding the archived epic report.</b> Default: exactly one untracked <code>data-artifact="epic-result"</code> doc under <code>docs.root</code>, else <code>--report</code>. Superseded by owner ruling 2026-11-10: no search; <code>--report</code> unless the result doc is committed in the epic's diff (DEC-40).</li>
   <li><b>W2 · schema version.</b> Default: payload header <code>keel-mr/v2</code>, note schema stays <code>mr/v1</code> changed in place.</li>
   <li><b>W2 · hooks coexistence (W9 open point 5).</b> Default: options B + D (refuse to clobber, plus the guard).</li>
   <li><b>W5 · Trawler source access.</b> Default: the worker reads Trawler's <code>docs/decisions/workflow-gates.html</code> from the owner's local Trawler checkout; if absent, it records the eight full re-records as lineage-only stubs and reports the gap.</li>

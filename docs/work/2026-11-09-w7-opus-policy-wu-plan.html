@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af0a12f9f34851f0dfb1fb7" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED2.W7 opus-only worker policy</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED2.W7 · Opus-only worker policy</h1>
+      <p>The worker model and effort policy lives in a new <code>[router]</code> section of <code>.keel/config.toml</code>: <code>opus</code>, effort <code>medium</code> or <code>high</code>, default <code>medium</code>. The launcher reads the policy from the router checkout's committed config and enforces it. DEC-39 and project-router record the owner's ruling of 2026-11-09. The shipped keel-router skill stays generic and points at the project's policy.</p>
+      <div class="meta">T3 · WU plan · revision r2 (owner review 2026-11-10) · Keel · branch <code>wu/E-SEED2/w7-opus-policy</code> off <code>epic/E-SEED2</code> <code>ef9ee75</code> · epic plan <a href="2026-11-09-e-seed2-epic-plan.html#w7">E-SEED2 W7</a> · <span class="badge approval">owner ruling 2026-11-09, review 2026-11-10</span></div>
+    </div>
+  </header>
+  <main>
+
+<p class="callout" data-c="r2-changes"><b>Revision r2 (owner review 2026-11-10):</b> the default effort is <code>medium</code>, not <code>high</code>. The policy moves into <code>.keel/config.toml</code> <code>[router]</code> (section "Where the policy lives"). The config lands in the existing owner commit for the skill text, and the commit sequence is reordered so that the config is on the branch before the launcher reads it. Everything else is unchanged from r1, which the owner approved.</p>
+
+<h2 id="requirement">Requirement</h2>
+<p data-item="requirement" data-c="requirement-body"><code>scripts/router-worker.sh spawn|resume</code> reads <code>[router]</code> <code>worker_model</code>, <code>worker_efforts</code> and <code>worker_default_effort</code> from <code>.keel/config.toml</code> as committed at the router checkout's <code>HEAD</code>. It refuses the run if that policy is absent or malformed. It refuses any model other than <code>worker_model</code> (<code>opus</code>), and any <code>--effort</code> value not in <code>worker_efforts</code> (<code>medium</code>, <code>high</code>). When <code>--effort</code> is omitted it uses <code>worker_default_effort</code> (<code>medium</code>), and it passes the effort to <code>claude -p</code> as <code>--effort</code>. After this WU, no tracked file outside <code>docs/work/</code> and the lessons' history offers a non-opus worker model.</p>
+
+<h2 id="maps-to">Maps to</h2>
+<p data-item="maps-to" data-c="maps-to-body">Epic <a href="2026-11-09-e-seed2-epic-plan.html#w7">E-SEED2.W7</a> (open point 6, open question 7) · UC-ROUTE, worker modes and launcher (<a href="../use-cases/router.html">use-cases/router.html</a>) · lessons B7 ("they should use opus 5.5") · amends <a href="../decisions/router.html#dec-31">DEC-31</a> ("explicit model") and <a href="../decisions/router.html#dec-37">DEC-37</a> (launcher options).</p>
+
+<h2 id="expected">Expected result</h2>
+<ul data-item="expected" data-c="expected-list">
+  <li><code>.keel/config.toml</code> has <code>[router]</code> with <code>worker_model = "opus"</code>, <code>worker_efforts = ["medium", "high"]</code> and <code>worker_default_effort = "medium"</code>.</li>
+  <li><code>router-worker.sh spawn n &lt;wt&gt; &lt;brief&gt; sonnet</code>, <code>haiku</code>, <code>fable</code> and <code>gpt</code> each exit 2 with <code>model must be opus ([router] worker_model in .keel/config.toml)</code>. <code>resume</code> refuses the same way.</li>
+  <li><code>… opus --effort medium</code> and <code>… opus --effort high</code> start a worker. Its argv carries <code>--model opus --effort &lt;level&gt;</code>, the run dir holds an <code>effort</code> file, and the <code>RUNNING</code> line shows <code>effort=&lt;level&gt;</code>. With no <code>--effort</code>, the effort is <code>medium</code>. <code>--effort low</code>, <code>max</code> or a missing value is refused. The option combines with <code>--permission-mode</code> in either order, at most once each.</li>
+  <li>The launcher refuses with a named <code>no worker policy</code> error, and starts nothing, in each of these cases: the router checkout's HEAD has no <code>.keel/config.toml</code>; the config has no <code>[router]</code> section or lacks one of its three keys; a value is outside the allowed shape; or the default effort is not in the list. An uncommitted edit to the config has no effect.</li>
+  <li>The router guard and <code>src/</code> are unchanged. The guard's launcher pattern (<code>[A-Za-z0-9._/ -]+</code>, <code>scripts/router-guard.jq:30</code>) already admits <code>--effort medium</code>.</li>
+  <li><code>git grep -n -i -E "sonnet|haiku|fable"</code> outside <code>docs/work/</code> hits only <code>lessons.md</code> B7 (history) and the refusal tests in <code>tests/router.rs</code>.</li>
+  <li>DEC-39 is in <code>docs/decisions/router.html</code> and the index. project-router "Workers" points at <code>[router]</code> in <code>.keel/config.toml</code>. The keel-router skill and its <code>.claude/skills/</code> mirror defer to "the project's model policy".</li>
+</ul>
+
+<h2 id="findings">Findings the plan rests on</h2>
+<table data-c="findings-table">
+  <thead><tr><th>#</th><th>Finding</th><th>Source</th></tr></thead>
+  <tbody>
+    <tr><td>F1</td><td>The launcher's model check is <code>case "$model" in opus|sonnet|haiku|fable)</code>, and it passes <code>--model "$model"</code> with no effort flag.</td><td><code>scripts/router-worker.sh:82</code>, <code>:136</code></td></tr>
+    <tr><td>F2</td><td><b>Effort flag: the CLI has one.</b> The Claude Code CLI reference lists <code>--effort</code>, with the options <code>low</code>, <code>medium</code>, <code>high</code>, <code>xhigh</code>, <code>max</code> and <code>ultracode</code>; the available levels depend on the model. The flag overrides <code>effortLevel</code> for the session and does not persist. The installed CLI is v2.1.288: the path <code>~/.local/share/claude/versions/2.1.288</code> appeared in a sandbox refusal. Running <code>claude --help</code> was refused in the plan session, so the flag is confirmed from the docs and not from the binary (open point 2).</td><td>code.claude.com/docs/en/cli-reference (fetched 2026-11-09)</td></tr>
+    <tr><td>F3</td><td>Files that offer a non-opus worker model, or a model without effort: <code>scripts/router-worker.sh</code> (:5–6 usage, :82 check); <code>.claude/skills/project-router/SKILL.md:41</code> ("strongest model") and <code>:65</code> (<code>opus|sonnet|haiku|fable</code>); <code>skills/keel-router/SKILL.md:217</code> ("explicit model"); <code>references/worker-ops.md:3</code>, <code>:27</code>, <code>:72–73</code>, <code>:92</code>, <code>:118</code>; <code>references/brief-skeleton.md:11</code>; <code>references/project-router-template.md:41</code>; all of these mirrored byte-identical under <code>.claude/skills/keel-router/</code>; <code>docs/decisions/router.html</code> DEC-31; <code>tests/router.rs:99</code>, <code>:429–447</code>, <code>:703</code>, <code>:718</code>, <code>:786</code>. <code>lessons.md:41</code> (B7) is history and stays. "Strongest model" in <code>review-checklists.md:4</code>, <code>messages.md:36</code> and <code>SKILL.md:258</code> is generic and stays.</td><td><code>git grep</code> at <code>ef9ee75</code></td></tr>
+    <tr><td>F4</td><td>In <code>rule_bearing</code>, <code>*</code> matches within one path segment only. So <code>docs/decisions/*.html</code> is <b>not</b> rule-bearing, and neither is <code>scripts/</code>. <code>.keel/</code> is rule-bearing.</td><td><code>.keel/config.toml:12–14</code></td></tr>
+    <tr><td>F5</td><td>The next free DEC id is DEC-39. No live branch has minted it yet. W2 runs in parallel.</td><td><code>docs/decisions/decisions-index.html:13</code></td></tr>
+    <tr><td>F6</td><td>The CLI's top-level <code>Config</code> struct has no <code>deny_unknown_fields</code>, so an extra <code>[router]</code> section parses and is ignored. <code>[review]</code> already does this: it is "read by the keel-code-review skill, not by the CLI". Only nested <code>[docs.tiers]</code> denies unknown keys.</td><td><code>src/main.rs:11–31</code>, <code>:74–75</code>; <code>.keel/config.toml</code> <code>[review]</code></td></tr>
+    <tr><td>F7</td><td>The launcher and the guard are Keel-project tooling. <code>keel init</code> does not ship them (DEC-30), and whether it should is still open (backlog R6). The merge gate reads the committed <code>HEAD</code> config, never the working tree.</td><td><a href="../decisions/router.html#dec-30">DEC-30</a>; <code>src/main.rs:98–106</code>; <a href="../backlog/e-router-v2.html#r6">R6</a></td></tr>
+    <tr><td>F8</td><td>The launcher test fixture builds its own scratch main checkout (<code>tests/router.rs:305–318</code>), so a fixture <code>.keel/config.toml</code> can be committed there.</td><td><code>tests/router.rs</code></td></tr>
+  </tbody>
+</table>
+
+<h2 id="policy-location">Where the policy lives</h2>
+<div data-c="policy-location-body">
+  <p><b>Choice.</b> A new <code>[router]</code> section in <code>.keel/config.toml</code>, read only by <code>scripts/router-worker.sh</code>. The CLI ignores it, the same way it ignores <code>[review]</code> (F6).</p>
+  <pre>[router]   # read by scripts/router-worker.sh, not by the CLI (DEC-39)
+worker_model = "opus"
+worker_efforts = ["medium", "high"]
+worker_default_effort = "medium"</pre>
+  <table data-c="policy-location-table">
+    <thead><tr><th>Question</th><th>Decision</th><th>Reason</th></tr></thead>
+    <tbody>
+      <tr><td>Keys and section</td><td><code>[router]</code> with <code>worker_model</code> (one string), <code>worker_efforts</code> (a string array) and <code>worker_default_effort</code> (one string)</td><td>The ruling allows one model, so a list of models would be speculative. The default effort is its own key, not "the first entry in the list", which would be an implicit rule.</td></tr>
+      <tr><td>Who reads it</td><td>The launcher, from <code>git -C "$ROOT" show HEAD:.keel/config.toml</code>, where <code>ROOT</code> is the router checkout. A dedicated sed/grep reads only the <code>[router]</code> section and accepts exactly these forms: <code>key = "word"</code> and <code>key = ["word", …]</code>, where a word is <code>[a-z0-9.-]+</code>, with an optional trailing <code># comment</code>. Anything else in the section is a refusal. <code>tests/router.rs</code> also pins the committed values, so a change needs the owner's commit and a red-then-green test.</td><td>The launcher is the only enforcer. Reading <code>HEAD</code> mirrors the merge gate (F7): an uncommitted edit, which a worker or a stray edit could make, cannot widen the policy. The launcher is POSIX sh with no TOML parser. The narrow grammar fails closed, so a form it does not understand denies the run instead of being misread.</td></tr>
+      <tr><td>Key absent</td><td>Refuse: <code>router-worker: no worker policy: [router] worker_model / worker_efforts / worker_default_effort in .keel/config.toml at HEAD of &lt;ROOT&gt;</code>, exit 2, nothing spawned.</td><td>One source of truth. A built-in fallback default would be a second copy of the policy in the launcher, and it could drift from the config unnoticed.</td></tr>
+      <tr><td>Config holds another model</td><td>The launcher enforces whatever the committed config says (for example, <code>worker_model = "sonnet"</code> admits only <code>sonnet</code>). Each value must match <code>[a-z0-9.-]+</code>. Every effort must be one of the CLI's levels (<code>low|medium|high|xhigh|max</code>; <code>ultracode</code> is refused because it turns on extra orchestration), and the default must be in the list. Otherwise the run is refused.</td><td>Changing the policy is an owner <code>keel mr commit</code> on a rule-bearing file, which is the point of the move. Hardcoding <code>opus</code> in the launcher as well would make two sources of truth. Shape checks catch typos at spawn time instead of passing them to <code>claude</code>.</td></tr>
+      <tr><td><code>src/</code> config parsing</td><td>Unchanged; the keys stay launcher-only.</td><td>No CLI command acts on them. A typed <code>RouterCfg</code> would be code with no caller, and a typo inside <code>[router]</code> is already caught at spawn time by the launcher's strict reader.</td></tr>
+      <tr><td><code>keel init</code> template</td><td>Not changed: <code>templates/config.toml</code> gets no <code>[router]</code>.</td><td>Init ships neither the launcher nor the guard (F7). A section that nothing in an adopting project reads would be dead config. Revisit together with R6 ("ship the enforcement with keel init").</td></tr>
+    </tbody>
+  </table>
+  <p><b>Rejected:</b> (a) <b>a <code>keel config get &lt;key&gt;</code> subcommand that the launcher calls.</b> It gives typed parsing, but it adds CLI surface and <code>src/</code> code for a single caller, and it makes the launcher depend on a <code>keel</code> binary on PATH, which the launcher does not need today. (b) <b>Policy only in the launcher and the skill text</b> (r1): the owner asked for it in the config that holds Keel's other rules. (c) <b>A separate <code>.router/policy</code> file:</b> it would not be rule-bearing, and <code>.router/</code> is git-ignored.</p>
+</div>
+
+<h2 id="changes">Changes</h2>
+<table data-c="changes-table">
+  <thead><tr><th>File</th><th>Change</th><th>Rule-bearing</th></tr></thead>
+  <tbody>
+    <tr><td><code>.keel/config.toml</code></td><td>Add the <code>[router]</code> section above.</td><td><b>yes</b></td></tr>
+    <tr><td><code>scripts/router-worker.sh</code></td><td>For <code>spawn</code> and <code>resume</code>: read the policy as described above, refusing when it is absent or malformed. The model must equal <code>worker_model</code>. Option parsing becomes a loop over at most two pairs, <code>--permission-mode acceptEdits|plan</code> and <code>--effort &lt;one of worker_efforts&gt;</code>, each allowed once and in either order. A repeat, an unknown option or a missing value is refused. The default is <code>worker_default_effort</code>, and a resume does not inherit the effort. The effort goes to <code>$R/effort</code>, onto the <code>RUNNING</code> line and into <code>--effort "$effort"</code> after <code>--model</code>. The header comment and usage strings are updated to match. <code>wait</code> is untouched.</td><td>no (outside the gates, backlog R3)</td></tr>
+    <tr><td><code>tests/router.rs</code></td><td>The fixture (<code>launcher()</code>, and the e2e's seeded main checkout) commits a <code>.keel/config.toml</code> with the real <code>[router]</code> values. The refusal table gains <code>sonnet</code>, <code>haiku</code> and <code>fable</code> → <code>"model must be opus"</code>; <code>--effort low</code>, <code>--effort</code> with no value and a repeated <code>--effort</code>; and the policy cases (no config at HEAD, no <code>[router]</code>, a missing key, a default not in the list, an unknown effort level, a malformed line, an uncommitted edit that widens the policy and is ignored) → <code>"no worker policy"</code> or the old refusal. Every <code>haiku</code> run becomes <code>opus</code>, and :99 becomes <code>opus --effort high</code>. <code>worker_argv</code> expects <code>--effort</code> after <code>--model</code>. The grant test asserts effort <code>medium</code> by default and <code>high</code> when passed (argv, run dir and RUNNING line), together with <code>--permission-mode plan</code> in both orders. A pin test asserts that the repo's committed <code>.keel/config.toml</code> <code>[router]</code> holds <code>opus</code> / <code>["medium", "high"]</code> / <code>medium</code>.</td><td>no (code path: the cr gate reviews it)</td></tr>
+    <tr><td><code>docs/decisions/router.html</code> + <code>decisions-index.html</code></td><td>New <b>DEC-39 · Workers run on opus at medium or high effort; the policy lives in <code>.keel/config.toml</code> <code>[router]</code> and the launcher enforces it</b>. Context: lessons B7 and the owner rulings of 2026-11-09 and 2026-11-10. Choice: the section and the launcher behaviour above; medium for mechanical work, high for design, review and debugging; default medium. Rejected: (a)–(c) above, and keeping four models with a documentary policy. Consequences: the CLI and the init template are unchanged, the guard is unchanged, a policy change is an owner commit, and the policy is read from the router checkout's HEAD. Lineage: amends DEC-31's "explicit model" and DEC-37's options. Index: the range becomes DEC-30 – DEC-39 and "next free id" becomes DEC-40. If W2 lands a DEC-39 first, this record takes the next free id.</td><td>no (F4)</td></tr>
+    <tr><td><code>.claude/skills/project-router/SKILL.md</code></td><td>"Workers": the model and effort come from <code>.keel/config.toml</code> <code>[router]</code> (currently <code>opus</code>; <code>--effort medium</code> by default, <code>high</code> for design, review and debugging), citing DEC-39. "Who runs what": the independent reviewer runs on <code>opus</code> at <code>--effort high</code>.</td><td><b>yes</b></td></tr>
+    <tr><td><code>skills/keel-router/SKILL.md</code>, <code>references/worker-ops.md</code>, <code>references/brief-skeleton.md</code>, <code>references/project-router-template.md</code></td><td>"Explicit model" becomes "an explicit model and effort, from the project's model policy (project-router)". The enumerations at worker-ops :27 and :73 become pointers to that policy. The brief header becomes <code>(&lt;model&gt;, effort &lt;level&gt;)</code>. The template's spawn line gains an effort slot and a "policy source" slot. Heartbeat and <code>ps</code> checks read <code>--effort</code> next to <code>--model</code>.</td><td><b>yes</b> (ships in the binary)</td></tr>
+    <tr><td><code>.claude/skills/keel-router/**</code></td><td>Byte-identical mirror of the four files above.</td><td><b>yes</b></td></tr>
+  </tbody>
+</table>
+
+<h2 id="commits">Commit sequence</h2>
+<ol data-c="commit-sequence">
+  <li><code>docs(E-SEED2.W7): WU plan</code>: r1 <code>ada8201</code>, r2 is this revision (worker).</li>
+  <li><code>docs(E-SEED2.W7): backlog R8</code>: <code>026bfc7</code> (worker, done).</li>
+  <li><code>docs(E-SEED2.W7): DEC-39 opus-only workers, policy in .keel/config.toml [router]</code>: <code>router.html</code> + the index (worker).</li>
+  <li><b>Owner</b> <code>keel mr commit</code>: <b>one staged set</b> with <code>.keel/config.toml</code> (<code>[router]</code>), project-router, <code>skills/keel-router/*</code> and the <code>.claude/skills/keel-router/*</code> mirror. The config change is folded into the skill-text commit because both state the same policy, and one review keeps the config and the prose about it in step. The worker stages exactly these files, and the owner runs:<br><code>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-SEED2-w7-opus-policy &amp;&amp; keel mr commit -m "chore(E-SEED2.W7): worker policy in .keel/config.toml [router] (opus, effort medium|high, default medium); skills defer to it (DEC-39)" --as vuluu</code></li>
+  <li><code>feat(E-SEED2.W7): launcher enforces [router] worker policy, --effort</code>: <code>scripts/router-worker.sh</code> + <code>tests/router.rs</code> in one commit, so the unit tests land with the code. It comes after commit 4, because the pin test reads the committed config (worker, fresh session).</li>
+  <li>WU result (worker), then <code>test/v1</code> + <code>doc/v1</code> notes, <code>keel preflight</code>, keel-code-review → <code>cr/v1</code>, and an independent review of <code>scripts/</code>, <code>.keel/</code> and the skill text (project-router "What no gate reviews"). Then <b>owner</b> <code>keel mr confirm wu &lt;tip&gt; --as vuluu --target epic/E-SEED2</code> and the owner's <code>--no-ff</code> merge.</li>
+</ol>
+<p data-c="commit-owner-note">Owner commands: one <code>keel mr commit</code> (step 4) and one <code>keel mr confirm wu</code> (step 6).</p>
+
+<h2 id="test-plan">Test plan</h2>
+<div data-item="test-plan" data-c="test-plan-body">
+  <p><b>Unit (commit 5):</b> in <code>tests/router.rs</code>, <code>launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name</code> covers the refusals: a non-opus model, a bad, missing or repeated <code>--effort</code>, and each policy case (absent, partial, malformed, default not in the list, unknown level, uncommitted widening ignored). <code>launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode</code> covers effort in the argv, the run dir and the RUNNING line: the default <code>medium</code>, an explicit <code>high</code>, and both option orders. <code>worker_argv</code> pins the option list including <code>--effort</code>. A pin test reads the repo's committed <code>.keel/config.toml</code> <code>[router]</code>. All of these run against the stub <code>claude</code> and fixture configs in temp dirs, so they are hermetic.</p>
+  <p><b>Integration (WU):</b> <code>epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end</code> spawns through the wired guard with <code>opus --effort high --permission-mode plan</code>, with the policy committed in the seeded checkout. This proves that the guard admits the shape and that the launcher reads the policy end to end.</p>
+  <p><b>Doc checks:</b> <code>keel verify-doc</code> on <code>router.html</code> and the index. The grep in Expected is run and its output recorded in the WU result.</p>
+  <p><b>Waivers:</b> none at WU level. The epic e2e (W3) does not touch the router.</p>
+</div>
+
+<h2 id="open-points">Open points (decided here, owner may override)</h2>
+<table data-c="open-points-table">
+  <thead><tr><th>#</th><th>Point</th><th>What was decided here</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Open question 7 (the effort flag)</td><td>The CLI has <code>--effort</code> (F2), so the launcher enforces the effort and the policy is not only documentary.</td></tr>
+    <tr><td>2</td><td>F2 is confirmed from the docs, not from the installed binary</td><td>The build worker's first step is to run <code>~/.local/bin/claude --help</code>. If that is refused too, the owner runs it once. If the binary lacks <code>--effort</code>, the launcher keeps the model check and drops the effort pass-through, and the policy keys stay as documentation.</td></tr>
+    <tr><td>3</td><td>Default effort</td><td><code>medium</code> (owner review 2026-11-10), held in <code>worker_default_effort</code>.</td></tr>
+    <tr><td>4</td><td>Effort levels allowed</td><td><code>medium</code> and <code>high</code> in the config. The launcher accepts only the CLI's levels in that list, and never <code>ultracode</code>.</td></tr>
+    <tr><td>5</td><td>Where the policy lives</td><td><code>.keel/config.toml</code> <code>[router]</code>, read by the launcher from HEAD. The CLI and the init template are unchanged (section "Where the policy lives").</td></tr>
+    <tr><td>6</td><td>Rule-bearing scope</td><td>One owner <code>keel mr commit</code> holding the config and the skill text. The DEC, the launcher and the tests are ordinary worker commits.</td></tr>
+    <tr><td>7</td><td>DEC id race with W2 (F5)</td><td>W7 takes DEC-39 and bumps "next free" to DEC-40. Whichever of W2 and W7 merges second renumbers on its merge from the epic.</td></tr>
+    <tr><td>8</td><td>Where the policy takes effect</td><td>The launcher reads the <b>router checkout's</b> HEAD. Until W7 reaches the branch the router runs from, that checkout has no <code>[router]</code>, so its launcher (the old one) keeps its old check. Once the new launcher and the config are both on that branch, they arrive together.</td></tr>
+  </tbody>
+</table>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

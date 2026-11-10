@@ -44,3 +44,8 @@ tiers = ["email", "username", "key"]   # accepted .mr-allowed tiers; ["key"] = s
 [review]   # read by the keel-code-review skill, not by the CLI
 modules = ["src/*"]          # each match of a glob's * is one module (altitude finder)
 rubric = ".keel/rubric.md"   # optional project-local rubric
+
+[router]   # read by scripts/router-worker.sh, not by the CLI (DEC-39)
+worker_model = "opus"
+worker_efforts = ["medium", "high"]
+worker_default_effort = "medium"

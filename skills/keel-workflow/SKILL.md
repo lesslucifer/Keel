@@ -49,7 +49,8 @@ skeleton, hooks), then follow the bootstrap and `keel mr setup` lines it prints.
 ## 2 · Lifecycle and sign order
 
 Every binding pins what it was made against: `cr/v1` pins the code diff hash,
-`mr/v1` the full diff hash and the result report's bytes, every note its tip.
+`mr/v1` the full diff hash and (when `[mr] report` asks for one) the result
+report's bytes, every note its tip.
 **Any tree change after a binding orphans it**, so the order is not a
 preference:
 
@@ -68,15 +69,28 @@ signing — the human is asked once, at the right moment. Notes are written on
 
 **`mr` is manual review — an agent never runs `keel mr confirm` or
 `keel mr commit`.** Stage the exact command (always `--as <id>`, and
-`--report <path>` when more than one result report changed), print it, stop.
+`--report <path>` when more than one doc carries the level's result role, and
+for an epic unless its result doc is committed in the epic's diff), print it,
+stop.
+
+**The result report** is the doc whose root `data-artifact` carries the level's
+role (`wu-result`, `epic-result`; a collapsed doc counts for both), whatever its
+file name. `[mr] report` in the target's committed `.keel/config.toml` decides
+whether the sign-off must attest one: `required` (default) · `optional` ·
+`none`. `keel mr confirm` finds it among the html docs under `docs.root`
+changed in the range and present at the tip — never an untracked or archived
+file — and refuses, writing nothing, when a required one is missing (pass
+`--report <path>`), when several match (it lists them: pass `--report`), or on
+`--report` under `none`.
 
 **Epic close**: merge main into the epic if it moved → distill (skill
 `distill`) → archive commit (`git rm` every T3 doc, keep the files in
 `docs/.archive/`) with `keel notes write doc --distill …` → epic result report
 in `docs/.archive/` → epic test note (e2e) → `keel preflight epic <tip>` →
 epic-scope review vs main → `keel verify-dod epic <tip>` → the human runs
-`keel mr confirm epic <tip> --as <id> --report docs/.archive/<…>-result.html`
-→ the human merges into main and pushes.
+`keel mr confirm epic <tip> --as <id> --report docs/.archive/<the epic-result doc>`
+→ the human merges into main and pushes. (An epic sign-off passes
+`--report <path>` unless its result doc is committed in the epic's diff.)
 
 ## 3 · Evidence — five notes, one tip
 
@@ -89,8 +103,12 @@ note between tips is a bypass: always use the writer.
 | `test/v1` | per layer (`unit`, `integration`, `e2e`): `count`, `covers`, `files`, `languages` — or `waived` | `keel notes write test` reads the judgment on stdin; counts come from the named files at the tip via `tests.adapter` (rust, ts, python, go, regex), never typed |
 | `doc/v1` | every changed doc (under `docs.root`, or T0) listed with its tier; archived T3 docs carry `distilled_to` | `keel notes write doc [--distill <t3>=<doc>[,<doc>] \| <t3>=none: <why>]` |
 | `cr/v1` | an independent review judged exactly this diff's code paths: `verdict`, `blockers`, `importants`, `code_diff_hash`; optional `walk_waivers` | the `keel-code-review` skill, via `keel notes write cr --verdict PASS\|FAIL` |
-| `mr/v1` | a listed human attested this tip: `signer`, `tier`, `report` + `report_hash`, `change_hash`, `sig` when key-backed | the human: `keel mr confirm` |
-| `dod/v1` | the gate ran green here | `keel verify-dod` on a green, non-exempt wu/epic, only |
+| `mr/v1` | a listed human attested this tip: `signer`, `tier`, `change_hash`, `report` + `report_hash` when a report is attested, `sig` when key-backed (payload `keel-mr/v2`; hashes `sha256:<hex>`) | the human: `keel mr confirm` |
+| `dod/v1` | the gate ran green here; names the attested `report` + `report_hash`, if any | `keel verify-dod` on a green, non-exempt wu/epic, only |
+
+A sign-off written by a Keel binary older than the `sha256:` hashes no longer
+verifies (check 8 names that cause): after upgrading Keel, re-sign every unmerged WU or
+epic tip with `keel mr confirm`.
 
 Test judgment (stdin of `keel notes write test`; `files` must be changed in
 the range and declare tests; give `files` + `covers`, or `waived`):
@@ -118,6 +136,7 @@ keel lint                               # check.lint only
 
 | # | Check | Levels |
 |---|---|---|
+| 0 | `0·hooks`: `core.hooksPath` is Keel's (unset or another tool's ⇒ red; fix `keel hooks install`) | preflight, `verify-dod wu\|epic` |
 | 0 | `0·tree` (preflight only): checkout is the tip, nothing uncommitted, `keel check` green | preflight |
 | 1 | `1·notes`: required notes present, JSON, declaring `<kind>/v1` | all |
 | 2 | `2·manifest`: the level's layer (commit ⇒ unit, WU ⇒ integration, epic ⇒ e2e) counted or waived; every note names this tip | all |
@@ -126,7 +145,7 @@ keel lint                               # check.lint only
 | 5 | `5·diff-binding`: `code_diff_hash` = the code-path diff recomputed now | wu, epic |
 | 6 | `6·doc-note`: `doc/v1` lists exactly the changed docs with their `docs.tiers` tier; archived T3 docs carry lineage to tracked T1/T2 docs; at an epic tip nothing T3 (or tier-less) is tracked under `docs.root` | all |
 | 7 | `7·walk`: every first-parent seam since the base passes its own gate (merges as WUs, plain commits as standalone); back-merges skipped; octopus refused | epic |
-| 8 | `8·manual-review`: a valid `mr/v1` from a signer in this checkout's `.mr-allowed`, bound to tip, base, level, diff and the report's bytes; signature verified for key-backed signers. Never exempt, never waivable, boundary-only (the walk never re-judges a seam's sign-off) | wu, epic |
+| 8 | `8·manual-review`: a valid `mr/v1` from a signer in this checkout's `.mr-allowed`, bound to tip, base, level, diff and the attested report's bytes (re-hashed whatever the policy); no report under `[mr] report = "required"` is red; signature verified for key-backed signers. Never exempt, never waivable, boundary-only (the walk never re-judges a seam's sign-off) | wu, epic |
 
 Green ⇒ exit 0 and, for a non-exempt wu/epic, the `dod/v1` receipt. Red ⇒ exit 1, one
 `FAIL <check> … fix -> …` block per failure, nothing written. Do what the
@@ -150,8 +169,8 @@ Green ⇒ exit 0 and, for a non-exempt wu/epic, the `dod/v1` receipt. Red ⇒ ex
 | Level | Required when | Recorded in | Refused at |
 |---|---|---|---|
 | Commit | the staged diff touches a `rule_bearing` path (default T0 `AGENTS.md` + flat `docs/*.html`) | `Reviewed-By: <tier> <id>` trailer via `keel mr commit -m "<msg>" --as <id>` | commit-msg hook |
-| WU | always — attests the WU result report (tracked at the tip) | `mr/v1` via `keel mr confirm wu` | check 8 |
-| Epic | always — attests the epic result report (may be archived, local) | `mr/v1` via `keel mr confirm epic` | check 8 |
+| WU | always — attests the `wu-result` report (tracked at the tip) unless `[mr] report = "none"` | `mr/v1` via `keel mr confirm wu` | check 8 |
+| Epic | always — attests the `epic-result` report (may be archived, local) unless `[mr] report = "none"` | `mr/v1` via `keel mr confirm epic` | check 8 |
 
 `.mr-allowed` is a **local, untracked** trust store (`email:`, `username:`,
 `key: <id> <ssh-pubkey>` lines; accepted tiers in `[mr] tiers`), created per
@@ -168,6 +187,17 @@ the roster is the human's to maintain.
 `<git-common-dir>/keel-hooks/` — inside the git dir, **never tracked**, shared
 by every worktree — and points `core.hooksPath` at that absolute path, so no
 branch can ship or merge in a neutered hook. Never commit hooks.
+
+Keel runs alone, never alongside another hook manager. `keel hooks install`
+refuses, changing nothing, when `core.hooksPath` (any scope) is another tool's,
+or, with `core.hooksPath` unset, when `.git/hooks/` holds anything but `*.sample`
+files; it names what it
+would replace. `keel hooks install --force` replaces it — the other tool's
+hooks stop running, so that is the owner's call, never an agent's. `keel init`
+writes its files, then stops on the same refusal (its `-f` is not `--force`).
+If another tool later takes or unsets `core.hooksPath`, the gate is silently
+off: `keel preflight` and `keel verify-dod wu|epic` are red on `0·hooks`,
+`keel check` warns.
 
 | Hook | Enforces |
 |---|---|

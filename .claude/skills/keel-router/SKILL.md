@@ -90,8 +90,9 @@ again … I can't remember things from the past, you sent me a ton of messages."
    addresses them by name) and headless workers (`ps aux`, the launcher's
    `.router/out/*.pid`). Map each to a worktree; flag unmapped ones, never adopt
    silently.
-3. Check your own model and each worker's (`ps aux` shows `--model` for
-   headless ones); the owner may require one model for all.
+3. Check your own model and each worker's (`ps aux` shows `--model` and
+   `--effort` for headless ones) against the project's model policy
+   (project-router).
 4. Confirm your posture is enforced (above). Load the deferred tools you need
    with `ToolSearch` (`select:SendMessage,Monitor,TaskStop`); a tool that does
    not load does not exist here — don't plan on it.
@@ -223,8 +224,10 @@ you used and why when it is not the standard.
 
 - **One fresh worker per phase** (plan, build, notes step, fix round, close).
   Find a way yourself before handing the owner mechanics.
-- **Pass an explicit model on every spawn and every review subagent**; never
-  inherit a default.
+- **Spawn every worker and review subagent with the model and effort from
+  the project's policy (project-router); the effort may be its default**.
+  Never let one inherit your session's model or effort (an `Agent` subagent
+  takes only the model).
 - Brief (you write it): worktree/branch/tip, rulings, what to read, job, hard
   rules, report protocol (`references/brief-skeleton.md`). Headless
   briefs live in the durable briefs dir; check the file exists before spawning.

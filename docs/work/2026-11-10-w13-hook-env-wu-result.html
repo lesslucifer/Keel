@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="c41e7a9d3b25f6e80a1d9c48" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED2.W13 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED2.W13 · Result: hook environment leak and landed-tip sign-off</h1>
+      <p>Delivered as planned. Every process keel spawns drops git's local environment (keel's own git keeps <code>GIT_INDEX_FILE</code>). Every test spawn goes through <code>tests/common</code>. <code>keel mr confirm</code> refuses a tip that its target already contains. A same-bug-class audit found four more spawns in <code>src/</code>, and they now use the same helper.</p>
+      <div class="meta">T3 · WU result · 2026-11-10 · Keel · branch <code>wu/E-SEED2/w13-hook-env</code> off <code>epic/E-SEED2</code> <code>36cd14d</code> · plan <a href="2026-11-10-w13-hook-env-wu-plan.html">W13 WU plan</a> · <span class="badge approval">owner ruling 2026-11-10</span></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<div data-item="outcome" data-c="outcome-body">
+<p><b>Delivered</b> against the requirement:</p>
+<ul>
+  <li><b>(1) Product.</b> <code>src/main.rs</code> has <code>GIT_LOCAL_ENV</code>, the 15 names from <code>git rev-parse --local-env-vars</code>, and <code>no_git_env(cmd, keep_index)</code>. <code>sh()</code> strips all 15. <code>git()</code> strips all of them except <code>GIT_INDEX_FILE</code>, and its explicit envs are applied after the strip. Because <code>repo_root()</code> goes through <code>git()</code>, keel finds the repository from its working directory. The <code>check_push</code> scratch path now proves the pushed sha, with no code of its own.</li>
+  <li><b>(2) Tests.</b> <code>tests/common/mod.rs</code> provides <code>GIT_LOCAL_ENV</code>, <code>no_git_env</code> and <code>cmd()</code>. Every spawn in <code>tests/*.rs</code> that can reach git goes through <code>common::cmd</code>; only <code>jq</code>, <code>ps</code> and <code>kill</code> are left as they were. Both <code>git clone</code> calls in init.rs set <code>current_dir</code>.</li>
+  <li><b>(3) Sign-off.</b> <code>gate::sign_ready</code> now returns <code>(tip, base, target)</code>. <code>mr::landed</code> refuses when <code>tip == base</code>, before any report lookup, hash, signature or write.</li>
+</ul>
+</div>
+
+<h2 id="deviations">Deviations</h2>
+<ul data-item="deviations" data-c="deviations-list">
+  <li><b>Commit order.</b> The plan's c1/c2/c3 code commits landed as one code commit, <code>db3e2a5</code>, followed by the audit commit. Why: the test files carry both the helper conversion and the new tests, so any split would have left an intermediate commit red.</li>
+  <li><b>Test helper shape.</b> The plan named <code>common::no_git_env</code>. Tests call <code>common::cmd(prog)</code>, a <code>Command</code> that is already stripped, and <code>no_git_env</code> stays available for W12. The calls are fully qualified (<code>common::cmd</code>) in five files, because local variables named <code>cmd</code> would otherwise shadow the helper.</li>
+  <li><b>Scope grew through the audit.</b> Four more product spawns bypassed <code>git()</code>: <code>notes::hash_blob</code> (<code>git hash-object</code>), <code>mr::report_hash</code> (<code>git cat-file</code>), <code>keel mr commit</code> (<code>git commit</code>) and init's <code>sh -c "command -v keel"</code>. All four now go through <code>no_git_env</code>. A second source-scan test, <code>every_keel_spawn_strips_gits_env</code>, guards <code>src/</code> just as the plan's scan guards <code>tests/</code>.</li>
+  <li><b>Stronger regression test.</b> The check regression test also points <code>GIT_INDEX_FILE</code> at B's index, and its test command runs <code>git add -A</code>. Without these, the mutant "sh() keeps the index" survived.</li>
+  <li><b>Code review r1 fix round.</b> Review r1 found no blockers and no importants. Three nits were verified, all in the source scans: the test scan exempted any line that contained <code>"jq"</code>, <code>"ps"</code> or <code>"kill"</code> anywhere; the src scan accepted <code>no_git_env</code> on the next line or anywhere on the line; and the src scan carried a test-only <code>"x"</code> exemption. Six candidates were refuted. Fix (<code>1129619</code>): <code>no_git_env</code> now takes the <code>Command</code> by value, so every spawn reads <code>no_git_env(Command::new(..), ..)</code> on one line. Both scans now judge each occurrence: only the exact programs <code>jq</code>, <code>ps</code> and <code>kill</code> (tests) and <code>ssh-keygen</code> (src) are exempt. Two mutants that slipped past the old matching, a raw spawn commented <code>"ps"</code> and a raw spawn commented <code>no_git_env</code>, are now both caught.</li>
+  <li><b>Code review r2 fix round.</b> No blockers and no importants. Two nits were verified. First, neither scan recursed, so <code>tests/common/mod.rs</code> was skipped only by accident. Second, nothing checked that the test-side list equals keel's. Four candidates were refuted. One of them was an important proposing that <code>verify-dod</code> refuse an empty range, which reverses owner ruling Q4. Fix (<code>080b573</code>): one recursive, per-occurrence scan, <code>raw_spawns</code>, now covers both <code>tests/</code> and <code>src/</code>. In <code>tests/common</code>, <code>cmd()</code> is built inside a by-value <code>no_git_env</code>. A new test, <code>the_test_strip_list_equals_keels</code>, parses <code>src/main.rs</code>'s list and compares it with the test-side copy. Two mutants are caught: a raw spawn in <code>tests/common/mod.rs</code>, and a renamed entry in one copy of the list.</li>
+  <li><b>Red evidence for the epic-level refusal.</b> On unfixed code, the epic case of the landed-tip test was refused for another reason (no report named), so only the WU case shows the incident's overwrite. After the fix, both cases assert the "already contained" text.</li>
+</ul>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence-body">
+<h3>Red before the fix, green after</h3>
+<table>
+  <thead><tr><th>Test</th><th>Red on unfixed code</th><th>Green</th></tr></thead>
+  <tbody>
+    <tr><td><code>cli::check_under_a_foreign_git_dir_uses_its_own_repo_and_leaves_the_other_untouched</code></td><td>The probe recorded B's git dir, not A's (<code>left: …/.tmp3MI7lx/.git</code>, <code>right: …/.tmpWUUDaU/.git</code>)</td><td>ok</td></tr>
+    <tr><td><code>cli::pre_push_from_a_linked_worktree_checks_the_pushed_sha_in_scratch</code></td><td>The probe recorded the worktree's HEAD <code>177cdf9…</code>, not the pushed <code>6ea272e…</code></td><td>ok</td></tr>
+    <tr><td><code>mr::confirm_refuses_a_tip_already_in_its_target_and_keeps_the_note</code></td><td><code>wrote refs/notes/mr on 84ba8e3d</code>: the incident, a sign-off over the merged tip</td><td>ok</td></tr>
+    <tr><td><code>cli::every_test_spawn_strips_gits_env</code></td><td>Listed 24 raw spawns in mr, verify_doc, verify_dod, router and init</td><td>ok</td></tr>
+    <tr><td><code>cli::every_keel_spawn_strips_gits_env</code></td><td>Mutant: mr.rs <code>git commit</code> spawned raw → listed</td><td>ok</td></tr>
+    <tr><td><code>mr::rule_bearing_commit_needs_a_listed_reviewed_by_trailer</code> (extended with <code>commit -a</code> and a pathspec commit in a linked worktree)</td><td>Mutant M1 (git() strips the index) → FAILED: the hook read the stale real index</td><td>ok</td></tr>
+    <tr><td>unit: <code>no_git_env_removes_every_local_var_and_keeps_the_index_only_when_asked</code>, <code>the_strip_list_covers_gits_local_env_vars</code>, <code>landed_refuses_exactly_when_the_tip_is_its_own_base</code> (500 seeded pairs), <code>cli::the_strip_lists_cover_gits_local_env_vars</code></td><td>Written alongside the code; the mutants below show each one red</td><td>ok</td></tr>
+  </tbody>
+</table>
+<h3>Mutant sweep (every branch added in <code>src/</code>)</h3>
+<table>
+  <thead><tr><th>#</th><th>Mutant</th><th>Killed by</th></tr></thead>
+  <tbody>
+    <tr><td>M1</td><td><code>git()</code>: <code>keep_index</code> true → false</td><td>mr <code>rule_bearing_commit…</code></td></tr>
+    <tr><td>M2</td><td><code>sh()</code>: <code>keep_index</code> false → true</td><td>cli <code>check_under_a_foreign…</code> (after its strengthening)</td></tr>
+    <tr><td>M3</td><td><code>sh()</code> strips nothing</td><td>cli <code>check_under…</code>, <code>pre_push_from…</code></td></tr>
+    <tr><td>M4</td><td><code>git()</code> strips nothing</td><td>cli <code>check_under…</code></td></tr>
+    <tr><td>M5</td><td>condition <code>&amp;&amp;</code> → <code>||</code></td><td>unit <code>no_git_env_removes…</code></td></tr>
+    <tr><td>M6</td><td>condition → <code>!keep_index</code></td><td>unit <code>no_git_env_removes…</code></td></tr>
+    <tr><td>M7</td><td>condition → never strip the index</td><td>unit <code>no_git_env_removes…</code></td></tr>
+    <tr><td>M8</td><td><code>GIT_DIR</code> missing from the list</td><td>unit <code>the_strip_list_covers…</code>, cli <code>check_under…</code></td></tr>
+    <tr><td>M9</td><td><code>landed</code>: <code>==</code> → <code>!=</code></td><td>unit <code>landed…</code> and 13 of 14 mr integration tests</td></tr>
+    <tr><td>M10</td><td><code>landed</code> never refuses</td><td>unit <code>landed…</code>, mr <code>confirm_refuses_a_tip…</code></td></tr>
+    <tr><td>M11</td><td>refusal printed, but confirm continues</td><td>mr <code>confirm_refuses_a_tip…</code></td></tr>
+    <tr><td>M12</td><td><code>sign_ready</code> returns an empty target</td><td>mr <code>confirm_refuses_a_tip…</code></td></tr>
+  </tbody>
+</table>
+<p>12 of 12 killed. Each mutant was made with <code>sed</code> in the worktree and restored with <code>git checkout</code>, or with the reverse <code>sed</code> where the file had uncommitted work.</p>
+<h3>Same-bug-class audit</h3>
+<p><code>src/</code>: every <code>Command::new</code> now goes through <code>no_git_env</code>, except <code>ssh-keygen</code>, which never reads a repository. <code>every_keel_spawn_strips_gits_env</code> enforces this. <code>tests/</code>: everything goes through <code>common::cmd</code> except <code>jq</code>, <code>ps</code> and <code>kill</code>, enforced by <code>every_test_spawn_strips_gits_env</code>. Outside the code paths: <code>scripts/router-worker.sh</code> and the Claude Code harness hooks in <code>.claude/settings.json</code> are never started by a git hook, so git's local environment cannot reach them. They are unchanged, and <code>.claude/</code> is off-limits in any case.</p>
+<h3>Hygiene of the runs</h3>
+<p>Before each full <code>cargo test</code> (13:57:29 and 14:00:24), <code>git rev-parse --absolute-git-dir</code> outside any repository failed, so no <code>GIT_DIR</code> was inherited. After each run, the shared <code>.git/config</code> still had <code>core.bare=false</code> and no <code>user</code> section, and <code>git log --all --since=&lt;start&gt;</code> showed no commit by <code>t &lt;t@t&gt;</code>. Results: full <code>cargo test</code> green (8 binaries, 94 tests), clippy <code>-D warnings</code> clean, <code>keel check</code> green.</p>
+<h3>Commits</h3>
+<p><code>1e6beb0</code> plan · <code>db3e2a5</code> fix (1)–(3) with tests · <code>2177484</code> audit fixes and the src scan · <code>9d29ccf</code> distillation · <code>405e087</code> this report · <code>1129619</code> review r1 nit fixes · <code>05852d0</code> this report's r1 update · <code>080b573</code> review r2 nit fixes · this report's r2 update. Full <code>cargo test</code> runs at 14:09:09 (after r1) and 14:15:15 (after r2, 95 tests) passed the same hygiene checks.</p>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation-body">Done in the WU. The decision is T2 <a href="../decisions/workflow-gates.html#dec-41">DEC-41</a>, with the index's next free id now DEC-42. The behaviour is in T2 <a href="../use-cases/workflow.html#uc-gate-4">UC-GATE-4</a> (keel finds the repo from its working directory; pre-push proves the pushed sha) and <a href="../use-cases/workflow.html#uc-mr-1">UC-MR-1</a> (confirm refuses a landed tip). The variable list is T4 code, pinned by tests. Nothing else citable remains in the plan or this report.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<ul data-item="follow-ups" data-c="follow-ups-list">
+  <li><b>Owner, R1.</b> The fix protects a push only once the fixed binary is the <code>keel</code> on <code>PATH</code>, because the hooks exec it. Until then, push from the main checkout.</li>
+  <li><b>W12.</b> After back-merging the epic, its <code>hermetic()</code> calls <code>common::no_git_env</code> or <code>common::cmd</code>. Its new spawns must pass <code>every_test_spawn_strips_gits_env</code>.</li>
+  <li><b>Backlog candidate: pre-existing, found by review r2's verifier.</b> If keel inherits <code>GIT_INDEX_FILE</code> when pre-push starts, the pre-push scratch path's <code>git worktree add</code> forwards it. That happens when the user's own post-commit hook runs <code>git push</code>, or when the user exported the variable. With an absolute path this can overwrite the main index with the pushed tree; with a relative one the push is refused for an unrelated reason. Either way the verdict stays correct. The diff neither introduced nor worsened this, since <code>git()</code> forwarded everything before. The fix would strip <code>GIT_INDEX_FILE</code> in <code>check_push</code>'s scratch calls.</li>
+  <li><b>Backlog candidate.</b> Isolate the test suite from the developer's <code>~/.gitconfig</code> (<code>GIT_CONFIG_GLOBAL</code> / <code>GIT_CONFIG_NOSYSTEM</code>). This is plan open question 1, out of scope here.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
