@@ -8,6 +8,8 @@ const WU_PLAN: &[&str] = &["requirement", "maps-to", "expected", "test-plan"];
 const WU_RESULT: &[&str] = &["outcome", "deviations", "evidence", "distillation", "follow-ups"];
 const EPIC_RESULT: &[&str] = &["outcome", "wu-rollup", "deviations", "evidence", "distillation", "follow-ups"];
 const WU_SUB: &[&str] = &["wu-summary", "wu-maps-to", "wu-expected", "wu-deps"];
+const WU_RESULT_ROLE: &str = "wu-result";
+const EPIC_RESULT_ROLE: &str = "epic-result";
 
 struct Tag<'a> {
     name: &'a str,
@@ -83,12 +85,29 @@ fn scannable(raw: &str) -> String {
     strip_blocks(&strip_blocks(raw, "script"), "style")
 }
 
+fn root<'a, 'b>(ts: &'b [Tag<'a>]) -> Option<&'b Tag<'a>> {
+    ts.iter().find(|t| t.name == "html" && !t.closing)
+}
+
 /// The root `<html>`'s `data-artifact` (its governed role(s)); `None` for an ungoverned doc.
 pub fn artifact(raw: &str) -> Option<String> {
     let html = scannable(raw);
     let ts = tags(&html);
-    let root = ts.iter().find(|t| t.name == "html" && !t.closing)?;
-    attr(root, "data-artifact").map(String::from)
+    attr(root(&ts)?, "data-artifact").map(String::from)
+}
+
+/// The result role a sign-off at this level attests.
+pub fn result_role(epic: bool) -> &'static str {
+    if epic {
+        EPIC_RESULT_ROLE
+    } else {
+        WU_RESULT_ROLE
+    }
+}
+
+/// Does the doc's root `data-artifact` carry `role`? A collapsed doc carries each of its roles.
+pub fn has_role(raw: &str, role: &str) -> bool {
+    artifact(raw).is_some_and(|a| a.split_whitespace().any(|r| r == role))
 }
 
 /// Problems with one doc; empty = green. Drafts are fully silent: no checklist, no link check.
@@ -100,7 +119,7 @@ pub fn verify(path: &Path) -> Vec<String> {
     let ts = tags(&html);
     let mut errs = vec![];
 
-    let root = ts.iter().find(|t| t.name == "html");
+    let root = root(&ts);
     if root.is_some_and(|r| attr(r, "data-status") == Some("draft")) {
         return errs;
     }
@@ -134,8 +153,8 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
         expected.extend(match a {
             "epic-plan" => EPIC_PLAN,
             "wu-plan" => WU_PLAN,
-            "wu-result" => WU_RESULT,
-            "epic-result" => EPIC_RESULT,
+            WU_RESULT_ROLE => WU_RESULT,
+            EPIC_RESULT_ROLE => EPIC_RESULT,
             _ => {
                 errs.push(format!("unknown data-artifact: {a}"));
                 return;
@@ -182,7 +201,18 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
 
 #[cfg(test)]
 mod tests {
-    use super::artifact;
+    use super::{artifact, has_role, result_role, verify};
+
+    #[test]
+    fn a_stray_closing_html_before_the_root_neither_hides_the_checklist_nor_the_role() {
+        let doc = r#"<p>see </html> below</p><html data-artifact="wu-result" data-status="final"><p data-item="outcome">done</p></html>"#;
+        let path = std::env::temp_dir().join(format!("keel-stray-root-{}.html", std::process::id()));
+        std::fs::write(&path, doc).unwrap();
+        let errs = verify(&path);
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(artifact(doc).as_deref(), Some("wu-result"), "the doc is a wu-result report");
+        assert!(errs.iter().any(|e| e == "missing item \"deviations\""), "the checklist judges the same root: {errs:?}");
+    }
 
     #[test]
     fn artifact_reads_the_root_role_and_is_none_for_an_ungoverned_doc() {
@@ -192,5 +222,26 @@ mod tests {
         assert_eq!(artifact("<html lang=\"en\"><p>x-result</p></html>"), None);
         assert_eq!(artifact("<p>wu a: done</p>"), None);
         assert_eq!(artifact(r#"<script>"<html data-artifact=\"wu-result\">"</script><html>"#), None);
+    }
+
+    #[test]
+    fn the_result_role_a_sign_off_attests_is_one_the_checklist_knows() {
+        for epic in [false, true] {
+            let role = result_role(epic);
+            let path = std::env::temp_dir().join(format!("keel-role-{epic}-{}.html", std::process::id()));
+            std::fs::write(&path, format!(r#"<html data-artifact="{role}" data-status="final"></html>"#)).unwrap();
+            let errs = verify(&path);
+            std::fs::remove_file(&path).unwrap();
+            assert!(errs.contains(&"missing item \"outcome\"".to_string()) && !errs.iter().any(|e| e.starts_with("unknown")), "{role}: {errs:?}");
+        }
+    }
+
+    #[test]
+    fn a_collapsed_result_doc_has_both_roles_and_an_ungoverned_one_none() {
+        let collapsed = r#"<html data-artifact="epic-result wu-result">"#;
+        assert!(has_role(collapsed, "wu-result") && has_role(collapsed, "epic-result"));
+        assert!(has_role(r#"<html data-artifact="wu-result">"#, "wu-result"));
+        assert!(!has_role(r#"<html data-artifact="wu-result">"#, "epic-result"));
+        assert!(!has_role("<p>x-result</p>", "wu-result"));
     }
 }

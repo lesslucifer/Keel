@@ -102,35 +102,39 @@ fn payload(level: &str, base: &str, tip: &str, change: &str, report: Option<(&st
     p
 }
 
-fn role(epic: bool) -> &'static str {
-    if epic {
-        "epic-result"
-    } else {
-        "wu-result"
+/// Reports already attested by a sign-off on a commit the base contains: an earlier, merged level's.
+fn attested_before(repo: &Path, base: &str) -> Result<Vec<String>, String> {
+    let mut out = vec![];
+    for line in git(repo, &["notes", "--ref=mr", "list"], &[]).unwrap_or_default().lines() {
+        let Some((note, commit)) = line.split_once(' ') else { continue };
+        if git(repo, &["merge-base", "--is-ancestor", commit, base], &[]).is_err() {
+            continue;
+        }
+        let v: serde_json::Value = serde_json::from_str(&git(repo, &["cat-file", "blob", note], &[])?).unwrap_or_default();
+        if let Some(r) = v["report"].as_str() {
+            out.push(r.to_string());
+        }
     }
-}
-
-fn has_role(html: &str, role: &str) -> bool {
-    verify_doc::artifact(html).is_some_and(|a| a.split_whitespace().any(|r| r == role))
+    Ok(out)
 }
 
 /// The docs whose `data-artifact` carries the level's result role: html under docs.root changed in
 /// base..tip and present at the tip, plus (epic: archived out of git by then) the untracked ones,
-/// ignored included - `docs/.archive/` is gitignored.
+/// ignored included - `docs/.archive/` is gitignored - that no sign-off merged into the base attested.
 fn report_candidates(repo: &Path, cfg: &Config, base: &str, tip: &str, epic: bool) -> Result<Vec<String>, String> {
-    let html = |n: &String| n.starts_with(&cfg.docs.root) && n.ends_with(".html");
+    let role = verify_doc::result_role(epic);
+    let root = cfg.docs.root.trim_end_matches('/');
+    let html = |n: &&String| n.ends_with(".html");
     let mut found = vec![];
-    for n in notes::names(repo, base, tip, &[])?.iter().filter(|n| html(n)) {
-        if let Ok(body) = git(repo, &["show", &format!("{tip}:{n}")], &[]) {
-            if has_role(&body, role(epic)) {
-                found.push(n.clone());
-            }
+    for n in notes::names(repo, base, tip, &[root.to_string()])?.iter().filter(html) {
+        if git(repo, &["show", &format!("{tip}:{n}")], &[]).is_ok_and(|body| verify_doc::has_role(&body, role)) {
+            found.push(n.clone());
         }
     }
     if epic {
-        let root = cfg.docs.root.trim_end_matches('/');
-        for n in notes::zpaths(&git(repo, &["ls-files", "-z", "--others", "--", root], &[])?).iter().filter(|n| html(n)) {
-            if std::fs::read_to_string(repo.join(n)).is_ok_and(|b| has_role(&b, role(epic))) && !found.contains(n) {
+        let earlier = attested_before(repo, base)?;
+        for n in notes::zpaths(&git(repo, &["ls-files", "-z", "--others", "--", root], &[])?).iter().filter(html) {
+            if !found.contains(n) && !earlier.contains(n) && std::fs::read_to_string(repo.join(n)).is_ok_and(|b| verify_doc::has_role(&b, role)) {
                 found.push(n.clone());
             }
         }
@@ -153,7 +157,7 @@ fn pick_report(repo: &Path, cfg: &Config, args: &[&str], base: &str, tip: &str, 
     if let Some(r) = given {
         return Ok(Some(r.to_string()));
     }
-    let role = role(epic);
+    let role = verify_doc::result_role(epic);
     let found = report_candidates(repo, cfg, base, tip, epic).map_err(|e| (e, "fix the repo state, then re-run".into()))?;
     match &found[..] {
         [one] => Ok(Some(one.clone())),
@@ -473,7 +477,7 @@ pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, b
         _ => return again(format!("the mr/v1 note on {t} names a report or a report_hash without the other")),
     };
     if attested.is_none() && cfg.mr.report == ReportPolicy::Required {
-        let role = role(level == "epic");
+        let role = verify_doc::result_role(level == "epic");
         return Err((
             format!("the {level} sign-off on {t} attests no result report, but [mr] report = \"required\" (the target's committed policy)"),
             format!("write the {role} report on the tip, then re-run keel mr confirm\n      {NOT_AUTHORISED}"),
@@ -561,7 +565,7 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{has_role, payload, sha256, stale_change};
+    use super::{payload, sha256, stale_change};
 
     #[test]
     fn a_pre_sha256_change_hash_names_the_old_format_not_a_changed_diff() {
@@ -583,14 +587,5 @@ mod tests {
         let without = payload("epic", "b", "t", "c", None);
         assert_eq!(without, "keel-mr/v2\nlevel: epic\nbase: b\ntip: t\nchange: c\n");
         assert!(!without.contains("report"));
-    }
-
-    #[test]
-    fn a_collapsed_result_doc_has_both_roles_and_an_ungoverned_one_none() {
-        let collapsed = r#"<html data-artifact="epic-result wu-result">"#;
-        assert!(has_role(collapsed, "wu-result") && has_role(collapsed, "epic-result"));
-        assert!(has_role(r#"<html data-artifact="wu-result">"#, "wu-result"));
-        assert!(!has_role(r#"<html data-artifact="wu-result">"#, "epic-result"));
-        assert!(!has_role("<p>x-result</p>", "wu-result"));
     }
 }
