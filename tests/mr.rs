@@ -459,9 +459,11 @@ fn a_forged_report_hash_is_red_under_optional() {
     assert_red8(p, "differs from the bytes");
 }
 
-/// I5: the epic report is archived out of git (docs/.archive/ is ignored): found untracked by role.
+/// I5 (owner ruling 2026-11-10): an epic's report is `--report <path>` or a result doc committed in
+/// the epic's own diff - never an untracked or archived file found by search.
 #[test]
-fn the_epic_report_is_found_untracked_in_the_ignored_archive() {
+fn the_epic_report_is_named_or_committed_never_searched_for() {
+    const EPIC: &str = "<html data-artifact=\"epic-result\"><p>epic e: done</p></html>";
     let (d, _k) = fixture();
     let p = d.path();
     notes_with(p, &["test", "doc"], r#"{"unit":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
@@ -469,39 +471,26 @@ fn the_epic_report_is_found_untracked_in_the_ignored_archive() {
     write(p, "docs/decisions/a.html", "<p>why a</p>");
     write(p, ".gitignore", "docs/.archive/\n");
     commit(p, "distill + archive wu a's report");
-    write(p, "docs/.archive/e-result.html", "<html data-artifact=\"epic-result\"><p>epic e: done</p></html>");
+    write(p, "docs/.archive/e-result.html", EPIC);
+    write(p, "docs/work/f-result.html", EPIC);
     notes_with(p, &["test", "cr"], r#"{"e2e":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
     ok(keel(p, &["notes", "write", "doc", "--distill", "docs/work/a-result.html=docs/decisions/a.html"]));
-    ok(keel(p, &["mr", "confirm", "epic"]));
+    refused(&keel(p, &["mr", "confirm", "epic"]), &["required", "epic-result", "--report <path>"]);
+    assert!(mr_note(p, "HEAD").is_none(), "an archived or untracked epic-result is never picked");
+
+    ok(keel(p, &["mr", "confirm", "epic", "--report", "docs/.archive/e-result.html"]));
     assert_eq!(mr_note(p, "HEAD").unwrap()["report"], "docs/.archive/e-result.html");
     ok(keel(p, &["verify-dod", "epic", "wu/e/a"]));
 
-    write(p, "docs/.archive/f-result.html", "<html data-artifact=\"epic-result wu-result\"><p>epic f</p></html>");
-    git(p, &["notes", "--ref=mr", "remove", "HEAD"]);
-    let o = keel(p, &["mr", "confirm", "epic"]);
-    refused(&o, &["docs/.archive/e-result.html", "docs/.archive/f-result.html", "--report"]);
-    assert!(mr_note(p, "HEAD").is_none());
-}
-
-/// R1 F2: an earlier epic's archived report, attested by a sign-off the base already contains, is
-/// never this epic's report - not as the only candidate, not as a second one.
-#[test]
-fn an_earlier_epics_attested_report_is_never_picked_for_this_epic() {
     let (d, _k) = fixture();
     let p = d.path();
-    write(p, "docs/.archive/old-result.html", "<html data-artifact=\"epic-result\"><p>epic d: done</p></html>");
-    put_note(p, "main", &json!({"schema": "mr/v1", "level": "epic", "report": "docs/.archive/old-result.html"}));
-    notes_with(p, &["test", "doc"], r#"{"unit":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
+    // An epic tip tracks no T3 doc (check 6), so a committed epic report sits outside docs/work/.
     git(p, &["rm", "-q", "docs/work/a-result.html"]);
-    write(p, "docs/decisions/a.html", "<p>why a</p>");
-    write(p, ".gitignore", "docs/.archive/\n");
-    commit(p, "distill + archive wu a's report");
-    notes_with(p, &["test", "cr"], r#"{"e2e":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
-    ok(keel(p, &["notes", "write", "doc", "--distill", "docs/work/a-result.html=docs/decisions/a.html"]));
-    refused(&keel(p, &["mr", "confirm", "epic"]), &["required", "epic-result"]);
-    assert!(mr_note(p, "HEAD").is_none(), "the stale report is not attested");
-
-    write(p, "docs/.archive/e-result.html", "<html data-artifact=\"epic-result\"><p>epic e: done</p></html>");
+    write(p, "docs/e-result.html", EPIC);
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-q", "--amend", "-m", "wu a\n\nReviewed-By: key vu"]);
+    write(p, "docs/work/f-result.html", EPIC);
+    notes_with(p, &["test", "doc", "cr"], r#"{"e2e":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
     ok(keel(p, &["mr", "confirm", "epic"]));
-    assert_eq!(mr_note(p, "HEAD").unwrap()["report"], "docs/.archive/e-result.html");
+    assert_eq!(mr_note(p, "HEAD").unwrap()["report"], "docs/e-result.html");
 }

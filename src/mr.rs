@@ -102,41 +102,16 @@ fn payload(level: &str, base: &str, tip: &str, change: &str, report: Option<(&st
     p
 }
 
-/// Reports already attested by a sign-off on a commit the base contains: an earlier, merged level's.
-fn attested_before(repo: &Path, base: &str) -> Result<Vec<String>, String> {
-    let mut out = vec![];
-    for line in git(repo, &["notes", "--ref=mr", "list"], &[]).unwrap_or_default().lines() {
-        let Some((note, commit)) = line.split_once(' ') else { continue };
-        if git(repo, &["merge-base", "--is-ancestor", commit, base], &[]).is_err() {
-            continue;
-        }
-        let v: serde_json::Value = serde_json::from_str(&git(repo, &["cat-file", "blob", note], &[])?).unwrap_or_default();
-        if let Some(r) = v["report"].as_str() {
-            out.push(r.to_string());
-        }
-    }
-    Ok(out)
-}
-
 /// The docs whose `data-artifact` carries the level's result role: html under docs.root changed in
-/// base..tip and present at the tip, plus (epic: archived out of git by then) the untracked ones,
-/// ignored included - `docs/.archive/` is gitignored - that no sign-off merged into the base attested.
+/// base..tip and present at the tip. Never an untracked or archived file: an epic whose report is
+/// archived out of git by sign-off time names it with `--report` (owner ruling, DEC-40).
 fn report_candidates(repo: &Path, cfg: &Config, base: &str, tip: &str, epic: bool) -> Result<Vec<String>, String> {
     let role = verify_doc::result_role(epic);
     let root = cfg.docs.root.trim_end_matches('/');
-    let html = |n: &&String| n.ends_with(".html");
     let mut found = vec![];
-    for n in notes::names(repo, base, tip, &[root.to_string()])?.iter().filter(html) {
+    for n in notes::names(repo, base, tip, &[root.to_string()])?.iter().filter(|n| n.ends_with(".html")) {
         if git(repo, &["show", &format!("{tip}:{n}")], &[]).is_ok_and(|body| verify_doc::has_role(&body, role)) {
             found.push(n.clone());
-        }
-    }
-    if epic {
-        let earlier = attested_before(repo, base)?;
-        for n in notes::zpaths(&git(repo, &["ls-files", "-z", "--others", "--", root], &[])?).iter().filter(html) {
-            if !found.contains(n) && !earlier.contains(n) && std::fs::read_to_string(repo.join(n)).is_ok_and(|b| verify_doc::has_role(&b, role)) {
-                found.push(n.clone());
-            }
         }
     }
     Ok(found)
@@ -163,8 +138,14 @@ fn pick_report(repo: &Path, cfg: &Config, args: &[&str], base: &str, tip: &str, 
         [one] => Ok(Some(one.clone())),
         [] if cfg.mr.report == ReportPolicy::Optional => Ok(None),
         [] => Err((
-            format!("[mr] report = \"required\", and no {role} doc (data-artifact=\"{role}\") is under {} for this {}", cfg.docs.root, if epic { "epic" } else { "WU" }),
-            format!("write the {role} report (skill keel-plan), commit it on the tip, then keel mr confirm again - or name it with --report <path>"),
+            format!(
+                "[mr] report = \"required\", and no {role} doc (data-artifact=\"{role}\") under {} is committed in this {}'s diff {}..{}",
+                cfg.docs.root,
+                if epic { "epic" } else { "WU" },
+                short(base),
+                short(tip)
+            ),
+            format!("commit the {role} report (skill keel-plan) on the tip, then keel mr confirm again - or name the one you read: keel mr confirm ... --report <path>"),
         )),
         several => Err((
             format!("{} {role} docs could be the report: {}", several.len(), several.join(", ")),
