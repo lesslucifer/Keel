@@ -89,16 +89,22 @@ while [ $# -gt 0 ]; do
   shift 2
 done
 # The worker policy (DEC-39) is [router] in .keel/config.toml as committed at this checkout's HEAD,
-# so an uncommitted edit cannot widen it. The reader accepts only `key = "word"` and
-# `key = ["word", ...]` (optional trailing # comment); any other line in the section refuses.
+# so an uncommitted edit cannot widen it. The reader accepts one exact `[router]` header and in it only
+# `key = "word"` and `key = ["word", ...]` (a word starts with a letter; optional trailing # comment);
+# any other line in the section, a second `[router]` or any other header naming router refuses.
 policy=$(git -C "$ROOT" show HEAD:.keel/config.toml 2>/dev/null | awk '
-  /^\[/ { on = /^\[router\][ \t]*(#.*)?$/; next }
+  /^[ \t]*\[/ {
+    on = /^\[router\]([ \t]+#.*)?$/
+    if (on && seen++) bad = 1
+    if (!on && /^[ \t]*\[+[ \t]*"?router"?[ \t]*(\]|\.)/) bad = 1
+    next
+  }
   !on { next }
   { sub(/[ \t]*#.*$/, ""); sub(/[ \t]+$/, "") }
   /^$/ { next }
-  /^worker_model = "[a-z0-9.-]+"$/ && m == "" { m = $3; next }
-  /^worker_default_effort = "[a-z0-9.-]+"$/ && d == "" { d = $3; next }
-  /^worker_efforts = \["[a-z0-9.-]+"(, "[a-z0-9.-]+")*\]$/ && e == "" { e = substr($0, 19, length($0) - 19); next }
+  /^worker_model = "[a-z][a-z0-9.-]*"$/ && m == "" { m = $3; next }
+  /^worker_default_effort = "[a-z][a-z0-9.-]*"$/ && d == "" { d = $3; next }
+  /^worker_efforts = \["[a-z][a-z0-9.-]*"(, "[a-z][a-z0-9.-]*")*\]$/ && e == "" { e = substr($0, 19, length($0) - 19); next }
   { bad = 1 }
   END {
     gsub(/"/, "", m); gsub(/"/, "", d); gsub(/[",]/, "", e)
