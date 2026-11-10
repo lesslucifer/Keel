@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af294109f34851f0dfb2034" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED2.W2 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED2.W2 · Report binding and hook coexistence — result</h1>
+      <p>The sign-off's result-report requirement is now a config policy, reports are found by role, sign-off hashes are SHA-256, dod/v1 names the attested report, and Keel's hooks refuse to clobber or be silently clobbered.</p>
+      <div class="meta">T3 · WU result · 2026-11-10 · Keel · branch <code>wu/E-SEED2/w2-report-binding</code> off <code>epic/E-SEED2</code> <code>ef9ee75</code> · <a href="2026-11-09-w2-report-binding-wu-plan.html">W2 plan</a> (r2 approved 2026-11-10)</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<div data-item="outcome" data-c="outcome">
+  <p><b>Delivered</b> against the requirement in the <a href="2026-11-09-w2-report-binding-wu-plan.html#requirement">plan</a>. Plan r2 was approved on 2026-11-10. Open questions 1–5 ran on their defaults and choices A–I were applied as written. Every item in the plan's expected list holds at this tip:</p>
+  <ul>
+    <li><code>[mr] report = "required" | "optional" | "none"</code> is read from the target's committed config, with <code>required</code> as the default. Keel's own <code>.keel/config.toml</code> does not set the key.</li>
+    <li>The report is the doc whose <code>data-artifact</code> carries the level's role (<code>wu-result</code> or <code>epic-result</code>), whatever its file name. <code>--report</code> overrides the lookup. The <code>-result.html</code> suffix filter is gone.</li>
+    <li>A missing required report is refused at <code>keel mr confirm</code> and no note is written. At the merge it is a named <code>8·manual-review</code> failure with a <code>fix -&gt;</code> line. A WU that sets its own policy to <code>none</code> is still judged by the target's committed policy.</li>
+    <li>The payload is <code>keel-mr/v2</code>. Its <code>change_hash</code> and <code>report_hash</code> are <code>sha256:&lt;hex&gt;</code>, and both report lines are left out when no report is attested. The <code>cr/v1</code> and <code>dod/v1</code> bindings stay git blob ids (choice B).</li>
+    <li><code>dod/v1</code> carries <code>report</code> and <code>report_hash</code> when the verified sign-off attested a report.</li>
+    <li><code>keel hooks install</code> refuses a foreign <code>core.hooksPath</code> or non-sample <code>.git/hooks</code> entries unless given <code>--force</code>. <code>keel init</code> writes its files and then stops on that refusal.</li>
+    <li>Guard D: <code>keel preflight</code> and <code>keel verify-dod wu|epic</code> are red as <code>0·hooks</code> while <code>core.hooksPath</code> is unset or not Keel's. <code>keel check</code> warns but keeps its exit code.</li>
+  </ul>
+</div>
+
+<h2 id="deviations">Deviations</h2>
+<ul data-item="deviations" data-c="deviations">
+  <li><b>Dependency added by hand.</b> The harness refused <code>cargo add sha2</code>, so the build worker edited <code>Cargo.toml</code> by hand to <code>sha2 = "0.10"</code>, which resolves to 0.10.9 in <code>Cargo.lock</code>. Review r1 found the result identical to <code>cargo add</code> except for the version floor (<code>"0.10"</code> rather than <code>"0.10.9"</code>). <code>cargo test --locked</code> passes.</li>
+  <li><b>Plan commit 8 became two owner commits.</b> <code>7814bd9</code> landed the rule text. <code>564a4a2</code> added the <code>.claude/skills/</code> copies of keel-workflow, keel-plan and the router's <code>commands.md</code>, which the first commit had left out.</li>
+  <li><b>A fix round after review r1</b>, which the plan did not have. The details are under <a href="#reviews">Reviews and rulings</a>. It added one code change (<code>5c0ed88</code>), T2 corrections (<code>dc8546b</code>) and a third owner commit (<code>640cb4d</code>). <code>640cb4d</code> touches <code>docs/install.html</code> (T1), which the plan did not name.</li>
+  <li><b>The old-format note gets its own message.</b> The plan only required a pre-W2 note to be red (I6). Since <code>5c0ed88</code>, the red line also names the old sign-off format as the cause and says to re-sign, instead of claiming the diff changed.</li>
+  <li><b>DEC ids.</b> The new decision is DEC-40, because W7 minted DEC-39 on its own branch. The index records DEC-41 as the next free id (choice H).</li>
+</ul>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+  <p><b>Commits</b> on <code>epic/E-SEED2</code> <code>ef9ee75</code>, oldest first:</p>
+  <table>
+    <tr><th>Commit</th><th>What</th><th>By</th></tr>
+    <tr><td><code>3eb4f58</code>, <code>b679309</code></td><td>WU plan, then r2</td><td>agent</td></tr>
+    <tr><td><code>8d871fa</code></td><td><code>[mr] report</code> key and <code>verify_doc::artifact</code></td><td>agent</td></tr>
+    <tr><td><code>ebcbd84</code></td><td>Report policy and lookup by role, payload <code>keel-mr/v2</code>, optional report fields</td><td>agent</td></tr>
+    <tr><td><code>9543613</code></td><td>SHA-256 sign-off hashes (adds <code>sha2</code>)</td><td>agent</td></tr>
+    <tr><td><code>d147bd6</code></td><td><code>dod/v1</code> names the attested report</td><td>agent</td></tr>
+    <tr><td><code>94043f3</code></td><td><code>hooks install</code> refuses to clobber; <code>--force</code>; <code>init</code> stops on the refusal</td><td>agent</td></tr>
+    <tr><td><code>7dc3386</code></td><td>Guard D (<code>0·hooks</code>) and the <code>keel check</code> warning</td><td>agent</td></tr>
+    <tr><td><code>9128728</code></td><td>T2 distillation</td><td>agent</td></tr>
+    <tr><td><code>7814bd9</code></td><td>Commit 8: rule text (skills, template)</td><td>owner (<code>keel mr commit</code>)</td></tr>
+    <tr><td><code>564a4a2</code></td><td>The <code>.claude/skills</code> copies that <code>7814bd9</code> left out</td><td>owner</td></tr>
+    <tr><td><code>5c0ed88</code></td><td>Review r1 F5 (code): the old-format note names its cause</td><td>agent</td></tr>
+    <tr><td><code>dc8546b</code></td><td>Review r1 F2, F4, F6 (T2 docs)</td><td>agent</td></tr>
+    <tr><td><code>640cb4d</code></td><td>Review r1 F1, F3, F5 (rule text, <code>install.html</code>)</td><td>owner</td></tr>
+    <tr><td>this commit</td><td>This report</td><td>agent</td></tr>
+  </table>
+  <p><b>Integration tests (I1–I10).</b> Red/green was checked by running the tip's <code>tests/</code> against the base <code>ef9ee75</code> source, copied by <code>git archive</code> under <code>target/</code>. Every test below is red on the base and green at the tip.</p>
+  <table data-c="tests-table">
+    <tr><th>#</th><th>Test</th><th>File</th></tr>
+    <tr><td>I1</td><td><code>report_policy_matrix_at_wu_level</code></td><td><code>tests/mr.rs</code></td></tr>
+    <tr><td>I2</td><td><code>the_wu_report_is_found_by_role_not_by_file_name</code></td><td><code>tests/mr.rs</code></td></tr>
+    <tr><td>I3</td><td><code>a_wu_cannot_drop_the_report_requirement_that_judges_its_merge</code></td><td><code>tests/mr.rs</code></td></tr>
+    <tr><td>I4</td><td><code>a_forged_report_hash_is_red_under_optional</code></td><td><code>tests/mr.rs</code></td></tr>
+    <tr><td>I5</td><td><code>the_epic_report_is_found_untracked_in_the_ignored_archive</code></td><td><code>tests/mr.rs</code></td></tr>
+    <tr><td>I6</td><td><code>sign_off_hashes_are_sha256_and_a_pre_w2_note_is_red</code></td><td><code>tests/mr.rs</code></td></tr>
+    <tr><td>I7</td><td><code>the_dod_receipt_names_the_attested_report</code></td><td><code>tests/mr.rs</code></td></tr>
+    <tr><td>I8</td><td><code>hooks_install_refuses_to_clobber_another_hook_setup_without_force</code></td><td><code>tests/cli.rs</code></td></tr>
+    <tr><td>I9</td><td><code>a_foreign_or_unset_hooks_path_turns_preflight_and_verify_dod_red</code></td><td><code>tests/verify_dod.rs</code></td></tr>
+    <tr><td>I10</td><td><code>init_over_a_foreign_hooks_path_writes_its_files_then_refuses_the_hooks</code></td><td><code>tests/init.rs</code></td></tr>
+  </table>
+  <p>Three other tests also failed in the base copy: <code>self_hosting_clone_is_gated_and_init_is_a_noop</code>, <code>self_hosting_new_worktree_inherits_the_signer_list</code> and the router e2e. W2 did not change any of them and all three are green at the tip. Their failure in the base copy was not investigated. The likely cause is that the extracted copy is not a git checkout of its own.</p>
+  <p><b>The F5 pair.</b> Two tests cover <code>5c0ed88</code>:</p>
+  <ul>
+    <li>The unit test <code>a_pre_sha256_change_hash_names_the_old_format_not_a_changed_diff</code>.</li>
+    <li>The I6 assertion pair: the red line names "signed by a keel older than the SHA-256 sign-off format", and does not say "changed since the sign-off".</li>
+  </ul>
+  <p>The I6 test is red against the <code>564a4a2</code> source and green at the tip.</p>
+  <p><b>Unit tests</b> (<code>#[cfg(test)]</code>):</p>
+  <ul>
+    <li><code>mr_report_parses_its_three_values_defaults_to_required_and_rejects_a_fourth</code></li>
+    <li><code>artifact_reads_the_root_role_and_is_none_for_an_ungoverned_doc</code></li>
+    <li><code>payload_v2_carries_the_report_lines_exactly_when_a_report_is_attested</code></li>
+    <li><code>a_collapsed_result_doc_has_both_roles_and_an_ungoverned_one_none</code></li>
+    <li><code>sha256_matches_the_fips_180_2_abc_vector</code></li>
+    <li><code>hook_conflicts_treat_sample_only_as_clean_and_anything_else_as_foreign</code></li>
+    <li><code>hooks_problem_passes_for_keels_path_and_fails_for_a_foreign_or_unset_one</code></li>
+    <li><code>a_pre_sha256_change_hash_names_the_old_format_not_a_changed_diff</code></li>
+  </ul>
+  <p>The full <code>cargo test --locked</code> run is green with 81 tests, and <code>cargo clippy --all-targets -- -D warnings</code> is green. The e2e layer is waived to W3's <code>e2e_python</code>, as the plan states.</p>
+  <p><b>Docs touched:</b></p>
+  <ul>
+    <li>T2: <code>use-cases/workflow.html</code> and its index, <code>decisions/workflow-gates.html</code> and the decision index, and <code>backlog/e-seed-v2.html</code>.</li>
+    <li>T1: <code>install.html</code>.</li>
+    <li>Rule text: <code>skills/keel-workflow</code>, <code>skills/keel-plan</code>, the keel-router <code>commands.md</code>, their <code>.claude/skills</code> copies, and <code>templates/config.toml</code>.</li>
+    <li>T3: the plan and this report.</li>
+  </ul>
+</div>
+
+<h2 id="reviews">Reviews and rulings</h2>
+<ul data-c="reviews">
+  <li><b>Independent review r1</b> at <code>564a4a2</code> returned FIX: F1 (medium, <code>install.html</code>) and F2–F6 (low). Owner ruling A: fix F1–F5, which landed in <code>5c0ed88</code>, <code>dc8546b</code> and <code>640cb4d</code>, and record F6 (lockfile currency and yanked status cannot be checked offline) as a backlog B7 row.</li>
+  <li><b>Independent review r2</b> at <code>640cb4d</code> returned PASS. Its two low findings are recorded under <a href="#follow-ups">follow-ups</a> as N1 and N2.</li>
+  <li><b>An earlier read-only check</b> (2026-11-09) found that closing the epic does not re-judge sign-offs on WUs already merged. The exposure is a sign, merge and push done with different installed <code>keel</code> binaries.</li>
+  <li>The keel-code-review verdict on this tip lives on its <code>cr/v1</code> note, not here.</li>
+</ul>
+
+<h2 id="owner-rule">Operational rule for the owner</h2>
+<div class="callout warn" data-c="owner-rule">
+  <ol>
+    <li><b>Sign, merge and push each WU with the same installed <code>keel</code>.</b> The merge hook runs whichever <code>keel</code> is first on PATH. A note signed by a pre-W2 binary is red when a W2 binary verifies it, at <code>verify-dod wu</code>, at the WU merge hook, or at pre-push of an unpushed merge. W2 itself is signed and merged with the pre-W2 installed binary, and that is consistent.</li>
+    <li><b>After upgrading to a W2 binary, re-sign every signed WU that is not yet merged</b> with <code>keel mr confirm</code>. At this tip W7 (<code>35d2782</code>) has no <code>mr</code> note.</li>
+    <li><b>Run <code>keel hooks install</code> in any checkout where it is missing.</b> With a W2 binary, <code>preflight</code> and <code>verify-dod wu|epic</code> refuse as <code>0·hooks</code> while <code>core.hooksPath</code> is unset or foreign. A checkout with another hook manager needs <code>--force</code>, and that drops the other tool's hooks.</li>
+  </ol>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">Done. T2 is in <code>9128728</code>, corrected by <code>dc8546b</code>:</p>
+<ul data-c="distillation-list">
+  <li>UC-MR-1, UC-GATE-2 and UC-INIT-1 are amended, and UC-GATE-6 is new.</li>
+  <li>DEC-40 records the report policy and the SHA-256 sign-off hashes.</li>
+  <li>DEC-21 and DEC-22 are amended, and DEC-23 has its coexistence amendment.</li>
+  <li>Backlog B2 is absorbed, and the B7 SHA-256 row is struck.</li>
+</ul>
+<p>The rule text is in <code>7814bd9</code>, <code>564a4a2</code> and <code>640cb4d</code>, and <code>install.html</code> (T1) in <code>640cb4d</code>. The plan and this report are archived at epic close.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<ul data-item="follow-ups" data-c="follow-ups">
+  <li><b>N1 (review r2, low).</b> In <code>src/mr.rs</code>, an old-format note prints two overlapping fix lines: the cause line and the shared fix line.</li>
+  <li><b>N2 (review r2, low).</b> In <code>skills/keel-workflow/SKILL.md</code>, the §7 paragraph is re-wrapped unevenly. The fix is rule-bearing, so it needs an owner <code>keel mr commit</code>.</li>
+  <li><b>Backlog B7</b> gains the row for checking <code>Cargo.lock</code> currency and yanked status, which needs the network (review r1 F6). Native SSH signing of rule-bearing commits stays in B7.</li>
+  <li><b>Backlog R7</b> already covers the false <code>4·review-base</code> red when <code>keel mr confirm</code> or <code>verify-dod</code> gets a bare-SHA tip, so always pass <code>--target epic/E-SEED2</code>. W2 did not change it.</li>
+  <li><b>Not built</b> (in the plan's "not this WU"):
+    <ul>
+      <li>a per-level report policy;</li>
+      <li>narrowing the epic-report candidates;</li>
+      <li>chaining other tools' hooks;</li>
+      <li>SHA-256 for the <code>cr/v1</code> and <code>dod/v1</code> bindings.</li>
+    </ul></li>
+  <li><b>The decision index conflicts with W7.</b> Both WUs edit the "next free id" line and adjacent topic rows. Whichever WU merges second merges <code>epic/E-SEED2</code> into its branch, keeps both rows (<code>workflow-gates.html</code> with DEC-13 – DEC-29 and DEC-40; <code>router.html</code> with DEC-30 – DEC-37 and DEC-39, each with its added scope), sets the next free id to DEC-41, and re-gates its new tip.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
