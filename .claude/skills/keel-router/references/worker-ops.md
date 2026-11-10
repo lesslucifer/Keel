@@ -114,21 +114,63 @@ lessons K5):**
 
 ## Watch every staged owner action
 
-Under the router posture you don't run shell loops; a watch worker (headless
-where the posture is enforced, else Mode 1; cheap explicit model) runs one background `until <probe>; do sleep N; done;
-echo <EVENT>` per action (no inner `&`, no `( … ) &`, never a foreground
-`sleep`) and reports when it fires. `Monitor` is for a stream of events (it
-expires after at most 30 min and can replay handled events: re-arm, dedupe).
+Under the router posture you don't run shell loops. Git-visible owner actions
+are watched by the project's committed watch script (`<watch>`; Keel's is
+`scripts/router-watch.sh`): read-only, fixed argv, every argument validated
+(none may start with `-`), whitelisted by the guard like the launcher. In the
+same turn you stage the action, run `<watch> <kind> <args…>` from your checkout
+as a Bash command with `run_in_background: true` and `timeout: 7200000` (the
+default 30 min would kill it first), and name it in the ask
+(`Watching: commit wu/E/x from 1a2b… (3 paths)`). It checks at once (the owner
+may already have acted), then polls until the state holds, prints one event line
+plus indented detail lines, and exits 0; the exit wakes you. A watch costs no
+worker and keeps no state, so several run side by side.
 
-| Owner action | Probe succeeds when |
+| Owner action | `<watch>` kind | Event and detail lines |
+|---|---|---|
+| `keel mr commit` | `commit <branch> <old-tip> [<path>…]` | `COMMITTED branch= from= to= commits=<n> expected=<k>/<n>`; `  commit <sha> reviewed-by=<v\|none> <subject>` per commit, `  landed <A\|M\|D> <path>`, `  missing <path>`, `  unexpected <path>`. Any missing path: `COMMITTED-PARTIAL`. Old tip not an ancestor (amend, rebase): `REWRITTEN` |
+| `keel mr confirm` | `signed <tip>` | `SIGNED tip=`, then the `mr` note verbatim, indented: check identity, level and target against what you staged |
+| `git merge --no-ff` | `merged <tip> <target-branch>` | `MERGED tip= target= at= how=no-ff\|ff\|contained` (`ff` is a finding: the gate wants `--no-ff`) |
+| `git push` | `pushed <tip> <branch>` | `PUSHED tip= branch= origin=<sha>` |
+| `git push origin <tag>` | `tagged <tag> [<sha>]` | `TAGGED tag= object= commit=`; on another commit `TAGGED-MISMATCH … expected=` (never move a pushed tag: stage a new version) |
+| any, never true | — | `TIMEOUT kind= waited=<m>m` after 110 min; `UNREACHABLE kind= remote=origin error=…` after 5 failed fetches in a row |
+
+The predicates the script runs inside itself (shown for reading, not as a loop
+recipe):
+
+| Owner action | Holds when |
 |---|---|
-| signs a WU/epic (`keel mr confirm`) | `[ -n "$(git log -1 --notes=mr --format=%N <tip> 2>/dev/null)" ]` (the router may run the inner `git log` itself: whitelisted) |
-| gate green after signing | `keel verify-dod wu <tip> --target epic/<E>` (or `epic <tip>`) exits 0 (writes the `dod` receipt) |
-| commits | `[ "$(git rev-parse <branch>)" != <old tip> ]` |
-| merges | `git merge-base --is-ancestor <tip> <target>` and no `MERGE_HEAD` (`git rev-parse --path-format=absolute --git-path MERGE_HEAD`) |
-| pushes · tags | `git fetch -q origin <b> && git merge-base --is-ancestor <tip> origin/<b>` (ancestry, not equality: a `--no-ff` merge pushes a new commit; same probe as `commands.md` PUSHED) · `[ -n "$(git ls-remote --tags origin <tag>)" ]` |
-| publishes a draft | `[ "$(gh release view <tag> --json isDraft -q .isDraft)" = false ]` |
-| comments on / resolves an htmldoc doc | open count ≠ last seen (below) |
+| signs | `git log -1 --notes=mr --format=%N <tip>` is non-empty (the router may run it itself: whitelisted) |
+| commits | `git rev-parse refs/heads/<branch>` ≠ `<old tip>` |
+| merges | `git merge-base --is-ancestor <tip> refs/heads/<target>` (the target only moves once the merge commit exists) |
+| pushes · tags | `git fetch -q origin <b> && git merge-base --is-ancestor <tip> origin/<b>` (ancestry, not equality: a `--no-ff` merge pushes a new commit; same probe as `commands.md` PUSHED) · `git ls-remote --tags origin refs/tags/<tag>` lists it |
+
+**Re-arm.** On `TIMEOUT`: re-read the state (the action may have failed with no
+state change, e.g. a red gate), re-send the task in full with the likely failure,
+and arm the same command again. On a wake with no line (the command was killed):
+re-arm. On `UNREACHABLE`: tell the owner origin cannot be reached; don't re-arm
+until they answer. The heartbeat re-arms any watch lost to a restart.
+
+**What a watch cannot see**, and what you do instead:
+
+| Not observable | Instead |
+|---|---|
+| Output only in the owner's terminal (`--help`, an app tried by hand, an error text) | If a worker can reproduce it in its worktree, delegate; ask the owner only for checks bound to their environment, as one question: "paste the output of …" |
+| A `keel mr` or merge that failed (no state change) | On `TIMEOUT`, re-check and re-send with the likely failure |
+| The owner's index, untracked files, `.mr-allowed` (never read) | The `commit` kind's `missing` lines surface a partial commit after it lands |
+| Decisions and rulings | Ask: one question, options, recommendation, default |
+| GitHub settings, secrets, registry tokens | Ask the owner to confirm; a later successful run is the indirect proof |
+
+Without a watch script, a Mode 1 watch worker (cheap explicit model) runs one
+background `until <predicate>; do sleep N; done; echo <EVENT>` per action (no
+inner `&`, no `( … ) &`, never a foreground `sleep`); a headless worker's command
+checker refuses such loops, so under the launcher commit a watch script instead. `Monitor` is
+for a stream of events (it expires after at most 30 min and can replay handled
+events: re-arm, dedupe). These stay worker-run (outside the router's
+whitelist): the gate after signing (`keel verify-dod wu <tip> --target
+epic/<E>` exits 0), a draft published
+(`[ "$(gh release view <tag> --json isDraft -q .isDraft)" = false ]`), CI runs
+and htmldoc comments (below).
 
 htmldoc open-comment count (`SERVER` per the htmldoc skill, `<id>` = the doc's
 `data-htmldoc-id`; checked against a real plan doc on 2026-11-08):
