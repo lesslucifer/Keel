@@ -215,9 +215,10 @@ you used and why when it is not the standard.
 
 - **One fresh worker per phase** (plan, build, notes step, fix round, close).
   Find a way yourself before handing the owner mechanics.
-- **Pass an explicit model and effort, from the project's model policy
-  (project-router), on every spawn and every review subagent**; never inherit
-  a default (an `Agent` subagent takes only the model).
+- **Spawn every worker and review subagent with the model and effort from
+  the project's policy (project-router); the effort may be its default**.
+  Never let one inherit your session's model or effort (an `Agent` subagent
+  takes only the model).
 - Brief (you write it): worktree/branch/tip, rulings, what to read, job, hard
   rules, report protocol (`references/brief-skeleton.md`). Headless
   briefs live in the durable briefs dir; check the file exists before spawning.
