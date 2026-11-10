@@ -69,18 +69,19 @@ signing — the human is asked once, at the right moment. Notes are written on
 
 **`mr` is manual review — an agent never runs `keel mr confirm` or
 `keel mr commit`.** Stage the exact command (always `--as <id>`, and
-`--report <path>` when more than one doc carries the level's result role), print
-it, stop.
+`--report <path>` when more than one doc carries the level's result role, and
+for an epic unless its result doc is committed in the epic's diff), print it,
+stop.
 
 **The result report** is the doc whose root `data-artifact` carries the level's
 role (`wu-result`, `epic-result`; a collapsed doc counts for both), whatever its
 file name. `[mr] report` in the target's committed `.keel/config.toml` decides
 whether the sign-off must attest one: `required` (default) · `optional` ·
-`none`. `keel mr confirm` finds it — a WU's among the html docs under
-`docs.root` changed in the range; an epic's also among the untracked ones,
-`docs/.archive/` included — and refuses, writing nothing, when a required one is
-missing, when several match (it lists them: pass `--report`), or on `--report`
-under `none`.
+`none`. `keel mr confirm` finds it among the html docs under `docs.root`
+changed in the range and present at the tip — never an untracked or archived
+file — and refuses, writing nothing, when a required one is missing (pass
+`--report <path>`), when several match (it lists them: pass `--report`), or on
+`--report` under `none`.
 
 **Epic close**: merge main into the epic if it moved → distill (skill
 `distill`) → archive commit (`git rm` every T3 doc, keep the files in
@@ -88,9 +89,8 @@ under `none`.
 in `docs/.archive/` → epic test note (e2e) → `keel preflight epic <tip>` →
 epic-scope review vs main → `keel verify-dod epic <tip>` → the human runs
 `keel mr confirm epic <tip> --as <id> --report docs/.archive/<the epic-result doc>`
-→ the human merges into main and pushes. (`--report` can be left out only
-while the epic's report is the one untracked `epic-result` doc under
-`docs.root` — usually a checkout's first epic.)
+→ the human merges into main and pushes. (An epic sign-off passes
+`--report <path>` unless its result doc is committed in the epic's diff.)
 
 ## 3 · Evidence — five notes, one tip
 

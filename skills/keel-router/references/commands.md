@@ -55,8 +55,9 @@ cd $MAIN && git merge --no-ff epic/$E
 cd $MAIN && git push origin main
 ```
 `--report` is required when more than one doc carries the level's result role
-(`data-artifact="wu-result"` / `"epic-result"`); always passing the one the owner
-read is simplest. Under `[mr] report = "none"`, drop `--report` (it is refused). `git switch epic/$E` fails if
+(`data-artifact="wu-result"` / `"epic-result"`), and an epic sign-off passes
+`--report <path>` unless its result doc is committed in the epic's diff; always
+passing the one the owner read is simplest. Under `[mr] report = "none"`, drop `--report` (it is refused). `git switch epic/$E` fails if
 the epic branch is checked out in another worktree: then `EWT` is that worktree.
 Without the owner's identity in `.mr-allowed`, `keel mr` refuses before signing
 ("<id> is not listed in …/.mr-allowed").
