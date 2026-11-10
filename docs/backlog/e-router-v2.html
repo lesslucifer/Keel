@@ -55,6 +55,17 @@
       <tr><td>Test nits (waived, fix when touching the code): <code>tests/router.rs</code> e2e's <code>PATH</code> prefix for <code>git worktree add</code> is inert; <code>wired_guard</code> duplicates the spawn head of the other guard helper; the <code>wait</code> test pins the default stall-min to the range 11–16, not exactly 15 (899 s / 901 s would)</td><td>W5 and W4 reviews</td></tr>
       <tr><td><code>cargo fmt --check</code> reports drift in <code>src/gate.rs</code>, predating this epic</td><td>W1 result</td></tr>
       <tr><td>Optional live checks: break the guard wiring by hand (clone's PreToolUse command → <code>cat &gt;/dev/null</code>) and see the e2e's denials go red; watch an interactive router wake on the idle notice, after which the heartbeat can drop its per-worker <code>ps</code> check</td><td>W5, W2 results</td></tr>
+      <tr><td><b>Owner-action watch kinds beyond git</b> (follow-up to row 1): <code>scripts/router-watch.sh</code> covers commit, signed, merged, pushed and tagged only. A draft release published, a CI run finished and htmldoc comments need <code>gh release</code>/<code>gh run</code>/<code>curl</code>, outside the router's whitelist; they stay with read-only workers. Options: <code>gh</code>-backed kinds in the script with fixed argv, or keep them worker-run</td><td>E-SEED2.W12 plan, D5</td></tr>
+      <tr><td><b><code>router-watch.sh</code> test-coverage follow-ups</b> (capped by the owner's 2026-11-10 review ruling: a missing edge-case test or a harness tidy-up is a nit and does not reopen W12):
+        <ul>
+          <li>No test covers <code>pushed</code> on a branch that exists only as <code>refs/remotes/origin/&lt;b&gt;</code>.</li>
+          <li>Prepared but not run: mutants for the peeled annotated-tag commit, the 5-failure threshold, the <code>[[:cntrl:]]</code> pass of <code>clean</code>, the <code>no-ff</code> second-parent check and the <code>commits=</code> count.</li>
+          <li>When the test binary dies mid-test (a killed <code>cargo test</code>), the <code>sleep</code> shim returns at once, so the orphaned watch keeps polling until its real 110-minute <code>TIMEOUT</code>. Eleven such processes were seen after the W12 mutant sweeps. The shim could kill its caller once <code>STUB_OWNER</code> is gone.</li>
+          <li><code>Launcher::cmd</code> and the e2e and wired-guard spawns of <code>router-worker.sh</code> do not go through <code>hermetic()</code>.</li>
+          <li>On git 2.50, <code>-c remote.origin.followRemoteHEAD=never</code> on the explicit-refspec fetch makes no observable difference, so no test can pin it.</li>
+          <li>The watch's sha check accepts up to 40 hex characters, so sha256 repositories are unsupported.</li>
+          <li>In production the watch reads the user's git config (for example <code>log.showSignature</code> or <code>core.quotePath</code>); detail lines are cleaned, but output shape under such settings is untested.</li>
+        </ul></td><td>E-SEED2.W12 code-review rounds, owner ruling 2026-11-10</td></tr>
     </table>
 
     <h2 id="r8">R8 · Router↔worker messaging redesign <span class="badge approval">own epic, owner ruling 2026-11-09</span></h2>

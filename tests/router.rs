@@ -81,6 +81,28 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "claude -p hi",
         "kill 1",
         "git -c core.pager=sh log",
+        "scripts/router-watch.sh pushed 1a2b3c4 main --upload-pack=x",
+        "scripts/router-watch.sh commit -b x y",
+        "scripts/router-watch.sh commit b 1a2b3c4 ../x",
+        "X=1 scripts/router-watch.sh signed 1a2b3c4",
+        "scripts/router-watch.sh watch main",
+        "scripts/router-watch.sh signed",
+        "scripts/router-watch.sh signed $(id)",
+        // the watch word class: plain words only, never a dots-only path, a rev expression or a flag
+        "scripts/router-watch.sh merged 1a2b3c4 main+x",
+        "scripts/router-watch.sh commit a:b 1a2b3c4",
+        "scripts/router-watch.sh signed HEAD^",
+        "scripts/router-watch.sh signed HEAD~1",
+        "scripts/router-watch.sh merged 1a2b3c4 main@{1}",
+        r#"scripts/router-watch.sh signed "1a2b3c4""#,
+        "scripts/router-watch.sh signed '1a2b3c4'",
+        r"scripts/router-watch.sh signed 1a2b\3c4",
+        "scripts/router-watch.sh signed  1a2b3c4",
+        "scripts/router-watch.sh commit b 1a2b3c4 .",
+        "scripts/router-watch.sh commit b 1a2b3c4 ..",
+        "scripts/router-watch.sh commit b 1a2b3c4 ...",
+        "scripts/router-watch.sh pushed 1a2b3c4 a--output",
+        "scripts/router-watch.sh signed x=y",
     ] {
         assert!(bash(denied).is_some(), "guard allowed {denied:?}");
     }
@@ -88,6 +110,7 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
     let t = Instant::now();
     assert!(bash(&format!("rm -rf x{}y", " ".repeat(100_000))).is_some());
     assert!(t.elapsed() < Duration::from_secs(3), "guard took {:?} on a long command", t.elapsed());
+    assert!(bash("rm x").unwrap().contains("scripts/router-watch.sh commit|signed|merged|pushed|tagged"), "deny message omits the watch shape");
 
     let mut allowed = vec![
         "git log --oneline -5".to_string(),
@@ -101,17 +124,24 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "scripts/router-worker.sh resume e-x-w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b /Users/o/Keel-x .router/briefs/e-x-w1-r1.md opus --effort high".into(),
         "scripts/router-worker.sh wait e-x-w1".into(),
         "scripts/router-worker.sh wait e-x-w1 30".into(),
+        "scripts/router-watch.sh commit wu/E-SEED2/w12-owner-watch fa5a25d16d953d5858c35b58e6025a6a7903ff8b skills/keel-router/SKILL.md .claude/skills/keel-router/SKILL.md".into(),
+        "scripts/router-watch.sh signed fa5a25d16d953d5858c35b58e6025a6a7903ff8b".into(),
+        "scripts/router-watch.sh merged fa5a25d epic/E-SEED2".into(),
+        "scripts/router-watch.sh pushed fa5a25d main".into(),
+        "scripts/router-watch.sh tagged v0.2.0 fa5a25d".into(),
+        "scripts/router-watch.sh commit b fa5a25d .claude/x .a.b/c".into(),
     ];
     // permissions.allow serves workers and the router alike: every router entry is a shape the guard
     // accepts (one source of truth, no drift); every worker-only entry is one it refuses the router.
-    // `wait` is a router entry (E-SEED2.W8: the router arms it after a spawn); cargo/keel are
-    // worker-only, and these shapes stay refused whether or not settings lists them yet.
+    // `wait` (E-SEED2.W8) and `router-watch.sh` (E-SEED2.W12) are router entries; cargo/keel are
+    // worker-only, and these shapes stay refused whether or not settings lists them.
     let mut worker_only: Vec<String> =
         ["cargo test", "cargo build", "keel notes write test", "keel preflight wu HEAD", "keel check"].map(String::from).to_vec();
     for a in settings()["permissions"]["allow"].as_array().unwrap() {
         let a = a.as_str().unwrap().strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
         let cmd = match a.strip_suffix(" *") {
             Some(p) if p.ends_with(" wait") => format!("{p} n 15"),
+            Some(p) if p.ends_with("router-watch.sh") => format!("{p} signed 1a2b3c4"),
             Some(p) if p.starts_with("scripts/") => format!("{p} n /w .router/briefs/n.md opus"),
             Some(p) => format!("{p} HEAD"),
             None => a.to_string(),
@@ -260,9 +290,26 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
     assert_eq!(run(root(), empty.path().to_str().unwrap()).status.code(), Some(2), "missing jq must block");
 }
 
+/// Layered on `common::cmd` for the git W12's tests run (`git()`, the PUSHED probe, the e2e worktree
+/// add, `Watcher::cmd` and the watch under it): only the repo's own config is read, so no user or
+/// system setting (tag.gpgSign, log.showSignature, core.quotePath, ...) can change what it does, and
+/// no inherited GIT_TRACE* or GIT_DEFAULT_HASH changes its output or its repos.
+fn hermetic(c: &mut Command) -> &mut Command {
+    let set: Vec<std::ffi::OsString> = c.get_envs().map(|(k, _)| k.to_owned()).collect();
+    for k in std::env::vars_os().map(|(k, _)| k).chain(set) {
+        if k.to_string_lossy().starts_with("GIT_TRACE") || k == "GIT_DEFAULT_HASH" {
+            c.env_remove(k);
+        }
+    }
+    c.env("GIT_CONFIG_GLOBAL", "/dev/null").env("GIT_CONFIG_NOSYSTEM", "1")
+}
+
+/// Upper bound on any wait for another process; a hung script fails the test instead of hanging it.
+const BOUND: Duration = Duration::from_secs(10);
+
 fn git(d: &Path, a: &[&str]) -> Output {
-    let o = common::cmd("git")
-        .args(["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false"])
+    let o = hermetic(&mut common::cmd("git"))
+        .args(["-c", "core.hooksPath=/dev/null"])
         .args(a)
         .current_dir(d)
         .env("GIT_AUTHOR_NAME", "t")
@@ -297,6 +344,19 @@ fn stub_claude(stub: &Path) {
     std::fs::set_permissions(stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
 
+/// `wait` and `router-watch.sh` sleep once per poll; this `<base>/shim/sleep` counts the polls in
+/// $STEP_DIR/polls (its argument, one per line, in $STEP_DIR/sleeps) and blocks poll n until the test
+/// creates $STEP_DIR/go-n, so each poll judges a state the test has set. It ends with its caller or the test process.
+fn sleep_shim(base: &Path) {
+    std::fs::create_dir_all(base.join("shim")).unwrap();
+    std::fs::write(base.join("shim/sleep"), concat!(
+        "#!/bin/sh\necho \"$1\" >> \"$STEP_DIR/sleeps\"\nn=$(( $(cat \"$STEP_DIR/polls\" 2>/dev/null || echo 0) + 1 ))\n",
+        "echo \"$n\" > \"$STEP_DIR/polls.tmp\" && mv \"$STEP_DIR/polls.tmp\" \"$STEP_DIR/polls\"\n",
+        "while [ ! -e \"$STEP_DIR/go-$n\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null && kill -0 \"$PPID\" 2>/dev/null; do /bin/sleep 0.02; done\n"
+    )).unwrap();
+    std::fs::set_permissions(base.join("shim/sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+}
+
 /// A repo whose main checkout holds the launcher, two linked worktrees, a stub claude and a `sleep`
 /// shim. The stub prints its argv (joined, then each argument bracketed so boundaries are visible) and
 /// stays alive until $STUB_RELEASE exists, so the launcher's startup window never races a timer; it
@@ -322,15 +382,7 @@ fn launcher() -> Launcher {
     git(&main, &["worktree", "add", "-q", "../wt2", "-b", "w2"]);
     let stub = base.join("claude");
     stub_claude(&stub);
-    // `wait` sleeps once per poll; this shim counts the polls in $STEP_DIR/polls and blocks poll n
-    // until the test creates $STEP_DIR/go-n, so each poll judges a state the test has set
-    std::fs::create_dir_all(base.join("shim")).unwrap();
-    std::fs::write(base.join("shim/sleep"), concat!(
-        "#!/bin/sh\nn=$(( $(cat \"$STEP_DIR/polls\" 2>/dev/null || echo 0) + 1 ))\n",
-        "echo \"$n\" > \"$STEP_DIR/polls.tmp\" && mv \"$STEP_DIR/polls.tmp\" \"$STEP_DIR/polls\"\n",
-        "while [ ! -e \"$STEP_DIR/go-$n\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do /bin/sleep 0.02; done\n"
-    )).unwrap();
-    std::fs::set_permissions(base.join("shim/sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    sleep_shim(&base);
     Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub, release: base.join("release"), _d: d }
 }
 
@@ -820,7 +872,7 @@ fn pushed_probe_fires_only_after_the_merge_reaches_origin() {
     git(&main, &["commit", "-q", "--allow-empty", "-m", "epic work"]);
     let t = String::from_utf8(git(&main, &["rev-parse", "HEAD"]).stdout).unwrap().trim().to_string();
     git(&main, &["switch", "-q", "main"]);
-    let fires = || common::cmd("sh").args(["-c", probe]).env("MAIN", &main).env("T", &t).output().unwrap().status.success();
+    let fires = || hermetic(&mut common::cmd("sh")).args(["-c", probe]).env("MAIN", &main).env("T", &t).output().unwrap().status.success();
 
     assert!(!fires(), "PUSHED fired when the action was only staged");
     git(&main, &["merge", "-q", "--no-ff", "-m", "merge epic", "epic/E-X"]);
@@ -838,7 +890,7 @@ fn age(path: &Path, secs: u64) {
 fn until(what: &str, mut cond: impl FnMut() -> bool) {
     let t = Instant::now();
     while !cond() {
-        assert!(t.elapsed() < Duration::from_secs(10), "timed out waiting for {what}");
+        assert!(t.elapsed() < BOUND, "timed out waiting for {what}");
         std::thread::sleep(Duration::from_millis(10));
     }
 }
@@ -868,28 +920,48 @@ impl Stepped {
                 std::io::Read::read_to_string(self.child.stdout.as_mut().unwrap(), &mut out).unwrap();
                 panic!("wait returned before poll {n}: {out}");
             }
-            assert!(t.elapsed() < Duration::from_secs(10), "wait never reached poll {n}");
+            assert!(t.elapsed() < BOUND, "wait never reached poll {n}");
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+
 
     fn go(&self, n: u32) {
         std::fs::write(self.dir.join(format!("go-{n}")), "").unwrap();
     }
 
     /// The one line `wait` prints once released from its last poll.
-    fn line(mut self) -> String {
-        let t = Instant::now();
-        while self.child.try_wait().unwrap().is_none() {
-            if t.elapsed() > Duration::from_secs(10) {
-                self.child.kill().unwrap();
-                panic!("wait never returned");
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        let o = self.child.wait_with_output().unwrap();
+    fn line(self) -> String {
+        let o = self.output();
         assert!(o.status.success(), "{o:?}");
         String::from_utf8(o.stdout).unwrap()
+    }
+
+    /// Everything the process left once released from its last poll; panics after BOUND.
+    fn output(mut self) -> Output {
+        let t = Instant::now();
+        while self.child.try_wait().unwrap().is_none() {
+            assert!(t.elapsed() < BOUND, "wait never returned");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let read = |p: Option<&mut dyn std::io::Read>| {
+            let mut b = Vec::new();
+            if let Some(p) = p {
+                p.read_to_end(&mut b).unwrap();
+            }
+            b
+        };
+        let stdout = read(self.child.stdout.as_mut().map(|p| p as &mut dyn std::io::Read));
+        let stderr = read(self.child.stderr.as_mut().map(|p| p as &mut dyn std::io::Read));
+        Output { status: self.child.wait().unwrap(), stdout, stderr }
+    }
+}
+
+/// However a test ends, its watch (or `wait`) and the `sleep` shim under it end with it.
+impl Drop for Stepped {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -1060,7 +1132,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     // W3: the worktree the worker will run in is created through keel's post-checkout hook
     let wt = base.join("wt");
     let path = format!("{}:{}", keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
-    let o = common::cmd("git").args(["worktree", "add", "-q", "-b", "wu/x/e2e", wt.to_str().unwrap()]).current_dir(&c).env("PATH", &path).output().unwrap();
+    let o = hermetic(&mut common::cmd("git")).args(["worktree", "add", "-q", "-b", "wu/x/e2e", wt.to_str().unwrap()]).current_dir(&c).env("PATH", &path).output().unwrap();
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     assert_eq!(std::fs::read_to_string(wt.join(".mr-allowed")).ok().as_deref(), Some("username: owner\n"), "worktree not seeded");
 
@@ -1136,4 +1208,530 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     assert_eq!(option(&a, "--effort"), "high");
     assert_eq!(option(&a, "-n"), name);
     assert_eq!(option(&a, "--session-id"), sid);
+}
+
+/// A checkout holding scripts/router-watch.sh, cloned from a bare `origin.git` file remote (no
+/// network), plus the stepped `sleep` shim and a `date` shim that prints $STEP_DIR/now when it exists.
+struct Watcher {
+    _d: TempDir,
+    base: PathBuf,
+    main: PathBuf,
+}
+
+fn watcher() -> Watcher {
+    let d = TempDir::new().unwrap();
+    let base = d.path().canonicalize().unwrap();
+    let (origin, main) = (base.join("origin.git"), base.join("main"));
+    git(&base, &["init", "-q", "--bare", "-b", "main", origin.to_str().unwrap()]);
+    git(&base, &["clone", "-q", origin.to_str().unwrap(), main.to_str().unwrap()]);
+    std::fs::create_dir_all(main.join("scripts")).unwrap();
+    std::fs::copy(root().join("scripts/router-watch.sh"), main.join("scripts/router-watch.sh")).unwrap();
+    git(&main, &["add", "."]);
+    git(&main, &["commit", "-qm", "base"]);
+    git(&main, &["push", "-q", "origin", "main"]);
+    sleep_shim(&base);
+    std::fs::write(base.join("shim/date"), "#!/bin/sh\n[ -e \"$STEP_DIR/now\" ] && exec cat \"$STEP_DIR/now\"\nexec /bin/date \"$@\"\n").unwrap();
+    std::fs::set_permissions(base.join("shim/date"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    Watcher { _d: d, base, main }
+}
+
+impl Watcher {
+    fn sha(&self, rev: &str) -> String {
+        String::from_utf8(git(&self.main, &["rev-parse", rev]).stdout).unwrap().trim().to_string()
+    }
+
+    /// Write each file (content = msg) on the current branch and commit them; returns the new tip.
+    fn commit(&self, files: &[&str], msg: &str) -> String {
+        for f in files {
+            std::fs::write(self.main.join(f), msg).unwrap();
+            git(&self.main, &["add", f]);
+        }
+        git(&self.main, &["commit", "-qm", msg]);
+        self.sha("HEAD")
+    }
+
+    /// `scripts/router-watch.sh <args>` as the router runs it, its polls stepped through steps-<k>/;
+    /// an exported ROUTER_WATCH_POLL or ROUTER_WATCH_MAX never reaches it, only `env` sets them.
+    fn cmd(&self, args: &[&str], k: &str, env: &[(&str, &str)]) -> (Command, PathBuf) {
+        let dir = self.base.join(format!("steps-{k}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut c = common::cmd("scripts/router-watch.sh");
+        hermetic(&mut c)
+            .args(args)
+            .current_dir(&self.main)
+            .env("PATH", format!("{}:{}", self.base.join("shim").display(), std::env::var("PATH").unwrap()))
+            .env("STEP_DIR", &dir)
+            .env("STUB_OWNER", std::process::id().to_string())
+            .env_remove("ROUTER_WATCH_POLL")
+            .env_remove("ROUTER_WATCH_MAX")
+            .envs(env.iter().copied());
+        (c, dir)
+    }
+
+    fn armed(&self, args: &[&str], k: &str) -> Stepped {
+        self.armed_env(args, k, &[])
+    }
+
+    fn armed_env(&self, args: &[&str], k: &str, env: &[(&str, &str)]) -> Stepped {
+        let (mut c, dir) = self.cmd(args, k, env);
+        Stepped { child: c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap(), dir }
+    }
+
+    /// A `git` on $PATH (with the `sleep` shim) ahead of the real one that logs each call to <base>/spy.log and, when
+    /// $GIT_SPY_FAIL is 1, fails every fetch: returns that PATH and the log.
+    fn spy(&self) -> (String, PathBuf) {
+        let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
+        let dir = self.base.join("spy");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("git"), format!(
+            "#!/bin/sh\necho \"$*\" >> \"$GIT_SPY_LOG\"\ncase \"$GIT_SPY_FAIL $*\" in 1*\" fetch \"*) printf 'fatal: spy refuses fetch\\nspy: last\\377line\\n' >&2; exit 128;; esac\nexec {} \"$@\"\n",
+            real.trim()
+        )).unwrap();
+        std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        (format!("{}:{}:{}", dir.display(), self.base.join("shim").display(), std::env::var("PATH").unwrap()), self.base.join("spy.log"))
+    }
+
+    /// One run to its end with polls 1..=go pre-released: (exit code, stdout, stderr, polls taken).
+    /// A run still going after BOUND (it polled past `go`) is killed and fails the test.
+    fn run(&self, args: &[&str], k: &str, go: u32, env: &[(&str, &str)]) -> (Option<i32>, String, String, u32) {
+        let s = self.armed_env(args, k, env);
+        for n in 1..=go {
+            s.go(n);
+        }
+        let dir = s.dir.clone();
+        let o = s.output();
+        let polls = std::fs::read_to_string(dir.join("polls")).map_or(0, |s| s.trim().parse().unwrap());
+        (o.status.code(), String::from_utf8(o.stdout).unwrap(), String::from_utf8(o.stderr).unwrap(), polls)
+    }
+}
+
+/// E-SEED2.W12 review r3: git under a test ignores whatever global or system config the environment
+/// points at, so a user's tag.gpgSign (or any other setting) cannot change a test's outcome.
+#[test]
+fn hermetic_git_ignores_global_and_system_config() {
+    let d = TempDir::new().unwrap();
+    let hostile = d.path().join("gitconfig");
+    std::fs::write(&hostile, "[tag]\n\tgpgSign = true\n").unwrap();
+    let mut c = common::cmd("git");
+    c.args(["config", "--list", "--show-origin"]).current_dir(d.path()).env("GIT_CONFIG_GLOBAL", &hostile).env("GIT_CONFIG_SYSTEM", &hostile).env("GIT_TRACE", "1");
+    let o = hermetic(&mut c).output().unwrap();
+    let list = String::from_utf8(o.stdout).unwrap();
+    assert!(o.status.success() && !list.contains("gpgsign"), "{list}");
+    assert_eq!(String::from_utf8(o.stderr).unwrap(), "", "a GIT_TRACE* variable reached git");
+    let mut c = common::cmd("git");
+    c.args(["init", "-q", "r"]).current_dir(d.path()).env("GIT_DEFAULT_HASH", "sha256");
+    assert!(hermetic(&mut c).status().unwrap().success());
+    let f = hermetic(&mut common::cmd("git")).args(["rev-parse", "--show-object-format"]).current_dir(d.path().join("r")).output().unwrap();
+    assert_eq!(String::from_utf8(f.stdout).unwrap(), "sha1\n", "GIT_DEFAULT_HASH reached git init");
+}
+
+/// E-SEED2.W12: every argument router-watch.sh cannot validate is refused with exit 2 before its
+/// first poll; no git option can ride in on a leading `-`.
+#[test]
+fn watch_refuses_bad_arguments_before_any_poll() {
+    let w = watcher();
+    let t = w.sha("HEAD");
+    let tree = w.sha("HEAD^{tree}");
+    for (args, why) in [
+        (vec![], "kind"),
+        (vec!["watch", "main"], "kind"),
+        (vec!["signed"], "signed <tip>"),
+        (vec!["signed", &t, "x"], "signed <tip>"),
+        (vec!["merged", &t], "merged <tip> <target>"),
+        (vec!["merged", &t, "main", "x"], "merged <tip> <target>"),
+        (vec!["pushed", &t, "main", "x"], "pushed <tip> <branch>"),
+        (vec!["pushed", &t], "pushed <tip> <branch>"),
+        (vec!["tagged"], "tagged <tag> [<sha>]"),
+        (vec!["tagged", "v1", &t, "x"], "tagged <tag> [<sha>]"),
+        (vec!["commit", "main"], "commit <branch> <old-tip>"),
+        (vec!["pushed", &t, "--upload-pack=touch x"], "may not start with -"),
+        (vec!["commit", "-b", &t], "may not start with -"),
+        (vec!["commit", "main", &t, "-x"], "may not start with -"),
+        (vec!["commit", "no/such", &t], "no branch"),
+        (vec!["commit", "a..b", &t], "no branch"),
+        (vec!["merged", &t, "nope"], "no branch"),
+        (vec!["pushed", &t, "nope"], "no branch"),
+        (vec!["tagged", "v1..2"], "bad tag"),
+        (vec!["signed", "deadbeef"], "not a commit"),
+        (vec!["signed", "HEAD"], "not a commit"),
+        (vec!["signed", "abc"], "not a commit"),
+        (vec!["signed", &tree], "not a commit"),
+        (vec!["tagged", "v1", "deadbeef"], "not a commit"),
+        (vec!["commit", "main", &t, "../x"], "bad path"),
+        (vec!["commit", "main", &t, "a/../b"], "bad path"),
+        (vec!["commit", "main", &t, "/etc/hosts"], "bad path"),
+    ] {
+        let (code, out, err, polls) = w.run(&args, "refuse", 0, &[]);
+        assert!(
+            code == Some(2) && out.is_empty() && err.starts_with("router-watch: ") && err.contains(why),
+            "{args:?} not refused for {why}: {code:?} {out} {err}"
+        );
+        assert_eq!(polls, 0, "{args:?} polled before refusing");
+    }
+    let huge = "99999999999999999999";
+    for (k, v) in [("ROUTER_WATCH_POLL", "x"), ("ROUTER_WATCH_POLL", "0"), ("ROUTER_WATCH_POLL", "1.5"), ("ROUTER_WATCH_POLL", "-1"), ("ROUTER_WATCH_POLL", huge), ("ROUTER_WATCH_MAX", "x"), ("ROUTER_WATCH_MAX", " 5"), ("ROUTER_WATCH_MAX", "1e3"), ("ROUTER_WATCH_MAX", huge)] {
+        let (code, out, err, polls) = w.run(&["signed", &t], "knob", 0, &[(k, v)]);
+        assert!(code == Some(2) && out.is_empty() && err.contains(k) && polls == 0, "{k}={v:?} not refused: {code:?} {out} {err}");
+    }
+}
+
+/// E-SEED2.W12: `commit` fires when the branch moves and reports each commit with its Reviewed-By,
+/// every landed path, and the staged paths that are missing or unexpected; a rewritten branch is
+/// REWRITTEN.
+#[test]
+fn watch_commit_reports_what_landed_against_what_was_staged() {
+    let w = watcher();
+    let old = w.sha("HEAD");
+    let mut s = w.armed(&["commit", "main", &old, "a", "b"], "partial");
+    s.at(1);
+    s.go(1);
+    s.at(2);
+    let a = w.commit(&["a"], "docs: a\n\nReviewed-By: username vuluu");
+    s.go(2);
+    assert_eq!(
+        s.line(),
+        format!("COMMITTED-PARTIAL branch=main from={old} to={a} commits=1 expected=1/2\n  commit {a} reviewed-by=username vuluu docs: a\n  landed A a\n  missing b\n")
+    );
+
+    // already true when armed: fires on the first check, before any poll
+    let c = w.commit(&["c"], "c");
+    let d = w.commit(&["d", "a"], "d");
+    let (code, out, _, polls) = w.run(&["commit", "main", &old, "a", "c"], "already", 0, &[]);
+    assert_eq!((code, polls), (Some(0), 0));
+    assert_eq!(
+        out,
+        format!(
+            "COMMITTED branch=main from={old} to={d} commits=3 expected=2/2\n  commit {a} reviewed-by=username vuluu docs: a\n  commit {c} reviewed-by=none c\n  commit {d} reviewed-by=none d\n  landed A a\n  landed A c\n  landed A d\n  unexpected d\n"
+        )
+    );
+    let (_, out, _, _) = w.run(&["commit", "main", &c], "nopaths", 0, &[]);
+    assert_eq!(out, format!("COMMITTED branch=main from={c} to={d} commits=1 expected=0/0\n  commit {d} reviewed-by=none d\n  landed M a\n  landed A d\n"));
+
+    let mut s = w.armed(&["commit", "main", &d], "rewritten");
+    s.at(1);
+    git(&w.main, &["commit", "-q", "--amend", "-m", "d2"]);
+    s.go(1);
+    let d2 = w.sha("HEAD");
+    assert_eq!(s.line(), format!("REWRITTEN branch=main from={d} to={d2}\n"));
+
+    // a folded trailer is one value; control characters in commit text never reach the router raw
+    let f = w.commit(&["f"], "f \x1b[2Jx\ry\n\nReviewed-By: username\n vuluu\x07");
+    let (_, out, _, _) = w.run(&["commit", "main", &d2], "folded", 0, &[]);
+    assert_eq!(out, format!("COMMITTED branch=main from={d2} to={f} commits=1 expected=0/0\n  commit {f} reviewed-by=username vuluu? f ?[2Jx?y\n  landed A f\n"));
+
+    // a net-empty range with staged paths: every path missing, no stray line
+    let e = w.commit(&["e"], "e");
+    git(&w.main, &["rm", "-q", "e"]);
+    git(&w.main, &["commit", "-qm", "drop e"]);
+    let de = w.sha("HEAD");
+    let (_, out, _, _) = w.run(&["commit", "main", &f, "e"], "empty", 0, &[]);
+    assert_eq!(out, format!("COMMITTED-PARTIAL branch=main from={f} to={de} commits=2 expected=0/1\n  commit {e} reviewed-by=none e\n  commit {de} reviewed-by=none drop e\n  missing e\n"));
+
+    // a branch deleted mid-watch is DELETED, not a rewrite
+    git(&w.main, &["branch", "wu/gone"]);
+    let g = w.sha("wu/gone");
+    let mut s = w.armed(&["commit", "wu/gone", &g], "deleted");
+    s.at(1);
+    git(&w.main, &["branch", "-q", "-D", "wu/gone"]);
+    s.go(1);
+    assert_eq!(s.line(), format!("DELETED branch=wu/gone from={g}\n"));
+
+    // review r4: a hostile file name never reaches the router raw, even under core.quotePath=false
+    git(&w.main, &["config", "core.quotePath", "false"]);
+    let h = w.sha("HEAD");
+    let hh = w.commit(&["e\u{202e}v\u{2028}l\u{9b}"], "h");
+    let (_, out, _, _) = w.run(&["commit", "main", &h, "x\x1b[2J"], "hostile-path", 0, &[]);
+    assert_eq!(out, format!("COMMITTED-PARTIAL branch=main from={h} to={hh} commits=1 expected=0/1\n  commit {hh} reviewed-by=none h\n  landed A e?v?l?\n  missing x?[2J\n  unexpected e?v?l?\n"));
+}
+
+/// E-SEED2.W12: `signed` fires on the mr note and prints its payload; `merged` fires once the tip is in
+/// the target and says how it got there.
+#[test]
+fn watch_signed_and_merged_report_the_note_and_how_the_tip_landed() {
+    let w = watcher();
+    let t = w.sha("HEAD");
+    git(&w.main, &["notes", "--ref=test", "add", "-m", "test/v1", &t]);
+    let mut s = w.armed(&["signed", &t], "signed");
+    s.at(1);
+    git(&w.main, &["notes", "--ref=mr", "add", "-m", "level: wu\nby: vu\rluu\x1b]0;x\x07\x7f\nu: \u{7e}\u{80}\u{9b}\u{9f}\u{a0}\u{e9}|\u{2027}\u{2028}\u{2029}\u{202e}\u{202f}|\u{2065}\u{2066}\u{2069}\u{206a}", &t]);
+    s.go(1);
+    assert_eq!(s.line(), format!("SIGNED tip={t}\n  level: wu\n  by: vu?luu?]0;x??\n  u: ~???\u{a0}\u{e9}|\u{2027}???\u{202f}|\u{2065}??\u{206a}\n"));
+
+    // review r8: a note with an invalid UTF-8 byte, under the router's UTF-8 locale: one SIGNED, exit 0
+    let u = w.commit(&["u"], "u");
+    let note = w.base.join("bad-note");
+    std::fs::write(&note, b"by: a\xffb\n").unwrap();
+    git(&w.main, &["notes", "--ref=mr", "add", "-F", note.to_str().unwrap(), &u]);
+    let o = w.armed_env(&["signed", &u], "bad-byte", &[("LC_ALL", "en_US.UTF-8")]).output();
+    assert_eq!((o.status.code(), o.stdout), (Some(0), [format!("SIGNED tip={u}\n").as_bytes(), b"  by: a\xffb\n"].concat()));
+
+    git(&w.main, &["switch", "-q", "-c", "wu/x"]);
+    let x = w.commit(&["x"], "x");
+    git(&w.main, &["switch", "-q", "main"]);
+    let mut s = w.armed(&["merged", &x, "main"], "noff");
+    s.at(1);
+    git(&w.main, &["merge", "-q", "--no-ff", "-m", "merge x", "wu/x"]);
+    s.go(1);
+    assert_eq!(s.line(), format!("MERGED tip={x} target=main at={} how=no-ff\n", w.sha("main")));
+
+    git(&w.main, &["switch", "-q", "-c", "wu/y"]);
+    let y = w.commit(&["y"], "y");
+    git(&w.main, &["switch", "-q", "main"]);
+    git(&w.main, &["merge", "-q", "--ff-only", "wu/y"]);
+    let (_, out, _, polls) = w.run(&["merged", &y[..7], "main"], "ff", 0, &[]);
+    assert_eq!((out, polls), (format!("MERGED tip={y} target=main at={y} how=ff\n"), 0));
+
+    git(&w.main, &["switch", "-q", "-c", "wu/z"]);
+    let z = w.commit(&["z"], "z");
+    git(&w.main, &["switch", "-q", "-c", "wu/z2"]);
+    w.commit(&["z2"], "z2");
+    git(&w.main, &["switch", "-q", "main"]);
+    git(&w.main, &["merge", "-q", "--no-ff", "-m", "merge z2", "wu/z2"]);
+    let (_, out, _, _) = w.run(&["merged", &z, "main"], "contained", 0, &[]);
+    assert_eq!(out, format!("MERGED tip={z} target=main at={} how=contained\n", w.sha("main")));
+
+    // review r3 (owner ruling V1-A): a target deleted mid-watch ends the watch at once, quietly
+    git(&w.main, &["branch", "epic/gone"]);
+    git(&w.main, &["switch", "-q", "-c", "wu/v"]);
+    let v = w.commit(&["v"], "v");
+    git(&w.main, &["switch", "-q", "main"]);
+    let mut s = w.armed(&["merged", &v, "epic/gone"], "target-deleted");
+    s.at(1);
+    git(&w.main, &["branch", "-q", "-D", "epic/gone"]);
+    s.go(1);
+    let dir = s.dir.clone();
+    let o = s.output();
+    assert_eq!((o.status.code(), String::from_utf8(o.stdout).unwrap(), String::from_utf8(o.stderr).unwrap()), (Some(0), "DELETED target=epic/gone\n".into(), String::new()));
+    assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "1");
+}
+
+/// E-SEED2.W12 review r1: a branch that exists only locally is "not pushed yet", never a network
+/// failure; the watch keeps polling past 5 attempts and fires PUSHED after the first push.
+#[test]
+fn watch_pushed_waits_on_a_local_only_branch_without_reporting_unreachable() {
+    let w = watcher();
+    git(&w.main, &["switch", "-q", "-c", "wu/local"]);
+    let t = w.commit(&["l"], "l");
+    let mut s = w.armed(&["pushed", &t, "wu/local"], "local-only");
+    s.at(1);
+    for n in 1..=5 {
+        s.go(n);
+        s.at(n + 1);
+    }
+    git(&w.main, &["push", "-q", "origin", "wu/local"]);
+    s.go(6);
+    let dir = s.dir.clone();
+    assert_eq!(s.line(), format!("PUSHED tip={t} branch=wu/local origin={t}\n"));
+    assert_eq!(std::fs::read_to_string(dir.join("sleeps")).unwrap(), "60\n".repeat(6), "pushed polls every 60 s by default");
+}
+
+/// The test harness itself: a watch that polls more than the test released fails the test in
+/// bounded time instead of hanging `cargo test`, and leaves no `sleep` shim behind.
+#[test]
+fn watcher_run_is_bounded_when_the_watch_outpolls_its_releases() {
+    let w = watcher();
+    let t = w.sha("HEAD");
+    let msg = |e: Box<dyn std::any::Any + Send>| e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|m| m.to_string())).unwrap();
+    let e = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.run(&["signed", &t], "unreleased", 0, &[]))).unwrap_err();
+    assert!(msg(e).contains("never returned"));
+    let mut at = w.armed(&["signed", &t], "unreleased-at");
+    let out = w.armed(&["signed", &t], "unreleased-output");
+    std::thread::scope(|sc| {
+        let a = sc.spawn(|| std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| at.at(2))).unwrap_err());
+        let o = sc.spawn(|| std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| out.output())).unwrap_err());
+        assert!(msg(a.join().unwrap()).contains("never reached poll 2"));
+        assert!(msg(o.join().unwrap()).contains("never returned"));
+    });
+    drop(at);
+    let shim = w.base.join("shim/sleep");
+    let shim = shim.to_str().unwrap();
+    until("the sleep shim to exit", || {
+        let o = Command::new("ps").args(["-A", "-o", "command="]).output().unwrap();
+        !String::from_utf8_lossy(&o.stdout).contains(shim)
+    });
+}
+
+/// E-SEED2.W12: `pushed` fires only once origin holds the tip (not on the local merge); `tagged` fires
+/// once origin lists the tag and flags a tag on another commit.
+#[test]
+fn watch_pushed_and_tagged_fire_on_origin_only() {
+    let w = watcher();
+    let base = w.sha("HEAD");
+    git(&w.main, &["switch", "-q", "-c", "wu/p"]);
+    let t = w.commit(&["p"], "p");
+    git(&w.main, &["switch", "-q", "main"]);
+    let mut s = w.armed(&["pushed", &t, "main"], "pushed");
+    s.at(1);
+    git(&w.main, &["merge", "-q", "--no-ff", "-m", "merge p", "wu/p"]);
+    s.go(1);
+    s.at(2);
+    git(&w.main, &["push", "-q", "origin", "main"]);
+    s.go(2);
+    assert_eq!(s.line(), format!("PUSHED tip={t} branch=main origin={}\n", w.sha("main")));
+
+    // the fetch writes refs/remotes/origin/<b> and nothing else: no auto-followed tag, no FETCH_HEAD
+    let other = w.base.join("other");
+    git(&w.base, &["clone", "-q", w.base.join("origin.git").to_str().unwrap(), other.to_str().unwrap()]);
+    git(&other, &["commit", "-q", "--allow-empty", "-m", "o"]);
+    git(&other, &["tag", "-a", "vo", "-m", "vo"]);
+    git(&other, &["push", "-q", "origin", "main", "vo"]);
+    let o = String::from_utf8(git(&other, &["rev-parse", "HEAD"]).stdout).unwrap().trim().to_string();
+    let m = w.sha("main");
+    let refs = || String::from_utf8(git(&w.main, &["for-each-ref", "--format=%(refname) %(objectname)"]).stdout).unwrap();
+    git(&w.main, &["update-ref", "-d", "refs/remotes/origin/HEAD"]);
+    git(&w.main, &["config", "remote.origin.followRemoteHEAD", "always"]);
+    let before = refs();
+    let (_, out, _, _) = w.run(&["pushed", &m, "main"], "only-ref", 0, &[]);
+    assert_eq!(out, format!("PUSHED tip={m} branch=main origin={o}\n"));
+    let after = refs();
+    let changed: Vec<&str> = after.lines().filter(|l| !before.lines().any(|b| b == *l)).collect();
+    assert_eq!(changed, [format!("refs/remotes/origin/main {o}")], "pushed wrote more than its ref:\n{after}");
+    let gitdir = w.main.join(".git");
+    assert!(!gitdir.join("FETCH_HEAD").exists(), "pushed wrote FETCH_HEAD");
+
+    // origin/<b> already at origin's tip: no fetch
+    let (path, log) = w.spy();
+    let (_, out, _, _) = w.run(&["pushed", &m, "main"], "no-fetch", 0, &[("PATH", &path), ("GIT_SPY_LOG", log.to_str().unwrap())]);
+    assert_eq!(out, format!("PUSHED tip={m} branch=main origin={o}\n"));
+    let calls = std::fs::read_to_string(&log).unwrap();
+    assert!(calls.contains("ls-remote") && !calls.contains("fetch"), "{calls}");
+
+    let mut s = w.armed(&["tagged", "v1", &t], "tagged");
+    s.at(1);
+    git(&w.main, &["tag", "-a", "v1", "-m", "v1", &t]);
+    s.go(1);
+    s.at(2);
+    git(&w.main, &["push", "-q", "origin", "v1"]);
+    s.go(2);
+    let dir = s.dir.clone();
+    assert_eq!(s.line(), format!("TAGGED tag=v1 object={} commit={t}\n", w.sha("v1")));
+    assert_eq!(std::fs::read_to_string(dir.join("sleeps")).unwrap(), "60\n60\n", "tagged polls every 60 s by default");
+
+    git(&w.main, &["tag", "v2", &base]);
+    git(&w.main, &["push", "-q", "origin", "v2"]);
+    let (_, out, _, _) = w.run(&["tagged", "v2", &t], "mismatch", 0, &[]);
+    assert_eq!(out, format!("TAGGED-MISMATCH tag=v2 object={base} commit={base} expected={t}\n"));
+    let (_, out, _, _) = w.run(&["tagged", "v2"], "no-sha", 0, &[]);
+    assert_eq!(out, format!("TAGGED tag=v2 object={base} commit={base}\n"), "with no sha any commit is TAGGED");
+}
+
+/// E-SEED2.W12: past its deadline the watch prints TIMEOUT; a network kind gives up after 5 failed
+/// attempts in a row with UNREACHABLE and the last error in plain words.
+#[test]
+fn watch_times_out_and_reports_an_unreachable_origin() {
+    let w = watcher();
+    let t = w.sha("HEAD");
+    let (code, out, _, polls) = w.run(&["signed", &t], "timeout", 0, &[("ROUTER_WATCH_MAX", "0")]);
+    assert_eq!((code, out.as_str(), polls), (Some(0), "TIMEOUT kind=signed waited=0m\n", 0));
+
+    git(&w.main, &["remote", "set-url", "origin", w.base.join("missing.git").to_str().unwrap()]);
+    for (args, k) in [(vec!["pushed", t.as_str(), "main"], "pushed"), (vec!["tagged", "v1"], "tagged")] {
+        let (code, out, _, polls) = w.run(&args, &format!("unreachable-{k}"), 4, &[]);
+        let err = out.strip_prefix(&format!("UNREACHABLE kind={k} remote=origin error=")).unwrap_or_else(|| panic!("{out}"));
+        assert!(code == Some(0) && out.lines().count() == 1 && err.trim().len() > 1, "{out}");
+        assert!(err.trim_end().chars().all(|c| c.is_ascii_alphanumeric() || " ._/:=@%,+^~-".contains(c)), "{out}");
+        assert_eq!(polls, 4, "{k}: 5 attempts, 4 polls between them");
+    }
+
+    // a success resets the count: 4 failures, 1 success, then 5 more failures before UNREACHABLE
+    git(&w.main, &["commit", "-q", "--allow-empty", "-m", "local only"]);
+    let local = w.sha("HEAD");
+    let mut s = w.armed(&["pushed", &local, "main"], "reset");
+    for n in 1..=3 {
+        s.go(n);
+    }
+    s.at(4);
+    git(&w.main, &["remote", "set-url", "origin", w.base.join("origin.git").to_str().unwrap()]);
+    s.go(4);
+    s.at(5);
+    git(&w.main, &["remote", "set-url", "origin", w.base.join("missing.git").to_str().unwrap()]);
+    for n in 5..=9 {
+        s.go(n);
+    }
+    let dir = s.dir.clone();
+    let out = s.line();
+    assert!(out.starts_with("UNREACHABLE kind=pushed "), "{out}");
+    assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "9", "the count did not reset on success");
+
+    // review r3: a poll whose ls-remote works but whose fetch fails is a failed attempt; a poll that
+    // finds the branch missing on origin is a good one and resets the count
+    git(&w.main, &["remote", "set-url", "origin", w.base.join("origin.git").to_str().unwrap()]);
+    git(&w.main, &["push", "-q", "origin", "main"]);
+    let tip = w.sha("main");
+    let other = w.base.join("other-f");
+    git(&w.base, &["clone", "-q", w.base.join("origin.git").to_str().unwrap(), other.to_str().unwrap()]);
+    git(&other, &["commit", "-q", "--allow-empty", "-m", "ahead"]);
+    git(&other, &["push", "-q", "origin", "HEAD:refs/heads/wu/f"]);
+    git(&w.main, &["fetch", "-q", "origin", "wu/f"]);
+    git(&other, &["commit", "-q", "--allow-empty", "-m", "ahead2"]);
+    git(&other, &["push", "-q", "origin", "HEAD:refs/heads/wu/f"]);
+    let (path, log) = w.spy();
+    let env = [("PATH", path.as_str()), ("GIT_SPY_LOG", log.to_str().unwrap()), ("GIT_SPY_FAIL", "1"), ("LC_ALL", "en_US.UTF-8")];
+    let mut s = w.armed_env(&["pushed", &tip, "wu/f"], "fetch-fails", &env);
+    for n in 1..=3 {
+        s.go(n);
+    }
+    s.at(4);
+    git(&other, &["push", "-q", "origin", "--delete", "wu/f"]);
+    s.go(4);
+    s.at(5);
+    git(&other, &["push", "-q", "origin", "HEAD:refs/heads/wu/f"]);
+    for n in 5..=9 {
+        s.go(n);
+    }
+    let dir = s.dir.clone();
+    let out = s.line();
+    assert_eq!(out, "UNREACHABLE kind=pushed remote=origin error=spy: last line\n", "the error is git's whole last line, an invalid byte as a space");
+    let calls = std::fs::read_to_string(&log).unwrap();
+    let fetches: Vec<&str> = calls.lines().filter(|l| l.contains(" fetch ")).collect();
+    assert!(!fetches.is_empty() && fetches.iter().all(|l| ["--no-tags", "--no-write-fetch-head", "--no-auto-maintenance", "--no-recurse-submodules"].iter().all(|f| l.contains(f))), "{fetches:?}");
+    let network: Vec<&str> = calls.lines().filter(|l| l.contains(" fetch ") || l.contains(" ls-remote ")).collect();
+    assert!(network.iter().any(|l| l.contains(" ls-remote ")), "{calls}");
+    assert!(network.iter().all(|l| l.contains("-c http.lowSpeedLimit=1 -c http.lowSpeedTime=120 ")), "a network call without the http stall bound: {network:?}");
+    assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "9", "a missing branch did not reset the count");
+
+    // review r5: tagged resets its count on a good ls-remote too (the tag is not there yet)
+    let (good, bad) = (w.base.join("origin.git"), w.base.join("missing.git"));
+    git(&w.main, &["remote", "set-url", "origin", bad.to_str().unwrap()]);
+    let mut s = w.armed(&["tagged", "v9"], "tagged-reset");
+    for n in 1..=3 {
+        s.go(n);
+    }
+    s.at(4);
+    git(&w.main, &["remote", "set-url", "origin", good.to_str().unwrap()]);
+    s.go(4);
+    s.at(5);
+    git(&w.main, &["remote", "set-url", "origin", bad.to_str().unwrap()]);
+    for n in 5..=9 {
+        s.go(n);
+    }
+    let dir = s.dir.clone();
+    let out = s.line();
+    assert!(out.starts_with("UNREACHABLE kind=tagged "), "{out}");
+    assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "9", "tagged did not reset the count on success");
+}
+
+/// E-SEED2.W12 review r5: by default a watch polls every 15 s and gives up with TIMEOUT once 6600 s
+/// (110 min) have passed, reported in whole minutes; the clock is the `date` shim.
+#[test]
+fn watch_polls_at_its_default_pace_and_times_out_in_minutes() {
+    let w = watcher();
+    let t = w.sha("HEAD");
+    let dir = w.base.join("steps-pace");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("now"), "1000").unwrap();
+    let mut s = w.armed(&["signed", &t], "pace");
+    s.at(1);
+    std::fs::write(dir.join("now"), "7599").unwrap();
+    s.go(1);
+    s.at(2);
+    std::fs::write(dir.join("now"), "7600").unwrap();
+    s.go(2);
+    assert_eq!(s.line(), "TIMEOUT kind=signed waited=110m\n");
+    assert_eq!(std::fs::read_to_string(dir.join("sleeps")).unwrap(), "15\n15\n");
+
+    // the defaults hold whatever the test process exported: the knobs reach the watch only via `env`
+    let (c, _) = w.cmd(&["signed", &t], "knobs", &[]);
+    let removed: Vec<&std::ffi::OsStr> = c.get_envs().filter(|(_, v)| v.is_none()).map(|(k, _)| k).collect();
+    assert!(["ROUTER_WATCH_POLL", "ROUTER_WATCH_MAX"].iter().all(|k| removed.contains(&std::ffi::OsStr::new(k))), "{removed:?}");
 }

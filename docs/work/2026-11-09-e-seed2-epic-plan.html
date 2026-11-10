@@ -68,9 +68,10 @@ flowchart LR
   W7[W7 opus worker policy]
   W8[W8 worker watchdog - done] --> W10[W10 sync main]
   W1 --> W11[W11 release hardening]
+  W12[W12 owner-action watch]
   W13[W13 hook env leak]
 </pre>
-<div class="caption">WU dependencies. W1 and W8 start now in parallel; W5 and W7 can start any time.</div>
+<div class="caption">WU dependencies. W1 and W8 start now in parallel; W5, W7 and W12 can start any time.</div>
 </div>
 
 <div data-item="wu-summaries" data-c="wu-summaries">
@@ -156,6 +157,14 @@ flowchart LR
   <p data-item="wu-deps">W1 (merged, <code>b7201c6</code>)</p>
 </div>
 
+<div data-wu="E-SEED2.W12" data-c="wu-w12">
+  <h3 id="w12">E-SEED2.W12 · The router watches owner actions itself <span class="badge approval">scope flagged</span> <span class="badge approval">owner request 2026-11-10</span></h3>
+  <p data-item="wu-summary">The router never waits for the owner to reply "done". A committed, read-only probe script, <code>scripts/router-watch.sh commit|signed|merged|pushed|tagged &lt;args&gt;</code>, is allowed by <code>router-guard.jq</code> and armed by the router as a background Bash command, the same pattern as <code>router-worker.sh wait</code> (DEC-36). It polls git until the staged owner action is observable, then wakes the router with one event line plus what landed: the commits and their <code>Reviewed-By</code>, the landed paths against the expected set (<code>COMMITTED-PARTIAL</code>), the <code>mr</code> note payload, and whether the merge was <code>no-ff</code> or <code>ff</code>. It exits on <code>TIMEOUT</code> before the 2 h background ceiling, and the router then re-arms. This replaces the worker-ops "Watch" recipe that launcher workers cannot run (backlog R7 row 1). Owner-applied: the <code>.claude/settings.json</code> allow entries (plus the missing <code>wait</code> entry), the <code>.claude/</code> skill mirrors and the <code>router.md</code> posture bullet. Router↔worker messaging stays deferred (R8). Plan: <a href="2026-11-10-w12-owner-watch-wu-plan.html">W12 plan</a>.</p>
+  <p data-item="wu-maps-to">UC-ROUTE-1 (amended: the router detects each owner action) · UC-ROUTE-6 (one new guard shape) · backlog e-router-v2 R7 rows 1 and 4 · keel-router "Watch, never wait to be told".</p>
+  <p data-item="wu-expected">In a temp repo with a bare origin, each kind stays silent until its state holds, then prints its event and detail lines and exits 0. A partial commit prints <code>COMMITTED-PARTIAL</code> with <code>missing</code> paths. Bad arguments, including any leading <code>-</code>, exit 2 before polling. The guard allows the five shapes and denies option injection. The skill text no longer tells a watch worker to run <code>until</code> loops for owner actions. One real router wake is quoted in the result.</p>
+  <p data-item="wu-deps">none (touches <code>tests/router.rs</code> and <code>router-guard.jq</code>, as W7 may: whichever merges second merges the epic in first)</p>
+</div>
+
 <div data-wu="E-SEED2.W13" data-c="wu-w13">
   <h3 id="w13">E-SEED2.W13 · Hook environment leak <span class="badge approval">owner ruling 2026-11-10</span></h3>
   <p data-item="wu-summary">On 2026-11-10, a <code>git push</code> from a linked worktree ran <code>keel check</code>, and <code>cargo test</code> inherited the absolute <code>GIT_DIR</code> that git exports to hooks. The test fixtures then wrote into the real repository: <code>core.bare</code>, the user identity, a moved <code>epic/E-SEED2</code>, a branch <code>work</code>, a note, and the installed hooks. The fix has three parts. (1) <code>sh()</code> and <code>git()</code> strip the variables in <code>git rev-parse --local-env-vars</code>; <code>git()</code> keeps <code>GIT_INDEX_FILE</code>, which the commit hooks need. This also corrects <code>check_push</code>'s scratch-worktree proof. (2) Every test spawn helper strips the same variables, and the two <code>git clone</code> calls get a <code>current_dir</code>. (3) <code>keel mr confirm</code> refuses a tip that is already an ancestor of its target, instead of signing the empty range over a valid note. Plan: <a href="2026-11-10-w13-hook-env-wu-plan.html">W13 WU plan</a>.</p>
@@ -184,6 +193,7 @@ flowchart LR
     <tr><td>W7</td><td><code>decisions/router.html</code> (new DEC), project-router skill</td></tr>
     <tr><td>W8</td><td><code>use-cases/router.html</code> UC-ROUTE, <code>decisions/router.html</code>, a struck cross-reference row in <code>backlog/e-router-v2.html</code></td></tr>
     <tr><td>W11</td><td><code>decisions/distribution.html</code> DEC-38 (pins, runners, accepted risks, owner setup tasks, corrected trigger and prerelease text); <code>docs/install.html</code> (profile edits); project-router "what no gate reviews"</td></tr>
+    <tr><td>W12</td><td><code>decisions/router.html</code> (new DEC: the router watches owner actions through a committed read-only probe script, which amends DEC-30's whitelist); <code>use-cases/router.html</code> UC-ROUTE-1/6; <code>backlog/e-router-v2.html</code> R7 rows 1 and 4 struck, plus a follow-up row for <code>gh</code>-backed kinds; keel-router skill and project-router (rule-bearing, owner commits)</td></tr>
     <tr><td>W13</td><td><code>decisions/workflow-gates.html</code> (DEC-41: keel never forwards git's local env); <code>use-cases/workflow.html</code> UC-MR-1 (refuses a landed tip), UC-GATE (pre-push proves the pushed sha)</td></tr>
     <tr><td>all</td><td>rows of <code>backlog/e-seed-v2.html</code> struck; this plan and every WU plan/result archived out of git at close</td></tr>
   </tbody>

@@ -54,7 +54,9 @@ otherwise (briefs, 2026-11-08, below).
   if it is not, hold yourself to the whitelist anyway and tell the owner
   enforcement is missing. Never use a gap to do work yourself.
 - `Monitor` runs a shell command outside the Bash hook: don't arm shell
-  watchers yourself — a watch worker does (`references/worker-ops.md` "Watch").
+  watchers yourself. Arm the project's committed watch command (fixed argv,
+  read-only, whitelisted like the launcher) as a background Bash command; where
+  the project has none, a watch worker does (`references/worker-ops.md` "Watch").
 
 ## First principle: the owner's attention is the scarcest resource
 
@@ -153,10 +155,17 @@ just saving it. Never author substantive content yourself."
   retry once, then say so. Tell the owner the channel's limits once. Never print
   a bot token.
 - **Watch, never wait to be told.** Never end on "tell me when done": for every
-  owner action you stage, arm in the same turn a watcher on its observable state
-  (note, tip, merge, origin, tag, run, draft, doc comments:
-  `references/worker-ops.md` "Watch"), name it in the message (`Watching: …`),
-  act when it fires. Ask only for what cannot be observed (decisions).
+  owner action you stage, arm in the same turn a watch on its observable state
+  (commit, note, merge, origin, tag; run, draft, doc comments:
+  `references/worker-ops.md` "Watch") — the project's watch command as a
+  background Bash command with its timeout at the maximum (2 h), or a watch
+  worker where the project has none — and name it in the message
+  (`Watching: <event> on <ref>`). When it fires, act and report what landed
+  against what you staged: a partial commit, a fast-forward merge or a tag on
+  another commit is a finding. On `TIMEOUT`, re-check the real state, re-send the
+  task in full and re-arm; on a wake with no line, re-arm. Ask only for what
+  cannot be observed (decisions, output that exists only in the owner's
+  terminal; worker-ops "What a watch cannot see").
 
 ## Before every ask: check the real state
 
