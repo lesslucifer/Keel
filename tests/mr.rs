@@ -329,6 +329,32 @@ fn sign_off_hashes_are_sha256_and_a_pre_w2_note_is_red() {
     assert!(!o.status.success() && text(&o).contains("8·manual-review"), "{}", text(&o));
 }
 
+/// I7: the dod/v1 receipt of a green WU merge names the report its sign-off attested, if any.
+#[test]
+fn the_dod_receipt_names_the_attested_report() {
+    for policy in ["required", "none"] {
+        let (d, _k) = fixture();
+        let p = d.path();
+        if policy == "none" {
+            git(p, &["switch", "-q", "epic/e"]);
+            set_policy(p, policy);
+            git(p, &["switch", "-q", "wu/e/a"]);
+            git(p, &["merge", "-q", "--no-ff", "--no-edit", "epic/e"]);
+        }
+        notes(p, &["test", "doc", "cr"]);
+        ok(keel(p, &["mr", "confirm", "wu"]));
+        let mr = mr_note(p, "wu/e/a").unwrap();
+        ok(keel(p, &["hooks", "install"]));
+        git(p, &["switch", "-q", "epic/e"]);
+        ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"]));
+        let dod: Value = serde_json::from_str(&git(p, &["notes", "--ref=dod", "show", "wu/e/a"])).unwrap();
+        for f in ["report", "report_hash"] {
+            assert_eq!(dod.get(f), mr.get(f), "{policy}: {f} in dod {dod} vs mr {mr}");
+        }
+        assert_eq!(dod.get("report").is_some(), policy == "required", "{policy}: {dod}");
+    }
+}
+
 /// I1: `[mr] report` × a wu-result doc present / absent, at WU level.
 #[test]
 fn report_policy_matrix_at_wu_level() {

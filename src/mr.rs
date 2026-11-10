@@ -436,9 +436,10 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     Ok(0)
 }
 
-/// Check 8 for a wu/epic tip: `Err((what, fix))` on the first cause found. Everything is rebuilt
-/// from the repo; the note contributes only the signer, the report path and the (signed) report hash.
-pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, base: &str) -> Result<(), (String, String)> {
+/// Check 8 for a wu/epic tip: `Err((what, fix))` on the first cause found, else the attested
+/// `(report, report_hash)`, if any. Everything is rebuilt from the repo; the note contributes only
+/// the signer, the report path and the (signed) report hash.
+pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, base: &str) -> Result<Option<(String, String)>, (String, String)> {
     let again = |what: String| Err((what, format!("re-run keel mr confirm on the tip as it now stands\n      {NOT_AUTHORISED}")));
     let t = short(tip);
     let Ok(raw) = git(repo, &["notes", "--ref=mr", "show", tip], &[]) else {
@@ -499,11 +500,11 @@ pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, b
         Some(_) => {} // identity tier: listed is all it proves
     }
     // A report in the note is re-hashed whatever the policy: an attestation is never ignored.
-    let Some((path, hash)) = attested else { return Ok(()) };
+    let Some((path, hash)) = attested else { return Ok(None) };
     match report_hash(repo, tip, path, level == "epic") {
         Ok(Some(h)) if h != hash => again(format!("{path} differs from the bytes the mr/v1 note attests")),
         Err(e) => again(e),
-        _ => Ok(()),
+        _ => Ok(Some((path.to_string(), hash.to_string()))),
     }
 }
 

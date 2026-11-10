@@ -115,6 +115,11 @@ pub struct DodNote {
     pub checks: Vec<String>,
     /// git blob hash of the full `git diff base tip`.
     pub diff_hash: String,
+    /// The report the verified mr/v1 sign-off attested, copied from it; absent when it attested none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_hash: Option<String>,
 }
 
 #[derive(Deserialize)]

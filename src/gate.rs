@@ -268,9 +268,11 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> 
     let mut r = verify(repo, cfg, level, tip_ref, target)?;
     // 8·manual-review: never exempt (UC-GATE-5), and only at the merge boundary - the walk never
     // re-judges a seam's sign-off against today's local roster (Trawler DEC-9/10).
+    let mut attested = None;
     if level != Level::Commit {
-        if let Err((what, fix)) = mr::manual_review(repo, cfg, level.name(), &r.tip, &r.base) {
-            r.fail("8·manual-review", what, fix);
+        match mr::manual_review(repo, cfg, level.name(), &r.tip, &r.base) {
+            Ok(a) => attested = a,
+            Err((what, fix)) => r.fail("8·manual-review", what, fix),
         }
         r.exempt &= r.failures.is_empty();
     }
@@ -287,6 +289,8 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> 
             level: level.name().into(),
             checks: level.checks().iter().map(|c| c.to_string()).collect(),
             diff_hash,
+            report: attested.as_ref().map(|(r, _)| r.clone()),
+            report_hash: attested.map(|(_, h)| h),
         };
         notes::store(repo, "dod", &r.tip, &note)?;
     }
