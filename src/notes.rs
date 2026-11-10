@@ -92,9 +92,12 @@ pub struct MrNote {
     pub signer: String,
     /// Informational: authority is re-derived from .mr-allowed at check time.
     pub tier: String,
-    pub report: String,
+    /// The attested result report; absent when `[mr] report` asked for none and none was attested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<String>,
     /// git blob id of the attested report's bytes.
-    pub report_hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_hash: Option<String>,
     /// git blob hash of the full `git diff base tip`.
     pub change_hash: String,
     /// Armored SSH SIGNATURE (namespace keel-mr), key-backed signers only.

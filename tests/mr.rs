@@ -87,9 +87,32 @@ fn fixture() -> (TempDir, TempDir) {
     git(p, &["switch", "-q", "-c", "wu/e/a"]);
     write(p, "src/a.py", "def a():\n    return 1\n");
     write(p, "tests/test_a.py", "def test_a():\n    pass\n");
-    write(p, "docs/work/a-result.html", "<p>wu a: done</p>");
+    write(p, "docs/work/a-result.html", RESULT);
     commit(p, "wu a");
     (d, k)
+}
+
+const RESULT: &str = "<html data-artifact=\"wu-result\"><p>wu a: done</p></html>";
+
+/// Commit `[mr] report = "<policy>"` on the current branch.
+fn set_policy(p: &Path, policy: &str) {
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    write(p, ".keel/config.toml", &format!("{cfg}[mr]\nreport = \"{policy}\"\n"));
+    commit(p, &format!("report policy {policy}"));
+}
+
+/// The WU as if it never wrote a result report (amended out, so no T3 archive lineage is owed).
+fn drop_fixture_report(p: &Path) {
+    git(p, &["rm", "-q", "docs/work/a-result.html"]);
+    git(p, &["commit", "-q", "--amend", "--no-edit"]);
+}
+
+fn refused(o: &Output, needles: &[&str]) {
+    let t = text(o);
+    assert!(!o.status.success() && t.contains("fix ->"), "expected a refusal with a fix line: {t}");
+    for n in needles {
+        assert!(t.contains(n), "expected '{n}': {t}");
+    }
 }
 
 fn notes(p: &Path, kinds: &[&str]) {
@@ -270,4 +293,130 @@ fn rule_bearing_commit_needs_a_listed_reviewed_by_trailer() {
     git(p, &["add", "-A"]);
     let o = run("git", p, &["commit", "-qm", "loosen a rule"]);
     assert!(!o.status.success() && text(&o).contains("docs/règle.html"), "{}", text(&o));
+}
+
+/// I1: `[mr] report` × a wu-result doc present / absent, at WU level.
+#[test]
+fn report_policy_matrix_at_wu_level() {
+    for policy in ["required", "optional", "none"] {
+        for present in [true, false] {
+            let case = format!("{policy}, report {}", if present { "present" } else { "absent" });
+            let (d, _k) = fixture();
+            let p = d.path();
+            if !present {
+                drop_fixture_report(p);
+            }
+            set_policy(p, policy);
+            notes(p, &["test", "doc", "cr"]);
+            if policy == "none" && present {
+                let o = keel(p, &["mr", "confirm", "wu", "--report", "docs/work/a-result.html"]);
+                refused(&o, &["report = \"none\""]);
+                assert!(mr_note(p, "HEAD").is_none(), "{case}: a refused confirm writes nothing");
+            }
+            let o = keel(p, &["mr", "confirm", "wu"]);
+            if policy == "required" && !present {
+                refused(&o, &["wu-result", "report = \"required\""]);
+                assert!(mr_note(p, "HEAD").is_none(), "{case}: a refused confirm writes nothing");
+                continue;
+            }
+            assert!(o.status.success(), "{case}: {}", text(&o));
+            let n = mr_note(p, "HEAD").unwrap();
+            let attests = present && policy != "none";
+            assert_eq!(n.get("report").is_some(), attests, "{case}: {n}");
+            assert_eq!(n.get("report_hash").is_some(), attests, "{case}: {n}");
+            let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+            assert!(o.status.success(), "{case}: {}", text(&o));
+        }
+    }
+}
+
+/// I2: the report is the doc whose data-artifact carries the level's role, whatever its file name.
+#[test]
+fn the_wu_report_is_found_by_role_not_by_file_name() {
+    let (d, _k) = fixture();
+    let p = d.path();
+    drop_fixture_report(p);
+    write(p, "docs/work/outcome.html", RESULT);
+    write(p, "docs/work/x-result.html", "<p>an ungoverned doc named like a report</p>");
+    commit(p, "a report by role");
+    notes(p, &["test", "doc", "cr"]);
+    ok(keel(p, &["mr", "confirm", "wu"]));
+    assert_eq!(mr_note(p, "HEAD").unwrap()["report"], "docs/work/outcome.html");
+
+    write(p, "docs/work/second.html", RESULT);
+    commit(p, "a second wu-result");
+    notes(p, &["test", "doc", "cr"]);
+    let o = keel(p, &["mr", "confirm", "wu"]);
+    refused(&o, &["docs/work/outcome.html", "docs/work/second.html", "--report"]);
+    assert!(mr_note(p, "HEAD").is_none());
+    ok(keel(p, &["mr", "confirm", "wu", "--report", "docs/work/second.html"]));
+    assert_eq!(mr_note(p, "HEAD").unwrap()["report"], "docs/work/second.html");
+
+    let (d, _k) = fixture();
+    let p = d.path();
+    write(p, "docs/work/a-result.html", "<html data-artifact=\"epic-result wu-result\"><p>one-WU epic</p></html>");
+    commit(p, "collapsed result doc");
+    notes(p, &["test", "doc", "cr"]);
+    ok(keel(p, &["mr", "confirm", "wu"]));
+    assert_eq!(mr_note(p, "HEAD").unwrap()["report"], "docs/work/a-result.html");
+}
+
+/// I3: the merge hook judges the sign-off by the target's committed policy, not the WU's own.
+#[test]
+fn a_wu_cannot_drop_the_report_requirement_that_judges_its_merge() {
+    let (d, _k) = fixture();
+    let p = d.path();
+    set_policy(p, "none");
+    notes(p, &["test", "doc", "cr"]);
+    ok(keel(p, &["mr", "confirm", "wu"]));
+    assert!(mr_note(p, "HEAD").unwrap().get("report").is_none());
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+
+    ok(keel(p, &["hooks", "install"]));
+    git(p, &["switch", "-q", "epic/e"]);
+    let o = run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("8·manual-review") && t.contains("attests no result report"), "{t}");
+    assert!(t.contains("fix ->"), "{t}");
+}
+
+/// I4: under "optional" an attested report is still bound: a forged hash is red.
+#[test]
+fn a_forged_report_hash_is_red_under_optional() {
+    let (d, _k) = fixture();
+    let p = d.path();
+    set_policy(p, "optional");
+    notes(p, &["test", "doc", "cr"]);
+    ok(keel(p, &["mr", "confirm", "wu"]));
+    let mut forged = mr_note(p, "HEAD").unwrap();
+    forged["report_hash"] = json!(git(p, &["rev-parse", "HEAD:README"]));
+    put_note(p, "HEAD", &forged);
+    assert_red8(p, "does not verify");
+    // An identity-tier roster takes the signature out of play: the re-hash alone catches it.
+    std::fs::write(p.join(".mr-allowed"), "username: vu\n").unwrap();
+    assert_red8(p, "differs from the bytes");
+}
+
+/// I5: the epic report is archived out of git (docs/.archive/ is ignored): found untracked by role.
+#[test]
+fn the_epic_report_is_found_untracked_in_the_ignored_archive() {
+    let (d, _k) = fixture();
+    let p = d.path();
+    notes_with(p, &["test", "doc"], r#"{"unit":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
+    git(p, &["rm", "-q", "docs/work/a-result.html"]);
+    write(p, "docs/decisions/a.html", "<p>why a</p>");
+    write(p, ".gitignore", "docs/.archive/\n");
+    commit(p, "distill + archive wu a's report");
+    write(p, "docs/.archive/e-result.html", "<html data-artifact=\"epic-result\"><p>epic e: done</p></html>");
+    notes_with(p, &["test", "cr"], r#"{"e2e":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
+    ok(keel(p, &["notes", "write", "doc", "--distill", "docs/work/a-result.html=docs/decisions/a.html"]));
+    ok(keel(p, &["mr", "confirm", "epic"]));
+    assert_eq!(mr_note(p, "HEAD").unwrap()["report"], "docs/.archive/e-result.html");
+    ok(keel(p, &["verify-dod", "epic", "wu/e/a"]));
+
+    write(p, "docs/.archive/f-result.html", "<html data-artifact=\"epic-result wu-result\"><p>epic f</p></html>");
+    git(p, &["notes", "--ref=mr", "remove", "HEAD"]);
+    let o = keel(p, &["mr", "confirm", "epic"]);
+    refused(&o, &["docs/.archive/e-result.html", "docs/.archive/f-result.html", "--report"]);
+    assert!(mr_note(p, "HEAD").is_none());
 }
