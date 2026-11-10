@@ -1005,12 +1005,22 @@ impl Watcher {
     }
 
     /// One run to its end with polls 1..=go pre-released: (exit code, stdout, stderr, polls taken).
+    /// A run still going 10 s on (it polled past `go`) is killed and fails the test.
     fn run(&self, args: &[&str], k: &str, go: u32, env: &[(&str, &str)]) -> (Option<i32>, String, String, u32) {
         let (mut c, dir) = self.cmd(args, k, env);
         for n in 1..=go {
             std::fs::write(dir.join(format!("go-{n}")), "").unwrap();
         }
-        let o = c.output().unwrap();
+        let mut child = c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        let t = Instant::now();
+        while child.try_wait().unwrap().is_none() {
+            if t.elapsed() > Duration::from_secs(10) {
+                child.kill().unwrap();
+                panic!("watch {args:?} never returned");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let o = child.wait_with_output().unwrap();
         let polls = std::fs::read_to_string(dir.join("polls")).map_or(0, |s| s.trim().parse().unwrap());
         (o.status.code(), String::from_utf8(o.stdout).unwrap(), String::from_utf8(o.stderr).unwrap(), polls)
     }
@@ -1057,7 +1067,8 @@ fn watch_refuses_bad_arguments_before_any_poll() {
         );
         assert_eq!(polls, 0, "{args:?} polled before refusing");
     }
-    for (k, v) in [("ROUTER_WATCH_POLL", "x"), ("ROUTER_WATCH_POLL", "0"), ("ROUTER_WATCH_POLL", "1.5"), ("ROUTER_WATCH_POLL", "-1"), ("ROUTER_WATCH_MAX", "x"), ("ROUTER_WATCH_MAX", " 5"), ("ROUTER_WATCH_MAX", "1e3")] {
+    let huge = "99999999999999999999";
+    for (k, v) in [("ROUTER_WATCH_POLL", "x"), ("ROUTER_WATCH_POLL", "0"), ("ROUTER_WATCH_POLL", "1.5"), ("ROUTER_WATCH_POLL", "-1"), ("ROUTER_WATCH_POLL", huge), ("ROUTER_WATCH_MAX", "x"), ("ROUTER_WATCH_MAX", " 5"), ("ROUTER_WATCH_MAX", "1e3"), ("ROUTER_WATCH_MAX", huge)] {
         let (code, out, err, polls) = w.run(&["signed", &t], "knob", 0, &[(k, v)]);
         assert!(code == Some(2) && out.is_empty() && err.contains(k) && polls == 0, "{k}={v:?} not refused: {code:?} {out} {err}");
     }
@@ -1160,6 +1171,35 @@ fn watch_signed_and_merged_report_the_note_and_how_the_tip_landed() {
     git(&w.main, &["merge", "-q", "--no-ff", "-m", "merge z2", "wu/z2"]);
     let (_, out, _, _) = w.run(&["merged", &z, "main"], "contained", 0, &[]);
     assert_eq!(out, format!("MERGED tip={z} target=main at={} how=contained\n", w.sha("main")));
+
+}
+
+/// E-SEED2.W12 review r1: a branch that exists only locally is "not pushed yet", never a network
+/// failure; the watch keeps polling past 5 attempts and fires PUSHED after the first push.
+#[test]
+fn watch_pushed_waits_on_a_local_only_branch_without_reporting_unreachable() {
+    let w = watcher();
+    git(&w.main, &["switch", "-q", "-c", "wu/local"]);
+    let t = w.commit(&["l"], "l");
+    let mut s = w.armed(&["pushed", &t, "wu/local"], "local-only");
+    s.at(1);
+    for n in 1..=5 {
+        s.go(n);
+        s.at(n + 1);
+    }
+    git(&w.main, &["push", "-q", "origin", "wu/local"]);
+    s.go(6);
+    assert_eq!(s.line(), format!("PUSHED tip={t} branch=wu/local origin={t}\n"));
+}
+
+/// The test harness itself: a watch that polls more than the test released fails the test in
+/// bounded time instead of hanging `cargo test`.
+#[test]
+#[should_panic(expected = "never returned")]
+fn watcher_run_is_bounded_when_the_watch_outpolls_its_releases() {
+    let w = watcher();
+    let t = w.sha("HEAD");
+    w.run(&["signed", &t], "unreleased", 0, &[]);
 }
 
 /// E-SEED2.W12: `pushed` fires only once origin holds the tip (not on the local merge); `tagged` fires
@@ -1189,6 +1229,8 @@ fn watch_pushed_and_tagged_fire_on_origin_only() {
     let o = String::from_utf8(git(&other, &["rev-parse", "HEAD"]).stdout).unwrap().trim().to_string();
     let m = w.sha("main");
     let refs = || String::from_utf8(git(&w.main, &["for-each-ref", "--format=%(refname) %(objectname)"]).stdout).unwrap();
+    git(&w.main, &["update-ref", "-d", "refs/remotes/origin/HEAD"]);
+    git(&w.main, &["config", "remote.origin.followRemoteHEAD", "always"]);
     let before = refs();
     let (_, out, _, _) = w.run(&["pushed", &m, "main"], "only-ref", 0, &[]);
     assert_eq!(out, format!("PUSHED tip={m} branch=main origin={o}\n"));
