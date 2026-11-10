@@ -121,9 +121,40 @@ fn load_config_at_head(repo: &Path) -> Result<Config, String> {
     toml::from_str(&text).map_err(|e| format!("keel: bad .keel/config.toml at HEAD: {e}"))
 }
 
+/// `git rev-parse --local-env-vars`: what git exports to its hooks to pin a repository (absolute
+/// from a linked worktree). Keel finds the repo from its working directory alone (DEC-41).
+const GIT_LOCAL_ENV: [&str; 15] = [
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_GRAFT_FILE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_PREFIX",
+    "GIT_SHALLOW_FILE",
+    "GIT_COMMON_DIR",
+];
+
+/// `keep_index`: git's commit hooks get the index being committed (a temp one for `commit -a` or a
+/// pathspec commit); keel's own `git diff --cached` must read it, a child command never.
+fn no_git_env(c: &mut Command, keep_index: bool) -> &mut Command {
+    for k in GIT_LOCAL_ENV {
+        if !(keep_index && k == "GIT_INDEX_FILE") {
+            c.env_remove(k);
+        }
+    }
+    c
+}
+
 fn git(repo: &Path, args: &[&str], envs: &[(&str, &Path)]) -> Result<String, String> {
     let mut c = Command::new("git");
-    c.args(args).current_dir(repo);
+    no_git_env(&mut c, true).args(args).current_dir(repo);
     for (k, v) in envs {
         c.env(k, v);
     }
@@ -146,7 +177,7 @@ fn repo_root() -> Result<PathBuf, String> {
 }
 
 fn sh(repo: &Path, cmd: &str) -> Result<bool, String> {
-    Command::new("sh")
+    no_git_env(&mut Command::new("sh"), false)
         .args(["-c", cmd])
         .current_dir(repo)
         .stdin(Stdio::null())
@@ -491,8 +522,41 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{hook_conflicts, hooks_problem_of, Config, ReportPolicy, COMMIT_MSG, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
+    use super::{hook_conflicts, hooks_problem_of, no_git_env, Config, ReportPolicy, COMMIT_MSG, GIT_LOCAL_ENV, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
+    use std::ffi::OsStr;
     use std::path::Path;
+    use std::process::Command;
+
+    fn removed(c: &Command) -> Vec<String> {
+        let mut r: Vec<String> = c.get_envs().filter(|(_, v)| v.is_none()).map(|(k, _)| k.to_string_lossy().into_owned()).collect();
+        r.sort();
+        r
+    }
+
+    #[test]
+    fn no_git_env_removes_every_local_var_and_keeps_the_index_only_when_asked() {
+        let mut child = Command::new("x");
+        no_git_env(&mut child, false);
+        let mut all: Vec<String> = GIT_LOCAL_ENV.iter().map(|s| s.to_string()).collect();
+        all.sort();
+        assert_eq!(removed(&child), all);
+
+        let mut own = Command::new("x");
+        no_git_env(&mut own, true).env("GIT_INDEX_FILE", "/tmp/i");
+        let mut rest: Vec<String> = all.iter().filter(|k| *k != "GIT_INDEX_FILE").cloned().collect();
+        rest.sort();
+        assert_eq!(removed(&own), rest);
+        assert!(own.get_envs().any(|(k, v)| k == "GIT_INDEX_FILE" && v == Some(OsStr::new("/tmp/i"))), "an explicit env set after the strip wins");
+    }
+
+    #[test]
+    fn the_strip_list_covers_gits_local_env_vars() {
+        let o = no_git_env(&mut Command::new("git"), false).args(["rev-parse", "--local-env-vars"]).current_dir("/").output().unwrap();
+        assert!(o.status.success());
+        for v in String::from_utf8(o.stdout).unwrap().lines() {
+            assert!(GIT_LOCAL_ENV.contains(&v), "GIT_LOCAL_ENV misses {v}");
+        }
+    }
 
     #[test]
     fn hooks_problem_passes_for_keels_path_and_fails_for_a_foreign_or_unset_one() {

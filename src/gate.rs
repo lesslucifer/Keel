@@ -310,15 +310,16 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, gua
 }
 
 /// mr confirm's sign-last rule (Trawler DEC-27): checks 1-7 must already be green on the tip.
-/// Red -> the failures are printed and `None`; green -> `(tip, base)` of the range to sign.
-pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, rest: &[&str]) -> Result<Option<(String, String)>, String> {
+/// Red -> the failures are printed and `None`; green -> `(tip, base, target)` of the range to sign.
+pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, rest: &[&str]) -> Result<Option<(String, String, String)>, String> {
     let level = if epic { Level::Epic } else { Level::Wu };
-    let r = verify(repo, cfg, level, tip_ref, &target_of(cfg, level, tip_ref, rest))?;
+    let target = target_of(cfg, level, tip_ref, rest);
+    let r = verify(repo, cfg, level, tip_ref, &target)?;
     if !r.failures.is_empty() {
         print(&r, "mr confirm");
         return Ok(None);
     }
-    Ok(Some((r.tip, r.base)))
+    Ok(Some((r.tip, r.base, target)))
 }
 
 /// pre-merge-commit: tip = the merge head, target = HEAD, level from HEAD's branch.

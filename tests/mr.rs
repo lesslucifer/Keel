@@ -2,12 +2,14 @@
 //! report, an amended tip, an unlisted signer and a confirm before cr are each red.
 use serde_json::{json, Value};
 use std::path::Path;
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 use tempfile::TempDir;
+
+mod common;
 
 fn run(prog: &str, d: &Path, a: &[&str]) -> Output {
     let bin = Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().to_owned();
-    Command::new(prog)
+    common::cmd(prog)
         .args(a)
         .current_dir(d)
         .env("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()))
@@ -122,7 +124,7 @@ fn notes(p: &Path, kinds: &[&str]) {
 
 fn notes_with(p: &Path, kinds: &[&str], judgment: &str) {
     for k in kinds {
-        let mut c = Command::new(env!("CARGO_BIN_EXE_keel"));
+        let mut c = common::cmd(env!("CARGO_BIN_EXE_keel"));
         c.current_dir(p).args(["notes", "write", k]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         if *k == "cr" {
             c.args(["--verdict", "PASS"]);
@@ -294,6 +296,39 @@ fn rule_bearing_commit_needs_a_listed_reviewed_by_trailer() {
     git(p, &["add", "-A"]);
     let o = run("git", p, &["commit", "-qm", "loosen a rule"]);
     assert!(!o.status.success() && text(&o).contains("docs/règle.html"), "{}", text(&o));
+
+    // W13: from a linked worktree (absolute GIT_DIR), `commit -a` and a pathspec commit stage into a
+    // temporary index (GIT_INDEX_FILE) the real index never sees - the hook must judge that one.
+    let wt = TempDir::new().unwrap();
+    let w = wt.path().join("w");
+    git(p, &["worktree", "add", "-q", "-b", "side", w.to_str().unwrap(), "HEAD"]);
+    write(&w, "docs/rules.html", "<p>a looser rule</p>");
+    for a in [&["commit", "-a", "-qm", "loosen a rule"][..], &["commit", "-qm", "loosen a rule", "docs/rules.html"]] {
+        let o = run("git", &w, a);
+        assert!(!o.status.success() && text(&o).contains("docs/rules.html"), "{a:?}: {}", text(&o));
+    }
+}
+
+/// W13: a tip its target already contains has an empty range; signing it would bind base = tip and
+/// the empty diff over the note that attests the real change - refused, nothing written.
+#[test]
+fn confirm_refuses_a_tip_already_in_its_target_and_keeps_the_note() {
+    let (d, _k) = fixture();
+    let p = d.path();
+    notes(p, &["test", "doc", "cr"]);
+    ok(keel(p, &["mr", "confirm", "wu"]));
+    git(p, &["switch", "-q", "epic/e"]);
+    ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"]));
+    let signed = git(p, &["notes", "--ref=mr", "show", "wu/e/a"]);
+
+    let o = keel(p, &["mr", "confirm", "wu", "wu/e/a", "--as", "vu", "--target", "epic/e", "--report", "docs/work/a-result.html"]);
+    refused(&o, &["already contained in epic/e", "nothing to sign"]);
+    assert_eq!(git(p, &["notes", "--ref=mr", "show", "wu/e/a"]), signed);
+
+    git(p, &["branch", "epic/f", "main"]);
+    let o = keel(p, &["mr", "confirm", "epic", "epic/f", "--as", "vu"]);
+    refused(&o, &["already contained in main"]);
+    assert!(mr_note(p, "epic/f").is_none());
 }
 
 /// I6: sign-off hashes are SHA-256; a pre-W2 note (keel-mr/v1 payload, git blob-id hashes) has no

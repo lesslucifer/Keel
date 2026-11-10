@@ -7,6 +7,8 @@ use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
+mod common;
+
 fn root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
@@ -237,7 +239,7 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
     assert!(pre[0].get("matcher").is_none(), "the guard must see every tool");
     let cmd = pre[0]["hooks"][0]["command"].as_str().unwrap().to_string();
     let run = |dir: &Path, path: &str| {
-        let mut p = Command::new("/bin/sh")
+        let mut p = common::cmd("/bin/sh")
             .args(["-c", &cmd])
             .env("CLAUDE_PROJECT_DIR", dir)
             .env("PATH", path)
@@ -259,7 +261,7 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
 }
 
 fn git(d: &Path, a: &[&str]) -> Output {
-    let o = Command::new("git")
+    let o = common::cmd("git")
         .args(["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false"])
         .args(a)
         .current_dir(d)
@@ -338,7 +340,7 @@ impl Launcher {
     }
 
     fn cmd(&self, args: &[&str], env: &[(&str, &str)]) -> Command {
-        let mut c = Command::new("sh");
+        let mut c = common::cmd("sh");
         c.arg("scripts/router-worker.sh")
             .args(args)
             .current_dir(&self.main)
@@ -818,7 +820,7 @@ fn pushed_probe_fires_only_after_the_merge_reaches_origin() {
     git(&main, &["commit", "-q", "--allow-empty", "-m", "epic work"]);
     let t = String::from_utf8(git(&main, &["rev-parse", "HEAD"]).stdout).unwrap().trim().to_string();
     git(&main, &["switch", "-q", "main"]);
-    let fires = || Command::new("sh").args(["-c", probe]).env("MAIN", &main).env("T", &t).output().unwrap().status.success();
+    let fires = || common::cmd("sh").args(["-c", probe]).env("MAIN", &main).env("T", &t).output().unwrap().status.success();
 
     assert!(!fires(), "PUSHED fired when the action was only staged");
     git(&main, &["merge", "-q", "--no-ff", "-m", "merge epic", "epic/E-X"]);
@@ -1025,7 +1027,7 @@ fn wired_guard(checkout: &Path, tool: &str, input: serde_json::Value) -> Option<
     let s: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(checkout.join(".claude/settings.json")).unwrap()).unwrap();
     let cmd = s["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str().unwrap();
     let event = serde_json::json!({"agent_type": "router", "tool_name": tool, "tool_input": input, "cwd": checkout});
-    let mut p = Command::new("/bin/sh")
+    let mut p = common::cmd("/bin/sh")
         .args(["-c", cmd])
         .env("CLAUDE_PROJECT_DIR", checkout)
         .stdin(Stdio::piped())
@@ -1052,13 +1054,13 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
         std::fs::copy(root().join(f), c.join(f)).unwrap();
     }
     let keel = Path::new(env!("CARGO_BIN_EXE_keel"));
-    assert!(Command::new(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
+    assert!(common::cmd(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
     std::fs::write(c.join(".mr-allowed"), "username: owner\n").unwrap();
 
     // W3: the worktree the worker will run in is created through keel's post-checkout hook
     let wt = base.join("wt");
     let path = format!("{}:{}", keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
-    let o = Command::new("git").args(["worktree", "add", "-q", "-b", "wu/x/e2e", wt.to_str().unwrap()]).current_dir(&c).env("PATH", &path).output().unwrap();
+    let o = common::cmd("git").args(["worktree", "add", "-q", "-b", "wu/x/e2e", wt.to_str().unwrap()]).current_dir(&c).env("PATH", &path).output().unwrap();
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     assert_eq!(std::fs::read_to_string(wt.join(".mr-allowed")).ok().as_deref(), Some("username: owner\n"), "worktree not seeded");
 
@@ -1069,7 +1071,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let owner = std::process::id().to_string();
     let router = |cmd: &str| -> String {
         assert_eq!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })), None, "guard denied {cmd:?}");
-        let mut p = Command::new("/bin/sh")
+        let mut p = common::cmd("/bin/sh")
             .args(["-c", cmd])
             .current_dir(&c)
             .env("ROUTER_CLAUDE", &stub)

@@ -335,6 +335,17 @@ fn commit(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     Ok(if o.success() { 0 } else { 1 })
 }
 
+/// merge-base(target, tip) = tip exactly when the target already contains the tip: the range is
+/// empty, and a sign-off would bind the empty diff over the note that attests the real change.
+fn landed(tip: &str, base: &str, target: &str) -> Option<String> {
+    (tip == base).then(|| {
+        format!(
+            "mr confirm refused - {} is already contained in {target} (merge-base = tip): the range is empty, so a sign-off here would bind the empty diff and replace the note that attests the real change\n  fix -> nothing to sign; the existing sign-off stands. To sign new work, commit it on the branch and confirm the new tip",
+            short(tip)
+        )
+    })
+}
+
 fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     const USAGE: &str = "usage: keel mr confirm <wu|epic> [<tip>] [--as <identity>] [--target R] [--report <path>]";
     let mut pos = vec![];
@@ -369,10 +380,14 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         return Ok(1);
     };
     // Sign last (Trawler DEC-27): every binding pins the diff, so the tree settles before a human signs.
-    let Some((tip, base)) = gate::sign_ready(repo, cfg, epic, &tip_ref, args)? else {
+    let Some((tip, base, target)) = gate::sign_ready(repo, cfg, epic, &tip_ref, args)? else {
         eprintln!("mr confirm refused - sign last: get the notes and a bound cr PASS green on this exact tip first\n  fix -> keel notes write test|doc, run the code review (cr PASS), then keel mr confirm again");
         return Ok(1);
     };
+    if let Some(refusal) = landed(&tip, &base, &target) {
+        eprintln!("{refusal}");
+        return Ok(1);
+    }
     let report = match pick_report(repo, cfg, args, &base, &tip, epic) {
         Ok(r) => r,
         Err((what, fix)) => {
@@ -546,7 +561,22 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{payload, sha256, stale_change};
+    use super::{landed, payload, sha256, stale_change};
+
+    #[test]
+    fn landed_refuses_exactly_when_the_tip_is_its_own_base() {
+        let t = "84ba8e3d0123456789abcdef0123456789abcdef";
+        let r = landed(t, t, "epic/e").unwrap();
+        assert!(r.contains("84ba8e3d01 is already contained in epic/e") && r.contains("fix -> nothing to sign"), "{r}");
+        // generated pairs (seeded LCG), equal and unequal alike: Some iff the two shas are equal
+        let mut x: u64 = 0x5eed;
+        for _ in 0..500 {
+            x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let a = format!("{:040x}", (x >> 33) % 4);
+            let b = format!("{:040x}", (x >> 13) % 4);
+            assert_eq!(landed(&a, &b, "main").is_some(), a == b, "{a} {b}");
+        }
+    }
 
     #[test]
     fn a_pre_sha256_change_hash_names_the_old_format_not_a_changed_diff() {
