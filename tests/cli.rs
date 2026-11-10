@@ -231,6 +231,57 @@ fn version_works_outside_any_repo() {
     assert!(keel(d.path(), &["-V"]).status.success());
 }
 
+fn hooks_path(p: &Path) -> String {
+    String::from_utf8(run("git", p, &["config", "--get", "core.hooksPath"]).stdout).unwrap().trim().to_string()
+}
+
+/// I8: another tool's hooks are never replaced silently; --force replaces them; samples are not hooks.
+#[test]
+fn hooks_install_refuses_to_clobber_another_hook_setup_without_force() {
+    let d = repo(false);
+    let p = d.path();
+    git(p, &["config", "core.hooksPath", ".husky"]);
+    let o = keel(p, &["hooks", "install"]);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("core.hooksPath") && t.contains(".husky") && t.contains("keel hooks install --force"), "{t}");
+    assert_eq!(hooks_path(p), ".husky", "a refused install changes nothing");
+    assert!(!p.join(".git/keel-hooks").exists(), "a refused install writes nothing");
+    assert!(keel(p, &["hooks", "install", "--force"]).status.success());
+    assert!(hooks_path(p).ends_with("keel-hooks"), "{}", hooks_path(p));
+
+    let d = repo(false);
+    let p = d.path();
+    std::fs::write(p.join(".git/hooks/pre-commit"), "#!/bin/sh\nexit 0\n").unwrap();
+    let o = keel(p, &["hooks", "install"]);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("pre-commit") && t.contains("--force"), "{t}");
+    assert_eq!(hooks_path(p), "", "a refused install changes nothing");
+    assert!(keel(p, &["hooks", "install", "--force"]).status.success());
+    assert!(hooks_path(p).ends_with("keel-hooks"));
+
+    let d = repo(false);
+    let p = d.path();
+    assert!(std::fs::read_dir(p.join(".git/hooks")).unwrap().any(|e| e.unwrap().file_name().to_string_lossy().ends_with(".sample")));
+    assert!(keel(p, &["hooks", "install"]).status.success(), "only *.sample: nothing to clobber");
+    let again = keel(p, &["hooks", "install"]);
+    assert!(again.status.success(), "a re-install over Keel's own path: {}", text(&again));
+}
+
+/// R1 F1: `0·hooks` and `hooks install` agree on what Keel's own path is - a trailing `/` included.
+#[test]
+fn a_trailing_slash_on_keels_hooks_path_is_a_reinstall_not_a_foreign_setup() {
+    let d = repo(false);
+    let p = d.path();
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    git(p, &["config", "core.hooksPath", &format!("{}/", hooks_path(p))]);
+    let check = keel(p, &["check"]);
+    assert!(!text(&check).contains("core.hooksPath is"), "guard D accepts it: {}", text(&check));
+    let again = keel(p, &["hooks", "install"]);
+    assert!(again.status.success(), "a re-install over Keel's own path: {}", text(&again));
+}
+
 #[test]
 fn installed_git_hook_without_keel_on_path_refuses_and_points_to_install_channels() {
     let d = repo(false);

@@ -354,6 +354,21 @@ fn upgrade_confirmation_and_force() {
     assert!(p.join(".claude/skills/keel-router/mine.md").exists());
 }
 
+/// I10: init over another hook manager writes its files, then stops on the hooks refusal.
+#[test]
+fn init_over_a_foreign_hooks_path_writes_its_files_then_refuses_the_hooks() {
+    let d = fresh_repo();
+    let p = d.path();
+    assert!(Command::new("git").args(["config", "core.hooksPath", ".husky"]).current_dir(p).status().unwrap().success());
+    let o = keel(p, &["init"]);
+    let t = text(&o);
+    assert!(!o.status.success(), "{t}");
+    assert!(p.join(".keel/config.toml").exists() && p.join("AGENTS.md").exists(), "{t}");
+    assert!(t.contains(".husky") && t.contains("keel hooks install --force"), "{t}");
+    let hooks = Command::new("git").args(["config", "core.hooksPath"]).current_dir(p).output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&hooks.stdout).trim(), ".husky");
+}
+
 #[test]
 fn worktrees_path_is_ignored_and_configurable() {
     let d = fresh_repo();

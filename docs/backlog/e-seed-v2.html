@@ -29,6 +29,7 @@
       <tr><th>Report binding</th><td>Owner direction (R11): drop the fixed/inferred report path, make the requirement configurable, treat the report as a receipt. Proposed: <code>[mr] report = "required" | "optional" | "none"</code> (default required); find the report by <code>data-artifact</code> role (<code>wu-result</code>/<code>epic-result</code>), not <code>*-result.html</code>; a missing required report is a named gate failure; optional report fields with payload header <code>keel-mr/v2</code>; dod/v1 names the attested report; amend UC-MR-1. Unanswered: meaning of "receipt" (1), one policy or per level (2), finding the archived epic report (3), schema version (4).</td></tr>
       <tr><th>Hook coexistence</th><td><code>keel hooks install</code> overrides any existing <code>core.hooksPath</code> (other hook managers stop silently) and nothing notices when another tool resets it (Keel stops silently). Proposed: refuse install over a foreign hooksPath or non-sample <code>.git/hooks</code> unless <code>--force</code>, and a DEC-72-style guard that makes verify-dod/preflight refuse (check warns) when <code>core.hooksPath</code> is not Keel's. Chaining other hooks rejected unless needed (re-imports branch-controlled code). Owner decision pending (W9 open point 5). The DEC-72 reversal itself is recorded: <a href="../decisions/workflow-gates.html#dec-23">DEC-23</a>.</td></tr>
       <tr><th>Source</th><td>W4 open points 11, 19; R11; R14; W9 plan (never started).</td></tr>
+      <tr><th>State</th><td>Absorbed by E-SEED2.W2: report binding as <a href="../decisions/workflow-gates.html#dec-40">DEC-40</a> (open points 1–4 on their defaults), coexistence as options B + D in <a href="../decisions/workflow-gates.html#dec-23">DEC-23</a>'s amendment (UC-GATE-6). Not built, follow-ups if asked: chaining other tools' hooks, a per-level report policy. Open point 3 is decided against any search (owner ruling 2026-11-10): an archived epic report is named with <code>--report</code> (DEC-40).</td></tr>
     </table>
 
     <h2 id="b3">B3 · Epic e2e per fixture language</h2>
@@ -50,10 +51,11 @@
       <tr><td>init and hook shims run <code>keel --version</code> and warn when it is not Keel's (keel.so collision); needs B1</td><td>W7 v2 open point 12</td></tr>
       <tr><td>Guard <code>.codex/hooks.json</code> commands like the settings hooks (<code>[ -f ] || exit 0</code>)</td><td>W7 v2 open point 16</td></tr>
       <tr><td>Validate verify-doc-post's Codex <code>apply_patch</code> payload parsing against real Codex output</td><td>W5 open point 3</td></tr>
-      <tr><td>SHA-256 for change/report hashes (payload <code>keel-mr/v2</code>)</td><td>W4 open point 3</td></tr>
+      <tr><td><s>SHA-256 for change/report hashes (payload <code>keel-mr/v2</code>)</s> absorbed by E-SEED2.W2 (<a href="../decisions/workflow-gates.html#dec-40">DEC-40</a>)</td><td>W4 open point 3</td></tr>
       <tr><td>Native SSH signing of rule-bearing commits, verified at pre-push</td><td>W4 open point 7, R9</td></tr>
       <tr><td>pre-commit runs <code>keel lint</code></td><td>W6 open point 9</td></tr>
       <tr><td>pre-commit runs the merge gate when MERGE_HEAD exists (conflicted merges)</td><td>W6 open point 10</td></tr>
+      <tr><td>Check <code>Cargo.lock</code> currency and yanked status (needs the network: <code>cargo audit</code> / registry; not checkable offline)</td><td>E-SEED2.W2 review r1 F6</td></tr>
     </table>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>

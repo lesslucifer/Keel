@@ -2,7 +2,7 @@
 //! commit-msg `Reviewed-By` check (UC-MR-1/2). Ported from Trawler's xtask/src/mr.rs
 //! (DEC-9/10/27): stock `ssh-keygen -Y` signatures, verified offline against the roster.
 use crate::notes::{self, MrNote};
-use crate::{gate, git, git_dir, Config};
+use crate::{gate, git, git_dir, verify_doc, Config, ReportPolicy};
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -92,30 +92,95 @@ fn keys_of<'a>(allowed: &'a [Entry], id: &str) -> Vec<&'a str> {
 }
 
 /// The bytes a key-backed sign-off signs: versioned, labelled, one field per line, and bound to the
-/// level, the range (base, tip) and the attested report. Never read back from a note - always rebuilt.
-fn payload(level: &str, base: &str, tip: &str, change: &str, report: &str, report_hash: &str) -> String {
-    format!("keel-mr/v1\nlevel: {level}\nbase: {base}\ntip: {tip}\nchange: {change}\nreport: {report}\nreport_hash: {report_hash}\n")
+/// level, the range (base, tip) and the attested report, if any - with none, the report lines are
+/// absent, so the signature never covers a placeholder. Never read back from a note - always rebuilt.
+fn payload(level: &str, base: &str, tip: &str, change: &str, report: Option<(&str, &str)>) -> String {
+    let mut p = format!("keel-mr/v2\nlevel: {level}\nbase: {base}\ntip: {tip}\nchange: {change}\n");
+    if let Some((path, hash)) = report {
+        p.push_str(&format!("report: {path}\nreport_hash: {hash}\n"));
+    }
+    p
 }
 
-/// git blob hash of the full `base..tip` diff.
+/// The docs whose `data-artifact` carries the level's result role: html under docs.root changed in
+/// base..tip and present at the tip. Never an untracked or archived file: an epic whose report is
+/// archived out of git by sign-off time names it with `--report` (owner ruling, DEC-40).
+fn report_candidates(repo: &Path, cfg: &Config, base: &str, tip: &str, epic: bool) -> Result<Vec<String>, String> {
+    let role = verify_doc::result_role(epic);
+    let root = cfg.docs.root.trim_end_matches('/');
+    let mut found = vec![];
+    for n in notes::names(repo, base, tip, &[root.to_string()])?.iter().filter(|n| n.ends_with(".html")) {
+        if git(repo, &["show", &format!("{tip}:{n}")], &[]).is_ok_and(|body| verify_doc::has_role(&body, role)) {
+            found.push(n.clone());
+        }
+    }
+    Ok(found)
+}
+
+/// The report this sign-off attests under `[mr] report`, or `Err((what, fix))` refusing the confirm.
+fn pick_report(repo: &Path, cfg: &Config, args: &[&str], base: &str, tip: &str, epic: bool) -> Result<Option<String>, (String, String)> {
+    let given = flag(args, "--report");
+    if cfg.mr.report == ReportPolicy::None {
+        return match given {
+            Some(r) => Err((
+                format!("--report {r} given, but [mr] report = \"none\": this project's sign-offs attest no report"),
+                "drop --report, or set [mr] report = \"optional\" or \"required\" in .keel/config.toml on the target".into(),
+            )),
+            None => Ok(None),
+        };
+    }
+    if let Some(r) = given {
+        return Ok(Some(r.to_string()));
+    }
+    let role = verify_doc::result_role(epic);
+    let found = report_candidates(repo, cfg, base, tip, epic).map_err(|e| (e, "fix the repo state, then re-run".into()))?;
+    match &found[..] {
+        [one] => Ok(Some(one.clone())),
+        [] if cfg.mr.report == ReportPolicy::Optional => Ok(None),
+        [] => Err((
+            format!(
+                "[mr] report = \"required\", and no {role} doc (data-artifact=\"{role}\") under {} is committed in this {}'s diff {}..{}",
+                cfg.docs.root,
+                if epic { "epic" } else { "WU" },
+                short(base),
+                short(tip)
+            ),
+            format!("commit the {role} report (skill keel-plan) on the tip, then keel mr confirm again - or name the one you read: keel mr confirm ... --report <path>"),
+        )),
+        several => Err((
+            format!("{} {role} docs could be the report: {}", several.len(), several.join(", ")),
+            "name the one you read: keel mr confirm ... --report <path>".into(),
+        )),
+    }
+}
+
+/// `sha256:<hex>`: the algorithm is named in the data.
+fn sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let hex: String = Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect();
+    format!("sha256:{hex}")
+}
+
+/// SHA-256 of the full `base..tip` diff text (the same bytes the cr and dod bindings hash).
 fn change_hash(repo: &Path, base: &str, tip: &str) -> Result<String, String> {
-    notes::diff_hash(repo, base, tip, &[])
+    Ok(sha256(notes::diff_text(repo, base, tip, &[])?.as_bytes()))
 }
 
-/// git blob id of the report's exact bytes: the blob at the tip, else (epic only - archived out of
-/// git by then) the unfiltered local file. `Ok(None)` = an epic report found nowhere.
+/// SHA-256 of the report's exact bytes: the blob at the tip, else (epic only - archived out of
+/// git by then) the raw local file. `Ok(None)` = an epic report found nowhere.
 fn report_hash(repo: &Path, tip: &str, path: &str, epic: bool) -> Result<Option<String>, String> {
     let ls = git(repo, &["ls-tree", tip, "--", path], &[])?;
     if let ["100644" | "100755", "blob", id] = ls.split('\t').next().unwrap_or("").split(' ').collect::<Vec<_>>()[..] {
-        return Ok(Some(id.to_string()));
+        let o = Command::new("git").args(["cat-file", "blob", id]).current_dir(repo).output().map_err(|e| format!("keel: cannot run git: {e}"))?;
+        if !o.status.success() {
+            return Err(format!("keel: git cat-file blob {id} failed: {}", String::from_utf8_lossy(&o.stderr).trim()));
+        }
+        return Ok(Some(sha256(&o.stdout)));
     }
     if !epic {
         return Err(format!("{path} (the attested result report) is not tracked at the tip {}", short(tip)));
     }
-    if !repo.join(path).is_file() {
-        return Ok(None);
-    }
-    git(repo, &["hash-object", "--no-filters", "--", path], &[]).map(Some)
+    Ok(std::fs::read(repo.join(path)).ok().map(|b| sha256(&b)))
 }
 
 fn ssh_keygen(args: &[&str], input: &[u8]) -> Result<std::process::Output, String> {
@@ -308,31 +373,29 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         eprintln!("mr confirm refused - sign last: get the notes and a bound cr PASS green on this exact tip first\n  fix -> keel notes write test|doc, run the code review (cr PASS), then keel mr confirm again");
         return Ok(1);
     };
-    let report = match flag(args, "--report") {
-        Some(r) => r.to_string(),
-        None => {
-            let found: Vec<String> = notes::names(repo, &base, &tip, &[])?
-                .into_iter()
-                .filter(|n| n.starts_with(&cfg.docs.root) && n.ends_with("-result.html"))
-                .collect();
-            match &found[..] {
-                [one] => one.clone(),
-                _ => return Err(format!("keel mr: {} result reports changed in the range - pass --report <the report you read>", found.len())),
-            }
+    let report = match pick_report(repo, cfg, args, &base, &tip, epic) {
+        Ok(r) => r,
+        Err((what, fix)) => {
+            eprintln!("mr confirm refused - {what}\n  fix -> {fix}");
+            return Ok(1);
         }
     };
-    if report.contains('\n') {
+    if report.as_ref().is_some_and(|r| r.contains('\n')) {
         return Err("keel mr: a report path cannot contain a newline".into());
     }
-    let report_hash = report_hash(repo, &tip, &report, epic)?
-        .ok_or_else(|| format!("keel mr: cannot read {report} - name the report you read"))?;
+    let report_hash = match &report {
+        Some(r) => Some(report_hash(repo, &tip, r, epic)?.ok_or_else(|| format!("keel mr: cannot read {r} - name the report you read"))?),
+        None => None,
+    };
+    let attested = report.as_deref().zip(report_hash.as_deref());
+    let what = attested.map_or("no report".to_string(), |(r, _)| r.to_string());
     let level = if epic { "epic" } else { "wu" };
     let change = change_hash(repo, &base, &tip)?;
     let sig = if tier == "key" {
         let key = git(repo, &["config", "--get", "keel.signingkey"], &[])
             .map_err(|_| format!("keel mr: {id} is key-backed but no signing key is configured\n  fix -> keel mr setup --as {id} --key <path>"))?;
-        let data = payload(level, &base, &tip, &change, &report, &report_hash);
-        eprintln!("signing the {level} {tip_ref} ({}) and {report} as {id} ...", short(&tip));
+        let data = payload(level, &base, &tip, &change, attested);
+        eprintln!("signing the {level} {tip_ref} ({}) and {what} as {id} ...", short(&tip));
         let sig = sign(&key, &data)?;
         if !verify(repo, &id, &keys_of(&allowed, &id), &data, &sig) {
             return Err(format!("keel mr: refused - keel.signingkey ({key}) is not a key {ALLOWED} lists for {id}"));
@@ -348,19 +411,20 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         level: level.into(),
         signer: id.clone(),
         tier: tier.clone(),
-        report: report.clone(),
+        report,
         report_hash,
         change_hash: change,
         sig,
     };
     notes::store(repo, "mr", &tip, &note)?;
-    println!("mr/v1 on {} - {tier} {id} attests {report}", short(&tip));
+    println!("mr/v1 on {} - {tier} {id} attests {what}", short(&tip));
     Ok(0)
 }
 
-/// Check 8 for a wu/epic tip: `Err((what, fix))` on the first cause found. Everything is rebuilt
-/// from the repo; the note contributes only the signer, the report path and the (signed) report hash.
-pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, base: &str) -> Result<(), (String, String)> {
+/// Check 8 for a wu/epic tip: `Err((what, fix))` on the first cause found, else the attested
+/// `(report, report_hash)`, if any. Everything is rebuilt from the repo; the note contributes only
+/// the signer, the report path and the (signed) report hash.
+pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, base: &str) -> Result<Option<(String, String)>, (String, String)> {
     let again = |what: String| Err((what, format!("re-run keel mr confirm on the tip as it now stands\n      {NOT_AUTHORISED}")));
     let t = short(tip);
     let Ok(raw) = git(repo, &["notes", "--ref=mr", "show", tip], &[]) else {
@@ -386,7 +450,19 @@ pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, b
     }
     let change = change_hash(repo, base, tip).map_err(|e| (e, "fix the repo state, then re-run".into()))?;
     if n.change_hash != change {
-        return again(format!("the diff {}..{t} changed since the sign-off", short(base)));
+        return again(stale_change(&n.change_hash, &format!("{}..{t}", short(base))));
+    }
+    let attested = match (&n.report, &n.report_hash) {
+        (Some(r), Some(h)) => Some((r.as_str(), h.as_str())),
+        (None, None) => None,
+        _ => return again(format!("the mr/v1 note on {t} names a report or a report_hash without the other")),
+    };
+    if attested.is_none() && cfg.mr.report == ReportPolicy::Required {
+        let role = verify_doc::result_role(level == "epic");
+        return Err((
+            format!("the {level} sign-off on {t} attests no result report, but [mr] report = \"required\" (the target's committed policy)"),
+            format!("write the {role} report on the tip, then re-run keel mr confirm\n      {NOT_AUTHORISED}"),
+        ));
     }
     let allowed = read_allowed(repo, cfg).map_err(|e| (e, NOT_AUTHORISED.into()))?;
     let roster = repo.join(ALLOWED).display().to_string();
@@ -401,17 +477,27 @@ pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, b
             let Some(sig) = &n.sig else {
                 return again(format!("{} is key-backed in {roster}, but the note on {t} carries no signature", n.signer));
             };
-            let data = payload(level, base, tip, &change, &n.report, &n.report_hash);
+            let data = payload(level, base, tip, &change, attested);
             if !verify(repo, &n.signer, &keys_of(&allowed, &n.signer), &data, sig) {
                 return again(format!("{t}'s mr/v1 signature by {} does not verify over base..tip and the attested report against {roster}", n.signer));
             }
         }
         Some(_) => {} // identity tier: listed is all it proves
     }
-    match report_hash(repo, tip, &n.report, level == "epic") {
-        Ok(Some(h)) if h != n.report_hash => again(format!("{} differs from the bytes the mr/v1 note attests", n.report)),
+    // A report in the note is re-hashed whatever the policy: an attestation is never ignored.
+    let Some((path, hash)) = attested else { return Ok(None) };
+    match report_hash(repo, tip, path, level == "epic") {
+        Ok(Some(h)) if h != hash => again(format!("{path} differs from the bytes the mr/v1 note attests")),
         Err(e) => again(e),
-        _ => Ok(()),
+        _ => Ok(Some((path.to_string(), hash.to_string()))),
+    }
+}
+
+fn stale_change(signed: &str, range: &str) -> String {
+    if signed.starts_with("sha256:") {
+        format!("the diff {range} changed since the sign-off")
+    } else {
+        format!("the sign-off on {range} was signed by a keel older than the SHA-256 sign-off format; re-sign with keel mr confirm")
     }
 }
 
@@ -455,5 +541,32 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         ["commit", rest @ ..] => commit(repo, cfg, rest),
         ["confirm", rest @ ..] => confirm(repo, cfg, rest),
         _ => Err("usage: keel mr <setup --as <id> [--key <path>] | commit -m <msg> [--as <id>] | confirm <wu|epic> [<tip>] [--as <id>] [--target R] [--report <path>]>".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{payload, sha256, stale_change};
+
+    #[test]
+    fn a_pre_sha256_change_hash_names_the_old_format_not_a_changed_diff() {
+        assert_eq!(stale_change("sha256:00", "b..t"), "the diff b..t changed since the sign-off");
+        let old = stale_change("9daeafb9864cf43055ae93beb0afd6c7d144bfa4", "b..t");
+        assert!(old.contains("older than the SHA-256 sign-off format") && old.contains("keel mr confirm"), "{old}");
+        assert!(!old.contains("changed since"));
+    }
+
+    #[test]
+    fn sha256_matches_the_fips_180_2_abc_vector() {
+        assert_eq!(sha256(b"abc"), "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
+
+    #[test]
+    fn payload_v2_carries_the_report_lines_exactly_when_a_report_is_attested() {
+        let with = payload("wu", "b", "t", "c", Some(("docs/r.html", "h")));
+        assert_eq!(with, "keel-mr/v2\nlevel: wu\nbase: b\ntip: t\nchange: c\nreport: docs/r.html\nreport_hash: h\n");
+        let without = payload("epic", "b", "t", "c", None);
+        assert_eq!(without, "keel-mr/v2\nlevel: epic\nbase: b\ntip: t\nchange: c\n");
+        assert!(!without.contains("report"));
     }
 }
