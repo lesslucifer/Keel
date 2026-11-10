@@ -49,6 +49,20 @@
       <li><code>Stepped::at</code> and <code>Stepped::output</code> kill and reap the watch on timeout.</li>
     </ul>
     Two efficiency candidates were refuted. The 10 s bound is not on the critical path, and <code>Watcher::run</code> has a different contract from <code>Stepped::line</code>. Each new branch has its own mutant in the sweep. The same-class audit found that every line printed outside <code>clean</code> carries only shas, counts, the router's own guard-whitelisted arguments, or the <code>tr</code>-filtered UNREACHABLE error.</li>
+  <li><b>Code-review fix round 4.</b> keel-code-review over <code>cf7ee21..07c9ce0</code> returned FAIL with three important findings, all of them script contract that no test pinned:
+    <ul>
+      <li><code>tagged</code> resets its failure count on a good <code>ls-remote</code>.</li>
+      <li>The default pace is 15 s per poll, 60 s for <code>pushed</code> and <code>tagged</code>.</li>
+      <li><code>TIMEOUT</code> fires at 6600 s and prints whole minutes.</li>
+    </ul>
+    The <code>sleep</code> shim now logs its argument, and <code>watcher()</code> adds a <code>date</code> shim that reads <code>$STEP_DIR/now</code>. With these, <code>watch_polls_at_its_default_pace_and_times_out_in_minutes</code> covers both the pace and the timeout. Verified nits:
+    <ul>
+      <li>Fixed: an abbreviated sha is expanded, and <code>merged</code> is now run with 7 hex digits.</li>
+      <li>Fixed: <code>Stepped</code> kills and reaps its process on drop, and <code>Watcher::run</code> reuses <code>Stepped::output</code>, so there is one bound-and-reap path.</li>
+      <li>Fixed: the <code>hermetic()</code> comment names the spawns it actually wraps.</li>
+      <li>Kept: <code>-c remote.origin.followRemoteHEAD=never</code>. On git 2.50 an explicit-refspec fetch never follows the remote HEAD, so no test can tell whether the option is set. It stays as a guard for other git versions, and the delta test pins the observable result: only the watched ref is written.</li>
+    </ul>
+    Two candidates were refuted: <code>GIT_TEMPLATE_DIR</code> (the watch never pushes, and a local fetch runs no hooks) and the 20 s harness test (it is not on the critical path).</li>
 </ul>
 
 <h2 id="evidence">Evidence</h2>
@@ -68,6 +82,7 @@
     <li><code>73cbe78</code> (owner, Reviewed-By): the back-merge of the epic, including the worker-ops <code>DELETED target=</code> row and the <code>ls-remote</code> step.</li>
     <li><code>2f4b6ff</code>: the W12 test spawns go through <code>common::cmd</code>.</li>
     <li><code>c67f1ac</code> and <code>f0016e2</code>: code-review fix round 3.</li>
+    <li><code>a3140b3</code>: code-review fix round 4.</li>
     <li>This report.</li>
   </ul>
   <p><b>Reviews.</b> The independent review r1 at <code>b997c0a</code> returned FIX, and it was fixed as described above. The independent review r2 at <code>f387c3b</code> returned PASS, with low follow-ups N1–N3. keel-code-review at <code>ab9d66e</code> returned FAIL and was fixed in <code>d9bd7da</code>, together with N1 and N2. keel-code-review at <code>e3c6f69</code> returned FAIL (V1, V2 and nits). Round 2 fixed them, together with N3.</p>
@@ -76,7 +91,7 @@
     <li><b>Integration (the WU contract).</b> Six tests: <code>watch_refuses_bad_arguments_before_any_poll</code>, <code>watch_commit_reports_what_landed_against_what_was_staged</code>, <code>watch_signed_and_merged_report_the_note_and_how_the_tip_landed</code>, <code>watch_pushed_and_tagged_fire_on_origin_only</code>, <code>watch_pushed_waits_on_a_local_only_branch_without_reporting_unreachable</code> and <code>watch_times_out_and_reports_an_unreachable_origin</code>. The harness check <code>watcher_run_is_bounded_when_the_watch_outpolls_its_releases</code> guards against a hang and a leftover <code>sleep</code> shim. <code>hermetic_git_ignores_global_and_system_config</code> pins V2. They run in a temp checkout with a bare file-remote origin and the stepped <code>sleep</code> shim, with no network.</li>
     <li><b>Guard.</b> <code>router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag</code> gained allow and deny cases for the watch shapes, and its settings mapping now covers <code>router-watch.sh</code>.</li>
     <li><b>Unit layer.</b> Waived for the script per D6: it is one shell file with no seam below the process boundary.</li>
-    <li><b>Result.</b> The full <code>cargo test</code> is green after the back-merge. <code>tests/router.rs</code> has 19 tests, and W13's spawn scan <code>every_test_spawn_strips_gits_env</code> is green. Before the run, <code>git -C /private/tmp rev-parse --absolute-git-dir</code> failed, which proves no <code>GIT_DIR</code> was inherited. After the run, the shared config was unchanged and there were no new commits. The mutant sweep was re-run on the merged code, and every mutant was killed again.</li>
+    <li><b>Result.</b> The full <code>cargo test</code> is green after the back-merge. <code>tests/router.rs</code> has 20 tests, and W13's spawn scan <code>every_test_spawn_strips_gits_env</code> is green. Before the run, <code>git -C /private/tmp rev-parse --absolute-git-dir</code> failed, which proves no <code>GIT_DIR</code> was inherited. After the run, the shared config was unchanged and there were no new commits. The mutant sweep was re-run on the merged code, and every mutant was killed again.</li>
   </ul>
   <p><b>Docs touched:</b></p>
   <ul>
