@@ -293,11 +293,11 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
 /// Layered on `common::cmd` for the git W12's tests run (`git()`, the PUSHED probe, the e2e worktree
 /// add, `Watcher::cmd` and the watch under it): only the repo's own config is read, so no user or
 /// system setting (tag.gpgSign, log.showSignature, core.quotePath, ...) can change what it does, and
-/// no inherited GIT_TRACE* writes to its stderr.
+/// no inherited GIT_TRACE* or GIT_DEFAULT_HASH changes its output or its repos.
 fn hermetic(c: &mut Command) -> &mut Command {
     let set: Vec<std::ffi::OsString> = c.get_envs().map(|(k, _)| k.to_owned()).collect();
     for k in std::env::vars_os().map(|(k, _)| k).chain(set) {
-        if k.to_string_lossy().starts_with("GIT_TRACE") {
+        if k.to_string_lossy().starts_with("GIT_TRACE") || k == "GIT_DEFAULT_HASH" {
             c.env_remove(k);
         }
     }
@@ -1250,7 +1250,8 @@ impl Watcher {
         self.sha("HEAD")
     }
 
-    /// `scripts/router-watch.sh <args>` as the router runs it, its polls stepped through steps-<k>/.
+    /// `scripts/router-watch.sh <args>` as the router runs it, its polls stepped through steps-<k>/;
+    /// an exported ROUTER_WATCH_POLL or ROUTER_WATCH_MAX never reaches it, only `env` sets them.
     fn cmd(&self, args: &[&str], k: &str, env: &[(&str, &str)]) -> (Command, PathBuf) {
         let dir = self.base.join(format!("steps-{k}"));
         std::fs::create_dir_all(&dir).unwrap();
@@ -1261,6 +1262,8 @@ impl Watcher {
             .env("PATH", format!("{}:{}", self.base.join("shim").display(), std::env::var("PATH").unwrap()))
             .env("STEP_DIR", &dir)
             .env("STUB_OWNER", std::process::id().to_string())
+            .env_remove("ROUTER_WATCH_POLL")
+            .env_remove("ROUTER_WATCH_MAX")
             .envs(env.iter().copied());
         (c, dir)
     }
@@ -1281,7 +1284,7 @@ impl Watcher {
         let dir = self.base.join("spy");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("git"), format!(
-            "#!/bin/sh\necho \"$*\" >> \"$GIT_SPY_LOG\"\ncase \"$GIT_SPY_FAIL $*\" in 1*\" fetch \"*) echo 'fatal: spy refuses fetch' >&2; exit 128;; esac\nexec {} \"$@\"\n",
+            "#!/bin/sh\necho \"$*\" >> \"$GIT_SPY_LOG\"\ncase \"$GIT_SPY_FAIL $*\" in 1*\" fetch \"*) printf 'fatal: spy refuses fetch\\nspy: last line\\n' >&2; exit 128;; esac\nexec {} \"$@\"\n",
             real.trim()
         )).unwrap();
         std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
@@ -1291,12 +1294,12 @@ impl Watcher {
     /// One run to its end with polls 1..=go pre-released: (exit code, stdout, stderr, polls taken).
     /// A run still going after BOUND (it polled past `go`) is killed and fails the test.
     fn run(&self, args: &[&str], k: &str, go: u32, env: &[(&str, &str)]) -> (Option<i32>, String, String, u32) {
-        let dir = self.base.join(format!("steps-{k}"));
-        std::fs::create_dir_all(&dir).unwrap();
+        let s = self.armed_env(args, k, env);
         for n in 1..=go {
-            std::fs::write(dir.join(format!("go-{n}")), "").unwrap();
+            s.go(n);
         }
-        let o = self.armed_env(args, k, env).output();
+        let dir = s.dir.clone();
+        let o = s.output();
         let polls = std::fs::read_to_string(dir.join("polls")).map_or(0, |s| s.trim().parse().unwrap());
         (o.status.code(), String::from_utf8(o.stdout).unwrap(), String::from_utf8(o.stderr).unwrap(), polls)
     }
@@ -1315,6 +1318,11 @@ fn hermetic_git_ignores_global_and_system_config() {
     let list = String::from_utf8(o.stdout).unwrap();
     assert!(o.status.success() && !list.contains("gpgsign"), "{list}");
     assert_eq!(String::from_utf8(o.stderr).unwrap(), "", "a GIT_TRACE* variable reached git");
+    let mut c = common::cmd("git");
+    c.args(["init", "-q", "r"]).current_dir(d.path()).env("GIT_DEFAULT_HASH", "sha256");
+    assert!(hermetic(&mut c).status().unwrap().success());
+    let f = hermetic(&mut common::cmd("git")).args(["rev-parse", "--show-object-format"]).current_dir(d.path().join("r")).output().unwrap();
+    assert_eq!(String::from_utf8(f.stdout).unwrap(), "sha1\n", "GIT_DEFAULT_HASH reached git init");
 }
 
 /// E-SEED2.W12: every argument router-watch.sh cannot validate is refused with exit 2 before its
@@ -1330,6 +1338,8 @@ fn watch_refuses_bad_arguments_before_any_poll() {
         (vec!["signed"], "signed <tip>"),
         (vec!["signed", &t, "x"], "signed <tip>"),
         (vec!["merged", &t], "merged <tip> <target>"),
+        (vec!["merged", &t, "main", "x"], "merged <tip> <target>"),
+        (vec!["pushed", &t, "main", "x"], "pushed <tip> <branch>"),
         (vec!["pushed", &t], "pushed <tip> <branch>"),
         (vec!["tagged"], "tagged <tag> [<sha>]"),
         (vec!["tagged", "v1", &t, "x"], "tagged <tag> [<sha>]"),
@@ -1647,8 +1657,7 @@ fn watch_times_out_and_reports_an_unreachable_origin() {
     git(&w.main, &["fetch", "-q", "origin", "wu/f"]);
     git(&other, &["commit", "-q", "--allow-empty", "-m", "ahead2"]);
     git(&other, &["push", "-q", "origin", "HEAD:refs/heads/wu/f"]);
-    let (path, _) = w.spy();
-    let log = w.base.join("spy.log");
+    let (path, log) = w.spy();
     let env = [("PATH", path.as_str()), ("GIT_SPY_LOG", log.to_str().unwrap()), ("GIT_SPY_FAIL", "1")];
     let mut s = w.armed_env(&["pushed", &tip, "wu/f"], "fetch-fails", &env);
     for n in 1..=3 {
@@ -1664,7 +1673,9 @@ fn watch_times_out_and_reports_an_unreachable_origin() {
     }
     let dir = s.dir.clone();
     let out = s.line();
-    assert_eq!(out, "UNREACHABLE kind=pushed remote=origin error=fatal: spy refuses fetch\n");
+    assert_eq!(out, "UNREACHABLE kind=pushed remote=origin error=spy: last line\n", "the error is git's last line");
+    let fetches: Vec<String> = std::fs::read_to_string(&log).unwrap().lines().filter(|l| l.contains(" fetch ")).map(String::from).collect();
+    assert!(!fetches.is_empty() && fetches.iter().all(|l| ["--no-tags", "--no-write-fetch-head", "--no-auto-maintenance", "--no-recurse-submodules"].iter().all(|f| l.contains(f))), "{fetches:?}");
     assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "9", "a missing branch did not reset the count");
 
     // review r5: tagged resets its count on a good ls-remote too (the tag is not there yet)
@@ -1706,4 +1717,9 @@ fn watch_polls_at_its_default_pace_and_times_out_in_minutes() {
     s.go(2);
     assert_eq!(s.line(), "TIMEOUT kind=signed waited=110m\n");
     assert_eq!(std::fs::read_to_string(dir.join("sleeps")).unwrap(), "15\n15\n");
+
+    // the defaults hold whatever the test process exported: the knobs reach the watch only via `env`
+    let (c, _) = w.cmd(&["signed", &t], "knobs", &[]);
+    let removed: Vec<&std::ffi::OsStr> = c.get_envs().filter(|(_, v)| v.is_none()).map(|(k, _)| k).collect();
+    assert!(["ROUTER_WATCH_POLL", "ROUTER_WATCH_MAX"].iter().all(|k| removed.contains(&std::ffi::OsStr::new(k))), "{removed:?}");
 }
