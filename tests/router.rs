@@ -1227,6 +1227,7 @@ fn watch_signed_and_merged_report_the_note_and_how_the_tip_landed() {
     git(&w.main, &["branch", "-q", "-D", "epic/gone"]);
     s.go(1);
     let dir = s.dir.clone();
+    until("the merged watch to end", || s.child.try_wait().unwrap().is_some());
     let o = s.child.wait_with_output().unwrap();
     assert_eq!((o.status.code(), String::from_utf8(o.stdout).unwrap(), String::from_utf8(o.stderr).unwrap()), (Some(0), "DELETED target=epic/gone\n".into(), String::new()));
     assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "1");
