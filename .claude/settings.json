@@ -19,8 +19,10 @@
       "Bash(git status *)",
       "Bash(ps -ef)",
       "Bash(ps aux)",
+      "Bash(scripts/router-watch.sh *)",
       "Bash(scripts/router-worker.sh resume *)",
-      "Bash(scripts/router-worker.sh spawn *)"
+      "Bash(scripts/router-worker.sh spawn *)",
+      "Bash(scripts/router-worker.sh wait *)"
     ]
   },
   "hooks": {

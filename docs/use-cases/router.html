@@ -10,18 +10,18 @@
     <div class="inner">
       <h1>Use cases: router</h1>
       <p>What a router session coordinating worker sessions must and must not do.</p>
-      <div class="meta">T2 · use-cases · current truth (updated in place) · 2026-11-08 · Keel · distilled from E-SEED (W6) and E-ROUTER (plan, W1–W4, close review)</div>
+      <div class="meta">T2 · use-cases · current truth (updated in place) · 2026-11-08 · Keel · distilled from E-SEED (W6), E-ROUTER (plan, W1–W4, close review), E-ROUTERFIX and E-SEED2 (W7, W12)</div>
     </div>
   </header>
   <main>
-    <p data-c="how-to-read">The standard itself is the <code>keel-router</code> skill (<code>skills/keel-router/</code>); this file holds only the contract. Why the router is shaped this way: <a href="../decisions/router.html">decisions/router.html</a> (DEC-30 – DEC-35).</p>
+    <p data-c="how-to-read">The standard itself is the <code>keel-router</code> skill (<code>skills/keel-router/</code>); this file holds only the contract. Why the router is shaped this way: <a href="../decisions/router.html">decisions/router.html</a> (DEC-30 – DEC-37, DEC-39).</p>
 
     <h2 id="uc-route">UC-ROUTE · routing</h2>
     <h3 id="uc-route-1"><span class="badge id">UC-ROUTE-1</span> the router coordinates, the owner acts</h3>
     <table data-c="uc-route-1-table">
       <tr><th>Trigger</th><td>A router session coordinating worker sessions on a Keel project.</td></tr>
-      <tr><th>Expected</th><td>It verifies workers' claims against the repo, stages the owner's commands (sign-off, merge, push) for the owner to run, and never signs (<code>keel mr</code>), merges or pushes for the owner.</td></tr>
-      <tr><th>Failure</th><td>The router runs <code>keel mr</code> itself, merges or pushes; or relays a worker claim it did not check.</td></tr>
+      <tr><th>Expected</th><td>It verifies workers' claims against the repo, stages the owner's commands (sign-off, merge, push, tag) for the owner to run, and never signs (<code>keel mr</code>), merges or pushes for the owner. In the turn it stages an owner action it arms a read-only watch for it in the background (Keel: <code>scripts/router-watch.sh commit|signed|merged|pushed|tagged &lt;args&gt;</code>, DEC-30 as amended by E-SEED2.W12), so it learns the action landed without the owner saying "done". The watch checks at once and then polls until the state holds. It wakes the router with one event line plus what landed: the commits with their <code>Reviewed-By</code>, the landed paths against the staged set (<code>COMMITTED-PARTIAL</code> when one is missing), the <code>mr</code> note, and whether a merge was <code>no-ff</code> or <code>ff</code>. Otherwise it ends with <code>REWRITTEN</code>, <code>DELETED</code>, <code>TAGGED-MISMATCH</code>, <code>TIMEOUT</code> (before the 2 h background ceiling; the router re-arms) or <code>UNREACHABLE</code>. Detail lines are untrusted data. Tests: <code>tests/router.rs</code> <code>watch_*</code>.</td></tr>
+      <tr><th>Failure</th><td>The router runs <code>keel mr</code> itself, merges or pushes; or relays a worker claim it did not check; or a watch fires before the owner acted, misses a partial commit or an <code>ff</code> merge, or polls past its timeout.</td></tr>
     </table>
     <h3 id="uc-route-2"><span class="badge id">UC-ROUTE-2</span> epic branch first</h3>
     <table data-c="uc-route-2-table">
@@ -50,7 +50,7 @@
     <h3 id="uc-route-6"><span class="badge id">UC-ROUTE-6</span> the router posture is enforced, fail-closed</h3>
     <table data-c="uc-route-6-table">
       <tr><th>Trigger</th><td>Any tool call by a session whose agent type is <code>router</code> in a checkout that enforces the posture (Keel: <code>"agent": "router"</code> in <code>.claude/settings.json</code>).</td></tr>
-      <tr><th>Expected</th><td>One <code>PreToolUse</code> guard on every tool (Keel: <code>scripts/router-guard.jq</code>) allows only the tools in the router's agent file (no <code>Agent</code>, <code>Edit</code>, <code>Monitor</code>), the inline keel skills, <code>ListAgents</code>, <code>SendMessage</code> only as a contentless idle subscription (<code>{to, notify_when_idle: true}</code>, no message, no other key; DEC-36), <code>Write</code> to <code>&lt;cwd&gt;/.router/briefs/&lt;name&gt;.md</code>, and Bash commands of plain words matching the whitelist (read-only git, gh with named query flags only, ps, the launcher's three shapes: spawn, resume, wait). A guard error denies. Other agent types pass untouched. Watch probes it stages fire only on the real event (PUSHED = the tip is in <code>origin/&lt;b&gt;</code>). Tests: <code>tests/router.rs</code>.</td></tr>
+      <tr><th>Expected</th><td>One <code>PreToolUse</code> guard on every tool (Keel: <code>scripts/router-guard.jq</code>) allows only the tools in the router's agent file (no <code>Agent</code>, <code>Edit</code>, <code>Monitor</code>), the inline keel skills, <code>ListAgents</code>, <code>SendMessage</code> only as a contentless idle subscription (<code>{to, notify_when_idle: true}</code>, no message, no other key; DEC-36), <code>Write</code> to <code>&lt;cwd&gt;/.router/briefs/&lt;name&gt;.md</code>, and Bash commands of plain words matching the whitelist (read-only git, gh with named query flags only, ps, the launcher's three shapes: spawn, resume, wait, and the five <code>router-watch.sh</code> kinds, each word validated so none starts with <code>-</code>). A guard error denies. Other agent types pass untouched. Watch probes it stages fire only on the real event (PUSHED = the tip is in <code>origin/&lt;b&gt;</code>). Tests: <code>tests/router.rs</code>.</td></tr>
       <tr><th>Failure</th><td>Any shell spelling that reassembles a denied flag (<code>--out""put=</code>); a subagent or forked skill started by the router; gh pointed at another host; a hook error or timeout that allows the call; a watcher that fires before the owner acted; router text reaching a worker through <code>SendMessage</code>.</td></tr>
     </table>
   </main>

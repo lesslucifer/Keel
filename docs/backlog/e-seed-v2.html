@@ -9,51 +9,102 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>Backlog: E-SEED v2</h1>
-      <p>Work deferred when E-SEED closed with W1–W8 (W7 v2 last), for a future "E-SEED v2" epic to absorb.</p>
-      <div class="meta">T2 · backlog · living (strike a row when an epic absorbs it) · 2026-11-08 · Keel</div>
+      <p>Work deferred when E-SEED closed with W1–W8 (W7 v2 last). E-SEED2 absorbed B1 and B2 and closed on 2026-11-10; every other row is re-pointed to a proposed later epic.</p>
+      <div class="meta">T2 · backlog · living (strike a row when an epic absorbs it) · 2026-11-08 · Keel · B1 – B14 · re-pointed at the E-SEED2 close (owner rulings 2026-11-10)</div>
     </div>
   </header>
   <main>
-    <p data-c="how-to-read">Each row names the source it was deferred from. The E-SEED working docs are archived out of git; <code>git show 0c8baea:docs/work/&lt;file&gt;</code> recovers any of them.</p>
+    <p data-c="how-to-read">Each row names the source it was deferred from. The E-SEED working docs are archived out of git; <code>git show 0c8baea:docs/work/&lt;file&gt;</code> recovers any of them. E-SEED2's are archived too; <code>git show f059eb4:docs/work/&lt;file&gt;</code> recovers them.</p>
 
-    <h2 id="b1">B1 · E-SEED.W10 release pipeline (parked branch)</h2>
+    <h2 id="proposed-epics">Proposed later epics <span class="badge approval">proposed, decided after E-ROUTER3</span></h2>
+    <p data-c="proposed-epics-how">Owner ruling 2026-11-10: E-SEED2 closes first, then E-ROUTER3 (<a href="e-router-v2.html#e-router3">e-router-v2.html</a>). The epics below are proposals, not commitments, and are decided after E-ROUTER3.</p>
+    <table data-c="proposed-epics">
+      <tr><th>Proposed epic</th><th>Rows, in proposed order</th></tr>
+      <tr><td>E-SEED3</td><td>B6 → B7 skills.lock, foreign-<code>keel</code> warning, pre-commit <code>keel lint</code>, pre-commit MERGE_HEAD gate → B9, B10 → B8, B12 → two Keel product rows of e-router-v2 R7 (bare-SHA target inference, <code>cargo fmt</code> drift) → B4 last</td></tr>
+      <tr><td>E-RELEASE</td><td>What B1 left before a real release: the owner prerequisites, the owner's <code>dist plan</code> / <code>dist generate</code> check, a prerelease-tag run, the first stable tag, the accepted-risk revisits of <a href="../decisions/distribution.html#dec-38">DEC-38</a>, and the fixed <code>keel</code> on <code>PATH</code> (<a href="../decisions/workflow-gates.html#dec-41">DEC-41</a> consequence)</td></tr>
+      <tr><td>E-LINEAGE</td><td>B5</td></tr>
+      <tr><td>E-GATEFIX</td><td>B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14</td></tr>
+      <tr><td>E-MULTILANG</td><td>B3: the Python e2e first, then other languages</td></tr>
+      <tr><td>stays in the backlog</td><td>B2's unbuilt follow-ups; B7 Codex rows (all non-Claude work), native SSH signing, <code>Cargo.lock</code> currency</td></tr>
+    </table>
+
+    <h2 id="b1"><s>B1 · E-SEED.W10 release pipeline (parked branch)</s> · done</h2>
     <table data-c="b1">
       <tr><th>What</th><td>Prebuilt Unix binaries (aarch64/x86_64 macOS, aarch64/x86_64 Linux musl) from one cargo-dist config: tag-triggered GitHub Release with shell installer, npm wrapper <code>@lesslucifer/keel</code>, Homebrew formula pushed to <code>lesslucifer/homebrew-tap</code> (<code>brew install lesslucifer/tap/keel</code>), plus <code>keel --version</code>/<code>-V</code> working outside a repo. No crates.io, no Windows, no signing/notarization. Release CI is a signal, never a gate. The owner tags; agents never do.</td></tr>
-      <tr><th>State</th><td>Implemented but never reviewed, signed or merged, on the parked branch <code>wu/E-SEED/w10-release-pipeline</code> (tip <code>4a22316</code>, two commits on top of epic/E-SEED <code>0c8baea</code>: <code>9b01d61</code> keel --version, <code>4a22316</code> cargo-dist 0.34.0 config, <code>.github/workflows/release.yml</code>, install.html channels, plan corrections). Its plan doc was <code>docs/work/2026-11-07-w10-release-pipeline-plan.html</code> (htmldoc id <code>6aef41b69f34851f0dfb0af6</code>); the branch still tracks its own, newer copy.</td></tr>
-      <tr><th>Owner prerequisites</th><td>npm account owning the <code>@lesslucifer</code> scope and an <code>NPM_TOKEN</code> repo secret; the public repo <code>lesslucifer/homebrew-tap</code> (name and personal-account location settled 2026-11-08) and a fine-grained <code>HOMEBREW_TAP_TOKEN</code> secret on lesslucifer/Keel; Actions write permission for releases.</td></tr>
-      <tr><th>Resuming</th><td>Merge the branch into the E-SEED v2 epic (never rebase it). Expect a modify/delete conflict on the W10 plan doc, which main no longer tracks: keep it as v2's T3 plan or drop it. Open plan points: in-binary install hints (5), npm devDependency route not supported (6), npm EEXIST with keel.so's bin (7, accepted).</td></tr>
+      <tr><th>State</th><td>Absorbed by E-SEED2.W1 (merged the parked branch, reviewed) and hardened by E-SEED2.W11 (MIT licence, action pins, Ubuntu 24.04 runners, F1–F12): <a href="../decisions/distribution.html#dec-38">DEC-38</a>. What remains before a real release is the proposed <b>E-RELEASE</b> epic (above).</td></tr>
+      <tr><th>Owner prerequisites</th><td>npm account owning the <code>@lesslucifer</code> scope and an <code>NPM_TOKEN</code> repo secret; the public repo <code>lesslucifer/homebrew-tap</code> and a fine-grained <code>HOMEBREW_TAP_TOKEN</code> secret on lesslucifer/Keel; Actions write permission for releases. Then the owner runs <code>dist plan</code> and <code>dist generate --mode=ci</code> and checks <code>git diff --exit-code .github/</code>, because agents cannot run <code>dist</code>. A prerelease tag's version must match <code>Cargo.toml</code>.</td></tr>
     </table>
 
-    <h2 id="b2">B2 · E-SEED.W9 report binding and hook coexistence</h2>
+    <h2 id="b2"><s>B2 · E-SEED.W9 report binding and hook coexistence</s> · done</h2>
     <table data-c="b2">
-      <tr><th>Report binding</th><td>Owner direction (R11): drop the fixed/inferred report path, make the requirement configurable, treat the report as a receipt. Proposed: <code>[mr] report = "required" | "optional" | "none"</code> (default required); find the report by <code>data-artifact</code> role (<code>wu-result</code>/<code>epic-result</code>), not <code>*-result.html</code>; a missing required report is a named gate failure; optional report fields with payload header <code>keel-mr/v2</code>; dod/v1 names the attested report; amend UC-MR-1. Unanswered: meaning of "receipt" (1), one policy or per level (2), finding the archived epic report (3), schema version (4).</td></tr>
-      <tr><th>Hook coexistence</th><td><code>keel hooks install</code> overrides any existing <code>core.hooksPath</code> (other hook managers stop silently) and nothing notices when another tool resets it (Keel stops silently). Proposed: refuse install over a foreign hooksPath or non-sample <code>.git/hooks</code> unless <code>--force</code>, and a DEC-72-style guard that makes verify-dod/preflight refuse (check warns) when <code>core.hooksPath</code> is not Keel's. Chaining other hooks rejected unless needed (re-imports branch-controlled code). Owner decision pending (W9 open point 5). The DEC-72 reversal itself is recorded: <a href="../decisions/workflow-gates.html#dec-23">DEC-23</a>.</td></tr>
-      <tr><th>Source</th><td>W4 open points 11, 19; R11; R14; W9 plan (never started).</td></tr>
+      <tr><th>State</th><td>Absorbed by E-SEED2.W2: report binding as <a href="../decisions/workflow-gates.html#dec-40">DEC-40</a>, coexistence as options B + D in <a href="../decisions/workflow-gates.html#dec-23">DEC-23</a>'s amendment (UC-GATE-6). An archived epic report is named with <code>--report</code> (owner ruling 2026-11-10, DEC-40).</td></tr>
+      <tr><th>Stays in the backlog</th><td>Not built; follow-ups if asked: chaining other tools' hooks (rejected unless needed: it re-imports branch-controlled code), a per-level report policy.</td></tr>
+      <tr><th>Source</th><td>W4 open points 11, 19; R11; R14; E-SEED.W9 plan.</td></tr>
     </table>
 
-    <h2 id="b3">B3 · Epic e2e per fixture language</h2>
-    <p data-c="b3">The seed plan's expected result: one hermetic e2e per fixture language (a Python repo with no Rust, then a second language) running init → epic + WU → notes → preflight → cr fixture → mr confirm with a test key → merges, plus the four refusals (edit after cr → check 5, skip mr → check 8, ff-merge a WU → walk, commit on main → pre-commit). Not built in E-SEED; integration tests cover each piece. Until built, an epic-level <code>test/v1</code> needs its e2e layer waived.</p>
+    <h2 id="b3">B3 · Epic e2e per fixture language <span class="badge id">proposed: E-MULTILANG</span></h2>
+    <p data-c="b3">The seed plan's expected result: one hermetic e2e per fixture language (a Python repo with no Rust, then other languages) running init → epic + WU → notes → preflight → cr fixture → mr confirm with a test key → merges, plus the four refusals (edit after cr → check 5, skip mr → check 8, ff-merge a WU → walk, commit on main → pre-commit). Planned as E-SEED2.W3, then moved out by owner ruling 2026-11-10: Python and every other language form their own late epic. Until built, an epic-level <code>test/v1</code> waives its e2e layer (E-SEED2's did, for this reason).</p>
 
-    <h2 id="b4">B4 · T1 architecture doc</h2>
-    <p data-c="b4">The seed plan's distillation plan named <code>docs/architecture.html</code> (T1): the CLI (with embedded skills) / adopting-project split, the config surface and the note set. Not written at E-SEED close: flat <code>docs/*.html</code> is rule-bearing, so it must land as a <code>keel mr commit</code> with the owner's Reviewed-By.</p>
+    <h2 id="b4">B4 · T1 architecture doc <span class="badge id">proposed: E-SEED3</span></h2>
+    <p data-c="b4">The seed plan's distillation plan named <code>docs/architecture.html</code> (T1): the CLI (with embedded skills) / adopting-project split, the config surface (<code>.keel/config.toml</code> keys), the note set and how the gates read them, and the router launcher and guard as Keel-project tooling. Flat <code>docs/*.html</code> is rule-bearing, so it lands as a <code>keel mr commit</code> with the owner's Reviewed-By. Write it last in its epic, so it describes the final surface. Was E-SEED2.W4, deferred 2026-11-10.</p>
 
-    <h2 id="b5">B5 · Re-record the remaining Trawler decisions</h2>
-    <p data-c="b5">The distillation plan committed to re-recording Trawler DEC-2, 3, 4, 6, 7, 8, 9, 10, 11, 27, 43, 44, 45, 47, 50, 51, 52, 54, 72, 74, 83 in Keel with "lineage: Trawler DEC-n". Keel's records cite most of them by lineage (see the <a href="../decisions/decisions-index.html#trawler-lineage">decision index</a>); full generalised records of DEC-2, 3, 6, 7, 8, 43, 45, 47 need Trawler's <code>docs/decisions/workflow-gates.html</code> as source.</p>
+    <h2 id="b5">B5 · Re-record the remaining Trawler decisions <span class="badge id">proposed: E-LINEAGE</span></h2>
+    <p data-c="b5">The distillation plan committed to re-recording Trawler DEC-2, 3, 4, 6, 7, 8, 9, 10, 11, 27, 43, 44, 45, 47, 50, 51, 52, 54, 72, 74, 83 in Keel with "lineage: Trawler DEC-n". Keel's records cite most of them by lineage (see the <a href="../decisions/decisions-index.html#trawler-lineage">decision index</a>); full generalised records of DEC-2, 3, 6, 7, 8, 43, 45, 47 need Trawler's <code>docs/decisions/workflow-gates.html</code> as source. Re-records take new Keel ids from the index's next free id (DEC-42 at the E-SEED2 close), never Trawler's number. Was E-SEED2.W5, deferred 2026-11-10.</p>
 
-    <h2 id="b6">B6 · Notes fetch on init</h2>
-    <p data-c="b6">keel init sets up no <code>refs/notes/*</code> fetch refspec, so a fresh clone fetches notes by hand. Deferred by the owner to a future WU, explicitly not W6 (R7, W3 open point 9).</p>
+    <h2 id="b6">B6 · Notes fetch on init <span class="badge id">proposed: E-SEED3</span></h2>
+    <p data-c="b6"><code>keel init</code> sets up no <code>refs/notes/*</code> fetch refspec, so a fresh clone fetches notes by hand. Add <code>+refs/notes/*:refs/notes/*</code> to <code>remote.origin.fetch</code>, idempotently. Was E-SEED2.W6, deferred 2026-11-10.</p>
 
     <h2 id="b7">B7 · Smaller deferred follow-ups</h2>
     <table data-c="b7">
-      <tr><th>Item</th><th>Source</th></tr>
-      <tr><td><code>.keel/skills.lock</code> so init can tell a hand edit from an upstream update</td><td>W7 v2 open point 4</td></tr>
-      <tr><td>init and hook shims run <code>keel --version</code> and warn when it is not Keel's (keel.so collision); needs B1</td><td>W7 v2 open point 12</td></tr>
-      <tr><td>Guard <code>.codex/hooks.json</code> commands like the settings hooks (<code>[ -f ] || exit 0</code>)</td><td>W7 v2 open point 16</td></tr>
-      <tr><td>Validate verify-doc-post's Codex <code>apply_patch</code> payload parsing against real Codex output</td><td>W5 open point 3</td></tr>
-      <tr><td>SHA-256 for change/report hashes (payload <code>keel-mr/v2</code>)</td><td>W4 open point 3</td></tr>
-      <tr><td>Native SSH signing of rule-bearing commits, verified at pre-push</td><td>W4 open point 7, R9</td></tr>
-      <tr><td>pre-commit runs <code>keel lint</code></td><td>W6 open point 9</td></tr>
-      <tr><td>pre-commit runs the merge gate when MERGE_HEAD exists (conflicted merges)</td><td>W6 open point 10</td></tr>
+      <tr><th>Item</th><th>Source</th><th>Destination</th></tr>
+      <tr><td><code>.keel/skills.lock</code> so init can tell a hand edit from an upstream update</td><td>W7 v2 open point 4</td><td>proposed E-SEED3</td></tr>
+      <tr><td>init and hook shims run <code>keel --version</code> and warn when it is not Keel's (keel.so collision); init's not-on-PATH warning names <code>docs/install.html</code> too</td><td>W7 v2 open point 12; E-SEED2.W1 result</td><td>proposed E-SEED3</td></tr>
+      <tr><td>Guard <code>.codex/hooks.json</code> commands like the settings hooks (<code>[ -f ] || exit 0</code>)</td><td>W7 v2 open point 16</td><td>backlog: non-Claude work waits for a later epic</td></tr>
+      <tr><td>Validate verify-doc-post's Codex <code>apply_patch</code> payload parsing against real Codex output</td><td>W5 open point 3</td><td>backlog: non-Claude</td></tr>
+      <tr><td><s>SHA-256 for change/report hashes (payload <code>keel-mr/v2</code>)</s> absorbed by E-SEED2.W2 (<a href="../decisions/workflow-gates.html#dec-40">DEC-40</a>)</td><td>W4 open point 3</td><td>done</td></tr>
+      <tr><td>Native SSH signing of rule-bearing commits, verified at pre-push</td><td>W4 open point 7, R9</td><td>backlog: a later epic</td></tr>
+      <tr><td>pre-commit runs <code>keel lint</code></td><td>W6 open point 9</td><td>proposed E-SEED3</td></tr>
+      <tr><td>pre-commit runs the merge gate when MERGE_HEAD exists (conflicted merges)</td><td>W6 open point 10</td><td>proposed E-SEED3</td></tr>
+      <tr><td>Check <code>Cargo.lock</code> currency and yanked status (needs the network: <code>cargo audit</code> / registry; not checkable offline)</td><td>E-SEED2.W2 review r1 F6</td><td>backlog</td></tr>
+    </table>
+
+    <h2 id="b8">B8 · Port Trawler's code-review limits into keel-code-review <span class="badge id">proposed: E-SEED3</span></h2>
+    <p data-c="b8">Bound the review loop the way Trawler's code review does: a cap on rounds and on finding scope, so that a missing edge-case test or a harness tidy-up stays a nit and does not reopen a WU. The owner applied such a cap by hand to E-SEED2.W12 (2026-11-10), and the owner wants no review loops. Source: E-SEED2.W12 result; owner, 2026-11-10.</p>
+
+    <h2 id="b9">B9 · Strip GIT_INDEX_FILE in check_push's scratch path <span class="badge id">proposed: E-SEED3</span></h2>
+    <p data-c="b9">Pre-existing; found by the E-SEED2.W13 review r2 verifier. If keel inherits <code>GIT_INDEX_FILE</code> when pre-push starts (the user's own post-commit hook runs <code>git push</code>, or the user exported it), the pre-push scratch path's <code>git worktree add</code> forwards it. With an absolute path that can overwrite the main index with the pushed tree; with a relative one the push is refused for an unrelated reason. The verdict stays correct either way. Fix: strip <code>GIT_INDEX_FILE</code> in <code>src/gate.rs</code> <code>check_push</code>'s scratch calls only (keel's other git calls keep it, <a href="../decisions/workflow-gates.html#dec-41">DEC-41</a>).</p>
+
+    <h2 id="b10">B10 · Keep the test suite away from the developer's ~/.gitconfig <span class="badge id">proposed: E-SEED3</span></h2>
+    <p data-c="b10">Tests still read the developer's global and system git config. Set <code>GIT_CONFIG_GLOBAL</code> / <code>GIT_CONFIG_NOSYSTEM</code> in every test spawn helper (<code>tests/common/</code>). DEC-41 left these selectors unstripped on purpose (they do not locate a repository). Source: E-SEED2.W13 plan open question 1.</p>
+
+    <h2 id="b11">B11 · W2 rule-text review round 3 follow-ups <span class="badge id">proposed: E-GATEFIX</span></h2>
+    <p data-c="b11-how">The owner signed E-SEED2.W2 without fixing these, and ruled on 2026-11-10 that they get their own later epic for review and fix.</p>
+    <table data-c="b11">
+      <tr><th>Item</th><th>Severity</th></tr>
+      <tr><td><a href="../decisions/workflow-gates.html#dec-40">DEC-40</a>'s Consequence says a one-WU epic's collapsed result doc is found without <code>--report</code>, but check 6 refuses it first, as a T3 doc tracked in <code>docs/work/</code> at the epic tip</td><td>medium (R3-1)</td></tr>
+      <tr><td>UC-MR-1 wording in <code>docs/use-cases/workflow.html</code></td><td>low (R3-2)</td></tr>
+      <tr><td><code>src/mr.rs</code>'s check-8 <code>fix -&gt;</code> line does not mention <code>--report</code></td><td>low (R3-3)</td></tr>
+    </table>
+    <p data-c="b11-note">R3-4 (stale lines in the W2 WU result) is moot: that result is archived.</p>
+
+    <h2 id="b13">B13 · Check 8 passes when an archived epic report is missing <span class="badge id">proposed: E-GATEFIX</span> <span class="badge approval">blocker, waived once for the E-SEED2 close</span></h2>
+    <table data-c="b13">
+      <tr><th>Finding</th><td>When an epic's attested report is untracked or archived (<code>docs/.archive/</code>) and the local file is missing or unreadable, <code>src/mr.rs</code> <code>report_hash</code> returns <code>Ok(None)</code>. <code>manual_review</code>'s match has three arms: <code>Ok(Some(h)) if h != hash</code> (red), <code>Err</code> (red) and a catch-all <code>_</code>, which returns <code>Ok(Some((path, hash)))</code>. So check <code>8·manual-review</code> passes without re-hashing anything. <code>src/gate.rs</code> then copies that report and hash into the <code>dod/v1</code> receipt as attested, although nothing was verified on this machine. Editing an archived report turns check 8 red (<code>tests/mr.rs</code>), but deleting it turns check 8 green. That breaks the stated contract: the comment above the match says "an attestation is never ignored", and <a href="../decisions/workflow-gates.html#dec-40">DEC-40</a> says a report in a note is re-hashed whatever the policy.</td></tr>
+      <tr><th>Origin</th><td>Pre-existing on main <code>0dad93f</code>: <code>report_hash</code> already returned <code>Ok(None)</code>, and the arm was <code>_ =&gt; Ok(())</code>. E-SEED2.W2 rewrote that match and widened the gap into the new <code>dod/v1</code> receipt. Found by the E-SEED2 epic review (one round, epic tip <code>e184f1e</code>, correctness finder; a fresh verifier confirmed it and raised it to blocker).</td></tr>
+      <tr><th>Waiver</th><td><b>Owner ruling 2026-11-10, one time, the E-SEED2 close only:</b> the blocker is waived, not fixed, and the epic's <code>cr/v1</code> records PASS by this waiver. <code>keel notes write cr</code> takes only the verdict and counts, so the waiver lives here (and in the archived E-SEED2 epic result), not on the note (see B12). Until the fix lands, an archived epic report must stay on disk at its path until the epic merges, because the gate would not notice it missing.</td></tr>
+      <tr><th>Fix sketch</th><td>A missing or unreadable local report is red at check 8, with a <code>fix -&gt;</code> line naming the path. Regression test first: delete an archived epic report after <code>mr confirm</code>, and <code>verify-dod epic</code> turns red on <code>8·manual-review</code>, writing no <code>dod/v1</code>.</td></tr>
+      <tr><th>Review nits (same round, not fixed)</th><td>(1) <code>src/mr.rs</code> <code>report_candidates</code> runs one <code>git show &lt;tip&gt;:&lt;path&gt;</code> per changed <code>.html</code>, deleted paths included, at sign-off; one <code>git cat-file --batch</code> or a <code>--diff-filter=d</code> pre-filter would do. (2) <code>src/main.rs</code> <code>hook_conflicts</code> / <code>hooks_problem_of</code> call a stale Keel <code>core.hooksPath</code> (the repo was moved or renamed) "another tool's setup". The refusal is the DEC-23 contract and <code>--force</code> is the documented recovery, but the message is wrong for that case.</td></tr>
+    </table>
+
+    <h2 id="b12">B12 · The cr note cannot carry a waiver <span class="badge id">proposed: E-SEED3</span></h2>
+    <p data-c="b12"><code>keel notes write cr</code> takes only <code>--verdict</code>, <code>--blockers</code> and <code>--importants</code>, so a review round the owner waives cannot be recorded on the note itself. The E-SEED2 epic review's blocker, waived for the close, is the second such case (B13). <b>The first:</b> on 2026-11-10 the owner waived the review round after the C-locale fix 519c2cc in E-SEED2.W12 (W12 only, a one-time ruling). The <code>cr/v1</code> PASS on W12's tip <code>90135b7</code> therefore records no review of that last change: it is a waiver, not a reviewed verdict. W12's round history (archived result, <code>git show f059eb4:docs/work/2026-11-10-w12-owner-watch-wu-result.html</code>): reviews over 7c26a43, 07c9ce0 and e8dcc49 FAIL and fixed; the round over f68f18c abandoned under the review cap, its real bug fixed in d42dcfd; the capped round over 854d334 FAIL (one blocker, one important), fixed in 519c2cc; the final round waived. Fix: a waiver field (with the owner's reason) on <code>cr/v1</code>, checked at the gate.</p>
+
+    <h2 id="b14">B14 · The check cache ignores HEAD and MERGE_HEAD <span class="badge id">proposed: E-GATEFIX</span></h2>
+    <table data-c="b14">
+      <tr><th>Finding</th><td><code>src/main.rs</code> <code>tree_key</code> keys the <code>keel check</code> green cache on the working tree's hash plus the lint and test commands only. A test whose result depends on HEAD or on a merge in progress can reuse a green verdict cached for the same tree under another HEAD.</td></tr>
+      <tr><th>History</th><td>On 2026-11-10 the owner's merge of <code>epic/E-SEED2</code> into main (<code>0dad93f</code>) was refused: the pre-merge-commit <code>keel check</code> failed <code>self_hosting_clone_is_gated_and_init_is_a_noop</code>. The test cloned the committed HEAD, which was still main's, while the build embedded the merged <code>skills/</code>. So every merge that changes a shipped skill failed, though <code>skills/</code> and <code>.claude/skills/</code> agreed on both branches. E-SEED2.W14 fixed the test: the clone now takes the source's index, the merged result. The regression test is <code>self_hosting_check_passes_mid_merge_of_a_skill_change</code>. The cache did not cause that failure, because the main checkout ran fresh. <b>Owner ruling 2026-11-10:</b> every code review of W14 and of the E-SEED2 re-gate is waived, and their <code>cr/v1</code> PASS records the waiver, not a review (see B12).</td></tr>
+      <tr><th>Fix sketch</th><td>Add HEAD and MERGE_HEAD (when present) to the cache key. Regression test: the same tree under two HEADs runs the check twice.</td></tr>
+      <tr><th>Second refusal (E-SEED2.W15)</th><td>The re-gated merge was refused again, in the hook's <code>keel check</code>. Six <code>tests/mr.rs</code> fixtures failed with <code>git rev-parse epic/E-SEED2^{commit}</code>. Git exports <code>GIT_REFLOG_ACTION="merge epic/E-SEED2"</code> to its hooks. A fixture's own <code>git merge</code> keeps an inherited value, and the fixture's keel then reads it (<code>src/gate.rs</code>) as its merge source. W14's mid-merge test ran <code>cargo test</code> by hand, outside the hook, so it could not catch this. W15 fixes it: keel's child spawns and the tests' <code>common::cmd</code> strip <code>GIT_HOOK_ENV</code> (the reflog action, editor, author and committer variables). That real merge then exposed five <code>tests/router.rs</code> fixtures that read Keel's config through HEAD, the W14 class again; cargo's stop at the first failing binary had hidden them. They now read the file from disk or use <code>common::self_clone</code>. Both fixes were proven by the real <code>git merge --no-ff epic/E-SEED2</code> in a scratch clone with hooks installed. The owner waived every review. <b>Lesson:</b> a gate fix is done only when the real merge, through the real hook, passes in a scratch clone.</td></tr>
     </table>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>

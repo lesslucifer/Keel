@@ -10,15 +10,24 @@
     <div class="inner">
       <h1>Backlog index</h1>
       <p>Routing table for Keel's roadmap and deferred work.</p>
-      <div class="meta">T2 · backlog · index · 2026-11-08 · Keel</div>
+      <div class="meta">T2 · backlog · index · 2026-11-08 · Keel · order updated at the E-SEED2 close, 2026-11-10</div>
     </div>
   </header>
   <main>
+    <h2 id="order">Order <span class="badge approval">owner ruling 2026-11-10</span></h2>
+    <table data-c="order-table">
+      <tr><th>#</th><th>Epic</th><th>Status</th><th>Rows</th></tr>
+      <tr><td>1</td><td>E-SEED2 close</td><td>closing</td><td>absorbed B1, B2 and B7's SHA-256 row</td></tr>
+      <tr><td>2</td><td>E-ROUTER3.W1: router↔worker messaging fix</td><td>next</td><td><a href="e-router-v2.html#e-router3">e-router-v2</a> R8, R12, R15</td></tr>
+      <tr><td>3</td><td>E-ROUTER3.W2–W7</td><td>to be decided</td><td>the rest of e-router-v2 (grouping proposed there)</td></tr>
+      <tr><td>4</td><td>E-SEED3, E-RELEASE, E-LINEAGE, E-GATEFIX, E-MULTILANG</td><td>proposed; decided after E-ROUTER3</td><td><a href="e-seed-v2.html#proposed-epics">e-seed-v2</a> (rows per epic there)</td></tr>
+    </table>
+
     <h2 id="topics">Topics</h2>
     <table data-c="topics-table">
       <tr><th>Topic file</th><th>Ids</th><th>Scope</th><th>Status</th></tr>
-      <tr><td><a href="e-seed-v2.html">e-seed-v2.html</a></td><td>B1 – B7</td><td>work deferred at E-SEED close: W10 release pipeline (parked branch), W9 report binding + hook coexistence, per-language e2e, T1 architecture doc, Trawler DEC re-records, notes fetch, small follow-ups</td><td>open, for a future E-SEED v2 epic</td></tr>
-      <tr><td><a href="e-router-v2.html">e-router-v2.html</a></td><td>R1 – R7</td><td>work deferred at E-ROUTER close: worker persona gap, acceptEdits stall (R2 done, DEC-37), gate coverage of the router's security files, accepted worker risk, router e2e, small launcher follow-ups; R7 what E-ROUTERFIX left open (watch recipe under the launcher, owner clean-up, pending skill text, E-SEED2 hand-off)</td><td>open</td></tr>
+      <tr><td><a href="e-seed-v2.html">e-seed-v2.html</a></td><td>B1 – B13</td><td>work deferred at E-SEED close, and the E-SEED2 close's re-pointing: release pipeline (B1 done; what remains is the proposed E-RELEASE), report binding + hook coexistence (B2 done), per-language e2e, T1 architecture doc, Trawler DEC re-records, notes fetch, small follow-ups, code-review limits, check_push index leak, test isolation from ~/.gitconfig, W2 rule-text r3 follow-ups, waiver on the cr note (holds W12's waiver), check 8 passing on a missing archived epic report (the E-SEED2 review blocker, waived once)</td><td>open; rows re-pointed to proposed epics</td></tr>
+      <tr><td><a href="e-router-v2.html">e-router-v2.html</a></td><td>R1 – R19</td><td>router work deferred at E-ROUTER close and since: worker persona gap, acceptEdits stall (R2 done), gate coverage of the router's security files, accepted worker risk, router e2e, small launcher follow-ups; R7 what E-ROUTERFIX left open (watch recipe and settings entry done by E-SEED2.W12); R8 router↔worker messaging, now a fix (owner ruling 2026-11-10); R9–R14 carried over from the dropped E-SEED2.W9 (R14: a granted worker can sign as the owner); R15–R19 from the E-SEED2 close (resume by default, budget cap, heartbeat, the GIT_DIR leak lesson; R18 obsolete). Holds the E-ROUTER3 WU grouping</td><td>open; E-ROUTER3.W1 next</td></tr>
     </table>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>

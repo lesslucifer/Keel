@@ -2,12 +2,22 @@
 name = "keel"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/lesslucifer/Keel"
+license = "MIT"
+description = "Keel: a merge gate and workflow rules for AI-written code"
+homepage = "https://github.com/lesslucifer/Keel"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 serde_json = { version = "1", features = ["preserve_order"] }
 regex = "1"
+sha2 = "0.10"
 
 [dev-dependencies]
 tempfile = "3"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

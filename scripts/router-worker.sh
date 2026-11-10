@@ -2,10 +2,12 @@
 # Router-only launcher for headless `claude -p` workers (E-ROUTER Q2/Q3 override, 2026-11-08).
 # The router's Bash hook allows ONLY this script's three shapes; every argument is validated
 # here, and the prompt is fixed text, so no untrusted string ever reaches `claude -p`.
-#   router-worker.sh spawn  <name> <worktree> <brief.md> <model> [--permission-mode acceptEdits|plan]
-#   router-worker.sh resume <name> <session-uuid> <worktree> <note.md> <model> [--permission-mode acceptEdits|plan]
+#   router-worker.sh spawn  <name> <worktree> <brief.md> <model> [--permission-mode acceptEdits|plan] [--effort <level>]
+#   router-worker.sh resume <name> <session-uuid> <worktree> <note.md> <model> [--permission-mode acceptEdits|plan] [--effort <level>]
 #   router-worker.sh wait   <name> [<stall-min>]
-# The mode defaults to acceptEdits per run (a resume does not inherit it). Every worker gets the fixed
+# The two options come in either order, once each. The model and effort must satisfy the worker policy,
+# [router] in .keel/config.toml at this checkout's HEAD (DEC-39); no policy, no run. The mode defaults
+# to acceptEdits and the effort to the policy's default, per run (a resume inherits neither). Every worker gets the fixed
 # cargo/keel grant below and is denied `keel mr` and `cargo run`; the grant never reaches the router.
 # wait (run by the router as a background Bash command, so its exit wakes the router) blocks
 # until the worker exits (EXITED) or stalls (STALLED: on two polls running, no Bash-tool shell
@@ -69,17 +71,55 @@ C=${ROUTER_CLAUDE:-$HOME/.local/bin/claude}
 mode=${1:-}; [ $# -ge 1 ] && shift
 case "$mode" in spawn) n=4 usage="spawn <name> <worktree> <brief.md> <model>";;
   resume) n=5 usage="resume <name> <uuid> <worktree> <note.md> <model>";; *) die "spawn|resume|wait";; esac
-usage="$usage [--permission-mode acceptEdits|plan]"
-[ $# -eq $n ] || [ $# -eq $((n + 2)) ] || die "$usage"
+usage="$usage [--permission-mode acceptEdits|plan] [--effort <level>]"
+[ $# -eq $n ] || [ $# -eq $((n + 2)) ] || [ $# -eq $((n + 4)) ] || die "$usage"
 name=$1; shift
 valid_name "$name"
 if [ "$mode" = resume ]; then sid=$1; shift
   expr "$sid" : '^[0-9a-f]\{8\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{12\}$' >/dev/null || die "bad session id"
 else sid=$(uuidgen | tr 'A-F' 'a-f'); fi
 wt=$1 file=$2 model=$3; shift 3
-pm=acceptEdits
-if [ $# -gt 0 ]; then [ "$1" = --permission-mode ] || die "$usage"; pm=$2; fi
-case "$model" in opus|sonnet|haiku|fable) ;; *) die "model must be opus|sonnet|haiku|fable";; esac
+pm=acceptEdits pm_set= effort= effort_set=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --permission-mode) [ -z "$pm_set" ] || die "$usage"; pm_set=1 pm=$2;;
+    --effort) [ -z "$effort_set" ] || die "$usage"; effort_set=1 effort=$2;;
+    *) die "$usage";;
+  esac
+  shift 2
+done
+# The worker policy (DEC-39) is [router] in .keel/config.toml as committed at this checkout's HEAD,
+# so an uncommitted edit cannot widen it. The reader accepts one exact `[router]` header and in it only
+# `key = "word"` and `key = ["word", ...]` (a word starts with a letter; optional trailing # comment);
+# any other line in the section, a second `[router]` or any other header naming router refuses.
+policy=$(git -C "$ROOT" show HEAD:.keel/config.toml 2>/dev/null | awk '
+  /^[ \t]*\[/ {
+    on = /^\[router\]([ \t]+#.*)?$/
+    if (on && seen++) bad = 1
+    if (!on && /^[ \t]*\[+[ \t]*"?router"?[ \t]*(\]|\.)/) bad = 1
+    next
+  }
+  !on { next }
+  { sub(/[ \t]*#.*$/, ""); sub(/[ \t]+$/, "") }
+  /^$/ { next }
+  /^worker_model = "[a-z][a-z0-9.-]*"$/ && m == "" { m = $3; next }
+  /^worker_default_effort = "[a-z][a-z0-9.-]*"$/ && d == "" { d = $3; next }
+  /^worker_efforts = \["[a-z][a-z0-9.-]*"(, "[a-z][a-z0-9.-]*")*\]$/ && e == "" { e = substr($0, 19, length($0) - 19); next }
+  { bad = 1 }
+  END {
+    gsub(/"/, "", m); gsub(/"/, "", d); gsub(/[",]/, "", e)
+    k = split(e, l, " ")
+    for (i = 1; i <= k; i++) { if (l[i] !~ /^(low|medium|high|xhigh|max)$/) bad = 1; if (l[i] == d) has = 1 }
+    if (bad || m == "" || !has) exit 1
+    print m; print d; print e
+  }') || die "no worker policy: [router] worker_model / worker_efforts / worker_default_effort in .keel/config.toml at HEAD of $ROOT"
+{ read -r policy_model; read -r policy_default; read -r policy_efforts; } <<EOF
+$policy
+EOF
+[ "$model" = "$policy_model" ] || die "model must be $policy_model ([router] worker_model in .keel/config.toml)"
+[ -n "$effort_set" ] || effort=$policy_default
+case "$effort" in ""|*[!a-z0-9.-]*) die "effort must be one of: $policy_efforts ([router] worker_efforts in .keel/config.toml)";; esac
+case " $policy_efforts " in *" $effort "*) ;; *) die "effort must be one of: $policy_efforts ([router] worker_efforts in .keel/config.toml)";; esac
 case "$pm" in acceptEdits|plan) ;; *) die "permission mode must be acceptEdits|plan";; esac
 wt=$(cd "$wt" 2>/dev/null && pwd -P) || die "no such worktree"
 git -C "$ROOT" worktree list --porcelain | grep -Fxq "worktree $wt" || die "not a registered worktree of this repo"
@@ -107,7 +147,7 @@ R="$ROOT/.router/runs/$name-$(date +%Y%m%d%H%M%S)-$mode"
 mkdir "$R" || die "run dir exists"
 cp "$f" "$R/brief.md"
 printf '%s\n' "$sid" > "$R/session"; printf '%s\n' "$name" > "$R/name"; printf '%s\n' "$wt" > "$R/worktree"
-printf '%s\n' "$pm" > "$R/permission-mode"
+printf '%s\n' "$pm" > "$R/permission-mode"; printf '%s\n' "$effort" > "$R/effort"
 sha=$(shasum -a 256 "$R/brief.md" | cut -d' ' -f1)
 echo "$sha" > "$R/sha256"; chmod 444 "$R"/*; chmod 555 "$R"
 # A session may only read its own worktree, so the worker gets a copy inside it, in a fresh
@@ -133,12 +173,12 @@ for c in "cargo build" "cargo test" "cargo check" "cargo clippy" "cargo fmt" "ke
   set -- "$@" "Bash($c)" "Bash($c *)"; done
 set -- "$@" --disallowedTools "Bash(keel mr)" "Bash(keel mr *)" "Bash(cargo run)" "Bash(cargo run *)"
 cd "$wt"
-nohup "$C" -p "$prompt" "$@" -n "$name" --model "$model" --agent worker --permission-mode "$pm" --max-budget-usd 25 \
+nohup "$C" -p "$prompt" "$@" -n "$name" --model "$model" --effort "$effort" --agent worker --permission-mode "$pm" --max-budget-usd 25 \
   > "$O/$name.out" 2>&1 < /dev/null &
 pid=$!; echo "$pid" > "$O/$name.pid"
 # survive a 2s startup window (poll 0.2s); an early exit reports its real exit code.
 # alive() excludes zombies: an exited-but-unreaped child still answers `ps -p`.
 alive() { st=$(ps -o stat= -p "$pid" 2>/dev/null) || return 1; case "$st" in Z*|"") return 1;; esac; }
 n=0; while [ $n -lt 10 ] && alive; do sleep 0.2; n=$((n+1)); done
-if alive; then echo "RUNNING name=$name pid=$pid session=$sid permission-mode=$pm out=$O/$name.out snapshot=$snap brief=$f sha256=$sha worktree=$wt"
+if alive; then echo "RUNNING name=$name pid=$pid session=$sid permission-mode=$pm effort=$effort out=$O/$name.out snapshot=$snap brief=$f sha256=$sha worktree=$wt"
 else rc=0; wait "$pid" || rc=$?; echo "DEAD name=$name exit=$rc session=$sid snapshot=$snap brief=$f sha256=$sha"; tail -5 "$O/$name.out"; exit 1; fi
