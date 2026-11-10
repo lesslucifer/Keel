@@ -132,9 +132,9 @@
   </tbody>
 </table>
 
-<h2 id="open-points">Open questions (decided here, owner may override)</h2>
+<h2 id="open-points">Open questions (decided by the owner on 2026-11-10: every question on its default)</h2>
 <table data-c="open-points-table">
-  <thead><tr><th>#</th><th>Point</th><th>Recommendation (the default this WU proceeds on)</th></tr></thead>
+  <thead><tr><th>#</th><th>Point</th><th>Decision (owner ruling 2026-11-10, the recommended default)</th></tr></thead>
   <tbody>
     <tr><td>1</td><td><code>GIT_CONFIG*</code> scope</td><td>Strip only what git lists (<code>GIT_CONFIG</code>, <code>GIT_CONFIG_PARAMETERS</code>, <code>GIT_CONFIG_COUNT</code>). Leave <code>GIT_CONFIG_GLOBAL</code>, <code>GIT_CONFIG_SYSTEM</code> and <code>GIT_CONFIG_NOSYSTEM</code>: they select the user's scope, not a repository. Isolating the test suite from the developer's <code>~/.gitconfig</code> is a separate hermeticity item; it goes to the backlog, not here.</td></tr>
     <tr><td>2</td><td>Guarding the helpers against regressions</td><td>Add one cheap source-scan test (<code>tests/cli.rs</code>). It fails when a <code>Command::new("git"|"sh"|"/bin/sh"|CARGO_BIN_EXE_keel)</code> in <code>tests/*.rs</code> does not go through <code>no_git_env</code>. It is deterministic and reads only the repository's own test sources.</td></tr>
