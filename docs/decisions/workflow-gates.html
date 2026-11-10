@@ -80,7 +80,7 @@
       <tr><th>Choice</th><td><code>ssh-keygen -Y sign -n keel-mr</code> over a versioned text: <code>keel-mr/v1</code>, level, base, tip, change hash (blob hash of the full diff), report path, report hash. Hashes are git object ids. The key comes from <code>git config keel.signingkey</code> (never <code>user.signingkey</code>). mr confirm self-verifies against the roster before writing. The verifier recomputes base, tip and change from the repo and trusts only the signed report hash, re-checked against the report's bytes.</td></tr>
       <tr><th>Rejected</th><td>Trawler's bare <code>change_hash\nreport_sha256</code> (replayable onto another commit, range or level); sha256 via a new crate.</td></tr>
       <tr><th>Lineage</th><td>W4 open points 2, 3, 6, 10; Trawler DEC-10.</td></tr>
-      <tr><th>Amended</th><td>By <a href="#dec-40">DEC-40</a> (E-SEED2.W2): payload <code>keel-mr/v2</code>, the report lines only when a report is attested, change and report hashes <code>sha256:&lt;hex&gt;</code> via the sha2 crate.</td></tr>
+      <tr><th>Amended</th><td>By <a href="#dec-40">DEC-40</a> (E-SEED2.W2): payload <code>keel-mr/v2</code>, the report lines only when a report is attested, change and report hashes <code>sha256:&lt;hex&gt;</code> via the sha2 crate, reversing the "sha256 via a new crate" rejection above.</td></tr>
     </table>
 
     <h3 id="dec-22">DEC-22 · Sign last, strictly; check 8 at the boundary only</h3>
