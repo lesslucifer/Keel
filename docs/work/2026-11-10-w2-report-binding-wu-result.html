@@ -61,8 +61,9 @@
     <tr><td><code>a104a19</code>, <code>7402b33</code>, <code>6bc2394</code></td><td>Code-review r1 F1–F4 and nits (code)</td><td>agent</td></tr>
     <tr><td><code>2fcdded</code></td><td>Code-review r1: DEC-23/DEC-40, UC-MR-1/UC-GATE-6, backlog, plan open question 3, this report</td><td>agent</td></tr>
     <tr><td><code>4aad173</code></td><td>Owner ruling 2026-11-10 (code): no epic-report search; I5 rewritten, the r1 F2 test folded into it</td><td>agent</td></tr>
-    <tr><td>this commit</td><td>Owner ruling 2026-11-10 (docs): DEC-40, UC-MR-1, backlog B2, plan open question 3 and I5, this report</td><td>agent</td></tr>
-    <tr><td>next owner commit</td><td>Rule text: an epic sign-off passes <code>--report</code> unless its result doc is committed in the epic's diff</td><td>owner (<code>keel mr commit</code>)</td></tr>
+    <tr><td><code>0179f0b</code></td><td>Owner ruling 2026-11-10 (docs): DEC-40, UC-MR-1, backlog B2, plan open question 3 and I5, this report</td><td>agent</td></tr>
+    <tr><td><code>6cdd81a</code></td><td>Rule text and <code>.claude/skills</code> copies: an epic sign-off passes <code>--report</code> unless its result doc is committed in the epic's diff</td><td>owner (<code>keel mr commit</code>)</td></tr>
+    <tr><td>this commit</td><td>This report: the re-gate at <code>6cdd81a</code></td><td>agent</td></tr>
   </table>
   <p><b>Integration tests (I1–I10).</b> Red/green was checked by running the tip's <code>tests/</code> against the base <code>ef9ee75</code> source, copied by <code>git archive</code> under <code>target/</code>. Every test below is red on the base and green at the tip.</p>
   <table data-c="tests-table">
@@ -113,7 +114,7 @@
     <tr><td>I5 <code>the_epic_report_is_found_untracked_in_the_ignored_archive</code> and r1 F2 <code>an_earlier_epics_attested_report_is_never_picked_for_this_epic</code> → <code>the_epic_report_is_named_or_committed_never_searched_for</code></td><td>one untracked archived <code>epic-result</code> is picked without <code>--report</code>; two are listed; an earlier merged one is excluded</td><td>untracked <code>epic-result</code> docs (one in the ignored archive, one in <code>docs/work/</code>) are not picked: refused under <code>required</code> with a <code>--report &lt;path&gt;</code> fix, no note; <code>--report</code> to the archived one is attested and <code>verify-dod epic</code> is green; a committed <code>epic-result</code> in base..tip is found beside an untracked one</td><td>yes: "2 epic-result docs could be the report: docs/.archive/e-result.html, docs/work/f-result.html"</td></tr>
   </table>
   <p>Found while writing the test: check 6 refuses a T3 doc tracked at the epic tip, so under the default tiers a committed epic report lives outside <code>docs/work/</code> (the test uses <code>docs/e-result.html</code>, a rule-bearing T1 path). The default flow archives the epic report and passes <code>--report</code>.</p>
-  <p>The full <code>cargo test --locked</code> run is green with 81 tests before this round, and <code>cargo clippy --all-targets -- -D warnings</code> is green. The e2e layer is waived to W3's <code>e2e_python</code>, as the plan states.</p>
+  <p>At <code>6cdd81a</code> the full <code>cargo test --locked</code> run is green with 84 tests (<code>self_hosting_clone_is_gated_and_init_is_a_noop</code> included, now that the <code>.claude/skills</code> copies are committed), and <code>cargo clippy --all-targets -- -D warnings</code> and <code>keel check</code> are green. The e2e layer is waived to W3's <code>e2e_python</code>, as the plan states.</p>
   <p><b>Docs touched:</b></p>
   <ul>
     <li>T2: <code>use-cases/workflow.html</code> and its index, <code>decisions/workflow-gates.html</code> and the decision index, and <code>backlog/e-seed-v2.html</code>.</li>
@@ -150,11 +151,10 @@
   <li>DEC-21 and DEC-22 are amended, and DEC-23 has its coexistence amendment.</li>
   <li>Backlog B2 is absorbed, and the B7 SHA-256 row is struck.</li>
 </ul>
-<p>The rule text is in <code>7814bd9</code>, <code>564a4a2</code> and <code>640cb4d</code>, and <code>install.html</code> (T1) in <code>640cb4d</code>. The plan and this report are archived at epic close.</p>
+<p>The rule text is in <code>7814bd9</code>, <code>564a4a2</code>, <code>640cb4d</code> and <code>6cdd81a</code>, and <code>install.html</code> (T1) in <code>640cb4d</code>. The plan and this report are archived at epic close.</p>
 
 <h2 id="follow-ups">Follow-ups</h2>
 <ul data-item="follow-ups" data-c="follow-ups">
-  <li><b>Skill text for the owner ruling (staged, owner commit).</b> keel-workflow §2 and the other rule text that let an epic leave out <code>--report</code> for an untracked report now say: an epic sign-off passes <code>--report &lt;path&gt;</code> unless its result doc is committed in the epic's diff. It lands as the next <code>keel mr commit</code>.</li>
   <li><b>One <code>git show</code> per changed html doc</b> in the report lookup (code-review r1 nit). The count is bounded by the docs a range changes; batching through <code>git cat-file --batch</code> waits until that count matters.</li>
   <li><b>N1 (review r2, low).</b> In <code>src/mr.rs</code>, an old-format note prints two overlapping fix lines: the cause line and the shared fix line.</li>
   <li><b>N2 (review r2, low).</b> In <code>skills/keel-workflow/SKILL.md</code>, the §7 paragraph is re-wrapped unevenly. The fix is rule-bearing, so it needs an owner <code>keel mr commit</code>.</li>
