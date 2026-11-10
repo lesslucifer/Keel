@@ -1,7 +1,7 @@
 # Worker operations (Claude Code; shell recipes are macOS/zsh-first)
 
 Two worker modes. Pick per SKILL.md "Workers"; both need an explicit model and
-a brief that says "ONE non-stop run, no mid-run questions". Tool names below
+effort from the project's model policy (project-router) and a brief that says "ONE non-stop run, no mid-run questions". Tool names below
 were checked on 2026-11-08 against Claude Code 2.1.288 (`Agent`, `SendMessage`,
 `TaskStop`, `Monitor`, `ToolSearch` load; `CronCreate` and `ListAgents` did not
 load via `ToolSearch` from a subagent session — re-check in yours with
@@ -24,7 +24,7 @@ outside any hook keyed on the router's agent type, with full tools, so an
 enforced router has no `Agent` tool (SKILL.md "The router posture"). There, for
 short one-shot read-only checks, reviews and watches.
 - **Spawn**: `Agent` with `name` (`<epic>-<purpose>`, e.g. `e-router-fix-verify`;
-  the name is its address), `model` set explicitly (`opus|sonnet|haiku|fable`),
+  the name is its address), `model` set explicitly from the project's model policy (project-router),
   `description`, and `prompt` = the full brief (worktree, branch, tip, job, hard
   rules, report protocol). It runs in the background in this session's
   permission mode.
@@ -69,9 +69,10 @@ pitfall 2).
   (regular file, no symlink). A brief is dispatch mechanics, like an `Agent`
   prompt, not authored substance (owner ruling 2026-11-08; SKILL.md
   "Substance comes from workers"). It is the only file you write.
-- **Spawn**: `<launcher> spawn <name> <worktree> .router/briefs/<name>.md <model> [--permission-mode plan]`
-  (`<name>` matches `[a-z0-9][a-z0-9-]{0,40}`; model `opus|sonnet|haiku|fable`).
-  Prints `RUNNING name=… pid=… session=<uuid> permission-mode=… out=… snapshot=… brief=… sha256=… worktree=…`,
+- **Spawn**: `<launcher> spawn <name> <worktree> .router/briefs/<name>.md <model> [--effort <level>] [--permission-mode plan]`
+  (`<name>` matches `[a-z0-9][a-z0-9-]{0,40}`; model and effort from the
+  project's model policy, project-router).
+  Prints `RUNNING name=… pid=… session=<uuid> permission-mode=… effort=… out=… snapshot=… brief=… sha256=… worktree=…`,
   or `DEAD name=… exit=<code> …` plus the output tail. Record the session uuid.
   `Read` the snapshot and confirm it is the brief you wrote. Announce the
   worker only after `RUNNING`.
@@ -84,14 +85,14 @@ pitfall 2).
   worker-written snippet: untrusted, and not the report. Keep the heartbeat for
   workers that hang without exiting.
 - **Alive**: `ps aux` and look for the pid in `.router/out/<name>.pid` (`Read`)
-  or `-n <name>`; the args show `--model`. `ListAgents` lists a live worker by name.
+  or `-n <name>`; the args show `--model` and `--effort`. `ListAgents` lists a live worker by name.
 - **Report**: when the notice arrives or the process is gone, `Read` `.router/out/<name>.out`; the
   final message is the worker's report. Each run of a name truncates it, and the
   launcher refuses a second live run of the same name.
 - **Follow-up**: you write `.router/briefs/<name>-r<n>.md`; then
-  `<launcher> resume <name> <session-uuid> <same worktree> .router/briefs/<name>-r<n>.md <model> [--permission-mode plan]`
+  `<launcher> resume <name> <session-uuid> <same worktree> .router/briefs/<name>-r<n>.md <model> [--effort <level>] [--permission-mode plan]`
   (the launcher refuses a different worktree than the spawn's; a resume does not
-  inherit the spawn's mode).
+  inherit the spawn's mode or effort).
 - **Retire**: none needed — a `-p` run exits when its run ends. A hung or
   mid-turn one needs the owner (or an owner-approved worker) to
   `kill <pid>`; the router has no `kill` (lessons D2).
@@ -115,7 +116,7 @@ lessons K5):**
 ## Watch every staged owner action
 
 Under the router posture you don't run shell loops; a watch worker (headless
-where the posture is enforced, else Mode 1; cheap explicit model) runs one background `until <probe>; do sleep N; done;
+where the posture is enforced, else Mode 1; explicit model and effort from the project's model policy) runs one background `until <probe>; do sleep N; done;
 echo <EVENT>` per action (no inner `&`, no `( … ) &`, never a foreground
 `sleep`) and reports when it fires. `Monitor` is for a stream of events (it
 expires after at most 30 min and can replay handled events: re-arm, dedupe).
@@ -148,7 +149,7 @@ echo "RUN $id"; gh run view $id --json conclusion,jobs -q '.jobs[]|"\(.name): \(
 
 `/loop 10m <prompt>` (the `loop` skill). Trawler's recipe used `CronCreate`;
 use it only if `ToolSearch` loads it in your session. Self-contained prompt:
-"Router heartbeat: 1 workers: headless (`ps aux` names + `--model` vs expected;
+"Router heartbeat: 1 workers: headless (`ps aux` names + `--model` and `--effort` vs expected;
 dead → relaunch from its brief, it keeps and checks uncommitted work; confirm
 RUNNING) and in-session (roster; finished but unrelayed reports); stalled (tip
 and tree unchanged 3 beats, no report) → `SendMessage` a ping or resume note,

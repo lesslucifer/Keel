@@ -8,7 +8,7 @@ the right column below). The router writes the brief itself (SKILL.md
 in-session one as the `Agent` prompt. Commands: `commands.md`.
 
 ```markdown
-# Brief: <E-CODE.Wn> <job> — fresh session (<model>)
+# Brief: <E-CODE.Wn> <job> — fresh session (<model>, effort <level>)
 Read first: <previous round's brief or report, abs path>. Router `<current name>` (older names: ignore).
 ONE non-stop run; status messages are not stopping points; stop only at your final self-contained report.
 No questions mid-run: decide reversible choices with a stated recommendation, or stop and report the options.
@@ -45,7 +45,7 @@ doc only or how to try · what no gate reviewed (paths outside code_paths) · fo
 
 | Line | Failure it prevents (`lessons.md`) |
 |---|---|
-| fresh session, explicit model | C6, B7 |
+| fresh session, explicit model and effort | C6, B7 |
 | current router name | C4, H1 |
 | ONE non-stop run · no mid-run questions | C2 · C1 |
 | never run `keel mr`, merge, push, tag | D1 |
