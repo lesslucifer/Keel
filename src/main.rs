@@ -339,9 +339,9 @@ fn keel_hooks_dir(repo: &Path) -> Result<PathBuf, String> {
 
 /// What installing Keel's hooks would stop git from running: a `core.hooksPath` (any scope) other
 /// than Keel's, else every entry of `<common>/hooks/` that is not a `*.sample`. Empty = nothing.
-fn hook_conflicts(hooks_path: Option<&str>, keel: &str, hooks_dir: &str, entries: &[String]) -> Vec<String> {
+fn hook_conflicts(hooks_path: Option<&str>, keel: &Path, hooks_dir: &str, entries: &[String]) -> Vec<String> {
     match hooks_path {
-        Some(h) if h == keel => vec![],
+        Some(h) if is_keel_path(h, keel) => vec![],
         Some(h) => vec![format!("core.hooksPath = {h}")],
         None => entries.iter().filter(|n| !n.ends_with(".sample")).map(|n| format!("{hooks_dir}/{n}")).collect(),
     }
@@ -357,9 +357,14 @@ fn hooks_problem(repo: &Path) -> Option<String> {
     }
 }
 
+/// Component-wise, so a trailing `/` or a `./` segment in `core.hooksPath` is still Keel's path.
+fn is_keel_path(hooks_path: &str, keel: &Path) -> bool {
+    Path::new(hooks_path) == keel
+}
+
 fn hooks_problem_of(hooks_path: Option<&str>, keel: &Path) -> Option<String> {
     match hooks_path {
-        Some(h) if Path::new(h) == keel => None,
+        Some(h) if is_keel_path(h, keel) => None,
         Some(h) => Some(format!("core.hooksPath is {h}, not Keel's {} - git runs another tool's hooks, so the merge gate is off", keel.display())),
         None => Some("core.hooksPath is unset - Keel's hooks are not installed in this clone, so the merge gate is off".into()),
     }
@@ -374,7 +379,7 @@ fn hooks_install(repo: &Path, force: bool) -> Result<i32, String> {
         let entries: Vec<String> = std::fs::read_dir(&own)
             .map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
             .unwrap_or_default();
-        let conflicts = hook_conflicts(current.as_deref(), &dir.to_string_lossy(), &own.to_string_lossy(), &entries);
+        let conflicts = hook_conflicts(current.as_deref(), &dir, &own.to_string_lossy(), &entries);
         if !conflicts.is_empty() {
             eprintln!(
                 "keel hooks install: refused - another hook setup is in place, and installing Keel's would stop git running it:\n    {}\n  fix -> keel hooks install --force   (replaces it; Keel does not chain other tools' hooks - move what they did into .keel/config.toml [check] or drop it)",
@@ -502,11 +507,14 @@ mod tests {
     #[test]
     fn hook_conflicts_treat_sample_only_as_clean_and_anything_else_as_foreign() {
         let names = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let keel = "/r/.git/keel-hooks";
+        let keel = Path::new("/r/.git/keel-hooks");
         let samples = names(&["pre-commit.sample", "pre-push.sample"]);
         assert!(hook_conflicts(None, keel, "/r/.git/hooks", &samples).is_empty());
         assert!(hook_conflicts(None, keel, "/r/.git/hooks", &[]).is_empty());
-        assert!(hook_conflicts(Some(keel), keel, "/r/.git/hooks", &names(&["pre-commit"])).is_empty(), "Keel's own path: a re-install");
+        for own in ["/r/.git/keel-hooks", "/r/.git/keel-hooks/", "/r/.git/./keel-hooks"] {
+            assert!(hook_conflicts(Some(own), keel, "/r/.git/hooks", &names(&["pre-commit"])).is_empty(), "Keel's own path {own}: a re-install");
+            assert_eq!(hooks_problem_of(Some(own), keel), None, "guard D agrees on {own}");
+        }
         assert_eq!(hook_conflicts(None, keel, "/r/.git/hooks", &names(&["pre-commit.sample", "pre-commit", "husky.sh"])), ["/r/.git/hooks/pre-commit", "/r/.git/hooks/husky.sh"]);
         assert_eq!(hook_conflicts(Some(".husky"), keel, "/r/.git/hooks", &samples), ["core.hooksPath = .husky"]);
     }

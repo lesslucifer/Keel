@@ -269,6 +269,19 @@ fn hooks_install_refuses_to_clobber_another_hook_setup_without_force() {
     assert!(again.status.success(), "a re-install over Keel's own path: {}", text(&again));
 }
 
+/// R1 F1: `0·hooks` and `hooks install` agree on what Keel's own path is - a trailing `/` included.
+#[test]
+fn a_trailing_slash_on_keels_hooks_path_is_a_reinstall_not_a_foreign_setup() {
+    let d = repo(false);
+    let p = d.path();
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    git(p, &["config", "core.hooksPath", &format!("{}/", hooks_path(p))]);
+    let check = keel(p, &["check"]);
+    assert!(!text(&check).contains("core.hooksPath is"), "guard D accepts it: {}", text(&check));
+    let again = keel(p, &["hooks", "install"]);
+    assert!(again.status.success(), "a re-install over Keel's own path: {}", text(&again));
+}
+
 #[test]
 fn installed_git_hook_without_keel_on_path_refuses_and_points_to_install_channels() {
     let d = repo(false);
