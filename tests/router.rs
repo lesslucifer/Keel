@@ -374,7 +374,7 @@ fn launcher() -> Launcher {
     std::fs::write(main.join(".gitignore"), ".router/\n").unwrap();
     std::fs::write(main.join(".router/briefs/b.md"), "do the thing\n").unwrap();
     std::fs::create_dir_all(main.join(".keel")).unwrap();
-    std::fs::write(main.join(".keel/config.toml"), git(root(), &["show", "HEAD:.keel/config.toml"]).stdout).unwrap();
+    std::fs::copy(root().join(".keel/config.toml"), main.join(".keel/config.toml")).unwrap();
     git(&main, &["init", "-q", "-b", "main"]);
     git(&main, &["add", "."]);
     git(&main, &["commit", "-qm", "base"]);
@@ -673,8 +673,7 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
 /// DEC-39: the repo's committed worker policy is opus at medium or high effort, medium by default.
 #[test]
 fn committed_worker_policy_is_opus_at_medium_or_high_effort() {
-    let o = git(root(), &["show", "HEAD:.keel/config.toml"]);
-    let config = String::from_utf8(o.stdout).unwrap();
+    let config = std::fs::read_to_string(root().join(".keel/config.toml")).unwrap();
     let section: Vec<&str> = config
         .lines()
         .skip_while(|l| !l.starts_with("[router]"))
@@ -1121,7 +1120,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let d = TempDir::new().unwrap();
     let base = d.path().canonicalize().unwrap();
     let c = base.join("c");
-    git(&base, &["clone", "-q", root().to_str().unwrap(), c.to_str().unwrap()]);
+    common::self_clone(root(), &c);
     for f in ["scripts/router-worker.sh", "scripts/router-guard.jq", ".claude/settings.json", ".gitworktreecopy"] {
         std::fs::copy(root().join(f), c.join(f)).unwrap();
     }

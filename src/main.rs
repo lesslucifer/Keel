@@ -141,11 +141,31 @@ const GIT_LOCAL_ENV: [&str; 15] = [
     "GIT_COMMON_DIR",
 ];
 
+/// What git exports to its hooks about the command running them (E-SEED2.W15). The pre-merge-commit
+/// gate reads GIT_REFLOG_ACTION to name the merge source; a check command's own fixtures must never
+/// inherit it (a fixture's `git merge` keeps it, and its keel would judge the outer merge's branch).
+const GIT_HOOK_ENV: [&str; 8] = [
+    "GIT_REFLOG_ACTION",
+    "GIT_EDITOR",
+    "GIT_AUTHOR_NAME",
+    "GIT_AUTHOR_EMAIL",
+    "GIT_AUTHOR_DATE",
+    "GIT_COMMITTER_NAME",
+    "GIT_COMMITTER_EMAIL",
+    "GIT_COMMITTER_DATE",
+];
+
 /// `keep_index`: git's commit hooks get the index being committed (a temp one for `commit -a` or a
-/// pathspec commit); keel's own `git diff --cached` must read it, a child command never.
+/// pathspec commit); keel's own `git diff --cached` must read it, a child command never. A child
+/// (`keep_index` false) also loses the hook's GIT_HOOK_ENV.
 fn no_git_env(mut c: Command, keep_index: bool) -> Command {
     for k in GIT_LOCAL_ENV {
         if !(keep_index && k == "GIT_INDEX_FILE") {
+            c.env_remove(k);
+        }
+    }
+    if !keep_index {
+        for k in GIT_HOOK_ENV {
             c.env_remove(k);
         }
     }
@@ -522,7 +542,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{hook_conflicts, hooks_problem_of, no_git_env, Config, ReportPolicy, COMMIT_MSG, GIT_LOCAL_ENV, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
+    use super::{hook_conflicts, hooks_problem_of, no_git_env, Config, ReportPolicy, COMMIT_MSG, GIT_HOOK_ENV, GIT_LOCAL_ENV, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
     use std::ffi::OsStr;
     use std::path::Path;
     use std::process::Command;
@@ -536,13 +556,13 @@ mod tests {
     #[test]
     fn no_git_env_removes_every_local_var_and_keeps_the_index_only_when_asked() {
         let child = no_git_env(Command::new("x"), false);
-        let mut all: Vec<String> = GIT_LOCAL_ENV.iter().map(|s| s.to_string()).collect();
+        let mut all: Vec<String> = GIT_LOCAL_ENV.iter().chain(&GIT_HOOK_ENV).map(|s| s.to_string()).collect();
         all.sort();
         assert_eq!(removed(&child), all);
 
         let mut own = no_git_env(Command::new("x"), true);
         own.env("GIT_INDEX_FILE", "/tmp/i");
-        let mut rest: Vec<String> = all.iter().filter(|k| *k != "GIT_INDEX_FILE").cloned().collect();
+        let mut rest: Vec<String> = GIT_LOCAL_ENV.iter().filter(|k| **k != "GIT_INDEX_FILE").map(|s| s.to_string()).collect();
         rest.sort();
         assert_eq!(removed(&own), rest);
         assert!(own.get_envs().any(|(k, v)| k == "GIT_INDEX_FILE" && v == Some(OsStr::new("/tmp/i"))), "an explicit env set after the strip wins");

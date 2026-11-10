@@ -382,6 +382,26 @@ fn check_under_a_foreign_git_dir_uses_its_own_repo_and_leaves_the_other_untouche
     assert!(before == snapshot(&b_git), "the foreign repo's .git was written to");
 }
 
+/// W15 regression (second E-SEED2 merge refusal, 2026-11-10): git exports GIT_REFLOG_ACTION="merge <branch>"
+/// (and, from commit hooks, author/editor variables) to its hooks; `keel check` there must not pass them
+/// to its test command, whose fixture merges would otherwise make their own keel judge <branch>.
+#[test]
+fn check_does_not_pass_the_hooks_git_env_to_its_test_command() {
+    let a = probe_repo(r#"env > "$KEEL_PROBE""#);
+    let probe_dir = TempDir::new().unwrap();
+    let probe = probe_dir.path().join("probe");
+    let mut envs: Vec<(&str, &str)> = common::GIT_HOOK_ENV.iter().map(|k| (*k, "merge epic/NOPE")).collect();
+    envs.push(("KEEL_PROBE", probe.to_str().unwrap()));
+
+    let o = run_env(env!("CARGO_BIN_EXE_keel"), a.path(), &["check"], &envs, "");
+
+    assert!(o.status.success(), "{}", text(&o));
+    let seen = std::fs::read_to_string(&probe).unwrap();
+    for k in common::GIT_HOOK_ENV {
+        assert!(!seen.lines().any(|l| l.starts_with(&format!("{k}="))), "{k} reached the test command");
+    }
+}
+
 /// W13: pre-push from a linked worktree (git exports its absolute GIT_DIR) proves a non-HEAD sha in
 /// the scratch worktree at that sha, not in the hook's own worktree.
 #[test]
@@ -469,4 +489,8 @@ fn the_test_strip_list_equals_keels() {
     let body = &src[start..start + src[start..].find("];").unwrap()];
     let keels: Vec<&str> = body.split('"').skip(1).step_by(2).collect();
     assert_eq!(keels, common::GIT_LOCAL_ENV);
+    let start = src.find("const GIT_HOOK_ENV").unwrap();
+    let body = &src[start..start + src[start..].find("];").unwrap()];
+    let keels: Vec<&str> = body.split('"').skip(1).step_by(2).collect();
+    assert_eq!(keels, common::GIT_HOOK_ENV);
 }
