@@ -295,6 +295,40 @@ fn rule_bearing_commit_needs_a_listed_reviewed_by_trailer() {
     assert!(!o.status.success() && text(&o).contains("docs/règle.html"), "{}", text(&o));
 }
 
+/// I6: sign-off hashes are SHA-256; a pre-W2 note (keel-mr/v1 payload, git blob-id hashes) has no
+/// legacy reader, so it is red at verify-dod wu and at the WU merge hook.
+#[test]
+fn sign_off_hashes_are_sha256_and_a_pre_w2_note_is_red() {
+    let (d, k) = fixture();
+    let p = d.path();
+    notes(p, &["test", "doc", "cr"]);
+    ok(keel(p, &["mr", "confirm", "wu"]));
+    let mut n = mr_note(p, "HEAD").unwrap();
+    let sha256 = regex::Regex::new(r"^sha256:[0-9a-f]{64}$").unwrap();
+    for f in ["change_hash", "report_hash"] {
+        assert!(sha256.is_match(n[f].as_str().unwrap()), "{f}: {n}");
+    }
+
+    let (base, tip) = (n["base"].as_str().unwrap().to_string(), git(p, &["rev-parse", "HEAD"]));
+    let diff = k.path().join("diff");
+    std::fs::write(&diff, git(p, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", &base, &tip, "--"])).unwrap();
+    let change = git(p, &["hash-object", diff.to_str().unwrap()]);
+    let report = git(p, &["rev-parse", "HEAD:docs/work/a-result.html"]);
+    let v1 = k.path().join("payload");
+    std::fs::write(&v1, format!("keel-mr/v1\nlevel: wu\nbase: {base}\ntip: {tip}\nchange: {change}\nreport: docs/work/a-result.html\nreport_hash: {report}\n")).unwrap();
+    ok(run("ssh-keygen", k.path(), &["-Y", "sign", "-n", "keel-mr", "-f", "id", "payload"]));
+    n["change_hash"] = json!(change);
+    n["report_hash"] = json!(report);
+    n["sig"] = json!(std::fs::read_to_string(k.path().join("payload.sig")).unwrap());
+    put_note(p, "HEAD", &n);
+    assert_red8(p, "changed since the sign-off");
+
+    ok(keel(p, &["hooks", "install"]));
+    git(p, &["switch", "-q", "epic/e"]);
+    let o = run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"]);
+    assert!(!o.status.success() && text(&o).contains("8·manual-review"), "{}", text(&o));
+}
+
 /// I1: `[mr] report` × a wu-result doc present / absent, at WU level.
 #[test]
 fn report_policy_matrix_at_wu_level() {

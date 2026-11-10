@@ -323,9 +323,14 @@ pub(crate) fn code_diff_hash(repo: &Path, cfg: &Config, base: &str, tip: &str) -
 /// git blob hash of `git diff base tip -- <pathspecs>` (none = the full diff), independent of the
 /// local diff config so every machine hashes the same bytes (cr, dod and mr bindings).
 pub(crate) fn diff_hash(repo: &Path, base: &str, tip: &str, pathspecs: &[String]) -> Result<String, String> {
+    hash_blob(repo, &diff_text(repo, base, tip, pathspecs)?)
+}
+
+/// The bytes every diff binding hashes: `git diff base tip -- <pathspecs>`, local diff config off.
+pub(crate) fn diff_text(repo: &Path, base: &str, tip: &str, pathspecs: &[String]) -> Result<String, String> {
     let mut a = vec!["diff", "--no-color", "--no-ext-diff", "--no-textconv", base, tip, "--"];
     a.extend(pathspecs.iter().map(String::as_str));
-    hash_blob(repo, &git(repo, &a, &[])?)
+    git(repo, &a, &[])
 }
 
 fn count_tests(adapter: &str, body: &str, pattern: Option<&str>) -> Result<u32, String> {

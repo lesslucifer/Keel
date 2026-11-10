@@ -169,25 +169,33 @@ fn pick_report(repo: &Path, cfg: &Config, args: &[&str], base: &str, tip: &str, 
     }
 }
 
-/// git blob hash of the full `base..tip` diff.
-fn change_hash(repo: &Path, base: &str, tip: &str) -> Result<String, String> {
-    notes::diff_hash(repo, base, tip, &[])
+/// `sha256:<hex>`: the algorithm is named in the data.
+fn sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let hex: String = Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect();
+    format!("sha256:{hex}")
 }
 
-/// git blob id of the report's exact bytes: the blob at the tip, else (epic only - archived out of
-/// git by then) the unfiltered local file. `Ok(None)` = an epic report found nowhere.
+/// SHA-256 of the full `base..tip` diff text (the same bytes the cr and dod bindings hash).
+fn change_hash(repo: &Path, base: &str, tip: &str) -> Result<String, String> {
+    Ok(sha256(notes::diff_text(repo, base, tip, &[])?.as_bytes()))
+}
+
+/// SHA-256 of the report's exact bytes: the blob at the tip, else (epic only - archived out of
+/// git by then) the raw local file. `Ok(None)` = an epic report found nowhere.
 fn report_hash(repo: &Path, tip: &str, path: &str, epic: bool) -> Result<Option<String>, String> {
     let ls = git(repo, &["ls-tree", tip, "--", path], &[])?;
     if let ["100644" | "100755", "blob", id] = ls.split('\t').next().unwrap_or("").split(' ').collect::<Vec<_>>()[..] {
-        return Ok(Some(id.to_string()));
+        let o = Command::new("git").args(["cat-file", "blob", id]).current_dir(repo).output().map_err(|e| format!("keel: cannot run git: {e}"))?;
+        if !o.status.success() {
+            return Err(format!("keel: git cat-file blob {id} failed: {}", String::from_utf8_lossy(&o.stderr).trim()));
+        }
+        return Ok(Some(sha256(&o.stdout)));
     }
     if !epic {
         return Err(format!("{path} (the attested result report) is not tracked at the tip {}", short(tip)));
     }
-    if !repo.join(path).is_file() {
-        return Ok(None);
-    }
-    git(repo, &["hash-object", "--no-filters", "--", path], &[]).map(Some)
+    Ok(std::fs::read(repo.join(path)).ok().map(|b| sha256(&b)))
 }
 
 fn ssh_keygen(args: &[&str], input: &[u8]) -> Result<std::process::Output, String> {
@@ -544,7 +552,12 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{has_role, payload};
+    use super::{has_role, payload, sha256};
+
+    #[test]
+    fn sha256_matches_the_fips_180_2_abc_vector() {
+        assert_eq!(sha256(b"abc"), "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
 
     #[test]
     fn payload_v2_carries_the_report_lines_exactly_when_a_report_is_attested() {
