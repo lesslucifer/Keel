@@ -389,19 +389,27 @@ fn git_in(d: &Path, a: &[&str]) -> Output {
     common::cmd("git").args(a).current_dir(d).env("PATH", format!("{}:{}", Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display(), std::env::var("PATH").unwrap())).env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t").output().unwrap()
 }
 
-/// Keel gates itself (Q12): a clone of committed HEAD with hooks installed refuses a direct commit
-/// on main and an evidence-less merge, and `keel init` over it changes nothing (the committed
-/// .claude/skills/keel-* equal the embedded copies).
-#[test]
-fn self_hosting_clone_is_gated_and_init_is_a_noop() {
-    let root = env!("CARGO_MANIFEST_DIR");
-    let d = TempDir::new().unwrap();
-    let c = d.path().join("c");
-    assert!(common::cmd("git").args(["clone", "-q", root, c.to_str().unwrap()]).current_dir(d.path()).status().unwrap().success());
-    assert!(git_in(&c, &["checkout", "-q", "-B", "main"]).status.success());
-    assert!(keel(&c, &["hooks", "install"]).status.success());
+/// A clone whose main holds the source's index (mid-merge: the merged result, not HEAD), the
+/// tree the build under test embeds; `--shared` makes the index's objects reachable. The tree is
+/// written from a copy of the index: write-tree rewrites the index it reads, and the source may be
+/// the real checkout, shared by parallel tests.
+fn self_clone(src: &Path, dst: &Path) {
+    assert!(common::cmd("git").args(["clone", "-q", "--shared", src.to_str().unwrap(), dst.to_str().unwrap()]).status().unwrap().success());
+    let idx = String::from_utf8(git_in(src, &["rev-parse", "--path-format=absolute", "--git-path", "index"]).stdout).unwrap();
+    let copy = dst.with_extension("index");
+    std::fs::copy(idx.trim(), &copy).unwrap();
+    let t = common::cmd("git").args(["write-tree"]).current_dir(src).env("GIT_INDEX_FILE", &copy).output().unwrap();
+    assert!(t.status.success(), "{}", text(&t));
+    let t = String::from_utf8(t.stdout).unwrap();
+    assert!(git_in(dst, &["checkout", "-q", "-B", "main"]).status.success());
+    assert!(git_in(dst, &["read-tree", "-u", "--reset", t.trim()]).status.success());
+    assert!(git_in(dst, &["commit", "-q", "--no-verify", "--allow-empty", "-m", "source index"]).status.success());
+}
 
-    let o = keel_in(&c, &["init"], "");
+/// `keel init` over a self-clone changes nothing: its .claude/skills/keel-* equal the embedded copies.
+fn assert_init_is_a_noop(c: &Path) {
+    assert!(keel(c, &["hooks", "install"]).status.success());
+    let o = keel_in(c, &["init"], "");
     let t = text(&o);
     assert!(o.status.success(), "{t}");
     // Keel's rule_bearing differs from the default by design, and its project-router is filled in
@@ -413,7 +421,17 @@ fn self_hosting_clone_is_gated_and_init_is_a_noop() {
     }
     assert!(t.contains("hooks installed"), "{t}");
     assert!(kept.iter().all(|k| t.contains(k)), "{t}");
-    assert!(git_in(&c, &["status", "--porcelain"]).stdout.is_empty(), "init dirtied the tree");
+    assert!(git_in(c, &["status", "--porcelain"]).stdout.is_empty(), "init dirtied the tree");
+}
+
+/// Keel gates itself (Q12): a clone of the source's current tree with hooks installed refuses a
+/// direct commit on main and an evidence-less merge, and `keel init` over it is a no-op.
+#[test]
+fn self_hosting_clone_is_gated_and_init_is_a_noop() {
+    let d = TempDir::new().unwrap();
+    let c = d.path().join("c");
+    self_clone(Path::new(env!("CARGO_MANIFEST_DIR")), &c);
+    assert_init_is_a_noop(&c);
 
     let o = git_in(&c, &["commit", "--allow-empty", "-q", "-m", "direct"]);
     assert!(!o.status.success(), "a direct commit on main must be refused");
@@ -426,6 +444,29 @@ fn self_hosting_clone_is_gated_and_init_is_a_noop() {
     assert!(git_in(&c, &["checkout", "-q", "main"]).status.success());
     let o = git_in(&c, &["merge", "--no-ff", "-m", "m", "feat"]);
     assert!(!o.status.success(), "an evidence-less merge into main must be refused");
+}
+
+/// E-SEED2.W14: the pre-merge-commit check runs before the merge commit exists, so HEAD still
+/// holds the old skills while the build embeds the merged ones; the self-clone must follow the
+/// merged index, not HEAD.
+#[test]
+fn self_hosting_check_passes_mid_merge_of_a_skill_change() {
+    let d = TempDir::new().unwrap();
+    let s = d.path().join("s");
+    self_clone(Path::new(env!("CARGO_MANIFEST_DIR")), &s);
+    let skill = s.join(".claude/skills/keel-workflow/SKILL.md");
+    let current = std::fs::read_to_string(&skill).unwrap();
+    std::fs::write(&skill, format!("{current}stale\n")).unwrap();
+    assert!(git_in(&s, &["commit", "-qam", "stale skill"]).status.success());
+    assert!(git_in(&s, &["checkout", "-q", "-b", "skill-update"]).status.success());
+    std::fs::write(&skill, current).unwrap();
+    assert!(git_in(&s, &["commit", "-qam", "skill update"]).status.success());
+    assert!(git_in(&s, &["checkout", "-q", "main"]).status.success());
+    assert!(git_in(&s, &["merge", "--no-ff", "--no-commit", "skill-update"]).status.success());
+
+    let c = d.path().join("c");
+    self_clone(&s, &c);
+    assert_init_is_a_noop(&c);
 }
 
 /// E-ROUTERFIX.W3: Keel's own tree lists `.mr-allowed` in `.gitworktreecopy`, so a new worktree

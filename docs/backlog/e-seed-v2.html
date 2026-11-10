@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>Backlog: E-SEED v2</h1>
       <p>Work deferred when E-SEED closed with W1–W8 (W7 v2 last). E-SEED2 absorbed B1 and B2 and closed on 2026-11-10; every other row is re-pointed to a proposed later epic.</p>
-      <div class="meta">T2 · backlog · living (strike a row when an epic absorbs it) · 2026-11-08 · Keel · B1 – B13 · re-pointed at the E-SEED2 close (owner rulings 2026-11-10)</div>
+      <div class="meta">T2 · backlog · living (strike a row when an epic absorbs it) · 2026-11-08 · Keel · B1 – B14 · re-pointed at the E-SEED2 close (owner rulings 2026-11-10)</div>
     </div>
   </header>
   <main>
@@ -23,7 +23,7 @@
       <tr><td>E-SEED3</td><td>B6 → B7 skills.lock, foreign-<code>keel</code> warning, pre-commit <code>keel lint</code>, pre-commit MERGE_HEAD gate → B9, B10 → B8, B12 → two Keel product rows of e-router-v2 R7 (bare-SHA target inference, <code>cargo fmt</code> drift) → B4 last</td></tr>
       <tr><td>E-RELEASE</td><td>What B1 left before a real release: the owner prerequisites, the owner's <code>dist plan</code> / <code>dist generate</code> check, a prerelease-tag run, the first stable tag, the accepted-risk revisits of <a href="../decisions/distribution.html#dec-38">DEC-38</a>, and the fixed <code>keel</code> on <code>PATH</code> (<a href="../decisions/workflow-gates.html#dec-41">DEC-41</a> consequence)</td></tr>
       <tr><td>E-LINEAGE</td><td>B5</td></tr>
-      <tr><td>E-GATEFIX</td><td>B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix</td></tr>
+      <tr><td>E-GATEFIX</td><td>B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14</td></tr>
       <tr><td>E-MULTILANG</td><td>B3: the Python e2e first, then other languages</td></tr>
       <tr><td>stays in the backlog</td><td>B2's unbuilt follow-ups; B7 Codex rows (all non-Claude work), native SSH signing, <code>Cargo.lock</code> currency</td></tr>
     </table>
@@ -98,6 +98,13 @@
 
     <h2 id="b12">B12 · The cr note cannot carry a waiver <span class="badge id">proposed: E-SEED3</span></h2>
     <p data-c="b12"><code>keel notes write cr</code> takes only <code>--verdict</code>, <code>--blockers</code> and <code>--importants</code>, so a review round the owner waives cannot be recorded on the note itself. The E-SEED2 epic review's blocker, waived for the close, is the second such case (B13). <b>The first:</b> on 2026-11-10 the owner waived the review round after the C-locale fix 519c2cc in E-SEED2.W12 (W12 only, a one-time ruling). The <code>cr/v1</code> PASS on W12's tip <code>90135b7</code> therefore records no review of that last change: it is a waiver, not a reviewed verdict. W12's round history (archived result, <code>git show f059eb4:docs/work/2026-11-10-w12-owner-watch-wu-result.html</code>): reviews over 7c26a43, 07c9ce0 and e8dcc49 FAIL and fixed; the round over f68f18c abandoned under the review cap, its real bug fixed in d42dcfd; the capped round over 854d334 FAIL (one blocker, one important), fixed in 519c2cc; the final round waived. Fix: a waiver field (with the owner's reason) on <code>cr/v1</code>, checked at the gate.</p>
+
+    <h2 id="b14">B14 · The check cache ignores HEAD and MERGE_HEAD <span class="badge id">proposed: E-GATEFIX</span></h2>
+    <table data-c="b14">
+      <tr><th>Finding</th><td><code>src/main.rs</code> <code>tree_key</code> keys the <code>keel check</code> green cache on the working tree's hash plus the lint and test commands only. A test whose result depends on HEAD or on a merge in progress can reuse a green verdict cached for the same tree under another HEAD.</td></tr>
+      <tr><th>History</th><td>On 2026-11-10 the owner's merge of <code>epic/E-SEED2</code> into main (<code>0dad93f</code>) was refused: the pre-merge-commit <code>keel check</code> failed <code>self_hosting_clone_is_gated_and_init_is_a_noop</code>. The test cloned the committed HEAD, which was still main's, while the build embedded the merged <code>skills/</code>. So every merge that changes a shipped skill failed, though <code>skills/</code> and <code>.claude/skills/</code> agreed on both branches. E-SEED2.W14 fixed the test: the clone now takes the source's index, the merged result. The regression test is <code>self_hosting_check_passes_mid_merge_of_a_skill_change</code>. The cache did not cause that failure, because the main checkout ran fresh. <b>Owner ruling 2026-11-10:</b> every code review of W14 and of the E-SEED2 re-gate is waived, and their <code>cr/v1</code> PASS records the waiver, not a review (see B12).</td></tr>
+      <tr><th>Fix sketch</th><td>Add HEAD and MERGE_HEAD (when present) to the cache key. Regression test: the same tree under two HEADs runs the check twice.</td></tr>
+    </table>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
 </body>

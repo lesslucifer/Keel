@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="e5ee2014c9a1d3b7f0a4c6e2" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED2.W14 result: self-hosting test</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED2.W14 result: self-hosting test follows the merged tree</h1>
+      <div class="meta">T3 · wu-result · tracked at the W14 tip, archived at the epic re-gate (distilled to backlog B14) · 2026-11-10 · branch wu/E-SEED2/w14-selfhost-test · owner ruling 2026-11-10: every code review waived, no plan doc</div>
+    </div>
+  </header>
+  <main>
+    <p data-item="outcome"><b>Delivered.</b> The owner's merge of <code>epic/E-SEED2</code> into main <code>0dad93f</code> was refused because the pre-merge-commit <code>keel check</code> failed <code>self_hosting_clone_is_gated_and_init_is_a_noop</code>. That test cloned the committed HEAD, still main's, while the build embedded the merged <code>skills/</code>. The test now clones the source's index, which during a merge is the merged result, and <code>keel init</code> over that clone is a no-op again.</p>
+    <p data-item="deviations">The owner's ruling (2026-11-10) waived the plan doc and every code review: the <code>cr/v1</code> PASS on this tip records that waiver, not a review. The tree is written from a copy of the source's index, because <code>write-tree</code> rewrites the index it reads, and parallel tests sharing the real checkout raced on <code>index.lock</code>, which was seen once.</p>
+    <div data-item="evidence">
+      <p>Commit <code>9c0e3f6</code>, which changes <code>tests/init.rs</code> and <code>docs/backlog/e-seed-v2.html</code>.</p>
+      <ul>
+        <li>The new <code>self_clone</code> helper uses a shared clone, takes the tree from the source's index, and commits it as the clone's main. <code>assert_init_is_a_noop</code> is extracted so both tests share it.</li>
+        <li>New regression test <code>self_hosting_check_passes_mid_merge_of_a_skill_change</code>. It was red against the old clone of HEAD (<code>.claude/skills/keel-workflow/SKILL.md differs from this keel build</code>) and is green with the fix, 6 runs out of 6.</li>
+        <li>Full <code>cargo test</code> and <code>keel lint</code> are green.</li>
+        <li>In a scratch clone with main <code>0dad93f</code> mid-merge (<code>--no-commit</code>) of the W14 tip, all three <code>self_hosting</code> tests pass. Before the fix, the same setup on the epic failed.</li>
+      </ul>
+    </div>
+    <p data-item="distillation">Backlog <code>docs/backlog/e-seed-v2.html</code> B14 records the history of this fix, the owner's waiver, and the gap in the check cache that it exposed.</p>
+    <p data-item="follow-ups">B14: the <code>keel check</code> cache key leaves out HEAD and MERGE_HEAD; it is proposed for E-GATEFIX.</p>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
