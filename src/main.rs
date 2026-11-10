@@ -347,6 +347,24 @@ fn hook_conflicts(hooks_path: Option<&str>, keel: &str, hooks_dir: &str, entries
     }
 }
 
+const HOOKS_FIX: &str = "keel hooks install   (it refuses to replace another tool's hooks unless --force)";
+
+/// Guard D (UC-GATE-6): why git is not running Keel's hooks here, if it is not.
+fn hooks_problem(repo: &Path) -> Option<String> {
+    match keel_hooks_dir(repo) {
+        Ok(keel) => hooks_problem_of(git(repo, &["config", "--get", "core.hooksPath"], &[]).ok().as_deref(), &keel),
+        Err(e) => Some(e),
+    }
+}
+
+fn hooks_problem_of(hooks_path: Option<&str>, keel: &Path) -> Option<String> {
+    match hooks_path {
+        Some(h) if Path::new(h) == keel => None,
+        Some(h) => Some(format!("core.hooksPath is {h}, not Keel's {} - git runs another tool's hooks, so the merge gate is off", keel.display())),
+        None => Some("core.hooksPath is unset - Keel's hooks are not installed in this clone, so the merge gate is off".into()),
+    }
+}
+
 fn hooks_install(repo: &Path, force: bool) -> Result<i32, String> {
     use std::os::unix::fs::PermissionsExt;
     let dir = keel_hooks_dir(repo)?;
@@ -439,7 +457,13 @@ fn run() -> Result<i32, String> {
         ["hooks", "install"] => hooks_install(&repo, false),
         ["hooks", "install", "--force"] => hooks_install(&repo, true),
         ["lint"] => lint(&repo, &load_config(&repo)?),
-        ["check"] => check(&repo, &load_config(&repo)?),
+        ["check"] => {
+            let cfg = load_config(&repo)?;
+            if let Some(p) = hooks_problem(&repo) {
+                eprintln!("keel check: warning - {p}\n  fix -> {HOOKS_FIX}");
+            }
+            check(&repo, &cfg)
+        }
         ["hook", "pre-commit"] => pre_commit(&repo, &load_config(&repo)?),
         ["hook", "commit-msg", file] => mr::commit_msg(&repo, &load_config(&repo)?, file),
         ["hook", "pre-push", remote, ..] => pre_push(&repo, &load_config(&repo)?, remote),
@@ -462,7 +486,18 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{hook_conflicts, Config, ReportPolicy, COMMIT_MSG, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
+    use super::{hook_conflicts, hooks_problem_of, Config, ReportPolicy, COMMIT_MSG, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
+    use std::path::Path;
+
+    #[test]
+    fn hooks_problem_passes_for_keels_path_and_fails_for_a_foreign_or_unset_one() {
+        let keel = Path::new("/r/.git/keel-hooks");
+        assert_eq!(hooks_problem_of(Some("/r/.git/keel-hooks"), keel), None);
+        let foreign = hooks_problem_of(Some(".husky"), keel).unwrap();
+        assert!(foreign.contains(".husky") && foreign.contains("/r/.git/keel-hooks"), "{foreign}");
+        assert!(hooks_problem_of(None, keel).unwrap().contains("unset"));
+        assert!(hooks_problem_of(Some("/other/.git/keel-hooks"), keel).is_some(), "another repo's install is not this one's");
+    }
 
     #[test]
     fn hook_conflicts_treat_sample_only_as_clean_and_anything_else_as_foreign() {

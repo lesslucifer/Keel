@@ -73,6 +73,7 @@ fn fixture_with(top: &str, branches: &str, epic: &str, wu: &str) -> TempDir {
     assert!(keel(p, &["mr", "setup", "--as", "t"]).status.success());
     write(p, "README", "x");
     commit(p, "base");
+    assert!(keel(p, &["hooks", "install"]).status.success()); // after the base commit: main is merge-only from here
     git(p, &["switch", "-q", "-c", epic]);
     git(p, &["switch", "-q", "-c", wu]);
     write(p, "src/a.py", "def a():\n    return 1\n");
@@ -246,6 +247,7 @@ fn epic_walk_catches_a_fast_forward_smuggled_seam_unless_waived() {
     let d = fixture();
     let p = d.path();
     bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
     git(p, &["switch", "-q", "epic/e"]);
     git(p, &["merge", "-q", "--no-ff", "-m", "merge wu a", "wu/e/a"]);
     write(p, "docs/result.html", "<p>result</p>");
@@ -367,6 +369,7 @@ fn epic_tip_rejects_a_tracked_t3_doc_and_an_archive_without_lineage() {
     write(p, "docs/work/plan.html", "<p>plan</p>");
     commit(p, "wu plan");
     bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
     git(p, &["switch", "-q", "epic/e"]);
     git(p, &["merge", "-q", "--no-ff", "-m", "merge wu a", "wu/e/a"]);
     write(p, "docs/result.html", "<p>result</p>");
@@ -482,6 +485,7 @@ fn a_non_ascii_t1_doc_at_the_epic_tip_is_green() {
     let d = fixture();
     let p = d.path();
     bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
     git(p, &["switch", "-q", "epic/e"]);
     git(p, &["merge", "-q", "--no-ff", "-m", "merge wu a", "wu/e/a"]);
     write(p, "docs/résultat.html", "<p>result</p>");
@@ -490,6 +494,33 @@ fn a_non_ascii_t1_doc_at_the_epic_tip_is_green() {
     sign(p, "epic", "docs/résultat.html");
     let o = keel(p, &["verify-dod", "epic", "epic/e"]);
     assert!(o.status.success(), "{}", text(&o));
+}
+
+/// I9: once another tool takes core.hooksPath (or it is unset), the gate is silently off: preflight
+/// and verify-dod wu refuse with 0·hooks, and keel check warns but keeps its exit code.
+#[test]
+fn a_foreign_or_unset_hooks_path_turns_preflight_and_verify_dod_red() {
+    let d = fixture();
+    let p = d.path();
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
+    assert!(keel(p, &["preflight", "wu", "wu/e/a"]).status.success());
+    assert!(keel(p, &["verify-dod", "wu", "wu/e/a"]).status.success());
+    git(p, &["notes", "--ref=dod", "remove", "wu/e/a"]);
+
+    for (what, args) in [(".husky", &["config", "core.hooksPath", ".husky"][..]), ("unset", &["config", "--unset", "core.hooksPath"][..])] {
+        git(p, args);
+        for cmd in [&["preflight", "wu", "wu/e/a"][..], &["verify-dod", "wu", "wu/e/a"][..]] {
+            let o = keel(p, cmd);
+            assert_red(&o, "0·hooks");
+            assert!(text(&o).contains("keel hooks install"), "{what} {cmd:?}: {}", text(&o));
+        }
+        assert!(!run("git", p, &["notes", "--ref=dod", "show", "wu/e/a"], "").status.success(), "{what}: no receipt on red");
+        let c = keel(p, &["check"]);
+        assert!(c.status.success(), "{what}: {}", text(&c));
+        assert!(String::from_utf8_lossy(&c.stderr).contains("warning") && String::from_utf8_lossy(&c.stderr).contains("keel hooks install"), "{what}: {}", text(&c));
+    }
 }
 
 /// cr important: the cr binding is the same bytes whatever the local diff config.

@@ -82,6 +82,7 @@ fn fixture() -> (TempDir, TempDir) {
     assert!(text(&o).contains("probe signature verified"), "{}", text(&o));
     write(p, "README", "x");
     commit(p, "base");
+    ok(keel(p, &["hooks", "install"])); // after the base commit: main is merge-only from here
     assert!(!git(p, &["ls-files"]).contains(".mr-allowed"), "the roster stays out of git");
     git(p, &["switch", "-q", "-c", "epic/e"]);
     git(p, &["switch", "-q", "-c", "wu/e/a"]);
