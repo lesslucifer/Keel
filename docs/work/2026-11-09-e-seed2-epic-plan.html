@@ -201,7 +201,7 @@ flowchart LR
 <ol data-item="open-questions" data-c="open-questions-list">
   <li><b>W2 · "receipt" meaning.</b> Default: the report is evidence like the other notes — required by policy, named when missing, named in <code>mr/v1</code> and <code>dod/v1</code>.</li>
   <li><b>W2 · one policy or per level?</b> Default: a single <code>[mr] report</code> for both levels.</li>
-  <li><b>W2 · finding the archived epic report.</b> Default: exactly one untracked <code>data-artifact="epic-result"</code> doc under <code>docs.root</code>, else <code>--report</code>.</li>
+  <li><b>W2 · finding the archived epic report.</b> Default: exactly one untracked <code>data-artifact="epic-result"</code> doc under <code>docs.root</code>, else <code>--report</code>. Superseded by owner ruling 2026-11-10: no search; <code>--report</code> unless the result doc is committed in the epic's diff (DEC-40).</li>
   <li><b>W2 · schema version.</b> Default: payload header <code>keel-mr/v2</code>, note schema stays <code>mr/v1</code> changed in place.</li>
   <li><b>W2 · hooks coexistence (W9 open point 5).</b> Default: options B + D (refuse to clobber, plus the guard).</li>
   <li><b>W5 · Trawler source access.</b> Default: the worker reads Trawler's <code>docs/decisions/workflow-gates.html</code> from the owner's local Trawler checkout; if absent, it records the eight full re-records as lineage-only stubs and reports the gap.</li>
