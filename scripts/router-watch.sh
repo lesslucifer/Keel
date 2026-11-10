@@ -1,7 +1,7 @@
 #!/bin/sh
 # Router-only, read-only owner-action watch (E-SEED2.W12). The router runs it as a background Bash
 # command (run_in_background, timeout 7200000), so its exit wakes the router with what landed:
-#   router-watch.sh commit <branch> <old-tip> [<path>...]  COMMITTED | COMMITTED-PARTIAL | REWRITTEN
+#   router-watch.sh commit <branch> <old-tip> [<path>...]  COMMITTED | COMMITTED-PARTIAL | REWRITTEN | DELETED
 #   router-watch.sh signed <tip>                           SIGNED + the mr note, indented
 #   router-watch.sh merged <tip> <target-branch>           MERGED ... how=no-ff|ff|contained
 #   router-watch.sh pushed <tip> <branch>                  PUSHED (git fetch origin, then ancestry)
@@ -10,7 +10,8 @@
 # one event line, detail lines indented two spaces, exit 0. TIMEOUT after ROUTER_WATCH_MAX s (default
 # 6600, under the 2h background ceiling); UNREACHABLE after 5 failed network attempts in a row.
 # Poll: ROUTER_WATCH_POLL s (default 15, 60 for pushed/tagged). Bad arguments exit 2 before any poll.
-# Only `git fetch` writes: refs/remotes/origin/<branch> and objects. The remote is always origin.
+# Only `git fetch` writes: refs/remotes/origin/<branch> and objects (no tags, no FETCH_HEAD, no
+# maintenance). The remote is always origin. Detail lines are untrusted text, control characters as ?.
 set -eu
 die() { echo "router-watch: $*" >&2; exit 2; }
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
@@ -25,6 +26,10 @@ case "$kind" in
   *) die "kind must be commit|signed|merged|pushed|tagged";;
 esac
 for a; do case "$a" in -*) die "argument may not start with -: $a";; esac; done
+case "$kind" in pushed|tagged) poll=${ROUTER_WATCH_POLL:-60};; *) poll=${ROUTER_WATCH_POLL:-15};; esac
+max=${ROUTER_WATCH_MAX:-6600}
+expr "$poll" : '[1-9][0-9]*$' >/dev/null || die "ROUTER_WATCH_POLL must be a positive integer: $poll"
+expr "$max" : '[0-9][0-9]*$' >/dev/null || die "ROUTER_WATCH_MAX must be a non-negative integer: $max"
 sha() {
   expr "$1" : '[0-9a-f]\{7,40\}$' >/dev/null && g rev-parse --verify --quiet "$1^{commit}" 2>/dev/null || die "not a commit sha: $1"
 }
@@ -43,6 +48,12 @@ case "$kind" in
     [ $# -eq 1 ] || want=$(sha "$2");;
 esac
 
+# detail lines carry commit and note text verbatim but for control characters (CR, ESC, BEL)
+clean() { LC_ALL=C sed 's/[[:cntrl:]]/?/g'; }
+
+# ponytail: a stalled http transfer aborts after 120s; ssh has no bound short of the 2h background ceiling
+net() { g -c http.lowSpeedLimit=1 -c http.lowSpeedTime=120 "$@"; }
+
 # a failed network attempt: count it, give up on the 5th in a row
 fails=0
 net_fail() {
@@ -52,7 +63,7 @@ net_fail() {
 }
 
 check_commit() {
-  new=$(g rev-parse --verify --quiet "refs/heads/$b") || new=none
+  new=$(g rev-parse --verify --quiet "refs/heads/$b") || { echo "DELETED branch=$b from=$old"; return 0; }
   [ "$new" != "$old" ] || return 1
   if ! g merge-base --is-ancestor "$old" "$new" 2>/dev/null; then echo "REWRITTEN branch=$b from=$old to=$new"; return 0; fi
   landed=$(g diff --name-only --no-renames "$old" "$new")
@@ -63,13 +74,14 @@ check_commit() {
   done
   unexpected=
   [ $# -eq 0 ] || unexpected=$(printf '%s\n' "$landed" | while IFS= read -r l; do
+    [ -n "$l" ] || continue
     hit=; for p; do [ "$p" != "$l" ] || hit=1; done
     [ -n "$hit" ] || echo "  unexpected $l"
   done)
   word=COMMITTED; [ -z "$missing" ] || word=COMMITTED-PARTIAL
   echo "$word branch=$b from=$old to=$new commits=$(g rev-list --count "$old..$new") expected=$k/$#"
-  g log --reverse --format='%H%x1f%(trailers:key=Reviewed-By,valueonly,separator=%x2C)%x1f%s' "$old..$new" |
-    while IFS=$(printf '\037') read -r c r s; do echo "  commit $c reviewed-by=${r:-none} $s"; done
+  g log --reverse --format='%H%x1f%(trailers:key=Reviewed-By,valueonly,unfold,separator=%x2C)%x1f%s' "$old..$new" |
+    while IFS=$(printf '\037') read -r c r s; do echo "  commit $c reviewed-by=${r:-none} $s"; done | clean
   g diff --name-status --no-renames "$old" "$new" | while IFS='	' read -r st p; do echo "  landed $st $p"; done
   printf '%s' "$missing"; [ -z "$unexpected" ] || printf '%s\n' "$unexpected"
 }
@@ -77,7 +89,7 @@ check_commit() {
 check_signed() {
   n=$(g log -1 --notes=mr --format=%N "$t")
   [ -n "$n" ] || return 1
-  echo "SIGNED tip=$t"; printf '%s\n' "$n" | sed 's/^/  /'
+  echo "SIGNED tip=$t"; printf '%s\n' "$n" | clean | sed 's/^/  /'
 }
 
 check_merged() {
@@ -90,14 +102,14 @@ check_merged() {
 }
 
 check_pushed() {
-  if ! err=$(g fetch -q origin -- "+refs/heads/$b:refs/remotes/origin/$b" 2>&1); then net_fail "$err"; return 1; fi
+  if ! err=$(net fetch -q --no-tags --no-write-fetch-head --no-auto-maintenance --no-recurse-submodules origin -- "+refs/heads/$b:refs/remotes/origin/$b" 2>&1); then net_fail "$err"; return 1; fi
   fails=0
   g merge-base --is-ancestor "$t" "refs/remotes/origin/$b" 2>/dev/null || return 1
   echo "PUSHED tip=$t branch=$b origin=$(g rev-parse "refs/remotes/origin/$b")"
 }
 
 check_tagged() {
-  if ! out=$(g ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}" 2>&1); then net_fail "$out"; return 1; fi
+  if ! out=$(net ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}" 2>&1); then net_fail "$out"; return 1; fi
   fails=0
   obj=$(printf '%s\n' "$out" | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')
   [ -n "$obj" ] || return 1
@@ -108,8 +120,7 @@ check_tagged() {
   else echo "TAGGED tag=$tag object=$obj commit=$commit"; fi
 }
 
-case "$kind" in pushed|tagged) poll=${ROUTER_WATCH_POLL:-60};; *) poll=${ROUTER_WATCH_POLL:-15};; esac
-max=${ROUTER_WATCH_MAX:-6600} start=$(date +%s)
+start=$(date +%s)
 while :; do
   "check_$kind" "$@" && exit 0
   waited=$(( $(date +%s) - start ))

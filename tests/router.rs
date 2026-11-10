@@ -86,6 +86,21 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "scripts/router-watch.sh watch main",
         "scripts/router-watch.sh signed",
         "scripts/router-watch.sh signed $(id)",
+        // the watch word class: plain words only, never a dots-only path, a rev expression or a flag
+        "scripts/router-watch.sh merged 1a2b3c4 main+x",
+        "scripts/router-watch.sh commit a:b 1a2b3c4",
+        "scripts/router-watch.sh signed HEAD^",
+        "scripts/router-watch.sh signed HEAD~1",
+        "scripts/router-watch.sh merged 1a2b3c4 main@{1}",
+        r#"scripts/router-watch.sh signed "1a2b3c4""#,
+        "scripts/router-watch.sh signed '1a2b3c4'",
+        r"scripts/router-watch.sh signed 1a2b\3c4",
+        "scripts/router-watch.sh signed  1a2b3c4",
+        "scripts/router-watch.sh commit b 1a2b3c4 .",
+        "scripts/router-watch.sh commit b 1a2b3c4 ..",
+        "scripts/router-watch.sh commit b 1a2b3c4 ...",
+        "scripts/router-watch.sh pushed 1a2b3c4 a--output",
+        "scripts/router-watch.sh signed x=y",
     ] {
         assert!(bash(denied).is_some(), "guard allowed {denied:?}");
     }
@@ -112,16 +127,15 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "scripts/router-watch.sh merged fa5a25d epic/E-SEED2".into(),
         "scripts/router-watch.sh pushed fa5a25d main".into(),
         "scripts/router-watch.sh tagged v0.2.0 fa5a25d".into(),
+        "scripts/router-watch.sh commit b fa5a25d .claude/x .a.b/c".into(),
     ];
     // permissions.allow serves workers and the router alike: every router entry is a shape the guard
     // accepts (one source of truth, no drift); every worker-only entry is one it refuses the router.
-    // `wait` is a router entry (E-SEED2.W8: the router arms it after a spawn); cargo/keel are
-    // worker-only, and these shapes stay refused whether or not settings lists them yet.
+    // `wait` (E-SEED2.W8) and `router-watch.sh` (E-SEED2.W12) are router entries; cargo/keel are
+    // worker-only, and these shapes stay refused whether or not settings lists them.
     let mut worker_only: Vec<String> =
         ["cargo test", "cargo build", "keel notes write test", "keel preflight wu HEAD", "keel check"].map(String::from).to_vec();
-    // the watch entry is mapped even before settings lists it (E-SEED2.W12: the owner adds it later)
-    let watch = serde_json::json!("Bash(scripts/router-watch.sh *)");
-    for a in settings()["permissions"]["allow"].as_array().unwrap().iter().chain([&watch]) {
+    for a in settings()["permissions"]["allow"].as_array().unwrap() {
         let a = a.as_str().unwrap().strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
         let cmd = match a.strip_suffix(" *") {
             Some(p) if p.ends_with(" wait") => format!("{p} n 15"),
@@ -1043,6 +1057,10 @@ fn watch_refuses_bad_arguments_before_any_poll() {
         );
         assert_eq!(polls, 0, "{args:?} polled before refusing");
     }
+    for (k, v) in [("ROUTER_WATCH_POLL", "x"), ("ROUTER_WATCH_POLL", "0"), ("ROUTER_WATCH_POLL", "1.5"), ("ROUTER_WATCH_POLL", "-1"), ("ROUTER_WATCH_MAX", "x"), ("ROUTER_WATCH_MAX", " 5"), ("ROUTER_WATCH_MAX", "1e3")] {
+        let (code, out, err, polls) = w.run(&["signed", &t], "knob", 0, &[(k, v)]);
+        assert!(code == Some(2) && out.is_empty() && err.contains(k) && polls == 0, "{k}={v:?} not refused: {code:?} {out} {err}");
+    }
 }
 
 /// E-SEED2.W12: `commit` fires when the branch moves and reports each commit with its Reviewed-By,
@@ -1081,7 +1099,29 @@ fn watch_commit_reports_what_landed_against_what_was_staged() {
     s.at(1);
     git(&w.main, &["commit", "-q", "--amend", "-m", "d2"]);
     s.go(1);
-    assert_eq!(s.line(), format!("REWRITTEN branch=main from={d} to={}\n", w.sha("HEAD")));
+    let d2 = w.sha("HEAD");
+    assert_eq!(s.line(), format!("REWRITTEN branch=main from={d} to={d2}\n"));
+
+    // a folded trailer is one value; control characters in commit text never reach the router raw
+    let f = w.commit(&["f"], "f \x1b[2Jx\ry\n\nReviewed-By: username\n vuluu\x07");
+    let (_, out, _, _) = w.run(&["commit", "main", &d2], "folded", 0, &[]);
+    assert_eq!(out, format!("COMMITTED branch=main from={d2} to={f} commits=1 expected=0/0\n  commit {f} reviewed-by=username vuluu? f ?[2Jx?y\n  landed A f\n"));
+
+    // a net-empty range with staged paths: every path missing, no stray line
+    w.commit(&["e"], "e");
+    git(&w.main, &["rm", "-q", "e"]);
+    git(&w.main, &["commit", "-qm", "drop e"]);
+    let (_, out, _, _) = w.run(&["commit", "main", &f, "e"], "empty", 0, &[]);
+    assert!(out.starts_with("COMMITTED-PARTIAL ") && out.contains(" expected=0/1\n") && out.ends_with("  missing e\n") && !out.contains("unexpected"), "{out}");
+
+    // a branch deleted mid-watch is DELETED, not a rewrite
+    git(&w.main, &["branch", "wu/gone"]);
+    let g = w.sha("wu/gone");
+    let mut s = w.armed(&["commit", "wu/gone", &g], "deleted");
+    s.at(1);
+    git(&w.main, &["branch", "-q", "-D", "wu/gone"]);
+    s.go(1);
+    assert_eq!(s.line(), format!("DELETED branch=wu/gone from={g}\n"));
 }
 
 /// E-SEED2.W12: `signed` fires on the mr note and prints its payload; `merged` fires once the tip is in
@@ -1092,9 +1132,9 @@ fn watch_signed_and_merged_report_the_note_and_how_the_tip_landed() {
     let t = w.sha("HEAD");
     let mut s = w.armed(&["signed", &t], "signed");
     s.at(1);
-    git(&w.main, &["notes", "--ref=mr", "add", "-m", "level: wu\nby: vuluu", &t]);
+    git(&w.main, &["notes", "--ref=mr", "add", "-m", "level: wu\nby: vu\rluu\x1b]0;x\x07", &t]);
     s.go(1);
-    assert_eq!(s.line(), format!("SIGNED tip={t}\n  level: wu\n  by: vuluu\n"));
+    assert_eq!(s.line(), format!("SIGNED tip={t}\n  level: wu\n  by: vu?luu?]0;x?\n"));
 
     git(&w.main, &["switch", "-q", "-c", "wu/x"]);
     let x = w.commit(&["x"], "x");
@@ -1140,6 +1180,24 @@ fn watch_pushed_and_tagged_fire_on_origin_only() {
     s.go(2);
     assert_eq!(s.line(), format!("PUSHED tip={t} branch=main origin={}\n", w.sha("main")));
 
+    // the fetch writes refs/remotes/origin/<b> and nothing else: no auto-followed tag, no FETCH_HEAD
+    let other = w.base.join("other");
+    git(&w.base, &["clone", "-q", w.base.join("origin.git").to_str().unwrap(), other.to_str().unwrap()]);
+    git(&other, &["commit", "-q", "--allow-empty", "-m", "o"]);
+    git(&other, &["tag", "-a", "vo", "-m", "vo"]);
+    git(&other, &["push", "-q", "origin", "main", "vo"]);
+    let o = String::from_utf8(git(&other, &["rev-parse", "HEAD"]).stdout).unwrap().trim().to_string();
+    let m = w.sha("main");
+    let refs = || String::from_utf8(git(&w.main, &["for-each-ref", "--format=%(refname) %(objectname)"]).stdout).unwrap();
+    let before = refs();
+    let (_, out, _, _) = w.run(&["pushed", &m, "main"], "only-ref", 0, &[]);
+    assert_eq!(out, format!("PUSHED tip={m} branch=main origin={o}\n"));
+    let after = refs();
+    let changed: Vec<&str> = after.lines().filter(|l| !before.lines().any(|b| b == *l)).collect();
+    assert_eq!(changed, [format!("refs/remotes/origin/main {o}")], "pushed wrote more than its ref:\n{after}");
+    let gitdir = w.main.join(".git");
+    assert!(!gitdir.join("FETCH_HEAD").exists(), "pushed wrote FETCH_HEAD");
+
     let mut s = w.armed(&["tagged", "v1", &t], "tagged");
     s.at(1);
     git(&w.main, &["tag", "-a", "v1", "-m", "v1", &t]);
@@ -1172,4 +1230,24 @@ fn watch_times_out_and_reports_an_unreachable_origin() {
         assert!(err.trim_end().chars().all(|c| c.is_ascii_alphanumeric() || " ._/:=@%,+^~-".contains(c)), "{out}");
         assert_eq!(polls, 4, "{k}: 5 attempts, 4 polls between them");
     }
+
+    // a success resets the count: 4 failures, 1 success, then 5 more failures before UNREACHABLE
+    git(&w.main, &["commit", "-q", "--allow-empty", "-m", "local only"]);
+    let local = w.sha("HEAD");
+    let mut s = w.armed(&["pushed", &local, "main"], "reset");
+    for n in 1..=3 {
+        s.go(n);
+    }
+    s.at(4);
+    git(&w.main, &["remote", "set-url", "origin", w.base.join("origin.git").to_str().unwrap()]);
+    s.go(4);
+    s.at(5);
+    git(&w.main, &["remote", "set-url", "origin", w.base.join("missing.git").to_str().unwrap()]);
+    for n in 5..=9 {
+        s.go(n);
+    }
+    let dir = s.dir.clone();
+    let out = s.line();
+    assert!(out.starts_with("UNREACHABLE kind=pushed "), "{out}");
+    assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "9", "the count did not reset on success");
 }
