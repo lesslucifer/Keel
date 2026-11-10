@@ -312,7 +312,7 @@ fn launcher() -> Launcher {
     std::fs::write(main.join(".gitignore"), ".router/\n").unwrap();
     std::fs::write(main.join(".router/briefs/b.md"), "do the thing\n").unwrap();
     std::fs::create_dir_all(main.join(".keel")).unwrap();
-    std::fs::copy(root().join(".keel/config.toml"), main.join(".keel/config.toml")).unwrap();
+    std::fs::write(main.join(".keel/config.toml"), git(root(), &["show", "HEAD:.keel/config.toml"]).stdout).unwrap();
     git(&main, &["init", "-q", "-b", "main"]);
     git(&main, &["add", "."]);
     git(&main, &["commit", "-qm", "base"]);
@@ -528,6 +528,23 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
     assert!(ok && out.contains(" effort=high "), "{out}");
     l.wait_exit("q");
+
+    // the accepted efforts are the committed list, not a built-in one: narrowed, medium is refused;
+    // widened, max is accepted on spawn and resume
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "medium"]);
+    assert!(!ok && out.contains("effort must be one of: high ("), "{out}");
+    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"max\"]\nworker_default_effort = \"high\"\n"));
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "max"]);
+    assert!(ok && out.contains(" effort=max "), "{out}");
+    let sid = field(&out, "session=").to_string();
+    l.wait_exit("q");
+    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "max");
+    let (ok, out) = l.run(&["resume", "q", &sid, wt, brief, "sonnet", "--effort", "medium"]);
+    assert!(!ok && out.contains("effort must be one of: high max ("), "{out}");
+    let (ok, out) = l.run(&["resume", "q", &sid, wt, brief, "sonnet", "--effort", "max"]);
+    assert!(ok && out.contains(" effort=max "), "{out}");
+    l.wait_exit("q");
+    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "max");
 }
 
 /// DEC-39: the repo's committed worker policy is opus at medium or high effort, medium by default.
@@ -600,19 +617,21 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
         let a = worker_argv(&l.main, name);
         option(&a, "--permission-mode")
     };
-    let run_dir_mode = |name: &str, kind: &str| {
+    let run_dir = |name: &str, kind: &str, file: &str| {
         let runs = std::fs::read_dir(l.main.join(".router/runs")).unwrap();
-        let mut modes: Vec<String> = runs
+        let mut values: Vec<String> = runs
             .map(|e| e.unwrap().path())
             .filter(|p| {
                 let f = p.file_name().unwrap().to_str().unwrap();
                 f.starts_with(&format!("{name}-")) && f.ends_with(&format!("-{kind}"))
             })
-            .map(|p| std::fs::read_to_string(p.join("permission-mode")).unwrap().trim().to_string())
+            .map(|p| std::fs::read_to_string(p.join(file)).unwrap().trim().to_string())
             .collect();
-        modes.sort();
-        modes
+        values.sort();
+        values
     };
+    let run_dir_mode = |name: &str, kind: &str| run_dir(name, kind, "permission-mode");
+    let run_dir_effort = |name: &str, kind: &str| run_dir(name, kind, "effort");
 
     for (i, (extra, why)) in [
         (vec!["--permission-mode", "bypassPermissions"], "permission mode must be"),
@@ -674,17 +693,7 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
         assert_eq!(option(&a, "--model"), "opus");
         (option(&a, "--effort"), option(&a, "--permission-mode"))
     };
-    let run_dir_effort = |name: &str, kind: &str| -> Vec<String> {
-        std::fs::read_dir(l.main.join(".router/runs"))
-            .unwrap()
-            .map(|e| e.unwrap().path())
-            .filter(|p| {
-                let f = p.file_name().unwrap().to_str().unwrap();
-                f.starts_with(&format!("{name}-")) && f.ends_with(&format!("-{kind}"))
-            })
-            .map(|p| std::fs::read_to_string(p.join("effort")).unwrap().trim().to_string())
-            .collect()
-    };
+    let mut sids = std::collections::HashMap::new();
     for (name, extra, effort, mode) in [
         ("e1", vec![], "medium", "acceptEdits"),
         ("e2", vec!["--effort", "high"], "high", "acceptEdits"),
@@ -695,19 +704,17 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
         args.extend(&extra);
         let (ok, out) = l.run(&args);
         assert!(ok && out.contains(&format!(" permission-mode={mode} effort={effort} ")), "{extra:?}: {out}");
+        sids.insert(name, field(&out, "session=").to_string());
         assert_eq!(effort_of(name), (effort.to_string(), mode.to_string()), "{extra:?}");
         assert_eq!(run_dir_effort(name, "spawn"), [effort], "{extra:?}");
     }
-    let (ok, out) = l.run(&["spawn", "h", wt, brief, "opus", "--effort", "high"]);
-    assert!(ok && out.contains(" effort=high "), "{out}");
-    let sid = field(&out, "session=").to_string();
-    l.wait_exit("h");
-    let (ok, out) = l.run(&["resume", "h", &sid, wt, brief, "opus"]);
+    let sid = sids["e2"].clone();
+    let (ok, out) = l.run(&["resume", "e2", &sid, wt, brief, "opus"]);
     assert!(ok && out.contains(" effort=medium "), "{out}");
-    assert_eq!(effort_of("h").0, "medium");
-    assert_eq!(run_dir_effort("h", "spawn"), ["high"]);
-    assert_eq!(run_dir_effort("h", "resume"), ["medium"]);
-    let (ok, out) = l.run(&["resume", "h", &sid, wt, brief, "opus", "--effort", "low"]);
+    assert_eq!(effort_of("e2").0, "medium");
+    assert_eq!(run_dir_effort("e2", "spawn"), ["high"]);
+    assert_eq!(run_dir_effort("e2", "resume"), ["medium"]);
+    let (ok, out) = l.run(&["resume", "e2", &sid, wt, brief, "opus", "--effort", "low"]);
     assert!(!ok && out.contains("effort must be one of"), "{out}");
 
     // router side: the guard admits the option on the launcher shape, and the grant never reaches it
