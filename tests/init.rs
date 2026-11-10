@@ -389,22 +389,7 @@ fn git_in(d: &Path, a: &[&str]) -> Output {
     common::cmd("git").args(a).current_dir(d).env("PATH", format!("{}:{}", Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display(), std::env::var("PATH").unwrap())).env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t").output().unwrap()
 }
 
-/// A clone whose main holds the source's index (mid-merge: the merged result, not HEAD), the
-/// tree the build under test embeds; `--shared` makes the index's objects reachable. The tree is
-/// written from a copy of the index: write-tree rewrites the index it reads, and the source may be
-/// the real checkout, shared by parallel tests.
-fn self_clone(src: &Path, dst: &Path) {
-    assert!(common::cmd("git").args(["clone", "-q", "--shared", src.to_str().unwrap(), dst.to_str().unwrap()]).status().unwrap().success());
-    let idx = String::from_utf8(git_in(src, &["rev-parse", "--path-format=absolute", "--git-path", "index"]).stdout).unwrap();
-    let copy = dst.with_extension("index");
-    std::fs::copy(idx.trim(), &copy).unwrap();
-    let t = common::cmd("git").args(["write-tree"]).current_dir(src).env("GIT_INDEX_FILE", &copy).output().unwrap();
-    assert!(t.status.success(), "{}", text(&t));
-    let t = String::from_utf8(t.stdout).unwrap();
-    assert!(git_in(dst, &["checkout", "-q", "-B", "main"]).status.success());
-    assert!(git_in(dst, &["read-tree", "-u", "--reset", t.trim()]).status.success());
-    assert!(git_in(dst, &["commit", "-q", "--no-verify", "--allow-empty", "-m", "source index"]).status.success());
-}
+use common::self_clone;
 
 /// `keel init` over a self-clone changes nothing: its .claude/skills/keel-* equal the embedded copies.
 fn assert_init_is_a_noop(c: &Path) {
@@ -473,10 +458,9 @@ fn self_hosting_check_passes_mid_merge_of_a_skill_change() {
 /// inherits the main checkout's signer list and its first `keel mr` is not refused for want of one.
 #[test]
 fn self_hosting_new_worktree_inherits_the_signer_list() {
-    let root = env!("CARGO_MANIFEST_DIR");
     let d = TempDir::new().unwrap();
     let c = d.path().join("c");
-    assert!(common::cmd("git").args(["clone", "-q", root, c.to_str().unwrap()]).current_dir(d.path()).status().unwrap().success());
+    self_clone(Path::new(env!("CARGO_MANIFEST_DIR")), &c);
     assert!(keel(&c, &["hooks", "install"]).status.success());
     std::fs::write(c.join(".mr-allowed"), "username: owner\n").unwrap();
 
