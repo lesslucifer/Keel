@@ -290,8 +290,9 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
     assert_eq!(run(root(), empty.path().to_str().unwrap()).status.code(), Some(2), "missing jq must block");
 }
 
-/// Every git a test runs, directly or under a script, reads only the repo's own config: no user or
-/// system setting (tag.gpgSign, log.showSignature, core.quotePath, ...) can change what it does.
+/// Layered on `common::cmd`: every git a test runs, directly or under a script, reads only the
+/// repo's own config: no user or system setting (tag.gpgSign, log.showSignature, core.quotePath,
+/// ...) can change what it does.
 fn hermetic(c: &mut Command) -> &mut Command {
     c.env("GIT_CONFIG_GLOBAL", "/dev/null").env("GIT_CONFIG_NOSYSTEM", "1")
 }
@@ -1225,7 +1226,7 @@ impl Watcher {
     fn cmd(&self, args: &[&str], k: &str, env: &[(&str, &str)]) -> (Command, PathBuf) {
         let dir = self.base.join(format!("steps-{k}"));
         std::fs::create_dir_all(&dir).unwrap();
-        let mut c = Command::new("scripts/router-watch.sh");
+        let mut c = common::cmd("scripts/router-watch.sh");
         hermetic(&mut c)
             .args(args)
             .current_dir(&self.main)
@@ -1248,7 +1249,7 @@ impl Watcher {
     /// A `git` on $PATH (with the `sleep` shim) ahead of the real one that logs each call to <base>/spy.log and, when
     /// $GIT_SPY_FAIL is 1, fails every fetch: returns that PATH and the log.
     fn spy(&self) -> (String, PathBuf) {
-        let real = String::from_utf8(Command::new("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
+        let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
         let dir = self.base.join("spy");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("git"), format!(
@@ -1289,7 +1290,7 @@ fn hermetic_git_ignores_global_and_system_config() {
     let d = TempDir::new().unwrap();
     let hostile = d.path().join("gitconfig");
     std::fs::write(&hostile, "[tag]\n\tgpgSign = true\n").unwrap();
-    let mut c = Command::new("git");
+    let mut c = common::cmd("git");
     c.args(["config", "--list", "--show-origin"]).current_dir(d.path()).env("GIT_CONFIG_GLOBAL", &hostile).env("GIT_CONFIG_SYSTEM", &hostile);
     let o = hermetic(&mut c).output().unwrap();
     let list = String::from_utf8(o.stdout).unwrap();
