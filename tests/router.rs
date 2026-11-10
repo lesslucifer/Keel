@@ -79,6 +79,13 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "claude -p hi",
         "kill 1",
         "git -c core.pager=sh log",
+        "scripts/router-watch.sh pushed 1a2b3c4 main --upload-pack=x",
+        "scripts/router-watch.sh commit -b x y",
+        "scripts/router-watch.sh commit b 1a2b3c4 ../x",
+        "X=1 scripts/router-watch.sh signed 1a2b3c4",
+        "scripts/router-watch.sh watch main",
+        "scripts/router-watch.sh signed",
+        "scripts/router-watch.sh signed $(id)",
     ] {
         assert!(bash(denied).is_some(), "guard allowed {denied:?}");
     }
@@ -86,6 +93,7 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
     let t = Instant::now();
     assert!(bash(&format!("rm -rf x{}y", " ".repeat(100_000))).is_some());
     assert!(t.elapsed() < Duration::from_secs(3), "guard took {:?} on a long command", t.elapsed());
+    assert!(bash("rm x").unwrap().contains("scripts/router-watch.sh commit|signed|merged|pushed|tagged"), "deny message omits the watch shape");
 
     let mut allowed = vec![
         "git log --oneline -5".to_string(),
@@ -99,6 +107,11 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "scripts/router-worker.sh resume e-x-w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b /Users/o/Keel-x .router/briefs/e-x-w1-r1.md sonnet".into(),
         "scripts/router-worker.sh wait e-x-w1".into(),
         "scripts/router-worker.sh wait e-x-w1 30".into(),
+        "scripts/router-watch.sh commit wu/E-SEED2/w12-owner-watch fa5a25d16d953d5858c35b58e6025a6a7903ff8b skills/keel-router/SKILL.md .claude/skills/keel-router/SKILL.md".into(),
+        "scripts/router-watch.sh signed fa5a25d16d953d5858c35b58e6025a6a7903ff8b".into(),
+        "scripts/router-watch.sh merged fa5a25d epic/E-SEED2".into(),
+        "scripts/router-watch.sh pushed fa5a25d main".into(),
+        "scripts/router-watch.sh tagged v0.2.0 fa5a25d".into(),
     ];
     // permissions.allow serves workers and the router alike: every router entry is a shape the guard
     // accepts (one source of truth, no drift); every worker-only entry is one it refuses the router.
@@ -106,10 +119,13 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
     // worker-only, and these shapes stay refused whether or not settings lists them yet.
     let mut worker_only: Vec<String> =
         ["cargo test", "cargo build", "keel notes write test", "keel preflight wu HEAD", "keel check"].map(String::from).to_vec();
-    for a in settings()["permissions"]["allow"].as_array().unwrap() {
+    // the watch entry is mapped even before settings lists it (E-SEED2.W12: the owner adds it later)
+    let watch = serde_json::json!("Bash(scripts/router-watch.sh *)");
+    for a in settings()["permissions"]["allow"].as_array().unwrap().iter().chain([&watch]) {
         let a = a.as_str().unwrap().strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
         let cmd = match a.strip_suffix(" *") {
             Some(p) if p.ends_with(" wait") => format!("{p} n 15"),
+            Some(p) if p.ends_with("router-watch.sh") => format!("{p} signed 1a2b3c4"),
             Some(p) if p.starts_with("scripts/") => format!("{p} n /w .router/briefs/n.md opus"),
             Some(p) => format!("{p} HEAD"),
             None => a.to_string(),
