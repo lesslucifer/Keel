@@ -143,7 +143,7 @@ const GIT_LOCAL_ENV: [&str; 15] = [
 
 /// `keep_index`: git's commit hooks get the index being committed (a temp one for `commit -a` or a
 /// pathspec commit); keel's own `git diff --cached` must read it, a child command never.
-fn no_git_env(c: &mut Command, keep_index: bool) -> &mut Command {
+fn no_git_env(mut c: Command, keep_index: bool) -> Command {
     for k in GIT_LOCAL_ENV {
         if !(keep_index && k == "GIT_INDEX_FILE") {
             c.env_remove(k);
@@ -153,8 +153,8 @@ fn no_git_env(c: &mut Command, keep_index: bool) -> &mut Command {
 }
 
 fn git(repo: &Path, args: &[&str], envs: &[(&str, &Path)]) -> Result<String, String> {
-    let mut c = Command::new("git");
-    no_git_env(&mut c, true).args(args).current_dir(repo);
+    let mut c = no_git_env(Command::new("git"), true);
+    c.args(args).current_dir(repo);
     for (k, v) in envs {
         c.env(k, v);
     }
@@ -177,7 +177,7 @@ fn repo_root() -> Result<PathBuf, String> {
 }
 
 fn sh(repo: &Path, cmd: &str) -> Result<bool, String> {
-    no_git_env(&mut Command::new("sh"), false)
+    no_git_env(Command::new("sh"), false)
         .args(["-c", cmd])
         .current_dir(repo)
         .stdin(Stdio::null())
@@ -535,14 +535,13 @@ mod tests {
 
     #[test]
     fn no_git_env_removes_every_local_var_and_keeps_the_index_only_when_asked() {
-        let mut child = Command::new("x");
-        no_git_env(&mut child, false);
+        let child = no_git_env(Command::new("x"), false);
         let mut all: Vec<String> = GIT_LOCAL_ENV.iter().map(|s| s.to_string()).collect();
         all.sort();
         assert_eq!(removed(&child), all);
 
-        let mut own = Command::new("x");
-        no_git_env(&mut own, true).env("GIT_INDEX_FILE", "/tmp/i");
+        let mut own = no_git_env(Command::new("x"), true);
+        own.env("GIT_INDEX_FILE", "/tmp/i");
         let mut rest: Vec<String> = all.iter().filter(|k| *k != "GIT_INDEX_FILE").cloned().collect();
         rest.sort();
         assert_eq!(removed(&own), rest);
@@ -551,7 +550,7 @@ mod tests {
 
     #[test]
     fn the_strip_list_covers_gits_local_env_vars() {
-        let o = no_git_env(&mut Command::new("git"), false).args(["rev-parse", "--local-env-vars"]).current_dir("/").output().unwrap();
+        let o = no_git_env(Command::new("git"), false).args(["rev-parse", "--local-env-vars"]).current_dir("/").output().unwrap();
         assert!(o.status.success());
         for v in String::from_utf8(o.stdout).unwrap().lines() {
             assert!(GIT_LOCAL_ENV.contains(&v), "GIT_LOCAL_ENV misses {v}");

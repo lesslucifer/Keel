@@ -252,7 +252,7 @@ pub fn run(repo: &Path, force: bool) -> Result<i32, String> {
     if repo.join("CLAUDE.md").exists() {
         println!("warning: CLAUDE.md exists - Claude Code reads it instead of AGENTS.md; merge the two or add a line `@AGENTS.md` to CLAUDE.md");
     }
-    let on_path = crate::no_git_env(&mut std::process::Command::new("sh"), false).args(["-c", "command -v keel"]).output().is_ok_and(|o| o.status.success());
+    let on_path = crate::no_git_env(std::process::Command::new("sh"), false).args(["-c", "command -v keel"]).output().is_ok_and(|o| o.status.success());
     if !on_path {
         println!("warning: keel is not on PATH - the hooks call it; install: cargo install --git https://github.com/lesslucifer/Keel");
     }

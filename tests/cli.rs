@@ -432,8 +432,8 @@ fn every_test_spawn_strips_gits_env() {
         let f = e.unwrap().path();
         if f.extension().is_some_and(|x| x == "rs") {
             for (i, line) in std::fs::read_to_string(&f).unwrap().lines().enumerate() {
-                let git_free = ["\"jq\"", "\"ps\"", "\"kill\""].iter().any(|p| line.contains(p));
-                if line.contains(&needle) && !git_free {
+                let git_free = |rest: &str| ["\"jq\")", "\"ps\")", "\"kill\")"].iter().any(|p| rest.starts_with(p));
+                if line.match_indices(&needle).any(|(at, _)| !git_free(&line[at + needle.len()..])) {
                     bad.push(format!("{}:{}: {}", f.display(), i + 1, line.trim()));
                 }
             }
@@ -442,8 +442,8 @@ fn every_test_spawn_strips_gits_env() {
     assert!(bad.is_empty(), "spawn through common::cmd:\n{}", bad.join("\n"));
 }
 
-/// W13: keel itself spawns nothing that can reach git without `no_git_env` (same or next line);
-/// ssh-keygen never reads a repository.
+/// W13: every process keel spawns is built inside `no_git_env(..)` on the same line; ssh-keygen never
+/// reads a repository.
 #[test]
 fn every_keel_spawn_strips_gits_env() {
     let needle = ["Command", "::new("].concat();
@@ -451,11 +451,12 @@ fn every_keel_spawn_strips_gits_env() {
     let mut bad = vec![];
     for e in std::fs::read_dir(&dir).unwrap() {
         let f = e.unwrap().path();
-        let src = std::fs::read_to_string(&f).unwrap();
-        let lines: Vec<&str> = src.lines().collect();
-        for (i, line) in lines.iter().enumerate() {
-            let stripped = line.contains("no_git_env") || lines.get(i + 1).is_some_and(|n| n.contains("no_git_env"));
-            if line.contains(&needle) && !line.contains("\"ssh-keygen\"") && !line.contains(&format!("{needle}\"x\")")) && !stripped {
+        for (i, line) in std::fs::read_to_string(&f).unwrap().lines().enumerate() {
+            let wrapped = |at: usize| {
+                let before = line[..at].trim_end_matches("std::process::");
+                before.ends_with("no_git_env(") || line[at + needle.len()..].starts_with("\"ssh-keygen\")")
+            };
+            if line.match_indices(&needle).any(|(at, _)| !wrapped(at)) {
                 bad.push(format!("{}:{}: {}", f.display(), i + 1, line.trim()));
             }
         }

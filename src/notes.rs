@@ -418,7 +418,7 @@ pub(crate) fn store<T: Serialize>(repo: &Path, kind: &str, tip: &str, note: &T) 
 }
 
 pub(crate) fn hash_blob(repo: &Path, data: &str) -> Result<String, String> {
-    let mut h = no_git_env(&mut Command::new("git"), true)
+    let mut h = no_git_env(Command::new("git"), true)
         .args(["hash-object", "--stdin"])
         .current_dir(repo)
         .stdin(Stdio::piped())

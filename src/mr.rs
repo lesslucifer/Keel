@@ -171,7 +171,7 @@ fn change_hash(repo: &Path, base: &str, tip: &str) -> Result<String, String> {
 fn report_hash(repo: &Path, tip: &str, path: &str, epic: bool) -> Result<Option<String>, String> {
     let ls = git(repo, &["ls-tree", tip, "--", path], &[])?;
     if let ["100644" | "100755", "blob", id] = ls.split('\t').next().unwrap_or("").split(' ').collect::<Vec<_>>()[..] {
-        let o = no_git_env(&mut Command::new("git"), true).args(["cat-file", "blob", id]).current_dir(repo).output().map_err(|e| format!("keel: cannot run git: {e}"))?;
+        let o = no_git_env(Command::new("git"), true).args(["cat-file", "blob", id]).current_dir(repo).output().map_err(|e| format!("keel: cannot run git: {e}"))?;
         if !o.status.success() {
             return Err(format!("keel: git cat-file blob {id} failed: {}", String::from_utf8_lossy(&o.stderr).trim()));
         }
@@ -331,7 +331,7 @@ fn commit(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         return Ok(1);
     };
     let body = format!("{}\n\n{TRAILER}: {tier} {id}\n", msg.trim_end());
-    let o = no_git_env(&mut Command::new("git"), true).args(["commit", "-m", &body]).current_dir(repo).status().map_err(|e| e.to_string())?;
+    let o = no_git_env(Command::new("git"), true).args(["commit", "-m", &body]).current_dir(repo).status().map_err(|e| e.to_string())?;
     Ok(if o.success() { 0 } else { 1 })
 }
 
