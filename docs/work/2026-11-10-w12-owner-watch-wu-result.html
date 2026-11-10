@@ -63,6 +63,20 @@
       <li>Kept: <code>-c remote.origin.followRemoteHEAD=never</code>. On git 2.50 an explicit-refspec fetch never follows the remote HEAD, so no test can tell whether the option is set. It stays as a guard for other git versions, and the delta test pins the observable result: only the watched ref is written.</li>
     </ul>
     Two candidates were refuted: <code>GIT_TEMPLATE_DIR</code> (the watch never pushes, and a local fetch runs no hooks) and the 20 s harness test (it is not on the critical path).</li>
+  <li><b>Code-review fix round 5.</b> keel-code-review over <code>cf7ee21..e8dcc49</code> returned FAIL with two important findings, both about the tests being hermetic:
+    <ul>
+      <li>An exported <code>ROUTER_WATCH_POLL</code> or <code>ROUTER_WATCH_MAX</code> reached the watch under test. <code>Watcher::cmd</code> now removes both, so only a test's own <code>env</code> sets them.</li>
+      <li>An exported <code>GIT_DEFAULT_HASH=sha256</code> made <code>watcher()</code> build sha256 repos. <code>hermetic()</code> now strips it as well.</li>
+    </ul>
+    The pins are a <code>get_envs</code> check and a sha1 <code>git init</code> check. Verified nits, all fixed:
+    <ul>
+      <li>An extra argument to <code>merged</code> or <code>pushed</code> is refused.</li>
+      <li><code>UNREACHABLE</code> carries the last line of git's output (the spy now fails with two lines).</li>
+      <li>The fetch runs with <code>--no-tags</code>, <code>--no-write-fetch-head</code>, <code>--no-auto-maintenance</code> and <code>--no-recurse-submodules</code>, checked through the spy log.</li>
+      <li><code>Watcher::run</code> uses the <code>Stepped</code> dir it arms instead of building it again.</li>
+      <li>The spy's log path is taken from <code>spy()</code> rather than rebuilt by hand.</li>
+    </ul>
+    One candidate was refuted: the 20 s harness test is not on the critical path, which was measured.</li>
 </ul>
 
 <h2 id="evidence">Evidence</h2>
@@ -83,6 +97,7 @@
     <li><code>2f4b6ff</code>: the W12 test spawns go through <code>common::cmd</code>.</li>
     <li><code>c67f1ac</code> and <code>f0016e2</code>: code-review fix round 3.</li>
     <li><code>a3140b3</code>: code-review fix round 4.</li>
+    <li><code>1cb601a</code>: code-review fix round 5.</li>
     <li>This report.</li>
   </ul>
   <p><b>Reviews.</b> The independent review r1 at <code>b997c0a</code> returned FIX, and it was fixed as described above. The independent review r2 at <code>f387c3b</code> returned PASS, with low follow-ups N1–N3. keel-code-review at <code>ab9d66e</code> returned FAIL and was fixed in <code>d9bd7da</code>, together with N1 and N2. keel-code-review at <code>e3c6f69</code> returned FAIL (V1, V2 and nits). Round 2 fixed them, together with N3.</p>
