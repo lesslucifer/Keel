@@ -1512,9 +1512,15 @@ fn watcher_run_is_bounded_when_the_watch_outpolls_its_releases() {
     let t = w.sha("HEAD");
     let e = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.run(&["signed", &t], "unreleased", 0, &[]))).unwrap_err();
     assert!(e.downcast_ref::<String>().is_some_and(|m| m.contains("never returned")));
-    let mut s = w.armed(&["signed", &t], "unreleased-at");
-    let e = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| s.at(2))).unwrap_err();
-    assert!(e.downcast_ref::<String>().is_some_and(|m| m.contains("never reached poll 2")));
+    let mut at = w.armed(&["signed", &t], "unreleased-at");
+    let out = w.armed(&["signed", &t], "unreleased-output");
+    std::thread::scope(|sc| {
+        let a = sc.spawn(|| std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| at.at(2))).unwrap_err());
+        let o = sc.spawn(|| std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| out.output())).unwrap_err());
+        let msg = |e: Box<dyn std::any::Any + Send>| e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|m| m.to_string())).unwrap();
+        assert!(msg(a.join().unwrap()).contains("never reached poll 2"));
+        assert!(msg(o.join().unwrap()).contains("never returned"));
+    });
     let shim = w.base.join("shim/sleep");
     let shim = shim.to_str().unwrap();
     until("the sleep shim to exit", || {
