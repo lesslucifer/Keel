@@ -422,44 +422,51 @@ fn the_strip_lists_cover_gits_local_env_vars() {
     }
 }
 
-/// W13: a test spawns anything that can reach git through `common::cmd`, never a bare `Command`.
-#[test]
-fn every_test_spawn_strips_gits_env() {
+/// Every spawn under `dir` (recursively, *.rs) not built inside `no_git_env(..)` on its own line,
+/// unless it runs one of `git_free` - programs that never read a repository.
+fn raw_spawns(dir: &Path, git_free: &[&str]) -> Vec<String> {
     let needle = ["Command", "::new("].concat();
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
     let mut bad = vec![];
-    for e in std::fs::read_dir(&dir).unwrap() {
+    for e in std::fs::read_dir(dir).unwrap() {
         let f = e.unwrap().path();
-        if f.extension().is_some_and(|x| x == "rs") {
+        if f.is_dir() {
+            bad.extend(raw_spawns(&f, git_free));
+        } else if f.extension().is_some_and(|x| x == "rs") {
             for (i, line) in std::fs::read_to_string(&f).unwrap().lines().enumerate() {
-                let git_free = |rest: &str| ["\"jq\")", "\"ps\")", "\"kill\")"].iter().any(|p| rest.starts_with(p));
-                if line.match_indices(&needle).any(|(at, _)| !git_free(&line[at + needle.len()..])) {
+                let wrapped = |at: usize| {
+                    let rest = &line[at + needle.len()..];
+                    line[..at].trim_end_matches("std::process::").ends_with("no_git_env(")
+                        || git_free.iter().any(|p| rest.starts_with(&format!("\"{p}\")")))
+                };
+                if line.match_indices(&needle).any(|(at, _)| !wrapped(at)) {
                     bad.push(format!("{}:{}: {}", f.display(), i + 1, line.trim()));
                 }
             }
         }
     }
+    bad
+}
+
+/// W13: a test spawns anything that can reach git through `common::cmd`, never a bare `Command`.
+#[test]
+fn every_test_spawn_strips_gits_env() {
+    let bad = raw_spawns(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests"), &["jq", "ps", "kill"]);
     assert!(bad.is_empty(), "spawn through common::cmd:\n{}", bad.join("\n"));
 }
 
-/// W13: every process keel spawns is built inside `no_git_env(..)` on the same line; ssh-keygen never
-/// reads a repository.
+/// W13: every process keel spawns is built inside `no_git_env(..)`; ssh-keygen never reads a repository.
 #[test]
 fn every_keel_spawn_strips_gits_env() {
-    let needle = ["Command", "::new("].concat();
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut bad = vec![];
-    for e in std::fs::read_dir(&dir).unwrap() {
-        let f = e.unwrap().path();
-        for (i, line) in std::fs::read_to_string(&f).unwrap().lines().enumerate() {
-            let wrapped = |at: usize| {
-                let before = line[..at].trim_end_matches("std::process::");
-                before.ends_with("no_git_env(") || line[at + needle.len()..].starts_with("\"ssh-keygen\")")
-            };
-            if line.match_indices(&needle).any(|(at, _)| !wrapped(at)) {
-                bad.push(format!("{}:{}: {}", f.display(), i + 1, line.trim()));
-            }
-        }
-    }
+    let bad = raw_spawns(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &["ssh-keygen"]);
     assert!(bad.is_empty(), "spawn through no_git_env:\n{}", bad.join("\n"));
+}
+
+/// W13: the test-side copy of the strip list equals keel's (a binary crate cannot be imported).
+#[test]
+fn the_test_strip_list_equals_keels() {
+    let src = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/main.rs")).unwrap();
+    let start = src.find("const GIT_LOCAL_ENV").unwrap();
+    let body = &src[start..start + src[start..].find("];").unwrap()];
+    let keels: Vec<&str> = body.split('"').skip(1).step_by(2).collect();
+    assert_eq!(keels, common::GIT_LOCAL_ENV);
 }

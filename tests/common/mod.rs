@@ -24,7 +24,7 @@ pub const GIT_LOCAL_ENV: [&str; 15] = [
     "GIT_COMMON_DIR",
 ];
 
-pub fn no_git_env(c: &mut Command) -> &mut Command {
+pub fn no_git_env(mut c: Command) -> Command {
     for k in GIT_LOCAL_ENV {
         c.env_remove(k);
     }
@@ -33,7 +33,5 @@ pub fn no_git_env(c: &mut Command) -> &mut Command {
 
 /// The only way a test spawns a process that can reach git (enforced by `every_test_spawn_strips_gits_env`).
 pub fn cmd(prog: impl AsRef<OsStr>) -> Command {
-    let mut c = Command::new(prog);
-    no_git_env(&mut c);
-    c
+    no_git_env(Command::new(prog))
 }
