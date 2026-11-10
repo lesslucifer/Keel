@@ -106,6 +106,10 @@ note between tips is a bypass: always use the writer.
 | `mr/v1` | a listed human attested this tip: `signer`, `tier`, `change_hash`, `report` + `report_hash` when a report is attested, `sig` when key-backed (payload `keel-mr/v2`; hashes `sha256:<hex>`) | the human: `keel mr confirm` |
 | `dod/v1` | the gate ran green here; names the attested `report` + `report_hash`, if any | `keel verify-dod` on a green, non-exempt wu/epic, only |
 
+A sign-off written by a Keel binary older than the `sha256:` hashes no longer
+verifies (check 8 names that cause): after upgrading Keel, re-sign every unmerged WU or
+epic tip with `keel mr confirm`.
+
 Test judgment (stdin of `keel notes write test`; `files` must be changed in
 the range and declare tests; give `files` + `covers`, or `waived`):
 
@@ -186,7 +190,8 @@ branch can ship or merge in a neutered hook. Never commit hooks.
 
 Keel runs alone, never alongside another hook manager. `keel hooks install`
 refuses, changing nothing, when `core.hooksPath` (any scope) is another tool's,
-or when `.git/hooks/` holds anything but `*.sample` files; it names what it
+or, with `core.hooksPath` unset, when `.git/hooks/` holds anything but `*.sample`
+files; it names what it
 would replace. `keel hooks install --force` replaces it — the other tool's
 hooks stop running, so that is the owner's call, never an agent's. `keel init`
 writes its files, then stops on the same refusal (its `-f` is not `--force`).
