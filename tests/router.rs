@@ -639,7 +639,7 @@ fn pushed_probe_fires_only_after_the_merge_reaches_origin() {
     git(&main, &["commit", "-q", "--allow-empty", "-m", "epic work"]);
     let t = String::from_utf8(git(&main, &["rev-parse", "HEAD"]).stdout).unwrap().trim().to_string();
     git(&main, &["switch", "-q", "main"]);
-    let fires = || Command::new("sh").args(["-c", probe]).env("MAIN", &main).env("T", &t).output().unwrap().status.success();
+    let fires = || hermetic(&mut Command::new("sh")).args(["-c", probe]).env("MAIN", &main).env("T", &t).output().unwrap().status.success();
 
     assert!(!fires(), "PUSHED fired when the action was only staged");
     git(&main, &["merge", "-q", "--no-ff", "-m", "merge epic", "epic/E-X"]);
@@ -880,7 +880,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     // W3: the worktree the worker will run in is created through keel's post-checkout hook
     let wt = base.join("wt");
     let path = format!("{}:{}", keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
-    let o = Command::new("git").args(["worktree", "add", "-q", "-b", "wu/x/e2e", wt.to_str().unwrap()]).current_dir(&c).env("PATH", &path).output().unwrap();
+    let o = hermetic(&mut Command::new("git")).args(["worktree", "add", "-q", "-b", "wu/x/e2e", wt.to_str().unwrap()]).current_dir(&c).env("PATH", &path).output().unwrap();
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     assert_eq!(std::fs::read_to_string(wt.join(".mr-allowed")).ok().as_deref(), Some("username: owner\n"), "worktree not seeded");
 
