@@ -95,10 +95,10 @@ pub struct MrNote {
     /// The attested result report; absent when `[mr] report` asked for none and none was attested.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report: Option<String>,
-    /// git blob id of the attested report's bytes.
+    /// `sha256:<hex>` of the attested report's bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_hash: Option<String>,
-    /// git blob hash of the full `git diff base tip`.
+    /// `sha256:<hex>` of the full `git diff base tip`.
     pub change_hash: String,
     /// Armored SSH SIGNATURE (namespace keel-mr), key-backed signers only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -326,12 +326,12 @@ pub(crate) fn code_diff_hash(repo: &Path, cfg: &Config, base: &str, tip: &str) -
 }
 
 /// git blob hash of `git diff base tip -- <pathspecs>` (none = the full diff), independent of the
-/// local diff config so every machine hashes the same bytes (cr, dod and mr bindings).
+/// local diff config so every machine hashes the same bytes (cr and dod bindings).
 pub(crate) fn diff_hash(repo: &Path, base: &str, tip: &str, pathspecs: &[String]) -> Result<String, String> {
     hash_blob(repo, &diff_text(repo, base, tip, pathspecs)?)
 }
 
-/// The bytes every diff binding hashes: `git diff base tip -- <pathspecs>`, local diff config off.
+/// The bytes every diff binding hashes (cr and dod as a git blob, mr as SHA-256): `git diff base tip -- <pathspecs>`, local diff config off.
 pub(crate) fn diff_text(repo: &Path, base: &str, tip: &str, pathspecs: &[String]) -> Result<String, String> {
     let mut a = vec!["diff", "--no-color", "--no-ext-diff", "--no-textconv", base, tip, "--"];
     a.extend(pathspecs.iter().map(String::as_str));
