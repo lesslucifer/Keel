@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="c41e7a9d3b25f6e80a1d9c47" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED2.W13 hook env leak</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED2.W13 · Hook environment leak and landed-tip sign-off</h1>
+      <p>Keel stops passing git's repository-locating environment variables to the lint and test commands it runs, and to its own git calls. Every test spawn helper strips the same variables. <code>keel mr confirm</code> refuses a tip that its target already contains.</p>
+      <div class="meta">T3 · WU plan · 2026-11-10 · Keel · branch <code>wu/E-SEED2/w13-hook-env</code> off <code>epic/E-SEED2</code> <code>36cd14d</code> · epic plan <a href="2026-11-09-e-seed2-epic-plan.html#w13">E-SEED2 W13</a> · <span class="badge approval">owner ruling 2026-11-10</span></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="requirement">Requirement</h2>
+<p data-item="requirement" data-c="requirement-body">Keel locates the repository only from its working directory. It runs git and the configured <code>check.lint</code> / <code>check.test</code> commands without the inherited variables that <code>git rev-parse --local-env-vars</code> lists. The one exception is <code>GIT_INDEX_FILE</code>, which keel's own git calls keep. As a result, <code>keel check</code>, run with <code>GIT_DIR</code> pointing at another repository, checks and changes only its own repository. The pre-push scratch worktree checks the pushed sha. Every test spawn removes the same variables. <code>keel mr confirm</code> refuses, and writes nothing, when the tip is already an ancestor of its target.</p>
+
+<h2 id="maps-to">Maps to</h2>
+<p data-item="maps-to" data-c="maps-to-body">Epic <a href="2026-11-09-e-seed2-epic-plan.html#w13">E-SEED2.W13</a> (owner ruling 2026-11-10) · UC-GATE, the pre-push check and <code>keel check</code> (<a href="../use-cases/workflow.html#uc-gate">use-cases/workflow.html</a>) · UC-MR-1, sign-off (<a href="../use-cases/workflow.html#uc-mr-1">UC-MR-1</a>) · testing charter rule "Hermetic".</p>
+
+<h2 id="problem">Problem and evidence</h2>
+<div data-c="problem-body">
+<p><b>Incident, 2026-11-10 13:24 and 13:36.</b> Someone ran <code>git push</code> from the linked worktree <code>Keel-E-SEED2</code>. The push started the pre-push hook, which runs <code>keel hook pre-push</code>, then <code>keel check</code>, then lint and <code>cargo test</code>. For a linked worktree, git exports an <b>absolute</b> <code>GIT_DIR</code> (<code>…/.git/worktrees/&lt;name&gt;</code>) to its hooks. <code>sh()</code> (<code>src/main.rs</code> ~148) passes its whole environment on to the child process, so <code>cargo test</code> inherited that <code>GIT_DIR</code>. The fixtures in <code>tests/cli.rs</code> then ran git inside their TempDir, and git followed <code>GIT_DIR</code> to the real repository instead. The fixture spawn helper is <code>run()</code> at cli.rs ~10. The fixture steps that wrote to the real repository:</p>
+<ul>
+  <li><code>git init</code> (~29) set <code>core.bare=true</code> in the shared <code>.git/config</code>.</li>
+  <li>The user config steps (~30-31) set the identity to <code>t</code> / <code>t@t</code>.</li>
+  <li>The fixture commits (~72-74) moved <code>epic/E-SEED2</code> onto a fixture commit.</li>
+  <li><code>git switch -c work</code> (~77 and ~138) created a branch named <code>work</code>.</li>
+  <li>A test note was added.</li>
+  <li><code>keel hooks install</code> rewrote <code>.git/keel-hooks/*</code>.</li>
+</ul>
+<p>The owner restored the repository by hand. In the main checkout, git exports the relative <code>GIT_DIR=.git</code>. That value resolves to the TempDir's own <code>.git</code>, so it does no harm. Only linked worktrees leak.</p>
+<p><b>The same class of bug elsewhere</b> (read-only audit, re-derived for this plan):</p>
+<ul>
+  <li><b>Test helpers.</b> No test spawn helper removes the variables. The sites are cli.rs 11, 119, 291; init.rs 7, 44, 61, 70, 129, 135, 267, 362, 368, 387; mr.rs 10, 125; router.rs 262, 341, 1055, 1061, 1072 (and the <code>/bin/sh</code> spawns at 240 and 1028, whose scripts call git); verify_doc.rs 12; verify_dod.rs 14.</li>
+  <li><b>Clones.</b> init.rs 398 and 436 run <code>git clone</code> with no <code>current_dir</code>. Under an inherited <code>GIT_DIR</code>, <code>git clone</code> uses that directory as the destination's git dir. These are the most dangerous calls in the suite.</li>
+  <li><b>Product: <code>check_push</code>.</b> The scratch-worktree branch (main.rs ~223-230) calls <code>check(&amp;dir, …)</code>. That runs <code>tree_key</code>, <code>git_dir</code> and <code>sh()</code> with <code>current_dir(scratch)</code> but with the inherited <code>GIT_DIR</code>. So the cache key, the cache file and the test run all target the hook's worktree, not the pushed sha. The proof for a non-HEAD push is therefore false.</li>
+  <li><b>Product: <code>git()</code>.</b> Every keel git call goes through <code>git()</code> in main.rs ~124 (gate.rs and mr.rs use it too). <code>repo_root()</code> goes through it as well. The only other spawn in <code>src/</code> is <code>init.rs:255</code> (<code>sh -c "command -v keel"</code>), which never touches git.</li>
+</ul>
+<p><b>A separate finding (item 3).</b> <code>keel mr confirm wu &lt;tip&gt; --target &lt;epic&gt;</code> was run on a tip that was already merged into the target. Then <code>merge-base(target, tip) = tip</code>, so the range is empty and has no code paths. The diff is exempt, so sign-last (<code>gate::sign_ready</code>) is green. Keel then signed <code>base = tip</code> with the empty change hash and overwrote the valid <code>mr/v1</code> note from the real sign-off.</p>
+</div>
+
+<h2 id="design">Design</h2>
+<div data-c="design-body">
+<h3 id="d1">(1) Product: keel never forwards git's local environment</h3>
+<ul>
+  <li><b>One list.</b> Add <code>const GIT_LOCAL_ENV: [&amp;str; 15]</code> in <code>src/main.rs</code>. It holds exactly what <code>git rev-parse --local-env-vars</code> prints on the installed git: <code>GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_OBJECT_DIRECTORY GIT_DIR GIT_WORK_TREE GIT_IMPLICIT_WORK_TREE GIT_GRAFT_FILE GIT_INDEX_FILE GIT_NO_REPLACE_OBJECTS GIT_REPLACE_REF_BASE GIT_PREFIX GIT_SHALLOW_FILE GIT_COMMON_DIR</code>. The list is hardcoded so that there is no extra git spawn per call. A test checks that it covers git's own list (see the test plan).</li>
+  <li><b>One helper.</b> <code>fn no_git_env(c: &amp;mut Command, keep_index: bool) -&gt; &amp;mut Command</code> calls <code>env_remove</code> on every name in the list. It skips <code>GIT_INDEX_FILE</code> when <code>keep_index</code> is set.</li>
+  <li><b><code>sh()</code></b> calls <code>no_git_env(&amp;mut c, false)</code>. A configured lint or test command finds its repository from its working directory and nothing else. This alone closes the incident path.</li>
+  <li><b><code>git()</code></b> calls <code>no_git_env(&amp;mut c, true)</code> before it applies its own <code>envs</code>. The explicit <code>GIT_INDEX_FILE</code> that <code>tree_key</code> sets is applied last, so it still wins. Because <code>repo_root()</code> uses <code>git()</code>, the whole binary now locates the repository from its working directory. Git runs hooks at the worktree root, and discovery from there finds the same git dir that git exported, in both the main checkout and linked worktrees.</li>
+  <li><b>Why <code>GIT_INDEX_FILE</code> is kept in <code>git()</code>.</b> Git's commit hooks (pre-commit, commit-msg, pre-merge-commit) get <code>GIT_INDEX_FILE</code>. For <code>git commit -a</code> or <code>git commit &lt;paths&gt;</code>, it names a temporary index (<code>index.lock</code> or <code>next-index-*.lock</code>), and only that index holds what is being committed. <code>mr::commit_msg</code> reads <code>git diff --cached</code>. If it stripped the variable, it would read the stale real index and miss a rule-bearing change, which would bypass the <code>Reviewed-By</code> check. <code>sh()</code> still strips the variable, because a test suite should never see the caller's index.</li>
+  <li><b><code>check_push</code>'s scratch path</b> needs no code of its own. Every call it makes (<code>git()</code>, <code>git_dir()</code>, <code>tree_key()</code>, <code>sh()</code>) is now cleaned, and each runs with <code>current_dir(scratch)</code>, so each one resolves to the scratch worktree. Pre-push hooks never receive <code>GIT_INDEX_FILE</code>, so keeping it in <code>git()</code> cannot reach this path. This is stated as a risk below.</li>
+  <li><b>Not stripped:</b> <code>GIT_CONFIG_GLOBAL</code>, <code>GIT_CONFIG_SYSTEM</code>, <code>GIT_CONFIG_NOSYSTEM</code>, <code>HOME</code>, <code>GIT_AUTHOR_*</code>, <code>GIT_COMMITTER_*</code>, <code>GIT_REFLOG_ACTION</code>. These variables do not locate a repository. They carry the user's own scope or identity, and the gate reads <code>GIT_REFLOG_ACTION</code> from keel's own environment, not a child's. <code>GIT_CONFIG_PARAMETERS</code> and <code>GIT_CONFIG_COUNT</code> (from <code>git -c</code>) are in git's list, so they are stripped. Without <code>GIT_CONFIG_COUNT</code>, git ignores the <code>GIT_CONFIG_KEY_n</code> / <code>GIT_CONFIG_VALUE_n</code> pairs, so those need no entry (open question 1).</li>
+</ul>
+
+<h3 id="d2">(2) Tests: every spawn helper strips the same variables</h3>
+<ul>
+  <li><b>New module:</b> <code>tests/common/mod.rs</code>, with <code>pub const GIT_LOCAL_ENV</code> (the same 15 names; a test crate cannot import from the binary) and <code>pub fn no_git_env(c: &amp;mut Command) -&gt; &amp;mut Command</code>, which strips all 15 names, <code>GIT_INDEX_FILE</code> included. Each test file adds <code>mod common;</code>. Cargo does not build <code>tests/common/mod.rs</code> as a test crate of its own.</li>
+  <li><b>Every spawn that can reach git</b> goes through it. That covers each helper listed in the audit above, plus the <code>sh</code> spawns in router.rs and init.rs whose scripts call git. Spawns of <code>jq</code>, <code>ps</code> and <code>kill</code> cannot reach git and stay as they are. Where several call sites in a file share a helper, the helper is changed once.</li>
+  <li><b>The clones</b> at init.rs 398 and 436 gain <code>.current_dir(d.path())</code>, on top of the stripping.</li>
+  <li><b>W12</b> (<code>wu/E-SEED2/w12-owner-watch</code>) will call <code>common::no_git_env</code> from its own <code>hermetic()</code> after it back-merges the epic. The name <code>no_git_env</code> is chosen so it does not clash with W12's <code>hermetic()</code>.</li>
+</ul>
+
+<h3 id="d3">(3) <code>keel mr confirm</code> refuses a tip that has already landed</h3>
+<ul>
+  <li><code>sign_ready</code> already returns <code>(tip, base)</code> with <code>base = merge-base(target, tip)</code>. <code>base == tip</code> holds exactly when the tip is an ancestor of its target, the tip and the target being equal included. So no extra git call is needed.</li>
+  <li>Add <code>fn landed(tip: &amp;str, base: &amp;str, target: &amp;str) -&gt; Option&lt;String&gt;</code> in <code>src/mr.rs</code>. It returns the refusal text when <code>tip == base</code>, otherwise <code>None</code>.</li>
+  <li>Call it in <code>confirm</code> straight after <code>sign_ready</code>, before <code>pick_report</code> and before anything is hashed, signed or written. When it returns text, print it and exit 1. The text: <code>mr confirm refused - &lt;tip&gt; is already contained in &lt;target&gt; (merge-base = tip): the range is empty, so a sign-off here would bind the empty diff and replace the note that attests the real change\n  fix -&gt; nothing to sign; the existing sign-off stands. To sign new work, commit it on the branch and confirm the new tip</code>.</li>
+  <li>The target name comes from the same <code>gate::target_of</code> that <code>sign_ready</code> uses. The fix exposes it through the <code>sign_ready</code> return value (a triple) so the refusal can name it. Both levels are covered: a WU against its epic, and an epic against main.</li>
+  <li>Out of scope: making <code>verify-dod</code> red on an empty range. An already-merged tip is legitimately exempt there (open question 4).</li>
+</ul>
+</div>
+
+<h2 id="expected">Expected result</h2>
+<ul data-item="expected" data-c="expected-list">
+  <li><code>keel check</code>, run in fixture repo A with <code>GIT_DIR=&lt;B&gt;/.git</code> (B is a second temp repo), runs A's test command against A: the command's probe records A's absolute git dir, and A's <code>keel-check-green</code> cache exists. Every file under B's <code>.git</code> is byte-identical before and after, and its file list is unchanged.</li>
+  <li><code>keel hook pre-push</code>, run from a linked worktree with git's absolute <code>GIT_DIR</code> and a pushed sha that is not HEAD, runs the test command in the scratch worktree with <code>HEAD</code> = the pushed sha.</li>
+  <li>In a linked worktree, a pathspec commit (<code>git commit -m … docs/rules.html</code>, which uses a temporary index) that touches a rule-bearing path and has no trailer is still refused by commit-msg.</li>
+  <li>Every test spawn that can reach git goes through <code>common::no_git_env</code>, and both clones set <code>current_dir</code>.</li>
+  <li><code>keel mr confirm wu &lt;tip&gt;</code> on a tip already merged into its epic exits 1 with the "already contained" refusal. The tip's <code>mr/v1</code> note is byte-identical afterwards. The same holds for an epic tip already in main.</li>
+</ul>
+
+<h2 id="test-plan">Test plan</h2>
+<div data-item="test-plan" data-c="test-plan-body">
+<table>
+  <thead><tr><th>Layer</th><th>Test (file)</th><th>Proves</th></tr></thead>
+  <tbody>
+    <tr><td>unit</td><td><code>no_git_env_removes_every_local_var_and_keeps_the_index_only_when_asked</code> (main.rs <code>mod tests</code>)</td><td>Reads <code>Command::get_envs()</code>: every name in the list shows as removed (<code>None</code>). <code>GIT_INDEX_FILE</code> is absent from the removals when <code>keep_index</code> is set. An env set after the call (the <code>tree_key</code> pattern) survives. Pure: no spawn.</td></tr>
+    <tr><td>unit</td><td><code>the_strip_list_covers_gits_local_env_vars</code> (main.rs <code>mod tests</code>)</td><td>Runs <code>git rev-parse --local-env-vars</code> with the test's own env stripped and asserts that every printed name is in <code>GIT_LOCAL_ENV</code>. This catches a future git release that adds a variable. It spawns git but reads no repository and no file.</td></tr>
+    <tr><td>unit</td><td><code>landed_refuses_only_when_the_tip_is_its_own_base</code> (mr.rs <code>mod tests</code>)</td><td>When <code>tip == base</code>, the result is <code>Some</code> and names the tip, the target and the fix. Otherwise it is <code>None</code>. A property over generated sha pairs: <code>Some</code> exactly when the two are equal.</td></tr>
+    <tr><td>unit</td><td>the same list check for <code>tests/common</code> (in <code>tests/cli.rs</code>)</td><td>The test-side copy of the list covers git's output too, so the two copies cannot drift apart.</td></tr>
+    <tr><td>integration</td><td><code>check_under_a_foreign_git_dir_uses_its_own_repo_and_leaves_the_other_untouched</code> (tests/cli.rs)</td><td>The owner's regression test (item 1). Temp repos A (with config) and B. A's <code>check.test</code> is <code>git rev-parse --absolute-git-dir &gt; "$KEEL_PROBE" &amp;&amp; git config keel.probe ran</code>, where <code>KEEL_PROBE</code> is a file in a third TempDir. Snapshot B's <code>.git</code> (sorted relative paths plus the bytes of every file), then run <code>keel check</code> in A through <code>no_git_env</code> plus an explicit <code>GIT_DIR=&lt;B&gt;/.git</code>. Asserts: exit 0; the probe equals A's git dir; <code>git -C A config keel.probe</code> is <code>ran</code>; A has the cache file; B's snapshot is unchanged. Red before the fix: <code>tree_key</code> writes objects and <code>keel-tmp-index</code> into B, and the probe names B.</td></tr>
+    <tr><td>integration</td><td><code>pre_push_from_a_linked_worktree_checks_the_pushed_sha_in_scratch</code> (tests/cli.rs)</td><td>Repo A with a bare TempDir remote and a linked worktree W at commit <code>c1</code>, plus branch <code>x</code> at <code>c2</code>, whose tree differs. The test command writes <code>git rev-parse HEAD</code> to the probe. Run <code>keel hook pre-push origin</code> in W with <code>GIT_DIR=&lt;A&gt;/.git/worktrees/W</code>, the variable git exports, and the stdin line <code>refs/heads/x c2 refs/heads/x 000…</code>. Assert the probe is <code>c2</code>. Red before the fix: it records W's HEAD.</td></tr>
+    <tr><td>integration</td><td><code>rule_bearing_commit_needs_a_listed_reviewed_by_trailer</code>, extended (tests/mr.rs)</td><td>Adds a linked worktree and a pathspec commit with no trailer that touches <code>docs/rules.html</code>: still refused. This locks in the <code>GIT_INDEX_FILE</code> exception, because without it the hook reads the stale real index.</td></tr>
+    <tr><td>integration</td><td><code>confirm_refuses_a_tip_already_in_its_target_and_keeps_the_note</code> (tests/mr.rs)</td><td>The existing fixture: sign the WU, then merge it <code>--no-ff</code> into its epic, which passes the gate. Save the tip's <code>mr/v1</code> note bytes and run <code>keel mr confirm wu &lt;tip&gt; --target &lt;epic&gt; --as vu</code>. Asserts: exit 1, the refusal text, the note bytes unchanged. Then the epic case: an epic tip that is already an ancestor of <code>main</code> is refused the same way.</td></tr>
+    <tr><td>e2e</td><td>not this WU's layer</td><td>The epic's e2e (W3) runs through the same helpers and picks up the stripping when it adopts <code>common::no_git_env</code>.</td></tr>
+  </tbody>
+</table>
+<p><b>How the regression test stays hermetic.</b> Both repositories and the probe file are TempDirs. The test first strips its own inherited variables (<code>no_git_env</code>) and only then sets the decoy <code>GIT_DIR</code>, which points at temp repo B. The real repository is never reachable, even when <code>cargo test</code> itself runs under a leaked <code>GIT_DIR</code>. The snapshot comparison shows that B, the stand-in for "the real repo", is unchanged. The worker proves each new integration test red against the unfixed binary before the fix lands, and records that in the result report.</p>
+<p><b>Commit order.</b> c1: <code>no_git_env</code>, <code>git()</code>, <code>sh()</code>, with their unit tests and the two cli.rs regression tests. c2: <code>tests/common</code> and every helper and clone. c3: the <code>mr confirm</code> refusal, its unit test and its integration test, plus the pathspec-commit extension. c4: distillation (DEC-41 and UC text). c5: the result report. Each commit carries unit tests for all the code it changes.</p>
+</div>
+
+<h2 id="files">Files</h2>
+<table data-c="files-table">
+  <thead><tr><th>File</th><th>Change</th></tr></thead>
+  <tbody>
+    <tr><td><code>src/main.rs</code></td><td><code>GIT_LOCAL_ENV</code>, <code>no_git_env</code>; <code>git()</code> and <code>sh()</code> call it; unit tests</td></tr>
+    <tr><td><code>src/mr.rs</code></td><td><code>landed()</code>, the refusal in <code>confirm</code>; unit test</td></tr>
+    <tr><td><code>src/gate.rs</code></td><td><code>sign_ready</code> also returns the target name</td></tr>
+    <tr><td><code>tests/common/mod.rs</code> (new)</td><td>the test-side list and <code>no_git_env</code></td></tr>
+    <tr><td><code>tests/cli.rs</code></td><td>helpers through <code>no_git_env</code>; two regression tests; the list-coverage test</td></tr>
+    <tr><td><code>tests/init.rs</code>, <code>tests/mr.rs</code>, <code>tests/router.rs</code>, <code>tests/verify_doc.rs</code>, <code>tests/verify_dod.rs</code></td><td>helpers and git-reaching spawns through <code>no_git_env</code>; the clones get <code>current_dir</code>; mr.rs gets the landed-tip and pathspec-commit tests</td></tr>
+    <tr><td><code>docs/decisions/workflow-gates.html</code> + <code>decisions-index.html</code></td><td>DEC-41: keel locates the repository from its working directory and never forwards git's local env (index exception); the "next free" id becomes DEC-42</td></tr>
+    <tr><td><code>docs/use-cases/workflow.html</code></td><td>UC-MR-1: confirm refuses a landed tip. UC-GATE: pre-push checks the pushed sha, whatever <code>GIT_DIR</code> is</td></tr>
+    <tr><td><code>docs/work/2026-11-10-w13-hook-env-wu-result.html</code> (new)</td><td>the result report</td></tr>
+  </tbody>
+</table>
+
+<h2 id="risks">Risks</h2>
+<table data-c="risks-table">
+  <thead><tr><th>#</th><th>Risk</th><th>Mitigation</th></tr></thead>
+  <tbody>
+    <tr><td>R1</td><td><b>The fix is not live until the installed binary is replaced.</b> The hooks run <code>keel</code> from <code>PATH</code>. A push from a linked worktree keeps leaking until the owner installs the fixed build. The worker cannot do that.</td><td>The worker reports this to the owner. Until the new binary is installed, push from the main checkout, where git exports the relative <code>GIT_DIR=.git</code>. Never use <code>--no-verify</code>.</td></tr>
+    <tr><td>R2</td><td>Keeping <code>GIT_INDEX_FILE</code> in <code>git()</code> would mis-point a call on <i>another</i> repository if a hook that exports it reached such a call.</td><td>Only <code>check_push</code> works on another directory, and pre-push never receives <code>GIT_INDEX_FILE</code>. The unit test locks the exception to that one name.</td></tr>
+    <tr><td>R3</td><td>Behaviour change: <code>GIT_DIR=/x keel …</code> run from an unrelated directory no longer reaches <code>/x</code>.</td><td>Deliberate: keel's contract is "run inside the checkout". DEC-41 records it.</td></tr>
+    <tr><td>R4</td><td>A future test adds a spawn and forgets the helper.</td><td>Open question 2 (source scan). With (1) in place, the hook path is safe whatever the test helpers do.</td></tr>
+    <tr><td>R5</td><td>Text conflict with W12 in <code>tests/router.rs</code>.</td><td>W13 edits only the spawn lines. W12 back-merges the epic and resolves the conflict on its own side.</td></tr>
+    <tr><td>R6</td><td>The worker runs <code>cargo test</code> during development under some hook.</td><td>Developers run <code>cargo test</code> from a plain shell. After c2, even a leaked <code>GIT_DIR</code> can no longer reach the real repository through the tests.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="open-points">Open questions (decided by the owner on 2026-11-10: every question on its default)</h2>
+<table data-c="open-points-table">
+  <thead><tr><th>#</th><th>Point</th><th>Decision (owner ruling 2026-11-10, the recommended default)</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><code>GIT_CONFIG*</code> scope</td><td>Strip only what git lists (<code>GIT_CONFIG</code>, <code>GIT_CONFIG_PARAMETERS</code>, <code>GIT_CONFIG_COUNT</code>). Leave <code>GIT_CONFIG_GLOBAL</code>, <code>GIT_CONFIG_SYSTEM</code> and <code>GIT_CONFIG_NOSYSTEM</code>: they select the user's scope, not a repository. Isolating the test suite from the developer's <code>~/.gitconfig</code> is a separate hermeticity item; it goes to the backlog, not here.</td></tr>
+    <tr><td>2</td><td>Guarding the helpers against regressions</td><td>Add one cheap source-scan test (<code>tests/cli.rs</code>). It fails when a <code>Command::new("git"|"sh"|"/bin/sh"|CARGO_BIN_EXE_keel)</code> in <code>tests/*.rs</code> does not go through <code>no_git_env</code>. It is deterministic and reads only the repository's own test sources.</td></tr>
+    <tr><td>3</td><td>Hardcoded list vs asking git at runtime</td><td>Hardcode it, with the coverage test. Asking git at runtime costs one extra spawn per keel process and per test helper, for no gain the test does not already give.</td></tr>
+    <tr><td>4</td><td>Should <code>verify-dod</code> also go red on an empty range?</td><td>No. A merged tip is legitimately exempt at the gate, and the walk re-judges seams. Only signing an empty range is wrong, so the refusal lives in <code>mr confirm</code>.</td></tr>
+    <tr><td>5</td><td><code>GIT_INDEX_FILE</code> in <code>git()</code></td><td>Keep it in <code>git()</code> and strip it in <code>sh()</code> (design 1). Stripping it in <code>git()</code> as well would open a <code>Reviewed-By</code> bypass through <code>git commit -a</code> or a pathspec commit.</td></tr>
+  </tbody>
+</table>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

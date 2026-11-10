@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::Output;
 use tempfile::TempDir;
 
+mod common;
+
 fn keel(d: &Path, a: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_keel")).args(a).current_dir(d).output().unwrap()
+    common::cmd(env!("CARGO_BIN_EXE_keel")).args(a).current_dir(d).output().unwrap()
 }
 
 fn text(o: &Output) -> String {
@@ -41,7 +43,7 @@ fn snapshot(p: &Path) -> BTreeMap<String, String> {
 fn init_twice_produces_the_same_tree_and_keeps_user_edits() {
     let d = TempDir::new().unwrap();
     let p = d.path();
-    assert!(Command::new("git").args(["init", "-q", "-b", "main"]).current_dir(p).status().unwrap().success());
+    assert!(common::cmd("git").args(["init", "-q", "-b", "main"]).current_dir(p).status().unwrap().success());
     std::fs::write(p.join("pyproject.toml"), "[project]\nname = \"x\"\n").unwrap();
 
     let first = keel(p, &["init"]);
@@ -58,7 +60,7 @@ fn init_twice_produces_the_same_tree_and_keeps_user_edits() {
     // W6 #1/#5: skills live only in .claude/skills; no .agents/skills Codex symlink
     assert!(!after_first.contains_key(".agents"), "init must not create .agents");
     assert!(after_first[".keel/config.toml"].contains("test = \"pytest -q\""));
-    let hooks = Command::new("git").args(["config", "core.hooksPath"]).current_dir(p).output().unwrap();
+    let hooks = common::cmd("git").args(["config", "core.hooksPath"]).current_dir(p).output().unwrap();
     assert!(String::from_utf8_lossy(&hooks.stdout).trim().ends_with("keel-hooks"));
     // the written config loads
     assert!(keel(p, &["verify-doc"]).status.success());
@@ -67,7 +69,7 @@ fn init_twice_produces_the_same_tree_and_keeps_user_edits() {
     let hooks_json: serde_json::Value = serde_json::from_str(&after_first[".codex/hooks.json"]).unwrap();
     let cmd = hooks_json["hooks"]["PostToolUse"][0]["hooks"][0]["command"].as_str().unwrap();
     let bin = Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display().to_string();
-    let mut sh = Command::new("sh")
+    let mut sh = common::cmd("sh")
         .args(["-c", cmd])
         .current_dir(p)
         .env("PATH", format!("{bin}:{}", std::env::var("PATH").unwrap()))
@@ -126,13 +128,13 @@ fn every_keel_command_a_skill_names_exists() {
 
 fn fresh_repo() -> TempDir {
     let d = TempDir::new().unwrap();
-    assert!(Command::new("git").args(["init", "-q", "-b", "main"]).current_dir(d.path()).status().unwrap().success());
+    assert!(common::cmd("git").args(["init", "-q", "-b", "main"]).current_dir(d.path()).status().unwrap().success());
     d
 }
 
 fn keel_in(d: &Path, a: &[&str], stdin: &str) -> Output {
     use std::io::Write;
-    let mut c = Command::new(env!("CARGO_BIN_EXE_keel"))
+    let mut c = common::cmd(env!("CARGO_BIN_EXE_keel"))
         .args(a)
         .current_dir(d)
         .stdin(std::process::Stdio::piped())
@@ -264,7 +266,7 @@ fn settings_merge() {
     let path = format!("{bin}:{}", std::env::var("PATH").unwrap());
     let run = |cmd: &str, cwd: &Path, payload: &str| {
         use std::io::Write;
-        let mut c = Command::new("sh").args(["-c", cmd]).current_dir(cwd).env("PATH", &path)
+        let mut c = common::cmd("sh").args(["-c", cmd]).current_dir(cwd).env("PATH", &path)
             .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
         c.stdin.take().unwrap().write_all(payload.as_bytes()).unwrap();
         c.wait_with_output().unwrap()
@@ -359,13 +361,13 @@ fn upgrade_confirmation_and_force() {
 fn init_over_a_foreign_hooks_path_writes_its_files_then_refuses_the_hooks() {
     let d = fresh_repo();
     let p = d.path();
-    assert!(Command::new("git").args(["config", "core.hooksPath", ".husky"]).current_dir(p).status().unwrap().success());
+    assert!(common::cmd("git").args(["config", "core.hooksPath", ".husky"]).current_dir(p).status().unwrap().success());
     let o = keel(p, &["init"]);
     let t = text(&o);
     assert!(!o.status.success(), "{t}");
     assert!(p.join(".keel/config.toml").exists() && p.join("AGENTS.md").exists(), "{t}");
     assert!(t.contains(".husky") && t.contains("keel hooks install --force"), "{t}");
-    let hooks = Command::new("git").args(["config", "core.hooksPath"]).current_dir(p).output().unwrap();
+    let hooks = common::cmd("git").args(["config", "core.hooksPath"]).current_dir(p).output().unwrap();
     assert_eq!(String::from_utf8_lossy(&hooks.stdout).trim(), ".husky");
 }
 
@@ -384,7 +386,7 @@ fn worktrees_path_is_ignored_and_configurable() {
 }
 
 fn git_in(d: &Path, a: &[&str]) -> Output {
-    Command::new("git").args(a).current_dir(d).env("PATH", format!("{}:{}", Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display(), std::env::var("PATH").unwrap())).env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t").output().unwrap()
+    common::cmd("git").args(a).current_dir(d).env("PATH", format!("{}:{}", Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display(), std::env::var("PATH").unwrap())).env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t").output().unwrap()
 }
 
 /// Keel gates itself (Q12): a clone of committed HEAD with hooks installed refuses a direct commit
@@ -395,7 +397,7 @@ fn self_hosting_clone_is_gated_and_init_is_a_noop() {
     let root = env!("CARGO_MANIFEST_DIR");
     let d = TempDir::new().unwrap();
     let c = d.path().join("c");
-    assert!(Command::new("git").args(["clone", "-q", root, c.to_str().unwrap()]).status().unwrap().success());
+    assert!(common::cmd("git").args(["clone", "-q", root, c.to_str().unwrap()]).current_dir(d.path()).status().unwrap().success());
     assert!(git_in(&c, &["checkout", "-q", "-B", "main"]).status.success());
     assert!(keel(&c, &["hooks", "install"]).status.success());
 
@@ -433,7 +435,7 @@ fn self_hosting_new_worktree_inherits_the_signer_list() {
     let root = env!("CARGO_MANIFEST_DIR");
     let d = TempDir::new().unwrap();
     let c = d.path().join("c");
-    assert!(Command::new("git").args(["clone", "-q", root, c.to_str().unwrap()]).status().unwrap().success());
+    assert!(common::cmd("git").args(["clone", "-q", root, c.to_str().unwrap()]).current_dir(d.path()).status().unwrap().success());
     assert!(keel(&c, &["hooks", "install"]).status.success());
     std::fs::write(c.join(".mr-allowed"), "username: owner\n").unwrap();
 

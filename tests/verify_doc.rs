@@ -1,7 +1,9 @@
 use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 use tempfile::TempDir;
+
+mod common;
 
 fn path_with_keel() -> String {
     let bin = Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().to_owned();
@@ -9,7 +11,7 @@ fn path_with_keel() -> String {
 }
 
 fn run(prog: &str, d: &Path, a: &[&str], stdin: &str) -> Output {
-    let mut c = Command::new(prog)
+    let mut c = common::cmd(prog)
         .args(a)
         .current_dir(d)
         .env("PATH", path_with_keel())

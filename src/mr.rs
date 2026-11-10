@@ -2,7 +2,7 @@
 //! commit-msg `Reviewed-By` check (UC-MR-1/2). Ported from Trawler's xtask/src/mr.rs
 //! (DEC-9/10/27): stock `ssh-keygen -Y` signatures, verified offline against the roster.
 use crate::notes::{self, MrNote};
-use crate::{gate, git, git_dir, verify_doc, Config, ReportPolicy};
+use crate::{gate, git, git_dir, no_git_env, verify_doc, Config, ReportPolicy};
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -171,7 +171,7 @@ fn change_hash(repo: &Path, base: &str, tip: &str) -> Result<String, String> {
 fn report_hash(repo: &Path, tip: &str, path: &str, epic: bool) -> Result<Option<String>, String> {
     let ls = git(repo, &["ls-tree", tip, "--", path], &[])?;
     if let ["100644" | "100755", "blob", id] = ls.split('\t').next().unwrap_or("").split(' ').collect::<Vec<_>>()[..] {
-        let o = Command::new("git").args(["cat-file", "blob", id]).current_dir(repo).output().map_err(|e| format!("keel: cannot run git: {e}"))?;
+        let o = no_git_env(Command::new("git"), true).args(["cat-file", "blob", id]).current_dir(repo).output().map_err(|e| format!("keel: cannot run git: {e}"))?;
         if !o.status.success() {
             return Err(format!("keel: git cat-file blob {id} failed: {}", String::from_utf8_lossy(&o.stderr).trim()));
         }
@@ -331,8 +331,19 @@ fn commit(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         return Ok(1);
     };
     let body = format!("{}\n\n{TRAILER}: {tier} {id}\n", msg.trim_end());
-    let o = Command::new("git").args(["commit", "-m", &body]).current_dir(repo).status().map_err(|e| e.to_string())?;
+    let o = no_git_env(Command::new("git"), true).args(["commit", "-m", &body]).current_dir(repo).status().map_err(|e| e.to_string())?;
     Ok(if o.success() { 0 } else { 1 })
+}
+
+/// merge-base(target, tip) = tip exactly when the target already contains the tip: the range is
+/// empty, and a sign-off would bind the empty diff over the note that attests the real change.
+fn landed(tip: &str, base: &str, target: &str) -> Option<String> {
+    (tip == base).then(|| {
+        format!(
+            "mr confirm refused - {} is already contained in {target} (merge-base = tip): the range is empty, so a sign-off here would bind the empty diff and replace the note that attests the real change\n  fix -> nothing to sign; the existing sign-off stands. To sign new work, commit it on the branch and confirm the new tip",
+            short(tip)
+        )
+    })
 }
 
 fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
@@ -369,10 +380,14 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         return Ok(1);
     };
     // Sign last (Trawler DEC-27): every binding pins the diff, so the tree settles before a human signs.
-    let Some((tip, base)) = gate::sign_ready(repo, cfg, epic, &tip_ref, args)? else {
+    let Some((tip, base, target)) = gate::sign_ready(repo, cfg, epic, &tip_ref, args)? else {
         eprintln!("mr confirm refused - sign last: get the notes and a bound cr PASS green on this exact tip first\n  fix -> keel notes write test|doc, run the code review (cr PASS), then keel mr confirm again");
         return Ok(1);
     };
+    if let Some(refusal) = landed(&tip, &base, &target) {
+        eprintln!("{refusal}");
+        return Ok(1);
+    }
     let report = match pick_report(repo, cfg, args, &base, &tip, epic) {
         Ok(r) => r,
         Err((what, fix)) => {
@@ -546,7 +561,22 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{payload, sha256, stale_change};
+    use super::{landed, payload, sha256, stale_change};
+
+    #[test]
+    fn landed_refuses_exactly_when_the_tip_is_its_own_base() {
+        let t = "84ba8e3d0123456789abcdef0123456789abcdef";
+        let r = landed(t, t, "epic/e").unwrap();
+        assert!(r.contains("84ba8e3d01 is already contained in epic/e") && r.contains("fix -> nothing to sign"), "{r}");
+        // generated pairs (seeded LCG), equal and unequal alike: Some iff the two shas are equal
+        let mut x: u64 = 0x5eed;
+        for _ in 0..500 {
+            x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let a = format!("{:040x}", (x >> 33) % 4);
+            let b = format!("{:040x}", (x >> 13) % 4);
+            assert_eq!(landed(&a, &b, "main").is_some(), a == b, "{a} {b}");
+        }
+    }
 
     #[test]
     fn a_pre_sha256_change_hash_names_the_old_format_not_a_changed_diff() {
