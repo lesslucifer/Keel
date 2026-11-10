@@ -1,7 +1,7 @@
 //! `keel verify-dod` + `keel preflight`: the merge gate (UC-GATE-2/3/5, UC-DOC-3).
 //! Ported from Trawler's xtask gate: same check ids, same `FAIL / fix ->` blocks, no cargo.
 use crate::notes::{self, CrNote, DocNote, DodNote, TestNote};
-use crate::{check, git, mr, Config};
+use crate::{check, git, hooks_problem, mr, Config, HOOKS_FIX};
 use serde::de::DeserializeOwned;
 use std::path::Path;
 
@@ -263,14 +263,28 @@ fn print(r: &Report, what: &str) {
     }
 }
 
-/// Verify, print, and on a full green wu/epic write the dod/v1 receipt.
-fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> Result<i32, String> {
+/// Guard D (UC-GATE-6), first in the report: a gate command run where git is not running Keel's hooks.
+fn guard_hooks(repo: &Path, r: &mut Report) {
+    if let Some(what) = hooks_problem(repo) {
+        r.failures.insert(0, Failure { check: "0·hooks".into(), what, fix: HOOKS_FIX.into() });
+        r.exempt = false;
+    }
+}
+
+/// Verify, print, and on a full green wu/epic write the dod/v1 receipt. `guard`: run guard D
+/// (verify-dod wu|epic by hand; the hook, range and commit gates run from Keel's hooks by construction).
+fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, guard: bool) -> Result<i32, String> {
     let mut r = verify(repo, cfg, level, tip_ref, target)?;
+    if guard {
+        guard_hooks(repo, &mut r);
+    }
     // 8·manual-review: never exempt (UC-GATE-5), and only at the merge boundary - the walk never
     // re-judges a seam's sign-off against today's local roster (Trawler DEC-9/10).
+    let mut attested = None;
     if level != Level::Commit {
-        if let Err((what, fix)) = mr::manual_review(repo, cfg, level.name(), &r.tip, &r.base) {
-            r.fail("8·manual-review", what, fix);
+        match mr::manual_review(repo, cfg, level.name(), &r.tip, &r.base) {
+            Ok(a) => attested = a,
+            Err((what, fix)) => r.fail("8·manual-review", what, fix),
         }
         r.exempt &= r.failures.is_empty();
     }
@@ -287,6 +301,8 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> 
             level: level.name().into(),
             checks: level.checks().iter().map(|c| c.to_string()).collect(),
             diff_hash,
+            report: attested.as_ref().map(|(r, _)| r.clone()),
+            report_hash: attested.map(|(_, h)| h),
         };
         notes::store(repo, "dod", &r.tip, &note)?;
     }
@@ -343,7 +359,7 @@ fn hook(repo: &Path, cfg: &Config) -> Result<i32, String> {
             Ok(0)
         }
         [tip] => {
-            let code = run(repo, cfg, level, tip, "HEAD")?;
+            let code = run(repo, cfg, level, tip, "HEAD", false)?;
             if code != 0 || level == Level::Wu {
                 return Ok(code);
             }
@@ -403,6 +419,7 @@ pub(crate) fn range(repo: &Path, cfg: &Config, old: &str, new: &str, branch: &st
 /// Before a review starts: right checkout, clean tree, check green, checks 1-2 on the test note.
 fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> Result<i32, String> {
     let (mut r, names) = open(repo, cfg, level, tip_ref, target)?;
+    guard_hooks(repo, &mut r);
     if r.exempt {
         print(&r, "preflight");
         return Ok(0);
@@ -436,12 +453,12 @@ fn target_of(cfg: &Config, level: Level, tip: &str, rest: &[&str]) -> String {
 
 pub fn verify_dod(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     match args {
-        ["commit", sha] => run(repo, cfg, Level::Commit, sha, &format!("{sha}^")),
+        ["commit", sha] => run(repo, cfg, Level::Commit, sha, &format!("{sha}^"), false),
         ["hook"] => hook(repo, cfg),
         ["range", old, new] => range(repo, cfg, old, new, new),
         [lvl, tip, rest @ ..] => {
             let level = level_of(lvl)?;
-            run(repo, cfg, level, tip, &target_of(cfg, level, tip, rest))
+            run(repo, cfg, level, tip, &target_of(cfg, level, tip, rest), true)
         }
         _ => Err(USAGE.into()),
     }

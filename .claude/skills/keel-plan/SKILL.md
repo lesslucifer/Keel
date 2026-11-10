@@ -22,8 +22,8 @@ exactly this format.
 |---|---|---|
 | Epic plan | `epic-plan` | before the epic branch carries any WU work; holds only a *summary* per WU |
 | WU plan | `wu-plan` | its own doc, before that WU's code |
-| WU result report | `wu-result` | at the WU's completion, before its merge; tracked at the WU tip — `keel mr confirm wu` attests its bytes |
-| Epic result report | `epic-result` | at epic close, in `docs/.archive/` (untracked) — `keel mr confirm epic --report <path>` attests its bytes |
+| WU result report | `wu-result` | at the WU's completion, before its merge; tracked at the WU tip — `keel mr confirm wu` finds it by this role and attests its bytes (unless `[mr] report = "none"`) |
+| Epic result report | `epic-result` | at epic close, in `docs/.archive/` (untracked) — `keel mr confirm epic --report <path>` names it (an epic sign-off passes `--report <path>` unless its result doc is committed in the epic's diff) and attests its bytes (unless `[mr] report = "none"`) |
 
 **Collapsed epic**: a one-WU epic may combine the plans
 (`data-artifact="epic-plan wu-plan"`) and the results
@@ -108,6 +108,8 @@ the checkpoint. Manual runs work anytime.
 This is the only place a document's **form** is checked. The merge reads doc
 **facts** instead: every changed doc listed in `doc/v1`, and the result report's
 bytes matching the human's `mr/v1` signature (skill `keel-workflow`, checks 6 and 8).
+The sign-off finds a result report by its `data-artifact` role, not its file
+name, so the role is what makes it the report.
 Depth of content is judgment — the owner's comment round and the reviews read
 these docs.
 

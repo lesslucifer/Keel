@@ -29,15 +29,30 @@ struct Config {
     #[serde(default)]
     mr: MrCfg,
 }
-/// Signer tiers this project accepts from .mr-allowed (Q10: configurable, Trawler's three by default).
+/// Signer tiers this project accepts from .mr-allowed (Q10: configurable, Trawler's three by default),
+/// and whether a WU/epic sign-off must attest a result report.
 #[derive(Deserialize)]
 struct MrCfg {
+    #[serde(default = "known_tiers")]
     tiers: Vec<String>,
+    #[serde(default)]
+    report: ReportPolicy,
+}
+fn known_tiers() -> Vec<String> {
+    mr::KNOWN_TIERS.iter().map(|t| t.to_string()).collect()
 }
 impl Default for MrCfg {
     fn default() -> Self {
-        MrCfg { tiers: mr::KNOWN_TIERS.iter().map(|t| t.to_string()).collect() }
+        MrCfg { tiers: known_tiers(), report: ReportPolicy::default() }
     }
+}
+#[derive(Deserialize, Default, Clone, Copy, PartialEq, Debug)]
+#[serde(rename_all = "lowercase")]
+enum ReportPolicy {
+    #[default]
+    Required,
+    Optional,
+    None,
 }
 #[derive(Deserialize, Default)]
 struct TestsCfg {
@@ -315,12 +330,64 @@ done < "$main/.gitworktreecopy"
 exit 0
 "#;
 
-fn hooks_install(repo: &Path) -> Result<i32, String> {
-    use std::os::unix::fs::PermissionsExt;
-    // Inside the COMMON git dir: never tracked, so no branch can ship (or merge in) a
-    // neutered hook, and every worktree of this repo shares the one install.
+/// Keel's hooks dir: inside the COMMON git dir, so it is never tracked - no branch can ship (or merge
+/// in) a neutered hook - and every worktree of this repo shares the one install.
+fn keel_hooks_dir(repo: &Path) -> Result<PathBuf, String> {
     let common = repo.join(git(repo, &["rev-parse", "--git-common-dir"], &[])?); // join keeps an absolute path as-is
-    let dir = common.canonicalize().unwrap_or(common).join("keel-hooks");
+    Ok(common.canonicalize().unwrap_or(common).join("keel-hooks"))
+}
+
+/// What installing Keel's hooks would stop git from running: a `core.hooksPath` (any scope) other
+/// than Keel's, else every entry of `<common>/hooks/` that is not a `*.sample`. Empty = nothing.
+fn hook_conflicts(hooks_path: Option<&str>, keel: &Path, hooks_dir: &str, entries: &[String]) -> Vec<String> {
+    match hooks_path {
+        Some(h) if is_keel_path(h, keel) => vec![],
+        Some(h) => vec![format!("core.hooksPath = {h}")],
+        None => entries.iter().filter(|n| !n.ends_with(".sample")).map(|n| format!("{hooks_dir}/{n}")).collect(),
+    }
+}
+
+const HOOKS_FIX: &str = "keel hooks install   (it refuses to replace another tool's hooks unless --force)";
+
+/// Guard D (UC-GATE-6): why git is not running Keel's hooks here, if it is not.
+fn hooks_problem(repo: &Path) -> Option<String> {
+    match keel_hooks_dir(repo) {
+        Ok(keel) => hooks_problem_of(git(repo, &["config", "--get", "core.hooksPath"], &[]).ok().as_deref(), &keel),
+        Err(e) => Some(e),
+    }
+}
+
+/// Component-wise, so a trailing `/` or a `./` segment in `core.hooksPath` is still Keel's path.
+fn is_keel_path(hooks_path: &str, keel: &Path) -> bool {
+    Path::new(hooks_path) == keel
+}
+
+fn hooks_problem_of(hooks_path: Option<&str>, keel: &Path) -> Option<String> {
+    match hooks_path {
+        Some(h) if is_keel_path(h, keel) => None,
+        Some(h) => Some(format!("core.hooksPath is {h}, not Keel's {} - git runs another tool's hooks, so the merge gate is off", keel.display())),
+        None => Some("core.hooksPath is unset - Keel's hooks are not installed in this clone, so the merge gate is off".into()),
+    }
+}
+
+fn hooks_install(repo: &Path, force: bool) -> Result<i32, String> {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = keel_hooks_dir(repo)?;
+    if !force {
+        let current = git(repo, &["config", "--get", "core.hooksPath"], &[]).ok();
+        let own = dir.parent().unwrap_or(&dir).join("hooks");
+        let entries: Vec<String> = std::fs::read_dir(&own)
+            .map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
+            .unwrap_or_default();
+        let conflicts = hook_conflicts(current.as_deref(), &dir, &own.to_string_lossy(), &entries);
+        if !conflicts.is_empty() {
+            eprintln!(
+                "keel hooks install: refused - another hook setup is in place, and installing Keel's would stop git running it:\n    {}\n  fix -> keel hooks install --force   (replaces it; Keel does not chain other tools' hooks - move what they did into .keel/config.toml [check] or drop it)",
+                conflicts.join("\n    ")
+            );
+            return Ok(1);
+        }
+    }
     std::fs::create_dir_all(&dir).map_err(|e| format!("keel: mkdir {}: {e}", dir.display()))?;
     for (name, body) in [
         ("pre-commit", PRE_COMMIT),
@@ -392,9 +459,16 @@ fn run() -> Result<i32, String> {
             ["--force"] | ["-f"] => init::run(&repo, true),
             _ => Err("usage: keel init [--force | -f]".into()),
         },
-        ["hooks", "install"] => hooks_install(&repo),
+        ["hooks", "install"] => hooks_install(&repo, false),
+        ["hooks", "install", "--force"] => hooks_install(&repo, true),
         ["lint"] => lint(&repo, &load_config(&repo)?),
-        ["check"] => check(&repo, &load_config(&repo)?),
+        ["check"] => {
+            let cfg = load_config(&repo)?;
+            if let Some(p) = hooks_problem(&repo) {
+                eprintln!("keel check: warning - {p}\n  fix -> {HOOKS_FIX}");
+            }
+            check(&repo, &cfg)
+        }
         ["hook", "pre-commit"] => pre_commit(&repo, &load_config(&repo)?),
         ["hook", "commit-msg", file] => mr::commit_msg(&repo, &load_config(&repo)?, file),
         ["hook", "pre-push", remote, ..] => pre_push(&repo, &load_config(&repo)?, remote),
@@ -404,7 +478,7 @@ fn run() -> Result<i32, String> {
         ["verify-dod", rest @ ..] => gate::verify_dod(&repo, &load_config(&repo)?, rest),
         ["preflight", rest @ ..] => gate::preflight_cmd(&repo, &load_config(&repo)?, rest),
         ["mr", rest @ ..] => mr::run(&repo, &load_config(&repo)?, rest),
-        _ => Err("usage: keel <init [-f] | lint | check | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install | notes write <test|doc|cr>>".into()),
+        _ => Err("usage: keel <init [-f] | lint | check | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install [--force] | notes write <test|doc|cr>>".into()),
     }
 }
 
@@ -417,7 +491,51 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{COMMIT_MSG, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
+    use super::{hook_conflicts, hooks_problem_of, Config, ReportPolicy, COMMIT_MSG, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
+    use std::path::Path;
+
+    #[test]
+    fn hooks_problem_passes_for_keels_path_and_fails_for_a_foreign_or_unset_one() {
+        let keel = Path::new("/r/.git/keel-hooks");
+        assert_eq!(hooks_problem_of(Some("/r/.git/keel-hooks"), keel), None);
+        let foreign = hooks_problem_of(Some(".husky"), keel).unwrap();
+        assert!(foreign.contains(".husky") && foreign.contains("/r/.git/keel-hooks"), "{foreign}");
+        assert!(hooks_problem_of(None, keel).unwrap().contains("unset"));
+        assert!(hooks_problem_of(Some("/other/.git/keel-hooks"), keel).is_some(), "another repo's install is not this one's");
+    }
+
+    #[test]
+    fn hook_conflicts_treat_sample_only_as_clean_and_anything_else_as_foreign() {
+        let names = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let keel = Path::new("/r/.git/keel-hooks");
+        let samples = names(&["pre-commit.sample", "pre-push.sample"]);
+        assert!(hook_conflicts(None, keel, "/r/.git/hooks", &samples).is_empty());
+        assert!(hook_conflicts(None, keel, "/r/.git/hooks", &[]).is_empty());
+        for own in ["/r/.git/keel-hooks", "/r/.git/keel-hooks/", "/r/.git/./keel-hooks"] {
+            assert!(hook_conflicts(Some(own), keel, "/r/.git/hooks", &names(&["pre-commit"])).is_empty(), "Keel's own path {own}: a re-install");
+            assert_eq!(hooks_problem_of(Some(own), keel), None, "guard D agrees on {own}");
+        }
+        assert_eq!(hook_conflicts(None, keel, "/r/.git/hooks", &names(&["pre-commit.sample", "pre-commit", "husky.sh"])), ["/r/.git/hooks/pre-commit", "/r/.git/hooks/husky.sh"]);
+        assert_eq!(hook_conflicts(Some(".husky"), keel, "/r/.git/hooks", &samples), ["core.hooksPath = .husky"]);
+    }
+
+    const BASE: &str = "[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n";
+
+    #[test]
+    fn mr_report_parses_its_three_values_defaults_to_required_and_rejects_a_fourth() {
+        let parse = |mr: &str| toml::from_str::<Config>(&format!("{BASE}{mr}"));
+        assert_eq!(parse("").unwrap().mr.report, ReportPolicy::Required);
+        assert_eq!(parse("[mr]\ntiers = [\"key\"]\n").unwrap().mr.report, ReportPolicy::Required);
+        for (v, want) in [("required", ReportPolicy::Required), ("optional", ReportPolicy::Optional), ("none", ReportPolicy::None)] {
+            let c = parse(&format!("[mr]\nreport = \"{v}\"\n")).unwrap();
+            assert_eq!(c.mr.report, want);
+            assert_eq!(c.mr.tiers, ["email", "username", "key"], "tiers keep their default beside report");
+        }
+        let e = parse("[mr]\nreport = \"sometimes\"\n").err().unwrap().to_string();
+        for needle in ["report", "required", "optional", "none"] {
+            assert!(e.contains(needle), "{needle} missing from: {e}");
+        }
+    }
 
     #[test]
     fn git_shims_guard_a_missing_keel_with_both_install_hints_then_exec_their_hook() {

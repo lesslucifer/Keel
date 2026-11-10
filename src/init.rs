@@ -242,7 +242,12 @@ pub fn run(repo: &Path, force: bool) -> Result<i32, String> {
     }
     ignore(repo, "docs/.archive/")?;
     ignore(repo, &worktrees_dir(repo))?;
-    hooks_install(repo)?;
+    // -f overwrites skills only: replacing another tool's hooks is its own explicit act.
+    let code = hooks_install(repo, false)?;
+    if code != 0 {
+        eprintln!("keel init: the files above are written; Keel's hooks are NOT installed, so nothing is gated yet");
+        return Ok(code);
+    }
 
     if repo.join("CLAUDE.md").exists() {
         println!("warning: CLAUDE.md exists - Claude Code reads it instead of AGENTS.md; merge the two or add a line `@AGENTS.md` to CLAUDE.md");

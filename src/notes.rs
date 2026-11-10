@@ -92,10 +92,13 @@ pub struct MrNote {
     pub signer: String,
     /// Informational: authority is re-derived from .mr-allowed at check time.
     pub tier: String,
-    pub report: String,
-    /// git blob id of the attested report's bytes.
-    pub report_hash: String,
-    /// git blob hash of the full `git diff base tip`.
+    /// The attested result report; absent when `[mr] report` asked for none and none was attested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<String>,
+    /// `sha256:<hex>` of the attested report's bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_hash: Option<String>,
+    /// `sha256:<hex>` of the full `git diff base tip`.
     pub change_hash: String,
     /// Armored SSH SIGNATURE (namespace keel-mr), key-backed signers only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -112,6 +115,11 @@ pub struct DodNote {
     pub checks: Vec<String>,
     /// git blob hash of the full `git diff base tip`.
     pub diff_hash: String,
+    /// The report the verified mr/v1 sign-off attested, copied from it; absent when it attested none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_hash: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -318,11 +326,16 @@ pub(crate) fn code_diff_hash(repo: &Path, cfg: &Config, base: &str, tip: &str) -
 }
 
 /// git blob hash of `git diff base tip -- <pathspecs>` (none = the full diff), independent of the
-/// local diff config so every machine hashes the same bytes (cr, dod and mr bindings).
+/// local diff config so every machine hashes the same bytes (cr and dod bindings).
 pub(crate) fn diff_hash(repo: &Path, base: &str, tip: &str, pathspecs: &[String]) -> Result<String, String> {
+    hash_blob(repo, &diff_text(repo, base, tip, pathspecs)?)
+}
+
+/// The bytes every diff binding hashes (cr and dod as a git blob, mr as SHA-256): `git diff base tip -- <pathspecs>`, local diff config off.
+pub(crate) fn diff_text(repo: &Path, base: &str, tip: &str, pathspecs: &[String]) -> Result<String, String> {
     let mut a = vec!["diff", "--no-color", "--no-ext-diff", "--no-textconv", base, tip, "--"];
     a.extend(pathspecs.iter().map(String::as_str));
-    hash_blob(repo, &git(repo, &a, &[])?)
+    git(repo, &a, &[])
 }
 
 fn count_tests(adapter: &str, body: &str, pattern: Option<&str>) -> Result<u32, String> {
