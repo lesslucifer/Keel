@@ -79,12 +79,24 @@ fn strip_blocks(html: &str, tag: &str) -> String {
     s
 }
 
+fn scannable(raw: &str) -> String {
+    strip_blocks(&strip_blocks(raw, "script"), "style")
+}
+
+/// The root `<html>`'s `data-artifact` (its governed role(s)); `None` for an ungoverned doc.
+pub fn artifact(raw: &str) -> Option<String> {
+    let html = scannable(raw);
+    let ts = tags(&html);
+    let root = ts.iter().find(|t| t.name == "html" && !t.closing)?;
+    attr(root, "data-artifact").map(String::from)
+}
+
 /// Problems with one doc; empty = green. Drafts are fully silent: no checklist, no link check.
 pub fn verify(path: &Path) -> Vec<String> {
     let Ok(raw) = std::fs::read_to_string(path) else {
         return vec!["cannot read file".into()];
     };
-    let html = strip_blocks(&strip_blocks(&raw, "script"), "style");
+    let html = scannable(&raw);
     let ts = tags(&html);
     let mut errs = vec![];
 
@@ -165,5 +177,20 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::artifact;
+
+    #[test]
+    fn artifact_reads_the_root_role_and_is_none_for_an_ungoverned_doc() {
+        let doc = r#"<!doctype html><html lang="en" data-artifact="wu-result" data-status="final"><body><div data-artifact="epic-plan"></div></body></html>"#;
+        assert_eq!(artifact(doc).as_deref(), Some("wu-result"));
+        assert_eq!(artifact(r#"<html data-artifact="epic-result wu-result">"#).as_deref(), Some("epic-result wu-result"));
+        assert_eq!(artifact("<html lang=\"en\"><p>x-result</p></html>"), None);
+        assert_eq!(artifact("<p>wu a: done</p>"), None);
+        assert_eq!(artifact(r#"<script>"<html data-artifact=\"wu-result\">"</script><html>"#), None);
     }
 }

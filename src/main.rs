@@ -29,15 +29,30 @@ struct Config {
     #[serde(default)]
     mr: MrCfg,
 }
-/// Signer tiers this project accepts from .mr-allowed (Q10: configurable, Trawler's three by default).
+/// Signer tiers this project accepts from .mr-allowed (Q10: configurable, Trawler's three by default),
+/// and whether a WU/epic sign-off must attest a result report.
 #[derive(Deserialize)]
 struct MrCfg {
+    #[serde(default = "known_tiers")]
     tiers: Vec<String>,
+    #[serde(default)]
+    report: ReportPolicy,
+}
+fn known_tiers() -> Vec<String> {
+    mr::KNOWN_TIERS.iter().map(|t| t.to_string()).collect()
 }
 impl Default for MrCfg {
     fn default() -> Self {
-        MrCfg { tiers: mr::KNOWN_TIERS.iter().map(|t| t.to_string()).collect() }
+        MrCfg { tiers: known_tiers(), report: ReportPolicy::default() }
     }
+}
+#[derive(Deserialize, Default, Clone, Copy, PartialEq, Debug)]
+#[serde(rename_all = "lowercase")]
+enum ReportPolicy {
+    #[default]
+    Required,
+    Optional,
+    None,
 }
 #[derive(Deserialize, Default)]
 struct TestsCfg {
@@ -417,7 +432,25 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{COMMIT_MSG, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
+    use super::{Config, ReportPolicy, COMMIT_MSG, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
+
+    const BASE: &str = "[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n";
+
+    #[test]
+    fn mr_report_parses_its_three_values_defaults_to_required_and_rejects_a_fourth() {
+        let parse = |mr: &str| toml::from_str::<Config>(&format!("{BASE}{mr}"));
+        assert_eq!(parse("").unwrap().mr.report, ReportPolicy::Required);
+        assert_eq!(parse("[mr]\ntiers = [\"key\"]\n").unwrap().mr.report, ReportPolicy::Required);
+        for (v, want) in [("required", ReportPolicy::Required), ("optional", ReportPolicy::Optional), ("none", ReportPolicy::None)] {
+            let c = parse(&format!("[mr]\nreport = \"{v}\"\n")).unwrap();
+            assert_eq!(c.mr.report, want);
+            assert_eq!(c.mr.tiers, ["email", "username", "key"], "tiers keep their default beside report");
+        }
+        let e = parse("[mr]\nreport = \"sometimes\"\n").err().unwrap().to_string();
+        for needle in ["report", "required", "optional", "none"] {
+            assert!(e.contains(needle), "{needle} missing from: {e}");
+        }
+    }
 
     #[test]
     fn git_shims_guard_a_missing_keel_with_both_install_hints_then_exec_their_hook() {
