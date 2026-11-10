@@ -1,6 +1,6 @@
 //! Versioned note schemas + `keel notes write <test|doc|cr>`.
 //! Notes live in refs/notes/<kind> (same naming as Trawler), JSON, attached to the tip commit.
-use crate::{git, Config};
+use crate::{git, no_git_env, Config};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -418,7 +418,7 @@ pub(crate) fn store<T: Serialize>(repo: &Path, kind: &str, tip: &str, note: &T) 
 }
 
 pub(crate) fn hash_blob(repo: &Path, data: &str) -> Result<String, String> {
-    let mut h = Command::new("git")
+    let mut h = no_git_env(&mut Command::new("git"), true)
         .args(["hash-object", "--stdin"])
         .current_dir(repo)
         .stdin(Stdio::piped())

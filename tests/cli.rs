@@ -352,7 +352,7 @@ fn probe_repo(test_cmd: &str) -> TempDir {
 /// test command - `keel check` runs against its own checkout and the foreign repo stays byte-identical.
 #[test]
 fn check_under_a_foreign_git_dir_uses_its_own_repo_and_leaves_the_other_untouched() {
-    let a = probe_repo(r#"git rev-parse --absolute-git-dir > "$KEEL_PROBE" && git config keel.probe ran"#);
+    let a = probe_repo(r#"git rev-parse --absolute-git-dir > "$KEEL_PROBE" && git config keel.probe ran && git add -A"#);
     let b = repo(false);
     std::fs::write(b.path().join("f"), "f").unwrap();
     git(b.path(), &["add", "f"]);
@@ -366,7 +366,11 @@ fn check_under_a_foreign_git_dir_uses_its_own_repo_and_leaves_the_other_untouche
         env!("CARGO_BIN_EXE_keel"),
         a.path(),
         &["check"],
-        &[("GIT_DIR", b_git.to_str().unwrap()), ("KEEL_PROBE", probe.to_str().unwrap())],
+        &[
+            ("GIT_DIR", b_git.to_str().unwrap()),
+            ("GIT_INDEX_FILE", b_git.join("index").to_str().unwrap()),
+            ("KEEL_PROBE", probe.to_str().unwrap()),
+        ],
         "",
     );
 
@@ -436,4 +440,25 @@ fn every_test_spawn_strips_gits_env() {
         }
     }
     assert!(bad.is_empty(), "spawn through common::cmd:\n{}", bad.join("\n"));
+}
+
+/// W13: keel itself spawns nothing that can reach git without `no_git_env` (same or next line);
+/// ssh-keygen never reads a repository.
+#[test]
+fn every_keel_spawn_strips_gits_env() {
+    let needle = ["Command", "::new("].concat();
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut bad = vec![];
+    for e in std::fs::read_dir(&dir).unwrap() {
+        let f = e.unwrap().path();
+        let src = std::fs::read_to_string(&f).unwrap();
+        let lines: Vec<&str> = src.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            let stripped = line.contains("no_git_env") || lines.get(i + 1).is_some_and(|n| n.contains("no_git_env"));
+            if line.contains(&needle) && !line.contains("\"ssh-keygen\"") && !line.contains(&format!("{needle}\"x\")")) && !stripped {
+                bad.push(format!("{}:{}: {}", f.display(), i + 1, line.trim()));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "spawn through no_git_env:\n{}", bad.join("\n"));
 }
