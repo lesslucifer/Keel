@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-SEED2.W2 · Report binding and hook coexistence</h1>
       <p>Builds the never-started E-SEED.W9: a configurable result-report requirement for the human sign-off, reports found by role instead of file name, SHA-256 sign-off hashes, and Keel's hooks that refuse to clobber or be silently clobbered.</p>
-      <div class="meta">T3 · WU plan · 2026-11-09 · Keel · branch <code>wu/E-SEED2/w2-report-binding</code> off <code>epic/E-SEED2</code> <code>ef9ee75</code> · epic <a href="2026-11-09-e-seed2-epic-plan.html#w2">E-SEED2 plan</a> · runs in parallel with W7 (owner ruling 2026-11-09, option A) · open questions 1–5 proceed on their defaults (owner ruling 2026-11-09)</div>
+      <div class="meta">T3 · WU plan · 2026-11-09, r2 2026-11-10 (owner review: diagram syntax, open question 4 scope) · Keel · branch <code>wu/E-SEED2/w2-report-binding</code> off <code>epic/E-SEED2</code> <code>ef9ee75</code> · epic <a href="2026-11-09-e-seed2-epic-plan.html#w2">E-SEED2 plan</a> · runs in parallel with W7 (owner ruling 2026-11-09, option A) · open questions 1–5 proceed on their defaults (owner ruling 2026-11-09)</div>
     </div>
   </header>
   <main>
@@ -57,21 +57,21 @@
 <div class="diagram" data-c="report-flow">
 <pre class="mermaid">
 flowchart TD
-  A[mr confirm wu|epic] --> B{sign_ready: checks 1-7 green?}
-  B -- no --> R0[refused: sign last]
-  B -- yes --> P{"[mr] report"}
-  P -- none --> N{--report given?}
-  N -- yes --> R1[refused: policy none attests nothing]
-  N -- no --> S[sign: payload v2 without report lines]
-  P -- required/optional --> O{--report given?}
-  O -- yes --> H[hash it]
-  O -- no --> F[candidates: docs.root html whose data-artifact has the level role]
-  F --> C{how many}
-  C -- one --> H
-  C -- several --> R2[refused: lists them, fix: --report]
-  C -- zero, required --> R3[refused: no wu-result / epic-result, fix: write it]
-  C -- zero, optional --> S
-  H --> S2[sign: payload v2 with report + sha256]
+  A["mr confirm wu or epic"] --> B{"sign_ready: checks 1-7 green?"}
+  B -->|"no"| R0["refused: sign last"]
+  B -->|"yes"| P{"[mr] report"}
+  P -->|"none"| N{"--report given?"}
+  N -->|"yes"| R1["refused: policy none attests nothing"]
+  N -->|"no"| S["sign: payload v2 without report lines"]
+  P -->|"required or optional"| O{"--report given?"}
+  O -->|"yes"| H["hash it"]
+  O -->|"no"| F["candidates: docs.root html whose data-artifact has the level role"]
+  F --> C{"how many"}
+  C -->|"one"| H
+  C -->|"several"| R2["refused: lists them, fix: --report"]
+  C -->|"zero, required"| R3["refused: no wu-result or epic-result, fix: write it"]
+  C -->|"zero, optional"| S
+  H --> S2["sign: payload v2 with report and sha256"]
 </pre>
 <div class="caption">Report lookup and policy in <code>keel mr confirm</code>. Candidates for a WU are the docs changed in <code>base..tip</code> and present at the tip. An epic adds the untracked docs under <code>docs.root</code>, including ignored ones, because <code>docs/.archive/</code> is gitignored.</div>
 </div>
@@ -98,7 +98,7 @@ flowchart TD
     <tr><td>I3</td><td>Policy from HEAD: the WU sets <code>report = "none"</code>, signs with no report, and merges into an epic whose committed policy is <code>"required"</code></td><td>The merge is refused at the hook with <code>8·manual-review</code></td></tr>
     <tr><td>I4</td><td>Tamper: under <code>"optional"</code>, a forged <code>report_hash</code>; the existing epic-report-edited-after-signing test</td><td>Both red</td></tr>
     <tr><td>I5</td><td>Epic report: one untracked <code>epic-result</code> in the ignored <code>docs/.archive/</code>; then a second one</td><td>One is found with no <code>--report</code>. Two are refused, listing both.</td></tr>
-    <tr><td>I6</td><td>Hash format: a fresh sign-off; then a note written with the old blob-id format</td><td><code>change_hash</code> and <code>report_hash</code> match <code>^sha256:[0-9a-f]{64}$</code>. The old-format note is red, because there are no legacy readers (DEC-13).</td></tr>
+    <tr><td>I6</td><td>Hash format: a fresh sign-off. Then, on an unmerged WU tip, a note in the pre-W2 format (payload <code>keel-mr/v1</code>, blob-id hashes)</td><td><code>change_hash</code> and <code>report_hash</code> match <code>^sha256:[0-9a-f]{64}$</code>. The old-format note is red under <code>verify-dod wu</code> and at the WU merge hook (the paths in open question 4), because there are no legacy readers (DEC-13). The same note under a merged seam is not re-judged by <code>verify-dod epic</code>, and the existing walk tests cover that.</td></tr>
     <tr><td>I7</td><td><code>dod/v1</code> after a green WU merge, with and without a report</td><td><code>report</code> and <code>report_hash</code> equal the <code>mr/v1</code> values, and are absent when the note has none</td></tr>
     <tr><td>I8</td><td><code>hooks install</code> over <code>core.hooksPath=.husky</code>; over a non-sample <code>.git/hooks/pre-commit</code>; over only <code>*.sample</code>; a second install; <code>--force</code></td><td>The first two are refused (exit 1) with the conflict named and <code>core.hooksPath</code> unchanged. Sample-only and re-install pass. <code>--force</code> installs.</td></tr>
     <tr><td>I9</td><td>Guard: after <code>git config core.hooksPath .husky</code>, and after <code>--unset</code></td><td><code>preflight wu</code> and <code>verify-dod wu</code> are red, naming <code>0·hooks</code> and <code>keel hooks install</code>. <code>keel check</code> is exit 0 with a warning on stderr.</td></tr>
@@ -133,7 +133,7 @@ flowchart TD
     <tr><td>1</td><td>What "the report is a receipt" means</td><td>The report is evidence like the other notes. The policy can require it, a missing one is a named failure, and the attested report is named in both <code>mr/v1</code> and <code>dod/v1</code>.</td><td>No new note kind. <code>dod/v1</code> gains two optional fields. The report does not replace <code>dod/v1</code> and is not merged into it.</td></tr>
     <tr><td>2</td><td>One policy or one per level</td><td>A single <code>[mr] report</code> for both levels</td><td>A project that wants WU reports but no epic report cannot say so. The table form (<code>{ wu = …, epic = … }</code>) can be added later without breaking the string form.</td></tr>
     <tr><td>3</td><td>Finding the archived epic report</td><td>Exactly one untracked <code>epic-result</code> doc under <code>docs.root</code> (gitignored ones included), else <code>--report</code></td><td><code>docs/.archive/</code> keeps every past epic's report, so from a checkout's second epic on there are usually several candidates. The lookup then refuses and lists them, and the owner passes <code>--report</code>. In practice the default only saves typing on a checkout's first epic. Narrowing the candidates (for example by the epic id in the file name) is a follow-up, not built.</td></tr>
-    <tr><td>4</td><td>Schema version</td><td>Payload header <code>keel-mr/v2</code>. The note schema stays <code>mr/v1</code>, changed in place, and <code>dod/v1</code> likewise.</td><td>There are no legacy readers (DEC-13). Any <code>mr/v1</code> note signed by a binary older than W2 is red under the new binary (wrong payload and hash format), so that tip must be signed again. This hits any WU (W7 included) that is signed before W2 lands and merged with a W2 binary. Owner action: sign with the binary that will run the merge hook.</td></tr>
+    <tr><td>4</td><td>Schema version</td><td>Payload header <code>keel-mr/v2</code>. The note schema stays <code>mr/v1</code>, changed in place, and <code>dod/v1</code> likewise.</td><td>There are no legacy readers (DEC-13), so a pre-W2 <code>mr/v1</code> note is red only where a W2 binary re-verifies it. Only <code>mr::manual_review</code> (<code>src/mr.rs:363</code>) re-verifies a note, and it rebuilds the payload at <code>src/mr.rs:404</code> and re-hashes the report at <code>src/mr.rs:411</code>. It has two callers. The first is <code>gate::run</code> (<code>src/gate.rs:272</code>), reached by <code>keel verify-dod wu|epic</code> (<code>src/gate.rs:444</code>) and by the merge hook (<code>src/gate.rs:346</code>). The second is pre-push <code>gate::range</code> (<code>src/gate.rs:383</code>), for merge seams not already on the remote branch (<code>src/gate.rs:374-380</code>). The epic walk (<code>src/gate.rs:218</code>) re-verifies seams without their sign-offs (<code>src/gate.rs:184-185</code>). So already merged and pushed WUs (W1, W10, W11; <code>ef9ee75</code> is on <code>origin/epic/E-SEED2</code>) are not exposed, and <code>verify-dod epic</code> judges only the epic tip's own note, which is signed at close. What is exposed is a WU tip signed by one binary and then merged or pushed by another: the merge shim runs whichever <code>keel</code> is first on <code>PATH</code> (<code>src/main.rs:261</code>). <b>Owner rule:</b> sign and merge each WU, and push its merge, with the same installed <code>keel</code>. Re-sign a WU that is signed but unmerged when the installed binary crosses W2, for example W7 if it is signed before W2 lands.</td></tr>
     <tr><td>5</td><td>Hooks coexistence</td><td>Options B + D. Install refuses to clobber without <code>--force</code>. The guard refuses in <code>preflight</code> and <code>verify-dod wu|epic</code> and warns in <code>check</code>. Chaining (C) is rejected.</td><td>Keel does not run alongside another hook manager: the owner picks one, or uses <code>--force</code> and loses the other tool's hooks. Turning a hook manager on later is caught at the next preflight or gate command, not at the moment it happens. DEC-23's "coexistence is open" sentence is replaced by this decision.</td></tr>
   </tbody>
 </table>
@@ -156,7 +156,7 @@ flowchart TD
 
 <h2 id="risks">Risks</h2>
 <ul data-c="risks">
-  <li><b>Existing sign-offs go red.</b> See open question 4. Mitigation: the WU result and the staged commands tell the owner to re-sign with the new binary any tip already signed before W2.</li>
+  <li><b>Binary skew between sign and merge.</b> See open question 4. Merged and pushed seams are not exposed. A WU tip signed before W2 is red if a W2 binary verifies it, at <code>verify-dod wu</code>, the WU merge hook, or pre-push of the unpushed merge. Mitigation: the WU result and the staged commands state the rule (sign, merge and push each WU with the same installed <code>keel</code>) and name any WU that is signed but unmerged when W2 lands.</li>
   <li><b>Fixture churn.</b> Choice C (refusing an unset <code>core.hooksPath</code>) means <code>tests/mr.rs</code>, <code>tests/verify_dod.rs</code> and <code>tests/cli.rs</code> fixtures call <code>keel hooks install</code> before gate commands. Every later fixture <code>git commit</code> then runs Keel's pre-commit and commit-msg shims, using the test binary first on <code>PATH</code>. A fixture that commits on <code>main</code> after install would be refused, so the install goes after the fixture's base commit.</li>
   <li><b>Fixture result doc.</b> The <code>tests/mr.rs</code> fixture's <code>&lt;p&gt;wu a: done&lt;/p&gt;</code> has no <code>data-artifact</code>, so the role lookup would not find it. It becomes a minimal <code>&lt;html data-artifact="wu-result"&gt;</code> doc, which is the one change to the "existing tests pass unchanged" claim.</li>
   <li><b>Merge with W1/W11 on <code>src/main.rs</code>.</b> W1 and W11 are already on the epic base (<code>ef9ee75</code>), so there is no pending conflict. W6 later shares the hook code (it depends on W2).</li>
