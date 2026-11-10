@@ -503,6 +503,31 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
         (&ok_policy.replace("\"opus\"", "\"--dangerously-skip-permissions\""), "model starting with -"),
         (&ok_policy.replace("\"opus\"", "\"4opus\""), "model starting with a digit"),
         (&ok_policy.replace("worker_default_effort = \"medium\"", "worker_default_effort = \"-medium\""), "effort starting with -"),
+        ("[router]\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n", "missing worker_model"),
+        (&ok_policy.replace("[router]\n", "[router]# c\n"), "no space before the header's comment"),
+        (&format!("{ok_policy}\t[router]\n"), "tab-indented second header"),
+        (&format!("{ok_policy}[\trouter]\n"), "tab inside a second header"),
+        (&format!("{ok_policy}[router\t]\n"), "tab before a second header's ]"),
+        (&ok_policy.replace("worker_model", "  worker_model"), "indented worker_model"),
+        (&ok_policy.replace("worker_default_effort", "  worker_default_effort"), "indented worker_default_effort"),
+        (&ok_policy.replace("worker_efforts", "  worker_efforts"), "indented worker_efforts"),
+        (&ok_policy.replace("\"opus\"", "\"opus\" x"), "junk after worker_model"),
+        (&ok_policy.replace("= \"medium\"\n", "= \"medium\" x\n"), "junk after worker_default_effort"),
+        (&ok_policy.replace("\"high\"]", "\"high\"] x"), "junk after worker_efforts"),
+        (&ok_policy.replace("worker_model = ", "worker_model  =  "), "two spaces around = (model)"),
+        (&ok_policy.replace("worker_default_effort = ", "worker_default_effort  =  "), "two spaces around = (default)"),
+        (&ok_policy.replace("worker_efforts = ", "worker_efforts  =  "), "two spaces around = (efforts)"),
+        (&ok_policy.replace("worker_efforts = ", "worker_efforts= "), "no space before = (efforts)"),
+        (&format!("{ok_policy}worker_default_effort = \"medium\"\n"), "repeated worker_default_effort"),
+        (&format!("{ok_policy}worker_efforts = [\"medium\", \"high\"]\n"), "repeated worker_efforts"),
+        (&ok_policy.replace("\"opus\"", "\"opus x\""), "model with a space"),
+        (&ok_policy.replace("\"opus\"", "\"opUs\""), "model with a capital"),
+        (&ok_policy.replace("= \"medium\"\n", "= \"medium high\"\n"), "default with a space"),
+        (&ok_policy.replace("[\"medium\", \"high\"]", "[\"medium high\"]"), "list entry with a space"),
+        (&ok_policy.replace("\"high\"]", "\"high medium\"]"), "later list entry with a space"),
+        (&ok_policy.replace("\"medium\", \"high\"", "\"medium\",  \"high\""), "two spaces after a comma"),
+        (&ok_policy.replace("\"high\"]", "\"below\"]"), "level word below"),
+        (&ok_policy.replace("\"high\"]", "\"highest\"]"), "level word highest"),
     ] {
         policy_refusals.push((Some(bad.to_string()), what.to_string()));
     }
@@ -563,6 +588,32 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
     assert!(ok && out.contains(" effort=medium "), "{out}");
     l.wait_exit("q");
     assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "medium");
+
+    // every level word is accepted when committed: low and xhigh, as the default and as --effort (review r5 V1)
+    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"low\", \"xhigh\"]\nworker_default_effort = \"low\"\n"));
+    for (extra, effort) in [(vec![], "low"), (vec!["--effort", "xhigh"], "xhigh")] {
+        let mut args = vec!["spawn", "q", wt, brief, "sonnet"];
+        args.extend(&extra);
+        let (ok, out) = l.run(&args);
+        assert!(ok && out.contains(&format!(" effort={effort} ")), "{out}");
+        l.wait_exit("q");
+        assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), effort);
+    }
+
+    // the reader's accepted edges in one policy: a tab before the header's comment, a dotted and
+    // hyphenated model, trailing blanks after a value, a three-entry list, and indented or similarly
+    // named headers that end the section
+    l.commit_config(Some("[router]\t# c\nworker_model = \"opus-4.5\" \t\nworker_efforts = [\"low\", \"medium\", \"xhigh\"]\nworker_default_effort = \"low\"\n\t[next]\nx = 1\n  [routers]\ny = 2\n"));
+    for effort in ["low", "medium", "xhigh"] {
+        let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus-4.5", "--effort", effort]);
+        assert!(ok && out.contains(&format!(" effort={effort} ")), "{out}");
+        l.wait_exit("q");
+    }
+    // an effort matches a whole list entry, never part of one
+    for part in ["med", "igh", "low medium"] {
+        let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus-4.5", "--effort", part]);
+        assert!(!ok && out.contains("effort must be one of: low medium xhigh ("), "{part}: {out}");
+    }
 }
 
 /// DEC-39: the repo's committed worker policy is opus at medium or high effort, medium by default.
