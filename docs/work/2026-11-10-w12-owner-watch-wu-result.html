@@ -77,6 +77,12 @@
       <li>The spy's log path is taken from <code>spy()</code> rather than rebuilt by hand.</li>
     </ul>
     One candidate was refuted: the 20 s harness test is not on the critical path, which was measured.</li>
+  <li><b>Review cap (owner ruling 2026-11-10).</b> From this point on in W12, a finding that is <em>only</em> a missing test for an edge case of <code>scripts/router-watch.sh</code>, or a tidy-up of the <code>tests/router.rs</code> harness, is a nit. It is recorded as a follow-up and not fixed now. Real bugs in the script, the guard, <code>src/</code> or shipped keel code stay important and are fixed. History after the back-merge, in this report's numbering:
+    <ul>
+      <li>Review rounds over <code>7c26a43</code>, <code>07c9ce0</code> and <code>e8dcc49</code> each returned FAIL. Their importants were fixed in fix rounds 3, 4 and 5 above.</li>
+      <li>The fourth round, over <code>f68f18c</code>, was abandoned under the ruling. Its one real bug, that the <code>missing</code> detail lines skipped <code>clean</code>, is fixed in <code>d42dcfd</code>, which also pins the http stall bound.</li>
+    </ul>
+    The capped follow-ups are recorded as one row in <a href="../backlog/e-router-v2.html#r7">backlog R7</a>. Porting Trawler's code-review limits into Keel's code review is a separate item, deferred to the E-SEED v2 backlog by the owner.</li>
 </ul>
 
 <h2 id="evidence">Evidence</h2>
@@ -98,6 +104,8 @@
     <li><code>c67f1ac</code> and <code>f0016e2</code>: code-review fix round 3.</li>
     <li><code>a3140b3</code>: code-review fix round 4.</li>
     <li><code>1cb601a</code>: code-review fix round 5.</li>
+    <li><code>d42dcfd</code>: the <code>missing</code> lines go through <code>clean</code>, and the http stall bound is pinned.</li>
+    <li>This report's final update and the backlog R7 follow-up row.</li>
     <li>This report.</li>
   </ul>
   <p><b>Reviews.</b> The independent review r1 at <code>b997c0a</code> returned FIX, and it was fixed as described above. The independent review r2 at <code>f387c3b</code> returned PASS, with low follow-ups N1–N3. keel-code-review at <code>ab9d66e</code> returned FAIL and was fixed in <code>d9bd7da</code>, together with N1 and N2. keel-code-review at <code>e3c6f69</code> returned FAIL (V1, V2 and nits). Round 2 fixed them, together with N3.</p>
