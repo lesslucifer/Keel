@@ -292,8 +292,14 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
 
 /// Layered on `common::cmd`: every git a test runs, directly or under a script, reads only the
 /// repo's own config: no user or system setting (tag.gpgSign, log.showSignature, core.quotePath,
-/// ...) can change what it does.
+/// ...) can change what it does, and no inherited GIT_TRACE* writes to its stderr.
 fn hermetic(c: &mut Command) -> &mut Command {
+    let set: Vec<std::ffi::OsString> = c.get_envs().map(|(k, _)| k.to_owned()).collect();
+    for k in std::env::vars_os().map(|(k, _)| k).chain(set) {
+        if k.to_string_lossy().starts_with("GIT_TRACE") {
+            c.env_remove(k);
+        }
+    }
     c.env("GIT_CONFIG_GLOBAL", "/dev/null").env("GIT_CONFIG_NOSYSTEM", "1")
 }
 
@@ -913,9 +919,17 @@ impl Stepped {
                 std::io::Read::read_to_string(self.child.stdout.as_mut().unwrap(), &mut out).unwrap();
                 panic!("wait returned before poll {n}: {out}");
             }
-            assert!(t.elapsed() < BOUND, "wait never reached poll {n}");
+            if t.elapsed() > BOUND {
+                self.reap();
+                panic!("wait never reached poll {n}");
+            }
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    fn reap(&mut self) {
+        self.child.kill().unwrap();
+        self.child.wait().unwrap();
     }
 
     fn go(&self, n: u32) {
@@ -923,19 +937,23 @@ impl Stepped {
     }
 
     /// The one line `wait` prints once released from its last poll.
-    fn line(mut self) -> String {
+    fn line(self) -> String {
+        let o = self.output();
+        assert!(o.status.success(), "{o:?}");
+        String::from_utf8(o.stdout).unwrap()
+    }
+
+    /// Everything the process left once released from its last poll; killed and reaped after BOUND.
+    fn output(mut self) -> Output {
         let t = Instant::now();
         while self.child.try_wait().unwrap().is_none() {
             if t.elapsed() > BOUND {
-                self.child.kill().unwrap();
-                self.child.wait().unwrap();
+                self.reap();
                 panic!("wait never returned");
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        let o = self.child.wait_with_output().unwrap();
-        assert!(o.status.success(), "{o:?}");
-        String::from_utf8(o.stdout).unwrap()
+        self.child.wait_with_output().unwrap()
     }
 }
 
@@ -1291,10 +1309,11 @@ fn hermetic_git_ignores_global_and_system_config() {
     let hostile = d.path().join("gitconfig");
     std::fs::write(&hostile, "[tag]\n\tgpgSign = true\n").unwrap();
     let mut c = common::cmd("git");
-    c.args(["config", "--list", "--show-origin"]).current_dir(d.path()).env("GIT_CONFIG_GLOBAL", &hostile).env("GIT_CONFIG_SYSTEM", &hostile);
+    c.args(["config", "--list", "--show-origin"]).current_dir(d.path()).env("GIT_CONFIG_GLOBAL", &hostile).env("GIT_CONFIG_SYSTEM", &hostile).env("GIT_TRACE", "1");
     let o = hermetic(&mut c).output().unwrap();
     let list = String::from_utf8(o.stdout).unwrap();
     assert!(o.status.success() && !list.contains("gpgsign"), "{list}");
+    assert_eq!(String::from_utf8(o.stderr).unwrap(), "", "a GIT_TRACE* variable reached git");
 }
 
 /// E-SEED2.W12: every argument router-watch.sh cannot validate is refused with exit 2 before its
@@ -1405,6 +1424,13 @@ fn watch_commit_reports_what_landed_against_what_was_staged() {
     git(&w.main, &["branch", "-q", "-D", "wu/gone"]);
     s.go(1);
     assert_eq!(s.line(), format!("DELETED branch=wu/gone from={g}\n"));
+
+    // review r4: a hostile file name never reaches the router raw, even under core.quotePath=false
+    git(&w.main, &["config", "core.quotePath", "false"]);
+    let h = w.sha("HEAD");
+    let hh = w.commit(&["e\u{202e}v\u{2028}l\u{9b}"], "h");
+    let (_, out, _, _) = w.run(&["commit", "main", &h, "x"], "hostile-path", 0, &[]);
+    assert_eq!(out, format!("COMMITTED-PARTIAL branch=main from={h} to={hh} commits=1 expected=0/1\n  commit {hh} reviewed-by=none h\n  landed A e?v?l?\n  missing x\n  unexpected e?v?l?\n"));
 }
 
 /// E-SEED2.W12: `signed` fires on the mr note and prints its payload; `merged` fires once the tip is in
@@ -1413,6 +1439,7 @@ fn watch_commit_reports_what_landed_against_what_was_staged() {
 fn watch_signed_and_merged_report_the_note_and_how_the_tip_landed() {
     let w = watcher();
     let t = w.sha("HEAD");
+    git(&w.main, &["notes", "--ref=test", "add", "-m", "test/v1", &t]);
     let mut s = w.armed(&["signed", &t], "signed");
     s.at(1);
     git(&w.main, &["notes", "--ref=mr", "add", "-m", "level: wu\nby: vu\rluu\x1b]0;x\x07\x7f\nu: \u{7e}\u{80}\u{9b}\u{9f}\u{a0}\u{e9}|\u{2027}\u{2028}\u{2029}\u{202e}\u{202f}|\u{2065}\u{2066}\u{2069}\u{206a}", &t]);
@@ -1454,8 +1481,7 @@ fn watch_signed_and_merged_report_the_note_and_how_the_tip_landed() {
     git(&w.main, &["branch", "-q", "-D", "epic/gone"]);
     s.go(1);
     let dir = s.dir.clone();
-    until("the merged watch to end", || s.child.try_wait().unwrap().is_some());
-    let o = s.child.wait_with_output().unwrap();
+    let o = s.output();
     assert_eq!((o.status.code(), String::from_utf8(o.stdout).unwrap(), String::from_utf8(o.stderr).unwrap()), (Some(0), "DELETED target=epic/gone\n".into(), String::new()));
     assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "1");
 }
@@ -1486,6 +1512,9 @@ fn watcher_run_is_bounded_when_the_watch_outpolls_its_releases() {
     let t = w.sha("HEAD");
     let e = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.run(&["signed", &t], "unreleased", 0, &[]))).unwrap_err();
     assert!(e.downcast_ref::<String>().is_some_and(|m| m.contains("never returned")));
+    let mut s = w.armed(&["signed", &t], "unreleased-at");
+    let e = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| s.at(2))).unwrap_err();
+    assert!(e.downcast_ref::<String>().is_some_and(|m| m.contains("never reached poll 2")));
     let shim = w.base.join("shim/sleep");
     let shim = shim.to_str().unwrap();
     until("the sleep shim to exit", || {
@@ -1552,6 +1581,8 @@ fn watch_pushed_and_tagged_fire_on_origin_only() {
     git(&w.main, &["push", "-q", "origin", "v2"]);
     let (_, out, _, _) = w.run(&["tagged", "v2", &t], "mismatch", 0, &[]);
     assert_eq!(out, format!("TAGGED-MISMATCH tag=v2 object={base} commit={base} expected={t}\n"));
+    let (_, out, _, _) = w.run(&["tagged", "v2"], "no-sha", 0, &[]);
+    assert_eq!(out, format!("TAGGED tag=v2 object={base} commit={base}\n"), "with no sha any commit is TAGGED");
 }
 
 /// E-SEED2.W12: past its deadline the watch prints TIMEOUT; a network kind gives up after 5 failed
