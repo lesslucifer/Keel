@@ -34,7 +34,14 @@
     </ul>
     One regression was caught while fixing: moving the count reset ahead of the fetch would have left a fetch that always fails, behind a working <code>ls-remote</code>, polling to <code>TIMEOUT</code>. A new stepped test pins it. A mechanical mutant sweep was run over every changed branch in the script and the test harness (32 mutants), and tests were added until no non-equivalent mutant survived. Same-class audit: no other watch polls to <code>TIMEOUT</code> on a vanished ref. <code>commit</code> prints <code>DELETED</code>. <code>signed</code> watches a sha. For <code>pushed</code> and <code>tagged</code>, a ref missing on origin means "not yet" by design. Two git calls in older tests (the PUSHED probe and the e2e worktree add) also go through <code>hermetic()</code> now.</li>
   <li><b>W7 fixes carried in O1.</b> The owner's <code>b997c0a</code> also carries W7 review r2 N2/N3/N5 project-router fixes. This is outside W12's plan and is recorded so that the W7 merge does not apply them twice.</li>
-  <li><b>Expected merge overlaps with W7</b> (<code>wu/E-SEED2/w7-opus-policy</code>): the worker-ops.md "Watch" intro, hunks in <code>tests/router.rs</code>, and <code>.claude/skills/project-router/SKILL.md</code>. Whichever WU merges second resolves them.</li>
+  <li><b>Back-merge of the epic (owner-resolved).</b> W12 merged second, so it took <code>epic/E-SEED2</code> <code>cf7ee21</code> (W2, W7, W13) in <code>73cbe78</code>. The worker resolved every conflict outside <code>.claude/</code> and the owner copied the two <code>.claude/</code> resolutions in (owner ruling 2026-11-10: "worker prepares, owner copies"). The resolutions:
+    <ul>
+      <li>worker-ops.md keeps W12's Watch intro, folds in W7's "explicit model and effort from the project's model policy", and carries the <code>DELETED target=</code> row and the <code>ls-remote</code> step. Its <code>.claude/</code> copy is identical to the <code>skills/</code> copy.</li>
+      <li>project-router keeps the newer facts from both sides.</li>
+      <li>The epic plan keeps both the W12 and the W13 entries.</li>
+      <li>In <code>tests/router.rs</code>, every spawn now goes through W13's <code>common::cmd</code>, and <code>hermetic()</code> adds the global and system config isolation on top (<code>2f4b6ff</code>).</li>
+    </ul></li>
+  <li><b>Author identity of <code>8fe2fe1</code> and <code>c985a27</code>.</b> Both commits are authored as <code>t &lt;t@t&gt;</code>. During the run, test fixtures that inherited a hook's <code>GIT_DIR</code> wrote <code>user.name</code>/<code>user.email</code> = <code>t</code> into the shared <code>.git/config</code> (the incident W13 fixes). Owner ruling 2026-11-10: they stay as they are, with no history rewrite. Every later W12 commit carries the owner's identity.</li>
 </ul>
 
 <h2 id="evidence">Evidence</h2>
@@ -51,7 +58,8 @@
     <li><code>f387c3b</code> (owner, Reviewed-By): the review r1 F9 and F5 skill text.</li>
     <li><code>d9bd7da</code>: the code-review fix round.</li>
     <li><code>dabcec8</code>, <code>dbea1c6</code> and <code>8fe2fe1</code>: code-review fix round 2.</li>
-    <li>Owner, pending: the worker-ops watch table gains <code>DELETED target=</code> and the <code>ls-remote</code> step of the "pushes" predicate.</li>
+    <li><code>73cbe78</code> (owner, Reviewed-By): the back-merge of the epic, including the worker-ops <code>DELETED target=</code> row and the <code>ls-remote</code> step.</li>
+    <li><code>2f4b6ff</code>: the W12 test spawns go through <code>common::cmd</code>.</li>
     <li>This report.</li>
   </ul>
   <p><b>Reviews.</b> The independent review r1 at <code>b997c0a</code> returned FIX, and it was fixed as described above. The independent review r2 at <code>f387c3b</code> returned PASS, with low follow-ups N1–N3. keel-code-review at <code>ab9d66e</code> returned FAIL and was fixed in <code>d9bd7da</code>, together with N1 and N2. keel-code-review at <code>e3c6f69</code> returned FAIL (V1, V2 and nits). Round 2 fixed them, together with N3.</p>
@@ -60,7 +68,7 @@
     <li><b>Integration (the WU contract).</b> Six tests: <code>watch_refuses_bad_arguments_before_any_poll</code>, <code>watch_commit_reports_what_landed_against_what_was_staged</code>, <code>watch_signed_and_merged_report_the_note_and_how_the_tip_landed</code>, <code>watch_pushed_and_tagged_fire_on_origin_only</code>, <code>watch_pushed_waits_on_a_local_only_branch_without_reporting_unreachable</code> and <code>watch_times_out_and_reports_an_unreachable_origin</code>. The harness check <code>watcher_run_is_bounded_when_the_watch_outpolls_its_releases</code> guards against a hang and a leftover <code>sleep</code> shim. <code>hermetic_git_ignores_global_and_system_config</code> pins V2. They run in a temp checkout with a bare file-remote origin and the stepped <code>sleep</code> shim, with no network.</li>
     <li><b>Guard.</b> <code>router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag</code> gained allow and deny cases for the watch shapes, and its settings mapping now covers <code>router-watch.sh</code>.</li>
     <li><b>Unit layer.</b> Waived for the script per D6: it is one shell file with no seam below the process boundary.</li>
-    <li><b>Result.</b> <code>cargo test --test router</code> is green, 18 passed, and the full <code>cargo test</code> is green at <code>8fe2fe1</code>. Until the owner's mirror commit lands, the staged <code>skills/</code> edit makes <code>self_hosting_clone_is_gated_and_init_is_a_noop</code> report that <code>.claude/</code>'s worker-ops.md differs. That is expected, and the mirror commit clears it.</li>
+    <li><b>Result.</b> The full <code>cargo test</code> is green after the back-merge. <code>tests/router.rs</code> has 19 tests, and W13's spawn scan <code>every_test_spawn_strips_gits_env</code> is green. Before the run, <code>git -C /private/tmp rev-parse --absolute-git-dir</code> failed, which proves no <code>GIT_DIR</code> was inherited. After the run, the shared config was unchanged and there were no new commits. The mutant sweep was re-run on the merged code, and every mutant was killed again.</li>
   </ul>
   <p><b>Docs touched:</b></p>
   <ul>
