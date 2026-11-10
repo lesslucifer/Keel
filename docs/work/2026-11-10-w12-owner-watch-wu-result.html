@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="a6c4723690c3a91d8e70dea4" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED2.W12 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED2.W12 · The router watches owner actions itself — result</h1>
+      <p>The router arms <code>scripts/router-watch.sh</code> as a background command for each staged owner action and wakes on its event line. The owner no longer has to reply "done".</p>
+      <div class="meta">T3 · WU result · 2026-11-10 · Keel · branch <code>wu/E-SEED2/w12-owner-watch</code> off <code>epic/E-SEED2</code> <code>ef9ee75</code> · <a href="2026-11-10-w12-owner-watch-wu-plan.html">W12 plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome">Delivered against the requirement, which comes from the owner's request of 2026-11-10: the router must detect owner actions itself and never wait for "done". The plan was approved with D1–D6 as recommended. <code>scripts/router-watch.sh</code> handles the five kinds (<code>commit</code>, <code>signed</code>, <code>merged</code>, <code>pushed</code>, <code>tagged</code>). For each kind it polls git read-only, prints one event line followed by two-space detail lines, and exits 0. On no change it prints <code>TIMEOUT</code>, and on a failing origin <code>UNREACHABLE</code>. Arguments it cannot validate are refused with exit 2 before any poll. <code>scripts/router-guard.jq</code> admits exactly the five shapes. The owner's commits add the allow entries (<code>router-watch.sh</code> and the missing <code>wait</code>), the posture bullet and the skill text. That text tells the router to arm a watch for every staged owner action and to ask only for what cannot be observed.</p>
+
+<h2 id="deviations">Deviations</h2>
+<ul data-item="deviations" data-c="deviations">
+  <li><b>C4 dogfood event deferred to epic close.</b> The plan asked for one real wake line quoted here. The router can arm <code>router-watch.sh</code> only from a checkout that holds the script and the guard change. The router runs in <code>main</code>, so live use starts when E-SEED2 reaches main, and only after a router session restart picks up the new allow entries. The first real event line is recorded at epic close.</li>
+  <li><b>Review r1 fix round.</b> An independent review at <code>b997c0a</code> returned FIX: F1 (medium), where the <code>pushed</code> fetch wrote tags and <code>FETCH_HEAD</code>, plus F2–F10 (low). These were fixed in <code>3fa022b</code> (script and tests), <code>e7e4643</code> (DEC-30 amended, plan D2 and shapes) and the owner's <code>f387c3b</code> (F9 and F5 skill text). The router applied the owner's standing option A. The plan was updated to the fixed shapes: <code>DELETED</code>, untrusted detail lines, the fetch flags and the network attempt count.</li>
+  <li><b>W7 fixes carried in O1.</b> The owner's <code>b997c0a</code> also carries W7 review r2 N2/N3/N5 project-router fixes. This is outside W12's plan and is recorded so that the W7 merge does not apply them twice.</li>
+  <li><b>Expected merge overlaps with W7</b> (<code>wu/E-SEED2/w7-opus-policy</code>): the worker-ops.md "Watch" intro, hunks in <code>tests/router.rs</code>, and <code>.claude/skills/project-router/SKILL.md</code>. Whichever WU merges second resolves them.</li>
+</ul>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+  <p><b>Commits</b> on <code>epic/E-SEED2</code> <code>ef9ee75</code>:</p>
+  <ul>
+    <li><code>122a595</code>: the plan and the W12 card in the epic plan.</li>
+    <li><code>fa5a25d</code> (C1): <code>scripts/router-watch.sh</code> and its integration tests.</li>
+    <li><code>466e3f6</code> (C2): the guard admits <code>router-watch.sh</code>, with guard and settings-mapping cases.</li>
+    <li><code>03a91e9</code>: the backlog R7 follow-up row (D5).</li>
+    <li><code>c60fb65</code> (C3, owner, Reviewed-By): the keel-router skill text.</li>
+    <li><code>b997c0a</code> (O1, owner, Reviewed-By): the <code>.claude/</code> mirror, the settings allow entries and router.md.</li>
+    <li><code>3fa022b</code> and <code>e7e4643</code>: the review r1 fixes.</li>
+    <li><code>f387c3b</code> (owner, Reviewed-By): the review r1 F9 and F5 skill text.</li>
+    <li>This report.</li>
+  </ul>
+  <p><b>Reviews.</b> The independent review r1 at <code>b997c0a</code> returned FIX, and it was fixed as described above. The independent review r2 at <code>f387c3b</code> returned PASS, with low follow-ups N1–N3 (listed under Follow-ups).</p>
+  <p><b>Tests.</b> All of these are in <code>tests/router.rs</code>.</p>
+  <ul>
+    <li><b>Integration (the WU contract).</b> Five tests: <code>watch_refuses_bad_arguments_before_any_poll</code>, <code>watch_commit_reports_what_landed_against_what_was_staged</code>, <code>watch_signed_and_merged_report_the_note_and_how_the_tip_landed</code>, <code>watch_pushed_and_tagged_fire_on_origin_only</code> and <code>watch_times_out_and_reports_an_unreachable_origin</code>. They run in a temp checkout with a bare file-remote origin and the stepped <code>sleep</code> shim, with no network.</li>
+    <li><b>Guard.</b> <code>router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag</code> gained allow and deny cases for the watch shapes, and its settings mapping now covers <code>router-watch.sh</code>.</li>
+    <li><b>Unit layer.</b> Waived for the script per D6: it is one shell file with no seam below the process boundary.</li>
+    <li><b>Result.</b> <code>cargo test --test router</code> is green, 15 passed.</li>
+  </ul>
+  <p><b>Docs touched:</b></p>
+  <ul>
+    <li>The epic plan W12 card and the W12 plan.</li>
+    <li>This report.</li>
+    <li><code>decisions/router.html</code>: DEC-30 is amended for <code>router-watch.sh</code>.</li>
+    <li><code>backlog/e-router-v2.html</code>: a new R7 row.</li>
+    <li>The keel-router skill and its <code>references/</code>, under both <code>skills/</code> and <code>.claude/skills/</code>.</li>
+    <li>project-router and <code>.claude/agents/router.md</code>.</li>
+  </ul>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">Several T2 and T1 docs now carry W12's truth:</p>
+<ul data-c="distillation-list">
+  <li>DEC-30 (<a href="../decisions/router.html#dec-30">decisions/router.html</a>, T2) records the whitelist choice, which now includes <code>scripts/router-watch.sh</code>.</li>
+  <li>The backlog <a href="../backlog/e-router-v2.html#r7">R7</a> row (T2) records the <code>gh</code>-backed kinds that are out of scope.</li>
+  <li>The keel-router skill and its worker-ops and commands references hold the procedure: arm, timeouts, re-arm, and the unobservable table.</li>
+  <li>project-router holds the project facts.</li>
+  <li>The script and <code>tests/router.rs</code> (T4) are the truth for the event lines.</li>
+</ul>
+<p data-c="distillation-archive">The plan and this report are archived at epic close.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<ul data-item="follow-ups" data-c="follow-ups">
+  <li>Quote the first live <code>router-watch.sh</code> event line in the epic result. Live use starts once E-SEED2 is on main and the router session has restarted.</li>
+  <li>N1 (low): with git ≥ 2.48 and <code>followRemoteHEAD</code>, the <code>pushed</code> fetch may create <code>refs/remotes/origin/HEAD</code>. Add <code>-c remote.origin.followRemoteHEAD=never</code>.</li>
+  <li>N2 (low): an out-of-range <code>ROUTER_WATCH_MAX</code> gives an immediate <code>TIMEOUT</code> instead of a refusal. Cap its digits.</li>
+  <li>N3 (low): <code>clean()</code> misses UTF-8 U+0085 and U+2028, and 8-bit CSI, in detail lines.</li>
+  <li>The <code>gh</code>-backed watch kinds stay in backlog R7.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
