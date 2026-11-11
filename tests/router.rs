@@ -2934,8 +2934,12 @@ fn launcher_starts_a_worker_on_project_settings_alone_with_no_mcp_server() {
             assert!(!a.iter().any(|x| x == no), "{no} in {a:?}");
         }
         let prompt = a.last().unwrap();
+        // the sandbox sets GIT_* of its own (proxy, safe.directory), so the check is where git
+        // resolves, not an empty environment (E-ROUTER3.W8 live run)
         assert!(
-            prompt.contains("First action: env | grep ^GIT_ must print nothing"),
+            prompt.contains("First action: git rev-parse --show-toplevel must print /")
+                && prompt.contains("(if it prints anything else, report that and stop)")
+                && !prompt.contains("grep ^GIT_"),
             "{prompt}"
         );
         assert!(
