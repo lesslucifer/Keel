@@ -8,7 +8,7 @@ Source (lineage): a router session on the Trawler project (a Rust + Tauri app ru
 3. Verify third-party behaviour a design depends on in source at the pinned version; PLAUSIBLE is a lead. (B3, B4)
 4. Pass the model explicitly on every worker and review; check yours and theirs at start. (B7)
 5. One current task per message, ending "What you need to do now:"; self-contained; never point back, even on a re-ask. (A1–A5, A8, A13, A14)
-6. Headless workers: fresh per phase, `ls`-checked durable brief, one non-stop run, no mid-run questions, current router name. (C1–C4, C6)
+6. Headless workers: resumed for follow-up rounds (R15), `ls`-checked durable brief, one non-stop run, no mid-run questions, current router name. (C1–C4, C6)
 7. Never do the work, never launder a denial: the owner runs `mr`, merges, pushes, tags. (C5, D1, D2)
 8. Independent read-only Opus review of everything outside the gate before the owner signs. (B7, G2)
 9. Protect the owner's machine: backup/restore, temp homes, one e2e at a time, `lsof` first. (F1–F3)

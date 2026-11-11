@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af327e69f34851f0dfb2120" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-ROUTER3.W1 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-ROUTER3.W1 · Router↔worker messaging works both ways — result</h1>
+      <p>What was wrong, what changed, how it works now, and how it was proven. This covers both the technical design and the outcome.</p>
+      <div class="meta">T3 · WU result · 2026-11-10 · Keel · branch <code>wu/E-ROUTER3/w1-two-way-messaging</code> off <code>e421b20</code> · <a href="2026-11-10-w1-two-way-messaging-wu-plan.html">WU plan</a> · <a href="2026-11-10-e-router3-epic-plan.html#w1">epic plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="tldr">In one paragraph</h2>
+<p data-c="tldr">The router session is a coordinator that drives worker sessions. It talks to them with Claude Code's <code>SendMessage</code> tool. A safety hook, the <b>router guard</b>, inspects every tool call the router makes and blocks anything outside its whitelist. Until now the guard blocked every <code>SendMessage</code> that carried text, by design. In practice it also blocked the one kind it was meant to allow, a bare "tell me when you finish" subscription (backlog R8). This WU found why: Claude Code silently adds three fields to every <code>SendMessage</code> call before the guard sees it, and the guard rejected unknown fields. The guard now asks one question, "is there a named recipient?". The router can therefore message a running worker and get its reply. A real two-session run proved both directions.</p>
+
+<h2 id="background">Background: the pieces involved</h2>
+<table data-c="pieces">
+  <thead><tr><th>Piece</th><th>What it is</th><th>Where</th></tr></thead>
+  <tbody>
+    <tr><td>Router</td><td>A Claude Code session started as <code>agent: router</code>. It plans and dispatches, and it never implements. Its tools are deliberately limited.</td><td><code>.claude/agents/router.md</code></td></tr>
+    <tr><td>Worker</td><td>A headless <code>claude -p</code> session that does the actual WU work in its own git worktree. The router starts it through the launcher, under a name (<code>-n &lt;name&gt;</code>).</td><td><code>scripts/router-worker.sh</code></td></tr>
+    <tr><td>Router guard</td><td>A jq filter that Claude Code runs as a <code>PreToolUse</code> hook <i>before</i> every tool call. For a router session it returns "deny" or nothing (allow). For any other session it does nothing.</td><td><code>scripts/router-guard.jq</code>, wired in <code>.claude/settings.json</code></td></tr>
+    <tr><td><code>SendMessage</code></td><td>Claude Code's tool for messaging another session on the same machine, by name. With <code>notify_when_idle: true</code> the sender also gets one notice when the target finishes.</td><td>Claude Code built-in</td></tr>
+  </tbody>
+</table>
+
+<div class="diagram" data-c="flow-diagram">
+<pre class="mermaid">
+sequenceDiagram
+  participant R as Router session
+  participant CC as Claude Code harness
+  participant G as router-guard.jq (PreToolUse hook)
+  participant W as Worker session (claude -p -n name)
+  R->>CC: SendMessage {to, message}
+  CC->>CC: adds type, recipient, content
+  CC->>G: PreToolUse event (agent_type=router, tool_input)
+  alt to is a non-empty string
+    G-->>CC: (no output) = allow
+    CC->>W: message delivered at the worker's next tool round
+    W->>R: SendMessage reply (lands at the router's next tool round)
+    W-->>R: [Cross-session idle notice] when it finishes
+  else no recipient
+    G-->>CC: deny + reason
+    CC-->>R: tool call refused
+  end
+</pre>
+<div class="caption">How a router message travels now. The hook sees the call <i>after</i> the harness has rewritten it, which is the crux of R8.</div>
+</div>
+
+<h2 id="problem">The problem, and how it was found</h2>
+<div data-c="problem">
+  <p><b>Before:</b> the guard allowed <code>SendMessage</code> only when it met all of these at once:</p>
+  <ul>
+    <li><code>notify_when_idle</code> was exactly <code>true</code>.</li>
+    <li><code>message</code> was empty.</li>
+    <li>The input had no key other than <code>to</code>, <code>notify_when_idle</code>, <code>message</code> and <code>summary</code>.</li>
+  </ul>
+  <p>The tests passed because they fed the guard hand-written inputs. Real routers were still denied.</p>
+  <p><b>The capture:</b> to see what the guard actually receives, a throwaway repo was set up with a hook that only writes its input to a file. A headless <code>--agent router</code> session there made two calls, and the hook recorded them:</p>
+  <table data-c="capture-table">
+    <thead><tr><th>The router wrote</th><th>The guard received (<code>tool_input</code>)</th></tr></thead>
+    <tbody>
+      <tr><td><code>{"to":"e-x-w1","notify_when_idle":true}</code></td><td><code>{"to":"e-x-w1","message":"","notify_when_idle":true,<b>"type":"message","recipient":"e-x-w1","content":""</b>}</code></td></tr>
+      <tr><td><code>{"to":"e-x-w1","message":"ping…","summary":"ping"}</code></td><td><code>{"to":"e-x-w1","summary":"ping","message":"ping…",<b>"type":"message","recipient":"e-x-w1","content":"ping…"</b>}</code></td></tr>
+    </tbody>
+  </table>
+  <p>The bold keys are added by Claude Code (2.1.288). The old guard's closed key list rejected <code>type</code>, <code>recipient</code> and <code>content</code>, so even the bare subscription was denied. Running the old guard on these two captures confirms it: both are denied.</p>
+</div>
+
+<h2 id="why-guard">Why a guard change is the whole fix</h2>
+<div data-c="why-guard">
+  <p>Two-way messaging needs a transport and permission to use it.</p>
+  <ul>
+    <li><b>Transport:</b> Claude Code already provides it. <code>SendMessage</code> delivers text from any session to any other named session on the machine, in both directions. Keel builds nothing here, and the live probe below shows it working unmodified.</li>
+    <li><b>Permission:</b> the router guard was the only thing standing in the way. It runs only for <code>agent_type == "router"</code>, so it never judged a worker's calls. It blocked exactly one direction, router→worker, and in practice also the router's subscription.</li>
+  </ul>
+  <table data-c="why-guard-table">
+    <thead><tr><th>Direction</th><th>Before W1</th><th>After W1</th></tr></thead>
+    <tbody>
+      <tr><td>Router → worker, text (an answer, a clarification, a stop)</td><td><b>Denied</b> by design (DEC-36)</td><td>Allowed</td></tr>
+      <tr><td>Router → worker, "notify me when you finish" subscription</td><td><b>Denied in practice</b> (R8: the harness-added keys)</td><td>Allowed</td></tr>
+      <tr><td>Worker → router, text</td><td>Not blocked: the guard ignores worker sessions. Of little use, though: a question got no answer, because the router could not reply.</td><td>Allowed, and the router can now answer</td></tr>
+    </tbody>
+  </table>
+  <p>Lifting that one block completes the loop. The worker sends a question or report, and the router answers or redirects it. The worker replies to the <code>from</code> address on the message it received, and an unprompted report goes to the router's name, which every brief already carries ("report to the router's current name"). That is why the code diff is a few lines of jq. The rest of the WU is proof (the capture, tests and the live probe) and rules: the skill text decides what the router may say in a message (DEC-42).</p>
+</div>
+
+<h2 id="old-new">The guard rule, old and new, on a text message</h2>
+<div data-c="old-new">
+  <p>The guard does not allow or forbid fields. It reads a call's whole argument list (<code>tool_input</code>) and answers allow or deny. A router's text message reaches it as <code>{"to":"w1","message":"use the old flag","type":"message","recipient":"w1","content":"use the old flag"}</code>. The text rides in <code>message</code>, and <code>content</code> is the harness's copy of it.</p>
+  <table data-c="old-new-table">
+    <thead><tr><th></th><th>Old rule: allow only if all hold</th><th>New rule</th></tr></thead>
+    <tbody>
+      <tr><td>Conditions</td><td>
+        <ol>
+          <li><code>to</code> is a string.</li>
+          <li><code>notify_when_idle</code> is <code>true</code>.</li>
+          <li><code>message</code> is empty (the "no text" ban).</li>
+          <li>There are no keys besides <code>to</code>, <code>notify_when_idle</code>, <code>message</code> and <code>summary</code>.</li>
+        </ol></td><td>The arguments are an object, and <code>to</code> is a non-empty string. The text is never read.</td></tr>
+      <tr><td>Text message</td><td>Denied by conditions 2, 3 and 4.</td><td>Allowed</td></tr>
+      <tr><td>Subscription</td><td>Denied by condition 4, because of the harness keys (R8).</td><td>Allowed</td></tr>
+      <tr><td>No recipient</td><td>Denied</td><td>Denied</td></tr>
+    </tbody>
+  </table>
+  <p>Text gets through because the conditions that inspected it were deleted. The remaining <code>to</code> check only rejects a malformed call. What the router may say lives in the skill text (DEC-42), because code cannot tell a clarification from a new task.</p>
+</div>
+
+<h2 id="change">What changed</h2>
+<table data-c="change-table">
+  <thead><tr><th>File</th><th>Change</th><th>Commit</th></tr></thead>
+  <tbody>
+    <tr><td><code>scripts/router-guard.jq</code></td><td>The <code>SendMessage</code> branch is now one rule: allow if <code>tool_input</code> is an object and <code>to</code> is a non-empty string. Otherwise deny with "SendMessage needs a named recipient". Every other rule is unchanged: other tools, Bash and Write stay as locked down as before.</td><td><code>02ba403</code></td></tr>
+    <tr><td><code>tests/router.rs</code></td><td>
+      <ul>
+        <li>The two captured events are stored as fixtures, with paths and ids blanked out and the keys kept exactly as captured.</li>
+        <li>The new test <code>router_guard_allows_send_message_to_a_named_worker_as_the_harness_sends_it</code> allows both fixtures, a bare subscription, a content message and a stop request. It denies a missing, empty or non-string <code>to</code> and a non-object input.</li>
+        <li>The e2e now expects a steering message to pass the guard as <code>.claude/settings.json</code> wires it. It used to expect a deny.</li>
+        <li>The "confines the router to its tools" test no longer lists <code>SendMessage</code> as a forbidden tool.</li>
+      </ul></td><td><code>02ba403</code></td></tr>
+    <tr><td><code>docs/decisions/router.html</code>, <code>decisions-index.html</code></td><td>New <b>DEC-42</b>: the router may message a live worker, and a new task still travels as a brief. DEC-32 and DEC-36 are marked amended. Next free id: DEC-43.</td><td><code>a62ae8f</code></td></tr>
+    <tr><td><code>skills/keel-router/</code> and its <code>.claude/skills/</code> mirror (rule-bearing)</td><td>
+      <ul>
+        <li><b>Message to steer, brief to task:</b> a message carries an answer, a clarification or a stop. A new task goes through <code>router-worker.sh resume</code>, which snapshots and hashes the brief.</li>
+        <li><b>Resume by default:</b> follow-up rounds continue the worker's session instead of starting a fresh worker (R15).</li>
+        <li><b>Expired subscription → <code>wait</code></b> (R12).</li>
+        <li>The old "contentless shape only" text is removed.</li>
+      </ul></td><td><code>66588aa</code> (owner's <code>keel mr commit</code>)</td></tr>
+    <tr><td><code>docs/work/…-epic-plan.html</code></td><td>The branch is renamed to <code>epic/E-ROUTER3</code>. New rule: the owner gives a go before each WU.</td><td>with this report</td></tr>
+  </tbody>
+</table>
+
+<div class="callout" data-c="why-loose">
+  <p><b>Why the guard checks so little now.</b></p>
+  <ul>
+    <li>An allow-list of keys is what broke R8, and the harness can add keys in any release.</li>
+    <li>No jq rule can tell "clarify step 3" from "now also push to main". The difference is semantic, so the brief-only rule for new tasks lives in the router's skill text, not the guard.</li>
+  </ul>
+  <p>The accepted residual is that router text can now reach a full-tool worker without a hashed snapshot. That is DEC-33's risk class, and DEC-42 records it.</p>
+</div>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome"><b>Delivered.</b> The requirement holds. The guard allows a router's <code>SendMessage</code> exactly when <code>to</code> is a non-empty string, including the harness's real payloads for a subscription and for a content message. Every tool outside the router's list is still denied. Two-way delivery between a guarded router and a launcher-style worker was shown live. The skill text change landed as the owner's commit <code>66588aa</code>.</p>
+
+<h2 id="probe">Live probe (2026-11-10)</h2>
+<div data-c="probe">
+  <p>Two real headless sessions ran in throwaway repos, both with <code>--setting-sources project,local --strict-mcp-config</code>, so no Telegram poller started:</p>
+  <ol>
+    <li><b>probe-w</b> (the worker): permission mode <code>acceptEdits</code>, as the launcher runs workers. It ran <code>sleep 20</code> in a loop and waited for a message.</li>
+    <li><b>probe-r</b> (the router): <code>agent: router</code>, with this branch's guard wired exactly as <code>.claude/settings.json</code> wires it. It ran <code>ListAgents</code>, which found <code>probe-w</code> live and busy. It then sent <code>SendMessage {to: "probe-w", message: "ping-7731 from the router", notify_when_idle: true}</code>.</li>
+    <li><b>Guard:</b> it allowed the call. The router transcript has no "router guard" denial, and the input it judged carried the harness's extra keys.</li>
+    <li><b>Router → worker:</b> the worker received <code>ping-7731 from the router</code> from <code>probe-r</code> between two of its <code>sleep</code> calls, mid-run.</li>
+    <li><b>Worker → router:</b> the worker replied <code>pong: ping-7731 from the router</code>. The reply reached the router mid-turn, between its tool calls. The <code>[Cross-session idle notice]</code> for <code>probe-w</code> followed when the worker finished.</li>
+  </ol>
+  <p>The router ran in default mode and the worker in <code>acceptEdits</code>. The message was not held for approval despite the different modes, which the <code>SendMessage</code> tool text warns can happen.</p>
+</div>
+
+<h2 id="deviations">Deviations</h2>
+<div data-item="deviations" data-c="deviations">
+  <ul>
+    <li><b>No owner go before execution.</b> W1 was executed straight from the epic plan's defaults. The owner then ruled that every WU needs a go first, and the epic plan now says so. W1's work is up for that review through this report.</li>
+    <li><b>Skill text is slightly wider than planned:</b>
+      <ul>
+        <li>Lessons summary item 6 now says "resumed for follow-up rounds" in place of "fresh per phase", to match R15.</li>
+        <li>The brief's "no mid-run questions" reason is reworded: a headless worker that stops to ask exits, so the answer goes in its resume brief. The old reason, "cannot get the answer", is no longer true.</li>
+      </ul>
+      Both lines would otherwise contradict DEC-42.</li>
+    <li><b>Probe receiver:</b> the worker also copied its receipt to the session that ran this WU, as a second witness of worker→session delivery. That is beyond the plan.</li>
+    <li><b>Snapshot:</b> <code>docs/decisions/router.html</code>'s htmldoc id is unknown to the htmldoc server, so no pre-edit snapshot exists for its diff view. Use <code>git diff</code> for that file.</li>
+  </ul>
+</div>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+  <ul>
+    <li><b>Commits:</b>
+      <ul>
+        <li><code>6ea4737</code>: WU plan.</li>
+        <li><code>02ba403</code>: guard and tests.</li>
+        <li><code>a62ae8f</code>: DEC-42.</li>
+        <li><code>66588aa</code>: the skill change, the owner's rule-bearing commit (<code>Reviewed-By: username vuluu</code>).</li>
+        <li>This report and the epic-plan note.</li>
+      </ul></li>
+    <li><b>Tests:</b>
+      <ul>
+        <li><code>cargo test --test router</code>: 20 passed, run on the committed tree. In this worktree <code>router_bash_guard_judges_plain_words_…</code> fails. It reads <code>permissions.allow</code> from <code>.claude/settings.json</code>, and the owner's uncommitted edit removes that block. It is unrelated to this change.</li>
+        <li><code>cargo test --test init</code>: 11 passed (embedded skills).</li>
+        <li><code>cargo clippy --all-targets -D warnings</code>: clean.</li>
+      </ul></li>
+    <li><b>Red then green:</b> the guard at <code>e421b20</code> denies both captured payloads, and the new guard allows both.</li>
+    <li><b>Mirror:</b> <code>diff -r skills/keel-router .claude/skills/keel-router</code> is empty.</li>
+    <li><b>Docs:</b> <code>keel verify-doc</code> is green on the plan, this report, the epic plan and the decisions docs.</li>
+  </ul>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">DEC-42 is in <code>docs/decisions/router.html</code> (T2), and DEC-32 and DEC-36 are marked amended there. The keel-router skill carries the steer/brief rule, the resume default and the expired-subscription fallback. Per the epic's distillation plan, the UC-ROUTE-1 and UC-ROUTE-6 amendments and striking R8, R12 and R15 in <code>backlog/e-router-v2.html</code> happen at epic close.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<div data-item="follow-ups" data-c="follow-ups">
+  <ul>
+    <li><b>Owner:</b> decide on the uncommitted <code>.claude/settings.json</code> edit in this worktree. <code>keel preflight</code> needs a clean tree, and one router test reads the removed block.</li>
+    <li><b>Then:</b> the agent writes the test and doc notes, runs preflight and the independent keel-code-review, and stages <code>keel mr confirm wu</code>.</li>
+    <li><b>W5:</b> the remaining wording pass (R9 Wait/Report, R10, the <code>router.md</code> posture bullet). <b>W7:</b> the e2e drives a real message round-trip with the stub.</li>
+    <li><b>W2:</b> wait for the owner's go (epic plan rule).</li>
+  </ul>
+</div>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

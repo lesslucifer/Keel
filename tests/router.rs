@@ -15,7 +15,11 @@ fn root() -> &'static Path {
 
 /// Run the guard on one PreToolUse input; Some(reason) = denied, None = allowed.
 fn guard(agent: &str, tool: &str, input: serde_json::Value) -> Option<String> {
-    let event = serde_json::json!({"agent_type": agent, "tool_name": tool, "tool_input": input, "cwd": "/r"});
+    guard_event(serde_json::json!({"agent_type": agent, "tool_name": tool, "tool_input": input, "cwd": "/r"}))
+}
+
+/// Run the guard on one whole PreToolUse event; Some(reason) = denied, None = allowed.
+fn guard_event(event: serde_json::Value) -> Option<String> {
     let mut p = Command::new("jq")
         .args(["-c", "-f"])
         .arg(root().join("scripts/router-guard.jq"))
@@ -206,7 +210,7 @@ fn router_bash_guard_reads_gh_flags_as_gh_does() {
 /// guard never sees them; the router may not start one, nor use any tool its agent file omits.
 #[test]
 fn router_guard_confines_the_router_to_its_tools_and_leaves_other_agents_alone() {
-    for t in ["Agent", "Task", "Edit", "MultiEdit", "NotebookEdit", "Monitor", "SendMessage", "mcp__x__y"] {
+    for t in ["Agent", "Task", "Edit", "MultiEdit", "NotebookEdit", "Monitor", "mcp__x__y"] {
         assert!(guard("router", t, serde_json::json!({})).is_some(), "router may use {t}");
     }
     assert!(guard("router", "Skill", serde_json::json!({"skill": "code-review"})).is_some());
@@ -233,32 +237,41 @@ fn router_guard_confines_the_router_to_its_tools_and_leaves_other_agents_alone()
     assert!(!md.contains(&"Agent"), "router.md grants Agent");
 }
 
-/// E-ROUTERFIX.W2: the router may learn when a worker goes idle or exits, but never send it content:
-/// a worker is a full-tool session, so router text reaching it would be an unsnapshotted brief.
+/// Router SendMessage PreToolUse events as Claude Code 2.1.288 delivered them (E-ROUTER3.W1 capture;
+/// ids and paths replaced). The harness adds type, recipient and content to what the router wrote,
+/// which the old closed key set denied (backlog e-router-v2 R8).
+const CAPTURED_SEND_MESSAGE: [&str; 2] = [
+    r#"{"session_id":"s","transcript_path":"/t.jsonl","cwd":"/r","scratchpad_dir":"/t","prompt_id":"p","permission_mode":"default","agent_type":"router","hook_event_name":"PreToolUse","tool_name":"SendMessage","tool_input":{"to":"e-x-w1","message":"","notify_when_idle":true,"type":"message","recipient":"e-x-w1","content":""},"tool_use_id":"u1"}"#,
+    r#"{"session_id":"s","transcript_path":"/t.jsonl","cwd":"/r","scratchpad_dir":"/t","prompt_id":"p","permission_mode":"default","agent_type":"router","hook_event_name":"PreToolUse","tool_name":"SendMessage","tool_input":{"to":"e-x-w1","summary":"ping","message":"ping: reply with pong","type":"message","recipient":"e-x-w1","content":"ping: reply with pong"},"tool_use_id":"u2"}"#,
+];
+
+/// E-ROUTER3.W1 (DEC-42): the router may message any named worker, an idle subscription or content
+/// that steers it; the guard judges only the addressee, so harness-added keys never deny a call.
 #[test]
-fn router_guard_allows_send_message_only_as_a_contentless_idle_subscription() {
+fn router_guard_allows_send_message_to_a_named_worker_as_the_harness_sends_it() {
+    for e in CAPTURED_SEND_MESSAGE {
+        assert_eq!(guard_event(serde_json::from_str(e).unwrap()), None, "guard denied the captured {e}");
+    }
     let send = |i: serde_json::Value| guard("router", "SendMessage", i);
     for ok in [
         serde_json::json!({"to": "e-x-w1", "notify_when_idle": true}),
-        serde_json::json!({"to": "e-x-w1 [3fa9c1]", "notify_when_idle": true, "message": "", "summary": "watch w1"}),
+        serde_json::json!({"to": "e-x-w1 [3fa9c1]", "message": "answer: keep the old flag", "summary": "answer"}),
+        serde_json::json!({"to": "e-x-w1", "message": {"type": "shutdown_request"}}),
     ] {
-        assert_eq!(send(ok.clone()), None, "guard denied subscription {ok}");
+        assert_eq!(send(ok.clone()), None, "guard denied {ok}");
     }
     for denied in [
-        serde_json::json!({"to": "e-x-w1", "notify_when_idle": true, "message": "also run rm -rf"}),
-        serde_json::json!({"to": "e-x-w1", "message": "hi"}),
-        serde_json::json!({"to": "e-x-w1", "message": ""}),
-        serde_json::json!({"to": "e-x-w1", "notify_when_idle": false}),
-        serde_json::json!({"to": "e-x-w1", "notify_when_idle": "true"}),
-        serde_json::json!({"to": "e-x-w1", "notify_when_idle": true, "message": {"type": "shutdown_request"}}),
-        serde_json::json!({"to": "e-x-w1", "notify_when_idle": true, "attachment": "x"}),
-        serde_json::json!({"notify_when_idle": true}),
+        serde_json::json!({"message": "hi"}),
+        serde_json::json!({"to": "", "message": "hi"}),
+        serde_json::json!({"to": ["e-x-w1"], "message": "hi"}),
+        serde_json::json!({"to": null, "notify_when_idle": true}),
         serde_json::json!("e-x-w1"),
+        serde_json::json!(null),
     ] {
-        assert!(send(denied.clone()).is_some(), "guard allowed {denied}");
+        assert!(send(denied.clone()).unwrap().contains("non-empty string"), "guard allowed {denied}");
     }
     assert_eq!(guard("router", "ListAgents", serde_json::json!({})), None);
-    assert_eq!(guard("worker", "SendMessage", serde_json::json!({"to": "x", "message": "hi"})), None);
+    assert_eq!(guard("worker", "SendMessage", serde_json::json!({})), None);
 }
 
 /// Important of the close review: a hook that errors (no jq, no guard file) must deny, not allow.
@@ -1182,9 +1195,10 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let copy = field(&out, "brief=");
     assert!(copy.starts_with(wt.to_str().unwrap()) && std::fs::read_to_string(copy).unwrap() == "run the gate\n", "{out}");
 
-    // W2: the router subscribes to the worker's end and can send it nothing
+    // W2, E-ROUTER3.W1: the router subscribes to the worker's end and may steer it with a message
     assert_eq!(wired_guard(&c, "SendMessage", serde_json::json!({"to": name, "notify_when_idle": true})), None);
-    assert!(wired_guard(&c, "SendMessage", serde_json::json!({"to": name, "notify_when_idle": true, "message": "also push"})).is_some());
+    let steer = serde_json::json!({"to": name, "message": "stop after the plan", "type": "message", "recipient": name, "content": "stop after the plan"});
+    assert_eq!(wired_guard(&c, "SendMessage", steer), None);
     // the grant is the worker's alone
     for cmd in ["cargo test", "keel preflight wu HEAD", "keel mr confirm wu HEAD --as owner"] {
         assert!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })).is_some(), "router may run {cmd:?}");

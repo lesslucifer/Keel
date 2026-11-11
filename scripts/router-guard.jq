@@ -44,12 +44,9 @@ elif .tool_name == "Write" then
     then empty else deny("Write only worker briefs: <checkout>/.router/briefs/<name>.md") end
 elif .tool_name == "Skill" then
   if (.tool_input.skill // "" | IN(skills[])) then empty else deny("Skill only \(skills | join(", "))") end
-# Subscribe only: one idle/exit notice from a worker, never content. A worker is a full-tool session,
-# so any text the router sent it would be an instruction outside the brief the launcher snapshots.
-# Unknown keys are denied too, so a future content-bearing parameter cannot ride along.
+# Any message to a named worker (DEC-42): an idle subscription or content that steers a live worker.
+# The harness adds keys of its own (type, recipient, content), so only the addressee is judged.
 elif .tool_name == "SendMessage" then
-  .tool_input as $i
-  | if ($i | type) == "object" and ($i.to | type) == "string" and $i.notify_when_idle == true
-       and (($i.message // "") == "") and ($i | keys - ["to", "notify_when_idle", "message", "summary"] | length) == 0
-    then empty else deny("SendMessage only as a pure subscription: {to, notify_when_idle: true}, no message") end
+  if (.tool_input | type) == "object" and (.tool_input.to | type) == "string" and .tool_input.to != ""
+    then empty else deny("SendMessage needs a named recipient: to must be a non-empty string") end
 else empty end
