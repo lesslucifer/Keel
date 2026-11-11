@@ -218,12 +218,18 @@ you used and why when it is not the standard.
 | | In-session subagent | Headless `claude -p` |
 |---|---|---|
 | spawn | `Agent` (`name`, explicit `model`) | `<launcher> spawn …` (project-router names it) |
-| reach | `SendMessage` to its name (resumes it after it finished) | `<launcher> resume …` |
+| reach | `SendMessage` to its name (resumes it after it finished) | `SendMessage` to its name while it runs (steer); `<launcher> resume …` for a new task |
 | report | its `SubagentHandback`, delivered to you | Read `.router/out/<name>.out` |
 | survives | this router session only | router session ending or compacting (process runs on independently); NOT a machine reboot: brief + run dir on disk survive, the process does not, so relaunch from the brief |
 
-- **One fresh worker per phase** (plan, build, notes step, fix round, close).
-  Find a way yourself before handing the owner mechanics.
+- **Resume by default.** A follow-up round of a worker's own work (fix round,
+  notes step, close) resumes its session (`<launcher> resume`); start a fresh
+  worker only when the earlier context must not carry over (an independent
+  check, a review) or is gone. Find a way yourself before handing the owner
+  mechanics.
+- **Message to steer, brief to task (DEC-42).** `SendMessage` to a running
+  worker carries an answer, a clarification or a stop. A new task always goes
+  as a brief through `<launcher> resume`, which snapshots and hashes it.
 - **Spawn every worker and review subagent with the model and effort from
   the project's policy (project-router); the effort may be its default**.
   Never let one inherit your session's model or effort (an `Agent` subagent
@@ -232,7 +238,7 @@ you used and why when it is not the standard.
   rules, report protocol (`references/brief-skeleton.md`). Headless
   briefs live in the durable briefs dir; check the file exists before spawning.
 - Brief says: "ONE non-stop run; status messages are not stopping points" and
-  "no mid-run questions" (a worker that asks cannot get the answer): decide
+  "no mid-run questions" (a headless worker that stops to ask exits; the answer goes in its resume brief): decide
   reversible choices with a recommendation, else stop with options. Answers go
   into the next brief.
 - Report to the router's current name: what, doc, full sha, ordered cd-prefixed
