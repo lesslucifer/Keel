@@ -1,6 +1,6 @@
 //! The router's enforcement surface (E-ROUTER close review): the PreToolUse guard
-//! `scripts/router-guard.jq` as `.claude/settings.json` wires it, the headless launcher
-//! `scripts/router-worker.sh` (with a stub `claude`) including its `wait` mode, and the shipped PUSHED watch probe.
+//! `scripts/router-guard.jq` as `.claude/settings.json` wires it, the background-session launcher
+//! `scripts/router-worker.sh` (with a stub `claude`), the owner-action watch, and the shipped PUSHED watch probe.
 //! Needs `jq`, `sh`, `uuidgen` and `shasum` on PATH, as the guard and launcher do.
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -125,9 +125,8 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "gh pr list --state open -L 5 --author vuluu".into(),
         "gh pr status".into(),
         "scripts/router-worker.sh spawn e-x-w1 /Users/o/Keel-x .router/briefs/e-x-w1.md opus".into(),
-        "scripts/router-worker.sh resume e-x-w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b /Users/o/Keel-x .router/briefs/e-x-w1-r1.md opus --effort high".into(),
-        "scripts/router-worker.sh wait e-x-w1".into(),
-        "scripts/router-worker.sh wait e-x-w1 30".into(),
+        "scripts/router-worker.sh resume e-x-w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b /Users/o/Keel-x .router/briefs/e-x-w1-r1.md".into(),
+        "scripts/router-worker.sh stop e-x-w1".into(),
         "scripts/router-watch.sh commit wu/E-SEED2/w12-owner-watch fa5a25d16d953d5858c35b58e6025a6a7903ff8b skills/keel-router/SKILL.md .claude/skills/keel-router/SKILL.md".into(),
         "scripts/router-watch.sh signed fa5a25d16d953d5858c35b58e6025a6a7903ff8b".into(),
         "scripts/router-watch.sh merged fa5a25d epic/E-SEED2".into(),
@@ -137,14 +136,14 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
     ];
     // permissions.allow serves workers and the router alike: every router entry is a shape the guard
     // accepts (one source of truth, no drift); every worker-only entry is one it refuses the router.
-    // `wait` (E-SEED2.W8) and `router-watch.sh` (E-SEED2.W12) are router entries; cargo/keel are
+    // the launcher and `router-watch.sh` (E-SEED2.W12) are router entries; cargo/keel are
     // worker-only, and these shapes stay refused whether or not settings lists them.
     let mut worker_only: Vec<String> =
         ["cargo test", "cargo build", "keel notes write test", "keel preflight wu HEAD", "keel check"].map(String::from).to_vec();
     for a in settings()["permissions"]["allow"].as_array().unwrap() {
         let a = a.as_str().unwrap().strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
         let cmd = match a.strip_suffix(" *") {
-            Some(p) if p.ends_with(" wait") => format!("{p} n 15"),
+            Some(p) if p.ends_with(" stop") => format!("{p} n"),
             Some(p) if p.ends_with("router-watch.sh") => format!("{p} signed 1a2b3c4"),
             Some(p) if p.starts_with("scripts/") => format!("{p} n /w .router/briefs/n.md opus"),
             Some(p) => format!("{p} HEAD"),
@@ -341,30 +340,44 @@ struct Launcher {
     wt: PathBuf,
     wt2: PathBuf,
     stub: PathBuf,
-    release: PathBuf,
+    state: PathBuf,
 }
 
-/// The stub `claude` the launcher starts through $ROUTER_CLAUDE; its behaviour is described on `launcher`.
+/// The stub `claude` the launcher runs through $ROUTER_CLAUDE, playing Claude Code 2.1.288's
+/// background CLI as the E-ROUTER3.W10 probes saw it. Every call appends its working directory and
+/// its argv (each argument bracketed, so boundaries are visible) to $STUB_STATE/calls and exits at
+/// once. `--bg` lists a new idle background session in $STUB_STATE/sessions.json (named by `-n`, or on
+/// `--resume` by the session's own saved name) and prints the `backgrounded` line; while
+/// $STUB_STATE/refuse exists it prints that file and exits 1, and while $STUB_STATE/unlisted exists it
+/// starts nothing it lists. `agents --json` prints the list; while $STUB_STATE/agents-ok holds k it
+/// succeeds k more times, then fails printing to stderr only. After printing: while $STUB_STATE/vanish
+/// exists it empties the list (a session that ends between two looks), while $STUB_STATE/swap exists a
+/// busy session is replaced by an idle one of the same name under a new id, and while
+/// $STUB_STATE/settle exists every session turns idle (a turn that ends between two looks). `stop <id>`
+/// delists the id, `rm` only records.
 fn stub_claude(stub: &Path) {
     std::fs::write(stub, concat!(
-        "#!/bin/sh\necho \"stub $*\"\nprintf '[%s]' \"$@\"; echo\n",
-        "held() { [ ! -e \"$STUB_RELEASE\" ] && [ -d \"${STUB_RELEASE%/*}\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; }\n",
-        "(while kill -0 $$ 2>/dev/null && [ -d \"${STUB_RELEASE%/*}\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done\n",
-        " kill -0 $$ 2>/dev/null && kill $$ 2>/dev/null) &\n",
-        "(while held; do sleep 0.05; done) | cut -c 1 &\n",
-        "n=0\nwhile read -r line; do\n  n=$((n + 1))\n  echo '{\"type\":\"system\",\"subtype\":\"init\"}'\n  echo '{\"type\":\"user\",\"isReplay\":true}'\n",
-        "  while held; do\n",
-        "    [ ! -e \"$STUB_RELEASE.busy\" ] || /bin/sh -c 'while [ -e \"$STUB_RELEASE.busy\" ] && [ ! -e \"$STUB_RELEASE\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done; :'\n",
-        "    sleep 0.05\n  done\n",
-        "  echo \"{\\\"duration_ms\\\":1,\\\"type\\\":\\\"result\\\",\\\"subtype\\\":\\\"success\\\",\\\"result\\\":\\\"report $n\\\"}\"\n",
-        "  echo '{\"type\":\"command_lifecycle\"}'\n",
-        "done\n",
-        "while [ -e \"$STUB_RELEASE.linger\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done\n"
+        "#!/bin/sh\nS=$STUB_STATE\nprintf '%s ' \"$PWD\" >> \"$S/calls\"; printf '[%s]' \"$@\" >> \"$S/calls\"; echo >> \"$S/calls\"\n",
+        "[ -s \"$S/sessions.json\" ] || echo '[]' > \"$S/sessions.json\"\n",
+        "case \"$1\" in\n",
+        "  agents) if [ -e \"$S/agents-ok\" ]; then k=$(cat \"$S/agents-ok\"); [ \"$k\" -gt 0 ] || { echo 'Error: no supervisor' >&2; exit 1; }; echo $((k - 1)) > \"$S/agents-ok\"; fi\n",
+        "    cat \"$S/sessions.json\"; [ ! -e \"$S/vanish\" ] || echo '[]' > \"$S/sessions.json\"\n",
+        "    [ ! -e \"$S/swap\" ] || { jq 'map(if .status == \"busy\" then .id = \"new0\" | .sessionId = \"new0-x\" | .status = \"idle\" else . end)' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }\n",
+        "    [ ! -e \"$S/settle\" ] || { jq 'map(.status = \"idle\")' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }; exit 0;;\n",
+        "  stop) jq --arg i \"$2\" 'map(select(.id != $i))' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; echo \"stopped $2\"; exit 0;;\n",
+        "  rm) echo \"removed $2\"; exit 0;;\n",
+        "esac\n",
+        "[ ! -e \"$S/refuse\" ] || { cat \"$S/refuse\"; exit 1; }\n",
+        "name= sid=\nwhile [ $# -gt 0 ]; do case \"$1\" in -n) name=$2;; --resume) sid=$2;; esac; shift; done\n",
+        "if [ -n \"$sid\" ]; then name=$(sed -n \"s/^$sid //p\" \"$S/names\"); else sid=$(uuidgen | tr A-F a-f); echo \"$sid $name\" >> \"$S/names\"; fi\n",
+        "id=${sid%%-*}\n",
+        "[ -e \"$S/unlisted\" ] || { jq --arg n \"$name\" --arg i \"$id\" --arg s \"$sid\" --arg c \"$PWD\" '. + [{pid: 1, id: $i, cwd: $c, kind: \"background\", sessionId: $s, name: $n, status: \"idle\", state: \"done\"}]' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }\n",
+        "echo \"backgrounded · $id · $name\"\n"
     )).unwrap();
     std::fs::set_permissions(stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
 
-/// `wait` and `router-watch.sh` sleep once per poll; this `<base>/shim/sleep` counts the polls in
+/// `router-watch.sh` sleeps once per poll; this `<base>/shim/sleep` counts the polls in
 /// $STEP_DIR/polls (its argument, one per line, in $STEP_DIR/sleeps) and blocks poll n until the test
 /// creates $STEP_DIR/go-n, so each poll judges a state the test has set. It ends with its caller or the test process.
 fn sleep_shim(base: &Path) {
@@ -377,15 +390,7 @@ fn sleep_shim(base: &Path) {
     std::fs::set_permissions(base.join("shim/sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
 
-/// A repo whose main checkout holds the launcher, two linked worktrees, a stub claude and a `sleep`
-/// shim. The stub prints its argv (joined, then each argument bracketed so boundaries are visible),
-/// then plays a long-running stream-json session as Claude Code 2.1.288 streams it: for each stdin line
-/// it opens a turn (system/init, then the brief's replay) and holds it until $STUB_RELEASE exists, so the launcher's startup
-/// window never races a timer, then prints one result event (`report <n>`, `type` not the first key)
-/// and a trailing command_lifecycle event; it exits at stdin EOF (lingering while $STUB_RELEASE.linger exists), and once the test's temp dir or the test process
-/// ($STUB_OWNER) is gone, so a failed test leaks no stub. While held it keeps a subshell piped to `cut -c` (long-lived children that are not
-/// `<shell> -c`, as an MCP server is), and runs a `sh -c` child, as a Bash tool command runs, while
-/// $STUB_RELEASE.busy exists.
+/// A repo whose main checkout holds the launcher, two linked worktrees and the stub claude.
 fn launcher() -> Launcher {
     let d = TempDir::new().unwrap();
     let base = d.path().canonicalize().unwrap();
@@ -404,8 +409,9 @@ fn launcher() -> Launcher {
     git(&main, &["worktree", "add", "-q", "../wt2", "-b", "w2"]);
     let stub = base.join("claude");
     stub_claude(&stub);
-    sleep_shim(&base);
-    Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub, release: base.join("release"), _d: d }
+    let state = base.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub, state, _d: d }
 }
 
 impl Launcher {
@@ -419,10 +425,7 @@ impl Launcher {
             .args(args)
             .current_dir(&self.main)
             .env("ROUTER_CLAUDE", &self.stub)
-            .env("STUB_RELEASE", &self.release)
-            .env("STUB_OWNER", std::process::id().to_string())
-            .env("CLAUDE_CONFIG_DIR", self.main.parent().unwrap().join("config"))
-            .env("ROUTER_WAIT_POLL", "0.2")
+            .env("STUB_STATE", &self.state)
             .envs(env.iter().copied());
         c
     }
@@ -430,37 +433,6 @@ impl Launcher {
     fn run_env(&self, args: &[&str], env: &[(&str, &str)]) -> (bool, String) {
         let o = self.cmd(args, env).output().unwrap();
         (o.status.success(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
-    }
-
-    /// Start `wait` in the background, as the router runs it, its polls stepped by the test.
-    fn wait_stepped(&self, args: &[&str], k: &str) -> Stepped {
-        let base = self.main.parent().unwrap();
-        let dir = base.join(format!("steps-{k}"));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = format!("{}:{}", base.join("shim").display(), std::env::var("PATH").unwrap());
-        let owner = std::process::id().to_string();
-        let env = [("STEP_DIR", dir.to_str().unwrap()), ("STUB_OWNER", owner.as_str()), ("PATH", path.as_str())];
-        let child = self.cmd(args, &env).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
-        Stepped { child, dir }
-    }
-
-    /// Spawn or resume worker n, held alive until `release` is created; returns the launcher's line.
-    fn hold(&self, args: &[&str], release: &Path) -> String {
-        let owner = std::process::id().to_string();
-        let (ok, out) = self.run_env(args, &[("STUB_RELEASE", release.to_str().unwrap()), ("STUB_OWNER", owner.as_str())]);
-        assert!(ok && out.starts_with("RUNNING"), "{out}");
-        out
-    }
-
-    /// The session transcript `wait` reads for this spawn, under the stubbed CLAUDE_CONFIG_DIR. Claude
-    /// Code names the project dir after the worktree, but truncates a long name and appends a hash, and
-    /// encodes non-ASCII per UTF-16 unit; the dir here matches no re-derivable rule, so `wait` must find
-    /// the transcript by its unique session id alone.
-    fn transcript(&self, wt: &Path, sid: &str) -> PathBuf {
-        let enc: String = wt.to_str().unwrap().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
-        let dir = self.main.parent().unwrap().join("config/projects").join(format!("{}-1k9x2q", &enc[..enc.len().min(20)]));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.join(format!("{sid}.jsonl"))
     }
 
     /// Commit `config` as the main checkout's .keel/config.toml (None: remove it), the HEAD the launcher reads.
@@ -474,27 +446,53 @@ impl Launcher {
         git(&self.main, &["commit", "-qm", "config"]);
     }
 
-    /// Release every held stub, `stop` the worker, wait (bounded) until the worker recorded in
-    /// <name>.pid has exited, then re-arm the hold for the next run.
-    fn wait_exit(&self, name: &str) {
-        std::fs::write(&self.release, "").unwrap();
-        let _ = self.run(&["stop", name]);
-        let pid = std::fs::read_to_string(self.main.join(format!(".router/out/{name}.pid"))).unwrap();
-        let t = Instant::now();
-        while Command::new("kill").args(["-0", pid.trim()]).stderr(Stdio::null()).status().unwrap().success() {
-            assert!(t.elapsed() < Duration::from_secs(20), "stub worker never exited");
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        std::fs::remove_file(&self.release).unwrap();
+    /// The router closes an idle worker.
+    fn stop(&self, name: &str) {
+        let (ok, out) = self.run(&["stop", name]);
+        assert!(ok && out.starts_with(&format!("STOPPED name={name} ")), "{out}");
     }
+
+    /// How many sessions the launcher started under `name`.
+    fn starts(&self, name: &str) -> usize {
+        calls(&self.state).iter().filter(|(_, a)| a.first().map(String::as_str) == Some("--bg") && a.windows(2).any(|w| w[0] == "-n" && w[1] == name)).count()
+    }
+
+    /// PATH with an instant `sleep` first, so the launcher's bounded polls run without waiting.
+    fn fast_path(&self) -> String {
+        let shim = self.state.join("shim");
+        std::fs::create_dir_all(&shim).unwrap();
+        std::fs::write(shim.join("sleep"), "#!/bin/sh\n:\n").unwrap();
+        std::fs::set_permissions(shim.join("sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        format!("{}:{}", shim.display(), std::env::var("PATH").unwrap())
+    }
+
+    fn sessions(&self) -> Vec<serde_json::Value> {
+        serde_json::from_str(&std::fs::read_to_string(self.state.join("sessions.json")).unwrap()).unwrap()
+    }
+
+    fn set_sessions(&self, rows: &[serde_json::Value]) {
+        std::fs::write(self.state.join("sessions.json"), serde_json::to_string(rows).unwrap()).unwrap();
+    }
+}
+
+/// Every call the stub recorded under `state`: its working directory and its argv.
+fn calls(state: &Path) -> Vec<(String, Vec<String>)> {
+    std::fs::read_to_string(state.join("calls"))
+        .unwrap_or_default()
+        .lines()
+        .map(|l| {
+            let (dir, argv) = l.split_once(" [").unwrap();
+            (dir.to_string(), argv.trim_end_matches(']').split("][").map(String::from).collect())
+        })
+        .collect()
 }
 
 fn field<'a>(out: &'a str, k: &str) -> &'a str {
     out.split_whitespace().find_map(|w| w.strip_prefix(k)).unwrap_or_else(|| panic!("no {k} in {out}"))
 }
 
-/// The launcher's refusals (none had a test before the close review) and the two importants it
-/// fixed: one live run per name, and <name>.out holding only the latest run's report.
+/// The launcher's refusals (none had a test before the close review), one live session per name
+/// (E-ROUTER3.W10: any session the CLI lists under it, wherever it runs), and resume bound to its spawn.
 #[test]
 fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
     let l = launcher();
@@ -510,7 +508,7 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
         (vec!["spawn", "n", wt, brief, "sonnet"], "model must be opus ([router] worker_model in .keel/config.toml)"),
         (vec!["spawn", "n", wt, brief, "haiku"], "model must be opus ([router] worker_model in .keel/config.toml)"),
         (vec!["spawn", "n", wt, brief, "fable"], "model must be opus ([router] worker_model in .keel/config.toml)"),
-        (vec!["resume", "n", "0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b", wt, brief, "sonnet"], "model must be opus"),
+        (vec!["resume", "n", "0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b", wt, brief, "opus"], "resume <name> <uuid> <worktree> <note.md>"),
         (vec!["spawn", "n", wt, "scripts/router-worker.sh", "opus"], "file must be a .md under"),
     ] {
         let (ok, out) = l.run(&args);
@@ -529,22 +527,32 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
     // a second run under a live name is refused, spawn or resume
     let (ok, out) = l.run(&["spawn", "n", wt2, brief, "opus"]);
     assert!(!ok && out.contains("still running"), "{out}");
-    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "opus"]);
+    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief]);
     assert!(!ok && out.contains("still running"), "{out}");
-    l.wait_exit("n");
+    l.stop("n");
 
-    // resume is bound to the spawn's name, session and worktree
-    let (ok, out) = l.run(&["resume", "n", &sid, wt2, brief, "opus"]);
+    // any listed session holds its name, whatever its directory or kind: SendMessage addresses by name
+    let elsewhere = serde_json::json!({"id": "e1", "sessionId": "e1", "name": "n", "cwd": "/elsewhere", "kind": "interactive", "status": "busy"});
+    l.set_sessions(&[elsewhere]);
+    let (ok, out) = l.run(&["spawn", "n", wt, brief, "opus"]);
+    assert!(!ok && out.contains("still running"), "{out}");
+    l.set_sessions(&[]);
+
+    // resume is bound to the spawn's name, session and worktree, and takes no option: a session
+    // wakes with the options it was spawned with
+    let (ok, out) = l.run(&["resume", "n", &sid, wt2, brief]);
     assert!(!ok && out.contains("was spawned in"), "{out}");
-    let (ok, out) = l.run(&["resume", "m", &sid, wt, brief, "opus"]);
+    let (ok, out) = l.run(&["resume", "m", &sid, wt, brief]);
     assert!(!ok && out.contains("no recorded spawn"), "{out}");
-    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "opus"]);
-    assert!(ok && out.starts_with("RUNNING"), "{out}");
-    l.wait_exit("n");
-
-    let log = std::fs::read_to_string(l.main.join(".router/out/n.out")).unwrap();
-    assert_eq!(log.matches("stub ").count(), 1, "n.out must hold only the latest run:\n{log}");
-    assert!(log.contains(&format!("--resume {sid}")), "{log}");
+    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "--effort", "high"]);
+    assert!(!ok && out.contains("resume <name> <uuid> <worktree> <note.md>"), "{out}");
+    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief]);
+    assert!(ok && out.starts_with(&format!("RUNNING name=n id={} session={sid} snapshot=", &sid[..8])), "{out}");
+    let (dir, a) = calls(&l.state).into_iter().rfind(|(_, a)| a[0] == "--bg").unwrap();
+    assert_eq!(dir, wt);
+    assert_eq!(a[..3], ["--bg", "--resume", sid.as_str()], "{a:?}");
+    assert!(a.len() == 4 && a[3].starts_with("Continue your work. Read ") && a[3].contains(field(&out, "brief=")), "{a:?}");
+    l.stop("n");
 
     // E-SEED2.W7 (DEC-39): the policy is [router] in .keel/config.toml as committed at HEAD; anything
     // the launcher's narrow reader does not accept refuses the run and starts nothing
@@ -612,7 +620,7 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
         l.commit_config(config.as_deref());
         let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus"]);
         assert!(!ok && out.contains("no worker policy: [router] worker_model / worker_efforts / worker_default_effort in .keel/config.toml at HEAD of"), "{what}: {out}");
-        assert!(!l.main.join(".router/out/q.pid").exists(), "{what}: started a worker");
+        assert_eq!(l.starts("q"), 0, "{what}: started a worker");
     }
 
     // an uncommitted edit, even staged, cannot widen the committed policy
@@ -630,41 +638,26 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
     assert!(!ok && out.contains("model must be sonnet ([router] worker_model"), "{out}");
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
     assert!(ok && out.contains(" effort=high "), "{out}");
-    l.wait_exit("q");
+    l.stop("q");
 
     // the accepted efforts are the committed list, not a built-in one: narrowed, medium is refused;
-    // widened, max is accepted on spawn and resume
+    // widened, max is accepted
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "medium"]);
     assert!(!ok && out.contains("effort must be one of: high ("), "{out}");
     l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"max\"]\nworker_default_effort = \"high\"\n"));
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "max"]);
     assert!(ok && out.contains(" effort=max "), "{out}");
-    let sid = field(&out, "session=").to_string();
-    l.wait_exit("q");
-    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "max");
-    let (ok, out) = l.run(&["resume", "q", &sid, wt, brief, "sonnet", "--effort", "medium"]);
-    assert!(!ok && out.contains("effort must be one of: high max ("), "{out}");
-    let (ok, out) = l.run(&["resume", "q", &sid, wt, brief, "sonnet", "--effort", "max"]);
-    assert!(ok && out.contains(" effort=max "), "{out}");
-    l.wait_exit("q");
-    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "max");
+    l.stop("q");
+    assert_eq!(option(&worker_argv(&l.state, "q"), "--effort"), "max");
 
-    // the default is worker_default_effort, not the list's first entry: a bare spawn and a bare
-    // resume of a session spawned at high both run at medium; read from HEAD on a branch other than main
+    // the default is worker_default_effort, not the list's first entry, read from HEAD on a branch
+    // other than main
     git(&l.main, &["checkout", "-qb", "router"]);
     l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"medium\"]\nworker_default_effort = \"medium\"\n"));
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
     assert!(ok && out.contains(" effort=medium "), "{out}");
-    l.wait_exit("q");
-    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "medium");
-    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "high"]);
-    assert!(ok && out.contains(" effort=high "), "{out}");
-    let sid = field(&out, "session=").to_string();
-    l.wait_exit("q");
-    let (ok, out) = l.run(&["resume", "q", &sid, wt, brief, "sonnet"]);
-    assert!(ok && out.contains(" effort=medium "), "{out}");
-    l.wait_exit("q");
-    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "medium");
+    l.stop("q");
+    assert_eq!(option(&worker_argv(&l.state, "q"), "--effort"), "medium");
 
     // every level word is accepted when committed: low and xhigh, as the default and as --effort (review r5 V1)
     l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"low\", \"xhigh\"]\nworker_default_effort = \"low\"\n"));
@@ -673,8 +666,8 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
         args.extend(&extra);
         let (ok, out) = l.run(&args);
         assert!(ok && out.contains(&format!(" effort={effort} ")), "{out}");
-        l.wait_exit("q");
-        assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), effort);
+        l.stop("q");
+        assert_eq!(option(&worker_argv(&l.state, "q"), "--effort"), effort);
     }
 
     // the reader's accepted edges in one policy: a tab before the header's comment, a dotted and
@@ -684,7 +677,7 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
     for effort in ["low", "medium", "xhigh"] {
         let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus-4.5", "--effort", effort]);
         assert!(ok && out.contains(&format!(" effort={effort} ")), "{out}");
-        l.wait_exit("q");
+        l.stop("q");
     }
     // an effort matches a whole list entry, never part of one
     for part in ["med", "igh", "low medium"] {
@@ -722,18 +715,20 @@ const WORKER_GRANTS: [&str; 11] = [
 ];
 const WORKER_DENIES: [&str; 4] = ["Bash(keel mr)", "Bash(keel mr *)", "Bash(cargo run)", "Bash(cargo run *)"];
 
-/// The argv the stub `claude` recorded for worker <name> under `checkout`'s .router/out, read from its
-/// bracketed line (one item per argv element: a word-split `Bash(cargo build *)` cannot pass). Every
-/// worker, spawned or resumed, gets exactly these options once each and the fixed grant/deny lists;
-/// an extra `--allowedTools Bash(*)` or a bypass flag fails here.
-fn worker_argv(checkout: &Path, name: &str) -> Vec<String> {
-    let out = std::fs::read_to_string(checkout.join(format!(".router/out/{name}.out"))).unwrap();
-    let line = out.lines().find(|x| x.starts_with('[')).unwrap_or_else(|| panic!("no stub argv: {out}"));
-    let a: Vec<String> = line[1..line.len() - 1].split("][").map(String::from).collect();
+/// The argv of the latest background session the stub started under <name>. Every spawned worker gets
+/// exactly these options once each, in this order, with the fixed grant/deny lists, and the fixed
+/// prompt last, after a single-valued option (after a list option it would be read as a tool name);
+/// an extra `--allowedTools Bash(*)`, a bypass flag, `-p` or a stream flag fails here.
+fn worker_argv(state: &Path, name: &str) -> Vec<String> {
+    let (_, a) = calls(state)
+        .into_iter()
+        .rfind(|(_, a)| a[0] == "--bg" && a.windows(2).any(|w| w[0] == "-n" && w[1] == name))
+        .unwrap_or_else(|| panic!("no session started for {name}"));
     let flags: Vec<&str> = a.iter().map(String::as_str).filter(|x| x.starts_with('-')).collect();
-    let start = if flags.contains(&"--resume") { "--resume" } else { "--session-id" };
-    let expected = ["-p", "--input-format", "--output-format", "--verbose", "--replay-user-messages", start, "--allowedTools", "--disallowedTools", "-n", "--model", "--effort", "--agent", "--permission-mode", "--max-budget-usd"];
-    assert_eq!(flags, expected, "{name}: options in {a:?}");
+    assert_eq!(flags, ["--bg", "-n", "--model", "--effort", "--agent", "--allowedTools", "--disallowedTools", "--permission-mode"], "{name}: options in {a:?}");
+    assert_eq!(option(&a, "--agent"), "worker");
+    assert_eq!(a[a.len() - 3], "--permission-mode", "{name}: the prompt must follow --permission-mode's value: {a:?}");
+    assert!(a[a.len() - 1].starts_with("You are a fresh worker session. Read "), "{a:?}");
     let list = |flag: &str| -> Vec<String> {
         let i = a.iter().position(|x| x == flag).unwrap();
         a[i + 1..].iter().take_while(|x| !x.starts_with('-')).cloned().collect()
@@ -749,17 +744,17 @@ fn option(a: &[String], flag: &str) -> String {
     a[a.iter().position(|x| x == flag).unwrap() + 1].clone()
 }
 
-/// E-ROUTERFIX.W1: headless workers were refused cargo/keel (nobody can approve a `claude -p`
-/// prompt), and the launcher hardcoded acceptEdits. The grant travels on the launcher's argv only;
-/// the mode is a validated per-run option.
+/// E-ROUTERFIX.W1: workers were refused cargo/keel, and the launcher hardcoded acceptEdits. The grant
+/// travels on the launcher's argv only; the mode is a validated per-run option. E-ROUTER3.W10: the
+/// worker is one `claude --bg` started in its worktree, with no print-mode, stream or budget flag.
 #[test]
-fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
+fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validated_mode() {
     let l = launcher();
     let wt = l.wt.to_str().unwrap();
     let brief = ".router/briefs/b.md";
     let mode_of = |name: &str| {
-        l.wait_exit(name);
-        let a = worker_argv(&l.main, name);
+        l.stop(name);
+        let a = worker_argv(&l.state, name);
         option(&a, "--permission-mode")
     };
     let run_dir = |name: &str, kind: &str, file: &str| {
@@ -770,7 +765,7 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
                 let f = p.file_name().unwrap().to_str().unwrap();
                 f.starts_with(&format!("{name}-")) && f.ends_with(&format!("-{kind}"))
             })
-            .map(|p| std::fs::read_to_string(p.join(file)).unwrap().trim().to_string())
+            .filter_map(|p| std::fs::read_to_string(p.join(file)).ok().map(|v| v.trim().to_string()))
             .collect();
         values.sort();
         values
@@ -805,11 +800,14 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
         args.extend(&extra);
         let (ok, out) = l.run(&args);
         assert!(!ok && out.contains(why), "{extra:?} not refused for {why}: {out}");
-        assert!(!l.main.join(format!(".router/out/{name}.pid")).exists(), "{extra:?} started a worker");
+        assert_eq!(l.starts(&name), 0, "{extra:?} started a worker");
     }
 
     let (ok, out) = l.run(&["spawn", "d", wt, brief, "opus"]);
     assert!(ok && out.contains("permission-mode=acceptEdits"), "{out}");
+    let (dir, _) = calls(&l.state).into_iter().rfind(|(_, a)| a[0] == "--bg").unwrap();
+    assert_eq!(dir, wt, "the worker runs in its worktree");
+    assert!(field(&out, "brief=").starts_with(wt) && worker_argv(&l.state, "d").last().unwrap().contains(field(&out, "brief=")), "{out}");
     let (ok, out) = l.run(&["spawn", "p", wt, brief, "opus", "--permission-mode", "plan"]);
     assert!(ok && out.contains("permission-mode=plan"), "{out}");
     let sid = field(&out, "session=").to_string();
@@ -819,26 +817,23 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
     assert_eq!(run_dir_mode("d", "spawn"), ["acceptEdits"]);
     assert_eq!(run_dir_mode("p", "spawn"), ["plan"]);
 
-    // a resume states its own mode or gets the default; it never inherits the spawn's plan
-    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus"]);
-    assert!(ok && out.contains("permission-mode=acceptEdits"), "{out}");
-    assert_eq!(mode_of("p"), "acceptEdits");
-    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus", "--permission-mode", "plan"]);
-    assert!(ok && out.contains("permission-mode=plan"), "{out}");
-    assert_eq!(mode_of("p"), "plan");
-    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus", "--permission-mode", "bypassPermissions"]);
-    assert!(!ok && out.contains("permission mode must be"), "{out}");
-    assert_eq!(run_dir_mode("p", "resume"), ["acceptEdits", "plan"]);
+    // a resume takes no mode: the session keeps its saved one (`--bg --resume` with an option
+    // starts a copy under a new id), and its run dir records none
+    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "--permission-mode", "plan"]);
+    assert!(!ok && out.contains("resume <name> <uuid> <worktree> <note.md>"), "{out}");
+    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief]);
+    assert!(ok && !out.contains("permission-mode="), "{out}");
+    l.stop("p");
+    assert_eq!(run_dir_mode("p", "resume"), Vec::<String>::new());
 
     // E-SEED2.W7: effort is medium by default, high when asked, in either order with the mode; it
-    // lands on the RUNNING line, in the run dir and after --model on the argv; a resume does not inherit it
+    // lands on the RUNNING line, in the run dir and after --model on the argv
     let effort_of = |name: &str| {
-        l.wait_exit(name);
-        let a = worker_argv(&l.main, name);
+        l.stop(name);
+        let a = worker_argv(&l.state, name);
         assert_eq!(option(&a, "--model"), "opus");
         (option(&a, "--effort"), option(&a, "--permission-mode"))
     };
-    let mut sids = std::collections::HashMap::new();
     for (name, extra, effort, mode) in [
         ("e1", vec![], "medium", "acceptEdits"),
         ("e2", vec!["--effort", "high"], "high", "acceptEdits"),
@@ -849,18 +844,9 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
         args.extend(&extra);
         let (ok, out) = l.run(&args);
         assert!(ok && out.contains(&format!(" permission-mode={mode} effort={effort} ")), "{extra:?}: {out}");
-        sids.insert(name, field(&out, "session=").to_string());
         assert_eq!(effort_of(name), (effort.to_string(), mode.to_string()), "{extra:?}");
         assert_eq!(run_dir_effort(name, "spawn"), [effort], "{extra:?}");
     }
-    let sid = sids["e2"].clone();
-    let (ok, out) = l.run(&["resume", "e2", &sid, wt, brief, "opus"]);
-    assert!(ok && out.contains(" effort=medium "), "{out}");
-    assert_eq!(effort_of("e2").0, "medium");
-    assert_eq!(run_dir_effort("e2", "spawn"), ["high"]);
-    assert_eq!(run_dir_effort("e2", "resume"), ["medium"]);
-    let (ok, out) = l.run(&["resume", "e2", &sid, wt, brief, "opus", "--effort", "low"]);
-    assert!(!ok && out.contains("effort must be one of"), "{out}");
 
     // router side: the guard admits the option on the launcher shape, and the grant never reaches it
     assert_eq!(bash("scripts/router-worker.sh spawn n /w .router/briefs/n.md opus --permission-mode plan"), None);
@@ -903,11 +889,6 @@ fn pushed_probe_fires_only_after_the_merge_reaches_origin() {
     assert!(fires(), "PUSHED did not fire after the push");
 }
 
-fn age(path: &Path, secs: u64) {
-    let f = std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap();
-    f.set_modified(std::time::SystemTime::now() - Duration::from_secs(secs)).unwrap();
-}
-
 /// Bounded wait for a condition another process brings about.
 fn until(what: &str, mut cond: impl FnMut() -> bool) {
     let t = Instant::now();
@@ -917,22 +898,14 @@ fn until(what: &str, mut cond: impl FnMut() -> bool) {
     }
 }
 
-/// Whether `pid` has a `<shell> -c` child, i.e. the stub is busy.
-fn has_shell_child(pid: &str) -> bool {
-    let o = Command::new("ps").args(["-A", "-o", "ppid=,command="]).output().unwrap();
-    String::from_utf8(o.stdout).unwrap().lines().any(|l| {
-        let w: Vec<&str> = l.split_whitespace().collect();
-        w.len() > 2 && w[0] == pid && w[1].ends_with("sh") && w[2] == "-c"
-    })
-}
-
+/// A watch run by a test, its polls stepped through the `sleep` shim.
 struct Stepped {
     child: std::process::Child,
     dir: PathBuf,
 }
 
 impl Stepped {
-    /// Block until `wait` has judged poll n and is sleeping; panics with its line if it returned instead.
+    /// Block until the watch has judged poll n and is sleeping; panics with its line if it returned instead.
     fn at(&mut self, n: u32) {
         let polls = || std::fs::read_to_string(self.dir.join("polls")).ok().and_then(|s| s.trim().parse::<u32>().ok());
         let t = Instant::now();
@@ -940,9 +913,9 @@ impl Stepped {
             if self.child.try_wait().unwrap().is_some() {
                 let mut out = String::new();
                 std::io::Read::read_to_string(self.child.stdout.as_mut().unwrap(), &mut out).unwrap();
-                panic!("wait returned before poll {n}: {out}");
+                panic!("watch returned before poll {n}: {out}");
             }
-            assert!(t.elapsed() < BOUND, "wait never reached poll {n}");
+            assert!(t.elapsed() < BOUND, "watch never reached poll {n}");
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -952,7 +925,7 @@ impl Stepped {
         std::fs::write(self.dir.join(format!("go-{n}")), "").unwrap();
     }
 
-    /// The one line `wait` prints once released from its last poll.
+    /// The one line the watch prints once released from its last poll.
     fn line(self) -> String {
         let o = self.output();
         assert!(o.status.success(), "{o:?}");
@@ -963,7 +936,7 @@ impl Stepped {
     fn output(mut self) -> Output {
         let t = Instant::now();
         while self.child.try_wait().unwrap().is_none() {
-            assert!(t.elapsed() < BOUND, "wait never returned");
+            assert!(t.elapsed() < BOUND, "watch never returned");
             std::thread::sleep(Duration::from_millis(10));
         }
         let read = |p: Option<&mut dyn std::io::Read>| {
@@ -979,7 +952,7 @@ impl Stepped {
     }
 }
 
-/// However a test ends, its watch (or `wait`) and the `sleep` shim under it end with it.
+/// However a test ends, its watch and the `sleep` shim under it end with it.
 impl Drop for Stepped {
     fn drop(&mut self) {
         let _ = self.child.kill();
@@ -987,136 +960,7 @@ impl Drop for Stepped {
     }
 }
 
-/// E-SEED2.W8: `wait <name> [<stall-min>]` blocks while the worker runs and returns one line when it
-/// exits (EXITED) or stalls (STALLED: on two polls running, no `sh -c` child and every transcript of its
-/// newest run, main and subagent, idle past the threshold, naming the newest; the pid file when no
-/// transcript exists). Polls are stepped through the `sleep` shim, so each judges a state the test set.
-/// Bad input exits 2.
-#[test]
-fn wait_blocks_until_the_worker_exits_or_stalls() {
-    let l = launcher();
-    let wt = l.wt.to_str().unwrap();
-    let brief = ".router/briefs/b.md";
-    let base = l.main.parent().unwrap().to_path_buf();
-    let release = |k: u8| base.join(format!("release-{k}"));
-    std::fs::create_dir_all(l.main.join(".router/out")).unwrap();
-    std::fs::write(l.main.join(".router/out/orphan.pid"), "1\n").unwrap();
-    for (args, why) in [
-        (vec!["wait"], "wait <name>"),
-        (vec!["wait", "n", "1", "x"], "wait <name>"),
-        (vec!["wait", "-n"], "bad name"),
-        (vec!["wait", "N"], "bad name"),
-        (vec!["wait", "n", "-1"], "stall-min"),
-        (vec!["wait", "n", "10000"], "stall-min"),
-        (vec!["wait", "n", "0"], "stall-min"),
-        (vec!["wait", "n", "x"], "stall-min"),
-        (vec!["wait", "n", ""], "stall-min"),
-        (vec!["wait", "ghost"], "no worker ghost"),
-        (vec!["wait", "orphan"], "no recorded run for orphan"),
-    ] {
-        let (ok, out) = l.run_env(&args, &[]);
-        assert!(!ok && out.contains(why), "{args:?} not refused for {why}: {out}");
-    }
-
-    // exits: still waiting while the worker lives, EXITED once it is gone
-    let out = l.hold(&["spawn", "n", wt, brief, "opus"], &release(1));
-    let sid = field(&out, "session=").to_string();
-    let pid = field(&out, "pid=").to_string();
-    let mut w = l.wait_stepped(&["wait", "n"], "exit");
-    w.at(1);
-    std::fs::write(release(1), "").unwrap();
-    l.wait_exit("n");
-    w.go(1);
-    let out = w.line();
-    assert!(out.starts_with(&format!("EXITED name=n pid={pid} ")) && out.lines().count() == 1, "{out}");
-    let (ok, out) = l.run_env(&["wait", "n"], &[]);
-    assert!(ok && out.starts_with("EXITED name=n ") && out.lines().count() == 1, "an exited worker returns at once: {out}");
-
-    // quiet, then busy (a command ran), then quiet: the busy poll resets, so STALLED needs two more
-    let tr = l.transcript(&l.wt, &sid);
-    let out = l.hold(&["resume", "n", &sid, wt, brief, "opus"], &release(2));
-    let pid = field(&out, "pid=").to_string();
-    age(&tr, 120);
-    let busy = base.join("release-2.busy");
-    let mut w = l.wait_stepped(&["wait", "n", "1"], "busy");
-    w.at(1);
-    std::fs::write(&busy, "").unwrap();
-    until("busy stub", || has_shell_child(&pid));
-    w.go(1);
-    w.at(2);
-    std::fs::remove_file(&busy).unwrap();
-    until("idle stub", || !has_shell_child(&pid));
-    age(&tr, 120);
-    w.go(2);
-    w.at(3);
-    w.go(3);
-    let out = w.line();
-    assert!(out.starts_with(&format!("STALLED name=n pid={pid} idle=2m since={}\n", tr.display())), "{out}");
-
-    // quiet, then a subagent writes, then quiet: the fresh poll resets; the newest transcript is named
-    let sub = tr.with_extension("").join("subagents/agent-a.jsonl");
-    std::fs::create_dir_all(sub.parent().unwrap()).unwrap();
-    age(&tr, 180);
-    let mut w = l.wait_stepped(&["wait", "n", "1"], "fresh");
-    w.at(1);
-    std::fs::write(&sub, "{}\n").unwrap();
-    w.go(1);
-    w.at(2);
-    age(&sub, 120);
-    w.go(2);
-    w.at(3);
-    w.go(3);
-    let out = w.line();
-    assert!(out.starts_with("STALLED name=n ") && out.ends_with(&format!(" idle=2m since={}\n", sub.display())), "{out}");
-
-    // thresholds are minutes, 15 by default: 30s is no 1-minute stall, 10 min no default stall
-    for (args, under, over, idle) in [(vec!["wait", "n", "1"], 30, 120, "2m"), (vec!["wait", "n"], 600, 960, "16m")] {
-        age(&tr, under);
-        age(&sub, under);
-        let mut w = l.wait_stepped(&args, idle);
-        for n in 1..=2 {
-            w.at(n);
-            w.go(n);
-        }
-        w.at(3);
-        age(&tr, over);
-        age(&sub, over);
-        w.go(3);
-        w.at(4);
-        w.go(4);
-        let out = w.line();
-        assert!(out.starts_with("STALLED name=n ") && out.contains(&format!(" idle={idle} ")), "{out}");
-    }
-
-    // no transcript: the pid file's age stands in
-    std::fs::remove_file(&tr).unwrap();
-    std::fs::remove_dir_all(tr.with_extension("")).unwrap();
-    age(&l.main.join(".router/out/n.pid"), 120);
-    let mut w = l.wait_stepped(&["wait", "n", "1"], "pid");
-    w.at(1);
-    w.go(1);
-    let out = w.line();
-    assert!(out.starts_with("STALLED name=n ") && out.contains("since=") && out.trim_end().ends_with("n.pid"), "{out}");
-    std::fs::write(release(2), "").unwrap();
-    l.wait_exit("n");
-    assert!(std::fs::read_to_string(l.main.join(".router/out/n.out")).unwrap().starts_with("stub "), "wait touched n.out");
-
-    // a name spawned again (new session, other worktree) is judged by its newest run only
-    let out = l.hold(&["spawn", "n", l.wt2.to_str().unwrap(), brief, "opus"], &release(3));
-    let tr2 = l.transcript(&l.wt2, field(&out, "session="));
-    std::fs::write(&tr, "{}\n").unwrap();
-    age(&tr2, 120);
-    let mut w = l.wait_stepped(&["wait", "n", "1"], "newest");
-    w.at(1);
-    w.go(1);
-    let out = w.line();
-    assert!(out.ends_with(&format!(" since={}\n", tr2.display())), "{out}");
-    std::fs::write(release(3), "").unwrap();
-    l.wait_exit("n");
-}
-
-/// A command that may block (`wait`), bounded by BOUND: a hung script fails the test instead of
-/// hanging it. Returns stdout then stderr; a non-zero exit fails the test with both.
+/// A command bounded by BOUND: a hung script fails the test instead of hanging it. Returns stdout then stderr; a non-zero exit fails the test with both.
 fn bounded(mut c: Command) -> String {
     let mut p = c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     let t = Instant::now();
@@ -1133,371 +977,194 @@ fn bounded(mut c: Command) -> String {
     out
 }
 
-/// E-ROUTER3.W2: a worker is a long-running session. It stays alive after its report (IDLE, never
-/// STALLED while it waits for input), `send` hands the same session its next brief as a new
-/// snapshot, `stop` closes its input so it exits after its turn and takes its feed with it, and a
-/// stopped worker can be resumed into the same shape.
+/// E-ROUTER3.W10: a start the CLI refuses (an untrusted worktree: "Workspace not trusted") or one that
+/// never shows in the session list is DEAD, with the CLI's own text, and exits 1.
 #[test]
-fn launcher_keeps_a_worker_alive_across_briefs_until_stopped() {
+fn a_start_the_cli_refuses_is_reported_dead_with_its_reason() {
     let l = launcher();
     let wt = l.wt.to_str().unwrap();
-    let out_dir = l.main.join(".router/out");
-    let wait = |args: &[&str]| bounded(l.cmd(args, &[]));
-    for (args, why) in [
-        (vec!["send", "n"], "send <name> <brief.md>"),
-        (vec!["send", "n", ".router/briefs/b.md", "x"], "send <name> <brief.md>"),
-        (vec!["stop"], "stop <name>"),
-        (vec!["stop", "n", "x"], "stop <name>"),
-        (vec!["send", "-n", ".router/briefs/b.md"], "bad name"),
-        (vec!["stop", "N"], "bad name"),
-        (vec!["send", "ghost", ".router/briefs/b.md"], "worker ghost is not running"),
-        (vec!["stop", "ghost"], "worker ghost is not running"),
+    let why = "Workspace not trusted. Run `claude` in the worktree once and accept the trust prompt, then retry.";
+    std::fs::write(l.state.join("refuse"), format!("{why}\n")).unwrap();
+    let (ok, out) = l.run(&["spawn", "n", wt, ".router/briefs/b.md", "opus"]);
+    assert!(!ok && out.starts_with("DEAD name=n exit=1 snapshot=") && out.contains(why), "{out}");
+    std::fs::remove_file(l.state.join("refuse")).unwrap();
+
+    // E-ROUTER3.W10 review r1 B1: a session list the CLI fails to give is no list, never "no sessions":
+    // spawn must not take the name as free, nor stop report the worker gone
+    std::fs::write(l.state.join("agents-ok"), "0").unwrap();
+    let started = l.starts("n");
+    for args in [vec!["spawn", "n", wt, ".router/briefs/b.md", "opus"], vec!["stop", "n"]] {
+        let (ok, out) = l.run(&args);
+        assert!(!ok && out.contains("cannot list sessions (claude agents --json)"), "{args:?}: {out}");
+    }
+    assert_eq!(l.starts("n"), started, "a failed listing started a worker");
+
+    // review r2: a listing that fails once the session has started reports it as possibly running,
+    // with its snapshot, never as refused before any start
+    std::fs::write(l.state.join("agents-ok"), "1").unwrap();
+    let (ok, out) = l.run(&["spawn", "n", wt, ".router/briefs/b.md", "opus"]);
+    assert!(!ok && out.starts_with("UNLISTED name=n exit=0 snapshot=") && out.contains("backgrounded") && out.contains("the session may be running"), "{out}");
+    std::fs::remove_file(l.state.join("agents-ok")).unwrap();
+    assert!(l.sessions().iter().any(|r| r["name"] == "n"), "the stub did start it");
+    l.set_sessions(&[]);
+
+    // listed never: the launcher's polls run through an instant `sleep`
+    std::fs::write(l.state.join("unlisted"), "").unwrap();
+    let path = l.fast_path();
+    let (ok, out) = l.run_env(&["spawn", "n", wt, ".router/briefs/b.md", "opus"], &[("PATH", &path)]);
+    assert!(!ok && out.starts_with("DEAD name=n exit=0 ") && out.contains("backgrounded"), "{out}");
+}
+
+/// E-ROUTER3.W10: `stop` closes the named idle worker of this repository by its id, `claude stop` then
+/// `claude rm`, and refuses everything else before calling the CLI: a busy worker (stopping cuts its
+/// turn), an unlisted name, a session outside this repository's worktrees, an interactive session, an
+/// ambiguous name.
+#[test]
+fn stop_stops_then_removes_this_repositorys_idle_worker_by_id() {
+    let l = launcher();
+    let brief = ".router/briefs/b.md";
+    assert!(l.run(&["spawn", "a", l.wt.to_str().unwrap(), brief, "opus"]).0);
+    assert!(l.run(&["spawn", "b", l.wt2.to_str().unwrap(), brief, "opus"]).0);
+    let mut rows = l.sessions();
+    let id = |n: &str| rows.iter().find(|r| r["name"] == n).unwrap()["id"].as_str().unwrap().to_string();
+    let (a, b) = (id("a"), id("b"));
+    rows.iter_mut().find(|r| r["name"] == "b").unwrap()["status"] = "busy".into();
+    let wt = l.wt.to_str().unwrap();
+    rows.push(serde_json::json!({"id": "c0", "sessionId": "c0-x", "name": "c", "cwd": "/elsewhere", "kind": "background", "status": "idle"}));
+    rows.push(serde_json::json!({"id": "d0", "sessionId": "d0-x", "name": "d", "cwd": wt, "kind": "interactive", "status": "idle"}));
+    rows.push(serde_json::json!({"id": "e0", "sessionId": "e0-x", "name": "e", "cwd": wt, "kind": "background", "status": "idle"}));
+    rows.push(serde_json::json!({"id": "e1", "sessionId": "e1-x", "name": "e", "cwd": wt, "kind": "background", "status": "idle"}));
+    l.set_sessions(&rows);
+    let before = calls(&l.state).len();
+    let path = l.fast_path();
+    for (name, why) in [
+        ("b", format!("worker b is still busy: stopping it would cut its turn; the owner decides (claude stop {b})")),
+        ("z", "worker z is not running".to_string()),
+        ("c", "c runs outside this repository's worktrees (/elsewhere)".to_string()),
+        ("d", "d is not a background session".to_string()),
+        ("e", "more than one session is named e".to_string()),
     ] {
-        let (ok, out) = l.run(&args);
-        assert!(!ok && out.contains(why), "{args:?} not refused for {why}: {out}");
+        let (ok, out) = l.run_env(&["stop", name], &[("PATH", &path)]);
+        assert!(!ok && out.contains(&why), "{name}: {out}");
     }
+    assert!(calls(&l.state)[before..].iter().all(|(_, c)| c[0] == "agents"), "a refused stop called the CLI");
 
-    std::fs::write(&l.release, "").unwrap();
-    let (ok, out) = l.run(&["spawn", "n", wt, ".router/briefs/b.md", "opus"]);
-    assert!(ok && out.starts_with("RUNNING"), "{out}");
-    let (sid, pid) = (field(&out, "session=").to_string(), field(&out, "pid=").to_string());
-    let report = out_dir.join("n.report");
+    let (ok, out) = l.run(&["stop", "a"]);
+    assert!(ok, "{out}");
+    let sid = rows.iter().find(|r| r["name"] == "a").unwrap()["sessionId"].as_str().unwrap().to_string();
+    assert_eq!(out, format!("STOPPED name=a id={a} session={sid}\n"));
+    let tail: Vec<Vec<String>> = calls(&l.state).into_iter().map(|(_, c)| c).filter(|c| c[0] != "agents").collect();
+    assert_eq!(tail[tail.len() - 2..], [vec!["stop".to_string(), a.clone()], vec!["rm".to_string(), a]]);
+    assert!(l.sessions().iter().all(|r| r["name"] != "a") && l.sessions().iter().any(|r| r["name"] == "b"));
 
-    // the first turn ends; a transcript long quiet is no stall while the worker waits for input
-    age(&l.transcript(&l.wt, &sid), 600);
-    assert_eq!(wait(&["wait", "n", "1"]), format!("IDLE name=n pid={pid} turn=1 report={}\n", report.display()));
-    assert_eq!(std::fs::read_to_string(&report).unwrap(), "report 1\n");
-    let (ok, out) = l.run(&["spawn", "n", wt, ".router/briefs/b.md", "opus"]);
-    assert!(!ok && out.contains("still running"), "an idle worker is live: {out}");
-
-    // a brief must be a regular .md under .router/briefs, as on spawn
-    std::os::unix::fs::symlink(l.main.join(".router/briefs/b.md"), l.main.join(".router/briefs/s.md")).unwrap();
-    for (file, why) in [(".router/briefs/s.md", "symlinks refused"), ("scripts/router-worker.sh", "file must be a .md under")] {
-        let (ok, out) = l.run(&["send", "n", file]);
-        assert!(!ok && out.contains(why), "{file}: {out}");
+    // review r2: Claude Code lists a blocked session (rate-limited, or waiting on its user) with a
+    // state and no status: it is refused at once by that state, as a worker waiting on a prompt is
+    let mut more = rows.clone();
+    more.push(serde_json::json!({"id": "f0", "sessionId": "f0-x", "name": "f", "cwd": wt, "kind": "background", "state": "blocked"}));
+    more.push(serde_json::json!({"id": "g0", "sessionId": "g0-x", "name": "g", "cwd": wt, "kind": "background", "status": "waiting", "waitingFor": "permission prompt", "state": "blocked"}));
+    l.set_sessions(&more);
+    for (name, state, id) in [("f", "blocked", "f0"), ("g", "waiting", "g0")] {
+        let n0 = calls(&l.state).len();
+        let (ok, out) = l.run_env(&["stop", name], &[("PATH", &path)]);
+        assert!(!ok && out.contains(&format!("worker {name} is {state}: the owner decides (claude stop {id})")), "{name}: {out}");
+        assert_eq!(calls(&l.state).len() - n0, 1, "{name}: stop waited on a session that is not busy");
     }
+    l.set_sessions(&rows);
 
-    std::fs::write(l.main.join(".router/briefs/b2.md"), "now the notes\n").unwrap();
-    let (ok, out) = l.run(&["send", "n", ".router/briefs/b2.md"]);
-    assert!(ok && out.starts_with(&format!("SENT name=n pid={pid} session={sid} snapshot=")), "{out}");
-    let (snap, copy) = (field(&out, "snapshot="), field(&out, "brief="));
-    assert!(snap.contains("/.router/runs/n-") && snap.ends_with("-send/brief.md"), "{out}");
-    assert!(copy.starts_with(wt) && std::fs::read_to_string(copy).unwrap() == "now the notes\n", "{out}");
-    let sha = std::fs::read_to_string(Path::new(snap).with_file_name("sha256")).unwrap();
-    assert_eq!(sha.trim(), field(&out, "sha256="));
-    let inbox = std::fs::read_to_string(out_dir.join("n.in")).unwrap();
-    let turns: Vec<serde_json::Value> = inbox.lines().map(|x| serde_json::from_str(x).unwrap()).collect();
-    assert_eq!(turns.len(), 2, "{inbox}");
-    assert!(turns.iter().all(|t| t["type"] == "user" && t["message"]["role"] == "user"), "{inbox}");
-    assert!(turns[1]["message"]["content"].as_str().unwrap().contains(copy), "{inbox}");
-    assert_eq!(wait(&["wait", "n"]), format!("IDLE name=n pid={pid} turn=2 report={}\n", report.display()));
-    assert_eq!(std::fs::read_to_string(&report).unwrap(), "report 2\n");
+    // review r2: the busy wait follows the worker's id, never another session that takes its name,
+    // and a listing that fails inside the wait stops it
+    std::fs::write(l.state.join("swap"), "").unwrap();
+    let (ok, out) = l.run_env(&["stop", "b"], &[("PATH", &path)]);
+    assert!(!ok && out.contains("worker b left the session list while busy; nothing to stop"), "{out}");
+    assert!(calls(&l.state).iter().all(|(_, c)| c[0] != "stop" || c[1] != "new0"), "stop closed the session that took the name");
+    std::fs::remove_file(l.state.join("swap")).unwrap();
+    l.set_sessions(&rows);
+    std::fs::write(l.state.join("agents-ok"), "1").unwrap();
+    let (ok, out) = l.run_env(&["stop", "b"], &[("PATH", &path)]);
+    assert!(!ok && out.contains("cannot list sessions (claude agents --json)"), "{out}");
+    std::fs::remove_file(l.state.join("agents-ok")).unwrap();
 
-    // a turn the worker opens on its own (a SendMessage reached it while idle) is no IDLE until it
-    // closes; the report keeps the whole result text
-    let stream = out_dir.join("n.out");
-    let append = |line: &str| std::io::Write::write_all(&mut std::fs::OpenOptions::new().append(true).open(&stream).unwrap(), line.as_bytes()).unwrap();
-    append("{\"type\":\"system\",\"subtype\":\"init\"}\n");
-    let mut w = l.wait_stepped(&["wait", "n"], "unprompted");
-    w.at(1);
-    append("{\"result\":\"steered\\nsecond line\",\"type\":\"result\"}\n");
-    w.go(1);
-    assert_eq!(w.line(), format!("IDLE name=n pid={pid} turn=3 report={}\n", report.display()));
-    assert_eq!(std::fs::read_to_string(&report).unwrap(), "steered\nsecond line\n");
+    // review r1 I1: a busy worker whose session ends while stop waits is gone, said at once, not after 30s
+    std::fs::write(l.state.join("vanish"), "").unwrap();
+    let n0 = calls(&l.state).len();
+    let (ok, out) = l.run_env(&["stop", "b"], &[("PATH", &path)]);
+    assert!(!ok && out.contains("worker b left the session list while busy; nothing to stop"), "{out}");
+    assert_eq!(calls(&l.state).len() - n0, 2, "stop kept polling a gone session");
+    std::fs::remove_file(l.state.join("vanish")).unwrap();
+    l.set_sessions(&rows);
 
-    // stop: the worker exits after its turn, and its feed ends with it; while it winds down after
-    // its last turn it is stopping, never IDLE (a re-armed wait would spin), so wait ends in EXITED
-    let feed = std::fs::read_to_string(out_dir.join("n.feed")).unwrap().trim().to_string();
-    let alive = |p: &str| Command::new("kill").args(["-0", p]).stderr(Stdio::null()).status().unwrap().success();
-    assert!(alive(&feed), "no live feed");
-    let linger = l.release.with_extension("linger");
-    std::fs::write(&linger, "").unwrap();
-    let (ok, out) = l.run(&["stop", "n"]);
-    assert!(ok && out.starts_with(&format!("STOPPING name=n pid={pid} ")), "{out}");
-    until("feed closed", || !alive(&feed));
-    let mut w = l.wait_stepped(&["wait", "n"], "stopping");
-    w.at(1);
-    assert!(alive(&pid), "the stub no longer lingers");
-    std::fs::remove_file(&linger).unwrap();
-    until("worker gone", || !alive(&pid));
-    w.go(1);
-    assert_eq!(w.line(), format!("EXITED name=n pid={pid} out={}\n", out_dir.join("n.out").display()));
-    until("feed gone", || !alive(&feed));
-    for args in [vec!["send", "n", ".router/briefs/b2.md"], vec!["stop", "n"]] {
-        let (ok, out) = l.run(&args);
-        assert!(!ok && out.contains("worker n is not running"), "{args:?}: {out}");
-    }
-
-    // a worker that dies on its own takes its feed with it
-    let (ok, out) = l.run(&["resume", "n", &sid, wt, ".router/briefs/b2.md", "opus"]);
-    assert!(ok && out.starts_with("RUNNING"), "{out}");
-    let pid = field(&out, "pid=").to_string();
-    assert_eq!(wait(&["wait", "n"]), format!("IDLE name=n pid={pid} turn=1 report={}\n", report.display()));
-    let feed = std::fs::read_to_string(out_dir.join("n.feed")).unwrap().trim().to_string();
-    assert!(Command::new("kill").arg(&pid).status().unwrap().success());
-    until("worker gone", || !alive(&pid));
-    until("feed gone", || !alive(&feed));
+    // live run 2026-11-11: a worker's report arrives while its turn is still ending, so the router's
+    // stop right after it finds the worker busy; stop waits (bounded) for the turn to end
+    std::fs::write(l.state.join("settle"), "").unwrap();
+    let (ok, out) = l.run_env(&["stop", "b"], &[("PATH", &path)]);
+    assert!(ok && out.starts_with(&format!("STOPPED name=b id={b} ")), "{out}");
 }
 
-/// A fake live worker `name` under `l`'s .router/out, for driving `wait`, `send` and `stop` over a
-/// hand-written stream, reset as a spawn resets it (output and scan state): a process whose argv
-/// carries ` -n <name> `, its pid file and run dir, and a
-/// real `tail -n +1 -f <name>.in` feed recorded in <name>.feed. The worker keeps an `sh -c` child,
-/// as a running Bash tool command (or a background task) keeps one. All end with the value.
-struct Fake {
-    worker: std::process::Child,
-    feed: std::process::Child,
-    out: PathBuf,
-}
-
-impl Fake {
-    fn new(l: &Launcher, name: &str, inbox: usize) -> Fake {
-        let out = l.main.join(".router/out");
-        let run = l.main.join(format!(".router/runs/{name}-1-spawn"));
-        std::fs::create_dir_all(&out).unwrap();
-        std::fs::create_dir_all(&run).unwrap();
-        std::fs::write(run.join("name"), format!("{name}\n")).unwrap();
-        std::fs::write(run.join("session"), "0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b\n").unwrap();
-        std::fs::write(run.join("worktree"), format!("{}\n", l.wt.display())).unwrap();
-        std::fs::write(out.join(format!("{name}.in")), "{\"type\":\"user\"}\n".repeat(inbox)).unwrap();
-        std::fs::write(out.join(format!("{name}.out")), "").unwrap();
-        let _ = std::fs::remove_file(out.join(format!("{name}.scan")));
-        let body = "sh -c 'while kill -0 $PPID 2>/dev/null; do sleep 1; done' & while :; do sleep 1; done";
-        let worker = common::cmd("sh").args(["-c", body, "sh", "-n", name, "x"]).spawn().unwrap();
-        let feed = common::cmd("tail").args(["-n", "+1", "-f"]).arg(out.join(format!("{name}.in"))).stdout(Stdio::null()).spawn().unwrap();
-        std::fs::write(out.join(format!("{name}.pid")), format!("{}\n", worker.id())).unwrap();
-        std::fs::write(out.join(format!("{name}.feed")), format!("{}\n", feed.id())).unwrap();
-        Fake { worker, feed, out: out.join(format!("{name}.out")) }
-    }
-
-    fn emit(&self, events: &[&str]) {
-        let mut f = std::fs::OpenOptions::new().append(true).open(&self.out).unwrap();
-        for e in events {
-            std::io::Write::write_all(&mut f, format!("{e}\n").as_bytes()).unwrap();
-        }
-    }
-}
-
-impl Drop for Fake {
-    fn drop(&mut self) {
-        for c in [&mut self.worker, &mut self.feed] {
-            let _ = c.kill();
-            let _ = c.wait();
-        }
-    }
-}
-
-const INIT: &str = r#"{"type":"system","subtype":"init"}"#;
-const REPLAY: &str = r#"{"type":"user","isReplay":true,"message":{"role":"user","content":"brief"}}"#;
-const BG_RUNNING: &str = r#"{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"b1","task_type":"local_bash"}]}"#;
-const BG_NONE: &str = r#"{"type":"system","subtype":"background_tasks_changed","tasks":[]}"#;
-const TASK_DONE: [&str; 2] = [
-    r#"{"type":"system","subtype":"task_updated","task_id":"b1","status":"completed"}"#,
-    r#"{"type":"system","subtype":"task_notification","task_id":"b1","status":"completed"}"#,
-];
-/// The replay Claude Code 2.1.288 emits for a turn a peer's SendMessage opens (live probe, E-ROUTER3.W2 review r3).
-const PEER_REPLAY: &str = r#"{"type":"user","isReplay":true,"isSynthetic":true,"origin":{"kind":"peer"},"message":{"role":"user","content":"Another Claude session sent a message"}}"#;
-const BUDGET_ERROR: &str = r#"{"type":"result","subtype":"error_max_budget_usd","is_error":true,"errors":["Reached maximum budget ($0.0001)"]}"#;
-/// An API failure as Claude Code 2.1.288 reports it (live, logged out; review r7): subtype success,
-/// no errors, the cause only in .result.
-const API_ERROR: &str = r#"{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login","terminal_reason":"api_error","api_error_status":null}"#;
-fn result(text: &str) -> String {
-    format!(r#"{{"duration_ms":1,"type":"result","subtype":"success","result":"{text}"}}"#)
-}
-
-/// E-ROUTER3.W2 review r1: `wait` knows a brief was taken only when the worker replays it
-/// (`--replay-user-messages`) and a turn is over only when every opened turn has its result, so a
-/// turn the worker opened itself never answers a brief it has not read (r1 B1), and briefs folded
-/// into one running turn are answered by its one result (r1 B3). A feed is open only while its pid
-/// is this worker's `tail` (r1 I4); a stopping worker takes no brief (r1 B2); and an exit that left
-/// the last brief unanswered leaves no report (r1 I6). A turn that ends with a background task
-/// running is not the worker's answer (r2 B1), nor is the moment between its task's notification
-/// and the completion turn (r3 B1); a peer's replayed message is no brief (r3 B2); an error result
-/// is reported as one (r3 B3); a task that never ends stalls the wait instead of hanging it (r3
-/// I2); each wait resumes the scan where the last one stopped (r4 I1), and only from state this
-/// run wrote (r5 I1).
+/// E-ROUTER3.W10 (owner ruling 2026-11-11): the launcher has three modes. `wait` and `send` are gone,
+/// with every file under .router/out: a spawn and a stop leave only the brief and its run dir.
 #[test]
-fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
+fn launcher_has_only_spawn_resume_and_stop_and_writes_no_out_dir() {
     let l = launcher();
-    let report = l.main.join(".router/out/fk.report");
-
-    // answered: one brief replayed, its turn closed
-    let f = Fake::new(&l, "fk", 1);
-    f.emit(&[INIT, REPLAY, &result("A")]);
-    let line = bounded(l.cmd(&["wait", "fk"], &[]));
-    assert!(line.starts_with("IDLE name=fk ") && line.contains(" turn=1 "), "{line}");
-    assert_eq!(std::fs::read_to_string(&report).unwrap(), "A\n");
-    // r4 I1: the scan's offset persists, so the next wait reads only what came after
-    let scanned: u64 = std::fs::read_to_string(l.main.join(".router/out/fk.scan")).unwrap().split_whitespace().nth(1).unwrap().parse().unwrap();
-    assert_eq!(scanned, std::fs::metadata(&f.out).unwrap().len(), "the scan state does not cover the whole stream");
-
-    // B1: a self-opened turn (no replay) closes, then a brief is sent but not yet read: no IDLE
-    f.emit(&[INIT, PEER_REPLAY, &result("steered")]);
-    std::fs::write(l.main.join(".router/out/fk.in"), "{\"type\":\"user\"}\n".repeat(2)).unwrap();
-    let mut w = l.wait_stepped(&["wait", "fk"], "b1");
-    w.at(1);
-    f.emit(&[INIT, REPLAY, &result("B")]);
-    w.go(1);
-    assert!(w.line().contains(" turn=3 "), "the sent brief's turn closes the wait");
-    assert_eq!(std::fs::read_to_string(&report).unwrap(), "B\n");
-    drop(f);
-
-    // B3: two briefs folded into one running turn are answered by its one result
-    let f = Fake::new(&l, "fk", 2);
-    f.emit(&[INIT, REPLAY, REPLAY, &result("AB")]);
-    let line = bounded(l.cmd(&["wait", "fk"], &[]));
-    assert!(line.starts_with("IDLE name=fk ") && line.contains(" turn=1 "), "{line}");
-    assert_eq!(std::fs::read_to_string(&report).unwrap(), "AB\n");
-    drop(f);
-
-    // I4: a feed pid now held by another process is no open feed: no IDLE, and stop kills nothing
-    let mut f = Fake::new(&l, "fk", 1);
-    f.emit(&[INIT, REPLAY, &result("A")]);
-    let other = f.worker.id().to_string();
-    let _ = f.feed.kill();
-    let _ = f.feed.wait();
-    std::fs::write(l.main.join(".router/out/fk.feed"), format!("{other}\n")).unwrap();
-    let (ok, out) = l.run(&["stop", "fk"]);
-    assert!(!ok && out.contains("worker fk is already stopping"), "{out}");
-    assert!(f.worker.try_wait().unwrap().is_none(), "stop signalled a process that is not the feed");
-
-    // B2: a stopping worker (feed gone, process alive) takes no brief
-    std::fs::write(l.main.join(".router/briefs/b2.md"), "next\n").unwrap();
-    let inbox = std::fs::read_to_string(l.main.join(".router/out/fk.in")).unwrap();
-    let (ok, out) = l.run(&["send", "fk", ".router/briefs/b2.md"]);
-    assert!(!ok && out.contains("worker fk is stopping"), "{out}");
-    assert_eq!(std::fs::read_to_string(l.main.join(".router/out/fk.in")).unwrap(), inbox, "send wrote to a closed inbox");
-    let mut w = l.wait_stepped(&["wait", "fk"], "i4");
-    w.at(1);
-    let _ = f.worker.kill();
-    let _ = f.worker.wait();
-    w.go(1);
-    assert!(w.line().starts_with("EXITED name=fk "));
-    drop(f);
-
-    // r2 B1: a turn that ends with a background task still running is no IDLE; the worker's own
-    // completion turn, opened once the task clears, carries the final report
-    let f = Fake::new(&l, "fk", 1);
-    f.emit(&[INIT, REPLAY, BG_RUNNING, &result("waiting for the background task")]);
-    let mut w = l.wait_stepped(&["wait", "fk"], "bg");
-    w.at(1);
-    // r3 B1, r4 B1: the task ends; its emptied task list and then its notification precede the
-    // completion turn's init by milliseconds, and a poll may fall after either
-    f.emit(&[BG_NONE]);
-    w.go(1);
-    w.at(2);
-    f.emit(&[TASK_DONE[0], TASK_DONE[1]]);
-    w.go(2);
-    w.at(3);
-    f.emit(&[INIT, &result("done")]);
-    w.go(3);
-    assert!(w.line().contains(" turn=2 "), "the completion turn closes the wait");
-    assert_eq!(std::fs::read_to_string(&report).unwrap(), "done\n");
-    drop(f);
-
-    // r3 B3: an error result is no silent answer: the IDLE line and the report carry it
-    let f = Fake::new(&l, "fk", 1);
-    f.emit(&[INIT, REPLAY, BUDGET_ERROR]);
-    let line = bounded(l.cmd(&["wait", "fk"], &[]));
-    assert!(line.starts_with("IDLE name=fk ") && line.trim_end().ends_with(" error=error_max_budget_usd"), "{line}");
-    assert_eq!(std::fs::read_to_string(&report).unwrap(), "error: error_max_budget_usd: Reached maximum budget ($0.0001)\n");
-    drop(f);
-    // r7 B1: an API failure is named by its terminal reason, and its cause (only in .result) is kept
-    let f = Fake::new(&l, "fk", 1);
-    f.emit(&[INIT, REPLAY, API_ERROR]);
-    let line = bounded(l.cmd(&["wait", "fk"], &[]));
-    assert!(line.starts_with("IDLE name=fk ") && line.trim_end().ends_with(" error=api_error"), "{line}");
-    assert_eq!(std::fs::read_to_string(&report).unwrap(), "error: api_error: Not logged in · Please run /login\n");
-    drop(f);
-
-    // r3 I2: a background task that never ends (its shell keeps the worker busy) is no endless
-    // wait: with every brief answered, the quiet transcript stalls it, naming the task count
-    let f = Fake::new(&l, "fk", 1);
-    f.emit(&[INIT, REPLAY, BG_RUNNING, &result("serving")]);
-    age(&l.main.join(".router/out/fk.pid"), 120);
-    let mut w = l.wait_stepped(&["wait", "fk", "1"], "bg-forever");
-    w.at(1);
-    w.go(1);
-    let line = w.line();
-    assert!(line.starts_with("STALLED name=fk ") && line.trim_end().ends_with(" background=1"), "{line}");
-    drop(f);
-
-    // r5 I1: scan state another run left behind (another pid) is never this run's: a new run whose
-    // first turn is still open is no IDLE, whatever that state says
-    let f = Fake::new(&l, "fk", 1);
-    let stale = l.main.join(".router/out/fk.scan");
-    std::fs::write(&stale, "1 0 1 1 1 0 0 -\nOLD RUN ANSWER\n").unwrap();
-    f.emit(&[INIT]);
-    let mut w = l.wait_stepped(&["wait", "fk"], "stale");
-    w.at(1);
-    f.emit(&[REPLAY, &result("new")]);
-    w.go(1);
-    assert!(w.line().contains(" turn=1 "), "the new run's own turn closes the wait");
-    assert_eq!(std::fs::read_to_string(&report).unwrap(), "new\n");
-    drop(f);
-
-    // I6: the worker died before answering its last brief: EXITED leaves no report
-    let mut f = Fake::new(&l, "fk", 2);
-    f.emit(&[INIT, REPLAY, &result("A"), INIT, REPLAY]);
-    let _ = f.worker.kill();
-    let _ = f.worker.wait();
-    let line = bounded(l.cmd(&["wait", "fk"], &[]));
-    assert!(line.starts_with("EXITED name=fk "), "{line}");
-    assert!(!report.exists(), "a stale report answers the unanswered brief");
-}
-
-/// E-ROUTER3.W2 review r6: the router's background `wait` is killed (SIGTERM) at its timeout and
-/// re-armed, so a signalled wait must leave neither its scratch dir nor a half-written scan state,
-/// or every timeout leaks one. Run under dash, which (unlike bash) runs no EXIT trap on a signal
-/// by itself, so only the launcher's own signal trap can pass this.
-#[test]
-fn a_signalled_wait_leaves_no_scratch_files() {
-    let l = launcher();
-    let f = Fake::new(&l, "fk", 1);
-    f.emit(&[INIT]);
-    let tmp = l.main.parent().unwrap().join("tmp");
-    std::fs::create_dir_all(&tmp).unwrap();
-    let shell = if Path::new("/bin/dash").exists() { "/bin/dash" } else { "/bin/sh" };
-    let mut w = common::cmd(shell)
-        .args(["scripts/router-worker.sh", "wait", "fk"])
-        .current_dir(&l.main)
-        .env("TMPDIR", &tmp)
-        .env("CLAUDE_CONFIG_DIR", l.main.parent().unwrap().join("config"))
-        .env("ROUTER_WAIT_POLL", "0.2")
-        .spawn()
-        .unwrap();
-    let out = l.main.join(".router/out");
-    until("the wait's first scan", || std::fs::read_dir(&tmp).unwrap().next().is_some() && out.join("fk.scan").exists());
-    assert!(Command::new("kill").args(["-TERM", &w.id().to_string()]).status().unwrap().success());
-    let t = Instant::now();
-    while w.try_wait().unwrap().is_none() {
-        assert!(t.elapsed() < BOUND, "the signalled wait never exited");
-        std::thread::sleep(Duration::from_millis(20));
+    for args in [vec!["wait", "n"], vec!["send", "n", ".router/briefs/b.md"], vec!["brief", "n", ".router/briefs/b.md"]] {
+        let o = l.cmd(&args, &[]).output().unwrap();
+        assert_eq!(o.status.code(), Some(2), "{args:?}");
+        assert!(String::from_utf8_lossy(&o.stderr).contains("spawn|resume|stop"), "{args:?}: {o:?}");
     }
-    let left: Vec<_> = std::fs::read_dir(&tmp).unwrap().map(|e| e.unwrap().path()).collect();
-    assert!(left.is_empty(), "{shell}: a signalled wait leaked {left:?}");
-    let half: Vec<_> = std::fs::read_dir(&out).unwrap().map(|e| e.unwrap().file_name()).filter(|n| n.to_string_lossy().starts_with("fk.scan.")).collect();
-    assert!(half.is_empty(), "{shell}: a signalled wait left {half:?}");
-    drop(f);
+    assert!(l.run(&["spawn", "n", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
+    l.stop("n");
+    let mut entries: Vec<String> = std::fs::read_dir(l.main.join(".router")).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+    entries.sort();
+    assert_eq!(entries, ["briefs", "runs"]);
+    assert_eq!(std::fs::read_dir(l.main.join(".router/runs")).unwrap().count(), 1);
 }
 
-/// E-ROUTER3.W2: the router's two new launcher shapes pass the guard in plain words, and nothing
-/// else of the script does.
+/// E-ROUTER3.W10: the router's launcher shapes are spawn, resume and stop in plain words; `wait` and
+/// `send` are gone, and nothing else of the script passes.
 #[test]
-fn router_guard_admits_send_and_stop_in_plain_words_only() {
-    for ok in ["scripts/router-worker.sh send w1 .router/briefs/w1-r2.md", "scripts/router-worker.sh stop w1"] {
+fn router_guard_admits_spawn_resume_and_stop_and_refuses_wait_and_send() {
+    for ok in [
+        "scripts/router-worker.sh spawn w1 /Users/o/Keel-x .router/briefs/w1.md opus",
+        "scripts/router-worker.sh resume w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b /Users/o/Keel-x .router/briefs/w1-r2.md",
+        "scripts/router-worker.sh stop w1",
+    ] {
         assert_eq!(bash(ok), None, "guard denied {ok:?}");
     }
     for no in [
+        "scripts/router-worker.sh wait w1",
+        "scripts/router-worker.sh send w1 .router/briefs/w1-r2.md",
+        "scripts/router-worker.sh brief w1 .router/briefs/w1-r2.md",
         "scripts/router-worker.sh kill w1",
-        "scripts/router-worker.sh sendx w1 b.md",
-        "scripts/router-worker.sh send w1 \"b.md\"",
-        "scripts/router-worker.sh send w1 $HOME/b.md",
+        "scripts/router-worker.sh stopx w1",
+        "scripts/router-worker.sh stop \"w1\"",
+        "scripts/router-worker.sh stop $HOME",
         "scripts/router-worker.sh stop ../w1",
         "scripts/router-worker.sh stop w1; kill 1",
     ] {
         assert!(bash(no).is_some(), "guard allowed {no:?}");
     }
+}
+
+/// A worker's Bash call as Claude Code 2.1.288 delivered it from a `claude --bg --agent worker` session
+/// (E-ROUTER3.W10 probe P2; ids and paths replaced): agent_type is "worker", so the router guard
+/// passes it untouched, and the session's own permission mode travels with it.
+const CAPTURED_BG_WORKER_BASH: &str = r#"{"session_id":"s","transcript_path":"/t.jsonl","cwd":"/w","scratchpad_dir":"/t","prompt_id":"p","permission_mode":"acceptEdits","agent_type":"worker","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"printenv PROBE_MARK","description":"Check PROBE_MARK environment variable"},"tool_use_id":"u1"}"#;
+
+#[test]
+fn router_guard_leaves_a_background_workers_calls_alone() {
+    assert_eq!(guard_event(serde_json::from_str(CAPTURED_BG_WORKER_BASH).unwrap()), None);
+}
+
+/// E-ROUTER3.W10: the settings allow exactly the launcher shapes the guard admits, spawn, resume and
+/// stop; `wait` and `send` are gone from both.
+#[test]
+fn settings_allow_exactly_the_launcher_shapes_the_guard_admits() {
+    let modes: Vec<String> = settings()["permissions"]["allow"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a.as_str().unwrap().strip_prefix("Bash(scripts/router-worker.sh ").map(|m| m.trim_end_matches(" *)").to_string()))
+        .collect();
+    assert_eq!(modes, ["resume", "spawn", "stop"]);
 }
 
 /// One router tool call through the PreToolUse command `checkout`'s .claude/settings.json wires, run
@@ -1522,8 +1189,8 @@ fn wired_guard(checkout: &Path, tool: &str, input: serde_json::Value) -> Option<
 /// tree with the working tree's epic files laid over it and keel's hooks installed. A new worktree
 /// inherits the signer list (W3); every router call passes the settings-wired guard and each allowed
 /// command runs exactly as judged; the worker starts in plan mode with the fixed grant (W1) under the
-/// name the subscription addresses (W2); `wait` reports it STALLED by its transcript (W4). E-ROUTER3.W2:
-/// the long-running worker goes IDLE with its report, takes a second brief by `send`, and `stop` ends it.
+/// name the subscription addresses (W2). E-ROUTER3.W10: the worker is a background session; a
+/// follow-up task is the router's message, `wait` and `send` are refused, and `stop` closes it.
 #[test]
 fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let d = TempDir::new().unwrap();
@@ -1546,19 +1213,12 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
 
     let stub = base.join("claude");
     stub_claude(&stub);
-    let release = base.join("release");
-    let config = base.join("config");
-    let owner = std::process::id().to_string();
+    let state = base.join("state");
+    std::fs::create_dir_all(&state).unwrap();
     let router = |cmd: &str| -> String {
         assert_eq!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })), None, "guard denied {cmd:?}");
         let mut p = common::cmd("/bin/sh");
-        p.args(["-c", cmd])
-            .current_dir(&c)
-            .env("ROUTER_CLAUDE", &stub)
-            .env("STUB_RELEASE", &release)
-            .env("STUB_OWNER", &owner)
-            .env("CLAUDE_CONFIG_DIR", &config)
-            .env("ROUTER_WAIT_POLL", "0.2");
+        p.args(["-c", cmd]).current_dir(&c).env("ROUTER_CLAUDE", &stub).env("STUB_STATE", &state);
         bounded(p)
     };
 
@@ -1568,58 +1228,37 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     std::fs::create_dir_all(brief.parent().unwrap()).unwrap();
     std::fs::write(&brief, "run the gate\n").unwrap();
 
-    // W1: spawned in plan mode
+    // W1: spawned in plan mode, a background session in the worktree
     let out = router(&format!("scripts/router-worker.sh spawn {name} {} .router/briefs/{name}.md opus --effort high --permission-mode plan", wt.display()));
     assert!(out.starts_with(&format!("RUNNING name={name} ")) && out.contains(" permission-mode=plan effort=high "), "{out}");
-    let (sid, pid) = (field(&out, "session=").to_string(), field(&out, "pid=").to_string());
+    let (id, sid) = (field(&out, "id=").to_string(), field(&out, "session=").to_string());
     let copy = field(&out, "brief=");
     assert!(copy.starts_with(wt.to_str().unwrap()) && std::fs::read_to_string(copy).unwrap() == "run the gate\n", "{out}");
 
-    // W2, E-ROUTER3.W1: the router subscribes to the worker's end and may steer it with a message
+    // W2, E-ROUTER3.W1: the router subscribes to the worker's end and may steer it with a message;
+    // E-ROUTER3.W10: a follow-up task is a message too, and `wait` and `send` are gone
     assert_eq!(wired_guard(&c, "SendMessage", serde_json::json!({"to": name, "notify_when_idle": true})), None);
     let steer = serde_json::json!({"to": name, "message": "stop after the plan", "type": "message", "recipient": name, "content": "stop after the plan"});
     assert_eq!(wired_guard(&c, "SendMessage", steer), None);
+    assert_eq!(wired_guard(&c, "SendMessage", serde_json::json!({"to": name, "message": "Follow-up task: now write the notes"})), None);
+    for cmd in [format!("scripts/router-worker.sh wait {name}"), format!("scripts/router-worker.sh send {name} .router/briefs/{name}.md")] {
+        assert!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })).is_some(), "router may run {cmd:?}");
+    }
     // the grant is the worker's alone
     for cmd in ["cargo test", "keel preflight wu HEAD", "keel mr confirm wu HEAD --as owner"] {
         assert!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })).is_some(), "router may run {cmd:?}");
     }
 
-    // W4: an idle worker is STALLED, found by its session id under a project dir no naming rule gives
-    let tr = config.join("projects/-e2e-odd-dir-7f3k").join(format!("{sid}.jsonl"));
-    std::fs::create_dir_all(tr.parent().unwrap()).unwrap();
-    std::fs::write(&tr, "{}\n").unwrap();
-    age(&tr, 120);
-    let out = router(&format!("scripts/router-worker.sh wait {name} 1"));
-    assert_eq!(out, format!("STALLED name={name} pid={pid} idle=2m since={}\n", tr.display()));
-
-    // E-ROUTER3.W2: the turn ends and the worker stays alive, IDLE with its report
-    std::fs::write(&release, "").unwrap();
-    let report = c.join(format!(".router/out/{name}.report"));
-    let out = router(&format!("scripts/router-worker.sh wait {name}"));
-    assert_eq!(out, format!("IDLE name={name} pid={pid} turn=1 report={}\n", report.display()));
-    assert_eq!(std::fs::read_to_string(&report).unwrap(), "report 1\n");
-
-    // the next brief goes to the same live session, snapshotted and hashed
-    let brief2 = c.join(format!(".router/briefs/{name}-r2.md"));
-    assert_eq!(wired_guard(&c, "Write", serde_json::json!({ "file_path": brief2 })), None);
-    std::fs::write(&brief2, "now write the notes\n").unwrap();
-    let out = router(&format!("scripts/router-worker.sh send {name} .router/briefs/{name}-r2.md"));
-    assert!(out.starts_with(&format!("SENT name={name} pid={pid} session={sid} ")), "{out}");
-    assert_eq!(std::fs::read_to_string(field(&out, "brief=")).unwrap(), "now write the notes\n");
-    let out = router(&format!("scripts/router-worker.sh wait {name}"));
-    assert_eq!(out, format!("IDLE name={name} pid={pid} turn=2 report={}\n", report.display()));
-    assert_eq!(std::fs::read_to_string(&report).unwrap(), "report 2\n");
-
-    // the router closes it: EXITED, and its argv carried the grant, the mode and the subscribed name
+    // the router closes it: stopped then removed by id, and its argv carried the grant, the mode and the subscribed name
     let out = router(&format!("scripts/router-worker.sh stop {name}"));
-    assert!(out.starts_with(&format!("STOPPING name={name} pid={pid} ")), "{out}");
-    let out = router(&format!("scripts/router-worker.sh wait {name}"));
-    assert_eq!(out, format!("EXITED name={name} pid={pid} out={}\n", c.join(format!(".router/out/{name}.out")).display()));
-    let a = worker_argv(&c, name);
+    assert_eq!(out, format!("STOPPED name={name} id={id} session={sid}\n"));
+    let cli: Vec<Vec<String>> = calls(&state).into_iter().map(|(_, a)| a).filter(|a| a[0] == "stop" || a[0] == "rm").collect();
+    assert_eq!(cli, [vec!["stop".to_string(), id.clone()], vec!["rm".to_string(), id]]);
+    let a = worker_argv(&state, name);
     assert_eq!(option(&a, "--permission-mode"), "plan");
     assert_eq!(option(&a, "--effort"), "high");
     assert_eq!(option(&a, "-n"), name);
-    assert_eq!(option(&a, "--session-id"), sid);
+    assert!(!c.join(".router/out").exists());
 }
 
 /// A checkout holding scripts/router-watch.sh, cloned from a bare `origin.git` file remote (no

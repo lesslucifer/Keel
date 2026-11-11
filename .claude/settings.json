@@ -21,10 +21,8 @@
       "Bash(ps aux)",
       "Bash(scripts/router-watch.sh *)",
       "Bash(scripts/router-worker.sh resume *)",
-      "Bash(scripts/router-worker.sh send *)",
       "Bash(scripts/router-worker.sh spawn *)",
-      "Bash(scripts/router-worker.sh stop *)",
-      "Bash(scripts/router-worker.sh wait *)"
+      "Bash(scripts/router-worker.sh stop *)"
     ]
   },
   "hooks": {

@@ -3,7 +3,7 @@
 Ported from Trawler's `trawler-router/references/brief-skeleton.md` (2026-11-06);
 every line exists because a worker once failed without it (`lessons.md` ids in
 the right column below). The router writes the brief itself (SKILL.md
-"Substance comes from workers"): a headless brief to
+"Substance comes from workers"): a background brief to
 `<ROOT>/.router/briefs/<name>.md` (`Read` it back before spawning), an
 in-session one as the `Agent` prompt. Commands: `commands.md`.
 
@@ -38,7 +38,7 @@ Owner rulings: <Qn = x, ...>.
    `keel mr commit -m $'…' --as <id>` for the owner; notes come in a fresh session after.
 6. Try-it: a TESTED helper at a stable path (free port, sample data), cd-prefixed run steps,
    backup/restore of any real state it touches.
-## Report to <router name>, then stop
+## Report to <router name> by SendMessage, then end your turn (stay alive for follow-ups)
 What is signed · doc (abs path, branch confirmed) · full tip · ordered cd-prefixed owner commands · gate state ·
 doc only or how to try · what no gate reviewed (paths outside code_paths) · follow-ups.
 ```

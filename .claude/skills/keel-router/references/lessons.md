@@ -8,7 +8,7 @@ Source (lineage): a router session on the Trawler project (a Rust + Tauri app ru
 3. Verify third-party behaviour a design depends on in source at the pinned version; PLAUSIBLE is a lead. (B3, B4)
 4. Pass the model explicitly on every worker and review; check yours and theirs at start. (B7)
 5. One current task per message, ending "What you need to do now:"; self-contained; never point back, even on a re-ask. (A1–A5, A8, A13, A14)
-6. Headless workers: resumed for follow-up rounds (R15), `ls`-checked durable brief, one non-stop run, no mid-run questions, current router name. (C1–C4, C6)
+6. Background workers: follow-up rounds go to the live session by message (R15, DEC-44), `ls`-checked durable brief, one non-stop run, no mid-run questions, report by `SendMessage` to the current router name. (C1–C4, C6)
 7. Never do the work, never launder a denial: the owner runs `mr`, merges, pushes, tags. (C5, D1, D2)
 8. Independent read-only Opus review of everything outside the gate before the owner signs. (B7, G2)
 9. Protect the owner's machine: backup/restore, temp homes, one e2e at a time, `lsof` first. (F1–F3)
@@ -52,10 +52,10 @@ Source (lineage): a router session on the Trawler project (a Rust + Tauri app ru
 - C7 Workers' try helpers broken (syntax error, HTML for a JSON test, helper in another scratchpad) → run once; stable path.
 - C8 Router's temp review worktree held the epic branch; back-merge blocked → remove temp worktrees.
 - C9 Hotfix landed as a one-epic collapse straight to main; owner wanted an epic with parallel WUs, main only after green → ask or default to that.
-- C10 The owner had to say "done" after every sign/merge/push/tag; the router idled until told → watcher per staged action, same turn; 10-minute heartbeat (superseded 2026-11-11: no router heartbeat; a `wait` per worker and a watch per action).
+- C10 The owner had to say "done" after every sign/merge/push/tag; the router idled until told → watcher per staged action, same turn; 10-minute heartbeat (superseded 2026-11-11: no router heartbeat; workers report by message (DEC-44) and a watch per action).
 - C11 A worker was announced as spawned but never started (`command -v claude` empty) → absolute claude path; announce only after `ps` shows it.
 - C12 Two parallel workers both took DEC-77 → a worker allocating a shared number (decision, rule, use case) checks every branch first; the router assigns the number in the brief.
-- C13 Workers died (reboot) or idled out and nobody noticed for hours → the heartbeat checks every worker and relaunches a dead or stalled one from its brief (now: a `wait` per live worker reports `STALLED` / `EXITED`).
+- C13 Workers died (reboot) or idled out and nobody noticed for hours → the heartbeat checks every worker and relaunches a dead or stalled one from its brief (now: a background worker survives the router; on wake the router checks `ListAgents` and resumes an unlisted one; the watchdog, E-ROUTER3.W9, reports idle and stuck workers).
 
 ## D. Permissions
 - D1 Router merged twice, then "Merge Without Review" was denied → the owner merges; check capability before promising automation.
