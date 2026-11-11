@@ -1915,6 +1915,18 @@ fn guard_run_with_a_watchdog_recipient_allows_only_the_scheduler_and_a_message_t
             guard_to("", &as_agent(send.clone())).is_some(),
             "{agent:?}: an empty recipient allowed a message"
         );
+        // review r2 I1: only the one schedule the start prompt asks for; transcript text cannot add another
+        for (k, v) in [
+            ("cron", serde_json::json!("* * * * *")),
+            ("cron", serde_json::json!("*/1 * * * *")),
+            ("prompt", serde_json::json!("tick and message w1")),
+            ("recurring", serde_json::json!(false)),
+            ("recurring", serde_json::Value::Null),
+        ] {
+            let mut e = cron.clone();
+            e["tool_input"][k] = v.clone();
+            assert!(guard_to("r1", &as_agent(e)).is_some(), "{agent:?}: CronCreate with {k} = {v} allowed");
+        }
     }
 }
 
@@ -2776,8 +2788,54 @@ fn watchdog_facts_never_block_the_prompt_and_say_what_they_cannot_read() {
         .env("ROUTER_CLAUDE", &l.stub)
         .env("STUB_STATE", &l.state)
         .env("HOME", h)
+        .env("GIT_CEILING_DIRECTORIES", bare.path().parent().unwrap())
         .output()
         .unwrap();
     assert!(o.status.success(), "{o:?}");
     assert_eq!(String::from_utf8_lossy(&o.stdout), "Report to r1.\nThe worktree list cannot be read (git worktree list).\n");
+}
+
+/// review r2 I2: facts reads a worker's worktree without taking its index lock, so the worker's own
+/// `git add` or `git commit` never meets an index.lock left by the watchdog.
+#[test]
+fn watchdog_facts_leave_a_workers_index_untouched() {
+    use std::os::unix::fs::MetadataExt;
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let mut rows = l.sessions();
+    rows.push(serde_json::json!({"id": "w100", "sessionId": sid(1), "name": "w1", "cwd": l.wt, "kind": "background", "status": "busy"}));
+    l.set_sessions(&rows);
+    // a stale index: a tracked file's stat no longer matches it, so a plain `git status` rewrites it
+    let tracked = std::fs::File::options().write(true).open(l.wt.join(".gitignore")).unwrap();
+    tracked.set_modified(std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_600_000_000)).unwrap();
+    let index = l.main.join(".git/worktrees/wt/index");
+    let before = std::fs::metadata(&index).unwrap();
+    let out = facts(&l, home.path());
+    assert!(out.contains("w1: busy"), "{out}");
+    let after = std::fs::metadata(&index).unwrap();
+    assert_eq!((before.ino(), before.mtime_nsec()), (after.ino(), after.mtime_nsec()), "facts rewrote the worker's index");
+}
+
+/// review r2 I3: a transcript facts cannot stat (it vanished between the glob and the look) costs
+/// that worker its quiet minutes, never the rest of the fleet.
+#[test]
+fn watchdog_facts_keep_the_fleet_when_a_transcript_cannot_be_read() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let mut rows = l.sessions();
+    for i in 1..=3 {
+        rows.push(worker_row(&l, h, &format!("w{i}"), &sid(i), serde_json::json!({"status": "busy"}), Some(1), &[]));
+    }
+    l.set_sessions(&rows);
+    let shim = l.state.join("nostat");
+    std::fs::create_dir_all(&shim).unwrap();
+    std::fs::write(shim.join("stat"), "#!/bin/sh\nexit 1\n").unwrap();
+    std::fs::set_permissions(shim.join("stat"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let path = format!("{}:{}", shim.display(), std::env::var("PATH").unwrap());
+    let (ok, out) = l.run_env(&["watchdog", "facts", "r1"], &[("HOME", h.to_str().unwrap()), ("PATH", &path)]);
+    assert!(ok, "{out}");
+    let b = blocks(&out);
+    assert_eq!(b.len(), 3, "{out}");
+    assert!(b.iter().all(|x| x.contains(": busy · quiet ? · ")), "{out}");
 }

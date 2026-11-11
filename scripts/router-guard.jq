@@ -35,11 +35,13 @@ def bash_ok:
 
 if $ARGS.named.watchdog_to != null then
   $ARGS.named.watchdog_to as $to
-  | if $to != "" and (.tool_name == "CronCreate"
+  # only the one schedule the start prompt asks for: transcript text cannot add another
+  | if $to != "" and ((.tool_name == "CronCreate" and (.tool_input | type) == "object"
+        and .tool_input.cron == "*/5 * * * *" and .tool_input.prompt == "tick" and .tool_input.recurring == true)
       or (.tool_name == "SendMessage" and (.tool_input | type) == "object" and .tool_input.to == $to))
     then empty
     else {hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny",
-      permissionDecisionReason: "watchdog guard: only CronCreate and a SendMessage to \($to) are allowed"}} end
+      permissionDecisionReason: "watchdog guard: only CronCreate of the */5 tick and a SendMessage to \($to) are allowed"}} end
 elif .agent_type != "router" then empty
 elif (.tool_name | IN(tools[]) | not) then deny("tool \(.tool_name) is not one of the router's tools (\(tools | join(", ")))")
 elif .tool_name == "Bash" then

@@ -117,6 +117,7 @@ EOF
 # drop the tick). Live worker: a background session in a registered worktree of this repository other
 # than this checkout and the main one, exactly where spawn may put a worker.
 facts() {
+  set +e  # a hook that fails would drop the tick: one worker's failed read never ends the fleet
   list=$("$C" agents --json 2>/dev/null) || { printf 'Report to %s.\nThe session list cannot be read (claude agents --json).\n' "$rn"; exit 0; }
   rc=0; printf '%s\n' "$list" | jq -e --arg n "$rn" 'any(.[]; .name == $n)' > /dev/null 2>&1 || rc=$?
   [ "$rc" -le 1 ] || { printf 'Report to %s.\nThe session list cannot be read (claude agents --json).\n' "$rn"; exit 0; }
@@ -143,8 +144,8 @@ facts() {
     if [ -n "$t" ]; then
       # one listing of the transcript and its subagents, newest first: one stat however many there are
       f=$(ls -t "$t" "${t%.jsonl}"/subagents/*.jsonl 2>/dev/null | head -1)
-      newest=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f")
-      quiet=$(( (now - newest) / 60 )); [ "$quiet" -ge 0 ] || quiet=0
+      newest=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null)
+      case "$newest" in ""|*[!0-9]*) ;; *) quiet=$(( (now - newest) / 60 )); [ "$quiet" -ge 0 ] || quiet=0;; esac
       # the last 64 KB; a first line the window cut is dropped
       items=$(if [ "$(wc -c < "$t")" -gt 65536 ]; then tail -c 65536 "$t" | sed 1d; else cat "$t"; fi |
         jq -R 'fromjson? | select(.type == "assistant") | .message.content[]? |
@@ -153,7 +154,8 @@ facts() {
     else items='[]'; fi
     br=$(git -C "$w_cwd" branch --show-current 2>/dev/null) || br=
     tip=$(git -C "$w_cwd" log -1 --format='%h %s' 2>/dev/null) || tip=
-    dirty=$(git -C "$w_cwd" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    # --no-optional-locks: never take the worker's index.lock (its own git add/commit would fail)
+    dirty=$(git --no-optional-locks -C "$w_cwd" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
     jq -n -c --arg name "$w_name" --arg st "$w_state" --arg wf "$w_wait" --arg q "$quiet" --arg br "${br:-detached}" \
       --arg tip "$tip" --arg dirty "$dirty" --argjson items "${items:-[]}" '
       def clean($n): tostring | gsub("[[:cntrl:]]"; " ") | .[0:$n];
