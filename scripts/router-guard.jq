@@ -27,7 +27,7 @@ def gh_args: "( ((--(json|state|limit|author|base|head|label|search)|-(L|s|A|B|H
 def bash_ok:
   test("^[A-Za-z0-9 ._/:=@%,+^~-]*$")
   and (test("--ou") | not)
-  and test("^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)" + gh_args + "|ps (aux|-ef)|scripts/router-worker\\.sh (spawn|resume|wait) [A-Za-z0-9._/ -]+|scripts/router-watch\\.sh (commit|signed|merged|pushed|tagged)( [.]*[A-Za-z0-9_][A-Za-z0-9._/-]*)+)$")
+  and test("^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)" + gh_args + "|ps (aux|-ef)|scripts/router-worker\\.sh (spawn|resume|send|stop|wait) [A-Za-z0-9._/ -]+|scripts/router-watch\\.sh (commit|signed|merged|pushed|tagged)( [.]*[A-Za-z0-9_][A-Za-z0-9._/-]*)+)$")
   and ((test("^scripts/") and test("\\.\\.")) | not);
 
 if .agent_type != "router" then empty
@@ -36,7 +36,7 @@ elif .tool_name == "Bash" then
   (.tool_input.command // "") as $c
   # length first: it bounds the regex work below (an unbounded trim once ran past the hook timeout)
   | if ($c | length) > 1000 or ($c | sub("^ +"; "") | sub(" +$"; "") | bash_ok | not)
-    then deny("Bash whitelist: git status/log/diff/show, git branch -v/-a, gh pr view/list/status (no -R), ps aux/-ef, scripts/router-worker.sh spawn|resume|wait, scripts/router-watch.sh commit|signed|merged|pushed|tagged <args not starting with -> (read-only owner-action watch); one command of plain words, no quotes/$/globs/pipes/redirects, no --output")
+    then deny("Bash whitelist: git status/log/diff/show, git branch -v/-a, gh pr view/list/status (no -R), ps aux/-ef, scripts/router-worker.sh spawn|resume|send|stop|wait, scripts/router-watch.sh commit|signed|merged|pushed|tagged <args not starting with -> (read-only owner-action watch); one command of plain words, no quotes/$/globs/pipes/redirects, no --output")
     else empty end
 elif .tool_name == "Write" then
   .cwd as $d | (.tool_input.file_path // "") as $p

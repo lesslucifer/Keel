@@ -1,18 +1,25 @@
 #!/bin/sh
 # Router-only launcher for headless `claude -p` workers (E-ROUTER Q2/Q3 override, 2026-11-08).
-# The router's Bash hook allows ONLY this script's three shapes; every argument is validated
+# The router's Bash hook allows ONLY this script's shapes; every argument is validated
 # here, and the prompt is fixed text, so no untrusted string ever reaches `claude -p`.
 #   router-worker.sh spawn  <name> <worktree> <brief.md> <model> [--permission-mode acceptEdits|plan] [--effort <level>]
 #   router-worker.sh resume <name> <session-uuid> <worktree> <note.md> <model> [--permission-mode acceptEdits|plan] [--effort <level>]
+#   router-worker.sh send   <name> <brief.md>
+#   router-worker.sh stop   <name>
 #   router-worker.sh wait   <name> [<stall-min>]
+# A worker is long-running (E-ROUTER3.W2): `claude -p` in stream-json mode reads its turns from
+# .router/out/<name>.in, kept open by a `tail -f` feed, so it stays alive between briefs. send appends
+# the next brief (snapshotted like any other) to a live worker; stop closes the feed, and the worker
+# exits after its current turn. resume restarts a dead session the same way.
 # The two options come in either order, once each. The model and effort must satisfy the worker policy,
 # [router] in .keel/config.toml at this checkout's HEAD (DEC-39); no policy, no run. The mode defaults
 # to acceptEdits and the effort to the policy's default, per run (a resume inherits neither). Every worker gets the fixed
 # cargo/keel grant below and is denied `keel mr` and `cargo run`; the grant never reaches the router.
 # wait (run by the router as a background Bash command, so its exit wakes the router) blocks
-# until the worker exits (EXITED) or stalls (STALLED: on two polls running, no Bash-tool shell
-# child and its session transcript untouched for <stall-min> minutes, default 15), prints that one
-# line, exits 0. It only reads; the transcript is ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/
+# until the worker ends a turn with every sent brief answered (IDLE; its last result text goes to
+# .router/out/<name>.report), exits (EXITED) or stalls mid-turn (STALLED: on two polls running, no
+# Bash-tool shell child and its session transcript untouched for <stall-min> minutes, default 15),
+# prints that one line, exits 0. It writes only <name>.report; the transcript is ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/
 # */<session>.jsonl plus */<session>/subagents/*.jsonl, falling back to the
 # pid file's mtime when none exists. Poll: ROUTER_WAIT_POLL s. A background Bash command is killed
 # at its timeout (max 2h): the router then wakes without a line and re-arms.
@@ -21,9 +28,8 @@
 # .router/runs/<name>-<ts>-<mode>/ (sha256 + path printed so the router can verify), and the worker reads a copy
 # of it inside its own worktree (<worktree>/.router-brief.XXXXXX/brief.md, git-ignored).
 # resume must name the same worktree the session was spawned in (recorded in the spawn's run dir).
-# One live run per name; each run truncates .router/out/<name>.out, so it holds only that run's report.
-# The worker runs as `-n <name>`: after RUNNING the router subscribes to its end with
-# SendMessage {to: <name>, notify_when_idle: true} and no message (the only shape the router guard allows).
+# One live run per name; each run truncates .router/out/<name>.out (the raw stream-json output), so it
+# holds only that run. The worker runs as `-n <name>`, the name SendMessage addresses (DEC-42).
 set -eu
 die() { echo "router-worker: $*" >&2; exit 2; }
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
@@ -31,15 +37,39 @@ B="$ROOT/.router/briefs" O="$ROOT/.router/out"
 # the one worker-name rule: spawn, resume and wait all check it here, and the guard does not repeat it
 valid_name() { expr "$1" : '^[a-z0-9][a-z0-9-]\{0,40\}$' >/dev/null || die "bad name"; }
 live() { ps -o stat=,command= -p "$1" 2>/dev/null | grep -v '^ *Z' | grep -qF -- " -n $name "; }
+newest_run() { run=; for d in "$ROOT"/.router/runs/*/; do [ "$(cat "${d}name" 2>/dev/null)" = "$name" ] && run=$d; done; [ -n "$run" ]; }
+brief_file() {
+  f=$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)/$(basename "$1")
+  case "$f" in "$B"/*.md) [ -f "$f" ] && [ ! -L "$f" ] || die "no such regular file (symlinks refused)";; *) die "file must be a .md under $B";; esac
+}
+# The brief $f is copied to a read-only snapshot run dir R (kind $1) with its sha256. A session may
+# only read its own worktree, so the worker gets a copy inside it, in a fresh random-named dir
+# (mktemp -d: never an existing path or symlink) that ignores itself in git. Copy-in, not
+# --add-dir "$R": the worker gets no tool access to the router's .router/runs/.
+# ponytail: one .router-brief.* dir per run is left in the target until the worktree is removed
+# (or `rm -rf .router-brief.*` there); add cleanup if a worktree lives across many runs.
+snapshot() {
+  mkdir -p "$O" "$ROOT/.router/runs"
+  R="$ROOT/.router/runs/$name-$(date +%Y%m%d%H%M%S)-$1"
+  mkdir "$R" || die "run dir exists"
+  cp "$f" "$R/brief.md"
+  printf '%s\n' "$sid" > "$R/session"; printf '%s\n' "$name" > "$R/name"; printf '%s\n' "$wt" > "$R/worktree"
+  [ -z "${pm:-}" ] || { printf '%s\n' "$pm" > "$R/permission-mode"; printf '%s\n' "$effort" > "$R/effort"; }
+  sha=$(shasum -a 256 "$R/brief.md" | cut -d' ' -f1)
+  echo "$sha" > "$R/sha256"; chmod 444 "$R"/*; chmod 555 "$R"
+  in=$(mktemp -d "$wt/.router-brief.XXXXXX") || die "cannot create brief dir in $wt"
+  echo '*' > "$in/.gitignore"; cp "$R/brief.md" "$in/brief.md"; chmod 444 "$in/brief.md"
+  snap="$R/brief.md" f="$in/brief.md"
+}
+# one stream-json user turn appended to the worker's inbox
+turn() { jq -cn --arg t "$1" '{type: "user", message: {role: "user", content: $t}}' >> "$O/$name.in"; }
 if [ "${1:-}" = wait ]; then
   [ $# -eq 2 ] || [ $# -eq 3 ] || die "wait <name> [<stall-min>]"
   name=$2 stall=${3-15}
   valid_name "$name"
   expr "$stall" : '^[1-9][0-9]\{0,3\}$' >/dev/null || die "stall-min must be 1-9999"
   pid=$(cat "$O/$name.pid" 2>/dev/null) || die "no worker $name ($O/$name.pid missing)"
-  run=
-  for d in "$ROOT"/.router/runs/*/; do [ "$(cat "${d}name" 2>/dev/null)" = "$name" ] && run=$d; done
-  [ -n "$run" ] || die "no recorded run for $name"
+  newest_run || die "no recorded run for $name"
   # found by the unique session id under any project dir: Claude Code's dir name (worktree path with
   # non-alnum -> -, truncated past 200 chars plus a hash) is not re-derived here
   P="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" sid=$(cat "${run}session")
@@ -51,9 +81,17 @@ if [ "${1:-}" = wait ]; then
   busy() { ps -A -o ppid=,command= | awk -v p="$pid" '$1 == p && $2 ~ /(^|\/)[a-z]*sh$/ && $3 == "-c" { f = 1 } END { exit !f }'; }
   # quiet must hold on two consecutive polls: a command that just ended leaves the transcript
   # stale until its result is written, and the worker may be exiting
+  # stream-json events by type (key order varies; non-JSON lines are skipped). Every turn opens with
+  # system/init and closes with a result; events such as command_lifecycle may follow the result.
+  count() { jq -R -r 'fromjson? | .type + "/" + (.subtype // "")' "$O/$name.out" 2>/dev/null | grep -c "$1" || :; }
+  results() { count '^result/'; }
+  # idle: every turn has closed, and every brief in the inbox has had its turn
+  idle() { r=$(results); [ "$r" -ge "$(count '^system/init$')" ] && [ "$r" -ge $(( $(cat "$O/$name.in" 2>/dev/null | wc -l) )) ]; }
+  report() { [ "$(results)" -eq 0 ] || jq -R -s -r '[split("\n")[] | fromjson? | select(.type == "result")] | last | .result // ""' "$O/$name.out" > "$O/$name.report"; }
   quiet=0
   while live "$pid"; do
-    if busy; then quiet=0
+    if idle; then report; echo "IDLE name=$name pid=$pid turn=$(results) report=$O/$name.report"; exit 0
+    elif busy; then quiet=0
     else
       at=$(seen)
       [ -n "$at" ] || at=$(mtime "$O/$name.pid")
@@ -64,13 +102,30 @@ if [ "${1:-}" = wait ]; then
     fi
     sleep "${ROUTER_WAIT_POLL:-10}"
   done
-  echo "EXITED name=$name pid=$pid out=$O/$name.out"; exit 0
+  report; echo "EXITED name=$name pid=$pid out=$O/$name.out"; exit 0
+fi
+if [ "${1:-}" = send ] || [ "${1:-}" = stop ]; then
+  mode=$1; shift
+  if [ "$mode" = send ]; then [ $# -eq 2 ] || die "send <name> <brief.md>"; else [ $# -eq 1 ] || die "stop <name>"; fi
+  name=$1
+  valid_name "$name"
+  pid=$(cat "$O/$name.pid" 2>/dev/null) && live "$pid" || die "worker $name is not running"
+  if [ "$mode" = stop ]; then
+    kill "$(cat "$O/$name.feed")" 2>/dev/null || die "cannot close $name's input"
+    echo "STOPPING name=$name pid=$pid (exits after its current turn; wait prints EXITED)"; exit 0
+  fi
+  brief_file "$2"
+  newest_run || die "no recorded run for $name"
+  sid=$(cat "${run}session") wt=$(cat "${run}worktree")
+  snapshot send
+  turn "Continue your work. Read $f in full and do exactly what it says, then end with a final self-contained report."
+  echo "SENT name=$name pid=$pid session=$sid snapshot=$snap brief=$f sha256=$sha"; exit 0
 fi
 C=${ROUTER_CLAUDE:-$HOME/.local/bin/claude}
 [ -x "$C" ] || die "claude not found at $C (set ROUTER_CLAUDE)"
 mode=${1:-}; [ $# -ge 1 ] && shift
 case "$mode" in spawn) n=4 usage="spawn <name> <worktree> <brief.md> <model>";;
-  resume) n=5 usage="resume <name> <uuid> <worktree> <note.md> <model>";; *) die "spawn|resume|wait";; esac
+  resume) n=5 usage="resume <name> <uuid> <worktree> <note.md> <model>";; *) die "spawn|resume|send|stop|wait";; esac
 usage="$usage [--permission-mode acceptEdits|plan] [--effort <level>]"
 [ $# -eq $n ] || [ $# -eq $((n + 2)) ] || [ $# -eq $((n + 4)) ] || die "$usage"
 name=$1; shift
@@ -128,13 +183,12 @@ top=$(cd "$(git rev-parse --show-toplevel)" && pwd -P) || die "not in a git repo
 main=$(git -C "$ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')
 main=$(cd "$main" 2>/dev/null && pwd -P) || die "cannot resolve main checkout"
 [ "$wt" != "$main" ] || die "worker may not run in the repository's main checkout ($wt)"
-f=$(cd "$(dirname "$file")" 2>/dev/null && pwd -P)/$(basename "$file")
-case "$f" in "$B"/*.md) [ -f "$f" ] && [ ! -L "$f" ] || die "no such regular file (symlinks refused)";; *) die "file must be a .md under $B";; esac
-mkdir -p "$O" "$ROOT/.router/runs"
+brief_file "$file"
+mkdir -p "$O"
 # one live run per name: a second spawn/resume would interleave <name>.out and orphan the pid
 p=$(cat "$O/$name.pid" 2>/dev/null) || p=
 if [ -n "$p" ] && live "$p"; then
-  die "worker $name is still running (pid $p); wait for it to exit"; fi
+  die "worker $name is still running (pid $p); send it the brief, or stop it first"; fi
 if [ "$mode" = resume ]; then
   ok=
   for d in "$ROOT"/.router/runs/*/; do
@@ -143,21 +197,7 @@ if [ "$mode" = resume ]; then
   done
   [ -n "$ok" ] || die "no recorded spawn for name=$name session=$sid"
 fi
-R="$ROOT/.router/runs/$name-$(date +%Y%m%d%H%M%S)-$mode"
-mkdir "$R" || die "run dir exists"
-cp "$f" "$R/brief.md"
-printf '%s\n' "$sid" > "$R/session"; printf '%s\n' "$name" > "$R/name"; printf '%s\n' "$wt" > "$R/worktree"
-printf '%s\n' "$pm" > "$R/permission-mode"; printf '%s\n' "$effort" > "$R/effort"
-sha=$(shasum -a 256 "$R/brief.md" | cut -d' ' -f1)
-echo "$sha" > "$R/sha256"; chmod 444 "$R"/*; chmod 555 "$R"
-# A session may only read its own worktree, so the worker gets a copy inside it, in a fresh
-# random-named dir (mktemp -d: never an existing path or symlink) that ignores itself in git.
-# Copy-in, not --add-dir "$R": the worker gets no tool access to the router's .router/runs/.
-# ponytail: one .router-brief.* dir per run is left in the target until the worktree is removed
-# (or `rm -rf .router-brief.*` there); add cleanup if a worktree lives across many runs.
-in=$(mktemp -d "$wt/.router-brief.XXXXXX") || die "cannot create brief dir in $wt"
-echo '*' > "$in/.gitignore"; cp "$R/brief.md" "$in/brief.md"; chmod 444 "$in/brief.md"
-snap="$R/brief.md" f="$in/brief.md"
+snapshot "$mode"
 if [ "$mode" = spawn ]; then
   prompt="You are a fresh worker session. Read $f in full and do exactly what it says, in ONE non-stop run (status messages are not stopping points; stop only at your final self-contained report). First action: git branch --show-current, git log --oneline -6, git status --short."
   set -- --session-id "$sid"
@@ -172,10 +212,17 @@ for c in "cargo build" "cargo test" "cargo check" "cargo clippy" "cargo fmt" "ke
   "keel verify-doc" "keel verify-dod" "keel notes write" "keel lint" "keel check"; do
   set -- "$@" "Bash($c)" "Bash($c *)"; done
 set -- "$@" --disallowedTools "Bash(keel mr)" "Bash(keel mr *)" "Bash(cargo run)" "Bash(cargo run *)"
+: > "$O/$name.in"; turn "$prompt"; rm -f "$O/$name.feed"
 cd "$wt"
-nohup "$C" -p "$prompt" "$@" -n "$name" --model "$model" --effort "$effort" --agent worker --permission-mode "$pm" --max-budget-usd 25 \
-  > "$O/$name.out" 2>&1 < /dev/null &
+# the feed keeps stdin open while the worker waits for its next brief; killing it (stop) is EOF
+sh -c 'tail -n +1 -f "$1" & echo $! > "$2"; wait' sh "$O/$name.in" "$O/$name.feed" 2>/dev/null |
+  nohup "$C" -p --input-format stream-json --output-format stream-json --verbose "$@" -n "$name" --model "$model" --effort "$effort" --agent worker --permission-mode "$pm" --max-budget-usd 25 \
+  > "$O/$name.out" 2>&1 &
 pid=$!; echo "$pid" > "$O/$name.pid"
+n=0; until [ -s "$O/$name.feed" ] || [ $n -ge 50 ]; do sleep 0.1; n=$((n+1)); done
+# a worker that dies on its own leaves its feed blocked in tail -f: end that feed (this run's, by
+# value: a later run of the name rewrites the feed file) with the worker
+nohup sh -c 'while kill -0 "$1" 2>/dev/null; do sleep 1; done; kill "$2" 2>/dev/null' sh "$pid" "$(cat "$O/$name.feed")" > /dev/null 2>&1 &
 # survive a 2s startup window (poll 0.2s); an early exit reports its real exit code.
 # alive() excludes zombies: an exited-but-unreaped child still answers `ps -p`.
 alive() { st=$(ps -o stat= -p "$pid" 2>/dev/null) || return 1; case "$st" in Z*|"") return 1;; esac; }
