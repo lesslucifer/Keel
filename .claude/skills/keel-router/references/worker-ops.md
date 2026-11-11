@@ -95,17 +95,20 @@ pitfall 2).
 - **Alive**: `ps aux` and look for the pid in `.router/out/<name>.pid` (`Read`)
   or `-n <name>`; the args show `--model` and `--effort`. `ListAgents` lists a live worker by name.
 - **Wait**: `<launcher> wait <name> [<stall-min>]` prints one line: `IDLE …
-  turn=<n> report=…` (every turn closed and every sent brief answered),
+  turn=<n> report=…` (every sent brief taken and every turn closed; a brief sent
+  mid-turn is folded into that turn and answered by its one result),
   `STALLED …` (quiet mid-turn) or `EXITED …`. An idle worker is never reported
   stalled, and a stopped one is never reported idle.
 - **Report**: on `IDLE` or `EXITED`, `Read` `.router/out/<name>.report`, the
-  worker's last result. `.router/out/<name>.out` is the raw stream-json output;
+  worker's last result. No `.report` after `EXITED` means the last brief got no
+  answer: resume the worker with it. `.router/out/<name>.out` is the raw stream-json output;
   each run of a name truncates it, and the launcher refuses a second live run of
   the same name.
 - **Follow-up**: you write `.router/briefs/<name>-r<n>.md`; then
   `<launcher> send <name> .router/briefs/<name>-r<n>.md` to the live worker
   (snapshotted and hashed as on spawn, printed `SENT … sha256=…`; the session
-  keeps its model, effort and mode), and re-arm `wait`. Only if its process
+  keeps its model, effort and mode), and re-arm `wait`. A stopping worker
+  refuses it. Only if its process
   died (`EXITED` unasked, a reboot):
   `<launcher> resume <name> <session-uuid> <same worktree> .router/briefs/<name>-r<n>.md <model> [--effort <level>] [--permission-mode plan]`
   (the launcher refuses a different worktree than the spawn's; a resume does not
