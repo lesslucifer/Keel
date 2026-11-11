@@ -349,13 +349,14 @@ struct Launcher {
 /// once. `--bg` lists a new idle background session in $STUB_STATE/sessions.json (named by `-n`, or on
 /// `--resume` by the session's own saved name) and prints the `backgrounded` line; while
 /// $STUB_STATE/refuse exists it prints that file and exits 1, and while $STUB_STATE/unlisted exists it
-/// starts nothing it lists. `agents --json` prints the list, `stop <id>` delists the id, `rm` only records.
+/// starts nothing it lists. `agents --json` prints the list (and, while $STUB_STATE/settle exists, then
+/// marks every session idle: a turn that ends between two looks), `stop <id>` delists the id, `rm` only records.
 fn stub_claude(stub: &Path) {
     std::fs::write(stub, concat!(
         "#!/bin/sh\nS=$STUB_STATE\nprintf '%s ' \"$PWD\" >> \"$S/calls\"; printf '[%s]' \"$@\" >> \"$S/calls\"; echo >> \"$S/calls\"\n",
         "[ -s \"$S/sessions.json\" ] || echo '[]' > \"$S/sessions.json\"\n",
         "case \"$1\" in\n",
-        "  agents) cat \"$S/sessions.json\"; exit 0;;\n",
+        "  agents) cat \"$S/sessions.json\"; [ ! -e \"$S/settle\" ] || { jq 'map(.status = \"idle\")' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }; exit 0;;\n",
         "  stop) jq --arg i \"$2\" 'map(select(.id != $i))' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; echo \"stopped $2\"; exit 0;;\n",
         "  rm) echo \"removed $2\"; exit 0;;\n",
         "esac\n",
@@ -447,6 +448,15 @@ impl Launcher {
     /// How many sessions the launcher started under `name`.
     fn starts(&self, name: &str) -> usize {
         calls(&self.state).iter().filter(|(_, a)| a.first().map(String::as_str) == Some("--bg") && a.windows(2).any(|w| w[0] == "-n" && w[1] == name)).count()
+    }
+
+    /// PATH with an instant `sleep` first, so the launcher's bounded polls run without waiting.
+    fn fast_path(&self) -> String {
+        let shim = self.state.join("shim");
+        std::fs::create_dir_all(&shim).unwrap();
+        std::fs::write(shim.join("sleep"), "#!/bin/sh\n:\n").unwrap();
+        std::fs::set_permissions(shim.join("sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        format!("{}:{}", shim.display(), std::env::var("PATH").unwrap())
     }
 
     fn sessions(&self) -> Vec<serde_json::Value> {
@@ -974,11 +984,7 @@ fn a_start_the_cli_refuses_is_reported_dead_with_its_reason() {
 
     // listed never: the launcher's polls run through an instant `sleep`
     std::fs::write(l.state.join("unlisted"), "").unwrap();
-    let shim = l.state.join("shim");
-    std::fs::create_dir_all(&shim).unwrap();
-    std::fs::write(shim.join("sleep"), "#!/bin/sh\n:\n").unwrap();
-    std::fs::set_permissions(shim.join("sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let path = format!("{}:{}", shim.display(), std::env::var("PATH").unwrap());
+    let path = l.fast_path();
     let (ok, out) = l.run_env(&["spawn", "n", wt, ".router/briefs/b.md", "opus"], &[("PATH", &path)]);
     assert!(!ok && out.starts_with("DEAD name=n exit=0 ") && out.contains("backgrounded"), "{out}");
 }
@@ -1004,14 +1010,15 @@ fn stop_stops_then_removes_this_repositorys_idle_worker_by_id() {
     rows.push(serde_json::json!({"id": "e1", "sessionId": "e1-x", "name": "e", "cwd": wt, "kind": "background", "status": "idle"}));
     l.set_sessions(&rows);
     let before = calls(&l.state).len();
+    let path = l.fast_path();
     for (name, why) in [
-        ("b", format!("worker b is busy: stopping it would cut its turn; the owner decides (claude stop {b})")),
+        ("b", format!("worker b is still busy: stopping it would cut its turn; the owner decides (claude stop {b})")),
         ("z", "worker z is not running".to_string()),
         ("c", "c runs outside this repository's worktrees (/elsewhere)".to_string()),
         ("d", "d is not a background session".to_string()),
         ("e", "more than one session is named e".to_string()),
     ] {
-        let (ok, out) = l.run(&["stop", name]);
+        let (ok, out) = l.run_env(&["stop", name], &[("PATH", &path)]);
         assert!(!ok && out.contains(&why), "{name}: {out}");
     }
     assert!(calls(&l.state)[before..].iter().all(|(_, c)| c[0] == "agents"), "a refused stop called the CLI");
@@ -1023,6 +1030,12 @@ fn stop_stops_then_removes_this_repositorys_idle_worker_by_id() {
     let tail: Vec<Vec<String>> = calls(&l.state).into_iter().map(|(_, c)| c).filter(|c| c[0] != "agents").collect();
     assert_eq!(tail[tail.len() - 2..], [vec!["stop".to_string(), a.clone()], vec!["rm".to_string(), a]]);
     assert!(l.sessions().iter().all(|r| r["name"] != "a") && l.sessions().iter().any(|r| r["name"] == "b"));
+
+    // live run 2026-11-11: a worker's report arrives while its turn is still ending, so the router's
+    // stop right after it finds the worker busy; stop waits (bounded) for the turn to end
+    std::fs::write(l.state.join("settle"), "").unwrap();
+    let (ok, out) = l.run_env(&["stop", "b"], &[("PATH", &path)]);
+    assert!(ok && out.starts_with(&format!("STOPPED name=b id={b} ")), "{out}");
 }
 
 /// E-ROUTER3.W10 (owner ruling 2026-11-11): the launcher has three modes. `wait` and `send` are gone,

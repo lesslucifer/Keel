@@ -9,7 +9,8 @@
 # worker`, run in its worktree, listed by `claude agents --json` while it lives. It reports to the
 # router by SendMessage and stays alive idle; a follow-up task is the router's own SendMessage, so
 # the launcher has no mode for it. stop closes an idle worker (`claude stop`, then `claude rm`, which
-# keeps its transcript and its worktree); a busy one is refused, because `claude stop` cuts its turn.
+# keeps its transcript and its worktree); a worker still busy after 30s is refused, because `claude
+# stop` cuts its turn.
 # The two spawn options come in either order, once each. The model and effort must satisfy the worker
 # policy, [router] in .keel/config.toml at this checkout's HEAD (DEC-39); no policy, no spawn. The mode
 # defaults to acceptEdits and the effort to the policy's default. Every worker gets the fixed cargo/keel
@@ -72,7 +73,14 @@ if [ "$mode" = stop ]; then
   id=$(get id) sid=$(get sessionId) cwd=$(get cwd) status=$(get status)
   [ "$(get kind)" = background ] || die "$name is not a background session"
   git -C "$ROOT" worktree list --porcelain | grep -Fxq "worktree $cwd" || die "$name runs outside this repository's worktrees ($cwd)"
-  [ "$status" = idle ] || die "worker $name is $status: stopping it would cut its turn; the owner decides (claude stop $id)"
+  # a worker reports by SendMessage before its turn has ended, so a stop right after its report may
+  # find it busy: give the turn up to 30s (poll 0.5s) to end, then refuse
+  n=0
+  while [ "$status" != idle ] && [ $n -lt 60 ]; do
+    sleep 0.5; n=$((n+1))
+    status=$(rows | jq -r --arg i "$id" 'select(.id == $i) | .status // ""')
+  done
+  [ "$status" = idle ] || die "worker $name is still ${status:-gone}: stopping it would cut its turn; the owner decides (claude stop $id)"
   "$C" stop "$id" > /dev/null || die "claude stop $id failed"
   "$C" rm "$id" > /dev/null || die "claude rm $id failed"
   echo "STOPPED name=$name id=$id session=$sid"; exit 0
