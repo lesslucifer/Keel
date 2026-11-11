@@ -1298,6 +1298,9 @@ const TASK_DONE: [&str; 2] = [
 /// The replay Claude Code 2.1.288 emits for a turn a peer's SendMessage opens (live probe, E-ROUTER3.W2 review r3).
 const PEER_REPLAY: &str = r#"{"type":"user","isReplay":true,"isSynthetic":true,"origin":{"kind":"peer"},"message":{"role":"user","content":"Another Claude session sent a message"}}"#;
 const BUDGET_ERROR: &str = r#"{"type":"result","subtype":"error_max_budget_usd","is_error":true,"errors":["Reached maximum budget ($0.0001)"]}"#;
+/// An API failure as Claude Code 2.1.288 reports it (live, logged out; review r7): subtype success,
+/// no errors, the cause only in .result.
+const API_ERROR: &str = r#"{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login","terminal_reason":"api_error","api_error_status":null}"#;
 fn result(text: &str) -> String {
     format!(r#"{{"duration_ms":1,"type":"result","subtype":"success","result":"{text}"}}"#)
 }
@@ -1398,6 +1401,13 @@ fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
     let line = bounded(l.cmd(&["wait", "fk"], &[]));
     assert!(line.starts_with("IDLE name=fk ") && line.trim_end().ends_with(" error=error_max_budget_usd"), "{line}");
     assert_eq!(std::fs::read_to_string(&report).unwrap(), "error: error_max_budget_usd: Reached maximum budget ($0.0001)\n");
+    drop(f);
+    // r7 B1: an API failure is named by its terminal reason, and its cause (only in .result) is kept
+    let f = Fake::new(&l, "fk", 1);
+    f.emit(&[INIT, REPLAY, API_ERROR]);
+    let line = bounded(l.cmd(&["wait", "fk"], &[]));
+    assert!(line.starts_with("IDLE name=fk ") && line.trim_end().ends_with(" error=api_error"), "{line}");
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "error: api_error: Not logged in · Please run /login\n");
     drop(f);
 
     // r3 I2: a background task that never ends (its shell keeps the worker busy) is no endless

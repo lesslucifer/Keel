@@ -124,8 +124,13 @@ if [ "${1:-}" = wait ]; then
         elif $x.type == "user" and $x.isReplay == true and $x.isSynthetic != true then .p += 1
         else . end)
       | .last as $l
-      | "\(.i) \(.r) \(.p) \(.bg) \(.due) \(if $l.is_error == true then $l.subtype // "error" else "-" end)",
-        (if $l == null then empty elif $l.is_error == true then "error: \($l.subtype // "error")" + (($l.errors // []) | if length > 0 then ": " + join("; ") else "" end) else $l.result // "" end)' "$T/chunk" > "$T/scan"
+      # an error result is named by its subtype, or, when that reads success (an API failure), by
+      # its terminal_reason; its cause is in errors, or else only in .result
+      | (if $l.is_error == true then (if ($l.subtype // "success") != "success" then $l.subtype else $l.terminal_reason // "error" end) else "-" end) as $err
+      | "\(.i) \(.r) \(.p) \(.bg) \(.due) \($err)",
+        (if $l == null then empty
+         elif $l.is_error == true then "error: \($err)" + (($l.errors // []) | if length > 0 then ": " + join("; ") elif ($l.result // "") != "" then ": " + $l.result else "" end)
+         else $l.result // "" end)' "$T/chunk" > "$T/scan"
     read -r i r p b d e < "$T/scan"
     inits=$((inits + i)) results=$((results + r)) replays=$((replays + p))
     [ "$b" -lt 0 ] || bg=$b
