@@ -99,8 +99,8 @@ pitfall 2).
   mid-turn is folded into that turn and answered by its one result),
   `STALLED …` (quiet mid-turn) or `EXITED …`. An idle worker is never reported
   stalled, and a stopped one is never reported idle. A turn that leaves a
-  background task running is not idle: its completion turn is. `IDLE … error=<subtype>`
-  means the worker's last turn failed (the report holds the error). `STALLED …
+  background task running is not idle: its completion turn is. `IDLE … error=<reason>`
+  means the worker's last turn failed (the report holds the error and its cause). `STALLED …
   background=<n>` means every brief is answered but a background task never
   ended: ping the worker, and stop it only once it is clean.
 - **Report**: on `IDLE` or `EXITED`, `Read` `.router/out/<name>.report`, the
