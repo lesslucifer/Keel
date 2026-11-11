@@ -98,6 +98,21 @@ stateDiagram-v2
       </ul>
       The fix made three changes beyond the plan: the replay flag, the feed-identity check, and the rule that an exit with an unanswered brief leaves no <code>.report</code>. The skill states the last one, and that a stopping worker refuses <code>send</code>, in a second owner commit.</li>
     <li><strong>Review round 2 (FAIL, 1 blocker on <code>966435b</code>).</strong> A worker that ended its turn with a background task still running was reported <code>IDLE</code> with an interim report. The real stream marks this with <code>system/background_tasks_changed</code> and a non-empty <code>tasks</code>; when the task finishes it opens its own completion turn. The fix landed with a regression case written first and shown red. <code>wait</code> now tracks the last task list and treats a turn as answered only when no task runs. The rule was checked against the real probe stream: cut after the interim result it reads one running task and a turn still open, and over the whole stream it reads none, with the final report. Two nits were fixed in the same commit: one <code>jq</code> pass per chunk, and the launcher's pid in the run-dir name so two sends in one second do not collide. The other nits are waived on the cr note.</li>
+    <li><strong>Review round 3 (FAIL, 3 blockers and 2 importants on <code>8e8fe80</code>).</strong> A verifier's live Haiku probes settled four event shapes:
+      <ul>
+        <li>A finished background task's <code>task_notification</code> comes about 8 ms before the completion turn's <code>init</code>.</li>
+        <li>A peer's <code>SendMessage</code> replays as <code>isReplay</code> with <code>isSynthetic</code>.</li>
+        <li>An error result has no <code>.result</code>.</li>
+        <li>A background task that never ends keeps <code>tasks</code> non-empty, and its shell keeps the worker busy.</li>
+      </ul>
+      The fixes landed with regression cases written first, using those exact shapes; the first was shown red with the peer-replay miscount.
+      <ul>
+        <li>A notification not yet followed by an <code>init</code> means a turn is due.</li>
+        <li>Synthetic replays are not counted.</li>
+        <li>An error shows as <code>error=&lt;subtype&gt;</code> on the <code>IDLE</code> line and in the report.</li>
+        <li>A never-ending task stalls the wait (<code>STALLED … background=&lt;n&gt;</code>).</li>
+      </ul>
+      The rule, replayed over the probe's real stream, keeps the gap closed and returns the real final report. The worker-ops skill text names the two new line suffixes (a third owner commit).</li>
     <li><strong>Plan file.</strong> The first W2 plan (a router heartbeat) was rewritten after the owner's ruling and renamed from <code>…-w2-heartbeat-…</code>. The epic plan was amended in this WU (W2 rewritten, W9 added, open point 6 ruled).</li>
     <li><strong>Snapshot.</strong> <code>docs/decisions/router.html</code>'s htmldoc id is still unknown to the server (as in W1), so its diff view has no baseline. Use <code>git diff</code>.</li>
   </ul>
