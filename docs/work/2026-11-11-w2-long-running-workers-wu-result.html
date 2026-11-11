@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af3e3b39f34851f0dfb216c" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-ROUTER3.W2 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-ROUTER3.W2 · Workers are long-running sessions — result</h1>
+      <p>A worker now stays alive between briefs. The router hands it the next brief with <code>send</code>, steers it with <code>SendMessage</code> even while it is idle, and closes it with <code>stop</code>. The router has no heartbeat.</p>
+      <div class="meta">T3 · WU result · 2026-11-11 · Keel · branch <code>wu/E-ROUTER3/w2-long-running-workers</code> off <code>dda9ce0</code> · <a href="2026-11-11-w2-long-running-workers-wu-plan.html">WU plan</a> · <a href="2026-11-10-e-router3-epic-plan.html#w2">epic plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="summary">In one paragraph</h2>
+<p data-c="summary">Before this WU a worker was a one-turn <code>claude -p</code>: it did one brief and exited, and every follow-up started a new process. Now <code>scripts/router-worker.sh</code> starts it in stream-json mode, reading its turns from an inbox file that a <code>tail -f</code> feed keeps open, so the session waits for its next brief instead of exiting. Three launcher commands drive that life: <code>send</code> (next brief, snapshotted and hashed as before), <code>stop</code> (close the input, the worker exits after its turn), and <code>wait</code>, which now also prints <code>IDLE</code> when the worker has finished its turn. The router's 10-minute heartbeat is gone from the skill (owner ruling: the router only routes), and a watchdog worker (W9) will report progress instead.</p>
+
+<h2 id="how">How a worker lives now</h2>
+<div class="diagram" data-c="lifecycle">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> Busy: spawn (brief 1 in the inbox)
+  Busy --> Idle: result event (wait prints IDLE, writes .report)
+  Idle --> Busy: send (next brief) or a SendMessage
+  Busy --> Busy: SendMessage steers mid-turn
+  Idle --> Stopping: stop (feed closed)
+  Busy --> Stopping: stop (the turn finishes first)
+  Stopping --> [*]: EOF, process exits (wait prints EXITED)
+  Busy --> [*]: crash or reboot (wait prints EXITED; resume restarts it)
+</pre>
+<div class="caption">The worker's states as <code>wait</code> reports them. A stopping worker is never reported <code>IDLE</code>, and an idle one is never reported <code>STALLED</code>.</div>
+</div>
+<table data-c="files">
+  <thead><tr><th>File under <code>.router/out/</code></th><th>Holds</th></tr></thead>
+  <tbody>
+    <tr><td><code>&lt;name&gt;.in</code></td><td>The inbox: one stream-json user message per brief (spawn writes the first, <code>send</code> appends).</td></tr>
+    <tr><td><code>&lt;name&gt;.feed</code></td><td>The pid of the <code>tail -f</code> that keeps the worker's stdin open. <code>stop</code> kills it.</td></tr>
+    <tr><td><code>&lt;name&gt;.out</code></td><td>The raw stream-json output, truncated by each run of the name.</td></tr>
+    <tr><td><code>&lt;name&gt;.report</code></td><td>The last result's text, written by <code>wait</code> on <code>IDLE</code> and <code>EXITED</code>. This is the report the router reads.</td></tr>
+  </tbody>
+</table>
+<p data-c="idle-rule"><strong>The idle rule</strong> (as fixed in review round 1). The worker runs with <code>--replay-user-messages</code>, so it echoes each brief when it takes it. <code>wait</code> counts typed events with <code>jq</code>, reading only the lines added since its last poll. A worker is idle when three things hold:</p>
+<ul data-c="idle-rule-list">
+  <li>every brief in the inbox has been replayed;</li>
+  <li>every turn it opened (<code>system/init</code>) has closed (<code>result</code>);</li>
+  <li>its feed is still its own <code>tail</code> of the inbox.</li>
+</ul>
+<p data-c="idle-rule-why">Three facts make this the rule:</p>
+<ul data-c="idle-rule-why-list">
+  <li>A turn the worker opens itself (a <code>SendMessage</code>) replays nothing, so it never answers an unread brief.</li>
+  <li>A brief sent mid-turn is folded into the running turn and answered by its one result.</li>
+  <li>Real sessions emit <code>command_lifecycle</code> after a result, so the last event is no signal.</li>
+</ul>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome">Delivered. The requirement holds: a spawned worker stays alive after it reports, <code>send</code> delivers its next brief, snapshotted and hashed, to the same session, <code>wait</code> prints <code>IDLE</code> at the end of each turn, <code>stop</code> ends the session after its turn, and the guard admits <code>send</code> and <code>stop</code> with no other posture change. Both plan unknowns came out on the default side: a stream-json <code>-p</code> session stays open between turns (open point 1), and a <code>SendMessage</code> reaches an idle worker, which opens a turn to answer (open point 2), so no pty fallback and no brief-only steering were needed.</p>
+
+<h2 id="live">Probes and live run (2026-11-11, Claude Code 2.1.288)</h2>
+<table data-c="live">
+  <thead><tr><th>Run</th><th>What it showed</th></tr></thead>
+  <tbody>
+    <tr><td>Probe 1 (two raw stream-json sessions)</td><td>The session stayed alive across two turns, with one <code>result</code> per turn, and exited about 5 s after its input closed. Its <code>ListAgents</code> step ran before the worker registered, so it answered nothing about reachability.</td></tr>
+    <tr><td>Probe 2</td><td>An idle worker received a <code>SendMessage</code>, opened a turn by itself and replied. The sender's idle notice fired at the end of that turn, with the worker still alive. A result line starts with <code>{"duration_api_ms"…</code>, not <code>{"type"…</code>, so key order is not fixed.</td></tr>
+    <tr><td>Live run (scratch clone at the WU tip; a real Opus worker through the launcher; a guarded <code>--agent router</code> session)</td><td>
+      <ol>
+        <li><code>spawn</code>, then <code>IDLE turn=1</code>, report "The current branch is <code>wu/x/live</code>".</li>
+        <li><code>send</code> (new sha256, same pid and session), then <code>IDLE turn=2</code>, <code>notes.txt</code> created.</li>
+        <li>The router, under the guard, loaded keel-router and project-router and sent <code>ping-7</code> to the idle worker. The worker opened turn 3 by itself and replied <code>pong-7</code>, and the router woke on the reply. No guard denial.</li>
+        <li><code>send</code> "run <code>sleep 40</code>", then <code>stop</code> after 12 s. The worker had moved the sleep to a background task and ended its turn early. On EOF it exited and the background task was cut. <code>wait</code> printed <code>IDLE</code> here, which was a bug: a stopping worker must end in <code>EXITED</code>. Fixed in <code>5dc7439</code>.</li>
+        <li>The feed was gone after exit, and no worker, router or feed process was left.</li>
+      </ol>
+    </td></tr>
+  </tbody>
+</table>
+
+<h2 id="deviations">Deviations</h2>
+<div data-item="deviations" data-c="deviations">
+  <ul>
+    <li><strong>Report file.</strong> The plan had the launcher pipe output through a filter that writes each result to <code>.out</code>. A filter at the end of the pipeline would make <code>$!</code> the filter's pid, not the worker's. Instead <code>.out</code> stays the raw stream, and <code>wait</code> writes <code>.report</code>.</li>
+    <li><strong>Idle rule.</strong> The plan said "when a new result event arrives". The live stream showed events after a result, and a turn with no inbox entry, so the rule counts turns, inbox entries and the open feed (above).</li>
+    <li><strong>A reaper per run.</strong> This was not planned. A worker that dies on its own would leave its <code>tail -f</code> blocked forever, so each run starts a small loop that ends the feed when the worker exits. It holds the feed pid by value, because a later run of the name rewrites <code>.feed</code>. The tests caught a <code>resume</code> whose feed was killed by the old run's reaper before this change.</li>
+    <li><strong><code>stop</code> semantics, refined.</strong> It still never kills mid-turn. But the live run showed that a worker can end its turn early with work in a background task, and exiting cuts that task. The skill and DEC-43 now say this, and the router stops only idle, clean workers.</li>
+    <li><strong>Settings allowlist.</strong> <code>send</code> and <code>stop</code> were added to <code>permissions.allow</code> in <code>.claude/settings.json</code>, so the router is not prompted for them. This was not in the plan; it landed in the owner's commit <code>6166848</code>, staged as HEAD plus the two lines so the owner's uncommitted edit stayed untouched.</li>
+    <li><strong>E2E touched here.</strong> The E-ROUTERFIX e2e asserted <code>EXITED</code> after the stub's release, which is now <code>IDLE</code>. Its flow gained <code>send</code> and <code>stop</code> in this WU rather than in W7.</li>
+    <li><strong>Live-run harness.</strong> Both sessions ran through a wrapper adding <code>--setting-sources project,local --strict-mcp-config</code>, so no second Telegram poller started. That flag is W3's and W8's to put in the launcher. The launcher commands ran from a shell, as the router would issue them: a headless router in an untrusted scratch clone ignores the project allowlist, so it could not run them unprompted. The router session made the <code>SendMessage</code> call under the guard.</li>
+    <li><strong>Review round 1 (FAIL, 3 blockers and 4 importants on <code>cd852ae</code>).</strong> Fixed in <code>e64507c</code>, with a regression test written first and shown red with the exact false <code>IDLE</code>.
+      <ul>
+        <li><strong>B1:</strong> a self-opened turn let a fresh <code>send</code> read as answered.</li>
+        <li><strong>B2:</strong> <code>send</code> to a stopping worker printed <code>SENT</code> for a brief no one would read.</li>
+        <li><strong>B3:</strong> a brief folded into a running turn left <code>wait</code> unable to print <code>IDLE</code>. A probe showed real folding.</li>
+        <li><strong>I4:</strong> the feed pid was killed without checking that it was still this worker's <code>tail</code>.</li>
+        <li><strong>I5:</strong> every poll re-parsed the whole output.</li>
+        <li><strong>I6:</strong> <code>EXITED</code> left an earlier brief's answer as the report.</li>
+        <li><strong>I7:</strong> a duplicated bounded-wait helper.</li>
+      </ul>
+      The fix made three changes beyond the plan: the replay flag, the feed-identity check, and the rule that an exit with an unanswered brief leaves no <code>.report</code>. The skill states the last one, and that a stopping worker refuses <code>send</code>, in a second owner commit.</li>
+    <li><strong>Review round 2 (FAIL, 1 blocker on <code>966435b</code>).</strong> A worker that ended its turn with a background task still running was reported <code>IDLE</code> with an interim report. The real stream marks this with <code>system/background_tasks_changed</code> and a non-empty <code>tasks</code>; when the task finishes it opens its own completion turn. The fix landed with a regression case written first and shown red. <code>wait</code> now tracks the last task list and treats a turn as answered only when no task runs. The rule was checked against the real probe stream: cut after the interim result it reads one running task and a turn still open, and over the whole stream it reads none, with the final report. Two nits were fixed in the same commit: one <code>jq</code> pass per chunk, and the launcher's pid in the run-dir name so two sends in one second do not collide. The other nits are waived on the cr note.</li>
+    <li><strong>Review round 3 (FAIL, 3 blockers and 2 importants on <code>8e8fe80</code>).</strong> A verifier's live Haiku probes settled four event shapes:
+      <ul>
+        <li>A finished background task's <code>task_notification</code> comes about 8 ms before the completion turn's <code>init</code>.</li>
+        <li>A peer's <code>SendMessage</code> replays as <code>isReplay</code> with <code>isSynthetic</code>.</li>
+        <li>An error result has no <code>.result</code>.</li>
+        <li>A background task that never ends keeps <code>tasks</code> non-empty, and its shell keeps the worker busy.</li>
+      </ul>
+      The fixes landed with regression cases written first, using those exact shapes; the first was shown red with the peer-replay miscount.
+      <ul>
+        <li>A notification not yet followed by an <code>init</code> means a turn is due.</li>
+        <li>Synthetic replays are not counted.</li>
+        <li>An error shows as <code>error=&lt;subtype&gt;</code> on the <code>IDLE</code> line and in the report.</li>
+        <li>A never-ending task stalls the wait (<code>STALLED … background=&lt;n&gt;</code>).</li>
+      </ul>
+      The rule, replayed over the probe's real stream, keeps the gap closed and returns the real final report. The worker-ops skill text names the two new line suffixes (a third owner commit).</li>
+    <li><strong>Review round 4 (FAIL, 1 blocker and 3 importants on <code>e01f20b</code>).</strong> Fixed in <code>75536d7</code>, with regression cases written first and shown red against <code>e01f20b</code>.
+      <ul>
+        <li><strong>Blocker:</strong> the emptied task list arrives before the <code>task_notification</code>, so a poll between the two printed <code>IDLE</code>. It now also marks the completion turn as due.</li>
+        <li><strong>Each new <code>wait</code> re-parsed the whole run:</strong> measured at about 7 s at 100 MB. The scan state now persists in <code>&lt;name&gt;.scan</code>.</li>
+        <li><strong><code>jq</code> slurped each chunk:</strong> 876 MB at 100 MB. A streaming <code>reduce</code> peaks at 2.9 MB.</li>
+        <li><strong><code>answered</code> was judged twice:</strong> a <code>send</code> landing between the two checks could leave an <code>IDLE</code> line naming a report it had removed. It is now judged once.</li>
+      </ul>
+      Two nits were fixed in the same commit: one read of the unread tail per poll, and the stub's watchdog no longer kills a pid after the stub has exited.</li>
+    <li><strong>Review round 5 (FAIL, 1 important on <code>6782c74</code>).</strong> A verifier reproduced the bug: <code>.scan</code> state left by the previous run made a new run's <code>wait</code> print <code>IDLE</code> at once with the old run's report. The state is now bound to the worker's pid, with a regression case written first and shown red. A nit was fixed in the same commit: a SIGTERM'd <code>wait</code> now exits through its cleanup trap, which dash would otherwise skip.</li>
+    <li><strong>Review round 6 (FAIL, 1 important on <code>bc7977f</code>).</strong> The signal trap from round 5 had no test. On a dash <code>/bin/sh</code> it is the only cleanup when the router's timeout kills a <code>wait</code>, and without it each timeout would leak a scratch dir. The new test <code>a_signalled_wait_leaves_no_scratch_files</code> SIGTERMs a <code>wait</code> under dash. It fails without the trap and passes with it. Writing it also showed that macOS <code>mktemp -d</code> ignores <code>TMPDIR</code>, so the scratch dir now uses an explicit <code>${TMPDIR:-/tmp}</code> template.</li>
+    <li><strong>Review round 7 (FAIL, 1 blocker and 1 important on <code>5905d9a</code>).</strong> Reproduced live, logged out: an API failure arrives as a result with subtype <code>success</code>, <code>is_error</code> set, no <code>errors</code>, and the cause only in <code>.result</code>. <code>wait</code> printed <code>error=success</code> and lost the cause. It now names the error by its <code>terminal_reason</code> and keeps <code>.result</code> as the cause. The regression case was built from that real line and shown red first. Replayed over the real stream, the scan now gives <code>error=api_error</code> with the cause "Not logged in · Please run /login".</li>
+    <li><strong>Review capped at round 7 (owner ruling 2026-11-11).</strong> Round 7's blocker and important are fixed (<code>ef9a4ad</code>) and pinned by a regression case. The owner waived review round 8 and ruled that the review loop be capped, so it does not run forever. The <code>cr/v1</code> PASS on this tip records that waiver: no independent review judged the round 7 fix, the same form as E-SEED2.W15's waiver. The deferred review is listed under Follow-ups.</li>
+    <li><strong>Plan file.</strong> The first W2 plan (a router heartbeat) was rewritten after the owner's ruling and renamed from <code>…-w2-heartbeat-…</code>. The epic plan was amended in this WU (W2 rewritten, W9 added, open point 6 ruled).</li>
+    <li><strong>Snapshot.</strong> <code>docs/decisions/router.html</code>'s htmldoc id is still unknown to the server (as in W1), so its diff view has no baseline. Use <code>git diff</code>.</li>
+  </ul>
+</div>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+  <ul>
+    <li><strong>Commits:</strong> <code>aa6472f</code> plans · <code>f000453</code> launcher, guard, tests · <code>5dc7439</code> stopping fix · <code>6c7e498</code> DEC-43 · <code>6166848</code> skill text and settings (owner's <code>keel mr commit</code>, <code>Reviewed-By: username vuluu</code>) · <code>cd852ae</code> this report · <code>e64507c</code> review round 1 fixes · <code>7bc8bcc</code> this report's round 1 update · <code>71f4758</code> the owner's second skill commit · a follow-up that routes the regression test's fake worker through <code>common::cmd</code>, which <code>tests/cli.rs</code> <code>every_test_spawn_strips_gits_env</code> requires (found by preflight).</li>
+    <li><strong>Review round 1</strong> on <code>cd852ae</code>: FAIL (cr note). Round 2 runs on the new tip.</li>
+    <li><strong>Regression test</strong> <code>wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity</code> drives <code>wait</code>, <code>send</code> and <code>stop</code> over hand-written streams with a fake live worker and a real <code>tail</code> feed. It covers B1, B2, B3, I4 and I6. It was red on <code>cd852ae</code> with <code>IDLE … turn=2</code> for an unread brief.</li>
+    <li><strong>Folded-brief live check</strong> (real Opus worker, after the fix): brief 2 was sent while brief 1's <code>sleep 20</code> ran. The stream shows 1 init, 2 replays and 1 result. <code>wait</code> printed <code>IDLE turn=1</code> with a report answering both. <code>stop</code> led to <code>EXITED</code>, a second <code>stop</code> was refused, and no process was left.</li>
+    <li><strong>New tests</strong> (<code>tests/router.rs</code>):
+      <ul>
+        <li><code>launcher_keeps_a_worker_alive_across_briefs_until_stopped</code>: covers refusals; <code>IDLE</code> not <code>STALLED</code> with a quiet transcript; <code>send</code> with a new snapshot and sha256 and the inbox shape; a self-opened turn; a multi-line report; stop → stopping → <code>EXITED</code>; the feed ending; and a dead worker taking its feed.</li>
+        <li><code>router_guard_admits_send_and_stop_in_plain_words_only</code>.</li>
+        <li>The e2e, extended with <code>IDLE</code>, <code>send</code> and <code>stop</code>.</li>
+      </ul>
+      The stub <code>claude</code> plays the 2.1.288 stream: an init per turn, a result whose first key is not <code>type</code>, and a trailing <code>command_lifecycle</code>.</li>
+    <li><strong>Red then green:</strong> with <code>dda9ce0</code>'s scripts the three new or extended tests fail. With <code>f000453</code>'s launcher the stopping assertion fails with the live run's exact bug (<code>IDLE … turn=3</code>).</li>
+    <li><strong>Suites, in a clean clone</strong> (committed settings): <code>cargo test --test router</code> 23 passed, 3 runs in a row after round 1; <code>cargo test --test init</code> 11 passed; <code>cargo clippy --all-targets -D warnings</code> clean. In this worktree <code>router_bash_guard_judges_plain_words_…</code> fails only because the owner's uncommitted <code>.claude/settings.json</code> drops <code>permissions</code> (as in W1).</li>
+    <li><strong>Mirror:</strong> <code>diff -r skills/keel-router .claude/skills/keel-router</code> is empty.</li>
+    <li><strong>Docs:</strong> <code>keel verify-doc</code> is green on the plan, this report, the epic plan and the decisions docs.</li>
+  </ul>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">DEC-43 is in <code>docs/decisions/router.html</code> (T2), with DEC-32 and DEC-36 marked amended, and the decisions index now gives DEC-44 as the next free id. The keel-router skill and its mirror, and project-router, carry the worker life cycle and the wake checklist that replaces the heartbeat. Per the epic's distillation plan, the UC-ROUTE-1, 5 and 6 amendments and striking R15 and R17 in <code>backlog/e-router-v2.html</code> happen at epic close.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<div data-item="follow-ups" data-c="follow-ups">
+  <ul>
+    <li><strong>Owner:</strong> before <code>keel preflight</code>, set aside the uncommitted <code>.claude/settings.json</code> edit, because preflight needs a clean tree.</li>
+    <li><strong>Then the agent</strong> writes the test and doc notes, runs preflight and the independent <code>keel-code-review</code>, and stages <code>keel mr confirm wu</code>.</li>
+    <li><strong>Deferred review (owner ruling 2026-11-11):</strong> a fresh independent review of <code>wait</code>'s stream rules from <code>ef9a4ad</code> on, which round 8 would have run. W9 owns it, because its watchdog reads the same stream, so W9's review takes <code>scripts/router-worker.sh</code>'s <code>wait</code> scan as part of its scope.</li>
+    <li><strong>Process (owner ruling 2026-11-11):</strong> cap keel-code-review rounds per WU, with the owner deciding past the cap, so a review cannot loop forever. This WU ran 7 rounds. For a backlog row at epic close.</li>
+    <li><strong>W9</strong> (watchdog): its plan comes next, after the owner's go. The raw <code>.out</code> stream is its input, and probe 2 confirms an idle router wakes on a worker's message.</li>
+    <li><strong>W3</strong> builds on this launcher. Its brief-copy cleanup should also cover the per-name <code>.in</code>, <code>.feed</code> and <code>.report</code> files, which are left in <code>.router/out/</code> today. W3 also owns <code>--setting-sources project,local</code> for workers (the Telegram row).</li>
+    <li><strong>W5:</strong> the remaining wording pass (R9, R10, the <code>router.md</code> posture bullet).</li>
+  </ul>
+</div>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

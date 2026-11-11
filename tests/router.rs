@@ -349,10 +349,17 @@ fn stub_claude(stub: &Path) {
     std::fs::write(stub, concat!(
         "#!/bin/sh\necho \"stub $*\"\nprintf '[%s]' \"$@\"; echo\n",
         "held() { [ ! -e \"$STUB_RELEASE\" ] && [ -d \"${STUB_RELEASE%/*}\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; }\n",
+        "(while kill -0 $$ 2>/dev/null && [ -d \"${STUB_RELEASE%/*}\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done\n",
+        " kill -0 $$ 2>/dev/null && kill $$ 2>/dev/null) &\n",
         "(while held; do sleep 0.05; done) | cut -c 1 &\n",
-        "while held; do\n",
-        "  [ ! -e \"$STUB_RELEASE.busy\" ] || /bin/sh -c 'while [ -e \"$STUB_RELEASE.busy\" ] && [ ! -e \"$STUB_RELEASE\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done; :'\n",
-        "  sleep 0.05\ndone\nwait\n"
+        "n=0\nwhile read -r line; do\n  n=$((n + 1))\n  echo '{\"type\":\"system\",\"subtype\":\"init\"}'\n  echo '{\"type\":\"user\",\"isReplay\":true}'\n",
+        "  while held; do\n",
+        "    [ ! -e \"$STUB_RELEASE.busy\" ] || /bin/sh -c 'while [ -e \"$STUB_RELEASE.busy\" ] && [ ! -e \"$STUB_RELEASE\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done; :'\n",
+        "    sleep 0.05\n  done\n",
+        "  echo \"{\\\"duration_ms\\\":1,\\\"type\\\":\\\"result\\\",\\\"subtype\\\":\\\"success\\\",\\\"result\\\":\\\"report $n\\\"}\"\n",
+        "  echo '{\"type\":\"command_lifecycle\"}'\n",
+        "done\n",
+        "while [ -e \"$STUB_RELEASE.linger\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done\n"
     )).unwrap();
     std::fs::set_permissions(stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
@@ -371,10 +378,12 @@ fn sleep_shim(base: &Path) {
 }
 
 /// A repo whose main checkout holds the launcher, two linked worktrees, a stub claude and a `sleep`
-/// shim. The stub prints its argv (joined, then each argument bracketed so boundaries are visible) and
-/// stays alive until $STUB_RELEASE exists, so the launcher's startup window never races a timer; it
-/// also exits once the test's temp dir or the test process ($STUB_OWNER) is gone, so a failed test
-/// leaks no stub. While held it keeps a subshell piped to `cut -c` (long-lived children that are not
+/// shim. The stub prints its argv (joined, then each argument bracketed so boundaries are visible),
+/// then plays a long-running stream-json session as Claude Code 2.1.288 streams it: for each stdin line
+/// it opens a turn (system/init, then the brief's replay) and holds it until $STUB_RELEASE exists, so the launcher's startup
+/// window never races a timer, then prints one result event (`report <n>`, `type` not the first key)
+/// and a trailing command_lifecycle event; it exits at stdin EOF (lingering while $STUB_RELEASE.linger exists), and once the test's temp dir or the test process
+/// ($STUB_OWNER) is gone, so a failed test leaks no stub. While held it keeps a subshell piped to `cut -c` (long-lived children that are not
 /// `<shell> -c`, as an MCP server is), and runs a `sh -c` child, as a Bash tool command runs, while
 /// $STUB_RELEASE.busy exists.
 fn launcher() -> Launcher {
@@ -465,10 +474,11 @@ impl Launcher {
         git(&self.main, &["commit", "-qm", "config"]);
     }
 
-    /// Release every held stub, wait (bounded) until the worker recorded in <name>.pid has exited,
-    /// then re-arm the hold for the next run.
+    /// Release every held stub, `stop` the worker, wait (bounded) until the worker recorded in
+    /// <name>.pid has exited, then re-arm the hold for the next run.
     fn wait_exit(&self, name: &str) {
         std::fs::write(&self.release, "").unwrap();
+        let _ = self.run(&["stop", name]);
         let pid = std::fs::read_to_string(self.main.join(format!(".router/out/{name}.pid"))).unwrap();
         let t = Instant::now();
         while Command::new("kill").args(["-0", pid.trim()]).stderr(Stdio::null()).status().unwrap().success() {
@@ -722,7 +732,7 @@ fn worker_argv(checkout: &Path, name: &str) -> Vec<String> {
     let a: Vec<String> = line[1..line.len() - 1].split("][").map(String::from).collect();
     let flags: Vec<&str> = a.iter().map(String::as_str).filter(|x| x.starts_with('-')).collect();
     let start = if flags.contains(&"--resume") { "--resume" } else { "--session-id" };
-    let expected = ["-p", start, "--allowedTools", "--disallowedTools", "-n", "--model", "--effort", "--agent", "--permission-mode", "--max-budget-usd"];
+    let expected = ["-p", "--input-format", "--output-format", "--verbose", "--replay-user-messages", start, "--allowedTools", "--disallowedTools", "-n", "--model", "--effort", "--agent", "--permission-mode", "--max-budget-usd"];
     assert_eq!(flags, expected, "{name}: options in {a:?}");
     let list = |flag: &str| -> Vec<String> {
         let i = a.iter().position(|x| x == flag).unwrap();
@@ -1105,6 +1115,391 @@ fn wait_blocks_until_the_worker_exits_or_stalls() {
     l.wait_exit("n");
 }
 
+/// A command that may block (`wait`), bounded by BOUND: a hung script fails the test instead of
+/// hanging it. Returns stdout then stderr; a non-zero exit fails the test with both.
+fn bounded(mut c: Command) -> String {
+    let mut p = c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let t = Instant::now();
+    while p.try_wait().unwrap().is_none() {
+        if t.elapsed() > BOUND {
+            p.kill().unwrap();
+            panic!("{c:?}: no result within {BOUND:?}");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let o = p.wait_with_output().unwrap();
+    let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    assert!(o.status.success(), "{c:?}: {out}");
+    out
+}
+
+/// E-ROUTER3.W2: a worker is a long-running session. It stays alive after its report (IDLE, never
+/// STALLED while it waits for input), `send` hands the same session its next brief as a new
+/// snapshot, `stop` closes its input so it exits after its turn and takes its feed with it, and a
+/// stopped worker can be resumed into the same shape.
+#[test]
+fn launcher_keeps_a_worker_alive_across_briefs_until_stopped() {
+    let l = launcher();
+    let wt = l.wt.to_str().unwrap();
+    let out_dir = l.main.join(".router/out");
+    let wait = |args: &[&str]| bounded(l.cmd(args, &[]));
+    for (args, why) in [
+        (vec!["send", "n"], "send <name> <brief.md>"),
+        (vec!["send", "n", ".router/briefs/b.md", "x"], "send <name> <brief.md>"),
+        (vec!["stop"], "stop <name>"),
+        (vec!["stop", "n", "x"], "stop <name>"),
+        (vec!["send", "-n", ".router/briefs/b.md"], "bad name"),
+        (vec!["stop", "N"], "bad name"),
+        (vec!["send", "ghost", ".router/briefs/b.md"], "worker ghost is not running"),
+        (vec!["stop", "ghost"], "worker ghost is not running"),
+    ] {
+        let (ok, out) = l.run(&args);
+        assert!(!ok && out.contains(why), "{args:?} not refused for {why}: {out}");
+    }
+
+    std::fs::write(&l.release, "").unwrap();
+    let (ok, out) = l.run(&["spawn", "n", wt, ".router/briefs/b.md", "opus"]);
+    assert!(ok && out.starts_with("RUNNING"), "{out}");
+    let (sid, pid) = (field(&out, "session=").to_string(), field(&out, "pid=").to_string());
+    let report = out_dir.join("n.report");
+
+    // the first turn ends; a transcript long quiet is no stall while the worker waits for input
+    age(&l.transcript(&l.wt, &sid), 600);
+    assert_eq!(wait(&["wait", "n", "1"]), format!("IDLE name=n pid={pid} turn=1 report={}\n", report.display()));
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "report 1\n");
+    let (ok, out) = l.run(&["spawn", "n", wt, ".router/briefs/b.md", "opus"]);
+    assert!(!ok && out.contains("still running"), "an idle worker is live: {out}");
+
+    // a brief must be a regular .md under .router/briefs, as on spawn
+    std::os::unix::fs::symlink(l.main.join(".router/briefs/b.md"), l.main.join(".router/briefs/s.md")).unwrap();
+    for (file, why) in [(".router/briefs/s.md", "symlinks refused"), ("scripts/router-worker.sh", "file must be a .md under")] {
+        let (ok, out) = l.run(&["send", "n", file]);
+        assert!(!ok && out.contains(why), "{file}: {out}");
+    }
+
+    std::fs::write(l.main.join(".router/briefs/b2.md"), "now the notes\n").unwrap();
+    let (ok, out) = l.run(&["send", "n", ".router/briefs/b2.md"]);
+    assert!(ok && out.starts_with(&format!("SENT name=n pid={pid} session={sid} snapshot=")), "{out}");
+    let (snap, copy) = (field(&out, "snapshot="), field(&out, "brief="));
+    assert!(snap.contains("/.router/runs/n-") && snap.ends_with("-send/brief.md"), "{out}");
+    assert!(copy.starts_with(wt) && std::fs::read_to_string(copy).unwrap() == "now the notes\n", "{out}");
+    let sha = std::fs::read_to_string(Path::new(snap).with_file_name("sha256")).unwrap();
+    assert_eq!(sha.trim(), field(&out, "sha256="));
+    let inbox = std::fs::read_to_string(out_dir.join("n.in")).unwrap();
+    let turns: Vec<serde_json::Value> = inbox.lines().map(|x| serde_json::from_str(x).unwrap()).collect();
+    assert_eq!(turns.len(), 2, "{inbox}");
+    assert!(turns.iter().all(|t| t["type"] == "user" && t["message"]["role"] == "user"), "{inbox}");
+    assert!(turns[1]["message"]["content"].as_str().unwrap().contains(copy), "{inbox}");
+    assert_eq!(wait(&["wait", "n"]), format!("IDLE name=n pid={pid} turn=2 report={}\n", report.display()));
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "report 2\n");
+
+    // a turn the worker opens on its own (a SendMessage reached it while idle) is no IDLE until it
+    // closes; the report keeps the whole result text
+    let stream = out_dir.join("n.out");
+    let append = |line: &str| std::io::Write::write_all(&mut std::fs::OpenOptions::new().append(true).open(&stream).unwrap(), line.as_bytes()).unwrap();
+    append("{\"type\":\"system\",\"subtype\":\"init\"}\n");
+    let mut w = l.wait_stepped(&["wait", "n"], "unprompted");
+    w.at(1);
+    append("{\"result\":\"steered\\nsecond line\",\"type\":\"result\"}\n");
+    w.go(1);
+    assert_eq!(w.line(), format!("IDLE name=n pid={pid} turn=3 report={}\n", report.display()));
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "steered\nsecond line\n");
+
+    // stop: the worker exits after its turn, and its feed ends with it; while it winds down after
+    // its last turn it is stopping, never IDLE (a re-armed wait would spin), so wait ends in EXITED
+    let feed = std::fs::read_to_string(out_dir.join("n.feed")).unwrap().trim().to_string();
+    let alive = |p: &str| Command::new("kill").args(["-0", p]).stderr(Stdio::null()).status().unwrap().success();
+    assert!(alive(&feed), "no live feed");
+    let linger = l.release.with_extension("linger");
+    std::fs::write(&linger, "").unwrap();
+    let (ok, out) = l.run(&["stop", "n"]);
+    assert!(ok && out.starts_with(&format!("STOPPING name=n pid={pid} ")), "{out}");
+    until("feed closed", || !alive(&feed));
+    let mut w = l.wait_stepped(&["wait", "n"], "stopping");
+    w.at(1);
+    assert!(alive(&pid), "the stub no longer lingers");
+    std::fs::remove_file(&linger).unwrap();
+    until("worker gone", || !alive(&pid));
+    w.go(1);
+    assert_eq!(w.line(), format!("EXITED name=n pid={pid} out={}\n", out_dir.join("n.out").display()));
+    until("feed gone", || !alive(&feed));
+    for args in [vec!["send", "n", ".router/briefs/b2.md"], vec!["stop", "n"]] {
+        let (ok, out) = l.run(&args);
+        assert!(!ok && out.contains("worker n is not running"), "{args:?}: {out}");
+    }
+
+    // a worker that dies on its own takes its feed with it
+    let (ok, out) = l.run(&["resume", "n", &sid, wt, ".router/briefs/b2.md", "opus"]);
+    assert!(ok && out.starts_with("RUNNING"), "{out}");
+    let pid = field(&out, "pid=").to_string();
+    assert_eq!(wait(&["wait", "n"]), format!("IDLE name=n pid={pid} turn=1 report={}\n", report.display()));
+    let feed = std::fs::read_to_string(out_dir.join("n.feed")).unwrap().trim().to_string();
+    assert!(Command::new("kill").arg(&pid).status().unwrap().success());
+    until("worker gone", || !alive(&pid));
+    until("feed gone", || !alive(&feed));
+}
+
+/// A fake live worker `name` under `l`'s .router/out, for driving `wait`, `send` and `stop` over a
+/// hand-written stream, reset as a spawn resets it (output and scan state): a process whose argv
+/// carries ` -n <name> `, its pid file and run dir, and a
+/// real `tail -n +1 -f <name>.in` feed recorded in <name>.feed. The worker keeps an `sh -c` child,
+/// as a running Bash tool command (or a background task) keeps one. All end with the value.
+struct Fake {
+    worker: std::process::Child,
+    feed: std::process::Child,
+    out: PathBuf,
+}
+
+impl Fake {
+    fn new(l: &Launcher, name: &str, inbox: usize) -> Fake {
+        let out = l.main.join(".router/out");
+        let run = l.main.join(format!(".router/runs/{name}-1-spawn"));
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::create_dir_all(&run).unwrap();
+        std::fs::write(run.join("name"), format!("{name}\n")).unwrap();
+        std::fs::write(run.join("session"), "0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b\n").unwrap();
+        std::fs::write(run.join("worktree"), format!("{}\n", l.wt.display())).unwrap();
+        std::fs::write(out.join(format!("{name}.in")), "{\"type\":\"user\"}\n".repeat(inbox)).unwrap();
+        std::fs::write(out.join(format!("{name}.out")), "").unwrap();
+        let _ = std::fs::remove_file(out.join(format!("{name}.scan")));
+        let body = "sh -c 'while kill -0 $PPID 2>/dev/null; do sleep 1; done' & while :; do sleep 1; done";
+        let worker = common::cmd("sh").args(["-c", body, "sh", "-n", name, "x"]).spawn().unwrap();
+        let feed = common::cmd("tail").args(["-n", "+1", "-f"]).arg(out.join(format!("{name}.in"))).stdout(Stdio::null()).spawn().unwrap();
+        std::fs::write(out.join(format!("{name}.pid")), format!("{}\n", worker.id())).unwrap();
+        std::fs::write(out.join(format!("{name}.feed")), format!("{}\n", feed.id())).unwrap();
+        Fake { worker, feed, out: out.join(format!("{name}.out")) }
+    }
+
+    fn emit(&self, events: &[&str]) {
+        let mut f = std::fs::OpenOptions::new().append(true).open(&self.out).unwrap();
+        for e in events {
+            std::io::Write::write_all(&mut f, format!("{e}\n").as_bytes()).unwrap();
+        }
+    }
+}
+
+impl Drop for Fake {
+    fn drop(&mut self) {
+        for c in [&mut self.worker, &mut self.feed] {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    }
+}
+
+const INIT: &str = r#"{"type":"system","subtype":"init"}"#;
+const REPLAY: &str = r#"{"type":"user","isReplay":true,"message":{"role":"user","content":"brief"}}"#;
+const BG_RUNNING: &str = r#"{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"b1","task_type":"local_bash"}]}"#;
+const BG_NONE: &str = r#"{"type":"system","subtype":"background_tasks_changed","tasks":[]}"#;
+const TASK_DONE: [&str; 2] = [
+    r#"{"type":"system","subtype":"task_updated","task_id":"b1","status":"completed"}"#,
+    r#"{"type":"system","subtype":"task_notification","task_id":"b1","status":"completed"}"#,
+];
+/// The replay Claude Code 2.1.288 emits for a turn a peer's SendMessage opens (live probe, E-ROUTER3.W2 review r3).
+const PEER_REPLAY: &str = r#"{"type":"user","isReplay":true,"isSynthetic":true,"origin":{"kind":"peer"},"message":{"role":"user","content":"Another Claude session sent a message"}}"#;
+const BUDGET_ERROR: &str = r#"{"type":"result","subtype":"error_max_budget_usd","is_error":true,"errors":["Reached maximum budget ($0.0001)"]}"#;
+/// An API failure as Claude Code 2.1.288 reports it (live, logged out; review r7): subtype success,
+/// no errors, the cause only in .result.
+const API_ERROR: &str = r#"{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login","terminal_reason":"api_error","api_error_status":null}"#;
+fn result(text: &str) -> String {
+    format!(r#"{{"duration_ms":1,"type":"result","subtype":"success","result":"{text}"}}"#)
+}
+
+/// E-ROUTER3.W2 review r1: `wait` knows a brief was taken only when the worker replays it
+/// (`--replay-user-messages`) and a turn is over only when every opened turn has its result, so a
+/// turn the worker opened itself never answers a brief it has not read (r1 B1), and briefs folded
+/// into one running turn are answered by its one result (r1 B3). A feed is open only while its pid
+/// is this worker's `tail` (r1 I4); a stopping worker takes no brief (r1 B2); and an exit that left
+/// the last brief unanswered leaves no report (r1 I6). A turn that ends with a background task
+/// running is not the worker's answer (r2 B1), nor is the moment between its task's notification
+/// and the completion turn (r3 B1); a peer's replayed message is no brief (r3 B2); an error result
+/// is reported as one (r3 B3); a task that never ends stalls the wait instead of hanging it (r3
+/// I2); each wait resumes the scan where the last one stopped (r4 I1), and only from state this
+/// run wrote (r5 I1).
+#[test]
+fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
+    let l = launcher();
+    let report = l.main.join(".router/out/fk.report");
+
+    // answered: one brief replayed, its turn closed
+    let f = Fake::new(&l, "fk", 1);
+    f.emit(&[INIT, REPLAY, &result("A")]);
+    let line = bounded(l.cmd(&["wait", "fk"], &[]));
+    assert!(line.starts_with("IDLE name=fk ") && line.contains(" turn=1 "), "{line}");
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "A\n");
+    // r4 I1: the scan's offset persists, so the next wait reads only what came after
+    let scanned: u64 = std::fs::read_to_string(l.main.join(".router/out/fk.scan")).unwrap().split_whitespace().nth(1).unwrap().parse().unwrap();
+    assert_eq!(scanned, std::fs::metadata(&f.out).unwrap().len(), "the scan state does not cover the whole stream");
+
+    // B1: a self-opened turn (no replay) closes, then a brief is sent but not yet read: no IDLE
+    f.emit(&[INIT, PEER_REPLAY, &result("steered")]);
+    std::fs::write(l.main.join(".router/out/fk.in"), "{\"type\":\"user\"}\n".repeat(2)).unwrap();
+    let mut w = l.wait_stepped(&["wait", "fk"], "b1");
+    w.at(1);
+    f.emit(&[INIT, REPLAY, &result("B")]);
+    w.go(1);
+    assert!(w.line().contains(" turn=3 "), "the sent brief's turn closes the wait");
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "B\n");
+    drop(f);
+
+    // B3: two briefs folded into one running turn are answered by its one result
+    let f = Fake::new(&l, "fk", 2);
+    f.emit(&[INIT, REPLAY, REPLAY, &result("AB")]);
+    let line = bounded(l.cmd(&["wait", "fk"], &[]));
+    assert!(line.starts_with("IDLE name=fk ") && line.contains(" turn=1 "), "{line}");
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "AB\n");
+    drop(f);
+
+    // I4: a feed pid now held by another process is no open feed: no IDLE, and stop kills nothing
+    let mut f = Fake::new(&l, "fk", 1);
+    f.emit(&[INIT, REPLAY, &result("A")]);
+    let other = f.worker.id().to_string();
+    let _ = f.feed.kill();
+    let _ = f.feed.wait();
+    std::fs::write(l.main.join(".router/out/fk.feed"), format!("{other}\n")).unwrap();
+    let (ok, out) = l.run(&["stop", "fk"]);
+    assert!(!ok && out.contains("worker fk is already stopping"), "{out}");
+    assert!(f.worker.try_wait().unwrap().is_none(), "stop signalled a process that is not the feed");
+
+    // B2: a stopping worker (feed gone, process alive) takes no brief
+    std::fs::write(l.main.join(".router/briefs/b2.md"), "next\n").unwrap();
+    let inbox = std::fs::read_to_string(l.main.join(".router/out/fk.in")).unwrap();
+    let (ok, out) = l.run(&["send", "fk", ".router/briefs/b2.md"]);
+    assert!(!ok && out.contains("worker fk is stopping"), "{out}");
+    assert_eq!(std::fs::read_to_string(l.main.join(".router/out/fk.in")).unwrap(), inbox, "send wrote to a closed inbox");
+    let mut w = l.wait_stepped(&["wait", "fk"], "i4");
+    w.at(1);
+    let _ = f.worker.kill();
+    let _ = f.worker.wait();
+    w.go(1);
+    assert!(w.line().starts_with("EXITED name=fk "));
+    drop(f);
+
+    // r2 B1: a turn that ends with a background task still running is no IDLE; the worker's own
+    // completion turn, opened once the task clears, carries the final report
+    let f = Fake::new(&l, "fk", 1);
+    f.emit(&[INIT, REPLAY, BG_RUNNING, &result("waiting for the background task")]);
+    let mut w = l.wait_stepped(&["wait", "fk"], "bg");
+    w.at(1);
+    // r3 B1, r4 B1: the task ends; its emptied task list and then its notification precede the
+    // completion turn's init by milliseconds, and a poll may fall after either
+    f.emit(&[BG_NONE]);
+    w.go(1);
+    w.at(2);
+    f.emit(&[TASK_DONE[0], TASK_DONE[1]]);
+    w.go(2);
+    w.at(3);
+    f.emit(&[INIT, &result("done")]);
+    w.go(3);
+    assert!(w.line().contains(" turn=2 "), "the completion turn closes the wait");
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "done\n");
+    drop(f);
+
+    // r3 B3: an error result is no silent answer: the IDLE line and the report carry it
+    let f = Fake::new(&l, "fk", 1);
+    f.emit(&[INIT, REPLAY, BUDGET_ERROR]);
+    let line = bounded(l.cmd(&["wait", "fk"], &[]));
+    assert!(line.starts_with("IDLE name=fk ") && line.trim_end().ends_with(" error=error_max_budget_usd"), "{line}");
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "error: error_max_budget_usd: Reached maximum budget ($0.0001)\n");
+    drop(f);
+    // r7 B1: an API failure is named by its terminal reason, and its cause (only in .result) is kept
+    let f = Fake::new(&l, "fk", 1);
+    f.emit(&[INIT, REPLAY, API_ERROR]);
+    let line = bounded(l.cmd(&["wait", "fk"], &[]));
+    assert!(line.starts_with("IDLE name=fk ") && line.trim_end().ends_with(" error=api_error"), "{line}");
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "error: api_error: Not logged in · Please run /login\n");
+    drop(f);
+
+    // r3 I2: a background task that never ends (its shell keeps the worker busy) is no endless
+    // wait: with every brief answered, the quiet transcript stalls it, naming the task count
+    let f = Fake::new(&l, "fk", 1);
+    f.emit(&[INIT, REPLAY, BG_RUNNING, &result("serving")]);
+    age(&l.main.join(".router/out/fk.pid"), 120);
+    let mut w = l.wait_stepped(&["wait", "fk", "1"], "bg-forever");
+    w.at(1);
+    w.go(1);
+    let line = w.line();
+    assert!(line.starts_with("STALLED name=fk ") && line.trim_end().ends_with(" background=1"), "{line}");
+    drop(f);
+
+    // r5 I1: scan state another run left behind (another pid) is never this run's: a new run whose
+    // first turn is still open is no IDLE, whatever that state says
+    let f = Fake::new(&l, "fk", 1);
+    let stale = l.main.join(".router/out/fk.scan");
+    std::fs::write(&stale, "1 0 1 1 1 0 0 -\nOLD RUN ANSWER\n").unwrap();
+    f.emit(&[INIT]);
+    let mut w = l.wait_stepped(&["wait", "fk"], "stale");
+    w.at(1);
+    f.emit(&[REPLAY, &result("new")]);
+    w.go(1);
+    assert!(w.line().contains(" turn=1 "), "the new run's own turn closes the wait");
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "new\n");
+    drop(f);
+
+    // I6: the worker died before answering its last brief: EXITED leaves no report
+    let mut f = Fake::new(&l, "fk", 2);
+    f.emit(&[INIT, REPLAY, &result("A"), INIT, REPLAY]);
+    let _ = f.worker.kill();
+    let _ = f.worker.wait();
+    let line = bounded(l.cmd(&["wait", "fk"], &[]));
+    assert!(line.starts_with("EXITED name=fk "), "{line}");
+    assert!(!report.exists(), "a stale report answers the unanswered brief");
+}
+
+/// E-ROUTER3.W2 review r6: the router's background `wait` is killed (SIGTERM) at its timeout and
+/// re-armed, so a signalled wait must leave neither its scratch dir nor a half-written scan state,
+/// or every timeout leaks one. Run under dash, which (unlike bash) runs no EXIT trap on a signal
+/// by itself, so only the launcher's own signal trap can pass this.
+#[test]
+fn a_signalled_wait_leaves_no_scratch_files() {
+    let l = launcher();
+    let f = Fake::new(&l, "fk", 1);
+    f.emit(&[INIT]);
+    let tmp = l.main.parent().unwrap().join("tmp");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let shell = if Path::new("/bin/dash").exists() { "/bin/dash" } else { "/bin/sh" };
+    let mut w = common::cmd(shell)
+        .args(["scripts/router-worker.sh", "wait", "fk"])
+        .current_dir(&l.main)
+        .env("TMPDIR", &tmp)
+        .env("CLAUDE_CONFIG_DIR", l.main.parent().unwrap().join("config"))
+        .env("ROUTER_WAIT_POLL", "0.2")
+        .spawn()
+        .unwrap();
+    let out = l.main.join(".router/out");
+    until("the wait's first scan", || std::fs::read_dir(&tmp).unwrap().next().is_some() && out.join("fk.scan").exists());
+    assert!(Command::new("kill").args(["-TERM", &w.id().to_string()]).status().unwrap().success());
+    let t = Instant::now();
+    while w.try_wait().unwrap().is_none() {
+        assert!(t.elapsed() < BOUND, "the signalled wait never exited");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let left: Vec<_> = std::fs::read_dir(&tmp).unwrap().map(|e| e.unwrap().path()).collect();
+    assert!(left.is_empty(), "{shell}: a signalled wait leaked {left:?}");
+    let half: Vec<_> = std::fs::read_dir(&out).unwrap().map(|e| e.unwrap().file_name()).filter(|n| n.to_string_lossy().starts_with("fk.scan.")).collect();
+    assert!(half.is_empty(), "{shell}: a signalled wait left {half:?}");
+    drop(f);
+}
+
+/// E-ROUTER3.W2: the router's two new launcher shapes pass the guard in plain words, and nothing
+/// else of the script does.
+#[test]
+fn router_guard_admits_send_and_stop_in_plain_words_only() {
+    for ok in ["scripts/router-worker.sh send w1 .router/briefs/w1-r2.md", "scripts/router-worker.sh stop w1"] {
+        assert_eq!(bash(ok), None, "guard denied {ok:?}");
+    }
+    for no in [
+        "scripts/router-worker.sh kill w1",
+        "scripts/router-worker.sh sendx w1 b.md",
+        "scripts/router-worker.sh send w1 \"b.md\"",
+        "scripts/router-worker.sh send w1 $HOME/b.md",
+        "scripts/router-worker.sh stop ../w1",
+        "scripts/router-worker.sh stop w1; kill 1",
+    ] {
+        assert!(bash(no).is_some(), "guard allowed {no:?}");
+    }
+}
+
 /// One router tool call through the PreToolUse command `checkout`'s .claude/settings.json wires, run
 /// as Claude Code runs it; Some(reason) = denied, None = allowed.
 fn wired_guard(checkout: &Path, tool: &str, input: serde_json::Value) -> Option<String> {
@@ -1127,7 +1522,8 @@ fn wired_guard(checkout: &Path, tool: &str, input: serde_json::Value) -> Option<
 /// tree with the working tree's epic files laid over it and keel's hooks installed. A new worktree
 /// inherits the signer list (W3); every router call passes the settings-wired guard and each allowed
 /// command runs exactly as judged; the worker starts in plan mode with the fixed grant (W1) under the
-/// name the subscription addresses (W2); `wait` reports it STALLED by its transcript, then EXITED (W4).
+/// name the subscription addresses (W2); `wait` reports it STALLED by its transcript (W4). E-ROUTER3.W2:
+/// the long-running worker goes IDLE with its report, takes a second brief by `send`, and `stop` ends it.
 #[test]
 fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let d = TempDir::new().unwrap();
@@ -1155,31 +1551,15 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let owner = std::process::id().to_string();
     let router = |cmd: &str| -> String {
         assert_eq!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })), None, "guard denied {cmd:?}");
-        let mut p = common::cmd("/bin/sh")
-            .args(["-c", cmd])
+        let mut p = common::cmd("/bin/sh");
+        p.args(["-c", cmd])
             .current_dir(&c)
             .env("ROUTER_CLAUDE", &stub)
             .env("STUB_RELEASE", &release)
             .env("STUB_OWNER", &owner)
             .env("CLAUDE_CONFIG_DIR", &config)
-            .env("ROUTER_WAIT_POLL", "0.2")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        // a `wait` that never reaches its line fails here instead of hanging the suite
-        let t = Instant::now();
-        while p.try_wait().unwrap().is_none() {
-            if t.elapsed() > Duration::from_secs(20) {
-                p.kill().unwrap();
-                panic!("{cmd}: no result within 20s");
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        let o = p.wait_with_output().unwrap();
-        let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
-        assert!(o.status.success(), "{cmd}: {out}");
-        out
+            .env("ROUTER_WAIT_POLL", "0.2");
+        bounded(p)
     };
 
     let name = "e2e-w";
@@ -1212,8 +1592,27 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let out = router(&format!("scripts/router-worker.sh wait {name} 1"));
     assert_eq!(out, format!("STALLED name={name} pid={pid} idle=2m since={}\n", tr.display()));
 
-    // the worker ends: EXITED, and its argv carried the grant, the mode and the subscribed name
+    // E-ROUTER3.W2: the turn ends and the worker stays alive, IDLE with its report
     std::fs::write(&release, "").unwrap();
+    let report = c.join(format!(".router/out/{name}.report"));
+    let out = router(&format!("scripts/router-worker.sh wait {name}"));
+    assert_eq!(out, format!("IDLE name={name} pid={pid} turn=1 report={}\n", report.display()));
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "report 1\n");
+
+    // the next brief goes to the same live session, snapshotted and hashed
+    let brief2 = c.join(format!(".router/briefs/{name}-r2.md"));
+    assert_eq!(wired_guard(&c, "Write", serde_json::json!({ "file_path": brief2 })), None);
+    std::fs::write(&brief2, "now write the notes\n").unwrap();
+    let out = router(&format!("scripts/router-worker.sh send {name} .router/briefs/{name}-r2.md"));
+    assert!(out.starts_with(&format!("SENT name={name} pid={pid} session={sid} ")), "{out}");
+    assert_eq!(std::fs::read_to_string(field(&out, "brief=")).unwrap(), "now write the notes\n");
+    let out = router(&format!("scripts/router-worker.sh wait {name}"));
+    assert_eq!(out, format!("IDLE name={name} pid={pid} turn=2 report={}\n", report.display()));
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "report 2\n");
+
+    // the router closes it: EXITED, and its argv carried the grant, the mode and the subscribed name
+    let out = router(&format!("scripts/router-worker.sh stop {name}"));
+    assert!(out.starts_with(&format!("STOPPING name={name} pid={pid} ")), "{out}");
     let out = router(&format!("scripts/router-worker.sh wait {name}"));
     assert_eq!(out, format!("EXITED name={name} pid={pid} out={}\n", c.join(format!(".router/out/{name}.out")).display()));
     let a = worker_argv(&c, name);

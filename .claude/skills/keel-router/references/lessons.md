@@ -52,10 +52,10 @@ Source (lineage): a router session on the Trawler project (a Rust + Tauri app ru
 - C7 Workers' try helpers broken (syntax error, HTML for a JSON test, helper in another scratchpad) → run once; stable path.
 - C8 Router's temp review worktree held the epic branch; back-merge blocked → remove temp worktrees.
 - C9 Hotfix landed as a one-epic collapse straight to main; owner wanted an epic with parallel WUs, main only after green → ask or default to that.
-- C10 The owner had to say "done" after every sign/merge/push/tag; the router idled until told → watcher per staged action, same turn; 10-minute heartbeat.
+- C10 The owner had to say "done" after every sign/merge/push/tag; the router idled until told → watcher per staged action, same turn; 10-minute heartbeat (superseded 2026-11-11: no router heartbeat; a `wait` per worker and a watch per action).
 - C11 A worker was announced as spawned but never started (`command -v claude` empty) → absolute claude path; announce only after `ps` shows it.
 - C12 Two parallel workers both took DEC-77 → a worker allocating a shared number (decision, rule, use case) checks every branch first; the router assigns the number in the brief.
-- C13 Workers died (reboot) or idled out and nobody noticed for hours → the heartbeat checks every worker and relaunches a dead or stalled one from its brief.
+- C13 Workers died (reboot) or idled out and nobody noticed for hours → the heartbeat checks every worker and relaunches a dead or stalled one from its brief (now: a `wait` per live worker reports `STALLED` / `EXITED`).
 
 ## D. Permissions
 - D1 Router merged twice, then "Merge Without Review" was denied → the owner merges; check capability before promising automation.
