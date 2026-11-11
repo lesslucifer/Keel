@@ -2020,7 +2020,7 @@ fn watchdog_hooks(a: &[String]) -> (String, String) {
 }
 
 /// Run a hook command as Claude Code would in a background session: no variable of the launcher's
-/// environment (W10 P8), only PATH, HOME and the stub's two.
+/// environment (W10 P8), ROUTER_CLAUDE included (review r1 B1), only PATH, HOME and the stub's state dir.
 fn run_hook(l: &Launcher, cmd: &str, path: &str, home: &Path, stdin: &str) -> Output {
     let mut p = common::cmd("/bin/sh")
         .args(["-c", cmd])
@@ -2028,7 +2028,6 @@ fn run_hook(l: &Launcher, cmd: &str, path: &str, home: &Path, stdin: &str) -> Ou
         .env_clear()
         .env("PATH", path)
         .env("HOME", home)
-        .env("ROUTER_CLAUDE", &l.stub)
         .env("STUB_STATE", &l.state)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -2093,10 +2092,8 @@ fn watchdog_starts_as_a_background_session_whose_hooks_carry_the_routers_name() 
         "{\"prompt\":\"tick\"}",
     );
     assert!(o.status.success(), "{o:?}");
-    assert!(
-        String::from_utf8_lossy(&o.stdout).starts_with("Report to r1.\n"),
-        "{o:?}"
-    );
+    // review r1 B1: with no ROUTER_CLAUDE and no claude under HOME, the hook still reads the session list
+    assert_eq!(String::from_utf8_lossy(&o.stdout), "Report to r1.\nNo live worker.\n", "{o:?}");
 
     let verdict = |o: Output| -> Option<String> { decision(&serde_json::json!({}), o) };
     assert_eq!(
@@ -2377,6 +2374,8 @@ fn watchdog_facts_hold_one_block_per_live_worker_of_this_repository() {
     rows.push(serde_json::json!({"id": "f0", "sessionId": sid(3), "name": "foreign", "cwd": "/elsewhere", "kind": "background", "status": "idle"}));
     rows.push(serde_json::json!({"id": "i0", "sessionId": sid(4), "name": "inter", "cwd": l.wt, "kind": "interactive", "status": "idle"}));
     rows.push(serde_json::json!({"id": "wd0", "sessionId": sid(5), "name": "watchdog-r1", "cwd": l.main, "kind": "background", "status": "busy"}));
+    // review r1 I2: another router's watchdog, in a sibling worktree, is no worker
+    rows.push(serde_json::json!({"id": "wd1", "sessionId": sid(6), "name": "watchdog-r2", "cwd": l.wt2, "kind": "background", "status": "idle"}));
     l.set_sessions(&rows);
     let out = facts(&l, h);
     assert!(out.starts_with("Report to r1.\n"), "{out}");
@@ -2745,4 +2744,40 @@ fn fact_block_states_a_worker_from_its_transcript_tail_within_its_bound() {
             assert_eq!(x.lines().count(), 7, "{n}: a block was cut: {x}");
         }
     }
+}
+
+/// review r1 (B1, I4, nit): facts runs as the watchdog's prompt hook, where an exit 2 would block the
+/// prompt: it always exits 0, and says what it could not read instead of reporting a wrong fleet.
+#[test]
+fn watchdog_facts_never_block_the_prompt_and_say_what_they_cannot_read() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path().to_str().unwrap();
+    let (ok, out) = l.run_env(&["watchdog", "facts", "r1"], &[("ROUTER_CLAUDE", "/nonexistent/claude"), ("HOME", h)]);
+    assert!(ok && out == "Report to r1.\nThe session list cannot be read (claude agents --json).\n", "{out}");
+
+    std::fs::write(l.state.join("sessions.json"), "not json\n").unwrap();
+    let n0 = calls(&l.state).len();
+    let (ok, out) = l.run_env(&["watchdog", "facts", "r1"], &[("HOME", h)]);
+    assert!(ok && out == "Report to r1.\nThe session list cannot be read (claude agents --json).\n", "{out}");
+    assert!(calls(&l.state)[n0..].iter().all(|(_, a)| a[0] == "agents"), "an unreadable list stopped a session");
+
+    // a checkout git cannot list: the worktree list is unreadable, never an empty fleet
+    let l = watchdog_launcher();
+    let mut rows = l.sessions();
+    rows.push(serde_json::json!({"id": "w100", "sessionId": sid(1), "name": "w1", "cwd": l.wt, "kind": "background", "status": "busy"}));
+    l.set_sessions(&rows);
+    let bare = TempDir::new().unwrap();
+    std::fs::create_dir_all(bare.path().join("scripts")).unwrap();
+    std::fs::copy(root().join("scripts/router-worker.sh"), bare.path().join("scripts/router-worker.sh")).unwrap();
+    let o = common::cmd("sh")
+        .arg(bare.path().join("scripts/router-worker.sh"))
+        .args(["watchdog", "facts", "r1"])
+        .env("ROUTER_CLAUDE", &l.stub)
+        .env("STUB_STATE", &l.state)
+        .env("HOME", h)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{o:?}");
+    assert_eq!(String::from_utf8_lossy(&o.stdout), "Report to r1.\nThe worktree list cannot be read (git worktree list).\n");
 }
