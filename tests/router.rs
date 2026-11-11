@@ -398,6 +398,7 @@ fn launcher() -> Launcher {
     std::fs::create_dir_all(main.join("scripts")).unwrap();
     std::fs::create_dir_all(main.join(".router/briefs")).unwrap();
     std::fs::copy(root().join("scripts/router-worker.sh"), main.join("scripts/router-worker.sh")).unwrap();
+    std::fs::copy(root().join("scripts/router-guard.jq"), main.join("scripts/router-guard.jq")).unwrap();
     std::fs::write(main.join(".gitignore"), ".router/\n").unwrap();
     std::fs::write(main.join(".router/briefs/b.md"), "do the thing\n").unwrap();
     std::fs::create_dir_all(main.join(".keel")).unwrap();
@@ -1785,4 +1786,960 @@ fn watch_polls_at_its_default_pace_and_times_out_in_minutes() {
     let (c, _) = w.cmd(&["signed", &t], "knobs", &[]);
     let removed: Vec<&std::ffi::OsStr> = c.get_envs().filter(|(_, v)| v.is_none()).map(|(k, _)| k).collect();
     assert!(["ROUTER_WATCH_POLL", "ROUTER_WATCH_MAX"].iter().all(|k| removed.contains(&std::ffi::OsStr::new(k))), "{removed:?}");
+}
+
+// ---- E-ROUTER3.W9: the watchdog (DEC-45) ----
+
+/// The watchdog's two tool calls as Claude Code 2.1.288 delivered them to the session's own
+/// PreToolUse hook (W9 probes P2/P3; ids and paths replaced, recipient renamed r1).
+const CAPTURED_WATCHDOG_CRON: &str = r#"{"cwd":"/r","scratchpad_dir":"/t","prompt_id":"p","permission_mode":"default","agent_type":"watchdog","hook_event_name":"PreToolUse","tool_name":"CronCreate","tool_input":{"cron":"*/5 * * * *","prompt":"tick","recurring":true},"tool_use_id":"u1"}"#;
+const CAPTURED_WATCHDOG_SEND: &str = r#"{"cwd":"/r","scratchpad_dir":"/t","prompt_id":"p","permission_mode":"default","agent_type":"watchdog","hook_event_name":"PreToolUse","tool_name":"SendMessage","tool_input":{"to":"r1","summary":"FACTSMARK-185209","message":"FACTSMARK-185209\nSendMessage, CronCreate","type":"message","recipient":"r1","content":"FACTSMARK-185209\nSendMessage, CronCreate"},"tool_use_id":"u2"}"#;
+
+const WATCHDOG_POLICY: &str = "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\nwatchdog_model = \"haiku\"\n";
+
+/// The guard run as the watchdog session's hook runs it: with `--arg watchdog_to <to>`.
+fn guard_to(to: &str, event: &serde_json::Value) -> Option<String> {
+    let mut p = Command::new("jq")
+        .args(["-c", "--arg", "watchdog_to", to, "-f"])
+        .arg(root().join("scripts/router-guard.jq"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(&mut p.stdin.take().unwrap(), event.to_string().as_bytes()).unwrap();
+    decision(event, p.wait_with_output().unwrap())
+}
+
+#[test]
+fn router_guard_admits_the_two_watchdog_shapes_in_plain_words_only() {
+    for ok in [
+        "scripts/router-worker.sh watchdog start r1",
+        "scripts/router-worker.sh watchdog stop r1",
+        "scripts/router-worker.sh watchdog start keel-e-router3-63",
+    ] {
+        assert_eq!(bash(ok), None, "guard denied {ok:?}");
+    }
+    let long = format!("scripts/router-worker.sh watchdog start {}", "a".repeat(33));
+    for no in [
+        "scripts/router-worker.sh watchdog",
+        "scripts/router-worker.sh watchdog start",
+        "scripts/router-worker.sh watchdog stop",
+        "scripts/router-worker.sh watchdog start r1 r2",
+        "scripts/router-worker.sh watchdog start R1",
+        "scripts/router-worker.sh watchdog start r.1",
+        "scripts/router-worker.sh watchdog start ..",
+        "scripts/router-worker.sh watchdog start -r1",
+        "scripts/router-worker.sh watchdog start \"r1\"",
+        "scripts/router-worker.sh watchdog start $USER",
+        "scripts/router-worker.sh watchdog facts r1",
+        "scripts/router-worker.sh watchdog restart r1",
+        "scripts/router-worker.sh watchdogx start r1",
+        long.as_str(),
+    ] {
+        assert!(bash(no).is_some(), "guard allowed {no:?}");
+    }
+    assert!(bash("scripts/router-worker.sh watchdog facts r1")
+        .unwrap()
+        .contains("watchdog start|stop <router-name>"));
+}
+
+#[test]
+fn guard_run_with_a_watchdog_recipient_allows_only_the_scheduler_and_a_message_to_that_name() {
+    let cron: serde_json::Value = serde_json::from_str(CAPTURED_WATCHDOG_CRON).unwrap();
+    let send: serde_json::Value = serde_json::from_str(CAPTURED_WATCHDOG_SEND).unwrap();
+    for agent in [Some("watchdog"), Some("router"), None] {
+        let as_agent = |mut e: serde_json::Value| {
+            match agent {
+                Some(a) => e["agent_type"] = a.into(),
+                None => {
+                    e.as_object_mut().unwrap().remove("agent_type");
+                }
+            }
+            e
+        };
+        assert_eq!(
+            guard_to("r1", &as_agent(cron.clone())),
+            None,
+            "{agent:?}: CronCreate"
+        );
+        assert_eq!(
+            guard_to("r1", &as_agent(send.clone())),
+            None,
+            "{agent:?}: SendMessage to r1"
+        );
+        let mut other = send.clone();
+        other["tool_input"]["to"] = "w1".into();
+        let mut missing = send.clone();
+        missing["tool_input"].as_object_mut().unwrap().remove("to");
+        let mut number = send.clone();
+        number["tool_input"]["to"] = 1.into();
+        let mut recipient_only = send.clone();
+        recipient_only["tool_input"]["to"] = "w1".into();
+        recipient_only["tool_input"]["recipient"] = "r1".into();
+        for (what, e) in [
+            ("another to", other),
+            ("no to", missing),
+            ("non-string to", number),
+            ("to w1, recipient r1", recipient_only),
+        ] {
+            let why =
+                guard_to("r1", &as_agent(e)).unwrap_or_else(|| panic!("{agent:?}: {what} allowed"));
+            assert!(why.contains("watchdog guard"), "{why}");
+        }
+        for (tool, input) in [
+            ("Bash", serde_json::json!({"command": "git status"})),
+            ("Read", serde_json::json!({"file_path": "/r/x"})),
+            (
+                "Write",
+                serde_json::json!({"file_path": "/r/.router/briefs/x.md"}),
+            ),
+            ("Agent", serde_json::json!({"prompt": "x"})),
+            ("CronDelete", serde_json::json!({"id": "x"})),
+        ] {
+            let mut e = cron.clone();
+            e["tool_name"] = tool.into();
+            e["tool_input"] = input;
+            assert!(
+                guard_to("r1", &as_agent(e)).is_some(),
+                "{agent:?}: {tool} allowed"
+            );
+        }
+        assert!(
+            guard_to("", &as_agent(cron.clone())).is_some(),
+            "{agent:?}: an empty recipient allowed CronCreate"
+        );
+        assert!(
+            guard_to("", &as_agent(send.clone())).is_some(),
+            "{agent:?}: an empty recipient allowed a message"
+        );
+    }
+}
+
+/// A launcher whose committed policy names a watchdog model and whose session list holds the router
+/// r1, a background session in the router checkout.
+fn watchdog_launcher() -> Launcher {
+    let l = launcher();
+    l.commit_config(Some(WATCHDOG_POLICY));
+    l.set_sessions(&[serde_json::json!({"id": "r100", "sessionId": "r100-x", "name": "r1", "cwd": l.main, "kind": "background", "status": "idle"})]);
+    l
+}
+
+/// The argv of the watchdog session the stub started for `router`, checked option by option.
+fn watchdog_argv(state: &Path, router: &str) -> (String, Vec<String>) {
+    let name = format!("watchdog-{router}");
+    let (dir, a) = calls(state)
+        .into_iter()
+        .rfind(|(_, a)| a[0] == "--bg" && a.windows(2).any(|w| w[0] == "-n" && w[1] == name))
+        .unwrap_or_else(|| panic!("no session started for {name}"));
+    let flags: Vec<&str> = a
+        .iter()
+        .map(String::as_str)
+        .filter(|x| x.starts_with('-'))
+        .collect();
+    assert_eq!(
+        flags,
+        [
+            "--bg",
+            "-n",
+            "--setting-sources",
+            "--agents",
+            "--agent",
+            "--model",
+            "--tools",
+            "--allowedTools",
+            "--strict-mcp-config",
+            "--autocompact",
+            "--settings"
+        ],
+        "options in {a:?}"
+    );
+    assert_eq!(option(&a, "-n"), name);
+    assert_eq!(option(&a, "--setting-sources"), "local");
+    assert_eq!(option(&a, "--agent"), "watchdog");
+    assert_eq!(option(&a, "--model"), "haiku");
+    assert_eq!(option(&a, "--autocompact"), "100k");
+    let list = |flag: &str| -> Vec<String> {
+        let i = a.iter().position(|x| x == flag).unwrap();
+        a[i + 1..]
+            .iter()
+            .take_while(|x| !x.starts_with('-'))
+            .cloned()
+            .collect()
+    };
+    assert_eq!(list("--tools"), ["SendMessage", "CronCreate"]);
+    assert_eq!(list("--allowedTools"), ["SendMessage", "CronCreate"]);
+    assert_eq!(
+        a[a.len() - 3],
+        "--settings",
+        "the prompt must follow --settings' value: {a:?}"
+    );
+    assert!(a[a.len() - 1].contains("*/5 * * * *"), "{a:?}");
+    (dir, a)
+}
+
+#[test]
+fn watchdog_session_loads_local_settings_only_and_defines_its_agent_inline() {
+    let l = watchdog_launcher();
+    let (ok, out) = l.run(&["watchdog", "start", "r1"]);
+    assert!(ok, "{out}");
+    let (_, a) = watchdog_argv(&l.state, "r1");
+    let agents: serde_json::Value = serde_json::from_str(&option(&a, "--agents")).unwrap();
+    let obj = agents.as_object().unwrap();
+    assert_eq!(obj.keys().collect::<Vec<_>>(), ["watchdog"]);
+    let w = &agents["watchdog"];
+    assert!(
+        !w["description"].as_str().unwrap().is_empty() && !w["prompt"].as_str().unwrap().is_empty(),
+        "{w}"
+    );
+    assert_eq!(w["tools"], serde_json::json!(["SendMessage", "CronCreate"]));
+    assert!(w["prompt"].as_str().unwrap().contains("untrusted"), "{w}");
+    assert!(!root().join(".claude/agents/watchdog.md").exists());
+}
+
+/// The two hook commands the watchdog's `--settings` carries.
+fn watchdog_hooks(a: &[String]) -> (String, String) {
+    let s: serde_json::Value = serde_json::from_str(&option(a, "--settings")).unwrap();
+    let one = |ev: &str| {
+        let h = s["hooks"][ev].as_array().unwrap();
+        assert_eq!(h.len(), 1, "{ev}: {s}");
+        assert_eq!(h[0]["hooks"].as_array().unwrap().len(), 1, "{ev}: {s}");
+        h[0]["hooks"][0]["command"].as_str().unwrap().to_string()
+    };
+    assert_eq!(s["hooks"].as_object().unwrap().len(), 2, "{s}");
+    assert_eq!(
+        s["hooks"]["PreToolUse"][0]
+            .get("matcher")
+            .and_then(|m| m.as_str())
+            .unwrap_or("*"),
+        "*"
+    );
+    (one("UserPromptSubmit"), one("PreToolUse"))
+}
+
+/// Run a hook command as Claude Code would in a background session: no variable of the launcher's
+/// environment (W10 P8), only PATH, HOME and the stub's two.
+fn run_hook(l: &Launcher, cmd: &str, path: &str, home: &Path, stdin: &str) -> Output {
+    let mut p = common::cmd("/bin/sh")
+        .args(["-c", cmd])
+        .current_dir(&l.main)
+        .env_clear()
+        .env("PATH", path)
+        .env("HOME", home)
+        .env("ROUTER_CLAUDE", &l.stub)
+        .env("STUB_STATE", &l.state)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(&mut p.stdin.take().unwrap(), stdin.as_bytes()).unwrap();
+    p.wait_with_output().unwrap()
+}
+
+#[test]
+fn watchdog_starts_as_a_background_session_whose_hooks_carry_the_routers_name() {
+    let l = watchdog_launcher();
+    let (ok, out) = l.run(&["watchdog", "start", "r1"]);
+    assert!(ok, "{out}");
+    let row = l
+        .sessions()
+        .into_iter()
+        .find(|r| r["name"] == "watchdog-r1")
+        .unwrap();
+    assert_eq!(
+        out,
+        format!(
+            "RUNNING name=watchdog-r1 id={} session={} router=r1 model=haiku every=5m\n",
+            row["id"].as_str().unwrap(),
+            row["sessionId"].as_str().unwrap()
+        )
+    );
+    let (dir, a) = watchdog_argv(&l.state, "r1");
+    assert_eq!(
+        dir,
+        l.main.to_str().unwrap(),
+        "started outside the router checkout"
+    );
+    for no in [
+        "-p",
+        "--print",
+        "--resume",
+        "--session-id",
+        "--effort",
+        "--permission-mode",
+        "--disallowedTools",
+    ] {
+        assert!(!a.iter().any(|x| x == no), "{no} in {a:?}");
+    }
+    assert!(
+        !a.iter().any(|x| x.starts_with("Bash(")),
+        "a worker grant reached the watchdog: {a:?}"
+    );
+
+    let (prompt_hook, tool_hook) = watchdog_hooks(&a);
+    for c in [&prompt_hook, &tool_hook] {
+        assert!(!c.contains('$'), "a hook reads the environment: {c}");
+    }
+    let home = TempDir::new().unwrap();
+    let path = std::env::var("PATH").unwrap();
+    let o = run_hook(
+        &l,
+        &prompt_hook,
+        &path,
+        home.path(),
+        "{\"prompt\":\"tick\"}",
+    );
+    assert!(o.status.success(), "{o:?}");
+    assert!(
+        String::from_utf8_lossy(&o.stdout).starts_with("Report to r1.\n"),
+        "{o:?}"
+    );
+
+    let verdict = |o: Output| -> Option<String> { decision(&serde_json::json!({}), o) };
+    assert_eq!(
+        verdict(run_hook(
+            &l,
+            &tool_hook,
+            &path,
+            home.path(),
+            CAPTURED_WATCHDOG_SEND
+        )),
+        None
+    );
+    assert_eq!(
+        verdict(run_hook(
+            &l,
+            &tool_hook,
+            &path,
+            home.path(),
+            CAPTURED_WATCHDOG_CRON
+        )),
+        None
+    );
+    assert!(verdict(run_hook(
+        &l,
+        &tool_hook,
+        &path,
+        home.path(),
+        &CAPTURED_WATCHDOG_SEND.replace("\"to\":\"r1\"", "\"to\":\"w1\"")
+    ))
+    .is_some());
+    // it is the session's only tool hook: a guard that cannot run or parse denies
+    assert_eq!(
+        run_hook(
+            &l,
+            &tool_hook,
+            "/nonexistent",
+            home.path(),
+            CAPTURED_WATCHDOG_SEND
+        )
+        .status
+        .code(),
+        Some(2),
+        "jq missing"
+    );
+    assert_eq!(
+        run_hook(&l, &tool_hook, &path, home.path(), "not json")
+            .status
+            .code(),
+        Some(2),
+        "payload not JSON"
+    );
+
+    // a start the CLI refuses is reported dead
+    let l = watchdog_launcher();
+    std::fs::write(l.state.join("refuse"), "Error: not logged in\n").unwrap();
+    let (ok, out) = l.run(&["watchdog", "start", "r1"]);
+    assert!(
+        !ok && out.starts_with("DEAD name=watchdog-r1 exit=1")
+            && out.contains("Error: not logged in"),
+        "{out}"
+    );
+}
+
+#[test]
+fn watchdog_start_refuses_a_bad_name_an_unlisted_router_and_a_second_start() {
+    let l = watchdog_launcher();
+    let path = l.fast_path();
+    let long = "a".repeat(33);
+    for (args, why) in [
+        (vec!["watchdog", "start", "R1"], "bad router name"),
+        (vec!["watchdog", "start", long.as_str()], "bad router name"),
+        (
+            vec!["watchdog", "start"],
+            "watchdog start|stop <router-name>",
+        ),
+        (
+            vec!["watchdog", "restart", "r1"],
+            "watchdog start|stop <router-name>",
+        ),
+        (vec!["watchdog", "start", "r2"], "router r2 is not listed"),
+        (
+            vec!["watchdog", "stop", "r1"],
+            "worker watchdog-r1 is not running",
+        ),
+        (
+            vec![
+                "spawn",
+                "watchdog",
+                l.wt.to_str().unwrap(),
+                ".router/briefs/b.md",
+                "opus",
+            ],
+            "the name watchdog is reserved",
+        ),
+        (
+            vec![
+                "spawn",
+                "watchdog-x",
+                l.wt.to_str().unwrap(),
+                ".router/briefs/b.md",
+                "opus",
+            ],
+            "the name watchdog-x is reserved",
+        ),
+        (
+            vec![
+                "resume",
+                "watchdog-x",
+                "0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b",
+                l.wt.to_str().unwrap(),
+                ".router/briefs/b.md",
+            ],
+            "the name watchdog-x is reserved",
+        ),
+    ] {
+        let (ok, out) = l.run_env(&args, &[("PATH", &path)]);
+        assert!(!ok && out.contains(why), "{args:?}: {out}");
+    }
+    assert_eq!(l.starts("watchdog-r1") + l.starts("watchdog-r2"), 0);
+    assert!(l.run(&["watchdog", "start", "r1"]).0);
+    let (ok, out) = l.run(&["watchdog", "start", "r1"]);
+    assert!(
+        !ok && out.contains("watchdog-r1 is already running"),
+        "{out}"
+    );
+    assert_eq!(l.starts("watchdog-r1"), 1);
+    std::fs::write(l.state.join("agents-ok"), "0").unwrap();
+    let (ok, out) = l.run(&["watchdog", "start", "r1"]);
+    assert!(
+        !ok && out.contains("cannot list sessions (claude agents --json)"),
+        "{out}"
+    );
+    std::fs::remove_file(l.state.join("agents-ok")).unwrap();
+    // no watchdog model in the committed policy: workers still spawn, the watchdog does not start
+    let l = watchdog_launcher();
+    l.commit_config(Some(
+        &WATCHDOG_POLICY.replace("watchdog_model = \"haiku\"\n", ""),
+    ));
+    let (ok, out) = l.run(&["watchdog", "start", "r1"]);
+    assert!(
+        !ok && out.contains("no watchdog model: [router] watchdog_model"),
+        "{out}"
+    );
+    assert!(
+        l.run(&[
+            "spawn",
+            "w1",
+            l.wt.to_str().unwrap(),
+            ".router/briefs/b.md",
+            "opus"
+        ])
+        .0
+    );
+}
+
+#[test]
+fn worker_policy_reads_an_optional_watchdog_model() {
+    let l = launcher();
+    let wt = l.wt.to_str().unwrap();
+    let base = WATCHDOG_POLICY.replace("watchdog_model = \"haiku\"\n", "");
+    for (config, spawns, watchdog) in [
+        (WATCHDOG_POLICY.to_string(), true, true),
+        (base.clone(), true, false),
+        (
+            format!("{WATCHDOG_POLICY}watchdog_model = \"opus\"\n"),
+            false,
+            false,
+        ),
+        (format!("{base}watchdog_model = haiku\n"), false, false),
+        (format!("{base}watchdog_model = \"Haiku\"\n"), false, false),
+        (
+            format!("{base}\n[router]\nwatchdog_model = \"haiku\"\n"),
+            false,
+            false,
+        ),
+    ] {
+        l.commit_config(Some(&config));
+        l.set_sessions(&[serde_json::json!({"id": "r100", "sessionId": "r100-x", "name": "r1", "cwd": l.main, "kind": "background", "status": "idle"})]);
+        let (ok, out) = l.run(&["spawn", "w1", wt, ".router/briefs/b.md", "opus"]);
+        assert_eq!(ok, spawns, "{config}: {out}");
+        let (ok, out) = l.run(&["watchdog", "start", "r1"]);
+        assert_eq!(ok, watchdog, "{config}: {out}");
+        if !spawns {
+            assert!(out.contains("no worker policy"), "{config}: {out}");
+        }
+    }
+}
+
+/// A worker row of this repository and its transcript under `home`, written `quiet_min` minutes ago.
+fn worker_row(
+    l: &Launcher,
+    home: &Path,
+    name: &str,
+    sid: &str,
+    status: serde_json::Value,
+    quiet_min: Option<u64>,
+    lines: &[String],
+) -> serde_json::Value {
+    if let Some(q) = quiet_min {
+        let dir = home.join(".claude/projects/-p");
+        std::fs::create_dir_all(&dir).unwrap();
+        let t = dir.join(format!("{sid}.jsonl"));
+        std::fs::write(&t, lines.join("\n") + "\n").unwrap();
+        let f = std::fs::File::options().write(true).open(&t).unwrap();
+        f.set_modified(std::time::SystemTime::now() - Duration::from_secs(q * 60))
+            .unwrap();
+    }
+    let mut r = serde_json::json!({"id": &sid[..8], "sessionId": sid, "name": name, "cwd": l.wt, "kind": "background"});
+    for (k, v) in status.as_object().unwrap() {
+        r[k] = v.clone();
+    }
+    r
+}
+
+fn assistant(items: serde_json::Value) -> String {
+    serde_json::json!({"type": "assistant", "message": {"role": "assistant", "content": items}})
+        .to_string()
+}
+
+fn facts(l: &Launcher, home: &Path) -> String {
+    let (ok, out) = l.run_env(
+        &["watchdog", "facts", "r1"],
+        &[("HOME", home.to_str().unwrap())],
+    );
+    assert!(ok, "{out}");
+    out
+}
+
+/// The blocks of a facts output: a block starts at a worker's line (it carries " · quiet ") and runs
+/// over its item lines.
+fn blocks(out: &str) -> Vec<String> {
+    let mut b: Vec<String> = Vec::new();
+    for line in out.lines().skip(1) {
+        if line.starts_with("  - ") {
+            let last = b.last_mut().unwrap();
+            last.push('\n');
+            last.push_str(line);
+        } else if line.contains(" · quiet ") {
+            b.push(line.to_string());
+        }
+    }
+    b
+}
+
+fn sid(n: u64) -> String {
+    format!("{n:08x}-0000-4000-8000-000000000000")
+}
+
+#[test]
+fn watchdog_facts_hold_one_block_per_live_worker_of_this_repository() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    assert_eq!(facts(&l, h), "Report to r1.\nNo live worker.\n");
+    let mut rows = l.sessions();
+    rows.push(worker_row(
+        &l,
+        h,
+        "w1",
+        &sid(1),
+        serde_json::json!({"status": "busy"}),
+        Some(1),
+        &[assistant(
+            serde_json::json!([{"type": "text", "text": "working on it"}]),
+        )],
+    ));
+    let mut w2 = worker_row(
+        &l,
+        h,
+        "w2",
+        &sid(2),
+        serde_json::json!({"status": "busy"}),
+        Some(2),
+        &[],
+    );
+    w2["cwd"] = l.wt2.to_str().unwrap().into();
+    rows.push(w2);
+    rows.push(serde_json::json!({"id": "f0", "sessionId": sid(3), "name": "foreign", "cwd": "/elsewhere", "kind": "background", "status": "idle"}));
+    rows.push(serde_json::json!({"id": "i0", "sessionId": sid(4), "name": "inter", "cwd": l.wt, "kind": "interactive", "status": "idle"}));
+    rows.push(serde_json::json!({"id": "wd0", "sessionId": sid(5), "name": "watchdog-r1", "cwd": l.main, "kind": "background", "status": "busy"}));
+    l.set_sessions(&rows);
+    let out = facts(&l, h);
+    assert!(out.starts_with("Report to r1.\n"), "{out}");
+    let b = blocks(&out);
+    assert_eq!(b.len(), 2, "{out}");
+    assert!(
+        b[0].starts_with("w1: busy")
+            && b[0].contains("  - working on it")
+            && b[1].starts_with("w2: busy"),
+        "{out}"
+    );
+    assert!(
+        b[0].contains(" · w · ") && b[1].contains(" · w2 · "),
+        "branch missing: {out}"
+    );
+    rows.retain(|r| r["name"] != "w2");
+    l.set_sessions(&rows);
+    assert_eq!(blocks(&facts(&l, h)).len(), 1);
+}
+
+#[test]
+fn watchdog_facts_mark_an_idle_worker_done_and_a_blocked_or_quiet_one_stuck() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let mut rows = l.sessions();
+    for (name, n, status, quiet) in [
+        (
+            "busy14",
+            1,
+            serde_json::json!({"status": "busy", "state": "working"}),
+            14,
+        ),
+        (
+            "busy16",
+            2,
+            serde_json::json!({"status": "busy", "state": "working"}),
+            16,
+        ),
+        (
+            "idle",
+            3,
+            serde_json::json!({"status": "idle", "state": "done"}),
+            40,
+        ),
+        (
+            "prompt",
+            4,
+            serde_json::json!({"status": "waiting", "waitingFor": "permission prompt", "state": "blocked"}),
+            0,
+        ),
+        ("blocked", 5, serde_json::json!({"state": "blocked"}), 0),
+        ("working", 6, serde_json::json!({"state": "working"}), 1),
+    ] {
+        rows.push(worker_row(&l, h, name, &sid(n), status, Some(quiet), &[]));
+    }
+    l.set_sessions(&rows);
+    let out = facts(&l, h);
+    let state = |name: &str| -> String {
+        let b = blocks(&out)
+            .into_iter()
+            .find(|b| b.starts_with(&format!("{name}: ")))
+            .unwrap_or_else(|| panic!("no {name} in {out}"));
+        b[name.len() + 2..].split(" · ").next().unwrap().to_string()
+    };
+    assert_eq!(state("busy14"), "busy");
+    assert_eq!(state("busy16"), "STUCK (quiet 16m)");
+    assert_eq!(state("idle"), "DONE");
+    assert_eq!(state("prompt"), "STUCK (permission prompt)");
+    assert_eq!(state("blocked"), "STUCK (blocked)");
+    assert_eq!(state("working"), "busy");
+    // done and stuck first, busy last, in list order within each
+    let order: Vec<String> = blocks(&out)
+        .iter()
+        .map(|b| b.split(':').next().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        order,
+        ["busy16", "idle", "prompt", "blocked", "busy14", "working"],
+        "{out}"
+    );
+}
+
+#[test]
+fn watchdog_ends_on_stop_and_when_the_router_is_gone() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    assert!(
+        l.run(&[
+            "spawn",
+            "w1",
+            l.wt.to_str().unwrap(),
+            ".router/briefs/b.md",
+            "opus"
+        ])
+        .0
+    );
+    assert!(l.run(&["watchdog", "start", "r1"]).0);
+    let id = |n: &str| {
+        l.sessions().iter().find(|r| r["name"] == n).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let (w1, wd) = (id("w1"), id("watchdog-r1"));
+    let cli = |from: usize| -> Vec<Vec<String>> {
+        calls(&l.state)[from..]
+            .iter()
+            .map(|(_, a)| a.clone())
+            .filter(|a| a[0] == "stop" || a[0] == "rm")
+            .collect()
+    };
+
+    let n0 = calls(&l.state).len();
+    let (ok, out) = l.run(&["watchdog", "stop", "r1"]);
+    assert!(
+        ok && out.starts_with(&format!("STOPPED name=watchdog-r1 id={wd} ")),
+        "{out}"
+    );
+    assert_eq!(
+        cli(n0),
+        [
+            vec!["stop".to_string(), wd.clone()],
+            vec!["rm".to_string(), wd]
+        ]
+    );
+
+    // the router leaves: the next facts run stops the watchdog, and only it
+    assert!(l.run(&["watchdog", "start", "r1"]).0);
+    let wd = id("watchdog-r1");
+    let rows: Vec<serde_json::Value> = l
+        .sessions()
+        .into_iter()
+        .filter(|r| r["name"] != "r1")
+        .collect();
+    l.set_sessions(&rows);
+    let n0 = calls(&l.state).len();
+    let out = facts(&l, home.path());
+    assert_eq!(cli(n0), [vec!["stop".to_string(), wd]]);
+    assert!(blocks(&out).is_empty() && !out.contains("w1"), "{out}");
+    assert!(l.sessions().iter().any(|r| r["id"] == w1.as_str()));
+
+    // an unreadable list stops nothing
+    std::fs::write(l.state.join("agents-ok"), "0").unwrap();
+    let n0 = calls(&l.state).len();
+    let out = facts(&l, home.path());
+    assert!(out.contains("cannot be read"), "{out}");
+    assert!(cli(n0).is_empty());
+}
+
+/// A deterministic generator (no crate): xorshift64.
+struct Rng(u64);
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+    fn text(&mut self, max: usize) -> String {
+        const ALPHABET: [&str; 12] = [
+            "a", "Z", " ", "\"", "\\", "\n", "\t", "\u{1}", "\u{7f}", "\u{85}", "漢", "é",
+        ];
+        (0..(self.next() as usize % max))
+            .map(|_| ALPHABET[self.next() as usize % ALPHABET.len()])
+            .collect()
+    }
+}
+
+#[test]
+fn fact_block_states_a_worker_from_its_transcript_tail_within_its_bound() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let mut rows = l.sessions();
+    // the last six items in order; a tool item; non-JSON skipped; thinking skipped
+    let mut lines: Vec<String> = (1..=8)
+        .map(|i| assistant(serde_json::json!([{"type": "text", "text": format!("step {i}")}])))
+        .collect();
+    lines.push("not json".into());
+    lines.push(assistant(serde_json::json!([{"type": "thinking", "thinking": "secret"}, {"type": "tool_use", "name": "Bash", "input": {"command": "cargo test"}}])));
+    lines.push(
+        serde_json::json!({"type": "user", "message": {"role": "user", "content": "do it"}})
+            .to_string(),
+    );
+    rows.push(worker_row(
+        &l,
+        h,
+        "w1",
+        &sid(1),
+        serde_json::json!({"status": "busy"}),
+        Some(0),
+        &lines,
+    ));
+    // a transcript longer than the 64 KB window: its cut first line is ignored
+    let big = "x".repeat(70_000);
+    rows.push(worker_row(
+        &l,
+        h,
+        "w2",
+        &sid(2),
+        serde_json::json!({"status": "busy"}),
+        Some(0),
+        &[
+            assistant(serde_json::json!([{"type": "text", "text": big}])),
+            assistant(serde_json::json!([{"type": "text", "text": "after the big one"}])),
+        ],
+    ));
+    // a quiet transcript whose subagent wrote lately: not quiet
+    rows.push(worker_row(
+        &l,
+        h,
+        "w3",
+        &sid(3),
+        serde_json::json!({"status": "busy"}),
+        Some(30),
+        &[],
+    ));
+    let sub = h.join(format!(".claude/projects/-p/{}/subagents", sid(3)));
+    std::fs::create_dir_all(&sub).unwrap();
+    std::fs::write(sub.join("agent-1.jsonl"), "{}\n").unwrap();
+    // no transcript at all
+    rows.push(worker_row(
+        &l,
+        h,
+        "w4",
+        &sid(4),
+        serde_json::json!({"status": "busy"}),
+        None,
+        &[],
+    ));
+    l.set_sessions(&rows);
+    let out = facts(&l, h);
+    let block = |n: &str| {
+        blocks(&out)
+            .into_iter()
+            .find(|b| b.starts_with(&format!("{n}: ")))
+            .unwrap_or_else(|| panic!("no {n} in {out}"))
+    };
+    let items: Vec<String> = block("w1").lines().skip(1).map(String::from).collect();
+    assert_eq!(
+        items,
+        [
+            "  - step 4",
+            "  - step 5",
+            "  - step 6",
+            "  - step 7",
+            "  - step 8",
+            "  - tool Bash: {\"command\":\"cargo test\"}"
+        ],
+        "{out}"
+    );
+    assert!(
+        !out.contains("secret") && !out.contains("not json"),
+        "{out}"
+    );
+    assert_eq!(
+        block("w2").lines().skip(1).collect::<Vec<_>>(),
+        ["  - after the big one"],
+        "{out}"
+    );
+    assert!(block("w3").starts_with("w3: busy · quiet 0m"), "{out}");
+    let w4 = block("w4");
+    assert!(
+        w4.starts_with("w4: busy · quiet ?") && w4.lines().count() == 1,
+        "{out}"
+    );
+
+    // invariant: whatever the transcript and the row hold, a block is at most 2000 bytes and holds
+    // no control character but its line breaks
+    let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+    for case in 0..12 {
+        let lines: Vec<String> = (0..rng.next() % 12)
+            .map(|_| match rng.next() % 3 {
+                0 => assistant(serde_json::json!([{"type": "text", "text": rng.text(600)}])),
+                1 => assistant(serde_json::json!([{"type": "tool_use", "name": rng.text(40), "input": {"command": rng.text(600)}}])),
+                _ => rng.text(200),
+            })
+            .collect();
+        let status = serde_json::json!({"status": "waiting", "waitingFor": rng.text(300)});
+        let mut rows = l
+            .sessions()
+            .into_iter()
+            .filter(|r| r["name"] == "r1")
+            .collect::<Vec<_>>();
+        let mut row = worker_row(
+            &l,
+            h,
+            "w9",
+            &sid(100 + case),
+            status,
+            Some(rng.next() % 30),
+            &lines,
+        );
+        row["name"] = format!("w9{}", rng.text(80)).into();
+        rows.push(row);
+        l.set_sessions(&rows);
+        let out = facts(&l, h);
+        let b = blocks(&out);
+        assert_eq!(b.len(), 1, "case {case}: {out:?}");
+        assert!(b[0].len() <= 2000, "case {case}: {} bytes", b[0].len());
+        assert!(
+            !b[0].chars().any(|c| c.is_control() && c != '\n'),
+            "case {case}: {:?}",
+            b[0]
+        );
+    }
+
+    // invariant: every whole output stays under 9000 bytes whatever the fleet; done and stuck
+    // workers come first, every printed block is whole, and the last line counts the rest
+    let fat = assistant(serde_json::json!([{"type": "text", "text": "y".repeat(400)}]));
+    for n in [0u64, 1, 3, 4, 5, 8, 13, 21, 40] {
+        let mut rows = l
+            .sessions()
+            .into_iter()
+            .filter(|r| r["name"] == "r1")
+            .collect::<Vec<_>>();
+        let mut stuck = 0;
+        for i in 0..n {
+            let status = if rng.next().is_multiple_of(3) {
+                stuck += 1;
+                serde_json::json!({"status": "waiting", "waitingFor": "permission prompt"})
+            } else {
+                serde_json::json!({"status": "busy"})
+            };
+            rows.push(worker_row(
+                &l,
+                h,
+                &format!("f{i}"),
+                &sid(1000 + i),
+                status,
+                Some(1),
+                &vec![fat.clone(); 6],
+            ));
+        }
+        l.set_sessions(&rows);
+        let out = facts(&l, h);
+        assert!(out.len() < 9000, "{n} workers: {} bytes", out.len());
+        let b = blocks(&out);
+        let shown = b.len() as u64;
+        if shown < n {
+            assert!(
+                out.ends_with(&format!("\n{} more workers not shown.\n", n - shown)),
+                "{n}: {out}"
+            );
+            let first_busy = b
+                .iter()
+                .position(|x| x.contains(": busy"))
+                .unwrap_or(b.len());
+            assert!(
+                b[first_busy..].iter().all(|x| x.contains(": busy")),
+                "{n}: stuck after busy"
+            );
+            assert_eq!(
+                b[..first_busy].len() as u64,
+                stuck.min(shown),
+                "{n}: stuck workers not first"
+            );
+        } else {
+            assert_eq!(shown, n, "{out}");
+            if n == 0 {
+                assert!(out.ends_with("No live worker.\n"));
+            }
+        }
+        for x in &b {
+            assert_eq!(x.lines().count(), 7, "{n}: a block was cut: {x}");
+        }
+    }
 }

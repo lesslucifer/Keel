@@ -2,6 +2,9 @@
 # (E-ROUTER Q2 ruling 2026-11-08; hardened at the E-ROUTER close review).
 # Wired fail-closed in .claude/settings.json: jq failing denies the call.
 # Sessions whose agent_type is not "router" (workers, their subagents) pass untouched.
+# Run with `--arg watchdog_to <router-name>` it is the watchdog session's only tool hook
+# (E-ROUTER3.W9, DEC-45): CronCreate and a SendMessage to that router pass, nothing else does,
+# whatever the agent_type; the project hook passes no argument, so this branch never runs there.
 # Input: Claude Code's PreToolUse JSON. Output: a deny decision, or nothing (allow).
 
 def deny($why): {hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny",
@@ -27,16 +30,23 @@ def gh_args: "( ((--(json|state|limit|author|base|head|label|search)|-(L|s|A|B|H
 def bash_ok:
   test("^[A-Za-z0-9 ._/:=@%,+^~-]*$")
   and (test("--ou") | not)
-  and test("^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)" + gh_args + "|ps (aux|-ef)|scripts/router-worker\\.sh (spawn|resume|stop) [A-Za-z0-9._/ -]+|scripts/router-watch\\.sh (commit|signed|merged|pushed|tagged)( [.]*[A-Za-z0-9_][A-Za-z0-9._/-]*)+)$")
+  and test("^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)" + gh_args + "|ps (aux|-ef)|scripts/router-worker\\.sh (spawn|resume|stop) [A-Za-z0-9._/ -]+|scripts/router-worker\\.sh watchdog (start|stop) [a-z0-9][a-z0-9-]{0,31}|scripts/router-watch\\.sh (commit|signed|merged|pushed|tagged)( [.]*[A-Za-z0-9_][A-Za-z0-9._/-]*)+)$")
   and ((test("^scripts/") and test("\\.\\.")) | not);
 
-if .agent_type != "router" then empty
+if $ARGS.named.watchdog_to != null then
+  $ARGS.named.watchdog_to as $to
+  | if $to != "" and (.tool_name == "CronCreate"
+      or (.tool_name == "SendMessage" and (.tool_input | type) == "object" and .tool_input.to == $to))
+    then empty
+    else {hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny",
+      permissionDecisionReason: "watchdog guard: only CronCreate and a SendMessage to \($to) are allowed"}} end
+elif .agent_type != "router" then empty
 elif (.tool_name | IN(tools[]) | not) then deny("tool \(.tool_name) is not one of the router's tools (\(tools | join(", ")))")
 elif .tool_name == "Bash" then
   (.tool_input.command // "") as $c
   # length first: it bounds the regex work below (an unbounded trim once ran past the hook timeout)
   | if ($c | length) > 1000 or ($c | sub("^ +"; "") | sub(" +$"; "") | bash_ok | not)
-    then deny("Bash whitelist: git status/log/diff/show, git branch -v/-a, gh pr view/list/status (no -R), ps aux/-ef, scripts/router-worker.sh spawn|resume|stop, scripts/router-watch.sh commit|signed|merged|pushed|tagged <args not starting with -> (read-only owner-action watch); one command of plain words, no quotes/$/globs/pipes/redirects, no --output")
+    then deny("Bash whitelist: git status/log/diff/show, git branch -v/-a, gh pr view/list/status (no -R), ps aux/-ef, scripts/router-worker.sh spawn|resume|stop, scripts/router-worker.sh watchdog start|stop <router-name>, scripts/router-watch.sh commit|signed|merged|pushed|tagged <args not starting with -> (read-only owner-action watch); one command of plain words, no quotes/$/globs/pipes/redirects, no --output")
     else empty end
 elif .tool_name == "Write" then
   .cwd as $d | (.tool_input.file_path // "") as $p
