@@ -1311,7 +1311,8 @@ fn result(text: &str) -> String {
 /// running is not the worker's answer (r2 B1), nor is the moment between its task's notification
 /// and the completion turn (r3 B1); a peer's replayed message is no brief (r3 B2); an error result
 /// is reported as one (r3 B3); a task that never ends stalls the wait instead of hanging it (r3
-/// I2); and each wait resumes the scan where the last one stopped (r4 I1).
+/// I2); each wait resumes the scan where the last one stopped (r4 I1), and only from state this
+/// run wrote (r5 I1).
 #[test]
 fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
     let l = launcher();
@@ -1324,7 +1325,7 @@ fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
     assert!(line.starts_with("IDLE name=fk ") && line.contains(" turn=1 "), "{line}");
     assert_eq!(std::fs::read_to_string(&report).unwrap(), "A\n");
     // r4 I1: the scan's offset persists, so the next wait reads only what came after
-    let scanned: u64 = std::fs::read_to_string(l.main.join(".router/out/fk.scan")).unwrap().split_whitespace().next().unwrap().parse().unwrap();
+    let scanned: u64 = std::fs::read_to_string(l.main.join(".router/out/fk.scan")).unwrap().split_whitespace().nth(1).unwrap().parse().unwrap();
     assert_eq!(scanned, std::fs::metadata(&f.out).unwrap().len(), "the scan state does not cover the whole stream");
 
     // B1: a self-opened turn (no replay) closes, then a brief is sent but not yet read: no IDLE
@@ -1409,6 +1410,20 @@ fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
     w.go(1);
     let line = w.line();
     assert!(line.starts_with("STALLED name=fk ") && line.trim_end().ends_with(" background=1"), "{line}");
+    drop(f);
+
+    // r5 I1: scan state another run left behind (another pid) is never this run's: a new run whose
+    // first turn is still open is no IDLE, whatever that state says
+    let f = Fake::new(&l, "fk", 1);
+    let stale = l.main.join(".router/out/fk.scan");
+    std::fs::write(&stale, "1 0 1 1 1 0 0 -\nOLD RUN ANSWER\n").unwrap();
+    f.emit(&[INIT]);
+    let mut w = l.wait_stepped(&["wait", "fk"], "stale");
+    w.at(1);
+    f.emit(&[REPLAY, &result("new")]);
+    w.go(1);
+    assert!(w.line().contains(" turn=1 "), "the new run's own turn closes the wait");
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "new\n");
     drop(f);
 
     // I6: the worker died before answering its last brief: EXITED leaves no report

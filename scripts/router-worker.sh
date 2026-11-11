@@ -83,8 +83,9 @@ if [ "${1:-}" = wait ]; then
   # a running Bash tool command is a `<shell> -c` child; MCP servers (also children) are not
   busy() { ps -A -o ppid=,command= | awk -v p="$pid" '$1 == p && $2 ~ /(^|\/)[a-z]*sh$/ && $3 == "-c" { f = 1 } END { exit !f }'; }
   # The stream-json output is read once, incrementally, across every wait of a run: each poll
-  # counts only the complete lines added since the scan state in <name>.scan (offset, counters,
-  # then the last result's text; spawn and resume reset it with the output), streamed through jq.
+  # counts only the complete lines added since the scan state in <name>.scan (the worker's pid,
+  # offset, counters, then the last result's text; spawn and resume reset it with the output, and
+  # state another run's wait wrote late, under another pid, is ignored), streamed through jq.
   # Every turn opens with system/init and closes with a result, which may answer several briefs
   # folded into it; a brief is taken when the worker replays it (--replay-user-messages); a peer's
   # SendMessage replays as isSynthetic and is no brief. A turn may end with a background task still
@@ -94,12 +95,15 @@ if [ "${1:-}" = wait ]; then
   # is due. Key order varies and non-JSON lines are skipped. (Event shapes: Claude Code 2.1.288,
   # E-ROUTER3.W2 probes.)
   T=$(mktemp -d) || die "cannot create a scratch dir"
-  trap 'rm -rf "$T"' EXIT
   S="$O/$name.scan"
+  trap 'rm -rf "$T" "$S.$$"' EXIT
+  trap 'exit 143' HUP INT TERM
   load() {
     off=0 inits=0 results=0 replays=0 bg=0 due=0 err=- ; : > "$T/last"
     [ -s "$S" ] || return 0
-    read -r off inits results replays bg due err < "$S"
+    read -r sp so si sr sp2 sb sd se < "$S"
+    [ "$sp" = "$pid" ] || return 0
+    off=$so inits=$si results=$sr replays=$sp2 bg=$sb due=$sd err=$se
     tail -n +2 "$S" > "$T/last"
   }
   scan() {
@@ -127,7 +131,7 @@ if [ "${1:-}" = wait ]; then
     [ "$b" -lt 0 ] || bg=$b
     [ "$d" -lt 0 ] || due=$d
     [ "$r" -eq 0 ] || { err=$e; tail -n +2 "$T/scan" > "$T/last"; }
-    { echo "$off $inits $results $replays $bg $due $err"; cat "$T/last"; } > "$S.$$" && mv "$S.$$" "$S"
+    { echo "$pid $off $inits $results $replays $bg $due $err"; cat "$T/last"; } > "$S.$$" && mv "$S.$$" "$S"
   }
   # settled: every opened turn has closed, no turn is due, and every brief in the inbox was taken
   settled() { [ "$results" -ge "$inits" ] && [ "$due" -eq 0 ] && [ "$replays" -ge $(( $(cat "$O/$name.in" 2>/dev/null | wc -l) )) ]; }
