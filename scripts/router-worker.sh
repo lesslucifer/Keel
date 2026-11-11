@@ -85,8 +85,10 @@ if [ "${1:-}" = wait ]; then
   # system/init and closes with a result; events such as command_lifecycle may follow the result.
   count() { jq -R -r 'fromjson? | .type + "/" + (.subtype // "")' "$O/$name.out" 2>/dev/null | grep -c "$1" || :; }
   results() { count '^result/'; }
-  # idle: every turn has closed, and every brief in the inbox has had its turn
-  idle() { r=$(results); [ "$r" -ge "$(count '^system/init$')" ] && [ "$r" -ge $(( $(cat "$O/$name.in" 2>/dev/null | wc -l) )) ]; }
+  # idle: every turn has closed, every brief in the inbox has had its turn, and the feed is open (a
+  # stopped worker winding down is not idle: it ends in EXITED)
+  idle() { r=$(results); [ "$r" -ge "$(count '^system/init$')" ] && [ "$r" -ge $(( $(cat "$O/$name.in" 2>/dev/null | wc -l) )) ] &&
+    kill -0 "$(cat "$O/$name.feed" 2>/dev/null)" 2>/dev/null; }
   report() { [ "$(results)" -eq 0 ] || jq -R -s -r '[split("\n")[] | fromjson? | select(.type == "result")] | last | .result // ""' "$O/$name.out" > "$O/$name.report"; }
   quiet=0
   while live "$pid"; do

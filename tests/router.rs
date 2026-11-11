@@ -357,7 +357,8 @@ fn stub_claude(stub: &Path) {
         "    sleep 0.05\n  done\n",
         "  echo \"{\\\"duration_ms\\\":1,\\\"type\\\":\\\"result\\\",\\\"subtype\\\":\\\"success\\\",\\\"result\\\":\\\"report $n\\\"}\"\n",
         "  echo '{\"type\":\"command_lifecycle\"}'\n",
-        "done\n"
+        "done\n",
+        "while [ -e \"$STUB_RELEASE.linger\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done\n"
     )).unwrap();
     std::fs::set_permissions(stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
@@ -380,7 +381,7 @@ fn sleep_shim(base: &Path) {
 /// then plays a long-running stream-json session as Claude Code 2.1.288 streams it: for each stdin line
 /// it opens a turn (system/init) and holds it until $STUB_RELEASE exists, so the launcher's startup
 /// window never races a timer, then prints one result event (`report <n>`, `type` not the first key)
-/// and a trailing command_lifecycle event; it exits at stdin EOF, and once the test's temp dir or the test process
+/// and a trailing command_lifecycle event; it exits at stdin EOF (lingering while $STUB_RELEASE.linger exists), and once the test's temp dir or the test process
 /// ($STUB_OWNER) is gone, so a failed test leaks no stub. While held it keeps a subshell piped to `cut -c` (long-lived children that are not
 /// `<shell> -c`, as an MCP server is), and runs a `sh -c` child, as a Bash tool command runs, while
 /// $STUB_RELEASE.busy exists.
@@ -1201,13 +1202,23 @@ fn launcher_keeps_a_worker_alive_across_briefs_until_stopped() {
     assert_eq!(w.line(), format!("IDLE name=n pid={pid} turn=3 report={}\n", report.display()));
     assert_eq!(std::fs::read_to_string(&report).unwrap(), "steered\nsecond line\n");
 
-    // stop: the worker exits after its turn, and its feed ends with it
+    // stop: the worker exits after its turn, and its feed ends with it; while it winds down after
+    // its last turn it is stopping, never IDLE (a re-armed wait would spin), so wait ends in EXITED
     let feed = std::fs::read_to_string(out_dir.join("n.feed")).unwrap().trim().to_string();
     let alive = |p: &str| Command::new("kill").args(["-0", p]).stderr(Stdio::null()).status().unwrap().success();
     assert!(alive(&feed), "no live feed");
+    let linger = l.release.with_extension("linger");
+    std::fs::write(&linger, "").unwrap();
     let (ok, out) = l.run(&["stop", "n"]);
     assert!(ok && out.starts_with(&format!("STOPPING name=n pid={pid} ")), "{out}");
-    assert_eq!(wait(&["wait", "n"]), format!("EXITED name=n pid={pid} out={}\n", out_dir.join("n.out").display()));
+    until("feed closed", || !alive(&feed));
+    let mut w = l.wait_stepped(&["wait", "n"], "stopping");
+    w.at(1);
+    assert!(alive(&pid), "the stub no longer lingers");
+    std::fs::remove_file(&linger).unwrap();
+    until("worker gone", || !alive(&pid));
+    w.go(1);
+    assert_eq!(w.line(), format!("EXITED name=n pid={pid} out={}\n", out_dir.join("n.out").display()));
     until("feed gone", || !alive(&feed));
     for args in [vec!["send", "n", ".router/briefs/b2.md"], vec!["stop", "n"]] {
         let (ok, out) = l.run(&args);
