@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af3e3b39f34851f0dfb216c" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-ROUTER3.W2 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-ROUTER3.W2 · Workers are long-running sessions — result</h1>
+      <p>A worker now stays alive between briefs. The router hands it the next brief with <code>send</code>, steers it with <code>SendMessage</code> even while it is idle, and closes it with <code>stop</code>. The router has no heartbeat.</p>
+      <div class="meta">T3 · WU result · 2026-11-11 · Keel · branch <code>wu/E-ROUTER3/w2-long-running-workers</code> off <code>dda9ce0</code> · <a href="2026-11-11-w2-long-running-workers-wu-plan.html">WU plan</a> · <a href="2026-11-10-e-router3-epic-plan.html#w2">epic plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="summary">In one paragraph</h2>
+<p data-c="summary">Before this WU a worker was a one-turn <code>claude -p</code>: it did one brief and exited, and every follow-up started a new process. Now <code>scripts/router-worker.sh</code> starts it in stream-json mode, reading its turns from an inbox file that a <code>tail -f</code> feed keeps open, so the session waits for its next brief instead of exiting. Three launcher commands drive that life: <code>send</code> (next brief, snapshotted and hashed as before), <code>stop</code> (close the input, the worker exits after its turn), and <code>wait</code>, which now also prints <code>IDLE</code> when the worker has finished its turn. The router's 10-minute heartbeat is gone from the skill (owner ruling: the router only routes), and a watchdog worker (W9) will report progress instead.</p>
+
+<h2 id="how">How a worker lives now</h2>
+<div class="diagram" data-c="lifecycle">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> Busy: spawn (brief 1 in the inbox)
+  Busy --> Idle: result event (wait prints IDLE, writes .report)
+  Idle --> Busy: send (next brief) or a SendMessage
+  Busy --> Busy: SendMessage steers mid-turn
+  Idle --> Stopping: stop (feed closed)
+  Busy --> Stopping: stop (the turn finishes first)
+  Stopping --> [*]: EOF, process exits (wait prints EXITED)
+  Busy --> [*]: crash or reboot (wait prints EXITED; resume restarts it)
+</pre>
+<div class="caption">The worker's states as <code>wait</code> reports them. A stopping worker is never reported <code>IDLE</code>, and an idle one is never reported <code>STALLED</code>.</div>
+</div>
+<table data-c="files">
+  <thead><tr><th>File under <code>.router/out/</code></th><th>Holds</th></tr></thead>
+  <tbody>
+    <tr><td><code>&lt;name&gt;.in</code></td><td>The inbox: one stream-json user message per brief (spawn writes the first, <code>send</code> appends).</td></tr>
+    <tr><td><code>&lt;name&gt;.feed</code></td><td>The pid of the <code>tail -f</code> that keeps the worker's stdin open. <code>stop</code> kills it.</td></tr>
+    <tr><td><code>&lt;name&gt;.out</code></td><td>The raw stream-json output, truncated by each run of the name.</td></tr>
+    <tr><td><code>&lt;name&gt;.report</code></td><td>The last result's text, written by <code>wait</code> on <code>IDLE</code> and <code>EXITED</code>. This is the report the router reads.</td></tr>
+  </tbody>
+</table>
+<p data-c="idle-rule"><strong>The idle rule.</strong> <code>wait</code> reads event types with <code>jq</code>. A worker is idle when every turn it opened (<code>system/init</code>) has closed (<code>result</code>), every brief in the inbox has had its turn, and its feed is still open. Counting turns instead of reading the last event matters, because real sessions emit <code>command_lifecycle</code> after a result, and a <code>SendMessage</code> can open a turn with no inbox entry.</p>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome">Delivered. The requirement holds: a spawned worker stays alive after it reports, <code>send</code> delivers its next brief, snapshotted and hashed, to the same session, <code>wait</code> prints <code>IDLE</code> at the end of each turn, <code>stop</code> ends the session after its turn, and the guard admits <code>send</code> and <code>stop</code> with no other posture change. Both plan unknowns came out on the default side: a stream-json <code>-p</code> session stays open between turns (open point 1), and a <code>SendMessage</code> reaches an idle worker, which opens a turn to answer (open point 2), so no pty fallback and no brief-only steering were needed.</p>
+
+<h2 id="live">Probes and live run (2026-11-11, Claude Code 2.1.288)</h2>
+<table data-c="live">
+  <thead><tr><th>Run</th><th>What it showed</th></tr></thead>
+  <tbody>
+    <tr><td>Probe 1 (two raw stream-json sessions)</td><td>The session stayed alive across two turns, with one <code>result</code> per turn, and exited about 5 s after its input closed. Its <code>ListAgents</code> step ran before the worker registered, so it answered nothing about reachability.</td></tr>
+    <tr><td>Probe 2</td><td>An idle worker received a <code>SendMessage</code>, opened a turn by itself and replied. The sender's idle notice fired at the end of that turn, with the worker still alive. A result line starts with <code>{"duration_api_ms"…</code>, not <code>{"type"…</code>, so key order is not fixed.</td></tr>
+    <tr><td>Live run (scratch clone at the WU tip; a real Opus worker through the launcher; a guarded <code>--agent router</code> session)</td><td>
+      <ol>
+        <li><code>spawn</code>, then <code>IDLE turn=1</code>, report "The current branch is <code>wu/x/live</code>".</li>
+        <li><code>send</code> (new sha256, same pid and session), then <code>IDLE turn=2</code>, <code>notes.txt</code> created.</li>
+        <li>The router, under the guard, loaded keel-router and project-router and sent <code>ping-7</code> to the idle worker. The worker opened turn 3 by itself and replied <code>pong-7</code>, and the router woke on the reply. No guard denial.</li>
+        <li><code>send</code> "run <code>sleep 40</code>", then <code>stop</code> after 12 s. The worker had moved the sleep to a background task and ended its turn early. On EOF it exited and the background task was cut. <code>wait</code> printed <code>IDLE</code> here, which was a bug: a stopping worker must end in <code>EXITED</code>. Fixed in <code>5dc7439</code>.</li>
+        <li>The feed was gone after exit, and no worker, router or feed process was left.</li>
+      </ol>
+    </td></tr>
+  </tbody>
+</table>
+
+<h2 id="deviations">Deviations</h2>
+<div data-item="deviations" data-c="deviations">
+  <ul>
+    <li><strong>Report file.</strong> The plan had the launcher pipe output through a filter that writes each result to <code>.out</code>. A filter at the end of the pipeline would make <code>$!</code> the filter's pid, not the worker's. Instead <code>.out</code> stays the raw stream, and <code>wait</code> writes <code>.report</code>.</li>
+    <li><strong>Idle rule.</strong> The plan said "when a new result event arrives". The live stream showed events after a result, and a turn with no inbox entry, so the rule counts turns, inbox entries and the open feed (above).</li>
+    <li><strong>A reaper per run.</strong> This was not planned. A worker that dies on its own would leave its <code>tail -f</code> blocked forever, so each run starts a small loop that ends the feed when the worker exits. It holds the feed pid by value, because a later run of the name rewrites <code>.feed</code>. The tests caught a <code>resume</code> whose feed was killed by the old run's reaper before this change.</li>
+    <li><strong><code>stop</code> semantics, refined.</strong> It still never kills mid-turn. But the live run showed that a worker can end its turn early with work in a background task, and exiting cuts that task. The skill and DEC-43 now say this, and the router stops only idle, clean workers.</li>
+    <li><strong>Settings allowlist.</strong> <code>send</code> and <code>stop</code> were added to <code>permissions.allow</code> in <code>.claude/settings.json</code>, so the router is not prompted for them. This was not in the plan; it landed in the owner's commit <code>6166848</code>, staged as HEAD plus the two lines so the owner's uncommitted edit stayed untouched.</li>
+    <li><strong>E2E touched here.</strong> The E-ROUTERFIX e2e asserted <code>EXITED</code> after the stub's release, which is now <code>IDLE</code>. Its flow gained <code>send</code> and <code>stop</code> in this WU rather than in W7.</li>
+    <li><strong>Live-run harness.</strong> Both sessions ran through a wrapper adding <code>--setting-sources project,local --strict-mcp-config</code>, so no second Telegram poller started. That flag is W3's and W8's to put in the launcher. The launcher commands ran from a shell, as the router would issue them: a headless router in an untrusted scratch clone ignores the project allowlist, so it could not run them unprompted. The router session made the <code>SendMessage</code> call under the guard.</li>
+    <li><strong>Plan file.</strong> The first W2 plan (a router heartbeat) was rewritten after the owner's ruling and renamed from <code>…-w2-heartbeat-…</code>. The epic plan was amended in this WU (W2 rewritten, W9 added, open point 6 ruled).</li>
+    <li><strong>Snapshot.</strong> <code>docs/decisions/router.html</code>'s htmldoc id is still unknown to the server (as in W1), so its diff view has no baseline. Use <code>git diff</code>.</li>
+  </ul>
+</div>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+  <ul>
+    <li><strong>Commits:</strong> <code>aa6472f</code> plans · <code>f000453</code> launcher, guard, tests · <code>5dc7439</code> stopping fix · <code>6c7e498</code> DEC-43 · <code>6166848</code> skill text and settings (owner's <code>keel mr commit</code>, <code>Reviewed-By: username vuluu</code>) · this report.</li>
+    <li><strong>New tests</strong> (<code>tests/router.rs</code>):
+      <ul>
+        <li><code>launcher_keeps_a_worker_alive_across_briefs_until_stopped</code>: covers refusals; <code>IDLE</code> not <code>STALLED</code> with a quiet transcript; <code>send</code> with a new snapshot and sha256 and the inbox shape; a self-opened turn; a multi-line report; stop → stopping → <code>EXITED</code>; the feed ending; and a dead worker taking its feed.</li>
+        <li><code>router_guard_admits_send_and_stop_in_plain_words_only</code>.</li>
+        <li>The e2e, extended with <code>IDLE</code>, <code>send</code> and <code>stop</code>.</li>
+      </ul>
+      The stub <code>claude</code> plays the 2.1.288 stream: an init per turn, a result whose first key is not <code>type</code>, and a trailing <code>command_lifecycle</code>.</li>
+    <li><strong>Red then green:</strong> with <code>dda9ce0</code>'s scripts the three new or extended tests fail. With <code>f000453</code>'s launcher the stopping assertion fails with the live run's exact bug (<code>IDLE … turn=3</code>).</li>
+    <li><strong>Suites, in a clean clone</strong> (committed settings): <code>cargo test --test router</code> 22 passed, 3 runs in a row; <code>cargo test --test init</code> 11 passed; <code>cargo clippy --all-targets -D warnings</code> clean. In this worktree <code>router_bash_guard_judges_plain_words_…</code> fails only because the owner's uncommitted <code>.claude/settings.json</code> drops <code>permissions</code> (as in W1).</li>
+    <li><strong>Mirror:</strong> <code>diff -r skills/keel-router .claude/skills/keel-router</code> is empty.</li>
+    <li><strong>Docs:</strong> <code>keel verify-doc</code> is green on the plan, this report, the epic plan and the decisions docs.</li>
+  </ul>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">DEC-43 is in <code>docs/decisions/router.html</code> (T2), with DEC-32 and DEC-36 marked amended, and the decisions index now gives DEC-44 as the next free id. The keel-router skill and its mirror, and project-router, carry the worker life cycle and the wake checklist that replaces the heartbeat. Per the epic's distillation plan, the UC-ROUTE-1, 5 and 6 amendments and striking R15 and R17 in <code>backlog/e-router-v2.html</code> happen at epic close.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<div data-item="follow-ups" data-c="follow-ups">
+  <ul>
+    <li><strong>Owner:</strong> before <code>keel preflight</code>, set aside the uncommitted <code>.claude/settings.json</code> edit, because preflight needs a clean tree.</li>
+    <li><strong>Then the agent</strong> writes the test and doc notes, runs preflight and the independent <code>keel-code-review</code>, and stages <code>keel mr confirm wu</code>.</li>
+    <li><strong>W9</strong> (watchdog): its plan comes next, after the owner's go. The raw <code>.out</code> stream is its input, and probe 2 confirms an idle router wakes on a worker's message.</li>
+    <li><strong>W3</strong> builds on this launcher. Its brief-copy cleanup should also cover the per-name <code>.in</code>, <code>.feed</code> and <code>.report</code> files, which are left in <code>.router/out/</code> today. W3 also owns <code>--setting-sources project,local</code> for workers (the Telegram row).</li>
+    <li><strong>W5:</strong> the remaining wording pass (R9, R10, the <code>router.md</code> posture bullet).</li>
+  </ul>
+</div>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
