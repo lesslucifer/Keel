@@ -100,9 +100,10 @@ Claude Code trusts (pitfall 3); the target's branch carries the worker persona
   reported to you: the watchdog (E-ROUTER3.W9) will; until then check on wake.
 - **Retire**: `<launcher> stop <name>` once its report is in and its worktree is
   clean: it runs `claude stop <id>` then `claude rm <id>` (the transcript and the
-  worktree stay) and prints `STOPPED name=… id=… session=…`. It refuses a busy
-  worker, because `claude stop` cuts the turn (seen cutting one after 4 of 30
-  calls): ask the worker to finish, or leave a stuck one to the owner
+  worktree stay) and prints `STOPPED name=… id=… session=…`. A report arrives
+  before the worker's turn has ended, so `stop` gives a busy worker up to 30 s to
+  go idle, then refuses, because `claude stop` cuts the turn (seen cutting one
+  after 4 of 30 calls): ask the worker to finish, or leave a stuck one to the owner
   (`claude stop <id>`; the router has no `claude` or `kill`, lessons D2).
 - **Resume**: only for a worker that is no longer listed (crashed, stopped,
   rebooted): `<launcher> resume <name> <session-uuid> <same worktree> .router/briefs/<name>-r<n>.md`.
@@ -119,9 +120,10 @@ path with a real spawn, lessons K5):**
 2. *Persona missing.* `--agent worker` fails in a worktree whose branch does not
    track the persona file: spawn only into a branch that tracks it.
 3. *Untrusted worktree.* `claude --bg` in a directory Claude Code has not
-   trusted exits with "Workspace not trusted" (`DEAD`). A sibling worktree under
-   a trusted parent directory is trusted; otherwise hand the owner the one
-   command the error names.
+   trusted exits with "Workspace not trusted" (`DEAD`). A `git worktree add` of
+   a repository whose main checkout is trusted is trusted at once; a new clone
+   is not, even under a trusted parent directory (seen 2026-11-11). Otherwise
+   hand the owner the one command the error names.
 4. *Blocked on a prompt.* A worker's call outside its allow list does not fail:
    the worker waits on a permission prompt (`ListAgents` / `claude agents --json`:
    `status: waiting`, `waitingFor: "permission prompt"`) until the owner answers
