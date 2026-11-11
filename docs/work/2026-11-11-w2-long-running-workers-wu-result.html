@@ -113,6 +113,14 @@ stateDiagram-v2
         <li>A never-ending task stalls the wait (<code>STALLED … background=&lt;n&gt;</code>).</li>
       </ul>
       The rule, replayed over the probe's real stream, keeps the gap closed and returns the real final report. The worker-ops skill text names the two new line suffixes (a third owner commit).</li>
+    <li><strong>Review round 4 (FAIL, 1 blocker and 3 importants on <code>e01f20b</code>).</strong> Fixed in <code>75536d7</code>, with regression cases written first and shown red against <code>e01f20b</code>.
+      <ul>
+        <li><strong>Blocker:</strong> the emptied task list arrives before the <code>task_notification</code>, so a poll between the two printed <code>IDLE</code>. It now also marks the completion turn as due.</li>
+        <li><strong>Each new <code>wait</code> re-parsed the whole run:</strong> measured at about 7 s at 100 MB. The scan state now persists in <code>&lt;name&gt;.scan</code>.</li>
+        <li><strong><code>jq</code> slurped each chunk:</strong> 876 MB at 100 MB. A streaming <code>reduce</code> peaks at 2.9 MB.</li>
+        <li><strong><code>answered</code> was judged twice:</strong> a <code>send</code> landing between the two checks could leave an <code>IDLE</code> line naming a report it had removed. It is now judged once.</li>
+      </ul>
+      Two nits were fixed in the same commit: one read of the unread tail per poll, and the stub's watchdog no longer kills a pid after the stub has exited.</li>
     <li><strong>Plan file.</strong> The first W2 plan (a router heartbeat) was rewritten after the owner's ruling and renamed from <code>…-w2-heartbeat-…</code>. The epic plan was amended in this WU (W2 rewritten, W9 added, open point 6 ruled).</li>
     <li><strong>Snapshot.</strong> <code>docs/decisions/router.html</code>'s htmldoc id is still unknown to the server (as in W1), so its diff view has no baseline. Use <code>git diff</code>.</li>
   </ul>
