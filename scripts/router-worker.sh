@@ -2,10 +2,12 @@
 # Router-only launcher for worker sessions (E-ROUTER Q2/Q3 override, 2026-11-08). The router's Bash
 # hook allows ONLY this script's shapes; every argument is validated here, and the prompt is fixed
 # text, so no untrusted string ever reaches `claude`.
-#   router-worker.sh spawn  <name> <worktree> <brief.md> <model> [--permission-mode acceptEdits|plan] [--effort <level>]
-#   router-worker.sh resume <name> <session-uuid> <worktree> <note.md>
+#   router-worker.sh spawn  <name> <worktree> <brief.md> <model> [--permission-mode acceptEdits|plan] [--effort <level>] [--review]
 #   router-worker.sh stop   <name>
+#   router-worker.sh worktree add|remove <epic/E | wu/E/slug>
 #   router-worker.sh watchdog start|stop <router-name>   (watchdog facts <router-name>: its prompt hook only)
+# No inherited GIT_* reaches the launcher's git or a session it starts (E-ROUTER3.W8 P1: a --bg
+# session takes the launching shell's environment).
 # The watchdog (E-ROUTER3.W9, DEC-45) is one background session per router, `watchdog-<router-name>`,
 # started in the router's checkout on [router] watchdog_model. Its native schedule prompts it every 5
 # min; its prompt hook runs `watchdog facts`, which prints one bounded block per live worker, and it
@@ -19,28 +21,36 @@
 # router by SendMessage and stays alive idle; a follow-up task is the router's own SendMessage, so
 # the launcher has no mode for it. stop closes an idle worker (`claude stop`, then `claude rm`, which
 # keeps its transcript and its worktree); a worker still busy after about 30s is refused, because
-# `claude stop` cuts its turn.
-# The two spawn options come in either order, once each. The model and effort must satisfy the worker
+# `claude stop` cuts its turn. A stopped worker is never revived (DEC-46: a plain `--bg --resume`
+# drops every launch flag): the router spawns a fresh one with a new brief.
+# The spawn options come in any order, once each. The model and effort must satisfy the worker
 # policy, [router] in .keel/config.toml at this checkout's HEAD (DEC-39); no policy, no spawn. The mode
-# defaults to acceptEdits and the effort to the policy's default. Every worker gets the fixed cargo/keel
-# grant below and is denied `keel mr` and `cargo run`; the grant never reaches the router. `--agent
-# worker` is always passed: this repo's settings make every other session a router.
-# resume wakes a session that is no longer listed (stopped, crashed, rebooted) with its saved options:
-# `claude --bg --resume` with any option starts a copy under a new id instead (Claude Code 2.1.288),
-# so resume takes none, and the spawn's model, effort, mode and grant carry over. It must name the
-# same worktree the session was spawned in (recorded in the spawn's run dir).
-# brief/note must be a regular (non-symlink) .md file under <repo>/.router/briefs/; worktree must be a
-# registered git worktree OTHER than the router's own checkout. The file is copied to a read-only
-# snapshot .router/runs/<name>-<ts>-<pid>-<mode>/ (sha256 + path printed so the router can verify), and
-# the worker reads a copy of it inside its own worktree (<worktree>/.router-brief.XXXXXX/brief.md,
-# git-ignored). `--bg` assigns the session id, so the run dir records it once the session is listed.
-# One live session per name, whatever its directory: SendMessage addresses by name.
+# defaults to acceptEdits and the effort to the policy's default. A worker loads the project's and
+# the worktree's local settings only, no MCP server, and runs its shell in Claude Code's sandbox
+# (writes: its worktree, the git dir but its config and hooks, cargo's cache); it gets the fixed
+# cargo/keel grant below and the fixed deny list, which never reach the router. Only a --review
+# worker may write the cr note, and it gets no edit tool. `--agent worker` is always passed: this
+# repo's settings make every other session a router.
+# brief must be a regular (non-symlink) .md file under <repo>/.router/briefs/; worktree must be a
+# registered git worktree OTHER than the router's own checkout, on a branch, holding the worker
+# persona. The file is copied to a read-only snapshot .router/runs/<name>-<ts>-<pid>-spawn/ (sha256 +
+# path printed so the router can verify), and the worker reads a copy of it inside its own worktree
+# (<worktree>/.router-brief.XXXXXX/brief.md, git-ignored), which stop removes. `--bg` assigns the
+# session id, so the run dir records it once the session is listed.
+# One live session per name, whatever its directory: SendMessage addresses by name; a launch holds
+# .router/runs/.lock-<name> from its live check to its start.
+# worktree add cuts epic/E off main and wu/E/slug off epic/E (an existing branch is used as it is) at
+# <main checkout>-<branch without its prefix, / as ->; worktree remove takes only a clean worktree
+# whose branch is merged into its base and in which no session runs, and keeps the branch.
 set -eu
+for v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 die() { echo "router-worker: $*" >&2; exit 2; }
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
 B="$ROOT/.router/briefs"
 C=${ROUTER_CLAUDE:-$HOME/.local/bin/claude}
-# the one worker-name rule: spawn, resume and stop all check it here, and the guard does not repeat it
+# Keel's branch policy (.keel/config.toml [branches], held equal by tests/router.rs)
+main_b=main epic_p=epic/ wu_p=wu/
+# the one worker-name rule: spawn and stop check it here, and the guard does not repeat it
 valid_name() { expr "$1" : '^[a-z0-9][a-z0-9-]\{0,40\}$' >/dev/null || die "bad name"; }
 # the live sessions named $name, one JSON row per line; fails when the CLI gives no list (never "none")
 rows() { list=$("$C" agents --json) || return 1; printf '%s\n' "$list" | jq -c --arg n "$name" '.[] | select(.name == $n)'; }
@@ -53,25 +63,45 @@ brief_file() {
   f=$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)/$(basename "$1")
   case "$f" in "$B"/*.md) [ -f "$f" ] && [ ! -L "$f" ] || die "no such regular file (symlinks refused)";; *) die "file must be a .md under $B";; esac
 }
-# The brief $f is copied to a snapshot run dir R (kind $1) with its sha256. A session may only read
-# its own worktree, so the worker gets a copy inside it, in a fresh random-named dir (mktemp -d: never
-# an existing path or symlink) that ignores itself in git. Copy-in, not --add-dir "$R": the worker gets
-# no tool access to the router's .router/runs/.
-# ponytail: one .router-brief.* dir per run is left in the target until the worktree is removed
-# (or `rm -rf .router-brief.*` there); W3 removes it at stop.
+# The brief $f is copied to a snapshot run dir R with its sha256. A session may only read its own
+# worktree, so the worker gets a copy inside it, in a fresh random-named dir (mktemp -d: never an
+# existing path or symlink) that ignores itself in git; the run dir records it for stop. Copy-in, not
+# --add-dir "$R": the worker gets no tool access to the router's .router/runs/.
 snapshot() {
-  mkdir -p "$ROOT/.router/runs"
-  R="$ROOT/.router/runs/$name-$(date +%Y%m%d%H%M%S)-$$-$1"
+  R="$ROOT/.router/runs/$name-$(date +%Y%m%d%H%M%S)-$$-spawn"
   mkdir "$R" || die "run dir exists"
   cp "$f" "$R/brief.md"
-  printf '%s\n' "$name" > "$R/name"; printf '%s\n' "$wt" > "$R/worktree"
-  [ -z "${pm:-}" ] || { printf '%s\n' "$pm" > "$R/permission-mode"; printf '%s\n' "$effort" > "$R/effort"; }
+  printf '%s\n' "$name" > "$R/name"; printf '%s\n' "$wt" > "$R/worktree"; printf '%s\n' "$branch" > "$R/branch"
+  printf '%s\n' "$pm" > "$R/permission-mode"; printf '%s\n' "$effort" > "$R/effort"; printf '%s\n' "${review:-no}" > "$R/review"
   sha=$(shasum -a 256 "$R/brief.md" | cut -d' ' -f1)
   echo "$sha" > "$R/sha256"
   in=$(mktemp -d "$wt/.router-brief.XXXXXX") || die "cannot create brief dir in $wt"
+  printf '%s\n' "$in" > "$R/brief-copy"
   echo '*' > "$in/.gitignore"; cp "$R/brief.md" "$in/brief.md"; chmod 444 "$in/brief.md"
   snap="$R/brief.md" f="$in/brief.md"
 }
+# The brief copies of the stopped session $sid are removed (only a real .router-brief.XXXXXX dir
+# directly under its recorded worktree), and drift=<branch now> is set when that worktree left the
+# branch recorded at spawn.
+cleanup() {
+  drift=
+  for d in "$ROOT"/.router/runs/*/; do
+    [ -f "${d}session" ] && [ "$(cat "${d}session")" = "$sid" ] || continue
+    w=$(cat "${d}worktree") p=$(cat "${d}brief-copy" 2>/dev/null) || p=
+    case "$p" in "$w"/.router-brief.*) expr "x${p#"$w"/.router-brief.}" : 'x[A-Za-z0-9]\{6\}$' > /dev/null || p=;; *) p=;; esac
+    if [ -n "$p" ] && [ -d "$p" ] && [ ! -L "$p" ]; then rm -rf -- "$p" || :; fi
+    rb=$(cat "${d}branch" 2>/dev/null) || rb=
+    now=$(git -C "$w" branch --show-current 2>/dev/null) || now=
+    if [ -n "$rb" ] && [ "$now" != "$rb" ]; then drift=" drift=${now:-detached}"; fi
+  done
+}
+# the main checkout, resolved
+main_checkout() {
+  main=$(git -C "$ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')
+  main=$(cd "$main" 2>/dev/null && pwd -P) || die "cannot resolve main checkout"
+}
+# the worktree that has branch $b checked out, as git lists it (empty: none)
+checked_out_at() { git -C "$ROOT" worktree list --porcelain | awk -v r="branch refs/heads/$b" '/^worktree /{w=substr($0,10)} $0==r{print w}'; }
 # the run dir becomes read-only once it records the session it started (none for a refused start)
 seal() { [ -z "$sid" ] || printf '%s\n' "$sid" > "$R/session"; chmod 444 "$R"/*; chmod 555 "$R"; }
 # after a start: $name listed within 50 looks, 0.2s apart (status 0, row in $r), not listed (1), or
@@ -239,86 +269,125 @@ EOF
   [ "$status" = idle ] || die "worker $name is ${status:-of unknown status}: the owner decides (claude stop $id)"
   "$C" stop "$id" > /dev/null || die "claude stop $id failed"
   "$C" rm "$id" > /dev/null || die "claude rm $id failed"
-  echo "STOPPED name=$name id=$id session=$sid"; exit 0
+  cleanup
+  echo "STOPPED name=$name id=$id session=$sid$drift"; exit 0
 fi
-case "$mode" in spawn) n=4 usage="spawn <name> <worktree> <brief.md> <model> [--permission-mode acceptEdits|plan] [--effort <level>]";;
-  resume) n=4 usage="resume <name> <uuid> <worktree> <note.md>";; *) die "spawn|resume|stop|watchdog";; esac
-if [ "$mode" = spawn ]; then [ $# -eq $n ] || [ $# -eq $((n + 2)) ] || [ $# -eq $((n + 4)) ] || die "$usage"
-else [ $# -eq $n ] || die "$usage"; fi
-name=$1; shift
+if [ "$mode" = worktree ]; then
+  [ $# -eq 2 ] || die "worktree add|remove <branch>"
+  op=$1 b=$2
+  case "$op" in add|remove) ;; *) die "worktree add|remove <branch>";; esac
+  seg='[A-Za-z0-9][A-Za-z0-9._-]*'
+  if expr "$b" : "^$epic_p$seg\$" > /dev/null; then base=$main_b
+  elif expr "$b" : "^$wu_p$seg/$seg\$" > /dev/null; then e=${b#"$wu_p"}; base=$epic_p${e%%/*}
+  else die "branch must be $epic_p<E> or $wu_p<E>/<slug> in plain words"; fi
+  case "$b" in *..*) die "branch must be $epic_p<E> or $wu_p<E>/<slug> in plain words";; esac
+  git check-ref-format "refs/heads/$b" || die "not a valid branch name: $b"
+  main_checkout
+  if [ "$op" = add ]; then
+    path=$main-$(printf '%s' "${b#*/}" | tr / -)
+    [ ! -e "$path" ] && [ ! -L "$path" ] || die "path $path exists"
+    git -C "$ROOT" show-ref --verify -q "refs/heads/$base" || die "base branch $base does not exist"
+    at=$(checked_out_at)
+    [ -z "$at" ] || die "branch $b is checked out at $at"
+    if git -C "$ROOT" show-ref --verify -q "refs/heads/$b"; then git -C "$ROOT" worktree add -q "$path" "$b" >&2 || die "git worktree add failed"
+    else git -C "$ROOT" worktree add -q -b "$b" "$path" "$base" >&2 || die "git worktree add failed"; fi
+    echo "WORKTREE path=$path branch=$b base=$base tip=$(git -C "$path" rev-parse HEAD)"; exit 0
+  fi
+  at=$(checked_out_at)
+  [ -n "$at" ] || die "branch $b is checked out in no worktree"
+  wt=$(cd "$at" 2>/dev/null && pwd -P) || die "cannot resolve worktree $at"
+  [ "$wt" != "$ROOT" ] || die "may not remove the router's own checkout ($wt)"
+  [ "$wt" != "$main" ] || die "may not remove the repository's main checkout ($wt)"
+  list=$("$C" agents --json) || nolist
+  rc=0; printf '%s\n' "$list" | jq -e --arg p "$wt" 'any(.[]; (.cwd // "") as $c | $c == $p or ($c | startswith($p + "/")))' > /dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || die "a session runs in $wt: stop it first"
+  [ "$rc" -eq 1 ] || nolist
+  st=$(git --no-optional-locks -C "$wt" status --porcelain) || die "cannot read the status of $wt"
+  [ -z "$st" ] || die "worktree $wt has uncommitted changes: the owner decides"
+  git -C "$ROOT" merge-base --is-ancestor "refs/heads/$b" "refs/heads/$base" 2>/dev/null || die "branch $b is not merged into $base: the owner decides"
+  git -C "$ROOT" worktree remove "$wt" >&2 || die "git worktree remove failed"
+  echo "REMOVED path=$wt branch=$b"; exit 0
+fi
+[ "$mode" = spawn ] || die "spawn|stop|worktree|watchdog"
+usage="spawn <name> <worktree> <brief.md> <model> [--permission-mode acceptEdits|plan] [--effort <level>] [--review]"
+[ $# -ge 4 ] || die "$usage"
+name=$1 wt=$2 file=$3 model=$4; shift 4
 valid_name "$name"
 case "$name" in watchdog|watchdog-*) die "the name $name is reserved for the watchdog";; esac
-sid=
-if [ "$mode" = resume ]; then sid=$1; shift
-  expr "$sid" : '^[0-9a-f]\{8\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{12\}$' >/dev/null || die "bad session id"
-  wt=$1 file=$2; pm=
-else
-  wt=$1 file=$2 model=$3; shift 3
-  pm=acceptEdits pm_set= effort= effort_set=
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --permission-mode) [ -z "$pm_set" ] || die "$usage"; pm_set=1 pm=$2;;
-      --effort) [ -z "$effort_set" ] || die "$usage"; effort_set=1 effort=$2;;
-      *) die "$usage";;
-    esac
-    shift 2
-  done
+pm=acceptEdits pm_set= effort= effort_set= review=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --permission-mode) [ -z "$pm_set" ] && [ $# -ge 2 ] || die "$usage"; pm_set=1 pm=$2; shift;;
+    --effort) [ -z "$effort_set" ] && [ $# -ge 2 ] || die "$usage"; effort_set=1 effort=$2; shift;;
+    --review) [ -z "$review" ] || die "$usage"; review=yes;;
+    *) die "$usage";;
+  esac
+  shift
+done
 read_policy
 [ "$model" = "$policy_model" ] || die "model must be $policy_model ([router] worker_model in .keel/config.toml)"
 [ -n "$effort_set" ] || effort=$policy_default
 case "$effort" in ""|*[!a-z0-9.-]*) die "effort must be one of: $policy_efforts ([router] worker_efforts in .keel/config.toml)";; esac
 case " $policy_efforts " in *" $effort "*) ;; *) die "effort must be one of: $policy_efforts ([router] worker_efforts in .keel/config.toml)";; esac
 case "$pm" in acceptEdits|plan) ;; *) die "permission mode must be acceptEdits|plan";; esac
-fi
 wt=$(cd "$wt" 2>/dev/null && pwd -P) || die "no such worktree"
 git -C "$ROOT" worktree list --porcelain | grep -Fxq "worktree $wt" || die "not a registered worktree of this repo"
 top=$(cd "$(git rev-parse --show-toplevel)" && pwd -P) || die "not in a git repo"
 [ "$wt" != "$ROOT" ] && [ "$wt" != "$top" ] || die "worker may not run in the router's own checkout ($wt)"
-main=$(git -C "$ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')
-main=$(cd "$main" 2>/dev/null && pwd -P) || die "cannot resolve main checkout"
+main_checkout
 [ "$wt" != "$main" ] || die "worker may not run in the repository's main checkout ($wt)"
+[ -f "$wt/.claude/agents/worker.md" ] || die "no worker persona in $wt (.claude/agents/worker.md): merge the base branch that carries it into this worktree's branch, then spawn again"
+branch=$(git -C "$wt" branch --show-current) && [ -n "$branch" ] || die "worktree $wt has a detached HEAD: a worker runs on a branch"
+gd=$(cd "$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir)" 2>/dev/null && pwd -P) || die "cannot resolve the git dir of $wt"
 brief_file "$file"
+mkdir -p "$ROOT/.router/runs"
+lock=$ROOT/.router/runs/.lock-$name
+mkdir "$lock" 2>/dev/null || die "a launch of $name is in progress ($lock); remove that directory if no launcher runs"
+trap 'rmdir "$lock" 2>/dev/null || :' EXIT
 r=$(rows) || nolist
 [ -z "$r" ] || die "worker $name is still running; message it, or stop it first"
-if [ "$mode" = resume ]; then
-  ok=
-  for d in "$ROOT"/.router/runs/*/; do
-    [ -f "${d}session" ] && [ "$(cat "${d}session")" = "$sid" ] && [ "$(cat "${d}name")" = "$name" ] || continue
-    [ "$(cat "${d}worktree")" = "$wt" ] && ok=1 || die "session $sid was spawned in $(cat "${d}worktree"), not $wt"
-  done
-  [ -n "$ok" ] || die "no recorded spawn for name=$name session=$sid"
-fi
-snapshot "$mode"
-done_line="When your work is finished, send one self-contained report by SendMessage to the router your brief names, then end your turn; you stay alive for follow-up tasks."
-if [ "$mode" = spawn ]; then
-  set -- --bg -n "$name" --model "$model" --effort "$effort" --agent worker --allowedTools
-  # No `cargo run` (`cargo run -- mr` is keel mr) and no install/publish/add/update; no keel init or
-  # hooks install (they write the shared git dir). A deny also beats the owner's user-level allowlist.
-  for c in "cargo build" "cargo test" "cargo check" "cargo clippy" "cargo fmt" "keel preflight" \
-    "keel verify-doc" "keel verify-dod" "keel notes write" "keel lint" "keel check"; do
-    set -- "$@" "Bash($c)" "Bash($c *)"; done
-  # the prompt follows a single-valued option: after a list option it would be read as a tool name
-  set -- "$@" --disallowedTools "Bash(keel mr)" "Bash(keel mr *)" "Bash(cargo run)" "Bash(cargo run *)" --permission-mode "$pm" \
-    "You are a fresh worker session. Read $f in full and do exactly what it says. $done_line First action: git branch --show-current, git log --oneline -6, git status --short."
-else
-  set -- --bg --resume "$sid" "Continue your work. Read $f in full and do exactly what it says. $done_line"
-fi
+sid=
+snapshot
+# Claude Code's Bash sandbox (DEC-46): shell writes reach the worktree (the working directory), the
+# shared git dir but its config and hooks, and cargo's cache; five hosts; no retry outside it
+sandbox=$(jq -n -c --arg g "$gd" '{sandbox: {enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
+  filesystem: {allowWrite: [$g, "~/.cargo"], denyWrite: [$g + "/config", $g + "/hooks", $g + "/keel-hooks", $g + "/info", "~/.cargo/bin"],
+    denyRead: ["~/.ssh", "~/.claude/channels"]},
+  network: {allowedDomains: ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}}}')
+set -- --bg -n "$name" --model "$model" --effort "$effort" --agent worker --setting-sources project,local --strict-mcp-config \
+  --settings "$sandbox" --allowedTools
+for c in "cargo build" "cargo test" "cargo check" "cargo clippy" "cargo fmt" "keel preflight" \
+  "keel verify-doc" "keel verify-dod" "keel notes write" "keel lint" "keel check"; do
+  set -- "$@" "Bash($c)" "Bash($c *)"; done
+[ -z "$review" ] || set -- "$@" "Bash(keel notes write cr)" "Bash(keel notes write cr *)"
+# The deny list states intent and refuses at once with a reason; the sandbox is the bound (a wrapper
+# passes a deny). `cargo run -- mr` is keel mr; keel init / hooks and git config write the shared git
+# dir; switch / checkout drift the worktree's branch; -C / --git-dir / --work-tree reach other checkouts.
+set -- "$@" --disallowedTools
+for c in "keel mr" "cargo run" "keel init" "keel hooks" "cargo install" "cargo publish" "cargo login" \
+  "git push" "git config" "git update-ref" "git symbolic-ref" "git stash" "git notes" "git switch" "git checkout" \
+  "git rebase" "git worktree add" "git worktree remove" "git worktree move" "git worktree prune" "git -C" \
+  "git --git-dir" "git --work-tree" "claude" "scripts/router-worker.sh"; do
+  set -- "$@" "Bash($c)" "Bash($c *)"; done
+if [ -n "$review" ]; then set -- "$@" "Bash(git add)" "Bash(git add *)" "Bash(git commit)" "Bash(git commit *)" Edit Write NotebookEdit
+else set -- "$@" "Bash(keel notes write cr)" "Bash(keel notes write cr *)"; fi
+# the prompt follows a single-valued option: after a list option it would be read as a tool name
+set -- "$@" --permission-mode "$pm" "You are a fresh worker session. Read $f in full and do exactly what it says. When your work is finished, send one self-contained report by SendMessage to the router your brief names, then end your turn; you stay alive for follow-up tasks. First action: env | grep ^GIT_ must print nothing (if it prints anything, report that and stop); then git branch --show-current, git log --oneline -6, git status --short. Your shell runs in a sandbox: give every network command a timeout (a host outside the sandbox makes it wait), and report a refusal or \"Operation not permitted\", never route around it."
 cd "$wt"
 rc=0; started=$("$C" "$@" 2>&1) || rc=$?
 lr=1; [ "$rc" -ne 0 ] || { listed && lr=0 || lr=$?; }
 if [ "$lr" -eq 2 ]; then
   # the session may have started: report it with its snapshot, never as refused before a start
-  sid=; seal
+  seal
   echo "UNLISTED name=$name exit=0 snapshot=$snap brief=$f sha256=$sha"; printf '%s\n' "$started"
   die "cannot list sessions (claude agents --json): the session may be running; check ListAgents before any respawn"
 fi
 if [ "$lr" -ne 0 ]; then
-  sid=; seal
+  seal
   echo "DEAD name=$name exit=$rc snapshot=$snap brief=$f sha256=$sha"; printf '%s\n' "$started"; exit 1
 fi
 IFS=$US read -r id sid _ <<EOF
 $(fields)
 EOF
 seal
-opts=; [ -z "$pm" ] || opts="permission-mode=$pm effort=$effort "
-echo "RUNNING name=$name id=$id session=$sid ${opts}snapshot=$snap brief=$f sha256=$sha worktree=$wt"
+echo "RUNNING name=$name id=$id session=$sid permission-mode=$pm effort=$effort branch=$branch snapshot=$snap brief=$f sha256=$sha worktree=$wt"
