@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af478a89f34851f0dfb2204" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-ROUTER3.W8 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-ROUTER3.W8 · Router and worker scope; worktree and environment limits — result</h1>
+      <p>Workers start on project and local settings only, with no MCP server, inside Claude Code's Bash sandbox and behind a longer deny list. The router creates and removes worktrees. A fresh <code>--review</code> worker writes the <code>cr</code> note. <code>resume</code> is gone. W3's remaining items are absorbed.</p>
+      <div class="meta">Result · 2026-11-11 · Keel · plan <a href="2026-11-11-w8-scope-limits-wu-plan.html">2026-11-11-w8-scope-limits-wu-plan.html</a> (v3) · DEC-46</div>
+    </div>
+  </header>
+  <main>
+<h2 id="outcome">Outcome</h2>
+<div data-item="outcome" data-c="outcome">
+  <p><b>Delivered, with deviations.</b> Every agenda item of the plan is decided, deferred or rejected as the owner ruled. Each decided limit has its enforcement point and a test. The owner's rulings were:</p>
+  <ul>
+    <li>Every point on its proposed default, except point 6: workers load <code>project,local</code> settings.</li>
+    <li>After the probes, <code>resume</code> is deleted.</li>
+  </ul>
+  <p>W8 absorbs W3's remaining items: the persona refusal (R1), the per-name launch lock (R6 row 3), the brief-copy cleanup at stop (R6 row 2) and the Telegram plugin (R7). W10 had already dropped the budget flag (R16), so W3 closes as absorbed.</p>
+</div>
+
+<h2 id="deviations">Deviations</h2>
+<div data-item="deviations" data-c="deviations">
+  <table>
+    <thead><tr><th>#</th><th>Deviation</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>resume</code> is deleted: the mode, its guard shape, its allow entry, its skill text and its tests.</td><td>Probe P3(i): a plain <code>claude --bg --resume</code> of a stopped worker drops every launch flag. The revived session runs as the router persona, with the user source, the connectors and the Telegram plugin, and no sandbox. This was owner ruling 2026-11-11. P5 showed that a resume with the full flag set keeps every bound. That is recorded as backlog R23 and not used.</td></tr>
+      <tr><td>2</td><td>The launcher unsets every <code>GIT_*</code> in its environment, instead of calling <code>git rev-parse --local-env-vars</code>.</td><td>This covers a wider set and needs no git call first. P1 found that a <code>--bg</code> session takes the launching shell's environment, and that a leaked <code>GIT_DIR</code> made the doc hooks miss <code>keel-hooks</code> without any sign.</td></tr>
+      <tr><td>3</td><td>The worker's first check is now <code>git rev-parse --show-toplevel</code> printing its worktree. It used to be an empty <code>env | grep ^GIT_</code> (fix <code>435d495</code>, DEC-46 <code>ee93be8</code>, and the brief skeleton in the owner's second commit).</td><td>The live run found that Claude Code's sandbox sets <code>GIT_*</code> of its own: <code>GIT_EDITOR</code>, the proxy settings in <code>GIT_CONFIG_PARAMETERS</code> and <code>GIT_SSH_COMMAND</code>, and <code>safe.directory</code> entries. The old check stopped the live review worker on its first action.</td></tr>
+      <tr><td>4</td><td><code>worktree remove</code> refuses a worktree whose <code>docs/.archive/</code> holds files (<code>172a4ca</code>).</td><td><code>git worktree remove</code> deletes ignored files, so an epic worktree's archived T3 docs would have been lost. The implementer had only warned about this in the skill text.</td></tr>
+      <tr><td>5</td><td><code>skills/keel-router/references/commands.md</code> and its mirror were edited, though point 21 does not list them.</td><td>Their worktree recipes contradicted the new launcher modes.</td></tr>
+      <tr><td>6</td><td>The per-name lock is not applied to <code>watchdog start</code>.</td><td>The plan asks for it on <code>spawn</code> only.</td></tr>
+      <tr><td>7</td><td>The stub <code>claude</code> records the <code>GIT_*</code> variables each call sees, and its <code>--resume</code> handling is removed. The launcher fixture runs with its own <code>HOME</code>.</td><td>The P1 ruling needs a hermetic test that shows no <code>GIT_*</code> reaches claude. Without its own <code>HOME</code>, <code>worktree add</code>'s git would read the user's config.</td></tr>
+      <tr><td>8</td><td>Two owner commits instead of one: <code>9dc3da4</code>, then the brief-skeleton line from deviation 3.</td><td>The defect was found by the live run, after the first owner commit.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+  <h3 id="ev-probes">Probes (probe clone <code>Keel-probe</code>, Haiku, claude 2.1.288)</h3>
+  <p>P1 to P5 are recorded in the plan's <a href="2026-11-11-w8-scope-limits-wu-plan.html#probe-results">Probe results</a> (v3, <code>627a29a</code>).</p>
+  <h3 id="ev-live">Live run (plan step 7, launcher at <code>ee93be8</code>, run from the probe clone's router worktree)</h3>
+  <table>
+    <thead><tr><th>Step</th><th>Observed</th></tr></thead>
+    <tbody>
+      <tr><td>Guard</td><td>For a payload with <code>agent_type: router</code>, <code>scripts/router-guard.jq</code> allows <code>worktree add|remove</code>, <code>spawn</code>, <code>spawn … --review</code> and <code>stop</code>, and denies <code>resume</code>.</td></tr>
+      <tr><td><code>worktree add epic/E-LIVE</code>, then <code>wu/E-LIVE/w1-author</code></td><td><code>WORKTREE path=…/Keel-probe-E-LIVE branch=epic/E-LIVE base=main</code>, then <code>…-E-LIVE-w1-author … base=epic/E-LIVE</code>.</td></tr>
+      <tr><td>Author <code>spawn</code></td><td><code>RUNNING … branch=wu/E-LIVE/w1-author</code>. The worker wrote and committed <code>docs/work/live.html</code> (<code>5bf3c1f</code>). <code>keel notes write cr</code> and <code>git push --dry-run</code> were denied. <code>env | grep ^GIT_</code> showed the sandbox's own variables (deviation 3).</td></tr>
+      <tr><td>Author <code>stop</code></td><td><code>STOPPED</code>. The worktree holds no <code>.router-brief.*</code>.</td></tr>
+      <tr><td><code>--review</code> spawn</td><td>On the first launcher, the worker stopped at the old <code>GIT_</code> check. That is deviation 3, fixed and spawned again. On the fixed launcher:<br>• <code>keel notes write cr</code> was allowed ("wrote refs/notes/cr on 5bf3c1f5").<br>• The Write tool was absent and <code>git commit</code> was denied.<br>• The worker then wrote a file with <code>cat &gt;</code> in Bash. The sandbox allows writes in the worktree, so "edits nothing" holds for the tools only (follow-up).<br>• After its final message, its row read <code>state: blocked</code>, <code>status: idle</code>, with no <code>waitingFor</code>.</td></tr>
+      <tr><td><code>worktree remove wu/E-LIVE/w1-author</code></td><td>With a stray file left: "has uncommitted changes: the owner decides". Clean but unmerged: "is not merged into epic/E-LIVE: the owner decides". After a <code>--no-ff</code> merge into the epic: <code>REMOVED</code>, and the branch is kept.</td></tr>
+    </tbody>
+  </table>
+  <h3 id="ev-tests">Tests</h3>
+  <ul>
+    <li>Eleven new tests are in <code>tests/router.rs</code>:
+      <ul>
+        <li><code>launcher_starts_a_worker_on_project_settings_alone_with_no_mcp_server</code></li>
+        <li><code>worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache</code></li>
+        <li><code>only_a_review_worker_is_granted_the_cr_note_and_it_gets_no_edit_tools</code></li>
+        <li><code>launcher_ignores_inherited_git_variables</code></li>
+        <li><code>spawn_refuses_a_worktree_without_the_worker_persona</code></li>
+        <li><code>a_name_whose_launch_is_in_progress_is_refused_and_no_lock_outlives_a_launch</code></li>
+        <li><code>stop_removes_that_sessions_brief_copies_and_reports_branch_drift</code></li>
+        <li><code>worktree_add_cuts_an_epic_or_wu_branch_off_its_base_at_the_derived_path</code></li>
+        <li><code>worktree_remove_takes_only_a_clean_merged_worktree_with_no_session_in_it</code> (with the archive case)</li>
+        <li><code>router_guard_admits_the_two_worktree_shapes_in_plain_words_only</code></li>
+        <li><code>worktree_branches_follow_the_committed_branch_policy</code> (seeded generator)</li>
+      </ul>
+    </li>
+    <li>The tests that exercised <code>resume</code> were rewritten.</li>
+    <li>Each new launcher test was red on the old scripts.</li>
+    <li><code>cargo test --test router</code> passes 49/49, three runs in a row.</li>
+    <li>The init tests pass 11/11 once the rule-bearing files are committed.</li>
+    <li><code>cargo clippy --all-targets -- -D warnings</code> is clean.</li>
+  </ul>
+  <h3 id="ev-commits">Commits</h3>
+  <ul>
+    <li><b>Plans:</b> <code>1b79971</code> (v2) and <code>627a29a</code> (v3).</li>
+    <li><b>Code:</b> <code>781e3a1</code> (launcher, guard and tests), <code>1352142</code> (worker persona), <code>1287ee1</code> (router persona).</li>
+    <li><b>Records:</b> <code>39e1cbc</code> (DEC-46, UC-ROUTE-2, 5 and 6, backlog).</li>
+    <li><b>Fixes:</b> <code>172a4ca</code> (archive refusal), <code>435d495</code> and <code>ee93be8</code> (the first check).</li>
+    <li><b>Owner commits:</b> <code>9dc3da4</code> (settings, the keel-router skill and its mirror, project-router), then the brief-skeleton commit.</li>
+  </ul>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<div data-item="distillation" data-c="distillation">
+  <ul>
+    <li><b>Decisions:</b> DEC-46 in <code>docs/decisions/router.html</code> records the roles, the worker's settings, sandbox and deny list, the <code>--review</code> worker, worktree ownership, the deletion of <code>resume</code>, and the first check. It amends DEC-30, DEC-33, DEC-37 and DEC-44.</li>
+    <li><b>Use cases:</b> UC-ROUTE-2, 5 and 6 in <code>docs/use-cases/router.html</code>.</li>
+    <li><b>Backlog:</b> in <code>docs/backlog/e-router-v2.html</code>, R1, R6 rows 2 and 3, and R7's Telegram row are struck; R4 is rewritten; R15 is superseded; R19's launcher side is marked done; R20 to R24 are new.</li>
+    <li><b>Rule-bearing text:</b> the keel-router skill, its references and the project-router skill carry the operating rules.</li>
+  </ul>
+</div>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<div data-item="follow-ups" data-c="follow-ups">
+  <ul>
+    <li><b>A review worker can still write through Bash.</b> The Write tool is denied, but <code>cat &gt; file</code> in the sandboxed shell is not, and <code>sh -c 'git commit …'</code> would pass the deny list. Closing this would take a review-specific sandbox that denies writes to the worktree, while the <code>target/</code> that <code>keel check</code> needs stays writable. That is a candidate backlog row next to R10.</li>
+    <li><b>A finished review worker's row read <code>state: blocked</code></b> with <code>status: idle</code> and no <code>waitingFor</code>. W9's <code>facts</code> would call it STUCK, not DONE. Worth a check in W5 or W7.</li>
+    <li><b>A host outside the sandbox makes a worker wait</b> (<code>blocked · sandbox request</code>) until the command's own timeout. The brief asks for timeouts, and the watchdog reports a wait.</li>
+    <li><b>The full <code>cargo test</code> run under the sandbox</b> was not probed; only <code>--no-run</code> was.</li>
+    <li><b>W7:</b> the e2e covers <code>worktree add</code>, a <code>--review</code> spawn and <code>worktree remove</code>.</li>
+    <li><b>htmldoc:</b> the server does not know the ids of <code>docs/decisions/router.html</code> and <code>docs/backlog/e-router-v2.html</code>, so neither has a snapshot (as in W9).</li>
+  </ul>
+</div>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
