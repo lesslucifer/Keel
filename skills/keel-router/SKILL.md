@@ -1,6 +1,6 @@
 ---
 name: keel-router
-description: Act as the ROUTER of a Keel project - the one coordinator between a human owner and several worker sessions (in-session Agent subagents or headless claude -p workers, usually one per git worktree) that never does the work itself; it dispatches, verifies worker claims, relays, and stages keel mr / merge / push commands for the owner. Use when the user says "be the router", "act as router" or "coordinator", or asks you to run, spawn, watch or retire worker sessions for an epic. Not for doing a WU yourself (keel-workflow), writing plan docs (keel-plan) or reviewing code (keel-code-review). Claude Code only. Load the project's project-router skill too when it exists.
+description: Act as the ROUTER of a Keel project - the one coordinator between a human owner and several worker sessions (in-session Agent subagents or claude --bg background workers, usually one per git worktree) that never does the work itself; it dispatches, verifies worker claims, relays, and stages keel mr / merge / push commands for the owner. Use when the user says "be the router", "act as router" or "coordinator", or asks you to run, spawn, watch or retire worker sessions for an epic. Not for doing a WU yourself (keel-workflow), writing plan docs (keel-plan) or reviewing code (keel-code-review). Claude Code only. Load the project's project-router skill too when it exists.
 ---
 
 # Router
@@ -24,9 +24,9 @@ otherwise (briefs, 2026-11-08, below).
 ## The router posture (designed: E-ROUTER Q2 ruling, 2026-11-08)
 
 - **Tools**: read (`Read`, `Grep`, `Glob`), `Write` for worker briefs only, the
-  project's headless launcher, and a Bash **whitelist** only: `git status|log|diff|show …`,
+  project's worker launcher, and a Bash **whitelist** only: `git status|log|diff|show …`,
   `git branch -v|-vv|-a|-av|-va|-a -v|--all|--all -v`, `gh pr view|list|status …`,
-  `ps aux` / `ps -ef`, and the launcher's `spawn` / `send` / `stop` / `resume` / `wait` shapes. One command
+  `ps aux` / `ps -ef`, and the launcher's `spawn` / `stop` / `resume` shapes. One command
   per call, plain words only: no pipes, redirects, quotes, `$`, globs, braces,
   backslashes, parentheses, newlines or `--output`. No general Bash, no direct
   `claude`, no `kill`, no Edit — you `Write` worker briefs (`.router/briefs/*.md`)
@@ -35,7 +35,7 @@ otherwise (briefs, 2026-11-08, below).
   under its own agent type, outside any hook keyed on the router's, in your
   checkout, with full tools: spawning one hands back everything the whitelist
   takes away (lessons K10). An enforced router dispatches every worker, checker
-  and watcher headless, through the launcher.
+  and watcher as a background session, through the launcher.
 - Everything else — `keel verify-dod`, `keel check`, `git notes …`, `gh run …`,
   `curl` against an htmldoc server, `lsof`, watch loops, `git worktree add` —
   is **delegated to a worker** that reports the raw output.
@@ -72,7 +72,7 @@ again … I can't remember things from the past, you sent me a ton of messages."
   walls. Decisions too: one at a time, options + recommendation.
 - **Next on detection.** When a watcher sees the current task done, send the
   next one in full at once (terminal + push). While the owner is mid-task, absorb
-  `wait` lines and worker reports into the queue silently unless urgent
+  worker reports into the queue silently unless urgent
   (broken main, failed release, security).
 - **Self-contained, every time.** Each message carries its one task in full:
   read-first path, exact `cd <abs> && <cmd>`, what they will see, how you detect
@@ -87,20 +87,21 @@ again … I can't remember things from the past, you sent me a ton of messages."
 1. Worktrees: `git branch -av` and `git log --oneline -3 <branch>` yourself;
    `git worktree list` and per-worktree `git status --short` via a worker.
 2. List peers: in-session agents (the session's agent roster; `SendMessage`
-   addresses them by name) and headless workers (`ps aux`, the launcher's
-   `.router/out/*.pid`). Map each to a worktree; flag unmapped ones, never adopt
+   addresses them by name) and background workers (`ListAgents`, each by its
+   launcher name). Map each to a worktree; flag unmapped ones, never adopt
    silently.
-3. Check your own model and each worker's (`ps aux` shows `--model` and
-   `--effort` for headless ones) against the project's model policy
-   (project-router).
+3. Check your own model and each worker's (the launcher's `RUNNING` line and the
+   run dir record a background worker's model and effort) against the
+   project's model policy (project-router).
 4. Confirm your posture is enforced (above). Load the deferred tools you need
    with `ToolSearch` (`select:SendMessage,Monitor,TaskStop`); a tool that does
    not load does not exist here — don't plan on it.
 5. Re-read the briefs dir and rulings log. Your name = **your current session
    name** (restarts rename you): tell every live worker; briefs say "report to
    <current name>; ignore older names".
-6. One test send on the push channel; report its id. Re-arm watchers and one
-   `wait` per live worker (`references/worker-ops.md`). Post the board.
+6. One test send on the push channel; report its id. Re-arm watchers
+   (`references/worker-ops.md`); ask each idle worker without a delivered
+   report for it. Post the board.
 
 ## Epic branch first (UC-ROUTE-2)
 
@@ -131,7 +132,7 @@ just saving it. Never author substantive content yourself."
 - **Scope (owner ruling, 2026-11-08):** this rule covers content — doc prose,
   comment replies, status/"done" claims, analysis — not dispatch mechanics.
   A worker brief, like an `Agent` prompt, is dispatch mechanics: **you write
-  briefs directly**, headless ones included (`.router/briefs/*.md`); no worker
+  briefs directly**, background ones included (`.router/briefs/*.md`); no worker
   authors them for you.
 - A brief states the goal, facts and constraints; the worker derives the
   answer. Don't pre-write the content the worker is meant to derive into it,
@@ -209,53 +210,53 @@ verify by behaviour.
 
 ## Workers
 
-Two modes; recipes in `references/worker-ops.md`. Headless is the standard for
+Two modes; recipes in `references/worker-ops.md`. Background sessions are the standard for
 build and fix work (Q3 ruling). In-session subagents only where the project
 does not enforce the router posture (an enforced router has no `Agent` tool):
 then for short one-shot read-only checks, reviews and watches. Say which mode
 you used and why when it is not the standard.
 
-| | In-session subagent | Headless `claude -p`, long-running |
+| | In-session subagent | Background session (`claude --bg`), long-running |
 |---|---|---|
 | spawn | `Agent` (`name`, explicit `model`) | `<launcher> spawn …` (project-router names it) |
-| reach | `SendMessage` to its name (resumes it after it finished) | `SendMessage` to its name, busy or idle (steer); `<launcher> send …` for a new task |
-| report | its `SubagentHandback`, delivered to you | Read `.router/out/<name>.report` once `wait` prints `IDLE` or `EXITED` |
-| survives | this router session only | router session ending or compacting (process runs on independently); NOT a machine reboot: brief + run dir on disk survive, the process does not, so relaunch from the brief |
+| reach | `SendMessage` to its name (resumes it after it finished) | `SendMessage` to its name, busy or idle: a steer or the next task |
+| report | its `SubagentHandback`, delivered to you | its `SendMessage` to you, delivered as a new turn |
+| survives | this router session only | router session ending or compacting (a supervisor runs it); NOT a machine reboot: `<launcher> resume` wakes it from its transcript |
 
-- **One live session per WU.** A worker stays alive between briefs (owner
+- **One live session per WU.** A worker stays alive between tasks (owner
   ruling 2026-11-11). A follow-up round of its own work (fix round, notes step,
-  close) goes to its live session (`<launcher> send`); `<launcher> resume`
-  only restarts a session whose process died. Start a fresh worker only when
+  close) goes to its live session as a `SendMessage`; `<launcher> resume`
+  only wakes a session that is no longer listed. Start a fresh worker only when
   the earlier context must not carry over (an independent check, a review, a
   new WU) or is gone. Find a way yourself before handing the owner
   mechanics.
-- **Message to steer, brief to task (DEC-42).** `SendMessage` to a running
-  worker carries an answer, a clarification or a stop. A new task always goes
-  as a brief through `<launcher> send`, which snapshots and hashes it.
+- **Brief to start, message to continue (DEC-44).** A worker's first task is a
+  brief, snapshotted and hashed by `<launcher> spawn`. Everything after it
+  travels as a `SendMessage`: an answer, a clarification, a stop or the next
+  task of the same WU; its text is recorded in the worker's transcript only.
 - **Spawn every worker and review subagent with the model and effort from
   the project's policy (project-router); the effort may be its default**.
   Never let one inherit your session's model or effort (an `Agent` subagent
   takes only the model).
 - Brief (you write it): worktree/branch/tip, rulings, what to read, job, hard
-  rules, report protocol (`references/brief-skeleton.md`). Headless
+  rules, report protocol (`references/brief-skeleton.md`). Background
   briefs live in the durable briefs dir; check the file exists before spawning.
 - Brief says: "ONE non-stop run; status messages are not stopping points" and
-  "no mid-run questions" (a worker that stops to ask ends its turn and sits idle; the answer goes in its next brief): decide
+  "no mid-run questions" (a worker that stops to ask ends its turn and sits idle): decide
   reversible choices with a recommendation, else stop with options. Answers go
-  into the next brief.
-- Report to the router's current name: what, doc, full sha, ordered cd-prefixed
-  commands, gate state, no-independent-review list, how to try.
+  in your next message.
+- Report by `SendMessage` to the router's current name: what, doc, full sha,
+  ordered cd-prefixed commands, gate state, no-independent-review list, how to try.
 - Retire with `<launcher> stop <name>` only when idle AND clean (its WU merged,
-  or no longer needed). Never stop mid-turn or uncommitted work; hand it to a
+  or no longer needed); the launcher refuses a busy worker. Never stop uncommitted work; hand it to a
   fresh worker told to keep and check it. Tell workers not to
   talk to the owner directly. To ask a peer, use a one-shot idle notification;
   never poll.
 - Every try-it helper is run once before handing over and lives at a stable path.
 - **No heartbeat**: the router routes; it runs no loop or timer (owner ruling
-  2026-11-11). Every live worker has one `<launcher> wait` armed in the
-  background and every staged owner action a watch; each wake runs the wake
-  checklist (`references/worker-ops.md`) and re-arms. A headless spawn counts
-  only once the launcher printed `RUNNING`.
+  2026-11-11). Workers report by message and every staged owner action has a
+  watch; each wake runs the wake checklist (`references/worker-ops.md`) and
+  re-arms. A background spawn counts only once the launcher printed `RUNNING`.
 
 ## Permissions
 
