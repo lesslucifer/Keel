@@ -22,7 +22,9 @@
       "Bash(scripts/router-watch.sh *)",
       "Bash(scripts/router-worker.sh resume *)",
       "Bash(scripts/router-worker.sh spawn *)",
-      "Bash(scripts/router-worker.sh stop *)"
+      "Bash(scripts/router-worker.sh stop *)",
+      "Bash(scripts/router-worker.sh watchdog start *)",
+      "Bash(scripts/router-worker.sh watchdog stop *)"
     ]
   },
   "hooks": {

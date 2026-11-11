@@ -14,7 +14,7 @@ runs fail-closed as a `PreToolUse` hook on every tool for `agent_type == "router
 (`"agent": "router"` makes a session here the router). The guard is the one
 definition of the whitelist; in short:
 - Bash: read-only git/gh/ps shapes, the launcher's `spawn` / `resume` / `stop`
-  (`scripts/router-worker.sh`) and `scripts/router-watch.sh` (read-only
+  and `watchdog start|stop <router-name>` (`scripts/router-worker.sh`) and `scripts/router-watch.sh` (read-only
   owner-action probes), one command of plain words. No direct `claude`, no
   `kill`, nothing else.
 - `Write` only worker briefs, `<this checkout>/.router/briefs/<name>.md` (owner
