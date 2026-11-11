@@ -1,0 +1,1 @@
+{"schema":"cr/v1","tip":"3a979160b95f1ff80e324efdafa7e69c2f0e15b7","base":"f759cf18f5d7425a2d0cd373adc35811b3202e88","branch":"wu/E-ROUTER3/w9-watchdog","committer":"vuluu <quangvu.luu92@gmail.com>","timestamp":1794399048,"verdict":"FAIL","blockers":1,"importants":4,"code_diff_hash":"1cfb34dc222e23524412e771373b8f27106daec9"}
