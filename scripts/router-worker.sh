@@ -36,6 +36,10 @@ valid_name() { expr "$1" : '^[a-z0-9][a-z0-9-]\{0,40\}$' >/dev/null || die "bad 
 # the live sessions named $name, one JSON row per line; fails when the CLI gives no list (never "none")
 rows() { list=$("$C" agents --json) || return 1; printf '%s\n' "$list" | jq -c --arg n "$name" '.[] | select(.name == $n)'; }
 nolist() { die "cannot list sessions (claude agents --json)"; }
+# a row's fields, US-separated (a whitespace IFS would merge empty fields); a blocked session (rate
+# limited, or waiting on its user) is listed with a state and no status, so the state stands in for it
+US=$(printf '\037')
+fields() { printf '%s\n' "$r" | jq -r --arg i "${1-}" "select(\$i == \"\" or .id == \$i) | [.id, .sessionId, .cwd, (.status // .state), .kind] | map(. // \"\") | join(\"$US\")"; }
 brief_file() {
   f=$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)/$(basename "$1")
   case "$f" in "$B"/*.md) [ -f "$f" ] && [ ! -L "$f" ] || die "no such regular file (symlinks refused)";; *) die "file must be a .md under $B";; esac
@@ -70,21 +74,24 @@ if [ "$mode" = stop ]; then
   r=$(rows) || nolist
   [ -n "$r" ] || die "worker $name is not running"
   [ "$(printf '%s\n' "$r" | wc -l)" -eq 1 ] || die "more than one session is named $name"
-  IFS='	' read -r id sid cwd status kind <<EOF
-$(printf '%s\n' "$r" | jq -r '[.id, .sessionId, .cwd, .status, .kind] | map(. // "") | @tsv')
+  IFS=$US read -r id sid cwd status kind <<EOF
+$(fields)
 EOF
   [ "$kind" = background ] || die "$name is not a background session"
   git -C "$ROOT" worktree list --porcelain | grep -Fxq "worktree $cwd" || die "$name runs outside this repository's worktrees ($cwd)"
   # a worker reports by SendMessage before its turn has ended, so a stop right after its report may
-  # find it busy: give the turn 60 more looks, 0.5s apart, to end, then refuse
+  # find it busy: give the turn 60 more looks, 0.5s apart, to end, then refuse; the looks follow
+  # this session's id, never another session that takes the name
   n=0
-  while [ "$status" != idle ] && [ $n -lt 60 ]; do
+  while [ "$status" = busy ] && [ $n -lt 60 ]; do
     sleep 0.5; n=$((n+1))
     r=$(rows) || nolist
-    status=$(printf '%s\n' "$r" | jq -r --arg i "$id" 'select(.id == $i) | .status // ""')
-    [ -n "$status" ] || die "worker $name left the session list while busy; nothing to stop"
+    row=$(fields "$id")
+    [ -n "$row" ] || die "worker $name left the session list while busy; nothing to stop"
+    status=$(printf '%s\n' "$row" | cut -d "$US" -f 4)
   done
-  [ "$status" = idle ] || die "worker $name is still $status: stopping it would cut its turn; the owner decides (claude stop $id)"
+  [ "$status" != busy ] || die "worker $name is still busy: stopping it would cut its turn; the owner decides (claude stop $id)"
+  [ "$status" = idle ] || die "worker $name is ${status:-of unknown status}: the owner decides (claude stop $id)"
   "$C" stop "$id" > /dev/null || die "claude stop $id failed"
   "$C" rm "$id" > /dev/null || die "claude rm $id failed"
   echo "STOPPED name=$name id=$id session=$sid"; exit 0
@@ -182,14 +189,19 @@ rc=0; started=$("$C" "$@" 2>&1) || rc=$?
 if [ "$rc" -eq 0 ]; then
   # listed within 50 looks, 0.2s apart, or the start failed
   n=0
-  while r=$(rows) || { sid=; seal; nolist; }; [ -z "$r" ] && [ $n -lt 50 ]; do sleep 0.2; n=$((n+1)); done
+  while r=$(rows) || {
+      # the session may have started: report it with its snapshot, never as refused before a start
+      sid=; seal
+      echo "UNLISTED name=$name exit=0 snapshot=$snap brief=$f sha256=$sha"; printf '%s\n' "$started"
+      die "cannot list sessions (claude agents --json): the session may be running; check ListAgents before any respawn"; }
+    [ -z "$r" ] && [ $n -lt 50 ]; do sleep 0.2; n=$((n+1)); done
 fi
 if [ "$rc" -ne 0 ] || [ -z "$r" ]; then
   sid=; seal
   echo "DEAD name=$name exit=$rc snapshot=$snap brief=$f sha256=$sha"; printf '%s\n' "$started"; exit 1
 fi
-IFS='	' read -r id sid <<EOF
-$(printf '%s\n' "$r" | jq -r '[.id, .sessionId] | @tsv')
+IFS=$US read -r id sid _ <<EOF
+$(fields)
 EOF
 seal
 opts=; [ -z "$pm" ] || opts="permission-mode=$pm effort=$effort "

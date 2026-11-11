@@ -349,16 +349,21 @@ struct Launcher {
 /// once. `--bg` lists a new idle background session in $STUB_STATE/sessions.json (named by `-n`, or on
 /// `--resume` by the session's own saved name) and prints the `backgrounded` line; while
 /// $STUB_STATE/refuse exists it prints that file and exits 1, and while $STUB_STATE/unlisted exists it
-/// starts nothing it lists. `agents --json` prints the list (while $STUB_STATE/agents-fail exists it fails
-/// instead, printing to stderr only; while $STUB_STATE/vanish exists it then empties the list, a session
-/// that ends between two looks; while $STUB_STATE/settle exists it then marks every session idle, a turn
-/// that ends between two looks), `stop <id>` delists the id, `rm` only records.
+/// starts nothing it lists. `agents --json` prints the list; while $STUB_STATE/agents-ok holds k it
+/// succeeds k more times, then fails printing to stderr only. After printing: while $STUB_STATE/vanish
+/// exists it empties the list (a session that ends between two looks), while $STUB_STATE/swap exists a
+/// busy session is replaced by an idle one of the same name under a new id, and while
+/// $STUB_STATE/settle exists every session turns idle (a turn that ends between two looks). `stop <id>`
+/// delists the id, `rm` only records.
 fn stub_claude(stub: &Path) {
     std::fs::write(stub, concat!(
         "#!/bin/sh\nS=$STUB_STATE\nprintf '%s ' \"$PWD\" >> \"$S/calls\"; printf '[%s]' \"$@\" >> \"$S/calls\"; echo >> \"$S/calls\"\n",
         "[ -s \"$S/sessions.json\" ] || echo '[]' > \"$S/sessions.json\"\n",
         "case \"$1\" in\n",
-        "  agents) [ ! -e \"$S/agents-fail\" ] || { echo 'Error: no supervisor' >&2; exit 1; }\n    cat \"$S/sessions.json\"; [ ! -e \"$S/vanish\" ] || echo '[]' > \"$S/sessions.json\"; [ ! -e \"$S/settle\" ] || { jq 'map(.status = \"idle\")' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }; exit 0;;\n",
+        "  agents) if [ -e \"$S/agents-ok\" ]; then k=$(cat \"$S/agents-ok\"); [ \"$k\" -gt 0 ] || { echo 'Error: no supervisor' >&2; exit 1; }; echo $((k - 1)) > \"$S/agents-ok\"; fi\n",
+        "    cat \"$S/sessions.json\"; [ ! -e \"$S/vanish\" ] || echo '[]' > \"$S/sessions.json\"\n",
+        "    [ ! -e \"$S/swap\" ] || { jq 'map(if .status == \"busy\" then .id = \"new0\" | .sessionId = \"new0-x\" | .status = \"idle\" else . end)' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }\n",
+        "    [ ! -e \"$S/settle\" ] || { jq 'map(.status = \"idle\")' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }; exit 0;;\n",
         "  stop) jq --arg i \"$2\" 'map(select(.id != $i))' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; echo \"stopped $2\"; exit 0;;\n",
         "  rm) echo \"removed $2\"; exit 0;;\n",
         "esac\n",
@@ -986,14 +991,22 @@ fn a_start_the_cli_refuses_is_reported_dead_with_its_reason() {
 
     // E-ROUTER3.W10 review r1 B1: a session list the CLI fails to give is no list, never "no sessions":
     // spawn must not take the name as free, nor stop report the worker gone
-    std::fs::write(l.state.join("agents-fail"), "").unwrap();
+    std::fs::write(l.state.join("agents-ok"), "0").unwrap();
     let started = l.starts("n");
     for args in [vec!["spawn", "n", wt, ".router/briefs/b.md", "opus"], vec!["stop", "n"]] {
         let (ok, out) = l.run(&args);
         assert!(!ok && out.contains("cannot list sessions (claude agents --json)"), "{args:?}: {out}");
     }
     assert_eq!(l.starts("n"), started, "a failed listing started a worker");
-    std::fs::remove_file(l.state.join("agents-fail")).unwrap();
+
+    // review r2: a listing that fails once the session has started reports it as possibly running,
+    // with its snapshot, never as refused before any start
+    std::fs::write(l.state.join("agents-ok"), "1").unwrap();
+    let (ok, out) = l.run(&["spawn", "n", wt, ".router/briefs/b.md", "opus"]);
+    assert!(!ok && out.starts_with("UNLISTED name=n exit=0 snapshot=") && out.contains("backgrounded") && out.contains("the session may be running"), "{out}");
+    std::fs::remove_file(l.state.join("agents-ok")).unwrap();
+    assert!(l.sessions().iter().any(|r| r["name"] == "n"), "the stub did start it");
+    l.set_sessions(&[]);
 
     // listed never: the launcher's polls run through an instant `sleep`
     std::fs::write(l.state.join("unlisted"), "").unwrap();
@@ -1043,6 +1056,33 @@ fn stop_stops_then_removes_this_repositorys_idle_worker_by_id() {
     let tail: Vec<Vec<String>> = calls(&l.state).into_iter().map(|(_, c)| c).filter(|c| c[0] != "agents").collect();
     assert_eq!(tail[tail.len() - 2..], [vec!["stop".to_string(), a.clone()], vec!["rm".to_string(), a]]);
     assert!(l.sessions().iter().all(|r| r["name"] != "a") && l.sessions().iter().any(|r| r["name"] == "b"));
+
+    // review r2: Claude Code lists a blocked session (rate-limited, or waiting on its user) with a
+    // state and no status: it is refused at once by that state, as a worker waiting on a prompt is
+    let mut more = rows.clone();
+    more.push(serde_json::json!({"id": "f0", "sessionId": "f0-x", "name": "f", "cwd": wt, "kind": "background", "state": "blocked"}));
+    more.push(serde_json::json!({"id": "g0", "sessionId": "g0-x", "name": "g", "cwd": wt, "kind": "background", "status": "waiting", "waitingFor": "permission prompt", "state": "blocked"}));
+    l.set_sessions(&more);
+    for (name, state, id) in [("f", "blocked", "f0"), ("g", "waiting", "g0")] {
+        let n0 = calls(&l.state).len();
+        let (ok, out) = l.run_env(&["stop", name], &[("PATH", &path)]);
+        assert!(!ok && out.contains(&format!("worker {name} is {state}: the owner decides (claude stop {id})")), "{name}: {out}");
+        assert_eq!(calls(&l.state).len() - n0, 1, "{name}: stop waited on a session that is not busy");
+    }
+    l.set_sessions(&rows);
+
+    // review r2: the busy wait follows the worker's id, never another session that takes its name,
+    // and a listing that fails inside the wait stops it
+    std::fs::write(l.state.join("swap"), "").unwrap();
+    let (ok, out) = l.run_env(&["stop", "b"], &[("PATH", &path)]);
+    assert!(!ok && out.contains("worker b left the session list while busy; nothing to stop"), "{out}");
+    assert!(calls(&l.state).iter().all(|(_, c)| c[0] != "stop" || c[1] != "new0"), "stop closed the session that took the name");
+    std::fs::remove_file(l.state.join("swap")).unwrap();
+    l.set_sessions(&rows);
+    std::fs::write(l.state.join("agents-ok"), "1").unwrap();
+    let (ok, out) = l.run_env(&["stop", "b"], &[("PATH", &path)]);
+    assert!(!ok && out.contains("cannot list sessions (claude agents --json)"), "{out}");
+    std::fs::remove_file(l.state.join("agents-ok")).unwrap();
 
     // review r1 I1: a busy worker whose session ends while stop waits is gone, said at once, not after 30s
     std::fs::write(l.state.join("vanish"), "").unwrap();
