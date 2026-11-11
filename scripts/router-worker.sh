@@ -16,10 +16,10 @@
 # to acceptEdits and the effort to the policy's default, per run (a resume inherits neither). Every worker gets the fixed
 # cargo/keel grant below and is denied `keel mr` and `cargo run`; the grant never reaches the router.
 # wait (run by the router as a background Bash command, so its exit wakes the router) blocks
-# until the worker ends a turn with every sent brief answered (IDLE; its last result text goes to
-# .router/out/<name>.report), exits (EXITED) or stalls mid-turn (STALLED: on two polls running, no
+# until the worker ends a turn with every sent brief taken and answered (IDLE; its last result text goes
+# to .router/out/<name>.report, removed when the last brief has no answer), exits (EXITED) or stalls mid-turn (STALLED: on two polls running, no
 # Bash-tool shell child and its session transcript untouched for <stall-min> minutes, default 15),
-# prints that one line, exits 0. It writes only <name>.report; the transcript is ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/
+# prints that one line, exits 0. It writes only <name>.report (and a scratch dir it removes); the transcript is ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/
 # */<session>.jsonl plus */<session>/subagents/*.jsonl, falling back to the
 # pid file's mtime when none exists. Poll: ROUTER_WAIT_POLL s. A background Bash command is killed
 # at its timeout (max 2h): the router then wakes without a line and re-arms.
@@ -37,6 +37,8 @@ B="$ROOT/.router/briefs" O="$ROOT/.router/out"
 # the one worker-name rule: spawn, resume and wait all check it here, and the guard does not repeat it
 valid_name() { expr "$1" : '^[a-z0-9][a-z0-9-]\{0,40\}$' >/dev/null || die "bad name"; }
 live() { ps -o stat=,command= -p "$1" 2>/dev/null | grep -v '^ *Z' | grep -qF -- " -n $name "; }
+# the feed is open while <name>.feed names this worker's own tail of its inbox, never a reused pid
+feed_open() { ps -o command= -p "$(cat "$O/$name.feed" 2>/dev/null)" 2>/dev/null | grep -qxF -- "tail -n +1 -f $O/$name.in"; }
 newest_run() { run=; for d in "$ROOT"/.router/runs/*/; do [ "$(cat "${d}name" 2>/dev/null)" = "$name" ] && run=$d; done; [ -n "$run" ]; }
 brief_file() {
   f=$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)/$(basename "$1")
@@ -79,20 +81,36 @@ if [ "${1:-}" = wait ]; then
   seen() { mtime "$P"/*/"$sid".jsonl "$P"/*/"$sid"/subagents/*.jsonl 2>/dev/null | sort -n | tail -1; }
   # a running Bash tool command is a `<shell> -c` child; MCP servers (also children) are not
   busy() { ps -A -o ppid=,command= | awk -v p="$pid" '$1 == p && $2 ~ /(^|\/)[a-z]*sh$/ && $3 == "-c" { f = 1 } END { exit !f }'; }
+  # The stream-json output is read once, incrementally: each poll counts only the complete lines
+  # added since the last (the output of a long-running session only grows). Every turn opens with
+  # system/init and closes with a result, which may answer several briefs folded into it; a brief is
+  # taken when the worker replays it (--replay-user-messages); a turn the worker opens itself (a
+  # SendMessage) replays nothing. Key order varies and non-JSON lines are skipped.
+  T=$(mktemp -d) || die "cannot create a scratch dir"
+  trap 'rm -rf "$T"' EXIT
+  off=0 inits=0 results=0 replays=0
+  scan() {
+    n=$(( $(tail -c +$((off + 1)) "$O/$name.out" 2>/dev/null | wc -l) ))
+    [ "$n" -gt 0 ] || return 0
+    tail -c +$((off + 1)) "$O/$name.out" | head -n "$n" > "$T/chunk"
+    off=$((off + $(wc -c < "$T/chunk") ))
+    read -r i r p <<COUNTS
+$(jq -R -s -r '[split("\n")[] | fromjson? | objects] | [map(select(.type == "system" and .subtype == "init")), map(select(.type == "result")), map(select(.type == "user" and .isReplay == true))] | map(length) | join(" ")' "$T/chunk")
+COUNTS
+    inits=$((inits + i)) results=$((results + r)) replays=$((replays + p))
+    [ "$r" -eq 0 ] || jq -R -s -r '[split("\n")[] | fromjson? | objects | select(.type == "result")] | last | .result // ""' "$T/chunk" > "$T/last"
+  }
+  # answered: every opened turn has closed and every brief in the inbox was taken
+  answered() { [ "$results" -ge "$inits" ] && [ "$replays" -ge $(( $(cat "$O/$name.in" 2>/dev/null | wc -l) )) ]; }
+  # the report is the last result, and only for an answered inbox: never an earlier brief's answer
+  report() { if answered && [ -f "$T/last" ]; then cp "$T/last" "$O/$name.report"; else rm -f "$O/$name.report"; fi; }
   # quiet must hold on two consecutive polls: a command that just ended leaves the transcript
   # stale until its result is written, and the worker may be exiting
-  # stream-json events by type (key order varies; non-JSON lines are skipped). Every turn opens with
-  # system/init and closes with a result; events such as command_lifecycle may follow the result.
-  count() { jq -R -r 'fromjson? | .type + "/" + (.subtype // "")' "$O/$name.out" 2>/dev/null | grep -c "$1" || :; }
-  results() { count '^result/'; }
-  # idle: every turn has closed, every brief in the inbox has had its turn, and the feed is open (a
-  # stopped worker winding down is not idle: it ends in EXITED)
-  idle() { r=$(results); [ "$r" -ge "$(count '^system/init$')" ] && [ "$r" -ge $(( $(cat "$O/$name.in" 2>/dev/null | wc -l) )) ] &&
-    kill -0 "$(cat "$O/$name.feed" 2>/dev/null)" 2>/dev/null; }
-  report() { [ "$(results)" -eq 0 ] || jq -R -s -r '[split("\n")[] | fromjson? | select(.type == "result")] | last | .result // ""' "$O/$name.out" > "$O/$name.report"; }
   quiet=0
   while live "$pid"; do
-    if idle; then report; echo "IDLE name=$name pid=$pid turn=$(results) report=$O/$name.report"; exit 0
+    scan
+    # a stopped worker winding down (feed closed) is not idle: it ends in EXITED
+    if answered && feed_open; then report; echo "IDLE name=$name pid=$pid turn=$results report=$O/$name.report"; exit 0
     elif busy; then quiet=0
     else
       at=$(seen)
@@ -104,7 +122,7 @@ if [ "${1:-}" = wait ]; then
     fi
     sleep "${ROUTER_WAIT_POLL:-10}"
   done
-  report; echo "EXITED name=$name pid=$pid out=$O/$name.out"; exit 0
+  scan; report; echo "EXITED name=$name pid=$pid out=$O/$name.out"; exit 0
 fi
 if [ "${1:-}" = send ] || [ "${1:-}" = stop ]; then
   mode=$1; shift
@@ -113,9 +131,11 @@ if [ "${1:-}" = send ] || [ "${1:-}" = stop ]; then
   valid_name "$name"
   pid=$(cat "$O/$name.pid" 2>/dev/null) && live "$pid" || die "worker $name is not running"
   if [ "$mode" = stop ]; then
+    feed_open || die "worker $name is already stopping (its input is closed)"
     kill "$(cat "$O/$name.feed")" 2>/dev/null || die "cannot close $name's input"
     echo "STOPPING name=$name pid=$pid (exits after its current turn; wait prints EXITED)"; exit 0
   fi
+  feed_open || die "worker $name is stopping (its input is closed); resume it once it has exited"
   brief_file "$2"
   newest_run || die "no recorded run for $name"
   sid=$(cat "${run}session") wt=$(cat "${run}worktree")
@@ -218,13 +238,14 @@ set -- "$@" --disallowedTools "Bash(keel mr)" "Bash(keel mr *)" "Bash(cargo run)
 cd "$wt"
 # the feed keeps stdin open while the worker waits for its next brief; killing it (stop) is EOF
 sh -c 'tail -n +1 -f "$1" & echo $! > "$2"; wait' sh "$O/$name.in" "$O/$name.feed" 2>/dev/null |
-  nohup "$C" -p --input-format stream-json --output-format stream-json --verbose "$@" -n "$name" --model "$model" --effort "$effort" --agent worker --permission-mode "$pm" --max-budget-usd 25 \
+  nohup "$C" -p --input-format stream-json --output-format stream-json --verbose --replay-user-messages "$@" -n "$name" --model "$model" --effort "$effort" --agent worker --permission-mode "$pm" --max-budget-usd 25 \
   > "$O/$name.out" 2>&1 &
 pid=$!; echo "$pid" > "$O/$name.pid"
 n=0; until [ -s "$O/$name.feed" ] || [ $n -ge 50 ]; do sleep 0.1; n=$((n+1)); done
 # a worker that dies on its own leaves its feed blocked in tail -f: end that feed (this run's, by
 # value: a later run of the name rewrites the feed file) with the worker
-nohup sh -c 'while kill -0 "$1" 2>/dev/null; do sleep 1; done; kill "$2" 2>/dev/null' sh "$pid" "$(cat "$O/$name.feed")" > /dev/null 2>&1 &
+nohup sh -c 'while kill -0 "$1" 2>/dev/null; do sleep 1; done
+  ps -o command= -p "$2" 2>/dev/null | grep -qxF -- "tail -n +1 -f $3" && kill "$2"' sh "$pid" "$(cat "$O/$name.feed")" "$O/$name.in" > /dev/null 2>&1 &
 # survive a 2s startup window (poll 0.2s); an early exit reports its real exit code.
 # alive() excludes zombies: an exited-but-unreaped child still answers `ps -p`.
 alive() { st=$(ps -o stat= -p "$pid" 2>/dev/null) || return 1; case "$st" in Z*|"") return 1;; esac; }
