@@ -1240,7 +1240,8 @@ fn launcher_keeps_a_worker_alive_across_briefs_until_stopped() {
 
 /// A fake live worker `name` under `l`'s .router/out, for driving `wait`, `send` and `stop` over a
 /// hand-written stream: a process whose argv carries ` -n <name> `, its pid file and run dir, and a
-/// real `tail -n +1 -f <name>.in` feed recorded in <name>.feed. Both end with the value.
+/// real `tail -n +1 -f <name>.in` feed recorded in <name>.feed. The worker keeps an `sh -c` child,
+/// as a running Bash tool command (or a background task) keeps one. All end with the value.
 struct Fake {
     worker: std::process::Child,
     feed: std::process::Child,
@@ -1258,7 +1259,8 @@ impl Fake {
         std::fs::write(run.join("worktree"), format!("{}\n", l.wt.display())).unwrap();
         std::fs::write(out.join(format!("{name}.in")), "{\"type\":\"user\"}\n".repeat(inbox)).unwrap();
         std::fs::write(out.join(format!("{name}.out")), "").unwrap();
-        let worker = common::cmd("sh").args(["-c", "while :; do sleep 1; done", "sh", "-n", name, "x"]).spawn().unwrap();
+        let body = "sh -c 'while kill -0 $PPID 2>/dev/null; do sleep 1; done' & while :; do sleep 1; done";
+        let worker = common::cmd("sh").args(["-c", body, "sh", "-n", name, "x"]).spawn().unwrap();
         let feed = common::cmd("tail").args(["-n", "+1", "-f"]).arg(out.join(format!("{name}.in"))).stdout(Stdio::null()).spawn().unwrap();
         std::fs::write(out.join(format!("{name}.pid")), format!("{}\n", worker.id())).unwrap();
         std::fs::write(out.join(format!("{name}.feed")), format!("{}\n", feed.id())).unwrap();
@@ -1286,6 +1288,13 @@ const INIT: &str = r#"{"type":"system","subtype":"init"}"#;
 const REPLAY: &str = r#"{"type":"user","isReplay":true,"message":{"role":"user","content":"brief"}}"#;
 const BG_RUNNING: &str = r#"{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"b1","task_type":"local_bash"}]}"#;
 const BG_NONE: &str = r#"{"type":"system","subtype":"background_tasks_changed","tasks":[]}"#;
+const TASK_DONE: [&str; 2] = [
+    r#"{"type":"system","subtype":"task_updated","task_id":"b1","status":"completed"}"#,
+    r#"{"type":"system","subtype":"task_notification","task_id":"b1","status":"completed"}"#,
+];
+/// The replay Claude Code 2.1.288 emits for a turn a peer's SendMessage opens (live probe, E-ROUTER3.W2 review r3).
+const PEER_REPLAY: &str = r#"{"type":"user","isReplay":true,"isSynthetic":true,"origin":{"kind":"peer"},"message":{"role":"user","content":"Another Claude session sent a message"}}"#;
+const BUDGET_ERROR: &str = r#"{"type":"result","subtype":"error_max_budget_usd","is_error":true,"errors":["Reached maximum budget ($0.0001)"]}"#;
 fn result(text: &str) -> String {
     format!(r#"{{"duration_ms":1,"type":"result","subtype":"success","result":"{text}"}}"#)
 }
@@ -1296,7 +1305,9 @@ fn result(text: &str) -> String {
 /// into one running turn are answered by its one result (r1 B3). A feed is open only while its pid
 /// is this worker's `tail` (r1 I4); a stopping worker takes no brief (r1 B2); and an exit that left
 /// the last brief unanswered leaves no report (r1 I6). A turn that ends with a background task
-/// running is not the worker's answer (r2 B1).
+/// running is not the worker's answer (r2 B1), nor is the moment between its task's notification
+/// and the completion turn (r3 B1); a peer's replayed message is no brief (r3 B2); an error result
+/// is reported as one (r3 B3); and a task that never ends stalls the wait instead of hanging it (r3 I2).
 #[test]
 fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
     let l = launcher();
@@ -1310,7 +1321,7 @@ fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
     assert_eq!(std::fs::read_to_string(&report).unwrap(), "A\n");
 
     // B1: a self-opened turn (no replay) closes, then a brief is sent but not yet read: no IDLE
-    f.emit(&[INIT, &result("steered")]);
+    f.emit(&[INIT, PEER_REPLAY, &result("steered")]);
     std::fs::write(l.main.join(".router/out/fk.in"), "{\"type\":\"user\"}\n".repeat(2)).unwrap();
     let mut w = l.wait_stepped(&["wait", "fk"], "b1");
     w.at(1);
@@ -1359,10 +1370,34 @@ fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
     f.emit(&[INIT, REPLAY, BG_RUNNING, &result("waiting for the background task")]);
     let mut w = l.wait_stepped(&["wait", "fk"], "bg");
     w.at(1);
-    f.emit(&[BG_NONE, INIT, &result("done")]);
+    // r3 B1: the task ends; its notification precedes the completion turn's init by milliseconds
+    f.emit(&[BG_NONE, TASK_DONE[0], TASK_DONE[1]]);
     w.go(1);
+    w.at(2);
+    f.emit(&[INIT, &result("done")]);
+    w.go(2);
     assert!(w.line().contains(" turn=2 "), "the completion turn closes the wait");
     assert_eq!(std::fs::read_to_string(&report).unwrap(), "done\n");
+    drop(f);
+
+    // r3 B3: an error result is no silent answer: the IDLE line and the report carry it
+    let f = Fake::new(&l, "fk", 1);
+    f.emit(&[INIT, REPLAY, BUDGET_ERROR]);
+    let line = bounded(l.cmd(&["wait", "fk"], &[]));
+    assert!(line.starts_with("IDLE name=fk ") && line.trim_end().ends_with(" error=error_max_budget_usd"), "{line}");
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "error: error_max_budget_usd: Reached maximum budget ($0.0001)\n");
+    drop(f);
+
+    // r3 I2: a background task that never ends (its shell keeps the worker busy) is no endless
+    // wait: with every brief answered, the quiet transcript stalls it, naming the task count
+    let f = Fake::new(&l, "fk", 1);
+    f.emit(&[INIT, REPLAY, BG_RUNNING, &result("serving")]);
+    age(&l.main.join(".router/out/fk.pid"), 120);
+    let mut w = l.wait_stepped(&["wait", "fk", "1"], "bg-forever");
+    w.at(1);
+    w.go(1);
+    let line = w.line();
+    assert!(line.starts_with("STALLED name=fk ") && line.trim_end().ends_with(" background=1"), "{line}");
     drop(f);
 
     // I6: the worker died before answering its last brief: EXITED leaves no report

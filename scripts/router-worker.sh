@@ -84,31 +84,40 @@ if [ "${1:-}" = wait ]; then
   # The stream-json output is read once, incrementally: each poll counts only the complete lines
   # added since the last (the output of a long-running session only grows). Every turn opens with
   # system/init and closes with a result, which may answer several briefs folded into it; a brief is
-  # taken when the worker replays it (--replay-user-messages); a turn the worker opens itself (a
-  # SendMessage) replays nothing. A turn may end with a background task still running (the last
-  # system/background_tasks_changed lists it): that is not the worker's answer, its completion turn
-  # is. Key order varies and non-JSON lines are skipped.
+  # taken when the worker replays it (--replay-user-messages); a peer's SendMessage replays as
+  # isSynthetic and is no brief. A turn may end with a background task still running (the last
+  # system/background_tasks_changed lists it): that is not the worker's answer. When the task ends,
+  # its system/task_notification comes just before the completion turn's init, so a notification
+  # not yet followed by an init or a result means a turn is due. Key order varies and non-JSON
+  # lines are skipped. (Event shapes: Claude Code 2.1.288, E-ROUTER3.W2 probes.)
   T=$(mktemp -d) || die "cannot create a scratch dir"
   trap 'rm -rf "$T"' EXIT
-  off=0 inits=0 results=0 replays=0 bg=0
+  off=0 inits=0 results=0 replays=0 bg=0 due=0 err=-
   scan() {
     n=$(( $(tail -c +$((off + 1)) "$O/$name.out" 2>/dev/null | wc -l) ))
     [ "$n" -gt 0 ] || return 0
     tail -c +$((off + 1)) "$O/$name.out" | head -n "$n" > "$T/chunk"
     off=$((off + $(wc -c < "$T/chunk") ))
-    # one pass: "<inits> <results> <replays> <background tasks, -1 if unreported>", then the last result's text
+    # one pass: "<inits> <results> <replays> <background tasks> <turn due> <error>" (-1: not in this
+    # chunk; error: the last result's subtype if it is an error, else -), then the last result's text
     jq -R -s -r '[split("\n")[] | fromjson? | objects] as $e | ($e | map(select(.type == "result"))) as $r
-      | ($e | map(select(.type == "system" and .subtype == "background_tasks_changed")) | last | if . == null then -1 else (.tasks | length) end) as $bg
-      | "\($e | map(select(.type == "system" and .subtype == "init")) | length) \($r | length) \($e | map(select(.type == "user" and .isReplay == true)) | length) \($bg)",
-        ($r | last | .result // empty)' "$T/chunk" > "$T/scan"
-    read -r i r p b < "$T/scan"
+      | def n(f): $e | map(select(f)) | length;
+      ($e | map(select(.type == "system" and .subtype == "background_tasks_changed")) | last | if . == null then -1 else (.tasks | length) end) as $bg
+      | ($e | map(select(.type == "result" or (.type == "system" and (.subtype == "init" or .subtype == "task_notification")))) | last
+         | if . == null then -1 elif .subtype == "task_notification" then 1 else 0 end) as $due
+      | ($r | last) as $l
+      | "\(n(.type == "system" and .subtype == "init")) \($r | length) \(n(.type == "user" and .isReplay == true and .isSynthetic != true)) \($bg) \($due) \(if $l.is_error == true then $l.subtype // "error" else "-" end)",
+        (if $l == null then empty elif $l.is_error == true then "error: \($l.subtype // "error")" + (($l.errors // []) | if length > 0 then ": " + join("; ") else "" end) else $l.result // "" end)' "$T/chunk" > "$T/scan"
+    read -r i r p b d e < "$T/scan"
     inits=$((inits + i)) results=$((results + r)) replays=$((replays + p))
     [ "$b" -lt 0 ] || bg=$b
-    [ "$r" -eq 0 ] || tail -n +2 "$T/scan" > "$T/last"
+    [ "$d" -lt 0 ] || due=$d
+    [ "$r" -eq 0 ] || { err=$e; tail -n +2 "$T/scan" > "$T/last"; }
   }
-  # answered: every opened turn has closed with no background task left running, and every brief
-  # in the inbox was taken
-  answered() { [ "$results" -ge "$inits" ] && [ "$bg" -eq 0 ] && [ "$replays" -ge $(( $(cat "$O/$name.in" 2>/dev/null | wc -l) )) ]; }
+  # settled: every opened turn has closed, no turn is due, and every brief in the inbox was taken
+  settled() { [ "$results" -ge "$inits" ] && [ "$due" -eq 0 ] && [ "$replays" -ge $(( $(cat "$O/$name.in" 2>/dev/null | wc -l) )) ]; }
+  # answered: settled with no background task left running
+  answered() { settled && [ "$bg" -eq 0 ]; }
   # the report is the last result, and only for an answered inbox: never an earlier brief's answer
   report() { if answered && [ -f "$T/last" ]; then cp "$T/last" "$O/$name.report"; else rm -f "$O/$name.report"; fi; }
   # quiet must hold on two consecutive polls: a command that just ended leaves the transcript
@@ -117,14 +126,17 @@ if [ "${1:-}" = wait ]; then
   while live "$pid"; do
     scan
     # a stopped worker winding down (feed closed) is not idle: it ends in EXITED
-    if answered && feed_open; then report; echo "IDLE name=$name pid=$pid turn=$results report=$O/$name.report"; exit 0
-    elif busy; then quiet=0
+    if answered && feed_open; then report
+      echo "IDLE name=$name pid=$pid turn=$results report=$O/$name.report$([ "$err" = - ] || echo " error=$err")"; exit 0
+    # settled but for a background task: its shell keeps the worker busy, so only the transcript's
+    # quiet can tell a task that never ends, and the wait stalls instead of running forever
+    elif ! { settled && [ "$bg" -gt 0 ]; } && busy; then quiet=0
     else
       at=$(seen)
       [ -n "$at" ] || at=$(mtime "$O/$name.pid")
       src=${at#* } idle=$(( $(date +%s) - ${at%% *} ))
       if [ "$idle" -lt $((stall * 60)) ]; then quiet=0
-      elif [ "$quiet" -eq 1 ]; then echo "STALLED name=$name pid=$pid idle=$((idle / 60))m since=$src"; exit 0
+      elif [ "$quiet" -eq 1 ]; then echo "STALLED name=$name pid=$pid idle=$((idle / 60))m since=$src$([ "$bg" -eq 0 ] || echo " background=$bg")"; exit 0
       else quiet=1; fi
     fi
     sleep "${ROUTER_WAIT_POLL:-10}"
