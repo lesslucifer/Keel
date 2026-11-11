@@ -52,7 +52,7 @@ brief_file() {
 # (or `rm -rf .router-brief.*` there); add cleanup if a worktree lives across many runs.
 snapshot() {
   mkdir -p "$O" "$ROOT/.router/runs"
-  R="$ROOT/.router/runs/$name-$(date +%Y%m%d%H%M%S)-$1"
+  R="$ROOT/.router/runs/$name-$(date +%Y%m%d%H%M%S)-$$-$1"
   mkdir "$R" || die "run dir exists"
   cp "$f" "$R/brief.md"
   printf '%s\n' "$sid" > "$R/session"; printf '%s\n' "$name" > "$R/name"; printf '%s\n' "$wt" > "$R/worktree"
@@ -85,23 +85,30 @@ if [ "${1:-}" = wait ]; then
   # added since the last (the output of a long-running session only grows). Every turn opens with
   # system/init and closes with a result, which may answer several briefs folded into it; a brief is
   # taken when the worker replays it (--replay-user-messages); a turn the worker opens itself (a
-  # SendMessage) replays nothing. Key order varies and non-JSON lines are skipped.
+  # SendMessage) replays nothing. A turn may end with a background task still running (the last
+  # system/background_tasks_changed lists it): that is not the worker's answer, its completion turn
+  # is. Key order varies and non-JSON lines are skipped.
   T=$(mktemp -d) || die "cannot create a scratch dir"
   trap 'rm -rf "$T"' EXIT
-  off=0 inits=0 results=0 replays=0
+  off=0 inits=0 results=0 replays=0 bg=0
   scan() {
     n=$(( $(tail -c +$((off + 1)) "$O/$name.out" 2>/dev/null | wc -l) ))
     [ "$n" -gt 0 ] || return 0
     tail -c +$((off + 1)) "$O/$name.out" | head -n "$n" > "$T/chunk"
     off=$((off + $(wc -c < "$T/chunk") ))
-    read -r i r p <<COUNTS
-$(jq -R -s -r '[split("\n")[] | fromjson? | objects] | [map(select(.type == "system" and .subtype == "init")), map(select(.type == "result")), map(select(.type == "user" and .isReplay == true))] | map(length) | join(" ")' "$T/chunk")
-COUNTS
+    # one pass: "<inits> <results> <replays> <background tasks, -1 if unreported>", then the last result's text
+    jq -R -s -r '[split("\n")[] | fromjson? | objects] as $e | ($e | map(select(.type == "result"))) as $r
+      | ($e | map(select(.type == "system" and .subtype == "background_tasks_changed")) | last | if . == null then -1 else (.tasks | length) end) as $bg
+      | "\($e | map(select(.type == "system" and .subtype == "init")) | length) \($r | length) \($e | map(select(.type == "user" and .isReplay == true)) | length) \($bg)",
+        ($r | last | .result // empty)' "$T/chunk" > "$T/scan"
+    read -r i r p b < "$T/scan"
     inits=$((inits + i)) results=$((results + r)) replays=$((replays + p))
-    [ "$r" -eq 0 ] || jq -R -s -r '[split("\n")[] | fromjson? | objects | select(.type == "result")] | last | .result // ""' "$T/chunk" > "$T/last"
+    [ "$b" -lt 0 ] || bg=$b
+    [ "$r" -eq 0 ] || tail -n +2 "$T/scan" > "$T/last"
   }
-  # answered: every opened turn has closed and every brief in the inbox was taken
-  answered() { [ "$results" -ge "$inits" ] && [ "$replays" -ge $(( $(cat "$O/$name.in" 2>/dev/null | wc -l) )) ]; }
+  # answered: every opened turn has closed with no background task left running, and every brief
+  # in the inbox was taken
+  answered() { [ "$results" -ge "$inits" ] && [ "$bg" -eq 0 ] && [ "$replays" -ge $(( $(cat "$O/$name.in" 2>/dev/null | wc -l) )) ]; }
   # the report is the last result, and only for an answered inbox: never an earlier brief's answer
   report() { if answered && [ -f "$T/last" ]; then cp "$T/last" "$O/$name.report"; else rm -f "$O/$name.report"; fi; }
   # quiet must hold on two consecutive polls: a command that just ended leaves the transcript

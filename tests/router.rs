@@ -1284,6 +1284,8 @@ impl Drop for Fake {
 
 const INIT: &str = r#"{"type":"system","subtype":"init"}"#;
 const REPLAY: &str = r#"{"type":"user","isReplay":true,"message":{"role":"user","content":"brief"}}"#;
+const BG_RUNNING: &str = r#"{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"b1","task_type":"local_bash"}]}"#;
+const BG_NONE: &str = r#"{"type":"system","subtype":"background_tasks_changed","tasks":[]}"#;
 fn result(text: &str) -> String {
     format!(r#"{{"duration_ms":1,"type":"result","subtype":"success","result":"{text}"}}"#)
 }
@@ -1293,7 +1295,8 @@ fn result(text: &str) -> String {
 /// turn the worker opened itself never answers a brief it has not read (r1 B1), and briefs folded
 /// into one running turn are answered by its one result (r1 B3). A feed is open only while its pid
 /// is this worker's `tail` (r1 I4); a stopping worker takes no brief (r1 B2); and an exit that left
-/// the last brief unanswered leaves no report (r1 I6).
+/// the last brief unanswered leaves no report (r1 I6). A turn that ends with a background task
+/// running is not the worker's answer (r2 B1).
 #[test]
 fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
     let l = launcher();
@@ -1348,6 +1351,18 @@ fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
     let _ = f.worker.wait();
     w.go(1);
     assert!(w.line().starts_with("EXITED name=fk "));
+    drop(f);
+
+    // r2 B1: a turn that ends with a background task still running is no IDLE; the worker's own
+    // completion turn, opened once the task clears, carries the final report
+    let f = Fake::new(&l, "fk", 1);
+    f.emit(&[INIT, REPLAY, BG_RUNNING, &result("waiting for the background task")]);
+    let mut w = l.wait_stepped(&["wait", "fk"], "bg");
+    w.at(1);
+    f.emit(&[BG_NONE, INIT, &result("done")]);
+    w.go(1);
+    assert!(w.line().contains(" turn=2 "), "the completion turn closes the wait");
+    assert_eq!(std::fs::read_to_string(&report).unwrap(), "done\n");
     drop(f);
 
     // I6: the worker died before answering its last brief: EXITED leaves no report
