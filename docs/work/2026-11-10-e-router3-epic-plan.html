@@ -8,7 +8,7 @@
 <body>
   <header class="doc-hero">
     <div class="inner">
-      <h1>E-ROUTER3 · Router v3: two-way messaging, heartbeat, clean launcher, owner-only signing</h1>
+      <h1>E-ROUTER3 · Router v3: two-way messaging, long-running workers, watchdog, clean launcher, owner-only signing</h1>
       <p>Epic plan for the router epic that absorbs backlog <a href="../backlog/e-router-v2.html">E-ROUTER v2</a> (R1, R3–R17, R19) along the grouping proposed there.</p>
       <div class="meta">T3 · epic plan · 2026-11-10 · Keel · branch <code>epic/E-ROUTER3</code> off <code>main</code> <code>bfb3eb8</code> (renamed from <code>epic/routerv3</code>: open point 7)</div>
     </div>
@@ -22,9 +22,9 @@
 <table data-item="use-cases" data-c="use-cases-table">
   <thead><tr><th>Contract</th><th>Change</th><th>WU</th></tr></thead>
   <tbody>
-    <tr><td><a href="../use-cases/router.html">UC-ROUTE-1</a> the router coordinates, the owner acts</td><td>Amended: the router messages a live worker and gets replies. Follow-up rounds resume the worker's session. The router wakes on its own heartbeat</td><td>W1, W2</td></tr>
+    <tr><td><a href="../use-cases/router.html">UC-ROUTE-1</a> the router coordinates, the owner acts</td><td>Amended: the router messages a live worker and gets replies. Follow-up rounds resume the worker's session. Workers are long-running sessions the router closes; a watchdog worker reports each worker's progress to the router (owner ruling 2026-11-11)</td><td>W1, W2, W9</td></tr>
     <tr><td><a href="../use-cases/router.html">UC-ROUTE-5</a> two worker modes, each with a full recipe</td><td>Amended: no budget cap, the persona is checked before launch, no Telegram poller in workers, the plan-mode checker is verified</td><td>W3, W5</td></tr>
-    <tr><td><a href="../use-cases/router.html">UC-ROUTE-6</a> the router posture is enforced, fail-closed</td><td>Amended: the guard admits content-bearing SendMessage and the heartbeat. The guard, launcher, watch script and agent files become rule-bearing</td><td>W1, W2, W4</td></tr>
+    <tr><td><a href="../use-cases/router.html">UC-ROUTE-6</a> the router posture is enforced, fail-closed</td><td>Amended: the guard admits content-bearing SendMessage and the launcher's new <code>send</code>, <code>stop</code> and <code>watchdog</code> shapes. The guard, launcher, watch script and agent files become rule-bearing</td><td>W1, W2, W4, W9</td></tr>
     <tr><td><a href="../use-cases/workflow.html">UC-MR</a> human sign-off</td><td>Amended: a launcher worker cannot produce a sign-off that passes check 8 (open point 2 decides how)</td><td>W4</td></tr>
   </tbody>
 </table>
@@ -34,7 +34,7 @@
   <ul>
     <li>A router session sends a running launcher worker a message with <code>SendMessage</code>, and the guard allows it. The worker answers, and the router receives the reply. A <code>notify_when_idle</code> subscription with the harness's real payload is allowed. <code>tests/router.rs</code> holds the captured payload as a fixture.</li>
     <li>A follow-up round goes through <code>router-worker.sh resume</code> by default. The keel-router skill says so and tells an expired subscription to fall back to <code>wait</code>.</li>
-    <li>An idle router wakes on its own heartbeat with no owner input, and the guard admits exactly that mechanism.</li>
+    <li>A worker stays alive between tasks: the router hands it the next brief with <code>router-worker.sh send</code> and closes it with <code>stop</code>. A watchdog worker messages the router every 5 min with one short sentence per worker saying what it is doing. The router itself runs no loop or timer (owner ruling 2026-11-11).</li>
     <li>The launcher passes no <code>--max-budget-usd</code>. It refuses early, with a named reason, a worktree that lacks <code>.claude/agents/worker.md</code>. Two same-second launches of one name do not collide. A worker starts with no Telegram plugin.</li>
     <li>A launcher worker that rewrites its worktree's <code>.mr-allowed</code> and <code>[check] test</code> cannot produce an <code>mr/v1</code> note that check 8 accepts. A test reproduces the R14 attack and shows it refused.</li>
     <li><code>scripts/router-guard.jq</code>, <code>scripts/router-worker.sh</code>, <code>scripts/router-watch.sh</code> and <code>.claude/agents/</code> are rule-bearing, so a plain commit touching them is refused without Reviewed-By.</li>
@@ -60,9 +60,13 @@
 <div class="diagram" data-c="wu-deps-diagram">
 <pre class="mermaid">
 flowchart LR
-  W1[W1 two-way messaging] --> W2[W2 heartbeat]
+  W1[W1 two-way messaging] --> W2[W2 long-running workers]
+  W2 --> W9[W9 watchdog worker]
   W1 --> W5[W5 skill text + decisions]
   W2 --> W5
+  W9 --> W5
+  W2 --> W3
+  W9 --> W7
   W3[W3 clean launcher] --> W7[W7 router e2e]
   W4[W4 owner-only signing + gated files] --> W7
   W1 --> W7
@@ -70,7 +74,7 @@ flowchart LR
   W8[W8 scope + env limits] -. plan first .-> W3
   W8 --> W7
 </pre>
-<div class="caption">WU dependencies. W1, W4 and W8's plan start in parallel. W3's code waits for W8's plan. W1 and W2 both edit the guard, so they run in sequence.</div>
+<div class="caption">WU dependencies. W1, W4 and W8's plan start in parallel. W3's code waits for W8's plan and for W2, because both change the launcher. W2 then W9 run in sequence: W9's watchdog is a long-running worker.</div>
 </div>
 
 <div data-item="wu-summaries" data-c="wu-summaries">
@@ -84,11 +88,19 @@ flowchart LR
 </div>
 
 <div data-wu="E-ROUTER3.W2" data-c="wu-w2">
-  <h3 id="w2">E-ROUTER3.W2 · The router stays awake on its own <span class="badge id">R17</span></h3>
-  <p data-item="wu-summary">Give the router a self-paced heartbeat. Proposed mechanism (open point 6): the guard admits the <code>loop</code> skill and the <code>ScheduleWakeup</code> tool, and the keel-router skill sets the cadence (a 1200 s or longer fallback, since worker ends and watches already wake the router) and lists what a tick checks. Then run R7's optional live checks once: break the guard wiring by hand and see the e2e's denials go red. Also watch an idle router wake on a worker's idle notice. If it does, drop the heartbeat's per-worker <code>ps</code> check.</p>
-  <p data-item="wu-maps-to">Backlog R17, R7 (optional live checks) · UC-ROUTE-1, UC-ROUTE-6.</p>
-  <p data-item="wu-expected">A guard test admits <code>Skill loop</code> and <code>ScheduleWakeup</code> for the router agent type, and it still denies <code>CronCreate</code> and <code>Agent</code>. A live router with no owner input logs at least one heartbeat tick.</p>
-  <p data-item="wu-deps">W1 (same guard branch)</p>
+  <h3 id="w2">E-ROUTER3.W2 · Workers are long-running sessions <span class="badge id">R15</span> <span class="badge id">owner 2026-11-11</span></h3>
+  <p data-item="wu-summary">Owner ruling 2026-11-11: a worker is no longer a one-turn <code>claude -p</code> that exits; it stays alive between tasks, the router coordinates it by <code>SendMessage</code>, and the router closes it when it is no longer needed. Probe first how a headless session stays open and what reaches it while idle. Proposed shape: <code>spawn</code> starts a stream-json session fed from a per-worker inbox; a new <code>send</code> snapshots and hashes the next brief (DEC-32) and appends it to the inbox; <code>stop</code> closes the inbox so the session exits after its turn; <code>wait</code> reports <code>IDLE</code> at a turn's end, beside <code>EXITED</code> and <code>STALLED</code>. The guard admits <code>send</code> and <code>stop</code>. The router's heartbeat is removed from the skill (the router routes only).</p>
+  <p data-item="wu-maps-to">Owner ruling 2026-11-11 · backlog R15 (follow-ups continue the same session), R17 (the router's heartbeat, struck in favour of W9) · UC-ROUTE-1, UC-ROUTE-5, UC-ROUTE-6 · DEC-32 and DEC-36 amended by a new DEC (the next free id when it lands; W4's planned DEC-43 keeps whichever it gets).</p>
+  <p data-item="wu-expected">Launcher tests with a stub <code>claude</code>: a spawned worker stays alive after its first report; <code>send</code> delivers a second hashed brief to the same session; <code>stop</code> ends it; <code>wait</code> prints <code>IDLE</code> after each report. A live run shows one real worker doing two briefs in one session and the router steering it while idle.</p>
+  <p data-item="wu-deps">W1 (SendMessage steering)</p>
+</div>
+
+<div data-wu="E-ROUTER3.W9" data-c="wu-w9">
+  <h3 id="w9">E-ROUTER3.W9 · A watchdog worker reports every worker's progress <span class="badge id">R17</span> <span class="badge id">owner 2026-11-11</span></h3>
+  <p data-item="wu-summary">A special long-running worker, agent type <code>watchdog</code>, started and stopped by the router through <code>router-worker.sh watchdog start|stop</code>. Every 5 min the launcher's ticker hands it a fact sheet per live worker (state, idle minutes, branch tip, the last few transcript lines), and it sends the router one <code>SendMessage</code> with one short sentence per worker. It runs on Haiku (a <code>watchdog_model</code> entry in <code>[router]</code>, an owner <code>keel mr commit</code>), has no tool but <code>SendMessage</code>, and keeps a small context: the ticker compacts it, or restarts it fresh, after a set number of ticks (W9's plan picks which, from W2's probe).</p>
+  <p data-item="wu-maps-to">Owner ruling 2026-11-11 · backlog R17 · UC-ROUTE-1, UC-ROUTE-5, UC-ROUTE-6.</p>
+  <p data-item="wu-expected">Tests with a stub <code>claude</code>: the ticker sends a tick every period with one fact block per live worker; the watchdog agent file grants only <code>SendMessage</code>; the guard admits the two <code>watchdog</code> shapes. A live run logs at least two watchdog reports reaching an idle router, one sentence per worker.</p>
+  <p data-item="wu-deps">W2 (the watchdog is a long-running worker)</p>
 </div>
 
 <div data-wu="E-ROUTER3.W3" data-c="wu-w3">
@@ -142,7 +154,7 @@ flowchart LR
   <p data-item="wu-summary">Extend <code>epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end</code>, or add a sibling test, so one hermetic run with a stub <code>claude</code> drives this flow: spawn, a guarded subscription, a content message, resume, wait, and the forged sign-off refused. R5's skill-loading session flow needs a real model, so it cannot be hermetic. It runs once as a manual try-recipe recorded in the result, and that slice is waived on the e2e layer (see e2e plan). The id W7 is kept from the backlog grouping. W6 is dropped (open point 4).</p>
   <p data-item="wu-maps-to">Backlog R5 · UC-ROUTE-1, UC-ROUTE-5, UC-ROUTE-6 · testing charter "Epic → e2e".</p>
   <p data-item="wu-expected"><code>cargo test --test router</code> is green and deterministic across 3 runs, and nothing is written outside the temp dir. A <code>GIT_DIR</code> probe at the start of the test shows no leak (R19).</p>
-  <p data-item="wu-deps">W1, W3, W4, W5, W8</p>
+  <p data-item="wu-deps">W1, W2, W3, W4, W5, W8, W9</p>
 </div>
 
 <div data-wu="E-ROUTER3.W8" data-c="wu-w8">
@@ -171,7 +183,7 @@ flowchart LR
 <table data-item="distillation-plan" data-c="distillation-table">
   <thead><tr><th>Target (tier)</th><th>Absorbs</th></tr></thead>
   <tbody>
-    <tr><td><a href="../decisions/router.html">decisions/router.html</a> (T2)</td><td>New DEC-42 (the router may message workers; tasks still travel as briefs) and DEC-43 (owner-only signing, R4 re-recorded). DEC-31, DEC-32, DEC-33 and DEC-36 marked amended</td></tr>
+    <tr><td><a href="../decisions/router.html">decisions/router.html</a> (T2)</td><td>New DEC-42 (the router may message workers; tasks still travel as briefs) and DEC-43 (owner-only signing, R4 re-recorded), plus W2's decision on long-running workers (ids taken in landing order). DEC-31, DEC-32, DEC-33 and DEC-36 marked amended</td></tr>
     <tr><td><a href="../use-cases/router.html">use-cases/router.html</a> (T2)</td><td>UC-ROUTE-1, 5 and 6 amended as in the use-case table</td></tr>
     <tr><td><a href="../use-cases/workflow.html">use-cases/workflow.html</a> (T2)</td><td>UC-MR: where check 8's roster comes from, and the key-only default</td></tr>
     <tr><td><a href="../backlog/e-router-v2.html">backlog/e-router-v2.html</a>, <a href="../backlog/backlog-index.html">backlog-index.html</a> (T2)</td><td>Rows struck or re-pointed. Leftover test nits and watch kinds stay as rows. Order table moves to E-SEED3 and the other proposed epics</td></tr>
@@ -189,7 +201,7 @@ flowchart LR
     <tr data-c="op-3"><td>3</td><td>Ship the enforcement with <code>keel init</code> (R6 row 1)</td><td>No. It stays per project, as the skill says today. W3 does not touch <code>src/init.rs</code>.</td></tr>
     <tr data-c="op-4"><td>4</td><td>Proposed W6 (gh watch kinds, test nits)</td><td>Dropped. The gh kinds stay worker-run. Test nits are fixed in whichever WU touches that code (W1, W3 and W7 touch <code>tests/router.rs</code>). The <code>router-watch.sh</code> coverage rows stay in the backlog.</td></tr>
     <tr data-c="op-5"><td>5</td><td>R4: worker-scoped allowlist now?</td><td>No. Re-record it as accepted (DEC-43): workers read no untrusted input yet, and an allowlist does not stop a same-user shell. The upgrade path is OS-level isolation.</td></tr>
-    <tr data-c="op-6"><td>6</td><td>Heartbeat mechanism (R17)</td><td>The guard admits <code>Skill loop</code> and <code>ScheduleWakeup</code>, a native timer that carries no content. The alternative is a <code>tick</code> kind in <code>router-watch.sh</code>.</td></tr>
+    <tr data-c="op-6"><td>6</td><td>Heartbeat mechanism (R17)</td><td><b>Ruled 2026-11-11:</b> the router runs no loop or timer; it only routes. Worker progress comes from a watchdog worker (W9) that messages the router every 5 min, on Haiku, started and stopped by the router through the launcher. Workers become long-running sessions the router closes (W2). The <code>Skill loop</code> / <code>ScheduleWakeup</code> proposal is withdrawn.</td></tr>
     <tr data-c="op-7"><td>7</td><td>Branch name <code>epic/routerv3</code> vs the ids' <code>epic/E-ROUTER3</code></td><td>Rename it to <code>epic/E-ROUTER3</code> before the first commit (it is local and unpushed with no commits), so WU branches read <code>wu/E-ROUTER3/&lt;slug&gt;</code> like the earlier epics.</td></tr>
   </tbody>
 </table>
