@@ -3426,6 +3426,16 @@ fn worktree_remove_takes_only_a_clean_merged_worktree_with_no_session_in_it() {
         );
     }
 
+    // an ignored archive of distilled docs blocks: git worktree remove would delete it
+    let exclude = l.main.join(".git/info/exclude");
+    let mut ex = std::fs::read_to_string(&exclude).unwrap_or_default();
+    ex.push_str("\ndocs/.archive/\n");
+    std::fs::write(&exclude, ex).unwrap();
+    std::fs::create_dir_all(p.join("docs/.archive")).unwrap();
+    std::fs::write(p.join("docs/.archive/plan.html"), "x").unwrap();
+    refused("holds archived docs in docs/.archive: copy them out first");
+    std::fs::remove_dir_all(p.join("docs/.archive")).unwrap();
+
     // an ignored build dir does not block
     std::fs::create_dir_all(p.join("target/debug")).unwrap();
     std::fs::write(p.join("target/debug/x"), "x").unwrap();

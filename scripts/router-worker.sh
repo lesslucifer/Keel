@@ -305,6 +305,7 @@ if [ "$mode" = worktree ]; then
   st=$(git --no-optional-locks -C "$wt" status --porcelain) || die "cannot read the status of $wt"
   [ -z "$st" ] || die "worktree $wt has uncommitted changes: the owner decides"
   git -C "$ROOT" merge-base --is-ancestor "refs/heads/$b" "refs/heads/$base" 2>/dev/null || die "branch $b is not merged into $base: the owner decides"
+  [ -z "$(ls -A "$wt/docs/.archive" 2>/dev/null)" ] || die "worktree $wt holds archived docs in docs/.archive: copy them out first (git worktree remove deletes ignored files)"
   git -C "$ROOT" worktree remove "$wt" >&2 || die "git worktree remove failed"
   echo "REMOVED path=$wt branch=$b"; exit 0
 fi
