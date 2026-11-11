@@ -118,7 +118,8 @@ flowchart LR
 </div>
 
 <div data-wu="E-ROUTER3.W3" data-c="wu-w3">
-  <h3 id="w3">E-ROUTER3.W3 · The launcher runs any worker cleanly <span class="badge id">R16</span> <span class="badge id">R1</span> <span class="badge id">R6</span> <span class="badge id">R7</span></h3>
+  <h3 id="w3">E-ROUTER3.W3 · The launcher runs any worker cleanly <span class="badge id">R16</span> <span class="badge id">R1</span> <span class="badge id">R6</span> <span class="badge id">R7</span> <span class="badge approval">absorbed by W8</span></h3>
+  <p class="callout" data-c="w3-absorbed"><b>Absorbed by W8 (owner ruling 2026-11-11, W8 plan point 18).</b> R16 was done by W10; W8 delivers the other four: the persona refusal, the per-name <code>mkdir</code> lock, the brief copy removed at <code>stop</code>, and no Telegram poller (workers load no user setting source and no MCP server, probe P1). W3 has no branch of its own.</p>
   <p data-item="wu-summary"><code>scripts/router-worker.sh</code> changes:</p>
   <ul>
     <li>Drop <code>--max-budget-usd 25</code> (R16).</li>
@@ -173,6 +174,7 @@ flowchart LR
 
 <div data-wu="E-ROUTER3.W8" data-c="wu-w8">
   <h3 id="w8">E-ROUTER3.W8 · Router and worker scope; worktree and environment limits <span class="badge approval">decided in its WU plan</span></h3>
+  <p class="callout" data-c="w8-decided"><b>Decided 2026-11-11</b> in the <a href="2026-11-11-w8-scope-limits-wu-plan.html">W8 WU plan</a> and DEC-46: no worker pushes; the router creates and removes worktrees (<code>worktree add|remove</code>), one per epic and per WU branch; the review runs in a fresh <code>--review</code> worker; workers start on <code>--setting-sources project,local --strict-mcp-config</code> in Claude Code's Bash sandbox with a fixed deny list and no inherited <code>GIT_*</code>; <code>resume</code> is deleted; W3's remaining items are absorbed.</p>
   <p data-item="wu-summary">This WU settles, in its own WU plan, what the router does, what a worker does, and the limits each worker's worktree and environment run under. Each limit gets the checks and the setup that enforce it. Nothing is decided in this epic plan. The WU plan resolves the agenda below first (owner ruling 2026-11-10), and the code comes after.</p>
   <ul>
     <li><b>Role contradictions.</b> UC-ROUTE-2 has a worker push the epic branch, but briefs forbid pushing. The first WU worktree cannot be started, because the launcher spawns only into an existing worktree. The author runs keel-code-review on its own diff, against AGENTS.md. Nobody owns removing a worktree after its merge.</li>
