@@ -26,8 +26,8 @@ otherwise (briefs, 2026-11-08, below).
 - **Tools**: read (`Read`, `Grep`, `Glob`), `Write` for worker briefs only, the
   project's worker launcher, and a Bash **whitelist** only: `git status|log|diff|show …`,
   `git branch -v|-vv|-a|-av|-va|-a -v|--all|--all -v`, `gh pr view|list|status …`,
-  `ps aux` / `ps -ef`, and the launcher's `spawn` / `stop` / `resume` and
-  `watchdog start|stop` shapes. One command
+  `ps aux` / `ps -ef`, and the launcher's `spawn` / `stop`, `worktree add|remove`
+  and `watchdog start|stop` shapes. One command
   per call, plain words only: no pipes, redirects, quotes, `$`, globs, braces,
   backslashes, parentheses, newlines or `--output`. No general Bash, no direct
   `claude`, no `kill`, no Edit — you `Write` worker briefs (`.router/briefs/*.md`)
@@ -38,8 +38,8 @@ otherwise (briefs, 2026-11-08, below).
   takes away (lessons K10). An enforced router dispatches every worker, checker
   and watcher as a background session, through the launcher.
 - Everything else — `keel verify-dod`, `keel check`, `git notes …`, `gh run …`,
-  `curl` against an htmldoc server, `lsof`, watch loops, `git worktree add` —
-  is **delegated to a worker** that reports the raw output.
+  `curl` against an htmldoc server, `lsof`, watch loops, a `git worktree` the
+  launcher does not make — is **delegated to a worker** that reports the raw output.
 - **Enforcement is the project's.** `keel init` ships this skill but no
   enforcement and no launcher; a project that wants the posture enforced commits
   them, and its project-router skill names the files. The shape that holds: the
@@ -106,11 +106,16 @@ again … I can't remember things from the past, you sent me a ton of messages."
 
 ## Epic branch first (UC-ROUTE-2)
 
-When a new epic starts, the **first** action — before any plan doc or WU — is a
-worker creating `<epic_prefix><id>` from the current main tip and pushing it
-(prefixes: `.keel/config.toml` `[branches]` `epic_prefix` / `wu_prefix`, Keel's
-defaults `epic/`, `wu/`). All plan and WU work lands there; each WU branches as
-`<wu_prefix><id>/<slug>` off it (own worktree when parallel) and merges back
+When a new epic starts, the **first** action — before any plan doc or WU — is
+creating `<epic_prefix><id>` from the current main tip in a worktree of its own
+(`<launcher> worktree add <epic_prefix><id>` where the launcher has it, else a
+worker; prefixes: `.keel/config.toml` `[branches]` `epic_prefix` / `wu_prefix`,
+Keel's defaults `epic/`, `wu/`). **No worker pushes**: stage
+`git push -u origin <epic_prefix><id>` for the owner and arm the `pushed` watch;
+plan work starts once the branch exists locally. All plan and WU work lands
+there; each WU branches as `<wu_prefix><id>/<slug>` off it, always in a worktree
+of its own whose branch never changes (`<launcher> worktree add
+<wu_prefix><id>/<slug>`), and merges back
 with `--no-ff`; main receives only the closed epic (or an explicit owner
 decision to land incrementally), never WU by WU. Nothing from an unclosed epic
 — plan, T3 doc, router config — goes to main.
@@ -222,14 +227,20 @@ you used and why when it is not the standard.
 | spawn | `Agent` (`name`, explicit `model`) | `<launcher> spawn …` (project-router names it) |
 | reach | `SendMessage` to its name (resumes it after it finished) | `SendMessage` to its name, busy or idle: a steer or the next task |
 | report | its `SubagentHandback`, delivered to you | its `SendMessage` to you, delivered as a new turn |
-| survives | this router session only | router session ending or compacting (a supervisor runs it); NOT a machine reboot: `<launcher> resume` wakes it from its transcript |
+| survives | this router session only | router session ending or compacting (a supervisor runs it); NOT a stop or a machine reboot: a stopped worker is never revived, spawn a fresh one with a new brief |
 
 - **One live session per WU.** A worker stays alive between tasks (owner
   ruling 2026-11-11). A follow-up round of its own work (fix round, notes step,
-  close) goes to its live session as a `SendMessage`; `<launcher> resume`
-  only wakes a session that is no longer listed. Start a fresh worker only when
-  the earlier context must not carry over (an independent check, a review, a
-  new WU) or is gone. Find a way yourself before handing the owner
+  close) goes to its live session as a `SendMessage`. Start a fresh worker only
+  when the earlier context must not carry over (an independent check, a review,
+  a new WU) or is gone; the launcher has no resume (a plain `claude --bg
+  --resume` drops every launch flag: persona, sandbox, settings).
+- **The author never reviews its own diff.** Each review round runs in a fresh
+  review worker (`<launcher> spawn … --review`) in the author's worktree while
+  the author is idle: it runs the keel-code-review skill and writes the `cr`
+  note, which no other worker may; it gets no edit tool. Stop it after its
+  verdict; a FAIL goes to the live author as a message, and the next round gets
+  a fresh reviewer. Find a way yourself before handing the owner
   mechanics.
 - **Brief to start, message to continue (DEC-44).** A worker's first task is a
   brief, snapshotted and hashed by `<launcher> spawn`. Everything after it
@@ -249,7 +260,9 @@ you used and why when it is not the standard.
 - Report by `SendMessage` to the router's current name: what, doc, full sha,
   ordered cd-prefixed commands, gate state, no-independent-review list, how to try.
 - Retire with `<launcher> stop <name>` only when idle AND clean (its WU merged,
-  or no longer needed); the launcher refuses a busy worker. Never stop uncommitted work; hand it to a
+  or no longer needed); the launcher refuses a busy worker. Once the `merged`
+  watch fired and the worker is stopped, `<launcher> worktree remove <branch>`
+  (it takes only a clean, merged worktree with no session in it; the branch stays). Never stop uncommitted work; hand it to a
   fresh worker told to keep and check it. Tell workers not to
   talk to the owner directly. To ask a peer, use a one-shot idle notification;
   never poll.

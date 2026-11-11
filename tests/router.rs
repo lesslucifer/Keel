@@ -144,6 +144,7 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         let a = a.as_str().unwrap().strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
         let cmd = match a.strip_suffix(" *") {
             Some(p) if p.ends_with(" stop") || p.ends_with(" watchdog start") => format!("{p} n"),
+            Some(p) if p.ends_with(" worktree add") || p.ends_with(" worktree remove") => format!("{p} wu/E-X/w1-a"),
             Some(p) if p.ends_with("router-watch.sh") => format!("{p} signed 1a2b3c4"),
             Some(p) if p.starts_with("scripts/") => format!("{p} n /w .router/briefs/n.md opus"),
             Some(p) => format!("{p} HEAD"),
@@ -1201,8 +1202,8 @@ fn router_guard_leaves_a_background_workers_calls_alone() {
     assert_eq!(guard_event(serde_json::from_str(CAPTURED_BG_WORKER_BASH).unwrap()), None);
 }
 
-/// E-ROUTER3.W10: the settings allow exactly the launcher shapes the guard admits, spawn, resume and
-/// stop; `wait` and `send` are gone from both.
+/// E-ROUTER3.W10: the settings allow exactly the launcher shapes the guard admits; `wait` and `send`
+/// are gone from both. E-ROUTER3.W8: `resume` is gone too, and `worktree add|remove` are in.
 #[test]
 fn settings_allow_exactly_the_launcher_shapes_the_guard_admits() {
     let modes: Vec<String> = settings()["permissions"]["allow"]
@@ -1211,9 +1212,9 @@ fn settings_allow_exactly_the_launcher_shapes_the_guard_admits() {
         .iter()
         .filter_map(|a| a.as_str().unwrap().strip_prefix("Bash(scripts/router-worker.sh ").map(|m| m.trim_end_matches(" *)").to_string()))
         .collect();
-    assert_eq!(modes, ["resume", "spawn", "stop", "watchdog start", "watchdog stop"]);
-    for m in &modes[3..] {
-        assert_eq!(bash(&format!("scripts/router-worker.sh {m} r1")), None, "the guard refuses the allowed {m}");
+    assert_eq!(modes, ["spawn", "stop", "watchdog start", "watchdog stop", "worktree add", "worktree remove"]);
+    for (m, arg) in [("watchdog start", "r1"), ("watchdog stop", "r1"), ("worktree add", "epic/E-X"), ("worktree remove", "wu/E-X/w1-a")] {
+        assert_eq!(bash(&format!("scripts/router-worker.sh {m} {arg}")), None, "the guard refuses the allowed {m}");
     }
 }
 
