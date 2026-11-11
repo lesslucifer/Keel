@@ -1,0 +1,1 @@
+{"schema":"cr/v1","tip":"e01f20b1885af7ed56407917c2bf295ee3882687","base":"dda9ce0541bae9788c173397377003efa4617fa5","branch":"wu/E-ROUTER3/w2-long-running-workers","committer":"vuluu <quangvu.luu92@gmail.com>","timestamp":1794373452,"verdict":"FAIL","blockers":1,"importants":3,"code_diff_hash":"12c50da67a00e2a6fb491f3d9ba6336683f99939"}
