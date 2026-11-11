@@ -143,7 +143,7 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
     for a in settings()["permissions"]["allow"].as_array().unwrap() {
         let a = a.as_str().unwrap().strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
         let cmd = match a.strip_suffix(" *") {
-            Some(p) if p.ends_with(" stop") => format!("{p} n"),
+            Some(p) if p.ends_with(" stop") || p.ends_with(" watchdog start") => format!("{p} n"),
             Some(p) if p.ends_with("router-watch.sh") => format!("{p} signed 1a2b3c4"),
             Some(p) if p.starts_with("scripts/") => format!("{p} n /w .router/briefs/n.md opus"),
             Some(p) => format!("{p} HEAD"),
