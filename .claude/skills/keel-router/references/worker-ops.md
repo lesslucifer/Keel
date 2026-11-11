@@ -98,7 +98,11 @@ pitfall 2).
   turn=<n> report=…` (every sent brief taken and every turn closed; a brief sent
   mid-turn is folded into that turn and answered by its one result),
   `STALLED …` (quiet mid-turn) or `EXITED …`. An idle worker is never reported
-  stalled, and a stopped one is never reported idle.
+  stalled, and a stopped one is never reported idle. A turn that leaves a
+  background task running is not idle: its completion turn is. `IDLE … error=<subtype>`
+  means the worker's last turn failed (the report holds the error). `STALLED …
+  background=<n>` means every brief is answered but a background task never
+  ended: ping the worker, and stop it only once it is clean.
 - **Report**: on `IDLE` or `EXITED`, `Read` `.router/out/<name>.report`, the
   worker's last result. No `.report` after `EXITED` means the last brief got no
   answer: resume the worker with it. `.router/out/<name>.out` is the raw stream-json output;
