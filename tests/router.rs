@@ -1,6 +1,6 @@
 //! The router's enforcement surface (E-ROUTER close review): the PreToolUse guard
-//! `scripts/router-guard.jq` as `.claude/settings.json` wires it, the headless launcher
-//! `scripts/router-worker.sh` (with a stub `claude`) including its `wait` mode, and the shipped PUSHED watch probe.
+//! `scripts/router-guard.jq` as `.claude/settings.json` wires it, the background-session launcher
+//! `scripts/router-worker.sh` (with a stub `claude`), the owner-action watch, and the shipped PUSHED watch probe.
 //! Needs `jq`, `sh`, `uuidgen` and `shasum` on PATH, as the guard and launcher do.
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -349,14 +349,16 @@ struct Launcher {
 /// once. `--bg` lists a new idle background session in $STUB_STATE/sessions.json (named by `-n`, or on
 /// `--resume` by the session's own saved name) and prints the `backgrounded` line; while
 /// $STUB_STATE/refuse exists it prints that file and exits 1, and while $STUB_STATE/unlisted exists it
-/// starts nothing it lists. `agents --json` prints the list (and, while $STUB_STATE/settle exists, then
-/// marks every session idle: a turn that ends between two looks), `stop <id>` delists the id, `rm` only records.
+/// starts nothing it lists. `agents --json` prints the list (while $STUB_STATE/agents-fail exists it fails
+/// instead, printing to stderr only; while $STUB_STATE/vanish exists it then empties the list, a session
+/// that ends between two looks; while $STUB_STATE/settle exists it then marks every session idle, a turn
+/// that ends between two looks), `stop <id>` delists the id, `rm` only records.
 fn stub_claude(stub: &Path) {
     std::fs::write(stub, concat!(
         "#!/bin/sh\nS=$STUB_STATE\nprintf '%s ' \"$PWD\" >> \"$S/calls\"; printf '[%s]' \"$@\" >> \"$S/calls\"; echo >> \"$S/calls\"\n",
         "[ -s \"$S/sessions.json\" ] || echo '[]' > \"$S/sessions.json\"\n",
         "case \"$1\" in\n",
-        "  agents) cat \"$S/sessions.json\"; [ ! -e \"$S/settle\" ] || { jq 'map(.status = \"idle\")' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }; exit 0;;\n",
+        "  agents) [ ! -e \"$S/agents-fail\" ] || { echo 'Error: no supervisor' >&2; exit 1; }\n    cat \"$S/sessions.json\"; [ ! -e \"$S/vanish\" ] || echo '[]' > \"$S/sessions.json\"; [ ! -e \"$S/settle\" ] || { jq 'map(.status = \"idle\")' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }; exit 0;;\n",
         "  stop) jq --arg i \"$2\" 'map(select(.id != $i))' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; echo \"stopped $2\"; exit 0;;\n",
         "  rm) echo \"removed $2\"; exit 0;;\n",
         "esac\n",
@@ -891,14 +893,14 @@ fn until(what: &str, mut cond: impl FnMut() -> bool) {
     }
 }
 
-/// Whether `pid` has a `<shell> -c` child, i.e. the stub is busy.
+/// A watch run by a test, its polls stepped through the `sleep` shim.
 struct Stepped {
     child: std::process::Child,
     dir: PathBuf,
 }
 
 impl Stepped {
-    /// Block until `wait` has judged poll n and is sleeping; panics with its line if it returned instead.
+    /// Block until the watch has judged poll n and is sleeping; panics with its line if it returned instead.
     fn at(&mut self, n: u32) {
         let polls = || std::fs::read_to_string(self.dir.join("polls")).ok().and_then(|s| s.trim().parse::<u32>().ok());
         let t = Instant::now();
@@ -906,9 +908,9 @@ impl Stepped {
             if self.child.try_wait().unwrap().is_some() {
                 let mut out = String::new();
                 std::io::Read::read_to_string(self.child.stdout.as_mut().unwrap(), &mut out).unwrap();
-                panic!("wait returned before poll {n}: {out}");
+                panic!("watch returned before poll {n}: {out}");
             }
-            assert!(t.elapsed() < BOUND, "wait never reached poll {n}");
+            assert!(t.elapsed() < BOUND, "watch never reached poll {n}");
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -918,7 +920,7 @@ impl Stepped {
         std::fs::write(self.dir.join(format!("go-{n}")), "").unwrap();
     }
 
-    /// The one line `wait` prints once released from its last poll.
+    /// The one line the watch prints once released from its last poll.
     fn line(self) -> String {
         let o = self.output();
         assert!(o.status.success(), "{o:?}");
@@ -929,7 +931,7 @@ impl Stepped {
     fn output(mut self) -> Output {
         let t = Instant::now();
         while self.child.try_wait().unwrap().is_none() {
-            assert!(t.elapsed() < BOUND, "wait never returned");
+            assert!(t.elapsed() < BOUND, "watch never returned");
             std::thread::sleep(Duration::from_millis(10));
         }
         let read = |p: Option<&mut dyn std::io::Read>| {
@@ -945,7 +947,7 @@ impl Stepped {
     }
 }
 
-/// However a test ends, its watch (or `wait`) and the `sleep` shim under it end with it.
+/// However a test ends, its watch and the `sleep` shim under it end with it.
 impl Drop for Stepped {
     fn drop(&mut self) {
         let _ = self.child.kill();
@@ -981,6 +983,17 @@ fn a_start_the_cli_refuses_is_reported_dead_with_its_reason() {
     let (ok, out) = l.run(&["spawn", "n", wt, ".router/briefs/b.md", "opus"]);
     assert!(!ok && out.starts_with("DEAD name=n exit=1 snapshot=") && out.contains(why), "{out}");
     std::fs::remove_file(l.state.join("refuse")).unwrap();
+
+    // E-ROUTER3.W10 review r1 B1: a session list the CLI fails to give is no list, never "no sessions":
+    // spawn must not take the name as free, nor stop report the worker gone
+    std::fs::write(l.state.join("agents-fail"), "").unwrap();
+    let started = l.starts("n");
+    for args in [vec!["spawn", "n", wt, ".router/briefs/b.md", "opus"], vec!["stop", "n"]] {
+        let (ok, out) = l.run(&args);
+        assert!(!ok && out.contains("cannot list sessions (claude agents --json)"), "{args:?}: {out}");
+    }
+    assert_eq!(l.starts("n"), started, "a failed listing started a worker");
+    std::fs::remove_file(l.state.join("agents-fail")).unwrap();
 
     // listed never: the launcher's polls run through an instant `sleep`
     std::fs::write(l.state.join("unlisted"), "").unwrap();
@@ -1030,6 +1043,15 @@ fn stop_stops_then_removes_this_repositorys_idle_worker_by_id() {
     let tail: Vec<Vec<String>> = calls(&l.state).into_iter().map(|(_, c)| c).filter(|c| c[0] != "agents").collect();
     assert_eq!(tail[tail.len() - 2..], [vec!["stop".to_string(), a.clone()], vec!["rm".to_string(), a]]);
     assert!(l.sessions().iter().all(|r| r["name"] != "a") && l.sessions().iter().any(|r| r["name"] == "b"));
+
+    // review r1 I1: a busy worker whose session ends while stop waits is gone, said at once, not after 30s
+    std::fs::write(l.state.join("vanish"), "").unwrap();
+    let n0 = calls(&l.state).len();
+    let (ok, out) = l.run_env(&["stop", "b"], &[("PATH", &path)]);
+    assert!(!ok && out.contains("worker b left the session list while busy; nothing to stop"), "{out}");
+    assert_eq!(calls(&l.state).len() - n0, 2, "stop kept polling a gone session");
+    std::fs::remove_file(l.state.join("vanish")).unwrap();
+    l.set_sessions(&rows);
 
     // live run 2026-11-11: a worker's report arrives while its turn is still ending, so the router's
     // stop right after it finds the worker busy; stop waits (bounded) for the turn to end

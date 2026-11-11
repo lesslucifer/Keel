@@ -9,8 +9,8 @@
 # worker`, run in its worktree, listed by `claude agents --json` while it lives. It reports to the
 # router by SendMessage and stays alive idle; a follow-up task is the router's own SendMessage, so
 # the launcher has no mode for it. stop closes an idle worker (`claude stop`, then `claude rm`, which
-# keeps its transcript and its worktree); a worker still busy after 30s is refused, because `claude
-# stop` cuts its turn.
+# keeps its transcript and its worktree); a worker still busy after about 30s is refused, because
+# `claude stop` cuts its turn.
 # The two spawn options come in either order, once each. The model and effort must satisfy the worker
 # policy, [router] in .keel/config.toml at this checkout's HEAD (DEC-39); no policy, no spawn. The mode
 # defaults to acceptEdits and the effort to the policy's default. Every worker gets the fixed cargo/keel
@@ -33,8 +33,9 @@ B="$ROOT/.router/briefs"
 C=${ROUTER_CLAUDE:-$HOME/.local/bin/claude}
 # the one worker-name rule: spawn, resume and stop all check it here, and the guard does not repeat it
 valid_name() { expr "$1" : '^[a-z0-9][a-z0-9-]\{0,40\}$' >/dev/null || die "bad name"; }
-# the live sessions named $name, one JSON row per line
-rows() { "$C" agents --json | jq -c --arg n "$name" '.[] | select(.name == $n)'; }
+# the live sessions named $name, one JSON row per line; fails when the CLI gives no list (never "none")
+rows() { list=$("$C" agents --json) || return 1; printf '%s\n' "$list" | jq -c --arg n "$name" '.[] | select(.name == $n)'; }
+nolist() { die "cannot list sessions (claude agents --json)"; }
 brief_file() {
   f=$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)/$(basename "$1")
   case "$f" in "$B"/*.md) [ -f "$f" ] && [ ! -L "$f" ] || die "no such regular file (symlinks refused)";; *) die "file must be a .md under $B";; esac
@@ -66,21 +67,24 @@ if [ "$mode" = stop ]; then
   [ $# -eq 1 ] || die "stop <name>"
   name=$1
   valid_name "$name"
-  r=$(rows) || die "cannot list sessions (claude agents --json)"
+  r=$(rows) || nolist
   [ -n "$r" ] || die "worker $name is not running"
   [ "$(printf '%s\n' "$r" | wc -l)" -eq 1 ] || die "more than one session is named $name"
-  get() { printf '%s\n' "$r" | jq -r ".$1 // \"\""; }
-  id=$(get id) sid=$(get sessionId) cwd=$(get cwd) status=$(get status)
-  [ "$(get kind)" = background ] || die "$name is not a background session"
+  IFS='	' read -r id sid cwd status kind <<EOF
+$(printf '%s\n' "$r" | jq -r '[.id, .sessionId, .cwd, .status, .kind] | map(. // "") | @tsv')
+EOF
+  [ "$kind" = background ] || die "$name is not a background session"
   git -C "$ROOT" worktree list --porcelain | grep -Fxq "worktree $cwd" || die "$name runs outside this repository's worktrees ($cwd)"
   # a worker reports by SendMessage before its turn has ended, so a stop right after its report may
-  # find it busy: give the turn up to 30s (poll 0.5s) to end, then refuse
+  # find it busy: give the turn 60 more looks, 0.5s apart, to end, then refuse
   n=0
   while [ "$status" != idle ] && [ $n -lt 60 ]; do
     sleep 0.5; n=$((n+1))
-    status=$(rows | jq -r --arg i "$id" 'select(.id == $i) | .status // ""')
+    r=$(rows) || nolist
+    status=$(printf '%s\n' "$r" | jq -r --arg i "$id" 'select(.id == $i) | .status // ""')
+    [ -n "$status" ] || die "worker $name left the session list while busy; nothing to stop"
   done
-  [ "$status" = idle ] || die "worker $name is still ${status:-gone}: stopping it would cut its turn; the owner decides (claude stop $id)"
+  [ "$status" = idle ] || die "worker $name is still $status: stopping it would cut its turn; the owner decides (claude stop $id)"
   "$C" stop "$id" > /dev/null || die "claude stop $id failed"
   "$C" rm "$id" > /dev/null || die "claude rm $id failed"
   echo "STOPPED name=$name id=$id session=$sid"; exit 0
@@ -148,7 +152,7 @@ main=$(git -C "$ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')
 main=$(cd "$main" 2>/dev/null && pwd -P) || die "cannot resolve main checkout"
 [ "$wt" != "$main" ] || die "worker may not run in the repository's main checkout ($wt)"
 brief_file "$file"
-r=$(rows) || die "cannot list sessions (claude agents --json)"
+r=$(rows) || nolist
 [ -z "$r" ] || die "worker $name is still running; message it, or stop it first"
 if [ "$mode" = resume ]; then
   ok=
@@ -176,14 +180,17 @@ fi
 cd "$wt"
 rc=0; started=$("$C" "$@" 2>&1) || rc=$?
 if [ "$rc" -eq 0 ]; then
-  # listed within 10s (poll 0.2s), or the start failed
-  n=0; until r=$(rows) && [ -n "$r" ] || [ $n -ge 50 ]; do sleep 0.2; n=$((n+1)); done
+  # listed within 50 looks, 0.2s apart, or the start failed
+  n=0
+  while r=$(rows) || { sid=; seal; nolist; }; [ -z "$r" ] && [ $n -lt 50 ]; do sleep 0.2; n=$((n+1)); done
 fi
 if [ "$rc" -ne 0 ] || [ -z "$r" ]; then
   sid=; seal
   echo "DEAD name=$name exit=$rc snapshot=$snap brief=$f sha256=$sha"; printf '%s\n' "$started"; exit 1
 fi
-id=$(printf '%s\n' "$r" | jq -r '.id') sid=$(printf '%s\n' "$r" | jq -r '.sessionId')
+IFS='	' read -r id sid <<EOF
+$(printf '%s\n' "$r" | jq -r '[.id, .sessionId] | @tsv')
+EOF
 seal
 opts=; [ -z "$pm" ] || opts="permission-mode=$pm effort=$effort "
 echo "RUNNING name=$name id=$id session=$sid ${opts}snapshot=$snap brief=$f sha256=$sha worktree=$wt"
