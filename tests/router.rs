@@ -1436,6 +1436,41 @@ fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
     assert!(!report.exists(), "a stale report answers the unanswered brief");
 }
 
+/// E-ROUTER3.W2 review r6: the router's background `wait` is killed (SIGTERM) at its timeout and
+/// re-armed, so a signalled wait must leave neither its scratch dir nor a half-written scan state,
+/// or every timeout leaks one. Run under dash, which (unlike bash) runs no EXIT trap on a signal
+/// by itself, so only the launcher's own signal trap can pass this.
+#[test]
+fn a_signalled_wait_leaves_no_scratch_files() {
+    let l = launcher();
+    let f = Fake::new(&l, "fk", 1);
+    f.emit(&[INIT]);
+    let tmp = l.main.parent().unwrap().join("tmp");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let shell = if Path::new("/bin/dash").exists() { "/bin/dash" } else { "/bin/sh" };
+    let mut w = common::cmd(shell)
+        .args(["scripts/router-worker.sh", "wait", "fk"])
+        .current_dir(&l.main)
+        .env("TMPDIR", &tmp)
+        .env("CLAUDE_CONFIG_DIR", l.main.parent().unwrap().join("config"))
+        .env("ROUTER_WAIT_POLL", "0.2")
+        .spawn()
+        .unwrap();
+    let out = l.main.join(".router/out");
+    until("the wait's first scan", || std::fs::read_dir(&tmp).unwrap().next().is_some() && out.join("fk.scan").exists());
+    assert!(Command::new("kill").args(["-TERM", &w.id().to_string()]).status().unwrap().success());
+    let t = Instant::now();
+    while w.try_wait().unwrap().is_none() {
+        assert!(t.elapsed() < BOUND, "the signalled wait never exited");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let left: Vec<_> = std::fs::read_dir(&tmp).unwrap().map(|e| e.unwrap().path()).collect();
+    assert!(left.is_empty(), "{shell}: a signalled wait leaked {left:?}");
+    let half: Vec<_> = std::fs::read_dir(&out).unwrap().map(|e| e.unwrap().file_name()).filter(|n| n.to_string_lossy().starts_with("fk.scan.")).collect();
+    assert!(half.is_empty(), "{shell}: a signalled wait left {half:?}");
+    drop(f);
+}
+
 /// E-ROUTER3.W2: the router's two new launcher shapes pass the guard in plain words, and nothing
 /// else of the script does.
 #[test]

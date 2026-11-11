@@ -94,7 +94,7 @@ if [ "${1:-}" = wait ]; then
   # the completion turn's init, so either, not yet followed by an init or a result, means a turn
   # is due. Key order varies and non-JSON lines are skipped. (Event shapes: Claude Code 2.1.288,
   # E-ROUTER3.W2 probes.)
-  T=$(mktemp -d) || die "cannot create a scratch dir"
+  T=$(mktemp -d "${TMPDIR:-/tmp}/router-wait.XXXXXX") || die "cannot create a scratch dir"
   S="$O/$name.scan"
   trap 'rm -rf "$T" "$S.$$"' EXIT
   trap 'exit 143' HUP INT TERM
