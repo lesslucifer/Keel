@@ -19,7 +19,8 @@
 # until the worker ends a turn with every sent brief taken and answered (IDLE; its last result text goes
 # to .router/out/<name>.report, removed when the last brief has no answer), exits (EXITED) or stalls mid-turn (STALLED: on two polls running, no
 # Bash-tool shell child and its session transcript untouched for <stall-min> minutes, default 15),
-# prints that one line, exits 0. It writes only <name>.report (and a scratch dir it removes); the transcript is ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/
+# prints that one line, exits 0. It writes only <name>.report, its scan state <name>.scan (and a scratch
+# dir it removes); the transcript is ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/
 # */<session>.jsonl plus */<session>/subagents/*.jsonl, falling back to the
 # pid file's mtime when none exists. Poll: ROUTER_WAIT_POLL s. A background Bash command is killed
 # at its timeout (max 2h): the router then wakes without a line and re-arms.
@@ -81,52 +82,67 @@ if [ "${1:-}" = wait ]; then
   seen() { mtime "$P"/*/"$sid".jsonl "$P"/*/"$sid"/subagents/*.jsonl 2>/dev/null | sort -n | tail -1; }
   # a running Bash tool command is a `<shell> -c` child; MCP servers (also children) are not
   busy() { ps -A -o ppid=,command= | awk -v p="$pid" '$1 == p && $2 ~ /(^|\/)[a-z]*sh$/ && $3 == "-c" { f = 1 } END { exit !f }'; }
-  # The stream-json output is read once, incrementally: each poll counts only the complete lines
-  # added since the last (the output of a long-running session only grows). Every turn opens with
-  # system/init and closes with a result, which may answer several briefs folded into it; a brief is
-  # taken when the worker replays it (--replay-user-messages); a peer's SendMessage replays as
-  # isSynthetic and is no brief. A turn may end with a background task still running (the last
-  # system/background_tasks_changed lists it): that is not the worker's answer. When the task ends,
-  # its system/task_notification comes just before the completion turn's init, so a notification
-  # not yet followed by an init or a result means a turn is due. Key order varies and non-JSON
-  # lines are skipped. (Event shapes: Claude Code 2.1.288, E-ROUTER3.W2 probes.)
+  # The stream-json output is read once, incrementally, across every wait of a run: each poll
+  # counts only the complete lines added since the scan state in <name>.scan (offset, counters,
+  # then the last result's text; spawn and resume reset it with the output), streamed through jq.
+  # Every turn opens with system/init and closes with a result, which may answer several briefs
+  # folded into it; a brief is taken when the worker replays it (--replay-user-messages); a peer's
+  # SendMessage replays as isSynthetic and is no brief. A turn may end with a background task still
+  # running (the last system/background_tasks_changed lists it): that is not the worker's answer.
+  # When the task ends, its emptied task list and its system/task_notification come just before
+  # the completion turn's init, so either, not yet followed by an init or a result, means a turn
+  # is due. Key order varies and non-JSON lines are skipped. (Event shapes: Claude Code 2.1.288,
+  # E-ROUTER3.W2 probes.)
   T=$(mktemp -d) || die "cannot create a scratch dir"
   trap 'rm -rf "$T"' EXIT
-  off=0 inits=0 results=0 replays=0 bg=0 due=0 err=-
+  S="$O/$name.scan"
+  load() {
+    off=0 inits=0 results=0 replays=0 bg=0 due=0 err=- ; : > "$T/last"
+    [ -s "$S" ] || return 0
+    read -r off inits results replays bg due err < "$S"
+    tail -n +2 "$S" > "$T/last"
+  }
   scan() {
-    n=$(( $(tail -c +$((off + 1)) "$O/$name.out" 2>/dev/null | wc -l) ))
+    load
+    tail -c +$((off + 1)) "$O/$name.out" 2>/dev/null > "$T/raw" || return 0
+    n=$(( $(wc -l < "$T/raw") ))
     [ "$n" -gt 0 ] || return 0
-    tail -c +$((off + 1)) "$O/$name.out" | head -n "$n" > "$T/chunk"
+    head -n "$n" "$T/raw" > "$T/chunk"
     off=$((off + $(wc -c < "$T/chunk") ))
-    # one pass: "<inits> <results> <replays> <background tasks> <turn due> <error>" (-1: not in this
-    # chunk; error: the last result's subtype if it is an error, else -), then the last result's text
-    jq -R -s -r '[split("\n")[] | fromjson? | objects] as $e | ($e | map(select(.type == "result"))) as $r
-      | def n(f): $e | map(select(f)) | length;
-      ($e | map(select(.type == "system" and .subtype == "background_tasks_changed")) | last | if . == null then -1 else (.tasks | length) end) as $bg
-      | ($e | map(select(.type == "result" or (.type == "system" and (.subtype == "init" or .subtype == "task_notification")))) | last
-         | if . == null then -1 elif .subtype == "task_notification" then 1 else 0 end) as $due
-      | ($r | last) as $l
-      | "\(n(.type == "system" and .subtype == "init")) \($r | length) \(n(.type == "user" and .isReplay == true and .isSynthetic != true)) \($bg) \($due) \(if $l.is_error == true then $l.subtype // "error" else "-" end)",
+    # one streamed pass: "<inits> <results> <replays> <background tasks> <turn due> <error>" (-1: not
+    # in this chunk; error: the last result's subtype if it is an error, else -), then the last
+    # result's text
+    jq -n -R -r 'reduce (inputs | fromjson? | objects) as $x ({i: 0, r: 0, p: 0, bg: -1, due: -1, last: null};
+        if $x.type == "result" then .r += 1 | .due = 0 | .last = $x
+        elif $x.type == "system" and $x.subtype == "init" then .i += 1 | .due = 0
+        elif $x.type == "system" and $x.subtype == "task_notification" then .due = 1
+        elif $x.type == "system" and $x.subtype == "background_tasks_changed" then .bg = ($x.tasks | length) | if .bg == 0 then .due = 1 else . end
+        elif $x.type == "user" and $x.isReplay == true and $x.isSynthetic != true then .p += 1
+        else . end)
+      | .last as $l
+      | "\(.i) \(.r) \(.p) \(.bg) \(.due) \(if $l.is_error == true then $l.subtype // "error" else "-" end)",
         (if $l == null then empty elif $l.is_error == true then "error: \($l.subtype // "error")" + (($l.errors // []) | if length > 0 then ": " + join("; ") else "" end) else $l.result // "" end)' "$T/chunk" > "$T/scan"
     read -r i r p b d e < "$T/scan"
     inits=$((inits + i)) results=$((results + r)) replays=$((replays + p))
     [ "$b" -lt 0 ] || bg=$b
     [ "$d" -lt 0 ] || due=$d
     [ "$r" -eq 0 ] || { err=$e; tail -n +2 "$T/scan" > "$T/last"; }
+    { echo "$off $inits $results $replays $bg $due $err"; cat "$T/last"; } > "$S.$$" && mv "$S.$$" "$S"
   }
   # settled: every opened turn has closed, no turn is due, and every brief in the inbox was taken
   settled() { [ "$results" -ge "$inits" ] && [ "$due" -eq 0 ] && [ "$replays" -ge $(( $(cat "$O/$name.in" 2>/dev/null | wc -l) )) ]; }
   # answered: settled with no background task left running
   answered() { settled && [ "$bg" -eq 0 ]; }
-  # the report is the last result, and only for an answered inbox: never an earlier brief's answer
-  report() { if answered && [ -f "$T/last" ]; then cp "$T/last" "$O/$name.report"; else rm -f "$O/$name.report"; fi; }
+  # the report is the last result, and only for an answered inbox (judged once, by the caller):
+  # never an earlier brief's answer
+  report() { if [ "$1" = answered ] && [ -s "$T/last" ]; then cp "$T/last" "$O/$name.report"; else rm -f "$O/$name.report"; fi; }
   # quiet must hold on two consecutive polls: a command that just ended leaves the transcript
   # stale until its result is written, and the worker may be exiting
   quiet=0
   while live "$pid"; do
     scan
     # a stopped worker winding down (feed closed) is not idle: it ends in EXITED
-    if answered && feed_open; then report
+    if answered && feed_open; then report answered
       echo "IDLE name=$name pid=$pid turn=$results report=$O/$name.report$([ "$err" = - ] || echo " error=$err")"; exit 0
     # settled but for a background task: its shell keeps the worker busy, so only the transcript's
     # quiet can tell a task that never ends, and the wait stalls instead of running forever
@@ -141,7 +157,8 @@ if [ "${1:-}" = wait ]; then
     fi
     sleep "${ROUTER_WAIT_POLL:-10}"
   done
-  scan; report; echo "EXITED name=$name pid=$pid out=$O/$name.out"; exit 0
+  scan; if answered; then report answered; else report unanswered; fi
+  echo "EXITED name=$name pid=$pid out=$O/$name.out"; exit 0
 fi
 if [ "${1:-}" = send ] || [ "${1:-}" = stop ]; then
   mode=$1; shift
@@ -253,7 +270,7 @@ for c in "cargo build" "cargo test" "cargo check" "cargo clippy" "cargo fmt" "ke
   "keel verify-doc" "keel verify-dod" "keel notes write" "keel lint" "keel check"; do
   set -- "$@" "Bash($c)" "Bash($c *)"; done
 set -- "$@" --disallowedTools "Bash(keel mr)" "Bash(keel mr *)" "Bash(cargo run)" "Bash(cargo run *)"
-: > "$O/$name.in"; turn "$prompt"; rm -f "$O/$name.feed"
+: > "$O/$name.in"; turn "$prompt"; rm -f "$O/$name.feed" "$O/$name.scan"
 cd "$wt"
 # the feed keeps stdin open while the worker waits for its next brief; killing it (stop) is EOF
 sh -c 'tail -n +1 -f "$1" & echo $! > "$2"; wait' sh "$O/$name.in" "$O/$name.feed" 2>/dev/null |

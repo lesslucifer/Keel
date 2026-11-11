@@ -349,7 +349,8 @@ fn stub_claude(stub: &Path) {
     std::fs::write(stub, concat!(
         "#!/bin/sh\necho \"stub $*\"\nprintf '[%s]' \"$@\"; echo\n",
         "held() { [ ! -e \"$STUB_RELEASE\" ] && [ -d \"${STUB_RELEASE%/*}\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; }\n",
-        "(while [ -d \"${STUB_RELEASE%/*}\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done; kill $$ 2>/dev/null) &\n",
+        "(while kill -0 $$ 2>/dev/null && [ -d \"${STUB_RELEASE%/*}\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done\n",
+        " kill -0 $$ 2>/dev/null && kill $$ 2>/dev/null) &\n",
         "(while held; do sleep 0.05; done) | cut -c 1 &\n",
         "n=0\nwhile read -r line; do\n  n=$((n + 1))\n  echo '{\"type\":\"system\",\"subtype\":\"init\"}'\n  echo '{\"type\":\"user\",\"isReplay\":true}'\n",
         "  while held; do\n",
@@ -1239,7 +1240,8 @@ fn launcher_keeps_a_worker_alive_across_briefs_until_stopped() {
 }
 
 /// A fake live worker `name` under `l`'s .router/out, for driving `wait`, `send` and `stop` over a
-/// hand-written stream: a process whose argv carries ` -n <name> `, its pid file and run dir, and a
+/// hand-written stream, reset as a spawn resets it (output and scan state): a process whose argv
+/// carries ` -n <name> `, its pid file and run dir, and a
 /// real `tail -n +1 -f <name>.in` feed recorded in <name>.feed. The worker keeps an `sh -c` child,
 /// as a running Bash tool command (or a background task) keeps one. All end with the value.
 struct Fake {
@@ -1259,6 +1261,7 @@ impl Fake {
         std::fs::write(run.join("worktree"), format!("{}\n", l.wt.display())).unwrap();
         std::fs::write(out.join(format!("{name}.in")), "{\"type\":\"user\"}\n".repeat(inbox)).unwrap();
         std::fs::write(out.join(format!("{name}.out")), "").unwrap();
+        let _ = std::fs::remove_file(out.join(format!("{name}.scan")));
         let body = "sh -c 'while kill -0 $PPID 2>/dev/null; do sleep 1; done' & while :; do sleep 1; done";
         let worker = common::cmd("sh").args(["-c", body, "sh", "-n", name, "x"]).spawn().unwrap();
         let feed = common::cmd("tail").args(["-n", "+1", "-f"]).arg(out.join(format!("{name}.in"))).stdout(Stdio::null()).spawn().unwrap();
@@ -1307,7 +1310,8 @@ fn result(text: &str) -> String {
 /// the last brief unanswered leaves no report (r1 I6). A turn that ends with a background task
 /// running is not the worker's answer (r2 B1), nor is the moment between its task's notification
 /// and the completion turn (r3 B1); a peer's replayed message is no brief (r3 B2); an error result
-/// is reported as one (r3 B3); and a task that never ends stalls the wait instead of hanging it (r3 I2).
+/// is reported as one (r3 B3); a task that never ends stalls the wait instead of hanging it (r3
+/// I2); and each wait resumes the scan where the last one stopped (r4 I1).
 #[test]
 fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
     let l = launcher();
@@ -1319,6 +1323,9 @@ fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
     let line = bounded(l.cmd(&["wait", "fk"], &[]));
     assert!(line.starts_with("IDLE name=fk ") && line.contains(" turn=1 "), "{line}");
     assert_eq!(std::fs::read_to_string(&report).unwrap(), "A\n");
+    // r4 I1: the scan's offset persists, so the next wait reads only what came after
+    let scanned: u64 = std::fs::read_to_string(l.main.join(".router/out/fk.scan")).unwrap().split_whitespace().next().unwrap().parse().unwrap();
+    assert_eq!(scanned, std::fs::metadata(&f.out).unwrap().len(), "the scan state does not cover the whole stream");
 
     // B1: a self-opened turn (no replay) closes, then a brief is sent but not yet read: no IDLE
     f.emit(&[INIT, PEER_REPLAY, &result("steered")]);
@@ -1370,12 +1377,16 @@ fn wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity() {
     f.emit(&[INIT, REPLAY, BG_RUNNING, &result("waiting for the background task")]);
     let mut w = l.wait_stepped(&["wait", "fk"], "bg");
     w.at(1);
-    // r3 B1: the task ends; its notification precedes the completion turn's init by milliseconds
-    f.emit(&[BG_NONE, TASK_DONE[0], TASK_DONE[1]]);
+    // r3 B1, r4 B1: the task ends; its emptied task list and then its notification precede the
+    // completion turn's init by milliseconds, and a poll may fall after either
+    f.emit(&[BG_NONE]);
     w.go(1);
     w.at(2);
-    f.emit(&[INIT, &result("done")]);
+    f.emit(&[TASK_DONE[0], TASK_DONE[1]]);
     w.go(2);
+    w.at(3);
+    f.emit(&[INIT, &result("done")]);
+    w.go(3);
     assert!(w.line().contains(" turn=2 "), "the completion turn closes the wait");
     assert_eq!(std::fs::read_to_string(&report).unwrap(), "done\n");
     drop(f);
