@@ -49,3 +49,4 @@ rubric = ".keel/rubric.md"   # optional project-local rubric
 worker_model = "opus"
 worker_efforts = ["medium", "high"]
 worker_default_effort = "medium"
+watchdog_model = "haiku"

@@ -689,7 +689,7 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
 
 /// DEC-39: the repo's committed worker policy is opus at medium or high effort, medium by default.
 #[test]
-fn committed_worker_policy_is_opus_at_medium_or_high_effort() {
+fn committed_worker_policy_is_opus_at_medium_or_high_effort_with_a_haiku_watchdog() {
     let config = std::fs::read_to_string(root().join(".keel/config.toml")).unwrap();
     let section: Vec<&str> = config
         .lines()
@@ -698,7 +698,7 @@ fn committed_worker_policy_is_opus_at_medium_or_high_effort() {
         .take_while(|l| !l.starts_with('['))
         .filter(|l| !l.trim().is_empty())
         .collect();
-    assert_eq!(section, ["worker_model = \"opus\"", "worker_efforts = [\"medium\", \"high\"]", "worker_default_effort = \"medium\""]);
+    assert_eq!(section, ["worker_model = \"opus\"", "worker_efforts = [\"medium\", \"high\"]", "worker_default_effort = \"medium\"", "watchdog_model = \"haiku\""]);
 }
 
 const WORKER_GRANTS: [&str; 11] = [
@@ -1165,7 +1165,10 @@ fn settings_allow_exactly_the_launcher_shapes_the_guard_admits() {
         .iter()
         .filter_map(|a| a.as_str().unwrap().strip_prefix("Bash(scripts/router-worker.sh ").map(|m| m.trim_end_matches(" *)").to_string()))
         .collect();
-    assert_eq!(modes, ["resume", "spawn", "stop"]);
+    assert_eq!(modes, ["resume", "spawn", "stop", "watchdog start", "watchdog stop"]);
+    for m in &modes[3..] {
+        assert_eq!(bash(&format!("scripts/router-worker.sh {m} r1")), None, "the guard refuses the allowed {m}");
+    }
 }
 
 /// One router tool call through the PreToolUse command `checkout`'s .claude/settings.json wires, run
