@@ -42,7 +42,18 @@ stateDiagram-v2
     <tr><td><code>&lt;name&gt;.report</code></td><td>The last result's text, written by <code>wait</code> on <code>IDLE</code> and <code>EXITED</code>. This is the report the router reads.</td></tr>
   </tbody>
 </table>
-<p data-c="idle-rule"><strong>The idle rule.</strong> <code>wait</code> reads event types with <code>jq</code>. A worker is idle when every turn it opened (<code>system/init</code>) has closed (<code>result</code>), every brief in the inbox has had its turn, and its feed is still open. Counting turns instead of reading the last event matters, because real sessions emit <code>command_lifecycle</code> after a result, and a <code>SendMessage</code> can open a turn with no inbox entry.</p>
+<p data-c="idle-rule"><strong>The idle rule</strong> (as fixed in review round 1). The worker runs with <code>--replay-user-messages</code>, so it echoes each brief when it takes it. <code>wait</code> counts typed events with <code>jq</code>, reading only the lines added since its last poll. A worker is idle when three things hold:</p>
+<ul data-c="idle-rule-list">
+  <li>every brief in the inbox has been replayed;</li>
+  <li>every turn it opened (<code>system/init</code>) has closed (<code>result</code>);</li>
+  <li>its feed is still its own <code>tail</code> of the inbox.</li>
+</ul>
+<p data-c="idle-rule-why">Three facts make this the rule:</p>
+<ul data-c="idle-rule-why-list">
+  <li>A turn the worker opens itself (a <code>SendMessage</code>) replays nothing, so it never answers an unread brief.</li>
+  <li>A brief sent mid-turn is folded into the running turn and answered by its one result.</li>
+  <li>Real sessions emit <code>command_lifecycle</code> after a result, so the last event is no signal.</li>
+</ul>
 
 <h2 id="outcome">Outcome</h2>
 <p data-item="outcome" data-c="outcome">Delivered. The requirement holds: a spawned worker stays alive after it reports, <code>send</code> delivers its next brief, snapshotted and hashed, to the same session, <code>wait</code> prints <code>IDLE</code> at the end of each turn, <code>stop</code> ends the session after its turn, and the guard admits <code>send</code> and <code>stop</code> with no other posture change. Both plan unknowns came out on the default side: a stream-json <code>-p</code> session stays open between turns (open point 1), and a <code>SendMessage</code> reaches an idle worker, which opens a turn to answer (open point 2), so no pty fallback and no brief-only steering were needed.</p>
@@ -75,6 +86,17 @@ stateDiagram-v2
     <li><strong>Settings allowlist.</strong> <code>send</code> and <code>stop</code> were added to <code>permissions.allow</code> in <code>.claude/settings.json</code>, so the router is not prompted for them. This was not in the plan; it landed in the owner's commit <code>6166848</code>, staged as HEAD plus the two lines so the owner's uncommitted edit stayed untouched.</li>
     <li><strong>E2E touched here.</strong> The E-ROUTERFIX e2e asserted <code>EXITED</code> after the stub's release, which is now <code>IDLE</code>. Its flow gained <code>send</code> and <code>stop</code> in this WU rather than in W7.</li>
     <li><strong>Live-run harness.</strong> Both sessions ran through a wrapper adding <code>--setting-sources project,local --strict-mcp-config</code>, so no second Telegram poller started. That flag is W3's and W8's to put in the launcher. The launcher commands ran from a shell, as the router would issue them: a headless router in an untrusted scratch clone ignores the project allowlist, so it could not run them unprompted. The router session made the <code>SendMessage</code> call under the guard.</li>
+    <li><strong>Review round 1 (FAIL, 3 blockers and 4 importants on <code>cd852ae</code>).</strong> Fixed in <code>e64507c</code>, with a regression test written first and shown red with the exact false <code>IDLE</code>.
+      <ul>
+        <li><strong>B1:</strong> a self-opened turn let a fresh <code>send</code> read as answered.</li>
+        <li><strong>B2:</strong> <code>send</code> to a stopping worker printed <code>SENT</code> for a brief no one would read.</li>
+        <li><strong>B3:</strong> a brief folded into a running turn left <code>wait</code> unable to print <code>IDLE</code>. A probe showed real folding.</li>
+        <li><strong>I4:</strong> the feed pid was killed without checking that it was still this worker's <code>tail</code>.</li>
+        <li><strong>I5:</strong> every poll re-parsed the whole output.</li>
+        <li><strong>I6:</strong> <code>EXITED</code> left an earlier brief's answer as the report.</li>
+        <li><strong>I7:</strong> a duplicated bounded-wait helper.</li>
+      </ul>
+      The fix made three changes beyond the plan: the replay flag, the feed-identity check, and the rule that an exit with an unanswered brief leaves no <code>.report</code>. The skill states the last one, and that a stopping worker refuses <code>send</code>, in a second owner commit.</li>
     <li><strong>Plan file.</strong> The first W2 plan (a router heartbeat) was rewritten after the owner's ruling and renamed from <code>…-w2-heartbeat-…</code>. The epic plan was amended in this WU (W2 rewritten, W9 added, open point 6 ruled).</li>
     <li><strong>Snapshot.</strong> <code>docs/decisions/router.html</code>'s htmldoc id is still unknown to the server (as in W1), so its diff view has no baseline. Use <code>git diff</code>.</li>
   </ul>
@@ -83,7 +105,10 @@ stateDiagram-v2
 <h2 id="evidence">Evidence</h2>
 <div data-item="evidence" data-c="evidence">
   <ul>
-    <li><strong>Commits:</strong> <code>aa6472f</code> plans · <code>f000453</code> launcher, guard, tests · <code>5dc7439</code> stopping fix · <code>6c7e498</code> DEC-43 · <code>6166848</code> skill text and settings (owner's <code>keel mr commit</code>, <code>Reviewed-By: username vuluu</code>) · this report.</li>
+    <li><strong>Commits:</strong> <code>aa6472f</code> plans · <code>f000453</code> launcher, guard, tests · <code>5dc7439</code> stopping fix · <code>6c7e498</code> DEC-43 · <code>6166848</code> skill text and settings (owner's <code>keel mr commit</code>, <code>Reviewed-By: username vuluu</code>) · <code>cd852ae</code> this report · <code>e64507c</code> review round 1 fixes · the owner's second skill commit · this report's round 1 update.</li>
+    <li><strong>Review round 1</strong> on <code>cd852ae</code>: FAIL (cr note). Round 2 runs on the new tip.</li>
+    <li><strong>Regression test</strong> <code>wait_send_and_stop_judge_briefs_by_replay_and_the_feed_by_identity</code> drives <code>wait</code>, <code>send</code> and <code>stop</code> over hand-written streams with a fake live worker and a real <code>tail</code> feed. It covers B1, B2, B3, I4 and I6. It was red on <code>cd852ae</code> with <code>IDLE … turn=2</code> for an unread brief.</li>
+    <li><strong>Folded-brief live check</strong> (real Opus worker, after the fix): brief 2 was sent while brief 1's <code>sleep 20</code> ran. The stream shows 1 init, 2 replays and 1 result. <code>wait</code> printed <code>IDLE turn=1</code> with a report answering both. <code>stop</code> led to <code>EXITED</code>, a second <code>stop</code> was refused, and no process was left.</li>
     <li><strong>New tests</strong> (<code>tests/router.rs</code>):
       <ul>
         <li><code>launcher_keeps_a_worker_alive_across_briefs_until_stopped</code>: covers refusals; <code>IDLE</code> not <code>STALLED</code> with a quiet transcript; <code>send</code> with a new snapshot and sha256 and the inbox shape; a self-opened turn; a multi-line report; stop → stopping → <code>EXITED</code>; the feed ending; and a dead worker taking its feed.</li>
@@ -92,7 +117,7 @@ stateDiagram-v2
       </ul>
       The stub <code>claude</code> plays the 2.1.288 stream: an init per turn, a result whose first key is not <code>type</code>, and a trailing <code>command_lifecycle</code>.</li>
     <li><strong>Red then green:</strong> with <code>dda9ce0</code>'s scripts the three new or extended tests fail. With <code>f000453</code>'s launcher the stopping assertion fails with the live run's exact bug (<code>IDLE … turn=3</code>).</li>
-    <li><strong>Suites, in a clean clone</strong> (committed settings): <code>cargo test --test router</code> 22 passed, 3 runs in a row; <code>cargo test --test init</code> 11 passed; <code>cargo clippy --all-targets -D warnings</code> clean. In this worktree <code>router_bash_guard_judges_plain_words_…</code> fails only because the owner's uncommitted <code>.claude/settings.json</code> drops <code>permissions</code> (as in W1).</li>
+    <li><strong>Suites, in a clean clone</strong> (committed settings): <code>cargo test --test router</code> 23 passed, 3 runs in a row after round 1; <code>cargo test --test init</code> 11 passed; <code>cargo clippy --all-targets -D warnings</code> clean. In this worktree <code>router_bash_guard_judges_plain_words_…</code> fails only because the owner's uncommitted <code>.claude/settings.json</code> drops <code>permissions</code> (as in W1).</li>
     <li><strong>Mirror:</strong> <code>diff -r skills/keel-router .claude/skills/keel-router</code> is empty.</li>
     <li><strong>Docs:</strong> <code>keel verify-doc</code> is green on the plan, this report, the epic plan and the decisions docs.</li>
   </ul>
