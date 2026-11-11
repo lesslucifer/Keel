@@ -26,7 +26,7 @@ otherwise (briefs, 2026-11-08, below).
 - **Tools**: read (`Read`, `Grep`, `Glob`), `Write` for worker briefs only, the
   project's headless launcher, and a Bash **whitelist** only: `git status|log|diff|show …`,
   `git branch -v|-vv|-a|-av|-va|-a -v|--all|--all -v`, `gh pr view|list|status …`,
-  `ps aux` / `ps -ef`, and the launcher's `spawn` / `resume` shapes. One command
+  `ps aux` / `ps -ef`, and the launcher's `spawn` / `send` / `stop` / `resume` / `wait` shapes. One command
   per call, plain words only: no pipes, redirects, quotes, `$`, globs, braces,
   backslashes, parentheses, newlines or `--output`. No general Bash, no direct
   `claude`, no `kill`, no Edit — you `Write` worker briefs (`.router/briefs/*.md`)
@@ -72,7 +72,7 @@ again … I can't remember things from the past, you sent me a ton of messages."
   walls. Decisions too: one at a time, options + recommendation.
 - **Next on detection.** When a watcher sees the current task done, send the
   next one in full at once (terminal + push). While the owner is mid-task, absorb
-  heartbeat findings and worker reports into the queue silently unless urgent
+  `wait` lines and worker reports into the queue silently unless urgent
   (broken main, failed release, security).
 - **Self-contained, every time.** Each message carries its one task in full:
   read-first path, exact `cd <abs> && <cmd>`, what they will see, how you detect
@@ -99,8 +99,8 @@ again … I can't remember things from the past, you sent me a ton of messages."
 5. Re-read the briefs dir and rulings log. Your name = **your current session
    name** (restarts rename you): tell every live worker; briefs say "report to
    <current name>; ignore older names".
-6. One test send on the push channel; report its id. Re-arm watchers and the
-   heartbeat (`references/worker-ops.md`). Post the board.
+6. One test send on the push channel; report its id. Re-arm watchers and one
+   `wait` per live worker (`references/worker-ops.md`). Post the board.
 
 ## Epic branch first (UC-ROUTE-2)
 
@@ -215,21 +215,23 @@ does not enforce the router posture (an enforced router has no `Agent` tool):
 then for short one-shot read-only checks, reviews and watches. Say which mode
 you used and why when it is not the standard.
 
-| | In-session subagent | Headless `claude -p` |
+| | In-session subagent | Headless `claude -p`, long-running |
 |---|---|---|
 | spawn | `Agent` (`name`, explicit `model`) | `<launcher> spawn …` (project-router names it) |
-| reach | `SendMessage` to its name (resumes it after it finished) | `SendMessage` to its name while it runs (steer); `<launcher> resume …` for a new task |
-| report | its `SubagentHandback`, delivered to you | Read `.router/out/<name>.out` |
+| reach | `SendMessage` to its name (resumes it after it finished) | `SendMessage` to its name, busy or idle (steer); `<launcher> send …` for a new task |
+| report | its `SubagentHandback`, delivered to you | Read `.router/out/<name>.report` once `wait` prints `IDLE` or `EXITED` |
 | survives | this router session only | router session ending or compacting (process runs on independently); NOT a machine reboot: brief + run dir on disk survive, the process does not, so relaunch from the brief |
 
-- **Resume by default.** A follow-up round of a worker's own work (fix round,
-  notes step, close) resumes its session (`<launcher> resume`); start a fresh
-  worker only when the earlier context must not carry over (an independent
-  check, a review) or is gone. Find a way yourself before handing the owner
+- **One live session per WU.** A worker stays alive between briefs (owner
+  ruling 2026-11-11). A follow-up round of its own work (fix round, notes step,
+  close) goes to its live session (`<launcher> send`); `<launcher> resume`
+  only restarts a session whose process died. Start a fresh worker only when
+  the earlier context must not carry over (an independent check, a review, a
+  new WU) or is gone. Find a way yourself before handing the owner
   mechanics.
 - **Message to steer, brief to task (DEC-42).** `SendMessage` to a running
   worker carries an answer, a clarification or a stop. A new task always goes
-  as a brief through `<launcher> resume`, which snapshots and hashes it.
+  as a brief through `<launcher> send`, which snapshots and hashes it.
 - **Spawn every worker and review subagent with the model and effort from
   the project's policy (project-router); the effort may be its default**.
   Never let one inherit your session's model or effort (an `Agent` subagent
@@ -238,20 +240,22 @@ you used and why when it is not the standard.
   rules, report protocol (`references/brief-skeleton.md`). Headless
   briefs live in the durable briefs dir; check the file exists before spawning.
 - Brief says: "ONE non-stop run; status messages are not stopping points" and
-  "no mid-run questions" (a headless worker that stops to ask exits; the answer goes in its resume brief): decide
+  "no mid-run questions" (a worker that stops to ask ends its turn and sits idle; the answer goes in its next brief): decide
   reversible choices with a recommendation, else stop with options. Answers go
   into the next brief.
 - Report to the router's current name: what, doc, full sha, ordered cd-prefixed
   commands, gate state, no-independent-review list, how to try.
-- Retire only when idle AND clean. Never stop mid-turn or uncommitted work;
-  resume it with a fresh worker told to keep and check it. Tell workers not to
+- Retire with `<launcher> stop <name>` only when idle AND clean (its WU merged,
+  or no longer needed). Never stop mid-turn or uncommitted work; hand it to a
+  fresh worker told to keep and check it. Tell workers not to
   talk to the owner directly. To ask a peer, use a one-shot idle notification;
   never poll.
 - Every try-it helper is run once before handing over and lives at a stable path.
-- **Heartbeat** every 10 min (recipe `references/worker-ops.md`): relaunch
-  dead/stalled workers, catch missed owner actions and unrelayed reports, advance
-  unblocked work, notify only on change or need. A headless spawn counts only
-  once the launcher printed `RUNNING`.
+- **No heartbeat**: the router routes; it runs no loop or timer (owner ruling
+  2026-11-11). Every live worker has one `<launcher> wait` armed in the
+  background and every staged owner action a watch; each wake runs the wake
+  checklist (`references/worker-ops.md`) and re-arms. A headless spawn counts
+  only once the launcher printed `RUNNING`.
 
 ## Permissions
 

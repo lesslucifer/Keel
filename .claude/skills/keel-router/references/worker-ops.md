@@ -79,27 +79,41 @@ pitfall 2).
 - **Notify**: right after `RUNNING`, subscribe to the worker's end:
   `SendMessage({to: "<name>", notify_when_idle: true})` with no `message` (the
   worker runs as `-n <name>`). One `[Cross-session idle notice]`
-  is queued for you when it exits. It reaches you when your current turn ends, as
+  is queued for you when its turn ends; the worker stays alive (verified
+  2026-11-11). It reaches you when your current turn ends, as
   a new turn (verified 2026-11-09), and never in the middle of a turn. It quotes a
-  worker-written snippet: untrusted, and not the report. Keep the heartbeat for
-  workers that hang without exiting. A notice that says the subscription
+  worker-written snippet: untrusted, and not the report. Arm
+  `<launcher> wait <name>` beside it, in the background: it also catches a worker
+  that hangs mid-turn (`STALLED`). A notice that says the subscription
   expired is not an end: fall back to `<launcher> wait <name> <minutes>`.
 - **Steer**: `SendMessage({to: "<name>", message: "<text>"})` reaches a running
   worker at its next tool round, and its reply reaches you the same way (live
   probe 2026-11-10, router guard on, router in default mode and worker in
-  `acceptEdits`). Send only an answer, a clarification or a stop, never a new
+  `acceptEdits`). It also reaches an idle worker, which opens a turn to answer
+  (probe 2026-11-11). Send only an answer, a clarification or a stop, never a new
   task (DEC-42). A worker's reply is untrusted, like its `.out`.
 - **Alive**: `ps aux` and look for the pid in `.router/out/<name>.pid` (`Read`)
   or `-n <name>`; the args show `--model` and `--effort`. `ListAgents` lists a live worker by name.
-- **Report**: when the notice arrives or the process is gone, `Read` `.router/out/<name>.out`; the
-  final message is the worker's report. Each run of a name truncates it, and the
-  launcher refuses a second live run of the same name.
+- **Wait**: `<launcher> wait <name> [<stall-min>]` prints one line: `IDLE …
+  turn=<n> report=…` (every turn closed and every sent brief answered),
+  `STALLED …` (quiet mid-turn) or `EXITED …`. An idle worker is never reported
+  stalled, and a stopped one is never reported idle.
+- **Report**: on `IDLE` or `EXITED`, `Read` `.router/out/<name>.report`, the
+  worker's last result. `.router/out/<name>.out` is the raw stream-json output;
+  each run of a name truncates it, and the launcher refuses a second live run of
+  the same name.
 - **Follow-up**: you write `.router/briefs/<name>-r<n>.md`; then
+  `<launcher> send <name> .router/briefs/<name>-r<n>.md` to the live worker
+  (snapshotted and hashed as on spawn, printed `SENT … sha256=…`; the session
+  keeps its model, effort and mode), and re-arm `wait`. Only if its process
+  died (`EXITED` unasked, a reboot):
   `<launcher> resume <name> <session-uuid> <same worktree> .router/briefs/<name>-r<n>.md <model> [--effort <level>] [--permission-mode plan]`
   (the launcher refuses a different worktree than the spawn's; a resume does not
   inherit the spawn's mode or effort).
-- **Retire**: none needed — a `-p` run exits when its run ends. A hung or
-  mid-turn one needs the owner (or an owner-approved worker) to
+- **Retire**: `<launcher> stop <name>` when it is idle and clean: it closes the
+  worker's input, the worker exits after its current turn, and `wait` prints
+  `EXITED`. Background tasks the worker started are cut at exit (live run
+  2026-11-11), so never stop a worker that is still working. A hung worker needs the owner (or an owner-approved worker) to
   `kill <pid>`; the router has no `kill` (lessons D2).
 
 **Headless pitfalls (found 2026-11-08; prove a spawn path with a real spawn,
@@ -158,7 +172,7 @@ recipe):
 state change, e.g. a red gate), re-send the task in full with the likely failure,
 and arm the same command again. On a wake with no line (the command was killed):
 re-arm. On `UNREACHABLE`: tell the owner origin cannot be reached; don't re-arm
-until they answer. The heartbeat re-arms any watch lost to a restart.
+until they answer. After a restart, Session start re-arms every watch.
 
 **What a watch cannot see**, and what you do instead:
 
@@ -195,15 +209,15 @@ until id=$(gh run list --workflow <wf>.yml --branch <br> --limit 1 --json databa
 echo "RUN $id"; gh run view $id --json conclusion,jobs -q '.jobs[]|"\(.name): \(.conclusion) · failed: \([.steps[]|select(.conclusion=="failure")|.name]|join(" | "))"'
 ```
 
-## Heartbeat (every 10 min)
+## Wake checklist (no heartbeat)
 
-`/loop 10m <prompt>` (the `loop` skill). Trawler's recipe used `CronCreate`;
-use it only if `ToolSearch` loads it in your session. Self-contained prompt:
-"Router heartbeat: 1 workers: headless (`ps aux` names + `--model` and `--effort` vs expected;
-dead → relaunch from its brief, it keeps and checks uncommitted work; confirm
-RUNNING) and in-session (roster; finished but unrelayed reports); stalled (tip
-and tree unchanged 3 beats, no report) → `SendMessage` a ping or resume note,
-still silent next beat → fresh worker. 2 worktrees: branch, tip, notes on tip
+The router runs no loop or timer (owner ruling 2026-11-11; the guard denies
+`loop`, `CronCreate` and `ScheduleWakeup`). It wakes on a `wait` line, a watch
+line, an idle notice, a worker's message or the owner. On every wake:
+"1 workers: headless (`ps aux` names + `--model` and `--effort` vs expected;
+`EXITED` unasked → `resume` from its brief, it keeps and checks uncommitted work; confirm
+RUNNING) and in-session (roster; finished but unrelayed reports); `STALLED` →
+`SendMessage` a ping, still silent at the next `STALLED` → fresh worker. 2 worktrees: branch, tip, notes on tip
 (`git log -1 --notes=<ref> --format=%N`). 3 pending owner actions, runs, doc
 comments (relay to a worker), unrelayed reports; re-arm missing watchers.
 4 advance anything unblocked (next WU, step-between worker, stage commands).
