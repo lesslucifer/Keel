@@ -1258,8 +1258,8 @@ impl Fake {
         std::fs::write(run.join("worktree"), format!("{}\n", l.wt.display())).unwrap();
         std::fs::write(out.join(format!("{name}.in")), "{\"type\":\"user\"}\n".repeat(inbox)).unwrap();
         std::fs::write(out.join(format!("{name}.out")), "").unwrap();
-        let worker = Command::new("sh").args(["-c", "while :; do sleep 1; done", "sh", "-n", name, "x"]).spawn().unwrap();
-        let feed = Command::new("tail").args(["-n", "+1", "-f"]).arg(out.join(format!("{name}.in"))).stdout(Stdio::null()).spawn().unwrap();
+        let worker = common::cmd("sh").args(["-c", "while :; do sleep 1; done", "sh", "-n", name, "x"]).spawn().unwrap();
+        let feed = common::cmd("tail").args(["-n", "+1", "-f"]).arg(out.join(format!("{name}.in"))).stdout(Stdio::null()).spawn().unwrap();
         std::fs::write(out.join(format!("{name}.pid")), format!("{}\n", worker.id())).unwrap();
         std::fs::write(out.join(format!("{name}.feed")), format!("{}\n", feed.id())).unwrap();
         Fake { worker, feed, out: out.join(format!("{name}.out")) }
