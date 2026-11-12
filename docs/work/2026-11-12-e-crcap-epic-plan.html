@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af58d849f34851f0dfb2282" data-artifact="epic-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-CRCAP epic plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-CRCAP · The review loop is capped, and an owner waiver is recorded on the cr note</h1>
+      <p>Epic plan for backlog B8 and B12 (owner scope ruling of 2026-11-12). A review loop stops after 3 failed rounds and the owner decides from there. A review the owner waives is recorded as a waiver with the owner's reason, never as a PASS, and the gate checks it.</p>
+      <div class="meta">T3 · epic plan · 2026-11-12 · Keel · branch <code>epic/E-CRCAP</code> off <code>main</code> <code>1f303dc</code> · plan only; no WU starts before the owner's go</div>
+    </div>
+  </header>
+  <main>
+
+<div class="callout" data-c="supersedes">This plan replaces the untracked draft <code>docs/work/2026-11-11-e-crcap-epic-plan.html</code>. That draft was never committed and has no comments on the htmldoc server. It also held a deferral rule ("every follow-up names a WU or an epic"), which the owner's scope ruling of 2026-11-12 leaves out (open point 10).</div>
+
+<h2 id="intent">Intent</h2>
+<p data-item="intent" data-c="intent-body">Bound the keel-code-review loop, and give a waived review a record of its own. <b>Cap (B8):</b> a WU or an epic gets at most 3 failed review rounds. After the third, the review stops and the owner decides what happens next. <b>Finding scope (B8):</b> a missing edge-case test for code that behaves correctly, or a tidy-up of the test harness, is a nit. A nit never fails a review, so it never reopens a WU. <b>Waiver (B12):</b> <code>keel notes write cr</code> can record the owner's waiver and the owner's reason on <code>cr/v1</code>. The gate accepts the waiver and shows it, and the owner's sign-off consents to it. Today such a review is recorded as a bare PASS. Why now: E-ROUTER3.W2 ran 7 FAIL → fix rounds before the owner capped the loop by hand on 2026-11-11. E-SEED2.W12 was capped by hand on 2026-11-10. Three tips carry a PASS that records a waiver, not a review: E-SEED2.W12's last round, the E-SEED2 close (B13) and E-SEED2.W14/W15 (B14). The cap is a rule an agent has to remember, and the note cannot tell a waiver from a review. Keel's premise is that completeness is proven from git notes, never from an agent's word, and today neither fact is.</p>
+
+<h2 id="trawler">What Trawler's code review actually limits</h2>
+<div data-c="trawler-limits">
+<p>Source: <code>/Users/nguyenvanluong/Documents/proj/misc/Trawler/.claude/skills/code-review/</code> (<code>SKILL.md</code>, <code>rubric.md</code>) and its decision DEC-47. The copies in the Trawler worktrees on this machine are the same text, apart from the code-path list. Read on 2026-11-12.</p>
+<table>
+  <thead><tr><th>Trawler limit</th><th>Where</th><th>In Keel today</th><th>This epic</th></tr></thead>
+  <tbody>
+    <tr><td>Severity decides the verdict. A verified nit never fails it</td><td>DEC-47, rubric severity rows</td><td>Ported (rubric, skill §5)</td><td>Kept. W3 names the two cases B8 cites as nits</td></tr>
+    <tr><td><code>nit</code> is the narrow exit: "nothing observable changes and nothing drifts". Uncertainty resolves upward</td><td>rubric</td><td>Ported</td><td>Kept. W3 states what a missing test is under this test</td></tr>
+    <tr><td>Exclusions: anything Gate 0 catches, pre-existing issues the diff neither introduces nor worsens, pure taste</td><td>rubric</td><td>Ported (plus "documents")</td><td>Kept</td></tr>
+    <tr><td>Never widen the caller's scope</td><td>SKILL §1</td><td>Ported</td><td>Kept</td></tr>
+    <tr><td>Every nit carries exactly one disposition, and the gate checks it (<code>3·review-nits</code>)</td><td>DEC-47, <code>xtask/src/gate.rs</code></td><td>Skill text only. Keel's DEC-26 ruled out the gate check</td><td>Not ported (open point 8)</td></tr>
+    <tr><td>A cap on review rounds</td><td>none: Trawler's skill loops "until a run returns PASS"</td><td>none: Keel's §7 says the same. The 3-round cap so far exists only as owner rulings (2026-11-10 and 2026-11-11) and as keel-router brief text ("round n of at most 3")</td><td>New, W2</td></tr>
+  </tbody>
+</table>
+<p>So B8's "port Trawler's limits" is mostly done already. What this epic adds is the round cap, which Trawler never had, and the two finding-scope cases B8 names.</p>
+</div>
+
+<h2 id="use-cases">Use cases</h2>
+<table data-item="use-cases" data-c="use-cases-table">
+  <thead><tr><th>Contract</th><th>Change</th><th>WU</th></tr></thead>
+  <tbody>
+    <tr><td><a href="../use-cases/workflow.html#uc-rev-1">UC-REV-1</a> the review is bound to the code diff</td><td>Amended. A waiver is bound to the same code diff hash as a verdict. A missing test for correct code and a test-harness tidy-up are named as nits</td><td>W1, W3</td></tr>
+    <tr><td>UC-REV-2 a waived review says so (new)</td><td>The owner's waiver is recorded on <code>cr/v1</code> as <code>verdict: WAIVED</code> with a non-empty reason. Check 3 accepts it and prints <code>WAIVED</code>. The owner's sign-off must accept it explicitly, and the signature binds it</td><td>W1</td></tr>
+    <tr><td>UC-REV-3 the review loop is capped (new)</td><td>A WU or an epic gets at most <code>max_rounds</code> (default 3) failed review rounds, counted from its own <code>cr/v1</code> FAIL notes. Past the cap, <code>keel preflight</code> refuses the next round until the owner rules</td><td>W2</td></tr>
+    <tr><td><a href="../use-cases/workflow.html#uc-mr-1">UC-MR-1</a> every WU and epic tip is signed last</td><td>Amended. <code>keel mr confirm</code> on a waived tip prints the waiver and the round history, and is refused without the owner's explicit acceptance</td><td>W1</td></tr>
+    <tr><td><a href="../use-cases/workflow.html#uc-gate-3">UC-GATE-3</a> the epic gate re-walks every seam</td><td>Amended. A WU seam whose review was waived passes its check 3 and prints <code>WAIVED</code>, as a waived walk seam already does</td><td>W1</td></tr>
+  </tbody>
+</table>
+
+<h2 id="expected">Expected result</h2>
+<div data-item="expected" data-c="expected-body">
+  <ul>
+    <li><code>keel notes write cr --verdict WAIVED --reason "&lt;the owner's ruling&gt;"</code> writes a <code>cr/v1</code> note with <code>verdict: WAIVED</code>, the reason, and the code diff hash. Without a reason, or with only whitespace, it is refused. <code>--blockers</code>/<code>--importants</code> may record what the waived round found.</li>
+    <li><code>keel verify-dod wu &lt;tip&gt;</code> on a tip whose review was waived prints <code>WAIVED 3·review: &lt;reason&gt;</code> and is red only on <code>8·manual-review</code>. After a code commit, check 5 orphans the waiver just as it orphans a verdict.</li>
+    <li><code>keel mr confirm wu &lt;tip&gt; --as &lt;id&gt;</code> on that tip prints the waiver and the tip's review rounds, then refuses and names the acceptance flag. With the flag it signs, and the signed payload carries the waiver. If the waiver reason is edited after the signature, or a PASS is turned into a waiver, check 8 turns red.</li>
+    <li>An epic walk passes a WU seam whose review was waived and prints <code>WAIVED</code> for it. An epic tip can carry a waived review of its own (the E-SEED2-close case).</li>
+    <li>On a WU branch whose first-parent history holds 3 <code>cr/v1</code> FAIL notes, <code>keel preflight wu &lt;tip&gt;</code> exits non-zero with a <code>0·review-cap</code> block. The block names the count, the cap, and the owner's choices (continue one round, waive, or stop the WU). No finder is spawned. Rounds 1–3 print <code>review round n of 3</code>.</li>
+    <li>An epic counts only its own rounds, the FAIL notes on its first-parent commits. A merged WU's rounds never count against its epic. Re-running a review on the same tip overwrites that tip's note, so it stays one round. A PASS is not a round.</li>
+    <li>With the owner's "continue", given as a flag that carries the ruling text, preflight admits exactly one more round, and that round's note records the ruling. The round after it is refused again. <code>keel notes write cr</code> applies the same count, so a note for a round past the cap cannot be written without the ruling.</li>
+    <li><code>[review] max_rounds = 5</code> in the committed <code>.keel/config.toml</code> moves the cap. With the key unset the cap is 3.</li>
+    <li>The keel-code-review rubric and skill name a missing edge-case test for correct code, and a test-harness tidy-up, as nits. The rubric keeps "a failing case the tests miss" a blocker, because that is a bug and not a missing test. <code>skills/</code> and <code>.claude/skills/</code> stay byte-identical (the <code>tests/init.rs</code> mirror test).</li>
+    <li>The epic e2e (below) passes through the real merge hook in a scratch repo.</li>
+  </ul>
+</div>
+
+<h2 id="non-goals">Non-goals</h2>
+<ul data-item="non-goals" data-c="non-goals-list">
+  <li>The deferral rule from the 2026-11-11 draft (every follow-up names a WU or an epic, checked by verify-doc). It is outside the B8 + B12 scope (open point 10).</li>
+  <li>A gate check on nit dispositions (Trawler's <code>3·review-nits</code>). DEC-26 rules it out (open point 8).</li>
+  <li>Changing what a finder or a verifier looks for beyond the two named nit cases, adding or removing dimensions, or changing the verifier batching.</li>
+  <li>Rewriting the existing PASS-by-waiver notes (E-SEED2.W12, the E-SEED2 close, E-SEED2.W14/W15) or any archived result report. B12 and B13 keep the history.</li>
+  <li>Fixing B13 or B14 themselves. They stay in E-GATEFIX; this epic only makes their kind of waiver recordable.</li>
+  <li>An owner-run <code>keel mr</code> command for each ruling. The owner's existing <code>keel mr confirm</code>, with an explicit acceptance flag, is the consent (open points 4, 5).</li>
+  <li>A new note schema version. <code>cr/v1</code> gains one value and optional fields that older readers ignore (open point 6).</li>
+</ul>
+
+<h2 id="design">Design</h2>
+<div class="diagram" data-c="loop-diagram">
+<pre class="mermaid">
+flowchart TD
+  P[keel preflight wu|epic] -->|FAIL rounds below max_rounds| R[review round n of max]
+  P -->|max_rounds reached| S[0·review-cap: stop, list open findings, ask the owner]
+  R -->|PASS| G[verify-dod red only on 8, owner signs]
+  R -->|FAIL| F[fix on a new tip] --> P
+  S --> O{owner rules}
+  O -->|continue| C[preflight --continue ruling: one more round, ruling on its note] --> R
+  O -->|waive| W[notes write cr --verdict WAIVED --reason ruling] --> G2[verify-dod: WAIVED 3·review, red only on 8]
+  G2 --> M[mr confirm prints the waiver, refuses without the acceptance flag; signature binds it]
+  O -->|stop| X[WU dropped or re-planned: owner's call, no tool]
+</pre>
+<div class="caption">The review loop with the cap (W2) and the waiver exit (W1). A waiver can also come before any round, when the owner waives a review outright (the E-SEED2.W14 case).</div>
+</div>
+<table data-c="design-table">
+  <thead><tr><th>Choice</th><th>Options weighed</th><th>Chosen, and why</th></tr></thead>
+  <tbody>
+    <tr><td>Where the cap lives</td><td>Skill text only · a typed <code>--round n</code> · preflight counts the FAIL notes already in the range</td><td><b>Preflight counts.</b> With skill text only, the session inside the loop has to count, and the count is lost on compaction or with a fresh review worker (E-ROUTER3.W2 ran 7 rounds under a text rule). A typed round number is the agent's word (UC-NOTE-1). Every failed round already leaves a FAIL note on its tip, and gated branches are never rebased, so the count needs no new state. Preflight is already the review's first step and the free place to abort</td></tr>
+    <tr><td>What a waiver is on the note</td><td>PASS plus a waiver field · a verdict value of its own</td><td><b><code>verdict: WAIVED</code></b> plus <code>waiver: "&lt;reason&gt;"</code>. A reader, the gate and an older binary can all tell it from a review. An older <code>keel</code> reads it as "not PASS" and fails safe (check 3 red). This matches Trawler DEC-47's split: a waiver accepts a failure, so it never looks like a pass</td></tr>
+    <tr><td>Who consents, and what the gate checks</td><td>Print only · an acceptance flag on <code>mr confirm</code> · the flag plus the waiver bound into the signed payload</td><td><b>Flag plus binding</b> (open point 5). The owner signs explicitly over a waiver, as <code>--roster-change</code> already works for roster edits. Check 8 rebuilds the payload from the current note, so a waiver added, removed or reworded after the signature turns the gate red. That is B12's "checked at the gate"</td></tr>
+  </tbody>
+</table>
+
+<h2 id="wus">Working units</h2>
+<div class="diagram" data-c="wu-deps-diagram">
+<pre class="mermaid">
+flowchart LR
+  W1[W1 waiver on cr/v1 · B12] --> W2[W2 round cap · B8]
+  W3[W3 finding scope · B8, text only]
+</pre>
+<div class="caption">W1 first: the cap's refusal names the waiver as an exit, and both WUs change the same writer (<code>src/notes.rs</code>). W3 is skill text only and runs in parallel. The last WU to land adds the epic e2e.</div>
+</div>
+
+<div data-item="wu-summaries" data-c="wu-summaries">
+
+<div data-wu="E-CRCAP.W1" data-c="wu-w1">
+  <h3 id="w1">E-CRCAP.W1 · A waived review is recorded as WAIVED, accepted at sign-off and checked at the gate <span class="badge id">B12</span></h3>
+  <p data-item="wu-summary"><b>Contract:</b> <code>keel notes write cr --verdict WAIVED --reason "&lt;owner's ruling&gt;" [--blockers n] [--importants n]</code> writes <code>cr/v1</code> with <code>verdict: WAIVED</code>, <code>waiver: &lt;reason&gt;</code> and the usual identity and <code>code_diff_hash</code>. An empty or whitespace-only reason is refused, and so is a reason on PASS or FAIL. Check 3 accepts WAIVED and prints <code>WAIVED 3·review: &lt;reason&gt;</code>. Checks 4 and 5 apply unchanged. The walk passes a waived seam and prints it. The <code>dod/v1</code> receipt records <code>review: WAIVED</code>. <code>keel mr confirm</code> (and so <code>sign_ready</code>) on a waived tip prints the waiver and every cr round found on the tip's first-parent history, then refuses without the acceptance flag (working name <code>--accept-waiver</code>). With the flag, the signed <code>keel-mr/v2</code> payload gains a <code>review: WAIVED sha256:&lt;hash of the reason&gt;</code> line. Check 8 rebuilds that line from the current note, so the payload is unchanged for every tip that is not waived, and existing signatures stay valid. <b>Skill text:</b> keel-code-review §5–§7 (who writes a waiver, and only on the owner's ruling) and keel-workflow §3, §4, §5 and §6 (the waiver row, check 3's WAIVED, the acceptance flag). <b>Rule-bearing:</b> <code>skills/</code> plus the <code>.claude/skills/</code> mirror, in one owner <code>keel mr commit</code>, staged and printed by the worker. <b>No gate reviews:</b> that skill text, plus this WU's plan and result under <code>docs/work/</code>. Code (<code>src/notes.rs</code>, <code>src/gate.rs</code>, <code>src/mr.rs</code>, <code>tests/</code>) goes through the cr gate.</p>
+  <p data-item="wu-maps-to">Backlog B12 (and the waiver kinds of B13, B14) · UC-REV-2 (new), UC-REV-1, UC-MR-1, UC-GATE-3 amended · a new decision record (next free id, DEC-49 at planning) amending DEC-40 (payload) and DEC-26.</p>
+  <p data-item="wu-expected"><b>Integration test</b> (<code>tests/verify_dod.rs</code> and <code>tests/mr.rs</code>, scratch repos, test signer): WAIVED without a reason is refused; with one, <code>verify-dod wu</code> is red only on check 8 and prints the waiver; a code commit after the waiver turns check 5 red; <code>mr confirm</code> without the flag is refused and writes no <code>mr/v1</code>, and with it signs; rewording the waiver after signing turns check 8 red, and so does turning a signed PASS into a waiver; a non-waived tip's payload is byte-identical to today's (the existing payload unit test is extended); an epic walk passes a waived WU seam and prints <code>WAIVED</code>. Unit tests cover the writer's flag parsing and the payload line.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+<div data-wu="E-CRCAP.W2" data-c="wu-w2">
+  <h3 id="w2">E-CRCAP.W2 · Preflight refuses a review round past the cap; the owner decides from there <span class="badge id">B8 · rounds</span> <span class="badge id">owner 2026-11-11</span></h3>
+  <p data-item="wu-summary"><b>Contract:</b> a round is a <code>cr/v1</code> FAIL note on a first-parent commit of <code>base..tip</code> (one <code>rev-list --first-parent</code> and one <code>notes --ref=cr list</code>, no new state). <code>keel preflight wu|epic</code> prints <code>review round n of N</code>, where N is <code>[review] max_rounds</code> from the config preflight already loads (default 3). Once the count has reached N, it refuses with <code>0·review-cap</code>, naming the count and the owner's three choices. <code>--continue "&lt;owner's ruling&gt;"</code> (working name) on preflight admits one round past the cap. <code>keel notes write cr</code> derives the same count, stamps <code>round</code> on the note, refuses a PASS or FAIL past the cap unless the same flag is given, and stores the ruling as <code>continued</code>. Each <code>continued</code> note admits exactly one round. A WAIVED note (W1) is never refused by the cap. W1's <code>mr confirm</code> round listing gains the count and any rulings. <b>Skill text:</b> keel-code-review §2 (the new refusal) and §7 (the loop ends at PASS or the cap; then stop and report the open findings with the three choices), the keel-workflow check table, keel-router's review-worker brief row (the round number comes from preflight; the brief's "at most 3" points at it), and <code>templates/config.toml</code>'s <code>[review]</code> comment (it is no longer read by the skill only). <b>Rule-bearing:</b> <code>skills/</code>, <code>.claude/skills/</code> and <code>templates/</code>, in one owner <code>keel mr commit</code>. Keel's own <code>.keel/config.toml</code> is not changed: the default applies (open point 2). <b>No gate reviews:</b> that text, the template, and the WU docs.</p>
+  <p data-item="wu-maps-to">Backlog B8 (rounds) · owner rulings 2026-11-10 (E-SEED2.W12) and 2026-11-11 (E-ROUTER3, 3 rounds per WU, the owner decides past it) · UC-REV-3 (new) · a new decision record amending DEC-26 (the CLI now reads <code>[review] max_rounds</code>).</p>
+  <p data-item="wu-expected"><b>Integration test</b> (<code>tests/verify_dod.rs</code>, scratch repo): three FAIL notes on three tips, then preflight is red on <code>0·review-cap</code> and prints the choices; rounds 1–3 print <code>n of 3</code>; a merged WU's FAIL notes do not count for its epic; re-running on the same tip is one round; a PASS then a docs-only commit then a PASS is no round; <code>--continue</code> admits exactly one round, and the ruling lands on its note; <code>notes write cr --verdict FAIL</code> past the cap is refused, and WAIVED past the cap is not; <code>max_rounds = 5</code> moves the cap. Unit tests cover the count over a fabricated note list.</p>
+  <p data-item="wu-deps">W1 (same writer; the cap's refusal names the waiver as an exit)</p>
+</div>
+
+<div data-wu="E-CRCAP.W3" data-c="wu-w3">
+  <h3 id="w3">E-CRCAP.W3 · A missing edge-case test or a harness tidy-up is a nit and never reopens a WU <span class="badge id">B8 · scope</span></h3>
+  <p data-item="wu-summary"><b>Contract (text only):</b> the shipped <code>rubric.md</code> severity rows say what a missing test is. If the code behaves correctly on a case no test covers, that is a nit: nothing observable changes. If the code fails on that case, it is a blocker against the code, and a missing test never is one. A test-harness or test-support tidy-up that changes no test's verdict (helpers, duplication between fixtures, hermeticity polish that no test observes) is a nit. Coverage of the WU's stated contract stays the test note's business, judged at the level the charter names. keel-code-review §5 and §7 say a nit never triggers a fix round and is dispositioned on the note. keel-router's triage line and its supplementary-review rule ("re-review security paths until a round finds nothing above low") take the same 3-round cap as text (open point 9). <b>Rule-bearing:</b> <code>skills/</code> plus the mirror, in one owner <code>keel mr commit</code>. <b>No gate reviews:</b> the whole WU. It touches no code path, so it is exempt from test, cr and doc evidence (UC-GATE-5) but never from check 8. The router's read-only supplementary review covers the text.</p>
+  <p data-item="wu-maps-to">Backlog B8 (finding scope) · owner ruling 2026-11-10 ("a missing edge-case test or a harness tidy-up is a nit and does not reopen W12") · UC-REV-1 amended · a new decision record, or an amendment of DEC-26's rubric line.</p>
+  <p data-item="wu-expected">The rubric and skill text above, byte-identical in <code>skills/</code> and <code>.claude/skills/</code>. <code>tests/init.rs</code>'s mirror test and <code>keel check</code> stay green. <b>Integration test:</b> waived in the test note, with the reason that the WU changes no code path and has no behaviour a test can assert. Its effect shows in later reviews, not in a test.</p>
+  <p data-item="wu-deps">none (it touches <code>rubric.md</code> and keel-router; W1 and W2 touch other sections of the same skills, so the later merge resolves any overlap)</p>
+</div>
+
+</div>
+
+<h2 id="e2e-plan">E2E plan</h2>
+<div data-item="e2e-plan" data-c="e2e-plan-body">
+  <p><b>Test:</b> <code>epic_e2e_a_capped_review_loop_ends_in_an_owner_waiver_the_gate_accepts</code>, in a new <code>tests/review.rs</code>, added by the last code WU to land (W2). It is one hermetic flow in a scratch repo built by the test: a temp dir, <code>keel init</code> with hooks inside that scratch repo only, a username-tier test signer, and no network.</p>
+  <ol>
+    <li>An epic branch with a plan, and a WU branch with code, tests, a result report, and test and doc notes.</li>
+    <li>Three review rounds end FAIL, each on a new tip (<code>keel notes write cr --verdict FAIL</code>, which is the only fleet output the gate reads). The fourth <code>keel preflight wu</code> is refused with <code>0·review-cap</code>.</li>
+    <li>The owner's "continue": one more round runs, ends FAIL, and records the ruling. The next preflight is refused again.</li>
+    <li>The owner's "waive": a WAIVED note with the ruling. <code>keel verify-dod wu</code> is red only on check 8 and prints the waiver. <code>keel mr confirm</code> without the flag is refused, and with it signs. The real <code>git merge --no-ff</code> of the WU into the epic passes the pre-merge-commit hook.</li>
+    <li>The epic: its own review PASS, its walk prints the WU seam as WAIVED, <code>mr confirm epic</code> signs, and the merge into main passes the hook.</li>
+    <li>A refusal leg: rewording the WU's waiver after signing turns <code>verify-dod wu</code> red on <code>8·manual-review</code>.</li>
+  </ol>
+  <p>No waiver of the e2e layer is intended. Lesson from E-SEED2.W15: the flow runs the real merge through the real hook, never <code>verify-dod</code> alone.</p>
+</div>
+
+<h2 id="no-gate">What no gate reviews</h2>
+<table data-c="no-gate-table">
+  <thead><tr><th>WU</th><th>Paths outside <code>code_paths</code> (<code>src/</code>, <code>tests/</code>)</th><th>What covers them</th></tr></thead>
+  <tbody>
+    <tr><td>W1</td><td><code>skills/keel-code-review/SKILL.md</code>, <code>skills/keel-workflow/SKILL.md</code>, their <code>.claude/skills/</code> mirrors, the WU plan and result</td><td>The owner's <code>keel mr commit</code> (Reviewed-By), plus the router's read-only supplementary review of the skill text</td></tr>
+    <tr><td>W2</td><td>keel-code-review, keel-workflow and keel-router (<code>references/brief-skeleton.md</code>) text and mirrors, <code>templates/config.toml</code>, the WU plan and result</td><td>Same</td></tr>
+    <tr><td>W3</td><td>Everything: <code>skills/keel-code-review/rubric.md</code> and <code>SKILL.md</code>, <code>skills/keel-router/SKILL.md</code>, mirrors, the WU plan and result</td><td>Same. The WU is exempt from test, cr and doc evidence, never from check 8</td></tr>
+    <tr><td>Epic close</td><td>The T2 docs below (not rule-bearing: <code>docs/*.html</code> matches flat docs only), the archive commit</td><td>Check 6 (lineage), the owner's epic sign-off</td></tr>
+  </tbody>
+</table>
+
+<h2 id="distillation-plan">Distillation plan</h2>
+<table data-item="distillation-plan" data-c="distillation-table">
+  <thead><tr><th>Target (tier)</th><th>Absorbs</th></tr></thead>
+  <tbody>
+    <tr><td><code>docs/use-cases/workflow.html</code> (T2)</td><td>UC-REV-2 and UC-REV-3 (new). UC-REV-1, UC-MR-1 and UC-GATE-3 amended as in the use-case table</td></tr>
+    <tr><td><code>docs/decisions/workflow-gates.html</code> (T2)</td><td>The waiver record (WAIVED as a verdict of its own, the acceptance flag, the payload line; amends DEC-40 and DEC-26). The cap record (a round is a derived FAIL note, the count lives in preflight and the writer, <code>max_rounds</code>; amends DEC-26, with the rejected options above). The finding-scope record or DEC-26 amendment. Ids are the next free ones at landing (DEC-49 on main at planning; check every live branch first)</td></tr>
+    <tr><td><code>docs/decisions/decisions-index.html</code>, <code>docs/use-cases/use-cases-index.html</code> (T2)</td><td>The new ids, the next free id, and UC-REV's scope line</td></tr>
+    <tr><td><code>docs/backlog/e-seed-v2.html</code>, <code>backlog-index.html</code> (T2)</td><td>B8 and B12 struck as done by E-CRCAP. B13 and B14 note that a waiver is now recordable. E-SEED3's row drops B8 and B12. The order table gains E-CRCAP</td></tr>
+    <tr><td><code>docs/backlog/e-router-v2.html</code> (T2)</td><td>The "E-SEED2.W12 code-review rounds" note points at UC-REV-3</td></tr>
+    <tr><td>Skills and <code>templates/</code> (infrastructure, rule-bearing)</td><td>The rule text itself, landed by the WUs. Nothing is distilled into them at close</td></tr>
+  </tbody>
+</table>
+
+<h2 id="open-questions">Open questions</h2>
+<p>No WU starts before the owner's go. Each point has a default that applies if the owner does not answer it.</p>
+<table data-item="open-questions" data-c="open-points-table">
+  <thead><tr><th>#</th><th>Point</th><th>Options and their costs</th><th>Recommendation · default if unanswered</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Where the cap is enforced</td><td>(a) Skill text only: no code, but the loop's own session has to count, and E-ROUTER3.W2 shows it does not. (b) Preflight and the cr writer derive the count from FAIL notes: one WU of code, and it holds across fresh workers and compaction</td><td><b>(b)</b> · default (b)</td></tr>
+    <tr><td>2</td><td>Cap value and scope</td><td>(a) 3 per WU only. (b) 3 per WU and 3 for an epic's own review, counted apart. Either way the cap is <code>[review] max_rounds</code>, default 3. <code>.keel/</code> is rule-bearing, so only an owner commit can raise it</td><td><b>(b)</b>, with Keel's config left unset so the default applies · default (b)</td></tr>
+    <tr><td>3</td><td>What counts as a round</td><td>A FAIL <code>cr/v1</code> note on a first-parent commit of the range. A re-run on the same tip is one round, a PASS is none, and a run that writes no note is none. Residual risk: an agent that abandons a FAIL round without writing its note escapes the count. The skill already says evidence is written either way, and the owner sees the round list at sign-off (W1)</td><td>As stated · default as stated</td></tr>
+    <tr><td>4</td><td>The owner's choices past the cap, and how "continue" is recorded</td><td>Three choices, put to the owner in the conversation with the open findings listed: <b>continue</b> (one round; the agent passes the ruling by flag, and it is stored on that round's note), <b>waive</b> (W1's WAIVED note), <b>stop</b> (drop or re-plan the WU; no tool). Alternative for "continue": an owner-run <code>keel mr</code> ruling command, which is stronger but adds a signed command for a choice the owner already sees at sign-off</td><td><b>Agent-passed flag, shown at sign-off</b>. Upgrade path if an agent ever invents a ruling: the owner-run command · default the flag</td></tr>
+    <tr><td>5</td><td>How the owner consents to a waiver, and what the gate checks</td><td>(a) <code>mr confirm</code> prints it: no code beyond the print, but nothing proves the owner saw it. (b) An acceptance flag on <code>mr confirm</code>: explicit, like <code>--roster-change</code>. (c) (b) plus a <code>review: WAIVED sha256:…</code> line in the signed payload, rebuilt by check 8: a later edit turns the gate red. It touches <code>src/mr.rs</code>'s payload, but only for waived tips</td><td><b>(c)</b> · default (c)</td></tr>
+    <tr><td>6</td><td>The waiver's shape on the note</td><td>(a) <code>verdict: PASS</code> plus a <code>waiver</code> field: an older <code>keel</code> passes it silently. (b) <code>verdict: WAIVED</code> plus <code>waiver</code>: an older <code>keel</code> is red on check 3 and fails safe, and every reader sees the difference. Both stay <code>cr/v1</code></td><td><b>(b)</b> · default (b). Flag, field and check names (<code>--reason</code>, <code>--accept-waiver</code>, <code>--continue</code>, <code>round</code>, <code>continued</code>, <code>0·review-cap</code>) are working names; each WU plan fixes them</td></tr>
+    <tr><td>7</td><td>Finding scope beyond the two named nit cases</td><td>(a) Rubric text for the two cases only. (b) Also narrow later rounds: from round 2, an important on code unchanged since the previous round's tip becomes a follow-up. That cuts loops, but it lets a real important through, and the cap already bounds the loop</td><td><b>(a)</b> · default (a)</td></tr>
+    <tr><td>8</td><td>Port Trawler's nit-disposition gate check (<code>3·review-nits</code>)</td><td>(a) No: DEC-26 ruled it out, nits stay skill-recorded, and no loop came from undecided nits. (b) Yes: reverses DEC-26 and adds a red check that names an undecided nit, at the cost of another way to fail a gate</td><td><b>(a)</b> · default (a)</td></tr>
+    <tr><td>9</td><td>The router's supplementary reviews (code no gate reviews; "re-review security paths until a round finds nothing above low")</td><td>(a) Leave them uncapped. (b) The same 3-round cap as text in keel-router (W3); past it the router asks the owner</td><td><b>(b)</b>: the owner wants no review loops · default (b)</td></tr>
+    <tr><td>10</td><td>The 2026-11-11 draft's deferral rule (a follow-up names a WU or an epic, and verify-doc checks it)</td><td>(a) Out of E-CRCAP, as the 2026-11-12 scope ruling says, and recorded as a new backlog row at this epic's close. (b) A fourth WU here</td><td><b>(a)</b> · default (a). The untracked draft stays on disk until the owner says to delete it</td></tr>
+    <tr><td>11</td><td>The installed <code>keel</code> binary</td><td>This epic's own gates run the installed <code>keel</code>, so the cap and the waiver act only after the owner reinstalls from main at the close. Until then the router applies the 3-round cap by hand (owner ruling 2026-11-11), and no WAIVED note is written on this epic's tips. An older binary would read one as not PASS, which fails safe</td><td>As stated · default as stated</td></tr>
+    <tr><td>12</td><td>Rule-bearing edits</td><td>One owner <code>keel mr commit</code> per WU (source and mirror in the same commit), staged and printed by the worker, never run by it</td><td>As stated · default as stated</td></tr>
+  </tbody>
+</table>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
