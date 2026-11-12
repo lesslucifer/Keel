@@ -123,6 +123,15 @@ Refuted findings are dropped; mention them in one line to the caller.
   already inside the range the note binds) or `waived: "<reason>"`. Nothing
   licenses a post-verdict fix: a later code commit moves the hash and orphans
   the note.
+- **WAIVED** is never a reviewer's verdict, and nobody writes PASS for a
+  review that did not run or did not pass. The owner waives a review in the
+  sign-off itself (`keel mr confirm … --waive-review "<reason>"`, skill
+  `keel-workflow` §5–§6); no session writes an owner's waiver or stages that
+  flag. The writer `keel notes write cr --verdict WAIVED --reason "<why>"` is
+  for a stop the review tool fixes (the round cap) and has no legitimate
+  caller until that cap exists. A waiver keeps the round's note whole; its
+  open findings are the `findings` entries without `waived` (§6), and the
+  sign-off prints them.
 
 ## 6 · Evidence — the `cr/v1` note on the reviewed tip
 
