@@ -9,7 +9,7 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>E-ROUTER3.W4 · A worker can never sign as the owner; the router's security files are gated — result</h1>
-      <p>The signer roster is <code>.keel/mr-allowed</code> as committed on the branch a change lands on; no keel command reads a roster from disk. A sign-off whose range changes the roster needs <code>--roster-change</code>. Keel's own policy becomes key-only and gates the router's four security paths once the owner lands it. The owner's steps and the live presence check are still to do.</p>
+      <p>The signer roster is <code>.keel/mr-allowed</code> as committed on the branch a change lands on; no keel command reads a roster from disk. A sign-off whose range changes the roster needs <code>--roster-change</code>. Keel's own policy gates the router's four security paths once the owner lands it. By owner ruling 2026-11-12 Keel's sign-offs stay name-based: key-only is deferred, so R14's signing half stays open (DEC-48 item 4). The owner's steps are still to do.</p>
       <div class="meta">Result · 2026-11-12 · Keel · plan <a href="2026-11-12-w4-owner-signing-wu-plan.html">2026-11-12-w4-owner-signing-wu-plan.html</a> (v1, owner go 2026-11-12 on every default) · DEC-47, DEC-48</div>
     </div>
   </header>
@@ -26,7 +26,7 @@
   <p>The disk read and the tracked-refusal of <code>.mr-allowed</code> are deleted. In <code>src/</code> the name survives only in that fix text. <code>.keel/mr-allowed</code> is rule-bearing whatever <code>rule_bearing</code> lists. <code>keel mr setup</code> writes the working <code>.keel/mr-allowed</code>, touches no <code>info/exclude</code> and prints the command that lands it. <code>keel init</code>'s next steps put <code>keel mr setup</code> before the one-time first commit.</p>
   <p><b>Not done yet</b> (each is the owner's, staged below):</p>
   <ul>
-    <li>Owner commit A: Keel's roster, the key-only policy, the four new rule-bearing paths, <code>.gitworktreecopy</code>, and the tests that pin them.</li>
+    <li>Owner commit A: Keel's roster (vuluu by name), the policy, the four new rule-bearing paths, <code>.gitworktreecopy</code>, and the tests that pin them.</li>
     <li>Owner commit B: the rule-bearing skill, template and install text.</li>
     <li>The review in a fresh <code>--review</code> worker, then the install of the reviewed build.</li>
     <li>The <b>live presence check</b>: the owner's real confirm waits for a touch or a passphrase, and the same command with no terminal writes no note.</li>
@@ -44,6 +44,7 @@
       <tr><td>3</td><td>The new backlog row is R25.</td><td>R1–R24 were taken.</td></tr>
       <tr><td>4</td><td>On a rule-bearing commit with no roster at <code>HEAD</code>, the bootstrap line prints twice: once from <code>keel mr commit</code>, once from the hook. Sign-off refusals name the target as given (a branch, <code>HEAD</code> or a full sha).</td><td>Each reader prints its own line. Deduplicating them would need state shared across processes.</td></tr>
       <tr><td>5</td><td><code>docs/install.html</code> has no <code>data-htmldoc-id</code>, so it has no snapshot. <code>docs/decisions/router.html</code> and <code>docs/backlog/e-router-v2.html</code> have none either: the server returns 404 for their ids, as it did in W8 and W9.</td><td>Known server state.</td></tr>
+      <tr><td>6</td><td>Keel's <code>[mr] tiers</code> stay <code>["username", "key"]</code> and the owner is listed by name; the plan's key-only flip and the live presence check are not done. The test that pinned key-only became <code>keels_router_security_files_are_rule_bearing</code>.</td><td>Owner ruling 2026-11-12: sign with the name for now. R14's signing half stays open (DEC-48 item 4, backlog R14).</td></tr>
     </tbody>
   </table>
 </div>
