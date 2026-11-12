@@ -102,9 +102,10 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
     }
 }
 
-/// Checks 1-2 (paperwork, all the preflight reads) or 1-6 on the tip itself.
-fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: bool) -> Result<(), String> {
-    let review = full && r.level != Level::Commit;
+/// Checks 1-2 (paperwork, all the preflight reads) or 1-6 on the tip itself. `own_review`: false
+/// only when the signer is about to waive the tip's review, so its cr note is neither required nor judged.
+fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: bool, own_review: bool) -> Result<(), String> {
+    let review = full && own_review && r.level != Level::Commit;
     let docs = notes::doc_paths(repo, cfg, &r.base, &r.tip, names)?;
     let test = read::<TestNote>(repo, r, "test", true);
     let cr = if review { read::<CrNote>(repo, r, "cr", true) } else { None };
@@ -200,11 +201,15 @@ fn tracked_layout(repo: &Path, cfg: &Config, r: &mut Report) -> Result<(), Strin
 }
 
 fn verify(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> Result<Report, String> {
+    verify_with(repo, cfg, level, tip_ref, target, true)
+}
+
+fn verify_with(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, own_review: bool) -> Result<Report, String> {
     let (mut r, names) = open(repo, cfg, level, tip_ref, target)?;
     // UC-GATE-5 never exempts W8's archive/tier-layout checks (below). W4's 8·manual-review runs in
     // `run()` instead - this fn is re-entered per walk seam and by mr confirm, neither of which may judge it.
     if !r.exempt {
-        check_tip(repo, cfg, &mut r, &names, true)?;
+        check_tip(repo, cfg, &mut r, &names, true, own_review)?;
     } else {
         // An archive commit is docs-only by nature; exempting it would leave distillation unchecked.
         let docs = notes::doc_paths(repo, cfg, &r.base, &r.tip, &names)?;
@@ -335,10 +340,12 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, gua
 
 /// mr confirm's sign-last rule (Trawler DEC-27): checks 1-7 must already be green on the tip.
 /// Red -> the failures are printed and `None`; green -> `(tip, base, target)` of the range to sign.
-pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, rest: &[&str]) -> Result<Option<(String, String, String)>, String> {
+/// `waive`: the signer waives the tip's own review in this sign-off (UC-REV-2), so its review - the
+/// cr note and checks 3-5 on it - is the one thing not yet required; everything else still is.
+pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, rest: &[&str], waive: bool) -> Result<Option<(String, String, String)>, String> {
     let level = if epic { Level::Epic } else { Level::Wu };
     let target = target_of(cfg, level, tip_ref, rest);
-    let r = verify(repo, cfg, level, tip_ref, &target)?;
+    let r = verify_with(repo, cfg, level, tip_ref, &target, !waive)?;
     if !r.failures.is_empty() {
         print(&r, "mr confirm");
         return Ok(None);
@@ -456,7 +463,7 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
     } else if check(repo, cfg)? != 0 {
         r.fail("0·tree", "keel check is red on the tip".into(), "get lint and tests green before the review runs");
     }
-    check_tip(repo, cfg, &mut r, &names, false)?;
+    check_tip(repo, cfg, &mut r, &names, false, true)?;
     print(&r, "preflight");
     Ok(!r.failures.is_empty() as i32)
 }

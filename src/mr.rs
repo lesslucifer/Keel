@@ -179,6 +179,46 @@ fn waiver_listing(tip: &str, cr: &CrNote, history: &[(String, CrNote)]) -> Strin
     out
 }
 
+/// `--waive-review "<reason>"`: `Ok(None)` when absent, the trimmed reason when given, refused when
+/// blank or missing (a following flag is not a reason).
+fn waive_reason(args: &[&str]) -> Result<Option<String>, String> {
+    if !args.contains(&"--waive-review") {
+        return Ok(None);
+    }
+    match flag(args, "--waive-review").map(str::trim) {
+        Some(r) if !r.is_empty() && !r.starts_with("--") => Ok(Some(r.to_string())),
+        _ => Err("--waive-review needs the reason, in the signer's own words\n  fix -> keel mr confirm <wu|epic> <tip> --as <identity> --waive-review \"<why this review is waived>\"".into()),
+    }
+}
+
+/// The cr/v1 note a signer's `--waive-review` writes, with the sign-off, in place of `existing`: never
+/// over a PASS (a review that passed is signed as it is); a failed or cap-waived round's open counts,
+/// findings and walk waivers carry over, so the waiver records what it leaves open.
+fn owner_waiver(id: notes::Identity, reason: &str, code_diff_hash: String, existing: Option<CrNote>) -> Result<CrNote, String> {
+    let carried = match existing {
+        Some(n) if n.verdict == "PASS" => {
+            return Err(format!(
+                "the review of {} is a PASS; there is nothing to waive\n  fix -> sign it as reviewed: keel mr confirm without --waive-review",
+                short(&id.tip)
+            ))
+        }
+        Some(n) => (n.blockers, n.importants, n.open_findings, n.walk_waivers),
+        None => (0, 0, serde_json::Value::Null, vec![]),
+    };
+    let (blockers, importants, open_findings, walk_waivers) = carried;
+    Ok(CrNote {
+        schema: "cr/v1".into(),
+        id,
+        verdict: "WAIVED".into(),
+        waiver: Some(reason.into()),
+        blockers,
+        importants,
+        code_diff_hash,
+        open_findings,
+        walk_waivers,
+    })
+}
+
 /// `keel mr confirm`'s positional arguments: every flag takes a value except the two acknowledgements.
 fn positionals<'a>(args: &[&'a str]) -> Vec<&'a str> {
     let (mut pos, mut i) = (vec![], 0);
@@ -441,7 +481,7 @@ fn landed(tip: &str, base: &str, target: &str) -> Option<String> {
 }
 
 fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
-    const USAGE: &str = "usage: keel mr confirm <wu|epic> [<tip>] [--as <identity>] [--target R] [--report <path>] [--roster-change] [--accept-waiver]";
+    const USAGE: &str = "usage: keel mr confirm <wu|epic> [<tip>] [--as <identity>] [--target R] [--report <path>] [--roster-change] [--accept-waiver | --waive-review \"<reason>\"]";
     let pos = positionals(args);
     let (level, tip_ref) = match pos[..] {
         [l] => (l, "HEAD"),
@@ -459,7 +499,14 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         t => t.to_string(),
     };
     // Sign last (Trawler DEC-27): every binding pins the diff, so the tree settles before a human signs.
-    let Some((tip, base, target)) = gate::sign_ready(repo, cfg, epic, &tip_ref, args)? else {
+    let waive = match waive_reason(args) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("mr confirm refused - {e}");
+            return Ok(1);
+        }
+    };
+    let Some((tip, base, target)) = gate::sign_ready(repo, cfg, epic, &tip_ref, args, waive.is_some())? else {
         eprintln!("mr confirm refused - sign last: get the notes and a bound cr PASS green on this exact tip first\n  fix -> keel notes write test|doc, run the code review (cr PASS), then keel mr confirm again");
         return Ok(1);
     };
@@ -485,8 +532,26 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         );
         return Ok(1);
     }
-    // A waived review meets the signer here: shown with every round, never signed by default (UC-REV-2).
+    let branch = (tip_ref != tip && tip_ref != "HEAD").then(|| tip_ref.clone());
+    // A waived review meets the signer here, shown with every round (UC-REV-2): the signer waives it in
+    // this sign-off (`--waive-review`, written with the signature), or accepts a waiver the tool wrote.
+    let mut owner_cr = None;
     let waiver = match notes::cr_note(repo, &tip).filter(|n| n.waiver().is_some()) {
+        _ if waive.is_some() => {
+            let reason = waive.as_deref().unwrap_or_default();
+            let ident = notes::identity(repo, tip.clone(), base.clone(), branch.clone())?;
+            let cr = match owner_waiver(ident, reason, notes::code_diff_hash(repo, cfg, &base, &tip)?, notes::cr_note(repo, &tip)) {
+                Ok(cr) => cr,
+                Err(e) => {
+                    eprintln!("mr confirm refused - {e}");
+                    return Ok(1);
+                }
+            };
+            eprint!("{}", waiver_listing(&tip, &cr, &review_history(repo, &base, &tip)?));
+            eprintln!("{id} waives this review: the cr/v1 note above is written with the sign-off");
+            owner_cr = Some(cr);
+            Some(sha256(reason.as_bytes()))
+        }
         Some(cr) => {
             eprint!("{}", waiver_listing(&tip, &cr, &review_history(repo, &base, &tip)?));
             if !args.contains(&"--accept-waiver") {
@@ -528,7 +593,9 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     } else {
         None
     };
-    let branch = (tip_ref != tip && tip_ref != "HEAD").then(|| tip_ref.clone());
+    if let Some(cr) = &owner_cr {
+        notes::store(repo, "cr", &tip, cr)?;
+    }
     let note = MrNote {
         schema: "mr/v1".into(),
         id: notes::identity(repo, tip.clone(), base, branch)?,
@@ -678,7 +745,7 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{landed, parse_roster, payload, positionals, roster_change, rule_bearing, sha256, stale_change, waiver_drift, waiver_listing};
+    use super::{landed, owner_waiver, parse_roster, payload, positionals, roster_change, rule_bearing, sha256, stale_change, waive_reason, waiver_drift, waiver_listing};
     use crate::notes::CrNote;
 
     fn lcg(x: &mut u64) -> u64 {
@@ -855,5 +922,37 @@ mod tests {
         assert!(l.find("1111111111 WAIVED").unwrap() < l.find("2222222222 FAIL").unwrap(), "newest first");
         let bare = waiver_listing("t", &cr("WAIVED", serde_json::json!({"waiver": "r"})), &[]);
         assert!(!bare.contains("    - "), "no open_findings, no finding lines: {bare}");
+    }
+
+    #[test]
+    fn waive_review_takes_the_signers_own_non_blank_reason() {
+        assert_eq!(waive_reason(&["wu", "--as", "vu"]), Ok(None));
+        assert_eq!(waive_reason(&["wu", "--waive-review", "  ruling  ", "--as", "vu"]), Ok(Some("ruling".into())));
+        for bad in [&["wu", "--waive-review"][..], &["wu", "--waive-review", ""], &["wu", "--waive-review", " \t"], &["wu", "--waive-review", "--as", "vu"]] {
+            let e = waive_reason(bad).unwrap_err();
+            assert!(e.contains("fix ->") && e.contains("--waive-review"), "{bad:?}: {e}");
+        }
+        assert_eq!(positionals(&["wu", "--waive-review", "r", "--as", "vu"]), ["wu"], "the reason is the flag's value, never a positional");
+    }
+
+    #[test]
+    fn an_owner_waiver_carries_what_a_failed_round_left_open_and_never_replaces_a_pass() {
+        let id = || crate::notes::Identity { tip: "t0123456789".into(), base: "b".into(), branch: None, committer: "o".into(), timestamp: 0 };
+        let note = |v: &str| -> CrNote {
+            serde_json::from_value(serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "old", "branch": null, "committer": "r",
+                "timestamp": 0, "verdict": v, "waiver": "cap", "blockers": 2, "importants": 1, "code_diff_hash": "old",
+                "open_findings": [{"severity": "blocker", "finding": "f"}], "walk_waivers": [{"seam": "s", "why": "w"}]}))
+            .unwrap()
+        };
+        let fresh = owner_waiver(id(), "ruling", "h".into(), None).unwrap();
+        assert_eq!((fresh.verdict.as_str(), fresh.waiver(), fresh.blockers, fresh.importants), ("WAIVED", Some("ruling"), 0, 0));
+        assert!(fresh.open_findings.is_null() && fresh.walk_waivers.is_empty());
+        for v in ["FAIL", "WAIVED"] {
+            let w = owner_waiver(id(), "ruling", "h".into(), Some(note(v))).unwrap();
+            assert_eq!((w.waiver(), w.blockers, w.importants, w.code_diff_hash.as_str(), w.id.base.as_str()), (Some("ruling"), 2, 1, "h", "b"), "{v}");
+            assert_eq!((w.open_findings[0]["finding"].as_str(), w.walk_waivers[0].why.as_str()), (Some("f"), "w"), "{v}");
+        }
+        let e = owner_waiver(id(), "ruling", "h".into(), Some(note("PASS"))).unwrap_err();
+        assert!(e.contains("t012345678 is a PASS") && e.contains("fix ->"), "{e}");
     }
 }
