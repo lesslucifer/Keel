@@ -81,7 +81,7 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
             let fix = match kind {
                 "test" => format!("keel notes write test{t} < judgment.json   (on {})", short(&r.tip)),
                 "doc" => format!("keel notes write doc{t}   (on {})", short(&r.tip)),
-                _ => format!("run the code review on {}, then keel notes write cr --verdict PASS   (or the owner waives the review at sign-off: keel mr confirm ... --waive-review, typed by the owner, never staged)", short(&r.tip)),
+                _ => format!("run the code review on {}, then keel notes write cr --verdict PASS   (or {})", short(&r.tip), notes::OWNER_WAIVES),
             };
             r.fail("1·notes", format!("no {schema} note on {}", short(&r.tip)), fix);
         }
@@ -137,7 +137,7 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
             Ok(None) => {}
             Ok(Some(why)) => {
                 r.waived.push(format!("3·review: {why}"));
-                r.review_waiver = Some(why.into());
+                r.review_waiver = Some(why);
             }
             Err((what, fix)) => r.fail("3·review", what, fix),
         }
@@ -159,16 +159,15 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
     Ok(())
 }
 
-/// 3·review's rule: PASS passes; WAIVED passes with its reason (`Ok(Some)`), never without one.
-fn review_verdict(cr: &CrNote) -> Result<Option<&str>, (String, &'static str)> {
-    match (cr.verdict.as_str(), cr.waiver().map(str::trim)) {
+/// 3·review's rule: PASS passes; WAIVED passes with a reason the one reason rule accepts
+/// (notes::waiver_reason, `Ok(Some)`), never without one.
+fn review_verdict(cr: &CrNote) -> Result<Option<String>, (String, String)> {
+    match (cr.verdict.as_str(), cr.waiver()) {
         ("PASS", _) => Ok(None),
-        (_, Some(why)) if !why.is_empty() => Ok(Some(why)),
-        (_, Some(_)) => Err((
-            "review verdict is WAIVED with no reason".into(),
-            "a waiver needs its reason: the owner waives the review again at sign-off (keel mr confirm ... --waive-review \"<reason>\", typed by the owner, never staged)",
-        )),
-        (v, None) => Err((format!("review verdict is {v}"), "fix the verified findings and re-run the review until PASS")),
+        (_, Some(why)) => notes::waiver_reason(Some(why))
+            .map(Some)
+            .map_err(|_| ("review verdict is WAIVED with no reason".into(), format!("a waiver needs its reason in words: {}", notes::OWNER_WAIVES))),
+        (v, None) => Err((format!("review verdict is {v}"), "fix the verified findings and re-run the review until PASS".into())),
     }
 }
 
@@ -524,7 +523,7 @@ mod tests {
     fn check_3_passes_a_pass_and_a_reasoned_waiver_only() {
         assert_eq!(review(&cr("PASS", None)), Ok(None));
         assert_eq!(review(&cr("PASS", Some("stray"))), Ok(None));
-        assert_eq!(review(&cr("WAIVED", Some("  owner ruling  "))), Ok(Some("owner ruling")));
+        assert_eq!(review(&cr("WAIVED", Some("  owner ruling  "))), Ok(Some("owner ruling".to_string())));
         for (v, w, needle) in [
             ("WAIVED", None, "no reason"),
             ("WAIVED", Some(" \n"), "no reason"),
