@@ -72,11 +72,16 @@ call at once with a reason. The sandbox is the bound: a wrapper (`sh -c`, a test
 runner) passes a deny, and only the sandbox stops what it then reaches. The launcher
 passes no inherited `GIT_*` to the session (a background session takes the
 launching shell's environment). A host outside the sandbox makes a command
-wait, not fail: briefs tell workers to give network commands a timeout. The permission mode is the one validated
-choice: `acceptEdits` by default, `plan` for read-only checkers (live run 2026-11-12, Claude Code 2.1.288: a
-plan-mode worker changed nothing and reported by `SendMessage`; the hold is the
-model obeying plan mode, the harness's own block was not exercised), nothing else
-(never `bypassPermissions`). Grants travel on the launcher's command line only,
+wait, not fail: briefs tell workers to give network commands a timeout. The permission mode is the
+project's committed policy, validated by the launcher: `acceptEdits` is the
+recommended default; `auto` (Claude Code's classifier judges the calls that
+would otherwise prompt the owner: a read or edit outside the worktree, a fetch,
+a host outside the sandbox) is an opt-in the project commits, with that
+judgment as its residual risk; `plan` for read-only checkers (live run 2026-11-12,
+Claude Code 2.1.288: a plan-mode worker changed nothing and reported by
+`SendMessage`; the hold is the model obeying plan mode, the harness's own block
+was not exercised). A spawn option may only narrow the committed mode, and
+nothing else is accepted (never `bypassPermissions`, `dontAsk` or `default`). Grants travel on the launcher's command line only,
 never in the settings the router shares, so they never reach the router. `keel
 init` ships no launcher: a project commits its own and its project-router skill
 names it (`<launcher>` below). `ROOT` = the checkout holding the launcher; its
@@ -95,7 +100,7 @@ Claude Code trusts (pitfall 3); the target's branch carries the worker persona
   prompt, not authored substance (owner ruling 2026-11-08; SKILL.md
   "Substance comes from workers"). It is the only file you write. It names you,
   the router, as the one to report to.
-- **Spawn**: `<launcher> spawn <name> <worktree> .router/briefs/<name>.md <model> [--effort <level>] [--permission-mode plan] [--review]`
+- **Spawn**: `<launcher> spawn <name> <worktree> .router/briefs/<name>.md <model> [--effort <level>] [--permission-mode <mode no wider than the committed one>] [--review]`
   (`<name>` matches `[a-z0-9][a-z0-9-]{0,40}`; model and effort from the
   project's model policy, project-router). The launcher refuses a name any live
   session holds (SendMessage addresses by name) or whose launch is in progress,
