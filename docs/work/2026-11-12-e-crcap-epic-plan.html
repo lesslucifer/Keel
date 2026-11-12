@@ -29,6 +29,7 @@
     <tr><td>You waive a review yourself</td><td>Recorded as PASS. Your reason lives only in a backlog row or a report</td><td>Recorded as WAIVED with your reason. The merge check prints it</td></tr>
     <tr><td>You sign off a waived piece of work</td><td>Nothing tells you a review was skipped</td><td>Sign-off shows the waiver, every round and every "fixed, no new round" step, and refuses until you accept the waiver explicitly. Your signature covers the waiver, so a later edit to it is caught</td></tr>
     <tr><td>A reviewer flags a missing edge-case test, or a tidy-up of test helpers</td><td>It can fail the review and reopen the work</td><td>It counts as a nit: recorded, never a reason to fail the review</td></tr>
+    <tr><td>A later round raises a defect an earlier round already found</td><td>It is judged again from scratch and can fail the round again</td><td>The reviewers see the earlier rounds' findings and refute the repeat. It only counts if they show the earlier fix does not hold</td></tr>
   </tbody>
 </table>
 
@@ -134,26 +135,27 @@ flowchart LR
 <div data-wu="E-CRCAP.W3" data-c="wu-w3">
   <h3 id="w3">W3 · What counts as a nit <span class="badge id">B8 · scope</span></h3>
   <div data-item="wu-summary">
-    <p><b>In short:</b> the review rules name two cases as nits, so they never fail a review: a missing test for a case the code already handles correctly, and a tidy-up of test helpers. The router's own extra reviews follow the same schedule. Text only, no code.</p>
+    <p><b>In short:</b> the review rules name two cases as nits, so they never fail a review: a missing test for a case the code already handles correctly, and a tidy-up of test helpers. A defect an earlier round already found is refuted when a later round raises it again. The router's own extra reviews follow the same schedule. Text only, no code.</p>
     <p><b>Mechanics:</b></p>
     <ul>
       <li>The shipped <code>rubric.md</code> severity rows: if the code is right on an untested case, the missing test is a nit. If the code is wrong on that case, that is a blocker against the code, never against the test.</li>
       <li>A test-harness tidy-up that changes no test's result (helpers, duplicated fixtures, hermeticity polish no test observes) is a nit. Whether the WU's own contract is tested stays a question for its test note.</li>
       <li>keel-code-review §5 and §7: a nit never triggers a new round; it is fixed under a fix-PASS or waived on the note.</li>
+      <li><b>Earlier findings are refuted when repeated</b> (owner comment, 2026-11-12). Every round records its verified blockers and importants and its refuted candidates on its cr note (the same skill-side <code>jq</code> step that records nits; no CLI change, DEC-26). From round 2, the skill reads the cr notes of the earlier rounds on the branch and gives each verifier that list. A candidate that repeats an earlier finding (fixed, waived or refuted) is refuted. The one exception: the verifier shows, against the code at the tip, that the earlier fix does not hold. Then it is judged as a finding against that fix (open point 16).</li>
       <li>keel-router: its triage line, and its rule "re-review security paths until a round finds nothing above low", follow the 5-round schedule as text (open point 9).</li>
       <li>Rule-bearing: <code>skills/</code> and the mirror, in one owner <code>keel mr commit</code>.</li>
       <li>Not reviewed by any gate: the whole WU. It changes no code, so it needs no test, review or doc notes, but it still needs the owner's sign-off. The router's read-only extra review reads the text.</li>
     </ul>
   </div>
-  <p data-item="wu-maps-to">Backlog B8 (finding scope) · owner ruling of 2026-11-10 ("a missing edge-case test or a harness tidy-up is a nit and does not reopen W12") · UC-REV-1 amended · one new decision record, or an amendment to DEC-26's rubric line.</p>
-  <p data-item="wu-expected">The rubric and skill text above, byte-identical in <code>skills/</code> and <code>.claude/skills/</code>. The mirror test in <code>tests/init.rs</code> and <code>keel check</code> stay green. <b>Integration test:</b> waived in the test note, because the WU changes no code and has no behaviour a test can assert. Its effect shows in later reviews.</p>
+  <p data-item="wu-maps-to">Backlog B8 (finding scope) · owner ruling of 2026-11-10 ("a missing edge-case test or a harness tidy-up is a nit and does not reopen W12") · owner comment of 2026-11-12 ("a defect that we have found in before rounds should be a strong refuted as well") · UC-REV-1 amended · one new decision record, or an amendment to DEC-26's rubric line.</p>
+  <p data-item="wu-expected">The rubric and skill text above (including the repeat-finding rule in the verifier prompt of §4), byte-identical in <code>skills/</code> and <code>.claude/skills/</code>. The mirror test in <code>tests/init.rs</code> and <code>keel check</code> stay green. <b>Integration test:</b> waived in the test note, because the WU changes no code and has no behaviour a test can assert. Its effect shows in later reviews.</p>
   <p data-item="wu-deps">none (it edits <code>rubric.md</code> and keel-router; W1 and W2 edit other sections, and the later merge resolves any overlap)</p>
 </div>
 
 </div>
 
 <h2 id="open-questions-h">Open points for the owner</h2>
-<p>Points 2, 3, 4, 7 and 13–15 follow your 2026-11-12 comment. Each point has a recommendation, which is also the default if you do not answer. No work starts before your go.</p>
+<p>Points 2, 3, 4, 7 and 13–15 follow your first 2026-11-12 comment, point 16 your second. Each point has a recommendation, which is also the default if you do not answer. No work starts before your go.</p>
 <table data-item="open-questions" data-c="open-points-table">
   <thead><tr><th>#</th><th>Question</th><th>Recommendation (= default)</th><th>Options and costs</th></tr></thead>
   <tbody>
@@ -172,6 +174,7 @@ flowchart LR
     <tr><td>13</td><td>Who checks that a fix-PASS commit only fixes the findings?</td><td><b>Nobody runs reviewers on it.</b> The tool checks the rules (allowed findings, an ancestor with the latest reviewed note, no fix-PASS on a fix-PASS) and records the fix's own code hash; sign-off lists each fix-PASS with the files it changed</td><td>Your comment: "fix those and write a PASS, no need a new round". A one-verifier check of the fix would catch new code slipped into a fix, but it is a small round of its own</td></tr>
     <tr><td>14</td><td>Do importants found in round 5 also end in a fix-PASS?</td><td><b>Yes</b>, like round 4: only a blocker in round 5 ends in WAIVED</td><td>Your comment: "after 4 rounds, we only continue the review if it has a blocker". The alternative, WAIVED on any open important in round 5, sends more work to sign-off for findings you said are accepted after fixing</td></tr>
     <tr><td>15</td><td>Does the cap reason name the open blockers, or only count them?</td><td><b>Count them in the reason</b>; the finding texts go on the note as the nits do, and sign-off prints them</td><td>A reason holding the full finding texts would be long and would change the signed line whenever the wording is touched</td></tr>
+    <tr><td>16</td><td>When is a repeat of an earlier round's finding not refuted?</td><td><b>Only when the verifier shows, against the code at the tip, that the earlier fix does not hold</b> (a failing case it can name). It is then judged as a finding against that fix, at its own severity</td><td>(a) Always refuted: simplest, but a fix that did not work would pass unseen. (b) This exception: the verifier must bring new evidence, so a reworded repeat still fails. (c) Re-judged normally: what happens today, and what you asked to stop</td></tr>
   </tbody>
 </table>
 
@@ -190,6 +193,7 @@ flowchart LR
     <li>Round 5 runs only after a round 4 with a blocker. Round 6 never runs. A blocker in round 5 ends in a WAIVED note with the cap reason.</li>
     <li>An epic counts only its own rounds, never its WUs'. Re-running a review on the same commit is one round.</li>
     <li><code>[review] max_rounds</code> in the committed config moves the cap. Unset means 5.</li>
+    <li>The skill records each round's findings and refuted candidates on its cr note, and from round 2 its verifiers refute a repeat of an earlier finding unless the earlier fix does not hold.</li>
     <li>The rubric and skill name the two nit cases, and keep "the code is wrong on an untested case" a blocker. <code>skills/</code> and <code>.claude/skills/</code> stay byte-identical.</li>
     <li>The epic test below passes through the real merge hook in a scratch repo.</li>
   </ul>
@@ -224,7 +228,7 @@ flowchart LR
 <table>
   <thead><tr><th>Trawler limit</th><th>In Keel today</th><th>This epic</th></tr></thead>
   <tbody>
-    <tr><td>Severity decides the verdict; a nit never fails it (DEC-47)</td><td>Ported</td><td>Kept; W3 names the two nit cases; W2 lets nits be fixed after the verdict</td></tr>
+    <tr><td>Severity decides the verdict; a nit never fails it (DEC-47)</td><td>Ported</td><td>Kept; W3 names the two nit cases and refutes repeats of earlier findings; W2 lets nits be fixed after the verdict</td></tr>
     <tr><td>A nit is the narrow exit ("nothing observable changes and nothing drifts"); doubt rounds up</td><td>Ported</td><td>Kept</td></tr>
     <tr><td>Never report what lint and tests catch, pre-existing issues, or taste</td><td>Ported</td><td>Kept</td></tr>
     <tr><td>Never widen the caller's scope</td><td>Ported</td><td>Kept; from round 3 the scope is narrower still</td></tr>
