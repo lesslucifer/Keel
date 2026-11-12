@@ -96,8 +96,34 @@ same call path); everything else stays apart. Spawn every batch in one message.
 | A batch holds **at most 4** claims | the saving is one shared read, not a smaller fleet; one agent reading every region serially is far slower |
 | Each claim is judged on **its own** evidence | grouping puts correlated claims in one context — a confirmed claim lends its neighbour nothing; say so in the prompt |
 
-A verifier receives **only** the finding(s) and the scope — never the finder's
-reasoning. Its prompt:
+**Earlier notes.** Before spawning verifiers, collect what earlier notes on
+this branch recorded. An earlier note is a cr note on a first-parent commit of
+the range, other than the tip (a re-run on the same tip replaces the tip's
+note). It may be a reviewed round, a fix-PASS or a WAIVED note: all of them go
+in the list. Which notes count as rounds is the schedule's question, not this
+list's. An epic reads only its own line, never its WUs' notes:
+
+```sh
+EARLIER=$(git rev-list --first-parent "$BASE..$HEAD_R" | tail -n +2 \
+  | while read -r c; do
+      n=$(git notes --ref=cr show "$c" 2>/dev/null) || continue
+      printf '%s' "$n" \
+        | jq -e -c --arg c "$c" '{commit: $c, findings: (.findings // []), nits: (.nits // []), refuted: (.refuted // [])} | select([.findings, .nits, .refuted] | all(type == "array"))' \
+        || echo "unreadable cr note on $c" >&2
+    done \
+  | jq -s -c 'map(select((.findings + .nits + .refuted) | length > 0))')
+```
+
+A note written before these fields existed has none; it counts as empty.
+If the reader prints anything on stderr (an `unreadable cr note on <commit>`
+line or a jq error), stop before the verifiers and report each named commit to
+the caller: never pass a partial list. The owner repairs a named note in
+place; never remove it (the schedule counts rounds from these notes). With no
+error, `EARLIER` is a JSON array, and `[]` when there are no earlier notes
+(round 1).
+
+A verifier receives **only** the finding(s), the scope and `EARLIER` — never the
+finder's reasoning. Its prompt:
 
 - try to **refute** the claim against actual behaviour: read the surrounding
   code, trace callers and data flow, run a targeted test when cheap — never
@@ -108,9 +134,30 @@ reasoning. Its prompt:
   false positive costs more than a missed nit;
 - **judge the severity** against `rubric.md`'s rows rather than inheriting the
   finder's; uncertainty between two rows resolves **upward**;
-- return one `{verdict: real|false-positive, severity, evidence}` per claim.
+- **a repeat is refuted** (owner comment 2026-11-12). A claim is a repeat
+  only when it is surely the same defect, in the same code, as an entry in
+  `EARLIER`, however it is worded. Then:
+  - the entry was **fixed** (a verified finding, or a nit with `fixed`): return
+    false-positive with `repeat_of: <its commit>`, unless you show, against the
+    code at the tip, that the fix does not hold. Name the failing case (the
+    input or path, and the wrong result). Then judge it as a finding against
+    that fix, at its own severity;
+  - the entry was **waived or refuted**: return false-positive with
+    `repeat_of: <its commit>` only while the code it judged is unchanged since
+    that commit. That code is its own file and every file its `why` or waiver
+    reason names (a refutation often rests on other code, such as a caller's
+    guard): `git diff <its commit> $HEAD_R -- <its file> <each named file>`
+    must show no change to what the judgment relies on. If any of it changed,
+    or the judgment rests on code it does not name, the old judgment no longer
+    covers the claim: it is new;
+  - **in any doubt** whether it is a repeat, it is a new claim, judged by the
+    rules above. The false-positive default does not decide this question;
+- name in `evidence` every file:line a refutation relies on;
+- return one `{verdict: real|false-positive, severity, evidence, repeat_of?}`
+  per claim.
 
-Refuted findings are dropped; mention them in one line to the caller.
+Refuted findings are dropped from the verdict, recorded on the note (§6) and
+mentioned in one line to the caller.
 
 ## 5 · Verdict
 
@@ -118,7 +165,8 @@ Refuted findings are dropped; mention them in one line to the caller.
   each with its reason (cite a `docs/decisions/` record where one applies).
 - **PASS** = `keel check` green and zero verified **blockers or importants** left
   unwaived. Anything else is **FAIL**. Evidence is written either way.
-- **A verified nit never fails the review and is never silently dropped**:
+- **A verified nit never fails the review, never starts a new round, and is
+  never silently dropped**:
   each gets **exactly one** disposition — `fixed: "<what changed>"` (the fix is
   already inside the range the note binds) or `waived: "<reason>"`. Nothing
   licenses a post-verdict fix: a later code commit moves the hash and orphans
@@ -133,17 +181,31 @@ keel notes write cr --verdict PASS|FAIL --blockers <n> --importants <n> [--targe
 ```
 
 The CLI derives the range, the identity and `code_diff_hash` itself, and
-refuses `PASS` with verified blockers or importants. Then record the nits and
-the round's bill on the same note — extra JSON fields the gate ignores, added
-the way `walk_waivers` are:
+refuses `PASS` with verified blockers or importants. Then record the round's
+findings, refuted candidates, nits and bill on the same note — extra JSON
+fields the gate ignores, added the way `walk_waivers` are. Every round writes
+them, PASS or FAIL: the next round's verifiers read them (§4).
 
 ```sh
-git notes --ref=cr show "$HEAD_R" \
-  | jq -c --argjson nits "$NITS" --argjson fleet "$FLEET" '. + {nits: $nits, fleet: $fleet}' \
-  | git notes --ref=cr add -f -F - "$HEAD_R"
+NOTE=$(git notes --ref=cr show "$HEAD_R" \
+  | jq -c --argjson findings "$FINDINGS" --argjson refuted "$REFUTED" \
+      --argjson nits "$NITS" --argjson fleet "$FLEET" \
+      'if ([$findings, $refuted, $nits] | all(type == "array")) and ($fleet | type == "object")
+       then . + {findings: $findings, refuted: $refuted, nits: $nits, fleet: $fleet}
+       else error("FINDINGS, REFUTED and NITS must be JSON arrays, FLEET an object") end') \
+  && [ -n "$NOTE" ] && git notes --ref=cr add -f -m "$NOTE" "$HEAD_R"
 ```
 
-- `NITS`: `[{"finding": "<summary>", "fixed": "<what changed>"} | {"finding": "<summary>", "waived": "<reason>"}]`
+Build the note first and write it only on success. The jq refuses anything but
+arrays for the three lists: the §4 reader stops on a note that holds a string
+there, so a prose `refuted` would stop every later round on the branch.
+Piping jq straight into `git notes add -F -` is wrong: on bad JSON, jq prints
+nothing, and git removes a note it is given empty. If this step fails, the CLI's note is still there,
+unchanged: fix the JSON and run the step again.
+
+- `FINDINGS`: every verified blocker and important, waived or not: `[{"location": "file:line", "claim": "<sentence>", "severity": "blocker|important", "evidence": "<verifier's, one line>"}]`, plus `"waived": "<reason>"` on a waived one
+- `REFUTED`: every refuted candidate, never a prose summary: `[{"location": "file:line", "claim": "<sentence>", "why": "<verifier's, one line, naming every file:line it relies on>"}]`, plus `"repeat_of": "<commit>"` on a refuted repeat
+- `NITS`: `[{"location": "file:line", "finding": "<summary>", "fixed": "<what changed>"} | {"location": "file:line", "finding": "<summary>", "waived": "<reason>"}]`
 - `FLEET`: `{"dimensions": [...], "finders": n, "verifiers": n, "verifier_model": "<id>", "candidates": {"blocker": n, "important": n, "nit": n}, "by_finder": {"correctness": {"found": n, "verified": n}, ...}, "stage_seconds": {"check": n, "finders": n, "verifiers": n, "total": n}, "waivers": [{"finding": "...", "reason": "..."}]}`
 
 Write what you observed and omit what you did not: an absent row is a stage
@@ -158,8 +220,9 @@ run the review again, never copy a note.
 
 Report: the verdict; the verified findings with severities and verifier
 evidence; waivers applied; the nits and their dispositions (they live on the cr note — never edit
-the result report after the review just to copy them, that moves the tip); refuted candidates in one line; the
-fleet bill; the note ref. On **FAIL**, state the loop: the triggering session
+the result report after the review just to copy them, that moves the tip); refuted candidates in one line (on the note they stay the `REFUTED` array, §6); the
+fleet bill; the note ref. A **PASS** with nits is done: a nit never starts
+another round. On **FAIL**, state the loop: the triggering session
 fixes — a correctness bug gets its failing, named regression test **first**,
 cleanups stay behaviour-preserving with the suite green — then re-runs this
 skill on the new tip until it returns PASS.

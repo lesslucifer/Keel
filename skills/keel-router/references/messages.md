@@ -37,10 +37,17 @@ the terminal message, report the id.
 ```
 Independent READ-ONLY review (very thorough) of <what>, which the automated gate does not bind.
 Worktree <abs>, branch <b>, tip <sha>; base <sha>. Do not edit, run <reserved commands: keel mr, merges>, push, tag, or execute
-downloaded binaries; git/grep/read and read-only gh api only. Scope: `git diff <base> HEAD -- <paths>` + <files>.
-Rules: <decision docs>. Already covered by earlier rounds: <list>.
+downloaded binaries; git/grep/read and read-only gh api only. Round <n> of at most 5.
+Scope: <rounds 1-2: `git diff <base> HEAD -- <paths>` + <files> | rounds 3-5: `git diff <last reviewed sha> HEAD -- <paths>`;
+read any file, report only on these changes>.
+Rules: <decision docs>. Earlier rounds' findings (fixed, recorded or refuted): <list, or "none">. A finding is a repeat
+only when it is surely the same defect in the same code. A repeat of a fixed one is refuted unless you show, at this
+tip, that the fix does not hold: name the failing case. A repeat of a recorded or refuted one is refuted only while the
+code it judged is unchanged since (its own file and any file its reason names). In any doubt, report it as new.
+A missing test for an edge case the code handles correctly, or a test-harness tidy-up that changes no result, is low.
 Hunt: (1) exit paths skipping a safety check (2) unsafe/FFI soundness, confinement (3) secret exposure: only in
 the step that needs it, never logged, unreachable by third-party code (4) workflow traps: ref injection in run:,
 unpinned actions, caches, pipefail, artifact naming (5) tests touching real data/ports/processes; teardown.
-Report file:line, severity, CONFIRMED vs PLAUSIBLE, concrete failure scenario; list what you checked clean. Concise.
+Report file:line, severity (blocker|high|medium|low), CONFIRMED vs PLAUSIBLE, concrete failure scenario; a PLAUSIBLE
+finding counts at its severity until refuted. List what you checked clean. Concise.
 ```

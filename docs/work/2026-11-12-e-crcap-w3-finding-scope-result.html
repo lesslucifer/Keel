@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="0cd42577491f1d1d12c11739" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-CRCAP.W3 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-CRCAP.W3 · Result: what counts as a nit, and repeat findings are refuted</h1>
+      <p>Result report for the <a href="2026-11-12-e-crcap-w3-finding-scope-plan.html">W3 plan</a> under the <a href="2026-11-12-e-crcap-epic-plan.html">E-CRCAP epic plan</a>.</p>
+      <div class="meta">T3 · WU result · 2026-11-12 · Keel · branch <code>wu/E-CRCAP/w3-finding-scope</code></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome">Delivered as planned, in skill text only, landing in the owner's <code>keel mr commit</code>. The rubric names the two nit cases and keeps wrong code on an untested case a blocker against the code. The code-review skill reads the earlier cr notes on the branch and gives verifiers that list. A claim is a repeat only when it is surely the same defect in the same code. A repeat of a fixed finding is refuted unless the verifier names a failing case at the tip that shows the fix does not hold; a repeat of a waived or refuted one is refuted only while the code it judged, and the code its reason names, is unchanged. Every round records <code>findings</code> and <code>refuted</code> on its cr note. A nit never starts a new round. The router's extra reviews follow the 5-round schedule, and its review prompt carries the round, the scope and the earlier findings.</p>
+
+<h2 id="deviations">Deviations</h2>
+<div data-item="deviations" data-c="deviations">
+<ul>
+  <li><b>The mirrors were not written by the worker.</b> <code>cp skills/… .claude/skills/…</code> was refused by the worker sandbox (<code>Operation not permitted</code>; <code>.claude/skills/</code> is write-denied). The owner's staged command copies the four files before <code>keel mr commit</code>, so the commit still lands source and mirror together.</li>
+  <li><b>Independent review round 1</b> (router, 1 blocker, 1 important, 7 nits) changed the text:
+    <ul>
+      <li>B1: a repeat now needs the same defect in the same code. A waived or refuted entry refutes its repeat only while the code it judged is unchanged; in any doubt the claim is new. Same rule in the router's two places.</li>
+      <li>I1: the §6 writer builds the note first and writes only on success (bad JSON had emptied the note, and git removes an empty note). The plan's "never a wrong gate verdict" claim is corrected.</li>
+      <li>N1: the earlier-notes reader names an unreadable note's commit on stderr, and the skill stops on any error instead of passing a partial list.</li>
+      <li>N2: "earlier notes", not "earlier rounds"; fix-PASS and WAIVED notes go in the list, and round counting stays W2's.</li>
+      <li>N3: the router points at its own schedule table, not at the code review's text.</li>
+      <li>N4: the table column is "What it reports on"; from round 3 the reviewer reads any file and reports only on the changes since the last reviewed tip; the prompt has one scope placeholder.</li>
+      <li>N5: the prompt names the severity scale, and a PLAUSIBLE finding counts at its severity until refuted.</li>
+      <li>N6: the router writes each round's number and findings into the item's next brief or prompt.</li>
+      <li>N7: the rubric's row 1 says "edge case", and the test-note caveat sits below the table and covers both rows.</li>
+    </ul></li>
+  <li><b>Independent review round 2</b> (router, 2 importants, 2 nits; the round-1 fixes held, B1 only within one file) changed the text:
+    <ul>
+      <li>I-A: "unchanged" for a waived or refuted entry now covers its own file and every file its <code>why</code> or waiver reason names (a refutation often rests on a caller's guard). If any of that changed, or the judgment rests on code it does not name, the claim is new. Verifiers name in <code>evidence</code> every file:line a refutation relies on, and <code>REFUTED</code>'s <code>why</code> carries them.</li>
+      <li>I-B: the §6 writer's jq refuses anything but arrays for <code>FINDINGS</code>, <code>REFUTED</code> and <code>NITS</code> (and an object for <code>FLEET</code>), and writes nothing. <code>REFUTED</code> is never a prose summary. §7's "refuted candidates in one line" now says that on the note they stay the array.</li>
+      <li>N-a: the reader's stop rule names the recovery: the owner repairs the named note in place, and never removes it.</li>
+      <li>N-b: the rubric says a WU's own contract test is judged against its test note (§3), never downgraded to a nit by the two rows.</li>
+    </ul></li>
+  <li><b>Independent review round 3</b> (router, the last fix only): only nits, fixed without a new round (fix-PASS by the schedule, applied by hand). The round-2 fixes held.
+    <ul>
+      <li>Nit 1: <code>NITS</code> entries now carry <code>"location": "file:line"</code>, so a waived nit can get the "its own file" test.</li>
+      <li>Nit 2: the router's repeat wording (SKILL.md and messages.md) now says "(its own file and any file its reason names)".</li>
+      <li>Optional, done: two overlong lines in the code-review skill (§4 stop rule, §6 writer note) rewrapped.</li>
+    </ul></li>
+  <li><b>The smoke check ran on the jq filters only.</b> The scratch-repo run was refused by auto mode because it wrote git notes. Both jq filters were run on sample JSON instead (below). The git half of the reader (<code>rev-list --first-parent … | tail -n +2</code>, <code>git notes show</code>) was not exercised.</li>
+</ul>
+</div>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+<ul>
+  <li>Files: <code>skills/keel-code-review/rubric.md</code> (Severity), <code>skills/keel-code-review/SKILL.md</code> (§4, §5, §6, §7), <code>skills/keel-router/SKILL.md</code> ("Independent review"), <code>skills/keel-router/references/messages.md</code> ("Independent review prompt"), and the same four under <code>.claude/skills/</code>.</li>
+  <li>Smoke check of the jq filters: the writer adds <code>findings</code>, <code>refuted</code>, <code>nits</code> and <code>fleet</code> and keeps the CLI's fields; the reader turns a note with only <code>nits</code> into one entry, drops a note with none of the three fields, and gives <code>[]</code> on empty input (round 1). After round 1: the reader marks invalid JSON (jq exit 5) and a non-array field (exit 4) as unreadable. The guarded writer writes nothing on bad <code>--argjson</code> input (exit 2) or empty input (exit 1). After round 2: the writer refuses a prose <code>REFUTED</code> string and a non-object <code>FLEET</code> (jq exit 5) and writes nothing.</li>
+  <li>Tests: none added (no code path changes); the integration layer is waived in the test note, as planned.</li>
+  <li>Commits: the WU plan and this report (worker); the skill text and mirrors (owner's <code>keel mr commit</code>).</li>
+</ul>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">Nothing now. Per the epic's distillation plan, the epic close records UC-REV-1's amendment (the two nit cases) and the nit-scope decision (a new record or a DEC-26 amendment). The rule text itself lives in the skills.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<div data-item="follow-ups" data-c="follow-ups">
+<ul>
+  <li>W2 adds the fix-PASS. It should state in §5 and §7 how a nit is fixed after the verdict without a new round. W3 only says that a nit never starts one.</li>
+  <li>For W2: the cap's WAIVED note goes on the same tip as the round-5 FAIL note and would replace it, dropping that round's findings, unless W2 runs the §6 step again on the WAIVED note.</li>
+  <li>The first real round 2 after this lands exercises the earlier-rounds reader end to end.</li>
+</ul>
+</div>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

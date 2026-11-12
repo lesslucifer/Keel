@@ -41,6 +41,20 @@ A finder proposes; the **verifier's** severity is the one the verdict reads.
 the default: a finding is one only after it survives *nothing observable changes
 and nothing drifts*.
 
+Two cases are always nits (owner ruling 2026-11-10):
+
+| Case | Severity | Why |
+|---|---|---|
+| A missing test for an edge case the code already handles correctly | nit | The code is right; a test would change nothing a caller sees. |
+| A test-harness tidy-up that changes no test's result: helpers, duplicated fixtures, hermeticity polish no test observes | nit | No result changes. |
+
+Neither row covers the WU's own contract: whether that is tested is judged
+against its test note (`SKILL.md` §3), never downgraded to a nit by these rows.
+
+**The test is never the blocker.** When the code is *wrong* on an untested
+case, the finding is a blocker against the code — name the wrong result — never
+a finding against the missing test.
+
 ## Principles
 
 | # | Principle | What it means anywhere |
