@@ -218,8 +218,10 @@ pub(crate) struct Fix {
 }
 
 /// A fix-PASS on the tip answering the round on `fixes`: only the latest round below the tip, only
-/// findings `fixable` allows, and never on top of another fix-PASS (a second fix needs a round).
-pub(crate) fn fix_pass(earlier: &[Entry], fixes: &str, max: u32) -> Result<Fix, (String, String)> {
+/// findings `fixable` allows, and never on top of another fix-PASS when code changed since it (a
+/// second fix needs a round). `unchanged(c)`: no code path changed between commit `c` and the tip -
+/// a later commit with nothing reviewable (the result report) carries the fix-PASS over.
+pub(crate) fn fix_pass(earlier: &[Entry], fixes: &str, max: u32, unchanged: impl Fn(&str) -> bool) -> Result<Fix, (String, String)> {
     let rounds = rounds(earlier)?;
     let Some(&(latest, note)) = rounds.first() else {
         return Err(("no review round on this branch below the tip, so a fix-PASS has nothing to answer".into(), "run the review (round 1) on the tip".into()));
@@ -231,9 +233,10 @@ pub(crate) fn fix_pass(earlier: &[Entry], fixes: &str, max: u32) -> Result<Fix, 
             format!("a fix-PASS answers only the latest round: --fixes {latest}"),
         ));
     }
-    if let Some(e) = earlier.iter().take_while(|e| e.commit != latest).find(|e| e.note.as_ref().is_ok_and(|n| kind(n) == Kind::FixPass)) {
+    let newest_fix = earlier.iter().take_while(|e| e.commit != latest).find(|e| e.note.as_ref().is_ok_and(|n| kind(n) == Kind::FixPass));
+    if let Some(e) = newest_fix.filter(|e| !unchanged(&e.commit)) {
         return Err((
-            format!("the fix-PASS on {} already answers round {round}; a second fix needs a new round", short(&e.commit)),
+            format!("the fix-PASS on {} already answers round {round}, and code changed since; a second fix needs a new round", short(&e.commit)),
             format!("run review round {} on the tip", round + 1),
         ));
     }
@@ -275,7 +278,7 @@ pub(crate) fn next_step(note: &CrNote, round: u32, max: u32, tip: &str) -> Strin
     }
     if round >= max && note.blockers > 0 {
         return format!(
-            "review cap reached: round {round} of {max} found {} blockers; the review stops here. Record the round's findings on this note, then: keel notes write cr --verdict WAIVED   (the tool writes the reason: {}); the owner decides at sign-off",
+            "review cap reached: round {round} of {max} found {} blockers; the review stops here. On this tip: keel notes write cr --verdict WAIVED   (the tool writes the reason: {}, and keeps this round's findings); the owner decides at sign-off",
             note.blockers,
             cap_reason(max, note.blockers)
         );
@@ -408,16 +411,19 @@ mod tests {
         assert!(fixable(&note("WAIVED", 0, 1, json!({"waiver": "w"})), 4, 5).is_err());
 
         let line = vec![at("r1", pass_nits)];
-        assert_eq!(fix_pass(&line, "r1", 5), Ok(Fix { round: 1, importants: 0, nits: 2 }));
+        let changed = |_: &str| false;
+        assert_eq!(fix_pass(&line, "r1", 5, changed), Ok(Fix { round: 1, importants: 0, nits: 2 }));
         let mut four = failed_rounds(4);
         four[0] = fail("r4", 0, 3);
-        assert_eq!(fix_pass(&four, "r4", 5), Ok(Fix { round: 4, importants: 3, nits: 0 }));
-        assert!(fix_pass(&four, "r3", 5).unwrap_err().0.contains("latest review round on this branch is round 4 on r4"));
-        assert!(fix_pass(&[], "r1", 5).is_err(), "nothing to answer");
-        let mut stacked = vec![fix_of("f4", "r4")];
+        assert_eq!(fix_pass(&four, "r4", 5, changed), Ok(Fix { round: 4, importants: 3, nits: 0 }));
+        assert!(fix_pass(&four, "r3", 5, changed).unwrap_err().0.contains("latest review round on this branch is round 4 on r4"));
+        assert!(fix_pass(&[], "r1", 5, changed).is_err(), "nothing to answer");
+        let mut stacked = vec![fix_of("f5", "r4"), fix_of("f4", "r4")];
         stacked.extend(four);
-        let (what, fix) = fix_pass(&stacked, "r4", 5).unwrap_err();
-        assert!(what.contains("fix-PASS on f4 already answers round 4") && fix.contains("round 5"), "{what}");
+        let (what, fix) = fix_pass(&stacked, "r4", 5, changed).unwrap_err();
+        assert!(what.contains("fix-PASS on f5 already answers round 4, and code changed since") && fix.contains("round 5"), "{what}");
+        assert_eq!(fix_pass(&stacked, "r4", 5, |c| c == "f5"), Ok(Fix { round: 4, importants: 3, nits: 0 }), "no code since the newest fix-PASS: it carries over");
+        assert!(fix_pass(&stacked, "r4", 5, |c| c == "f4").is_err(), "only the newest fix-PASS counts: code changed since it");
     }
 
     #[test]

@@ -768,7 +768,8 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
                     "commit the fix, then write the fix-PASS on it",
                 );
             }
-            let fix = review::fix_pass(&earlier()?, &sha, max()?).or_else(|(what, fix)| refuse(what, &fix))?;
+            let unchanged = |c: &str| names(repo, c, &tip, &cfg.code_paths).is_ok_and(|n| n.is_empty());
+            let fix = review::fix_pass(&earlier()?, &sha, max()?, unchanged).or_else(|(what, fix)| refuse(what, &fix))?;
             let mut extra = serde_json::Map::new();
             extra.insert("fixes".into(), sha.clone().into());
             extra.insert("round".into(), fix.round.into());
