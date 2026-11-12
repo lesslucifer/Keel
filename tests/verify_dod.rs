@@ -71,7 +71,7 @@ fn fixture_with(top: &str, branches: &str, epic: &str, wu: &str) -> TempDir {
         ".keel/config.toml",
         &format!("{top}code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n{branches}[docs]\nroot = \"docs/\"\n"),
     );
-    // An identity-tier signer (local, git-ignored roster) so green paths can sign off (check 8).
+    // An identity-tier signer in the roster the base commit carries, so green paths can sign off (check 8).
     assert!(keel(p, &["mr", "setup", "--as", "t"]).status.success());
     write(p, "README", "x");
     commit(p, "base");

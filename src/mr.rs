@@ -1,5 +1,5 @@
-//! `keel mr setup|commit|confirm`, the `.mr-allowed` trust store, gate check 8 and the
-//! commit-msg `Reviewed-By` check (UC-MR-1/2). Ported from Trawler's xtask/src/mr.rs
+//! `keel mr setup|commit|confirm`, the committed signer roster `.keel/mr-allowed`, gate check 8 and
+//! the commit-msg `Reviewed-By` check (UC-MR-1/2, DEC-47). Ported from Trawler's xtask/src/mr.rs
 //! (DEC-9/10/27): stock `ssh-keygen -Y` signatures, verified offline against the roster.
 use crate::notes::{self, MrNote};
 use crate::{gate, git, git_dir, no_git_env, verify_doc, Config, ReportPolicy};
@@ -10,13 +10,13 @@ use std::process::{Command, Stdio};
 /// `ssh-keygen -Y -n` namespace: a Keel sign-off is never valid as a git commit signature or anything else.
 const NAMESPACE: &str = "keel-mr";
 const TRAILER: &str = "Reviewed-By";
-const ALLOWED: &str = ".mr-allowed";
+const ROSTER: &str = ".keel/mr-allowed";
 pub(crate) const KNOWN_TIERS: &[&str] = &["email", "username", "key"];
 const NOT_AUTHORISED: &str = "A HUMAN must review this and confirm - an AI agent MUST NOT self-authorise.
       after the human has read the change and said yes:
         keel mr commit -m \"<msg>\" --as <identity>          (rule-bearing commit)
         keel mr confirm <wu|epic> [<tip>] --as <identity>   (WU / epic tip)
-      the identity must be listed in .mr-allowed (keel mr setup)";
+      the identity must be listed in the target's committed .keel/mr-allowed (keel mr setup, then keel mr commit)";
 
 struct Entry {
     tier: String,
@@ -34,30 +34,16 @@ fn short(sha: &str) -> &str {
     sha.get(..10).unwrap_or(sha)
 }
 
-/// The local trust store. `<tier>: <identity>` or `key: <identity> <keytype> <base64> [comment]`.
-/// Refused while tracked (a branch could rewrite it); lines whose tier the project does not accept
-/// (`mr.tiers`) authorise nothing; a malformed line is an error, never skipped.
-fn read_allowed(repo: &Path, cfg: &Config) -> Result<Vec<Entry>, String> {
-    if let Some(t) = cfg.mr.tiers.iter().find(|t| !KNOWN_TIERS.contains(&t.as_str())) {
-        return Err(format!("keel: unknown mr tier '{t}' in .keel/config.toml (known: {})", KNOWN_TIERS.join(", ")));
-    }
-    if git(repo, &["ls-files", "--error-unmatch", "--", ALLOWED], &[]).is_ok() {
-        return Err(format!(
-            "{ALLOWED} is tracked by git - a trust store a branch can rewrite trusts whoever wrote the branch, and checking out that branch has already overwritten your local roster with its copy\n  fix -> do not trust the file on disk: git rm --cached {ALLOWED} && rm {ALLOWED}, commit the removal, then rebuild your own roster from scratch with keel mr setup --as <identity> [--key <path>]"
-        ));
-    }
-    let text = match std::fs::read_to_string(repo.join(ALLOWED)) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(format!("keel: cannot read {ALLOWED}: {e}")),
-    };
+/// `<tier>: <identity>` or `key: <identity> <keytype> <base64> [comment]` lines, read from `src`.
+/// Lines whose tier is not in `tiers` authorise nothing; a malformed line is an error, never skipped.
+fn parse_roster(text: &str, tiers: &[String], src: &str) -> Result<Vec<Entry>, String> {
     let mut out = vec![];
     for (n, line) in text.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let bad = || format!("keel: {ALLOWED} line {}: expected `<tier>: <identity>` or `key: <identity> <ssh-pubkey>`", n + 1);
+        let bad = || format!("keel: {src} line {}: expected `<tier>: <identity>` or `key: <identity> <ssh-pubkey>`", n + 1);
         let (tier, rest) = line.split_once(':').ok_or_else(bad)?;
         let tier = tier.trim();
         let mut f = rest.split_whitespace();
@@ -69,19 +55,54 @@ fn read_allowed(repo: &Path, cfg: &Config) -> Result<Vec<Entry>, String> {
             (_, None, _) => None,
             _ => return Err(bad()),
         };
-        if cfg.mr.tiers.iter().any(|t| t == tier) {
+        if tiers.iter().any(|t| t == tier) {
             out.push(Entry { tier: tier.into(), identity: identity.into(), key });
         }
     }
     Ok(out)
 }
 
+/// The committed roster at `rev` (`""` = the index), if that tree holds one.
+fn roster_text(repo: &Path, rev: &str) -> Option<String> {
+    git(repo, &["show", &format!("{rev}:{ROSTER}")], &[]).ok()
+}
+
+/// The roster that judges a change: the one committed on `judge` (the merge target, or HEAD for a
+/// commit), else - bootstrap, said on stderr - the one the change carries (`carried`: its tip, or
+/// `""` for the index). Never a file on disk: whoever writes a checkout must not pick its signers.
+/// Returns the entries and where they were read, for the refusal texts.
+fn roster(repo: &Path, cfg: &Config, judge: &str, carried: &str) -> Result<(Vec<Entry>, String), String> {
+    if let Some(t) = cfg.mr.tiers.iter().find(|t| !KNOWN_TIERS.contains(&t.as_str())) {
+        return Err(format!("keel: unknown mr tier '{t}' in .keel/config.toml (known: {})", KNOWN_TIERS.join(", ")));
+    }
+    if let Some(text) = roster_text(repo, judge) {
+        let src = format!("{judge}:{ROSTER}");
+        return Ok((parse_roster(&text, &cfg.mr.tiers, &src)?, src));
+    }
+    let Some(text) = roster_text(repo, carried) else {
+        return Err(format!(
+            "nobody is listed - neither {judge} nor the change commits {ROSTER}\n  fix -> keel mr setup --as <identity> [--key <path>], then land {ROSTER} with keel mr commit; a local .mr-allowed is no longer read"
+        ));
+    };
+    let src = if carried.is_empty() { format!("the staged {ROSTER}") } else { format!("{carried}:{ROSTER}") };
+    eprintln!("keel: {judge} commits no {ROSTER} - bootstrap: {src} judges this change");
+    Ok((parse_roster(&text, &cfg.mr.tiers, &src)?, src))
+}
+
+/// The roster lines `new` adds (`+ `) and removes (`- `), each once; comments, blank lines,
+/// spacing and order are not a change.
+fn roster_change(old: &str, new: &str) -> Vec<String> {
+    let lines = |t: &str| -> std::collections::BTreeSet<String> {
+        t.lines().map(|l| l.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|l| !l.is_empty() && !l.starts_with('#')).collect()
+    };
+    let (old, new) = (lines(old), lines(new));
+    new.difference(&old).map(|l| format!("+ {l}")).chain(old.difference(&new).map(|l| format!("- {l}"))).collect()
+}
+
 /// The tier that authorises `id`; `key` wins, so a key holder can never sign off unsigned.
 ///
-/// Accepted limitation (owner decision, E-SEED W4 review H1): "signed" means "a key/identity listed
-/// in this checkout's roster signed", not "a human reviewed". An agent with filesystem access can add
-/// itself to `.mr-allowed` and sign with an agent-usable key; nothing here can tell. E-SEED runs
-/// ungated until W7 (epic Q12), so this is revisited before Keel gates its own real work or ships.
+/// "Signed" means "a key listed in the target's committed roster signed", not "a human reviewed":
+/// that a key needs a human's touch or passphrase is the owner's setup, which Keel cannot see (DEC-48).
 fn tier_of<'a>(allowed: &'a [Entry], id: &str) -> Option<&'a str> {
     let mine = || allowed.iter().filter(|e| e.identity == id);
     mine().find(|e| e.key.is_some()).or_else(|| mine().next()).map(|e| e.tier.as_str())
@@ -227,14 +248,16 @@ fn verify(repo: &Path, id: &str, keys: &[&str], data: &str, sig: &str) -> bool {
 
 /// `rule_bearing` entry: a trailing `/` is a prefix; otherwise a glob where
 /// `*`/`?` stay inside one path segment and `**` crosses segments.
-fn rule_bearing(cfg: &Config, path: &str) -> bool {
-    cfg.rule_bearing.iter().any(|p| {
-        if p.ends_with('/') {
-            return path.starts_with(p.as_str());
-        }
-        let re = regex::escape(p).replace(r"\*\*", ".*").replace(r"\*", "[^/]*").replace(r"\?", "[^/]");
-        regex::Regex::new(&format!("^{re}$")).is_ok_and(|r| r.is_match(path))
-    })
+/// The roster itself always is: the policy's own list cannot exempt who may sign.
+fn rule_bearing(patterns: &[String], path: &str) -> bool {
+    path == ROSTER
+        || patterns.iter().any(|p| {
+            if p.ends_with('/') {
+                return path.starts_with(p.as_str());
+            }
+            let re = regex::escape(p).replace(r"\*\*", ".*").replace(r"\*", "[^/]*").replace(r"\?", "[^/]");
+            regex::Regex::new(&format!("^{re}$")).is_ok_and(|r| r.is_match(path))
+        })
 }
 
 fn flag<'a>(args: &[&'a str], k: &str) -> Option<&'a str> {
@@ -242,7 +265,7 @@ fn flag<'a>(args: &[&'a str], k: &str) -> Option<&'a str> {
 }
 
 /// `--as`, else the roster's only identity.
-fn signer(allowed: &[Entry], args: &[&str]) -> Result<String, String> {
+fn signer(allowed: &[Entry], src: &str, args: &[&str]) -> Result<String, String> {
     if let Some(id) = flag(args, "--as") {
         return Ok(id.into());
     }
@@ -251,13 +274,13 @@ fn signer(allowed: &[Entry], args: &[&str]) -> Result<String, String> {
     ids.dedup();
     match ids[..] {
         [one] => Ok(one.into()),
-        [] => Err(format!("keel mr: refused - {ALLOWED} lists nobody\n  fix -> keel mr setup --as <identity> [--key <path>]")),
+        [] => Err(format!("keel mr: refused - {src} lists nobody\n  fix -> keel mr setup --as <identity> [--key <path>], then land {ROSTER} with keel mr commit")),
         _ => Err("keel mr: several identities are listed - pass --as <identity>".into()),
     }
 }
 
-fn unlisted(repo: &Path, id: &str) -> String {
-    format!("keel mr: refused - {id} is not listed in {}\n  fix -> {NOT_AUTHORISED}", repo.join(ALLOWED).display())
+fn unlisted(src: &str, id: &str) -> String {
+    format!("keel mr: refused - {id} is not listed in {src}\n  fix -> {NOT_AUTHORISED}")
 }
 
 fn setup(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
@@ -265,16 +288,10 @@ fn setup(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     if !valid_identity(id) {
         return Err(format!("keel mr: identity '{id}' may only use letters, digits and @._+-"));
     }
-    let allowed = read_allowed(repo, cfg)?;
-    if git(repo, &["check-ignore", "-q", ALLOWED], &[]).is_err() {
-        let ex = repo.join(git(repo, &["rev-parse", "--git-path", "info/exclude"], &[])?);
-        std::fs::create_dir_all(ex.parent().unwrap()).map_err(|e| e.to_string())?;
-        let mut body = std::fs::read_to_string(&ex).unwrap_or_default();
-        if !body.is_empty() && !body.ends_with('\n') {
-            body.push('\n');
-        }
-        std::fs::write(&ex, format!("{body}/{ALLOWED}\n")).map_err(|e| format!("keel: write {}: {e}", ex.display()))?;
-    }
+    // The working file only: setup authorises nothing, the line counts once it is committed.
+    let path = repo.join(ROSTER);
+    let working = || parse_roster(&std::fs::read_to_string(&path).unwrap_or_default(), &cfg.mr.tiers, ROSTER);
+    let allowed = working()?;
     let key = flag(args, "--key");
     let line = match key {
         Some(k) => {
@@ -297,37 +314,38 @@ fn setup(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     if !cfg.mr.tiers.iter().any(|t| t == tier) {
         return Err(format!("keel mr: refused - tier '{tier}' is not accepted here ([mr] tiers = {:?})", cfg.mr.tiers));
     }
-    let path = repo.join(ALLOWED);
     let mut body = std::fs::read_to_string(&path).unwrap_or_default();
     if !body.lines().any(|l| l.trim() == line) {
         if !body.is_empty() && !body.ends_with('\n') {
             body.push('\n');
         }
-        std::fs::write(&path, format!("{body}{line}\n")).map_err(|e| format!("keel: write {ALLOWED}: {e}"))?;
+        std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+        std::fs::write(&path, format!("{body}{line}\n")).map_err(|e| format!("keel: write {ROSTER}: {e}"))?;
     }
-    let allowed = read_allowed(repo, cfg)?; // also validates the line just written
+    let allowed = working()?; // also validates the line just written
     if let Some(k) = key {
         git(repo, &["config", "--local", "keel.signingkey", k], &[])?;
         // Prove the key signs here (private half present, or loaded in ssh-agent) and matches the roster.
         let probe = format!("keel-mr setup probe for {id}\n");
         let sig = sign(k, &probe)?;
         if !verify(repo, id, &keys_of(&allowed, id), &probe, &sig) {
-            return Err(format!("keel mr: the key {k} signed, but its signature does not verify against {ALLOWED}"));
+            return Err(format!("keel mr: the key {k} signed, but its signature does not verify against {ROSTER}"));
         }
-        println!("registered {id} (key) in {ALLOWED}; keel.signingkey = {k}; a probe signature verified");
+        println!("registered {id} (key) in {ROSTER}; keel.signingkey = {k}; a probe signature verified");
         println!("note: a key the agent's ssh-agent can use is a key the AI agent can use - prefer an sk- (FIDO2) key or ssh-add -c");
     } else {
-        println!("registered {id} ({tier}) in {ALLOWED} - an identity tier is a string match, not a signature");
+        println!("registered {id} ({tier}) in {ROSTER} - an identity tier is a string match, not a signature");
     }
+    println!("the line authorises nothing until it is committed: git add {ROSTER} && keel mr commit -m \"<msg>\" --as {id}");
     Ok(0)
 }
 
 fn commit(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     let msg = flag(args, "-m").filter(|m| !m.trim().is_empty()).ok_or("usage: keel mr commit -m <msg> [--as <identity>]")?;
-    let allowed = read_allowed(repo, cfg)?;
-    let id = signer(&allowed, args)?;
+    let (allowed, src) = roster(repo, cfg, "HEAD", "")?;
+    let id = signer(&allowed, &src, args)?;
     let Some(tier) = tier_of(&allowed, &id) else {
-        eprintln!("{}", unlisted(repo, &id));
+        eprintln!("{}", unlisted(&src, &id));
         return Ok(1);
     };
     let body = format!("{}\n\n{TRAILER}: {tier} {id}\n", msg.trim_end());
@@ -347,11 +365,13 @@ fn landed(tip: &str, base: &str, target: &str) -> Option<String> {
 }
 
 fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
-    const USAGE: &str = "usage: keel mr confirm <wu|epic> [<tip>] [--as <identity>] [--target R] [--report <path>]";
+    const USAGE: &str = "usage: keel mr confirm <wu|epic> [<tip>] [--as <identity>] [--target R] [--report <path>] [--roster-change]";
     let mut pos = vec![];
     let mut i = 0;
     while i < args.len() {
-        if args[i].starts_with('-') {
+        if args[i] == "--roster-change" {
+            i += 1;
+        } else if args[i].starts_with('-') {
             i += 2;
         } else {
             pos.push(args[i]);
@@ -373,12 +393,6 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         "HEAD" => git(repo, &["symbolic-ref", "--short", "-q", "HEAD"], &[]).unwrap_or_else(|_| "HEAD".into()),
         t => t.to_string(),
     };
-    let allowed = read_allowed(repo, cfg)?;
-    let id = signer(&allowed, args)?;
-    let Some(tier) = tier_of(&allowed, &id).map(String::from) else {
-        eprintln!("{}", unlisted(repo, &id));
-        return Ok(1);
-    };
     // Sign last (Trawler DEC-27): every binding pins the diff, so the tree settles before a human signs.
     let Some((tip, base, target)) = gate::sign_ready(repo, cfg, epic, &tip_ref, args)? else {
         eprintln!("mr confirm refused - sign last: get the notes and a bound cr PASS green on this exact tip first\n  fix -> keel notes write test|doc, run the code review (cr PASS), then keel mr confirm again");
@@ -386,6 +400,24 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     };
     if let Some(refusal) = landed(&tip, &base, &target) {
         eprintln!("{refusal}");
+        return Ok(1);
+    }
+    // The roster check 8 will judge by: a sign-off the gate would refuse is refused before signing.
+    let (allowed, src) = roster(repo, cfg, &target, &tip)?;
+    let id = signer(&allowed, &src, args)?;
+    let Some(tier) = tier_of(&allowed, &id).map(String::from) else {
+        eprintln!("{}", unlisted(&src, &id));
+        return Ok(1);
+    };
+    // The one point a roster edit made inside a branch meets the signer, who reads a report, not the diff.
+    let change = roster_change(&roster_text(repo, &base).unwrap_or_default(), &roster_text(repo, &tip).unwrap_or_default());
+    if !change.is_empty() && !args.contains(&"--roster-change") {
+        eprintln!(
+            "mr confirm refused - {}..{} changes who may sign ({ROSTER}):\n{}\n  fix -> if you mean to sign this roster change, re-run with --roster-change",
+            short(&base),
+            short(&tip),
+            change.iter().map(|l| format!("    {l}")).collect::<Vec<_>>().join("\n")
+        );
         return Ok(1);
     }
     let report = match pick_report(repo, cfg, args, &base, &tip, epic) {
@@ -413,7 +445,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         eprintln!("signing the {level} {tip_ref} ({}) and {what} as {id} ...", short(&tip));
         let sig = sign(&key, &data)?;
         if !verify(repo, &id, &keys_of(&allowed, &id), &data, &sig) {
-            return Err(format!("keel mr: refused - keel.signingkey ({key}) is not a key {ALLOWED} lists for {id}"));
+            return Err(format!("keel mr: refused - keel.signingkey ({key}) is not a key {src} lists for {id}"));
         }
         Some(sig)
     } else {
@@ -439,7 +471,8 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 /// Check 8 for a wu/epic tip: `Err((what, fix))` on the first cause found, else the attested
 /// `(report, report_hash)`, if any. Everything is rebuilt from the repo; the note contributes only
 /// the signer, the report path and the (signed) report hash.
-pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, base: &str) -> Result<Option<(String, String)>, (String, String)> {
+/// The roster is `target`'s committed one, else the tip's (bootstrap), never the checkout's.
+pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, base: &str, target: &str) -> Result<Option<(String, String)>, (String, String)> {
     let again = |what: String| Err((what, format!("re-run keel mr confirm on the tip as it now stands\n      {NOT_AUTHORISED}")));
     let t = short(tip);
     let Ok(raw) = git(repo, &["notes", "--ref=mr", "show", tip], &[]) else {
@@ -479,13 +512,12 @@ pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, b
             format!("write the {role} report on the tip, then re-run keel mr confirm\n      {NOT_AUTHORISED}"),
         ));
     }
-    let allowed = read_allowed(repo, cfg).map_err(|e| (e, NOT_AUTHORISED.into()))?;
-    let roster = repo.join(ALLOWED).display().to_string();
+    let (allowed, roster) = roster(repo, cfg, target, tip).map_err(|e| (e, NOT_AUTHORISED.into()))?;
     match tier_of(&allowed, &n.signer) {
         None => {
             return Err((
                 format!("{t} is signed off by {}, whom {roster} does not list (under tiers {:?})", n.signer, cfg.mr.tiers),
-                format!("the roster is per-checkout by design - add {}'s line there (keel mr setup), or merge from the checkout that signed\n      {NOT_AUTHORISED}", n.signer),
+                format!("a signer is added by landing their line in {ROSTER} on {target}, signed off by a signer it already lists\n      {NOT_AUTHORISED}"),
             ))
         }
         Some("key") => {
@@ -516,20 +548,22 @@ fn stale_change(signed: &str, range: &str) -> String {
     }
 }
 
-/// commit-msg hook: a staged change to a rule-bearing path needs a `Reviewed-By` trailer naming a listed signer.
+/// commit-msg hook: a staged change to a rule-bearing path needs a `Reviewed-By` trailer naming a
+/// signer HEAD's roster lists. The trailer is typed text, so this stops an honest agent only (DEC-24).
 pub fn commit_msg(repo: &Path, cfg: &Config, msg_file: &str) -> Result<i32, String> {
     // A merge authors nothing new; its commits were authorised on their branch.
     if git(repo, &["rev-parse", "--verify", "-q", "MERGE_HEAD"], &[]).is_ok() {
         return Ok(0);
     }
     let staged = notes::zpaths(&git(repo, &["diff", "--cached", "--name-only", "--no-renames", "-z"], &[])?);
-    let hits: Vec<&str> = staged.iter().map(String::as_str).filter(|p| rule_bearing(cfg, p)).collect();
+    let hits: Vec<&str> = staged.iter().map(String::as_str).filter(|p| rule_bearing(&cfg.rule_bearing, p)).collect();
     if hits.is_empty() {
         return Ok(0);
     }
     let msg = std::fs::read_to_string(msg_file).map_err(|e| format!("keel: cannot read {msg_file}: {e}"))?;
-    let allowed = match read_allowed(repo, cfg) {
-        Ok(a) => a,
+    // HEAD's roster: a commit that edits the roster is judged by the one it replaces.
+    let allowed = match roster(repo, cfg, "HEAD", "") {
+        Ok((a, _)) => a,
         Err(e) => {
             eprintln!("keel: commit refused - {e}");
             return Ok(1);
@@ -555,13 +589,83 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         ["setup", rest @ ..] => setup(repo, cfg, rest),
         ["commit", rest @ ..] => commit(repo, cfg, rest),
         ["confirm", rest @ ..] => confirm(repo, cfg, rest),
-        _ => Err("usage: keel mr <setup --as <id> [--key <path>] | commit -m <msg> [--as <id>] | confirm <wu|epic> [<tip>] [--as <id>] [--target R] [--report <path>]>".into()),
+        _ => Err("usage: keel mr <setup --as <id> [--key <path>] | commit -m <msg> [--as <id>] | confirm <wu|epic> [<tip>] [--as <id>] [--target R] [--report <path>] [--roster-change]>".into()),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{landed, payload, sha256, stale_change};
+    use super::{landed, parse_roster, payload, roster_change, rule_bearing, sha256, stale_change};
+
+    fn lcg(x: &mut u64) -> u64 {
+        *x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *x >> 33
+    }
+
+    fn tiers(t: &[&str]) -> Vec<String> {
+        t.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_roster_reads_the_same_from_any_tree_and_a_bad_line_is_an_error() {
+        let text = "# owners\n\nemail: a@b.c\nusername: vu\nkey: vu ssh-ed25519 AAAA comment here\n";
+        let all = parse_roster(text, &tiers(&["email", "username", "key"]), "r").unwrap();
+        let got: Vec<_> = all.iter().map(|e| (e.tier.as_str(), e.identity.as_str(), e.key.as_deref())).collect();
+        assert_eq!(got, [("email", "a@b.c", None), ("username", "vu", None), ("key", "vu", Some("ssh-ed25519 AAAA"))]);
+        let keys = parse_roster(text, &tiers(&["key"]), "r").unwrap();
+        assert_eq!(keys.iter().map(|e| e.tier.as_str()).collect::<Vec<_>>(), ["key"], "a tier the policy does not accept authorises nothing");
+        for (bad, line) in [
+            ("key: vu cert-authority ssh-ed25519 AAAA", 2),
+            ("username: v*u", 2),
+            ("key: vu", 2),
+            ("username: vu extra", 2),
+            ("no colon here", 2),
+        ] {
+            let e = parse_roster(&format!("username: ok\n{bad}\n"), &tiers(&["username", "key"]), "HEAD:.keel/mr-allowed").err().unwrap_or_else(|| panic!("{bad} parsed"));
+            assert!(e.contains(&format!("HEAD:.keel/mr-allowed line {line}")), "{bad}: {e}");
+        }
+        // generated rosters (seeded LCG) under generated policies: every entry's tier is in the policy
+        let names = ["email", "username", "key"];
+        let mut x: u64 = 0x5eed;
+        for _ in 0..300 {
+            let policy: Vec<String> = names.iter().filter(|_| lcg(&mut x).is_multiple_of(2)).map(|s| s.to_string()).collect();
+            let roster: String = (0..lcg(&mut x) % 6)
+                .map(|i| match lcg(&mut x) % 3 {
+                    0 => format!("email: u{i}@x.y\n"),
+                    1 => format!("username: u{i}\n"),
+                    _ => format!("key: u{i} ssh-ed25519 AAAA{i}\n"),
+                })
+                .collect();
+            for e in parse_roster(&roster, &policy, "r").unwrap() {
+                assert!(policy.contains(&e.tier), "{} under {policy:?}", e.tier);
+            }
+        }
+    }
+
+    #[test]
+    fn the_roster_path_is_rule_bearing_whatever_the_policy_lists() {
+        assert!(rule_bearing(&[], ".keel/mr-allowed"));
+        for p in [".keel/mr-allowed.bak", "x/.keel/mr-allowed", ".mr-allowed", ".keel/config.toml"] {
+            assert!(!rule_bearing(&[], p), "{p}");
+        }
+        assert!(rule_bearing(&tiers(&[".keel/"]), ".keel/config.toml"));
+    }
+
+    #[test]
+    fn a_roster_change_lists_every_added_and_removed_line_once() {
+        let old = "key: vu ssh-ed25519 AAAA\nusername: gone\n";
+        let new = "# a comment\n\nkey: two  ssh-ed25519 BBBB\nkey: two ssh-ed25519 BBBB\n  key: vu ssh-ed25519 AAAA\n";
+        assert_eq!(roster_change(old, new), ["+ key: two ssh-ed25519 BBBB", "- username: gone"]);
+        assert!(roster_change("a: b\nc: d\n", "# x\n\nc:   d\na: b\n").is_empty(), "comments, blanks, spacing and order are no change");
+        // generated pairs (seeded LCG): empty exactly when both sides list the same set of lines
+        let mut x: u64 = 0xace;
+        for _ in 0..500 {
+            let mut side = || -> Vec<String> { (0..lcg(&mut x) % 4).map(|_| format!("username: u{}", lcg(&mut x) % 3)).collect() };
+            let (a, b) = (side(), side());
+            let set = |v: &[String]| v.iter().cloned().collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(roster_change(&a.join("\n"), &b.join("\n")).is_empty(), set(&a) == set(&b), "{a:?} {b:?}");
+        }
+    }
 
     #[test]
     fn landed_refuses_exactly_when_the_tip_is_its_own_base() {

@@ -29,7 +29,7 @@ struct Config {
     #[serde(default)]
     mr: MrCfg,
 }
-/// Signer tiers this project accepts from .mr-allowed (Q10: configurable, Trawler's three by default),
+/// Signer tiers this project accepts from .keel/mr-allowed (Q10: configurable, Trawler's three by default),
 /// and whether a WU/epic sign-off must attest a result report.
 #[derive(Deserialize)]
 struct MrCfg {
