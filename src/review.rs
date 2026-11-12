@@ -235,10 +235,15 @@ pub(crate) fn fix_pass(earlier: &[Entry], fixes: &str, max: u32, unchanged: impl
     }
     let newest_fix = earlier.iter().take_while(|e| e.commit != latest).find(|e| e.note.as_ref().is_ok_and(|n| kind(n) == Kind::FixPass));
     if let Some(e) = newest_fix.filter(|e| !unchanged(&e.commit)) {
-        return Err((
-            format!("the fix-PASS on {} already answers round {round}, and code changed since; a second fix needs a new round", short(&e.commit)),
-            format!("run review round {} on the tip", round + 1),
-        ));
+        let what = format!("the fix-PASS on {} already answers round {round}, and code changed since; a second fix needs a new round", short(&e.commit));
+        return Err(match next_round(earlier, max) {
+            Ok(_) => (what, format!("run review round {} on the tip", round + 1)),
+            // From round 4 (or at the cap) no round follows a round without a blocker: nothing is left but the owner.
+            Err(_) => (
+                format!("{what}, and no round {} follows round {round}", round + 1),
+                format!("write a fix-PASS only on the final fix; for this tip, {OWNER_WAIVES}"),
+            ),
+        });
     }
     fixable(note, round, max).map_err(|why| (why, format!("fix the findings, then run review round {} on the fix", round + 1)))?;
     Ok(Fix { round, importants: note.importants, nits: note.extra.get("nits").and_then(|n| n.as_array()).map_or(0, Vec::len) })
@@ -421,7 +426,11 @@ mod tests {
         let mut stacked = vec![fix_of("f5", "r4"), fix_of("f4", "r4")];
         stacked.extend(four);
         let (what, fix) = fix_pass(&stacked, "r4", 5, changed).unwrap_err();
-        assert!(what.contains("fix-PASS on f5 already answers round 4, and code changed since") && fix.contains("round 5"), "{what}");
+        assert!(what.contains("fix-PASS on f5 already answers round 4, and code changed since") && what.contains("no round 5 follows"), "{what}");
+        assert!(fix.contains("--waive-review") && !fix.contains("run review round"), "no round 5 after a round 4 without a blocker: {fix}");
+        let two = vec![fix_of("f2", "r2"), fix_of("f1", "r2"), at("r2", note("PASS", 0, 0, json!({}))), fail("r1", 1, 0)];
+        let (_, fix) = fix_pass(&two, "r2", 5, changed).unwrap_err();
+        assert_eq!(fix, "run review round 3 on the tip", "before round 4 a second fix gets its round");
         assert_eq!(fix_pass(&stacked, "r4", 5, |c| c == "f5"), Ok(Fix { round: 4, importants: 3, nits: 0 }), "no code since the newest fix-PASS: it carries over");
         assert!(fix_pass(&stacked, "r4", 5, |c| c == "f4").is_err(), "only the newest fix-PASS counts: code changed since it");
     }
