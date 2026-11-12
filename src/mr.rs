@@ -2,7 +2,7 @@
 //! the commit-msg `Reviewed-By` check (UC-MR-1/2, DEC-47). Ported from Trawler's xtask/src/mr.rs
 //! (DEC-9/10/27): stock `ssh-keygen -Y` signatures, verified offline against the roster.
 use crate::notes::{self, sha256, CrNote, MrNote};
-use crate::{gate, git, git_dir, no_git_env, verify_doc, Config, ReportPolicy};
+use crate::{gate, git, git_dir, no_git_env, review, verify_doc, Config, ReportPolicy};
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -145,20 +145,40 @@ fn waiver_drift(signed: Option<&str>, current: Option<&str>, t: &str) -> Option<
     }
 }
 
+/// One row of the review history: the commit, its cr note (`None`: it cannot be read), and its tag
+/// (round and scope, or the fix-PASS it is).
+type Row = (String, Option<CrNote>, String);
+
 /// The cr notes on the first-parent commits of `base..tip`, newest first: every review the branch's
-/// own line of history recorded (an epic's merged WUs keep theirs on their own tips). Read through
-/// plumbing only: `rev-list` names the commits of the range, and each note is read as a blob
-/// (notes::cr_raw), so no display config (`log.showSignature`, `i18n.*`, any `log.*` or `format.*`)
-/// can change or drop a row. A note that does not parse is a row of its own (`None`), never dropped:
-/// the signer must see that a round exists.
-fn review_history(repo: &Path, base: &str, tip: &str) -> Result<Vec<(String, Option<CrNote>)>, String> {
-    let commits = git(repo, &["rev-list", "--first-parent", &format!("{base}..{tip}")], &[])?;
-    Ok(commits.lines().filter_map(|c| notes::cr_raw(repo, c).map(|raw| (c.to_string(), serde_json::from_str(&raw).ok()))).collect())
+/// own line of history recorded (an epic's merged WUs keep theirs on their own tips), read in a fixed
+/// number of git processes through plumbing only (review::line), so no display config can change or
+/// drop a row. A note git cannot print or parse is a row of its own (`None`), never dropped: the
+/// signer must see that a round exists. A fix-PASS row names the files its commit changed.
+fn review_history(repo: &Path, base: &str, tip: &str) -> Result<Vec<Row>, String> {
+    let entries = review::line(repo, base, tip)?;
+    let tags = review::tags(&entries, |from, to| notes::names(repo, from, to, &[]));
+    Ok(entries.into_iter().zip(tags).map(|(e, tag)| (e.commit, e.note.ok(), tag)).collect())
+}
+
+/// The history lines, one per row, recorded text made inert.
+fn history_lines(history: &[Row]) -> String {
+    let mut out = String::from("  review history (newest first):\n");
+    for (c, n, tag) in history {
+        let Some(n) = n else {
+            out.push_str(&format!("    {} unreadable cr note - git cannot print it or it does not parse as cr/v1; a round was recorded here\n", short(c)));
+            continue;
+        };
+        let why = n.waiver().map(|w| format!(" - {}", w.trim())).unwrap_or_default();
+        let open = if n.unreviewed() { "not reviewed".to_string() } else { format!("blockers {} importants {}", n.blockers, n.importants) };
+        out.push_str(&printable(&format!("    {} {} {open}{why}{tag}", short(c), n.verdict)));
+        out.push('\n');
+    }
+    out
 }
 
 /// What the signer reads before a waiver is accepted or written: the reason, what the review left
 /// open (its unwaived findings, its walk waivers) - or that no review ran - and every round.
-fn waiver_listing(tip: &str, cr: &CrNote, history: &[(String, Option<CrNote>)]) -> String {
+fn waiver_listing(tip: &str, cr: &CrNote, history: &[Row]) -> String {
     let mut out = format!("the review of {} is WAIVED: {}\n", short(tip), printable(cr.waiver().unwrap_or("").trim()));
     if cr.unreviewed() {
         out.push_str("  open: not reviewed - no review of this range ran on this tip, so what it would find is unknown\n");
@@ -186,17 +206,7 @@ fn waiver_listing(tip: &str, cr: &CrNote, history: &[(String, Option<CrNote>)]) 
     for w in &cr.walk_waivers {
         out.push_str(&format!("  walk waiver {}: {}\n", printable(&w.seam), printable(w.why.trim())));
     }
-    out.push_str("  review history (newest first):\n");
-    for (c, n) in history {
-        let Some(n) = n else {
-            out.push_str(&format!("    {} unreadable cr note - it does not parse as cr/v1; a round was recorded here\n", short(c)));
-            continue;
-        };
-        let why = n.waiver().map(|w| format!(" - {}", w.trim())).unwrap_or_default();
-        let open = if n.unreviewed() { "not reviewed".to_string() } else { format!("blockers {} importants {}", n.blockers, n.importants) };
-        out.push_str(&printable(&format!("    {} {} {open}{why}", short(c), n.verdict)));
-        out.push('\n');
-    }
+    out.push_str(&history_lines(history));
     out
 }
 
@@ -581,7 +591,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     let mut owner_cr = None;
     // The tip's cr note is read once: as stored for the owner's waiver (the writer refuses one it
     // cannot parse), parsed for a waiver the tool wrote.
-    let stored = notes::cr_raw(repo, &tip);
+    let stored = notes::cr_raw(repo, &tip)?;
     let tool_waiver = stored.as_deref().and_then(|r| serde_json::from_str::<CrNote>(r).ok()).filter(|n| n.waiver().is_some());
     let waiver = match tool_waiver {
         _ if waive.is_some() => {
@@ -630,7 +640,14 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
             // The waiver signed is the one listed, never a second read of the note.
             cr.waiver_hash()
         }
-        None => None,
+        None => {
+            // A fix nobody reviewed meets the signer here, with the files it changed (UC-REV-3).
+            let history = review_history(repo, &base, &tip)?;
+            if history.iter().any(|(_, n, _)| n.as_ref().is_some_and(|n| review::kind(n) == review::Kind::FixPass)) {
+                eprint!("{}", history_lines(&history));
+            }
+            None
+        }
     };
     let attested = report.as_deref().zip(report_hash.as_deref());
     let what = attested.map_or("no report".to_string(), |(r, _)| r.to_string());
@@ -677,8 +694,10 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, base: &str, target: &str) -> Result<Option<(String, String)>, (String, String)> {
     let again = |what: String| Err((what, format!("re-run keel mr confirm on the tip as it now stands\n      {NOT_AUTHORISED}")));
     let t = short(tip);
-    let Ok(raw) = git(repo, &["notes", "--ref=mr", "show", tip], &[]) else {
-        return Err((format!("every {level} merge needs a human sign-off - tip {t} has no mr/v1 note"), NOT_AUTHORISED.into()));
+    let raw = match notes::raw(repo, "mr", tip) {
+        Ok(Some(raw)) => raw,
+        Ok(None) => return Err((format!("every {level} merge needs a human sign-off - tip {t} has no mr/v1 note"), NOT_AUTHORISED.into())),
+        Err(e) => return again(format!("the mr note on {t} cannot be read: {e}")),
     };
     let n = match serde_json::from_str::<serde_json::Value>(&raw).map_err(|e| e.to_string()).and_then(|v| {
         match v["schema"].as_str() {
@@ -964,9 +983,10 @@ mod tests {
                 {"severity": "important", "location": "x:1", "claim": "waived one", "waived": "ok"}, "bare text", 7],
             "walk_waivers": [{"seam": "abc123", "why": " safe "}]}));
         let history = vec![
-            ("1111111111aa".to_string(), Some(cr("WAIVED", serde_json::json!({"waiver": "review cap: 5 rounds, 1 blockers open"})))),
-            ("2222222222bb".to_string(), Some(cr("FAIL", serde_json::json!({})))),
-            ("3333333333cc".to_string(), None),
+            ("1111111111aa".to_string(), Some(cr("WAIVED", serde_json::json!({"waiver": "review cap: 5 rounds, 1 blockers open"}))), " [round 2, full]".to_string()),
+            ("4444444444dd".to_string(), Some(cr("PASS", serde_json::json!({"fixes": "2222222222bb"}))), " [fix-PASS of round 1 on 2222222222; no reviewers ran; changed: src/a.rs]".to_string()),
+            ("2222222222bb".to_string(), Some(cr("FAIL", serde_json::json!({}))), " [round 1, full]".to_string()),
+            ("3333333333cc".to_string(), None, String::new()),
         ];
         let l = waiver_listing("1111111111aa", &tip, &history);
         for needle in [
@@ -977,8 +997,9 @@ mod tests {
             "- bare text",
             "- 7",
             "walk waiver abc123: safe",
-            "1111111111 WAIVED blockers 1 importants 0 - review cap",
-            "2222222222 FAIL blockers 1 importants 0\n",
+            "1111111111 WAIVED blockers 1 importants 0 - review cap: 5 rounds, 1 blockers open [round 2, full]\n",
+            "4444444444 PASS blockers 1 importants 0 [fix-PASS of round 1 on 2222222222; no reviewers ran; changed: src/a.rs]\n",
+            "2222222222 FAIL blockers 1 importants 0 [round 1, full]\n",
             "3333333333 unreadable cr note",
         ] {
             assert!(l.contains(needle), "missing '{needle}' in:\n{l}");
@@ -1017,7 +1038,7 @@ mod tests {
             "committer": "c", "timestamp": 0, "verdict": "WAIVED", "waiver": "r\u{1b}[1A", "blockers": 1, "importants": 0, "code_diff_hash": "h",
             "findings": [{"severity": "blocker\u{1b}", "location": "l", "claim": "c\u{1b}[2K"}], "walk_waivers": [{"seam": "s\u{7}", "why": "w\u{1b}"}]}))
         .unwrap();
-        let history = vec![("1111111111".to_string(), Some(round("FAIL\u{1b}")))];
+        let history = vec![("1111111111".to_string(), Some(round("FAIL\u{1b}")), " [round 1, full]".to_string())];
         fn round(v: &str) -> CrNote {
             serde_json::from_value(serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c",
                 "timestamp": 0, "verdict": v, "waiver": "x\u{1b}", "blockers": 0, "importants": 0, "code_diff_hash": "h"})).unwrap()
