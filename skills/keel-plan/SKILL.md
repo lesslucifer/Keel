@@ -12,9 +12,8 @@ archived like any T3 doc.
 
 The checklist constrains **substance** (items that must exist), never **form**:
 a plan may be prose, tables, diagrams or widgets, shaped to its task. There is
-no template to copy-paste on purpose. Worked examples: Keel's own E-SEED epic
-plan and its WU plans (`docs/work/2026-11-07-*-plan.html` in the Keel repo) are
-exactly this format.
+no template to copy-paste on purpose. Worked example: skill `keel-write`'s
+`references/example.html`, a ready epic plan in this format.
 
 ## 1 · The four outputs
 
@@ -29,6 +28,9 @@ exactly this format.
 (`data-artifact="epic-plan wu-plan"`) and the results
 (`data-artifact="epic-result wu-result"`); the doc must satisfy the union of
 both checklists, and a tag both share is satisfied once.
+
+Write every one by skill `keel-write`: short, plain words, the problem first,
+details last.
 
 ## 2 · The markup contract
 
@@ -79,9 +81,11 @@ the report is committed, so its verdict and nits live on the cr note, not here) 
 distillation plan; plans and reports archived) · `follow-ups`.
 
 Beyond the checklist, a plan carries whatever the task needs. The convention in
-Keel's own plans: an **open-points table** (`#` · point · what was decided
-here), so the owner can review asynchronously through htmldoc comments while
-work proceeds on the stated defaults.
+Keel's own plans: an **open-points table** (`#` · question · answer · why), so
+the owner can review asynchronously through htmldoc comments while work
+proceeds on the stated defaults. The order of the sections is skill
+`keel-write`'s: problem, what changes for the reader, a real case in steps,
+terms, the work, open points, details last.
 
 ## 4 · The verification loop — `keel verify-doc`
 
@@ -118,7 +122,9 @@ these docs.
 1. Decide the tier first — a plan or result is T3, so `docs/work/`.
 2. Create it per the htmldoc skill (mint the id, skeleton, snapshot), with
    `data-artifact` and `data-status="draft"`.
-3. Write the content, tagging each checklist item as you go.
-4. Flip `data-status="ready"`; fix whatever `keel verify-doc` reports.
+3. Write the content by skill `keel-write`, tagging each checklist item as you
+   go.
+4. Run that skill's self-check. Flip `data-status="ready"`; fix whatever
+   `keel verify-doc` reports.
 5. Commit it on the work branch: a WU plan before the WU's code, a WU result
    before its notes (it is part of the diff the notes and the signature bind).

@@ -9,7 +9,8 @@ description: Keel's documentation tiers (T0-T4) and the distillation process - b
 cannot say — intent, rationale, behaviour contracts, the map of the system's
 shape. Every fact lives at exactly one tier; elsewhere, link. When a doc and the
 code disagree, **code wins** — the session that finds the conflict fixes the doc
-in the same session. Docs target an AI reader; no work estimates.
+in the same session. Docs are for a person first and exact for an agent; no
+work estimates.
 
 ## 1 · The tiers
 
@@ -27,7 +28,7 @@ defaults `keel init` writes:
 
 - **Decide a doc's tier before creating it** and put it in that tier's folder.
   A plan, spec, test plan or backlog is never T1: T1 must be permanent **and**
-  shape-level.
+  shape-level. Then write it by skill `keel-write`.
 - **T0 changes only on an explicit request**, never silently or as a side
   effect, and lands as a `keel mr commit` (it is rule-bearing). T1 flat docs
   are rule-bearing too (`rule_bearing` in config).

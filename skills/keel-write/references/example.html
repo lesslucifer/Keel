@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-artifact="epic-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Example — E-CRCAP epic plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-CRCAP · A code review stops after 3 failed rounds</h1>
+      <p>An example epic plan, written by the writing rules.</p>
+      <div class="meta">T3 · epic plan</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-item="intent" data-c="intent">A code review can loop without end. Each round (one review run) finds something new. The author fixes it. The next round finds more. One piece of work ran 7 rounds until you stopped it. And when you waive a review (let it merge without a pass), the record still says PASS. This epic stops a review after 3 failed rounds and records a waiver as a waiver.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>A review keeps failing</td><td>Rounds go on until you notice</td><td>After 3 failed rounds, the tool stops and asks you</td></tr>
+    <tr><td>You must decide</td><td>No defined choices</td><td>Three: one more round, waive, or stop</td></tr>
+    <tr><td>You waive a review</td><td>Recorded as PASS</td><td>Recorded as WAIVED, with your reason</td></tr>
+    <tr><td>You sign off (your last step before a merge)</td><td>Nothing shows a waiver</td><td>You must accept the waiver</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">Example: a review that will not pass</h2>
+<ol data-c="example-steps">
+  <li>Round 3 fails.</li>
+  <li>The tool refuses round 4 and lists your three choices.</li>
+  <li>You say "waive it: the finding is cosmetic".</li>
+  <li>The review is recorded as WAIVED, with your reason.</li>
+  <li>You accept the waiver and sign off.</li>
+</ol>
+<div class="diagram" data-c="loop-diagram">
+<pre class="mermaid">
+flowchart TD
+  R["Review round"] -->|"PASS"| S["Owner signs"]
+  R -->|"FAIL"| Q{"3 failed rounds?"}
+  Q -->|"no"| F["Author fixes"] --> R
+  Q -->|"yes"| O{"Owner decides"}
+  O -->|"one more"| R
+  O -->|"waive"| W["Recorded as WAIVED"] --> S
+  O -->|"stop"| X["Work dropped"]
+</pre>
+</div>
+
+<h2 id="wus">The work</h2>
+<p>W2 needs W1: its choices include a waiver. W3 can run any time.</p>
+
+<div data-item="wu-summaries" data-c="wu-summaries">
+
+<div data-wu="E-CRCAP.W1" data-c="wu-w1">
+  <h3 id="w1">W1 · A waived review says WAIVED</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the agent records your waiver with your reason. The merge check accepts it and prints it. Sign-off needs your explicit yes.</p>
+    <ul>
+      <li><code>keel notes write cr --verdict WAIVED --reason "…"</code>. An empty reason is refused.</li>
+      <li>Sign-off refuses a waived commit without <code>--accept-waiver</code>.</li>
+      <li>A code change after the waiver undoes it.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Your ruling on waivers · UC-REV-2 (new).</p>
+  <p data-item="wu-expected"><b>Integration:</b> a waiver without a reason is refused; with one, the merge check passes and prints it; sign-off without the flag is refused. <b>Unit:</b> the flag parsing.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+<div data-wu="E-CRCAP.W2" data-c="wu-w2">
+  <h3 id="w2">W2 · The 3-round limit</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> preflight counts the failed reviews on the branch. At 3 it refuses a 4th and lists your choices.</p>
+    <ul>
+      <li>The count comes from the review notes git already holds. No new state.</li>
+      <li><code>[review] max_rounds</code> in the config, default 3.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Your ruling: 3 rounds, then you decide · UC-REV-3 (new).</p>
+  <p data-item="wu-expected"><b>Integration:</b> after 3 failed rounds, preflight refuses and lists the choices; a passing round is not counted. <b>Unit:</b> the count.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+<div data-wu="E-CRCAP.W3" data-c="wu-w3">
+  <h3 id="w3">W3 · What counts as a nit</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> two cases never fail a review: a missing test for code that already works, and a tidy-up of test helpers. Text only.</p>
+    <ul>
+      <li>The review rubric names both cases.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Your ruling on nits · UC-REV-1 (amended).</p>
+  <p data-item="wu-expected"><b>Integration: waived.</b> The WU changes no code.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+</div>
+
+<h2 id="open-points">Open points</h2>
+<p>Work goes on at these answers. Comment to overrule.</p>
+<table data-item="open-questions" data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>How many failed rounds before you decide?</td><td><b>3</b>, changeable in the config</td><td>Fewer stops good reviews. More is the loop we have today</td></tr>
+    <tr><td>2</td><td>Can you waive before any round runs?</td><td><b>Yes</b></td><td>Some work needs no review, such as a revert</td></tr>
+    <tr><td>3</td><td>Does a later code change undo a waiver?</td><td><b>Yes</b></td><td>A waiver covers only the code it saw</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="expected-h">Acceptance</h3>
+<ul data-item="expected" data-c="expected">
+  <li>A 4th review round is refused, and the message lists the three choices.</li>
+  <li>A waived review reads WAIVED with its reason, in the note and in the merge check's output.</li>
+  <li>Sign-off on waived work needs an explicit acceptance.</li>
+  <li>A code change after a waiver undoes it.</li>
+  <li>The epic test passes.</li>
+</ul>
+
+<h3 id="use-cases-h">Use cases</h3>
+<ul data-item="use-cases" data-c="use-cases">
+  <li>UC-REV-1, amended: the two nit cases (W3).</li>
+  <li>UC-REV-2, new: a waiver is recorded as WAIVED (W1).</li>
+  <li>UC-REV-3, new: the round limit (W2).</li>
+</ul>
+
+<h3 id="non-goals-h">Out of scope</h3>
+<ul data-item="non-goals" data-c="non-goals">
+  <li>What reviewers look for.</li>
+  <li>The merge check's other steps.</li>
+</ul>
+
+<h3 id="e2e-h">Epic test</h3>
+<div data-item="e2e-plan" data-c="e2e-plan">
+  <p>A scratch repo, no network:</p>
+  <ol>
+    <li>Three review rounds fail. The 4th is refused.</li>
+    <li>Your waiver is recorded. The merge check passes and prints it.</li>
+    <li>Sign-off without acceptance is refused. With it, the merge lands.</li>
+  </ol>
+</div>
+
+<h3 id="close-h">At the close</h3>
+<ul data-item="distillation-plan" data-c="distillation-plan">
+  <li>The use-case file: UC-REV-1, UC-REV-2, UC-REV-3.</li>
+  <li>The decisions file: one record for the limit and the waiver.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+</body>
+</html>
