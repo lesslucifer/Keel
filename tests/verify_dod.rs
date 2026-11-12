@@ -681,8 +681,49 @@ fn bless_unreviewed(p: &Path, tests: &str) {
     }
 }
 
+/// The code a `--waive-review` preview prints for its confirming re-run.
+fn confirm_code(t: &str) -> Option<String> {
+    let re = regex::Regex::new(r"--confirm-waiver ([0-9a-f]{12})").unwrap();
+    re.captures(t).map(|c| c[1].to_string())
+}
+
+/// The owner's two steps: the preview prints the listing and refuses; the re-run with its code signs.
 fn waive_at_sign_off(p: &Path, level: &str, report: &str, reason: &str) -> Output {
-    keel(p, &["mr", "confirm", level, "--as", "t", "--report", report, "--waive-review", reason])
+    let args = ["mr", "confirm", level, "--as", "t", "--report", report, "--waive-review", reason];
+    let preview = keel(p, &args);
+    match confirm_code(&text(&preview)) {
+        Some(code) if !preview.status.success() => keel(p, &[&args[..], &["--confirm-waiver", &code]].concat()),
+        _ => preview,
+    }
+}
+
+#[test]
+fn the_owner_sees_the_waiver_before_it_is_written_and_confirms_what_was_shown() {
+    let d = fixture();
+    let p = d.path();
+    bless_unreviewed(p, WU_TESTS);
+    let args = ["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING];
+    let preview = keel(p, &args);
+    let t = text(&preview);
+    assert!(!preview.status.success() && t.contains(RULING) && t.contains("not reviewed") && !t.contains("0 blockers"), "{t}");
+    let code = confirm_code(&t).unwrap_or_else(|| panic!("no confirm code: {t}"));
+    assert!(!has_note(p, "cr", "HEAD") && !has_note(p, "mr", "HEAD"), "a preview writes nothing");
+    for bad in [&["--confirm-waiver", "000000000000"][..], &["--confirm-waiver", &code, "--accept-waiver"], &["--accept-waiver"]] {
+        let o = keel(p, &[&args[..], bad].concat());
+        assert!(!o.status.success() && text(&o).contains("fix ->"), "{bad:?}: {}", text(&o));
+        assert!(!has_note(p, "cr", "HEAD") && !has_note(p, "mr", "HEAD"), "{bad:?} wrote a note");
+    }
+    // The code binds what was shown: a review recorded since, or other words, need a new preview.
+    let reworded = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", "other words", "--confirm-waiver", &code]);
+    assert!(!reworded.status.success() && !has_note(p, "mr", "HEAD"), "{}", text(&reworded));
+    assert!(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]).status.success());
+    let stale = keel(p, &[&args[..], &["--confirm-waiver", &code]].concat());
+    assert!(!stale.status.success() && text(&stale).contains("changed since"), "{}", text(&stale));
+    assert!(!has_note(p, "mr", "HEAD"));
+    assert_eq!(note(p, "cr", "HEAD")["verdict"], "FAIL");
+    let o = waive_at_sign_off(p, "wu", "docs/a.html", RULING);
+    assert!(o.status.success() && text(&o).contains(RULING), "{}", text(&o));
+    assert!(keel(p, &["verify-dod", "wu", "wu/e/a"]).status.success());
 }
 
 #[test]
@@ -733,28 +774,39 @@ fn an_owner_waiver_replaces_a_failed_round_carrying_its_findings_and_never_a_pas
     let d = fixture();
     let p = d.path();
     bless(p, WU_TESTS, "PASS");
-    // A review that passed is never waived over.
+    // A review that passed is never waived over; a stale one needs a new review.
     let o = waive_at_sign_off(p, "wu", "docs/a.html", RULING);
-    assert!(!o.status.success() && text(&o).contains("PASS") && text(&o).contains("fix ->"), "{}", text(&o));
+    assert!(!o.status.success() && text(&o).contains("PASS") && text(&o).contains("new review") && text(&o).contains("fix ->"), "{}", text(&o));
     assert_eq!(note(p, "cr", "HEAD")["verdict"], "PASS");
     assert!(!has_note(p, "mr", "HEAD"));
 
-    // A failed round: its counts and open findings ride the waiver, and are shown before it is signed.
+    // A failed round on the tip: its counts, its unwaived findings and walk waivers are shown before
+    // the waiver is written, and every field the review recorded stays on the note.
     assert!(write_cr(p, &["--verdict", "FAIL", "--blockers", "2", "--importants", "1"]).status.success());
-    edit_note(p, "cr", "HEAD", |n| {
-        n["open_findings"] = json!([{"severity": "blocker", "finding": "a() is wrong on 0"}]);
-        n["walk_waivers"] = json!([{"seam": "abc", "why": "kept"}]);
+    let recorded = json!({
+        "findings": [
+            {"location": "src/a.py:2", "claim": "a() is wrong on 0", "severity": "blocker", "evidence": "a(0) returns 1"},
+            {"location": "src/a.py:1", "claim": "a() is slow", "severity": "important", "evidence": "e", "waived": "owner: fine"}
+        ],
+        "refuted": [{"location": "src/a.py:1", "claim": "c", "why": "w"}],
+        "nits": [{"location": "src/a.py:1", "finding": "n", "fixed": "f"}],
+        "fleet": {"finders": 2},
+        "walk_waivers": [{"seam": "abc", "why": "seam kept"}]
     });
-    let o = waive_at_sign_off(p, "wu", "docs/a.html", RULING);
-    let t = text(&o);
-    assert!(o.status.success(), "{t}");
-    for needle in [RULING, "open: 2 blockers, 1 importants", "blocker: a() is wrong on 0", "FAIL blockers 2 importants 1"] {
+    edit_note(p, "cr", "HEAD", |n| n.as_object_mut().unwrap().extend(recorded.as_object().unwrap().clone()));
+    let preview = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING]);
+    let t = text(&preview);
+    for needle in [RULING, "open: 2 blockers, 1 importants", "blocker src/a.py:2: a() is wrong on 0", "FAIL blockers 2 importants 1", "walk waiver abc: seam kept"] {
         assert!(t.contains(needle), "missing '{needle}': {t}");
     }
+    assert!(!t.contains("a() is slow"), "a waived finding is not open: {t}");
+    let o = waive_at_sign_off(p, "wu", "docs/a.html", RULING);
+    assert!(o.status.success(), "{}", text(&o));
     let cr = note(p, "cr", "HEAD");
     assert_eq!((cr["verdict"].as_str(), cr["blockers"].as_u64(), cr["importants"].as_u64()), (Some("WAIVED"), Some(2), Some(1)), "{cr}");
-    assert_eq!(cr["open_findings"][0]["finding"], "a() is wrong on 0");
-    assert_eq!(cr["walk_waivers"][0]["why"], "kept");
+    for f in ["findings", "refuted", "nits", "fleet", "walk_waivers"] {
+        assert_eq!(cr[f], recorded[f], "{f} kept on the waiver");
+    }
     assert!(keel(p, &["verify-dod", "wu", "wu/e/a"]).status.success());
 
     // Sign-last holds for everything else: a missing doc note refuses the waiver and writes nothing.
@@ -763,6 +815,7 @@ fn an_owner_waiver_replaces_a_failed_round_carrying_its_findings_and_never_a_pas
     let o = run(env!("CARGO_BIN_EXE_keel"), p, &["notes", "write", "test"], WU_TESTS);
     assert!(o.status.success());
     let o = waive_at_sign_off(p, "wu", "docs/a.html", RULING);
-    assert!(!o.status.success() && text(&o).contains("1·notes") && text(&o).contains("doc/v1"), "{}", text(&o));
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("1·notes") && t.contains("doc/v1") && t.contains("waive") && !t.contains("cr PASS"), "{t}");
     assert!(!has_note(p, "cr", "HEAD") && !has_note(p, "mr", "HEAD"));
 }

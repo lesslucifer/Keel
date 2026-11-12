@@ -831,11 +831,11 @@ fn a_waived_tip_is_signed_only_with_explicit_acceptance_after_the_history_is_sho
     ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER, "--blockers", "1"]));
     let tip = git(p, &["rev-parse", "HEAD"]);
     let mut n: Value = serde_json::from_str(&git(p, &["notes", "--ref=cr", "show", "HEAD"])).unwrap();
-    n["open_findings"] = json!([{"severity": "blocker", "finding": "a() returns 2 where the contract says 1"}]);
+    n["findings"] = json!([{"location": "src/a.py:2", "claim": "a() returns 2 where the contract says 1", "severity": "blocker", "evidence": "e"}]);
     git(p, &["notes", "--ref=cr", "add", "-f", "-m", &n.to_string(), "HEAD"]);
 
     let o = keel(p, &["mr", "confirm", "wu"]);
-    refused(&o, &["WAIVED", WAIVER, "--accept-waiver", "blocker: a() returns 2 where the contract says 1", &round1[..10], "FAIL", &tip[..10]]);
+    refused(&o, &["WAIVED", WAIVER, "--accept-waiver", "blocker src/a.py:2: a() returns 2 where the contract says 1", &round1[..10], "FAIL", &tip[..10]]);
     assert!(mr_note(p, "HEAD").is_none(), "a refused confirm writes nothing");
 
     let o = ok(keel(p, &["mr", "confirm", "wu", "--accept-waiver", "--as", "vu"]));
@@ -918,12 +918,15 @@ fn an_owner_waiver_at_sign_off_is_key_signed_and_a_failed_signing_writes_neither
     // No signing key configured: the sign-off fails before anything is written.
     let key = git(p, &["config", "keel.signingkey"]);
     git(p, &["config", "--unset", "keel.signingkey"]);
-    let o = keel(p, &["mr", "confirm", "wu", "--waive-review", WAIVER]);
+    let preview = keel(p, &["mr", "confirm", "wu", "--waive-review", WAIVER]);
+    let re = regex::Regex::new(r"--confirm-waiver ([0-9a-f]{12})").unwrap();
+    let code = re.captures(&text(&preview)).unwrap_or_else(|| panic!("no code: {}", text(&preview)))[1].to_string();
+    let o = keel(p, &["mr", "confirm", "wu", "--waive-review", WAIVER, "--confirm-waiver", &code]);
     assert!(!o.status.success() && text(&o).contains("no signing key"), "{}", text(&o));
     assert!(mr_note(p, "HEAD").is_none() && !run("git", p, &["notes", "--ref=cr", "show", "HEAD"]).status.success(), "nothing written");
     git(p, &["config", "keel.signingkey", &key]);
 
-    let o = ok(keel(p, &["mr", "confirm", "wu", "--waive-review", WAIVER]));
+    let o = ok(keel(p, &["mr", "confirm", "wu", "--waive-review", WAIVER, "--confirm-waiver", &code]));
     assert!(text(&o).contains(WAIVER), "{}", text(&o));
     let m = mr_note(p, "HEAD").unwrap();
     assert_eq!(m["waiver_hash"].as_str().unwrap(), sha256_of(WAIVER.as_bytes()));
