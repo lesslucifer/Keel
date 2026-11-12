@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="4dd3f661d61d93905cff20c2" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-CRCAP.W2 plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-CRCAP.W2 · The 5-round review schedule — plan</h1>
+      <p>The tool counts review rounds from the cr notes already on the branch. Preflight tells the reviewer which round it is and what to review. A fix that only answers allowed findings gets a PASS without a new round. Round 5 is the last; a blocker there ends in a WAIVED note that the owner accepts, or not, at sign-off.</p>
+      <div class="meta">T3 · WU plan · 2026-11-12 · Keel · branch <code>wu/E-CRCAP/w2-review-schedule</code> off <code>epic/E-CRCAP</code> <code>1221c60</code> (W1 and W3 merged) · <a href="2026-11-12-e-crcap-epic-plan.html">epic plan</a>, block W2 · builds on <a href="2026-11-12-e-crcap-w1-waived-verdict-plan.html">W1</a> · the epic plan asks for no owner go per WU plan, so work proceeds on the decisions below</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="requirement">Requirement</h2>
+<p data-item="requirement" data-c="requirement"><code>keel preflight wu|epic</code> prints <code>review round n of N</code> and the scope (the whole range in rounds 1–2, the code changed since the last reviewed commit from round 3), counted from the reviewed cr notes on the branch's own first-parent line, and refuses with <code>0·review-cap</code> a round past the cap or a round 5 after a round 4 with no blocker; <code>keel notes write cr</code> stamps that round and scope, enforces the same refusals, takes the round's findings, refuted candidates, nits and fleet itself, writes a fix-PASS (<code>--verdict PASS --fixes &lt;reviewed commit&gt;</code>) only after a round whose findings may be fixed without a new round, and writes the cap's WAIVED note with a reason the tool fixes; and <code>keel mr confirm</code> shows each round, its scope and each fix-PASS with the files it changed.</p>
+
+<h2 id="maps-to">Maps to</h2>
+<p data-item="maps-to" data-c="maps-to">Epic E-CRCAP, block W2, open points 1, 2, 3, 4, 7, 13, 14 and 15. Backlog B8 (rounds). UC-REV-3 (new), UC-REV-1 and UC-MR-1 amended, at the epic close. One new decision record at the close, amending DEC-26 (the CLI now reads <code>[review]</code>). Adds the epic's e2e test (<code>tests/review.rs</code>), as the last code WU.</p>
+
+<h2 id="design">The design</h2>
+
+<h3>What counts as a round</h3>
+<table data-c="rounds">
+  <thead><tr><th>Note on a first-parent commit of base..tip</th><th>Counts as</th></tr></thead>
+  <tbody>
+    <tr><td>PASS or FAIL written by a review</td><td>a round</td></tr>
+    <tr><td>WAIVED that kept a reviewed round of this range (the cap, or the owner over a FAIL)</td><td>that round</td></tr>
+    <tr><td>fix-PASS, or a WAIVED marked <code>unreviewed</code></td><td>not a round</td></tr>
+    <tr><td>a note that does not parse</td><td>refused: preflight and the writer stop and name the commit; the owner repairs it in place</td></tr>
+  </tbody>
+</table>
+<p>The round about to run is one more than the rounds below the tip. The tip's own note never counts, so a re-run on the same commit is the same round. An epic reads only its own line, so its WUs' rounds (on their own tips) never count.</p>
+
+<h3>The CLI</h3>
+<table data-c="cli">
+  <thead><tr><th>Command</th><th>Does</th></tr></thead>
+  <tbody>
+    <tr><td><code>keel preflight wu|epic &lt;tip&gt;</code></td><td>After its checks, prints <code>review round n of N - scope: the whole range, &lt;base&gt;..&lt;tip&gt;</code>, or from round 3 <code>scope: the last fix, &lt;since&gt;..&lt;tip&gt; on the code paths</code> (full SHAs; <code>since</code> is the last reviewed commit). Red <code>0·review-cap</code> for round N+1, for round 5 or later when the round before found no blocker, and for an unreadable earlier note</td></tr>
+    <tr><td><code>keel notes write cr --verdict PASS|FAIL</code></td><td>Same refusals. Writes <code>round</code> and <code>scope</code> (<code>"full"</code> or <code>"since &lt;sha&gt;"</code>). Still binds the whole range's code hash, so checks 4–5 do not change. Prints the next step of the schedule. A FAIL with a blocker in round N says the cap is reached and names the WAIVED step</td></tr>
+    <tr><td><code>… --findings &lt;json&gt; --refuted &lt;json&gt; --nits &lt;json&gt; --fleet &lt;json&gt;</code></td><td>Router item 1. The round's lists go on the note in the same call: arrays (fleet an object), refused otherwise, nothing written. With <code>--findings</code>, the counts come from it (entries without a <code>waived</code> reason); a typed <code>--blockers</code>/<code>--importants</code> that disagrees is refused. Only on a reviewed PASS or FAIL</td></tr>
+    <tr><td><code>keel notes write cr --verdict PASS --fixes &lt;rev&gt;</code></td><td>The fix-PASS. Allowed when <code>&lt;rev&gt;</code> is the commit of the latest round below the tip, no fix-PASS sits between it and the tip, and that round may be fixed without a new round: a PASS (nits), or a FAIL with importants and no blocker in round 4 or later (or in the cap round, when N is below 4). Writes <code>fixes</code>, <code>round</code> (the round it answers), <code>fix_diff_hash</code> (the code diff from the reviewed commit to the tip) and <code>answers</code> (its importants and nits). Not a round</td></tr>
+    <tr><td><code>keel notes write cr --verdict WAIVED</code> (no <code>--reason</code>)</td><td>The cap. Only when the tip's own note is round N's FAIL with a blocker. The tool writes the reason <code>review cap: N rounds, &lt;b&gt; blockers open</code> through W1's one waiver writer, so the FAIL's findings stay on the note. Anywhere else it is refused, as a waiver with no reason is today</td></tr>
+    <tr><td><code>keel mr confirm</code></td><td>The history rows gain <code>[round n, full]</code>, <code>[round n, since &lt;sha&gt;]</code> and <code>[fix-PASS of round n on &lt;sha&gt;; no reviewers ran; changed: &lt;files&gt;]</code>. A sign-off whose line holds a fix-PASS prints the history too (open point 13), with no new flag</td></tr>
+  </tbody>
+</table>
+<p><b>The cap</b> is <code>[review] max_rounds</code> in the <b>target's committed</b> <code>.keel/config.toml</code>, default 5, like every other policy the gate reads: an edit in the branch or the working tree cannot raise it. Keel's own config stays unset. From round 4 only a blocker earns another round, whatever N is.</p>
+
+<h3>Router items and W1 follow-ups taken</h3>
+<table data-c="router-items">
+  <thead><tr><th>Item</th><th>Decision</th></tr></thead>
+  <tbody>
+    <tr><td>1 · The skill's jq step cannot run in a review session (no <code>git notes add</code>)</td><td><code>keel notes write cr</code> takes the four lists (above), and keel-code-review §6 calls it instead of jq. <b>This amends the epic plan's "no CLI change" line</b> for that step (W3, DEC-26)</td></tr>
+    <tr><td>2a · <code>notes::cr_raw</code> drops a note it cannot read</td><td>One plumbing reader for every note kind: <code>notes list</code> exit 1 is "no note", any other failure is an error; a failed <code>cat-file</code> is an error for a single read and an "unreadable cr note" row in the history</td></tr>
+    <tr><td>2b · the history starts 1+n+k git processes</td><td>One read of the line shared by the history, preflight and the writer: <code>rev-list --first-parent</code>, <code>notes list</code>, one <code>cat-file --batch</code>. A fix-PASS row adds one <code>diff --name-only</code> for its files</td></tr>
+    <tr><td>3 · <code>gate::read</code>, <code>notes::doc_paths</code> to plumbing; keel-workflow §5 wording</td><td>Taken. The gate's and check 8's note reads use the plumbing reader. <code>doc_paths</code> reads deleted paths with <code>rev-list | diff-tree --stdin</code>, so <code>log.showSignature</code> cannot add lines to it. §5 says <code>replaced</code> keeps one level</td></tr>
+  </tbody>
+</table>
+
+<h2 id="expected">Expected</h2>
+<ul data-item="expected" data-c="expected">
+  <li>Preflight prints <code>review round 1 of 5</code> and <code>round 2</code> with the whole range, and from round 3 the range since the last reviewed commit.</li>
+  <li>A fix-PASS after a nits-only round is written and the merge check is green on it (red only on <code>8·manual-review</code> before the sign-off). It is refused after a round-2 FAIL with importants, after any blocker, and on top of another fix-PASS. After a round-4 FAIL with importants and no blocker it is written.</li>
+  <li>Round 5 is refused after a round 4 with no blocker. Round 6 is refused. A round-5 FAIL with a blocker leads to the WAIVED note with the cap reason, and the owner's <code>--accept-waiver</code> signs it.</li>
+  <li>A merged WU's rounds do not count for its epic. Re-running a review on the same commit is the same round. <code>max_rounds = 6</code> on the target moves the cap.</li>
+  <li>The writer stores findings, refuted, nits and fleet given as flags, and refuses a non-array list.</li>
+  <li>An unreadable earlier note refuses preflight and the writer; a notes ref git cannot list is an error, never "no note".</li>
+  <li>The epic e2e passes: a fix-PASS WU and a capped, waived WU merge through the real hook, and the epic merges into main.</li>
+</ul>
+
+<h2 id="test-plan">Test plan</h2>
+<div data-item="test-plan" data-c="test-plan">
+<table>
+  <thead><tr><th>Level</th><th>Where</th><th>Asserts</th></tr></thead>
+  <tbody>
+    <tr><td>E2E</td><td><code>tests/review.rs</code> (new): <code>epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver</code></td><td>The flow the epic plan names: <code>keel init</code> in a scratch repo, a key signer, WU A (nits, fix-PASS, sign, real merge), WU B (rounds 1–5, scopes, a refused fix-PASS after round 2, round 6 refused, the cap's WAIVED, sign-off refused then accepted, a reworded waiver red, real merge), the epic (round 1 of its own, the walk prints WU B as WAIVED, archive, sign, real merge into main)</td></tr>
+    <tr><td>Integration</td><td><code>tests/verify_dod.rs</code></td><td>Each line of Expected above in its own scratch repo; the history's round, scope and fix-PASS rows; the unreadable and unlistable note cases; <code>doc_paths</code> under <code>log.showSignature</code> with a signed archive commit</td></tr>
+    <tr><td>Unit</td><td><code>src/review.rs</code> (new), <code>src/notes.rs</code>, <code>src/mr.rs</code></td><td>The round count, scope, cap and fix-PASS rules over fabricated note lists; the batch reader's parser; the list flags and count derivation; the history row tags</td></tr>
+  </tbody>
+</table>
+<p>Tests are committed red against the code at <code>1221c60</code>, then the code turns them green. No layer is waived.</p>
+</div>
+
+<h2 id="skill-text">Skill text (rule-bearing, one owner <code>keel mr commit</code>)</h2>
+<table data-c="skill-text">
+  <thead><tr><th>File (and its <code>.claude/skills/</code> mirror)</th><th>Change</th></tr></thead>
+  <tbody>
+    <tr><td><code>skills/keel-code-review/SKILL.md</code></td><td>§1: from round 3 the scope is preflight's range. §2: the round line and <code>0·review-cap</code>. §5–§7: the schedule replaces "loop until PASS"; a nit may be fixed after the verdict under a fix-PASS; the cap writes WAIVED. §6: the four lists go through the writer's flags, not jq</td></tr>
+    <tr><td><code>skills/keel-workflow/SKILL.md</code></td><td>§3 cr row (round, scope, fix-PASS fields), §4 check table (<code>0·review-cap</code>), §5 (the cap exists; <code>replaced</code> keeps one level), §6 (the history rows; <code>--accept-waiver</code> takes the code)</td></tr>
+    <tr><td><code>skills/keel-router/references/brief-skeleton.md</code></td><td>Review-worker row: "round n of at most 3" becomes the schedule, round and scope from preflight</td></tr>
+    <tr><td><code>templates/config.toml</code></td><td><code>[review]</code> comment: the CLI reads <code>max_rounds</code> (on the target), the skill the rest</td></tr>
+  </tbody>
+</table>
+
+<h2 id="open-points">Open points (decided here; the owner may overrule by comment)</h2>
+<table data-c="open-points">
+  <thead><tr><th>#</th><th>Point</th><th>Decided here</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Does this plan need an owner go first?</td><td>No. Neither keel-workflow nor the epic plan asks for one.</td></tr>
+    <tr><td>2</td><td>W1's <code>--verdict WAIVED --reason "…"</code> still writes any reason. Restrict it to the cap?</td><td>Keep it as W1 built it: W1's tests pin the waiver's behaviour through it, and the owner still accepts any waiver at sign-off. The skill uses only the reasonless cap form. Restricting it is a small follow-up if the owner wants it.</td></tr>
+    <tr><td>3</td><td>Which config holds <code>max_rounds</code>?</td><td>The target's committed config (above). The working tree's is never read for it.</td></tr>
+    <tr><td>4</td><td>A FAIL with 0 blockers and 0 importants (e.g. <code>keel check</code> red)</td><td>No fix-PASS after it: something other than findings failed the round, so it needs a round.</td></tr>
+    <tr><td>5</td><td>Field and flag names (working names in the epic plan)</td><td><code>round</code>, <code>scope</code>, <code>--fixes</code>, <code>fixes</code>, <code>fix_diff_hash</code>, <code>answers</code>, <code>--findings</code>, <code>--refuted</code>, <code>--nits</code>, <code>--fleet</code>, <code>0·review-cap</code>.</td></tr>
+    <tr><td>6</td><td>Does the merge check verify a fix-PASS?</td><td>No: it reads PASS as today (checks 3–5). The rules live in the writer, and the owner sees each fix-PASS and its files at sign-off (epic open point 13).</td></tr>
+  </tbody>
+</table>
+
+<h2 id="steps">Steps and commits</h2>
+<ol data-c="steps">
+  <li>This plan (worker).</li>
+  <li>Tests, red on the current code (worker).</li>
+  <li>The code in <code>src/</code>, green (worker).</li>
+  <li>The skill text and template, staged for the owner's <code>keel mr commit</code>.</li>
+  <li>After that commit: the result report, <code>keel check</code>, test and doc notes, preflight, then a review worker.</li>
+</ol>
+
+<h2 id="no-gate">What no gate reviews</h2>
+<p data-c="no-gate">The skill text, its mirrors and <code>templates/config.toml</code> (the owner's <code>keel mr commit</code> and the router's read-only review cover them), and this plan and the result report. The code in <code>src/</code> and <code>tests/</code> goes through the code review. Per open point 11, this epic's own reviews still run on the installed keel; no fix-PASS or WAIVED note is written on this epic's commits.</p>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
