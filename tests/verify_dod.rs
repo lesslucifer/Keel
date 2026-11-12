@@ -1440,3 +1440,25 @@ fn a_commit_that_changes_no_code_after_a_failed_round_gets_no_fix_pass_it_could_
     test_note(p);
     refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c1]), &["round 1", "importants"]);
 }
+
+/// Independent text review round 2, I1: from round 4 a second code fix after a fix-PASS has no round
+/// to go to, so the refusal names the owner's waiver, never a round preflight would refuse.
+#[test]
+fn a_second_code_fix_after_a_round_4_fix_pass_points_at_the_owners_waiver_not_a_refused_round() {
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    for n in 1..=3 {
+        ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+        step(p, n + 1);
+    }
+    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "1"]));
+    let r4 = head(p);
+    step(p, 5);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &r4]));
+    step(p, 6);
+    let o = write_cr(p, &["--verdict", "PASS", "--fixes", &r4]);
+    refused(&o, &["second fix", "--waive-review"]);
+    assert!(!text(&o).contains("run review round 5"), "round 5 does not exist here: {}", text(&o));
+    assert_red(&preflight(p), "0·review-cap");
+}
