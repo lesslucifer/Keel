@@ -1149,6 +1149,13 @@ fn stop_stops_then_removes_this_repositorys_idle_worker_by_id() {
         assert!(!ok && out.contains(&format!("worker {name} is {state}: the owner decides (claude stop {id})")), "{name}: {out}");
         assert_eq!(calls(&l.state).len() - n0, 1, "{name}: stop waited on a session that is not busy");
     }
+    // E-ROUTER3.W5 (W8 result): a finished review worker listed idle with state blocked is stopped
+    more.push(serde_json::json!({"id": "h0", "sessionId": "h0-x", "name": "h", "cwd": wt, "kind": "background", "status": "idle", "state": "blocked"}));
+    l.set_sessions(&more);
+    let (ok, out) = l.run_env(&["stop", "h"], &[("PATH", &path)]);
+    assert!(ok && out.starts_with("STOPPED name=h id=h0 "), "{out}");
+    let tail: Vec<Vec<String>> = calls(&l.state).into_iter().map(|(_, c)| c).filter(|c| c[0] != "agents").collect();
+    assert_eq!(tail[tail.len() - 2..], [vec!["stop".to_string(), "h0".into()], vec!["rm".to_string(), "h0".into()]]);
     l.set_sessions(&rows);
 
     // review r2: the busy wait follows the worker's id, never another session that takes its name,
@@ -2000,7 +2007,7 @@ fn guard_run_with_a_watchdog_recipient_allows_only_the_scheduler_and_a_message_t
             guard_to("", &as_agent(send.clone())).is_some(),
             "{agent:?}: an empty recipient allowed a message"
         );
-        // review r2 I1: only the one schedule the start prompt asks for; transcript text cannot add another
+        // review r2 I1: only the tick's shape is admitted; a repeat of that same call passes
         for (k, v) in [
             ("cron", serde_json::json!("* * * * *")),
             ("cron", serde_json::json!("*/1 * * * *")),
@@ -2516,6 +2523,13 @@ fn watchdog_facts_mark_an_idle_worker_done_and_a_blocked_or_quiet_one_stuck() {
         ),
         ("blocked", 5, serde_json::json!({"state": "blocked"}), 0),
         ("working", 6, serde_json::json!({"state": "working"}), 1),
+        // E-ROUTER3.W5 (W8 result): a finished review worker was listed idle with state blocked
+        (
+            "review",
+            7,
+            serde_json::json!({"status": "idle", "state": "blocked"}),
+            0,
+        ),
     ] {
         rows.push(worker_row(&l, h, name, &sid(n), status, Some(quiet), &[]));
     }
@@ -2534,6 +2548,7 @@ fn watchdog_facts_mark_an_idle_worker_done_and_a_blocked_or_quiet_one_stuck() {
     assert_eq!(state("prompt"), "STUCK (permission prompt)");
     assert_eq!(state("blocked"), "STUCK (blocked)");
     assert_eq!(state("working"), "busy");
+    assert_eq!(state("review"), "DONE");
     // done and stuck first, busy last, in list order within each
     let order: Vec<String> = blocks(&out)
         .iter()
@@ -2541,7 +2556,7 @@ fn watchdog_facts_mark_an_idle_worker_done_and_a_blocked_or_quiet_one_stuck() {
         .collect();
     assert_eq!(
         order,
-        ["busy16", "idle", "prompt", "blocked", "busy14", "working"],
+        ["busy16", "idle", "prompt", "blocked", "review", "busy14", "working"],
         "{out}"
     );
 }
