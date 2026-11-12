@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-CRCAP · Code review follows a fixed 5-round schedule, and a waived review says so</h1>
       <p>Epic plan for backlog rows B8 and B12, within the owner's scope ruling of 2026-11-12 and the owner's review-schedule direction of the same day (plan comment).</p>
-      <div class="meta">T3 · epic plan · 2026-11-12 · Keel · branch <code>epic/E-CRCAP</code> off <code>main</code> <code>1f303dc</code> · plan only; no work starts before the owner's go</div>
+      <div class="meta">T3 · epic plan · 2026-11-12 · Keel · branch <code>epic/E-CRCAP</code> off <code>main</code> <code>1f303dc</code> · <b>owner go 2026-11-12</b> on <code>968800a</code>, every open point (1–16) decided at its default · no WU starts until E-WMODE has merged into main and main has been merged into <code>epic/E-CRCAP</code></div>
     </div>
   </header>
   <main>
@@ -154,10 +154,10 @@ flowchart LR
 
 </div>
 
-<h2 id="open-questions-h">Open points for the owner</h2>
-<p>Points 2, 3, 4, 7 and 13–15 follow your first 2026-11-12 comment, point 16 your second. Each point has a recommendation, which is also the default if you do not answer. No work starts before your go.</p>
+<h2 id="open-questions-h">Open points: decided</h2>
+<p><b>Owner go, 2026-11-12:</b> every point below is decided at its recommendation (the default). Points 2, 3, 4, 7 and 13–15 followed the owner's first 2026-11-12 comment, point 16 the second. The go also rules that no WU starts until E-WMODE has merged into main and main has been merged into <code>epic/E-CRCAP</code>.</p>
 <table data-item="open-questions" data-c="open-points-table">
-  <thead><tr><th>#</th><th>Question</th><th>Recommendation (= default)</th><th>Options and costs</th></tr></thead>
+  <thead><tr><th>#</th><th>Question</th><th>Decided (owner go 2026-11-12, at the default)</th><th>Options and costs</th></tr></thead>
   <tbody>
     <tr><td>1</td><td>Should the tool enforce the schedule, or only the skill text?</td><td><b>The tool.</b> Preflight and the cr writer derive the round from the notes</td><td>Text only costs no code, but the looping session has to count, and E-ROUTER3.W2 shows it does not. The tool's count holds across fresh workers and lost context</td></tr>
     <tr><td>2</td><td>The cap: for WUs only, or also for an epic's own review?</td><td><b>Both</b>, counted separately: 5 rounds, set by <code>[review] max_rounds</code> (default 5). The other steps are fixed: rounds 1–2 full, round 4 the last that needs a blocker to continue. Keel's config stays unset</td><td>Your comment names "WU / epics" for the narrower scope; the same schedule for both keeps one rule. Only an owner commit can change <code>.keel/</code>, so an agent cannot raise the cap</td></tr>
