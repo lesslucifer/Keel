@@ -402,6 +402,7 @@ fn launcher() -> Launcher {
     std::fs::create_dir_all(main.join(".router/briefs")).unwrap();
     std::fs::copy(root().join("scripts/router-worker.sh"), main.join("scripts/router-worker.sh")).unwrap();
     std::fs::copy(root().join("scripts/router-guard.jq"), main.join("scripts/router-guard.jq")).unwrap();
+    std::fs::copy(root().join("scripts/router-file-guard.sh"), main.join("scripts/router-file-guard.sh")).unwrap();
     std::fs::write(main.join(".gitignore"), ".router/\n/target/\n").unwrap();
     std::fs::create_dir_all(main.join(".claude/agents")).unwrap();
     std::fs::write(main.join(".claude/agents/worker.md"), "---\nname: worker\n---\nworker\n").unwrap();
@@ -676,8 +677,9 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
 }
 
 /// DEC-39: the repo's committed worker policy is opus at medium or high effort, medium by default.
+/// E-WMODE.W1 (DEC-37 amended): Keel's workers start in auto mode, and project-router says so.
 #[test]
-fn committed_worker_policy_is_opus_at_medium_or_high_effort_with_a_haiku_watchdog() {
+fn committed_worker_policy_is_opus_at_medium_or_high_effort_in_auto_mode_with_a_haiku_watchdog() {
     let config = std::fs::read_to_string(root().join(".keel/config.toml")).unwrap();
     let section: Vec<&str> = config
         .lines()
@@ -686,7 +688,18 @@ fn committed_worker_policy_is_opus_at_medium_or_high_effort_with_a_haiku_watchdo
         .take_while(|l| !l.starts_with('['))
         .filter(|l| !l.trim().is_empty())
         .collect();
-    assert_eq!(section, ["worker_model = \"opus\"", "worker_efforts = [\"medium\", \"high\"]", "worker_default_effort = \"medium\"", "watchdog_model = \"haiku\""]);
+    assert_eq!(
+        section,
+        [
+            "worker_model = \"opus\"",
+            "worker_efforts = [\"medium\", \"high\"]",
+            "worker_default_effort = \"medium\"",
+            "worker_permission_mode = \"auto\"",
+            "watchdog_model = \"haiku\""
+        ]
+    );
+    let project_router = std::fs::read_to_string(root().join(".claude/skills/project-router/SKILL.md")).unwrap();
+    assert!(project_router.contains("`worker_permission_mode = \"auto\"`"), "project-router does not state the committed worker mode");
 }
 
 /// E-ROUTER3.W4 (R3, DEC-48): in a self-clone with keel's hooks a plain commit touching a router security file is refused naming it,
@@ -716,7 +729,7 @@ fn keels_router_security_files_are_rule_bearing() {
     };
     assert!(common::cmd(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
     assert!(run(&["checkout", "-q", "-b", "wu/x/gate"]).status.success());
-    for f in ["scripts/router-guard.jq", "scripts/router-worker.sh", "scripts/router-watch.sh", ".claude/agents/worker.md"] {
+    for f in ["scripts/router-guard.jq", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", ".claude/agents/worker.md"] {
         let body = std::fs::read_to_string(c.join(f)).unwrap();
         std::fs::write(c.join(f), format!("{body}\n")).unwrap();
         assert!(run(&["add", f]).status.success());
@@ -782,9 +795,36 @@ fn worker_argv(state: &Path, name: &str) -> Vec<String> {
     argv_of(state, name, false)
 }
 
-/// As `worker_argv`, for a worker spawned with `--review` (`review`) or without.
+/// The Read rules every worker gets after the Bash denies (E-WMODE, DEC-37): the sandbox's denyRead
+/// paths. The edit tools get no path rule (review round 2, H1): the worker file guard bounds them.
+const WORKER_READ_DENIES: [&str; 2] = ["Read(~/.ssh/**)", "Read(~/.claude/channels/**)"];
+
+/// The main checkout of the repository whose worktree is `dir`, as git lists it.
+fn main_of(dir: &Path) -> String {
+    let list = String::from_utf8(git(dir, &["worktree", "list", "--porcelain"]).stdout).unwrap();
+    list.lines().next().unwrap().strip_prefix("worktree ").unwrap().to_string()
+}
+
+/// The worker file guard's hook command for a launcher in `router` and a worker in `wt`, with the
+/// launcher's `home` (E-WMODE review round 2, DEC-37).
+fn guard_hook(router: &str, wt: &str, home: &str) -> String {
+    format!("sh '{router}/scripts/router-file-guard.sh' '{wt}' '{home}' || {{ echo 'worker file guard: failed - tool call denied' >&2; exit 2; }}")
+}
+
+/// As `worker_argv`, for a worker spawned with `--review` (`review`) or without; the launcher ran
+/// in the main checkout.
 fn argv_of(state: &Path, name: &str, review: bool) -> Vec<String> {
-    let (_, a) = calls(state)
+    let (dir, _) = calls(state)
+        .into_iter()
+        .rfind(|(_, a)| a[0] == "--bg" && a.windows(2).any(|w| w[0] == "-n" && w[1] == name))
+        .unwrap_or_else(|| panic!("no session started for {name}"));
+    argv_with_root(state, name, review, &main_of(Path::new(&dir)))
+}
+
+/// As `argv_of`, for a launcher run in the checkout `router`: its --settings carry exactly one
+/// PreToolUse hook, on every tool, running that checkout's worker file guard on the worker's worktree.
+fn argv_with_root(state: &Path, name: &str, review: bool, router: &str) -> Vec<String> {
+    let (dir, a) = calls(state)
         .into_iter()
         .rfind(|(_, a)| a[0] == "--bg" && a.windows(2).any(|w| w[0] == "-n" && w[1] == name))
         .unwrap_or_else(|| panic!("no session started for {name}"));
@@ -817,6 +857,7 @@ fn argv_of(state: &Path, name: &str, review: bool) -> Vec<String> {
     let mut allow = bash_pairs(WORKER_GRANTS);
     let mut deny = bash_pairs(WORKER_DENIES);
     deny.extend(["Bash(git --git-dir=*)", "Bash(git --work-tree=*)"].map(String::from));
+    deny.extend(WORKER_READ_DENIES.map(String::from));
     if review {
         allow.extend(bash_pairs(["keel notes write cr"]));
         deny.extend(bash_pairs(["git add", "git commit"]));
@@ -826,6 +867,16 @@ fn argv_of(state: &Path, name: &str, review: bool) -> Vec<String> {
     }
     assert_eq!(list("--allowedTools"), allow, "{name}: allow list");
     assert_eq!(list("--disallowedTools"), deny, "{name}: deny list");
+    let settings: serde_json::Value = serde_json::from_str(&option(&a, "--settings")).unwrap();
+    let hooks = &settings["hooks"]["PreToolUse"];
+    assert_eq!(hooks.as_array().map(Vec::len), Some(1), "{name}: {settings}");
+    assert_eq!(hooks[0]["matcher"], "*", "{name}");
+    assert_eq!(hooks[0]["hooks"].as_array().map(Vec::len), Some(1), "{name}");
+    assert_eq!(hooks[0]["hooks"][0]["timeout"], 10, "{name}");
+    let cmd = hooks[0]["hooks"][0]["command"].as_str().unwrap();
+    let home = cmd.rsplit_once("' || ").unwrap().0.rsplit_once(" '").unwrap().1;
+    assert!(home.starts_with('/') && !home.contains('\''), "{name}: {cmd}");
+    assert_eq!(cmd, guard_hook(router, &dir, home), "{name}");
     a
 }
 
@@ -837,6 +888,7 @@ fn option(a: &[String], flag: &str) -> String {
 /// E-ROUTERFIX.W1: workers were refused cargo/keel, and the launcher hardcoded acceptEdits. The grant
 /// travels on the launcher's argv only; the mode is a validated per-run option. E-ROUTER3.W10: the
 /// worker is one `claude --bg` started in its worktree, with no print-mode, stream or budget flag.
+/// E-WMODE.W1: the mode with no option is the committed policy's (Keel's: auto).
 #[test]
 fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validated_mode() {
     let l = launcher();
@@ -868,9 +920,9 @@ fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validat
         (vec!["--permission-mode", "dontAsk"], "permission mode must be"),
         (vec!["--permission-mode", "default"], "permission mode must be"),
         (vec!["--permission-mode", ""], "permission mode must be"),
-        (vec!["--permission-mode"], "[--permission-mode acceptEdits|plan]"),
-        (vec!["--bogus", "x"], "[--permission-mode acceptEdits|plan]"),
-        (vec!["--permission-mode", "plan", "x"], "[--permission-mode acceptEdits|plan]"),
+        (vec!["--permission-mode"], "[--permission-mode plan|acceptEdits|auto]"),
+        (vec!["--bogus", "x"], "[--permission-mode plan|acceptEdits|auto]"),
+        (vec!["--permission-mode", "plan", "x"], "[--permission-mode plan|acceptEdits|auto]"),
         (vec!["--effort", "low"], "effort must be one of: medium high ([router] worker_efforts in .keel/config.toml)"),
         (vec!["--effort", "max"], "effort must be one of: medium high"),
         (vec!["--effort", "ultracode"], "effort must be one of: medium high"),
@@ -893,17 +945,18 @@ fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validat
         assert_eq!(l.starts(&name), 0, "{extra:?} started a worker");
     }
 
+    // E-WMODE.W1: with no option the mode is the committed policy's (the fixture copies Keel's: auto)
     let (ok, out) = l.run(&["spawn", "d", wt, brief, "opus"]);
-    assert!(ok && out.contains("permission-mode=acceptEdits"), "{out}");
+    assert!(ok && out.contains("permission-mode=auto"), "{out}");
     let (dir, _) = calls(&l.state).into_iter().rfind(|(_, a)| a[0] == "--bg").unwrap();
     assert_eq!(dir, wt, "the worker runs in its worktree");
     assert!(field(&out, "brief=").starts_with(wt) && worker_argv(&l.state, "d").last().unwrap().contains(field(&out, "brief=")), "{out}");
     let (ok, out) = l.run(&["spawn", "p", wt, brief, "opus", "--permission-mode", "plan"]);
     assert!(ok && out.contains("permission-mode=plan"), "{out}");
 
-    assert_eq!(mode_of("d"), "acceptEdits");
+    assert_eq!(mode_of("d"), "auto");
     assert_eq!(mode_of("p"), "plan");
-    assert_eq!(run_dir_mode("d", "spawn"), ["acceptEdits"]);
+    assert_eq!(run_dir_mode("d", "spawn"), ["auto"]);
     assert_eq!(run_dir_mode("p", "spawn"), ["plan"]);
 
     // E-SEED2.W7: effort is medium by default, high when asked, in either order with the mode; it
@@ -915,8 +968,8 @@ fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validat
         (option(&a, "--effort"), option(&a, "--permission-mode"))
     };
     for (name, extra, effort, mode) in [
-        ("e1", vec![], "medium", "acceptEdits"),
-        ("e2", vec!["--effort", "high"], "high", "acceptEdits"),
+        ("e1", vec![], "medium", "auto"),
+        ("e2", vec!["--effort", "high"], "high", "auto"),
         ("e3", vec!["--effort", "high", "--permission-mode", "plan"], "high", "plan"),
         ("e4", vec!["--permission-mode", "plan", "--effort", "medium"], "medium", "plan"),
     ] {
@@ -934,6 +987,424 @@ fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validat
     for c in WORKER_GRANTS {
         assert!(bash(&format!("{c} x")).is_some(), "router may run {c}");
     }
+}
+
+/// The worker policy with no `worker_permission_mode` line.
+const MODELESS_POLICY: &str = "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n";
+
+/// Spawn `name` with `extra`, expecting a start; stop it and return its mode as the worker's argv,
+/// the RUNNING line and the run dir all carry it.
+fn spawned_mode(l: &Launcher, name: &str, extra: &[&str]) -> String {
+    let mut args = vec!["spawn", name, l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"];
+    args.extend(extra);
+    let (ok, out) = l.run(&args);
+    assert!(ok, "{extra:?}: {out}");
+    l.stop(name);
+    let mode = option(&worker_argv(&l.state, name), "--permission-mode");
+    assert!(out.contains(&format!(" permission-mode={mode} effort=")), "{extra:?}: {out}");
+    assert_eq!(std::fs::read_to_string(run_dir(l, name).join("permission-mode")).unwrap(), format!("{mode}\n"));
+    mode
+}
+
+/// E-WMODE.W1 (DEC-37 amended): a worker starts in `[router] worker_permission_mode` as committed at
+/// the router checkout's HEAD, acceptEdits when the key is absent; `--permission-mode` only narrows
+/// it (plan < acceptEdits < auto).
+#[test]
+fn worker_permission_mode_comes_from_the_committed_policy() {
+    let l = launcher();
+    let mut n = 0;
+    let mut next = || {
+        n += 1;
+        format!("m{n}")
+    };
+    for (line, mode) in [
+        ("", "acceptEdits"),
+        ("worker_permission_mode = \"acceptEdits\"\n", "acceptEdits"),
+        ("worker_permission_mode = \"auto\"\n", "auto"),
+        ("worker_permission_mode = \"plan\"\n", "plan"),
+        ("worker_permission_mode = \"auto\"  # Keel's\n", "auto"),
+        ("worker_permission_mode = \"auto\"\nwatchdog_model = \"haiku\"\n", "auto"),
+    ] {
+        l.commit_config(Some(&format!("{MODELESS_POLICY}{line}")));
+        assert_eq!(spawned_mode(&l, &next(), &[]), mode, "{line:?}");
+    }
+    // the key may come first in the section
+    l.commit_config(Some(&MODELESS_POLICY.replace("[router]\n", "[router]\nworker_permission_mode = \"plan\"\n")));
+    assert_eq!(spawned_mode(&l, &next(), &[]), "plan");
+
+    // an option narrows the policy's mode, and may repeat it
+    for (policy, asked) in [
+        ("auto", vec!["plan", "acceptEdits", "auto"]),
+        ("acceptEdits", vec!["plan", "acceptEdits"]),
+        ("plan", vec!["plan"]),
+    ] {
+        l.commit_config(Some(&format!("{MODELESS_POLICY}worker_permission_mode = \"{policy}\"\n")));
+        for m in asked {
+            assert_eq!(spawned_mode(&l, &next(), &["--permission-mode", m]), m, "{policy} asked {m}");
+            assert_eq!(spawned_mode(&l, &next(), &["--effort", "high", "--permission-mode", m]), m, "{policy} asked {m}");
+        }
+    }
+    // with no key, acceptEdits is the policy an option narrows
+    l.commit_config(Some(MODELESS_POLICY));
+    assert_eq!(spawned_mode(&l, &next(), &["--permission-mode", "plan"]), "plan");
+
+    // an uncommitted edit, even staged, cannot widen the committed mode
+    l.commit_config(Some(&format!("{MODELESS_POLICY}worker_permission_mode = \"acceptEdits\"\n")));
+    std::fs::write(l.main.join(".keel/config.toml"), format!("{MODELESS_POLICY}worker_permission_mode = \"auto\"\n")).unwrap();
+    git(&l.main, &["add", ".keel"]);
+    assert_eq!(spawned_mode(&l, &next(), &[]), "acceptEdits");
+    let (ok, out) = l.run(&["spawn", "w", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus", "--permission-mode", "auto"]);
+    assert!(!ok && out.contains("permission mode auto is wider than the policy's acceptEdits"), "{out}");
+}
+
+/// E-WMODE.W1: a mode outside plan|acceptEdits|auto, committed or asked for, and an asked mode wider
+/// than the committed one are refused before anything starts: no session, no run dir, no brief copy.
+#[test]
+fn a_permission_mode_outside_the_accepted_set_or_wider_than_the_policy_is_refused_before_any_start() {
+    let l = launcher();
+    let mut n = 0;
+    let mut refused = |extra: &[&str], why: &str| {
+        n += 1;
+        let name = format!("x{n}");
+        let mut args = vec!["spawn", &name, l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"];
+        args.extend(extra);
+        let (ok, out) = l.run(&args);
+        assert!(!ok && out.contains(why), "{extra:?} not refused for {why:?}: {out}");
+        assert_eq!(l.starts(&name), 0, "{extra:?} started a worker");
+        let runs = std::fs::read_dir(l.main.join(".router/runs")).map(|d| d.count()).unwrap_or(0);
+        assert_eq!(runs, 0, "{extra:?} left a run dir or a lock");
+        assert!(brief_copies(&l.wt).is_empty(), "{extra:?} left a brief copy");
+    };
+    let set = "worker_permission_mode must be one of: plan acceptEdits auto ([router] in .keel/config.toml)";
+    let malformed = "no worker policy: [router]";
+
+    // a well-formed committed value outside the set: refused by name, whatever the option asks
+    for bad in ["bypassPermissions", "dontAsk", "default", "Auto", "acceptedits", "AcceptEdits", "planning"] {
+        l.commit_config(Some(&format!("{MODELESS_POLICY}worker_permission_mode = \"{bad}\"\n")));
+        refused(&[], set);
+        refused(&["--permission-mode", "plan"], set);
+    }
+    // a malformed line fails the whole policy, as any other [router] line does
+    for bad in [
+        "worker_permission_mode = auto",
+        "worker_permission_mode = [\"auto\"]",
+        "worker_permission_mode = \"auto\" x",
+        "worker_permission_mode = \"\"",
+        "worker_permission_mode = \"auto-x\"",
+        "worker_permission_mode = \"accept edits\"",
+        "worker_permission_mode = \"--dangerously-skip-permissions\"",
+        "worker_permission_mode=\"auto\"",
+        "  worker_permission_mode = \"auto\"",
+        "worker_permission_mode = 'auto'",
+        "worker_permission_mode = \"auto\"\nworker_permission_mode = \"auto\"",
+        "worker_permission_mode = \"plan\"\nworker_permission_mode = \"auto\"",
+    ] {
+        l.commit_config(Some(&format!("{MODELESS_POLICY}{bad}\n")));
+        refused(&[], malformed);
+    }
+    // the key outside [router] is not the policy's: a later section's line is refused like any key there
+    l.commit_config(Some(&format!("{MODELESS_POLICY}[other]\nworker_permission_mode = \"auto\"\n")));
+    let (ok, out) = l.run(&["spawn", "o", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus", "--permission-mode", "auto"]);
+    assert!(!ok && out.contains("permission mode auto is wider than the policy's acceptEdits"), "{out}");
+
+    // an asked mode outside the set, under the widest policy
+    l.commit_config(Some(&format!("{MODELESS_POLICY}worker_permission_mode = \"auto\"\n")));
+    for bad in ["bypassPermissions", "dontAsk", "default", "Auto", "", "auto plan"] {
+        refused(&["--permission-mode", bad], "permission mode must be plan|acceptEdits|auto");
+    }
+    // an asked mode wider than the committed one
+    for (policy, wider) in [("acceptEdits", vec!["auto"]), ("plan", vec!["acceptEdits", "auto"])] {
+        l.commit_config(Some(&format!("{MODELESS_POLICY}worker_permission_mode = \"{policy}\"\n")));
+        for m in wider {
+            refused(&["--permission-mode", m], &format!("permission mode {m} is wider than the policy's {policy} ([router] worker_permission_mode in .keel/config.toml)"));
+        }
+    }
+    l.commit_config(Some(MODELESS_POLICY));
+    refused(&["--permission-mode", "auto"], "permission mode auto is wider than the policy's acceptEdits");
+}
+
+/// The worker file guard run as its hook runs it, on `event`: its deny reason, None when it lets the
+/// call go on; panics when it fails (the hook's wrapper turns a failure into a deny).
+fn file_guard(wt: &Path, home: &Path, event: &serde_json::Value) -> Option<String> {
+    let mut c = common::cmd("sh");
+    c.arg(root().join("scripts/router-file-guard.sh")).arg(wt).arg(home).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped());
+    let mut child = c.spawn().unwrap();
+    std::io::Write::write_all(child.stdin.as_mut().unwrap(), event.to_string().as_bytes()).unwrap();
+    let o = child.wait_with_output().unwrap();
+    assert!(o.status.success(), "the guard failed on {event}: {o:?}");
+    let out = String::from_utf8(o.stdout).unwrap();
+    if out.trim().is_empty() {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["hookSpecificOutput"]["permissionDecision"], "deny", "{out}");
+    Some(v["hookSpecificOutput"]["permissionDecisionReason"].as_str().unwrap().to_string())
+}
+
+/// E-WMODE review round 2 (owner ruling 2026-11-12, option A; DEC-37): the file tools edit only the
+/// worker's worktree, never its .git or its two settings files, judged on the resolved path (symlinks,
+/// a path not yet there, hard links); Read never reaches ~/.ssh or ~/.claude/channels, Grep and Glob
+/// never search them; case variants are denied (APFS is usually case-insensitive); every other tool
+/// passes untouched.
+#[test]
+fn worker_file_guard_lets_the_file_tools_edit_only_the_worktree_and_read_neither_ssh_nor_channels() {
+    let d = TempDir::new().unwrap();
+    let base = d.path().canonicalize().unwrap();
+    let (wt, home, out) = (base.join("wt"), base.join("home"), base.join("out"));
+    for dir in [wt.join("sub"), wt.join(".claude/agents"), home.join(".ssh"), home.join(".claude/channels"), out.clone()] {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    for (f, body) in [
+        (wt.join(".git"), "gitdir: /x/.git/worktrees/wt\n"),
+        (wt.join("a.txt"), "a"),
+        (wt.join(".claude/settings.json"), "{}"),
+        (wt.join(".claude/agents/worker.md"), "w"),
+        (home.join(".ssh/id"), "key"),
+        (home.join(".claude/channels/c"), "c"),
+        (home.join(".claude/settings.json"), "{}"),
+        (out.join("x.txt"), "x"),
+        (out.join("h.txt"), "h"),
+    ] {
+        std::fs::write(f, body).unwrap();
+    }
+    let ln = |target: &Path, at: &str| std::os::unix::fs::symlink(target, wt.join(at)).unwrap();
+    ln(&out.join("x.txt"), "link-out");
+    ln(&out, "linkdir");
+    ln(&out.join("new.txt"), "dangling");
+    ln(&home.join(".ssh/id"), "ssh-link");
+    std::os::unix::fs::symlink("../out/x.txt", wt.join("rel-link")).unwrap();
+    std::fs::hard_link(out.join("h.txt"), wt.join("hard")).unwrap();
+    let w = |p: &str| format!("{}/{p}", wt.display());
+    let h = |p: &str| format!("{}/{p}", home.display());
+    let o = |p: &str| format!("{}/{p}", out.display());
+    let ev = |tool: &str, input: serde_json::Value| serde_json::json!({"session_id": "s", "cwd": wt, "hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": input});
+    let edit = |p: &str| ev("Edit", serde_json::json!({"file_path": p, "old_string": "a", "new_string": "b"}));
+    let guard = |e: serde_json::Value| file_guard(&wt, &home, &e);
+
+    // allowed: the worktree's files, new ones, deep new paths, its .claude/agents (residual, DEC-37)
+    for p in [w("a.txt"), w("new.txt"), w("sub/deep/new.rs"), w(".claude/agents/worker.md"), w(".claude/skills/x/SKILL.md"), w("sub/")] {
+        assert_eq!(guard(edit(&p)), None, "Edit {p}");
+    }
+    assert_eq!(guard(ev("Write", serde_json::json!({"file_path": w("b.txt"), "content": "b"}))), None);
+    assert_eq!(guard(ev("MultiEdit", serde_json::json!({"file_path": w("a.txt"), "edits": []}))), None);
+    assert_eq!(guard(ev("NotebookEdit", serde_json::json!({"notebook_path": w("n.ipynb"), "new_source": ""}))), None);
+
+    // denied edits, each for its reason
+    for (p, why) in [
+        (o("x.txt"), "outside the worktree"),
+        (h(".claude/settings.json"), "outside the worktree"),
+        (w("link-out"), "outside the worktree"),
+        (w("linkdir/y.txt"), "outside the worktree"),
+        (w("dangling"), "outside the worktree"),
+        (w("rel-link"), "outside the worktree"),
+        (wt.display().to_string(), "outside the worktree"),
+        (format!("{}/WT/a.txt", base.display()), "outside the worktree"),
+        (w(".git"), "worktree's .git"),
+        (w(".GIT"), "worktree's .git"),
+        (w(".git/config"), "worktree's .git"),
+        (w(".claude/settings.json"), "the next session in this worktree loads it"),
+        (w(".Claude/Settings.Local.JSON"), "the next session in this worktree loads it"),
+        (w("hard"), "hard links"),
+        (w("../out/x.txt"), ". or .. component"),
+        (w("./a.txt"), ". or .. component"),
+        ("a.txt".to_string(), "must be an absolute path"),
+        (String::new(), "no file_path"),
+    ] {
+        let r = guard(edit(&p));
+        assert!(r.as_deref().is_some_and(|r| r.contains(why)), "Edit {p:?}: {r:?}, want {why}");
+    }
+    assert!(guard(ev("Write", serde_json::json!({"file_path": o("y.txt"), "content": ""}))).is_some());
+    assert!(guard(ev("MultiEdit", serde_json::json!({"file_path": o("x.txt"), "edits": []}))).is_some());
+    assert!(guard(ev("NotebookEdit", serde_json::json!({"notebook_path": o("n.ipynb"), "new_source": ""}))).is_some());
+    assert!(guard(ev("NotebookEdit", serde_json::json!({"file_path": w("n.ipynb")}))).is_some_and(|r| r.contains("no notebook_path")));
+    assert!(guard(ev("Edit", serde_json::json!({"file_path": 7}))).is_some_and(|r| r.contains("not a string")));
+    assert!(guard(ev("Edit", serde_json::json!({}))).is_some_and(|r| r.contains("no file_path")));
+    assert!(guard(serde_json::json!({"tool_name": "Write"})).is_some_and(|r| r.contains("no file_path")));
+
+    // reads: anywhere but the two denied directories, however spelled
+    let read = |p: &str| ev("Read", serde_json::json!({"file_path": p}));
+    for p in [o("x.txt"), h(".claude/settings.json"), w("a.txt"), w("link-out")] {
+        assert_eq!(guard(read(&p)), None, "Read {p}");
+    }
+    for p in [h(".ssh/id"), h(".SSH/id"), h(".ssh"), w("ssh-link"), h(".claude/channels/c"), h(".claude/Channels/c")] {
+        assert!(guard(read(&p)).is_some_and(|r| r.contains("is not readable to a worker")), "Read {p}");
+    }
+    // searches: not in them, and not over a directory holding them
+    let search = |tool: &str, input: serde_json::Value| guard(ev(tool, input));
+    assert_eq!(search("Grep", serde_json::json!({"pattern": "x"})), None, "Grep in the cwd");
+    assert_eq!(search("Grep", serde_json::json!({"pattern": "x", "path": "sub"})), None, "relative to the cwd");
+    assert_eq!(search("Glob", serde_json::json!({"pattern": "*", "path": o("")})), None);
+    for (tool, p) in [("Grep", h("")), ("Glob", h(".ssh")), ("Grep", base.display().to_string()), ("Glob", "/".to_string()), ("Grep", h(".claude"))] {
+        assert!(search(tool, serde_json::json!({"pattern": "*", "path": p})).is_some(), "{tool} {p}");
+    }
+    assert!(search("Grep", serde_json::json!({"pattern": "x", "path": "../home"})).is_some_and(|r| r.contains(". or .. component")));
+
+    // every other tool passes untouched; a payload that is not JSON fails (the wrapper denies)
+    for tool in ["Bash", "WebFetch", "SendMessage", "Agent"] {
+        assert_eq!(guard(ev(tool, serde_json::json!({"command": "cat ~/.ssh/id", "file_path": o("x.txt")}))), None, "{tool}");
+    }
+    let mut c = common::cmd("sh");
+    c.arg(root().join("scripts/router-file-guard.sh")).arg(&wt).arg(&home).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped());
+    let mut child = c.spawn().unwrap();
+    std::io::Write::write_all(child.stdin.as_mut().unwrap(), b"not json").unwrap();
+    assert!(!child.wait_with_output().unwrap().status.success(), "a payload that is not JSON must fail");
+}
+
+/// E-WMODE review round 2: every worker, normal or review, launched from the main checkout or from a
+/// second router worktree, gets the file guard of the launcher's own checkout on its own worktree;
+/// spawn refuses a worktree it could not bound: inside the router's checkout or the main one (L1),
+/// holding the router's checkout (L2), a path the hook would mis-quote (L3), or a .git link a worker
+/// changed (H2), each before any start.
+#[test]
+fn launcher_passes_every_worker_the_file_guard_and_refuses_worktrees_it_cannot_bound() {
+    let l = launcher();
+    let main = l.main.to_str().unwrap();
+    for (name, review) in [("f1", false), ("f2", true)] {
+        let mut args = vec!["spawn", name, l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"];
+        if review {
+            args.push("--review");
+        }
+        let (ok, out) = l.run(&args);
+        assert!(ok, "{out}");
+        l.stop(name);
+        argv_with_root(&l.state, name, review, main);
+    }
+
+    // a router checkout other than the main one passes its own guard
+    let router_at = |dir: &Path| {
+        std::fs::create_dir_all(dir.join(".router/briefs")).unwrap();
+        std::fs::write(dir.join(".router/briefs/b.md"), "do the thing\n").unwrap();
+        let dir = dir.to_path_buf();
+        let (stub, state) = (l.stub.clone(), l.state.clone());
+        move |args: &[&str]| {
+            let o = common::cmd("sh")
+                .arg("scripts/router-worker.sh")
+                .args(args)
+                .current_dir(&dir)
+                .env("ROUTER_CLAUDE", &stub)
+                .env("STUB_STATE", &state)
+                .env("HOME", state.join("home"))
+                .output()
+                .unwrap();
+            (o.status.success(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
+        }
+    };
+    let second = router_at(&l.wt2);
+    let (ok, out) = second(&["spawn", "f3", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+    assert!(ok, "{out}");
+    argv_with_root(&l.state, "f3", false, l.wt2.to_str().unwrap());
+    let (ok, out) = second(&["stop", "f3"]);
+    assert!(ok, "{out}");
+
+    let refused = |run: &dyn Fn(&[&str]) -> (bool, String), name: &str, wt: &Path, why: &str| {
+        let (ok, out) = run(&["spawn", name, wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+        assert!(!ok && out.contains(why), "{name}: {out}");
+        assert_eq!(l.starts(name), 0, "{name} started");
+    };
+    let from_main = |a: &[&str]| l.run(a);
+    // L1: a worktree inside the main checkout, from the main checkout and from the second router
+    git(&l.main, &["worktree", "add", "-q", ".claude/worktrees/x", "-b", "x"]);
+    let in_main = l.main.join(".claude/worktrees/x");
+    refused(&from_main, "g1", &in_main, "lies inside the router's or the main checkout");
+    refused(&second, "g2", &in_main, "lies inside the router's or the main checkout");
+    // and inside the second router's checkout
+    let in_router = l.wt2.join("w");
+    git(&l.main, &["worktree", "add", "-q", in_router.to_str().unwrap(), "-b", "y"]);
+    refused(&second, "g3", &in_router, "lies inside the router's or the main checkout");
+    // L2: a router checkout inside the worker's worktree
+    let outer = l.main.parent().unwrap().join("outer");
+    git(&l.main, &["worktree", "add", "-q", outer.to_str().unwrap(), "-b", "outer"]);
+    let inner = outer.join("router");
+    git(&l.main, &["worktree", "add", "-q", inner.to_str().unwrap(), "-b", "inner"]);
+    refused(&router_at(&inner), "g4", &outer, "lies inside the worktree");
+    // L3: a worktree path holding a quote
+    let quoted = l.main.parent().unwrap().join("q'w");
+    git(&l.main, &["worktree", "add", "-q", quoted.to_str().unwrap(), "-b", "quoted"]);
+    refused(&from_main, "g5", &quoted, "holds a quote, a backslash or a newline");
+    // H2: a .git link rewritten, a symlinked .git, an admin dir's commondir or gitdir rewritten
+    let link = l.wt2.join(".git");
+    let good = std::fs::read_to_string(&link).unwrap();
+    let admin = l.main.join(".git/worktrees/wt2");
+    let unlinked = "does not link to this repository as git made it";
+    for (what, f, body, why) in [
+        ("link elsewhere", link.clone(), format!("gitdir: {}/evil\n", l.wt2.display()), unlinked),
+        ("second line", link.clone(), format!("{good}gitdir: /x\n"), unlinked),
+        ("commondir", admin.join("commondir"), "../../evil\n".to_string(), unlinked),
+        // git itself then lists the admin dir under the other path, so the registration check refuses first
+        ("gitdir", admin.join("gitdir"), format!("{}/.git\n", l.wt.display()), "not a registered worktree"),
+    ] {
+        let before = std::fs::read_to_string(&f).unwrap();
+        std::fs::write(&f, body).unwrap();
+        let (ok, out) = l.run(&["spawn", "g6", l.wt2.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+        assert!(!ok && out.contains(why), "{what}: {out}");
+        assert_eq!(l.starts("g6"), 0, "{what} started");
+        std::fs::write(&f, before).unwrap();
+    }
+    std::fs::remove_file(&link).unwrap();
+    std::fs::write(l.main.join("linked-git"), &good).unwrap();
+    std::os::unix::fs::symlink(l.main.join("linked-git"), &link).unwrap();
+    refused(&from_main, "g7", &l.wt2, "does not link to this repository as git made it");
+    std::fs::remove_file(&link).unwrap();
+    std::fs::write(&link, &good).unwrap();
+    let (ok, out) = l.run(&["spawn", "g8", l.wt2.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+    assert!(ok, "the restored link spawns: {out}");
+    l.stop("g8");
+}
+
+/// E-WMODE review round 2 (H2): a worktree whose .git a worker pointed at a git dir it made would run
+/// that dir's core.fsmonitor in any process that runs git status there. The watchdog's facts, the
+/// launcher's stop and its worktree remove run no git in such a worktree (and facts never the
+/// fsmonitor hook): it is reported, not read.
+#[test]
+fn a_worktree_whose_git_link_was_changed_is_never_run_git_in() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    // the threat, shown in this scratch repository: an fsmonitor the worktree's config names runs on
+    // a plain git status there
+    let evil = l.main.parent().unwrap().join("evil");
+    let marker = l.main.parent().unwrap().join("fsmonitor-ran");
+    git(l.main.parent().unwrap(), &["init", "-q", "--bare", evil.to_str().unwrap()]);
+    let hook = l.main.parent().unwrap().join("fsmonitor.sh");
+    std::fs::write(&hook, format!("#!/bin/sh\ntouch '{}'\n", marker.display())).unwrap();
+    std::fs::set_permissions(&hook, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    git(&evil, &["config", "core.fsmonitor", hook.to_str().unwrap()]);
+    git(&evil, &["config", "core.bare", "false"]);
+    let link = l.wt.join(".git");
+    let good = std::fs::read_to_string(&link).unwrap();
+    std::fs::write(&link, format!("gitdir: {}\n", evil.display())).unwrap();
+    let _ = hermetic(&mut common::cmd("git")).args(["status", "--porcelain"]).current_dir(&l.wt).output().unwrap();
+    assert!(marker.exists(), "the scratch repository did not show the threat");
+    std::fs::remove_file(&marker).unwrap();
+
+    // facts: the worker is reported, its worktree not read
+    let mut rows = l.sessions();
+    rows.push(worker_row(&l, h, "w1", &sid(1), serde_json::json!({"status": "idle"}), None, &[]));
+    l.set_sessions(&rows);
+    let out = facts(&l, h);
+    let b = blocks(&out);
+    assert!(b.len() == 1 && b[0].starts_with("w1: DONE · quiet ? · unlinked .git, not read ·") && b[0].ends_with(" · dirty ?"), "{out}");
+    assert!(!marker.exists(), "facts ran git in the unlinked worktree");
+
+    // worktree remove refuses such a worktree before any git call there
+    let (ok, out) = l.run(&["worktree", "add", "wu/E-X/v"]);
+    assert!(ok, "{out}");
+    let v = PathBuf::from(field(&out, "path="));
+    std::fs::write(v.join(".git"), format!("gitdir: {}\n", evil.display())).unwrap();
+    let (ok, out) = l.run(&["worktree", "remove", "wu/E-X/v"]);
+    assert!(!ok && out.contains("does not link to this repository as git made it"), "{out}");
+    assert!(!marker.exists(), "worktree remove ran git in the unlinked worktree");
+
+    // stop reports it instead of reading its branch
+    std::fs::write(&link, &good).unwrap();
+    l.set_sessions(&l.sessions().into_iter().filter(|r| r["name"] != "w1").collect::<Vec<_>>());
+    let (ok, out) = l.run(&["spawn", "w2", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+    assert!(ok, "{out}");
+    std::fs::write(&link, format!("gitdir: {}\n", evil.display())).unwrap();
+    let (ok, out) = l.run(&["stop", "w2"]);
+    assert!(ok && out.starts_with("STOPPED name=w2 ") && out.trim_end().ends_with(" drift=unlinked"), "{out}");
+    assert!(!marker.exists(), "stop ran git in the unlinked worktree");
+    std::fs::write(&link, &good).unwrap();
 }
 
 /// Blockers 3-4 of the close review: the shipped PUSHED probe fired before anything was pushed
@@ -1330,7 +1801,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let base = d.path().canonicalize().unwrap();
     let c = base.join("c");
     common::self_clone(root(), &c);
-    for f in ["scripts/router-worker.sh", "scripts/router-guard.jq", "scripts/router-watch.sh", ".claude/settings.json", ".gitworktreecopy"] {
+    for f in ["scripts/router-worker.sh", "scripts/router-guard.jq", "scripts/router-file-guard.sh", "scripts/router-watch.sh", ".claude/settings.json", ".gitworktreecopy"] {
         std::fs::copy(root().join(f), c.join(f)).unwrap();
     }
     let keel = Path::new(env!("CARGO_BIN_EXE_keel"));
@@ -1467,10 +1938,11 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     assert_eq!(option(&a, "--effort"), "high");
     assert_eq!(option(&a, "-n"), name);
 
-    // 7 · a review worker: granted the cr note, no edit tool, recorded as one
+    // 7 · a review worker: granted the cr note, no edit tool, recorded as one; E-WMODE: with no option
+    // it starts in the committed policy's mode (Keel's: auto), where step 3's plan narrowed it
     let out = launch(&format!("scripts/router-worker.sh spawn e2e-cr {} .router/briefs/{name}.md opus --review", l.wt.display()));
-    assert!(out.starts_with("RUNNING name=e2e-cr ") && out.contains(" permission-mode=acceptEdits "), "{out}");
-    argv_of(&state, "e2e-cr", true);
+    assert!(out.starts_with("RUNNING name=e2e-cr ") && out.contains(" permission-mode=auto "), "{out}");
+    assert_eq!(option(&argv_of(&state, "e2e-cr", true), "--permission-mode"), "auto");
     assert_eq!(std::fs::read_to_string(run_dir(&l, "e2e-cr").join("review")).unwrap(), "yes\n");
     assert!(launch("scripts/router-worker.sh stop e2e-cr").starts_with("STOPPED name=e2e-cr "));
 
@@ -3266,19 +3738,25 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
     let l = launcher();
     let g = l.main.join(".git");
     let g = g.to_str().unwrap();
-    let want = serde_json::json!({"sandbox": {
+    // E-WMODE round 2: ~/.cargo only where cargo writes (H3); the worktree's .git link, its two
+    // settings files and its admin dir's link files are not the shell's (H2, M2); ~/.claude.json (M1)
+    let want = |wt: &Path, admin: &str| serde_json::json!({"sandbox": {
         "enabled": true,
         "autoAllowBashIfSandboxed": true,
         "allowUnsandboxedCommands": false,
         "filesystem": {
-            "allowWrite": [g, "~/.cargo"],
-            "denyWrite": [format!("{g}/config"), format!("{g}/hooks"), format!("{g}/keel-hooks"), format!("{g}/info"), "~/.cargo/bin"],
+            "allowWrite": [g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
+                "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
+            "denyWrite": [format!("{g}/config"), format!("{g}/hooks"), format!("{g}/keel-hooks"), format!("{g}/info"),
+                format!("{g}/worktrees/{admin}/commondir"), format!("{g}/worktrees/{admin}/gitdir"),
+                format!("{}/.git", wt.display()), format!("{}/.claude/settings.json", wt.display()),
+                format!("{}/.claude/settings.local.json", wt.display()), "~/.claude.json".to_string()],
             "denyRead": ["~/.ssh", "~/.claude/channels"]
         },
         "network": {"allowedDomains": ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}
     }});
     // a second worktree of the same repository shares its git dir
-    for (name, wt) in [("a", &l.wt), ("b", &l.wt2)] {
+    for (name, wt, admin) in [("a", &l.wt, "wt"), ("b", &l.wt2, "wt2")] {
         let (ok, out) = l.run(&[
             "spawn",
             name,
@@ -3287,9 +3765,10 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
             "opus",
         ]);
         assert!(ok, "{out}");
-        let s: serde_json::Value =
+        let mut s: serde_json::Value =
             serde_json::from_str(&option(&worker_argv(&l.state, name), "--settings")).unwrap();
-        assert_eq!(s, want, "{name}");
+        s.as_object_mut().unwrap().remove("hooks");
+        assert_eq!(s, want(wt, admin), "{name}");
     }
 }
 

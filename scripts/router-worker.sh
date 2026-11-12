@@ -2,7 +2,7 @@
 # Router-only launcher for worker sessions (E-ROUTER Q2/Q3 override, 2026-11-08). The router's Bash
 # hook allows ONLY this script's shapes; every argument is validated here, and the prompt is fixed
 # text, so no untrusted string ever reaches `claude`.
-#   router-worker.sh spawn  <name> <worktree> <brief.md> <model> [--permission-mode acceptEdits|plan] [--effort <level>] [--review]
+#   router-worker.sh spawn  <name> <worktree> <brief.md> <model> [--permission-mode plan|acceptEdits|auto] [--effort <level>] [--review]
 #   router-worker.sh stop   <name>
 #   router-worker.sh worktree add|remove <epic/E | wu/E/slug>
 #   router-worker.sh watchdog start|stop <router-name>   (watchdog facts <router-name>: its prompt hook only)
@@ -25,7 +25,9 @@
 # drops every launch flag): the router spawns a fresh one with a new brief.
 # The spawn options come in any order, once each. The model and effort must satisfy the worker
 # policy, [router] in .keel/config.toml at this checkout's HEAD (DEC-39); no policy, no spawn. The mode
-# defaults to acceptEdits and the effort to the policy's default. A worker loads the project's and
+# is the policy's worker_permission_mode (acceptEdits when absent; plan, acceptEdits or auto, never
+# bypassPermissions, dontAsk or default), which --permission-mode may only narrow (plan < acceptEdits
+# < auto; E-WMODE, DEC-37), and the effort defaults to the policy's default. A worker loads the project's and
 # the worktree's local settings only, no MCP server, and runs its shell in Claude Code's sandbox
 # (writes: its worktree, the git dir but its config and hooks, cargo's cache); it gets the fixed
 # cargo/keel grant below and the fixed deny list, which never reach the router. Only a --review
@@ -33,7 +35,8 @@
 # repo's settings make every other session a router.
 # brief must be a regular (non-symlink) .md file under <repo>/.router/briefs/; worktree must be a
 # registered git worktree OTHER than the router's own checkout, on a branch, holding the worker
-# persona. The file is copied to a read-only snapshot .router/runs/<name>-<ts>-<pid>-spawn/ (sha256 +
+# persona, neither inside the router's or the main checkout nor holding the router's checkout, whose
+# .git still links to this repository as git made it (E-WMODE). The file is copied to a read-only snapshot .router/runs/<name>-<ts>-<pid>-spawn/ (sha256 +
 # path printed so the router can verify), and the worker reads a copy of it inside its own worktree
 # (<worktree>/.router-brief.XXXXXX/brief.md, git-ignored), which stop removes. `--bg` assigns the
 # session id, so the run dir records it once the session is listed.
@@ -91,10 +94,34 @@ cleanup() {
     case "$p" in "$w"/.router-brief.*) expr "x${p#"$w"/.router-brief.}" : 'x[A-Za-z0-9]\{6\}$' > /dev/null || p=;; *) p=;; esac
     if [ -n "$p" ] && [ -d "$p" ] && [ ! -L "$p" ]; then rm -rf -- "$p" || :; fi
     rb=$(cat "${d}branch" 2>/dev/null) || rb=
-    now=$(git -C "$w" branch --show-current 2>/dev/null) || now=
+    if ! linked_ok "$w"; then drift=" drift=unlinked"; continue; fi
+    now=$(git -c core.fsmonitor=false -C "$w" branch --show-current 2>/dev/null) || now=
     if [ -n "$rb" ] && [ "$now" != "$rb" ]; then drift=" drift=${now:-detached}"; fi
   done
 }
+# this repository's git dir (git's common dir), resolved from the router's checkout, never from a
+# worker's worktree (whose .git a worker could point elsewhere: E-WMODE review round 2, H2)
+common_dir() { gd=$(cd "$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)" 2>/dev/null && pwd -P); }
+# A linked worktree $1 still links to this repository as git made it: $1/.git is a regular file reading
+# exactly "gitdir: $gd/worktrees/<name>", and that admin dir (a real directory) holds commondir "../.."
+# and a gitdir naming $1/.git. Checked before any git call in $1, since a link a worker rewrote would
+# have git (and its core.fsmonitor or hooks) read a config the worker wrote, in the owner's or the
+# watchdog's unsandboxed process. Sets lk_admin to the admin dir.
+linked_ok() {
+  lk_admin=
+  [ -f "$1/.git" ] && [ ! -L "$1/.git" ] || return 1
+  lk_l=$(cat "$1/.git") || return 1
+  lk_n=${lk_l#"gitdir: $gd/worktrees/"}
+  [ "$lk_n" != "$lk_l" ] && [ "$lk_n" != . ] && [ "$lk_n" != .. ] && expr "x$lk_n" : 'x[A-Za-z0-9._-]\{1,\}$' > /dev/null || return 1
+  lk_a=$gd/worktrees/$lk_n
+  [ -d "$lk_a" ] && [ ! -L "$lk_a" ] && [ "$(cat "$lk_a/commondir" 2>/dev/null)" = ../.. ] || return 1
+  lk_g=$(cat "$lk_a/gitdir" 2>/dev/null) && [ "$(basename "$lk_g")" = .git ] || return 1
+  [ "$(cd -P "$(dirname "$lk_g")" 2>/dev/null && pwd -P)" = "$(cd -P "$1" 2>/dev/null && pwd -P)" ] || return 1
+  lk_admin=$lk_a
+}
+# a path the hook command, the sandbox and the rules quote safely: no quote, backslash or newline
+safe_path() { case "$2" in *[\'\"\\]*|*"
+"*) die "$1 $2 holds a quote, a backslash or a newline: the launcher cannot pass it safely";; esac; }
 # the main checkout, resolved
 main_checkout() {
   main=$(git -C "$ROOT" worktree list --porcelain | sed -n '1s/^worktree //p')
@@ -115,7 +142,8 @@ listed() {
 # so an uncommitted edit cannot widen it. The reader accepts one exact `[router]` header and in it only
 # `key = "word"` and `key = ["word", ...]` (a word starts with a letter; optional trailing # comment);
 # any other line in the section, a second `[router]` or any other header naming router refuses.
-# watchdog_model is optional ("-" when absent).
+# watchdog_model is optional ("-" when absent); so is worker_permission_mode, a word of letters only
+# ("acceptEdits" is not a lowercase word), whose value spawn judges.
 read_policy() {
 policy=$(git -C "$ROOT" show HEAD:.keel/config.toml 2>/dev/null | awk '
   /^[ \t]*\[/ {
@@ -131,15 +159,16 @@ policy=$(git -C "$ROOT" show HEAD:.keel/config.toml 2>/dev/null | awk '
   /^worker_default_effort = "[a-z][a-z0-9.-]*"$/ && d == "" { d = $3; next }
   /^worker_efforts = \["[a-z][a-z0-9.-]*"(, "[a-z][a-z0-9.-]*")*\]$/ && e == "" { e = substr($0, 19, length($0) - 19); next }
   /^watchdog_model = "[a-z][a-z0-9.-]*"$/ && w == "" { w = $3; next }
+  /^worker_permission_mode = "[A-Za-z]+"$/ && p == "" { p = $3; next }
   { bad = 1 }
   END {
-    gsub(/"/, "", m); gsub(/"/, "", d); gsub(/[",]/, "", e); gsub(/"/, "", w)
+    gsub(/"/, "", m); gsub(/"/, "", d); gsub(/[",]/, "", e); gsub(/"/, "", w); gsub(/"/, "", p)
     k = split(e, l, " ")
     for (i = 1; i <= k; i++) { if (l[i] !~ /^(low|medium|high|xhigh|max)$/) bad = 1; if (l[i] == d) has = 1 }
     if (bad || m == "" || !has) exit 1
-    print m; print d; print e; print (w == "" ? "-" : w)
+    print m; print d; print e; print (w == "" ? "-" : w); print (p == "" ? "-" : p)
   }') || die "no worker policy: [router] worker_model / worker_efforts / worker_default_effort in .keel/config.toml at HEAD of $ROOT"
-{ read -r policy_model; read -r policy_default; read -r policy_efforts; read -r policy_watchdog; } <<EOF
+{ read -r policy_model; read -r policy_default; read -r policy_efforts; read -r policy_watchdog; read -r policy_mode; } <<EOF
 $policy
 EOF
 }
@@ -160,6 +189,7 @@ facts() {
   wts=$(git -C "$ROOT" worktree list --porcelain 2>/dev/null) || { printf 'Report to %s.\nThe worktree list cannot be read (git worktree list).\n' "$rn"; exit 0; }
   wts=$(printf '%s\n' "$wts" | sed -n 's/^worktree //p')
   main=$(printf '%s\n' "$wts" | sed -n 1p)
+  common_dir || gd=
   now=$(date +%s)
   # control characters (the separator among them) are blanked first, so a row is one line of five fields
   printf '%s\n' "$list" | jq -r '.[] | select(.kind == "background") | [.name, .sessionId, .cwd, (.status // .state), .waitingFor]
@@ -182,10 +212,13 @@ facts() {
           if .type == "text" then .text elif .type == "tool_use" then "tool \(.name): \(.input | tojson)" else empty end' 2>/dev/null |
         jq -s -c '.[-6:]') || items='[]'
     else items='[]'; fi
-    br=$(git -C "$w_cwd" branch --show-current 2>/dev/null) || br=
-    tip=$(git -C "$w_cwd" log -1 --format='%h %s' 2>/dev/null) || tip=
-    # --no-optional-locks: never take the worker's index.lock (its own git add/commit would fail)
-    dirty=$(git --no-optional-locks -C "$w_cwd" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    # no git call in a worktree whose .git link was changed (H2); never the fsmonitor hook either
+    if [ -n "$gd" ] && linked_ok "$w_cwd"; then
+      br=$(git -c core.fsmonitor=false -C "$w_cwd" branch --show-current 2>/dev/null) || br=
+      tip=$(git -c core.fsmonitor=false -C "$w_cwd" log -1 --format='%h %s' 2>/dev/null) || tip=
+      # --no-optional-locks: never take the worker's index.lock (its own git add/commit would fail)
+      dirty=$(git -c core.fsmonitor=false --no-optional-locks -C "$w_cwd" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    else br="unlinked .git, not read" tip= dirty=?; fi
     jq -n -c --arg name "$w_name" --arg st "$w_state" --arg wf "$w_wait" --arg q "$quiet" --arg br "${br:-detached}" \
       --arg tip "$tip" --arg dirty "$dirty" --argjson items "${items:-[]}" '
       def clean($n): tostring | gsub("[[:cntrl:]]"; " ") | .[0:$n];
@@ -269,6 +302,7 @@ EOF
   [ "$status" = idle ] || die "worker $name is ${status:-of unknown status}: the owner decides (claude stop $id)"
   "$C" stop "$id" > /dev/null || die "claude stop $id failed"
   "$C" rm "$id" > /dev/null || die "claude rm $id failed"
+  common_dir || gd=/nonexistent
   cleanup
   echo "STOPPED name=$name id=$id session=$sid$drift"; exit 0
 fi
@@ -302,7 +336,9 @@ if [ "$mode" = worktree ]; then
   rc=0; printf '%s\n' "$list" | jq -e --arg p "$wt" 'any(.[]; (.cwd // "") as $c | $c == $p or ($c | startswith($p + "/")))' > /dev/null 2>&1 || rc=$?
   [ "$rc" -ne 0 ] || die "a session runs in $wt: stop it first"
   [ "$rc" -eq 1 ] || nolist
-  st=$(git --no-optional-locks -C "$wt" status --porcelain) || die "cannot read the status of $wt"
+  common_dir || die "cannot resolve this repository's git dir"
+  linked_ok "$wt" || die "worktree $wt's .git does not link to this repository as git made it: the owner decides"
+  st=$(git -c core.fsmonitor=false --no-optional-locks -C "$wt" status --porcelain) || die "cannot read the status of $wt"
   [ -z "$st" ] || die "worktree $wt has uncommitted changes: the owner decides"
   git -C "$ROOT" merge-base --is-ancestor "refs/heads/$b" "refs/heads/$base" 2>/dev/null || die "branch $b is not merged into $base: the owner decides"
   [ -z "$(ls -A "$wt/docs/.archive" 2>/dev/null)" ] || die "worktree $wt holds archived docs in docs/.archive: copy them out first (git worktree remove deletes ignored files)"
@@ -310,12 +346,12 @@ if [ "$mode" = worktree ]; then
   echo "REMOVED path=$wt branch=$b"; exit 0
 fi
 [ "$mode" = spawn ] || die "spawn|stop|worktree|watchdog"
-usage="spawn <name> <worktree> <brief.md> <model> [--permission-mode acceptEdits|plan] [--effort <level>] [--review]"
+usage="spawn <name> <worktree> <brief.md> <model> [--permission-mode plan|acceptEdits|auto] [--effort <level>] [--review]"
 [ $# -ge 4 ] || die "$usage"
 name=$1 wt=$2 file=$3 model=$4; shift 4
 valid_name "$name"
 case "$name" in watchdog|watchdog-*) die "the name $name is reserved for the watchdog";; esac
-pm=acceptEdits pm_set= effort= effort_set= review=
+pm= pm_set= effort= effort_set= review=
 while [ $# -gt 0 ]; do
   case "$1" in
     --permission-mode) [ -z "$pm_set" ] && [ $# -ge 2 ] || die "$usage"; pm_set=1 pm=$2; shift;;
@@ -330,16 +366,33 @@ read_policy
 [ -n "$effort_set" ] || effort=$policy_default
 case "$effort" in ""|*[!a-z0-9.-]*) die "effort must be one of: $policy_efforts ([router] worker_efforts in .keel/config.toml)";; esac
 case " $policy_efforts " in *" $effort "*) ;; *) die "effort must be one of: $policy_efforts ([router] worker_efforts in .keel/config.toml)";; esac
-case "$pm" in acceptEdits|plan) ;; *) die "permission mode must be acceptEdits|plan";; esac
+# the mode (E-WMODE, DEC-37): the policy's, acceptEdits when absent; an option may only narrow it
+rank() { case "$1" in plan) echo 0;; acceptEdits) echo 1;; auto) echo 2;; *) echo -;; esac; }
+[ "$policy_mode" != - ] || policy_mode=acceptEdits
+[ "$(rank "$policy_mode")" != - ] || die "worker_permission_mode must be one of: plan acceptEdits auto ([router] in .keel/config.toml)"
+if [ -n "$pm_set" ]; then
+  [ "$(rank "$pm")" != - ] || die "permission mode must be plan|acceptEdits|auto"
+  [ "$(rank "$pm")" -le "$(rank "$policy_mode")" ] || die "permission mode $pm is wider than the policy's $policy_mode ([router] worker_permission_mode in .keel/config.toml)"
+else pm=$policy_mode; fi
 wt=$(cd "$wt" 2>/dev/null && pwd -P) || die "no such worktree"
 git -C "$ROOT" worktree list --porcelain | grep -Fxq "worktree $wt" || die "not a registered worktree of this repo"
 top=$(cd "$(git rev-parse --show-toplevel)" && pwd -P) || die "not in a git repo"
 [ "$wt" != "$ROOT" ] && [ "$wt" != "$top" ] || die "worker may not run in the router's own checkout ($wt)"
 main_checkout
 [ "$wt" != "$main" ] || die "worker may not run in the repository's main checkout ($wt)"
+# a worker edits only its own worktree (the file guard below), so a worktree inside either checkout
+# could edit nothing, and a router checkout inside the worktree would be the worker's to edit
+case "$wt/" in "$ROOT"/*|"$main"/*) die "worktree $wt lies inside the router's or the main checkout, whose files a worker may not edit";; esac
+case "$ROOT/" in "$wt"/*) die "the router's checkout $ROOT lies inside the worktree $wt, whose files the worker may edit";; esac
+common_dir || die "cannot resolve this repository's git dir"
+for v in "router checkout:$ROOT" "main checkout:$main" "git dir:$gd" "worktree:$wt" "home:$HOME"; do safe_path "${v%%:*}" "${v#*:}"; done
+linked_ok "$wt" || die "worktree $wt's .git does not link to this repository as git made it: the owner decides"
+admin=$lk_admin
+[ "$ROOT" = "$main" ] || linked_ok "$ROOT" || die "the router's checkout $ROOT has a .git that does not link to this repository as git made it: the owner decides"
+guard=$ROOT/scripts/router-file-guard.sh
+[ -f "$guard" ] || die "no worker file guard at $guard"
 [ -f "$wt/.claude/agents/worker.md" ] || die "no worker persona in $wt (.claude/agents/worker.md): merge the base branch that carries it into this worktree's branch, then spawn again"
-branch=$(git -C "$wt" branch --show-current) && [ -n "$branch" ] || die "worktree $wt has a detached HEAD: a worker runs on a branch"
-gd=$(cd "$(git -C "$wt" rev-parse --path-format=absolute --git-common-dir)" 2>/dev/null && pwd -P) || die "cannot resolve the git dir of $wt"
+branch=$(git -c core.fsmonitor=false -C "$wt" branch --show-current) && [ -n "$branch" ] || die "worktree $wt has a detached HEAD: a worker runs on a branch"
 brief_file "$file"
 mkdir -p "$ROOT/.router/runs"
 lock=$ROOT/.router/runs/.lock-$name
@@ -349,12 +402,27 @@ r=$(rows) || nolist
 [ -z "$r" ] || die "worker $name is still running; message it, or stop it first"
 sid=
 snapshot
-# Claude Code's Bash sandbox (DEC-46): shell writes reach the worktree (the working directory), the
-# shared git dir but its config and hooks, and cargo's cache; five hosts; no retry outside it
-sandbox=$(jq -n -c --arg g "$gd" '{sandbox: {enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
-  filesystem: {allowWrite: [$g, "~/.cargo"], denyWrite: [$g + "/config", $g + "/hooks", $g + "/keel-hooks", $g + "/info", "~/.cargo/bin"],
+# Claude Code's Bash sandbox (DEC-46): shell writes reach the worktree (the working directory) but its
+# .git link and its two settings files, the shared git dir but its config, hooks and info and this
+# worktree's commondir/gitdir link files, and only the parts of ~/.cargo cargo writes when it builds
+# (E-WMODE round 2, H3: never ~/.cargo/env, config, credentials or bin; probed with a fresh
+# CARGO_HOME: fetch, build and test write .global-cache, .package-cache, .package-cache-mutate and
+# registry/; git/ holds git dependencies, the -journal/-wal/-shm names are SQLite's); ~/.claude.json
+# is named for intent (no allowWrite reaches it). Five hosts, widened by a permission decision (the
+# owner's prompt, or auto's per-call review) or by the worktree's own local settings, which merge
+# with these (DEC-37); no retry outside it. The worker file guard (scripts/router-file-guard.sh) is a
+# PreToolUse hook on every tool, fail-closed: the file tools edit only this worktree and read
+# neither ~/.ssh nor ~/.claude/channels (DEC-37). A hook is not a deny rule, so it feeds no sandbox
+# path (review round 2, H1).
+hook="sh '$guard' '$wt' '$HOME' || { echo 'worker file guard: failed - tool call denied' >&2; exit 2; }"
+sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --arg hook "$hook" '{sandbox: {enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
+  filesystem: {allowWrite: [$g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
+      "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
+    denyWrite: [$g + "/config", $g + "/hooks", $g + "/keel-hooks", $g + "/info", $a + "/commondir", $a + "/gitdir",
+      $w + "/.git", $w + "/.claude/settings.json", $w + "/.claude/settings.local.json", "~/.claude.json"],
     denyRead: ["~/.ssh", "~/.claude/channels"]},
-  network: {allowedDomains: ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}}}')
+  network: {allowedDomains: ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}},
+  hooks: {PreToolUse: [{matcher: "*", hooks: [{type: "command", command: $hook, timeout: 10}]}]}}')
 set -- --bg -n "$name" --model "$model" --effort "$effort" --agent worker --setting-sources project,local --strict-mcp-config \
   --settings "$sandbox" --allowedTools
 for c in "cargo build" "cargo test" "cargo check" "cargo clippy" "cargo fmt" "keel preflight" \
@@ -371,6 +439,11 @@ for c in "keel mr" "cargo run" "keel init" "keel hooks" "cargo install" "cargo p
   "git --git-dir" "git --work-tree" "claude" "scripts/router-worker.sh"; do
   set -- "$@" "Bash($c)" "Bash($c *)"; done
 set -- "$@" "Bash(git --git-dir=*)" "Bash(git --work-tree=*)"
+# The Read tool is also denied the sandbox's denyRead paths by rule (the file guard's realpath check is
+# the bound; a rule is matched best-effort, and Grep/Glob are the guard's alone). The edit tools get no
+# path rule: an Edit deny rule may feed the sandbox's denyWrite, and one on the main checkout would
+# deny the shell the git dir under it (review round 2, H1).
+set -- "$@" "Read(~/.ssh/**)" "Read(~/.claude/channels/**)"
 if [ -n "$review" ]; then set -- "$@" "Bash(git add)" "Bash(git add *)" "Bash(git commit)" "Bash(git commit *)" Edit Write NotebookEdit
 else set -- "$@" "Bash(keel notes write cr)" "Bash(keel notes write cr *)"; fi
 # the prompt follows a single-valued option: after a list option it would be read as a tool name
