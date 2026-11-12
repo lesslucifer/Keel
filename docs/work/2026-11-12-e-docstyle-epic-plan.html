@@ -38,7 +38,18 @@
   <li><b>Questions, answer first.</b> Each open point is a question with its recommendation.</li>
   <li><b>Details last.</b> Mechanics, tests and history go at the end.</li>
   <li><b>Diagram labels</b> in quotes and plain words.</li>
+  <li><b>Show by example.</b> Explain a flow with a real case, in numbered steps.</li>
   <li><b>Check before "ready".</b> Can the owner say the problem, the change and the decision from the first screen?</li>
+</ol>
+
+<h2 id="example">Example: an agent writes a plan</h2>
+<ol data-c="example-steps">
+  <li>It loads the writing skill.</li>
+  <li>It writes the problem in three sentences.</li>
+  <li>It adds a "what changes for you" table.</li>
+  <li>It lists the work, then questions with answers.</li>
+  <li>Mechanics go under Details. It marks the plan ready.</li>
+  <li>The doc check counts the top: under 300 words, it passes.</li>
 </ol>
 
 <h2 id="terms">Terms</h2>
@@ -65,7 +76,7 @@ flowchart LR
   <div data-item="wu-summary">
     <p><b>In short:</b> a new skill holds the rules and one short example. Every agent is told to load it before writing a doc.</p>
     <ul>
-      <li>New <code>skills/keel-write/</code> (working name): <code>SKILL.md</code> and <code>references/example.html</code>, embedded in <code>src/init.rs</code>.</li>
+      <li>New <code>skills/keel-write/</code> (working name): <code>SKILL.md</code>, each rule with a short before/after example, and <code>references/example.html</code>, embedded in <code>src/init.rs</code>.</li>
       <li>Pointers: keel-plan §1, §3, §5; keel-distill §1; AGENTS.md and <code>templates/AGENTS.md</code> (open point 5).</li>
       <li>Rule-bearing text: one owner <code>keel mr commit</code>. No gate reviews it.</li>
     </ul>
@@ -100,7 +111,7 @@ flowchart LR
   <tbody>
     <tr><td>1</td><td>Where do the rules live?</td><td><b>Their own skill</b>, pointed to from AGENTS.md</td><td>A plan-skill section misses other docs. AGENTS.md has no room for an example</td></tr>
     <tr><td>2</td><td>Which docs?</td><td><b>Every doc you read</b></td><td>Skill files and agent-to-agent messages are out</td></tr>
-    <tr><td>3</td><td>Should the tool cap length?</td><td><b>Yes: 300 words</b> above the first WU of an epic plan</td><td>Length is the one style fault a tool can count. This plan's top is about 220. Other docs get the rule as text only</td></tr>
+    <tr><td>3</td><td>Should the tool cap length?</td><td><b>Yes: 300 words</b> above the first WU of an epic plan</td><td>Length is the one style fault a tool can count. This plan's top is about 290. Other docs get the rule as text only</td></tr>
     <tr><td>4</td><td>Rewrite existing docs now?</td><td><b>No.</b> Only new or edited docs</td><td>A full rewrite changes no behaviour</td></tr>
     <tr><td>5</td><td>Change AGENTS.md ("docs for AI readers")?</td><td><b>Yes</b>, to "short, plain, for people first", in your commit</td><td>Otherwise AGENTS.md and the skill disagree</td></tr>
     <tr><td>6</td><td>Ship the skill to other projects?</td><td><b>Yes</b>, via <code>keel init</code></td><td>The rules are not Keel-specific</td></tr>
