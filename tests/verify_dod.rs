@@ -819,3 +819,54 @@ fn an_owner_waiver_replaces_a_failed_round_carrying_its_findings_and_never_a_pas
     assert!(!o.status.success() && t.contains("1·notes") && t.contains("doc/v1") && t.contains("waive") && !t.contains("cr PASS"), "{t}");
     assert!(!has_note(p, "cr", "HEAD") && !has_note(p, "mr", "HEAD"));
 }
+
+// E-CRCAP.W1 review round 2 leads: the listing is safe to read, complete, and bound to the note written.
+
+#[test]
+fn the_waiver_preview_is_inert_text_bound_to_the_note_and_refused_on_a_broken_note_or_report() {
+    let d = fixture();
+    let p = d.path();
+    bless_unreviewed(p, WU_TESTS);
+    let args = ["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING];
+
+    // A cr note that does not parse is never taken for "no review" and overwritten.
+    git(p, &["notes", "--ref=cr", "add", "-f", "-m", "{not json", "HEAD"]);
+    let o = keel(p, &args);
+    assert!(!o.status.success() && text(&o).contains("does not parse") && text(&o).contains("fix ->"), "{}", text(&o));
+    assert_eq!(git(p, &["notes", "--ref=cr", "show", "HEAD"]), "{not json");
+
+    // A failed round whose recorded text carries terminal control sequences.
+    assert!(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]).status.success());
+    edit_note(p, "cr", "HEAD", |n| {
+        n["findings"] = json!([{"location": "src/a.py:2", "claim": "hidden\u{1b}[2K\u{1b}[1Aclaim", "severity": "blocker", "evidence": "e"}]);
+        n["walk_waivers"] = json!([{"seam": "abc", "why": "bell\u{7}why"}]);
+        n["committer"] = json!("reviewer <r@r>");
+        n["timestamp"] = json!(1);
+    });
+    // The report is settled before the waiver is shown: a bad report refuses with no waiver printed.
+    let bad = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/nope.html", "--waive-review", RULING]);
+    assert!(!bad.status.success() && !text(&bad).contains("is WAIVED:"), "{}", text(&bad));
+
+    let preview = keel(p, &args);
+    let t = text(&preview);
+    assert!(!t.contains('\u{1b}') && !t.contains('\u{7}'), "control characters reach the terminal: {t:?}");
+    assert!(t.contains(r"hidden\u{1b}[2K\u{1b}[1Aclaim") && t.contains(r"bell\u{7}why"), "{t}");
+    let code = confirm_code(&t).unwrap();
+
+    // The code binds the note to be written, not only the lines shown: a changed refuted list needs a new preview.
+    edit_note(p, "cr", "HEAD", |n| n["refuted"] = json!([{"location": "src/a.py:1", "claim": "c", "why": "added after the preview"}]));
+    let stale = keel(p, &[&args[..], &["--confirm-waiver", &code]].concat());
+    assert!(!stale.status.success() && text(&stale).contains("changed since"), "{}", text(&stale));
+    assert!(!has_note(p, "mr", "HEAD"));
+
+    let o = waive_at_sign_off(p, "wu", "docs/a.html", RULING);
+    assert!(o.status.success(), "{}", text(&o));
+    let raw = git(p, &["notes", "--ref=cr", "show", "HEAD"]);
+    for key in ["\"tip\"", "\"base\"", "\"committer\"", "\"timestamp\"", "\"verdict\""] {
+        assert_eq!(raw.matches(key).count(), 1, "{key} once: {raw}");
+    }
+    let cr = note(p, "cr", "HEAD");
+    assert_eq!(cr["committer"], "t <t@t>", "the signer writes the waiver: {cr}");
+    assert!(cr["timestamp"].as_u64().unwrap() > 1, "{cr}");
+    assert_eq!(cr["refuted"][0]["why"], "added after the preview");
+}
