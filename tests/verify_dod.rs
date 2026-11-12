@@ -668,6 +668,8 @@ fn the_epic_walk_passes_a_waived_wu_and_an_epic_review_can_be_waived() {
     let close = "owner ruling: epic review waived at close";
     git(p, &["notes", "--ref=mr", "remove", "HEAD"]);
     git(p, &["notes", "--ref=dod", "remove", "HEAD"]);
+    // The tool never waives over a PASS: this epic's review stopped before one (no cr note).
+    git(p, &["notes", "--ref=cr", "remove", "HEAD"]);
     assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", close]).status.success());
     let o = keel(p, &["mr", "confirm", "epic", "--as", "t", "--report", "docs/result.html"]);
     assert!(!o.status.success() && text(&o).contains(close), "{}", text(&o));

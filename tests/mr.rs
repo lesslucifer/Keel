@@ -881,10 +881,12 @@ fn the_sign_off_covers_the_waiver_it_accepted_and_only_that() {
     // A signed waiver whose note later says PASS: the owner accepted something no longer there.
     ok(cr(p, &["--verdict", "PASS"]));
     assert_red8(p, "waiver");
-    // A signed PASS turned into a waiver: the owner never saw it.
+    // A signed PASS turned into a waiver by hand (the writer never waives over a PASS): the owner never saw it.
     ok(keel(p, &["mr", "confirm", "wu"]));
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER]));
+    let mut n: Value = serde_json::from_str(&git(p, &["notes", "--ref=cr", "show", "HEAD"])).unwrap();
+    (n["verdict"], n["waiver"]) = (json!("WAIVED"), json!(WAIVER));
+    git(p, &["notes", "--ref=cr", "add", "-f", "-m", &n.to_string(), "HEAD"]);
     assert_red8(p, "waiver");
     // Forged: the waiver hash copied into the PASS sign-off by hand still fails the signature.
     let mut m = mr_note(p, "HEAD").unwrap();
