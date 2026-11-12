@@ -1,14 +1,16 @@
-//! `keel verify-doc`: htmldoc checklist + relative-link checks (UC-DOC-1/2).
+//! `keel verify-doc`: htmldoc checklist, relative links, quoted diagram labels (UC-DOC-1/2/4).
 //! ponytail: hand-rolled tag scanner, not an HTML parser; fine for htmldoc's
 //! well-formed output, swap in a real parser if docs start using odd markup.
 use std::path::Path;
 
-const EPIC_PLAN: &[&str] = &["intent", "use-cases", "expected", "non-goals", "wu-summaries", "e2e-plan", "distillation-plan", "open-questions"];
+const EPIC_PLAN: &[&str] = &["intent", "owner-changes", "use-cases", "expected", "non-goals", "wu-summaries", "e2e-plan", "distillation-plan", "open-questions"];
 const WU_PLAN: &[&str] = &["requirement", "maps-to", "expected", "test-plan"];
 const WU_RESULT: &[&str] = &["outcome", "deviations", "evidence", "distillation", "follow-ups"];
 const EPIC_RESULT: &[&str] = &["outcome", "wu-rollup", "deviations", "evidence", "distillation", "follow-ups"];
 const WU_SUB: &[&str] = &["wu-summary", "wu-maps-to", "wu-expected", "wu-deps"];
 const WU_RESULT_ROLE: &str = "wu-result";
+/// Words allowed in an epic plan's top: its main content above the first WU.
+const TOP_CAP: usize = 300;
 const EPIC_RESULT_ROLE: &str = "epic-result";
 
 struct Tag<'a> {
@@ -132,6 +134,14 @@ pub fn verify(path: &Path) -> Vec<String> {
         }
     }
 
+    for t in ts.iter().filter(|t| !t.closing && attr(t, "class").is_some_and(|c| c.split_whitespace().any(|c| c == "mermaid"))) {
+        let inner = &html[t.end..];
+        let inner = &inner[..inner.find(&format!("</{}>", t.name)).unwrap_or(inner.len())];
+        for (found, fix) in unquoted_labels(&decode(inner)) {
+            errs.push(format!("diagram label not in quotes: {found} - write {fix}"));
+        }
+    }
+
     let dir = path.parent().unwrap_or(Path::new("."));
     for t in ts.iter().filter(|t| t.name == "a" && !t.closing) {
         let Some(h) = attr(t, "href") else { continue };
@@ -181,6 +191,10 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
         }
     }
     if epic {
+        let n = top_words(html, ts);
+        if n > TOP_CAP {
+            errs.push(format!("epic plan top has {n} words above the first WU, over the cap of {TOP_CAP}: cut it, or move details below the work"));
+        }
         let wus: Vec<usize> = (0..ts.len()).filter(|&i| !ts[i].closing && attr(&ts[i], "data-wu").is_some()).collect();
         if wus.is_empty() {
             errs.push("epic plan has no data-wu block".into());
@@ -199,9 +213,142 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
     }
 }
 
+fn decode(s: &str) -> String {
+    s.replace("&gt;", ">").replace("&lt;", "<").replace("&quot;", "\"").replace("&#34;", "\"").replace("&#39;", "'").replace("&nbsp;", " ").replace("&amp;", "&")
+}
+
+/// Words in an epic plan's top: the text from the start of `<main>` (else `<body>`) up to the
+/// first `data-wu` block. A word is a whitespace-separated run holding a letter or digit.
+fn top_words(html: &str, ts: &[Tag]) -> usize {
+    let open = |n: &str| ts.iter().find(|t| t.name == n && !t.closing).map(|t| t.end);
+    let start = open("main").or_else(|| open("body")).unwrap_or(0);
+    let end = ts.iter().find(|t| !t.closing && t.start >= start && attr(t, "data-wu").is_some()).map_or(html.len(), |t| t.start);
+    let top = &html[start..end.max(start)];
+    let mut text = String::new();
+    let mut in_tag = false;
+    for (i, c) in top.char_indices() {
+        let opens = top[i + c.len_utf8()..].starts_with(|n: char| n.is_ascii_alphabetic() || n == '/' || n == '!');
+        match c {
+            '<' if !in_tag && opens => in_tag = true,
+            '>' if in_tag => {
+                in_tag = false;
+                text.push(' ');
+            }
+            _ if !in_tag => text.push(c),
+            _ => {}
+        }
+    }
+    decode(&text).split_whitespace().filter(|w| w.chars().any(char::is_alphanumeric)).count()
+}
+
+const DIRECTIVES: &[&str] = &["classDef", "class", "style", "linkStyle", "click", "direction", "end", "accTitle", "accDescr"];
+
+/// Flowchart labels not in double quotes, as (found, fix): node shapes (`A[x]`, `A(x)`, `A{x}`,
+/// `A>x]` and their doubled forms) and edge labels (`-->|x|`, `-- x -->`). Only `flowchart` and
+/// `graph` diagrams are scanned; comments and style lines are skipped.
+fn unquoted_labels(src: &str) -> Vec<(String, String)> {
+    let mut lines = src.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("%%")).peekable();
+    if lines.peek() == Some(&"---") {
+        lines.next();
+        for l in lines.by_ref() {
+            if l == "---" {
+                break;
+            }
+        }
+    }
+    let Some(head) = lines.next() else { return vec![] };
+    let kind = head.split(|c: char| c.is_whitespace() || c == ';').next().unwrap_or("");
+    if kind != "flowchart" && kind != "graph" {
+        return vec![];
+    }
+    let mut out = vec![];
+    let first = head.split_once(';').map(|(_, r)| r);
+    for line in first.into_iter().chain(lines) {
+        let line = line.trim();
+        let word = line.split(|c: char| c.is_whitespace() || c == ':').next().unwrap_or("");
+        if line.starts_with("%%") || DIRECTIVES.contains(&word) {
+            continue;
+        }
+        scan_line(line.strip_prefix("subgraph").unwrap_or(line), &mut out);
+    }
+    out
+}
+
+fn is_link(c: u8) -> bool {
+    matches!(c, b'-' | b'=' | b'.' | b'<' | b'>')
+}
+
+fn scan_line(l: &str, out: &mut Vec<(String, String)>) {
+    let b = l.as_bytes();
+    let skip_quoted = |i: usize| b[i + 1..].iter().position(|&c| c == b'"').map_or(b.len(), |q| i + q + 2);
+    let mut i = 0;
+    while i < b.len() {
+        let c = b[i];
+        if c == b'"' {
+            i = skip_quoted(i);
+        } else if c == b'@' && b.get(i + 1) == Some(&b'{') {
+            let mut j = i + 2;
+            while j < b.len() && b[j] != b'}' {
+                j = if b[j] == b'"' { skip_quoted(j) } else { j + 1 };
+            }
+            i = j + 1;
+        } else if c == b'|' {
+            let Some(k) = b[i + 1..].iter().position(|&c| c == b'|').map(|k| i + 1 + k) else { return };
+            let label = l[i + 1..k].trim();
+            if !label.starts_with('"') {
+                out.push((format!("|{label}|"), format!("|\"{label}\"|")));
+            }
+            i = k + 1;
+        } else if matches!(c, b'[' | b'(' | b'{') || (c == b'>' && i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')) {
+            let mut j = i + 1;
+            while c != b'>' && j < b.len() && matches!(b[j], b'[' | b'(' | b'{') {
+                j += 1;
+            }
+            if b[j - 1] == b'[' && j < b.len() && matches!(b[j], b'/' | b'\\') {
+                j += 1;
+            }
+            while j < b.len() && b[j] == b' ' {
+                j += 1;
+            }
+            if j < b.len() && b[j] == b'"' {
+                i = skip_quoted(j);
+                continue;
+            }
+            let mut k = b[j..].iter().position(|c| matches!(c, b']' | b')' | b'}')).map_or(b.len(), |k| j + k);
+            let mut close = k;
+            while close < b.len() && matches!(b[close], b']' | b')' | b'}') {
+                close += 1;
+            }
+            if k > j && matches!(b[k - 1], b'/' | b'\\') {
+                k -= 1;
+            }
+            let (open, label, end) = (&l[i..j].trim_end(), l[j..k].trim(), &l[k..close]);
+            out.push((format!("{open}{label}{end}"), format!("{open}\"{label}\"{end}")));
+            i = close;
+        } else if is_link(c) {
+            let run = b[i..].iter().take_while(|&&c| is_link(c)).count();
+            let arrow = l[i..i + run].trim_start_matches('<');
+            let opens_text = matches!(arrow, "--" | "==" | "-.") && b.get(i + run).is_some_and(u8::is_ascii_whitespace);
+            i += run;
+            if opens_text {
+                let Some(k) = (i..b.len().saturating_sub(1)).find(|&k| matches!(b[k], b'-' | b'=' | b'.') && matches!(b[k + 1], b'-' | b'=' | b'.' | b'>')) else { return };
+                let label = l[i..k].trim();
+                let end = b[k..].iter().take_while(|&&c| is_link(c)).count();
+                let close = &l[k..k + end];
+                if !label.starts_with('"') {
+                    out.push((format!("{arrow} {label} {close}"), format!("{arrow} \"{label}\" {close}")));
+                }
+                i = k + end;
+            }
+        } else {
+            i += 1;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{artifact, has_role, result_role, verify};
+    use super::{artifact, has_role, result_role, tags, top_words, unquoted_labels, verify};
 
     #[test]
     fn a_stray_closing_html_before_the_root_neither_hides_the_checklist_nor_the_role() {
@@ -243,5 +390,60 @@ mod tests {
         assert!(has_role(r#"<html data-artifact="wu-result">"#, "wu-result"));
         assert!(!has_role(r#"<html data-artifact="wu-result">"#, "epic-result"));
         assert!(!has_role("<p>x-result</p>", "wu-result"));
+    }
+
+    fn labels(src: &str) -> Vec<String> {
+        unquoted_labels(src).into_iter().map(|(found, _)| found).collect()
+    }
+
+    #[test]
+    fn every_node_shape_is_scanned_and_a_quoted_label_passes() {
+        for shape in ["[x]", "(x)", "([x])", "[[x]]", "[(x)]", "((x))", "{x}", "{{x}}", ">x]", "[/x/]", "[\\x\\]", "[/x\\]"] {
+            let open = &shape[..shape.find('x').unwrap()];
+            let close = &shape[shape.find('x').unwrap() + 1..];
+            assert_eq!(labels(&format!("flowchart LR\n  A{shape} --> B")), vec![shape.to_string()], "{shape}");
+            assert!(labels(&format!("flowchart LR\n  A{open}\"x\"{close} --> B")).is_empty(), "{shape} quoted");
+        }
+        assert_eq!(unquoted_labels("graph TD\n  A[Build step]"), vec![("[Build step]".into(), "[\"Build step\"]".into())]);
+    }
+
+    #[test]
+    fn both_edge_label_forms_are_scanned_and_plain_arrows_are_not_labels() {
+        assert_eq!(labels("flowchart LR\n  A -->|yes| B -.->|no| C"), ["|yes|", "|no|"]);
+        assert_eq!(labels("flowchart LR\n  A -- yes --> B\n  B == go ==> C\n  C -. later .-> D\n  D <-- back --> A"), ["-- yes -->", "== go ==>", "-. later .->", "-- back -->"]);
+        assert_eq!(unquoted_labels("flowchart LR\n  A -- yes --> B")[0].1, "-- \"yes\" -->");
+        let quoted = "flowchart LR\n  A -->|\"yes\"| B -- \"no\" --> C == \"go\" ==> D -. \"x\" .-> E\n  A --> B --- C -.-> D ==> E <--> F --x G --o H";
+        assert!(labels(quoted).is_empty(), "{:?}", labels(quoted));
+    }
+
+    #[test]
+    fn quoted_text_hides_delimiters_and_non_label_lines_are_skipped() {
+        let src = "---\ntitle: A[x]\n---\nflowchart TD;  A[\"a [b] | c -- d\"] --> B\n  %% C[comment]\n  classDef hot fill:#f96\n  style A fill:#f9f\n  class A hot\n  click A \"https://x.io\" \"tip (x)\"\n  linkStyle 0 stroke:#f00\n  direction LR\n  N@{ shape: rect, label: \"x [y]\" }\n  end";
+        assert!(labels(src).is_empty(), "{:?}", labels(src));
+        assert_eq!(labels("flowchart LR; A[raw]"), ["[raw]"]);
+        assert_eq!(labels("flowchart LR\n  subgraph S [Title]\n  A\n  end"), ["[Title]"]);
+        assert_eq!(labels("flowchart LR\n  A[W1 · the skill]"), ["[W1 · the skill]"]);
+    }
+
+    #[test]
+    fn only_flowcharts_are_scanned() {
+        for src in ["sequenceDiagram\n  A->>B: hi [x]", "stateDiagram-v2\n  A --> B: go [x]", "pie\n  \"a\" : 1", "", "flowchartX\n  A[x]"] {
+            assert!(labels(src).is_empty(), "{src}");
+        }
+    }
+
+    fn top(html: &str) -> usize {
+        top_words(html, &tags(html))
+    }
+
+    #[test]
+    fn the_top_runs_from_main_or_body_to_the_first_wu_and_counts_words_with_a_letter_or_digit() {
+        assert_eq!(top("<body><header>one two</header><main><p>three four</p><div data-wu=\"W1\">five</div></main></body>"), 2);
+        assert_eq!(top("<body><header>one two</header><p>three</p><div data-wu=\"W1\">four</div></body>"), 3);
+        assert_eq!(top("<main><p>a · b — c --> | 1</p></main>"), 4);
+        assert_eq!(top("<main><td>a</td><td>b</td>x&amp;y A &lt;-- B</main>"), 5);
+        assert_eq!(top("<main><pre>A <-- B</pre></main>"), 2);
+        assert_eq!(top("<main><!-- hidden words --><p>shown</p></main>"), 1);
+        assert_eq!(top("<p>no main nor body</p><div data-wu=\"W1\">x</div>"), 4);
     }
 }
