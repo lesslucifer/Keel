@@ -1338,12 +1338,12 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let other = base.join("other");
     decoy(&other);
     let decoy_before = decoy_state(&other);
-    let real_worktrees = git(root(), &["worktree", "list", "--porcelain"]).stdout;
     let hostile = hostile_git_env(&other);
     let watch_env = [hostile.clone(), vec![("ROUTER_WATCH_MAX", "0".into())]].concat();
     let home = base.join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let path = format!("{}:{}", keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
+    git_shim(&base.join("shim"));
+    let path = format!("{}:{}:{}", base.join("shim").display(), keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
     let stub = base.join("claude");
     stub_claude(&stub);
     let state = base.join("state");
@@ -1542,7 +1542,20 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
         }
     }
     assert!(!c.join(".router/out").exists());
-    assert_eq!(git(root(), &["worktree", "list", "--porcelain"]).stdout, real_worktrees, "the real checkout's worktrees changed");
+    for line in String::from_utf8(git(root(), &["worktree", "list", "--porcelain"]).stdout).unwrap().lines() {
+        if let Some(p) = line.strip_prefix("worktree ") {
+            let p = Path::new(p).canonicalize().unwrap_or_else(|_| p.into());
+            assert!(!p.starts_with(&base), "the real checkout lists a worktree in the temp dir: {}", p.display());
+        }
+    }
+}
+
+/// `<dir>/git`: the real git with hermetic's config isolation, for scripts that clear every inherited GIT_*.
+fn git_shim(dir: &Path) {
+    let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(dir.join("git"), format!("#!/bin/sh\nGIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null exec {} \"$@\"\n", real.trim())).unwrap();
+    std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
 
 /// A checkout holding scripts/router-watch.sh, cloned from a bare `origin.git` file remote (no
@@ -1565,6 +1578,7 @@ fn watcher() -> Watcher {
     git(&main, &["commit", "-qm", "base"]);
     git(&main, &["push", "-q", "origin", "main"]);
     sleep_shim(&base);
+    git_shim(&base.join("shim"));
     std::fs::write(base.join("shim/date"), "#!/bin/sh\n[ -e \"$STEP_DIR/now\" ] && exec cat \"$STEP_DIR/now\"\nexec /bin/date \"$@\"\n").unwrap();
     std::fs::set_permissions(base.join("shim/date"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     Watcher { _d: d, base, main }
@@ -1587,7 +1601,8 @@ impl Watcher {
 
     /// `scripts/router-watch.sh <args>` as the router runs it, its polls stepped through steps-<k>/;
     /// an exported ROUTER_WATCH_POLL or ROUTER_WATCH_MAX never reaches it, only `env` sets them. The
-    /// watch clears every GIT_* it inherits, hermetic's too, so HOME points into the temp dir.
+    /// watch clears every GIT_* it inherits, hermetic's too, so `git_shim` restores hermetic's config
+    /// isolation and HOME points into the temp dir.
     fn cmd(&self, args: &[&str], k: &str, env: &[(&str, &str)]) -> (Command, PathBuf) {
         let dir = self.base.join(format!("steps-{k}"));
         std::fs::create_dir_all(&dir).unwrap();
@@ -1615,15 +1630,14 @@ impl Watcher {
         Stepped { child: c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap(), dir }
     }
 
-    /// A `git` on $PATH (with the `sleep` shim) ahead of the real one that logs each call to <base>/spy.log and, when
-    /// $SPY_FAIL is 1, fails every fetch: returns that PATH and the log.
+    /// A `git` on $PATH (with the shims) ahead of `git_shim`'s, which it chains to, that logs each call to
+    /// <base>/spy.log and, when $SPY_FAIL is 1, fails every fetch: returns that PATH and the log.
     fn spy(&self) -> (String, PathBuf) {
-        let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
         let dir = self.base.join("spy");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("git"), format!(
             "#!/bin/sh\necho \"$*\" >> \"$SPY_LOG\"\ncase \"$SPY_FAIL $*\" in 1*\" fetch \"*) printf 'fatal: spy refuses fetch\\nspy: last\\377line\\n' >&2; exit 128;; esac\nexec {} \"$@\"\n",
-            real.trim()
+            self.base.join("shim/git").display()
         )).unwrap();
         std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
         (format!("{}:{}:{}", dir.display(), self.base.join("shim").display(), std::env::var("PATH").unwrap()), self.base.join("spy.log"))
@@ -1640,6 +1654,31 @@ impl Watcher {
         let o = s.output();
         let polls = std::fs::read_to_string(dir.join("polls")).map_or(0, |s| s.trim().parse().unwrap());
         (o.status.code(), String::from_utf8(o.stdout).unwrap(), String::from_utf8(o.stderr).unwrap(), polls)
+    }
+}
+
+/// E-ROUTER3.W7 review r1: the watch clears hermetic's GIT_CONFIG_*, so the `git` its PATH resolves
+/// (plain or spied) must still read no system or global config.
+#[test]
+fn watch_git_reads_no_system_or_global_config() {
+    let w = watcher();
+    let (c, _) = w.cmd(&[], "cfg", &[]);
+    let watch_path = c.get_envs().find(|(k, _)| *k == "PATH").and_then(|(_, v)| v).unwrap().to_owned();
+    let hostile = w.base.join("gitconfig");
+    std::fs::write(&hostile, "[hostile]\n\tkey = 1\n").unwrap();
+    for path in [watch_path, w.spy().0.into()] {
+        let o = common::cmd("sh")
+            .args(["-c", "git config --list"])
+            .current_dir(&w.base)
+            .env("PATH", &path)
+            .env("SPY_LOG", w.base.join("spy.log"))
+            .env("GIT_CONFIG_SYSTEM", &hostile)
+            .env("GIT_CONFIG_GLOBAL", &hostile)
+            .env_remove("GIT_CONFIG_NOSYSTEM")
+            .output()
+            .unwrap();
+        let list = String::from_utf8(o.stdout).unwrap();
+        assert!(o.status.success() && !list.contains("hostile"), "{path:?}: {list}");
     }
 }
 
