@@ -556,8 +556,13 @@ fn bless_waived(p: &Path, tests: &str, reason: &str) {
     assert!(o.status.success(), "waive: {}", text(&o));
 }
 
+/// Accept a tool-written waiver in two steps: the refused run prints the code, the re-run gives it back.
 fn sign_waived(p: &Path, level: &str, report: &str) {
-    let o = keel(p, &["mr", "confirm", level, "--accept-waiver", "--as", "t", "--report", report]);
+    let args = ["mr", "confirm", level, "--as", "t", "--report", report];
+    let preview = keel(p, &args);
+    let re = regex::Regex::new(r"--accept-waiver ([0-9a-f]{12})").unwrap();
+    let code = re.captures(&text(&preview)).unwrap_or_else(|| panic!("no accept code: {}", text(&preview)))[1].to_string();
+    let o = keel(p, &[&args[..], &["--accept-waiver", &code]].concat());
     assert!(o.status.success(), "mr confirm --accept-waiver: {}", text(&o));
 }
 
@@ -869,4 +874,42 @@ fn the_waiver_preview_is_inert_text_bound_to_the_note_and_refused_on_a_broken_no
     assert_eq!(cr["committer"], "t <t@t>", "the signer writes the waiver: {cr}");
     assert!(cr["timestamp"].as_u64().unwrap() > 1, "{cr}");
     assert_eq!(cr["refuted"][0]["why"], "added after the preview");
+}
+
+// E-CRCAP.W1 code review round 1: one cr/v1 waiver writer.
+
+#[test]
+fn a_waiver_reason_is_never_the_next_flag() {
+    let d = fixture();
+    let p = d.path();
+    bless_unreviewed(p, WU_TESTS);
+    for args in [&["--verdict", "WAIVED", "--reason", "--blockers", "2"][..], &["--verdict", "WAIVED", "--blockers", "2", "--reason", "--importants"]] {
+        let o = write_cr(p, args);
+        assert!(!o.status.success() && text(&o).contains("fix ->"), "{args:?}: {}", text(&o));
+        assert!(!has_note(p, "cr", "HEAD"), "{args:?} wrote a note");
+    }
+}
+
+#[test]
+fn a_tool_written_waiver_with_no_review_on_the_tip_says_not_reviewed() {
+    let d = fixture();
+    let p = d.path();
+    bless_unreviewed(p, WU_TESTS);
+    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", "review cap: 5 rounds, 0 blockers open"]).status.success());
+    assert_eq!(note(p, "cr", "HEAD")["unreviewed"], true);
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"]);
+    assert!(!o.status.success() && text(&o).contains("not reviewed") && !text(&o).contains("0 blockers, 0 importants"), "{}", text(&o));
+
+    // Over a reviewed round the tool's waiver is a reviewed one, and keeps what the round recorded.
+    assert!(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]).status.success());
+    edit_note(p, "cr", "HEAD", |n| n["findings"] = json!([{"location": "src/a.py:2", "claim": "kept", "severity": "blocker", "evidence": "e"}]));
+    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", "review cap: 5 rounds, 1 blockers open", "--blockers", "1"]).status.success());
+    let n = note(p, "cr", "HEAD");
+    assert!(n.get("unreviewed").is_none(), "{n}");
+    assert_eq!((n["blockers"].as_u64(), n["findings"][0]["claim"].as_str()), (Some(1), Some("kept")), "{n}");
+    // A PASS is never waived over, by the tool either.
+    assert!(write_cr(p, &["--verdict", "PASS"]).status.success());
+    let o = write_cr(p, &["--verdict", "WAIVED", "--reason", "cap"]);
+    assert!(!o.status.success() && text(&o).contains("PASS"), "{}", text(&o));
+    assert_eq!(note(p, "cr", "HEAD")["verdict"], "PASS");
 }

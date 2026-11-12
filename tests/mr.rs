@@ -806,6 +806,19 @@ fn setup_refuses_an_unreadable_roster_and_leaves_its_signers_in_place() {
 
 // E-CRCAP.W1: a waived review at sign-off (UC-REV-2, UC-MR-1).
 
+fn accept_code(o: &Output) -> Option<String> {
+    let re = regex::Regex::new(r"--accept-waiver ([0-9a-f]{12})").unwrap();
+    re.captures(&text(o)).map(|c| c[1].to_string())
+}
+
+/// Accept the tip's tool-written waiver: the refused run shows it with a code, the re-run gives it back.
+fn accept(p: &Path, extra: &[&str]) -> Output {
+    let args = [&["mr", "confirm", "wu"][..], extra].concat();
+    let preview = keel(p, &args);
+    let code = accept_code(&preview).unwrap_or_else(|| panic!("no accept code: {}", text(&preview)));
+    ok(keel(p, &[&args[..], &["--accept-waiver", &code]].concat()))
+}
+
 const WAIVER: &str = "owner ruling 2026-11-12: review waived, the open blocker is R31";
 
 fn cr(p: &Path, args: &[&str]) -> Output {
@@ -838,7 +851,7 @@ fn a_waived_tip_is_signed_only_with_explicit_acceptance_after_the_history_is_sho
     refused(&o, &["WAIVED", WAIVER, "--accept-waiver", "blocker src/a.py:2: a() returns 2 where the contract says 1", &round1[..10], "FAIL", &tip[..10]]);
     assert!(mr_note(p, "HEAD").is_none(), "a refused confirm writes nothing");
 
-    let o = ok(keel(p, &["mr", "confirm", "wu", "--accept-waiver", "--as", "vu"]));
+    let o = accept(p, &["--as", "vu"]);
     assert!(text(&o).contains(WAIVER), "{}", text(&o));
     let m = mr_note(p, "HEAD").unwrap();
     assert_eq!(m["waiver_hash"].as_str().unwrap(), sha256_of(WAIVER.as_bytes()));
@@ -858,7 +871,7 @@ fn the_sign_off_covers_the_waiver_it_accepted_and_only_that() {
     let p = d.path();
     notes(p, &["test", "doc"]);
     ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER]));
-    ok(keel(p, &["mr", "confirm", "wu", "--accept-waiver"]));
+    accept(p, &[]);
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
     // Reworded after signing: red. The signed wording again: green - the line is rebuilt from the note.
     ok(cr(p, &["--verdict", "WAIVED", "--reason", "owner ruling: waived (softer wording)"]));
@@ -939,4 +952,31 @@ fn an_owner_waiver_at_sign_off_is_key_signed_and_a_failed_signing_writes_neither
     ok(keel(p, &["hooks", "install"]));
     git(p, &["switch", "-q", "epic/e"]);
     ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"]));
+}
+
+// E-CRCAP.W1 code review round 1, I1: --accept-waiver signs the waiver it showed.
+
+#[test]
+fn accept_waiver_signs_the_waiver_it_showed_and_only_with_its_code() {
+    let (d, _k) = fixture();
+    let p = d.path();
+    notes(p, &["test", "doc"]);
+    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER]));
+    let preview = keel(p, &["mr", "confirm", "wu"]);
+    let code = accept_code(&preview).unwrap_or_else(|| panic!("no accept code: {}", text(&preview)));
+    assert!(mr_note(p, "HEAD").is_none());
+    for bad in [&["--accept-waiver"][..], &["--accept-waiver", "000000000000"]] {
+        let o = keel(p, &[&["mr", "confirm", "wu"][..], bad].concat());
+        assert!(!o.status.success() && text(&o).contains("fix ->"), "{bad:?}: {}", text(&o));
+        assert!(mr_note(p, "HEAD").is_none(), "{bad:?} signed");
+    }
+    // The note changes between the refused run and the accepting one: the old code no longer signs.
+    let reworded = "review cap: reworded after the preview";
+    ok(cr(p, &["--verdict", "WAIVED", "--reason", reworded]));
+    let stale = keel(p, &["mr", "confirm", "wu", "--accept-waiver", &code]);
+    assert!(!stale.status.success() && text(&stale).contains("changed since"), "{}", text(&stale));
+    assert!(mr_note(p, "HEAD").is_none());
+    accept(p, &[]);
+    assert_eq!(mr_note(p, "HEAD").unwrap()["waiver_hash"].as_str().unwrap(), sha256_of(reworded.as_bytes()), "signs the waiver it showed");
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
 }
