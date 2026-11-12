@@ -87,6 +87,7 @@
     <li><b>Records:</b> <code>39e1cbc</code> (DEC-46, UC-ROUTE-2, 5 and 6, backlog).</li>
     <li><b>Fixes:</b> <code>172a4ca</code> (archive refusal), <code>435d495</code> and <code>ee93be8</code> (the first check).</li>
     <li><b>Owner commits:</b> <code>9dc3da4</code> (settings, the keel-router skill and its mirror, project-router), then the brief-skeleton commit.</li>
+    <li><b>Review round 1 (FAIL, 0 blockers, 1 important, on <code>5c22e11</code>):</b> the spawn-prompt test checked only <code>must print /</code>, so a prompt naming another directory would pass. <code>21010c0</code> pins the resolved worktree path (a prompt naming <code>$ROOT</code> now fails it). Nit: <code>04d38a2</code> also denies <code>git --git-dir=</code> and <code>--work-tree=</code>. Refuted: moving <code>main</code> with <code>git branch -f</code> and writing a cr note past the prefix denies, both accepted in DEC-46.</li>
   </ul>
 </div>
 
@@ -107,6 +108,7 @@
     <li><b>A finished review worker's row read <code>state: blocked</code></b> with <code>status: idle</code> and no <code>waitingFor</code>. W9's <code>facts</code> would call it STUCK, not DONE. Worth a check in W5 or W7.</li>
     <li><b>A host outside the sandbox makes a worker wait</b> (<code>blocked · sandbox request</code>) until the command's own timeout. The brief asks for timeouts, and the watchdog reports a wait.</li>
     <li><b>The full <code>cargo test</code> run under the sandbox</b> was not probed; only <code>--no-run</code> was.</li>
+    <li><b>A spawn that ends DEAD or UNLISTED keeps its brief copy</b> in the worktree (its run dir records no session, so <code>stop</code> never matches it). The copy is self-ignored and goes with <code>worktree remove</code> (review round 1 nit).</li>
     <li><b>W7:</b> the e2e covers <code>worktree add</code>, a <code>--review</code> spawn and <code>worktree remove</code>.</li>
     <li><b>htmldoc:</b> the server does not know the ids of <code>docs/decisions/router.html</code> and <code>docs/backlog/e-router-v2.html</code>, so neither has a snapshot (as in W9).</li>
   </ul>
