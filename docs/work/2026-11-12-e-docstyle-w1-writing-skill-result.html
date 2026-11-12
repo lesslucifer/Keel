@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af5cc729f34851f0dfb2319" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-DOCSTYLE.W1 WU result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-DOCSTYLE.W1 · The writing skill: result</h1>
+      <p>WU result for the <a href="2026-11-12-e-docstyle-w1-writing-skill-plan.html">W1 plan</a>. Updated after each review round.</p>
+      <div class="meta">T3 · WU result · 2026-11-12 · Keel</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">What happened</h2>
+<p data-item="outcome" data-c="outcome">Delivered as planned. A new writing skill holds the nine rules, each with a before/after, and says which rules apply to which doc. It has a self-check and a short example plan. The plan and tiers skills, AGENTS.md and its template point to it.</p>
+
+<h2 id="rounds">Review rounds</h2>
+<table data-c="rounds">
+  <thead><tr><th>Round</th><th>Found</th><th>Fixed</th></tr></thead>
+  <tbody>
+    <tr><td>1 (router)</td><td>3 importants, 5 nits, all in the text</td><td>All 8. Below</td></tr>
+    <tr><td>2 (router)</td><td>Only nits: 6</td><td>All 6, without a new round</td></tr>
+  </tbody>
+</table>
+<ol data-c="round-1">
+  <li>"The top" is now defined once. Rule 3 now says no code in the top, and a term is defined in Terms or where first used. The example now obeys it.</li>
+  <li>Rule 9 has a before/after.</li>
+  <li>New "Which rules apply": every doc, plans and results, records with their own fields, and edits that rewrite only what they touch.</li>
+  <li>Nits: keel-plan's order and open-points columns match the skill. AGENTS.md says "docs a person reads". The example is consistent and trimmed to 260 words above its first WU. The skill says to start from the htmldoc skeleton.</li>
+  <li>Round 2: only nits, fixed without a new round. "The top" of a doc with no work is its first screen. The code check moved to the plan self-check. Rule 3's after, the order's "In short", two example sentences and this report's deviations were corrected.</li>
+</ol>
+
+<h2 id="deviations-h">Deviations</h2>
+<div data-item="deviations" data-c="deviations">
+<p>Two:</p>
+<ol>
+  <li>The example has no Terms table. It defines its three terms where it first uses them.</li>
+  <li>The sandbox cannot write the installed copies of the skills. Your commit command copies them instead.</li>
+</ol>
+</div>
+
+<h2 id="details">Details</h2>
+
+<h3 id="evidence-h">Evidence</h3>
+<ul data-item="evidence" data-c="evidence">
+  <li>The skill: <code>skills/keel-write/</code>, embedded by two lines in <code>src/init.rs</code>.</li>
+  <li>Commits: <code>3cd7ba7</code> plan, <code>7f09d22</code> test (red), <code>feb8492</code> your <code>keel mr commit</code> (skill text and mirror), <code>1378ab6</code> the <code>src/init.rs</code> lines (after your commit, plan question 3), and this report.</li>
+  <li>The new test in <code>tests/init.rs</code> was red before the skill existed and is green with it.</li>
+  <li><code>keel check</code> at <code>1378ab6</code>: lint clean; every test passes (<code>tests/init.rs</code> 12/12, self-hosting included) except one sandbox-only router test (backlog R43).</li>
+  <li><code>keel verify-doc</code> is green over <code>docs/</code> and on the example.</li>
+</ul>
+
+<h3 id="distillation-h">Distillation</h3>
+<p data-item="distillation" data-c="distillation">Nothing citable yet. The decision record and use cases come at the epic close, per the epic plan.</p>
+
+<h3 id="follow-ups-h">Follow-ups</h3>
+<p data-item="follow-ups" data-c="follow-ups">W2 adds the length, section and label checks, and runs them on this example.</p>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

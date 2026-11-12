@@ -13,6 +13,8 @@ const SKILLS: &[(&str, &str)] = &[
     ("keel-code-review/SKILL.md", include_str!("../skills/keel-code-review/SKILL.md")),
     ("keel-code-review/rubric.md", include_str!("../skills/keel-code-review/rubric.md")),
     ("keel-distill/SKILL.md", include_str!("../skills/keel-distill/SKILL.md")),
+    ("keel-write/SKILL.md", include_str!("../skills/keel-write/SKILL.md")),
+    ("keel-write/references/example.html", include_str!("../skills/keel-write/references/example.html")),
     ("keel-router/SKILL.md", include_str!("../skills/keel-router/SKILL.md")),
     ("keel-router/references/brief-skeleton.md", include_str!("../skills/keel-router/references/brief-skeleton.md")),
     ("keel-router/references/commands.md", include_str!("../skills/keel-router/references/commands.md")),

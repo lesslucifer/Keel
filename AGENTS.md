@@ -7,8 +7,10 @@ as a `keel mr commit` (it is rule-bearing).
 ## AI-first
 
 All code is written by AI agents; no human reads diffs before they land.
-Design docs, plans and processes for AI readers and executors. Never produce
-work estimates (effort, timelines, sizing).
+Docs a person reads have two readers: the person reads them first, an agent
+acts on them. Write them short and plain for the person, exact for the agent
+(skill `keel-write`).
+Never produce work estimates (effort, timelines, sizing).
 
 ## Coding conventions
 
