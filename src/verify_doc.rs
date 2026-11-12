@@ -7,6 +7,8 @@ const EPIC_PLAN: &[&str] = &["intent", "owner-changes", "use-cases", "expected",
 const WU_PLAN: &[&str] = &["requirement", "maps-to", "expected", "test-plan"];
 const WU_RESULT: &[&str] = &["outcome", "deviations", "evidence", "distillation", "follow-ups"];
 const EPIC_RESULT: &[&str] = &["outcome", "wu-rollup", "deviations", "evidence", "distillation", "follow-ups"];
+/// Known in every governed doc, required only where a checklist lists it (keel-write's today/after table).
+const OPTIONAL: &[&str] = &["owner-changes"];
 const WU_SUB: &[&str] = &["wu-summary", "wu-maps-to", "wu-expected", "wu-deps"];
 const WU_RESULT_ROLE: &str = "wu-result";
 /// Words allowed in an epic plan's top: its main content above the first WU.
@@ -175,7 +177,7 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
     let mut seen: Vec<&str> = vec![];
     for (i, t) in ts.iter().enumerate().filter(|(_, t)| !t.closing) {
         let Some(item) = attr(t, "data-item") else { continue };
-        if expected.contains(&item) {
+        if expected.contains(&item) || OPTIONAL.contains(&item) {
             if filled(html, ts, i) {
                 seen.push(item);
             } else {

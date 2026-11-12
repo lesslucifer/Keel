@@ -292,3 +292,21 @@ fn epic_the_installed_hooks_refuse_each_doc_fault_and_pass_the_fixed_plan() {
     let o = hook(&stop, "");
     assert!(o.status.success(), "the fixed plan fails the end-of-turn hook: {}", text(&o));
 }
+
+/// E-DOCSTYLE.W2 review round 1: every plan and result follows keel-write's order, so any governed
+/// doc may tag its "what changes for you" table; only an epic plan must have one.
+#[test]
+fn any_governed_doc_may_tag_what_changes_for_you_and_only_an_epic_plan_must() {
+    let d = repo();
+    let p = d.path();
+    let table = r#"<table data-item="owner-changes"><tr><td>today</td><td>after</td></tr></table>"#;
+    let (ok, t) = verify(p, "w.html", &doc("ready", "expected", table));
+    assert!(ok, "a WU plan with the tag: {t}");
+    let result = r#"<html data-artifact="wu-result" data-status="ready"><body><p data-item="outcome">o</p><p data-item="deviations">d</p><p data-item="evidence">e</p><p data-item="distillation">x</p><p data-item="follow-ups">f</p>TABLE</body></html>"#;
+    let (ok, t) = verify(p, "r.html", &result.replace("TABLE", table));
+    assert!(ok, "a WU result with the tag: {t}");
+    let (ok, t) = verify(p, "r.html", &result.replace("TABLE", ""));
+    assert!(ok, "a WU result without it: {t}");
+    let (ok, t) = verify(p, "w.html", &doc("ready", "expected", r#"<table data-item="owner-changes"> </table>"#));
+    assert!(!ok && t.contains("item \"owner-changes\" is empty"), "{t}");
+}
