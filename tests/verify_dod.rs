@@ -1023,3 +1023,378 @@ fn the_review_history_lists_every_round_intact_whatever_the_log_encoding_and_sho
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
+
+// E-CRCAP.W2: the 5-round review schedule (UC-REV-3).
+
+fn ok(o: Output) -> Output {
+    assert!(o.status.success(), "{}", text(&o));
+    o
+}
+
+fn refused(o: &Output, needles: &[&str]) {
+    let t = text(o);
+    assert!(!o.status.success() && t.contains("fix ->"), "expected a refusal with a fix line: {t}");
+    for n in needles {
+        assert!(t.contains(n), "expected '{n}': {t}");
+    }
+}
+
+fn test_note(p: &Path) {
+    ok(run(env!("CARGO_BIN_EXE_keel"), p, &["notes", "write", "test"], WU_TESTS));
+}
+
+fn doc_note(p: &Path) {
+    ok(keel(p, &["notes", "write", "doc"]));
+}
+
+fn head(p: &Path) -> String {
+    git(p, &["rev-parse", "HEAD"])
+}
+
+/// A fix of the last round: a new code commit on HEAD with its test note, ready for preflight.
+fn step(p: &Path, n: u32) -> String {
+    write(p, "src/a.py", &format!("def a():\n    return {n}\n"));
+    commit(p, &format!("fix {n}"));
+    test_note(p);
+    head(p)
+}
+
+fn preflight(p: &Path) -> Output {
+    keel(p, &["preflight", "wu", "wu/e/a"])
+}
+
+fn base(p: &Path) -> String {
+    git(p, &["merge-base", "epic/e", "HEAD"])
+}
+
+fn whole(n: u32, of: u32, base: &str, tip: &str) -> String {
+    format!("review round {n} of {of} - scope: the whole range, {base}..{tip}")
+}
+
+fn last_fix(n: u32, of: u32, since: &str, tip: &str) -> String {
+    format!("review round {n} of {of} - scope: the last fix, {since}..{tip}")
+}
+
+/// The history row of `sha` in a sign-off's output.
+fn row(t: &str, sha: &str) -> String {
+    t.lines().find(|l| l.trim_start().starts_with(&sha[..10])).map(String::from).unwrap_or_else(|| panic!("no history row for {}: {t}", &sha[..10]))
+}
+
+#[test]
+fn preflight_names_the_round_and_its_scope_the_whole_range_then_the_last_fix() {
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    let (b, c1) = (base(p), head(p));
+    assert!(text(&ok(preflight(p))).contains(&whole(1, 5, &b, &c1)), "round 1");
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    // A re-run on the same commit is the same round.
+    assert!(text(&ok(preflight(p))).contains(&whole(1, 5, &b, &c1)), "a re-run is round 1 again");
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    let n = note(p, "cr", "HEAD");
+    assert_eq!((n["round"].as_u64(), n["scope"].as_str()), (Some(1), Some("full")), "{n}");
+
+    let c2 = step(p, 2);
+    assert!(text(&ok(preflight(p))).contains(&whole(2, 5, &b, &c2)), "round 2 still reviews the whole range");
+    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "1"]));
+    assert_eq!((note(p, "cr", "HEAD")["round"].as_u64(), note(p, "cr", "HEAD")["scope"].as_str()), (Some(2), Some("full")));
+
+    let c3 = step(p, 3);
+    let t = text(&ok(preflight(p)));
+    assert!(t.contains(&last_fix(3, 5, &c2, &c3)) && !t.contains("whole range"), "round 3 reviews only the last fix: {t}");
+    ok(write_cr(p, &["--verdict", "PASS"]));
+    let n = note(p, "cr", "HEAD");
+    assert_eq!((n["round"].as_u64(), n["scope"].as_str()), (Some(3), Some(format!("since {c2}").as_str())), "{n}");
+    let full = |a: &str, b: &str| git(p, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", a, b, "--", "src/", "tests/"]);
+    let hash = run("git", p, &["hash-object", "--stdin"], &full(&b, &c3));
+    assert_eq!(n["code_diff_hash"].as_str(), Some(String::from_utf8_lossy(&hash.stdout).trim()), "a narrow round still binds the whole range");
+}
+
+#[test]
+fn a_fix_pass_after_a_nits_only_round_is_accepted_by_the_merge_check_and_listed_at_sign_off() {
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    doc_note(p);
+    let nits = r#"[{"location": "src/a.py:1", "finding": "a() could be named one()", "fixed": "renamed, in a fix-PASS"}]"#;
+    ok(write_cr(p, &["--verdict", "PASS", "--nits", nits]));
+    let c1 = head(p);
+    assert_eq!(note(p, "cr", "HEAD")["nits"][0]["finding"], "a() could be named one()");
+    write(p, "src/a.py", "def one():\n    return 1\n");
+    write(p, "tests/test_a.py", "def test_one():\n    pass\n");
+    commit(p, "fix the nit");
+    test_note(p);
+    doc_note(p);
+    let c2 = head(p);
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", "HEAD"]), &["fixes"]);
+    let o = ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1[..12]]));
+    assert!(!text(&o).contains("review round"), "a fix-PASS is no round: {}", text(&o));
+    let n = note(p, "cr", "HEAD");
+    assert_eq!((n["verdict"].as_str(), n["fixes"].as_str(), n["round"].as_u64()), (Some("PASS"), Some(c1.as_str()), Some(1)), "{n}");
+    assert_eq!((n["answers"]["importants"].as_u64(), n["answers"]["nits"].as_u64()), (Some(0), Some(1)), "{n}");
+    let fix = git(p, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", &c1, &c2, "--", "src/", "tests/"]);
+    let hash = run("git", p, &["hash-object", "--stdin"], &fix);
+    assert_eq!(n["fix_diff_hash"].as_str(), Some(String::from_utf8_lossy(&hash.stdout).trim()), "the fix's own code hash");
+
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    assert_red(&o, "8·manual-review");
+    assert!(text(&o).contains("- 1 failed"), "the merge check reads a fix-PASS as a PASS: {}", text(&o));
+    let o = ok(keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"]));
+    let t = text(&o);
+    assert!(row(&t, &c2).contains(&format!("[fix-PASS of round 1 on {}; no reviewers ran; changed: src/a.py, tests/test_a.py]", &c1[..10])), "{t}");
+    assert!(row(&t, &c1).contains("[round 1, full]"), "{t}");
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    git(p, &["switch", "-q", "epic/e"]);
+    ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"], ""));
+}
+
+#[test]
+fn a_fix_pass_answers_only_findings_that_need_no_new_round() {
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "1"]));
+    let c1 = head(p);
+    step(p, 2);
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c1]), &["round 1", "importants"]);
+    assert!(!has_note(p, "cr", "HEAD"), "a refused fix-PASS writes nothing");
+    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "1"]));
+    let c2 = head(p);
+    step(p, 3);
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c2]), &["round 2", "importants"]);
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c1]), &["latest"]);
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1", "--importants", "1"]));
+    let c3 = head(p);
+    step(p, 4);
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c3]), &["blocker"]);
+    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "2"]));
+    let c4 = head(p);
+    let c5 = step(p, 5);
+
+    // Round 4 found no blocker: there is no round 5, and its importants are fixed under a fix-PASS.
+    let o = preflight(p);
+    assert_red(&o, "0·review-cap");
+    assert!(text(&o).contains("round 5") && text(&o).contains("round 4"), "{}", text(&o));
+    refused(&write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]), &["round 5"]);
+    assert!(!has_note(p, "cr", "HEAD"));
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c4]));
+    let n = note(p, "cr", "HEAD");
+    assert_eq!((n["fixes"].as_str(), n["round"].as_u64(), n["answers"]["importants"].as_u64()), (Some(c4.as_str()), Some(4), Some(2)), "{n}");
+
+    // A second fix needs a round.
+    step(p, 6);
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c4]), &["fix-PASS", &c5[..10]]);
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c5]), &["latest"]);
+    assert!(!has_note(p, "cr", "HEAD"));
+}
+
+#[test]
+fn round_5_follows_only_a_round_4_blocker_round_6_never_runs_and_a_round_5_blocker_ends_in_the_cap_waiver() {
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    doc_note(p);
+    let mut tips = vec![head(p)];
+    for n in 1..=4 {
+        ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+        if n == 4 {
+            let o = write_cr(p, &["--verdict", "WAIVED"]);
+            refused(&o, &["review cap", "round 4 of 5"]);
+            assert_eq!(note(p, "cr", "HEAD")["verdict"], "FAIL", "below the cap no waiver is written");
+        }
+        tips.push(step(p, n + 1));
+        doc_note(p);
+    }
+    assert!(text(&ok(preflight(p))).contains(&last_fix(5, 5, &tips[3], &tips[4])));
+    let findings = r#"[{"location": "src/a.py:2", "claim": "a() returns 5", "severity": "blocker", "evidence": "e"},
+        {"location": "src/a.py:1", "claim": "a() has no contract", "severity": "blocker", "evidence": "e"},
+        {"location": "src/a.py:1", "claim": "named badly", "severity": "important", "evidence": "e", "waived": "owner: fine"}]"#;
+    let o = ok(write_cr(p, &["--verdict", "FAIL", "--findings", findings]));
+    assert!(text(&o).contains("review cap reached") && text(&o).contains("keel notes write cr --verdict WAIVED"), "{}", text(&o));
+    let n = note(p, "cr", "HEAD");
+    assert_eq!((n["blockers"].as_u64(), n["importants"].as_u64(), n["round"].as_u64()), (Some(2), Some(0), Some(5)), "counts come from the findings: {n}");
+    ok(write_cr(p, &["--verdict", "WAIVED"]));
+    let n = note(p, "cr", "HEAD");
+    assert_eq!((n["verdict"].as_str(), n["waiver"].as_str(), n["blockers"].as_u64(), n["round"].as_u64()), (Some("WAIVED"), Some("review cap: 5 rounds, 2 blockers open"), Some(2), Some(5)), "{n}");
+    assert_eq!(n["findings"][0]["claim"], "a() returns 5", "the round's findings stay on the waiver: {n}");
+
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    assert_red(&o, "8·manual-review");
+    assert!(text(&o).contains("WAIVED 3·review: review cap: 5 rounds, 2 blockers open") && text(&o).contains("- 1 failed"), "{}", text(&o));
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"]);
+    refused(&o, &["review cap: 5 rounds, 2 blockers open", "--accept-waiver", "blocker src/a.py:2: a() returns 5"]);
+    let t = text(&o);
+    assert!(row(&t, &tips[4]).contains(&format!("[round 5, since {}]", &tips[3][..10])), "{t}");
+    assert!(row(&t, &tips[2]).contains(&format!("[round 3, since {}]", &tips[1][..10])), "{t}");
+    assert!(row(&t, &tips[1]).contains("[round 2, full]") && row(&t, &tips[0]).contains("[round 1, full]"), "{t}");
+    sign_waived(p, "wu", "docs/a.html");
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+
+    // Round 6 never runs, not even under a higher cap the branch commits for itself.
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    write(p, ".keel/config.toml", &format!("{cfg}[review]\nmax_rounds = 9\n"));
+    commit(p, "a cap of the branch's own");
+    step(p, 6);
+    let o = preflight(p);
+    assert_red(&o, "0·review-cap");
+    assert!(text(&o).contains("round 6"), "{}", text(&o));
+    refused(&write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]), &["round 6"]);
+    assert!(!has_note(p, "cr", "HEAD"));
+}
+
+#[test]
+fn max_rounds_on_the_target_moves_the_cap() {
+    let d = fixture();
+    let p = d.path();
+    git(p, &["switch", "-q", "epic/e"]);
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    write(p, ".keel/config.toml", &format!("{cfg}[review]\nmax_rounds = 6\n"));
+    commit(p, "the target's cap");
+    git(p, &["switch", "-q", "wu/e/a"]);
+    test_note(p);
+    assert!(text(&ok(preflight(p))).contains("review round 1 of 6"));
+    for n in 1..=5 {
+        ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+        step(p, n + 1);
+    }
+    assert!(text(&ok(preflight(p))).contains("review round 6 of 6"));
+    let o = ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    assert!(text(&o).contains("review cap reached"), "{}", text(&o));
+    ok(write_cr(p, &["--verdict", "WAIVED"]));
+    assert_eq!(note(p, "cr", "HEAD")["waiver"], "review cap: 6 rounds, 1 blockers open");
+}
+
+#[test]
+fn a_merged_wus_rounds_do_not_count_for_its_epic() {
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    doc_note(p);
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    step(p, 2);
+    doc_note(p);
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    step(p, 3);
+    doc_note(p);
+    ok(write_cr(p, &["--verdict", "PASS"]));
+    assert_eq!(note(p, "cr", "HEAD")["round"], 3);
+    sign(p, "wu", "docs/a.html");
+    git(p, &["switch", "-q", "epic/e"]);
+    ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"], ""));
+    write(p, "docs/result.html", "<p>result</p>");
+    commit(p, "close epic");
+    ok(run(env!("CARGO_BIN_EXE_keel"), p, &["notes", "write", "test"], EPIC_TESTS));
+    let o = ok(keel(p, &["preflight", "epic", "epic/e"]));
+    assert!(text(&o).contains(&whole(1, 5, &git(p, &["merge-base", "main", "HEAD"]), &head(p))), "{}", text(&o));
+    ok(write_cr(p, &["--verdict", "PASS"]));
+    assert_eq!(note(p, "cr", "HEAD")["round"], 1);
+}
+
+#[test]
+fn the_writer_records_the_rounds_lists_and_takes_the_counts_from_its_findings() {
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    let findings = r#"[{"location": "src/a.py:2", "claim": "wrong", "severity": "blocker", "evidence": "e"},
+        {"location": "src/a.py:1", "claim": "costly", "severity": "important", "evidence": "e", "waived": "owner: tracked as B9"}]"#;
+    let refuted = r#"[{"location": "src/a.py:1", "claim": "slow", "why": "src/a.py:1 is O(1)"}]"#;
+    let nits = r#"[{"location": "src/a.py:1", "finding": "naming", "waived": "taste"}]"#;
+    let fleet = r#"{"dimensions": ["correctness", "efficiency"], "finders": 2}"#;
+    for (args, needle) in [
+        (&["--verdict", "PASS", "--findings", findings][..], "blocker"),
+        (&["--verdict", "FAIL", "--findings", findings, "--blockers", "0"], "--blockers"),
+        (&["--verdict", "FAIL", "--findings", findings, "--importants", "1"], "--importants"),
+        (&["--verdict", "FAIL", "--findings", "\"prose\""], "--findings"),
+        (&["--verdict", "FAIL", "--refuted", "{}"], "--refuted"),
+        (&["--verdict", "FAIL", "--nits", "[1"], "--nits"),
+        (&["--verdict", "FAIL", "--fleet", "[]"], "--fleet"),
+        (&["--verdict", "FAIL", "--findings", r#"[{"claim": "x", "severity": "nit"}]"#], "severity"),
+        (&["--verdict", "FAIL", "--findings", "--nits", "[]"], "--findings"),
+    ] {
+        let o = write_cr(p, args);
+        assert!(!o.status.success() && text(&o).contains(needle), "{args:?}: {}", text(&o));
+        assert!(!has_note(p, "cr", "HEAD"), "{args:?} wrote a note");
+    }
+    ok(write_cr(p, &["--verdict", "FAIL", "--findings", findings, "--refuted", refuted, "--nits", nits, "--fleet", fleet, "--blockers", "1"]));
+    let n = note(p, "cr", "HEAD");
+    assert_eq!((n["blockers"].as_u64(), n["importants"].as_u64()), (Some(1), Some(0)), "a waived important is not open: {n}");
+    assert_eq!((n["findings"][1]["waived"].as_str(), n["refuted"][0]["why"].as_str(), n["nits"][0]["finding"].as_str(), n["fleet"]["finders"].as_u64()),
+        (Some("owner: tracked as B9"), Some("src/a.py:1 is O(1)"), Some("naming"), Some(2)), "{n}");
+
+    // A fix-PASS ran no reviewers: it records none of the lists.
+    step(p, 2);
+    ok(write_cr(p, &["--verdict", "PASS"]));
+    let c2 = head(p);
+    step(p, 3);
+    for list in ["--findings", "--refuted", "--nits"] {
+        refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c2, list, "[]"]), &[list]);
+    }
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c2, "--fleet", "{}"]), &["--fleet"]);
+}
+
+#[test]
+fn an_unreadable_earlier_note_stops_the_schedule_and_shows_in_the_history() {
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    git(p, &["notes", "--ref=cr", "add", "-f", "-m", "{not json", "HEAD"]);
+    let c1 = head(p);
+    step(p, 2);
+    let o = preflight(p);
+    assert_red(&o, "0·review-cap");
+    assert!(text(&o).contains(&c1[..10]) && text(&o).contains("unreadable"), "{}", text(&o));
+    refused(&write_cr(p, &["--verdict", "PASS"]), &[&c1[..10], "unreadable"]);
+    assert!(!has_note(p, "cr", "HEAD"));
+
+    // A note git lists but cannot print (its blob is gone) is an unreadable row, never dropped.
+    git(p, &["notes", "--ref=cr", "add", "-f", "-m", r#"{"lost": true}"#, &c1]);
+    let blob = git(p, &["notes", "--ref=cr", "list", &c1]);
+    std::fs::remove_file(p.join(".git/objects").join(&blob[..2]).join(&blob[2..])).unwrap();
+    doc_note(p);
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING]);
+    assert!(row(&text(&o), &c1).contains("unreadable"), "{}", text(&o));
+}
+
+#[test]
+fn a_notes_ref_git_cannot_list_is_an_error_never_no_note() {
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    doc_note(p);
+    let blob = run("git", p, &["hash-object", "-w", "--stdin"], "not a notes tree");
+    let blob = String::from_utf8_lossy(&blob.stdout).trim().to_string();
+    git(p, &["update-ref", "refs/notes/cr", &blob]);
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING]);
+    let t = text(&o);
+    assert!(!o.status.success() && !t.contains("is WAIVED:") && t.contains("notes --ref=cr list"), "{t}");
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("1·notes") && t.contains("cannot be read") && !t.contains("no cr/v1 note"), "{t}");
+}
+
+#[test]
+fn the_archived_doc_list_ignores_the_signature_lines_git_log_would_print() {
+    let d = fixture();
+    let p = d.path();
+    let k = TempDir::new().unwrap();
+    ok(run("ssh-keygen", k.path(), &["-q", "-t", "ed25519", "-N", "", "-f", "signer"], ""));
+    let key = k.path().join("signer");
+    let public = std::fs::read_to_string(k.path().join("signer.pub")).unwrap();
+    std::fs::write(k.path().join("signers"), format!("t@t {}\n", public.split_whitespace().take(2).collect::<Vec<_>>().join(" "))).unwrap();
+    for (k_, v) in [("gpg.format", "ssh"), ("user.signingkey", key.to_str().unwrap()), ("gpg.ssh.allowedSignersFile", k.path().join("signers").to_str().unwrap())] {
+        git(p, &["config", k_, v]);
+    }
+    write(p, "docs/work/plan.html", "<p>plan</p>");
+    commit(p, "wu plan");
+    git(p, &["rm", "-q", "docs/work/plan.html"]);
+    write(p, "docs/decisions/d.html", "<p>why</p>");
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-q", "-S", "-m", "signed: distill + archive the plan"]);
+    git(p, &["config", "log.showSignature", "true"]);
+    let shown = git(p, &["log", "-1"]);
+    assert!(shown.to_lowercase().contains("signature"), "git log prints signature lines here: {shown}");
+    ok(keel(p, &["notes", "write", "doc", "--distill", "docs/work/plan.html=docs/decisions/d.html"]));
+    let n = note(p, "doc", "HEAD");
+    let paths: Vec<&str> = n["changes"].as_array().unwrap().iter().map(|c| c["path"].as_str().unwrap()).collect();
+    assert_eq!(paths, ["docs/a.html", "docs/decisions/d.html", "docs/work/plan.html"], "{n}");
+}
