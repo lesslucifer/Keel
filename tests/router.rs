@@ -2941,8 +2941,7 @@ fn launcher_starts_a_worker_on_project_settings_alone_with_no_mcp_server() {
             prompt.contains(&format!(
                 "First action: git rev-parse --show-toplevel must print {} (",
                 l.wt.canonicalize().unwrap().display()
-            ))
-                && prompt.contains("(if it prints anything else, report that and stop)")
+            )) && prompt.contains("(if it prints anything else, report that and stop)")
                 && !prompt.contains("grep ^GIT_"),
             "{prompt}"
         );

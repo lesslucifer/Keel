@@ -370,6 +370,7 @@ for c in "keel mr" "cargo run" "keel init" "keel hooks" "cargo install" "cargo p
   "git rebase" "git worktree add" "git worktree remove" "git worktree move" "git worktree prune" "git -C" \
   "git --git-dir" "git --work-tree" "claude" "scripts/router-worker.sh"; do
   set -- "$@" "Bash($c)" "Bash($c *)"; done
+set -- "$@" "Bash(git --git-dir=*)" "Bash(git --work-tree=*)"
 if [ -n "$review" ]; then set -- "$@" "Bash(git add)" "Bash(git add *)" "Bash(git commit)" "Bash(git commit *)" Edit Write NotebookEdit
 else set -- "$@" "Bash(keel notes write cr)" "Bash(keel notes write cr *)"; fi
 # the prompt follows a single-valued option: after a list option it would be read as a tool name
