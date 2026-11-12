@@ -19,11 +19,15 @@ pub struct Identity {
 }
 
 impl Identity {
+    /// An identity with every field empty: a placeholder the writer replaces before storing.
+    pub(crate) fn blank() -> Identity {
+        Identity { tip: String::new(), base: String::new(), branch: None, committer: String::new(), timestamp: 0 }
+    }
+
     /// The JSON keys the identity block flattens into every note, from the type itself: whoever
     /// strips the identity from a note (the waiver code) never keeps its own copy of the list.
     pub(crate) fn keys() -> Vec<String> {
-        let blank = Identity { tip: String::new(), base: String::new(), branch: None, committer: String::new(), timestamp: 0 };
-        serde_json::to_value(blank).ok().and_then(|v| v.as_object().map(|m| m.keys().cloned().collect())).unwrap_or_default()
+        serde_json::to_value(Identity::blank()).ok().and_then(|v| v.as_object().map(|m| m.keys().cloned().collect())).unwrap_or_default()
     }
 }
 
@@ -156,12 +160,14 @@ pub(crate) fn waive(existing_raw: Option<&str>, id: Identity, reason: Option<&st
         let mut extra = serde_json::Map::new();
         extra.insert("unreviewed".into(), serde_json::Value::Bool(true));
         let walk_waivers = replaced.as_ref().map(|r| r.walk_waivers.iter().map(|w| WalkWaiver { seam: w.seam.clone(), why: w.why.clone() }).collect()).unwrap_or_default();
-        if let Some(r) = replaced {
+        if let Some(mut r) = replaced {
+            // One level of history: a note that itself replaced another drops that, never nesting deeper.
+            r.extra.remove("replaced");
             extra.insert("replaced".into(), serde_json::to_value(r).unwrap_or_default());
         }
         CrNote {
             schema: String::new(),
-            id: Identity { tip: String::new(), base: String::new(), branch: None, committer: String::new(), timestamp: 0 },
+            id: Identity::blank(),
             verdict: String::new(),
             waiver: None,
             blockers: 0,
@@ -793,6 +799,11 @@ mod tests {
                 assert_eq!(j["walk_waivers"][0]["seam"], "s", "{v}: seam waivers carried");
             }
         }
+        let once = waive(Some(&raw(&note("FAIL", "old", "old"))), id(), Some("r"), "h".into(), (None, None)).unwrap();
+        let twice = waive(Some(&raw(&once)), Identity { base: "newer".into(), ..id() }, Some("r"), "h2".into(), (None, None)).unwrap();
+        let j = serde_json::to_value(&twice).unwrap();
+        assert_eq!(j["replaced"]["waiver"], "r", "the last note is kept");
+        assert!(j["replaced"].get("replaced").is_none(), "never nested deeper: {j}");
         let (what, fix) = waive(Some(&raw(&note("PASS", "b", "h"))), id(), Some("ruling"), "h".into(), (None, None)).unwrap_err();
         assert!(what.contains("t012345678 is a PASS") && fix.contains("new review"), "{what} / {fix}");
         assert!(waive(Some(&raw(&note("PASS", "old", "old"))), id(), Some("r"), "h".into(), (None, None)).is_err(), "a stale PASS is not waived over either");

@@ -147,9 +147,10 @@ fn waiver_drift(signed: Option<&str>, current: Option<&str>, t: &str) -> Option<
 
 /// The cr notes on the first-parent commits of `base..tip`, newest first: every review the branch's
 /// own line of history recorded (an epic's merged WUs keep theirs on their own tips). One range-bound
-/// `git log`, never a listing of every note in the repository.
+/// `git log`, never a listing of every note in the repository, and never with the user's
+/// `log.showSignature`: its verification lines would land inside the previous record's note.
 fn review_history(repo: &Path, base: &str, tip: &str) -> Result<Vec<(String, CrNote)>, String> {
-    let out = git(repo, &["log", "--first-parent", "--notes=cr", "--format=%x1e%H%x1f%N", &format!("{base}..{tip}")], &[])?;
+    let out = git(repo, &["log", "--no-show-signature", "--first-parent", "--notes=cr", "--format=%x1e%H%x1f%N", &format!("{base}..{tip}")], &[])?;
     Ok(out
         .split('\x1e')
         .filter_map(|rec| rec.split_once('\x1f'))
@@ -162,7 +163,7 @@ fn review_history(repo: &Path, base: &str, tip: &str) -> Result<Vec<(String, CrN
 fn waiver_listing(tip: &str, cr: &CrNote, history: &[(String, CrNote)]) -> String {
     let mut out = format!("the review of {} is WAIVED: {}\n", short(tip), printable(cr.waiver().unwrap_or("").trim()));
     if cr.unreviewed() {
-        out.push_str("  open: not reviewed - no review ran on this tip, so what it would find is unknown\n");
+        out.push_str("  open: not reviewed - no review of this range ran on this tip, so what it would find is unknown\n");
     } else {
         out.push_str(&format!("  open: {} blockers, {} importants\n", cr.blockers, cr.importants));
     }
@@ -180,7 +181,7 @@ fn waiver_listing(tip: &str, cr: &CrNote, history: &[(String, CrNote)]) -> Strin
         out.push_str(&printable(&format!(
             "  replaces a {} note on this tip that judged another range (base {}); its counts and findings are not this tip's",
             old["verdict"].as_str().unwrap_or("?"),
-            base.get(..10).unwrap_or(base)
+            short(base)
         )));
         out.push('\n');
     }
@@ -198,12 +199,13 @@ fn waiver_listing(tip: &str, cr: &CrNote, history: &[(String, CrNote)]) -> Strin
 }
 
 /// Agent-written text made inert for a terminal, by an allowlist: printable ASCII but `\`, and
-/// Unicode letters and digits that render as themselves, pass; every other character - controls,
-/// format and invisible characters (bidi, zero-width, tags, variation selectors), separators, private
-/// use, unassigned code points, the invisible filler letters, and also non-ASCII punctuation, symbols
-/// and marks, for which std has no category test - is shown as `\u{..}`, and `\` as `\\`, so no
-/// recorded text can hide, reorder or redraw a line of the listing the signer confirms, or forge an
-/// escape.
+/// Unicode letters and digits that render as themselves (std's alphanumeric, which also takes the
+/// Alphabetic combining marks: they draw visible ink and cannot hide text), pass; every other
+/// character - controls, format and invisible characters (bidi, zero-width, tags, variation
+/// selectors), separators, private use, unassigned code points, the invisible filler letters, and
+/// also non-ASCII punctuation, symbols and the non-Alphabetic marks, for which std has no category
+/// test - is shown as `\u{..}`, and `\` as `\\`, so no recorded text can hide, reorder or redraw a
+/// line of the listing the signer confirms, or forge an escape.
 fn printable(s: &str) -> String {
     let shown = |c: char| (c.is_ascii_graphic() && c != '\\') || c == ' ' || (!c.is_ascii() && c.is_alphanumeric() && !matches!(c, '\u{115f}' | '\u{1160}' | '\u{3164}' | '\u{ffa0}'));
     s.chars()
