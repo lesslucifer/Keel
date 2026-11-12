@@ -1398,3 +1398,45 @@ fn the_archived_doc_list_ignores_the_signature_lines_git_log_would_print() {
     let paths: Vec<&str> = n["changes"].as_array().unwrap().iter().map(|c| c["path"].as_str().unwrap()).collect();
     assert_eq!(paths, ["docs/a.html", "docs/decisions/d.html", "docs/work/plan.html"], "{n}");
 }
+
+/// Independent text review round 1, I: a later commit that changes no code path since the last cr
+/// note needs no round: the fix-PASS carries over it, even on top of a fix-PASS; a code change does not.
+#[test]
+fn a_commit_that_changes_no_code_since_the_last_cr_note_gets_a_fix_pass_even_on_a_fix_pass() {
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    ok(write_cr(p, &["--verdict", "PASS", "--nits", r#"[{"location": "src/a.py:1", "finding": "naming", "fixed": "renamed"}]"#]));
+    let c1 = head(p);
+    step(p, 2);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1]));
+    write(p, "docs/a.html", "<p>a, with its result</p>");
+    commit(p, "the result report, after the fix-PASS");
+    test_note(p);
+    doc_note(p);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1]));
+    let n = note(p, "cr", "HEAD");
+    assert_eq!((n["fixes"].as_str(), n["round"].as_u64()), (Some(c1.as_str()), Some(1)), "{n}");
+    assert_red(&keel(p, &["verify-dod", "wu", "wu/e/a"]), "8·manual-review");
+    sign(p, "wu", "docs/a.html");
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+
+    // A code change after it is a second fix: it needs a round.
+    step(p, 3);
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c1]), &["fix-PASS", "second fix"]);
+    assert!(!has_note(p, "cr", "HEAD"));
+}
+
+/// A failed round stays failed: a docs-only commit after it fixes nothing, so it gets no PASS.
+#[test]
+fn a_commit_that_changes_no_code_after_a_failed_round_gets_no_fix_pass_it_could_not_get_anyway() {
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "1"]));
+    let c1 = head(p);
+    write(p, "docs/a.html", "<p>a, reworded</p>");
+    commit(p, "docs only");
+    test_note(p);
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c1]), &["round 1", "importants"]);
+}
