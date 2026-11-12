@@ -901,8 +901,8 @@ fn a_tip_without_a_waiver_signs_byte_for_byte_as_today() {
     std::fs::write(v.path().join("signers"), format!("vu {}\n", pubkey.split_whitespace().take(2).collect::<Vec<_>>().join(" "))).unwrap();
     std::fs::write(v.path().join("sig"), m["sig"].as_str().unwrap()).unwrap();
     std::fs::write(v.path().join("payload"), &payload).unwrap();
-    let sh = format!("ssh-keygen -Y verify -f signers -I vu -n keel-mr -s sig < payload");
-    ok(run("sh", v.path(), &["-c", &sh]));
+    let sh = "ssh-keygen -Y verify -f signers -I vu -n keel-mr -s sig < payload";
+    ok(run("sh", v.path(), &["-c", sh]));
     // And a note signed over today's payload by the key holder is accepted by check 8.
     forge(p, "wu/e/a", "epic/e", "vu", "key", Some(k.path().join("id").to_str().unwrap()));
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));

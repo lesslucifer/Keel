@@ -1,7 +1,7 @@
 //! `keel mr setup|commit|confirm`, the committed signer roster `.keel/mr-allowed`, gate check 8 and
 //! the commit-msg `Reviewed-By` check (UC-MR-1/2, DEC-47). Ported from Trawler's xtask/src/mr.rs
 //! (DEC-9/10/27): stock `ssh-keygen -Y` signatures, verified offline against the roster.
-use crate::notes::{self, MrNote};
+use crate::notes::{self, CrNote, MrNote};
 use crate::{gate, git, git_dir, no_git_env, verify_doc, Config, ReportPolicy};
 use std::io::Write;
 use std::path::Path;
@@ -114,14 +114,85 @@ fn keys_of<'a>(allowed: &'a [Entry], id: &str) -> Vec<&'a str> {
 }
 
 /// The bytes a key-backed sign-off signs: versioned, labelled, one field per line, and bound to the
-/// level, the range (base, tip) and the attested report, if any - with none, the report lines are
-/// absent, so the signature never covers a placeholder. Never read back from a note - always rebuilt.
-fn payload(level: &str, base: &str, tip: &str, change: &str, report: Option<(&str, &str)>) -> String {
+/// level, the range (base, tip), the attested report, if any, and the accepted review waiver, if any -
+/// with none, those lines are absent, so the signature never covers a placeholder and a sign-off with
+/// no waiver signs exactly the bytes it always has. Never read back from a note - always rebuilt.
+fn payload(level: &str, base: &str, tip: &str, change: &str, report: Option<(&str, &str)>, waiver: Option<&str>) -> String {
     let mut p = format!("keel-mr/v2\nlevel: {level}\nbase: {base}\ntip: {tip}\nchange: {change}\n");
     if let Some((path, hash)) = report {
         p.push_str(&format!("report: {path}\nreport_hash: {hash}\n"));
     }
+    if let Some(hash) = waiver {
+        p.push_str(&format!("review: WAIVED {hash}\n"));
+    }
     p
+}
+
+/// `sha256:<hex>` of the waiver reason on `tip`'s cr note, if its review is WAIVED: what a sign-off
+/// accepts with `--accept-waiver`, and what check 8 rebuilds.
+fn waiver_hash(repo: &Path, tip: &str) -> Option<String> {
+    notes::cr_note(repo, tip)?.waiver().map(|w| sha256(w.as_bytes()))
+}
+
+/// Check 8's waiver rule: the waiver the sign-off accepted (`signed`) is the one the cr note carries
+/// now (`current`). `Some(cause)` when they differ.
+fn waiver_drift(signed: Option<&str>, current: Option<&str>, t: &str) -> Option<String> {
+    match (signed, current) {
+        (Some(s), Some(c)) if s != c => Some(format!("the review waiver on {t} was reworded after the sign-off accepted it")),
+        (None, Some(_)) => Some(format!("the review on {t} is WAIVED, but its sign-off accepted no waiver (the waiver was written after signing)")),
+        (Some(_), None) => Some(format!("the sign-off on {t} accepted a review waiver that the cr note no longer carries")),
+        _ => None,
+    }
+}
+
+/// The cr notes on the first-parent commits of `base..tip`, newest first: every review the branch's
+/// own line of history recorded (an epic's merged WUs keep theirs on their own tips).
+fn review_history(repo: &Path, base: &str, tip: &str) -> Result<Vec<(String, CrNote)>, String> {
+    let noted: std::collections::HashSet<String> =
+        git(repo, &["notes", "--ref=cr", "list"], &[]).unwrap_or_default().lines().filter_map(|l| l.split_whitespace().nth(1)).map(String::from).collect();
+    let line = git(repo, &["rev-list", "--first-parent", &format!("{base}..{tip}")], &[])?;
+    Ok(line.lines().filter(|c| noted.contains(*c)).filter_map(|c| notes::cr_note(repo, c).map(|n| (c.to_string(), n))).collect())
+}
+
+/// What the signer reads before accepting a waiver: the reason, the findings left open, every round.
+fn waiver_listing(tip: &str, cr: &CrNote, history: &[(String, CrNote)]) -> String {
+    let mut out = format!(
+        "the review of {} is WAIVED: {}\n  open: {} blockers, {} importants\n",
+        short(tip),
+        cr.waiver().unwrap_or("").trim(),
+        cr.blockers,
+        cr.importants
+    );
+    for f in cr.open_findings.as_array().into_iter().flatten() {
+        let line = match (f["severity"].as_str(), f["finding"].as_str(), f.as_str()) {
+            (Some(s), Some(t), _) => format!("{s}: {t}"),
+            (None, Some(t), _) | (_, _, Some(t)) => t.to_string(),
+            _ => f.to_string(),
+        };
+        out.push_str(&format!("    - {line}\n"));
+    }
+    out.push_str("  review history (newest first):\n");
+    for (c, n) in history {
+        let why = n.waiver().map(|w| format!(" - {}", w.trim())).unwrap_or_default();
+        out.push_str(&format!("    {} {} blockers {} importants {}{why}\n", short(c), n.verdict, n.blockers, n.importants));
+    }
+    out
+}
+
+/// `keel mr confirm`'s positional arguments: every flag takes a value except the two acknowledgements.
+fn positionals<'a>(args: &[&'a str]) -> Vec<&'a str> {
+    let (mut pos, mut i) = (vec![], 0);
+    while i < args.len() {
+        match args[i] {
+            "--roster-change" | "--accept-waiver" => i += 1,
+            a if a.starts_with('-') => i += 2,
+            a => {
+                pos.push(a);
+                i += 1;
+            }
+        }
+    }
+    pos
 }
 
 /// The docs whose `data-artifact` carries the level's result role: html under docs.root changed in
@@ -370,19 +441,8 @@ fn landed(tip: &str, base: &str, target: &str) -> Option<String> {
 }
 
 fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
-    const USAGE: &str = "usage: keel mr confirm <wu|epic> [<tip>] [--as <identity>] [--target R] [--report <path>] [--roster-change]";
-    let mut pos = vec![];
-    let mut i = 0;
-    while i < args.len() {
-        if args[i] == "--roster-change" {
-            i += 1;
-        } else if args[i].starts_with('-') {
-            i += 2;
-        } else {
-            pos.push(args[i]);
-            i += 1;
-        }
-    }
+    const USAGE: &str = "usage: keel mr confirm <wu|epic> [<tip>] [--as <identity>] [--target R] [--report <path>] [--roster-change] [--accept-waiver]";
+    let pos = positionals(args);
     let (level, tip_ref) = match pos[..] {
         [l] => (l, "HEAD"),
         [l, t] => (l, t),
@@ -425,6 +485,18 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         );
         return Ok(1);
     }
+    // A waived review meets the signer here: shown with every round, never signed by default (UC-REV-2).
+    let waiver = match notes::cr_note(repo, &tip).filter(|n| n.waiver().is_some()) {
+        Some(cr) => {
+            eprint!("{}", waiver_listing(&tip, &cr, &review_history(repo, &base, &tip)?));
+            if !args.contains(&"--accept-waiver") {
+                eprintln!("mr confirm refused - the review of {} did not pass; it was waived\n  fix -> if you accept the waiver above, re-run with --accept-waiver", short(&tip));
+                return Ok(1);
+            }
+            waiver_hash(repo, &tip)
+        }
+        None => None,
+    };
     let report = match pick_report(repo, cfg, args, &base, &tip, epic) {
         Ok(r) => r,
         Err((what, fix)) => {
@@ -446,7 +518,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     let sig = if tier == "key" {
         let key = git(repo, &["config", "--get", "keel.signingkey"], &[])
             .map_err(|_| format!("keel mr: {id} is key-backed but no signing key is configured\n  fix -> keel mr setup --as {id} --key <path>"))?;
-        let data = payload(level, &base, &tip, &change, attested);
+        let data = payload(level, &base, &tip, &change, attested, waiver.as_deref());
         eprintln!("signing the {level} {tip_ref} ({}) and {what} as {id} ...", short(&tip));
         let sig = sign(&key, &data)?;
         if !verify(repo, &id, &keys_of(&allowed, &id), &data, &sig) {
@@ -465,11 +537,13 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         tier: tier.clone(),
         report,
         report_hash,
+        waiver_hash: waiver.clone(),
         change_hash: change,
         sig,
     };
     notes::store(repo, "mr", &tip, &note)?;
-    println!("mr/v1 on {} - {tier} {id} attests {what}", short(&tip));
+    let accepted = if waiver.is_some() { " and accepts the review waiver" } else { "" };
+    println!("mr/v1 on {} - {tier} {id} attests {what}{accepted}", short(&tip));
     Ok(0)
 }
 
@@ -505,6 +579,10 @@ pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, b
     if n.change_hash != change {
         return again(stale_change(&n.change_hash, &format!("{}..{t}", short(base))));
     }
+    let waiver = waiver_hash(repo, tip);
+    if let Some(cause) = waiver_drift(n.waiver_hash.as_deref(), waiver.as_deref(), t) {
+        return again(cause);
+    }
     let attested = match (&n.report, &n.report_hash) {
         (Some(r), Some(h)) => Some((r.as_str(), h.as_str())),
         (None, None) => None,
@@ -529,7 +607,7 @@ pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, b
             let Some(sig) = &n.sig else {
                 return again(format!("{} is key-backed in {roster}, but the note on {t} carries no signature", n.signer));
             };
-            let data = payload(level, base, tip, &change, attested);
+            let data = payload(level, base, tip, &change, attested, waiver.as_deref());
             if !verify(repo, &n.signer, &keys_of(&allowed, &n.signer), &data, sig) {
                 return again(format!("{t}'s mr/v1 signature by {} does not verify over base..tip and the attested report against {roster}", n.signer));
             }
@@ -600,7 +678,8 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{landed, parse_roster, payload, roster_change, rule_bearing, sha256, stale_change};
+    use super::{landed, parse_roster, payload, positionals, roster_change, rule_bearing, sha256, stale_change, waiver_drift, waiver_listing};
+    use crate::notes::CrNote;
 
     fn lcg(x: &mut u64) -> u64 {
         *x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
@@ -711,10 +790,70 @@ mod tests {
 
     #[test]
     fn payload_v2_carries_the_report_lines_exactly_when_a_report_is_attested() {
-        let with = payload("wu", "b", "t", "c", Some(("docs/r.html", "h")));
+        let with = payload("wu", "b", "t", "c", Some(("docs/r.html", "h")), None);
         assert_eq!(with, "keel-mr/v2\nlevel: wu\nbase: b\ntip: t\nchange: c\nreport: docs/r.html\nreport_hash: h\n");
-        let without = payload("epic", "b", "t", "c", None);
+        let without = payload("epic", "b", "t", "c", None, None);
         assert_eq!(without, "keel-mr/v2\nlevel: epic\nbase: b\ntip: t\nchange: c\n");
         assert!(!without.contains("report"));
+    }
+
+    #[test]
+    fn the_payload_gains_the_review_line_exactly_when_a_waiver_is_accepted() {
+        for report in [None, Some(("docs/r.html", "h"))] {
+            let plain = payload("wu", "b", "t", "c", report, None);
+            let waived = payload("wu", "b", "t", "c", report, Some("sha256:ab"));
+            assert_eq!(waived, format!("{plain}review: WAIVED sha256:ab\n"), "the line is appended, every earlier byte unchanged");
+            assert!(!plain.contains("review"), "{plain}");
+        }
+    }
+
+    #[test]
+    fn check_8_holds_the_sign_off_to_the_waiver_the_note_carries_now() {
+        assert_eq!(waiver_drift(None, None, "t"), None);
+        assert_eq!(waiver_drift(Some("sha256:a"), Some("sha256:a"), "t"), None);
+        for (signed, current, needle) in [
+            (Some("sha256:a"), Some("sha256:b"), "reworded"),
+            (None, Some("sha256:b"), "accepted no waiver"),
+            (Some("sha256:a"), None, "no longer carries"),
+        ] {
+            let cause = waiver_drift(signed, current, "t").unwrap_or_else(|| panic!("{signed:?} {current:?} passed"));
+            assert!(cause.contains(needle) && cause.contains("waiver"), "{cause}");
+        }
+    }
+
+    #[test]
+    fn confirm_reads_its_acknowledgement_flags_as_valueless() {
+        assert_eq!(positionals(&["wu", "--accept-waiver", "--as", "vu"]), ["wu"]);
+        assert_eq!(positionals(&["--roster-change", "epic", "tip", "--report", "r.html", "--accept-waiver"]), ["epic", "tip"]);
+        assert_eq!(positionals(&["wu", "--target", "epic/e", "t"]), ["wu", "t"]);
+    }
+
+    #[test]
+    fn the_waiver_listing_shows_the_reason_the_open_findings_and_every_round() {
+        let cr = |v: &str, extra: serde_json::Value| -> CrNote {
+            let mut j = serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c",
+                "timestamp": 0, "verdict": v, "blockers": 1, "importants": 0, "code_diff_hash": "h"});
+            j.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            serde_json::from_value(j).unwrap()
+        };
+        let tip = cr("WAIVED", serde_json::json!({"waiver": "review cap: 5 rounds, 1 blockers open",
+            "open_findings": [{"severity": "blocker", "finding": "a() is wrong"}, "bare text", {"finding": "no severity"}, 7]}));
+        let history = vec![("1111111111aa".to_string(), cr("WAIVED", serde_json::json!({"waiver": "review cap: 5 rounds, 1 blockers open"}))), ("2222222222bb".to_string(), cr("FAIL", serde_json::json!({})))];
+        let l = waiver_listing("1111111111aa", &tip, &history);
+        for needle in [
+            "the review of 1111111111 is WAIVED: review cap: 5 rounds, 1 blockers open",
+            "open: 1 blockers, 0 importants",
+            "- blocker: a() is wrong",
+            "- bare text",
+            "- no severity",
+            "- 7",
+            "1111111111 WAIVED blockers 1 importants 0 - review cap",
+            "2222222222 FAIL blockers 1 importants 0\n",
+        ] {
+            assert!(l.contains(needle), "missing '{needle}' in:\n{l}");
+        }
+        assert!(l.find("1111111111 WAIVED").unwrap() < l.find("2222222222 FAIL").unwrap(), "newest first");
+        let bare = waiver_listing("t", &cr("WAIVED", serde_json::json!({"waiver": "r"})), &[]);
+        assert!(!bare.contains("    - "), "no open_findings, no finding lines: {bare}");
     }
 }

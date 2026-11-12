@@ -44,6 +44,8 @@ struct Report {
     exempt: bool,
     failures: Vec<Failure>,
     waived: Vec<String>,
+    /// The tip's own review was waived: its reason, for the dod receipt.
+    review_waiver: Option<String>,
 }
 
 impl Report {
@@ -65,7 +67,7 @@ fn open(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) ->
     let base = git(repo, &["merge-base", target, &tip], &[])?;
     let names = notes::names(repo, &base, &tip, &[])?;
     let exempt = notes::exempt(repo, cfg, &base, &tip, &names)?;
-    let r = Report { level, tip_ref: tip_ref.into(), tip, base, exempt, failures: vec![], waived: vec![] };
+    let r = Report { level, tip_ref: tip_ref.into(), tip, base, exempt, failures: vec![], waived: vec![], review_waiver: None };
     Ok((r, names))
 }
 
@@ -79,7 +81,7 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
             let fix = match kind {
                 "test" => format!("keel notes write test{t} < judgment.json   (on {})", short(&r.tip)),
                 "doc" => format!("keel notes write doc{t}   (on {})", short(&r.tip)),
-                _ => format!("run the code review on {}, then keel notes write cr --verdict PASS", short(&r.tip)),
+                _ => format!("run the code review on {}, then keel notes write cr --verdict PASS   (or record the owner's waiver: --verdict WAIVED --reason \"<ruling>\")", short(&r.tip)),
             };
             r.fail("1·notes", format!("no {schema} note on {}", short(&r.tip)), fix);
         }
@@ -130,8 +132,13 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
 
     // 3-5: the review verdict, its base, its binding to the code diff.
     if let Some(cr) = &cr {
-        if cr.verdict != "PASS" {
-            r.fail("3·review", format!("review verdict is {}", cr.verdict), "fix the verified findings and re-run the review until PASS");
+        match review_verdict(cr) {
+            Ok(None) => {}
+            Ok(Some(why)) => {
+                r.waived.push(format!("3·review: {why}"));
+                r.review_waiver = Some(why.into());
+            }
+            Err((what, fix)) => r.fail("3·review", what, fix),
         }
         if cr.id.base != r.base {
             r.fail(
@@ -149,6 +156,19 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
         doc_note(repo, cfg, r, &docs, doc);
     }
     Ok(())
+}
+
+/// 3·review's rule: PASS passes; WAIVED passes with its reason (`Ok(Some)`), never without one.
+fn review_verdict(cr: &CrNote) -> Result<Option<&str>, (String, &'static str)> {
+    match (cr.verdict.as_str(), cr.waiver().map(str::trim)) {
+        ("PASS", _) => Ok(None),
+        (_, Some(why)) if !why.is_empty() => Ok(Some(why)),
+        (_, Some(_)) => Err((
+            "review verdict is WAIVED with no reason".into(),
+            "record the waiver with its reason: keel notes write cr --verdict WAIVED --reason \"<the owner's ruling>\"",
+        )),
+        (v, None) => Err((format!("review verdict is {v}"), "fix the verified findings and re-run the review until PASS")),
+    }
 }
 
 /// 6·doc-note: every doc listed with its config tier, nothing phantom, archived T3 with lineage.
@@ -204,18 +224,20 @@ fn verify(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) 
 
 /// 7·walk: every first-parent seam since the base must pass its own gate.
 fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), String> {
-    let waivers = git(repo, &["notes", "--ref=cr", "show", &r.tip], &[])
-        .ok()
-        .and_then(|raw| serde_json::from_str::<CrNote>(&raw).ok())
-        .map(|n| n.walk_waivers)
-        .unwrap_or_default();
+    let waivers = notes::cr_note(repo, &r.tip).map(|n| n.walk_waivers).unwrap_or_default();
     let lines = git(repo, &["rev-list", "--first-parent", "--parents", &format!("{}..{}", r.base, r.tip)], &[])?;
     for line in lines.lines() {
         let p: Vec<&str> = line.split_whitespace().collect();
         let (seam, failures, level) = match p.as_slice() {
             // Parent 2 already reachable from the mainline or the target: a back-merge, not a seam.
             [_, main, wu] if is_ancestor(repo, wu, main) || is_ancestor(repo, wu, target) => continue,
-            [m, main, wu] => (*m, verify(repo, cfg, Level::Wu, wu, main)?.failures, "wu"),
+            [m, main, wu] => {
+                let seam = verify(repo, cfg, Level::Wu, wu, main)?;
+                if seam.failures.is_empty() {
+                    r.waived.extend(seam.waived.iter().map(|w| format!("7·walk [wu {}] {w}", short(m))));
+                }
+                (*m, seam.failures, "wu")
+            }
             [c, _] if *c == r.tip => continue, // the epic's own checks cover its tip
             [c, first] => (*c, verify(repo, cfg, Level::Commit, c, first)?.failures, "commit"),
             [m, ..] if p.len() > 3 => {
@@ -303,6 +325,8 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, gua
             diff_hash,
             report: attested.as_ref().map(|(r, _)| r.clone()),
             report_hash: attested.map(|(_, h)| h),
+            review: r.review_waiver.is_some().then(|| "WAIVED".into()),
+            waiver: r.review_waiver.clone(),
         };
         notes::store(repo, "dod", &r.tip, &note)?;
     }
@@ -472,5 +496,37 @@ pub fn preflight_cmd(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, St
             preflight(repo, cfg, level, tip, &target_of(cfg, level, tip, rest))
         }
         _ => Err(USAGE.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::review_verdict as review;
+    use crate::notes::CrNote;
+
+    fn cr(verdict: &str, waiver: Option<&str>) -> CrNote {
+        let mut j = serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c",
+            "timestamp": 0, "verdict": verdict, "blockers": 0, "importants": 0, "code_diff_hash": "h"});
+        if let Some(w) = waiver {
+            j["waiver"] = w.into();
+        }
+        serde_json::from_value(j).unwrap()
+    }
+
+    #[test]
+    fn check_3_passes_a_pass_and_a_reasoned_waiver_only() {
+        assert_eq!(review(&cr("PASS", None)), Ok(None));
+        assert_eq!(review(&cr("PASS", Some("stray"))), Ok(None));
+        assert_eq!(review(&cr("WAIVED", Some("  owner ruling  "))), Ok(Some("owner ruling")));
+        for (v, w, needle) in [
+            ("WAIVED", None, "no reason"),
+            ("WAIVED", Some(" \n"), "no reason"),
+            ("FAIL", None, "verdict is FAIL"),
+            ("FAIL", Some("a reason on a FAIL waives nothing"), "verdict is FAIL"),
+            ("CAPPED", Some("unknown verdict"), "verdict is CAPPED"),
+        ] {
+            let (what, fix) = review(&cr(v, w)).unwrap_err();
+            assert!(what.contains(needle) && !fix.is_empty(), "{v} {w:?}: {what}");
+        }
     }
 }
