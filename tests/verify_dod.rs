@@ -537,3 +537,137 @@ fn diff_binding_ignores_local_diff_color_and_external_diff() {
     let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
     assert!(o.status.success(), "{}", text(&o));
 }
+
+// E-CRCAP.W1: the WAIVED verdict (UC-REV-2).
+
+const RULING: &str = "owner ruling 2026-11-12: review waived, open findings tracked in R31";
+
+fn write_cr(p: &Path, args: &[&str]) -> Output {
+    keel(p, &[&["notes", "write", "cr"][..], args].concat())
+}
+
+/// The test and doc notes, then the owner's waiver in place of a review.
+fn bless_waived(p: &Path, tests: &str, reason: &str) {
+    for (args, input) in [(&["notes", "write", "test"][..], tests), (&["notes", "write", "doc"][..], "")] {
+        let o = run(env!("CARGO_BIN_EXE_keel"), p, args, input);
+        assert!(o.status.success(), "{args:?}: {}", text(&o));
+    }
+    let o = write_cr(p, &["--verdict", "WAIVED", "--reason", reason]);
+    assert!(o.status.success(), "waive: {}", text(&o));
+}
+
+fn sign_waived(p: &Path, level: &str, report: &str) {
+    let o = keel(p, &["mr", "confirm", level, "--accept-waiver", "--as", "t", "--report", report]);
+    assert!(o.status.success(), "mr confirm --accept-waiver: {}", text(&o));
+}
+
+fn has_note(p: &Path, kind: &str, rev: &str) -> bool {
+    run("git", p, &["notes", &format!("--ref={kind}"), "show", rev], "").status.success()
+}
+
+#[test]
+fn a_waiver_needs_a_reason_is_bound_like_a_review_and_prints_at_the_gate() {
+    let d = fixture();
+    let p = d.path();
+    bless(p, WU_TESTS, "PASS");
+    let pass = note(p, "cr", "HEAD");
+    git(p, &["notes", "--ref=cr", "remove", "HEAD"]);
+    for args in [
+        &["--verdict", "WAIVED"][..],
+        &["--verdict", "WAIVED", "--reason", "   "],
+        &["--verdict", "WAIVED", "--reason"],
+        &["--verdict", "PASS", "--reason", "x"],
+        &["--verdict", "FAIL", "--blockers", "1", "--reason", "x"],
+    ] {
+        let o = write_cr(p, args);
+        assert!(!o.status.success(), "{args:?} was accepted: {}", text(&o));
+        assert!(!has_note(p, "cr", "HEAD"), "{args:?} wrote a note");
+    }
+    let o = write_cr(p, &["--verdict", "WAIVED", "--reason", &format!("  {RULING}\n"), "--blockers", "2"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let n = note(p, "cr", "HEAD");
+    assert_eq!((n["verdict"].as_str(), n["waiver"].as_str(), n["blockers"].as_u64()), (Some("WAIVED"), Some(RULING), Some(2)));
+    for f in ["base", "tip", "code_diff_hash"] {
+        assert_eq!(n[f], pass[f], "{f}: a waiver is bound like a review");
+    }
+
+    // The gate accepts and prints it; only the sign-off is missing. Preflight never reads cr.
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    let t = text(&o);
+    assert!(t.contains(&format!("WAIVED 3·review: {RULING}")), "{t}");
+    assert_red(&o, "8·manual-review");
+    assert!(t.contains("- 1 failed") && !t.contains("FAIL  3·review"), "{t}");
+    assert!(keel(p, &["preflight", "wu", "wu/e/a"]).status.success());
+
+    // A waiver with its reason blanked by hand waives nothing.
+    edit_note(p, "cr", "HEAD", |n| n["waiver"] = json!("  "));
+    assert_red(&keel(p, &["verify-dod", "wu", "wu/e/a"]), "3·review");
+    edit_note(p, "cr", "HEAD", |n| {
+        n.as_object_mut().unwrap().remove("waiver");
+    });
+    assert_red(&keel(p, &["verify-dod", "wu", "wu/e/a"]), "3·review");
+    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", RULING]).status.success());
+
+    // Sign-off needs the explicit acceptance (identity tier); then green, and the receipt says so.
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"]);
+    assert!(!o.status.success() && text(&o).contains(RULING) && text(&o).contains("--accept-waiver"), "{}", text(&o));
+    assert!(!has_note(p, "mr", "HEAD"), "a refused confirm writes nothing");
+    sign_waived(p, "wu", "docs/a.html");
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    assert!(o.status.success() && text(&o).contains(&format!("WAIVED 3·review: {RULING}")), "{}", text(&o));
+    let dod = note(p, "dod", "wu/e/a");
+    assert_eq!((dod["review"].as_str(), dod["waiver"].as_str()), (Some("WAIVED"), Some(RULING)), "{dod}");
+
+    // An identity-tier sign-off has no signature: the note's waiver hash still covers the reason.
+    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", "reworded after the owner signed"]).status.success());
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    assert_red(&o, "8·manual-review");
+    assert!(text(&o).contains("waiver"), "{}", text(&o));
+    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", RULING]).status.success());
+    assert!(keel(p, &["verify-dod", "wu", "wu/e/a"]).status.success(), "rebuilt from the current note, never stored");
+
+    // A code commit after the waiver: the new tip has no review, and the old waiver carried onto it binds other code.
+    let waived = note(p, "cr", "HEAD");
+    write(p, "src/a.py", "def a():\n    return 2\n");
+    commit(p, "change after the waiver");
+    for (args, input) in [(&["notes", "write", "test"][..], WU_TESTS), (&["notes", "write", "doc"][..], "")] {
+        assert!(run(env!("CARGO_BIN_EXE_keel"), p, args, input).status.success());
+    }
+    assert_red(&keel(p, &["verify-dod", "wu", "wu/e/a"]), "1·notes");
+    let mut carried = waived;
+    carried["tip"] = json!(git(p, &["rev-parse", "HEAD"]));
+    git(p, &["notes", "--ref=cr", "add", "-f", "-m", &carried.to_string(), "HEAD"]);
+    assert_red(&keel(p, &["verify-dod", "wu", "wu/e/a"]), "5·diff-binding");
+}
+
+#[test]
+fn the_epic_walk_passes_a_waived_wu_and_an_epic_review_can_be_waived() {
+    let d = fixture();
+    let p = d.path();
+    bless_waived(p, WU_TESTS, RULING);
+    sign_waived(p, "wu", "docs/a.html");
+    git(p, &["switch", "-q", "epic/e"]);
+    let o = run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"], "");
+    assert!(o.status.success(), "the merge hook passes a waived, accepted WU: {}", text(&o));
+    write(p, "docs/result.html", "<p>result</p>");
+    commit(p, "close epic");
+    bless(p, EPIC_TESTS, "PASS");
+    sign(p, "epic", "docs/result.html");
+    let o = keel(p, &["verify-dod", "epic", "epic/e"]);
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("WAIVED 7·walk") && t.contains(RULING), "the walk prints the waived seam: {t}");
+    assert!(note(p, "dod", "epic/e").get("review").is_none(), "the epic's own review passed");
+
+    // The E-SEED2 close case: the epic's own review is waived.
+    let close = "owner ruling: epic review waived at close";
+    git(p, &["notes", "--ref=mr", "remove", "HEAD"]);
+    git(p, &["notes", "--ref=dod", "remove", "HEAD"]);
+    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", close]).status.success());
+    let o = keel(p, &["mr", "confirm", "epic", "--as", "t", "--report", "docs/result.html"]);
+    assert!(!o.status.success() && text(&o).contains(close), "{}", text(&o));
+    sign_waived(p, "epic", "docs/result.html");
+    let o = keel(p, &["verify-dod", "epic", "epic/e"]);
+    assert!(o.status.success() && text(&o).contains(&format!("WAIVED 3·review: {close}")), "{}", text(&o));
+    assert_eq!(note(p, "dod", "epic/e")["review"], "WAIVED");
+}
