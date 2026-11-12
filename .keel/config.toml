@@ -11,7 +11,7 @@ code_paths = ["src/", "tests/"]
 
 # Commits touching these need a Reviewed-By trailer (`keel mr commit`).
 # A trailing / is a prefix; otherwise a glob (* and ? within a segment, ** across).
-rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json", "scripts/router-guard.jq", "scripts/router-worker.sh", "scripts/router-watch.sh", ".claude/agents/"]
+rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json", "scripts/router-guard.jq", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", ".claude/agents/"]
 
 [check]
 lint = "cargo clippy --all-targets -- -D warnings"
@@ -49,4 +49,5 @@ rubric = ".keel/rubric.md"   # optional project-local rubric
 worker_model = "opus"
 worker_efforts = ["medium", "high"]
 worker_default_effort = "medium"
+worker_permission_mode = "auto"
 watchdog_model = "haiku"
