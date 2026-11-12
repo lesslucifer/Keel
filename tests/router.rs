@@ -1477,6 +1477,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     // 8 · R14: the worker commits its result, rewrites its checkout's rosters to list itself and signs
     // as itself; keel refuses the confirm, and the note it then writes by hand is refused at the merge
     let report = "docs/work/e2e-result.html";
+    std::fs::create_dir_all(l.wt.join("docs/work")).unwrap();
     std::fs::write(l.wt.join(report), "<html data-artifact=\"wu-result\"><p>e2e: done</p></html>\n").unwrap();
     for a in [&["add", report][..], &["commit", "-qm", "e2e result"]] {
         let o = hooked(&l.wt, a);
