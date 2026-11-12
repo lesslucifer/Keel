@@ -901,6 +901,10 @@ fn a_tool_written_waiver_with_no_review_on_the_tip_says_not_reviewed() {
     assert_eq!(note(p, "cr", "HEAD")["unreviewed"], true);
     let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"]);
     assert!(!o.status.success() && text(&o).contains("not reviewed") && !text(&o).contains("0 blockers, 0 importants"), "{}", text(&o));
+    // B3: the history row says so too, never "blockers 0 importants 0".
+    let tip = git(p, &["rev-parse", "HEAD"]);
+    let row = text(&o).lines().find(|l| l.trim_start().starts_with(&tip[..10])).map(String::from).unwrap_or_else(|| panic!("no history row: {}", text(&o)));
+    assert!(row.contains("WAIVED not reviewed") && !row.contains("blockers 0"), "{row}");
 
     // Over a reviewed round the tool's waiver is a reviewed one, and keeps what the round recorded.
     assert!(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]).status.success());
@@ -914,4 +918,69 @@ fn a_tool_written_waiver_with_no_review_on_the_tip_says_not_reviewed() {
     let o = write_cr(p, &["--verdict", "WAIVED", "--reason", "cap"]);
     assert!(!o.status.success() && text(&o).contains("PASS"), "{}", text(&o));
     assert_eq!(note(p, "cr", "HEAD")["verdict"], "PASS");
+}
+
+// E-CRCAP.W1 code review round 2.
+
+/// B1: a count flag the writer was not given keeps the count the replaced round recorded.
+#[test]
+fn a_waiver_keeps_the_open_count_it_was_not_given() {
+    let d = fixture();
+    let p = d.path();
+    bless_unreviewed(p, WU_TESTS);
+    assert!(write_cr(p, &["--verdict", "FAIL", "--blockers", "2", "--importants", "3"]).status.success());
+    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", "review cap: 5 rounds, 2 blockers open", "--blockers", "2"]).status.success());
+    let n = note(p, "cr", "HEAD");
+    assert_eq!((n["blockers"].as_u64(), n["importants"].as_u64()), (Some(2), Some(3)), "{n}");
+    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", "review cap: 5 rounds, 1 blockers open", "--importants", "1"]).status.success());
+    let n = note(p, "cr", "HEAD");
+    assert_eq!((n["blockers"].as_u64(), n["importants"].as_u64()), (Some(2), Some(1)), "{n}");
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"]);
+    assert!(text(&o).contains("open: 2 blockers, 1 importants"), "{}", text(&o));
+}
+
+/// B4: a round recorded against another range is never shown or recorded as this tip's review.
+#[test]
+fn a_review_of_another_range_is_never_this_tips_review() {
+    for owner in [true, false] {
+        let d = fixture();
+        let p = d.path();
+        bless_unreviewed(p, WU_TESTS);
+        assert!(write_cr(p, &["--verdict", "FAIL", "--blockers", "2", "--importants", "1"]).status.success());
+        edit_note(p, "cr", "HEAD", |n| {
+            n["code_diff_hash"] = json!("0000000000000000000000000000000000000000");
+            n["findings"] = json!([{"location": "src/a.py:9", "claim": "about other code", "severity": "blocker", "evidence": "e"}]);
+        });
+        let n = if owner {
+            let preview = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING]);
+            let t = text(&preview);
+            assert!(t.contains("not reviewed") && t.contains("another range") && !t.contains("about other code") && !t.contains("open: 2 blockers"), "{t}");
+            assert!(waive_at_sign_off(p, "wu", "docs/a.html", RULING).status.success());
+            note(p, "cr", "HEAD")
+        } else {
+            assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", "review cap"]).status.success());
+            note(p, "cr", "HEAD")
+        };
+        assert_eq!((n["unreviewed"].as_bool(), n["blockers"].as_u64(), n["importants"].as_u64()), (Some(true), Some(0), Some(0)), "{owner}: {n}");
+        assert!(n.get("findings").is_none(), "{owner}: the stale round's findings are not this tip's: {n}");
+        assert_eq!(n["replaced"]["findings"][0]["claim"], "about other code", "{owner}: kept as history: {n}");
+        assert_eq!(n["replaced"]["code_diff_hash"], "0000000000000000000000000000000000000000");
+    }
+}
+
+/// I-c: the one writer refuses a note it cannot parse, whoever calls it, with one fix text.
+#[test]
+fn every_waiver_writer_refuses_a_cr_note_it_cannot_parse() {
+    let d = fixture();
+    let p = d.path();
+    bless_unreviewed(p, WU_TESTS);
+    git(p, &["notes", "--ref=cr", "add", "-f", "-m", "{not json", "HEAD"]);
+    let tool = write_cr(p, &["--verdict", "WAIVED", "--reason", "cap"]);
+    let owner = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING]);
+    let fix = |o: &Output| text(o).lines().find(|l| l.contains("fix ->")).map(|l| l.split("fix ->").nth(1).unwrap().trim().to_string());
+    for o in [&tool, &owner] {
+        assert!(!o.status.success() && text(o).contains("does not parse"), "{}", text(o));
+    }
+    assert_eq!(fix(&tool), fix(&owner), "one fix text");
+    assert_eq!(git(p, &["notes", "--ref=cr", "show", "HEAD"]), "{not json");
 }

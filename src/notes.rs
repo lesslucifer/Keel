@@ -755,4 +755,15 @@ mod tests {
         assert!(what.contains("t012345678 is a PASS") && fix.contains("new review"), "{what} / {fix}");
         assert!(waive(None, id(), Some("--blockers"), "h".into(), None).is_err());
     }
+
+    /// B5: a blank or non-string `waived` waives nothing, as everywhere else.
+    #[test]
+    fn a_finding_is_waived_only_by_a_waiver_in_words() {
+        let n: CrNote = serde_json::from_value(serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c",
+            "timestamp": 0, "verdict": "FAIL", "blockers": 5, "importants": 0, "code_diff_hash": "h",
+            "findings": [{"claim": "null", "waived": null}, {"claim": "false", "waived": false}, {"claim": "blank", "waived": "  "},
+                {"claim": "none"}, {"claim": "words", "waived": "owner: fine"}]})).unwrap();
+        let open: Vec<_> = n.open_findings().iter().map(|f| f["claim"].as_str().unwrap()).collect();
+        assert_eq!(open, ["null", "false", "blank", "none"]);
+    }
 }

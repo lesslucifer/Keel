@@ -531,6 +531,7 @@ mod tests {
             ("FAIL", None, "verdict is FAIL"),
             ("FAIL", Some("a reason on a FAIL waives nothing"), "verdict is FAIL"),
             ("CAPPED", Some("unknown verdict"), "verdict is CAPPED"),
+            ("WAIVED", Some("--blockers"), "no reason"),
         ] {
             let (what, fix) = review(&cr(v, w)).unwrap_err();
             assert!(what.contains(needle) && !fix.is_empty(), "{v} {w:?}: {what}");

@@ -1013,4 +1013,25 @@ mod tests {
         assert!(waive_reason(&["wu", "--waive-review", "r", "--accept-waiver"]).unwrap_err().contains("together"));
         assert_eq!(positionals(&["wu", "--waive-review", "r", "--as", "vu", "--confirm-waiver", "abc"]), ["wu"], "flag values are never positionals");
     }
+
+    /// B2: every character either reaches the terminal as itself and is plainly visible, or is escaped.
+    #[test]
+    fn printable_lets_through_only_what_it_can_show_and_escapes_everything_else() {
+        let visible = |c: char| c == ' ' || c.is_ascii_graphic() || (c.is_alphanumeric() && !matches!(c, '\u{115f}' | '\u{1160}' | '\u{3164}' | '\u{ffa0}'));
+        for cp in 0..=0x10ffffu32 {
+            let Some(c) = char::from_u32(cp) else { continue };
+            let out = printable(&c.to_string());
+            if out != c.to_string() {
+                assert_eq!(out, format!("\\u{{{cp:x}}}"), "{cp:x}");
+            } else {
+                assert!(visible(c) && c != '\\', "{cp:x} passes unescaped");
+            }
+        }
+        for cp in [0xe0001u32, 0xe0041, 0xe007f, 0xfe00, 0xfe0f, 0xe0100, 0xe01ef, 0x180b, 0x1bca0, 0x13430, 0x115f, 0x3164, 0x2800, 0xe000, 0x2014] {
+            let c = char::from_u32(cp).unwrap();
+            assert_eq!(printable(&c.to_string()), format!("\\u{{{cp:x}}}"), "{cp:x}");
+        }
+        assert_eq!(printable(r"\u{1b}"), r"\\u{1b}", "a typed escape never reads as a real one");
+        assert_eq!(printable("café 日本 x9"), "café 日本 x9");
+    }
 }
