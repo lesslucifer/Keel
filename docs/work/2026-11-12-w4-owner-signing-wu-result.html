@@ -24,13 +24,14 @@
     <li>On a target with no roster, the change's own roster judges and keel prints one bootstrap line. With none on either side the refusal names the <code>keel mr setup</code> fix.</li>
   </ul>
   <p>The disk read and the tracked-refusal of <code>.mr-allowed</code> are deleted. In <code>src/</code> the name survives only in that fix text. <code>.keel/mr-allowed</code> is rule-bearing whatever <code>rule_bearing</code> lists. <code>keel mr setup</code> writes the working <code>.keel/mr-allowed</code>, touches no <code>info/exclude</code> and prints the command that lands it. <code>keel init</code>'s next steps put <code>keel mr setup</code> before the one-time first commit.</p>
-  <p><b>Not done yet</b> (each is the owner's, staged below):</p>
+  <p><b>Done by the owner:</b> owner commit A (<code>4e30e61</code>: Keel's roster with vuluu by name, the policy, the four new rule-bearing paths, <code>.gitworktreecopy</code>, the tests that pin them) and owner commit B (<code>0dd4bfa</code>: the rule-bearing skill, template and install text), each under the W4 build.</p>
+  <p><b>Not done yet:</b> the sign-off with <code>--roster-change</code>, then the merge. The <b>live presence check</b> is deferred with key-only (deviation 6).</p>
+  <p><b>Review round 1</b> (FAIL, 1 blocker, 1 important, on <code>0dd4bfa</code>):</p>
   <ul>
-    <li>Owner commit A: Keel's roster (vuluu by name), the policy, the four new rule-bearing paths, <code>.gitworktreecopy</code>, and the tests that pin them.</li>
-    <li>Owner commit B: the rule-bearing skill, template and install text.</li>
-    <li>The review in a fresh <code>--review</code> worker, then the install of the reviewed build.</li>
-    <li>The <b>live presence check</b>: the owner's real confirm waits for a touch or a passphrase, and the same command with no terminal writes no note.</li>
-    <li>The sign-off with <code>--roster-change</code>, then the merge.</li>
+    <li>Blocker, fixed in <code>ae7979c</code>: <code>keel mr setup</code> read an unreadable <code>.keel/mr-allowed</code> (not UTF-8, no permission) as empty and rewrote it with only the new line, dropping every signer. It now refuses with the read error; regression test <code>setup_refuses_an_unreadable_roster_and_leaves_its_signers_in_place</code>, written first and seen red.</li>
+    <li>Important, fixed in <code>f92ef3d</code>: <code>roster_change</code> had its own rule for what a roster line is. Both now read <code>roster_lines</code>, pinned by <code>a_roster_change_counts_exactly_the_lines_the_parser_reads</code>.</li>
+    <li>Nits waived: <code>keel init</code>'s next steps name <code>.keel/mr-allowed</code> as a literal (a <code>const</code> cannot splice <code>mr::ROSTER</code>, and the path is DEC-47's fixed contract); <code>roster_text</code> maps every <code>git show</code> error to "no roster" (it fails open only in an offline partial clone missing the target's roster blob, and the bootstrap line still prints).</li>
+    <li>Refuted: check 8, confirm and pre-push filtering the committed roster by the working tree's <code>[mr] tiers</code> (predates the diff; the merge hook reads the committed policy; DEC-24); <code>--roster-change</code> ignoring a tiers edit (outside the plan; <code>.keel/</code> is rule-bearing); deleting the roster on an epic so later WU merges bootstrap (DEC-48 items 1, 2 and 5; the epic sign-off is judged by main's roster).</li>
   </ul>
 </div>
 
@@ -74,7 +75,7 @@
     </li>
     <li>Integration, Keel's own tree. These tests are in owner commit A because they pass only once Keel commits its roster and policy:
       <ul>
-        <li><code>tests/router.rs</code> <code>keels_router_security_files_are_rule_bearing_and_its_sign_offs_key_only</code></li>
+        <li><code>tests/router.rs</code> <code>keels_router_security_files_are_rule_bearing</code></li>
         <li><code>tests/init.rs</code> <code>self_hosting_new_worktree_reads_the_committed_roster_and_copies_no_local_one</code>, which replaces <code>self_hosting_new_worktree_inherits_the_signer_list</code></li>
         <li>the epic e2e, without its <code>.mr-allowed</code> seeding lines</li>
       </ul>
