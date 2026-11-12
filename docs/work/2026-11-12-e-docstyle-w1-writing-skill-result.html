@@ -16,13 +16,14 @@
   <main>
 
 <h2 id="outcome">What happened</h2>
-<p data-item="outcome" data-c="outcome">Delivered as planned, waiting on your commit. A new skill, <code>keel-write</code>, holds the nine rules, each with a before/after, and says which rules apply to which doc. It has a self-check and a short example plan. The plan and tiers skills, AGENTS.md and its template point to it.</p>
+<p data-item="outcome" data-c="outcome">Delivered as planned, waiting on your commit. A new writing skill holds the nine rules, each with a before/after, and says which rules apply to which doc. It has a self-check and a short example plan. The plan and tiers skills, AGENTS.md and its template point to it.</p>
 
 <h2 id="rounds">Review rounds</h2>
 <table data-c="rounds">
   <thead><tr><th>Round</th><th>Found</th><th>Fixed</th></tr></thead>
   <tbody>
     <tr><td>1 (router)</td><td>3 importants, 5 nits, all in the text</td><td>All 8. Below</td></tr>
+    <tr><td>2 (router)</td><td>Only nits: 6</td><td>All 6, without a new round</td></tr>
   </tbody>
 </table>
 <ol data-c="round-1">
@@ -30,15 +31,23 @@
   <li>Rule 9 has a before/after.</li>
   <li>New "Which rules apply": every doc, plans and results, records with their own fields, and edits that rewrite only what they touch.</li>
   <li>Nits: keel-plan's order and open-points columns match the skill. AGENTS.md says "docs a person reads". The example is consistent and trimmed to 260 words above its first WU. The skill says to start from the htmldoc skeleton.</li>
+  <li>Round 2: only nits, fixed without a new round. "The top" of a doc with no work is its first screen. The code check moved to the plan self-check. Rule 3's after, the order's "In short", two example sentences and this report's deviations were corrected.</li>
 </ol>
 
 <h2 id="deviations-h">Deviations</h2>
-<p data-item="deviations" data-c="deviations">One. The <code>src/init.rs</code> lines land after your commit, not with the skill (plan question 3). The example has no Terms table. It defines its three terms where it first uses them.</p>
+<div data-item="deviations" data-c="deviations">
+<p>Two:</p>
+<ol>
+  <li>The example has no Terms table. It defines its three terms where it first uses them.</li>
+  <li>The sandbox cannot write the installed copies of the skills. Your commit command copies them instead.</li>
+</ol>
+</div>
 
 <h2 id="details">Details</h2>
 
 <h3 id="evidence-h">Evidence</h3>
 <ul data-item="evidence" data-c="evidence">
+  <li>The skill: <code>skills/keel-write/</code>. The <code>src/init.rs</code> lines land after your commit (plan question 3).</li>
   <li>Commits: <code>3cd7ba7</code> plan, <code>7f09d22</code> test (red), this report.</li>
   <li>The new test in <code>tests/init.rs</code> was red before the skill existed and is green with it.</li>
   <li>The two self-hosting tests in <code>tests/init.rs</code> stay red here until your commit copies the mirror. In a scratch clone with the mirror, the full suite and lint pass, except one sandbox-only router test (backlog R43).</li>
