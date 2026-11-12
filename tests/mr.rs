@@ -907,3 +907,33 @@ fn a_tip_without_a_waiver_signs_byte_for_byte_as_today() {
     forge(p, "wu/e/a", "epic/e", "vu", "key", Some(k.path().join("id").to_str().unwrap()));
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
 }
+
+// E-CRCAP.W1 round 2: the owner's waiver at sign-off, key tier.
+
+#[test]
+fn an_owner_waiver_at_sign_off_is_key_signed_and_a_failed_signing_writes_neither_note() {
+    let (d, _k) = fixture();
+    let p = d.path();
+    notes(p, &["test", "doc"]);
+    // No signing key configured: the sign-off fails before anything is written.
+    let key = git(p, &["config", "keel.signingkey"]);
+    git(p, &["config", "--unset", "keel.signingkey"]);
+    let o = keel(p, &["mr", "confirm", "wu", "--waive-review", WAIVER]);
+    assert!(!o.status.success() && text(&o).contains("no signing key"), "{}", text(&o));
+    assert!(mr_note(p, "HEAD").is_none() && !run("git", p, &["notes", "--ref=cr", "show", "HEAD"]).status.success(), "nothing written");
+    git(p, &["config", "keel.signingkey", &key]);
+
+    let o = ok(keel(p, &["mr", "confirm", "wu", "--waive-review", WAIVER]));
+    assert!(text(&o).contains(WAIVER), "{}", text(&o));
+    let m = mr_note(p, "HEAD").unwrap();
+    assert_eq!(m["waiver_hash"].as_str().unwrap(), sha256_of(WAIVER.as_bytes()));
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    // The signature covers the owner's words: a session rewording them is caught.
+    ok(cr(p, &["--verdict", "WAIVED", "--reason", "owner ruling: waived (softer wording)"]));
+    assert_red8(p, "waiver");
+    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER]));
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    ok(keel(p, &["hooks", "install"]));
+    git(p, &["switch", "-q", "epic/e"]);
+    ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"]));
+}
