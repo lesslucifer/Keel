@@ -24,7 +24,7 @@ No questions mid-run: decide reversible choices with a stated recommendation, or
 - Follow AGENTS.md and the keel-workflow, keel-plan and keel-distill skills; docs per the project's doc
   convention (htmldoc: read `~/.claude/skills/htmldoc/SKILL.md`, a worker loads no user-level skill); no estimates.
 ## State
-Worktree <abs>, branch <b>, tip <full sha>. First: `env | grep ^GIT_` prints nothing (else report it and stop);
+Worktree <abs>, branch <b>, tip <full sha>. First: `git rev-parse --show-toplevel` prints <abs> (else report it and stop);
 git branch --show-current, git log --oneline -6, git status --short.
 Base is <epic/<E> | main> at <sha>; if it moved, merge it in with a merge commit (never rebase).
 Owner rulings: <Qn = x, ...>.
