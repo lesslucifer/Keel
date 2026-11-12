@@ -174,10 +174,13 @@ Green ⇒ exit 0 and, for a non-exempt wu/epic, the `dod/v1` receipt. Red ⇒ ex
   the `WAIVED` cr note and the sign-off together. This is the one relaxation of
   sign-last: the tip's own review (its cr note, checks 3–5) is not required
   first; everything else is. It is refused over a PASS. When the tip carries a
-  failed review, that note is kept under the waiver, not dropped: its counts,
-  findings (the open ones are those without `waived`), refuted candidates, nits
-  and walk waivers. Kept is not signed: the sign-off covers only the reason
-  and the verdict (§6). Notes on earlier commits stay where they are and show
+  failed review of this same range (base and code hash), that note is kept
+  under the waiver, not dropped: its counts, findings (the open ones are those
+  without a `waived` reason), refuted candidates, nits and walk waivers. A
+  review recorded against another range is no review of this one: the waiver
+  is `unreviewed`, that note is kept whole under `replaced` as history only,
+  and only its walk waivers carry. Kept is not signed: the sign-off covers only
+  the reason and the verdict (§6). Notes on earlier commits stay where they are and show
   in the history. With no review on the tip, the waiver carries
   `unreviewed: true` and says `not reviewed`. An epic whose walk needs a seam
   waiver needs its cr note, holding `walk_waivers`, before the human waives
