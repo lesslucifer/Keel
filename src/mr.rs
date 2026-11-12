@@ -290,7 +290,11 @@ fn setup(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     }
     // The working file only: setup authorises nothing, the line counts once it is committed.
     let path = repo.join(ROSTER);
-    let working = || parse_roster(&std::fs::read_to_string(&path).unwrap_or_default(), &cfg.mr.tiers, ROSTER);
+    let read = || match std::fs::read_to_string(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        r => r.map_err(|e| format!("keel mr: cannot read {ROSTER}: {e}")),
+    };
+    let working = || parse_roster(&read()?, &cfg.mr.tiers, ROSTER);
     let allowed = working()?;
     let key = flag(args, "--key");
     let line = match key {
@@ -314,7 +318,7 @@ fn setup(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     if !cfg.mr.tiers.iter().any(|t| t == tier) {
         return Err(format!("keel mr: refused - tier '{tier}' is not accepted here ([mr] tiers = {:?})", cfg.mr.tiers));
     }
-    let mut body = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut body = read()?;
     if !body.lines().any(|l| l.trim() == line) {
         if !body.is_empty() && !body.ends_with('\n') {
             body.push('\n');

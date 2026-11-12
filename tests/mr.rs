@@ -788,3 +788,18 @@ fn setup_writes_the_tracked_roster_and_touches_no_local_file() {
     assert_eq!(std::fs::read_to_string(p.join(".git/info/exclude")).unwrap_or_default(), exclude);
     assert!(git(p, &["status", "--porcelain"]).contains(".keel/"), "the roster is a file git sees, to be committed");
 }
+
+/// W4 review round 1 blocker: a roster setup cannot read is refused, never rewritten as if empty.
+#[test]
+fn setup_refuses_an_unreadable_roster_and_leaves_its_signers_in_place() {
+    let d = TempDir::new().unwrap();
+    let p = d.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    write(p, ".keel/config.toml", "code_paths = [\"src/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n");
+    let bytes = b"username: owner\n\xff\n";
+    std::fs::write(p.join(".keel/mr-allowed"), bytes).unwrap();
+
+    let o = keel(p, &["mr", "setup", "--as", "vu"]);
+    assert!(!o.status.success() && text(&o).contains("cannot read .keel/mr-allowed"), "{}", text(&o));
+    assert_eq!(std::fs::read(p.join(".keel/mr-allowed")).unwrap(), bytes);
+}
