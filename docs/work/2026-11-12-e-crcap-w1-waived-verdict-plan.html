@@ -9,8 +9,8 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>E-CRCAP.W1 · A waived review is recorded as WAIVED — plan</h1>
-      <p>The cr note gains a third verdict, WAIVED, with the reason. The merge check accepts it and prints it. Sign-off shows it with the review history and needs the owner's explicit yes, and the sign-off covers the waiver, so a later edit is caught.</p>
-      <div class="meta">T3 · WU plan v3 (v2: the owner's waiver at sign-off, <a href="#round-2">router decision 2026-11-12</a>; v3: <a href="#round-3">review round 1 fixes</a>) · 2026-11-12 · Keel · branch <code>wu/E-CRCAP/w1-waived-verdict</code> off <code>epic/E-CRCAP</code> <code>d957cd6</code> (E-WMODE merged into main, main merged into the epic) · epic <a href="2026-11-12-e-crcap-epic-plan.html#w1">E-CRCAP plan</a>, block W1, open points 4, 5, 6 and 15 · the epic plan asks for no owner go per WU plan, so work proceeds on the defaults below while the owner reads this</div>
+      <p>The cr note gains a third verdict, WAIVED, with the reason. The merge check accepts it and prints it. Sign-off shows it with the review history and needs the owner's explicit yes, and the sign-off covers the waiver, so a later edit of the reason or verdict is caught.</p>
+      <div class="meta">T3 · WU plan v4 (v2: the owner's waiver at sign-off, <a href="#round-2">router decision 2026-11-12</a>; v3: <a href="#round-3">review round 1 fixes</a>; v4: <a href="#round-4">review round 2 nits</a>) · 2026-11-12 · Keel · branch <code>wu/E-CRCAP/w1-waived-verdict</code> off <code>epic/E-CRCAP</code> <code>d957cd6</code> (E-WMODE merged into main, main merged into the epic) · epic <a href="2026-11-12-e-crcap-epic-plan.html#w1">E-CRCAP plan</a>, block W1, open points 4, 5, 6 and 15 · the epic plan asks for no owner go per WU plan, so work proceeds on the defaults below while the owner reads this</div>
     </div>
   </header>
   <main>
@@ -85,7 +85,7 @@ flowchart TD
   <thead><tr><th>Piece</th><th>Rule</th></tr></thead>
   <tbody>
     <tr><td>What is printed</td><td>The waiver reason, the open counts, each open (unwaived) <code>findings</code> entry and each walk waiver, "not reviewed" in place of 0/0 when no review ran on the tip, and the review history: every cr note on a first-parent commit of <code>base..tip</code>, newest first, one line each (short sha, verdict, blockers, importants, and the reason on a WAIVED one). W2 adds round, scope and fix-PASS to these lines</td></tr>
-    <tr><td>The flag</td><td><code>--accept-waiver</code>, no value. Without it on a waived tip: refused with a <code>fix -&gt;</code> line, nothing written. On a tip with no waiver it is ignored, as <code>--roster-change</code> is</td></tr>
+    <tr><td>The flags</td><td>Three, all typed by the owner only: <code>--waive-review "&lt;reason&gt;"</code> and <code>--confirm-waiver &lt;code&gt;</code> for the owner's own waiver (<a href="#round-2">round 2</a>, <a href="#round-3">round 3</a>), and <code>--accept-waiver</code>, no value, for a waiver the review tool wrote. Without it on a waived tip: refused with a <code>fix -&gt;</code> line, nothing written. On a tip with no waiver it is ignored, as <code>--roster-change</code> is</td></tr>
     <tr><td>The note</td><td>mr/v1 gains <code>waiver_hash: "sha256:&lt;hex of the reason's bytes&gt;"</code>, present only on an accepted waiver. This is what binds an identity-tier sign-off, which has no signature</td></tr>
     <tr><td>The signed text (key tier)</td><td>The <code>keel-mr/v2</code> payload gains a last line <code>review: WAIVED sha256:&lt;hex&gt;</code> on a waived tip only. With no waiver the bytes are exactly today's, so every existing signature stays valid. The header stays v2: the line appears only where no older signature can exist</td></tr>
     <tr><td>Check 8</td><td>Rebuilds the waiver hash from the tip's current cr note and compares it with the note's <code>waiver_hash</code> before any signature check: reworded (hashes differ), a signed PASS later turned into a waiver (current has one, note has none), or a signed waiver later turned into something else (note has one, current has none) are each red with their own cause. A key-backed signature is then verified over the payload rebuilt with the current line</td></tr>
@@ -97,7 +97,7 @@ flowchart TD
 <table data-c="who-writes">
   <thead><tr><th>Option</th><th>How</th><th>Costs</th></tr></thead>
   <tbody>
-    <tr><td><b>(a) An agent records the owner's ruling; the owner accepts at sign-off</b> — recommended, built here</td><td>The WU's own session (on the router's relay of the ruling, quoted as the reason) runs <code>keel notes write cr --verdict WAIVED --reason "…"</code>. No review session is spawned: the session judges nothing, it records. The owner's own act is <code>keel mr confirm … --accept-waiver</code>, which shows the reason and signs its hash</td><td>The reason text is typed by an agent. Bounded: nothing merges until the owner reads it at sign-off and accepts it explicitly, and an agent that writes WAIVED without a ruling only reaches that same question. Inside the epic contract</td></tr>
+    <tr><td><b>(a) An agent records the owner's ruling; the owner accepts at sign-off</b> — v1's recommendation, superseded by <a href="#round-2">round 2</a></td><td>The WU's own session (on the router's relay of the ruling, quoted as the reason) runs <code>keel notes write cr --verdict WAIVED --reason "…"</code>. No review session is spawned: the session judges nothing, it records. The owner's own act is <code>keel mr confirm … --accept-waiver</code>, which shows the reason and signs its hash</td><td>The reason text is typed by an agent. Bounded: nothing merges until the owner reads it at sign-off and accepts it explicitly, and an agent that writes WAIVED without a ruling only reaches that same question. Inside the epic contract</td></tr>
     <tr><td>(b) The owner's sign-off writes it</td><td><code>keel mr confirm … --waive-review "&lt;reason&gt;"</code> writes the WAIVED cr note, then signs with the acceptance implied</td><td>A sign-off then writes a cr note too (two note kinds, one command). The sign-last check must accept a tip with no cr note or a FAIL one, for check 3 only, a new path through the gate. The cap (W2) still needs (a)'s writer, so the surface doubles. Widens W1 beyond the epic contract, which lists "a new owner command for any step" as out of scope</td></tr>
     <tr><td>(c) Both</td><td>(a) for the cap and relayed rulings, (b) for the owner's direct waiver</td><td>The sum of both; two ways to reach one record</td></tr>
   </tbody>
@@ -115,7 +115,7 @@ flowchart TD
     <tr><td>Shown first</td><td>v3, two steps: the first run with <code>--waive-review</code> prints the listing and a 12-hex code and refuses, writing nothing; the same command with <code>--confirm-waiver &lt;code&gt;</code> writes. The code is a hash of the tip, the base and the listing, so it confirms exactly what was shown: other words, or a note recorded since, need a new preview. <code>--waive-review</code> with <code>--accept-waiver</code> is refused</td></tr>
     <tr><td>Order of writes</td><td>Roster, report and signing all run first. The cr note and then the mr note are stored only after the signature succeeds, so a failed sign-off writes neither</td></tr>
     <tr><td>The WAIVED writer stays</td><td><code>keel notes write cr --verdict WAIVED</code> remains, for a stop the tool fixes. W2's cap is written by the review session, the one worker allowed to write cr, and the owner accepts it with <code>--accept-waiver</code>. Removing it now would only make W2 add it back. The skill text limits it to that use: no session writes an owner's waiver</td></tr>
-    <tr><td>Staging</td><td>An agent never stages <code>--waive-review</code> or <code>--accept-waiver</code>. Only the owner types them, after reading</td></tr>
+    <tr><td>Staging</td><td>An agent never stages <code>--waive-review</code>, <code>--confirm-waiver</code> or <code>--accept-waiver</code>. Only the owner types them, after reading</td></tr>
   </tbody>
 </table>
 
@@ -124,12 +124,15 @@ flowchart TD
   <thead><tr><th>Finding</th><th>Fix</th></tr></thead>
   <tbody>
     <tr><td>I1: fix lines told an agent to write the owner's waiver</td><td>Every <code>fix -&gt;</code> line (check 1 cr, check 3, the cr writer's refusals and usage) points at the owner waiving at sign-off with <code>--waive-review</code>, typed by the owner. The writer is for the cap only</td></tr>
-    <tr><td>I2: the owner decided before seeing the listing</td><td>The two-step form above. Why a code rather than a bare flag: a valueless confirm could be typed on the first run, unseen. A code exists only after the preview, and it binds the waiver written to the waiver shown</td></tr>
+    <tr><td>I2: the owner decided before seeing the listing</td><td>The two-step form above. Why a code rather than a bare flag: a valueless confirm could be typed on the first run, unseen. The code proves the waiver written is the one shown, not who read it; agents never run <code>keel mr confirm</code> (keel-workflow §2). A code exists only after the preview, and it binds the waiver written to the waiver shown</td></tr>
     <tr><td>I3: the waiver dropped what the round recorded</td><td>CrNote keeps every field it does not know (a flattened map), so the note the waiver replaces stays whole; open findings come from <code>findings</code></td></tr>
     <tr><td>I4: <code>open_findings</code> duplicated W3's schema</td><td>Dropped; the sign-off reads <code>findings</code> without <code>waived</code></td></tr>
     <tr><td>Code leads</td><td>The sign-last refusal under <code>--waive-review</code> names the waiver; <code>--waive-review</code> with <code>--accept-waiver</code> is refused; a PASS on the tip points at a new review when it no longer binds; the listing prints walk waivers</td></tr>
   </tbody>
 </table>
+
+<h3 id="round-4">Round 4: review round 2, only nits (fixed without a new round)</h3>
+<p data-c="round-4">The listing escapes every control character in recorded text, so agent-written text cannot hide or redraw a line the code certifies. A cr note that does not parse refuses <code>--waive-review</code>. The report is settled before any waiver is shown, so the diagram's caption is now true. The confirm code also binds the note to be written, minus its identity. The skill text says the waiver hash covers only the reason, names <code>unreviewed: true</code>, adds the waiver to check 8's row and the sign order, makes the cap sentence conditional, and says an epic waived with no cr note has no walk waivers to carry.</p>
 
 <h3 id="skill-text">Skill text (rule-bearing, one owner <code>keel mr commit</code>)</h3>
 <table data-c="skill-text">
