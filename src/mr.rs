@@ -34,15 +34,16 @@ fn short(sha: &str) -> &str {
     sha.get(..10).unwrap_or(sha)
 }
 
-/// `<tier>: <identity>` or `key: <identity> <keytype> <base64> [comment]` lines, read from `src`.
+/// The roster's meaningful lines, numbered from 0: trimmed, without blank lines and `#` comments.
+fn roster_lines(text: &str) -> impl Iterator<Item = (usize, &str)> {
+    text.lines().map(str::trim).enumerate().filter(|(_, l)| !l.is_empty() && !l.starts_with('#'))
+}
+
+/// `<tier>: <identity>` or `key:<identity> <keytype> <base64> [comment]` lines, read from `src`.
 /// Lines whose tier is not in `tiers` authorise nothing; a malformed line is an error, never skipped.
 fn parse_roster(text: &str, tiers: &[String], src: &str) -> Result<Vec<Entry>, String> {
     let mut out = vec![];
-    for (n, line) in text.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
+    for (n, line) in roster_lines(text) {
         let bad = || format!("keel: {src} line {}: expected `<tier>: <identity>` or `key: <identity> <ssh-pubkey>`", n + 1);
         let (tier, rest) = line.split_once(':').ok_or_else(bad)?;
         let tier = tier.trim();
@@ -93,7 +94,7 @@ fn roster(repo: &Path, cfg: &Config, judge: &str, carried: &str) -> Result<(Vec<
 /// spacing and order are not a change.
 fn roster_change(old: &str, new: &str) -> Vec<String> {
     let lines = |t: &str| -> std::collections::BTreeSet<String> {
-        t.lines().map(|l| l.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|l| !l.is_empty() && !l.starts_with('#')).collect()
+        roster_lines(t).map(|(_, l)| l.split_whitespace().collect::<Vec<_>>().join(" ")).collect()
     };
     let (old, new) = (lines(old), lines(new));
     new.difference(&old).map(|l| format!("+ {l}")).chain(old.difference(&new).map(|l| format!("- {l}"))).collect()
@@ -653,6 +654,15 @@ mod tests {
             assert!(!rule_bearing(&[], p), "{p}");
         }
         assert!(rule_bearing(&tiers(&[".keel/"]), ".keel/config.toml"));
+    }
+
+    #[test]
+    fn a_roster_change_counts_exactly_the_lines_the_parser_reads() {
+        let tiers: Vec<String> = crate::mr::KNOWN_TIERS.iter().map(|t| t.to_string()).collect();
+        for t in ["", "  \n\t\n", "# c\n  # indented\n", "username: a\n", " \tusername:  a \n# c\n", "email: a@b\n\n"] {
+            let read = parse_roster(t, &tiers, "t").unwrap().len();
+            assert_eq!(roster_change("", t).len(), read, "{t:?}");
+        }
     }
 
     #[test]
