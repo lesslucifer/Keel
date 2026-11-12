@@ -18,6 +18,22 @@ pub struct Identity {
     pub timestamp: u64,
 }
 
+impl Identity {
+    /// An identity with every field empty: a placeholder the writer replaces before storing.
+    pub(crate) fn blank() -> Identity {
+        Identity { tip: String::new(), base: String::new(), branch: None, committer: String::new(), timestamp: 0 }
+    }
+
+    /// The JSON keys the identity block flattens into every note, from the type itself: whoever
+    /// strips the identity from a note (the waiver code) never keeps its own copy of the list.
+    pub(crate) fn keys() -> Vec<String> {
+        serde_json::to_value(Identity::blank()).ok().and_then(|v| v.as_object().map(|m| m.keys().cloned().collect())).unwrap_or_default()
+    }
+}
+
+/// How every fix line names the owner's waiver: the owner's own act, never an agent's.
+pub(crate) const OWNER_WAIVES: &str = "the owner waives a review at sign-off (keel mr confirm ... --waive-review \"<reason>\", typed by the owner, never staged)";
+
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
 pub enum Layer {
@@ -65,7 +81,11 @@ pub struct CrNote {
     pub schema: String, // "cr/v1"
     #[serde(flatten)]
     pub id: Identity,
-    pub verdict: String, // PASS | FAIL
+    pub verdict: String, // PASS | FAIL | WAIVED
+    /// WAIVED only: why no review passed - the owner's ruling, or the review cap's reason (UC-REV-2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiver: Option<String>,
+    /// On WAIVED: the findings left open.
     pub blockers: u32,
     pub importants: u32,
     /// git blob hash of `git diff base tip -- <code_paths>`: binds the verdict to the code reviewed.
@@ -73,7 +93,124 @@ pub struct CrNote {
     /// Epic tips only: seams of the epic walk waived on the record (edited in by hand).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub walk_waivers: Vec<WalkWaiver>,
+    /// Every other field the review skill records (`findings`, `refuted`, `nits`, `fleet`, ...): kept
+    /// as read, so a note rewritten in place (a waiver at sign-off) never drops what a round recorded.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
+
+impl CrNote {
+    /// The waiver's reason (possibly blank, when hand-edited) iff the verdict is WAIVED.
+    pub(crate) fn waiver(&self) -> Option<&str> {
+        (self.verdict == "WAIVED").then(|| self.waiver.as_deref().unwrap_or(""))
+    }
+
+    /// `sha256:<hex>` of the waiver reason iff the verdict is WAIVED: what a sign-off accepts and signs,
+    /// and what check 8 rebuilds - one rule for both.
+    pub(crate) fn waiver_hash(&self) -> Option<String> {
+        self.waiver().map(|w| sha256(w.as_bytes()))
+    }
+
+    /// A waiver written where no review ran on the tip: its counts of 0 mean nothing.
+    pub(crate) fn unreviewed(&self) -> bool {
+        self.extra.get("unreviewed") == Some(&serde_json::Value::Bool(true))
+    }
+
+    /// The round's verified findings left open: the review skill's `findings` entries with no `waived`
+    /// reason in words (a blank, null or non-string `waived` waives nothing, as everywhere else).
+    pub(crate) fn open_findings(&self) -> Vec<&serde_json::Value> {
+        let open = |f: &&serde_json::Value| !f.get("waived").and_then(|w| w.as_str()).is_some_and(|w| !w.trim().is_empty());
+        self.extra.get("findings").and_then(|f| f.as_array()).into_iter().flatten().filter(open).collect()
+    }
+}
+
+/// `sha256:<hex>`: the algorithm is named in the data.
+pub(crate) fn sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let hex: String = Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect();
+    format!("sha256:{hex}")
+}
+
+/// The one rule for a waiver's reason, whoever writes it: trimmed, not blank, and never the next flag
+/// (`--reason --blockers 2` names no reason).
+pub(crate) fn waiver_reason(raw: Option<&str>) -> Result<String, String> {
+    match raw.map(str::trim) {
+        Some(r) if !r.is_empty() && !r.starts_with("--") => Ok(r.into()),
+        _ => Err("a waiver needs its reason, in words (a following flag is not a reason)".into()),
+    }
+}
+
+/// The one cr/v1 waiver writer, for the owner's sign-off and the review tool's cap alike, given the
+/// tip's cr note as stored (`existing_raw`, `None` when there is none). Never over a note it cannot
+/// parse, nor over a PASS. Over a failed or waived round of this very range (same base and code hash)
+/// the note is kept whole (counts, walk waivers, every field the review recorded) and only identity,
+/// verdict, reason and binding change; a count the caller gives replaces that one count, an absent one
+/// keeps it. A round recorded against another range is no review of this one: the waiver is written
+/// `unreviewed`, that note kept under `replaced` as history only (whole but for its own `replaced`:
+/// one level of history, never nested), and only its `walk_waivers`
+/// (they name seams, which a later code change does not move) carried. With no note at all it is
+/// `unreviewed` too, so its 0/0 never reads as a clean review. Err = (what, fix).
+pub(crate) fn waive(existing_raw: Option<&str>, id: Identity, reason: Option<&str>, code_diff_hash: String, counts: (Option<u32>, Option<u32>)) -> Result<CrNote, (String, String)> {
+    let t = id.tip.get(..10).unwrap_or(&id.tip).to_string();
+    let reason = waiver_reason(reason).map_err(|w| (w, "give the reason in words".to_string()))?;
+    let existing = existing_raw
+        .map(serde_json::from_str::<CrNote>)
+        .transpose()
+        .map_err(|e| (format!("the cr note on {t} does not parse as cr/v1 ({e}); a waiver never overwrites a note it cannot read"), "repair that note in place, or run a new review on the tip, then waive again".to_string()))?;
+    let unreviewed = |replaced: Option<CrNote>| {
+        let mut extra = serde_json::Map::new();
+        extra.insert("unreviewed".into(), serde_json::Value::Bool(true));
+        let walk_waivers = replaced.as_ref().map(|r| r.walk_waivers.iter().map(|w| WalkWaiver { seam: w.seam.clone(), why: w.why.clone() }).collect()).unwrap_or_default();
+        if let Some(mut r) = replaced {
+            // One level of history: a note that itself replaced another drops that, never nesting deeper.
+            r.extra.remove("replaced");
+            extra.insert("replaced".into(), serde_json::to_value(r).unwrap_or_default());
+        }
+        CrNote {
+            schema: String::new(),
+            id: Identity::blank(),
+            verdict: String::new(),
+            waiver: None,
+            blockers: 0,
+            importants: 0,
+            code_diff_hash: String::new(),
+            walk_waivers,
+            extra,
+        }
+    };
+    let mut n = match existing {
+        Some(n) if n.verdict == "PASS" => {
+            return Err((
+                format!("the review of {t} is a PASS; a review that passed is never waived over"),
+                "sign it as reviewed (keel mr confirm without --waive-review); if that PASS no longer binds this tip (checks 4-5 red), run a new review on it".into(),
+            ))
+        }
+        Some(n) if n.id.base == id.base && n.code_diff_hash == code_diff_hash => n,
+        other => unreviewed(other),
+    };
+    n.schema = "cr/v1".into();
+    n.id = id;
+    n.verdict = "WAIVED".into();
+    n.waiver = Some(reason);
+    n.code_diff_hash = code_diff_hash;
+    n.blockers = counts.0.unwrap_or(n.blockers);
+    n.importants = counts.1.unwrap_or(n.importants);
+    Ok(n)
+}
+
+/// The cr note on `rev` as stored, unparsed: `None` only when there is none. Read through plumbing
+/// only - `notes list` names the note's blob, `cat-file blob` prints its bytes - so no display config
+/// (`log.*`, `i18n.*`, `format.*`) can re-encode, decorate or drop it.
+pub(crate) fn cr_raw(repo: &Path, rev: &str) -> Option<String> {
+    let blob = git(repo, &["notes", "--ref=cr", "list", rev], &[]).ok()?;
+    git(repo, &["cat-file", "blob", &blob], &[]).ok()
+}
+
+/// The cr note on `rev`, if one parses; the gate's check 1 reports a bad one.
+pub(crate) fn cr_note(repo: &Path, rev: &str) -> Option<CrNote> {
+    serde_json::from_str(&cr_raw(repo, rev)?).ok()
+}
+
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct WalkWaiver {
@@ -98,6 +235,10 @@ pub struct MrNote {
     /// `sha256:<hex>` of the attested report's bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_hash: Option<String>,
+    /// `sha256:<hex>` of the waiver reason the signer accepted (`--accept-waiver`); absent when the
+    /// review was not waived. Check 8 rebuilds it from the tip's current cr note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiver_hash: Option<String>,
     /// `sha256:<hex>` of the full `git diff base tip`.
     pub change_hash: String,
     /// Armored SSH SIGNATURE (namespace keel-mr), key-backed signers only.
@@ -120,6 +261,11 @@ pub struct DodNote {
     pub report: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_hash: Option<String>,
+    /// "WAIVED" when the tip's own review was waived; absent after a reviewed PASS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiver: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -434,6 +580,31 @@ pub(crate) fn hash_blob(repo: &Path, data: &str) -> Result<String, String> {
     Ok(id)
 }
 
+const CR_USAGE: &str = "usage: keel notes write cr --verdict PASS|FAIL [--blockers N] [--importants N]\n       keel notes write cr --verdict WAIVED --reason \"<the stop the review tool fixed>\" [--blockers N] [--importants N]   (the review cap only)";
+
+/// The cr writer's rules on its flags; `Ok` carries the waiver reason to record, if any.
+/// `reason`: `None` when `--reason` is absent, `Some("")` when it has no value.
+fn cr_verdict(verdict: &str, reason: Option<&str>, blockers: u32, importants: u32) -> Result<Option<String>, String> {
+    match (verdict, reason.map(str::trim)) {
+        ("PASS" | "FAIL", Some(_)) => refuse(
+            format!("--reason given with --verdict {verdict}: only a waiver carries a reason"),
+            &format!("drop --reason. A waiver is the owner's: {OWNER_WAIVES}"),
+        ),
+        ("PASS", None) if blockers + importants > 0 => {
+            refuse("PASS claimed with verified blockers/importants".into(), "record FAIL, or fix the findings first")
+        }
+        ("PASS" | "FAIL", None) => Ok(None),
+        ("WAIVED", r) => match waiver_reason(r) {
+            Ok(r) => Ok(Some(r)),
+            Err(what) => refuse(
+                what,
+                &format!("give the reason the review tool stopped for (the review cap). Never write a waiver for the owner: {OWNER_WAIVES}"),
+            ),
+        },
+        _ => Err(format!("{CR_USAGE}\n       an owner's waiver is not written here: {OWNER_WAIVES}")),
+    }
+}
+
 /// `args` are the flags after `notes write <kind>`.
 pub fn write(repo: &Path, cfg: &Config, kind: &str, args: &[&str]) -> Result<i32, String> {
     let r = range(repo, cfg, args)?;
@@ -488,25 +659,178 @@ pub fn write(repo: &Path, cfg: &Config, kind: &str, args: &[&str]) -> Result<i32
             };
             let verdict = flag("--verdict").unwrap_or("");
             let (blockers, importants) = (num("--blockers")?, num("--importants")?);
-            if !matches!(verdict, "PASS" | "FAIL") {
-                return Err("usage: keel notes write cr --verdict PASS|FAIL [--blockers N] [--importants N]".into());
-            }
-            if verdict == "PASS" && blockers + importants > 0 {
-                return refuse("PASS claimed with verified blockers/importants".into(), "record FAIL, or fix the findings first");
-            }
+            let reason = flag("--reason").or_else(|| args.contains(&"--reason").then_some(""));
+            let waiver = cr_verdict(verdict, reason, blockers, importants)?;
             let code_diff_hash = code_diff_hash(repo, cfg, &r.id.base, &tip)?;
-            let note = CrNote {
-                schema: "cr/v1".into(),
-                id: r.id,
-                verdict: verdict.into(),
-                blockers,
-                importants,
-                code_diff_hash,
-                walk_waivers: vec![],
+            let note = if waiver.is_some() {
+                let counts = (args.contains(&"--blockers").then_some(blockers), args.contains(&"--importants").then_some(importants));
+                waive(cr_raw(repo, &tip).as_deref(), r.id, waiver.as_deref(), code_diff_hash, counts).or_else(|(what, fix)| refuse(what, &fix))?
+            } else {
+                CrNote {
+                    schema: "cr/v1".into(),
+                    id: r.id,
+                    verdict: verdict.into(),
+                    waiver,
+                    blockers,
+                    importants,
+                    code_diff_hash,
+                    walk_waivers: vec![],
+                    extra: Default::default(),
+                }
             };
             store(repo, "cr", &tip, &note)?;
         }
         _ => return Err("usage: keel notes write <test|doc|cr>".into()),
     }
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cr_verdict, waive, waiver_reason, CrNote, Identity};
+
+    fn raw(n: &CrNote) -> String {
+        serde_json::to_string(n).unwrap()
+    }
+
+    #[test]
+    fn the_cr_writer_takes_a_reason_exactly_on_a_waiver() {
+        assert_eq!(cr_verdict("PASS", None, 0, 0), Ok(None));
+        assert_eq!(cr_verdict("FAIL", None, 2, 1), Ok(None));
+        assert_eq!(cr_verdict("WAIVED", Some("  ruling \n"), 1, 0), Ok(Some("ruling".into())));
+        assert_eq!(cr_verdict("WAIVED", Some("cap"), 0, 0), Ok(Some("cap".into())));
+        for (v, r, b) in [
+            ("PASS", None, 1),
+            ("PASS", Some("x"), 0),
+            ("FAIL", Some("x"), 1),
+            ("FAIL", Some(""), 1),
+            ("WAIVED", None, 0),
+            ("WAIVED", Some(""), 0),
+            ("WAIVED", Some(" \t\n"), 2),
+        ] {
+            let e = cr_verdict(v, r, b, 0).unwrap_err();
+            assert!(e.contains("refused") && e.contains("fix ->"), "{v} {r:?} {b}: {e}");
+        }
+        for v in ["", "pass", "WAIVE", "CAPPED"] {
+            assert!(cr_verdict(v, None, 0, 0).unwrap_err().starts_with("usage:"), "{v}");
+        }
+    }
+
+    #[test]
+    fn a_waiver_is_read_only_from_a_waived_verdict() {
+        let note = |v: &str, w: Option<&str>| -> CrNote {
+            let mut j = serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c",
+                "timestamp": 0, "verdict": v, "blockers": 0, "importants": 0, "code_diff_hash": "h"});
+            if let Some(w) = w {
+                j["waiver"] = w.into();
+            }
+            serde_json::from_value(j).unwrap()
+        };
+        assert_eq!(note("WAIVED", Some("r")).waiver(), Some("r"));
+        assert_eq!(note("WAIVED", None).waiver(), Some(""), "a hand-stripped reason reads blank, never absent");
+        assert_eq!(note("PASS", Some("r")).waiver(), None, "a stray field on a PASS waives nothing");
+        assert_eq!(note("FAIL", None).waiver(), None);
+        let n = note("WAIVED", Some("r"));
+        let back = serde_json::to_value(&n).unwrap();
+        assert!(back.get("walk_waivers").is_none() && back.get("findings").is_none(), "{back}");
+    }
+
+    #[test]
+    fn a_cr_note_keeps_the_fields_it_does_not_know_and_reads_its_open_findings() {
+        let raw = serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c", "timestamp": 0,
+            "verdict": "FAIL", "blockers": 1, "importants": 1, "code_diff_hash": "h",
+            "findings": [{"claim": "open", "severity": "blocker"}, {"claim": "waived", "severity": "important", "waived": "r"}],
+            "refuted": [{"claim": "x"}], "nits": [], "fleet": {"finders": 2}});
+        let n: CrNote = serde_json::from_value(raw.clone()).unwrap();
+        assert_eq!(n.open_findings().iter().map(|f| f["claim"].as_str().unwrap()).collect::<Vec<_>>(), ["open"]);
+        assert_eq!(serde_json::to_value(&n).unwrap(), raw, "a round trip keeps every field");
+        let bare: CrNote = serde_json::from_value(serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null,
+            "committer": "c", "timestamp": 0, "verdict": "PASS", "blockers": 0, "importants": 0, "code_diff_hash": "h", "findings": "prose"})).unwrap();
+        assert!(bare.open_findings().is_empty(), "a non-array findings field lists nothing");
+    }
+
+    #[test]
+    fn no_refusal_tells_an_agent_to_write_a_waiver_for_the_owner() {
+        for (v, r, b) in [("PASS", Some("x"), 0), ("FAIL", Some("x"), 1), ("WAIVED", None, 0), ("WAIVED", Some(" "), 0)] {
+            let e = cr_verdict(v, r, b, 0).unwrap_err();
+            let fix = e.split("fix ->").nth(1).unwrap();
+            assert!(fix.contains("--waive-review") && !fix.contains("--verdict WAIVED"), "{v} {r:?}: {e}");
+        }
+    }
+
+    #[test]
+    fn one_reason_rule_for_every_waiver_writer() {
+        assert_eq!(waiver_reason(Some("  cap  ")), Ok("cap".into()));
+        for bad in [None, Some(""), Some(" \t"), Some("--blockers"), Some(" --as")] {
+            assert!(waiver_reason(bad).is_err(), "{bad:?}");
+            assert!(cr_verdict("WAIVED", bad, 0, 0).is_err(), "the cr writer follows it: {bad:?}");
+        }
+    }
+
+    #[test]
+    fn the_one_waiver_writer_keeps_this_ranges_round_whole_marks_anything_else_unreviewed_and_never_replaces_a_pass() {
+        let id = || Identity { tip: "t0123456789".into(), base: "b".into(), branch: None, committer: "o".into(), timestamp: 7 };
+        let note = |v: &str, base: &str, hash: &str| -> CrNote {
+            serde_json::from_value(serde_json::json!({"schema": "cr/v1", "tip": "t", "base": base, "branch": null, "committer": "r",
+                "timestamp": 0, "verdict": v, "waiver": "cap", "blockers": 2, "importants": 1, "code_diff_hash": hash,
+                "findings": [{"severity": "blocker", "claim": "f"}], "refuted": [{"claim": "r"}], "nits": [], "fleet": {"finders": 2},
+                "walk_waivers": [{"seam": "s", "why": "w"}]}))
+            .unwrap()
+        };
+        let fresh = waive(None, id(), Some("ruling"), "h".into(), (None, None)).unwrap();
+        assert_eq!((fresh.verdict.as_str(), fresh.waiver(), fresh.blockers, fresh.importants, fresh.unreviewed()), ("WAIVED", Some("ruling"), 0, 0, true));
+        assert_eq!(fresh.waiver_hash().unwrap(), super::sha256(b"ruling"), "the hash is the stored reason's");
+        let counted = waive(None, id(), Some("cap"), "h".into(), (Some(3), None)).unwrap();
+        assert!(counted.unreviewed() && (counted.blockers, counted.importants) == (3, 0), "no review on the tip: unreviewed whatever the counts");
+        for v in ["FAIL", "WAIVED"] {
+            let same = raw(&note(v, "b", "h"));
+            let w = waive(Some(&same), id(), Some(" ruling "), "h".into(), (None, None)).unwrap();
+            assert_eq!((w.waiver(), w.blockers, w.importants, w.code_diff_hash.as_str(), w.id.base.as_str(), w.id.committer.as_str(), w.id.timestamp), (Some("ruling"), 2, 1, "h", "b", "o", 7), "{v}");
+            assert!(!w.unreviewed(), "{v}");
+            let (j, before) = (serde_json::to_value(&w).unwrap(), serde_json::to_value(note(v, "b", "h")).unwrap());
+            for f in ["findings", "refuted", "nits", "fleet", "walk_waivers"] {
+                assert_eq!(j[f], before[f], "{v}: {f} kept");
+            }
+            for (counts, want) in [((Some(0), None), (0, 1)), ((None, Some(4)), (2, 4)), ((Some(5), Some(6)), (5, 6))] {
+                let c = waive(Some(&same), id(), Some("r"), "h".into(), counts).unwrap();
+                assert_eq!((c.blockers, c.importants), want, "{v}: a given count replaces, an absent one keeps");
+            }
+            for (base, hash) in [("other", "h"), ("b", "other")] {
+                let stale = waive(Some(&raw(&note(v, base, hash))), id(), Some("r"), "h".into(), (None, None)).unwrap();
+                let j = serde_json::to_value(&stale).unwrap();
+                assert!(stale.unreviewed() && (stale.blockers, stale.importants) == (0, 0) && stale.open_findings().is_empty(), "{v} {base} {hash}: {j}");
+                assert_eq!((j["replaced"]["findings"][0]["claim"].as_str(), j["replaced"]["base"].as_str()), (Some("f"), Some(base)), "{v}: history kept whole");
+                assert_eq!(j["walk_waivers"][0]["seam"], "s", "{v}: seam waivers carried");
+            }
+        }
+        let once = waive(Some(&raw(&note("FAIL", "old", "old"))), id(), Some("r"), "h".into(), (None, None)).unwrap();
+        let twice = waive(Some(&raw(&once)), Identity { base: "newer".into(), ..id() }, Some("r"), "h2".into(), (None, None)).unwrap();
+        let j = serde_json::to_value(&twice).unwrap();
+        assert_eq!(j["replaced"]["waiver"], "r", "the last note is kept");
+        assert!(j["replaced"].get("replaced").is_none(), "never nested deeper: {j}");
+        let (what, fix) = waive(Some(&raw(&note("PASS", "b", "h"))), id(), Some("ruling"), "h".into(), (None, None)).unwrap_err();
+        assert!(what.contains("t012345678 is a PASS") && fix.contains("new review"), "{what} / {fix}");
+        assert!(waive(Some(&raw(&note("PASS", "old", "old"))), id(), Some("r"), "h".into(), (None, None)).is_err(), "a stale PASS is not waived over either");
+        assert!(waive(None, id(), Some("--blockers"), "h".into(), (None, None)).is_err());
+        let (what, _) = waive(Some("{not json"), id(), Some("r"), "h".into(), (None, None)).unwrap_err();
+        assert!(what.contains("does not parse"), "{what}");
+    }
+
+    #[test]
+    fn the_identity_keys_come_from_the_type() {
+        let mut k = Identity::keys();
+        k.sort();
+        assert_eq!(k, ["base", "branch", "committer", "timestamp", "tip"], "Identity changed: every place that strips it follows Identity::keys");
+    }
+
+    /// B5: a blank or non-string `waived` waives nothing, as everywhere else.
+    #[test]
+    fn a_finding_is_waived_only_by_a_waiver_in_words() {
+        let n: CrNote = serde_json::from_value(serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c",
+            "timestamp": 0, "verdict": "FAIL", "blockers": 5, "importants": 0, "code_diff_hash": "h",
+            "findings": [{"claim": "null", "waived": null}, {"claim": "false", "waived": false}, {"claim": "blank", "waived": "  "},
+                {"claim": "none"}, {"claim": "words", "waived": "owner: fine"}]})).unwrap();
+        let open: Vec<_> = n.open_findings().iter().map(|f| f["claim"].as_str().unwrap()).collect();
+        assert_eq!(open, ["null", "false", "blank", "none"]);
+    }
 }
