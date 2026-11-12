@@ -81,7 +81,7 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
             let fix = match kind {
                 "test" => format!("keel notes write test{t} < judgment.json   (on {})", short(&r.tip)),
                 "doc" => format!("keel notes write doc{t}   (on {})", short(&r.tip)),
-                _ => format!("run the code review on {}, then keel notes write cr --verdict PASS   (or record the owner's waiver: --verdict WAIVED --reason \"<ruling>\")", short(&r.tip)),
+                _ => format!("run the code review on {}, then keel notes write cr --verdict PASS   (or the owner waives the review at sign-off: keel mr confirm ... --waive-review, typed by the owner, never staged)", short(&r.tip)),
             };
             r.fail("1·notes", format!("no {schema} note on {}", short(&r.tip)), fix);
         }
@@ -166,7 +166,7 @@ fn review_verdict(cr: &CrNote) -> Result<Option<&str>, (String, &'static str)> {
         (_, Some(why)) if !why.is_empty() => Ok(Some(why)),
         (_, Some(_)) => Err((
             "review verdict is WAIVED with no reason".into(),
-            "record the waiver with its reason: keel notes write cr --verdict WAIVED --reason \"<the owner's ruling>\"",
+            "a waiver needs its reason: the owner waives the review again at sign-off (keel mr confirm ... --waive-review \"<reason>\", typed by the owner, never staged)",
         )),
         (v, None) => Err((format!("review verdict is {v}"), "fix the verified findings and re-run the review until PASS")),
     }
@@ -534,6 +534,7 @@ mod tests {
         ] {
             let (what, fix) = review(&cr(v, w)).unwrap_err();
             assert!(what.contains(needle) && !fix.is_empty(), "{v} {w:?}: {what}");
+            assert!(!fix.contains("--verdict WAIVED"), "no fix line tells an agent to write a waiver: {fix}");
         }
     }
 }
