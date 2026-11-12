@@ -989,11 +989,10 @@ fn accept_waiver_signs_the_waiver_it_showed_and_only_with_its_code() {
 fn the_review_history_keeps_every_row_when_git_log_shows_signatures() {
     let (d, k) = fixture();
     let p = d.path();
-    let key = k.path().join("id");
-    let public = std::fs::read_to_string(k.path().join("id.pub")).unwrap();
-    std::fs::write(k.path().join("signers"), format!("t@t {}\n", public.split_whitespace().take(2).collect::<Vec<_>>().join(" "))).unwrap();
+    let (key, public) = keygen(k.path(), "commit-signer");
+    std::fs::write(k.path().join("signers"), format!("t@t {public}\n")).unwrap();
     // The repo's own config (never the user's): signed commits, and git log showing their signatures.
-    for (k_, v) in [("gpg.format", "ssh"), ("user.signingkey", key.to_str().unwrap()), ("gpg.ssh.allowedSignersFile", k.path().join("signers").to_str().unwrap())] {
+    for (k_, v) in [("gpg.format", "ssh"), ("user.signingkey", key.as_str()), ("gpg.ssh.allowedSignersFile", k.path().join("signers").to_str().unwrap())] {
         git(p, &["config", k_, v]);
     }
     // Round 1 fails on a signed commit; the owner's waiver sits on the unsigned fix above it.

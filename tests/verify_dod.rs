@@ -984,3 +984,42 @@ fn every_waiver_writer_refuses_a_cr_note_it_cannot_parse() {
     assert_eq!(fix(&tool), fix(&owner), "one fix text");
     assert_eq!(git(p, &["notes", "--ref=cr", "show", "HEAD"]), "{not json");
 }
+
+// E-CRCAP.W1 code review round 4: the review history never depends on the user's display config.
+
+#[test]
+fn the_review_history_lists_every_round_intact_whatever_the_log_encoding_and_shows_an_unreadable_one() {
+    let d = fixture();
+    let p = d.path();
+    // An older round whose note carries non-ASCII text (a tool waiver), then one whose note does not parse.
+    bless_unreviewed(p, WU_TESTS);
+    let cap = "review cap: Größe übrig";
+    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", cap]).status.success());
+    let older = git(p, &["rev-parse", "HEAD"]);
+    write(p, "src/a.py", "def a():\n    return 2\n");
+    commit(p, "round 2");
+    git(p, &["notes", "--ref=cr", "add", "-f", "-m", "{not json", "HEAD"]);
+    let broken = git(p, &["rev-parse", "HEAD"]);
+    write(p, "src/a.py", "def a():\n    return 1\n");
+    commit(p, "fix");
+    bless_unreviewed(p, WU_TESTS);
+    let mut wrong = vec![];
+    for encoding in [None, Some("ISO-8859-1"), Some("UTF-16")] {
+        if let Some(e) = encoding {
+            git(p, &["config", "i18n.logOutputEncoding", e]);
+            git(p, &["config", "i18n.commitEncoding", e]);
+        }
+        let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING]);
+        let t = text(&o);
+        let row = |sha: &str| t.lines().find(|l| l.trim_start().starts_with(&sha[..10])).map(String::from);
+        match row(&older) {
+            Some(r) if r.contains(&format!("WAIVED not reviewed - {cap}")) => {}
+            other => wrong.push(format!("{encoding:?}: older round row {other:?}")),
+        }
+        match row(&broken) {
+            Some(r) if r.contains("unreadable") => {}
+            other => wrong.push(format!("{encoding:?}: unreadable round row {other:?}")),
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
