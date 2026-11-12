@@ -2,6 +2,9 @@
 # (E-ROUTER Q2 ruling 2026-11-08; hardened at the E-ROUTER close review).
 # Wired fail-closed in .claude/settings.json: jq failing denies the call.
 # Sessions whose agent_type is not "router" (workers, their subagents) pass untouched.
+# Run with `--arg watchdog_to <router-name>` it is the watchdog session's only tool hook
+# (E-ROUTER3.W9, DEC-45): CronCreate and a SendMessage to that router pass, nothing else does,
+# whatever the agent_type; the project hook passes no argument, so this branch never runs there.
 # Input: Claude Code's PreToolUse JSON. Output: a deny decision, or nothing (allow).
 
 def deny($why): {hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny",
@@ -27,16 +30,25 @@ def gh_args: "( ((--(json|state|limit|author|base|head|label|search)|-(L|s|A|B|H
 def bash_ok:
   test("^[A-Za-z0-9 ._/:=@%,+^~-]*$")
   and (test("--ou") | not)
-  and test("^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)" + gh_args + "|ps (aux|-ef)|scripts/router-worker\\.sh (spawn|resume|wait) [A-Za-z0-9._/ -]+|scripts/router-watch\\.sh (commit|signed|merged|pushed|tagged)( [.]*[A-Za-z0-9_][A-Za-z0-9._/-]*)+)$")
+  and test("^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)" + gh_args + "|ps (aux|-ef)|scripts/router-worker\\.sh (spawn|stop) [A-Za-z0-9._/ -]+|scripts/router-worker\\.sh worktree (add|remove) (epic|wu)/[A-Za-z0-9._/-]+|scripts/router-worker\\.sh watchdog (start|stop) [a-z0-9][a-z0-9-]{0,31}|scripts/router-watch\\.sh (commit|signed|merged|pushed|tagged)( [.]*[A-Za-z0-9_][A-Za-z0-9._/-]*)+)$")
   and ((test("^scripts/") and test("\\.\\.")) | not);
 
-if .agent_type != "router" then empty
+if $ARGS.named.watchdog_to != null then
+  $ARGS.named.watchdog_to as $to
+  # only the tick's shape is admitted (one call judged at a time): a repeat of that same call passes
+  | if $to != "" and ((.tool_name == "CronCreate" and (.tool_input | type) == "object"
+        and .tool_input.cron == "*/5 * * * *" and .tool_input.prompt == "tick" and .tool_input.recurring == true)
+      or (.tool_name == "SendMessage" and (.tool_input | type) == "object" and .tool_input.to == $to))
+    then empty
+    else {hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny",
+      permissionDecisionReason: "watchdog guard: only CronCreate of the */5 tick and a SendMessage to \($to) are allowed"}} end
+elif .agent_type != "router" then empty
 elif (.tool_name | IN(tools[]) | not) then deny("tool \(.tool_name) is not one of the router's tools (\(tools | join(", ")))")
 elif .tool_name == "Bash" then
   (.tool_input.command // "") as $c
   # length first: it bounds the regex work below (an unbounded trim once ran past the hook timeout)
   | if ($c | length) > 1000 or ($c | sub("^ +"; "") | sub(" +$"; "") | bash_ok | not)
-    then deny("Bash whitelist: git status/log/diff/show, git branch -v/-a, gh pr view/list/status (no -R), ps aux/-ef, scripts/router-worker.sh spawn|resume|wait, scripts/router-watch.sh commit|signed|merged|pushed|tagged <args not starting with -> (read-only owner-action watch); one command of plain words, no quotes/$/globs/pipes/redirects, no --output")
+    then deny("Bash whitelist: git status/log/diff/show, git branch -v/-a, gh pr view/list/status (no -R), ps aux/-ef, scripts/router-worker.sh spawn|stop, scripts/router-worker.sh worktree add|remove <epic/E or wu/E/slug>, scripts/router-worker.sh watchdog start|stop <router-name>, scripts/router-watch.sh commit|signed|merged|pushed|tagged <args not starting with -> (read-only owner-action watch); one command of plain words, no quotes/$/globs/pipes/redirects, no --output")
     else empty end
 elif .tool_name == "Write" then
   .cwd as $d | (.tool_input.file_path // "") as $p
@@ -44,12 +56,9 @@ elif .tool_name == "Write" then
     then empty else deny("Write only worker briefs: <checkout>/.router/briefs/<name>.md") end
 elif .tool_name == "Skill" then
   if (.tool_input.skill // "" | IN(skills[])) then empty else deny("Skill only \(skills | join(", "))") end
-# Subscribe only: one idle/exit notice from a worker, never content. A worker is a full-tool session,
-# so any text the router sent it would be an instruction outside the brief the launcher snapshots.
-# Unknown keys are denied too, so a future content-bearing parameter cannot ride along.
+# Any message to a named worker (DEC-42): an idle subscription or content that steers a live worker.
+# The harness adds keys of its own (type, recipient, content), so only the addressee is judged.
 elif .tool_name == "SendMessage" then
-  .tool_input as $i
-  | if ($i | type) == "object" and ($i.to | type) == "string" and $i.notify_when_idle == true
-       and (($i.message // "") == "") and ($i | keys - ["to", "notify_when_idle", "message", "summary"] | length) == 0
-    then empty else deny("SendMessage only as a pure subscription: {to, notify_when_idle: true}, no message") end
+  if (.tool_input | type) == "object" and (.tool_input.to | type) == "string" and .tool_input.to != ""
+    then empty else deny("SendMessage needs a named recipient: to must be a non-empty string") end
 else empty end

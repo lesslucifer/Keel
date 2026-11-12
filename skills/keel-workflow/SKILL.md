@@ -145,7 +145,7 @@ keel lint                               # check.lint only
 | 5 | `5·diff-binding`: `code_diff_hash` = the code-path diff recomputed now | wu, epic |
 | 6 | `6·doc-note`: `doc/v1` lists exactly the changed docs with their `docs.tiers` tier; archived T3 docs carry lineage to tracked T1/T2 docs; at an epic tip nothing T3 (or tier-less) is tracked under `docs.root` | all |
 | 7 | `7·walk`: every first-parent seam since the base passes its own gate (merges as WUs, plain commits as standalone); back-merges skipped; octopus refused | epic |
-| 8 | `8·manual-review`: a valid `mr/v1` from a signer in this checkout's `.mr-allowed`, bound to tip, base, level, diff and the attested report's bytes (re-hashed whatever the policy); no report under `[mr] report = "required"` is red; signature verified for key-backed signers. Never exempt, never waivable, boundary-only (the walk never re-judges a seam's sign-off) | wu, epic |
+| 8 | `8·manual-review`: a valid `mr/v1` from a signer in the target's committed `.keel/mr-allowed`, bound to tip, base, level, diff and the attested report's bytes (re-hashed whatever the policy); no report under `[mr] report = "required"` is red; signature verified for key-backed signers. Never exempt, never waivable, boundary-only (the walk never re-judges a seam's sign-off) | wu, epic |
 
 Green ⇒ exit 0 and, for a non-exempt wu/epic, the `dod/v1` receipt. Red ⇒ exit 1, one
 `FAIL <check> … fix -> …` block per failure, nothing written. Do what the
@@ -172,14 +172,20 @@ Green ⇒ exit 0 and, for a non-exempt wu/epic, the `dod/v1` receipt. Red ⇒ ex
 | WU | always — attests the `wu-result` report (tracked at the tip) unless `[mr] report = "none"` | `mr/v1` via `keel mr confirm wu` | check 8 |
 | Epic | always — attests the `epic-result` report (may be archived, local) unless `[mr] report = "none"` | `mr/v1` via `keel mr confirm epic` | check 8 |
 
-`.mr-allowed` is a **local, untracked** trust store (`email:`, `username:`,
-`key: <id> <ssh-pubkey>` lines; accepted tiers in `[mr] tiers`), created per
-checkout by `keel mr setup --as <id> [--key <path>]`. Readers refuse it while
-tracked. A `key` identity must sign (`ssh-keygen -Y`, verified offline); identity
-tiers are a string match. List it in `.gitworktreecopy` to seed new worktrees.
-**Accepted limitation**: "signed" means a key or identity listed in this
-checkout's roster signed — an agent with filesystem access could add itself, so
-the roster is the human's to maintain.
+The signer roster is the **committed** file `.keel/mr-allowed` (`email:`,
+`username:`, `key: <id> <ssh-pubkey>` lines; accepted tiers in `[mr] tiers`).
+`keel mr setup --as <id> [--key <path>]` writes the working file; it authorises
+nothing until landed with `keel mr commit`. A change is judged by the roster
+committed on what it lands on: the merge target (pre-push: the merge's first
+parent), `HEAD` for a commit; where that has none, the change's own roster
+judges and a bootstrap line says so. No file on disk is read. The roster
+path is rule-bearing whatever `rule_bearing` lists. A sign-off whose
+`base..tip` changes the roster prints the added and removed lines and is
+refused without `--roster-change`. A `key` identity must sign (`ssh-keygen -Y`,
+verified offline); identity tiers are a string match.
+**Accepted limitation**: the `Reviewed-By` trailer is typed text, and a
+same-user shell can rewrite the target branch itself; the owner's key must need
+a touch or a passphrase (DEC-47, DEC-48).
 
 ## 7 · Hooks
 

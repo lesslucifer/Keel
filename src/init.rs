@@ -256,22 +256,31 @@ pub fn run(repo: &Path, force: bool) -> Result<i32, String> {
     if !on_path {
         println!("warning: keel is not on PATH - the hooks call it; install: cargo install --git https://github.com/lesslucifer/Keel");
     }
-    println!(
-        "next:\n  1. review .keel/config.toml (check commands, code_paths) and AGENTS.md; fill in .claude/skills/project-router/SKILL.md\n  \
-         2. land the policy on main once, before any gated merge (main is merge-only from now on):\n     \
-         git add .keel AGENTS.md .claude/skills .claude/settings.json .codex .gitignore && git commit --no-verify -m \"keel init\"\n  \
-         3. the human owner registers as signer (never an agent): keel mr setup --as <identity> [--key ~/.ssh/<key>.pub]"
-    );
+    println!("{NEXT_STEPS}");
     Ok(0)
 }
 
+/// The signer comes before the first commit, so the policy lands on main with its roster (DEC-47).
+const NEXT_STEPS: &str = "next:\n  1. review .keel/config.toml (check commands, code_paths) and AGENTS.md; fill in .claude/skills/project-router/SKILL.md\n  \
+     2. the human owner registers as signer (never an agent): keel mr setup --as <identity> [--key ~/.ssh/<key>]\n  \
+     3. land the policy and the roster (.keel/mr-allowed) on main once, before any gated merge (main is merge-only from now on):\n     \
+     git add .keel AGENTS.md .claude/skills .claude/settings.json .codex .gitignore && git commit --no-verify -m \"keel init\"";
+
 #[cfg(test)]
 mod tests {
-    use super::confirm;
+    use super::{confirm, NEXT_STEPS};
     use std::io::Cursor;
 
     fn ask(input: &str) -> bool {
         confirm(&mut Cursor::new(input.to_string()), &mut Vec::new(), "q?")
+    }
+
+    #[test]
+    fn the_next_steps_register_the_signer_before_the_one_time_first_commit() {
+        let setup = NEXT_STEPS.find("keel mr setup").unwrap();
+        let first = NEXT_STEPS.find("git commit --no-verify").unwrap();
+        assert!(setup < first, "{NEXT_STEPS}");
+        assert!(NEXT_STEPS.contains("git add .keel "), "the roster under .keel/ rides the first commit");
     }
 
     #[test]

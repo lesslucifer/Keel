@@ -8,7 +8,7 @@ Source (lineage): a router session on the Trawler project (a Rust + Tauri app ru
 3. Verify third-party behaviour a design depends on in source at the pinned version; PLAUSIBLE is a lead. (B3, B4)
 4. Pass the model explicitly on every worker and review; check yours and theirs at start. (B7)
 5. One current task per message, ending "What you need to do now:"; self-contained; never point back, even on a re-ask. (A1–A5, A8, A13, A14)
-6. Headless workers: fresh per phase, `ls`-checked durable brief, one non-stop run, no mid-run questions, current router name. (C1–C4, C6)
+6. Background workers: follow-up rounds go to the live session by message (R15, DEC-44), `ls`-checked durable brief, one non-stop run, no mid-run questions, report by `SendMessage` to the current router name. (C1–C4, C6)
 7. Never do the work, never launder a denial: the owner runs `mr`, merges, pushes, tags. (C5, D1, D2)
 8. Independent read-only Opus review of everything outside the gate before the owner signs. (B7, G2)
 9. Protect the owner's machine: backup/restore, temp homes, one e2e at a time, `lsof` first. (F1–F3)
@@ -52,10 +52,10 @@ Source (lineage): a router session on the Trawler project (a Rust + Tauri app ru
 - C7 Workers' try helpers broken (syntax error, HTML for a JSON test, helper in another scratchpad) → run once; stable path.
 - C8 Router's temp review worktree held the epic branch; back-merge blocked → remove temp worktrees.
 - C9 Hotfix landed as a one-epic collapse straight to main; owner wanted an epic with parallel WUs, main only after green → ask or default to that.
-- C10 The owner had to say "done" after every sign/merge/push/tag; the router idled until told → watcher per staged action, same turn; 10-minute heartbeat.
+- C10 The owner had to say "done" after every sign/merge/push/tag; the router idled until told → watcher per staged action, same turn; 10-minute heartbeat (superseded 2026-11-11: no router heartbeat; workers report by message (DEC-44) and a watch per action).
 - C11 A worker was announced as spawned but never started (`command -v claude` empty) → absolute claude path; announce only after `ps` shows it.
 - C12 Two parallel workers both took DEC-77 → a worker allocating a shared number (decision, rule, use case) checks every branch first; the router assigns the number in the brief.
-- C13 Workers died (reboot) or idled out and nobody noticed for hours → the heartbeat checks every worker and relaunches a dead or stalled one from its brief.
+- C13 Workers died (reboot) or idled out and nobody noticed for hours → the heartbeat checks every worker and relaunches a dead or stalled one from its brief (now: a background worker survives the router; on wake the router checks `ListAgents` and spawns a fresh one for an unlisted one; the watchdog, E-ROUTER3.W9, reports idle and stuck workers).
 
 ## D. Permissions
 - D1 Router merged twice, then "Merge Without Review" was denied → the owner merges; check capability before promising automation.
@@ -95,6 +95,7 @@ Source (lineage): the router session that ran E-SEED's close and E-ROUTER on Kee
 - K9 Running W2's command templates against a scratch repo showed `keel verify-dod` / `preflight` / `mr confirm` given a sha measure a WU against main unless passed `--target epic/<E>` → run every staged command template once before it ships (C7, for templates).
 - K10 E-ROUTER's router posture ran its whole epic with no independent review; the first one, at epic close (2026-11-08), broke it twice. (1) The Bash hook denied the substring `--output` in the raw command string, but the shell joins `--out""put=` into `--output=`: one whitelisted `git log --format=<script> --out""put=<launcher>` rewrote the launcher, which the router may run. (2) Both hooks keyed on `agent_type == "router"`, and every `Agent`-tool subagent reports its own type, so one delegation gave the router full Bash and Edit in its own checkout. The hooks also failed open (a jq error or timeout allows the call) → judge a command only after reducing it to plain words (a character whitelist), never by substrings of shell text; give an enforced router no tool that starts an agent outside the guard; fail closed; and have security-bearing config reviewed before it is relied on, not at close.
 - K11 Commit `2d7e18d` took Keel's router config off main while the router session ran in the main checkout; from then its Bash fell under the user-level allowlist (`git`, `rm`, `kill`, `curl`, `claude`) and it observed far broader Bash than the posture intends → enforcement lives in the checkout the router runs in: confirm the guard is loaded at session start.
+- K12 Git exports an absolute `GIT_DIR` to hooks in a linked worktree (2026-11-10). A `git push` there ran `keel check`, and the `cargo test` fixtures under that `GIT_DIR` wrote into the real repository (`core.bare`, an identity, a moved epic branch, a branch, a note, the hooks) → test fixtures clear every `GIT_*` (E-SEED2.W13, DEC-41), the launcher passes none to a worker (E-ROUTER3.W8), and a worker's first action proves where git resolves (`git rev-parse --show-toplevel`); re-check the shared git config after a full test run.
 
 ## Index: Trawler `failure-modes.md`
 Trawler's `trawler-router` kept a one-line-per-incident table (30 rows). Its generic rows are folded in above; this maps each to its lesson. Rows 10–21 and 24 (Windows CI layers, a cancelled macOS job, rpm/WiX versions, ports 4445/7420, `keep-capturing.json`, macOS login items, a downloaded actionlint, a slow vitest file) are Trawler's own; where generic, their rules survive in B2, B3, D2, F1–F2 and G1–G3.

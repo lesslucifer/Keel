@@ -17,7 +17,7 @@ disagrees with this file, they win — fix this file.
 | Main checkout | `<abs path>` (first row of `git worktree list`), branch `<branches.main>`, merge-only |
 | Worktrees | `<convention, e.g. ../<repo>-<slug>, one per epic (+ one per parallel WU)>` |
 | Remote | `<origin url>` |
-| Owner identity | `--as <id>` (from this checkout's `.mr-allowed`; untracked, copied into new worktrees via `.gitworktreecopy`) |
+| Owner identity | `--as <id>` (listed in the committed `.keel/mr-allowed`; key-backed where `[mr] tiers` asks for keys) |
 | Shared resources | `<fixed ports, single-instance sockets, real app data dirs>` |
 
 ## Who runs what

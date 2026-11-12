@@ -1,6 +1,6 @@
 //! The router's enforcement surface (E-ROUTER close review): the PreToolUse guard
-//! `scripts/router-guard.jq` as `.claude/settings.json` wires it, the headless launcher
-//! `scripts/router-worker.sh` (with a stub `claude`) including its `wait` mode, and the shipped PUSHED watch probe.
+//! `scripts/router-guard.jq` as `.claude/settings.json` wires it, the background-session launcher
+//! `scripts/router-worker.sh` (with a stub `claude`), the owner-action watch, and the shipped PUSHED watch probe.
 //! Needs `jq`, `sh`, `uuidgen` and `shasum` on PATH, as the guard and launcher do.
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -15,7 +15,11 @@ fn root() -> &'static Path {
 
 /// Run the guard on one PreToolUse input; Some(reason) = denied, None = allowed.
 fn guard(agent: &str, tool: &str, input: serde_json::Value) -> Option<String> {
-    let event = serde_json::json!({"agent_type": agent, "tool_name": tool, "tool_input": input, "cwd": "/r"});
+    guard_event(serde_json::json!({"agent_type": agent, "tool_name": tool, "tool_input": input, "cwd": "/r"}))
+}
+
+/// Run the guard on one whole PreToolUse event; Some(reason) = denied, None = allowed.
+fn guard_event(event: serde_json::Value) -> Option<String> {
     let mut p = Command::new("jq")
         .args(["-c", "-f"])
         .arg(root().join("scripts/router-guard.jq"))
@@ -121,9 +125,8 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
         "gh pr list --state open -L 5 --author vuluu".into(),
         "gh pr status".into(),
         "scripts/router-worker.sh spawn e-x-w1 /Users/o/Keel-x .router/briefs/e-x-w1.md opus".into(),
-        "scripts/router-worker.sh resume e-x-w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b /Users/o/Keel-x .router/briefs/e-x-w1-r1.md opus --effort high".into(),
-        "scripts/router-worker.sh wait e-x-w1".into(),
-        "scripts/router-worker.sh wait e-x-w1 30".into(),
+        "scripts/router-worker.sh worktree add wu/E-X/w1-a".into(),
+        "scripts/router-worker.sh stop e-x-w1".into(),
         "scripts/router-watch.sh commit wu/E-SEED2/w12-owner-watch fa5a25d16d953d5858c35b58e6025a6a7903ff8b skills/keel-router/SKILL.md .claude/skills/keel-router/SKILL.md".into(),
         "scripts/router-watch.sh signed fa5a25d16d953d5858c35b58e6025a6a7903ff8b".into(),
         "scripts/router-watch.sh merged fa5a25d epic/E-SEED2".into(),
@@ -133,14 +136,15 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
     ];
     // permissions.allow serves workers and the router alike: every router entry is a shape the guard
     // accepts (one source of truth, no drift); every worker-only entry is one it refuses the router.
-    // `wait` (E-SEED2.W8) and `router-watch.sh` (E-SEED2.W12) are router entries; cargo/keel are
+    // the launcher and `router-watch.sh` (E-SEED2.W12) are router entries; cargo/keel are
     // worker-only, and these shapes stay refused whether or not settings lists them.
     let mut worker_only: Vec<String> =
         ["cargo test", "cargo build", "keel notes write test", "keel preflight wu HEAD", "keel check"].map(String::from).to_vec();
     for a in settings()["permissions"]["allow"].as_array().unwrap() {
         let a = a.as_str().unwrap().strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
         let cmd = match a.strip_suffix(" *") {
-            Some(p) if p.ends_with(" wait") => format!("{p} n 15"),
+            Some(p) if p.ends_with(" stop") || p.ends_with(" watchdog start") => format!("{p} n"),
+            Some(p) if p.ends_with(" worktree add") || p.ends_with(" worktree remove") => format!("{p} wu/E-X/w1-a"),
             Some(p) if p.ends_with("router-watch.sh") => format!("{p} signed 1a2b3c4"),
             Some(p) if p.starts_with("scripts/") => format!("{p} n /w .router/briefs/n.md opus"),
             Some(p) => format!("{p} HEAD"),
@@ -206,7 +210,7 @@ fn router_bash_guard_reads_gh_flags_as_gh_does() {
 /// guard never sees them; the router may not start one, nor use any tool its agent file omits.
 #[test]
 fn router_guard_confines_the_router_to_its_tools_and_leaves_other_agents_alone() {
-    for t in ["Agent", "Task", "Edit", "MultiEdit", "NotebookEdit", "Monitor", "SendMessage", "mcp__x__y"] {
+    for t in ["Agent", "Task", "Edit", "MultiEdit", "NotebookEdit", "Monitor", "mcp__x__y"] {
         assert!(guard("router", t, serde_json::json!({})).is_some(), "router may use {t}");
     }
     assert!(guard("router", "Skill", serde_json::json!({"skill": "code-review"})).is_some());
@@ -233,32 +237,41 @@ fn router_guard_confines_the_router_to_its_tools_and_leaves_other_agents_alone()
     assert!(!md.contains(&"Agent"), "router.md grants Agent");
 }
 
-/// E-ROUTERFIX.W2: the router may learn when a worker goes idle or exits, but never send it content:
-/// a worker is a full-tool session, so router text reaching it would be an unsnapshotted brief.
+/// Router SendMessage PreToolUse events as Claude Code 2.1.288 delivered them (E-ROUTER3.W1 capture;
+/// ids and paths replaced). The harness adds type, recipient and content to what the router wrote,
+/// which the old closed key set denied (backlog e-router-v2 R8).
+const CAPTURED_SEND_MESSAGE: [&str; 2] = [
+    r#"{"session_id":"s","transcript_path":"/t.jsonl","cwd":"/r","scratchpad_dir":"/t","prompt_id":"p","permission_mode":"default","agent_type":"router","hook_event_name":"PreToolUse","tool_name":"SendMessage","tool_input":{"to":"e-x-w1","message":"","notify_when_idle":true,"type":"message","recipient":"e-x-w1","content":""},"tool_use_id":"u1"}"#,
+    r#"{"session_id":"s","transcript_path":"/t.jsonl","cwd":"/r","scratchpad_dir":"/t","prompt_id":"p","permission_mode":"default","agent_type":"router","hook_event_name":"PreToolUse","tool_name":"SendMessage","tool_input":{"to":"e-x-w1","summary":"ping","message":"ping: reply with pong","type":"message","recipient":"e-x-w1","content":"ping: reply with pong"},"tool_use_id":"u2"}"#,
+];
+
+/// E-ROUTER3.W1 (DEC-42): the router may message any named worker, an idle subscription or content
+/// that steers it; the guard judges only the addressee, so harness-added keys never deny a call.
 #[test]
-fn router_guard_allows_send_message_only_as_a_contentless_idle_subscription() {
+fn router_guard_allows_send_message_to_a_named_worker_as_the_harness_sends_it() {
+    for e in CAPTURED_SEND_MESSAGE {
+        assert_eq!(guard_event(serde_json::from_str(e).unwrap()), None, "guard denied the captured {e}");
+    }
     let send = |i: serde_json::Value| guard("router", "SendMessage", i);
     for ok in [
         serde_json::json!({"to": "e-x-w1", "notify_when_idle": true}),
-        serde_json::json!({"to": "e-x-w1 [3fa9c1]", "notify_when_idle": true, "message": "", "summary": "watch w1"}),
+        serde_json::json!({"to": "e-x-w1 [3fa9c1]", "message": "answer: keep the old flag", "summary": "answer"}),
+        serde_json::json!({"to": "e-x-w1", "message": {"type": "shutdown_request"}}),
     ] {
-        assert_eq!(send(ok.clone()), None, "guard denied subscription {ok}");
+        assert_eq!(send(ok.clone()), None, "guard denied {ok}");
     }
     for denied in [
-        serde_json::json!({"to": "e-x-w1", "notify_when_idle": true, "message": "also run rm -rf"}),
-        serde_json::json!({"to": "e-x-w1", "message": "hi"}),
-        serde_json::json!({"to": "e-x-w1", "message": ""}),
-        serde_json::json!({"to": "e-x-w1", "notify_when_idle": false}),
-        serde_json::json!({"to": "e-x-w1", "notify_when_idle": "true"}),
-        serde_json::json!({"to": "e-x-w1", "notify_when_idle": true, "message": {"type": "shutdown_request"}}),
-        serde_json::json!({"to": "e-x-w1", "notify_when_idle": true, "attachment": "x"}),
-        serde_json::json!({"notify_when_idle": true}),
+        serde_json::json!({"message": "hi"}),
+        serde_json::json!({"to": "", "message": "hi"}),
+        serde_json::json!({"to": ["e-x-w1"], "message": "hi"}),
+        serde_json::json!({"to": null, "notify_when_idle": true}),
         serde_json::json!("e-x-w1"),
+        serde_json::json!(null),
     ] {
-        assert!(send(denied.clone()).is_some(), "guard allowed {denied}");
+        assert!(send(denied.clone()).unwrap().contains("non-empty string"), "guard allowed {denied}");
     }
     assert_eq!(guard("router", "ListAgents", serde_json::json!({})), None);
-    assert_eq!(guard("worker", "SendMessage", serde_json::json!({"to": "x", "message": "hi"})), None);
+    assert_eq!(guard("worker", "SendMessage", serde_json::json!({})), None);
 }
 
 /// Important of the close review: a hook that errors (no jq, no guard file) must deny, not allow.
@@ -328,23 +341,45 @@ struct Launcher {
     wt: PathBuf,
     wt2: PathBuf,
     stub: PathBuf,
-    release: PathBuf,
+    state: PathBuf,
 }
 
-/// The stub `claude` the launcher starts through $ROUTER_CLAUDE; its behaviour is described on `launcher`.
+/// The stub `claude` the launcher runs through $ROUTER_CLAUDE, playing Claude Code 2.1.288's
+/// background CLI as the E-ROUTER3.W10 probes saw it. Every call appends its working directory and
+/// its argv (each argument bracketed, so boundaries are visible) to $STUB_STATE/calls and exits at
+/// once; the GIT_* variables each call sees are appended to $STUB_STATE/git-env. `--bg` lists a new
+/// idle background session in $STUB_STATE/sessions.json (named by `-n`) and prints the `backgrounded` line; while
+/// $STUB_STATE/refuse exists it prints that file and exits 1, and while $STUB_STATE/unlisted exists it
+/// starts nothing it lists. `agents --json` prints the list; while $STUB_STATE/agents-ok holds k it
+/// succeeds k more times, then fails printing to stderr only. After printing: while $STUB_STATE/vanish
+/// exists it empties the list (a session that ends between two looks), while $STUB_STATE/swap exists a
+/// busy session is replaced by an idle one of the same name under a new id, and while
+/// $STUB_STATE/settle exists every session turns idle (a turn that ends between two looks). `stop <id>`
+/// delists the id, `rm` only records.
 fn stub_claude(stub: &Path) {
     std::fs::write(stub, concat!(
-        "#!/bin/sh\necho \"stub $*\"\nprintf '[%s]' \"$@\"; echo\n",
-        "held() { [ ! -e \"$STUB_RELEASE\" ] && [ -d \"${STUB_RELEASE%/*}\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; }\n",
-        "(while held; do sleep 0.05; done) | cut -c 1 &\n",
-        "while held; do\n",
-        "  [ ! -e \"$STUB_RELEASE.busy\" ] || /bin/sh -c 'while [ -e \"$STUB_RELEASE.busy\" ] && [ ! -e \"$STUB_RELEASE\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null; do sleep 0.05; done; :'\n",
-        "  sleep 0.05\ndone\nwait\n"
+        "#!/bin/sh\nS=$STUB_STATE\nprintf '%s ' \"$PWD\" >> \"$S/calls\"; printf '[%s]' \"$@\" >> \"$S/calls\"; echo >> \"$S/calls\"\n",
+        "env | grep '^GIT_' >> \"$S/git-env\"\n",
+        "[ -s \"$S/sessions.json\" ] || echo '[]' > \"$S/sessions.json\"\n",
+        "case \"$1\" in\n",
+        "  agents) if [ -e \"$S/agents-ok\" ]; then k=$(cat \"$S/agents-ok\"); [ \"$k\" -gt 0 ] || { echo 'Error: no supervisor' >&2; exit 1; }; echo $((k - 1)) > \"$S/agents-ok\"; fi\n",
+        "    cat \"$S/sessions.json\"; [ ! -e \"$S/vanish\" ] || echo '[]' > \"$S/sessions.json\"\n",
+        "    [ ! -e \"$S/swap\" ] || { jq 'map(if .status == \"busy\" then .id = \"new0\" | .sessionId = \"new0-x\" | .status = \"idle\" else . end)' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }\n",
+        "    [ ! -e \"$S/settle\" ] || { jq 'map(.status = \"idle\")' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }; exit 0;;\n",
+        "  stop) jq --arg i \"$2\" 'map(select(.id != $i))' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; echo \"stopped $2\"; exit 0;;\n",
+        "  rm) echo \"removed $2\"; exit 0;;\n",
+        "esac\n",
+        "[ ! -e \"$S/refuse\" ] || { cat \"$S/refuse\"; exit 1; }\n",
+        "name=\nwhile [ $# -gt 0 ]; do case \"$1\" in -n) name=$2;; esac; shift; done\n",
+        "sid=$(uuidgen | tr A-F a-f)\n",
+        "id=${sid%%-*}\n",
+        "[ -e \"$S/unlisted\" ] || { jq --arg n \"$name\" --arg i \"$id\" --arg s \"$sid\" --arg c \"$PWD\" '. + [{pid: 1, id: $i, cwd: $c, kind: \"background\", sessionId: $s, name: $n, status: \"idle\", state: \"done\"}]' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }\n",
+        "echo \"backgrounded · $id · $name\"\n"
     )).unwrap();
     std::fs::set_permissions(stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
 
-/// `wait` and `router-watch.sh` sleep once per poll; this `<base>/shim/sleep` counts the polls in
+/// `router-watch.sh` sleeps once per poll; this `<base>/shim/sleep` counts the polls in
 /// $STEP_DIR/polls (its argument, one per line, in $STEP_DIR/sleeps) and blocks poll n until the test
 /// creates $STEP_DIR/go-n, so each poll judges a state the test has set. It ends with its caller or the test process.
 fn sleep_shim(base: &Path) {
@@ -357,13 +392,8 @@ fn sleep_shim(base: &Path) {
     std::fs::set_permissions(base.join("shim/sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
 
-/// A repo whose main checkout holds the launcher, two linked worktrees, a stub claude and a `sleep`
-/// shim. The stub prints its argv (joined, then each argument bracketed so boundaries are visible) and
-/// stays alive until $STUB_RELEASE exists, so the launcher's startup window never races a timer; it
-/// also exits once the test's temp dir or the test process ($STUB_OWNER) is gone, so a failed test
-/// leaks no stub. While held it keeps a subshell piped to `cut -c` (long-lived children that are not
-/// `<shell> -c`, as an MCP server is), and runs a `sh -c` child, as a Bash tool command runs, while
-/// $STUB_RELEASE.busy exists.
+/// A repo whose main checkout holds the launcher, the worker persona and an `epic/E-X` branch, two
+/// linked worktrees and the stub claude.
 fn launcher() -> Launcher {
     let d = TempDir::new().unwrap();
     let base = d.path().canonicalize().unwrap();
@@ -371,19 +401,24 @@ fn launcher() -> Launcher {
     std::fs::create_dir_all(main.join("scripts")).unwrap();
     std::fs::create_dir_all(main.join(".router/briefs")).unwrap();
     std::fs::copy(root().join("scripts/router-worker.sh"), main.join("scripts/router-worker.sh")).unwrap();
-    std::fs::write(main.join(".gitignore"), ".router/\n").unwrap();
+    std::fs::copy(root().join("scripts/router-guard.jq"), main.join("scripts/router-guard.jq")).unwrap();
+    std::fs::write(main.join(".gitignore"), ".router/\n/target/\n").unwrap();
+    std::fs::create_dir_all(main.join(".claude/agents")).unwrap();
+    std::fs::write(main.join(".claude/agents/worker.md"), "---\nname: worker\n---\nworker\n").unwrap();
     std::fs::write(main.join(".router/briefs/b.md"), "do the thing\n").unwrap();
     std::fs::create_dir_all(main.join(".keel")).unwrap();
     std::fs::copy(root().join(".keel/config.toml"), main.join(".keel/config.toml")).unwrap();
     git(&main, &["init", "-q", "-b", "main"]);
     git(&main, &["add", "."]);
     git(&main, &["commit", "-qm", "base"]);
+    git(&main, &["branch", "epic/E-X"]);
     git(&main, &["worktree", "add", "-q", "../wt", "-b", "w"]);
     git(&main, &["worktree", "add", "-q", "../wt2", "-b", "w2"]);
     let stub = base.join("claude");
     stub_claude(&stub);
-    sleep_shim(&base);
-    Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub, release: base.join("release"), _d: d }
+    let state = base.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub, state, _d: d }
 }
 
 impl Launcher {
@@ -397,10 +432,9 @@ impl Launcher {
             .args(args)
             .current_dir(&self.main)
             .env("ROUTER_CLAUDE", &self.stub)
-            .env("STUB_RELEASE", &self.release)
-            .env("STUB_OWNER", std::process::id().to_string())
-            .env("CLAUDE_CONFIG_DIR", self.main.parent().unwrap().join("config"))
-            .env("ROUTER_WAIT_POLL", "0.2")
+            .env("STUB_STATE", &self.state)
+            .env("HOME", self.state.join("home"))
+            .env("XDG_CONFIG_HOME", self.state.join("home/.config"))
             .envs(env.iter().copied());
         c
     }
@@ -408,37 +442,6 @@ impl Launcher {
     fn run_env(&self, args: &[&str], env: &[(&str, &str)]) -> (bool, String) {
         let o = self.cmd(args, env).output().unwrap();
         (o.status.success(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
-    }
-
-    /// Start `wait` in the background, as the router runs it, its polls stepped by the test.
-    fn wait_stepped(&self, args: &[&str], k: &str) -> Stepped {
-        let base = self.main.parent().unwrap();
-        let dir = base.join(format!("steps-{k}"));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = format!("{}:{}", base.join("shim").display(), std::env::var("PATH").unwrap());
-        let owner = std::process::id().to_string();
-        let env = [("STEP_DIR", dir.to_str().unwrap()), ("STUB_OWNER", owner.as_str()), ("PATH", path.as_str())];
-        let child = self.cmd(args, &env).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
-        Stepped { child, dir }
-    }
-
-    /// Spawn or resume worker n, held alive until `release` is created; returns the launcher's line.
-    fn hold(&self, args: &[&str], release: &Path) -> String {
-        let owner = std::process::id().to_string();
-        let (ok, out) = self.run_env(args, &[("STUB_RELEASE", release.to_str().unwrap()), ("STUB_OWNER", owner.as_str())]);
-        assert!(ok && out.starts_with("RUNNING"), "{out}");
-        out
-    }
-
-    /// The session transcript `wait` reads for this spawn, under the stubbed CLAUDE_CONFIG_DIR. Claude
-    /// Code names the project dir after the worktree, but truncates a long name and appends a hash, and
-    /// encodes non-ASCII per UTF-16 unit; the dir here matches no re-derivable rule, so `wait` must find
-    /// the transcript by its unique session id alone.
-    fn transcript(&self, wt: &Path, sid: &str) -> PathBuf {
-        let enc: String = wt.to_str().unwrap().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
-        let dir = self.main.parent().unwrap().join("config/projects").join(format!("{}-1k9x2q", &enc[..enc.len().min(20)]));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir.join(format!("{sid}.jsonl"))
     }
 
     /// Commit `config` as the main checkout's .keel/config.toml (None: remove it), the HEAD the launcher reads.
@@ -452,28 +455,55 @@ impl Launcher {
         git(&self.main, &["commit", "-qm", "config"]);
     }
 
-    /// Release every held stub, wait (bounded) until the worker recorded in <name>.pid has exited,
-    /// then re-arm the hold for the next run.
-    fn wait_exit(&self, name: &str) {
-        std::fs::write(&self.release, "").unwrap();
-        let pid = std::fs::read_to_string(self.main.join(format!(".router/out/{name}.pid"))).unwrap();
-        let t = Instant::now();
-        while Command::new("kill").args(["-0", pid.trim()]).stderr(Stdio::null()).status().unwrap().success() {
-            assert!(t.elapsed() < Duration::from_secs(20), "stub worker never exited");
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        std::fs::remove_file(&self.release).unwrap();
+    /// The router closes an idle worker.
+    fn stop(&self, name: &str) {
+        let (ok, out) = self.run(&["stop", name]);
+        assert!(ok && out.starts_with(&format!("STOPPED name={name} ")), "{out}");
     }
+
+    /// How many sessions the launcher started under `name`.
+    fn starts(&self, name: &str) -> usize {
+        calls(&self.state).iter().filter(|(_, a)| a.first().map(String::as_str) == Some("--bg") && a.windows(2).any(|w| w[0] == "-n" && w[1] == name)).count()
+    }
+
+    /// PATH with an instant `sleep` first, so the launcher's bounded polls run without waiting.
+    fn fast_path(&self) -> String {
+        let shim = self.state.join("shim");
+        std::fs::create_dir_all(&shim).unwrap();
+        std::fs::write(shim.join("sleep"), "#!/bin/sh\n:\n").unwrap();
+        std::fs::set_permissions(shim.join("sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        format!("{}:{}", shim.display(), std::env::var("PATH").unwrap())
+    }
+
+    fn sessions(&self) -> Vec<serde_json::Value> {
+        serde_json::from_str(&std::fs::read_to_string(self.state.join("sessions.json")).unwrap()).unwrap()
+    }
+
+    fn set_sessions(&self, rows: &[serde_json::Value]) {
+        std::fs::write(self.state.join("sessions.json"), serde_json::to_string(rows).unwrap()).unwrap();
+    }
+}
+
+/// Every call the stub recorded under `state`: its working directory and its argv.
+fn calls(state: &Path) -> Vec<(String, Vec<String>)> {
+    std::fs::read_to_string(state.join("calls"))
+        .unwrap_or_default()
+        .lines()
+        .map(|l| {
+            let (dir, argv) = l.split_once(" [").unwrap();
+            (dir.to_string(), argv.trim_end_matches(']').split("][").map(String::from).collect())
+        })
+        .collect()
 }
 
 fn field<'a>(out: &'a str, k: &str) -> &'a str {
     out.split_whitespace().find_map(|w| w.strip_prefix(k)).unwrap_or_else(|| panic!("no {k} in {out}"))
 }
 
-/// The launcher's refusals (none had a test before the close review) and the two importants it
-/// fixed: one live run per name, and <name>.out holding only the latest run's report.
+/// The launcher's refusals (none had a test before the close review) and one live session per name
+/// (E-ROUTER3.W10: any session the CLI lists under it, wherever it runs).
 #[test]
-fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
+fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
     let l = launcher();
     let wt = l.wt.to_str().unwrap();
     let wt2 = l.wt2.to_str().unwrap();
@@ -487,7 +517,6 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
         (vec!["spawn", "n", wt, brief, "sonnet"], "model must be opus ([router] worker_model in .keel/config.toml)"),
         (vec!["spawn", "n", wt, brief, "haiku"], "model must be opus ([router] worker_model in .keel/config.toml)"),
         (vec!["spawn", "n", wt, brief, "fable"], "model must be opus ([router] worker_model in .keel/config.toml)"),
-        (vec!["resume", "n", "0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b", wt, brief, "sonnet"], "model must be opus"),
         (vec!["spawn", "n", wt, "scripts/router-worker.sh", "opus"], "file must be a .md under"),
     ] {
         let (ok, out) = l.run(&args);
@@ -499,29 +528,20 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
 
     let (ok, out) = l.run(&["spawn", "n", wt, brief, "opus"]);
     assert!(ok && out.starts_with("RUNNING"), "{out}");
-    let sid = field(&out, "session=").to_string();
     let copy = field(&out, "brief=").to_string();
     assert!(copy.starts_with(wt) && std::fs::read_to_string(&copy).unwrap() == "do the thing\n", "{out}");
 
-    // a second run under a live name is refused, spawn or resume
+    // a second run under a live name is refused
     let (ok, out) = l.run(&["spawn", "n", wt2, brief, "opus"]);
     assert!(!ok && out.contains("still running"), "{out}");
-    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "opus"]);
+    l.stop("n");
+
+    // any listed session holds its name, whatever its directory or kind: SendMessage addresses by name
+    let elsewhere = serde_json::json!({"id": "e1", "sessionId": "e1", "name": "n", "cwd": "/elsewhere", "kind": "interactive", "status": "busy"});
+    l.set_sessions(&[elsewhere]);
+    let (ok, out) = l.run(&["spawn", "n", wt, brief, "opus"]);
     assert!(!ok && out.contains("still running"), "{out}");
-    l.wait_exit("n");
-
-    // resume is bound to the spawn's name, session and worktree
-    let (ok, out) = l.run(&["resume", "n", &sid, wt2, brief, "opus"]);
-    assert!(!ok && out.contains("was spawned in"), "{out}");
-    let (ok, out) = l.run(&["resume", "m", &sid, wt, brief, "opus"]);
-    assert!(!ok && out.contains("no recorded spawn"), "{out}");
-    let (ok, out) = l.run(&["resume", "n", &sid, wt, brief, "opus"]);
-    assert!(ok && out.starts_with("RUNNING"), "{out}");
-    l.wait_exit("n");
-
-    let log = std::fs::read_to_string(l.main.join(".router/out/n.out")).unwrap();
-    assert_eq!(log.matches("stub ").count(), 1, "n.out must hold only the latest run:\n{log}");
-    assert!(log.contains(&format!("--resume {sid}")), "{log}");
+    l.set_sessions(&[]);
 
     // E-SEED2.W7 (DEC-39): the policy is [router] in .keel/config.toml as committed at HEAD; anything
     // the launcher's narrow reader does not accept refuses the run and starts nothing
@@ -589,7 +609,7 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
         l.commit_config(config.as_deref());
         let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus"]);
         assert!(!ok && out.contains("no worker policy: [router] worker_model / worker_efforts / worker_default_effort in .keel/config.toml at HEAD of"), "{what}: {out}");
-        assert!(!l.main.join(".router/out/q.pid").exists(), "{what}: started a worker");
+        assert_eq!(l.starts("q"), 0, "{what}: started a worker");
     }
 
     // an uncommitted edit, even staged, cannot widen the committed policy
@@ -607,41 +627,26 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
     assert!(!ok && out.contains("model must be sonnet ([router] worker_model"), "{out}");
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
     assert!(ok && out.contains(" effort=high "), "{out}");
-    l.wait_exit("q");
+    l.stop("q");
 
     // the accepted efforts are the committed list, not a built-in one: narrowed, medium is refused;
-    // widened, max is accepted on spawn and resume
+    // widened, max is accepted
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "medium"]);
     assert!(!ok && out.contains("effort must be one of: high ("), "{out}");
     l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"max\"]\nworker_default_effort = \"high\"\n"));
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "max"]);
     assert!(ok && out.contains(" effort=max "), "{out}");
-    let sid = field(&out, "session=").to_string();
-    l.wait_exit("q");
-    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "max");
-    let (ok, out) = l.run(&["resume", "q", &sid, wt, brief, "sonnet", "--effort", "medium"]);
-    assert!(!ok && out.contains("effort must be one of: high max ("), "{out}");
-    let (ok, out) = l.run(&["resume", "q", &sid, wt, brief, "sonnet", "--effort", "max"]);
-    assert!(ok && out.contains(" effort=max "), "{out}");
-    l.wait_exit("q");
-    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "max");
+    l.stop("q");
+    assert_eq!(option(&worker_argv(&l.state, "q"), "--effort"), "max");
 
-    // the default is worker_default_effort, not the list's first entry: a bare spawn and a bare
-    // resume of a session spawned at high both run at medium; read from HEAD on a branch other than main
+    // the default is worker_default_effort, not the list's first entry, read from HEAD on a branch
+    // other than main
     git(&l.main, &["checkout", "-qb", "router"]);
     l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"medium\"]\nworker_default_effort = \"medium\"\n"));
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
     assert!(ok && out.contains(" effort=medium "), "{out}");
-    l.wait_exit("q");
-    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "medium");
-    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "high"]);
-    assert!(ok && out.contains(" effort=high "), "{out}");
-    let sid = field(&out, "session=").to_string();
-    l.wait_exit("q");
-    let (ok, out) = l.run(&["resume", "q", &sid, wt, brief, "sonnet"]);
-    assert!(ok && out.contains(" effort=medium "), "{out}");
-    l.wait_exit("q");
-    assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), "medium");
+    l.stop("q");
+    assert_eq!(option(&worker_argv(&l.state, "q"), "--effort"), "medium");
 
     // every level word is accepted when committed: low and xhigh, as the default and as --effort (review r5 V1)
     l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"low\", \"xhigh\"]\nworker_default_effort = \"low\"\n"));
@@ -650,8 +655,8 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
         args.extend(&extra);
         let (ok, out) = l.run(&args);
         assert!(ok && out.contains(&format!(" effort={effort} ")), "{out}");
-        l.wait_exit("q");
-        assert_eq!(option(&worker_argv(&l.main, "q"), "--effort"), effort);
+        l.stop("q");
+        assert_eq!(option(&worker_argv(&l.state, "q"), "--effort"), effort);
     }
 
     // the reader's accepted edges in one policy: a tab before the header's comment, a dotted and
@@ -661,7 +666,7 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
     for effort in ["low", "medium", "xhigh"] {
         let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus-4.5", "--effort", effort]);
         assert!(ok && out.contains(&format!(" effort={effort} ")), "{out}");
-        l.wait_exit("q");
+        l.stop("q");
     }
     // an effort matches a whole list entry, never part of one
     for part in ["med", "igh", "low medium"] {
@@ -672,7 +677,7 @@ fn launcher_refuses_unsafe_targets_binds_resume_and_runs_one_worker_per_name() {
 
 /// DEC-39: the repo's committed worker policy is opus at medium or high effort, medium by default.
 #[test]
-fn committed_worker_policy_is_opus_at_medium_or_high_effort() {
+fn committed_worker_policy_is_opus_at_medium_or_high_effort_with_a_haiku_watchdog() {
     let config = std::fs::read_to_string(root().join(".keel/config.toml")).unwrap();
     let section: Vec<&str> = config
         .lines()
@@ -681,7 +686,46 @@ fn committed_worker_policy_is_opus_at_medium_or_high_effort() {
         .take_while(|l| !l.starts_with('['))
         .filter(|l| !l.trim().is_empty())
         .collect();
-    assert_eq!(section, ["worker_model = \"opus\"", "worker_efforts = [\"medium\", \"high\"]", "worker_default_effort = \"medium\""]);
+    assert_eq!(section, ["worker_model = \"opus\"", "worker_efforts = [\"medium\", \"high\"]", "worker_default_effort = \"medium\"", "watchdog_model = \"haiku\""]);
+}
+
+/// E-ROUTER3.W4 (R3, DEC-48): in a self-clone with keel's hooks a plain commit touching a router security file is refused naming it,
+/// while a trailer naming the committed roster's signer admits it.
+#[test]
+fn keels_router_security_files_are_rule_bearing() {
+    let d = TempDir::new().unwrap();
+    let c = d.path().join("c");
+    common::self_clone(root(), &c);
+    let roster = std::fs::read_to_string(c.join(".keel/mr-allowed")).unwrap();
+    let (tier, rest) = roster.lines().find_map(|l| l.split_once(':')).expect("a committed signer");
+    let owner = rest.split_whitespace().next().unwrap();
+
+    let keel = Path::new(env!("CARGO_BIN_EXE_keel"));
+    let path = format!("{}:{}", keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
+    let run = |a: &[&str]| {
+        hermetic(&mut common::cmd("git"))
+            .args(a)
+            .current_dir(&c)
+            .env("PATH", &path)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap()
+    };
+    assert!(common::cmd(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
+    assert!(run(&["checkout", "-q", "-b", "wu/x/gate"]).status.success());
+    for f in ["scripts/router-guard.jq", "scripts/router-worker.sh", "scripts/router-watch.sh", ".claude/agents/worker.md"] {
+        let body = std::fs::read_to_string(c.join(f)).unwrap();
+        std::fs::write(c.join(f), format!("{body}\n")).unwrap();
+        assert!(run(&["add", f]).status.success());
+        let o = run(&["commit", "-qm", "a plain change"]);
+        let t = String::from_utf8_lossy(&o.stderr);
+        assert!(!o.status.success() && t.contains(f), "{f}: {t}");
+        let o = run(&["commit", "-qm", &format!("a reviewed change\n\nReviewed-By: {} {owner}", tier.trim())]);
+        assert!(o.status.success(), "{f}: {}", String::from_utf8_lossy(&o.stderr));
+    }
 }
 
 const WORKER_GRANTS: [&str; 11] = [
@@ -697,27 +741,91 @@ const WORKER_GRANTS: [&str; 11] = [
     "keel lint",
     "keel check",
 ];
-const WORKER_DENIES: [&str; 4] = ["Bash(keel mr)", "Bash(keel mr *)", "Bash(cargo run)", "Bash(cargo run *)"];
+/// Denied to every worker, each as `Bash(c)` and `Bash(c *)` (E-ROUTER3.W8, DEC-46).
+const WORKER_DENIES: [&str; 25] = [
+    "keel mr",
+    "cargo run",
+    "keel init",
+    "keel hooks",
+    "cargo install",
+    "cargo publish",
+    "cargo login",
+    "git push",
+    "git config",
+    "git update-ref",
+    "git symbolic-ref",
+    "git stash",
+    "git notes",
+    "git switch",
+    "git checkout",
+    "git rebase",
+    "git worktree add",
+    "git worktree remove",
+    "git worktree move",
+    "git worktree prune",
+    "git -C",
+    "git --git-dir",
+    "git --work-tree",
+    "claude",
+    "scripts/router-worker.sh",
+];
 
-/// The argv the stub `claude` recorded for worker <name> under `checkout`'s .router/out, read from its
-/// bracketed line (one item per argv element: a word-split `Bash(cargo build *)` cannot pass). Every
-/// worker, spawned or resumed, gets exactly these options once each and the fixed grant/deny lists;
-/// an extra `--allowedTools Bash(*)` or a bypass flag fails here.
-fn worker_argv(checkout: &Path, name: &str) -> Vec<String> {
-    let out = std::fs::read_to_string(checkout.join(format!(".router/out/{name}.out"))).unwrap();
-    let line = out.lines().find(|x| x.starts_with('[')).unwrap_or_else(|| panic!("no stub argv: {out}"));
-    let a: Vec<String> = line[1..line.len() - 1].split("][").map(String::from).collect();
+fn bash_pairs<'a>(cmds: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    cmds.into_iter().flat_map(|c| [format!("Bash({c})"), format!("Bash({c} *)")]).collect()
+}
+
+/// The argv of the latest background session the stub started under <name>. Every spawned worker gets
+/// exactly these options once each, in this order, with the fixed grant/deny lists, and the fixed
+/// prompt last, after a single-valued option (after a list option it would be read as a tool name);
+/// an extra `--allowedTools Bash(*)`, a bypass flag, `-p` or a stream flag fails here.
+fn worker_argv(state: &Path, name: &str) -> Vec<String> {
+    argv_of(state, name, false)
+}
+
+/// As `worker_argv`, for a worker spawned with `--review` (`review`) or without.
+fn argv_of(state: &Path, name: &str, review: bool) -> Vec<String> {
+    let (_, a) = calls(state)
+        .into_iter()
+        .rfind(|(_, a)| a[0] == "--bg" && a.windows(2).any(|w| w[0] == "-n" && w[1] == name))
+        .unwrap_or_else(|| panic!("no session started for {name}"));
     let flags: Vec<&str> = a.iter().map(String::as_str).filter(|x| x.starts_with('-')).collect();
-    let start = if flags.contains(&"--resume") { "--resume" } else { "--session-id" };
-    let expected = ["-p", start, "--allowedTools", "--disallowedTools", "-n", "--model", "--effort", "--agent", "--permission-mode", "--max-budget-usd"];
-    assert_eq!(flags, expected, "{name}: options in {a:?}");
+    assert_eq!(
+        flags,
+        [
+            "--bg",
+            "-n",
+            "--model",
+            "--effort",
+            "--agent",
+            "--setting-sources",
+            "--strict-mcp-config",
+            "--settings",
+            "--allowedTools",
+            "--disallowedTools",
+            "--permission-mode"
+        ],
+        "{name}: options in {a:?}"
+    );
+    assert_eq!(option(&a, "--agent"), "worker");
+    assert_eq!(option(&a, "--setting-sources"), "project,local");
+    assert_eq!(a[a.len() - 3], "--permission-mode", "{name}: the prompt must follow --permission-mode's value: {a:?}");
+    assert!(a[a.len() - 1].starts_with("You are a fresh worker session. Read "), "{a:?}");
     let list = |flag: &str| -> Vec<String> {
         let i = a.iter().position(|x| x == flag).unwrap();
         a[i + 1..].iter().take_while(|x| !x.starts_with('-')).cloned().collect()
     };
-    let allow: Vec<String> = WORKER_GRANTS.iter().flat_map(|c| [format!("Bash({c})"), format!("Bash({c} *)")]).collect();
+    let mut allow = bash_pairs(WORKER_GRANTS);
+    let mut deny = bash_pairs(WORKER_DENIES);
+    deny.extend(["Bash(git --git-dir=*)", "Bash(git --work-tree=*)"].map(String::from));
+    if review {
+        allow.extend(bash_pairs(["keel notes write cr"]));
+        deny.extend(bash_pairs(["git add", "git commit"]));
+        deny.extend(["Edit", "Write", "NotebookEdit"].map(String::from));
+    } else {
+        deny.extend(bash_pairs(["keel notes write cr"]));
+    }
     assert_eq!(list("--allowedTools"), allow, "{name}: allow list");
-    assert_eq!(list("--disallowedTools"), WORKER_DENIES, "{name}: deny list");
+    assert_eq!(list("--disallowedTools"), deny, "{name}: deny list");
     a
 }
 
@@ -726,17 +834,17 @@ fn option(a: &[String], flag: &str) -> String {
     a[a.iter().position(|x| x == flag).unwrap() + 1].clone()
 }
 
-/// E-ROUTERFIX.W1: headless workers were refused cargo/keel (nobody can approve a `claude -p`
-/// prompt), and the launcher hardcoded acceptEdits. The grant travels on the launcher's argv only;
-/// the mode is a validated per-run option.
+/// E-ROUTERFIX.W1: workers were refused cargo/keel, and the launcher hardcoded acceptEdits. The grant
+/// travels on the launcher's argv only; the mode is a validated per-run option. E-ROUTER3.W10: the
+/// worker is one `claude --bg` started in its worktree, with no print-mode, stream or budget flag.
 #[test]
-fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
+fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validated_mode() {
     let l = launcher();
     let wt = l.wt.to_str().unwrap();
     let brief = ".router/briefs/b.md";
     let mode_of = |name: &str| {
-        l.wait_exit(name);
-        let a = worker_argv(&l.main, name);
+        l.stop(name);
+        let a = worker_argv(&l.state, name);
         option(&a, "--permission-mode")
     };
     let run_dir = |name: &str, kind: &str, file: &str| {
@@ -747,7 +855,7 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
                 let f = p.file_name().unwrap().to_str().unwrap();
                 f.starts_with(&format!("{name}-")) && f.ends_with(&format!("-{kind}"))
             })
-            .map(|p| std::fs::read_to_string(p.join(file)).unwrap().trim().to_string())
+            .filter_map(|p| std::fs::read_to_string(p.join(file)).ok().map(|v| v.trim().to_string()))
             .collect();
         values.sort();
         values
@@ -782,40 +890,30 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
         args.extend(&extra);
         let (ok, out) = l.run(&args);
         assert!(!ok && out.contains(why), "{extra:?} not refused for {why}: {out}");
-        assert!(!l.main.join(format!(".router/out/{name}.pid")).exists(), "{extra:?} started a worker");
+        assert_eq!(l.starts(&name), 0, "{extra:?} started a worker");
     }
 
     let (ok, out) = l.run(&["spawn", "d", wt, brief, "opus"]);
     assert!(ok && out.contains("permission-mode=acceptEdits"), "{out}");
+    let (dir, _) = calls(&l.state).into_iter().rfind(|(_, a)| a[0] == "--bg").unwrap();
+    assert_eq!(dir, wt, "the worker runs in its worktree");
+    assert!(field(&out, "brief=").starts_with(wt) && worker_argv(&l.state, "d").last().unwrap().contains(field(&out, "brief=")), "{out}");
     let (ok, out) = l.run(&["spawn", "p", wt, brief, "opus", "--permission-mode", "plan"]);
     assert!(ok && out.contains("permission-mode=plan"), "{out}");
-    let sid = field(&out, "session=").to_string();
 
     assert_eq!(mode_of("d"), "acceptEdits");
     assert_eq!(mode_of("p"), "plan");
     assert_eq!(run_dir_mode("d", "spawn"), ["acceptEdits"]);
     assert_eq!(run_dir_mode("p", "spawn"), ["plan"]);
 
-    // a resume states its own mode or gets the default; it never inherits the spawn's plan
-    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus"]);
-    assert!(ok && out.contains("permission-mode=acceptEdits"), "{out}");
-    assert_eq!(mode_of("p"), "acceptEdits");
-    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus", "--permission-mode", "plan"]);
-    assert!(ok && out.contains("permission-mode=plan"), "{out}");
-    assert_eq!(mode_of("p"), "plan");
-    let (ok, out) = l.run(&["resume", "p", &sid, wt, brief, "opus", "--permission-mode", "bypassPermissions"]);
-    assert!(!ok && out.contains("permission mode must be"), "{out}");
-    assert_eq!(run_dir_mode("p", "resume"), ["acceptEdits", "plan"]);
-
     // E-SEED2.W7: effort is medium by default, high when asked, in either order with the mode; it
-    // lands on the RUNNING line, in the run dir and after --model on the argv; a resume does not inherit it
+    // lands on the RUNNING line, in the run dir and after --model on the argv
     let effort_of = |name: &str| {
-        l.wait_exit(name);
-        let a = worker_argv(&l.main, name);
+        l.stop(name);
+        let a = worker_argv(&l.state, name);
         assert_eq!(option(&a, "--model"), "opus");
         (option(&a, "--effort"), option(&a, "--permission-mode"))
     };
-    let mut sids = std::collections::HashMap::new();
     for (name, extra, effort, mode) in [
         ("e1", vec![], "medium", "acceptEdits"),
         ("e2", vec!["--effort", "high"], "high", "acceptEdits"),
@@ -826,18 +924,9 @@ fn launcher_grants_workers_cargo_and_keel_and_validates_the_permission_mode() {
         args.extend(&extra);
         let (ok, out) = l.run(&args);
         assert!(ok && out.contains(&format!(" permission-mode={mode} effort={effort} ")), "{extra:?}: {out}");
-        sids.insert(name, field(&out, "session=").to_string());
         assert_eq!(effort_of(name), (effort.to_string(), mode.to_string()), "{extra:?}");
         assert_eq!(run_dir_effort(name, "spawn"), [effort], "{extra:?}");
     }
-    let sid = sids["e2"].clone();
-    let (ok, out) = l.run(&["resume", "e2", &sid, wt, brief, "opus"]);
-    assert!(ok && out.contains(" effort=medium "), "{out}");
-    assert_eq!(effort_of("e2").0, "medium");
-    assert_eq!(run_dir_effort("e2", "spawn"), ["high"]);
-    assert_eq!(run_dir_effort("e2", "resume"), ["medium"]);
-    let (ok, out) = l.run(&["resume", "e2", &sid, wt, brief, "opus", "--effort", "low"]);
-    assert!(!ok && out.contains("effort must be one of"), "{out}");
 
     // router side: the guard admits the option on the launcher shape, and the grant never reaches it
     assert_eq!(bash("scripts/router-worker.sh spawn n /w .router/briefs/n.md opus --permission-mode plan"), None);
@@ -880,11 +969,6 @@ fn pushed_probe_fires_only_after_the_merge_reaches_origin() {
     assert!(fires(), "PUSHED did not fire after the push");
 }
 
-fn age(path: &Path, secs: u64) {
-    let f = std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap();
-    f.set_modified(std::time::SystemTime::now() - Duration::from_secs(secs)).unwrap();
-}
-
 /// Bounded wait for a condition another process brings about.
 fn until(what: &str, mut cond: impl FnMut() -> bool) {
     let t = Instant::now();
@@ -894,22 +978,14 @@ fn until(what: &str, mut cond: impl FnMut() -> bool) {
     }
 }
 
-/// Whether `pid` has a `<shell> -c` child, i.e. the stub is busy.
-fn has_shell_child(pid: &str) -> bool {
-    let o = Command::new("ps").args(["-A", "-o", "ppid=,command="]).output().unwrap();
-    String::from_utf8(o.stdout).unwrap().lines().any(|l| {
-        let w: Vec<&str> = l.split_whitespace().collect();
-        w.len() > 2 && w[0] == pid && w[1].ends_with("sh") && w[2] == "-c"
-    })
-}
-
+/// A watch run by a test, its polls stepped through the `sleep` shim.
 struct Stepped {
     child: std::process::Child,
     dir: PathBuf,
 }
 
 impl Stepped {
-    /// Block until `wait` has judged poll n and is sleeping; panics with its line if it returned instead.
+    /// Block until the watch has judged poll n and is sleeping; panics with its line if it returned instead.
     fn at(&mut self, n: u32) {
         let polls = || std::fs::read_to_string(self.dir.join("polls")).ok().and_then(|s| s.trim().parse::<u32>().ok());
         let t = Instant::now();
@@ -917,9 +993,9 @@ impl Stepped {
             if self.child.try_wait().unwrap().is_some() {
                 let mut out = String::new();
                 std::io::Read::read_to_string(self.child.stdout.as_mut().unwrap(), &mut out).unwrap();
-                panic!("wait returned before poll {n}: {out}");
+                panic!("watch returned before poll {n}: {out}");
             }
-            assert!(t.elapsed() < BOUND, "wait never reached poll {n}");
+            assert!(t.elapsed() < BOUND, "watch never reached poll {n}");
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -929,7 +1005,7 @@ impl Stepped {
         std::fs::write(self.dir.join(format!("go-{n}")), "").unwrap();
     }
 
-    /// The one line `wait` prints once released from its last poll.
+    /// The one line the watch prints once released from its last poll.
     fn line(self) -> String {
         let o = self.output();
         assert!(o.status.success(), "{o:?}");
@@ -940,7 +1016,7 @@ impl Stepped {
     fn output(mut self) -> Output {
         let t = Instant::now();
         while self.child.try_wait().unwrap().is_none() {
-            assert!(t.elapsed() < BOUND, "wait never returned");
+            assert!(t.elapsed() < BOUND, "watch never returned");
             std::thread::sleep(Duration::from_millis(10));
         }
         let read = |p: Option<&mut dyn std::io::Read>| {
@@ -956,7 +1032,7 @@ impl Stepped {
     }
 }
 
-/// However a test ends, its watch (or `wait`) and the `sleep` shim under it end with it.
+/// However a test ends, its watch and the `sleep` shim under it end with it.
 impl Drop for Stepped {
     fn drop(&mut self) {
         let _ = self.child.kill();
@@ -964,132 +1040,227 @@ impl Drop for Stepped {
     }
 }
 
-/// E-SEED2.W8: `wait <name> [<stall-min>]` blocks while the worker runs and returns one line when it
-/// exits (EXITED) or stalls (STALLED: on two polls running, no `sh -c` child and every transcript of its
-/// newest run, main and subagent, idle past the threshold, naming the newest; the pid file when no
-/// transcript exists). Polls are stepped through the `sleep` shim, so each judges a state the test set.
-/// Bad input exits 2.
+/// A command bounded by BOUND: a hung script fails the test instead of hanging it. Returns whether it succeeded, then stdout then stderr.
+fn bounded(mut c: Command) -> (bool, String) {
+    let mut p = c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let t = Instant::now();
+    while p.try_wait().unwrap().is_none() {
+        if t.elapsed() > BOUND {
+            p.kill().unwrap();
+            panic!("{c:?}: no result within {BOUND:?}");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let o = p.wait_with_output().unwrap();
+    (o.status.success(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
+}
+
+/// E-ROUTER3.W10: a start the CLI refuses (an untrusted worktree: "Workspace not trusted") or one that
+/// never shows in the session list is DEAD, with the CLI's own text, and exits 1.
 #[test]
-fn wait_blocks_until_the_worker_exits_or_stalls() {
+fn a_start_the_cli_refuses_is_reported_dead_with_its_reason() {
     let l = launcher();
     let wt = l.wt.to_str().unwrap();
+    let why = "Workspace not trusted. Run `claude` in the worktree once and accept the trust prompt, then retry.";
+    std::fs::write(l.state.join("refuse"), format!("{why}\n")).unwrap();
+    let (ok, out) = l.run(&["spawn", "n", wt, ".router/briefs/b.md", "opus"]);
+    assert!(!ok && out.starts_with("DEAD name=n exit=1 snapshot=") && out.contains(why), "{out}");
+    std::fs::remove_file(l.state.join("refuse")).unwrap();
+
+    // E-ROUTER3.W10 review r1 B1: a session list the CLI fails to give is no list, never "no sessions":
+    // spawn must not take the name as free, nor stop report the worker gone
+    std::fs::write(l.state.join("agents-ok"), "0").unwrap();
+    let started = l.starts("n");
+    for args in [vec!["spawn", "n", wt, ".router/briefs/b.md", "opus"], vec!["stop", "n"]] {
+        let (ok, out) = l.run(&args);
+        assert!(!ok && out.contains("cannot list sessions (claude agents --json)"), "{args:?}: {out}");
+    }
+    assert_eq!(l.starts("n"), started, "a failed listing started a worker");
+
+    // review r2: a listing that fails once the session has started reports it as possibly running,
+    // with its snapshot, never as refused before any start
+    std::fs::write(l.state.join("agents-ok"), "1").unwrap();
+    let (ok, out) = l.run(&["spawn", "n", wt, ".router/briefs/b.md", "opus"]);
+    assert!(!ok && out.starts_with("UNLISTED name=n exit=0 snapshot=") && out.contains("backgrounded") && out.contains("the session may be running"), "{out}");
+    std::fs::remove_file(l.state.join("agents-ok")).unwrap();
+    assert!(l.sessions().iter().any(|r| r["name"] == "n"), "the stub did start it");
+    l.set_sessions(&[]);
+
+    // listed never: the launcher's polls run through an instant `sleep`
+    std::fs::write(l.state.join("unlisted"), "").unwrap();
+    let path = l.fast_path();
+    let (ok, out) = l.run_env(&["spawn", "n", wt, ".router/briefs/b.md", "opus"], &[("PATH", &path)]);
+    assert!(!ok && out.starts_with("DEAD name=n exit=0 ") && out.contains("backgrounded"), "{out}");
+}
+
+/// E-ROUTER3.W10: `stop` closes the named idle worker of this repository by its id, `claude stop` then
+/// `claude rm`, and refuses everything else before calling the CLI: a busy worker (stopping cuts its
+/// turn), an unlisted name, a session outside this repository's worktrees, an interactive session, an
+/// ambiguous name.
+#[test]
+fn stop_stops_then_removes_this_repositorys_idle_worker_by_id() {
+    let l = launcher();
     let brief = ".router/briefs/b.md";
-    let base = l.main.parent().unwrap().to_path_buf();
-    let release = |k: u8| base.join(format!("release-{k}"));
-    std::fs::create_dir_all(l.main.join(".router/out")).unwrap();
-    std::fs::write(l.main.join(".router/out/orphan.pid"), "1\n").unwrap();
-    for (args, why) in [
-        (vec!["wait"], "wait <name>"),
-        (vec!["wait", "n", "1", "x"], "wait <name>"),
-        (vec!["wait", "-n"], "bad name"),
-        (vec!["wait", "N"], "bad name"),
-        (vec!["wait", "n", "-1"], "stall-min"),
-        (vec!["wait", "n", "10000"], "stall-min"),
-        (vec!["wait", "n", "0"], "stall-min"),
-        (vec!["wait", "n", "x"], "stall-min"),
-        (vec!["wait", "n", ""], "stall-min"),
-        (vec!["wait", "ghost"], "no worker ghost"),
-        (vec!["wait", "orphan"], "no recorded run for orphan"),
+    assert!(l.run(&["spawn", "a", l.wt.to_str().unwrap(), brief, "opus"]).0);
+    assert!(l.run(&["spawn", "b", l.wt2.to_str().unwrap(), brief, "opus"]).0);
+    let mut rows = l.sessions();
+    let id = |n: &str| rows.iter().find(|r| r["name"] == n).unwrap()["id"].as_str().unwrap().to_string();
+    let (a, b) = (id("a"), id("b"));
+    rows.iter_mut().find(|r| r["name"] == "b").unwrap()["status"] = "busy".into();
+    let wt = l.wt.to_str().unwrap();
+    rows.push(serde_json::json!({"id": "c0", "sessionId": "c0-x", "name": "c", "cwd": "/elsewhere", "kind": "background", "status": "idle"}));
+    rows.push(serde_json::json!({"id": "d0", "sessionId": "d0-x", "name": "d", "cwd": wt, "kind": "interactive", "status": "idle"}));
+    rows.push(serde_json::json!({"id": "e0", "sessionId": "e0-x", "name": "e", "cwd": wt, "kind": "background", "status": "idle"}));
+    rows.push(serde_json::json!({"id": "e1", "sessionId": "e1-x", "name": "e", "cwd": wt, "kind": "background", "status": "idle"}));
+    l.set_sessions(&rows);
+    let before = calls(&l.state).len();
+    let path = l.fast_path();
+    for (name, why) in [
+        ("b", format!("worker b is still busy: stopping it would cut its turn; the owner decides (claude stop {b})")),
+        ("z", "worker z is not running".to_string()),
+        ("c", "c runs outside this repository's worktrees (/elsewhere)".to_string()),
+        ("d", "d is not a background session".to_string()),
+        ("e", "more than one session is named e".to_string()),
     ] {
-        let (ok, out) = l.run_env(&args, &[]);
-        assert!(!ok && out.contains(why), "{args:?} not refused for {why}: {out}");
+        let (ok, out) = l.run_env(&["stop", name], &[("PATH", &path)]);
+        assert!(!ok && out.contains(&why), "{name}: {out}");
     }
+    assert!(calls(&l.state)[before..].iter().all(|(_, c)| c[0] == "agents"), "a refused stop called the CLI");
 
-    // exits: still waiting while the worker lives, EXITED once it is gone
-    let out = l.hold(&["spawn", "n", wt, brief, "opus"], &release(1));
-    let sid = field(&out, "session=").to_string();
-    let pid = field(&out, "pid=").to_string();
-    let mut w = l.wait_stepped(&["wait", "n"], "exit");
-    w.at(1);
-    std::fs::write(release(1), "").unwrap();
-    l.wait_exit("n");
-    w.go(1);
-    let out = w.line();
-    assert!(out.starts_with(&format!("EXITED name=n pid={pid} ")) && out.lines().count() == 1, "{out}");
-    let (ok, out) = l.run_env(&["wait", "n"], &[]);
-    assert!(ok && out.starts_with("EXITED name=n ") && out.lines().count() == 1, "an exited worker returns at once: {out}");
+    let (ok, out) = l.run(&["stop", "a"]);
+    assert!(ok, "{out}");
+    let sid = rows.iter().find(|r| r["name"] == "a").unwrap()["sessionId"].as_str().unwrap().to_string();
+    assert_eq!(out, format!("STOPPED name=a id={a} session={sid}\n"));
+    let tail: Vec<Vec<String>> = calls(&l.state).into_iter().map(|(_, c)| c).filter(|c| c[0] != "agents").collect();
+    assert_eq!(tail[tail.len() - 2..], [vec!["stop".to_string(), a.clone()], vec!["rm".to_string(), a]]);
+    assert!(l.sessions().iter().all(|r| r["name"] != "a") && l.sessions().iter().any(|r| r["name"] == "b"));
 
-    // quiet, then busy (a command ran), then quiet: the busy poll resets, so STALLED needs two more
-    let tr = l.transcript(&l.wt, &sid);
-    let out = l.hold(&["resume", "n", &sid, wt, brief, "opus"], &release(2));
-    let pid = field(&out, "pid=").to_string();
-    age(&tr, 120);
-    let busy = base.join("release-2.busy");
-    let mut w = l.wait_stepped(&["wait", "n", "1"], "busy");
-    w.at(1);
-    std::fs::write(&busy, "").unwrap();
-    until("busy stub", || has_shell_child(&pid));
-    w.go(1);
-    w.at(2);
-    std::fs::remove_file(&busy).unwrap();
-    until("idle stub", || !has_shell_child(&pid));
-    age(&tr, 120);
-    w.go(2);
-    w.at(3);
-    w.go(3);
-    let out = w.line();
-    assert!(out.starts_with(&format!("STALLED name=n pid={pid} idle=2m since={}\n", tr.display())), "{out}");
-
-    // quiet, then a subagent writes, then quiet: the fresh poll resets; the newest transcript is named
-    let sub = tr.with_extension("").join("subagents/agent-a.jsonl");
-    std::fs::create_dir_all(sub.parent().unwrap()).unwrap();
-    age(&tr, 180);
-    let mut w = l.wait_stepped(&["wait", "n", "1"], "fresh");
-    w.at(1);
-    std::fs::write(&sub, "{}\n").unwrap();
-    w.go(1);
-    w.at(2);
-    age(&sub, 120);
-    w.go(2);
-    w.at(3);
-    w.go(3);
-    let out = w.line();
-    assert!(out.starts_with("STALLED name=n ") && out.ends_with(&format!(" idle=2m since={}\n", sub.display())), "{out}");
-
-    // thresholds are minutes, 15 by default: 30s is no 1-minute stall, 10 min no default stall
-    for (args, under, over, idle) in [(vec!["wait", "n", "1"], 30, 120, "2m"), (vec!["wait", "n"], 600, 960, "16m")] {
-        age(&tr, under);
-        age(&sub, under);
-        let mut w = l.wait_stepped(&args, idle);
-        for n in 1..=2 {
-            w.at(n);
-            w.go(n);
-        }
-        w.at(3);
-        age(&tr, over);
-        age(&sub, over);
-        w.go(3);
-        w.at(4);
-        w.go(4);
-        let out = w.line();
-        assert!(out.starts_with("STALLED name=n ") && out.contains(&format!(" idle={idle} ")), "{out}");
+    // review r2: Claude Code lists a blocked session (rate-limited, or waiting on its user) with a
+    // state and no status: it is refused at once by that state, as a worker waiting on a prompt is
+    let mut more = rows.clone();
+    more.push(serde_json::json!({"id": "f0", "sessionId": "f0-x", "name": "f", "cwd": wt, "kind": "background", "state": "blocked"}));
+    more.push(serde_json::json!({"id": "g0", "sessionId": "g0-x", "name": "g", "cwd": wt, "kind": "background", "status": "waiting", "waitingFor": "permission prompt", "state": "blocked"}));
+    l.set_sessions(&more);
+    for (name, state, id) in [("f", "blocked", "f0"), ("g", "waiting", "g0")] {
+        let n0 = calls(&l.state).len();
+        let (ok, out) = l.run_env(&["stop", name], &[("PATH", &path)]);
+        assert!(!ok && out.contains(&format!("worker {name} is {state}: the owner decides (claude stop {id})")), "{name}: {out}");
+        assert_eq!(calls(&l.state).len() - n0, 1, "{name}: stop waited on a session that is not busy");
     }
+    // E-ROUTER3.W5 (W8 result): a finished review worker listed idle with state blocked is stopped
+    more.push(serde_json::json!({"id": "h0", "sessionId": "h0-x", "name": "h", "cwd": wt, "kind": "background", "status": "idle", "state": "blocked"}));
+    l.set_sessions(&more);
+    let (ok, out) = l.run_env(&["stop", "h"], &[("PATH", &path)]);
+    assert!(ok && out.starts_with("STOPPED name=h id=h0 "), "{out}");
+    let tail: Vec<Vec<String>> = calls(&l.state).into_iter().map(|(_, c)| c).filter(|c| c[0] != "agents").collect();
+    assert_eq!(tail[tail.len() - 2..], [vec!["stop".to_string(), "h0".into()], vec!["rm".to_string(), "h0".into()]]);
+    l.set_sessions(&rows);
 
-    // no transcript: the pid file's age stands in
-    std::fs::remove_file(&tr).unwrap();
-    std::fs::remove_dir_all(tr.with_extension("")).unwrap();
-    age(&l.main.join(".router/out/n.pid"), 120);
-    let mut w = l.wait_stepped(&["wait", "n", "1"], "pid");
-    w.at(1);
-    w.go(1);
-    let out = w.line();
-    assert!(out.starts_with("STALLED name=n ") && out.contains("since=") && out.trim_end().ends_with("n.pid"), "{out}");
-    std::fs::write(release(2), "").unwrap();
-    l.wait_exit("n");
-    assert!(std::fs::read_to_string(l.main.join(".router/out/n.out")).unwrap().starts_with("stub "), "wait touched n.out");
+    // review r2: the busy wait follows the worker's id, never another session that takes its name,
+    // and a listing that fails inside the wait stops it
+    std::fs::write(l.state.join("swap"), "").unwrap();
+    let (ok, out) = l.run_env(&["stop", "b"], &[("PATH", &path)]);
+    assert!(!ok && out.contains("worker b left the session list while busy; nothing to stop"), "{out}");
+    assert!(calls(&l.state).iter().all(|(_, c)| c[0] != "stop" || c[1] != "new0"), "stop closed the session that took the name");
+    std::fs::remove_file(l.state.join("swap")).unwrap();
+    l.set_sessions(&rows);
+    std::fs::write(l.state.join("agents-ok"), "1").unwrap();
+    let (ok, out) = l.run_env(&["stop", "b"], &[("PATH", &path)]);
+    assert!(!ok && out.contains("cannot list sessions (claude agents --json)"), "{out}");
+    std::fs::remove_file(l.state.join("agents-ok")).unwrap();
 
-    // a name spawned again (new session, other worktree) is judged by its newest run only
-    let out = l.hold(&["spawn", "n", l.wt2.to_str().unwrap(), brief, "opus"], &release(3));
-    let tr2 = l.transcript(&l.wt2, field(&out, "session="));
-    std::fs::write(&tr, "{}\n").unwrap();
-    age(&tr2, 120);
-    let mut w = l.wait_stepped(&["wait", "n", "1"], "newest");
-    w.at(1);
-    w.go(1);
-    let out = w.line();
-    assert!(out.ends_with(&format!(" since={}\n", tr2.display())), "{out}");
-    std::fs::write(release(3), "").unwrap();
-    l.wait_exit("n");
+    // review r1 I1: a busy worker whose session ends while stop waits is gone, said at once, not after 30s
+    std::fs::write(l.state.join("vanish"), "").unwrap();
+    let n0 = calls(&l.state).len();
+    let (ok, out) = l.run_env(&["stop", "b"], &[("PATH", &path)]);
+    assert!(!ok && out.contains("worker b left the session list while busy; nothing to stop"), "{out}");
+    assert_eq!(calls(&l.state).len() - n0, 2, "stop kept polling a gone session");
+    std::fs::remove_file(l.state.join("vanish")).unwrap();
+    l.set_sessions(&rows);
+
+    // live run 2026-11-11: a worker's report arrives while its turn is still ending, so the router's
+    // stop right after it finds the worker busy; stop waits (bounded) for the turn to end
+    std::fs::write(l.state.join("settle"), "").unwrap();
+    let (ok, out) = l.run_env(&["stop", "b"], &[("PATH", &path)]);
+    assert!(ok && out.starts_with(&format!("STOPPED name=b id={b} ")), "{out}");
+}
+
+/// E-ROUTER3.W10 (owner ruling 2026-11-11): `wait` and `send` are gone, with every file under
+/// .router/out: a spawn and a stop leave only the brief and its run dir. E-ROUTER3.W8 (owner ruling
+/// 2026-11-11, probe P3 i): `resume` is gone too: a plain `--bg --resume` drops every launch flag.
+#[test]
+fn launcher_has_only_its_modes_and_writes_no_out_dir() {
+    let l = launcher();
+    for args in [
+        vec!["wait", "n"],
+        vec!["send", "n", ".router/briefs/b.md"],
+        vec!["brief", "n", ".router/briefs/b.md"],
+        vec!["resume", "n", "0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b", l.wt.to_str().unwrap(), ".router/briefs/b.md"],
+    ] {
+        let o = l.cmd(&args, &[]).output().unwrap();
+        assert_eq!(o.status.code(), Some(2), "{args:?}");
+        assert!(String::from_utf8_lossy(&o.stderr).contains("spawn|stop|worktree|watchdog"), "{args:?}: {o:?}");
+    }
+    assert_eq!(calls(&l.state).len(), 0, "an unknown mode called the CLI");
+    assert!(l.run(&["spawn", "n", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
+    l.stop("n");
+    let mut entries: Vec<String> = std::fs::read_dir(l.main.join(".router")).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+    entries.sort();
+    assert_eq!(entries, ["briefs", "runs"]);
+    assert_eq!(std::fs::read_dir(l.main.join(".router/runs")).unwrap().count(), 1);
+}
+
+/// E-ROUTER3.W10: the router's launcher shapes are spawn and stop in plain words; `wait` and `send`
+/// are gone, E-ROUTER3.W8 `resume` too, and nothing else of the script passes.
+#[test]
+fn router_guard_admits_spawn_and_stop_and_refuses_resume_wait_and_send() {
+    for ok in [
+        "scripts/router-worker.sh spawn w1 /Users/o/Keel-x .router/briefs/w1.md opus",
+        "scripts/router-worker.sh spawn w1 /Users/o/Keel-x .router/briefs/w1.md opus --review",
+        "scripts/router-worker.sh stop w1",
+    ] {
+        assert_eq!(bash(ok), None, "guard denied {ok:?}");
+    }
+    for no in [
+        "scripts/router-worker.sh resume w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b /Users/o/Keel-x .router/briefs/w1-r2.md",
+        "scripts/router-worker.sh wait w1",
+        "scripts/router-worker.sh send w1 .router/briefs/w1-r2.md",
+        "scripts/router-worker.sh brief w1 .router/briefs/w1-r2.md",
+        "scripts/router-worker.sh kill w1",
+        "scripts/router-worker.sh stopx w1",
+        "scripts/router-worker.sh stop \"w1\"",
+        "scripts/router-worker.sh stop $HOME",
+        "scripts/router-worker.sh stop ../w1",
+        "scripts/router-worker.sh stop w1; kill 1",
+    ] {
+        assert!(bash(no).is_some(), "guard allowed {no:?}");
+    }
+}
+
+/// A worker's Bash call as Claude Code 2.1.288 delivered it from a `claude --bg --agent worker` session
+/// (E-ROUTER3.W10 probe P2; ids and paths replaced): agent_type is "worker", so the router guard
+/// passes it untouched, and the session's own permission mode travels with it.
+const CAPTURED_BG_WORKER_BASH: &str = r#"{"session_id":"s","transcript_path":"/t.jsonl","cwd":"/w","scratchpad_dir":"/t","prompt_id":"p","permission_mode":"acceptEdits","agent_type":"worker","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"printenv PROBE_MARK","description":"Check PROBE_MARK environment variable"},"tool_use_id":"u1"}"#;
+
+#[test]
+fn router_guard_leaves_a_background_workers_calls_alone() {
+    assert_eq!(guard_event(serde_json::from_str(CAPTURED_BG_WORKER_BASH).unwrap()), None);
+}
+
+/// E-ROUTER3.W10: the settings allow exactly the launcher shapes the guard admits; `wait` and `send`
+/// are gone from both. E-ROUTER3.W8: `resume` is gone too, and `worktree add|remove` are in.
+#[test]
+fn settings_allow_exactly_the_launcher_shapes_the_guard_admits() {
+    let modes: Vec<String> = settings()["permissions"]["allow"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a.as_str().unwrap().strip_prefix("Bash(scripts/router-worker.sh ").map(|m| m.trim_end_matches(" *)").to_string()))
+        .collect();
+    assert_eq!(modes, ["spawn", "stop", "watchdog start", "watchdog stop", "worktree add", "worktree remove"]);
+    for (m, arg) in [("watchdog start", "r1"), ("watchdog stop", "r1"), ("worktree add", "epic/E-X"), ("worktree remove", "wu/E-X/w1-a")] {
+        assert_eq!(bash(&format!("scripts/router-worker.sh {m} {arg}")), None, "the guard refuses the allowed {m}");
+    }
 }
 
 /// One router tool call through the PreToolUse command `checkout`'s .claude/settings.json wires, run
@@ -1110,103 +1281,282 @@ fn wired_guard(checkout: &Path, tool: &str, input: serde_json::Value) -> Option<
     decision(&event, p.wait_with_output().unwrap())
 }
 
-/// E-ROUTERFIX e2e (W5): one worker's life as the router drives it, in a scratch clone of Keel's own
-/// tree with the working tree's epic files laid over it and keel's hooks installed. A new worktree
-/// inherits the signer list (W3); every router call passes the settings-wired guard and each allowed
-/// command runs exactly as judged; the worker starts in plan mode with the fixed grant (W1) under the
-/// name the subscription addresses (W2); `wait` reports it STALLED by its transcript, then EXITED (W4).
+/// A repository with one commit, for the GIT_* variables of `hostile_git_env` to name.
+fn decoy(dir: &Path) {
+    std::fs::create_dir_all(dir).unwrap();
+    git(dir, &["init", "-q", "-b", "main"]);
+    std::fs::write(dir.join("f"), "x").unwrap();
+    git(dir, &["add", "f"]);
+    git(dir, &["commit", "-qm", "other"]);
+}
+
+/// Everything in `decoy` a git call that followed an inherited GIT_* into it could change.
+fn decoy_state(decoy: &Path) -> Vec<Vec<u8>> {
+    let mut v: Vec<Vec<u8>> = ["config", "index", "HEAD"]
+        .iter()
+        .map(|f| std::fs::read(decoy.join(".git").join(f)).unwrap())
+        .collect();
+    v.push(git(decoy, &["for-each-ref"]).stdout);
+    v.push(git(decoy, &["worktree", "list", "--porcelain"]).stdout);
+    v
+}
+
+/// What a shell started from another repository's git hook inherits: GIT_DIR, GIT_WORK_TREE and
+/// GIT_INDEX_FILE naming `decoy`, plus an author, an editor and a config override.
+fn hostile_git_env(decoy: &Path) -> Vec<(&'static str, String)> {
+    let o = decoy.display();
+    vec![
+        ("GIT_DIR", format!("{o}/.git")),
+        ("GIT_WORK_TREE", o.to_string()),
+        ("GIT_INDEX_FILE", format!("{o}/.git/index")),
+        ("GIT_AUTHOR_NAME", "leak".into()),
+        ("GIT_EDITOR", "leak".into()),
+        ("GIT_CONFIG_PARAMETERS", "'core.hookspath'='/leak'".into()),
+    ]
+}
+
+/// E-ROUTERFIX e2e (W5), extended by E-ROUTER3.W7 to the router's whole current flow, in a scratch
+/// clone of Keel's own tree with the working tree's router files laid over it, keel's hooks
+/// installed and the stub claude. Every router call passes the settings-wired guard and runs exactly
+/// as judged, with HOME inside the temp dir and every launcher and watch call under GIT_* naming a
+/// decoy repository: worktree add (epic, then WU, through keel's post-checkout hook), watchdog start, a
+/// worker spawned in plan mode with the fixed grant, the router's messages to it, the watchdog's
+/// tick, stop, a --review worker, a sign-off the worker forges as itself refused by the merge hook at
+/// 8·manual-review, worktree remove and watchdog stop. Not covered: a note forged as a name the
+/// target's roster lists on the username tier passes check 8 (DEC-48 item 4, open by owner ruling).
 #[test]
 fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let d = TempDir::new().unwrap();
     let base = d.path().canonicalize().unwrap();
     let c = base.join("c");
     common::self_clone(root(), &c);
-    for f in ["scripts/router-worker.sh", "scripts/router-guard.jq", ".claude/settings.json", ".gitworktreecopy"] {
+    for f in ["scripts/router-worker.sh", "scripts/router-guard.jq", "scripts/router-watch.sh", ".claude/settings.json", ".gitworktreecopy"] {
         std::fs::copy(root().join(f), c.join(f)).unwrap();
     }
     let keel = Path::new(env!("CARGO_BIN_EXE_keel"));
     assert!(common::cmd(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
-    std::fs::write(c.join(".mr-allowed"), "username: owner\n").unwrap();
-
-    // W3: the worktree the worker will run in is created through keel's post-checkout hook
-    let wt = base.join("wt");
-    let path = format!("{}:{}", keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
-    let o = hermetic(&mut common::cmd("git")).args(["worktree", "add", "-q", "-b", "wu/x/e2e", wt.to_str().unwrap()]).current_dir(&c).env("PATH", &path).output().unwrap();
-    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    assert_eq!(std::fs::read_to_string(wt.join(".mr-allowed")).ok().as_deref(), Some("username: owner\n"), "worktree not seeded");
-
+    let other = base.join("other");
+    decoy(&other);
+    let decoy_before = decoy_state(&other);
+    let hostile = hostile_git_env(&other);
+    let watch_env = [hostile.clone(), vec![("ROUTER_WATCH_MAX", "0".into())]].concat();
+    let home = base.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    git_shim(&base.join("shim"));
+    let path = format!("{}:{}:{}", base.join("shim").display(), keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
     let stub = base.join("claude");
     stub_claude(&stub);
-    let release = base.join("release");
-    let config = base.join("config");
-    let owner = std::process::id().to_string();
-    let router = |cmd: &str| -> String {
+    let state = base.join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let l = Launcher { main: c.clone(), wt: base.join("c-E-X-e2e"), wt2: base.join("c-E-X"), stub: stub.clone(), state: state.clone(), _d: d };
+    l.set_sessions(&[serde_json::json!({"id": "r100", "sessionId": "r100-x", "name": "r1", "cwd": c, "kind": "background", "status": "idle"})]);
+    let printed = std::cell::RefCell::new(String::new());
+    let router = |cmd: &str, env: &[(&str, String)]| -> (bool, String) {
         assert_eq!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })), None, "guard denied {cmd:?}");
-        let mut p = common::cmd("/bin/sh")
-            .args(["-c", cmd])
+        let mut p = common::cmd("/bin/sh");
+        p.args(["-c", cmd])
             .current_dir(&c)
             .env("ROUTER_CLAUDE", &stub)
-            .env("STUB_RELEASE", &release)
-            .env("STUB_OWNER", &owner)
-            .env("CLAUDE_CONFIG_DIR", &config)
-            .env("ROUTER_WAIT_POLL", "0.2")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        // a `wait` that never reaches its line fails here instead of hanging the suite
-        let t = Instant::now();
-        while p.try_wait().unwrap().is_none() {
-            if t.elapsed() > Duration::from_secs(20) {
-                p.kill().unwrap();
-                panic!("{cmd}: no result within 20s");
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        let o = p.wait_with_output().unwrap();
-        let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
-        assert!(o.status.success(), "{cmd}: {out}");
+            .env("STUB_STATE", &state)
+            .env("HOME", &home)
+            .env("XDG_CONFIG_HOME", home.join(".config"))
+            .env("PATH", &path)
+            .envs(env.iter().map(|(k, v)| (k, v)));
+        let r = bounded(p);
+        printed.borrow_mut().push_str(&r.1);
+        r
+    };
+    let launch = |cmd: &str| {
+        let (ok, out) = router(cmd, &hostile);
+        assert!(ok, "{cmd}: {out}");
         out
     };
+    let watch = |cmd: &str| {
+        let (ok, out) = router(cmd, &watch_env);
+        assert!(ok, "{cmd}: {out}");
+        out
+    };
+    let text = |o: &Output| format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    let hooked = |dir: &Path, a: &[&str]| -> Output {
+        hermetic(&mut common::cmd("git"))
+            .args(a)
+            .current_dir(dir)
+            .env("PATH", &path)
+            .env("HOME", &home)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap()
+    };
+    let rev = |r: &str| String::from_utf8(git(&c, &["rev-parse", r]).stdout).unwrap().trim().to_string();
 
+    // 1 · R19's probe: the launcher's git resolves the clone, never the decoy the environment names;
+    // the WU worktree gets the worker persona from the committed tree
+    let m = c.display();
+    let out = launch("scripts/router-worker.sh worktree add epic/E-X");
+    assert!(out.ends_with(&format!("WORKTREE path={m}-E-X branch=epic/E-X base=main tip={}\n", rev("main"))), "{out}");
+    let out = launch("scripts/router-worker.sh worktree add wu/E-X/e2e");
+    assert!(out.ends_with(&format!("WORKTREE path={m}-E-X-e2e branch=wu/E-X/e2e base=epic/E-X tip={}\n", rev("epic/E-X"))), "{out}");
+    assert_eq!(decoy_state(&other), decoy_before, "worktree add reached the decoy");
+    assert!(l.wt.join(".claude/agents/worker.md").is_file());
+
+    // 2 · the watchdog starts in the router's checkout; its prompt hook runs as the session runs it
+    let out = launch("scripts/router-worker.sh watchdog start r1");
+    assert!(out.starts_with("RUNNING name=watchdog-r1 ") && out.ends_with(" router=r1 model=haiku every=5m\n"), "{out}");
+    let (dir, a) = watchdog_argv(&state, "r1");
+    assert_eq!(dir, c.to_str().unwrap());
+    let (prompt_hook, tool_hook) = watchdog_hooks(&a);
+    let sys_path = std::env::var("PATH").unwrap();
+    let hook = |cmd: &str, stdin: &str| run_hook(&l, cmd, &sys_path, &home, stdin);
+    let o = hook(&prompt_hook, "{\"prompt\":\"tick\"}");
+    assert_eq!(String::from_utf8_lossy(&o.stdout), "Report to r1.\nNo live worker.\n", "{o:?}");
+
+    // 3 · W1: the brief, then the worker spawned in plan mode, a background session in the WU worktree
     let name = "e2e-w";
     let brief = c.join(format!(".router/briefs/{name}.md"));
     assert_eq!(wired_guard(&c, "Write", serde_json::json!({ "file_path": brief })), None);
     std::fs::create_dir_all(brief.parent().unwrap()).unwrap();
     std::fs::write(&brief, "run the gate\n").unwrap();
-
-    // W1: spawned in plan mode
-    let out = router(&format!("scripts/router-worker.sh spawn {name} {} .router/briefs/{name}.md opus --effort high --permission-mode plan", wt.display()));
-    assert!(out.starts_with(&format!("RUNNING name={name} ")) && out.contains(" permission-mode=plan effort=high "), "{out}");
-    let (sid, pid) = (field(&out, "session=").to_string(), field(&out, "pid=").to_string());
+    let out = launch(&format!("scripts/router-worker.sh spawn {name} {} .router/briefs/{name}.md opus --effort high --permission-mode plan", l.wt.display()));
+    assert!(out.starts_with(&format!("RUNNING name={name} ")) && out.contains(" permission-mode=plan effort=high branch=wu/E-X/e2e "), "{out}");
+    let (id, sid) = (field(&out, "id=").to_string(), field(&out, "session=").to_string());
     let copy = field(&out, "brief=");
-    assert!(copy.starts_with(wt.to_str().unwrap()) && std::fs::read_to_string(copy).unwrap() == "run the gate\n", "{out}");
+    assert!(copy.starts_with(l.wt.to_str().unwrap()) && std::fs::read_to_string(copy).unwrap() == "run the gate\n", "{out}");
 
-    // W2: the router subscribes to the worker's end and can send it nothing
+    // 4 · W2, E-ROUTER3.W1: the router subscribes to the worker's end and may steer it with a message;
+    // E-ROUTER3.W10: a follow-up task is a message too, and `wait`, `send` and `resume` are gone
     assert_eq!(wired_guard(&c, "SendMessage", serde_json::json!({"to": name, "notify_when_idle": true})), None);
-    assert!(wired_guard(&c, "SendMessage", serde_json::json!({"to": name, "notify_when_idle": true, "message": "also push"})).is_some());
+    let steer = serde_json::json!({"to": name, "message": "stop after the plan", "type": "message", "recipient": name, "content": "stop after the plan"});
+    assert_eq!(wired_guard(&c, "SendMessage", steer), None);
+    assert_eq!(wired_guard(&c, "SendMessage", serde_json::json!({"to": name, "message": "Follow-up task: now write the notes"})), None);
+    for cmd in [
+        format!("scripts/router-worker.sh wait {name}"),
+        format!("scripts/router-worker.sh send {name} .router/briefs/{name}.md"),
+        format!("scripts/router-worker.sh resume {name}"),
+    ] {
+        assert!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })).is_some(), "router may run {cmd:?}");
+    }
     // the grant is the worker's alone
     for cmd in ["cargo test", "keel preflight wu HEAD", "keel mr confirm wu HEAD --as owner"] {
         assert!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })).is_some(), "router may run {cmd:?}");
     }
 
-    // W4: an idle worker is STALLED, found by its session id under a project dir no naming rule gives
-    let tr = config.join("projects/-e2e-odd-dir-7f3k").join(format!("{sid}.jsonl"));
-    std::fs::create_dir_all(tr.parent().unwrap()).unwrap();
-    std::fs::write(&tr, "{}\n").unwrap();
-    age(&tr, 120);
-    let out = router(&format!("scripts/router-worker.sh wait {name} 1"));
-    assert_eq!(out, format!("STALLED name={name} pid={pid} idle=2m since={}\n", tr.display()));
+    // 5 · the watchdog's tick: one block, for the worker; it may message the router and nobody else
+    let out = String::from_utf8(hook(&prompt_hook, "{\"prompt\":\"tick\"}").stdout).unwrap();
+    let b = blocks(&out);
+    assert!(
+        out.starts_with("Report to r1.\n") && b.len() == 1 && b[0].starts_with(&format!("{name}: DONE · quiet ? · wu/E-X/e2e · ")) && b[0].ends_with(" · dirty 0"),
+        "{out}"
+    );
+    let verdict = |stdin: &str| decision(&serde_json::json!({}), hook(&tool_hook, stdin));
+    assert_eq!(verdict(CAPTURED_WATCHDOG_SEND), None);
+    assert!(verdict(&CAPTURED_WATCHDOG_SEND.replace("\"to\":\"r1\"", &format!("\"to\":\"{name}\""))).is_some());
 
-    // the worker ends: EXITED, and its argv carried the grant, the mode and the subscribed name
-    std::fs::write(&release, "").unwrap();
-    let out = router(&format!("scripts/router-worker.sh wait {name}"));
-    assert_eq!(out, format!("EXITED name={name} pid={pid} out={}\n", c.join(format!(".router/out/{name}.out")).display()));
-    let a = worker_argv(&c, name);
+    // 6 · the router closes it: stopped then removed by id, its brief copy gone, the watchdog still
+    // listed; its argv carried the grant, the mode and the subscribed name
+    let out = launch(&format!("scripts/router-worker.sh stop {name}"));
+    assert_eq!(out, format!("STOPPED name={name} id={id} session={sid}\n"));
+    let cli: Vec<Vec<String>> = calls(&state).into_iter().map(|(_, a)| a).filter(|a| a[0] == "stop" || a[0] == "rm").collect();
+    assert_eq!(cli, [vec!["stop".to_string(), id.clone()], vec!["rm".to_string(), id]]);
+    assert!(brief_copies(&l.wt).is_empty(), "{:?}", brief_copies(&l.wt));
+    assert!(l.sessions().iter().any(|r| r["name"] == "watchdog-r1"));
+    let a = worker_argv(&state, name);
     assert_eq!(option(&a, "--permission-mode"), "plan");
     assert_eq!(option(&a, "--effort"), "high");
     assert_eq!(option(&a, "-n"), name);
-    assert_eq!(option(&a, "--session-id"), sid);
+
+    // 7 · a review worker: granted the cr note, no edit tool, recorded as one
+    let out = launch(&format!("scripts/router-worker.sh spawn e2e-cr {} .router/briefs/{name}.md opus --review", l.wt.display()));
+    assert!(out.starts_with("RUNNING name=e2e-cr ") && out.contains(" permission-mode=acceptEdits "), "{out}");
+    argv_of(&state, "e2e-cr", true);
+    assert_eq!(std::fs::read_to_string(run_dir(&l, "e2e-cr").join("review")).unwrap(), "yes\n");
+    assert!(launch("scripts/router-worker.sh stop e2e-cr").starts_with("STOPPED name=e2e-cr "));
+
+    // 8 · R14: the worker commits its result, rewrites its checkout's rosters to list itself and signs
+    // as itself; keel refuses the confirm, and the note it then writes by hand is refused at the merge
+    let report = "docs/work/e2e-result.html";
+    std::fs::create_dir_all(l.wt.join("docs/work")).unwrap();
+    std::fs::write(l.wt.join(report), "<html data-artifact=\"wu-result\"><p>e2e: done</p></html>\n").unwrap();
+    for a in [&["add", report][..], &["commit", "-qm", "e2e result"]] {
+        let o = hooked(&l.wt, a);
+        assert!(o.status.success(), "{}", text(&o));
+    }
+    for f in [".mr-allowed", ".keel/mr-allowed"] {
+        std::fs::write(l.wt.join(f), "username: worker\n").unwrap();
+    }
+    let o = hermetic(&mut common::cmd(keel)).args(["mr", "confirm", "wu", "--as", "worker"]).current_dir(&l.wt).env("PATH", &path).env("HOME", &home).output().unwrap();
+    assert!(!o.status.success() && text(&o).contains("worker is not listed in epic/E-X:.keel/mr-allowed"), "{}", text(&o));
+    let tip = rev("wu/E-X/e2e");
+    assert!(!hooked(&c, &["notes", "--ref=mr", "show", &tip]).status.success(), "a refused confirm wrote a note");
+    let sha256 = |b: &[u8]| {
+        use sha2::{Digest, Sha256};
+        format!("sha256:{}", Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect::<String>())
+    };
+    let mbase = String::from_utf8(git(&c, &["merge-base", "epic/E-X", &tip]).stdout).unwrap().trim().to_string();
+    let diff = String::from_utf8(git(&c, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", &mbase, &tip, "--"]).stdout).unwrap();
+    let note = serde_json::json!({"schema": "mr/v1", "tip": tip, "base": mbase, "level": "wu", "signer": "worker", "tier": "username",
+        "committer": "worker", "timestamp": 0, "report": report, "report_hash": sha256(&git(&c, &["show", &format!("{tip}:{report}")]).stdout),
+        "change_hash": sha256(diff.trim().as_bytes())});
+    git(&l.wt, &["notes", "--ref=mr", "add", "-m", &note.to_string(), &tip]);
+    // the watch reports that a note exists and judges nothing
+    let out = watch(&format!("scripts/router-watch.sh signed {tip}"));
+    assert!(out.starts_with(&format!("SIGNED tip={tip}\n  {{\"schema\":\"mr/v1\"")) && out.contains("\"signer\":\"worker\""), "{out}");
+    let epic_at = rev("epic/E-X");
+    let o = hooked(&l.wt2, &["merge", "--no-ff", "-m", "merge wu e2e", "wu/E-X/e2e"]);
+    assert!(
+        !o.status.success() && text(&o).contains("8·manual-review") && text(&o).contains("signed off by worker, whom HEAD:.keel/mr-allowed does not list"),
+        "{}",
+        text(&o)
+    );
+    assert_eq!(rev("epic/E-X"), epic_at, "the refused merge moved epic/E-X");
+    assert_eq!(watch(&format!("scripts/router-watch.sh merged {tip} epic/E-X")), "TIMEOUT kind=merged waited=0m\n");
+
+    // 9 · the WU worktree holds the rewritten roster and an unmerged branch: the owner decides; the
+    // epic worktree goes, its branch stays
+    let (ok, out) = router("scripts/router-worker.sh worktree remove wu/E-X/e2e", &hostile);
+    assert!(!ok && out.contains("the owner decides") && l.wt.is_dir(), "{out}");
+    let o = hooked(&l.wt2, &["merge", "--abort"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(launch("scripts/router-worker.sh worktree remove epic/E-X"), format!("REMOVED path={m}-E-X branch=epic/E-X\n"));
+    assert!(!l.wt2.exists());
+    assert_eq!(rev("epic/E-X"), epic_at);
+
+    // 10 · the watchdog ends; the router is all that is left
+    assert!(launch("scripts/router-worker.sh watchdog stop r1").starts_with("STOPPED name=watchdog-r1 "));
+    assert_eq!(l.sessions().iter().map(|r| r["name"].as_str().unwrap().to_string()).collect::<Vec<_>>(), ["r1"]);
+
+    // 11 · nothing reached past the temp dir: the decoy is byte-identical, the CLI saw no GIT_*,
+    // every CLI call and every path the launcher printed is inside it
+    assert_eq!(decoy_state(&other), decoy_before, "the decoy repository changed");
+    let seen = std::fs::read_to_string(state.join("git-env")).unwrap_or_default();
+    assert!(seen.is_empty(), "the CLI saw {seen}");
+    for (dir, a) in calls(&state) {
+        assert!(Path::new(&dir).starts_with(&base), "{a:?} ran in {dir}");
+    }
+    for w in printed.borrow().split_whitespace() {
+        for k in ["path=", "snapshot=", "brief=", "worktree="] {
+            if let Some(p) = w.strip_prefix(k) {
+                assert!(Path::new(p).starts_with(&base), "{w}");
+            }
+        }
+    }
+    assert!(!c.join(".router/out").exists());
+    for line in String::from_utf8(git(root(), &["worktree", "list", "--porcelain"]).stdout).unwrap().lines() {
+        if let Some(p) = line.strip_prefix("worktree ") {
+            let p = Path::new(p).canonicalize().unwrap_or_else(|_| p.into());
+            assert!(!p.starts_with(&base), "the real checkout lists a worktree in the temp dir: {}", p.display());
+        }
+    }
+}
+
+/// `<dir>/git`: the real git with hermetic's config isolation, for scripts that clear every inherited GIT_*.
+fn git_shim(dir: &Path) {
+    let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(dir.join("git"), format!("#!/bin/sh\nGIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null exec {} \"$@\"\n", real.trim())).unwrap();
+    std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
 
 /// A checkout holding scripts/router-watch.sh, cloned from a bare `origin.git` file remote (no
@@ -1229,6 +1579,7 @@ fn watcher() -> Watcher {
     git(&main, &["commit", "-qm", "base"]);
     git(&main, &["push", "-q", "origin", "main"]);
     sleep_shim(&base);
+    git_shim(&base.join("shim"));
     std::fs::write(base.join("shim/date"), "#!/bin/sh\n[ -e \"$STEP_DIR/now\" ] && exec cat \"$STEP_DIR/now\"\nexec /bin/date \"$@\"\n").unwrap();
     std::fs::set_permissions(base.join("shim/date"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     Watcher { _d: d, base, main }
@@ -1250,7 +1601,9 @@ impl Watcher {
     }
 
     /// `scripts/router-watch.sh <args>` as the router runs it, its polls stepped through steps-<k>/;
-    /// an exported ROUTER_WATCH_POLL or ROUTER_WATCH_MAX never reaches it, only `env` sets them.
+    /// an exported ROUTER_WATCH_POLL or ROUTER_WATCH_MAX never reaches it, only `env` sets them. The
+    /// watch clears every GIT_* it inherits, hermetic's too, so `git_shim` restores hermetic's config
+    /// isolation and HOME points into the temp dir.
     fn cmd(&self, args: &[&str], k: &str, env: &[(&str, &str)]) -> (Command, PathBuf) {
         let dir = self.base.join(format!("steps-{k}"));
         std::fs::create_dir_all(&dir).unwrap();
@@ -1260,6 +1613,8 @@ impl Watcher {
             .current_dir(&self.main)
             .env("PATH", format!("{}:{}", self.base.join("shim").display(), std::env::var("PATH").unwrap()))
             .env("STEP_DIR", &dir)
+            .env("HOME", self.base.join("home"))
+            .env("XDG_CONFIG_HOME", self.base.join("home/.config"))
             .env("STUB_OWNER", std::process::id().to_string())
             .env_remove("ROUTER_WATCH_POLL")
             .env_remove("ROUTER_WATCH_MAX")
@@ -1276,15 +1631,14 @@ impl Watcher {
         Stepped { child: c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap(), dir }
     }
 
-    /// A `git` on $PATH (with the `sleep` shim) ahead of the real one that logs each call to <base>/spy.log and, when
-    /// $GIT_SPY_FAIL is 1, fails every fetch: returns that PATH and the log.
+    /// A `git` on $PATH (with the shims) ahead of `git_shim`'s, which it chains to, that logs each call to
+    /// <base>/spy.log and, when $SPY_FAIL is 1, fails every fetch: returns that PATH and the log.
     fn spy(&self) -> (String, PathBuf) {
-        let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
         let dir = self.base.join("spy");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("git"), format!(
-            "#!/bin/sh\necho \"$*\" >> \"$GIT_SPY_LOG\"\ncase \"$GIT_SPY_FAIL $*\" in 1*\" fetch \"*) printf 'fatal: spy refuses fetch\\nspy: last\\377line\\n' >&2; exit 128;; esac\nexec {} \"$@\"\n",
-            real.trim()
+            "#!/bin/sh\necho \"$*\" >> \"$SPY_LOG\"\ncase \"$SPY_FAIL $*\" in 1*\" fetch \"*) printf 'fatal: spy refuses fetch\\nspy: last\\377line\\n' >&2; exit 128;; esac\nexec {} \"$@\"\n",
+            self.base.join("shim/git").display()
         )).unwrap();
         std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
         (format!("{}:{}:{}", dir.display(), self.base.join("shim").display(), std::env::var("PATH").unwrap()), self.base.join("spy.log"))
@@ -1301,6 +1655,31 @@ impl Watcher {
         let o = s.output();
         let polls = std::fs::read_to_string(dir.join("polls")).map_or(0, |s| s.trim().parse().unwrap());
         (o.status.code(), String::from_utf8(o.stdout).unwrap(), String::from_utf8(o.stderr).unwrap(), polls)
+    }
+}
+
+/// E-ROUTER3.W7 review r1: the watch clears hermetic's GIT_CONFIG_*, so the `git` its PATH resolves
+/// (plain or spied) must still read no system or global config.
+#[test]
+fn watch_git_reads_no_system_or_global_config() {
+    let w = watcher();
+    let (c, _) = w.cmd(&[], "cfg", &[]);
+    let watch_path = c.get_envs().find(|(k, _)| *k == "PATH").and_then(|(_, v)| v).unwrap().to_owned();
+    let hostile = w.base.join("gitconfig");
+    std::fs::write(&hostile, "[hostile]\n\tkey = 1\n").unwrap();
+    for path in [watch_path, w.spy().0.into()] {
+        let o = common::cmd("sh")
+            .args(["-c", "git config --list"])
+            .current_dir(&w.base)
+            .env("PATH", &path)
+            .env("SPY_LOG", w.base.join("spy.log"))
+            .env("GIT_CONFIG_SYSTEM", &hostile)
+            .env("GIT_CONFIG_GLOBAL", &hostile)
+            .env_remove("GIT_CONFIG_NOSYSTEM")
+            .output()
+            .unwrap();
+        let list = String::from_utf8(o.stdout).unwrap();
+        assert!(o.status.success() && !list.contains("hostile"), "{path:?}: {list}");
     }
 }
 
@@ -1322,6 +1701,29 @@ fn hermetic_git_ignores_global_and_system_config() {
     assert!(hermetic(&mut c).status().unwrap().success());
     let f = hermetic(&mut common::cmd("git")).args(["rev-parse", "--show-object-format"]).current_dir(d.path().join("r")).output().unwrap();
     assert_eq!(String::from_utf8(f.stdout).unwrap(), "sha1\n", "GIT_DEFAULT_HASH reached git init");
+}
+
+/// E-ROUTER3.W7 (owner ruling 2026-11-12): run with GIT_* naming another repository, the watch judges
+/// and fetches into its own repository, and that one stays byte-identical. Before the fix,
+/// `merged <the other's sha> main` printed MERGED for a commit the watch's repository does not hold.
+#[test]
+fn watch_ignores_inherited_git_variables() {
+    let w = watcher();
+    let other = w.base.join("other");
+    decoy(&other);
+    let before = decoy_state(&other);
+    let hostile = hostile_git_env(&other);
+    let mut env: Vec<(&str, &str)> = hostile.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    env.push(("ROUTER_WATCH_MAX", "0"));
+    let theirs = String::from_utf8(git(&other, &["rev-parse", "HEAD"]).stdout).unwrap().trim().to_string();
+    let (code, _, err, _) = w.run(&["merged", &theirs, "main"], "theirs", 0, &env);
+    assert_eq!((code, err), (Some(2), format!("router-watch: not a commit sha: {theirs}\n")));
+    let m = w.commit(&["a"], "a");
+    git(&w.main, &["push", "-q", "origin", "main"]);
+    git(&w.main, &["update-ref", "refs/remotes/origin/main", "HEAD~1"]);
+    let (code, out, _, _) = w.run(&["pushed", &m, "main"], "ours", 0, &env);
+    assert_eq!((code, out), (Some(0), format!("PUSHED tip={m} branch=main origin={m}\n")));
+    assert_eq!(decoy_state(&other), before, "the other repository changed");
 }
 
 /// E-SEED2.W12: every argument router-watch.sh cannot validate is refused with exit 2 before its
@@ -1590,7 +1992,7 @@ fn watch_pushed_and_tagged_fire_on_origin_only() {
 
     // origin/<b> already at origin's tip: no fetch
     let (path, log) = w.spy();
-    let (_, out, _, _) = w.run(&["pushed", &m, "main"], "no-fetch", 0, &[("PATH", &path), ("GIT_SPY_LOG", log.to_str().unwrap())]);
+    let (_, out, _, _) = w.run(&["pushed", &m, "main"], "no-fetch", 0, &[("PATH", &path), ("SPY_LOG", log.to_str().unwrap())]);
     assert_eq!(out, format!("PUSHED tip={m} branch=main origin={o}\n"));
     let calls = std::fs::read_to_string(&log).unwrap();
     assert!(calls.contains("ls-remote") && !calls.contains("fetch"), "{calls}");
@@ -1665,7 +2067,7 @@ fn watch_times_out_and_reports_an_unreachable_origin() {
     git(&other, &["commit", "-q", "--allow-empty", "-m", "ahead2"]);
     git(&other, &["push", "-q", "origin", "HEAD:refs/heads/wu/f"]);
     let (path, log) = w.spy();
-    let env = [("PATH", path.as_str()), ("GIT_SPY_LOG", log.to_str().unwrap()), ("GIT_SPY_FAIL", "1"), ("LC_ALL", "en_US.UTF-8")];
+    let env = [("PATH", path.as_str()), ("SPY_LOG", log.to_str().unwrap()), ("SPY_FAIL", "1"), ("LC_ALL", "en_US.UTF-8")];
     let mut s = w.armed_env(&["pushed", &tip, "wu/f"], "fetch-fails", &env);
     for n in 1..=3 {
         s.go(n);
@@ -1733,4 +2135,1760 @@ fn watch_polls_at_its_default_pace_and_times_out_in_minutes() {
     let (c, _) = w.cmd(&["signed", &t], "knobs", &[]);
     let removed: Vec<&std::ffi::OsStr> = c.get_envs().filter(|(_, v)| v.is_none()).map(|(k, _)| k).collect();
     assert!(["ROUTER_WATCH_POLL", "ROUTER_WATCH_MAX"].iter().all(|k| removed.contains(&std::ffi::OsStr::new(k))), "{removed:?}");
+}
+
+// ---- E-ROUTER3.W9: the watchdog (DEC-45) ----
+
+/// The watchdog's two tool calls as Claude Code 2.1.288 delivered them to the session's own
+/// PreToolUse hook (W9 probes P2/P3; ids and paths replaced, recipient renamed r1).
+const CAPTURED_WATCHDOG_CRON: &str = r#"{"cwd":"/r","scratchpad_dir":"/t","prompt_id":"p","permission_mode":"default","agent_type":"watchdog","hook_event_name":"PreToolUse","tool_name":"CronCreate","tool_input":{"cron":"*/5 * * * *","prompt":"tick","recurring":true},"tool_use_id":"u1"}"#;
+const CAPTURED_WATCHDOG_SEND: &str = r#"{"cwd":"/r","scratchpad_dir":"/t","prompt_id":"p","permission_mode":"default","agent_type":"watchdog","hook_event_name":"PreToolUse","tool_name":"SendMessage","tool_input":{"to":"r1","summary":"FACTSMARK-185209","message":"FACTSMARK-185209\nSendMessage, CronCreate","type":"message","recipient":"r1","content":"FACTSMARK-185209\nSendMessage, CronCreate"},"tool_use_id":"u2"}"#;
+
+const WATCHDOG_POLICY: &str = "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\nwatchdog_model = \"haiku\"\n";
+
+/// The guard run as the watchdog session's hook runs it: with `--arg watchdog_to <to>`.
+fn guard_to(to: &str, event: &serde_json::Value) -> Option<String> {
+    let mut p = Command::new("jq")
+        .args(["-c", "--arg", "watchdog_to", to, "-f"])
+        .arg(root().join("scripts/router-guard.jq"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(&mut p.stdin.take().unwrap(), event.to_string().as_bytes()).unwrap();
+    decision(event, p.wait_with_output().unwrap())
+}
+
+#[test]
+fn router_guard_admits_the_two_watchdog_shapes_in_plain_words_only() {
+    for ok in [
+        "scripts/router-worker.sh watchdog start r1",
+        "scripts/router-worker.sh watchdog stop r1",
+        "scripts/router-worker.sh watchdog start keel-e-router3-63",
+    ] {
+        assert_eq!(bash(ok), None, "guard denied {ok:?}");
+    }
+    let long = format!("scripts/router-worker.sh watchdog start {}", "a".repeat(33));
+    for no in [
+        "scripts/router-worker.sh watchdog",
+        "scripts/router-worker.sh watchdog start",
+        "scripts/router-worker.sh watchdog stop",
+        "scripts/router-worker.sh watchdog start r1 r2",
+        "scripts/router-worker.sh watchdog start R1",
+        "scripts/router-worker.sh watchdog start r.1",
+        "scripts/router-worker.sh watchdog start ..",
+        "scripts/router-worker.sh watchdog start -r1",
+        "scripts/router-worker.sh watchdog start \"r1\"",
+        "scripts/router-worker.sh watchdog start $USER",
+        "scripts/router-worker.sh watchdog facts r1",
+        "scripts/router-worker.sh watchdog restart r1",
+        "scripts/router-worker.sh watchdogx start r1",
+        long.as_str(),
+    ] {
+        assert!(bash(no).is_some(), "guard allowed {no:?}");
+    }
+    assert!(bash("scripts/router-worker.sh watchdog facts r1")
+        .unwrap()
+        .contains("watchdog start|stop <router-name>"));
+}
+
+#[test]
+fn guard_run_with_a_watchdog_recipient_allows_only_the_scheduler_and_a_message_to_that_name() {
+    let cron: serde_json::Value = serde_json::from_str(CAPTURED_WATCHDOG_CRON).unwrap();
+    let send: serde_json::Value = serde_json::from_str(CAPTURED_WATCHDOG_SEND).unwrap();
+    for agent in [Some("watchdog"), Some("router"), None] {
+        let as_agent = |mut e: serde_json::Value| {
+            match agent {
+                Some(a) => e["agent_type"] = a.into(),
+                None => {
+                    e.as_object_mut().unwrap().remove("agent_type");
+                }
+            }
+            e
+        };
+        assert_eq!(
+            guard_to("r1", &as_agent(cron.clone())),
+            None,
+            "{agent:?}: CronCreate"
+        );
+        assert_eq!(
+            guard_to("r1", &as_agent(send.clone())),
+            None,
+            "{agent:?}: SendMessage to r1"
+        );
+        let mut other = send.clone();
+        other["tool_input"]["to"] = "w1".into();
+        let mut missing = send.clone();
+        missing["tool_input"].as_object_mut().unwrap().remove("to");
+        let mut number = send.clone();
+        number["tool_input"]["to"] = 1.into();
+        let mut recipient_only = send.clone();
+        recipient_only["tool_input"]["to"] = "w1".into();
+        recipient_only["tool_input"]["recipient"] = "r1".into();
+        for (what, e) in [
+            ("another to", other),
+            ("no to", missing),
+            ("non-string to", number),
+            ("to w1, recipient r1", recipient_only),
+        ] {
+            let why =
+                guard_to("r1", &as_agent(e)).unwrap_or_else(|| panic!("{agent:?}: {what} allowed"));
+            assert!(why.contains("watchdog guard"), "{why}");
+        }
+        for (tool, input) in [
+            ("Bash", serde_json::json!({"command": "git status"})),
+            ("Read", serde_json::json!({"file_path": "/r/x"})),
+            (
+                "Write",
+                serde_json::json!({"file_path": "/r/.router/briefs/x.md"}),
+            ),
+            ("Agent", serde_json::json!({"prompt": "x"})),
+            ("CronDelete", serde_json::json!({"id": "x"})),
+        ] {
+            let mut e = cron.clone();
+            e["tool_name"] = tool.into();
+            e["tool_input"] = input;
+            assert!(
+                guard_to("r1", &as_agent(e)).is_some(),
+                "{agent:?}: {tool} allowed"
+            );
+        }
+        assert!(
+            guard_to("", &as_agent(cron.clone())).is_some(),
+            "{agent:?}: an empty recipient allowed CronCreate"
+        );
+        assert!(
+            guard_to("", &as_agent(send.clone())).is_some(),
+            "{agent:?}: an empty recipient allowed a message"
+        );
+        // review r2 I1: only the tick's shape is admitted; a repeat of that same call passes
+        for (k, v) in [
+            ("cron", serde_json::json!("* * * * *")),
+            ("cron", serde_json::json!("*/1 * * * *")),
+            ("prompt", serde_json::json!("tick and message w1")),
+            ("recurring", serde_json::json!(false)),
+            ("recurring", serde_json::Value::Null),
+        ] {
+            let mut e = cron.clone();
+            e["tool_input"][k] = v.clone();
+            assert!(guard_to("r1", &as_agent(e)).is_some(), "{agent:?}: CronCreate with {k} = {v} allowed");
+        }
+    }
+}
+
+/// A launcher whose committed policy names a watchdog model and whose session list holds the router
+/// r1, a background session in the router checkout.
+fn watchdog_launcher() -> Launcher {
+    let l = launcher();
+    l.commit_config(Some(WATCHDOG_POLICY));
+    l.set_sessions(&[serde_json::json!({"id": "r100", "sessionId": "r100-x", "name": "r1", "cwd": l.main, "kind": "background", "status": "idle"})]);
+    l
+}
+
+/// The argv of the watchdog session the stub started for `router`, checked option by option.
+fn watchdog_argv(state: &Path, router: &str) -> (String, Vec<String>) {
+    let name = format!("watchdog-{router}");
+    let (dir, a) = calls(state)
+        .into_iter()
+        .rfind(|(_, a)| a[0] == "--bg" && a.windows(2).any(|w| w[0] == "-n" && w[1] == name))
+        .unwrap_or_else(|| panic!("no session started for {name}"));
+    let flags: Vec<&str> = a
+        .iter()
+        .map(String::as_str)
+        .filter(|x| x.starts_with('-'))
+        .collect();
+    assert_eq!(
+        flags,
+        [
+            "--bg",
+            "-n",
+            "--setting-sources",
+            "--agents",
+            "--agent",
+            "--model",
+            "--tools",
+            "--allowedTools",
+            "--strict-mcp-config",
+            "--autocompact",
+            "--settings"
+        ],
+        "options in {a:?}"
+    );
+    assert_eq!(option(&a, "-n"), name);
+    assert_eq!(option(&a, "--setting-sources"), "local");
+    assert_eq!(option(&a, "--agent"), "watchdog");
+    assert_eq!(option(&a, "--model"), "haiku");
+    assert_eq!(option(&a, "--autocompact"), "100k");
+    let list = |flag: &str| -> Vec<String> {
+        let i = a.iter().position(|x| x == flag).unwrap();
+        a[i + 1..]
+            .iter()
+            .take_while(|x| !x.starts_with('-'))
+            .cloned()
+            .collect()
+    };
+    assert_eq!(list("--tools"), ["SendMessage", "CronCreate"]);
+    assert_eq!(list("--allowedTools"), ["SendMessage", "CronCreate"]);
+    assert_eq!(
+        a[a.len() - 3],
+        "--settings",
+        "the prompt must follow --settings' value: {a:?}"
+    );
+    assert!(a[a.len() - 1].contains("*/5 * * * *"), "{a:?}");
+    (dir, a)
+}
+
+#[test]
+fn watchdog_session_loads_local_settings_only_and_defines_its_agent_inline() {
+    let l = watchdog_launcher();
+    let (ok, out) = l.run(&["watchdog", "start", "r1"]);
+    assert!(ok, "{out}");
+    let (_, a) = watchdog_argv(&l.state, "r1");
+    let agents: serde_json::Value = serde_json::from_str(&option(&a, "--agents")).unwrap();
+    let obj = agents.as_object().unwrap();
+    assert_eq!(obj.keys().collect::<Vec<_>>(), ["watchdog"]);
+    let w = &agents["watchdog"];
+    assert!(
+        !w["description"].as_str().unwrap().is_empty() && !w["prompt"].as_str().unwrap().is_empty(),
+        "{w}"
+    );
+    assert_eq!(w["tools"], serde_json::json!(["SendMessage", "CronCreate"]));
+    assert!(w["prompt"].as_str().unwrap().contains("untrusted"), "{w}");
+    assert!(!root().join(".claude/agents/watchdog.md").exists());
+}
+
+/// The two hook commands the watchdog's `--settings` carries.
+fn watchdog_hooks(a: &[String]) -> (String, String) {
+    let s: serde_json::Value = serde_json::from_str(&option(a, "--settings")).unwrap();
+    let one = |ev: &str| {
+        let h = s["hooks"][ev].as_array().unwrap();
+        assert_eq!(h.len(), 1, "{ev}: {s}");
+        assert_eq!(h[0]["hooks"].as_array().unwrap().len(), 1, "{ev}: {s}");
+        h[0]["hooks"][0]["command"].as_str().unwrap().to_string()
+    };
+    assert_eq!(s["hooks"].as_object().unwrap().len(), 2, "{s}");
+    assert_eq!(
+        s["hooks"]["PreToolUse"][0]
+            .get("matcher")
+            .and_then(|m| m.as_str())
+            .unwrap_or("*"),
+        "*"
+    );
+    (one("UserPromptSubmit"), one("PreToolUse"))
+}
+
+/// Run a hook command as Claude Code would in a background session: no variable of the launcher's
+/// environment (W10 P8), ROUTER_CLAUDE included (review r1 B1), only PATH, HOME and the stub's state dir.
+fn run_hook(l: &Launcher, cmd: &str, path: &str, home: &Path, stdin: &str) -> Output {
+    let mut p = common::cmd("/bin/sh")
+        .args(["-c", cmd])
+        .current_dir(&l.main)
+        .env_clear()
+        .env("PATH", path)
+        .env("HOME", home)
+        .env("STUB_STATE", &l.state)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(&mut p.stdin.take().unwrap(), stdin.as_bytes()).unwrap();
+    p.wait_with_output().unwrap()
+}
+
+#[test]
+fn watchdog_starts_as_a_background_session_whose_hooks_carry_the_routers_name() {
+    let l = watchdog_launcher();
+    let (ok, out) = l.run(&["watchdog", "start", "r1"]);
+    assert!(ok, "{out}");
+    let row = l
+        .sessions()
+        .into_iter()
+        .find(|r| r["name"] == "watchdog-r1")
+        .unwrap();
+    assert_eq!(
+        out,
+        format!(
+            "RUNNING name=watchdog-r1 id={} session={} router=r1 model=haiku every=5m\n",
+            row["id"].as_str().unwrap(),
+            row["sessionId"].as_str().unwrap()
+        )
+    );
+    let (dir, a) = watchdog_argv(&l.state, "r1");
+    assert_eq!(
+        dir,
+        l.main.to_str().unwrap(),
+        "started outside the router checkout"
+    );
+    for no in [
+        "-p",
+        "--print",
+        "--resume",
+        "--session-id",
+        "--effort",
+        "--permission-mode",
+        "--disallowedTools",
+    ] {
+        assert!(!a.iter().any(|x| x == no), "{no} in {a:?}");
+    }
+    assert!(
+        !a.iter().any(|x| x.starts_with("Bash(")),
+        "a worker grant reached the watchdog: {a:?}"
+    );
+
+    let (prompt_hook, tool_hook) = watchdog_hooks(&a);
+    for c in [&prompt_hook, &tool_hook] {
+        assert!(!c.contains('$'), "a hook reads the environment: {c}");
+    }
+    let home = TempDir::new().unwrap();
+    let path = std::env::var("PATH").unwrap();
+    let o = run_hook(
+        &l,
+        &prompt_hook,
+        &path,
+        home.path(),
+        "{\"prompt\":\"tick\"}",
+    );
+    assert!(o.status.success(), "{o:?}");
+    // review r1 B1: with no ROUTER_CLAUDE and no claude under HOME, the hook still reads the session list
+    assert_eq!(String::from_utf8_lossy(&o.stdout), "Report to r1.\nNo live worker.\n", "{o:?}");
+
+    let verdict = |o: Output| -> Option<String> { decision(&serde_json::json!({}), o) };
+    assert_eq!(
+        verdict(run_hook(
+            &l,
+            &tool_hook,
+            &path,
+            home.path(),
+            CAPTURED_WATCHDOG_SEND
+        )),
+        None
+    );
+    assert_eq!(
+        verdict(run_hook(
+            &l,
+            &tool_hook,
+            &path,
+            home.path(),
+            CAPTURED_WATCHDOG_CRON
+        )),
+        None
+    );
+    assert!(verdict(run_hook(
+        &l,
+        &tool_hook,
+        &path,
+        home.path(),
+        &CAPTURED_WATCHDOG_SEND.replace("\"to\":\"r1\"", "\"to\":\"w1\"")
+    ))
+    .is_some());
+    // it is the session's only tool hook: a guard that cannot run or parse denies
+    assert_eq!(
+        run_hook(
+            &l,
+            &tool_hook,
+            "/nonexistent",
+            home.path(),
+            CAPTURED_WATCHDOG_SEND
+        )
+        .status
+        .code(),
+        Some(2),
+        "jq missing"
+    );
+    assert_eq!(
+        run_hook(&l, &tool_hook, &path, home.path(), "not json")
+            .status
+            .code(),
+        Some(2),
+        "payload not JSON"
+    );
+
+    // a start the CLI refuses is reported dead
+    let l = watchdog_launcher();
+    std::fs::write(l.state.join("refuse"), "Error: not logged in\n").unwrap();
+    let (ok, out) = l.run(&["watchdog", "start", "r1"]);
+    assert!(
+        !ok && out.starts_with("DEAD name=watchdog-r1 exit=1")
+            && out.contains("Error: not logged in"),
+        "{out}"
+    );
+}
+
+#[test]
+fn watchdog_start_refuses_a_bad_name_an_unlisted_router_and_a_second_start() {
+    let l = watchdog_launcher();
+    let path = l.fast_path();
+    let long = "a".repeat(33);
+    for (args, why) in [
+        (vec!["watchdog", "start", "R1"], "bad router name"),
+        (vec!["watchdog", "start", long.as_str()], "bad router name"),
+        (
+            vec!["watchdog", "start"],
+            "watchdog start|stop <router-name>",
+        ),
+        (
+            vec!["watchdog", "restart", "r1"],
+            "watchdog start|stop <router-name>",
+        ),
+        (vec!["watchdog", "start", "r2"], "router r2 is not listed"),
+        (
+            vec!["watchdog", "stop", "r1"],
+            "worker watchdog-r1 is not running",
+        ),
+        (
+            vec![
+                "spawn",
+                "watchdog",
+                l.wt.to_str().unwrap(),
+                ".router/briefs/b.md",
+                "opus",
+            ],
+            "the name watchdog is reserved",
+        ),
+        (
+            vec![
+                "spawn",
+                "watchdog-x",
+                l.wt.to_str().unwrap(),
+                ".router/briefs/b.md",
+                "opus",
+            ],
+            "the name watchdog-x is reserved",
+        ),
+    ] {
+        let (ok, out) = l.run_env(&args, &[("PATH", &path)]);
+        assert!(!ok && out.contains(why), "{args:?}: {out}");
+    }
+    assert_eq!(l.starts("watchdog-r1") + l.starts("watchdog-r2"), 0);
+    assert!(l.run(&["watchdog", "start", "r1"]).0);
+    let (ok, out) = l.run(&["watchdog", "start", "r1"]);
+    assert!(
+        !ok && out.contains("watchdog-r1 is already running"),
+        "{out}"
+    );
+    assert_eq!(l.starts("watchdog-r1"), 1);
+    std::fs::write(l.state.join("agents-ok"), "0").unwrap();
+    let (ok, out) = l.run(&["watchdog", "start", "r1"]);
+    assert!(
+        !ok && out.contains("cannot list sessions (claude agents --json)"),
+        "{out}"
+    );
+    std::fs::remove_file(l.state.join("agents-ok")).unwrap();
+    // no watchdog model in the committed policy: workers still spawn, the watchdog does not start
+    let l = watchdog_launcher();
+    l.commit_config(Some(
+        &WATCHDOG_POLICY.replace("watchdog_model = \"haiku\"\n", ""),
+    ));
+    let (ok, out) = l.run(&["watchdog", "start", "r1"]);
+    assert!(
+        !ok && out.contains("no watchdog model: [router] watchdog_model"),
+        "{out}"
+    );
+    assert!(
+        l.run(&[
+            "spawn",
+            "w1",
+            l.wt.to_str().unwrap(),
+            ".router/briefs/b.md",
+            "opus"
+        ])
+        .0
+    );
+}
+
+#[test]
+fn worker_policy_reads_an_optional_watchdog_model() {
+    let l = launcher();
+    let wt = l.wt.to_str().unwrap();
+    let base = WATCHDOG_POLICY.replace("watchdog_model = \"haiku\"\n", "");
+    for (config, spawns, watchdog) in [
+        (WATCHDOG_POLICY.to_string(), true, true),
+        (base.clone(), true, false),
+        (
+            format!("{WATCHDOG_POLICY}watchdog_model = \"opus\"\n"),
+            false,
+            false,
+        ),
+        (format!("{base}watchdog_model = haiku\n"), false, false),
+        (format!("{base}watchdog_model = \"Haiku\"\n"), false, false),
+        (
+            format!("{base}\n[router]\nwatchdog_model = \"haiku\"\n"),
+            false,
+            false,
+        ),
+    ] {
+        l.commit_config(Some(&config));
+        l.set_sessions(&[serde_json::json!({"id": "r100", "sessionId": "r100-x", "name": "r1", "cwd": l.main, "kind": "background", "status": "idle"})]);
+        let (ok, out) = l.run(&["spawn", "w1", wt, ".router/briefs/b.md", "opus"]);
+        assert_eq!(ok, spawns, "{config}: {out}");
+        let (ok, out) = l.run(&["watchdog", "start", "r1"]);
+        assert_eq!(ok, watchdog, "{config}: {out}");
+        if !spawns {
+            assert!(out.contains("no worker policy"), "{config}: {out}");
+        }
+    }
+}
+
+/// A worker row of this repository and its transcript under `home`, written `quiet_min` minutes ago.
+fn worker_row(
+    l: &Launcher,
+    home: &Path,
+    name: &str,
+    sid: &str,
+    status: serde_json::Value,
+    quiet_min: Option<u64>,
+    lines: &[String],
+) -> serde_json::Value {
+    if let Some(q) = quiet_min {
+        let dir = home.join(".claude/projects/-p");
+        std::fs::create_dir_all(&dir).unwrap();
+        let t = dir.join(format!("{sid}.jsonl"));
+        std::fs::write(&t, lines.join("\n") + "\n").unwrap();
+        let f = std::fs::File::options().write(true).open(&t).unwrap();
+        f.set_modified(std::time::SystemTime::now() - Duration::from_secs(q * 60))
+            .unwrap();
+    }
+    let mut r = serde_json::json!({"id": &sid[..8], "sessionId": sid, "name": name, "cwd": l.wt, "kind": "background"});
+    for (k, v) in status.as_object().unwrap() {
+        r[k] = v.clone();
+    }
+    r
+}
+
+fn assistant(items: serde_json::Value) -> String {
+    serde_json::json!({"type": "assistant", "message": {"role": "assistant", "content": items}})
+        .to_string()
+}
+
+fn facts(l: &Launcher, home: &Path) -> String {
+    let (ok, out) = l.run_env(
+        &["watchdog", "facts", "r1"],
+        &[("HOME", home.to_str().unwrap())],
+    );
+    assert!(ok, "{out}");
+    out
+}
+
+/// The blocks of a facts output: a block starts at a worker's line (it carries " · quiet ") and runs
+/// over its item lines.
+fn blocks(out: &str) -> Vec<String> {
+    let mut b: Vec<String> = Vec::new();
+    for line in out.lines().skip(1) {
+        if line.starts_with("  - ") {
+            let last = b.last_mut().unwrap();
+            last.push('\n');
+            last.push_str(line);
+        } else if line.contains(" · quiet ") {
+            b.push(line.to_string());
+        }
+    }
+    b
+}
+
+fn sid(n: u64) -> String {
+    format!("{n:08x}-0000-4000-8000-000000000000")
+}
+
+#[test]
+fn watchdog_facts_hold_one_block_per_live_worker_of_this_repository() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    assert_eq!(facts(&l, h), "Report to r1.\nNo live worker.\n");
+    let mut rows = l.sessions();
+    rows.push(worker_row(
+        &l,
+        h,
+        "w1",
+        &sid(1),
+        serde_json::json!({"status": "busy"}),
+        Some(1),
+        &[assistant(
+            serde_json::json!([{"type": "text", "text": "working on it"}]),
+        )],
+    ));
+    let mut w2 = worker_row(
+        &l,
+        h,
+        "w2",
+        &sid(2),
+        serde_json::json!({"status": "busy"}),
+        Some(2),
+        &[],
+    );
+    w2["cwd"] = l.wt2.to_str().unwrap().into();
+    rows.push(w2);
+    rows.push(serde_json::json!({"id": "f0", "sessionId": sid(3), "name": "foreign", "cwd": "/elsewhere", "kind": "background", "status": "idle"}));
+    rows.push(serde_json::json!({"id": "i0", "sessionId": sid(4), "name": "inter", "cwd": l.wt, "kind": "interactive", "status": "idle"}));
+    rows.push(serde_json::json!({"id": "wd0", "sessionId": sid(5), "name": "watchdog-r1", "cwd": l.main, "kind": "background", "status": "busy"}));
+    // review r1 I2: another router's watchdog, in a sibling worktree, is no worker
+    rows.push(serde_json::json!({"id": "wd1", "sessionId": sid(6), "name": "watchdog-r2", "cwd": l.wt2, "kind": "background", "status": "idle"}));
+    l.set_sessions(&rows);
+    let out = facts(&l, h);
+    assert!(out.starts_with("Report to r1.\n"), "{out}");
+    let b = blocks(&out);
+    assert_eq!(b.len(), 2, "{out}");
+    assert!(
+        b[0].starts_with("w1: busy")
+            && b[0].contains("  - working on it")
+            && b[1].starts_with("w2: busy"),
+        "{out}"
+    );
+    assert!(
+        b[0].contains(" · w · ") && b[1].contains(" · w2 · "),
+        "branch missing: {out}"
+    );
+    rows.retain(|r| r["name"] != "w2");
+    l.set_sessions(&rows);
+    assert_eq!(blocks(&facts(&l, h)).len(), 1);
+}
+
+#[test]
+fn watchdog_facts_mark_an_idle_worker_done_and_a_blocked_or_quiet_one_stuck() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let mut rows = l.sessions();
+    for (name, n, status, quiet) in [
+        (
+            "busy14",
+            1,
+            serde_json::json!({"status": "busy", "state": "working"}),
+            14,
+        ),
+        (
+            "busy16",
+            2,
+            serde_json::json!({"status": "busy", "state": "working"}),
+            16,
+        ),
+        (
+            "idle",
+            3,
+            serde_json::json!({"status": "idle", "state": "done"}),
+            40,
+        ),
+        (
+            "prompt",
+            4,
+            serde_json::json!({"status": "waiting", "waitingFor": "permission prompt", "state": "blocked"}),
+            0,
+        ),
+        ("blocked", 5, serde_json::json!({"state": "blocked"}), 0),
+        ("working", 6, serde_json::json!({"state": "working"}), 1),
+        // E-ROUTER3.W5 (W8 result): a finished review worker was listed idle with state blocked
+        (
+            "review",
+            7,
+            serde_json::json!({"status": "idle", "state": "blocked"}),
+            0,
+        ),
+    ] {
+        rows.push(worker_row(&l, h, name, &sid(n), status, Some(quiet), &[]));
+    }
+    l.set_sessions(&rows);
+    let out = facts(&l, h);
+    let state = |name: &str| -> String {
+        let b = blocks(&out)
+            .into_iter()
+            .find(|b| b.starts_with(&format!("{name}: ")))
+            .unwrap_or_else(|| panic!("no {name} in {out}"));
+        b[name.len() + 2..].split(" · ").next().unwrap().to_string()
+    };
+    assert_eq!(state("busy14"), "busy");
+    assert_eq!(state("busy16"), "STUCK (quiet 16m)");
+    assert_eq!(state("idle"), "DONE");
+    assert_eq!(state("prompt"), "STUCK (permission prompt)");
+    assert_eq!(state("blocked"), "STUCK (blocked)");
+    assert_eq!(state("working"), "busy");
+    assert_eq!(state("review"), "DONE");
+    // done and stuck first, busy last, in list order within each
+    let order: Vec<String> = blocks(&out)
+        .iter()
+        .map(|b| b.split(':').next().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        order,
+        ["busy16", "idle", "prompt", "blocked", "review", "busy14", "working"],
+        "{out}"
+    );
+}
+
+#[test]
+fn watchdog_ends_on_stop_and_when_the_router_is_gone() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    assert!(
+        l.run(&[
+            "spawn",
+            "w1",
+            l.wt.to_str().unwrap(),
+            ".router/briefs/b.md",
+            "opus"
+        ])
+        .0
+    );
+    assert!(l.run(&["watchdog", "start", "r1"]).0);
+    let id = |n: &str| {
+        l.sessions().iter().find(|r| r["name"] == n).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let (w1, wd) = (id("w1"), id("watchdog-r1"));
+    let cli = |from: usize| -> Vec<Vec<String>> {
+        calls(&l.state)[from..]
+            .iter()
+            .map(|(_, a)| a.clone())
+            .filter(|a| a[0] == "stop" || a[0] == "rm")
+            .collect()
+    };
+
+    let n0 = calls(&l.state).len();
+    let (ok, out) = l.run(&["watchdog", "stop", "r1"]);
+    assert!(
+        ok && out.starts_with(&format!("STOPPED name=watchdog-r1 id={wd} ")),
+        "{out}"
+    );
+    assert_eq!(
+        cli(n0),
+        [
+            vec!["stop".to_string(), wd.clone()],
+            vec!["rm".to_string(), wd]
+        ]
+    );
+
+    // the router leaves: the next facts run stops the watchdog, and only it
+    assert!(l.run(&["watchdog", "start", "r1"]).0);
+    let wd = id("watchdog-r1");
+    let rows: Vec<serde_json::Value> = l
+        .sessions()
+        .into_iter()
+        .filter(|r| r["name"] != "r1")
+        .collect();
+    l.set_sessions(&rows);
+    let n0 = calls(&l.state).len();
+    let out = facts(&l, home.path());
+    assert_eq!(cli(n0), [vec!["stop".to_string(), wd]]);
+    assert!(blocks(&out).is_empty() && !out.contains("w1"), "{out}");
+    assert!(l.sessions().iter().any(|r| r["id"] == w1.as_str()));
+
+    // an unreadable list stops nothing
+    std::fs::write(l.state.join("agents-ok"), "0").unwrap();
+    let n0 = calls(&l.state).len();
+    let out = facts(&l, home.path());
+    assert!(out.contains("cannot be read"), "{out}");
+    assert!(cli(n0).is_empty());
+}
+
+/// A deterministic generator (no crate): xorshift64.
+struct Rng(u64);
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+    fn text(&mut self, max: usize) -> String {
+        const ALPHABET: [&str; 12] = [
+            "a", "Z", " ", "\"", "\\", "\n", "\t", "\u{1}", "\u{7f}", "\u{85}", "漢", "é",
+        ];
+        (0..(self.next() as usize % max))
+            .map(|_| ALPHABET[self.next() as usize % ALPHABET.len()])
+            .collect()
+    }
+}
+
+#[test]
+fn fact_block_states_a_worker_from_its_transcript_tail_within_its_bound() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let mut rows = l.sessions();
+    // the last six items in order; a tool item; non-JSON skipped; thinking skipped
+    let mut lines: Vec<String> = (1..=8)
+        .map(|i| assistant(serde_json::json!([{"type": "text", "text": format!("step {i}")}])))
+        .collect();
+    lines.push("not json".into());
+    lines.push(assistant(serde_json::json!([{"type": "thinking", "thinking": "secret"}, {"type": "tool_use", "name": "Bash", "input": {"command": "cargo test"}}])));
+    lines.push(
+        serde_json::json!({"type": "user", "message": {"role": "user", "content": "do it"}})
+            .to_string(),
+    );
+    rows.push(worker_row(
+        &l,
+        h,
+        "w1",
+        &sid(1),
+        serde_json::json!({"status": "busy"}),
+        Some(0),
+        &lines,
+    ));
+    // a transcript longer than the 64 KB window: its cut first line is ignored
+    let big = "x".repeat(70_000);
+    rows.push(worker_row(
+        &l,
+        h,
+        "w2",
+        &sid(2),
+        serde_json::json!({"status": "busy"}),
+        Some(0),
+        &[
+            assistant(serde_json::json!([{"type": "text", "text": big}])),
+            assistant(serde_json::json!([{"type": "text", "text": "after the big one"}])),
+        ],
+    ));
+    // a quiet transcript whose subagent wrote lately: not quiet
+    rows.push(worker_row(
+        &l,
+        h,
+        "w3",
+        &sid(3),
+        serde_json::json!({"status": "busy"}),
+        Some(30),
+        &[],
+    ));
+    let sub = h.join(format!(".claude/projects/-p/{}/subagents", sid(3)));
+    std::fs::create_dir_all(&sub).unwrap();
+    std::fs::write(sub.join("agent-1.jsonl"), "{}\n").unwrap();
+    // no transcript at all
+    rows.push(worker_row(
+        &l,
+        h,
+        "w4",
+        &sid(4),
+        serde_json::json!({"status": "busy"}),
+        None,
+        &[],
+    ));
+    l.set_sessions(&rows);
+    let out = facts(&l, h);
+    let block = |n: &str| {
+        blocks(&out)
+            .into_iter()
+            .find(|b| b.starts_with(&format!("{n}: ")))
+            .unwrap_or_else(|| panic!("no {n} in {out}"))
+    };
+    let items: Vec<String> = block("w1").lines().skip(1).map(String::from).collect();
+    assert_eq!(
+        items,
+        [
+            "  - step 4",
+            "  - step 5",
+            "  - step 6",
+            "  - step 7",
+            "  - step 8",
+            "  - tool Bash: {\"command\":\"cargo test\"}"
+        ],
+        "{out}"
+    );
+    assert!(
+        !out.contains("secret") && !out.contains("not json"),
+        "{out}"
+    );
+    assert_eq!(
+        block("w2").lines().skip(1).collect::<Vec<_>>(),
+        ["  - after the big one"],
+        "{out}"
+    );
+    assert!(block("w3").starts_with("w3: busy · quiet 0m"), "{out}");
+    let w4 = block("w4");
+    assert!(
+        w4.starts_with("w4: busy · quiet ?") && w4.lines().count() == 1,
+        "{out}"
+    );
+
+    // invariant: whatever the transcript and the row hold, a block is at most 2000 bytes and holds
+    // no control character but its line breaks
+    let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+    for case in 0..12 {
+        let lines: Vec<String> = (0..rng.next() % 12)
+            .map(|_| match rng.next() % 3 {
+                0 => assistant(serde_json::json!([{"type": "text", "text": rng.text(600)}])),
+                1 => assistant(serde_json::json!([{"type": "tool_use", "name": rng.text(40), "input": {"command": rng.text(600)}}])),
+                _ => rng.text(200),
+            })
+            .collect();
+        let status = serde_json::json!({"status": "waiting", "waitingFor": rng.text(300)});
+        let mut rows = l
+            .sessions()
+            .into_iter()
+            .filter(|r| r["name"] == "r1")
+            .collect::<Vec<_>>();
+        let mut row = worker_row(
+            &l,
+            h,
+            "w9",
+            &sid(100 + case),
+            status,
+            Some(rng.next() % 30),
+            &lines,
+        );
+        row["name"] = format!("w9{}", rng.text(80)).into();
+        rows.push(row);
+        l.set_sessions(&rows);
+        let out = facts(&l, h);
+        let b = blocks(&out);
+        assert_eq!(b.len(), 1, "case {case}: {out:?}");
+        assert!(b[0].len() <= 2000, "case {case}: {} bytes", b[0].len());
+        assert!(
+            !b[0].chars().any(|c| c.is_control() && c != '\n'),
+            "case {case}: {:?}",
+            b[0]
+        );
+    }
+
+    // invariant: every whole output stays under 9000 bytes whatever the fleet; done and stuck
+    // workers come first, every printed block is whole, and the last line counts the rest
+    let fat = assistant(serde_json::json!([{"type": "text", "text": "y".repeat(400)}]));
+    for n in [0u64, 1, 3, 4, 5, 8, 13, 21, 40] {
+        let mut rows = l
+            .sessions()
+            .into_iter()
+            .filter(|r| r["name"] == "r1")
+            .collect::<Vec<_>>();
+        let mut stuck = 0;
+        for i in 0..n {
+            let status = if rng.next().is_multiple_of(3) {
+                stuck += 1;
+                serde_json::json!({"status": "waiting", "waitingFor": "permission prompt"})
+            } else {
+                serde_json::json!({"status": "busy"})
+            };
+            rows.push(worker_row(
+                &l,
+                h,
+                &format!("f{i}"),
+                &sid(1000 + i),
+                status,
+                Some(1),
+                &vec![fat.clone(); 6],
+            ));
+        }
+        l.set_sessions(&rows);
+        let out = facts(&l, h);
+        assert!(out.len() < 9000, "{n} workers: {} bytes", out.len());
+        let b = blocks(&out);
+        let shown = b.len() as u64;
+        if shown < n {
+            assert!(
+                out.ends_with(&format!("\n{} more workers not shown.\n", n - shown)),
+                "{n}: {out}"
+            );
+            let first_busy = b
+                .iter()
+                .position(|x| x.contains(": busy"))
+                .unwrap_or(b.len());
+            assert!(
+                b[first_busy..].iter().all(|x| x.contains(": busy")),
+                "{n}: stuck after busy"
+            );
+            assert_eq!(
+                b[..first_busy].len() as u64,
+                stuck.min(shown),
+                "{n}: stuck workers not first"
+            );
+        } else {
+            assert_eq!(shown, n, "{out}");
+            if n == 0 {
+                assert!(out.ends_with("No live worker.\n"));
+            }
+        }
+        for x in &b {
+            assert_eq!(x.lines().count(), 7, "{n}: a block was cut: {x}");
+        }
+    }
+}
+
+/// review r1 (B1, I4, nit): facts runs as the watchdog's prompt hook, where an exit 2 would block the
+/// prompt: it always exits 0, and says what it could not read instead of reporting a wrong fleet.
+#[test]
+fn watchdog_facts_never_block_the_prompt_and_say_what_they_cannot_read() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path().to_str().unwrap();
+    let (ok, out) = l.run_env(&["watchdog", "facts", "r1"], &[("ROUTER_CLAUDE", "/nonexistent/claude"), ("HOME", h)]);
+    assert!(ok && out == "Report to r1.\nThe session list cannot be read (claude agents --json).\n", "{out}");
+
+    std::fs::write(l.state.join("sessions.json"), "not json\n").unwrap();
+    let n0 = calls(&l.state).len();
+    let (ok, out) = l.run_env(&["watchdog", "facts", "r1"], &[("HOME", h)]);
+    assert!(ok && out == "Report to r1.\nThe session list cannot be read (claude agents --json).\n", "{out}");
+    assert!(calls(&l.state)[n0..].iter().all(|(_, a)| a[0] == "agents"), "an unreadable list stopped a session");
+
+    // a checkout git cannot list: the worktree list is unreadable, never an empty fleet
+    let l = watchdog_launcher();
+    let mut rows = l.sessions();
+    rows.push(serde_json::json!({"id": "w100", "sessionId": sid(1), "name": "w1", "cwd": l.wt, "kind": "background", "status": "busy"}));
+    l.set_sessions(&rows);
+    let bare = TempDir::new().unwrap();
+    std::fs::create_dir_all(bare.path().join("scripts")).unwrap();
+    std::fs::copy(root().join("scripts/router-worker.sh"), bare.path().join("scripts/router-worker.sh")).unwrap();
+    let o = common::cmd("sh")
+        .arg(bare.path().join("scripts/router-worker.sh"))
+        .args(["watchdog", "facts", "r1"])
+        .env("ROUTER_CLAUDE", &l.stub)
+        .env("STUB_STATE", &l.state)
+        .env("HOME", h)
+        .env("GIT_CEILING_DIRECTORIES", bare.path().parent().unwrap())
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{o:?}");
+    assert_eq!(String::from_utf8_lossy(&o.stdout), "Report to r1.\nThe worktree list cannot be read (git worktree list).\n");
+}
+
+/// review r2 I2: facts reads a worker's worktree without taking its index lock, so the worker's own
+/// `git add` or `git commit` never meets an index.lock left by the watchdog.
+#[test]
+fn watchdog_facts_leave_a_workers_index_untouched() {
+    use std::os::unix::fs::MetadataExt;
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let mut rows = l.sessions();
+    rows.push(serde_json::json!({"id": "w100", "sessionId": sid(1), "name": "w1", "cwd": l.wt, "kind": "background", "status": "busy"}));
+    l.set_sessions(&rows);
+    // a stale index: a tracked file's stat no longer matches it, so a plain `git status` rewrites it
+    let tracked = std::fs::File::options().write(true).open(l.wt.join(".gitignore")).unwrap();
+    tracked.set_modified(std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_600_000_000)).unwrap();
+    let index = l.main.join(".git/worktrees/wt/index");
+    let before = std::fs::metadata(&index).unwrap();
+    let out = facts(&l, home.path());
+    assert!(out.contains("w1: busy"), "{out}");
+    let after = std::fs::metadata(&index).unwrap();
+    assert_eq!((before.ino(), before.mtime_nsec()), (after.ino(), after.mtime_nsec()), "facts rewrote the worker's index");
+}
+
+/// review r2 I3: a transcript facts cannot stat (it vanished between the glob and the look) costs
+/// that worker its quiet minutes, never the rest of the fleet.
+#[test]
+fn watchdog_facts_keep_the_fleet_when_a_transcript_cannot_be_read() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let mut rows = l.sessions();
+    for i in 1..=3 {
+        rows.push(worker_row(&l, h, &format!("w{i}"), &sid(i), serde_json::json!({"status": "busy"}), Some(1), &[]));
+    }
+    l.set_sessions(&rows);
+    let shim = l.state.join("nostat");
+    std::fs::create_dir_all(&shim).unwrap();
+    std::fs::write(shim.join("stat"), "#!/bin/sh\nexit 1\n").unwrap();
+    std::fs::set_permissions(shim.join("stat"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let path = format!("{}:{}", shim.display(), std::env::var("PATH").unwrap());
+    let (ok, out) = l.run_env(&["watchdog", "facts", "r1"], &[("HOME", h.to_str().unwrap()), ("PATH", &path)]);
+    assert!(ok, "{out}");
+    let b = blocks(&out);
+    assert_eq!(b.len(), 3, "{out}");
+    assert!(b.iter().all(|x| x.contains(": busy · quiet ? · ")), "{out}");
+}
+
+/// The one spawn run dir of `name` under the fixture's .router/runs.
+fn run_dir(l: &Launcher, name: &str) -> PathBuf {
+    let dirs: Vec<PathBuf> = std::fs::read_dir(l.main.join(".router/runs"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| {
+            p.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with(&format!("{name}-"))
+        })
+        .collect();
+    assert_eq!(dirs.len(), 1, "{name}: {dirs:?}");
+    dirs[0].clone()
+}
+
+/// The `.router-brief.*` dirs directly under `wt`.
+fn brief_copies(wt: &Path) -> Vec<String> {
+    std::fs::read_dir(wt)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .filter(|f| f.starts_with(".router-brief."))
+        .collect()
+}
+
+/// E-ROUTER3.W8 (DEC-46, points 6 and 7): a worker loads the project's and its worktree's local
+/// settings only and no MCP server (probe P1: the user source brought 42 allow entries, the user's
+/// plugins and the connectors); its prompt opens with the GIT_ check and asks every network command
+/// for a timeout (probe P3: a host outside the sandbox makes the call wait).
+#[test]
+fn launcher_starts_a_worker_on_project_settings_alone_with_no_mcp_server() {
+    let l = launcher();
+    let wt = l.wt.to_str().unwrap();
+    for (name, extra) in [("a", vec![]), ("p", vec!["--permission-mode", "plan"])] {
+        let mut args = vec!["spawn", name, wt, ".router/briefs/b.md", "opus"];
+        args.extend(&extra);
+        let (ok, out) = l.run(&args);
+        assert!(ok && out.contains(" branch=w snapshot="), "{out}");
+        let a = worker_argv(&l.state, name);
+        for once in ["--setting-sources", "--strict-mcp-config", "--settings"] {
+            assert_eq!(
+                a.iter().filter(|x| *x == once).count(),
+                1,
+                "{once} in {a:?}"
+            );
+        }
+        for no in [
+            "--mcp-config",
+            "--add-dir",
+            "--resume",
+            "--plugin-dir",
+            "--dangerously-skip-permissions",
+        ] {
+            assert!(!a.iter().any(|x| x == no), "{no} in {a:?}");
+        }
+        let prompt = a.last().unwrap();
+        // the sandbox sets GIT_* of its own (proxy, safe.directory), so the check is where git
+        // resolves, not an empty environment (E-ROUTER3.W8 live run)
+        assert!(
+            prompt.contains(&format!(
+                "First action: git rev-parse --show-toplevel must print {} (",
+                l.wt.canonicalize().unwrap().display()
+            )) && prompt.contains("(if it prints anything else, report that and stop)")
+                && !prompt.contains("grep ^GIT_"),
+            "{prompt}"
+        );
+        assert!(
+            prompt.contains("give every network command a timeout"),
+            "{prompt}"
+        );
+    }
+}
+
+/// E-ROUTER3.W8 (DEC-46, points 9 and 13): the worker's shell runs in Claude Code's sandbox, which
+/// writes its worktree, the shared git dir but its config and hooks, and cargo's cache, reads no ssh
+/// key or push channel, and reaches five hosts. What the sandbox does is probe P3's; this pins the JSON.
+#[test]
+fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
+    let l = launcher();
+    let g = l.main.join(".git");
+    let g = g.to_str().unwrap();
+    let want = serde_json::json!({"sandbox": {
+        "enabled": true,
+        "autoAllowBashIfSandboxed": true,
+        "allowUnsandboxedCommands": false,
+        "filesystem": {
+            "allowWrite": [g, "~/.cargo"],
+            "denyWrite": [format!("{g}/config"), format!("{g}/hooks"), format!("{g}/keel-hooks"), format!("{g}/info"), "~/.cargo/bin"],
+            "denyRead": ["~/.ssh", "~/.claude/channels"]
+        },
+        "network": {"allowedDomains": ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}
+    }});
+    // a second worktree of the same repository shares its git dir
+    for (name, wt) in [("a", &l.wt), ("b", &l.wt2)] {
+        let (ok, out) = l.run(&[
+            "spawn",
+            name,
+            wt.to_str().unwrap(),
+            ".router/briefs/b.md",
+            "opus",
+        ]);
+        assert!(ok, "{out}");
+        let s: serde_json::Value =
+            serde_json::from_str(&option(&worker_argv(&l.state, name), "--settings")).unwrap();
+        assert_eq!(s, want, "{name}");
+    }
+}
+
+/// E-ROUTER3.W8 (DEC-46, point 4): the review runs in a fresh `--review` worker, the only one granted
+/// the cr note; it gets no edit tool, no `git add` and no `git commit`. Every other worker is denied
+/// the cr note.
+#[test]
+fn only_a_review_worker_is_granted_the_cr_note_and_it_gets_no_edit_tools() {
+    let l = launcher();
+    let wt = l.wt.to_str().unwrap();
+    let brief = ".router/briefs/b.md";
+    for (i, extra) in [
+        vec!["--review", "--review"],
+        vec!["--review", "yes"],
+        vec!["--review=yes"],
+        vec!["--review", "--effort", "high", "--review"],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let name = format!("r{i}");
+        let mut args = vec!["spawn", name.as_str(), wt, brief, "opus"];
+        args.extend(&extra);
+        let (ok, out) = l.run(&args);
+        assert!(!ok && out.contains("[--review]"), "{extra:?}: {out}");
+        assert_eq!(l.starts(&name), 0, "{extra:?} started a worker");
+    }
+    let (ok, out) = l.run(&["spawn", "author", wt, brief, "opus"]);
+    assert!(ok, "{out}");
+    let (ok, out) = l.run(&[
+        "spawn", "reviewer", wt, brief, "opus", "--review", "--effort", "high",
+    ]);
+    assert!(ok, "{out}");
+    argv_of(&l.state, "author", false);
+    assert_eq!(
+        option(&argv_of(&l.state, "reviewer", true), "--effort"),
+        "high"
+    );
+    let review = |name: &str| std::fs::read_to_string(run_dir(&l, name).join("review")).unwrap();
+    assert_eq!(
+        (review("author"), review("reviewer")),
+        ("no\n".to_string(), "yes\n".to_string())
+    );
+}
+
+/// E-ROUTER3.W8 (DEC-46, point 12; probe P1: a `--bg` session takes the launching shell's
+/// environment, and a leaked GIT_DIR silenced the doc hooks). Run with GIT_* naming another
+/// repository, every mode acts on its own repository, that one stays byte-identical, and the CLI the
+/// launcher runs sees no GIT_* at all.
+#[test]
+fn launcher_ignores_inherited_git_variables() {
+    let l = launcher();
+    let other = l.main.parent().unwrap().join("other");
+    decoy(&other);
+    let before = decoy_state(&other);
+    let hostile = hostile_git_env(&other);
+    let env: Vec<(&str, &str)> = hostile.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let run = |args: &[&str]| {
+        let (ok, out) = l.run_env(args, &env);
+        assert!(ok, "{args:?}: {out}");
+        out
+    };
+    let wt = l.wt.to_str().unwrap();
+    let out = run(&["spawn", "n", wt, ".router/briefs/b.md", "opus"]);
+    assert!(
+        out.contains(" branch=w ") && out.contains(&format!(" worktree={wt}")),
+        "{out}"
+    );
+    let mut rows = l.sessions();
+    rows.push(serde_json::json!({"id": "r100", "sessionId": "r100-x", "name": "r1", "cwd": l.main, "kind": "background", "status": "idle"}));
+    l.set_sessions(&rows);
+    let out = run(&["watchdog", "facts", "r1"]);
+    assert!(out.contains("n: DONE · quiet ? · w · "), "{out}");
+    assert!(run(&["stop", "n"]).starts_with("STOPPED name=n "));
+    let p = format!("{}-E-X-w1-a", l.main.display());
+    assert!(
+        run(&["worktree", "add", "wu/E-X/w1-a"]).starts_with(&format!(
+            "WORKTREE path={p} branch=wu/E-X/w1-a base=epic/E-X "
+        ))
+    );
+    assert_eq!(
+        run(&["worktree", "remove", "wu/E-X/w1-a"]),
+        format!("REMOVED path={p} branch=wu/E-X/w1-a\n")
+    );
+    assert_eq!(decoy_state(&other), before, "the other repository changed");
+    let seen = std::fs::read_to_string(l.state.join("git-env")).unwrap_or_default();
+    assert!(seen.is_empty(), "the CLI saw {seen}");
+    assert!(
+        calls(&l.state).iter().any(|(_, a)| a[0] == "--bg"),
+        "no session started"
+    );
+}
+
+/// E-ROUTER3.W8 (W3 absorbed, backlog R1): a worktree whose branch predates the worker persona would
+/// start a session without `--agent worker`'s file, which this repository's settings make a router.
+/// Refused before any run dir or brief copy exists; so is a detached worktree (DEC-46 point 15).
+#[test]
+fn spawn_refuses_a_worktree_without_the_worker_persona() {
+    let l = launcher();
+    std::fs::remove_file(l.wt.join(".claude/agents/worker.md")).unwrap();
+    let (ok, out) = l.run(&[
+        "spawn",
+        "n",
+        l.wt.to_str().unwrap(),
+        ".router/briefs/b.md",
+        "opus",
+    ]);
+    assert!(!ok, "{out}");
+    assert!(out.contains(&format!("no worker persona in {} (.claude/agents/worker.md): merge the base branch that carries it", l.wt.display())), "{out}");
+    git(&l.wt2, &["checkout", "-q", "--detach"]);
+    let (ok, out) = l.run(&[
+        "spawn",
+        "n",
+        l.wt2.to_str().unwrap(),
+        ".router/briefs/b.md",
+        "opus",
+    ]);
+    assert!(
+        !ok && out.contains("has a detached HEAD: a worker runs on a branch"),
+        "{out}"
+    );
+    assert_eq!(l.starts("n"), 0);
+    assert!(
+        !l.main.join(".router/runs").exists(),
+        "a refused spawn left a run dir"
+    );
+    assert!(brief_copies(&l.wt).is_empty() && brief_copies(&l.wt2).is_empty());
+}
+
+/// E-ROUTER3.W8 (W3 absorbed, backlog R6 row 3): two launches of one name in the same second both
+/// passed the live check. The lock covers the live check and the start; no lock outlives a launch,
+/// whatever its outcome, and another name is not held up.
+#[test]
+fn a_name_whose_launch_is_in_progress_is_refused_and_no_lock_outlives_a_launch() {
+    let l = launcher();
+    let (wt, wt2, brief) = (
+        l.wt.to_str().unwrap(),
+        l.wt2.to_str().unwrap(),
+        ".router/briefs/b.md",
+    );
+    let runs = l.main.join(".router/runs");
+    let lock = runs.join(".lock-n");
+    std::fs::create_dir_all(&lock).unwrap();
+    let (ok, out) = l.run(&["spawn", "n", wt, brief, "opus"]);
+    assert!(
+        !ok && out.contains(&format!(
+            "a launch of n is in progress ({})",
+            lock.display()
+        )),
+        "{out}"
+    );
+    assert_eq!(l.starts("n"), 0);
+    assert!(
+        lock.exists(),
+        "a refused launch removed the lock it did not take"
+    );
+    let locks = || {
+        std::fs::read_dir(&runs)
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_str()
+                    .unwrap()
+                    .starts_with(".lock-")
+            })
+            .count()
+    };
+    // RUNNING, while n's launch holds its lock
+    let (ok, out) = l.run(&["spawn", "m", wt, brief, "opus"]);
+    assert!(ok && out.starts_with("RUNNING name=m "), "{out}");
+    std::fs::remove_dir(&lock).unwrap();
+    assert_eq!(locks(), 0, "RUNNING");
+    // refused inside the lock: the name is live
+    let (ok, out) = l.run(&["spawn", "m", wt2, brief, "opus"]);
+    assert!(!ok && out.contains("still running"), "{out}");
+    assert_eq!(locks(), 0, "refused");
+    // DEAD
+    std::fs::write(l.state.join("refuse"), "no\n").unwrap();
+    let (ok, out) = l.run(&["spawn", "d", wt, brief, "opus"]);
+    assert!(!ok && out.starts_with("DEAD name=d "), "{out}");
+    assert_eq!(locks(), 0, "DEAD");
+    std::fs::remove_file(l.state.join("refuse")).unwrap();
+    // UNLISTED: the live check reads the list, the look after the start cannot
+    std::fs::write(l.state.join("agents-ok"), "1").unwrap();
+    let (ok, out) = l.run(&["spawn", "u", wt, brief, "opus"]);
+    assert!(!ok && out.starts_with("UNLISTED name=u "), "{out}");
+    assert_eq!(locks(), 0, "UNLISTED");
+}
+
+/// E-ROUTER3.W8 (W3 absorbed, backlog R6 row 2; DEC-46 point 15): stop removes the brief copies its
+/// session's run dir records, only a real `.router-brief.XXXXXX` dir directly under that worktree, and
+/// leaves another session's; `drift=` names the branch the worktree moved to since the spawn.
+#[test]
+fn stop_removes_that_sessions_brief_copies_and_reports_branch_drift() {
+    let l = launcher();
+    let (wt, wt2, brief) = (
+        l.wt.to_str().unwrap(),
+        l.wt2.to_str().unwrap(),
+        ".router/briefs/b.md",
+    );
+    let copy = |name: &str, wt: &str| {
+        let (ok, out) = l.run(&["spawn", name, wt, brief, "opus"]);
+        assert!(ok, "{out}");
+        PathBuf::from(field(&out, "brief="))
+            .parent()
+            .unwrap()
+            .to_path_buf()
+    };
+    let (a, b) = (copy("a", wt), copy("b", wt));
+    let (ok, out) = l.run(&["stop", "a"]);
+    assert!(ok && !out.contains("drift="), "{out}");
+    assert!(
+        !a.exists() && b.join("brief.md").exists(),
+        "a's copy {a:?}, b's copy {b:?}"
+    );
+
+    git(&l.wt, &["switch", "-q", "-c", "other"]);
+    let (ok, out) = l.run(&["stop", "b"]);
+    assert!(ok && out.ends_with(" drift=other\n"), "{out}");
+    assert!(!b.exists());
+    assert!(brief_copies(&l.wt).is_empty(), "{:?}", brief_copies(&l.wt));
+
+    // a recorded copy swapped for a symlink is not followed
+    let victim = l.main.parent().unwrap().join("victim");
+    std::fs::create_dir_all(&victim).unwrap();
+    std::fs::write(victim.join("keep"), "x").unwrap();
+    let c = copy("c", wt2);
+    std::fs::remove_dir_all(&c).unwrap();
+    std::os::unix::fs::symlink(&victim, &c).unwrap();
+    l.stop("c");
+    assert!(
+        victim.join("keep").exists(),
+        "stop followed a symlinked copy"
+    );
+    // a recorded path outside the worktree is not removed
+    let outside = l.main.parent().unwrap().join(".router-brief.ABCDEF");
+    std::fs::create_dir_all(&outside).unwrap();
+    copy("e", wt2);
+    let rd = run_dir(&l, "e");
+    let set_mode = |p: &Path, m: u32| {
+        std::fs::set_permissions(p, std::os::unix::fs::PermissionsExt::from_mode(m)).unwrap()
+    };
+    set_mode(&rd, 0o755);
+    set_mode(&rd.join("brief-copy"), 0o644);
+    std::fs::write(rd.join("brief-copy"), format!("{}\n", outside.display())).unwrap();
+    l.stop("e");
+    assert!(outside.exists(), "stop removed a path outside the worktree");
+}
+
+/// E-ROUTER3.W8 (DEC-46, points 2 and 3): the router creates a worktree for an epic or WU branch
+/// only, off its fixed base (main, or the WU's epic), at the path derived from the branch; an
+/// existing branch is checked out as it is. A refusal creates nothing.
+#[test]
+fn worktree_add_cuts_an_epic_or_wu_branch_off_its_base_at_the_derived_path() {
+    let l = launcher();
+    let m = l.main.to_str().unwrap();
+    let tip = |r: &str| {
+        String::from_utf8(git(&l.main, &["rev-parse", r]).stdout)
+            .unwrap()
+            .trim()
+            .to_string()
+    };
+    git(
+        &l.main,
+        &["commit", "-q", "--allow-empty", "-m", "main moves on"],
+    );
+    git(&l.main, &["branch", "wu/E-X/w2-b", "main"]);
+    for (b, path, base, at) in [
+        (
+            "wu/E-X/w1-a",
+            format!("{m}-E-X-w1-a"),
+            "epic/E-X",
+            tip("epic/E-X"),
+        ),
+        ("epic/E-Y", format!("{m}-E-Y"), "main", tip("main")),
+        (
+            "wu/E-X/w2-b",
+            format!("{m}-E-X-w2-b"),
+            "epic/E-X",
+            tip("main"),
+        ),
+    ] {
+        let (ok, out) = l.run(&["worktree", "add", b]);
+        assert!(ok, "{out}");
+        assert_eq!(
+            out.lines().last().unwrap(),
+            format!("WORKTREE path={path} branch={b} base={base} tip={at}")
+        );
+        assert_eq!(
+            String::from_utf8(git(Path::new(&path), &["branch", "--show-current"]).stdout)
+                .unwrap()
+                .trim(),
+            b
+        );
+        assert_eq!(tip(b), at, "{b}");
+    }
+    assert_ne!(tip("epic/E-X"), tip("main"));
+    let (ok, out) = l.run(&[
+        "spawn",
+        "n",
+        &format!("{m}-E-X-w1-a"),
+        ".router/briefs/b.md",
+        "opus",
+    ]);
+    assert!(ok && out.contains(" branch=wu/E-X/w1-a "), "{out}");
+
+    git(
+        &l.main,
+        &["worktree", "add", "-q", "../elsewhere", "-b", "wu/E-X/w3-c"],
+    );
+    std::fs::create_dir_all(format!("{m}-E-X-w4-d")).unwrap();
+    let shape = "branch must be epic/<E> or wu/<E>/<slug> in plain words";
+    let snapshot = || {
+        let mut d: Vec<String> = std::fs::read_dir(l.main.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        d.sort();
+        (
+            d,
+            git(&l.main, &["worktree", "list", "--porcelain"]).stdout,
+            git(&l.main, &["for-each-ref"]).stdout,
+        )
+    };
+    let before = snapshot();
+    for (args, why) in [
+        (vec!["feature/x"], shape.to_string()),
+        (vec!["main"], shape.into()),
+        (vec!["wu/E-X"], shape.into()),
+        (vec!["wu/E-X/a/b"], shape.into()),
+        (vec!["epic/E..X"], shape.into()),
+        (vec!["epic/-x"], shape.into()),
+        (vec!["epic/E X"], shape.into()),
+        (vec!["epic/E-X\nwu/E-X/w9"], shape.into()),
+        (vec!["epic/"], shape.into()),
+        (
+            vec!["epic/E-X.lock"],
+            "not a valid branch name: epic/E-X.lock".into(),
+        ),
+        (
+            vec!["wu/E-Z/w1"],
+            "base branch epic/E-Z does not exist".into(),
+        ),
+        (
+            vec!["wu/E-X/w3-c"],
+            format!(
+                "branch wu/E-X/w3-c is checked out at {}",
+                l.main.parent().unwrap().join("elsewhere").display()
+            ),
+        ),
+        (vec!["wu/E-X/w4-d"], format!("path {m}-E-X-w4-d exists")),
+        (vec![], "worktree add|remove <branch>".into()),
+        (vec!["epic/E-Q", "x"], "worktree add|remove <branch>".into()),
+    ] {
+        let mut a = vec!["worktree", "add"];
+        a.extend(&args);
+        let (ok, out) = l.run(&a);
+        assert!(
+            !ok && out.contains(&why),
+            "{args:?} not refused for {why}: {out}"
+        );
+    }
+    let (ok, out) = l.run(&["worktree", "move", "epic/E-Q"]);
+    assert!(!ok && out.contains("worktree add|remove <branch>"), "{out}");
+    assert!(
+        before == snapshot(),
+        "a refused worktree add changed the repository or its parent dir"
+    );
+}
+
+/// E-ROUTER3.W8 (DEC-46, point 5): the router removes only a clean worktree whose branch is merged
+/// into its base and in which no session runs, never its own checkout or the main one; the branch stays.
+#[test]
+fn worktree_remove_takes_only_a_clean_merged_worktree_with_no_session_in_it() {
+    let l = launcher();
+    let b = "wu/E-X/w1-a";
+    let (ok, out) = l.run(&["worktree", "add", b]);
+    assert!(ok, "{out}");
+    let p = PathBuf::from(field(&out, "path="));
+    let refused = |why: &str| {
+        let (ok, out) = l.run(&["worktree", "remove", b]);
+        assert!(!ok && out.contains(why), "not refused for {why}: {out}");
+        assert!(p.join(".git").exists(), "{why}: the worktree is gone");
+    };
+    let (ok, out) = l.run(&[
+        "spawn",
+        "n",
+        p.to_str().unwrap(),
+        ".router/briefs/b.md",
+        "opus",
+    ]);
+    assert!(ok, "{out}");
+    refused(&format!("a session runs in {}: stop it first", p.display()));
+    l.stop("n");
+    std::fs::write(l.state.join("agents-ok"), "0").unwrap();
+    refused("cannot list sessions (claude agents --json)");
+    std::fs::remove_file(l.state.join("agents-ok")).unwrap();
+    std::fs::write(p.join("new.txt"), "x").unwrap();
+    refused("has uncommitted changes: the owner decides");
+    std::fs::remove_file(p.join("new.txt")).unwrap();
+    git(&p, &["commit", "-q", "--allow-empty", "-m", "wu work"]);
+    refused("branch wu/E-X/w1-a is not merged into epic/E-X: the owner decides");
+    git(&l.main, &["branch", "-f", "epic/E-X", b]);
+    let (ok, out) = l.run(&["worktree", "remove", "epic/E-X"]);
+    assert!(
+        !ok && out.contains("branch epic/E-X is checked out in no worktree"),
+        "{out}"
+    );
+
+    // the launcher's own checkout and the main one, with a router in a linked worktree
+    git(&l.main, &["switch", "-q", "-c", "epic/E-M"]);
+    git(&l.wt2, &["switch", "-q", "-c", "epic/E-R"]);
+    for (branch, why) in [
+        ("epic/E-R", "may not remove the router's own checkout"),
+        ("epic/E-M", "may not remove the repository's main checkout"),
+    ] {
+        let o = l
+            .cmd(&["worktree", "remove", branch], &[])
+            .current_dir(&l.wt2)
+            .output()
+            .unwrap();
+        assert!(
+            !o.status.success() && String::from_utf8_lossy(&o.stderr).contains(why),
+            "{branch}: {o:?}"
+        );
+    }
+
+    // an ignored archive of distilled docs blocks: git worktree remove would delete it
+    let exclude = l.main.join(".git/info/exclude");
+    let mut ex = std::fs::read_to_string(&exclude).unwrap_or_default();
+    ex.push_str("\ndocs/.archive/\n");
+    std::fs::write(&exclude, ex).unwrap();
+    std::fs::create_dir_all(p.join("docs/.archive")).unwrap();
+    std::fs::write(p.join("docs/.archive/plan.html"), "x").unwrap();
+    refused("holds archived docs in docs/.archive: copy them out first");
+    std::fs::remove_dir_all(p.join("docs/.archive")).unwrap();
+
+    // an ignored build dir does not block
+    std::fs::create_dir_all(p.join("target/debug")).unwrap();
+    std::fs::write(p.join("target/debug/x"), "x").unwrap();
+    let (ok, out) = l.run(&["worktree", "remove", b]);
+    assert_eq!(
+        (ok, out.as_str()),
+        (
+            true,
+            format!("REMOVED path={} branch={b}\n", p.display()).as_str()
+        )
+    );
+    assert!(!p.exists());
+    assert!(
+        !String::from_utf8(git(&l.main, &["worktree", "list"]).stdout)
+            .unwrap()
+            .contains(p.to_str().unwrap())
+    );
+    git(&l.main, &["rev-parse", "--verify", "-q", b]);
+}
+
+#[test]
+fn router_guard_admits_the_two_worktree_shapes_in_plain_words_only() {
+    for ok in [
+        "scripts/router-worker.sh worktree add epic/E-X",
+        "scripts/router-worker.sh worktree add wu/E-X/w1-a",
+        "scripts/router-worker.sh worktree remove epic/E-X",
+        "scripts/router-worker.sh worktree remove wu/E-X/w1-a",
+    ] {
+        assert_eq!(bash(ok), None, "guard denied {ok:?}");
+    }
+    for no in [
+        "scripts/router-worker.sh worktree add",
+        "scripts/router-worker.sh worktree remove",
+        "scripts/router-worker.sh worktree add epic/E-X wu/E-X/w1-a",
+        "scripts/router-worker.sh worktree add feature/x",
+        "scripts/router-worker.sh worktree add main",
+        "scripts/router-worker.sh worktree add wu/../x",
+        "scripts/router-worker.sh worktree add epic/E..X",
+        "scripts/router-worker.sh worktree add -b epic/E-X",
+        "scripts/router-worker.sh worktree add \"epic/E-X\"",
+        "scripts/router-worker.sh worktree add epic/$USER",
+        "scripts/router-worker.sh worktree add epic/E-X; id",
+        "scripts/router-worker.sh worktree prune",
+        "scripts/router-worker.sh worktree list",
+        "scripts/router-worker.sh worktree move epic/E-X",
+        "scripts/router-worker.sh worktreex add epic/E-X",
+    ] {
+        assert!(bash(no).is_some(), "guard allowed {no:?}");
+    }
+    assert!(bash("scripts/router-worker.sh worktree prune")
+        .unwrap()
+        .contains("worktree add|remove <epic/E or wu/E/slug>"));
+}
+
+/// E-ROUTER3.W8 (DEC-46, point 2): the launcher's branch words are the committed branch policy, and
+/// whatever name it accepts derives a path beside the main checkout, never into or above another dir.
+#[test]
+fn worktree_branches_follow_the_committed_branch_policy() {
+    let sh = std::fs::read_to_string(root().join("scripts/router-worker.sh")).unwrap();
+    let line = sh.lines().find(|l| l.starts_with("main_b=")).unwrap();
+    let launcher_words: Vec<&str> = line
+        .split(' ')
+        .map(|w| w.split_once('=').unwrap().1)
+        .collect();
+    let config = std::fs::read_to_string(root().join(".keel/config.toml")).unwrap();
+    let value = |k: &str| {
+        config
+            .lines()
+            .skip_while(|l| !l.starts_with("[branches]"))
+            .find_map(|l| l.strip_prefix(&format!("{k} = \"")))
+            .map(|v| v.split('"').next().unwrap())
+            .unwrap()
+    };
+    assert_eq!(
+        launcher_words,
+        [value("main"), value("epic_prefix"), value("wu_prefix")]
+    );
+
+    let l = launcher();
+    let parent = l.main.parent().unwrap();
+    let mut rng = Rng(0x5eed_0008);
+    let mut accepted = 0;
+    for _ in 0..40 {
+        let head = ["epic/", "wu/E-X/", "wu/", "Epic/", "", "-"][rng.next() as usize % 6];
+        let body: String = (0..1 + rng.next() % 6)
+            .map(|_| ["a", "Z", "0", ".", "-", "_", "/"][rng.next() as usize % 7])
+            .collect();
+        let name = format!("{head}{body}");
+        let (ok, out) = l.run(&["worktree", "add", &name]);
+        if name.contains("..") || name.matches('/').count() > 2 {
+            assert!(!ok, "{name:?} accepted: {out}");
+        }
+        if ok {
+            accepted += 1;
+            let path = PathBuf::from(field(&out, "path="));
+            assert_eq!(path.parent(), Some(parent), "{name:?}: {out}");
+            assert!(
+                path.file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .starts_with("main-"),
+                "{name:?}: {out}"
+            );
+        }
+    }
+    assert!(accepted > 0, "no generated name was accepted");
+}
+
+/// E-ROUTER3.W5: the router's rule-bearing text says what the launcher at this tip prints and holds no
+/// retired mechanism. Every outcome word the launcher prints as `<WORD> name=` or `<WORD> path=` is in
+/// worker-ops, with the UNLISTED respawn instruction, the stop refusal by state and the deny list as
+/// intent; no current text names `wait`, `resume`, `.router/out` or a router that never messages
+/// (lessons.md is the dated record of what was, so it is not read); router.md's body names the two
+/// fleet tools; project-router states the committed sign-off tiers.
+#[test]
+fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
+    let read = |p: &str| std::fs::read_to_string(root().join(p)).unwrap();
+    let launcher = read("scripts/router-worker.sh");
+    let ops = read("skills/keel-router/references/worker-ops.md");
+    let words: std::collections::BTreeSet<String> = regex::Regex::new(r#"echo "([A-Z]+) (?:name|path)="#)
+        .unwrap()
+        .captures_iter(&launcher)
+        .map(|c| c[1].to_string())
+        .collect();
+    assert!(words.len() >= 6, "the launcher's outcome words were not found: {words:?}");
+    for w in &words {
+        assert!(ops.contains(&format!("{w} name=")) || ops.contains(&format!("{w} path=")), "worker-ops never names {w}");
+    }
+    for (said, why) in [
+        ("before any respawn", "UNLISTED's instruction to check ListAgents"),
+        ("the owner decides", "stop's refusal of a worker that is neither busy nor idle"),
+        ("intent", "the deny list as intent, the sandbox as the bound"),
+    ] {
+        assert!(ops.contains(said), "worker-ops omits {why}");
+    }
+    assert!(launcher.contains("check ListAgents before any respawn") && launcher.contains(": the owner decides (claude stop $id)"));
+
+    let mut current = Vec::new();
+    for dir in ["skills/keel-router", ".claude/skills/keel-router"] {
+        for f in ["SKILL.md", "references/worker-ops.md", "references/commands.md", "references/messages.md", "references/brief-skeleton.md", "references/review-checklists.md", "references/project-router-template.md"] {
+            current.push(format!("{dir}/{f}"));
+        }
+    }
+    current.extend([".claude/skills/project-router/SKILL.md".to_string(), ".claude/agents/router.md".to_string()]);
+    for f in &current {
+        let body = read(f);
+        for retired in ["router-worker.sh wait", "router-worker.sh resume", "<launcher> wait", "<launcher> resume", ".router/out", "never message"] {
+            assert!(!body.contains(retired), "{f} names the retired {retired:?}");
+        }
+    }
+
+    let agent = read(".claude/agents/router.md");
+    let body = agent.splitn(3, "---\n").nth(2).unwrap();
+    for t in ["SendMessage", "ListAgents"] {
+        assert!(body.contains(&format!("`{t}`")), "router.md's posture omits {t}");
+    }
+
+    let policy: toml::Value = read(".keel/config.toml").parse().unwrap();
+    let tiers: Vec<String> = policy["mr"]["tiers"].as_array().unwrap().iter().map(|t| format!("{t}")).collect();
+    let tiers = format!("tiers = [{}]", tiers.join(", "));
+    assert!(read(".claude/skills/project-router/SKILL.md").contains(&tiers), "project-router does not state {tiers}");
 }

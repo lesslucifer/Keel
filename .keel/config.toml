@@ -11,7 +11,7 @@ code_paths = ["src/", "tests/"]
 
 # Commits touching these need a Reviewed-By trailer (`keel mr commit`).
 # A trailing / is a prefix; otherwise a glob (* and ? within a segment, ** across).
-rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json"]
+rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json", "scripts/router-guard.jq", "scripts/router-worker.sh", "scripts/router-watch.sh", ".claude/agents/"]
 
 [check]
 lint = "cargo clippy --all-targets -- -D warnings"
@@ -39,7 +39,7 @@ T3 = ["docs/work/**", "docs/.archive/**"]
 # pattern = "..."      # test-declaration regex, for the regex adapter
 
 [mr]
-tiers = ["email", "username", "key"]   # accepted .mr-allowed tiers; ["key"] = signatures only
+tiers = ["username", "key"]   # accepted .keel/mr-allowed tiers; key-only is deferred by owner ruling 2026-11-12 (DEC-48)
 
 [review]   # read by the keel-code-review skill, not by the CLI
 modules = ["src/*"]          # each match of a glob's * is one module (altitude finder)
@@ -49,3 +49,4 @@ rubric = ".keel/rubric.md"   # optional project-local rubric
 worker_model = "opus"
 worker_efforts = ["medium", "high"]
 worker_default_effort = "medium"
+watchdog_model = "haiku"

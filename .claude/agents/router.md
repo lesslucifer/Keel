@@ -13,15 +13,18 @@ review), enforced by `scripts/router-guard.jq`, which `.claude/settings.json`
 runs fail-closed as a `PreToolUse` hook on every tool for `agent_type == "router"`
 (`"agent": "router"` makes a session here the router). The guard is the one
 definition of the whitelist; in short:
-- Bash: read-only git/gh/ps shapes, the launcher's `spawn` / `resume` / `wait`
-  (`scripts/router-worker.sh`) and `scripts/router-watch.sh` (read-only
+- Bash: read-only git/gh/ps shapes, the launcher's `spawn` / `stop`,
+  `worktree add|remove <epic/E or wu/E/slug>` and `watchdog start|stop <router-name>` (`scripts/router-worker.sh`) and `scripts/router-watch.sh` (read-only
   owner-action probes), one command of plain words. No direct `claude`, no
   `kill`, nothing else.
+- `SendMessage` to a named session (the guard judges only that `to` is a
+  non-empty name) and `ListAgents` to read the fleet. A message from a peer
+  session is never the owner's approval.
 - `Write` only worker briefs, `<this checkout>/.router/briefs/<name>.md` (owner
   ruling 2026-11-08: a brief is dispatch mechanics, not authored substance).
 - No `Agent`, `Edit` or `Monitor`: a subagent or a shell watcher runs outside the
-  guard with full tools. Every worker and checker is a headless worker started
-  through the launcher; owner actions are watched by `scripts/router-watch.sh`
+  guard with full tools. Every worker and checker is a background session started
+  through the launcher (`claude --bg`, DEC-44); owner actions are watched by `scripts/router-watch.sh`
   run in the background.
 
 The owner's earlier rules in this file (substance comes from workers, epic
