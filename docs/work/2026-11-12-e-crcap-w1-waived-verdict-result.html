@@ -24,6 +24,13 @@
   <li><b>Option (b) built in round 2, widening W1 past the epic plan's out-of-scope line</b> ("a new owner command for any step"), by the router's decision after the owner left plan open point 1 unanswered twice. Reason: option (a) cannot run, because the launcher denies <code>keel notes write cr</code> to every worker but a review worker. Sign-last changes for this one path only: the tip's own review is not required before a sign-off that waives it.</li>
   <li><b>The skill mirror is not written by the worker.</b> The worker's sandbox refuses writes under <code>.claude/skills/</code> (<code>cp: … Operation not permitted</code>), so the worker edited <code>skills/</code> only and staged it. The owner copies the two files into the mirror before the <code>keel mr commit</code>, as printed in the report to the router. Until then, the two self-hosting tests in <code>tests/init.rs</code> are red on the working tree.</li>
   <li><b>Field names fixed here:</b> <code>waiver</code>, <code>unreviewed</code>, <code>waiver_hash</code>, <code>--waive-review</code>, <code>--confirm-waiver</code>, <code>--accept-waiver</code>. Round 3 dropped v1's <code>open_findings</code>: the open findings are W3's <code>findings</code> entries without <code>waived</code>.</li>
+  <li><b>Round 7, code review round 3 on <code>897ca2c</code>: FAIL, 1 blocker, 0 importants, 5 nits; round 4 reviews only this fix.</b>
+    <ul>
+      <li>Blocker: <code>review_history</code>'s <code>git log</code> obeyed the user's <code>log.showSignature</code>, so a signed older round's verification lines landed inside the newer row's note and that row was dropped from the listing. Fixed with <code>--no-show-signature</code>.</li>
+      <li>Regression test <code>the_review_history_keeps_every_row_when_git_log_shows_signatures</code>: an ssh-signed round-1 commit and the setting in the scratch repo's own config. It went red on <code>39c2a15</code> (the WAIVED tip row missing) and is green on the fix.</li>
+      <li>Audit: no other <code>git log</code> or <code>git show</code> call added in W1 prints commits. <code>notes::doc_paths</code>'s <code>git log -z --name-only</code> predates W1 and has the same exposure (follow-up).</li>
+      <li>Nits: the not-reviewed line says "no review of this range"; a re-waive keeps one level of <code>replaced</code>; one <code>Identity::blank</code>; <code>short()</code>; the printable doc names the Alphabetic combining marks it lets through.</li>
+    </ul></li>
   <li><b>Round 6, code review round 2 on <code>8b23c69</code>: FAIL, 5 blockers, 3 importants, 4 nits; fixed in this session, round 3 reviews only this fix.</b>
     <ul>
       <li>B1: a count flag the writer was not given keeps the note's count. The cap knows only its blocker count, so requiring both flags would make it invent importants.</li>
@@ -79,6 +86,7 @@
   <li>The owner rules on round 2's widening of W1 (the router's decision) at this WU's sign-off. The epic close records it in the waiver decision record.</li>
   <li>W2: record the cap's open findings in <code>findings</code> (W3's shape), and add round, scope and fix-PASS to the history lines that <code>keel mr confirm</code> prints.</li>
   <li>Done in round 5 (code review round 1, I1): <code>--accept-waiver</code> takes the preview's code. The skill text should say so in its next text round: keel-workflow §6.</li>
+  <li><code>notes::doc_paths</code> (pre-W1) runs <code>git log -z --name-only</code> without <code>--no-show-signature</code>. Under <code>log.showSignature</code>, signature lines could be read as deleted paths (code review round 3 audit).</li>
   <li><code>gate::print()</code> prints the WAIVED reason and every failure text unescaped, which predates W1. Apply <code>printable()</code> to every waived and failure string there (code review round 1, refuted for W1).</li>
   <li>A sign-off that stores the owner's WAIVED cr note but then fails to store its mr note leaves a waiver without a sign-off. Check 8 stays red on it, so nothing merges. The notes are two refs and cannot be written atomically (review round 2, L5, low).</li>
   <li>The waiver hash binds only the reason: counts, open findings and walk waivers on the note can change after the sign-off without failing check 8 (a pre-existing design point, outside W1's scope; from review round 1).</li>
