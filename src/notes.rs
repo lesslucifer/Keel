@@ -146,7 +146,8 @@ pub(crate) fn waiver_reason(raw: Option<&str>) -> Result<String, String> {
 /// the note is kept whole (counts, walk waivers, every field the review recorded) and only identity,
 /// verdict, reason and binding change; a count the caller gives replaces that one count, an absent one
 /// keeps it. A round recorded against another range is no review of this one: the waiver is written
-/// `unreviewed`, that note kept whole under `replaced` as history only, and only its `walk_waivers`
+/// `unreviewed`, that note kept under `replaced` as history only (whole but for its own `replaced`:
+/// one level of history, never nested), and only its `walk_waivers`
 /// (they name seams, which a later code change does not move) carried. With no note at all it is
 /// `unreviewed` too, so its 0/0 never reads as a clean review. Err = (what, fix).
 pub(crate) fn waive(existing_raw: Option<&str>, id: Identity, reason: Option<&str>, code_diff_hash: String, counts: (Option<u32>, Option<u32>)) -> Result<CrNote, (String, String)> {
@@ -197,9 +198,12 @@ pub(crate) fn waive(existing_raw: Option<&str>, id: Identity, reason: Option<&st
     Ok(n)
 }
 
-/// The tip's cr note as stored, unparsed: `None` only when there is none.
+/// The cr note on `rev` as stored, unparsed: `None` only when there is none. Read through plumbing
+/// only - `notes list` names the note's blob, `cat-file blob` prints its bytes - so no display config
+/// (`log.*`, `i18n.*`, `format.*`) can re-encode, decorate or drop it.
 pub(crate) fn cr_raw(repo: &Path, rev: &str) -> Option<String> {
-    git(repo, &["notes", "--ref=cr", "show", rev], &[]).ok()
+    let blob = git(repo, &["notes", "--ref=cr", "list", rev], &[]).ok()?;
+    git(repo, &["cat-file", "blob", &blob], &[]).ok()
 }
 
 /// The cr note on `rev`, if one parses; the gate's check 1 reports a bad one.

@@ -146,21 +146,19 @@ fn waiver_drift(signed: Option<&str>, current: Option<&str>, t: &str) -> Option<
 }
 
 /// The cr notes on the first-parent commits of `base..tip`, newest first: every review the branch's
-/// own line of history recorded (an epic's merged WUs keep theirs on their own tips). One range-bound
-/// `git log`, never a listing of every note in the repository, and never with the user's
-/// `log.showSignature`: its verification lines would land inside the previous record's note.
-fn review_history(repo: &Path, base: &str, tip: &str) -> Result<Vec<(String, CrNote)>, String> {
-    let out = git(repo, &["log", "--no-show-signature", "--first-parent", "--notes=cr", "--format=%x1e%H%x1f%N", &format!("{base}..{tip}")], &[])?;
-    Ok(out
-        .split('\x1e')
-        .filter_map(|rec| rec.split_once('\x1f'))
-        .filter_map(|(c, n)| serde_json::from_str::<CrNote>(n.trim()).ok().map(|n| (c.trim().to_string(), n)))
-        .collect())
+/// own line of history recorded (an epic's merged WUs keep theirs on their own tips). Read through
+/// plumbing only: `rev-list` names the commits of the range, and each note is read as a blob
+/// (notes::cr_raw), so no display config (`log.showSignature`, `i18n.*`, any `log.*` or `format.*`)
+/// can change or drop a row. A note that does not parse is a row of its own (`None`), never dropped:
+/// the signer must see that a round exists.
+fn review_history(repo: &Path, base: &str, tip: &str) -> Result<Vec<(String, Option<CrNote>)>, String> {
+    let commits = git(repo, &["rev-list", "--first-parent", &format!("{base}..{tip}")], &[])?;
+    Ok(commits.lines().filter_map(|c| notes::cr_raw(repo, c).map(|raw| (c.to_string(), serde_json::from_str(&raw).ok()))).collect())
 }
 
 /// What the signer reads before a waiver is accepted or written: the reason, what the review left
 /// open (its unwaived findings, its walk waivers) - or that no review ran - and every round.
-fn waiver_listing(tip: &str, cr: &CrNote, history: &[(String, CrNote)]) -> String {
+fn waiver_listing(tip: &str, cr: &CrNote, history: &[(String, Option<CrNote>)]) -> String {
     let mut out = format!("the review of {} is WAIVED: {}\n", short(tip), printable(cr.waiver().unwrap_or("").trim()));
     if cr.unreviewed() {
         out.push_str("  open: not reviewed - no review of this range ran on this tip, so what it would find is unknown\n");
@@ -190,6 +188,10 @@ fn waiver_listing(tip: &str, cr: &CrNote, history: &[(String, CrNote)]) -> Strin
     }
     out.push_str("  review history (newest first):\n");
     for (c, n) in history {
+        let Some(n) = n else {
+            out.push_str(&format!("    {} unreadable cr note - it does not parse as cr/v1; a round was recorded here\n", short(c)));
+            continue;
+        };
         let why = n.waiver().map(|w| format!(" - {}", w.trim())).unwrap_or_default();
         let open = if n.unreviewed() { "not reviewed".to_string() } else { format!("blockers {} importants {}", n.blockers, n.importants) };
         out.push_str(&printable(&format!("    {} {} {open}{why}", short(c), n.verdict)));
@@ -961,7 +963,11 @@ mod tests {
             "findings": [{"severity": "blocker", "location": "src/a.rs:3", "claim": "a() is wrong"}, {"severity": "important", "claim": "no location"},
                 {"severity": "important", "location": "x:1", "claim": "waived one", "waived": "ok"}, "bare text", 7],
             "walk_waivers": [{"seam": "abc123", "why": " safe "}]}));
-        let history = vec![("1111111111aa".to_string(), cr("WAIVED", serde_json::json!({"waiver": "review cap: 5 rounds, 1 blockers open"}))), ("2222222222bb".to_string(), cr("FAIL", serde_json::json!({})))];
+        let history = vec![
+            ("1111111111aa".to_string(), Some(cr("WAIVED", serde_json::json!({"waiver": "review cap: 5 rounds, 1 blockers open"})))),
+            ("2222222222bb".to_string(), Some(cr("FAIL", serde_json::json!({})))),
+            ("3333333333cc".to_string(), None),
+        ];
         let l = waiver_listing("1111111111aa", &tip, &history);
         for needle in [
             "the review of 1111111111 is WAIVED: review cap: 5 rounds, 1 blockers open",
@@ -973,6 +979,7 @@ mod tests {
             "walk waiver abc123: safe",
             "1111111111 WAIVED blockers 1 importants 0 - review cap",
             "2222222222 FAIL blockers 1 importants 0\n",
+            "3333333333 unreadable cr note",
         ] {
             assert!(l.contains(needle), "missing '{needle}' in:\n{l}");
         }
@@ -1010,7 +1017,7 @@ mod tests {
             "committer": "c", "timestamp": 0, "verdict": "WAIVED", "waiver": "r\u{1b}[1A", "blockers": 1, "importants": 0, "code_diff_hash": "h",
             "findings": [{"severity": "blocker\u{1b}", "location": "l", "claim": "c\u{1b}[2K"}], "walk_waivers": [{"seam": "s\u{7}", "why": "w\u{1b}"}]}))
         .unwrap();
-        let history = vec![("1111111111".to_string(), round("FAIL\u{1b}"))];
+        let history = vec![("1111111111".to_string(), Some(round("FAIL\u{1b}")))];
         fn round(v: &str) -> CrNote {
             serde_json::from_value(serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c",
                 "timestamp": 0, "verdict": v, "waiver": "x\u{1b}", "blockers": 0, "importants": 0, "code_diff_hash": "h"})).unwrap()
