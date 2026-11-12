@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="7c26eb6bab8b3cc595c8954d" data-artifact="epic-plan wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-WMODE plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-WMODE · The permission mode a background worker starts in comes from the committed <code>[router]</code> policy</h1>
+      <p>One-WU epic (E-WMODE.W1), epic and WU plan collapsed. The launcher stops hard-coding <code>acceptEdits</code>. It reads the mode from <code>.keel/config.toml</code> <code>[router]</code>, as it already reads the model and the effort. Keel's own config sets Claude Code's <code>auto</code> mode.</p>
+      <div class="meta">T3 · epic plan + WU plan · 2026-11-12 · Keel · branch <code>wu/E-WMODE/worker-mode</code> off <code>epic/E-WMODE</code> <code>1f303dc</code> (= <code>main</code>) · owner rulings 2026-11-12 · plan and build in one run; the owner reviews the open points at sign-off</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="intent">Intent</h2>
+<p data-item="intent" data-c="intent-body">The permission mode a background worker starts in becomes project policy. Today <code>scripts/router-worker.sh</code> hard-codes <code>acceptEdits</code>, and a trailing <code>--permission-mode plan</code> on <code>spawn</code> is the only override. After this epic the launcher reads <code>worker_permission_mode</code> from <code>[router]</code> in <code>.keel/config.toml</code>, as committed at the router checkout's HEAD. This is the same source and the same fail-closed reader that already decide the model and the effort (DEC-39). Keel's own config sets <code>auto</code>. <b>Why now:</b> during a worker run the owner had to answer permission prompts for plain reads. <code>acceptEdits</code> auto-accepts only edits inside the worktree. A <code>Read</code> outside it, a <code>WebFetch</code>, or a host outside the sandbox stops a background worker on a prompt that only the owner can answer through <code>claude attach</code> (DEC-44 consequences). In <code>auto</code> mode, Claude Code's classifier judges those calls instead of the owner. The owner wants this on main before E-CRCAP's WUs start, so E-WMODE is a separate one-WU epic.</p>
+
+<h2 id="use-cases">Use cases</h2>
+<table data-item="use-cases" data-c="use-cases-table">
+  <thead><tr><th>Contract</th><th>Change</th></tr></thead>
+  <tbody>
+    <tr><td><a href="../use-cases/router.html">UC-ROUTE-5</a> (two worker modes, each with a full recipe)</td><td>Amended. <code>spawn</code> starts the worker in <code>[router] worker_permission_mode</code> (<code>acceptEdits</code> when the key is absent). <code>--permission-mode</code> may only narrow that mode. A mode outside <code>plan|acceptEdits|auto</code>, in the config or on the command line, is refused before any start. The Failure row changes to match.</td></tr>
+    <tr><td><a href="../use-cases/router.html">UC-ROUTE-6</a> (router posture enforced)</td><td>Unchanged. The guard's <code>spawn</code> shape already admits any plain-word option, and the launcher is the only judge of the value (DEC-37)</td></tr>
+  </tbody>
+</table>
+
+<h2 id="expected">Expected</h2>
+<div data-item="expected" data-c="expected-body">
+<ul>
+  <li>With <code>worker_permission_mode = "auto"</code> committed in the router checkout, <code>scripts/router-worker.sh spawn &lt;name&gt; &lt;wt&gt; &lt;brief&gt; opus</code> passes <code>--permission-mode auto</code> to <code>claude</code>, writes <code>auto</code> to the run dir's <code>permission-mode</code> and prints <code>permission-mode=auto</code> on the <code>RUNNING</code> line. The same holds for <code>acceptEdits</code> and <code>plan</code>.</li>
+  <li>With no <code>worker_permission_mode</code> line, the mode is <code>acceptEdits</code>. A project that already has a <code>[router]</code> section keeps working unchanged.</li>
+  <li><code>--permission-mode X</code> on <code>spawn</code> is accepted only when <code>X</code> is no wider than the committed mode (<code>plan</code> &lt; <code>acceptEdits</code> &lt; <code>auto</code>). Under <code>auto</code>, <code>plan</code> and <code>acceptEdits</code> are accepted. Under <code>acceptEdits</code>, <code>auto</code> is refused as wider than the policy, and nothing starts.</li>
+  <li>A committed value outside <code>plan|acceptEdits|auto</code> (<code>bypassPermissions</code>, <code>dontAsk</code>, <code>default</code>, <code>Auto</code>) is refused with <code>worker_permission_mode must be one of: plan acceptEdits auto</code>, and nothing starts. A malformed line (unquoted, a list, repeated, with junk after it) makes the whole policy fail with <code>no worker policy</code>, as any other malformed <code>[router]</code> line does. An uncommitted edit cannot widen the mode.</li>
+  <li>Keel's committed <code>[router]</code> holds <code>worker_permission_mode = "auto"</code>, pinned by <code>tests/router.rs</code>.</li>
+  <li>The sandbox, the grant and deny lists, <code>--setting-sources project,local</code>, <code>--strict-mcp-config</code> and <code>--agent worker</code> reach the worker exactly as before, whatever the mode (the argv shape test is unchanged).</li>
+</ul>
+</div>
+
+<h2 id="non-goals">Non-goals</h2>
+<ul data-item="non-goals" data-c="non-goals-list">
+  <li>No <code>src/</code> change. The <code>keel</code> CLI keeps ignoring <code>[router]</code> (DEC-39).</li>
+  <li>No change to the router guard or to <code>.claude/settings.json</code>.</li>
+  <li>No live run of <code>claude</code> in this WU: a worker cannot run <code>claude</code>, because it is on the deny list. The router's first spawn after the merge is the live check (open point 9).</li>
+  <li>No <code>[router]</code> section in <code>templates/config.toml</code>, since <code>keel init</code> ships no launcher (open point 5).</li>
+  <li>No new bound for <code>Edit</code>/<code>Write</code> outside the worktree in <code>auto</code> mode. That is recorded as a residual risk (open point 7).</li>
+</ul>
+
+<h2 id="wus">Working unit</h2>
+<div data-item="wu-summaries" data-c="wu-summaries">
+<div data-wu="E-WMODE.W1" data-c="wu-w1">
+  <h3>E-WMODE.W1 · worker permission mode from config</h3>
+  <p data-item="wu-summary"><b>Contract:</b> the launcher's policy reader accepts one more optional <code>[router]</code> line, <code>worker_permission_mode = "&lt;word&gt;"</code> (a word of letters). <code>spawn</code> takes that value, <code>acceptEdits</code> when it is absent, and refuses it when it is outside <code>plan|acceptEdits|auto</code>. A <code>--permission-mode</code> option must be in the same set and no wider than the policy's mode. The chosen mode reaches <code>claude --permission-mode</code>, the run dir and the <code>RUNNING</code> line. Keel's <code>.keel/config.toml</code> sets <code>auto</code>. The project-router Workers line, the shipped keel-router <code>worker-ops.md</code> (both copies), DEC-37/DEC-39 and UC-ROUTE-5 say so.</p>
+  <p data-item="wu-maps-to">E-WMODE (whole epic) · owner rulings 2026-11-12 · UC-ROUTE-5 amended · DEC-37 amended (the mode set, and <code>auto</code> leaves its Rejected row), DEC-39 amended (one more policy key)</p>
+  <p data-item="wu-expected">The Expected list above, asserted by <code>tests/router.rs</code> against the stubbed <code>claude</code>. <code>keel check</code> is green.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+</div>
+
+<h2 id="requirement">WU requirement</h2>
+<p data-item="requirement" data-c="requirement-body"><code>scripts/router-worker.sh spawn</code> starts every worker in the permission mode named by <code>[router] worker_permission_mode</code> in the router checkout's committed <code>.keel/config.toml</code> (<code>acceptEdits</code> when the key is absent). It narrows that mode only through <code>--permission-mode</code>. It refuses, before starting anything, a configured or requested mode outside <code>plan|acceptEdits|auto</code> and a requested mode wider than the configured one.</p>
+<p data-item="maps-to" data-c="maps-to-body">E-WMODE (this is its only WU; see the summary block) · UC-ROUTE-5 · DEC-37, DEC-39 · owner rulings 2026-11-12.</p>
+
+<h2 id="design">Design</h2>
+<div data-c="design-body">
+<table>
+  <thead><tr><th>Piece</th><th>Change</th></tr></thead>
+  <tbody>
+    <tr><td><code>read_policy</code> (awk over <code>git show HEAD:.keel/config.toml</code>)</td><td>One more accepted line: <code>/^worker_permission_mode = "[A-Za-z]+"$/</code>, at most once (a repeat falls through to <code>bad</code>, as a repeated key does today). It prints a fifth line: the value, or <code>-</code> when absent. The existing word grammar (<code>[a-z][a-z0-9.-]*</code>) cannot hold <code>acceptEdits</code>, hence its own pattern. Membership is checked by <code>spawn</code>, not by the reader, so a well-formed but refused value gets a message that names the key. A watchdog start, which does not use the mode, is not refused by it.</td></tr>
+    <tr><td><code>spawn</code></td><td><code>pm</code> starts empty. After <code>read_policy</code>: the policy mode is <code>-</code> → <code>acceptEdits</code>. If it is outside the set → <code>die "worker_permission_mode must be one of: plan acceptEdits auto ([router] in .keel/config.toml)"</code>. Then a requested <code>--permission-mode</code> outside the set → <code>die "permission mode must be plan|acceptEdits|auto"</code>. A request ranked above the policy's mode → <code>die "permission mode &lt;X&gt; is wider than the policy's &lt;Y&gt; ([router] worker_permission_mode in .keel/config.toml)"</code>. All of this runs before the worktree checks, the lock, the snapshot and the start. The usage line becomes <code>[--permission-mode plan|acceptEdits|auto]</code>.</td></tr>
+    <tr><td><code>.keel/config.toml</code></td><td><code>worker_permission_mode = "auto"</code> after <code>worker_default_effort</code></td></tr>
+    <tr><td>Router guard, <code>.claude/settings.json</code></td><td>Unchanged</td></tr>
+  </tbody>
+</table>
+<h3 id="still-holds">What still holds in <code>auto</code> mode, from the code</h3>
+<table>
+  <thead><tr><th>Bound</th><th>Where</th><th>In <code>auto</code></th></tr></thead>
+  <tbody>
+    <tr><td>Bash sandbox: writes to the worktree, the git dir except <code>config</code>/<code>hooks</code>/<code>keel-hooks</code>/<code>info</code>, and <code>~/.cargo</code> except <code>bin</code>; no read of <code>~/.ssh</code> or <code>~/.claude/channels</code>; <code>allowUnsandboxedCommands: false</code></td><td><code>router-worker.sh</code> <code>sandbox=$(jq …)</code>, passed as <code>--settings</code>, not tied to <code>--permission-mode</code></td><td>Still passed. The OS-level write and read bounds are Seatbelt's, not the permission system's. <b>Changes:</b> a host outside the five allowed hosts no longer waits on the owner. In <code>auto</code> mode a Bash call may name extra hosts, and the classifier reviews them (this session's own Bash tool documents <code>allowed_domains</code> as "Auto mode only: the list is reviewed together with the command and, if approved, applies to this one command"). The network bound becomes classifier-judged (open point 7)</td></tr>
+    <tr><td>Deny list (<code>--disallowedTools</code>: <code>keel mr</code>, <code>git push|config|notes|…</code>, <code>claude</code>, the launcher, the <code>cr</code> note for non-review workers; <code>Edit</code>/<code>Write</code>/<code>NotebookEdit</code>/<code>git add|commit</code> for a review worker)</td><td><code>set -- "$@" --disallowedTools …</code></td><td>Still passed. Claude Code evaluates deny rules before the mode (documented behaviour, not run live at 2.1.288 under <code>auto</code>)</td></tr>
+    <tr><td>Grant (<code>--allowedTools</code> cargo/keel gate commands)</td><td><code>set -- … --allowedTools …</code></td><td>Still passed. Whether <code>auto</code> drops broad allow rules for code-running commands (<code>cargo test</code> runs code) and sends them to the classifier is the live check's question. Either way the command runs or is judged; it does not stall</td></tr>
+    <tr><td>Settings sources: project and local only, no MCP server, <code>--agent worker</code></td><td><code>--setting-sources project,local --strict-mcp-config</code>, <code>--agent worker</code></td><td>Unchanged. The argv shape test pins the option order and count for every mode</td></tr>
+    <tr><td>Git-side gates: <code>commit-msg</code> on rule-bearing paths, <code>pre-merge-commit</code> verify-dod, owner-signed <code>mr/v1</code></td><td>Keel hooks in the git dir (sandbox-denied to the worker)</td><td>Unchanged: git runs them whatever the Claude Code mode</td></tr>
+    <tr><td><code>Read</code>/<code>Edit</code>/<code>Write</code> outside the worktree, <code>WebFetch</code></td><td>no launcher bound; under <code>acceptEdits</code> they prompt the owner</td><td><b>Changes:</b> the classifier judges them. This is the point of the change for reads. For writes it is the residual risk (open point 7)</td></tr>
+  </tbody>
+</table>
+<h3 id="auto-evidence">Evidence that <code>auto</code> is an accepted <code>--permission-mode</code> value</h3>
+<p data-c="auto-evidence-body">This worker cannot run <code>claude</code> (it is on the deny list) and reads nothing outside its worktree, so it has no direct evidence. Indirect evidence: (1) DEC-37's Rejected row (2026-11-09) lists <code>auto</code> beside <code>bypassPermissions</code>, <code>dontAsk</code> and <code>default</code> as a worker mode the CLI offered. (2) This worker session (Claude Code, launched by this launcher on 2026-11-12) documents an auto mode in its own Bash tool (<code>allowed_domains</code>: "Auto mode only"). Neither proves that <code>claude --bg --permission-mode auto</code> is accepted at the installed version, or that auto mode is enabled for the owner's account and model. The router's first spawn after the merge is the live check (open point 9).</p>
+</div>
+
+<h2 id="test-plan">Test plan</h2>
+<div data-item="test-plan" data-c="test-plan-body">
+<table>
+  <thead><tr><th>Level</th><th>Test</th><th>Asserts</th></tr></thead>
+  <tbody>
+    <tr><td>Integration (WU) · <code>tests/router.rs</code></td><td><code>worker_permission_mode_comes_from_the_committed_policy</code> (new)</td><td>For each committed <code>plan|acceptEdits|auto</code>, and for an absent key: a spawn without an option carries that mode in the stub's argv, the run dir and the <code>RUNNING</code> line. Under <code>auto</code>, <code>--permission-mode plan</code> and <code>acceptEdits</code> narrow it. An uncommitted, staged edit to <code>auto</code> over a committed <code>acceptEdits</code> changes nothing</td></tr>
+    <tr><td>Integration (WU) · <code>tests/router.rs</code></td><td><code>a_permission_mode_outside_the_accepted_set_or_wider_than_the_policy_is_refused_before_any_start</code> (new)</td><td>Committed <code>bypassPermissions</code>, <code>dontAsk</code>, <code>default</code>, <code>Auto</code> → <code>worker_permission_mode must be one of</code>. Unquoted, a list, a repeat, junk after the value, an empty value → <code>no worker policy</code>. Requested <code>auto</code> under <code>acceptEdits</code>, and <code>acceptEdits</code>/<code>auto</code> under <code>plan</code> → <code>wider than the policy's</code>. Every case: zero starts, no run dir</td></tr>
+    <tr><td>Integration (WU) · <code>tests/router.rs</code></td><td><code>launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validated_mode</code>, <code>committed_worker_policy_is_opus_at_medium_or_high_effort_in_auto_mode_with_a_haiku_watchdog</code> (amended, renamed)</td><td>The default is now the copied repo policy's <code>auto</code>. The pin includes the new line. The refusal table keeps <code>bypassPermissions</code>/<code>dontAsk</code>/<code>default</code> on the command line</td></tr>
+    <tr><td>E2E (epic) · <code>tests/router.rs</code></td><td><code>epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end</code> (amended)</td><td>See the e2e plan</td></tr>
+    <tr><td>Unit</td><td>none</td><td>No <code>src/</code> change. The launcher is shell, and its tests are the integration layer above</td></tr>
+  </tbody>
+</table>
+<p>Tests first: the new tests are written and run red against the current launcher, then the launcher changes.</p>
+</div>
+
+<h2 id="e2e">E2E plan</h2>
+<div data-item="e2e-plan" data-c="e2e-plan-body">
+<p>The existing epic e2e, <code>epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end</code>, runs the router's calls through the settings-wired guard in a self-clone whose committed config is this branch's. It is amended rather than duplicated. Step 3's <code>--permission-mode plan</code> spawn now proves the narrowing override through the guard. Step 7's review worker, spawned with no option, must carry the committed <code>auto</code> on its argv and its <code>RUNNING</code> line, where it asserted <code>acceptEdits</code> before. That is the epic's flow: committed policy → guard-admitted spawn → the mode on the worker's <code>claude</code>. No waiver.</p>
+</div>
+
+<h2 id="distill">Distillation plan</h2>
+<table data-item="distillation-plan" data-c="distillation-table">
+  <thead><tr><th>Truth</th><th>Absorbed by</th></tr></thead>
+  <tbody>
+    <tr><td>The mode set, the default, the narrowing rule, Keel's <code>auto</code>, the residual risk</td><td><a href="../decisions/router.html">DEC-37</a> Amended row (in this WU). DEC-39 Amended row (one more key)</td></tr>
+    <tr><td>The launcher contract and failure cases</td><td><a href="../use-cases/router.html">UC-ROUTE-5</a> (in this WU)</td></tr>
+    <tr><td>The live check's result (open point 9)</td><td>DEC-37 Amended row, at epic close</td></tr>
+    <tr><td>Residual risk follow-ups (open point 7)</td><td>backlog e-router-v2, a new R row, at epic close</td></tr>
+  </tbody>
+</table>
+
+<h2 id="open">Open points</h2>
+<table data-item="open-questions" data-c="open-points-table">
+  <thead><tr><th>#</th><th>Point</th><th>Options and costs</th><th>Recommendation · default</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>The config key</td><td>(a) <code>worker_permission_mode = "auto"</code>: one value, beside <code>worker_model</code>. (b) <code>worker_permission_modes = [...]</code> plus <code>worker_default_permission_mode</code>, mirroring the efforts: the config would also decide which overrides are allowed, at the cost of two keys and a list nobody needs yet. (c) <code>permission_mode</code>: shorter, but not clearly about workers (the watchdog has no mode of its own)</td><td><b>(a)</b> · default (a)</td></tr>
+    <tr><td>2</td><td>The modes the launcher accepts</td><td>Built in: <code>plan</code>, <code>acceptEdits</code>, <code>auto</code>. <b><code>bypassPermissions</code> stays refused.</b> It skips every permission check: no prompt and no classifier, so <code>Edit</code>/<code>Write</code>/<code>Read</code> anywhere and any host the sandbox would ask about go through unjudged, and DEC-37 rejected it. <code>dontAsk</code> stays refused: it denies everything the grant does not pre-approve, including the worker's own edits, so a worker cannot work. <code>default</code> stays refused: it prompts on every edit, so a background worker stalls</td><td><b>As stated</b> · default as stated</td></tr>
+    <tr><td>3</td><td>The default when the key is absent</td><td>(a) <code>acceptEdits</code>: today's behaviour, so an existing <code>[router]</code> keeps working. (b) Refuse, like the required keys (DEC-39: no policy, no spawn): this breaks every existing policy until it adds the line. (c) <code>auto</code>: widens every project silently</td><td><b>(a)</b> · default (a). This is not DEC-39's rejected "built-in fallback default": it is the documented value of an optional key</td></tr>
+    <tr><td>4</td><td>The trailing <code>--permission-mode</code> override on <code>spawn</code></td><td>(a) Keep it, but it may only narrow: <code>plan</code> &lt; <code>acceptEdits</code> &lt; <code>auto</code>. A <code>plan</code> checker stays possible, and the router cannot widen past the committed policy (DEC-39's point). (b) Keep it over the whole set: the router could start <code>auto</code> workers in a project whose committed policy says <code>acceptEdits</code>. (c) Drop it: loses read-only <code>plan</code> checkers</td><td><b>(a)</b> · default (a)</td></tr>
+    <tr><td>5</td><td>What <code>templates/</code> ships for other projects</td><td>(a) Nothing new. <code>templates/config.toml</code> has no <code>[router]</code> and <code>keel init</code> ships no launcher (DEC-30, DEC-39), so an adopter who copies Keel's launcher gets <code>acceptEdits</code> through the absent key. The shipped keel-router <code>worker-ops.md</code> (and its <code>.claude/skills/</code> mirror) says the mode comes from the project's committed policy, recommends <code>acceptEdits</code>, makes <code>auto</code> an opt-in and never allows <code>bypassPermissions</code>. (b) Also add a commented <code>[router]</code> block to the template: it would document a key that nothing in a fresh project reads</td><td><b>(a)</b> · default (a). <code>auto</code> is set only in Keel's own config</td></tr>
+    <tr><td>6</td><td>Decision record id</td><td>(a) Amend DEC-37, whose Choice set the mode set and whose Rejected row lists <code>auto</code>, with a pointer row in DEC-39. No new id, so DEC-49 stays free for E-CRCAP, whose plan counts on it. (b) Mint DEC-49: E-CRCAP then takes the next free ids at its landing, as its plan already allows ("next free at landing")</td><td><b>(a)</b> · default (a)</td></tr>
+    <tr><td>7</td><td>Residual risk in <code>auto</code></td><td>Calls that prompted the owner now go to the classifier: <code>Edit</code>/<code>Write</code> outside the worktree (not bounded by the Bash sandbox), <code>Read</code> outside it, <code>WebFetch</code>, and a Bash call naming a host outside the five. (a) Accept and record it in DEC-37 (DEC-33/DEC-48's same-user class). A backlog row at close for a tool-level bound, for example deny rules for <code>Edit</code>/<code>Write</code> on <code>~/.claude/**</code> and the shell rc files. (b) Add those deny rules now: more launcher surface, path-rule semantics not probed live, and no evidence yet of a need</td><td><b>(a)</b> · default (a)</td></tr>
+    <tr><td>8</td><td>The review worker's mode</td><td>(a) The same policy mode (<code>auto</code> in Keel): its edit-tool and <code>git add|commit</code> denies still hold. (b) Force <code>plan</code> for <code>--review</code>: it must write the <code>cr</code> note through Bash, and DEC-37's live run showed that plan mode holds by the model obeying it, so it might decline the note</td><td><b>(a)</b> · default (a)</td></tr>
+    <tr><td>9</td><td>Live check of <code>auto</code></td><td>The router's first spawn after the merge (the router checkout's HEAD must carry both the config and the launcher, DEC-39). Observe: <code>RUNNING … permission-mode=auto</code>, not <code>DEAD</code> with the CLI's text; the worker reads a file outside its worktree with no prompt row in <code>claude agents --json</code>. If the CLI refuses <code>auto</code>, or auto mode is not enabled for the account or the model: an owner <code>keel mr commit</code> setting <code>worker_permission_mode = "acceptEdits"</code>, with no launcher change</td><td>As stated · default as stated. The result goes into DEC-37 at close</td></tr>
+    <tr><td>10</td><td>Commit layout</td><td>The tests and the rule-bearing files cannot land in separate commits without a red tree. New tests with the old launcher fail. The new launcher and config with the old tests fail too (their default turns <code>auto</code>). (a) One owner <code>keel mr commit</code> holding the tests, launcher, config, skills, DEC/UC docs and the result report. The worker commits only this plan. (b) Two commits with a red one in between</td><td><b>(a)</b> · default (a)</td></tr>
+  </tbody>
+</table>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
