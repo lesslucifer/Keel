@@ -41,6 +41,12 @@
       <li>N-a: the reader's stop rule names the recovery: the owner repairs the named note in place, and never removes it.</li>
       <li>N-b: the rubric says a WU's own contract test is judged against its test note (§3), never downgraded to a nit by the two rows.</li>
     </ul></li>
+  <li><b>Independent review round 3</b> (router, the last fix only): only nits, fixed without a new round (fix-PASS by the schedule, applied by hand). The round-2 fixes held.
+    <ul>
+      <li>Nit 1: <code>NITS</code> entries now carry <code>"location": "file:line"</code>, so a waived nit can get the "its own file" test.</li>
+      <li>Nit 2: the router's repeat wording (SKILL.md and messages.md) now says "(its own file and any file its reason names)".</li>
+      <li>Optional, done: two overlong lines in the code-review skill (§4 stop rule, §6 writer note) rewrapped.</li>
+    </ul></li>
   <li><b>The smoke check ran on the jq filters only.</b> The scratch-repo run was refused by auto mode because it wrote git notes. Both jq filters were run on sample JSON instead (below). The git half of the reader (<code>rev-list --first-parent … | tail -n +2</code>, <code>git notes show</code>) was not exercised.</li>
 </ul>
 </div>
