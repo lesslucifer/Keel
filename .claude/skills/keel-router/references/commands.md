@@ -3,7 +3,7 @@
 Ported from Trawler's `trawler-router/references/commands.md` (2026-11-06), rewritten
 in `keel` terms and re-run on 2026-11-08 against a scratch clone of Keel
 (`keel` built from this repo; read-only lines executed, owner lines executed up
-to the `.mr-allowed` refusal, merges and pushes executed against a scratch
+to the roster refusal, merges and pushes executed against a scratch
 origin). macOS/zsh-first, like `worker-ops.md`.
 
 Variables: `M` = the directory holding the checkouts · `MAIN=$M/<Repo>` (main
@@ -59,8 +59,9 @@ cd $MAIN && git push origin main
 `--report <path>` unless its result doc is committed in the epic's diff; always
 passing the one the owner read is simplest. Under `[mr] report = "none"`, drop `--report` (it is refused). `git switch epic/$E` fails if
 the epic branch is checked out in another worktree: then `EWT` is that worktree.
-Without the owner's identity in `.mr-allowed`, `keel mr` refuses before signing
-("<id> is not listed in …/.mr-allowed").
+Without the owner's identity in the target's committed `.keel/mr-allowed`, `keel mr`
+refuses before signing ("<id> is not listed in <target>:.keel/mr-allowed"). A
+range that changes the roster is refused until the owner passes `--roster-change`.
 
 ## Router: watch each staged owner action
 
@@ -91,7 +92,7 @@ base and the path are derived, never arguments. Without that launcher mode, a
 worker creates it as the first step of its brief
 (`git -C $MAIN worktree add ../<Repo>-<E>-$W -b wu/$E/$W epic/$E`). A worker
 never touches another WU's worktree. Keel's `post-checkout` hook (after `keel hooks install`) copies the
-files listed in `.gitworktreecopy` (e.g. the untracked `.mr-allowed`) into it.
+files listed in `.gitworktreecopy` into it; the signer roster arrives by checkout.
 
 ## Router: retire a closed worktree
 
