@@ -102,6 +102,13 @@ pub(crate) fn cr_note(repo: &Path, rev: &str) -> Option<CrNote> {
     serde_json::from_str(&raw).ok()
 }
 
+/// The cr note on `rev`: `Ok(None)` only when there is none; a note that does not parse is an error,
+/// never taken for "no review" (a waiver must not overwrite what it cannot read).
+pub(crate) fn cr_note_strict(repo: &Path, rev: &str) -> Result<Option<CrNote>, String> {
+    let Ok(raw) = git(repo, &["notes", "--ref=cr", "show", rev], &[]) else { return Ok(None) };
+    serde_json::from_str(&raw).map(Some).map_err(|e| format!("the cr note on {} does not parse as cr/v1: {e}", rev.get(..10).unwrap_or(rev)))
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct WalkWaiver {
     pub seam: String,

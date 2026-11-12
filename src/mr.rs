@@ -157,7 +157,7 @@ fn review_history(repo: &Path, base: &str, tip: &str) -> Result<Vec<(String, CrN
 /// What the signer reads before a waiver is accepted or written: the reason, what the review left
 /// open (its unwaived findings, its walk waivers) - or that no review ran - and every round.
 fn waiver_listing(tip: &str, cr: &CrNote, history: &[(String, CrNote)]) -> String {
-    let mut out = format!("the review of {} is WAIVED: {}\n", short(tip), cr.waiver().unwrap_or("").trim());
+    let mut out = format!("the review of {} is WAIVED: {}\n", short(tip), printable(cr.waiver().unwrap_or("").trim()));
     if cr.extra.get("unreviewed") == Some(&serde_json::Value::Bool(true)) {
         out.push_str("  open: not reviewed - no review ran on this tip, so what it would find is unknown\n");
     } else {
@@ -170,23 +170,39 @@ fn waiver_listing(tip: &str, cr: &CrNote, history: &[(String, CrNote)]) -> Strin
             (None, _, Some(c), _) | (_, _, _, Some(c)) => c.to_string(),
             _ => f.to_string(),
         };
-        out.push_str(&format!("    - {line}\n"));
+        out.push_str(&format!("    - {}\n", printable(&line)));
     }
     for w in &cr.walk_waivers {
-        out.push_str(&format!("  walk waiver {}: {}\n", w.seam, w.why.trim()));
+        out.push_str(&format!("  walk waiver {}: {}\n", printable(&w.seam), printable(w.why.trim())));
     }
     out.push_str("  review history (newest first):\n");
     for (c, n) in history {
         let why = n.waiver().map(|w| format!(" - {}", w.trim())).unwrap_or_default();
-        out.push_str(&format!("    {} {} blockers {} importants {}{why}\n", short(c), n.verdict, n.blockers, n.importants));
+        out.push_str(&printable(&format!("    {} {} blockers {} importants {}{why}", short(c), n.verdict, n.blockers, n.importants)));
+        out.push('\n');
     }
     out
 }
 
-/// The code a `--waive-review` preview prints and its confirming re-run must give back: it names
-/// exactly what was shown (tip, base and the listing), so the waiver written is the one read.
-fn waiver_code(tip: &str, base: &str, listing: &str) -> String {
-    sha256(format!("{tip}\n{base}\n{listing}").as_bytes()).trim_start_matches("sha256:")[..12].to_string()
+/// Agent-written text made inert for a terminal: every control character (escape sequences, bells,
+/// carriage returns, newlines) is shown as `\u{..}`, so recorded text can never hide or redraw a line
+/// of the listing the signer confirms.
+fn printable(s: &str) -> String {
+    s.chars().map(|c| if c.is_control() { format!("\\u{{{:x}}}", c as u32) } else { c.to_string() }).collect()
+}
+
+/// The code a `--waive-review` preview prints and its confirming re-run must give back. It names the
+/// tip, the base, the listing shown and the note to be written (all but its identity, which carries the
+/// time of writing), so the waiver written is exactly the one previewed - which proves what was shown,
+/// not who read it.
+fn waiver_code(tip: &str, base: &str, listing: &str, note: &CrNote) -> String {
+    let mut body = serde_json::to_value(note).unwrap_or_default();
+    if let Some(m) = body.as_object_mut() {
+        for k in ["tip", "base", "branch", "committer", "timestamp"] {
+            m.remove(k);
+        }
+    }
+    sha256(format!("{tip}\n{base}\n{listing}\n{body}").as_bytes()).trim_start_matches("sha256:")[..12].to_string()
 }
 
 /// `--waive-review "<reason>"`: `Ok(None)` when absent, the trimmed reason when given, refused when
@@ -555,6 +571,21 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         );
         return Ok(1);
     }
+    // The report is settled before any waiver is shown, so nothing refuses after "<id> waives ...".
+    let report = match pick_report(repo, cfg, args, &base, &tip, epic) {
+        Ok(r) => r,
+        Err((what, fix)) => {
+            eprintln!("mr confirm refused - {what}\n  fix -> {fix}");
+            return Ok(1);
+        }
+    };
+    if report.as_ref().is_some_and(|r| r.contains('\n')) {
+        return Err("keel mr: a report path cannot contain a newline".into());
+    }
+    let report_hash = match &report {
+        Some(r) => Some(report_hash(repo, &tip, r, epic)?.ok_or_else(|| format!("keel mr: cannot read {r} - name the report you read"))?),
+        None => None,
+    };
     let branch = (tip_ref != tip && tip_ref != "HEAD").then(|| tip_ref.clone());
     // A waived review meets the signer here, shown with every round (UC-REV-2): the signer waives it in
     // this sign-off (`--waive-review`, written with the signature), or accepts a waiver the tool wrote.
@@ -563,7 +594,14 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         _ if waive.is_some() => {
             let reason = waive.as_deref().unwrap_or_default();
             let ident = notes::identity(repo, tip.clone(), base.clone(), branch.clone())?;
-            let cr = match owner_waiver(ident, reason, notes::code_diff_hash(repo, cfg, &base, &tip)?, notes::cr_note(repo, &tip)) {
+            let existing = match notes::cr_note_strict(repo, &tip) {
+                Ok(n) => n,
+                Err(e) => {
+                    eprintln!("mr confirm refused - {e}; a waiver never overwrites a note it cannot read\n  fix -> repair that note in place, or run a new review on the tip, then waive again");
+                    return Ok(1);
+                }
+            };
+            let cr = match owner_waiver(ident, reason, notes::code_diff_hash(repo, cfg, &base, &tip)?, existing) {
                 Ok(cr) => cr,
                 Err(e) => {
                     eprintln!("mr confirm refused - {e}");
@@ -572,9 +610,9 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
             };
             let listing = waiver_listing(&tip, &cr, &review_history(repo, &base, &tip)?);
             eprint!("{listing}");
-            let code = waiver_code(&tip, &base, &listing);
+            let code = waiver_code(&tip, &base, &listing, &cr);
             match flag(args, "--confirm-waiver") {
-                Some(c) if c == code => eprintln!("{id} waives the review of {}: {reason}", short(&tip)),
+                Some(c) if c == code => eprintln!("{id} waives the review of {}: {}", short(&tip), printable(reason)),
                 Some(_) => {
                     eprintln!("mr confirm refused - the waiver above has changed since the preview whose code you gave (or the code is not its own); nothing is written\n  fix -> read the waiver above; to write it as shown, re-run with --confirm-waiver {code}");
                     return Ok(1);
@@ -595,20 +633,6 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
             }
             waiver_hash(repo, &tip)
         }
-        None => None,
-    };
-    let report = match pick_report(repo, cfg, args, &base, &tip, epic) {
-        Ok(r) => r,
-        Err((what, fix)) => {
-            eprintln!("mr confirm refused - {what}\n  fix -> {fix}");
-            return Ok(1);
-        }
-    };
-    if report.as_ref().is_some_and(|r| r.contains('\n')) {
-        return Err("keel mr: a report path cannot contain a newline".into());
-    }
-    let report_hash = match &report {
-        Some(r) => Some(report_hash(repo, &tip, r, epic)?.ok_or_else(|| format!("keel mr: cannot read {r} - name the report you read"))?),
         None => None,
     };
     let attested = report.as_deref().zip(report_hash.as_deref());
@@ -780,7 +804,7 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{landed, owner_waiver, parse_roster, payload, positionals, roster_change, rule_bearing, sha256, stale_change, waive_reason, waiver_code, waiver_drift, waiver_listing};
+    use super::{landed, owner_waiver, parse_roster, payload, positionals, roster_change, rule_bearing, sha256, stale_change, waive_reason, waiver_code, waiver_drift, waiver_listing, printable};
     use crate::notes::CrNote;
 
     fn lcg(x: &mut u64) -> u64 {
@@ -964,14 +988,37 @@ mod tests {
     }
 
     #[test]
-    fn the_waiver_code_names_exactly_what_was_shown() {
-        let c = waiver_code("t", "b", "listing");
+    fn the_waiver_code_names_exactly_what_was_shown_and_will_be_written() {
+        let note = |refuted: &str, ts: u64| -> CrNote {
+            serde_json::from_value(serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c",
+                "timestamp": ts, "verdict": "WAIVED", "waiver": "r", "blockers": 0, "importants": 0, "code_diff_hash": "h", "refuted": [refuted]}))
+            .unwrap()
+        };
+        let c = waiver_code("t", "b", "listing", &note("x", 1));
         assert_eq!(c.len(), 12);
         assert!(c.chars().all(|x| x.is_ascii_hexdigit() && !x.is_ascii_uppercase()), "{c}");
-        assert_eq!(c, waiver_code("t", "b", "listing"), "deterministic");
-        for (t, b, l) in [("u", "b", "listing"), ("t", "c", "listing"), ("t", "b", "listing2")] {
-            assert_ne!(c, waiver_code(t, b, l), "{t} {b} {l}");
+        assert_eq!(c, waiver_code("t", "b", "listing", &note("x", 99)), "the time of writing is not part of it");
+        for (t, b, l, r) in [("u", "b", "listing", "x"), ("t", "c", "listing", "x"), ("t", "b", "listing2", "x"), ("t", "b", "listing", "y")] {
+            assert_ne!(c, waiver_code(t, b, l, &note(r, 1)), "{t} {b} {l} {r}");
         }
+    }
+
+    #[test]
+    fn recorded_text_reaches_the_terminal_inert() {
+        assert_eq!(printable("plain text: ok"), "plain text: ok");
+        assert_eq!(printable("a\u{1b}[2Kb\u{7}c\rd\ne\u{9b}f"), r"a\u{1b}[2Kb\u{7}c\u{d}d\u{a}e\u{9b}f");
+        let cr: CrNote = serde_json::from_value(serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null,
+            "committer": "c", "timestamp": 0, "verdict": "WAIVED", "waiver": "r\u{1b}[1A", "blockers": 1, "importants": 0, "code_diff_hash": "h",
+            "findings": [{"severity": "blocker\u{1b}", "location": "l", "claim": "c\u{1b}[2K"}], "walk_waivers": [{"seam": "s\u{7}", "why": "w\u{1b}"}]}))
+        .unwrap();
+        let history = vec![("1111111111".to_string(), round("FAIL\u{1b}"))];
+        fn round(v: &str) -> CrNote {
+            serde_json::from_value(serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c",
+                "timestamp": 0, "verdict": v, "waiver": "x\u{1b}", "blockers": 0, "importants": 0, "code_diff_hash": "h"})).unwrap()
+        }
+        let l = waiver_listing("t", &cr, &history);
+        assert!(l.chars().all(|c| c == '\n' || !c.is_control()), "{l:?}");
+        assert_eq!(l.matches('\n').count(), 6, "one line per entry, none injected: {l}");
     }
 
     #[test]
