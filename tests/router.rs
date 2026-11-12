@@ -777,6 +777,7 @@ fn argv_of(state: &Path, name: &str, review: bool) -> Vec<String> {
     };
     let mut allow = bash_pairs(WORKER_GRANTS);
     let mut deny = bash_pairs(WORKER_DENIES);
+    deny.extend(["Bash(git --git-dir=*)", "Bash(git --work-tree=*)"].map(String::from));
     if review {
         allow.extend(bash_pairs(["keel notes write cr"]));
         deny.extend(bash_pairs(["git add", "git commit"]));
@@ -2937,7 +2938,10 @@ fn launcher_starts_a_worker_on_project_settings_alone_with_no_mcp_server() {
         // the sandbox sets GIT_* of its own (proxy, safe.directory), so the check is where git
         // resolves, not an empty environment (E-ROUTER3.W8 live run)
         assert!(
-            prompt.contains("First action: git rev-parse --show-toplevel must print /")
+            prompt.contains(&format!(
+                "First action: git rev-parse --show-toplevel must print {} (",
+                l.wt.canonicalize().unwrap().display()
+            ))
                 && prompt.contains("(if it prints anything else, report that and stop)")
                 && !prompt.contains("grep ^GIT_"),
             "{prompt}"
