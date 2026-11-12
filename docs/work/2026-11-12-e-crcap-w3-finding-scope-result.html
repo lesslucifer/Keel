@@ -16,12 +16,24 @@
   <main>
 
 <h2 id="outcome">Outcome</h2>
-<p data-item="outcome" data-c="outcome">Delivered as planned, in skill text only, landing in the owner's <code>keel mr commit</code>. The rubric names the two nit cases and keeps wrong code on an untested case a blocker against the code. The code-review skill reads earlier rounds' cr notes and gives verifiers that list; a repeat is refuted unless the verifier names a failing case at the tip that shows the earlier fix does not hold. Every round records <code>findings</code> and <code>refuted</code> on its cr note. A nit never starts a new round. The router's extra reviews follow the 5-round schedule, and its review prompt carries the round, the scope and the earlier findings.</p>
+<p data-item="outcome" data-c="outcome">Delivered as planned, in skill text only, landing in the owner's <code>keel mr commit</code>. The rubric names the two nit cases and keeps wrong code on an untested case a blocker against the code. The code-review skill reads the earlier cr notes on the branch and gives verifiers that list. A claim is a repeat only when it is surely the same defect in the same code. A repeat of a fixed finding is refuted unless the verifier names a failing case at the tip that shows the fix does not hold; a repeat of a waived or refuted one is refuted only while the code it judged is unchanged. Every round records <code>findings</code> and <code>refuted</code> on its cr note. A nit never starts a new round. The router's extra reviews follow the 5-round schedule, and its review prompt carries the round, the scope and the earlier findings.</p>
 
 <h2 id="deviations">Deviations</h2>
 <div data-item="deviations" data-c="deviations">
 <ul>
   <li><b>The mirrors were not written by the worker.</b> <code>cp skills/… .claude/skills/…</code> was refused by the worker sandbox (<code>Operation not permitted</code>; <code>.claude/skills/</code> is write-denied). The owner's staged command copies the four files before <code>keel mr commit</code>, so the commit still lands source and mirror together.</li>
+  <li><b>Independent review round 1</b> (router, 1 blocker, 1 important, 7 nits) changed the text:
+    <ul>
+      <li>B1: a repeat now needs the same defect in the same code. A waived or refuted entry refutes its repeat only while the code it judged is unchanged; in any doubt the claim is new. Same rule in the router's two places.</li>
+      <li>I1: the §6 writer builds the note first and writes only on success (bad JSON had emptied the note, and git removes an empty note). The plan's "never a wrong gate verdict" claim is corrected.</li>
+      <li>N1: the earlier-notes reader names an unreadable note's commit on stderr, and the skill stops on any error instead of passing a partial list.</li>
+      <li>N2: "earlier notes", not "earlier rounds"; fix-PASS and WAIVED notes go in the list, and round counting stays W2's.</li>
+      <li>N3: the router points at its own schedule table, not at the code review's text.</li>
+      <li>N4: the table column is "What it reports on"; from round 3 the reviewer reads any file and reports only on the changes since the last reviewed tip; the prompt has one scope placeholder.</li>
+      <li>N5: the prompt names the severity scale, and a PLAUSIBLE finding counts at its severity until refuted.</li>
+      <li>N6: the router writes each round's number and findings into the item's next brief or prompt.</li>
+      <li>N7: the rubric's row 1 says "edge case", and the test-note caveat sits below the table and covers both rows.</li>
+    </ul></li>
   <li><b>The smoke check ran on the jq filters only.</b> The scratch-repo run was refused by auto mode because it wrote git notes. Both jq filters were run on sample JSON instead (below). The git half of the reader (<code>rev-list --first-parent … | tail -n +2</code>, <code>git notes show</code>) was not exercised.</li>
 </ul>
 </div>
@@ -30,7 +42,7 @@
 <div data-item="evidence" data-c="evidence">
 <ul>
   <li>Files: <code>skills/keel-code-review/rubric.md</code> (Severity), <code>skills/keel-code-review/SKILL.md</code> (§4, §5, §6, §7), <code>skills/keel-router/SKILL.md</code> ("Independent review"), <code>skills/keel-router/references/messages.md</code> ("Independent review prompt"), and the same four under <code>.claude/skills/</code>.</li>
-  <li>Smoke check of the jq filters: the writer adds <code>findings</code>, <code>refuted</code>, <code>nits</code> and <code>fleet</code> and keeps the CLI's fields; the reader turns a note with only <code>nits</code> into one entry, drops a note with none of the three fields, and gives <code>[]</code> on empty input (round 1).</li>
+  <li>Smoke check of the jq filters: the writer adds <code>findings</code>, <code>refuted</code>, <code>nits</code> and <code>fleet</code> and keeps the CLI's fields; the reader turns a note with only <code>nits</code> into one entry, drops a note with none of the three fields, and gives <code>[]</code> on empty input (round 1). After round 1: the reader marks invalid JSON (jq exit 5) and a non-array field (exit 4) as unreadable. The guarded writer writes nothing on bad <code>--argjson</code> input (exit 2) or empty input (exit 1).</li>
   <li>Tests: none added (no code path changes); the integration layer is waived in the test note, as planned.</li>
   <li>Commits: the WU plan and this report (worker); the skill text and mirrors (owner's <code>keel mr commit</code>).</li>
 </ul>
@@ -43,6 +55,7 @@
 <div data-item="follow-ups" data-c="follow-ups">
 <ul>
   <li>W2 adds the fix-PASS. It should state in §5 and §7 how a nit is fixed after the verdict without a new round. W3 only says that a nit never starts one.</li>
+  <li>For W2: the cap's WAIVED note goes on the same tip as the round-5 FAIL note and would replace it, dropping that round's findings, unless W2 runs the §6 step again on the WAIVED note.</li>
   <li>The first real round 2 after this lands exercises the earlier-rounds reader end to end.</li>
 </ul>
 </div>
