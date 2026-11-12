@@ -982,3 +982,38 @@ fn accept_waiver_signs_the_waiver_it_showed_and_only_with_its_code() {
     assert_eq!(mr_note(p, "HEAD").unwrap()["waiver_hash"].as_str().unwrap(), sha256_of(reworded.as_bytes()), "signs the waiver it showed");
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
 }
+
+// E-CRCAP.W1 code review round 3: the review history is read the same whatever the user's log config.
+
+#[test]
+fn the_review_history_keeps_every_row_when_git_log_shows_signatures() {
+    let (d, k) = fixture();
+    let p = d.path();
+    let key = k.path().join("id");
+    let public = std::fs::read_to_string(k.path().join("id.pub")).unwrap();
+    std::fs::write(k.path().join("signers"), format!("t@t {}\n", public.split_whitespace().take(2).collect::<Vec<_>>().join(" "))).unwrap();
+    // The repo's own config (never the user's): signed commits, and git log showing their signatures.
+    for (k_, v) in [("gpg.format", "ssh"), ("user.signingkey", key.to_str().unwrap()), ("gpg.ssh.allowedSignersFile", k.path().join("signers").to_str().unwrap())] {
+        git(p, &["config", k_, v]);
+    }
+    // Round 1 fails on a signed commit; the owner's waiver sits on the unsigned fix above it.
+    write(p, "src/a.py", "def a():\n    return 3\n");
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-q", "-S", "-m", "signed round 1"]);
+    notes(p, &["test", "doc"]);
+    ok(cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    let round1 = git(p, &["rev-parse", "HEAD"]);
+    write(p, "src/a.py", "def a():\n    return 1\n");
+    commit(p, "fix");
+    notes(p, &["test", "doc"]);
+    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER, "--blockers", "1"]));
+    let tip = git(p, &["rev-parse", "HEAD"]);
+    git(p, &["config", "log.showSignature", "true"]);
+    let shown = git(p, &["log", "-1", &round1]);
+    assert!(shown.to_lowercase().contains("signature"), "the setting makes git log print signature lines: {shown}");
+    let o = keel(p, &["mr", "confirm", "wu"]);
+    let t = text(&o);
+    for (sha, verdict) in [(&tip, "WAIVED"), (&round1, "FAIL")] {
+        assert!(t.lines().any(|l| l.trim_start().starts_with(&format!("{} {verdict}", &sha[..10]))), "history row {} {verdict} missing: {t}", &sha[..10]);
+    }
+}
