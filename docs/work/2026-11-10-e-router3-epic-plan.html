@@ -152,12 +152,13 @@ flowchart LR
   <h3 id="w5">E-ROUTER3.W5 · Router skill text and decisions say what the tooling does <span class="badge id">R9</span> <span class="badge id">R10</span> <span class="badge id">R11</span> <span class="badge id">R13</span> <span class="badge id">R19</span></h3>
   <p data-item="wu-summary">One rule-bearing text pass over <code>skills/keel-router</code> and its <code>.claude/skills/</code> mirror, project-router, <code>.claude/agents/router.md</code> and <code>decisions/router.html</code>:</p>
   <ul>
-    <li>The worker-ops "Wait" and "Report" wording, updated for W1's messaging (R9).</li>
+    <li>The worker-ops "Wait" and "Report" wording, updated for W1's messaging (R9). <b>Amended by the W5 plan:</b> superseded by W10 (no Wait step; the report is the worker's <code>SendMessage</code>), so R9 is struck with no skill edit.</li>
     <li>The deny wording states intent, not a sandbox (R10).</li>
-    <li>Plan mode for read-only checkers is marked unverified until one real <code>--permission-mode plan</code> checker has been shown unable to edit, yet able to write its <code>.out</code> (R11, a live run).</li>
+    <li>Plan mode for read-only checkers is marked unverified until one real <code>--permission-mode plan</code> checker has been shown unable to edit, yet able to write its <code>.out</code> (R11, a live run). <b>Amended by the W5 plan (open point 1):</b> W10 deleted the <code>.out</code> file, so "writes its report" reads as: no write lands, and the worker's <code>SendMessage</code> report arrives.</li>
     <li>DEC-31 is marked as amended by DEC-36, DEC-37 and DEC-42 (R13).</li>
     <li>The GIT_DIR lesson goes into the keel-router lessons (R19).</li>
     <li>The posture bullet for SendMessage and ListAgents (R7).</li>
+    <li><b>Carried in (W5 plan):</b> worker-ops names the launcher's <code>UNLISTED</code> line and the stop refusal by state (W10); the state-only <code>working</code> row at <code>stop</code> and the watchdog stop wording (W9); the guard's "cannot add a schedule" comment reworded (W9 cr); a finished review worker's <code>status: idle</code>, <code>state: blocked</code> row pinned in two fixtures (W8); the gitfile / <code>commondir</code> escape as backlog R26 (W4); project-router's stale tiers, roster path and router-checkout text; lesson C13's "resumes".</li>
   </ul>
   <p data-item="wu-maps-to">Backlog R9, R10, R11, R13, R19, R7 posture bullet · UC-ROUTE-4, UC-ROUTE-5.</p>
   <p data-item="wu-expected">The skill and its mirror are byte-identical (the existing mirror test). A grep finds no text still saying the router never messages a worker. The R11 live run is recorded. Everything is staged as one owner <code>keel mr commit</code>.</p>

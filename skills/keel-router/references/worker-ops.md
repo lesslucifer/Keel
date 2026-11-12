@@ -66,12 +66,16 @@ Code's sandbox: writes to the worktree, the git dir but its config and hooks,
 and the build cache, a few hosts; plus a fixed allow list of the gate commands
 a worker needs: build, test, lint,
 `keel preflight|verify-doc|verify-dod|notes write|check`, and a fixed deny list:
-`keel mr` and anything that reaches it, pushes, git config, notes, stash,
-branch switches, other checkouts, `claude` and the launcher). The launcher
+`keel mr`, pushes, git config, notes, stash, branch switches, other checkouts,
+`claude` and the launcher). The deny list states intent: it refuses a matching
+call at once with a reason. The sandbox is the bound: a wrapper (`sh -c`, a test
+runner) passes a deny, and only the sandbox stops what it then reaches. The launcher
 passes no inherited `GIT_*` to the session (a background session takes the
 launching shell's environment). A host outside the sandbox makes a command
 wait, not fail: briefs tell workers to give network commands a timeout. The permission mode is the one validated
-choice: `acceptEdits` by default, `plan` for read-only checkers, nothing else
+choice: `acceptEdits` by default, `plan` for read-only checkers (live run 2026-11-12, Claude Code 2.1.288: a
+plan-mode worker changed nothing and reported by `SendMessage`; the hold is the
+model obeying plan mode, the harness's own block was not exercised), nothing else
 (never `bypassPermissions`). Grants travel on the launcher's command line only,
 never in the settings the router shares, so they never reach the router. `keel
 init` ships no launcher: a project commits its own and its project-router skill
@@ -99,7 +103,10 @@ Claude Code trusts (pitfall 3); the target's branch carries the worker persona
   `--review` starts a review worker: the only one granted the `cr` note, with no
   edit tool, `git add` or `git commit` (SKILL.md "Workers").
   Prints `RUNNING name=… id=<short id> session=<uuid> permission-mode=… effort=… branch=… snapshot=… brief=… sha256=… worktree=…`,
-  or `DEAD name=… exit=<code> …` plus the CLI's own text. Record the session
+  or `DEAD name=… exit=<code> …` plus the CLI's own text, or
+  `UNLISTED name=… exit=0 snapshot=… brief=… sha256=…` and an exit 2 when the
+  session list cannot be read after the start: the session may be running, so
+  check `ListAgents` before any respawn. Record the session
   uuid. `Read` the snapshot and confirm it is the brief you wrote. Announce the
   worker only after `RUNNING`.
 - **Report**: when its work is finished the worker sends you one
@@ -125,7 +132,11 @@ Claude Code trusts (pitfall 3); the target's branch carries the worker persona
   before the worker's turn has ended, so `stop` gives a busy worker up to 30 s to
   go idle, then refuses, because `claude stop` cuts the turn (seen cutting one
   after 4 of 30 calls): ask the worker to finish, or leave a stuck one to the owner
-  (`claude stop <id>`; the router has no `claude` or `kill`, lessons D2).
+  (`claude stop <id>`; the router has no `claude` or `kill`, lessons D2). A
+  worker neither busy nor idle (waiting on a prompt, blocked) is refused at once:
+  `worker <name> is <state>: the owner decides (claude stop <id>)`. `stop` reads
+  a row's `status`, else its `state`: a row listed only as `state: working` is
+  refused that way at once, not after 30 s, with the same outcome.
 - **No resume**: a stopped, crashed or rebooted worker is never revived (a plain
   `claude --bg --resume` comes back without the persona, the sandbox or the
   settings): spawn a fresh worker with a new brief that says what the last one
@@ -164,7 +175,9 @@ idle, reaches you without a heartbeat of your own.
   under that name, when one is already running, or when the policy names no
   watchdog model.
 - `<launcher> watchdog stop <your-name>` when the last worker is retired:
-  `STOPPED name=watchdog-<your-name> …`. It also stops itself once you are no
+  `STOPPED name=watchdog-<your-name> …`. It runs the worker `stop`, so its
+  refusals are that `stop`'s and name the watchdog as a worker
+  (`worker watchdog-<your-name> is …`). It also stops itself once you are no
   longer listed (a restart renames you: stop it and start a new one).
 - A report: one `SendMessage` from `watchdog-<your-name>`, one sentence per worker,
   `DONE` and `STUCK` workers first. `DONE` = idle. `STUCK (permission prompt)`

@@ -35,7 +35,7 @@ def bash_ok:
 
 if $ARGS.named.watchdog_to != null then
   $ARGS.named.watchdog_to as $to
-  # only the one schedule the start prompt asks for: transcript text cannot add another
+  # only the tick's shape is admitted (one call judged at a time): a repeat of that same call passes
   | if $to != "" and ((.tool_name == "CronCreate" and (.tool_input | type) == "object"
         and .tool_input.cron == "*/5 * * * *" and .tool_input.prompt == "tick" and .tool_input.recurring == true)
       or (.tool_name == "SendMessage" and (.tool_input | type) == "object" and .tool_input.to == $to))

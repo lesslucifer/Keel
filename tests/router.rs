@@ -1149,6 +1149,13 @@ fn stop_stops_then_removes_this_repositorys_idle_worker_by_id() {
         assert!(!ok && out.contains(&format!("worker {name} is {state}: the owner decides (claude stop {id})")), "{name}: {out}");
         assert_eq!(calls(&l.state).len() - n0, 1, "{name}: stop waited on a session that is not busy");
     }
+    // E-ROUTER3.W5 (W8 result): a finished review worker listed idle with state blocked is stopped
+    more.push(serde_json::json!({"id": "h0", "sessionId": "h0-x", "name": "h", "cwd": wt, "kind": "background", "status": "idle", "state": "blocked"}));
+    l.set_sessions(&more);
+    let (ok, out) = l.run_env(&["stop", "h"], &[("PATH", &path)]);
+    assert!(ok && out.starts_with("STOPPED name=h id=h0 "), "{out}");
+    let tail: Vec<Vec<String>> = calls(&l.state).into_iter().map(|(_, c)| c).filter(|c| c[0] != "agents").collect();
+    assert_eq!(tail[tail.len() - 2..], [vec!["stop".to_string(), "h0".into()], vec!["rm".to_string(), "h0".into()]]);
     l.set_sessions(&rows);
 
     // review r2: the busy wait follows the worker's id, never another session that takes its name,
@@ -2000,7 +2007,7 @@ fn guard_run_with_a_watchdog_recipient_allows_only_the_scheduler_and_a_message_t
             guard_to("", &as_agent(send.clone())).is_some(),
             "{agent:?}: an empty recipient allowed a message"
         );
-        // review r2 I1: only the one schedule the start prompt asks for; transcript text cannot add another
+        // review r2 I1: only the tick's shape is admitted; a repeat of that same call passes
         for (k, v) in [
             ("cron", serde_json::json!("* * * * *")),
             ("cron", serde_json::json!("*/1 * * * *")),
@@ -2516,6 +2523,13 @@ fn watchdog_facts_mark_an_idle_worker_done_and_a_blocked_or_quiet_one_stuck() {
         ),
         ("blocked", 5, serde_json::json!({"state": "blocked"}), 0),
         ("working", 6, serde_json::json!({"state": "working"}), 1),
+        // E-ROUTER3.W5 (W8 result): a finished review worker was listed idle with state blocked
+        (
+            "review",
+            7,
+            serde_json::json!({"status": "idle", "state": "blocked"}),
+            0,
+        ),
     ] {
         rows.push(worker_row(&l, h, name, &sid(n), status, Some(quiet), &[]));
     }
@@ -2534,6 +2548,7 @@ fn watchdog_facts_mark_an_idle_worker_done_and_a_blocked_or_quiet_one_stuck() {
     assert_eq!(state("prompt"), "STUCK (permission prompt)");
     assert_eq!(state("blocked"), "STUCK (blocked)");
     assert_eq!(state("working"), "busy");
+    assert_eq!(state("review"), "DONE");
     // done and stuck first, busy last, in list order within each
     let order: Vec<String> = blocks(&out)
         .iter()
@@ -2541,7 +2556,7 @@ fn watchdog_facts_mark_an_idle_worker_done_and_a_blocked_or_quiet_one_stuck() {
         .collect();
     assert_eq!(
         order,
-        ["busy16", "idle", "prompt", "blocked", "busy14", "working"],
+        ["busy16", "idle", "prompt", "blocked", "review", "busy14", "working"],
         "{out}"
     );
 }
@@ -3588,4 +3603,59 @@ fn worktree_branches_follow_the_committed_branch_policy() {
         }
     }
     assert!(accepted > 0, "no generated name was accepted");
+}
+
+/// E-ROUTER3.W5: the router's rule-bearing text says what the launcher at this tip prints and holds no
+/// retired mechanism. Every outcome word the launcher prints as `<WORD> name=` or `<WORD> path=` is in
+/// worker-ops, with the UNLISTED respawn instruction, the stop refusal by state and the deny list as
+/// intent; no current text names `wait`, `resume`, `.router/out` or a router that never messages
+/// (lessons.md is the dated record of what was, so it is not read); router.md's body names the two
+/// fleet tools; project-router states the committed sign-off tiers.
+#[test]
+fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
+    let read = |p: &str| std::fs::read_to_string(root().join(p)).unwrap();
+    let launcher = read("scripts/router-worker.sh");
+    let ops = read("skills/keel-router/references/worker-ops.md");
+    let words: std::collections::BTreeSet<String> = regex::Regex::new(r#"echo "([A-Z]+) (?:name|path)="#)
+        .unwrap()
+        .captures_iter(&launcher)
+        .map(|c| c[1].to_string())
+        .collect();
+    assert!(words.len() >= 6, "the launcher's outcome words were not found: {words:?}");
+    for w in &words {
+        assert!(ops.contains(&format!("{w} name=")) || ops.contains(&format!("{w} path=")), "worker-ops never names {w}");
+    }
+    for (said, why) in [
+        ("before any respawn", "UNLISTED's instruction to check ListAgents"),
+        ("the owner decides", "stop's refusal of a worker that is neither busy nor idle"),
+        ("intent", "the deny list as intent, the sandbox as the bound"),
+    ] {
+        assert!(ops.contains(said), "worker-ops omits {why}");
+    }
+    assert!(launcher.contains("check ListAgents before any respawn") && launcher.contains(": the owner decides (claude stop $id)"));
+
+    let mut current = Vec::new();
+    for dir in ["skills/keel-router", ".claude/skills/keel-router"] {
+        for f in ["SKILL.md", "references/worker-ops.md", "references/commands.md", "references/messages.md", "references/brief-skeleton.md", "references/review-checklists.md", "references/project-router-template.md"] {
+            current.push(format!("{dir}/{f}"));
+        }
+    }
+    current.extend([".claude/skills/project-router/SKILL.md".to_string(), ".claude/agents/router.md".to_string()]);
+    for f in &current {
+        let body = read(f);
+        for retired in ["router-worker.sh wait", "router-worker.sh resume", "<launcher> wait", "<launcher> resume", ".router/out", "never message"] {
+            assert!(!body.contains(retired), "{f} names the retired {retired:?}");
+        }
+    }
+
+    let agent = read(".claude/agents/router.md");
+    let body = agent.splitn(3, "---\n").nth(2).unwrap();
+    for t in ["SendMessage", "ListAgents"] {
+        assert!(body.contains(&format!("`{t}`")), "router.md's posture omits {t}");
+    }
+
+    let policy: toml::Value = read(".keel/config.toml").parse().unwrap();
+    let tiers: Vec<String> = policy["mr"]["tiers"].as_array().unwrap().iter().map(|t| format!("{t}")).collect();
+    let tiers = format!("tiers = [{}]", tiers.join(", "));
+    assert!(read(".claude/skills/project-router/SKILL.md").contains(&tiers), "project-router does not state {tiers}");
 }
