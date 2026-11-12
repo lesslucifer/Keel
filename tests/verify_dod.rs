@@ -1460,5 +1460,8 @@ fn a_second_code_fix_after_a_round_4_fix_pass_points_at_the_owners_waiver_not_a_
     let o = write_cr(p, &["--verdict", "PASS", "--fixes", &r4]);
     refused(&o, &["second fix", "--waive-review"]);
     assert!(!text(&o).contains("run review round 5"), "round 5 does not exist here: {}", text(&o));
-    assert_red(&preflight(p), "0·review-cap");
+    // Preflight's refusal names the same way out, never the fix-PASS the writer refuses here.
+    let o = preflight(p);
+    assert_red(&o, "0·review-cap");
+    assert!(text(&o).contains("--waive-review") && !text(&o).contains("--fixes"), "{}", text(&o));
 }
