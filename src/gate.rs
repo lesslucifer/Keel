@@ -471,7 +471,7 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
         r.fail("0·tree", "keel check is red on the tip".into(), "get lint and tests green before the review runs");
     }
     check_tip(repo, cfg, &mut r, &names, false, true)?;
-    match review::schedule(repo, &r.base, &r.tip, target) {
+    match review::schedule(repo, &r.base, &r.tip, target, &cfg.code_paths) {
         Ok(next) => println!("{}", next.announce(&r.base, &r.tip)),
         Err((what, fix)) => r.fail("0·review-cap", what, fix),
     }

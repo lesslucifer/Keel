@@ -768,7 +768,7 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
                     "commit the fix, then write the fix-PASS on it",
                 );
             }
-            let unchanged = |c: &str| names(repo, c, &tip, &cfg.code_paths).is_ok_and(|n| n.is_empty());
+            let unchanged = |c: &str| review::no_code_since(repo, c, &tip, &cfg.code_paths);
             let fix = review::fix_pass(&earlier()?, &sha, max()?, unchanged).or_else(|(what, fix)| refuse(what, &fix))?;
             let mut extra = serde_json::Map::new();
             extra.insert("fixes".into(), sha.clone().into());
@@ -780,7 +780,7 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
         }
         (CrWrite::Review, None) => {
             let max = max()?;
-            let next = review::next_round(&earlier()?, max).or_else(|(what, fix)| refuse(what, &fix))?;
+            let next = review::next_round(&earlier()?, max, &|c: &str| review::no_code_since(repo, c, &tip, &cfg.code_paths)).or_else(|(what, fix)| refuse(what, &fix))?;
             let mut extra = lists;
             extra.insert("round".into(), next.round.into());
             extra.insert("scope".into(), next.scope().into());
