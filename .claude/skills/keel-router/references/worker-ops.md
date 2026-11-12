@@ -226,7 +226,7 @@ until they answer. After a restart, Session start re-arms every watch.
 |---|---|
 | Output only in the owner's terminal (`--help`, an app tried by hand, an error text) | If a worker can reproduce it in its worktree, delegate; ask the owner only for checks bound to their environment, as one question: "paste the output of …" |
 | A `keel mr` or merge that failed (no state change) | On `TIMEOUT`, re-check and re-send with the likely failure |
-| The owner's index, untracked files, `.mr-allowed` (never read) | The `commit` kind's `missing` lines surface a partial commit after it lands |
+| The owner's index, untracked files, signing keys (never read) | The `commit` kind's `missing` lines surface a partial commit after it lands |
 | Decisions and rulings | Ask: one question, options, recommendation, default |
 | GitHub settings, secrets, registry tokens | Ask the owner to confirm; a later successful run is the indirect proof |
 

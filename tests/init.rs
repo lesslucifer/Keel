@@ -454,17 +454,20 @@ fn self_hosting_check_passes_mid_merge_of_a_skill_change() {
     assert_init_is_a_noop(&c);
 }
 
-/// E-ROUTERFIX.W3: Keel's own tree lists `.mr-allowed` in `.gitworktreecopy`, so a new worktree
-/// inherits the main checkout's signer list and its first `keel mr` is not refused for want of one.
+/// E-ROUTER3.W4 (DEC-47): a new worktree gets Keel's signer roster by checkout, as committed; the
+/// main checkout's local `.mr-allowed` is no longer copied into it.
 #[test]
-fn self_hosting_new_worktree_inherits_the_signer_list() {
+fn self_hosting_new_worktree_reads_the_committed_roster_and_copies_no_local_one() {
     let d = TempDir::new().unwrap();
     let c = d.path().join("c");
     self_clone(Path::new(env!("CARGO_MANIFEST_DIR")), &c);
     assert!(keel(&c, &["hooks", "install"]).status.success());
     std::fs::write(c.join(".mr-allowed"), "username: owner\n").unwrap();
+    let committed = String::from_utf8(git_in(&c, &["show", "HEAD:.keel/mr-allowed"]).stdout).unwrap();
+    assert!(!committed.trim().is_empty(), "Keel commits a roster");
 
     let w = d.path().join("w");
     assert!(git_in(&c, &["worktree", "add", "-q", "-b", "wu/x/y", w.to_str().unwrap()]).status.success());
-    assert_eq!(std::fs::read_to_string(w.join(".mr-allowed")).unwrap(), "username: owner\n");
+    assert_eq!(std::fs::read_to_string(w.join(".keel/mr-allowed")).unwrap(), committed);
+    assert!(!w.join(".mr-allowed").exists(), "no local roster is copied");
 }

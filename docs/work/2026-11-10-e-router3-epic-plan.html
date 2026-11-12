@@ -142,8 +142,8 @@ flowchart LR
     <li>Check 8 reads the signer roster from the target's committed, rule-bearing tree, never from the merging worktree's disk.</li>
     <li>The owner's key needs presence: a FIDO <code>sk-</code> key, or a passphrase key that is not cached in the agent.</li>
   </ol>
-  <p>R3: add the guard, the launcher, the watch script and <code>.claude/agents/</code> to <code>rule_bearing</code>. R4: re-record DEC-33's accepted risk with R14's residual (a same-user shell can bypass any local hook, so the final boundary is the owner's push). New DEC-43.</p>
-  <p data-item="wu-maps-to">Backlog R14, R3, R4 · UC-MR, UC-ROUTE-6 · DEC-33 re-recorded.</p>
+  <p>R3: add the guard, the launcher, the watch script and <code>.claude/agents/</code> to <code>rule_bearing</code>. R4: re-record DEC-33's accepted risk with R14's residual (a same-user shell can bypass any local hook, so the final boundary is the owner's push). New DEC-43 as planned; landed as DEC-47 and DEC-48 (ids 43–46 were taken first).</p>
+  <p data-item="wu-maps-to">Backlog R14, R3, R4 · UC-MR, UC-ROUTE-6 · DEC-47 (workflow-gates: the committed roster, amends DEC-20) and DEC-48 (router: the accepted risk re-recorded, amends DEC-33 and DEC-46) · new backlog R25.</p>
   <p data-item="wu-expected">A test replays the R14 attack in a scratch repo: the worker edits <code>.mr-allowed</code> and <code>[check] test</code>, then runs <code>keel check</code>. The resulting sign-off fails check 8 with a named reason. A commit touching <code>scripts/router-guard.jq</code> without Reviewed-By is refused. The <code>.keel/</code> change is staged as an owner <code>keel mr commit</code>.</p>
   <p data-item="wu-deps">none</p>
 </div>

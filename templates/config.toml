@@ -39,7 +39,7 @@ T3 = ["docs/work/**", "docs/.archive/**"]
 # pattern = "..."      # test-declaration regex, for the regex adapter
 
 [mr]
-tiers = ["email", "username", "key"]   # accepted .mr-allowed tiers; ["key"] = signatures only
+tiers = ["email", "username", "key"]   # accepted .keel/mr-allowed tiers; ["key"] = signatures only (email/username are a string match)
 report = "required"   # required | optional | none: must a WU/epic sign-off attest its result report (data-artifact wu-result / epic-result)
 
 [review]   # read by the keel-code-review skill, not by the CLI

@@ -292,9 +292,10 @@ you used and why when it is not the standard.
   (sign-offs), merges, push, tag, dispatch, secret uploads. Never hand-write or
   copy a gate note between tips — it is a bypass. Check a capability before
   promising automation on it.
-- Never edit the owner's settings/permission rules, `.mr-allowed`, the router
-  hook or launcher, or the T0 instructions file (`AGENTS.md`) unless explicitly
-  asked. Never read or print secrets (keys, tokens); check secrets by name only.
+- Never edit the owner's settings/permission rules, the signer roster
+  `.keel/mr-allowed`, the router hook or launcher, or the T0 instructions file
+  (`AGENTS.md`) unless explicitly asked. Stage `keel mr confirm … --roster-change`
+  only when the WU's plan names a roster change. Never read or print secrets (keys, tokens); check secrets by name only.
 
 ## Independent review (outside the automated gates)
 

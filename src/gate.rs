@@ -279,10 +279,10 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, gua
         guard_hooks(repo, &mut r);
     }
     // 8·manual-review: never exempt (UC-GATE-5), and only at the merge boundary - the walk never
-    // re-judges a seam's sign-off against today's local roster (Trawler DEC-9/10).
+    // re-judges a seam's sign-off against the epic's roster (Trawler DEC-9/10; DEC-48 names the gap).
     let mut attested = None;
     if level != Level::Commit {
-        match mr::manual_review(repo, cfg, level.name(), &r.tip, &r.base) {
+        match mr::manual_review(repo, cfg, level.name(), &r.tip, &r.base, target) {
             Ok(a) => attested = a,
             Err((what, fix)) => r.fail("8·manual-review", what, fix),
         }
@@ -397,7 +397,7 @@ pub(crate) fn range(repo: &Path, cfg: &Config, old: &str, new: &str, branch: &st
             }
             [_, main, wu] => {
                 let mut r = verify(repo, cfg, merges, wu, main)?;
-                if let Err((what, fix)) = mr::manual_review(repo, cfg, merges.name(), &r.tip, &r.base) {
+                if let Err((what, fix)) = mr::manual_review(repo, cfg, merges.name(), &r.tip, &r.base, main) {
                     r.fail("8·manual-review", what, fix);
                 }
                 r

@@ -1,5 +1,6 @@
 //! E-SEED.W4 manual review: a throwaway ssh key signs a WU tip; the merge goes green; a tampered
 //! report, an amended tip, an unlisted signer and a confirm before cr are each red.
+//! E-ROUTER3.W4: the roster is `.keel/mr-allowed` as committed on the target, never a file on disk.
 use serde_json::{json, Value};
 use std::path::Path;
 use std::process::{Output, Stdio};
@@ -59,14 +60,19 @@ fn put_note(p: &Path, rev: &str, n: &Value) {
 }
 
 fn assert_red8(p: &Path, needle: &str) {
-    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    assert_red8_on(p, "wu/e/a", needle);
+}
+
+fn assert_red8_on(p: &Path, tip: &str, needle: &str) {
+    let o = keel(p, &["verify-dod", "wu", tip]);
     let t = text(&o);
     assert!(!o.status.success() && t.contains("8·manual-review") && t.contains("fix ->"), "{t}");
     assert!(t.contains(needle), "expected '{needle}': {t}");
 }
 
-/// A key-tier signer `vu` (throwaway ed25519, no passphrase), main → epic/e → wu/e/a with code,
-/// a test and a tracked result report. HEAD on wu/e/a. The key lives outside the repo.
+/// A key-tier signer `vu` (throwaway ed25519, no passphrase) in the roster main commits, main →
+/// epic/e → wu/e/a with code, a test and a tracked result report. HEAD on wu/e/a. The key lives
+/// outside the repo; keel.signingkey names it.
 fn fixture() -> (TempDir, TempDir) {
     let (d, k) = (TempDir::new().unwrap(), TempDir::new().unwrap());
     let p = d.path();
@@ -85,7 +91,7 @@ fn fixture() -> (TempDir, TempDir) {
     write(p, "README", "x");
     commit(p, "base");
     ok(keel(p, &["hooks", "install"])); // after the base commit: main is merge-only from here
-    assert!(!git(p, &["ls-files"]).contains(".mr-allowed"), "the roster stays out of git");
+    assert!(git(p, &["ls-files"]).lines().any(|f| f == ".keel/mr-allowed"), "the base commit carries the roster");
     git(p, &["switch", "-q", "-c", "epic/e"]);
     git(p, &["switch", "-q", "-c", "wu/e/a"]);
     write(p, "src/a.py", "def a():\n    return 1\n");
@@ -93,6 +99,45 @@ fn fixture() -> (TempDir, TempDir) {
     write(p, "docs/work/a-result.html", RESULT);
     commit(p, "wu a");
     (d, k)
+}
+
+/// Commit `roster` on epic/e, the target that judges wu/e/a, and come back. Its first parent stays
+/// the fork point, so wu/e/a's base and every note on it are unchanged.
+fn land_roster(p: &Path, roster: &str) {
+    git(p, &["switch", "-q", "epic/e"]);
+    write(p, ".keel/mr-allowed", roster);
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-q", "--no-verify", "-m", "the target's roster"]);
+    git(p, &["switch", "-q", "wu/e/a"]);
+}
+
+fn keygen(dir: &Path, name: &str) -> (String, String) {
+    ok(run("ssh-keygen", dir, &["-q", "-t", "ed25519", "-N", "", "-f", name]));
+    let key = dir.join(name).to_str().unwrap().to_string();
+    let public = std::fs::read_to_string(format!("{key}.pub")).unwrap();
+    (key, public.split_whitespace().take(2).collect::<Vec<_>>().join(" "))
+}
+
+/// An mr/v1 note on `tip` as `signer`, bound like a real one (base, change and report hashes) and
+/// signed with `key` when given: what a session holding only its own key can write by hand.
+fn forge(p: &Path, tip: &str, target: &str, signer: &str, tier: &str, key: Option<&str>) {
+    use sha2::{Digest, Sha256};
+    let hash = |b: &[u8]| format!("sha256:{}", Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect::<String>());
+    let (tip, base) = (git(p, &["rev-parse", tip]), git(p, &["merge-base", target, tip]));
+    let change = hash(git(p, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", &base, &tip, "--"]).as_bytes());
+    let report = "docs/work/a-result.html";
+    let report_hash = hash(&run("git", p, &["show", &format!("{tip}:{report}")]).stdout);
+    let mut n = json!({"schema": "mr/v1", "tip": tip, "base": base, "level": "wu", "signer": signer, "tier": tier,
+        "committer": "forger", "timestamp": 0,
+        "report": report, "report_hash": report_hash, "change_hash": change});
+    if let Some(k) = key {
+        let dir = TempDir::new().unwrap();
+        let payload = format!("keel-mr/v2\nlevel: wu\nbase: {base}\ntip: {tip}\nchange: {change}\nreport: {report}\nreport_hash: {report_hash}\n");
+        std::fs::write(dir.path().join("payload"), payload).unwrap();
+        ok(run("ssh-keygen", dir.path(), &["-Y", "sign", "-n", "keel-mr", "-f", k, "payload"]));
+        n["sig"] = json!(std::fs::read_to_string(dir.path().join("payload.sig")).unwrap());
+    }
+    put_note(p, &tip, &n);
 }
 
 const RESULT: &str = "<html data-artifact=\"wu-result\"><p>wu a: done</p></html>";
@@ -172,33 +217,29 @@ fn confirm_refuses_before_cr_and_for_an_unlisted_signer() {
     assert!(!o.status.success() && text(&o).contains("ghost is not listed"), "{}", text(&o));
     assert!(mr_note(p, "HEAD").is_none());
 
-    // Signed by vu, then this checkout's roster stops listing vu: check 8 names the roster.
+    // Signed by vu, then the target's committed roster stops listing vu: check 8 names that roster.
     ok(keel(p, &["mr", "confirm", "wu", "--as", "vu"]));
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
     // vu listed, but with a different key: the signature is not vu's.
     let other = TempDir::new().unwrap();
-    ok(run("ssh-keygen", other.path(), &["-q", "-t", "ed25519", "-N", "", "-f", "o"]));
-    let pubkey = std::fs::read_to_string(other.path().join("o.pub")).unwrap();
-    std::fs::write(p.join(".mr-allowed"), format!("key: vu {pubkey}")).unwrap();
+    let (_, pubkey) = keygen(other.path(), "o");
+    land_roster(p, &format!("key: vu {pubkey}\n"));
     assert_red8(p, "does not verify");
-    std::fs::write(p.join(".mr-allowed"), "username: someone-else\n").unwrap();
+    assert_red8(p, "epic/e:.keel/mr-allowed");
+    land_roster(p, "username: someone-else\n");
     assert_red8(p, "does not list");
     // Re-listed as an identity tier: listed is all that tier proves, so it is green again.
-    std::fs::write(p.join(".mr-allowed"), "username: vu\n").unwrap();
+    land_roster(p, "username: vu\n");
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
-    // A tracked roster is refused, and the fix says to delete it and rebuild, not merely untrack it.
-    git(p, &["add", "-f", ".mr-allowed"]);
-    assert_red8(p, "rm .mr-allowed");
-    assert_red8(p, "rebuild your own roster from scratch with keel mr setup");
 }
 
 #[test]
 fn a_branch_cannot_weaken_the_policy_that_judges_its_own_merge() {
     let (d, _k) = fixture();
     let p = d.path();
-    // vu holds a key, and is also listed as a plain username.
-    let roster = std::fs::read_to_string(p.join(".mr-allowed")).unwrap();
-    std::fs::write(p.join(".mr-allowed"), format!("{roster}username: vu\n")).unwrap();
+    // vu holds a key, and the target also lists vu as a plain username.
+    let roster = std::fs::read_to_string(p.join(".keel/mr-allowed")).unwrap();
+    land_roster(p, &format!("{roster}username: vu\n"));
     // The WU drops `key` from the accepted tiers, so its own working tree lets vu sign off unsigned.
     let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
     write(p, ".keel/config.toml", &format!("{cfg}[mr]\ntiers = [\"username\"]\n"));
@@ -490,7 +531,7 @@ fn a_forged_report_hash_is_red_under_optional() {
     put_note(p, "HEAD", &forged);
     assert_red8(p, "does not verify");
     // An identity-tier roster takes the signature out of play: the re-hash alone catches it.
-    std::fs::write(p.join(".mr-allowed"), "username: vu\n").unwrap();
+    land_roster(p, "username: vu\n");
     assert_red8(p, "differs from the bytes");
 }
 
@@ -528,4 +569,237 @@ fn the_epic_report_is_named_or_committed_never_searched_for() {
     notes_with(p, &["test", "doc", "cr"], r#"{"e2e":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
     ok(keel(p, &["mr", "confirm", "epic"]));
     assert_eq!(mr_note(p, "HEAD").unwrap()["report"], "docs/e-result.html");
+}
+
+/// E-ROUTER3.W4 (R14 as filed): a session rewrites its checkout's `.mr-allowed`, the working
+/// `.keel/mr-allowed` and `[check] test`, then runs `keel check` to sign as the owner. The target's
+/// committed roster judges: nothing is signed, and a hand-written note is red naming that roster.
+#[test]
+fn a_session_that_rewrites_its_checkouts_roster_and_check_command_cannot_sign_as_the_owner() {
+    let (d, k) = fixture();
+    let p = d.path();
+    let owner = std::fs::read_to_string(p.join(".keel/mr-allowed")).unwrap();
+    git(p, &["switch", "-q", "epic/e"]);
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    write(p, ".keel/config.toml", &format!("{cfg}[mr]\ntiers = [\"key\"]\n"));
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-q", "--no-verify", "-m", "key-only policy"]);
+    git(p, &["switch", "-q", "wu/e/a"]);
+    notes(p, &["test", "doc", "cr"]);
+
+    let w = TempDir::new().unwrap();
+    let (wkey, wpub) = keygen(w.path(), "worker");
+    std::fs::write(p.join(".mr-allowed"), format!("username: vu\nkey: vu {wpub}\n")).unwrap();
+    write(p, ".keel/mr-allowed", &format!("key: vu {wpub}\nkey: worker {wpub}\n"));
+    git(p, &["config", "keel.signingkey", &wkey]);
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    write(p, ".keel/config.toml", &cfg.replace("test = \"true\"", "test = \"keel mr confirm wu --as vu\""));
+    let o = keel(p, &["check"]);
+    assert!(!o.status.success() && text(&o).contains("epic/e:.keel/mr-allowed"), "{}", text(&o));
+    assert!(mr_note(p, "wu/e/a").is_none(), "a refused confirm writes nothing");
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "worker"]);
+    assert!(!o.status.success() && text(&o).contains("worker is not listed in epic/e:.keel/mr-allowed"), "{}", text(&o));
+    assert!(mr_note(p, "wu/e/a").is_none());
+
+    forge(p, "wu/e/a", "epic/e", "vu", "key", Some(&wkey));
+    assert_red8(p, "signature by vu does not verify");
+    assert_red8(p, "epic/e:.keel/mr-allowed");
+    forge(p, "wu/e/a", "epic/e", "worker", "key", Some(&wkey));
+    assert_red8(p, "whom epic/e:.keel/mr-allowed does not list");
+    forge(p, "wu/e/a", "epic/e", "vu", "username", None);
+    assert_red8(p, "carries no signature");
+
+    git(p, &["checkout", "--", "."]);
+    git(p, &["config", "keel.signingkey", k.path().join("id").to_str().unwrap()]);
+    assert_eq!(std::fs::read_to_string(p.join(".keel/mr-allowed")).unwrap(), owner);
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "vu"]));
+    git(p, &["switch", "-q", "epic/e"]);
+    ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"]));
+}
+
+/// A WU that commits its own signer is judged by the target's roster; the owner's confirm shows the
+/// added line and signs only with --roster-change; once merged, the new signer counts.
+#[test]
+fn a_roster_change_inside_a_branch_is_judged_by_the_target_and_needs_the_signers_ack() {
+    let (d, k) = fixture();
+    let p = d.path();
+    let owner_key = k.path().join("id").to_str().unwrap().to_string();
+    let (two_key, two_pub) = keygen(k.path(), "two");
+    let roster = std::fs::read_to_string(p.join(".keel/mr-allowed")).unwrap();
+    write(p, ".keel/mr-allowed", &format!("{roster}key: two {two_pub}\n"));
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "add a signer\n\nReviewed-By: key vu"]);
+    notes(p, &["test", "doc", "cr"]);
+
+    git(p, &["config", "keel.signingkey", &two_key]);
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "two", "--roster-change"]);
+    assert!(!o.status.success() && text(&o).contains("two is not listed in epic/e:.keel/mr-allowed"), "{}", text(&o));
+    forge(p, "wu/e/a", "epic/e", "two", "key", Some(&two_key));
+    assert_red8(p, "whom epic/e:.keel/mr-allowed does not list");
+
+    git(p, &["notes", "--ref=mr", "remove", "wu/e/a"]);
+    git(p, &["config", "keel.signingkey", &owner_key]);
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "vu"]);
+    refused(&o, &[&format!("+ key: two {two_pub}"), "--roster-change"]);
+    assert!(mr_note(p, "wu/e/a").is_none(), "a refused confirm writes nothing");
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "vu", "--roster-change"]));
+    git(p, &["switch", "-q", "epic/e"]);
+    ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"]));
+
+    git(p, &["switch", "-q", "-c", "wu/e/b"]);
+    write(p, "src/b.py", "def b():\n    return 2\n");
+    write(p, "tests/test_b.py", "def test_b():\n    pass\n");
+    write(p, "docs/work/b-result.html", RESULT);
+    commit(p, "wu b");
+    notes_with(p, &["test", "doc", "cr"], r#"{"integration":{"files":["tests/test_b.py"],"covers":"b works"}}"#);
+    git(p, &["config", "keel.signingkey", &two_key]);
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "two"]));
+    git(p, &["switch", "-q", "epic/e"]);
+    ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu b", "wu/e/b"]));
+}
+
+/// Bootstrap: a target with no committed roster is judged by the one the change carries, and keel
+/// says so; with none on either side nobody may sign. A leftover `.mr-allowed` changes nothing.
+#[test]
+fn a_target_without_a_roster_is_judged_by_the_one_the_change_carries_and_says_so() {
+    let (d, _k) = fixture();
+    let p = d.path();
+    let roster = std::fs::read_to_string(p.join(".keel/mr-allowed")).unwrap();
+    git(p, &["switch", "-q", "epic/e"]);
+    git(p, &["rm", "-q", ".keel/mr-allowed"]);
+    git(p, &["commit", "-q", "--no-verify", "-m", "no roster on the target"]);
+    std::fs::write(p.join(".mr-allowed"), "username: ghost\nusername: vu\n").unwrap();
+
+    git(p, &["switch", "-q", "-c", "wu/e/c"]);
+    write(p, "src/a.py", "def a():\n    return 1\n");
+    write(p, "tests/test_a.py", "def test_a():\n    pass\n");
+    write(p, "docs/work/a-result.html", RESULT);
+    commit(p, "wu c, no roster");
+    notes(p, &["test", "doc", "cr"]);
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "vu"]);
+    refused(&o, &["nobody is listed", "keel mr setup --as <identity>", "a local .mr-allowed is no longer read"]);
+    forge(p, "wu/e/c", "epic/e", "vu", "username", None);
+    assert_red8_on(p, "wu/e/c", "nobody is listed");
+
+    write(p, ".keel/mr-allowed", &roster);
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-q", "--no-verify", "-m", "wu c carries the roster"]);
+    notes(p, &["test", "doc", "cr"]);
+    let bootstrap = "epic/e commits no .keel/mr-allowed - bootstrap";
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "vu"]);
+    refused(&o, &[bootstrap, "+ key: vu", "--roster-change"]);
+    let o = ok(keel(p, &["mr", "confirm", "wu", "--as", "vu", "--roster-change"]));
+    assert!(text(&o).contains(bootstrap), "{}", text(&o));
+    git(p, &["switch", "-q", "epic/e"]);
+    let o = ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu c", "wu/e/c"]));
+    assert!(text(&o).contains("HEAD commits no .keel/mr-allowed - bootstrap"), "{}", text(&o));
+}
+
+/// The commit level: HEAD's committed roster judges a rule-bearing commit, so a commit cannot name
+/// itself into the roster it edits; only with no roster at HEAD does the staged one count.
+#[test]
+fn the_commit_hook_reads_the_roster_from_head_never_from_the_working_tree() {
+    let (d, _k) = fixture();
+    let p = d.path();
+    let roster = std::fs::read_to_string(p.join(".keel/mr-allowed")).unwrap();
+    write(p, ".keel/mr-allowed", &format!("{roster}username: ghost\n"));
+    write(p, "docs/rules.html", "<p>a rule</p>");
+    git(p, &["add", "docs/rules.html"]);
+    let o = run("git", p, &["commit", "-qm", "loosen a rule\n\nReviewed-By: username ghost"]);
+    assert!(!o.status.success() && text(&o).contains("docs/rules.html"), "a working-copy roster admits nobody: {}", text(&o));
+
+    git(p, &["reset", "-q"]);
+    git(p, &["add", ".keel/mr-allowed"]);
+    let o = run("git", p, &["commit", "-qm", "add ghost"]);
+    assert!(!o.status.success() && text(&o).contains(".keel/mr-allowed"), "the roster is rule-bearing whatever rule_bearing lists: {}", text(&o));
+    let o = run("git", p, &["commit", "-qm", "add ghost\n\nReviewed-By: username ghost"]);
+    assert!(!o.status.success(), "a staged roster edit is judged by HEAD's roster: {}", text(&o));
+    ok(run("git", p, &["commit", "-qm", "add ghost\n\nReviewed-By: key vu"]));
+
+    git(p, &["checkout", "-q", "--orphan", "fresh"]);
+    git(p, &["rm", "-q", "--cached", ".keel/mr-allowed"]);
+    write(p, ".keel/mr-allowed", "username: newbie\n");
+    git(p, &["add", "-A"]);
+    let o = run("git", p, &["commit", "-qm", "first\n\nReviewed-By: key vu"]);
+    assert!(!o.status.success(), "with no roster at HEAD the staged one judges, and it lists no vu: {}", text(&o));
+    let o = ok(run("git", p, &["commit", "-qm", "first\n\nReviewed-By: username newbie"]));
+    assert!(text(&o).contains("bootstrap"), "{}", text(&o));
+}
+
+/// pre-push re-judges each pushed merge by the roster its own first parent committed, so a merge
+/// forced in before its signer was listed stays red after the roster later lists them.
+#[test]
+fn pre_push_judges_each_merge_by_the_roster_of_its_own_first_parent() {
+    let (d, k) = fixture();
+    let p = d.path();
+    let remote = TempDir::new().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(p, &["remote", "add", "origin", remote.path().to_str().unwrap()]);
+    ok(run("git", p, &["push", "-q", "origin", "main", "epic/e"]));
+
+    let (two_key, two_pub) = keygen(k.path(), "two");
+    notes(p, &["test", "doc", "cr"]);
+    forge(p, "wu/e/a", "epic/e", "two", "key", Some(&two_key));
+    git(p, &["switch", "-q", "epic/e"]);
+    git(p, &["merge", "-q", "--no-ff", "--no-verify", "-m", "merge wu a, signed by a signer not yet listed", "wu/e/a"]);
+    let forced = git(p, &["rev-parse", "--short=10", "wu/e/a"]);
+
+    let roster = std::fs::read_to_string(p.join(".keel/mr-allowed")).unwrap();
+    write(p, ".keel/mr-allowed", &format!("{roster}key: two {two_pub}\n"));
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "add two\n\nReviewed-By: key vu"]);
+
+    git(p, &["switch", "-q", "-c", "wu/e/b"]);
+    write(p, "src/b.py", "def b():\n    return 2\n");
+    write(p, "tests/test_b.py", "def test_b():\n    pass\n");
+    write(p, "docs/work/b-result.html", RESULT);
+    commit(p, "wu b");
+    notes_with(p, &["test", "doc", "cr"], r#"{"integration":{"files":["tests/test_b.py"],"covers":"b works"}}"#);
+    git(p, &["config", "keel.signingkey", &two_key]);
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "two"]));
+    git(p, &["switch", "-q", "epic/e"]);
+    ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu b", "wu/e/b"]));
+    let signed = git(p, &["rev-parse", "--short=10", "wu/e/b"]);
+
+    let o = run("git", p, &["push", "origin", "epic/e"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("8·manual-review") && t.contains("two, whom"), "{t}");
+    assert!(t.contains(&format!("red on {forced}")) && !t.contains(&format!("red on {signed}")), "{t}");
+}
+
+/// setup writes the line into the tracked roster file and names the commit that lands it; it
+/// writes no local roster and no exclude entry.
+#[test]
+fn setup_writes_the_tracked_roster_and_touches_no_local_file() {
+    let (d, k) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    let p = d.path();
+    let (key, public) = keygen(k.path(), "id");
+    git(p, &["init", "-q", "-b", "main"]);
+    write(p, ".keel/config.toml", "code_paths = [\"src/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n[mr]\ntiers = [\"key\"]\n");
+    let exclude = std::fs::read_to_string(p.join(".git/info/exclude")).unwrap_or_default();
+
+    let o = keel(p, &["mr", "setup", "--as", "vu"]);
+    assert!(!o.status.success() && text(&o).contains("tier 'username' is not accepted"), "{}", text(&o));
+    let o = ok(keel(p, &["mr", "setup", "--as", "vu", "--key", &key]));
+    assert!(text(&o).contains("probe signature verified"), "{}", text(&o));
+    assert!(text(&o).contains("git add .keel/mr-allowed && keel mr commit"), "{}", text(&o));
+    assert_eq!(std::fs::read_to_string(p.join(".keel/mr-allowed")).unwrap(), format!("key: vu {public}\n"));
+    assert!(!p.join(".mr-allowed").exists());
+    assert_eq!(std::fs::read_to_string(p.join(".git/info/exclude")).unwrap_or_default(), exclude);
+    assert!(git(p, &["status", "--porcelain"]).contains(".keel/"), "the roster is a file git sees, to be committed");
+}
+
+/// W4 review round 1 blocker: a roster setup cannot read is refused, never rewritten as if empty.
+#[test]
+fn setup_refuses_an_unreadable_roster_and_leaves_its_signers_in_place() {
+    let d = TempDir::new().unwrap();
+    let p = d.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    write(p, ".keel/config.toml", "code_paths = [\"src/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n");
+    let bytes = b"username: owner\n\xff\n";
+    std::fs::write(p.join(".keel/mr-allowed"), bytes).unwrap();
+
+    let o = keel(p, &["mr", "setup", "--as", "vu"]);
+    assert!(!o.status.success() && text(&o).contains("cannot read .keel/mr-allowed"), "{}", text(&o));
+    assert_eq!(std::fs::read(p.join(".keel/mr-allowed")).unwrap(), bytes);
 }

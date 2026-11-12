@@ -689,6 +689,45 @@ fn committed_worker_policy_is_opus_at_medium_or_high_effort_with_a_haiku_watchdo
     assert_eq!(section, ["worker_model = \"opus\"", "worker_efforts = [\"medium\", \"high\"]", "worker_default_effort = \"medium\"", "watchdog_model = \"haiku\""]);
 }
 
+/// E-ROUTER3.W4 (R3, DEC-48): in a self-clone with keel's hooks a plain commit touching a router security file is refused naming it,
+/// while a trailer naming the committed roster's signer admits it.
+#[test]
+fn keels_router_security_files_are_rule_bearing() {
+    let d = TempDir::new().unwrap();
+    let c = d.path().join("c");
+    common::self_clone(root(), &c);
+    let roster = std::fs::read_to_string(c.join(".keel/mr-allowed")).unwrap();
+    let (tier, rest) = roster.lines().find_map(|l| l.split_once(':')).expect("a committed signer");
+    let owner = rest.split_whitespace().next().unwrap();
+
+    let keel = Path::new(env!("CARGO_BIN_EXE_keel"));
+    let path = format!("{}:{}", keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
+    let run = |a: &[&str]| {
+        hermetic(&mut common::cmd("git"))
+            .args(a)
+            .current_dir(&c)
+            .env("PATH", &path)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap()
+    };
+    assert!(common::cmd(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
+    assert!(run(&["checkout", "-q", "-b", "wu/x/gate"]).status.success());
+    for f in ["scripts/router-guard.jq", "scripts/router-worker.sh", "scripts/router-watch.sh", ".claude/agents/worker.md"] {
+        let body = std::fs::read_to_string(c.join(f)).unwrap();
+        std::fs::write(c.join(f), format!("{body}\n")).unwrap();
+        assert!(run(&["add", f]).status.success());
+        let o = run(&["commit", "-qm", "a plain change"]);
+        let t = String::from_utf8_lossy(&o.stderr);
+        assert!(!o.status.success() && t.contains(f), "{f}: {t}");
+        let o = run(&["commit", "-qm", &format!("a reviewed change\n\nReviewed-By: {} {owner}", tier.trim())]);
+        assert!(o.status.success(), "{f}: {}", String::from_utf8_lossy(&o.stderr));
+    }
+}
+
 const WORKER_GRANTS: [&str; 11] = [
     "cargo build",
     "cargo test",
@@ -1239,7 +1278,7 @@ fn wired_guard(checkout: &Path, tool: &str, input: serde_json::Value) -> Option<
 
 /// E-ROUTERFIX e2e (W5): one worker's life as the router drives it, in a scratch clone of Keel's own
 /// tree with the working tree's epic files laid over it and keel's hooks installed. A new worktree
-/// inherits the signer list (W3); every router call passes the settings-wired guard and each allowed
+/// is created through keel's post-checkout hook (W3); every router call passes the settings-wired guard and each allowed
 /// command runs exactly as judged; the worker starts in plan mode with the fixed grant (W1) under the
 /// name the subscription addresses (W2). E-ROUTER3.W10: the worker is a background session; a
 /// follow-up task is the router's message, `wait` and `send` are refused, and `stop` closes it.
@@ -1254,14 +1293,12 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     }
     let keel = Path::new(env!("CARGO_BIN_EXE_keel"));
     assert!(common::cmd(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
-    std::fs::write(c.join(".mr-allowed"), "username: owner\n").unwrap();
 
     // W3: the worktree the worker will run in is created through keel's post-checkout hook
     let wt = base.join("wt");
     let path = format!("{}:{}", keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
     let o = hermetic(&mut common::cmd("git")).args(["worktree", "add", "-q", "-b", "wu/x/e2e", wt.to_str().unwrap()]).current_dir(&c).env("PATH", &path).output().unwrap();
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    assert_eq!(std::fs::read_to_string(wt.join(".mr-allowed")).ok().as_deref(), Some("username: owner\n"), "worktree not seeded");
 
     let stub = base.join("claude");
     stub_claude(&stub);

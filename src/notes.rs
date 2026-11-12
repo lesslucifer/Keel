@@ -90,7 +90,7 @@ pub struct MrNote {
     pub id: Identity,
     pub level: String, // wu | epic
     pub signer: String,
-    /// Informational: authority is re-derived from .mr-allowed at check time.
+    /// Informational: authority is re-derived from the target's committed .keel/mr-allowed at check time.
     pub tier: String,
     /// The attested result report; absent when `[mr] report` asked for none and none was attested.
     #[serde(default, skip_serializing_if = "Option::is_none")]

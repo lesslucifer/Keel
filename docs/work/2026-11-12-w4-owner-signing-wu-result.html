@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af537279f34851f0dfb222b" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-ROUTER3.W4 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-ROUTER3.W4 · A worker can never sign as the owner; the router's security files are gated — result</h1>
+      <p>The signer roster is <code>.keel/mr-allowed</code> as committed on the branch a change lands on; no keel command reads a roster from disk. A sign-off whose range changes the roster needs <code>--roster-change</code>. Keel's own policy gates the router's four security paths once the owner lands it. By owner ruling 2026-11-12 Keel's sign-offs stay name-based: key-only is deferred, so R14's signing half stays open (DEC-48 item 4). The owner's steps are still to do.</p>
+      <div class="meta">Result · 2026-11-12 · Keel · plan <a href="2026-11-12-w4-owner-signing-wu-plan.html">2026-11-12-w4-owner-signing-wu-plan.html</a> (v1, owner go 2026-11-12 on every default) · DEC-47, DEC-48</div>
+    </div>
+  </header>
+  <main>
+<h2 id="outcome">Outcome</h2>
+<div data-item="outcome" data-c="outcome">
+  <p><b>Code and records delivered; owner steps pending.</b> Every reader of the roster does what the plan's reader table says:</p>
+  <ul>
+    <li>Check 8 at the merge hook reads <code>HEAD</code>'s roster. Run by hand, it reads the resolved target's. At pre-push it reads the merge's first parent's.</li>
+    <li><code>keel mr confirm</code> reads the target's roster, and so does its default signer.</li>
+    <li><code>keel mr commit</code> and the commit-msg hook read <code>HEAD</code>'s roster. With none at <code>HEAD</code>, they read the staged one.</li>
+    <li>On a target with no roster, the change's own roster judges and keel prints one bootstrap line. With none on either side the refusal names the <code>keel mr setup</code> fix.</li>
+  </ul>
+  <p>The disk read and the tracked-refusal of <code>.mr-allowed</code> are deleted. In <code>src/</code> the name survives only in that fix text. <code>.keel/mr-allowed</code> is rule-bearing whatever <code>rule_bearing</code> lists. <code>keel mr setup</code> writes the working <code>.keel/mr-allowed</code>, touches no <code>info/exclude</code> and prints the command that lands it. <code>keel init</code>'s next steps put <code>keel mr setup</code> before the one-time first commit.</p>
+  <p><b>Done by the owner:</b> owner commit A (<code>4e30e61</code>: Keel's roster with vuluu by name, the policy, the four new rule-bearing paths, <code>.gitworktreecopy</code>, the tests that pin them) and owner commit B (<code>0dd4bfa</code>: the rule-bearing skill, template and install text), each under the W4 build.</p>
+  <p><b>Not done yet:</b> the sign-off with <code>--roster-change</code>, then the merge. The <b>live presence check</b> is deferred with key-only (deviation 6).</p>
+  <p><b>Review round 1</b> (FAIL, 1 blocker, 1 important, on <code>0dd4bfa</code>):</p>
+  <ul>
+    <li>Blocker, fixed in <code>ae7979c</code>: <code>keel mr setup</code> read an unreadable <code>.keel/mr-allowed</code> (not UTF-8, no permission) as empty and rewrote it with only the new line, dropping every signer. It now refuses with the read error; regression test <code>setup_refuses_an_unreadable_roster_and_leaves_its_signers_in_place</code>, written first and seen red.</li>
+    <li>Important, fixed in <code>f92ef3d</code>: <code>roster_change</code> had its own rule for what a roster line is. Both now read <code>roster_lines</code>, pinned by <code>a_roster_change_counts_exactly_the_lines_the_parser_reads</code>.</li>
+    <li>Nits waived: <code>keel init</code>'s next steps name <code>.keel/mr-allowed</code> as a literal (a <code>const</code> cannot splice <code>mr::ROSTER</code>, and the path is DEC-47's fixed contract); <code>roster_text</code> maps every <code>git show</code> error to "no roster" (it fails open only in an offline partial clone missing the target's roster blob, and the bootstrap line still prints).</li>
+    <li>Refuted: check 8, confirm and pre-push filtering the committed roster by the working tree's <code>[mr] tiers</code> (predates the diff; the merge hook reads the committed policy; DEC-24); <code>--roster-change</code> ignoring a tiers edit (outside the plan; <code>.keel/</code> is rule-bearing); deleting the roster on an epic so later WU merges bootstrap (DEC-48 items 1, 2 and 5; the epic sign-off is judged by main's roster).</li>
+  </ul>
+</div>
+
+<h2 id="deviations">Deviations</h2>
+<div data-item="deviations" data-c="deviations">
+  <table>
+    <thead><tr><th>#</th><th>Deviation</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>The owner installs the W4 build <b>before</b> owner commit A, not only after the review's PASS (open point 6). The PASS install stays as a second install of the reviewed tip.</td><td>Verified in a scratch clone, under the installed (old) binary. Its commit-msg hook reads the disk <code>.mr-allowed</code> (<code>username: vuluu</code>) under the working tree's new <code>tiers = ["key"]</code>, so it refuses A as "vuluu is not listed". It refuses B the same way. The same happens when the new code makes the trailer (<code>cargo run -- mr commit</code>), because the hook runs the old binary. A workaround exists: an old <code>keel mr setup --key</code> adds a key line to <code>.mr-allowed</code>. It keeps the disk roster this WU removes, so it is not proposed.</td></tr>
+      <tr><td>2</td><td>Tests and code landed in one commit (<code>48a4c83</code>), not as a red test commit followed by several small code commits.</td><td>Every new test needs the new fixture, which commits its roster. On the old code that fixture fails at once, so a separate red commit would show only that. Nobody ran the new tests against the old binary.</td></tr>
+      <tr><td>3</td><td>The new backlog row is R25.</td><td>R1–R24 were taken.</td></tr>
+      <tr><td>4</td><td>On a rule-bearing commit with no roster at <code>HEAD</code>, the bootstrap line prints twice: once from <code>keel mr commit</code>, once from the hook. Sign-off refusals name the target as given (a branch, <code>HEAD</code> or a full sha).</td><td>Each reader prints its own line. Deduplicating them would need state shared across processes.</td></tr>
+      <tr><td>5</td><td><code>docs/install.html</code> has no <code>data-htmldoc-id</code>, so it has no snapshot. <code>docs/decisions/router.html</code> and <code>docs/backlog/e-router-v2.html</code> have none either: the server returns 404 for their ids, as it did in W8 and W9.</td><td>Known server state.</td></tr>
+      <tr><td>6</td><td>Keel's <code>[mr] tiers</code> stay <code>["username", "key"]</code> and the owner is listed by name; the plan's key-only flip and the live presence check are not done. The test that pinned key-only became <code>keels_router_security_files_are_rule_bearing</code>.</td><td>Owner ruling 2026-11-12: sign with the name for now. R14's signing half stays open (DEC-48 item 4, backlog R14).</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+  <h3>Tests</h3>
+  <ul>
+    <li>Unit, <code>src/mr.rs</code>:
+      <ul>
+        <li><code>a_roster_reads_the_same_from_any_tree_and_a_bad_line_is_an_error</code> (with a seeded generator)</li>
+        <li><code>the_roster_path_is_rule_bearing_whatever_the_policy_lists</code></li>
+        <li><code>a_roster_change_lists_every_added_and_removed_line_once</code> (with a seeded generator)</li>
+      </ul>
+    </li>
+    <li>Unit, <code>src/init.rs</code>: <code>the_next_steps_register_the_signer_before_the_one_time_first_commit</code>.</li>
+    <li>Integration, <code>tests/mr.rs</code>:
+      <ul>
+        <li><code>a_session_that_rewrites_its_checkouts_roster_and_check_command_cannot_sign_as_the_owner</code> (the R14 replay)</li>
+        <li><code>a_roster_change_inside_a_branch_is_judged_by_the_target_and_needs_the_signers_ack</code></li>
+        <li><code>a_target_without_a_roster_is_judged_by_the_one_the_change_carries_and_says_so</code></li>
+        <li><code>the_commit_hook_reads_the_roster_from_head_never_from_the_working_tree</code></li>
+        <li><code>pre_push_judges_each_merge_by_the_roster_of_its_own_first_parent</code></li>
+        <li><code>setup_writes_the_tracked_roster_and_touches_no_local_file</code></li>
+      </ul>
+      The fixture commits its roster. Three existing tests now change the target's committed roster instead of the disk file: <code>confirm_refuses_before_cr_and_for_an_unlisted_signer</code>, <code>a_branch_cannot_weaken_the_policy_that_judges_its_own_merge</code> and <code>a_forged_report_hash_is_red_under_optional</code>.
+    </li>
+    <li>Integration, Keel's own tree. These tests are in owner commit A because they pass only once Keel commits its roster and policy:
+      <ul>
+        <li><code>tests/router.rs</code> <code>keels_router_security_files_are_rule_bearing</code></li>
+        <li><code>tests/init.rs</code> <code>self_hosting_new_worktree_reads_the_committed_roster_and_copies_no_local_one</code>, which replaces <code>self_hosting_new_worktree_inherits_the_signer_list</code></li>
+        <li>the epic e2e, without its <code>.mr-allowed</code> seeding lines</li>
+      </ul>
+    </li>
+    <li>On <code>2593501</code>, <code>cargo clippy --all-targets -- -D warnings</code> is clean and the full <code>cargo test</code> passes.</li>
+  </ul>
+  <h3>Bootstrap order, verified in a scratch clone</h3>
+  <p>Clone of this repository with Keel's hooks, a throwaway passphrase-less key standing in for the owner's, the A and B edits laid over the W4 tip, and <code>.mr-allowed</code> = <code>username: vuluu</code>.</p>
+  <ul>
+    <li>Old binary, the ed2d927 build:
+      <ul>
+        <li><code>mr setup</code> by the new code: written.</li>
+        <li>A by <code>keel mr commit</code>: refused, "vuluu is not listed".</li>
+        <li>A made by the new code under the old hook: refused.</li>
+      </ul>
+    </li>
+    <li>New binary first:
+      <ul>
+        <li><code>keel mr setup --key</code>: probe verified.</li>
+        <li>A: bootstrap line, then committed with <code>Reviewed-By: key vuluu</code>.</li>
+        <li>B: committed.</li>
+        <li>A plain commit touching <code>scripts/router-guard.jq</code>: refused, naming it.</li>
+        <li><code>keel mr confirm wu</code>: prints <code>+ key: vuluu …</code> and refuses. With <code>--roster-change</code> it signs.</li>
+        <li><code>git merge --no-ff</code> into <code>epic/E-ROUTER3</code>: bootstrap line, <code>verify-dod wu green</code>.</li>
+        <li><code>git push</code> to a scratch bare remote: <code>keel check</code> green, including the A tests (router 50/50, init 11/11). The pre-push range re-judged the merge by its first parent's (bootstrap) roster and passed.</li>
+      </ul>
+    </li>
+  </ul>
+  <h3>Commits</h3>
+  <ul>
+    <li>Code: <code>48a4c83</code> (the roster reader, check 8, confirm and its acknowledgement, commit, setup, tests) and <code>9038cbe</code> (<code>keel init</code>'s next steps).</li>
+    <li>Records: <code>2593501</code> (DEC-47, DEC-48, the index, UC-MR-1 and UC-MR-2, backlog, epic plan).</li>
+    <li>Owner commits A and B: staged, not yet made.</li>
+  </ul>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<div data-item="distillation" data-c="distillation">
+  <ul>
+    <li>Decisions: <a href="../decisions/workflow-gates.html#dec-47">DEC-47</a> records the committed roster, the judging ref per reader, the bootstrap and <code>--roster-change</code>. It amends DEC-20. <a href="../decisions/router.html#dec-48">DEC-48</a> records what is closed and what remains (T1–T8 of the plan), the owner's presence-key duty and R3's paths. It amends DEC-33 and DEC-46. The index names DEC-49 as the next free id.</li>
+    <li>Use cases: UC-MR-1 and UC-MR-2 in <a href="../use-cases/workflow.html#uc-mr">use-cases/workflow.html</a>.</li>
+    <li>Backlog: in <a href="../backlog/e-router-v2.html">e-router-v2</a>, R14 and R3 are struck as done, R4 is marked accepted (DEC-48), and R25 is new (the epic gate re-judges inner sign-offs).</li>
+    <li>Rule-bearing text (owner commit B): the keel-workflow §4 row 8 and §6, the keel-router skill and its references, project-router, the template comment and the install steps.</li>
+  </ul>
+</div>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<div data-item="follow-ups" data-c="follow-ups">
+  <ul>
+    <li><b>Owner steps, in this order</b>, all from this worktree:
+      <ol>
+        <li><code>cargo install --path . --locked</code>.</li>
+        <li><code>keel mr setup --as vuluu --key &lt;private key path&gt;</code>, with an <code>sk-</code> key or a passphrase key that is not in ssh-agent.</li>
+        <li>Owner commit A, then owner commit B.</li>
+        <li>The review.</li>
+        <li><code>cargo install --path . --locked</code> again, on the reviewed tip.</li>
+        <li><code>keel mr confirm wu … --roster-change</code>. This is also the live presence check.</li>
+        <li><code>git switch epic/E-ROUTER3</code>, then <code>git merge --no-ff</code>, then the push.</li>
+      </ol>
+    </li>
+    <li><b>Live presence check, not done.</b> The owner's confirm must wait for a touch or a passphrase. The same signing with no terminal must fail and write no note. No hermetic test can show this.</li>
+    <li><b>Side effect of the install.</b> From the first install on, every checkout's hooks run the new binary. A sign-off, a gated merge or a rule-bearing commit is refused ("nobody is listed") on any branch whose target commits no roster and whose change carries none, <code>epic/E-CRCAP</code> among them. This lasts until <code>main</code> carries Keel's roster (the epic's merge) and that branch merges <code>main</code>. The existing <code>.mr-allowed</code> files are read by nothing and can be deleted.</li>
+    <li>The epic's own sign-off needs <code>--roster-change</code>: <code>main..epic</code> adds the roster.</li>
+    <li>W7 replays the forged sign-off through the launcher.</li>
+  </ul>
+</div>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
