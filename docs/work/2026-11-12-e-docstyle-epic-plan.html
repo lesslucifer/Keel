@@ -8,80 +8,54 @@
 <body>
   <header class="doc-hero">
     <div class="inner">
-      <h1>E-DOCSTYLE · Agents write docs that start with the problem and what changes for you</h1>
-      <p>Epic plan for the owner's requirement of 2026-11-12. This plan is written the way it asks every doc to be written, so it is also the first example.</p>
-      <div class="meta">T3 · epic plan · 2026-11-12 · Keel · branch <code>epic/E-DOCSTYLE</code> at <code>4ed65ed</code>, off <code>main</code> <code>1f303dc</code> · plan only; no WU starts before your go, and not before main (<code>298303d</code>) is merged into the epic branch</div>
+      <h1>E-DOCSTYLE · Agents write short, plain docs</h1>
+      <p>Epic plan for the owner's requirement of 2026-11-12. This plan follows its own rules.</p>
+      <div class="meta">T3 · epic plan · 2026-11-12 · Keel · branch <code>epic/E-DOCSTYLE</code>, main merged in at <code>2f19e39</code> · revised for the owner's comment of 2026-11-12 · plan only; no WU starts before your go</div>
     </div>
   </header>
   <main>
 
 <h2 id="problem">The problem</h2>
-<p data-item="intent" data-c="intent-body">You found the first E-CRCAP epic plan hard to understand. Its rewrite, with the same facts, was much better. Today nothing tells an agent to write the second way. The plan skill lists the sections a plan must contain, and agents write them in that order: commands, ids and check numbers start in the first paragraph. In the first E-CRCAP plan, the part above the work list held 48 code snippets and about 40 internal ids. In the rewrite it held 5 and about 4. This epic writes down what made the rewrite better, as a skill every agent loads before it writes a doc you read. The tool then checks the two parts a tool can check.</p>
+<p data-item="intent" data-c="intent-body">Agents write docs that are long, dense and hard to read. Nothing tells them how to write. This epic gives them short writing rules, and makes the tool check what it can.</p>
 
 <h2 id="for-the-owner">What changes for you</h2>
 <table data-c="owner-changes">
-  <thead><tr><th>Situation</th><th>Today</th><th>After this epic</th></tr></thead>
+  <thead><tr><th>You read</th><th>Today</th><th>After</th></tr></thead>
   <tbody>
-    <tr><td>You open an epic plan</td><td>It follows the checklist's order. Commands, ids and check numbers start in the first paragraph</td><td>It starts with the problem and a "what changes for you" table, in plain words. Commands and ids are in a Details section at the end</td></tr>
-    <tr><td>You read the summary of one WU</td><td>One dense paragraph with labels such as "Contract:" and "Rule-bearing:"</td><td>Two or three plain sentences ("In short"), then the mechanics as a list, one fact per line</td></tr>
-    <tr><td>You answer the open points</td><td>Short topic names, options as (a) and (b), the recommendation in the last column</td><td>Real questions you can answer, the recommendation first, then the options and their costs</td></tr>
-    <tr><td>A plan has a diagram</td><td>One unquoted label with a "|" in it breaks the whole diagram</td><td>Labels are quoted and in plain words. The doc check refuses an unquoted label</td></tr>
-    <tr><td>An agent marks an epic plan ready without saying what changes for you</td><td>Accepted</td><td>Refused by the doc check until the section is there</td></tr>
-    <tr><td>An agent writes a decision record, a use case or a backlog row</td><td>No writing rules, only where the doc goes</td><td>The same rules: the point first, plain words, terms defined, one idea per row</td></tr>
-    <tr><td>A new project runs <code>keel init</code></td><td>It gets no writing rules</td><td>It gets the writing skill, with its example, and a pointer to it in its AGENTS.md</td></tr>
+    <tr><td>A plan</td><td>Long. Code and ids from line one</td><td>Short. Problem and changes first, in plain words</td></tr>
+    <tr><td>A WU</td><td>One dense paragraph</td><td>Two or three sentences, then a list</td></tr>
+    <tr><td>Open points</td><td>Topics and lettered options</td><td>Questions, answer first</td></tr>
+    <tr><td>Any other doc</td><td>No writing rules</td><td>The same rules</td></tr>
   </tbody>
 </table>
 
-<h2 id="rules">The rules the skill will teach</h2>
-<div data-c="rules-list">
-<p>These come from comparing the two versions line by line (the evidence is under Details). Your comments here change what the skill says.</p>
-<ol>
-  <li><b>A doc has two readers.</b> You read the top. The agent that does the work reads the details. Write the top for you and the details for the agent.</li>
-  <li><b>Start with the problem.</b> Say what goes wrong today, with a real case, then in one sentence what the work changes. Do not open with the solution or the mechanism.</li>
-  <li><b>Say what changes for you.</b> A table with one row per situation you meet: today, and after.</li>
-  <li><b>Draw the flow once, in plain words.</b> Every diagram label in quotes, with no code in it.</li>
-  <li><b>Use few terms, and define each one.</b> A short "Terms" table, or a definition where the term first appears. Above the work list, say what an id or check means ("fails only on the missing sign-off") instead of naming it ("red on 8·manual-review").</li>
-  <li><b>One idea per paragraph, row or list item.</b> Short sentences help, but the evidence shows they were not what made the difference.</li>
-  <li><b>Each piece of work: "In short", then mechanics.</b> Two or three plain sentences, then a list with one fact per item.</li>
-  <li><b>Open points are questions.</b> Each one is a question you can answer, with the recommendation first and the options after. Say once that the recommendation is the default.</li>
-  <li><b>Reference material goes last, under "Details".</b> Acceptance criteria, contracts, scope limits, research, design choices, tests, and where the knowledge goes. The checklist tags go wherever the reader needs them. The order of the tags is not the order of the doc.</li>
-  <li><b>History goes last too.</b> What a doc replaces, and how it was researched, come after everything else.</li>
-  <li><b>Check before marking it ready.</b> Read the first screen as the owner. Can you say the problem, what changes for you, and what you must decide, without reading any code?</li>
+<h2 id="rules">The rules</h2>
+<ol data-c="rules-list">
+  <li><b>Short.</b> Cut every word you can. A plan's top fits on one screen.</li>
+  <li><b>Direct.</b> Short sentences. One idea each. No filler.</li>
+  <li><b>Plain words.</b> No code or ids at the top. Define each term once.</li>
+  <li><b>Problem first.</b> Then what changes for the reader, then the work.</li>
+  <li><b>Questions, answer first.</b> Each open point is a question with its recommendation.</li>
+  <li><b>Details last.</b> Mechanics, tests and history go at the end.</li>
+  <li><b>Diagram labels</b> in quotes and plain words.</li>
+  <li><b>Check before "ready".</b> Can the owner say the problem, the change and the decision from the first screen?</li>
 </ol>
-</div>
 
-<h2 id="flow">How it works after this epic</h2>
-<div class="diagram" data-c="flow-diagram">
-<pre class="mermaid">
-flowchart LR
-  A["An agent starts a doc"] --> B["AGENTS.md points it to the writing skill"]
-  B --> C["It writes the problem, what changes, the work, the questions, then the details"]
-  C --> D["The doc check tests the diagram labels and the what-changes section"]
-  D --> E["You read the top and comment"]
-</pre>
-<div class="caption">The skill carries the rules. The doc check carries only what a tool can decide. Whether the doc is easy to read stays your judgment, in the comment round.</div>
-</div>
-
-<h2 id="terms">Terms used below</h2>
+<h2 id="terms">Terms</h2>
 <table data-c="terms">
-  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
   <tbody>
-    <tr><td>WU (working unit)</td><td>One slice of an epic, on its own branch, merged into the epic after its own checks and your sign-off</td></tr>
-    <tr><td>Skill</td><td>A text file of instructions an agent loads before a task. Keel ships its skills to every project that runs <code>keel init</code></td></tr>
-    <tr><td>Governed doc</td><td>One of the four plan and result docs (epic plan, WU plan, WU result, epic result). The doc check knows which sections each must have</td></tr>
-    <tr><td>Doc check</td><td><code>keel verify-doc</code>. It runs on every doc an agent writes, and at the end of every turn. A red doc stops the turn</td></tr>
-    <tr><td>Knowledge-base doc</td><td>The lasting docs: decisions, use cases and the backlog (tier T2), and the few shape docs above them (T1)</td></tr>
-    <tr><td>Rule-bearing file</td><td>A file that lands only with your own commit (<code>keel mr commit</code>): skills, AGENTS.md, templates</td></tr>
+    <tr><td>WU</td><td>One slice of the epic, merged on its own</td></tr>
+    <tr><td>Skill</td><td>An instruction file agents load. <code>keel init</code> ships it</td></tr>
+    <tr><td>Doc check</td><td><code>keel verify-doc</code>. A red doc stops the agent's turn</td></tr>
   </tbody>
 </table>
 
-<h2 id="wus">The work, in two WUs</h2>
+<h2 id="wus">The work</h2>
 <div class="diagram" data-c="wu-deps-diagram">
 <pre class="mermaid">
 flowchart LR
-  W1["W1 · the writing skill"] --> W2["W2 · the doc check tests what it can"]
+  W1["W1 · the writing skill"] --> W2["W2 · the doc check"]
 </pre>
-<div class="caption">W1 goes first: W2 adds to the same skill text, and W2's test uses W1's example. If you choose "rules only" in open point 4, W2 is dropped and W1 carries the end-to-end test.</div>
 </div>
 
 <div data-item="wu-summaries" data-c="wu-summaries">
@@ -89,176 +63,101 @@ flowchart LR
 <div data-wu="E-DOCSTYLE.W1" data-c="wu-w1">
   <h3 id="w1">W1 · The writing skill</h3>
   <div data-item="wu-summary">
-    <p><b>In short:</b> a new skill holds the rules above and one short worked example. AGENTS.md, the plan skill and the distill skill tell every agent to load it before it writes a doc you read. <code>keel init</code> ships it to every project.</p>
-    <p><b>Mechanics:</b></p>
+    <p><b>In short:</b> a new skill holds the rules and one short example. Every agent is told to load it before writing a doc.</p>
     <ul>
-      <li>New skill <code>skills/keel-write/</code> (working name; the WU plan fixes it): <code>SKILL.md</code> with the rules, a short "before" excerpt from the first E-CRCAP plan, and the self-check; <code>references/example.html</code>, a short ready epic plan in the style, condensed from the E-CRCAP rewrite. The example has to ship inside the skill: an adopting project cannot read Keel's git history.</li>
-      <li>The skill covers wording and order only. Markup, the page skeleton and the comment id stay with the htmldoc skill.</li>
-      <li><code>src/init.rs</code>: the two new files join the embedded skill list, so <code>keel init</code> writes them like every other Keel skill.</li>
-      <li>keel-plan: §1's worked examples (the E-SEED plans, archived and written in the old style) point at the new example instead; §3 says the order of the tags is not the order of the doc; §5 step 3 says to write per the new skill.</li>
-      <li>keel-distill §1: "Docs target an AI reader" becomes the two-reader rule, and T1/T2 writing points at the new skill.</li>
-      <li>AGENTS.md and <code>templates/AGENTS.md</code>: the AI-first line names the two readers; the Documentation section gets one sentence pointing at the skill (open point 6).</li>
-      <li>Rule-bearing: <code>skills/</code>, the <code>.claude/skills/</code> mirror, AGENTS.md and <code>templates/AGENTS.md</code>, in one owner <code>keel mr commit</code> that the worker stages and prints.</li>
-      <li>Not reviewed by any gate: all of that text, and this WU's plan and result. The code review covers <code>src/init.rs</code> and <code>tests/</code>.</li>
+      <li>New <code>skills/keel-write/</code> (working name): <code>SKILL.md</code> and <code>references/example.html</code>, embedded in <code>src/init.rs</code>.</li>
+      <li>Pointers: keel-plan §1, §3, §5; keel-distill §1; AGENTS.md and <code>templates/AGENTS.md</code> (open point 5).</li>
+      <li>Rule-bearing text: one owner <code>keel mr commit</code>. No gate reviews it.</li>
     </ul>
   </div>
-  <p data-item="wu-maps-to">The owner's requirement of 2026-11-12 (<a href="2026-11-12-e-docstyle-requirement.html">requirement doc</a>) · UC-INIT-1 unchanged (it already says "every embedded skill file") · one new decision record (the style rule, its two readers, and where it lives).</p>
-  <p data-item="wu-expected"><b>Integration tests:</b> the existing embedding test in <code>tests/init.rs</code> fails until the new files are embedded, then passes: <code>keel init</code> in a scratch repo writes the skill byte-identical to <code>skills/</code>, with a valid name and description. A new test runs <code>keel verify-doc</code> on the shipped example and gets green. <b>Unit tests:</b> waived for the two list entries in <code>src/init.rs</code>: they are data, and the embedding test checks each one.</p>
-  <p data-item="wu-deps">none (main must be merged into the epic branch first)</p>
+  <p data-item="wu-maps-to">Owner's requirement and comment, 2026-11-12 (<a href="2026-11-12-e-docstyle-requirement.html">requirement</a>) · UC-INIT-1 unchanged · one new decision record.</p>
+  <p data-item="wu-expected"><b>Integration:</b> the embedding test in <code>tests/init.rs</code> covers the new files; a new test finds the example green under the doc check. <b>Unit:</b> waived; the <code>init.rs</code> entries are data.</p>
+  <p data-item="wu-deps">none</p>
 </div>
 
 <div data-wu="E-DOCSTYLE.W2" data-c="wu-w2">
-  <h3 id="w2">W2 · The doc check tests what it can</h3>
+  <h3 id="w2">W2 · The doc check</h3>
   <div data-item="wu-summary">
-    <p><b>In short:</b> the doc check refuses a diagram label that is not in quotes, in any finished doc. It also refuses an epic plan that does not say what changes for you. Everything else in the rules stays judgment, yours and the author's.</p>
-    <p><b>Mechanics:</b></p>
+    <p><b>In short:</b> the doc check refuses an epic plan whose top is too long, one with no "what changes for you" section, and any unquoted diagram label.</p>
     <ul>
-      <li><b>Diagram labels.</b> In every non-draft doc, governed or not (as links are checked today), each <code>&lt;pre class="mermaid"&gt;</code> flowchart has every node label and every edge label in double quotes. The error names the label and its line. Other Mermaid diagram kinds are skipped, and the skill says so.</li>
-      <li><b>What changes for you.</b> The epic plan checklist gains one item, <code>owner-changes</code> (working name). An epic that changes nothing for the owner says so in that section, as an epic with no use cases already does.</li>
-      <li>keel-plan §3 and §4 list the new item and the label check; the writing skill's rules 3 and 4 point at them.</li>
-      <li>A ready epic plan written before this lands goes red when its branch merges main, until it adds the one tag (open point 7).</li>
-      <li>Rule-bearing: the keel-plan and writing-skill text and their mirrors, in one owner <code>keel mr commit</code>.</li>
-      <li>Not reviewed by any gate: that text and the WU docs. The code review covers <code>src/verify_doc.rs</code> and <code>tests/</code>.</li>
+      <li>Length: words above the first WU in an epic plan, capped (open point 3).</li>
+      <li>New epic-plan item <code>owner-changes</code> (working name).</li>
+      <li>Mermaid flowchart labels must be quoted, in every finished doc.</li>
+      <li>Code in <code>src/verify_doc.rs</code>; keel-plan text in one owner <code>keel mr commit</code>.</li>
     </ul>
   </div>
-  <p data-item="wu-maps-to">The owner's requirement of 2026-11-12 · UC-DOC-1 amended (one new epic-plan item) · UC-DOC-4 new (diagram labels are quoted) · the decision record of W1, extended with what the check covers and why sentence length and order are not checked.</p>
-  <p data-item="wu-expected"><b>Integration tests</b> (<code>tests/verify_doc.rs</code>, scratch repo): an unquoted node label is red and named with its line; an unquoted label with a "|" is red; an unquoted edge label is red; quoted labels are green; a non-flowchart diagram is not checked; a draft stays silent; an ungoverned finished doc with an unquoted label is red; an epic plan without the new item is red with "missing item", and green with it; the writing skill's example stays green. <b>Unit tests:</b> the label scanner over small fixtures. W2 also adds the epic's end-to-end test (below).</p>
-  <p data-item="wu-deps">W1 (same skill text; the test uses W1's example)</p>
+  <p data-item="wu-maps-to">Owner's requirement and comment, 2026-11-12 · UC-DOC-1 amended · UC-DOC-4 new.</p>
+  <p data-item="wu-expected"><b>Integration</b> (<code>tests/verify_doc.rs</code>): each check red on a bad doc and green on a good one; drafts silent; the skill's example green. <b>Unit:</b> the label scanner and the word count. W2 adds the epic test.</p>
+  <p data-item="wu-deps">W1</p>
 </div>
 
 </div>
 
-<h2 id="open-questions-h">Open points for you</h2>
-<p>Each point has a recommendation, which is also the default if you do not answer. No work starts before your go.</p>
+<h2 id="open-questions-h">Open points</h2>
+<p>The recommendation is the default if you do not answer.</p>
 <table data-item="open-questions" data-c="open-points-table">
-  <thead><tr><th>#</th><th>Question</th><th>Recommendation (= default)</th><th>Options and costs</th></tr></thead>
+  <thead><tr><th>#</th><th>Question</th><th>Recommendation</th><th>Why</th></tr></thead>
   <tbody>
-    <tr><td>1</td><td>Where should the rules live?</td><td><b>A new skill of their own</b>, with a one-line pointer in AGENTS.md, the plan skill and the distill skill</td><td>A section in the plan skill: no new skill, but agents load it only for plans and results, so decision records and use cases miss it. AGENTS.md only: always loaded, but it must stay under 200 lines, so there is room for a few lines and no example. A skill of its own triggers on any doc, and holds the example</td></tr>
-    <tr><td>2</td><td>Should the skill ship to projects that adopt Keel?</td><td><b>Yes</b>, through <code>keel init</code>, like every Keel skill</td><td>Keel-only would keep it out of <code>keel init</code>, but the rules are not about Keel's own content. The AGENTS.md pointer reaches new projects only: an existing project's AGENTS.md is its own and is never overwritten</td></tr>
-    <tr><td>3</td><td>Which docs must follow it?</td><td><b>Every doc a person reads.</b> Plans and results get the full layout. Decision records, use cases and backlog rows keep their own shapes but follow the writing rules</td><td>Plans and results only: smaller, but decision records are the docs you read when you ask "why". Out in every case: skill files, AGENTS.md, and messages between agents (router briefs and reports; see point 9)</td></tr>
-    <tr><td>4</td><td>How is it checked?</td><td><b>The rules and a self-check in the skill, plus two tool checks</b>: diagram labels in quotes, and the "what changes for you" section in an epic plan</td><td>Rules only: no code, nothing stops a plan that skips the section. More tool checks (no code in the problem paragraph, sentence length, section order, a terms table): the evidence shows sentence length did not change, and order or a terms table are form, which the plan skill keeps free on purpose. A fresh agent reading the top and answering three questions is useful but not repeatable, so it cannot be a check; the skill offers it as optional</td></tr>
-    <tr><td>5</td><td>Should this epic rewrite the existing docs?</td><td><b>No.</b> New docs follow the rules, and so does any doc an agent next edits</td><td>A rewrite of every decision record and use case now is large and changes no behaviour. A sweep can be a backlog row if you want one later</td></tr>
-    <tr><td>6</td><td>AGENTS.md says docs are designed for AI readers. Should it say there are two readers?</td><td><b>Yes</b>: one line in AGENTS.md and its template, in your own commit</td><td>AGENTS.md changes only when you ask. Your <code>keel mr commit</code> for W1 is that request. Without it, AGENTS.md and the new skill disagree about who a doc is for</td></tr>
-    <tr><td>7</td><td>What happens to the E-CRCAP plan when this lands on main?</td><td><b>Nothing now.</b> If E-CRCAP is still open then, it adds one tag to its plan when it next merges main</td><td>Its plan already has a "what changes for you" table and quoted labels. Only the new tag is missing, and the doc check would stop E-CRCAP's turns until it is added</td></tr>
-    <tr><td>8</td><td>Should the htmldoc skill carry these rules too?</td><td><b>No.</b> The Keel skill covers Keel projects</td><td>The htmldoc skill is yours and lives outside this repo, so this epic can neither read nor change it. If you want the rules in every project you use htmldoc in, copy them into it yourself</td></tr>
-    <tr><td>9</td><td>Should the router check a plan's top before it sends it to you, and should briefs name the new skill?</td><td><b>Not in this epic.</b> A backlog row, done after E-CRCAP closes</td><td>E-CRCAP is changing the router skill now. Editing it here would collide. The AGENTS.md pointer already reaches every worker</td></tr>
+    <tr><td>1</td><td>Where do the rules live?</td><td><b>Their own skill</b>, pointed to from AGENTS.md</td><td>A plan-skill section misses other docs. AGENTS.md has no room for an example</td></tr>
+    <tr><td>2</td><td>Which docs?</td><td><b>Every doc you read</b></td><td>Skill files and agent-to-agent messages are out</td></tr>
+    <tr><td>3</td><td>Should the tool cap length?</td><td><b>Yes: 300 words</b> above the first WU of an epic plan</td><td>Length is the one style fault a tool can count. This plan's top is about 220. Other docs get the rule as text only</td></tr>
+    <tr><td>4</td><td>Rewrite existing docs now?</td><td><b>No.</b> Only new or edited docs</td><td>A full rewrite changes no behaviour</td></tr>
+    <tr><td>5</td><td>Change AGENTS.md ("docs for AI readers")?</td><td><b>Yes</b>, to "short, plain, for people first", in your commit</td><td>Otherwise AGENTS.md and the skill disagree</td></tr>
+    <tr><td>6</td><td>Ship the skill to other projects?</td><td><b>Yes</b>, via <code>keel init</code></td><td>The rules are not Keel-specific</td></tr>
+    <tr><td>7</td><td>E-CRCAP's plan when W2 lands?</td><td><b>It adds one tag</b> if still open</td><td>It already has the section</td></tr>
+    <tr><td>8</td><td>Router and briefs too?</td><td><b>Later</b>, after E-CRCAP closes</td><td>E-CRCAP is editing the router skill now</td></tr>
   </tbody>
 </table>
 
 <h2 id="details">Details</h2>
-<p>The rest of the plan is reference: acceptance criteria, contracts, scope limits, the evidence, tests, and where the knowledge goes at the close.</p>
 
-<h3 id="expected-h">Acceptance criteria</h3>
-<div data-item="expected" data-c="expected-body">
-  <ul>
-    <li><code>keel init</code> in a fresh repo writes <code>.claude/skills/keel-write/SKILL.md</code> and its example, byte-identical to <code>skills/</code>. The AGENTS.md it writes names the skill.</li>
-    <li>keel-plan and keel-distill name the skill. <code>skills/</code> and <code>.claude/skills/</code> stay byte-identical.</li>
-    <li>The shipped example is a ready epic plan, and <code>keel verify-doc</code> is green on it.</li>
-    <li><code>keel verify-doc</code> on a finished doc with an unquoted flowchart label exits 1 and names the label. Quoted labels pass. Drafts stay silent.</li>
-    <li>An epic plan without the "what changes for you" item is red with "missing item"; with it, green.</li>
-    <li>Calibration, checked by hand in W2 and recorded in its result (history is not a hermetic test input): the first E-CRCAP plan (<code>9b1c38f</code>) fails the label check, and its rewrite (<code>86b2dfd</code>) passes it.</li>
-    <li>The epic test below passes through the real doc hooks in a scratch repo.</li>
-    <li>This plan is the first doc written by the rules. Your comment round judges whether it reads well.</li>
-  </ul>
-</div>
+<h3 id="expected-h">Acceptance</h3>
+<ul data-item="expected" data-c="expected-body">
+  <li><code>keel init</code> writes the skill and its example; its AGENTS.md names the skill.</li>
+  <li><code>skills/</code> and <code>.claude/skills/</code> stay byte-identical.</li>
+  <li>The doc check: an epic plan over the cap, without the new item, or with an unquoted label is red, and the error names the fault. A doc with none of these is green.</li>
+  <li>The skill's example and this plan pass all three checks.</li>
+  <li>The epic test passes.</li>
+</ul>
 
-<h3 id="use-cases-h">Use-case contracts</h3>
+<h3 id="use-cases-h">Use cases</h3>
 <table data-item="use-cases" data-c="use-cases-table">
-  <thead><tr><th>Contract</th><th>Change</th><th>WU</th></tr></thead>
   <tbody>
-    <tr><td><a href="../use-cases/workflow.html">UC-DOC-1</a> ready governed docs stay green</td><td>Amended: the epic plan checklist gains the "what changes for you" item</td><td>W2</td></tr>
-    <tr><td>UC-DOC-4 diagram labels are quoted (new)</td><td>A finished doc whose flowchart has an unquoted node or edge label is red, and the label is named</td><td>W2</td></tr>
-    <tr><td><a href="../use-cases/workflow.html">UC-INIT-1</a> keel init wires a repo</td><td>Unchanged: it already writes every embedded skill file, so the new skill is covered</td><td>W1</td></tr>
+    <tr><td><a href="../use-cases/workflow.html">UC-DOC-1</a></td><td>Amended: the new item, and the length cap on an epic plan's top</td><td>W2</td></tr>
+    <tr><td>UC-DOC-4 (new)</td><td>Diagram labels are quoted in every finished doc</td><td>W2</td></tr>
+    <tr><td><a href="../use-cases/workflow.html">UC-INIT-1</a></td><td>Unchanged: it already writes every embedded skill</td><td>W1</td></tr>
   </tbody>
 </table>
 
 <h3 id="non-goals-h">Out of scope</h3>
 <ul data-item="non-goals" data-c="non-goals-list">
-  <li>Any change to the htmldoc skill (open point 8).</li>
-  <li>A readability score, a sentence-length limit, or a check on section order (open point 4).</li>
-  <li>Rewriting existing docs (open point 5).</li>
-  <li>Router briefs and messages, and any edit to the router skill (open point 9). E-CRCAP owns the router, code-review and workflow skills now; this epic touches none of them.</li>
-  <li>The code review judging docs. It judges code only, and stays that way.</li>
-  <li>New required sections in WU plans or results. Their writing follows the skill as text.</li>
+  <li>The htmldoc skill: it is yours, outside this repo.</li>
+  <li>Rewriting existing docs; the router skill; code review of docs.</li>
 </ul>
 
-<h3 id="evidence">What made the rewrite better</h3>
-<div data-c="evidence">
-<p>The two versions are <code>git show 9b1c38f:docs/work/2026-11-12-e-crcap-epic-plan.html</code> (first) and the same path at <code>86b2dfd</code> (rewrite). Revisions <code>5b57403</code>, <code>968800a</code> and <code>f5e6c0c</code> changed the content after your comments but kept the layout. Counts are from a script over the HTML, diagrams excluded.</p>
-<table>
-  <thead><tr><th>Measure</th><th>First version</th><th>Rewrite</th><th>What it shows</th></tr></thead>
-  <tbody>
-    <tr><td>Words in the whole doc</td><td>4,060</td><td>3,617</td><td>About 11% shorter. Almost no fact was cut</td></tr>
-    <tr><td>Words above the work list</td><td>1,575</td><td>533</td><td>The top got short. Reference material moved below the work</td></tr>
-    <tr><td>Code snippets above the work list</td><td>48</td><td>5</td><td>The top is in plain words</td></tr>
-    <tr><td>Internal ids and gate words above the work list (backlog, UC and DEC ids, check numbers, "seam", "orphan", "first-parent")</td><td>about 40</td><td>about 4</td><td>Ids were replaced by what they mean</td></tr>
-    <tr><td>Average sentence length, problem paragraph</td><td>11.4 words</td><td>13.4 words</td><td>Not shorter. Short sentences were not the fix</td></tr>
-    <tr><td>Longest sentence in the first WU summary</td><td>34 words</td><td>24 words</td><td>Long lists of facts were split into one fact per item</td></tr>
-    <tr><td>First section</td><td>"Intent": the mechanism, labelled by backlog id</td><td>"The problem": what goes wrong, with the 7-round case</td><td>Problem before solution</td></tr>
-    <tr><td>Section order</td><td>The checklist's order: intent, research, use cases, acceptance, non-goals, design, WUs, test, no-gate, distillation, open questions</td><td>Problem, what changes for you, diagram, terms, WUs, open points, then Details holding all the rest</td><td>The tags did not change; only where they sit</td></tr>
-    <tr><td>Headings</td><td>Checklist words: "Intent", "Non-goals", "E2E plan", "Distillation plan"</td><td>Reader words: "The problem", "Out of scope", "Epic end-to-end test", "Where the knowledge goes at the close"</td><td>Headings say what the reader gets</td></tr>
-    <tr><td>WU summary</td><td>One paragraph with run-in labels</td><td>"In short", then a list of mechanics</td><td>Two layers: the gist, then the detail</td></tr>
-    <tr><td>Open points</td><td>Topic names, (a)/(b) options, recommendation in the last column</td><td>Questions, recommendation first, "(= default)" said once in the header</td><td>The reader can answer each row directly</td></tr>
-    <tr><td>Diagram labels</td><td>Code, unquoted; <code>wu|epic</code> broke the diagram</td><td>Plain words, quoted</td><td>The only fault a tool can see directly</td></tr>
-    <tr><td>What it replaces</td><td>First thing on the page</td><td>Last thing on the page</td><td>History goes last</td></tr>
-  </tbody>
-</table>
-<p>Two things in the rewrite's own summary did not hold up when measured: it was not much shorter, and its sentences were not shorter. What changed was the order and the words of the top. Later revisions kept the layout, but the top grew from 533 to 821 words as decisions were added. The self-check (rule 11) is there for that drift.</p>
-</div>
-
-<h3 id="checkable">What a tool can check, and what it cannot</h3>
-<table data-c="checkable-table">
-  <thead><tr><th>Rule</th><th>Checkable?</th><th>Why</th></tr></thead>
-  <tbody>
-    <tr><td>Diagram labels quoted</td><td>Yes (W2)</td><td>A syntax fact. It broke a real diagram</td></tr>
-    <tr><td>"What changes for you" present in an epic plan</td><td>Yes (W2)</td><td>A section either exists or not. It is content, not form</td></tr>
-    <tr><td>Problem before solution, plain words, terms defined</td><td>No</td><td>Meaning, not syntax. Proxies such as "no code in the problem paragraph" punish a problem that is about a command</td></tr>
-    <tr><td>Sentence length</td><td>Measurable, not useful</td><td>The evidence shows it did not change</td></tr>
-    <tr><td>Section order, a terms table, "In short" lines</td><td>Possible, not wanted</td><td>Form. The plan skill keeps form free so a plan can take the shape its task needs</td></tr>
-    <tr><td>Easy to understand</td><td>No</td><td>Only you can judge it, in the comment round</td></tr>
-  </tbody>
-</table>
-
-<h3 id="e2e-plan-h">Epic end-to-end test</h3>
+<h3 id="e2e-plan-h">Epic test</h3>
 <div data-item="e2e-plan" data-c="e2e-plan-body">
-  <p><code>epic_e2e_a_new_project_gets_the_writing_skill_and_its_doc_hooks_hold_a_plan_to_it</code> in <code>tests/verify_doc.rs</code>, added by W2. It builds a scratch repo in a temp dir, runs <code>keel init</code> there, and needs no network.</p>
+  <p>In <code>tests/verify_doc.rs</code>, added by W2. A scratch repo, no network:</p>
   <ol>
-    <li><code>keel init</code> writes the writing skill and its example, and the AGENTS.md it writes names the skill.</li>
-    <li>The installed example is copied into <code>docs/work/</code> as a plan. The installed after-write hook, fed a write event for it, exits 0.</li>
-    <li>One diagram label is made unquoted, with a "|" in it. The after-write hook exits 2 and names the label.</li>
-    <li>The label is fixed and the "what changes for you" tag is removed. The end-of-turn hook exits 2 and names the missing item.</li>
-    <li>The tag is put back. The end-of-turn hook exits 0.</li>
+    <li><code>keel init</code>; the skill is installed.</li>
+    <li>The example, written as a plan: the after-write hook passes.</li>
+    <li>An unquoted label, a missing section, a top over the cap: each makes the hooks fail and names the fault.</li>
+    <li>Fixed: the end-of-turn hook passes.</li>
   </ol>
-  <p>No test layer is waived. If you choose "rules only" (open point 4), W2 is dropped and W1 adds a shorter version: steps 1 and 2.</p>
 </div>
+
+<h3 id="evidence">Evidence</h3>
+<p data-c="evidence">The first E-CRCAP plan (<code>9b1c38f</code>) had 1,575 words and 48 code snippets above its work list. The rewrite (<code>86b2dfd</code>) had 533 and 5, with the same facts. Your comment of 2026-11-12 asks for shorter still: "short, direct and easy to understand… We can't consume long and verbose text."</p>
 
 <h3 id="no-gate">What no gate reviews</h3>
-<table data-c="no-gate-table">
-  <thead><tr><th>WU</th><th>Files outside the reviewed code paths (<code>src/</code>, <code>tests/</code>)</th><th>What covers them</th></tr></thead>
-  <tbody>
-    <tr><td>W1</td><td>The new skill and its example, keel-plan and keel-distill text, the <code>.claude/skills/</code> mirror, AGENTS.md, <code>templates/AGENTS.md</code>, the WU plan and result</td><td>Your <code>keel mr commit</code>, plus the router's read-only extra review of the text. The example is also tested green by the doc check</td></tr>
-    <tr><td>W2</td><td>keel-plan and writing-skill text and mirrors, the WU docs</td><td>Same</td></tr>
-    <tr><td>All</td><td>Whether agents actually write this way</td><td>Nothing mechanical. Your comment round on each plan is the only judge</td></tr>
-    <tr><td>Epic close</td><td>The knowledge-base docs below (not rule-bearing), the archive commit</td><td>The doc-note check (lineage) and your epic sign-off</td></tr>
-  </tbody>
-</table>
+<p data-c="no-gate">The skill text, AGENTS.md and the templates: your <code>keel mr commit</code> and the router's read-only review. Whether agents really write well: only your comments.</p>
 
-<h3 id="distillation-plan-h">Where the knowledge goes at the close</h3>
-<table data-item="distillation-plan" data-c="distillation-table">
-  <thead><tr><th>Target (tier)</th><th>Absorbs</th></tr></thead>
-  <tbody>
-    <tr><td><code>docs/decisions/workflow-gates.html</code> (T2)</td><td>One record: docs have two readers; the rules live in their own shipped skill; the doc check tests only quoted labels and the "what changes for you" item; sentence length, order and proxies are not checked, with the evidence above</td></tr>
-    <tr><td><code>docs/use-cases/workflow.html</code> (T2)</td><td>UC-DOC-1 amended, UC-DOC-4 new</td></tr>
-    <tr><td><code>docs/decisions/decisions-index.html</code>, <code>docs/use-cases/use-cases-index.html</code> (T2)</td><td>The new id, the next free id, the UC-DOC scope line</td></tr>
-    <tr><td><code>docs/backlog/</code> and its index (T2)</td><td>New rows: the router's read-through and the brief naming the skill (open point 9); a sweep of existing docs, if you want one (open point 5); the order table gains E-DOCSTYLE</td></tr>
-    <tr><td>Skills and templates (rule-bearing)</td><td>The rule text itself, landed by the WUs; nothing more at the close</td></tr>
-  </tbody>
-</table>
-<p data-c="dec-id">The decision id is taken at the close, not now. Main and every live branch hold DEC-48 as the last id today, and E-CRCAP plans up to three new records. At the close this epic merges main first, then checks every live branch's decision files, and takes the next free id after all of them. If E-CRCAP is closing at the same time, the router decides which epic goes first.</p>
-
-<h3 id="base">Base, and what this planning run could not do</h3>
-<p data-c="base-note">The brief asked this run to merge main (<code>298303d</code>, E-WMODE) into the epic branch first. The merge failed: the sandbox does not let this worker write under <code>.claude/skills/</code>, and E-WMODE changes two files there. The failed merge also left one untracked file, <code>scripts/router-file-guard.sh</code>, from main; removing it was refused. Both are handed to the router. The plan does not depend on E-WMODE's changes, but no WU starts before main is merged in.</p>
-<p data-c="ids-note">The requirement doc's comment id had been made up locally and was never registered. This run registered a new id for it on the htmldoc server, and one for this plan, so both take comments.</p>
+<h3 id="distillation-plan-h">At the close</h3>
+<ul data-item="distillation-plan" data-c="distillation-table">
+  <li><code>docs/decisions/workflow-gates.html</code>: one record (the rules, where they live, what the tool checks). Id taken at the close, after merging main and checking every live branch, so it cannot clash with E-CRCAP.</li>
+  <li><code>docs/use-cases/workflow.html</code>: UC-DOC-1, UC-DOC-4. Indexes updated.</li>
+  <li><code>docs/backlog/</code>: a row for the router and briefs (open point 8).</li>
+</ul>
 
   </main>
   <script type="module">
