@@ -10,7 +10,16 @@ worker loaded `SendMessage` and reached a named router with it.
 
 ## Worktree for a WU (either mode)
 
-A worker, never the router, creates it as the brief's first step:
+One worktree per epic branch and one per WU branch; its branch never changes.
+Where the launcher has the mode, the router creates it:
+`<launcher> worktree add <wu_prefix><epic>/<wu-slug>` (or `<epic_prefix><epic>`)
+cuts the branch off its fixed base (`<epic_prefix><epic>`, which must exist, or
+main; an existing branch is used as it is) at `<main checkout>-<branch without
+its prefix, / as ->` and prints `WORKTREE path=… branch=… base=… tip=…`. After
+the merge and the worker's stop, `<launcher> worktree remove <branch>` removes
+it (`REMOVED path=… branch=…`); it refuses a dirty tree, an unmerged branch, a
+session in it, the router's checkout and the main one, and keeps the branch.
+Without that mode a worker creates it as the brief's first step:
 `git worktree add ../<Repo>-<epic-slug>-<wu-slug> -b <wu_prefix><epic>/<wu-slug> <epic_prefix><epic>`
 (prefixes from `.keel/config.toml` `[branches]`). Don't use the `Agent` tool's
 `isolation: "worktree"` for WU work: it makes its own `worktree-agent-*` branch,
@@ -51,10 +60,17 @@ worktree under a supervisor, outlives the router, stays alive idle between tasks
 and is listed by `claude agents --json` while it lives. The router never types
 `claude`. A committed launcher validates every argument, passes a fixed prompt
 naming a brief file, and fixed flags (`--agent worker`, always: a repo whose
-settings make sessions routers would otherwise start a router; plus a fixed allow
-list of the gate commands a worker needs: build, test, lint,
+settings make sessions routers would otherwise start a router; the project's
+and the worktree's local settings only, no MCP server, and the shell in Claude
+Code's sandbox: writes to the worktree, the git dir but its config and hooks,
+and the build cache, a few hosts; plus a fixed allow list of the gate commands
+a worker needs: build, test, lint,
 `keel preflight|verify-doc|verify-dod|notes write|check`, and a fixed deny list:
-`keel mr` and anything that reaches it). The permission mode is the one validated
+`keel mr` and anything that reaches it, pushes, git config, notes, stash,
+branch switches, other checkouts, `claude` and the launcher). The launcher
+passes no inherited `GIT_*` to the session (a background session takes the
+launching shell's environment). A host outside the sandbox makes a command
+wait, not fail: briefs tell workers to give network commands a timeout. The permission mode is the one validated
 choice: `acceptEdits` by default, `plan` for read-only checkers, nothing else
 (never `bypassPermissions`). Grants travel on the launcher's command line only,
 never in the settings the router shares, so they never reach the router. `keel
@@ -75,11 +91,14 @@ Claude Code trusts (pitfall 3); the target's branch carries the worker persona
   prompt, not authored substance (owner ruling 2026-11-08; SKILL.md
   "Substance comes from workers"). It is the only file you write. It names you,
   the router, as the one to report to.
-- **Spawn**: `<launcher> spawn <name> <worktree> .router/briefs/<name>.md <model> [--effort <level>] [--permission-mode plan]`
+- **Spawn**: `<launcher> spawn <name> <worktree> .router/briefs/<name>.md <model> [--effort <level>] [--permission-mode plan] [--review]`
   (`<name>` matches `[a-z0-9][a-z0-9-]{0,40}`; model and effort from the
   project's model policy, project-router). The launcher refuses a name any live
-  session holds (SendMessage addresses by name).
-  Prints `RUNNING name=… id=<short id> session=<uuid> permission-mode=… effort=… snapshot=… brief=… sha256=… worktree=…`,
+  session holds (SendMessage addresses by name) or whose launch is in progress,
+  a worktree without the worker persona (naming the fix) and a detached one.
+  `--review` starts a review worker: the only one granted the `cr` note, with no
+  edit tool, `git add` or `git commit` (SKILL.md "Workers").
+  Prints `RUNNING name=… id=<short id> session=<uuid> permission-mode=… effort=… branch=… snapshot=… brief=… sha256=… worktree=…`,
   or `DEAD name=… exit=<code> …` plus the CLI's own text. Record the session
   uuid. `Read` the snapshot and confirm it is the brief you wrote. Announce the
   worker only after `RUNNING`.
@@ -100,16 +119,17 @@ Claude Code trusts (pitfall 3); the target's branch carries the worker persona
   up in the watchdog's report as `DONE` or `STUCK` (below); check on wake too.
 - **Retire**: `<launcher> stop <name>` once its report is in and its worktree is
   clean: it runs `claude stop <id>` then `claude rm <id>` (the transcript and the
-  worktree stay) and prints `STOPPED name=… id=… session=…`. A report arrives
+  worktree stay), removes the session's brief copy and prints
+  `STOPPED name=… id=… session=…`, plus `drift=<branch>` when the worktree left
+  the spawn's branch (a finding: ask the worker why). A report arrives
   before the worker's turn has ended, so `stop` gives a busy worker up to 30 s to
   go idle, then refuses, because `claude stop` cuts the turn (seen cutting one
   after 4 of 30 calls): ask the worker to finish, or leave a stuck one to the owner
   (`claude stop <id>`; the router has no `claude` or `kill`, lessons D2).
-- **Resume**: only for a worker that is no longer listed (crashed, stopped,
-  rebooted): `<launcher> resume <name> <session-uuid> <same worktree> .router/briefs/<name>-r<n>.md`.
-  It wakes the same session with the options it was spawned with and takes none
-  of its own (`claude --bg --resume` with an option starts a copy under a new id);
-  the launcher refuses a different worktree than the spawn's.
+- **No resume**: a stopped, crashed or rebooted worker is never revived (a plain
+  `claude --bg --resume` comes back without the persona, the sandbox or the
+  settings): spawn a fresh worker with a new brief that says what the last one
+  left (uncommitted work: keep and check it).
 
 **Background-session pitfalls (found 2026-11-08 and 2026-11-11; prove a spawn
 path with a real spawn, lessons K5):**
@@ -118,7 +138,8 @@ path with a real spawn, lessons K5):**
    the brief into `<worktree>/.router-brief.XXXXXX/brief.md` (self-ignoring) and
    names it as `brief=`; keep the router's read-only snapshot as the evidence.
 2. *Persona missing.* `--agent worker` fails in a worktree whose branch does not
-   track the persona file: spawn only into a branch that tracks it.
+   track the persona file; the launcher refuses such a worktree: merge the base
+   branch that carries it.
 3. *Untrusted worktree.* `claude --bg` in a directory Claude Code has not
    trusted exits with "Workspace not trusted" (`DEAD`). A `git worktree add` of
    a repository whose main checkout is trusted is trusted at once; a new clone
@@ -241,7 +262,7 @@ The router runs no loop or timer (owner ruling 2026-11-11; the guard denies
 watch line, an idle notice or the owner. On every wake:
 "1 workers: background (`ListAgents`: each expected name listed, busy or idle;
 idle without a report → `SendMessage` asking for it; not listed unasked →
-`resume` from its brief, it keeps and checks uncommitted work; confirm RUNNING;
+a fresh worker from a new brief, it keeps and checks uncommitted work; confirm RUNNING;
 blocked on a prompt or silent too long → tell the owner; workers live and no
 `watchdog-<your-name>` listed → `watchdog start`) and in-session (roster;
 finished but unrelayed reports); reported and clean → `stop`. 2 worktrees:

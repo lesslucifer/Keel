@@ -17,12 +17,15 @@ No questions mid-run: decide reversible choices with a stated recommendation, or
 - Never merge into a branch the owner merges, push, tag, dispatch workflows, `gh secret set`, or read
   signing keys or tokens. Read-only `gh` is fine.
 - Never amend/rebase a gated branch; never hand-write or copy a gate note (`refs/notes/*`).
-- A permission denial is not routed around: report the exact command for the owner.
+- A permission denial or "Operation not permitted" is not routed around: report the exact command for the owner.
+- Stay on your worktree's branch: never switch, check out, stash, rebase, push, or touch git config, notes or hooks.
+- Your shell runs in a sandbox: give every network command a timeout (a host outside it makes the command wait).
 - <the project's machine-safety rules from its project-router skill: temp HOME, held ports, real data dirs>
 - Follow AGENTS.md and the keel-workflow, keel-plan and keel-distill skills; docs per the project's doc
-  convention; no estimates.
+  convention (htmldoc: read `~/.claude/skills/htmldoc/SKILL.md`, a worker loads no user-level skill); no estimates.
 ## State
-Worktree <abs>, branch <b>, tip <full sha>. First: git branch --show-current, git log --oneline -6, git status --short.
+Worktree <abs>, branch <b>, tip <full sha>. First: `git rev-parse --show-toplevel` prints <abs> (else report it and stop);
+git branch --show-current, git log --oneline -6, git status --short.
 Base is <epic/<E> | main> at <sha>; if it moved, merge it in with a merge commit (never rebase).
 Owner rulings: <Qn = x, ...>.
 ## Read first / evidence
@@ -32,8 +35,8 @@ Owner rulings: <Qn = x, ...>.
 2. Root cause with evidence (third-party source at the pinned version); fix once where all callers route.
 3. Audit the same bug class; predict the next CI layer before asking for a run.
 4. Gates: keel check · keel notes write test|doc · keel preflight wu <tip> --target epic/<E> ·
-   keel-code-review skill (code paths only) → keel notes write cr · keel verify-dod wu <tip> --target epic/<E>
-   red only on 8·manual-review · actionlint on changed workflows.
+   report the tip for review (never review your own diff: a fresh review worker writes the cr note) ·
+   after its PASS, keel verify-dod wu <tip> --target epic/<E> red only on 8·manual-review · actionlint on changed workflows.
 5. Rule-bearing file (`rule_bearing` in .keel/config.toml): leave only it staged, stage
    `keel mr commit -m $'…' --as <id>` for the owner; notes come in a fresh session after.
 6. Try-it: a TESTED helper at a stable path (free port, sample data), cd-prefixed run steps,
@@ -58,8 +61,9 @@ doc only or how to try · what no gate reviewed (paths outside code_paths) · fo
 | Variant | Add |
 |---|---|
 | CI fix round | per-job result, failing step, cleaned log path, hypotheses; "stage push + dispatch" for the owner |
-| Step between (after the owner's `keel mr commit`) | new tip D; `keel notes write test\|doc`, the keel-code-review skill on D (never copy the old cr note), `keel preflight`, `keel verify-dod` on D |
+| Step between (after the owner's `keel mr commit`) | new tip D; `keel notes write test\|doc`, `keel preflight`, then a fresh review worker on D (never copy the old cr note), `keel verify-dod` on D |
+| Review worker (`spawn … --review`) | the scope and base (e.g. WU tip vs its epic), round n of at most 3; run the keel-code-review skill and write the `cr` note; no edits, no commits; report verdict and findings verbatim with severity |
 | Epic close | merge main in if it moved; distill (keel-distill skill); archive commit (`git rm` every T3 doc, files kept in git-ignored `docs/.archive/`) with `keel notes write doc --distill …`; epic result report in `docs/.archive/`; epic test note (e2e); `keel preflight epic <tip>`; epic-scope review vs main; `keel verify-dod epic <tip>` red only on 8·manual-review; copy `docs/.archive/` to the main checkout; stage `keel mr confirm epic … --report docs/.archive/<…>-epic-result.html` + merge + push |
 | Review fix round | findings verbatim with severity; fix vs record; re-gate on the new tip (notes and review are per tip) |
-| Parallel WU | create your own worktree (`commands.md`); never touch another WU's worktree |
+| Parallel WU | the router creates your worktree (`<launcher> worktree add`); never touch another WU's worktree |
 | Read-only check / watch | no edits, no commits; report raw output; the exact probe and its EVENT line |

@@ -82,18 +82,25 @@ PUSHED is true only once origin's main contains `$T`, so it is safe to arm when
 the action is staged (an equality check against local `main` fires at once, and
 one against `$T` never fires: the `--no-ff` merge pushes a new commit).
 
-## Worker: worktree for a parallel WU
+## Router: worktree for an epic or a WU
 ```sh
-git -C $MAIN worktree add ../<Repo>-<E>-$W -b wu/$E/$W epic/$E
+<launcher> worktree add wu/$E/$W        # or epic/$E; prints WORKTREE path=… branch=… base=… tip=…
 ```
-The worker creates it (first step of its brief) and never touches another WU's
-worktree. Keel's `post-checkout` hook (after `keel hooks install`) copies the
+One worktree per epic branch and per WU branch, created before the spawn; the
+base and the path are derived, never arguments. Without that launcher mode, a
+worker creates it as the first step of its brief
+(`git -C $MAIN worktree add ../<Repo>-<E>-$W -b wu/$E/$W epic/$E`). A worker
+never touches another WU's worktree. Keel's `post-checkout` hook (after `keel hooks install`) copies the
 files listed in `.gitworktreecopy` (e.g. the untracked `.mr-allowed`) into it.
 
-## Router: retire a closed worktree (a worker runs it)
+## Router: retire a closed worktree
 
 Only when merged, clean and no process runs in it; keep the branch (its notes
-live on it).
+live on it). Where the launcher has the mode, the router runs
+`<launcher> worktree remove <branch>` once the worker is stopped: it checks
+merged, clean and no listed session, keeps the branch, and deletes git-ignored
+files with the worktree, so a worker first copies `docs/.archive/` out (the
+copy and compare lines below). Otherwise a worker runs all of it:
 ```sh
 cd $M && b=$(git -C <Repo>-<slug> branch --show-current) && git -C $MAIN merge-base --is-ancestor $b epic/$E && echo merged   # main for an epic
 git -C $M/<Repo>-<slug> status --short | wc -l                                  # 0
