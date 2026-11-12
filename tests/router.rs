@@ -3604,3 +3604,58 @@ fn worktree_branches_follow_the_committed_branch_policy() {
     }
     assert!(accepted > 0, "no generated name was accepted");
 }
+
+/// E-ROUTER3.W5: the router's rule-bearing text says what the launcher at this tip prints and holds no
+/// retired mechanism. Every outcome word the launcher prints as `<WORD> name=` or `<WORD> path=` is in
+/// worker-ops, with the UNLISTED respawn instruction, the stop refusal by state and the deny list as
+/// intent; no current text names `wait`, `resume`, `.router/out` or a router that never messages
+/// (lessons.md is the dated record of what was, so it is not read); router.md's body names the two
+/// fleet tools; project-router states the committed sign-off tiers.
+#[test]
+fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
+    let read = |p: &str| std::fs::read_to_string(root().join(p)).unwrap();
+    let launcher = read("scripts/router-worker.sh");
+    let ops = read("skills/keel-router/references/worker-ops.md");
+    let words: std::collections::BTreeSet<String> = regex::Regex::new(r#"echo "([A-Z]+) (?:name|path)="#)
+        .unwrap()
+        .captures_iter(&launcher)
+        .map(|c| c[1].to_string())
+        .collect();
+    assert!(words.len() >= 6, "the launcher's outcome words were not found: {words:?}");
+    for w in &words {
+        assert!(ops.contains(&format!("{w} name=")) || ops.contains(&format!("{w} path=")), "worker-ops never names {w}");
+    }
+    for (said, why) in [
+        ("before any respawn", "UNLISTED's instruction to check ListAgents"),
+        ("the owner decides", "stop's refusal of a worker that is neither busy nor idle"),
+        ("intent", "the deny list as intent, the sandbox as the bound"),
+    ] {
+        assert!(ops.contains(said), "worker-ops omits {why}");
+    }
+    assert!(launcher.contains("check ListAgents before any respawn") && launcher.contains(": the owner decides (claude stop $id)"));
+
+    let mut current = Vec::new();
+    for dir in ["skills/keel-router", ".claude/skills/keel-router"] {
+        for f in ["SKILL.md", "references/worker-ops.md", "references/commands.md", "references/messages.md", "references/brief-skeleton.md", "references/review-checklists.md", "references/project-router-template.md"] {
+            current.push(format!("{dir}/{f}"));
+        }
+    }
+    current.extend([".claude/skills/project-router/SKILL.md".to_string(), ".claude/agents/router.md".to_string()]);
+    for f in &current {
+        let body = read(f);
+        for retired in ["router-worker.sh wait", "router-worker.sh resume", "<launcher> wait", "<launcher> resume", ".router/out", "never message"] {
+            assert!(!body.contains(retired), "{f} names the retired {retired:?}");
+        }
+    }
+
+    let agent = read(".claude/agents/router.md");
+    let body = agent.splitn(3, "---\n").nth(2).unwrap();
+    for t in ["SendMessage", "ListAgents"] {
+        assert!(body.contains(&format!("`{t}`")), "router.md's posture omits {t}");
+    }
+
+    let policy: toml::Value = read(".keel/config.toml").parse().unwrap();
+    let tiers: Vec<String> = policy["mr"]["tiers"].as_array().unwrap().iter().map(|t| format!("{t}")).collect();
+    let tiers = format!("tiers = [{}]", tiers.join(", "));
+    assert!(read(".claude/skills/project-router/SKILL.md").contains(&tiers), "project-router does not state {tiers}");
+}
