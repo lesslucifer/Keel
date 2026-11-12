@@ -13,7 +13,10 @@
 # Bad arguments exit 2 before any poll. A branch or tag missing on origin means "not yet", not a network failure.
 # Only `git fetch` writes: refs/remotes/origin/<branch> and objects (no tags, no FETCH_HEAD, no
 # maintenance). The remote is always origin. Detail lines are untrusted text, control characters as ?.
+# No inherited GIT_* reaches its git (E-ROUTER3.W7: an inherited GIT_DIR made it judge, and fetch
+# into, another repository).
 set -eu
+for v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 # bytes, not characters: an invalid UTF-8 byte in a note or a git error must not stop sed or tr
 export LC_ALL=C
 die() { echo "router-watch: $*" >&2; exit 2; }

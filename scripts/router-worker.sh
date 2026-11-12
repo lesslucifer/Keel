@@ -235,7 +235,7 @@ if [ "$mode" = watchdog ]; then
     --tools SendMessage CronCreate --allowedTools SendMessage CronCreate --strict-mcp-config --autocompact 100k --settings "$hooks" \
     "Call CronCreate once with cron \"*/5 * * * *\", prompt \"tick\", recurring true. Then treat this turn as the first tick." 2>&1) || rc=$?
   lr=1; [ "$rc" -ne 0 ] || { listed && lr=0 || lr=$?; }
-  [ "$lr" -ne 2 ] || { echo "UNLISTED name=$name exit=0"; printf '%s\n' "$started"; die "cannot list sessions (claude agents --json): the watchdog may be running; check ListAgents before any restart"; }
+  [ "$lr" -ne 2 ] || { echo "UNLISTED name=$name exit=0"; printf '%s\n' "$started"; die "cannot list sessions (claude agents --json): the watchdog may be running; check ListAgents before any second start"; }
   [ "$lr" -eq 0 ] || { echo "DEAD name=$name exit=$rc"; printf '%s\n' "$started"; exit 1; }
   IFS=$US read -r id sid _ <<EOF
 $(fields)

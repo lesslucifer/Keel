@@ -1318,8 +1318,8 @@ fn hostile_git_env(decoy: &Path) -> Vec<(&'static str, String)> {
 /// E-ROUTERFIX e2e (W5), extended by E-ROUTER3.W7 to the router's whole current flow, in a scratch
 /// clone of Keel's own tree with the working tree's router files laid over it, keel's hooks
 /// installed and the stub claude. Every router call passes the settings-wired guard and runs exactly
-/// as judged, with HOME inside the temp dir and every launcher call under GIT_* naming a decoy
-/// repository: worktree add (epic, then WU, through keel's post-checkout hook), watchdog start, a
+/// as judged, with HOME inside the temp dir and every launcher and watch call under GIT_* naming a
+/// decoy repository: worktree add (epic, then WU, through keel's post-checkout hook), watchdog start, a
 /// worker spawned in plan mode with the fixed grant, the router's messages to it, the watchdog's
 /// tick, stop, a --review worker, a sign-off the worker forges as itself refused by the merge hook at
 /// 8·manual-review, worktree remove and watchdog stop. Not covered: a note forged as a name the
@@ -1340,7 +1340,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let decoy_before = decoy_state(&other);
     let real_worktrees = git(root(), &["worktree", "list", "--porcelain"]).stdout;
     let hostile = hostile_git_env(&other);
-    let watch_env = [("ROUTER_WATCH_MAX", "0".to_string())];
+    let watch_env = [hostile.clone(), vec![("ROUTER_WATCH_MAX", "0".into())]].concat();
     let home = base.join("home");
     std::fs::create_dir_all(&home).unwrap();
     let path = format!("{}:{}", keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
@@ -1586,7 +1586,8 @@ impl Watcher {
     }
 
     /// `scripts/router-watch.sh <args>` as the router runs it, its polls stepped through steps-<k>/;
-    /// an exported ROUTER_WATCH_POLL or ROUTER_WATCH_MAX never reaches it, only `env` sets them.
+    /// an exported ROUTER_WATCH_POLL or ROUTER_WATCH_MAX never reaches it, only `env` sets them. The
+    /// watch clears every GIT_* it inherits, hermetic's too, so HOME points into the temp dir.
     fn cmd(&self, args: &[&str], k: &str, env: &[(&str, &str)]) -> (Command, PathBuf) {
         let dir = self.base.join(format!("steps-{k}"));
         std::fs::create_dir_all(&dir).unwrap();
@@ -1596,6 +1597,8 @@ impl Watcher {
             .current_dir(&self.main)
             .env("PATH", format!("{}:{}", self.base.join("shim").display(), std::env::var("PATH").unwrap()))
             .env("STEP_DIR", &dir)
+            .env("HOME", self.base.join("home"))
+            .env("XDG_CONFIG_HOME", self.base.join("home/.config"))
             .env("STUB_OWNER", std::process::id().to_string())
             .env_remove("ROUTER_WATCH_POLL")
             .env_remove("ROUTER_WATCH_MAX")
@@ -1613,13 +1616,13 @@ impl Watcher {
     }
 
     /// A `git` on $PATH (with the `sleep` shim) ahead of the real one that logs each call to <base>/spy.log and, when
-    /// $GIT_SPY_FAIL is 1, fails every fetch: returns that PATH and the log.
+    /// $SPY_FAIL is 1, fails every fetch: returns that PATH and the log.
     fn spy(&self) -> (String, PathBuf) {
         let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
         let dir = self.base.join("spy");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("git"), format!(
-            "#!/bin/sh\necho \"$*\" >> \"$GIT_SPY_LOG\"\ncase \"$GIT_SPY_FAIL $*\" in 1*\" fetch \"*) printf 'fatal: spy refuses fetch\\nspy: last\\377line\\n' >&2; exit 128;; esac\nexec {} \"$@\"\n",
+            "#!/bin/sh\necho \"$*\" >> \"$SPY_LOG\"\ncase \"$SPY_FAIL $*\" in 1*\" fetch \"*) printf 'fatal: spy refuses fetch\\nspy: last\\377line\\n' >&2; exit 128;; esac\nexec {} \"$@\"\n",
             real.trim()
         )).unwrap();
         std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
@@ -1658,6 +1661,29 @@ fn hermetic_git_ignores_global_and_system_config() {
     assert!(hermetic(&mut c).status().unwrap().success());
     let f = hermetic(&mut common::cmd("git")).args(["rev-parse", "--show-object-format"]).current_dir(d.path().join("r")).output().unwrap();
     assert_eq!(String::from_utf8(f.stdout).unwrap(), "sha1\n", "GIT_DEFAULT_HASH reached git init");
+}
+
+/// E-ROUTER3.W7 (owner ruling 2026-11-12): run with GIT_* naming another repository, the watch judges
+/// and fetches into its own repository, and that one stays byte-identical. Before the fix,
+/// `merged <the other's sha> main` printed MERGED for a commit the watch's repository does not hold.
+#[test]
+fn watch_ignores_inherited_git_variables() {
+    let w = watcher();
+    let other = w.base.join("other");
+    decoy(&other);
+    let before = decoy_state(&other);
+    let hostile = hostile_git_env(&other);
+    let mut env: Vec<(&str, &str)> = hostile.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    env.push(("ROUTER_WATCH_MAX", "0"));
+    let theirs = String::from_utf8(git(&other, &["rev-parse", "HEAD"]).stdout).unwrap().trim().to_string();
+    let (code, _, err, _) = w.run(&["merged", &theirs, "main"], "theirs", 0, &env);
+    assert_eq!((code, err), (Some(2), format!("router-watch: not a commit sha: {theirs}\n")));
+    let m = w.commit(&["a"], "a");
+    git(&w.main, &["push", "-q", "origin", "main"]);
+    git(&w.main, &["update-ref", "refs/remotes/origin/main", "HEAD~1"]);
+    let (code, out, _, _) = w.run(&["pushed", &m, "main"], "ours", 0, &env);
+    assert_eq!((code, out), (Some(0), format!("PUSHED tip={m} branch=main origin={m}\n")));
+    assert_eq!(decoy_state(&other), before, "the other repository changed");
 }
 
 /// E-SEED2.W12: every argument router-watch.sh cannot validate is refused with exit 2 before its
@@ -1926,7 +1952,7 @@ fn watch_pushed_and_tagged_fire_on_origin_only() {
 
     // origin/<b> already at origin's tip: no fetch
     let (path, log) = w.spy();
-    let (_, out, _, _) = w.run(&["pushed", &m, "main"], "no-fetch", 0, &[("PATH", &path), ("GIT_SPY_LOG", log.to_str().unwrap())]);
+    let (_, out, _, _) = w.run(&["pushed", &m, "main"], "no-fetch", 0, &[("PATH", &path), ("SPY_LOG", log.to_str().unwrap())]);
     assert_eq!(out, format!("PUSHED tip={m} branch=main origin={o}\n"));
     let calls = std::fs::read_to_string(&log).unwrap();
     assert!(calls.contains("ls-remote") && !calls.contains("fetch"), "{calls}");
@@ -2001,7 +2027,7 @@ fn watch_times_out_and_reports_an_unreachable_origin() {
     git(&other, &["commit", "-q", "--allow-empty", "-m", "ahead2"]);
     git(&other, &["push", "-q", "origin", "HEAD:refs/heads/wu/f"]);
     let (path, log) = w.spy();
-    let env = [("PATH", path.as_str()), ("GIT_SPY_LOG", log.to_str().unwrap()), ("GIT_SPY_FAIL", "1"), ("LC_ALL", "en_US.UTF-8")];
+    let env = [("PATH", path.as_str()), ("SPY_LOG", log.to_str().unwrap()), ("SPY_FAIL", "1"), ("LC_ALL", "en_US.UTF-8")];
     let mut s = w.armed_env(&["pushed", &tip, "wu/f"], "fetch-fails", &env);
     for n in 1..=3 {
         s.go(n);
