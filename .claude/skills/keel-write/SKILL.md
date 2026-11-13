@@ -27,7 +27,9 @@ first screen. The title may carry the id.
 
 ### 1 · Short
 
-Cut every word you can. The top fits on one screen.
+Cut every word you can. The top fits on one screen. In an epic plan the doc
+check counts it: at most 300 words from the start of `<main>` (the title
+block sits outside it), else from `<body>`, to the first WU.
 
 - Before: "This section provides an overview of the changes this epic will introduce."
 - After: "What changes:"
@@ -70,7 +72,8 @@ Mechanics, tests, evidence and history go at the end, under one heading.
 
 ### 7 · Diagram labels in quotes and plain words
 
-An unquoted `|` or `·` can break a Mermaid diagram.
+An unquoted `|` or `·` can break a Mermaid diagram. The doc check refuses an
+unquoted flowchart node or edge label in any doc not marked draft.
 
 - Before: `R[preflight wu|epic] --> S[cr PASS]`
 - After: `R["Review round"] -->|"PASS"| S["Owner signs"]`

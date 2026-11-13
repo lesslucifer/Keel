@@ -40,8 +40,8 @@ whatever element holds it, in any order.
 
 | Attribute | Where | Meaning |
 |---|---|---|
-| `data-artifact` | once, on `<html>` | what the doc is (values above, space-separated when combined). No `data-artifact` = ungoverned: no checklist, links still checked |
-| `data-status` | on `<html>`, next to `data-artifact` | `draft` while authoring — every check silent, links included. `ready` = verified on every write. Always set it: with no `data-status` the checklist is never run (only links are). Flipping back to draft to silence a red doc is visible to every reviewer |
+| `data-artifact` | once, on `<html>` | what the doc is (values above, space-separated when combined). No `data-artifact` = ungoverned: no checklist, links and diagram labels still checked |
+| `data-status` | on `<html>`, next to `data-artifact` | `draft` while authoring — every check silent, links included. `ready` = verified on every write. Always set it: with no `data-status` the checklist is never run (only links and diagram labels are). Flipping back to draft to silence a red doc is visible to every reviewer |
 | `data-item` | the element holding a checklist item | exactly one tag from the tables below, with non-empty text inside |
 | `data-wu` | epic plan only, inside `wu-summaries` | one block per WU, value = its id (`E-CAP.W2`), each holding the four `wu-*` sub-items |
 | `data-c` | any block | htmldoc's comment anchor (stable id); not checked by Keel |
@@ -55,9 +55,11 @@ whatever element holds it, in any order.
 ## 3 · The checklists
 
 **Epic plan** — `intent` (one requirement paragraph: what user-visible change,
-and why now) · `use-cases` (the `UC-*` contracts delivered or changed; a
-process epic touching none says so) · `expected` (observable acceptance a
-reader who wasn't there can check) · `non-goals` · `wu-summaries` (one
+and why now) · `owner-changes` (what changes for the owner: today and after,
+skill `keel-write`'s order item 2; any other plan or result may tag its
+today/after table the same way, optional there) · `use-cases` (the `UC-*`
+contracts delivered or changed; a process epic touching none says so) ·
+`expected` (observable acceptance a reader who wasn't there can check) · `non-goals` · `wu-summaries` (one
 `data-wu` block per WU with `wu-summary`, `wu-maps-to`, `wu-expected`,
 `wu-deps` — "none" when none) · `e2e-plan` (the flow(s) proving the epic; a
 waiver intent stated here) · `distillation-plan` (which T2/T1 docs absorb the
@@ -90,7 +92,7 @@ terms, the work, open points, details last.
 ## 4 · The verification loop — `keel verify-doc`
 
 ```
-keel verify-doc <path> [<path>…]   # exit 0 green / draft / ungoverned · exit 1 red
+keel verify-doc <path> [<path>…]   # exit 0 green / draft / ungoverned with clean links and labels · exit 1 red
 keel verify-doc                    # every .html under docs.root (tracked or untracked)
 ```
 
@@ -98,9 +100,15 @@ It checks exactly this, nothing cleverer: every checklist item present with
 non-empty content; an epic plan has ≥ 1 `data-wu` block, each with its four
 sub-items filled; **no unknown tags** (the typo guard reports
 `unknown tag data-item="expcted"` next to `missing item "expected"`); an
-unknown `data-artifact` is red; and, on every non-draft doc, governed or not,
-**every relative `href` resolves** (absolute URLs, `mailto:`, root-relative
-paths and fragments are not checked). A target that was archived is cited as
+unknown `data-artifact` is red; an epic plan's **top** (its `<main>` content,
+else its `<body>`, above the first `data-wu` block) holds **at most 300
+words** (a word has a letter or digit; the diagram source counts, ids
+included); and, on every non-draft doc, governed or not, **every relative
+`href` resolves** (absolute URLs, `mailto:`, root-relative paths and fragments
+are not checked) and **every Mermaid flowchart node and edge label is in
+double quotes** (node shapes like `A["…"]`, `Q{"…"}`, and edge labels
+`-->|"…"|`, `-- "…" -->`, spaced or not; a bracketless subgraph title,
+`N@{ … }` shapes and other diagram kinds are not scanned). A target that was archived is cited as
 plain text marked archived, never linked into `docs/.archive/`.
 
 The trigger is the harness, not the agent and not git: the
