@@ -522,3 +522,63 @@ fn self_hosting_new_worktree_reads_the_committed_roster_and_copies_no_local_one(
     assert_eq!(std::fs::read_to_string(w.join(".keel/mr-allowed")).unwrap(), committed);
     assert!(!w.join(".mr-allowed").exists(), "no local roster is copied");
 }
+
+fn sha256_hex(b: &[u8]) -> String {
+    let o = common::cmd("shasum").args(["-a", "256"]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn().unwrap();
+    use std::io::Write;
+    let mut o = o;
+    o.stdin.take().unwrap().write_all(b).unwrap();
+    String::from_utf8(o.wait_with_output().unwrap().stdout).unwrap().split_whitespace().next().unwrap().to_string()
+}
+
+fn lock_entry(p: &Path, rel: &str) -> Option<String> {
+    std::fs::read_to_string(p.join(".keel/skills.lock")).unwrap().lines().find_map(|l| l.strip_suffix(&format!("  {rel}")).map(String::from))
+}
+
+/// B7: a skill file still as an older keel wrote it upgrades silently; an edited one asks as today.
+#[test]
+fn an_unedited_skill_from_an_older_build_upgrades_without_asking_and_an_edited_one_asks() {
+    let d = fresh_repo();
+    let p = d.path();
+    let o = keel_in(p, &["init"], "");
+    assert!(text(&o).contains("created   .keel/skills.lock"), "{}", text(&o));
+    let wf = p.join(".claude/skills/keel-workflow/SKILL.md");
+    let shipped = std::fs::read(&wf).unwrap();
+    assert_eq!(lock_entry(p, "keel-workflow/SKILL.md"), Some(sha256_hex(&shipped)), "the lock holds shasum -a 256 lines");
+
+    // an older build: its bytes on disk and its hash in the lock
+    let old = b"keel-workflow as an older keel shipped it\n";
+    std::fs::write(&wf, old).unwrap();
+    let lock = std::fs::read_to_string(p.join(".keel/skills.lock")).unwrap().replace(&sha256_hex(&shipped), &sha256_hex(old));
+    std::fs::write(p.join(".keel/skills.lock"), lock).unwrap();
+    // and a hand edit of another file
+    let plan = p.join(".claude/skills/keel-plan/SKILL.md");
+    let plan_shipped = std::fs::read(&plan).unwrap();
+    std::fs::write(&plan, "my own edit\n").unwrap();
+
+    let o = keel_in(p, &["init"], "");
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("updated   .claude/skills/keel-workflow/SKILL.md (unedited since keel last wrote it)"), "{t}");
+    assert!(!t.contains("keel-workflow/SKILL.md differs from this keel build"), "no prompt for the unedited file: {t}");
+    assert_eq!(std::fs::read(&wf).unwrap(), shipped);
+    assert!(t.contains("keel-plan/SKILL.md differs from this keel build") && t.contains("differs   .claude/skills/keel-plan/SKILL.md"), "{t}");
+    assert_eq!(std::fs::read_to_string(&plan).unwrap(), "my own edit\n");
+    assert_eq!(lock_entry(p, "keel-workflow/SKILL.md"), Some(sha256_hex(&shipped)), "the upgrade is recorded");
+    assert_eq!(lock_entry(p, "keel-plan/SKILL.md"), Some(sha256_hex(&plan_shipped)), "a kept edit keeps its old entry, so it asks again");
+    assert!(t.contains("updated   .keel/skills.lock"), "{t}");
+
+    let o = keel_in(p, &["init"], "");
+    assert!(text(&o).contains("differs   .claude/skills/keel-plan/SKILL.md") && text(&o).contains("unchanged .keel/skills.lock"), "{}", text(&o));
+}
+
+/// Open point 2 of the WU plan: no lock appears while every skill matches and none exists (Keel's own tree).
+#[test]
+fn init_writes_no_lock_while_every_skill_matches_and_none_exists() {
+    let d = fresh_repo();
+    let p = d.path();
+    assert!(keel_in(p, &["init"], "").status.success());
+    std::fs::remove_file(p.join(".keel/skills.lock")).unwrap();
+    let o = keel_in(p, &["init"], "");
+    assert!(o.status.success() && !p.join(".keel/skills.lock").exists(), "{}", text(&o));
+}

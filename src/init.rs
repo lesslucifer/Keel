@@ -1,7 +1,9 @@
 //! `keel init` (UC-INIT-1): wire a repo of any language to Keel. Idempotent. A project-owned file
 //! that exists with other bytes is kept and reported; a Keel-owned skill file (`.claude/skills/keel-*`)
-//! that differs is overwritten only after confirmation (or with `--force`/`-f`).
+//! that differs is overwritten without asking when `.keel/skills.lock` shows keel wrote those bytes,
+//! otherwise only after confirmation (or with `--force`/`-f`).
 use crate::{git, hooks_install};
+use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 use std::path::Path;
 
@@ -118,41 +120,107 @@ fn git_note(repo: &Path, rel: &str) -> &'static str {
     }
 }
 
-/// Write the embedded skills. Missing -> create; equal -> unchanged; differs -> ask (or `force`).
+const LOCK: &str = ".keel/skills.lock";
+const LOCK_HEADER: &str =
+    "# keel init: the SHA-256 of each keel skill file as init last wrote it (shasum -a 256 form). A file still matching is upgraded without asking.\n";
+
+fn hex(bytes: &[u8]) -> String {
+    crate::notes::sha256(bytes).trim_start_matches("sha256:").to_string()
+}
+
+/// `<64 hex>  <path>` lines, path relative to .claude/skills; anything else is ignored (that file then asks).
+fn parse_lock(text: &str) -> BTreeMap<String, String> {
+    text.lines()
+        .filter_map(|l| l.split_once("  "))
+        .filter(|(h, _)| h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+        .map(|(h, p)| (p.to_string(), h.to_string()))
+        .collect()
+}
+
+/// Shipped skills only, in SKILLS order.
+fn format_lock(lock: &BTreeMap<String, String>) -> String {
+    SKILLS.iter().filter_map(|(p, _)| lock.get(*p).map(|h| format!("{h}  {p}\n"))).fold(LOCK_HEADER.to_string(), |acc, l| acc + &l)
+}
+
+#[derive(Debug, PartialEq)]
+enum SkillAction {
+    Create,
+    Unchanged,
+    /// differs, but its bytes are what keel last wrote: never edited (B7, DEC-3 amended)
+    Upgrade,
+    Ask,
+}
+
+fn skill_action(current: Option<&[u8]>, build: &[u8], locked: Option<&str>) -> SkillAction {
+    match current {
+        None => SkillAction::Create,
+        Some(c) if c == build => SkillAction::Unchanged,
+        Some(c) if locked == Some(hex(c).as_str()) => SkillAction::Upgrade,
+        Some(_) => SkillAction::Ask,
+    }
+}
+
+/// Write the embedded skills. Missing -> create; equal -> unchanged; differs -> upgrade when the lock
+/// says keel wrote these bytes, else ask (or `force`). The lock is written when a skill was written or
+/// it exists, so a tree whose skills all match and that has no lock (Keel's own) stays untouched.
 fn skills(repo: &Path, force: bool, input: &mut impl BufRead, out: &mut impl Write) -> Result<(), String> {
+    let lock_text = std::fs::read_to_string(repo.join(LOCK)).ok();
+    let old = lock_text.as_deref().map(parse_lock).unwrap_or_default();
+    let mut lock = old.clone();
+    let mut wrote = false;
     for (path, body) in SKILLS {
         let rel = format!(".claude/skills/{path}");
         let p = repo.join(&rel);
-        match std::fs::read(&p) {
-            Ok(cur) if cur == body.as_bytes() => {
+        let current = std::fs::read(&p).ok();
+        if current.is_none() && p.symlink_metadata().is_ok() {
+            writeln!(out, "  kept      {rel} (exists but is not a readable file)").ok();
+            continue;
+        }
+        let go = match skill_action(current.as_deref(), body.as_bytes(), old.get(*path).map(String::as_str)) {
+            SkillAction::Unchanged => {
                 writeln!(out, "  unchanged {rel}").ok();
+                lock.insert(path.to_string(), hex(body.as_bytes()));
+                continue;
             }
-            Ok(_) => {
-                let go = force || {
-                    writeln!(
-                        out,
-                        "{rel} differs from this keel build ({}).\nLocal edits or an older Keel version - keel cannot tell which.",
-                        env!("CARGO_PKG_VERSION")
-                    )
-                    .ok();
-                    confirm(input, out, &format!("Overwrite with this build's version?{}  (-f overwrites without asking)", git_note(repo, &rel)))
-                };
-                if go {
-                    std::fs::write(&p, body).map_err(|e| format!("keel: write {rel}: {e}"))?;
-                    writeln!(out, "  updated   {rel}").ok();
-                } else {
-                    writeln!(out, "  differs   {rel} (kept; re-run `keel init` and answer y, or pass -f, to take this build's version)").ok();
-                }
-            }
-            Err(_) if p.symlink_metadata().is_ok() => {
-                writeln!(out, "  kept      {rel} (exists but is not a readable file)").ok();
-            }
-            Err(_) => {
+            SkillAction::Create => {
                 std::fs::create_dir_all(p.parent().unwrap()).map_err(|e| format!("keel: mkdir for {rel}: {e}"))?;
                 std::fs::write(&p, body).map_err(|e| format!("keel: write {rel}: {e}"))?;
                 writeln!(out, "  created   {rel}").ok();
+                lock.insert(path.to_string(), hex(body.as_bytes()));
+                wrote = true;
+                continue;
+            }
+            SkillAction::Upgrade => Some(" (unedited since keel last wrote it)"),
+            SkillAction::Ask if force => Some(""),
+            SkillAction::Ask => {
+                writeln!(
+                    out,
+                    "{rel} differs from this keel build ({}).\nLocal edits or an older Keel version - keel cannot tell which.",
+                    env!("CARGO_PKG_VERSION")
+                )
+                .ok();
+                confirm(input, out, &format!("Overwrite with this build's version?{}  (-f overwrites without asking)", git_note(repo, &rel))).then_some("")
+            }
+        };
+        match go {
+            Some(why) => {
+                std::fs::write(&p, body).map_err(|e| format!("keel: write {rel}: {e}"))?;
+                writeln!(out, "  updated   {rel}{why}").ok();
+                lock.insert(path.to_string(), hex(body.as_bytes()));
+                wrote = true;
+            }
+            None => {
+                writeln!(out, "  differs   {rel} (kept; re-run `keel init` and answer y, or pass -f, to take this build's version)").ok();
             }
         }
+    }
+    let body = format_lock(&lock);
+    if lock_text.as_deref() == Some(body.as_str()) {
+        writeln!(out, "  unchanged {LOCK}").ok();
+    } else if lock_text.is_some() || wrote {
+        std::fs::create_dir_all(repo.join(".keel")).map_err(|e| format!("keel: mkdir .keel: {e}"))?;
+        std::fs::write(repo.join(LOCK), &body).map_err(|e| format!("keel: write {LOCK}: {e}"))?;
+        writeln!(out, "  {} {LOCK}", if lock_text.is_some() { "updated  " } else { "created  " }).ok();
     }
     // never delete: report files in a keel-* dir that this build does not ship
     let mut stack = vec![repo.join(".claude/skills")];
@@ -270,7 +338,7 @@ const NEXT_STEPS: &str = "next:\n  1. review .keel/config.toml (check commands, 
 
 #[cfg(test)]
 mod tests {
-    use super::{confirm, NEXT_STEPS};
+    use super::{confirm, format_lock, hex, parse_lock, skill_action, SkillAction, NEXT_STEPS, SKILLS};
     use std::io::Cursor;
 
     fn ask(input: &str) -> bool {
@@ -283,6 +351,37 @@ mod tests {
         let first = NEXT_STEPS.find("git commit --no-verify").unwrap();
         assert!(setup < first, "{NEXT_STEPS}");
         assert!(NEXT_STEPS.contains("git add .keel "), "the roster under .keel/ rides the first commit");
+    }
+
+    #[test]
+    fn the_lock_round_trips_shipped_paths_in_order_and_ignores_the_rest() {
+        let (a, b) = (SKILLS[0].0, SKILLS[1].0);
+        let lock = [(b.to_string(), hex(b"b")), (a.to_string(), hex(b"a")), ("gone/SKILL.md".to_string(), hex(b"x"))].into_iter().collect();
+        let text = format_lock(&lock);
+        let lines: Vec<&str> = text.lines().filter(|l| !l.starts_with('#')).collect();
+        assert_eq!(lines, [format!("{}  {a}", hex(b"a")), format!("{}  {b}", hex(b"b"))], "{text}");
+        let back = parse_lock(&text);
+        assert_eq!(back.len(), 2);
+        assert_eq!(back[a], hex(b"a"));
+        let junk = parse_lock("# c\nnot a line\nABCD  x\n0123  short\nzz{}  y\n");
+        assert!(junk.is_empty(), "{junk:?}");
+    }
+
+    #[test]
+    fn hex_is_shasum_256_lowercase() {
+        assert_eq!(hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
+
+    #[test]
+    fn a_differing_file_upgrades_silently_only_when_its_bytes_are_what_the_lock_recorded() {
+        let (build, old) = (b"new".as_slice(), b"old".as_slice());
+        assert_eq!(skill_action(None, build, None), SkillAction::Create);
+        assert_eq!(skill_action(None, build, Some(&hex(old))), SkillAction::Create);
+        assert_eq!(skill_action(Some(build), build, None), SkillAction::Unchanged);
+        assert_eq!(skill_action(Some(build), build, Some(&hex(old))), SkillAction::Unchanged);
+        assert_eq!(skill_action(Some(old), build, Some(&hex(old))), SkillAction::Upgrade);
+        assert_eq!(skill_action(Some(b"edited"), build, Some(&hex(old))), SkillAction::Ask);
+        assert_eq!(skill_action(Some(old), build, None), SkillAction::Ask, "no entry: ask as today");
     }
 
     #[test]
