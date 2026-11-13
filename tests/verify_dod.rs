@@ -1669,25 +1669,13 @@ fn epic_edits_shared_and_back_merge(p: &Path) {
 }
 
 /// Epic code review round 2, B1: a clean back-merge whose epic and WU edited different hunks of one
-/// code file changed nothing of the WU's own (`--cc --name-only` lists every path that differs from
-/// all parents; only the `-p --cc` hunks are what the merge resolved itself).
+/// code file changed nothing of the WU's own: the merge matches git's automatic merge of its parents.
 #[test]
 fn a_clean_back_merge_into_a_file_the_wu_also_changed_is_no_change_of_its_own() {
     // After a fix-PASS, the fix-PASS carries over such a back-merge.
     let d = fixture();
     let p = d.path();
-    shared_file(p);
-    edit_shared(p, 2, "\"wu\"");
-    commit(p, "the WU changes line 2 of the shared file");
-    test_note(p);
-    doc_note(p);
-    ok(write_cr(p, &["--verdict", "PASS", "--nits", r#"[{"location": "src/a.py:1", "finding": "naming", "fixed": "renamed"}]"#]));
-    let c1 = head(p);
-    write(p, "src/a.py", "def one():\n    return 1\n");
-    commit(p, "fix the nit");
-    test_note(p);
-    doc_note(p);
-    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1]));
+    let c1 = fix_passed_wu_on_shared_file(p, "", 2);
     epic_edits_shared_and_back_merge(p);
     test_note(p);
     doc_note(p);
@@ -1735,8 +1723,7 @@ fn fix_passed_wu_on_shared_file(p: &Path, attrs: &str, wu_line: usize) -> String
     c1
 }
 
-/// The epic changes line `n` of the shared file to `v`, then the WU merges the epic (with `-X` options
-/// none: a conflict is left for the caller).
+/// The epic changes line `n` of the shared file to `v`, back on the WU branch; the caller merges.
 fn epic_edits_shared(p: &Path, n: usize, v: &str) {
     git(p, &["switch", "-q", "epic/e"]);
     edit_shared(p, n, v);
@@ -1786,4 +1773,25 @@ fn a_merge_that_resolves_a_conflict_by_hand_is_the_branchs_own_change() {
     test_note(p);
     let o = write_cr(p, &["--verdict", "PASS", "--fixes", &c1]);
     refused(&o, &["second fix"]);
+}
+
+/// Epic code review round 4, B-1: git's automatic merge reads the attributes the real merge read (the
+/// first parent's, the checkout it was made on), never the tip's worktree. The epic marks the shared
+/// file `-merge` and edits line 19, the WU edits line 2: the real back-merge, on the WU's checkout,
+/// was clean.
+#[test]
+fn the_automatic_merge_reads_the_attributes_of_the_merges_first_parent_not_the_checkout() {
+    let d = fixture();
+    let p = d.path();
+    let c1 = fix_passed_wu_on_shared_file(p, "", 2);
+    git(p, &["switch", "-q", "epic/e"]);
+    write(p, ".gitattributes", "src/shared.py -merge\n");
+    edit_shared(p, 19, "\"epic\"");
+    commit(p, "the epic marks the shared file -merge and changes line 19");
+    git(p, &["switch", "-q", "wu/e/a"]);
+    git(p, &["merge", "-q", "--no-ff", "-m", "back-merge the epic", "epic/e"]);
+    assert!(std::fs::read_to_string(p.join("src/shared.py")).unwrap().contains("x2 = \"wu\"\n"), "the real merge was clean");
+    test_note(p);
+    doc_note(p);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1]));
 }
