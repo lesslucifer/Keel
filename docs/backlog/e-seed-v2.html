@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>Backlog: E-SEED v2</h1>
       <p>Work deferred when E-SEED closed with W1–W8 (W7 v2 last). E-SEED2 absorbed B1 and B2 and closed on 2026-11-10; every other row is re-pointed to a proposed later epic.</p>
-      <div class="meta">T2 · backlog · living (strike a row when an epic absorbs it) · 2026-11-08 · Keel · B1 – B19 · re-pointed at the E-SEED2 close (owner rulings 2026-11-10); B8 and B12 done and B15 – B19 added at the E-CRCAP close (2026-11-13)</div>
+      <div class="meta">T2 · backlog · living (strike a row when an epic absorbs it) · 2026-11-08 · Keel · B1 – B20 · re-pointed at the E-SEED2 close (owner rulings 2026-11-10); B8 and B12 done and B15 – B20 added at the E-CRCAP close (2026-11-13)</div>
     </div>
   </header>
   <main>
@@ -23,7 +23,7 @@
       <tr><td>E-SEED3</td><td>B6 → B7 skills.lock, foreign-<code>keel</code> warning, pre-commit <code>keel lint</code>, pre-commit MERGE_HEAD gate → B9, B10 → two Keel product rows of e-router-v2 R7 (bare-SHA target inference, <code>cargo fmt</code> drift) → B4 last</td></tr>
       <tr><td>E-RELEASE</td><td>What B1 left before a real release: the owner prerequisites, the owner's <code>dist plan</code> / <code>dist generate</code> check, a prerelease-tag run, the first stable tag, the accepted-risk revisits of <a href="../decisions/distribution.html#dec-38">DEC-38</a>, and the fixed <code>keel</code> on <code>PATH</code> (<a href="../decisions/workflow-gates.html#dec-41">DEC-41</a> consequence)</td></tr>
       <tr><td>E-LINEAGE</td><td>B5</td></tr>
-      <tr><td>E-GATEFIX</td><td>B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14; B16, B17</td></tr>
+      <tr><td>E-GATEFIX</td><td>B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14; B16, B17, B20</td></tr>
       <tr><td>E-MULTILANG</td><td>B3: the Python e2e first, then other languages</td></tr>
       <tr><td>stays in the backlog</td><td>B15 and B18 (owner questions); B19 (owed by the owner's reinstall); B2's unbuilt follow-ups; B7 Codex rows (all non-Claude work), native SSH signing, <code>Cargo.lock</code> currency</td></tr>
     </table>
@@ -115,11 +115,15 @@
     <table data-c="b16">
       <tr><th>Item</th><th>Where</th></tr>
       <tr><td>The <code>--target no-such-ref</code> half of the max_rounds test passes without the N5 fix: it does not pin that a target naming no commit is an error</td><td><code>tests/verify_dod.rs</code> 1273–1274</td></tr>
-      <tr><td>The history tags never compare a fix-PASS note's recorded <code>round</code> with the round the line gives it, and ignore a non-integer <code>round</code></td><td><code>src/review.rs</code> 419–437</td></tr>
+      <tr><td>The history tags never compare a fix-PASS note's recorded <code>round</code> with the round the line gives it (a non-integer <code>round</code> is now unreadable: epic code review round 1, I2)</td><td><code>src/review.rs</code> 419–437</td></tr>
       <tr><td>The refusal text for an owner's waiver can read better</td><td><code>src/review.rs</code> 319</td></tr>
       <tr><td>The fix-PASS writer reads the tip's cr note twice</td><td><code>src/notes.rs</code> 775</td></tr>
+      <tr><td><code>keel mr confirm</code> reads the tip's cr note three or four times (the gate's checks, the stored note for a waiver, the history's batch); one read needs the note passed through the gate's verify (epic code review round 1, N2)</td><td><code>src/mr.rs</code> 590</td></tr>
     </table>
     <p data-c="b16-src">Source: E-CRCAP.W2 code review round 3 (PASS, nits only, on 47a8e2e; the installed keel recorded no nits on the note). Line numbers at epic tip ed8047b.</p>
+
+    <h2 id="b20">B20 · An epic-close archive commit becomes a walked seam when a review fix follows <span class="badge id">proposed: E-GATEFIX</span></h2>
+    <p data-c="b20">The close writes the epic's doc note (with <code>--distill</code>) on the archive commit while it is the tip. A fix after the epic review makes that commit a plain first-parent seam, and the walk gates it as a standalone commit: its note, written for the epic range, is red there (<code>6·doc-note</code>), and <code>keel notes write</code> writes only on <code>HEAD</code>, so the note can be rewritten only from a checkout of that commit. Fix direction: run the epic review before the archive commit, or let <code>keel notes write</code> take a commit (<code>--tip</code>) for a standalone note, or have the walk accept an archive commit whose note covers the epic range. Source: E-CRCAP close (epic code review round 1 fix, archive commit 128e3c0).</p>
 
     <h2 id="b17">B17 · E-CRCAP.W1 follow-ups not yet done <span class="badge id">proposed: E-GATEFIX</span></h2>
     <table data-c="b17">
