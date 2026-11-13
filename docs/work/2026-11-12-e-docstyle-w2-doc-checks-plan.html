@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af5d13e24b871ec86557e98" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-DOCSTYLE.W2 WU plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-DOCSTYLE.W2 · The doc check</h1>
+      <p>WU plan under the <a href="2026-11-12-e-docstyle-epic-plan.html">E-DOCSTYLE epic plan</a> (owner go 2026-11-12).</p>
+      <div class="meta">T3 · WU plan · 2026-11-12 · Keel · branch <code>wu/E-DOCSTYLE/w2-doc-checks</code> off <code>76eb995</code></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="requirement">The job</h2>
+<p data-item="requirement" data-c="requirement">The doc check refuses a finished doc with an unquoted diagram label, and a finished epic plan with no "what changes for you" section or with more than 300 words above its first WU. Each error names the fault.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>An agent marks an epic plan ready</td><td>Any length passes</td><td>Over 300 words before the work: refused, with the count</td></tr>
+    <tr><td>The plan has no "what changes for you"</td><td>Passes</td><td>Refused</td></tr>
+    <tr><td>A diagram label has no quotes</td><td>Passes, and may not draw</td><td>Refused, naming the label</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">Example</h2>
+<ol data-c="example-steps">
+  <li>An agent writes an epic plan and marks it ready.</li>
+  <li>Its diagram has <code>A[Build step]</code>.</li>
+  <li>The check says: <code>diagram label not in quotes: [Build step] - write ["Build step"]</code>.</li>
+  <li>The agent adds the quotes. The check passes.</li>
+</ol>
+
+<h2 id="maps-to">Maps to</h2>
+<p data-item="maps-to" data-c="maps-to">The epic plan's W2 block · your requirement and comment of 2026-11-12 · epic open points 3 and 7 · UC-DOC-1 amended and UC-DOC-4 new, written at the epic close as the epic plan says.</p>
+
+<h2 id="expected">Done when</h2>
+<ul data-item="expected" data-c="expected">
+  <li>Each of the three faults makes the check fail, and the message names it.</li>
+  <li>A draft stays silent.</li>
+  <li>The writing skill's example and every ready doc in <code>docs/</code> pass.</li>
+  <li>The plan skill lists the new epic-plan item and the two other checks.</li>
+  <li>The epic test passes.</li>
+</ul>
+
+<h2 id="questions">Questions, answered here</h2>
+<p>Work goes on at these answers. Comment to overrule.</p>
+<table data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Where does the counted top start?</td><td><b>At the main content</b>, not the title block. The epic plan's "about 290" was counted this way: 294.</td></tr>
+    <tr><td>2</td><td>What is a word?</td><td><b>Anything between spaces with a letter or digit in it.</b> A "·" or an arrow is not a word. Diagram text counts: you read it.</td></tr>
+    <tr><td>3</td><td>Which diagrams?</td><td><b>Flowcharts only.</b> Other diagram kinds are not scanned. A subgraph title without brackets is not checked.</td></tr>
+    <tr><td>4</td><td>Which docs get the label check?</td><td><b>Every finished doc</b>, plan or not, like the link check.</td></tr>
+    <tr><td>5</td><td>Does this plan need your go?</td><td><b>No.</b> Neither the workflow skill nor the epic plan asks for one.</td></tr>
+    <tr><td>6</td><td>E-CRCAP's ready plan has 889 words above its work. What then?</td><td><b>The router decides when the new <code>keel</code> is installed.</b> Installed while that plan is open, it turns E-CRCAP's turns red until the plan is cut and tagged.</td></tr>
+    <tr><td>7</td><td>How strict is the label check? <i>(Your ruling, 2026-11-13.)</i></td><td><b>Best effort, for htmldoc output.</b> A label it misses is a known limit. Refusing a valid diagram, or a fix that changes it, is a bug. The word count must match what a reader sees.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="test-plan-h">Tests</h3>
+<ul data-item="test-plan" data-c="test-plan">
+  <li><b>Integration</b> (<code>tests/verify_doc.rs</code>), written first and red before the code: each check red on a doc that breaks it and green on one that does not; a draft silent; a WU plan needs no "what changes" item; 300 words pass and 301 fail; words after the first WU and in the title block are not counted; every ready doc under <code>docs/</code> passes.</li>
+  <li><b>Unit</b> (<code>src/verify_doc.rs</code>): the label scanner (each node shape, both edge-label forms, quoted and not, escaped characters, comments and style lines, non-flowchart diagrams) and the word count (where the top starts and ends, what is a word).</li>
+  <li><b>Epic test</b> (<code>tests/verify_doc.rs</code>): <code>keel init</code> in a scratch repo; the installed example, written as a plan, passes the installed after-write hook; an unquoted label, a missing section and a long top each make the after-write and end-of-turn hooks fail and name the fault; fixed, the end-of-turn hook passes.</li>
+</ul>
+
+<h3 id="files">Files</h3>
+<ul data-c="files">
+  <li>Code: <code>src/verify_doc.rs</code>; tests: <code>tests/verify_doc.rs</code>.</li>
+  <li>The epic plan gets the new tag on its "what changes for you" table (my commit).</li>
+  <li>Your <code>keel mr commit</code>: <code>skills/keel-plan/SKILL.md</code> (§3 the new item, §4 the two checks), <code>skills/keel-write/SKILL.md</code> (rules 1 and 7 name the checks), <code>skills/keel-write/references/example.html</code> (the new tag), and their <code>.claude/skills/</code> mirror.</li>
+</ul>
+
+<h3 id="order">Commit order</h3>
+<p data-c="order">My code commit lands first, then yours. Between the two, the example lacks the new tag, so that one commit's tests are red. The tip is green. The reverse order has the same gap.</p>
+
+<h3 id="review-h">Review round 1</h3>
+<ul data-c="review-1">
+  <li><b>Important, fixed:</b> a WU plan that tagged its "what changes for you" table was refused as a typo. Every governed doc may now carry the tag; only an epic plan must.</li>
+  <li><b>Nits, fixed in the skill text:</b> the plan skill says "every flowchart node and edge label" and names what is not scanned; the writing skill says "any doc not marked draft" and where the top is counted from; "the diagram source counts, ids included".</li>
+  <li><b>Refuted by the router:</b> the unstaged <code>.claude/skills</code> copy. Your command copies it.</li>
+</ul>
+
+<h3 id="review-2-h">Review round 2</h3>
+<ul data-c="review-2">
+  <li><b>Pass, nits fixed:</b> the plan skill's link-only wording now names diagram labels too; the writing skill says where the top starts without a <code>&lt;main&gt;</code>; this plan quotes the real error.</li>
+  <li><b>Code nits fixed:</b> a typo of <code>owner-changes</code> in any governed doc now names it in the hint. Mermaid 11 also accepts an unspaced edge label, <code>A--yes--&gt;B</code>; the scan now covers it.</li>
+</ul>
+
+<h3 id="code-review-h">Code review</h3>
+<ul data-c="code-review">
+  <li><b>Round 1, fail:</b> the label check read one line at a time and ended a label at the first closing bracket. It now reads each diagram as one stream.</li>
+  <li><b>Round 2, fail:</b> under your ruling (question 7), four refusals or wrong counts were fixed: <code>%%{…}%%</code> directives, a fix that changed dotted edge text, words split at inline tags, unknown entities counted as words. Known misses are listed in the plan skill.</li>
+</ul>
+
+<h3 id="no-gate">What no gate reviews</h3>
+<p data-c="no-gate">The skill text and the example: your commit and the router's read-only review. Whether 300 words is the right cap: only your comments.</p>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

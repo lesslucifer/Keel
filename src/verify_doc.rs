@@ -1,14 +1,18 @@
-//! `keel verify-doc`: htmldoc checklist + relative-link checks (UC-DOC-1/2).
+//! `keel verify-doc`: htmldoc checklist, relative links, quoted diagram labels (UC-DOC-1/2/4).
 //! ponytail: hand-rolled tag scanner, not an HTML parser; fine for htmldoc's
 //! well-formed output, swap in a real parser if docs start using odd markup.
 use std::path::Path;
 
-const EPIC_PLAN: &[&str] = &["intent", "use-cases", "expected", "non-goals", "wu-summaries", "e2e-plan", "distillation-plan", "open-questions"];
+const EPIC_PLAN: &[&str] = &["intent", "owner-changes", "use-cases", "expected", "non-goals", "wu-summaries", "e2e-plan", "distillation-plan", "open-questions"];
 const WU_PLAN: &[&str] = &["requirement", "maps-to", "expected", "test-plan"];
 const WU_RESULT: &[&str] = &["outcome", "deviations", "evidence", "distillation", "follow-ups"];
 const EPIC_RESULT: &[&str] = &["outcome", "wu-rollup", "deviations", "evidence", "distillation", "follow-ups"];
+/// Known in every governed doc, required only where a checklist lists it (keel-write's today/after table).
+const OPTIONAL: &[&str] = &["owner-changes"];
 const WU_SUB: &[&str] = &["wu-summary", "wu-maps-to", "wu-expected", "wu-deps"];
 const WU_RESULT_ROLE: &str = "wu-result";
+/// Words allowed in an epic plan's top: its main content above the first WU.
+const TOP_CAP: usize = 300;
 const EPIC_RESULT_ROLE: &str = "epic-result";
 
 struct Tag<'a> {
@@ -19,16 +23,46 @@ struct Tag<'a> {
     closing: bool,
 }
 
+/// Tags in document order. A comment or CDATA section is one tag named `!--` and a doctype or
+/// processing instruction one named `!`, so `text` drops them whole; a `>` inside a quoted
+/// attribute value does not end its tag; a `<` not followed by a letter, `/`, `!` or `?` is text.
 fn tags(html: &str) -> Vec<Tag<'_>> {
+    let b = html.as_bytes();
     let mut out = vec![];
     let mut i = 0;
     while let Some(p) = html[i..].find('<') {
         let start = i + p;
-        let Some(q) = html[start..].find('>') else { break };
-        let end = start + q + 1;
-        let body = &html[start + 1..end - 1];
+        i = start + 1;
+        let hidden = [("<!--", "-->"), ("<![CDATA[", "]]>")].into_iter().find(|(open, _)| html[start..].starts_with(open));
+        if let Some((open, close)) = hidden {
+            let from = start + open.len();
+            let end = html[from..].find(close).map_or(html.len(), |q| from + q + close.len());
+            out.push(Tag { name: "!--", attrs: "", start, end, closing: false });
+            i = end;
+            continue;
+        }
+        if !b.get(start + 1).is_some_and(|&c| c.is_ascii_alphabetic() || matches!(c, b'/' | b'!' | b'?')) {
+            continue;
+        }
+        let mut j = start + 1;
+        let mut quote = None;
+        while j < b.len() {
+            match (quote, b[j]) {
+                (None, b'>') => break,
+                (None, q @ (b'"' | b'\'')) => quote = Some(q),
+                (Some(q), c) if c == q => quote = None,
+                _ => {}
+            }
+            j += 1;
+        }
+        if j == b.len() {
+            break;
+        }
+        let end = j + 1;
+        let body = &html[start + 1..j];
         i = end;
         if body.starts_with('!') || body.starts_with('?') {
+            out.push(Tag { name: "!", attrs: "", start, end, closing: false });
             continue;
         }
         let (closing, body) = body.strip_prefix('/').map_or((false, body), |r| (true, r));
@@ -61,14 +95,44 @@ fn span(ts: &[Tag], i: usize) -> Option<(usize, usize)> {
     None
 }
 
+/// Elements that end a run of words where they open or close; every other tag, a comment
+/// included, joins the text on its two sides, as a browser shows it (`non-<code>.md</code>`).
+const BLOCK: &[&str] = &[
+    "address", "article", "aside", "blockquote", "body", "br", "dd", "details", "div", "dl", "dt", "figcaption", "figure", "footer", "form", "h1", "h2", "h3",
+    "h4", "h5", "h6", "head", "header", "hr", "html", "li", "main", "nav", "ol", "p", "pre", "section", "summary", "table", "tbody", "td", "tfoot", "th", "thead",
+    "title", "tr", "ul", "!",
+];
+
+/// Calls `f` on each run of raw text in html[a..b] with the tag that ends it (`None` for the last).
+fn walk<'h>(html: &'h str, ts: &[Tag], a: usize, b: usize, mut f: impl FnMut(&'h str, Option<&Tag>)) {
+    let lo = ts.partition_point(|t| t.start < a);
+    let hi = ts.partition_point(|t| t.start < b);
+    let mut at = a;
+    for t in &ts[lo..hi] {
+        f(&html[at..t.start.max(at)], Some(t));
+        at = t.end.min(b).max(at);
+    }
+    f(&html[at..b.max(at)], None);
+}
+
+/// The text of html[a..b] as a reader sees its words: tags dropped, a block tag one space.
+fn text(html: &str, ts: &[Tag], a: usize, b: usize) -> String {
+    let mut out = String::new();
+    walk(html, ts, a, b, |run, t| {
+        out.push_str(run);
+        if t.is_some_and(|t| BLOCK.iter().any(|n| n.eq_ignore_ascii_case(t.name))) {
+            out.push(' ');
+        }
+    });
+    out
+}
+
 fn filled(html: &str, ts: &[Tag], i: usize) -> bool {
-    let Some((a, b)) = span(ts, i) else { return false };
-    let mut in_tag = false;
-    html[a..b].chars().any(|c| match c {
-        '<' => { in_tag = true; false }
-        '>' => { in_tag = false; false }
-        _ => !in_tag && !c.is_whitespace(),
-    })
+    let mut any = false;
+    if let Some((a, b)) = span(ts, i) {
+        walk(html, ts, a, b, |run, _| any |= run.chars().any(|c| !c.is_whitespace()));
+    }
+    any
 }
 
 fn strip_blocks(html: &str, tag: &str) -> String {
@@ -132,6 +196,13 @@ pub fn verify(path: &Path) -> Vec<String> {
         }
     }
 
+    for (i, t) in ts.iter().enumerate().filter(|(_, t)| !t.closing && attr(t, "class").is_some_and(|c| c.split_whitespace().any(|c| c == "mermaid"))) {
+        let (a, b) = span(&ts, i).unwrap_or((t.end, html.len()));
+        for (found, fix) in unquoted_labels(&decode(&text(&html, &ts, a, b))) {
+            errs.push(format!("diagram label not in quotes: {found} - write {fix}"));
+        }
+    }
+
     let dir = path.parent().unwrap_or(Path::new("."));
     for t in ts.iter().filter(|t| t.name == "a" && !t.closing) {
         let Some(h) = attr(t, "href") else { continue };
@@ -162,17 +233,23 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
         });
     }
     let epic = artifact.split_whitespace().any(|a| a == "epic-plan");
+    let mut known: Vec<&str> = vec![];
+    for k in expected.iter().chain(OPTIONAL) {
+        if !known.contains(k) {
+            known.push(k);
+        }
+    }
     let mut seen: Vec<&str> = vec![];
     for (i, t) in ts.iter().enumerate().filter(|(_, t)| !t.closing) {
         let Some(item) = attr(t, "data-item") else { continue };
-        if expected.contains(&item) {
+        if expected.contains(&item) || OPTIONAL.contains(&item) {
             if filled(html, ts, i) {
                 seen.push(item);
             } else {
                 errs.push(format!("item \"{item}\" is empty"));
             }
         } else if !(epic && WU_SUB.contains(&item)) {
-            errs.push(format!("unknown tag data-item=\"{item}\" (typo? expected one of: {})", expected.join(", ")));
+            errs.push(format!("unknown tag data-item=\"{item}\" (typo? expected one of: {})", known.join(", ")));
         }
     }
     for e in &expected {
@@ -181,7 +258,11 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
         }
     }
     if epic {
-        let wus: Vec<usize> = (0..ts.len()).filter(|&i| !ts[i].closing && attr(&ts[i], "data-wu").is_some()).collect();
+        let wus = wu_blocks(ts);
+        let n = top_words(html, ts, &wus);
+        if n > TOP_CAP {
+            errs.push(format!("epic plan top has {n} words above the first WU, over the cap of {TOP_CAP}: cut it, or move details below the work"));
+        }
         if wus.is_empty() {
             errs.push("epic plan has no data-wu block".into());
         }
@@ -199,9 +280,317 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
     }
 }
 
+/// Decodes numeric character references (decimal and hex) and the named entities docs use; any
+/// other `&name;` stays as written.
+fn decode(s: &str) -> String {
+    decode_with(s, None)
+}
+
+/// `decode`, with every unknown `&name;` replaced by `unknown` when one is given.
+fn decode_with(s: &str, unknown: Option<char>) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(p) = rest.find('&') {
+        out.push_str(&rest[..p]);
+        rest = &rest[p..];
+        let semi = rest.as_bytes()[1..].iter().take(32).position(|&c| c == b';').filter(|&n| n > 0);
+        let hit = semi.and_then(|n| {
+            let name = &rest[1..=n];
+            let named = name.bytes().all(|c| c.is_ascii_alphanumeric());
+            entity(name).or(unknown.filter(|_| named)).map(|c| (c, n + 2))
+        });
+        let (c, len) = hit.unwrap_or(('&', 1));
+        out.push(c);
+        rest = &rest[len..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn entity(name: &str) -> Option<char> {
+    if let Some(n) = name.strip_prefix('#') {
+        let code = match n.strip_prefix(['x', 'X']) {
+            Some(h) => u32::from_str_radix(h, 16).ok()?,
+            None => n.parse().ok()?,
+        };
+        return char::from_u32(code);
+    }
+    Some(match name {
+        "amp" => '&',
+        "lt" => '<',
+        "gt" => '>',
+        "quot" => '"',
+        "apos" => '\'',
+        "nbsp" => ' ',
+        "mdash" => '—',
+        "ndash" => '–',
+        "rarr" => '→',
+        "larr" => '←',
+        "harr" => '↔',
+        "hellip" => '…',
+        "middot" => '·',
+        "bull" => '•',
+        "times" => '×',
+        "lsquo" => '‘',
+        "rsquo" => '’',
+        "ldquo" => '“',
+        "rdquo" => '”',
+        _ => return None,
+    })
+}
+
+/// The open tags carrying `data-wu`, in document order.
+fn wu_blocks(ts: &[Tag]) -> Vec<usize> {
+    (0..ts.len()).filter(|&i| !ts[i].closing && attr(&ts[i], "data-wu").is_some()).collect()
+}
+
+/// Words in an epic plan's top: the text from the start of `<main>` (else `<body>`) up to the
+/// first `data-wu` block (`wus`, from `wu_blocks`). A word is a whitespace-separated run, entities
+/// decoded, holding a letter or digit: a dash, arrow, `·` or unknown `&name;` is not one; inline
+/// tags join the text around them, block tags (`BLOCK`) separate it.
+fn top_words(html: &str, ts: &[Tag], wus: &[usize]) -> usize {
+    let open = |n: &str| ts.iter().find(|t| t.name == n && !t.closing).map(|t| t.end);
+    let start = open("main").or_else(|| open("body")).unwrap_or(0);
+    let end = wus.iter().map(|&i| ts[i].start).find(|&s| s >= start).unwrap_or(html.len());
+    let words = decode_with(&text(html, ts, start, end.max(start)), Some('\u{fffd}'));
+    words.split_whitespace().filter(|w| w.chars().any(char::is_alphanumeric)).count()
+}
+
+const FLOWCHARTS: &[&str] = &["flowchart", "graph", "flowchart-elk"];
+/// Lines skipped to their end.
+const DIRECTIVES: &[&str] = &["classDef", "style", "linkStyle", "direction", "accTitle", "accDescr"];
+/// Statements skipped to their end: the line's end or a `;` outside quotes.
+const STATEMENTS: &[&str] = &["class", "click", "end"];
+
+/// Flowchart labels not in double quotes, as (found, fix).
+///
+/// The grammar this scanner knows, a subset of Mermaid 11's flowchart: after optional `---` front
+/// matter (indented or not), `%%` lines and `%%{…}%%` directives, the header `flowchart`, `graph`
+/// or `flowchart-elk` (other diagram kinds are not scanned). The rest is one token stream; a statement starts at a line start or after
+/// `;`. A `"…"` string runs across lines and hides every delimiter in it. Labels: a node shape
+/// (`A[x]`, `A(x)`, `A{x}`, `A>x]`, doubled and slanted forms) from its opening brackets to the
+/// matching close, brackets nesting inside; an edge label between `|…|`; edge text from `--`, `==`
+/// or `-.` to the next `--`, `==` or `-.`/`.-` outside quotes, spaced or not. Skipped whole: `%%`
+/// lines, `%%{…}%%` directives anywhere and over any lines, `accDescr {…}` blocks (spaced or not),
+/// lines opening with `accTitle`, `accDescr:`, `classDef`, `style`, `linkStyle` or `direction`,
+/// statements opening with `class`, `click` or `end` (to the `;` or line end), and `N@{…}` shape
+/// blocks. A fix hint keeps the label's text exact, a `"` in it written `#quot;`.
+///
+/// Best effort (owner ruling 2026-11-13): a label this misses is a known limit; refusing a valid
+/// diagram, or a hint that changes it, is a bug. Known misses: a bracketless subgraph title, the
+/// inside of a quoted label, `N@{…}` shapes, other diagram kinds, a `>…]` shape after an id that
+/// ends in a non-ASCII or punctuation character, and a statement after a `;` on a skipped line.
+fn unquoted_labels(src: &str) -> Vec<(String, String)> {
+    let mut rest = src;
+    loop {
+        let t = rest.trim_start();
+        if let Some(d) = t.strip_prefix("%%{") {
+            rest = d.find("}%%").map_or("", |p| &d[p + 3..]);
+        } else if t.starts_with("%%") {
+            rest = t.split_once('\n').map_or("", |(_, r)| r);
+        } else if let Some(fm) = t.strip_prefix("---") {
+            let fm = fm.split_once('\n').map_or("", |(_, r)| r);
+            let mut off = 0;
+            rest = "";
+            for line in fm.split_inclusive('\n') {
+                off += line.len();
+                if line.trim() == "---" {
+                    rest = &fm[off..];
+                    break;
+                }
+            }
+        } else {
+            rest = t;
+            break;
+        }
+    }
+    let kind = rest.split(|c: char| c.is_whitespace() || c == ';').next().unwrap_or("");
+    if !FLOWCHARTS.contains(&kind) {
+        return vec![];
+    }
+    let body = rest.find(['\n', ';']).map_or("", |p| &rest[p + 1..]);
+    let mut out = vec![];
+    scan(body, &mut out);
+    out
+}
+
+/// A label's text as it goes inside the quotes of a fix: Mermaid writes a `"` as `#quot;`.
+fn inner(label: &str) -> String {
+    label.replace('"', "#quot;")
+}
+
+fn is_link(c: u8) -> bool {
+    matches!(c, b'-' | b'=' | b'.' | b'<' | b'>')
+}
+
+fn is_close(c: u8) -> bool {
+    matches!(c, b']' | b')' | b'}')
+}
+
+fn is_open(c: u8) -> bool {
+    matches!(c, b'[' | b'(' | b'{')
+}
+
+fn scan(s: &str, out: &mut Vec<(String, String)>) {
+    let b = s.as_bytes();
+    let skip_quoted = |i: usize| b[i + 1..].iter().position(|&c| c == b'"').map_or(b.len(), |q| i + q + 2);
+    let line_end = |i: usize| s[i..].find('\n').map_or(s.len(), |p| i + p);
+    let stmt_end = |mut j: usize| {
+        while j < b.len() && b[j] != b'\n' && b[j] != b';' {
+            j = if b[j] == b'"' { skip_quoted(j) } else { j + 1 };
+        }
+        j.min(b.len())
+    };
+    let mut i = 0;
+    let mut at_start = true;
+    while i < b.len() {
+        let c = b[i];
+        if c == b'%' && s[i..].starts_with("%%{") {
+            i = s[i..].find("}%%").map_or(s.len(), |p| i + p + 3);
+            continue;
+        }
+        if c == b'\n' || c == b';' {
+            at_start = true;
+            i += 1;
+            continue;
+        }
+        if at_start {
+            if c.is_ascii_whitespace() {
+                i += 1;
+                continue;
+            }
+            at_start = false;
+            if s[i..].starts_with("%%") {
+                i = line_end(i);
+                continue;
+            }
+            let n = s[i..].find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(s.len() - i);
+            let word = &s[i..i + n];
+            if word == "accDescr" && s[i + n..].trim_start().starts_with('{') {
+                i = s[i..].find('}').map_or(s.len(), |p| i + p + 1);
+                continue;
+            }
+            if STATEMENTS.contains(&word) {
+                i = stmt_end(i);
+                continue;
+            }
+            if DIRECTIVES.contains(&word) {
+                i = line_end(i);
+                continue;
+            }
+            if word == "subgraph" {
+                i += n;
+                continue;
+            }
+        }
+        if c == b'"' {
+            i = skip_quoted(i);
+        } else if c == b'@' && b.get(i + 1) == Some(&b'{') {
+            let mut j = i + 2;
+            while j < b.len() && b[j] != b'}' {
+                j = if b[j] == b'"' { skip_quoted(j) } else { j + 1 };
+            }
+            i = j + 1;
+        } else if c == b'|' {
+            let mut j = i + 1;
+            while j < b.len() && b[j] == b' ' {
+                j += 1;
+            }
+            let from = if j < b.len() && b[j] == b'"' { skip_quoted(j) } else { j };
+            let Some(k) = b.get(from..).and_then(|r| r.iter().position(|&c| c == b'|')).map(|k| from + k) else { return };
+            let label = s[i + 1..k].trim();
+            if !label.starts_with('"') {
+                out.push((format!("|{label}|"), format!("|\"{}\"|", inner(label))));
+            }
+            i = k + 1;
+        } else if is_open(c) || (c == b'>' && i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')) {
+            let mut j = i + 1;
+            let mut opens = 1;
+            while c != b'>' && j < b.len() && is_open(b[j]) {
+                j += 1;
+                opens += 1;
+            }
+            if b[j - 1] == b'[' && j < b.len() && matches!(b[j], b'/' | b'\\') {
+                j += 1;
+            }
+            while j < b.len() && b[j] == b' ' {
+                j += 1;
+            }
+            if j < b.len() && b[j] == b'"' {
+                i = skip_quoted(j);
+                while i < b.len() && is_close(b[i]) {
+                    i += 1;
+                }
+                continue;
+            }
+            let mut k = j;
+            let mut depth = opens;
+            while k < b.len() {
+                if b[k] == b'"' {
+                    k = skip_quoted(k);
+                    continue;
+                }
+                if is_open(b[k]) {
+                    depth += 1;
+                } else if is_close(b[k]) {
+                    depth -= 1;
+                    if depth < opens {
+                        break;
+                    }
+                }
+                k += 1;
+            }
+            let mut close = k;
+            while close < b.len() && close - k < opens && is_close(b[close]) {
+                close += 1;
+            }
+            if k > j && matches!(b[k - 1], b'/' | b'\\') {
+                k -= 1;
+            }
+            let (open, label, end) = (s[i..j].trim_end(), s[j..k].trim(), &s[k..close]);
+            out.push((format!("{open}{label}{end}"), format!("{open}\"{}\"{end}", inner(label))));
+            i = close;
+        } else if is_link(c) {
+            let run = b[i..].iter().take_while(|&&c| is_link(c)).count();
+            let from = i + s[i..i + run].len() - s[i..i + run].trim_start_matches('<').len();
+            let arrow = &s[from..i + run];
+            let ends_arrow = |n: &u8| matches!(n, b'x' | b'o') && arrow != "-.";
+            let opens_text = matches!(arrow, "--" | "==" | "-.") && b.get(i + run).is_some_and(|n| !ends_arrow(n));
+            i += run;
+            if opens_text {
+                let shut: &[u8] = if arrow == "-." { b".-" } else { arrow.as_bytes() };
+                let mut k = i;
+                while k < b.len() && !b[k..].starts_with(shut) {
+                    k = if b[k] == b'"' { skip_quoted(k) } else { k + 1 };
+                }
+                if k >= b.len() {
+                    return;
+                }
+                if arrow == "-." {
+                    while k > i && b[k - 1] == b'.' {
+                        k -= 1;
+                    }
+                    if k > i && b[k - 1] == b'-' {
+                        k -= 1;
+                    }
+                }
+                let label = s[i..k].trim();
+                let end = b[k..].iter().take_while(|&&c| is_link(c)).count();
+                let close = &s[k..k + end];
+                if !label.starts_with('"') {
+                    out.push((s[from..k + end].to_string(), format!("{arrow} \"{}\" {close}", inner(label))));
+                }
+                i = k + end;
+            }
+        } else {
+            i += 1;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{artifact, has_role, result_role, verify};
+    use super::{artifact, decode, has_role, result_role, tags, top_words, unquoted_labels, verify, wu_blocks};
 
     #[test]
     fn a_stray_closing_html_before_the_root_neither_hides_the_checklist_nor_the_role() {
@@ -243,5 +632,161 @@ mod tests {
         assert!(has_role(r#"<html data-artifact="wu-result">"#, "wu-result"));
         assert!(!has_role(r#"<html data-artifact="wu-result">"#, "epic-result"));
         assert!(!has_role("<p>x-result</p>", "wu-result"));
+    }
+
+    fn labels(src: &str) -> Vec<String> {
+        unquoted_labels(src).into_iter().map(|(found, _)| found).collect()
+    }
+
+    #[test]
+    fn every_node_shape_is_scanned_and_a_quoted_label_passes() {
+        for shape in ["[x]", "(x)", "([x])", "[[x]]", "[(x)]", "((x))", "{x}", "{{x}}", ">x]", "[/x/]", "[\\x\\]", "[/x\\]"] {
+            let open = &shape[..shape.find('x').unwrap()];
+            let close = &shape[shape.find('x').unwrap() + 1..];
+            assert_eq!(labels(&format!("flowchart LR\n  A{shape} --> B")), vec![shape.to_string()], "{shape}");
+            assert!(labels(&format!("flowchart LR\n  A{open}\"x\"{close} --> B")).is_empty(), "{shape} quoted");
+        }
+        assert_eq!(unquoted_labels("graph TD\n  A[Build step]"), vec![("[Build step]".into(), "[\"Build step\"]".into())]);
+    }
+
+    #[test]
+    fn both_edge_label_forms_are_scanned_and_plain_arrows_are_not_labels() {
+        assert_eq!(labels("flowchart LR\n  A -->|yes| B -.->|no| C"), ["|yes|", "|no|"]);
+        assert_eq!(labels("flowchart LR\n  A -- yes --> B\n  B == go ==> C\n  C -. later .-> D\n  D <-- back --> A"), ["-- yes -->", "== go ==>", "-. later .->", "-- back -->"]);
+        assert_eq!(unquoted_labels("flowchart LR\n  A -- yes --> B")[0].1, "-- \"yes\" -->");
+        let quoted = "flowchart LR\n  A -->|\"yes\"| B -- \"no\" --> C == \"go\" ==> D -. \"x\" .-> E\n  A --> B --- C -.-> D ==> E <--> F --x G --o H";
+        assert!(labels(quoted).is_empty(), "{:?}", labels(quoted));
+    }
+
+    #[test]
+    fn an_unspaced_edge_label_is_scanned_and_a_cross_or_circle_end_is_not_a_label() {
+        assert_eq!(labels("flowchart LR\n  A--yes-->B\n  B==go==>C\n  C-.later.->D\n  D<--back-->A"), ["--yes-->", "==go==>", "-.later.->", "--back-->"]);
+        assert_eq!(unquoted_labels("flowchart LR\n  A--yes-->B")[0].1, "-- \"yes\" -->");
+        let fine = "flowchart LR\n  A--\"yes\"-->B\n  A--xB\n  A--oB\n  A==xB\n  A--x C\n  A--o C\n  A--well-known-->B";
+        assert_eq!(labels(fine), ["--well-known-->"]);
+    }
+
+    #[test]
+    fn quoted_text_hides_delimiters_and_non_label_lines_are_skipped() {
+        let src = "---\ntitle: A[x]\n---\nflowchart TD;  A[\"a [b] | c -- d\"] --> B\n  %% C[comment]\n  classDef hot fill:#f96\n  style A fill:#f9f\n  class A hot\n  click A \"https://x.io\" \"tip (x)\"\n  linkStyle 0 stroke:#f00\n  direction LR\n  N@{ shape: rect, label: \"x [y]\" }\n  end";
+        assert!(labels(src).is_empty(), "{:?}", labels(src));
+        assert_eq!(labels("flowchart LR; A[raw]"), ["[raw]"]);
+        assert_eq!(labels("flowchart LR\n  subgraph S [Title]\n  A\n  end"), ["[Title]"]);
+        assert_eq!(labels("flowchart LR\n  A[W1 · the skill]"), ["[W1 · the skill]"]);
+    }
+
+    /// Code review round 1, blocker 1: a quoted edge text hides the link-like dots inside it.
+    #[test]
+    fn a_quoted_edge_text_hides_its_dots_from_the_link_search() {
+        assert!(labels("flowchart LR\n  A -- \"wait...\" --> B(\"retry (3x)\")").is_empty(), "{:?}", labels("flowchart LR\n  A -- \"wait...\" --> B(\"retry (3x)\")"));
+        assert_eq!(labels("flowchart LR\n  A -- \"wait...\" --> B(retry)"), ["(retry)"]);
+    }
+
+    /// Code review round 1, blocker 2: Mermaid's own multi-line quoted label.
+    #[test]
+    fn a_quoted_label_runs_across_lines() {
+        let src = "flowchart LR\n  A[\"first line\n  second (x) line\"] --> B[raw]";
+        assert_eq!(labels(src), ["[raw]"]);
+    }
+
+    /// Code review round 1, blocker 3: a whole accDescr block is skipped, spaced or not.
+    #[test]
+    fn an_acc_descr_block_is_skipped_whole_spaced_or_not() {
+        for open in ["accDescr {", "accDescr{"] {
+            let src = format!("flowchart LR\n  {open}\n    a diagram (x) of [y]\n    and more {{z}}\n  }}\n  accTitle: the [t]\n  accDescr: one (line)\n  A[raw]");
+            assert_eq!(labels(&src), ["[raw]"], "{open}");
+        }
+        assert_eq!(labels("flowchart LR\n  accDescr{ one (x) }\n  A[raw]"), ["[raw]"]);
+    }
+
+    /// Code review round 1, blocker 4: Mermaid 11 parses `flowchart-elk` as a flowchart.
+    #[test]
+    fn a_flowchart_elk_diagram_is_scanned() {
+        assert_eq!(labels("flowchart-elk TD\n  A[x] --> B"), ["[x]"]);
+        assert_eq!(labels("%% lead\nflowchart-elk\n  A[x]"), ["[x]"]);
+    }
+
+    /// Code review round 1, important 5: a label ends at its shape's matching bracket.
+    #[test]
+    fn a_label_ends_at_its_matching_bracket_and_the_hint_quotes_all_of_it() {
+        assert_eq!(unquoted_labels("flowchart LR\n  A[foo (bar)] --> B"), vec![("[foo (bar)]".into(), "[\"foo (bar)\"]".into())]);
+        assert_eq!(unquoted_labels("flowchart LR\n  A([a {b} c]) --> B"), vec![("([a {b} c])".into(), "([\"a {b} c\"])".into())]);
+        assert_eq!(labels("flowchart LR\n  A[/a (b)/] --> B{c [d]}"), ["[/a (b)/]", "{c [d]}"]);
+    }
+
+    /// Code review round 1, important 6: comments and quoted attribute values hide their `>`.
+    #[test]
+    fn a_comment_or_attribute_value_hides_its_angle_bracket_from_the_word_count() {
+        assert_eq!(top("<main><!-- x > y z --><p title=\"b > c d\">one</p></main>"), 1);
+        assert_eq!(top("<main><p data-x='a > b'>one two</p></main>"), 2);
+    }
+
+    /// Code review round 1, important 7: numeric entities and the named ones docs use decode;
+    /// a decoded punctuation mark is not a word.
+    #[test]
+    fn entities_decode_numeric_and_named_and_punctuation_is_no_word() {
+        assert_eq!(decode("&#x22;hi&#34;&quot; &mdash;&#8212;&#x2014; &rarr; &amp;lt; &bogus; &"), "\"hi\"\" ——— → &lt; &bogus; &");
+        assert_eq!(top("<main>a &mdash; b &rarr; c &#8212; d &hellip;</main>"), 4);
+        assert!(labels(&decode("flowchart LR\n  A[&#x22;hi&#x22;] --> B[&#34;b&#34;]")).is_empty());
+    }
+
+    /// Code review round 2, B3: a `%%{…}%%` directive is skipped whole, multi-line or inline.
+    #[test]
+    fn a_directive_is_skipped_whole_multi_line_or_inline() {
+        assert!(labels("%%{\n  init: {'theme': 'dark'}\n}%%\nflowchart LR\n  A[\"a\"] --> B[\"b\"]").is_empty());
+        assert_eq!(labels("%%{init: {'theme': 'dark'}}%% flowchart LR\n  A[x]"), ["[x]"]);
+        assert!(labels("flowchart LR\n  %%{init: {'theme': 'dark'}}%%\n  A[\"a\"]\n  %%{\n  init: {'x': 'y'}\n  }%%\n  B[\"b\"]").is_empty());
+    }
+
+    /// Code review round 2, B5: the hint keeps the label's text exact.
+    #[test]
+    fn the_hint_keeps_the_label_text_exact() {
+        assert_eq!(unquoted_labels("flowchart LR\n  A[\"a\"] -. yes -.-> B[\"b\"]"), vec![("-. yes -.->".into(), "-. \"yes\" -.->".into())]);
+        assert_eq!(unquoted_labels("flowchart LR\n  A[say \"hi\" now]"), vec![("[say \"hi\" now]".into(), "[\"say #quot;hi#quot; now\"]".into())]);
+    }
+
+    /// Code review round 2, B6: inline tags join the words around them; block tags separate.
+    #[test]
+    fn inline_tags_join_words_and_block_tags_separate_them() {
+        assert_eq!(top("<main><p>non-<code>.md</code> <b>re</b>use <a href=\"x\">li</a>nk</p></main>"), 3);
+        assert_eq!(top("<main><p>one</p><p>two</p><ul><li>three</li></ul><table><tr><td>four</td><th>five</th></tr></table><h2>six</h2><div>seven</div>eight<br>nine<pre>ten</pre></main>"), 10);
+    }
+
+    /// Code review round 2, B7: an unknown named entity is one symbol, like its numeric form.
+    #[test]
+    fn an_unknown_named_entity_is_no_word() {
+        assert_eq!(top("<main>a &copy; b &#169; c &reg;</main>"), 3);
+    }
+
+    /// Code review round 2, B1, B2, B8 (known limits made trivial): `class`, `click` and `end`
+    /// end at `;`; indented front matter; CDATA is skipped whole.
+    #[test]
+    fn a_class_click_or_end_statement_ends_at_a_semicolon_front_matter_may_be_indented_and_cdata_is_skipped() {
+        assert_eq!(labels("flowchart LR\n  class A hot; B[x]\n  click A cb \"t;ip\"; C[y]\n  end; D[z]"), ["[x]", "[y]", "[z]"]);
+        assert_eq!(labels("  ---\n  title: t\n  ---\n  flowchart LR\n  A[x]"), ["[x]"]);
+        assert_eq!(top("<main><svg><![CDATA[ a > b c ]]></svg>one</main>"), 1);
+    }
+
+    #[test]
+    fn only_flowcharts_are_scanned() {
+        for src in ["sequenceDiagram\n  A->>B: hi [x]", "stateDiagram-v2\n  A --> B: go [x]", "pie\n  \"a\" : 1", "", "flowchartX\n  A[x]"] {
+            assert!(labels(src).is_empty(), "{src}");
+        }
+    }
+
+    fn top(html: &str) -> usize {
+        let ts = tags(html);
+        top_words(html, &ts, &wu_blocks(&ts))
+    }
+
+    #[test]
+    fn the_top_runs_from_main_or_body_to_the_first_wu_and_counts_words_with_a_letter_or_digit() {
+        assert_eq!(top("<body><header>one two</header><main><p>three four</p><div data-wu=\"W1\">five</div></main></body>"), 2);
+        assert_eq!(top("<body><header>one two</header><p>three</p><div data-wu=\"W1\">four</div></body>"), 3);
+        assert_eq!(top("<main><p>a · b — c --> | 1</p></main>"), 4);
+        assert_eq!(top("<main><td>a</td><td>b</td>x&amp;y A &lt;-- B</main>"), 5);
+        assert_eq!(top("<main><pre>A <-- B</pre></main>"), 2);
+        assert_eq!(top("<main><!-- hidden words --><p>shown</p></main>"), 1);
+        assert_eq!(top("<p>no main nor body</p><div data-wu=\"W1\">x</div>"), 4);
     }
 }
