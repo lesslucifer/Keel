@@ -2,7 +2,7 @@
 //! line, the scope each round reviews, which fixes need no new round (a fix-PASS), and the cap.
 //! Derived from the notes every time, never typed: a fresh session counts what the branch recorded.
 use crate::notes::{self, CrNote, OWNER_WAIVES};
-use crate::{git, git_raw, ok_text, short};
+use crate::{git, short};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -38,72 +38,17 @@ pub(crate) fn kind(n: &CrNote) -> Kind {
     }
 }
 
-/// The cr notes on the first-parent commits of `base..tip`, newest first, in three git processes
-/// whatever the length of the line: `rev-list` names the commits, `notes list` every note's blob, one
-/// `cat-file --batch` prints the line's blobs. Plumbing only, so no display config changes a note.
-/// A note git cannot print, or that does not parse, is an entry of its own, never dropped.
+/// The cr notes on the first-parent commits of `base..tip`, newest first, each parsed: one note that
+/// git cannot print or that does not parse is an entry of its own, never dropped. The storage read is
+/// `notes::cr_line`'s.
 pub(crate) fn line(repo: &Path, base: &str, tip: &str) -> Result<Vec<Entry>, String> {
-    let commits = git(repo, &["rev-list", "--first-parent", &format!("{base}..{tip}")], &[])?;
-    let listed = git(repo, &["notes", "--ref=cr", "list"], &[])?;
-    let blobs: HashMap<&str, &str> = listed.lines().filter_map(|l| l.split_once(' ')).map(|(blob, commit)| (commit, blob)).collect();
-    let on_line: Vec<(&str, &str)> = commits.lines().filter_map(|c| blobs.get(c).map(|b| (c, *b))).collect();
-    if on_line.is_empty() {
-        return Ok(vec![]);
-    }
-    let input: String = on_line.iter().map(|(_, b)| format!("{b}\n")).collect();
-    let args = ["cat-file", "--batch"];
-    let out = git_raw(repo, &args, Some(input.as_bytes()))?;
-    if !out.status.success() {
-        ok_text(&args, out)?;
-        return Err("keel: git cat-file --batch failed".into());
-    }
-    let bodies = parse_batch(&out.stdout, on_line.len());
-    Ok(on_line
-        .into_iter()
-        .zip(bodies)
-        .map(|((c, _), body)| Entry {
-            commit: c.to_string(),
-            note: body.and_then(|b| parse_note(&b)),
-        })
-        .collect())
+    Ok(notes::cr_line(repo, base, tip)?.into_iter().map(|(commit, body)| Entry { commit, note: body.and_then(|b| parse_note(&b)) }).collect())
 }
 
 /// A cr note as the schedule reads it: the schedule's fields are typed on `CrNote`
 /// (`notes::ScheduleFields`), so a `fixes` that is not a full commit name makes the note unreadable.
 pub(crate) fn parse_note(body: &str) -> Result<CrNote, String> {
     serde_json::from_str(body).map_err(|e| format!("it does not parse as cr/v1 ({e})"))
-}
-
-/// `git cat-file --batch` output, one result per object asked for: its bytes as text, or why not.
-fn parse_batch(mut out: &[u8], n: usize) -> Vec<Result<String, String>> {
-    let mut v = Vec::with_capacity(n);
-    for _ in 0..n {
-        let Some(nl) = out.iter().position(|&b| b == b'\n') else {
-            v.push(Err("git printed nothing for it".into()));
-            continue;
-        };
-        let header = String::from_utf8_lossy(&out[..nl]).into_owned();
-        out = &out[nl + 1..];
-        let fields: Vec<&str> = header.split(' ').collect();
-        let size = match fields[..] {
-            [_, _, size] => size.parse::<usize>().ok().filter(|s| out.len() > *s),
-            _ => None,
-        };
-        match (&fields[..], size) {
-            ([_, "blob", _], Some(s)) => v.push(String::from_utf8(out[..s].to_vec()).map_err(|_| "its blob is not UTF-8".into())),
-            ([_, kind, _], Some(_)) => v.push(Err(format!("it names a {kind}, not a blob"))),
-            ([_, "missing"], _) => v.push(Err("its blob is missing from the object store".into())),
-            _ => {
-                v.push(Err(format!("git printed '{header}' for it")));
-                out = &[];
-                continue;
-            }
-        }
-        if let Some(s) = size {
-            out = &out[s + 1..];
-        }
-    }
-    v
 }
 
 /// `[review] max_rounds` in the target's committed `.keel/config.toml`: the policy a branch is
@@ -237,7 +182,7 @@ fn no_round_after(note: &CrNote, round: u32, max: u32, c: &str) -> String {
 /// cap, and from round 5 unless the round before found a blocker; the fix line is `then`'s.
 /// `unchanged(c)`: no code path changed between commit `c` and the tip (fix_pass's carry-over rule,
 /// so the two name one way out).
-pub(crate) fn next_round(earlier: &[Entry], max: u32, unchanged: &dyn Fn(&str) -> bool) -> Result<Next, (String, String)> {
+pub(crate) fn next_round(earlier: &[Entry], max: u32, unchanged: &dyn Fn(&str) -> Result<bool, String>) -> Result<Next, (String, String)> {
     let rounds = rounds(earlier)?;
     let Some(&(c, note)) = rounds.first() else { return Ok(Next { round: 1, max, since: None }) };
     let (last, n) = (rounds.len() as u32, rounds.len() as u32 + 1);
@@ -252,11 +197,11 @@ pub(crate) fn next_round(earlier: &[Entry], max: u32, unchanged: &dyn Fn(&str) -
     if then(note, last, max) != Then::FixPass {
         return Err((what, no_round_after(note, last, max, c)));
     }
-    let fixed_and_changed = earlier
-        .iter()
-        .take_while(|e| e.commit != c)
-        .find(|e| e.note.as_ref().is_ok_and(|n| kind(n) == Kind::FixPass))
-        .filter(|e| !unchanged(&e.commit));
+    let newest_fix = earlier.iter().take_while(|e| e.commit != c).find(|e| e.note.as_ref().is_ok_and(|n| kind(n) == Kind::FixPass));
+    let fixed_and_changed = match newest_fix {
+        Some(e) if !unchanged(&e.commit).map_err(unknown)? => Some(e),
+        _ => None,
+    };
     Err(match fixed_and_changed {
         Some(f) => (
             format!("{what}; the fix-PASS on {} already answers it, and code changed since", short(&f.commit)),
@@ -285,9 +230,10 @@ impl<'a> Schedule<'a> {
     }
 
     /// The branch itself changed no code path between commit `c` and the tip (`notes::own_names`: a
-    /// back-merge brings no change of this branch's own). One rule for the round and the fix-PASS.
-    pub(crate) fn unchanged(&self, c: &str) -> bool {
-        notes::own_names(self.repo, c, self.tip, self.code_paths).is_ok_and(|n| n.is_empty())
+    /// back-merge brings no change of this branch's own). One rule for the round and the fix-PASS. An
+    /// error is an error, never an answer: the callers refuse on it.
+    pub(crate) fn unchanged(&self, c: &str) -> Result<bool, String> {
+        Ok(notes::own_names(self.repo, c, self.tip, self.code_paths)?.is_empty())
     }
 
     /// The round about to run on the tip.
@@ -310,6 +256,11 @@ pub(crate) fn fixable(note: &CrNote, round: u32, max: u32) -> Result<(), String>
     }
 }
 
+/// Refused when keel cannot tell what the branch changed: never read as "changed" or "unchanged".
+fn unknown(e: String) -> (String, String) {
+    (format!("keel cannot tell what this branch changed since a reviewed commit ({e})"), "repair the repo state (git fsck names what is broken), then run again".to_string())
+}
+
 /// What a fix-PASS answers.
 #[derive(Debug, PartialEq)]
 pub(crate) struct Fix {
@@ -324,7 +275,7 @@ pub(crate) struct Fix {
 /// fix-PASS when code changed since it (a second fix needs a round). `own`: the tip's own note.
 /// `unchanged(c)`: no code path changed between commit `c` and the tip - a later commit with nothing
 /// reviewable (the result report) carries the fix-PASS over.
-pub(crate) fn fix_pass(own: Option<&CrNote>, earlier: &[Entry], fixes: &str, max: u32, unchanged: impl Fn(&str) -> bool) -> Result<Fix, (String, String)> {
+pub(crate) fn fix_pass(own: Option<&CrNote>, earlier: &[Entry], fixes: &str, max: u32, unchanged: impl Fn(&str) -> Result<bool, String>) -> Result<Fix, (String, String)> {
     let rounds = rounds(earlier)?;
     if let Some(n) = own.filter(|n| kind(n) != Kind::FixPass) {
         let what = match kind(n) {
@@ -344,7 +295,11 @@ pub(crate) fn fix_pass(own: Option<&CrNote>, earlier: &[Entry], fixes: &str, max
         ));
     }
     let newest_fix = earlier.iter().take_while(|e| e.commit != latest).find(|e| e.note.as_ref().is_ok_and(|n| kind(n) == Kind::FixPass));
-    if let Some(e) = newest_fix.filter(|e| !unchanged(&e.commit)) {
+    let newest_fix = match newest_fix {
+        Some(e) if !unchanged(&e.commit).map_err(unknown)? => Some(e),
+        _ => None,
+    };
+    if let Some(e) = newest_fix {
         let what = format!("the fix-PASS on {} already answers round {round}, and code changed since; a second fix needs a new round", short(&e.commit));
         return Err(match then(note, round, max) {
             _ if round_follows(note, round, max) => (what, format!("run review round {} on the tip", round + 1)),
@@ -357,7 +312,7 @@ pub(crate) fn fix_pass(own: Option<&CrNote>, earlier: &[Entry], fixes: &str, max
         Then::Round(n) => (why, format!("fix the findings, then run review round {n} on the fix")),
         _ => (why, no_round_after(note, round, max, latest)),
     })?;
-    if note.verdict != "PASS" && unchanged(latest) {
+    if note.verdict != "PASS" && unchanged(latest).map_err(unknown)? {
         return Err((
             format!("no code path changed since round {round} on {}, so nothing fixed its findings; a fix-PASS answers a failed round only with a fix", short(latest)),
             format!("fix the findings in code, then on the fix commit: keel notes write cr --verdict PASS --fixes {latest}"),
@@ -458,7 +413,7 @@ pub(crate) fn tags(entries: &[Entry], files: impl Fn(&str, &str) -> Result<Vec<S
 
 #[cfg(test)]
 mod tests {
-    use super::{cap, fix_pass, fixable, max_rounds_in, next_round, next_step, parse_batch, parse_note, tags, then, Entry, Fix, Kind, Next, Then};
+    use super::{cap, fix_pass, fixable, max_rounds_in, next_round, next_step, parse_note, tags, then, Entry, Fix, Kind, Next, Then};
     use crate::notes::{full_sha, CrNote};
     use serde_json::json;
 
@@ -501,17 +456,17 @@ mod tests {
 
     #[test]
     fn the_round_counts_the_reviews_below_the_tip_and_rounds_3_on_review_the_last_fix() {
-        assert_eq!(next_round(&[], 5, &|_| false), Ok(Next { round: 1, max: 5, since: None }));
+        assert_eq!(next_round(&[], 5, &|_| Ok(false)), Ok(Next { round: 1, max: 5, since: None }));
         let two = vec![fail("r2", 1, 0), fix_of("f1", "r1"), at("w", note("WAIVED", 0, 0, json!({"waiver": "x", "unreviewed": true}))), fail("r1", 0, 1)];
-        assert_eq!(next_round(&two, 5, &|_| false), Ok(Next { round: 3, max: 5, since: Some("r2".into()) }), "a fix-PASS or an unreviewed waiver is no round");
-        assert_eq!(next_round(&two[1..], 5, &|_| false).unwrap().since, None, "round 2 reviews the whole range");
-        assert_eq!(next_round(&failed_rounds(4), 5, &|_| false), Ok(Next { round: 5, max: 5, since: Some("r4".into()) }));
+        assert_eq!(next_round(&two, 5, &|_| Ok(false)), Ok(Next { round: 3, max: 5, since: Some("r2".into()) }), "a fix-PASS or an unreviewed waiver is no round");
+        assert_eq!(next_round(&two[1..], 5, &|_| Ok(false)).unwrap().since, None, "round 2 reviews the whole range");
+        assert_eq!(next_round(&failed_rounds(4), 5, &|_| Ok(false)), Ok(Next { round: 5, max: 5, since: Some("r4".into()) }));
         let n = Next { round: 3, max: 5, since: Some("s".into()) };
         assert_eq!((n.scope(), Next { round: 1, max: 5, since: None }.scope()), ("since s".to_string(), "full".to_string()));
         let paths = ["src/".to_string(), "tests/".to_string()];
         let a = n.announce("b", "t", &paths, &["src/a.rs".into()]);
         assert!(a.starts_with("review round 3 of 5 - scope: the last fix, s..t: this branch's own changes"), "{a}");
-        assert!(a.contains("git rev-list --first-parent s..t | git diff-tree --stdin -r -p --cc -- src/ tests/; changed: src/a.rs ("), "{a}");
+        assert!(a.contains("git rev-list --first-parent --end-of-options s..t | git diff-tree --stdin -r -p --cc --no-renames --src-prefix=a/ --dst-prefix=b/ -- src/ tests/; changed: src/a.rs ("), "{a}");
         assert!(n.announce("b", "t", &paths, &[]).contains("changed: nothing"));
         assert_eq!(Next { round: 2, max: 5, since: None }.announce("b", "t", &paths, &[]), "review round 2 of 5 - scope: the whole range, b..t");
     }
@@ -520,23 +475,23 @@ mod tests {
     fn round_5_follows_only_a_blocker_and_nothing_follows_the_cap() {
         let mut no_blocker = failed_rounds(4);
         no_blocker[0] = fail("r4", 0, 2);
-        let (what, fix) = next_round(&no_blocker, 5, &|_| false).unwrap_err();
+        let (what, fix) = next_round(&no_blocker, 5, &|_| Ok(false)).unwrap_err();
         assert!(what.contains("round 5 runs only after round 4 found a blocker") && fix.contains("--fixes r4"), "{what} / {fix}");
         let mut fixed = vec![fix_of("f4", "r4")];
         fixed.extend(no_blocker);
-        let (what, fix) = next_round(&fixed, 5, &|_| false).unwrap_err();
+        let (what, fix) = next_round(&fixed, 5, &|_| Ok(false)).unwrap_err();
         assert!(what.contains("fix-PASS on f4 already answers it") && fix.contains("--waive-review") && !fix.contains("--fixes"), "a second fix: {what} / {fix}");
-        let (_, fix) = next_round(&fixed, 5, &|c| c == "f4").unwrap_err();
+        let (_, fix) = next_round(&fixed, 5, &|c| Ok(c == "f4")).unwrap_err();
         assert!(fix.contains("--fixes r4"), "no code since the fix-PASS: it carries over: {fix}");
-        let (what, fix) = next_round(&failed_rounds(5), 5, &|_| false).unwrap_err();
+        let (what, fix) = next_round(&failed_rounds(5), 5, &|_| Ok(false)).unwrap_err();
         assert!(what.contains("no review round 6") && fix.contains("--verdict WAIVED") && fix.contains("--waive-review"), "{what} / {fix}");
-        assert_eq!(next_round(&failed_rounds(5), 6, &|_| false).unwrap().round, 6, "max_rounds moves the cap");
+        assert_eq!(next_round(&failed_rounds(5), 6, &|_| Ok(false)).unwrap().round, 6, "max_rounds moves the cap");
         let mut six = failed_rounds(5);
         six[0] = fail("r5", 0, 1);
-        assert!(next_round(&six, 6, &|_| false).is_err(), "from round 4 on, only a blocker earns another round, whatever the cap");
-        assert!(next_round(&failed_rounds(2), 2, &|_| false).is_err() && next_round(&failed_rounds(1), 2, &|_| false).is_ok());
+        assert!(next_round(&six, 6, &|_| Ok(false)).is_err(), "from round 4 on, only a blocker earns another round, whatever the cap");
+        assert!(next_round(&failed_rounds(2), 2, &|_| Ok(false)).is_err() && next_round(&failed_rounds(1), 2, &|_| Ok(false)).is_ok());
         let unreadable = vec![fail("r2", 1, 0), Entry { commit: "0123456789ab".into(), note: Err("it does not parse".into()) }];
-        let (what, fix) = next_round(&unreadable, 5, &|_| false).unwrap_err();
+        let (what, fix) = next_round(&unreadable, 5, &|_| Ok(false)).unwrap_err();
         assert!(what.contains("0123456789 is unreadable") && fix.contains("repairs"), "{what}");
     }
 
@@ -558,7 +513,7 @@ mod tests {
         assert!(fixable(&note("WAIVED", 0, 1, json!({"waiver": "w"})), 4, 5).is_err());
 
         let line = vec![at("r1", pass_nits)];
-        let changed = |_: &str| false;
+        let changed = |_: &str| Ok(false);
         assert_eq!(fix_pass(None, &line, "r1", 5, changed), Ok(Fix { round: 1, importants: 0, nits: 2 }));
         let mut four = failed_rounds(4);
         four[0] = fail("r4", 0, 3);
@@ -573,8 +528,14 @@ mod tests {
         let two = vec![fix_of("f2", "r2"), fix_of("f1", "r2"), at("r2", note("PASS", 0, 0, json!({}))), fail("r1", 1, 0)];
         let (_, fix) = fix_pass(None, &two, "r2", 5, changed).unwrap_err();
         assert_eq!(fix, "run review round 3 on the tip", "before round 4 a second fix gets its round");
-        assert_eq!(fix_pass(None, &stacked, "r4", 5, |c| c == "f5"), Ok(Fix { round: 4, importants: 3, nits: 0 }), "no code since the newest fix-PASS: it carries over");
-        assert!(fix_pass(None, &stacked, "r4", 5, |c| c == "f4").is_err(), "only the newest fix-PASS counts: code changed since it");
+        assert_eq!(fix_pass(None, &stacked, "r4", 5, |c| Ok(c == "f5")), Ok(Fix { round: 4, importants: 3, nits: 0 }), "no code since the newest fix-PASS: it carries over");
+        assert!(fix_pass(None, &stacked, "r4", 5, |c| Ok(c == "f4")).is_err(), "only the newest fix-PASS counts: code changed since it");
+        // Epic code review round 2, I2: when keel cannot tell what changed, it refuses, never guessing.
+        let broken = |_: &str| -> Result<bool, String> { Err("git failed".into()) };
+        let (what, _) = fix_pass(None, &stacked, "r4", 5, broken).unwrap_err();
+        assert!(what.contains("cannot tell what this branch changed") && what.contains("git failed"), "{what}");
+        let one_failed = vec![fail("r4", 0, 2), fail("r3", 1, 0), fail("r2", 1, 0), fail("r1", 1, 0)];
+        assert!(fix_pass(None, &one_failed, "r4", 5, broken).unwrap_err().0.contains("cannot tell"), "a failed round is never answered unproven");
     }
 
     #[test]
@@ -633,14 +594,14 @@ mod tests {
     #[test]
     fn no_fix_line_names_a_round_that_cannot_run() {
         // Code review round 1, B2: a round-5 blocker at the cap ends in the cap's waiver, never a round 6.
-        let (what, fix) = fix_pass(None, &failed_rounds(5), "r5", 5, |_| false).unwrap_err();
+        let (what, fix) = fix_pass(None, &failed_rounds(5), "r5", 5, |_| Ok(false)).unwrap_err();
         assert!(fix.contains("--verdict WAIVED") && fix.contains("--waive-review") && !fix.contains("round 6"), "{what} / {fix}");
         // B3: a round-4 FAIL with nothing counted: no round 5, no fix-PASS; only the owner.
         let mut nothing = failed_rounds(4);
         nothing[0] = fail("r4", 0, 0);
-        let (what, fix) = next_round(&nothing, 5, &|_| false).unwrap_err();
+        let (what, fix) = next_round(&nothing, 5, &|_| Ok(false)).unwrap_err();
         assert!(fix.contains("--waive-review") && !fix.contains("--fixes"), "{what} / {fix}");
-        let (what, fix) = fix_pass(None, &nothing, "r4", 5, |_| false).unwrap_err();
+        let (what, fix) = fix_pass(None, &nothing, "r4", 5, |_| Ok(false)).unwrap_err();
         assert!(fix.contains("--waive-review") && !fix.contains("review round 5"), "{what} / {fix}");
         assert!(next_step(&note("FAIL", 0, 0, json!({})), 4, 5, "t").contains("--waive-review"));
     }
@@ -651,10 +612,10 @@ mod tests {
         // a fix-PASS that fixable refuses.
         let mut stacked = vec![fix_of("f5", "r5")];
         stacked.extend(failed_rounds(5));
-        let (what, fix) = fix_pass(None, &stacked, "r5", 5, |_| false).unwrap_err();
+        let (what, fix) = fix_pass(None, &stacked, "r5", 5, |_| Ok(false)).unwrap_err();
         assert!(!fix.contains("write a fix-PASS") && fix.contains("--verdict WAIVED") && fix.contains("--waive-review"), "{what} / {fix}");
         // I3: a target that lowers the cap below the rounds recorded names the last round as it is.
-        let (what, _) = next_round(&failed_rounds(5), 3, &|_| false).unwrap_err();
+        let (what, _) = next_round(&failed_rounds(5), 3, &|_| Ok(false)).unwrap_err();
         assert!(what.contains("round 5 ran on r5") && !what.contains("round 3 ran on r5"), "{what}");
     }
 
@@ -725,18 +686,5 @@ mod tests {
         for bad in ["[review]\nmax_rounds = 0\n", "[review]\nmax_rounds = -1\n", "[review]\nmax_rounds = \"5\"\n", "[review]\nmax_rounds = 99999999999\n", "not toml ["] {
             assert!(max_rounds_in(bad).is_err(), "{bad}");
         }
-    }
-
-    #[test]
-    fn a_batch_read_gives_each_blob_or_why_not_in_order() {
-        let out = b"aaa blob 5\nhello\nbbb missing\nccc tree 3\nxyz\nddd blob 2\n\xff\xfe\n";
-        let got = parse_batch(out, 4);
-        assert_eq!(got[0], Ok("hello".to_string()));
-        assert!(got[1].as_ref().unwrap_err().contains("missing"));
-        assert!(got[2].as_ref().unwrap_err().contains("tree"));
-        assert!(got[3].as_ref().unwrap_err().contains("UTF-8"));
-        let short = parse_batch(b"aaa blob 50\nhello\n", 2);
-        assert!(short.iter().all(Result::is_err) && short.len() == 2, "a truncated read never invents a note");
-        assert_eq!(parse_batch(b"", 1).len(), 1);
     }
 }

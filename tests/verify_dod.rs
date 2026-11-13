@@ -985,6 +985,9 @@ fn every_waiver_writer_refuses_a_cr_note_it_cannot_parse() {
         assert!(!o.status.success() && text(o).contains("does not parse"), "{}", text(o));
     }
     assert_eq!(fix(&tool), fix(&owner), "one fix text");
+    // Epic code review round 2, I1: the cap's waiver refuses it too, never reading it as no note.
+    let cap = write_cr(p, &["--verdict", "WAIVED"]);
+    assert!(!cap.status.success() && text(&cap).contains("unreadable") && !text(&cap).contains("cap is not reached"), "{}", text(&cap));
     assert_eq!(git(p, &["notes", "--ref=cr", "show", "HEAD"]), "{not json");
 }
 
@@ -1629,7 +1632,7 @@ fn a_back_merge_of_the_epic_is_no_fix_of_this_wu_and_no_part_of_its_last_fix() {
     let t = text(&ok(preflight(p)));
     assert!(t.contains(&last_fix(3, 5, &c2, &tip)), "{t}");
     assert!(t.contains("changed: src/a.py") && !t.contains("src/b.py"), "the scope is the WU's own fix, never the merged code: {t}");
-    assert!(t.contains(&format!("git rev-list --first-parent {c2}..{tip} | git diff-tree --stdin -r -p --cc -- src/ tests/")), "{t}");
+    assert!(t.contains(&format!("git rev-list --first-parent --end-of-options {c2}..{tip} | git diff-tree --stdin -r -p --cc --no-renames --src-prefix=a/ --dst-prefix=b/ -- src/ tests/")), "{t}");
 }
 
 /// A 20-line code file both the epic and the WU hold: put on the epic, back-merged into the WU.
