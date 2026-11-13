@@ -687,6 +687,25 @@ fn the_epic_walk_passes_a_waived_wu_and_an_epic_review_can_be_waived() {
     assert_eq!(note(p, "dod", "epic/e")["review"], "WAIVED");
 }
 
+/// B17: the gate prints recorded text inert - a waiver's reason and a failure's text - as the
+/// sign-off listing does; its own check ids keep their middle dot.
+#[test]
+fn the_gate_prints_recorded_text_escaped() {
+    let d = fixture();
+    let p = d.path();
+    bless_waived(p, WU_TESTS, "cap\u{1b}[2K\u{1b}[1Aall green\u{7}\u{200b}");
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    let t = text(&o);
+    assert!(!t.contains('\u{1b}') && !t.contains('\u{7}') && !t.contains('\u{200b}'), "control characters reach the terminal: {t:?}");
+    assert!(t.contains(r"WAIVED 3·review: cap\u{1b}[2K\u{1b}[1Aall green\u{7}\u{200b}"), "{t}");
+    assert_red(&o, "8·manual-review");
+    edit_note(p, "cr", "HEAD", |n| n["verdict"] = json!("FAIL\u{1b}]0;title\u{7}"));
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    let t = text(&o);
+    assert!(!t.contains('\u{1b}') && !t.contains('\u{7}'), "{t:?}");
+    assert!(t.contains(r"FAIL  3·review") && t.contains(r"review verdict is FAIL\u{1b}]0;title\u{7}"), "{t}");
+}
+
 // E-CRCAP.W1 round 2: the owner records a waiver at sign-off; no session writes it (router decision 2026-11-12).
 
 fn bless_unreviewed(p: &Path, tests: &str) {

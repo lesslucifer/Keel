@@ -212,7 +212,7 @@ fn waiver_listing(tip: &str, cr: &CrNote, history: &[Row]) -> String {
 /// also non-ASCII punctuation, symbols and the non-Alphabetic marks, for which std has no category
 /// test - is shown as `\u{..}`, and `\` as `\\`, so no recorded text can hide, reorder or redraw a
 /// line of the listing the signer confirms, or forge an escape.
-fn printable(s: &str) -> String {
+pub(crate) fn printable(s: &str) -> String {
     let shown = |c: char| {
         (c.is_ascii_graphic() && c != '\\')
             || c == ' '

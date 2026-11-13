@@ -287,9 +287,20 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
     Ok(())
 }
 
+/// Recorded text made inert for a terminal by the sign-off listing's rule (`mr::printable`), keeping
+/// the middle dot of the check ids. `lines`: a fix keeps its own line breaks, each line escaped.
+fn inert(s: &str, lines: bool) -> String {
+    let one = |l: &str| l.split('·').map(mr::printable).collect::<Vec<_>>().join("·");
+    if lines {
+        s.split('\n').map(one).collect::<Vec<_>>().join("\n")
+    } else {
+        one(s)
+    }
+}
+
 fn print(r: &Report, what: &str) {
     for w in &r.waived {
-        println!("WAIVED {w}");
+        println!("WAIVED {}", inert(w, false));
     }
     if r.exempt {
         println!("{what} {} exempt on {} - docs/infra-only, test/cr/doc evidence not required", r.level.name(), short(&r.tip));
@@ -297,7 +308,7 @@ fn print(r: &Report, what: &str) {
         println!("{what} {} green on {} (checks: {})", r.level.name(), short(&r.tip), r.level.checks().join(", "));
     } else {
         for f in &r.failures {
-            eprintln!("FAIL  {:<24} {}\n      fix -> {}", f.check, f.what, f.fix);
+            eprintln!("FAIL  {:<24} {}\n      fix -> {}", inert(&f.check, false), inert(&f.what, false), inert(&f.fix, true));
         }
         eprintln!("{what} {} red on {} - {} failed", r.level.name(), short(&r.tip), r.failures.len());
     }
@@ -539,6 +550,7 @@ pub fn preflight_cmd(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, St
 
 #[cfg(test)]
 mod tests {
+    use super::inert;
     use super::review_verdict as review;
     use crate::notes::CrNote;
 
@@ -549,6 +561,18 @@ mod tests {
             j["waiver"] = w.into();
         }
         serde_json::from_value(j).unwrap()
+    }
+
+    /// B17: recorded text reaches the terminal inert; the check ids' middle dot and a fix's own
+    /// line breaks stay.
+    #[test]
+    fn the_printout_escapes_recorded_text_and_keeps_its_own_layout() {
+        assert_eq!(inert("WAIVED 3·review: cap", false), "WAIVED 3·review: cap");
+        assert_eq!(inert("r\u{1b}[2K\u{7}\u{200b}\\", false), r"r\u{1b}[2K\u{7}\u{200b}\\");
+        assert_eq!(inert("a\nFAIL  fake", false), r"a\u{a}FAIL  fake", "a recorded line break cannot start a line");
+        assert_eq!(inert("one\n      two\u{1b}", true), "one\n      two\\u{1b}", "a fix keeps its lines, each escaped");
+        assert_eq!(inert("7·walk·3·review", false), "7·walk·3·review");
+        assert_eq!(inert("café 日本", true), "café 日本");
     }
 
     #[test]
