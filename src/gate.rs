@@ -1,7 +1,7 @@
 //! `keel verify-dod` + `keel preflight`: the merge gate (UC-GATE-2/3/5, UC-DOC-3).
 //! Ported from Trawler's xtask gate: same check ids, same `FAIL / fix ->` blocks, no cargo.
 use crate::notes::{self, CrNote, DocNote, DodNote, TestNote};
-use crate::{check, git, hooks_problem, mr, Config, HOOKS_FIX};
+use crate::{check, git, hooks_problem, mr, review, short, Config, HOOKS_FIX};
 use serde::de::DeserializeOwned;
 use std::path::Path;
 
@@ -54,10 +54,6 @@ impl Report {
     }
 }
 
-fn short(sha: &str) -> &str {
-    sha.get(..10).unwrap_or(sha)
-}
-
 fn is_ancestor(repo: &Path, commit: &str, of: &str) -> bool {
     git(repo, &["merge-base", "--is-ancestor", commit, of], &[]).is_ok()
 }
@@ -74,7 +70,14 @@ fn open(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) ->
 /// Check 1 for one note: present (when required), JSON, declaring `<kind>/v1`.
 fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: bool) -> Option<T> {
     let schema = format!("{kind}/v1");
-    let Ok(raw) = git(repo, &["notes", &format!("--ref={kind}"), "show", &r.tip], &[]) else {
+    let stored = match notes::raw(repo, kind, &r.tip) {
+        Ok(stored) => stored,
+        Err(e) => {
+            r.fail("1·notes", format!("the {kind} note on {} cannot be read: {e}", short(&r.tip)), format!("repair refs/notes/{kind} (git fsck names what is broken), then re-run"));
+            return None;
+        }
+    };
+    let Some(raw) = stored else {
         if required {
             // A standalone commit's range is its parent, not the branch's target.
             let t = if r.level == Level::Commit { format!(" --target {}^", short(&r.tip)) } else { String::new() };
@@ -447,7 +450,8 @@ pub(crate) fn range(repo: &Path, cfg: &Config, old: &str, new: &str, branch: &st
     Ok(red as i32)
 }
 
-/// Before a review starts: right checkout, clean tree, check green, checks 1-2 on the test note.
+/// Before a review starts: right checkout, clean tree, check green, checks 1-2 on the test note, and
+/// the review schedule: the round about to run and its scope, or 0·review-cap (UC-REV-3).
 fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> Result<i32, String> {
     let (mut r, names) = open(repo, cfg, level, tip_ref, target)?;
     guard_hooks(repo, &mut r);
@@ -463,6 +467,10 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
         r.fail("0·tree", "keel check is red on the tip".into(), "get lint and tests green before the review runs");
     }
     check_tip(repo, cfg, &mut r, &names, false, true)?;
+    match review::schedule(repo, &r.base, &r.tip, target, &cfg.code_paths) {
+        Ok(next) => println!("{}", next.announce(&r.base, &r.tip)),
+        Err((what, fix)) => r.fail("0·review-cap", what, fix),
+    }
     print(&r, "preflight");
     Ok(!r.failures.is_empty() as i32)
 }

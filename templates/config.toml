@@ -42,6 +42,7 @@ T3 = ["docs/work/**", "docs/.archive/**"]
 tiers = ["email", "username", "key"]   # accepted .keel/mr-allowed tiers; ["key"] = signatures only (email/username are a string match)
 report = "required"   # required | optional | none: must a WU/epic sign-off attest its result report (data-artifact wu-result / epic-result)
 
-[review]   # read by the keel-code-review skill, not by the CLI
+[review]   # max_rounds is read by the CLI from the target branch's committed copy; the rest by the keel-code-review skill
+# max_rounds = 5             # the review cap: rounds 1-2 review the whole range, later rounds only the last fix
 modules = ["src/*"]          # each match of a glob's * is one module (altitude finder)
 rubric = ".keel/rubric.md"   # optional project-local rubric
