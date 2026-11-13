@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>Backlog: E-SEED v2</h1>
       <p>Work deferred when E-SEED closed with W1–W8 (W7 v2 last). E-SEED2 absorbed B1 and B2 and closed on 2026-11-10; every other row is re-pointed to a proposed later epic.</p>
-      <div class="meta">T2 · backlog · living (strike a row when an epic absorbs it) · 2026-11-08 · Keel · B1 – B22 · re-pointed at the E-SEED2 close (owner rulings 2026-11-10); B8 and B12 done and B15 – B20 added at the E-CRCAP close (2026-11-13); B21, B22 added at the E-DOCSTYLE close</div>
+      <div class="meta">T2 · backlog · living (strike a row when an epic absorbs it) · 2026-11-08 · Keel · B1 – B23 · re-pointed at the E-SEED2 close (owner rulings 2026-11-10); B8 and B12 done and B15 – B20 added at the E-CRCAP close (2026-11-13); B21, B22 added at the E-DOCSTYLE close; B23 added by the E-SEED3 plan (2026-11-13)</div>
     </div>
   </header>
   <main>
@@ -154,6 +154,8 @@
 
     <h2 id="b22">B22 · A directive test cannot fail on a missed label <span class="badge id">proposed: E-GATEFIX</span></h2>
     <p data-c="b22">The first assertion of each <code>%%{…}%%</code> directive test checks that a quoted diagram is green. A change that stops finding labels after a directive still passes it. Add an unquoted label after each directive and assert it is named. Where: <code>tests/verify_doc.rs</code> <code>a_quoted_diagram_with_a_directive_is_green</code>, <code>src/verify_doc.rs</code> <code>a_directive_is_skipped_whole_multi_line_or_inline</code>. Source: E-DOCSTYLE.W2 code review round 3 (PASS; nit waived).</p>
+    <h2 id="b23">B23 · A push of an epic branch judges its close commit as a plain commit <span class="badge id">proposed: E-SEED3</span></h2>
+    <p data-c="b23">After an epic's close, <code>git push origin epic/&lt;E&gt;</code> is refused. The pre-push walk (<code>src/gate.rs</code> <code>range</code>) judges every plain first-parent commit at the commit level, the epic tip included, while the epic gate's own walk skips its tip (DEC-18: "the epic tip itself is not walked"). The tip carries notes written for the epic range, so the commit gate is red on them: "level commit needs the unit layer" and "doc/v1 lists … but the range does not touch it". Seen on <code>epic/E-DOCSTYLE</code> at <code>fa355e0</code> on 2026-11-13. Same class as B20 (an epic-range note judged as a standalone commit's). Source: owner, 2026-11-13.</p>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
 </body>
