@@ -573,6 +573,19 @@ mod tests {
     }
 
     #[test]
+    fn a_second_fix_and_a_lowered_cap_name_the_step_and_round_that_hold() {
+        // Code review round 2, I2: a second fix above a round-5 blocker names the cap's way out, never
+        // a fix-PASS that fixable refuses.
+        let mut stacked = vec![fix_of("f5", "r5")];
+        stacked.extend(failed_rounds(5));
+        let (what, fix) = fix_pass(&stacked, "r5", 5, |_| false).unwrap_err();
+        assert!(!fix.contains("write a fix-PASS") && fix.contains("--verdict WAIVED") && fix.contains("--waive-review"), "{what} / {fix}");
+        // I3: a target that lowers the cap below the rounds recorded names the last round as it is.
+        let (what, _) = next_round(&failed_rounds(5), 3, &|_| false).unwrap_err();
+        assert!(what.contains("round 5 ran on r5") && !what.contains("round 3 ran on r5"), "{what}");
+    }
+
+    #[test]
     fn the_cap_waiver_stops_only_the_last_rounds_blocker_and_names_the_reason() {
         let four = failed_rounds(4);
         assert_eq!(cap(Some(&note("FAIL", 2, 1, json!({}))), &four, 5, "tip"), Ok("review cap: 5 rounds, 2 blockers open".into()));
@@ -612,7 +625,21 @@ mod tests {
             fail("r1", 1, 0),
         ];
         let got = tags(&line, |from, to| Ok(vec![format!("{from}->{to}")]));
-        assert_eq!(got, [" [fix-PASS of round 3 on r3; no reviewers ran; changed: r3->f3]", " [round 3, since r2]", "", " [round 2, full]", "", " [round 1, full]"]);
+        // Code review round 2, I1: an unreadable note stops the count, as it stops preflight and the writer.
+        assert_eq!(
+            got,
+            [
+                " [fix-PASS of a round past an unreadable note on r3; no reviewers ran; changed: r3->f3]",
+                " [round not counted: an unreadable note below it]",
+                "",
+                " [round 2, full]",
+                "",
+                " [round 1, full]"
+            ]
+        );
+        // A note that records another round or scope than the line gives it says so.
+        let recorded = vec![at("r2", note("FAIL", 1, 0, json!({"round": 3, "scope": "since r0"}))), at("r1", note("FAIL", 1, 0, json!({"round": 1, "scope": "full"})))];
+        assert_eq!(tags(&recorded, |_, _| Ok(vec![])), [" [round 2, full; the note records round 3, since r0]", " [round 1, full]"]);
         let orphan = tags(&[fix_of("f", "elsewhere")], |_, _| Err("gone".into()));
         assert_eq!(orphan, [" [fix-PASS of a round not on this line on elsewhere; no reviewers ran; changed: unknown (gone)]"]);
     }

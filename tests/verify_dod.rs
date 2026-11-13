@@ -1265,6 +1265,13 @@ fn max_rounds_on_the_target_moves_the_cap() {
     assert!(text(&o).contains("review cap reached"), "{}", text(&o));
     ok(write_cr(p, &["--verdict", "WAIVED"]));
     assert_eq!(note(p, "cr", "HEAD")["waiver"], "review cap: 6 rounds, 1 blockers open");
+
+    // Code review round 2, N5: a target git names another way still reads its committed cap; only a
+    // config the target does not hold falls back to the default.
+    let o = ok(keel(p, &["preflight", "wu", "wu/e/a", "--target", ":/the target's cap"]));
+    assert!(!text(&o).contains("of 5"), "{}", text(&o));
+    let o = keel(p, &["preflight", "wu", "wu/e/a", "--target", "no-such-ref"]);
+    assert!(!o.status.success() && !text(&o).contains("review round"), "{}", text(&o));
 }
 
 #[test]
@@ -1417,6 +1424,39 @@ fn no_fix_line_names_a_round_the_schedule_refuses() {
     let o = write_cr(p, &["--verdict", "PASS", "--fixes", &c4]);
     refused(&o, &["--waive-review"]);
     assert!(!text(&o).contains("round 5 on the fix"), "{}", text(&o));
+}
+
+#[test]
+fn a_fix_pass_answers_a_failed_round_only_with_a_code_fix_and_never_replaces_a_reviewed_note() {
+    // Code review round 2, B1: a docs-only commit after a round-4 FAIL with importants fixed nothing.
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    for n in 1..=3 {
+        ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+        step(p, n + 1);
+    }
+    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "2"]));
+    let r4 = head(p);
+    write(p, "docs/a.html", "<p>a, reworded</p>");
+    commit(p, "docs only");
+    test_note(p);
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &r4]), &["no code path changed", &r4[..10]]);
+    assert!(!has_note(p, "cr", "HEAD"), "a refused fix-PASS writes nothing");
+    step(p, 5);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &r4]));
+
+    // B2: the tip's own reviewed note is the latest round; a fix-PASS never overwrites it.
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    ok(write_cr(p, &["--verdict", "PASS", "--nits", r#"[{"location": "src/a.py:1", "finding": "n"}]"#]));
+    let r1 = head(p);
+    let t = step(p, 2);
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &r1]), &[&t[..10], "round 2"]);
+    let n = note(p, "cr", "HEAD");
+    assert_eq!((n["verdict"].as_str(), n["blockers"].as_u64()), (Some("FAIL"), Some(1)), "the reviewed note stays: {n}");
 }
 
 #[test]
