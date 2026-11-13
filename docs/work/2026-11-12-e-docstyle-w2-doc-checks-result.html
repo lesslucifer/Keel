@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-DOCSTYLE.W2 WU result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-DOCSTYLE.W2 · The doc check: result</h1>
+      <p>WU result for the <a href="2026-11-12-e-docstyle-w2-doc-checks-plan.html">W2 plan</a>.</p>
+      <div class="meta">T3 · WU result · 2026-11-13 · Keel</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">What happened</h2>
+<p data-item="outcome" data-c="outcome">Delivered as planned. The doc check now refuses a finished doc with an unquoted flowchart label, and a finished epic plan with no "what changes for you" item or with more than 300 words above its first WU. Each error names the fault. Drafts stay silent. Every doc in <code>docs/</code> and the writing skill's example pass.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<p data-c="owner-changes">As the plan said: a long epic plan top, a missing "what changes for you" and an unquoted diagram label each stop the agent's turn, with the fault named.</p>
+
+<h2 id="rounds">Review rounds</h2>
+<table data-c="rounds">
+  <thead><tr><th>Round</th><th>Found</th><th>Fixed</th></tr></thead>
+  <tbody>
+    <tr><td>1 (router)</td><td>1 important, a few nits, 1 refuted</td><td>All, in <code>efdf406</code> and the skill text</td></tr>
+    <tr><td>2 (router)</td><td>Pass, 5 nits</td><td>All, in <code>c52f719</code> and the skill text, without a new round</td></tr>
+  </tbody>
+</table>
+<ol data-c="round-notes">
+  <li>Round 1: a WU plan that tagged its "what changes for you" table was refused as a typo. Any governed doc may now carry the tag; only an epic plan must.</li>
+  <li>Round 2: the skills' wording names all checks; this plan quotes the real error; a misspelled <code>owner-changes</code> is named in the hint; an edge label with no spaces (<code>A--yes--&gt;B</code>, valid in Mermaid 11) is now checked too.</li>
+</ol>
+
+<h2 id="deviations-h">Deviations</h2>
+<div data-item="deviations" data-c="deviations">
+<p>One: the label check also covers edge labels with no spaces. The plan named only the spaced form. Mermaid 11's grammar accepts both, so a label written either way could fail to draw.</p>
+</div>
+
+<h2 id="details">Details</h2>
+
+<h3 id="evidence-h">Evidence</h3>
+<ul data-item="evidence" data-c="evidence">
+  <li>Commits: <code>9e28ac7</code> plan, <code>93d4268</code> tests and code, <code>efdf406</code> round 1, <code>c52f719</code> round 2, <code>ac3161c</code> your <code>keel mr commit</code> (skill text and mirror), and this report.</li>
+  <li>The two round-2 tests failed before their code change and pass with it.</li>
+  <li><code>keel check</code> at <code>ac3161c</code>: lint clean. All tests pass except one router test that fails only in the sandbox (backlog R43). <code>keel check</code> stops at that test binary; <code>cargo test --no-fail-fast</code> shows <code>tests/verify_doc.rs</code> 11/11 and <code>tests/verify_dod.rs</code> 17/17 pass too. <code>tests/init.rs</code> is 12/12 now that the mirror is in.</li>
+  <li><code>keel verify-doc</code> is green over <code>docs/</code>.</li>
+</ul>
+
+<h3 id="distillation-h">Distillation</h3>
+<p data-item="distillation" data-c="distillation">Nothing yet. UC-DOC-1 (amended) and UC-DOC-4 (new) are written at the epic close, as the epic plan says.</p>
+
+<h3 id="follow-ups-h">Follow-ups</h3>
+<p data-item="follow-ups" data-c="follow-ups">Open: E-CRCAP's ready plan (889 words above its work) turns red under the new <code>keel</code> until it is cut and tagged. The router decides when (plan question 6).</p>
+
+<h3 id="no-gate">What no gate reviews</h3>
+<p data-c="no-gate">The skill text and the example: your commit and the router's review. Whether 300 words is the right cap: only your comments.</p>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
