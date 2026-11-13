@@ -1,0 +1,1 @@
+{"schema":"cr/v1","tip":"245a6b6c989dd8fc7d6db7eff9dc01a6ab280123","base":"76eb99509a893bd7d4f29c64ac7a612c8eeadf3d","branch":"wu/E-DOCSTYLE/w2-doc-checks","committer":"vuluu <quangvu.luu92@gmail.com>","timestamp":1794552982,"verdict":"FAIL","blockers":4,"importants":4,"code_diff_hash":"132238426f03fce759e217735a134ddce8527ec7"}
