@@ -1282,8 +1282,10 @@ fn max_rounds_on_the_target_moves_the_cap() {
     // config the target does not hold falls back to the default.
     let o = ok(keel(p, &["preflight", "wu", "wu/e/a", "--target", ":/the target's cap"]));
     assert!(!text(&o).contains("of 5"), "{}", text(&o));
+    // B16: a target naming no commit is an error that names it (here the merge-base meets it first;
+    // max_rounds' own rule is pinned by its unit test, the_cap_of_a_target_naming_no_commit_is_an_error).
     let o = keel(p, &["preflight", "wu", "wu/e/a", "--target", "no-such-ref"]);
-    assert!(!o.status.success() && !text(&o).contains("review round"), "{}", text(&o));
+    assert!(!o.status.success() && !text(&o).contains("review round") && text(&o).contains("no-such-ref"), "{}", text(&o));
 }
 
 #[test]

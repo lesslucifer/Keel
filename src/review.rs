@@ -58,11 +58,23 @@ pub(crate) fn max_rounds(repo: &Path, target: &str) -> Result<u32, String> {
     // Resolved first, then peeled: a suffix on `:/<text>` would join the text it searches for.
     let commit = git(repo, &["rev-parse", "--verify", "-q", "--end-of-options", target], &[])
         .and_then(|obj| git(repo, &["rev-parse", "--verify", "-q", &format!("{obj}^{{commit}}")], &[]))
-        .map_err(|_| format!("keel: the target {target} names no commit, so its [review] max_rounds cannot be read"))?;
-    if git(repo, &["ls-tree", "--name-only", &commit, "--", ".keel/config.toml"], &[])?.is_empty() {
-        return Ok(DEFAULT_MAX_ROUNDS);
+        .ok();
+    max_rounds_at(target, commit.as_deref(), |commit| {
+        if git(repo, &["ls-tree", "--name-only", commit, "--", ".keel/config.toml"], &[])?.is_empty() {
+            return Ok(None);
+        }
+        git(repo, &["cat-file", "blob", &format!("{commit}:.keel/config.toml")], &[]).map(Some)
+    })
+}
+
+/// `max_rounds`' rule on what git resolved: `commit`, the target's commit (`None`: it names none, an
+/// error), and `config`, the `.keel/config.toml` that commit holds (`None`: none, the default).
+fn max_rounds_at(target: &str, commit: Option<&str>, config: impl FnOnce(&str) -> Result<Option<String>, String>) -> Result<u32, String> {
+    let commit = commit.ok_or_else(|| format!("keel: the target {target} names no commit, so its [review] max_rounds cannot be read"))?;
+    match config(commit)? {
+        None => Ok(DEFAULT_MAX_ROUNDS),
+        Some(text) => max_rounds_in(&text),
     }
-    max_rounds_in(&git(repo, &["cat-file", "blob", &format!("{commit}:.keel/config.toml")], &[])?)
 }
 
 fn max_rounds_in(text: &str) -> Result<u32, String> {
@@ -296,6 +308,15 @@ pub(crate) fn fix_pass(
                 rounds.len() + 1,
                 n.verdict
             ),
+            _ if n.waiver().is_some() => {
+                return Err((
+                    format!(
+                        "the tip {} carries the owner's waiver, with no review under it; a fix-PASS answers a reviewed round and never replaces a waiver",
+                        short(&n.id.tip)
+                    ),
+                    format!("put the fix on a later commit and review it as keel preflight names; or {OWNER_WAIVES}"),
+                ))
+            }
             _ => format!("the tip {} carries a {} note with no review under it; a fix-PASS never replaces it", short(&n.id.tip), n.verdict),
         };
         return Err((what, "follow the step the writer printed for that note; a fix-PASS goes on a later commit".into()));
@@ -418,13 +439,18 @@ pub(crate) fn tags(entries: &[Entry], files: impl Fn(&str, &str) -> Result<Vec<V
             }
             Ok(n) if kind(n) == Kind::FixPass => {
                 let reviewed = n.fixes().unwrap_or("?");
-                let of = match numbered.get(reviewed) {
+                let round = numbered.get(reviewed);
+                let of = match round {
                     Some(r) => format!("round {r}"),
                     None if stopped => "a round past an unreadable note".to_string(),
                     None => "a round not on this line".to_string(),
                 };
+                let note_says = match (n.schedule.round, round) {
+                    (Some(r), Some(line)) if r != *line => format!("; the note records round {r}"),
+                    _ => String::new(),
+                };
                 let changed = notes::changed_text(files(reviewed, &e.commit), &format!("{}..{}", short(reviewed), short(&e.commit)));
-                format!(" [fix-PASS of {of} on {}; no reviewers ran; changed: {changed}]", short(reviewed))
+                format!(" [fix-PASS of {of} on {}{note_says}; no reviewers ran; changed: {changed}]", short(reviewed))
             }
             _ => String::new(),
         };
@@ -436,7 +462,7 @@ pub(crate) fn tags(entries: &[Entry], files: impl Fn(&str, &str) -> Result<Vec<V
 
 #[cfg(test)]
 mod tests {
-    use super::{cap, fix_pass, fixable, max_rounds_in, next_round, next_step, parse_note, tags, then, Entry, Fix, Kind, Next, Then};
+    use super::{cap, fix_pass, fixable, max_rounds_at, max_rounds_in, next_round, next_step, parse_note, tags, then, Entry, Fix, Kind, Next, Then};
     use crate::notes::{full_sha, CrNote};
     use serde_json::json;
 
@@ -716,6 +742,35 @@ mod tests {
         assert_eq!(empty[0], " [fix-PASS of round 1 on r1; no reviewers ran; changed: nothing]");
         let orphan = tags(&[fix_of("f", "elsewhere")], |_, _| Err("gone".into()));
         assert_eq!(orphan, [" [fix-PASS of a round not on this line on elsewhere; no reviewers ran; changed: unknown (gone)]"]);
+        // B16: a fix-PASS whose note records another round than the line gives it says so too.
+        let mut off = fix_of("f2", "r2");
+        off.note.as_mut().unwrap().schedule.round = Some(4);
+        let mut right = fix_of("f1", "r1");
+        right.note.as_mut().unwrap().schedule.round = Some(1);
+        let line = [off, fail("r2", 0, 1), right, fail("r1", 0, 1)];
+        let got = tags(&line, |_, _| Ok(vec![]));
+        assert_eq!(got[0], " [fix-PASS of round 2 on r2; the note records round 4; no reviewers ran; changed: nothing]");
+        assert_eq!(got[2], " [fix-PASS of round 1 on r1; no reviewers ran; changed: nothing]");
+    }
+
+    /// B16: a target that names no commit is an error, never the default cap.
+    #[test]
+    fn the_cap_of_a_target_naming_no_commit_is_an_error() {
+        let e = max_rounds_at("no-such-ref", None, |_| panic!("no config is read for a target naming no commit")).unwrap_err();
+        assert!(e.contains("no-such-ref") && e.contains("names no commit"), "{e}");
+        assert_eq!(max_rounds_at("t", Some("c"), |_| Ok(None)), Ok(5), "a target holding no config: the default");
+        assert_eq!(max_rounds_at("t", Some("c"), |c| Ok(Some(format!("[review]\nmax_rounds = {}\n", c.len() + 6)))), Ok(7));
+        assert!(max_rounds_at("t", Some("c"), |_| Err("git failed".into())).is_err(), "a config git cannot read is an error");
+    }
+
+    /// B16: a fix-PASS over the owner's waiver says what that note is and where the fix goes.
+    #[test]
+    fn a_fix_pass_over_the_owners_waiver_names_it_and_the_way_on() {
+        let owner = note("WAIVED", 0, 0, json!({"waiver": "owner ruling", "unreviewed": true}));
+        let (what, fix) = fix_pass(Some(&owner), &failed_rounds(1), "r1", 5, |_| Ok(false)).unwrap_err();
+        assert!(what.contains("owner's waiver") && what.contains("no review under it"), "{what}");
+        assert!(fix.contains("later commit") && fix.contains("keel preflight") && fix.contains("--waive-review"), "{fix}");
+        assert!(!fix.contains("the step the writer printed"), "the writer printed no step for the owner's waiver: {fix}");
     }
 
     #[test]
