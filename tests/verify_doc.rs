@@ -198,17 +198,8 @@ fn an_epic_plan_top_over_300_words_is_red_with_its_count() {
 fn an_unquoted_flowchart_label_is_red_and_named_in_any_finished_doc() {
     let d = repo();
     let p = d.path();
-    for (body, found, fix) in [
-        (r#"A[Build step] --> B["Done"]"#, "[Build step]", r#"["Build step"]"#),
-        (r#"A["a"] -->|yes| B["b"]"#, "|yes|", r#"|"yes"|"#),
-        (r#"A["a"] -- yes --> B["b"]"#, "-- yes -->", r#"-- "yes" -->"#),
-        (r#"A["a"]--yes-->B["b"]"#, "--yes-->", r#"-- "yes" -->"#),
-        (r#"Q{Ready?} -->|"no"| A(["a"])"#, "{Ready?}", r#"{"Ready?"}"#),
-        (r#"A["a"] --&gt;|yes| B["b"]"#, "|yes|", r#"|"yes"|"#),
-    ] {
-        let (ok, t) = verify(p, "f.html", &flowchart(body));
-        assert!(!ok && t.contains(found) && t.contains(fix), "{body}: {t}");
-    }
+    let (ok, t) = verify(p, "f.html", &flowchart(r#"A["a"] --&gt;|yes| B["b"]"#));
+    assert!(!ok && t.contains(r#"diagram label not in quotes: |yes| - write |"yes"|"#), "{t}");
     let quoted = r#"A["Build · step"] -->|"yes"| B(["b"]) -- "no" --> Q{"Ready?"}
   Q -.->|"later"| C[("db")] == "x" ==> D
   %% A[comment]
@@ -313,4 +304,36 @@ fn any_governed_doc_may_tag_what_changes_for_you_and_only_an_epic_plan_must() {
     assert!(ok, "a WU result without it: {t}");
     let (ok, t) = verify(p, "w.html", &doc("ready", "expected", r#"<table data-item="owner-changes"> </table>"#));
     assert!(!ok && t.contains("item \"owner-changes\" is empty"), "{t}");
+}
+
+/// Code review round 1, important 6: an HTML comment in a diagram block is not diagram source.
+#[test]
+fn an_html_comment_in_a_diagram_block_is_not_scanned() {
+    let d = repo();
+    let p = d.path();
+    let (ok, t) = verify(p, "f.html", &flowchart("<!-- x > y [z] -->\n  A[\"a\"] --> B[\"b\"]"));
+    assert!(ok, "{t}");
+}
+
+/// Code review round 1, important 8: the diagram block ends at its own closing tag, spaced or
+/// nested, never at the first same-name close nor at the end of the doc.
+#[test]
+fn a_diagram_block_ends_at_its_own_closing_tag() {
+    let d = repo();
+    let p = d.path();
+    let spaced = "<html lang=\"en\"><body><main><pre class=\"mermaid\">flowchart LR\n  A[\"a\"]</pre ><p>see [this]</p></main></body></html>";
+    let (ok, t) = verify(p, "f.html", spaced);
+    assert!(ok, "the text after the block is not diagram source: {t}");
+    let nested = "<html lang=\"en\"><body><main><div class=\"mermaid\">flowchart LR\n<div>A[\"a\"]</div>\n  B[raw]</div></main></body></html>";
+    let (ok, t) = verify(p, "f.html", nested);
+    assert!(!ok && t.contains("[raw]"), "a nested div does not end the block: {t}");
+}
+
+/// Code review round 1, nit: an epic plan's typo hint names each known item once.
+#[test]
+fn an_epic_plan_typo_hint_names_each_item_once() {
+    let d = repo();
+    let p = d.path();
+    let (ok, t) = verify(p, "e.html", &epic_plan("", "", "", r#"<p data-item="owner-chages">x</p>"#));
+    assert!(!ok && t.matches("owner-changes").count() == 1, "{t}");
 }

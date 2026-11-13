@@ -352,7 +352,7 @@ fn scan_line(l: &str, out: &mut Vec<(String, String)>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{artifact, has_role, result_role, tags, top_words, unquoted_labels, verify};
+    use super::{artifact, decode, has_role, result_role, tags, top_words, unquoted_labels, verify};
 
     #[test]
     fn a_stray_closing_html_before_the_root_neither_hides_the_checklist_nor_the_role() {
@@ -435,6 +435,61 @@ mod tests {
         assert_eq!(labels("flowchart LR; A[raw]"), ["[raw]"]);
         assert_eq!(labels("flowchart LR\n  subgraph S [Title]\n  A\n  end"), ["[Title]"]);
         assert_eq!(labels("flowchart LR\n  A[W1 · the skill]"), ["[W1 · the skill]"]);
+    }
+
+    /// Code review round 1, blocker 1: a quoted edge text hides the link-like dots inside it.
+    #[test]
+    fn a_quoted_edge_text_hides_its_dots_from_the_link_search() {
+        assert!(labels("flowchart LR\n  A -- \"wait...\" --> B(\"retry (3x)\")").is_empty(), "{:?}", labels("flowchart LR\n  A -- \"wait...\" --> B(\"retry (3x)\")"));
+        assert_eq!(labels("flowchart LR\n  A -- \"wait...\" --> B(retry)"), ["(retry)"]);
+    }
+
+    /// Code review round 1, blocker 2: Mermaid's own multi-line quoted label.
+    #[test]
+    fn a_quoted_label_runs_across_lines() {
+        let src = "flowchart LR\n  A[\"first line\n  second (x) line\"] --> B[raw]";
+        assert_eq!(labels(src), ["[raw]"]);
+    }
+
+    /// Code review round 1, blocker 3: a whole accDescr block is skipped, spaced or not.
+    #[test]
+    fn an_acc_descr_block_is_skipped_whole_spaced_or_not() {
+        for open in ["accDescr {", "accDescr{"] {
+            let src = format!("flowchart LR\n  {open}\n    a diagram (x) of [y]\n    and more {{z}}\n  }}\n  accTitle: the [t]\n  accDescr: one (line)\n  A[raw]");
+            assert_eq!(labels(&src), ["[raw]"], "{open}");
+        }
+        assert_eq!(labels("flowchart LR\n  accDescr{ one (x) }\n  A[raw]"), ["[raw]"]);
+    }
+
+    /// Code review round 1, blocker 4: Mermaid 11 parses `flowchart-elk` as a flowchart.
+    #[test]
+    fn a_flowchart_elk_diagram_is_scanned() {
+        assert_eq!(labels("flowchart-elk TD\n  A[x] --> B"), ["[x]"]);
+        assert_eq!(labels("%% lead\nflowchart-elk\n  A[x]"), ["[x]"]);
+    }
+
+    /// Code review round 1, important 5: a label ends at its shape's matching bracket.
+    #[test]
+    fn a_label_ends_at_its_matching_bracket_and_the_hint_quotes_all_of_it() {
+        assert_eq!(unquoted_labels("flowchart LR\n  A[foo (bar)] --> B"), vec![("[foo (bar)]".into(), "[\"foo (bar)\"]".into())]);
+        assert_eq!(unquoted_labels("flowchart LR\n  A([a {b} c]) --> B"), vec![("([a {b} c])".into(), "([\"a {b} c\"])".into())]);
+        assert_eq!(labels("flowchart LR\n  A[/a (b)/] --> B{c [d]}"), ["[/a (b)/]", "{c [d]}"]);
+    }
+
+    /// Code review round 1, important 6: comments and quoted attribute values hide their `>`.
+    #[test]
+    fn a_comment_or_attribute_value_hides_its_angle_bracket_from_the_word_count() {
+        assert_eq!(top("<main><!-- x > y z --><p title=\"b > c d\">one</p></main>"), 1);
+        assert_eq!(top("<main><p data-x='a > b'>one two</p></main>"), 2);
+    }
+
+    /// Code review round 1, important 7: numeric entities and the named ones docs use decode;
+    /// a decoded punctuation mark is not a word.
+    #[test]
+    fn entities_decode_numeric_and_named_and_punctuation_is_no_word() {
+        assert_eq!(decode("&#x22;hi&#34;&quot; &mdash;&#8212;&#x2014; &rarr; &amp;lt; &bogus; &"), "\"hi\"\" ——— → &lt; &bogus; &");
+        assert_eq!(top("<main>a &mdash; b &rarr; c &#8212; d &hellip;</main>"), 4);
+        assert!(labels(&decode("flowchart LR\n  A[&#x22;hi&#x22;] --> B[&#34;b&#34;]")).is_empty());
     }
 
     #[test]
