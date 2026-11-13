@@ -658,6 +658,13 @@ mod tests {
         assert!(labels(quoted).is_empty(), "{:?}", labels(quoted));
     }
 
+    /// Epic code review round 1, nit: a label is reported as written in the source, spaces kept.
+    #[test]
+    fn a_label_is_reported_as_written() {
+        assert_eq!(unquoted_labels("flowchart LR\n  A -->| yes | B"), vec![("| yes |".into(), "|\"yes\"|".into())]);
+        assert_eq!(unquoted_labels("flowchart LR\n  A[ yes ] --> B"), vec![("[ yes ]".into(), "[\"yes\"]".into())]);
+    }
+
     #[test]
     fn an_unspaced_edge_label_is_scanned_and_a_cross_or_circle_end_is_not_a_label() {
         assert_eq!(labels("flowchart LR\n  A--yes-->B\n  B==go==>C\n  C-.later.->D\n  D<--back-->A"), ["--yes-->", "==go==>", "-.later.->", "--back-->"]);

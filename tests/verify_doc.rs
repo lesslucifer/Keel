@@ -349,3 +349,22 @@ fn a_quoted_diagram_with_a_directive_is_green() {
         assert!(ok, "{directive}: {t}");
     }
 }
+
+/// Epic code review round 1, blocker: Mermaid reads a diagram's source with its markup, so a raw
+/// `<br>` or `<b>` in a label is part of the label. The fix hint quotes that source exactly.
+#[test]
+fn a_label_with_raw_markup_gets_a_hint_that_keeps_the_markup() {
+    let d = repo();
+    let p = d.path();
+    for (body, hint) in [
+        (r#"A[a<br>b] --> B["c"]"#, r#"write ["a<br>b"]"#),
+        (r#"A[a<br/>b] --> B["c"]"#, r#"write ["a<br/>b"]"#),
+        (r#"A[a<b>x</b>b] --> B["c"]"#, r#"write ["a<b>x</b>b"]"#),
+        (r#"A["a"] -->|x<br>y| B["c"]"#, r#"write |"x<br>y"|"#),
+    ] {
+        let (ok, t) = verify(p, "f.html", &flowchart(body));
+        assert!(!ok && t.contains(hint), "{body}: {t}");
+    }
+    let (ok, t) = verify(p, "f.html", &flowchart(r#"A["a<br>b"] -->|"x<br>y"| B["a<b>x</b>b"]"#));
+    assert!(ok, "quoted labels with markup are green: {t}");
+}
