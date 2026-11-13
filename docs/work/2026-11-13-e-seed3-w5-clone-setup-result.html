@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="4c99c216cf17d86da0f6108d" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED3.W5 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED3.W5 · Setup on a new clone — result</h1>
+      <div class="meta">T3 · WU result · 2026-11-13 · Keel · branch <code>wu/E-SEED3/w5-clone-setup</code> · <a href="2026-11-13-e-seed3-w5-clone-setup-plan.html">WU plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">What happened</h2>
+<p data-item="outcome" data-c="outcome"><b>Delivered, with one part deferred.</b> Upgrading skills you never edited no longer asks. Another program named keel on the path is named: setup warns and each git hook refuses. Fetching evidence on a clone was <b>dropped</b> from this WU by owner ruling D (2026-11-13): done the planned way, every fetch would fail while you have notes not yet pushed.</p>
+
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Before</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>You upgrade skills you never edited</td><td>Asked for each file</td><td>Upgraded without asking</td></tr>
+    <tr><td>You upgrade a skill you edited</td><td>Asked</td><td>Asked, as before</td></tr>
+    <tr><td>Another program named keel is first on the path</td><td>Confusing errors</td><td>Setup warns; each git hook refuses, naming the clash</td></tr>
+    <tr><td>You set up a clone and fetch</td><td>Evidence fetched by hand</td><td>Unchanged (deferred)</td></tr>
+  </tbody>
+</table>
+
+<h2 id="deviations">Deviations</h2>
+<ul data-item="deviations" data-c="deviations">
+  <li><b>B6 deferred</b> (owner ruling D, 2026-11-13). Git rejects a fetch without force whenever a local note ref is ahead of origin's, not only when it diverged. A scratch-repo test showed it right after a clean notes merge. The finding, options A–C and the verified fix line are in backlog B24; B6 is re-pointed there. The code and tests are not in this WU.</li>
+  <li><b>For the epic close:</b> DEC-19 stays push-only (not amended). The epic test's step "a fresh clone set up by init fetches the evidence with a plain fetch, and keel verify-dod epic is green there" cannot run as planned; it changes or moves with B24. The epic plan is not edited here.</li>
+  <li>The harness hooks treat a foreign keel like a missing one (exit 0), as the WU plan's open point 3 said. Only the four git hooks refuse.</li>
+</ul>
+
+<h2 id="details">Details</h2>
+<h3>Evidence</h3>
+<div data-item="evidence" data-c="evidence">
+<ul>
+  <li><code>ffc738e</code> skills lock: <code>.keel/skills.lock</code> in <code>shasum -a 256</code> form; written when init writes a skill or the lock exists.</li>
+  <li><code>524f9bc</code> foreign keel: <code>init::KEEL_MARK</code>, init's warnings (both name <code>docs/install.html</code>), a guard line in the four git hook shims and the two harness hooks; <code>--version</code> prints the shared marker.</li>
+  <li><code>3ab4434</code> (owner's <code>keel mr commit</code>): <code>docs/install.html</code>, the clash detected and the lock explained.</li>
+  <li><code>3fe1e69</code>: backlog B24 added, B6 re-pointed, WU plan updated.</li>
+  <li>Integration, <code>tests/init.rs</code>: an unedited older skill upgrades silently and an edited one asks; no lock while all skills match and none exists; a fake keel first on PATH makes init warn and <code>git commit</code> refuse, Keel first lets it pass; no keel on PATH names the install page. All four were run red on the old code first.</li>
+  <li>Unit: lock round trip and junk lines, hex, the per-file decision and the version check in <code>src/init.rs</code>; the shims' guard and the harness hooks in <code>src/main.rs</code>.</li>
+  <li>Full suite green except <code>tests/router.rs</code> <code>watcher_run_is_bounded_when_the_watch_outpolls_its_releases</code> (R43, sandbox only).</li>
+  <li><code>src/main.rs</code> was touched for the hook scripts (W3 and W4 also edit hooks there).</li>
+</ul>
+</div>
+<h3>Distillation</h3>
+<p data-item="distillation" data-c="distillation">Goes to the E-SEED3 close: UC-INIT-1 (skills lock, foreign keel) and DEC-3 amended (an unedited file upgrades without asking). DEC-19 unchanged. Backlog: B7's skills-lock and foreign-keel rows struck; B6 already re-pointed to B24.</p>
+<h3>Follow-ups</h3>
+<ul data-item="follow-ups" data-c="follow-ups">
+  <li>The notes fetch: backlog B24 (owner picks A–C, then an epic).</li>
+  <li>The epic test's clone-fetch step and DEC-19: the E-SEED3 close (W8 or the close itself) adjusts them.</li>
+</ul>
+
+  </main>
+</body>
+</html>
