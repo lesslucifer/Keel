@@ -10,6 +10,8 @@ enum Level {
     Commit,
     Wu,
     Epic,
+    /// A plain commit on an epic branch judged by the epic-range notes it carries (B20, B23).
+    Close,
 }
 
 impl Level {
@@ -18,12 +20,13 @@ impl Level {
             Level::Commit => "commit",
             Level::Wu => "wu",
             Level::Epic => "epic",
+            Level::Close => "close",
         }
     }
     /// The receipt names of the checks this level runs.
     fn checks(self) -> &'static [&'static str] {
         match self {
-            Level::Commit => &["notes", "manifest", "doc-note"],
+            Level::Commit | Level::Close => &["notes", "manifest", "doc-note"],
             Level::Wu => &["notes", "manifest", "review", "review-base", "diff-binding", "doc-note", "manual-review"],
             Level::Epic => &["notes", "manifest", "review", "review-base", "diff-binding", "doc-note", "walk", "manual-review"],
         }
@@ -112,7 +115,7 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
 /// Checks 1-2 (paperwork, all the preflight reads) or 1-6 on the tip itself. `own_review`: false
 /// only when the signer is about to waive the tip's review, so its cr note is neither required nor judged.
 fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: bool, own_review: bool) -> Result<(), String> {
-    let review = full && own_review && r.level != Level::Commit;
+    let review = full && own_review && matches!(r.level, Level::Wu | Level::Epic);
     let docs = notes::doc_paths(repo, cfg, &r.base, &r.tip, names)?;
     let test = read::<TestNote>(repo, r, "test", true);
     let cr = if review { read::<CrNote>(repo, r, "cr", true) } else { None };
@@ -123,7 +126,7 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
         let (layer, have) = match r.level {
             Level::Commit => ("unit", &t.unit),
             Level::Wu => ("integration", &t.integration),
-            Level::Epic => ("e2e", &t.e2e),
+            Level::Epic | Level::Close => ("e2e", &t.e2e),
         };
         if have.is_none() {
             r.fail(
@@ -234,6 +237,7 @@ fn verify_with(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &
             }
         }
     }
+    // The tracked-doc layout is the epic tip's alone: a close commit before the archive still tracks T3.
     if level == Level::Epic {
         tracked_layout(repo, cfg, &mut r)?;
         walk(repo, cfg, &mut r, target)?;
@@ -259,7 +263,11 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
                 (*m, seam.failures, "wu")
             }
             [c, _] if *c == r.tip => continue, // the epic's own checks cover its tip
-            [c, first] => (*c, verify(repo, cfg, Level::Commit, c, first)?.failures, "commit"),
+            [c, first] => {
+                let level = plain_seam(repo, cfg, c, first, target, false)?;
+                let range = if level == Level::Close { target } else { first };
+                (*c, verify(repo, cfg, level, c, range)?.failures, level.name())
+            }
             [m, ..] if p.len() > 3 => {
                 let what = format!("{} is an octopus merge - parents beyond the second were never gated", short(m));
                 (*m, vec![Failure { check: String::new(), what, fix: "merge one WU per --no-ff merge commit".into() }], "merge")
@@ -426,11 +434,19 @@ fn hook(repo: &Path, cfg: &Config) -> Result<i32, String> {
 /// merge never ran pre-merge-commit and a `--ff-only` one made no merge commit, so this is the last gate.
 pub(crate) fn range(repo: &Path, cfg: &Config, old: &str, new: &str, branch: &str) -> Result<i32, String> {
     let merges = if branch == cfg.branches.main { Level::Epic } else { Level::Wu };
+    let main = cfg.branches.main.as_str();
+    let tip = git(repo, &["rev-parse", &format!("{new}^{{commit}}")], &[])?;
     let mut red = false;
     for line in git(repo, &["rev-list", "--first-parent", "--parents", &format!("{old}..{new}")], &[])?.lines() {
         let p: Vec<&str> = line.split_whitespace().collect();
         let r = match p.as_slice() {
-            [c, first] => verify(repo, cfg, Level::Commit, c, first)?,
+            [c, first] if merges == Level::Epic => verify(repo, cfg, Level::Commit, c, first)?,
+            // On an epic branch: a commit already on main landed through a gated epic merge (B23).
+            [c, _] if is_ancestor(repo, c, main) => continue,
+            [c, first] => {
+                let level = plain_seam(repo, cfg, c, first, main, *c == tip)?;
+                verify(repo, cfg, level, c, if level == Level::Close { main } else { first })?
+            }
             // Already landed on the remote branch, or a back-merge of main into an epic: not a seam.
             [_, main, wu]
                 if is_ancestor(repo, wu, main) || is_ancestor(repo, wu, old) || (merges == Level::Wu && is_ancestor(repo, wu, &cfg.branches.main)) =>
@@ -457,6 +473,51 @@ pub(crate) fn range(repo: &Path, cfg: &Config, old: &str, new: &str, branch: &st
         }
     }
     Ok(red as i32)
+}
+
+/// Which range a plain commit's test and doc notes were written for. Every note names its range's
+/// base: the epic's when it equals where the branch left main and that is not the commit's own parent
+/// (there the two ranges are one commit, judged as a commit).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum NoteRange {
+    Commit,
+    Epic,
+}
+
+fn note_range(bases: &[&str], parent: &str, epic_base: &str) -> NoteRange {
+    if epic_base != parent && !bases.is_empty() && bases.iter().all(|b| *b == epic_base) {
+        NoteRange::Epic
+    } else {
+        NoteRange::Commit
+    }
+}
+
+/// B23, B20: epic-range notes judge a plain commit over the epic when it is the pushed tip or changes
+/// no code (the archive commit). A code commit inside the range stays a commit (owner, 2026-11-13).
+fn judged_as(notes: NoteRange, pushed_tip: bool, changes_code: bool) -> Level {
+    if notes == NoteRange::Epic && (pushed_tip || !changes_code) {
+        Level::Close
+    } else {
+        Level::Commit
+    }
+}
+
+/// The level a plain first-parent commit `c` (parent `parent`) of an epic branch is judged at.
+/// `main`: what the epic merges into. A note present but unreadable names no base, so the commit
+/// gate judges it and reports why.
+fn plain_seam(repo: &Path, cfg: &Config, c: &str, parent: &str, main: &str, pushed_tip: bool) -> Result<Level, String> {
+    let epic_base = git(repo, &["merge-base", main, c], &[])?;
+    let bases: Vec<String> = ["test", "doc"]
+        .iter()
+        .filter_map(|kind| notes::raw(repo, kind, c).transpose())
+        .map(|raw| {
+            let v = raw.ok().and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+            v.and_then(|v| v["base"].as_str().map(String::from)).unwrap_or_default()
+        })
+        .collect();
+    let range = note_range(&bases.iter().map(String::as_str).collect::<Vec<_>>(), parent, &epic_base);
+    let changes_code = range == NoteRange::Epic && !pushed_tip && !notes::names(repo, parent, c, &cfg.code_paths)?.is_empty();
+    Ok(judged_as(range, pushed_tip, changes_code))
 }
 
 /// Before a review starts: right checkout, clean tree, check green, checks 1-2 on the test note, and
@@ -540,7 +601,35 @@ pub fn preflight_cmd(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, St
 #[cfg(test)]
 mod tests {
     use super::review_verdict as review;
+    use super::{judged_as, note_range, Level, NoteRange};
     use crate::notes::CrNote;
+
+    #[test]
+    fn notes_are_the_epics_only_when_every_one_names_the_epic_base_and_that_is_not_the_parent() {
+        let pool = ["parent", "epic", "other", ""];
+        let mut sets: Vec<Vec<&str>> = vec![vec![]];
+        sets.extend(pool.iter().map(|b| vec![*b]));
+        sets.extend(pool.iter().flat_map(|a| pool.iter().map(move |b| vec![*a, *b])));
+        for (parent, epic) in [("parent", "epic"), ("epic", "epic")] {
+            for bases in &sets {
+                let want = parent != epic && !bases.is_empty() && bases.iter().all(|b| *b == epic);
+                let got = note_range(bases, parent, epic);
+                assert_eq!(got == NoteRange::Epic, want, "bases {bases:?}, parent {parent}, epic base {epic}");
+            }
+        }
+    }
+
+    #[test]
+    fn epic_notes_judge_the_pushed_tip_or_a_commit_without_code_over_the_epic_and_nothing_else() {
+        for notes in [NoteRange::Commit, NoteRange::Epic] {
+            for tip in [false, true] {
+                for code in [false, true] {
+                    let want = if notes == NoteRange::Epic && (tip || !code) { Level::Close } else { Level::Commit };
+                    assert!(judged_as(notes, tip, code) == want, "{notes:?} tip={tip} code={code}");
+                }
+            }
+        }
+    }
 
     fn cr(verdict: &str, waiver: Option<&str>) -> CrNote {
         let mut j = serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c",
