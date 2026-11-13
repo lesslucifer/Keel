@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="ac7a26dcae3f5303cb84f5ea" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED3.W2 WU result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED3.W2 · The push and the walk know the epic close — result</h1>
+      <p>An epic's close commits are now judged by the epic evidence they carry. Pushing a closed epic passes, and a review fix after the archive commit needs nothing rewritten.</p>
+      <div class="meta">T3 · WU result · 2026-11-13 · Keel · branch <code>wu/E-SEED3/w2-epic-close-walk</code> off <code>epic/E-SEED3</code> <code>3260330</code> · <a href="2026-11-13-e-seed3-w2-close-walk-plan.html">WU plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">What happened</h2>
+<p data-item="outcome" data-c="outcome">Delivered as ruled, with one narrowing. Pushing an epic branch after its merge passes. A push mid-close is judged on the last commit's epic evidence. An archive commit followed by a review fix passes the epic gate, the merge into main and the push, with no evidence rewritten. The narrowing: these close commits are not held to the rule that no working doc is tracked; that rule stays with the epic's last commit.</p>
+
+<h2 id="for-the-owner">What changed for you</h2>
+<table data-c="owner-changes">
+  <thead><tr><th>When</th><th>Before</th><th>Now</th></tr></thead>
+  <tbody>
+    <tr><td>You push an epic branch after it merged into main</td><td>Refused</td><td>Accepted</td></tr>
+    <tr><td>You push an epic branch mid-close</td><td>Refused</td><td>Accepted when the last commit's epic evidence is complete</td></tr>
+    <tr><td>A review fix follows the archive commit</td><td>You rewrite evidence from a separate checkout</td><td>Nothing to rewrite</td></tr>
+    <tr><td>A second review fix follows a first</td><td>You rewrite the first fix's evidence</td><td>Unchanged, as you ruled: waive that step on the record</td></tr>
+    <tr><td>You must do</td><td>—</td><td>One sign-off commit for the workflow skill's two rows (command below)</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+<div data-item="deviations" data-c="deviations">
+  <ul>
+    <li><b>The tracked-doc layout is not part of the close level's check 6.</b> The plan said it was. The existing test <code>epic_tip_rejects_a_tracked_t3_doc_and_an_archive_without_lineage</code> went red: a commit before the archive commit carries epic notes and still tracks the working docs, by design. The close level runs the doc list and archive lineage; the layout stays the epic tip's (plan amended in <code>380a84b</code>).</li>
+  </ul>
+</div>
+<div data-item="evidence" data-c="evidence">
+  <ul>
+    <li>Commits: <code>a0041dd</code> WU plan · <code>bc77172</code> the code and tests (<code>src/gate.rs</code>, new <code>tests/close_walk.rs</code>; commit test note written while it was HEAD, <code>keel verify-dod commit</code> green) · <code>380a84b</code> plan amended · this report · the owner's <code>keel mr commit</code> of the two keel-workflow rows (§4 check 7, §7 pre-push), staged.</li>
+    <li>Code: a <code>close</code> level (checks 1, 2 with the e2e layer, 6 without the layout; no review, no sign-off). <code>range</code> skips a plain commit already on main for an epic-branch push and judges the pushed tip at <code>close</code> when its notes are the epic's. <code>walk</code> and <code>range</code> judge an inner plain commit at <code>close</code> when its notes are the epic's and it changes no code.</li>
+    <li>Red first, on the unchanged gate: 4 of the 5 new integration tests failed with the real cases' messages (<code>doc/v1 lists docs/a.html but the range does not touch it</code>, at the push and as <code>7·walk·6·doc-note [commit …]</code>). The fifth, the ruled-red code commit, passed before and after.</li>
+    <li>Integration, <code>tests/close_walk.rs</code> (real hooks, bare remote): <code>pushing_an_epic_branch_after_its_merge_into_main_passes_the_real_pre_push_hook</code> · <code>an_epic_branch_pushed_mid_close_is_judged_on_its_tips_epic_notes</code> · <code>an_archive_commit_followed_by_a_review_fix_passes_both_walks_with_no_note_rewritten</code> · <code>a_code_commit_carrying_epic_notes_is_still_red_as_a_commit_in_both_walks</code> · <code>a_plain_commit_with_no_notes_is_still_red_and_one_with_its_own_notes_still_passes</code>.</li>
+    <li>Unit, <code>src/gate.rs</code>: <code>notes_are_the_epics_only_when_every_one_names_the_epic_base_and_that_is_not_the_parent</code> (every base combination up to two notes) · <code>epic_notes_judge_the_pushed_tip_or_a_commit_without_code_over_the_epic_and_nothing_else</code> (every combination).</li>
+    <li>Suite on <code>bc77172</code>: <code>cargo fmt --check</code> and clippy green; <code>cargo test --no-fail-fast</code> all green but the sandbox-only R43 router test.</li>
+    <li>Docs touched: the WU plan and this report (T3); <code>skills/keel-workflow/SKILL.md</code> (staged for the owner).</li>
+  </ul>
+</div>
+<div data-item="distillation" data-c="distillation">
+  <p>Nothing lands in T1/T2 at this WU. The E-SEED3 close takes this wording.</p>
+  <ul>
+    <li><b>DEC-18, amended</b> (<code>docs/decisions/workflow-gates.html</code>), appended to Choice: "A plain seam that changes no code and carries epic-range test and doc notes (each naming the epic's base, which is not the commit's parent: the archive commit) is judged on them over the epic range, by checks 1, 2 and 6 without the tracked-doc layout; a commit that changes code stays a standalone commit. The push of an epic branch skips plain commits already on main and judges its tip the same way when the tip carries epic-range notes; review and sign-off stay at the merge into main (owner ruling 2026-11-13, E-SEED3.W2)." Rejected, added: "running the epic review before the archive commit; a <code>--tip</code> flag for <code>keel notes write</code>; judging a code commit with epic notes over the epic."</li>
+    <li><b>UC-GATE-3, amended</b> (<code>docs/use-cases/workflow.html</code>), after "a plain commit as a commit": "; a plain commit that changes no code and carries epic-range notes is judged on them over the epic (checks 1, 2, 6)". And a sentence: "A push of an epic branch skips plain commits already on main, and judges a tip carrying epic-range notes the same way."</li>
+    <li>Backlog <code>docs/backlog/e-seed-v2.html</code>: B20 and B23 struck.</li>
+  </ul>
+</div>
+<div data-item="follow-ups" data-c="follow-ups">
+  <ul>
+    <li>A review fix buried by a later fix (E-DOCSTYLE's <code>ad30e30</code> case) stays red as a commit, as ruled; its relief is a walk waiver. The E-SEED3 close files it as a new row in <code>docs/backlog/e-seed-v2.html</code> (B24), with the rejected directions above as options.</li>
+  </ul>
+</div>
+<p data-c="trust">Trust, unchanged: "already on main" reads the local main branch, as the existing back-merge skip does.</p>
+
+  </main>
+</body>
+</html>
