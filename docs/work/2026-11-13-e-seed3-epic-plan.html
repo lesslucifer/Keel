@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af6fa3c9f34851f0dfbde22" data-artifact="epic-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED3 epic plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED3 · Clear the backlog's small gaps</h1>
+      <p>Epic plan for the owner's ruling of 2026-11-13: "Handle all left items in the next E-SEED epic from the backlog."</p>
+      <div class="meta">T3 · epic plan · 2026-11-13 · Keel · branch <code>epic/E-SEED3</code> off main <code>f031e36</code> · draft for the owner's comments</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-item="intent" data-c="intent">Small gaps from earlier epics wait in the backlog. Two hurt now. After an epic closes, pushing its branch is refused. And when a fix follows the epic review, you rewrite evidence by hand from a separate checkout. The rest are gaps in setup, the commit check and the review tool. This epic fixes them all, then writes the architecture doc.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>You push an epic branch after its close</td><td>Refused</td><td>Accepted</td></tr>
+    <tr><td>A fix follows the epic review</td><td>You rewrite evidence from a separate checkout</td><td>Nothing to rewrite</td></tr>
+    <tr><td>You clone a project</td><td>Evidence is fetched by hand</td><td>It comes with the code</td></tr>
+    <tr><td>You commit code</td><td>No check runs</td><td>The fast style check runs</td></tr>
+    <tr><td>You finish a conflicted merge by hand</td><td>It lands unchecked</td><td>It is checked like any merge</td></tr>
+    <tr><td>You re-run setup</td><td>Asked about every changed skill file</td><td>Asked only about files you edited</td></tr>
+    <tr><td>Another program named keel is installed</td><td>Confusing errors</td><td>Setup and hooks name the clash</td></tr>
+    <tr><td>You must decide</td><td>—</td><td>Open points 1–3. Work goes on at the defaults</td></tr>
+  </tbody>
+</table>
+
+<h2 id="terms">Terms</h2>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Evidence</td><td>The records the tool keeps on a commit: tests, docs, review, your sign-off.</td></tr>
+    <tr><td>Close</td><td>An epic's last steps: archive its working docs, review it, you sign, you merge.</td></tr>
+    <tr><td>Walk</td><td>The check that re-judges each commit and merge on a branch.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="wus">The work</h2>
+<p>W1 goes first. W2–W7 then run in any order. W8 goes last.</p>
+
+<div data-item="wu-summaries" data-c="wu-summaries">
+
+<div data-wu="E-SEED3.W1" data-c="wu-w1">
+  <h3 id="w1">W1 · Format the code once</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the code has never been run through the Rust formatter. It drifts in 948 places across every file, not just the gate file the backlog names. One formatting commit, then the format check joins lint, so later work stays formatted.</p>
+    <ul>
+      <li>A <code>rustfmt.toml</code> close to the current long-line style, then one <code>cargo fmt</code> commit, no other change.</li>
+      <li><code>cargo fmt --check</code> joins <code>[check] lint</code> in <code>.keel/config.toml</code> (rule-bearing: your <code>keel mr commit</code>).</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">e-router-v2 R7 (cargo fmt drift, re-pointed here) · UC-GATE-4 (what <code>keel check</code> runs).</p>
+  <p data-item="wu-expected"><b>Integration: waived</b>: no behaviour changes; the whole suite passes unchanged on the formatted code. <b>Unit: waived</b>, same reason. Observable: <code>cargo fmt --check</code> exits 0 and <code>keel lint</code> runs it.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+<div data-wu="E-SEED3.W2" data-c="wu-w2">
+  <h3 id="w2">W2 · The push and the walk know the epic close</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> two walks judge a close commit as a plain commit and reject its epic-wide evidence. The push walk does it to the epic's last commit. The epic gate's walk does it to the archive commit once a review fix follows it. Both should judge such a commit by the epic evidence it carries.</p>
+    <ul>
+      <li>New row B23: a plain commit already on main is not re-judged when its epic branch is pushed; it landed through a gated epic merge.</li>
+      <li>B23: a plain commit whose test and doc notes were written for the epic range is judged on those notes over that range (checks 1, 2 and 6, as the epic gate reads them), when it is the pushed tip. Review and sign-off stay at the merge into main (open point 8).</li>
+      <li>B20: in both walks, an inner commit that changes no code and carries epic-range notes (the archive commit) is judged the same way, not as a standalone commit. A commit that changes code stays a commit.</li>
+      <li>DEC-18 is amended: today it says only the epic gate's own tip is skipped.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Backlog B23 (new, owner 2026-11-13) and B20 · UC-GATE-3 (the walk) amended · DEC-18 amended.</p>
+  <p data-item="wu-expected"><b>Integration:</b> in a scratch repo with a remote, after an epic merges into main, <code>git push origin epic/&lt;E&gt;</code> passes the real pre-push hook; an archive commit followed by a review fix passes <code>keel verify-dod epic</code> with no note rewritten; a code commit carrying epic notes is still red as a commit; a plain commit with no notes is still red. <b>Unit:</b> the rule that tells an epic-range note from a commit's.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+<div data-wu="E-SEED3.W3" data-c="wu-w3">
+  <h3 id="w3">W3 · The gate in odd setups</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> three places where a setup the user did not expect changes what the gate or the tests see. Each gets a guard and a regression test.</p>
+    <ul>
+      <li>B9: the push check's scratch checkout strips an inherited <code>GIT_INDEX_FILE</code>, so it can never write the real index.</li>
+      <li>e-router-v2 R7: <code>keel mr confirm</code> and <code>keel verify-dod</code> on a bare commit id resolve the branch that holds it, or refuse and ask for <code>--target</code>; never a silent guess of main and a false <code>4·review-base</code> red.</li>
+      <li>B10: every test spawn (<code>tests/common</code>) sets <code>GIT_CONFIG_GLOBAL</code> and <code>GIT_CONFIG_NOSYSTEM</code>, so no test reads the developer's git config. Two test files already do it locally; the shared helper does not.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Backlog B9, B10; e-router-v2 R7 (bare-SHA target) · UC-NOTE-1 and UC-GATE-2 (one target rule) · DEC-15 and DEC-41 amended.</p>
+  <p data-item="wu-expected"><b>Integration:</b> a push run with <code>GIT_INDEX_FILE</code> set leaves the real index unchanged; a sign-off on a bare WU tip id targets its epic or is refused with a fix line; a test that plants a hostile global git config still passes. <b>Unit:</b> the target resolution.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+<div data-wu="E-SEED3.W4" data-c="wu-w4">
+  <h3 id="w4">W4 · The commit hook checks more</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the commit hook today only keeps main merge-only. It gains two checks: lint on a commit that changes code, and the merge gate when a conflicted merge is finished with a plain commit.</p>
+    <ul>
+      <li>B7: <code>pre-commit</code> runs <code>keel lint</code> when the staged diff touches a code path (open point 4).</li>
+      <li>B7: with <code>MERGE_HEAD</code> present, <code>pre-commit</code> runs the gate <code>pre-merge-commit</code> would have run.</li>
+      <li>DEC-17 and DEC-29 amended; keel-workflow §7's hook table updated (rule-bearing: your <code>keel mr commit</code>).</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Backlog B7 (two rows) · UC-GATE-1 and UC-GATE-2 amended · DEC-17, DEC-29 amended.</p>
+  <p data-item="wu-expected"><b>Integration:</b> through the real hooks in a scratch repo, a code commit that fails lint is refused, a docs-only commit runs no lint, and a conflicted WU merge finished with <code>git commit</code> into an epic is refused without evidence and accepted with it. <b>Unit:</b> the hook's decisions.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+<div data-wu="E-SEED3.W5" data-c="wu-w5">
+  <h3 id="w5">W5 · Setup on a new clone</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> <code>keel init</code> leaves three gaps on a fresh clone. Evidence is not fetched. A skill file you never edited still prompts on upgrade. Another program named keel on the path breaks the hooks with no clear message.</p>
+    <ul>
+      <li>B6: <code>init</code> adds a notes fetch refspec to <code>origin</code>, idempotently, never forced (open point 5).</li>
+      <li>B7: <code>.keel/skills.lock</code> records each shipped skill file's hash; a file that still matches is upgraded without asking, an edited one asks as today (DEC-3 amended).</li>
+      <li>B7: <code>init</code> warns and each hook refuses when <code>keel --version</code> is not Keel's (open point 6); <code>init</code>'s not-on-path warning names <code>docs/install.html</code>, as the hooks already do.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Backlog B6, B7 (two rows) · UC-INIT-1 amended · DEC-3, DEC-19 amended.</p>
+  <p data-item="wu-expected"><b>Integration:</b> a clone set up by <code>init</code> fetches notes with a plain <code>git fetch</code>; a second <code>init</code> adds nothing; an unedited old skill file upgrades silently and an edited one prompts; a fake <code>keel</code> on the path makes <code>init</code> warn and a hook refuse. <b>Unit:</b> the lock file and the version check.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+<div data-wu="E-SEED3.W6" data-c="wu-w6">
+  <h3 id="w6">W6 · Review and sign-off follow-ups</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the follow-ups left by the review-cap epic and one weak doc-check test. Most are small. Two follow your answers to open points 2 and 3.</p>
+    <ul>
+      <li>B16: the six round-3 nits (a test that does not pin its case, round numbers on a fix-PASS, the waiver refusal text, repeated note reads in the writer and in <code>mr confirm</code>, the per-commit diff calls).</li>
+      <li>B17: the gate's printout escapes every waiver reason and failure text; the waiver and the sign-off are stored in one transaction, so one cannot land without the other; the signed waiver line covers what open point 2 decides.</li>
+      <li>B18: the reasoned <code>--verdict WAIVED --reason</code> form is removed (open point 3); tests move to the sign-off path.</li>
+      <li>B22: each directive test gets an unquoted label after the directive and asserts it is named.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Backlog B16, B17, B18, B22 · UC-REV-2, UC-REV-3, UC-MR-1, UC-DOC-4 · DEC-49 amended.</p>
+  <p data-item="wu-expected"><b>Integration:</b> a reason with control characters prints escaped; a sign-off whose note write fails leaves neither note; after a signed waiver, changing its counts, open findings or seam waivers turns the sign-off check red (per open point 2); the reasoned waiver form is refused; the directive tests fail when labels after a directive are missed. <b>Unit:</b> each changed function.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+<div data-wu="E-SEED3.W7" data-c="wu-w7">
+  <h3 id="w7">W7 · Every follow-up says where it goes</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> a follow-up can be written with no destination, so it is deferred to nowhere. The rule text says every follow-up names the WU, epic or backlog row that takes it. Text only, per open point 1.</p>
+    <ul>
+      <li>B15: keel-workflow and keel-plan (the result reports' follow-ups item) state the rule (rule-bearing: your <code>keel mr commit</code>).</li>
+      <li>No gate. Dropped if you answer "neither".</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Backlog B15 · UC-DOC-1 (the follow-ups item's wording) · a new record, DEC-53, if you answer yes.</p>
+  <p data-item="wu-expected"><b>Integration: waived</b>: rule text only, no code path; the diff is docs-only and exempt. Observable: the two skill texts carry the rule.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+<div data-wu="E-SEED3.W8" data-c="wu-w8">
+  <h3 id="w8">W8 · The architecture doc</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> one T1 doc describes the final shape: the CLI and what it installs, the config keys, the evidence set and which gate reads what, and the router tooling. Written last, so it matches what W1–W7 built.</p>
+    <ul>
+      <li>B4: <code>docs/architecture.html</code>. Flat <code>docs/*.html</code> is rule-bearing: it lands by your <code>keel mr commit</code>.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Backlog B4 · no use case (a T1 description).</p>
+  <p data-item="wu-expected"><b>Integration: waived</b>: a doc, no code path. Observable: <code>keel verify-doc</code> green; every config key and note kind in the code is named in it.</p>
+  <p data-item="wu-deps">W2, W3, W4, W5, W6, W7</p>
+</div>
+
+</div>
+
+<h2 id="live-check">The live review check rides on these reviews</h2>
+<p>Backlog B19 asks for one real run of the new review schedule. This epic's own reviews are that run: they use the installed keel, built from main with the schedule in it. The epic result records each item with the commit where it was seen. B19 is struck when all five are seen; an item no review reached stays open, named.</p>
+<table data-c="live-check">
+  <thead><tr><th>#</th><th>To see</th><th>Where</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><code>keel preflight</code> prints <code>review round n of 5</code> and its scope</td><td>W1's first preflight</td></tr>
+    <tr><td>2</td><td>The writer stores <code>--findings</code>, <code>--refuted</code>, <code>--nits</code>, <code>--fleet</code></td><td>Every round's cr note</td></tr>
+    <tr><td>3</td><td>A fix-PASS is written by keel and the gate accepts it</td><td>The first round whose fix the schedule lets pass without reviewers</td></tr>
+    <tr><td>4</td><td>Round 2 reads the earlier notes end to end</td><td>The first review that reaches round 2</td></tr>
+    <tr><td>5</td><td><code>keel mr confirm</code> shows the history rows</td><td>Your first sign-off in this epic</td></tr>
+  </tbody>
+</table>
+
+<h2 id="open-points">Open points</h2>
+<p>Work goes on at these answers. Comment to overrule. 1–3 are yours to decide.</p>
+<table data-item="open-questions" data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Must every follow-up name the WU, epic or backlog row that takes it? (B15)</td><td><b>Yes, as a written rule, with no gate</b> (W7)</td><td>A gate cannot tell a real destination from an invented one. The rule costs nothing. "Neither" drops W7</td></tr>
+    <tr><td>2</td><td>Should your waiver signature cover the whole waiver, not only its reason? (B17)</td><td><b>Yes</b>: the reason, the counts, the open findings and the seam waivers</td><td>Today these can change after you sign and the gate does not notice. Cost: an open tip signed by an older keel is re-signed; none is open now</td></tr>
+    <tr><td>3</td><td>Should an agent still be able to write a waiver with any reason? (B18)</td><td><b>No</b>: remove that form</td><td>The workflow already says a session never writes a waiver. The cap's waiver and yours at sign-off remain</td></tr>
+    <tr><td>4</td><td>Does every commit that changes code run lint?</td><td><b>Yes</b>, lint only, not tests</td><td>Catches errors at the commit. Tests are slow; they stay at the review and the push</td></tr>
+    <tr><td>5</td><td>May a fetch overwrite evidence you have not pushed yet?</td><td><b>No</b>: notes are fetched without force</td><td>A forced fetch would drop local notes. A diverged note ref fails loudly instead, with a fix line</td></tr>
+    <tr><td>6</td><td>Another program named keel: warn or refuse?</td><td><b>Setup warns; a hook refuses</b>, naming the clash</td><td>A hook that runs another program cannot gate anything</td></tr>
+    <tr><td>7</td><td>Format the whole codebase once?</td><td><b>Yes</b>, in W1, before other work</td><td>The drift is in every file. Formatting later would conflict with every open branch</td></tr>
+    <tr><td>8</td><td>Can you push an epic branch mid-close, before its review passes?</td><td><b>Yes</b></td><td>The push is a backup. The merge into main judges review and sign-off anyway</td></tr>
+    <tr><td>9</td><td>Does this epic also take B11, B13 and B14?</td><td><b>No</b>: they stay in E-GATEFIX</td><td>Your ruling named this epic's rows and the two closes' leftovers. B13 is a gate hole that deserves its own review. Comment to pull it in</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="expected-h">Acceptance</h3>
+<ul data-item="expected" data-c="expected">
+  <li>After an epic merges into main, pushing its branch passes the real pre-push hook.</li>
+  <li>A review fix after the archive commit needs no note rewritten; <code>keel verify-dod epic</code> is green.</li>
+  <li><code>cargo fmt --check</code> is green and runs in <code>keel lint</code>.</li>
+  <li>A code commit failing lint is refused; a conflicted merge finished by hand into an epic is gated.</li>
+  <li>A fresh clone set up by <code>init</code> fetches notes; an unedited skill file upgrades without a prompt; a foreign keel is named.</li>
+  <li>Every B16, B17, B18 and B22 item is fixed or decided as answered; each has its test.</li>
+  <li>The five live-check items are recorded, or the missing ones named, in the epic result.</li>
+  <li><code>docs/architecture.html</code> exists and passes <code>keel verify-doc</code>.</li>
+  <li>The epic test passes.</li>
+</ul>
+
+<h3 id="use-cases-h">Use cases</h3>
+<ul data-item="use-cases" data-c="use-cases">
+  <li>UC-GATE-3, amended: the walk and the push judge an epic-close commit by its epic notes (W2).</li>
+  <li>UC-GATE-1, UC-GATE-2, amended: the commit hook's lint and conflicted-merge gate (W4); one target rule for a bare id (W3).</li>
+  <li>UC-GATE-4, amended: lint includes the format check (W1).</li>
+  <li>UC-INIT-1, amended: notes fetch, skills lock, foreign keel (W5).</li>
+  <li>UC-NOTE-1, amended: target of a bare id (W3).</li>
+  <li>UC-REV-2, UC-MR-1, amended: the waiver's signed scope, the reasoned form removed, the atomic write (W6).</li>
+  <li>UC-DOC-1, amended: follow-ups name their destination (W7, if answered yes).</li>
+</ul>
+
+<h3 id="non-goals-h">Out of scope</h3>
+<ul data-item="non-goals" data-c="non-goals">
+  <li>B21, the diagram labels the quote check misses: an accepted limit (owner, 2026-11-13). Listed, no work.</li>
+  <li>E-GATEFIX's B11, B13, B14 (open point 9).</li>
+  <li>B7's non-Claude rows (Codex hooks), native SSH signing and <code>Cargo.lock</code> currency.</li>
+  <li>The release (E-RELEASE), the Trawler re-records (E-LINEAGE), per-language epic tests (E-MULTILANG).</li>
+</ul>
+
+<h3 id="e2e-h">Epic test</h3>
+<div data-item="e2e-plan" data-c="e2e-plan">
+  <p>One hermetic test, <code>tests/cli.rs</code> <code>seed3_epic_close_pushes_and_clone_fetches_evidence</code>: a scratch repo with a bare local remote, hooks installed by <code>init</code>, no network.</p>
+  <ol>
+    <li>A WU is merged into an epic through the real hooks. A conflicted merge finished by hand is refused without evidence.</li>
+    <li>The close: archive commit, then a review fix. <code>keel verify-dod epic</code> is green with no note rewritten.</li>
+    <li>The epic merges into main. <code>git push</code> of main and then of the epic branch both pass.</li>
+    <li>A fresh clone set up by <code>init</code> fetches the evidence with a plain fetch, and <code>keel verify-dod epic</code> is green there.</li>
+  </ol>
+  <p>No waiver intended.</p>
+</div>
+
+<h3 id="close-h">At the close</h3>
+<ul data-item="distillation-plan" data-c="distillation-plan">
+  <li><code>docs/use-cases/workflow.html</code>: the use cases above.</li>
+  <li><code>docs/decisions/workflow-gates.html</code>: DEC-15, DEC-17, DEC-18, DEC-19, DEC-29, DEC-41, DEC-49 amended; DEC-53 for the follow-up rule if W7 lands.</li>
+  <li><code>docs/decisions/distribution.html</code>: DEC-3 amended (the skills lock).</li>
+  <li>Backlog: B4, B6, B7's four rows, B9, B10, B15–B20, B22, B23 struck; e-router-v2 R7's two Keel rows struck; the proposed-epics table updated (E-GATEFIX keeps B11, B13, B14).</li>
+  <li><code>docs/architecture.html</code> (W8, T1) carries the shape.</li>
+</ul>
+
+<h3 id="rows-h">Backlog rows: status found while planning</h3>
+<ul data-c="rows-status">
+  <li>None is obsolete. None is done.</li>
+  <li>B7's install-link row is half done: the hooks name <code>docs/install.html</code>; <code>init</code>'s warning does not.</li>
+  <li>B10 is half done: <code>tests/verify_dod.rs</code> and <code>tests/router.rs</code> isolate git config locally; <code>tests/common</code> does not.</li>
+  <li>R7's format drift is wider than the row says: every source and test file, 948 places.</li>
+  <li>B23 is new, added to <code>docs/backlog/e-seed-v2.html</code> with this plan.</li>
+  <li>B21 stays an accepted limit (listed in keel-plan §4).</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
