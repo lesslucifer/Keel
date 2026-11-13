@@ -27,10 +27,14 @@ changes no code path asks for no review, no note and no finders.
   `HEAD_R=$(git rev-parse <head>)`. Merge-base, not the base tip.
 - The reviewed diff is `git diff $BASE $HEAD_R -- <code_paths…>` — exactly the
   bytes `keel notes write cr` will hash into `code_diff_hash`.
-- **From round 3, the round reviews only the last fix** (the schedule, §5).
-  Preflight (§2) prints the range: `SINCE` is the last reviewed commit, and
-  finders and verifiers get `git diff $SINCE $HEAD_R -- <code_paths…>` as their
-  diff. They may read any file, and report findings only on those changes. The
+- **From round 3, the round reviews only the last fix** (the schedule, §5):
+  the branch's own changes since `SINCE`, the last reviewed commit. Preflight
+  (§2) prints the command that shows them, and finders and verifiers get its
+  output as their diff: `git rev-list --first-parent $SINCE..$HEAD_R | git
+  diff-tree --stdin -r -p --cc -- <code_paths…>` (each commit of the branch's
+  own line; a merge only for what it resolved itself, never what a back-merge
+  brought from its second parent). Never `git diff $SINCE $HEAD_R`: after a
+  back-merge it holds other branches' code. They may read any file, and report findings only on those changes. The
   note still binds the whole range.
 - Optional, repeatable: `--waive "<finding summary>: <reason>"` — the
   trigger's waiver declarations, applied at the verdict (§5).
@@ -57,7 +61,8 @@ fleet again. It refuses on exactly:
 
 On green it prints the round and its scope:
 `review round <n> of <N> - scope: the whole range, <base>..<tip>` (rounds 1–2)
-or `… scope: the last fix, <since>..<tip>` (from round 3). Use that range (§1).
+or `… scope: the last fix, <since>..<tip>: this branch's own changes, …: <command>;
+changed: <files>` (from round 3). Use that range, and from round 3 that command (§1).
 
 Non-zero exit ⇒ stop, report its blocks to the caller, spawn nothing, write
 nothing. An **exempt** diff (no code path) prints `exempt`: report that and
@@ -87,8 +92,9 @@ dimension, each on an explicitly named model. Each prompt contains exactly:
 - its dimension, and the instruction to read `rubric.md` (this skill's
   directory) and the project rubric if it exists — its dimension row, the
   principles, the exclusions;
-- the scope (`$BASE..$HEAD_R`, or from round 3 `$SINCE..$HEAD_R`, plus the
-  working tree if in scope) — the finder runs `git diff` itself, may read any
+- the scope (`$BASE..$HEAD_R`, or from round 3 `$SINCE..$HEAD_R` with
+  preflight's own-changes command, §1, plus the working tree if in scope) —
+  the finder runs `git diff` (from round 3, that command) itself, may read any
   file, and reads the tip's test note
   (`git log -1 --no-show-signature --no-notes --notes=test --format=%N $HEAD_R`;
   a review session may run no `git notes` command, reads included): a declared
