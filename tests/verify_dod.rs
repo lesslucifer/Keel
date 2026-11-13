@@ -1569,3 +1569,65 @@ fn a_second_code_fix_after_a_round_4_fix_pass_points_at_the_owners_waiver_not_a_
     assert_red(&o, "0·review-cap");
     assert!(text(&o).contains("--waive-review") && !text(&o).contains("--fixes"), "{}", text(&o));
 }
+
+/// Code that reached the epic from another branch, by itself, without this WU's commits.
+fn epic_code(p: &Path, file: &str) {
+    git(p, &["switch", "-q", "epic/e"]);
+    write(p, file, "def other():\n    return 0\n");
+    commit(p, &format!("another WU's reviewed {file}"));
+    git(p, &["switch", "-q", "wu/e/a"]);
+}
+
+/// Epic code review round 1, B1: a WU that back-merges its epic (DEC-29) did not change what the
+/// merge brought. "Code changed since a round" and the scope from round 3 count only the branch's
+/// own changes: its first-parent commits, a merge only for what it resolved itself.
+#[test]
+fn a_back_merge_of_the_epic_is_no_fix_of_this_wu_and_no_part_of_its_last_fix() {
+    // A fix-PASS carries over a back-merge, and the sign-off lists only the WU's own files.
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    doc_note(p);
+    ok(write_cr(p, &["--verdict", "PASS", "--nits", r#"[{"location": "src/a.py:1", "finding": "naming", "fixed": "renamed"}]"#]));
+    let c1 = head(p);
+    write(p, "src/a.py", "def one():\n    return 1\n");
+    commit(p, "fix the nit");
+    test_note(p);
+    doc_note(p);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1]));
+    epic_code(p, "src/b.py");
+    git(p, &["merge", "-q", "--no-ff", "-m", "back-merge the epic", "epic/e"]);
+    test_note(p);
+    doc_note(p);
+    let m = head(p);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1]));
+    assert_eq!(note(p, "cr", "HEAD")["fixes"].as_str(), Some(c1.as_str()));
+    let t = text(&ok(keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"])));
+    assert!(row(&t, &m).contains(&format!("[fix-PASS of round 1 on {}; no reviewers ran; changed: src/a.py]", &c1[..10])), "{t}");
+
+    // What a merge resolves itself is the branch's own change: a second fix.
+    epic_code(p, "src/c.py");
+    git(p, &["merge", "-q", "--no-ff", "--no-commit", "epic/e"]);
+    write(p, "src/a.py", "def one():\n    return 2\n");
+    commit(p, "back-merge the epic, changing a.py in the merge");
+    test_note(p);
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c1]), &["second fix"]);
+
+    // From round 3 the scope names only the branch's own changes since the last reviewed commit.
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    step(p, 2);
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    let c2 = head(p);
+    step(p, 3);
+    epic_code(p, "src/b.py");
+    git(p, &["merge", "-q", "--no-ff", "-m", "back-merge the epic", "epic/e"]);
+    test_note(p);
+    let tip = head(p);
+    let t = text(&ok(preflight(p)));
+    assert!(t.contains(&last_fix(3, 5, &c2, &tip)), "{t}");
+    assert!(t.contains("changed: src/a.py") && !t.contains("src/b.py"), "the scope is the WU's own fix, never the merged code: {t}");
+    assert!(t.contains(&format!("git rev-list --first-parent {c2}..{tip} | git diff-tree --stdin -r -p --cc -- src/ tests/")), "{t}");
+}
