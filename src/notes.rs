@@ -148,9 +148,20 @@ impl CrNote {
         (self.verdict == "WAIVED").then(|| self.waiver.as_deref().unwrap_or(""))
     }
 
-    /// `sha256:<hex>` of the waiver reason iff the verdict is WAIVED: what a sign-off accepts and signs,
-    /// and what check 8 rebuilds - one rule for both.
+    /// `sha256:<hex>` of the whole waiver iff the verdict is WAIVED: what a sign-off accepts and signs,
+    /// and what check 8 rebuilds - one rule for both. It covers the reason, the open counts, whether a
+    /// review ran, each open finding and each walk waiver (owner, E-SEED3 open point 2), as one JSON
+    /// text, so no reason can pass for another field. Anything else on the note is not signed.
     pub(crate) fn waiver_hash(&self) -> Option<String> {
+        let reason = self.waiver()?;
+        let walk: Vec<serde_json::Value> = self.walk_waivers.iter().map(|w| serde_json::json!({"seam": w.seam, "why": w.why})).collect();
+        let signed = serde_json::json!({"waiver": "keel-waiver/v2", "reason": reason, "blockers": self.blockers, "importants": self.importants,
+            "unreviewed": self.unreviewed(), "open_findings": self.open_findings(), "walk_waivers": walk});
+        Some(sha256(signed.to_string().as_bytes()))
+    }
+
+    /// `sha256:<hex>` of the reason alone: what a keel before E-SEED3.W6 signed. Check 8 names that cause.
+    pub(crate) fn reason_hash(&self) -> Option<String> {
         self.waiver().map(|w| sha256(w.as_bytes()))
     }
 
@@ -304,8 +315,9 @@ pub struct MrNote {
     /// `sha256:<hex>` of the attested report's bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_hash: Option<String>,
-    /// `sha256:<hex>` of the waiver reason the signer accepted (`--accept-waiver`); absent when the
-    /// review was not waived. Check 8 rebuilds it from the tip's current cr note.
+    /// `sha256:<hex>` of the waiver the signer accepted (`CrNote::waiver_hash`: its reason, counts, open
+    /// findings, walk waivers and review state); absent when the review was not waived. Check 8
+    /// rebuilds it from the tip's current cr note.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waiver_hash: Option<String>,
     /// `sha256:<hex>` of the full `git diff base tip`.
@@ -1201,7 +1213,7 @@ mod tests {
         };
         let fresh = waive(None, id(), Some("ruling"), "h".into()).unwrap();
         assert_eq!((fresh.verdict.as_str(), fresh.waiver(), fresh.blockers, fresh.importants, fresh.unreviewed()), ("WAIVED", Some("ruling"), 0, 0, true));
-        assert_eq!(fresh.waiver_hash().unwrap(), super::sha256(b"ruling"), "the hash is the stored reason's");
+        assert_eq!(fresh.reason_hash().unwrap(), super::sha256(b"ruling"), "the older keel's hash: the reason's");
         for v in ["FAIL", "WAIVED"] {
             let same = raw(&note(v, "b", "h"));
             let w = waive(Some(&same), id(), Some(" ruling "), "h".into()).unwrap();
@@ -1238,6 +1250,48 @@ mod tests {
         assert!(waive(None, id(), Some("--blockers"), "h".into()).is_err());
         let (what, _) = waive(Some("{not json"), id(), Some("r"), "h".into()).unwrap_err();
         assert!(what.contains("does not parse"), "{what}");
+    }
+
+    /// B17 (open point 2): the signed waiver covers its reason, counts, review state, open findings and
+    /// walk waivers - nothing else - and no reason can pass for another field.
+    #[test]
+    fn the_waiver_hash_covers_exactly_what_the_owner_signs() {
+        let base = serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c", "timestamp": 0,
+            "verdict": "WAIVED", "waiver": "r", "blockers": 1, "importants": 0, "code_diff_hash": "h",
+            "findings": [{"severity": "blocker", "claim": "open"}, {"severity": "important", "claim": "closed", "waived": "w"}],
+            "walk_waivers": [{"seam": "s", "why": "w"}], "refuted": [{"claim": "x"}], "nits": []});
+        let hash = |f: &dyn Fn(&mut serde_json::Value)| {
+            let mut j = base.clone();
+            f(&mut j);
+            serde_json::from_value::<CrNote>(j).unwrap().waiver_hash().unwrap()
+        };
+        let h = hash(&|_| {});
+        assert!(h.starts_with("sha256:") && h != super::sha256(b"r"));
+        let signed: [&dyn Fn(&mut serde_json::Value); 8] = [
+            &|j| j["waiver"] = "r2".into(),
+            &|j| j["blockers"] = 2.into(),
+            &|j| j["importants"] = 1.into(),
+            &|j| j["unreviewed"] = true.into(),
+            &|j| j["findings"][0]["claim"] = "softer".into(),
+            &|j| j["findings"][0]["waived"] = "closed later".into(),
+            &|j| j["walk_waivers"][0]["why"] = "other".into(),
+            &|j| j["waiver"] = "r\",\"blockers\":1".into(),
+        ];
+        for (i, f) in signed.iter().enumerate() {
+            assert_ne!(hash(f), h, "edit {i} is signed");
+        }
+        let free: [&dyn Fn(&mut serde_json::Value); 4] = [
+            &|j| j["findings"][1]["claim"] = "closed, reworded".into(),
+            &|j| j["refuted"] = serde_json::json!([]),
+            &|j| j["committer"] = "other".into(),
+            &|j| j["nits"] = serde_json::json!([{"n": 1}]),
+        ];
+        for (i, f) in free.iter().enumerate() {
+            assert_eq!(hash(f), h, "edit {i} is not signed");
+        }
+        let mut pass = base.clone();
+        pass["verdict"] = "PASS".into();
+        assert_eq!(serde_json::from_value::<CrNote>(pass).unwrap().waiver_hash(), None);
     }
 
     #[test]

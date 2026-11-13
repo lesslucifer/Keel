@@ -122,17 +122,15 @@ fn payload(level: &str, base: &str, tip: &str, change: &str, report: Option<(&st
     p
 }
 
-/// `sha256:<hex>` of the waiver reason on `tip`'s cr note, if its review is WAIVED: what a sign-off
-/// accepts with `--accept-waiver`, and what check 8 rebuilds.
-fn waiver_hash(repo: &Path, tip: &str) -> Option<String> {
-    notes::cr_note(repo, tip)?.waiver_hash()
-}
-
 /// Check 8's waiver rule: the waiver the sign-off accepted (`signed`) is the one the cr note carries
-/// now (`current`). `Some(cause)` when they differ.
-fn waiver_drift(signed: Option<&str>, current: Option<&str>, t: &str) -> Option<String> {
+/// now (`current`). `Some(cause)` when they differ. `reason`: the note's reason-only hash, which a keel
+/// before E-SEED3.W6 signed: that sign-off is named as such, not as a changed waiver.
+fn waiver_drift(signed: Option<&str>, current: Option<&str>, reason: Option<&str>, t: &str) -> Option<String> {
     match (signed, current) {
-        (Some(s), Some(c)) if s != c => Some(format!("the review waiver on {t} was reworded after the sign-off accepted it")),
+        (Some(s), Some(c)) if s != c && Some(s) == reason => Some(format!(
+            "the sign-off on {t} signed only the review waiver's reason (an older keel); the signature now covers the whole waiver - re-sign with keel mr confirm"
+        )),
+        (Some(s), Some(c)) if s != c => Some(format!("the review waiver on {t} changed after the sign-off accepted it (its reason, counts, open findings, walk waivers or review state)")),
         (None, Some(_)) => Some(format!("the review on {t} is WAIVED, but its sign-off accepted no waiver (the waiver was written after signing)")),
         (Some(_), None) => Some(format!("the sign-off on {t} accepted a review waiver that the cr note no longer carries")),
         _ => None,
@@ -728,8 +726,16 @@ pub(crate) fn manual_review(
     if n.change_hash != change {
         return again(stale_change(&n.change_hash, &format!("{}..{t}", short(base))));
     }
-    let waiver = cr.map_or_else(|| waiver_hash(repo, tip), CrNote::waiver_hash);
-    if let Some(cause) = waiver_drift(n.waiver_hash.as_deref(), waiver.as_deref(), t) {
+    let read;
+    let cr = match cr {
+        Some(cr) => Some(cr),
+        None => {
+            read = notes::cr_note(repo, tip);
+            read.as_ref()
+        }
+    };
+    let waiver = cr.and_then(CrNote::waiver_hash);
+    if let Some(cause) = waiver_drift(n.waiver_hash.as_deref(), waiver.as_deref(), cr.and_then(CrNote::reason_hash).as_deref(), t) {
         return again(cause);
     }
     let attested = match (&n.report, &n.report_hash) {
@@ -952,12 +958,15 @@ mod tests {
 
     #[test]
     fn check_8_holds_the_sign_off_to_the_waiver_the_note_carries_now() {
-        assert_eq!(waiver_drift(None, None, "t"), None);
-        assert_eq!(waiver_drift(Some("sha256:a"), Some("sha256:a"), "t"), None);
-        for (signed, current, needle) in
-            [(Some("sha256:a"), Some("sha256:b"), "reworded"), (None, Some("sha256:b"), "accepted no waiver"), (Some("sha256:a"), None, "no longer carries")]
-        {
-            let cause = waiver_drift(signed, current, "t").unwrap_or_else(|| panic!("{signed:?} {current:?} passed"));
+        assert_eq!(waiver_drift(None, None, None, "t"), None);
+        assert_eq!(waiver_drift(Some("sha256:a"), Some("sha256:a"), Some("sha256:a"), "t"), None, "a waiver whose text is its reason");
+        for (signed, current, reason, needle) in [
+            (Some("sha256:a"), Some("sha256:b"), Some("sha256:r"), "changed after"),
+            (None, Some("sha256:b"), Some("sha256:r"), "accepted no waiver"),
+            (Some("sha256:a"), None, None, "no longer carries"),
+            (Some("sha256:r"), Some("sha256:b"), Some("sha256:r"), "older keel"),
+        ] {
+            let cause = waiver_drift(signed, current, reason, "t").unwrap_or_else(|| panic!("{signed:?} {current:?} passed"));
             assert!(cause.contains(needle) && cause.contains("waiver"), "{cause}");
         }
     }
