@@ -214,6 +214,11 @@ fn git_raw(repo: &Path, args: &[&str], input: Option<&[u8]>) -> Result<std::proc
 
 /// A finished git command's stdout as trimmed text, or its failure.
 fn ok_text(args: &[&str], o: std::process::Output) -> Result<String, String> {
+    ok_bytes(args, o).map(|out| String::from_utf8_lossy(&out).trim().to_string())
+}
+
+/// A finished git command's stdout as raw bytes, or its failure: the one failure text.
+fn ok_bytes(args: &[&str], o: std::process::Output) -> Result<Vec<u8>, String> {
     if !o.status.success() {
         return Err(format!(
             "keel: git {} failed: {}",
@@ -221,7 +226,7 @@ fn ok_text(args: &[&str], o: std::process::Output) -> Result<String, String> {
             String::from_utf8_lossy(&o.stderr).trim()
         ));
     }
-    Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+    Ok(o.stdout)
 }
 
 fn repo_root() -> Result<PathBuf, String> {

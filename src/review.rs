@@ -116,14 +116,13 @@ impl Next {
     /// Preflight's line: the round and the exact range the reviewers read (full SHAs). From round 3
     /// that is the branch's own changes since the last reviewed commit: `commands` prints them
     /// (`notes::own_diff_commands`), `changed` lists their files (`notes::diff_names`), one argv for both.
-    pub(crate) fn announce(&self, base: &str, tip: &str, commands: &str, changed: &[String]) -> String {
+    pub(crate) fn announce(&self, base: &str, tip: &str, commands: &str, changed: &str) -> String {
         match &self.since {
             None => format!("review round {} of {} - scope: the whole range, {base}..{tip}", self.round, self.max),
             Some(s) => format!(
-                "review round {} of {} - scope: the last fix, {s}..{tip}: this branch's own changes, each commit against its first parent and a merge against git's automatic merge of its parents: {commands}; changed: {} (reviewers may read any file, and report only on these changes)",
+                "review round {} of {} - scope: the last fix, {s}..{tip}: this branch's own changes, each commit against its first parent and a merge against git's automatic merge of its parents: {commands}; changed: {changed} (reviewers may read any file, and report only on these changes)",
                 self.round,
                 self.max,
-                if changed.is_empty() { "nothing".to_string() } else { changed.join(", ") }
             ),
         }
     }
@@ -462,11 +461,10 @@ mod tests {
         assert_eq!(next_round(&failed_rounds(4), 5, &|_| Ok(false)), Ok(Next { round: 5, max: 5, since: Some("r4".into()) }));
         let n = Next { round: 3, max: 5, since: Some("s".into()) };
         assert_eq!((n.scope(), Next { round: 1, max: 5, since: None }.scope()), ("since s".to_string(), "full".to_string()));
-        let a = n.announce("b", "t", "git diff-tree X", &["src/a.rs".into()]);
+        let a = n.announce("b", "t", "git diff-tree X", "src/a.rs");
         assert!(a.starts_with("review round 3 of 5 - scope: the last fix, s..t: this branch's own changes"), "{a}");
         assert!(a.contains("its parents: git diff-tree X; changed: src/a.rs ("), "{a}");
-        assert!(n.announce("b", "t", "", &[]).contains("changed: nothing"));
-        assert_eq!(Next { round: 2, max: 5, since: None }.announce("b", "t", "", &[]), "review round 2 of 5 - scope: the whole range, b..t");
+        assert_eq!(Next { round: 2, max: 5, since: None }.announce("b", "t", "", ""), "review round 2 of 5 - scope: the whole range, b..t");
     }
 
     #[test]

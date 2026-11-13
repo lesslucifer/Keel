@@ -1,6 +1,6 @@
 //! Versioned note schemas + `keel notes write <test|doc|cr>`.
 //! Notes live in refs/notes/<kind> (same naming as Trawler), JSON, attached to the tip commit.
-use crate::{git, git_raw, ok_text, review, short, Config};
+use crate::{git, git_raw, ok_bytes, ok_text, review, short, Config};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -398,8 +398,8 @@ pub(crate) struct OwnDiff {
 /// 2026-11-13, epic code review round 3): a commit with one parent against that parent; a merge of
 /// two against git's own automatic merge of them (`git merge-tree --write-tree`, conflict markers and
 /// all), so only what the merge commit changed by hand counts, never what its second parent brought;
-/// an octopus merge whole, against its first parent (the gate refuses one anyway). Needs git 2.38 or
-/// later for `merge-tree --write-tree`; with an older git it refuses rather than guess.
+/// an octopus merge whole, against its first parent (the gate refuses one anyway). Needs git 2.40 or
+/// later (`merge-tree --write-tree`, `--attr-source`); with an older git it refuses rather than guess.
 pub(crate) fn own_diffs(repo: &Path, since: &str, tip: &str) -> Result<Vec<OwnDiff>, String> {
     let line = git(repo, &["rev-list", "--reverse", "--first-parent", "--parents", "--end-of-options", &format!("{since}..{tip}")], &[])?;
     let mut diffs = vec![];
@@ -416,15 +416,18 @@ pub(crate) fn own_diffs(repo: &Path, since: &str, tip: &str) -> Result<Vec<OwnDi
 }
 
 /// The tree git's automatic merge of `p1` and `p2` gives: `merge-tree --write-tree` prints it first,
-/// exiting 0 when clean and 1 with conflicts (the tree then holds the conflict markers).
+/// exiting 0 when clean and 1 with conflicts (the tree then holds the conflict markers). Attributes
+/// come from `p1`'s tree, the checkout the real merge was made on, never from the running checkout's
+/// worktree (epic code review round 4, B-1); `$GIT_DIR/info/attributes` applies to both alike.
 fn auto_merge(repo: &Path, p1: &str, p2: &str) -> Result<String, String> {
-    let args = ["merge-tree", "--write-tree", "--end-of-options", p1, p2];
+    let attrs = format!("--attr-source={p1}");
+    let args = [attrs.as_str(), "merge-tree", "--write-tree", "--end-of-options", p1, p2];
     let o = git_raw(repo, &args, None)?;
     let tree = String::from_utf8_lossy(&o.stdout).lines().next().unwrap_or_default().to_string();
     match o.status.code() {
         Some(0 | 1) if full_sha(&tree) => Ok(tree),
         _ => Err(format!(
-            "keel: git merge-tree --write-tree failed on the merge of {} and {} ({}); telling a merge's own changes needs git 2.38 or later",
+            "keel: git merge-tree --write-tree failed on the merge of {} and {} ({}); telling a merge's own changes needs git 2.40 or later",
             short(p1),
             short(p2),
             String::from_utf8_lossy(&o.stderr).trim()
@@ -441,21 +444,44 @@ fn own_diff_argv(d: &OwnDiff, format: &[&str], pathspecs: &[String]) -> Vec<Stri
     a
 }
 
-/// The paths within `pathspecs` that `diffs` change: their union, sorted. A path is listed as git
-/// prints it under `-z`, never C-quoted or re-encoded.
-pub(crate) fn diff_names(repo: &Path, diffs: &[OwnDiff], pathspecs: &[String]) -> Result<Vec<String>, String> {
-    let mut names = vec![];
+/// The paths within `pathspecs` that `diffs` change: their union, sorted, as the raw bytes git prints
+/// under `-z` (never C-quoted, never decoded), so two paths stay two whatever their encoding. One
+/// `diff-tree` per diff (backlog B16). `shown` turns them into text for the signer.
+pub(crate) fn diff_names(repo: &Path, diffs: &[OwnDiff], pathspecs: &[String]) -> Result<Vec<Vec<u8>>, String> {
+    let mut outputs = vec![];
     for d in diffs {
         let argv = own_diff_argv(d, &["--name-only", "-z"], pathspecs);
-        names.extend(zpaths(&git(repo, &argv.iter().map(String::as_str).collect::<Vec<_>>(), &[])?));
+        let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
+        outputs.push(ok_bytes(&argv, git_raw(repo, &argv, None)?)?);
     }
+    Ok(union_of_z(&outputs))
+}
+
+/// The union of `-z` path listings, sorted, each path its raw bytes.
+fn union_of_z(outputs: &[Vec<u8>]) -> Vec<Vec<u8>> {
+    let mut names: Vec<Vec<u8>> = outputs.iter().flat_map(|o| o.split(|&b| b == 0)).filter(|p| !p.is_empty()).map(<[u8]>::to_vec).collect();
     names.sort();
     names.dedup();
-    Ok(names)
+    names
+}
+
+/// Paths as the signer reads them: text, or the reason they cannot be shown when a path is not UTF-8
+/// (the decision never depends on it: `diff_names`' bytes do).
+pub(crate) fn shown(names: Vec<Vec<u8>>) -> Result<Vec<String>, String> {
+    names.into_iter().map(String::from_utf8).collect::<Result<_, _>>().map_err(|_| "a path is not UTF-8; run the printed commands".to_string())
+}
+
+/// Preflight's `changed:` text for `names`.
+pub(crate) fn changed_text(names: Vec<Vec<u8>>) -> String {
+    match shown(names) {
+        Ok(n) if n.is_empty() => "nothing".into(),
+        Ok(n) => n.join(", "),
+        Err(why) => format!("unknown ({why})"),
+    }
 }
 
 /// Paths within `pathspecs` the branch itself changed after `since` up to `tip` (`own_diffs`).
-pub(crate) fn own_names(repo: &Path, since: &str, tip: &str, pathspecs: &[String]) -> Result<Vec<String>, String> {
+pub(crate) fn own_names(repo: &Path, since: &str, tip: &str, pathspecs: &[String]) -> Result<Vec<Vec<u8>>, String> {
     diff_names(repo, &own_diffs(repo, since, tip)?, pathspecs)
 }
 
@@ -493,11 +519,8 @@ pub(crate) fn cr_line(repo: &Path, base: &str, tip: &str) -> Result<Vec<StoredNo
     }
     let input: String = on_line.iter().map(|(_, b)| format!("{b}\n")).collect();
     let args = ["cat-file", "--batch"];
-    let out = git_raw(repo, &args, Some(input.as_bytes()))?;
-    if !out.status.success() {
-        return Err(format!("keel: git {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim()));
-    }
-    let bodies = parse_batch(&out.stdout, on_line.len());
+    let out = ok_bytes(&args, git_raw(repo, &args, Some(input.as_bytes()))?)?;
+    let bodies = parse_batch(&out, on_line.len());
     Ok(on_line.into_iter().zip(bodies).map(|((c, _), body)| (c.to_string(), body)).collect())
 }
 
@@ -1040,7 +1063,17 @@ mod tests {
         }
     }
 
-    use super::{own_diff_argv, own_diff_commands, parse_batch, shell_quote, OwnDiff};
+    #[test]
+    fn paths_stay_their_bytes_and_one_that_is_not_utf8_is_never_shown_as_another() {
+        let names = union_of_z(&[b"src/b\xff.rs\0src/a.rs\0".to_vec(), b"src/b\xfe.rs\0src/a.rs\0".to_vec()]);
+        assert_eq!(names, [b"src/a.rs".to_vec(), b"src/b\xfe.rs".to_vec(), b"src/b\xff.rs".to_vec()], "two paths stay two");
+        assert_eq!(changed_text(names.clone()), "unknown (a path is not UTF-8; run the printed commands)");
+        assert!(shown(names).is_err());
+        assert_eq!(changed_text(union_of_z(&[b"src/b.rs\0src/a.rs\0".to_vec()])), "src/a.rs, src/b.rs");
+        assert_eq!(changed_text(union_of_z(&[vec![]])), "nothing");
+    }
+
+    use super::{changed_text, own_diff_argv, own_diff_commands, parse_batch, shell_quote, shown, union_of_z, OwnDiff};
     use super::{cr_counts, cr_lists, cr_verdict, waive, waiver_reason, CrNote, CrWrite, Identity};
 
     fn raw(n: &CrNote) -> String {

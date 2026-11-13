@@ -476,9 +476,9 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
             let (commands, changed) = match &next.since {
                 Some(since) => {
                     let diffs = notes::own_diffs(repo, since, &r.tip)?;
-                    (notes::own_diff_commands(&diffs, &cfg.code_paths), notes::diff_names(repo, &diffs, &cfg.code_paths)?)
+                    (notes::own_diff_commands(&diffs, &cfg.code_paths), notes::changed_text(notes::diff_names(repo, &diffs, &cfg.code_paths)?))
                 }
-                None => (String::new(), vec![]),
+                None => (String::new(), String::new()),
             };
             println!("{}", next.announce(&r.base, &r.tip, &commands, &changed));
         }
