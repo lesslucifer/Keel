@@ -134,7 +134,7 @@ fn source(html: &str, ts: &[Tag], a: usize, b: usize) -> String {
     let mut quoted = false;
     let mut keep = |out: &mut String, s: &str| {
         out.push_str(s);
-        quoted ^= s.matches('"').count() % 2 == 1;
+        quoted ^= decode_with(s, None).matches('"').count() % 2 == 1; // a quote as the scan sees it
         quoted
     };
     walk(html, ts, a, b, |run, t| {
@@ -495,9 +495,25 @@ fn hits(src: &str) -> Vec<Hit> {
     out
 }
 
-/// A label's text as it goes inside the quotes of a fix: Mermaid writes a `"` as `#quot;`.
+/// A label's text as it goes inside the quotes of a fix: Mermaid writes a `"` as `#quot;`, and so
+/// is every entity that `entity` decodes to one.
 fn inner(label: &str) -> String {
-    ["\"", "&quot;", "&#34;", "&#x22;"].iter().fold(label.to_string(), |l, q| l.replace(q, "#quot;"))
+    let mut out = String::with_capacity(label.len());
+    let mut rest = label;
+    while let Some(p) = rest.find(['"', '&']) {
+        out.push_str(&rest[..p]);
+        rest = &rest[p..];
+        let quote = if rest.starts_with('"') {
+            Some(1)
+        } else {
+            rest.as_bytes()[1..].iter().take(32).position(|&c| c == b';').filter(|&n| n > 0 && entity(&rest[1..=n]) == Some('"')).map(|n| n + 2)
+        };
+        let n = quote.unwrap_or(1);
+        out.push_str(if quote.is_some() { "#quot;" } else { &rest[..1] });
+        rest = &rest[n..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// `s[a..b]` without its outer whitespace, as a span.
@@ -793,6 +809,9 @@ mod tests {
         let html = r#"A["<!--"] --> B["b"] <!-- [z] --> C"#;
         let ts = tags(html);
         assert_eq!(super::source(html, &ts, 0, html.len()), r#"A["<!--"] --> B["b"]  C"#);
+        let html = r#"A[&#34;<!--&#34;] --> B <!-- [z] --> C"#;
+        let ts = tags(html);
+        assert_eq!(super::source(html, &ts, 0, html.len()), r#"A[&#34;<!--&#34;] --> B  C"#, "an entity quote counts");
     }
 
     /// Epic code review round 1, nit: a label is reported as written in the source, spaces kept.
