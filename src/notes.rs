@@ -465,15 +465,14 @@ fn union_of_z(outputs: &[Vec<u8>]) -> Vec<Vec<u8>> {
     names
 }
 
-/// Paths as the signer reads them: text, or the reason they cannot be shown when a path is not UTF-8
-/// (the decision never depends on it: `diff_names`' bytes do).
-pub(crate) fn shown(names: Vec<Vec<u8>>) -> Result<Vec<String>, String> {
-    names.into_iter().map(String::from_utf8).collect::<Result<_, _>>().map_err(|_| "a path is not UTF-8; run the printed commands".to_string())
-}
-
-/// Preflight's `changed:` text for `names`.
-pub(crate) fn changed_text(names: Vec<Vec<u8>>) -> String {
-    match shown(names) {
+/// The one `changed:` text, for preflight and the sign-off history alike: the paths the branch's own
+/// changes in `range` touch, "nothing", or "unknown (why)" when git failed or a path is not UTF-8
+/// (the decision never depends on the text: `diff_names`' bytes do).
+pub(crate) fn changed_text(names: Result<Vec<Vec<u8>>, String>, range: &str) -> String {
+    let shown = names.and_then(|n| {
+        n.into_iter().map(String::from_utf8).collect::<Result<Vec<_>, _>>().map_err(|_| format!("a path is not UTF-8; it is among the branch's own changes in {range}"))
+    });
+    match shown {
         Ok(n) if n.is_empty() => "nothing".into(),
         Ok(n) => n.join(", "),
         Err(why) => format!("unknown ({why})"),
@@ -1067,13 +1066,13 @@ mod tests {
     fn paths_stay_their_bytes_and_one_that_is_not_utf8_is_never_shown_as_another() {
         let names = union_of_z(&[b"src/b\xff.rs\0src/a.rs\0".to_vec(), b"src/b\xfe.rs\0src/a.rs\0".to_vec()]);
         assert_eq!(names, [b"src/a.rs".to_vec(), b"src/b\xfe.rs".to_vec(), b"src/b\xff.rs".to_vec()], "two paths stay two");
-        assert_eq!(changed_text(names.clone()), "unknown (a path is not UTF-8; run the printed commands)");
-        assert!(shown(names).is_err());
-        assert_eq!(changed_text(union_of_z(&[b"src/b.rs\0src/a.rs\0".to_vec()])), "src/a.rs, src/b.rs");
-        assert_eq!(changed_text(union_of_z(&[vec![]])), "nothing");
+        assert_eq!(changed_text(Ok(names), "s..t"), "unknown (a path is not UTF-8; it is among the branch's own changes in s..t)");
+        assert_eq!(changed_text(Ok(union_of_z(&[b"src/b.rs\0src/a.rs\0".to_vec()])), "s..t"), "src/a.rs, src/b.rs");
+        assert_eq!(changed_text(Ok(union_of_z(&[vec![]])), "s..t"), "nothing");
+        assert_eq!(changed_text(Err("git failed".into()), "s..t"), "unknown (git failed)");
     }
 
-    use super::{changed_text, own_diff_argv, own_diff_commands, parse_batch, shell_quote, shown, union_of_z, OwnDiff};
+    use super::{changed_text, own_diff_argv, own_diff_commands, parse_batch, shell_quote, union_of_z, OwnDiff};
     use super::{cr_counts, cr_lists, cr_verdict, waive, waiver_reason, CrNote, CrWrite, Identity};
 
     fn raw(n: &CrNote) -> String {

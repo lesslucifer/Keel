@@ -115,7 +115,8 @@ impl Next {
 
     /// Preflight's line: the round and the exact range the reviewers read (full SHAs). From round 3
     /// that is the branch's own changes since the last reviewed commit: `commands` prints them
-    /// (`notes::own_diff_commands`), `changed` lists their files (`notes::diff_names`), one argv for both.
+    /// (`notes::own_diff_commands`), and `changed` is the ready text of their files
+    /// (`notes::changed_text` over `notes::diff_names`, one argv for both).
     pub(crate) fn announce(&self, base: &str, tip: &str, commands: &str, changed: &str) -> String {
         match &self.since {
             None => format!("review round {} of {} - scope: the whole range, {base}..{tip}", self.round, self.max),
@@ -362,8 +363,9 @@ pub(crate) fn next_step(note: &CrNote, round: u32, max: u32, tip: &str) -> Strin
 /// `[round n, since <commit>]`, `[fix-PASS of round n on <commit>; no reviewers ran; changed: ...]`,
 /// or nothing. Rounds are numbered from the oldest under `rounds`' rule: an unreadable note stops the
 /// count, so a round above it shows as not counted. A note that records another round or scope than
-/// the line gives it says so. `files` lists what a fix-PASS commit changed.
-pub(crate) fn tags(entries: &[Entry], files: impl Fn(&str, &str) -> Result<Vec<String>, String>) -> Vec<String> {
+/// the line gives it says so. `files` lists what a fix-PASS commit changed, as `notes::diff_names` does;
+/// `notes::changed_text` renders it, as for preflight.
+pub(crate) fn tags(entries: &[Entry], files: impl Fn(&str, &str) -> Result<Vec<Vec<u8>>, String>) -> Vec<String> {
     let mut numbered: HashMap<&str, u32> = HashMap::new();
     let mut previous: Option<&str> = None;
     let mut stopped = false;
@@ -398,7 +400,7 @@ pub(crate) fn tags(entries: &[Entry], files: impl Fn(&str, &str) -> Result<Vec<S
                     None if stopped => "a round past an unreadable note".to_string(),
                     None => "a round not on this line".to_string(),
                 };
-                let changed = files(reviewed, &e.commit).map_or_else(|e| format!("unknown ({e})"), |f| f.join(", "));
+                let changed = notes::changed_text(files(reviewed, &e.commit), &format!("{}..{}", short(reviewed), short(&e.commit)));
                 format!(" [fix-PASS of {of} on {}; no reviewers ran; changed: {changed}]", short(reviewed))
             }
             _ => String::new(),
@@ -654,7 +656,7 @@ mod tests {
             at("w0", note("WAIVED", 0, 0, json!({"waiver": "w", "unreviewed": true}))),
             fail("r1", 1, 0),
         ];
-        let got = tags(&line, |from, to| Ok(vec![format!("{from}->{to}")]));
+        let got = tags(&line, |from, to| Ok(vec![format!("{from}->{to}").into_bytes()]));
         // Code review round 2, I1: an unreadable note stops the count, as it stops preflight and the writer.
         assert_eq!(
             got,

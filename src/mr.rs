@@ -152,7 +152,7 @@ type Row = (String, Option<CrNote>, String);
 /// signer must see that a round exists. A fix-PASS row names the files its commit changed.
 fn review_history(repo: &Path, base: &str, tip: &str) -> Result<Vec<Row>, String> {
     let entries = review::line(repo, base, tip)?;
-    let tags = review::tags(&entries, |from, to| notes::own_names(repo, from, to, &[]).and_then(notes::shown));
+    let tags = review::tags(&entries, |from, to| notes::own_names(repo, from, to, &[]));
     Ok(entries.into_iter().zip(tags).map(|(e, tag)| (e.commit, e.note.ok(), tag)).collect())
 }
 
