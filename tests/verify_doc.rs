@@ -437,3 +437,28 @@ fn a_comment_opener_inside_an_entity_quoted_label_is_label_text() {
         assert!(ok, "{body}: {t}");
     }
 }
+
+/// Epic code review round 4, I1: a quote on a line the scan skips (a `%%` comment, a `style` line)
+/// does not decide whether a later HTML comment sits inside a quoted label.
+#[test]
+fn a_quote_on_a_skipped_line_does_not_unhide_a_later_comment() {
+    let d = repo();
+    let p = d.path();
+    for skipped in ["%% the 5&quot; screen", "%% the 5\" screen", "style A stroke-dasharray: 5&quot;"] {
+        let body = format!("{skipped}\n  A[\"a\"] --> B[\"b\"]\n  <!-- A ==> B[x] -->");
+        let (ok, t) = verify(p, "f.html", &flowchart(&body));
+        assert!(ok, "{skipped}: {t}");
+    }
+}
+
+/// Epic code review round 4, I2: a signed character reference (`&#+34;`) is text, not a quote, so
+/// the hint keeps it as written.
+#[test]
+fn a_signed_character_reference_is_text() {
+    let d = repo();
+    let p = d.path();
+    for (body, named) in [("A -->|x &#+34; y| B", r#"write |"x &#+34; y"|"#), ("A -->|x &#x+22; y| B", r#"write |"x &#x+22; y"|"#)] {
+        let (ok, t) = verify(p, "f.html", &flowchart(body));
+        assert!(!ok && t.contains(named), "{body}: {t}");
+    }
+}

@@ -793,6 +793,18 @@ mod tests {
         assert_eq!(super::inner(r#"a"b&quot;c&#34;d&#034;e&#x22;f&#X22;g&#x0022;h&amp;i"#), "a#quot;b#quot;c#quot;d#quot;e#quot;f#quot;g#quot;h&amp;i");
     }
 
+    /// Epic code review round 4, I2: a character reference with a sign is no entity.
+    #[test]
+    fn a_signed_character_reference_is_no_entity() {
+        assert_eq!(super::entity("#34"), Some('"'));
+        assert_eq!(super::entity("#x22"), Some('"'));
+        for signed in ["#+34", "#-34", "#x+22", "#X+22", "#x", "#"] {
+            assert_eq!(super::entity(signed), None, "{signed}");
+        }
+        assert_eq!(decode("&#+34;"), "&#+34;");
+        assert_eq!(super::inner("a&#+34;b"), "a&#+34;b");
+    }
+
     /// Epic code review round 2, blocker 1: a `<` that opens a tag ends the arrow.
     #[test]
     fn a_tag_after_an_arrow_is_edge_text() {
