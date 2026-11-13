@@ -55,7 +55,7 @@
 <p><b>In short:</b> the evidence already names the range it was written for. The walks read that range: when it is the epic's, they judge the commit over the epic, with the checks the epic gate runs on evidence. Review and sign-off stay at the merge into main.</p>
 <ol data-c="work">
   <li><b>B23, landed work:</b> the push of an epic branch skips a plain commit already on main. It landed through a gated epic merge.</li>
-  <li><b>B23, the pushed tip:</b> a plain commit whose evidence names the epic's range, pushed as an epic branch's tip, is judged over that range: <code>1·notes</code>, <code>2·manifest</code> (the e2e layer) and <code>6·doc-note</code> (with the epic's tracked-doc layout).</li>
+  <li><b>B23, the pushed tip:</b> a plain commit whose evidence names the epic's range, pushed as an epic branch's tip, is judged over that range: <code>1·notes</code>, <code>2·manifest</code> (the e2e layer) and <code>6·doc-note</code> (the doc list and archive lineage; the tracked-doc layout stays the epic tip's, since a commit before the archive still tracks working docs).</li>
   <li><b>B20, inner commits:</b> in both walks, a plain commit that changes no code and carries epic-range evidence is judged the same way. A commit that changes code stays a commit.</li>
   <li><b>The rule</b> that tells the two kinds of evidence apart: every test or doc note on the commit names, as its base, where the commit's branch left main, and that is not the commit's parent.</li>
   <li>keel-workflow §4's check 7 row and §7's pre-push row say so. Rule-bearing: your <code>keel mr commit</code>.</li>
