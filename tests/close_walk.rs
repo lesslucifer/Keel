@@ -259,3 +259,21 @@ fn a_plain_commit_with_no_notes_is_still_red_and_one_with_its_own_notes_still_pa
     ok(keel(p, &["verify-dod", "epic", "epic/e"], ""));
     ok(push(p, "epic/e"));
 }
+
+/// The push walk of an epic branch leaves out what is on main, never what is not: an octopus merge
+/// made past the merge hook is still refused, and nothing lands.
+#[test]
+fn an_epic_branch_push_still_refuses_an_octopus_merge() {
+    let (d, remote) = epic_with_a_merged_wu();
+    let p = d.path();
+    let before = git(remote.path(), &["rev-parse", "epic/e"]);
+    for b in ["x", "y"] {
+        git(p, &["switch", "-q", "-c", b, "epic/e"]);
+        write(p, &format!("docs/{b}.html"), "<p>b</p>");
+        commit(p, b);
+    }
+    git(p, &["switch", "-q", "epic/e"]);
+    git(p, &["merge", "-q", "--no-verify", "--no-ff", "-m", "octopus", "x", "y"]);
+    red(&push(p, "epic/e"), &["octopus merge"]);
+    assert_eq!(git(remote.path(), &["rev-parse", "epic/e"]), before, "nothing landed");
+}
