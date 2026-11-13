@@ -2,6 +2,7 @@ mod gate;
 mod init;
 mod mr;
 mod notes;
+mod review;
 mod verify_doc;
 
 use serde::Deserialize;
@@ -172,6 +173,11 @@ fn no_git_env(mut c: Command, keep_index: bool) -> Command {
     c
 }
 
+/// A commit as the messages name it: its first 10 characters.
+pub(crate) fn short(sha: &str) -> &str {
+    sha.get(..10).unwrap_or(sha)
+}
+
 fn git(repo: &Path, args: &[&str], envs: &[(&str, &Path)]) -> Result<String, String> {
     let mut c = no_git_env(Command::new("git"), true);
     c.args(args).current_dir(repo);
@@ -179,6 +185,40 @@ fn git(repo: &Path, args: &[&str], envs: &[(&str, &Path)]) -> Result<String, Str
         c.env(k, v);
     }
     let o = c.output().map_err(|e| format!("keel: cannot run git: {e}"))?;
+    ok_text(args, o)
+}
+
+/// `git <args>` with `input` on its stdin, its output returned whole: the caller reads the exit
+/// code and the raw bytes (a batch read, or a command whose exit 1 is an answer, not a failure).
+fn git_raw(repo: &Path, args: &[&str], input: Option<&[u8]>) -> Result<std::process::Output, String> {
+    use std::io::Write;
+    let mut c = no_git_env(Command::new("git"), true);
+    c.args(args).current_dir(repo).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = c.spawn().map_err(|e| format!("keel: cannot run git: {e}"))?;
+    let mut stdin = child.stdin.take().ok_or("keel: git has no stdin")?;
+    let failed = |e: std::io::Error| format!("keel: git {}: {e}", args.join(" "));
+    let Some(input) = input.filter(|i| !i.is_empty()) else {
+        drop(stdin);
+        return child.wait_with_output().map_err(failed);
+    };
+    // Fed from a scoped thread that borrows the input: git may fill its stdout before it has read all of it.
+    std::thread::scope(|s| {
+        let feeder = s.spawn(move || stdin.write_all(input));
+        let out = child.wait_with_output().map_err(failed)?;
+        match feeder.join() {
+            Ok(Err(e)) if e.kind() != std::io::ErrorKind::BrokenPipe => Err(failed(e)),
+            _ => Ok(out),
+        }
+    })
+}
+
+/// A finished git command's stdout as trimmed text, or its failure.
+fn ok_text(args: &[&str], o: std::process::Output) -> Result<String, String> {
+    ok_bytes(args, o).map(|out| String::from_utf8_lossy(&out).trim().to_string())
+}
+
+/// A finished git command's stdout as raw bytes, or its failure: the one failure text.
+fn ok_bytes(args: &[&str], o: std::process::Output) -> Result<Vec<u8>, String> {
     if !o.status.success() {
         return Err(format!(
             "keel: git {} failed: {}",
@@ -186,7 +226,7 @@ fn git(repo: &Path, args: &[&str], envs: &[(&str, &Path)]) -> Result<String, Str
             String::from_utf8_lossy(&o.stderr).trim()
         ));
     }
-    Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+    Ok(o.stdout)
 }
 
 fn repo_root() -> Result<PathBuf, String> {
