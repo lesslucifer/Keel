@@ -127,6 +127,18 @@ fn text(html: &str, ts: &[Tag], a: usize, b: usize) -> String {
     out
 }
 
+/// The source of html[a..b] as Mermaid reads it: markup kept, comments and CDATA hidden.
+fn source(html: &str, ts: &[Tag], a: usize, b: usize) -> String {
+    let mut out = String::new();
+    walk(html, ts, a, b, |run, t| {
+        out.push_str(run);
+        if let Some(t) = t.filter(|t| t.name != "!--" && t.end <= b) {
+            out.push_str(&html[t.start..t.end]);
+        }
+    });
+    out
+}
+
 fn filled(html: &str, ts: &[Tag], i: usize) -> bool {
     let mut any = false;
     if let Some((a, b)) = span(ts, i) {
@@ -198,7 +210,7 @@ pub fn verify(path: &Path) -> Vec<String> {
 
     for (i, t) in ts.iter().enumerate().filter(|(_, t)| !t.closing && attr(t, "class").is_some_and(|c| c.split_whitespace().any(|c| c == "mermaid"))) {
         let (a, b) = span(&ts, i).unwrap_or((t.end, html.len()));
-        for (found, fix) in unquoted_labels(&decode(&text(&html, &ts, a, b))) {
+        for (found, fix) in unquoted_labels(&decode(&source(&html, &ts, a, b))) {
             errs.push(format!("diagram label not in quotes: {found} - write {fix}"));
         }
     }
@@ -374,7 +386,8 @@ const STATEMENTS: &[&str] = &["class", "click", "end"];
 /// lines, `%%{…}%%` directives anywhere and over any lines, `accDescr {…}` blocks (spaced or not),
 /// lines opening with `accTitle`, `accDescr:`, `classDef`, `style`, `linkStyle` or `direction`,
 /// statements opening with `class`, `click` or `end` (to the `;` or line end), and `N@{…}` shape
-/// blocks. A fix hint keeps the label's text exact, a `"` in it written `#quot;`.
+/// blocks. `src` is the block's source as Mermaid reads it, markup included (`A[a<br>b]`). A label
+/// is reported as written; a fix hint keeps its text exact, markup included, a `"` written `#quot;`.
 ///
 /// Best effort (owner ruling 2026-11-13): a label this misses is a known limit; refusing a valid
 /// diagram, or a hint that changes it, is a bug. Known misses: a bracketless subgraph title, the
@@ -500,7 +513,7 @@ fn scan(s: &str, out: &mut Vec<(String, String)>) {
             let Some(k) = b.get(from..).and_then(|r| r.iter().position(|&c| c == b'|')).map(|k| from + k) else { return };
             let label = s[i + 1..k].trim();
             if !label.starts_with('"') {
-                out.push((format!("|{label}|"), format!("|\"{}\"|", inner(label))));
+                out.push((s[i..=k].to_string(), format!("|\"{}\"|", inner(label))));
             }
             i = k + 1;
         } else if is_open(c) || (c == b'>' && i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')) {
@@ -548,7 +561,7 @@ fn scan(s: &str, out: &mut Vec<(String, String)>) {
                 k -= 1;
             }
             let (open, label, end) = (s[i..j].trim_end(), s[j..k].trim(), &s[k..close]);
-            out.push((format!("{open}{label}{end}"), format!("{open}\"{}\"{end}", inner(label))));
+            out.push((s[i..close].to_string(), format!("{open}\"{}\"{end}", inner(label))));
             i = close;
         } else if is_link(c) {
             let run = b[i..].iter().take_while(|&&c| is_link(c)).count();
