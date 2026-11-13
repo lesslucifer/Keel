@@ -834,6 +834,20 @@ fn cr(p: &Path, args: &[&str]) -> Output {
     keel(p, &[&["notes", "write", "cr"][..], args].concat())
 }
 
+/// A tool's waiver on HEAD: a failed round made WAIVED by hand. The writer has no reasoned form
+/// (B18) and the real cap needs five rounds (tests/verify_dod.rs runs them); the sign-off reads the
+/// same note either way.
+fn plant_waiver(p: &Path, reason: &str) {
+    ok(cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    edit_cr(p, |n| (n["verdict"], n["waiver"]) = (json!("WAIVED"), json!(reason)));
+}
+
+fn edit_cr(p: &Path, f: impl FnOnce(&mut Value)) {
+    let mut n: Value = serde_json::from_str(&git(p, &["notes", "--ref=cr", "show", "HEAD"])).unwrap();
+    f(&mut n);
+    git(p, &["notes", "--ref=cr", "add", "-f", "-m", &n.to_string(), "HEAD"]);
+}
+
 fn sha256_of(b: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     format!("sha256:{}", Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect::<String>())
@@ -850,11 +864,11 @@ fn a_waived_tip_is_signed_only_with_explicit_acceptance_after_the_history_is_sho
     write(p, "src/a.py", "def a():\n    return 2\n");
     commit(p, "fix round 1");
     notes(p, &["test", "doc"]);
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER, "--blockers", "1"]));
+    plant_waiver(p, WAIVER);
     let tip = git(p, &["rev-parse", "HEAD"]);
-    let mut n: Value = serde_json::from_str(&git(p, &["notes", "--ref=cr", "show", "HEAD"])).unwrap();
-    n["findings"] = json!([{"location": "src/a.py:2", "claim": "a() returns 2 where the contract says 1", "severity": "blocker", "evidence": "e"}]);
-    git(p, &["notes", "--ref=cr", "add", "-f", "-m", &n.to_string(), "HEAD"]);
+    edit_cr(p, |n| {
+        n["findings"] = json!([{"location": "src/a.py:2", "claim": "a() returns 2 where the contract says 1", "severity": "blocker", "evidence": "e"}])
+    });
 
     let o = keel(p, &["mr", "confirm", "wu"]);
     refused(&o, &["WAIVED", WAIVER, "--accept-waiver", "blocker src/a.py:2: a() returns 2 where the contract says 1", &round1[..10], "FAIL", &tip[..10]]);
@@ -879,13 +893,13 @@ fn the_sign_off_covers_the_waiver_it_accepted_and_only_that() {
     let (d, _k) = fixture();
     let p = d.path();
     notes(p, &["test", "doc"]);
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER]));
+    plant_waiver(p, WAIVER);
     accept(p, &[]);
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
     // Reworded after signing: red. The signed wording again: green - the line is rebuilt from the note.
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", "owner ruling: waived (softer wording)"]));
+    edit_cr(p, |n| n["waiver"] = json!("owner ruling: waived (softer wording)"));
     assert_red8(p, "waiver");
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER]));
+    edit_cr(p, |n| n["waiver"] = json!(WAIVER));
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
     // A signed waiver whose note later says PASS: the owner accepted something no longer there.
     ok(cr(p, &["--verdict", "PASS"]));
@@ -956,9 +970,9 @@ fn an_owner_waiver_at_sign_off_is_key_signed_and_a_failed_signing_writes_neither
     assert_eq!(m["waiver_hash"].as_str().unwrap(), sha256_of(WAIVER.as_bytes()));
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
     // The signature covers the owner's words: a session rewording them is caught.
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", "owner ruling: waived (softer wording)"]));
+    edit_cr(p, |n| n["waiver"] = json!("owner ruling: waived (softer wording)"));
     assert_red8(p, "waiver");
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER]));
+    edit_cr(p, |n| n["waiver"] = json!(WAIVER));
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
     ok(keel(p, &["hooks", "install"]));
     git(p, &["switch", "-q", "epic/e"]);
@@ -972,7 +986,7 @@ fn accept_waiver_signs_the_waiver_it_showed_and_only_with_its_code() {
     let (d, _k) = fixture();
     let p = d.path();
     notes(p, &["test", "doc"]);
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER]));
+    plant_waiver(p, WAIVER);
     let preview = keel(p, &["mr", "confirm", "wu"]);
     let code = accept_code(&preview).unwrap_or_else(|| panic!("no accept code: {}", text(&preview)));
     assert!(mr_note(p, "HEAD").is_none());
@@ -983,7 +997,7 @@ fn accept_waiver_signs_the_waiver_it_showed_and_only_with_its_code() {
     }
     // The note changes between the refused run and the accepting one: the old code no longer signs.
     let reworded = "review cap: reworded after the preview";
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", reworded]));
+    edit_cr(p, |n| n["waiver"] = json!(reworded));
     let stale = keel(p, &["mr", "confirm", "wu", "--accept-waiver", &code]);
     assert!(!stale.status.success() && text(&stale).contains("changed since"), "{}", text(&stale));
     assert!(mr_note(p, "HEAD").is_none());
@@ -1014,7 +1028,7 @@ fn the_review_history_keeps_every_row_when_git_log_shows_signatures() {
     write(p, "src/a.py", "def a():\n    return 1\n");
     commit(p, "fix");
     notes(p, &["test", "doc"]);
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER, "--blockers", "1"]));
+    plant_waiver(p, WAIVER);
     let tip = git(p, &["rev-parse", "HEAD"]);
     git(p, &["config", "log.showSignature", "true"]);
     let shown = git(p, &["log", "-1", &round1]);

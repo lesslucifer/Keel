@@ -550,14 +550,21 @@ fn write_cr(p: &Path, args: &[&str]) -> Output {
     keel(p, &[&["notes", "write", "cr"][..], args].concat())
 }
 
-/// The test and doc notes, then the owner's waiver in place of a review.
+/// The test and doc notes, then a tool's waiver in place of a review: a failed round, made WAIVED
+/// by hand. The writer has no reasoned form (B18) and the real cap needs five rounds (its own test
+/// runs them); the gate and the sign-off read the same note either way.
 fn bless_waived(p: &Path, tests: &str, reason: &str) {
     for (args, input) in [(&["notes", "write", "test"][..], tests), (&["notes", "write", "doc"][..], "")] {
         let o = run(env!("CARGO_BIN_EXE_keel"), p, args, input);
         assert!(o.status.success(), "{args:?}: {}", text(&o));
     }
-    let o = write_cr(p, &["--verdict", "WAIVED", "--reason", reason]);
-    assert!(o.status.success(), "waive: {}", text(&o));
+    plant_waiver(p, reason);
+}
+
+fn plant_waiver(p: &Path, reason: &str) {
+    let o = write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]);
+    assert!(o.status.success(), "round: {}", text(&o));
+    edit_note(p, "cr", "HEAD", |n| (n["verdict"], n["waiver"]) = (json!("WAIVED"), json!(reason)));
 }
 
 /// Accept a tool-written waiver in two steps: the refused run prints the code, the re-run gives it back.
@@ -574,39 +581,47 @@ fn has_note(p: &Path, kind: &str, rev: &str) -> bool {
     run("git", p, &["notes", &format!("--ref={kind}"), "show", rev], "").status.success()
 }
 
+/// B18: no session writes a waiver with a reason of its own - the cap's form and the owner's
+/// waiver at sign-off are the only two. The owner's is bound like a review and printed by the gate.
 #[test]
-fn a_waiver_needs_a_reason_is_bound_like_a_review_and_prints_at_the_gate() {
+fn the_cr_writer_takes_no_reason_and_a_waiver_is_bound_like_a_review_and_prints_at_the_gate() {
     let d = fixture();
     let p = d.path();
     bless(p, WU_TESTS, "PASS");
     let pass = note(p, "cr", "HEAD");
     git(p, &["notes", "--ref=cr", "remove", "HEAD"]);
     for args in [
-        &["--verdict", "WAIVED"][..],
+        &["--verdict", "WAIVED", "--reason", RULING][..],
+        &["--verdict", "WAIVED", "--reason", RULING, "--blockers", "2"],
         &["--verdict", "WAIVED", "--reason", "   "],
         &["--verdict", "WAIVED", "--reason"],
+        &["--verdict", "WAIVED", "--reason", "--blockers", "2"],
+        &["--verdict", "WAIVED", "--blockers", "2", "--reason", "--importants"],
         &["--verdict", "PASS", "--reason", "x"],
         &["--verdict", "FAIL", "--blockers", "1", "--reason", "x"],
     ] {
         let o = write_cr(p, args);
-        assert!(!o.status.success(), "{args:?} was accepted: {}", text(&o));
+        let t = text(&o);
+        assert!(!o.status.success() && t.contains("--reason") && t.contains("--waive-review") && t.contains("fix ->"), "{args:?}: {t}");
+        assert!(!t.contains("--verdict WAIVED --reason"), "no fix line names the removed form: {t}");
         assert!(!has_note(p, "cr", "HEAD"), "{args:?} wrote a note");
     }
-    let o = write_cr(p, &["--verdict", "WAIVED", "--reason", &format!("  {RULING}\n"), "--blockers", "2"]);
+    // The cap's form, with no round on the tip to stop, is refused too.
+    let o = write_cr(p, &["--verdict", "WAIVED"]);
+    assert!(!o.status.success() && !has_note(p, "cr", "HEAD"), "{}", text(&o));
+
+    let o = waive_at_sign_off(p, "wu", "docs/a.html", &format!("  {RULING}\n"));
     assert!(o.status.success(), "{}", text(&o));
     let n = note(p, "cr", "HEAD");
-    assert_eq!((n["verdict"].as_str(), n["waiver"].as_str(), n["blockers"].as_u64()), (Some("WAIVED"), Some(RULING), Some(2)));
+    assert_eq!((n["verdict"].as_str(), n["waiver"].as_str()), (Some("WAIVED"), Some(RULING)));
     for f in ["base", "tip", "code_diff_hash"] {
         assert_eq!(n[f], pass[f], "{f}: a waiver is bound like a review");
     }
-
-    // The gate accepts and prints it; only the sign-off is missing. Preflight never reads cr.
     let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
-    let t = text(&o);
-    assert!(t.contains(&format!("WAIVED 3·review: {RULING}")), "{t}");
-    assert_red(&o, "8·manual-review");
-    assert!(t.contains("- 1 failed") && !t.contains("FAIL  3·review"), "{t}");
-    assert!(keel(p, &["preflight", "wu", "wu/e/a"]).status.success());
+    assert!(o.status.success() && text(&o).contains(&format!("WAIVED 3·review: {RULING}")), "{}", text(&o));
+    let dod = note(p, "dod", "wu/e/a");
+    assert_eq!((dod["review"].as_str(), dod["waiver"].as_str()), (Some("WAIVED"), Some(RULING)), "{dod}");
+    assert!(keel(p, &["preflight", "wu", "wu/e/a"]).status.success(), "preflight never reads cr");
 
     // A waiver with its reason blanked by hand waives nothing.
     edit_note(p, "cr", "HEAD", |n| n["waiver"] = json!("  "));
@@ -615,24 +630,13 @@ fn a_waiver_needs_a_reason_is_bound_like_a_review_and_prints_at_the_gate() {
         n.as_object_mut().unwrap().remove("waiver");
     });
     assert_red(&keel(p, &["verify-dod", "wu", "wu/e/a"]), "3·review");
-    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", RULING]).status.success());
-
-    // Sign-off needs the explicit acceptance (identity tier); then green, and the receipt says so.
-    let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"]);
-    assert!(!o.status.success() && text(&o).contains(RULING) && text(&o).contains("--accept-waiver"), "{}", text(&o));
-    assert!(!has_note(p, "mr", "HEAD"), "a refused confirm writes nothing");
-    sign_waived(p, "wu", "docs/a.html");
-    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
-    assert!(o.status.success() && text(&o).contains(&format!("WAIVED 3·review: {RULING}")), "{}", text(&o));
-    let dod = note(p, "dod", "wu/e/a");
-    assert_eq!((dod["review"].as_str(), dod["waiver"].as_str()), (Some("WAIVED"), Some(RULING)), "{dod}");
 
     // An identity-tier sign-off has no signature: the note's waiver hash still covers the reason.
-    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", "reworded after the owner signed"]).status.success());
+    edit_note(p, "cr", "HEAD", |n| n["waiver"] = json!("reworded after the owner signed"));
     let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
     assert_red(&o, "8·manual-review");
     assert!(text(&o).contains("waiver"), "{}", text(&o));
-    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", RULING]).status.success());
+    edit_note(p, "cr", "HEAD", |n| n["waiver"] = json!(RULING));
     assert!(keel(p, &["verify-dod", "wu", "wu/e/a"]).status.success(), "rebuilt from the current note, never stored");
 
     // A code commit after the waiver: the new tip has no review, and the old waiver carried onto it binds other code.
@@ -674,7 +678,7 @@ fn the_epic_walk_passes_a_waived_wu_and_an_epic_review_can_be_waived() {
     git(p, &["notes", "--ref=dod", "remove", "HEAD"]);
     // The tool never waives over a PASS: this epic's review stopped before one (no cr note).
     git(p, &["notes", "--ref=cr", "remove", "HEAD"]);
-    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", close]).status.success());
+    plant_waiver(p, close);
     let o = keel(p, &["mr", "confirm", "epic", "--as", "t", "--report", "docs/result.html"]);
     assert!(!o.status.success() && text(&o).contains(close), "{}", text(&o));
     sign_waived(p, "epic", "docs/result.html");
@@ -887,91 +891,49 @@ fn the_waiver_preview_is_inert_text_bound_to_the_note_and_refused_on_a_broken_no
 // E-CRCAP.W1 code review round 1: one cr/v1 waiver writer.
 
 #[test]
-fn a_waiver_reason_is_never_the_next_flag() {
+fn a_waiver_with_no_review_under_it_says_not_reviewed_in_the_history() {
     let d = fixture();
     let p = d.path();
     bless_unreviewed(p, WU_TESTS);
-    for args in [&["--verdict", "WAIVED", "--reason", "--blockers", "2"][..], &["--verdict", "WAIVED", "--blockers", "2", "--reason", "--importants"]] {
-        let o = write_cr(p, args);
-        assert!(!o.status.success() && text(&o).contains("fix ->"), "{args:?}: {}", text(&o));
-        assert!(!has_note(p, "cr", "HEAD"), "{args:?} wrote a note");
-    }
-}
-
-#[test]
-fn a_tool_written_waiver_with_no_review_on_the_tip_says_not_reviewed() {
-    let d = fixture();
-    let p = d.path();
-    bless_unreviewed(p, WU_TESTS);
-    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", "review cap: 5 rounds, 0 blockers open"]).status.success());
+    assert!(waive_at_sign_off(p, "wu", "docs/a.html", RULING).status.success());
     assert_eq!(note(p, "cr", "HEAD")["unreviewed"], true);
-    let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"]);
-    assert!(!o.status.success() && text(&o).contains("not reviewed") && !text(&o).contains("0 blockers, 0 importants"), "{}", text(&o));
-    // B3: the history row says so too, never "blockers 0 importants 0".
-    let tip = git(p, &["rev-parse", "HEAD"]);
-    let row = text(&o).lines().find(|l| l.trim_start().starts_with(&tip[..10])).map(String::from).unwrap_or_else(|| panic!("no history row: {}", text(&o)));
-    assert!(row.contains("WAIVED not reviewed") && !row.contains("blockers 0"), "{row}");
-
-    // Over a reviewed round the tool's waiver is a reviewed one, and keeps what the round recorded.
-    assert!(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]).status.success());
-    edit_note(p, "cr", "HEAD", |n| n["findings"] = json!([{"location": "src/a.py:2", "claim": "kept", "severity": "blocker", "evidence": "e"}]));
-    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", "review cap: 5 rounds, 1 blockers open", "--blockers", "1"]).status.success());
-    let n = note(p, "cr", "HEAD");
-    assert!(n.get("unreviewed").is_none(), "{n}");
-    assert_eq!((n["blockers"].as_u64(), n["findings"][0]["claim"].as_str()), (Some(1), Some("kept")), "{n}");
-    // A PASS is never waived over, by the tool either.
+    let waived = git(p, &["rev-parse", "HEAD"]);
+    write(p, "src/a.py", "def a():\n    return 2\n");
+    commit(p, "after the waiver");
+    bless_unreviewed(p, WU_TESTS);
+    // B3: the history row says so, never "blockers 0 importants 0".
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", "the second waiver"]);
+    let row = text(&o).lines().find(|l| l.trim_start().starts_with(&waived[..10])).map(String::from).unwrap_or_else(|| panic!("no history row: {}", text(&o)));
+    assert!(row.contains("WAIVED not reviewed") && row.contains(RULING) && !row.contains("blockers 0"), "{row}");
+    // A PASS is never waived over by the cap's form either.
     assert!(write_cr(p, &["--verdict", "PASS"]).status.success());
-    let o = write_cr(p, &["--verdict", "WAIVED", "--reason", "cap"]);
-    assert!(!o.status.success() && text(&o).contains("PASS"), "{}", text(&o));
+    let o = write_cr(p, &["--verdict", "WAIVED"]);
+    assert!(!o.status.success(), "{}", text(&o));
     assert_eq!(note(p, "cr", "HEAD")["verdict"], "PASS");
 }
 
 // E-CRCAP.W1 code review round 2.
 
-/// B1: a count flag the writer was not given keeps the count the replaced round recorded.
-#[test]
-fn a_waiver_keeps_the_open_count_it_was_not_given() {
-    let d = fixture();
-    let p = d.path();
-    bless_unreviewed(p, WU_TESTS);
-    assert!(write_cr(p, &["--verdict", "FAIL", "--blockers", "2", "--importants", "3"]).status.success());
-    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", "review cap: 5 rounds, 2 blockers open", "--blockers", "2"]).status.success());
-    let n = note(p, "cr", "HEAD");
-    assert_eq!((n["blockers"].as_u64(), n["importants"].as_u64()), (Some(2), Some(3)), "{n}");
-    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", "review cap: 5 rounds, 1 blockers open", "--importants", "1"]).status.success());
-    let n = note(p, "cr", "HEAD");
-    assert_eq!((n["blockers"].as_u64(), n["importants"].as_u64()), (Some(2), Some(1)), "{n}");
-    let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"]);
-    assert!(text(&o).contains("open: 2 blockers, 1 importants"), "{}", text(&o));
-}
-
 /// B4: a round recorded against another range is never shown or recorded as this tip's review.
 #[test]
 fn a_review_of_another_range_is_never_this_tips_review() {
-    for owner in [true, false] {
-        let d = fixture();
-        let p = d.path();
-        bless_unreviewed(p, WU_TESTS);
-        assert!(write_cr(p, &["--verdict", "FAIL", "--blockers", "2", "--importants", "1"]).status.success());
-        edit_note(p, "cr", "HEAD", |n| {
-            n["code_diff_hash"] = json!("0000000000000000000000000000000000000000");
-            n["findings"] = json!([{"location": "src/a.py:9", "claim": "about other code", "severity": "blocker", "evidence": "e"}]);
-        });
-        let n = if owner {
-            let preview = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING]);
-            let t = text(&preview);
-            assert!(t.contains("not reviewed") && t.contains("another range") && !t.contains("about other code") && !t.contains("open: 2 blockers"), "{t}");
-            assert!(waive_at_sign_off(p, "wu", "docs/a.html", RULING).status.success());
-            note(p, "cr", "HEAD")
-        } else {
-            assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", "review cap"]).status.success());
-            note(p, "cr", "HEAD")
-        };
-        assert_eq!((n["unreviewed"].as_bool(), n["blockers"].as_u64(), n["importants"].as_u64()), (Some(true), Some(0), Some(0)), "{owner}: {n}");
-        assert!(n.get("findings").is_none(), "{owner}: the stale round's findings are not this tip's: {n}");
-        assert_eq!(n["replaced"]["findings"][0]["claim"], "about other code", "{owner}: kept as history: {n}");
-        assert_eq!(n["replaced"]["code_diff_hash"], "0000000000000000000000000000000000000000");
-    }
+    let d = fixture();
+    let p = d.path();
+    bless_unreviewed(p, WU_TESTS);
+    assert!(write_cr(p, &["--verdict", "FAIL", "--blockers", "2", "--importants", "1"]).status.success());
+    edit_note(p, "cr", "HEAD", |n| {
+        n["code_diff_hash"] = json!("0000000000000000000000000000000000000000");
+        n["findings"] = json!([{"location": "src/a.py:9", "claim": "about other code", "severity": "blocker", "evidence": "e"}]);
+    });
+    let preview = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING]);
+    let t = text(&preview);
+    assert!(t.contains("not reviewed") && t.contains("another range") && !t.contains("about other code") && !t.contains("open: 2 blockers"), "{t}");
+    assert!(waive_at_sign_off(p, "wu", "docs/a.html", RULING).status.success());
+    let n = note(p, "cr", "HEAD");
+    assert_eq!((n["unreviewed"].as_bool(), n["blockers"].as_u64(), n["importants"].as_u64()), (Some(true), Some(0), Some(0)), "{n}");
+    assert!(n.get("findings").is_none(), "the stale round's findings are not this tip's: {n}");
+    assert_eq!(n["replaced"]["findings"][0]["claim"], "about other code", "kept as history: {n}");
+    assert_eq!(n["replaced"]["code_diff_hash"], "0000000000000000000000000000000000000000");
 }
 
 /// I-c: the one writer refuses a note it cannot parse, whoever calls it, with one fix text.
@@ -981,16 +943,15 @@ fn every_waiver_writer_refuses_a_cr_note_it_cannot_parse() {
     let p = d.path();
     bless_unreviewed(p, WU_TESTS);
     git(p, &["notes", "--ref=cr", "add", "-f", "-m", "{not json", "HEAD"]);
-    let tool = write_cr(p, &["--verdict", "WAIVED", "--reason", "cap"]);
+    let tool = write_cr(p, &["--verdict", "WAIVED"]);
     let owner = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING]);
     let fix = |o: &Output| text(o).lines().find(|l| l.contains("fix ->")).map(|l| l.split("fix ->").nth(1).unwrap().trim().to_string());
     for o in [&tool, &owner] {
         assert!(!o.status.success() && text(o).contains("does not parse"), "{}", text(o));
     }
     assert_eq!(fix(&tool), fix(&owner), "one fix text");
-    // Epic code review round 2, I1: the cap's waiver refuses it too, never reading it as no note.
-    let cap = write_cr(p, &["--verdict", "WAIVED"]);
-    assert!(!cap.status.success() && text(&cap).contains("unreadable") && !text(&cap).contains("cap is not reached"), "{}", text(&cap));
+    // Epic code review round 2, I1: the cap's waiver never reads it as no note.
+    assert!(text(&tool).contains("unreadable") && !text(&tool).contains("cap is not reached"), "{}", text(&tool));
     assert_eq!(git(p, &["notes", "--ref=cr", "show", "HEAD"]), "{not json");
 }
 
@@ -1002,8 +963,8 @@ fn the_review_history_lists_every_round_intact_whatever_the_log_encoding_and_sho
     let p = d.path();
     // An older round whose note carries non-ASCII text (a tool waiver), then one whose note does not parse.
     bless_unreviewed(p, WU_TESTS);
-    let cap = "review cap: Größe übrig";
-    assert!(write_cr(p, &["--verdict", "WAIVED", "--reason", cap]).status.success());
+    let cap = "owner: Größe übrig";
+    assert!(waive_at_sign_off(p, "wu", "docs/a.html", cap).status.success());
     let older = git(p, &["rev-parse", "HEAD"]);
     write(p, "src/a.py", "def a():\n    return 2\n");
     commit(p, "round 2");

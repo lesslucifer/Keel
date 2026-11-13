@@ -597,7 +597,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         _ if waive.is_some() => {
             let reason = waive.as_deref().unwrap_or_default();
             let ident = notes::identity(repo, tip.clone(), base.clone(), branch.clone())?;
-            let cr = match notes::waive(stored.as_deref(), ident, Some(reason), notes::code_diff_hash(repo, cfg, &base, &tip)?, (None, None)) {
+            let cr = match notes::waive(stored.as_deref(), ident, Some(reason), notes::code_diff_hash(repo, cfg, &base, &tip)?) {
                 Ok(cr) => cr,
                 Err((what, fix)) => {
                     eprintln!("mr confirm refused - {what}\n  fix -> {fix}");
