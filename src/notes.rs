@@ -7,7 +7,7 @@ use std::io::Read;
 use std::path::Path;
 
 /// Shared identity block: what was judged (tip over base), on which branch, by whom, when.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Identity {
     pub tip: String,
     pub base: String,
@@ -76,7 +76,7 @@ pub enum DistilledTo {
     DeadEnd(String),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CrNote {
     pub schema: String, // "cr/v1"
     #[serde(flatten)]
@@ -107,7 +107,7 @@ pub struct CrNote {
 /// round it answers), `fix_diff_hash` and `answers` on a fix-PASS. A note whose field has another type,
 /// or whose `fixes` is not a full commit name, does not parse: it is unreadable, never half-read, and a
 /// note's text never reaches git as anything but a commit (code review round 1, B1).
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct ScheduleFields {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub round: Option<u32>,
@@ -122,7 +122,7 @@ pub struct ScheduleFields {
 }
 
 /// The findings a fix-PASS answers.
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Answers {
     pub importants: u32,
     pub nits: usize,
@@ -204,7 +204,8 @@ pub(crate) fn waiver_reason(raw: Option<&str>) -> Result<String, String> {
 }
 
 /// The one cr/v1 waiver writer, for the owner's sign-off and the review tool's cap alike, given the
-/// tip's cr note as stored (`existing_raw`, `None` when there is none). Never over a note it cannot
+/// tip's cr note as read (`existing`: `None` when there is none, `Err` when it cannot be read or
+/// parsed). Never over a note it cannot
 /// parse, nor over a PASS. Over a failed or waived round of this very range (same base and code hash)
 /// the note is kept whole (counts, walk waivers, every field the review recorded) and only identity,
 /// verdict, reason and binding change. A round recorded against another range is no review of this one: the waiver is written
@@ -212,10 +213,10 @@ pub(crate) fn waiver_reason(raw: Option<&str>) -> Result<String, String> {
 /// one level of history, never nested), and only its `walk_waivers`
 /// (they name seams, which a later code change does not move) carried. With no note at all it is
 /// `unreviewed` too, so its 0/0 never reads as a clean review. Err = (what, fix).
-pub(crate) fn waive(existing_raw: Option<&str>, id: Identity, reason: Option<&str>, code_diff_hash: String) -> Result<CrNote, (String, String)> {
+pub(crate) fn waive(existing: Option<Result<CrNote, String>>, id: Identity, reason: Option<&str>, code_diff_hash: String) -> Result<CrNote, (String, String)> {
     let t = short(&id.tip).to_string();
     let reason = waiver_reason(reason).map_err(|w| (w, "give the reason in words".to_string()))?;
-    let existing = existing_raw.map(review::parse_note).transpose().map_err(|why| unreadable(&t, &why))?;
+    let existing = existing.transpose().map_err(|why| unreadable(&t, &why))?;
     let unreviewed = |replaced: Option<CrNote>| {
         let mut extra = serde_json::Map::new();
         extra.insert("unreviewed".into(), serde_json::Value::Bool(true));
@@ -292,7 +293,7 @@ pub(crate) fn cr_note(repo: &Path, rev: &str) -> Option<CrNote> {
     serde_json::from_str(&cr_raw(repo, rev).ok()??).ok()
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WalkWaiver {
     pub seam: String,
     pub why: String,
@@ -523,14 +524,15 @@ fn shell_quote(a: &str) -> String {
 pub(crate) type StoredNote = (String, Result<String, String>);
 
 /// The `cr` notes on the first-parent commits of `base..tip`, newest first, as stored: each commit and
-/// its note's text, or why git cannot print it. Three git processes whatever the length of the line:
+/// its note's text, or why git cannot print it; `skip`: a commit whose note the caller already read.
+/// Three git processes whatever the length of the line:
 /// `rev-list` names the commits, `notes list` every note's blob, one `cat-file --batch` prints the
 /// line's blobs. Plumbing only, so no display config changes a note.
-pub(crate) fn cr_line(repo: &Path, base: &str, tip: &str) -> Result<Vec<StoredNote>, String> {
+pub(crate) fn cr_line(repo: &Path, base: &str, tip: &str, skip: Option<&str>) -> Result<Vec<StoredNote>, String> {
     let commits = git(repo, &["rev-list", "--first-parent", "--end-of-options", &format!("{base}..{tip}")], &[])?;
     let listed = git(repo, &["notes", "--ref=cr", "list"], &[])?;
     let blobs: std::collections::HashMap<&str, &str> = listed.lines().filter_map(|l| l.split_once(' ')).map(|(blob, commit)| (commit, blob)).collect();
-    let on_line: Vec<(&str, &str)> = commits.lines().filter_map(|c| blobs.get(c).map(|b| (c, *b))).collect();
+    let on_line: Vec<(&str, &str)> = commits.lines().filter(|c| Some(*c) != skip).filter_map(|c| blobs.get(c).map(|b| (c, *b))).collect();
     if on_line.is_empty() {
         return Ok(vec![]);
     }
@@ -1043,9 +1045,9 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
                     "commit the fix, then write the fix-PASS on it",
                 );
             }
-            let s = schedule()?;
-            // The tip's own note: a reviewed one is the latest round, and a fix-PASS never replaces it.
-            let own = cr_raw(repo, &tip)?.map(|raw| review::parse_note(&raw)).transpose().or_else(|why| {
+            let mut s = schedule()?;
+            // The tip's own note, read with the line: a reviewed one is the latest round, and a fix-PASS never replaces it.
+            let own = s.own.take().transpose().or_else(|why| {
                 refuse(
                     format!("the cr note on {} is unreadable ({why}); a fix-PASS never overwrites a note it cannot read", short(&tip)),
                     "the owner repairs that note in place, then write the fix-PASS again",
@@ -1105,15 +1107,14 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
             if typed_blockers.is_some() || typed_importants.is_some() {
                 return refuse("counts given with the cap's waiver".into(), "drop --blockers/--importants: the cap keeps the counts of the round it stops");
             }
-            let stored = cr_raw(repo, &tip)?;
-            let own = stored.as_deref().map(review::parse_note).transpose().or_else(|why| {
+            let mut s = schedule()?;
+            let own = s.own.take().transpose().or_else(|why| {
                 let (what, fix) = unreadable(short(&tip), &why);
                 refuse(what, &fix)
             })?;
-            let s = schedule()?;
             let reason = review::cap(own.as_ref(), &s.earlier, s.max, &tip).or_else(|(what, fix)| refuse(what, &fix))?;
             let said = format!("{reason}: the owner decides at sign-off (keel mr confirm shows the waiver and every round)");
-            (waive(stored.as_deref(), r.id, Some(&reason), code_diff_hash).or_else(|(what, fix)| refuse(what, &fix))?, said)
+            (waive(own.map(Ok), r.id, Some(&reason), code_diff_hash).or_else(|(what, fix)| refuse(what, &fix))?, said)
         }
     };
     store(repo, "cr", &tip, &note)?;
@@ -1167,6 +1168,11 @@ mod tests {
 
     fn raw(n: &CrNote) -> String {
         serde_json::to_string(n).unwrap()
+    }
+
+    /// A note as the waiver writer's callers read it: stored, then parsed.
+    fn stored(n: &CrNote) -> Option<Result<CrNote, String>> {
+        Some(crate::review::parse_note(&raw(n)))
     }
 
     /// B18: the writer takes no `--reason`, with any verdict: its one waiver is the cap's.
@@ -1279,7 +1285,7 @@ mod tests {
         assert_eq!(fresh.reason_hash().unwrap(), super::sha256(b"ruling"), "the older keel's hash: the reason's");
         for v in ["FAIL", "WAIVED"] {
             let same = raw(&note(v, "b", "h"));
-            let w = waive(Some(&same), id(), Some(" ruling "), "h".into()).unwrap();
+            let w = waive(Some(crate::review::parse_note(&same)), id(), Some(" ruling "), "h".into()).unwrap();
             assert_eq!(
                 (w.waiver(), w.blockers, w.importants, w.code_diff_hash.as_str(), w.id.base.as_str(), w.id.committer.as_str(), w.id.timestamp),
                 (Some("ruling"), 2, 1, "h", "b", "o", 7),
@@ -1291,7 +1297,7 @@ mod tests {
                 assert_eq!(j[f], before[f], "{v}: {f} kept");
             }
             for (base, hash) in [("other", "h"), ("b", "other")] {
-                let stale = waive(Some(&raw(&note(v, base, hash))), id(), Some("r"), "h".into()).unwrap();
+                let stale = waive(stored(&note(v, base, hash)), id(), Some("r"), "h".into()).unwrap();
                 let j = serde_json::to_value(&stale).unwrap();
                 assert!(stale.unreviewed() && (stale.blockers, stale.importants) == (0, 0) && stale.open_findings().is_empty(), "{v} {base} {hash}: {j}");
                 assert_eq!(
@@ -1302,16 +1308,16 @@ mod tests {
                 assert_eq!(j["walk_waivers"][0]["seam"], "s", "{v}: seam waivers carried");
             }
         }
-        let once = waive(Some(&raw(&note("FAIL", "old", "old"))), id(), Some("r"), "h".into()).unwrap();
-        let twice = waive(Some(&raw(&once)), Identity { base: "newer".into(), ..id() }, Some("r"), "h2".into()).unwrap();
+        let once = waive(stored(&note("FAIL", "old", "old")), id(), Some("r"), "h".into()).unwrap();
+        let twice = waive(stored(&once), Identity { base: "newer".into(), ..id() }, Some("r"), "h2".into()).unwrap();
         let j = serde_json::to_value(&twice).unwrap();
         assert_eq!(j["replaced"]["waiver"], "r", "the last note is kept");
         assert!(j["replaced"].get("replaced").is_none(), "never nested deeper: {j}");
-        let (what, fix) = waive(Some(&raw(&note("PASS", "b", "h"))), id(), Some("ruling"), "h".into()).unwrap_err();
+        let (what, fix) = waive(stored(&note("PASS", "b", "h")), id(), Some("ruling"), "h".into()).unwrap_err();
         assert!(what.contains("t012345678 is a PASS") && fix.contains("new review"), "{what} / {fix}");
-        assert!(waive(Some(&raw(&note("PASS", "old", "old"))), id(), Some("r"), "h".into()).is_err(), "a stale PASS is not waived over either");
+        assert!(waive(stored(&note("PASS", "old", "old")), id(), Some("r"), "h".into()).is_err(), "a stale PASS is not waived over either");
         assert!(waive(None, id(), Some("--blockers"), "h".into()).is_err());
-        let (what, _) = waive(Some("{not json"), id(), Some("r"), "h".into()).unwrap_err();
+        let (what, _) = waive(Some(crate::review::parse_note("{not json")), id(), Some("r"), "h".into()).unwrap_err();
         assert!(what.contains("does not parse"), "{what}");
     }
 

@@ -137,26 +137,27 @@ fn waiver_drift(signed: Option<&str>, current: Option<&str>, reason: Option<&str
     }
 }
 
-/// One row of the review history: the commit, its cr note (`None`: it cannot be read), and its tag
+/// One row of the review history: the commit, its cr note (`Err`: why it cannot be read), and its tag
 /// (round and scope, or the fix-PASS it is).
-type Row = (String, Option<CrNote>, String);
+type Row = (String, Result<CrNote, String>, String);
 
 /// The cr notes on the first-parent commits of `base..tip`, newest first: every review the branch's
 /// own line of history recorded (an epic's merged WUs keep theirs on their own tips), read in a fixed
 /// number of git processes through plumbing only (review::line), so no display config can change or
-/// drop a row. A note git cannot print or parse is a row of its own (`None`), never dropped: the
-/// signer must see that a round exists. A fix-PASS row names the files its commit changed.
-fn review_history(repo: &Path, base: &str, tip: &str) -> Result<Vec<Row>, String> {
-    let entries = review::line(repo, base, tip)?;
+/// drop a row. A note git cannot print or parse is a row of its own (`Err`), never dropped: the
+/// signer must see that a round exists. A fix-PASS row names the files its commit changed. `own`: the
+/// tip's note when the gate already read it, never read twice (B16).
+fn review_history(repo: &Path, base: &str, tip: &str, own: Option<CrNote>) -> Result<Vec<Row>, String> {
+    let entries = review::line(repo, base, tip, own)?;
     let tags = review::tags(&entries, |from, to| notes::own_names(repo, from, to, &[]));
-    Ok(entries.into_iter().zip(tags).map(|(e, tag)| (e.commit, e.note.ok(), tag)).collect())
+    Ok(entries.into_iter().zip(tags).map(|(e, tag)| (e.commit, e.note, tag)).collect())
 }
 
 /// The history lines, one per row, recorded text made inert.
 fn history_lines(history: &[Row]) -> String {
     let mut out = String::from("  review history (newest first):\n");
     for (c, n, tag) in history {
-        let Some(n) = n else {
+        let Ok(n) = n else {
             out.push_str(&format!("    {} unreadable cr note - git cannot print it or it does not parse as cr/v1; a round was recorded here\n", short(c)));
             continue;
         };
@@ -537,7 +538,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
             return Ok(1);
         }
     };
-    let Some((tip, base, target)) = gate::sign_ready(repo, cfg, epic, &tip_ref, args, waive.is_some())? else {
+    let Some(gate::Ready { tip, base, target, cr: judged }) = gate::sign_ready(repo, cfg, epic, &tip_ref, args, waive.is_some())? else {
         if waive.is_some() {
             eprintln!("mr confirm refused - sign last: everything but the review must be green on this exact tip before you waive it (the review is the one thing this waiver replaces)\n  fix -> keel notes write test|doc and whatever else the lines above name, then keel mr confirm ... --waive-review again");
         } else {
@@ -587,22 +588,24 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     // A waived review meets the signer here, shown with every round (UC-REV-2): the signer waives it in
     // this sign-off (`--waive-review`, written with the signature), or accepts a waiver the tool wrote.
     let mut owner_cr = None;
-    // The tip's cr note as stored, for the owner's waiver (the writer refuses one it cannot parse) and
-    // parsed for a waiver the tool wrote; the review history reads it again with the rest of the line.
-    let stored = notes::cr_raw(repo, &tip)?;
-    let tool_waiver = stored.as_deref().and_then(|r| serde_json::from_str::<CrNote>(r).ok()).filter(|n| n.waiver().is_some());
+    // The review history, read once with the tip's cr note in it - the gate's read when it judged the
+    // review (B16): the note the owner's waiver is written over (the writer refuses one it cannot
+    // parse), and the waiver the tool wrote, if any.
+    let history = review_history(repo, &base, &tip, judged)?;
+    let stored = history.first().filter(|(c, ..)| *c == tip).map(|(_, n, _)| n.clone());
+    let tool_waiver = stored.as_ref().and_then(|n| n.as_ref().ok()).filter(|n| n.waiver().is_some()).cloned();
     let waiver = match tool_waiver {
         _ if waive.is_some() => {
             let reason = waive.as_deref().unwrap_or_default();
             let ident = notes::identity(repo, tip.clone(), base.clone(), branch.clone())?;
-            let cr = match notes::waive(stored.as_deref(), ident, Some(reason), notes::code_diff_hash(repo, cfg, &base, &tip)?) {
+            let cr = match notes::waive(stored, ident, Some(reason), notes::code_diff_hash(repo, cfg, &base, &tip)?) {
                 Ok(cr) => cr,
                 Err((what, fix)) => {
                     eprintln!("mr confirm refused - {what}\n  fix -> {fix}");
                     return Ok(1);
                 }
             };
-            let listing = waiver_listing(&tip, &cr, &review_history(repo, &base, &tip)?);
+            let listing = waiver_listing(&tip, &cr, &history);
             eprint!("{listing}");
             let code = waiver_code(&tip, &base, &listing, &cr);
             match flag(args, "--confirm-waiver") {
@@ -621,7 +624,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
             hash
         }
         Some(cr) => {
-            let listing = waiver_listing(&tip, &cr, &review_history(repo, &base, &tip)?);
+            let listing = waiver_listing(&tip, &cr, &history);
             eprint!("{listing}");
             let code = waiver_code(&tip, &base, &listing, &cr);
             match flag(args, "--accept-waiver") {
@@ -640,8 +643,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         }
         None => {
             // A fix nobody reviewed meets the signer here, with the files it changed (UC-REV-3).
-            let history = review_history(repo, &base, &tip)?;
-            if history.iter().any(|(_, n, _)| n.as_ref().is_some_and(|n| review::kind(n) == review::Kind::FixPass)) {
+            if history.iter().any(|(_, n, _)| n.as_ref().is_ok_and(|n| review::kind(n) == review::Kind::FixPass)) {
                 eprint!("{}", history_lines(&history));
             }
             None
@@ -999,16 +1001,16 @@ mod tests {
         let history = vec![
             (
                 "1111111111aa".to_string(),
-                Some(cr("WAIVED", serde_json::json!({"waiver": "review cap: 5 rounds, 1 blockers open"}))),
+                Ok(cr("WAIVED", serde_json::json!({"waiver": "review cap: 5 rounds, 1 blockers open"}))),
                 " [round 2, full]".to_string(),
             ),
             (
                 "4444444444dd".to_string(),
-                Some(cr("PASS", serde_json::json!({"fixes": "2222222222bb2222222222bb2222222222bb2222"}))),
+                Ok(cr("PASS", serde_json::json!({"fixes": "2222222222bb2222222222bb2222222222bb2222"}))),
                 " [fix-PASS of round 1 on 2222222222; no reviewers ran; changed: src/a.rs]".to_string(),
             ),
-            ("2222222222bb".to_string(), Some(cr("FAIL", serde_json::json!({}))), " [round 1, full]".to_string()),
-            ("3333333333cc".to_string(), None, String::new()),
+            ("2222222222bb".to_string(), Ok(cr("FAIL", serde_json::json!({}))), " [round 1, full]".to_string()),
+            ("3333333333cc".to_string(), Err("unreadable".into()), String::new()),
         ];
         let l = waiver_listing("1111111111aa", &tip, &history);
         for needle in [
@@ -1063,7 +1065,7 @@ mod tests {
             "committer": "c", "timestamp": 0, "verdict": "WAIVED", "waiver": "r\u{1b}[1A", "blockers": 1, "importants": 0, "code_diff_hash": "h",
             "findings": [{"severity": "blocker\u{1b}", "location": "l", "claim": "c\u{1b}[2K"}], "walk_waivers": [{"seam": "s\u{7}", "why": "w\u{1b}"}]}))
         .unwrap();
-        let history = vec![("1111111111".to_string(), Some(round("FAIL\u{1b}")), " [round 1, full]".to_string())];
+        let history = vec![("1111111111".to_string(), Ok(round("FAIL\u{1b}")), " [round 1, full]".to_string())];
         fn round(v: &str) -> CrNote {
             serde_json::from_value(serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c",
                 "timestamp": 0, "verdict": v, "waiver": "x\u{1b}", "blockers": 0, "importants": 0, "code_diff_hash": "h"}))

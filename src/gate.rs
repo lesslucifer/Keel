@@ -362,11 +362,20 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, gua
     Ok(0)
 }
 
+/// The range a sign-off signs, once checks 1-7 are green on it.
+pub(crate) struct Ready {
+    pub tip: String,
+    pub base: String,
+    pub target: String,
+    /// The tip's cr note as checks 3-5 read it; `None` when the signer waives the review (not read).
+    pub cr: Option<CrNote>,
+}
+
 /// mr confirm's sign-last rule (Trawler DEC-27): checks 1-7 must already be green on the tip.
-/// Red -> the failures are printed and `None`; green -> `(tip, base, target)` of the range to sign.
+/// Red -> the failures are printed and `None`; green -> the range to sign and the cr note read.
 /// `waive`: the signer waives the tip's own review in this sign-off (UC-REV-2), so its review - the
 /// cr note and checks 3-5 on it - is the one thing not yet required; everything else still is.
-pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, rest: &[&str], waive: bool) -> Result<Option<(String, String, String)>, String> {
+pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, rest: &[&str], waive: bool) -> Result<Option<Ready>, String> {
     let level = if epic { Level::Epic } else { Level::Wu };
     let target = target_of(cfg, level, tip_ref, rest);
     let r = verify_with(repo, cfg, level, tip_ref, &target, !waive)?;
@@ -374,7 +383,7 @@ pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, r
         print(&r, "mr confirm");
         return Ok(None);
     }
-    Ok(Some((r.tip, r.base, target)))
+    Ok(Some(Ready { tip: r.tip, base: r.base, target, cr: r.tip_cr }))
 }
 
 /// pre-merge-commit: tip = the merge head, target = HEAD, level from HEAD's branch.

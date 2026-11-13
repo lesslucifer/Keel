@@ -41,8 +41,27 @@ pub(crate) fn kind(n: &CrNote) -> Kind {
 /// The cr notes on the first-parent commits of `base..tip`, newest first, each parsed: one note that
 /// git cannot print or that does not parse is an entry of its own, never dropped. The storage read is
 /// `notes::cr_line`'s.
-pub(crate) fn line(repo: &Path, base: &str, tip: &str) -> Result<Vec<Entry>, String> {
-    Ok(notes::cr_line(repo, base, tip)?.into_iter().map(|(commit, body)| Entry { commit, note: body.and_then(|b| parse_note(&b)) }).collect())
+/// `own`: the tip's note when the caller already read it, which stands in for a second read (B16).
+pub(crate) fn line(repo: &Path, base: &str, tip: &str, own: Option<CrNote>) -> Result<Vec<Entry>, String> {
+    let skip = own.is_some().then_some(tip);
+    let below: Vec<Entry> =
+        notes::cr_line(repo, base, tip, skip)?.into_iter().map(|(commit, body)| Entry { commit, note: body.and_then(|b| parse_note(&b)) }).collect();
+    Ok(match own {
+        Some(n) => with_own(below, tip, n),
+        None => below,
+    })
+}
+
+/// The line with the tip's note, already read, first.
+fn with_own(mut below: Vec<Entry>, tip: &str, own: CrNote) -> Vec<Entry> {
+    below.insert(0, Entry { commit: tip.into(), note: Ok(own) });
+    below
+}
+
+/// The tip's own entry (its note, or why it cannot be read), apart from the entries below it.
+fn split_own(entries: Vec<Entry>, tip: &str) -> (Option<Result<CrNote, String>>, Vec<Entry>) {
+    let (own, earlier): (Vec<Entry>, Vec<Entry>) = entries.into_iter().partition(|e| e.commit == tip);
+    (own.into_iter().next().map(|e| e.note), earlier)
 }
 
 /// A cr note as the schedule reads it: the schedule's fields are typed on `CrNote`
@@ -227,6 +246,8 @@ pub(crate) fn next_round(earlier: &[Entry], max: u32, unchanged: &dyn Fn(&str) -
 
 /// A tip's schedule, read once: the one place preflight and the cr writer assemble it from.
 pub(crate) struct Schedule<'a> {
+    /// The tip's own note, read with the line (B16): `None` when there is none, `Err` when unreadable.
+    pub own: Option<Result<CrNote, String>>,
     /// The cr notes below the tip, newest first (the tip's own note never counts: a re-run on the same
     /// commit is the same round).
     pub earlier: Vec<Entry>,
@@ -239,8 +260,8 @@ pub(crate) struct Schedule<'a> {
 
 impl<'a> Schedule<'a> {
     pub(crate) fn read(repo: &'a Path, base: &str, tip: &'a str, target: &str, code_paths: &'a [String]) -> Result<Self, String> {
-        let earlier = line(repo, base, tip)?.into_iter().filter(|e| e.commit != tip).collect();
-        Ok(Schedule { earlier, max: max_rounds(repo, target)?, repo, tip, code_paths })
+        let (own, earlier) = split_own(line(repo, base, tip, None)?, tip);
+        Ok(Schedule { own, earlier, max: max_rounds(repo, target)?, repo, tip, code_paths })
     }
 
     /// The branch itself changed no code path between commit `c` and the tip (`notes::own_names`: a
@@ -462,7 +483,9 @@ pub(crate) fn tags(entries: &[Entry], files: impl Fn(&str, &str) -> Result<Vec<V
 
 #[cfg(test)]
 mod tests {
-    use super::{cap, fix_pass, fixable, max_rounds_at, max_rounds_in, next_round, next_step, parse_note, tags, then, Entry, Fix, Kind, Next, Then};
+    use super::{
+        cap, fix_pass, fixable, max_rounds_at, max_rounds_in, next_round, next_step, parse_note, split_own, tags, then, with_own, Entry, Fix, Kind, Next, Then,
+    };
     use crate::notes::{full_sha, CrNote};
     use serde_json::json;
 
@@ -751,6 +774,24 @@ mod tests {
         let got = tags(&line, |_, _| Ok(vec![]));
         assert_eq!(got[0], " [fix-PASS of round 2 on r2; the note records round 4; no reviewers ran; changed: nothing]");
         assert_eq!(got[2], " [fix-PASS of round 1 on r1; no reviewers ran; changed: nothing]");
+    }
+
+    /// B16: the tip's own note is read once, with the line: the schedule keeps it apart from the
+    /// rounds below it, and a note the caller already read stands in for the stored one.
+    #[test]
+    fn the_tips_own_note_is_read_with_the_line_and_kept_apart() {
+        let line = || vec![fail("t", 1, 0), fail("r2", 0, 1), Entry { commit: "bad".into(), note: Err("x".into()) }, fail("r1", 1, 0)];
+        let (own, earlier) = split_own(line(), "t");
+        assert_eq!(own.unwrap().unwrap().blockers, 1);
+        assert_eq!(earlier.iter().map(|e| e.commit.as_str()).collect::<Vec<_>>(), ["r2", "bad", "r1"]);
+        let (own, earlier) = split_own(line().split_off(1), "t");
+        assert!(own.is_none() && earlier.len() == 3, "no note on the tip");
+        let (own, _) = split_own(vec![Entry { commit: "t".into(), note: Err("unreadable".into()) }], "t");
+        assert_eq!(own.unwrap().unwrap_err(), "unreadable", "an unreadable own note stays an error");
+        let below = line().split_off(1);
+        let read = with_own(below, "t", note("WAIVED", 2, 0, json!({"waiver": "cap"})));
+        assert_eq!(read.iter().map(|e| e.commit.as_str()).collect::<Vec<_>>(), ["t", "r2", "bad", "r1"]);
+        assert_eq!(read[0].note.as_ref().unwrap().blockers, 2, "the caller's note, not a second read");
     }
 
     /// B16: a target that names no commit is an error, never the default cap.
