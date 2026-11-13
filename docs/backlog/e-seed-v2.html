@@ -119,6 +119,7 @@
       <tr><td>The refusal text for an owner's waiver can read better</td><td><code>src/review.rs</code> 319</td></tr>
       <tr><td>The fix-PASS writer reads the tip's cr note twice</td><td><code>src/notes.rs</code> 775</td></tr>
       <tr><td><code>keel mr confirm</code> reads the tip's cr note three or four times (the gate's checks, the stored note for a waiver, the history's batch); one read needs the note passed through the gate's verify (epic code review round 1, N2)</td><td><code>src/mr.rs</code> 590</td></tr>
+      <tr><td>The own-change check runs one <code>diff-tree --name-only</code> per commit since the last round; a batch would cost fewer processes but no longer share its argv with the printed reviewer commands (epic code review round 4, nit, waived)</td><td><code>src/notes.rs</code> <code>diff_names</code></td></tr>
     </table>
     <p data-c="b16-src">Source: E-CRCAP.W2 code review round 3 (PASS, nits only, on 47a8e2e; the installed keel recorded no nits on the note). Line numbers at epic tip ed8047b.</p>
 
