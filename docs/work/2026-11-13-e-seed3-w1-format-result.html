@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="a21b270e09e1a5c2eddf3b00" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED3.W1 WU result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED3.W1 · Format the code once — result</h1>
+      <p>The code is formatted, the tests are unchanged, and lint now runs the format check.</p>
+      <div class="meta">T3 · WU result · 2026-11-13 · Keel · branch <code>wu/E-SEED3/w1-format</code> off <code>epic/E-SEED3</code> <code>c2fbd29</code> · <a href="2026-11-13-e-seed3-w1-format-plan.html">WU plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">What happened</h2>
+<p data-item="outcome" data-c="outcome">Delivered as planned. The format check now passes. The formatting commit holds only the formatter's output. The full test suite gives the same results before and after it. Lint now runs the format check first, then clippy.</p>
+
+<h2 id="for-the-owner">What changed for you</h2>
+<table data-c="owner-changes">
+  <thead><tr><th>When</th><th>Before</th><th>Now</th></tr></thead>
+  <tbody>
+    <tr><td>You run the format check</td><td>948 places differ</td><td>Clean</td></tr>
+    <tr><td>Lint runs</td><td>Clippy only</td><td>Format check, then clippy</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+<p data-item="deviations" data-c="deviations">None.</p>
+<div data-item="evidence" data-c="evidence">
+  <ul>
+    <li>Commits: <code>988a4d5</code> WU plan · <code>4e49560</code> <code>rustfmt.toml</code> (<code>max_width = 160</code>, <code>use_small_heuristics = "Max"</code>) · <code>bd62d9c</code> <code>cargo fmt</code> (15 of 16 <code>.rs</code> files, +724/−1070, formatter output only) · <code>fab0b4e</code> <code>[check] lint = "cargo fmt --check &amp;&amp; cargo clippy --all-targets -- -D warnings"</code> (owner's <code>keel mr commit</code>).</li>
+    <li>Suite: <code>cargo test --no-fail-fast</code> on <code>4e49560</code> and on <code>bd62d9c</code> gives the same list of 273 results (diffed): 272 pass. The sandbox-only R43 test <code>watcher_run_is_bounded_when_the_watch_outpolls_its_releases</code> is red in both.</li>
+    <li><code>cargo fmt --check</code> exits 0; <code>keel lint</code> runs it then clippy, both green.</li>
+    <li>Tests added: none. Integration and unit waived as planned: no behaviour change.</li>
+    <li>Docs touched: this report and the WU plan (T3).</li>
+  </ul>
+</div>
+<p data-item="distillation" data-c="distillation">Nothing citable at this WU. The fact that lint runs the format check goes into UC-GATE-4 at the epic close, as the epic plan's distillation plan says; e-router-v2 R7's format row is struck there too.</p>
+<p data-item="follow-ups" data-c="follow-ups">None.</p>
+
+  </main>
+</body>
+</html>
