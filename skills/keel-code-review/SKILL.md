@@ -30,10 +30,11 @@ changes no code path asks for no review, no note and no finders.
 - **From round 3, the round reviews only the last fix** (the schedule, §5):
   the branch's own changes since `SINCE`, the last reviewed commit. Preflight
   (§2) prints the command that shows them, and finders and verifiers get its
-  output as their diff: `git rev-list --first-parent $SINCE..$HEAD_R | git
-  diff-tree --stdin -r -p --cc -- <code_paths…>` (each commit of the branch's
-  own line; a merge only for what it resolved itself, never what a back-merge
-  brought from its second parent). Never `git diff $SINCE $HEAD_R`: after a
+  output, run exactly as printed, as their diff (`git rev-list --first-parent
+  … $SINCE..$HEAD_R | git diff-tree --stdin -r -p --cc …`: each commit of the
+  branch's own line; a merge only for the hunks it resolved itself, never what
+  a back-merge brought from its second parent). Its `changed:` list is the
+  files of that diff. Never `git diff $SINCE $HEAD_R`: after a
   back-merge it holds other branches' code. They may read any file, and report findings only on those changes. The
   note still binds the whole range.
 - Optional, repeatable: `--waive "<finding summary>: <reason>"` — the
