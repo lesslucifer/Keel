@@ -29,12 +29,12 @@ changes no code path asks for no review, no note and no finders.
   bytes `keel notes write cr` will hash into `code_diff_hash`.
 - **From round 3, the round reviews only the last fix** (the schedule, §5):
   the branch's own changes since `SINCE`, the last reviewed commit. Preflight
-  (§2) prints the command that shows them, and finders and verifiers get its
-  output, run exactly as printed, as their diff (`git rev-list --first-parent
-  … $SINCE..$HEAD_R | git diff-tree --stdin -r -p --cc …`: each commit of the
-  branch's own line; a merge only for the hunks it resolved itself, never what
-  a back-merge brought from its second parent). Its `changed:` list is the
-  files of that diff. Never `git diff $SINCE $HEAD_R`: after a
+  (§2) prints the commands that show them, one `git diff-tree -p` per commit
+  of the branch's own line, oldest first, and finders and verifiers get their
+  output, run exactly as printed, as their diff: each commit against its first
+  parent, a merge against git's automatic merge of its parents, so only what
+  the merge changed by hand, never what a back-merge brought from its second
+  parent. Its `changed:` list is the files of that diff. Never `git diff $SINCE $HEAD_R`: after a
   back-merge it holds other branches' code. They may read any file, and report findings only on those changes. The
   note still binds the whole range.
 - Optional, repeatable: `--waive "<finding summary>: <reason>"` — the
@@ -62,8 +62,8 @@ fleet again. It refuses on exactly:
 
 On green it prints the round and its scope:
 `review round <n> of <N> - scope: the whole range, <base>..<tip>` (rounds 1–2)
-or `… scope: the last fix, <since>..<tip>: this branch's own changes, …: <command>;
-changed: <files>` (from round 3). Use that range, and from round 3 that command (§1).
+or `… scope: the last fix, <since>..<tip>: this branch's own changes, …: <commands>;
+changed: <files>` (from round 3). Use that range, and from round 3 those commands (§1).
 
 Non-zero exit ⇒ stop, report its blocks to the caller, spawn nothing, write
 nothing. An **exempt** diff (no code path) prints `exempt`: report that and
