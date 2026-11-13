@@ -680,3 +680,37 @@ fn an_unreadable_lock_is_kept_and_init_finishes() {
         }
     }
 }
+
+/// The harness hooks, as installed, do nothing with a foreign keel first on PATH: exit 0, no verify-doc.
+#[test]
+fn harness_hooks_exit_0_and_never_call_verify_doc_on_a_foreign_keel() {
+    let d = fresh_repo();
+    let p = d.path();
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    std::fs::create_dir_all(p.join("docs")).unwrap();
+    std::fs::write(p.join("docs/x.html"), "<html></html>").unwrap();
+    let tools = TempDir::new().unwrap();
+    let log = tools.path().join("calls");
+    let fake = bin_dir(tools.path(), &[], &[("keel", &format!("#!/bin/sh\necho \"$*\" >> '{}'\necho 'keel.so 1.2.3'\n", log.display()))]);
+    let path = format!("{}:{}", fake.display(), std::env::var("PATH").unwrap());
+    let hooks = p.join(".git/keel-hooks");
+    for (hook, stdin) in [("verify-doc-post", r#"{"tool_input":{"file_path":"docs/x.html"}}"#), ("verify-doc-stop", "{}")] {
+        use std::io::Write;
+        let mut c = common::cmd("sh")
+            .arg(hooks.join(hook))
+            .current_dir(p)
+            .env("PATH", &path)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        c.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
+        let o = c.wait_with_output().unwrap();
+        assert_eq!(o.status.code(), Some(0), "{hook}: {}", text(&o));
+        let calls = std::fs::read_to_string(&log).unwrap_or_default();
+        assert!(calls.lines().all(|l| l == "--version"), "{hook} called the foreign keel with more than --version: {calls:?}");
+        assert!(calls.lines().count() >= 1, "{hook} never checked the keel on PATH: {calls:?}");
+        std::fs::remove_file(&log).unwrap();
+    }
+}

@@ -2,7 +2,7 @@
 //! that exists with other bytes is kept and reported; a Keel-owned skill file (`.claude/skills/keel-*`)
 //! that differs is overwritten without asking when `.keel/skills.lock` shows keel wrote those bytes,
 //! otherwise only after confirmation (or with `--force`/`-f`).
-use crate::{git, hooks_install};
+use crate::{git, hooks_install, INSTALL_PAGE, KEEL_MARK};
 use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 use std::path::Path;
@@ -329,17 +329,13 @@ pub fn run(repo: &Path, force: bool) -> Result<i32, String> {
     match keel_on_path() {
         None => println!("warning: keel is not on PATH - the hooks call it; install: cargo install --git https://github.com/lesslucifer/Keel, or prebuilt binaries, npm and Homebrew: {INSTALL_PAGE}"),
         Some((path, version)) if !is_keel(&version) => println!(
-            "warning: {path} is not Keel (its `keel --version` lacks \"{KEEL_MARK}\") - another program is named keel, e.g. keel.so; the git hooks refuse to run it. Put Keel first on PATH: {INSTALL_PAGE}"
+            "warning: {path} is not Keel (its `keel --version` lacks \"{KEEL_MARK}\") - another program is named keel, e.g. keel.so, or a Keel older than 2026-11-10 (upgrade it); the git hooks refuse to run it. Put Keel first on PATH: {INSTALL_PAGE}"
         ),
         Some(_) => {}
     }
     println!("{NEXT_STEPS}");
     Ok(0)
 }
-
-/// The second line of Keel's `keel --version`; the git hook shims grep for the same text (open point 6).
-pub(crate) const KEEL_MARK: &str = "Keel: merge-gate workflow CLI";
-const INSTALL_PAGE: &str = "https://github.com/lesslucifer/Keel/blob/main/docs/install.html";
 
 fn is_keel(version_out: &str) -> bool {
     version_out.lines().any(|l| l.starts_with(KEEL_MARK))
@@ -361,7 +357,8 @@ const NEXT_STEPS: &str = "next:\n  1. review .keel/config.toml (check commands, 
 
 #[cfg(test)]
 mod tests {
-    use super::{confirm, format_lock, hex, is_keel, parse_lock, skill_action, SkillAction, KEEL_MARK, NEXT_STEPS, SKILLS};
+    use super::{confirm, format_lock, hex, is_keel, parse_lock, skill_action, SkillAction, NEXT_STEPS, SKILLS};
+    use crate::KEEL_MARK;
     use std::io::Cursor;
 
     fn ask(input: &str) -> bool {
