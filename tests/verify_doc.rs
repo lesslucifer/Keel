@@ -343,7 +343,9 @@ fn an_epic_plan_typo_hint_names_each_item_once() {
 fn a_quoted_diagram_with_a_directive_is_green() {
     let d = repo();
     let p = d.path();
-    let doc = "<html lang=\"en\"><body><main><pre class=\"mermaid\">\n%%{init: {'theme': 'dark'}}%%\nflowchart LR\n  A[\"a\"] --> B[\"b\"]\n</pre></main></body></html>";
-    let (ok, t) = verify(p, "f.html", doc);
-    assert!(ok, "{t}");
+    for directive in ["%%{init: {'theme': 'dark'}}%%\nflowchart LR", "%%{init: {'theme': 'dark'}}%% flowchart LR", "flowchart LR\n  %%{\n  init: {'theme': 'dark'}\n  }%%"] {
+        let doc = format!("<html lang=\"en\"><body><main><pre class=\"mermaid\">\n{directive}\n  A[\"a\"] --> B[\"b\"]\n</pre></main></body></html>");
+        let (ok, t) = verify(p, "f.html", &doc);
+        assert!(ok, "{directive}: {t}");
+    }
 }
