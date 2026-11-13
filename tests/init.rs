@@ -582,3 +582,74 @@ fn init_writes_no_lock_while_every_skill_matches_and_none_exists() {
     let o = keel_in(p, &["init"], "");
     assert!(o.status.success() && !p.join(".keel/skills.lock").exists(), "{}", text(&o));
 }
+
+fn ok(d: &Path, a: &[&str]) -> String {
+    let o = git_in(d, a);
+    assert!(o.status.success(), "git {a:?}: {}", text(&o));
+    String::from_utf8_lossy(&o.stdout).trim().to_string()
+}
+
+/// A dir holding only links to the given programs from the current PATH, plus extra scripts.
+fn bin_dir(root: &Path, links: &[&str], scripts: &[(&str, &str)]) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = root.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    for l in links {
+        let w = common::cmd("sh").args(["-c", &format!("command -v {l}")]).output().unwrap();
+        let real = String::from_utf8(w.stdout).unwrap().trim().to_string();
+        assert!(!real.is_empty(), "{l} not on PATH");
+        std::os::unix::fs::symlink(real, bin.join(l)).unwrap();
+    }
+    for (name, body) in scripts {
+        std::fs::write(bin.join(name), body).unwrap();
+        std::fs::set_permissions(bin.join(name), std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    bin
+}
+
+#[test]
+fn init_without_keel_on_path_names_the_install_page() {
+    let d = fresh_repo();
+    let tools = TempDir::new().unwrap();
+    let bin = bin_dir(tools.path(), &["git", "sh"], &[]);
+    let o = common::cmd(env!("CARGO_BIN_EXE_keel")).arg("init").current_dir(d.path()).env("PATH", &bin).stdin(std::process::Stdio::null()).output().unwrap();
+    let t = text(&o);
+    assert!(t.contains("warning: keel is not on PATH"), "{t}");
+    assert!(t.contains("https://github.com/lesslucifer/Keel/blob/main/docs/install.html"), "{t}");
+}
+
+/// Open point 6: another program named keel first on PATH - init warns, a git hook refuses.
+#[test]
+fn a_foreign_keel_on_path_makes_init_warn_and_a_git_hook_refuse() {
+    let d = fresh_repo();
+    let p = d.path();
+    let tools = TempDir::new().unwrap();
+    let fake = bin_dir(tools.path(), &[], &[("keel", "#!/bin/sh\necho 'keel.so 1.2.3'\n")]);
+    let path = format!("{}:{}", fake.display(), std::env::var("PATH").unwrap());
+    let o = common::cmd(env!("CARGO_BIN_EXE_keel")).arg("init").current_dir(p).env("PATH", &path).stdin(std::process::Stdio::null()).output().unwrap();
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains(&format!("warning: {} is not Keel", fake.join("keel").display())) && t.contains("the git hooks refuse"), "{t}");
+
+    ok(p, &["switch", "-q", "-c", "wu/x/y"]);
+    let commit = |path: &str| {
+        common::cmd("git")
+            .args(["commit", "-q", "--allow-empty", "-m", "c"])
+            .current_dir(p)
+            .env("PATH", path)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap()
+    };
+    let o = commit(&path);
+    let t = text(&o);
+    assert!(!o.status.success(), "a hook must refuse a foreign keel: {t}");
+    assert!(t.contains("is not Keel") && t.contains("docs/install.html"), "{t}");
+
+    let keel_first = format!("{}:{path}", Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display());
+    let o = commit(&keel_first);
+    assert!(o.status.success(), "with Keel first the hook runs: {}", text(&o));
+}

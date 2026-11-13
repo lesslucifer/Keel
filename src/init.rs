@@ -322,12 +322,31 @@ pub fn run(repo: &Path, force: bool) -> Result<i32, String> {
     if repo.join("CLAUDE.md").exists() {
         println!("warning: CLAUDE.md exists - Claude Code reads it instead of AGENTS.md; merge the two or add a line `@AGENTS.md` to CLAUDE.md");
     }
-    let on_path = crate::no_git_env(std::process::Command::new("sh"), false).args(["-c", "command -v keel"]).output().is_ok_and(|o| o.status.success());
-    if !on_path {
-        println!("warning: keel is not on PATH - the hooks call it; install: cargo install --git https://github.com/lesslucifer/Keel");
+    match keel_on_path() {
+        None => println!("warning: keel is not on PATH - the hooks call it; install: cargo install --git https://github.com/lesslucifer/Keel, or prebuilt binaries, npm and Homebrew: {INSTALL_PAGE}"),
+        Some((path, version)) if !is_keel(&version) => println!(
+            "warning: {path} is not Keel (its `keel --version` lacks \"{KEEL_MARK}\") - another program is named keel, e.g. keel.so; the git hooks refuse to run it. Put Keel first on PATH: {INSTALL_PAGE}"
+        ),
+        Some(_) => {}
     }
     println!("{NEXT_STEPS}");
     Ok(0)
+}
+
+/// The second line of Keel's `keel --version`; the git hook shims grep for the same text (open point 6).
+pub(crate) const KEEL_MARK: &str = "Keel: merge-gate workflow CLI";
+const INSTALL_PAGE: &str = "https://github.com/lesslucifer/Keel/blob/main/docs/install.html";
+
+fn is_keel(version_out: &str) -> bool {
+    version_out.lines().any(|l| l.starts_with(KEEL_MARK))
+}
+
+/// The `keel` the hooks would run, as (path, `keel --version` stdout); None when none is on PATH.
+fn keel_on_path() -> Option<(String, String)> {
+    let sh = |script: &str| crate::no_git_env(std::process::Command::new("sh"), false).args(["-c", script]).stdin(std::process::Stdio::null()).output().ok();
+    let path = sh("command -v keel").filter(|o| o.status.success())?;
+    let version = sh("keel --version 2>/dev/null").map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    Some((String::from_utf8_lossy(&path.stdout).trim().to_string(), version))
 }
 
 /// The signer comes before the first commit, so the policy lands on main with its roster (DEC-47).
@@ -338,7 +357,7 @@ const NEXT_STEPS: &str = "next:\n  1. review .keel/config.toml (check commands, 
 
 #[cfg(test)]
 mod tests {
-    use super::{confirm, format_lock, hex, parse_lock, skill_action, SkillAction, NEXT_STEPS, SKILLS};
+    use super::{confirm, format_lock, hex, is_keel, parse_lock, skill_action, SkillAction, KEEL_MARK, NEXT_STEPS, SKILLS};
     use std::io::Cursor;
 
     fn ask(input: &str) -> bool {
@@ -382,6 +401,14 @@ mod tests {
         assert_eq!(skill_action(Some(old), build, Some(&hex(old))), SkillAction::Upgrade);
         assert_eq!(skill_action(Some(b"edited"), build, Some(&hex(old))), SkillAction::Ask);
         assert_eq!(skill_action(Some(old), build, None), SkillAction::Ask, "no entry: ask as today");
+    }
+
+    #[test]
+    fn only_a_version_output_carrying_keels_line_is_keel() {
+        assert!(is_keel(&format!("keel 0.4.0\n{KEEL_MARK} (not keel.so)\n")));
+        assert!(!is_keel("keel.so 1.2.3\n"));
+        assert!(!is_keel(""));
+        assert!(!is_keel(&format!("prefix {KEEL_MARK}\n")), "the line must start with the mark, as the shims' grep '^...' does");
     }
 
     #[test]

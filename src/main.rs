@@ -348,11 +348,20 @@ fn pre_push(repo: &Path, cfg: &Config, remote: &str) -> Result<i32, String> {
     Ok(0)
 }
 
+/// Open point 6: a `keel` on PATH whose `--version` lacks init::KEEL_MARK is another program.
+macro_rules! keel_guard {
+    ($or:literal) => {
+        concat!("keel --version </dev/null 2>/dev/null | grep -q '^Keel: merge-gate workflow CLI' || ", $or)
+    };
+}
+
 macro_rules! git_shim {
     ($exec:literal) => {
         concat!(
             "#!/bin/sh\n",
             r#"command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install --git https://github.com/lesslucifer/Keel) or run: git config --unset core.hooksPath" >&2; echo "keel: prebuilt binaries, npm and Homebrew: https://github.com/lesslucifer/Keel/blob/main/docs/install.html" >&2; exit 1; }"#,
+            "\n",
+            keel_guard!(r#"{ echo "keel: $(command -v keel) is not Keel, the merge-gate CLI - another program is named keel (e.g. keel.so); put Keel first on PATH: https://github.com/lesslucifer/Keel/blob/main/docs/install.html" >&2; exit 1; }"#),
             "\nexec keel ",
             $exec,
             "\n"
@@ -369,8 +378,10 @@ const PRE_PUSH: &str = git_shim!(r#"hook pre-push "$1""#);
 // apply_patch carries patch text in tool_input.command, whose "*** Add/Update File:"
 // headers name the targets. Red -> exit 2 + stderr (fed back / turn refused). Needs jq.
 // ponytail: the Codex shape is best-effort (Trawler's), not verified against Codex docs.
-const DOC_POST: &str = r#"#!/bin/sh
-command -v keel >/dev/null 2>&1 || exit 0
+const DOC_POST: &str = concat!(
+    "#!/bin/sh\ncommand -v keel >/dev/null 2>&1 || exit 0\n",
+    keel_guard!("exit 0"),
+    r#"
 paths=$(jq -r 'if (.tool_input.file_path? // "") != "" then .tool_input.file_path
   else (.tool_input.command? // "") | split("\n")[]
     | select(test("^\\*\\*\\* (Add|Update|Delete) File: |^\\*\\*\\* Move to: "))
@@ -386,14 +397,18 @@ done
 out=$(keel verify-doc "$@" 2>&1) && exit 0
 printf '%s\n' "$out" >&2
 exit 2
-"#;
+"#
+);
 
-const DOC_STOP: &str = r#"#!/bin/sh
-command -v keel >/dev/null 2>&1 || exit 0
+const DOC_STOP: &str = concat!(
+    "#!/bin/sh\ncommand -v keel >/dev/null 2>&1 || exit 0\n",
+    keel_guard!("exit 0"),
+    r#"
 out=$(keel verify-doc 2>&1) && exit 0
 printf 'A doc is red - fix it before ending the turn:\n%s\n' "$out" >&2
 exit 2
-"#;
+"#
+);
 
 const POST_CHECKOUT: &str = r#"#!/bin/sh
 # post-checkout: seed new worktrees from .gitworktreecopy, heal merge.ff=false.
@@ -524,7 +539,7 @@ fn run() -> Result<i32, String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     if let ["--version" | "-V"] = args.as_slice() {
-        println!("keel {}\nKeel: merge-gate workflow CLI (not keel.so)", env!("CARGO_PKG_VERSION"));
+        println!("keel {}\n{} (not keel.so)", env!("CARGO_PKG_VERSION"), init::KEEL_MARK);
         return Ok(0);
     }
     let repo = repo_root()?;
@@ -567,7 +582,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        hook_conflicts, hooks_problem_of, no_git_env, Config, ReportPolicy, COMMIT_MSG, GIT_HOOK_ENV, GIT_LOCAL_ENV, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH,
+        hook_conflicts, hooks_problem_of, no_git_env, Config, ReportPolicy, COMMIT_MSG, DOC_POST, DOC_STOP, GIT_HOOK_ENV, GIT_LOCAL_ENV, PRE_COMMIT,
+        PRE_MERGE_COMMIT, PRE_PUSH,
     };
     use std::ffi::OsStr;
     use std::path::Path;
@@ -658,12 +674,28 @@ mod tests {
             (PRE_PUSH, "exec keel hook pre-push \"$1\"\n"),
         ] {
             let lines: Vec<&str> = shim.lines().collect();
-            assert_eq!(lines.len(), 3, "{shim}");
+            assert_eq!(lines.len(), 4, "{shim}");
             assert_eq!(lines[0], "#!/bin/sh");
             assert!(lines[1].starts_with("command -v keel >/dev/null 2>&1 || {") && lines[1].ends_with("exit 1; }"), "{shim}");
             assert!(lines[1].contains("cargo install --git https://github.com/lesslucifer/Keel"), "{shim}");
             assert!(lines[1].contains("https://github.com/lesslucifer/Keel/blob/main/docs/install.html"), "{shim}");
+            assert!(lines[2].starts_with(&foreign_guard()) && lines[2].ends_with("exit 1; }"), "{shim}");
+            assert!(lines[2].contains("is not Keel") && lines[2].contains("docs/install.html"), "{shim}");
             assert!(shim.ends_with(exec), "{shim}");
+        }
+    }
+
+    /// The shims' grep and Keel's own `--version` share one marker (open point 6).
+    fn foreign_guard() -> String {
+        format!("keel --version </dev/null 2>/dev/null | grep -q '^{}' || ", crate::init::KEEL_MARK)
+    }
+
+    #[test]
+    fn harness_hooks_exit_0_on_a_foreign_keel_as_on_a_missing_one() {
+        for hook in [DOC_POST, DOC_STOP] {
+            let lines: Vec<&str> = hook.lines().collect();
+            assert_eq!(lines[1], "command -v keel >/dev/null 2>&1 || exit 0", "{hook}");
+            assert_eq!(lines[2], format!("{}exit 0", foreign_guard()), "{hook}");
         }
     }
 }
