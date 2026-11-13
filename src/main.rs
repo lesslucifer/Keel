@@ -173,6 +173,11 @@ fn no_git_env(mut c: Command, keep_index: bool) -> Command {
     c
 }
 
+/// A commit as the messages name it: its first 10 characters.
+pub(crate) fn short(sha: &str) -> &str {
+    sha.get(..10).unwrap_or(sha)
+}
+
 fn git(repo: &Path, args: &[&str], envs: &[(&str, &Path)]) -> Result<String, String> {
     let mut c = no_git_env(Command::new("git"), true);
     c.args(args).current_dir(repo);

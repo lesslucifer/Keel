@@ -335,9 +335,10 @@ pub(crate) fn zpaths(out: &str) -> Vec<String> {
 }
 
 /// Paths changed base..tip within `pathspecs` (none = all). No rename pairing: moving a file out of
-/// a path is a change to that path.
+/// a path is a change to that path. `--end-of-options`: a revision is never read as an option, even
+/// one taken from a note.
 pub(crate) fn names(repo: &Path, base: &str, tip: &str, pathspecs: &[String]) -> Result<Vec<String>, String> {
-    let mut a = vec!["diff", "--name-only", "--no-renames", "-z", base, tip, "--"];
+    let mut a = vec!["diff", "--name-only", "--no-renames", "-z", "--end-of-options", base, tip, "--"];
     a.extend(pathspecs.iter().map(String::as_str));
     Ok(zpaths(&git(repo, &a, &[])?))
 }
@@ -745,8 +746,8 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
     let (blockers, importants) = cr_counts(lists.get("findings"), typed_blockers, typed_importants)?;
     let write = cr_verdict(verdict, reason, blockers, importants)?;
     let code_diff_hash = code_diff_hash(repo, cfg, &r.id.base, &tip)?;
-    let earlier = || -> Result<Vec<review::Entry>, String> { Ok(review::line(repo, &r.id.base, &tip)?.into_iter().filter(|e| e.commit != tip).collect()) };
-    let max = || review::max_rounds(repo, &r.target);
+    // The schedule's inputs exactly as preflight reads them (one rule for "the tip's own note never counts").
+    let schedule = || review::below_tip(repo, &r.id.base, &tip, &r.target);
     let fixes = flag("--fixes").or_else(|| args.contains(&"--fixes").then_some(""));
     if fixes.is_some() && verdict != "PASS" {
         return refuse("--fixes given with a verdict other than PASS".into(), "a fix-PASS is --verdict PASS --fixes <reviewed commit>");
@@ -761,7 +762,7 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
     }
     let (note, said) = match (write, fixes) {
         (CrWrite::Review, Some(fixes)) => {
-            let sha = git(repo, &["rev-parse", "--verify", "-q", &format!("{fixes}^{{commit}}")], &[]).or_else(|_| refuse(format!("--fixes {fixes} names no commit"), "give the reviewed commit of the round this fix answers"))?;
+            let sha = git(repo, &["rev-parse", "--verify", "-q", "--end-of-options", &format!("{fixes}^{{commit}}")], &[]).or_else(|_| refuse(format!("--fixes {fixes} names no commit"), "give the reviewed commit of the round this fix answers"))?;
             if sha == tip {
                 return refuse(
                     format!("--fixes names the tip {} itself; a fix-PASS goes on a later commit than the round it answers", &tip[..10]),
@@ -769,7 +770,8 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
                 );
             }
             let unchanged = |c: &str| review::no_code_since(repo, c, &tip, &cfg.code_paths);
-            let fix = review::fix_pass(&earlier()?, &sha, max()?, unchanged).or_else(|(what, fix)| refuse(what, &fix))?;
+            let (earlier, max) = schedule()?;
+            let fix = review::fix_pass(&earlier, &sha, max, unchanged).or_else(|(what, fix)| refuse(what, &fix))?;
             let mut extra = serde_json::Map::new();
             extra.insert("fixes".into(), sha.clone().into());
             extra.insert("round".into(), fix.round.into());
@@ -779,8 +781,8 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
             (CrNote { schema: "cr/v1".into(), id: r.id, verdict: "PASS".into(), waiver: None, blockers: 0, importants: 0, code_diff_hash, walk_waivers: vec![], extra }, said)
         }
         (CrWrite::Review, None) => {
-            let max = max()?;
-            let next = review::next_round(&earlier()?, max, &|c: &str| review::no_code_since(repo, c, &tip, &cfg.code_paths)).or_else(|(what, fix)| refuse(what, &fix))?;
+            let (earlier, max) = schedule()?;
+            let next = review::next_round(&earlier, max, &|c: &str| review::no_code_since(repo, c, &tip, &cfg.code_paths)).or_else(|(what, fix)| refuse(what, &fix))?;
             let mut extra = lists;
             extra.insert("round".into(), next.round.into());
             extra.insert("scope".into(), next.scope().into());
@@ -798,7 +800,8 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
             }
             let stored = cr_raw(repo, &tip)?;
             let own = stored.as_deref().map(serde_json::from_str::<CrNote>).and_then(Result::ok);
-            let reason = review::cap(own.as_ref(), &earlier()?, max()?, &tip).or_else(|(what, fix)| refuse(what, &fix))?;
+            let (earlier, max) = schedule()?;
+            let reason = review::cap(own.as_ref(), &earlier, max, &tip).or_else(|(what, fix)| refuse(what, &fix))?;
             let said = format!("{reason}: the owner decides at sign-off (keel mr confirm shows the waiver and every round)");
             (waive(stored.as_deref(), r.id, Some(&reason), code_diff_hash, (None, None)).or_else(|(what, fix)| refuse(what, &fix))?, said)
         }

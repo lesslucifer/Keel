@@ -2,7 +2,7 @@
 //! the commit-msg `Reviewed-By` check (UC-MR-1/2, DEC-47). Ported from Trawler's xtask/src/mr.rs
 //! (DEC-9/10/27): stock `ssh-keygen -Y` signatures, verified offline against the roster.
 use crate::notes::{self, sha256, CrNote, MrNote};
-use crate::{gate, git, git_dir, no_git_env, review, verify_doc, Config, ReportPolicy};
+use crate::{gate, git, git_dir, no_git_env, review, short, verify_doc, Config, ReportPolicy};
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -28,10 +28,6 @@ struct Entry {
 /// Restricted so an identity can never carry allowed_signers pattern syntax (`*?,!"`) or whitespace.
 fn valid_identity(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "@._+-".contains(c))
-}
-
-fn short(sha: &str) -> &str {
-    sha.get(..10).unwrap_or(sha)
 }
 
 /// The roster's meaningful lines, numbered from 0: trimmed, without blank lines and `#` comments.

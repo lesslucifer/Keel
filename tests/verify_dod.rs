@@ -17,6 +17,9 @@ fn run(prog: &str, d: &Path, a: &[&str], input: &str) -> Output {
         .args(a)
         .current_dir(d)
         .env("PATH", path_with_keel())
+        // No global or system git config reaches a fixture (a signing key, log.showSignature, hooks...).
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

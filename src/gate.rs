@@ -1,7 +1,7 @@
 //! `keel verify-dod` + `keel preflight`: the merge gate (UC-GATE-2/3/5, UC-DOC-3).
 //! Ported from Trawler's xtask gate: same check ids, same `FAIL / fix ->` blocks, no cargo.
 use crate::notes::{self, CrNote, DocNote, DodNote, TestNote};
-use crate::{check, git, hooks_problem, mr, review, Config, HOOKS_FIX};
+use crate::{check, git, hooks_problem, mr, review, short, Config, HOOKS_FIX};
 use serde::de::DeserializeOwned;
 use std::path::Path;
 
@@ -52,10 +52,6 @@ impl Report {
     fn fail(&mut self, check: &str, what: String, fix: impl Into<String>) {
         self.failures.push(Failure { check: check.into(), what, fix: fix.into() });
     }
-}
-
-fn short(sha: &str) -> &str {
-    sha.get(..10).unwrap_or(sha)
 }
 
 fn is_ancestor(repo: &Path, commit: &str, of: &str) -> bool {
