@@ -1,6 +1,6 @@
 //! Versioned note schemas + `keel notes write <test|doc|cr>`.
 //! Notes live in refs/notes/<kind> (same naming as Trawler), JSON, attached to the tip commit.
-use crate::{git, git_raw, ok_text, review, Config};
+use crate::{git, git_raw, ok_text, review, short, Config};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -765,19 +765,24 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
             let sha = git(repo, &["rev-parse", "--verify", "-q", "--end-of-options", &format!("{fixes}^{{commit}}")], &[]).or_else(|_| refuse(format!("--fixes {fixes} names no commit"), "give the reviewed commit of the round this fix answers"))?;
             if sha == tip {
                 return refuse(
-                    format!("--fixes names the tip {} itself; a fix-PASS goes on a later commit than the round it answers", &tip[..10]),
+                    format!("--fixes names the tip {} itself; a fix-PASS goes on a later commit than the round it answers", short(&tip)),
                     "commit the fix, then write the fix-PASS on it",
                 );
             }
             let unchanged = |c: &str| review::no_code_since(repo, c, &tip, &cfg.code_paths);
             let (earlier, max) = schedule()?;
-            let fix = review::fix_pass(&earlier, &sha, max, unchanged).or_else(|(what, fix)| refuse(what, &fix))?;
+            // The tip's own note: a reviewed one is the latest round, and a fix-PASS never replaces it.
+            let own = cr_raw(repo, &tip)?
+                .map(|raw| review::parse_note(&raw))
+                .transpose()
+                .or_else(|why| refuse(format!("the cr note on {} is unreadable ({why}); a fix-PASS never overwrites a note it cannot read", short(&tip)), "the owner repairs that note in place, then write the fix-PASS again"))?;
+            let fix = review::fix_pass(own.as_ref(), &earlier, &sha, max, unchanged).or_else(|(what, fix)| refuse(what, &fix))?;
             let mut extra = serde_json::Map::new();
             extra.insert("fixes".into(), sha.clone().into());
             extra.insert("round".into(), fix.round.into());
             extra.insert("fix_diff_hash".into(), self::code_diff_hash(repo, cfg, &sha, &tip)?.into());
             extra.insert("answers".into(), serde_json::json!({"importants": fix.importants, "nits": fix.nits}));
-            let said = format!("fix-PASS of round {} on {}: no reviewers run, no new round", fix.round, &sha[..10]);
+            let said = format!("fix-PASS of round {} on {}: no reviewers run, no new round", fix.round, short(&sha));
             (CrNote { schema: "cr/v1".into(), id: r.id, verdict: "PASS".into(), waiver: None, blockers: 0, importants: 0, code_diff_hash, walk_waivers: vec![], extra }, said)
         }
         (CrWrite::Review, None) => {

@@ -585,8 +585,8 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     // A waived review meets the signer here, shown with every round (UC-REV-2): the signer waives it in
     // this sign-off (`--waive-review`, written with the signature), or accepts a waiver the tool wrote.
     let mut owner_cr = None;
-    // The tip's cr note is read once: as stored for the owner's waiver (the writer refuses one it
-    // cannot parse), parsed for a waiver the tool wrote.
+    // The tip's cr note as stored, for the owner's waiver (the writer refuses one it cannot parse) and
+    // parsed for a waiver the tool wrote; the review history reads it again with the rest of the line.
     let stored = notes::cr_raw(repo, &tip)?;
     let tool_waiver = stored.as_deref().and_then(|r| serde_json::from_str::<CrNote>(r).ok()).filter(|n| n.waiver().is_some());
     let waiver = match tool_waiver {
