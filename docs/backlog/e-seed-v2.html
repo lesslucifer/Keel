@@ -156,7 +156,7 @@
     <p data-c="b22">The first assertion of each <code>%%{…}%%</code> directive test checks that a quoted diagram is green. A change that stops finding labels after a directive still passes it. Add an unquoted label after each directive and assert it is named. Where: <code>tests/verify_doc.rs</code> <code>a_quoted_diagram_with_a_directive_is_green</code>, <code>src/verify_doc.rs</code> <code>a_directive_is_skipped_whole_multi_line_or_inline</code>. Source: E-DOCSTYLE.W2 code review round 3 (PASS; nit waived).</p>
     <h2 id="b23">B23 · A push of an epic branch judges its close commit as a plain commit <span class="badge id">proposed: E-SEED3</span></h2>
     <p data-c="b23">After an epic's close, <code>git push origin epic/&lt;E&gt;</code> is refused. The pre-push walk (<code>src/gate.rs</code> <code>range</code>) judges every plain first-parent commit at the commit level, the epic tip included, while the epic gate's own walk skips its tip (DEC-18: "the epic tip itself is not walked"). The tip carries notes written for the epic range, so the commit gate is red on them: "level commit needs the unit layer" and "doc/v1 lists … but the range does not touch it". Seen on <code>epic/E-DOCSTYLE</code> at <code>fa355e0</code> on 2026-11-13. Same class as B20 (an epic-range note judged as a standalone commit's). Source: owner, 2026-11-13.</p>
-    <h2 id="b24">B24 · A notes fetch that neither drops nor blocks <span class="badge id">backlog: needs an owner pick (A–C), then an epic</span></h2>
+    <h2 id="b24">B24 · A notes fetch that neither drops nor blocks <span class="badge id">backlog: needs an owner pick (A, B, C or E), then an epic</span></h2>
     <div data-c="b24">
     <p>A fresh clone still fetches evidence by hand (DEC-19 stays push-only). B6's plan was a non-forced <code>refs/notes/*:refs/notes/*</code> on <code>remote.origin.fetch</code>. Git rejects that fetch whenever a local note ref is <b>ahead of</b> origin's, not only when it diverged: <code>! [rejected] refs/notes/test -&gt; refs/notes/test (non-fast-forward)</code>, exit 1. So every <code>git fetch</code>, in any worktree, fails between a <code>keel notes write</code> and the next push. Seen in an E-SEED3.W5 scratch-repo test, right after a clean <code>git notes merge</code> made the local ref a descendant of origin's.</p>
     <table>
@@ -165,10 +165,19 @@
         <tr><td>A · forced <code>+refs/notes/*:refs/notes/*</code></td><td>Fetch always works; unpushed local notes are dropped. Rejected by E-SEED3 open point 5.</td></tr>
         <tr><td>B · non-forced, as B6 planned</td><td>Fetch fails after every local note write until the push.</td></tr>
         <tr><td>C · forced mirror <code>+refs/notes/*:refs/notes-origin/*</code></td><td>Holds nothing local, so force is safe. Keel's note readers fall back to it, or a merge step runs <code>git notes merge</code>. Touches the note reader and the hooks.</td></tr>
+        <tr><td>E · an explicit <code>keel notes pull</code></td><td>No refspec: <code>git fetch</code> is untouched. The command runs the fix line below for each note kind, and says what it merged or which note conflicted. (D was the deferral itself.)</td></tr>
       </tbody>
     </table>
-    <p>The fix line for a diverged note ref, verified end to end in that test (<code>--refmap=</code> stops the configured refspec retrying the rejected ref; <code>git notes merge</code> expands any name into <code>refs/notes/</code>, so the temporary ref sits there and is deleted before the pre-push sync can send it):</p>
-    <pre><code>git fetch --refmap= origin refs/notes/&lt;kind&gt;:refs/notes/keel-remote-&lt;kind&gt; &amp;&amp; git notes --ref=&lt;kind&gt; merge refs/notes/keel-remote-&lt;kind&gt; &amp;&amp; git update-ref -d refs/notes/keel-remote-&lt;kind&gt;</code></pre>
+    <p>The fix for a diverged note ref, per note kind:</p>
+    <pre><code>git fetch --refmap= origin +refs/notes/&lt;kind&gt;:refs/notes/keel-remote-&lt;kind&gt; &amp;&amp;
+  git notes --ref=&lt;kind&gt; merge -s ours refs/notes/keel-remote-&lt;kind&gt;
+git update-ref -d refs/notes/keel-remote-&lt;kind&gt;</code></pre>
+    <ul>
+      <li><code>--refmap=</code> stops the configured refspec retrying the rejected ref. The <code>+</code> lets a re-run replace a temporary ref a failed run left behind.</li>
+      <li><code>git notes merge</code> expands any name into <code>refs/notes/</code>, so the temporary ref must live there. The last line runs whatever happened before it, so the pre-push sync of <code>refs/notes/*</code> never sends it.</li>
+      <li>Keel writes notes with <code>git notes add -f</code>, so two machines noting one commit conflict. The default strategy (manual) then stops mid-merge. <code>-s ours</code> keeps your note on such a commit; <code>-s theirs</code> takes origin's. Which one is right is part of the pick above.</li>
+      <li>Tested in E-SEED3.W5: the earlier form (no <code>+</code>, no strategy, delete chained with <code>&amp;&amp;</code>) on a clean merge. This form is not tested.</li>
+    </ul>
     <p>Source: E-SEED3.W5 (B6 deferred by owner ruling D, 2026-11-13). The E-SEED3 epic test's "a fresh clone fetches the evidence" step changes with it.</p>
     </div>
   </main>
