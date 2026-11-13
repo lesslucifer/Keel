@@ -85,6 +85,11 @@ file — and refuses, writing nothing, when a required one is missing (pass
 `--report <path>`), when several match (it lists them: pass `--report`), or on
 `--report` under `none`.
 
+**Every follow-up says where it goes.** A follow-up recorded anywhere (a
+result report, a cr note, the backlog) names the WU, epic or backlog row that
+takes it, so nothing is deferred to nowhere. No gate checks this: a gate
+cannot tell a real destination from an invented one.
+
 **Epic close**: merge main into the epic if it moved → distill (skill
 `distill`) → archive commit (`git rm` every T3 doc, keep the files in
 `docs/.archive/`) with `keel notes write doc --distill …` → epic result report
