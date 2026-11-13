@@ -1702,3 +1702,81 @@ fn a_clean_back_merge_into_a_file_the_wu_also_changed_is_no_change_of_its_own() 
     let t = text(&ok(preflight(p)));
     assert!(t.contains("changed: src/a.py (") && !t.contains("src/shared.py"), "the merged hunk is the epic's, not the WU's: {t}");
 }
+
+/// A WU whose round 1 passed with a nit and whose fix carries a fix-PASS, both on top of the shared
+/// file (with `attrs` as .gitattributes on the epic) and the WU's own edit of line `wu_line`.
+/// Returns the round-1 commit.
+fn fix_passed_wu_on_shared_file(p: &Path, attrs: &str, wu_line: usize) -> String {
+    if !attrs.is_empty() {
+        git(p, &["switch", "-q", "epic/e"]);
+        write(p, ".gitattributes", attrs);
+        commit(p, "attributes");
+        git(p, &["switch", "-q", "wu/e/a"]);
+    }
+    shared_file(p);
+    edit_shared(p, wu_line, "\"wu\"");
+    commit(p, "the WU changes the shared file");
+    test_note(p);
+    doc_note(p);
+    ok(write_cr(p, &["--verdict", "PASS", "--nits", r#"[{"location": "src/a.py:1", "finding": "naming", "fixed": "renamed"}]"#]));
+    let c1 = head(p);
+    write(p, "src/a.py", "def one():\n    return 1\n");
+    commit(p, "fix the nit");
+    test_note(p);
+    doc_note(p);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1]));
+    c1
+}
+
+/// The epic changes line `n` of the shared file to `v`, then the WU merges the epic (with `-X` options
+/// none: a conflict is left for the caller).
+fn epic_edits_shared(p: &Path, n: usize, v: &str) {
+    git(p, &["switch", "-q", "epic/e"]);
+    edit_shared(p, n, v);
+    commit(p, &format!("the epic changes line {n} of the shared file"));
+    git(p, &["switch", "-q", "wu/e/a"]);
+}
+
+/// Epic code review round 3, B1 and B2 (owner ruling 2026-11-13, the exact rule): a merge is the
+/// branch's own change only where the real merge differs from git's automatic merge of its parents.
+#[test]
+fn a_clean_back_merge_of_edits_two_lines_apart_is_no_change_of_the_wus_own() {
+    // --cc joins edits within 3 lines into one hunk; git's automatic merge resolves them cleanly.
+    let d = fixture();
+    let p = d.path();
+    let c1 = fix_passed_wu_on_shared_file(p, "", 10);
+    epic_edits_shared(p, 12, "\"epic\"");
+    git(p, &["merge", "-q", "--no-ff", "-m", "back-merge the epic", "epic/e"]);
+    test_note(p);
+    doc_note(p);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1]));
+}
+
+/// Epic code review round 3, B2: a code file git diffs as binary (-diff), where --cc has no hunk filter.
+#[test]
+fn a_clean_back_merge_of_a_file_marked_minus_diff_is_no_change_of_the_wus_own() {
+    let d = fixture();
+    let p = d.path();
+    let c1 = fix_passed_wu_on_shared_file(p, "src/shared.py -diff\n", 2);
+    epic_edits_shared(p, 19, "\"epic\"");
+    git(p, &["merge", "-q", "--no-ff", "-m", "back-merge the epic", "epic/e"]);
+    test_note(p);
+    doc_note(p);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1]));
+}
+
+/// The exact rule still counts what a merge resolved by hand: a second fix.
+#[test]
+fn a_merge_that_resolves_a_conflict_by_hand_is_the_branchs_own_change() {
+    let d = fixture();
+    let p = d.path();
+    let c1 = fix_passed_wu_on_shared_file(p, "", 5);
+    epic_edits_shared(p, 5, "\"epic\"");
+    assert!(!run("git", p, &["merge", "-q", "--no-ff", "-m", "back-merge the epic", "epic/e"], "").status.success(), "a conflict");
+    edit_shared(p, 5, "\"both\"");
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "back-merge the epic, resolving line 5"]);
+    test_note(p);
+    let o = write_cr(p, &["--verdict", "PASS", "--fixes", &c1]);
+    refused(&o, &["second fix"]);
+}
