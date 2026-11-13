@@ -9,20 +9,18 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>E-SEED3.W5 · Setup on a new clone — plan</h1>
-      <div class="meta">T3 · WU plan · 2026-11-13 · Keel · branch <code>wu/E-SEED3/w5-clone-setup</code> off <code>epic/E-SEED3</code> <code>3260330</code> · epic <a href="2026-11-13-e-seed3-epic-plan.html#w5">E-SEED3 plan</a>, block W5, open points 5 and 6 (owner go 2026-11-13, defaults) · the epic plan asks for no owner go per WU plan</div>
+      <div class="meta">T3 · WU plan · 2026-11-13 · Keel · branch <code>wu/E-SEED3/w5-clone-setup</code> off <code>epic/E-SEED3</code> <code>3260330</code> · epic <a href="2026-11-13-e-seed3-epic-plan.html#w5">E-SEED3 plan</a>, block W5, open points 5 and 6 (owner go 2026-11-13, defaults) · B6 deferred by owner ruling D, 2026-11-13 (backlog B24) · the epic plan asks for no owner go per WU plan</div>
     </div>
   </header>
   <main>
 
 <h2 id="problem">The problem</h2>
-<p data-c="problem">Setup leaves three gaps on a fresh clone. The evidence is not fetched: you fetch it by hand. A skill file you never edited still asks before each upgrade. And another program named keel on the path breaks the hooks with no clear message.</p>
+<p data-c="problem">Setup leaves gaps on a fresh clone. A skill file you never edited still asks before each upgrade. Another program named keel on the path breaks the hooks with no clear message. Fetching evidence is the third gap; it is deferred by the owner (part 1 of the work).</p>
 
 <h2 id="for-the-owner">What changes for you</h2>
 <table data-item="owner-changes" data-c="owner-changes">
   <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
   <tbody>
-    <tr><td>You set up a clone and fetch</td><td>Evidence stays on the remote</td><td>A plain fetch brings it</td></tr>
-    <tr><td>Your evidence and the remote's diverged</td><td>—</td><td>The fetch fails loudly; nothing local is overwritten; setup printed the fix</td></tr>
     <tr><td>You upgrade skills you never edited</td><td>Asked for each file</td><td>Upgraded without asking</td></tr>
     <tr><td>You upgrade a skill you edited</td><td>Asked</td><td>Asked, as today</td></tr>
     <tr><td>Another program named keel comes first on the path</td><td>Confusing errors</td><td>Setup warns; each git hook refuses and names the clash</td></tr>
@@ -39,20 +37,15 @@
   </tbody>
 </table>
 
-<p data-item="requirement" data-c="requirement">On a clone with a remote named origin, setup makes a plain fetch bring the evidence, once and never forced. It upgrades without asking each skill file still exactly as setup last wrote it, and asks for every other changed one. When the keel on the path is another program, setup warns and each git hook refuses, naming the clash.</p>
+<p data-item="requirement" data-c="requirement">Setup upgrades without asking each skill file still exactly as setup last wrote it, and asks for every other changed one. When the keel on the path is another program, setup warns and each git hook refuses, naming the clash.</p>
 
 <h2 id="maps-to">Maps to</h2>
-<p data-item="maps-to" data-c="maps-to">Epic E-SEED3, summary block W5 (<a href="2026-11-13-e-seed3-epic-plan.html#w5">epic plan</a>) · backlog B6, B7's skills-lock row and foreign-keel row · UC-INIT-1 amended · DEC-3 and DEC-19 amended, at the epic close.</p>
+<p data-item="maps-to" data-c="maps-to">Epic E-SEED3, summary block W5 (<a href="2026-11-13-e-seed3-epic-plan.html#w5">epic plan</a>) · backlog B7's skills-lock row and foreign-keel row · UC-INIT-1 amended · DEC-3 amended, at the epic close. B6 left this WU (owner ruling D): DEC-19 stays push-only.</p>
 
 <h2 id="work">The work</h2>
 
-<h3>1 · Notes fetch (B6)</h3>
-<p><b>In short:</b> init adds <code>refs/notes/*:refs/notes/*</code> to <code>remote.origin.fetch</code>, with no <code>+</code>, so a fetch never overwrites local evidence.</p>
-<ul>
-  <li>Added once: present already (with or without <code>+</code>) prints <code>unchanged</code>. No remote origin: init says it skipped, and to re-run after adding one.</li>
-  <li>When it adds the refspec, init prints what a rejected note fetch means and the fix line: fetch origin's note ref into <code>refs/keel-remote-notes/&lt;kind&gt;</code>, then <code>git notes --ref=&lt;kind&gt; merge</code> it. The temporary ref sits outside <code>refs/notes/</code>, so the pre-push sync never pushes it.</li>
-  <li>The refspec is git config, not a tree change: the self-hosting "init is a no-op" test accepts that one line.</li>
-</ul>
+<h3>1 · Notes fetch (B6): deferred</h3>
+<p><b>In short:</b> a fetch without force is rejected whenever a local note ref is ahead of origin's, not only when it diverged. So every fetch would fail between writing a note and the next push. The owner ruled D on 2026-11-13: B6 leaves this WU. Backlog B24 holds the finding, options A–C and the verified fix line. DEC-19 stays push-only, and the epic test's "a fresh clone fetches the evidence" step changes; both are recorded in the result for the epic close.</p>
 
 <h3>2 · Skills lock (B7)</h3>
 <p><b>In short:</b> <code>.keel/skills.lock</code> holds a SHA-256 per shipped skill file, in <code>shasum -a 256</code> form. A differing file whose hash equals its entry was written by Keel and never edited: it is upgraded without asking. Anything else asks as today.</p>
@@ -70,20 +63,19 @@
   <li>The four git hook shims gain one line after the not-on-PATH guard: run <code>keel --version</code>, refuse with the clash and the install page when the line is missing.</li>
   <li>The two harness hooks treat a foreign keel like a missing one and exit 0: they are not gates, and a refusing turn-end hook would block every turn for a machine problem.</li>
   <li><code>src/main.rs</code> is touched for the shims only (W3 and W4 also edit hooks there).</li>
-  <li><code>docs/install.html</code> (rule-bearing) updated: the clash is now detected, upgrades ask only for edited files, and a new clone runs <code>keel init</code> to get the notes fetch. Staged for the owner's <code>keel mr commit</code>.</li>
+  <li><code>docs/install.html</code> (rule-bearing) updated: the clash is now detected and upgrades ask only for edited files. Landed by the owner's <code>keel mr commit</code>.</li>
 </ul>
 
 <h2 id="expected">Expected</h2>
-<p data-item="expected" data-c="expected">After init on a clone, <code>git fetch</code> brings origin's notes; a second init adds nothing; a diverged note ref makes the fetch fail with local notes kept, and init's fix line resolves it. An unedited skill file from an older build upgrades with no prompt; an edited one prompts. A fake keel first on PATH makes init warn and <code>git commit</code> refuse, naming the clash.</p>
+<p data-item="expected" data-c="expected">An unedited skill file from an older build upgrades with no prompt; an edited one prompts. A fake keel first on PATH makes init warn and <code>git commit</code> refuse, naming the clash.</p>
 
 <h2 id="open">Open points</h2>
 <table data-c="open-points">
   <thead><tr><th>#</th><th>Question</th><th>Answer (default; work proceeds on it)</th><th>Why</th></tr></thead>
   <tbody>
-    <tr><td>1</td><td>Where does the fix line for a diverged note ref show?</td><td><b>In init's output when it adds the refspec, and on the install page.</b> The failing fetch is git's own, loud rejection</td><td>Keel does not run during a fetch, so it cannot add a line there</td></tr>
+    <tr><td>1</td><td>How is B6 handled?</td><td><b>Deferred</b> (owner ruling D, 2026-11-13) to backlog B24</td><td>Without force, every fetch fails while notes are unpushed; with force, unpushed notes are lost</td></tr>
     <tr><td>2</td><td>Should init write a lock when none exists and every skill matches?</td><td><b>No</b>, only when it writes a skill or the lock exists</td><td>Otherwise Keel's own tree needs a hand-kept lock, and every WU editing a skill must update it</td></tr>
     <tr><td>3</td><td>Do the harness hooks refuse a foreign keel too?</td><td><b>No</b>, they exit 0 as with no keel</td><td>They gate nothing; a refusing turn-end hook blocks every turn</td></tr>
-    <tr><td>4</td><td>Does <code>keel hooks install</code> add the notes fetch too?</td><td><b>No</b>, init only (the owner's B6 wording); the install page says a new clone runs init</td><td>Keeps the change in one place</td></tr>
   </tbody>
 </table>
 
@@ -92,9 +84,6 @@
 <div data-item="test-plan" data-c="test-plan">
 <p><b>Integration</b> (<code>tests/init.rs</code>, through the built <code>keel init</code> in scratch repos with a bare local remote, no network):</p>
 <ul>
-  <li>a clone set up by init fetches origin's notes with a plain <code>git fetch</code>; a second init prints unchanged and leaves one notes refspec;</li>
-  <li>a diverged note ref fails the fetch, the local note is kept, and the fix line init printed makes the next fetch pass;</li>
-  <li>no remote origin: init says it skipped the notes fetch;</li>
   <li>an unedited skill file from an older build upgrades with no prompt, an edited one prompts and is kept, and the lock records what was written;</li>
   <li>no lock is written while every skill matches and none exists;</li>
   <li>a fake keel first on PATH: init warns, and <code>git commit</code> through the installed hook is refused naming the clash; with Keel first, the commit passes;</li>
@@ -104,7 +93,7 @@
 <p>Red first: the integration tests are run red against today's code before the code lands.</p>
 </div>
 <h3>Scope</h3>
-<p>Out: Codex hooks, fetch setup for remotes other than origin, a Keel check that detects diverged notes on its own.</p>
+<p>Out: Codex hooks; the notes fetch (B6, deferred to B24).</p>
 
   </main>
 </body>
