@@ -808,6 +808,69 @@ pub(crate) fn store<T: Serialize>(repo: &Path, kind: &str, tip: &str, note: &T) 
     Ok(())
 }
 
+/// One note's move in `store_all`'s transaction: its real ref, the commit it moves to, the commit it
+/// was read at (`None`: absent), and the pending ref that carried the write.
+struct Move {
+    real: String,
+    new: String,
+    old: Option<String>,
+    pending: String,
+}
+
+/// `git update-ref --stdin`'s input for `moves`: one transaction that moves each real ref only from
+/// the value it was read at (created only if still absent) and deletes each pending ref.
+fn transaction(moves: &[Move]) -> String {
+    let mut t = String::from("start\n");
+    for m in moves {
+        match &m.old {
+            Some(old) => t.push_str(&format!("update {} {} {old}\n", m.real, m.new)),
+            None => t.push_str(&format!("create {} {}\n", m.real, m.new)),
+        }
+        t.push_str(&format!("delete {} {}\n", m.pending, m.new));
+    }
+    t.push_str("commit\n");
+    t
+}
+
+/// Several notes stored all or none (B17: the owner's waiver never lands without the sign-off).
+/// Each `(kind, tip, note)` is written by `git notes` to a pending ref that starts at its kind's
+/// current commit - git refuses notes refs outside `refs/notes/` - then one ref transaction moves
+/// every real ref and deletes the pending refs. On any failure the pending refs are deleted and no
+/// real ref has moved. Kinds are distinct.
+pub(crate) fn store_all(repo: &Path, notes: &[(&str, &str, String)]) -> Result<(), String> {
+    let mut moves = vec![];
+    let result = (|| {
+        for (kind, tip, json) in notes {
+            let real = format!("refs/notes/{kind}");
+            let pending = format!("refs/notes/keel-pending-{kind}-{}", std::process::id());
+            let old = git(repo, &["rev-parse", "--verify", "-q", &real], &[]).ok();
+            moves.push(Move { real, new: String::new(), old: old.clone(), pending: pending.clone() });
+            match &old {
+                Some(old) => git(repo, &["update-ref", &pending, old], &[])?,
+                None => git(repo, &["update-ref", "-d", &pending], &[])?,
+            };
+            git(repo, &["notes", &format!("--ref={pending}"), "add", "-f", "-m", json, tip], &[])?;
+            let new = git(repo, &["rev-parse", "--verify", "-q", &pending], &[])?;
+            if let Some(m) = moves.last_mut() {
+                m.new = new;
+            }
+        }
+        let input = transaction(&moves);
+        let args = ["update-ref", "--stdin"];
+        ok_text(&args, git_raw(repo, &args, Some(input.as_bytes()))?).map(|_| ())
+    })();
+    if result.is_err() {
+        for m in &moves {
+            let _ = git(repo, &["update-ref", "-d", &m.pending], &[]);
+        }
+    }
+    result?;
+    for (kind, tip, _) in notes {
+        println!("wrote refs/notes/{kind} on {}", tip.get(..8).unwrap_or(tip));
+    }
+    Ok(())
+}
+
 pub(crate) fn hash_blob(repo: &Path, data: &str) -> Result<String, String> {
     let args = ["hash-object", "--stdin"];
     let id = ok_text(&args, git_raw(repo, &args, Some(data.as_bytes()))?)?;
@@ -1292,6 +1355,22 @@ mod tests {
         let mut pass = base.clone();
         pass["verdict"] = "PASS".into();
         assert_eq!(serde_json::from_value::<CrNote>(pass).unwrap().waiver_hash(), None);
+    }
+
+    /// B17: one transaction moves every real ref only from the value it was read at, creates an
+    /// absent one only if still absent, and deletes every pending ref.
+    #[test]
+    fn the_notes_transaction_moves_each_ref_from_its_read_value_and_drops_the_pending_refs() {
+        let m = |real: &str, new: &str, old: Option<&str>| super::Move {
+            real: real.into(),
+            new: new.into(),
+            old: old.map(String::from),
+            pending: format!("{real}-pending"),
+        };
+        assert_eq!(
+            super::transaction(&[m("refs/notes/cr", "c2", Some("c1")), m("refs/notes/mr", "m1", None)]),
+            "start\nupdate refs/notes/cr c2 c1\ndelete refs/notes/cr-pending c2\ncreate refs/notes/mr m1\ndelete refs/notes/mr-pending m1\ncommit\n"
+        );
     }
 
     #[test]

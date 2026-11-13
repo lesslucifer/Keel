@@ -803,6 +803,28 @@ fn the_owner_waives_an_unreviewed_tip_at_sign_off_and_the_gate_reads_it_as_a_wai
     assert!(t.contains("WAIVED 7·walk") && t.contains(RULING) && t.contains(&format!("WAIVED 3·review: {close}")), "{t}");
 }
 
+/// B17: the owner's waiver and the sign-off land in one ref transaction - when the sign-off's ref
+/// cannot be written, neither note lands and no pending ref is left behind.
+#[test]
+fn a_sign_off_whose_note_write_fails_leaves_neither_note() {
+    let d = fixture();
+    let p = d.path();
+    bless_unreviewed(p, WU_TESTS);
+    let lock = p.join(git(p, &["rev-parse", "--git-path", "refs/notes/mr.lock"]));
+    std::fs::create_dir_all(lock.parent().unwrap()).unwrap();
+    std::fs::write(&lock, "").unwrap();
+    let o = waive_at_sign_off(p, "wu", "docs/a.html", RULING);
+    assert!(!o.status.success(), "{}", text(&o));
+    assert!(!has_note(p, "cr", "HEAD") && !has_note(p, "mr", "HEAD"), "a waiver without its sign-off landed: {}", text(&o));
+    let refs = git(p, &["for-each-ref", "--format=%(refname)", "refs/notes/"]);
+    assert!(!refs.contains("pending") && !refs.contains("refs/notes/cr"), "no pending ref and no cr ref left: {refs}");
+    std::fs::remove_file(&lock).unwrap();
+    let o = waive_at_sign_off(p, "wu", "docs/a.html", RULING);
+    assert!(o.status.success() && has_note(p, "cr", "HEAD") && has_note(p, "mr", "HEAD"), "{}", text(&o));
+    assert!(!git(p, &["for-each-ref", "--format=%(refname)", "refs/notes/"]).contains("pending"));
+    assert!(keel(p, &["verify-dod", "wu", "wu/e/a"]).status.success());
+}
+
 #[test]
 fn an_owner_waiver_replaces_a_failed_round_carrying_its_findings_and_never_a_pass() {
     let d = fixture();

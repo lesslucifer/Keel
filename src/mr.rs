@@ -664,9 +664,6 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     } else {
         None
     };
-    if let Some(cr) = &owner_cr {
-        notes::store(repo, "cr", &tip, cr)?;
-    }
     let note = MrNote {
         schema: "mr/v1".into(),
         id: notes::identity(repo, tip.clone(), base, branch)?,
@@ -679,7 +676,13 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         change_hash: change,
         sig,
     };
-    notes::store(repo, "mr", &tip, &note)?;
+    // The owner's waiver and the sign-off land together or not at all (B17).
+    let mut writes = vec![];
+    if let Some(cr) = &owner_cr {
+        writes.push(("cr", tip.as_str(), serde_json::to_string(cr).map_err(|e| e.to_string())?));
+    }
+    writes.push(("mr", tip.as_str(), serde_json::to_string(&note).map_err(|e| e.to_string())?));
+    notes::store_all(repo, &writes)?;
     let accepted = if waiver.is_some() { " and accepts the review waiver" } else { "" };
     println!("mr/v1 on {} - {tier} {id} attests {what}{accepted}", short(&tip));
     Ok(0)
