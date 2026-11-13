@@ -27,11 +27,13 @@
   <tbody>
     <tr><td>1 (router)</td><td>1 important, a few nits, 1 refuted</td><td>All, in <code>efdf406</code> and the skill text</td></tr>
     <tr><td>2 (router)</td><td>Pass, 5 nits</td><td>All, in <code>c52f719</code> and the skill text, without a new round</td></tr>
+    <tr><td>Code review 1</td><td>Fail: 4 blockers, 4 importants, 4 nits</td><td>All, in <code>bab9539</code> (tests, red) and <code>419335b</code> (fix)</td></tr>
   </tbody>
 </table>
 <ol data-c="round-notes">
   <li>Round 1: a WU plan that tagged its "what changes for you" table was refused as a typo. Any governed doc may now carry the tag; only an epic plan must.</li>
   <li>Round 2: the skills' wording names all checks; this plan quotes the real error; a misspelled <code>owner-changes</code> is named in the hint; an edge label with no spaces (<code>A--yes--&gt;B</code>, valid in Mermaid 11) is now checked too.</li>
+  <li>Code review 1: the label check read one line at a time and ended a label at the first closing bracket, so valid diagrams were refused and a bad fix was suggested. It now reads each diagram as one stream: quotes run across lines, a label ends at its matching bracket, <code>accDescr</code> blocks are skipped and <code>flowchart-elk</code> is checked. The page reader now skips comments and <code>&gt;</code> inside attribute values, ends a diagram at its own closing tag and decodes all numeric entities and the common named ones, so a dash or arrow is never a word. The typo hint names each item once. Each finding has a test that failed first.</li>
 </ol>
 
 <h2 id="deviations-h">Deviations</h2>
@@ -43,9 +45,9 @@
 
 <h3 id="evidence-h">Evidence</h3>
 <ul data-item="evidence" data-c="evidence">
-  <li>Commits: <code>9e28ac7</code> plan, <code>93d4268</code> tests and code, <code>efdf406</code> round 1, <code>c52f719</code> round 2, <code>ac3161c</code> your <code>keel mr commit</code> (skill text and mirror), and this report.</li>
-  <li>The two round-2 tests failed before their code change and pass with it.</li>
-  <li><code>keel check</code> at <code>ac3161c</code>: lint clean. All tests pass except one router test that fails only in the sandbox (backlog R43). <code>keel check</code> stops at that test binary; <code>cargo test --no-fail-fast</code> shows <code>tests/verify_doc.rs</code> 11/11 and <code>tests/verify_dod.rs</code> 17/17 pass too. <code>tests/init.rs</code> is 12/12 now that the mirror is in.</li>
+  <li>Commits: <code>9e28ac7</code> plan, <code>93d4268</code> tests and code, <code>efdf406</code> round 1, <code>c52f719</code> round 2, <code>ac3161c</code> your <code>keel mr commit</code> (skill text and mirror), <code>245a6b6</code> this report, <code>bab9539</code> and <code>419335b</code> code review 1.</li>
+  <li>The two round-2 tests and the ten code-review tests failed before their code change and pass with it.</li>
+  <li><code>keel check</code> at <code>419335b</code>: lint clean. All tests pass except one router test that fails only in the sandbox (backlog R43). <code>keel check</code> stops at that test binary; run on their own, <code>tests/verify_doc.rs</code> (14/14) and <code>tests/verify_dod.rs</code> (17/17) pass too.</li>
   <li><code>keel verify-doc</code> is green over <code>docs/</code>.</li>
 </ul>
 
