@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>Backlog: E-ROUTER v2</h1>
       <p>Router work deferred at E-ROUTER's close: open launcher issues, gate coverage of the router's security files, the epic e2e, and the accepted worker risk.</p>
-      <div class="meta">T2 · backlog · living · 2026-11-08 · Keel · R1 – R45 · distilled from E-ROUTER (plan, worker-ops open issues, close review), E-ROUTERFIX (WU results, close), E-SEED2 (W7, W12, the dropped W9, the close reprioritization), E-ROUTER3 (WU results, close), E-WMODE (W1 result, close), E-CRCAP (close) and the owner rulings of 2026-11-09 to 2026-11-12</div>
+      <div class="meta">T2 · backlog · living · 2026-11-08 · Keel · R1 – R46 · distilled from E-ROUTER (plan, worker-ops open issues, close review), E-ROUTERFIX (WU results, close), E-SEED2 (W7, W12, the dropped W9, the close reprioritization), E-ROUTER3 (WU results, close), E-WMODE (W1 result, close), E-CRCAP (close), E-DOCSTYLE (close) and the owner rulings of 2026-11-09 to 2026-11-12</div>
     </div>
   </header>
   <main>
@@ -184,6 +184,9 @@
       <tr id="r44-row"><td>R44</td><td><b><code>ListAgents</code> once omitted an idle worker.</b> The router could not see a worker that was alive and waiting for a follow-up, so it could not address it by name. Not reproduced; cause unknown (harness listing or the worker's state). Fix direction: the router cross-checks the launcher's own worker list before it treats a worker as gone. Source: router keel-77, E-CRCAP</td></tr>
       <tr id="r45-row"><td>R45</td><td><b>The watchdog once labelled an idle worker STUCK.</b> A worker that had sent its report and was waiting, as the brief tells it to, read as stuck. Fix direction: the watchdog tells "reported and idle" from "no progress", for example from the worker's last SendMessage. Source: router keel-77, E-CRCAP</td></tr>
     </table>
+
+    <h2 id="r46">R46 · The router skill and briefs follow the writing skill <span class="badge approval">open</span></h2>
+    <p data-c="r46">The router's skill and the briefs it writes are long and dense, like plans were before <code>keel-write</code>. Apply the writing skill to them: briefs short, problem first, details last. Deferred because E-CRCAP was editing the router skill (E-DOCSTYLE epic open point 8); E-CRCAP has closed. Source: E-DOCSTYLE close.</p>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
 </body>

@@ -12,9 +12,8 @@ archived like any T3 doc.
 
 The checklist constrains **substance** (items that must exist), never **form**:
 a plan may be prose, tables, diagrams or widgets, shaped to its task. There is
-no template to copy-paste on purpose. Worked examples: Keel's own E-SEED epic
-plan and its WU plans (`docs/work/2026-11-07-*-plan.html` in the Keel repo) are
-exactly this format.
+no template to copy-paste on purpose. Worked example: skill `keel-write`'s
+`references/example.html`, a ready epic plan in this format.
 
 ## 1 · The four outputs
 
@@ -30,6 +29,9 @@ exactly this format.
 (`data-artifact="epic-result wu-result"`); the doc must satisfy the union of
 both checklists, and a tag both share is satisfied once.
 
+Write every one by skill `keel-write`: short, plain words, the problem first,
+details last.
+
 ## 2 · The markup contract
 
 Tagging is strict by design — **the tag is the contract**. Content under a
@@ -38,8 +40,8 @@ whatever element holds it, in any order.
 
 | Attribute | Where | Meaning |
 |---|---|---|
-| `data-artifact` | once, on `<html>` | what the doc is (values above, space-separated when combined). No `data-artifact` = ungoverned: no checklist, links still checked |
-| `data-status` | on `<html>`, next to `data-artifact` | `draft` while authoring — every check silent, links included. `ready` = verified on every write. Always set it: with no `data-status` the checklist is never run (only links are). Flipping back to draft to silence a red doc is visible to every reviewer |
+| `data-artifact` | once, on `<html>` | what the doc is (values above, space-separated when combined). No `data-artifact` = ungoverned: no checklist, links and diagram labels still checked |
+| `data-status` | on `<html>`, next to `data-artifact` | `draft` while authoring — every check silent, links included. `ready` = verified on every write. Always set it: with no `data-status` the checklist is never run (only links and diagram labels are). Flipping back to draft to silence a red doc is visible to every reviewer |
 | `data-item` | the element holding a checklist item | exactly one tag from the tables below, with non-empty text inside |
 | `data-wu` | epic plan only, inside `wu-summaries` | one block per WU, value = its id (`E-CAP.W2`), each holding the four `wu-*` sub-items |
 | `data-c` | any block | htmldoc's comment anchor (stable id); not checked by Keel |
@@ -53,9 +55,11 @@ whatever element holds it, in any order.
 ## 3 · The checklists
 
 **Epic plan** — `intent` (one requirement paragraph: what user-visible change,
-and why now) · `use-cases` (the `UC-*` contracts delivered or changed; a
-process epic touching none says so) · `expected` (observable acceptance a
-reader who wasn't there can check) · `non-goals` · `wu-summaries` (one
+and why now) · `owner-changes` (what changes for the owner: today and after,
+skill `keel-write`'s order item 2; any other plan or result may tag its
+today/after table the same way, optional there) · `use-cases` (the `UC-*`
+contracts delivered or changed; a process epic touching none says so) ·
+`expected` (observable acceptance a reader who wasn't there can check) · `non-goals` · `wu-summaries` (one
 `data-wu` block per WU with `wu-summary`, `wu-maps-to`, `wu-expected`,
 `wu-deps` — "none" when none) · `e2e-plan` (the flow(s) proving the epic; a
 waiver intent stated here) · `distillation-plan` (which T2/T1 docs absorb the
@@ -79,14 +83,16 @@ the report is committed, so its verdict and nits live on the cr note, not here) 
 distillation plan; plans and reports archived) · `follow-ups`.
 
 Beyond the checklist, a plan carries whatever the task needs. The convention in
-Keel's own plans: an **open-points table** (`#` · point · what was decided
-here), so the owner can review asynchronously through htmldoc comments while
-work proceeds on the stated defaults.
+Keel's own plans: an **open-points table** (`#` · question · answer · why), so
+the owner can review asynchronously through htmldoc comments while work
+proceeds on the stated defaults. The order of the sections is skill
+`keel-write`'s: problem, what changes for the reader, a real case in steps,
+terms, the work, open points, details last.
 
 ## 4 · The verification loop — `keel verify-doc`
 
 ```
-keel verify-doc <path> [<path>…]   # exit 0 green / draft / ungoverned · exit 1 red
+keel verify-doc <path> [<path>…]   # exit 0 green / draft / ungoverned with clean links and labels · exit 1 red
 keel verify-doc                    # every .html under docs.root (tracked or untracked)
 ```
 
@@ -94,10 +100,22 @@ It checks exactly this, nothing cleverer: every checklist item present with
 non-empty content; an epic plan has ≥ 1 `data-wu` block, each with its four
 sub-items filled; **no unknown tags** (the typo guard reports
 `unknown tag data-item="expcted"` next to `missing item "expected"`); an
-unknown `data-artifact` is red; and, on every non-draft doc, governed or not,
-**every relative `href` resolves** (absolute URLs, `mailto:`, root-relative
-paths and fragments are not checked). A target that was archived is cited as
-plain text marked archived, never linked into `docs/.archive/`.
+unknown `data-artifact` is red; an epic plan's **top** (its `<main>` content,
+else its `<body>`, above the first `data-wu` block) holds **at most 300
+words** (counted as a reader sees them: a word has a letter or digit, inline
+tags like `<code>` join the text around them, block tags separate it; the
+diagram source counts, ids included); and, on every non-draft doc, governed or not, **every relative
+`href` resolves** (absolute URLs, `mailto:`, root-relative paths and fragments
+are not checked) and **every Mermaid flowchart node and edge label is in
+double quotes** (node shapes like `A["…"]`, `Q{"…"}`, and edge labels
+`-->|"…"|`, `-- "…" -->`, spaced or not). The label check is a **best-effort
+lint** for htmldoc output: refusing a valid diagram, or a fix hint that
+changes the diagram, is a bug; a missed label is a known limit. Known misses:
+a bracketless subgraph title, `N@{ … }` shapes, other diagram kinds, a `>…]`
+shape after an id ending in a non-ASCII or punctuation character, and a
+statement after a `;` on a `classDef`, `style`, `linkStyle`, `direction` or
+`accTitle` line. A target that was archived is cited as plain text marked
+archived, never linked into `docs/.archive/`.
 
 The trigger is the harness, not the agent and not git: the
 `verify-doc-post` hook runs it on every written `.html` (red ⇒ problems fed
@@ -118,7 +136,9 @@ these docs.
 1. Decide the tier first — a plan or result is T3, so `docs/work/`.
 2. Create it per the htmldoc skill (mint the id, skeleton, snapshot), with
    `data-artifact` and `data-status="draft"`.
-3. Write the content, tagging each checklist item as you go.
-4. Flip `data-status="ready"`; fix whatever `keel verify-doc` reports.
+3. Write the content by skill `keel-write`, tagging each checklist item as you
+   go.
+4. Run that skill's self-check. Flip `data-status="ready"`; fix whatever
+   `keel verify-doc` reports.
 5. Commit it on the work branch: a WU plan before the WU's code, a WU result
    before its notes (it is part of the diff the notes and the signature bind).

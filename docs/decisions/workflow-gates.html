@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>Decisions: workflow gates</h1>
       <p>Why the notes, the merge gate, the human sign-off, the code review contract and the doc tiers are the way they are. Check here before "fixing" anything that looks deliberate.</p>
-      <div class="meta">T2 · decisions · append-only · 2026-11-08 · Keel · DEC-13 – DEC-29, DEC-40, DEC-41, DEC-47, DEC-49 – DEC-51 · distilled from E-SEED (W2–W8 open points, rulings R2–R24), later epics as each record says</div>
+      <div class="meta">T2 · decisions · append-only · 2026-11-08 · Keel · DEC-13 – DEC-29, DEC-40, DEC-41, DEC-47, DEC-49 – DEC-52 · distilled from E-SEED (W2–W8 open points, rulings R2–R24), later epics as each record says</div>
     </div>
   </header>
   <main>
@@ -199,6 +199,15 @@
       <tr><th>Context</th><td>Finishing a conflicted merge with <code>git commit</code> never runs pre-merge-commit. On main pre-commit refuses it; into an epic it lands ungated until the epic walk re-checks the seam.</td></tr>
       <tr><th>Choice</th><td>The workflow skill says: resolve conflicts by merging the target into the work branch first, so the gated merge is clean. Porting Trawler's MERGE_HEAD branch in pre-commit is a possible follow-up (<a href="../backlog/e-seed-v2.html#b7">backlog B7</a>).</td></tr>
       <tr><th>Lineage</th><td>W6 open point 10.</td></tr>
+    </table>
+
+    <h3 id="dec-52">DEC-52 · Docs are written by a shipped writing skill; the tool checks only what it can count</h3>
+    <table data-c="dec-52">
+      <tr><th>Context</th><td>Agents wrote long, dense plans: the first E-CRCAP epic plan had 1,575 words and 48 code snippets above its work. The owner asked for docs that are "short, direct and easy to understand".</td></tr>
+      <tr><th>Choice</th><td>A shipped skill, <code>keel-write</code>, holds nine writing rules, each with a before/after, a self-check and one short ready epic plan as its example. <code>keel init</code> installs it; keel-plan, keel-distill, <code>AGENTS.md</code> and its template point to it. It covers every doc a person reads, not skill files or messages between agents. Existing docs are rewritten only when edited. <code>keel verify-doc</code> checks three things a tool can judge: an epic plan carries <code>owner-changes</code> (optional in other governed docs); an epic plan's top holds at most 300 words, counted as a reader sees them, except that the diagram source counts, ids included; every Mermaid flowchart label in a non-draft doc is in quotes. The label check is a best-effort lint for htmldoc output (owner ruling 2026-11-13): refusing a valid diagram, or a fix that changes it, is a bug; a missed label is a known limit, listed in keel-plan §4 (<a href="../backlog/e-seed-v2.html#b21">backlog B21</a>).</td></tr>
+      <tr><th>Rejected</th><td>Rules as a keel-plan section (misses other docs) or in <code>AGENTS.md</code> alone (no room for examples). A length cap on every doc (other docs get the rule as text only, epic open point 3). A label check that must catch every label (the owner ruled best effort). Rewriting existing docs now (changes no behaviour).</td></tr>
+      <tr><th>Consequences</th><td>Style beyond the three checks is judged only by the owner's comments and reviews. A ready epic plan over the cap turns the agent's turn red until cut. Router skill and briefs are not yet covered (<a href="../backlog/e-router-v2.html#r46">backlog R46</a>).</td></tr>
+      <tr><th>Lineage</th><td>Owner requirement and comments 2026-11-12; E-DOCSTYLE epic plan open points 1–8; W1 plan questions 1–5; W2 plan questions 1–7 (7: the owner's best-effort ruling, 2026-11-13); W2 code review rounds 1–3.</td></tr>
     </table>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>

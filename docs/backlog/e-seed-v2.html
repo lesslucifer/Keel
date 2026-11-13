@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>Backlog: E-SEED v2</h1>
       <p>Work deferred when E-SEED closed with W1–W8 (W7 v2 last). E-SEED2 absorbed B1 and B2 and closed on 2026-11-10; every other row is re-pointed to a proposed later epic.</p>
-      <div class="meta">T2 · backlog · living (strike a row when an epic absorbs it) · 2026-11-08 · Keel · B1 – B20 · re-pointed at the E-SEED2 close (owner rulings 2026-11-10); B8 and B12 done and B15 – B20 added at the E-CRCAP close (2026-11-13)</div>
+      <div class="meta">T2 · backlog · living (strike a row when an epic absorbs it) · 2026-11-08 · Keel · B1 – B22 · re-pointed at the E-SEED2 close (owner rulings 2026-11-10); B8 and B12 done and B15 – B20 added at the E-CRCAP close (2026-11-13); B21, B22 added at the E-DOCSTYLE close</div>
     </div>
   </header>
   <main>
@@ -23,9 +23,9 @@
       <tr><td>E-SEED3</td><td>B6 → B7 skills.lock, foreign-<code>keel</code> warning, pre-commit <code>keel lint</code>, pre-commit MERGE_HEAD gate → B9, B10 → two Keel product rows of e-router-v2 R7 (bare-SHA target inference, <code>cargo fmt</code> drift) → B4 last</td></tr>
       <tr><td>E-RELEASE</td><td>What B1 left before a real release: the owner prerequisites, the owner's <code>dist plan</code> / <code>dist generate</code> check, a prerelease-tag run, the first stable tag, the accepted-risk revisits of <a href="../decisions/distribution.html#dec-38">DEC-38</a>, and the fixed <code>keel</code> on <code>PATH</code> (<a href="../decisions/workflow-gates.html#dec-41">DEC-41</a> consequence)</td></tr>
       <tr><td>E-LINEAGE</td><td>B5</td></tr>
-      <tr><td>E-GATEFIX</td><td>B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14; B16, B17, B20</td></tr>
+      <tr><td>E-GATEFIX</td><td>B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14; B16, B17, B20, B22</td></tr>
       <tr><td>E-MULTILANG</td><td>B3: the Python e2e first, then other languages</td></tr>
-      <tr><td>stays in the backlog</td><td>B15 and B18 (owner questions); B19 (owed by the owner's reinstall); B2's unbuilt follow-ups; B7 Codex rows (all non-Claude work), native SSH signing, <code>Cargo.lock</code> currency</td></tr>
+      <tr><td>stays in the backlog</td><td>B15 and B18 (owner questions); B21 (accepted limits); B19 (owed by the owner's reinstall); B2's unbuilt follow-ups; B7 Codex rows (all non-Claude work), native SSH signing, <code>Cargo.lock</code> currency</td></tr>
     </table>
 
     <h2 id="b1"><s>B1 · E-SEED.W10 release pipeline (parked branch)</s> · done</h2>
@@ -140,6 +140,20 @@
 
     <h2 id="b19">B19 · The live check of the review schedule <span class="badge approval">owed after the owner reinstalls keel from main</span></h2>
     <p data-c="b19">E-CRCAP's own reviews ran on the installed keel, with the schedule applied by hand (epic open point 11); no fix-PASS or WAIVED note was written on its commits. After E-CRCAP merges and the owner reinstalls keel from main, the first real review checks it: <code>keel preflight</code> prints <code>review round n of 5</code> with its scope; a fix-PASS is written and the gate accepts it; the writer stores <code>--findings</code>, <code>--refuted</code>, <code>--nits</code>, <code>--fleet</code>; the first real round 2 exercises the earlier-notes reader end to end (E-CRCAP.W3's smoke check ran the jq filters only); <code>keel mr confirm</code> shows the history rows. Source: E-CRCAP epic plan open point 11; W2 and W3 results.</p>
+
+    <h2 id="b21">B21 · Diagram labels the quote check misses <span class="badge approval">accepted limits (owner ruling 2026-11-13)</span></h2>
+    <p data-c="b21">The label check (UC-DOC-4) is a best-effort lint; these unquoted labels pass unseen. Fix one only if real docs hit it.</p>
+    <ul data-c="b21-list">
+      <li>A <code>&gt;…]</code> shape after an id that ends in a non-ASCII or punctuation character.</li>
+      <li>A statement after a <code>;</code> on a <code>classDef</code>, <code>style</code>, <code>linkStyle</code>, <code>direction</code> or <code>accTitle</code> line.</li>
+      <li>A subgraph title without brackets.</li>
+      <li><code>N@{ … }</code> shapes.</li>
+      <li>Diagram kinds other than flowcharts.</li>
+    </ul>
+    <p data-c="b21-src">Source: E-DOCSTYLE.W2 code review round 2 and the owner's ruling; listed in keel-plan §4.</p>
+
+    <h2 id="b22">B22 · A directive test cannot fail on a missed label <span class="badge id">proposed: E-GATEFIX</span></h2>
+    <p data-c="b22">The first assertion of each <code>%%{…}%%</code> directive test checks that a quoted diagram is green. A change that stops finding labels after a directive still passes it. Add an unquoted label after each directive and assert it is named. Where: <code>tests/verify_doc.rs</code> <code>a_quoted_diagram_with_a_directive_is_green</code>, <code>src/verify_doc.rs</code> <code>a_directive_is_skipped_whole_multi_line_or_inline</code>. Source: E-DOCSTYLE.W2 code review round 3 (PASS; nit waived).</p>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
 </body>

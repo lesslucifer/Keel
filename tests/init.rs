@@ -203,6 +203,33 @@ fn embedding_is_complete_and_prefixed() {
     }
 }
 
+/// E-DOCSTYLE.W1: `keel init` ships the writing skill and its example; the example is a ready epic
+/// plan the doc check passes; every place that tells an agent how to write a doc points to it.
+#[test]
+fn writing_skill_ships_with_a_passing_example_and_is_pointed_to() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let d = fresh_repo();
+    let p = d.path();
+    assert!(keel(p, &["init"]).status.success());
+    let skill = std::fs::read_to_string(p.join(".claude/skills/keel-write/SKILL.md")).expect("keel init did not install keel-write");
+    assert!(skill.contains("references/example.html"), "SKILL.md does not name its example");
+
+    let example = std::fs::read_to_string(p.join(".claude/skills/keel-write/references/example.html")).expect("keel init did not install the example");
+    let head = &example[example.find("<html").expect("no <html> tag")..];
+    let head = &head[..head.find('>').unwrap()];
+    assert!(head.contains(r#"data-artifact="epic-plan""#) && head.contains(r#"data-status="ready""#), "the example is not a ready epic plan: {head}");
+    std::fs::write(p.join("docs/work/example-plan.html"), &example).unwrap();
+    let o = keel(p, &["verify-doc", "docs/work/example-plan.html"]);
+    assert!(o.status.success(), "the example fails the doc check: {}", text(&o));
+
+    for f in ["skills/keel-plan/SKILL.md", "skills/keel-distill/SKILL.md", "AGENTS.md", "templates/AGENTS.md"] {
+        let body = std::fs::read_to_string(root.join(f)).unwrap();
+        assert!(body.contains("skill `keel-write`"), "{f} does not point to skill `keel-write`");
+        assert!(!body.contains("AI readers") && !body.contains("target an AI reader"), "{f} still writes docs for AI readers only");
+    }
+    assert!(std::fs::read_to_string(p.join("AGENTS.md")).unwrap().contains("skill `keel-write`"), "init's AGENTS.md does not name the skill");
+}
+
 /// UC-ROUTE-4 (E-ROUTER.W4): the router skill ships exactly the references SKILL.md names,
 /// including the three recovered from Trawler's trawler-router (W2) and a Keel lessons section
 /// (W4); no Trawler-only token appears outside lineage. Capitalised "Trawler" is allowed: it is
