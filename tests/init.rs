@@ -54,7 +54,15 @@ fn init_twice_produces_the_same_tree_and_keeps_user_edits() {
     assert_eq!(after_first, snapshot(p), "second init changed the tree");
     assert!(!text(&second).contains("created"), "{}", text(&second));
 
-    for f in [".keel/config.toml", "AGENTS.md", ".codex/hooks.json", ".claude/skills/project-router/SKILL.md", ".claude/skills/keel-workflow/SKILL.md", ".claude/settings.json", "docs/work"] {
+    for f in [
+        ".keel/config.toml",
+        "AGENTS.md",
+        ".codex/hooks.json",
+        ".claude/skills/project-router/SKILL.md",
+        ".claude/skills/keel-workflow/SKILL.md",
+        ".claude/settings.json",
+        "docs/work",
+    ] {
         assert!(after_first.contains_key(f), "missing {f}");
     }
     // W6 #1/#5: skills live only in .claude/skills; no .agents/skills Codex symlink
@@ -293,8 +301,15 @@ fn settings_merge() {
     let path = format!("{bin}:{}", std::env::var("PATH").unwrap());
     let run = |cmd: &str, cwd: &Path, payload: &str| {
         use std::io::Write;
-        let mut c = common::cmd("sh").args(["-c", cmd]).current_dir(cwd).env("PATH", &path)
-            .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
+        let mut c = common::cmd("sh")
+            .args(["-c", cmd])
+            .current_dir(cwd)
+            .env("PATH", &path)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
         c.stdin.take().unwrap().write_all(payload.as_bytes()).unwrap();
         c.wait_with_output().unwrap()
     };
@@ -413,7 +428,16 @@ fn worktrees_path_is_ignored_and_configurable() {
 }
 
 fn git_in(d: &Path, a: &[&str]) -> Output {
-    common::cmd("git").args(a).current_dir(d).env("PATH", format!("{}:{}", Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display(), std::env::var("PATH").unwrap())).env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t").output().unwrap()
+    common::cmd("git")
+        .args(a)
+        .current_dir(d)
+        .env("PATH", format!("{}:{}", Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display(), std::env::var("PATH").unwrap()))
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@t")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@t")
+        .output()
+        .unwrap()
 }
 
 use common::self_clone;

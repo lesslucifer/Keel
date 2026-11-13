@@ -89,9 +89,7 @@ fn roster(repo: &Path, cfg: &Config, judge: &str, carried: &str) -> Result<(Vec<
 /// The roster lines `new` adds (`+ `) and removes (`- `), each once; comments, blank lines,
 /// spacing and order are not a change.
 fn roster_change(old: &str, new: &str) -> Vec<String> {
-    let lines = |t: &str| -> std::collections::BTreeSet<String> {
-        roster_lines(t).map(|(_, l)| l.split_whitespace().collect::<Vec<_>>().join(" ")).collect()
-    };
+    let lines = |t: &str| -> std::collections::BTreeSet<String> { roster_lines(t).map(|(_, l)| l.split_whitespace().collect::<Vec<_>>().join(" ")).collect() };
     let (old, new) = (lines(old), lines(new));
     new.difference(&old).map(|l| format!("+ {l}")).chain(old.difference(&new).map(|l| format!("- {l}"))).collect()
 }
@@ -215,7 +213,11 @@ fn waiver_listing(tip: &str, cr: &CrNote, history: &[Row]) -> String {
 /// test - is shown as `\u{..}`, and `\` as `\\`, so no recorded text can hide, reorder or redraw a
 /// line of the listing the signer confirms, or forge an escape.
 fn printable(s: &str) -> String {
-    let shown = |c: char| (c.is_ascii_graphic() && c != '\\') || c == ' ' || (!c.is_ascii() && c.is_alphanumeric() && !matches!(c, '\u{115f}' | '\u{1160}' | '\u{3164}' | '\u{ffa0}'));
+    let shown = |c: char| {
+        (c.is_ascii_graphic() && c != '\\')
+            || c == ' '
+            || (!c.is_ascii() && c.is_alphanumeric() && !matches!(c, '\u{115f}' | '\u{1160}' | '\u{3164}' | '\u{ffa0}'))
+    };
     s.chars()
         .map(|c| match c {
             '\\' => "\\\\".to_string(),
@@ -322,7 +324,6 @@ fn pick_report(repo: &Path, cfg: &Config, args: &[&str], base: &str, tip: &str, 
     }
 }
 
-
 /// SHA-256 of the full `base..tip` diff text (the same bytes the cr and dod bindings hash).
 fn change_hash(repo: &Path, base: &str, tip: &str) -> Result<String, String> {
     Ok(sha256(notes::diff_text(repo, base, tip, &[])?.as_bytes()))
@@ -333,7 +334,11 @@ fn change_hash(repo: &Path, base: &str, tip: &str) -> Result<String, String> {
 fn report_hash(repo: &Path, tip: &str, path: &str, epic: bool) -> Result<Option<String>, String> {
     let ls = git(repo, &["ls-tree", tip, "--", path], &[])?;
     if let ["100644" | "100755", "blob", id] = ls.split('\t').next().unwrap_or("").split(' ').collect::<Vec<_>>()[..] {
-        let o = no_git_env(Command::new("git"), true).args(["cat-file", "blob", id]).current_dir(repo).output().map_err(|e| format!("keel: cannot run git: {e}"))?;
+        let o = no_git_env(Command::new("git"), true)
+            .args(["cat-file", "blob", id])
+            .current_dir(repo)
+            .output()
+            .map_err(|e| format!("keel: cannot run git: {e}"))?;
         if !o.status.success() {
             return Err(format!("keel: git cat-file blob {id} failed: {}", String::from_utf8_lossy(&o.stderr).trim()));
         }
@@ -378,11 +383,8 @@ fn verify(repo: &Path, id: &str, keys: &[&str], data: &str, sig: &str) -> bool {
     let ok = std::fs::create_dir_all(&dir).is_ok()
         && std::fs::write(&signers, lines).is_ok()
         && std::fs::write(&sig_file, sig).is_ok()
-        && ssh_keygen(
-            &["-Y", "verify", "-f", &signers.to_string_lossy(), "-I", id, "-n", NAMESPACE, "-s", &sig_file.to_string_lossy()],
-            data.as_bytes(),
-        )
-        .is_ok_and(|o| o.status.success());
+        && ssh_keygen(&["-Y", "verify", "-f", &signers.to_string_lossy(), "-I", id, "-n", NAMESPACE, "-s", &sig_file.to_string_lossy()], data.as_bytes())
+            .is_ok_and(|o| o.status.success());
     let _ = std::fs::remove_dir_all(&dir);
     ok
 }
@@ -415,7 +417,9 @@ fn signer(allowed: &[Entry], src: &str, args: &[&str]) -> Result<String, String>
     ids.dedup();
     match ids[..] {
         [one] => Ok(one.into()),
-        [] => Err(format!("keel mr: refused - {src} lists nobody\n  fix -> keel mr setup --as <identity> [--key <path>], then land {ROSTER} with keel mr commit")),
+        [] => {
+            Err(format!("keel mr: refused - {src} lists nobody\n  fix -> keel mr setup --as <identity> [--key <path>], then land {ROSTER} with keel mr commit"))
+        }
         _ => Err("keel mr: several identities are listed - pass --as <identity>".into()),
     }
 }
@@ -688,7 +692,15 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 /// the signer, the report path and the (signed) report hash.
 /// The roster is `target`'s committed one, else the tip's (bootstrap), never the checkout's.
 /// `cr`: the tip's cr note when the caller already read it (checks 3-5); otherwise it is read here.
-pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, base: &str, target: &str, cr: Option<&CrNote>) -> Result<Option<(String, String)>, (String, String)> {
+pub(crate) fn manual_review(
+    repo: &Path,
+    cfg: &Config,
+    level: &str,
+    tip: &str,
+    base: &str,
+    target: &str,
+    cr: Option<&CrNote>,
+) -> Result<Option<(String, String)>, (String, String)> {
     let again = |what: String| Err((what, format!("re-run keel mr confirm on the tip as it now stands\n      {NOT_AUTHORISED}")));
     let t = short(tip);
     let raw = match notes::raw(repo, "mr", tip) {
@@ -696,11 +708,9 @@ pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, b
         Ok(None) => return Err((format!("every {level} merge needs a human sign-off - tip {t} has no mr/v1 note"), NOT_AUTHORISED.into())),
         Err(e) => return again(format!("the mr note on {t} cannot be read: {e}")),
     };
-    let n = match serde_json::from_str::<serde_json::Value>(&raw).map_err(|e| e.to_string()).and_then(|v| {
-        match v["schema"].as_str() {
-            Some("mr/v1") => serde_json::from_value::<MrNote>(v).map_err(|e| e.to_string()),
-            other => Err(format!("declares schema {}", other.unwrap_or("none"))),
-        }
+    let n = match serde_json::from_str::<serde_json::Value>(&raw).map_err(|e| e.to_string()).and_then(|v| match v["schema"].as_str() {
+        Some("mr/v1") => serde_json::from_value::<MrNote>(v).map_err(|e| e.to_string()),
+        other => Err(format!("declares schema {}", other.unwrap_or("none"))),
     }) {
         Ok(n) => n,
         Err(e) => return again(format!("the mr note on {t} is not valid mr/v1: {e}")),
@@ -791,18 +801,11 @@ pub fn commit_msg(repo: &Path, cfg: &Config, msg_file: &str) -> Result<i32, Stri
             return Ok(1);
         }
     };
-    let id = msg
-        .lines()
-        .filter_map(|l| l.strip_prefix(TRAILER)?.trim_start().strip_prefix(':'))
-        .next_back()
-        .and_then(|v| v.split_whitespace().next_back());
+    let id = msg.lines().filter_map(|l| l.strip_prefix(TRAILER)?.trim_start().strip_prefix(':')).next_back().and_then(|v| v.split_whitespace().next_back());
     if id.is_some_and(|id| tier_of(&allowed, id).is_some()) {
         return Ok(0);
     }
-    eprintln!(
-        "keel: commit refused - it touches rule-bearing {} with no {TRAILER} trailer from a listed signer\n  fix -> {NOT_AUTHORISED}",
-        hits.join(", ")
-    );
+    eprintln!("keel: commit refused - it touches rule-bearing {} with no {TRAILER} trailer from a listed signer\n  fix -> {NOT_AUTHORISED}", hits.join(", "));
     Ok(1)
 }
 
@@ -817,7 +820,10 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{landed, parse_roster, payload, positionals, roster_change, rule_bearing, sha256, stale_change, waive_reason, waiver_code, waiver_drift, waiver_listing, printable};
+    use super::{
+        landed, parse_roster, payload, positionals, printable, roster_change, rule_bearing, sha256, stale_change, waive_reason, waiver_code, waiver_drift,
+        waiver_listing,
+    };
     use crate::notes::CrNote;
 
     fn lcg(x: &mut u64) -> u64 {
@@ -837,14 +843,12 @@ mod tests {
         assert_eq!(got, [("email", "a@b.c", None), ("username", "vu", None), ("key", "vu", Some("ssh-ed25519 AAAA"))]);
         let keys = parse_roster(text, &tiers(&["key"]), "r").unwrap();
         assert_eq!(keys.iter().map(|e| e.tier.as_str()).collect::<Vec<_>>(), ["key"], "a tier the policy does not accept authorises nothing");
-        for (bad, line) in [
-            ("key: vu cert-authority ssh-ed25519 AAAA", 2),
-            ("username: v*u", 2),
-            ("key: vu", 2),
-            ("username: vu extra", 2),
-            ("no colon here", 2),
-        ] {
-            let e = parse_roster(&format!("username: ok\n{bad}\n"), &tiers(&["username", "key"]), "HEAD:.keel/mr-allowed").err().unwrap_or_else(|| panic!("{bad} parsed"));
+        for (bad, line) in
+            [("key: vu cert-authority ssh-ed25519 AAAA", 2), ("username: v*u", 2), ("key: vu", 2), ("username: vu extra", 2), ("no colon here", 2)]
+        {
+            let e = parse_roster(&format!("username: ok\n{bad}\n"), &tiers(&["username", "key"]), "HEAD:.keel/mr-allowed")
+                .err()
+                .unwrap_or_else(|| panic!("{bad} parsed"));
             assert!(e.contains(&format!("HEAD:.keel/mr-allowed line {line}")), "{bad}: {e}");
         }
         // generated rosters (seeded LCG) under generated policies: every entry's tier is in the policy
@@ -950,11 +954,9 @@ mod tests {
     fn check_8_holds_the_sign_off_to_the_waiver_the_note_carries_now() {
         assert_eq!(waiver_drift(None, None, "t"), None);
         assert_eq!(waiver_drift(Some("sha256:a"), Some("sha256:a"), "t"), None);
-        for (signed, current, needle) in [
-            (Some("sha256:a"), Some("sha256:b"), "reworded"),
-            (None, Some("sha256:b"), "accepted no waiver"),
-            (Some("sha256:a"), None, "no longer carries"),
-        ] {
+        for (signed, current, needle) in
+            [(Some("sha256:a"), Some("sha256:b"), "reworded"), (None, Some("sha256:b"), "accepted no waiver"), (Some("sha256:a"), None, "no longer carries")]
+        {
             let cause = waiver_drift(signed, current, "t").unwrap_or_else(|| panic!("{signed:?} {current:?} passed"));
             assert!(cause.contains(needle) && cause.contains("waiver"), "{cause}");
         }
@@ -975,13 +977,24 @@ mod tests {
             j.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
             serde_json::from_value(j).unwrap()
         };
-        let tip = cr("WAIVED", serde_json::json!({"waiver": "review cap: 5 rounds, 1 blockers open",
+        let tip = cr(
+            "WAIVED",
+            serde_json::json!({"waiver": "review cap: 5 rounds, 1 blockers open",
             "findings": [{"severity": "blocker", "location": "src/a.rs:3", "claim": "a() is wrong"}, {"severity": "important", "claim": "no location"},
                 {"severity": "important", "location": "x:1", "claim": "waived one", "waived": "ok"}, "bare text", 7],
-            "walk_waivers": [{"seam": "abc123", "why": " safe "}]}));
+            "walk_waivers": [{"seam": "abc123", "why": " safe "}]}),
+        );
         let history = vec![
-            ("1111111111aa".to_string(), Some(cr("WAIVED", serde_json::json!({"waiver": "review cap: 5 rounds, 1 blockers open"}))), " [round 2, full]".to_string()),
-            ("4444444444dd".to_string(), Some(cr("PASS", serde_json::json!({"fixes": "2222222222bb2222222222bb2222222222bb2222"}))), " [fix-PASS of round 1 on 2222222222; no reviewers ran; changed: src/a.rs]".to_string()),
+            (
+                "1111111111aa".to_string(),
+                Some(cr("WAIVED", serde_json::json!({"waiver": "review cap: 5 rounds, 1 blockers open"}))),
+                " [round 2, full]".to_string(),
+            ),
+            (
+                "4444444444dd".to_string(),
+                Some(cr("PASS", serde_json::json!({"fixes": "2222222222bb2222222222bb2222222222bb2222"}))),
+                " [fix-PASS of round 1 on 2222222222; no reviewers ran; changed: src/a.rs]".to_string(),
+            ),
             ("2222222222bb".to_string(), Some(cr("FAIL", serde_json::json!({}))), " [round 1, full]".to_string()),
             ("3333333333cc".to_string(), None, String::new()),
         ];
@@ -1026,7 +1039,10 @@ mod tests {
     #[test]
     fn recorded_text_reaches_the_terminal_inert() {
         assert_eq!(printable("plain text: ok, café, 日本"), "plain text: ok, café, 日本");
-        for c in ['\u{202e}', '\u{202a}', '\u{2066}', '\u{2069}', '\u{200e}', '\u{200f}', '\u{61c}', '\u{200b}', '\u{200d}', '\u{2060}', '\u{feff}', '\u{2028}', '\u{2029}', '\u{ad}'] {
+        for c in [
+            '\u{202e}', '\u{202a}', '\u{2066}', '\u{2069}', '\u{200e}', '\u{200f}', '\u{61c}', '\u{200b}', '\u{200d}', '\u{2060}', '\u{feff}', '\u{2028}',
+            '\u{2029}', '\u{ad}',
+        ] {
             let out = printable(&format!("a{c}b"));
             assert_eq!(out, format!("a\\u{{{:x}}}b", c as u32), "{:x}", c as u32);
         }
@@ -1038,7 +1054,8 @@ mod tests {
         let history = vec![("1111111111".to_string(), Some(round("FAIL\u{1b}")), " [round 1, full]".to_string())];
         fn round(v: &str) -> CrNote {
             serde_json::from_value(serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c",
-                "timestamp": 0, "verdict": v, "waiver": "x\u{1b}", "blockers": 0, "importants": 0, "code_diff_hash": "h"})).unwrap()
+                "timestamp": 0, "verdict": v, "waiver": "x\u{1b}", "blockers": 0, "importants": 0, "code_diff_hash": "h"}))
+            .unwrap()
         }
         let l = waiver_listing("t", &cr, &history);
         assert!(l.chars().all(|c| c == '\n' || !c.is_control()), "{l:?}");

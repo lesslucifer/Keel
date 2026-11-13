@@ -102,12 +102,7 @@ struct Tiers {
 
 fn load_config(repo: &Path) -> Result<Config, String> {
     let path = repo.join(".keel/config.toml");
-    let text = std::fs::read_to_string(&path).map_err(|_| {
-        format!(
-            "keel: no .keel/config.toml in {}\n  run `keel init` to create one",
-            repo.display()
-        )
-    })?;
+    let text = std::fs::read_to_string(&path).map_err(|_| format!("keel: no .keel/config.toml in {}\n  run `keel init` to create one", repo.display()))?;
     toml::from_str(&text).map_err(|e| format!("keel: bad .keel/config.toml: {e}"))
 }
 
@@ -220,20 +215,14 @@ fn ok_text(args: &[&str], o: std::process::Output) -> Result<String, String> {
 /// A finished git command's stdout as raw bytes, or its failure: the one failure text.
 fn ok_bytes(args: &[&str], o: std::process::Output) -> Result<Vec<u8>, String> {
     if !o.status.success() {
-        return Err(format!(
-            "keel: git {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&o.stderr).trim()
-        ));
+        return Err(format!("keel: git {} failed: {}", args.join(" "), String::from_utf8_lossy(&o.stderr).trim()));
     }
     Ok(o.stdout)
 }
 
 fn repo_root() -> Result<PathBuf, String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    git(&cwd, &["rev-parse", "--show-toplevel"], &[])
-        .map(PathBuf::from)
-        .map_err(|_| "keel: not inside a git repository".into())
+    git(&cwd, &["rev-parse", "--show-toplevel"], &[]).map(PathBuf::from).map_err(|_| "keel: not inside a git repository".into())
 }
 
 fn sh(repo: &Path, cmd: &str) -> Result<bool, String> {
@@ -467,9 +456,8 @@ fn hooks_install(repo: &Path, force: bool) -> Result<i32, String> {
     if !force {
         let current = git(repo, &["config", "--get", "core.hooksPath"], &[]).ok();
         let own = dir.parent().unwrap_or(&dir).join("hooks");
-        let entries: Vec<String> = std::fs::read_dir(&own)
-            .map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
-            .unwrap_or_default();
+        let entries: Vec<String> =
+            std::fs::read_dir(&own).map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect()).unwrap_or_default();
         let conflicts = hook_conflicts(current.as_deref(), &dir, &own.to_string_lossy(), &entries);
         if !conflicts.is_empty() {
             eprintln!(
@@ -491,8 +479,7 @@ fn hooks_install(repo: &Path, force: bool) -> Result<i32, String> {
     ] {
         let p = dir.join(name);
         std::fs::write(&p, body).map_err(|e| format!("keel: write {}: {e}", p.display()))?;
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| e.to_string())?;
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
     }
     // Absolute: a relative hooksPath resolves against the worktree, i.e. against branch content.
     let d = dir.to_string_lossy();
@@ -507,10 +494,7 @@ fn hooks_install(repo: &Path, force: bool) -> Result<i32, String> {
 fn pre_commit(repo: &Path, cfg: &Config) -> Result<i32, String> {
     let branch = git(repo, &["symbolic-ref", "--short", "-q", "HEAD"], &[]).unwrap_or_default();
     if branch == cfg.branches.main {
-        eprintln!(
-            "keel: commit refused - '{b}' is merge-only.\n  fix -> git switch -c <branch>   (then commit there and merge into {b})",
-            b = branch
-        );
+        eprintln!("keel: commit refused - '{b}' is merge-only.\n  fix -> git switch -c <branch>   (then commit there and merge into {b})", b = branch);
         return Ok(1);
     }
     Ok(0)
@@ -582,7 +566,9 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{hook_conflicts, hooks_problem_of, no_git_env, Config, ReportPolicy, COMMIT_MSG, GIT_HOOK_ENV, GIT_LOCAL_ENV, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
+    use super::{
+        hook_conflicts, hooks_problem_of, no_git_env, Config, ReportPolicy, COMMIT_MSG, GIT_HOOK_ENV, GIT_LOCAL_ENV, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH,
+    };
     use std::ffi::OsStr;
     use std::path::Path;
     use std::process::Command;
@@ -638,7 +624,10 @@ mod tests {
             assert!(hook_conflicts(Some(own), keel, "/r/.git/hooks", &names(&["pre-commit"])).is_empty(), "Keel's own path {own}: a re-install");
             assert_eq!(hooks_problem_of(Some(own), keel), None, "guard D agrees on {own}");
         }
-        assert_eq!(hook_conflicts(None, keel, "/r/.git/hooks", &names(&["pre-commit.sample", "pre-commit", "husky.sh"])), ["/r/.git/hooks/pre-commit", "/r/.git/hooks/husky.sh"]);
+        assert_eq!(
+            hook_conflicts(None, keel, "/r/.git/hooks", &names(&["pre-commit.sample", "pre-commit", "husky.sh"])),
+            ["/r/.git/hooks/pre-commit", "/r/.git/hooks/husky.sh"]
+        );
         assert_eq!(hook_conflicts(Some(".husky"), keel, "/r/.git/hooks", &samples), ["core.hooksPath = .husky"]);
     }
 

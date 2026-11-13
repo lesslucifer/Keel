@@ -31,7 +31,8 @@ impl Identity {
 }
 
 /// How every fix line names the owner's waiver: the owner's own act, never an agent's.
-pub(crate) const OWNER_WAIVES: &str = "the owner waives a review at sign-off (keel mr confirm ... --waive-review \"<reason>\", typed by the owner, never staged)";
+pub(crate) const OWNER_WAIVES: &str =
+    "the owner waives a review at sign-off (keel mr confirm ... --waive-review \"<reason>\", typed by the owner, never staged)";
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
@@ -201,17 +202,26 @@ pub(crate) fn waiver_reason(raw: Option<&str>) -> Result<String, String> {
 /// one level of history, never nested), and only its `walk_waivers`
 /// (they name seams, which a later code change does not move) carried. With no note at all it is
 /// `unreviewed` too, so its 0/0 never reads as a clean review. Err = (what, fix).
-pub(crate) fn waive(existing_raw: Option<&str>, id: Identity, reason: Option<&str>, code_diff_hash: String, counts: (Option<u32>, Option<u32>)) -> Result<CrNote, (String, String)> {
+pub(crate) fn waive(
+    existing_raw: Option<&str>,
+    id: Identity,
+    reason: Option<&str>,
+    code_diff_hash: String,
+    counts: (Option<u32>, Option<u32>),
+) -> Result<CrNote, (String, String)> {
     let t = short(&id.tip).to_string();
     let reason = waiver_reason(reason).map_err(|w| (w, "give the reason in words".to_string()))?;
-    let existing = existing_raw
-        .map(serde_json::from_str::<CrNote>)
-        .transpose()
-        .map_err(|e| (format!("the cr note on {t} does not parse as cr/v1 ({e}); a waiver never overwrites a note it cannot read"), "repair that note in place, or run a new review on the tip, then waive again".to_string()))?;
+    let existing = existing_raw.map(serde_json::from_str::<CrNote>).transpose().map_err(|e| {
+        (
+            format!("the cr note on {t} does not parse as cr/v1 ({e}); a waiver never overwrites a note it cannot read"),
+            "repair that note in place, or run a new review on the tip, then waive again".to_string(),
+        )
+    })?;
     let unreviewed = |replaced: Option<CrNote>| {
         let mut extra = serde_json::Map::new();
         extra.insert("unreviewed".into(), serde_json::Value::Bool(true));
-        let walk_waivers = replaced.as_ref().map(|r| r.walk_waivers.iter().map(|w| WalkWaiver { seam: w.seam.clone(), why: w.why.clone() }).collect()).unwrap_or_default();
+        let walk_waivers =
+            replaced.as_ref().map(|r| r.walk_waivers.iter().map(|w| WalkWaiver { seam: w.seam.clone(), why: w.why.clone() }).collect()).unwrap_or_default();
         if let Some(mut r) = replaced {
             // One level of history: a note that itself replaced another drops that, never nesting deeper.
             r.extra.remove("replaced");
@@ -230,16 +240,16 @@ pub(crate) fn waive(existing_raw: Option<&str>, id: Identity, reason: Option<&st
             extra,
         }
     };
-    let mut n = match existing {
-        Some(n) if n.verdict == "PASS" => {
-            return Err((
+    let mut n =
+        match existing {
+            Some(n) if n.verdict == "PASS" => return Err((
                 format!("the review of {t} is a PASS; a review that passed is never waived over"),
-                "sign it as reviewed (keel mr confirm without --waive-review); if that PASS no longer binds this tip (checks 4-5 red), run a new review on it".into(),
-            ))
-        }
-        Some(n) if n.id.base == id.base && n.code_diff_hash == code_diff_hash => n,
-        other => unreviewed(other),
-    };
+                "sign it as reviewed (keel mr confirm without --waive-review); if that PASS no longer binds this tip (checks 4-5 red), run a new review on it"
+                    .into(),
+            )),
+            Some(n) if n.id.base == id.base && n.code_diff_hash == code_diff_hash => n,
+            other => unreviewed(other),
+        };
     n.schema = "cr/v1".into();
     n.id = id;
     n.verdict = "WAIVED".into();
@@ -276,7 +286,6 @@ pub(crate) fn cr_raw(repo: &Path, rev: &str) -> Result<Option<String>, String> {
 pub(crate) fn cr_note(repo: &Path, rev: &str) -> Option<CrNote> {
     serde_json::from_str(&cr_raw(repo, rev).ok()??).ok()
 }
-
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct WalkWaiver {
@@ -470,7 +479,10 @@ fn union_of_z(outputs: &[Vec<u8>]) -> Vec<Vec<u8>> {
 /// (the decision never depends on the text: `diff_names`' bytes do).
 pub(crate) fn changed_text(names: Result<Vec<Vec<u8>>, String>, range: &str) -> String {
     let shown = names.and_then(|n| {
-        n.into_iter().map(String::from_utf8).collect::<Result<Vec<_>, _>>().map_err(|_| format!("a path is not UTF-8; it is among the branch's own changes in {range}"))
+        n.into_iter()
+            .map(String::from_utf8)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| format!("a path is not UTF-8; it is among the branch's own changes in {range}"))
     });
     match shown {
         Ok(n) if n.is_empty() => "nothing".into(),
@@ -559,11 +571,7 @@ pub(crate) fn identity(repo: &Path, tip: String, base: String, branch: Option<St
     // "Name <email> 1700000000 +0100"
     let ident = git(repo, &["var", "GIT_COMMITTER_IDENT"], &[])?;
     let (who, ts) = ident.split_once("> ").ok_or("keel: cannot parse committer identity")?;
-    let timestamp = ts
-        .split(' ')
-        .next()
-        .and_then(|t| t.parse().ok())
-        .ok_or("keel: bad committer timestamp")?;
+    let timestamp = ts.split(' ').next().and_then(|t| t.parse().ok()).ok_or("keel: bad committer timestamp")?;
     Ok(Identity { tip, base, branch, committer: format!("{who}>"), timestamp })
 }
 
@@ -586,8 +594,7 @@ fn range(repo: &Path, cfg: &Config, args: &[&str]) -> Result<Range, String> {
 /// diff cr binds (empty = every path is code) - and, when `infra_paths` is set, every changed path
 /// matches one of its globs.
 pub(crate) fn exempt(repo: &Path, cfg: &Config, base: &str, tip: &str, names: &[String]) -> Result<bool, String> {
-    Ok(self::names(repo, base, tip, &cfg.code_paths)?.is_empty()
-        && cfg.infra_paths.as_ref().is_none_or(|g| names.iter().all(|n| g.iter().any(|p| glob(p, n)))))
+    Ok(self::names(repo, base, tip, &cfg.code_paths)?.is_empty() && cfg.infra_paths.as_ref().is_none_or(|g| names.iter().all(|n| g.iter().any(|p| glob(p, n)))))
 }
 
 /// `*` = within one segment, `**` = any depth, `?` = one char.
@@ -626,10 +633,8 @@ pub(crate) fn tier_of(cfg: &Config, path: &str) -> Option<&'static str> {
             &default
         }
     };
-    let tier = [("T3", &t.t3), ("T2", &t.t2), ("T1", &t.t1), ("T0", &t.t0)]
-        .into_iter()
-        .find(|(_, globs)| globs.iter().any(|g| glob(g, path)))
-        .map(|(name, _)| name);
+    let tier =
+        [("T3", &t.t3), ("T2", &t.t2), ("T1", &t.t1), ("T0", &t.t0)].into_iter().find(|(_, globs)| globs.iter().any(|g| glob(g, path))).map(|(name, _)| name);
     tier
 }
 
@@ -645,8 +650,7 @@ fn archived(repo: &Path, cfg: &Config, tip: &str, path: &str) -> bool {
 /// docs deleted anywhere in the range - one created and archived inside it nets out
 /// of the endpoint diff, but its lineage is still owed. Shared by the writer and check 6.
 pub(crate) fn doc_paths(repo: &Path, cfg: &Config, base: &str, tip: &str, names: &[String]) -> Result<Vec<String>, String> {
-    let mut v: Vec<String> =
-        names.iter().filter(|n| n.starts_with(&cfg.docs.root) || tier_of(cfg, n) == Some("T0")).cloned().collect();
+    let mut v: Vec<String> = names.iter().filter(|n| n.starts_with(&cfg.docs.root) || tier_of(cfg, n) == Some("T0")).cloned().collect();
     // Plumbing (rev-list into diff-tree), so no display config can add a line: git log under
     // log.showSignature prints signature text into the very listing read as paths.
     let commits = git(repo, &["rev-list", &format!("{base}..{tip}")], &[])?;
@@ -725,9 +729,7 @@ pub(crate) fn diff_text(repo: &Path, base: &str, tip: &str, pathspecs: &[String]
 }
 
 fn count_tests(adapter: &str, body: &str, pattern: Option<&str>) -> Result<u32, String> {
-    let starts = |forms: &[&str]| {
-        body.lines().filter(|l| forms.iter().any(|f| l.trim_start().starts_with(f))).count() as u32
-    };
+    let starts = |forms: &[&str]| body.lines().filter(|l| forms.iter().any(|f| l.trim_start().starts_with(f))).count() as u32;
     Ok(match adapter {
         // ponytail: line-prefix rules; a declaration written another way is not counted (use the regex adapter)
         "rust" => starts(&["#[test]", "#[tokio::test"]),
@@ -778,10 +780,7 @@ fn layer(repo: &Path, cfg: &Config, r: &Range, name: &str, j: &JLayer) -> Result
     let (mut count, mut languages) = (0, BTreeMap::new());
     for f in &j.files {
         if !r.names.contains(f) {
-            return refuse(
-                format!("{name} claims {f}, but the range does not touch it"),
-                "name only test files changed in this range, or waive the layer",
-            );
+            return refuse(format!("{name} claims {f}, but the range does not touch it"), "name only test files changed in this range, or waive the layer");
         }
         let body = git(repo, &["show", &format!("{}:{f}", r.id.tip)], &[])
             .or_else(|_| refuse(format!("{f} is not a file at the tip"), "name a file that exists at HEAD"))?;
@@ -840,10 +839,9 @@ fn cr_verdict(verdict: &str, reason: Option<&str>, blockers: u32, importants: u3
         ("WAIVED", None) => Ok(CrWrite::Cap),
         ("WAIVED", r) => match waiver_reason(r) {
             Ok(r) => Ok(CrWrite::Waiver(r)),
-            Err(what) => refuse(
-                what,
-                &format!("the review cap's waiver takes no --reason (the tool writes it). Never write a waiver for the owner: {OWNER_WAIVES}"),
-            ),
+            Err(what) => {
+                refuse(what, &format!("the review cap's waiver takes no --reason (the tool writes it). Never write a waiver for the owner: {OWNER_WAIVES}"))
+            }
         },
         _ => Err(format!("{CR_USAGE}\n       an owner's waiver is not written here: {OWNER_WAIVES}")),
     }
@@ -888,7 +886,10 @@ fn cr_counts(findings: Option<&serde_json::Value>, blockers: Option<u32>, import
     }
     for (flag, typed, derived) in [("--blockers", blockers, open.0), ("--importants", importants, open.1)] {
         if typed.is_some_and(|t| t != derived) {
-            return refuse(format!("{flag} {} disagrees with --findings, which leaves {derived} open", typed.unwrap_or(0)), &format!("drop {flag}: the count comes from --findings"));
+            return refuse(
+                format!("{flag} {} disagrees with --findings, which leaves {derived} open", typed.unwrap_or(0)),
+                &format!("drop {flag}: the count comes from --findings"),
+            );
         }
     }
     Ok(open)
@@ -902,11 +903,9 @@ pub fn write(repo: &Path, cfg: &Config, kind: &str, args: &[&str]) -> Result<i32
         "test" => {
             let mut s = String::new();
             std::io::stdin().read_to_string(&mut s).map_err(|e| e.to_string())?;
-            let j: Judgment =
-                serde_json::from_str(&s).map_err(|e| format!("keel: bad test judgment on stdin: {e}"))?;
+            let j: Judgment = serde_json::from_str(&s).map_err(|e| format!("keel: bad test judgment on stdin: {e}"))?;
             let one = |n: &str, l: &Option<JLayer>| l.as_ref().map(|l| layer(repo, cfg, &r, n, l)).transpose();
-            let (unit, integration, e2e) =
-                (one("unit", &j.unit)?, one("integration", &j.integration)?, one("e2e", &j.e2e)?);
+            let (unit, integration, e2e) = (one("unit", &j.unit)?, one("integration", &j.integration)?, one("e2e", &j.e2e)?);
             if unit.is_none() && integration.is_none() && e2e.is_none() {
                 return refuse("the judgment claims no test layer".into(), "give unit, integration and/or e2e");
             }
@@ -974,7 +973,8 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
     }
     let (note, said) = match (write, fixes) {
         (CrWrite::Review, Some(fixes)) => {
-            let sha = git(repo, &["rev-parse", "--verify", "-q", "--end-of-options", &format!("{fixes}^{{commit}}")], &[]).or_else(|_| refuse(format!("--fixes {fixes} names no commit"), "give the reviewed commit of the round this fix answers"))?;
+            let sha = git(repo, &["rev-parse", "--verify", "-q", "--end-of-options", &format!("{fixes}^{{commit}}")], &[])
+                .or_else(|_| refuse(format!("--fixes {fixes} names no commit"), "give the reviewed commit of the round this fix answers"))?;
             if sha == tip {
                 return refuse(
                     format!("--fixes names the tip {} itself; a fix-PASS goes on a later commit than the round it answers", short(&tip)),
@@ -983,10 +983,12 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
             }
             let s = schedule()?;
             // The tip's own note: a reviewed one is the latest round, and a fix-PASS never replaces it.
-            let own = cr_raw(repo, &tip)?
-                .map(|raw| review::parse_note(&raw))
-                .transpose()
-                .or_else(|why| refuse(format!("the cr note on {} is unreadable ({why}); a fix-PASS never overwrites a note it cannot read", short(&tip)), "the owner repairs that note in place, then write the fix-PASS again"))?;
+            let own = cr_raw(repo, &tip)?.map(|raw| review::parse_note(&raw)).transpose().or_else(|why| {
+                refuse(
+                    format!("the cr note on {} is unreadable ({why}); a fix-PASS never overwrites a note it cannot read", short(&tip)),
+                    "the owner repairs that note in place, then write the fix-PASS again",
+                )
+            })?;
             let fix = review::fix_pass(own.as_ref(), &s.earlier, &sha, s.max, |c| s.unchanged(c)).or_else(|(what, fix)| refuse(what, &fix))?;
             let said = format!("fix-PASS of round {} on {}: no reviewers run, no new round", fix.round, short(&sha));
             let schedule = ScheduleFields {
@@ -996,14 +998,45 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
                 fixes: Some(sha),
                 scope: None,
             };
-            (CrNote { schema: "cr/v1".into(), id: r.id, verdict: "PASS".into(), waiver: None, blockers: 0, importants: 0, code_diff_hash, walk_waivers: vec![], schedule, extra: serde_json::Map::new() }, said)
+            (
+                CrNote {
+                    schema: "cr/v1".into(),
+                    id: r.id,
+                    verdict: "PASS".into(),
+                    waiver: None,
+                    blockers: 0,
+                    importants: 0,
+                    code_diff_hash,
+                    walk_waivers: vec![],
+                    schedule,
+                    extra: serde_json::Map::new(),
+                },
+                said,
+            )
         }
         (CrWrite::Review, None) => {
             let s = schedule()?;
             let next = s.next().or_else(|(what, fix)| refuse(what, &fix))?;
             let schedule = ScheduleFields { round: Some(next.round), scope: Some(next.scope()), ..ScheduleFields::default() };
-            let note = CrNote { schema: "cr/v1".into(), id: r.id, verdict: verdict.into(), waiver: None, blockers, importants, code_diff_hash, walk_waivers: vec![], schedule, extra: lists };
-            let said = format!("review round {} of {} recorded ({})\n  next -> {}", next.round, s.max, next.scope(), review::next_step(&note, next.round, s.max, &tip));
+            let note = CrNote {
+                schema: "cr/v1".into(),
+                id: r.id,
+                verdict: verdict.into(),
+                waiver: None,
+                blockers,
+                importants,
+                code_diff_hash,
+                walk_waivers: vec![],
+                schedule,
+                extra: lists,
+            };
+            let said = format!(
+                "review round {} of {} recorded ({})\n  next -> {}",
+                next.round,
+                s.max,
+                next.scope(),
+                review::next_step(&note, next.round, s.max, &tip)
+            );
             (note, said)
         }
         (CrWrite::Waiver(reason), _) => {
@@ -1015,11 +1048,12 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
                 return refuse("counts given with the cap's waiver".into(), "drop --blockers/--importants: the cap keeps the counts of the round it stops");
             }
             let stored = cr_raw(repo, &tip)?;
-            let own = stored
-                .as_deref()
-                .map(review::parse_note)
-                .transpose()
-                .or_else(|why| refuse(format!("the cr note on {} is unreadable ({why}); the cap's waiver never overwrites a note it cannot read", short(&tip)), "the owner repairs that note in place, then write the cap's waiver again"))?;
+            let own = stored.as_deref().map(review::parse_note).transpose().or_else(|why| {
+                refuse(
+                    format!("the cr note on {} is unreadable ({why}); the cap's waiver never overwrites a note it cannot read", short(&tip)),
+                    "the owner repairs that note in place, then write the cap's waiver again",
+                )
+            })?;
             let s = schedule()?;
             let reason = review::cap(own.as_ref(), &s.earlier, s.max, &tip).or_else(|(what, fix)| refuse(what, &fix))?;
             let said = format!("{reason}: the owner decides at sign-off (keel mr confirm shows the waiver and every round)");
@@ -1086,14 +1120,9 @@ mod tests {
         assert_eq!(cr_verdict("WAIVED", Some("  ruling \n"), 1, 0), Ok(CrWrite::Waiver("ruling".into())));
         assert_eq!(cr_verdict("WAIVED", Some("cap"), 0, 0), Ok(CrWrite::Waiver("cap".into())));
         assert_eq!(cr_verdict("WAIVED", None, 0, 0), Ok(CrWrite::Cap), "no reason: the cap's waiver, whose reason the tool writes");
-        for (v, r, b) in [
-            ("PASS", None, 1),
-            ("PASS", Some("x"), 0),
-            ("FAIL", Some("x"), 1),
-            ("FAIL", Some(""), 1),
-            ("WAIVED", Some(""), 0),
-            ("WAIVED", Some(" \t\n"), 2),
-        ] {
+        for (v, r, b) in
+            [("PASS", None, 1), ("PASS", Some("x"), 0), ("FAIL", Some("x"), 1), ("FAIL", Some(""), 1), ("WAIVED", Some(""), 0), ("WAIVED", Some(" \t\n"), 2)]
+        {
             let e = cr_verdict(v, r, b, 0).unwrap_err();
             assert!(e.contains("refused") && e.contains("fix ->"), "{v} {r:?} {b}: {e}");
         }
@@ -1105,10 +1134,14 @@ mod tests {
     #[test]
     fn the_rounds_lists_are_json_of_their_shape_and_the_findings_decide_the_counts() {
         let args = |a: &[&'static str]| a.to_vec();
-        let got = cr_lists(&args(&["--verdict", "FAIL", "--findings", "[]", "--refuted", "[{\"claim\": \"x\"}]", "--nits", "[]", "--fleet", "{\"finders\": 2}"])).unwrap();
+        let got =
+            cr_lists(&args(&["--verdict", "FAIL", "--findings", "[]", "--refuted", "[{\"claim\": \"x\"}]", "--nits", "[]", "--fleet", "{\"finders\": 2}"]))
+                .unwrap();
         assert_eq!(got.keys().collect::<Vec<_>>(), ["findings", "refuted", "nits", "fleet"]);
         assert!(cr_lists(&args(&["--verdict", "PASS"])).unwrap().is_empty());
-        for bad in [&["--findings"][..], &["--findings", "{}"], &["--refuted", "\"prose\""], &["--nits", "[1"], &["--fleet", "[]"], &["--refuted", "--fleet", "{}"]] {
+        for bad in
+            [&["--findings"][..], &["--findings", "{}"], &["--refuted", "\"prose\""], &["--nits", "[1"], &["--fleet", "[]"], &["--refuted", "--fleet", "{}"]]
+        {
             let e = cr_lists(bad).unwrap_err();
             assert!(e.contains(bad[0]) && e.contains("fix ->"), "{bad:?}: {e}");
         }
@@ -1152,7 +1185,8 @@ mod tests {
         assert_eq!(n.open_findings().iter().map(|f| f["claim"].as_str().unwrap()).collect::<Vec<_>>(), ["open"]);
         assert_eq!(serde_json::to_value(&n).unwrap(), raw, "a round trip keeps every field");
         let bare: CrNote = serde_json::from_value(serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null,
-            "committer": "c", "timestamp": 0, "verdict": "PASS", "blockers": 0, "importants": 0, "code_diff_hash": "h", "findings": "prose"})).unwrap();
+            "committer": "c", "timestamp": 0, "verdict": "PASS", "blockers": 0, "importants": 0, "code_diff_hash": "h", "findings": "prose"}))
+        .unwrap();
         assert!(bare.open_findings().is_empty(), "a non-array findings field lists nothing");
     }
 
@@ -1193,7 +1227,11 @@ mod tests {
         for v in ["FAIL", "WAIVED"] {
             let same = raw(&note(v, "b", "h"));
             let w = waive(Some(&same), id(), Some(" ruling "), "h".into(), (None, None)).unwrap();
-            assert_eq!((w.waiver(), w.blockers, w.importants, w.code_diff_hash.as_str(), w.id.base.as_str(), w.id.committer.as_str(), w.id.timestamp), (Some("ruling"), 2, 1, "h", "b", "o", 7), "{v}");
+            assert_eq!(
+                (w.waiver(), w.blockers, w.importants, w.code_diff_hash.as_str(), w.id.base.as_str(), w.id.committer.as_str(), w.id.timestamp),
+                (Some("ruling"), 2, 1, "h", "b", "o", 7),
+                "{v}"
+            );
             assert!(!w.unreviewed(), "{v}");
             let (j, before) = (serde_json::to_value(&w).unwrap(), serde_json::to_value(note(v, "b", "h")).unwrap());
             for f in ["findings", "refuted", "nits", "fleet", "walk_waivers"] {
@@ -1207,7 +1245,11 @@ mod tests {
                 let stale = waive(Some(&raw(&note(v, base, hash))), id(), Some("r"), "h".into(), (None, None)).unwrap();
                 let j = serde_json::to_value(&stale).unwrap();
                 assert!(stale.unreviewed() && (stale.blockers, stale.importants) == (0, 0) && stale.open_findings().is_empty(), "{v} {base} {hash}: {j}");
-                assert_eq!((j["replaced"]["findings"][0]["claim"].as_str(), j["replaced"]["base"].as_str()), (Some("f"), Some(base)), "{v}: history kept whole");
+                assert_eq!(
+                    (j["replaced"]["findings"][0]["claim"].as_str(), j["replaced"]["base"].as_str()),
+                    (Some("f"), Some(base)),
+                    "{v}: history kept whole"
+                );
                 assert_eq!(j["walk_waivers"][0]["seam"], "s", "{v}: seam waivers carried");
             }
         }
@@ -1237,7 +1279,8 @@ mod tests {
         let n: CrNote = serde_json::from_value(serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c",
             "timestamp": 0, "verdict": "FAIL", "blockers": 5, "importants": 0, "code_diff_hash": "h",
             "findings": [{"claim": "null", "waived": null}, {"claim": "false", "waived": false}, {"claim": "blank", "waived": "  "},
-                {"claim": "none"}, {"claim": "words", "waived": "owner: fine"}]})).unwrap();
+                {"claim": "none"}, {"claim": "words", "waived": "owner: fine"}]}))
+        .unwrap();
         let open: Vec<_> = n.open_findings().iter().map(|f| f["claim"].as_str().unwrap()).collect();
         assert_eq!(open, ["null", "false", "blank", "none"]);
     }

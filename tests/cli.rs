@@ -70,8 +70,7 @@ fn commit_on_main_is_refused_but_a_branch_is_fine() {
     // A no-op hook at the old in-tree path is just content now - it never runs.
     std::fs::create_dir_all(p.join(".keel/hooks")).unwrap();
     std::fs::write(p.join(".keel/hooks/pre-commit"), "#!/bin/sh\nexit 0\n").unwrap();
-    std::fs::set_permissions(p.join(".keel/hooks/pre-commit"), std::os::unix::fs::PermissionsExt::from_mode(0o755))
-        .unwrap();
+    std::fs::set_permissions(p.join(".keel/hooks/pre-commit"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     std::fs::write(p.join("a"), "a").unwrap();
     git(p, &["add", "a", ".keel/hooks"]);
     let c = run("git", p, &["commit", "-qm", "x"]);
@@ -95,16 +94,11 @@ fn new_worktree_is_seeded_from_gitworktreecopy() {
     assert!(keel(p, &["hooks", "install"]).status.success());
 
     let w = TempDir::new().unwrap();
-    assert!(run("git", p, &["worktree", "add", "-q", "-b", "feature", w.path().to_str().unwrap()])
-        .status
-        .success());
+    assert!(run("git", p, &["worktree", "add", "-q", "-b", "feature", w.path().to_str().unwrap()]).status.success());
 
     assert_eq!(std::fs::read_to_string(w.path().join("secret.env")).unwrap(), "TOKEN=abc");
     assert_eq!(std::fs::read_to_string(w.path().join("nested/trust.txt")).unwrap(), "trusted");
-    assert_eq!(
-        run("git", w.path(), &["config", "--local", "--get", "merge.ff"]).stdout.as_slice(),
-        b"false\n"
-    );
+    assert_eq!(run("git", w.path(), &["config", "--local", "--get", "merge.ff"]).stdout.as_slice(), b"false\n");
 }
 
 #[test]
@@ -159,11 +153,7 @@ fn notes_round_trip_on_a_fixture_tip() {
     let d = notes_fixture();
     let p = d.path();
     let head = String::from_utf8(run("git", p, &["rev-parse", "HEAD"]).stdout).unwrap();
-    let o = keel_stdin(
-        p,
-        &["notes", "write", "test"],
-        r#"{"unit":{"files":["tests/test_a.py"],"covers":"a"},"e2e":{"waived":"no ui"}}"#,
-    );
+    let o = keel_stdin(p, &["notes", "write", "test"], r#"{"unit":{"files":["tests/test_a.py"],"covers":"a"},"e2e":{"waived":"no ui"}}"#);
     assert!(o.status.success(), "{}", text(&o));
     let n = note(p, "test");
     assert_eq!(n["schema"], "test/v1");
@@ -185,7 +175,7 @@ fn claiming_a_layer_the_diff_has_no_tests_for_is_refused() {
     let d = notes_fixture();
     let p = d.path();
     for j in [
-        r#"{"integration":{"files":["README"],"covers":"x"}}"#, // untouched by the range
+        r#"{"integration":{"files":["README"],"covers":"x"}}"#,      // untouched by the range
         r#"{"integration":{"files":["docs/a.html"],"covers":"x"}}"#, // touched, declares no tests
     ] {
         let o = keel_stdin(p, &["notes", "write", "test"], j);
@@ -302,12 +292,7 @@ fn run_env(prog: &str, d: &Path, a: &[&str], envs: &[(&str, &str)], input: &str)
     use std::io::Write;
     let mut c = cmd(prog);
     c.args(a).current_dir(d).env("PATH", path_with_keel()).envs(envs.iter().copied());
-    let mut c = c
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut c = c.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
     c.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
     c.wait_with_output().unwrap()
 }
@@ -366,11 +351,7 @@ fn check_under_a_foreign_git_dir_uses_its_own_repo_and_leaves_the_other_untouche
         env!("CARGO_BIN_EXE_keel"),
         a.path(),
         &["check"],
-        &[
-            ("GIT_DIR", b_git.to_str().unwrap()),
-            ("GIT_INDEX_FILE", b_git.join("index").to_str().unwrap()),
-            ("KEEL_PROBE", probe.to_str().unwrap()),
-        ],
+        &[("GIT_DIR", b_git.to_str().unwrap()), ("GIT_INDEX_FILE", b_git.join("index").to_str().unwrap()), ("KEEL_PROBE", probe.to_str().unwrap())],
         "",
     );
 
@@ -455,8 +436,7 @@ fn raw_spawns(dir: &Path, git_free: &[&str]) -> Vec<String> {
             for (i, line) in std::fs::read_to_string(&f).unwrap().lines().enumerate() {
                 let wrapped = |at: usize| {
                     let rest = &line[at + needle.len()..];
-                    line[..at].trim_end_matches("std::process::").ends_with("no_git_env(")
-                        || git_free.iter().any(|p| rest.starts_with(&format!("\"{p}\")")))
+                    line[..at].trim_end_matches("std::process::").ends_with("no_git_env(") || git_free.iter().any(|p| rest.starts_with(&format!("\"{p}\")")))
                 };
                 if line.match_indices(&needle).any(|(at, _)| !wrapped(at)) {
                     bad.push(format!("{}:{}: {}", f.display(), i + 1, line.trim()));

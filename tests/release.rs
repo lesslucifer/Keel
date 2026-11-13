@@ -18,10 +18,7 @@ fn job(yml: &str, name: &str) -> String {
     let header = format!("  {name}:");
     let mut lines = yml.lines().skip_while(|l| *l != header);
     assert!(lines.next().is_some(), "job {name} missing");
-    lines
-        .take_while(|l| l.is_empty() || l.starts_with("   "))
-        .collect::<Vec<_>>()
-        .join("\n")
+    lines.take_while(|l| l.is_empty() || l.starts_with("   ")).collect::<Vec<_>>().join("\n")
 }
 
 #[test]

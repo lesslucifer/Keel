@@ -75,7 +75,11 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
     let stored = match notes::raw(repo, kind, &r.tip) {
         Ok(stored) => stored,
         Err(e) => {
-            r.fail("1·notes", format!("the {kind} note on {} cannot be read: {e}", short(&r.tip)), format!("repair refs/notes/{kind} (git fsck names what is broken), then re-run"));
+            r.fail(
+                "1·notes",
+                format!("the {kind} note on {} cannot be read: {e}", short(&r.tip)),
+                format!("repair refs/notes/{kind} (git fsck names what is broken), then re-run"),
+            );
             return None;
         }
     };
@@ -92,11 +96,9 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
         }
         return None;
     };
-    let parsed = serde_json::from_str::<serde_json::Value>(&raw).map_err(|e| e.to_string()).and_then(|v| {
-        match v["schema"].as_str() {
-            Some(s) if s == schema => serde_json::from_value::<T>(v).map_err(|e| e.to_string()),
-            other => Err(format!("declares schema {}, expected {schema}", other.unwrap_or("none"))),
-        }
+    let parsed = serde_json::from_str::<serde_json::Value>(&raw).map_err(|e| e.to_string()).and_then(|v| match v["schema"].as_str() {
+        Some(s) if s == schema => serde_json::from_value::<T>(v).map_err(|e| e.to_string()),
+        other => Err(format!("declares schema {}, expected {schema}", other.unwrap_or("none"))),
     });
     match parsed {
         Ok(n) => Some(n),
@@ -133,7 +135,11 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
     }
     let tips = [test.as_ref().map(|n| &n.id.tip), cr.as_ref().map(|n| &n.id.tip), doc.as_ref().map(|n| &n.id.tip)];
     if tips.iter().flatten().any(|t| **t != r.tip) {
-        r.fail("2·manifest", format!("a note on {} names a different tip (copied from another commit?)", short(&r.tip)), "rewrite the notes on this tip with keel notes write");
+        r.fail(
+            "2·manifest",
+            format!("a note on {} names a different tip (copied from another commit?)", short(&r.tip)),
+            "rewrite the notes on this tip with keel notes write",
+        );
     }
 
     // 3-5: the review verdict, its base, its binding to the code diff.
@@ -154,7 +160,11 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
             );
         }
         if cr.code_diff_hash != notes::code_diff_hash(repo, cfg, &r.base, &r.tip)? {
-            r.fail("5·diff-binding", "reviewed code is not byte-identical to the code this tip changes".into(), "the tip changed after review - re-run the review on this exact tip");
+            r.fail(
+                "5·diff-binding",
+                "reviewed code is not byte-identical to the code this tip changes".into(),
+                "the tip changed after review - re-run the review on this exact tip",
+            );
         }
     }
 
@@ -259,9 +269,7 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
         if failures.is_empty() {
             continue;
         }
-        let why = waivers.iter().find(|w| {
-            !w.seam.is_empty() && !w.why.trim().is_empty() && (seam.starts_with(&w.seam) || w.seam.starts_with(seam))
-        });
+        let why = waivers.iter().find(|w| !w.seam.is_empty() && !w.why.trim().is_empty() && (seam.starts_with(&w.seam) || w.seam.starts_with(seam)));
         if let Some(w) = why {
             r.waived.push(format!("7·walk seam {} waived: {}", short(seam), w.why.trim()));
             continue;
@@ -425,9 +433,7 @@ pub(crate) fn range(repo: &Path, cfg: &Config, old: &str, new: &str, branch: &st
             [c, first] => verify(repo, cfg, Level::Commit, c, first)?,
             // Already landed on the remote branch, or a back-merge of main into an epic: not a seam.
             [_, main, wu]
-                if is_ancestor(repo, wu, main)
-                    || is_ancestor(repo, wu, old)
-                    || (merges == Level::Wu && is_ancestor(repo, wu, &cfg.branches.main)) =>
+                if is_ancestor(repo, wu, main) || is_ancestor(repo, wu, old) || (merges == Level::Wu && is_ancestor(repo, wu, &cfg.branches.main)) =>
             {
                 continue
             }
@@ -470,13 +476,17 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
         r.fail("0·tree", "keel check is red on the tip".into(), "get lint and tests green before the review runs");
     }
     check_tip(repo, cfg, &mut r, &names, false, true)?;
-    let schedule = review::Schedule::read(repo, &r.base, &r.tip, target, &cfg.code_paths).map_err(|e| (e, "fix the repo state, then preflight again".to_string()));
+    let schedule =
+        review::Schedule::read(repo, &r.base, &r.tip, target, &cfg.code_paths).map_err(|e| (e, "fix the repo state, then preflight again".to_string()));
     match schedule.and_then(|s| s.next()) {
         Ok(next) => {
             let (commands, changed) = match &next.since {
                 Some(since) => {
                     let diffs = notes::own_diffs(repo, since, &r.tip)?;
-                    (notes::own_diff_commands(&diffs, &cfg.code_paths), notes::changed_text(Ok(notes::diff_names(repo, &diffs, &cfg.code_paths)?), &format!("{since}..{}", r.tip)))
+                    (
+                        notes::own_diff_commands(&diffs, &cfg.code_paths),
+                        notes::changed_text(Ok(notes::diff_names(repo, &diffs, &cfg.code_paths)?), &format!("{since}..{}", r.tip)),
+                    )
                 }
                 None => (String::new(), String::new()),
             };
@@ -488,7 +498,8 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
     Ok(!r.failures.is_empty() as i32)
 }
 
-const USAGE: &str = "usage: keel verify-dod <wu|epic> <tip> [--target R] | commit <sha> | hook | range <old> <new>\n       keel preflight <wu|epic> <tip> [--target R]";
+const USAGE: &str =
+    "usage: keel verify-dod <wu|epic> <tip> [--target R] | commit <sha> | hook | range <old> <new>\n       keel preflight <wu|epic> <tip> [--target R]";
 
 fn level_of(s: &str) -> Result<Level, String> {
     match s {

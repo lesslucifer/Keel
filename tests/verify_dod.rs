@@ -90,11 +90,9 @@ fn fixture_with(top: &str, branches: &str, epic: &str, wu: &str) -> TempDir {
 
 /// Write the three notes on HEAD, as the workflow does before a merge.
 fn bless(p: &Path, tests: &str, verdict: &str) {
-    for (args, input) in [
-        (&["notes", "write", "test"][..], tests),
-        (&["notes", "write", "doc"][..], ""),
-        (&["notes", "write", "cr", "--verdict", verdict][..], ""),
-    ] {
+    for (args, input) in
+        [(&["notes", "write", "test"][..], tests), (&["notes", "write", "doc"][..], ""), (&["notes", "write", "cr", "--verdict", verdict][..], "")]
+    {
         let o = run(env!("CARGO_BIN_EXE_keel"), p, args, input);
         assert!(o.status.success(), "{args:?}: {}", text(&o));
     }
@@ -297,8 +295,7 @@ fn a_branch_shipping_neutered_hooks_cannot_skip_the_merge_gate() {
 
     for h in ["pre-merge-commit", "pre-commit", "pre-push"] {
         write(p, &format!(".keel/hooks/{h}"), "#!/bin/sh\nexit 0\n");
-        std::fs::set_permissions(p.join(".keel/hooks").join(h), std::os::unix::fs::PermissionsExt::from_mode(0o755))
-            .unwrap();
+        std::fs::set_permissions(p.join(".keel/hooks").join(h), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     }
     commit(p, "neuter the gate");
     git(p, &["switch", "-q", "epic/e"]);
@@ -524,7 +521,11 @@ fn a_foreign_or_unset_hooks_path_turns_preflight_and_verify_dod_red() {
         assert!(!run("git", p, &["notes", "--ref=dod", "show", "wu/e/a"], "").status.success(), "{what}: no receipt on red");
         let c = keel(p, &["check"]);
         assert!(c.status.success(), "{what}: {}", text(&c));
-        assert!(String::from_utf8_lossy(&c.stderr).contains("warning") && String::from_utf8_lossy(&c.stderr).contains("keel hooks install"), "{what}: {}", text(&c));
+        assert!(
+            String::from_utf8_lossy(&c.stderr).contains("warning") && String::from_utf8_lossy(&c.stderr).contains("keel hooks install"),
+            "{what}: {}",
+            text(&c)
+        );
     }
 }
 
@@ -806,7 +807,9 @@ fn an_owner_waiver_replaces_a_failed_round_carrying_its_findings_and_never_a_pas
     edit_note(p, "cr", "HEAD", |n| n.as_object_mut().unwrap().extend(recorded.as_object().unwrap().clone()));
     let preview = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING]);
     let t = text(&preview);
-    for needle in [RULING, "open: 2 blockers, 1 importants", "blocker src/a.py:2: a() is wrong on 0", "FAIL blockers 2 importants 1", "walk waiver abc: seam kept"] {
+    for needle in
+        [RULING, "open: 2 blockers, 1 importants", "blocker src/a.py:2: a() is wrong on 0", "FAIL blockers 2 importants 1", "walk waiver abc: seam kept"]
+    {
         assert!(t.contains(needle), "missing '{needle}': {t}");
     }
     assert!(!t.contains("a() is slow"), "a waived finding is not open: {t}");
@@ -1221,7 +1224,11 @@ fn round_5_follows_only_a_round_4_blocker_round_6_never_runs_and_a_round_5_block
     assert_eq!((n["blockers"].as_u64(), n["importants"].as_u64(), n["round"].as_u64()), (Some(2), Some(0), Some(5)), "counts come from the findings: {n}");
     ok(write_cr(p, &["--verdict", "WAIVED"]));
     let n = note(p, "cr", "HEAD");
-    assert_eq!((n["verdict"].as_str(), n["waiver"].as_str(), n["blockers"].as_u64(), n["round"].as_u64()), (Some("WAIVED"), Some("review cap: 5 rounds, 2 blockers open"), Some(2), Some(5)), "{n}");
+    assert_eq!(
+        (n["verdict"].as_str(), n["waiver"].as_str(), n["blockers"].as_u64(), n["round"].as_u64()),
+        (Some("WAIVED"), Some("review cap: 5 rounds, 2 blockers open"), Some(2), Some(5)),
+        "{n}"
+    );
     assert_eq!(n["findings"][0]["claim"], "a() returns 5", "the round's findings stay on the waiver: {n}");
 
     let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
@@ -1331,8 +1338,11 @@ fn the_writer_records_the_rounds_lists_and_takes_the_counts_from_its_findings() 
     ok(write_cr(p, &["--verdict", "FAIL", "--findings", findings, "--refuted", refuted, "--nits", nits, "--fleet", fleet, "--blockers", "1"]));
     let n = note(p, "cr", "HEAD");
     assert_eq!((n["blockers"].as_u64(), n["importants"].as_u64()), (Some(1), Some(0)), "a waived important is not open: {n}");
-    assert_eq!((n["findings"][1]["waived"].as_str(), n["refuted"][0]["why"].as_str(), n["nits"][0]["finding"].as_str(), n["fleet"]["finders"].as_u64()),
-        (Some("owner: tracked as B9"), Some("src/a.py:1 is O(1)"), Some("naming"), Some(2)), "{n}");
+    assert_eq!(
+        (n["findings"][1]["waived"].as_str(), n["refuted"][0]["why"].as_str(), n["nits"][0]["finding"].as_str(), n["fleet"]["finders"].as_u64()),
+        (Some("owner: tracked as B9"), Some("src/a.py:1 is O(1)"), Some("naming"), Some(2)),
+        "{n}"
+    );
 
     // A fix-PASS ran no reviewers: it records none of the lists.
     step(p, 2);
@@ -1488,7 +1498,9 @@ fn the_archived_doc_list_ignores_the_signature_lines_git_log_would_print() {
     let key = k.path().join("signer");
     let public = std::fs::read_to_string(k.path().join("signer.pub")).unwrap();
     std::fs::write(k.path().join("signers"), format!("t@t {}\n", public.split_whitespace().take(2).collect::<Vec<_>>().join(" "))).unwrap();
-    for (k_, v) in [("gpg.format", "ssh"), ("user.signingkey", key.to_str().unwrap()), ("gpg.ssh.allowedSignersFile", k.path().join("signers").to_str().unwrap())] {
+    for (k_, v) in
+        [("gpg.format", "ssh"), ("user.signingkey", key.to_str().unwrap()), ("gpg.ssh.allowedSignersFile", k.path().join("signers").to_str().unwrap())]
+    {
         git(p, &["config", k_, v]);
     }
     write(p, "docs/work/plan.html", "<p>plan</p>");
@@ -1633,7 +1645,12 @@ fn a_back_merge_of_the_epic_is_no_fix_of_this_wu_and_no_part_of_its_last_fix() {
     assert!(t.contains(&last_fix(3, 5, &c2, &tip)), "{t}");
     assert!(t.contains("changed: src/a.py") && !t.contains("src/b.py"), "the scope is the WU's own fix, never the merged code: {t}");
     let fix = git(p, &["rev-parse", "HEAD^1"]);
-    assert!(t.contains(&format!("git diff-tree -r --no-renames -p --end-of-options {c2} {fix} -- src/ tests/ ; git diff-tree -r --no-renames -p --end-of-options ")), "{t}");
+    assert!(
+        t.contains(&format!(
+            "git diff-tree -r --no-renames -p --end-of-options {c2} {fix} -- src/ tests/ ; git diff-tree -r --no-renames -p --end-of-options "
+        )),
+        "{t}"
+    );
     assert!(t.contains(&format!(" {tip} -- src/ tests/; changed: src/a.py (")), "{t}");
     // The printed commands, run as printed, show exactly the listed files.
     let commands = t.split("its parents: ").nth(1).and_then(|r| r.split("; changed:").next()).unwrap();
@@ -1655,7 +1672,8 @@ fn shared_file(p: &Path) {
 fn edit_shared(p: &Path, n: usize, v: &str) {
     let body: String = (1..=20).map(|i| if i == n { format!("x{i} = {v}\n") } else { format!("x{i} = {i}\n") }).collect();
     let current = std::fs::read_to_string(p.join("src/shared.py")).unwrap();
-    let merged: String = current.lines().zip(body.lines()).enumerate().map(|(i, (c, b))| if i + 1 == n { format!("{b}\n") } else { format!("{c}\n") }).collect();
+    let merged: String =
+        current.lines().zip(body.lines()).enumerate().map(|(i, (c, b))| if i + 1 == n { format!("{b}\n") } else { format!("{c}\n") }).collect();
     write(p, "src/shared.py", &merged);
 }
 

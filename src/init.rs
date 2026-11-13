@@ -45,10 +45,7 @@ fn check_for(repo: &Path) -> (&'static str, &'static str) {
     } else if has("go.mod") {
         ("go vet ./...", "go test ./...")
     } else {
-        (
-            "echo 'keel: set check.lint in .keel/config.toml' >&2; exit 1",
-            "echo 'keel: set check.test in .keel/config.toml' >&2; exit 1",
-        )
+        ("echo 'keel: set check.lint in .keel/config.toml' >&2; exit 1", "echo 'keel: set check.test in .keel/config.toml' >&2; exit 1")
     }
 }
 
@@ -132,7 +129,12 @@ fn skills(repo: &Path, force: bool, input: &mut impl BufRead, out: &mut impl Wri
             }
             Ok(_) => {
                 let go = force || {
-                    writeln!(out, "{rel} differs from this keel build ({}).\nLocal edits or an older Keel version - keel cannot tell which.", env!("CARGO_PKG_VERSION")).ok();
+                    writeln!(
+                        out,
+                        "{rel} differs from this keel build ({}).\nLocal edits or an older Keel version - keel cannot tell which.",
+                        env!("CARGO_PKG_VERSION")
+                    )
+                    .ok();
                     confirm(input, out, &format!("Overwrite with this build's version?{}  (-f overwrites without asking)", git_note(repo, &rel)))
                 };
                 if go {
@@ -198,9 +200,7 @@ fn settings(repo: &Path) -> Result<(), String> {
         let Some(groups) = hooks.entry(event).or_insert_with(|| json!([])).as_array_mut() else {
             return by_hand(&format!("\"hooks.{event}\" is not an array"));
         };
-        let present = groups.iter().any(|g| {
-            g["hooks"].as_array().is_some_and(|hs| hs.iter().any(|h| h["command"].as_str() == Some(cmd)))
-        });
+        let present = groups.iter().any(|g| g["hooks"].as_array().is_some_and(|hs| hs.iter().any(|h| h["command"].as_str() == Some(cmd))));
         if !present {
             let hook = json!([{"type": "command", "command": cmd}]);
             let g = match matcher {

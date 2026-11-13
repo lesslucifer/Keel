@@ -3,7 +3,8 @@
 //! well-formed output, swap in a real parser if docs start using odd markup.
 use std::path::Path;
 
-const EPIC_PLAN: &[&str] = &["intent", "owner-changes", "use-cases", "expected", "non-goals", "wu-summaries", "e2e-plan", "distillation-plan", "open-questions"];
+const EPIC_PLAN: &[&str] =
+    &["intent", "owner-changes", "use-cases", "expected", "non-goals", "wu-summaries", "e2e-plan", "distillation-plan", "open-questions"];
 const WU_PLAN: &[&str] = &["requirement", "maps-to", "expected", "test-plan"];
 const WU_RESULT: &[&str] = &["outcome", "deviations", "evidence", "distillation", "follow-ups"];
 const EPIC_RESULT: &[&str] = &["outcome", "wu-rollup", "deviations", "evidence", "distillation", "follow-ups"];
@@ -98,9 +99,49 @@ fn span(ts: &[Tag], i: usize) -> Option<(usize, usize)> {
 /// Elements that end a run of words where they open or close; every other tag, a comment
 /// included, joins the text on its two sides, as a browser shows it (`non-<code>.md</code>`).
 const BLOCK: &[&str] = &[
-    "address", "article", "aside", "blockquote", "body", "br", "dd", "details", "div", "dl", "dt", "figcaption", "figure", "footer", "form", "h1", "h2", "h3",
-    "h4", "h5", "h6", "head", "header", "hr", "html", "li", "main", "nav", "ol", "p", "pre", "section", "summary", "table", "tbody", "td", "tfoot", "th", "thead",
-    "title", "tr", "ul", "!",
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "body",
+    "br",
+    "dd",
+    "details",
+    "div",
+    "dl",
+    "dt",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "head",
+    "header",
+    "hr",
+    "html",
+    "li",
+    "main",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "summary",
+    "table",
+    "tbody",
+    "td",
+    "tfoot",
+    "th",
+    "thead",
+    "title",
+    "tr",
+    "ul",
+    "!",
 ];
 
 /// Calls `f` on each run of raw text in html[a..b] with the tag that ends it (`None` for the last).
@@ -306,9 +347,8 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
         for i in wus {
             let (a, b) = span(ts, i).unwrap_or((ts[i].end, html.len()));
             for sub in WU_SUB {
-                let ok = (0..ts.len()).any(|j| {
-                    !ts[j].closing && ts[j].start >= a && ts[j].start < b && attr(&ts[j], "data-item") == Some(sub) && filled(html, ts, j)
-                });
+                let ok = (0..ts.len())
+                    .any(|j| !ts[j].closing && ts[j].start >= a && ts[j].start < b && attr(&ts[j], "data-item") == Some(sub) && filled(html, ts, j));
                 if !ok {
                     errs.push(format!("data-wu {}: missing or empty \"{sub}\"", attr(&ts[i], "data-wu").unwrap_or("?")));
                 }
@@ -784,7 +824,10 @@ mod tests {
     #[test]
     fn both_edge_label_forms_are_scanned_and_plain_arrows_are_not_labels() {
         assert_eq!(labels("flowchart LR\n  A -->|yes| B -.->|no| C"), ["|yes|", "|no|"]);
-        assert_eq!(labels("flowchart LR\n  A -- yes --> B\n  B == go ==> C\n  C -. later .-> D\n  D <-- back --> A"), ["-- yes -->", "== go ==>", "-. later .->", "-- back -->"]);
+        assert_eq!(
+            labels("flowchart LR\n  A -- yes --> B\n  B == go ==> C\n  C -. later .-> D\n  D <-- back --> A"),
+            ["-- yes -->", "== go ==>", "-. later .->", "-- back -->"]
+        );
         assert_eq!(unquoted_labels("flowchart LR\n  A -- yes --> B")[0].1, "-- \"yes\" -->");
         let quoted = "flowchart LR\n  A -->|\"yes\"| B -- \"no\" --> C == \"go\" ==> D -. \"x\" .-> E\n  A --> B --- C -.-> D ==> E <--> F --x G --o H";
         assert!(labels(quoted).is_empty(), "{:?}", labels(quoted));
@@ -874,7 +917,11 @@ mod tests {
     /// Code review round 1, blocker 1: a quoted edge text hides the link-like dots inside it.
     #[test]
     fn a_quoted_edge_text_hides_its_dots_from_the_link_search() {
-        assert!(labels("flowchart LR\n  A -- \"wait...\" --> B(\"retry (3x)\")").is_empty(), "{:?}", labels("flowchart LR\n  A -- \"wait...\" --> B(\"retry (3x)\")"));
+        assert!(
+            labels("flowchart LR\n  A -- \"wait...\" --> B(\"retry (3x)\")").is_empty(),
+            "{:?}",
+            labels("flowchart LR\n  A -- \"wait...\" --> B(\"retry (3x)\")")
+        );
         assert_eq!(labels("flowchart LR\n  A -- \"wait...\" --> B(retry)"), ["(retry)"]);
     }
 
@@ -889,7 +936,8 @@ mod tests {
     #[test]
     fn an_acc_descr_block_is_skipped_whole_spaced_or_not() {
         for open in ["accDescr {", "accDescr{"] {
-            let src = format!("flowchart LR\n  {open}\n    a diagram (x) of [y]\n    and more {{z}}\n  }}\n  accTitle: the [t]\n  accDescr: one (line)\n  A[raw]");
+            let src =
+                format!("flowchart LR\n  {open}\n    a diagram (x) of [y]\n    and more {{z}}\n  }}\n  accTitle: the [t]\n  accDescr: one (line)\n  A[raw]");
             assert_eq!(labels(&src), ["[raw]"], "{open}");
         }
         assert_eq!(labels("flowchart LR\n  accDescr{ one (x) }\n  A[raw]"), ["[raw]"]);
