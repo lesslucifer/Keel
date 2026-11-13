@@ -78,6 +78,9 @@ fn misspelled_tag_is_reported_by_name_and_draft_is_silent() {
     let t = text(&o);
     assert_eq!(o.status.code(), Some(1));
     assert!(t.contains("unknown tag data-item=\"expcted\"") && t.contains("missing item \"expected\""), "{t}");
+    std::fs::write(p.join("docs/a.html"), doc("ready", "owner-chages", "")).unwrap();
+    let t = text(&keel(p, &["verify-doc", "docs/a.html"]));
+    assert!(t.contains("unknown tag data-item=\"owner-chages\"") && t.contains("owner-changes"), "the hint names the optional item: {t}");
     std::fs::write(p.join("docs/a.html"), doc("draft", "expcted", "")).unwrap();
     assert!(keel(p, &["verify-doc", "docs/a.html"]).status.success());
 }
@@ -199,6 +202,7 @@ fn an_unquoted_flowchart_label_is_red_and_named_in_any_finished_doc() {
         (r#"A[Build step] --> B["Done"]"#, "[Build step]", r#"["Build step"]"#),
         (r#"A["a"] -->|yes| B["b"]"#, "|yes|", r#"|"yes"|"#),
         (r#"A["a"] -- yes --> B["b"]"#, "-- yes -->", r#"-- "yes" -->"#),
+        (r#"A["a"]--yes-->B["b"]"#, "--yes-->", r#"-- "yes" -->"#),
         (r#"Q{Ready?} -->|"no"| A(["a"])"#, "{Ready?}", r#"{"Ready?"}"#),
         (r#"A["a"] --&gt;|yes| B["b"]"#, "|yes|", r#"|"yes"|"#),
     ] {

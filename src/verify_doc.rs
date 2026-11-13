@@ -184,7 +184,7 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
                 errs.push(format!("item \"{item}\" is empty"));
             }
         } else if !(epic && WU_SUB.contains(&item)) {
-            errs.push(format!("unknown tag data-item=\"{item}\" (typo? expected one of: {})", expected.join(", ")));
+            errs.push(format!("unknown tag data-item=\"{item}\" (typo? expected one of: {})", expected.iter().chain(OPTIONAL).copied().collect::<Vec<_>>().join(", ")));
         }
     }
     for e in &expected {
@@ -246,8 +246,8 @@ fn top_words(html: &str, ts: &[Tag]) -> usize {
 const DIRECTIVES: &[&str] = &["classDef", "class", "style", "linkStyle", "click", "direction", "end", "accTitle", "accDescr"];
 
 /// Flowchart labels not in double quotes, as (found, fix): node shapes (`A[x]`, `A(x)`, `A{x}`,
-/// `A>x]` and their doubled forms) and edge labels (`-->|x|`, `-- x -->`). Only `flowchart` and
-/// `graph` diagrams are scanned; comments and style lines are skipped.
+/// `A>x]` and their doubled forms) and edge labels (`-->|x|`, `-- x -->`, `--x-->`). Only
+/// `flowchart` and `graph` diagrams are scanned; comments and style lines are skipped.
 fn unquoted_labels(src: &str) -> Vec<(String, String)> {
     let mut lines = src.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("%%")).peekable();
     if lines.peek() == Some(&"---") {
@@ -329,8 +329,10 @@ fn scan_line(l: &str, out: &mut Vec<(String, String)>) {
             i = close;
         } else if is_link(c) {
             let run = b[i..].iter().take_while(|&&c| is_link(c)).count();
-            let arrow = l[i..i + run].trim_start_matches('<');
-            let opens_text = matches!(arrow, "--" | "==" | "-.") && b.get(i + run).is_some_and(u8::is_ascii_whitespace);
+            let from = i + l[i..i + run].len() - l[i..i + run].trim_start_matches('<').len();
+            let arrow = &l[from..i + run];
+            let ends_arrow = |n: &u8| matches!(n, b'x' | b'o') && arrow != "-.";
+            let opens_text = matches!(arrow, "--" | "==" | "-.") && b.get(i + run).is_some_and(|n| !ends_arrow(n));
             i += run;
             if opens_text {
                 let Some(k) = (i..b.len().saturating_sub(1)).find(|&k| matches!(b[k], b'-' | b'=' | b'.') && matches!(b[k + 1], b'-' | b'=' | b'.' | b'>')) else { return };
@@ -338,7 +340,7 @@ fn scan_line(l: &str, out: &mut Vec<(String, String)>) {
                 let end = b[k..].iter().take_while(|&&c| is_link(c)).count();
                 let close = &l[k..k + end];
                 if !label.starts_with('"') {
-                    out.push((format!("{arrow} {label} {close}"), format!("{arrow} \"{label}\" {close}")));
+                    out.push((l[from..k + end].to_string(), format!("{arrow} \"{label}\" {close}")));
                 }
                 i = k + end;
             }
@@ -416,6 +418,14 @@ mod tests {
         assert_eq!(unquoted_labels("flowchart LR\n  A -- yes --> B")[0].1, "-- \"yes\" -->");
         let quoted = "flowchart LR\n  A -->|\"yes\"| B -- \"no\" --> C == \"go\" ==> D -. \"x\" .-> E\n  A --> B --- C -.-> D ==> E <--> F --x G --o H";
         assert!(labels(quoted).is_empty(), "{:?}", labels(quoted));
+    }
+
+    #[test]
+    fn an_unspaced_edge_label_is_scanned_and_a_cross_or_circle_end_is_not_a_label() {
+        assert_eq!(labels("flowchart LR\n  A--yes-->B\n  B==go==>C\n  C-.later.->D\n  D<--back-->A"), ["--yes-->", "==go==>", "-.later.->", "--back-->"]);
+        assert_eq!(unquoted_labels("flowchart LR\n  A--yes-->B")[0].1, "-- \"yes\" -->");
+        let fine = "flowchart LR\n  A--\"yes\"-->B\n  A--xB\n  A--oB\n  A==xB\n  A--x C\n  A--o C\n  A--well-known-->B";
+        assert_eq!(labels(fine), ["--well-known-->"]);
     }
 
     #[test]

@@ -32,7 +32,7 @@
 <ol data-c="example-steps">
   <li>An agent writes an epic plan and marks it ready.</li>
   <li>Its diagram has <code>A[Build step]</code>.</li>
-  <li>The check says: unquoted diagram label <code>[Build step]</code>; write <code>["Build step"]</code>.</li>
+  <li>The check says: <code>diagram label not in quotes: [Build step] - write ["Build step"]</code>.</li>
   <li>The agent adds the quotes. The check passes.</li>
 </ol>
 
@@ -86,6 +86,12 @@
   <li><b>Important, fixed:</b> a WU plan that tagged its "what changes for you" table was refused as a typo. Every governed doc may now carry the tag; only an epic plan must.</li>
   <li><b>Nits, fixed in the skill text:</b> the plan skill says "every flowchart node and edge label" and names what is not scanned; the writing skill says "any doc not marked draft" and where the top is counted from; "the diagram source counts, ids included".</li>
   <li><b>Refuted by the router:</b> the unstaged <code>.claude/skills</code> copy. Your command copies it.</li>
+</ul>
+
+<h3 id="review-2-h">Review round 2</h3>
+<ul data-c="review-2">
+  <li><b>Pass, nits fixed:</b> the plan skill's link-only wording now names diagram labels too; the writing skill says where the top starts without a <code>&lt;main&gt;</code>; this plan quotes the real error.</li>
+  <li><b>Code nits fixed:</b> a typo of <code>owner-changes</code> in any governed doc now names it in the hint. Mermaid 11 also accepts an unspaced edge label, <code>A--yes--&gt;B</code>; the scan now covers it.</li>
 </ul>
 
 <h3 id="no-gate">What no gate reviews</h3>
