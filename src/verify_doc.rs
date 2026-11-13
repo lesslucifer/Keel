@@ -127,13 +127,20 @@ fn text(html: &str, ts: &[Tag], a: usize, b: usize) -> String {
     out
 }
 
-/// The source of html[a..b] as Mermaid reads it: markup kept, comments and CDATA hidden.
+/// The source of html[a..b] as Mermaid reads it: markup kept, comments and CDATA hidden unless
+/// they open inside a `"…"` string, where they are label text.
 fn source(html: &str, ts: &[Tag], a: usize, b: usize) -> String {
     let mut out = String::new();
+    let mut quoted = false;
+    let mut keep = |out: &mut String, s: &str| {
+        out.push_str(s);
+        quoted ^= s.matches('"').count() % 2 == 1;
+        quoted
+    };
     walk(html, ts, a, b, |run, t| {
-        out.push_str(run);
-        if let Some(t) = t.filter(|t| t.name != "!--" && t.end <= b) {
-            out.push_str(&html[t.start..t.end]);
+        let quoted = keep(&mut out, run);
+        if let Some(t) = t.filter(|t| t.end <= b && (t.name != "!--" || quoted)) {
+            keep(&mut out, &html[t.start..t.end]);
         }
     });
     out
@@ -208,9 +215,18 @@ pub fn verify(path: &Path) -> Vec<String> {
         }
     }
 
+    let mut scanned = 0;
     for (i, t) in ts.iter().enumerate().filter(|(_, t)| !t.closing && attr(t, "class").is_some_and(|c| c.split_whitespace().any(|c| c == "mermaid"))) {
+        if t.start < scanned {
+            continue; // inside a block already scanned (an unclosed one runs to the end)
+        }
         let (a, b) = span(&ts, i).unwrap_or((t.end, html.len()));
-        for (found, fix) in unquoted_labels(&decode(&source(&html, &ts, a, b))) {
+        scanned = b;
+        // Scan the decoded source (Mermaid decodes it), report from the source as written.
+        let raw = source(&html, &ts, a, b);
+        let (src, map) = decode_mapped(&raw);
+        for h in hits(&src) {
+            let (found, fix) = h.render(|(x, y)| &raw[map[x]..map[y]]);
             errs.push(format!("diagram label not in quotes: {found} - write {fix}"));
         }
     }
@@ -254,7 +270,7 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
     let mut seen: Vec<&str> = vec![];
     for (i, t) in ts.iter().enumerate().filter(|(_, t)| !t.closing) {
         let Some(item) = attr(t, "data-item") else { continue };
-        if expected.contains(&item) || OPTIONAL.contains(&item) {
+        if known.contains(&item) {
             if filled(html, ts, i) {
                 seen.push(item);
             } else {
@@ -294,28 +310,47 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
 
 /// Decodes numeric character references (decimal and hex) and the named entities docs use; any
 /// other `&name;` stays as written.
+#[cfg(test)]
 fn decode(s: &str) -> String {
     decode_with(s, None)
 }
 
 /// `decode`, with every unknown `&name;` replaced by `unknown` when one is given.
 fn decode_with(s: &str, unknown: Option<char>) -> String {
+    decode_core(s, unknown, None)
+}
+
+/// `decode`, with `map[j]` the offset in `s` where decoded byte `j` comes from (one entry past the
+/// end too), so a decoded range `x..y` is `s[map[x]..map[y]]` as written.
+fn decode_mapped(s: &str) -> (String, Vec<usize>) {
+    let mut map = Vec::with_capacity(s.len() + 1);
+    let out = decode_core(s, None, Some(&mut map));
+    (out, map)
+}
+
+fn decode_core(s: &str, unknown: Option<char>, mut map: Option<&mut Vec<usize>>) -> String {
     let mut out = String::with_capacity(s.len());
-    let mut rest = s;
-    while let Some(p) = rest.find('&') {
-        out.push_str(&rest[..p]);
-        rest = &rest[p..];
-        let semi = rest.as_bytes()[1..].iter().take(32).position(|&c| c == b';').filter(|&n| n > 0);
-        let hit = semi.and_then(|n| {
+    let mut i = 0;
+    while i < s.len() {
+        let rest = &s[i..];
+        let hit = rest.starts_with('&').then(|| rest.as_bytes()[1..].iter().take(32).position(|&c| c == b';').filter(|&n| n > 0)).flatten().and_then(|n| {
             let name = &rest[1..=n];
             let named = name.bytes().all(|c| c.is_ascii_alphanumeric());
             entity(name).or(unknown.filter(|_| named)).map(|c| (c, n + 2))
         });
-        let (c, len) = hit.unwrap_or(('&', 1));
+        let (c, len) = hit.unwrap_or_else(|| {
+            let c = rest.chars().next().unwrap_or('&');
+            (c, c.len_utf8())
+        });
+        if let Some(m) = map.as_deref_mut() {
+            m.extend(std::iter::repeat_n(i, c.len_utf8()));
+        }
         out.push(c);
-        rest = &rest[len..];
+        i += len;
     }
-    out.push_str(rest);
+    if let Some(m) = map {
+        m.push(s.len());
+    }
     out
 }
 
@@ -374,7 +409,33 @@ const DIRECTIVES: &[&str] = &["classDef", "style", "linkStyle", "direction", "ac
 /// Statements skipped to their end: the line's end or a `;` outside quotes.
 const STATEMENTS: &[&str] = &["class", "click", "end"];
 
-/// Flowchart labels not in double quotes, as (found, fix).
+/// `hits` read back from `src` itself, as (found, fix).
+#[cfg(test)]
+fn unquoted_labels(src: &str) -> Vec<(String, String)> {
+    hits(src).into_iter().map(|h| h.render(|(x, y)| &src[x..y])).collect()
+}
+
+/// A byte range of the scanned source.
+type Span = (usize, usize);
+
+/// One unquoted label: the text that names it, and the parts its fix is built from.
+struct Hit {
+    found: Span,
+    pre: Span,
+    label: Span,
+    post: Span,
+    spaced: bool,
+}
+
+impl Hit {
+    /// (found, fix), each part read through `at` (the source as written).
+    fn render<'s>(&self, at: impl Fn(Span) -> &'s str) -> (String, String) {
+        let sp = if self.spaced { " " } else { "" };
+        (at(self.found).to_string(), format!("{}{sp}\"{}\"{sp}{}", at(self.pre), inner(at(self.label)), at(self.post)))
+    }
+}
+
+/// Flowchart labels not in double quotes, as spans of `src`.
 ///
 /// The grammar this scanner knows, a subset of Mermaid 11's flowchart: after optional `---` front
 /// matter (indented or not), `%%` lines and `%%{…}%%` directives, the header `flowchart`, `graph`
@@ -386,14 +447,16 @@ const STATEMENTS: &[&str] = &["class", "click", "end"];
 /// lines, `%%{…}%%` directives anywhere and over any lines, `accDescr {…}` blocks (spaced or not),
 /// lines opening with `accTitle`, `accDescr:`, `classDef`, `style`, `linkStyle` or `direction`,
 /// statements opening with `class`, `click` or `end` (to the `;` or line end), and `N@{…}` shape
-/// blocks. `src` is the block's source as Mermaid reads it, markup included (`A[a<br>b]`). A label
-/// is reported as written; a fix hint keeps its text exact, markup included, a `"` written `#quot;`.
+/// blocks. `src` is the block's decoded source as Mermaid reads it, markup included (`A[a<br>b]`);
+/// a `<` that opens a tag never belongs to an arrow. Each hit is a set of spans the caller reads
+/// back from the source as written (entities kept), so a fix hint keeps the label exact, markup
+/// and entities included, a `"` written `#quot;`.
 ///
 /// Best effort (owner ruling 2026-11-13): a label this misses is a known limit; refusing a valid
 /// diagram, or a hint that changes it, is a bug. Known misses: a bracketless subgraph title, the
 /// inside of a quoted label, `N@{…}` shapes, other diagram kinds, a `>…]` shape after an id that
 /// ends in a non-ASCII or punctuation character, and a statement after a `;` on a skipped line.
-fn unquoted_labels(src: &str) -> Vec<(String, String)> {
+fn hits(src: &str) -> Vec<Hit> {
     let mut rest = src;
     loop {
         let t = rest.trim_start();
@@ -422,14 +485,32 @@ fn unquoted_labels(src: &str) -> Vec<(String, String)> {
         return vec![];
     }
     let body = rest.find(['\n', ';']).map_or("", |p| &rest[p + 1..]);
+    let off = src.len() - body.len();
     let mut out = vec![];
     scan(body, &mut out);
+    let shift = |(x, y): Span| (x + off, y + off);
+    for h in &mut out {
+        (h.found, h.pre, h.label, h.post) = (shift(h.found), shift(h.pre), shift(h.label), shift(h.post));
+    }
     out
 }
 
 /// A label's text as it goes inside the quotes of a fix: Mermaid writes a `"` as `#quot;`.
 fn inner(label: &str) -> String {
-    label.replace('"', "#quot;")
+    ["\"", "&quot;", "&#34;", "&#x22;"].iter().fold(label.to_string(), |l, q| l.replace(q, "#quot;"))
+}
+
+/// `s[a..b]` without its outer whitespace, as a span.
+fn trimmed(s: &str, a: usize, b: usize) -> Span {
+    let t = &s[a..b];
+    let lead = t.len() - t.trim_start().len();
+    (a + lead, (a + lead).max(b - (t.len() - t.trim_end().len())))
+}
+
+/// The length of the arrow run at `i`; a `<` that opens a tag (`<b>`) is not part of it.
+fn link_run(b: &[u8], i: usize) -> usize {
+    let tag = |j: usize| b[j] == b'<' && b.get(j + 1).is_some_and(|c| c.is_ascii_alphabetic() || matches!(c, b'/' | b'!'));
+    (i..b.len()).take_while(|&j| is_link(b[j]) && !tag(j)).count()
 }
 
 fn is_link(c: u8) -> bool {
@@ -444,7 +525,7 @@ fn is_open(c: u8) -> bool {
     matches!(c, b'[' | b'(' | b'{')
 }
 
-fn scan(s: &str, out: &mut Vec<(String, String)>) {
+fn scan(s: &str, out: &mut Vec<Hit>) {
     let b = s.as_bytes();
     let skip_quoted = |i: usize| b[i + 1..].iter().position(|&c| c == b'"').map_or(b.len(), |q| i + q + 2);
     let line_end = |i: usize| s[i..].find('\n').map_or(s.len(), |p| i + p);
@@ -511,9 +592,9 @@ fn scan(s: &str, out: &mut Vec<(String, String)>) {
             }
             let from = if j < b.len() && b[j] == b'"' { skip_quoted(j) } else { j };
             let Some(k) = b.get(from..).and_then(|r| r.iter().position(|&c| c == b'|')).map(|k| from + k) else { return };
-            let label = s[i + 1..k].trim();
-            if !label.starts_with('"') {
-                out.push((s[i..=k].to_string(), format!("|\"{}\"|", inner(label))));
+            let label = trimmed(s, i + 1, k);
+            if !s[label.0..].starts_with('"') {
+                out.push(Hit { found: (i, k + 1), pre: (i, i + 1), label, post: (k, k + 1), spaced: false });
             }
             i = k + 1;
         } else if is_open(c) || (c == b'>' && i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')) {
@@ -560,11 +641,15 @@ fn scan(s: &str, out: &mut Vec<(String, String)>) {
             if k > j && matches!(b[k - 1], b'/' | b'\\') {
                 k -= 1;
             }
-            let (open, label, end) = (s[i..j].trim_end(), s[j..k].trim(), &s[k..close]);
-            out.push((s[i..close].to_string(), format!("{open}\"{}\"{end}", inner(label))));
+            let pre = (i, i + s[i..j].trim_end().len());
+            out.push(Hit { found: (i, close), pre, label: trimmed(s, j, k), post: (k, close), spaced: false });
             i = close;
         } else if is_link(c) {
-            let run = b[i..].iter().take_while(|&&c| is_link(c)).count();
+            let run = link_run(b, i);
+            if run == 0 {
+                i = s[i..].find('>').map_or(s.len(), |p| i + p + 1); // a tag between statements
+                continue;
+            }
             let from = i + s[i..i + run].len() - s[i..i + run].trim_start_matches('<').len();
             let arrow = &s[from..i + run];
             let ends_arrow = |n: &u8| matches!(n, b'x' | b'o') && arrow != "-.";
@@ -587,11 +672,10 @@ fn scan(s: &str, out: &mut Vec<(String, String)>) {
                         k -= 1;
                     }
                 }
-                let label = s[i..k].trim();
-                let end = b[k..].iter().take_while(|&&c| is_link(c)).count();
-                let close = &s[k..k + end];
-                if !label.starts_with('"') {
-                    out.push((s[from..k + end].to_string(), format!("{arrow} \"{}\" {close}", inner(label))));
+                let label = trimmed(s, i, k);
+                let end = link_run(b, k);
+                if !s[label.0..].starts_with('"') {
+                    out.push(Hit { found: (from, k + end), pre: (from, i), label, post: (k, k + end), spaced: true });
                 }
                 i = k + end;
             }
@@ -603,7 +687,7 @@ fn scan(s: &str, out: &mut Vec<(String, String)>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{artifact, decode, has_role, result_role, tags, top_words, unquoted_labels, verify, wu_blocks};
+    use super::{artifact, decode, decode_mapped, has_role, hits, result_role, tags, top_words, unquoted_labels, verify, wu_blocks};
 
     #[test]
     fn a_stray_closing_html_before_the_root_neither_hides_the_checklist_nor_the_role() {
@@ -669,6 +753,40 @@ mod tests {
         assert_eq!(unquoted_labels("flowchart LR\n  A -- yes --> B")[0].1, "-- \"yes\" -->");
         let quoted = "flowchart LR\n  A -->|\"yes\"| B -- \"no\" --> C == \"go\" ==> D -. \"x\" .-> E\n  A --> B --- C -.-> D ==> E <--> F --x G --o H";
         assert!(labels(quoted).is_empty(), "{:?}", labels(quoted));
+    }
+
+    /// Epic code review round 2, blocker 2: a decoded range maps back to the source as written.
+    #[test]
+    fn a_decoded_range_maps_back_to_the_source() {
+        let raw = "A[Vec&lt;String&gt;] é&amp;lt;";
+        let (d, map) = decode_mapped(raw);
+        assert_eq!(d, "A[Vec<String>] é&lt;");
+        assert_eq!(map.len(), d.len() + 1);
+        assert_eq!(&raw[map[1]..map[14]], "[Vec&lt;String&gt;]");
+        assert_eq!(&raw[map[15]..map[d.len()]], "é&amp;lt;");
+        let raw = "flowchart LR\n  A[a&nbsp;b]";
+        let (d, map) = decode_mapped(raw);
+        let h = hits(&d);
+        assert_eq!(h[0].render(|(x, y)| &raw[map[x]..map[y]]), ("[a&nbsp;b]".into(), "[\"a&nbsp;b\"]".into()));
+        assert_eq!(super::inner("a&quot;b\"c"), "a#quot;b#quot;c");
+    }
+
+    /// Epic code review round 2, blocker 1: a `<` that opens a tag ends the arrow.
+    #[test]
+    fn a_tag_after_an_arrow_is_edge_text() {
+        assert_eq!(super::link_run(b"--<b>x", 0), 2);
+        assert_eq!(super::link_run(b"<-->B", 0), 4);
+        assert_eq!(super::link_run(b"--></b>", 0), 3);
+        assert_eq!(unquoted_labels("flowchart LR\n  A--<b>x</b>-->B"), vec![("--<b>x</b>-->".into(), "-- \"<b>x</b>\" -->".into())]);
+        assert!(labels("flowchart LR\n  A--\"<b>x</b>\"-->B").is_empty());
+    }
+
+    /// Epic code review round 2, blocker 3: a comment is hidden only outside a quoted string.
+    #[test]
+    fn a_comment_inside_a_quoted_string_is_kept() {
+        let html = r#"A["<!--"] --> B["b"] <!-- [z] --> C"#;
+        let ts = tags(html);
+        assert_eq!(super::source(html, &ts, 0, html.len()), r#"A["<!--"] --> B["b"]  C"#);
     }
 
     /// Epic code review round 1, nit: a label is reported as written in the source, spaces kept.
