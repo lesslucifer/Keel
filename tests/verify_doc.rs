@@ -368,3 +368,60 @@ fn a_label_with_raw_markup_gets_a_hint_that_keeps_the_markup() {
     let (ok, t) = verify(p, "f.html", &flowchart(r#"A["a<br>b"] -->|"x<br>y"| B["a<b>x</b>b"]"#));
     assert!(ok, "quoted labels with markup are green: {t}");
 }
+
+/// Epic code review round 2, blocker 1: edge text that opens with a tag right after the arrow is
+/// edge text, not part of the arrow; the hint keeps the diagram.
+#[test]
+fn edge_text_that_opens_with_a_tag_is_edge_text() {
+    let d = repo();
+    let p = d.path();
+    for (body, named) in [
+        ("A--<b>x</b>-->B", r#"diagram label not in quotes: --<b>x</b>--> - write -- "<b>x</b>" -->"#),
+        ("A==<b>x</b>==>B", r#"diagram label not in quotes: ==<b>x</b>==> - write == "<b>x</b>" ==>"#),
+        ("A-.<i>x</i>.->B", r#"diagram label not in quotes: -.<i>x</i>.-> - write -. "<i>x</i>" .->"#),
+    ] {
+        let (ok, t) = verify(p, "f.html", &flowchart(body));
+        assert!(!ok && t.contains(named) && t.matches("not in quotes").count() == 1, "{body}: {t}");
+    }
+    let (ok, t) = verify(p, "f.html", &flowchart(r#"A--"<b>x</b>"-->B"#));
+    assert!(ok, "{t}");
+}
+
+/// Epic code review round 2, blocker 2: a label and its hint are shown as written, entities kept,
+/// so the hint pasted back into the page draws the same diagram.
+#[test]
+fn a_label_with_entities_is_named_and_fixed_as_written() {
+    let d = repo();
+    let p = d.path();
+    for (body, named) in [
+        ("A[Vec&lt;String&gt;]", r#"diagram label not in quotes: [Vec&lt;String&gt;] - write ["Vec&lt;String&gt;"]"#),
+        ("A[a&amp;lt;b]", r#"diagram label not in quotes: [a&amp;lt;b] - write ["a&amp;lt;b"]"#),
+        ("A[a&nbsp;b]", r#"diagram label not in quotes: [a&nbsp;b] - write ["a&nbsp;b"]"#),
+    ] {
+        let (ok, t) = verify(p, "f.html", &flowchart(body));
+        assert!(!ok && t.contains(named), "{body}: {t}");
+    }
+    let (ok, t) = verify(p, "f.html", &flowchart(r#"A[&quot;a&quot;] --&gt;|&quot;b&quot;| B["Vec&lt;String&gt;"]"#));
+    assert!(ok, "entity-written quotes still quote: {t}");
+}
+
+/// Epic code review round 2, blocker 3: comment-like text inside a quoted label is label text; it
+/// never flips which quotes pair up.
+#[test]
+fn a_comment_opener_inside_a_quoted_label_is_label_text() {
+    let d = repo();
+    let p = d.path();
+    let (ok, t) = verify(p, "f.html", &flowchart(r#"A["<!--"] --> B["b"] --> C["[y]"]"#));
+    assert!(ok, "{t}");
+}
+
+/// Epic code review round 2, nit: a diagram block with no closing tag is scanned once, and a later
+/// block inside it is not scanned again.
+#[test]
+fn an_unclosed_diagram_block_is_scanned_once() {
+    let d = repo();
+    let p = d.path();
+    let doc = "<html lang=\"en\"><body><main><div class=\"mermaid\">flowchart LR\n  <pre class=\"mermaid\">flowchart LR\n  A[x]</pre></main></body></html>";
+    let (ok, t) = verify(p, "f.html", doc);
+    assert!(!ok && t.matches("not in quotes: [x]").count() == 1, "{t}");
+}
