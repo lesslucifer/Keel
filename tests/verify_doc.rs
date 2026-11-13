@@ -425,3 +425,15 @@ fn an_unclosed_diagram_block_is_scanned_once() {
     let (ok, t) = verify(p, "f.html", doc);
     assert!(!ok && t.matches("not in quotes: [x]").count() == 1, "{t}");
 }
+
+/// Epic code review round 3, important: a quote written as an entity is a quote, so a comment
+/// opener inside an entity-quoted label is label text too.
+#[test]
+fn a_comment_opener_inside_an_entity_quoted_label_is_label_text() {
+    let d = repo();
+    let p = d.path();
+    for body in [r#"A[&quot;<!--&quot;] --> B["b"] --> C["[y]"]"#, r#"A[&#34;<!--&#34;] --> B["b"] --> C["[y]"]"#, r#"A[&quot;a&quot;] --> B[&quot;<!--&quot;] --> C[&quot;[y]&quot;]"#] {
+        let (ok, t) = verify(p, "f.html", &flowchart(body));
+        assert!(ok, "{body}: {t}");
+    }
+}

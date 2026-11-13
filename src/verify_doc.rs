@@ -771,6 +771,12 @@ mod tests {
         assert_eq!(super::inner("a&quot;b\"c"), "a#quot;b#quot;c");
     }
 
+    /// Epic code review round 3, nit: every form entity() decodes to `"` is written `#quot;`.
+    #[test]
+    fn every_quote_entity_is_written_as_quot() {
+        assert_eq!(super::inner(r#"a"b&quot;c&#34;d&#034;e&#x22;f&#X22;g&#x0022;h&amp;i"#), "a#quot;b#quot;c#quot;d#quot;e#quot;f#quot;g#quot;h&amp;i");
+    }
+
     /// Epic code review round 2, blocker 1: a `<` that opens a tag ends the arrow.
     #[test]
     fn a_tag_after_an_arrow_is_edge_text() {
