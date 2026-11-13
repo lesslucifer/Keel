@@ -68,20 +68,10 @@ pub(crate) fn line(repo: &Path, base: &str, tip: &str) -> Result<Vec<Entry>, Str
         .collect())
 }
 
-/// A cr note as the schedule reads it. A `fixes` that is not a full commit name makes the note
-/// unreadable: a fix-PASS names the commit its writer verified, and a note's text never reaches git
-/// as anything but a commit (code review round 1, B1).
+/// A cr note as the schedule reads it: the schedule's fields are typed on `CrNote`
+/// (`notes::ScheduleFields`), so a `fixes` that is not a full commit name makes the note unreadable.
 pub(crate) fn parse_note(body: &str) -> Result<CrNote, String> {
-    let n: CrNote = serde_json::from_str(body).map_err(|e| format!("it does not parse as cr/v1 ({e})"))?;
-    match n.extra.get("fixes") {
-        Some(f) if !f.as_str().is_some_and(full_sha) => Err(format!("its fixes {f} is not a full commit name")),
-        _ => Ok(n),
-    }
-}
-
-/// A full object name: 40 (SHA-1) or 64 (SHA-256) lowercase hex digits.
-pub(crate) fn full_sha(s: &str) -> bool {
-    matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    serde_json::from_str(body).map_err(|e| format!("it does not parse as cr/v1 ({e})"))
 }
 
 /// `git cat-file --batch` output, one result per object asked for: its bytes as text, or why not.
@@ -167,17 +157,30 @@ pub(crate) struct Next {
     pub since: Option<String>,
 }
 
+/// A note's `scope` field: `full`, or `since <commit>` from round 3.
+fn scope_of(since: Option<&str>) -> String {
+    since.map_or("full".to_string(), |s| format!("since {s}"))
+}
+
 impl Next {
     /// The note's `scope` field.
     pub(crate) fn scope(&self) -> String {
-        self.since.as_ref().map_or("full".to_string(), |s| format!("since {s}"))
+        scope_of(self.since.as_deref())
     }
 
-    /// Preflight's line: the round and the exact range the reviewers read (full SHAs).
-    pub(crate) fn announce(&self, base: &str, tip: &str) -> String {
+    /// Preflight's line: the round and the exact range the reviewers read (full SHAs). From round 3
+    /// that is the branch's own changes since the last reviewed commit (`changed`, from
+    /// `notes::own_names`), never what a merge brought from its second parent.
+    pub(crate) fn announce(&self, base: &str, tip: &str, code_paths: &[String], changed: &[String]) -> String {
         match &self.since {
             None => format!("review round {} of {} - scope: the whole range, {base}..{tip}", self.round, self.max),
-            Some(s) => format!("review round {} of {} - scope: the last fix, {s}..{tip} (the code paths; reviewers may read any file, and report only on these changes)", self.round, self.max),
+            Some(s) => format!(
+                "review round {} of {} - scope: the last fix, {s}..{tip}: this branch's own changes, a merge only for what it resolved itself: {}; changed: {} (reviewers may read any file, and report only on these changes)",
+                self.round,
+                self.max,
+                notes::own_diff_command(s, tip, code_paths),
+                if changed.is_empty() { "nothing".to_string() } else { changed.join(", ") }
+            ),
         }
     }
 }
@@ -263,22 +266,34 @@ pub(crate) fn next_round(earlier: &[Entry], max: u32, unchanged: &dyn Fn(&str) -
     })
 }
 
-/// The cr notes below the tip (the tip's own note never counts: a re-run on the same commit is the
-/// same round) and the target's cap: what preflight and the writer both read the schedule from.
-pub(crate) fn below_tip(repo: &Path, base: &str, tip: &str, target: &str) -> Result<(Vec<Entry>, u32), String> {
-    let earlier = line(repo, base, tip)?.into_iter().filter(|e| e.commit != tip).collect();
-    Ok((earlier, max_rounds(repo, target)?))
+/// A tip's schedule, read once: the one place preflight and the cr writer assemble it from.
+pub(crate) struct Schedule<'a> {
+    /// The cr notes below the tip, newest first (the tip's own note never counts: a re-run on the same
+    /// commit is the same round).
+    pub earlier: Vec<Entry>,
+    /// The target's cap.
+    pub max: u32,
+    repo: &'a Path,
+    tip: &'a str,
+    code_paths: &'a [String],
 }
 
-/// The tip's schedule for preflight.
-pub(crate) fn schedule(repo: &Path, base: &str, tip: &str, target: &str, code_paths: &[String]) -> Result<Next, (String, String)> {
-    let (earlier, max) = below_tip(repo, base, tip, target).map_err(|e| (e, "fix the repo state, then preflight again".to_string()))?;
-    next_round(&earlier, max, &|c: &str| no_code_since(repo, c, tip, code_paths))
-}
+impl<'a> Schedule<'a> {
+    pub(crate) fn read(repo: &'a Path, base: &str, tip: &'a str, target: &str, code_paths: &'a [String]) -> Result<Self, String> {
+        let earlier = line(repo, base, tip)?.into_iter().filter(|e| e.commit != tip).collect();
+        Ok(Schedule { earlier, max: max_rounds(repo, target)?, repo, tip, code_paths })
+    }
 
-/// No code path changed between commit `c` and the tip.
-pub(crate) fn no_code_since(repo: &Path, c: &str, tip: &str, code_paths: &[String]) -> bool {
-    notes::names(repo, c, tip, code_paths).is_ok_and(|n| n.is_empty())
+    /// The branch itself changed no code path between commit `c` and the tip (`notes::own_names`: a
+    /// back-merge brings no change of this branch's own). One rule for the round and the fix-PASS.
+    pub(crate) fn unchanged(&self, c: &str) -> bool {
+        notes::own_names(self.repo, c, self.tip, self.code_paths).is_ok_and(|n| n.is_empty())
+    }
+
+    /// The round about to run on the tip.
+    pub(crate) fn next(&self) -> Result<Next, (String, String)> {
+        next_round(&self.earlier, self.max, &|c: &str| self.unchanged(c))
+    }
 }
 
 /// Whether a round's findings may be fixed with no new round: only nits (a PASS), in any round;
@@ -410,13 +425,11 @@ pub(crate) fn tags(entries: &[Entry], files: impl Fn(&str, &str) -> Result<Vec<S
             Ok(n) if kind(n) == Kind::Round => {
                 let round = numbered.len() as u32 + 1;
                 numbered.insert(&e.commit, round);
-                let (scope, recorded_scope) = match previous {
-                    Some(p) if round > WHOLE_RANGE_ROUNDS => (format!("since {}", short(p)), format!("since {p}")),
-                    _ => ("full".to_string(), "full".to_string()),
-                };
+                let since = previous.filter(|_| round > WHOLE_RANGE_ROUNDS);
+                let (scope, recorded_scope) = (scope_of(since.map(short)), scope_of(since));
                 previous = Some(&e.commit);
-                let (r, s) = (n.extra.get("round").and_then(|r| r.as_u64()), n.extra.get("scope").and_then(|s| s.as_str()));
-                let differs = r.is_some_and(|r| r != u64::from(round)) || s.is_some_and(|s| s != recorded_scope);
+                let (r, s) = (n.schedule.round, n.schedule.scope.as_deref());
+                let differs = r.is_some_and(|r| r != round) || s.is_some_and(|s| s != recorded_scope);
                 let note_says = match (differs, r, s) {
                     (true, Some(r), Some(s)) => format!("; the note records round {r}, {s}"),
                     (true, Some(r), None) => format!("; the note records round {r}"),
@@ -445,8 +458,8 @@ pub(crate) fn tags(entries: &[Entry], files: impl Fn(&str, &str) -> Result<Vec<S
 
 #[cfg(test)]
 mod tests {
-    use super::{cap, fix_pass, fixable, full_sha, max_rounds_in, next_round, next_step, parse_batch, parse_note, tags, then, Entry, Fix, Kind, Next, Then};
-    use crate::notes::CrNote;
+    use super::{cap, fix_pass, fixable, max_rounds_in, next_round, next_step, parse_batch, parse_note, tags, then, Entry, Fix, Kind, Next, Then};
+    use crate::notes::{full_sha, CrNote};
     use serde_json::json;
 
     fn note(verdict: &str, blockers: u32, importants: u32, extra: serde_json::Value) -> CrNote {
@@ -464,8 +477,12 @@ mod tests {
         at(commit, note("FAIL", blockers, importants, json!({})))
     }
 
+    /// A fix-PASS on `commit` answering `reviewed`. The test names commits briefly, so `fixes` is set
+    /// past the parser's full-commit rule (pinned in a_note_whose_fixes_is_no_full_commit_is_unreadable).
     fn fix_of(commit: &str, reviewed: &str) -> Entry {
-        at(commit, note("PASS", 0, 0, json!({"fixes": reviewed})))
+        let mut n = note("PASS", 0, 0, json!({}));
+        n.schedule.fixes = Some(reviewed.into());
+        at(commit, n)
     }
 
     /// `n` FAIL rounds with a blocker, newest first: commits r<n>..r1.
@@ -478,8 +495,7 @@ mod tests {
         assert_eq!(super::kind(&note("PASS", 0, 0, json!({}))), Kind::Round);
         assert_eq!(super::kind(&note("FAIL", 1, 0, json!({}))), Kind::Round);
         assert_eq!(super::kind(&note("WAIVED", 1, 0, json!({"waiver": "cap"}))), Kind::Round, "a waiver kept over its round");
-        assert_eq!(super::kind(&note("PASS", 0, 0, json!({"fixes": "r1"}))), Kind::FixPass);
-        assert_eq!(super::kind(&note("PASS", 0, 0, json!({"fixes": " "}))), Kind::Round, "a blank fixes answers nothing");
+        assert_eq!(super::kind(fix_of("f1", "r1").note.as_ref().unwrap()), Kind::FixPass);
         assert_eq!(super::kind(&note("WAIVED", 0, 0, json!({"waiver": "r", "unreviewed": true}))), Kind::Other);
     }
 
@@ -492,8 +508,12 @@ mod tests {
         assert_eq!(next_round(&failed_rounds(4), 5, &|_| false), Ok(Next { round: 5, max: 5, since: Some("r4".into()) }));
         let n = Next { round: 3, max: 5, since: Some("s".into()) };
         assert_eq!((n.scope(), Next { round: 1, max: 5, since: None }.scope()), ("since s".to_string(), "full".to_string()));
-        assert!(n.announce("b", "t").starts_with("review round 3 of 5 - scope: the last fix, s..t"));
-        assert_eq!(Next { round: 2, max: 5, since: None }.announce("b", "t"), "review round 2 of 5 - scope: the whole range, b..t");
+        let paths = ["src/".to_string(), "tests/".to_string()];
+        let a = n.announce("b", "t", &paths, &["src/a.rs".into()]);
+        assert!(a.starts_with("review round 3 of 5 - scope: the last fix, s..t: this branch's own changes"), "{a}");
+        assert!(a.contains("git rev-list --first-parent s..t | git diff-tree --stdin -r -p --cc -- src/ tests/; changed: src/a.rs ("), "{a}");
+        assert!(n.announce("b", "t", &paths, &[]).contains("changed: nothing"));
+        assert_eq!(Next { round: 2, max: 5, since: None }.announce("b", "t", &paths, &[]), "review round 2 of 5 - scope: the whole range, b..t");
     }
 
     #[test]
@@ -591,9 +611,22 @@ mod tests {
         let sha = "0123456789abcdef0123456789abcdef01234567";
         assert!(parse_note(&body(json!(sha))).is_ok());
         assert!(parse_note(&body(json!(sha.repeat(2)[..64]))).is_ok(), "a SHA-256 name");
-        for bad in [json!("--output=x"), json!("HEAD~1"), json!(" "), json!(&sha[..39]), json!(sha.to_uppercase()), json!(1), json!(null)] {
+        for bad in [json!("--output=x"), json!("HEAD~1"), json!(" "), json!(&sha[..39]), json!(sha.to_uppercase())] {
             assert!(parse_note(&body(bad.clone())).unwrap_err().contains("not a full commit name"), "{bad}");
         }
+        for bad in [json!(1), json!(null), json!([sha])] {
+            assert!(parse_note(&body(bad.clone())).is_err(), "a fixes that is no string is unreadable: {bad}");
+        }
+        // Epic code review round 1, I2: one typed home. A blank fixes is unreadable for every reader
+        // (it was "no fix-PASS" to CrNote::fixes and unreadable to the schedule), and a round that is
+        // not a whole number is unreadable too, never ignored.
+        assert!(serde_json::from_str::<CrNote>(&body(json!(" "))).is_err());
+        let mut round = serde_json::from_str::<serde_json::Value>(&body(json!(sha))).unwrap();
+        round["round"] = json!("2");
+        assert!(parse_note(&round.to_string()).is_err());
+        let n = parse_note(&body(json!(sha))).unwrap();
+        assert_eq!((n.fixes(), n.extra.get("fixes")), (Some(sha), None), "the schedule's fields are typed, not left in extra");
+        assert_eq!(serde_json::to_value(&n).unwrap()["fixes"], json!(sha), "and written back at the top level");
         assert!(full_sha(sha) && !full_sha(&format!("-{}", &sha[1..])));
     }
 

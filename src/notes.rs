@@ -92,10 +92,53 @@ pub struct CrNote {
     /// Epic tips only: seams of the epic walk waived on the record (edited in by hand).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub walk_waivers: Vec<WalkWaiver>,
+    /// The review schedule's fields (UC-REV-3), keel's own: typed here, so the writer and every reader
+    /// read them one way. Declared before `extra`, which keeps only what no typed field took.
+    #[serde(flatten)]
+    pub schedule: ScheduleFields,
     /// Every other field the review skill records (`findings`, `refuted`, `nits`, `fleet`, ...): kept
     /// as read, so a note rewritten in place (a waiver at sign-off) never drops what a round recorded.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// What keel writes for the schedule: `round` and `scope` on a reviewed note; `fixes`, `round` (the
+/// round it answers), `fix_diff_hash` and `answers` on a fix-PASS. A note whose field has another type,
+/// or whose `fixes` is not a full commit name, does not parse: it is unreadable, never half-read, and a
+/// note's text never reaches git as anything but a commit (code review round 1, B1).
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct ScheduleFields {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub round: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "full_commit")]
+    pub fixes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fix_diff_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<Answers>,
+}
+
+/// The findings a fix-PASS answers.
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Answers {
+    pub importants: u32,
+    pub nits: usize,
+}
+
+fn full_commit<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    let s = String::deserialize(d)?;
+    if full_sha(&s) {
+        Ok(Some(s))
+    } else {
+        Err(serde::de::Error::custom(format!("its fixes {s:?} is not a full commit name")))
+    }
+}
+
+/// A full object name: 40 (SHA-1) or 64 (SHA-256) lowercase hex digits.
+pub(crate) fn full_sha(s: &str) -> bool {
+    matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 impl CrNote {
@@ -123,7 +166,7 @@ impl CrNote {
 
     /// A fix-PASS's reviewed commit: the round it answers without a new one (UC-REV-3).
     pub(crate) fn fixes(&self) -> Option<&str> {
-        self.extra.get("fixes").and_then(|f| f.as_str()).filter(|f| !f.trim().is_empty())
+        self.schedule.fixes.as_deref()
     }
 }
 
@@ -159,7 +202,7 @@ pub(crate) fn waiver_reason(raw: Option<&str>) -> Result<String, String> {
 /// (they name seams, which a later code change does not move) carried. With no note at all it is
 /// `unreviewed` too, so its 0/0 never reads as a clean review. Err = (what, fix).
 pub(crate) fn waive(existing_raw: Option<&str>, id: Identity, reason: Option<&str>, code_diff_hash: String, counts: (Option<u32>, Option<u32>)) -> Result<CrNote, (String, String)> {
-    let t = id.tip.get(..10).unwrap_or(&id.tip).to_string();
+    let t = short(&id.tip).to_string();
     let reason = waiver_reason(reason).map_err(|w| (w, "give the reason in words".to_string()))?;
     let existing = existing_raw
         .map(serde_json::from_str::<CrNote>)
@@ -183,6 +226,7 @@ pub(crate) fn waive(existing_raw: Option<&str>, id: Identity, reason: Option<&st
             importants: 0,
             code_diff_hash: String::new(),
             walk_waivers,
+            schedule: ScheduleFields::default(),
             extra,
         }
     };
@@ -341,6 +385,30 @@ pub(crate) fn names(repo: &Path, base: &str, tip: &str, pathspecs: &[String]) ->
     let mut a = vec!["diff", "--name-only", "--no-renames", "-z", "--end-of-options", base, tip, "--"];
     a.extend(pathspecs.iter().map(String::as_str));
     Ok(zpaths(&git(repo, &a, &[])?))
+}
+
+/// Paths within `pathspecs` that the branch itself changed after `since` up to `tip`: each first-parent
+/// commit of `since..tip` against its first parent, a merge only where its result differs from every
+/// parent (`--cc`: what the merge resolved itself, never what its second parent brought). A WU that
+/// back-merges its epic has not changed another WU's code (epic code review round 1, B1). Two git
+/// processes, plumbing only.
+pub(crate) fn own_names(repo: &Path, since: &str, tip: &str, pathspecs: &[String]) -> Result<Vec<String>, String> {
+    let commits = git(repo, &["rev-list", "--first-parent", "--end-of-options", &format!("{since}..{tip}")], &[])?;
+    if commits.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut a = vec!["diff-tree", "--stdin", "-r", "--cc", "--no-renames", "--name-only", "-z", "--no-commit-id", "--"];
+    a.extend(pathspecs.iter().map(String::as_str));
+    let out = git_raw(repo, &a, Some(format!("{commits}\n").as_bytes()))?;
+    let mut names = zpaths(&ok_text(&a, out)?);
+    names.sort();
+    names.dedup();
+    Ok(names)
+}
+
+/// The command that prints the branch's own changes `own_names` lists, for reviewers to read.
+pub(crate) fn own_diff_command(since: &str, tip: &str, pathspecs: &[String]) -> String {
+    format!("git rev-list --first-parent {since}..{tip} | git diff-tree --stdin -r -p --cc -- {}", pathspecs.join(" "))
 }
 
 pub(crate) fn identity(repo: &Path, tip: String, base: String, branch: Option<String>) -> Result<Identity, String> {
@@ -746,8 +814,8 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
     let (blockers, importants) = cr_counts(lists.get("findings"), typed_blockers, typed_importants)?;
     let write = cr_verdict(verdict, reason, blockers, importants)?;
     let code_diff_hash = code_diff_hash(repo, cfg, &r.id.base, &tip)?;
-    // The schedule's inputs exactly as preflight reads them (one rule for "the tip's own note never counts").
-    let schedule = || review::below_tip(repo, &r.id.base, &tip, &r.target);
+    // The schedule exactly as preflight reads it (review::Schedule, one place for both).
+    let schedule = || review::Schedule::read(repo, &r.id.base, &tip, &r.target, &cfg.code_paths);
     let fixes = flag("--fixes").or_else(|| args.contains(&"--fixes").then_some(""));
     if fixes.is_some() && verdict != "PASS" {
         return refuse("--fixes given with a verdict other than PASS".into(), "a fix-PASS is --verdict PASS --fixes <reviewed commit>");
@@ -769,30 +837,29 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
                     "commit the fix, then write the fix-PASS on it",
                 );
             }
-            let unchanged = |c: &str| review::no_code_since(repo, c, &tip, &cfg.code_paths);
-            let (earlier, max) = schedule()?;
+            let s = schedule()?;
             // The tip's own note: a reviewed one is the latest round, and a fix-PASS never replaces it.
             let own = cr_raw(repo, &tip)?
                 .map(|raw| review::parse_note(&raw))
                 .transpose()
                 .or_else(|why| refuse(format!("the cr note on {} is unreadable ({why}); a fix-PASS never overwrites a note it cannot read", short(&tip)), "the owner repairs that note in place, then write the fix-PASS again"))?;
-            let fix = review::fix_pass(own.as_ref(), &earlier, &sha, max, unchanged).or_else(|(what, fix)| refuse(what, &fix))?;
-            let mut extra = serde_json::Map::new();
-            extra.insert("fixes".into(), sha.clone().into());
-            extra.insert("round".into(), fix.round.into());
-            extra.insert("fix_diff_hash".into(), self::code_diff_hash(repo, cfg, &sha, &tip)?.into());
-            extra.insert("answers".into(), serde_json::json!({"importants": fix.importants, "nits": fix.nits}));
+            let fix = review::fix_pass(own.as_ref(), &s.earlier, &sha, s.max, |c| s.unchanged(c)).or_else(|(what, fix)| refuse(what, &fix))?;
             let said = format!("fix-PASS of round {} on {}: no reviewers run, no new round", fix.round, short(&sha));
-            (CrNote { schema: "cr/v1".into(), id: r.id, verdict: "PASS".into(), waiver: None, blockers: 0, importants: 0, code_diff_hash, walk_waivers: vec![], extra }, said)
+            let schedule = ScheduleFields {
+                round: Some(fix.round),
+                fix_diff_hash: Some(self::code_diff_hash(repo, cfg, &sha, &tip)?),
+                answers: Some(Answers { importants: fix.importants, nits: fix.nits }),
+                fixes: Some(sha),
+                scope: None,
+            };
+            (CrNote { schema: "cr/v1".into(), id: r.id, verdict: "PASS".into(), waiver: None, blockers: 0, importants: 0, code_diff_hash, walk_waivers: vec![], schedule, extra: serde_json::Map::new() }, said)
         }
         (CrWrite::Review, None) => {
-            let (earlier, max) = schedule()?;
-            let next = review::next_round(&earlier, max, &|c: &str| review::no_code_since(repo, c, &tip, &cfg.code_paths)).or_else(|(what, fix)| refuse(what, &fix))?;
-            let mut extra = lists;
-            extra.insert("round".into(), next.round.into());
-            extra.insert("scope".into(), next.scope().into());
-            let note = CrNote { schema: "cr/v1".into(), id: r.id, verdict: verdict.into(), waiver: None, blockers, importants, code_diff_hash, walk_waivers: vec![], extra };
-            let said = format!("review round {} of {max} recorded ({})\n  next -> {}", next.round, next.scope(), review::next_step(&note, next.round, max, &tip));
+            let s = schedule()?;
+            let next = s.next().or_else(|(what, fix)| refuse(what, &fix))?;
+            let schedule = ScheduleFields { round: Some(next.round), scope: Some(next.scope()), ..ScheduleFields::default() };
+            let note = CrNote { schema: "cr/v1".into(), id: r.id, verdict: verdict.into(), waiver: None, blockers, importants, code_diff_hash, walk_waivers: vec![], schedule, extra: lists };
+            let said = format!("review round {} of {} recorded ({})\n  next -> {}", next.round, s.max, next.scope(), review::next_step(&note, next.round, s.max, &tip));
             (note, said)
         }
         (CrWrite::Waiver(reason), _) => {
@@ -805,8 +872,8 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
             }
             let stored = cr_raw(repo, &tip)?;
             let own = stored.as_deref().map(serde_json::from_str::<CrNote>).and_then(Result::ok);
-            let (earlier, max) = schedule()?;
-            let reason = review::cap(own.as_ref(), &earlier, max, &tip).or_else(|(what, fix)| refuse(what, &fix))?;
+            let s = schedule()?;
+            let reason = review::cap(own.as_ref(), &s.earlier, s.max, &tip).or_else(|(what, fix)| refuse(what, &fix))?;
             let said = format!("{reason}: the owner decides at sign-off (keel mr confirm shows the waiver and every round)");
             (waive(stored.as_deref(), r.id, Some(&reason), code_diff_hash, (None, None)).or_else(|(what, fix)| refuse(what, &fix))?, said)
         }

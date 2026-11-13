@@ -46,6 +46,8 @@ struct Report {
     waived: Vec<String>,
     /// The tip's own review was waived: its reason, for the dod receipt.
     review_waiver: Option<String>,
+    /// The tip's cr note as checks 3-5 read it, for check 8's waiver binding (read once).
+    tip_cr: Option<CrNote>,
 }
 
 impl Report {
@@ -63,7 +65,7 @@ fn open(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) ->
     let base = git(repo, &["merge-base", target, &tip], &[])?;
     let names = notes::names(repo, &base, &tip, &[])?;
     let exempt = notes::exempt(repo, cfg, &base, &tip, &names)?;
-    let r = Report { level, tip_ref: tip_ref.into(), tip, base, exempt, failures: vec![], waived: vec![], review_waiver: None };
+    let r = Report { level, tip_ref: tip_ref.into(), tip, base, exempt, failures: vec![], waived: vec![], review_waiver: None, tip_cr: None };
     Ok((r, names))
 }
 
@@ -159,6 +161,7 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
     if let Some(doc) = &doc {
         doc_note(repo, cfg, r, &docs, doc);
     }
+    r.tip_cr = cr;
     Ok(())
 }
 
@@ -311,7 +314,7 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, gua
     // re-judges a seam's sign-off against the epic's roster (Trawler DEC-9/10; DEC-48 names the gap).
     let mut attested = None;
     if level != Level::Commit {
-        match mr::manual_review(repo, cfg, level.name(), &r.tip, &r.base, target) {
+        match mr::manual_review(repo, cfg, level.name(), &r.tip, &r.base, target, r.tip_cr.as_ref()) {
             Ok(a) => attested = a,
             Err((what, fix)) => r.fail("8·manual-review", what, fix),
         }
@@ -430,7 +433,7 @@ pub(crate) fn range(repo: &Path, cfg: &Config, old: &str, new: &str, branch: &st
             }
             [_, main, wu] => {
                 let mut r = verify(repo, cfg, merges, wu, main)?;
-                if let Err((what, fix)) = mr::manual_review(repo, cfg, merges.name(), &r.tip, &r.base, main) {
+                if let Err((what, fix)) = mr::manual_review(repo, cfg, merges.name(), &r.tip, &r.base, main, r.tip_cr.as_ref()) {
                     r.fail("8·manual-review", what, fix);
                 }
                 r
@@ -467,8 +470,15 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
         r.fail("0·tree", "keel check is red on the tip".into(), "get lint and tests green before the review runs");
     }
     check_tip(repo, cfg, &mut r, &names, false, true)?;
-    match review::schedule(repo, &r.base, &r.tip, target, &cfg.code_paths) {
-        Ok(next) => println!("{}", next.announce(&r.base, &r.tip)),
+    let schedule = review::Schedule::read(repo, &r.base, &r.tip, target, &cfg.code_paths).map_err(|e| (e, "fix the repo state, then preflight again".to_string()));
+    match schedule.and_then(|s| s.next()) {
+        Ok(next) => {
+            let changed = match &next.since {
+                Some(since) => notes::own_names(repo, since, &r.tip, &cfg.code_paths)?,
+                None => vec![],
+            };
+            println!("{}", next.announce(&r.base, &r.tip, &cfg.code_paths, &changed));
+        }
         Err((what, fix)) => r.fail("0·review-cap", what, fix),
     }
     print(&r, "preflight");

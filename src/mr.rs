@@ -152,7 +152,7 @@ type Row = (String, Option<CrNote>, String);
 /// signer must see that a round exists. A fix-PASS row names the files its commit changed.
 fn review_history(repo: &Path, base: &str, tip: &str) -> Result<Vec<Row>, String> {
     let entries = review::line(repo, base, tip)?;
-    let tags = review::tags(&entries, |from, to| notes::names(repo, from, to, &[]));
+    let tags = review::tags(&entries, |from, to| notes::own_names(repo, from, to, &[]));
     Ok(entries.into_iter().zip(tags).map(|(e, tag)| (e.commit, e.note.ok(), tag)).collect())
 }
 
@@ -687,7 +687,8 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 /// `(report, report_hash)`, if any. Everything is rebuilt from the repo; the note contributes only
 /// the signer, the report path and the (signed) report hash.
 /// The roster is `target`'s committed one, else the tip's (bootstrap), never the checkout's.
-pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, base: &str, target: &str) -> Result<Option<(String, String)>, (String, String)> {
+/// `cr`: the tip's cr note when the caller already read it (checks 3-5); otherwise it is read here.
+pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, base: &str, target: &str, cr: Option<&CrNote>) -> Result<Option<(String, String)>, (String, String)> {
     let again = |what: String| Err((what, format!("re-run keel mr confirm on the tip as it now stands\n      {NOT_AUTHORISED}")));
     let t = short(tip);
     let raw = match notes::raw(repo, "mr", tip) {
@@ -717,7 +718,7 @@ pub(crate) fn manual_review(repo: &Path, cfg: &Config, level: &str, tip: &str, b
     if n.change_hash != change {
         return again(stale_change(&n.change_hash, &format!("{}..{t}", short(base))));
     }
-    let waiver = waiver_hash(repo, tip);
+    let waiver = cr.map_or_else(|| waiver_hash(repo, tip), CrNote::waiver_hash);
     if let Some(cause) = waiver_drift(n.waiver_hash.as_deref(), waiver.as_deref(), t) {
         return again(cause);
     }
@@ -980,7 +981,7 @@ mod tests {
             "walk_waivers": [{"seam": "abc123", "why": " safe "}]}));
         let history = vec![
             ("1111111111aa".to_string(), Some(cr("WAIVED", serde_json::json!({"waiver": "review cap: 5 rounds, 1 blockers open"}))), " [round 2, full]".to_string()),
-            ("4444444444dd".to_string(), Some(cr("PASS", serde_json::json!({"fixes": "2222222222bb"}))), " [fix-PASS of round 1 on 2222222222; no reviewers ran; changed: src/a.rs]".to_string()),
+            ("4444444444dd".to_string(), Some(cr("PASS", serde_json::json!({"fixes": "2222222222bb2222222222bb2222222222bb2222"}))), " [fix-PASS of round 1 on 2222222222; no reviewers ran; changed: src/a.rs]".to_string()),
             ("2222222222bb".to_string(), Some(cr("FAIL", serde_json::json!({}))), " [round 1, full]".to_string()),
             ("3333333333cc".to_string(), None, String::new()),
         ];

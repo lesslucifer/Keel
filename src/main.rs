@@ -196,14 +196,20 @@ fn git_raw(repo: &Path, args: &[&str], input: Option<&[u8]>) -> Result<std::proc
     c.args(args).current_dir(repo).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = c.spawn().map_err(|e| format!("keel: cannot run git: {e}"))?;
     let mut stdin = child.stdin.take().ok_or("keel: git has no stdin")?;
-    let input = input.unwrap_or_default().to_vec();
-    // Fed from its own thread: git may fill its stdout before it has read all of a large input.
-    let feeder = std::thread::spawn(move || stdin.write_all(&input));
-    let out = child.wait_with_output().map_err(|e| format!("keel: git {}: {e}", args.join(" ")))?;
-    match feeder.join() {
-        Ok(Err(e)) if e.kind() != std::io::ErrorKind::BrokenPipe => Err(format!("keel: git {}: {e}", args.join(" "))),
-        _ => Ok(out),
-    }
+    let failed = |e: std::io::Error| format!("keel: git {}: {e}", args.join(" "));
+    let Some(input) = input.filter(|i| !i.is_empty()) else {
+        drop(stdin);
+        return child.wait_with_output().map_err(failed);
+    };
+    // Fed from a scoped thread that borrows the input: git may fill its stdout before it has read all of it.
+    std::thread::scope(|s| {
+        let feeder = s.spawn(move || stdin.write_all(input));
+        let out = child.wait_with_output().map_err(failed)?;
+        match feeder.join() {
+            Ok(Err(e)) if e.kind() != std::io::ErrorKind::BrokenPipe => Err(failed(e)),
+            _ => Ok(out),
+        }
+    })
 }
 
 /// A finished git command's stdout as trimmed text, or its failure.
