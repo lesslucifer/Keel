@@ -1631,3 +1631,71 @@ fn a_back_merge_of_the_epic_is_no_fix_of_this_wu_and_no_part_of_its_last_fix() {
     assert!(t.contains("changed: src/a.py") && !t.contains("src/b.py"), "the scope is the WU's own fix, never the merged code: {t}");
     assert!(t.contains(&format!("git rev-list --first-parent {c2}..{tip} | git diff-tree --stdin -r -p --cc -- src/ tests/")), "{t}");
 }
+
+/// A 20-line code file both the epic and the WU hold: put on the epic, back-merged into the WU.
+fn shared_file(p: &Path) {
+    git(p, &["switch", "-q", "epic/e"]);
+    write(p, "src/shared.py", &(1..=20).map(|i| format!("x{i} = {i}\n")).collect::<String>());
+    commit(p, "a shared file");
+    git(p, &["switch", "-q", "wu/e/a"]);
+    git(p, &["merge", "-q", "--no-ff", "-m", "back-merge the shared file", "epic/e"]);
+}
+
+/// Line `n` of the shared file set to `v`, on the current branch.
+fn edit_shared(p: &Path, n: usize, v: &str) {
+    let body: String = (1..=20).map(|i| if i == n { format!("x{i} = {v}\n") } else { format!("x{i} = {i}\n") }).collect();
+    let current = std::fs::read_to_string(p.join("src/shared.py")).unwrap();
+    let merged: String = current.lines().zip(body.lines()).enumerate().map(|(i, (c, b))| if i + 1 == n { format!("{b}\n") } else { format!("{c}\n") }).collect();
+    write(p, "src/shared.py", &merged);
+}
+
+/// The epic changes another hunk of the shared file; the WU back-merges it cleanly.
+fn epic_edits_shared_and_back_merge(p: &Path) {
+    git(p, &["switch", "-q", "epic/e"]);
+    edit_shared(p, 19, "\"epic\"");
+    commit(p, "the epic changes line 19 of the shared file");
+    git(p, &["switch", "-q", "wu/e/a"]);
+    git(p, &["merge", "-q", "--no-ff", "-m", "back-merge the epic", "epic/e"]);
+}
+
+/// Epic code review round 2, B1: a clean back-merge whose epic and WU edited different hunks of one
+/// code file changed nothing of the WU's own (`--cc --name-only` lists every path that differs from
+/// all parents; only the `-p --cc` hunks are what the merge resolved itself).
+#[test]
+fn a_clean_back_merge_into_a_file_the_wu_also_changed_is_no_change_of_its_own() {
+    // After a fix-PASS, the fix-PASS carries over such a back-merge.
+    let d = fixture();
+    let p = d.path();
+    shared_file(p);
+    edit_shared(p, 2, "\"wu\"");
+    commit(p, "the WU changes line 2 of the shared file");
+    test_note(p);
+    doc_note(p);
+    ok(write_cr(p, &["--verdict", "PASS", "--nits", r#"[{"location": "src/a.py:1", "finding": "naming", "fixed": "renamed"}]"#]));
+    let c1 = head(p);
+    write(p, "src/a.py", "def one():\n    return 1\n");
+    commit(p, "fix the nit");
+    test_note(p);
+    doc_note(p);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1]));
+    epic_edits_shared_and_back_merge(p);
+    test_note(p);
+    doc_note(p);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1]));
+
+    // From round 3 the scope's files are those of the diff it prints: the WU's fix, not the merge.
+    let d = fixture();
+    let p = d.path();
+    shared_file(p);
+    edit_shared(p, 2, "\"wu\"");
+    commit(p, "the WU changes line 2 of the shared file");
+    test_note(p);
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    step(p, 2);
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    step(p, 3);
+    epic_edits_shared_and_back_merge(p);
+    test_note(p);
+    let t = text(&ok(preflight(p)));
+    assert!(t.contains("changed: src/a.py (") && !t.contains("src/shared.py"), "the merged hunk is the epic's, not the WU's: {t}");
+}
