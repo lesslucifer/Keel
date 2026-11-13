@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>Backlog: E-ROUTER v2</h1>
       <p>Router work deferred at E-ROUTER's close: open launcher issues, gate coverage of the router's security files, the epic e2e, and the accepted worker risk.</p>
-      <div class="meta">T2 · backlog · living · 2026-11-08 · Keel · R1 – R43 · distilled from E-ROUTER (plan, worker-ops open issues, close review), E-ROUTERFIX (WU results, close), E-SEED2 (W7, W12, the dropped W9, the close reprioritization), E-ROUTER3 (WU results, close), E-WMODE (W1 result, close) and the owner rulings of 2026-11-09 to 2026-11-12</div>
+      <div class="meta">T2 · backlog · living · 2026-11-08 · Keel · R1 – R45 · distilled from E-ROUTER (plan, worker-ops open issues, close review), E-ROUTERFIX (WU results, close), E-SEED2 (W7, W12, the dropped W9, the close reprioritization), E-ROUTER3 (WU results, close), E-WMODE (W1 result, close), E-CRCAP (close) and the owner rulings of 2026-11-09 to 2026-11-12</div>
     </div>
   </header>
   <main>
@@ -86,7 +86,7 @@
           <li>On git 2.50, <code>-c remote.origin.followRemoteHEAD=never</code> on the explicit-refspec fetch makes no observable difference, so no test can pin it.</li>
           <li>The watch's sha check accepts up to 40 hex characters, so sha256 repositories are unsupported.</li>
           <li>In production the watch reads the user's git config (for example <code>log.showSignature</code> or <code>core.quotePath</code>); detail lines are cleaned, but output shape under such settings is untested.</li>
-        </ul></td><td>E-SEED2.W12 code-review rounds, owner ruling 2026-11-10</td></tr>
+        </ul></td><td>E-SEED2.W12 code-review rounds, owner ruling 2026-11-10 (that ruling is now the rubric's nit rows and the 5-round schedule: <a href="../use-cases/workflow.html#uc-rev-1">UC-REV-1</a>, <a href="../use-cases/workflow.html#uc-rev-3">UC-REV-3</a>)</td></tr>
     </table>
 
     <h2 id="r8"><s>R8 · Router↔worker messaging: a fix</s> · done <span class="badge approval">E-ROUTER3.W1: DEC-42</span></h2>
@@ -177,6 +177,12 @@
       <tr id="r41-row"><td>R41 · accepted residual</td><td><b>What remains after the worker file guard</b> (DEC-37, "What remains"). Owner code execution: (1) the worktree's own <code>.claude/agents/worker.md</code> and <code>.claude/skills/</code>, editable by the worker and loaded by the next session there; (2) other worktrees' admin dirs under the git dir, which the worker's shell can still rewrite, unchecked when the owner or the router runs git there (the router's checkout included when it is a linked worktree). Data exposure: under <code>auto</code> the classifier judges reads outside the worktree and extra hosts, so what a worker may read it may send. Fix direction: a guard or sandbox bound on the worktree's <code>.claude/agents/</code> and <code>.claude/skills/</code>, a <code>linked_ok</code>-style check before any owner or router git in a worktree, and a read allowlist or host pin for <code>auto</code> workers. Source: E-WMODE plan open point 7, W1 review round 2 (M4)</td></tr>
       <tr id="r42-row"><td>R42 · unverified</td><td><b>An <code>acceptEdits</code> worker reached a host outside the five.</b> The E-CRCAP planner ran <code>npm install</code> from <code>registry.npmjs.org</code> and was not stopped. Candidate causes, none verified: the owner answered a <code>sandbox request</code> prompt; that worktree's <code>settings.local.json</code> added the host or a <code>WebFetch(domain:…)</code> allow; the session was not started by this launcher. The router or the owner can tell from that session's transcript and worktree. Source: E-WMODE.W1 result, review round 1 (L3)</td></tr>
       <tr id="r43-row"><td>R43</td><td><b>The full suite is red in a worker's sandbox for sandbox reasons.</b> <code>/usr/bin/git</code> (the xcrun shim) prints <code>couldn't create cache file '/var/folders/…/xcrun_db-…' (errno=Operation not permitted)</code>, which fails the router tests that compare git output exactly; with <code>/Library/Developer/CommandLineTools/usr/bin</code> first on <code>PATH</code> they pass. <code>watcher_run_is_bounded_when_the_watch_outpolls_its_releases</code> fails in the sandbox even on the untouched base tree. Fix direction: tests put a real git first on <code>PATH</code> (or the sandbox allows the xcrun cache), and the watcher test's bound is checked under the sandbox. Pairs with <a href="#r30-row">R30</a>. Source: E-WMODE.W1 result</td></tr>
+    </table>
+    <h2 id="r44">R44 – R45 · Router tooling, seen during E-CRCAP <span class="badge approval">open</span></h2>
+    <table data-c="r44-r45">
+      <tr><th>Id</th><th>Item</th></tr>
+      <tr id="r44-row"><td>R44</td><td><b><code>ListAgents</code> once omitted an idle worker.</b> The router could not see a worker that was alive and waiting for a follow-up, so it could not address it by name. Not reproduced; cause unknown (harness listing or the worker's state). Fix direction: the router cross-checks the launcher's own worker list before it treats a worker as gone. Source: router keel-77, E-CRCAP</td></tr>
+      <tr id="r45-row"><td>R45</td><td><b>The watchdog once labelled an idle worker STUCK.</b> A worker that had sent its report and was waiting, as the brief tells it to, read as stuck. Fix direction: the watchdog tells "reported and idle" from "no progress", for example from the worker's last SendMessage. Source: router keel-77, E-CRCAP</td></tr>
     </table>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>

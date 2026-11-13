@@ -27,6 +27,16 @@ changes no code path asks for no review, no note and no finders.
   `HEAD_R=$(git rev-parse <head>)`. Merge-base, not the base tip.
 - The reviewed diff is `git diff $BASE $HEAD_R -- <code_paths…>` — exactly the
   bytes `keel notes write cr` will hash into `code_diff_hash`.
+- **From round 3, the round reviews only the last fix** (the schedule, §5):
+  the branch's own changes since `SINCE`, the last reviewed commit. Preflight
+  (§2) prints the commands that show them, one `git diff-tree -p` per commit
+  of the branch's own line, oldest first, and finders and verifiers get their
+  output, run exactly as printed, as their diff: each commit against its first
+  parent, a merge against git's automatic merge of its parents, so only what
+  the merge changed by hand, never what a back-merge brought from its second
+  parent. Its `changed:` list is the files of that diff. Never `git diff $SINCE $HEAD_R`: after a
+  back-merge it holds other branches' code. They may read any file, and report findings only on those changes. The
+  note still binds the whole range.
 - Optional, repeatable: `--waive "<finding summary>: <reason>"` — the
   trigger's waiver declarations, applied at the verdict (§5).
 
@@ -43,8 +53,17 @@ fleet again. It refuses on exactly:
   already passed) is red.
 - **`1·notes` / `2·manifest`** — the tip's `test/v1` note (the one the finders
   read) is missing, malformed, lacks the level's layer, or names another tip.
+- **`0·review-cap`** — the schedule (§5) has no such round: past the cap, a
+  round 5 or later after a round that found no blocker, an earlier cr note
+  on the branch that does not parse (it names the commit), or a
+  `[review] max_rounds` on the target that is not a whole number of 1 or more.
 - **Nothing else**: no cr (this run writes it), no doc note, no `mr/v1` (the
   human signs last).
+
+On green it prints the round and its scope:
+`review round <n> of <N> - scope: the whole range, <base>..<tip>` (rounds 1–2)
+or `… scope: the last fix, <since>..<tip>: this branch's own changes, …: <commands>;
+changed: <files>` (from round 3). Use that range, and from round 3 those commands (§1).
 
 Non-zero exit ⇒ stop, report its blocks to the caller, spawn nothing, write
 nothing. An **exempt** diff (no code path) prints `exempt`: report that and
@@ -74,10 +93,13 @@ dimension, each on an explicitly named model. Each prompt contains exactly:
 - its dimension, and the instruction to read `rubric.md` (this skill's
   directory) and the project rubric if it exists — its dimension row, the
   principles, the exclusions;
-- the scope (`$BASE..$HEAD_R`, plus the working tree if in scope) — the finder
-  runs `git diff` itself, may read any file, and reads the tip's test note
-  (`git notes --ref=test show $HEAD_R`): a declared waiver is a review subject,
-  not a free pass. Documents are not read;
+- the scope (`$BASE..$HEAD_R`, or from round 3 `$SINCE..$HEAD_R` with
+  preflight's own-changes command, §1, plus the working tree if in scope) —
+  the finder runs `git diff` (from round 3, that command) itself, may read any
+  file, and reads the tip's test note
+  (`git log -1 --no-show-signature --no-notes --notes=test --format=%N $HEAD_R`;
+  a review session may run no `git notes` command, reads included): a declared
+  waiver is a review subject, not a free pass. Documents are not read;
 - the return format: candidate findings, each
   `{location: file:line, claim: <one falsifiable sentence>, severity: blocker|important|nit}`.
 
@@ -96,8 +118,38 @@ same call path); everything else stays apart. Spawn every batch in one message.
 | A batch holds **at most 4** claims | the saving is one shared read, not a smaller fleet; one agent reading every region serially is far slower |
 | Each claim is judged on **its own** evidence | grouping puts correlated claims in one context — a confirmed claim lends its neighbour nothing; say so in the prompt |
 
-A verifier receives **only** the finding(s) and the scope — never the finder's
-reasoning. Its prompt:
+**Earlier notes.** Before spawning verifiers, collect what earlier notes on
+this branch recorded. An earlier note is a cr note on a first-parent commit of
+the range, other than the tip (a re-run on the same tip replaces the tip's
+note). It may be a reviewed round, a fix-PASS or a WAIVED note: all of them go
+in the list. Which notes count as rounds is the schedule's question, not this
+list's. An epic reads only its own line, never its WUs' notes. A review
+session may run no `git notes` command, so each note is read with `git log`
+(an empty `%N` is a commit with no note):
+
+```sh
+EARLIER=$(git rev-list --first-parent "$BASE..$HEAD_R" | tail -n +2 \
+  | while read -r c; do
+      n=$(git log -1 --no-show-signature --no-notes --notes=cr --format=%N "$c") \
+        || { echo "unreadable cr note on $c" >&2; continue; }
+      [ -n "$n" ] || continue
+      printf '%s' "$n" \
+        | jq -e -c --arg c "$c" '{commit: $c, findings: (.findings // []), nits: (.nits // []), refuted: (.refuted // [])} | select([.findings, .nits, .refuted] | all(type == "array"))' \
+        || echo "unreadable cr note on $c" >&2
+    done \
+  | jq -s -c 'map(select((.findings + .nits + .refuted) | length > 0))')
+```
+
+A note written before these fields existed has none; it counts as empty.
+If the reader prints anything on stderr (an `unreadable cr note on <commit>`
+line or a jq error), stop before the verifiers and report each named commit to
+the caller: never pass a partial list. The owner repairs a named note in
+place; never remove it (the schedule counts rounds from these notes). With no
+error, `EARLIER` is a JSON array, and `[]` when there are no earlier notes
+(round 1).
+
+A verifier receives **only** the finding(s), the scope and `EARLIER` — never the
+finder's reasoning. Its prompt:
 
 - try to **refute** the claim against actual behaviour: read the surrounding
   code, trace callers and data flow, run a targeted test when cheap — never
@@ -108,9 +160,30 @@ reasoning. Its prompt:
   false positive costs more than a missed nit;
 - **judge the severity** against `rubric.md`'s rows rather than inheriting the
   finder's; uncertainty between two rows resolves **upward**;
-- return one `{verdict: real|false-positive, severity, evidence}` per claim.
+- **a repeat is refuted** (owner comment 2026-11-12). A claim is a repeat
+  only when it is surely the same defect, in the same code, as an entry in
+  `EARLIER`, however it is worded. Then:
+  - the entry was **fixed** (a verified finding, or a nit with `fixed`): return
+    false-positive with `repeat_of: <its commit>`, unless you show, against the
+    code at the tip, that the fix does not hold. Name the failing case (the
+    input or path, and the wrong result). Then judge it as a finding against
+    that fix, at its own severity;
+  - the entry was **waived or refuted**: return false-positive with
+    `repeat_of: <its commit>` only while the code it judged is unchanged since
+    that commit. That code is its own file and every file its `why` or waiver
+    reason names (a refutation often rests on other code, such as a caller's
+    guard): `git diff <its commit> $HEAD_R -- <its file> <each named file>`
+    must show no change to what the judgment relies on. If any of it changed,
+    or the judgment rests on code it does not name, the old judgment no longer
+    covers the claim: it is new;
+  - **in any doubt** whether it is a repeat, it is a new claim, judged by the
+    rules above. The false-positive default does not decide this question;
+- name in `evidence` every file:line a refutation relies on;
+- return one `{verdict: real|false-positive, severity, evidence, repeat_of?}`
+  per claim.
 
-Refuted findings are dropped; mention them in one line to the caller.
+Refuted findings are dropped from the verdict, recorded on the note (§6) and
+mentioned in one line to the caller.
 
 ## 5 · Verdict
 
@@ -118,32 +191,84 @@ Refuted findings are dropped; mention them in one line to the caller.
   each with its reason (cite a `docs/decisions/` record where one applies).
 - **PASS** = `keel check` green and zero verified **blockers or importants** left
   unwaived. Anything else is **FAIL**. Evidence is written either way.
-- **A verified nit never fails the review and is never silently dropped**:
-  each gets **exactly one** disposition — `fixed: "<what changed>"` (the fix is
-  already inside the range the note binds) or `waived: "<reason>"`. Nothing
-  licenses a post-verdict fix: a later code commit moves the hash and orphans
-  the note.
+- **A verified nit never fails the review, never starts a new round, and is
+  never silently dropped**:
+  each gets **exactly one** disposition — `fixed: "<what changed>"` (inside
+  the range the note binds, or after the verdict, recorded with a fix-PASS,
+  below) or `waived: "<reason>"`.
+- **WAIVED** is never a reviewer's verdict, and nobody writes PASS for a
+  review that did not run or did not pass. The owner waives a review in the
+  sign-off itself (`keel mr confirm … --waive-review "<reason>"`, skill
+  `keel-workflow` §5–§6); no session writes an owner's waiver or stages that
+  flag. The one waiver a review writes is the cap's (below). A waiver keeps
+  the round's note whole; its open findings are the `findings` entries
+  without `waived` (§6), and the sign-off prints them.
+
+**The schedule** (UC-REV-3). A round is one run of this skill on one commit,
+recorded as a PASS or FAIL cr note. Re-running on the same commit is the same
+round. `keel preflight` and `keel notes write cr` count the rounds from the cr
+notes on the branch's own first-parent line (an epic never counts its WUs'),
+refuse any round the table does not reach, and the writer prints the next
+step after each round.
+
+| Round | Reviews | Only nits | Importants, no blocker | A blocker |
+|---|---|---|---|---|
+| 1, 2 | the whole range | PASS; nits fixed after it under a fix-PASS | fix, next round | fix, next round |
+| 3 | the last fix | same | fix, next round | fix, next round |
+| 4 | the last fix | same | fix under a fix-PASS, done | fix, round 5 |
+| 5, the cap | the last fix | same | fix under a fix-PASS, done | stop: the cap's WAIVED; the owner decides at sign-off |
+
+`[review] max_rounds` in the target's committed `.keel/config.toml` moves the
+cap (default 5). From round 4 only a blocker earns another round. When
+`max_rounds` is below 4, the last round's importants are also fixed under a
+fix-PASS.
+
+- **Fix-PASS**: after the fix is committed and its test and doc notes are
+  written, `keel notes write cr --verdict PASS --fixes <reviewed commit>`. No
+  reviewers run. The tool allows it only for the latest round, only for the
+  findings the table fixes without a round (importants: from round 4, or in
+  the last round when `max_rounds` is below 4), and never on top of another
+  fix-PASS when code changed since it (a second fix needs a round: before
+  round 4 the next round; from round 4, or at the cap, where no round follows
+  a round without a blocker, only the owner's waiver — so write the fix-PASS
+  only on the final fix). It records
+  `fixes`, `round`, `fix_diff_hash` and `answers`, and the sign-off lists it
+  with the files changed since the reviewed commit. Only a session allowed to
+  write cr notes writes it.
+- **A later commit that changes no code path** (the result report, the
+  owner's skill commit) runs no reviewers and costs no round: it gets a
+  fix-PASS answering the same round where the schedule allows one, even on
+  top of a fix-PASS. Otherwise it gets the round preflight names. A failed
+  round stays failed: a docs-only commit after it fixes nothing.
+- **The cap**: when round N fails with a blocker, the writer says
+  `review cap reached`. On the same tip, run `keel notes write cr --verdict
+  WAIVED` with no `--reason`: the tool writes the reason (`review cap: N
+  rounds, <b> blockers open`) and keeps the round's findings on the waiver. It
+  is refused anywhere else. The owner accepts it, or not, at sign-off
+  (`--accept-waiver`, typed by the owner only).
 
 ## 6 · Evidence — the `cr/v1` note on the reviewed tip
 
 With the tip checked out (preflight guaranteed it):
 
 ```sh
-keel notes write cr --verdict PASS|FAIL --blockers <n> --importants <n> [--target <ref>]
+keel notes write cr --verdict PASS|FAIL [--target <ref>] \
+  --findings "$FINDINGS" --refuted "$REFUTED" --nits "$NITS" --fleet "$FLEET"
 ```
 
-The CLI derives the range, the identity and `code_diff_hash` itself, and
-refuses `PASS` with verified blockers or importants. Then record the nits and
-the round's bill on the same note — extra JSON fields the gate ignores, added
-the way `walk_waivers` are:
+One call writes the whole note. The CLI derives the range, the identity,
+`code_diff_hash`, the round and its `scope` itself, and counts `blockers` and
+`importants` from `FINDINGS` (entries without a `waived` reason; a typed
+`--blockers`/`--importants` that disagrees is refused). It refuses `PASS` with
+open blockers or importants, a round the schedule does not reach, and any list
+that is not JSON of its shape (arrays; `FLEET` an object): a prose `refuted`
+would stop every later round's reader (§4). A refused call writes nothing. The
+lists are extra fields the gate ignores. Every round writes them, PASS or
+FAIL: the next round's verifiers read them (§4).
 
-```sh
-git notes --ref=cr show "$HEAD_R" \
-  | jq -c --argjson nits "$NITS" --argjson fleet "$FLEET" '. + {nits: $nits, fleet: $fleet}' \
-  | git notes --ref=cr add -f -F - "$HEAD_R"
-```
-
-- `NITS`: `[{"finding": "<summary>", "fixed": "<what changed>"} | {"finding": "<summary>", "waived": "<reason>"}]`
+- `FINDINGS`: every verified blocker and important, waived or not: `[{"location": "file:line", "claim": "<sentence>", "severity": "blocker|important", "evidence": "<verifier's, one line>"}]`, plus `"waived": "<reason>"` on a waived one
+- `REFUTED`: every refuted candidate, never a prose summary: `[{"location": "file:line", "claim": "<sentence>", "why": "<verifier's, one line, naming every file:line it relies on>"}]`, plus `"repeat_of": "<commit>"` on a refuted repeat
+- `NITS`: `[{"location": "file:line", "finding": "<summary>", "fixed": "<what changed>"} | {"location": "file:line", "finding": "<summary>", "waived": "<reason>"}]`
 - `FLEET`: `{"dimensions": [...], "finders": n, "verifiers": n, "verifier_model": "<id>", "candidates": {"blocker": n, "important": n, "nit": n}, "by_finder": {"correctness": {"found": n, "verified": n}, ...}, "stage_seconds": {"check": n, "finders": n, "verifiers": n, "total": n}, "waivers": [{"finding": "...", "reason": "..."}]}`
 
 Write what you observed and omit what you did not: an absent row is a stage
@@ -151,15 +276,22 @@ nobody timed, never a zero. A dimension not spawned has no `by_finder` row.
 
 The gate (checks 3–5) reads `verdict`, `base` and `code_diff_hash`; the
 pre-push hook syncs `refs/notes/*`. A docs-only commit on top of a reviewed tip
-keeps the hash but moves the tip: the gate wants a cr note **on the new tip** —
-run the review again, never copy a note.
+keeps the hash but moves the tip: the gate wants a cr note **on the new tip**,
+never a copied one — a fix-PASS where the schedule allows it (§5), else the
+round preflight names.
 
 ## 7 · Return to the caller
 
-Report: the verdict; the verified findings with severities and verifier
-evidence; waivers applied; the nits and their dispositions (they live on the cr note — never edit
-the result report after the review just to copy them, that moves the tip); refuted candidates in one line; the
-fleet bill; the note ref. On **FAIL**, state the loop: the triggering session
-fixes — a correctness bug gets its failing, named regression test **first**,
-cleanups stay behaviour-preserving with the suite green — then re-runs this
-skill on the new tip until it returns PASS.
+Report: the round and its scope; the verdict; the verified findings with
+severities and verifier evidence; waivers applied; the nits and their
+dispositions (they live on the cr note — never edit the result report after
+the review just to copy them, that moves the tip); refuted candidates in one
+line (on the note they stay the `REFUTED` array, §6); the fleet bill; the note
+ref; the next step the writer printed. A **PASS** with nits is done: a nit
+never starts another round; the nits marked fixed are fixed after it and
+recorded with a fix-PASS (§5). On **FAIL**, the triggering session fixes — a
+correctness bug gets its failing, named regression test **first**, cleanups
+stay behaviour-preserving with the suite green — then follows the schedule
+(§5): the next round on the new tip, a fix-PASS, or, at the cap, the cap's
+waiver and the owner's decision at sign-off. Never a round the schedule
+refuses.
