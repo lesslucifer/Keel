@@ -392,7 +392,8 @@ fn sign_off_hashes_are_sha256_and_a_pre_w2_note_is_red() {
     let change = git(p, &["hash-object", diff.to_str().unwrap()]);
     let report = git(p, &["rev-parse", "HEAD:docs/work/a-result.html"]);
     let v1 = k.path().join("payload");
-    std::fs::write(&v1, format!("keel-mr/v1\nlevel: wu\nbase: {base}\ntip: {tip}\nchange: {change}\nreport: docs/work/a-result.html\nreport_hash: {report}\n")).unwrap();
+    std::fs::write(&v1, format!("keel-mr/v1\nlevel: wu\nbase: {base}\ntip: {tip}\nchange: {change}\nreport: docs/work/a-result.html\nreport_hash: {report}\n"))
+        .unwrap();
     ok(run("ssh-keygen", k.path(), &["-Y", "sign", "-n", "keel-mr", "-f", "id", "payload"]));
     n["change_hash"] = json!(change);
     n["report_hash"] = json!(report);
@@ -775,7 +776,11 @@ fn setup_writes_the_tracked_roster_and_touches_no_local_file() {
     let p = d.path();
     let (key, public) = keygen(k.path(), "id");
     git(p, &["init", "-q", "-b", "main"]);
-    write(p, ".keel/config.toml", "code_paths = [\"src/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n[mr]\ntiers = [\"key\"]\n");
+    write(
+        p,
+        ".keel/config.toml",
+        "code_paths = [\"src/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n[mr]\ntiers = [\"key\"]\n",
+    );
     let exclude = std::fs::read_to_string(p.join(".git/info/exclude")).unwrap_or_default();
 
     let o = keel(p, &["mr", "setup", "--as", "vu"]);
@@ -795,7 +800,11 @@ fn setup_refuses_an_unreadable_roster_and_leaves_its_signers_in_place() {
     let d = TempDir::new().unwrap();
     let p = d.path();
     git(p, &["init", "-q", "-b", "main"]);
-    write(p, ".keel/config.toml", "code_paths = [\"src/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n");
+    write(
+        p,
+        ".keel/config.toml",
+        "code_paths = [\"src/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
+    );
     let bytes = b"username: owner\n\xff\n";
     std::fs::write(p.join(".keel/mr-allowed"), bytes).unwrap();
 
