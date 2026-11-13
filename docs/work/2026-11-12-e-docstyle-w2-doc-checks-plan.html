@@ -59,6 +59,7 @@
     <tr><td>4</td><td>Which docs get the label check?</td><td><b>Every finished doc</b>, plan or not, like the link check.</td></tr>
     <tr><td>5</td><td>Does this plan need your go?</td><td><b>No.</b> Neither the workflow skill nor the epic plan asks for one.</td></tr>
     <tr><td>6</td><td>E-CRCAP's ready plan has 889 words above its work. What then?</td><td><b>The router decides when the new <code>keel</code> is installed.</b> Installed while that plan is open, it turns E-CRCAP's turns red until the plan is cut and tagged.</td></tr>
+    <tr><td>7</td><td>How strict is the label check? <i>(Your ruling, 2026-11-13.)</i></td><td><b>Best effort, for htmldoc output.</b> A label it misses is a known limit. Refusing a valid diagram, or a fix that changes it, is a bug. The word count must match what a reader sees.</td></tr>
   </tbody>
 </table>
 
@@ -92,6 +93,12 @@
 <ul data-c="review-2">
   <li><b>Pass, nits fixed:</b> the plan skill's link-only wording now names diagram labels too; the writing skill says where the top starts without a <code>&lt;main&gt;</code>; this plan quotes the real error.</li>
   <li><b>Code nits fixed:</b> a typo of <code>owner-changes</code> in any governed doc now names it in the hint. Mermaid 11 also accepts an unspaced edge label, <code>A--yes--&gt;B</code>; the scan now covers it.</li>
+</ul>
+
+<h3 id="code-review-h">Code review</h3>
+<ul data-c="code-review">
+  <li><b>Round 1, fail:</b> the label check read one line at a time and ended a label at the first closing bracket. It now reads each diagram as one stream.</li>
+  <li><b>Round 2, fail:</b> under your ruling (question 7), four refusals or wrong counts were fixed: <code>%%{…}%%</code> directives, a fix that changed dotted edge text, words split at inline tags, unknown entities counted as words. Known misses are listed in the plan skill.</li>
 </ul>
 
 <h3 id="no-gate">What no gate reviews</h3>
