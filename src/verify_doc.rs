@@ -23,16 +23,44 @@ struct Tag<'a> {
     closing: bool,
 }
 
+/// Tags in document order. A comment is one tag named `!--` and a doctype or processing
+/// instruction one named `!`, so `text` drops them whole; a `>` inside a quoted attribute value
+/// does not end its tag; a `<` not followed by a letter, `/`, `!` or `?` is text.
 fn tags(html: &str) -> Vec<Tag<'_>> {
+    let b = html.as_bytes();
     let mut out = vec![];
     let mut i = 0;
     while let Some(p) = html[i..].find('<') {
         let start = i + p;
-        let Some(q) = html[start..].find('>') else { break };
-        let end = start + q + 1;
-        let body = &html[start + 1..end - 1];
+        i = start + 1;
+        if html[start..].starts_with("<!--") {
+            let end = html[start + 4..].find("-->").map_or(html.len(), |q| start + 4 + q + 3);
+            out.push(Tag { name: "!--", attrs: "", start, end, closing: false });
+            i = end;
+            continue;
+        }
+        if !b.get(start + 1).is_some_and(|&c| c.is_ascii_alphabetic() || matches!(c, b'/' | b'!' | b'?')) {
+            continue;
+        }
+        let mut j = start + 1;
+        let mut quote = None;
+        while j < b.len() {
+            match (quote, b[j]) {
+                (None, b'>') => break,
+                (None, q @ (b'"' | b'\'')) => quote = Some(q),
+                (Some(q), c) if c == q => quote = None,
+                _ => {}
+            }
+            j += 1;
+        }
+        if j == b.len() {
+            break;
+        }
+        let end = j + 1;
+        let body = &html[start + 1..j];
         i = end;
         if body.starts_with('!') || body.starts_with('?') {
+            out.push(Tag { name: "!", attrs: "", start, end, closing: false });
             continue;
         }
         let (closing, body) = body.strip_prefix('/').map_or((false, body), |r| (true, r));
@@ -65,14 +93,21 @@ fn span(ts: &[Tag], i: usize) -> Option<(usize, usize)> {
     None
 }
 
+/// The raw text of html[a..b], every tag and comment in it replaced by one space.
+fn text(html: &str, ts: &[Tag], a: usize, b: usize) -> String {
+    let mut out = String::new();
+    let mut at = a;
+    for t in ts.iter().filter(|t| t.start >= a && t.start < b) {
+        out.push_str(&html[at..t.start]);
+        out.push(' ');
+        at = t.end.min(b);
+    }
+    out.push_str(&html[at..b.max(at)]);
+    out
+}
+
 fn filled(html: &str, ts: &[Tag], i: usize) -> bool {
-    let Some((a, b)) = span(ts, i) else { return false };
-    let mut in_tag = false;
-    html[a..b].chars().any(|c| match c {
-        '<' => { in_tag = true; false }
-        '>' => { in_tag = false; false }
-        _ => !in_tag && !c.is_whitespace(),
-    })
+    span(ts, i).is_some_and(|(a, b)| text(html, ts, a, b).chars().any(|c| !c.is_whitespace()))
 }
 
 fn strip_blocks(html: &str, tag: &str) -> String {
@@ -136,10 +171,9 @@ pub fn verify(path: &Path) -> Vec<String> {
         }
     }
 
-    for t in ts.iter().filter(|t| !t.closing && attr(t, "class").is_some_and(|c| c.split_whitespace().any(|c| c == "mermaid"))) {
-        let inner = &html[t.end..];
-        let inner = &inner[..inner.find(&format!("</{}>", t.name)).unwrap_or(inner.len())];
-        for (found, fix) in unquoted_labels(&decode(inner)) {
+    for (i, t) in ts.iter().enumerate().filter(|(_, t)| !t.closing && attr(t, "class").is_some_and(|c| c.split_whitespace().any(|c| c == "mermaid"))) {
+        let (a, b) = span(&ts, i).unwrap_or((t.end, html.len()));
+        for (found, fix) in unquoted_labels(&decode(&text(&html, &ts, a, b))) {
             errs.push(format!("diagram label not in quotes: {found} - write {fix}"));
         }
     }
@@ -174,6 +208,12 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
         });
     }
     let epic = artifact.split_whitespace().any(|a| a == "epic-plan");
+    let mut known: Vec<&str> = vec![];
+    for k in expected.iter().chain(OPTIONAL) {
+        if !known.contains(k) {
+            known.push(k);
+        }
+    }
     let mut seen: Vec<&str> = vec![];
     for (i, t) in ts.iter().enumerate().filter(|(_, t)| !t.closing) {
         let Some(item) = attr(t, "data-item") else { continue };
@@ -184,7 +224,7 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
                 errs.push(format!("item \"{item}\" is empty"));
             }
         } else if !(epic && WU_SUB.contains(&item)) {
-            errs.push(format!("unknown tag data-item=\"{item}\" (typo? expected one of: {})", expected.iter().chain(OPTIONAL).copied().collect::<Vec<_>>().join(", ")));
+            errs.push(format!("unknown tag data-item=\"{item}\" (typo? expected one of: {})", known.join(", ")));
         }
     }
     for e in &expected {
@@ -197,7 +237,7 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
         if n > TOP_CAP {
             errs.push(format!("epic plan top has {n} words above the first WU, over the cap of {TOP_CAP}: cut it, or move details below the work"));
         }
-        let wus: Vec<usize> = (0..ts.len()).filter(|&i| !ts[i].closing && attr(&ts[i], "data-wu").is_some()).collect();
+        let wus = wu_blocks(ts);
         if wus.is_empty() {
             errs.push("epic plan has no data-wu block".into());
         }
@@ -215,64 +255,105 @@ fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
     }
 }
 
+/// Decodes numeric character references (decimal and hex) and the named entities docs use; any
+/// other `&…;` stays as written.
 fn decode(s: &str) -> String {
-    s.replace("&gt;", ">").replace("&lt;", "<").replace("&quot;", "\"").replace("&#34;", "\"").replace("&#39;", "'").replace("&nbsp;", " ").replace("&amp;", "&")
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(p) = rest.find('&') {
+        out.push_str(&rest[..p]);
+        rest = &rest[p..];
+        let hit = rest[1..].find(';').filter(|&n| (1..=10).contains(&n)).and_then(|n| entity(&rest[1..=n]).map(|c| (c, n + 2)));
+        let (c, len) = hit.unwrap_or(('&', 1));
+        out.push(c);
+        rest = &rest[len..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn entity(name: &str) -> Option<char> {
+    if let Some(n) = name.strip_prefix('#') {
+        let code = match n.strip_prefix(['x', 'X']) {
+            Some(h) => u32::from_str_radix(h, 16).ok()?,
+            None => n.parse().ok()?,
+        };
+        return char::from_u32(code);
+    }
+    Some(match name {
+        "amp" => '&',
+        "lt" => '<',
+        "gt" => '>',
+        "quot" => '"',
+        "apos" => '\'',
+        "nbsp" => ' ',
+        "mdash" => '—',
+        "ndash" => '–',
+        "rarr" => '→',
+        "larr" => '←',
+        "harr" => '↔',
+        "hellip" => '…',
+        "middot" => '·',
+        "bull" => '•',
+        "times" => '×',
+        "lsquo" => '‘',
+        "rsquo" => '’',
+        "ldquo" => '“',
+        "rdquo" => '”',
+        _ => return None,
+    })
+}
+
+/// The open tags carrying `data-wu`, in document order.
+fn wu_blocks(ts: &[Tag]) -> Vec<usize> {
+    (0..ts.len()).filter(|&i| !ts[i].closing && attr(&ts[i], "data-wu").is_some()).collect()
 }
 
 /// Words in an epic plan's top: the text from the start of `<main>` (else `<body>`) up to the
-/// first `data-wu` block. A word is a whitespace-separated run holding a letter or digit.
+/// first `data-wu` block. A word is a whitespace-separated run, entities decoded, holding a letter
+/// or digit: a dash, arrow or `·` is not one.
 fn top_words(html: &str, ts: &[Tag]) -> usize {
     let open = |n: &str| ts.iter().find(|t| t.name == n && !t.closing).map(|t| t.end);
     let start = open("main").or_else(|| open("body")).unwrap_or(0);
-    let end = ts.iter().find(|t| !t.closing && t.start >= start && attr(t, "data-wu").is_some()).map_or(html.len(), |t| t.start);
-    let top = &html[start..end.max(start)];
-    let mut text = String::new();
-    let mut in_tag = false;
-    for (i, c) in top.char_indices() {
-        let opens = top[i + c.len_utf8()..].starts_with(|n: char| n.is_ascii_alphabetic() || n == '/' || n == '!');
-        match c {
-            '<' if !in_tag && opens => in_tag = true,
-            '>' if in_tag => {
-                in_tag = false;
-                text.push(' ');
-            }
-            _ if !in_tag => text.push(c),
-            _ => {}
-        }
-    }
-    decode(&text).split_whitespace().filter(|w| w.chars().any(char::is_alphanumeric)).count()
+    let end = wu_blocks(ts).into_iter().map(|i| ts[i].start).find(|&s| s >= start).unwrap_or(html.len());
+    decode(&text(html, ts, start, end.max(start))).split_whitespace().filter(|w| w.chars().any(char::is_alphanumeric)).count()
 }
 
+const FLOWCHARTS: &[&str] = &["flowchart", "graph", "flowchart-elk"];
 const DIRECTIVES: &[&str] = &["classDef", "class", "style", "linkStyle", "click", "direction", "end", "accTitle", "accDescr"];
 
-/// Flowchart labels not in double quotes, as (found, fix): node shapes (`A[x]`, `A(x)`, `A{x}`,
-/// `A>x]` and their doubled forms) and edge labels (`-->|x|`, `-- x -->`, `--x-->`). Only
-/// `flowchart` and `graph` diagrams are scanned; comments and style lines are skipped.
+/// Flowchart labels not in double quotes, as (found, fix).
+///
+/// The grammar this scanner knows, a subset of Mermaid 11's flowchart: after optional `---` front
+/// matter and `%%` lines, the header `flowchart`, `graph` or `flowchart-elk` (other diagram kinds
+/// are not scanned). The rest is one token stream; a statement starts at a line start or after
+/// `;`. A `"…"` string runs across lines and hides every delimiter in it. Labels: a node shape
+/// (`A[x]`, `A(x)`, `A{x}`, `A>x]`, doubled and slanted forms) from its opening brackets to the
+/// matching close, brackets nesting inside; an edge label between `|…|`; edge text from `--`, `==`
+/// or `-.` to the next `--`, `==` or `.-` outside quotes, spaced or not. Skipped whole: `%%`
+/// lines, `accDescr {…}` blocks (spaced or not), lines opening with `accTitle`, `accDescr:`,
+/// `classDef`, `class`, `style`, `linkStyle`, `click`, `direction` or `end`, and `N@{…}` shape
+/// blocks. Not checked: a bracketless subgraph title, the inside of a quoted label.
 fn unquoted_labels(src: &str) -> Vec<(String, String)> {
-    let mut lines = src.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("%%")).peekable();
-    if lines.peek() == Some(&"---") {
-        lines.next();
-        for l in lines.by_ref() {
-            if l == "---" {
-                break;
-            }
+    let mut rest = src;
+    loop {
+        let t = rest.trim_start();
+        if t.starts_with("%%") {
+            rest = t.split_once('\n').map_or("", |(_, r)| r);
+        } else if let Some(fm) = t.strip_prefix("---") {
+            rest = fm.find("\n---").map_or("", |p| fm[p + 4..].split_once('\n').map_or("", |(_, r)| r));
+        } else {
+            rest = t;
+            break;
         }
     }
-    let Some(head) = lines.next() else { return vec![] };
-    let kind = head.split(|c: char| c.is_whitespace() || c == ';').next().unwrap_or("");
-    if kind != "flowchart" && kind != "graph" {
+    let kind = rest.split(|c: char| c.is_whitespace() || c == ';').next().unwrap_or("");
+    if !FLOWCHARTS.contains(&kind) {
         return vec![];
     }
+    let body = rest.find(['\n', ';']).map_or("", |p| &rest[p + 1..]);
     let mut out = vec![];
-    let first = head.split_once(';').map(|(_, r)| r);
-    for line in first.into_iter().chain(lines) {
-        let line = line.trim();
-        let word = line.split(|c: char| c.is_whitespace() || c == ':').next().unwrap_or("");
-        if line.starts_with("%%") || DIRECTIVES.contains(&word) {
-            continue;
-        }
-        scan_line(line.strip_prefix("subgraph").unwrap_or(line), &mut out);
-    }
+    scan(body, &mut out);
     out
 }
 
@@ -280,12 +361,52 @@ fn is_link(c: u8) -> bool {
     matches!(c, b'-' | b'=' | b'.' | b'<' | b'>')
 }
 
-fn scan_line(l: &str, out: &mut Vec<(String, String)>) {
-    let b = l.as_bytes();
+fn is_close(c: u8) -> bool {
+    matches!(c, b']' | b')' | b'}')
+}
+
+fn is_open(c: u8) -> bool {
+    matches!(c, b'[' | b'(' | b'{')
+}
+
+fn scan(s: &str, out: &mut Vec<(String, String)>) {
+    let b = s.as_bytes();
     let skip_quoted = |i: usize| b[i + 1..].iter().position(|&c| c == b'"').map_or(b.len(), |q| i + q + 2);
+    let line_end = |i: usize| s[i..].find('\n').map_or(s.len(), |p| i + p);
     let mut i = 0;
+    let mut at_start = true;
     while i < b.len() {
         let c = b[i];
+        if c == b'\n' || c == b';' {
+            at_start = true;
+            i += 1;
+            continue;
+        }
+        if at_start {
+            if c.is_ascii_whitespace() {
+                i += 1;
+                continue;
+            }
+            at_start = false;
+            if s[i..].starts_with("%%") {
+                i = line_end(i);
+                continue;
+            }
+            let n = s[i..].find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(s.len() - i);
+            let word = &s[i..i + n];
+            if word == "accDescr" && s[i + n..].trim_start().starts_with('{') {
+                i = s[i..].find('}').map_or(s.len(), |p| i + p + 1);
+                continue;
+            }
+            if DIRECTIVES.contains(&word) {
+                i = line_end(i);
+                continue;
+            }
+            if word == "subgraph" {
+                i += n;
+                continue;
+            }
+        }
         if c == b'"' {
             i = skip_quoted(i);
         } else if c == b'@' && b.get(i + 1) == Some(&b'{') {
@@ -295,16 +416,23 @@ fn scan_line(l: &str, out: &mut Vec<(String, String)>) {
             }
             i = j + 1;
         } else if c == b'|' {
-            let Some(k) = b[i + 1..].iter().position(|&c| c == b'|').map(|k| i + 1 + k) else { return };
-            let label = l[i + 1..k].trim();
+            let mut j = i + 1;
+            while j < b.len() && b[j] == b' ' {
+                j += 1;
+            }
+            let from = if j < b.len() && b[j] == b'"' { skip_quoted(j) } else { j };
+            let Some(k) = b.get(from..).and_then(|r| r.iter().position(|&c| c == b'|')).map(|k| from + k) else { return };
+            let label = s[i + 1..k].trim();
             if !label.starts_with('"') {
                 out.push((format!("|{label}|"), format!("|\"{label}\"|")));
             }
             i = k + 1;
-        } else if matches!(c, b'[' | b'(' | b'{') || (c == b'>' && i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')) {
+        } else if is_open(c) || (c == b'>' && i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')) {
             let mut j = i + 1;
-            while c != b'>' && j < b.len() && matches!(b[j], b'[' | b'(' | b'{') {
+            let mut opens = 1;
+            while c != b'>' && j < b.len() && is_open(b[j]) {
                 j += 1;
+                opens += 1;
             }
             if b[j - 1] == b'[' && j < b.len() && matches!(b[j], b'/' | b'\\') {
                 j += 1;
@@ -314,33 +442,59 @@ fn scan_line(l: &str, out: &mut Vec<(String, String)>) {
             }
             if j < b.len() && b[j] == b'"' {
                 i = skip_quoted(j);
+                while i < b.len() && is_close(b[i]) {
+                    i += 1;
+                }
                 continue;
             }
-            let mut k = b[j..].iter().position(|c| matches!(c, b']' | b')' | b'}')).map_or(b.len(), |k| j + k);
+            let mut k = j;
+            let mut depth = opens;
+            while k < b.len() {
+                if b[k] == b'"' {
+                    k = skip_quoted(k);
+                    continue;
+                }
+                if is_open(b[k]) {
+                    depth += 1;
+                } else if is_close(b[k]) {
+                    depth -= 1;
+                    if depth < opens {
+                        break;
+                    }
+                }
+                k += 1;
+            }
             let mut close = k;
-            while close < b.len() && matches!(b[close], b']' | b')' | b'}') {
+            while close < b.len() && close - k < opens && is_close(b[close]) {
                 close += 1;
             }
             if k > j && matches!(b[k - 1], b'/' | b'\\') {
                 k -= 1;
             }
-            let (open, label, end) = (&l[i..j].trim_end(), l[j..k].trim(), &l[k..close]);
+            let (open, label, end) = (s[i..j].trim_end(), s[j..k].trim(), &s[k..close]);
             out.push((format!("{open}{label}{end}"), format!("{open}\"{label}\"{end}")));
             i = close;
         } else if is_link(c) {
             let run = b[i..].iter().take_while(|&&c| is_link(c)).count();
-            let from = i + l[i..i + run].len() - l[i..i + run].trim_start_matches('<').len();
-            let arrow = &l[from..i + run];
+            let from = i + s[i..i + run].len() - s[i..i + run].trim_start_matches('<').len();
+            let arrow = &s[from..i + run];
             let ends_arrow = |n: &u8| matches!(n, b'x' | b'o') && arrow != "-.";
             let opens_text = matches!(arrow, "--" | "==" | "-.") && b.get(i + run).is_some_and(|n| !ends_arrow(n));
             i += run;
             if opens_text {
-                let Some(k) = (i..b.len().saturating_sub(1)).find(|&k| matches!(b[k], b'-' | b'=' | b'.') && matches!(b[k + 1], b'-' | b'=' | b'.' | b'>')) else { return };
-                let label = l[i..k].trim();
+                let shut: &[u8] = if arrow == "-." { b".-" } else { arrow.as_bytes() };
+                let mut k = i;
+                while k < b.len() && !b[k..].starts_with(shut) {
+                    k = if b[k] == b'"' { skip_quoted(k) } else { k + 1 };
+                }
+                if k >= b.len() {
+                    return;
+                }
+                let label = s[i..k].trim();
                 let end = b[k..].iter().take_while(|&&c| is_link(c)).count();
-                let close = &l[k..k + end];
+                let close = &s[k..k + end];
                 if !label.starts_with('"') {
-                    out.push((l[from..k + end].to_string(), format!("{arrow} \"{label}\" {close}")));
+                    out.push((s[from..k + end].to_string(), format!("{arrow} \"{label}\" {close}")));
                 }
                 i = k + end;
             }
