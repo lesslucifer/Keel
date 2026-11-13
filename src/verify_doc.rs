@@ -131,19 +131,28 @@ fn text(html: &str, ts: &[Tag], a: usize, b: usize) -> String {
 /// they open inside a `"…"` string, where they are label text.
 fn source(html: &str, ts: &[Tag], a: usize, b: usize) -> String {
     let mut out = String::new();
-    let mut quoted = false;
-    let mut keep = |out: &mut String, s: &str| {
-        out.push_str(s);
-        quoted ^= decode_with(s, None).matches('"').count() % 2 == 1; // a quote as the scan sees it
-        quoted
-    };
     walk(html, ts, a, b, |run, t| {
-        let quoted = keep(&mut out, run);
-        if let Some(t) = t.filter(|t| t.end <= b && (t.name != "!--" || quoted)) {
-            keep(&mut out, &html[t.start..t.end]);
+        out.push_str(run);
+        if let Some(t) = t.filter(|t| t.end <= b && (t.name != "!--" || in_quote(&out))) {
+            out.push_str(&html[t.start..t.end]);
         }
     });
     out
+}
+
+/// Does `src` end inside a `"…"` string? Quotes count as the scan sees them: decoded, and not on
+/// a line the scan skips unread (`%%` lines, `classDef`, `style` and the other directive lines).
+fn in_quote(src: &str) -> bool {
+    let mut quoted = false;
+    for line in decode_with(src, None).split('\n') {
+        let w = line.trim_start();
+        let word = &w[..w.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(w.len())];
+        if !quoted && (w.starts_with("%%") || DIRECTIVES.contains(&word)) {
+            continue;
+        }
+        quoted ^= line.matches('"').count() % 2 == 1;
+    }
+    quoted
 }
 
 fn filled(html: &str, ts: &[Tag], i: usize) -> bool {
@@ -333,10 +342,9 @@ fn decode_core(s: &str, unknown: Option<char>, mut map: Option<&mut Vec<usize>>)
     let mut i = 0;
     while i < s.len() {
         let rest = &s[i..];
-        let hit = rest.starts_with('&').then(|| rest.as_bytes()[1..].iter().take(32).position(|&c| c == b';').filter(|&n| n > 0)).flatten().and_then(|n| {
-            let name = &rest[1..=n];
+        let hit = entity_span(rest).and_then(|(name, len)| {
             let named = name.bytes().all(|c| c.is_ascii_alphanumeric());
-            entity(name).or(unknown.filter(|_| named)).map(|c| (c, n + 2))
+            entity(name).or(unknown.filter(|_| named)).map(|c| (c, len))
         });
         let (c, len) = hit.unwrap_or_else(|| {
             let c = rest.chars().next().unwrap_or('&');
@@ -354,11 +362,19 @@ fn decode_core(s: &str, unknown: Option<char>, mut map: Option<&mut Vec<usize>>)
     out
 }
 
+/// At an `&name;` (within 32 bytes), the name and the length of the whole reference.
+fn entity_span(rest: &str) -> Option<(&str, usize)> {
+    let n = rest.strip_prefix('&')?.bytes().take(32).position(|c| c == b';').filter(|&n| n > 0)?;
+    Some((&rest[1..=n], n + 2))
+}
+
 fn entity(name: &str) -> Option<char> {
     if let Some(n) = name.strip_prefix('#') {
+        // Digits only: a browser leaves a signed reference (`&#+34;`) as text.
         let code = match n.strip_prefix(['x', 'X']) {
-            Some(h) => u32::from_str_radix(h, 16).ok()?,
-            None => n.parse().ok()?,
+            Some(h) if h.bytes().all(|c| c.is_ascii_hexdigit()) => u32::from_str_radix(h, 16).ok()?,
+            None if n.bytes().all(|c| c.is_ascii_digit()) => n.parse().ok()?,
+            _ => return None,
         };
         return char::from_u32(code);
     }
@@ -503,14 +519,17 @@ fn inner(label: &str) -> String {
     while let Some(p) = rest.find(['"', '&']) {
         out.push_str(&rest[..p]);
         rest = &rest[p..];
-        let quote = if rest.starts_with('"') {
-            Some(1)
-        } else {
-            rest.as_bytes()[1..].iter().take(32).position(|&c| c == b';').filter(|&n| n > 0 && entity(&rest[1..=n]) == Some('"')).map(|n| n + 2)
+        let quote = if rest.starts_with('"') { Some(1) } else { entity_span(rest).filter(|&(name, _)| entity(name) == Some('"')).map(|(_, n)| n) };
+        rest = match quote {
+            Some(n) => {
+                out.push_str("#quot;");
+                &rest[n..]
+            }
+            None => {
+                out.push('&');
+                &rest[1..]
+            }
         };
-        let n = quote.unwrap_or(1);
-        out.push_str(if quote.is_some() { "#quot;" } else { &rest[..1] });
-        rest = &rest[n..];
     }
     out.push_str(rest);
     out
@@ -824,6 +843,8 @@ mod tests {
         let html = r#"A[&#34;<!--&#34;] --> B <!-- [z] --> C"#;
         let ts = tags(html);
         assert_eq!(super::source(html, &ts, 0, html.len()), r#"A[&#34;<!--&#34;] --> B  C"#, "an entity quote counts");
+        assert!(super::in_quote("A[\"a\n  b") && super::in_quote("A[&quot;a"));
+        assert!(!super::in_quote("%% 5&quot; screen\n  style A x:\"\n  classDef c y:&#34;\n  A[\"a\"] --> "), "skipped lines do not count");
     }
 
     /// Epic code review round 1, nit: a label is reported as written in the source, spaces kept.
