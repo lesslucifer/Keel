@@ -653,3 +653,30 @@ fn a_foreign_keel_on_path_makes_init_warn_and_a_git_hook_refuse() {
     let o = commit(&keel_first);
     assert!(o.status.success(), "with Keel first the hook runs: {}", text(&o));
 }
+
+/// An unreadable lock (a directory, or not UTF-8) is kept and said so, never overwritten, and init
+/// carries on through project-router, settings and the hooks, as for any unreadable path.
+#[test]
+fn an_unreadable_lock_is_kept_and_init_finishes() {
+    for plant in ["dir", "bytes"] {
+        let d = fresh_repo();
+        let p = d.path();
+        let lock = p.join(".keel/skills.lock");
+        std::fs::create_dir_all(p.join(".keel")).unwrap();
+        match plant {
+            "dir" => std::fs::create_dir(&lock).unwrap(),
+            _ => std::fs::write(&lock, b"\xff\xfe not utf-8\n").unwrap(),
+        }
+        let o = keel_in(p, &["init"], "");
+        let t = text(&o);
+        assert!(o.status.success(), "{plant}: {t}");
+        assert!(t.contains("kept      .keel/skills.lock (exists but is not a readable file"), "{plant}: {t}");
+        assert!(t.contains("created   .claude/skills/keel-workflow/SKILL.md"), "{plant}: {t}");
+        assert!(p.join(".claude/skills/project-router/SKILL.md").exists() && p.join(".claude/settings.json").exists(), "{plant}: {t}");
+        assert!(t.contains("hooks installed"), "{plant}: {t}");
+        match plant {
+            "dir" => assert!(lock.is_dir()),
+            _ => assert_eq!(std::fs::read(&lock).unwrap(), b"\xff\xfe not utf-8\n"),
+        }
+    }
+}
