@@ -457,6 +457,21 @@ mod tests {
     }
 
     #[test]
+    fn no_fix_line_names_a_round_that_cannot_run() {
+        // Code review round 1, B2: a round-5 blocker at the cap ends in the cap's waiver, never a round 6.
+        let (what, fix) = fix_pass(&failed_rounds(5), "r5", 5, |_| false).unwrap_err();
+        assert!(fix.contains("--verdict WAIVED") && fix.contains("--waive-review") && !fix.contains("round 6"), "{what} / {fix}");
+        // B3: a round-4 FAIL with nothing counted: no round 5, no fix-PASS; only the owner.
+        let mut nothing = failed_rounds(4);
+        nothing[0] = fail("r4", 0, 0);
+        let (what, fix) = next_round(&nothing, 5, &|_| false).unwrap_err();
+        assert!(fix.contains("--waive-review") && !fix.contains("--fixes"), "{what} / {fix}");
+        let (what, fix) = fix_pass(&nothing, "r4", 5, |_| false).unwrap_err();
+        assert!(fix.contains("--waive-review") && !fix.contains("round 5"), "{what} / {fix}");
+        assert!(next_step(&note("FAIL", 0, 0, json!({})), 4, 5, "t").contains("--waive-review"));
+    }
+
+    #[test]
     fn the_cap_waiver_stops_only_the_last_rounds_blocker_and_names_the_reason() {
         let four = failed_rounds(4);
         assert_eq!(cap(Some(&note("FAIL", 2, 1, json!({}))), &four, 5, "tip"), Ok("review cap: 5 rounds, 2 blockers open".into()));

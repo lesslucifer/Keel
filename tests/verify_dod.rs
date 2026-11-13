@@ -1356,6 +1356,67 @@ fn an_unreadable_earlier_note_stops_the_schedule_and_shows_in_the_history() {
 }
 
 #[test]
+fn a_cr_note_whose_fixes_names_no_full_commit_is_unreadable_and_never_reaches_git() {
+    // Code review round 1, B1: a note's `fixes` went unchecked into `git diff`, so `--output=<path>`
+    // made every sign-off create or truncate that file.
+    for bad in ["--output=.keel/config.toml", "HEAD~1", " "] {
+        let d = fixture();
+        let p = d.path();
+        test_note(p);
+        let c1 = head(p);
+        let forged = json!({"schema": "cr/v1", "tip": c1, "base": base(p), "branch": null, "committer": "x", "timestamp": 0,
+            "verdict": "PASS", "blockers": 0, "importants": 0, "code_diff_hash": "h", "fixes": bad});
+        git(p, &["notes", "--ref=cr", "add", "-f", "-m", &forged.to_string(), &c1]);
+        step(p, 2);
+        doc_note(p);
+        let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+        let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING]);
+        assert_eq!(std::fs::read_to_string(p.join(".keel/config.toml")).unwrap(), cfg, "fixes {bad:?} reached git: {}", text(&o));
+        assert!(row(&text(&o), &c1).contains("unreadable"), "fixes {bad:?}: {}", text(&o));
+        let o = preflight(p);
+        assert_red(&o, "0·review-cap");
+        assert!(text(&o).contains(&c1[..10]) && text(&o).contains("unreadable"), "fixes {bad:?}: {}", text(&o));
+    }
+}
+
+#[test]
+fn no_fix_line_names_a_round_the_schedule_refuses() {
+    // Code review round 1, B2: after a round-5 blocker a fix-PASS named round 6, which never runs.
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    let mut tips = vec![head(p)];
+    for n in 1..=5 {
+        ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+        tips.push(step(p, n + 1));
+    }
+    let o = write_cr(p, &["--verdict", "PASS", "--fixes", &tips[4]]);
+    refused(&o, &["--verdict WAIVED", &tips[4][..10], "--waive-review"]);
+    assert!(!text(&o).contains("round 6 on the fix"), "{}", text(&o));
+
+    // B3: a round-4 FAIL with nothing counted. No round 5 follows it and no fix-PASS answers it, so
+    // every refusal names the owner's waiver.
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    for n in 1..=3 {
+        ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+        step(p, n + 1);
+    }
+    let o = ok(write_cr(p, &["--verdict", "FAIL"]));
+    assert!(text(&o).contains("--waive-review"), "{}", text(&o));
+    let c4 = head(p);
+    step(p, 5);
+    doc_note(p);
+    let o = preflight(p);
+    assert_red(&o, "0·review-cap");
+    assert!(text(&o).contains("--waive-review") && !text(&o).contains("--fixes"), "{}", text(&o));
+    let o = write_cr(p, &["--verdict", "PASS", "--fixes", &c4]);
+    refused(&o, &["--waive-review"]);
+    assert!(!text(&o).contains("round 5 on the fix"), "{}", text(&o));
+}
+
+#[test]
 fn a_notes_ref_git_cannot_list_is_an_error_never_no_note() {
     let d = fixture();
     let p = d.path();
