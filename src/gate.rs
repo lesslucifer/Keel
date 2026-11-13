@@ -473,11 +473,14 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
     let schedule = review::Schedule::read(repo, &r.base, &r.tip, target, &cfg.code_paths).map_err(|e| (e, "fix the repo state, then preflight again".to_string()));
     match schedule.and_then(|s| s.next()) {
         Ok(next) => {
-            let changed = match &next.since {
-                Some(since) => notes::own_names(repo, since, &r.tip, &cfg.code_paths)?,
-                None => vec![],
+            let (commands, changed) = match &next.since {
+                Some(since) => {
+                    let diffs = notes::own_diffs(repo, since, &r.tip)?;
+                    (notes::own_diff_commands(&diffs, &cfg.code_paths), notes::diff_names(repo, &diffs, &cfg.code_paths)?)
+                }
+                None => (String::new(), vec![]),
             };
-            println!("{}", next.announce(&r.base, &r.tip, &cfg.code_paths, &changed));
+            println!("{}", next.announce(&r.base, &r.tip, &commands, &changed));
         }
         Err((what, fix)) => r.fail("0·review-cap", what, fix),
     }

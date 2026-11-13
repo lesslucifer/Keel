@@ -387,118 +387,89 @@ pub(crate) fn names(repo: &Path, base: &str, tip: &str, pathspecs: &[String]) ->
     Ok(zpaths(&git(repo, &a, &[])?))
 }
 
-/// The two commands that print the branch's own changes after `since` up to `tip`, as argv: each
-/// first-parent commit of `since..tip` against its first parent, a merge only for the hunks it
-/// resolved itself (`-p --cc`: never what its second parent brought, even in a file both sides
-/// changed). `own_names` runs exactly these, and preflight prints exactly these (`own_diff_command`),
-/// so the files it lists are the files of the diff reviewers read (epic code review rounds 1-2, B1, I4).
-fn own_diff_argv(since: &str, tip: &str, pathspecs: &[String]) -> [Vec<String>; 2] {
-    let rev_list = ["rev-list", "--first-parent", "--end-of-options", &format!("{since}..{tip}")].map(String::from).to_vec();
-    let mut diff: Vec<String> = ["diff-tree", "--stdin", "-r", "-p", "--cc", "--no-renames", "--src-prefix=a/", "--dst-prefix=b/", "--"].map(String::from).to_vec();
-    diff.extend(pathspecs.iter().cloned());
-    [rev_list, diff]
+/// One diff of the branch's own changes: what commit `to` changed against `from`.
+#[derive(Debug, PartialEq)]
+pub(crate) struct OwnDiff {
+    pub from: String,
+    pub to: String,
 }
 
-/// Paths within `pathspecs` that the branch itself changed after `since` up to `tip`: the file headers
-/// of `own_diff_argv`'s diff. A clean back-merge of the epic is no change of the branch's own. Two git
-/// processes, plumbing only.
-pub(crate) fn own_names(repo: &Path, since: &str, tip: &str, pathspecs: &[String]) -> Result<Vec<String>, String> {
-    let [rev_list, diff] = own_diff_argv(since, tip, pathspecs);
-    let rev_list: Vec<&str> = rev_list.iter().map(String::as_str).collect();
-    let commits = git(repo, &rev_list, &[])?;
-    if commits.is_empty() {
-        return Ok(vec![]);
+/// The branch's own changes after `since` up to `tip`, one diff per first-parent commit, oldest first (owner ruling
+/// 2026-11-13, epic code review round 3): a commit with one parent against that parent; a merge of
+/// two against git's own automatic merge of them (`git merge-tree --write-tree`, conflict markers and
+/// all), so only what the merge commit changed by hand counts, never what its second parent brought;
+/// an octopus merge whole, against its first parent (the gate refuses one anyway). Needs git 2.38 or
+/// later for `merge-tree --write-tree`; with an older git it refuses rather than guess.
+pub(crate) fn own_diffs(repo: &Path, since: &str, tip: &str) -> Result<Vec<OwnDiff>, String> {
+    let line = git(repo, &["rev-list", "--reverse", "--first-parent", "--parents", "--end-of-options", &format!("{since}..{tip}")], &[])?;
+    let mut diffs = vec![];
+    for l in line.lines() {
+        let ids: Vec<&str> = l.split(' ').collect();
+        let from = match ids[1..] {
+            [p1, p2] => auto_merge(repo, p1, p2)?,
+            [p1, ..] => p1.to_string(),
+            [] => return Err(format!("keel: {} has no parent, so the branch's own changes cannot be told", short(ids[0]))),
+        };
+        diffs.push(OwnDiff { from, to: ids[0].to_string() });
     }
-    let diff: Vec<&str> = diff.iter().map(String::as_str).collect();
-    let out = git_raw(repo, &diff, Some(format!("{commits}\n").as_bytes()))?;
-    if !out.status.success() {
-        ok_text(&diff, out)?;
-        return Err("keel: git diff-tree failed".into());
+    Ok(diffs)
+}
+
+/// The tree git's automatic merge of `p1` and `p2` gives: `merge-tree --write-tree` prints it first,
+/// exiting 0 when clean and 1 with conflicts (the tree then holds the conflict markers).
+fn auto_merge(repo: &Path, p1: &str, p2: &str) -> Result<String, String> {
+    let args = ["merge-tree", "--write-tree", "--end-of-options", p1, p2];
+    let o = git_raw(repo, &args, None)?;
+    let tree = String::from_utf8_lossy(&o.stdout).lines().next().unwrap_or_default().to_string();
+    match o.status.code() {
+        Some(0 | 1) if full_sha(&tree) => Ok(tree),
+        _ => Err(format!(
+            "keel: git merge-tree --write-tree failed on the merge of {} and {} ({}); telling a merge's own changes needs git 2.38 or later",
+            short(p1),
+            short(p2),
+            String::from_utf8_lossy(&o.stderr).trim()
+        )),
     }
-    let mut names = diff_headers(&String::from_utf8_lossy(&out.stdout))?;
+}
+
+/// The argv of one own diff, in output `format` (`--name-only -z` for the check, `-p` for reviewers):
+/// one argv, so the files the check lists are the files of the diff reviewers read.
+fn own_diff_argv(d: &OwnDiff, format: &[&str], pathspecs: &[String]) -> Vec<String> {
+    let mut a: Vec<String> = ["diff-tree", "-r", "--no-renames"].into_iter().chain(format.iter().copied()).map(String::from).collect();
+    a.extend(["--end-of-options".into(), d.from.clone(), d.to.clone(), "--".into()]);
+    a.extend(pathspecs.iter().cloned());
+    a
+}
+
+/// The paths within `pathspecs` that `diffs` change: their union, sorted. A path is listed as git
+/// prints it under `-z`, never C-quoted or re-encoded.
+pub(crate) fn diff_names(repo: &Path, diffs: &[OwnDiff], pathspecs: &[String]) -> Result<Vec<String>, String> {
+    let mut names = vec![];
+    for d in diffs {
+        let argv = own_diff_argv(d, &["--name-only", "-z"], pathspecs);
+        names.extend(zpaths(&git(repo, &argv.iter().map(String::as_str).collect::<Vec<_>>(), &[])?));
+    }
     names.sort();
     names.dedup();
     Ok(names)
 }
 
-/// The paths a `-p` diff names in its file headers: `diff --git a/<p> b/<p>` (no renames, so both
-/// sides are one path) and a merge's `diff --cc <p>`, either C-quoted when git quotes it. Only a
-/// header line starts with `diff `: every content line carries its +/-/space prefix.
-fn diff_headers(out: &str) -> Result<Vec<String>, String> {
-    let mut names = vec![];
-    for l in out.lines() {
-        let path = if let Some(p) = l.strip_prefix("diff --cc ").or_else(|| l.strip_prefix("diff --combined ")) {
-            unquote(p)?
-        } else if let Some(rest) = l.strip_prefix("diff --git ") {
-            if rest.starts_with('"') {
-                let (a, b) = rest.split_at(quoted_len(rest).ok_or_else(|| format!("keel: cannot read the diff header '{l}'"))?);
-                let (a, b) = (unquote(a)?, unquote(b.trim_start())?);
-                a.strip_prefix("a/").filter(|a| Some(*a) == b.strip_prefix("b/")).map(String::from)
-            } else {
-                let half = rest.len().checked_sub(5).filter(|n| n % 2 == 0).map(|n| n / 2);
-                half.and_then(|h| rest.get(2..2 + h)).filter(|p| rest == format!("a/{p} b/{p}")).map(String::from)
-            }
-            .ok_or_else(|| format!("keel: cannot read the diff header '{l}'"))?
-        } else {
-            continue;
-        };
-        names.push(path);
-    }
-    Ok(names)
+/// Paths within `pathspecs` the branch itself changed after `since` up to `tip` (`own_diffs`).
+pub(crate) fn own_names(repo: &Path, since: &str, tip: &str, pathspecs: &[String]) -> Result<Vec<String>, String> {
+    diff_names(repo, &own_diffs(repo, since, tip)?, pathspecs)
 }
 
-/// The length of the C-quoted string `s` starts with, quotes included.
-fn quoted_len(s: &str) -> Option<usize> {
-    let b = s.as_bytes();
-    let mut i = 1;
-    while i < b.len() {
-        match b[i] {
-            b'\\' => i += 2,
-            b'"' => return Some(i + 1),
-            _ => i += 1,
-        }
-    }
-    None
+/// The commands that print `diffs` as patches, shell-quoted, joined into one line for reviewers:
+/// exactly `diff_names`' argv with `-p` in place of `--name-only -z`.
+pub(crate) fn own_diff_commands(diffs: &[OwnDiff], pathspecs: &[String]) -> String {
+    let sh = |argv: Vec<String>| std::iter::once("git".to_string()).chain(argv.iter().map(|a| shell_quote(a))).collect::<Vec<_>>().join(" ");
+    diffs.iter().map(|d| sh(own_diff_argv(d, &["-p"], pathspecs))).collect::<Vec<_>>().join(" ; ")
 }
 
-/// A path as git prints it: as is, or C-quoted (`"…"` with `\\`, `\"`, `\n`, `\t` and octal escapes).
-fn unquote(p: &str) -> Result<String, String> {
-    let Some(inner) = p.strip_prefix('"').and_then(|q| q.strip_suffix('"')) else { return Ok(p.to_string()) };
-    let (mut out, mut it) = (Vec::new(), inner.bytes().peekable());
-    while let Some(c) = it.next() {
-        if c != b'\\' {
-            out.push(c);
-            continue;
-        }
-        let e = it.next().ok_or_else(|| format!("keel: bad quoted path {p}"))?;
-        out.push(match e {
-            b'n' => b'\n',
-            b't' => b'\t',
-            b'r' => b'\r',
-            b'a' => 7,
-            b'b' => 8,
-            b'f' => 12,
-            b'v' => 11,
-            b'0'..=b'7' => {
-                let digits = [e, it.next().unwrap_or(b'x'), it.next().unwrap_or(b'x')];
-                let o = std::str::from_utf8(&digits).ok().and_then(|d| u8::from_str_radix(d, 8).ok());
-                o.ok_or_else(|| format!("keel: bad quoted path {p}"))?
-            }
-            other => other,
-        });
-    }
-    String::from_utf8(out).map_err(|_| format!("keel: the path {p} is not UTF-8"))
-}
-
-/// The pipeline `own_names` runs, shell-quoted, for reviewers to read the same diff.
-pub(crate) fn own_diff_command(since: &str, tip: &str, pathspecs: &[String]) -> String {
-    let [rev_list, diff] = own_diff_argv(since, tip, pathspecs);
-    let sh = |argv: &[String]| std::iter::once("git".to_string()).chain(argv.iter().map(|a| shell_quote(a))).collect::<Vec<_>>().join(" ");
-    format!("{} | {}", sh(&rev_list), sh(&diff))
-}
-
+/// An argument the shell passes through unchanged: as is when it holds only [A-Za-z0-9/._-], else
+/// single-quoted (no expansion of `~`, `=`, `^` or anything else).
 fn shell_quote(a: &str) -> String {
-    if !a.is_empty() && a.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_./=:@%+,^~".contains(&b)) {
+    if !a.is_empty() && a.bytes().all(|b| b.is_ascii_alphanumeric() || b"/._-".contains(&b)) {
         a.to_string()
     } else {
         format!("'{}'", a.replace('\'', "'\\''"))
@@ -524,8 +495,7 @@ pub(crate) fn cr_line(repo: &Path, base: &str, tip: &str) -> Result<Vec<StoredNo
     let args = ["cat-file", "--batch"];
     let out = git_raw(repo, &args, Some(input.as_bytes()))?;
     if !out.status.success() {
-        ok_text(&args, out)?;
-        return Err("keel: git cat-file --batch failed".into());
+        return Err(format!("keel: git {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim()));
     }
     let bodies = parse_batch(&out.stdout, on_line.len());
     Ok(on_line.into_iter().zip(bodies).map(|((c, _), body)| (c.to_string(), body)).collect())
@@ -1057,14 +1027,20 @@ mod tests {
     }
 
     #[test]
-    fn a_diff_names_each_file_by_its_header_quoted_or_not() {
-        let out = "abc123\ndiff --git a/src/a.rs b/src/a.rs\nindex 1..2\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1 +1 @@\n-diff --git x\n+y\ndiff --git a/a b c b/a b c\nnew file\ndiff --git \"a/t\\tab\" \"b/t\\tab\"\ndiff --cc src/m.rs\nindex 1,2..3\ndiff --cc \"\\303\\274.rs\"\n";
-        assert_eq!(diff_headers(out).unwrap(), ["src/a.rs", "a b c", "t\tab", "src/m.rs", "\u{fc}.rs"]);
-        assert!(diff_headers("diff --git a/x b/y\n").is_err(), "no renames: both sides are one path");
-        assert_eq!(own_diff_command("s", "t", &["src/".into(), "it's dir/".into()]), "git rev-list --first-parent --end-of-options s..t | git diff-tree --stdin -r -p --cc --no-renames --src-prefix=a/ --dst-prefix=b/ -- src/ 'it'\\''s dir/'");
+    fn the_printed_commands_are_the_checks_argv_with_patches_and_quote_all_but_plain_characters() {
+        let d = [OwnDiff { from: "aaa".into(), to: "bbb".into() }, OwnDiff { from: "ccc".into(), to: "ddd".into() }];
+        let paths = ["src/".to_string(), "it's ~dir/".to_string()];
+        assert_eq!(
+            own_diff_commands(&d, &paths),
+            "git diff-tree -r --no-renames -p --end-of-options aaa bbb -- src/ 'it'\\''s ~dir/' ; git diff-tree -r --no-renames -p --end-of-options ccc ddd -- src/ 'it'\\''s ~dir/'"
+        );
+        assert_eq!(own_diff_argv(&d[0], &["--name-only", "-z"], &paths)[3..5], ["--name-only", "-z"]);
+        for (a, q) in [("src/a_b-c.rs", "src/a_b-c.rs"), ("~x", "'~x'"), ("a=b", "'a=b'"), ("x^", "'x^'"), ("", "''"), ("$(x)", "'$(x)'")] {
+            assert_eq!(shell_quote(a), q);
+        }
     }
 
-    use super::{diff_headers, own_diff_command, parse_batch};
+    use super::{own_diff_argv, own_diff_commands, parse_batch, shell_quote, OwnDiff};
     use super::{cr_counts, cr_lists, cr_verdict, waive, waiver_reason, CrNote, CrWrite, Identity};
 
     fn raw(n: &CrNote) -> String {

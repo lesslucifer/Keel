@@ -1632,7 +1632,14 @@ fn a_back_merge_of_the_epic_is_no_fix_of_this_wu_and_no_part_of_its_last_fix() {
     let t = text(&ok(preflight(p)));
     assert!(t.contains(&last_fix(3, 5, &c2, &tip)), "{t}");
     assert!(t.contains("changed: src/a.py") && !t.contains("src/b.py"), "the scope is the WU's own fix, never the merged code: {t}");
-    assert!(t.contains(&format!("git rev-list --first-parent --end-of-options {c2}..{tip} | git diff-tree --stdin -r -p --cc --no-renames --src-prefix=a/ --dst-prefix=b/ -- src/ tests/")), "{t}");
+    let fix = git(p, &["rev-parse", "HEAD^1"]);
+    assert!(t.contains(&format!("git diff-tree -r --no-renames -p --end-of-options {c2} {fix} -- src/ tests/ ; git diff-tree -r --no-renames -p --end-of-options ")), "{t}");
+    assert!(t.contains(&format!(" {tip} -- src/ tests/; changed: src/a.py (")), "{t}");
+    // The printed commands, run as printed, show exactly the listed files.
+    let commands = t.split("its parents: ").nth(1).and_then(|r| r.split("; changed:").next()).unwrap();
+    let shown = String::from_utf8(run("sh", p, &["-c", commands], "").stdout).unwrap();
+    let files: Vec<&str> = shown.lines().filter_map(|l| l.strip_prefix("diff --git a/")).map(|l| l.split(' ').next().unwrap()).collect();
+    assert_eq!(files, ["src/a.py"], "{shown}");
 }
 
 /// A 20-line code file both the epic and the WU hold: put on the epic, back-merged into the WU.
