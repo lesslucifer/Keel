@@ -337,3 +337,13 @@ fn an_epic_plan_typo_hint_names_each_item_once() {
     let (ok, t) = verify(p, "e.html", &epic_plan("", "", "", r#"<p data-item="owner-chages">x</p>"#));
     assert!(!ok && t.matches("owner-changes").count() == 1, "{t}");
 }
+
+/// Code review round 2, B3: a fully quoted diagram with a `%%{…}%%` directive is green.
+#[test]
+fn a_quoted_diagram_with_a_directive_is_green() {
+    let d = repo();
+    let p = d.path();
+    let doc = "<html lang=\"en\"><body><main><pre class=\"mermaid\">\n%%{init: {'theme': 'dark'}}%%\nflowchart LR\n  A[\"a\"] --> B[\"b\"]\n</pre></main></body></html>";
+    let (ok, t) = verify(p, "f.html", doc);
+    assert!(ok, "{t}");
+}

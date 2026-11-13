@@ -646,6 +646,43 @@ mod tests {
         assert!(labels(&decode("flowchart LR\n  A[&#x22;hi&#x22;] --> B[&#34;b&#34;]")).is_empty());
     }
 
+    /// Code review round 2, B3: a `%%{…}%%` directive is skipped whole, multi-line or inline.
+    #[test]
+    fn a_directive_is_skipped_whole_multi_line_or_inline() {
+        assert!(labels("%%{\n  init: {'theme': 'dark'}\n}%%\nflowchart LR\n  A[\"a\"] --> B[\"b\"]").is_empty());
+        assert_eq!(labels("%%{init: {'theme': 'dark'}}%% flowchart LR\n  A[x]"), ["[x]"]);
+        assert!(labels("flowchart LR\n  %%{init: {'theme': 'dark'}}%%\n  A[\"a\"]\n  %%{\n  init: {'x': 'y'}\n  }%%\n  B[\"b\"]").is_empty());
+    }
+
+    /// Code review round 2, B5: the hint keeps the label's text exact.
+    #[test]
+    fn the_hint_keeps_the_label_text_exact() {
+        assert_eq!(unquoted_labels("flowchart LR\n  A[\"a\"] -. yes -.-> B[\"b\"]"), vec![("-. yes -.->".into(), "-. \"yes\" -.->".into())]);
+        assert_eq!(unquoted_labels("flowchart LR\n  A[say \"hi\" now]"), vec![("[say \"hi\" now]".into(), "[\"say #quot;hi#quot; now\"]".into())]);
+    }
+
+    /// Code review round 2, B6: inline tags join the words around them; block tags separate.
+    #[test]
+    fn inline_tags_join_words_and_block_tags_separate_them() {
+        assert_eq!(top("<main><p>non-<code>.md</code> <b>re</b>use <a href=\"x\">li</a>nk</p></main>"), 3);
+        assert_eq!(top("<main><p>one</p><p>two</p><ul><li>three</li></ul><table><tr><td>four</td><th>five</th></tr></table><h2>six</h2><div>seven</div>eight<br>nine<pre>ten</pre></main>"), 10);
+    }
+
+    /// Code review round 2, B7: an unknown named entity is one symbol, like its numeric form.
+    #[test]
+    fn an_unknown_named_entity_is_no_word() {
+        assert_eq!(top("<main>a &copy; b &#169; c &reg;</main>"), 3);
+    }
+
+    /// Code review round 2, B1, B2, B8 (known limits made trivial): `class`, `click` and `end`
+    /// end at `;`; indented front matter; CDATA is skipped whole.
+    #[test]
+    fn a_class_click_or_end_statement_ends_at_a_semicolon_front_matter_may_be_indented_and_cdata_is_skipped() {
+        assert_eq!(labels("flowchart LR\n  class A hot; B[x]\n  click A cb \"t;ip\"; C[y]\n  end; D[z]"), ["[x]", "[y]", "[z]"]);
+        assert_eq!(labels("  ---\n  title: t\n  ---\n  flowchart LR\n  A[x]"), ["[x]"]);
+        assert_eq!(top("<main><svg><![CDATA[ a > b c ]]></svg>one</main>"), 1);
+    }
+
     #[test]
     fn only_flowcharts_are_scanned() {
         for src in ["sequenceDiagram\n  A->>B: hi [x]", "stateDiagram-v2\n  A --> B: go [x]", "pie\n  \"a\" : 1", "", "flowchartX\n  A[x]"] {
