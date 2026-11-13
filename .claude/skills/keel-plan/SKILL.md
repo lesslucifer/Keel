@@ -102,14 +102,20 @@ sub-items filled; **no unknown tags** (the typo guard reports
 `unknown tag data-item="expcted"` next to `missing item "expected"`); an
 unknown `data-artifact` is red; an epic plan's **top** (its `<main>` content,
 else its `<body>`, above the first `data-wu` block) holds **at most 300
-words** (a word has a letter or digit; the diagram source counts, ids
-included); and, on every non-draft doc, governed or not, **every relative
+words** (counted as a reader sees them: a word has a letter or digit, inline
+tags like `<code>` join the text around them, block tags separate it; the
+diagram source counts, ids included); and, on every non-draft doc, governed or not, **every relative
 `href` resolves** (absolute URLs, `mailto:`, root-relative paths and fragments
 are not checked) and **every Mermaid flowchart node and edge label is in
 double quotes** (node shapes like `A["…"]`, `Q{"…"}`, and edge labels
-`-->|"…"|`, `-- "…" -->`, spaced or not; a bracketless subgraph title,
-`N@{ … }` shapes and other diagram kinds are not scanned). A target that was archived is cited as
-plain text marked archived, never linked into `docs/.archive/`.
+`-->|"…"|`, `-- "…" -->`, spaced or not). The label check is a **best-effort
+lint** for htmldoc output: refusing a valid diagram, or a fix hint that
+changes the diagram, is a bug; a missed label is a known limit. Known misses:
+a bracketless subgraph title, `N@{ … }` shapes, other diagram kinds, a `>…]`
+shape after an id ending in a non-ASCII or punctuation character, and a
+statement after a `;` on a `classDef`, `style`, `linkStyle`, `direction` or
+`accTitle` line. A target that was archived is cited as plain text marked
+archived, never linked into `docs/.archive/`.
 
 The trigger is the harness, not the agent and not git: the
 `verify-doc-post` hook runs it on every written `.html` (red ⇒ problems fed
