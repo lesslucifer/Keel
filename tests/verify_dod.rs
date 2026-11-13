@@ -1790,7 +1790,8 @@ fn the_automatic_merge_reads_the_attributes_of_the_merges_first_parent_not_the_c
     commit(p, "the epic marks the shared file -merge and changes line 19");
     git(p, &["switch", "-q", "wu/e/a"]);
     git(p, &["merge", "-q", "--no-ff", "-m", "back-merge the epic", "epic/e"]);
-    assert!(std::fs::read_to_string(p.join("src/shared.py")).unwrap().contains("x2 = \"wu\"\n"), "the real merge was clean");
+    let merged = std::fs::read_to_string(p.join("src/shared.py")).unwrap();
+    assert!(merged.contains("x2 = \"wu\"\n") && merged.contains("x19 = \"epic\"\n"), "the real merge was clean, both sides kept: {merged}");
     test_note(p);
     doc_note(p);
     ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1]));

@@ -670,6 +670,9 @@ mod tests {
         // A note that records another round or scope than the line gives it says so.
         let recorded = vec![at("r2", note("FAIL", 1, 0, json!({"round": 3, "scope": "since r0"}))), at("r1", note("FAIL", 1, 0, json!({"round": 1, "scope": "full"})))];
         assert_eq!(tags(&recorded, |_, _| Ok(vec![])), [" [round 2, full; the note records round 3, since r0]", " [round 1, full]"]);
+        // Epic code review round 5, I1: a fix-PASS that changed no file says so, as preflight does.
+        let empty = tags(&[fix_of("f1", "r1"), at("r1", note("PASS", 0, 0, json!({})))], |_, _| Ok(vec![]));
+        assert_eq!(empty[0], " [fix-PASS of round 1 on r1; no reviewers ran; changed: nothing]");
         let orphan = tags(&[fix_of("f", "elsewhere")], |_, _| Err("gone".into()));
         assert_eq!(orphan, [" [fix-PASS of a round not on this line on elsewhere; no reviewers ran; changed: unknown (gone)]"]);
     }
