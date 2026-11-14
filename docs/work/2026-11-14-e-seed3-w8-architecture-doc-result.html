@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af84cfd9f34851f0dfb2487" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED3.W8 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED3.W8 · The architecture doc — result</h1>
+      <p>The page is written and verified; it is staged for the owner's rule-bearing commit.</p>
+      <div class="meta">T3 · WU result · 2026-11-14 · Keel · branch <code>wu/E-SEED3/w8-architecture-doc</code> off <code>epic/E-SEED3</code> at <code>26f2069</code></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome"><b>Delivered.</b> <code>docs/architecture.html</code> is a T1 page describing the code at this tip: the CLI, what <code>keel init</code> installs and does not install, every config key the code reads, the five note kinds and the gate checks that consume them, the router tooling and the epic close after W2 and W3. It passes <code>keel verify-doc</code>, and a coverage check finds every config key and note kind the code has named in the page, with no key the code does not read. The page is staged, not committed: flat <code>docs/*.html</code> is rule-bearing and lands by the owner's <code>keel mr commit</code>.</p>
+
+<h2 id="changes">What changed</h2>
+<table data-c="changes">
+  <thead><tr><th>File</th><th>Commit / state</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><td><code>docs/work/2026-11-14-e-seed3-w8-architecture-doc-plan.html</code></td><td><code>cf3423b</code></td><td>The WU plan: one T1 page, every key and kind, the hand-off to the owner.</td></tr>
+    <tr><td><code>docs/architecture.html</code></td><td>staged for the owner</td><td>The T1 page: seven sections, links to the T2 owner of each rule, one Mermaid diagram.</td></tr>
+    <tr><td>This result</td><td>the tip before the owner's commit</td><td>The record; <code>data-artifact="wu-result"</code>, so the sign-off finds it in the range.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="deviations">Deviations</h2>
+<p data-item="deviations" data-c="deviations"><b>The WU has no test or doc notes yet, by rule, not by omission.</b> The whole WU range is docs-only, so the gate treats it as exempt: checks 1–6 do not run and no note is required. The final tip is the owner's <code>keel mr commit</code>, which this session must not create; writing notes on the tip before it would orphan them on the next commit. The plan's test-layer waiver stands as written: <b>integration waived</b>, a T1 description with no code path; the observable is this page's <code>verify-doc</code> result and the coverage check. Everything else is as planned. The page did not need a code, test, template or skill change; where it found the code and a written rule apart, it names both (<a href="../architecture.html#gaps">Where the code and the rules disagree</a>).</p>
+<p><b>The notes refspec is not installed.</b> The epic plan's W5 item expected <code>keel init</code> to add one. The owner deferred it to backlog B24, and the code at this tip touches no remote; the page states that plainly rather than describing the plan.</p>
+
+<h2 id="evidence">Evidence</h2>
+<ul data-item="evidence" data-c="evidence">
+  <li><b>Commits:</b> <code>cf3423b</code> (plan) and the result commit after it. The architecture page is staged on top of them.</li>
+  <li><b><code>keel verify-doc docs/architecture.html</code>:</b> no output, exit 0. The same command on the plan and the result: exit 0.</li>
+  <li><b>Coverage check:</b> 26 config keys in the code, 26 in the page's table, none missing, none invented; note kinds <code>test</code>, <code>doc</code>, <code>cr</code>, <code>mr</code>, <code>dod</code>, all present; the seven installed hooks all named.</li>
+  <li><b>Preflight:</b> the range is docs-only, so <code>keel preflight wu &lt;tip&gt;</code> prints exempt and returns before the tree and check steps. That is the gate's own rule for this WU, not a skipped run.</li>
+  <li><b>The doc's own scope:</b> seven sections, each <code>h2</code> a direct child of <code>main</code>; every relative link resolves; the Mermaid nodes and edges are quoted.</li>
+</ul>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation"><code>docs/architecture.html</code> is the T1 target: it now carries the final shape and points at the T2 page that owns each rule. The plan and this result are T3 and are archived by the epic close. No other T1/T2 doc changed in this WU; the epic close still owes the T2 texts the page names (the W2 walk/push, W3's target rule, W5's setup, W6's waiver scope, W7's follow-up rule).</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<ul data-item="follow-ups" data-c="follow-ups">
+  <li><b>The owner's hand-off, this WU:</b> <code>keel mr commit -m "docs(E-SEED3.W8): architecture - the final shape" --as vuluu</code>, then <code>keel mr confirm wu &lt;tip&gt; --as vuluu --target epic/E-SEED3</code>, then merge <code>--no-ff</code> into <code>epic/E-SEED3</code>. The result report is in the range and at the tip, so the sign-off finds it.</li>
+  <li><b>E-SEED3 close:</b> land W3's two <code>keel-workflow</code> rows (the bare-tip target rule) so the skill matches the code; the page names the gap. These are rule-bearing and go in the close's owner commit.</li>
+  <li><b>E-SEED3 close:</b> the T2 amendments the page lists, and backlog B4 struck (this page is its deliverable).</li>
+  <li><b>Backlog B24:</b> the notes-fetch design stays open and deferred; this WU did not change it.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
