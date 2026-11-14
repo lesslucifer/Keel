@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af85de49f34851f0dfb24aa" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-RGUARD.W3 result: the inbox channel</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-RGUARD.W3 · The inbox channel</h1>
+      <p>Delivered: a worker's post wakes the router, and the report timer is gone.</p>
+      <div class="meta">T3 · WU result · 2026-11-14 · epic E-RGUARD · WU E-RGUARD.W3 · tip <code>efac00b</code></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome"><b>Delivered, with the rule-bearing commit left to you.</b> <code>scripts/router-inbox.sh</code> ships the channel: <code>init</code>, <code>post</code> (atomic, prints the id), <code>watch</code> (checks at once, then polls; exit 1 at its bound) and <code>consume</code> (the durable ack, idempotent). <code>tests/router_inbox.rs</code> drives all of it through the process boundary, 21 cases in their own temp inbox, and the 2026-11-14 probe's 28 checks are covered. The shipped router skill now says a DSH worker posts and the router's armed watcher is the wake; no shipped text allows a timer, a loop or a reminder. One decision row (DEC-57) records the channel, why a push channel beats a poll on DSH, and its limits.</p>
+
+<p>What did <b>not</b> land here: the skill text, the decision, the guard, the settings entry and the config line are rule-bearing, so this session stops at the staged command. Claude Code workers still cannot post; that needs the launcher's sandbox widened, which is a DEC-46 change and out of scope.</p>
+
+<h2 id="for-you">What changes for you</h2>
+<table data-c="owner-changes">
+  <thead><tr><th>When</th><th>Before</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>A worker finishes</td><td>The router reads the transcript at its next wake</td><td>A post wakes the router in a poll, report in hand</td></tr>
+    <tr><td>The router waits</td><td>A 10-minute reminder, or W1's fleet wake</td><td>One armed watcher; no reminder and no schedule</td></tr>
+    <tr><td>A report is acknowledged</td><td>Another message to read</td><td><code>consume &lt;id&gt;</code>; the id is quoted back</td></tr>
+    <tr><td>A worker wedges silently</td><td>The tick saw the silence</td><td>Nothing checks; the next wake reads the status</td></tr>
+  </tbody>
+</table>
+
+<h2 id="deviations">Deviations from the plan</h2>
+<table data-item="deviations" data-c="deviations">
+  <thead><tr><th>Plan said</th><th>What happened</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Delete the fleet-wake exception and its placeholder date from <code>worker-ops.md</code> "Wake on DSH"</td><td><b>Not possible at this base.</b> The exception, its placeholder date and <code>references/checklists.md</code> exist only on <code>wu/E-RGUARD/w1-interim-checklist</code> (unmerged). The channel text was written against the base instead</td><td>Hard rule: no merging another branch. When W1 lands, delete its <code>worker-ops.md</code> "Wake on DSH" subsection (its open point 1 answer "No: one wake per fleet…", the acceptance bullet "On DSH, arming the fleet wake is a bullet a router cannot miss", and the <code>checklists.md</code> rows at its lines 41-42 and 57 that name the fleet wake). Do not keep both texts</td></tr>
+    <tr><td>Carry the epic plan and add the W3 card (W2's pattern)</td><td><b>Not carried.</b> The W3 plan and this result stand alone</td><td>The only copy is on W1/W2, and its "What changes" row, open point 1, W1 card and acceptance bullet all bless the fleet wake this WU deletes. A merged copy would contradict this tip; the epic close updates it</td></tr>
+    <tr><td>The probe's cost: idle wakes drop to zero</td><td><b>Not zero.</b> The watcher's bound, and the host's 2 h background ceiling, still wake the router: about 13 a day at 6,600 s while a fleet is live</td><td>An armed blocking read must end. The 144-a-day report reminder is gone and nothing is scheduled; the decision states the remaining wakes and the plan's liveness answer</td></tr>
+    <tr><td>Port the prototype's 27 checks</td><td><b>28.</b> The prototype test prints 28 PASS lines; all 28 are covered, plus a worktree-resolver case and a symlinked consume</td><td>Counted by running the prototype, not by trusting the report</td></tr>
+    <tr><td>Commit <code>tests/router.rs</code> as code</td><td><b>Staged with the guard.</b> The pin test cannot be green at a commit that lacks the staged guard</td><td>W2's precedent (<code>0f189ce</code>): the guard's pin rides the guard's rule-bearing commit, so every commit stays green</td></tr>
+  </tbody>
+</table>
+
+<h2 id="evidence">Evidence</h2>
+
+<h3 id="commits">Commits</h3>
+<ul data-item="evidence" data-c="commits">
+  <li><code>f266086</code> — the WU plan.</li>
+  <li><code>cd2d41a</code> — <code>scripts/router-inbox.sh</code> and <code>tests/router_inbox.rs</code> (20 cases).</li>
+  <li><code>efac00b</code> — the worktree-resolver case (21 cases); code tip.</li>
+  <li>This report is the next commit. The rule-bearing changes are staged on top of it.</li>
+</ul>
+
+<h3 id="red-green">Red first, then green</h3>
+<pre data-c="red-green"><code># no script yet: every case fails at the process boundary
+$ cargo test --test router_inbox
+test result: FAILED. 0 passed; 20 failed
+  sh: …/scripts/router-inbox.sh: No such file or directory
+
+# the guard pin, against the old guard
+$ cargo test --test router -- router_guard_admits_the_inbox
+assertion `left == right` failed: guard denied documented shape "scripts/router-inbox.sh init"
+test result: FAILED. 0 passed; 1 failed
+
+# after the script and the guard
+$ cargo test --test router_inbox
+test result: ok. 21 passed; 0 failed
+$ cargo test --test router -- router_guard_admits_the_inbox router_bash_guard_judges_plain_words
+test result: ok. 2 passed; 0 failed
+$ cargo clippy --all-targets -- -D warnings
+Finished `dev` profile …</code></pre>
+
+<h3 id="check">Gate check on a clean tree</h3>
+<p>In a scratch worktree at <code>cd2d41a</code> (nothing uncommitted), the proof run the task names:</p>
+<pre data-c="check"><code>$ RUST_TEST_THREADS=1 keel check
+…
+test result: ok. 51 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 126.19s
+check green - cached</code></pre>
+<p>The two <code>tests/init.rs</code> self-hosting cases are red in this checkout only while the skill text is staged and uncommitted: they clone HEAD and compare <code>keel init</code>'s embedded skills against it. They are green once your commit makes the text HEAD — that is why the notes and preflight below run on your new tip.</p>
+
+<h3 id="demo">A post delivered and consumed</h3>
+<pre data-c="demo"><code>$ sh scripts/router-inbox.sh init
+READY dir=/tmp/w3-demo/inbox read=/tmp/w3-demo/inbox/read
+$ sh scripts/router-inbox.sh post e-rguard-w3 REPORT "W3 done: channel shipped, tip efac00b"
+POSTED id=1794661770-KNwLfU
+$ sh scripts/router-inbox.sh watch 30        # armed as a background job
+MSG id=1794661770-KNwLfU from=e-rguard-w3 kind=REPORT age=6s bytes=122
+  W3 done: channel shipped, tip efac00b
+[status: completed, exit code: 0]
+$ sh scripts/router-inbox.sh consume 1794661770-KNwLfU
+CONSUMED id=1794661770-KNwLfU
+$ sh scripts/router-inbox.sh consume 1794661770-KNwLfU
+CONSUMED-ALREADY id=1794661770-KNwLfU
+$ sh scripts/router-inbox.sh status
+INBOX dir=/tmp/w3-demo/inbox pending=0 oldest=none read=1 orphans=0</code></pre>
+<p>The demo sets <code>ROUTER_INBOX_DIR</code> so it writes no repository state; the production path (a worktree copy resolves the main checkout's <code>.router/inbox</code>) is the 21st test.</p>
+
+<h3 id="verdict">The host's auto-review verdict, on the shipped file</h3>
+<pre data-c="verdict"><code>{"command":"sh scripts/router-inbox.sh watch 6600","risk":"low","source":"shell",
+ "reason":"script contains no destructive command",
+ "script":{"kind":"shell","withinWorkspace":true}}
+{"command":"sh scripts/router-inbox.sh consume 1794659383-abc123","risk":"low", …}
+{"command":"sh scripts/router-inbox.sh init","risk":"low", …}
+{"command":"sh scripts/router-inbox.sh status","risk":"low", …}
+{"command":"sh scripts/router-inbox.sh post e-rguard-w3 REPORT \"…\"","risk":"low", …}</code></pre>
+<p>The classifier was run directly (the session's danger-full-access bypasses the gate, so the plugin's own rules were called on the real command strings). An unreadable script path is <code>unknown</code>; every shape the channel runs is <code>low</code>. The polling loop is not the risky shape — a delete verb or a redirect into a system path would be, and the script has neither.</p>
+
+<h3 id="diff">The diff, and what no gate reviews</h3>
+<ul data-c="diff">
+  <li>Code committed: <code>scripts/router-inbox.sh</code>, <code>tests/router_inbox.rs</code> (2 commits, 21 tests).</li>
+  <li>Staged rule-bearing: both skill trees (SKILL.md, worker-ops.md, brief-skeleton.md), <code>docs/decisions/router.html</code> and <code>decisions-index.html</code>, <code>scripts/router-guard.jq</code>, <code>.claude/settings.json</code>, <code>.keel/config.toml</code>, and the guard pin in <code>tests/router.rs</code>.</li>
+  <li><b>No gate reviews</b> <code>scripts/router-inbox.sh</code>, <code>scripts/router-guard.jq</code>, <code>.claude/settings.json</code>, the skill text, the decision doc or <code>.keel/config.toml</code>: none is under <code>code_paths</code> (<code>src/</code>, <code>tests/</code>), so the cr review binds only the tests. The independent review must read the channel and the guard by hand.</li>
+</ul>
+
+<h2 id="liveness">Liveness: nothing replaces it</h2>
+<p>Decided as the task preferred. A worker that posts nothing is invisible: a wedge and a long turn are the same silence, so a clock adds a model pass, not information. No reminder, schedule, loop or DSH watchdog is armed. The router reads <code>worker_status</code> and the transcript at its next wake; while a watcher is armed its bound is the longest silence (110 minutes at most), and with none armed only the owner's next message. That residual is written into DEC-57 and the skill, not hidden. The armed watcher's own bounded exit is not a liveness check: it is the wake the channel already has.</p>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">The durable truth is the shipped skill text (the report channel section in <code>worker-ops.md</code>, the transport table and the no-heartbeat bullet in <code>SKILL.md</code>, the post line in <code>brief-skeleton.md</code>) and DEC-57 in <code>docs/decisions/router.html</code>. At epic close, UC-ROUTE-5's report row and UC-ROUTE-6's wake row absorb the channel; this plan and report are archived. Nothing else here is citable.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<ul data-item="follow-ups" data-c="follow-ups">
+  <li><b>Your step, in order:</b> run the staged owner command below; then, on the new tip, <code>keel notes write test &lt; judgment.json</code>, <code>keel notes write doc</code>, <code>keel preflight wu &lt;new-tip&gt; --target epic/E-RGUARD</code>, and the independent review (a fresh review worker writes the <code>cr</code> note). The guard pin and the skill text count in that run.</li>
+  <li><b>Reconcile W1 when it lands:</b> delete its <code>worker-ops.md</code> "Wake on DSH" subsection and the <code>checklists.md</code> rows that name the fleet wake; keep this WU's channel text. If W1 merges after this, that is a textual conflict in <code>worker-ops.md</code>, not a silent merge.</li>
+  <li><b>Claude Code workers posting</b> is a separate owner change: <code>scripts/router-worker.sh</code>'s sandbox would need <code>&lt;main&gt;/.router/inbox</code> in <code>allowWrite</code>, which weakens DEC-46 for every worker. Not done here.</li>
+  <li><b>Housekeeping, manual by design:</b> <code>read/</code> grows and is never pruned by the script; the owner moves files out. <code>.router/</code> is unbacked, so deleting it drops pending messages.</li>
+</ul>
+
+<h2 id="staged">The staged owner command</h2>
+<pre data-c="staged"><code>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-RGUARD-w3-inbox-channel &amp;&amp; keel mr commit -m "feat(E-RGUARD.W3): the router wakes on a worker's post - the inbox channel, the guard shapes, the skill text and DEC-57; scripts/router-inbox.sh joins rule_bearing" --as vuluu</code></pre>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
