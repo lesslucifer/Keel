@@ -403,8 +403,8 @@ fn epic_tip_rejects_a_tracked_t3_doc_and_an_archive_without_lineage() {
     assert_red(&keel(p, &["verify-dod", "epic", "epic/e"]), "6·doc-note");
 }
 
-/// cr blocker 1: `git merge --no-commit` skips pre-merge-commit, and `--ff-only` makes no merge
-/// commit, so the push range is the only gate left - it must judge merge seams, not skip them.
+/// cr blocker 1: a merge smuggled past the commit hooks (`--no-verify`), then fast-forwarded into
+/// main, leaves the push range as the only gate - it must judge merge seams, not skip them.
 #[test]
 fn push_of_a_fast_forwarded_no_commit_wu_merge_is_gated() {
     let d = fixture();
@@ -417,7 +417,8 @@ fn push_of_a_fast_forwarded_no_commit_wu_merge_is_gated() {
 
     git(p, &["switch", "-q", "epic/e"]);
     git(p, &["merge", "-q", "--no-ff", "--no-commit", "wu/e/a"]);
-    git(p, &["commit", "-qm", "merge wu a, never gated"]);
+    // E-SEED3.W4 gates a merge finished by hand; the bypass is what leaves the push the only gate.
+    assert!(run("git", p, &["commit", "-q", "--no-verify", "-m", "merge wu a, never gated"], "").status.success());
     git(p, &["switch", "-q", "main"]);
     git(p, &["merge", "-q", "--ff-only", "epic/e"]);
     let push = run("git", p, &["push", "-q", "origin", "main"], "");
