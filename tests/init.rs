@@ -480,6 +480,8 @@ fn router_ships_the_moment_of_action_checklists() {
     for leak in ["/Users/", "E-ROUTER", "E-RGUARD", "E-SEED"] {
         assert!(!src.contains(leak), "checklists.md carries Keel's own state: {leak:?}");
     }
+    let epic_id = regex::Regex::new(r"\bE-[A-Z][A-Z0-9]+\b").unwrap();
+    assert!(epic_id.find(&src).is_none(), "checklists.md names an epic id: {:?}", epic_id.find(&src).map(|m| m.as_str()));
 
     let d = fresh_repo();
     assert!(keel(d.path(), &["init"]).status.success());
@@ -523,7 +525,9 @@ fn router_ships_the_moment_of_action_checklists() {
         "not a reason to read on",
         "never a second reminder",
         "never one per worker",
-        "has no owner ruling yet",
+        "no owner ruling",
+        "nothing is armed",
+        "never arm one",
     ] {
         assert!(src.contains(said), "checklists.md lost {said:?}");
     }

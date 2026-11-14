@@ -332,10 +332,11 @@ in another skill.
   none came), then retire it; `STUCK (quiet …)` → message the worker first;
   `STUCK (permission prompt)` → the owner answers it (`claude attach <id>`), you
   cannot. A watchdog whose reports stop is yours to notice and start again.
-- **On DSH the fleet wake is yours to arm.** `worker_spawn` sends no message, so a
-  worker's finish cannot wake you: arm a wake for the fleet before the first
-  dispatch and re-arm it on every wake (`references/worker-ops.md` "Wake on DSH"),
-  and never close a turn with a live worker and nothing armed.
+- **On DSH nothing can wake you yet.** `worker_spawn` sends no message, so a
+  worker's finish cannot wake you. The fleet wake that would close that gap has no
+  owner ruling and is not in force, so do not arm it (`references/worker-ops.md`
+  "Wake on DSH"). Until one is recorded, a turn that ends with live workers says in
+  one line that nothing can wake you, and names the message you need.
 - **No heartbeat**: the router routes; it runs no loop or timer (owner ruling
   2026-11-11). Workers report by message and every staged owner action has a
   watch; each wake runs the wake checklist (`references/checklists.md` WAKE) and
@@ -405,9 +406,10 @@ is a new finding.
 Ask only what is truly the owner's (product, policy, outward actions, rule
 changes, risk). Every question: options with costs, your recommendation, the
 default if unanswered. Ask twice at most, then proceed on the default
-*(inference)*. Record a ruling in the next brief, and in the rulings log
-(`<ROOT>/.router/rulings.md`) when it exists — the owner or a worker starts that
-file: the router may write no file but a brief.
+*(inference)*. Record a ruling in the next brief — your only write. The rulings log
+(`<ROOT>/.router/rulings.md`) is the owner's to add to: read it, and a ruling
+missing from it is a finding to report, never a file for you to create or append
+to.
 
 ## CI, releases, shared resources
 
