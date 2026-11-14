@@ -216,7 +216,7 @@ fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver()
     n["waiver"] = Value::from("review cap: 5 rounds, 0 blockers open");
     git(p, &["notes", "--ref=cr", "add", "-f", "-m", &n.to_string(), &b5]);
     let o = keel(p, &["verify-dod", "wu", "wu/e/b"]);
-    assert!(!o.status.success() && text(&o).contains("8·manual-review") && text(&o).contains("reworded"), "{}", text(&o));
+    assert!(!o.status.success() && text(&o).contains("8·manual-review") && text(&o).contains("changed after"), "{}", text(&o));
     git(p, &["notes", "--ref=cr", "add", "-f", "-m", &signed, &b5]);
     ok(keel(p, &["verify-dod", "wu", "wu/e/b"]));
     git(p, &["switch", "-q", "epic/e"]);

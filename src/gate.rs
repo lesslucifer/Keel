@@ -302,9 +302,20 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
     Ok(())
 }
 
+/// Recorded text made inert for a terminal by the sign-off listing's rule (`mr::printable`), keeping
+/// the middle dot of the check ids. `lines`: a fix keeps its own line breaks, each line escaped.
+fn inert(s: &str, lines: bool) -> String {
+    let one = |l: &str| l.split('·').map(mr::printable).collect::<Vec<_>>().join("·");
+    if lines {
+        s.split('\n').map(one).collect::<Vec<_>>().join("\n")
+    } else {
+        one(s)
+    }
+}
+
 fn print(r: &Report, what: &str) {
     for w in &r.waived {
-        println!("WAIVED {w}");
+        println!("WAIVED {}", inert(w, false));
     }
     if r.exempt {
         println!("{what} {} exempt on {} - docs/infra-only, test/cr/doc evidence not required", r.level.name(), short(&r.tip));
@@ -312,7 +323,7 @@ fn print(r: &Report, what: &str) {
         println!("{what} {} green on {} (checks: {})", r.level.name(), short(&r.tip), r.level.checks().join(", "));
     } else {
         for f in &r.failures {
-            eprintln!("FAIL  {:<24} {}\n      fix -> {}", f.check, f.what, f.fix);
+            eprintln!("FAIL  {:<24} {}\n      fix -> {}", inert(&f.check, false), inert(&f.what, false), inert(&f.fix, true));
         }
         eprintln!("{what} {} red on {} - {} failed", r.level.name(), short(&r.tip), r.failures.len());
     }
@@ -366,11 +377,20 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, gua
     Ok(0)
 }
 
+/// The range a sign-off signs, once checks 1-7 are green on it.
+pub(crate) struct Ready {
+    pub tip: String,
+    pub base: String,
+    pub target: String,
+    /// The tip's cr note as checks 3-5 read it; `None` when the signer waives the review (not read).
+    pub cr: Option<CrNote>,
+}
+
 /// mr confirm's sign-last rule (Trawler DEC-27): checks 1-7 must already be green on the tip.
-/// Red -> the failures are printed and `None`; green -> `(tip, base, target)` of the range to sign.
+/// Red -> the failures are printed and `None`; green -> the range to sign and the cr note read.
 /// `waive`: the signer waives the tip's own review in this sign-off (UC-REV-2), so its review - the
 /// cr note and checks 3-5 on it - is the one thing not yet required; everything else still is.
-pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, rest: &[&str], waive: bool) -> Result<Option<(String, String, String)>, String> {
+pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, rest: &[&str], waive: bool) -> Result<Option<Ready>, String> {
     let level = if epic { Level::Epic } else { Level::Wu };
     let target = target_of(cfg, level, tip_ref, rest);
     let r = verify_with(repo, cfg, level, tip_ref, &target, !waive)?;
@@ -378,7 +398,7 @@ pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, r
         print(&r, "mr confirm");
         return Ok(None);
     }
-    Ok(Some((r.tip, r.base, target)))
+    Ok(Some(Ready { tip: r.tip, base: r.base, target, cr: r.tip_cr }))
 }
 
 /// pre-merge-commit: tip = the merge head, target = HEAD, level from HEAD's branch.
@@ -609,6 +629,7 @@ pub fn preflight_cmd(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, St
 
 #[cfg(test)]
 mod tests {
+    use super::inert;
     use super::review_verdict as review;
     use super::{judged_as, note_range, Level, NoteRange};
     use crate::notes::CrNote;
@@ -647,6 +668,18 @@ mod tests {
             j["waiver"] = w.into();
         }
         serde_json::from_value(j).unwrap()
+    }
+
+    /// B17: recorded text reaches the terminal inert; the check ids' middle dot and a fix's own
+    /// line breaks stay.
+    #[test]
+    fn the_printout_escapes_recorded_text_and_keeps_its_own_layout() {
+        assert_eq!(inert("WAIVED 3·review: cap", false), "WAIVED 3·review: cap");
+        assert_eq!(inert("r\u{1b}[2K\u{7}\u{200b}\\", false), r"r\u{1b}[2K\u{7}\u{200b}\\");
+        assert_eq!(inert("a\nFAIL  fake", false), r"a\u{a}FAIL  fake", "a recorded line break cannot start a line");
+        assert_eq!(inert("one\n      two\u{1b}", true), "one\n      two\\u{1b}", "a fix keeps its lines, each escaped");
+        assert_eq!(inert("7·walk·3·review", false), "7·walk·3·review");
+        assert_eq!(inert("café 日本", true), "café 日本");
     }
 
     #[test]

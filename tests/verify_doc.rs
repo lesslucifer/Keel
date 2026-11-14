@@ -353,6 +353,10 @@ fn a_quoted_diagram_with_a_directive_is_green() {
         let doc = format!("<html lang=\"en\"><body><main><pre class=\"mermaid\">\n{directive}\n  A[\"a\"] --> B[\"b\"]\n</pre></main></body></html>");
         let (ok, t) = verify(p, "f.html", &doc);
         assert!(ok, "{directive}: {t}");
+        // B22: the label scan reads on after the directive, so an unquoted label there is named.
+        let doc = format!("<html lang=\"en\"><body><main><pre class=\"mermaid\">\n{directive}\n  A[\"a\"] --> B[\"b\"]\n  B --> C[after the directive]\n</pre></main></body></html>");
+        let (ok, t) = verify(p, "f.html", &doc);
+        assert!(!ok && t.contains("[after the directive]"), "{directive}: {t}");
     }
 }
 

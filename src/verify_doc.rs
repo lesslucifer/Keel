@@ -977,9 +977,9 @@ mod tests {
     /// Code review round 2, B3: a `%%{…}%%` directive is skipped whole, multi-line or inline.
     #[test]
     fn a_directive_is_skipped_whole_multi_line_or_inline() {
-        assert!(labels("%%{\n  init: {'theme': 'dark'}\n}%%\nflowchart LR\n  A[\"a\"] --> B[\"b\"]").is_empty());
+        assert_eq!(labels("%%{\n  init: {'theme': 'dark'}\n}%%\nflowchart LR\n  A[\"a\"] --> B[\"b\"]\n  B --> C[c]"), ["[c]"]);
         assert_eq!(labels("%%{init: {'theme': 'dark'}}%% flowchart LR\n  A[x]"), ["[x]"]);
-        assert!(labels("flowchart LR\n  %%{init: {'theme': 'dark'}}%%\n  A[\"a\"]\n  %%{\n  init: {'x': 'y'}\n  }%%\n  B[\"b\"]").is_empty());
+        assert_eq!(labels("flowchart LR\n  %%{init: {'theme': 'dark'}}%%\n  A[a]\n  %%{\n  init: {'x': 'y'}\n  }%%\n  B[\"b\"] --> C[c]"), ["[a]", "[c]"]);
     }
 
     /// Code review round 2, B5: the hint keeps the label's text exact.
