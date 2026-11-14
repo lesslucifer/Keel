@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af88e399f34851f0dfb24ba" data-artifact="epic-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-TESTOPT epic plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-TESTOPT · A full test run in half the time, green in a worker's sandbox</h1>
+      <p>Epic plan for the owner's ask of 2026-11-15: "Init a new epic for test optimization, we've done the same thing on trawler, let's migrate it here, the tests currently take insanely long."</p>
+      <div class="meta">T3 · epic plan · 2026-11-15 · Keel · branch <code>epic/E-TESTOPT</code> off main <code>690aef1</code> · ready without owner review (owner ruling 2026-11-15: plans carry their recommended answers)</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-item="intent" data-c="intent">A full test run takes about a minute here, and longer when several workers test at once. Every gated step pays it: each review round, each push, the merge into main. Most of the time goes to starting programs: one run starts about 22,600 git processes. The test files also run one after another. One test waits out a 20-second timeout on purpose. And in a worker's sandbox, 12 tests fail for reasons that have nothing to do with Keel. This epic halves the run and makes it green in the sandbox, porting what sped up Trawler's suite.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>A full test run (every review round, push and merge into main)</td><td>About 61 s; 77 s in a worker's sandbox</td><td>About 30 s, measured on a trial copy</td></tr>
+    <tr><td>A test fails</td><td>The run stops at that test file; later files never run</td><td>Every test runs; every failure shows</td></tr>
+    <tr><td>A worker runs the suite in its sandbox</td><td>13 failures</td><td>Green</td></tr>
+    <tr><td>The slowest test</td><td>20 s, waiting out a timeout</td><td>Under 3 s</td></tr>
+    <tr><td>You must decide</td><td>—</td><td>Nothing now: the open points carry their answers</td></tr>
+  </tbody>
+</table>
+
+<h2 id="terms">Terms</h2>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Test program</td><td>Each file under the tests folder builds into its own program. The test runner runs these programs one after another.</td></tr>
+    <tr><td>Spawn</td><td>Starting a separate program, such as git, keel or a shell. One costs about 5 ms here.</td></tr>
+    <tr><td>Sandbox</td><td>The limits a worker session runs under. It blocks some files and commands.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="wus">The work</h2>
+<p>W1 and W2 run in any order. W3 moves every test file, so it follows them. W4 follows W3. W5 closes.</p>
+
+<div data-item="wu-summaries" data-c="wu-summaries">
+
+<div data-wu="E-TESTOPT.W1" data-c="wu-w1">
+  <h3 id="w1">W1 · The tests run the real git</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> on macOS, <code>/usr/bin/git</code> is a small launcher (the xcrun shim) that finds the real git and starts it. In a worker's sandbox it also prints an error about its cache, and 12 router tests that compare git's output fail on that line. The shim also costs time: 8.4 ms per git call against 5.2 ms for the real git, over 22,600 calls a run. The test helpers put the real git first on every path a test hands to a child process, so keel, the hooks and the router scripts all use it.</p>
+    <ul>
+      <li><code>tests/common/mod.rs</code> resolves the real git's directory once per process (for example from <code>git --exec-path</code>) and <code>common::cmd</code> puts it first on <code>PATH</code>. Where no shim is in the way (Linux, or no real git found), nothing changes.</li>
+      <li>Every test that builds its own <code>PATH</code> (the router launcher's <code>fast_path</code>, the review and walk helpers that put keel's directory first) starts from that path.</li>
+      <li>A guard in the style of <code>every_test_spawn_strips_gits_env</code>: no test sets <code>PATH</code> except from the helper's.</li>
+      <li>Production code is unchanged: keel still runs whatever <code>git</code> the user's <code>PATH</code> names.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">The owner's ask (2026-11-15) · backlog R43, first half (sandbox-only reds from the xcrun shim) · testing charter: tests are deterministic and hermetic.</p>
+  <p data-item="wu-expected"><b>Integration:</b> with the stock <code>PATH</code> in a worker's sandbox, <code>cargo test --test router</code> has no xcrun cache failure (12 reds today); a test asserts the git a spawned test command resolves is not the shim when a real git exists. <b>Unit:</b> the directory resolver, including the case with no real git. Observable: the recipe's stock-PATH run matches the CLT-git run within noise.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+<div data-wu="E-TESTOPT.W2" data-c="wu-w2">
+  <h3 id="w2">W2 · A test that proves a timeout does not wait out the full bound</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the router tests bound every wait by one 10-second constant. <code>watcher_run_is_bounded_when_the_watch_outpolls_its_releases</code> proves that a watch that is never released makes the helpers give up, so it waits out that bound twice: 20.1 s alone, the longest test by four times. It also fails in the sandbox, because it lists processes with <code>ps</code>, which the sandbox blocks (R43, second half).</p>
+    <ul>
+      <li>The stepped-watch helpers take their bound as an argument. A test that expects "never" passes a short bound; every wait for something that must happen keeps 10 s.</li>
+      <li>"The sleep shim has exited" is checked without <code>ps</code>, for example from a pid file the shim writes and a liveness check.</li>
+      <li>A sweep of the suite for other waits that run to their bound on purpose; the serial profile shows none above 5 s.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">The owner's ask · backlog R43, second half (the watcher test in the sandbox) · testing charter: no sleep as synchronization; fast and isolated.</p>
+  <p data-item="wu-expected"><b>Integration:</b> the watcher test still fails if the helpers stop bounding a never-released watch, kept by a mutant check (the helper's bound removed: the test must hang or fail, not pass); it runs under 3 s and is green in the sandbox. <b>Unit:</b> the bound helper. Observable: <code>tests/router.rs</code>'s test program under <code>cargo test</code> drops from 23.9 s to its next-slowest test.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+<div data-wu="E-TESTOPT.W3" data-c="wu-w3">
+  <h3 id="w3">W3 · One test program</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> Trawler's port (E-GATEPAR2.W4). The ten test files become modules of one program, so <code>cargo test</code> runs all 231 integration tests in one pool instead of ten in a row. A trial copy measured 61.3 s → 38.2 s with no other change, and 29.2 s at 8 threads with the watcher test left out. One program also ends the stop at the first failing file that hid five router reds in E-SEED2.W15.</p>
+    <ul>
+      <li><code>git mv tests/&lt;f&gt;.rs tests/suite/&lt;f&gt;.rs</code>; <code>tests/suite/main.rs</code> declares each module and <code>#[path = "../common/mod.rs"] mod common;</code>; each <code>mod common;</code> becomes <code>use crate::common;</code>. That is the whole change the trial needed: it compiled and passed first time.</li>
+      <li>A guard test: a <code>.rs</code> file directly under <code>tests/</code> fails, naming the fix (open point 3).</li>
+      <li>The thread cap, if W3's own re-measure still shows it (open point 2): <code>.cargo/config.toml</code> <code>[env] RUST_TEST_THREADS = "8"</code>. Checked: cargo hands <code>[env]</code> to the test programs.</li>
+      <li><code>[check] test</code> stays <code>cargo test</code>: no change to <code>.keel/config.toml</code>, no new tool (open point 1).</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">The owner's ask · Trawler E-GATEPAR2.W4 "suite-cost" (34 test binaries → 9) · backlog e-seed-v2's E-SEED2.W15 lesson (cargo stops at the first failing binary).</p>
+  <p data-item="wu-expected"><b>Integration:</b> <code>cargo test</code> lists exactly two test programs (the unit tests and <code>suite</code>); the passed count equals the count before the move (329 with W1 and W2 in); the guard fails on a planted top-level test file. <b>Unit:</b> waived, no production code. Observable: the recipe's <code>cargo test</code> wall time near the trial's 38 s (29 s with the cap).</p>
+  <p data-item="wu-deps">W1, W2 (it moves the files they edit)</p>
+</div>
+
+<div data-wu="E-TESTOPT.W4" data-c="wu-w4">
+  <h3 id="w4">W4 · Fewer spawns: fixtures built once, copied per test</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> spawns are the cost, and they get dearer in parallel: kernel time is 60 s run one test at a time and 321 s at 14 threads. Many tests build the same scratch repo from scratch: init, config, <code>keel mr setup</code>, a commit, <code>keel hooks install</code>, branches, commits through the hooks. W4 measures where the 22,600 git calls come from, then builds each common fixture once per run and copies it per test, with no spawn.</p>
+    <ul>
+      <li>First, the profile: git calls per test, split into fixture setup and the steps the test judges (recipe step 5, run per test). The fixtures that pay go first; today <code>verify_dod</code> (10,266 calls) and <code>mr</code> (5,909) hold 72%.</li>
+      <li>A template per fixture shape, built once (<code>OnceLock</code>) in its own temp dir and copied into each test's temp dir with <code>std::fs</code>. Each test still owns its copy.</li>
+      <li>A fixture whose repo records an absolute path (hooks, worktrees, a remote) is rebuilt or rewritten after the copy; the WU checks every shape it converts.</li>
+      <li>No test loses an assertion; table-driven tests that rebuild a repo per row may share one where rows do not write.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">The owner's ask · testing charter: each test owns its state and runs in parallel · Trawler's shared fixtures (<code>tests/suite/common.rs</code>, E-GATEPAR2.W5's <code>hermetic.rs</code>).</p>
+  <p data-item="wu-expected"><b>Integration:</b> a template copy is independent: a write in one test's copy is not seen by another's or by the template (asserted for each shape). The suite's git calls per run fall (recipe step 5), and the passed count is unchanged. <b>Unit:</b> the copy helper (a tree with a symlink, an empty directory, the file modes git needs). Observable: recipe steps 3 and 5, before and after, in the WU result.</p>
+  <p data-item="wu-deps">W3</p>
+</div>
+
+<div data-wu="E-TESTOPT.W5" data-c="wu-w5">
+  <h3 id="w5">W5 · Close: the before/after re-run, the proof through the real hook, distillation</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> re-run the recipe on main and on the epic tip on the same machine, prove the suite through the real merge hook in a scratch clone, then write what lasts.</p>
+    <ul>
+      <li>The before/after table: every recipe step, twice each, load recorded.</li>
+      <li>A scratch clone with Keel's hooks installed merges the epic into main with <code>git merge --no-ff</code>; the pre-merge-commit hook runs <code>keel check</code> on the merged tree, green.</li>
+      <li>The distillation plan below; backlog R43 closed.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-TESTOPT, all · the epic test plan and distillation plan below.</p>
+  <p data-item="wu-expected"><b>Integration: waived</b>: W5 adds no code. Observable: the before/after table in the epic result; the scratch-clone merge green; the T2 rows written.</p>
+  <p data-item="wu-deps">W1, W2, W3, W4</p>
+</div>
+
+</div>
+
+<h2 id="open-points">Open points</h2>
+<p>Each answer is the plan's answer (owner ruling 2026-11-15). A comment overrules it.</p>
+<table data-item="open-questions" data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Make cargo-nextest the required test runner, as Trawler did (DEC-75)?</td><td><b>No.</b> One test program under plain <code>cargo test</code></td><td>Measured the same: 29.2 s (one program, 8 threads) against 28.8 s (nextest, 8 threads). No new install on every machine, and <code>[check] test</code> (a rule-bearing file) stays as it is. nextest stays a local option</td></tr>
+    <tr><td>2</td><td>Cap the test threads?</td><td><b>Yes, at 8</b>, in <code>.cargo/config.toml</code>, if W3's re-measure still shows at least 10 % gain over the default</td><td>14 threads ran slower than 8 (35.1 s against 29.2 s): spawns fight in the kernel. A developer can still override it with <code>RUST_TEST_THREADS</code>. W5 re-checks it after W4</td></tr>
+    <tr><td>3</td><td>Guard the one-program layout?</td><td><b>Yes</b>: a test fails on a test file directly under <code>tests/</code></td><td>Cargo would build such a file as its own program and the cost would creep back with no signal. Trawler relied on review; the guard is one small test</td></tr>
+    <tr><td>4</td><td>Make keel itself call git less (batching its object and note reads)?</td><td><b>Not in this epic</b>: a backlog row with W4's numbers</td><td>It changes the gate's own code, which this epic leaves alone. In <code>verify_dod</code>, keel and hook processes make 88 % of the git calls (683 processes, median 9 calls each), but only 5 % are exact repeats, so a cheap cache would buy little. W4's profile says how much of that is fixture setup</td></tr>
+    <tr><td>5</td><td>Waive the epic e2e test?</td><td><b>Yes</b>, with the proof in its place (epic test, below)</td><td>No product behaviour changes. A test that runs the whole suite would run itself. The real merge hook running the suite in a scratch clone, plus the before/after table, proves the epic</td></tr>
+    <tr><td>6</td><td>Where are timings taken?</td><td><b>In a worker's sandbox on this machine</b>, both git paths, twice each, load recorded</td><td>That is where workers run the gate. The sandbox blocks <code>ps</code>, so a sibling worker's run cannot be seen. Load before and after, and a repeat, are the check</td></tr>
+    <tr><td>7</td><td>Copy fixtures in-process, or with <code>cp -R</code> or <code>git clone --local</code>?</td><td><b>In-process</b> (<code>std::fs</code>)</td><td>A copy that spawns would put back part of the cost it removes</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="baseline">Baseline, measured 2026-11-15</h3>
+<p>macOS 26.5.1, 14 cores, inside a worker's sandbox, epic tip <code>690aef1</code>, warm build unless noted. "CLT git" = <code>/Library/Developer/CommandLineTools/usr/bin</code> first on <code>PATH</code>; "stock" = <code>/usr/bin/git</code>, the xcrun shim. Load is the 1-minute average before → after.</p>
+<table data-c="baseline-totals">
+  <thead><tr><th>Measure</th><th>Result</th><th>Conditions</th><th>Confidence</th></tr></thead>
+  <tbody>
+    <tr><td><code>cargo test --no-fail-fast</code>, CLT git</td><td><b>61.3 s</b> · <b>61.0 s</b>; 328 pass, 1 fail (R43)</td><td>load 8.2 → 9.2 · 1.8 → 6.3</td><td>high: two samples within 0.3 s</td></tr>
+    <tr><td><code>cargo test --no-fail-fast</code>, stock</td><td><b>76.7 s</b> · <b>77.6 s</b>; 12 router reds (xcrun cache) + R43</td><td>load 3.2 → 8.5 · 6.3 → 9.8</td><td>high for the figure; the 12 reds fail early, so a clean run would take longer</td></tr>
+    <tr><td><code>cargo test</code> (what the gate runs), stock, first run</td><td>79.9 s, then stopped: router red, the last three test programs never ran</td><td>load 2.0 → 17.6, likely another run at the same time</td><td>low: shows the load effect (close_walk 14.3 s against 4.4 s)</td></tr>
+    <tr><td>Serial, <code>cargo nextest run -j1</code>, CLT git</td><td>161.9 s of test time over 329 tests; kernel time 60 s</td><td>load 9.7 → 2.2</td><td>high: per-test times are the profile below</td></tr>
+    <tr><td>Compile, cold (11 test programs + keel + deps)</td><td>5.4 s</td><td>new worktree, empty <code>target/</code></td><td>high</td></tr>
+    <tr><td>Compile after an edit (src or tests)</td><td>0.6 s</td><td>one line added, then restored</td><td>high</td></tr>
+    <tr><td>Lint half of <code>keel check</code></td><td>fmt 0.15 s · clippy 2.6 s cold, 0.06 s cached</td><td>—</td><td>high</td></tr>
+    <tr><td>First launch of a freshly linked program</td><td>0.005 s (3 probes); second launch 0.004 s</td><td>Trawler's Gatekeeper wait</td><td>high: no first-launch wait on this machine</td></tr>
+    <tr><td>Doc-test pass</td><td>none (Keel is a binary-only crate)</td><td>—</td><td>high</td></tr>
+  </tbody>
+</table>
+<p>The run is spawn-bound, not compile-bound: compile and lint together are under 4 s of a 61 s run.</p>
+
+<table data-c="baseline-binaries">
+  <thead><tr><th>Test program</th><th>Tests</th><th>Wall in <code>cargo test</code> (CLT git)</th><th>Serial sum</th><th>Slowest test</th><th>git calls per run</th></tr></thead>
+  <tbody>
+    <tr><td>router</td><td>58</td><td>23.9 s</td><td>58.8 s</td><td>20.1 s</td><td>2,469</td></tr>
+    <tr><td>verify_dod</td><td>54</td><td>14.0 s</td><td>47.5 s</td><td>2.2 s</td><td>10,266</td></tr>
+    <tr><td>mr</td><td>29</td><td>8.3 s</td><td>27.9 s</td><td>3.3 s</td><td>5,909</td></tr>
+    <tr><td>review</td><td>1</td><td>4.6 s</td><td>4.5 s</td><td>4.5 s</td><td>1,009</td></tr>
+    <tr><td>close_walk</td><td>6</td><td>4.4 s</td><td>12.3 s</td><td>3.6 s</td><td>1,556</td></tr>
+    <tr><td>seed3_e2e</td><td>1</td><td>3.5 s</td><td>3.4 s</td><td>3.4 s</td><td>492</td></tr>
+    <tr><td>cli</td><td>27</td><td>1.2 s</td><td>3.1 s</td><td>0.7 s</td><td>465</td></tr>
+    <tr><td>init</td><td>27</td><td>0.8 s</td><td>2.8 s</td><td>0.3 s</td><td>330</td></tr>
+    <tr><td>verify_doc</td><td>23</td><td>0.4 s</td><td>0.8 s</td><td>0.2 s</td><td>120</td></tr>
+    <tr><td>unit tests (src)</td><td>98</td><td>0.3 s</td><td>0.8 s</td><td>0.3 s</td><td>1</td></tr>
+    <tr><td>release</td><td>5</td><td>0.0 s</td><td>0.0 s</td><td>0.0 s</td><td>0</td></tr>
+    <tr><td><b>all</b></td><td><b>329</b></td><td><b>61.3 s</b></td><td><b>161.9 s</b></td><td></td><td><b>22,617</b></td></tr>
+  </tbody>
+</table>
+<p>Test-time spread (serial): 168 tests under 0.1 s, 111 from 0.1 to 1 s, 42 from 1 to 3 s, 7 from 3 to 10 s, 1 at 20.1 s. The 50 tests of 1 s or more hold 108 s of the 162 s.</p>
+
+<table data-c="slowest">
+  <thead><tr><th>Slowest tests (serial)</th><th>Time</th></tr></thead>
+  <tbody>
+    <tr><td>router · watcher_run_is_bounded_when_the_watch_outpolls_its_releases (fails in the sandbox)</td><td>20.1 s</td></tr>
+    <tr><td>router · fact_block_states_a_worker_from_its_transcript_tail_within_its_bound</td><td>5.0 s</td></tr>
+    <tr><td>review · epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver</td><td>4.5 s</td></tr>
+    <tr><td>router · worker_permission_mode_comes_from_the_committed_policy</td><td>4.5 s</td></tr>
+    <tr><td>router · launcher_refuses_unsafe_targets_and_runs_one_worker_per_name</td><td>3.8 s</td></tr>
+    <tr><td>close_walk · a_plain_commit_with_no_notes_is_still_red_and_one_with_its_own_notes_still_passes</td><td>3.6 s</td></tr>
+    <tr><td>seed3_e2e · seed3_epic_close_merges_pushes_and_keeps_the_evidence</td><td>3.4 s</td></tr>
+    <tr><td>mr · report_policy_matrix_at_wu_level</td><td>3.3 s</td></tr>
+  </tbody>
+</table>
+
+<table data-c="spawn-costs">
+  <thead><tr><th>One spawn, 200 in a row</th><th>Each</th></tr></thead>
+  <tbody>
+    <tr><td><code>git rev-parse --git-dir</code>, CLT git</td><td>5.2 ms</td></tr>
+    <tr><td>the same through <code>/usr/bin/git</code> (shim, sandbox)</td><td>8.4 ms</td></tr>
+    <tr><td><code>keel --version</code></td><td>4.2 ms</td></tr>
+    <tr><td><code>/bin/sh -c :</code></td><td>2.4 ms</td></tr>
+  </tbody>
+</table>
+<p>Inside <code>verify_dod</code>: the test program itself makes 1,261 git calls (12 %); 683 other processes (keel, hook scripts, keel under hooks) make the rest, median 9 calls each, p90 28, max per process 1,261 being the test program. Exact repeats within one process: 555 (5 %). Most-used subcommands: rev-parse 2,184 · notes 1,297 · diff 1,134 · cat-file 896 · merge-base 621 · rev-list 547.</p>
+
+<h3 id="experiments">Experiments</h3>
+<table data-c="experiments">
+  <thead><tr><th>Experiment</th><th>Result</th><th>How it was run</th></tr></thead>
+  <tbody>
+    <tr><td>nextest, all threads (14), R43 included</td><td>37.6 s wall; R43 at 20.3 s is the tail; kernel time 311 s</td><td><code>cargo nextest run --no-fail-fast</code>, CLT git</td></tr>
+    <tr><td>nextest by thread count, R43 left out</td><td>j14 34.7 / 34.6 s · j10 30.0 s · j8 28.8 / 29.0 s · j6 31.9 s · j4 41.4 s; kernel time j14 321 s, j8 133 s, j4 75 s</td><td><code>cargo nextest run --no-fail-fast -j N -E 'not test(watcher_run_is_bounded_when_the_watch_outpolls_its_releases)'</code>, two samples where listed; load 7–12 throughout</td></tr>
+    <tr><td>One test program, plain <code>cargo test</code></td><td>default threads 38.2 s (R43 in) · 35.1 s (R43 skipped) · 8 threads 35.9 s (R43 in) · 29.2 s (R43 skipped); 98 + 230 pass, only R43 red</td><td>a <code>git clone</code> of the tip under <code>$TMPDIR</code>; <code>git mv</code> each <code>tests/*.rs</code> to <code>tests/suite/</code>, <code>sed 's/^mod common;/use crate::common;/'</code>, a <code>main.rs</code> with <code>#[path = "../common/mod.rs"] mod common;</code> and one <code>mod</code> per file; <code>cargo test --no-fail-fast -- [--test-threads=8] [--skip watcher_run_is_bounded]</code></td></tr>
+    <tr><td><code>[env] RUST_TEST_THREADS</code> in <code>.cargo/config.toml</code></td><td>honoured: init's 27 tests 2.64 s at 1 thread against 0.85 s without</td><td>same clone, the file added then removed</td></tr>
+    <tr><td>git calls per test program</td><td>the per-program column above</td><td>a <code>git</code> shim first on <code>PATH</code> that appends a line to a log and <code>exec</code>s the CLT git; <code>cargo test --test &lt;name&gt;</code> one at a time</td></tr>
+  </tbody>
+</table>
+
+<h3 id="recipe">The recipe (W3, W4 and W5 re-run it)</h3>
+<ol data-c="recipe">
+  <li>Record <code>uptime</code> before and after every step. Run each step twice.</li>
+  <li><code>cargo test --no-fail-fast</code>, once with the stock <code>PATH</code>, once with <code>/Library/Developer/CommandLineTools/usr/bin</code> first: wall, pass and fail counts.</li>
+  <li><code>cargo nextest run --no-fail-fast -j 8</code> and <code>-j 14</code>: wall and kernel time (<code>/usr/bin/time -p</code>).</li>
+  <li><code>cargo nextest run --no-fail-fast -j1</code>: per-test times; sum per test program; the ten slowest.</li>
+  <li>The git-counting shim (experiments table), per test program; from W4 on, per test.</li>
+  <li>Compile after a one-line edit: <code>cargo test --no-run</code>.</li>
+</ol>
+
+<h3 id="trawler">What Trawler did, and what applies here</h3>
+<p>Sources: Trawler's git history (its T3 docs are archived out of the tree): the push timing report (<code>docs/work/2026-11-04-push-timing-report.html</code> at <code>34825017^</code>), E-GATEPAR plan (<code>2026-11-04-gate-parity-plan.html</code>, same commit), E-GATEPAR2's suite-cost plan and result and close result (at <code>1f0b8831^</code>), <code>docs/decisions/dec-73</code>, <code>dec-75</code>, <code>docs/testing-strategy.html</code>, E-GATEFAST commit <code>d1ed2861</code>.</p>
+<table data-c="trawler-map">
+  <thead><tr><th>Trawler mechanism</th><th>What it bought there</th><th>Here</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>One integration test binary per crate, <code>tests/suite/main.rs</code> (E-GATEPAR2.W4, <code>97e34a31</code>)</td><td>34 → 9 binaries; nextest 22.2 → 16.3 s; plain <code>cargo test</code> 65–67 → 13.4 s together with the doc-test cut</td><td><b>applies</b>: W3</td><td>Here it buys parallelism across files under plain <code>cargo test</code> (61.3 → 38.2 s trial), not fewer links: links and first launches are cheap on this machine</td></tr>
+    <tr><td>cargo-nextest required, the gate runs only nextest (E-GATEPAR2.W3, DEC-75)</td><td>parallel binaries; one red binary no longer hides the rest</td><td><b>does not apply</b> (open point 1)</td><td>One program gives the same time and the same "every test runs" with <code>cargo test</code>; Keel ships as a tool for other projects, whose <code>[check] test</code> is their own</td></tr>
+    <tr><td>First-launch probe: refuse a machine whose fresh binary waits on Gatekeeper (E-GATEPAR2.W3, DEC-75)</td><td>the cause of a 15-minute push (21 s median per binary), fixed by the Developer Tools exemption</td><td><b>does not apply</b></td><td>Fresh binaries launch in 5 ms here; no wait to guard</td></tr>
+    <tr><td><code>doctest = false</code> plus a guard against runnable doc examples (E-GATEPAR2.W4)</td><td>52 s of empty doc-test passes per run</td><td><b>does not apply</b></td><td>Keel is a binary-only crate; <code>cargo test</code> runs no doc-test pass</td></tr>
+    <tr><td>Gate 0 skips when the tree is byte-identical to the last green run (E-GATEFAST.W2, <code>d1ed2861</code>)</td><td>the repeat runs in a gate-heavy epic</td><td><b>already here</b></td><td><code>keel check</code> caches by tree and commands (<code>&lt;git-dir&gt;/keel-check-green</code>)</td></tr>
+    <tr><td>The merge into main proves the merged tree; the push reads that proof (E-GATEPAR2.W1, W2, DEC-74)</td><td>push after a green merge 9.9 → 0.2 s</td><td><b>already here</b></td><td>pre-merge-commit runs <code>keel check</code> on the merged tree; pre-push checks a clean HEAD in place, through the same cache</td></tr>
+    <tr><td>Each worktree builds into its own <code>target/</code>, seeded by an APFS clone (E-GATEPAR.W2, DEC-73)</td><td>no wrong-code links; no third-party rebuild in a new worktree</td><td><b>does not apply</b></td><td>Keel's worktrees are separate checkouts with their own <code>target/</code>; a cold build is 5.4 s, so seeding buys little</td></tr>
+    <tr><td>Hooks run from the tracked directory via <code>core.hooksPath</code> (E-GATEPAR.W1, DEC-72)</td><td>landed hook changes reach every worktree</td><td><b>does not apply</b></td><td>Not a test-speed change; Keel installs its hooks with <code>keel hooks install</code></td></tr>
+    <tr><td>Shared test helpers (<code>tests/suite/common.rs</code>, <code>hermetic.rs</code>)</td><td>one copy of the temp-repo helpers</td><td><b>applies with changes</b>: W4</td><td>Here the point is fewer spawns: a fixture built once and copied, not only shared code</td></tr>
+    <tr><td>Measure first: every stage timed, quiet and loaded, cause isolated (the push timing report)</td><td>found the real cause (the launch wait) before any fix</td><td><b>applies</b>: the baseline and recipe here</td><td>It found this suite's real cost (spawns), which differs from Trawler's</td></tr>
+    <tr><td>Review-speed A/Bs (E-GATEFAST.W3–W8)</td><td>faster review finders</td><td><b>does not apply</b></td><td>About the review, not the tests</td></tr>
+  </tbody>
+</table>
+
+<h3 id="expected-h">Acceptance</h3>
+<ul data-item="expected" data-c="expected">
+  <li>The recipe's <code>cargo test --no-fail-fast</code> on the epic tip takes at most half of main's on the same machine in the same session, every test passing.</li>
+  <li>The suite is green in a worker's sandbox with the stock <code>PATH</code>.</li>
+  <li><code>cargo test</code> builds two test programs: the unit tests and <code>suite</code>. A new top-level test file fails a test.</li>
+  <li>No single test takes more than 6 s in the serial run.</li>
+  <li>The passed count is 329 or more; no test was deleted to buy time.</li>
+  <li>The before/after table is in the epic result, with load and both git paths.</li>
+</ul>
+
+<h3 id="use-cases-h">Use cases</h3>
+<ul data-item="use-cases" data-c="use-cases">
+  <li>None. A process epic: it changes only tests and test tooling. What <code>keel check</code> runs (UC-GATE-4) stays <code>cargo test</code>.</li>
+</ul>
+
+<h3 id="non-goals-h">Out of scope</h3>
+<ul data-item="non-goals" data-c="non-goals">
+  <li>Keel's own git calls in <code>src/</code> (open point 4: a backlog row).</li>
+  <li>A required test runner, or any change to <code>.keel/config.toml</code>.</li>
+  <li>Dropping or weakening a test to save time.</li>
+  <li>The router's other sandbox rows (R30 and the rest of R40–R46).</li>
+  <li>CI: Keel has only <code>release.yml</code>; no test workflow is added.</li>
+</ul>
+
+<h3 id="e2e-h">Epic test</h3>
+<div data-item="e2e-plan" data-c="e2e-plan">
+  <p><b>Waiver intent</b> (open point 5): no e2e test is added. The epic changes no product behaviour, and a test that runs the whole suite would run itself. In its place, at W5:</p>
+  <ol>
+    <li>A scratch clone with Keel's hooks installed (<code>keel hooks install</code> run there only) merges the epic into main with <code>git merge --no-ff</code>. The pre-merge-commit hook runs <code>keel check</code> on the merged tree: green. This is the E-SEED2.W15 lesson: a gate change is done when the real merge through the real hook passes.</li>
+    <li>The recipe runs on main and on the epic tip, same machine and session. The epic result carries the table.</li>
+    <li>The suite runs green in a worker's sandbox with the stock <code>PATH</code>.</li>
+  </ol>
+</div>
+
+<h3 id="close-h">At the close</h3>
+<ul data-item="distillation-plan" data-c="distillation-plan">
+  <li><code>docs/decisions/workflow-gates.html</code> + index: DEC-84, "Keel's suite is one test program run by plain <code>cargo test</code>": why one program, why no nextest prerequisite, the thread cap, the git-on-PATH rule for tests, the short bound for a "never" wait; with the before/after numbers.</li>
+  <li><code>docs/backlog/e-router-v2.html</code>: R43 closed by W1 and W2.</li>
+  <li><code>docs/backlog/e-seed-v2.html</code>: B26, keel's own git calls, with W4's profile (open point 4).</li>
+  <li>T1: none expected; <code>docs/architecture.html</code> does not describe the test layout. If a T1 line changes, it goes through <code>keel mr commit</code>.</li>
+  <li>This plan and the WU docs archived to <code>docs/.archive/</code>.</li>
+</ul>
+
+<h3 id="risks">Risks</h3>
+<ul data-c="risks">
+  <li>Load cannot be controlled: the sandbox blocks <code>ps</code>, so a sibling worker's test run is invisible. Mitigation: load recorded, two samples, before and after in one session.</li>
+  <li>One program shares one process: a test that changes process-wide state (environment, current directory) would now reach tests from other files. A grep finds no <code>set_var</code>, <code>remove_var</code> or <code>set_current_dir</code> in <code>tests/</code> today; W3 re-checks.</li>
+  <li>The stock-git cost outside the sandbox may be lower than 8.4 ms, since the shim can write its cache there. W1's gain outside the sandbox is measured, not assumed.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
