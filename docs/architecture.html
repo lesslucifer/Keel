@@ -198,11 +198,11 @@ flowchart LR
 <p>A WU tip is measured against the epic its branch name names: <code>wu/&lt;e&gt;/…</code> gives <code>epic/&lt;e&gt;</code>. A tip that is not a local branch (a bare commit id, or a detached <code>HEAD</code>) has no name to read. The gate then looks at the local branches that hold it: one <code>wu/</code> holder names its epic; otherwise one <code>epic/</code> holder is the target. No holder, or two epics, is a refusal that names <code>--target</code>; <code>main</code> is never a guess for a WU. <code>--target R</code> always overrides, and the result must be a local branch. The branch-name derivation is shared (<code>notes::target</code>); the gate adds holder resolution (<code>notes::target_from_holders</code>) for a tip with no local branch. The writer has no holder rule, so write notes with the WU branch checked out.</p>
 
 <h2 id="gaps">Where the code and the rules disagree</h2>
-<p>Three places at this tip. The code wins each. The first is a text the epic close owes; the second is a deferred backlog row the close must not misread; the third is a host gap, not a text.</p>
+<p>Two places at this tip, plus one the E-SEED3 close just resolved. The code wins each; where a rule text was behind the code, the row says so.</p>
 <table data-c="gaps">
   <thead><tr><th>Topic</th><th>Code at this tip</th><th>Rule text</th></tr></thead>
   <tbody>
-    <tr><td>A bare WU tip's target</td><td>Resolved from the branches that hold it, or refused with <code>--target</code>; never main (<code>gate::target_of</code>).</td><td><code>keel-workflow</code> §1 still says "anything else against <code>branches.main</code>", and §4's comment says "target from the branch name, else main". W3's two rule rows are owed by the close.</td></tr>
+    <tr><td>A bare WU tip's target</td><td>Resolved from the branches that hold it, or refused with <code>--target</code>; never main (<code>gate::target_of</code>).</td><td><b>Resolved by the E-SEED3 close:</b> <code>keel-workflow</code> §1 and §4 now carry the holder rule, landed in the same owner commit as this row. Before that commit, §1 read "anything else against <code>branches.main</code>".</td></tr>
     <tr><td><code>keel init</code> and the notes refspec</td><td>No remote call; the pre-push hook pushes <code>refs/notes/*</code> (DEC-19).</td><td>The epic plan's B6 expected init to add a non-forced fetch refspec. The owner deferred it to backlog B24; the close must not read a fetch into init.</td></tr>
     <tr><td>Doc checks on DeepSeek Harness</td><td>The host doc hooks are written into <code>.claude/settings.json</code> and <code>.codex/hooks.json</code>; nothing runs them on DSH.</td><td><code>keel-plan</code>/<code>keel-workflow</code> say the write-time check runs on every host, through a plugin where there is no shell hook. The <code>dsh-doc-gate</code> plugin is not built (<a href="backlog/dsh.html#d1">backlog D1</a>).</td></tr>
   </tbody>
@@ -228,7 +228,7 @@ flowchart LR
   <li><a href="decisions/distribution.html">Decisions: distribution</a> — the binary carries the rules; the skills lock.</li>
   <li><a href="decisions/router.html">Decisions: router</a> — the router posture, worker sessions, the watchdog and the DSH host.</li>
   <li><a href="install.html">Installing Keel</a> — the names, PATH, the roster and the DSH plugins.</li>
-  <li><a href="backlog/e-seed-v2.html">Backlog: E-SEED2/E-SEED3</a> — B24 (notes fetch) and B4 (this page).</li>
+  <li><a href="backlog/e-seed-v2.html">Backlog: E-SEED2/E-SEED3</a> — B24 (notes fetch) and B25 (a review fix buried by a later fix).</li>
 </ul>
 
   </main>

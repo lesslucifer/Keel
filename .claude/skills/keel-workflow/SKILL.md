@@ -30,7 +30,11 @@ skeleton, hooks), then follow the bootstrap and `keel mr setup` lines it prints.
   against `epic/<e>`; anything else against `branches.main`, unless `--target R`
   is passed. Keep the naming exact or pass `--target` everywhere. The `epic/`
   and `wu/` prefixes are `branches.epic_prefix` / `branches.wu_prefix` in
-  `.keel/config.toml`; this skill's examples use the defaults.
+  `.keel/config.toml`; this skill's examples use the defaults. A tip that names no
+  local branch (a bare commit id) has no name to read: the gate takes the epic of a
+  local `wu/<e>/…` branch that holds it, else the one local `epic/<e>` branch that
+  holds it, and refuses asking for `--target` when none or more than one epic holds
+  it. It never falls back to main.
 - **Main is merge-only**: the pre-commit hook refuses every non-merge commit on
   `branches.main`. All work, docs included, starts on an `epic/*` or `wu/*`
   branch.
@@ -134,7 +138,7 @@ check 7 judges it on them (§4). Notes sync to the remote on every push
 ## 4 · The gate — `keel verify-dod`
 
 ```
-keel verify-dod wu <tip> [--target R]   # target from the branch name, else main
+keel verify-dod wu <tip> [--target R]   # target from the branch name; a bare tip's holder branches, or a refusal; --target overrides
 keel verify-dod epic <tip> [--target R] # target defaults to main
 keel verify-dod commit <sha>            # standalone commit
 keel verify-dod hook                    # what pre-merge-commit runs
