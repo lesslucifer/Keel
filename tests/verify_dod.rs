@@ -176,6 +176,23 @@ fn a_bare_wu_tip_is_measured_against_its_epic_or_refused_with_a_target() {
     assert!(!t.contains("4·review-base"), "the gate guessed main instead of asking: {t}");
 }
 
+/// A tag that shares a holder branch's short name must not hide the branch: with both refs,
+/// `%(refname:short)` prints `heads/wu/e/a`, and the epic prefix then matches nothing, so the gate
+/// refuses a tip whose holder branch is right there.
+#[test]
+fn a_tag_sharing_a_holder_branch_name_does_not_hide_the_branch() {
+    let d = fixture_where_the_epic_has_work();
+    let p = d.path();
+    bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    git(p, &["tag", "wu/e/a", &tip]);
+    let o = keel(p, &["verify-dod", "wu", &tip]);
+    assert!(o.status.success(), "a same-named tag must not hide the holder branch: {}", text(&o));
+    let dod = note(p, "dod", &tip);
+    assert_eq!(dod["base"].as_str().unwrap(), git(p, &["rev-parse", "epic/e"]), "the bare tip was measured from the wrong base");
+}
+
 type Tamper = fn(&Path);
 
 #[test]

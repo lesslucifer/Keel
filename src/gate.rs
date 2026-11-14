@@ -604,10 +604,13 @@ fn is_local_branch(repo: &Path, name: &str) -> bool {
     git(repo, &["rev-parse", "--verify", "-q", &format!("refs/heads/{name}")], &[]).is_ok()
 }
 
-/// The local branches whose history holds `sha`, as git prints their short names.
+/// The local branches whose history holds `sha`, as their names without `refs/heads/`.
+/// `%(refname:short)` disambiguates against tags, so a tag named like a holder turns
+/// `epic/e` into `heads/epic/e` and the prefix match below finds nothing (E-SEED3 review
+/// round 1, I1); a full refname stripped here cannot be renamed by another ref.
 fn holders(repo: &Path, sha: &str) -> Result<Vec<String>, String> {
-    let args = ["for-each-ref", "--contains", sha, "--format=%(refname:short)", "refs/heads"];
-    Ok(git(repo, &args, &[])?.lines().map(String::from).collect())
+    let args = ["for-each-ref", "--contains", sha, "--format=%(refname)", "refs/heads"];
+    Ok(git(repo, &args, &[])?.lines().map(|l| l.strip_prefix("refs/heads/").unwrap_or(l).to_string()).collect())
 }
 
 fn unresolved_target(cfg: &Config, sha: &str, why: &str) -> String {
