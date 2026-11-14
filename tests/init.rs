@@ -386,7 +386,7 @@ fn router_skill_is_complete() {
     let shipped: std::collections::BTreeSet<String> =
         std::fs::read_dir(dir.join("references")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
     assert_eq!(named, shipped, "SKILL.md names a missing reference (left only) or a reference is orphaned (right only)");
-    for r in ["brief-skeleton.md", "commands.md", "review-checklists.md", "lessons.md", "messages.md", "worker-ops.md"] {
+    for r in ["brief-skeleton.md", "commands.md", "review-checklists.md", "lessons.md", "messages.md", "worker-ops.md", "checklists.md"] {
         assert!(shipped.contains(r), "references/{r} missing");
     }
     let lessons = std::fs::read_to_string(dir.join("references/lessons.md")).unwrap();
@@ -461,6 +461,53 @@ fn router_skill_carries_the_dsh_transport_and_the_template_its_slots() {
     for f in ["SKILL.md", "references/project-router-template.md"] {
         let self_hosting = std::fs::read_to_string(root.join(".claude/skills/keel-router").join(f)).unwrap();
         assert_eq!(std::fs::read_to_string(dir.join(f)).unwrap(), self_hosting, "skills/keel-router/{f} and .claude/skills/keel-router/{f} differ");
+    }
+}
+
+/// E-RGUARD.W1 (UC-ROUTE-6, interim until backlog D2): the router ships a short checklist to run at
+/// the moment of action - both trees byte-identical, planted by `keel init` - and `SKILL.md` names it
+/// at the two places a router meets it (the posture, session start) plus the DSH fleet wake where the
+/// no-heartbeat ruling lives. Each list states the moment it runs at and keeps the rows the misses
+/// named, including the four turn-stopping checks the D2 guard will enforce: the durable brief, the
+/// closing line, the armed wake, the named denial.
+#[test]
+fn router_ships_the_moment_of_action_checklists() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let src = std::fs::read_to_string(root.join("skills/keel-router/references/checklists.md")).expect("skills/keel-router/references/checklists.md is missing");
+    let mirror = std::fs::read_to_string(root.join(".claude/skills/keel-router/references/checklists.md")).unwrap();
+    assert_eq!(src, mirror, "skills/keel-router and .claude/skills/keel-router differ for checklists.md");
+
+    let d = fresh_repo();
+    assert!(keel(d.path(), &["init"]).status.success());
+    let planted = std::fs::read_to_string(d.path().join(".claude/skills/keel-router/references/checklists.md")).expect("keel init did not plant checklists.md");
+    assert_eq!(src, planted, "keel init planted a different checklists.md");
+
+    let skill = std::fs::read_to_string(root.join("skills/keel-router/SKILL.md")).unwrap();
+    let section = |h: &str| {
+        let at = skill.find(h).unwrap_or_else(|| panic!("SKILL.md has no {h:?} section"));
+        &skill[at..at + skill[at..].find("\n## ").unwrap_or(skill.len() - at)]
+    };
+    for h in ["## The router posture", "## Session start"] {
+        assert!(section(h).contains("references/checklists.md"), "{h} does not name references/checklists.md");
+    }
+    assert!(section("## Workers").contains("Wake on DSH"), "the no-heartbeat ruling does not name the DSH fleet wake it excepts");
+
+    for (heading, trigger, rows) in [
+        ("## START", "before the first tool call", 7),
+        ("## WAKE", "before any tool call", 5),
+        ("## DISPATCH", "before every spawn or send", 4),
+    ] {
+        let at = src.find(heading).unwrap_or_else(|| panic!("checklists.md has no {heading} list"));
+        let body = &src[at..at + src[at..].find("\n## ").unwrap_or(src.len() - at)];
+        assert!(body.contains(trigger), "{heading} never names its trigger ({trigger:?})");
+        let numbered = body.lines().filter(|l| l.len() > 1 && l.as_bytes()[0].is_ascii_digit() && l[1..].starts_with(". ")).count();
+        assert!(numbered >= rows, "{heading} has {numbered} rows, under {rows}");
+    }
+    for row in ["briefs/<name>.md", "What you need to do now:", "Never retry it", "nothing armed"] {
+        assert!(src.contains(row), "checklists.md has no row for {row:?}");
+    }
+    for leak in ["/Users/", "E-ROUTER", "E-RGUARD", "E-SEED"] {
+        assert!(!src.contains(leak), "checklists.md carries Keel's own state: {leak:?}");
     }
 }
 

@@ -14,7 +14,8 @@ from `references/project-router-template.md`. Each rule traces to a real
 failure: `references/lessons.md`; *(inference)* = generalised, not ordered by
 an owner. Templates: `references/messages.md`, `references/worker-ops.md`,
 `references/brief-skeleton.md`, `references/commands.md`,
-`references/review-checklists.md`.
+`references/review-checklists.md`; run `references/checklists.md` at the moment
+of action.
 
 If the project has an owner-written router agent definition
 (`.claude/agents/router.md`), it binds you; where it is stricter than this
@@ -60,7 +61,10 @@ otherwise (briefs, 2026-11-08, below).
   a guard plugin exists nothing checks the tool whitelist or the Bash shapes:
   the skill is the only guard there. Hold yourself to the whitelist anyway, tell
   the owner enforcement is missing, and never treat the gap as licence to do the
-  work yourself.
+  work yourself. Until one is installed, run the START checklist before your
+  first tool call and WAKE on every wake (`references/checklists.md`); lessons
+  K13 is what skipping them cost: 24 calls outside the whitelist in five minutes,
+  after reading this file.
 - `Monitor` runs a shell command outside the Bash hook: don't arm shell
   watchers yourself. Arm the project's committed watch command (fixed argv,
   read-only, whitelisted like the launcher) as a background Bash command; where
@@ -91,6 +95,10 @@ again … I can't remember things from the past, you sent me a ton of messages."
   never name worker internals. Digest a worker's report yourself; never forward it.
 
 ## Session start (and after every restart, reboot, compaction)
+
+Run the START checklist (`references/checklists.md`) before your first tool call;
+the numbered steps below are its project halves. A restart, a reboot, a compaction
+and every owner message are also wakes: run WAKE with them.
 
 1. Worktrees: `git branch -av` and `git log --oneline -3 <branch>` yourself;
    `git worktree list` and per-worktree `git status --short` via a worker.
@@ -291,9 +299,13 @@ in another skill.
   the project's policy (project-router); the effort may be its default**.
   Never let one inherit your session's model or effort (an `Agent` subagent
   takes only the model).
-- Brief (you write it): worktree/branch/tip, rulings, what to read, job, hard
-  rules, report protocol (`references/brief-skeleton.md`). Background
-  briefs live in the durable briefs dir; check the file exists before spawning.
+- Brief (you write it, on every host): worktree/branch/tip, rulings, what to
+  read, job, hard rules, report protocol (`references/brief-skeleton.md`).
+  **Every dispatch writes `<ROOT>/.router/briefs/<name>.md` first and reads it
+  back**; on DSH the same text is the `worker_spawn` prompt and the file is still
+  written, because a prompt is not readable after a restart and a stale file (old
+  tip, dead router name) is worse than none. Overwrite it; never reuse one
+  (lessons K14).
 - Brief says: "ONE non-stop run; status messages are not stopping points" and
   "no mid-run questions" (a worker that stops to ask ends its turn and sits idle): decide
   reversible choices with a recommendation, else stop with options. Answers go
@@ -317,10 +329,16 @@ in another skill.
   none came), then retire it; `STUCK (quiet …)` → message the worker first;
   `STUCK (permission prompt)` → the owner answers it (`claude attach <id>`), you
   cannot. A watchdog whose reports stop is yours to notice and start again.
+- **On DSH the fleet wake is yours to arm.** `worker_spawn` sends no message, so a
+  worker's finish cannot wake you: arm a wake for the fleet before the first
+  dispatch and re-arm it on every wake (`references/worker-ops.md` "Wake on DSH"),
+  and never close a turn with a live worker and nothing armed.
 - **No heartbeat**: the router routes; it runs no loop or timer (owner ruling
   2026-11-11). Workers report by message and every staged owner action has a
-  watch; each wake runs the wake checklist (`references/worker-ops.md`) and
+  watch; each wake runs the wake checklist (`references/checklists.md` WAKE) and
   re-arms. A background spawn counts only once the launcher printed `RUNNING`.
+  The one exception is a host whose workers cannot message (DSH): the single
+  fleet wake there is a wake, not a poll, and it is covered in "Wake on DSH".
 
 ## Permissions
 

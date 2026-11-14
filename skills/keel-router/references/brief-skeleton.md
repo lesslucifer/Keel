@@ -5,7 +5,9 @@ every line exists because a worker once failed without it (`lessons.md` ids in
 the right column below). The router writes the brief itself (SKILL.md
 "Substance comes from workers"): a background brief to
 `<ROOT>/.router/briefs/<name>.md` (`Read` it back before spawning), an
-in-session one as the `Agent` prompt. Commands: `commands.md`.
+in-session one as the `Agent` prompt. Every host writes the file, DSH included,
+where the same text is also the `worker_spawn` prompt (SKILL.md "Workers";
+lessons K14). Commands: `commands.md`.
 
 ```markdown
 # Brief: <E-CODE.Wn> <job> — fresh session (<model>, effort <level>)
@@ -66,5 +68,6 @@ doc only or how to try · what no gate reviewed (paths outside code_paths) · fo
 | Fix-PASS or cap step (`spawn … --review`) | only the cr writer's step the last round's next step named: `keel notes write cr --verdict PASS --fixes <reviewed commit>` on the fix tip (its test and doc notes written first), or `keel notes write cr --verdict WAIVED` on the capped tip; no finders, no edits; report the tool's output raw |
 | Epic close | merge main in if it moved; distill (keel-distill skill); archive commit (`git rm` every T3 doc, files kept in git-ignored `docs/.archive/`) with `keel notes write doc --distill …`; epic result report in `docs/.archive/`; epic test note (e2e); `keel preflight epic <tip>`; epic-scope review vs main; `keel verify-dod epic <tip>` red only on 8·manual-review; copy `docs/.archive/` to the main checkout; stage `keel mr confirm epic … --report docs/.archive/<…>-epic-result.html` + merge + push |
 | Review fix round | findings verbatim with severity; fix vs record; then the writer's next step: the next round or a fix-PASS, or, at the cap or for a second fix from round 4, the step the writer names (the cap's WAIVED or the owner's waiver) (notes and review are per tip) |
-| Parallel WU | the router creates your worktree (`<launcher> worktree add`); never touch another WU's worktree |
+| Parallel WU | the router creates your worktree (`<launcher> worktree add`) where the launcher is allowed, else a worker does (`worktree add` is never the router's own `git`); never touch another WU's worktree |
+| DSH worker | no message channel: the report is your last assistant message, and the router reads it from the transcript at every wake; a question is the last message of a turn that ended |
 | Read-only check / watch | no edits, no commits; report raw output; the exact probe and its EVENT line |

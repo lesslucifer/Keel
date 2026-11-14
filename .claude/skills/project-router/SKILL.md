@@ -69,6 +69,24 @@ the git hooks are strings in `src/main.rs`, so the cr gate covers them).
 - Briefs: `Keel/.router/briefs/` in the main checkout (git-ignored, durable; run snapshots in `.router/runs/`; a worker's transcript is `~/.claude/projects/*/<session>.jsonl`); skeleton in the keel-router skill's `references/brief-skeleton.md`. Keel's hard rules: never run `keel init` or `keel hooks install` in a real checkout to test them (they write into the shared git common dir) — use a scratch clone; never push; never edit `.keel/mr-allowed`.
 - Live probes of the launcher (W8 point 17): in the probe clone `/Users/nguyenvanluong/Documents/proj/misc/Keel-probe` (trusted once by the owner, reused for the epic), never in a worktree of this repository, since a probe writes the git dir. Per run: fetch the WU tip from this repository, check it out detached there, commit a `[router]` policy with a Haiku worker model, `keel hooks install` there, add two worktrees of the clone (router and worker). Whoever orchestrates the WU runs it; the router cannot.
 
+## On DSH (checked 2026-11-14)
+
+The router runs as a DSH session in the main checkout, and the preset changes what it
+may do. Facts from that day's router session (`~/.dsh/sessions/--Users-nguyenvanluong-Documents-proj-misc-Keel--/session-3618800f-…`, 17:19-17:28):
+
+| Thing | Fact |
+|---|---|
+| The launcher | `scripts/router-worker.sh` is denied to the router by the Always Auto Review preset, which reads a script as high risk ("script redirection to a system or sensitive path"): three calls denied at 17:20:11, 17:20:14 and 17:22:44 (a `watchdog facts` and a `stop`). `scripts/router-watch.sh` ran earlier the same day, so the denial is per script: the launcher writes `$HOME/.claude`. |
+| Dispatch, steer, read, stop | the worker plugin's `worker_spawn` / `worker_send` / `worker_output` / `worker_list` / `worker_status` / `worker_stop`, with the worktree as the workspace and the brief as the prompt. `worker_spawn` sends no message: the report is the transcript. |
+| Worktree add/remove | a worker's, not the router's: raw `git worktree add` is outside the whitelist and skips the launcher's checks. 2026-11-14 17:24:08 it ran one anyway, and then told a worker to create the same worktree (17:24:35). |
+| Fleet wake | the launcher watchdog watches Claude sessions only, so on DSH it reports an empty fleet. The DSH wake is a host reminder (or the profile's worker wake), armed before the first dispatch: keel-router `references/worker-ops.md` "Wake on DSH". |
+| A denial | final: Auto Review offers no approval path, so it goes to the owner with the exact command, never to a worker. |
+
+The guard (`scripts/router-guard.jq` run by `.claude/settings.json`) is Claude Code
+only; on DSH the keel-router skill is the only guard until the router guard plugin
+lands (`docs/backlog/dsh.html` D2). Until then the router runs keel-router
+`references/checklists.md` START before its first call and WAKE on every wake.
+
 ## Never touch
 The signer roster `.keel/mr-allowed`; `~/.claude/settings.json` and other user-level
 settings; the push channel's token and access files; the owner's ssh keys.
