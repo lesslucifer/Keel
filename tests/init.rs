@@ -57,8 +57,9 @@ fn init_twice_produces_the_same_tree_and_keeps_user_edits() {
     for f in [".keel/config.toml", "AGENTS.md", ".codex/hooks.json", ".claude/skills/project-router/SKILL.md", ".claude/skills/keel-workflow/SKILL.md", ".claude/settings.json", "docs/work"] {
         assert!(after_first.contains_key(f), "missing {f}");
     }
-    // W6 #1/#5: skills live only in .claude/skills; no .agents/skills Codex symlink
-    assert!(!after_first.contains_key(".agents"), "init must not create .agents");
+    // E-DSH.W1: one shared skill root - a relative link, so Claude Code and DSH read one copy
+    assert_eq!(after_first.get(".agents/skills").map(String::as_str), Some("-> ../.claude/skills"), "init must plant .agents/skills as a relative link");
+    assert_eq!(std::fs::read_link(p.join(".agents/skills")).unwrap(), Path::new("../.claude/skills"));
     assert!(after_first[".keel/config.toml"].contains("test = \"pytest -q\""));
     let hooks = common::cmd("git").args(["config", "core.hooksPath"]).current_dir(p).output().unwrap();
     assert!(String::from_utf8_lossy(&hooks.stdout).trim().ends_with("keel-hooks"));
@@ -88,6 +89,65 @@ fn init_twice_produces_the_same_tree_and_keeps_user_edits() {
     let third = keel(p, &["init"]);
     assert!(text(&third).contains("kept      .keel/config.toml"), "{}", text(&third));
     assert_eq!(std::fs::read_to_string(p.join(".keel/config.toml")).unwrap(), edited);
+}
+
+/// E-DSH.W1 (UC-INIT-1): init plants one shared skill root, `.agents/skills` a relative link to
+/// `.claude/skills`, so a host that reads `.agents` and one that reads `.claude` read one copy. A
+/// second init changes nothing and a worktree checkout carries the link.
+#[test]
+fn init_plants_one_relative_skill_root_a_worktree_carries() {
+    let d = fresh_repo();
+    let p = d.path();
+    let first = keel(p, &["init"]);
+    let t = text(&first);
+    assert!(first.status.success(), "{t}");
+    for plugin in ["dsh-auto-review", "dsh-worker-workspace", "dsh-doc-gate"] {
+        assert!(t.contains(&format!("dsh plugin --profile <name> add <path>/{plugin}")), "the hand-off misses {plugin}:\n{t}");
+    }
+    assert!(t.contains("never in the project"), "the hand-off says where a plugin lives:\n{t}");
+
+    let link = p.join(".agents/skills");
+    assert_eq!(std::fs::read_link(&link).unwrap(), Path::new("../.claude/skills"), "the shared root is the one relative link");
+    let through = std::fs::read_to_string(link.join("keel-workflow/SKILL.md")).unwrap();
+    assert_eq!(through, std::fs::read_to_string(p.join(".claude/skills/keel-workflow/SKILL.md")).unwrap(), "the link reads the one copy, not a second");
+
+    let second = keel(p, &["init"]);
+    assert!(second.status.success(), "{}", text(&second));
+    assert!(text(&second).contains("unchanged .agents/skills"), "{}", text(&second));
+    assert!(!text(&second).contains("created"), "{}", text(&second));
+
+    assert!(git_in(p, &["add", "-A"]).status.success());
+    assert!(git_in(p, &["commit", "-q", "--no-verify", "-m", "keel init"]).status.success());
+    let w = d.path().join("w");
+    let o = git_in(p, &["worktree", "add", "-q", "-b", "wu/e/x", w.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(std::fs::read_link(w.join(".agents/skills")).unwrap(), Path::new("../.claude/skills"));
+    assert!(w.join(".agents/skills/keel-workflow/SKILL.md").is_file(), "a worktree checkout carries the shared root");
+}
+
+/// E-DSH.W1: init never clobbers a project's own `.agents/skills` - a real directory or a link to
+/// somewhere else is kept and reported, with how to take the shared root.
+#[test]
+fn a_project_owned_agents_skills_is_kept_and_reported() {
+    let d = fresh_repo();
+    let p = d.path();
+    std::fs::create_dir_all(p.join(".agents/skills")).unwrap();
+    std::fs::write(p.join(".agents/skills/mine.md"), "mine").unwrap();
+    let o = keel(p, &["init"]);
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("kept      .agents/skills") && t.contains("real directory"), "{t}");
+    assert_eq!(std::fs::read_to_string(p.join(".agents/skills/mine.md")).unwrap(), "mine");
+    let again = keel(p, &["init"]);
+    assert!(text(&again).contains("kept      .agents/skills"), "a second run still reports the kept root: {}", text(&again));
+
+    std::fs::remove_dir_all(p.join(".agents/skills")).unwrap();
+    std::os::unix::fs::symlink("../skills", p.join(".agents/skills")).unwrap();
+    let o = keel(p, &["init"]);
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("kept      .agents/skills") && t.contains("../skills"), "{t}");
+    assert_eq!(std::fs::read_link(p.join(".agents/skills")).unwrap(), Path::new("../skills"), "the project's link is untouched");
 }
 
 fn md_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
