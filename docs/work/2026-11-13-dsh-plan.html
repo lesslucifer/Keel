@@ -58,6 +58,7 @@
   <div data-item="wu-summary">
     <p><b>In short:</b> one embedded list writes both skill roots. A repo initialised by Keel also carries the skills a DSH session loads. Nothing written for Claude Code or Codex changes.</p>
     <ul>
+      <li>DSH scans <code>.dsh/skills</code> and <code>.agents/skills</code>, never <code>.claude/skills</code> (probe, 2026-11-14): this root is the only way a fresh repo gets skills.</li>
       <li>Init writes <code>.dsh/skills/keel-*</code> and the project-owned <code>project-router</code> beside <code>.claude/skills/</code>: same bytes, same create-or-keep and <code>-f</code> ask.</li>
       <li>The printed next steps name the DSH root, and say a host plugin is installed in the DSH profile, never in the project.</li>
       <li>Keel's own policy lists <code>.dsh/skills/</code> as rule-bearing, so this repo's DSH copy is protected like its Claude Code copy.</li>
@@ -88,13 +89,13 @@
   <div data-item="wu-summary">
     <p><b>In short:</b> the router skill learns the DSH way to dispatch, read and retire a worker, and the project template gains the slots a project fills in. The Claude Code recipe stays as it is.</p>
     <ul>
-      <li>One table maps each mechanism: dispatch, follow-up, report, fleet list, stop, and the preset that lets an unattended worker commit.</li>
+      <li>One table maps each mechanism: dispatch, follow-up, report, fleet list, stop, and Auto Review, the preset every Keel DSH session runs under.</li>
       <li>A DSH worker does not message the router: its report is its transcript, read at each wake and before each ask. A DSH subagent is not a worker, because it inherits the router's directory.</li>
-      <li>The persona on DSH is the worktree's <code>AGENTS.md</code> plus the skills plus the brief; the project records which preset its router selects.</li>
+      <li>The persona on DSH is the worktree's <code>AGENTS.md</code> plus the skills plus the brief; Auto Review is always on, so there is no preset to pick.</li>
     </ul>
   </div>
   <p data-item="wu-maps-to">UC-ROUTE-5 and UC-ROUTE-6 amended, UC-DSH-3 and UC-DSH-4 new · DEC-55, DEC-56 · rulings R0, R2, R4.</p>
-  <p data-item="wu-expected"><b>Integration:</b> a content test asserts the transport table names every DSH worker tool, the template carries the harness and preset slots, and the skill description no longer says Claude Code only. <b>Unit:</b> waived, text only.</p>
+  <p data-item="wu-expected"><b>Integration:</b> a content test asserts the transport table names every DSH worker tool, the template carries the harness and permission slots, and the skill description no longer says Claude Code only. <b>Unit:</b> waived, text only.</p>
   <p data-item="wu-deps">W1</p>
 </div>
 
@@ -120,13 +121,14 @@
 <table data-item="open-questions" data-c="open-points">
   <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
   <tbody>
-    <tr><td>1</td><td>Which DSH root holds the skills?</td><td><b><code>.dsh/skills</code></b></td><td>It is the host's own project root and wins a duplicate name against the shared <code>.agents/skills</code>.</td></tr>
-    <tr><td>2</td><td>Does init always write them?</td><td><b>Yes</b>, like the Codex hook file today</td><td>Additive and inert for a project that never opens DSH; an opt-out can come later if one objects.</td></tr>
+    <tr><td>1</td><td>Which DSH root holds the skills?</td><td><b><code>.dsh/skills</code></b></td><td>DSH deliberately shares the project <code>.agents/skills</code> and the user-level <code>~/.agents/skills</code>; Claude Code's project root <code>.claude/skills</code> is host-private and not scanned (probe: a skill there is absent from a DSH worker's catalog). <code>.dsh/skills</code> is the host's own root and wins a duplicate name.</td></tr>
+    <tr><td>2</td><td>Does init always write them?</td><td><b>Yes</b>, like the Codex hook file today</td><td>Writing <code>.dsh/skills</code> is the only way a fresh repo gets skills, so "do nothing new" is overruled by the probe. It is additive and inert for a project that never opens DSH.</td></tr>
     <tr><td>3</td><td>Where does DSH get the write-time doc feedback a hook gives Claude Code?</td><td><b>A host plugin, outside this epic</b></td><td>A host plugin is a profile install, not a project file; the review step (W4) is the stop this epic can guarantee.</td></tr>
     <tr><td>4</td><td>Who enforces the router's tool whitelist on DSH?</td><td><b>The skill, until a plugin exists</b></td><td>DSH has no shell hooks; the router must say its posture is unenforced there, and a backlog row tracks the guard.</td></tr>
-    <tr><td>5</td><td>Which preset does a router select?</td><td><b>Auto Review</b></td><td>Medium calls (add, commit, a minting request) then run and high is denied, so an unattended worker does not stall.</td></tr>
-    <tr><td>6</td><td>Is the review's first step the right home for the doc check?</td><td><b>Yes</b></td><td>Form is checked when authoring and when a review starts; the merge keeps reading facts, so the tiers stay apart.</td></tr>
+    <tr><td>5</td><td>Which preset does a DSH session run under?</td><td><b>Always Auto Review</b></td><td>Owner ruling: it is not a per-session choice. Medium calls (add, commit, a minting request) run and high is denied, so an unattended session never stalls on a prompt.</td></tr>
+    <tr><td>6</td><td>Where does the doc check run?</td><td><b>At the start of the review</b>, not at the merge</td><td>The review's first step — the <code>keel preflight</code> command the keel-code-review skill runs before a reviewer starts — verifies every doc the change touched, and a red doc stops the review there. The merge gate is untouched: it still reads notes and the result report, never doc form. The cost: on DSH a broken doc is caught when the review starts, not the moment it is saved.</td></tr>
     <tr><td>7</td><td>Does a worker need its own persona file?</td><td><b>No</b></td><td>A DSH preset is user-level, so the worktree's instructions, the skills and the brief are the persona.</td></tr>
+    <tr><td>8</td><td>Use the shared <code>.agents/skills</code> instead of <code>.dsh/skills</code>?</td><td><b>Not in this epic</b>; keep <code>.dsh/skills</code></td><td>DSH reads <code>.agents/skills</code> too, and Codex's design once targeted that root, so one shared root could serve two hosts. It reverses DEC-4, and an existing test asserts init creates no <code>.agents</code>. The owner can switch later: only the root name and the places that name it change.</td></tr>
   </tbody>
 </table>
 
@@ -138,7 +140,7 @@
   <li>Every Claude Code and Codex artifact is byte-identical to before this epic, and the existing tests stay green.</li>
   <li>A ready doc with a problem is refused by <code>keel verify-doc</code> and by the review's first step, on any host.</li>
   <li>A DSH router dispatches one worker per worktree, reads its report from the transcript, sends follow-ups and stops it.</li>
-  <li>Under the Auto Review preset a worker's medium call (an add, a commit, a minting request) runs; a high-risk call is denied.</li>
+  <li>Every Keel DSH session runs under Auto Review, so a worker's medium call (an add, a commit, a minting request) runs and a high-risk call is denied.</li>
   <li>The epic test passes, and the live DSH run is recorded as evidence.</li>
 </ul>
 
@@ -176,7 +178,7 @@
 <h3 id="close-h">At the close</h3>
 <ul data-item="distillation-plan" data-c="distillation-plan">
   <li>A new T2 topic <code>docs/use-cases/dsh.html</code> (UC-DSH-1 to 4) plus its index row; amendments to <a href="../use-cases/workflow.html">workflow</a> and <a href="../use-cases/router.html">router</a>.</li>
-  <li>Decision records: DEC-53 (the DSH skill root; DEC-4's skills-only line is superseded where it conflicts), DEC-54 (no hooks on DSH; form is checked at authoring and at review start), DEC-55 (a DSH worker is a workspace-rooted session with no push report), DEC-56 (a router selects the Auto Review preset). Numbers are taken at the close after checking live branches.</li>
+  <li>Decision records: DEC-53 (the DSH skill root; DEC-4's skills-only line is superseded where it conflicts), DEC-54 (no hooks on DSH; form is checked at authoring and at review start), DEC-55 (a DSH worker is a workspace-rooted session with no push report), DEC-56 (Auto Review is always on, never a per-session choice). Numbers are taken at the close after checking live branches.</li>
   <li>T1: <a href="../install.html">install.html</a> gains the DSH artifacts and the worker-session plugin's profile install line.</li>
   <li>Backlog rows: the DSH doc-gate host plugin, the DSH router guard plugin, and the worker plugin's cold resume (its own repo). <a href="../backlog/backlog-index.html">Backlog index</a>.</li>
   <li>T0 stays unchanged: no rule changes, only artifacts and their checks.</li>
@@ -187,14 +189,14 @@
 <ul>
   <li>A DSH session's sandbox root is the directory it was created in, and it never changes; a subagent always inherits its parent's directory. So a worker cannot be a subagent: the worker-session plugin creates the session itself, with the worktree as its directory (ruling R3).</li>
   <li>DSH has no shell-hook surface: no host setting runs a command on a tool call or at turn end. What replaces Keel's two doc hooks is therefore either a host plugin or a check on a path every host shares (W4) — verified from the installed packages, not from memory.</li>
-  <li>With approvals off, a medium call is rejected unless something decides it. The Auto Review preset is how a stock install lets an unattended worker add, commit or mint, and denies what it calls high risk (ruling R4).</li>
+  <li>With approvals off, a medium call is rejected unless something decides it. Auto Review is how a stock install lets an unattended session add, commit or mint, and denies what it calls high risk; every Keel DSH session runs under it (ruling R4, and the owner's round-1 comment).</li>
 </ul>
 
 <h3 id="surfaces">Harness surfaces at a glance</h3>
 <table data-c="surfaces">
   <thead><tr><th>Need</th><th>Claude Code today</th><th>DSH after this epic</th></tr></thead>
   <tbody>
-    <tr><td>Read the rules</td><td><code>AGENTS.md</code>, skills in <code>.claude/skills</code></td><td><code>AGENTS.md</code> (read natively), skills in <code>.dsh/skills</code></td></tr>
+    <tr><td>Read the rules</td><td><code>AGENTS.md</code>; skills in <code>.claude/skills</code></td><td><code>AGENTS.md</code>, <code>CLAUDE.md</code> and the <code>*.local.md</code> overlays (read natively); skills in <code>.dsh/skills</code> or <code>.agents/skills</code>, never <code>.claude/skills</code></td></tr>
     <tr><td>Doc check on write</td><td>PostToolUse hook</td><td>Nothing runs by itself; the review's first step refuses (W4)</td></tr>
     <tr><td>Doc check at turn end</td><td>Stop hook</td><td>A plugin's turn-end listener is possible; not this epic</td></tr>
     <tr><td>Merge gate</td><td>git hooks</td><td>git hooks, unchanged</td></tr>
@@ -202,7 +204,7 @@
     <tr><td>Read a worker</td><td>its message</td><td><code>worker_output</code> (the transcript)</td></tr>
     <tr><td>Fleet list, stop</td><td><code>ListAgents</code>, the launcher</td><td><code>worker_list</code>, <code>worker_stop</code></td></tr>
     <tr><td>Enforce the router posture</td><td>a project <code>PreToolUse</code> guard</td><td>no hook surface; the skill holds it (open point 4)</td></tr>
-    <tr><td>Permit unattended work</td><td>project settings and sandbox</td><td>the Auto Review preset</td></tr>
+    <tr><td>Permit unattended work</td><td>project settings and sandbox</td><td>Always Auto Review (owner ruling)</td></tr>
   </tbody>
 </table>
 
@@ -221,7 +223,7 @@ flowchart LR
 </div>
 
 <h3 id="lineage">Lineage</h3>
-<p>Epic E-DSH, branch <code>epic/E-DSH</code> off main at <code>f031e36</code>. Owner rulings R0 to R4 in this session's brief bind the plan: the worker-session plugin is a built, installed dependency (<code>dsh-worker-workspace</code>, HEAD <code>20553e3</code>, its own repo in the desktop-dsh project); Auto Review 0.5.0 is a permission preset, not planned work; DSH lands beside Claude Code; the worker plugin stays in that project while the Keel artifact stays in this repo; a session's directory is immutable and a subagent inherits it; and the stock permission path is stated rather than assumed. Predecessors: <a href="../decisions/distribution.html">DEC-2</a> (rules inside the binary), <a href="../decisions/distribution.html#dec-4">DEC-4</a> (one AGENTS.md, skills in one root), <a href="../decisions/distribution.html#dec-5">DEC-5</a> (the two doc hooks), <a href="../decisions/router.html#dec-44">DEC-44</a> (background workers report by message).</p>
+<p>Epic E-DSH, branch <code>epic/E-DSH</code> off main at <code>f031e36</code>. Owner rulings R0 to R4 in this session's brief bind the plan: the worker-session plugin is a built, installed dependency (<code>dsh-worker-workspace</code>, HEAD <code>20553e3</code>, its own repo in the desktop-dsh project); Auto Review 0.5.0 is a permission preset, not planned work; DSH lands beside Claude Code; the worker plugin stays in that project while the Keel artifact stays in this repo; a session's directory is immutable and a subagent inherits it; and the stock permission path is stated rather than assumed. Owner review round 1 (2026-11-14) settled the skill-root question by probe: in three throwaway workspaces, a skill in <code>.claude/skills</code> was absent from a DSH worker's catalog and the <code>skill</code> tool refused it, while copies in <code>.dsh/skills</code> and <code>.agents/skills</code> both loaded; a <code>CLAUDE.md</code> was loaded as instructions where it existed. The doc keeps <code>.dsh/skills</code>, makes Auto Review always-on, and states where the doc check runs. Predecessors: <a href="../decisions/distribution.html">DEC-2</a> (rules inside the binary), <a href="../decisions/distribution.html#dec-4">DEC-4</a> (one AGENTS.md, skills in one root), <a href="../decisions/distribution.html#dec-5">DEC-5</a> (the two doc hooks), <a href="../decisions/router.html#dec-44">DEC-44</a> (background workers report by message).</p>
 
   </main>
   <script type="module">
