@@ -120,11 +120,15 @@ statement after a `;` on a `classDef`, `style`, `linkStyle`, `direction` or
 `accTitle` line. A target that was archived is cited as plain text marked
 archived, never linked into `docs/.archive/`.
 
-The trigger is the harness, not the agent and not git: the
-`verify-doc-post` hook runs it on every written `.html` (red ⇒ problems fed
-back, fix the doc now) and `verify-doc-stop` runs it over all docs at turn end
-(red ⇒ the turn is refused). Drafts iterate in silence; flipping to `ready` is
-the checkpoint. Manual runs work anytime.
+The trigger is the write, not a review or a merge. The host runs
+`keel verify-doc <path>` after every first-party write or edit of a doc under
+`docs.root`, and `keel verify-doc` over all docs at turn end — through a shell
+hook where the host has one, through a plugin where it has none. A red doc
+comes straight back with its problem lines: the write's result fails, and at
+turn end the problems steer the writer into another step, so it is fixed in the
+same turn. The bytes have already landed; no post-write check can prevent that.
+A review or a merge is too late and no substitute. Drafts iterate in silence;
+flipping to `ready` is the checkpoint. Manual runs work anytime.
 
 This is the only place a document's **form** is checked. The merge reads doc
 **facts** instead: every changed doc listed in `doc/v1`, and the result report's
