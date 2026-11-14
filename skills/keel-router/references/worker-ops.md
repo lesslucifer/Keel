@@ -85,7 +85,8 @@ nothing else is accepted (never `bypassPermissions`, `dontAsk` or `default`). Gr
 never in the settings the router shares, so they never reach the router. `keel
 init` ships no launcher: a project commits its own and its project-router skill
 names it (`<launcher>` below). `ROOT` = the checkout holding the launcher; its
-`.router/` is git-ignored and durable (`briefs/`, `runs/`), unlike `/tmp`.
+`.router/` is git-ignored and durable (`briefs/`, `runs/`, `rulings.md`), unlike
+`/tmp`.
 
 Prerequisites: the router runs in the checkout that holds the launcher (an
 enforced whitelist allows only its relative path) and under a name, which every
@@ -273,23 +274,55 @@ until id=$(gh run list --workflow <wf>.yml --branch <br> --limit 1 --json databa
 echo "RUN $id"; gh run view $id --json conclusion,jobs -q '.jobs[]|"\(.name): \(.conclusion) · failed: \([.steps[]|select(.conclusion=="failure")|.name]|join(" | "))"'
 ```
 
-## Wake checklist (no heartbeat)
+## Wake checklist (no loop; a DSH fleet wake pending a ruling)
 
-The router runs no loop or timer (owner ruling 2026-11-11; the guard denies
-`loop`, `CronCreate` and `ScheduleWakeup`). It wakes on a worker's message, a
-watch line, an idle notice or the owner. On every wake:
-"1 workers: background (`ListAgents`: each expected name listed, busy or idle;
-idle without a report → `SendMessage` asking for it; not listed unasked →
-a fresh worker from a new brief, it keeps and checks uncommitted work; confirm RUNNING;
-blocked on a prompt or silent too long → tell the owner; workers live and no
-`watchdog-<your-name>` listed → `watchdog start`) and in-session (roster;
-finished but unrelayed reports); reported and clean → `stop`. 2 worktrees:
-branch, tip, notes on tip
-(`git log -1 --notes=<ref> --format=%N`). 3 pending owner actions, runs, doc
-comments (relay to a worker), unrelayed reports; re-arm missing watchers.
-4 advance anything unblocked (next WU, step-between worker, stage commands).
-5 changed or needs the owner → terminal + push ending `What you need to do
-now:`; else one line. Never run reserved commands; stay inside the posture."
+The router runs no loop or timer (owner ruling 2026-11-11; the Claude Code guard
+denies `loop`, `CronCreate` and `ScheduleWakeup`). It wakes on a worker's message,
+a watch line, an idle notice or the owner. The short ordered form is
+`checklists.md` WAKE; what a wake must cover here:
+
+1. **Workers.** Claude Code: `ListAgents` — every expected name listed, busy or
+   idle; idle without a report → `SendMessage` asking for it; not listed unasked →
+   a fresh worker from a new brief that keeps and checks uncommitted work, and
+   confirm `RUNNING`; blocked on a prompt or silent too long → tell the owner;
+   workers live and no `watchdog-<your-name>` listed → `watchdog start`; reported
+   and clean → `stop`. DSH: `worker_list`, then the transcript tail of each live
+   worker with `worker_output`, and the same decisions.
+2. **Worktrees.** Branch, tip, and the notes on the tip
+   (`git log -1 --notes=<ref> --format=%N`).
+3. **Pending.** Owner actions, runs and doc comments; relay a run or a comment
+   finding to a worker; re-arm every watcher that is gone.
+4. **Advance** anything unblocked: the next WU, the step between workers, the
+   staged owner commands.
+5. **Close.** Changed or needs the owner → terminal + push ending
+   `What you need to do now:`; else one line. Never run reserved commands; stay
+   inside the posture.
+
+### Wake on DSH
+
+A DSH worker sends nothing: `worker_spawn` has no report channel, so a worker that
+finishes cannot wake the router, and `worker_output` is a read, not a message. What
+wakes a DSH router is a host event: an owner message, a finished background job, or
+a host reminder.
+
+**No owner ruling grants the exception below, and it is not in force.** A commit
+that makes it binding may not be signed until the owner records a dated ruling;
+that ruling replaces this paragraph, and nothing else in this skill may assume the
+exception in the meantime.
+
+- **One reminder, armed once, re-armed only on a wake.** A single host reminder
+  covers the whole fleet: arm it before the first dispatch with the same 5-minute
+  cadence as the watchdog (DEC-45). Re-arm it once per wake; never a second reminder
+  beside it; stop it when the last worker is `stopped`. It is a wake, not a
+  heartbeat: one WAKE pass per firing, no loop of your own, and no poll in between.
+  It would be the one exception to "no loop or timer", and only where workers
+  cannot message.
+- **It covers every live worker.** One reminder asks about the fleet, never one
+  watch or one reminder per worker: WAKE.3 checks that this single wake is armed,
+  and one WAKE pass reads every live worker.
+- **Never close a turn with a live worker and nothing armed.** That is the DSH form
+  of "watch, never wait to be told": without it, the next thing that wakes the
+  router is the owner.
 
 ## Read failures / third-party source (a read-only worker runs these)
 ```sh

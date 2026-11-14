@@ -15,7 +15,7 @@ fix this file.
 | Thing | Value |
 |---|---|
 | Main checkout | `/Users/nguyenvanluong/Documents/proj/misc/Keel` (first row of `git worktree list`), branch `main` (`[branches] main`), merge-only: it stays on `main` and receives only closed epics (DEC-12) |
-| Worktrees | siblings of the main checkout, one per epic branch and one per WU branch, each created and removed by the router through the launcher (DEC-46): `scripts/router-worker.sh worktree add epic/<E>` makes `../Keel-<E>` off `main`, `worktree add wu/<E>/<slug>` makes `../Keel-<E>-<slug>` off `epic/<E>`; `worktree remove <branch>` once merged, clean and session-free (the branch stays; it deletes ignored files, so a worker copies `docs/.archive/` out first). A worktree's branch never changes. `.claude/worktrees/` (`[paths] worktrees`) is only for `Agent`-tool isolation worktrees, never WU work |
+| Worktrees | siblings of the main checkout, one per epic branch and one per WU branch, created and removed through the launcher — by the router where the launcher is allowed, by a worker on DSH where the preset denies it (DEC-46, "Who runs what", "On DSH"): `scripts/router-worker.sh worktree add epic/<E>` makes `../Keel-<E>` off `main`, `worktree add wu/<E>/<slug>` makes `../Keel-<E>-<slug>` off `epic/<E>`; `worktree remove <branch>` once merged, clean and session-free (the branch stays; it deletes ignored files, so a worker copies `docs/.archive/` out first). A worktree's branch never changes. `.claude/worktrees/` (`[paths] worktrees`) is only for `Agent`-tool isolation worktrees, never WU work |
 | Branches | `epic/<E>` and `wu/<E>/<slug>` (`[branches] epic_prefix = "epic/"`, `wu_prefix = "wu/"`); a WU merges `--no-ff` into its epic, the epic `--no-ff` into `main` |
 | Remote | `origin` = `https://github.com/lesslucifer/Keel.git` |
 | Owner identity | `--as vuluu`; the committed policy is `[mr] tiers = ["username", "key"]` and the committed `.keel/mr-allowed` holds `username: vuluu` (owner ruling 2026-11-12: key-only is deferred, DEC-48). A sign-off is the owner's typed command at a terminal; the agents never run it. The roster arrives in a worktree by checkout; the old untracked `.mr-allowed` files are read by nothing. Only the owner changes the roster (`keel mr setup`, then `keel mr commit`), and a WU that changes it is signed with `--roster-change` |
@@ -38,9 +38,10 @@ Worktrees on 2026-11-10 (snapshot; `git worktree list` wins):
 |---|---|
 | Plans, code, tests, results, distillation, `keel notes write` (not `cr`), `keel preflight`, `keel verify-dod` | worker (the author) |
 | The keel-code-review skill and the `cr` note on an author's tip | a fresh review worker per round, `spawn … --review` in the author's worktree while the author is idle; never the author (DEC-46) |
-| Creating and removing worktrees (`scripts/router-worker.sh worktree add|remove <epic/E or wu/E/slug>`) | router |
+| Creating and removing worktrees (`scripts/router-worker.sh worktree add|remove <epic/E or wu/E/slug>`) | router, where the launcher is allowed; on DSH the preset denies it, so a worker does it ("On DSH") |
 | Independent read-only review of what no gate reviews (below); reading CI runs and git state beyond the router's whitelist | read-only worker on `opus` at `--effort high`, dispatched by the router |
 | Briefs (`<router checkout>/.router/briefs/<name>.md`), spawning via the launcher, whitelisted git/gh/ps reads | router (posture: `.claude/agents/router.md`; no `Agent` tool, so every worker, checker and watcher is a background session) |
+| The rulings log (`<router checkout>/.router/rulings.md`), one line per ruling | owner only: the worker file guard confines a worker to its own worktree, so it may not write into the router's checkout either; the router reads the log and carries a ruling into the next brief — its only write is a brief |
 | `keel mr commit` / `keel mr confirm` | **owner only** — the router stages, never runs |
 | Epic → `main` merge, every `git push` (the epic branch's first push too), tags, release dispatch | owner; no worker pushes (DEC-46) |
 | WU → epic merge | owner for gated epics; for E-ROUTER's ungated WUs (owner ruling 2026-11-08) the WU's worker merges `--no-ff` into `epic/E-ROUTER` and does not push |
@@ -68,6 +69,23 @@ the git hooks are strings in `src/main.rs`, so the cr gate covers them).
 - Names: lowercase `<epic>-<area>-<phase>`, e.g. `e-router-w2-kickoff`, `e-seed-close-gates` (the launcher requires `[a-z0-9][a-z0-9-]{0,40}`).
 - Briefs: `Keel/.router/briefs/` in the main checkout (git-ignored, durable; run snapshots in `.router/runs/`; a worker's transcript is `~/.claude/projects/*/<session>.jsonl`); skeleton in the keel-router skill's `references/brief-skeleton.md`. Keel's hard rules: never run `keel init` or `keel hooks install` in a real checkout to test them (they write into the shared git common dir) — use a scratch clone; never push; never edit `.keel/mr-allowed`.
 - Live probes of the launcher (W8 point 17): in the probe clone `/Users/nguyenvanluong/Documents/proj/misc/Keel-probe` (trusted once by the owner, reused for the epic), never in a worktree of this repository, since a probe writes the git dir. Per run: fetch the WU tip from this repository, check it out detached there, commit a `[router]` policy with a Haiku worker model, `keel hooks install` there, add two worktrees of the clone (router and worker). Whoever orchestrates the WU runs it; the router cannot.
+
+## On DSH (checked 2026-11-14)
+
+The router runs as a DSH session in the main checkout. What the host itself does is
+the keel-router skill's, one copy: its transport table and its permission row. Two
+Keel facts change there, from that day's router session
+(`~/.dsh/sessions/--Users-nguyenvanluong-Documents-proj-misc-Keel--/session-3618800f-…`, 17:19-17:28):
+
+| Thing | Fact |
+|---|---|
+| The launcher | `scripts/router-worker.sh` is denied to the router by the Always Auto Review preset, which reads a script as high risk ("script redirection to a system or sensitive path"): three calls denied at 17:20:11, 17:20:14 and 17:22:44 (a `watchdog facts` and a `stop`). `scripts/router-watch.sh` ran earlier the same day, so the denial is per script: the launcher writes `$HOME/.claude`. So a worktree add/remove is a worker's on DSH — and a raw `git worktree add` is no alternative: outside the whitelist and skipping the launcher's checks, one ran anyway at 17:24:08 and then told a worker to create the same worktree. A worker kill is not: on DSH the router stops workers itself, with `worker_stop` (the transport table's Stop row), and the launcher's `stop` is for Claude sessions and denied to it. A denied call is final: it goes to the owner with the exact command, never to a worker (SKILL.md "Permissions" — at 17:22:44 the denied `stop` was handed to a worker at 17:25:33, which ran `claude stop`). |
+| The fleet wake | the launcher's watchdog watches Claude sessions only, so on DSH it reports an empty fleet — and the single fleet wake that would replace it has no owner ruling and is not in force (keel-router `references/worker-ops.md` "Wake on DSH"): the router arms no fleet wake there, and a turn that ends with live workers says that no worker's finish can wake it. |
+
+The guard (`scripts/router-guard.jq` run by `.claude/settings.json`) is Claude Code
+only; on DSH the keel-router skill is the only guard until the router guard plugin
+lands (`docs/backlog/dsh.html#d2`). Until then the router runs keel-router
+`references/checklists.md` START before its first call and WAKE on every wake.
 
 ## Never touch
 The signer roster `.keel/mr-allowed`; `~/.claude/settings.json` and other user-level
