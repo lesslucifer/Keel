@@ -3,12 +3,15 @@
 
 The router runs this in the same turn it stages an owner action. The bot token
 and the one chat it may write to are read from the Claude Code Telegram
-channel's own state; neither is ever printed. `--check` asks Telegram who the
-bot is, `--dry-run` validates and prints without sending, `--send` posts and
-prints the Telegram message id.
+channel's own state; neither the token nor the chat id is ever printed.
+`--check` asks Telegram who the bot is and sends nothing; `--dry-run` validates
+the body and prints the request without reaching the network; `--send` posts and
+prints the Telegram message id. A body read from `.router/notify/owner.md` is
+emptied after it lands, so a later bare `--send` cannot resend it.
 
-The message body is the text the router already writes for the push channel:
-short, commands on their own lines, `cd`-prefixed.
+No command-line argument can choose a file, credential, chat or endpoint. The
+KEEL_NOTIFY_ENV, KEEL_NOTIFY_ACCESS and KEEL_NOTIFY_API_BASE variables are the
+test seam: a normal invocation sets none of them and uses this host's channel.
 """
 
 import argparse
@@ -16,6 +19,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -25,6 +29,7 @@ DEFAULT_BODY = Path(".router") / "notify" / "owner.md"
 DEFAULT_API_BASE = "https://api.telegram.org"
 TOKEN_KEY = "TELEGRAM_BOT_TOKEN"
 MAX_TEXT = 4096
+LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 USE_FILE = object()
 
 
@@ -39,6 +44,17 @@ def one_line(value):
 def fail(message):
     print("notify-owner: " + one_line(message), file=sys.stderr)
     return 1
+
+
+def check_api_base(value):
+    value = value.strip()
+    parts = urllib.parse.urlsplit(value)
+    host = (parts.hostname or "").lower()
+    if not parts.netloc:
+        raise NotifyError("KEEL_NOTIFY_API_BASE has no host")
+    if parts.scheme != "https" and not (parts.scheme == "http" and host in LOOPBACK):
+        raise NotifyError("KEEL_NOTIFY_API_BASE must be https (http is allowed for loopback only)")
+    return value
 
 
 def read_env(path):
@@ -85,6 +101,14 @@ def read_body(path):
     return body
 
 
+def clear_body(path):
+    # A body left in place would be sent again by the next bare --send; empty it, best effort.
+    try:
+        Path(path).write_text("", encoding="utf-8")
+    except OSError:
+        pass
+
+
 def check_text(text):
     if not text or not text.strip():
         raise NotifyError("the message is empty")
@@ -110,7 +134,10 @@ def request(method, token, api_base, payload):
         suffix = f" ({detail})" if detail else ""
         raise NotifyError(f"Telegram returned HTTP {error.code}{suffix}") from None
     except urllib.error.URLError as error:
-        raise NotifyError(f"cannot reach the Telegram API: {one_line(error.reason)}") from None
+        # Only an OS strerror is safe: a raw reason can echo the request target, token included.
+        detail = getattr(getattr(error, "reason", None), "strerror", None)
+        suffix = f": {one_line(detail)}" if isinstance(detail, str) and detail else ""
+        raise NotifyError("cannot reach the Telegram API" + suffix) from None
     except Exception:
         raise NotifyError("the Telegram request failed") from None
     try:
@@ -128,24 +155,13 @@ def main(argv):
     parser.add_argument("--send", nargs="?", const=USE_FILE, metavar="TEXT")
     parser.add_argument("--dry-run", nargs="?", const=USE_FILE, metavar="TEXT")
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--body", metavar="PATH", help=f"message file for a bare --send/--dry-run (default {DEFAULT_BODY})")
-    parser.add_argument("--api-base", default=os.environ.get("KEEL_NOTIFY_API_BASE", DEFAULT_API_BASE))
-    parser.add_argument("--env-file", default=os.environ.get("KEEL_NOTIFY_ENV", str(DEFAULT_ENV)))
-    parser.add_argument("--access-file", default=os.environ.get("KEEL_NOTIFY_ACCESS", str(DEFAULT_ACCESS)))
     args = parser.parse_args(argv)
 
-    modes = int(args.send is not None) + int(args.dry_run is not None) + int(args.check)
-    if modes != 1:
+    if int(args.send is not None) + int(args.dry_run is not None) + int(args.check) != 1:
         parser.error("give exactly one of --send, --dry-run, --check")
-    if args.check:
-        if args.body is not None:
-            parser.error("--body belongs to --send/--dry-run")
 
-    api_base = args.api_base.strip()
-    if not api_base.startswith("https://") and not api_base.startswith("http://"):
-        raise NotifyError(f"--api-base is not an http(s) URL: {api_base}")
-
-    token = read_env(args.env_file)
+    api_base = check_api_base(os.environ.get("KEEL_NOTIFY_API_BASE", DEFAULT_API_BASE))
+    token = read_env(os.environ.get("KEEL_NOTIFY_ENV", str(DEFAULT_ENV)))
 
     if args.check:
         bot = request("getMe", token, api_base, None)
@@ -157,15 +173,14 @@ def main(argv):
         return 0
 
     text = args.send if args.send is not None else args.dry_run
-    if text is USE_FILE:
-        text = read_body(args.body if args.body is not None else DEFAULT_BODY)
-    elif args.body is not None:
-        parser.error("give text or --body, not both")
+    from_file = text is USE_FILE
+    if from_file:
+        text = read_body(DEFAULT_BODY)
     text = check_text(text)
-    chat = read_chat(args.access_file)
+    chat = read_chat(os.environ.get("KEEL_NOTIFY_ACCESS", str(DEFAULT_ACCESS)))
 
     if args.dry_run is not None:
-        print(f"dry-run: would sendMessage to chat {chat} ({len(text)} chars, {len(text.splitlines())} lines)")
+        print(f"dry-run: valid sendMessage request ({len(text)} chars, {len(text.splitlines())} lines); no request sent")
         print(text, end="" if text.endswith("\n") else "\n")
         return 0
 
@@ -174,6 +189,8 @@ def main(argv):
     if message_id is None:
         raise NotifyError("Telegram did not return a message id")
     print(f"id {message_id}")
+    if from_file:
+        clear_body(DEFAULT_BODY)
     return 0
 
 

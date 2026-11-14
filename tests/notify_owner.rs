@@ -1,7 +1,7 @@
 //! E-RGUARD.W2: the router's owner-notify sender, spawned as the router runs it.
 //! The script posts one message to the paired Telegram bot and prints its id; these tests
-//! pin its three modes against a local mock API, its failure line, and that the channel
-//! credential never reaches stdout or stderr.
+//! pin its three modes against a local mock API, its failure line, the no-redirection rule,
+//! and that neither the credential nor the chat id reaches stdout or stderr.
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -43,9 +43,10 @@ fn channel() -> TempDir {
     dir
 }
 
+/// Run the sender as the router does: the file itself, no interpreter named on the command line.
+/// The three KEEL_NOTIFY_* variables are the only redirection, and only this test sets them.
 fn run(dir: &TempDir, args: &[&str], api_base: &str) -> Output {
-    common::cmd("python3")
-        .arg(script())
+    common::cmd(script())
         .args(args)
         .env("KEEL_NOTIFY_ENV", dir.path().join(".env"))
         .env("KEEL_NOTIFY_ACCESS", dir.path().join("access.json"))
@@ -62,6 +63,12 @@ fn stdout(out: &Output) -> String {
 
 fn stderr(out: &Output) -> String {
     String::from_utf8(out.stderr.clone()).unwrap()
+}
+
+fn assert_no_credential(out: &Output) {
+    let shown = stdout(out) + &stderr(out);
+    assert!(!shown.contains(TOKEN), "the credential reached the output");
+    assert!(!shown.contains(CHAT), "the chat id reached the output");
 }
 
 /// A port nothing listens on: a dry run that tried to send would fail to connect.
@@ -113,7 +120,7 @@ fn mock(status: &'static str, body: &'static str) -> (String, Receiver<String>, 
 }
 
 #[test]
-fn dry_run_prints_the_request_and_sends_nothing() {
+fn dry_run_prints_the_request_without_the_chat_or_a_send() {
     let dir = channel();
     let base = closed_base();
     let out = run(
@@ -126,16 +133,16 @@ fn dry_run_prints_the_request_and_sends_nothing() {
     );
     assert!(out.status.success(), "dry run failed: {}", stderr(&out));
     let shown = stdout(&out);
-    assert!(shown.contains("dry-run:"), "{shown}");
-    assert!(shown.contains(CHAT), "{shown}");
+    assert!(
+        shown.contains("dry-run:") && shown.contains("no request sent"),
+        "{shown}"
+    );
     assert!(
         shown.contains("cd /keel && keel mr confirm wu abc --as vuluu"),
         "{shown}"
     );
-    assert!(
-        !shown.contains(TOKEN) && !stderr(&out).contains(TOKEN),
-        "the credential reached the output"
-    );
+    assert!(!shown.contains(CHAT), "the chat id is in the dry-run line");
+    assert_no_credential(&out);
     assert!(stderr(&out).is_empty(), "{}", stderr(&out));
 }
 
@@ -156,10 +163,7 @@ fn check_names_the_bot_and_sends_no_message() {
         seen.contains("/getMe") && !seen.contains("/sendMessage"),
         "check called the wrong method"
     );
-    assert!(
-        !shown.contains(TOKEN) && !stderr(&out).contains(TOKEN),
-        "the credential reached the output"
-    );
+    assert_no_credential(&out);
 }
 
 #[test]
@@ -182,10 +186,7 @@ fn check_failure_is_one_line_and_never_prints_the_credential() {
         "a failure is one line: {problem:?}"
     );
     assert!(problem.contains("401"), "{problem}");
-    assert!(
-        !shown.contains(TOKEN) && !problem.contains(TOKEN),
-        "the credential reached the output"
-    );
+    assert_no_credential(&out);
 }
 
 #[test]
@@ -198,21 +199,14 @@ fn send_prints_the_id_and_never_the_credential() {
     assert!(out.status.success(), "send failed: {}", stderr(&out));
     assert_eq!(stdout(&out), "id 1731\n");
     assert!(
-        seen.contains("/sendMessage"),
-        "send called the wrong method"
-    );
-    assert!(
-        seen.contains("hello owner") && seen.contains(CHAT),
+        seen.contains("/sendMessage") && seen.contains("hello owner"),
         "send carried the wrong payload"
     );
-    assert!(
-        !stdout(&out).contains(TOKEN) && !stderr(&out).contains(TOKEN),
-        "the credential reached the output"
-    );
+    assert_no_credential(&out);
 }
 
 #[test]
-fn bare_send_reads_the_body_the_router_wrote() {
+fn bare_send_reads_and_clears_the_body_so_it_cannot_resend_a_stale_message() {
     let dir = channel();
     let body = dir.path().join(".router/notify/owner.md");
     std::fs::create_dir_all(body.parent().unwrap()).unwrap();
@@ -231,14 +225,27 @@ fn bare_send_reads_the_body_the_router_wrote() {
         seen.contains("Sign-off ready") && seen.contains("keel mr confirm"),
         "send carried the wrong body"
     );
+    assert_no_credential(&out);
+    assert!(
+        std::fs::read_to_string(&body).unwrap().is_empty(),
+        "the sent body was left in place and a later bare --send would resend it"
+    );
+    let again = run(&dir, &["--send"], &closed_base());
+    assert!(!again.status.success(), "a cleared body must not send");
+    let problem = stderr(&again);
+    assert_eq!(problem.lines().count(), 1, "{problem:?}");
+    assert!(
+        problem.contains("empty"),
+        "a cleared body must fail as empty: {problem}"
+    );
+    assert_no_credential(&again);
 }
 
 #[test]
 fn a_missing_credential_is_one_line_naming_the_file_only() {
     let dir = channel();
     let missing = dir.path().join("absent.env");
-    let out = common::cmd("python3")
-        .arg(script())
+    let out = common::cmd(script())
         .arg("--check")
         .env("KEEL_NOTIFY_ENV", &missing)
         .env("KEEL_NOTIFY_ACCESS", dir.path().join("access.json"))
@@ -253,8 +260,53 @@ fn a_missing_credential_is_one_line_naming_the_file_only() {
         "a failure is one line: {problem:?}"
     );
     assert!(problem.contains("absent.env"), "{problem}");
+    assert_no_credential(&out);
+}
+
+#[test]
+fn bare_send_without_a_body_is_one_line_and_sends_nothing() {
+    let dir = channel();
+    let out = run(&dir, &["--send"], &closed_base());
+    assert!(!out.status.success(), "a missing body must fail");
+    assert!(stdout(&out).is_empty(), "a failure writes stdout");
+    let problem = stderr(&out);
+    assert_eq!(problem.lines().count(), 1, "{problem:?}");
     assert!(
-        !stdout(&out).contains(TOKEN) && !problem.contains(TOKEN),
-        "the credential reached the output"
+        problem.contains("owner.md"),
+        "the failure names the body file: {problem}"
     );
+    assert_no_credential(&out);
+}
+
+#[test]
+fn cleartext_http_is_refused_for_a_non_loopback_host() {
+    let dir = channel();
+    let out = run(&dir, &["--check"], "http://example.com");
+    assert!(
+        !out.status.success(),
+        "cleartext http to another host must be refused"
+    );
+    let problem = stderr(&out);
+    assert_eq!(problem.lines().count(), 1, "{problem:?}");
+    assert!(problem.contains("https"), "{problem}");
+    assert_no_credential(&out);
+}
+
+#[test]
+fn a_malformed_token_never_echoes_the_request_target() {
+    let dir = channel();
+    std::fs::write(
+        dir.path().join(".env"),
+        "TELEGRAM_BOT_TOKEN=bad token:secret\n",
+    )
+    .unwrap();
+    let out = run(&dir, &["--check"], &closed_base());
+    assert!(!out.status.success(), "a malformed token must fail");
+    let shown = stdout(&out) + &stderr(&out);
+    assert_eq!(shown.lines().count(), 1, "{shown:?}");
+    assert!(
+        !shown.contains("bad token") && !shown.contains("secret"),
+        "{shown}"
+    );
+    assert_no_credential(&out);
 }
