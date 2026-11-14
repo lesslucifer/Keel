@@ -94,6 +94,44 @@ fn ids(mut v: Vec<String>) -> Vec<String> {
     v
 }
 
+fn git(dir: &Path, args: &[&str]) {
+    let o = common::cmd("git").args(args).current_dir(dir).output().unwrap();
+    assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+}
+
+/// The production path: a copy in a linked worktree resolves the main checkout's inbox, so a
+/// worker's post lands where the router watches, whatever directory the script is called from.
+#[test]
+fn a_worktree_copy_resolves_the_main_checkouts_inbox() {
+    let d = TempDir::new().unwrap();
+    let main = d.path().join("main");
+    std::fs::create_dir_all(main.join("scripts")).unwrap();
+    std::fs::copy(script(), main.join("scripts/router-inbox.sh")).unwrap();
+    git(&main, &["init", "-q", "-b", "main"]);
+    git(&main, &["add", "."]);
+    git(&main, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"]);
+    git(&main, &["worktree", "add", "-q", "../wt", "-b", "w"]);
+    let wt = d.path().join("wt");
+    let run = |at: &Path, args: &[&str]| {
+        let o = common::cmd("sh").arg(at.join("scripts/router-inbox.sh")).args(args).output().unwrap();
+        (o.status.code(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
+    };
+    let (code, out) = run(&wt, &["init"]);
+    assert_eq!(code, Some(0), "{out}");
+    let main = main.canonicalize().unwrap();
+    let inbox = format!("READY dir={}/.router/inbox", main.display());
+    assert!(out.starts_with(&inbox), "the worktree copy did not name the main checkout's inbox: {out:?}");
+    let (code, out) = run(&main, &["post", "worker", "REPORT", "from the router's checkout"]);
+    assert_eq!(code, Some(0), "{out}");
+    let id = out.trim().strip_prefix("POSTED id=").unwrap().to_string();
+    let (code, out) = run(&wt, &["watch", "2"]);
+    assert_eq!(code, Some(0), "a worktree copy did not read the main checkout's inbox: {out}");
+    assert!(out.contains(&format!("MSG id={id} from=worker kind=REPORT")), "{out:?}");
+    let (code, out) = run(&main, &["consume", &id]);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(out.trim() == format!("CONSUMED id={id}"), "{out:?}");
+}
+
 #[test]
 fn watch_before_init_exits_2_and_names_the_inbox() {
     let b = Inbox::new();
