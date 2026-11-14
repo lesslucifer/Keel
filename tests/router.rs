@@ -314,7 +314,7 @@ fn hermetic(c: &mut Command) -> &mut Command {
 /// Upper bound on any wait for another process; a hung script fails the test instead of hanging it.
 const BOUND: Duration = Duration::from_secs(10);
 /// The bound a test passes when it expects the wait to fail: "never" holds at any length.
-const NEVER: Duration = Duration::from_millis(500);
+const NEVER: Duration = Duration::from_millis(100);
 
 fn git(d: &Path, a: &[&str]) -> Output {
     let o = hermetic(&mut common::cmd("git"))
@@ -377,8 +377,8 @@ fn stub_claude(stub: &Path) {
 
 /// `router-watch.sh` sleeps once per poll; this `<base>/shim/sleep` counts the polls in
 /// $STEP_DIR/polls (its argument, one per line, in $STEP_DIR/sleeps) and blocks poll n until the test
-/// creates $STEP_DIR/go-n, so each poll judges a state the test has set. It appends its pid to $STEP_DIR/pids
-/// and ends with its caller or the test process.
+/// creates $STEP_DIR/go-n, so each poll judges a state the test has set. It ends with its caller or the test
+/// process; it appends its pid to $STEP_DIR/pids as it starts and, as its last act, to $STEP_DIR/exited.
 fn sleep_shim(base: &Path) {
     std::fs::create_dir_all(base.join("shim")).unwrap();
     std::fs::write(
@@ -386,7 +386,8 @@ fn sleep_shim(base: &Path) {
         concat!(
             "#!/bin/sh\necho $$ >> \"$STEP_DIR/pids\"\necho \"$1\" >> \"$STEP_DIR/sleeps\"\nn=$(( $(cat \"$STEP_DIR/polls\" 2>/dev/null || echo 0) + 1 ))\n",
             "echo \"$n\" > \"$STEP_DIR/polls.tmp\" && mv \"$STEP_DIR/polls.tmp\" \"$STEP_DIR/polls\"\n",
-            "while [ ! -e \"$STEP_DIR/go-$n\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null && kill -0 \"$PPID\" 2>/dev/null; do /bin/sleep 0.02; done\n"
+            "while [ ! -e \"$STEP_DIR/go-$n\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null && kill -0 \"$PPID\" 2>/dev/null; do /bin/sleep 0.02; done\n",
+            "echo $$ >> \"$STEP_DIR/exited\"\n"
         ),
     )
     .unwrap();
@@ -2464,27 +2465,36 @@ fn watcher_run_is_bounded_when_the_watch_outpolls_its_releases() {
         assert!((NEVER..BOUND).contains(&took), "gave up after {took:?}, not within [{NEVER:?}, {BOUND:?})");
         msg(e)
     };
-    assert!(timed(&mut || drop(w.run_within(&["signed", &t], "unreleased", 0, &[], NEVER))).contains("never returned"));
     let mut at = w.armed(&["signed", &t], "unreleased-at");
     let mut out = w.armed(&["signed", &t], "unreleased-output");
     at.at(1);
     out.at(1);
     std::thread::scope(|sc| {
+        let r = sc.spawn(|| timed(&mut || drop(w.run_within(&["signed", &t], "unreleased", 0, &[], NEVER))));
         let a = sc.spawn(|| timed(&mut || at.at_within(2, NEVER)));
         let o = sc.spawn(|| {
             let mut out = Some(out);
             timed(&mut || drop(out.take().unwrap().output_within(NEVER)))
         });
+        assert!(r.join().unwrap().contains("never returned"));
         assert!(a.join().unwrap().contains("never reached poll 2"));
         assert!(o.join().unwrap().contains("never returned"));
     });
     drop(at);
-    let pids: Vec<String> = ["unreleased", "unreleased-at", "unreleased-output"]
-        .iter()
-        .flat_map(|k| std::fs::read_to_string(w.base.join(format!("steps-{k}/pids"))).unwrap_or_default().lines().map(String::from).collect::<Vec<_>>())
-        .collect();
-    assert!(pids.len() >= 2, "the shims of the two watches held at poll 1 recorded no pid: {pids:?}");
-    until("every sleep shim to exit", || pids.iter().all(|p| !common::cmd("kill").args(["-0", p]).stderr(Stdio::null()).status().unwrap().success()));
+    // A shim's own last write, not a liveness probe: `kill -0` also succeeds on a zombie, which an
+    // orphaned shim stays wherever pid 1 never reaps.
+    let read = |f: &str| -> Vec<String> {
+        ["unreleased", "unreleased-at", "unreleased-output"]
+            .iter()
+            .flat_map(|k| std::fs::read_to_string(w.base.join(format!("steps-{k}/{f}"))).unwrap_or_default().lines().map(String::from).collect::<Vec<_>>())
+            .collect()
+    };
+    let started = read("pids");
+    assert!(started.len() >= 2, "the shims of the two watches held at poll 1 recorded no pid: {started:?}");
+    until("every sleep shim to exit", || {
+        let exited = read("exited");
+        started.iter().all(|p| exited.contains(p))
+    });
 }
 
 /// E-SEED2.W12: `pushed` fires only once origin holds the tip (not on the local merge); `tagged` fires
