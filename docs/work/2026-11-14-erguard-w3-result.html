@@ -43,6 +43,19 @@
   </tbody>
 </table>
 
+
+<h2 id="fix-round">Fix round 1 (cr/v1 FAIL)</h2>
+<p>The independent review of <code>b006031</code> failed with 0 blockers, 2 importants and 11 nits. Both importants were real; all findings are fixed, none refuted.</p>
+<table data-c="fix-round">
+  <thead><tr><th>Finding</th><th>Fix</th></tr></thead>
+  <tbody>
+    <tr><td><b>Important:</b> a <code>*.msg</code> whose name is outside <code>consume</code>'s id grammar (a space, a tab, an ESC) but whose header matched was printed by <code>watch</code> on every arm while <code>consume</code> refused it — the queue starved forever and the router could neither ack nor delete it</td><td><code>scripts/router-inbox.sh</code>: one predicate, <code>id_ok</code>, is consume's id grammar and the name a message may carry; <code>message_ok</code> is exactly the set <code>watch</code> prints and <code>status</code> counts (regular, not a symlink, id name, matching <code>id:</code> line, one of the five kinds). A name consume refuses is not a message, so it is skipped and cannot starve the queue. Test: <code>watch_skips_a_name_consume_would_refuse_so_junk_cannot_starve_the_queue</code></td></tr>
+    <tr><td><b>Important:</b> the 4,000-byte cap lived only in <code>post</code>; a 5 MiB single-line body printed 5,242,950 bytes with <code>bytes=65536</code> in the header</td><td>The reader caps the body at <code>ROUTER_INBOX_MAX_BYTES</code> (4,000), prints <code>… truncated at 4000 bytes</code>, and <code>bytes=</code> is the cleaned, capped body it printed, never the file's size. Test: <code>watch_caps_the_body_by_bytes_and_keeps_the_header_honest</code> (red at 5,242,950 bytes, green under 6,000)</td></tr>
+    <tr><td><b>Nits</b> (11)</td><td>Every printed field cleaned, not only the body; <code>status</code> counts only what <code>watch</code> delivers; the symlink test's target is a valid message so only the link check can skip it; the concurrent-post test asserts both bodies; the settings entries are narrowed to the guard's four shapes (no wildcard that admits <code>post</code>); <code>SKILL.md</code> states the watcher's self-renewed 110-minute wake and its ~13 passes a day; <code>worker-ops.md</code> says <code>read/</code> is never pruned and <code>.router/</code> unbacked; DEC-57 says 28 checks; DEC-55 carries the DEC-57 amendment marker (record and index); a duplicate <code>consume</code> no longer leaks <code>mv</code> stderr; the two fixed 200 ms sleeps are gone</td></tr>
+  </tbody>
+</table>
+<p>Test-first: the five new cases failed on <code>b006031</code>'s script for their stated reasons (junk printed, 5,242,950 bytes, raw ESC in <code>from=</code>, <code>pending=2</code> with header-less files, leaked <code>mv</code> stderr), then passed.</p>
+
 <h2 id="evidence">Evidence</h2>
 
 <h3 id="commits">Commits</h3>

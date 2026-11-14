@@ -147,7 +147,8 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
             Some(p) if p.ends_with(" stop") || p.ends_with(" watchdog start") => format!("{p} n"),
             Some(p) if p.ends_with(" worktree add") || p.ends_with(" worktree remove") => format!("{p} wu/E-X/w1-a"),
             Some(p) if p.ends_with("router-watch.sh") => format!("{p} signed 1a2b3c4"),
-            Some(p) if p.ends_with("router-inbox.sh") => format!("{p} watch 6600"),
+            Some(p) if p.ends_with("router-inbox.sh watch") => format!("{p} 6600"),
+            Some(p) if p.ends_with("router-inbox.sh consume") => format!("{p} 1794659383-abc123"),
             Some(p) if p.starts_with("scripts/") => format!("{p} n /w .router/briefs/n.md opus"),
             Some(p) => format!("{p} HEAD"),
             None => a.to_string(),
@@ -290,6 +291,10 @@ fn router_guard_admits_the_inbox_watcher_and_consume_but_never_post() {
     ] {
         assert_eq!(bash(ok), None, "guard denied documented shape {ok:?}");
     }
+    let settings = settings();
+    let allow: Vec<&str> = settings["permissions"]["allow"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+    assert!(!allow.contains(&"Bash(scripts/router-inbox.sh *)"), "settings still admit every inbox verb: {allow:?}");
+    assert!(allow.contains(&"Bash(scripts/router-inbox.sh watch *)") && allow.contains(&"Bash(scripts/router-inbox.sh consume *)"), "the router's two shapes are not allowlisted: {allow:?}");
     for denied in [
         "scripts/router-inbox.sh",
         "scripts/router-inbox.sh post",

@@ -1,7 +1,8 @@
 //! The router's report channel (E-RGUARD.W3): `scripts/router-inbox.sh`, as a worker and the router
 //! run it. Every case spawns the shipped script through its process boundary, in its own inbox under
-//! a temp dir, so the tests are hermetic and parallel. The 2026-11-14 probe's 27 checks are the
-//! contract; the killed watcher and the symlinked consume are the two cases added here.
+//! a temp dir, so the tests are hermetic and parallel. The 2026-11-14 probe's 28 checks are the
+//! contract; the hostile-name, byte-cap, field-cleaning and concurrent-ack cases are the ones
+//! the round-1 review added.
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -210,9 +211,12 @@ fn two_concurrent_posts_both_land_whole_with_distinct_ids() {
     assert_ne!(ida, idb, "two writers collided on one id");
     let out = b.ok(&["status"]);
     assert!(out.contains("pending=2"), "{out:?}");
-    for id in ids(vec![ida, idb]) {
+    let pair = |id: &str, a: &str| if id == a { ("bob", "one") } else { ("carol", "two") };
+    for id in ids(vec![ida.clone(), idb]) {
         let out = b.watch("1");
-        assert!(out.contains(&format!("MSG id={id} ")), "not delivered: {out:?}");
+        let (from, body) = pair(&id, &ida);
+        assert!(out.contains(&format!("MSG id={id} from={from} kind=NOTE")), "wrong header for {id}: {out:?}");
+        assert!(out.contains(&format!("  {body}\n")), "wrong or torn body for {id}: {out:?}");
         b.ok(&["consume", &id]);
     }
 }
@@ -283,7 +287,6 @@ fn an_armed_watcher_wakes_on_a_live_post() {
     let b = Inbox::new();
     b.init();
     let child = b.armed_watch("30", Stdio::piped());
-    std::thread::sleep(Duration::from_millis(200));
     let id = b.post("frank", "QUESTION", "are you there");
     let o = child.wait_with_output().unwrap();
     let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
@@ -308,13 +311,17 @@ fn watch_skips_a_symlink_and_a_forged_header_without_following_either() {
     let b = Inbox::new();
     b.init();
     let secret = b.d.path().join("secret.txt");
-    std::fs::write(&secret, "SECRET-NOT-A-MESSAGE\n").unwrap();
+    std::fs::write(
+        &secret,
+        "id: 0000000001-evil\nfrom: mallory\nkind: NOTE\nwhen: now\n---\nSECRET-VIA-SYMLINK\n",
+    )
+    .unwrap();
     std::os::unix::fs::symlink(&secret, b.dir().join("0000000001-evil.msg")).unwrap();
     std::fs::write(b.dir().join("0000000002-forged.msg"), "forged\n").unwrap();
     let id = b.post("hank", "NOTE", "real message after junk");
     let out = b.watch("1");
     assert!(out.contains(&format!("MSG id={id}")), "the real message was blocked: {out:?}");
-    assert!(!out.contains("SECRET"), "the symlink target was printed: {out:?}");
+    assert!(!out.contains("SECRET-VIA-SYMLINK"), "the symlink to a valid message was followed: {out:?}");
     assert!(!out.contains("forged"), "the forged header was printed: {out:?}");
     b.ok(&["consume", &id]);
 }
@@ -367,7 +374,6 @@ fn a_killed_watcher_loses_nothing() {
     let b = Inbox::new();
     b.init();
     let mut child = b.armed_watch("30", Stdio::piped());
-    std::thread::sleep(Duration::from_millis(200));
     child.kill().unwrap();
     child.wait().unwrap();
     let id = b.post("laura", "REPORT", "posted after the watcher died");
@@ -390,4 +396,102 @@ fn consume_refuses_a_symlink_in_the_inbox_instead_of_moving_it() {
     assert!(out.contains("MISSING"), "{out:?}");
     assert!(!out.contains("SECRET") && !out.contains("CONSUMED"), "{out:?}");
     assert!(link.is_symlink() && !b.read().join(format!("{id}.msg")).exists(), "consume moved the symlink");
+}
+
+#[test]
+fn watch_skips_a_name_consume_would_refuse_so_junk_cannot_starve_the_queue() {
+    let b = Inbox::new();
+    b.init();
+    let esc = "0000000001-e\u{1b}[31mvil";
+    std::fs::write(
+        b.dir().join(format!("{esc}.msg")),
+        format!("id: {esc}\nfrom: mallory\nkind: NOTE\nwhen: now\n---\nhostile body\n"),
+    )
+    .unwrap();
+    let space = "0000000002-a b";
+    std::fs::write(
+        b.dir().join(format!("{space}.msg")),
+        format!("id: {space}\nfrom: mallory\nkind: NOTE\nwhen: now\n---\nspace body\n"),
+    )
+    .unwrap();
+    let id = b.post("hank", "NOTE", "the real message behind the junk");
+    let out = b.watch("1");
+    assert!(out.contains(&format!("MSG id={id}")), "junk starved the real message: {out:?}");
+    assert!(!out.contains("hostile body") && !out.contains("space body"), "a non-id name was printed: {out:?}");
+    assert!(!out.contains('\u{1b}'), "a raw ESC reached the terminal: {out:?}");
+    let (code, out) = b.run(&["consume", esc]);
+    assert_eq!(code, Some(2), "consume accepted an id watch could never print: {out}");
+    assert!(out.contains("bad id"), "{out:?}");
+    let out = b.ok(&["status"]);
+    assert!(out.contains("pending=1") && out.contains(&format!("oldest={id}")), "status counted junk: {out:?}");
+    b.ok(&["consume", &id]);
+}
+
+#[test]
+fn watch_caps_the_body_by_bytes_and_keeps_the_header_honest() {
+    let b = Inbox::new();
+    b.init();
+    let id = "1700000003-big";
+    let body = "x".repeat(5 * 1024 * 1024);
+    std::fs::write(
+        b.dir().join(format!("{id}.msg")),
+        format!("id: {id}\nfrom: big\nkind: NOTE\nwhen: now\n---\n{body}\n"),
+    )
+    .unwrap();
+    let out = b.watch("1");
+    assert!(out.len() < 6000, "the watcher printed {} bytes for a 5 MiB body", out.len());
+    assert!(out.contains("truncated at 4000 bytes"), "no byte-truncation marker: {out:?}");
+    assert!(out.contains("bytes=4000"), "the header's bytes= is not what was printed: {out:?}");
+    assert!(!out.contains(&body), "the body was printed whole");
+    b.ok(&["consume", id]);
+}
+
+#[test]
+fn watch_cleans_the_from_field_like_the_body() {
+    let b = Inbox::new();
+    b.init();
+    let id = "1700000004-cleaned";
+    std::fs::write(
+        b.dir().join(format!("{id}.msg")),
+        format!("id: {id}\nfrom: \u{1b}[2Jevil\nkind: NOTE\nwhen: now\n---\nhi\n"),
+    )
+    .unwrap();
+    let out = b.watch("1");
+    assert!(out.contains("from=?[2Jevil"), "the from field was not cleaned: {out:?}");
+    assert!(!out.contains('\u{1b}'), "a raw ESC reached the terminal: {out:?}");
+    b.ok(&["consume", id]);
+}
+
+#[test]
+fn status_counts_only_what_watch_would_deliver() {
+    let b = Inbox::new();
+    b.init();
+    std::fs::write(b.dir().join("3333333333-empty.msg"), "").unwrap();
+    std::fs::write(b.dir().join("4444444444-junk.msg"), "junk\n").unwrap();
+    let out = b.ok(&["status"]);
+    assert!(out.contains("pending=0") && out.contains("oldest=none"), "status counted a file watch skips: {out:?}");
+    let id = b.post("ivy", "NOTE", "the real one");
+    let out = b.ok(&["status"]);
+    assert!(out.contains("pending=1") && out.contains(&format!("oldest={id}")), "{out:?}");
+}
+
+#[test]
+fn a_concurrent_duplicate_consume_is_silent_and_still_acks_once() {
+    let b = Inbox::new();
+    b.init();
+    let id = b.post("jane", "NOTE", "one");
+    let children: Vec<std::process::Child> = (0..8)
+        .map(|_| b.cmd(&["consume", &id]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap())
+        .collect();
+    let mut lines = Vec::new();
+    for c in children {
+        let o = c.wait_with_output().unwrap();
+        assert!(o.status.success(), "consume failed: {}", String::from_utf8_lossy(&o.stderr));
+        assert!(o.stderr.is_empty(), "a duplicate consume leaked stderr: {}", String::from_utf8_lossy(&o.stderr));
+        lines.push(String::from_utf8(o.stdout).unwrap().trim().to_string());
+    }
+    let consumed = format!("CONSUMED id={id}");
+    let already = format!("CONSUMED-ALREADY id={id}");
+    assert_eq!(lines.iter().filter(|l| **l == consumed).count(), 1, "{lines:?}");
+    assert!(lines.iter().all(|l| *l == consumed || *l == already), "{lines:?}");
 }
