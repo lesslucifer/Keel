@@ -196,6 +196,44 @@ idle, reaches you without a heartbeat of your own.
   never resumed (a resume of a running session starts a copy); its recurring
   schedule expires after 7 days: if reports stop, stop it and start it again.
 
+## The report channel (DSH)
+
+On DSH a worker cannot message you: it posts one short report to a file inbox,
+and an armed watcher is the wake. One script, one watcher, no reminder.
+
+- **Arm it once for the whole fleet**, before the first dispatch and again on
+  every wake: `scripts/router-inbox.sh watch 6600` as a background Bash command
+  (`run_in_background: true`, `timeout: 7200000`), named in the ask
+  (`Watching: the report channel`). It checks at once, then every 2 s, and prints
+  one `MSG id=… from=… kind=… age=…s bytes=…` line plus the indented body, then
+  exits 0 — that exit is the wake. At its bound it prints `TIMEOUT kind=inbox`
+  and exits 1: run the wake checklist, then arm the same command again. One
+  watcher serves the fleet; a second only duplicates what it prints.
+- **A worker posts its report** to the same inbox:
+  `sh scripts/router-inbox.sh post <name> REPORT "<one line>"` (a short body on
+  stdin also works). It prints `POSTED id=…`, and the worker quotes that id in
+  its final transcript message. The inbox is `<main checkout>/.router/inbox`;
+  the script resolves it from the git common dir, so a copy in the worker's
+  worktree posts to the router's inbox. The 4,000-byte cap and the closed kinds
+  are the boundary: one line, not a document.
+- **Consume is the ack.** `scripts/router-inbox.sh consume <id>` after you have
+  read and recorded the message; it prints `CONSUMED`, then `CONSUMED-ALREADY`
+  on a repeat. Delivery is at-least-once: an unacked message returns on the next
+  watch, so quote the id back and never treat a print as the ack. `status` counts
+  pending, read and orphan dotfiles without writing; junk files and symlinks are
+  skipped, never followed.
+- **No liveness check.** A worker that wedges without posting wakes nobody: a
+  wedge and a long turn look identical, and silence cannot tell them apart. Do
+  not arm a reminder, a schedule, a loop or a watchdog for it; at every wake read
+  `worker_status` and that worker's transcript, and that is when you find it.
+  While the watcher is armed its bound is the longest silence (110 minutes at
+  most); with none armed, only the owner's next message. Say that plainly when
+  the owner asks what detects a stuck worker.
+- **Claude Code workers do not post.** Their launcher sandbox does not allow the
+  inbox (widening it would weaken DEC-46), and they report by `SendMessage`. On
+  Claude Code the channel is a redundant path: use it only for a mixed fleet that
+  needs one inbox.
+
 ## Watch every staged owner action
 
 Under the router posture you don't run shell loops. Git-visible owner actions
@@ -275,9 +313,10 @@ echo "RUN $id"; gh run view $id --json conclusion,jobs -q '.jobs[]|"\(.name): \(
 
 ## Wake checklist (no heartbeat)
 
-The router runs no loop or timer (owner ruling 2026-11-11; the guard denies
-`loop`, `CronCreate` and `ScheduleWakeup`). It wakes on a worker's message, a
-watch line, an idle notice or the owner. On every wake:
+The router runs no loop, timer or reminder (owner ruling 2026-11-11; the guard
+denies `loop`, `CronCreate` and `ScheduleWakeup`). It wakes on a worker's message,
+a watch line, an idle notice, the owner, or a DSH worker's post on the report
+channel. On every wake:
 "1 workers: background (`ListAgents`: each expected name listed, busy or idle;
 idle without a report → `SendMessage` asking for it; not listed unasked →
 a fresh worker from a new brief, it keeps and checks uncommitted work; confirm RUNNING;
@@ -286,10 +325,11 @@ blocked on a prompt or silent too long → tell the owner; workers live and no
 finished but unrelayed reports); reported and clean → `stop`. 2 worktrees:
 branch, tip, notes on tip
 (`git log -1 --notes=<ref> --format=%N`). 3 pending owner actions, runs, doc
-comments (relay to a worker), unrelayed reports; re-arm missing watchers.
-4 advance anything unblocked (next WU, step-between worker, stage commands).
-5 changed or needs the owner → terminal + push ending `What you need to do
-now:`; else one line. Never run reserved commands; stay inside the posture."
+comments (relay to a worker), unrelayed reports; re-arm missing watchers and the
+report channel (`router-inbox.sh watch`). 4 advance anything unblocked (next WU,
+step-between worker, stage commands). 5 changed or needs the owner → terminal +
+push ending `What you need to do now:`; else one line. Never run reserved
+commands; stay inside the posture."
 
 ## Read failures / third-party source (a read-only worker runs these)
 ```sh

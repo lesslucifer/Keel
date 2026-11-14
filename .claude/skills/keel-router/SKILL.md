@@ -247,7 +247,7 @@ in another skill.
 |---|---|---|
 | Dispatch | `<launcher> spawn <name> <worktree> <brief> <model>` (standard); `Agent` with a name and an explicit model only where the posture is not enforced | `worker_spawn` with the worktree as its workspace and the brief as its prompt; the name is its handle |
 | Follow-up | `SendMessage` to its name: a steer while busy, the next task while idle | `worker_send` queues one turn, which runs after its current one |
-| Report | its `SendMessage` to you (a subagent: its `SubagentHandback`), one self-contained report | none is sent: `worker_output` reads the transcript, at each wake and before each ask |
+| Report | its `SendMessage` to you (a subagent: its `SubagentHandback`), one self-contained report | a post to the report channel: `scripts/router-inbox.sh post <name> REPORT "<one line>"` prints `POSTED id=…`; your armed `watch` prints it and `consume <id>` acks it. The transcript stays the evidence: `worker_output` at every wake and before every ask |
 | Fleet list | `ListAgents` (a subagent: the session's roster); the launcher's CLI behind it | `worker_list` |
 | Status | the `ListAgents` row says busy or idle; the watchdog reports `DONE` or `STUCK` | `worker_status`: running, idle, ready or stopped |
 | Stop | `<launcher> stop <name>` (a subagent: `TaskStop`) | `worker_stop`, idempotent; a stopped worker is never revived |
@@ -258,12 +258,17 @@ in another skill.
   `worker_spawn` starts in the worktree it names, and that directory never
   changes. Worker work goes to `worker_spawn`; a subagent is for a short
   read-only check, never for a WU.
-- **A DSH worker does not message you.** Its report is its transcript: read it
-  with `worker_output` at every wake and before every ask, digest it yourself,
-  and verify its claims against git like any report. A quiet worker is a
-  `worker_status` row plus its transcript, never a missing message. Answer or
-  steer it with `worker_send`, one turn per call; a busy worker takes it at its
-  next step.
+- **A DSH worker posts; it does not message you.** Its one-line report is
+  `scripts/router-inbox.sh post <name> REPORT "<one line>"` (a short body on
+  stdin also works), which prints `POSTED id=…` for its final message. You arm
+  the channel's `watch` as a background command and it prints `MSG id=…`; you ack
+  with `consume <id>` and quote that id back. Its transcript stays the evidence:
+  read it with `worker_output` at every wake and before every ask, digest it
+  yourself, and verify its claims against git like any report. A worker that
+  posts nothing is invisible, and a wedge looks exactly like a long turn:
+  nothing on DSH checks for it, so read `worker_status` and the transcript at
+  your next wake. Answer or steer it with `worker_send`, one turn per call; a
+  busy worker takes it at its next step.
 - **The DSH persona is the worktree's `AGENTS.md` plus the skills plus the
   brief.** There is no project-scoped agent definition to select and no
   per-worker preset to pass: the session reads that directory's instruction
@@ -298,8 +303,9 @@ in another skill.
   "no mid-run questions" (a worker that stops to ask ends its turn and sits idle): decide
   reversible choices with a recommendation, else stop with options. Answers go
   in your next message.
-- Report by `SendMessage` to the router's current name: what, doc, full sha,
-  ordered cd-prefixed commands, gate state, no-independent-review list, how to try.
+- Report by `SendMessage` to the router's current name; on DSH, post it to the
+  report channel and quote the id it printed: what, doc, full sha, ordered
+  cd-prefixed commands, gate state, no-independent-review list, how to try.
 - Retire with `<launcher> stop <name>` only when idle AND clean (its WU merged,
   or no longer needed); the launcher refuses a busy worker. Once the `merged`
   watch fired and the worker is stopped, `<launcher> worktree remove <branch>`
@@ -317,10 +323,12 @@ in another skill.
   none came), then retire it; `STUCK (quiet …)` → message the worker first;
   `STUCK (permission prompt)` → the owner answers it (`claude attach <id>`), you
   cannot. A watchdog whose reports stop is yours to notice and start again.
-- **No heartbeat**: the router routes; it runs no loop or timer (owner ruling
-  2026-11-11). Workers report by message and every staged owner action has a
-  watch; each wake runs the wake checklist (`references/worker-ops.md`) and
-  re-arms. A background spawn counts only once the launcher printed `RUNNING`.
+- **No heartbeat**: the router routes; it runs no loop, timer or reminder
+  (owner ruling 2026-11-11). On DSH a worker reports by posting to the channel
+  and your armed `watch` is the wake; every staged owner action has a watch too.
+  Each wake runs the wake checklist (`references/worker-ops.md`) and re-arms the
+  watcher in the same turn. A background spawn counts only once the launcher
+  printed `RUNNING`.
 
 ## Permissions
 

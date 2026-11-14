@@ -115,6 +115,7 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
     assert!(bash(&format!("rm -rf x{}y", " ".repeat(100_000))).is_some());
     assert!(t.elapsed() < Duration::from_secs(3), "guard took {:?} on a long command", t.elapsed());
     assert!(bash("rm x").unwrap().contains("scripts/router-watch.sh commit|signed|merged|pushed|tagged"), "deny message omits the watch shape");
+    assert!(bash("rm x").unwrap().contains("scripts/router-inbox.sh"), "deny message omits the inbox shape");
 
     let mut allowed = vec![
         "git log --oneline -5".to_string(),
@@ -146,6 +147,7 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
             Some(p) if p.ends_with(" stop") || p.ends_with(" watchdog start") => format!("{p} n"),
             Some(p) if p.ends_with(" worktree add") || p.ends_with(" worktree remove") => format!("{p} wu/E-X/w1-a"),
             Some(p) if p.ends_with("router-watch.sh") => format!("{p} signed 1a2b3c4"),
+            Some(p) if p.ends_with("router-inbox.sh") => format!("{p} watch 6600"),
             Some(p) if p.starts_with("scripts/") => format!("{p} n /w .router/briefs/n.md opus"),
             Some(p) => format!("{p} HEAD"),
             None => a.to_string(),
@@ -272,6 +274,43 @@ fn router_guard_allows_send_message_to_a_named_worker_as_the_harness_sends_it() 
     }
     assert_eq!(guard("router", "ListAgents", serde_json::json!({})), None);
     assert_eq!(guard("worker", "SendMessage", serde_json::json!({})), None);
+}
+
+/// E-RGUARD.W3: the router arms the report channel and acks with it; it never posts. The body is
+/// free text, so `post` is the one verb no plain-word guard can admit.
+#[test]
+fn router_guard_admits_the_inbox_watcher_and_consume_but_never_post() {
+    for ok in [
+        "scripts/router-inbox.sh init",
+        "scripts/router-inbox.sh status",
+        "scripts/router-inbox.sh watch 6600",
+        "scripts/router-inbox.sh watch 0",
+        "scripts/router-inbox.sh consume 1794659383-abc123",
+        "scripts/router-inbox.sh consume 1a.b_c-D",
+    ] {
+        assert_eq!(bash(ok), None, "guard denied documented shape {ok:?}");
+    }
+    for denied in [
+        "scripts/router-inbox.sh",
+        "scripts/router-inbox.sh post",
+        "scripts/router-inbox.sh post e-rguard-w3 REPORT hi",
+        "scripts/router-inbox.sh watch",
+        "scripts/router-inbox.sh watch -1",
+        "scripts/router-inbox.sh watch 1x",
+        "scripts/router-inbox.sh watch 6600 extra",
+        "scripts/router-inbox.sh consume",
+        "scripts/router-inbox.sh consume ../x",
+        "scripts/router-inbox.sh consume x/y",
+        "scripts/router-inbox.sh consume 1794659383-abc extra",
+        "scripts/router-inbox.sh init extra",
+        "scripts/router-inbox.sh status extra",
+        "scripts/router-inbox.sh rm x",
+        "scripts/router-inbox.sh watch 6600; id",
+        r#"scripts/router-inbox.sh watch "6600""#,
+        "X=1 scripts/router-inbox.sh watch 6600",
+    ] {
+        assert!(bash(denied).is_some(), "guard allowed {denied:?}");
+    }
 }
 
 /// Important of the close review: a hook that errors (no jq, no guard file) must deny, not allow.
