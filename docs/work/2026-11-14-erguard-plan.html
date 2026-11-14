@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af834e59f34851f0dfb245c" data-artifact="epic-plan wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-RGUARD plan: the router's moment-of-action checklists</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-RGUARD · The rules a router hits at the moment of action</h1>
+      <p>One working unit of rule text, landed before the guard plugin that will enforce it.</p>
+      <div class="meta">T3 · epic plan + WU plan · 2026-11-14 · epic <code>E-RGUARD</code> · WU <code>E-RGUARD.W1</code></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-item="intent" data-c="intent">A router session made 24 calls its whitelist does not name, in six minutes, after reading the rules and quoting them. Nothing failed those calls: the guard that refuses one on Claude Code has no counterpart on DSH, and the plugin that would be it is backlogged as D2. Until it lands, the rules must stand in front of the call: a short checklist at the moment of action.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th></th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>A router session starts</td><td>It reads the rules and works</td><td>START first, then one line: no guard on this host</td></tr>
+    <tr><td>Something wakes it</td><td>It goes to the next dispatch</td><td>WAKE: check the claim, arm a watch, name denials</td></tr>
+    <tr><td>A worker is dispatched</td><td>The brief may live only in the prompt</td><td>The brief file is written and read back on every host</td></tr>
+    <tr><td>A DSH fleet runs unattended</td><td>A turn can end with live workers and nothing armed</td><td>One fleet wake armed before the first dispatch</td></tr>
+  </tbody>
+</table>
+
+<h2 id="case">The session that started it</h2>
+<ol data-c="case-steps">
+  <li>You ask the router to resume a stopped epic; it loads the router skill.</li>
+  <li>Eight seconds later it lists worktrees itself: the first of 24 calls outside the whitelist.</li>
+  <li>Six minutes on you interrupt — "you are the router, you DO NOT work" — with four workers live and nothing armed.</li>
+  <li>It dispatches an audit instead; its finding: nothing fails a wrong call here.</li>
+</ol>
+
+<h2 id="terms">Terms</h2>
+<table data-c="terms">
+  <tbody>
+    <tr><th>Whitelist</th><td>The tools and shell shapes a router may use: read tools, brief writes, worker tools, a short git and gh list.</td></tr>
+    <tr><th>Wake</th><td>Anything that gives the router a turn: a message, a watch line, a host reminder.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="work">The work</h2>
+<p data-item="requirement" data-c="requirement">A router session runs the START, WAKE and DISPATCH checklists at the moment of action, and each rule its misses named carries a trigger.</p>
+<p data-item="maps-to" data-c="maps-to">Epic <code>E-RGUARD</code> · UC-ROUTE-1, UC-ROUTE-6 (interim), UC-ROUTE-5.</p>
+
+<div data-item="wu-summaries" data-c="wu-summaries">
+
+<div data-wu="E-RGUARD.W1" data-c="wu-w1">
+  <h3 id="w1">W1 · The rules a router hits at the moment of action</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> a new checklist file the router skill points to, plus the shipped text that made a known rule look skippable: the brief file on every host, the DSH fleet wake, and the audit's three ambiguities.</p>
+    <ul>
+      <li><code>references/checklists.md</code> (new): START (7 rows), WAKE (5), DISPATCH (4); each row a trigger, a tool, and the cost of skipping it.</li>
+      <li><code>SKILL.md</code>: START before the first call, WAKE on every wake, the missing-enforcement line, the DSH fleet wake, the brief file on every host.</li>
+      <li><code>worker-ops.md</code>: the wake paragraph becomes an ordered list; a new "Wake on DSH" subsection.</li>
+      <li><code>brief-skeleton.md</code>: every host writes the brief file; a DSH worker row.</li>
+      <li><code>lessons.md</code>: K13 (a rule known, quoted and overridden) and K14 (a prompt is not a durable brief).</li>
+      <li><code>project-router</code>: the DSH facts checked that day — the launcher denied, no fleet wake from the launcher, worktrees a worker's.</li>
+      <li>Both skill trees byte-identical; <code>src/init.rs</code> embeds the new file, <code>tests/init.rs</code> proves <code>keel init</code> plants it.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-RGUARD.W1 · UC-ROUTE-1 (the router does not do the work) and UC-ROUTE-6 (the posture, interim until D2); UC-ROUTE-5 for the DSH worker row.</p>
+  <p data-item="wu-expected"><b>Observable:</b> the shipped router skill names <code>references/checklists.md</code> at both points a router meets it (session start, every wake); <code>keel init</code> plants that file byte-equal in a scratch repo; each START/WAKE/DISPATCH row names its trigger and a cost; the four failures the D2 plugin will enforce have their checklist row.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+</div>
+
+<h2 id="open-points">Open points</h2>
+<p>Work goes on at these answers. Comment to overrule.</p>
+<table data-item="open-questions" data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Is a fleet wake on DSH the heartbeat the 2026-11-11 ruling forbids?</td><td><b>No</b>: one wake per fleet, re-armed on each wake and stopped with the last worker</td><td>DSH workers cannot message, so without it only the owner can wake the router. It is one wake per fleet, not a poll loop</td></tr>
+    <tr><td>2</td><td>May the router still read a plan or a backlog row?</td><td><b>Only to dispatch, verify or relay</b> — never to derive the substance, and never a document a worker was just sent to read</td><td>The posture allows read tools; the miss was using them to do a running worker's job</td></tr>
+    <tr><td>3</td><td>When does D2 land?</td><td><b>Next epic</b>, as you decided on 2026-11-14</td><td>This WU names the four checks D2 must enforce; the checklist keeps the router honest until then</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="expected-h">Acceptance</h3>
+<ul data-item="expected" data-c="expected">
+  <li>A router that reads the shipped skill meets "run START before your first tool call" and "WAKE on every wake", each one link away from the checklist.</li>
+  <li>The checklist fits one screen and every row says what skipping it cost.</li>
+  <li>A dispatch on any host writes the brief file first; a stale brief is a finding, not a template.</li>
+  <li>On DSH, arming the fleet wake is a bullet a router cannot miss; the exception to the no-timer ruling is stated once, where the ruling lives.</li>
+  <li><code>keel init</code> in a scratch repo plants <code>checklists.md</code>, byte-equal to the source; the two skill trees stay byte-identical.</li>
+  <li>No test in the repository goes red; clippy with <code>-D warnings</code> stays green.</li>
+</ul>
+
+<h3 id="use-cases-h">Use cases</h3>
+<ul data-item="use-cases" data-c="use-cases">
+  <li>UC-ROUTE-6, amended: on DSH the skill is the only guard, so the router runs the checklists and names the gap; the fleet wake is the one wake it arms.</li>
+  <li>UC-ROUTE-1, amended: the moment of action carries the boundary — read tools for dispatch and verification, never for the work.</li>
+  <li>UC-ROUTE-5, amended: a DSH worker's report is its transcript; a dispatch writes a brief file on every host.</li>
+</ul>
+
+<h3 id="non-goals-h">Out of scope</h3>
+<ul data-item="non-goals" data-c="non-goals">
+  <li>The guard plugin (D2) and any plugin code.</li>
+  <li>An allow rule for the launcher in the DSH preset.</li>
+  <li>Any change to <code>scripts/</code>, the launcher, the hooks or the preset.</li>
+  <li>Rewriting the router skill's long form; the checklists point to it, they do not replace it.</li>
+</ul>
+
+<h3 id="e2e-h">Epic test</h3>
+<div data-item="e2e-plan" data-c="e2e-plan">
+  <p>This is a one-WU process epic, so its end-to-end proof is the WU's integration test on the shipped tree: <code>keel init</code> in a scratch repo plants <code>checklists.md</code> byte-equal to the source, and the installed <code>SKILL.md</code> names it at the two points a router meets it. There is no running system beyond the built binary, and the plugin that would be its live subject is D2. Waiver intent: stated here rather than as a separate flow.</p>
+</div>
+
+<h3 id="testplan-h">Test plan</h3>
+<div data-item="test-plan" data-c="test-plan">
+  <ul>
+    <li><b>Integration</b> (<code>tests/init.rs</code>): the shipped-skill inventory stays exact — every reference file is named by <code>SKILL.md</code> and the reverse; the embed list matches <code>skills/</code>, so <code>keel init</code> plants <code>checklists.md</code>; a new test asserts each of the three checklists exists with its trigger and that the four failures D2 will enforce each have a row.</li>
+    <li><b>Unit: waived</b> — the code change is one entry in a constant list; the behaviour it buys is the integration test above.</li>
+    <li><b>Rule text</b>: the existing rule-text tests in <code>tests/init.rs</code> and <code>tests/router.rs</code> stay green on the new wording.</li>
+    <li><b>No live router session</b>: a router's conduct on DSH is not observable from a test; the evidence is the checklist a session must read, and D2 is what makes it fail a call.</li>
+  </ul>
+</div>
+
+<h3 id="close-h">At the close</h3>
+<ul data-item="distillation-plan" data-c="distillation-plan">
+  <li>UC-ROUTE-6's "On DSH" row and UC-ROUTE-5's DSH row absorb the checklists' truth and the fleet wake.</li>
+  <li>The DSH decision record gains one record: a host whose workers cannot message gets one wake per fleet.</li>
+  <li><code>docs/backlog/dsh.html</code> D2 keeps the four checks the plugin must enforce and points at the checklists they replace.</li>
+  <li>This plan and the WU result report are archived at epic close; nothing of them stays tracked.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
