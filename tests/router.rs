@@ -164,6 +164,27 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
     }
 }
 
+/// E-RGUARD.W2: the router may run the owner sender as one plain shape per mode, and write the
+/// body file it reads; a quoted body or any other notify path is not a shape the guard allows.
+#[test]
+fn router_guard_allows_the_owner_sender_only_as_a_plain_shape() {
+    for ok in ["scripts/notify-owner.py --check", "scripts/notify-owner.py --send", "scripts/notify-owner.py --dry-run"] {
+        assert_eq!(bash(ok), None, "guard denied {ok:?}");
+    }
+    for bad in [
+        "scripts/notify-owner.py --send hello",
+        "scripts/notify-owner.py --send 'hello; rm -rf x'",
+        "scripts/notify-owner.py --check extra",
+        "scripts/notify-owner.py",
+    ] {
+        assert!(bash(bad).is_some(), "guard allowed {bad:?}");
+    }
+    let write = |p: &str| guard("router", "Write", serde_json::json!({ "file_path": p }));
+    assert_eq!(write("/r/.router/notify/owner.md"), None, "the owner body must be writable");
+    assert!(write("/r/.router/notify/other.md").is_some(), "only owner.md is the notify body");
+    assert!(write("/r/.router/briefs/x.txt").is_some(), "a brief is a .md file");
+}
+
 /// Review of 67b0de5: the guard must split gh's argv the way gh's flag parser (pflag) does. A
 /// single-dash long name is a short flag plus an attached value to gh (`-label` = `-l abel`), so
 /// the "value" after it becomes a flag of its own (`-label -R evil` really contacted evil.invalid);
