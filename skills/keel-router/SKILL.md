@@ -113,10 +113,11 @@ and every owner message are also wakes: run WAKE with them.
 4. Confirm your posture is enforced (above). Load the deferred tools you need
    with `ToolSearch` (`select:SendMessage,Monitor,TaskStop`); a tool that does
    not load does not exist here — don't plan on it.
-5. Re-read the briefs dir and the rulings log (`<ROOT>/.router/briefs/`,
-   `<ROOT>/.router/rulings.md`: one line per ruling, its date, what and why). Your
-   name = **your current session name** (restarts rename you): tell every live
-   worker; briefs say "report to <current name>; ignore older names".
+5. Re-read the briefs dir and, if it exists, the rulings log
+   (`<ROOT>/.router/briefs/`, `<ROOT>/.router/rulings.md`: one line per ruling, its
+   date, what and why). Your name = **your current session name** (restarts rename
+   you): tell every live worker; briefs say "report to <current name>; ignore
+   older names".
 6. One test send on the push channel; report its id. Re-arm watchers
    (`references/worker-ops.md`); ask each idle worker without a delivered
    report for it. Post the board.
@@ -339,10 +340,12 @@ in another skill.
   2026-11-11). Workers report by message and every staged owner action has a
   watch; each wake runs the wake checklist (`references/checklists.md` WAKE) and
   re-arms. A background spawn counts only once the launcher printed `RUNNING`.
-  The one exception is a host whose workers cannot message (DSH): one wake for the
-  whole fleet, armed once before the first dispatch and re-armed only on a wake,
-  never a second reminder; it is a wake, not a heartbeat. The ruling that allows
-  it is the owner's, and it is stated in "Wake on DSH".
+  The one exception would be a host whose workers cannot message (DSH): one wake
+  for the whole fleet, armed once before the first dispatch and re-armed only on a
+  wake, never a second reminder; it is a wake, not a heartbeat. It has no owner
+  ruling yet and is not in force: no owner ruling grants it, and a commit that makes
+  it binding may not be signed until the owner records a dated ruling
+  (`references/worker-ops.md` "Wake on DSH").
 
 ## Permissions
 
@@ -402,8 +405,9 @@ is a new finding.
 Ask only what is truly the owner's (product, policy, outward actions, rule
 changes, risk). Every question: options with costs, your recommendation, the
 default if unanswered. Ask twice at most, then proceed on the default
-*(inference)*. Record rulings in the rulings log (`<ROOT>/.router/rulings.md`) and
-next briefs.
+*(inference)*. Record a ruling in the next brief, and in the rulings log
+(`<ROOT>/.router/rulings.md`) when it exists — the owner or a worker starts that
+file: the router may write no file but a brief.
 
 ## CI, releases, shared resources
 

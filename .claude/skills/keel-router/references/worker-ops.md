@@ -274,7 +274,7 @@ until id=$(gh run list --workflow <wf>.yml --branch <br> --limit 1 --json databa
 echo "RUN $id"; gh run view $id --json conclusion,jobs -q '.jobs[]|"\(.name): \(.conclusion) · failed: \([.steps[]|select(.conclusion=="failure")|.name]|join(" | "))"'
 ```
 
-## Wake checklist (no loop; one fleet wake on DSH)
+## Wake checklist (no loop; a DSH fleet wake pending a ruling)
 
 The router runs no loop or timer (owner ruling 2026-11-11; the Claude Code guard
 denies `loop`, `CronCreate` and `ScheduleWakeup`). It wakes on a worker's message,
@@ -303,15 +303,20 @@ a watch line, an idle notice or the owner. The short ordered form is
 A DSH worker sends nothing: `worker_spawn` has no report channel, so a worker that
 finishes cannot wake the router, and `worker_output` is a read, not a message. What
 wakes a DSH router is a host event: an owner message, a finished background job, or
-a host reminder. The exception below is the owner's ruling; its date is pending,
-2026-11-__.
+a host reminder.
+
+**No owner ruling grants the exception below, and it is not in force.** A commit
+that makes it binding may not be signed until the owner records a dated ruling;
+that ruling replaces this paragraph, and nothing else in this skill may assume the
+exception in the meantime.
 
 - **One reminder, armed once, re-armed only on a wake.** A single host reminder
-  covers the whole fleet: arm it before the first dispatch, re-arm it once per
-  wake, never a second reminder beside it, and stop it when the last worker is
-  `stopped`. It is a wake, not a heartbeat: one WAKE pass per firing, no loop of
-  your own, and no poll in between. This is the one exception to "no loop or
-  timer", and only where workers cannot message.
+  covers the whole fleet: arm it before the first dispatch with the same 5-minute
+  cadence as the watchdog (DEC-45). Re-arm it once per wake; never a second reminder
+  beside it; stop it when the last worker is `stopped`. It is a wake, not a
+  heartbeat: one WAKE pass per firing, no loop of your own, and no poll in between.
+  It would be the one exception to "no loop or timer", and only where workers
+  cannot message.
 - **It covers every live worker.** One reminder asks about the fleet, never one
   watch or one reminder per worker: WAKE.3 checks that this single wake is armed,
   and one WAKE pass reads every live worker.

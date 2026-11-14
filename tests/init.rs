@@ -477,6 +477,10 @@ fn router_ships_the_moment_of_action_checklists() {
     let mirror = std::fs::read_to_string(root.join(".claude/skills/keel-router/references/checklists.md")).unwrap();
     assert_eq!(src, mirror, "skills/keel-router and .claude/skills/keel-router differ for checklists.md");
 
+    for leak in ["/Users/", "E-ROUTER", "E-RGUARD", "E-SEED"] {
+        assert!(!src.contains(leak), "checklists.md carries Keel's own state: {leak:?}");
+    }
+
     let d = fresh_repo();
     assert!(keel(d.path(), &["init"]).status.success());
     let planted = std::fs::read_to_string(d.path().join(".claude/skills/keel-router/references/checklists.md")).expect("keel init did not plant checklists.md");
@@ -506,16 +510,33 @@ fn router_ships_the_moment_of_action_checklists() {
     for row in ["briefs/<name>.md", "What you need to do now:", "Never retry it", "nothing armed"] {
         assert!(src.contains(row), "checklists.md has no row for {row:?}");
     }
-    // round 2 of the rule-text review, as regressions: the rulings log has a location, the Claude Code
-    // wake is armed when its subject exists, a read stops at the facts a dispatch needs, and the DSH
-    // fleet wake is one reminder that is never doubled and never one per worker
-    for said in [".router/rulings.md", "once the first background worker is `RUNNING`", "the facts a dispatch needs", "never a second reminder"] {
+    // round 2 of the rule-text review, as guards: the rulings log has a location and is not the
+    // router's to create, the Claude Code wake is armed when its subject exists, a read stops at the
+    // facts a dispatch needs, the DSH fleet wake is one reminder never doubled and never one per
+    // worker, and no owner ruling is asserted for it
+    for said in [
+        ".router/rulings.md",
+        "your only write is a brief",
+        "once the first background worker is `RUNNING`",
+        "never for deriving the substance",
+        "read once, for the facts",
+        "not a reason to read on",
+        "never a second reminder",
+        "never one per worker",
+        "has no owner ruling yet",
+    ] {
         assert!(src.contains(said), "checklists.md lost {said:?}");
     }
     let ops = std::fs::read_to_string(root.join("skills/keel-router/references/worker-ops.md")).unwrap();
     assert!(ops.contains("One reminder, armed once, re-armed only on a wake") && ops.contains("never a second reminder"), "worker-ops allows a second fleet reminder, or a poll");
+    assert!(ops.contains("no loop of your own") && ops.contains("no poll in between"), "worker-ops lost the no-loop and no-poll bounds");
     assert!(!ops.contains("the profile's worker wake"), "the fleet wake rests on a profile hook nothing defines");
+    for (f, body) in [("checklists.md", &src), ("worker-ops.md", &ops)] {
+        assert!(!body.contains("2026-11-__"), "{f} ships a placeholder date for a ruling nobody made");
+    }
+    assert!(ops.contains("may not be signed"), "worker-ops does not hold the unsigned exception to a ruling");
     assert!(section("## Session start").contains("rulings.md") && section("## Decisions").contains("rulings.md"), "SKILL.md does not place the rulings log");
+    assert!(!skill.contains("2026-11-__") && skill.contains("no owner ruling grants it"), "SKILL.md asserts or dates a ruling the owner has not made");
 }
 
 fn hook_cmds(v: &serde_json::Value, ev: &str) -> Vec<String> {
