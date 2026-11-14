@@ -474,3 +474,177 @@ fn the_test_strip_list_equals_keels() {
     let keels: Vec<&str> = body.split('"').skip(1).step_by(2).collect();
     assert_eq!(keels, common::GIT_HOOK_ENV);
 }
+
+// ── E-SEED3.W4: the commit hook checks more ─────────────────────────────────────────────────────
+
+/// `.keel/config.toml` with `lint` and the default code paths, one base commit on main, Keel's hooks.
+fn commit_hook_repo(lint: &str) -> TempDir {
+    let d = TempDir::new().unwrap();
+    let p = d.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.email", "t@t"]);
+    git(p, &["config", "user.name", "t"]);
+    std::fs::create_dir(p.join(".keel")).unwrap();
+    std::fs::write(
+        p.join(".keel/config.toml"),
+        format!("code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"{lint}\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n"),
+    )
+    .unwrap();
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "base"]);
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    git(p, &["switch", "-q", "-c", "work"]);
+    d
+}
+
+fn lint_runs(p: &Path) -> usize {
+    std::fs::read_to_string(p.join("lint.log")).map(|s| s.lines().count()).unwrap_or(0)
+}
+
+fn write_file(d: &Path, rel: &str, body: &str) {
+    let f = d.join(rel);
+    std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+    std::fs::write(f, body).unwrap();
+}
+
+#[test]
+fn a_code_commit_runs_lint_and_red_lint_refuses_it() {
+    let d = commit_hook_repo("echo x >> lint.log; ! grep -q BAD src/a.txt");
+    let p = d.path();
+    write_file(p, "src/a.txt", "BAD\n");
+    git(p, &["add", "src/a.txt"]);
+
+    let c = run("git", p, &["commit", "-qm", "red"]);
+    let t = text(&c);
+    assert!(!c.status.success(), "a code commit with red lint must be refused: {t}");
+    assert!(t.contains("keel lint: red") && t.contains("commit refused"), "{t}");
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "1", "the refused commit records nothing");
+    assert_eq!(lint_runs(p), 1);
+
+    write_file(p, "src/a.txt", "ok\n");
+    git(p, &["add", "src/a.txt"]);
+    assert!(run("git", p, &["commit", "-qm", "green"]).status.success());
+    assert_eq!(lint_runs(p), 2, "lint ran on the green commit too");
+}
+
+#[test]
+fn a_docs_only_commit_runs_no_lint() {
+    let d = commit_hook_repo("echo x >> lint.log; exit 1");
+    let p = d.path();
+    write_file(p, "docs/x.html", "<p>x</p>");
+    git(p, &["add", "docs/x.html"]);
+    let c = run("git", p, &["commit", "-qm", "docs"]);
+    assert!(c.status.success(), "an always-red lint proves no lint ran: {}", text(&c));
+    assert_eq!(lint_runs(p), 0);
+    assert_eq!(out(p, &["log", "-1", "--format=%s"]), "docs");
+}
+
+#[test]
+fn a_commit_a_of_a_tracked_code_file_runs_lint_through_the_temporary_index() {
+    let d = commit_hook_repo("echo x >> lint.log; ! grep -q BAD src/a.txt");
+    let p = d.path();
+    write_file(p, "src/a.txt", "ok\n");
+    git(p, &["add", "src/a.txt"]);
+    assert!(run("git", p, &["commit", "-qm", "green"]).status.success());
+
+    write_file(p, "src/a.txt", "BAD\n"); // never staged: `git commit -a` gives the hook a temporary index
+    let c = run("git", p, &["commit", "-aqm", "bad"]);
+    assert!(!c.status.success(), "git commit -a's index must reach the staged-diff read: {}", text(&c));
+    assert_eq!(lint_runs(p), 2);
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "2");
+}
+
+const WU_TEST_FILES: &str = r#"{"integration":{"files":["tests/test_a.py"],"covers":"a works"}}"#;
+
+/// main → epic/e → wu/e/a, with the same file changed on both sides, so the WU merge conflicts.
+/// HEAD is on epic/e, the merge is not started.
+fn conflicting_wu() -> TempDir {
+    let d = TempDir::new().unwrap();
+    let p = d.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.email", "t@t"]);
+    git(p, &["config", "user.name", "t"]);
+    std::fs::create_dir(p.join(".keel")).unwrap();
+    std::fs::write(
+        p.join(".keel/config.toml"),
+        "code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
+    )
+    .unwrap();
+    assert!(keel(p, &["mr", "setup", "--as", "t"]).status.success());
+    write_file(p, "README", "x");
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "base"]);
+    assert!(keel(p, &["hooks", "install"]).status.success());
+
+    git(p, &["switch", "-q", "-c", "epic/e"]);
+    write_file(p, "src/shared.py", "epic base\n");
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "epic shared"]);
+
+    git(p, &["switch", "-q", "-c", "wu/e/a"]);
+    write_file(p, "src/shared.py", "wu\n");
+    write_file(p, "tests/test_a.py", "def test_a():\n    pass\n");
+    write_file(p, "docs/a.html", "<p>a</p>");
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "wu a"]);
+
+    git(p, &["switch", "-q", "epic/e"]);
+    write_file(p, "src/shared.py", "epic\n");
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "epic edits shared"]);
+    d
+}
+
+/// The real merge, conflicted and resolved by hand, then finished with `git commit` as a user would.
+fn merge_and_finish_by_hand(p: &Path) -> Output {
+    let m = run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"]);
+    assert!(!m.status.success() && text(&m).contains("CONFLICT"), "a real conflict: {}", text(&m));
+    write_file(p, "src/shared.py", "merged\n");
+    git(p, &["add", "src/shared.py"]);
+    run("git", p, &["commit", "-q", "--no-edit"])
+}
+
+#[test]
+fn a_conflicted_wu_merge_finished_by_hand_into_an_epic_is_gated() {
+    let d = conflicting_wu();
+    let p = d.path();
+    let c = merge_and_finish_by_hand(p);
+    let t = text(&c);
+    assert!(!c.status.success(), "no evidence: the merge gate must refuse it: {t}");
+    assert!(t.contains("1·notes") && t.contains("fix ->"), "{t}");
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "3", "nothing landed");
+    git(p, &["merge", "--abort"]);
+
+    git(p, &["switch", "-q", "wu/e/a"]);
+    let o = run_env(env!("CARGO_BIN_EXE_keel"), p, &["notes", "write", "test"], &[], WU_TEST_FILES);
+    assert!(o.status.success(), "test note: {}", text(&o));
+    assert!(keel(p, &["notes", "write", "doc"]).status.success(), "doc note");
+    assert!(keel(p, &["notes", "write", "cr", "--verdict", "PASS"]).status.success(), "cr note");
+    let s = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"]);
+    assert!(s.status.success(), "mr confirm: {}", text(&s));
+
+    git(p, &["switch", "-q", "epic/e"]);
+    let c = merge_and_finish_by_hand(p);
+    assert!(c.status.success(), "with evidence the hand-finished merge lands: {}", text(&c));
+    assert_eq!(out(p, &["rev-list", "--parents", "-n", "1", "HEAD"]).split_whitespace().count(), 3, "a merge commit with two parents");
+}
+
+#[test]
+fn a_conflicted_merge_finished_by_hand_into_main_runs_the_epic_gate_not_the_merge_only_refusal() {
+    let d = conflicting_wu();
+    let p = d.path();
+    git(p, &["switch", "-q", "main"]);
+    write_file(p, "src/shared.py", "main\n");
+    git(p, &["add", "-A"]);
+    // Fixture state: main moved while the feature branch was open. A real move is a gated merge; the
+    // merge-only hook would refuse this direct commit, so the setup bypasses it.
+    assert!(run("git", p, &["commit", "-q", "--no-verify", "-m", "main edits shared"]).status.success());
+
+    let c = merge_and_finish_by_hand(p);
+    let t = text(&c);
+    assert!(!c.status.success(), "the epic gate has no evidence for the feature tip: {t}");
+    assert!(t.contains("1·notes"), "the gate ran: {t}");
+    assert!(!t.contains("merge-only"), "a merge on main is allowed, not refused as a direct commit: {t}");
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "2", "nothing landed");
+    git(p, &["merge", "--abort"]);
+}
