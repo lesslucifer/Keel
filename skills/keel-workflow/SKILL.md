@@ -21,7 +21,7 @@ skeleton, hooks), then follow the bootstrap and `keel mr setup` lines it prints.
 |---|---|---|---|---|
 | Epic | `epic/<slug>` off main | epic plan, WU summaries included | verify-dod **epic**, at the merge into main | `test/v1` (e2e) · `cr/v1` PASS · `doc/v1` · `mr/v1` · `dod/v1` |
 | WU | `wu/<epic-slug>/<slug>` off its epic | WU plan doc, before code | verify-dod **wu**, at the merge into the epic | `test/v1` (integration) · `cr/v1` PASS · `doc/v1` · `mr/v1` · `dod/v1` |
-| Commit | on its WU (or epic) branch | — | hooks; verify-dod **commit** for standalone commits | standalone only: `test/v1` (unit), `doc/v1` when it touches docs |
+| Commit | on its WU (or epic) branch | — | hooks; verify-dod **commit** for standalone commits | standalone only: `test/v1` (unit), `doc/v1` when it touches docs; an epic-close commit carries the epic's notes instead (§3) |
 
 - **Ids**: epic `E-<CODE>` (short uppercase abbreviation of its slug, e.g.
   `E-INFRA`); WU numbered within its epic, `E-<CODE>.W<m>` (numeric only).
@@ -126,7 +126,10 @@ the range and declare tests; give `files` + `covers`, or `waived`):
 ```
 
 A standalone commit on an epic branch writes its notes with
-`--target <sha>^`. Notes sync to the remote on every push (pre-push hook).
+`--target <sha>^`. The exception is the epic close: the archive commit gets
+the epic's notes, written with no `--target` while it is the epic tip, and
+check 7 judges it on them (§4). Notes sync to the remote on every push
+(pre-push hook).
 
 ## 4 · The gate — `keel verify-dod`
 
@@ -152,7 +155,7 @@ keel lint                               # check.lint only
 | 4 | `4·review-base`: review base = current merge-base | wu, epic |
 | 5 | `5·diff-binding`: `code_diff_hash` = the code-path diff recomputed now | wu, epic |
 | 6 | `6·doc-note`: `doc/v1` lists exactly the changed docs with their `docs.tiers` tier; archived T3 docs carry lineage to tracked T1/T2 docs; at an epic tip nothing T3 (or tier-less) is tracked under `docs.root` | all |
-| 7 | `7·walk`: every first-parent seam since the base passes its own gate (merges as WUs, plain commits as standalone); back-merges skipped; octopus refused | epic |
+| 7 | `7·walk`: every first-parent seam since the base passes its own gate (merges as WUs, plain commits as standalone); back-merges skipped; octopus refused. A plain commit that changes no code and carries **epic-range** notes (every test or doc note on it names the epic's base — where the branch left main — and that base is not the commit's parent: the archive commit) is judged on them over the epic: checks 1, 2 (e2e layer), 6 without the tracked-doc layout. The first commit on an epic, whose parent is that base, is judged as a commit. A code commit stays a commit: a review fix buried by a later fix needs its own notes or a walk waiver | epic |
 | 8 | `8·manual-review`: a valid `mr/v1` from a signer in the target's committed `.keel/mr-allowed`, bound to tip, base, level, diff, the attested report's bytes (re-hashed whatever the policy) and the accepted review waiver (`waiver_hash`); no report under `[mr] report = "required"` is red; signature verified for key-backed signers. Never exempt, never waivable, boundary-only (the walk never re-judges a seam's sign-off) | wu, epic |
 
 Green ⇒ exit 0 and, for a non-exempt wu/epic, the `dod/v1` receipt. Red ⇒ exit 1, one
@@ -259,10 +262,14 @@ off: `keel preflight` and `keel verify-dod wu|epic` are red on `0·hooks`,
 | `pre-commit` | refuses non-merge commits on `branches.main` (merge-only). Runs no lint — run `keel lint` / `keel check` yourself |
 | `commit-msg` | a staged change to a `rule_bearing` path needs a `Reviewed-By` trailer naming a listed signer; merge commits skipped |
 | `pre-merge-commit` | `keel verify-dod hook`, judged by the target's **committed** `.keel/config.toml`: into `epic/*` ⇒ wu gate, into main ⇒ epic gate then `keel check` on the merged tree; other targets ungated; a back-merge of landed history into an epic passes; an octopus or an unknowable merge head (`git pull`) is refused — fetch, then `git merge --no-ff <branch>` |
-| `pre-push` | `keel check` on every pushed tree (clean HEAD in place, others in a scratch worktree) · `verify-dod range` on main/`epic/*` updates · pushes `refs/notes/*` |
+| `pre-push` | `keel check` on every pushed tree (clean HEAD in place, others in a scratch worktree) · `verify-dod range` on main/`epic/*` updates (on an epic branch: commits already on main skipped; a plain commit with epic-range notes judged on them over the epic, like check 7's archive commit — inside the range only when it changes no code, as the pushed tip even when it changes code; review and sign-off stay at the merge into main) · pushes `refs/notes/*` |
 | `post-checkout` | heals `merge.ff=false` · copies `.gitworktreecopy` entries into a new worktree |
-| `verify-doc-post` · `verify-doc-stop` | harness hooks (PostToolUse / Stop): `keel verify-doc` on each written doc / every doc at turn end (skill `keel-plan`) |
+| `verify-doc-post` · `verify-doc-stop` | shell hooks: `keel verify-doc <path>` on each first-party write or edit of a doc, and `keel verify-doc` over all docs at turn end; a red doc feeds the problem lines back and the turn does not close until it is green (skill `keel-plan`) |
+| doc check · no shell hooks | a host plugin runs the same two checks at the same points: a red write returns failed with the problem lines, and at turn end the problems are steered back so the turn takes another step; exit 0 is silent, and a draft is silent |
 
+- **No substitute**: the doc check runs at the write, never at a review or a merge.
+  It checks form only; the review reads depth, and the merge reads the `doc/v1`
+  facts (check 6). A review or a merge is too late and no substitute.
 - **Conflicts**: completing a conflicted merge with `git commit` never runs
   pre-merge-commit (and on main pre-commit refuses it). Resolve conflicts by
   merging the target into the work branch first, so the gated merge is clean.

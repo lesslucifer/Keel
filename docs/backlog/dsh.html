@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af80c6a9f34851f0dfb241d">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — Backlog: DeepSeek Harness</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>Backlog: DeepSeek Harness</h1>
+      <p>Host plugins deferred at E-DSH's close: the doc gate, the router guard, and the worker plugin's cold resume. All three live in the desktop-dsh project, never in a Keel project.</p>
+      <div class="meta">T2 · backlog · living · 2026-11-14 · Keel · D1 – D3 · distilled from E-DSH (plan, W2 and W3 results, close)</div>
+    </div>
+  </header>
+  <main>
+    <p data-c="how-to-read">Each row names the source it was deferred from. The contracts are <a href="../use-cases/dsh.html">use-cases/dsh.html</a> and the DSH use cases it points at; the why is <a href="../decisions/workflow-gates.html#dec-54">DEC-54</a> and <a href="../decisions/router.html#dec-55">DEC-55</a>.</p>
+
+    <h2 id="d1">D1 · The DSH doc-gate plugin <span class="badge approval">open</span></h2>
+    <p data-c="d1"><b>Build it in its own repo in the desktop-dsh project.</b> <a href="../decisions/workflow-gates.html#dec-54">DEC-54</a> records the contract and <code>keel init</code> prints the install line, but no such repo exists (checked 2026-11-14), so a DSH session has no doc check at all: a red doc's write comes back a success and the turn can close on it. The plugin runs <code>keel verify-doc &lt;path&gt;</code> in <code>tools/post-execute</code> after a first-party doc write or edit and returns <code>{kind:'block', feedback}</code> with the problem lines; it runs <code>keel verify-doc</code> over all docs in <code>agent/turn-stopping</code> and calls <code>agent.steer()</code> with the problems. Exit 0 is silent, and a draft is silent by construction. Its repo carries its own tests. The install line names the repo <code>dsh-doc-gate</code>, a placeholder until the repo is created. Source: E-DSH plan open point 3; E-DSH.W2 result.</p>
+
+    <h2 id="d2">D2 · The DSH router guard plugin <span class="badge approval">open</span></h2>
+    <p data-c="d2"><b>A plugin that enforces the router's tool whitelist and Bash shapes on DSH.</b> DSH has no shell-hook surface, so today the <code>keel-router</code> skill is the only guard on that host: nothing checks the whitelist, the brief path or the inline skills, and the skill tells the router to say that enforcement is missing (<a href="../use-cases/router.html#uc-route-6">UC-ROUTE-6</a>, <a href="../decisions/router.html#dec-55">DEC-55</a>). Where a Claude Code project runs <code>scripts/router-guard.jq</code> as one fail-closed <code>PreToolUse</code> hook, the plugin would judge the same shapes at <code>tools/pre-execute</code> and deny every call the whitelist does not name, fail-closed. The plugin is a profile package; the whitelist itself stays the project's. Source: E-DSH plan open point 4; E-DSH.W3 result ("the honest gap").</p>
+
+    <h2 id="d3">D3 · The worker plugin's cold resume <span class="badge approval">open</span></h2>
+    <p data-c="d3"><b>Wake a stopped worker's session instead of spawning a fresh one.</b> <code>dsh-worker-workspace</code> (its own repo in the desktop-dsh project, HEAD <code>a93dff2</code>) starts a worker session in a worktree; there is no resume, so a worker that dies takes its context with it, and the router starts a fresh session with a new brief (<a href="../decisions/router.html#dec-55">DEC-55</a>). A cold resume would wake that session with its workspace root, its transcript and its instructions intact, so a crashed worker's round does not start over. Deferred out of E-DSH as out of scope. Source: E-DSH plan non-goals; E-DSH.W3 result.</p>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

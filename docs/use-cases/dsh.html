@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af80c6a9f34851f0dfb241b">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — Use cases: DeepSeek Harness</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>Use cases: DeepSeek Harness</h1>
+      <p>What a Keel project must do for a DeepSeek Harness session: hand it the skills through one shared root, check a doc at the write, give a router its workers and their transcripts, and state the permissions an unattended session runs under.</p>
+      <div class="meta">T2 · use-cases · current truth (updated in place) · 2026-11-14 · Keel · distilled from E-DSH (W1–W3) and its plan</div>
+    </div>
+  </header>
+  <main>
+    <p data-c="how-to-read">Contract level only: trigger, expected behaviour, what counts as failure. The standard is the skills (<code>skills/</code>); the why lives in <a href="../decisions/distribution.html#dec-53">DEC-53</a>, <a href="../decisions/workflow-gates.html#dec-54">DEC-54</a>, <a href="../decisions/router.html#dec-55">DEC-55</a> and <a href="../decisions/router.html#dec-56">DEC-56</a>. Ids are never reused or renumbered.</p>
+
+    <h2 id="uc-dsh">UC-DSH · the same rules on DeepSeek Harness</h2>
+    <p data-c="uc-dsh-shape">DeepSeek Harness (DSH) is an agent host beside Claude Code. A project holds no DSH-specific file: init plants one shared skill root, the doc check comes from a plugin in the DSH profile, and the router learns the host's transport from one table in its skill.</p>
+
+    <div class="diagram" data-c="uc-dsh-paths">
+<pre class="mermaid">
+flowchart LR
+  I["keel init"] -->|"writes"| S[".claude/skills"]
+  I -->|"links"| A[".agents/skills"]
+  A -->|"read by"| C["DSH skill catalog"]
+  W["a doc write in DSH"] -->|"checked by"| G["doc-gate plugin"]
+  R["DSH router"] -->|"worker_spawn"| K["worker in a worktree"]
+  K -->|"leaves"| T["a transcript"]
+  R -->|"reads"| T
+</pre>
+      <div class="caption">One shared root for the rules, one write-time check, and a worker the router reads instead of a message.</div>
+    </div>
+
+    <h3 id="uc-dsh-1"><span class="badge id">UC-DSH-1</span> init gives DSH the skills through one shared root</h3>
+    <table data-c="uc-dsh-1-table">
+      <tr><th>Trigger</th><td><code>keel init</code> in a repo of any host, then a DSH session in that repo or in a worktree of it.</td></tr>
+      <tr><th>Expected</th><td>The six <code>keel-*</code> skills are written once, under <code>.claude/skills</code>. Init then plants <code>.agents/skills</code> as a relative link to <code>../.claude/skills</code>, so a DSH session's skill catalog lists all six and each load resolves its base directory under <code>.agents/skills/</code>. The link is relative, so a <code>git worktree add</code> checkout carries it and it resolves there too. <code>.agents/</code> is created when missing; a real <code>.agents/skills</code> directory, a regular file, an unreadable link or a link aimed elsewhere is kept and reported, never replaced; a symlinked or non-directory <code>.agents</code> gets nothing planted, because a relative target resolves only from a real <code>.agents</code> at the repo root. A second run prints <code>unchanged .agents/skills (-&gt; ../.claude/skills)</code>. The link rides the first commit: the hand-off's <code>git add</code> names <code>.agents</code>. The hand-off also prints the three DSH profile install lines (Auto Review, worker sessions, doc gate) and says a plugin lives in the DSH profile, never in the project.</td></tr>
+      <tr><th>Failure</th><td>A DSH session on an adopted repo with an empty or unreadable skill catalog; init replacing a project's own <code>.agents/skills</code>; a link that resolves in the main checkout and dangles in a worktree; a second run that changes the tree; a plugin file written into the project.</td></tr>
+    </table>
+
+    <h3 id="uc-dsh-2"><span class="badge id">UC-DSH-2</span> the doc check runs at the write on a host without hooks</h3>
+    <table data-c="uc-dsh-2-table">
+      <tr><th>Trigger</th><td>A first-party write or edit of a doc under the docs root in a DSH session, with the doc-gate plugin installed in the profile.</td></tr>
+      <tr><th>Expected</th><td>DSH has no shell-hook surface, so the plugin runs the same two checks at the same points. On each write or edit, <code>tools/post-execute</code> runs <code>keel verify-doc &lt;path&gt;</code> after the bytes land: exit 0 is silent, and a draft is silent by construction. A red doc returns <code>{kind:'block', feedback}</code> with the problem lines, so that write's result is a failure and the agent fixes it in the same turn. At turn end, <code>agent/turn-stopping</code> runs <code>keel verify-doc</code> over all docs and calls <code>agent.steer()</code> with the problems, so the turn takes another step instead of closing. The check fails the write; it cannot prevent it, and no post-write surface could. A review or a merge is too late and no substitute: the merge reads doc facts, never a document's form.</td></tr>
+      <tr><th>Failure</th><td>A red doc's write reported as a success; a turn that closes with a red doc under the docs root; the check treated as a review or merge step; the plugin's code committed into the project instead of installed in the profile; a draft's problems reported as red.</td></tr>
+    </table>
+
+    <h3 id="uc-dsh-3"><span class="badge id">UC-DSH-3</span> a DSH router's workers and their transcripts</h3>
+    <table data-c="uc-dsh-3-table">
+      <tr><th>Trigger</th><td>A router session on DSH that starts, steers, reads or stops a worker.</td></tr>
+      <tr><th>Expected</th><td><code>worker_spawn</code> starts the worker with the worktree as its workspace, the brief as its prompt and a handle as its name; a session's directory never changes, so the worker stays in its worktree. A follow-up is one <code>worker_send</code>, which runs after the worker's current turn. A subagent is not a worker: it inherits the router's directory and works in the router's checkout, so it is only ever a short read-only check. A worker sends no message; its report is its transcript, read with <code>worker_output</code> at every wake and before every ask, and its claims are verified against git like any other report. <code>worker_list</code>, <code>worker_status</code> (running, idle, ready, stopped) and <code>worker_stop</code> (idempotent; a stopped worker is never revived) give the fleet view, the state and the end. The persona is the worktree's <code>AGENTS.md</code>, the skills through the shared root and the brief: DSH has no project-scoped agent definition to select and no per-worker preset, so the brief carries the goal, the hard rules and the report protocol in full.</td></tr>
+      <tr><th>Failure</th><td>Worker work dispatched to a subagent that lands in the router's checkout; a router waiting for a message a DSH worker never sends; a transcript claim relayed without a check against git; a stopped worker revived; a worker started outside its own worktree; a brief that leaves the report protocol out.</td></tr>
+    </table>
+
+    <h3 id="uc-dsh-4"><span class="badge id">UC-DSH-4</span> permissions for an unattended DSH session</h3>
+    <table data-c="uc-dsh-4-table">
+      <tr><th>Trigger</th><td>A DSH session, router or worker, in a Keel project.</td></tr>
+      <tr><th>Expected</th><td>Every Keel DSH session runs under Always Auto Review, fixed by the owner: a medium call (an add, a commit, minting a request) runs, a high-risk call is denied, and no approval prompt is offered, so a denial is final. A denial is surfaced with the exact command, never retried, never handed to another session. A worker in a linked git worktree runs <code>danger-full-access</code> because the git directory lives outside it; one in a plain directory runs <code>workspace-write</code>: the workspace root is the bound. The preset is a session fact and settings are user-level, so a project cannot set it and the router passes none per worker. The preset is never the owner's approval: <code>keel mr</code>, a merge, a push and a tag stay the owner's.</td></tr>
+      <tr><th>Failure</th><td>A session whose approvals are off with nothing deciding its calls, so every medium call is rejected; a denial retried or laundered to a peer; a worker granted a scope wider than the workspace it was started in; a preset treated as the owner's sign-off; a project trying to pin the preset for its own sessions.</td></tr>
+    </table>
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
