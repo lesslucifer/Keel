@@ -612,9 +612,10 @@ fn fake_git(root: &Path, on_path: &str, exec_path: &str, code: i32, files: &[&st
     format!("{}:/bin", bin.display())
 }
 
-/// The resolver against the PATH's git: it links the git beside that git's exec-path, and leaves the
-/// PATH as it is when there is no other git to find - a machine without the developer tools, a git that
-/// fails, an exec-path with nothing in it, or a git that already is its own real git.
+/// The resolver against the PATH's git: it links the git beside that git's exec-path and puts it first
+/// on the shared PATH, and leaves the PATH as it is when there is no other git to find - a git that
+/// already is its own real git (Linux, the developer tools first), a git that fails, an exec-path with
+/// nothing in it, no git at all. A PATH a test makes up still gets the link first.
 #[test]
 fn the_real_git_is_found_from_the_paths_git_or_the_path_is_left_alone() {
     let d = TempDir::new().unwrap();
@@ -626,12 +627,22 @@ fn the_real_git_is_found_from_the_paths_git_or_the_path_is_left_alone() {
     assert_eq!(std::fs::read_link(link.join("git")).unwrap(), r.join("dev/bin/git"));
     assert_eq!(std::fs::read_dir(&link).unwrap().count(), 1, "only git: the staged name is renamed away");
     assert_eq!(common::real_git_dir(&path, &link), Some(link.clone()), "a second run replaces the link");
+    assert_eq!(common::shared_path(&path, Some(&link)), format!("{}:{path}", link.display()));
+    assert_eq!(common::shared_path(&path, None), path);
 
-    let cases: [(&str, &str, &str, i32, &[&str]); 5] = [
+    for (what, on_path) in [("its own real git", "dev/bin"), ("its own real git, inside git-core", "dev/libexec/git-core")] {
+        let d = TempDir::new().unwrap();
+        let r = d.path().canonicalize().unwrap();
+        let path = fake_git(&r, on_path, r.join("dev/libexec/git-core").to_str().unwrap(), 0, &[]);
+        let link = r.join("link");
+        assert_eq!(common::real_git_dir(&path, &link), Some(link.clone()), "{what}");
+        assert_eq!(common::shared_path(&path, Some(&link)), path, "{what}: the shared PATH is left alone");
+        assert_eq!(common::test_path("/usr/bin:/bin", Some(&link)), format!("{}:/usr/bin:/bin", link.display()), "{what}");
+    }
+
+    let cases: [(&str, &str, &str, i32, &[&str]); 3] = [
         ("a git that fails", "launcher", "dev/libexec/git-core", 1, &["dev/bin/git"]),
         ("nothing at its exec-path", "launcher", "dev/libexec/git-core", 0, &[]),
-        ("its own real git", "dev/bin", "dev/libexec/git-core", 0, &[]),
-        ("its own real git, inside git-core", "dev/libexec/git-core", "dev/libexec/git-core", 0, &[]),
         ("a relative exec-path", "launcher", "", 0, &["bin/git"]),
     ];
     for (what, on_path, exec, code, files) in cases {

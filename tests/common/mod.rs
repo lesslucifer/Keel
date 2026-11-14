@@ -87,14 +87,28 @@ pub fn cmd(prog: impl AsRef<OsStr>) -> Command {
 /// unchanged: it runs whatever git its caller's PATH names.
 pub fn path() -> &'static str {
     static PATH: OnceLock<String> = OnceLock::new();
-    PATH.get_or_init(|| real_git_first(&inherited_path()))
+    PATH.get_or_init(|| shared_path(&inherited_path(), real_git_link()))
+}
+
+/// The inherited PATH as it is when its git already is the linked real git (Linux; the developer tools'
+/// git first), else behind the link's directory.
+pub fn shared_path(inherited: &str, link: Option<&Path>) -> String {
+    let same = |l: &Path| {
+        let canon = |g: PathBuf| std::fs::canonicalize(g).ok();
+        canon(l.join("git")).is_some_and(|real| on_path(inherited, "git", |p| p.is_file()).and_then(canon) == Some(real))
+    };
+    test_path(inherited, link.filter(|l| !same(l)))
 }
 
 /// `p` behind the real git's directory, when the test PATH has one: a test that runs with a PATH of its
 /// own making (no keel on it, say) still runs the real git.
 pub fn real_git_first(p: &str) -> String {
+    test_path(p, real_git_link())
+}
+
+fn real_git_link() -> Option<&'static Path> {
     static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
-    test_path(p, DIR.get_or_init(|| real_git_dir(&inherited_path(), &Path::new(env!("CARGO_TARGET_TMPDIR")).join("real-git"))).as_deref())
+    DIR.get_or_init(|| real_git_dir(&inherited_path(), &Path::new(env!("CARGO_TARGET_TMPDIR")).join("real-git"))).as_deref()
 }
 
 /// The PATH this test program was started with; a test reads it only through here.
@@ -132,16 +146,13 @@ pub fn on_path(path: &str, prog: &str, is_file: impl Fn(&Path) -> bool) -> Optio
     path.split(':').filter(|d| !d.is_empty()).map(|d| Path::new(d).join(prog)).find(|p| is_file(p))
 }
 
-/// `dir`, now holding only a link to the real git, or None when the inherited PATH's git already is it,
-/// or git cannot be found or run: then the test PATH is the inherited one. The link is made under
+/// `dir`, now holding only a link to the real git the inherited PATH's git runs, or None when git cannot
+/// be found or run, or names no real git: then every test PATH is as given. The link is made under
 /// another name and renamed into place, so a parallel test program never runs a half-made link.
 pub fn real_git_dir(inherited: &str, dir: &Path) -> Option<PathBuf> {
     let on_path_git = on_path(inherited, "git", |p| p.is_file())?;
     let o = no_git_env(Command::new(&on_path_git)).arg("--exec-path").env("PATH", inherited).output().ok()?;
     let real = real_git(&String::from_utf8_lossy(&o.stdout), |p| p.is_file()).filter(|_| o.status.success())?;
-    if std::fs::canonicalize(&real).ok()? == std::fs::canonicalize(&on_path_git).ok()? {
-        return None;
-    }
     std::fs::create_dir_all(dir).ok()?;
     let staged = dir.join(format!("git.{}", std::process::id()));
     let _ = std::fs::remove_file(&staged);
