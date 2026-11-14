@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af84cfc9f34851f0dfb2485" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED3.W8 plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED3.W8 · The architecture doc</h1>
+      <p>Plan for the epic's last unit: one T1 page that says what the final shape is.</p>
+      <div class="meta">T3 · WU plan · 2026-11-14 · Keel · branch <code>wu/E-SEED3/w8-architecture-doc</code> off <code>epic/E-SEED3</code> at <code>26f2069</code></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-item="requirement" data-c="requirement">The epic moved the CLI, what setup installs, the config keys, the evidence and the epic close. The router tooling stays in its own scripts. A reader who wants the final shape must read the code and six T2 pages and join them. One T1 page should carry that shape.</p>
+
+<h2 id="for-the-reader">What changes</h2>
+<table data-c="changes">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>You need the whole shape</td><td>Code plus six T2 pages, joined by hand</td><td>One page, <code>docs/architecture.html</code>, with each fact linked to its owner</td></tr>
+    <tr><td>The code and a skill disagree</td><td>You find out from a gate failure</td><td>The page names the gap</td></tr>
+    <tr><td>The epic is signed</td><td>B4 is open</td><td>The page exists and the close can cite it</td></tr>
+  </tbody>
+</table>
+
+<h2 id="case">How it is read</h2>
+<ol>
+  <li>An agent meets an unfamiliar subcommand or config key. It opens the page's table, finds the key and the code that reads it.</li>
+  <li>A gate prints a check id. It opens the evidence table, finds which note feeds that check and who writes it.</li>
+  <li>A close worker needs the order. It opens the close section and sees what the code enforces and what no gate sees.</li>
+</ol>
+
+<h2 id="terms">Terms</h2>
+<table data-c="terms">
+  <tbody>
+    <tr><td>T1</td><td>A page under <code>docs/*</code>: shape and process, one per project, not scratch.</td></tr>
+    <tr><td>Note</td><td>A record in <code>refs/notes/&lt;kind&gt;</code> on a commit, holding what a gate must believe.</td></tr>
+    <tr><td>Gate</td><td><code>keel verify-dod</code> for a merge, a walk seam, a close commit or a standalone commit.</td></tr>
+    <tr><td>Exempt</td><td>A range that changes no <code>code_paths</code> path. It owes no test, review or doc evidence; the sign-off still runs.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="work">The work</h2>
+<p><b>In short:</b> one page written last, so it describes what W1–W7 built. Every claim comes from the code at this tip, not from a skill's summary.</p>
+<ul>
+  <li><b>The CLI:</b> every subcommand, its arguments and what it does, including the hook entry points.</li>
+  <li><b>What setup installs:</b> git hooks, settings, skills, <code>.keel/</code>, the notes refspec and the skills lock. Say what the code does <i>not</i> install.</li>
+  <li><b>The config keys:</b> every key in <code>templates/config.toml</code> and every key the code reads, with the reader named. This includes the keys the CLI never reads (<code>[review] modules</code>/<code>rubric</code>, <code>[router]</code>).</li>
+  <li><b>The evidence set:</b> each note kind, what writes it, what reads it and which gate check depends on it.</li>
+  <li><b>The router tooling:</b> launcher, watch, guard and the worker plugin's tools; for each, what it may and may not do.</li>
+  <li><b>The close:</b> the sequence the code enforces after W2 and W3, including the close level, the epic-range note rule and the bare-tip target rule.</li>
+  <li><b>Disagreements:</b> where the code and a skill say different things, both sides are named.</li>
+</ul>
+
+<h2 id="open-points">Open points</h2>
+<table data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Name only the keys this epic touched?</td><td><b>No: every key the code has</b></td><td>The page describes the final shape, not this epic's diff. A reader must not learn a key from a surprise.</td></tr>
+    <tr><td>2</td><td>Where code and a skill disagree, which one does the page state?</td><td><b>The code, and the skill's text beside it</b></td><td>Code wins conflicts (AGENTS.md). Hiding the gap would leave a trap.</td></tr>
+    <tr><td>3</td><td>Is the page signed by the owner as a commit?</td><td><b>Yes</b></td><td>Flat <code>docs/*.html</code> is rule-bearing; the WU stops with it staged.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="acceptance">Acceptance</h3>
+<ul>
+  <li><code>docs/architecture.html</code> exists, is a T1 page and passes <code>keel verify-doc</code>.</li>
+  <li>Every config key and every note kind the code has appears in it.</li>
+  <li>Each close rule after W2 and W3 is described as the code enforces it.</li>
+  <li>No claim rests on a skill alone: a rule that exists only in a skill is named as a rule.</li>
+</ul>
+
+<h3 id="tests">Tests</h3>
+<p data-item="test-plan"><b>Integration: waived</b>: a T1 description, no code path. <b>Unit: waived</b>, same reason. The observable is two checks: <code>keel verify-doc docs/architecture.html</code> exits 0, and a coverage check compares the code's config keys and note kinds with the page's and fails on a missing one.</p>
+
+<h3 id="maps">Maps to</h3>
+<p data-item="maps-to">Backlog B4 · epic E-SEED3.W8 · no use case: a T1 description changes no behaviour.</p>
+
+<h3 id="expected">Expected</h3>
+<p data-item="expected"><b>Integration: waived</b>: a T1 description, no code path. <b>Unit: waived</b>, same reason. Observable: <code>keel verify-doc</code> is green and every config key and note kind in the code is named in the page.</p>
+
+<h3 id="scope">Scope</h3>
+<ul>
+  <li>One T1 page. The plan and result are T3 and are archived by the epic close.</li>
+  <li>No code, test, template or skill change. A fact this page finds wrong is a follow-up, not a fix here.</li>
+  <li>The page is staged for the owner's <code>keel mr commit</code>; it is never committed by a session.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
