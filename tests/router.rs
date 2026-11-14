@@ -313,6 +313,8 @@ fn hermetic(c: &mut Command) -> &mut Command {
 
 /// Upper bound on any wait for another process; a hung script fails the test instead of hanging it.
 const BOUND: Duration = Duration::from_secs(10);
+/// The bound a test passes when it expects the wait to fail: "never" holds at any length.
+const NEVER: Duration = Duration::from_millis(500);
 
 fn git(d: &Path, a: &[&str]) -> Output {
     let o = hermetic(&mut common::cmd("git"))
@@ -375,13 +377,14 @@ fn stub_claude(stub: &Path) {
 
 /// `router-watch.sh` sleeps once per poll; this `<base>/shim/sleep` counts the polls in
 /// $STEP_DIR/polls (its argument, one per line, in $STEP_DIR/sleeps) and blocks poll n until the test
-/// creates $STEP_DIR/go-n, so each poll judges a state the test has set. It ends with its caller or the test process.
+/// creates $STEP_DIR/go-n, so each poll judges a state the test has set. It appends its pid to $STEP_DIR/pids
+/// and ends with its caller or the test process.
 fn sleep_shim(base: &Path) {
     std::fs::create_dir_all(base.join("shim")).unwrap();
     std::fs::write(
         base.join("shim/sleep"),
         concat!(
-            "#!/bin/sh\necho \"$1\" >> \"$STEP_DIR/sleeps\"\nn=$(( $(cat \"$STEP_DIR/polls\" 2>/dev/null || echo 0) + 1 ))\n",
+            "#!/bin/sh\necho $$ >> \"$STEP_DIR/pids\"\necho \"$1\" >> \"$STEP_DIR/sleeps\"\nn=$(( $(cat \"$STEP_DIR/polls\" 2>/dev/null || echo 0) + 1 ))\n",
             "echo \"$n\" > \"$STEP_DIR/polls.tmp\" && mv \"$STEP_DIR/polls.tmp\" \"$STEP_DIR/polls\"\n",
             "while [ ! -e \"$STEP_DIR/go-$n\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null && kill -0 \"$PPID\" 2>/dev/null; do /bin/sleep 0.02; done\n"
         ),
@@ -1463,6 +1466,10 @@ struct Stepped {
 impl Stepped {
     /// Block until the watch has judged poll n and is sleeping; panics with its line if it returned instead.
     fn at(&mut self, n: u32) {
+        self.at_within(n, BOUND)
+    }
+
+    fn at_within(&mut self, n: u32, bound: Duration) {
         let polls = || std::fs::read_to_string(self.dir.join("polls")).ok().and_then(|s| s.trim().parse::<u32>().ok());
         let t = Instant::now();
         while polls() != Some(n) {
@@ -1471,7 +1478,7 @@ impl Stepped {
                 std::io::Read::read_to_string(self.child.stdout.as_mut().unwrap(), &mut out).unwrap();
                 panic!("watch returned before poll {n}: {out}");
             }
-            assert!(t.elapsed() < BOUND, "watch never reached poll {n}");
+            assert!(t.elapsed() < bound, "watch never reached poll {n}");
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -1488,10 +1495,14 @@ impl Stepped {
     }
 
     /// Everything the process left once released from its last poll; panics after BOUND.
-    fn output(mut self) -> Output {
+    fn output(self) -> Output {
+        self.output_within(BOUND)
+    }
+
+    fn output_within(mut self, bound: Duration) -> Output {
         let t = Instant::now();
         while self.child.try_wait().unwrap().is_none() {
-            assert!(t.elapsed() < BOUND, "watch never returned");
+            assert!(t.elapsed() < bound, "watch never returned");
             std::thread::sleep(Duration::from_millis(10));
         }
         let read = |p: Option<&mut dyn std::io::Read>| {
@@ -2136,12 +2147,16 @@ impl Watcher {
     /// One run to its end with polls 1..=go pre-released: (exit code, stdout, stderr, polls taken).
     /// A run still going after BOUND (it polled past `go`) is killed and fails the test.
     fn run(&self, args: &[&str], k: &str, go: u32, env: &[(&str, &str)]) -> (Option<i32>, String, String, u32) {
+        self.run_within(args, k, go, env, BOUND)
+    }
+
+    fn run_within(&self, args: &[&str], k: &str, go: u32, env: &[(&str, &str)], bound: Duration) -> (Option<i32>, String, String, u32) {
         let s = self.armed_env(args, k, env);
         for n in 1..=go {
             s.go(n);
         }
         let dir = s.dir.clone();
-        let o = s.output();
+        let o = s.output_within(bound);
         let polls = std::fs::read_to_string(dir.join("polls")).map_or(0, |s| s.trim().parse().unwrap());
         (o.status.code(), String::from_utf8(o.stdout).unwrap(), String::from_utf8(o.stderr).unwrap(), polls)
     }
@@ -2435,30 +2450,41 @@ fn watch_pushed_waits_on_a_local_only_branch_without_reporting_unreachable() {
     assert_eq!(std::fs::read_to_string(dir.join("sleeps")).unwrap(), "60\n".repeat(6), "pushed polls every 60 s by default");
 }
 
-/// The test harness itself: a watch that polls more than the test released fails the test in
-/// bounded time instead of hanging `cargo test`, and leaves no `sleep` shim behind.
+/// The test harness itself: a watch that polls more than the test released fails the test within the
+/// bound it was given instead of hanging `cargo test`, and leaves no `sleep` shim behind.
 #[test]
 fn watcher_run_is_bounded_when_the_watch_outpolls_its_releases() {
     let w = watcher();
     let t = w.sha("HEAD");
     let msg = |e: Box<dyn std::any::Any + Send>| e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|m| m.to_string())).unwrap();
-    let e = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.run(&["signed", &t], "unreleased", 0, &[]))).unwrap_err();
-    assert!(msg(e).contains("never returned"));
+    let timed = |f: &mut dyn FnMut()| {
+        let start = Instant::now();
+        let e = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_err();
+        let took = start.elapsed();
+        assert!((NEVER..BOUND).contains(&took), "gave up after {took:?}, not within [{NEVER:?}, {BOUND:?})");
+        msg(e)
+    };
+    assert!(timed(&mut || drop(w.run_within(&["signed", &t], "unreleased", 0, &[], NEVER))).contains("never returned"));
     let mut at = w.armed(&["signed", &t], "unreleased-at");
-    let out = w.armed(&["signed", &t], "unreleased-output");
+    let mut out = w.armed(&["signed", &t], "unreleased-output");
+    at.at(1);
+    out.at(1);
     std::thread::scope(|sc| {
-        let a = sc.spawn(|| std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| at.at(2))).unwrap_err());
-        let o = sc.spawn(|| std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| out.output())).unwrap_err());
-        assert!(msg(a.join().unwrap()).contains("never reached poll 2"));
-        assert!(msg(o.join().unwrap()).contains("never returned"));
+        let a = sc.spawn(|| timed(&mut || at.at_within(2, NEVER)));
+        let o = sc.spawn(|| {
+            let mut out = Some(out);
+            timed(&mut || drop(out.take().unwrap().output_within(NEVER)))
+        });
+        assert!(a.join().unwrap().contains("never reached poll 2"));
+        assert!(o.join().unwrap().contains("never returned"));
     });
     drop(at);
-    let shim = w.base.join("shim/sleep");
-    let shim = shim.to_str().unwrap();
-    until("the sleep shim to exit", || {
-        let o = Command::new("ps").args(["-A", "-o", "command="]).output().unwrap();
-        !String::from_utf8_lossy(&o.stdout).contains(shim)
-    });
+    let pids: Vec<String> = ["unreleased", "unreleased-at", "unreleased-output"]
+        .iter()
+        .flat_map(|k| std::fs::read_to_string(w.base.join(format!("steps-{k}/pids"))).unwrap_or_default().lines().map(String::from).collect::<Vec<_>>())
+        .collect();
+    assert!(pids.len() >= 2, "the shims of the two watches held at poll 1 recorded no pid: {pids:?}");
+    until("every sleep shim to exit", || pids.iter().all(|p| !common::cmd("kill").args(["-0", p]).stderr(Stdio::null()).status().unwrap().success()));
 }
 
 /// E-SEED2.W12: `pushed` fires only once origin holds the tip (not on the local merge); `tagged` fires
