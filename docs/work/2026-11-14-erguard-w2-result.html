@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af8437e9f34851f0dfb2478" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-RGUARD.W2 result: the sender, proven</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-RGUARD.W2 · The sender, proven</h1>
+      <p>One script, three modes; the real API named the bot, no message was sent, and the DSH classifier says the sender is low risk.</p>
+      <div class="meta">T3 · WU result · 2026-11-14 · epic <code>E-RGUARD</code> · WU <code>E-RGUARD.W2</code></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">What landed</h2>
+<div data-item="outcome" data-c="outcome">
+  <p><b>Delivered, with the rule-bearing commit left to you.</b> <code>scripts/notify-owner.py</code> posts the router's owner message to the already-paired Telegram bot and prints <code>id N</code>; <code>--dry-run</code> validates and prints without sending; <code>--check</code> asks <code>getMe</code> and sends nothing. The same file runs on DSH and Claude Code. Its credential is read from the channel state and never printed; a failure is one line and exits non-zero.</p>
+  <p><b>Proven here:</b> from this checkout, <code>--check</code> reached the real API and named <code>@MyClaudeCodeAssistantbot (id 8027058808)</code> without sending; <code>--dry-run</code> printed the request and a closed port in the test proves it sends nothing; six integration tests cover the three modes, the <code>--check</code> failure line and the no-credential rule. The Claude router guard allows the three plain shapes and the body write, and the new guard test pins the boundary.</p>
+  <p><b>What is not done here:</b> the skill bullet, the guard and the settings entries are rule-bearing, so the commit is yours and this run stops at the staged command. The WU notes and preflight on the owner's new tip follow the same pattern as W1 (the tip changes under them). No real message was sent; the first one is yours.</p>
+</div>
+
+<h2 id="for-owner">What changes for you</h2>
+<table data-c="today-after">
+  <thead><tr><th></th><th>Before</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>The router needs a decision</td><td>The ask lands in a terminal you are not watching</td><td>Your phone gets it in the same turn, commands on their own lines</td></tr>
+    <tr><td>A host is swapped</td><td>Only a session that is not the enforced router can send</td><td>The same command runs on either host and prints the id</td></tr>
+  </tbody>
+</table>
+
+<h2 id="deviations">Deviations from the plan</h2>
+<div data-item="deviations" data-c="deviations">
+  <ul>
+    <li><b>The epic plan was not on the base.</b> W1's plan commit <code>c6982a5</code> is not merged into <code>epic/E-RGUARD</code>, so this branch carries that file and adds the W2 card. If W1 lands first, the merge has an add/add conflict on <code>docs/work/2026-11-14-erguard-plan.html</code>; take this tip's file, which holds W1's text verbatim plus the W2 card. The skill file is touched in a different region by each WU and should merge cleanly.</li>
+    <li><b>The body travels through a file on Claude.</b> The router guard judges plain words, so a quoted multi-line message cannot pass it; a body file <code>.router/notify/owner.md</code> does. <code>--send "&lt;text&gt;"</code> still exists and is what the DSH router may use.</li>
+    <li><b>Auto Review did not adjudicate this session.</b> The session log's <code>permission/preset</code> event says <code>danger-full-access</code>, so the gate was bypassed and the call simply ran. The plugin's own classifier was run directly instead; see the evidence.</li>
+  </ul>
+</div>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+  <p><b>Commits:</b> <code>eff724b</code> (epic plan W2 card and the W2 plan), <code>7fe78c1</code> (sender and its test; code tip). This report is the next commit; the rule-bearing change is staged on top for <code>keel mr commit</code>.</p>
+  <p><b>Real <code>--check</code> (reaches the API, sends no message):</b></p>
+  <pre>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-RGUARD-w2-notify-owner &amp;&amp; scripts/notify-owner.py --check
+check ok: @MyClaudeCodeAssistantbot (id 8027058808)</pre>
+  <p>The first two attempts were the failure path in one line: <code>notify-owner: cannot reach the Telegram API: [Errno 54] Connection reset by peer</code>. The third succeeded. That is the router's retry-once case, not a code change.</p>
+  <p><b>Real <code>--dry-run</code> (validates and prints, sends nothing):</b></p>
+  <pre>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-RGUARD-w2-notify-owner &amp;&amp; scripts/notify-owner.py --dry-run "Keel E-RGUARD.W2 dry run
+cd /Users/nguyenvanluong/Documents/proj/misc/Keel &amp;&amp; git status --short"
+dry-run: would sendMessage to chat 152560587 (96 chars, 2 lines)
+Keel E-RGUARD.W2 dry run
+cd /Users/nguyenvanluong/Documents/proj/misc/Keel &amp;&amp; git status --short</pre>
+  <p><b>Host classifier, in its own words</b> (<code>classify</code> from <code>dsh-auto-review/lib/rules.js</code>, the tool name <code>bash</code>):</p>
+  <pre>scripts/notify-owner.py --check  -&gt; {"risk":"low","reason":"script contains no destructive call","script":{"kind":"python","withinWorkspace":true}}
+scripts/notify-owner.py --send   -&gt; {"risk":"low","reason":"script contains no destructive call"}
+scripts/router-worker.sh spawn x y z opus -&gt; {"risk":"high","reason":"script redirection to a system or sensitive path"}</pre>
+  <p><b>Tests (red then green):</b> with the sender absent, <code>cargo test --test notify_owner</code> failed 6/6 (all modes unreachable); with it, 6 passed. The guard test <code>router_guard_allows_the_owner_sender_only_as_a_plain_shape</code> passes 1/1, and <code>cargo test --test router -- --test-threads=1</code> is 59/59 (the base's R43 watch reds are parallel-load only). <code>cargo clippy --all-targets -- -D warnings</code> is green; the new test file is rustfmt-clean.</p>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<div data-item="distillation" data-c="distillation">
+  <p>The durable statement is the shipped skill bullet: both hosts send through <code>scripts/notify-owner.py</code>. The epic plan's distillation plan now names UC-ROUTE-6's push-channel row as the T2 home at epic close; nothing else here is citable.</p>
+</div>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<div data-item="follow-ups" data-c="follow-ups">
+  <ol>
+    <li>After your <code>keel mr commit</code>, on its new tip: <code>keel notes write test</code> (integration: <code>tests/notify_owner.rs</code>, <code>tests/router.rs</code>; unit waived), <code>keel notes write doc</code>, then <code>keel preflight wu &lt;tip&gt; --target epic/E-RGUARD</code> and the review.</li>
+    <li>Before the sign-off, an independent review reads <code>scripts/notify-owner.py</code> and the guard change: neither is under <code>code_paths</code>, so no gate reviews them.</li>
+    <li><b>Rotate the bot token</b> after this lands. While diagnosing the connection resets, one diagnostic probe printed it into this session's transcript. It reached no file, command, test or commit, and the sender never prints it, but the transcript is enough.</li>
+    <li>A probe called <code>getUpdates</code> once without an offset while testing connectivity; it confirmed nothing and is not repeated.</li>
+  </ol>
+</div>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
