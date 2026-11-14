@@ -150,6 +150,47 @@ fn a_project_owned_agents_skills_is_kept_and_reported() {
     assert_eq!(std::fs::read_link(p.join(".agents/skills")).unwrap(), Path::new("../skills"), "the project's link is untouched");
 }
 
+/// E-DSH.W1: the link is relative, so init plants it only under a real `.agents` at the repo root.
+/// A symlinked `.agents` (here to a sibling directory) is kept as found: init writes nothing inside
+/// the target, says so, and exits clean.
+#[test]
+fn a_symlinked_agents_directory_is_kept_and_its_target_untouched() {
+    let d = TempDir::new().unwrap();
+    let shared = d.path().join("shared");
+    std::fs::create_dir_all(&shared).unwrap();
+    let p = d.path().join("repo");
+    std::fs::create_dir_all(&p).unwrap();
+    assert!(common::cmd("git").args(["init", "-q", "-b", "main"]).current_dir(&p).status().unwrap().success());
+    std::os::unix::fs::symlink("../shared", p.join(".agents")).unwrap();
+    let before = snapshot(&shared);
+
+    let o = keel(&p, &["init"]);
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("kept      .agents/skills") && t.contains("symlink -> ../shared"), "{t}");
+    assert!(!t.contains("created   .agents"), "init must not claim it planted the link: {t}");
+    assert_eq!(std::fs::read_link(p.join(".agents")).unwrap(), Path::new("../shared"), "the symlinked .agents is untouched");
+    assert_eq!(before, snapshot(&shared), "init wrote inside the symlink's target");
+
+    let again = keel(&p, &["init"]);
+    assert!(text(&again).contains("kept      .agents/skills"), "a second run still reports the kept root: {}", text(&again));
+}
+
+/// E-DSH.W1: `.agents` as a regular file is the other non-directory case - kept, reported, no link.
+#[test]
+fn a_regular_file_at_agents_is_kept_and_reported() {
+    let d = fresh_repo();
+    let p = d.path();
+    std::fs::write(p.join(".agents"), "mine\n").unwrap();
+    let o = keel(p, &["init"]);
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("kept      .agents/skills") && t.contains("regular file"), "{t}");
+    assert!(!t.contains("created   .agents"), "{t}");
+    assert_eq!(std::fs::read_to_string(p.join(".agents")).unwrap(), "mine\n", "the file is untouched");
+    assert!(std::fs::symlink_metadata(p.join(".agents/skills")).is_err(), "no link is planted through a file");
+}
+
 fn md_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
     for e in std::fs::read_dir(dir).unwrap() {
         let p = e.unwrap().path();

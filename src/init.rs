@@ -1,7 +1,8 @@
 //! `keel init` (UC-INIT-1): wire a repo of any language to Keel. Idempotent. A project-owned file
 //! that exists with other bytes is kept and reported; a Keel-owned skill file (`.claude/skills/keel-*`)
 //! that differs is overwritten only after confirmation (or with `--force`/`-f`). The skills live
-//! once, in `.claude/skills`; `.agents/skills` is a relative link every other host reads.
+//! once, in `.claude/skills`; `.agents/skills` is a relative link every other host reads, planted
+//! only under a real `.agents` directory at the repo root, where a relative target resolves.
 use crate::{git, hooks_install};
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -61,8 +62,9 @@ fn shared_root(state: LinkState) -> SharedRoot {
     }
 }
 
-fn link_state(repo: &Path) -> LinkState {
-    let p = repo.join(SHARED_SKILLS_LINK);
+/// What is at `rel`, read without following it: fabricated input for `shared_root` and `agents_dir`.
+fn path_state(repo: &Path, rel: &str) -> LinkState {
+    let p = repo.join(rel);
     if let Ok(target) = std::fs::read_link(&p) {
         return LinkState::Symlink(target);
     }
@@ -74,12 +76,51 @@ fn link_state(repo: &Path) -> LinkState {
     }
 }
 
-/// Plant the shared root once. Idempotent, and it never replaces a real directory or another link.
+fn link_state(repo: &Path) -> LinkState {
+    path_state(repo, SHARED_SKILLS_LINK)
+}
+
+/// What to do about `.agents`, the directory that must hold the relative link.
+#[derive(Debug, PartialEq, Eq)]
+enum AgentsDir {
+    Real,
+    Create,
+    Keep(String),
+}
+
+/// The link is relative, so it resolves only from a real `.agents` at the repo root: a symlink or a
+/// file there is kept as found, never followed and never overwritten (E-DSH.W1).
+fn agents_dir(state: LinkState) -> AgentsDir {
+    match state {
+        LinkState::Missing => AgentsDir::Create,
+        LinkState::RealDir => AgentsDir::Real,
+        LinkState::Symlink(t) => AgentsDir::Keep(format!(
+            ".agents is a symlink -> {}; the relative skills target resolves only from a real .agents directory - replace it and re-run `keel init`",
+            t.display()
+        )),
+        LinkState::Unreadable => AgentsDir::Keep(
+            ".agents is an unreadable link; the relative skills target resolves only from a real .agents directory - replace it and re-run `keel init`".into(),
+        ),
+        LinkState::RealFile => AgentsDir::Keep(
+            ".agents is a regular file; the relative skills target resolves only from a real .agents directory - remove it and re-run `keel init`".into(),
+        ),
+    }
+}
+
+/// Plant the shared root once. Idempotent, and it never replaces a real directory or another link;
+/// with no real `.agents` it plants nothing at all, because a relative link there would dangle.
 fn shared_skills(repo: &Path) -> Result<(), String> {
+    match agents_dir(path_state(repo, ".agents")) {
+        AgentsDir::Real => {}
+        AgentsDir::Create => std::fs::create_dir_all(repo.join(".agents")).map_err(|e| format!("keel: mkdir .agents: {e}"))?,
+        AgentsDir::Keep(why) => {
+            println!("  kept      {SHARED_SKILLS_LINK} ({why})");
+            return Ok(());
+        }
+    }
     match shared_root(link_state(repo)) {
         SharedRoot::Shared => println!("  unchanged {SHARED_SKILLS_LINK} (-> {SHARED_SKILLS})"),
         SharedRoot::Create => {
-            std::fs::create_dir_all(repo.join(".agents")).map_err(|e| format!("keel: mkdir .agents: {e}"))?;
             std::os::unix::fs::symlink(SHARED_SKILLS, repo.join(SHARED_SKILLS_LINK)).map_err(|e| format!("keel: link {SHARED_SKILLS_LINK}: {e}"))?;
             println!("  created   {SHARED_SKILLS_LINK} (-> {SHARED_SKILLS})");
         }
@@ -341,7 +382,7 @@ const NEXT_STEPS: &str = "next:\n  1. review .keel/config.toml (check commands, 
 
 #[cfg(test)]
 mod tests {
-    use super::{confirm, shared_root, LinkState, SharedRoot, NEXT_STEPS};
+    use super::{agents_dir, confirm, shared_root, AgentsDir, LinkState, SharedRoot, NEXT_STEPS};
     use std::io::Cursor;
     use std::path::PathBuf;
 
@@ -367,6 +408,29 @@ mod tests {
         assert!(kept(LinkState::RealDir).contains("directory"), "a real directory is reported as one");
         assert!(kept(LinkState::RealFile).contains("file"), "a real file is reported as one");
         assert!(kept(LinkState::Unreadable).contains("link"), "an unreadable link is reported as one");
+    }
+
+    fn kept_dir(state: LinkState) -> String {
+        match agents_dir(state) {
+            AgentsDir::Keep(why) => why,
+            other => panic!("expected kept, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_skill_link_is_planted_only_under_a_real_agents_directory() {
+        assert_eq!(agents_dir(LinkState::Missing), AgentsDir::Create);
+        assert_eq!(agents_dir(LinkState::RealDir), AgentsDir::Real);
+        for (state, found) in [
+            (LinkState::Symlink(PathBuf::from("../shared")), "../shared"),
+            (LinkState::RealFile, "regular file"),
+            (LinkState::Unreadable, "unreadable link"),
+        ] {
+            let why = kept_dir(state);
+            assert!(why.contains(found), "the report names what was found at .agents: {why}");
+            assert!(why.contains("real .agents directory"), "the report says what a relative target needs: {why}");
+            assert!(why.contains("keel init"), "the report says how to take the shared root: {why}");
+        }
     }
 
     #[test]
