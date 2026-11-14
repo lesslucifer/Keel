@@ -57,8 +57,9 @@ fn init_twice_produces_the_same_tree_and_keeps_user_edits() {
     for f in [".keel/config.toml", "AGENTS.md", ".codex/hooks.json", ".claude/skills/project-router/SKILL.md", ".claude/skills/keel-workflow/SKILL.md", ".claude/settings.json", "docs/work"] {
         assert!(after_first.contains_key(f), "missing {f}");
     }
-    // W6 #1/#5: skills live only in .claude/skills; no .agents/skills Codex symlink
-    assert!(!after_first.contains_key(".agents"), "init must not create .agents");
+    // E-DSH.W1: one shared skill root - a relative link, so Claude Code and DSH read one copy
+    assert_eq!(after_first.get(".agents/skills").map(String::as_str), Some("-> ../.claude/skills"), "init must plant .agents/skills as a relative link");
+    assert_eq!(std::fs::read_link(p.join(".agents/skills")).unwrap(), Path::new("../.claude/skills"));
     assert!(after_first[".keel/config.toml"].contains("test = \"pytest -q\""));
     let hooks = common::cmd("git").args(["config", "core.hooksPath"]).current_dir(p).output().unwrap();
     assert!(String::from_utf8_lossy(&hooks.stdout).trim().ends_with("keel-hooks"));
@@ -88,6 +89,106 @@ fn init_twice_produces_the_same_tree_and_keeps_user_edits() {
     let third = keel(p, &["init"]);
     assert!(text(&third).contains("kept      .keel/config.toml"), "{}", text(&third));
     assert_eq!(std::fs::read_to_string(p.join(".keel/config.toml")).unwrap(), edited);
+}
+
+/// E-DSH.W1 (UC-INIT-1): init plants one shared skill root, `.agents/skills` a relative link to
+/// `.claude/skills`, so a host that reads `.agents` and one that reads `.claude` read one copy. A
+/// second init changes nothing and a worktree checkout carries the link.
+#[test]
+fn init_plants_one_relative_skill_root_a_worktree_carries() {
+    let d = fresh_repo();
+    let p = d.path();
+    let first = keel(p, &["init"]);
+    let t = text(&first);
+    assert!(first.status.success(), "{t}");
+    for plugin in ["dsh-auto-review", "dsh-worker-workspace", "dsh-doc-gate"] {
+        assert!(t.contains(&format!("dsh plugin --profile <name> add <path>/{plugin}")), "the hand-off misses {plugin}:\n{t}");
+    }
+    assert!(t.contains("never in the project"), "the hand-off says where a plugin lives:\n{t}");
+
+    let link = p.join(".agents/skills");
+    assert_eq!(std::fs::read_link(&link).unwrap(), Path::new("../.claude/skills"), "the shared root is the one relative link");
+    let through = std::fs::read_to_string(link.join("keel-workflow/SKILL.md")).unwrap();
+    assert_eq!(through, std::fs::read_to_string(p.join(".claude/skills/keel-workflow/SKILL.md")).unwrap(), "the link reads the one copy, not a second");
+
+    let second = keel(p, &["init"]);
+    assert!(second.status.success(), "{}", text(&second));
+    assert!(text(&second).contains("unchanged .agents/skills"), "{}", text(&second));
+    assert!(!text(&second).contains("created"), "{}", text(&second));
+
+    assert!(git_in(p, &["add", "-A"]).status.success());
+    assert!(git_in(p, &["commit", "-q", "--no-verify", "-m", "keel init"]).status.success());
+    let w = d.path().join("w");
+    let o = git_in(p, &["worktree", "add", "-q", "-b", "wu/e/x", w.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(std::fs::read_link(w.join(".agents/skills")).unwrap(), Path::new("../.claude/skills"));
+    assert!(w.join(".agents/skills/keel-workflow/SKILL.md").is_file(), "a worktree checkout carries the shared root");
+}
+
+/// E-DSH.W1: init never clobbers a project's own `.agents/skills` - a real directory or a link to
+/// somewhere else is kept and reported, with how to take the shared root.
+#[test]
+fn a_project_owned_agents_skills_is_kept_and_reported() {
+    let d = fresh_repo();
+    let p = d.path();
+    std::fs::create_dir_all(p.join(".agents/skills")).unwrap();
+    std::fs::write(p.join(".agents/skills/mine.md"), "mine").unwrap();
+    let o = keel(p, &["init"]);
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("kept      .agents/skills") && t.contains("real directory"), "{t}");
+    assert_eq!(std::fs::read_to_string(p.join(".agents/skills/mine.md")).unwrap(), "mine");
+    let again = keel(p, &["init"]);
+    assert!(text(&again).contains("kept      .agents/skills"), "a second run still reports the kept root: {}", text(&again));
+
+    std::fs::remove_dir_all(p.join(".agents/skills")).unwrap();
+    std::os::unix::fs::symlink("../skills", p.join(".agents/skills")).unwrap();
+    let o = keel(p, &["init"]);
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("kept      .agents/skills") && t.contains("../skills"), "{t}");
+    assert_eq!(std::fs::read_link(p.join(".agents/skills")).unwrap(), Path::new("../skills"), "the project's link is untouched");
+}
+
+/// E-DSH.W1: the link is relative, so init plants it only under a real `.agents` at the repo root.
+/// A symlinked `.agents` (here to a sibling directory) is kept as found: init writes nothing inside
+/// the target, says so, and exits clean.
+#[test]
+fn a_symlinked_agents_directory_is_kept_and_its_target_untouched() {
+    let d = TempDir::new().unwrap();
+    let shared = d.path().join("shared");
+    std::fs::create_dir_all(&shared).unwrap();
+    let p = d.path().join("repo");
+    std::fs::create_dir_all(&p).unwrap();
+    assert!(common::cmd("git").args(["init", "-q", "-b", "main"]).current_dir(&p).status().unwrap().success());
+    std::os::unix::fs::symlink("../shared", p.join(".agents")).unwrap();
+    let before = snapshot(&shared);
+
+    let o = keel(&p, &["init"]);
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("kept      .agents/skills") && t.contains("symlink -> ../shared"), "{t}");
+    assert!(!t.contains("created   .agents"), "init must not claim it planted the link: {t}");
+    assert_eq!(std::fs::read_link(p.join(".agents")).unwrap(), Path::new("../shared"), "the symlinked .agents is untouched");
+    assert_eq!(before, snapshot(&shared), "init wrote inside the symlink's target");
+
+    let again = keel(&p, &["init"]);
+    assert!(text(&again).contains("kept      .agents/skills"), "a second run still reports the kept root: {}", text(&again));
+}
+
+/// E-DSH.W1: `.agents` as a regular file is the other non-directory case - kept, reported, no link.
+#[test]
+fn a_regular_file_at_agents_is_kept_and_reported() {
+    let d = fresh_repo();
+    let p = d.path();
+    std::fs::write(p.join(".agents"), "mine\n").unwrap();
+    let o = keel(p, &["init"]);
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("kept      .agents/skills") && t.contains("regular file"), "{t}");
+    assert!(!t.contains("created   .agents"), "{t}");
+    assert_eq!(std::fs::read_to_string(p.join(".agents")).unwrap(), "mine\n", "the file is untouched");
+    assert!(std::fs::symlink_metadata(p.join(".agents/skills")).is_err(), "no link is planted through a file");
 }
 
 fn md_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
@@ -230,6 +331,46 @@ fn writing_skill_ships_with_a_passing_example_and_is_pointed_to() {
     assert!(std::fs::read_to_string(p.join("AGENTS.md")).unwrap().contains("skill `keel-write`"), "init's AGENTS.md does not name the skill");
 }
 
+/// E-DSH.W2: the doc check runs at the write on every host, not at a review or a merge; a red
+/// doc returns the problem lines, and no shipped skill makes Claude Code (or another host) the
+/// gate's trigger.
+#[test]
+fn shipped_skills_put_the_doc_check_at_the_write_and_name_no_required_host() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workflow = std::fs::read_to_string(root.join("skills/keel-workflow/SKILL.md")).unwrap();
+    let plan = std::fs::read_to_string(root.join("skills/keel-plan/SKILL.md")).unwrap();
+
+    // the write-time contract, the problem feedback and the no-substitute rule
+    for (f, body) in [("keel-workflow", workflow.to_ascii_lowercase()), ("keel-plan", plan.to_ascii_lowercase())] {
+        for said in ["problem lines", "no substitute"] {
+            assert!(body.contains(said), "{f} does not say {said:?}");
+        }
+    }
+    assert!(workflow.to_ascii_lowercase().contains("at the write"), "keel-workflow does not put the doc check at the write");
+    assert!(plan.to_ascii_lowercase().contains("trigger is the write"), "keel-plan does not make the write the trigger");
+    // a host without shell hooks runs the same checks through a plugin; it does not drop them
+    let wf = workflow.to_ascii_lowercase();
+    assert!(wf.contains("no shell hooks") && wf.contains("host plugin"), "keel-workflow has no plugin row for a host without shell hooks");
+    // the plan skill stops naming one host's hook scripts as the trigger
+    for hook in ["verify-doc-post", "verify-doc-stop", "PostToolUse", "Stop hook"] {
+        assert!(!plan.contains(hook), "keel-plan still names the {hook} trigger");
+    }
+    // no shipped skill claims the doc gate needs Claude Code
+    let mut files = Vec::new();
+    md_files(&root.join("skills"), &mut files);
+    for f in &files {
+        let body = std::fs::read_to_string(f).unwrap();
+        for line in body.lines() {
+            let l = line.to_ascii_lowercase();
+            let about_check = ["verify-doc", "doc check", "doc gate"].iter().any(|k| l.contains(k));
+            assert!(!(about_check && l.contains("claude")), "{}: the doc check names Claude Code: {line}", f.display());
+        }
+    }
+    for (f, body) in [("keel-workflow", &workflow), ("keel-plan", &plan)] {
+        assert!(!body.to_ascii_lowercase().contains("claude"), "{f} still names Claude Code");
+    }
+}
+
 /// UC-ROUTE-4 (E-ROUTER.W4): the router skill ships exactly the references SKILL.md names,
 /// including the three recovered from Trawler's trawler-router (W2) and a Keel lessons section
 /// (W4); no Trawler-only token appears outside lineage. Capitalised "Trawler" is allowed: it is
@@ -267,6 +408,59 @@ fn router_skill_is_complete() {
             let hit = keel_state.find(body);
             assert!(hit.is_none(), "{f}: Keel-only fact {:?} in the shipped skill (belongs in project-router or lessons)", hit.map(|m| m.as_str()));
         }
+    }
+}
+
+/// E-DSH.W3: the router skill carries the DSH transport, report and persona rules in one dated
+/// host table - every mechanism, every DSH worker tool - and the project-router template gains the
+/// harness, permission-preset and brief slots; the description no longer claims Claude Code only.
+/// DSH's host facts stay in this skill, and both shipped copies stay byte-identical.
+#[test]
+fn router_skill_carries_the_dsh_transport_and_the_template_its_slots() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = root.join("skills/keel-router");
+    let skill = std::fs::read_to_string(dir.join("SKILL.md")).unwrap();
+
+    let fm = skill.strip_prefix("---\n").and_then(|b| b.split_once("\n---\n")).map(|(fm, _)| fm).expect("SKILL.md has no closed frontmatter");
+    assert!(!fm.to_ascii_lowercase().contains("claude code only"), "the description still says Claude Code only");
+
+    let start = skill.find("### Transport by host").expect("SKILL.md has no transport table");
+    let table = &skill[start..start + skill[start..].find("\n\n- ").unwrap_or(skill.len() - start)];
+    for mechanism in ["Dispatch", "Follow-up", "Report", "Fleet list", "Status", "Stop", "Permission preset"] {
+        assert!(table.contains(&format!("| {mechanism} |")), "the transport table has no {mechanism} row");
+    }
+    for tool in ["worker_spawn", "worker_send", "worker_output", "worker_list", "worker_status", "worker_stop"] {
+        assert!(table.contains(&format!("`{tool}`")), "the transport table never names {tool}");
+    }
+    assert!(table.contains("Claude Code") && table.contains("DSH") && table.contains("re-check"), "the table is not per-host, or says nothing about re-checking the host's tool list");
+
+    assert!(skill.contains("`worker_output` at every wake and before every ask"), "SKILL.md does not read a DSH report from the transcript");
+    assert!(skill.contains("A DSH subagent is not a worker"), "SKILL.md does not keep the worker-vs-subagent rule");
+    assert!(skill.contains("no project-scoped agent definition") && skill.contains("per-worker preset"), "SKILL.md does not state the DSH persona");
+    assert!(skill.to_ascii_lowercase().contains("posture is unenforced"), "SKILL.md implies a guard where DSH has none");
+
+    let template = std::fs::read_to_string(dir.join("references/project-router-template.md")).unwrap();
+    for slot in ["| Harness |", "| Permission preset |", "| Brief location |"] {
+        assert!(template.contains(slot), "the template has no {slot} slot");
+    }
+
+    let tools = ["worker_spawn", "worker_send", "worker_output", "worker_list", "worker_status", "worker_stop"];
+    let mut files = Vec::new();
+    md_files(&root.join("skills"), &mut files);
+    for f in &files {
+        if f.starts_with(&dir) {
+            continue;
+        }
+        let body = std::fs::read_to_string(f).unwrap();
+        for tool in tools {
+            assert!(!body.contains(tool), "{} names the DSH tool {tool} outside the router skill", f.display());
+        }
+        assert!(!body.contains("DSH") && !body.contains("DeepSeek"), "{} names the DSH host outside the router skill", f.display());
+    }
+
+    for f in ["SKILL.md", "references/project-router-template.md"] {
+        let self_hosting = std::fs::read_to_string(root.join(".claude/skills/keel-router").join(f)).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join(f)).unwrap(), self_hosting, "skills/keel-router/{f} and .claude/skills/keel-router/{f} differ");
     }
 }
 
