@@ -372,7 +372,7 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, gua
 /// cr note and checks 3-5 on it - is the one thing not yet required; everything else still is.
 pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, rest: &[&str], waive: bool) -> Result<Option<(String, String, String)>, String> {
     let level = if epic { Level::Epic } else { Level::Wu };
-    let target = target_of(cfg, level, tip_ref, rest);
+    let target = target_of(repo, cfg, level, tip_ref, rest)?;
     let r = verify_with(repo, cfg, level, tip_ref, &target, !waive)?;
     if !r.failures.is_empty() {
         print(&r, "mr confirm");
@@ -579,9 +579,66 @@ fn level_of(s: &str) -> Result<Level, String> {
     }
 }
 
-/// Epic default target is main; a WU's is inferred from its branch (notes::target).
-fn target_of(cfg: &Config, level: Level, tip: &str, rest: &[&str]) -> String {
-    notes::target(cfg, if level == Level::Epic { "" } else { tip }, rest)
+/// Whether `name` is a local branch, so its name alone decides a WU's target.
+fn is_local_branch(repo: &Path, name: &str) -> bool {
+    git(repo, &["rev-parse", "--verify", "-q", &format!("refs/heads/{name}")], &[]).is_ok()
+}
+
+/// The local branches whose history holds `sha`, as git prints their short names.
+fn holders(repo: &Path, sha: &str) -> Result<Vec<String>, String> {
+    let args = ["for-each-ref", "--contains", sha, "--format=%(refname:short)", "refs/heads"];
+    Ok(git(repo, &args, &[])?.lines().map(String::from).collect())
+}
+
+/// The target a WU tip that names no local branch is measured against: the epic its `wu/` holders
+/// name, else the one `epic/` branch that holds it. Anything else is a refusal, never main by guess.
+fn target_from_holders(cfg: &Config, holders: &[String]) -> Result<String, String> {
+    let b = &cfg.branches;
+    let mut epics: Vec<String> = holders
+        .iter()
+        .filter_map(|h| h.strip_prefix(b.wu_prefix.as_str()).and_then(|r| r.split_once('/')))
+        .filter(|(epic, _)| !epic.is_empty())
+        .map(|(epic, _)| format!("{}{epic}", b.epic_prefix))
+        .collect();
+    epics.sort();
+    epics.dedup();
+    match epics.as_slice() {
+        [epic] => return Ok(epic.clone()),
+        [] => {}
+        _ => return Err(format!("its wu branches name more than one epic: {}", epics.join(", "))),
+    }
+    let mut epic_branches: Vec<String> = holders.iter().filter(|h| h.starts_with(b.epic_prefix.as_str()) && h.len() > b.epic_prefix.len()).cloned().collect();
+    epic_branches.sort();
+    epic_branches.dedup();
+    match epic_branches.as_slice() {
+        [epic] => Ok(epic.clone()),
+        [] => Err("no wu or epic branch holds it, and main is not a guess this gate makes for a WU".into()),
+        _ => Err(format!("more than one epic branch holds it: {}", epic_branches.join(", "))),
+    }
+}
+
+fn unresolved_target(cfg: &Config, sha: &str, why: &str) -> String {
+    format!(
+        "keel: cannot tell which branch judges {} - {why}\n  fix -> name it: --target <the branch the WU is measured against>, e.g. --target {}<name>",
+        short(sha),
+        cfg.branches.epic_prefix
+    )
+}
+
+/// Epic default target is main; a WU's is inferred from its branch (notes::target). A tip that names
+/// no local branch - a bare commit id, `HEAD` on a detached checkout - is resolved from the branches
+/// that hold it, or refused: main is never a guess (e-router-v2 R7).
+fn target_of(repo: &Path, cfg: &Config, level: Level, tip: &str, rest: &[&str]) -> Result<String, String> {
+    let explicit = rest.windows(2).any(|w| w[0] == "--target");
+    if level == Level::Epic || explicit || is_local_branch(repo, tip) {
+        return Ok(notes::target(cfg, if level == Level::Epic { "" } else { tip }, rest));
+    }
+    let sha = git(repo, &["rev-parse", &format!("{tip}^{{commit}}")], &[])?;
+    let target = target_from_holders(cfg, &holders(repo, &sha)?).map_err(|why| unresolved_target(cfg, &sha, &why))?;
+    if !is_local_branch(repo, &target) {
+        return Err(unresolved_target(cfg, &sha, &format!("{target} is not a local branch, so the range cannot be measured")));
+    }
+    Ok(target)
 }
 
 pub fn verify_dod(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
@@ -591,7 +648,7 @@ pub fn verify_dod(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, Strin
         ["range", old, new] => range(repo, cfg, old, new, new),
         [lvl, tip, rest @ ..] => {
             let level = level_of(lvl)?;
-            run(repo, cfg, level, tip, &target_of(cfg, level, tip, rest), true)
+            run(repo, cfg, level, tip, &target_of(repo, cfg, level, tip, rest)?, true)
         }
         _ => Err(USAGE.into()),
     }
@@ -601,7 +658,7 @@ pub fn preflight_cmd(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, St
     match args {
         [lvl, tip, rest @ ..] => {
             let level = level_of(lvl)?;
-            preflight(repo, cfg, level, tip, &target_of(cfg, level, tip, rest))
+            preflight(repo, cfg, level, tip, &target_of(repo, cfg, level, tip, rest)?)
         }
         _ => Err(USAGE.into()),
     }
@@ -610,8 +667,56 @@ pub fn preflight_cmd(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, St
 #[cfg(test)]
 mod tests {
     use super::review_verdict as review;
-    use super::{judged_as, note_range, Level, NoteRange};
+    use super::{judged_as, note_range, target_from_holders, Level, NoteRange};
     use crate::notes::CrNote;
+
+    fn cfg_with(branches: &str) -> crate::Config {
+        toml::from_str(&format!("[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n{branches}[docs]\nroot = \"docs/\"\n")).unwrap()
+    }
+
+    #[test]
+    fn a_bare_tip_resolves_through_its_wu_holders_else_one_epic_branch_and_refuses_everything_else() {
+        let cfg = cfg_with("");
+        let target = |holders: &[&str]| {
+            let holders: Vec<String> = holders.iter().map(|h| h.to_string()).collect();
+            target_from_holders(&cfg, &holders)
+        };
+        assert_eq!(target(&["wu/e/a"]).unwrap(), "epic/e");
+        assert_eq!(target(&["wu/e/a", "wu/e/b", "epic/e", "main"]).unwrap(), "epic/e", "the wu branch's epic decides");
+        assert_eq!(target(&["epic/e", "main"]).unwrap(), "epic/e", "a merged WU's epic branch still holds it");
+        assert!(target(&[]).is_err());
+        assert!(target(&["main"]).is_err(), "main only is a refusal, not a guess");
+        let err = target(&["wu/a/x", "wu/b/y"]).unwrap_err();
+        assert!(err.contains("epic/a") && err.contains("epic/b"), "{err}");
+        assert!(target(&["epic/a", "epic/b"]).is_err(), "two epic branches are ambiguous");
+    }
+
+    #[test]
+    fn the_resolution_reads_the_configured_prefixes_and_never_picks_main_over_a_holder() {
+        let cfg = cfg_with("epic_prefix = \"release/\"\nwu_prefix = \"task/\"\n");
+        let pool = ["main", "release/e", "task/e/a", "task/f/b", "docs"];
+        for n in 0..(1 << pool.len()) {
+            let holders: Vec<String> = pool.iter().enumerate().filter(|(i, _)| n & (1 << i) != 0).map(|(_, h)| h.to_string()).collect();
+            // The rule, written from the holder sets: a wu holder's epic decides, else one epic branch.
+            let mut wu_epics: Vec<String> =
+                holders.iter().filter_map(|h| h.strip_prefix("task/").and_then(|r| r.split_once('/')).map(|(e, _)| format!("release/{e}"))).collect();
+            wu_epics.sort();
+            wu_epics.dedup();
+            let mut epic_branches: Vec<String> = holders.iter().filter(|h| h.starts_with("release/")).cloned().collect();
+            epic_branches.sort();
+            epic_branches.dedup();
+            let want = match (wu_epics.len(), epic_branches.len()) {
+                (1, _) => Ok(wu_epics[0].clone()),
+                (0, 1) => Ok(epic_branches[0].clone()),
+                _ => Err(()),
+            };
+            let got = target_from_holders(&cfg, &holders).map_err(|_| ());
+            assert_eq!(got, want, "holders {holders:?}");
+            if let Ok(t) = got {
+                assert_ne!(t, "main", "holders {holders:?}");
+            }
+        }
+    }
 
     #[test]
     fn notes_are_the_epics_only_when_every_one_names_the_epic_base_and_that_is_not_the_parent() {

@@ -17,9 +17,6 @@ fn run(prog: &str, d: &Path, a: &[&str], input: &str) -> Output {
         .args(a)
         .current_dir(d)
         .env("PATH", path_with_keel())
-        // No global or system git config reaches a fixture (a signing key, log.showSignature, hooks...).
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -62,8 +59,18 @@ fn fixture() -> TempDir {
     fixture_with("", "", "epic/e", "wu/e/a")
 }
 
+/// `fixture` whose epic carries a commit of its own, so main's merge-base with the WU tip is not the
+/// epic's: the case a bare WU tip id used to measure against main.
+fn fixture_where_the_epic_has_work() -> TempDir {
+    build_fixture("", "", "epic/e", "wu/e/a", true)
+}
+
 /// `fixture` with extra top-level and `[branches]` config lines and its own branch names.
 fn fixture_with(top: &str, branches: &str, epic: &str, wu: &str) -> TempDir {
+    build_fixture(top, branches, epic, wu, false)
+}
+
+fn build_fixture(top: &str, branches: &str, epic: &str, wu: &str, epic_work: bool) -> TempDir {
     let d = TempDir::new().unwrap();
     let p = d.path();
     git(p, &["init", "-q", "-b", "main"]);
@@ -80,6 +87,10 @@ fn fixture_with(top: &str, branches: &str, epic: &str, wu: &str) -> TempDir {
     commit(p, "base");
     assert!(keel(p, &["hooks", "install"]).status.success()); // after the base commit: main is merge-only from here
     git(p, &["switch", "-q", "-c", epic]);
+    if epic_work {
+        write(p, "src/epic.py", "def e():\n    return 0\n");
+        commit(p, "epic work");
+    }
     git(p, &["switch", "-q", "-c", wu]);
     write(p, "src/a.py", "def a():\n    return 1\n");
     write(p, "tests/test_a.py", "def test_a():\n    pass\n");
@@ -136,6 +147,33 @@ fn green_wu_writes_a_parsable_receipt_and_preflight_is_green() {
     assert_eq!(dod["tip"].as_str().unwrap(), git(p, &["rev-parse", "wu/e/a"]));
     assert!(dod["checks"].as_array().unwrap().contains(&json!("diff-binding")));
     assert!(dod["checks"].as_array().unwrap().contains(&json!("manual-review")));
+}
+
+/// e-router-v2 R7: a WU tip given as a bare commit id names no branch, so the gate takes the epic its
+/// WU branch holds. That is not main: the review base is the epic's commit. A tip no branch holds is
+/// refused with a `--target` fix line instead of guessed.
+#[test]
+fn a_bare_wu_tip_is_measured_against_its_epic_or_refused_with_a_target() {
+    let d = fixture_where_the_epic_has_work();
+    let p = d.path();
+    bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let o = keel(p, &["verify-dod", "wu", &tip]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(!text(&o).contains("4·review-base"), "{}", text(&o));
+    let dod = note(p, "dod", &tip);
+    assert_eq!(dod["base"].as_str().unwrap(), git(p, &["rev-parse", "epic/e"]), "the bare tip was measured from the wrong base");
+
+    // A commit no local branch holds has no epic to resolve: refuse rather than fall back to main.
+    git(p, &["switch", "-q", "--detach"]);
+    write(p, "src/orphan.py", "def o():\n    return 2\n");
+    commit(p, "detached");
+    let orphan = git(p, &["rev-parse", "HEAD"]);
+    let o = keel(p, &["verify-dod", "wu", &orphan]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("--target") && t.contains("fix ->"), "expected a --target refusal: {t}");
+    assert!(!t.contains("4·review-base"), "the gate guessed main instead of asking: {t}");
 }
 
 type Tamper = fn(&Path);
