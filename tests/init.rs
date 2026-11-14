@@ -230,6 +230,46 @@ fn writing_skill_ships_with_a_passing_example_and_is_pointed_to() {
     assert!(std::fs::read_to_string(p.join("AGENTS.md")).unwrap().contains("skill `keel-write`"), "init's AGENTS.md does not name the skill");
 }
 
+/// E-DSH.W2: the doc check runs at the write on every host, not at a review or a merge; a red
+/// doc returns the problem lines, and no shipped skill makes Claude Code (or another host) the
+/// gate's trigger.
+#[test]
+fn shipped_skills_put_the_doc_check_at_the_write_and_name_no_required_host() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workflow = std::fs::read_to_string(root.join("skills/keel-workflow/SKILL.md")).unwrap();
+    let plan = std::fs::read_to_string(root.join("skills/keel-plan/SKILL.md")).unwrap();
+
+    // the write-time contract, the problem feedback and the no-substitute rule
+    for (f, body) in [("keel-workflow", workflow.to_ascii_lowercase()), ("keel-plan", plan.to_ascii_lowercase())] {
+        for said in ["problem lines", "no substitute"] {
+            assert!(body.contains(said), "{f} does not say {said:?}");
+        }
+    }
+    assert!(workflow.to_ascii_lowercase().contains("at the write"), "keel-workflow does not put the doc check at the write");
+    assert!(plan.to_ascii_lowercase().contains("trigger is the write"), "keel-plan does not make the write the trigger");
+    // a host without shell hooks runs the same checks through a plugin; it does not drop them
+    let wf = workflow.to_ascii_lowercase();
+    assert!(wf.contains("no shell hooks") && wf.contains("host plugin"), "keel-workflow has no plugin row for a host without shell hooks");
+    // the plan skill stops naming one host's hook scripts as the trigger
+    for hook in ["verify-doc-post", "verify-doc-stop", "PostToolUse", "Stop hook"] {
+        assert!(!plan.contains(hook), "keel-plan still names the {hook} trigger");
+    }
+    // no shipped skill claims the doc gate needs Claude Code
+    let mut files = Vec::new();
+    md_files(&root.join("skills"), &mut files);
+    for f in &files {
+        let body = std::fs::read_to_string(f).unwrap();
+        for line in body.lines() {
+            let l = line.to_ascii_lowercase();
+            let about_check = ["verify-doc", "doc check", "doc gate"].iter().any(|k| l.contains(k));
+            assert!(!(about_check && l.contains("claude")), "{}: the doc check names Claude Code: {line}", f.display());
+        }
+    }
+    for (f, body) in [("keel-workflow", &workflow), ("keel-plan", &plan)] {
+        assert!(!body.to_ascii_lowercase().contains("claude"), "{f} still names Claude Code");
+    }
+}
+
 /// UC-ROUTE-4 (E-ROUTER.W4): the router skill ships exactly the references SKILL.md names,
 /// including the three recovered from Trawler's trawler-router (W2) and a Keel lessons section
 /// (W4); no Trawler-only token appears outside lineage. Capitalised "Trawler" is allowed: it is
