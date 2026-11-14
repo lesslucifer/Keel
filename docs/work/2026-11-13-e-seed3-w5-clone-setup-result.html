@@ -47,6 +47,7 @@
   <li>Unit: lock round trip and junk lines, hex, the per-file decision and the version check in <code>src/init.rs</code>; the shims' guard and the harness hooks in <code>src/main.rs</code>.</li>
   <li>Full suite green except <code>tests/router.rs</code> <code>watcher_run_is_bounded_when_the_watch_outpolls_its_releases</code> (R43, sandbox only).</li>
   <li><code>src/main.rs</code> was touched for the hook scripts (W3 and W4 also edit hooks there).</li>
+  <li>Sync merge <code>faf64dc</code>: <code>epic/E-SEED3</code> at <code>b302855</code> merged into the branch, bringing the DSH worker tooling and the <code>.agents/skills</code> root; the review base is now <code>b302855</code>. One hand resolution, <code>src/init.rs</code>: its module doc and the test module's imports keep both the skills lock and the shared skill root. The merge adds no WU change of its own; the WU's commits are the ones above it.</li>
 </ul>
 </div>
 <h3>Distillation</h3>
