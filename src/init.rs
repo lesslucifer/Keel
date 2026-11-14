@@ -286,12 +286,26 @@ fn lock_state(repo: &Path) -> LockState {
 }
 
 /// Write the lock, or report it and keep its bytes: a lock init cannot write must never stop init
-/// half-wired, exactly as a lock init cannot read does not.
+/// half-wired, exactly as a lock init cannot read does not. The bytes go to a temporary file and a
+/// rename, and a lock that cannot be opened for writing is refused first, so a failed write leaves
+/// the old lock whole - `kept` is true, never a truncated file wearing the word (E-SEED3 review
+/// round 1 nit: W5's cr note recorded this as fixed and it never landed; that note is bound to its
+/// tip and stays as written, this is the correction).
 fn write_lock(repo: &Path, body: &str, verb: &str, out: &mut impl Write) {
-    let written = std::fs::create_dir_all(repo.join(".keel")).and_then(|_| std::fs::write(repo.join(LOCK), body));
+    let path = repo.join(LOCK);
+    let tmp = repo.join(format!("{LOCK}.tmp"));
+    let writable = match std::fs::OpenOptions::new().write(true).open(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        other => other.map(|_| ()),
+    };
+    let written =
+        writable.and_then(|_| std::fs::create_dir_all(repo.join(".keel"))).and_then(|_| std::fs::write(&tmp, body)).and_then(|_| std::fs::rename(&tmp, &path));
     match written {
         Ok(()) => writeln!(out, "  {verb} {LOCK}").ok(),
-        Err(e) => writeln!(out, "  kept      {LOCK} (not writable: {e}; the skills are written, init carries on)").ok(),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            writeln!(out, "  kept      {LOCK} (not writable: {e}; the skills are written, init carries on)").ok()
+        }
     };
 }
 

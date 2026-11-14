@@ -928,6 +928,32 @@ fn a_read_only_lock_is_kept_and_init_finishes() {
     assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), lock, "the old lock is kept");
 }
 
+/// A lock write that cannot start must leave the old lock and say so. The bytes go through a
+/// temporary file and a rename, so nothing can truncate the lock and still report it "kept"
+/// (E-SEED3 review round 1 nit: W5's cr note recorded this as fixed and it never landed).
+#[test]
+fn a_lock_write_that_cannot_start_leaves_the_old_lock() {
+    let d = fresh_repo();
+    let p = d.path();
+    assert!(keel_in(p, &["init"], "").status.success());
+    let wf = p.join(".claude/skills/keel-workflow/SKILL.md");
+    let shipped = std::fs::read(&wf).unwrap();
+    let old = b"keel-workflow before the upgrade\n";
+    std::fs::write(&wf, old).unwrap();
+    let lock_path = p.join(".keel/skills.lock");
+    let lock = std::fs::read_to_string(&lock_path).unwrap().replace(&sha256_hex(&shipped), &sha256_hex(old));
+    std::fs::write(&lock_path, &lock).unwrap();
+    // The write's temporary path is taken, so the write cannot start; the lock itself is untouched.
+    std::fs::create_dir(p.join(".keel/skills.lock.tmp")).unwrap();
+
+    let o = keel_in(p, &["init"], "");
+    let t = text(&o);
+    assert!(o.status.success(), "a lock write that fails must not end init: {t}");
+    assert!(t.contains("updated   .claude/skills/keel-workflow/SKILL.md"), "{t}");
+    assert!(t.contains("kept      .keel/skills.lock") && t.contains("not writable"), "{t}");
+    assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), lock, "the old lock is kept");
+}
+
 /// The harness hooks, as installed, do nothing with a foreign keel first on PATH: exit 0, no verify-doc.
 #[test]
 fn harness_hooks_exit_0_and_never_call_verify_doc_on_a_foreign_keel() {

@@ -176,6 +176,25 @@ fn a_bare_wu_tip_is_measured_against_its_epic_or_refused_with_a_target() {
     assert!(!t.contains("4·review-base"), "the gate guessed main instead of asking: {t}");
 }
 
+/// The second grammar path: with `refs/tags/epic/e` beside `refs/heads/epic/e`, `%(refname:short)`
+/// printed `heads/epic/e`, so an epic that alone holds the tip was invisible and the gate refused.
+#[test]
+fn a_tag_sharing_the_epic_holder_name_does_not_hide_the_epic() {
+    let d = fixture_where_the_epic_has_work();
+    let p = d.path();
+    bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    // The epic alone holds the tip: a finished merge, then its branch removed.
+    git(p, &["switch", "-q", "epic/e"]);
+    git(p, &["merge", "-q", "--no-verify", "--no-ff", "-m", "merge wu a", "wu/e/a"]);
+    git(p, &["branch", "-D", "wu/e/a"]);
+    git(p, &["tag", "epic/e", "epic/e"]);
+    let t = text(&keel(p, &["verify-dod", "wu", &tip]));
+    assert!(!t.contains("no wu or epic branch holds it"), "a same-named tag must not hide the epic holder: {t}");
+    assert!(t.contains("8·manual-review"), "the gate ran and judged the tip instead of refusing to find its target: {t}");
+}
+
 /// A tag that shares a holder branch's short name must not hide the branch: with both refs,
 /// `%(refname:short)` prints `heads/wu/e/a`, and the epic prefix then matches nothing, so the gate
 /// refuses a tip whose holder branch is right there.
