@@ -270,6 +270,59 @@ fn router_skill_is_complete() {
     }
 }
 
+/// E-DSH.W3: the router skill carries the DSH transport, report and persona rules in one dated
+/// host table - every mechanism, every DSH worker tool - and the project-router template gains the
+/// harness, permission-preset and brief slots; the description no longer claims Claude Code only.
+/// DSH's host facts stay in this skill, and both shipped copies stay byte-identical.
+#[test]
+fn router_skill_carries_the_dsh_transport_and_the_template_its_slots() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = root.join("skills/keel-router");
+    let skill = std::fs::read_to_string(dir.join("SKILL.md")).unwrap();
+
+    let fm = skill.strip_prefix("---\n").and_then(|b| b.split_once("\n---\n")).map(|(fm, _)| fm).expect("SKILL.md has no closed frontmatter");
+    assert!(!fm.to_ascii_lowercase().contains("claude code only"), "the description still says Claude Code only");
+
+    let start = skill.find("### Transport by host").expect("SKILL.md has no transport table");
+    let table = &skill[start..start + skill[start..].find("\n\n- ").unwrap_or(skill.len() - start)];
+    for mechanism in ["Dispatch", "Follow-up", "Report", "Fleet list", "Status", "Stop", "Permission preset"] {
+        assert!(table.contains(&format!("| {mechanism} |")), "the transport table has no {mechanism} row");
+    }
+    for tool in ["worker_spawn", "worker_send", "worker_output", "worker_list", "worker_status", "worker_stop"] {
+        assert!(table.contains(&format!("`{tool}`")), "the transport table never names {tool}");
+    }
+    assert!(table.contains("Claude Code") && table.contains("DSH") && table.contains("re-check"), "the table is not per-host, or says nothing about re-checking the host's tool list");
+
+    assert!(skill.contains("`worker_output` at every wake and before every ask"), "SKILL.md does not read a DSH report from the transcript");
+    assert!(skill.contains("A DSH subagent is not a worker"), "SKILL.md does not keep the worker-vs-subagent rule");
+    assert!(skill.contains("no project-scoped agent definition") && skill.contains("per-worker preset"), "SKILL.md does not state the DSH persona");
+    assert!(skill.to_ascii_lowercase().contains("posture is unenforced"), "SKILL.md implies a guard where DSH has none");
+
+    let template = std::fs::read_to_string(dir.join("references/project-router-template.md")).unwrap();
+    for slot in ["| Harness |", "| Permission preset |", "| Brief location |"] {
+        assert!(template.contains(slot), "the template has no {slot} slot");
+    }
+
+    let tools = ["worker_spawn", "worker_send", "worker_output", "worker_list", "worker_status", "worker_stop"];
+    let mut files = Vec::new();
+    md_files(&root.join("skills"), &mut files);
+    for f in &files {
+        if f.starts_with(&dir) {
+            continue;
+        }
+        let body = std::fs::read_to_string(f).unwrap();
+        for tool in tools {
+            assert!(!body.contains(tool), "{} names the DSH tool {tool} outside the router skill", f.display());
+        }
+        assert!(!body.contains("DSH") && !body.contains("DeepSeek"), "{} names the DSH host outside the router skill", f.display());
+    }
+
+    for f in ["SKILL.md", "references/project-router-template.md"] {
+        let self_hosting = std::fs::read_to_string(root.join(".claude/skills/keel-router").join(f)).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join(f)).unwrap(), self_hosting, "skills/keel-router/{f} and .claude/skills/keel-router/{f} differ");
+    }
+}
+
 fn hook_cmds(v: &serde_json::Value, ev: &str) -> Vec<String> {
     v["hooks"][ev].as_array().unwrap().iter().flat_map(|g| g["hooks"].as_array().unwrap().iter().map(|h| h["command"].as_str().unwrap().to_string())).collect()
 }
