@@ -477,9 +477,11 @@ fn router_ships_the_moment_of_action_checklists() {
     let mirror = std::fs::read_to_string(root.join(".claude/skills/keel-router/references/checklists.md")).unwrap();
     assert_eq!(src, mirror, "skills/keel-router and .claude/skills/keel-router differ for checklists.md");
 
-    for leak in ["/Users/", "E-ROUTER", "E-RGUARD", "E-SEED"] {
+    for leak in ["/Users/", "/home/", "E-ROUTER", "E-RGUARD", "E-SEED"] {
         assert!(!src.contains(leak), "checklists.md carries Keel's own state: {leak:?}");
     }
+    let home_path = regex::Regex::new(r"(?:/Users/|/home/|[A-Za-z]:[\\/])").unwrap();
+    assert!(home_path.find(&src).is_none(), "checklists.md carries a home-directory path: {:?}", home_path.find(&src).map(|m| m.as_str()));
     let epic_id = regex::Regex::new(r"\bE-[A-Z][A-Z0-9]*\b").unwrap();
     assert!(epic_id.find(&src).is_none(), "checklists.md names an epic id: {:?}", epic_id.find(&src).map(|m| m.as_str()));
 
@@ -520,6 +522,8 @@ fn router_ships_the_moment_of_action_checklists() {
         ".router/rulings.md",
         "your only write is a brief",
         "once the first background worker is `RUNNING`",
+        "arm it when its subject exists",
+        "no worker's finish can wake you",
         "never for deriving the substance",
         "read once, for the facts",
         "not a reason to read on",
@@ -542,6 +546,7 @@ fn router_ships_the_moment_of_action_checklists() {
     assert!(section("## Session start").contains("rulings.md") && section("## Decisions").contains("rulings.md"), "SKILL.md does not place the rulings log");
     assert!(!skill.contains("2026-11-__") && skill.contains("no owner ruling grants it"), "SKILL.md asserts or dates a ruling the owner has not made");
     assert!(skill.contains("do not arm it") && skill.contains("never a file for you to create or append to"), "SKILL.md re-orders the unruled fleet wake or gives the rulings log back to the router");
+    assert!(skill.contains("no worker's finish can wake you"), "SKILL.md widened the DSH wake claim past the worker's finish");
 }
 
 fn hook_cmds(v: &serde_json::Value, ev: &str) -> Vec<String> {
