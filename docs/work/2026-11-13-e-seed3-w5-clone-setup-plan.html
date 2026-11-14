@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="a71eb30483e92beec4629ea8" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED3.W5 plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED3.W5 · Setup on a new clone — plan</h1>
+      <div class="meta">T3 · WU plan · 2026-11-13 · Keel · branch <code>wu/E-SEED3/w5-clone-setup</code> off <code>epic/E-SEED3</code> <code>3260330</code> · epic <a href="2026-11-13-e-seed3-epic-plan.html#w5">E-SEED3 plan</a>, block W5, open points 5 and 6 (owner go 2026-11-13, defaults) · B6 deferred by owner ruling D, 2026-11-13 (backlog B24) · the epic plan asks for no owner go per WU plan</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">Setup leaves gaps on a fresh clone. A skill file you never edited still asks before each upgrade. Another program named keel on the path breaks the hooks with no clear message. Fetching evidence is the third gap; it is deferred by the owner (part 1 of the work).</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>You upgrade skills you never edited</td><td>Asked for each file</td><td>Upgraded without asking</td></tr>
+    <tr><td>You upgrade a skill you edited</td><td>Asked</td><td>Asked, as today</td></tr>
+    <tr><td>Another program named keel comes first on the path</td><td>Confusing errors</td><td>Setup warns; each git hook refuses and names the clash</td></tr>
+    <tr><td>Keel is not on the path at setup</td><td>Warning with a build command</td><td>The warning also names the install page</td></tr>
+    <tr><td>You must do</td><td>—</td><td>One sign-off commit: the install page's text (rule-bearing)</td></tr>
+  </tbody>
+</table>
+
+<h2 id="terms">Terms</h2>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Evidence</td><td>The notes the tool keeps on a commit: tests, docs, review, sign-off.</td></tr>
+    <tr><td>Lock</td><td>A file listing the fingerprint of each skill file as setup last wrote it.</td></tr>
+  </tbody>
+</table>
+
+<p data-item="requirement" data-c="requirement">Setup upgrades without asking each skill file still exactly as setup last wrote it, and asks for every other changed one. When the keel on the path is another program, setup warns and each git hook refuses, naming the clash.</p>
+
+<h2 id="maps-to">Maps to</h2>
+<p data-item="maps-to" data-c="maps-to">Epic E-SEED3, summary block W5 (<a href="2026-11-13-e-seed3-epic-plan.html#w5">epic plan</a>) · backlog B7's skills-lock row and foreign-keel row · UC-INIT-1 amended · DEC-3 amended, at the epic close. B6 left this WU (owner ruling D): DEC-19 stays push-only.</p>
+
+<h2 id="work">The work</h2>
+
+<h3>1 · Notes fetch (B6): deferred</h3>
+<p><b>In short:</b> a fetch without force is rejected whenever a local note ref is ahead of origin's, not only when it diverged. So every fetch would fail between writing a note and the next push. The owner ruled D on 2026-11-13: B6 leaves this WU. Backlog B24 holds the finding, options A–C and the verified fix line. DEC-19 stays push-only, and the epic test's "a fresh clone fetches the evidence" step changes; both are recorded in the result for the epic close.</p>
+
+<h3>2 · Skills lock (B7)</h3>
+<p><b>In short:</b> <code>.keel/skills.lock</code> holds a SHA-256 per shipped skill file, in <code>shasum -a 256</code> form. A differing file whose hash equals its entry was written by Keel and never edited: it is upgraded without asking. Anything else asks as today.</p>
+<ul>
+  <li>An entry is set to this build's hash when init creates, upgrades or finds the file equal. A kept file keeps its old entry, so it asks again next time.</li>
+  <li>The lock is written only when init writes a skill file or the lock exists. A project with no lock whose skills all match gets none. This keeps init a no-op on Keel's own tree, whose skills are copied by hand, so no other WU must maintain a lock.</li>
+  <li>Safe by construction: a file is replaced silently only when its bytes are a version Keel itself wrote.</li>
+  <li><code>-f</code> overwrites as today and records the new hashes.</li>
+</ul>
+
+<h3>3 · Another keel on the path (B7)</h3>
+<p><b>In short:</b> Keel's <code>keel --version</code> prints the line <code>Keel: merge-gate workflow CLI</code>. A keel that does not print it is someone else's.</p>
+<ul>
+  <li>init: not on PATH → the warning names <code>docs/install.html</code> as well as the build command; on PATH but foreign → a warning naming its path and that the git hooks will refuse.</li>
+  <li>The four git hook shims gain one line after the not-on-PATH guard: run <code>keel --version</code>, refuse with the clash and the install page when the line is missing.</li>
+  <li>The two harness hooks treat a foreign keel like a missing one and exit 0: they are not gates, and a refusing turn-end hook would block every turn for a machine problem.</li>
+  <li><code>src/main.rs</code> is touched for the shims only (W3 and W4 also edit hooks there).</li>
+  <li><code>docs/install.html</code> (rule-bearing) updated: the clash is now detected and upgrades ask only for edited files. Landed by the owner's <code>keel mr commit</code>.</li>
+</ul>
+
+<h2 id="expected">Expected</h2>
+<p data-item="expected" data-c="expected">An unedited skill file from an older build upgrades with no prompt; an edited one prompts. A fake keel first on PATH makes init warn and <code>git commit</code> refuse, naming the clash.</p>
+
+<h2 id="open">Open points</h2>
+<table data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer (default; work proceeds on it)</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>How is B6 handled?</td><td><b>Deferred</b> (owner ruling D, 2026-11-13) to backlog B24</td><td>Without force, every fetch fails while notes are unpushed; with force, unpushed notes are lost</td></tr>
+    <tr><td>2</td><td>Should init write a lock when none exists and every skill matches?</td><td><b>No</b>, only when it writes a skill or the lock exists</td><td>Otherwise Keel's own tree needs a hand-kept lock, and every WU editing a skill must update it</td></tr>
+    <tr><td>3</td><td>Do the harness hooks refuse a foreign keel too?</td><td><b>No</b>, they exit 0 as with no keel</td><td>They gate nothing; a refusing turn-end hook blocks every turn</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+<h3>Test plan</h3>
+<div data-item="test-plan" data-c="test-plan">
+<p><b>Integration</b> (<code>tests/init.rs</code>, through the built <code>keel init</code> in scratch repos with a bare local remote, no network):</p>
+<ul>
+  <li>an unedited skill file from an older build upgrades with no prompt, an edited one prompts and is kept, and the lock records what was written;</li>
+  <li>no lock is written while every skill matches and none exists;</li>
+  <li>a fake keel first on PATH: init warns, and <code>git commit</code> through the installed hook is refused naming the clash; with Keel first, the commit passes;</li>
+  <li>no keel on PATH: init's warning names <code>docs/install.html</code>.</li>
+</ul>
+<p><b>Unit</b>: lock parse and format; the per-file decision (create, unchanged, upgrade, ask); the version check; the shims' new guard line and its marker, which must equal Keel's own <code>--version</code> line.</p>
+<p>Red first: the integration tests are run red against today's code before the code lands.</p>
+</div>
+<h3>Scope</h3>
+<p>Out: Codex hooks; the notes fetch (B6, deferred to B24).</p>
+
+  </main>
+</body>
+</html>
