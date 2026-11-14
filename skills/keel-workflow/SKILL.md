@@ -262,7 +262,7 @@ off: `keel preflight` and `keel verify-dod wu|epic` are red on `0·hooks`,
 
 | Hook | Enforces |
 |---|---|
-| `pre-commit` | refuses non-merge commits on `branches.main` (merge-only). Runs no lint — run `keel lint` / `keel check` yourself |
+| `pre-commit` | refuses non-merge commits on `branches.main` (merge-only) · runs `keel lint` when the staged diff touches a `code_paths` path (lint only, never tests) · with `MERGE_HEAD` present (a merge finished by hand with `git commit`) runs the gate `pre-merge-commit` would have run, because git skips that hook then |
 | `commit-msg` | a staged change to a `rule_bearing` path needs a `Reviewed-By` trailer naming a listed signer; merge commits skipped |
 | `pre-merge-commit` | `keel verify-dod hook`, judged by the target's **committed** `.keel/config.toml`: into `epic/*` ⇒ wu gate, into main ⇒ epic gate then `keel check` on the merged tree; other targets ungated; a back-merge of landed history into an epic passes; an octopus or an unknowable merge head (`git pull`) is refused — fetch, then `git merge --no-ff <branch>` |
 | `pre-push` | `keel check` on every pushed tree (clean HEAD in place, others in a scratch worktree) · `verify-dod range` on main/`epic/*` updates (on an epic branch: commits already on main skipped; a plain commit with epic-range notes judged on them over the epic, like check 7's archive commit — inside the range only when it changes no code, as the pushed tip even when it changes code; review and sign-off stay at the merge into main) · pushes `refs/notes/*` |
@@ -274,8 +274,9 @@ off: `keel preflight` and `keel verify-dod wu|epic` are red on `0·hooks`,
   It checks form only; the review reads depth, and the merge reads the `doc/v1`
   facts (check 6). A review or a merge is too late and no substitute.
 - **Conflicts**: completing a conflicted merge with `git commit` never runs
-  pre-merge-commit (and on main pre-commit refuses it). Resolve conflicts by
-  merging the target into the work branch first, so the gated merge is clean.
+  pre-merge-commit, so pre-commit runs that same gate then (into main the epic
+  gate plus `keel check`; a merge commit is allowed on main). Resolve conflicts
+  by merging the target into the work branch first, so the gated merge is clean.
 - **Bypass honesty**: `--no-verify` and fast-forwards skip hooks, but the epic
   walk re-verifies every seam, so smuggled work turns the epic gate red before
   it reaches main. Never amend or rebase a gated branch — it orphans the notes.

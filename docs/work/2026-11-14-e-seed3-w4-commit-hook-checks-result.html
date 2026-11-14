@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af832449f34851f0dfb2451" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED3.W4 result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED3.W4 · The commit hook checks more: result</h1>
+      <p>A code commit now runs the fast style check, and a merge finished by hand runs the gate git skipped.</p>
+      <div class="meta">T3 · WU result · 2026-11-14 · Keel · branch <code>wu/E-SEED3/w4-commit-hook-checks</code> off <code>epic/E-SEED3</code> <code>99f72e8</code> · <a href="2026-11-14-e-seed3-w4-commit-hook-checks-plan.html">WU plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome">Delivered. A commit whose staged diff touches a code path runs <code>keel lint</code> and is refused while lint is red; a docs-only commit runs no lint. A conflicted merge finished with <code>git commit</code> runs the gate <code>pre-merge-commit</code> would have run: into an epic the WU gate, into main the epic gate then <code>keel check</code>. A normal commit on main is still refused.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-c="owner-changes">
+  <thead><tr><th>When</th><th>Before</th><th>Now</th></tr></thead>
+  <tbody>
+    <tr><td>You commit code that fails lint</td><td>It landed</td><td>Refused with the lint output; the changes stay staged</td></tr>
+    <tr><td>You commit docs only</td><td>No lint</td><td>Unchanged</td></tr>
+    <tr><td>You finish a conflicted merge into an epic</td><td>Ungated</td><td>The WU gate judges it</td></tr>
+    <tr><td>You finish a conflicted merge into main</td><td>Refused as merge-only</td><td>Allowed; the epic gate and <code>keel check</code> judge it</td></tr>
+    <tr><td>You still must do</td><td>—</td><td>Nothing on the rule text: it landed in your commit <code>f3d290a</code>; the notes and preflight were re-run on that tip</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<div data-item="deviations" data-c="deviations">
+  <ul>
+    <li><b>A hand-finished merge on main is now allowed.</b> UC-GATE-1 refuses <i>non-merge</i> commits, and without this the new gate row could never run on main. Decided in the plan (reading 2), with its integration test.</li>
+    <li><b>A hand-finished merge runs the gate only, not a separate lint.</b> That is parity with the clean path, which git sends to <code>pre-merge-commit</code> and not to <code>pre-commit</code>; into main the gate already runs <code>keel check</code>. Decided in the plan (reading 1).</li>
+    <li><b>One existing test fixture changed.</b> <code>push_of_a_fast_forwarded_no_commit_wu_merge_is_gated</code> finished its setup merge with <code>git commit</code>, which the new gate now refuses on purpose; the bypass became <code>--no-verify</code>, which is the case the push walk exists to catch. Its own commit carries its own test note.</li>
+    <li><b>The rule text landed in the owner's commit <code>f3d290a</code>.</b> One <code>keel mr commit</code> carried the amended rule text and the byte-identical <code>.claude/skills/keel-workflow/SKILL.md</code> mirror. The test and doc notes and the preflight were then run again on that new tip.</li>
+  </ul>
+</div>
+
+<div data-item="evidence" data-c="evidence">
+  <ul>
+    <li>Commits: <code>d9c2da2</code> the WU plan · <code>4abcb03</code> <code>src/main.rs</code> and <code>tests/cli.rs</code> (commit test note written while HEAD, <code>keel verify-dod commit</code> green) · <code>b18f326</code> the push-walk fixture (its own note, <code>keel verify-dod commit</code> green) · this report.</li>
+    <li>Red first, on the unchanged hook: 4 of the 5 new integration tests failed with the real case — the red-lint commit landed; <code>git commit -a</code> landed; the hand-finished epic merge landed with no gate; the hand-finished main merge printed only <code>commit refused - 'main' is merge-only</code>. The fifth (docs-only runs no lint) was and stays green.</li>
+    <li>Integration, <code>tests/cli.rs</code> (real installed hooks, scratch repos, no network): <code>a_code_commit_runs_lint_and_red_lint_refuses_it</code> · <code>a_docs_only_commit_runs_no_lint</code> · <code>a_commit_a_of_a_tracked_code_file_runs_lint_through_the_temporary_index</code> · <code>a_conflicted_wu_merge_finished_by_hand_into_an_epic_is_gated</code> · <code>a_conflicted_merge_finished_by_hand_into_main_runs_the_epic_gate_not_the_merge_only_refusal</code>.</li>
+    <li>Unit, <code>src/main.rs</code>: <code>commit_check_routes_a_merge_to_the_gate_main_to_a_refusal_and_the_rest_to_lint</code>.</li>
+    <li><code>cargo test --test cli -- --test-threads=1</code>: 24 passed, 0 failed. <code>cargo test --test verify_dod -- --test-threads=1</code>: 51 passed. Full <code>cargo test</code>: every target green except the 8 <code>tests/router.rs</code> watch tests, red only under parallel load in this sandbox (backlog R43); <code>cargo test --test router -- --test-threads=1</code> is 58 passed, 0 failed.</li>
+    <li><code>keel check</code> raw: red only on that same 8-test router set (<code>watch never reached poll 1</code>, <code>watch never returned</code>, and the epic e2e), never on a code path this WU changed. <code>cargo fmt --check</code> and clippy <code>-D warnings</code> green.</li>
+    <li>Docs touched: this result and the plan (T3). Rule text, landed in the owner's commit <code>f3d290a</code>: <code>skills/keel-workflow/SKILL.md</code> §7's <code>pre-commit</code> row and the Conflicts note; DEC-17 and DEC-29 in <code>docs/decisions/workflow-gates.html</code>; UC-GATE-1 and UC-GATE-2 in <code>docs/use-cases/workflow.html</code>; and the byte-identical <code>.claude/skills/keel-workflow/SKILL.md</code>.</li>
+  </ul>
+</div>
+
+<div data-item="distillation" data-c="distillation">
+  <p>The truth of this WU landed in the rule text of the owner's commit <code>f3d290a</code>:</p>
+  <ul>
+    <li><b>DEC-17</b>: the commit hook no longer "runs no lint"; a code commit runs <code>keel lint</code>, and a merge commit runs the gate instead.</li>
+    <li><b>DEC-29</b>: the follow-up is now the rule - a hand-finished merge is judged by the same gate, on main the epic gate plus <code>keel check</code>, so a merge commit on main is allowed by the merge-only rule.</li>
+    <li><b>UC-GATE-1</b>: the commit hook's lint and the merge-commit allowance. <b>UC-GATE-2</b>: a merge finished by hand is judged by the same gate, run from <code>pre-commit</code>.</li>
+    <li><b>keel-workflow §7</b>: the <code>pre-commit</code> row names both checks.</li>
+  </ul>
+  <p>The E-SEED3 close takes the remainder: striking B7's two rows in <code>docs/backlog/e-seed-v2.html</code> (the epic plan's distillation plan).</p>
+</div>
+
+<div data-item="follow-ups" data-c="follow-ups">
+  <p>Two items, neither deferred to nowhere:</p>
+  <ol>
+    <li><b>E-SEED3.W4</b>: done. The owner's <code>keel mr commit</code> landed as <code>f3d290a</code>; the test and doc notes and the preflight were re-run on that tip, which is green. The owner's sign-off and merge follow.</li>
+    <li><b>E-SEED3 epic close</b>: strike B7's two rows (pre-commit lint, MERGE_HEAD gate) when the epic distills its backlog.</li>
+  </ol>
+</div>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

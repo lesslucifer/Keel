@@ -491,13 +491,58 @@ fn hooks_install(repo: &Path, force: bool) -> Result<i32, String> {
     Ok(0)
 }
 
+/// What `pre-commit` does for the commit being made. A merge finished by hand is judged by the gate
+/// git did not run; a non-merge commit on main is refused; any other commit is lint-checked.
+#[derive(Debug, PartialEq, Eq)]
+enum CommitCheck {
+    MergeGate,
+    RefuseMain,
+    Lint,
+}
+
+fn commit_check(branch: &str, main: &str, merging: bool) -> CommitCheck {
+    if merging {
+        CommitCheck::MergeGate
+    } else if branch == main {
+        CommitCheck::RefuseMain
+    } else {
+        CommitCheck::Lint
+    }
+}
+
+/// A staged diff touches a code path when git lists a staged path under `code_paths` - the same git
+/// pathspecs the gate binds (UC-GATE-5); empty `code_paths` = every path is code. Reads the index git
+/// is committing (a temporary one for `git commit -a`), as `keel check`'s own `git diff --cached` must.
+fn staged_code(repo: &Path, code_paths: &[String]) -> Result<bool, String> {
+    let mut a = vec!["diff", "--cached", "--name-only", "--no-renames", "-z", "--"];
+    a.extend(code_paths.iter().map(String::as_str));
+    Ok(!git(repo, &a, &[])?.is_empty())
+}
+
+/// `pre-commit`: main stays merge-only, lint guards a code commit, and a merge git leaves to `git commit`
+/// (a conflicted one finished by hand) gets the gate `pre-merge-commit` would have run (DEC-17, DEC-29).
 fn pre_commit(repo: &Path, cfg: &Config) -> Result<i32, String> {
     let branch = git(repo, &["symbolic-ref", "--short", "-q", "HEAD"], &[]).unwrap_or_default();
-    if branch == cfg.branches.main {
-        eprintln!("keel: commit refused - '{b}' is merge-only.\n  fix -> git switch -c <branch>   (then commit there and merge into {b})", b = branch);
-        return Ok(1);
+    let merging = repo.join(git(repo, &["rev-parse", "--git-path", "MERGE_HEAD"], &[])?).exists();
+    match commit_check(&branch, &cfg.branches.main, merging) {
+        CommitCheck::RefuseMain => {
+            eprintln!("keel: commit refused - '{branch}' is merge-only.\n  fix -> git switch -c <branch>   (then commit there and merge into {branch})");
+            Ok(1)
+        }
+        CommitCheck::MergeGate => gate::verify_dod(repo, &load_config_at_head(repo)?, &["hook"]),
+        CommitCheck::Lint => {
+            if !staged_code(repo, &cfg.code_paths)? {
+                return Ok(0);
+            }
+            let code = lint(repo, cfg)?;
+            if code != 0 {
+                eprintln!(
+                    "keel: commit refused - the staged diff changes a code path and keel lint is red\n  fix -> make `keel lint` green, then commit again"
+                );
+            }
+            Ok(code)
+        }
     }
-    Ok(0)
 }
 
 /// No paths: every html doc under docs.root (tracked or untracked, not ignored).
@@ -567,7 +612,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        hook_conflicts, hooks_problem_of, no_git_env, Config, ReportPolicy, COMMIT_MSG, GIT_HOOK_ENV, GIT_LOCAL_ENV, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH,
+        commit_check, hook_conflicts, hooks_problem_of, no_git_env, CommitCheck, Config, ReportPolicy, COMMIT_MSG, GIT_HOOK_ENV, GIT_LOCAL_ENV, PRE_COMMIT,
+        PRE_MERGE_COMMIT, PRE_PUSH,
     };
     use std::ffi::OsStr;
     use std::path::Path;
@@ -647,6 +693,16 @@ mod tests {
         for needle in ["report", "required", "optional", "none"] {
             assert!(e.contains(needle), "{needle} missing from: {e}");
         }
+    }
+
+    #[test]
+    fn commit_check_routes_a_merge_to_the_gate_main_to_a_refusal_and_the_rest_to_lint() {
+        assert_eq!(commit_check("main", "main", true), CommitCheck::MergeGate, "a merge finished by hand on main is gated, not refused");
+        assert_eq!(commit_check("epic/e", "main", true), CommitCheck::MergeGate, "a merge on an epic is gated too");
+        assert_eq!(commit_check("main", "main", false), CommitCheck::RefuseMain);
+        assert_eq!(commit_check("epic/e", "main", false), CommitCheck::Lint);
+        assert_eq!(commit_check("wu/e/a", "main", false), CommitCheck::Lint);
+        assert_eq!(commit_check("", "main", false), CommitCheck::Lint, "a detached HEAD is not main");
     }
 
     #[test]
