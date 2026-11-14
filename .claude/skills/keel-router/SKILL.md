@@ -167,10 +167,12 @@ just saving it. Never author substantive content yourself."
   write `Sent to <channel> (id N)`. Never "I'll message you" as a promise. ≤ ~10
   lines, commands on their own lines with `cd`, self-contained. Send failure:
   retry once, then say so. Tell the owner the channel's limits once. Never print
-  a bot token. Both hosts send through `scripts/notify-owner.py`: write the body
-  to `.router/notify/owner.md` and run `scripts/notify-owner.py --send` in the
-  same turn; it prints `id N` (`--send "<text>"` where the host allows it).
-  `--check` names the bot, `--dry-run` validates and sends nothing.
+  a bot token. Where the project ships `scripts/notify-owner.py`, both hosts
+  send through it: write the body to `.router/notify/owner.md` and run
+  `scripts/notify-owner.py --send` in the same turn; it prints `id N`
+  (`--send "<text>"` where the host allows it). `--check` reaches the API and
+  names the bot; `--dry-run` validates the body and prints the request, sending
+  nothing and reaching nothing.
 - **Watch, never wait to be told.** Never end on "tell me when done": for every
   owner action you stage, arm in the same turn a watch on its observable state
   (commit, note, merge, origin, tag; run, draft, doc comments:
