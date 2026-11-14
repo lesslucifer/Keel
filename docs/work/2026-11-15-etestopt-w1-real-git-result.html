@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af88fcf9f34851f0dfb24c5" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-TESTOPT.W1 WU result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-TESTOPT.W1 · The tests run the real git — result</h1>
+      <p>Every program a test starts now runs the real git, not the macOS launcher. The 11 sandbox failures it caused are gone, and the full run with the stock PATH is as fast as with the developer tools' git first.</p>
+      <div class="meta">T3 · WU result · 2026-11-15 · Keel · branch <code>wu/E-TESTOPT/w1-real-git</code> off <code>epic/E-TESTOPT</code> <code>1e1c6bc</code> · <a href="2026-11-15-etestopt-w1-real-git-plan.html">WU plan</a> · epic <a href="2026-11-15-etestopt-plan.html#w1">E-TESTOPT plan</a>, block W1</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">What happened</h2>
+<p data-item="outcome" data-c="outcome">Delivered as planned. The test helpers find the real git once per test program and put a directory holding only it first on every PATH a test hands a child. With the stock PATH in a worker's sandbox, the router tests went from 12 failures to 1. The one left is the watcher test, which W2 owns. A full run with the stock PATH took 61.6 s, the same as with the developer tools' git first; the epic's baseline had it at 77 s. Keel's own code is unchanged.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-c="owner-changes" data-item="owner-changes">
+  <thead><tr><th>When</th><th>Before</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>A worker runs the router tests in its sandbox</td><td>12 failures, 11 of them the launcher's cache error</td><td>1 failure, the watcher test (W2)</td></tr>
+    <tr><td>A full test run with the stock PATH</td><td>76.7 s and 77.6 s (baseline)</td><td>61.6 s and 61.7 s</td></tr>
+    <tr><td>One git call from a test</td><td>6.5 ms through the launcher</td><td>3.1 ms</td></tr>
+    <tr><td>You run keel yourself</td><td>Keel runs the git your PATH names</td><td>Unchanged</td></tr>
+    <tr><td>You must decide</td><td>—</td><td>Nothing</td></tr>
+  </tbody>
+</table>
+
+<h2 id="deviations">Deviations</h2>
+<div data-item="deviations" data-c="deviations">
+  <ul>
+    <li><b>The before runs come from the epic's baseline, not from this session.</b> A scratch clone of the base for a same-session run was refused twice by the session's permission check (<code>git clone -q &lt;this worktree&gt; $TMPDIR/keel-before</code>). The test code at the base <code>1e1c6bc</code> equals the baseline's <code>690aef1</code> (that commit adds only the epic plan), on the same machine. This session also ran the router tests on the old code: 12 failures, 18 <code>xcrun_db</code> lines, 30.2 s.</li>
+    <li><b>A fix found by the recipe's own run.</b> With the developer tools' git already first, the resolver made no link, so a PATH a test makes up (<code>/usr/bin:/bin</code>) fell back to the launcher, and the new test caught it. The link is now made whenever a real git is found. Only the shared PATH is left as inherited when its git already is that one (commit <code>9619347</code>).</li>
+    <li><b>The requirement's fallback reads slightly wider.</b> The plan said the test PATH is unchanged when the PATH's git is the real one. That holds for the shared PATH. A PATH a test makes up still gets the link first, so it never reaches the launcher.</li>
+  </ul>
+</div>
+
+<h2 id="details">Details</h2>
+
+<h3 id="timings">Timings</h3>
+<p data-c="timings-lead">In a worker's sandbox on this machine (macOS 26.5.1, 14 cores), <code>cargo test --no-fail-fast</code> on a warm build. "Stock" is the session's PATH, whose git is <code>/usr/bin/git</code>, the launcher; "CLT first" puts <code>/Library/Developer/CommandLineTools/usr/bin</code> first. Load is the 1-, 5- and 15-minute average before → after. W2 runs its own tests at the same time in a sibling worktree.</p>
+<table data-c="timings">
+  <thead><tr><th>Run</th><th>Wall</th><th>Result</th><th>Load</th></tr></thead>
+  <tbody>
+    <tr><td>Before, stock (baseline, <code>690aef1</code>)</td><td>76.7 s · 77.6 s</td><td>12 router reds from the launcher's cache error, plus the watcher test</td><td>3.2 → 8.5 · 6.3 → 9.8</td></tr>
+    <tr><td>Before, CLT first (baseline)</td><td>61.3 s · 61.0 s</td><td>328 pass, 1 fail (watcher)</td><td>8.2 → 9.2 · 1.8 → 6.3</td></tr>
+    <tr><td>After, stock #1</td><td>61.6 s</td><td>333 pass, 1 fail (watcher); 0 <code>xcrun_db</code> lines</td><td>8.53 12.54 9.45 → 10.40 12.31 9.59</td></tr>
+    <tr><td>After, CLT first #1</td><td>61.7 s</td><td>333 pass, 1 fail (watcher)</td><td>10.40 12.31 9.59 → 10.47 11.78 9.56</td></tr>
+    <tr><td>After, stock #2</td><td>61.7 s</td><td>333 pass, 1 fail (watcher); 0 <code>xcrun_db</code> lines</td><td>10.47 11.78 9.56 → 10.16 11.45 9.59</td></tr>
+    <tr><td>After, CLT first #2</td><td>61.7 s</td><td>333 pass, 1 fail (watcher)</td><td>10.16 11.45 9.59 → 9.44 11.00 9.56</td></tr>
+    <tr><td>Router tests only, old code, stock (this session)</td><td>30.2 s</td><td>46 pass, 12 fail; 18 <code>xcrun_db</code> lines</td><td>3.18 → 7.73</td></tr>
+    <tr><td>Router tests only, new code, stock (this session)</td><td>23.9 s</td><td>57 pass, 1 fail (watcher: <code>watch never returned</code>)</td><td>2.22 → 5.79</td></tr>
+  </tbody>
+</table>
+<p data-c="timings-note">An earlier round of the four after-runs, before the fix in Deviations, took 66.2 to 80.9 s under load 16 to 20. It is kept only as a sign that the load moves the wall more than the git path does. One git call, 200 in a row, <code>git rev-parse --git-dir</code>, two samples each: <code>/usr/bin/git</code> 6.73 · 6.48 ms; the linked real git 3.14 · 3.16 ms; the Command Line Tools' git 3.11 · 3.12 ms (load 8.92 → 8.29).</p>
+
+<h3 id="how">How it works</h3>
+<ul data-c="how">
+  <li><code>tests/common/mod.rs</code>: <code>real_git(exec_path)</code> takes <code>&lt;prefix&gt;/bin/git</code> beside <code>&lt;prefix&gt;/libexec/git-core</code>, else <code>git-core/git</code>; a relative or empty exec-path is none. <code>real_git_dir</code> asks the PATH's git for <code>--exec-path</code> once and links the real git into <code>target/tmp/real-git/git</code>, under a staged name, then renamed. <code>shared_path</code> leaves the inherited PATH alone when its git already is the linked one. <code>path()</code>, <code>path_with(dir)</code> and <code>real_git_first(p)</code> are the only ways a test builds a PATH, and <code>cmd</code> sets <code>path()</code> on every spawn.</li>
+  <li>This machine's real git is Xcode's (<code>xcode-select -p</code> is <code>/Applications/Xcode.app/Contents/Developer</code>), not the Command Line Tools'. Its directory also holds <code>python3</code>, <code>make</code>, <code>gcc</code> and dozens more, which is why only git is linked.</li>
+  <li>Every <code>std::env::var("PATH")</code> in the test files became a helper call (cli, close_walk, init, mr, review, router, seed3_e2e, verify_doc, verify_dod). The one literal PATH, <code>/usr/bin:/bin</code> in <code>installed_git_hook_without_keel_on_path_refuses_and_points_to_install_channels</code>, goes through <code>real_git_first</code>.</li>
+  <li>Known limit: the link sits in the shared <code>target/tmp</code>. Two test runs in one worktree with different git paths re-point it in turn. Each target is a real git, and one worktree runs one test run at a time.</li>
+</ul>
+
+<h3 id="evidence-h">Evidence</h3>
+<div data-item="evidence" data-c="evidence">
+  <ul>
+    <li>Commits: <code>762701c</code> WU plan · <code>c67b5ab</code> the helpers, the PATH migration and the tests · <code>9619347</code> the made-up PATH fix · this report.</li>
+    <li><b>Red first,</b> on <code>1e1c6bc</code>, stock PATH, sandbox: <code>cargo test --test router</code>, 46 pass and 12 fail, with <code>git: error: couldn't create cache file '/var/folders/…/T/xcrun_db-…' (errno=Operation not permitted)</code> 18 times. The failing tests: <code>epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end</code>, <code>a_worktree_whose_git_link_was_changed_is_never_run_git_in</code>, <code>launcher_ignores_inherited_git_variables</code>, <code>stop_removes_that_sessions_brief_copies_and_reports_branch_drift</code>, <code>watch_refuses_bad_arguments_before_any_poll</code>, <code>watchdog_facts_hold_one_block_per_live_worker_of_this_repository</code>, <code>stop_stops_then_removes_this_repositorys_idle_worker_by_id</code>, <code>watch_signed_and_merged_report_the_note_and_how_the_tip_landed</code>, <code>worktree_add_cuts_an_epic_or_wu_branch_off_its_base_at_the_derived_path</code>, <code>fact_block_states_a_worker_from_its_transcript_tail_within_its_bound</code>, <code>worktree_remove_takes_only_a_clean_merged_worktree_with_no_session_in_it</code>, and <code>watcher_run_is_bounded_when_the_watch_outpolls_its_releases</code> (W2's). After: only the last.</li>
+    <li><b>Integration,</b> <code>tests/cli.rs</code>: <code>a_test_spawn_runs_the_real_git_not_the_launcher</code> (<code>common::cmd</code>'s own PATH, <code>path()</code>, <code>path_with(keel's directory)</code> and <code>real_git_first("/usr/bin:/bin")</code> each resolve the real git, the same exec-path as the PATH's git, never <code>/usr/bin/git</code> on macOS, and <code>git --version</code> prints nothing on stderr) · <code>the_real_git_is_found_from_the_paths_git_or_the_path_is_left_alone</code> (scratch gits: the link and its replacement; a git that is its own real git, beside or inside git-core, leaves the shared PATH alone; a failing git, nothing at the exec-path, a relative exec-path, no git, an empty PATH make no link) · <code>every_test_path_comes_from_common</code>. <code>tests/router.rs</code>: the 11 tests above, now green in the sandbox.</li>
+    <li><b>Unit,</b> <code>tests/cli.rs</code>: <code>real_git_is_beside_the_exec_path_else_inside_it</code> (Xcode, Command Line Tools, Homebrew, Linux, git-core only, nothing, empty, relative, root) · <code>the_test_path_puts_the_git_directory_first_or_nothing</code>.</li>
+    <li><b>Mutants,</b> each run then restored: <code>cmd</code> without the test PATH fails <code>a_test_spawn_runs_the_real_git_not_the_launcher</code>; the "already real" check removed, before and after the fix, fails the resolver test at "its own real git"; a planted <code>std::env::var("PATH")</code> and a literal PATH under <code>tests/planted/</code> fail the guard, naming the line.</li>
+    <li><code>tests/cli.rs</code> green with three PATHs: stock, Command Line Tools first, Xcode first. <code>git diff 1e1c6bc -- src/</code> is empty.</li>
+    <li>Docs touched: the WU plan and this report, both T3.</li>
+  </ul>
+</div>
+
+<h3 id="distillation-h">Distillation</h3>
+<p data-item="distillation" data-c="distillation">Nothing lands in T1/T2 at this WU. For DEC-84 at the epic close, the git-on-PATH rule for tests: "Every PATH a test hands a child comes from <code>tests/common</code> (<code>path</code>, <code>path_with</code>, <code>real_git_first</code>; guarded by <code>every_test_path_comes_from_common</code>). It has a directory holding only the real git first, found from the PATH's git's <code>--exec-path</code>, so the macOS xcrun launcher never runs under a test. Where the PATH's git already is the real one, the shared PATH is the inherited one. Keel itself runs whatever git its caller's PATH names." Rejected: the real git's own directory first (it shadows Xcode's <code>python3</code>, <code>make</code> and more); <code>xcrun --find git</code> (macOS only, and it is the program that fails in the sandbox). Backlog R43's first half is done by this WU; R43 closes at the epic close with W2.</p>
+
+<h3 id="follow-ups-h">Follow-ups</h3>
+<div data-item="follow-ups" data-c="follow-ups">
+  <ul>
+    <li>The watcher test stays red in the sandbox. Destination: E-TESTOPT.W2, in flight.</li>
+    <li>A same-session before-run needs a scratch clone, refused here. Destination: E-TESTOPT.W5's recipe re-run on main and the epic tip, which the epic plan already holds.</li>
+    <li>W3 moves <code>tests/cli.rs</code> with these tests and the guard. The guard scans <code>tests/</code> recursively and skips only <code>tests/common</code>. Destination: E-TESTOPT.W3, which must keep that exclusion if <code>common</code> moves.</li>
+  </ul>
+</div>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
