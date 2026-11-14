@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>W1 · The router's moment-of-action checklists</h1>
       <p>The rule the router already knew now has a short form it must run before the call. This report keeps, changes or drops every hunk of the audit's patch, with the reason, and names what the guard plugin still has to enforce.</p>
-      <div class="meta">T3 · wu-result · 2026-11-14 · E-RGUARD.W1 · wu/E-RGUARD/w1-interim-checklist · plan <code>c6982a5</code></div>
+      <div class="meta">T3 · wu-result · 2026-11-14 · E-RGUARD.W1 · wu/E-RGUARD/w1-interim-checklist · plan <code>c6982a5</code> · round 2 on your commit <code>206b98c</code></div>
     </div>
   </header>
   <main>
@@ -60,7 +60,7 @@
     <tr>
       <td><code>references/checklists.md</code> (new)</td>
       <td>START (7), WAKE (5), DISPATCH (4)</td>
-      <td><b>Kept, two rows rewritten, one added.</b> (1) START.2 said "everything else — a plan, a config, a backlog row … — is a worker's", which contradicts the posture's read tools and would leave a router unable to brief; it now reads: read tools for dispatch, verification and relaying, never for deriving the substance, and never a document a worker was just sent to read. (2) START.4 gained the model and effort check, which the audit counted as a miss and only the long form had. (3) START.1 said "run 2-6 by hand" with seven rows; it says 2-7. WAKE and DISPATCH are as the patch wrote them, including the denial row that M4 lacked.</td>
+      <td><b>Kept, two rows rewritten, one added.</b> (1) START.2 said "everything else — a plan, a config, a backlog row … — is a worker's", which contradicts the posture's read tools and would leave a router unable to brief; it now reads: read tools for dispatch, verification and relaying, never for deriving the substance, and never a document a worker was just sent to read. (2) START.4 gained the model and effort check, which the audit counted as a miss and only the long form had. (3) START.1 said "run 2-6 by hand" with seven rows; it says 2-7. WAKE and DISPATCH kept the patch's rows, including the denial row that M4 lacked; round 2 rewrote START.6 and WAKE.3 (below).</td>
     </tr>
     <tr>
       <td><code>references/worker-ops.md</code></td>
@@ -70,7 +70,7 @@
     <tr>
       <td><code>references/worker-ops.md</code></td>
       <td>"Wake on DSH"</td>
-      <td><b>Kept, one bullet dropped.</b> Dropped "The brief carries the signal … <code>DONE|BLOCKED|QUESTION</code> in <code>&lt;worktree&gt;/.router-ready.&lt;name&gt;</code>": a new worker-side file with no gate, no test and no reader a router can trust, and <code>worker_status</code> plus <code>worker_output</code> already answer "idle or waiting on a question". If a machine-readable signal is wanted, D2 defines it. Kept: one wake per fleet, armed before the first dispatch, re-armed on every wake, stopped with the last worker; never close a turn with a live worker and nothing armed.</td>
+      <td><b>Kept, one bullet dropped.</b> Dropped "The brief carries the signal … <code>DONE|BLOCKED|QUESTION</code> in <code>&lt;worktree&gt;/.router-ready.&lt;name&gt;</code>": a new worker-side file with no gate, no test and no reader a router can trust, and <code>worker_status</code> plus <code>worker_output</code> already answer "idle or waiting on a question". If a machine-readable signal is wanted, D2 defines it. Kept: one wake per fleet, armed before the first dispatch, re-armed on every wake, stopped with the last worker; never close a turn with a live worker and nothing armed. Round 2 bounded it to one reminder that is never doubled and made its ruling the owner's, dated (below).</td>
     </tr>
     <tr>
       <td><code>references/brief-skeleton.md</code></td>
@@ -80,12 +80,12 @@
     <tr>
       <td><code>references/lessons.md</code></td>
       <td>K13 and K14</td>
-      <td><b>Kept, moved after K12.</b> The patch inserted them between K11 and K12; the list is in id order, so K13 and K14 are appended. Their text is unchanged except that K13 now ends by pointing at the checklist.</td>
+      <td><b>Kept, moved after K12.</b> The patch inserted them between K11 and K12; the list is in id order, so K13 and K14 are appended. Their text is the patch's, byte for byte — including K13's closing pointer at the checklist; only their position changed.</td>
     </tr>
     <tr>
       <td><code>.claude/skills/project-router/SKILL.md</code></td>
       <td>"On DSH (checked 2026-11-14)"</td>
-      <td><b>Kept, one line added.</b> The right tier for the launcher and preset facts: the project skill, no mirror, and the launcher denial, the worktree rule, the fleet wake and "a denial is final" are Keel's, not general router doctrine. One line now points the router at the checklists until D2 lands. <code>docs/backlog/dsh.html#d2</code> is the file the section cites, and it exists.</td>
+      <td><b>Kept, then cut back in round 2.</b> The project skill is the right tier for Keel's own facts and has no mirror, but the first version also restated the host's transport table and the "a denial is final" rule — generic rules in the project skill, duplicated. It now carries two Keel facts (the launcher denial, the fleet wake) and points at the router skill, one copy (below). <code>docs/backlog/dsh.html#d2</code> is the file it cites, and it exists.</td>
     </tr>
     <tr>
       <td>The five mirrored files</td>
@@ -99,6 +99,25 @@
     </tr>
   </tbody>
 </table>
+
+<h2 id="round-2">Round 2 — the rule-text review's five importants</h2>
+<p>The independent review of the rule text found no blocker and five importants; the code review had already passed. Every one is fixed in the text, and four are now asserted by the WU test, so a later edit cannot quietly drop them.</p>
+<table data-c="round2-table">
+  <thead><tr><th>Finding</th><th>Fix</th></tr></thead>
+  <tbody>
+    <tr><td><b>I1</b> — START.6 armed the Claude Code watchdog "before the first dispatch", when no worker exists yet; the long form starts it at the first <code>RUNNING</code></td>
+      <td>START.6 now arms each wake when its subject exists: a staged action's watch in the turn it is staged, the DSH fleet wake before the first dispatch, and the Claude Code watchdog once the first background worker is <code>RUNNING</code> — "never before one exists". Its cost line names both failure shapes: a fleet finishing into silence, and a watchdog guarding nothing.</td></tr>
+    <tr><td><b>I2</b> — START.2 still did not say where a router's read of a plan stops</td>
+      <td>It says it now: a plan or a brief is read "for the facts a dispatch needs — WU id, branch, tip, base, rulings, hard rules — not to summarise, analyse or pre-answer it", and still not a document a worker was sent to read. That is the boundary the audit's cause (e) found missing, and it answers the plan's open point 2 in the rule itself.</td></tr>
+    <tr><td><b>I3</b> — START.3 read an owner queue a restart has cleared, and START.5 read a rulings log with no path anywhere</td>
+      <td>START.3 rebuilds the queue from state instead of memory: a tip with no notes, a staged sign-off, an unmerged branch, a watch that has not fired. The rulings log is <code>&lt;ROOT&gt;/.router/rulings.md</code> — one line per ruling, its date, what and why, started if missing — named in START.5, in <code>SKILL.md</code> "Session start" step 5 and "Decisions", in <code>project-router</code> beside the briefs, and in <code>worker-ops</code>' list of durable <code>ROOT</code> state.</td></tr>
+    <tr><td><b>I4</b> — the DSH fleet wake was a 5-minute timer under a "no heartbeat" heading, with no at-most-one rule, readable as one watch per worker, and no dated ruling</td>
+      <td>"Wake on DSH" now opens by naming its ruling as the owner's with the date left for you (<code>2026-11-__</code>), and bounds it: one reminder, armed once before the first dispatch, re-armed only on a wake, never a second beside it, stopped with the last worker; one WAKE pass per firing, no loop of its own and no poll in between; and one reminder covers every live worker, never one per worker. WAKE.3 repeats the per-fleet and at-most-one bounds. The section heading no longer claims "no heartbeat" — it names the exception (<code>no loop; one fleet wake on DSH</code>) — and <code>SKILL.md</code>'s no-heartbeat bullet states the same bounds and points at the ruling.</td></tr>
+    <tr><td><b>I5</b> — <code>project-router</code> duplicated the transport table and the DSH denial rule, and its worktree row contradicted the unconditional "Who runs what" row</td>
+      <td>The section now carries two Keel facts only — the launcher denial and the fleet wake — and points at the router skill for the host's own rules, one copy. "Who runs what" qualifies the worktree row: the router creates and removes worktrees through the launcher where the launcher is allowed, and on DSH the preset denies it, so a worker does it; the DSH row adds that a raw <code>git worktree add</code> is no alternative.</td></tr>
+  </tbody>
+</table>
+<p><b>The nits</b>, all taken. The brief bullet no longer claims a prompt is unreadable after a restart — it says what is true: a prompt is a record of what was said, not a brief you re-read at the next start. The checklists' pointer names "Workers" too. START.1 works through 2-6 by hand and lets 7 close the message. The lessons table says what actually changed: K13 and K14 are the patch's text verbatim, moved after K12. And "the profile's worker wake" is gone: the fleet wake is a host reminder, not a plugin hook nothing in either skill defines.</p>
 
 <h2 id="d2">What the D2 epic must still enforce</h2>
 <p>The checklist is a rule a willing router runs. It is not a guard, and the transcript that started this WU is proof that a known rule does not fail a call. D2 owns these, and this WU leaves them where the plugin can find them:</p>
@@ -118,7 +137,7 @@
 <div data-item="evidence" data-c="evidence">
   <p><b>Red, before the change was wired in.</b> The new test failed at its first assertion — <code>keel init did not plant checklists.md</code> — and <code>embedding_is_complete_and_prefixed</code> failed on the map of <code>skills/</code> against what <code>keel init</code> wrote (the new file was in the source tree and in no build).</p>
   <p><b>Green, after one entry in the embed list.</b> <code>cargo test --test init</code>: 19 passed, 0 failed, including the two self-hosting tests, which build their clone from the index and so see the staged tree. The new test asserts: both trees byte-identical; <code>keel init</code> plants the file byte-equal; <code>SKILL.md</code> names it under "The router posture" and "Session start" and names "Wake on DSH" where the no-timer ruling lives; each list names its trigger and keeps its rows (7, 5, 4); the four D2 checks each have a row; and the file carries no project path and no epic id.</p>
-  <p><b>Raw gates.</b></p>
+  <p><b>Raw gates</b> (round 1, on <code>206b98c</code>).</p>
   <ul>
     <li><code>cargo clippy --all-targets -- -D warnings</code>: exit 0.</li>
     <li><code>cargo test --no-fail-fast</code>: exit 101. Every target green — unit 80, <code>cli</code> 19, <code>init</code> 19, <code>mr</code> 27, <code>release</code> 5, <code>review</code> 1, <code>verify_doc</code> 23, <code>verify_dod</code> 51 — except <code>--test router</code>: 55 passed, 3 failed, all watch tests (<code>watch_polls_at_its_default_pace_and_times_out_in_minutes</code>, <code>watch_pushed_and_tagged_fire_on_origin_only</code>, <code>watch_signed_and_merged_report_the_note_and_how_the_tip_landed</code>). The same suite with <code>--test-threads=1</code>: 58 passed, 0 failed.</li>
@@ -126,6 +145,7 @@
     <li><code>keel check</code>: exit 1, <code>check red - lint/tests failed; not cached</code>. The lint half is green (clippy exit 0); the test half fails only on six <code>watch_*</code> tests in <code>--test router</code> — <code>watch never reached poll 1</code>, <code>watch never returned</code> — which are the load-dependent ones of backlog R43. Single-threaded the same suite is green.</li>
     <li><code>cargo fmt --check</code>: <b>red, 16 files, and red at the base commit too</b> — the repository's code is not formatted to rustfmt's default width and this WU touched neither the formatter nor those files. The project's lint gate is clippy (<code>[check] lint</code>); nothing ran <code>cargo fmt</code>, which would have rewritten 16 unrelated files.</li>
     <li><b>The watch tests are red under parallel load in this sandbox only</b> (backlog R43; 3 failed in the parallel run above, 6 in <code>keel check</code>'s, 0 with <code>--test-threads=1</code>). None of them touches a skill file, and this WU changes no watcher.</li>
+    <li><b>Round 2, the fixes staged on <code>206b98c</code>:</b> <code>cargo clippy</code> exit 0; <code>cargo test --no-fail-fast</code> exit 101, every target green except six <code>watch_*</code> tests of <code>--test router</code> (52 passed, 6 failed); <code>cargo test --test router -- --test-threads=1</code> 58 passed, 0 failed, exit 0; <code>--test init</code> 19/19, including the four new assertions; <code>keel check</code> exit 1 on the same watch tests; <code>cargo fmt --check</code> unchanged, the same 16 files as at the base. One serial run of the router suite, made while the machine was still loaded, failed two watch tests (<code>watch never reached poll 1</code>, <code>watch never returned</code>); both passed alone and the whole suite passed on an idle rerun, so that is load, not this change.</li>
   </ul>
 </div>
 
@@ -152,6 +172,7 @@
     <li><code>keel preflight wu &lt;tip&gt; --target epic/E-RGUARD</code>, then the review the preflight names; the rule text needs the independent review above.</li>
     <li><code>keel verify-dod wu &lt;tip&gt; --target epic/E-RGUARD</code> red on <code>8·manual-review</code> only, then <code>keel mr confirm wu &lt;tip&gt; --as vuluu --target epic/E-RGUARD</code>.</li>
   </ol>
+  <p><b>Yours to decide:</b> the fleet-wake exception carries <code>2026-11-__</code> as its ruling date — fill it when you rule, or reject it and the DSH fleet wake goes (then WAKE.3 has nothing to arm on a host whose workers cannot message, and D2's turn-stopping check is the whole answer).</p>
   <p>The rest is the D2 epic: the deny, the four turn-stopping checks, and the launcher allow-rule the preset needs.</p>
 </div>
 
