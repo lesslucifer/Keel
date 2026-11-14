@@ -506,9 +506,16 @@ fn router_ships_the_moment_of_action_checklists() {
     for row in ["briefs/<name>.md", "What you need to do now:", "Never retry it", "nothing armed"] {
         assert!(src.contains(row), "checklists.md has no row for {row:?}");
     }
-    for leak in ["/Users/", "E-ROUTER", "E-RGUARD", "E-SEED"] {
-        assert!(!src.contains(leak), "checklists.md carries Keel's own state: {leak:?}");
+    // round 2 of the rule-text review, as regressions: the rulings log has a location, the Claude Code
+    // wake is armed when its subject exists, a read stops at the facts a dispatch needs, and the DSH
+    // fleet wake is one reminder that is never doubled and never one per worker
+    for said in [".router/rulings.md", "once the first background worker is `RUNNING`", "the facts a dispatch needs", "never a second reminder"] {
+        assert!(src.contains(said), "checklists.md lost {said:?}");
     }
+    let ops = std::fs::read_to_string(root.join("skills/keel-router/references/worker-ops.md")).unwrap();
+    assert!(ops.contains("One reminder, armed once, re-armed only on a wake") && ops.contains("never a second reminder"), "worker-ops allows a second fleet reminder, or a poll");
+    assert!(!ops.contains("the profile's worker wake"), "the fleet wake rests on a profile hook nothing defines");
+    assert!(section("## Session start").contains("rulings.md") && section("## Decisions").contains("rulings.md"), "SKILL.md does not place the rulings log");
 }
 
 fn hook_cmds(v: &serde_json::Value, ev: &str) -> Vec<String> {

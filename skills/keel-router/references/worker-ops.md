@@ -85,7 +85,8 @@ nothing else is accepted (never `bypassPermissions`, `dontAsk` or `default`). Gr
 never in the settings the router shares, so they never reach the router. `keel
 init` ships no launcher: a project commits its own and its project-router skill
 names it (`<launcher>` below). `ROOT` = the checkout holding the launcher; its
-`.router/` is git-ignored and durable (`briefs/`, `runs/`), unlike `/tmp`.
+`.router/` is git-ignored and durable (`briefs/`, `runs/`, `rulings.md`), unlike
+`/tmp`.
 
 Prerequisites: the router runs in the checkout that holds the launcher (an
 enforced whitelist allows only its relative path) and under a name, which every
@@ -273,7 +274,7 @@ until id=$(gh run list --workflow <wf>.yml --branch <br> --limit 1 --json databa
 echo "RUN $id"; gh run view $id --json conclusion,jobs -q '.jobs[]|"\(.name): \(.conclusion) · failed: \([.steps[]|select(.conclusion=="failure")|.name]|join(" | "))"'
 ```
 
-## Wake checklist (no heartbeat)
+## Wake checklist (no loop; one fleet wake on DSH)
 
 The router runs no loop or timer (owner ruling 2026-11-11; the Claude Code guard
 denies `loop`, `CronCreate` and `ScheduleWakeup`). It wakes on a worker's message,
@@ -302,13 +303,18 @@ a watch line, an idle notice or the owner. The short ordered form is
 A DSH worker sends nothing: `worker_spawn` has no report channel, so a worker that
 finishes cannot wake the router, and `worker_output` is a read, not a message. What
 wakes a DSH router is a host event: an owner message, a finished background job, or
-a host reminder.
+a host reminder. The exception below is the owner's ruling; its date is pending,
+2026-11-__.
 
-- **One wake per fleet, armed before the first dispatch, re-armed on every wake.**
-  Use the profile's worker wake when it has one; otherwise one host reminder for the
-  whole fleet at 5 minutes. It is a wake, not a heartbeat: one WAKE pass, then
-  re-arm, and it is stopped when the last worker is `stopped`. This is the one
-  exception to "no loop or timer", and only where workers cannot message.
+- **One reminder, armed once, re-armed only on a wake.** A single host reminder
+  covers the whole fleet: arm it before the first dispatch, re-arm it once per
+  wake, never a second reminder beside it, and stop it when the last worker is
+  `stopped`. It is a wake, not a heartbeat: one WAKE pass per firing, no loop of
+  your own, and no poll in between. This is the one exception to "no loop or
+  timer", and only where workers cannot message.
+- **It covers every live worker.** One reminder asks about the fleet, never one
+  watch or one reminder per worker: WAKE.3 checks that this single wake is armed,
+  and one WAKE pass reads every live worker.
 - **Never close a turn with a live worker and nothing armed.** That is the DSH form
   of "watch, never wait to be told": without it, the next thing that wakes the
   router is the owner.

@@ -78,7 +78,8 @@ again … I can't remember things from the past, you sent me a ton of messages."
 
 - **One task at a time.** Keep an ordered owner queue (each item: what, what it
   unblocks, cd-prefixed commands, the watcher that detects done), ordered by most
-  workers unblocked; sign + merge of one WU = one task. Every message carries
+  workers unblocked; a restart clears it, so rebuild it from state
+  (`references/checklists.md` START.3); sign + merge of one WU = one task. Every message carries
   exactly ONE current task in full (read-first doc, commands, how you verify) +
   `Up next:` one line per item; never several full tasks or mixed-WU command
   walls. Decisions too: one at a time, options + recommendation.
@@ -112,9 +113,10 @@ and every owner message are also wakes: run WAKE with them.
 4. Confirm your posture is enforced (above). Load the deferred tools you need
    with `ToolSearch` (`select:SendMessage,Monitor,TaskStop`); a tool that does
    not load does not exist here — don't plan on it.
-5. Re-read the briefs dir and rulings log. Your name = **your current session
-   name** (restarts rename you): tell every live worker; briefs say "report to
-   <current name>; ignore older names".
+5. Re-read the briefs dir and the rulings log (`<ROOT>/.router/briefs/`,
+   `<ROOT>/.router/rulings.md`: one line per ruling, its date, what and why). Your
+   name = **your current session name** (restarts rename you): tell every live
+   worker; briefs say "report to <current name>; ignore older names".
 6. One test send on the push channel; report its id. Re-arm watchers
    (`references/worker-ops.md`); ask each idle worker without a delivered
    report for it. Post the board.
@@ -303,9 +305,9 @@ in another skill.
   read, job, hard rules, report protocol (`references/brief-skeleton.md`).
   **Every dispatch writes `<ROOT>/.router/briefs/<name>.md` first and reads it
   back**; on DSH the same text is the `worker_spawn` prompt and the file is still
-  written, because a prompt is not readable after a restart and a stale file (old
-  tip, dead router name) is worse than none. Overwrite it; never reuse one
-  (lessons K14).
+  written, because a prompt is a record of what was said, not a brief you re-read
+  at the next start, and a stale file (old tip, dead router name) is worse than
+  none. Overwrite it; never reuse one (lessons K14).
 - Brief says: "ONE non-stop run; status messages are not stopping points" and
   "no mid-run questions" (a worker that stops to ask ends its turn and sits idle): decide
   reversible choices with a recommendation, else stop with options. Answers go
@@ -337,8 +339,10 @@ in another skill.
   2026-11-11). Workers report by message and every staged owner action has a
   watch; each wake runs the wake checklist (`references/checklists.md` WAKE) and
   re-arms. A background spawn counts only once the launcher printed `RUNNING`.
-  The one exception is a host whose workers cannot message (DSH): the single
-  fleet wake there is a wake, not a poll, and it is covered in "Wake on DSH".
+  The one exception is a host whose workers cannot message (DSH): one wake for the
+  whole fleet, armed once before the first dispatch and re-armed only on a wake,
+  never a second reminder; it is a wake, not a heartbeat. The ruling that allows
+  it is the owner's, and it is stated in "Wake on DSH".
 
 ## Permissions
 
@@ -398,7 +402,8 @@ is a new finding.
 Ask only what is truly the owner's (product, policy, outward actions, rule
 changes, risk). Every question: options with costs, your recommendation, the
 default if unanswered. Ask twice at most, then proceed on the default
-*(inference)*. Record rulings in the rulings log and next briefs.
+*(inference)*. Record rulings in the rulings log (`<ROOT>/.router/rulings.md`) and
+next briefs.
 
 ## CI, releases, shared resources
 
