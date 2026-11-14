@@ -82,6 +82,9 @@ the report is committed, so its verdict and nits live on the cr note, not here) 
 `distillation` (the T2/T1 docs now carrying the truth, checked against the
 distillation plan; plans and reports archived) · `follow-ups`.
 
+Every follow-up, in either report, names the WU, epic or backlog row that
+takes it (skill `keel-workflow` §2).
+
 Beyond the checklist, a plan carries whatever the task needs. The convention in
 Keel's own plans: an **open-points table** (`#` · question · answer · why), so
 the owner can review asynchronously through htmldoc comments while work

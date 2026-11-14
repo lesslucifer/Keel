@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af84cca9f34851f0dfb2483">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — architecture</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>Keel — architecture</h1>
+      <p>What Keel is at this tip: its commands, what setup installs, every policy key, the evidence, the router tools and the close.</p>
+      <div class="meta">T1 · 2026-11-14 · Keel · code at <code>epic/E-SEED3</code> <code>26f2069</code> (W1–W7 merged; W8 writes this page)</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="shape">The shape</h2>
+<p>Keel is one binary plus the rules it writes into a repository. The binary serves the CLI and the git hooks. The repository holds the policy (committed) and the evidence (git notes, which travel with the code).</p>
+<p>Work moves from the owner to a router to a worker in one worktree. A worker commits on <code>wu/&lt;epic&gt;/&lt;slug&gt;</code> or <code>epic/&lt;epic&gt;</code>. Each WU and then the epic is gated at its merge into its target; the owner signs last.</p>
+<div class="diagram" data-c="shape-diagram">
+  <pre class="mermaid">
+flowchart LR
+  O["Owner"] -->|"signs, merges, pushes"| M["main"]
+  E["epic/E"] -->|"epic gate"| M
+  W["worker in a worktree"] -->|"WU gate"| E
+  W -->|"writes"| N["refs/notes/*"]
+  G["keel verify-dod"] -->|"reads"| N
+  G -->|"reads"| C[".keel/config.toml at HEAD"]
+  H["git hooks in the common git dir"] -->|"run"| G
+  R["router"] -->|"launcher"| W
+  </pre>
+  <div class="caption">The gate reads committed policy and notes; the hooks are the enforcement.</div>
+</div>
+<p>Documentation has five tiers (skill <code>keel-distill</code>): T0 <code>AGENTS.md</code>, T1 this page and <code>docs/install.html</code>, T2 <code>docs/use-cases/</code>, <code>docs/decisions/</code> and <code>docs/backlog/</code>, T3 <code>docs/work/</code>, T4 the code. This page is T1: it carries the shape and points at the T2 page that owns each rule. Where this page and the code disagree, the code wins; where the code and a written rule disagree, both are named in <a href="#gaps">Where the code and the rules disagree</a>.</p>
+
+<h3 id="terms">Terms</h3>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Epic</td><td>A user-visible change on <code>epic/&lt;slug&gt;</code>: one working unit or more, merged into <code>main</code> once.</td></tr>
+    <tr><td>WU</td><td>A working unit: one independently shippable slice on <code>wu/&lt;epic&gt;/&lt;slug&gt;</code>, merged into its epic.</td></tr>
+    <tr><td>Gate</td><td><code>keel verify-dod</code> at a merge boundary. It reads committed policy and notes, never an agent's word.</td></tr>
+    <tr><td>Evidence</td><td>The notes a gate believes: <code>test</code>, <code>doc</code>, <code>cr</code>, <code>mr</code>, and the <code>dod</code> receipt the gate writes.</td></tr>
+    <tr><td>Exempt</td><td>A range that changes no <code>code_paths</code> path. It owes no test, review or doc note; the sign-off still runs.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="cli">The CLI</h2>
+<p>One binary, <code>keel</code>. The commands below are the whole surface at this tip (<code>src/main.rs</code>). <code>keel hook …</code> exists for git to call, not for a person.</p>
+<table data-c="cli">
+  <thead><tr><th>Command</th><th>What it does</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><code>keel --version</code></td><td>Prints the version and the line <code>Keel: merge-gate workflow CLI</code>.</td><td>The hooks refuse a <code>keel</code> whose version lacks that line.</td></tr>
+    <tr><td><code>keel init [--force|-f]</code></td><td>Wires a repository: policy, rules, skills, host hooks, git hooks, ignore entries, docs directories.</td><td>Idempotent. <code>-f</code> only overwrites differing skill files. See <a href="#init">What setup installs</a>.</td></tr>
+    <tr><td><code>keel hooks install [--force]</code></td><td>Writes the seven hooks into <code>&lt;git-common-dir&gt;/keel-hooks</code> and sets <code>core.hooksPath</code> to that absolute path.</td><td>Refuses another hook manager unless <code>--force</code>.</td></tr>
+    <tr><td><code>keel lint</code></td><td>Runs <code>[check] lint</code> in the repository root.</td><td>Red prints <code>keel lint: red</code>.</td></tr>
+    <tr><td><code>keel check</code></td><td>Runs <code>[check] lint</code> then <code>[check] test</code>; skips both when the tree hash and the two commands match the last green run.</td><td>Cache: <code>&lt;git-dir&gt;/keel-check-green</code>. Warns when Keel's hooks are not the ones installed.</td></tr>
+    <tr><td><code>keel verify-doc [path…]</code></td><td>Checks doc form: governed checklist items, unknown tags, an epic plan's top word count, relative links and Mermaid node/edge label quoting.</td><td>No path: every tracked or untracked, non-ignored <code>.html</code> under <code>[docs] root</code>. A draft is silent.</td></tr>
+    <tr><td><code>keel verify-dod wu|epic &lt;tip&gt; [--target R]</code></td><td>Runs the merge gate for a WU or epic tip; green writes a <code>dod/v1</code> receipt when the range is not exempt.</td><td>Target from the branch name, else a bare tip's holder branches, else a refusal (<a href="#targets">targets</a>).</td></tr>
+    <tr><td><code>keel verify-dod commit &lt;sha&gt;</code></td><td>Runs the standalone commit gate; its range is <code>&lt;sha&gt;^..&lt;sha&gt;</code>.</td><td>Unit layer, if the commit changes code.</td></tr>
+    <tr><td><code>keel verify-dod range &lt;old&gt; &lt;new&gt;</code></td><td>Walks every first-parent seam in a pushed range; a plain commit as a commit, a merge as its level's gate.</td><td>What the pre-push hook runs on <code>main</code> and <code>epic/*</code>.</td></tr>
+    <tr><td><code>keel verify-dod hook</code></td><td>The merge gate as <code>pre-merge-commit</code> runs it: target branch from HEAD, merge head from <code>MERGE_HEAD</code> or the reflog action.</td><td>Refuses an octopus or an unknowable head.</td></tr>
+    <tr><td><code>keel preflight wu|epic &lt;tip&gt; [--target R]</code></td><td>The review's first step: the hooks guard, the checkout is the tip and clean, <code>keel check</code> is green, checks 1–2, then the review round and its scope.</td><td>A docs/infra-only range prints exempt and returns before those checks.</td></tr>
+    <tr><td><code>keel notes write test</code></td><td>Reads a JSON judgment on stdin; derives the range, identity and counts; writes <code>test/v1</code>.</td><td>Each layer is counted from files changed in the range, or waived with a reason.</td></tr>
+    <tr><td><code>keel notes write doc [--distill …]</code></td><td>Lists every changed doc under <code>[docs] root</code> (plus T0) with its tier; archived T3 docs carry their distillation lineage.</td><td>Refuses a missing, phantom, tierless or unlineaged doc.</td></tr>
+    <tr><td><code>keel notes write cr …</code></td><td>Writes <code>cr/v1</code>: a review round (PASS/FAIL with findings), a fix-PASS, or the cap's WAIVED.</td><td>Binds <code>code_diff_hash</code> to the range's <code>code_paths</code> diff. No <code>--reason</code> form.</td></tr>
+    <tr><td><code>keel mr setup --as &lt;id&gt; [--key &lt;path&gt;]</code></td><td>Writes a line into the working <code>.keel/mr-allowed</code>; with a key, probes a signature.</td><td>Authorises nothing until the file is committed by <code>keel mr commit</code>.</td></tr>
+    <tr><td><code>keel mr commit -m &lt;msg&gt; --as &lt;id&gt;</code></td><td>The owner commits a staged diff that touches a <code>rule_bearing</code> path; appends <code>Reviewed-By: &lt;tier&gt; &lt;id&gt;</code>.</td><td>The intended way: it adds the trailer the commit-msg hook looks for. The trailer is typed text, not proof a human read the diff (DEC-47). An agent stages, the owner runs it.</td></tr>
+    <tr><td><code>keel mr confirm wu|epic [&lt;tip&gt;] …</code></td><td>The owner's sign-off: checks 1–7 must be green on the tip, then it writes <code>mr/v1</code> bound to base, tip, level, diff, report bytes and any accepted waiver.</td><td>Options: <code>--as</code>, <code>--target</code>, <code>--report</code>, <code>--roster-change</code>, <code>--waive-review</code>/<code>--confirm-waiver</code>, <code>--accept-waiver</code>. Never run by an agent.</td></tr>
+    <tr><td><code>keel hook pre-commit</code></td><td>Keeps <code>main</code> merge-only; lints a staged code change; gates a merge finished by <code>git commit</code>.</td><td>Internal.</td></tr>
+    <tr><td><code>keel hook commit-msg &lt;file&gt;</code></td><td>Refuses a staged <code>rule_bearing</code> path without a <code>Reviewed-By</code> trailer naming a roster signer.</td><td>Internal; merge commits are skipped.</td></tr>
+    <tr><td><code>keel hook pre-push &lt;remote&gt;</code></td><td>Checks every pushed tree, runs <code>verify-dod range</code> on <code>main</code>/<code>epic/*</code>, then pushes <code>refs/notes/*</code>.</td><td>Internal.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="init">What setup installs</h2>
+<p><code>keel init</code> is additive. A file it owns that already exists with other bytes is kept and reported; <code>keel init -f</code> overwrites only the skill files, never the policy, <code>AGENTS.md</code> or the host settings. It stops after writing the files when <code>core.hooksPath</code> points at another tool, or is unset while <code>.git/hooks</code> holds anything but <code>*.sample</code> files, because Keel never chains another tool's hooks.</p>
+<table data-c="init-files">
+  <thead><tr><th>What</th><th>Where</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Policy</td><td><code>.keel/config.toml</code></td><td>Written once; later runs keep the project's bytes. Check commands are detected from the first manifest (Cargo, Python, Node, Go), and the main branch is <code>master</code> only when no <code>main</code> exists.</td></tr>
+    <tr><td>Project rules</td><td><code>AGENTS.md</code></td><td>Written once; project-owned afterwards (T0, rule-bearing).</td></tr>
+    <tr><td>Skills</td><td><code>.claude/skills/keel-*/</code></td><td>Six skills, 15 embedded files: <code>keel-workflow</code>, <code>keel-plan</code>, <code>keel-code-review</code> (plus rubric), <code>keel-distill</code>, <code>keel-write</code> (plus example), <code>keel-router</code> (plus seven references).</td></tr>
+    <tr><td>Project router</td><td><code>.claude/skills/project-router/SKILL.md</code></td><td>Written once from the template; the project fills it in.</td></tr>
+    <tr><td>Shared skill root</td><td><code>.agents/skills</code></td><td>A relative symlink to <code>../.claude/skills</code>, so DeepSeek Harness and every worktree read one copy. Planted only under a real <code>.agents</code> directory; anything else there is kept and reported.</td></tr>
+    <tr><td>Host doc hooks</td><td><code>.claude/settings.json</code></td><td>Merges, never overwrites: <code>PostToolUse</code> on <code>Write|Edit</code> runs <code>verify-doc-post</code>; <code>Stop</code> runs <code>verify-doc-stop</code>. Invalid JSON is left untouched and the entries are printed.</td></tr>
+    <tr><td>Codex doc hooks</td><td><code>.codex/hooks.json</code></td><td>Written once; the same two checks.</td></tr>
+    <tr><td>Docs directories</td><td><code>docs/use-cases/</code>, <code>docs/decisions/</code>, <code>docs/work/</code></td><td>Created empty.</td></tr>
+    <tr><td>Ignore entries</td><td><code>.gitignore</code></td><td>Appends <code>docs/.archive/</code> and the <code>[paths] worktrees</code> directory (default <code>.claude/worktrees/</code>); never rewrites existing lines.</td></tr>
+    <tr><td>Git hooks</td><td><code>&lt;git-common-dir&gt;/keel-hooks/</code></td><td>Seven files plus <code>core.hooksPath</code> to that absolute path. Inside the git dir, so untracked and shared by every worktree.</td></tr>
+    <tr><td>Skills lock</td><td><code>.keel/skills.lock</code></td><td>SHA-256 per shipped skill file, in <code>shasum -a 256</code> form. Written when a skill was written or the lock exists; absent in a tree whose skills all match and that never had one.</td></tr>
+    <tr><td>Signer roster</td><td><code>.keel/mr-allowed</code></td><td><b>Not written by init.</b> The owner runs <code>keel mr setup --as &lt;id&gt;</code>, then lands it with <code>keel mr commit</code>.</td></tr>
+    <tr><td>Notes fetch refspec</td><td><code>origin</code></td><td><b>Not installed at this tip.</b> init touches no remote. Evidence reaches a remote only because the pre-push hook pushes <code>refs/notes/*</code>; a clone fetches by hand with <code>git fetch origin 'refs/notes/*:refs/notes/*'</code>.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="hooks">The seven git hooks</h3>
+<table data-c="hooks">
+  <thead><tr><th>Hook</th><th>What it enforces</th></tr></thead>
+  <tbody>
+    <tr><td><code>pre-commit</code></td><td>Refuses a non-merge commit on <code>[branches] main</code>. With <code>MERGE_HEAD</code> present it runs the gate <code>pre-merge-commit</code> would have run, because git skips that hook when a conflicted merge is finished by <code>git commit</code>. Otherwise, when the staged diff touches a code path, it runs <code>keel lint</code> (never tests).</td></tr>
+    <tr><td><code>commit-msg</code></td><td>A staged <code>rule_bearing</code> path needs a <code>Reviewed-By</code> trailer naming a signer in the committed roster. Merge commits are skipped.</td></tr>
+    <tr><td><code>pre-merge-commit</code></td><td>Runs <code>keel verify-dod hook</code> with the target's committed policy: into <code>epic/*</code> the WU gate, into <code>main</code> the epic gate and then <code>keel check</code> on the merged tree. Other targets are ungated; a back-merge of landed history passes; an octopus or an unknowable head is refused.</td></tr>
+    <tr><td><code>pre-push</code></td><td><code>keel check</code> on every pushed tree (in place for a clean <code>HEAD</code>, else in a scratch worktree); <code>verify-dod range</code> on <code>main</code> and <code>epic/*</code> updates; then pushes every <code>refs/notes/*</code> ref. A failed notes sync only warns.</td></tr>
+    <tr><td><code>post-checkout</code></td><td>Sets <code>merge.ff=false</code>; copies <code>.gitworktreecopy</code> entries into a new worktree.</td></tr>
+    <tr><td><code>verify-doc-post</code></td><td>The host's per-write doc check: <code>keel verify-doc &lt;path&gt;</code>, fed back on red. Called from the host settings, not by git.</td></tr>
+    <tr><td><code>verify-doc-stop</code></td><td>The host's turn-end doc check: <code>keel verify-doc</code> over all docs. Called from the host settings, not by git.</td></tr>
+  </tbody>
+</table>
+<p>Each installed hook is a short shim: it refuses when <code>keel</code> is not on <code>PATH</code>, refuses when the first <code>keel</code> on <code>PATH</code> does not print Keel's marker (another program named <code>keel</code>, or a build older than 2026-11-10), then <code>exec</code>s the real command. The two host doc hooks exit 0 instead, so a missing or foreign <code>keel</code> never blocks an edit.</p>
+
+<h3 id="lock">The skills lock</h3>
+<p>Before a write, init compares each shipped file with three things: what is on disk, what this binary carries, and the lock entry. Missing: create. Equal: leave. Differs but still matching its lock hash: upgrade silently, because Keel wrote those bytes. Differs and not matching: ask (default no), or overwrite with <code>-f</code>. A file inside a <code>keel-*</code> directory that this build does not ship is reported as <code>extra</code> and left alone. A symlinked or unreadable lock is never written through; init reports it and carries on. The lock is written whenever init writes a skill, or when one already exists, so a later upgrade can tell an unedited file from an edited one. A tree whose skills all match and that never had a lock is left untouched (Keel's own tree).</p>
+
+<h3 id="notes-refspec">The notes refspec</h3>
+<p>This is the one item in the epic's setup plan that the code does not have. W5's B6 (init adds a non-forced notes fetch refspec) was deferred to backlog B24 by the owner, and DEC-19 records the push-only behaviour above. At this tip <code>keel init</code> performs no remote call of any kind. Do not read a fetch setup into it: the pre-push hook pushes the notes, and a clone fetches them by hand. <a href="backlog/e-seed-v2.html#b24">Backlog B24</a> holds the deferred design.</p>
+
+<h2 id="config">The config keys</h2>
+<p><code>.keel/config.toml</code> is read at two different moments. The pre-merge-commit hook reads the copy committed at <code>HEAD</code> (the target), so a branch cannot change the rules that judge its own merge. By-hand commands (<code>verify-dod</code>, <code>preflight</code>, <code>mr confirm</code>) read the working tree's copy, and the review cap is read from the target's committed copy. The CLI parses a fixed set of keys and silently ignores unknown ones at the top level (the <code>[docs.tiers]</code> table is stricter: an unknown tier key is an error). The <code>[review] modules</code>/<code>rubric</code> and the <code>[router]</code> keys are never read by the CLI: the review skill and the worker launcher read them. This table names every key that exists in <code>templates/config.toml</code> or in the code that reads a config.</p>
+<table data-c="config">
+  <thead><tr><th>Key</th><th>Default / example</th><th>Read by</th><th>What it decides</th></tr></thead>
+  <tbody>
+    <tr><td><code>code_paths</code></td><td><code>["src/", "tests/"]</code></td><td>Gate, <code>notes write</code></td><td>Which paths are code: the <code>cr</code> diff binding, the test levels, and the docs/infra exemption. Empty list = every path is code.</td></tr>
+    <tr><td><code>infra_paths</code></td><td>unset</td><td><code>notes::exempt</code></td><td>Optional globs that narrow the exemption: a non-code path counts as infra only if it matches one. It can never exempt a code path.</td></tr>
+    <tr><td><code>rule_bearing</code></td><td><code>["AGENTS.md", "docs/*.html"]</code></td><td><code>keel hook commit-msg</code></td><td>Patterns whose staged change needs a <code>Reviewed-By</code> trailer. A trailing <code>/</code> is a prefix; otherwise <code>*</code> and <code>?</code> stay in one segment and <code>**</code> crosses. <code>.keel/mr-allowed</code> is always rule-bearing.</td></tr>
+    <tr><td><code>[check] lint</code></td><td>detected; Keel's own runs <code>cargo fmt --check &amp;&amp; cargo clippy --all-targets -- -D warnings</code></td><td><code>lint</code>, <code>check</code>, <code>hook pre-commit</code>, <code>pre-merge-commit</code></td><td>The lint command.</td></tr>
+    <tr><td><code>[check] test</code></td><td>detected; Keel's own <code>cargo test</code></td><td><code>check</code>, <code>pre-push</code>, <code>pre-merge-commit</code></td><td>The test command.</td></tr>
+    <tr><td><code>[branches] main</code></td><td><code>"main"</code> (or <code>"master"</code> when only it exists)</td><td>Gate, hooks, <code>mr</code></td><td>Merge-only branch; an epic's default target; the branch whose push runs the epic gate.</td></tr>
+    <tr><td><code>[branches] epic_prefix</code></td><td><code>"epic/"</code></td><td>Gate, <code>notes</code>, launcher</td><td>Epic branch naming. A merge into one is a WU merge.</td></tr>
+    <tr><td><code>[branches] wu_prefix</code></td><td><code>"wu/"</code></td><td>Gate, <code>notes</code>, launcher</td><td>WU branch naming; a WU's target is the epic its name carries.</td></tr>
+    <tr><td><code>[paths] worktrees</code></td><td><code>".claude/worktrees/"</code></td><td><code>keel init</code> only</td><td>The directory init appends to <code>.gitignore</code>. No runtime command reads it.</td></tr>
+    <tr><td><code>[docs] root</code></td><td><code>"docs/"</code></td><td><code>verify-doc</code>, doc note, <code>mr confirm</code></td><td>The docs tree: which files are docs, which HTML files <code>verify-doc</code> walks, where the result report is found.</td></tr>
+    <tr><td><code>[docs.tiers] T0</code>–<code>T3</code></td><td><code>T0 = ["AGENTS.md", "CLAUDE.md"]</code>; <code>T1 = ["docs/*"]</code>; <code>T2 = use-cases, decisions, backlog</code>; <code>T3 = work, .archive</code></td><td><code>notes::tier_of</code> (doc note, check 6, tracked layout)</td><td>The tier of a path. T3 is tried before T1, so a broad T1 glob cannot hide a working doc. Unknown keys in the table are an error.</td></tr>
+    <tr><td><code>[tests] adapter</code></td><td>by extension: rust, ts, python, go; <code>regex</code> when a pattern is set</td><td><code>notes write test</code></td><td>How a test declaration is counted.</td></tr>
+    <tr><td><code>[tests] pattern</code></td><td>unset</td><td><code>notes write test</code></td><td>The regular expression for the <code>regex</code> adapter; required by it.</td></tr>
+    <tr><td><code>[mr] tiers</code></td><td><code>["email", "username", "key"]</code></td><td><code>mr setup</code>, <code>mr commit</code>, <code>mr confirm</code>, <code>commit-msg</code></td><td>Which roster line tiers authorise anything. An unknown tier is an error. <code>key</code> means a signature; <code>email</code>/<code>username</code> are a string match.</td></tr>
+    <tr><td><code>[mr] report</code></td><td><code>"required"</code></td><td><code>mr confirm</code> / check 8</td><td><code>required</code>, <code>optional</code>, <code>none</code>: whether a WU or epic sign-off must attest its result report (<code>data-artifact</code> <code>wu-result</code> / <code>epic-result</code>).</td></tr>
+    <tr><td><code>[review] max_rounds</code></td><td>5</td><td>Review schedule: <code>preflight</code>, <code>notes write cr</code></td><td>The review round cap, read from the target's committed config. A value that is not a whole number of 1 or more is red.</td></tr>
+    <tr><td><code>[review] modules</code></td><td><code>["src/*"]</code></td><td><code>keel-code-review</code> skill only</td><td>The altitude finder's modules. The CLI never reads it.</td></tr>
+    <tr><td><code>[review] rubric</code></td><td><code>".keel/rubric.md"</code></td><td><code>keel-code-review</code> skill only</td><td>An optional project rubric. The CLI never reads it.</td></tr>
+    <tr><td><code>[router] worker_model</code></td><td><code>"opus"</code> (Keel's file)</td><td><code>scripts/router-worker.sh</code></td><td>The only model a worker may be spawned with. Required for a spawn.</td></tr>
+    <tr><td><code>[router] worker_efforts</code></td><td><code>["medium", "high"]</code></td><td><code>scripts/router-worker.sh</code></td><td>The allowed effort values; each must be one of low, medium, high, xhigh, max.</td></tr>
+    <tr><td><code>[router] worker_default_effort</code></td><td><code>"medium"</code></td><td><code>scripts/router-worker.sh</code></td><td>The effort used when a spawn names none; it must be in <code>worker_efforts</code>.</td></tr>
+    <tr><td><code>[router] worker_permission_mode</code></td><td><code>"auto"</code> (absent = <code>acceptEdits</code>)</td><td><code>scripts/router-worker.sh</code></td><td>The widest permission mode a spawn may use. An option may only narrow it; <code>bypassPermissions</code>, <code>dontAsk</code> and <code>default</code> are refused.</td></tr>
+    <tr><td><code>[router] watchdog_model</code></td><td><code>"haiku"</code></td><td><code>scripts/router-worker.sh</code></td><td>Optional; the model the watchdog session runs on. Without it, no watchdog starts.</td></tr>
+  </tbody>
+</table>
+<p>The <code>[router]</code> section has its own reader, not the TOML parser: one exact <code>[router]</code> header, then only <code>key = "word"</code> or <code>key = ["word", …]</code> lines. Any other line, a second <code>[router]</code> or a header naming router refuses the spawn. The launcher reads it from this checkout's <code>HEAD</code>, so an uncommitted edit cannot widen the policy. Keel's own <code>.keel/config.toml</code> carries <code>[review]</code> and <code>[router]</code>; the template ships a <code>[review]</code> section but no <code>[router]</code> section, with <code>max_rounds</code> commented out.</p>
+
+<h2 id="evidence">The evidence set</h2>
+<p>Five note kinds, all JSON in <code>refs/notes/&lt;kind&gt;</code>, all carrying the same identity block: <code>tip</code>, <code>base</code>, <code>branch</code>, <code>committer</code>, <code>timestamp</code>, and a <code>schema</code> string (<code>&lt;kind&gt;/v1</code>). Notes travel with the code because the pre-push hook pushes them; the gate never takes an agent's word for a fact it can read from a note.</p>
+<table data-c="evidence">
+  <thead><tr><th>Kind</th><th>What it records</th><th>Written by</th><th>Read by</th><th>Gate check</th></tr></thead>
+  <tbody>
+    <tr><td><code>test/v1</code></td><td>Per layer (<code>unit</code>, <code>integration</code>, <code>e2e</code>): a count with <code>files</code>, <code>covers</code> and <code>languages</code>, or a <code>waived</code> reason. Counts are derived from the named files at the tip.</td><td><code>keel notes write test</code> (the worker), judgment on stdin.</td><td>Gate checks 1–2; preflight; the walk.</td><td><code>1·notes</code>, <code>2·manifest</code> (the level's layer: commit unit, WU integration, epic e2e), <code>7·walk</code> (a close commit's e2e).</td></tr>
+    <tr><td><code>doc/v1</code></td><td>Every changed doc under the docs root or T0, with its config tier; an archived T3 doc also names the T1/T2 docs that absorbed it, or <code>none: &lt;why&gt;</code>.</td><td><code>keel notes write doc [--distill …]</code>.</td><td>Gate check 6; the walk (a close commit).</td><td><code>1·notes</code>, <code>6·doc-note</code>; <code>7·walk</code> for a close commit.</td></tr>
+    <tr><td><code>cr/v1</code></td><td>The review: verdict PASS/FAIL, the range's <code>code_diff_hash</code>, counts and the round's lists; a fix-PASS (<code>fixes</code>, the round it answers); or WAIVED with a reason. Optional <code>walk_waivers</code>.</td><td>A review worker via <code>keel notes write cr</code>; a waiver by the owner's sign-off (or the review cap's writer).</td><td>Gate checks 3–5; the review schedule (rounds, scope, cap, fix-PASS); <code>mr confirm</code> (waiver hash and history); the walk.</td><td><code>1·notes</code>, <code>3·review</code>, <code>4·review-base</code>, <code>5·diff-binding</code>, <code>7·walk</code> waivers.</td></tr>
+    <tr><td><code>mr/v1</code></td><td>The owner's sign-off: signer, tier, level, <code>change_hash</code>, the attested report and its hash, any accepted waiver's hash, and a signature for a key signer.</td><td><code>keel mr confirm</code> — the owner only.</td><td>Check 8 only.</td><td><code>8·manual-review</code> (never exempt, never waived in the walk).</td></tr>
+    <tr><td><code>dod/v1</code></td><td>The gate's receipt: level, checks it ran, range diff hash, attested report, and <code>review: WAIVED</code> with the reason if the tip's review was waived.</td><td><code>keel verify-dod</code> on a green, non-exempt WU or epic tip.</td><td><b>Nothing in the CLI reads it.</b> It is a receipt for a person or an external audit.</td><td>None: no check depends on it.</td></tr>
+  </tbody>
+</table>
+<p>Two notes bind more than their kind suggests. <code>cr/v1</code> also carries the review schedule's fields (<code>round</code>, <code>scope</code>, <code>fixes</code>, <code>fix_diff_hash</code>, <code>answers</code>) and any <code>walk_waivers</code>, which is why a seam waiver rides the review note and not a separate file. <code>doc/v1</code> is also the lineage record: check 6 refuses an archived T3 doc without a live T1/T2 target, because distillation is judged from the note, not from the archive directory.</p>
+
+<h2 id="router">The router tooling</h2>
+<p>The router is one coordinator between the owner and several workers. It never does the work itself. The tooling is in <code>scripts/</code>; the rules it implements are the <code>keel-router</code> skill plus the project's <code>project-router</code> skill. The enforcement split matters: on Claude Code the guard is a hook and fails closed; on DeepSeek Harness no guard plugin exists, so the skill is the only guard (backlog D2).</p>
+<table data-c="router-tools">
+  <thead><tr><th>Tool</th><th>What it may do</th><th>What it may not do</th></tr></thead>
+  <tbody>
+    <tr><td><b>Launcher</b> <code>scripts/router-worker.sh</code> — <code>spawn</code>, <code>stop</code>, <code>worktree add|remove</code>, <code>watchdog start|stop|facts</code></td><td>Start one background worker per name in a registered worktree, with a fixed prompt, a read-only brief snapshot and the <code>[router]</code> policy read from <code>HEAD</code>; stop an idle worker; cut a <code>wu/</code> worktree off its epic or an <code>epic/</code> worktree off main; run one watchdog session per router.</td><td>No spawn in the router's own or the main checkout, no detached worktree, no worktree without <code>.claude/agents/worker.md</code>, no model/effort/mode the policy does not allow, no resume of a stopped worker. It never pushes, merges, signs or edits a project file.</td></tr>
+    <tr><td><b>Watch</b> <code>scripts/router-watch.sh</code> — <code>commit</code>, <code>signed</code>, <code>merged</code>, <code>pushed</code>, <code>tagged</code></td><td>Read the owner's action at once and then once per poll; print one event line and exit. The only write it makes is <code>git fetch origin</code> (remote-tracking refs and objects; no tags, no <code>FETCH_HEAD</code>). It escapes control characters in untrusted detail text.</td><td>No local ref update, no merge, no push, no tag, no second remote. Bad arguments exit 2 before any poll; five failed network attempts print <code>UNREACHABLE</code>.</td></tr>
+    <tr><td><b>Router guard</b> <code>scripts/router-guard.jq</code></td><td>Allows the router only: read tools, <code>Write</code> of <code>.router/briefs/&lt;name&gt;.md</code>, a fixed Bash whitelist (<code>git status|log|diff|show</code>, <code>git branch -v|-a</code>, a narrow <code>gh pr</code>, <code>ps</code>, the launcher and the watch in fixed shapes), five inline skills, and <code>SendMessage</code> to a named session. In watchdog mode it allows only the 5-minute <code>CronCreate</code> tick and a <code>SendMessage</code> to its router.</td><td>No <code>Agent</code>, no <code>Edit</code>, no general Bash, no shell punctuation, no direct <code>claude</code>, no second recipient. jq failing denies the call. It judges one command per call and only on <code>agent_type == "router"</code>; sessions that are not the router pass untouched.</td></tr>
+    <tr><td><b>Worker file guard</b> <code>scripts/router-file-guard.sh</code></td><td>Lets a worker edit only paths that resolve under its own worktree, and read anywhere except <code>~/.ssh</code> and <code>~/.claude/channels</code>; resolves symlinks and judges a missing path by its deepest existing ancestor.</td><td>No edit of the worktree's <code>.git</code>, <code>.claude/settings.json</code> or <code>settings.local.json</code>; no edit through a hard-linked path; relative paths are refused for the file tools. Known gaps (waived 2026-11-12): a Unicode case-fold variant, tools it does not name, a path ending in a newline, and a path resolved before the tool opens it.</td></tr>
+  </tbody>
+</table>
+<p>The <b>worker plugin</b> is the DeepSeek Harness host package, not a file in this repository (init's hand-off and the install page name it). Its tools are <code>worker_spawn</code> (start a resident session in an absolute existing workspace, with a name, model, effort and prompt), <code>worker_send</code> (queue one turn), <code>worker_output</code> (read the transcript), <code>worker_status</code>, <code>worker_list</code>, <code>worker_stop</code>, <code>worker_forget</code>, <code>worker_forget_workspace</code> and <code>worker_sweep</code>. They may start, steer, read, list and retire sessions. They may not change a spawned worker's workspace after the fact, revive a stopped worker, or make a worker report by message: on DSH the report is its transcript, read with <code>worker_output</code>. On DSH the router's tool whitelist and Bash shapes are unenforced until a guard plugin exists (<a href="backlog/dsh.html#d2">backlog D2</a>), and the doc gate plugin is a placeholder that no repository provides (<a href="backlog/dsh.html#d1">backlog D1</a>).</p>
+
+<h2 id="close">The epic close</h2>
+<p>An epic closes on its own branch, then lands on main. The code enforces the evidence at each step; the owner does the signing, the merge and the push. The exact order:</p>
+<p>The T2 pages own the wording of these rules. The epic close lands the epic's amendments there: <a href="use-cases/workflow.html">UC-GATE-3</a> and UC-GATE-4, <a href="use-cases/workflow.html#uc-note-1">UC-NOTE-1</a> and <a href="use-cases/workflow.html#uc-gate-2">UC-GATE-2</a>, <a href="use-cases/workflow.html#uc-init-1">UC-INIT-1</a>, <a href="use-cases/workflow.html#uc-rev-2">UC-REV-2</a>/<a href="use-cases/workflow.html#uc-rev-3">UC-REV-3</a>, <a href="use-cases/workflow.html#uc-mr-1">UC-MR-1</a> and UC-DOC-1; <a href="decisions/distribution.html#dec-3">DEC-3</a>, DEC-15, <a href="decisions/workflow-gates.html#dec-18">DEC-18</a>, DEC-41, DEC-49, and a new DEC-57 for the follow-up rule. DEC-19 is not amended: it already records push-only notes. This page carries the shape those texts describe.</p>
+<ol>
+  <li>Merge <code>main</code> into the epic if main moved. A back-merge into an epic is not a seam: the gate passes it.</li>
+  <li>Distil: move each T3 working doc's durable truth into a T1/T2 doc, then <code>git rm</code> the T3 file and keep the file in the git-ignored <code>docs/.archive/</code>.</li>
+  <li>On the archive commit, write the epic's notes: <code>test/v1</code> with the <code>e2e</code> layer, and <code>doc/v1</code> with one <code>--distill</code> line per archived T3 doc. Written with no <code>--target</code> while the archive commit is the epic tip, their range is the whole epic (<code>merge-base(main, tip)..tip</code>).</li>
+  <li>Write the epic result report into <code>docs/.archive/</code> (untracked), with <code>data-artifact="epic-result"</code> and a ready status; keep it on disk through the sign-off.</li>
+  <li>Run the epic-scope code review on the tip; it writes <code>cr/v1</code>. A walk seam that is genuinely safe is waived in that cr note's <code>walk_waivers</code>, never with <code>--no-verify</code>.</li>
+  <li><code>keel preflight epic &lt;tip&gt;</code>: the checkout is the tip, the tree is clean, <code>keel check</code> is green, checks 1–2 pass, and the round is within the cap.</li>
+  <li><code>keel verify-dod epic &lt;tip&gt;</code>: checks 1–8. Before the sign-off the only expected red is <code>8·manual-review</code>, the boundary being signed.</li>
+  <li>The owner signs: <code>keel mr confirm epic &lt;tip&gt; --as &lt;id&gt; --report docs/.archive/&lt;date&gt;-&lt;slug&gt;-epic-result.html</code>. It writes <code>mr/v1</code>. Re-run <code>keel verify-dod epic &lt;tip&gt;</code>: check 8 now passes and the gate writes the <code>dod/v1</code> receipt.</li>
+  <li>The owner merges <code>--no-ff</code> into <code>main</code>. The pre-merge-commit hook runs the epic gate again and then <code>keel check</code> on the merged tree.</li>
+  <li>The owner pushes <code>main</code> and the epic branch. The pre-push hook checks every pushed tree, walks the range on <code>main</code> and <code>epic/*</code>, and pushes the notes.</li>
+</ol>
+
+<h3 id="close-notes">A close commit is judged by its epic-range notes (W2)</h3>
+<p>Check 7 (and the pre-push range walk) reads a plain first-parent commit in one of two ways. A commit is <b>epic-range</b> when every test or doc note on it names the epic's base (the merge-base of main and that commit) and that base is not its own parent. An epic-range commit is judged at the <b>close</b> level — checks 1, 2 (e2e) and 6, without the tracked-doc layout — when it is the pushed tip <i>or</i> it changes no code. A commit that changes code is judged at close level only when it is the pushed tip; inside the range it stays a <b>commit</b>. The first commit on an epic, whose parent is the epic base, is judged as a commit. Merge seams are judged as their WU tip; a merge whose second parent is already reachable from the mainline or the target is skipped as a back-merge; an octopus is refused.</p>
+<p>That is what makes the archive commit pushable and walkable: it changes no code and carries the epic's notes. Writing those notes on the archive commit, not on the previous tip, is the whole point of the rule. A later code fix after the archive commit gets its own commit evidence; the archive commit itself keeps the epic's.</p>
+
+<h3 id="targets">A bare tip is resolved, never guessed (W3)</h3>
+<p>A WU tip is measured against the epic its branch name names: <code>wu/&lt;e&gt;/…</code> gives <code>epic/&lt;e&gt;</code>. A tip that is not a local branch (a bare commit id, or a detached <code>HEAD</code>) has no name to read. The gate then looks at the local branches that hold it: one <code>wu/</code> holder names its epic; otherwise one <code>epic/</code> holder is the target. No holder, or two epics, is a refusal that names <code>--target</code>; <code>main</code> is never a guess for a WU. <code>--target R</code> always overrides, and the result must be a local branch. The branch-name derivation is shared (<code>notes::target</code>); the gate adds holder resolution (<code>notes::target_from_holders</code>) for a tip with no local branch. The writer has no holder rule, so write notes with the WU branch checked out.</p>
+
+<h2 id="gaps">Where the code and the rules disagree</h2>
+<p>Two places at this tip, plus one the E-SEED3 close just resolved. The code wins each; where a rule text was behind the code, the row says so.</p>
+<table data-c="gaps">
+  <thead><tr><th>Topic</th><th>Code at this tip</th><th>Rule text</th></tr></thead>
+  <tbody>
+    <tr><td>A bare WU tip's target</td><td>Resolved from the branches that hold it, or refused with <code>--target</code>; never main (<code>gate::target_of</code>).</td><td><b>Resolved by the E-SEED3 close:</b> <code>keel-workflow</code> §1 and §4 now carry the holder rule, landed in the same owner commit as this row. Before that commit, §1 read "anything else against <code>branches.main</code>".</td></tr>
+    <tr><td><code>keel init</code> and the notes refspec</td><td>No remote call; the pre-push hook pushes <code>refs/notes/*</code> (DEC-19).</td><td>The epic plan's B6 expected init to add a non-forced fetch refspec. The owner deferred it to backlog B24; the close must not read a fetch into init.</td></tr>
+    <tr><td>Doc checks on DeepSeek Harness</td><td>The host doc hooks are written into <code>.claude/settings.json</code> and <code>.codex/hooks.json</code>; nothing runs them on DSH.</td><td><code>keel-plan</code>/<code>keel-workflow</code> say the write-time check runs on every host, through a plugin where there is no shell hook. The <code>dsh-doc-gate</code> plugin is not built (<a href="backlog/dsh.html#d1">backlog D1</a>).</td></tr>
+  </tbody>
+</table>
+<p>Rules that exist only in a skill, with no code behind them: the review's depth and severity rubric (<code>keel-code-review</code>), the router posture on DSH (<code>keel-router</code>), every "never push / never amend / never sign" rule, and the follow-up rule that every follow-up must name the WU, epic or backlog row that takes it. They are rules, not gates. A gate can check presence and bytes; it cannot tell a real destination from an invented one, which is why that last rule is written down and not enforced.</p>
+
+<h2 id="not-gated">What no gate reviews</h2>
+<ul>
+  <li><b>Everything outside <code>code_paths</code>.</b> Docs, skills, templates, <code>.keel/</code>, <code>scripts/</code>, <code>AGENTS.md</code> and the router guard are not code to the gate. Some are rule-bearing, so a commit to them needs the owner's <code>Reviewed-By</code>, but that trailer is typed text (DEC-47), no <code>cr</code> note is required and no test layer covers them.</li>
+  <li><b>A docs/infra-only WU or epic.</b> Its whole range is exempt: checks 1–6 are skipped (an archived T3 doc still owes check 6's lineage), no test, review or doc note is required, and only the hooks guard, the owner's sign-off (check 8) and, at an epic tip, the tracked-doc layout still run. This page's own WU is that kind of range.</li>
+  <li><b>Whether a waiver's reason is true.</b> The gate accepts any non-blank reason for a waived test layer; a review reads its quality, not the gate.</li>
+  <li><b>Doc depth and doc claims.</b> <code>verify-doc</code> checks form: items, tags, the epic-plan word count, links and diagram label quoting. It cannot check that a sentence is right, and the Mermaid label scan is best-effort (backlog B21).</li>
+  <li><b>The <code>dod/v1</code> receipt.</b> The gate writes it; nothing reads it. Nothing notices if it is deleted.</li>
+  <li><b>Whether a follow-up names a real destination.</b> The rule is in the skills; no gate can verify it.</li>
+  <li><b>The router guard on DeepSeek Harness.</b> No hook surface exists there; the whitelist is a skill rule only, and the router must say enforcement is missing.</li>
+  <li><b>The <code>keel</code> binary itself.</b> The hooks call whatever is first on <code>PATH</code>; if it is old or foreign, the hooks refuse, but nothing installs or upgrades the right one for you.</li>
+</ul>
+
+<h2 id="next">Read next</h2>
+<ul>
+  <li><a href="use-cases/workflow.html">Use cases: workflow</a> — what each command must do (UC-GATE, UC-NOTE, UC-INIT, UC-REV, UC-MR, UC-DOC).</li>
+  <li><a href="decisions/workflow-gates.html">Decisions: workflow gates</a> — the note schemas, exemption, walk, sign-off trust model and review schedule.</li>
+  <li><a href="decisions/distribution.html">Decisions: distribution</a> — the binary carries the rules; the skills lock.</li>
+  <li><a href="decisions/router.html">Decisions: router</a> — the router posture, worker sessions, the watchdog and the DSH host.</li>
+  <li><a href="install.html">Installing Keel</a> — the names, PATH, the roster and the DSH plugins.</li>
+  <li><a href="backlog/e-seed-v2.html">Backlog: E-SEED2/E-SEED3</a> — B24 (notes fetch) and B25 (a review fix buried by a later fix).</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

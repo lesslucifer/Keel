@@ -101,6 +101,34 @@ fn fixture() -> (TempDir, TempDir) {
     (d, k)
 }
 
+/// main → epic/e (with a commit of its own) → wu/e/a, so main's merge-base with the WU tip differs
+/// from the epic's: what a bare WU tip id has to resolve (e-router-v2 R7). HEAD on wu/e/a.
+fn fixture_where_the_epic_has_work() -> TempDir {
+    let d = TempDir::new().unwrap();
+    let p = d.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.email", "t@t"]);
+    git(p, &["config", "user.name", "t"]);
+    write(
+        p,
+        ".keel/config.toml",
+        "code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
+    );
+    ok(keel(p, &["mr", "setup", "--as", "t"]));
+    write(p, "README", "x");
+    commit(p, "base");
+    ok(keel(p, &["hooks", "install"]));
+    git(p, &["switch", "-q", "-c", "epic/e"]);
+    write(p, "src/epic.py", "def e():\n    return 0\n");
+    commit(p, "epic work");
+    git(p, &["switch", "-q", "-c", "wu/e/a"]);
+    write(p, "src/a.py", "def a():\n    return 1\n");
+    write(p, "tests/test_a.py", "def test_a():\n    pass\n");
+    write(p, "docs/work/a-result.html", RESULT);
+    commit(p, "wu a");
+    d
+}
+
 /// Commit `roster` on epic/e, the target that judges wu/e/a, and come back. Its first parent stays
 /// the fork point, so wu/e/a's base and every note on it are unchanged.
 fn land_roster(p: &Path, roster: &str) {
@@ -201,6 +229,21 @@ fn key_signed_confirm_lets_the_merge_through() {
     ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"]));
     let dod = git(p, &["notes", "--ref=dod", "show", "wu/e/a"]);
     assert!(dod.contains("manual-review"), "{dod}");
+}
+
+/// e-router-v2 R7: a sign-off on a bare WU tip id takes the epic that holds it, not main, so the range
+/// it signs is the range the review judged.
+#[test]
+fn a_sign_off_on_a_bare_wu_tip_measures_it_against_its_epic() {
+    let d = fixture_where_the_epic_has_work();
+    let p = d.path();
+    notes(p, &["test", "doc", "cr"]);
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let o = keel(p, &["mr", "confirm", "wu", tip.as_str(), "--as", "t"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let n = mr_note(p, &tip).unwrap();
+    assert_eq!(n["base"].as_str().unwrap(), git(p, &["rev-parse", "epic/e"]));
+    assert_ne!(n["base"].as_str().unwrap(), git(p, &["rev-parse", "main"]));
 }
 
 #[test]
@@ -392,7 +435,8 @@ fn sign_off_hashes_are_sha256_and_a_pre_w2_note_is_red() {
     let change = git(p, &["hash-object", diff.to_str().unwrap()]);
     let report = git(p, &["rev-parse", "HEAD:docs/work/a-result.html"]);
     let v1 = k.path().join("payload");
-    std::fs::write(&v1, format!("keel-mr/v1\nlevel: wu\nbase: {base}\ntip: {tip}\nchange: {change}\nreport: docs/work/a-result.html\nreport_hash: {report}\n")).unwrap();
+    std::fs::write(&v1, format!("keel-mr/v1\nlevel: wu\nbase: {base}\ntip: {tip}\nchange: {change}\nreport: docs/work/a-result.html\nreport_hash: {report}\n"))
+        .unwrap();
     ok(run("ssh-keygen", k.path(), &["-Y", "sign", "-n", "keel-mr", "-f", "id", "payload"]));
     n["change_hash"] = json!(change);
     n["report_hash"] = json!(report);
@@ -775,7 +819,11 @@ fn setup_writes_the_tracked_roster_and_touches_no_local_file() {
     let p = d.path();
     let (key, public) = keygen(k.path(), "id");
     git(p, &["init", "-q", "-b", "main"]);
-    write(p, ".keel/config.toml", "code_paths = [\"src/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n[mr]\ntiers = [\"key\"]\n");
+    write(
+        p,
+        ".keel/config.toml",
+        "code_paths = [\"src/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n[mr]\ntiers = [\"key\"]\n",
+    );
     let exclude = std::fs::read_to_string(p.join(".git/info/exclude")).unwrap_or_default();
 
     let o = keel(p, &["mr", "setup", "--as", "vu"]);
@@ -795,7 +843,11 @@ fn setup_refuses_an_unreadable_roster_and_leaves_its_signers_in_place() {
     let d = TempDir::new().unwrap();
     let p = d.path();
     git(p, &["init", "-q", "-b", "main"]);
-    write(p, ".keel/config.toml", "code_paths = [\"src/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n");
+    write(
+        p,
+        ".keel/config.toml",
+        "code_paths = [\"src/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
+    );
     let bytes = b"username: owner\n\xff\n";
     std::fs::write(p.join(".keel/mr-allowed"), bytes).unwrap();
 
@@ -825,6 +877,20 @@ fn cr(p: &Path, args: &[&str]) -> Output {
     keel(p, &[&["notes", "write", "cr"][..], args].concat())
 }
 
+/// A tool's waiver on HEAD: a failed round made WAIVED by hand. The writer has no reasoned form
+/// (B18) and the real cap needs five rounds (tests/verify_dod.rs runs them); the sign-off reads the
+/// same note either way.
+fn plant_waiver(p: &Path, reason: &str) {
+    ok(cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    edit_cr(p, |n| (n["verdict"], n["waiver"]) = (json!("WAIVED"), json!(reason)));
+}
+
+fn edit_cr(p: &Path, f: impl FnOnce(&mut Value)) {
+    let mut n: Value = serde_json::from_str(&git(p, &["notes", "--ref=cr", "show", "HEAD"])).unwrap();
+    f(&mut n);
+    git(p, &["notes", "--ref=cr", "add", "-f", "-m", &n.to_string(), "HEAD"]);
+}
+
 fn sha256_of(b: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     format!("sha256:{}", Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect::<String>())
@@ -841,11 +907,11 @@ fn a_waived_tip_is_signed_only_with_explicit_acceptance_after_the_history_is_sho
     write(p, "src/a.py", "def a():\n    return 2\n");
     commit(p, "fix round 1");
     notes(p, &["test", "doc"]);
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER, "--blockers", "1"]));
+    plant_waiver(p, WAIVER);
     let tip = git(p, &["rev-parse", "HEAD"]);
-    let mut n: Value = serde_json::from_str(&git(p, &["notes", "--ref=cr", "show", "HEAD"])).unwrap();
-    n["findings"] = json!([{"location": "src/a.py:2", "claim": "a() returns 2 where the contract says 1", "severity": "blocker", "evidence": "e"}]);
-    git(p, &["notes", "--ref=cr", "add", "-f", "-m", &n.to_string(), "HEAD"]);
+    edit_cr(p, |n| {
+        n["findings"] = json!([{"location": "src/a.py:2", "claim": "a() returns 2 where the contract says 1", "severity": "blocker", "evidence": "e"}])
+    });
 
     let o = keel(p, &["mr", "confirm", "wu"]);
     refused(&o, &["WAIVED", WAIVER, "--accept-waiver", "blocker src/a.py:2: a() returns 2 where the contract says 1", &round1[..10], "FAIL", &tip[..10]]);
@@ -854,7 +920,8 @@ fn a_waived_tip_is_signed_only_with_explicit_acceptance_after_the_history_is_sho
     let o = accept(p, &["--as", "vu"]);
     assert!(text(&o).contains(WAIVER), "{}", text(&o));
     let m = mr_note(p, "HEAD").unwrap();
-    assert_eq!(m["waiver_hash"].as_str().unwrap(), sha256_of(WAIVER.as_bytes()));
+    let hash = m["waiver_hash"].as_str().unwrap();
+    assert!(hash.starts_with("sha256:") && hash != sha256_of(WAIVER.as_bytes()), "B17: it covers more than the reason: {m}");
     assert!(m["sig"].as_str().unwrap().contains("BEGIN SSH SIGNATURE"));
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
 
@@ -870,13 +937,14 @@ fn the_sign_off_covers_the_waiver_it_accepted_and_only_that() {
     let (d, _k) = fixture();
     let p = d.path();
     notes(p, &["test", "doc"]);
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER]));
+    plant_waiver(p, WAIVER);
     accept(p, &[]);
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    let (accepted, accepted_hash) = (git(p, &["notes", "--ref=cr", "show", "HEAD"]), mr_note(p, "HEAD").unwrap()["waiver_hash"].clone());
     // Reworded after signing: red. The signed wording again: green - the line is rebuilt from the note.
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", "owner ruling: waived (softer wording)"]));
+    edit_cr(p, |n| n["waiver"] = json!("owner ruling: waived (softer wording)"));
     assert_red8(p, "waiver");
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER]));
+    edit_cr(p, |n| n["waiver"] = json!(WAIVER));
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
     // A signed waiver whose note later says PASS: the owner accepted something no longer there.
     ok(cr(p, &["--verdict", "PASS"]));
@@ -884,13 +952,11 @@ fn the_sign_off_covers_the_waiver_it_accepted_and_only_that() {
     // A signed PASS turned into a waiver by hand (the writer never waives over a PASS): the owner never saw it.
     ok(keel(p, &["mr", "confirm", "wu"]));
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
-    let mut n: Value = serde_json::from_str(&git(p, &["notes", "--ref=cr", "show", "HEAD"])).unwrap();
-    (n["verdict"], n["waiver"]) = (json!("WAIVED"), json!(WAIVER));
-    git(p, &["notes", "--ref=cr", "add", "-f", "-m", &n.to_string(), "HEAD"]);
+    git(p, &["notes", "--ref=cr", "add", "-f", "-m", &accepted, "HEAD"]);
     assert_red8(p, "waiver");
-    // Forged: the waiver hash copied into the PASS sign-off by hand still fails the signature.
+    // Forged: the accepted waiver's hash copied into the PASS sign-off by hand still fails the signature.
     let mut m = mr_note(p, "HEAD").unwrap();
-    m["waiver_hash"] = json!(sha256_of(WAIVER.as_bytes()));
+    m["waiver_hash"] = accepted_hash;
     put_note(p, "HEAD", &m);
     assert_red8(p, "does not verify");
 }
@@ -923,6 +989,53 @@ fn a_tip_without_a_waiver_signs_byte_for_byte_as_today() {
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
 }
 
+/// B17 (open point 2): the signed line covers the whole waiver - its reason, counts, open findings,
+/// walk waivers and whether a review ran. Each changed after signing is red; restored, green.
+#[test]
+fn the_signed_waiver_covers_its_counts_open_findings_walk_waivers_and_review_state() {
+    let (d, _k) = fixture();
+    let p = d.path();
+    notes(p, &["test", "doc"]);
+    plant_waiver(p, WAIVER);
+    edit_cr(p, |n| {
+        n["findings"] = json!([{"location": "src/a.py:2", "claim": "open", "severity": "blocker", "evidence": "e"},
+            {"location": "src/a.py:1", "claim": "closed", "severity": "important", "evidence": "e", "waived": "owner: fine"}]);
+        n["walk_waivers"] = json!([{"seam": "abc", "why": "safe"}]);
+    });
+    accept(p, &["--as", "vu"]);
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    let signed: Value = serde_json::from_str(&git(p, &["notes", "--ref=cr", "show", "HEAD"])).unwrap();
+    type Edit = (&'static str, fn(&mut Value));
+    let edits: [Edit; 7] = [
+        ("blockers", |n| n["blockers"] = json!(0)),
+        ("importants", |n| n["importants"] = json!(3)),
+        ("an open finding reworded", |n| n["findings"][0]["claim"] = json!("softer")),
+        ("an open finding closed", |n| n["findings"][0]["waived"] = json!("closed after signing")),
+        ("a walk waiver", |n| n["walk_waivers"][0]["why"] = json!("other")),
+        ("a walk waiver added", |n| n["walk_waivers"].as_array_mut().unwrap().push(json!({"seam": "def", "why": "w"}))),
+        ("unreviewed", |n| n["unreviewed"] = json!(true)),
+    ];
+    for (what, f) in edits {
+        edit_cr(p, f);
+        let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+        assert!(!o.status.success() && text(&o).contains("8·manual-review") && text(&o).contains("waiver"), "{what}: {}", text(&o));
+        git(p, &["notes", "--ref=cr", "add", "-f", "-m", &signed.to_string(), "HEAD"]);
+        ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    }
+    // What the owner did not sign stays free: a closed finding's text, the refuted list.
+    edit_cr(p, |n| {
+        n["findings"][1]["claim"] = json!("closed, reworded");
+        n["refuted"] = json!([{"claim": "r"}]);
+    });
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    // A sign-off whose hash covers the reason only was made by an older keel: check 8 says so.
+    git(p, &["notes", "--ref=cr", "add", "-f", "-m", &signed.to_string(), "HEAD"]);
+    let mut m = mr_note(p, "HEAD").unwrap();
+    m["waiver_hash"] = json!(sha256_of(WAIVER.as_bytes()));
+    put_note(p, "HEAD", &m);
+    assert_red8(p, "older keel");
+}
+
 // E-CRCAP.W1 round 2: the owner's waiver at sign-off, key tier.
 
 #[test]
@@ -943,13 +1056,12 @@ fn an_owner_waiver_at_sign_off_is_key_signed_and_a_failed_signing_writes_neither
 
     let o = ok(keel(p, &["mr", "confirm", "wu", "--waive-review", WAIVER, "--confirm-waiver", &code]));
     assert!(text(&o).contains(WAIVER), "{}", text(&o));
-    let m = mr_note(p, "HEAD").unwrap();
-    assert_eq!(m["waiver_hash"].as_str().unwrap(), sha256_of(WAIVER.as_bytes()));
+    assert!(mr_note(p, "HEAD").unwrap()["waiver_hash"].as_str().unwrap().starts_with("sha256:"));
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
     // The signature covers the owner's words: a session rewording them is caught.
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", "owner ruling: waived (softer wording)"]));
+    edit_cr(p, |n| n["waiver"] = json!("owner ruling: waived (softer wording)"));
     assert_red8(p, "waiver");
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER]));
+    edit_cr(p, |n| n["waiver"] = json!(WAIVER));
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
     ok(keel(p, &["hooks", "install"]));
     git(p, &["switch", "-q", "epic/e"]);
@@ -963,7 +1075,7 @@ fn accept_waiver_signs_the_waiver_it_showed_and_only_with_its_code() {
     let (d, _k) = fixture();
     let p = d.path();
     notes(p, &["test", "doc"]);
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER]));
+    plant_waiver(p, WAIVER);
     let preview = keel(p, &["mr", "confirm", "wu"]);
     let code = accept_code(&preview).unwrap_or_else(|| panic!("no accept code: {}", text(&preview)));
     assert!(mr_note(p, "HEAD").is_none());
@@ -974,13 +1086,14 @@ fn accept_waiver_signs_the_waiver_it_showed_and_only_with_its_code() {
     }
     // The note changes between the refused run and the accepting one: the old code no longer signs.
     let reworded = "review cap: reworded after the preview";
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", reworded]));
+    edit_cr(p, |n| n["waiver"] = json!(reworded));
     let stale = keel(p, &["mr", "confirm", "wu", "--accept-waiver", &code]);
     assert!(!stale.status.success() && text(&stale).contains("changed since"), "{}", text(&stale));
     assert!(mr_note(p, "HEAD").is_none());
     accept(p, &[]);
-    assert_eq!(mr_note(p, "HEAD").unwrap()["waiver_hash"].as_str().unwrap(), sha256_of(reworded.as_bytes()), "signs the waiver it showed");
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    edit_cr(p, |n| n["waiver"] = json!(WAIVER));
+    assert_red8(p, "waiver");
 }
 
 // E-CRCAP.W1 code review round 3: the review history is read the same whatever the user's log config.
@@ -1005,7 +1118,7 @@ fn the_review_history_keeps_every_row_when_git_log_shows_signatures() {
     write(p, "src/a.py", "def a():\n    return 1\n");
     commit(p, "fix");
     notes(p, &["test", "doc"]);
-    ok(cr(p, &["--verdict", "WAIVED", "--reason", WAIVER, "--blockers", "1"]));
+    plant_waiver(p, WAIVER);
     let tip = git(p, &["rev-parse", "HEAD"]);
     git(p, &["config", "log.showSignature", "true"]);
     let shown = git(p, &["log", "-1", &round1]);

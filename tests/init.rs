@@ -54,7 +54,15 @@ fn init_twice_produces_the_same_tree_and_keeps_user_edits() {
     assert_eq!(after_first, snapshot(p), "second init changed the tree");
     assert!(!text(&second).contains("created"), "{}", text(&second));
 
-    for f in [".keel/config.toml", "AGENTS.md", ".codex/hooks.json", ".claude/skills/project-router/SKILL.md", ".claude/skills/keel-workflow/SKILL.md", ".claude/settings.json", "docs/work"] {
+    for f in [
+        ".keel/config.toml",
+        "AGENTS.md",
+        ".codex/hooks.json",
+        ".claude/skills/project-router/SKILL.md",
+        ".claude/skills/keel-workflow/SKILL.md",
+        ".claude/settings.json",
+        "docs/work",
+    ] {
         assert!(after_first.contains_key(f), "missing {f}");
     }
     // E-DSH.W1: one shared skill root - a relative link, so Claude Code and DSH read one copy
@@ -432,7 +440,10 @@ fn router_skill_carries_the_dsh_transport_and_the_template_its_slots() {
     for tool in ["worker_spawn", "worker_send", "worker_output", "worker_list", "worker_status", "worker_stop"] {
         assert!(table.contains(&format!("`{tool}`")), "the transport table never names {tool}");
     }
-    assert!(table.contains("Claude Code") && table.contains("DSH") && table.contains("re-check"), "the table is not per-host, or says nothing about re-checking the host's tool list");
+    assert!(
+        table.contains("Claude Code") && table.contains("DSH") && table.contains("re-check"),
+        "the table is not per-host, or says nothing about re-checking the host's tool list"
+    );
 
     assert!(skill.contains("`worker_output` at every wake and before every ask"), "SKILL.md does not read a DSH report from the transcript");
     assert!(skill.contains("A DSH subagent is not a worker"), "SKILL.md does not keep the worker-vs-subagent rule");
@@ -487,8 +498,15 @@ fn settings_merge() {
     let path = format!("{bin}:{}", std::env::var("PATH").unwrap());
     let run = |cmd: &str, cwd: &Path, payload: &str| {
         use std::io::Write;
-        let mut c = common::cmd("sh").args(["-c", cmd]).current_dir(cwd).env("PATH", &path)
-            .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
+        let mut c = common::cmd("sh")
+            .args(["-c", cmd])
+            .current_dir(cwd)
+            .env("PATH", &path)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
         c.stdin.take().unwrap().write_all(payload.as_bytes()).unwrap();
         c.wait_with_output().unwrap()
     };
@@ -607,7 +625,16 @@ fn worktrees_path_is_ignored_and_configurable() {
 }
 
 fn git_in(d: &Path, a: &[&str]) -> Output {
-    common::cmd("git").args(a).current_dir(d).env("PATH", format!("{}:{}", Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display(), std::env::var("PATH").unwrap())).env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t").output().unwrap()
+    common::cmd("git")
+        .args(a)
+        .current_dir(d)
+        .env("PATH", format!("{}:{}", Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display(), std::env::var("PATH").unwrap()))
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@t")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@t")
+        .output()
+        .unwrap()
 }
 
 use common::self_clone;
@@ -691,4 +718,272 @@ fn self_hosting_new_worktree_reads_the_committed_roster_and_copies_no_local_one(
     assert!(git_in(&c, &["worktree", "add", "-q", "-b", "wu/x/y", w.to_str().unwrap()]).status.success());
     assert_eq!(std::fs::read_to_string(w.join(".keel/mr-allowed")).unwrap(), committed);
     assert!(!w.join(".mr-allowed").exists(), "no local roster is copied");
+}
+
+fn sha256_hex(b: &[u8]) -> String {
+    let o = common::cmd("shasum").args(["-a", "256"]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn().unwrap();
+    use std::io::Write;
+    let mut o = o;
+    o.stdin.take().unwrap().write_all(b).unwrap();
+    String::from_utf8(o.wait_with_output().unwrap().stdout).unwrap().split_whitespace().next().unwrap().to_string()
+}
+
+fn lock_entry(p: &Path, rel: &str) -> Option<String> {
+    std::fs::read_to_string(p.join(".keel/skills.lock")).unwrap().lines().find_map(|l| l.strip_suffix(&format!("  {rel}")).map(String::from))
+}
+
+/// B7: a skill file still as an older keel wrote it upgrades silently; an edited one asks as today.
+#[test]
+fn an_unedited_skill_from_an_older_build_upgrades_without_asking_and_an_edited_one_asks() {
+    let d = fresh_repo();
+    let p = d.path();
+    let o = keel_in(p, &["init"], "");
+    assert!(text(&o).contains("created   .keel/skills.lock"), "{}", text(&o));
+    let wf = p.join(".claude/skills/keel-workflow/SKILL.md");
+    let shipped = std::fs::read(&wf).unwrap();
+    assert_eq!(lock_entry(p, "keel-workflow/SKILL.md"), Some(sha256_hex(&shipped)), "the lock holds shasum -a 256 lines");
+
+    // an older build: its bytes on disk and its hash in the lock
+    let old = b"keel-workflow as an older keel shipped it\n";
+    std::fs::write(&wf, old).unwrap();
+    let lock = std::fs::read_to_string(p.join(".keel/skills.lock")).unwrap().replace(&sha256_hex(&shipped), &sha256_hex(old));
+    std::fs::write(p.join(".keel/skills.lock"), lock).unwrap();
+    // and a hand edit of another file
+    let plan = p.join(".claude/skills/keel-plan/SKILL.md");
+    let plan_shipped = std::fs::read(&plan).unwrap();
+    std::fs::write(&plan, "my own edit\n").unwrap();
+
+    let o = keel_in(p, &["init"], "");
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("updated   .claude/skills/keel-workflow/SKILL.md (unedited since keel last wrote it)"), "{t}");
+    assert!(!t.contains("keel-workflow/SKILL.md differs from this keel build"), "no prompt for the unedited file: {t}");
+    assert_eq!(std::fs::read(&wf).unwrap(), shipped);
+    assert!(t.contains("keel-plan/SKILL.md differs from this keel build") && t.contains("differs   .claude/skills/keel-plan/SKILL.md"), "{t}");
+    assert_eq!(std::fs::read_to_string(&plan).unwrap(), "my own edit\n");
+    assert_eq!(lock_entry(p, "keel-workflow/SKILL.md"), Some(sha256_hex(&shipped)), "the upgrade is recorded");
+    assert_eq!(lock_entry(p, "keel-plan/SKILL.md"), Some(sha256_hex(&plan_shipped)), "a kept edit keeps its old entry, so it asks again");
+    assert!(t.contains("updated   .keel/skills.lock"), "{t}");
+
+    let o = keel_in(p, &["init"], "");
+    assert!(text(&o).contains("differs   .claude/skills/keel-plan/SKILL.md") && text(&o).contains("unchanged .keel/skills.lock"), "{}", text(&o));
+}
+
+/// Open point 2 of the WU plan: no lock appears while every skill matches and none exists (Keel's own tree).
+#[test]
+fn init_writes_no_lock_while_every_skill_matches_and_none_exists() {
+    let d = fresh_repo();
+    let p = d.path();
+    assert!(keel_in(p, &["init"], "").status.success());
+    std::fs::remove_file(p.join(".keel/skills.lock")).unwrap();
+    let o = keel_in(p, &["init"], "");
+    assert!(o.status.success() && !p.join(".keel/skills.lock").exists(), "{}", text(&o));
+}
+
+fn ok(d: &Path, a: &[&str]) -> String {
+    let o = git_in(d, a);
+    assert!(o.status.success(), "git {a:?}: {}", text(&o));
+    String::from_utf8_lossy(&o.stdout).trim().to_string()
+}
+
+/// A dir holding only links to the given programs from the current PATH, plus extra scripts.
+fn bin_dir(root: &Path, links: &[&str], scripts: &[(&str, &str)]) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = root.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    for l in links {
+        let w = common::cmd("sh").args(["-c", &format!("command -v {l}")]).output().unwrap();
+        let real = String::from_utf8(w.stdout).unwrap().trim().to_string();
+        assert!(!real.is_empty(), "{l} not on PATH");
+        std::os::unix::fs::symlink(real, bin.join(l)).unwrap();
+    }
+    for (name, body) in scripts {
+        std::fs::write(bin.join(name), body).unwrap();
+        std::fs::set_permissions(bin.join(name), std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    bin
+}
+
+#[test]
+fn init_without_keel_on_path_names_the_install_page() {
+    let d = fresh_repo();
+    let tools = TempDir::new().unwrap();
+    let bin = bin_dir(tools.path(), &["git", "sh"], &[]);
+    let o = common::cmd(env!("CARGO_BIN_EXE_keel")).arg("init").current_dir(d.path()).env("PATH", &bin).stdin(std::process::Stdio::null()).output().unwrap();
+    let t = text(&o);
+    assert!(t.contains("warning: keel is not on PATH"), "{t}");
+    assert!(t.contains("https://github.com/lesslucifer/Keel/blob/main/docs/install.html"), "{t}");
+}
+
+/// Open point 6: another program named keel first on PATH - init warns, a git hook refuses.
+#[test]
+fn a_foreign_keel_on_path_makes_init_warn_and_a_git_hook_refuse() {
+    let d = fresh_repo();
+    let p = d.path();
+    let tools = TempDir::new().unwrap();
+    let fake = bin_dir(tools.path(), &[], &[("keel", "#!/bin/sh\necho 'keel.so 1.2.3'\n")]);
+    let path = format!("{}:{}", fake.display(), std::env::var("PATH").unwrap());
+    let o = common::cmd(env!("CARGO_BIN_EXE_keel")).arg("init").current_dir(p).env("PATH", &path).stdin(std::process::Stdio::null()).output().unwrap();
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains(&format!("warning: {} is not Keel", fake.join("keel").display())) && t.contains("the git hooks refuse"), "{t}");
+
+    ok(p, &["switch", "-q", "-c", "wu/x/y"]);
+    let commit = |path: &str| {
+        common::cmd("git")
+            .args(["commit", "-q", "--allow-empty", "-m", "c"])
+            .current_dir(p)
+            .env("PATH", path)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap()
+    };
+    let o = commit(&path);
+    let t = text(&o);
+    assert!(!o.status.success(), "a hook must refuse a foreign keel: {t}");
+    assert!(t.contains("is not Keel") && t.contains("docs/install.html"), "{t}");
+
+    let keel_first = format!("{}:{path}", Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display());
+    let o = commit(&keel_first);
+    assert!(o.status.success(), "with Keel first the hook runs: {}", text(&o));
+}
+
+/// An unreadable lock (a directory, or not UTF-8) is kept and said so, never overwritten, and init
+/// carries on through project-router, settings and the hooks, as for any unreadable path.
+#[test]
+fn an_unreadable_lock_is_kept_and_init_finishes() {
+    for plant in ["dir", "bytes"] {
+        let d = fresh_repo();
+        let p = d.path();
+        let lock = p.join(".keel/skills.lock");
+        std::fs::create_dir_all(p.join(".keel")).unwrap();
+        match plant {
+            "dir" => std::fs::create_dir(&lock).unwrap(),
+            _ => std::fs::write(&lock, b"\xff\xfe not utf-8\n").unwrap(),
+        }
+        let o = keel_in(p, &["init"], "");
+        let t = text(&o);
+        assert!(o.status.success(), "{plant}: {t}");
+        assert!(t.contains("kept      .keel/skills.lock (exists but is not a readable file"), "{plant}: {t}");
+        assert!(t.contains("created   .claude/skills/keel-workflow/SKILL.md"), "{plant}: {t}");
+        assert!(p.join(".claude/skills/project-router/SKILL.md").exists() && p.join(".claude/settings.json").exists(), "{plant}: {t}");
+        assert!(t.contains("hooks installed"), "{plant}: {t}");
+        match plant {
+            "dir" => assert!(lock.is_dir()),
+            _ => assert_eq!(std::fs::read(&lock).unwrap(), b"\xff\xfe not utf-8\n"),
+        }
+    }
+}
+
+/// Review r2 blocker: a `.keel/skills.lock` that is a symlink is kept as found - init never reads or
+/// writes through it, so a plain init cannot overwrite the link's target with lock text.
+#[test]
+fn a_symlinked_lock_is_kept_and_its_target_untouched() {
+    let d = fresh_repo();
+    let p = d.path();
+    let elsewhere = TempDir::new().unwrap();
+    let target = elsewhere.path().join("notes.txt");
+    let sentinel = "my own notes, not a lock\n";
+    std::fs::write(&target, sentinel).unwrap();
+    std::fs::create_dir_all(p.join(".keel")).unwrap();
+    std::os::unix::fs::symlink(&target, p.join(".keel/skills.lock")).unwrap();
+
+    let o = keel_in(p, &["init"], "");
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("kept      .keel/skills.lock") && t.contains("symlink"), "the link is reported: {t}");
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), sentinel, "init wrote through the link");
+    assert_eq!(std::fs::read_link(p.join(".keel/skills.lock")).unwrap(), target);
+    assert!(t.contains("next:"), "init finished: {t}");
+    assert!(p.join(".claude/skills/project-router/SKILL.md").exists() && p.join(".claude/settings.json").exists(), "{t}");
+}
+
+/// Review r2 important: a lock that is readable but not writable, whose body must change, is kept and
+/// reported; init finishes wiring the clone instead of stopping at the lock write.
+#[test]
+fn a_read_only_lock_is_kept_and_init_finishes() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = fresh_repo();
+    let p = d.path();
+    assert!(keel_in(p, &["init"], "").status.success());
+    let wf = p.join(".claude/skills/keel-workflow/SKILL.md");
+    let shipped = std::fs::read(&wf).unwrap();
+    let old = b"keel-workflow before the upgrade\n";
+    std::fs::write(&wf, old).unwrap();
+    let lock_path = p.join(".keel/skills.lock");
+    let lock = std::fs::read_to_string(&lock_path).unwrap().replace(&sha256_hex(&shipped), &sha256_hex(old));
+    std::fs::write(&lock_path, &lock).unwrap();
+    std::fs::set_permissions(&lock_path, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+    let o = keel_in(p, &["init"], "");
+    let t = text(&o);
+    assert!(o.status.success(), "the lock write must not end init: {t}");
+    assert!(t.contains("updated   .claude/skills/keel-workflow/SKILL.md"), "{t}");
+    assert!(t.contains("kept      .keel/skills.lock") && t.contains("not writable"), "the failed write is reported: {t}");
+    assert!(t.contains("next:"), "init finished: {t}");
+    assert!(p.join(".claude/skills/project-router/SKILL.md").exists() && p.join(".codex/hooks.json").exists(), "{t}");
+    assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), lock, "the old lock is kept");
+}
+
+/// A lock write that cannot start must leave the old lock and say so. The bytes go through a
+/// temporary file and a rename, so nothing can truncate the lock and still report it "kept"
+/// (E-SEED3 review round 1 nit: W5's cr note recorded this as fixed and it never landed).
+#[test]
+fn a_lock_write_that_cannot_start_leaves_the_old_lock() {
+    let d = fresh_repo();
+    let p = d.path();
+    assert!(keel_in(p, &["init"], "").status.success());
+    let wf = p.join(".claude/skills/keel-workflow/SKILL.md");
+    let shipped = std::fs::read(&wf).unwrap();
+    let old = b"keel-workflow before the upgrade\n";
+    std::fs::write(&wf, old).unwrap();
+    let lock_path = p.join(".keel/skills.lock");
+    let lock = std::fs::read_to_string(&lock_path).unwrap().replace(&sha256_hex(&shipped), &sha256_hex(old));
+    std::fs::write(&lock_path, &lock).unwrap();
+    // The write's temporary path is taken, so the write cannot start; the lock itself is untouched.
+    std::fs::create_dir(p.join(".keel/skills.lock.tmp")).unwrap();
+
+    let o = keel_in(p, &["init"], "");
+    let t = text(&o);
+    assert!(o.status.success(), "a lock write that fails must not end init: {t}");
+    assert!(t.contains("updated   .claude/skills/keel-workflow/SKILL.md"), "{t}");
+    assert!(t.contains("kept      .keel/skills.lock") && t.contains("not writable"), "{t}");
+    assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), lock, "the old lock is kept");
+}
+
+/// The harness hooks, as installed, do nothing with a foreign keel first on PATH: exit 0, no verify-doc.
+#[test]
+fn harness_hooks_exit_0_and_never_call_verify_doc_on_a_foreign_keel() {
+    let d = fresh_repo();
+    let p = d.path();
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    std::fs::create_dir_all(p.join("docs")).unwrap();
+    std::fs::write(p.join("docs/x.html"), "<html></html>").unwrap();
+    let tools = TempDir::new().unwrap();
+    let log = tools.path().join("calls");
+    let fake = bin_dir(tools.path(), &[], &[("keel", &format!("#!/bin/sh\necho \"$*\" >> '{}'\necho 'keel.so 1.2.3'\n", log.display()))]);
+    let path = format!("{}:{}", fake.display(), std::env::var("PATH").unwrap());
+    let hooks = p.join(".git/keel-hooks");
+    for (hook, stdin) in [("verify-doc-post", r#"{"tool_input":{"file_path":"docs/x.html"}}"#), ("verify-doc-stop", "{}")] {
+        use std::io::Write;
+        let mut c = common::cmd("sh")
+            .arg(hooks.join(hook))
+            .current_dir(p)
+            .env("PATH", &path)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        c.stdin.take().unwrap().write_all(stdin.as_bytes()).unwrap();
+        let o = c.wait_with_output().unwrap();
+        assert_eq!(o.status.code(), Some(0), "{hook}: {}", text(&o));
+        let calls = std::fs::read_to_string(&log).unwrap_or_default();
+        assert!(calls.lines().all(|l| l == "--version"), "{hook} called the foreign keel with more than --version: {calls:?}");
+        assert!(calls.lines().count() >= 1, "{hook} never checked the keel on PATH: {calls:?}");
+        std::fs::remove_file(&log).unwrap();
+    }
 }

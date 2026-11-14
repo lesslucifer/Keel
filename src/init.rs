@@ -1,9 +1,11 @@
 //! `keel init` (UC-INIT-1): wire a repo of any language to Keel. Idempotent. A project-owned file
 //! that exists with other bytes is kept and reported; a Keel-owned skill file (`.claude/skills/keel-*`)
-//! that differs is overwritten only after confirmation (or with `--force`/`-f`). The skills live
-//! once, in `.claude/skills`; `.agents/skills` is a relative link every other host reads, planted
-//! only under a real `.agents` directory at the repo root, where a relative target resolves.
-use crate::{git, hooks_install};
+//! that differs is overwritten without asking when `.keel/skills.lock` shows keel wrote those bytes,
+//! otherwise only after confirmation (or with `--force`/`-f`). The skills live once, in
+//! `.claude/skills`; `.agents/skills` is a relative link every other host reads, planted only
+//! under a real `.agents` directory at the repo root, where a relative target resolves.
+use crate::{git, hooks_install, INSTALL_PAGE, KEEL_MARK};
+use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
@@ -151,10 +153,7 @@ fn check_for(repo: &Path) -> (&'static str, &'static str) {
     } else if has("go.mod") {
         ("go vet ./...", "go test ./...")
     } else {
-        (
-            "echo 'keel: set check.lint in .keel/config.toml' >&2; exit 1",
-            "echo 'keel: set check.test in .keel/config.toml' >&2; exit 1",
-        )
+        ("echo 'keel: set check.lint in .keel/config.toml' >&2; exit 1", "echo 'keel: set check.test in .keel/config.toml' >&2; exit 1")
     }
 }
 
@@ -227,36 +226,157 @@ fn git_note(repo: &Path, rel: &str) -> &'static str {
     }
 }
 
-/// Write the embedded skills. Missing -> create; equal -> unchanged; differs -> ask (or `force`).
+const LOCK: &str = ".keel/skills.lock";
+const LOCK_HEADER: &str =
+    "# keel init: the SHA-256 of each keel skill file as init last wrote it (shasum -a 256 form). A file still matching is upgraded without asking.\n";
+
+fn hex(bytes: &[u8]) -> String {
+    crate::notes::sha256(bytes).trim_start_matches("sha256:").to_string()
+}
+
+/// `<64 hex>  <path>` lines, path relative to .claude/skills; anything else is ignored (that file then asks).
+fn parse_lock(text: &str) -> BTreeMap<String, String> {
+    text.lines()
+        .filter_map(|l| l.split_once("  "))
+        .filter(|(h, _)| h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+        .map(|(h, p)| (p.to_string(), h.to_string()))
+        .collect()
+}
+
+/// Shipped skills only, in SKILLS order.
+fn format_lock(lock: &BTreeMap<String, String>) -> String {
+    SKILLS.iter().filter_map(|(p, _)| lock.get(*p).map(|h| format!("{h}  {p}\n"))).fold(LOCK_HEADER.to_string(), |acc, l| acc + &l)
+}
+
+#[derive(Debug, PartialEq)]
+enum SkillAction {
+    Create,
+    Unchanged,
+    /// differs, but its bytes are what keel last wrote: never edited (B7, DEC-3 amended)
+    Upgrade,
+    Ask,
+}
+
+fn skill_action(current: Option<&[u8]>, build: &[u8], locked: Option<&str>) -> SkillAction {
+    match current {
+        None => SkillAction::Create,
+        Some(c) if c == build => SkillAction::Unchanged,
+        Some(c) if locked == Some(hex(c).as_str()) => SkillAction::Upgrade,
+        Some(_) => SkillAction::Ask,
+    }
+}
+
+/// What is at `.keel/skills.lock`, read without following it: a symlink is never followed (a write
+/// would land on its target, wherever that is), and anything that is not a readable file is kept.
+enum LockState {
+    Absent,
+    Readable(String),
+    Kept(&'static str),
+}
+
+fn lock_state(repo: &Path) -> LockState {
+    match std::fs::symlink_metadata(repo.join(LOCK)) {
+        Err(_) => LockState::Absent,
+        Ok(meta) if meta.file_type().is_symlink() => LockState::Kept("a symlink; init never reads or writes through it"),
+        Ok(_) => match std::fs::read_to_string(repo.join(LOCK)) {
+            Ok(text) => LockState::Readable(text),
+            Err(_) => LockState::Kept("exists but is not a readable file"),
+        },
+    }
+}
+
+/// Write the lock, or report it and keep its bytes: a lock init cannot write must never stop init
+/// half-wired, exactly as a lock init cannot read does not. The bytes go to a temporary file and a
+/// rename, and a lock that cannot be opened for writing is refused first, so a failed write leaves
+/// the old lock whole - `kept` is true, never a truncated file wearing the word (E-SEED3 review
+/// round 1 nit: W5's cr note recorded this as fixed and it never landed; that note is bound to its
+/// tip and stays as written, this is the correction).
+fn write_lock(repo: &Path, body: &str, verb: &str, out: &mut impl Write) {
+    let path = repo.join(LOCK);
+    let tmp = repo.join(format!("{LOCK}.tmp"));
+    let writable = match std::fs::OpenOptions::new().write(true).open(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        other => other.map(|_| ()),
+    };
+    let written =
+        writable.and_then(|_| std::fs::create_dir_all(repo.join(".keel"))).and_then(|_| std::fs::write(&tmp, body)).and_then(|_| std::fs::rename(&tmp, &path));
+    match written {
+        Ok(()) => writeln!(out, "  {verb} {LOCK}").ok(),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            writeln!(out, "  kept      {LOCK} (not writable: {e}; the skills are written, init carries on)").ok()
+        }
+    };
+}
+
+/// Write the embedded skills. Missing -> create; equal -> unchanged; differs -> upgrade when the lock
+/// says keel wrote these bytes, else ask (or `force`). The lock is written when a skill was written or
+/// it exists, so a tree whose skills all match and that has no lock (Keel's own) stays untouched.
 fn skills(repo: &Path, force: bool, input: &mut impl BufRead, out: &mut impl Write) -> Result<(), String> {
+    let state = lock_state(repo);
+    let old = match &state {
+        LockState::Readable(text) => parse_lock(text),
+        _ => BTreeMap::new(),
+    };
+    let mut lock = old.clone();
+    let mut wrote = false;
     for (path, body) in SKILLS {
         let rel = format!(".claude/skills/{path}");
         let p = repo.join(&rel);
-        match std::fs::read(&p) {
-            Ok(cur) if cur == body.as_bytes() => {
+        let current = std::fs::read(&p).ok();
+        if current.is_none() && p.symlink_metadata().is_ok() {
+            writeln!(out, "  kept      {rel} (exists but is not a readable file)").ok();
+            continue;
+        }
+        let go = match skill_action(current.as_deref(), body.as_bytes(), old.get(*path).map(String::as_str)) {
+            SkillAction::Unchanged => {
                 writeln!(out, "  unchanged {rel}").ok();
+                lock.insert(path.to_string(), hex(body.as_bytes()));
+                continue;
             }
-            Ok(_) => {
-                let go = force || {
-                    writeln!(out, "{rel} differs from this keel build ({}).\nLocal edits or an older Keel version - keel cannot tell which.", env!("CARGO_PKG_VERSION")).ok();
-                    confirm(input, out, &format!("Overwrite with this build's version?{}  (-f overwrites without asking)", git_note(repo, &rel)))
-                };
-                if go {
-                    std::fs::write(&p, body).map_err(|e| format!("keel: write {rel}: {e}"))?;
-                    writeln!(out, "  updated   {rel}").ok();
-                } else {
-                    writeln!(out, "  differs   {rel} (kept; re-run `keel init` and answer y, or pass -f, to take this build's version)").ok();
-                }
-            }
-            Err(_) if p.symlink_metadata().is_ok() => {
-                writeln!(out, "  kept      {rel} (exists but is not a readable file)").ok();
-            }
-            Err(_) => {
+            SkillAction::Create => {
                 std::fs::create_dir_all(p.parent().unwrap()).map_err(|e| format!("keel: mkdir for {rel}: {e}"))?;
                 std::fs::write(&p, body).map_err(|e| format!("keel: write {rel}: {e}"))?;
                 writeln!(out, "  created   {rel}").ok();
+                lock.insert(path.to_string(), hex(body.as_bytes()));
+                wrote = true;
+                continue;
+            }
+            SkillAction::Upgrade => Some(" (unedited since keel last wrote it)"),
+            SkillAction::Ask if force => Some(""),
+            SkillAction::Ask => {
+                writeln!(
+                    out,
+                    "{rel} differs from this keel build ({}).\nLocal edits or an older Keel version - keel cannot tell which.",
+                    env!("CARGO_PKG_VERSION")
+                )
+                .ok();
+                confirm(input, out, &format!("Overwrite with this build's version?{}  (-f overwrites without asking)", git_note(repo, &rel))).then_some("")
+            }
+        };
+        match go {
+            Some(why) => {
+                std::fs::write(&p, body).map_err(|e| format!("keel: write {rel}: {e}"))?;
+                writeln!(out, "  updated   {rel}{why}").ok();
+                lock.insert(path.to_string(), hex(body.as_bytes()));
+                wrote = true;
+            }
+            None => {
+                writeln!(out, "  differs   {rel} (kept; re-run `keel init` and answer y, or pass -f, to take this build's version)").ok();
             }
         }
+    }
+    let body = format_lock(&lock);
+    match &state {
+        LockState::Kept(why) => {
+            writeln!(out, "  kept      {LOCK} ({why}; every differing skill file asks)").ok();
+        }
+        LockState::Readable(text) if *text == body => {
+            writeln!(out, "  unchanged {LOCK}").ok();
+        }
+        LockState::Absent if !wrote => {}
+        LockState::Readable(_) => write_lock(repo, &body, "updated  ", out),
+        LockState::Absent => write_lock(repo, &body, "created  ", out),
     }
     // never delete: report files in a keel-* dir that this build does not ship
     let mut stack = vec![repo.join(".claude/skills")];
@@ -304,9 +424,7 @@ fn settings(repo: &Path) -> Result<(), String> {
         let Some(groups) = hooks.entry(event).or_insert_with(|| json!([])).as_array_mut() else {
             return by_hand(&format!("\"hooks.{event}\" is not an array"));
         };
-        let present = groups.iter().any(|g| {
-            g["hooks"].as_array().is_some_and(|hs| hs.iter().any(|h| h["command"].as_str() == Some(cmd)))
-        });
+        let present = groups.iter().any(|g| g["hooks"].as_array().is_some_and(|hs| hs.iter().any(|h| h["command"].as_str() == Some(cmd))));
         if !present {
             let hook = json!([{"type": "command", "command": cmd}]);
             let g = match matcher {
@@ -361,12 +479,27 @@ pub fn run(repo: &Path, force: bool) -> Result<i32, String> {
     if repo.join("CLAUDE.md").exists() {
         println!("warning: CLAUDE.md exists - Claude Code reads it instead of AGENTS.md; merge the two or add a line `@AGENTS.md` to CLAUDE.md");
     }
-    let on_path = crate::no_git_env(std::process::Command::new("sh"), false).args(["-c", "command -v keel"]).output().is_ok_and(|o| o.status.success());
-    if !on_path {
-        println!("warning: keel is not on PATH - the hooks call it; install: cargo install --git https://github.com/lesslucifer/Keel");
+    match keel_on_path() {
+        None => println!("warning: keel is not on PATH - the hooks call it; install: cargo install --git https://github.com/lesslucifer/Keel, or prebuilt binaries, npm and Homebrew: {INSTALL_PAGE}"),
+        Some((path, version)) if !is_keel(&version) => println!(
+            "warning: {path} is not Keel (its `keel --version` lacks \"{KEEL_MARK}\") - another program is named keel, e.g. keel.so, or a Keel older than 2026-11-10 (upgrade it); the git hooks refuse to run it. Put Keel first on PATH: {INSTALL_PAGE}"
+        ),
+        Some(_) => {}
     }
     println!("{NEXT_STEPS}");
     Ok(0)
+}
+
+fn is_keel(version_out: &str) -> bool {
+    version_out.lines().any(|l| l.starts_with(KEEL_MARK))
+}
+
+/// The `keel` the hooks would run, as (path, `keel --version` stdout); None when none is on PATH.
+fn keel_on_path() -> Option<(String, String)> {
+    let sh = |script: &str| crate::no_git_env(std::process::Command::new("sh"), false).args(["-c", script]).stdin(std::process::Stdio::null()).output().ok();
+    let path = sh("command -v keel").filter(|o| o.status.success())?;
+    let version = sh("keel --version 2>/dev/null").map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    Some((String::from_utf8_lossy(&path.stdout).trim().to_string(), version))
 }
 
 /// The signer comes before the first commit, so the policy lands on main with its roster (DEC-47).
@@ -382,7 +515,11 @@ const NEXT_STEPS: &str = "next:\n  1. review .keel/config.toml (check commands, 
 
 #[cfg(test)]
 mod tests {
-    use super::{agents_dir, confirm, shared_root, AgentsDir, LinkState, SharedRoot, NEXT_STEPS};
+    use super::{
+        agents_dir, confirm, format_lock, hex, is_keel, parse_lock, shared_root, skill_action, AgentsDir, LinkState, SharedRoot, SkillAction, NEXT_STEPS,
+        SKILLS,
+    };
+    use crate::KEEL_MARK;
     use std::io::Cursor;
     use std::path::PathBuf;
 
@@ -421,11 +558,9 @@ mod tests {
     fn the_skill_link_is_planted_only_under_a_real_agents_directory() {
         assert_eq!(agents_dir(LinkState::Missing), AgentsDir::Create);
         assert_eq!(agents_dir(LinkState::RealDir), AgentsDir::Real);
-        for (state, found) in [
-            (LinkState::Symlink(PathBuf::from("../shared")), "../shared"),
-            (LinkState::RealFile, "regular file"),
-            (LinkState::Unreadable, "unreadable link"),
-        ] {
+        for (state, found) in
+            [(LinkState::Symlink(PathBuf::from("../shared")), "../shared"), (LinkState::RealFile, "regular file"), (LinkState::Unreadable, "unreadable link")]
+        {
             let why = kept_dir(state);
             assert!(why.contains(found), "the report names what was found at .agents: {why}");
             assert!(why.contains("real .agents directory"), "the report says what a relative target needs: {why}");
@@ -450,6 +585,45 @@ mod tests {
         let first = NEXT_STEPS.find("git commit --no-verify").unwrap();
         assert!(setup < first, "{NEXT_STEPS}");
         assert!(NEXT_STEPS.contains("git add .keel "), "the roster under .keel/ rides the first commit");
+    }
+
+    #[test]
+    fn the_lock_round_trips_shipped_paths_in_order_and_ignores_the_rest() {
+        let (a, b) = (SKILLS[0].0, SKILLS[1].0);
+        let lock = [(b.to_string(), hex(b"b")), (a.to_string(), hex(b"a")), ("gone/SKILL.md".to_string(), hex(b"x"))].into_iter().collect();
+        let text = format_lock(&lock);
+        let lines: Vec<&str> = text.lines().filter(|l| !l.starts_with('#')).collect();
+        assert_eq!(lines, [format!("{}  {a}", hex(b"a")), format!("{}  {b}", hex(b"b"))], "{text}");
+        let back = parse_lock(&text);
+        assert_eq!(back.len(), 2);
+        assert_eq!(back[a], hex(b"a"));
+        let junk = parse_lock("# c\nnot a line\nABCD  x\n0123  short\nzz{}  y\n");
+        assert!(junk.is_empty(), "{junk:?}");
+    }
+
+    #[test]
+    fn hex_is_shasum_256_lowercase() {
+        assert_eq!(hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
+
+    #[test]
+    fn a_differing_file_upgrades_silently_only_when_its_bytes_are_what_the_lock_recorded() {
+        let (build, old) = (b"new".as_slice(), b"old".as_slice());
+        assert_eq!(skill_action(None, build, None), SkillAction::Create);
+        assert_eq!(skill_action(None, build, Some(&hex(old))), SkillAction::Create);
+        assert_eq!(skill_action(Some(build), build, None), SkillAction::Unchanged);
+        assert_eq!(skill_action(Some(build), build, Some(&hex(old))), SkillAction::Unchanged);
+        assert_eq!(skill_action(Some(old), build, Some(&hex(old))), SkillAction::Upgrade);
+        assert_eq!(skill_action(Some(b"edited"), build, Some(&hex(old))), SkillAction::Ask);
+        assert_eq!(skill_action(Some(old), build, None), SkillAction::Ask, "no entry: ask as today");
+    }
+
+    #[test]
+    fn only_a_version_output_carrying_keels_line_is_keel() {
+        assert!(is_keel(&format!("keel 0.4.0\n{KEEL_MARK} (not keel.so)\n")));
+        assert!(!is_keel("keel.so 1.2.3\n"));
+        assert!(!is_keel(""));
+        assert!(!is_keel(&format!("prefix {KEEL_MARK}\n")), "the line must start with the mark, as the shims' grep '^...' does");
     }
 
     #[test]

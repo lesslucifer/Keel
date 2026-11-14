@@ -273,7 +273,11 @@ fn epic_the_installed_hooks_refuse_each_doc_fault_and_pass_the_fixed_plan() {
     let unquoted = example.replacen(r#"R["Review round"]"#, "R[Review round]", 1);
     let no_section = example.replacen(r#" data-item="owner-changes""#, "", 1);
     let long = example.replacen(r#"<h2 id="wus">"#, &format!(r#"<p>{}</p><h2 id="wus">"#, words(300)), 1);
-    for (fault, broken, named) in [("unquoted label", unquoted, "[Review round]"), ("missing section", no_section, "missing item \"owner-changes\""), ("long top", long, "words above the first WU")] {
+    for (fault, broken, named) in [
+        ("unquoted label", unquoted, "[Review round]"),
+        ("missing section", no_section, "missing item \"owner-changes\""),
+        ("long top", long, "words above the first WU"),
+    ] {
         assert_ne!(broken, example, "{fault}: the fixture did not change the example");
         std::fs::write(p.join(plan), &broken).unwrap();
         for (name, c) in [("after-write", &post), ("end-of-turn", &stop)] {
@@ -343,10 +347,16 @@ fn an_epic_plan_typo_hint_names_each_item_once() {
 fn a_quoted_diagram_with_a_directive_is_green() {
     let d = repo();
     let p = d.path();
-    for directive in ["%%{init: {'theme': 'dark'}}%%\nflowchart LR", "%%{init: {'theme': 'dark'}}%% flowchart LR", "flowchart LR\n  %%{\n  init: {'theme': 'dark'}\n  }%%"] {
+    for directive in
+        ["%%{init: {'theme': 'dark'}}%%\nflowchart LR", "%%{init: {'theme': 'dark'}}%% flowchart LR", "flowchart LR\n  %%{\n  init: {'theme': 'dark'}\n  }%%"]
+    {
         let doc = format!("<html lang=\"en\"><body><main><pre class=\"mermaid\">\n{directive}\n  A[\"a\"] --> B[\"b\"]\n</pre></main></body></html>");
         let (ok, t) = verify(p, "f.html", &doc);
         assert!(ok, "{directive}: {t}");
+        // B22: the label scan reads on after the directive, so an unquoted label there is named.
+        let doc = format!("<html lang=\"en\"><body><main><pre class=\"mermaid\">\n{directive}\n  A[\"a\"] --> B[\"b\"]\n  B --> C[after the directive]\n</pre></main></body></html>");
+        let (ok, t) = verify(p, "f.html", &doc);
+        assert!(!ok && t.contains("[after the directive]"), "{directive}: {t}");
     }
 }
 
@@ -432,7 +442,11 @@ fn an_unclosed_diagram_block_is_scanned_once() {
 fn a_comment_opener_inside_an_entity_quoted_label_is_label_text() {
     let d = repo();
     let p = d.path();
-    for body in [r#"A[&quot;<!--&quot;] --> B["b"] --> C["[y]"]"#, r#"A[&#34;<!--&#34;] --> B["b"] --> C["[y]"]"#, r#"A[&quot;a&quot;] --> B[&quot;<!--&quot;] --> C[&quot;[y]&quot;]"#] {
+    for body in [
+        r#"A[&quot;<!--&quot;] --> B["b"] --> C["[y]"]"#,
+        r#"A[&#34;<!--&#34;] --> B["b"] --> C["[y]"]"#,
+        r#"A[&quot;a&quot;] --> B[&quot;<!--&quot;] --> C[&quot;[y]&quot;]"#,
+    ] {
         let (ok, t) = verify(p, "f.html", &flowchart(body));
         assert!(ok, "{body}: {t}");
     }

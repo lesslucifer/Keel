@@ -108,7 +108,15 @@ fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver()
     let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
     let cfg: String = cfg
         .lines()
-        .map(|l| if l.starts_with("lint = ") { "lint = \"true\"" } else if l.starts_with("test = ") { "test = \"true\"" } else { l })
+        .map(|l| {
+            if l.starts_with("lint = ") {
+                "lint = \"true\""
+            } else if l.starts_with("test = ") {
+                "test = \"true\""
+            } else {
+                l
+            }
+        })
         .map(|l| format!("{l}\n"))
         .collect();
     write(p, ".keel/config.toml", &cfg);
@@ -161,7 +169,10 @@ fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver()
         assert!(text(&o).contains(&scope), "round {n}: {}", text(&o));
         let o = match n {
             2 => ok(cr(p, &["--verdict", "FAIL", "--importants", "1"])),
-            5 => ok(cr(p, &["--verdict", "FAIL", "--findings", r#"[{"location": "src/b.py:2", "claim": "b() returns 6", "severity": "blocker", "evidence": "e"}]"#])),
+            5 => ok(cr(
+                p,
+                &["--verdict", "FAIL", "--findings", r#"[{"location": "src/b.py:2", "claim": "b() returns 6", "severity": "blocker", "evidence": "e"}]"#],
+            )),
             _ => ok(cr(p, &["--verdict", "FAIL", "--blockers", "1"])),
         };
         if n == 5 {
@@ -205,7 +216,7 @@ fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver()
     n["waiver"] = Value::from("review cap: 5 rounds, 0 blockers open");
     git(p, &["notes", "--ref=cr", "add", "-f", "-m", &n.to_string(), &b5]);
     let o = keel(p, &["verify-dod", "wu", "wu/e/b"]);
-    assert!(!o.status.success() && text(&o).contains("8·manual-review") && text(&o).contains("reworded"), "{}", text(&o));
+    assert!(!o.status.success() && text(&o).contains("8·manual-review") && text(&o).contains("changed after"), "{}", text(&o));
     git(p, &["notes", "--ref=cr", "add", "-f", "-m", &signed, &b5]);
     ok(keel(p, &["verify-dod", "wu", "wu/e/b"]));
     git(p, &["switch", "-q", "epic/e"]);
@@ -216,7 +227,12 @@ fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver()
     write(p, "docs/use-cases/review.html", "<p>UC-REV-3: the review schedule</p>");
     let e = commit(p, "distill and archive");
     write(p, "docs/.archive/e-result.html", "<html data-artifact=\"epic-result\"><p>done</p></html>");
-    ok(run(env!("CARGO_BIN_EXE_keel"), p, &["notes", "write", "test"], r#"{"e2e":{"files":["tests/test_a.py","tests/test_b.py"],"covers":"a and b, through the schedule"}}"#));
+    ok(run(
+        env!("CARGO_BIN_EXE_keel"),
+        p,
+        &["notes", "write", "test"],
+        r#"{"e2e":{"files":["tests/test_a.py","tests/test_b.py"],"covers":"a and b, through the schedule"}}"#,
+    ));
     let distill: Vec<String> = ["e-plan", "a-result", "b-result"].iter().map(|f| format!("docs/work/{f}.html=docs/use-cases/review.html")).collect();
     ok(keel(p, &[&["notes", "write", "doc"][..], &distill.iter().flat_map(|d| ["--distill", d.as_str()]).collect::<Vec<_>>()].concat()));
     let e_base = git(p, &["merge-base", "main", "HEAD"]);

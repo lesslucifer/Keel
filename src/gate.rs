@@ -10,6 +10,8 @@ enum Level {
     Commit,
     Wu,
     Epic,
+    /// A plain commit on an epic branch judged by the epic-range notes it carries (B20, B23).
+    Close,
 }
 
 impl Level {
@@ -18,12 +20,13 @@ impl Level {
             Level::Commit => "commit",
             Level::Wu => "wu",
             Level::Epic => "epic",
+            Level::Close => "close",
         }
     }
     /// The receipt names of the checks this level runs.
     fn checks(self) -> &'static [&'static str] {
         match self {
-            Level::Commit => &["notes", "manifest", "doc-note"],
+            Level::Commit | Level::Close => &["notes", "manifest", "doc-note"],
             Level::Wu => &["notes", "manifest", "review", "review-base", "diff-binding", "doc-note", "manual-review"],
             Level::Epic => &["notes", "manifest", "review", "review-base", "diff-binding", "doc-note", "walk", "manual-review"],
         }
@@ -48,6 +51,8 @@ struct Report {
     review_waiver: Option<String>,
     /// The tip's cr note as checks 3-5 read it, for check 8's waiver binding (read once).
     tip_cr: Option<CrNote>,
+    /// Notes already read from the tip (kind, as `notes::raw` gave it): check 1 reads them from here.
+    seen: Vec<(&'static str, Result<Option<String>, String>)>,
 }
 
 impl Report {
@@ -65,17 +70,22 @@ fn open(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) ->
     let base = git(repo, &["merge-base", target, &tip], &[])?;
     let names = notes::names(repo, &base, &tip, &[])?;
     let exempt = notes::exempt(repo, cfg, &base, &tip, &names)?;
-    let r = Report { level, tip_ref: tip_ref.into(), tip, base, exempt, failures: vec![], waived: vec![], review_waiver: None, tip_cr: None };
+    let r = Report { level, tip_ref: tip_ref.into(), tip, base, exempt, failures: vec![], waived: vec![], review_waiver: None, tip_cr: None, seen: vec![] };
     Ok((r, names))
 }
 
 /// Check 1 for one note: present (when required), JSON, declaring `<kind>/v1`.
 fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: bool) -> Option<T> {
     let schema = format!("{kind}/v1");
-    let stored = match notes::raw(repo, kind, &r.tip) {
+    let seen = r.seen.iter().find(|(k, _)| *k == kind).map(|(_, raw)| raw.clone());
+    let stored = match seen.unwrap_or_else(|| notes::raw(repo, kind, &r.tip)) {
         Ok(stored) => stored,
         Err(e) => {
-            r.fail("1·notes", format!("the {kind} note on {} cannot be read: {e}", short(&r.tip)), format!("repair refs/notes/{kind} (git fsck names what is broken), then re-run"));
+            r.fail(
+                "1·notes",
+                format!("the {kind} note on {} cannot be read: {e}", short(&r.tip)),
+                format!("repair refs/notes/{kind} (git fsck names what is broken), then re-run"),
+            );
             return None;
         }
     };
@@ -92,11 +102,9 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
         }
         return None;
     };
-    let parsed = serde_json::from_str::<serde_json::Value>(&raw).map_err(|e| e.to_string()).and_then(|v| {
-        match v["schema"].as_str() {
-            Some(s) if s == schema => serde_json::from_value::<T>(v).map_err(|e| e.to_string()),
-            other => Err(format!("declares schema {}, expected {schema}", other.unwrap_or("none"))),
-        }
+    let parsed = serde_json::from_str::<serde_json::Value>(&raw).map_err(|e| e.to_string()).and_then(|v| match v["schema"].as_str() {
+        Some(s) if s == schema => serde_json::from_value::<T>(v).map_err(|e| e.to_string()),
+        other => Err(format!("declares schema {}, expected {schema}", other.unwrap_or("none"))),
     });
     match parsed {
         Ok(n) => Some(n),
@@ -110,7 +118,7 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
 /// Checks 1-2 (paperwork, all the preflight reads) or 1-6 on the tip itself. `own_review`: false
 /// only when the signer is about to waive the tip's review, so its cr note is neither required nor judged.
 fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: bool, own_review: bool) -> Result<(), String> {
-    let review = full && own_review && r.level != Level::Commit;
+    let review = full && own_review && matches!(r.level, Level::Wu | Level::Epic);
     let docs = notes::doc_paths(repo, cfg, &r.base, &r.tip, names)?;
     let test = read::<TestNote>(repo, r, "test", true);
     let cr = if review { read::<CrNote>(repo, r, "cr", true) } else { None };
@@ -121,7 +129,7 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
         let (layer, have) = match r.level {
             Level::Commit => ("unit", &t.unit),
             Level::Wu => ("integration", &t.integration),
-            Level::Epic => ("e2e", &t.e2e),
+            Level::Epic | Level::Close => ("e2e", &t.e2e),
         };
         if have.is_none() {
             r.fail(
@@ -133,7 +141,11 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
     }
     let tips = [test.as_ref().map(|n| &n.id.tip), cr.as_ref().map(|n| &n.id.tip), doc.as_ref().map(|n| &n.id.tip)];
     if tips.iter().flatten().any(|t| **t != r.tip) {
-        r.fail("2·manifest", format!("a note on {} names a different tip (copied from another commit?)", short(&r.tip)), "rewrite the notes on this tip with keel notes write");
+        r.fail(
+            "2·manifest",
+            format!("a note on {} names a different tip (copied from another commit?)", short(&r.tip)),
+            "rewrite the notes on this tip with keel notes write",
+        );
     }
 
     // 3-5: the review verdict, its base, its binding to the code diff.
@@ -154,7 +166,11 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
             );
         }
         if cr.code_diff_hash != notes::code_diff_hash(repo, cfg, &r.base, &r.tip)? {
-            r.fail("5·diff-binding", "reviewed code is not byte-identical to the code this tip changes".into(), "the tip changed after review - re-run the review on this exact tip");
+            r.fail(
+                "5·diff-binding",
+                "reviewed code is not byte-identical to the code this tip changes".into(),
+                "the tip changed after review - re-run the review on this exact tip",
+            );
         }
     }
 
@@ -210,20 +226,26 @@ fn verify(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) 
 }
 
 fn verify_with(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, own_review: bool) -> Result<Report, String> {
-    let (mut r, names) = open(repo, cfg, level, tip_ref, target)?;
+    let (r, names) = open(repo, cfg, level, tip_ref, target)?;
+    judge(repo, cfg, r, &names, target, own_review)
+}
+
+fn judge(repo: &Path, cfg: &Config, mut r: Report, names: &[String], target: &str, own_review: bool) -> Result<Report, String> {
+    let level = r.level;
     // UC-GATE-5 never exempts W8's archive/tier-layout checks (below). W4's 8·manual-review runs in
     // `run()` instead - this fn is re-entered per walk seam and by mr confirm, neither of which may judge it.
     if !r.exempt {
-        check_tip(repo, cfg, &mut r, &names, true, own_review)?;
+        check_tip(repo, cfg, &mut r, names, true, own_review)?;
     } else {
         // An archive commit is docs-only by nature; exempting it would leave distillation unchecked.
-        let docs = notes::doc_paths(repo, cfg, &r.base, &r.tip, &names)?;
+        let docs = notes::doc_paths(repo, cfg, &r.base, &r.tip, names)?;
         if notes::archives_t3(repo, cfg, &r.tip, &docs) {
             if let Some(doc) = read::<DocNote>(repo, &mut r, "doc", true) {
                 doc_note(repo, cfg, &mut r, &docs, &doc);
             }
         }
     }
+    // The tracked-doc layout is the epic tip's alone: a close commit before the archive still tracks T3.
     if level == Level::Epic {
         tracked_layout(repo, cfg, &mut r)?;
         walk(repo, cfg, &mut r, target)?;
@@ -249,7 +271,10 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
                 (*m, seam.failures, "wu")
             }
             [c, _] if *c == r.tip => continue, // the epic's own checks cover its tip
-            [c, first] => (*c, verify(repo, cfg, Level::Commit, c, first)?.failures, "commit"),
+            [c, first] => {
+                let seam = verify_plain(repo, cfg, c, first, target, false)?;
+                (*c, seam.failures, seam.level.name())
+            }
             [m, ..] if p.len() > 3 => {
                 let what = format!("{} is an octopus merge - parents beyond the second were never gated", short(m));
                 (*m, vec![Failure { check: String::new(), what, fix: "merge one WU per --no-ff merge commit".into() }], "merge")
@@ -259,9 +284,7 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
         if failures.is_empty() {
             continue;
         }
-        let why = waivers.iter().find(|w| {
-            !w.seam.is_empty() && !w.why.trim().is_empty() && (seam.starts_with(&w.seam) || w.seam.starts_with(seam))
-        });
+        let why = waivers.iter().find(|w| !w.seam.is_empty() && !w.why.trim().is_empty() && (seam.starts_with(&w.seam) || w.seam.starts_with(seam)));
         if let Some(w) = why {
             r.waived.push(format!("7·walk seam {} waived: {}", short(seam), w.why.trim()));
             continue;
@@ -279,9 +302,20 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
     Ok(())
 }
 
+/// Recorded text made inert for a terminal by the sign-off listing's rule (`mr::printable`), keeping
+/// the middle dot of the check ids. `lines`: a fix keeps its own line breaks, each line escaped.
+fn inert(s: &str, lines: bool) -> String {
+    let one = |l: &str| l.split('·').map(mr::printable).collect::<Vec<_>>().join("·");
+    if lines {
+        s.split('\n').map(one).collect::<Vec<_>>().join("\n")
+    } else {
+        one(s)
+    }
+}
+
 fn print(r: &Report, what: &str) {
     for w in &r.waived {
-        println!("WAIVED {w}");
+        println!("WAIVED {}", inert(w, false));
     }
     if r.exempt {
         println!("{what} {} exempt on {} - docs/infra-only, test/cr/doc evidence not required", r.level.name(), short(&r.tip));
@@ -289,7 +323,7 @@ fn print(r: &Report, what: &str) {
         println!("{what} {} green on {} (checks: {})", r.level.name(), short(&r.tip), r.level.checks().join(", "));
     } else {
         for f in &r.failures {
-            eprintln!("FAIL  {:<24} {}\n      fix -> {}", f.check, f.what, f.fix);
+            eprintln!("FAIL  {:<24} {}\n      fix -> {}", inert(&f.check, false), inert(&f.what, false), inert(&f.fix, true));
         }
         eprintln!("{what} {} red on {} - {} failed", r.level.name(), short(&r.tip), r.failures.len());
     }
@@ -343,19 +377,28 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, gua
     Ok(0)
 }
 
+/// The range a sign-off signs, once checks 1-7 are green on it.
+pub(crate) struct Ready {
+    pub tip: String,
+    pub base: String,
+    pub target: String,
+    /// The tip's cr note as checks 3-5 read it; `None` when the signer waives the review (not read).
+    pub cr: Option<CrNote>,
+}
+
 /// mr confirm's sign-last rule (Trawler DEC-27): checks 1-7 must already be green on the tip.
-/// Red -> the failures are printed and `None`; green -> `(tip, base, target)` of the range to sign.
+/// Red -> the failures are printed and `None`; green -> the range to sign and the cr note read.
 /// `waive`: the signer waives the tip's own review in this sign-off (UC-REV-2), so its review - the
 /// cr note and checks 3-5 on it - is the one thing not yet required; everything else still is.
-pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, rest: &[&str], waive: bool) -> Result<Option<(String, String, String)>, String> {
+pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, rest: &[&str], waive: bool) -> Result<Option<Ready>, String> {
     let level = if epic { Level::Epic } else { Level::Wu };
-    let target = target_of(cfg, level, tip_ref, rest);
+    let target = target_of(repo, cfg, level, tip_ref, rest)?;
     let r = verify_with(repo, cfg, level, tip_ref, &target, !waive)?;
     if !r.failures.is_empty() {
         print(&r, "mr confirm");
         return Ok(None);
     }
-    Ok(Some((r.tip, r.base, target)))
+    Ok(Some(Ready { tip: r.tip, base: r.base, target, cr: r.tip_cr }))
 }
 
 /// pre-merge-commit: tip = the merge head, target = HEAD, level from HEAD's branch.
@@ -418,22 +461,24 @@ fn hook(repo: &Path, cfg: &Config) -> Result<i32, String> {
 /// merge never ran pre-merge-commit and a `--ff-only` one made no merge commit, so this is the last gate.
 pub(crate) fn range(repo: &Path, cfg: &Config, old: &str, new: &str, branch: &str) -> Result<i32, String> {
     let merges = if branch == cfg.branches.main { Level::Epic } else { Level::Wu };
+    let main = cfg.branches.main.as_str();
+    let tip = git(repo, &["rev-parse", &format!("{new}^{{commit}}")], &[])?;
+    let mut list = vec!["rev-list".to_string(), "--first-parent".into(), "--parents".into(), format!("{old}..{new}")];
+    // On an epic branch, what is already on main landed through a gated epic merge (B23): not walked.
+    if merges == Level::Wu && git(repo, &["rev-parse", "--verify", "-q", &format!("{main}^{{commit}}")], &[]).is_ok() {
+        list.push(format!("^{main}"));
+    }
     let mut red = false;
-    for line in git(repo, &["rev-list", "--first-parent", "--parents", &format!("{old}..{new}")], &[])?.lines() {
+    for line in git(repo, &list.iter().map(String::as_str).collect::<Vec<_>>(), &[])?.lines() {
         let p: Vec<&str> = line.split_whitespace().collect();
         let r = match p.as_slice() {
-            [c, first] => verify(repo, cfg, Level::Commit, c, first)?,
+            [c, first] if merges == Level::Epic => verify(repo, cfg, Level::Commit, c, first)?,
+            [c, first] => verify_plain(repo, cfg, c, first, main, *c == tip)?,
             // Already landed on the remote branch, or a back-merge of main into an epic: not a seam.
-            [_, main, wu]
-                if is_ancestor(repo, wu, main)
-                    || is_ancestor(repo, wu, old)
-                    || (merges == Level::Wu && is_ancestor(repo, wu, &cfg.branches.main)) =>
-            {
-                continue
-            }
-            [_, main, wu] => {
-                let mut r = verify(repo, cfg, merges, wu, main)?;
-                if let Err((what, fix)) = mr::manual_review(repo, cfg, merges.name(), &r.tip, &r.base, main, r.tip_cr.as_ref()) {
+            [_, first, wu] if is_ancestor(repo, wu, first) || is_ancestor(repo, wu, old) || (merges == Level::Wu && is_ancestor(repo, wu, main)) => continue,
+            [_, first, wu] => {
+                let mut r = verify(repo, cfg, merges, wu, first)?;
+                if let Err((what, fix)) = mr::manual_review(repo, cfg, merges.name(), &r.tip, &r.base, first, r.tip_cr.as_ref()) {
                     r.fail("8·manual-review", what, fix);
                 }
                 r
@@ -453,6 +498,57 @@ pub(crate) fn range(repo: &Path, cfg: &Config, old: &str, new: &str, branch: &st
     Ok(red as i32)
 }
 
+/// Which range a plain commit's test and doc notes were written for. Every note names its range's
+/// base: the epic's when it equals where the branch left main and that is not the commit's own parent
+/// (there the two ranges are one commit, judged as a commit).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum NoteRange {
+    Commit,
+    Epic,
+}
+
+fn note_range(bases: &[&str], parent: &str, epic_base: &str) -> NoteRange {
+    if epic_base != parent && !bases.is_empty() && bases.iter().all(|b| *b == epic_base) {
+        NoteRange::Epic
+    } else {
+        NoteRange::Commit
+    }
+}
+
+/// B23, B20: epic-range notes judge a plain commit over the epic when it is the pushed tip or changes
+/// no code (the archive commit). A code commit inside the range stays a commit (owner, 2026-11-13).
+fn judged_as(notes: NoteRange, pushed_tip: bool, changes_code: bool) -> Level {
+    if notes == NoteRange::Epic && (pushed_tip || !changes_code) {
+        Level::Close
+    } else {
+        Level::Commit
+    }
+}
+
+/// Judge a plain first-parent commit `c` (parent `parent`) of an epic branch: over the epic (`close`)
+/// or alone (`commit`), by `judged_as`. `main`: what the epic merges into. Its test and doc notes are
+/// read once, here, and judged from what was read. A note present but unreadable names no base, so the
+/// commit gate judges it and reports why.
+fn verify_plain(repo: &Path, cfg: &Config, c: &str, parent: &str, main: &str, pushed_tip: bool) -> Result<Report, String> {
+    let epic_base = git(repo, &["merge-base", main, c], &[])?;
+    let seen: Vec<(&'static str, Result<Option<String>, String>)> = ["test", "doc"].into_iter().map(|kind| (kind, notes::raw(repo, kind, c))).collect();
+    let bases: Vec<String> = seen
+        .iter()
+        .filter_map(|(_, raw)| raw.as_ref().map(Option::as_deref).transpose())
+        .map(|raw| {
+            let v = raw.ok().and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+            v.and_then(|v| v["base"].as_str().map(String::from)).unwrap_or_default()
+        })
+        .collect();
+    let range = note_range(&bases.iter().map(String::as_str).collect::<Vec<_>>(), parent, &epic_base);
+    let changes_code = range == NoteRange::Epic && !pushed_tip && !notes::names(repo, parent, c, &cfg.code_paths)?.is_empty();
+    let level = judged_as(range, pushed_tip, changes_code);
+    let target = if level == Level::Close { main } else { parent };
+    let (mut r, names) = open(repo, cfg, level, c, target)?;
+    r.seen = seen;
+    judge(repo, cfg, r, &names, target, true)
+}
+
 /// Before a review starts: right checkout, clean tree, check green, checks 1-2 on the test note, and
 /// the review schedule: the round about to run and its scope, or 0·review-cap (UC-REV-3).
 fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> Result<i32, String> {
@@ -470,13 +566,17 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
         r.fail("0·tree", "keel check is red on the tip".into(), "get lint and tests green before the review runs");
     }
     check_tip(repo, cfg, &mut r, &names, false, true)?;
-    let schedule = review::Schedule::read(repo, &r.base, &r.tip, target, &cfg.code_paths).map_err(|e| (e, "fix the repo state, then preflight again".to_string()));
+    let schedule =
+        review::Schedule::read(repo, &r.base, &r.tip, target, &cfg.code_paths).map_err(|e| (e, "fix the repo state, then preflight again".to_string()));
     match schedule.and_then(|s| s.next()) {
         Ok(next) => {
             let (commands, changed) = match &next.since {
                 Some(since) => {
                     let diffs = notes::own_diffs(repo, since, &r.tip)?;
-                    (notes::own_diff_commands(&diffs, &cfg.code_paths), notes::changed_text(Ok(notes::diff_names(repo, &diffs, &cfg.code_paths)?), &format!("{since}..{}", r.tip)))
+                    (
+                        notes::own_diff_commands(&diffs, &cfg.code_paths),
+                        notes::changed_text(Ok(notes::diff_names(repo, &diffs, &cfg.code_paths)?), &format!("{since}..{}", r.tip)),
+                    )
                 }
                 None => (String::new(), String::new()),
             };
@@ -488,7 +588,8 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
     Ok(!r.failures.is_empty() as i32)
 }
 
-const USAGE: &str = "usage: keel verify-dod <wu|epic> <tip> [--target R] | commit <sha> | hook | range <old> <new>\n       keel preflight <wu|epic> <tip> [--target R]";
+const USAGE: &str =
+    "usage: keel verify-dod <wu|epic> <tip> [--target R] | commit <sha> | hook | range <old> <new>\n       keel preflight <wu|epic> <tip> [--target R]";
 
 fn level_of(s: &str) -> Result<Level, String> {
     match s {
@@ -498,9 +599,42 @@ fn level_of(s: &str) -> Result<Level, String> {
     }
 }
 
-/// Epic default target is main; a WU's is inferred from its branch (notes::target).
-fn target_of(cfg: &Config, level: Level, tip: &str, rest: &[&str]) -> String {
-    notes::target(cfg, if level == Level::Epic { "" } else { tip }, rest)
+/// Whether `name` is a local branch, so its name alone decides a WU's target.
+fn is_local_branch(repo: &Path, name: &str) -> bool {
+    git(repo, &["rev-parse", "--verify", "-q", &format!("refs/heads/{name}")], &[]).is_ok()
+}
+
+/// The local branches whose history holds `sha`, as their names without `refs/heads/`.
+/// `%(refname:short)` disambiguates against tags, so a tag named like a holder turns
+/// `epic/e` into `heads/epic/e` and the prefix match below finds nothing (E-SEED3 review
+/// round 1, I1); a full refname stripped here cannot be renamed by another ref.
+fn holders(repo: &Path, sha: &str) -> Result<Vec<String>, String> {
+    let args = ["for-each-ref", "--contains", sha, "--format=%(refname)", "refs/heads"];
+    Ok(git(repo, &args, &[])?.lines().map(|l| l.strip_prefix("refs/heads/").unwrap_or(l).to_string()).collect())
+}
+
+fn unresolved_target(cfg: &Config, sha: &str, why: &str) -> String {
+    format!(
+        "keel: cannot tell which branch judges {} - {why}\n  fix -> name it: --target <the branch the WU is measured against>, e.g. --target {}<name>",
+        short(sha),
+        cfg.branches.epic_prefix
+    )
+}
+
+/// Epic default target is main; a WU's is inferred from its branch (notes::target). A tip that names
+/// no local branch - a bare commit id, `HEAD` on a detached checkout - is resolved from the branches
+/// that hold it, or refused: main is never a guess (e-router-v2 R7). The grammar itself lives in
+/// `notes`, so the writer and this gate read one rule.
+fn target_of(repo: &Path, cfg: &Config, level: Level, tip: &str, rest: &[&str]) -> Result<String, String> {
+    if level == Level::Epic || notes::target_flag(rest).is_some() || is_local_branch(repo, tip) {
+        return Ok(notes::target(cfg, if level == Level::Epic { "" } else { tip }, rest));
+    }
+    let sha = git(repo, &["rev-parse", &format!("{tip}^{{commit}}")], &[])?;
+    let target = notes::target_from_holders(cfg, &holders(repo, &sha)?).map_err(|why| unresolved_target(cfg, &sha, &why))?;
+    if !is_local_branch(repo, &target) {
+        return Err(unresolved_target(cfg, &sha, &format!("{target} is not a local branch, so the range cannot be measured")));
+    }
+    Ok(target)
 }
 
 pub fn verify_dod(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
@@ -510,7 +644,7 @@ pub fn verify_dod(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, Strin
         ["range", old, new] => range(repo, cfg, old, new, new),
         [lvl, tip, rest @ ..] => {
             let level = level_of(lvl)?;
-            run(repo, cfg, level, tip, &target_of(cfg, level, tip, rest), true)
+            run(repo, cfg, level, tip, &target_of(repo, cfg, level, tip, rest)?, true)
         }
         _ => Err(USAGE.into()),
     }
@@ -520,7 +654,7 @@ pub fn preflight_cmd(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, St
     match args {
         [lvl, tip, rest @ ..] => {
             let level = level_of(lvl)?;
-            preflight(repo, cfg, level, tip, &target_of(cfg, level, tip, rest))
+            preflight(repo, cfg, level, tip, &target_of(repo, cfg, level, tip, rest)?)
         }
         _ => Err(USAGE.into()),
     }
@@ -528,8 +662,37 @@ pub fn preflight_cmd(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, St
 
 #[cfg(test)]
 mod tests {
+    use super::inert;
     use super::review_verdict as review;
+    use super::{judged_as, note_range, Level, NoteRange};
     use crate::notes::CrNote;
+
+    #[test]
+    fn notes_are_the_epics_only_when_every_one_names_the_epic_base_and_that_is_not_the_parent() {
+        let pool = ["parent", "epic", "other", ""];
+        let mut sets: Vec<Vec<&str>> = vec![vec![]];
+        sets.extend(pool.iter().map(|b| vec![*b]));
+        sets.extend(pool.iter().flat_map(|a| pool.iter().map(move |b| vec![*a, *b])));
+        for (parent, epic) in [("parent", "epic"), ("epic", "epic")] {
+            for bases in &sets {
+                let want = parent != epic && !bases.is_empty() && bases.iter().all(|b| *b == epic);
+                let got = note_range(bases, parent, epic);
+                assert_eq!(got == NoteRange::Epic, want, "bases {bases:?}, parent {parent}, epic base {epic}");
+            }
+        }
+    }
+
+    #[test]
+    fn epic_notes_judge_the_pushed_tip_or_a_commit_without_code_over_the_epic_and_nothing_else() {
+        for notes in [NoteRange::Commit, NoteRange::Epic] {
+            for tip in [false, true] {
+                for code in [false, true] {
+                    let want = if notes == NoteRange::Epic && (tip || !code) { Level::Close } else { Level::Commit };
+                    assert!(judged_as(notes, tip, code) == want, "{notes:?} tip={tip} code={code}");
+                }
+            }
+        }
+    }
 
     fn cr(verdict: &str, waiver: Option<&str>) -> CrNote {
         let mut j = serde_json::json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c",
@@ -538,6 +701,18 @@ mod tests {
             j["waiver"] = w.into();
         }
         serde_json::from_value(j).unwrap()
+    }
+
+    /// B17: recorded text reaches the terminal inert; the check ids' middle dot and a fix's own
+    /// line breaks stay.
+    #[test]
+    fn the_printout_escapes_recorded_text_and_keeps_its_own_layout() {
+        assert_eq!(inert("WAIVED 3·review: cap", false), "WAIVED 3·review: cap");
+        assert_eq!(inert("r\u{1b}[2K\u{7}\u{200b}\\", false), r"r\u{1b}[2K\u{7}\u{200b}\\");
+        assert_eq!(inert("a\nFAIL  fake", false), r"a\u{a}FAIL  fake", "a recorded line break cannot start a line");
+        assert_eq!(inert("one\n      two\u{1b}", true), "one\n      two\\u{1b}", "a fix keeps its lines, each escaped");
+        assert_eq!(inert("7·walk·3·review", false), "7·walk·3·review");
+        assert_eq!(inert("café 日本", true), "café 日本");
     }
 
     #[test]

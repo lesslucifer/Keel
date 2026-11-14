@@ -20,13 +20,7 @@ fn guard(agent: &str, tool: &str, input: serde_json::Value) -> Option<String> {
 
 /// Run the guard on one whole PreToolUse event; Some(reason) = denied, None = allowed.
 fn guard_event(event: serde_json::Value) -> Option<String> {
-    let mut p = Command::new("jq")
-        .args(["-c", "-f"])
-        .arg(root().join("scripts/router-guard.jq"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut p = Command::new("jq").args(["-c", "-f"]).arg(root().join("scripts/router-guard.jq")).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
     std::io::Write::write_all(&mut p.stdin.take().unwrap(), event.to_string().as_bytes()).unwrap();
     decision(&event, p.wait_with_output().unwrap())
 }
@@ -384,11 +378,15 @@ fn stub_claude(stub: &Path) {
 /// creates $STEP_DIR/go-n, so each poll judges a state the test has set. It ends with its caller or the test process.
 fn sleep_shim(base: &Path) {
     std::fs::create_dir_all(base.join("shim")).unwrap();
-    std::fs::write(base.join("shim/sleep"), concat!(
-        "#!/bin/sh\necho \"$1\" >> \"$STEP_DIR/sleeps\"\nn=$(( $(cat \"$STEP_DIR/polls\" 2>/dev/null || echo 0) + 1 ))\n",
-        "echo \"$n\" > \"$STEP_DIR/polls.tmp\" && mv \"$STEP_DIR/polls.tmp\" \"$STEP_DIR/polls\"\n",
-        "while [ ! -e \"$STEP_DIR/go-$n\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null && kill -0 \"$PPID\" 2>/dev/null; do /bin/sleep 0.02; done\n"
-    )).unwrap();
+    std::fs::write(
+        base.join("shim/sleep"),
+        concat!(
+            "#!/bin/sh\necho \"$1\" >> \"$STEP_DIR/sleeps\"\nn=$(( $(cat \"$STEP_DIR/polls\" 2>/dev/null || echo 0) + 1 ))\n",
+            "echo \"$n\" > \"$STEP_DIR/polls.tmp\" && mv \"$STEP_DIR/polls.tmp\" \"$STEP_DIR/polls\"\n",
+            "while [ ! -e \"$STEP_DIR/go-$n\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null && kill -0 \"$PPID\" 2>/dev/null; do /bin/sleep 0.02; done\n"
+        ),
+    )
+    .unwrap();
     std::fs::set_permissions(base.join("shim/sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
 
@@ -557,8 +555,14 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
         ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\" \"high\"]\nworker_default_effort = \"medium\"\n", "list without comma"),
         (&format!("{ok_policy}worker_model = \"opus\"\n"), "repeated key"),
         (&format!("{ok_policy}worker_extra = \"x\"\n"), "unknown key"),
-        ("[router]\nworker_model = \"opus\"\n[other]\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n", "key outside the section"),
-        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\n[other]\nworker_default_effort = \"medium\"\n", "key after another section"),
+        (
+            "[router]\nworker_model = \"opus\"\n[other]\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n",
+            "key outside the section",
+        ),
+        (
+            "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\n[other]\nworker_default_effort = \"medium\"\n",
+            "key after another section",
+        ),
         (&ok_policy.replace('\n', "\r\n"), "CRLF"),
         (&ok_policy.replace("worker_model = ", "worker_model\t=\t"), "tabs around ="),
         (&ok_policy.replace("\"opus\"", "'opus'"), "single quotes"),
@@ -572,7 +576,10 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
         (&format!("  {ok_policy}"), "indented header"),
         (&format!("{ok_policy}  [router]\n"), "indented second header"),
         (&format!("{ok_policy}[router]\n"), "duplicate section"),
-        ("[router]\nworker_model = \"opus\"\n[review]\nx = 1\n[router]\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n", "split section"),
+        (
+            "[router]\nworker_model = \"opus\"\n[review]\nx = 1\n[router]\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n",
+            "split section",
+        ),
         (&ok_policy.replace("[router]\n", "[router]\t\n"), "trailing tab on header"),
         (&ok_policy.replace("[router]\n", "[router] \n"), "trailing space on header"),
         (&ok_policy.replace("\"opus\"", "\"--dangerously-skip-permissions\""), "model starting with -"),
@@ -609,13 +616,17 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
     for (config, what) in policy_refusals {
         l.commit_config(config.as_deref());
         let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus"]);
-        assert!(!ok && out.contains("no worker policy: [router] worker_model / worker_efforts / worker_default_effort in .keel/config.toml at HEAD of"), "{what}: {out}");
+        assert!(
+            !ok && out.contains("no worker policy: [router] worker_model / worker_efforts / worker_default_effort in .keel/config.toml at HEAD of"),
+            "{what}: {out}"
+        );
         assert_eq!(l.starts("q"), 0, "{what}: started a worker");
     }
 
     // an uncommitted edit, even staged, cannot widen the committed policy
     l.commit_config(Some("[router]   # comment\nworker_model = \"opus\"  # trailing\n\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n[next]\nx = 1\n"));
-    std::fs::write(l.main.join(".keel/config.toml"), "[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"max\"]\nworker_default_effort = \"max\"\n").unwrap();
+    std::fs::write(l.main.join(".keel/config.toml"), "[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"max\"]\nworker_default_effort = \"max\"\n")
+        .unwrap();
     git(&l.main, &["add", ".keel"]);
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
     assert!(!ok && out.contains("model must be opus"), "{out}");
@@ -681,13 +692,8 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
 #[test]
 fn committed_worker_policy_is_opus_at_medium_or_high_effort_in_auto_mode_with_a_haiku_watchdog() {
     let config = std::fs::read_to_string(root().join(".keel/config.toml")).unwrap();
-    let section: Vec<&str> = config
-        .lines()
-        .skip_while(|l| !l.starts_with("[router]"))
-        .skip(1)
-        .take_while(|l| !l.starts_with('['))
-        .filter(|l| !l.trim().is_empty())
-        .collect();
+    let section: Vec<&str> =
+        config.lines().skip_while(|l| !l.starts_with("[router]")).skip(1).take_while(|l| !l.starts_with('[')).filter(|l| !l.trim().is_empty()).collect();
     assert_eq!(
         section,
         [
@@ -1033,11 +1039,7 @@ fn worker_permission_mode_comes_from_the_committed_policy() {
     assert_eq!(spawned_mode(&l, &next(), &[]), "plan");
 
     // an option narrows the policy's mode, and may repeat it
-    for (policy, asked) in [
-        ("auto", vec!["plan", "acceptEdits", "auto"]),
-        ("acceptEdits", vec!["plan", "acceptEdits"]),
-        ("plan", vec!["plan"]),
-    ] {
+    for (policy, asked) in [("auto", vec!["plan", "acceptEdits", "auto"]), ("acceptEdits", vec!["plan", "acceptEdits"]), ("plan", vec!["plan"])] {
         l.commit_config(Some(&format!("{MODELESS_POLICY}worker_permission_mode = \"{policy}\"\n")));
         for m in asked {
             assert_eq!(spawned_mode(&l, &next(), &["--permission-mode", m]), m, "{policy} asked {m}");
@@ -1116,7 +1118,10 @@ fn a_permission_mode_outside_the_accepted_set_or_wider_than_the_policy_is_refuse
     for (policy, wider) in [("acceptEdits", vec!["auto"]), ("plan", vec!["acceptEdits", "auto"])] {
         l.commit_config(Some(&format!("{MODELESS_POLICY}worker_permission_mode = \"{policy}\"\n")));
         for m in wider {
-            refused(&["--permission-mode", m], &format!("permission mode {m} is wider than the policy's {policy} ([router] worker_permission_mode in .keel/config.toml)"));
+            refused(
+                &["--permission-mode", m],
+                &format!("permission mode {m} is wider than the policy's {policy} ([router] worker_permission_mode in .keel/config.toml)"),
+            );
         }
     }
     l.commit_config(Some(MODELESS_POLICY));
@@ -1471,7 +1476,6 @@ impl Stepped {
         }
     }
 
-
     fn go(&self, n: u32) {
         std::fs::write(self.dir.join(format!("go-{n}")), "").unwrap();
     }
@@ -1763,10 +1767,7 @@ fn decoy(dir: &Path) {
 
 /// Everything in `decoy` a git call that followed an inherited GIT_* into it could change.
 fn decoy_state(decoy: &Path) -> Vec<Vec<u8>> {
-    let mut v: Vec<Vec<u8>> = ["config", "index", "HEAD"]
-        .iter()
-        .map(|f| std::fs::read(decoy.join(".git").join(f)).unwrap())
-        .collect();
+    let mut v: Vec<Vec<u8>> = ["config", "index", "HEAD"].iter().map(|f| std::fs::read(decoy.join(".git").join(f)).unwrap()).collect();
     v.push(git(decoy, &["for-each-ref"]).stdout);
     v.push(git(decoy, &["worktree", "list", "--porcelain"]).stdout);
     v
@@ -1801,7 +1802,14 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let base = d.path().canonicalize().unwrap();
     let c = base.join("c");
     common::self_clone(root(), &c);
-    for f in ["scripts/router-worker.sh", "scripts/router-guard.jq", "scripts/router-file-guard.sh", "scripts/router-watch.sh", ".claude/settings.json", ".gitworktreecopy"] {
+    for f in [
+        "scripts/router-worker.sh",
+        "scripts/router-guard.jq",
+        "scripts/router-file-guard.sh",
+        "scripts/router-watch.sh",
+        ".claude/settings.json",
+        ".gitworktreecopy",
+    ] {
         std::fs::copy(root().join(f), c.join(f)).unwrap();
     }
     let keel = Path::new(env!("CARGO_BIN_EXE_keel"));
@@ -1918,7 +1926,10 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let out = String::from_utf8(hook(&prompt_hook, "{\"prompt\":\"tick\"}").stdout).unwrap();
     let b = blocks(&out);
     assert!(
-        out.starts_with("Report to r1.\n") && b.len() == 1 && b[0].starts_with(&format!("{name}: DONE · quiet ? · wu/E-X/e2e · ")) && b[0].ends_with(" · dirty 0"),
+        out.starts_with("Report to r1.\n")
+            && b.len() == 1
+            && b[0].starts_with(&format!("{name}: DONE · quiet ? · wu/E-X/e2e · "))
+            && b[0].ends_with(" · dirty 0"),
         "{out}"
     );
     let verdict = |stdin: &str| decision(&serde_json::json!({}), hook(&tool_hook, stdin));
@@ -1958,7 +1969,13 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     for f in [".mr-allowed", ".keel/mr-allowed"] {
         std::fs::write(l.wt.join(f), "username: worker\n").unwrap();
     }
-    let o = hermetic(&mut common::cmd(keel)).args(["mr", "confirm", "wu", "--as", "worker"]).current_dir(&l.wt).env("PATH", &path).env("HOME", &home).output().unwrap();
+    let o = hermetic(&mut common::cmd(keel))
+        .args(["mr", "confirm", "wu", "--as", "worker"])
+        .current_dir(&l.wt)
+        .env("PATH", &path)
+        .env("HOME", &home)
+        .output()
+        .unwrap();
     assert!(!o.status.success() && text(&o).contains("worker is not listed in epic/E-X:.keel/mr-allowed"), "{}", text(&o));
     let tip = rev("wu/E-X/e2e");
     assert!(!hooked(&c, &["notes", "--ref=mr", "show", &tip]).status.success(), "a refused confirm wrote a note");
@@ -2163,7 +2180,11 @@ fn hermetic_git_ignores_global_and_system_config() {
     let hostile = d.path().join("gitconfig");
     std::fs::write(&hostile, "[tag]\n\tgpgSign = true\n").unwrap();
     let mut c = common::cmd("git");
-    c.args(["config", "--list", "--show-origin"]).current_dir(d.path()).env("GIT_CONFIG_GLOBAL", &hostile).env("GIT_CONFIG_SYSTEM", &hostile).env("GIT_TRACE", "1");
+    c.args(["config", "--list", "--show-origin"])
+        .current_dir(d.path())
+        .env("GIT_CONFIG_GLOBAL", &hostile)
+        .env("GIT_CONFIG_SYSTEM", &hostile)
+        .env("GIT_TRACE", "1");
     let o = hermetic(&mut c).output().unwrap();
     let list = String::from_utf8(o.stdout).unwrap();
     assert!(o.status.success() && !list.contains("gpgsign"), "{list}");
@@ -2242,7 +2263,17 @@ fn watch_refuses_bad_arguments_before_any_poll() {
         assert_eq!(polls, 0, "{args:?} polled before refusing");
     }
     let huge = "99999999999999999999";
-    for (k, v) in [("ROUTER_WATCH_POLL", "x"), ("ROUTER_WATCH_POLL", "0"), ("ROUTER_WATCH_POLL", "1.5"), ("ROUTER_WATCH_POLL", "-1"), ("ROUTER_WATCH_POLL", huge), ("ROUTER_WATCH_MAX", "x"), ("ROUTER_WATCH_MAX", " 5"), ("ROUTER_WATCH_MAX", "1e3"), ("ROUTER_WATCH_MAX", huge)] {
+    for (k, v) in [
+        ("ROUTER_WATCH_POLL", "x"),
+        ("ROUTER_WATCH_POLL", "0"),
+        ("ROUTER_WATCH_POLL", "1.5"),
+        ("ROUTER_WATCH_POLL", "-1"),
+        ("ROUTER_WATCH_POLL", huge),
+        ("ROUTER_WATCH_MAX", "x"),
+        ("ROUTER_WATCH_MAX", " 5"),
+        ("ROUTER_WATCH_MAX", "1e3"),
+        ("ROUTER_WATCH_MAX", huge),
+    ] {
         let (code, out, err, polls) = w.run(&["signed", &t], "knob", 0, &[(k, v)]);
         assert!(code == Some(2) && out.is_empty() && err.contains(k) && polls == 0, "{k}={v:?} not refused: {code:?} {out} {err}");
     }
@@ -2290,7 +2321,10 @@ fn watch_commit_reports_what_landed_against_what_was_staged() {
     // a folded trailer is one value; control characters in commit text never reach the router raw
     let f = w.commit(&["f"], "f \x1b[2Jx\ry\n\nReviewed-By: username\n vuluu\x07");
     let (_, out, _, _) = w.run(&["commit", "main", &d2], "folded", 0, &[]);
-    assert_eq!(out, format!("COMMITTED branch=main from={d2} to={f} commits=1 expected=0/0\n  commit {f} reviewed-by=username vuluu? f ?[2Jx?y\n  landed A f\n"));
+    assert_eq!(
+        out,
+        format!("COMMITTED branch=main from={d2} to={f} commits=1 expected=0/0\n  commit {f} reviewed-by=username vuluu? f ?[2Jx?y\n  landed A f\n")
+    );
 
     // a net-empty range with staged paths: every path missing, no stray line
     let e = w.commit(&["e"], "e");
@@ -2374,7 +2408,10 @@ fn watch_signed_and_merged_report_the_note_and_how_the_tip_landed() {
     s.go(1);
     let dir = s.dir.clone();
     let o = s.output();
-    assert_eq!((o.status.code(), String::from_utf8(o.stdout).unwrap(), String::from_utf8(o.stderr).unwrap()), (Some(0), "DELETED target=epic/gone\n".into(), String::new()));
+    assert_eq!(
+        (o.status.code(), String::from_utf8(o.stdout).unwrap(), String::from_utf8(o.stderr).unwrap()),
+        (Some(0), "DELETED target=epic/gone\n".into(), String::new())
+    );
     assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "1");
 }
 
@@ -2557,10 +2594,17 @@ fn watch_times_out_and_reports_an_unreachable_origin() {
     assert_eq!(out, "UNREACHABLE kind=pushed remote=origin error=spy: last line\n", "the error is git's whole last line, an invalid byte as a space");
     let calls = std::fs::read_to_string(&log).unwrap();
     let fetches: Vec<&str> = calls.lines().filter(|l| l.contains(" fetch ")).collect();
-    assert!(!fetches.is_empty() && fetches.iter().all(|l| ["--no-tags", "--no-write-fetch-head", "--no-auto-maintenance", "--no-recurse-submodules"].iter().all(|f| l.contains(f))), "{fetches:?}");
+    assert!(
+        !fetches.is_empty()
+            && fetches.iter().all(|l| ["--no-tags", "--no-write-fetch-head", "--no-auto-maintenance", "--no-recurse-submodules"].iter().all(|f| l.contains(f))),
+        "{fetches:?}"
+    );
     let network: Vec<&str> = calls.lines().filter(|l| l.contains(" fetch ") || l.contains(" ls-remote ")).collect();
     assert!(network.iter().any(|l| l.contains(" ls-remote ")), "{calls}");
-    assert!(network.iter().all(|l| l.contains("-c http.lowSpeedLimit=1 -c http.lowSpeedTime=120 ")), "a network call without the http stall bound: {network:?}");
+    assert!(
+        network.iter().all(|l| l.contains("-c http.lowSpeedLimit=1 -c http.lowSpeedTime=120 ")),
+        "a network call without the http stall bound: {network:?}"
+    );
     assert_eq!(std::fs::read_to_string(dir.join("polls")).unwrap().trim(), "9", "a missing branch did not reset the count");
 
     // review r5: tagged resets its count on a good ls-remote too (the tag is not there yet)
@@ -2616,7 +2660,8 @@ fn watch_polls_at_its_default_pace_and_times_out_in_minutes() {
 const CAPTURED_WATCHDOG_CRON: &str = r#"{"cwd":"/r","scratchpad_dir":"/t","prompt_id":"p","permission_mode":"default","agent_type":"watchdog","hook_event_name":"PreToolUse","tool_name":"CronCreate","tool_input":{"cron":"*/5 * * * *","prompt":"tick","recurring":true},"tool_use_id":"u1"}"#;
 const CAPTURED_WATCHDOG_SEND: &str = r#"{"cwd":"/r","scratchpad_dir":"/t","prompt_id":"p","permission_mode":"default","agent_type":"watchdog","hook_event_name":"PreToolUse","tool_name":"SendMessage","tool_input":{"to":"r1","summary":"FACTSMARK-185209","message":"FACTSMARK-185209\nSendMessage, CronCreate","type":"message","recipient":"r1","content":"FACTSMARK-185209\nSendMessage, CronCreate"},"tool_use_id":"u2"}"#;
 
-const WATCHDOG_POLICY: &str = "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\nwatchdog_model = \"haiku\"\n";
+const WATCHDOG_POLICY: &str =
+    "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\nwatchdog_model = \"haiku\"\n";
 
 /// The guard run as the watchdog session's hook runs it: with `--arg watchdog_to <to>`.
 fn guard_to(to: &str, event: &serde_json::Value) -> Option<String> {
@@ -2633,11 +2678,9 @@ fn guard_to(to: &str, event: &serde_json::Value) -> Option<String> {
 
 #[test]
 fn router_guard_admits_the_two_watchdog_shapes_in_plain_words_only() {
-    for ok in [
-        "scripts/router-worker.sh watchdog start r1",
-        "scripts/router-worker.sh watchdog stop r1",
-        "scripts/router-worker.sh watchdog start keel-e-router3-63",
-    ] {
+    for ok in
+        ["scripts/router-worker.sh watchdog start r1", "scripts/router-worker.sh watchdog stop r1", "scripts/router-worker.sh watchdog start keel-e-router3-63"]
+    {
         assert_eq!(bash(ok), None, "guard denied {ok:?}");
     }
     let long = format!("scripts/router-worker.sh watchdog start {}", "a".repeat(33));
@@ -2659,9 +2702,7 @@ fn router_guard_admits_the_two_watchdog_shapes_in_plain_words_only() {
     ] {
         assert!(bash(no).is_some(), "guard allowed {no:?}");
     }
-    assert!(bash("scripts/router-worker.sh watchdog facts r1")
-        .unwrap()
-        .contains("watchdog start|stop <router-name>"));
+    assert!(bash("scripts/router-worker.sh watchdog facts r1").unwrap().contains("watchdog start|stop <router-name>"));
 }
 
 #[test]
@@ -2678,16 +2719,8 @@ fn guard_run_with_a_watchdog_recipient_allows_only_the_scheduler_and_a_message_t
             }
             e
         };
-        assert_eq!(
-            guard_to("r1", &as_agent(cron.clone())),
-            None,
-            "{agent:?}: CronCreate"
-        );
-        assert_eq!(
-            guard_to("r1", &as_agent(send.clone())),
-            None,
-            "{agent:?}: SendMessage to r1"
-        );
+        assert_eq!(guard_to("r1", &as_agent(cron.clone())), None, "{agent:?}: CronCreate");
+        assert_eq!(guard_to("r1", &as_agent(send.clone())), None, "{agent:?}: SendMessage to r1");
         let mut other = send.clone();
         other["tool_input"]["to"] = "w1".into();
         let mut missing = send.clone();
@@ -2697,42 +2730,24 @@ fn guard_run_with_a_watchdog_recipient_allows_only_the_scheduler_and_a_message_t
         let mut recipient_only = send.clone();
         recipient_only["tool_input"]["to"] = "w1".into();
         recipient_only["tool_input"]["recipient"] = "r1".into();
-        for (what, e) in [
-            ("another to", other),
-            ("no to", missing),
-            ("non-string to", number),
-            ("to w1, recipient r1", recipient_only),
-        ] {
-            let why =
-                guard_to("r1", &as_agent(e)).unwrap_or_else(|| panic!("{agent:?}: {what} allowed"));
+        for (what, e) in [("another to", other), ("no to", missing), ("non-string to", number), ("to w1, recipient r1", recipient_only)] {
+            let why = guard_to("r1", &as_agent(e)).unwrap_or_else(|| panic!("{agent:?}: {what} allowed"));
             assert!(why.contains("watchdog guard"), "{why}");
         }
         for (tool, input) in [
             ("Bash", serde_json::json!({"command": "git status"})),
             ("Read", serde_json::json!({"file_path": "/r/x"})),
-            (
-                "Write",
-                serde_json::json!({"file_path": "/r/.router/briefs/x.md"}),
-            ),
+            ("Write", serde_json::json!({"file_path": "/r/.router/briefs/x.md"})),
             ("Agent", serde_json::json!({"prompt": "x"})),
             ("CronDelete", serde_json::json!({"id": "x"})),
         ] {
             let mut e = cron.clone();
             e["tool_name"] = tool.into();
             e["tool_input"] = input;
-            assert!(
-                guard_to("r1", &as_agent(e)).is_some(),
-                "{agent:?}: {tool} allowed"
-            );
+            assert!(guard_to("r1", &as_agent(e)).is_some(), "{agent:?}: {tool} allowed");
         }
-        assert!(
-            guard_to("", &as_agent(cron.clone())).is_some(),
-            "{agent:?}: an empty recipient allowed CronCreate"
-        );
-        assert!(
-            guard_to("", &as_agent(send.clone())).is_some(),
-            "{agent:?}: an empty recipient allowed a message"
-        );
+        assert!(guard_to("", &as_agent(cron.clone())).is_some(), "{agent:?}: an empty recipient allowed CronCreate");
+        assert!(guard_to("", &as_agent(send.clone())).is_some(), "{agent:?}: an empty recipient allowed a message");
         // review r2 I1: only the tick's shape is admitted; a repeat of that same call passes
         for (k, v) in [
             ("cron", serde_json::json!("* * * * *")),
@@ -2764,11 +2779,7 @@ fn watchdog_argv(state: &Path, router: &str) -> (String, Vec<String>) {
         .into_iter()
         .rfind(|(_, a)| a[0] == "--bg" && a.windows(2).any(|w| w[0] == "-n" && w[1] == name))
         .unwrap_or_else(|| panic!("no session started for {name}"));
-    let flags: Vec<&str> = a
-        .iter()
-        .map(String::as_str)
-        .filter(|x| x.starts_with('-'))
-        .collect();
+    let flags: Vec<&str> = a.iter().map(String::as_str).filter(|x| x.starts_with('-')).collect();
     assert_eq!(
         flags,
         [
@@ -2793,19 +2804,11 @@ fn watchdog_argv(state: &Path, router: &str) -> (String, Vec<String>) {
     assert_eq!(option(&a, "--autocompact"), "100k");
     let list = |flag: &str| -> Vec<String> {
         let i = a.iter().position(|x| x == flag).unwrap();
-        a[i + 1..]
-            .iter()
-            .take_while(|x| !x.starts_with('-'))
-            .cloned()
-            .collect()
+        a[i + 1..].iter().take_while(|x| !x.starts_with('-')).cloned().collect()
     };
     assert_eq!(list("--tools"), ["SendMessage", "CronCreate"]);
     assert_eq!(list("--allowedTools"), ["SendMessage", "CronCreate"]);
-    assert_eq!(
-        a[a.len() - 3],
-        "--settings",
-        "the prompt must follow --settings' value: {a:?}"
-    );
+    assert_eq!(a[a.len() - 3], "--settings", "the prompt must follow --settings' value: {a:?}");
     assert!(a[a.len() - 1].contains("*/5 * * * *"), "{a:?}");
     (dir, a)
 }
@@ -2820,10 +2823,7 @@ fn watchdog_session_loads_local_settings_only_and_defines_its_agent_inline() {
     let obj = agents.as_object().unwrap();
     assert_eq!(obj.keys().collect::<Vec<_>>(), ["watchdog"]);
     let w = &agents["watchdog"];
-    assert!(
-        !w["description"].as_str().unwrap().is_empty() && !w["prompt"].as_str().unwrap().is_empty(),
-        "{w}"
-    );
+    assert!(!w["description"].as_str().unwrap().is_empty() && !w["prompt"].as_str().unwrap().is_empty(), "{w}");
     assert_eq!(w["tools"], serde_json::json!(["SendMessage", "CronCreate"]));
     assert!(w["prompt"].as_str().unwrap().contains("untrusted"), "{w}");
     assert!(!root().join(".claude/agents/watchdog.md").exists());
@@ -2839,13 +2839,7 @@ fn watchdog_hooks(a: &[String]) -> (String, String) {
         h[0]["hooks"][0]["command"].as_str().unwrap().to_string()
     };
     assert_eq!(s["hooks"].as_object().unwrap().len(), 2, "{s}");
-    assert_eq!(
-        s["hooks"]["PreToolUse"][0]
-            .get("matcher")
-            .and_then(|m| m.as_str())
-            .unwrap_or("*"),
-        "*"
-    );
+    assert_eq!(s["hooks"]["PreToolUse"][0].get("matcher").and_then(|m| m.as_str()).unwrap_or("*"), "*");
     (one("UserPromptSubmit"), one("PreToolUse"))
 }
 
@@ -2873,40 +2867,17 @@ fn watchdog_starts_as_a_background_session_whose_hooks_carry_the_routers_name() 
     let l = watchdog_launcher();
     let (ok, out) = l.run(&["watchdog", "start", "r1"]);
     assert!(ok, "{out}");
-    let row = l
-        .sessions()
-        .into_iter()
-        .find(|r| r["name"] == "watchdog-r1")
-        .unwrap();
+    let row = l.sessions().into_iter().find(|r| r["name"] == "watchdog-r1").unwrap();
     assert_eq!(
         out,
-        format!(
-            "RUNNING name=watchdog-r1 id={} session={} router=r1 model=haiku every=5m\n",
-            row["id"].as_str().unwrap(),
-            row["sessionId"].as_str().unwrap()
-        )
+        format!("RUNNING name=watchdog-r1 id={} session={} router=r1 model=haiku every=5m\n", row["id"].as_str().unwrap(), row["sessionId"].as_str().unwrap())
     );
     let (dir, a) = watchdog_argv(&l.state, "r1");
-    assert_eq!(
-        dir,
-        l.main.to_str().unwrap(),
-        "started outside the router checkout"
-    );
-    for no in [
-        "-p",
-        "--print",
-        "--resume",
-        "--session-id",
-        "--effort",
-        "--permission-mode",
-        "--disallowedTools",
-    ] {
+    assert_eq!(dir, l.main.to_str().unwrap(), "started outside the router checkout");
+    for no in ["-p", "--print", "--resume", "--session-id", "--effort", "--permission-mode", "--disallowedTools"] {
         assert!(!a.iter().any(|x| x == no), "{no} in {a:?}");
     }
-    assert!(
-        !a.iter().any(|x| x.starts_with("Bash(")),
-        "a worker grant reached the watchdog: {a:?}"
-    );
+    assert!(!a.iter().any(|x| x.starts_with("Bash(")), "a worker grant reached the watchdog: {a:?}");
 
     let (prompt_hook, tool_hook) = watchdog_hooks(&a);
     for c in [&prompt_hook, &tool_hook] {
@@ -2914,77 +2885,24 @@ fn watchdog_starts_as_a_background_session_whose_hooks_carry_the_routers_name() 
     }
     let home = TempDir::new().unwrap();
     let path = std::env::var("PATH").unwrap();
-    let o = run_hook(
-        &l,
-        &prompt_hook,
-        &path,
-        home.path(),
-        "{\"prompt\":\"tick\"}",
-    );
+    let o = run_hook(&l, &prompt_hook, &path, home.path(), "{\"prompt\":\"tick\"}");
     assert!(o.status.success(), "{o:?}");
     // review r1 B1: with no ROUTER_CLAUDE and no claude under HOME, the hook still reads the session list
     assert_eq!(String::from_utf8_lossy(&o.stdout), "Report to r1.\nNo live worker.\n", "{o:?}");
 
     let verdict = |o: Output| -> Option<String> { decision(&serde_json::json!({}), o) };
-    assert_eq!(
-        verdict(run_hook(
-            &l,
-            &tool_hook,
-            &path,
-            home.path(),
-            CAPTURED_WATCHDOG_SEND
-        )),
-        None
-    );
-    assert_eq!(
-        verdict(run_hook(
-            &l,
-            &tool_hook,
-            &path,
-            home.path(),
-            CAPTURED_WATCHDOG_CRON
-        )),
-        None
-    );
-    assert!(verdict(run_hook(
-        &l,
-        &tool_hook,
-        &path,
-        home.path(),
-        &CAPTURED_WATCHDOG_SEND.replace("\"to\":\"r1\"", "\"to\":\"w1\"")
-    ))
-    .is_some());
+    assert_eq!(verdict(run_hook(&l, &tool_hook, &path, home.path(), CAPTURED_WATCHDOG_SEND)), None);
+    assert_eq!(verdict(run_hook(&l, &tool_hook, &path, home.path(), CAPTURED_WATCHDOG_CRON)), None);
+    assert!(verdict(run_hook(&l, &tool_hook, &path, home.path(), &CAPTURED_WATCHDOG_SEND.replace("\"to\":\"r1\"", "\"to\":\"w1\""))).is_some());
     // it is the session's only tool hook: a guard that cannot run or parse denies
-    assert_eq!(
-        run_hook(
-            &l,
-            &tool_hook,
-            "/nonexistent",
-            home.path(),
-            CAPTURED_WATCHDOG_SEND
-        )
-        .status
-        .code(),
-        Some(2),
-        "jq missing"
-    );
-    assert_eq!(
-        run_hook(&l, &tool_hook, &path, home.path(), "not json")
-            .status
-            .code(),
-        Some(2),
-        "payload not JSON"
-    );
+    assert_eq!(run_hook(&l, &tool_hook, "/nonexistent", home.path(), CAPTURED_WATCHDOG_SEND).status.code(), Some(2), "jq missing");
+    assert_eq!(run_hook(&l, &tool_hook, &path, home.path(), "not json").status.code(), Some(2), "payload not JSON");
 
     // a start the CLI refuses is reported dead
     let l = watchdog_launcher();
     std::fs::write(l.state.join("refuse"), "Error: not logged in\n").unwrap();
     let (ok, out) = l.run(&["watchdog", "start", "r1"]);
-    assert!(
-        !ok && out.starts_with("DEAD name=watchdog-r1 exit=1")
-            && out.contains("Error: not logged in"),
-        "{out}"
-    );
+    assert!(!ok && out.starts_with("DEAD name=watchdog-r1 exit=1") && out.contains("Error: not logged in"), "{out}");
 }
 
 #[test]
@@ -2995,39 +2913,12 @@ fn watchdog_start_refuses_a_bad_name_an_unlisted_router_and_a_second_start() {
     for (args, why) in [
         (vec!["watchdog", "start", "R1"], "bad router name"),
         (vec!["watchdog", "start", long.as_str()], "bad router name"),
-        (
-            vec!["watchdog", "start"],
-            "watchdog start|stop <router-name>",
-        ),
-        (
-            vec!["watchdog", "restart", "r1"],
-            "watchdog start|stop <router-name>",
-        ),
+        (vec!["watchdog", "start"], "watchdog start|stop <router-name>"),
+        (vec!["watchdog", "restart", "r1"], "watchdog start|stop <router-name>"),
         (vec!["watchdog", "start", "r2"], "router r2 is not listed"),
-        (
-            vec!["watchdog", "stop", "r1"],
-            "worker watchdog-r1 is not running",
-        ),
-        (
-            vec![
-                "spawn",
-                "watchdog",
-                l.wt.to_str().unwrap(),
-                ".router/briefs/b.md",
-                "opus",
-            ],
-            "the name watchdog is reserved",
-        ),
-        (
-            vec![
-                "spawn",
-                "watchdog-x",
-                l.wt.to_str().unwrap(),
-                ".router/briefs/b.md",
-                "opus",
-            ],
-            "the name watchdog-x is reserved",
-        ),
+        (vec!["watchdog", "stop", "r1"], "worker watchdog-r1 is not running"),
+        (vec!["spawn", "watchdog", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], "the name watchdog is reserved"),
+        (vec!["spawn", "watchdog-x", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], "the name watchdog-x is reserved"),
     ] {
         let (ok, out) = l.run_env(&args, &[("PATH", &path)]);
         assert!(!ok && out.contains(why), "{args:?}: {out}");
@@ -3035,38 +2926,18 @@ fn watchdog_start_refuses_a_bad_name_an_unlisted_router_and_a_second_start() {
     assert_eq!(l.starts("watchdog-r1") + l.starts("watchdog-r2"), 0);
     assert!(l.run(&["watchdog", "start", "r1"]).0);
     let (ok, out) = l.run(&["watchdog", "start", "r1"]);
-    assert!(
-        !ok && out.contains("watchdog-r1 is already running"),
-        "{out}"
-    );
+    assert!(!ok && out.contains("watchdog-r1 is already running"), "{out}");
     assert_eq!(l.starts("watchdog-r1"), 1);
     std::fs::write(l.state.join("agents-ok"), "0").unwrap();
     let (ok, out) = l.run(&["watchdog", "start", "r1"]);
-    assert!(
-        !ok && out.contains("cannot list sessions (claude agents --json)"),
-        "{out}"
-    );
+    assert!(!ok && out.contains("cannot list sessions (claude agents --json)"), "{out}");
     std::fs::remove_file(l.state.join("agents-ok")).unwrap();
     // no watchdog model in the committed policy: workers still spawn, the watchdog does not start
     let l = watchdog_launcher();
-    l.commit_config(Some(
-        &WATCHDOG_POLICY.replace("watchdog_model = \"haiku\"\n", ""),
-    ));
+    l.commit_config(Some(&WATCHDOG_POLICY.replace("watchdog_model = \"haiku\"\n", "")));
     let (ok, out) = l.run(&["watchdog", "start", "r1"]);
-    assert!(
-        !ok && out.contains("no watchdog model: [router] watchdog_model"),
-        "{out}"
-    );
-    assert!(
-        l.run(&[
-            "spawn",
-            "w1",
-            l.wt.to_str().unwrap(),
-            ".router/briefs/b.md",
-            "opus"
-        ])
-        .0
-    );
+    assert!(!ok && out.contains("no watchdog model: [router] watchdog_model"), "{out}");
+    assert!(l.run(&["spawn", "w1", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
 }
 
 #[test]
@@ -3077,18 +2948,10 @@ fn worker_policy_reads_an_optional_watchdog_model() {
     for (config, spawns, watchdog) in [
         (WATCHDOG_POLICY.to_string(), true, true),
         (base.clone(), true, false),
-        (
-            format!("{WATCHDOG_POLICY}watchdog_model = \"opus\"\n"),
-            false,
-            false,
-        ),
+        (format!("{WATCHDOG_POLICY}watchdog_model = \"opus\"\n"), false, false),
         (format!("{base}watchdog_model = haiku\n"), false, false),
         (format!("{base}watchdog_model = \"Haiku\"\n"), false, false),
-        (
-            format!("{base}\n[router]\nwatchdog_model = \"haiku\"\n"),
-            false,
-            false,
-        ),
+        (format!("{base}\n[router]\nwatchdog_model = \"haiku\"\n"), false, false),
     ] {
         l.commit_config(Some(&config));
         l.set_sessions(&[serde_json::json!({"id": "r100", "sessionId": "r100-x", "name": "r1", "cwd": l.main, "kind": "background", "status": "idle"})]);
@@ -3103,23 +2966,14 @@ fn worker_policy_reads_an_optional_watchdog_model() {
 }
 
 /// A worker row of this repository and its transcript under `home`, written `quiet_min` minutes ago.
-fn worker_row(
-    l: &Launcher,
-    home: &Path,
-    name: &str,
-    sid: &str,
-    status: serde_json::Value,
-    quiet_min: Option<u64>,
-    lines: &[String],
-) -> serde_json::Value {
+fn worker_row(l: &Launcher, home: &Path, name: &str, sid: &str, status: serde_json::Value, quiet_min: Option<u64>, lines: &[String]) -> serde_json::Value {
     if let Some(q) = quiet_min {
         let dir = home.join(".claude/projects/-p");
         std::fs::create_dir_all(&dir).unwrap();
         let t = dir.join(format!("{sid}.jsonl"));
         std::fs::write(&t, lines.join("\n") + "\n").unwrap();
         let f = std::fs::File::options().write(true).open(&t).unwrap();
-        f.set_modified(std::time::SystemTime::now() - Duration::from_secs(q * 60))
-            .unwrap();
+        f.set_modified(std::time::SystemTime::now() - Duration::from_secs(q * 60)).unwrap();
     }
     let mut r = serde_json::json!({"id": &sid[..8], "sessionId": sid, "name": name, "cwd": l.wt, "kind": "background"});
     for (k, v) in status.as_object().unwrap() {
@@ -3129,15 +2983,11 @@ fn worker_row(
 }
 
 fn assistant(items: serde_json::Value) -> String {
-    serde_json::json!({"type": "assistant", "message": {"role": "assistant", "content": items}})
-        .to_string()
+    serde_json::json!({"type": "assistant", "message": {"role": "assistant", "content": items}}).to_string()
 }
 
 fn facts(l: &Launcher, home: &Path) -> String {
-    let (ok, out) = l.run_env(
-        &["watchdog", "facts", "r1"],
-        &[("HOME", home.to_str().unwrap())],
-    );
+    let (ok, out) = l.run_env(&["watchdog", "facts", "r1"], &[("HOME", home.to_str().unwrap())]);
     assert!(ok, "{out}");
     out
 }
@@ -3176,19 +3026,9 @@ fn watchdog_facts_hold_one_block_per_live_worker_of_this_repository() {
         &sid(1),
         serde_json::json!({"status": "busy"}),
         Some(1),
-        &[assistant(
-            serde_json::json!([{"type": "text", "text": "working on it"}]),
-        )],
+        &[assistant(serde_json::json!([{"type": "text", "text": "working on it"}]))],
     ));
-    let mut w2 = worker_row(
-        &l,
-        h,
-        "w2",
-        &sid(2),
-        serde_json::json!({"status": "busy"}),
-        Some(2),
-        &[],
-    );
+    let mut w2 = worker_row(&l, h, "w2", &sid(2), serde_json::json!({"status": "busy"}), Some(2), &[]);
     w2["cwd"] = l.wt2.to_str().unwrap().into();
     rows.push(w2);
     rows.push(serde_json::json!({"id": "f0", "sessionId": sid(3), "name": "foreign", "cwd": "/elsewhere", "kind": "background", "status": "idle"}));
@@ -3201,16 +3041,8 @@ fn watchdog_facts_hold_one_block_per_live_worker_of_this_repository() {
     assert!(out.starts_with("Report to r1.\n"), "{out}");
     let b = blocks(&out);
     assert_eq!(b.len(), 2, "{out}");
-    assert!(
-        b[0].starts_with("w1: busy")
-            && b[0].contains("  - working on it")
-            && b[1].starts_with("w2: busy"),
-        "{out}"
-    );
-    assert!(
-        b[0].contains(" · w · ") && b[1].contains(" · w2 · "),
-        "branch missing: {out}"
-    );
+    assert!(b[0].starts_with("w1: busy") && b[0].contains("  - working on it") && b[1].starts_with("w2: busy"), "{out}");
+    assert!(b[0].contains(" · w · ") && b[1].contains(" · w2 · "), "branch missing: {out}");
     rows.retain(|r| r["name"] != "w2");
     l.set_sessions(&rows);
     assert_eq!(blocks(&facts(&l, h)).len(), 1);
@@ -3223,49 +3055,21 @@ fn watchdog_facts_mark_an_idle_worker_done_and_a_blocked_or_quiet_one_stuck() {
     let h = home.path();
     let mut rows = l.sessions();
     for (name, n, status, quiet) in [
-        (
-            "busy14",
-            1,
-            serde_json::json!({"status": "busy", "state": "working"}),
-            14,
-        ),
-        (
-            "busy16",
-            2,
-            serde_json::json!({"status": "busy", "state": "working"}),
-            16,
-        ),
-        (
-            "idle",
-            3,
-            serde_json::json!({"status": "idle", "state": "done"}),
-            40,
-        ),
-        (
-            "prompt",
-            4,
-            serde_json::json!({"status": "waiting", "waitingFor": "permission prompt", "state": "blocked"}),
-            0,
-        ),
+        ("busy14", 1, serde_json::json!({"status": "busy", "state": "working"}), 14),
+        ("busy16", 2, serde_json::json!({"status": "busy", "state": "working"}), 16),
+        ("idle", 3, serde_json::json!({"status": "idle", "state": "done"}), 40),
+        ("prompt", 4, serde_json::json!({"status": "waiting", "waitingFor": "permission prompt", "state": "blocked"}), 0),
         ("blocked", 5, serde_json::json!({"state": "blocked"}), 0),
         ("working", 6, serde_json::json!({"state": "working"}), 1),
         // E-ROUTER3.W5 (W8 result): a finished review worker was listed idle with state blocked
-        (
-            "review",
-            7,
-            serde_json::json!({"status": "idle", "state": "blocked"}),
-            0,
-        ),
+        ("review", 7, serde_json::json!({"status": "idle", "state": "blocked"}), 0),
     ] {
         rows.push(worker_row(&l, h, name, &sid(n), status, Some(quiet), &[]));
     }
     l.set_sessions(&rows);
     let out = facts(&l, h);
     let state = |name: &str| -> String {
-        let b = blocks(&out)
-            .into_iter()
-            .find(|b| b.starts_with(&format!("{name}: ")))
-            .unwrap_or_else(|| panic!("no {name} in {out}"));
+        let b = blocks(&out).into_iter().find(|b| b.starts_with(&format!("{name}: "))).unwrap_or_else(|| panic!("no {name} in {out}"));
         b[name.len() + 2..].split(" · ").next().unwrap().to_string()
     };
     assert_eq!(state("busy14"), "busy");
@@ -3276,69 +3080,29 @@ fn watchdog_facts_mark_an_idle_worker_done_and_a_blocked_or_quiet_one_stuck() {
     assert_eq!(state("working"), "busy");
     assert_eq!(state("review"), "DONE");
     // done and stuck first, busy last, in list order within each
-    let order: Vec<String> = blocks(&out)
-        .iter()
-        .map(|b| b.split(':').next().unwrap().to_string())
-        .collect();
-    assert_eq!(
-        order,
-        ["busy16", "idle", "prompt", "blocked", "review", "busy14", "working"],
-        "{out}"
-    );
+    let order: Vec<String> = blocks(&out).iter().map(|b| b.split(':').next().unwrap().to_string()).collect();
+    assert_eq!(order, ["busy16", "idle", "prompt", "blocked", "review", "busy14", "working"], "{out}");
 }
 
 #[test]
 fn watchdog_ends_on_stop_and_when_the_router_is_gone() {
     let l = watchdog_launcher();
     let home = TempDir::new().unwrap();
-    assert!(
-        l.run(&[
-            "spawn",
-            "w1",
-            l.wt.to_str().unwrap(),
-            ".router/briefs/b.md",
-            "opus"
-        ])
-        .0
-    );
+    assert!(l.run(&["spawn", "w1", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
     assert!(l.run(&["watchdog", "start", "r1"]).0);
-    let id = |n: &str| {
-        l.sessions().iter().find(|r| r["name"] == n).unwrap()["id"]
-            .as_str()
-            .unwrap()
-            .to_string()
-    };
+    let id = |n: &str| l.sessions().iter().find(|r| r["name"] == n).unwrap()["id"].as_str().unwrap().to_string();
     let (w1, wd) = (id("w1"), id("watchdog-r1"));
-    let cli = |from: usize| -> Vec<Vec<String>> {
-        calls(&l.state)[from..]
-            .iter()
-            .map(|(_, a)| a.clone())
-            .filter(|a| a[0] == "stop" || a[0] == "rm")
-            .collect()
-    };
+    let cli = |from: usize| -> Vec<Vec<String>> { calls(&l.state)[from..].iter().map(|(_, a)| a.clone()).filter(|a| a[0] == "stop" || a[0] == "rm").collect() };
 
     let n0 = calls(&l.state).len();
     let (ok, out) = l.run(&["watchdog", "stop", "r1"]);
-    assert!(
-        ok && out.starts_with(&format!("STOPPED name=watchdog-r1 id={wd} ")),
-        "{out}"
-    );
-    assert_eq!(
-        cli(n0),
-        [
-            vec!["stop".to_string(), wd.clone()],
-            vec!["rm".to_string(), wd]
-        ]
-    );
+    assert!(ok && out.starts_with(&format!("STOPPED name=watchdog-r1 id={wd} ")), "{out}");
+    assert_eq!(cli(n0), [vec!["stop".to_string(), wd.clone()], vec!["rm".to_string(), wd]]);
 
     // the router leaves: the next facts run stops the watchdog, and only it
     assert!(l.run(&["watchdog", "start", "r1"]).0);
     let wd = id("watchdog-r1");
-    let rows: Vec<serde_json::Value> = l
-        .sessions()
-        .into_iter()
-        .filter(|r| r["name"] != "r1")
-        .collect();
+    let rows: Vec<serde_json::Value> = l.sessions().into_iter().filter(|r| r["name"] != "r1").collect();
     l.set_sessions(&rows);
     let n0 = calls(&l.state).len();
     let out = facts(&l, home.path());
@@ -3364,12 +3128,8 @@ impl Rng {
         self.0
     }
     fn text(&mut self, max: usize) -> String {
-        const ALPHABET: [&str; 12] = [
-            "a", "Z", " ", "\"", "\\", "\n", "\t", "\u{1}", "\u{7f}", "\u{85}", "漢", "é",
-        ];
-        (0..(self.next() as usize % max))
-            .map(|_| ALPHABET[self.next() as usize % ALPHABET.len()])
-            .collect()
+        const ALPHABET: [&str; 12] = ["a", "Z", " ", "\"", "\\", "\n", "\t", "\u{1}", "\u{7f}", "\u{85}", "漢", "é"];
+        (0..(self.next() as usize % max)).map(|_| ALPHABET[self.next() as usize % ALPHABET.len()]).collect()
     }
 }
 
@@ -3380,24 +3140,13 @@ fn fact_block_states_a_worker_from_its_transcript_tail_within_its_bound() {
     let h = home.path();
     let mut rows = l.sessions();
     // the last six items in order; a tool item; non-JSON skipped; thinking skipped
-    let mut lines: Vec<String> = (1..=8)
-        .map(|i| assistant(serde_json::json!([{"type": "text", "text": format!("step {i}")}])))
-        .collect();
+    let mut lines: Vec<String> = (1..=8).map(|i| assistant(serde_json::json!([{"type": "text", "text": format!("step {i}")}]))).collect();
     lines.push("not json".into());
-    lines.push(assistant(serde_json::json!([{"type": "thinking", "thinking": "secret"}, {"type": "tool_use", "name": "Bash", "input": {"command": "cargo test"}}])));
-    lines.push(
-        serde_json::json!({"type": "user", "message": {"role": "user", "content": "do it"}})
-            .to_string(),
-    );
-    rows.push(worker_row(
-        &l,
-        h,
-        "w1",
-        &sid(1),
-        serde_json::json!({"status": "busy"}),
-        Some(0),
-        &lines,
+    lines.push(assistant(
+        serde_json::json!([{"type": "thinking", "thinking": "secret"}, {"type": "tool_use", "name": "Bash", "input": {"command": "cargo test"}}]),
     ));
+    lines.push(serde_json::json!({"type": "user", "message": {"role": "user", "content": "do it"}}).to_string());
+    rows.push(worker_row(&l, h, "w1", &sid(1), serde_json::json!({"status": "busy"}), Some(0), &lines));
     // a transcript longer than the 64 KB window: its cut first line is ignored
     let big = "x".repeat(70_000);
     rows.push(worker_row(
@@ -3407,70 +3156,25 @@ fn fact_block_states_a_worker_from_its_transcript_tail_within_its_bound() {
         &sid(2),
         serde_json::json!({"status": "busy"}),
         Some(0),
-        &[
-            assistant(serde_json::json!([{"type": "text", "text": big}])),
-            assistant(serde_json::json!([{"type": "text", "text": "after the big one"}])),
-        ],
+        &[assistant(serde_json::json!([{"type": "text", "text": big}])), assistant(serde_json::json!([{"type": "text", "text": "after the big one"}]))],
     ));
     // a quiet transcript whose subagent wrote lately: not quiet
-    rows.push(worker_row(
-        &l,
-        h,
-        "w3",
-        &sid(3),
-        serde_json::json!({"status": "busy"}),
-        Some(30),
-        &[],
-    ));
+    rows.push(worker_row(&l, h, "w3", &sid(3), serde_json::json!({"status": "busy"}), Some(30), &[]));
     let sub = h.join(format!(".claude/projects/-p/{}/subagents", sid(3)));
     std::fs::create_dir_all(&sub).unwrap();
     std::fs::write(sub.join("agent-1.jsonl"), "{}\n").unwrap();
     // no transcript at all
-    rows.push(worker_row(
-        &l,
-        h,
-        "w4",
-        &sid(4),
-        serde_json::json!({"status": "busy"}),
-        None,
-        &[],
-    ));
+    rows.push(worker_row(&l, h, "w4", &sid(4), serde_json::json!({"status": "busy"}), None, &[]));
     l.set_sessions(&rows);
     let out = facts(&l, h);
-    let block = |n: &str| {
-        blocks(&out)
-            .into_iter()
-            .find(|b| b.starts_with(&format!("{n}: ")))
-            .unwrap_or_else(|| panic!("no {n} in {out}"))
-    };
+    let block = |n: &str| blocks(&out).into_iter().find(|b| b.starts_with(&format!("{n}: "))).unwrap_or_else(|| panic!("no {n} in {out}"));
     let items: Vec<String> = block("w1").lines().skip(1).map(String::from).collect();
-    assert_eq!(
-        items,
-        [
-            "  - step 4",
-            "  - step 5",
-            "  - step 6",
-            "  - step 7",
-            "  - step 8",
-            "  - tool Bash: {\"command\":\"cargo test\"}"
-        ],
-        "{out}"
-    );
-    assert!(
-        !out.contains("secret") && !out.contains("not json"),
-        "{out}"
-    );
-    assert_eq!(
-        block("w2").lines().skip(1).collect::<Vec<_>>(),
-        ["  - after the big one"],
-        "{out}"
-    );
+    assert_eq!(items, ["  - step 4", "  - step 5", "  - step 6", "  - step 7", "  - step 8", "  - tool Bash: {\"command\":\"cargo test\"}"], "{out}");
+    assert!(!out.contains("secret") && !out.contains("not json"), "{out}");
+    assert_eq!(block("w2").lines().skip(1).collect::<Vec<_>>(), ["  - after the big one"], "{out}");
     assert!(block("w3").starts_with("w3: busy · quiet 0m"), "{out}");
     let w4 = block("w4");
-    assert!(
-        w4.starts_with("w4: busy · quiet ?") && w4.lines().count() == 1,
-        "{out}"
-    );
+    assert!(w4.starts_with("w4: busy · quiet ?") && w4.lines().count() == 1, "{out}");
 
     // invariant: whatever the transcript and the row hold, a block is at most 2000 bytes and holds
     // no control character but its line breaks
@@ -3484,20 +3188,8 @@ fn fact_block_states_a_worker_from_its_transcript_tail_within_its_bound() {
             })
             .collect();
         let status = serde_json::json!({"status": "waiting", "waitingFor": rng.text(300)});
-        let mut rows = l
-            .sessions()
-            .into_iter()
-            .filter(|r| r["name"] == "r1")
-            .collect::<Vec<_>>();
-        let mut row = worker_row(
-            &l,
-            h,
-            "w9",
-            &sid(100 + case),
-            status,
-            Some(rng.next() % 30),
-            &lines,
-        );
+        let mut rows = l.sessions().into_iter().filter(|r| r["name"] == "r1").collect::<Vec<_>>();
+        let mut row = worker_row(&l, h, "w9", &sid(100 + case), status, Some(rng.next() % 30), &lines);
         row["name"] = format!("w9{}", rng.text(80)).into();
         rows.push(row);
         l.set_sessions(&rows);
@@ -3505,22 +3197,14 @@ fn fact_block_states_a_worker_from_its_transcript_tail_within_its_bound() {
         let b = blocks(&out);
         assert_eq!(b.len(), 1, "case {case}: {out:?}");
         assert!(b[0].len() <= 2000, "case {case}: {} bytes", b[0].len());
-        assert!(
-            !b[0].chars().any(|c| c.is_control() && c != '\n'),
-            "case {case}: {:?}",
-            b[0]
-        );
+        assert!(!b[0].chars().any(|c| c.is_control() && c != '\n'), "case {case}: {:?}", b[0]);
     }
 
     // invariant: every whole output stays under 9000 bytes whatever the fleet; done and stuck
     // workers come first, every printed block is whole, and the last line counts the rest
     let fat = assistant(serde_json::json!([{"type": "text", "text": "y".repeat(400)}]));
     for n in [0u64, 1, 3, 4, 5, 8, 13, 21, 40] {
-        let mut rows = l
-            .sessions()
-            .into_iter()
-            .filter(|r| r["name"] == "r1")
-            .collect::<Vec<_>>();
+        let mut rows = l.sessions().into_iter().filter(|r| r["name"] == "r1").collect::<Vec<_>>();
         let mut stuck = 0;
         for i in 0..n {
             let status = if rng.next().is_multiple_of(3) {
@@ -3529,15 +3213,7 @@ fn fact_block_states_a_worker_from_its_transcript_tail_within_its_bound() {
             } else {
                 serde_json::json!({"status": "busy"})
             };
-            rows.push(worker_row(
-                &l,
-                h,
-                &format!("f{i}"),
-                &sid(1000 + i),
-                status,
-                Some(1),
-                &vec![fat.clone(); 6],
-            ));
+            rows.push(worker_row(&l, h, &format!("f{i}"), &sid(1000 + i), status, Some(1), &vec![fat.clone(); 6]));
         }
         l.set_sessions(&rows);
         let out = facts(&l, h);
@@ -3545,23 +3221,10 @@ fn fact_block_states_a_worker_from_its_transcript_tail_within_its_bound() {
         let b = blocks(&out);
         let shown = b.len() as u64;
         if shown < n {
-            assert!(
-                out.ends_with(&format!("\n{} more workers not shown.\n", n - shown)),
-                "{n}: {out}"
-            );
-            let first_busy = b
-                .iter()
-                .position(|x| x.contains(": busy"))
-                .unwrap_or(b.len());
-            assert!(
-                b[first_busy..].iter().all(|x| x.contains(": busy")),
-                "{n}: stuck after busy"
-            );
-            assert_eq!(
-                b[..first_busy].len() as u64,
-                stuck.min(shown),
-                "{n}: stuck workers not first"
-            );
+            assert!(out.ends_with(&format!("\n{} more workers not shown.\n", n - shown)), "{n}: {out}");
+            let first_busy = b.iter().position(|x| x.contains(": busy")).unwrap_or(b.len());
+            assert!(b[first_busy..].iter().all(|x| x.contains(": busy")), "{n}: stuck after busy");
+            assert_eq!(b[..first_busy].len() as u64, stuck.min(shown), "{n}: stuck workers not first");
         } else {
             assert_eq!(shown, n, "{out}");
             if n == 0 {
@@ -3661,13 +3324,7 @@ fn run_dir(l: &Launcher, name: &str) -> PathBuf {
     let dirs: Vec<PathBuf> = std::fs::read_dir(l.main.join(".router/runs"))
         .unwrap()
         .map(|e| e.unwrap().path())
-        .filter(|p| {
-            p.file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .starts_with(&format!("{name}-"))
-        })
+        .filter(|p| p.file_name().unwrap().to_str().unwrap().starts_with(&format!("{name}-")))
         .collect();
     assert_eq!(dirs.len(), 1, "{name}: {dirs:?}");
     dirs[0].clone()
@@ -3675,11 +3332,7 @@ fn run_dir(l: &Launcher, name: &str) -> PathBuf {
 
 /// The `.router-brief.*` dirs directly under `wt`.
 fn brief_copies(wt: &Path) -> Vec<String> {
-    std::fs::read_dir(wt)
-        .unwrap()
-        .map(|e| e.unwrap().file_name().into_string().unwrap())
-        .filter(|f| f.starts_with(".router-brief."))
-        .collect()
+    std::fs::read_dir(wt).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).filter(|f| f.starts_with(".router-brief.")).collect()
 }
 
 /// E-ROUTER3.W8 (DEC-46, points 6 and 7): a worker loads the project's and its worktree's local
@@ -3697,36 +3350,21 @@ fn launcher_starts_a_worker_on_project_settings_alone_with_no_mcp_server() {
         assert!(ok && out.contains(" branch=w snapshot="), "{out}");
         let a = worker_argv(&l.state, name);
         for once in ["--setting-sources", "--strict-mcp-config", "--settings"] {
-            assert_eq!(
-                a.iter().filter(|x| *x == once).count(),
-                1,
-                "{once} in {a:?}"
-            );
+            assert_eq!(a.iter().filter(|x| *x == once).count(), 1, "{once} in {a:?}");
         }
-        for no in [
-            "--mcp-config",
-            "--add-dir",
-            "--resume",
-            "--plugin-dir",
-            "--dangerously-skip-permissions",
-        ] {
+        for no in ["--mcp-config", "--add-dir", "--resume", "--plugin-dir", "--dangerously-skip-permissions"] {
             assert!(!a.iter().any(|x| x == no), "{no} in {a:?}");
         }
         let prompt = a.last().unwrap();
         // the sandbox sets GIT_* of its own (proxy, safe.directory), so the check is where git
         // resolves, not an empty environment (E-ROUTER3.W8 live run)
         assert!(
-            prompt.contains(&format!(
-                "First action: git rev-parse --show-toplevel must print {} (",
-                l.wt.canonicalize().unwrap().display()
-            )) && prompt.contains("(if it prints anything else, report that and stop)")
+            prompt.contains(&format!("First action: git rev-parse --show-toplevel must print {} (", l.wt.canonicalize().unwrap().display()))
+                && prompt.contains("(if it prints anything else, report that and stop)")
                 && !prompt.contains("grep ^GIT_"),
             "{prompt}"
         );
-        assert!(
-            prompt.contains("give every network command a timeout"),
-            "{prompt}"
-        );
+        assert!(prompt.contains("give every network command a timeout"), "{prompt}");
     }
 }
 
@@ -3740,33 +3378,28 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
     let g = g.to_str().unwrap();
     // E-WMODE round 2: ~/.cargo only where cargo writes (H3); the worktree's .git link, its two
     // settings files and its admin dir's link files are not the shell's (H2, M2); ~/.claude.json (M1)
-    let want = |wt: &Path, admin: &str| serde_json::json!({"sandbox": {
-        "enabled": true,
-        "autoAllowBashIfSandboxed": true,
-        "allowUnsandboxedCommands": false,
-        "filesystem": {
-            "allowWrite": [g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
-                "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
-            "denyWrite": [format!("{g}/config"), format!("{g}/hooks"), format!("{g}/keel-hooks"), format!("{g}/info"),
-                format!("{g}/worktrees/{admin}/commondir"), format!("{g}/worktrees/{admin}/gitdir"),
-                format!("{}/.git", wt.display()), format!("{}/.claude/settings.json", wt.display()),
-                format!("{}/.claude/settings.local.json", wt.display()), "~/.claude.json".to_string()],
-            "denyRead": ["~/.ssh", "~/.claude/channels"]
-        },
-        "network": {"allowedDomains": ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}
-    }});
+    let want = |wt: &Path, admin: &str| {
+        serde_json::json!({"sandbox": {
+            "enabled": true,
+            "autoAllowBashIfSandboxed": true,
+            "allowUnsandboxedCommands": false,
+            "filesystem": {
+                "allowWrite": [g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
+                    "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
+                "denyWrite": [format!("{g}/config"), format!("{g}/hooks"), format!("{g}/keel-hooks"), format!("{g}/info"),
+                    format!("{g}/worktrees/{admin}/commondir"), format!("{g}/worktrees/{admin}/gitdir"),
+                    format!("{}/.git", wt.display()), format!("{}/.claude/settings.json", wt.display()),
+                    format!("{}/.claude/settings.local.json", wt.display()), "~/.claude.json".to_string()],
+                "denyRead": ["~/.ssh", "~/.claude/channels"]
+            },
+            "network": {"allowedDomains": ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}
+        }})
+    };
     // a second worktree of the same repository shares its git dir
     for (name, wt, admin) in [("a", &l.wt, "wt"), ("b", &l.wt2, "wt2")] {
-        let (ok, out) = l.run(&[
-            "spawn",
-            name,
-            wt.to_str().unwrap(),
-            ".router/briefs/b.md",
-            "opus",
-        ]);
+        let (ok, out) = l.run(&["spawn", name, wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
         assert!(ok, "{out}");
-        let mut s: serde_json::Value =
-            serde_json::from_str(&option(&worker_argv(&l.state, name), "--settings")).unwrap();
+        let mut s: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, name), "--settings")).unwrap();
         s.as_object_mut().unwrap().remove("hooks");
         assert_eq!(s, want(wt, admin), "{name}");
     }
@@ -3780,14 +3413,8 @@ fn only_a_review_worker_is_granted_the_cr_note_and_it_gets_no_edit_tools() {
     let l = launcher();
     let wt = l.wt.to_str().unwrap();
     let brief = ".router/briefs/b.md";
-    for (i, extra) in [
-        vec!["--review", "--review"],
-        vec!["--review", "yes"],
-        vec!["--review=yes"],
-        vec!["--review", "--effort", "high", "--review"],
-    ]
-    .into_iter()
-    .enumerate()
+    for (i, extra) in
+        [vec!["--review", "--review"], vec!["--review", "yes"], vec!["--review=yes"], vec!["--review", "--effort", "high", "--review"]].into_iter().enumerate()
     {
         let name = format!("r{i}");
         let mut args = vec!["spawn", name.as_str(), wt, brief, "opus"];
@@ -3798,20 +3425,12 @@ fn only_a_review_worker_is_granted_the_cr_note_and_it_gets_no_edit_tools() {
     }
     let (ok, out) = l.run(&["spawn", "author", wt, brief, "opus"]);
     assert!(ok, "{out}");
-    let (ok, out) = l.run(&[
-        "spawn", "reviewer", wt, brief, "opus", "--review", "--effort", "high",
-    ]);
+    let (ok, out) = l.run(&["spawn", "reviewer", wt, brief, "opus", "--review", "--effort", "high"]);
     assert!(ok, "{out}");
     argv_of(&l.state, "author", false);
-    assert_eq!(
-        option(&argv_of(&l.state, "reviewer", true), "--effort"),
-        "high"
-    );
+    assert_eq!(option(&argv_of(&l.state, "reviewer", true), "--effort"), "high");
     let review = |name: &str| std::fs::read_to_string(run_dir(&l, name).join("review")).unwrap();
-    assert_eq!(
-        (review("author"), review("reviewer")),
-        ("no\n".to_string(), "yes\n".to_string())
-    );
+    assert_eq!((review("author"), review("reviewer")), ("no\n".to_string(), "yes\n".to_string()));
 }
 
 /// E-ROUTER3.W8 (DEC-46, point 12; probe P1: a `--bg` session takes the launching shell's
@@ -3833,10 +3452,7 @@ fn launcher_ignores_inherited_git_variables() {
     };
     let wt = l.wt.to_str().unwrap();
     let out = run(&["spawn", "n", wt, ".router/briefs/b.md", "opus"]);
-    assert!(
-        out.contains(" branch=w ") && out.contains(&format!(" worktree={wt}")),
-        "{out}"
-    );
+    assert!(out.contains(" branch=w ") && out.contains(&format!(" worktree={wt}")), "{out}");
     let mut rows = l.sessions();
     rows.push(serde_json::json!({"id": "r100", "sessionId": "r100-x", "name": "r1", "cwd": l.main, "kind": "background", "status": "idle"}));
     l.set_sessions(&rows);
@@ -3844,22 +3460,12 @@ fn launcher_ignores_inherited_git_variables() {
     assert!(out.contains("n: DONE · quiet ? · w · "), "{out}");
     assert!(run(&["stop", "n"]).starts_with("STOPPED name=n "));
     let p = format!("{}-E-X-w1-a", l.main.display());
-    assert!(
-        run(&["worktree", "add", "wu/E-X/w1-a"]).starts_with(&format!(
-            "WORKTREE path={p} branch=wu/E-X/w1-a base=epic/E-X "
-        ))
-    );
-    assert_eq!(
-        run(&["worktree", "remove", "wu/E-X/w1-a"]),
-        format!("REMOVED path={p} branch=wu/E-X/w1-a\n")
-    );
+    assert!(run(&["worktree", "add", "wu/E-X/w1-a"]).starts_with(&format!("WORKTREE path={p} branch=wu/E-X/w1-a base=epic/E-X ")));
+    assert_eq!(run(&["worktree", "remove", "wu/E-X/w1-a"]), format!("REMOVED path={p} branch=wu/E-X/w1-a\n"));
     assert_eq!(decoy_state(&other), before, "the other repository changed");
     let seen = std::fs::read_to_string(l.state.join("git-env")).unwrap_or_default();
     assert!(seen.is_empty(), "the CLI saw {seen}");
-    assert!(
-        calls(&l.state).iter().any(|(_, a)| a[0] == "--bg"),
-        "no session started"
-    );
+    assert!(calls(&l.state).iter().any(|(_, a)| a[0] == "--bg"), "no session started");
 }
 
 /// E-ROUTER3.W8 (W3 absorbed, backlog R1): a worktree whose branch predates the worker persona would
@@ -3869,32 +3475,14 @@ fn launcher_ignores_inherited_git_variables() {
 fn spawn_refuses_a_worktree_without_the_worker_persona() {
     let l = launcher();
     std::fs::remove_file(l.wt.join(".claude/agents/worker.md")).unwrap();
-    let (ok, out) = l.run(&[
-        "spawn",
-        "n",
-        l.wt.to_str().unwrap(),
-        ".router/briefs/b.md",
-        "opus",
-    ]);
+    let (ok, out) = l.run(&["spawn", "n", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
     assert!(!ok, "{out}");
     assert!(out.contains(&format!("no worker persona in {} (.claude/agents/worker.md): merge the base branch that carries it", l.wt.display())), "{out}");
     git(&l.wt2, &["checkout", "-q", "--detach"]);
-    let (ok, out) = l.run(&[
-        "spawn",
-        "n",
-        l.wt2.to_str().unwrap(),
-        ".router/briefs/b.md",
-        "opus",
-    ]);
-    assert!(
-        !ok && out.contains("has a detached HEAD: a worker runs on a branch"),
-        "{out}"
-    );
+    let (ok, out) = l.run(&["spawn", "n", l.wt2.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+    assert!(!ok && out.contains("has a detached HEAD: a worker runs on a branch"), "{out}");
     assert_eq!(l.starts("n"), 0);
-    assert!(
-        !l.main.join(".router/runs").exists(),
-        "a refused spawn left a run dir"
-    );
+    assert!(!l.main.join(".router/runs").exists(), "a refused spawn left a run dir");
     assert!(brief_copies(&l.wt).is_empty() && brief_copies(&l.wt2).is_empty());
 }
 
@@ -3904,40 +3492,15 @@ fn spawn_refuses_a_worktree_without_the_worker_persona() {
 #[test]
 fn a_name_whose_launch_is_in_progress_is_refused_and_no_lock_outlives_a_launch() {
     let l = launcher();
-    let (wt, wt2, brief) = (
-        l.wt.to_str().unwrap(),
-        l.wt2.to_str().unwrap(),
-        ".router/briefs/b.md",
-    );
+    let (wt, wt2, brief) = (l.wt.to_str().unwrap(), l.wt2.to_str().unwrap(), ".router/briefs/b.md");
     let runs = l.main.join(".router/runs");
     let lock = runs.join(".lock-n");
     std::fs::create_dir_all(&lock).unwrap();
     let (ok, out) = l.run(&["spawn", "n", wt, brief, "opus"]);
-    assert!(
-        !ok && out.contains(&format!(
-            "a launch of n is in progress ({})",
-            lock.display()
-        )),
-        "{out}"
-    );
+    assert!(!ok && out.contains(&format!("a launch of n is in progress ({})", lock.display())), "{out}");
     assert_eq!(l.starts("n"), 0);
-    assert!(
-        lock.exists(),
-        "a refused launch removed the lock it did not take"
-    );
-    let locks = || {
-        std::fs::read_dir(&runs)
-            .unwrap()
-            .filter(|e| {
-                e.as_ref()
-                    .unwrap()
-                    .file_name()
-                    .to_str()
-                    .unwrap()
-                    .starts_with(".lock-")
-            })
-            .count()
-    };
+    assert!(lock.exists(), "a refused launch removed the lock it did not take");
+    let locks = || std::fs::read_dir(&runs).unwrap().filter(|e| e.as_ref().unwrap().file_name().to_str().unwrap().starts_with(".lock-")).count();
     // RUNNING, while n's launch holds its lock
     let (ok, out) = l.run(&["spawn", "m", wt, brief, "opus"]);
     assert!(ok && out.starts_with("RUNNING name=m "), "{out}");
@@ -3966,26 +3529,16 @@ fn a_name_whose_launch_is_in_progress_is_refused_and_no_lock_outlives_a_launch()
 #[test]
 fn stop_removes_that_sessions_brief_copies_and_reports_branch_drift() {
     let l = launcher();
-    let (wt, wt2, brief) = (
-        l.wt.to_str().unwrap(),
-        l.wt2.to_str().unwrap(),
-        ".router/briefs/b.md",
-    );
+    let (wt, wt2, brief) = (l.wt.to_str().unwrap(), l.wt2.to_str().unwrap(), ".router/briefs/b.md");
     let copy = |name: &str, wt: &str| {
         let (ok, out) = l.run(&["spawn", name, wt, brief, "opus"]);
         assert!(ok, "{out}");
-        PathBuf::from(field(&out, "brief="))
-            .parent()
-            .unwrap()
-            .to_path_buf()
+        PathBuf::from(field(&out, "brief=")).parent().unwrap().to_path_buf()
     };
     let (a, b) = (copy("a", wt), copy("b", wt));
     let (ok, out) = l.run(&["stop", "a"]);
     assert!(ok && !out.contains("drift="), "{out}");
-    assert!(
-        !a.exists() && b.join("brief.md").exists(),
-        "a's copy {a:?}, b's copy {b:?}"
-    );
+    assert!(!a.exists() && b.join("brief.md").exists(), "a's copy {a:?}, b's copy {b:?}");
 
     git(&l.wt, &["switch", "-q", "-c", "other"]);
     let (ok, out) = l.run(&["stop", "b"]);
@@ -4001,18 +3554,13 @@ fn stop_removes_that_sessions_brief_copies_and_reports_branch_drift() {
     std::fs::remove_dir_all(&c).unwrap();
     std::os::unix::fs::symlink(&victim, &c).unwrap();
     l.stop("c");
-    assert!(
-        victim.join("keep").exists(),
-        "stop followed a symlinked copy"
-    );
+    assert!(victim.join("keep").exists(), "stop followed a symlinked copy");
     // a recorded path outside the worktree is not removed
     let outside = l.main.parent().unwrap().join(".router-brief.ABCDEF");
     std::fs::create_dir_all(&outside).unwrap();
     copy("e", wt2);
     let rd = run_dir(&l, "e");
-    let set_mode = |p: &Path, m: u32| {
-        std::fs::set_permissions(p, std::os::unix::fs::PermissionsExt::from_mode(m)).unwrap()
-    };
+    let set_mode = |p: &Path, m: u32| std::fs::set_permissions(p, std::os::unix::fs::PermissionsExt::from_mode(m)).unwrap();
     set_mode(&rd, 0o755);
     set_mode(&rd.join("brief-copy"), 0o644);
     std::fs::write(rd.join("brief-copy"), format!("{}\n", outside.display())).unwrap();
@@ -4027,73 +3575,31 @@ fn stop_removes_that_sessions_brief_copies_and_reports_branch_drift() {
 fn worktree_add_cuts_an_epic_or_wu_branch_off_its_base_at_the_derived_path() {
     let l = launcher();
     let m = l.main.to_str().unwrap();
-    let tip = |r: &str| {
-        String::from_utf8(git(&l.main, &["rev-parse", r]).stdout)
-            .unwrap()
-            .trim()
-            .to_string()
-    };
-    git(
-        &l.main,
-        &["commit", "-q", "--allow-empty", "-m", "main moves on"],
-    );
+    let tip = |r: &str| String::from_utf8(git(&l.main, &["rev-parse", r]).stdout).unwrap().trim().to_string();
+    git(&l.main, &["commit", "-q", "--allow-empty", "-m", "main moves on"]);
     git(&l.main, &["branch", "wu/E-X/w2-b", "main"]);
     for (b, path, base, at) in [
-        (
-            "wu/E-X/w1-a",
-            format!("{m}-E-X-w1-a"),
-            "epic/E-X",
-            tip("epic/E-X"),
-        ),
+        ("wu/E-X/w1-a", format!("{m}-E-X-w1-a"), "epic/E-X", tip("epic/E-X")),
         ("epic/E-Y", format!("{m}-E-Y"), "main", tip("main")),
-        (
-            "wu/E-X/w2-b",
-            format!("{m}-E-X-w2-b"),
-            "epic/E-X",
-            tip("main"),
-        ),
+        ("wu/E-X/w2-b", format!("{m}-E-X-w2-b"), "epic/E-X", tip("main")),
     ] {
         let (ok, out) = l.run(&["worktree", "add", b]);
         assert!(ok, "{out}");
-        assert_eq!(
-            out.lines().last().unwrap(),
-            format!("WORKTREE path={path} branch={b} base={base} tip={at}")
-        );
-        assert_eq!(
-            String::from_utf8(git(Path::new(&path), &["branch", "--show-current"]).stdout)
-                .unwrap()
-                .trim(),
-            b
-        );
+        assert_eq!(out.lines().last().unwrap(), format!("WORKTREE path={path} branch={b} base={base} tip={at}"));
+        assert_eq!(String::from_utf8(git(Path::new(&path), &["branch", "--show-current"]).stdout).unwrap().trim(), b);
         assert_eq!(tip(b), at, "{b}");
     }
     assert_ne!(tip("epic/E-X"), tip("main"));
-    let (ok, out) = l.run(&[
-        "spawn",
-        "n",
-        &format!("{m}-E-X-w1-a"),
-        ".router/briefs/b.md",
-        "opus",
-    ]);
+    let (ok, out) = l.run(&["spawn", "n", &format!("{m}-E-X-w1-a"), ".router/briefs/b.md", "opus"]);
     assert!(ok && out.contains(" branch=wu/E-X/w1-a "), "{out}");
 
-    git(
-        &l.main,
-        &["worktree", "add", "-q", "../elsewhere", "-b", "wu/E-X/w3-c"],
-    );
+    git(&l.main, &["worktree", "add", "-q", "../elsewhere", "-b", "wu/E-X/w3-c"]);
     std::fs::create_dir_all(format!("{m}-E-X-w4-d")).unwrap();
     let shape = "branch must be epic/<E> or wu/<E>/<slug> in plain words";
     let snapshot = || {
-        let mut d: Vec<String> = std::fs::read_dir(l.main.parent().unwrap())
-            .unwrap()
-            .map(|e| e.unwrap().file_name().into_string().unwrap())
-            .collect();
+        let mut d: Vec<String> = std::fs::read_dir(l.main.parent().unwrap()).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
         d.sort();
-        (
-            d,
-            git(&l.main, &["worktree", "list", "--porcelain"]).stdout,
-            git(&l.main, &["for-each-ref"]).stdout,
-        )
+        (d, git(&l.main, &["worktree", "list", "--porcelain"]).stdout, git(&l.main, &["for-each-ref"]).stdout)
     };
     let before = snapshot();
     for (args, why) in [
@@ -4106,21 +3612,9 @@ fn worktree_add_cuts_an_epic_or_wu_branch_off_its_base_at_the_derived_path() {
         (vec!["epic/E X"], shape.into()),
         (vec!["epic/E-X\nwu/E-X/w9"], shape.into()),
         (vec!["epic/"], shape.into()),
-        (
-            vec!["epic/E-X.lock"],
-            "not a valid branch name: epic/E-X.lock".into(),
-        ),
-        (
-            vec!["wu/E-Z/w1"],
-            "base branch epic/E-Z does not exist".into(),
-        ),
-        (
-            vec!["wu/E-X/w3-c"],
-            format!(
-                "branch wu/E-X/w3-c is checked out at {}",
-                l.main.parent().unwrap().join("elsewhere").display()
-            ),
-        ),
+        (vec!["epic/E-X.lock"], "not a valid branch name: epic/E-X.lock".into()),
+        (vec!["wu/E-Z/w1"], "base branch epic/E-Z does not exist".into()),
+        (vec!["wu/E-X/w3-c"], format!("branch wu/E-X/w3-c is checked out at {}", l.main.parent().unwrap().join("elsewhere").display())),
         (vec!["wu/E-X/w4-d"], format!("path {m}-E-X-w4-d exists")),
         (vec![], "worktree add|remove <branch>".into()),
         (vec!["epic/E-Q", "x"], "worktree add|remove <branch>".into()),
@@ -4128,17 +3622,11 @@ fn worktree_add_cuts_an_epic_or_wu_branch_off_its_base_at_the_derived_path() {
         let mut a = vec!["worktree", "add"];
         a.extend(&args);
         let (ok, out) = l.run(&a);
-        assert!(
-            !ok && out.contains(&why),
-            "{args:?} not refused for {why}: {out}"
-        );
+        assert!(!ok && out.contains(&why), "{args:?} not refused for {why}: {out}");
     }
     let (ok, out) = l.run(&["worktree", "move", "epic/E-Q"]);
     assert!(!ok && out.contains("worktree add|remove <branch>"), "{out}");
-    assert!(
-        before == snapshot(),
-        "a refused worktree add changed the repository or its parent dir"
-    );
+    assert!(before == snapshot(), "a refused worktree add changed the repository or its parent dir");
 }
 
 /// E-ROUTER3.W8 (DEC-46, point 5): the router removes only a clean worktree whose branch is merged
@@ -4155,13 +3643,7 @@ fn worktree_remove_takes_only_a_clean_merged_worktree_with_no_session_in_it() {
         assert!(!ok && out.contains(why), "not refused for {why}: {out}");
         assert!(p.join(".git").exists(), "{why}: the worktree is gone");
     };
-    let (ok, out) = l.run(&[
-        "spawn",
-        "n",
-        p.to_str().unwrap(),
-        ".router/briefs/b.md",
-        "opus",
-    ]);
+    let (ok, out) = l.run(&["spawn", "n", p.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
     assert!(ok, "{out}");
     refused(&format!("a session runs in {}: stop it first", p.display()));
     l.stop("n");
@@ -4175,27 +3657,14 @@ fn worktree_remove_takes_only_a_clean_merged_worktree_with_no_session_in_it() {
     refused("branch wu/E-X/w1-a is not merged into epic/E-X: the owner decides");
     git(&l.main, &["branch", "-f", "epic/E-X", b]);
     let (ok, out) = l.run(&["worktree", "remove", "epic/E-X"]);
-    assert!(
-        !ok && out.contains("branch epic/E-X is checked out in no worktree"),
-        "{out}"
-    );
+    assert!(!ok && out.contains("branch epic/E-X is checked out in no worktree"), "{out}");
 
     // the launcher's own checkout and the main one, with a router in a linked worktree
     git(&l.main, &["switch", "-q", "-c", "epic/E-M"]);
     git(&l.wt2, &["switch", "-q", "-c", "epic/E-R"]);
-    for (branch, why) in [
-        ("epic/E-R", "may not remove the router's own checkout"),
-        ("epic/E-M", "may not remove the repository's main checkout"),
-    ] {
-        let o = l
-            .cmd(&["worktree", "remove", branch], &[])
-            .current_dir(&l.wt2)
-            .output()
-            .unwrap();
-        assert!(
-            !o.status.success() && String::from_utf8_lossy(&o.stderr).contains(why),
-            "{branch}: {o:?}"
-        );
+    for (branch, why) in [("epic/E-R", "may not remove the router's own checkout"), ("epic/E-M", "may not remove the repository's main checkout")] {
+        let o = l.cmd(&["worktree", "remove", branch], &[]).current_dir(&l.wt2).output().unwrap();
+        assert!(!o.status.success() && String::from_utf8_lossy(&o.stderr).contains(why), "{branch}: {o:?}");
     }
 
     // an ignored archive of distilled docs blocks: git worktree remove would delete it
@@ -4212,19 +3681,9 @@ fn worktree_remove_takes_only_a_clean_merged_worktree_with_no_session_in_it() {
     std::fs::create_dir_all(p.join("target/debug")).unwrap();
     std::fs::write(p.join("target/debug/x"), "x").unwrap();
     let (ok, out) = l.run(&["worktree", "remove", b]);
-    assert_eq!(
-        (ok, out.as_str()),
-        (
-            true,
-            format!("REMOVED path={} branch={b}\n", p.display()).as_str()
-        )
-    );
+    assert_eq!((ok, out.as_str()), (true, format!("REMOVED path={} branch={b}\n", p.display()).as_str()));
     assert!(!p.exists());
-    assert!(
-        !String::from_utf8(git(&l.main, &["worktree", "list"]).stdout)
-            .unwrap()
-            .contains(p.to_str().unwrap())
-    );
+    assert!(!String::from_utf8(git(&l.main, &["worktree", "list"]).stdout).unwrap().contains(p.to_str().unwrap()));
     git(&l.main, &["rev-parse", "--verify", "-q", b]);
 }
 
@@ -4257,9 +3716,7 @@ fn router_guard_admits_the_two_worktree_shapes_in_plain_words_only() {
     ] {
         assert!(bash(no).is_some(), "guard allowed {no:?}");
     }
-    assert!(bash("scripts/router-worker.sh worktree prune")
-        .unwrap()
-        .contains("worktree add|remove <epic/E or wu/E/slug>"));
+    assert!(bash("scripts/router-worker.sh worktree prune").unwrap().contains("worktree add|remove <epic/E or wu/E/slug>"));
 }
 
 /// E-ROUTER3.W8 (DEC-46, point 2): the launcher's branch words are the committed branch policy, and
@@ -4268,10 +3725,7 @@ fn router_guard_admits_the_two_worktree_shapes_in_plain_words_only() {
 fn worktree_branches_follow_the_committed_branch_policy() {
     let sh = std::fs::read_to_string(root().join("scripts/router-worker.sh")).unwrap();
     let line = sh.lines().find(|l| l.starts_with("main_b=")).unwrap();
-    let launcher_words: Vec<&str> = line
-        .split(' ')
-        .map(|w| w.split_once('=').unwrap().1)
-        .collect();
+    let launcher_words: Vec<&str> = line.split(' ').map(|w| w.split_once('=').unwrap().1).collect();
     let config = std::fs::read_to_string(root().join(".keel/config.toml")).unwrap();
     let value = |k: &str| {
         config
@@ -4281,10 +3735,7 @@ fn worktree_branches_follow_the_committed_branch_policy() {
             .map(|v| v.split('"').next().unwrap())
             .unwrap()
     };
-    assert_eq!(
-        launcher_words,
-        [value("main"), value("epic_prefix"), value("wu_prefix")]
-    );
+    assert_eq!(launcher_words, [value("main"), value("epic_prefix"), value("wu_prefix")]);
 
     let l = launcher();
     let parent = l.main.parent().unwrap();
@@ -4292,9 +3743,7 @@ fn worktree_branches_follow_the_committed_branch_policy() {
     let mut accepted = 0;
     for _ in 0..40 {
         let head = ["epic/", "wu/E-X/", "wu/", "Epic/", "", "-"][rng.next() as usize % 6];
-        let body: String = (0..1 + rng.next() % 6)
-            .map(|_| ["a", "Z", "0", ".", "-", "_", "/"][rng.next() as usize % 7])
-            .collect();
+        let body: String = (0..1 + rng.next() % 6).map(|_| ["a", "Z", "0", ".", "-", "_", "/"][rng.next() as usize % 7]).collect();
         let name = format!("{head}{body}");
         let (ok, out) = l.run(&["worktree", "add", &name]);
         if name.contains("..") || name.matches('/').count() > 2 {
@@ -4304,14 +3753,7 @@ fn worktree_branches_follow_the_committed_branch_policy() {
             accepted += 1;
             let path = PathBuf::from(field(&out, "path="));
             assert_eq!(path.parent(), Some(parent), "{name:?}: {out}");
-            assert!(
-                path.file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .starts_with("main-"),
-                "{name:?}: {out}"
-            );
+            assert!(path.file_name().unwrap().to_str().unwrap().starts_with("main-"), "{name:?}: {out}");
         }
     }
     assert!(accepted > 0, "no generated name was accepted");
@@ -4328,11 +3770,8 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
     let read = |p: &str| std::fs::read_to_string(root().join(p)).unwrap();
     let launcher = read("scripts/router-worker.sh");
     let ops = read("skills/keel-router/references/worker-ops.md");
-    let words: std::collections::BTreeSet<String> = regex::Regex::new(r#"echo "([A-Z]+) (?:name|path)="#)
-        .unwrap()
-        .captures_iter(&launcher)
-        .map(|c| c[1].to_string())
-        .collect();
+    let words: std::collections::BTreeSet<String> =
+        regex::Regex::new(r#"echo "([A-Z]+) (?:name|path)="#).unwrap().captures_iter(&launcher).map(|c| c[1].to_string()).collect();
     assert!(words.len() >= 6, "the launcher's outcome words were not found: {words:?}");
     for w in &words {
         assert!(ops.contains(&format!("{w} name=")) || ops.contains(&format!("{w} path=")), "worker-ops never names {w}");
@@ -4348,7 +3787,15 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
 
     let mut current = Vec::new();
     for dir in ["skills/keel-router", ".claude/skills/keel-router"] {
-        for f in ["SKILL.md", "references/worker-ops.md", "references/commands.md", "references/messages.md", "references/brief-skeleton.md", "references/review-checklists.md", "references/project-router-template.md"] {
+        for f in [
+            "SKILL.md",
+            "references/worker-ops.md",
+            "references/commands.md",
+            "references/messages.md",
+            "references/brief-skeleton.md",
+            "references/review-checklists.md",
+            "references/project-router-template.md",
+        ] {
             current.push(format!("{dir}/{f}"));
         }
     }

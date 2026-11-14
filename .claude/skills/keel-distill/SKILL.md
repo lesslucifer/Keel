@@ -94,8 +94,10 @@ doc:
    The writer refuses a doc it cannot account for: an archived T3 doc with no
    `--distill`, a target that is not a T1/T2 doc tracked at the tip, a
    `--distill` for a path this range did not archive, or an empty `none:` reason.
-4. **Verify**: `keel verify-dod commit <sha>` for a standalone archive commit
-   on the epic, or `keel verify-dod epic <tip>` at close. Check `6·doc-note`
+4. **Verify**: `keel verify-dod commit <sha>` for an archive commit with its
+   own notes (`--target <sha>^`), or `keel verify-dod epic <tip>` at close; an
+   archive commit carrying the epic's notes is judged by the epic gate's walk
+   (check 7), not by `verify-dod commit`. Check `6·doc-note`
    also proves that nothing T3 is still tracked at the epic tip. An archive
    commit is never exempt, even though it touches only docs.
 
