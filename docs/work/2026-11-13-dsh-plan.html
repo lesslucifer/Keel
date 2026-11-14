@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af7e2db9f34851f0dfb2390" data-artifact="epic-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-DSH epic plan: DeepSeek Harness beside Claude Code</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-DSH · The same rules on DeepSeek Harness</h1>
+      <p>Keel's rulebook reaches an agent through the files it writes for one host. This epic writes them for DeepSeek Harness too, beside Claude Code, and gives a host without doc hooks a place where a broken doc still stops.</p>
+      <div class="meta">T3 · epic plan · 2026-11-13 · epic/E-DSH · Keel</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-item="intent" data-c="intent">Keel's rules reach an agent only through the files it writes for one host. In a DeepSeek Harness (DSH) session on a Keel project an agent sees no skills, no doc check, no worker recipe: the rulebook is silent. This epic puts the same rules in front of a DSH agent, beside Claude Code, and stops a broken doc at the review on a host with no doc hook.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>You start a project in a DSH session</td><td>No skills, no doc check, no worker recipe</td><td>The initialiser writes the skills into the DSH root; the session lists them</td></tr>
+    <tr><td>You write a doc there</td><td>A broken ready doc can reach the review</td><td>The review's first step refuses it and names the problems</td></tr>
+    <tr><td>You run a router there</td><td>No worker recipe exists</td><td>One worker per worktree; a report is read from the transcript</td></tr>
+    <tr><td>You sign off, merge, push</td><td>Same commands</td><td>Same commands, same order</td></tr>
+  </tbody>
+</table>
+
+<h2 id="case">A plan written in a DSH session</h2>
+<ol data-c="case-steps">
+  <li>A worker in a DSH session writes a plan doc and misses one item.</li>
+  <li>On Claude Code a hook refuses the write; on DSH nothing runs.</li>
+  <li>The worker runs the review's first step: red, naming the same item.</li>
+  <li>It fixes the doc; the step is green, and notes, review, sign-off and merge run as today.</li>
+</ol>
+
+<h2 id="terms">Terms</h2>
+<table data-c="terms">
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>DSH</td><td>DeepSeek Harness, an agent host that reads its rules from project files.</td></tr>
+    <tr><td>Host</td><td>The program running the agent: Claude Code, Codex or DSH.</td></tr>
+    <tr><td>Worker</td><td>A resident agent session the router starts in one worktree.</td></tr>
+    <tr><td>Preset</td><td>A host setting that pairs a sandbox with an approval policy.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="wus">The work</h2>
+<p>W2 and W3 need W1. W4 stands alone.</p>
+
+<div data-item="wu-summaries" data-c="wu-summaries">
+
+<div data-wu="E-DSH.W1" data-c="wu-w1">
+  <h3 id="w1">W1 · The initialiser gives DSH the rules</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> one embedded list writes both skill roots. A repo initialised by Keel also carries the skills a DSH session loads. Nothing written for Claude Code or Codex changes.</p>
+    <ul>
+      <li>Init writes <code>.dsh/skills/keel-*</code> and the project-owned <code>project-router</code> beside <code>.claude/skills/</code>: same bytes, same create-or-keep and <code>-f</code> ask.</li>
+      <li>The printed next steps name the DSH root, and say a host plugin is installed in the DSH profile, never in the project.</li>
+      <li>Keel's own policy lists <code>.dsh/skills/</code> as rule-bearing, so this repo's DSH copy is protected like its Claude Code copy.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">R1 (beside, not instead) · UC-INIT-1 amended, UC-DSH-1 new · DEC-53.</p>
+  <p data-item="wu-expected"><b>Integration:</b> after <code>keel init</code> in a temp repo both roots hold the same bytes, the router template sits in both, a second run adds nothing, and every shipped skill's frontmatter is the shape DSH parses: a closed block, a one-line <code>name</code> in kebab-case matching its directory, a one-line <code>description</code>, and no nested <code>SKILL.md</code> under a skill. <b>Unit:</b> the DSH root list and the conformance scan.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+<div data-wu="E-DSH.W2" data-c="wu-w2">
+  <h3 id="w2">W2 · The rules say what a host without hooks does</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the standard tells an agent to verify a doc after writing it, because a hook does that on Claude Code. On DSH no shell hook exists, so the standard says who runs the check and where a miss is caught.</p>
+    <ul>
+      <li>The workflow skill keeps its two hook rows and adds the no-hook case: the check is a command you run, and the review's first step refuses a red doc.</li>
+      <li>The plan skill stops naming one host as the trigger of that check.</li>
+      <li>A host-only fact stays out of the standard: it belongs in the router skill's project section.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">UC-DOC-1 amended, UC-DSH-2 new · DEC-54.</p>
+  <p data-item="wu-expected"><b>Integration:</b> a content test reads the shipped skills and asserts the no-hook paragraph names the doc check and the review step, and that no shipped skill claims the gate needs Claude Code. <b>Unit:</b> waived, text only.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+<div data-wu="E-DSH.W3" data-c="wu-w3">
+  <h3 id="w3">W3 · A DSH router has a worker recipe</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the router skill learns the DSH way to dispatch, read and retire a worker, and the project template gains the slots a project fills in. The Claude Code recipe stays as it is.</p>
+    <ul>
+      <li>One table maps each mechanism: dispatch, follow-up, report, fleet list, stop, and the preset that lets an unattended worker commit.</li>
+      <li>A DSH worker does not message the router: its report is its transcript, read at each wake and before each ask. A DSH subagent is not a worker, because it inherits the router's directory.</li>
+      <li>The persona on DSH is the worktree's <code>AGENTS.md</code> plus the skills plus the brief; the project records which preset its router selects.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">UC-ROUTE-5 and UC-ROUTE-6 amended, UC-DSH-3 and UC-DSH-4 new · DEC-55, DEC-56 · rulings R0, R2, R4.</p>
+  <p data-item="wu-expected"><b>Integration:</b> a content test asserts the transport table names every DSH worker tool, the template carries the harness and preset slots, and the skill description no longer says Claude Code only. <b>Unit:</b> waived, text only.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+<div data-wu="E-DSH.W4" data-c="wu-w4">
+  <h3 id="w4">W4 · A red doc stops the review on any host</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the review's first step verifies every doc the range changed. A red doc stops it and names the problems, so a host with no doc hook cannot reach a review with a broken doc.</p>
+    <ul>
+      <li>New check <code>0·doc</code> beside <code>0·tree</code>; it reads each changed doc at the tip and applies the same rules as <code>keel verify-doc</code>.</li>
+      <li>The merge gate keeps reading doc facts only: form is checked when authoring (the hook) and when a review starts.</li>
+      <li>Drafts stay silent, as they are today.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">UC-DOC-1 amended, UC-DSH-2 new · DEC-54.</p>
+  <p data-item="wu-expected"><b>Integration:</b> on a WU branch, a ready doc missing one item makes preflight red <code>0·doc</code> naming that item; the fixed doc is green; a draft is silent; a range with no doc is green. <b>Unit:</b> the changed-doc selection (docs root, a deleted doc, a doc outside the root).</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+</div>
+
+<h2 id="open-points">Open points</h2>
+<p>Work goes on at these answers. Comment to overrule.</p>
+<table data-item="open-questions" data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Which DSH root holds the skills?</td><td><b><code>.dsh/skills</code></b></td><td>It is the host's own project root and wins a duplicate name against the shared <code>.agents/skills</code>.</td></tr>
+    <tr><td>2</td><td>Does init always write them?</td><td><b>Yes</b>, like the Codex hook file today</td><td>Additive and inert for a project that never opens DSH; an opt-out can come later if one objects.</td></tr>
+    <tr><td>3</td><td>Where does DSH get the write-time doc feedback a hook gives Claude Code?</td><td><b>A host plugin, outside this epic</b></td><td>A host plugin is a profile install, not a project file; the review step (W4) is the stop this epic can guarantee.</td></tr>
+    <tr><td>4</td><td>Who enforces the router's tool whitelist on DSH?</td><td><b>The skill, until a plugin exists</b></td><td>DSH has no shell hooks; the router must say its posture is unenforced there, and a backlog row tracks the guard.</td></tr>
+    <tr><td>5</td><td>Which preset does a router select?</td><td><b>Auto Review</b></td><td>Medium calls (add, commit, a minting request) then run and high is denied, so an unattended worker does not stall.</td></tr>
+    <tr><td>6</td><td>Is the review's first step the right home for the doc check?</td><td><b>Yes</b></td><td>Form is checked when authoring and when a review starts; the merge keeps reading facts, so the tiers stay apart.</td></tr>
+    <tr><td>7</td><td>Does a worker need its own persona file?</td><td><b>No</b></td><td>A DSH preset is user-level, so the worktree's instructions, the skills and the brief are the persona.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="acceptance">Acceptance</h3>
+<ul data-item="expected" data-c="expected">
+  <li>A fresh repo after <code>keel init</code> carries both skill roots; a DSH session lists the six <code>keel-*</code> skills and the project's router skill, and a worker reads its worktree's <code>AGENTS.md</code>.</li>
+  <li>Every Claude Code and Codex artifact is byte-identical to before this epic, and the existing tests stay green.</li>
+  <li>A ready doc with a problem is refused by <code>keel verify-doc</code> and by the review's first step, on any host.</li>
+  <li>A DSH router dispatches one worker per worktree, reads its report from the transcript, sends follow-ups and stops it.</li>
+  <li>Under the Auto Review preset a worker's medium call (an add, a commit, a minting request) runs; a high-risk call is denied.</li>
+  <li>The epic test passes, and the live DSH run is recorded as evidence.</li>
+</ul>
+
+<h3 id="use-cases-h">Use cases</h3>
+<ul data-item="use-cases" data-c="use-cases">
+  <li>UC-DSH-1, new: <code>keel init</code> writes the DSH artifacts (W1).</li>
+  <li>UC-DSH-2, new: the doc check runs on a host without hooks (W2, W4).</li>
+  <li>UC-DSH-3, new: a DSH router's workers and their transcripts (W3).</li>
+  <li>UC-DSH-4, new: permissions for an unattended DSH session (W3).</li>
+  <li>UC-INIT-1, amended: both skill roots, the DSH hand-off (W1).</li>
+  <li>UC-DOC-1, amended: the review's first step verifies changed docs (W2, W4).</li>
+  <li>UC-ROUTE-5 and UC-ROUTE-6, amended: the DSH transport, the unenforced posture (W3).</li>
+</ul>
+
+<h3 id="non-goals-h">Out of scope</h3>
+<ul data-item="non-goals" data-c="non-goals">
+  <li>Replacing Claude Code, or changing any artifact, hook or test it uses.</li>
+  <li>Shipping a host plugin inside the <code>keel</code> binary; there is no channel for one. The epic ships the contract and the install line.</li>
+  <li>Re-implementing the Auto Review preset, the worker-session plugin, or any DSH UI.</li>
+  <li>Worker cold resume, out-of-process workers, a watchdog on DSH.</li>
+</ul>
+
+<h3 id="e2e-h">Epic test</h3>
+<div data-item="e2e-plan" data-c="e2e-plan">
+  <p>A scratch repo, no network, in <code>tests/</code>:</p>
+  <ol>
+    <li><code>keel init</code> twice. Both roots hold the same bytes, the second run adds nothing, and every shipped skill passes the DSH conformance scan.</li>
+    <li>On a WU branch, a ready plan doc missing one item: <code>keel verify-doc</code> is red, preflight is red <code>0·doc</code>. Fix it: both green.</li>
+    <li>The gate: test and doc notes, a review PASS, your sign-off, then <code>--no-ff</code> into the epic runs the hook green.</li>
+    <li>The close: the truth lands in the use cases and decisions, the T3 docs are archived, the epic gate is green.</li>
+    <li>Live, recorded once on the desktop host: DSH lists the skills from a worktree, a worker spawned there loads that worktree's instructions, preflight stops it on a red doc, the router reads its transcript. A second run in the same tree shows the Claude Code files unchanged.</li>
+  </ol>
+</div>
+
+<h3 id="close-h">At the close</h3>
+<ul data-item="distillation-plan" data-c="distillation-plan">
+  <li>A new T2 topic <code>docs/use-cases/dsh.html</code> (UC-DSH-1 to 4) plus its index row; amendments to <a href="../use-cases/workflow.html">workflow</a> and <a href="../use-cases/router.html">router</a>.</li>
+  <li>Decision records: DEC-53 (the DSH skill root; DEC-4's skills-only line is superseded where it conflicts), DEC-54 (no hooks on DSH; form is checked at authoring and at review start), DEC-55 (a DSH worker is a workspace-rooted session with no push report), DEC-56 (a router selects the Auto Review preset). Numbers are taken at the close after checking live branches.</li>
+  <li>T1: <a href="../install.html">install.html</a> gains the DSH artifacts and the worker-session plugin's profile install line.</li>
+  <li>Backlog rows: the DSH doc-gate host plugin, the DSH router guard plugin, and the worker plugin's cold resume (its own repo). <a href="../backlog/backlog-index.html">Backlog index</a>.</li>
+  <li>T0 stays unchanged: no rule changes, only artifacts and their checks.</li>
+</ul>
+
+<h3 id="constraints">What the host makes true</h3>
+<p>Three facts shape the plan and are not up for design here.</p>
+<ul>
+  <li>A DSH session's sandbox root is the directory it was created in, and it never changes; a subagent always inherits its parent's directory. So a worker cannot be a subagent: the worker-session plugin creates the session itself, with the worktree as its directory (ruling R3).</li>
+  <li>DSH has no shell-hook surface: no host setting runs a command on a tool call or at turn end. What replaces Keel's two doc hooks is therefore either a host plugin or a check on a path every host shares (W4) — verified from the installed packages, not from memory.</li>
+  <li>With approvals off, a medium call is rejected unless something decides it. The Auto Review preset is how a stock install lets an unattended worker add, commit or mint, and denies what it calls high risk (ruling R4).</li>
+</ul>
+
+<h3 id="surfaces">Harness surfaces at a glance</h3>
+<table data-c="surfaces">
+  <thead><tr><th>Need</th><th>Claude Code today</th><th>DSH after this epic</th></tr></thead>
+  <tbody>
+    <tr><td>Read the rules</td><td><code>AGENTS.md</code>, skills in <code>.claude/skills</code></td><td><code>AGENTS.md</code> (read natively), skills in <code>.dsh/skills</code></td></tr>
+    <tr><td>Doc check on write</td><td>PostToolUse hook</td><td>Nothing runs by itself; the review's first step refuses (W4)</td></tr>
+    <tr><td>Doc check at turn end</td><td>Stop hook</td><td>A plugin's turn-end listener is possible; not this epic</td></tr>
+    <tr><td>Merge gate</td><td>git hooks</td><td>git hooks, unchanged</td></tr>
+    <tr><td>Dispatch a worker</td><td>the project's launcher, <code>SendMessage</code></td><td><code>worker_spawn</code> with the worktree path</td></tr>
+    <tr><td>Read a worker</td><td>its message</td><td><code>worker_output</code> (the transcript)</td></tr>
+    <tr><td>Fleet list, stop</td><td><code>ListAgents</code>, the launcher</td><td><code>worker_list</code>, <code>worker_stop</code></td></tr>
+    <tr><td>Enforce the router posture</td><td>a project <code>PreToolUse</code> guard</td><td>no hook surface; the skill holds it (open point 4)</td></tr>
+    <tr><td>Permit unattended work</td><td>project settings and sandbox</td><td>the Auto Review preset</td></tr>
+  </tbody>
+</table>
+
+<div class="diagram" data-c="dsh-surfaces">
+<pre class="mermaid">
+flowchart LR
+  I["keel init"] -->|"writes"| D[".dsh/skills"]
+  D -->|"loaded by"| S["DSH session"]
+  S -->|"writes"| P["a plan doc"]
+  P -->|"refused by"| G["review first step"]
+  R["DSH router"] -->|"worker_spawn"| W["worker in a worktree"]
+  W -->|"runs"| G
+  R -->|"reads"| O["worker transcript"]
+</pre>
+<div class="caption">The two paths this epic fixes: the rules a DSH session loads, and the check that stops a broken doc there.</div>
+</div>
+
+<h3 id="lineage">Lineage</h3>
+<p>Epic E-DSH, branch <code>epic/E-DSH</code> off main at <code>f031e36</code>. Owner rulings R0 to R4 in this session's brief bind the plan: the worker-session plugin is a built, installed dependency (<code>dsh-worker-workspace</code>, HEAD <code>20553e3</code>, its own repo in the desktop-dsh project); Auto Review 0.5.0 is a permission preset, not planned work; DSH lands beside Claude Code; the worker plugin stays in that project while the Keel artifact stays in this repo; a session's directory is immutable and a subagent inherits it; and the stock permission path is stated rather than assumed. Predecessors: <a href="../decisions/distribution.html">DEC-2</a> (rules inside the binary), <a href="../decisions/distribution.html#dec-4">DEC-4</a> (one AGENTS.md, skills in one root), <a href="../decisions/distribution.html#dec-5">DEC-5</a> (the two doc hooks), <a href="../decisions/router.html#dec-44">DEC-44</a> (background workers report by message).</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
