@@ -1,9 +1,11 @@
 //! `keel init` (UC-INIT-1): wire a repo of any language to Keel. Idempotent. A project-owned file
 //! that exists with other bytes is kept and reported; a Keel-owned skill file (`.claude/skills/keel-*`)
-//! that differs is overwritten only after confirmation (or with `--force`/`-f`).
+//! that differs is overwritten only after confirmation (or with `--force`/`-f`). The skills live
+//! once, in `.claude/skills`; `.agents/skills` is a relative link every other host reads, planted
+//! only under a real `.agents` directory at the repo root, where a relative target resolves.
 use crate::{git, hooks_install};
 use std::io::{BufRead, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Every file under `skills/`, embedded; written to `.claude/skills/<path>`. The completeness
 /// test (tests/init.rs) fails when a file under skills/ is missing here.
@@ -24,6 +26,110 @@ const SKILLS: &[(&str, &str)] = &[
     ("keel-router/references/project-router-template.md", include_str!("../skills/keel-router/references/project-router-template.md")),
     ("keel-router/references/review-checklists.md", include_str!("../skills/keel-router/references/review-checklists.md")),
 ];
+
+/// The one shared skill root: a link relative to `.agents/`, so a checkout in another worktree still
+/// resolves it (E-DSH.W1).
+const SHARED_SKILLS: &str = "../.claude/skills";
+const SHARED_SKILLS_LINK: &str = ".agents/skills";
+
+/// What is at `.agents/skills`, read without following it: fabricated input for `shared_root`.
+#[derive(Debug, PartialEq, Eq)]
+enum LinkState {
+    Missing,
+    Symlink(PathBuf),
+    Unreadable,
+    RealDir,
+    RealFile,
+}
+
+/// What to do about the shared root: create it, it is already the link, or keep what is there.
+#[derive(Debug, PartialEq, Eq)]
+enum SharedRoot {
+    Create,
+    Shared,
+    Keep(String),
+}
+
+/// Only exactly the relative link is the shared root: anything else is a project's own root, kept.
+fn shared_root(state: LinkState) -> SharedRoot {
+    match state {
+        LinkState::Missing => SharedRoot::Create,
+        LinkState::Symlink(t) if t.as_path() == Path::new(SHARED_SKILLS) => SharedRoot::Shared,
+        LinkState::Symlink(t) => SharedRoot::Keep(format!("-> {}; not the shared root", t.display())),
+        LinkState::Unreadable => SharedRoot::Keep("an unreadable link; not the shared root".into()),
+        LinkState::RealDir => SharedRoot::Keep("a real directory; not the shared root".into()),
+        LinkState::RealFile => SharedRoot::Keep("a real file; not the shared root".into()),
+    }
+}
+
+/// What is at `rel`, read without following it: fabricated input for `shared_root` and `agents_dir`.
+fn path_state(repo: &Path, rel: &str) -> LinkState {
+    let p = repo.join(rel);
+    if let Ok(target) = std::fs::read_link(&p) {
+        return LinkState::Symlink(target);
+    }
+    match p.symlink_metadata() {
+        Err(_) => LinkState::Missing,
+        Ok(m) if m.is_dir() => LinkState::RealDir,
+        Ok(m) if m.file_type().is_symlink() => LinkState::Unreadable,
+        Ok(_) => LinkState::RealFile,
+    }
+}
+
+fn link_state(repo: &Path) -> LinkState {
+    path_state(repo, SHARED_SKILLS_LINK)
+}
+
+/// What to do about `.agents`, the directory that must hold the relative link.
+#[derive(Debug, PartialEq, Eq)]
+enum AgentsDir {
+    Real,
+    Create,
+    Keep(String),
+}
+
+/// The link is relative, so it resolves only from a real `.agents` at the repo root: a symlink or a
+/// file there is kept as found, never followed and never overwritten (E-DSH.W1).
+fn agents_dir(state: LinkState) -> AgentsDir {
+    match state {
+        LinkState::Missing => AgentsDir::Create,
+        LinkState::RealDir => AgentsDir::Real,
+        LinkState::Symlink(t) => AgentsDir::Keep(format!(
+            ".agents is a symlink -> {}; the relative skills target resolves only from a real .agents directory - replace it and re-run `keel init`",
+            t.display()
+        )),
+        LinkState::Unreadable => AgentsDir::Keep(
+            ".agents is an unreadable link; the relative skills target resolves only from a real .agents directory - replace it and re-run `keel init`".into(),
+        ),
+        LinkState::RealFile => AgentsDir::Keep(
+            ".agents is a regular file; the relative skills target resolves only from a real .agents directory - remove it and re-run `keel init`".into(),
+        ),
+    }
+}
+
+/// Plant the shared root once. Idempotent, and it never replaces a real directory or another link;
+/// with no real `.agents` it plants nothing at all, because a relative link there would dangle.
+fn shared_skills(repo: &Path) -> Result<(), String> {
+    match agents_dir(path_state(repo, ".agents")) {
+        AgentsDir::Real => {}
+        AgentsDir::Create => std::fs::create_dir_all(repo.join(".agents")).map_err(|e| format!("keel: mkdir .agents: {e}"))?,
+        AgentsDir::Keep(why) => {
+            println!("  kept      {SHARED_SKILLS_LINK} ({why})");
+            return Ok(());
+        }
+    }
+    match shared_root(link_state(repo)) {
+        SharedRoot::Shared => println!("  unchanged {SHARED_SKILLS_LINK} (-> {SHARED_SKILLS})"),
+        SharedRoot::Create => {
+            std::os::unix::fs::symlink(SHARED_SKILLS, repo.join(SHARED_SKILLS_LINK)).map_err(|e| format!("keel: link {SHARED_SKILLS_LINK}: {e}"))?;
+            println!("  created   {SHARED_SKILLS_LINK} (-> {SHARED_SKILLS})");
+        }
+        SharedRoot::Keep(why) => {
+            println!("  kept      {SHARED_SKILLS_LINK} ({why}; remove it and re-run `keel init` to take the shared root)")
+        }
+    }
+    Ok(())
+}
 
 const POST_CMD: &str = r##"f="$(git rev-parse --git-common-dir 2>/dev/null)/keel-hooks/verify-doc-post"; [ -f "$f" ] || exit 0; sh "$f""##;
 const STOP_CMD: &str = r##"f="$(git rev-parse --git-common-dir 2>/dev/null)/keel-hooks/verify-doc-stop"; [ -f "$f" ] || exit 0; sh "$f""##;
@@ -237,6 +343,7 @@ pub fn run(repo: &Path, force: bool) -> Result<i32, String> {
     write(repo, "AGENTS.md", AGENTS)?;
     skills(repo, force, &mut std::io::stdin().lock(), &mut std::io::stdout())?;
     write(repo, ".claude/skills/project-router/SKILL.md", PROJECT_ROUTER)?;
+    shared_skills(repo)?;
     settings(repo)?;
     write(repo, ".codex/hooks.json", CODEX_HOOKS)?;
     for d in ["docs/use-cases", "docs/decisions", "docs/work"] {
@@ -263,18 +370,76 @@ pub fn run(repo: &Path, force: bool) -> Result<i32, String> {
 }
 
 /// The signer comes before the first commit, so the policy lands on main with its roster (DEC-47).
+/// `.agents` rides the first commit with the rest: the shared skill root is project state too.
 const NEXT_STEPS: &str = "next:\n  1. review .keel/config.toml (check commands, code_paths) and AGENTS.md; fill in .claude/skills/project-router/SKILL.md\n  \
      2. the human owner registers as signer (never an agent): keel mr setup --as <identity> [--key ~/.ssh/<key>]\n  \
      3. land the policy and the roster (.keel/mr-allowed) on main once, before any gated merge (main is merge-only from now on):\n     \
-     git add .keel AGENTS.md .claude/skills .claude/settings.json .codex .gitignore && git commit --no-verify -m \"keel init\"";
+     git add .keel AGENTS.md .claude/skills .claude/settings.json .codex .agents .gitignore && git commit --no-verify -m \"keel init\"\n  \
+     4. DeepSeek Harness reads the same skills through .agents/skills; a plugin lives in the DSH profile, never in the project - install the three:\n       \
+     dsh plugin --profile <name> add <path>/dsh-auto-review\n       \
+     dsh plugin --profile <name> add <path>/dsh-worker-workspace\n       \
+     dsh plugin --profile <name> add <path>/dsh-doc-gate";
 
 #[cfg(test)]
 mod tests {
-    use super::{confirm, NEXT_STEPS};
+    use super::{agents_dir, confirm, shared_root, AgentsDir, LinkState, SharedRoot, NEXT_STEPS};
     use std::io::Cursor;
+    use std::path::PathBuf;
 
     fn ask(input: &str) -> bool {
         confirm(&mut Cursor::new(input.to_string()), &mut Vec::new(), "q?")
+    }
+
+    fn kept(state: LinkState) -> String {
+        match shared_root(state) {
+            SharedRoot::Keep(why) => why,
+            other => panic!("expected kept, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_shared_root_is_created_once_and_kept_when_it_is_not_the_relative_link() {
+        assert_eq!(shared_root(LinkState::Missing), SharedRoot::Create);
+        assert_eq!(shared_root(LinkState::Symlink(PathBuf::from("../.claude/skills"))), SharedRoot::Shared);
+        for elsewhere in ["../skills", ".claude/skills", "/abs/.claude/skills"] {
+            let why = kept(LinkState::Symlink(PathBuf::from(elsewhere)));
+            assert!(why.contains(elsewhere), "the report names the link's target: {why}");
+        }
+        assert!(kept(LinkState::RealDir).contains("directory"), "a real directory is reported as one");
+        assert!(kept(LinkState::RealFile).contains("file"), "a real file is reported as one");
+        assert!(kept(LinkState::Unreadable).contains("link"), "an unreadable link is reported as one");
+    }
+
+    fn kept_dir(state: LinkState) -> String {
+        match agents_dir(state) {
+            AgentsDir::Keep(why) => why,
+            other => panic!("expected kept, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_skill_link_is_planted_only_under_a_real_agents_directory() {
+        assert_eq!(agents_dir(LinkState::Missing), AgentsDir::Create);
+        assert_eq!(agents_dir(LinkState::RealDir), AgentsDir::Real);
+        for (state, found) in
+            [(LinkState::Symlink(PathBuf::from("../shared")), "../shared"), (LinkState::RealFile, "regular file"), (LinkState::Unreadable, "unreadable link")]
+        {
+            let why = kept_dir(state);
+            assert!(why.contains(found), "the report names what was found at .agents: {why}");
+            assert!(why.contains("real .agents directory"), "the report says what a relative target needs: {why}");
+            assert!(why.contains("keel init"), "the report says how to take the shared root: {why}");
+        }
+    }
+
+    #[test]
+    fn the_hand_off_installs_the_three_dsh_profile_plugins() {
+        for plugin in ["dsh-auto-review", "dsh-worker-workspace", "dsh-doc-gate"] {
+            let line = format!("dsh plugin --profile <name> add <path>/{plugin}");
+            assert!(NEXT_STEPS.contains(&line), "the hand-off misses {line:?}");
+        }
+        assert!(NEXT_STEPS.contains("a plugin lives in the DSH profile, never in the project"), "{NEXT_STEPS}");
+        assert!(NEXT_STEPS.contains(".agents/skills"), "{NEXT_STEPS}");
+        assert!(NEXT_STEPS.contains(".agents .gitignore"), "the shared root rides the first commit: {NEXT_STEPS}");
     }
 
     #[test]

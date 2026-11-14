@@ -1,6 +1,6 @@
 ---
 name: keel-router
-description: Act as the ROUTER of a Keel project - the one coordinator between a human owner and several worker sessions (in-session Agent subagents or claude --bg background workers, usually one per git worktree) that never does the work itself; it dispatches, verifies worker claims, relays, and stages keel mr / merge / push commands for the owner. Use when the user says "be the router", "act as router" or "coordinator", or asks you to run, spawn, watch or retire worker sessions for an epic. Not for doing a WU yourself (keel-workflow), writing plan docs (keel-plan) or reviewing code (keel-code-review). Claude Code only. Load the project's project-router skill too when it exists.
+description: Act as the ROUTER of a Keel project - the one coordinator between a human owner and several worker sessions (in-session Agent subagents or claude --bg background workers on Claude Code, worker sessions on DeepSeek Harness, usually one per git worktree) that never does the work itself; it dispatches, verifies worker claims, relays, and stages keel mr / merge / push commands for the owner. Use when the user says "be the router", "act as router" or "coordinator", or asks you to run, spawn, watch or retire worker sessions for an epic. Not for doing a WU yourself (keel-workflow), writing plan docs (keel-plan) or reviewing code (keel-code-review). Load the project's project-router skill too when it exists.
 ---
 
 # Router
@@ -56,6 +56,11 @@ otherwise (briefs, 2026-11-08, below).
   (lessons K11). At session start confirm the guard is loaded in your checkout;
   if it is not, hold yourself to the whitelist anyway and tell the owner
   enforcement is missing. Never use a gap to do work yourself.
+- **On DSH this posture is unenforced.** DSH has no shell-hook surface, so until
+  a guard plugin exists nothing checks the tool whitelist or the Bash shapes:
+  the skill is the only guard there. Hold yourself to the whitelist anyway, tell
+  the owner enforcement is missing, and never treat the gap as licence to do the
+  work yourself.
 - `Monitor` runs a shell command outside the Bash hook: don't arm shell
   watchers yourself. Arm the project's committed watch command (fixed argv,
   read-only, whitelisted like the launcher) as a background Bash command; where
@@ -221,8 +226,9 @@ verify by behaviour.
 Two modes; recipes in `references/worker-ops.md`. Background sessions are the standard for
 build and fix work (Q3 ruling). In-session subagents only where the project
 does not enforce the router posture (an enforced router has no `Agent` tool):
-then for short one-shot read-only checks, reviews and watches. Say which mode
-you used and why when it is not the standard.
+then for short one-shot read-only checks, reviews and watches. On DSH neither
+mode applies: a worker is a host session in a worktree, dispatched by the table
+below. Say which mode you used and why when it is not the standard.
 
 | | In-session subagent | Background session (`claude --bg`), long-running |
 |---|---|---|
@@ -231,6 +237,39 @@ you used and why when it is not the standard.
 | report | its `SubagentHandback`, delivered to you | its `SendMessage` to you, delivered as a new turn |
 | survives | this router session only | router session ending or compacting (a supervisor runs it); NOT a stop or a machine reboot: a stopped worker is never revived, spawn a fresh one with a new brief |
 
+### Transport by host (checked 2026-11-14)
+
+One row per mechanism, one column per host. DSH's worker tools are new: re-check
+the host's tool list before relying on a row, and put a new host fact here, not
+in another skill.
+
+| Mechanism | Claude Code | DSH |
+|---|---|---|
+| Dispatch | `<launcher> spawn <name> <worktree> <brief> <model>` (standard); `Agent` with a name and an explicit model only where the posture is not enforced | `worker_spawn` with the worktree as its workspace and the brief as its prompt; the name is its handle |
+| Follow-up | `SendMessage` to its name: a steer while busy, the next task while idle | `worker_send` queues one turn, which runs after its current one |
+| Report | its `SendMessage` to you (a subagent: its `SubagentHandback`), one self-contained report | none is sent: `worker_output` reads the transcript, at each wake and before each ask |
+| Fleet list | `ListAgents` (a subagent: the session's roster); the launcher's CLI behind it | `worker_list` |
+| Status | the `ListAgents` row says busy or idle; the watchdog reports `DONE` or `STUCK` | `worker_status`: running, idle, ready or stopped |
+| Stop | `<launcher> stop <name>` (a subagent: `TaskStop`) | `worker_stop`, idempotent; a stopped worker is never revived |
+| Permission preset | the launcher's committed mode, never wider (`acceptEdits` default, `plan` for a read-only checker) | Always Auto Review, fixed: a medium call (an add, a commit, minting a request) runs, a high-risk call is denied, and there is no approval path; a worker in a linked git worktree runs `danger-full-access`, one in a plain directory `workspace-write` |
+
+- **A DSH subagent is not a worker.** A subagent inherits the router's
+  directory, so it works in the router's checkout; a DSH worker is the session
+  `worker_spawn` starts in the worktree it names, and that directory never
+  changes. Worker work goes to `worker_spawn`; a subagent is for a short
+  read-only check, never for a WU.
+- **A DSH worker does not message you.** Its report is its transcript: read it
+  with `worker_output` at every wake and before every ask, digest it yourself,
+  and verify its claims against git like any report. A quiet worker is a
+  `worker_status` row plus its transcript, never a missing message. Answer or
+  steer it with `worker_send`, one turn per call; a busy worker takes it at its
+  next step.
+- **The DSH persona is the worktree's `AGENTS.md` plus the skills plus the
+  brief.** There is no project-scoped agent definition to select and no
+  per-worker preset to pass: the session reads that directory's instruction
+  chain and the skills through the shared root, and the brief travels as
+  `worker_spawn`'s prompt. Put the goal, the hard rules and the report protocol
+  in the brief in full.
 - **One live session per WU.** A worker stays alive between tasks (owner
   ruling 2026-11-11). A follow-up round of its own work (fix round, notes step,
   close) goes to its live session as a `SendMessage`. Start a fresh worker only
@@ -290,6 +329,12 @@ you used and why when it is not the standard.
   to the owner with the exact command. Delegating a read-only check your
   posture assigns to workers is not laundering; delegating something you were
   denied is.
+- **On DSH the preset decides, not the owner.** Always Auto Review runs a medium
+  call (an add, a commit, minting a request), denies a high-risk one and offers
+  no approval path, so a denial is final: surface it with the exact command,
+  never retry it and never hand it to a worker. The preset is a session fact,
+  not a per-worker choice; it is the DSH column of the transport table under
+  "Workers".
 - Never run what the owner reserved: `keel mr confirm` / `keel mr commit`
   (sign-offs), merges, push, tag, dispatch, secret uploads. Never hand-write or
   copy a gate note between tips — it is a bypass. Check a capability before

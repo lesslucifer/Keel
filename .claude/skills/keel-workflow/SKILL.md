@@ -264,8 +264,12 @@ off: `keel preflight` and `keel verify-dod wu|epic` are red on `0·hooks`,
 | `pre-merge-commit` | `keel verify-dod hook`, judged by the target's **committed** `.keel/config.toml`: into `epic/*` ⇒ wu gate, into main ⇒ epic gate then `keel check` on the merged tree; other targets ungated; a back-merge of landed history into an epic passes; an octopus or an unknowable merge head (`git pull`) is refused — fetch, then `git merge --no-ff <branch>` |
 | `pre-push` | `keel check` on every pushed tree (clean HEAD in place, others in a scratch worktree) · `verify-dod range` on main/`epic/*` updates (on an epic branch: commits already on main skipped; a plain commit with epic-range notes judged on them over the epic, like check 7's archive commit — inside the range only when it changes no code, as the pushed tip even when it changes code; review and sign-off stay at the merge into main) · pushes `refs/notes/*` |
 | `post-checkout` | heals `merge.ff=false` · copies `.gitworktreecopy` entries into a new worktree |
-| `verify-doc-post` · `verify-doc-stop` | harness hooks (PostToolUse / Stop): `keel verify-doc` on each written doc / every doc at turn end (skill `keel-plan`) |
+| `verify-doc-post` · `verify-doc-stop` | shell hooks: `keel verify-doc <path>` on each first-party write or edit of a doc, and `keel verify-doc` over all docs at turn end; a red doc feeds the problem lines back and the turn does not close until it is green (skill `keel-plan`) |
+| doc check · no shell hooks | a host plugin runs the same two checks at the same points: a red write returns failed with the problem lines, and at turn end the problems are steered back so the turn takes another step; exit 0 is silent, and a draft is silent |
 
+- **No substitute**: the doc check runs at the write, never at a review or a merge.
+  It checks form only; the review reads depth, and the merge reads the `doc/v1`
+  facts (check 6). A review or a merge is too late and no substitute.
 - **Conflicts**: completing a conflicted merge with `git commit` never runs
   pre-merge-commit (and on main pre-commit refuses it). Resolve conflicts by
   merging the target into the work branch first, so the gated merge is clean.
