@@ -289,7 +289,7 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
         std::io::Write::write_all(&mut p.stdin.take().unwrap(), ev.as_bytes()).unwrap();
         p.wait_with_output().unwrap()
     };
-    let path = std::env::var("PATH").unwrap();
+    let path = common::path().to_string();
     let o = run(root(), &path);
     assert!(o.status.success() && String::from_utf8_lossy(&o.stdout).contains("\"deny\""), "{o:?}");
     let empty = TempDir::new().unwrap();
@@ -471,7 +471,7 @@ impl Launcher {
         std::fs::create_dir_all(&shim).unwrap();
         std::fs::write(shim.join("sleep"), "#!/bin/sh\n:\n").unwrap();
         std::fs::set_permissions(shim.join("sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-        format!("{}:{}", shim.display(), std::env::var("PATH").unwrap())
+        common::path_with(shim)
     }
 
     fn sessions(&self) -> Vec<serde_json::Value> {
@@ -720,7 +720,7 @@ fn keels_router_security_files_are_rule_bearing() {
     let owner = rest.split_whitespace().next().unwrap();
 
     let keel = Path::new(env!("CARGO_BIN_EXE_keel"));
-    let path = format!("{}:{}", keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
+    let path = common::path_with(keel.parent().unwrap());
     let run = |a: &[&str]| {
         hermetic(&mut common::cmd("git"))
             .args(a)
@@ -1822,7 +1822,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let home = base.join("home");
     std::fs::create_dir_all(&home).unwrap();
     git_shim(&base.join("shim"));
-    let path = format!("{}:{}:{}", base.join("shim").display(), keel.parent().unwrap().display(), std::env::var("PATH").unwrap());
+    let path = format!("{}:{}", base.join("shim").display(), common::path_with(keel.parent().unwrap()));
     let stub = base.join("claude");
     stub_claude(&stub);
     let state = base.join("state");
@@ -1887,7 +1887,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let (dir, a) = watchdog_argv(&state, "r1");
     assert_eq!(dir, c.to_str().unwrap());
     let (prompt_hook, tool_hook) = watchdog_hooks(&a);
-    let sys_path = std::env::var("PATH").unwrap();
+    let sys_path = common::path().to_string();
     let hook = |cmd: &str, stdin: &str| run_hook(&l, cmd, &sys_path, &home, stdin);
     let o = hook(&prompt_hook, "{\"prompt\":\"tick\"}");
     assert_eq!(String::from_utf8_lossy(&o.stdout), "Report to r1.\nNo live worker.\n", "{o:?}");
@@ -2100,7 +2100,7 @@ impl Watcher {
         hermetic(&mut c)
             .args(args)
             .current_dir(&self.main)
-            .env("PATH", format!("{}:{}", self.base.join("shim").display(), std::env::var("PATH").unwrap()))
+            .env("PATH", common::path_with(self.base.join("shim")))
             .env("STEP_DIR", &dir)
             .env("HOME", self.base.join("home"))
             .env("XDG_CONFIG_HOME", self.base.join("home/.config"))
@@ -2130,7 +2130,7 @@ impl Watcher {
             self.base.join("shim/git").display()
         )).unwrap();
         std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-        (format!("{}:{}:{}", dir.display(), self.base.join("shim").display(), std::env::var("PATH").unwrap()), self.base.join("spy.log"))
+        (format!("{}:{}", dir.display(), common::path_with(self.base.join("shim"))), self.base.join("spy.log"))
     }
 
     /// One run to its end with polls 1..=go pre-released: (exit code, stdout, stderr, polls taken).
@@ -2884,7 +2884,7 @@ fn watchdog_starts_as_a_background_session_whose_hooks_carry_the_routers_name() 
         assert!(!c.contains('$'), "a hook reads the environment: {c}");
     }
     let home = TempDir::new().unwrap();
-    let path = std::env::var("PATH").unwrap();
+    let path = common::path().to_string();
     let o = run_hook(&l, &prompt_hook, &path, home.path(), "{\"prompt\":\"tick\"}");
     assert!(o.status.success(), "{o:?}");
     // review r1 B1: with no ROUTER_CLAUDE and no claude under HOME, the hook still reads the session list
@@ -3311,7 +3311,7 @@ fn watchdog_facts_keep_the_fleet_when_a_transcript_cannot_be_read() {
     std::fs::create_dir_all(&shim).unwrap();
     std::fs::write(shim.join("stat"), "#!/bin/sh\nexit 1\n").unwrap();
     std::fs::set_permissions(shim.join("stat"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let path = format!("{}:{}", shim.display(), std::env::var("PATH").unwrap());
+    let path = common::path_with(shim);
     let (ok, out) = l.run_env(&["watchdog", "facts", "r1"], &[("HOME", h.to_str().unwrap()), ("PATH", &path)]);
     assert!(ok, "{out}");
     let b = blocks(&out);

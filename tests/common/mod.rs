@@ -3,7 +3,9 @@
 #![allow(dead_code)]
 
 use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 /// `git rev-parse --local-env-vars` (git 2.x); `the_strip_lists_cover_gits_local_env_vars` guards drift.
 pub const GIT_LOCAL_ENV: [&str; 15] = [
@@ -72,6 +74,78 @@ pub fn self_clone(src: &std::path::Path, dst: &std::path::Path) {
 }
 
 /// The only way a test spawns a process that can reach git (enforced by `every_test_spawn_strips_gits_env`).
+/// It runs on the test PATH, so a git it reaches is the real one (`every_test_path_comes_from_common`).
 pub fn cmd(prog: impl AsRef<OsStr>) -> Command {
-    no_git_env(Command::new(prog))
+    let mut c = no_git_env(Command::new(prog));
+    c.env("PATH", path());
+    c
+}
+
+/// The PATH every test hands a child (E-TESTOPT.W1): the inherited one, behind a directory holding only
+/// the real git when the inherited PATH's git is a launcher in front of it (macOS's xcrun shim, which
+/// costs a few ms a call and, in a sandbox, prints a cache error into git's output). Keel itself is
+/// unchanged: it runs whatever git its caller's PATH names.
+pub fn path() -> &'static str {
+    static PATH: OnceLock<String> = OnceLock::new();
+    PATH.get_or_init(|| real_git_first(&inherited_path()))
+}
+
+/// `p` behind the real git's directory, when the test PATH has one: a test that runs with a PATH of its
+/// own making (no keel on it, say) still runs the real git.
+pub fn real_git_first(p: &str) -> String {
+    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+    test_path(p, DIR.get_or_init(|| real_git_dir(&inherited_path(), &Path::new(env!("CARGO_TARGET_TMPDIR")).join("real-git"))).as_deref())
+}
+
+/// The PATH this test program was started with; a test reads it only through here.
+pub fn inherited_path() -> String {
+    std::env::var("PATH").unwrap_or_default()
+}
+
+/// `dir` in front of the test PATH: keel's build directory, or a test's own shims.
+pub fn path_with(dir: impl AsRef<Path>) -> String {
+    test_path(path(), Some(dir.as_ref()))
+}
+
+pub fn test_path(inherited: &str, first: Option<&Path>) -> String {
+    match first {
+        Some(d) if inherited.is_empty() => d.display().to_string(),
+        Some(d) => format!("{}:{inherited}", d.display()),
+        None => inherited.to_string(),
+    }
+}
+
+/// The git a git with this `--exec-path` runs from: `<prefix>/bin/git` beside `<prefix>/libexec/git-core`
+/// (Xcode, the Command Line Tools, Homebrew, `/usr/lib/git-core` on Linux), else the copy most installs
+/// keep inside git-core itself.
+pub fn real_git(exec_path: &str, is_file: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    let core = Path::new(exec_path.trim());
+    if !core.is_absolute() {
+        return None;
+    }
+    let beside = core.parent().and_then(Path::parent).map(|prefix| prefix.join("bin").join("git"));
+    beside.into_iter().chain([core.join("git")]).find(|g| is_file(g))
+}
+
+/// The first `prog` along `path`.
+pub fn on_path(path: &str, prog: &str, is_file: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    path.split(':').filter(|d| !d.is_empty()).map(|d| Path::new(d).join(prog)).find(|p| is_file(p))
+}
+
+/// `dir`, now holding only a link to the real git, or None when the inherited PATH's git already is it,
+/// or git cannot be found or run: then the test PATH is the inherited one. The link is made under
+/// another name and renamed into place, so a parallel test program never runs a half-made link.
+pub fn real_git_dir(inherited: &str, dir: &Path) -> Option<PathBuf> {
+    let on_path_git = on_path(inherited, "git", |p| p.is_file())?;
+    let o = no_git_env(Command::new(&on_path_git)).arg("--exec-path").env("PATH", inherited).output().ok()?;
+    let real = real_git(&String::from_utf8_lossy(&o.stdout), |p| p.is_file()).filter(|_| o.status.success())?;
+    if std::fs::canonicalize(&real).ok()? == std::fs::canonicalize(&on_path_git).ok()? {
+        return None;
+    }
+    std::fs::create_dir_all(dir).ok()?;
+    let staged = dir.join(format!("git.{}", std::process::id()));
+    let _ = std::fs::remove_file(&staged);
+    std::os::unix::fs::symlink(&real, &staged).ok()?;
+    std::fs::rename(&staged, dir.join("git")).ok()?;
+    Some(dir.to_path_buf())
 }

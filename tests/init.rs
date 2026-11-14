@@ -81,7 +81,7 @@ fn init_twice_produces_the_same_tree_and_keeps_user_edits() {
     let mut sh = common::cmd("sh")
         .args(["-c", cmd])
         .current_dir(p)
-        .env("PATH", format!("{bin}:{}", std::env::var("PATH").unwrap()))
+        .env("PATH", common::path_with(&bin))
         .stdin(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -495,7 +495,7 @@ fn settings_merge() {
 
     // (f) the merged commands run under sh: no keel-hooks -> silent exit 0; red doc -> 2; green -> 0
     let bin = Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display().to_string();
-    let path = format!("{bin}:{}", std::env::var("PATH").unwrap());
+    let path = common::path_with(&bin);
     let run = |cmd: &str, cwd: &Path, payload: &str| {
         use std::io::Write;
         let mut c = common::cmd("sh")
@@ -628,7 +628,7 @@ fn git_in(d: &Path, a: &[&str]) -> Output {
     common::cmd("git")
         .args(a)
         .current_dir(d)
-        .env("PATH", format!("{}:{}", Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display(), std::env::var("PATH").unwrap()))
+        .env("PATH", common::path_with(Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap()))
         .env("GIT_AUTHOR_NAME", "t")
         .env("GIT_AUTHOR_EMAIL", "t@t")
         .env("GIT_COMMITTER_NAME", "t")
@@ -822,7 +822,7 @@ fn a_foreign_keel_on_path_makes_init_warn_and_a_git_hook_refuse() {
     let p = d.path();
     let tools = TempDir::new().unwrap();
     let fake = bin_dir(tools.path(), &[], &[("keel", "#!/bin/sh\necho 'keel.so 1.2.3'\n")]);
-    let path = format!("{}:{}", fake.display(), std::env::var("PATH").unwrap());
+    let path = common::path_with(&fake);
     let o = common::cmd(env!("CARGO_BIN_EXE_keel")).arg("init").current_dir(p).env("PATH", &path).stdin(std::process::Stdio::null()).output().unwrap();
     let t = text(&o);
     assert!(o.status.success(), "{t}");
@@ -965,7 +965,7 @@ fn harness_hooks_exit_0_and_never_call_verify_doc_on_a_foreign_keel() {
     let tools = TempDir::new().unwrap();
     let log = tools.path().join("calls");
     let fake = bin_dir(tools.path(), &[], &[("keel", &format!("#!/bin/sh\necho \"$*\" >> '{}'\necho 'keel.so 1.2.3'\n", log.display()))]);
-    let path = format!("{}:{}", fake.display(), std::env::var("PATH").unwrap());
+    let path = common::path_with(&fake);
     let hooks = p.join(".git/keel-hooks");
     for (hook, stdin) in [("verify-doc-post", r#"{"tool_input":{"file_path":"docs/x.html"}}"#), ("verify-doc-stop", "{}")] {
         use std::io::Write;
