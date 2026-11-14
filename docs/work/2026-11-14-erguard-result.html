@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>W1 · The router's moment-of-action checklists</h1>
       <p>The rule the router already knew now has a short form it must run before the call. This report keeps, changes or drops every hunk of the audit's patch, with the reason, and names what the guard plugin still has to enforce.</p>
-      <div class="meta">T3 · wu-result · 2026-11-14 · E-RGUARD.W1 · wu/E-RGUARD/w1-interim-checklist · plan <code>c6982a5</code> · rule commits <code>b3231f4</code>, <code>cf805a5</code>, <code>849d0bf</code> (rounds 2-4)</div>
+      <div class="meta">T3 · wu-result · 2026-11-14 · E-RGUARD.W1 · wu/E-RGUARD/w1-interim-checklist · plan <code>c6982a5</code> · rule commits <code>b3231f4</code>, <code>cf805a5</code>, <code>849d0bf</code> (rounds 2-4), round 5 staged on <code>16a1198</code></div>
     </div>
   </header>
   <main>
@@ -149,7 +149,21 @@
       <td>"Record a ruling in the next brief — your only write. The rulings log … is the owner's to add to: read it, and a ruling missing from it is a finding to report, never a file for you to create or append to." A worker cannot cover it either: <code>project-router</code>'s row now says only the owner may, because the worker file guard confines a worker to its own worktree, not the router's checkout.</td></tr>
   </tbody>
 </table>
-<p><b>The three nits</b>: the <code>project-router</code> row no longer sends a worker to write in the router's checkout; the test pins the epic id by shape (<code>\bE-[A-Z][A-Z0-9]+\b</code>) instead of four literals, so <code>E-DSH</code> would fail too; and this report's stale round-2 and round-3 lines now name <code>cf805a5</code> and <code>b3231f4</code>, with the I3 row marked as round-2 history.</p>
+<p><b>The three nits</b>: the <code>project-router</code> row no longer sends a worker to write in the router's checkout; the test pins the epic id by shape (<code>\bE-[A-Z][A-Z0-9]*\b</code>) in addition to the four literals, so <code>E-DSH</code> and <code>E-A</code> would fail too; and this report's stale round-2 and round-3 lines now name <code>cf805a5</code> and <code>b3231f4</code>, with the I3 row marked as round-2 history.</p>
+
+<h2 id="round-5">Round 5 — the fourth rule-text review's importants</h2>
+<p>Round 4 closed both round-3 must-fixes as orders, and created two importants of its own: "no fleet wake" became the false "no wake at all", and the round-4 sentences in <code>SKILL.md</code> were pinned nowhere. The round-5 edits are the reviewer's smallest edits, used as written.</p>
+<table data-c="round5-table">
+  <thead><tr><th>Finding</th><th>Fix</th></tr></thead>
+  <tbody>
+    <tr><td><b>MF-1</b> — three places said nothing can wake a DSH router, contradicting the skill's own "a finished background job" wake and stopping a router from watching the sign-off it just staged</td>
+      <td>Every claim is scoped to the worker's finish and the fleet wake. <code>SKILL.md:335</code>: "On DSH no worker's finish can wake you yet". <code>SKILL.md:338-339</code>: "says in one line that no worker's finish can wake you, and names the message the owner needs to send". START.6: "On DSH no fleet wake is armed: … so your message says no worker's finish can wake you". <code>project-router</code>: "the router arms no fleet wake there … says that no worker's finish can wake it". The test's pin moved from the false literal "nothing is armed" to "no fleet wake is armed".</td></tr>
+    <tr><td><b>MF-2</b> — the round-4 <code>SKILL.md</code> sentences were pinned nowhere; the test only checked that the Decisions section names <code>rulings.md</code></td>
+      <td>The test now asserts <code>SKILL.md</code> contains "do not arm it" and "never a file for you to create or append to" — the exact pair whose absence let round 3's M1 survive its own fix. Both sentences now sit on one line, so the pins stay exact.</td></tr>
+  </tbody>
+</table>
+<p><b>The four nits</b>: "Where a wake exists to arm" is now "Where a wake is yours to arm" (the legal-turn-end hinge); "names the message you need" is now "the message the owner needs to send"; the epic-id pin is <code>\bE-[A-Z][A-Z0-9]*\b</code>, so <code>E-A</code> fails too; and this report says the shape pin is <b>in addition to</b> the four literals, not instead of them.</p>
+<p><b>What the pins cannot cover:</b> <code>.claude/skills/project-router/SKILL.md</code> is Keel's own instance, not the shipped template, so no test reads it — the round-4 and round-5 edits there are reviewed by reading only, and this report claims no test coverage for them. The <code>test/v1</code> note on the tip promises the scoped fact only: no wake for a DSH worker's finish, never "no wake at all".</p>
 
 <h2 id="d2">What the D2 epic must still enforce</h2>
 <p>The checklist is a rule a willing router runs. It is not a guard, and the transcript that started this WU is proof that a known rule does not fail a call. D2 owns these, and this WU leaves them where the plugin can find them:</p>
@@ -180,6 +194,7 @@
     <li><b>Round 2, the fixes committed in <code>b3231f4</code>:</b> <code>cargo clippy</code> exit 0; <code>cargo test --no-fail-fast</code> exit 101, every target green except six <code>watch_*</code> tests of <code>--test router</code> (52 passed, 6 failed); <code>cargo test --test router -- --test-threads=1</code> 58 passed, 0 failed, exit 0; <code>--test init</code> 19/19, including the four new assertions; <code>keel check</code> exit 1 on the same watch tests; <code>cargo fmt --check</code> unchanged, the same 16 files as at the base. One serial run of the router suite, made while the machine was still loaded, failed two watch tests (<code>watch never reached poll 1</code>, <code>watch never returned</code>); both passed alone and the whole suite passed on an idle rerun, so that is load, not this change.</li>
     <li><b>Round 3, the fixes committed in <code>cf805a5</code>:</b> <code>cargo clippy</code> exit 0; <code>cargo test --no-fail-fast</code> exit 101, every target green except six <code>watch_*</code> tests of <code>--test router</code> (52 passed, 6 failed); <code>cargo test --test router -- --test-threads=1</code> 58 passed, 0 failed, exit 0; <code>--test init</code> 19/19; <code>keel check</code> ran twice on this tree — exit 0 once (<code>check green - cached</code>) and exit 1 once, on the same six <code>watch_*</code> tests: the two commands do pass on this tree, and when they time out it is load (the serial suite is green); <code>cargo fmt --check</code> unchanged, the same 16 files as at the base.</li>
     <li><b>Round 4, the fixes committed in <code>849d0bf</code>:</b> <code>cargo clippy</code> exit 0; <code>cargo test --no-fail-fast</code> exit 101, every target green except five <code>watch_*</code> tests of <code>--test router</code> (53 passed, 5 failed); <code>cargo test --test router -- --test-threads=1</code> 58 passed, 0 failed, exit 0; <code>--test init</code> 19/19; <code>keel check</code> exit 0 (<code>check green - cached</code>); <code>cargo fmt --check</code> unchanged, the same 16 files as at the base.</li>
+    <li><b>Round 5, the fixes staged on <code>16a1198</code>:</b> <code>cargo clippy</code> exit 0; <code>cargo test --no-fail-fast</code> exit 101, every target green except seven <code>--test router</code> tests under parallel load (the six <code>watch_*</code> and the router e2e; 51 passed, 7 failed); <code>cargo test --test router -- --test-threads=1</code> 58 passed, 0 failed, exit 0; <code>--test init</code> 19/19; <code>cargo fmt --check</code> unchanged, the same 16 files as at the base.</li>
   </ul>
 </div>
 
