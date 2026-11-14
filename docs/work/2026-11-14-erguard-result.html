@@ -10,15 +10,15 @@
     <div class="inner">
       <h1>W1 · The router's moment-of-action checklists</h1>
       <p>The rule the router already knew now has a short form it must run before the call. This report keeps, changes or drops every hunk of the audit's patch, with the reason, and names what the guard plugin still has to enforce.</p>
-      <div class="meta">T3 · wu-result · 2026-11-14 · E-RGUARD.W1 · wu/E-RGUARD/w1-interim-checklist · plan <code>c6982a5</code> · rounds 2 and 3 on <code>206b98c</code> and <code>b3231f4</code></div>
+      <div class="meta">T3 · wu-result · 2026-11-14 · E-RGUARD.W1 · wu/E-RGUARD/w1-interim-checklist · plan <code>c6982a5</code> · rule commits <code>b3231f4</code>, <code>cf805a5</code>, <code>849d0bf</code> (rounds 2-4)</div>
     </div>
   </header>
   <main>
 
 <h2 id="outcome">What landed</h2>
 <div data-item="outcome" data-c="outcome">
-  <p><b>Delivered, with the commit left to you.</b> The router skill now ships a short checklist to run at the moment of action — START, WAKE and DISPATCH — and the shipped rules the eight misses named say when to run it: the brief file on every host, the DSH fleet wake, and the audit's three ambiguities. The file lands in both skill trees byte-identical, <code>keel init</code> plants it, and the embed list and the shipped-skill inventory agree with the code.</p>
-  <p><b>What is not done here:</b> every skill byte is rule-bearing, so the commit that carries it is yours and this run stops at the staged command. The WU test and doc notes, <code>keel preflight</code> and the review follow your commit, because each binds its tip — the exact sequence is in "Follow-ups".</p>
+  <p><b>Delivered.</b> The router skill now ships a short checklist to run at the moment of action — START, WAKE and DISPATCH — and the shipped rules the eight misses named say when to run it: the brief file on every host, the audit's three ambiguities, and a fleet-wake exception stated as pending (W3 replaces it with the inbox channel). The file lands in both skill trees byte-identical, <code>keel init</code> plants it, and the embed list and the shipped-skill inventory agree with the code.</p>
+  <p><b>Where it stands:</b> every skill byte is rule-bearing, so each round is your <code>keel mr commit</code>; rounds 2-4 landed as <code>b3231f4</code>, <code>cf805a5</code> and <code>849d0bf</code>. The WU test and doc notes, <code>keel preflight</code> and the reviews bind the tip this report's own commit makes — the exact sequence is in "Follow-ups".</p>
 </div>
 
 <h2 id="for-the-owner">What changes for you</h2>
@@ -27,7 +27,7 @@
   <tbody>
     <tr><td>The router starts or wakes</td><td>It read the 400-line rule once and worked from memory</td><td>It runs a 7-row START list first and a 5-row WAKE list on every wake</td></tr>
     <tr><td>A dispatch</td><td>On DSH the prompt carried the brief and no file did</td><td>The brief file is written and read back on every host; a stale one is a finding</td></tr>
-    <tr><td>A DSH fleet runs</td><td>The turn could close with live workers and nothing armed</td><td>One fleet wake is armed before the first dispatch, re-armed on each wake, and it stops with the last worker</td></tr>
+    <tr><td>A DSH fleet runs unattended</td><td>The turn could close with live workers and nothing armed</td><td>It says in one line that nothing can wake it. The fleet wake that would fix that is not in force; W3 replaces it with the inbox channel</td></tr>
   </tbody>
 </table>
 
@@ -179,14 +179,14 @@
     <li><b>The watch tests are red under parallel load in this sandbox only</b> (backlog R43; 3 failed in the parallel run above, 6 in <code>keel check</code>'s, 0 with <code>--test-threads=1</code>). None of them touches a skill file, and this WU changes no watcher.</li>
     <li><b>Round 2, the fixes committed in <code>b3231f4</code>:</b> <code>cargo clippy</code> exit 0; <code>cargo test --no-fail-fast</code> exit 101, every target green except six <code>watch_*</code> tests of <code>--test router</code> (52 passed, 6 failed); <code>cargo test --test router -- --test-threads=1</code> 58 passed, 0 failed, exit 0; <code>--test init</code> 19/19, including the four new assertions; <code>keel check</code> exit 1 on the same watch tests; <code>cargo fmt --check</code> unchanged, the same 16 files as at the base. One serial run of the router suite, made while the machine was still loaded, failed two watch tests (<code>watch never reached poll 1</code>, <code>watch never returned</code>); both passed alone and the whole suite passed on an idle rerun, so that is load, not this change.</li>
     <li><b>Round 3, the fixes committed in <code>cf805a5</code>:</b> <code>cargo clippy</code> exit 0; <code>cargo test --no-fail-fast</code> exit 101, every target green except six <code>watch_*</code> tests of <code>--test router</code> (52 passed, 6 failed); <code>cargo test --test router -- --test-threads=1</code> 58 passed, 0 failed, exit 0; <code>--test init</code> 19/19; <code>keel check</code> ran twice on this tree — exit 0 once (<code>check green - cached</code>) and exit 1 once, on the same six <code>watch_*</code> tests: the two commands do pass on this tree, and when they time out it is load (the serial suite is green); <code>cargo fmt --check</code> unchanged, the same 16 files as at the base.</li>
-    <li><b>Round 4, the fixes staged on <code>cf805a5</code>:</b> <code>cargo clippy</code> exit 0; <code>cargo test --no-fail-fast</code> exit 101, every target green except five <code>watch_*</code> tests of <code>--test router</code> (53 passed, 5 failed); <code>cargo test --test router -- --test-threads=1</code> 58 passed, 0 failed, exit 0; <code>--test init</code> 19/19; <code>keel check</code> exit 0 (<code>check green - cached</code>); <code>cargo fmt --check</code> unchanged, the same 16 files as at the base.</li>
+    <li><b>Round 4, the fixes committed in <code>849d0bf</code>:</b> <code>cargo clippy</code> exit 0; <code>cargo test --no-fail-fast</code> exit 101, every target green except five <code>watch_*</code> tests of <code>--test router</code> (53 passed, 5 failed); <code>cargo test --test router -- --test-threads=1</code> 58 passed, 0 failed, exit 0; <code>--test init</code> 19/19; <code>keel check</code> exit 0 (<code>check green - cached</code>); <code>cargo fmt --check</code> unchanged, the same 16 files as at the base.</li>
   </ul>
 </div>
 
 <h3 id="deviations-h">Deviations</h3>
 <div data-item="deviations" data-c="deviations">
   <ul>
-    <li><b>The rule-bearing commit is yours, so the WU evidence follows it.</b> This report and the plan are committed; each rule-text round is staged for your <code>keel mr commit</code> — <code>b3231f4</code> is round 2, <code>cf805a5</code> is round 3, and the round-4 fix is staged on top of it. Notes, preflight and review bind a tip, and the tip here is your commit, so they run after it. An unattended run cannot write a note on a commit it may not make.</li>
+    <li><b>The rule-bearing commit is yours, so the WU evidence follows it.</b> This report and the plan are committed; each rule-text round is staged for your <code>keel mr commit</code> — <code>b3231f4</code> is round 2, <code>cf805a5</code> is round 3, <code>849d0bf</code> is round 4. Notes, preflight and review bind a tip, and the tip here is this report's own commit, so they run after it. An unattended run cannot write a note on a commit it may not make.</li>
     <li><b>The <code>.router-ready</code> marker is gone</b> (worker-ops, brief-skeleton), against the patch, with the reason in the table above.</li>
     <li><b>Two hunks are not the patch's wording</b> (the DSH bullet, START.2) and one sentence was dropped from the DSH fleet-wake bullet; each reason is in the table.</li>
     <li><b>No hunk was applied with <code>git apply</code></b>: the edits went into the working tree by hand so the rewrites above could be made in place, and the mirrors were copied from <code>skills/</code> afterwards.</li>
