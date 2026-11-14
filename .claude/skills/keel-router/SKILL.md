@@ -332,11 +332,12 @@ in another skill.
   none came), then retire it; `STUCK (quiet …)` → message the worker first;
   `STUCK (permission prompt)` → the owner answers it (`claude attach <id>`), you
   cannot. A watchdog whose reports stop is yours to notice and start again.
-- **On DSH nothing can wake you yet.** `worker_spawn` sends no message, so a
-  worker's finish cannot wake you. The fleet wake that would close that gap has no
-  owner ruling and is not in force, so do not arm it (`references/worker-ops.md`
-  "Wake on DSH"). Until one is recorded, a turn that ends with live workers says in
-  one line that nothing can wake you, and names the message you need.
+- **On DSH no worker's finish can wake you yet.** `worker_spawn` sends no message,
+  so a worker's finish cannot wake you. The fleet wake that would close that gap
+  has no owner ruling and is not in force, so do not arm it
+  (`references/worker-ops.md` "Wake on DSH"). Until one is recorded, a turn that
+  ends with live workers says in one line that no worker's finish can wake you, and
+  names the message the owner needs to send.
 - **No heartbeat**: the router routes; it runs no loop or timer (owner ruling
   2026-11-11). Workers report by message and every staged owner action has a
   watch; each wake runs the wake checklist (`references/checklists.md` WAKE) and
@@ -408,8 +409,7 @@ changes, risk). Every question: options with costs, your recommendation, the
 default if unanswered. Ask twice at most, then proceed on the default
 *(inference)*. Record a ruling in the next brief — your only write. The rulings log
 (`<ROOT>/.router/rulings.md`) is the owner's to add to: read it, and a ruling
-missing from it is a finding to report, never a file for you to create or append
-to.
+missing from it is a finding to report, never a file for you to create or append to.
 
 ## CI, releases, shared resources
 

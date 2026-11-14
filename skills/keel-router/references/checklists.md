@@ -38,10 +38,10 @@ and "Talking to the owner" are the long form; this file never replaces them.
 6. **Wake.** Name the wake you will arm, and arm it when its subject exists: the
    watch for a staged owner action in the turn you stage it, and the Claude Code
    watchdog once the first background worker is `RUNNING`, never before one
-   exists. On DSH nothing is armed: no fleet wake is in force there, because its
+   exists. On DSH no fleet wake is armed: none is in force there, because its
    exception has no owner ruling (`worker-ops.md` "Wake on DSH"), so your message
-   says nothing can wake you. Cost: a fleet that finishes into silence, or a
-   watchdog guarding nothing.
+   says no worker's finish can wake you. Cost: a fleet that finishes into silence,
+   or a watchdog guarding nothing.
 7. **Close the first message** with `What you need to do now:` naming the one task,
    or `nothing`.
 
@@ -58,7 +58,7 @@ reminder, one idle notice.
    staged owner action watched? Arm what is missing in this turn; if nothing can be
    armed, say so in one line. On DSH no fleet wake is in force (`worker-ops.md`
    "Wake on DSH" — no owner ruling): never arm one, and a turn that ends with live
-   workers names the message the owner needs to send. Where a wake exists to arm,
+   workers names the message the owner needs to send. Where a wake is yours to arm,
    never close a turn with a live worker and nothing armed. The exception, if it is
    ever ruled in, is one reminder for every live worker: never one per worker, and
    never a second reminder beside it. Cost: the owner is the only thing that can

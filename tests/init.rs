@@ -480,7 +480,7 @@ fn router_ships_the_moment_of_action_checklists() {
     for leak in ["/Users/", "E-ROUTER", "E-RGUARD", "E-SEED"] {
         assert!(!src.contains(leak), "checklists.md carries Keel's own state: {leak:?}");
     }
-    let epic_id = regex::Regex::new(r"\bE-[A-Z][A-Z0-9]+\b").unwrap();
+    let epic_id = regex::Regex::new(r"\bE-[A-Z][A-Z0-9]*\b").unwrap();
     assert!(epic_id.find(&src).is_none(), "checklists.md names an epic id: {:?}", epic_id.find(&src).map(|m| m.as_str()));
 
     let d = fresh_repo();
@@ -526,7 +526,7 @@ fn router_ships_the_moment_of_action_checklists() {
         "never a second reminder",
         "never one per worker",
         "no owner ruling",
-        "nothing is armed",
+        "no fleet wake is armed",
         "never arm one",
     ] {
         assert!(src.contains(said), "checklists.md lost {said:?}");
@@ -541,6 +541,7 @@ fn router_ships_the_moment_of_action_checklists() {
     assert!(ops.contains("may not be signed"), "worker-ops does not hold the unsigned exception to a ruling");
     assert!(section("## Session start").contains("rulings.md") && section("## Decisions").contains("rulings.md"), "SKILL.md does not place the rulings log");
     assert!(!skill.contains("2026-11-__") && skill.contains("no owner ruling grants it"), "SKILL.md asserts or dates a ruling the owner has not made");
+    assert!(skill.contains("do not arm it") && skill.contains("never a file for you to create or append to"), "SKILL.md re-orders the unruled fleet wake or gives the rulings log back to the router");
 }
 
 fn hook_cmds(v: &serde_json::Value, ev: &str) -> Vec<String> {
