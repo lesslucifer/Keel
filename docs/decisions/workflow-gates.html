@@ -49,9 +49,9 @@
 
     <h3 id="dec-17">DEC-17 · keel check: where trees are proven</h3>
     <table data-c="dec-17">
-      <tr><th>Choice</th><td>Renamed from "gate0" to <code>check</code> everywhere (<code>keel check</code>, <code>[check]</code>, <code>keel-check-green</code>), with no compatibility for <code>[gate0]</code>. It runs at preflight, on the merged tree of an epic → main merge, and on every pushed tree; a WU → epic merge checks notes only. Results are cached by tree content. The pre-commit hook only enforces merge-only main and runs no lint.</td></tr>
+      <tr><th>Choice</th><td>Renamed from "gate0" to <code>check</code> everywhere (<code>keel check</code>, <code>[check]</code>, <code>keel-check-green</code>), with no compatibility for <code>[gate0]</code>. It runs at preflight, on the merged tree of an epic → main merge, and on every pushed tree; a WU → epic merge checks notes only. Results are cached by tree content. The pre-commit hook enforces merge-only main and, since E-SEED3.W4, runs <code>keel lint</code> when the staged diff touches a <code>code_paths</code> path (lint only, never tests) and, with <code>MERGE_HEAD</code> present, runs the gate <code>pre-merge-commit</code> would have run instead of a separate lint.</td></tr>
       <tr><th>Consequences</th><td>Two WUs green alone but red together are caught at the epic's preflight, its merge into main, or a push, not at the second WU merge. A non-HEAD pushed tree is proven in a scratch worktree whose cache is discarded.</td></tr>
-      <tr><th>Lineage</th><td>R2 (option a: spec reworded to match code); R5; W3 open point 8; W6 open point 9; Trawler DEC-74, DEC-11/54 (cache).</td></tr>
+      <tr><th>Lineage</th><td>R2 (option a: spec reworded to match code); R5; W3 open point 8; W6 open point 9; Trawler DEC-74, DEC-11/54 (cache); E-SEED3.W4 (the commit hook's lint and merge gate).</td></tr>
     </table>
 
     <h3 id="dec-18">DEC-18 · The epic walk and walk_waivers</h3>
@@ -196,9 +196,9 @@
 
     <h3 id="dec-29">DEC-29 · Conflicted merges are handled by the workflow, not the CLI</h3>
     <table data-c="dec-29">
-      <tr><th>Context</th><td>Finishing a conflicted merge with <code>git commit</code> never runs pre-merge-commit. On main pre-commit refuses it; into an epic it lands ungated until the epic walk re-checks the seam.</td></tr>
-      <tr><th>Choice</th><td>The workflow skill says: resolve conflicts by merging the target into the work branch first, so the gated merge is clean. Porting Trawler's MERGE_HEAD branch in pre-commit is a possible follow-up (<a href="../backlog/e-seed-v2.html#b7">backlog B7</a>).</td></tr>
-      <tr><th>Lineage</th><td>W6 open point 10.</td></tr>
+      <tr><th>Context</th><td>Finishing a conflicted merge with <code>git commit</code> never runs pre-merge-commit. Before E-SEED3.W4, on main pre-commit refused it and into an epic it landed ungated until the epic walk re-checked the seam.</td></tr>
+      <tr><th>Choice</th><td>The workflow skill says: resolve conflicts by merging the target into the work branch first, so the gated merge is clean. Since E-SEED3.W4, pre-commit runs that same gate when <code>MERGE_HEAD</code> is present (the follow-up this record named landed): into an epic the WU gate, into main the epic gate then <code>keel check</code>. It runs the gate instead of a separate lint, so a hand-finished merge behaves as the clean path git sends to pre-merge-commit. A merge commit is therefore allowed on main, where the merge-only rule refuses only non-merge commits (UC-GATE-1).</td></tr>
+      <tr><th>Lineage</th><td>W6 open point 10; <a href="../backlog/e-seed-v2.html#b7">backlog B7</a>; E-SEED3.W4.</td></tr>
     </table>
 
     <h3 id="dec-52">DEC-52 · Docs are written by a shipped writing skill; the tool checks only what it can count</h3>
