@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af834e69f34851f0dfb245e" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-RGUARD.W1 result: the router checklists</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>W1 · The router's moment-of-action checklists</h1>
+      <p>The rule the router already knew now has a short form it must run before the call. This report keeps, changes or drops every hunk of the audit's patch, with the reason, and names what the guard plugin still has to enforce.</p>
+      <div class="meta">T3 · wu-result · 2026-11-14 · E-RGUARD.W1 · wu/E-RGUARD/w1-interim-checklist · plan <code>c6982a5</code></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">What landed</h2>
+<div data-item="outcome" data-c="outcome">
+  <p><b>Delivered, with the commit left to you.</b> The router skill now ships a short checklist to run at the moment of action — START, WAKE and DISPATCH — and the shipped rules the eight misses named say when to run it: the brief file on every host, the DSH fleet wake, and the audit's three ambiguities. The file lands in both skill trees byte-identical, <code>keel init</code> plants it, and the embed list and the shipped-skill inventory agree with the code.</p>
+  <p><b>What is not done here:</b> every skill byte is rule-bearing, so the commit that carries it is yours and this run stops at the staged command. The WU test and doc notes, <code>keel preflight</code> and the review follow your commit, because each binds its tip — the exact sequence is in "Follow-ups".</p>
+</div>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-c="today-after">
+  <thead><tr><th></th><th>Before</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>The router starts or wakes</td><td>It read the 400-line rule once and worked from memory</td><td>It runs a 7-row START list first and a 5-row WAKE list on every wake</td></tr>
+    <tr><td>A dispatch</td><td>On DSH the prompt carried the brief and no file did</td><td>The brief file is written and read back on every host; a stale one is a finding</td></tr>
+    <tr><td>A DSH fleet runs</td><td>The turn could close with live workers and nothing armed</td><td>One fleet wake is armed before the first dispatch, re-armed on each wake, and it stops with the last worker</td></tr>
+  </tbody>
+</table>
+
+<h2 id="hunks">The patch, hunk by hunk</h2>
+<p>The audit's patch (<code>.router/checks/router-fix.patch</code>, 11 file diffs, <code>git apply --check</code> clean) was the start, not the answer. Nothing was dropped whole; two hunks changed materially and three were trimmed. Every file was applied by editing it in place, then the five mirrored files were copied so both trees stay byte-identical.</p>
+
+<table data-c="hunks-table">
+  <thead><tr><th>File</th><th>Hunk</th><th>Decision and reason</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>SKILL.md</code></td>
+      <td>The DSH "posture is unenforced" bullet</td>
+      <td><b>Changed.</b> The five existing lines stay; two are appended: run START before the first tool call, WAKE on every wake, and K13 as what skipping cost. The patch replaced the bullet with nine lines that also named the D2 seam (<code>tools/pre-execute</code>, <code>agent/turn-stopping</code>) and said "so building it is not a design question". That is D2's design and it also sits in the backlog row; in a shipped skill it is a paragraph with no trigger. The appended lines are the trigger.</td>
+    </tr>
+    <tr>
+      <td><code>SKILL.md</code></td>
+      <td>The session-start preamble</td>
+      <td><b>Kept.</b> START comes before step 1, the numbered steps are its project halves, and a restart, a reboot, a compaction and an owner message are wakes.</td>
+    </tr>
+    <tr>
+      <td><code>SKILL.md</code></td>
+      <td>The brief bullet</td>
+      <td><b>Kept, tightened.</b> Every dispatch writes <code>&lt;ROOT&gt;/.router/briefs/&lt;name&gt;.md</code> and reads it back; on DSH the same text is the <code>worker_spawn</code> prompt and the file is still written. This closes cause (e): the old line made the file look optional on DSH, and a session skipped it "to move fast".</td>
+    </tr>
+    <tr>
+      <td><code>SKILL.md</code></td>
+      <td>The watchdog bullet and the no-heartbeat ruling</td>
+      <td><b>Kept, one sentence dropped.</b> Dropped "The launcher's watchdog watches Claude sessions only, so on DSH it reports an empty fleet": a fact about Keel's launcher inside a shipped skill, and it is already in project-router and in "Wake on DSH". Kept: arm the fleet wake before the first dispatch, never close a turn with a live worker and nothing armed, and the single stated exception to the 2026-11-11 no-timer ruling.</td>
+    </tr>
+    <tr>
+      <td><code>references/checklists.md</code> (new)</td>
+      <td>START (7), WAKE (5), DISPATCH (4)</td>
+      <td><b>Kept, two rows rewritten, one added.</b> (1) START.2 said "everything else — a plan, a config, a backlog row … — is a worker's", which contradicts the posture's read tools and would leave a router unable to brief; it now reads: read tools for dispatch, verification and relaying, never for deriving the substance, and never a document a worker was just sent to read. (2) START.4 gained the model and effort check, which the audit counted as a miss and only the long form had. (3) START.1 said "run 2-6 by hand" with seven rows; it says 2-7. WAKE and DISPATCH are as the patch wrote them, including the denial row that M4 lacked.</td>
+    </tr>
+    <tr>
+      <td><code>references/worker-ops.md</code></td>
+      <td>The wake checklist</td>
+      <td><b>Kept.</b> The 12-line quoted paragraph becomes an ordered list with the host split, and the Claude Code guard is named as the thing that denies timers.</td>
+    </tr>
+    <tr>
+      <td><code>references/worker-ops.md</code></td>
+      <td>"Wake on DSH"</td>
+      <td><b>Kept, one bullet dropped.</b> Dropped "The brief carries the signal … <code>DONE|BLOCKED|QUESTION</code> in <code>&lt;worktree&gt;/.router-ready.&lt;name&gt;</code>": a new worker-side file with no gate, no test and no reader a router can trust, and <code>worker_status</code> plus <code>worker_output</code> already answer "idle or waiting on a question". If a machine-readable signal is wanted, D2 defines it. Kept: one wake per fleet, armed before the first dispatch, re-armed on every wake, stopped with the last worker; never close a turn with a live worker and nothing armed.</td>
+    </tr>
+    <tr>
+      <td><code>references/brief-skeleton.md</code></td>
+      <td>The file on every host; the two rows</td>
+      <td><b>Kept, the DSH row without the marker.</b> The Parallel WU row now says a worktree add is a worker's where the launcher is not allowed (M3). The DSH row says the report is the last assistant message and a question is the last message of a turn that ended.</td>
+    </tr>
+    <tr>
+      <td><code>references/lessons.md</code></td>
+      <td>K13 and K14</td>
+      <td><b>Kept, moved after K12.</b> The patch inserted them between K11 and K12; the list is in id order, so K13 and K14 are appended. Their text is unchanged except that K13 now ends by pointing at the checklist.</td>
+    </tr>
+    <tr>
+      <td><code>.claude/skills/project-router/SKILL.md</code></td>
+      <td>"On DSH (checked 2026-11-14)"</td>
+      <td><b>Kept, one line added.</b> The right tier for the launcher and preset facts: the project skill, no mirror, and the launcher denial, the worktree rule, the fleet wake and "a denial is final" are Keel's, not general router doctrine. One line now points the router at the checklists until D2 lands. <code>docs/backlog/dsh.html#d2</code> is the file the section cites, and it exists.</td>
+    </tr>
+    <tr>
+      <td>The five mirrored files</td>
+      <td><code>.claude/skills/keel-router/*</code></td>
+      <td><b>Kept byte-identical.</b> <code>diff -r skills/keel-router .claude/skills/keel-router</code> is silent, and the new file is in the embed list so <code>keel init</code> plants it.</td>
+    </tr>
+    <tr>
+      <td>Not in the patch</td>
+      <td><code>src/init.rs</code>, <code>tests/init.rs</code></td>
+      <td><b>Added.</b> A shipped skill that gains a file needs its <code>include_str!</code> entry or <code>keel init</code> never plants it and the inventory test stays red. The test file gains the new reference in its required list and one test for this WU's contract.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="d2">What the D2 epic must still enforce</h2>
+<p>The checklist is a rule a willing router runs. It is not a guard, and the transcript that started this WU is proof that a known rule does not fail a call. D2 owns these, and this WU leaves them where the plugin can find them:</p>
+<ul data-c="d2-list">
+  <li><b>A deny at <code>tools/pre-execute</code></b>, fail-closed, over every call reduced to plain words exactly as <code>scripts/router-guard.jq</code> reduces it: the read tools, writes under <code>.router/briefs/</code>, the worker tools, the project's watch command and the launcher's shapes pass; everything else is denied with the rule and the alternative named. <code>keel mr</code>, merge, push, tag, <code>claude</code>, <code>kill</code> and any other script never pass.</li>
+  <li><b>Four <code>agent/turn-stopping</code> checks with <code>agent.steer()</code></b>, the four failures the checklists name: a worker spawned with no brief file written that turn (DISPATCH.1); a closing message with no <code>What you need to do now:</code> (START.7, WAKE.5); live workers with no wake armed (START.6, WAKE.3); a call denied that turn that the closing message does not name (WAKE.4).</li>
+  <li><b>The DSH fleet wake stays a wake, not a poll</b>: one reminder per fleet, re-armed each time, stopped with the last worker. If the plugin can wake the router on a worker's turn end, the reminder goes and this exception with it.</li>
+  <li><b>When the plugin lands, the checklist is deleted or demoted</b>. Two guards for one rule is how they drift.</li>
+</ul>
+
+<h2 id="gate">What no gate reviews</h2>
+<p>The code review gate binds <code>code_paths = src/ tests/</code>. It sees the embed entry and the new test, and it never reads a byte of the rule text — which is the part that changes a router's behaviour. So this WU's real diff needs the independent review the project-router skill names for rule-bearing paths outside <code>code_paths</code>, or your own read of <code>skills/keel-router/references/checklists.md</code> before you sign.</p>
+
+<h2 id="details">Details</h2>
+
+<h3 id="evidence-h">Evidence</h3>
+<div data-item="evidence" data-c="evidence">
+  <p><b>Red, before the change was wired in.</b> The new test failed at its first assertion — <code>keel init did not plant checklists.md</code> — and <code>embedding_is_complete_and_prefixed</code> failed on the map of <code>skills/</code> against what <code>keel init</code> wrote (the new file was in the source tree and in no build).</p>
+  <p><b>Green, after one entry in the embed list.</b> <code>cargo test --test init</code>: 19 passed, 0 failed, including the two self-hosting tests, which build their clone from the index and so see the staged tree. The new test asserts: both trees byte-identical; <code>keel init</code> plants the file byte-equal; <code>SKILL.md</code> names it under "The router posture" and "Session start" and names "Wake on DSH" where the no-timer ruling lives; each list names its trigger and keeps its rows (7, 5, 4); the four D2 checks each have a row; and the file carries no project path and no epic id.</p>
+  <p><b>Raw gates.</b></p>
+  <ul>
+    <li><code>cargo clippy --all-targets -- -D warnings</code>: exit 0.</li>
+    <li><code>cargo test --no-fail-fast</code>: exit 101. Every target green — unit 80, <code>cli</code> 19, <code>init</code> 19, <code>mr</code> 27, <code>release</code> 5, <code>review</code> 1, <code>verify_doc</code> 23, <code>verify_dod</code> 51 — except <code>--test router</code>: 55 passed, 3 failed, all watch tests (<code>watch_polls_at_its_default_pace_and_times_out_in_minutes</code>, <code>watch_pushed_and_tagged_fire_on_origin_only</code>, <code>watch_signed_and_merged_report_the_note_and_how_the_tip_landed</code>). The same suite with <code>--test-threads=1</code>: 58 passed, 0 failed.</li>
+    <li><code>keel verify-doc docs/work/2026-11-14-erguard-plan.html</code> and <code>…-result.html</code>: exit 0, no output.</li>
+    <li><code>keel check</code>: exit 1, <code>check red - lint/tests failed; not cached</code>. The lint half is green (clippy exit 0); the test half fails only on six <code>watch_*</code> tests in <code>--test router</code> — <code>watch never reached poll 1</code>, <code>watch never returned</code> — which are the load-dependent ones of backlog R43. Single-threaded the same suite is green.</li>
+    <li><code>cargo fmt --check</code>: <b>red, 16 files, and red at the base commit too</b> — the repository's code is not formatted to rustfmt's default width and this WU touched neither the formatter nor those files. The project's lint gate is clippy (<code>[check] lint</code>); nothing ran <code>cargo fmt</code>, which would have rewritten 16 unrelated files.</li>
+    <li><b>The watch tests are red under parallel load in this sandbox only</b> (backlog R43; 3 failed in the parallel run above, 6 in <code>keel check</code>'s, 0 with <code>--test-threads=1</code>). None of them touches a skill file, and this WU changes no watcher.</li>
+  </ul>
+</div>
+
+<h3 id="deviations-h">Deviations</h3>
+<div data-item="deviations" data-c="deviations">
+  <ul>
+    <li><b>The rule-bearing commit is yours, so the WU evidence follows it.</b> This report and the plan are committed; the change is staged. Notes, preflight and review bind a tip, and the tip here is your <code>keel mr commit</code>, so they run after it. An unattended run cannot write a note on a commit it may not make.</li>
+    <li><b>The <code>.router-ready</code> marker is gone</b> (worker-ops, brief-skeleton), against the patch, with the reason in the table above.</li>
+    <li><b>Two hunks are not the patch's wording</b> (the DSH bullet, START.2) and one sentence was dropped from the DSH fleet-wake bullet; each reason is in the table.</li>
+    <li><b>No hunk was applied with <code>git apply</code></b>: the edits went into the working tree by hand so the rewrites above could be made in place, and the mirrors were copied from <code>skills/</code> afterwards.</li>
+  </ul>
+</div>
+
+<h3 id="distill-h">Distillation</h3>
+<div data-item="distillation" data-c="distillation">
+  <p><b>Nothing citable yet</b>: this is a T3 report of a WU, and the epic is still open. At epic close UC-ROUTE-6's "On DSH" row and UC-ROUTE-5's DSH row carry the checklists and the fleet wake; one DSH decision record carries the fleet-wake exception; <code>docs/backlog/dsh.html#d2</code> keeps the four checks above and points the plugin at the file it replaces.</p>
+</div>
+
+<h3 id="followups-h">Follow-ups</h3>
+<div data-item="follow-ups" data-c="follow-ups">
+  <p>After your <code>keel mr commit</code>, on its new tip:</p>
+  <ol>
+    <li><code>keel notes write test</code> (integration: <code>tests/init.rs</code>, unit waived — the code change is one constant entry) and <code>keel notes write doc</code>.</li>
+    <li><code>keel preflight wu &lt;tip&gt; --target epic/E-RGUARD</code>, then the review the preflight names; the rule text needs the independent review above.</li>
+    <li><code>keel verify-dod wu &lt;tip&gt; --target epic/E-RGUARD</code> red on <code>8·manual-review</code> only, then <code>keel mr confirm wu &lt;tip&gt; --as vuluu --target epic/E-RGUARD</code>.</li>
+  </ol>
+  <p>The rest is the D2 epic: the deny, the four turn-stopping checks, and the launcher allow-rule the preset needs.</p>
+</div>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
