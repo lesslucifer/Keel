@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af804799f34851f0dfb23fb" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-DSH.W3 result: the DSH router's worker recipe</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>W3 · The DSH router's worker recipe</h1>
+      <p>A router on DeepSeek Harness now has a recipe. It starts a worker in a worktree, steers it, reads its report from the transcript, and stops it. Claude Code's recipe is unchanged.</p>
+      <div class="meta">T3 · wu-result · 2026-11-14 · E-DSH.W3 · wu/E-DSH/w3-router · tip 667092c</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="what-landed">What landed</h2>
+<div data-item="outcome" data-c="outcome">
+  <p><b>Delivered.</b> The router skill teaches a DSH worker session beside the Claude Code one, and the project template asks a project which host it runs on.</p>
+  <ul>
+    <li><b>One transport table, dated 2026-11-14.</b> One row per mechanism and one column per host: dispatch, follow-up, report, fleet list, status, stop, permission preset. The DSH cells name <code>worker_spawn</code>, <code>worker_send</code>, <code>worker_output</code>, <code>worker_list</code>, <code>worker_status</code> and <code>worker_stop</code>. The table says to re-check the host's tool list, because DSH's worker tools are new.</li>
+    <li><b>A report that is not a message.</b> A DSH worker never messages the router. Its report is its transcript: the router reads it with <code>worker_output</code> at every wake and before every ask, and verifies its claims against git like any other report.</li>
+    <li><b>Subagent is not worker.</b> A DSH subagent inherits the router's directory, so it works in the router's checkout. A worker is the session <code>worker_spawn</code> starts in the worktree it names; that directory never changes. Worker work goes to <code>worker_spawn</code>; a subagent is only for a short read-only check.</li>
+    <li><b>The persona.</b> On DSH it is the worktree's <code>AGENTS.md</code> plus the skills plus the brief. There is no project-scoped agent definition to select and no per-worker preset to pass; the brief travels as <code>worker_spawn</code>'s prompt and must carry the goal, the hard rules and the report protocol in full.</li>
+    <li><b>The preset.</b> Always Auto Review, fixed: a medium call (an add, a commit, minting a request) runs, a high-risk call is denied, and there is no approval path — a denial is final. A worker in a linked git worktree runs <code>danger-full-access</code> since the host plugin <code>a93dff2</code>; one in a plain directory runs <code>workspace-write</code>.</li>
+    <li><b>The honest gap.</b> DSH has no shell-hook surface, so nothing enforces the router's tool whitelist or its Bash shapes until a guard plugin exists; the skill is the only guard. The router must hold itself to the whitelist, say that enforcement is missing, and never treat the gap as licence to do the work itself.</li>
+    <li><b>Template slots.</b> The project-router template gained a "Harness and permissions" block: the harness, the permission preset, and where the brief lives.</li>
+    <li><b>Claude Code is intact.</b> Its launcher, modes and table rows are as they were; the description no longer claims the skill is Claude Code only, and it now names DSH workers too.</li>
+  </ul>
+</div>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-c="today-after">
+  <thead><tr><th>When</th><th>Before</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>You run a router on DSH</td><td>No recipe: the skill was Claude Code only</td><td>One table: spawn a worker per worktree, steer it, read the transcript, stop it</td></tr>
+    <tr><td>A worker finishes a task</td><td>You expect a message, as on Claude Code</td><td>No message: the router reads <code>worker_output</code> and checks the claims against git</td></tr>
+    <tr><td>You fill in a project's router template</td><td>No slot for the host or its permissions</td><td>Harness, permission preset and brief location are asked for</td></tr>
+  </tbody>
+</table>
+
+<h2 id="case">The recipe, in steps</h2>
+<ol>
+  <li>The router calls <code>worker_spawn</code> with the worktree as the workspace, the brief as the prompt, and a handle as the name.</li>
+  <li>The worker runs; the router keeps its own checkout. A follow-up is one <code>worker_send</code>, queued after the worker's current turn.</li>
+  <li>The worker finishes and sends nothing. The router reads <code>worker_status</code> and then <code>worker_output</code>, at each wake and before each ask.</li>
+  <li>The router checks the transcript's claims against git, then ends the worker with <code>worker_stop</code> — idempotent, and a stopped worker is never revived.</li>
+</ol>
+
+<div class="diagram" data-c="transport-diagram">
+<pre class="mermaid">
+flowchart LR
+  R["Router session"] -->|"worker_spawn"| W["Worker in its worktree"]
+  R -->|"worker_send"| W
+  W --> T["Transcript"]
+  R -->|"worker_output"| T
+  R -->|"worker_stop"| W
+  R -->|"worker_list / worker_status"| F["Fleet view"]
+</pre>
+<div class="caption">The router acts on the worker, never the reverse: the worker's only output is its transcript.</div>
+</div>
+
+<h2 id="deviations">Deviations</h2>
+<div data-item="deviations" data-c="deviations">
+  <ul>
+    <li><b>No WU plan doc.</b> This WU skipped its own <code>wu-plan</code>, as W1 did. The epic plan's W3 section is the only plan it has.</li>
+    <li><b>The owner made the commit.</b> The first attempt was blocked: the skills are rule-bearing, and an agent must not self-authorise. The owner committed through <code>keel mr commit</code>; <code>667092c</code> carries the <code>Reviewed-By</code> trailer.</li>
+    <li><b>The table was written without subagent delegation.</b> The review environment had no subagent delegation at that depth, so the round's fleet counts show zero finders and the reviewer noted it. The table's facts were checked against the epic plan, the installed tool list and the Claude Code worker recipes by one agent.</li>
+    <li>No other deviation: <code>src/</code>, the other skills and the Claude Code recipe are untouched.</li>
+  </ul>
+</div>
+
+<h2 id="details">Details</h2>
+
+<h3 id="evidence">Evidence</h3>
+<div data-item="evidence" data-c="evidence">
+  <ul>
+    <li><b>The content test.</b> <code>tests/init.rs::router_skill_carries_the_dsh_transport_and_the_template_its_slots</code> reads the shipped skill and asserts: the description no longer says "Claude Code only"; the transport table has all seven mechanism rows and names every one of the six DSH worker tools; the table is per host and says to re-check the tool list; the report-from-transcript, subagent-is-not-worker, persona and unenforced-posture rules are stated; the template has the harness, permission-preset and brief-location slots; and no other shipped skill names a DSH tool or the DSH host.</li>
+    <li><b>Both skill roots are byte-identical.</b> The test compares <code>skills/keel-router/SKILL.md</code> with <code>.claude/skills/keel-router/SKILL.md</code>, and the template with its twin; they match. The commit changed both copies in step.</li>
+    <li><b>The template slots.</b> <code>references/project-router-template.md</code> carries <code>| Harness |</code>, <code>| Permission preset |</code> and <code>| Brief location |</code>.</li>
+    <li><b>The review.</b> The <code>cr/v1</code> note on <code>667092c</code> reads PASS: round 1, 0 blockers, 0 importants, 2 waived wording nits. Its full verdict, and the fix-PASS on the report commit, live on that note.</li>
+    <li><b>Lint and tests.</b> <code>cargo clippy --all-targets -- -D warnings</code> is clean, and the serial full suite is green. The commit is text plus one content test; the new test is the only test it adds.</li>
+    <li><b>Docs touched.</b> This report. The WU itself touched no doc; it is measured against the <a href="2026-11-13-dsh-plan.html">E-DSH epic plan</a>, whose W3 section was committed on the epic branch before the work.</li>
+  </ul>
+</div>
+
+<h3 id="distillation">Distillation</h3>
+<div data-item="distillation" data-c="distillation">
+  <p>This is a T3 doc, so its truth lands at epic close and then this doc archives under <code>docs/.archive/</code>. Three topics leave it.</p>
+  <ul>
+    <li><b>Router transport on a host without hooks.</b> How a DSH router dispatches and steers workers, and why the report is read from the transcript instead of delivered as a message. It goes to the amended router use case and its DSH companion.</li>
+    <li><b>The unenforced posture.</b> DSH has no hook surface, so the router's tool whitelist is a self-imposed rule until a guard plugin exists. It goes to the decision record on the router's posture.</li>
+    <li><b>The preset decision.</b> Always Auto Review, fixed for every DSH session — a medium call runs, a high-risk call is denied, there is no approval path — and the linked-worktree worker's permission mode. It goes to the DSH permissions use case and its decision.</li>
+  </ul>
+</div>
+
+<h3 id="follow-ups">Follow-ups</h3>
+<div data-item="follow-ups" data-c="follow-ups">
+  <ul>
+    <li><b>The router guard plugin.</b> A backlog row: a DSH plugin that enforces the router's tool whitelist and Bash shapes, so the honest gap above closes.</li>
+    <li><b>Re-check the DSH tool list when the worker plugin changes.</b> The transport table is dated and says so; a rename changes one cell.</li>
+    <li>None else. Worker cold resume and a DSH watchdog stay out of scope, as the epic plan says.</li>
+  </ul>
+</div>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    // keep diagram source readable for the diff layer (mermaid replaces it with SVG)
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
