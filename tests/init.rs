@@ -878,6 +878,56 @@ fn an_unreadable_lock_is_kept_and_init_finishes() {
     }
 }
 
+/// Review r2 blocker: a `.keel/skills.lock` that is a symlink is kept as found - init never reads or
+/// writes through it, so a plain init cannot overwrite the link's target with lock text.
+#[test]
+fn a_symlinked_lock_is_kept_and_its_target_untouched() {
+    let d = fresh_repo();
+    let p = d.path();
+    let elsewhere = TempDir::new().unwrap();
+    let target = elsewhere.path().join("notes.txt");
+    let sentinel = "my own notes, not a lock\n";
+    std::fs::write(&target, sentinel).unwrap();
+    std::fs::create_dir_all(p.join(".keel")).unwrap();
+    std::os::unix::fs::symlink(&target, p.join(".keel/skills.lock")).unwrap();
+
+    let o = keel_in(p, &["init"], "");
+    let t = text(&o);
+    assert!(o.status.success(), "{t}");
+    assert!(t.contains("kept      .keel/skills.lock") && t.contains("symlink"), "the link is reported: {t}");
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), sentinel, "init wrote through the link");
+    assert_eq!(std::fs::read_link(p.join(".keel/skills.lock")).unwrap(), target);
+    assert!(t.contains("next:"), "init finished: {t}");
+    assert!(p.join(".claude/skills/project-router/SKILL.md").exists() && p.join(".claude/settings.json").exists(), "{t}");
+}
+
+/// Review r2 important: a lock that is readable but not writable, whose body must change, is kept and
+/// reported; init finishes wiring the clone instead of stopping at the lock write.
+#[test]
+fn a_read_only_lock_is_kept_and_init_finishes() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = fresh_repo();
+    let p = d.path();
+    assert!(keel_in(p, &["init"], "").status.success());
+    let wf = p.join(".claude/skills/keel-workflow/SKILL.md");
+    let shipped = std::fs::read(&wf).unwrap();
+    let old = b"keel-workflow before the upgrade\n";
+    std::fs::write(&wf, old).unwrap();
+    let lock_path = p.join(".keel/skills.lock");
+    let lock = std::fs::read_to_string(&lock_path).unwrap().replace(&sha256_hex(&shipped), &sha256_hex(old));
+    std::fs::write(&lock_path, &lock).unwrap();
+    std::fs::set_permissions(&lock_path, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+    let o = keel_in(p, &["init"], "");
+    let t = text(&o);
+    assert!(o.status.success(), "the lock write must not end init: {t}");
+    assert!(t.contains("updated   .claude/skills/keel-workflow/SKILL.md"), "{t}");
+    assert!(t.contains("kept      .keel/skills.lock") && t.contains("not writable"), "the failed write is reported: {t}");
+    assert!(t.contains("next:"), "init finished: {t}");
+    assert!(p.join(".claude/skills/project-router/SKILL.md").exists() && p.join(".codex/hooks.json").exists(), "{t}");
+    assert_eq!(std::fs::read_to_string(&lock_path).unwrap(), lock, "the old lock is kept");
+}
+
 /// The harness hooks, as installed, do nothing with a foreign keel first on PATH: exit 0, no verify-doc.
 #[test]
 fn harness_hooks_exit_0_and_never_call_verify_doc_on_a_foreign_keel() {

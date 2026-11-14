@@ -266,14 +266,44 @@ fn skill_action(current: Option<&[u8]>, build: &[u8], locked: Option<&str>) -> S
     }
 }
 
+/// What is at `.keel/skills.lock`, read without following it: a symlink is never followed (a write
+/// would land on its target, wherever that is), and anything that is not a readable file is kept.
+enum LockState {
+    Absent,
+    Readable(String),
+    Kept(&'static str),
+}
+
+fn lock_state(repo: &Path) -> LockState {
+    match std::fs::symlink_metadata(repo.join(LOCK)) {
+        Err(_) => LockState::Absent,
+        Ok(meta) if meta.file_type().is_symlink() => LockState::Kept("a symlink; init never reads or writes through it"),
+        Ok(_) => match std::fs::read_to_string(repo.join(LOCK)) {
+            Ok(text) => LockState::Readable(text),
+            Err(_) => LockState::Kept("exists but is not a readable file"),
+        },
+    }
+}
+
+/// Write the lock, or report it and keep its bytes: a lock init cannot write must never stop init
+/// half-wired, exactly as a lock init cannot read does not.
+fn write_lock(repo: &Path, body: &str, verb: &str, out: &mut impl Write) {
+    let written = std::fs::create_dir_all(repo.join(".keel")).and_then(|_| std::fs::write(repo.join(LOCK), body));
+    match written {
+        Ok(()) => writeln!(out, "  {verb} {LOCK}").ok(),
+        Err(e) => writeln!(out, "  kept      {LOCK} (not writable: {e}; the skills are written, init carries on)").ok(),
+    };
+}
+
 /// Write the embedded skills. Missing -> create; equal -> unchanged; differs -> upgrade when the lock
 /// says keel wrote these bytes, else ask (or `force`). The lock is written when a skill was written or
 /// it exists, so a tree whose skills all match and that has no lock (Keel's own) stays untouched.
 fn skills(repo: &Path, force: bool, input: &mut impl BufRead, out: &mut impl Write) -> Result<(), String> {
-    let lock_text = std::fs::read_to_string(repo.join(LOCK)).ok();
-    // like any unreadable path init meets: kept, said so, never overwritten; every differing file asks
-    let unreadable = lock_text.is_none() && repo.join(LOCK).symlink_metadata().is_ok();
-    let old = lock_text.as_deref().map(parse_lock).unwrap_or_default();
+    let state = lock_state(repo);
+    let old = match &state {
+        LockState::Readable(text) => parse_lock(text),
+        _ => BTreeMap::new(),
+    };
     let mut lock = old.clone();
     let mut wrote = false;
     for (path, body) in SKILLS {
@@ -323,14 +353,16 @@ fn skills(repo: &Path, force: bool, input: &mut impl BufRead, out: &mut impl Wri
         }
     }
     let body = format_lock(&lock);
-    if unreadable {
-        writeln!(out, "  kept      {LOCK} (exists but is not a readable file; every differing skill file asks)").ok();
-    } else if lock_text.as_deref() == Some(body.as_str()) {
-        writeln!(out, "  unchanged {LOCK}").ok();
-    } else if lock_text.is_some() || wrote {
-        std::fs::create_dir_all(repo.join(".keel")).map_err(|e| format!("keel: mkdir .keel: {e}"))?;
-        std::fs::write(repo.join(LOCK), &body).map_err(|e| format!("keel: write {LOCK}: {e}"))?;
-        writeln!(out, "  {} {LOCK}", if lock_text.is_some() { "updated  " } else { "created  " }).ok();
+    match &state {
+        LockState::Kept(why) => {
+            writeln!(out, "  kept      {LOCK} ({why}; every differing skill file asks)").ok();
+        }
+        LockState::Readable(text) if *text == body => {
+            writeln!(out, "  unchanged {LOCK}").ok();
+        }
+        LockState::Absent if !wrote => {}
+        LockState::Readable(_) => write_lock(repo, &body, "updated  ", out),
+        LockState::Absent => write_lock(repo, &body, "created  ", out),
     }
     // never delete: report files in a keel-* dir that this build does not ship
     let mut stack = vec![repo.join(".claude/skills")];
