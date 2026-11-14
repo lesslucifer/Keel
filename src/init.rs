@@ -421,11 +421,9 @@ mod tests {
     fn the_skill_link_is_planted_only_under_a_real_agents_directory() {
         assert_eq!(agents_dir(LinkState::Missing), AgentsDir::Create);
         assert_eq!(agents_dir(LinkState::RealDir), AgentsDir::Real);
-        for (state, found) in [
-            (LinkState::Symlink(PathBuf::from("../shared")), "../shared"),
-            (LinkState::RealFile, "regular file"),
-            (LinkState::Unreadable, "unreadable link"),
-        ] {
+        for (state, found) in
+            [(LinkState::Symlink(PathBuf::from("../shared")), "../shared"), (LinkState::RealFile, "regular file"), (LinkState::Unreadable, "unreadable link")]
+        {
             let why = kept_dir(state);
             assert!(why.contains(found), "the report names what was found at .agents: {why}");
             assert!(why.contains("real .agents directory"), "the report says what a relative target needs: {why}");

@@ -440,7 +440,10 @@ fn router_skill_carries_the_dsh_transport_and_the_template_its_slots() {
     for tool in ["worker_spawn", "worker_send", "worker_output", "worker_list", "worker_status", "worker_stop"] {
         assert!(table.contains(&format!("`{tool}`")), "the transport table never names {tool}");
     }
-    assert!(table.contains("Claude Code") && table.contains("DSH") && table.contains("re-check"), "the table is not per-host, or says nothing about re-checking the host's tool list");
+    assert!(
+        table.contains("Claude Code") && table.contains("DSH") && table.contains("re-check"),
+        "the table is not per-host, or says nothing about re-checking the host's tool list"
+    );
 
     assert!(skill.contains("`worker_output` at every wake and before every ask"), "SKILL.md does not read a DSH report from the transcript");
     assert!(skill.contains("A DSH subagent is not a worker"), "SKILL.md does not keep the worker-vs-subagent rule");
