@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af88fbd9f34851f0dfb24bf" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-TESTOPT.W2 plan: bounded waits</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-TESTOPT.W2 · A test that proves "never" stops waiting out the full bound</h1>
+      <p>The watcher test that takes 20 s and fails in a worker's sandbox becomes a 2 s test that passes there.</p>
+      <div class="meta">T3 · WU plan · 2026-11-15 · epic <code>E-TESTOPT</code> · WU <code>E-TESTOPT.W2</code> · ready without owner review (owner ruling 2026-11-15)</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p><code>watcher_run_is_bounded_when_the_watch_outpolls_its_releases</code> proves that the router tests give up on a watch that is never released. To prove it, it waits out the router tests' one 10-second bound, twice: 20.1 s, the slowest test by four times. Then it lists processes with <code>ps</code> to check the sleep shim exited. The sandbox blocks <code>ps</code>, so the test fails in every worker's sandbox (backlog R43, second half).</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-c="today-after">
+  <thead><tr><th></th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>The watcher test</td><td>20.1 s; red in a worker's sandbox</td><td>About 2 s; green there</td></tr>
+    <tr><td>A wait for something that must happen</td><td>10 s bound</td><td>Unchanged: 10 s</td></tr>
+  </tbody>
+</table>
+
+<h2 id="terms">Terms</h2>
+<table data-c="terms">
+  <tbody>
+    <tr><th>Stepped watch</th><td>A run of <code>scripts/router-watch.sh</code> whose polls a test releases one by one through a <code>sleep</code> shim.</td></tr>
+    <tr><th>Bound</th><td>How long a test helper waits before it fails the test.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="work">The work</h2>
+<p data-item="requirement" data-c="requirement">The stepped-watch helpers take their bound as an argument, a test that expects a watch never to move passes a short one, and the check that the sleep shim exited reads the shim's own pid file instead of <code>ps</code>, so the watcher test runs under 3 s and passes in a worker's sandbox while still failing when the helpers stop bounding a never-released watch.</p>
+<p data-item="maps-to" data-c="maps-to">Epic <code>E-TESTOPT</code>, its W2 block · backlog R43, second half · testing charter: no sleep as synchronization, fast and isolated.</p>
+<p data-item="expected" data-c="expected">In a worker's sandbox, with the CLT git first on <code>PATH</code> (W1 fixes the stock path), <code>cargo test --test router watcher_run_is_bounded</code> passes in under 3 s; it is red today (20.1 s, <code>ps</code>: Operation not permitted). Every other router test passes as before. No production script changes.</p>
+
+<ul data-c="changes">
+  <li><code>Stepped::at_within(n, bound)</code> and <code>Stepped::output_within(bound)</code>; <code>at</code> and <code>output</code> call them with the 10 s <code>BOUND</code>. <code>Watcher::run_within(…, bound)</code>; <code>run</code> calls it with <code>BOUND</code>.</li>
+  <li>The watcher test passes a 500 ms bound to the three "never" waits. Before it asks for poll 2 or the output, it waits for poll 1 under the full bound, so the shims it later checks are known to have started.</li>
+  <li>The sleep shim appends its pid to <code>$STEP_DIR/pids</code>. The test reads every pid there and waits, under the full bound, until <code>kill -0</code> fails for each one.</li>
+</ul>
+
+<h2 id="testplan">Test plan</h2>
+<div data-item="test-plan" data-c="test-plan">
+  <ul>
+    <li><b>Integration</b> (<code>tests/router.rs</code>): the watcher test itself, red first in the sandbox. It asserts each "never" wait fails with its message, takes at least the short bound and less than <code>BOUND</code>, and that the shims it started (at least two pids) all exit. Mutant checks, each run red then restored green: (1) <code>output_within</code> loses its bound: the test must hang or fail, not pass; (2) <code>at_within</code> loses its bound: the same; (3) the shim stops exiting with its caller (<code>kill -0 "$PPID"</code> removed): the shim-exit wait must fail; (4) the shim writes no pid: the at-least-two-pids assertion must fail.</li>
+    <li><b>Unit</b>: the bound helper is checked by the elapsed-time assertions above (at least the bound passed, under <code>BOUND</code>). A separate unit test would spawn the same watch; the crate has no in-process seam for these helpers.</li>
+    <li><b>Sweep</b>: the other slow tests in the baseline (the facts block 5.0 s, the launcher 3.8 to 4.5 s, review, close walk, seed3, mr) wait for nothing to its bound. The launcher's own polls (<code>listed</code> 50 × 0.2 s, the busy stop 60 × 0.5 s) already run through an instant <code>sleep</code> (<code>fast_path</code>). No other test catches a bound's panic. Recorded in the result; no change.</li>
+    <li><b>Observable</b>: the test's time before and after, and <code>cargo test --test router</code> wall time before and after, in the result.</li>
+  </ul>
+</div>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
