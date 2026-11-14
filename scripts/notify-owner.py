@@ -6,17 +6,23 @@ and the one chat it may write to are read from the Claude Code Telegram
 channel's own state; neither the token nor the chat id is ever printed.
 `--check` asks Telegram who the bot is and sends nothing; `--dry-run` validates
 the body and prints the request without reaching the network; `--send` posts and
-prints the Telegram message id. A body read from `.router/notify/owner.md` is
-emptied after it lands, so a later bare `--send` cannot resend it.
+prints the Telegram message id.
+
+A body read from `.router/notify/owner.md` must be writable. The message is
+reported with `id N` only after that file is emptied, so a later bare `--send`
+cannot resend it. A body that is not writable fails before sending (nothing is
+sent); a clear that fails after the send names the sent id and the file, and
+prints no `id N`.
 
 No command-line argument can choose a file, credential, chat or endpoint. The
-KEEL_NOTIFY_ENV, KEEL_NOTIFY_ACCESS and KEEL_NOTIFY_API_BASE variables are the
-test seam: a normal invocation sets none of them and uses this host's channel.
+KEEL_NOTIFY_ENV, KEEL_NOTIFY_ACCESS, KEEL_NOTIFY_API_BASE and
+KEEL_NOTIFY_TIMEOUT variables are the test seam: a normal invocation sets none.
 """
 
 import argparse
 import json
 import os
+import socket
 import sys
 import urllib.error
 import urllib.parse
@@ -27,6 +33,7 @@ DEFAULT_ENV = Path.home() / ".claude" / "channels" / "telegram" / ".env"
 DEFAULT_ACCESS = Path.home() / ".claude" / "channels" / "telegram" / "access.json"
 DEFAULT_BODY = Path(".router") / "notify" / "owner.md"
 DEFAULT_API_BASE = "https://api.telegram.org"
+DEFAULT_TIMEOUT = 15.0
 TOKEN_KEY = "TELEGRAM_BOT_TOKEN"
 MAX_TEXT = 4096
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
@@ -55,6 +62,16 @@ def check_api_base(value):
     if parts.scheme != "https" and not (parts.scheme == "http" and host in LOOPBACK):
         raise NotifyError("KEEL_NOTIFY_API_BASE must be https (http is allowed for loopback only)")
     return value
+
+
+def check_timeout(value):
+    try:
+        seconds = float(value)
+    except ValueError:
+        raise NotifyError("KEEL_NOTIFY_TIMEOUT is not a number") from None
+    if not 0 < seconds <= 120:
+        raise NotifyError("KEEL_NOTIFY_TIMEOUT must be between 0 and 120 seconds")
+    return seconds
 
 
 def read_env(path):
@@ -101,14 +118,6 @@ def read_body(path):
     return body
 
 
-def clear_body(path):
-    # A body left in place would be sent again by the next bare --send; empty it, best effort.
-    try:
-        Path(path).write_text("", encoding="utf-8")
-    except OSError:
-        pass
-
-
 def check_text(text):
     if not text or not text.strip():
         raise NotifyError("the message is empty")
@@ -117,12 +126,12 @@ def check_text(text):
     return text
 
 
-def request(method, token, api_base, payload):
+def request(method, token, api_base, payload, timeout):
     url = api_base.rstrip("/") + "/bot" + token + "/" + method
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {} if data is None else {"Content-Type": "application/json"}
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=headers), timeout=15) as response:
+        with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=headers), timeout=timeout) as response:
             raw = response.read()
     except urllib.error.HTTPError as error:
         detail = ""
@@ -133,9 +142,15 @@ def request(method, token, api_base, payload):
             detail = ""
         suffix = f" ({detail})" if detail else ""
         raise NotifyError(f"Telegram returned HTTP {error.code}{suffix}") from None
+    except (TimeoutError, socket.timeout):
+        raise NotifyError("cannot reach the Telegram API: timed out") from None
     except urllib.error.URLError as error:
-        # Only an OS strerror is safe: a raw reason can echo the request target, token included.
-        detail = getattr(getattr(error, "reason", None), "strerror", None)
+        # Only an OS strerror or the exception class is safe: a raw reason can echo the
+        # request target, token included.
+        reason = getattr(error, "reason", None)
+        detail = getattr(reason, "strerror", None)
+        if not detail and isinstance(reason, BaseException):
+            detail = reason.__class__.__name__
         suffix = f": {one_line(detail)}" if isinstance(detail, str) and detail else ""
         raise NotifyError("cannot reach the Telegram API" + suffix) from None
     except Exception:
@@ -161,10 +176,11 @@ def main(argv):
         parser.error("give exactly one of --send, --dry-run, --check")
 
     api_base = check_api_base(os.environ.get("KEEL_NOTIFY_API_BASE", DEFAULT_API_BASE))
+    timeout = check_timeout(os.environ.get("KEEL_NOTIFY_TIMEOUT", str(DEFAULT_TIMEOUT)))
     token = read_env(os.environ.get("KEEL_NOTIFY_ENV", str(DEFAULT_ENV)))
 
     if args.check:
-        bot = request("getMe", token, api_base, None)
+        bot = request("getMe", token, api_base, None, timeout)
         if not isinstance(bot, dict) or not bot.get("id"):
             raise NotifyError("Telegram did not name the bot")
         username = bot.get("username")
@@ -177,6 +193,8 @@ def main(argv):
     if from_file:
         text = read_body(DEFAULT_BODY)
     text = check_text(text)
+    if from_file and not os.access(DEFAULT_BODY, os.W_OK):
+        raise NotifyError(f"cannot clear {DEFAULT_BODY}: it is not writable; the message was not sent")
     chat = read_chat(os.environ.get("KEEL_NOTIFY_ACCESS", str(DEFAULT_ACCESS)))
 
     if args.dry_run is not None:
@@ -184,13 +202,18 @@ def main(argv):
         print(text, end="" if text.endswith("\n") else "\n")
         return 0
 
-    result = request("sendMessage", token, api_base, {"chat_id": chat, "text": text})
+    result = request("sendMessage", token, api_base, {"chat_id": chat, "text": text}, timeout)
     message_id = result.get("message_id") if isinstance(result, dict) else None
     if message_id is None:
         raise NotifyError("Telegram did not return a message id")
-    print(f"id {message_id}")
     if from_file:
-        clear_body(DEFAULT_BODY)
+        try:
+            DEFAULT_BODY.write_text("", encoding="utf-8")
+        except OSError as error:
+            raise NotifyError(
+                f"the message was sent (id {message_id}), but {DEFAULT_BODY} could not be cleared: {error.strerror or error}; a later bare --send would resend it"
+            ) from None
+    print(f"id {message_id}")
     return 0
 
 

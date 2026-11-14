@@ -18,7 +18,7 @@
 <h2 id="outcome">What landed</h2>
 <div data-item="outcome" data-c="outcome">
   <p><b>Delivered, with the rule-bearing commit left to you.</b> <code>scripts/notify-owner.py</code> posts the router's owner message to the already-paired Telegram bot and prints <code>id N</code>; <code>--dry-run</code> validates the body and prints the request without reaching the network; <code>--check</code> asks <code>getMe</code> and sends nothing. The same file runs on DSH and Claude Code. Neither the token nor the chat id is printed, a sent body file is emptied, and a failure is one line and exits non-zero.</p>
-  <p><b>Proven here:</b> from this checkout, <code>--check</code> reached the real API and named <code>@MyClaudeCodeAssistantbot (id 8027058808)</code> without sending; <code>--dry-run</code> printed the request and a closed port in the test proves it sends nothing; nine integration tests cover the three modes, the failure line, the no-credential and no-chat rules, the cleared body, the https/loopback rule and a malformed token. The Claude router guard allows the three plain shapes and the body write, and the new guard test pins the boundary.</p>
+  <p><b>Proven here:</b> from this checkout, <code>--check</code> reached the real API and named <code>@MyClaudeCodeAssistantbot (id 8027058808)</code> without sending; <code>--dry-run</code> printed the request and a closed port in the test proves it sends nothing; twelve integration tests cover the three modes, the failure line, the no-credential and no-chat rules, the cleared body, the read-only body, the https/loopback rule, a malformed token, the address the request actually uses, and the injectable timeout. The Claude router guard allows the three plain shapes and the body write, and the new guard test pins the boundary.</p>
   <p><b>What is not done here:</b> the skill bullet, the guard and the settings entries are rule-bearing, so the commit is yours and this run stops at the staged command. The WU notes and preflight on the owner's new tip follow the same pattern as W1 (the tip changes under them). No real message was sent; the first one is yours.</p>
 </div>
 
@@ -58,9 +58,21 @@
   </tbody>
 </table>
 
+<h2 id="cr1">Code review round 1 fixes</h2>
+<table data-c="cr1-fixes">
+  <thead><tr><th>Finding</th><th>Fix and evidence</th></tr></thead>
+  <tbody>
+    <tr><td><b>Important</b> — the body clear swallowed its error and <code>id N</code> was printed first</td><td>The clear is part of success. A body that is not writable fails <b>before</b> sending, one line naming the file and saying the message was not sent; after a send the file is emptied <b>before</b> <code>id N</code> is printed, and a clear that still fails names the sent id and the file and prints no <code>id N</code>. Tests: the read-only body fails with the body unchanged (red on the old sender); the writable body is cleared; a preview and a failed send leave the body.</td></tr>
+    <tr><td><b>Important</b> — the send tests never asserted <code>chat_id</code></td><td>Both send cases parse the mock's raw request body and assert <code>chat_id</code> is the paired chat and the text is the body. A constant <code>read_chat</code> made both fail with <code>the wrong chat was addressed</code>; restored, 12/12 pass.</td></tr>
+    <tr><td>Nit — no test for a bare dry run or a failed send over a body</td><td>New case: a bare <code>--dry-run</code> and a 500 <code>--send</code> both leave <code>owner.md</code> intact.</td></tr>
+    <tr><td>Nit — the cleartext test used public <code>example.com</code></td><td>Uses <code>evil.invalid</code>; the rule is exercised with no possible egress.</td></tr>
+    <tr><td>Nit — the 15 s timeout was untested</td><td>Covered: a loopback server accepts and stalls, <code>KEEL_NOTIFY_TIMEOUT=0.2</code> makes the bound injectable, and the failure is one line (<code>cannot reach the Telegram API: timed out</code>) with no traceback. On the old sender the case failed (the bound was fixed).</td></tr>
+  </tbody>
+</table>
+
 <h2 id="evidence">Evidence</h2>
 <div data-item="evidence" data-c="evidence">
-  <p><b>Commits:</b> <code>eff724b</code> (epic plan W2 card and the W2 plan), <code>7fe78c1</code> (sender and its test), <code>0f189ce</code> (the owner's guard/skill/settings commit), <code>a8b5f79</code> (the round-1 fix; code tip). This report is the next commit; the corrected skill bullet is staged on top for <code>keel mr commit</code>.</p>
+  <p><b>Commits:</b> <code>eff724b</code> (epic plan W2 card and the W2 plan), <code>7fe78c1</code> (sender and its test), <code>0f189ce</code> (the owner's guard/skill/settings commit), <code>a8b5f79</code> (the owner-review fix), <code>160d8aa</code> (the corrected skill bullet), and this fix commit (the code-review-round-1 fix; code tip).</p>
   <p><b>Real <code>--check</code> (reaches the API, sends no message):</b></p>
   <pre>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-RGUARD-w2-notify-owner &amp;&amp; scripts/notify-owner.py --check
 check ok: @MyClaudeCodeAssistantbot (id 8027058808)</pre>
@@ -76,7 +88,7 @@ cd /Users/nguyenvanluong/Documents/proj/misc/Keel &amp;&amp; git status --short<
   <pre>scripts/notify-owner.py --check  -&gt; {"risk":"low","reason":"script contains no destructive call","script":{"kind":"python","withinWorkspace":true}}
 scripts/notify-owner.py --send   -&gt; {"risk":"low","reason":"script contains no destructive call"}
 scripts/router-worker.sh spawn x y z opus -&gt; {"risk":"high","reason":"script redirection to a system or sensitive path"}</pre>
-  <p><b>Tests (red then green):</b> with the sender absent, <code>cargo test --test notify_owner</code> failed 6/6; the old sender then failed the three new cases (chat printed, body kept, cleartext accepted) at <code>FAILED. 6 passed; 3 failed</code>. After the fix, <code>9 passed; 0 failed</code>, every case spawning the file directly. The guard test <code>router_guard_allows_the_owner_sender_only_as_a_plain_shape</code> passes 1/1, and <code>cargo test --test router -- --test-threads=1</code> is 59/59 (the base's R43 watch reds are parallel-load only). <code>cargo clippy --all-targets -- -D warnings</code> is green; the test file is rustfmt-clean.</p>
+  <p><b>Tests (red then green):</b> with the sender absent, <code>cargo test --test notify_owner</code> failed 6/6. At the owner review the old sender failed the three then-new cases at <code>FAILED. 6 passed; 3 failed</code>. At code review round 1 the old sender failed the read-only-body and stalled-timeout cases at <code>FAILED. 10 passed; 2 failed</code>; after the fix, <code>12 passed; 0 failed</code>, every case spawning the file directly. Mutation evidence for the chat: a constant <code>read_chat</code> failed both send cases with <code>the wrong chat was addressed</code>; restored, 12/12. The guard test <code>router_guard_allows_the_owner_sender_only_as_a_plain_shape</code> passes 1/1, and <code>cargo test --test router -- --test-threads=1</code> is 59/59 (the base's R43 watch reds are parallel-load only). <code>cargo clippy --all-targets -- -D warnings</code> is green; the test file is rustfmt-clean.</p>
 </div>
 
 <h2 id="distillation">Distillation</h2>

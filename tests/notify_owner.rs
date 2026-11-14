@@ -1,7 +1,8 @@
 //! E-RGUARD.W2: the router's owner-notify sender, spawned as the router runs it.
 //! The script posts one message to the paired Telegram bot and prints its id; these tests
 //! pin its three modes against a local mock API, its failure line, the no-redirection rule,
-//! and that neither the credential nor the chat id reaches stdout or stderr.
+//! the chat it actually addresses, and that neither the credential nor the chat id reaches
+//! stdout or stderr.
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -9,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
 
@@ -44,17 +45,24 @@ fn channel() -> TempDir {
 }
 
 /// Run the sender as the router does: the file itself, no interpreter named on the command line.
-/// The three KEEL_NOTIFY_* variables are the only redirection, and only this test sets them.
-fn run(dir: &TempDir, args: &[&str], api_base: &str) -> Output {
-    common::cmd(script())
+/// The KEEL_NOTIFY_* variables are the only redirection, and only this test sets them.
+fn run_with(dir: &TempDir, args: &[&str], api_base: &str, extra: &[(&str, &str)]) -> Output {
+    let mut command = common::cmd(script());
+    command
         .args(args)
         .env("KEEL_NOTIFY_ENV", dir.path().join(".env"))
         .env("KEEL_NOTIFY_ACCESS", dir.path().join("access.json"))
         .env("KEEL_NOTIFY_API_BASE", api_base)
         .current_dir(dir.path())
-        .stdin(Stdio::null())
-        .output()
-        .unwrap()
+        .stdin(Stdio::null());
+    for (key, value) in extra {
+        command.env(key, value);
+    }
+    command.output().unwrap()
+}
+
+fn run(dir: &TempDir, args: &[&str], api_base: &str) -> Output {
+    run_with(dir, args, api_base, &[])
 }
 
 fn stdout(out: &Output) -> String {
@@ -69,6 +77,15 @@ fn assert_no_credential(out: &Output) {
     let shown = stdout(out) + &stderr(out);
     assert!(!shown.contains(TOKEN), "the credential reached the output");
     assert!(!shown.contains(CHAT), "the chat id reached the output");
+}
+
+/// The JSON body the mock captured, so a test can assert which chat the sender addressed.
+fn sent_payload(request: &str) -> serde_json::Value {
+    let body = request
+        .split("\r\n\r\n")
+        .nth(1)
+        .expect("the request has no body");
+    serde_json::from_str(body).expect("the send body is not JSON")
 }
 
 /// A port nothing listens on: a dry run that tried to send would fail to connect.
@@ -117,6 +134,20 @@ fn mock(status: &'static str, body: &'static str) -> (String, Receiver<String>, 
         stream.write_all(response.as_bytes()).unwrap();
     });
     (format!("http://{addr}"), rx, handle)
+}
+
+/// A loopback server that accepts and never answers, so an injectable timeout can be exercised.
+fn stalled_server() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            std::thread::sleep(Duration::from_millis(1500));
+        }
+    });
+    format!("http://{addr}")
 }
 
 #[test]
@@ -198,10 +229,13 @@ fn send_prints_the_id_and_never_the_credential() {
     server.join().unwrap();
     assert!(out.status.success(), "send failed: {}", stderr(&out));
     assert_eq!(stdout(&out), "id 1731\n");
-    assert!(
-        seen.contains("/sendMessage") && seen.contains("hello owner"),
-        "send carried the wrong payload"
+    let payload = sent_payload(&seen);
+    assert_eq!(
+        payload["chat_id"].as_str(),
+        Some(CHAT),
+        "the wrong chat was addressed"
     );
+    assert_eq!(payload["text"].as_str(), Some("hello owner"));
     assert_no_credential(&out);
 }
 
@@ -221,8 +255,16 @@ fn bare_send_reads_and_clears_the_body_so_it_cannot_resend_a_stale_message() {
     server.join().unwrap();
     assert!(out.status.success(), "send failed: {}", stderr(&out));
     assert_eq!(stdout(&out), "id 7\n");
+    let payload = sent_payload(&seen);
+    assert_eq!(
+        payload["chat_id"].as_str(),
+        Some(CHAT),
+        "the wrong chat was addressed"
+    );
     assert!(
-        seen.contains("Sign-off ready") && seen.contains("keel mr confirm"),
+        payload["text"]
+            .as_str()
+            .is_some_and(|t| t.contains("Sign-off ready") && t.contains("keel mr confirm")),
         "send carried the wrong body"
     );
     assert_no_credential(&out);
@@ -239,6 +281,68 @@ fn bare_send_reads_and_clears_the_body_so_it_cannot_resend_a_stale_message() {
         "a cleared body must fail as empty: {problem}"
     );
     assert_no_credential(&again);
+}
+
+#[test]
+fn preview_and_failed_send_leave_the_body_in_place() {
+    let dir = channel();
+    let body = dir.path().join(".router/notify/owner.md");
+    std::fs::create_dir_all(body.parent().unwrap()).unwrap();
+    std::fs::write(&body, "Keep me\n").unwrap();
+    let preview = run(&dir, &["--dry-run"], &closed_base());
+    assert!(
+        preview.status.success(),
+        "a bare dry run failed: {}",
+        stderr(&preview)
+    );
+    assert_eq!(
+        std::fs::read_to_string(&body).unwrap(),
+        "Keep me\n",
+        "a preview truncated the body"
+    );
+    let (base, request, server) = mock(
+        "500 Internal Server Error",
+        r#"{"ok":false,"error_code":500,"description":"boom"}"#,
+    );
+    let failed = run(&dir, &["--send"], &base);
+    request.recv_timeout(Duration::from_secs(10)).unwrap();
+    server.join().unwrap();
+    assert!(!failed.status.success(), "a 500 send must fail");
+    assert_eq!(
+        std::fs::read_to_string(&body).unwrap(),
+        "Keep me\n",
+        "a failed send truncated the body"
+    );
+    assert_no_credential(&preview);
+    assert_no_credential(&failed);
+}
+
+#[test]
+fn a_read_only_body_fails_before_sending_and_names_the_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = channel();
+    let body = dir.path().join(".router/notify/owner.md");
+    std::fs::create_dir_all(body.parent().unwrap()).unwrap();
+    std::fs::write(&body, "Owner action\n").unwrap();
+    std::fs::set_permissions(&body, std::fs::Permissions::from_mode(0o444)).unwrap();
+    let out = run(&dir, &["--send"], &closed_base());
+    assert!(!out.status.success(), "a read-only body must fail");
+    assert!(stdout(&out).is_empty(), "a failure writes stdout");
+    let problem = stderr(&out);
+    assert_eq!(problem.lines().count(), 1, "{problem:?}");
+    assert!(
+        problem.contains("owner.md")
+            && problem.contains("not writable")
+            && problem.contains("not sent"),
+        "{problem}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&body).unwrap(),
+        "Owner action\n",
+        "the body was changed"
+    );
+    std::fs::set_permissions(&body, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_no_credential(&out);
 }
 
 #[test]
@@ -281,7 +385,7 @@ fn bare_send_without_a_body_is_one_line_and_sends_nothing() {
 #[test]
 fn cleartext_http_is_refused_for_a_non_loopback_host() {
     let dir = channel();
-    let out = run(&dir, &["--check"], "http://example.com");
+    let out = run(&dir, &["--check"], "http://evil.invalid");
     assert!(
         !out.status.success(),
         "cleartext http to another host must be refused"
@@ -308,5 +412,23 @@ fn a_malformed_token_never_echoes_the_request_target() {
         !shown.contains("bad token") && !shown.contains("secret"),
         "{shown}"
     );
+    assert_no_credential(&out);
+}
+
+#[test]
+fn a_stalled_server_times_out_in_one_line() {
+    let dir = channel();
+    let base = stalled_server();
+    let started = Instant::now();
+    let out = run_with(&dir, &["--check"], &base, &[("KEEL_NOTIFY_TIMEOUT", "0.2")]);
+    assert!(!out.status.success(), "a stalled server must fail");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "the timeout was not injectable: {:?}",
+        started.elapsed()
+    );
+    let problem = stderr(&out);
+    assert_eq!(problem.lines().count(), 1, "{problem:?}");
+    assert!(problem.contains("Telegram API"), "{problem}");
     assert_no_credential(&out);
 }
