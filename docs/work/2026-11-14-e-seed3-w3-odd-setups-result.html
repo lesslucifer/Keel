@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af837c39f34851f0dfb246c" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-SEED3.W3 WU result</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-SEED3.W3 · The gate in odd setups — result</h1>
+      <p>Three setups you did not expect no longer change what the gate or the tests see. Each has a guard and its regression test.</p>
+      <div class="meta">T3 · WU result · 2026-11-14 · Keel · branch <code>wu/E-SEED3/w3-odd-setups</code> off <code>epic/E-SEED3</code> <code>99f72e8</code> · <a href="2026-11-14-e-seed3-w3-odd-setups-plan.html">WU plan</a> · epic <a href="2026-11-13-e-seed3-epic-plan.html#w3">E-SEED3 plan</a>, block W3</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">What happened</h2>
+<p data-item="outcome" data-c="outcome">Delivered as planned. A push that inherits an index path leaves your real index alone. A WU signed off or verified by a bare commit id is measured against the epic its branch holds, or refuses and asks for the target; it is never a guess of main. No test spawn reads your global or system git config. One thing changed from the brief: no owner sign-off commit is staged, because no rule-bearing path changes here (see Deviations).</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-c="owner-changes">
+  <thead><tr><th>When</th><th>Before</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>You push while <code>GIT_INDEX_FILE</code> is set</td><td>The pushed tree lands in your real index</td><td>Your index is untouched</td></tr>
+    <tr><td>You sign off or verify a WU by its sha</td><td>A false red on <code>4·review-base</code></td><td>Green against its epic, or a refusal naming <code>--target</code></td></tr>
+    <tr><td>Your git config has a signing key or log setting</td><td>Tests can differ on your machine</td><td>Tests read no global or system config</td></tr>
+  </tbody>
+</table>
+
+<h2 id="deviations">Deviations</h2>
+<div data-item="deviations" data-c="deviations">
+  <ul>
+    <li><b>No rule-bearing file is touched, so no owner <code>keel mr commit</code> is staged.</b> The brief expected one for UC-NOTE-1, UC-GATE-2, DEC-15 and DEC-41. Those docs are T2 (<code>docs/use-cases/</code>, <code>docs/decisions/</code>) and <code>rule_bearing</code> names <code>docs/*.html</code>, which matches flat docs only; the keel-workflow rows would be rule-bearing, but a staged change makes <code>keel preflight</code> red on <code>0·tree</code> and the owner's commit needs the owner present. The exact wording is in Distillation, for the epic close, as W2 did for its use cases. <b>Recommendation:</b> the epic close applies those amendments and the two keel-workflow rows in one owner <code>keel mr commit</code>.</li>
+    <li><b>B10 is proven at the spawn, not by running a whole keel fixture under a hostile config.</b> The guard spawns git through <code>tests/common</code> with a hostile <code>~/.gitconfig</code> and a hostile <code>GIT_CONFIG_SYSTEM</code> and asserts neither is read; the whole suite then runs under the same isolation. A repository's own config still applies, which the fixtures rely on.</li>
+  </ul>
+</div>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+  <ul>
+    <li>Commits: <code>8d14e15</code> WU plan · <code>c79ddbe5</code> the code and tests (its test note written while it was HEAD; <code>keel verify-dod commit c79ddbe5</code> green, checks <code>notes, manifest, doc-note</code>) · this report.</li>
+    <li><b>Red first, on the unchanged gate:</b> <code>a_push_check_with_an_inherited_index_file_leaves_the_real_index_alone</code> failed at <code>the pushed tree was written into the real index</code>; <code>every_test_spawn_ignores_the_developers_git_config</code> saw <code>tag.gpgsign=true</code> and <code>log.showsignature=true</code>; <code>a_bare_wu_tip_is_measured_against_its_epic_or_refused_with_a_target</code> failed <code>FAIL 4·review-base review base fcbc06a5d5 != current merge-base 04d98e3357</code> (with <code>5·diff-binding</code> following); <code>a_sign_off_on_a_bare_wu_tip_measures_it_against_its_epic</code> failed the same <code>4·review-base</code> in <code>mr confirm</code>.</li>
+    <li><b>Integration,</b> <code>tests/cli.rs</code>: <code>a_push_check_with_an_inherited_index_file_leaves_the_real_index_alone</code> (the pushed sha is proven in the scratch checkout; the real index is byte-identical and <code>git status</code> is clean) · <code>every_test_spawn_ignores_the_developers_git_config</code>. <code>tests/verify_dod.rs</code>: <code>a_bare_wu_tip_is_measured_against_its_epic_or_refused_with_a_target</code> (the receipt's base is the epic's commit; a detached commit no branch holds is refused with <code>--target</code> and no <code>4·review-base</code>). <code>tests/mr.rs</code>: <code>a_sign_off_on_a_bare_wu_tip_measures_it_against_its_epic</code> (the <code>mr/v1</code> base is the epic's commit).</li>
+    <li><b>Unit,</b> <code>src/gate.rs</code>: <code>a_bare_tip_resolves_through_its_wu_holders_else_one_epic_branch_and_refuses_everything_else</code> · <code>the_resolution_reads_the_configured_prefixes_and_never_picks_main_over_a_holder</code> (every subset of a five-branch pool, with <code>release/</code> and <code>task/</code> prefixes).</li>
+    <li><b>Green:</b> <code>cargo fmt --check</code> · <code>cargo clippy --all-targets -- -D warnings</code> · <code>cargo test -- --test-threads=1</code>: every binary green except <code>tests/router.rs</code>, whose 10-second bound tests time out under this sandbox's load (<code>watch never reached poll 1</code>, <code>no result within 10s</code>); each of those passes on its own, and the whole router binary passed twice in a quiet window. In parallel, <code>cargo test</code> fails the same router watch tests. Backlog R43, this sandbox only; no gate reviews that red, it is not this WU's code.</li>
+    <li>Docs touched: the WU plan and this report, both T3.</li>
+  </ul>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<p data-c="distillation-lead">Nothing lands in T1/T2 at this WU. The E-SEED3 close takes this wording.</p>
+<div data-item="distillation" data-c="distillation">
+  <ul>
+    <li><b>UC-NOTE-1</b> (<code>docs/use-cases/workflow.html</code>), appended: "A target is read from the branch a tip sits on. A tip that names no local branch - a bare commit id, <code>HEAD</code> on a detached checkout - is resolved from the branches that hold it, or refused; the writer is unaffected because it always writes on <code>HEAD</code>'s branch."</li>
+    <li><b>UC-GATE-2</b> (<code>docs/use-cases/workflow.html</code>), appended: "A WU tip given as a bare commit id is measured against the epic branch a local <code>wu/&lt;e&gt;/…</code> branch that holds it names, else the one local <code>epic/&lt;e&gt;</code> branch that holds it; no holder, or two epics, is a refusal whose fix line asks for <code>--target</code>. The gate never guesses <code>main</code> for a bare id."</li>
+    <li><b>DEC-15</b> (<code>docs/decisions/workflow-gates.html</code>), appended to Choice: "A tip that names no local branch (a bare commit id, <code>HEAD</code> on a detached checkout) is resolved before the naming rule: the epic of a <code>wu/</code> branch that holds it, else the one <code>epic/</code> branch that holds it; no holder or more than one epic refuses, asking for <code>--target</code>. <code>main</code> is never a guess for a WU. The note writer needs no such resolution: it always writes on <code>HEAD</code>'s branch (owner ruling 2026-11-14, E-SEED3.W3)." Rejected, added: "taking the first holder git prints; falling back to main when the tip is an ancestor of main; searching remote-tracking branches, since the checkout cannot measure what it does not have."</li>
+    <li><b>DEC-41</b> (<code>docs/decisions/workflow-gates.html</code>), appended to Choice: "The push check's scratch <code>git worktree add</code> and <code>worktree remove</code> strip <code>GIT_INDEX_FILE</code>, so a hook that pushes, or a shell that exported it, can never have the pushed tree written into the caller's real index; keel's other git calls keep it, as above. Every test spawn in <code>tests/common</code> also sets <code>GIT_CONFIG_GLOBAL=/dev/null</code> and <code>GIT_CONFIG_NOSYSTEM=1</code>, so the suite reads no developer global or system config (B10); a repository's own config still applies." Rejected, added: "stripping the config selectors from keel's own calls (they select a scope, not a repository)."</li>
+    <li><b>keel-workflow §1</b>, the "Branch names carry the target" bullet: append "A tip that names no local branch (a bare commit id) has no name to read: the gate takes the epic of a local <code>wu/&lt;e&gt;/…</code> branch that holds it, else the one local <code>epic/&lt;e&gt;</code> branch that holds it, and refuses asking for <code>--target</code> when none or more than one epic holds it. It never falls back to main."</li>
+    <li><b>keel-workflow §4</b>, the <code>keel verify-dod wu &lt;tip&gt;</code> block's comment: <code># target from the branch name, else main</code> becomes <code># target from the branch name; a bare tip's holder branches, or a refusal; --target overrides</code>.</li>
+    <li><b>Backlog:</b> <code>docs/backlog/e-seed-v2.html</code> B9 and B10 struck; <code>docs/backlog/e-router-v2.html</code> R7's bare-SHA row struck. All of the above is T2 or skill text and lands at the epic close; nothing is staged here.</li>
+  </ul>
+</div>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<div data-item="follow-ups" data-c="follow-ups">
+  <ul>
+    <li>The router watch tests stay red under parallel load in this sandbox (R43); this WU does not touch them. Destination: backlog R43, unchanged.</li>
+    <li>The <code>keel check</code> cache keys on the tree, not on the test-thread setting, so a green from a serial run is reused for a later parallel one. Destination: backlog B14 (E-GATEFIX), which already owns the cache key.</li>
+  </ul>
+</div>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
