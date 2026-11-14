@@ -509,6 +509,31 @@ fn every_test_spawn_strips_gits_env() {
     assert!(bad.is_empty(), "spawn through common::cmd:\n{}", bad.join("\n"));
 }
 
+/// Review round 1 (I1): the branch-to-target grammar has one home, so the gate's review base and the
+/// writer cannot drift apart. The `--target` form and the `wu/<e>/…` to epic derivation are written
+/// in `src/notes.rs` only; `main.rs` defines the config keys, and code after a `#[cfg(test)]` marker
+/// is a test, not counted.
+#[test]
+fn the_target_grammar_is_written_once_in_notes() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut bad = vec![];
+    for e in std::fs::read_dir(&src).unwrap() {
+        let f = e.unwrap().path();
+        let name = f.file_name().unwrap().to_string_lossy().into_owned();
+        if !f.extension().is_some_and(|x| x == "rs") || name == "notes.rs" {
+            continue;
+        }
+        let mut in_tests = false;
+        for (i, line) in std::fs::read_to_string(&f).unwrap().lines().enumerate() {
+            in_tests |= line.contains("#[cfg(test)]");
+            if !in_tests && (line.contains("\"--target\"") || (name != "main.rs" && line.contains("wu_prefix"))) {
+                bad.push(format!("{name}:{}: {}", i + 1, line.trim()));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "the target grammar is written again outside src/notes.rs:\n{}", bad.join("\n"));
+}
+
 /// W13: every process keel spawns is built inside `no_git_env(..)`; ssh-keygen never reads a repository.
 #[test]
 fn every_keel_spawn_strips_gits_env() {
