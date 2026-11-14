@@ -376,16 +376,55 @@ struct Range {
     target: String,
 }
 
-/// The ref a range is measured against, shared by the writer and the gate so both
-/// judge one range: `--target R`, else a `<wu_prefix><e>/..` tip's `<epic_prefix><e>`, else main.
-pub(crate) fn target(cfg: &Config, tip_ref: &str, args: &[&str]) -> String {
-    if let Some(t) = args.windows(2).find(|w| w[0] == "--target") {
-        return t[1].to_string();
-    }
+/// The one reader of the `--target R` form, so the writer and the gate cannot disagree on it.
+pub(crate) fn target_flag<'a>(args: &'a [&'a str]) -> Option<&'a str> {
+    args.windows(2).find(|w| w[0] == "--target").map(|w| w[1])
+}
+
+/// The epic branch a `<wu_prefix><e>/…` branch name names. The one branch-to-target derivation.
+pub(crate) fn epic_of(cfg: &Config, branch: &str) -> Option<String> {
     let b = &cfg.branches;
-    match tip_ref.strip_prefix(b.wu_prefix.as_str()).and_then(|r| r.split_once('/')) {
-        Some((epic, _)) if !epic.is_empty() => format!("{}{epic}", b.epic_prefix),
-        _ => cfg.branches.main.clone(),
+    branch
+        .strip_prefix(b.wu_prefix.as_str())
+        .and_then(|r| r.split_once('/'))
+        .filter(|(epic, _)| !epic.is_empty())
+        .map(|(epic, _)| format!("{}{epic}", b.epic_prefix))
+}
+
+/// The epic branch `<epic_prefix><e>` names, if `name` is one.
+pub(crate) fn epic_branch(cfg: &Config, name: &str) -> Option<String> {
+    let b = &cfg.branches;
+    name.strip_prefix(b.epic_prefix.as_str()).filter(|epic| !epic.is_empty()).map(|_| name.to_string())
+}
+
+/// The ref a range is measured against, shared by the writer and the gate so both judge one range:
+/// `--target R`, else a `<wu_prefix><e>/..` tip's `<epic_prefix><e>`, else main. A tip that names no
+/// branch (a bare commit id) resolves through `target_from_holders` first.
+pub(crate) fn target(cfg: &Config, tip_ref: &str, args: &[&str]) -> String {
+    match target_flag(args) {
+        Some(t) => t.to_string(),
+        None => epic_of(cfg, tip_ref).unwrap_or_else(|| cfg.branches.main.clone()),
+    }
+}
+
+/// The target a WU tip that names no local branch is measured against: the epic its `wu/` holders
+/// name, else the one `epic/` branch that holds it. Anything else is a refusal, never main by guess.
+pub(crate) fn target_from_holders(cfg: &Config, holders: &[String]) -> Result<String, String> {
+    let mut epics: Vec<String> = holders.iter().filter_map(|h| epic_of(cfg, h)).collect();
+    epics.sort();
+    epics.dedup();
+    match epics.as_slice() {
+        [epic] => return Ok(epic.clone()),
+        [] => {}
+        _ => return Err(format!("its wu branches name more than one epic: {}", epics.join(", "))),
+    }
+    let mut epic_branches: Vec<String> = holders.iter().filter_map(|h| epic_branch(cfg, h)).collect();
+    epic_branches.sort();
+    epic_branches.dedup();
+    match epic_branches.as_slice() {
+        [epic] => Ok(epic.clone()),
+        [] => Err("no wu or epic branch holds it, and main is not a guess this gate makes for a WU".into()),
+        _ => Err(format!("more than one epic branch holds it: {}", epic_branches.join(", "))),
     }
 }
 
@@ -1165,6 +1204,84 @@ mod tests {
 
     use super::{changed_text, own_diff_argv, own_diff_commands, parse_batch, shell_quote, union_of_z, OwnDiff};
     use super::{cr_counts, cr_lists, cr_verdict, waive, waiver_reason, CrNote, CrWrite, Identity};
+    use super::{epic_branch, epic_of, target, target_flag, target_from_holders};
+    use crate::Config;
+
+    fn cfg_with(branches: &str) -> Config {
+        toml::from_str(&format!("[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n{branches}[docs]\nroot = \"docs/\"\n")).unwrap()
+    }
+
+    #[test]
+    fn a_bare_tip_resolves_through_its_wu_holders_else_one_epic_branch_and_refuses_everything_else() {
+        let cfg = cfg_with("");
+        let target = |holders: &[&str]| {
+            let holders: Vec<String> = holders.iter().map(|h| h.to_string()).collect();
+            target_from_holders(&cfg, &holders)
+        };
+        assert_eq!(target(&["wu/e/a"]).unwrap(), "epic/e");
+        assert_eq!(target(&["wu/e/a", "wu/e/b", "epic/e", "main"]).unwrap(), "epic/e", "the wu branch's epic decides");
+        assert_eq!(target(&["epic/e", "main"]).unwrap(), "epic/e", "a merged WU's epic branch still holds it");
+        assert!(target(&[]).is_err());
+        assert!(target(&["main"]).is_err(), "main only is a refusal, not a guess");
+        let err = target(&["wu/a/x", "wu/b/y"]).unwrap_err();
+        assert!(err.contains("epic/a") && err.contains("epic/b"), "{err}");
+        assert!(target(&["epic/a", "epic/b"]).is_err(), "two epic branches are ambiguous");
+    }
+
+    #[test]
+    fn the_resolution_reads_the_configured_prefixes_and_never_picks_main_over_a_holder() {
+        let cfg = cfg_with("epic_prefix = \"release/\"\nwu_prefix = \"task/\"\n");
+        let pool = ["main", "release/e", "task/e/a", "task/f/b", "docs"];
+        for n in 0..(1 << pool.len()) {
+            let holders: Vec<String> = pool.iter().enumerate().filter(|(i, _)| n & (1 << i) != 0).map(|(_, h)| h.to_string()).collect();
+            // The candidates come from the one grammar, so this test cannot drift with it.
+            let mut wu_epics: Vec<String> = holders.iter().filter_map(|h| epic_of(&cfg, h)).collect();
+            wu_epics.sort();
+            wu_epics.dedup();
+            let mut epic_branches: Vec<String> = holders.iter().filter_map(|h| epic_branch(&cfg, h)).collect();
+            epic_branches.sort();
+            epic_branches.dedup();
+            let want = match (wu_epics.len(), epic_branches.len()) {
+                (1, _) => Ok(wu_epics[0].clone()),
+                (0, 1) => Ok(epic_branches[0].clone()),
+                _ => Err(()),
+            };
+            let got = target_from_holders(&cfg, &holders).map_err(|_| ());
+            assert_eq!(got, want, "holders {holders:?}");
+            if let Ok(t) = got {
+                assert_ne!(t, "main", "holders {holders:?}");
+            }
+        }
+    }
+
+    /// Review round 1 (I1): one grammar, read by the writer, the gate's holder path and the flag.
+    #[test]
+    fn the_writer_and_the_holder_path_read_one_branch_grammar_and_one_flag() {
+        for cfg in [cfg_with(""), cfg_with("epic_prefix = \"release/\"\nwu_prefix = \"task/\"\n")] {
+            let pool = ["main", "epic/e", "wu/e/a", "wu/e/b", "wu/f/c", "docs", "", "wu//x", "wu/e"];
+            for name in pool {
+                let holders = [name.to_string()];
+                match epic_of(&cfg, name) {
+                    Some(epic) => {
+                        assert_eq!(target(&cfg, name, &[]), epic, "a wu branch's target is the epic the holder path names: {name}");
+                        assert_eq!(target_from_holders(&cfg, &holders), Ok(epic), "{name}");
+                    }
+                    None => {
+                        assert_eq!(target(&cfg, name, &[]), cfg.branches.main, "only a wu branch name names an epic: {name}");
+                        match epic_branch(&cfg, name) {
+                            Some(epic) => assert_eq!(target_from_holders(&cfg, &holders), Ok(epic), "{name}"),
+                            None => assert!(target_from_holders(&cfg, &holders).is_err(), "{name}"),
+                        }
+                    }
+                }
+                // The flag is one reader, and it wins over every tip, as the writer and the gate both read it.
+                assert_eq!(target(&cfg, name, &["--target", "epic/x"]), "epic/x");
+                assert_eq!(target_flag(&["--target", "epic/x"]), Some("epic/x"));
+            }
+            assert_eq!(target_flag(&["--target"]), None, "a trailing flag with no value is no flag");
+            assert_eq!(target_flag(&["--target", "a", "--target", "b"]), Some("a"), "the first flag wins");
+        }
+    }
 
     fn raw(n: &CrNote) -> String {
         serde_json::to_string(n).unwrap()

@@ -392,7 +392,7 @@ pub(crate) struct Ready {
 /// cr note and checks 3-5 on it - is the one thing not yet required; everything else still is.
 pub(crate) fn sign_ready(repo: &Path, cfg: &Config, epic: bool, tip_ref: &str, rest: &[&str], waive: bool) -> Result<Option<Ready>, String> {
     let level = if epic { Level::Epic } else { Level::Wu };
-    let target = target_of(cfg, level, tip_ref, rest);
+    let target = target_of(repo, cfg, level, tip_ref, rest)?;
     let r = verify_with(repo, cfg, level, tip_ref, &target, !waive)?;
     if !r.failures.is_empty() {
         print(&r, "mr confirm");
@@ -599,9 +599,39 @@ fn level_of(s: &str) -> Result<Level, String> {
     }
 }
 
-/// Epic default target is main; a WU's is inferred from its branch (notes::target).
-fn target_of(cfg: &Config, level: Level, tip: &str, rest: &[&str]) -> String {
-    notes::target(cfg, if level == Level::Epic { "" } else { tip }, rest)
+/// Whether `name` is a local branch, so its name alone decides a WU's target.
+fn is_local_branch(repo: &Path, name: &str) -> bool {
+    git(repo, &["rev-parse", "--verify", "-q", &format!("refs/heads/{name}")], &[]).is_ok()
+}
+
+/// The local branches whose history holds `sha`, as git prints their short names.
+fn holders(repo: &Path, sha: &str) -> Result<Vec<String>, String> {
+    let args = ["for-each-ref", "--contains", sha, "--format=%(refname:short)", "refs/heads"];
+    Ok(git(repo, &args, &[])?.lines().map(String::from).collect())
+}
+
+fn unresolved_target(cfg: &Config, sha: &str, why: &str) -> String {
+    format!(
+        "keel: cannot tell which branch judges {} - {why}\n  fix -> name it: --target <the branch the WU is measured against>, e.g. --target {}<name>",
+        short(sha),
+        cfg.branches.epic_prefix
+    )
+}
+
+/// Epic default target is main; a WU's is inferred from its branch (notes::target). A tip that names
+/// no local branch - a bare commit id, `HEAD` on a detached checkout - is resolved from the branches
+/// that hold it, or refused: main is never a guess (e-router-v2 R7). The grammar itself lives in
+/// `notes`, so the writer and this gate read one rule.
+fn target_of(repo: &Path, cfg: &Config, level: Level, tip: &str, rest: &[&str]) -> Result<String, String> {
+    if level == Level::Epic || notes::target_flag(rest).is_some() || is_local_branch(repo, tip) {
+        return Ok(notes::target(cfg, if level == Level::Epic { "" } else { tip }, rest));
+    }
+    let sha = git(repo, &["rev-parse", &format!("{tip}^{{commit}}")], &[])?;
+    let target = notes::target_from_holders(cfg, &holders(repo, &sha)?).map_err(|why| unresolved_target(cfg, &sha, &why))?;
+    if !is_local_branch(repo, &target) {
+        return Err(unresolved_target(cfg, &sha, &format!("{target} is not a local branch, so the range cannot be measured")));
+    }
+    Ok(target)
 }
 
 pub fn verify_dod(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
@@ -611,7 +641,7 @@ pub fn verify_dod(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, Strin
         ["range", old, new] => range(repo, cfg, old, new, new),
         [lvl, tip, rest @ ..] => {
             let level = level_of(lvl)?;
-            run(repo, cfg, level, tip, &target_of(cfg, level, tip, rest), true)
+            run(repo, cfg, level, tip, &target_of(repo, cfg, level, tip, rest)?, true)
         }
         _ => Err(USAGE.into()),
     }
@@ -621,7 +651,7 @@ pub fn preflight_cmd(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, St
     match args {
         [lvl, tip, rest @ ..] => {
             let level = level_of(lvl)?;
-            preflight(repo, cfg, level, tip, &target_of(cfg, level, tip, rest))
+            preflight(repo, cfg, level, tip, &target_of(repo, cfg, level, tip, rest)?)
         }
         _ => Err(USAGE.into()),
     }

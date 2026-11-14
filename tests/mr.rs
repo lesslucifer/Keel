@@ -101,6 +101,34 @@ fn fixture() -> (TempDir, TempDir) {
     (d, k)
 }
 
+/// main → epic/e (with a commit of its own) → wu/e/a, so main's merge-base with the WU tip differs
+/// from the epic's: what a bare WU tip id has to resolve (e-router-v2 R7). HEAD on wu/e/a.
+fn fixture_where_the_epic_has_work() -> TempDir {
+    let d = TempDir::new().unwrap();
+    let p = d.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.email", "t@t"]);
+    git(p, &["config", "user.name", "t"]);
+    write(
+        p,
+        ".keel/config.toml",
+        "code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
+    );
+    ok(keel(p, &["mr", "setup", "--as", "t"]));
+    write(p, "README", "x");
+    commit(p, "base");
+    ok(keel(p, &["hooks", "install"]));
+    git(p, &["switch", "-q", "-c", "epic/e"]);
+    write(p, "src/epic.py", "def e():\n    return 0\n");
+    commit(p, "epic work");
+    git(p, &["switch", "-q", "-c", "wu/e/a"]);
+    write(p, "src/a.py", "def a():\n    return 1\n");
+    write(p, "tests/test_a.py", "def test_a():\n    pass\n");
+    write(p, "docs/work/a-result.html", RESULT);
+    commit(p, "wu a");
+    d
+}
+
 /// Commit `roster` on epic/e, the target that judges wu/e/a, and come back. Its first parent stays
 /// the fork point, so wu/e/a's base and every note on it are unchanged.
 fn land_roster(p: &Path, roster: &str) {
@@ -201,6 +229,21 @@ fn key_signed_confirm_lets_the_merge_through() {
     ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"]));
     let dod = git(p, &["notes", "--ref=dod", "show", "wu/e/a"]);
     assert!(dod.contains("manual-review"), "{dod}");
+}
+
+/// e-router-v2 R7: a sign-off on a bare WU tip id takes the epic that holds it, not main, so the range
+/// it signs is the range the review judged.
+#[test]
+fn a_sign_off_on_a_bare_wu_tip_measures_it_against_its_epic() {
+    let d = fixture_where_the_epic_has_work();
+    let p = d.path();
+    notes(p, &["test", "doc", "cr"]);
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let o = keel(p, &["mr", "confirm", "wu", tip.as_str(), "--as", "t"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let n = mr_note(p, &tip).unwrap();
+    assert_eq!(n["base"].as_str().unwrap(), git(p, &["rev-parse", "epic/e"]));
+    assert_ne!(n["base"].as_str().unwrap(), git(p, &["rev-parse", "main"]));
 }
 
 #[test]

@@ -183,6 +183,16 @@ fn git(repo: &Path, args: &[&str], envs: &[(&str, &Path)]) -> Result<String, Str
     ok_text(args, o)
 }
 
+/// The push check's scratch worktree calls only (B9): an inherited `GIT_INDEX_FILE` — git exports one
+/// to its hooks, a user may export one — would make `worktree add` write the pushed tree into the
+/// caller's real index. No scratch call needs an index the caller chose; keel's other git calls keep it.
+fn git_scratch(repo: &Path, args: &[&str]) -> Result<String, String> {
+    let mut c = no_git_env(Command::new("git"), false);
+    c.args(args).current_dir(repo);
+    let o = c.output().map_err(|e| format!("keel: cannot run git: {e}"))?;
+    ok_text(args, o)
+}
+
 /// `git <args>` with `input` on its stdin, its output returned whole: the caller reads the exit
 /// code and the raw bytes (a batch read, or a command whose exit 1 is an answer, not a failure).
 fn git_raw(repo: &Path, args: &[&str], input: Option<&[u8]>) -> Result<std::process::Output, String> {
@@ -305,10 +315,10 @@ fn check_push(repo: &Path, cfg: &Config, refspecs: &str) -> Result<i32, String> 
             // ponytail: the scratch worktree's check cache dies with it; re-pushing a non-HEAD sha re-runs check.
             let dir = git_dir(repo)?.join("keel-push-proof");
             let d = dir.to_string_lossy();
-            let _ = git(repo, &["worktree", "remove", "--force", &d], &[]);
-            git(repo, &["worktree", "add", "-q", "--detach", &d, sha], &[])?;
+            let _ = git_scratch(repo, &["worktree", "remove", "--force", &d]);
+            git_scratch(repo, &["worktree", "add", "-q", "--detach", &d, sha])?;
             let code = load_config(&dir).and_then(|c| check(&dir, &c));
-            let _ = git(repo, &["worktree", "remove", "--force", &d], &[]);
+            let _ = git_scratch(repo, &["worktree", "remove", "--force", &d]);
             code?
         };
         if code != 0 {

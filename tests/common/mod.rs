@@ -40,6 +40,10 @@ pub fn no_git_env(mut c: Command) -> Command {
     for k in GIT_LOCAL_ENV.iter().chain(&GIT_HOOK_ENV) {
         c.env_remove(k);
     }
+    // B10: no fixture reads the developer's global or system config (a signing key, tag.gpgSign,
+    // log.showSignature). A repo's own config still applies: it is part of what a test judges.
+    c.env("GIT_CONFIG_GLOBAL", "/dev/null");
+    c.env("GIT_CONFIG_NOSYSTEM", "1");
     c
 }
 

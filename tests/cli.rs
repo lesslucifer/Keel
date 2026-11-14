@@ -414,6 +414,61 @@ fn pre_push_from_a_linked_worktree_checks_the_pushed_sha_in_scratch() {
     assert_eq!(std::fs::read_to_string(&probe).unwrap().trim(), pushed);
 }
 
+/// B9: an inherited GIT_INDEX_FILE (a post-commit hook that pushes, or a shell that exported it) must
+/// not reach the scratch worktree, where `worktree add` would write the pushed tree into the real index.
+#[test]
+fn a_push_check_with_an_inherited_index_file_leaves_the_real_index_alone() {
+    let a = probe_repo(r#"git rev-parse HEAD > "$KEEL_PROBE""#);
+    let p = a.path();
+    git(p, &["switch", "-q", "-c", "x"]);
+    std::fs::write(p.join("new"), "new").unwrap();
+    git(p, &["add", "new"]);
+    git(p, &["commit", "-qm", "x"]);
+    let pushed = out(p, &["rev-parse", "x"]);
+    git(p, &["switch", "-q", "main"]);
+    let index = p.join(".git/index");
+    let before = std::fs::read(&index).unwrap();
+    let probe_dir = TempDir::new().unwrap();
+    let probe = probe_dir.path().join("probe");
+
+    let o = run_env(
+        env!("CARGO_BIN_EXE_keel"),
+        p,
+        &["hook", "pre-push", "origin"],
+        &[("GIT_INDEX_FILE", index.to_str().unwrap()), ("KEEL_PROBE", probe.to_str().unwrap())],
+        &format!("refs/heads/x {pushed} refs/heads/x {}\n", "0".repeat(40)),
+    );
+
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(std::fs::read_to_string(&probe).unwrap().trim(), pushed, "the scratch checkout did not prove the pushed sha");
+    assert!(std::fs::read(&index).unwrap() == before, "the pushed tree was written into the real index");
+    assert_eq!(out(p, &["status", "--porcelain"]), "", "the real checkout now reports the pushed tree as staged");
+}
+
+/// B10: no test reads the developer's global or system git config. A spawn through `tests/common`
+/// with a hostile ~/.gitconfig and a hostile system config selector sees neither.
+#[test]
+fn every_test_spawn_ignores_the_developers_git_config() {
+    let d = TempDir::new().unwrap();
+    let home = d.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let hostile = home.join(".gitconfig");
+    std::fs::write(&hostile, "[tag]\n\tgpgSign = true\n[log]\n\tshowSignature = true\n").unwrap();
+
+    let o = cmd("git")
+        .args(["config", "--list"])
+        .current_dir(d.path())
+        .env("HOME", &home)
+        .env("XDG_CONFIG_HOME", home.join("xdg"))
+        .env("GIT_CONFIG_SYSTEM", &hostile)
+        .output()
+        .unwrap();
+
+    let list = String::from_utf8(o.stdout).unwrap();
+    assert!(o.status.success(), "{list}");
+    assert!(!list.to_lowercase().contains("gpgsign") && !list.contains("showSignature"), "the developer's git config reached git: {list}");
+}
+
 #[test]
 fn the_strip_lists_cover_gits_local_env_vars() {
     let o = run("git", Path::new("/"), &["rev-parse", "--local-env-vars"]);
@@ -452,6 +507,31 @@ fn raw_spawns(dir: &Path, git_free: &[&str]) -> Vec<String> {
 fn every_test_spawn_strips_gits_env() {
     let bad = raw_spawns(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests"), &["jq", "ps", "kill"]);
     assert!(bad.is_empty(), "spawn through common::cmd:\n{}", bad.join("\n"));
+}
+
+/// Review round 1 (I1): the branch-to-target grammar has one home, so the gate's review base and the
+/// writer cannot drift apart. The `--target` form and the `wu/<e>/…` to epic derivation are written
+/// in `src/notes.rs` only; `main.rs` defines the config keys, and code after a `#[cfg(test)]` marker
+/// is a test, not counted.
+#[test]
+fn the_target_grammar_is_written_once_in_notes() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut bad = vec![];
+    for e in std::fs::read_dir(&src).unwrap() {
+        let f = e.unwrap().path();
+        let name = f.file_name().unwrap().to_string_lossy().into_owned();
+        if !f.extension().is_some_and(|x| x == "rs") || name == "notes.rs" {
+            continue;
+        }
+        let mut in_tests = false;
+        for (i, line) in std::fs::read_to_string(&f).unwrap().lines().enumerate() {
+            in_tests |= line.contains("#[cfg(test)]");
+            if !in_tests && (line.contains("\"--target\"") || (name != "main.rs" && line.contains("wu_prefix"))) {
+                bad.push(format!("{name}:{}: {}", i + 1, line.trim()));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "the target grammar is written again outside src/notes.rs:\n{}", bad.join("\n"));
 }
 
 /// W13: every process keel spawns is built inside `no_git_env(..)`; ssh-keygen never reads a repository.
