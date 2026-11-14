@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>Decisions: distribution and adoption</h1>
       <p>Why Keel is one CLI that carries its own rules, how a project adopts it, and how Keel itself is run.</p>
-      <div class="meta">T2 · decisions · append-only · 2026-11-08 · Keel · DEC-1 – DEC-12, DEC-38 · distilled from E-SEED and E-SEED2 (seed plan Q1–Q14, rulings R1–R25, W5–W7 open points)</div>
+      <div class="meta">T2 · decisions · append-only · 2026-11-08 · Keel · DEC-1 – DEC-12, DEC-38, DEC-53 · distilled from E-SEED and E-SEED2 (seed plan Q1–Q14, rulings R1–R25, W5–W7 open points) and E-DSH (W1)</div>
     </div>
   </header>
   <main>
@@ -42,12 +42,13 @@
       <tr><th>Lineage</th><td>W6 open point 4; W7 v2 open points 2–5, 14; R25 (5).</td></tr>
     </table>
 
-    <h3 id="dec-4">DEC-4 · One AGENTS.md as T0; skills only in .claude/skills</h3>
+    <h3 id="dec-4">DEC-4 · One AGENTS.md as T0; skills only in .claude/skills <span class="badge">the skills-root line is superseded by <a href="#dec-53">DEC-53</a></span></h3>
     <table data-c="dec-4">
       <tr><th>Context</th><td>Trawler kept CLAUDE.md plus <code>.agents/skills</code> symlinks for Codex (Trawler DEC-52).</td></tr>
       <tr><th>Choice</th><td>init writes a single <code>AGENTS.md</code> as the T0 file, no CLAUDE.md (Claude Code 2.1.277+ reads AGENTS.md when no CLAUDE.md exists; Codex reads it natively); it warns when a CLAUDE.md exists. Skills live only in <code>.claude/skills</code>: no <code>.agents/skills</code> symlink, no Codex skills parity. <code>.codex/hooks.json</code> is still written as a real file calling the installed scripts (unguarded, as the template has it).</td></tr>
       <tr><th>Rejected</th><td>The <code>.agents/skills → ../.claude/skills</code> symlink: Claude Code does not read <code>.agents/skills/</code> (docs plus a live test).</td></tr>
       <tr><th>Lineage</th><td>Q8 (changed from the proposed default); R18; W6 open points 1, 5; W7 v2 open point 16; Trawler DEC-52.</td></tr>
+      <tr><th>Amended</th><td>By <a href="#dec-53">DEC-53</a> (E-DSH.W1): the skills root is not <code>.claude/skills</code> alone. <code>.agents/skills</code> is a relative link to it, planted by init, because DeepSeek Harness reads skills from <code>.agents/skills</code> and never from <code>.claude/skills</code>. One AGENTS.md, no CLAUDE.md written, and <code>.codex/hooks.json</code> stand as written.</td></tr>
     </table>
 
     <h3 id="dec-5">DEC-5 · Harness hooks are merged into settings.json, guarded, fail-open</h3>
@@ -132,6 +133,15 @@
       </ul>
       <p><b>Recovery.</b> The npm job runs after the GitHub Release is live. If it fails (for example on an expired token, <code>EOTP</code> or a missing scope), fix the token and use "Re-run failed jobs" on the same run. Never delete or re-push the tag.</p></td></tr>
       <tr><th>Lineage</th><td>E-SEED.W10 (parked, <code>4a22316</code>); E-SEED2.W1; backlog e-seed-v2 B1; W10 open points 5–8; E-SEED2.W11 (independent review of W1, F1–F12).</td></tr>
+    </table>
+
+    <h3 id="dec-53">DEC-53 · One shared skill root: .agents/skills is a relative link to .claude/skills</h3>
+    <table data-c="dec-53">
+      <tr><th>Context</th><td>DEC-4 kept the skills only in <code>.claude/skills</code> and rejected a <code>.agents/skills</code> link, because Claude Code does not read <code>.agents/skills</code>. E-DSH brings DeepSeek Harness (DSH) in beside Claude Code, and DSH reads skills from <code>.agents/skills</code> and never scans <code>.claude/skills</code>: in a worker's catalog a skill left in <code>.claude/skills</code> was absent and the skill tool refused it, while the same skill under <code>.agents/skills</code> listed and loaded. DSH also reads <code>CLAUDE.md</code> as instructions. A second copy of the skills per host would drift.</td></tr>
+      <tr><th>Choice</th><td>Init writes the six <code>keel-*</code> skills once, under <code>.claude/skills</code>, then plants <code>.agents/skills</code> as a relative link to <code>../.claude/skills</code>. Relative, so a checkout in another worktree resolves it. It is planted only under a real <code>.agents</code> directory at the repo root: a symlinked, non-directory or unreadable <code>.agents</code> is kept with the reason printed and nothing planted, because a relative target would resolve from nowhere else. Anything at <code>.agents/skills</code> other than exactly that relative link — a real directory, a regular file, an unreadable link, a link aimed elsewhere — is kept and reported, never replaced. A second run prints <code>unchanged .agents/skills (-&gt; ../.claude/skills)</code>. The link rides the first commit: <code>.agents</code> is in the hand-off's <code>git add</code>. Init renders and copies no per-host variant; the six skills are the same bytes for every host, and the one per-host prose shipped is the router's transport table (<a href="router.html#dec-55">DEC-55</a>).</td></tr>
+      <tr><th>Rejected</th><td>Copying the skills into <code>.agents/skills</code> (two trees that drift; a second upgrade path). Rendering a per-host skill variant at init (N copies, and a DSH tool rename means re-running init in every project). An absolute link (dangles in a worktree, which is where workers run). Replacing a project's own <code>.agents/skills</code> (init never clobbers). Keeping DEC-4's ban: it leaves DSH with no rulebook at all.</td></tr>
+      <tr><th>Consequences</th><td>DEC-4's skills-root line is superseded; the rest of DEC-4 stands. A project that keeps its own <code>.agents/skills</code> gets no DSH catalog from init, and init says so. The test that asserted "init creates no <code>.agents</code>" now asserts the link and its target — the one deliberate change to an existing test in E-DSH. Live probes (2026-11-14): a DSH catalog listed all six <code>keel-*</code> skills through the link, and every load resolved its base directory under <code>.agents/skills/</code>, in the main checkout and in a worktree. The link survives <code>git worktree add</code> because only the target is relative.</td></tr>
+      <tr><th>Lineage</th><td>E-DSH plan open points 1, 2 and 7, and "What the host makes true"; E-DSH.W1 result; owner review round 2 (2026-11-14) after the probe that a <code>.claude/skills</code> skill is absent from a DSH catalog and a <code>.agents/skills</code> copy loads. Supersedes <a href="#dec-4">DEC-4</a>'s skills-root line.</td></tr>
     </table>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
