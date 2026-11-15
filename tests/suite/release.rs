@@ -1,5 +1,7 @@
 //! The release contract (DEC-38): the licence npm and Homebrew carry, prereleases never
 //! reaching npm or Homebrew, and the hardened dist config `release.yml` is generated from.
+compiled!();
+
 use std::path::Path;
 
 fn read(rel: &str) -> String {

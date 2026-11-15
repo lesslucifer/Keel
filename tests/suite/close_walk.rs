@@ -1,10 +1,12 @@
 //! E-SEED3.W2: the push and the epic walk judge an epic-close commit by the epic-range notes it
 //! carries (B23, B20). Every merge and push runs through the real hooks into a bare local remote.
+compiled!();
+
 use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;
 
-mod common;
+use crate::common;
 
 fn path_with_keel() -> String {
     let bin = Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().to_owned();

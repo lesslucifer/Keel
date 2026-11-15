@@ -1,12 +1,14 @@
 //! E-SEED.W4 manual review: a throwaway ssh key signs a WU tip; the merge goes green; a tampered
 //! report, an amended tip, an unlisted signer and a confirm before cr are each red.
 //! E-ROUTER3.W4: the roster is `.keel/mr-allowed` as committed on the target, never a file on disk.
+compiled!();
+
 use serde_json::{json, Value};
 use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;
 
-mod common;
+use crate::common;
 
 fn run(prog: &str, d: &Path, a: &[&str]) -> Output {
     let bin = Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().to_owned();
@@ -878,7 +880,7 @@ fn cr(p: &Path, args: &[&str]) -> Output {
 }
 
 /// A tool's waiver on HEAD: a failed round made WAIVED by hand. The writer has no reasoned form
-/// (B18) and the real cap needs five rounds (tests/verify_dod.rs runs them); the sign-off reads the
+/// (B18) and the real cap needs five rounds (tests/suite/verify_dod.rs runs them); the sign-off reads the
 /// same note either way.
 fn plant_waiver(p: &Path, reason: &str) {
     ok(cr(p, &["--verdict", "FAIL", "--blockers", "1"]));

@@ -1,8 +1,10 @@
+compiled!();
+
 use std::path::Path;
 use std::process::Output;
 use tempfile::TempDir;
 
-mod common;
+use crate::common;
 use common::cmd;
 
 fn path_with_keel() -> String {

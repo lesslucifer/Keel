@@ -1,10 +1,12 @@
 //! E-SEED.W3 merge gate: one red fixture per check, a green path, the epic walk, the hooks.
+compiled!();
+
 use serde_json::{json, Value};
 use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;
 
-mod common;
+use crate::common;
 
 fn path_with_keel() -> String {
     let bin = Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().to_owned();
