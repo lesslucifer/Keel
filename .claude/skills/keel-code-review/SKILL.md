@@ -242,10 +242,10 @@ fix-PASS.
   round stays failed: a docs-only commit after it fixes nothing.
 - **The cap**: when round N fails with a blocker, the writer says
   `review cap reached`. On the same tip, run `keel notes write cr --verdict
-  WAIVED` with no `--reason`: the tool writes the reason (`review cap: N
-  rounds, <b> blockers open`) and keeps the round's findings on the waiver. It
-  is refused anywhere else. The owner accepts it, or not, at sign-off
-  (`--accept-waiver`, typed by the owner only).
+  WAIVED`: the tool writes the reason (`review cap: N rounds, <b> blockers
+  open`) and keeps the round's findings on the waiver. It is refused anywhere
+  else, and the writer refuses `--reason` with any verdict. The owner accepts
+  it, or not, at sign-off (`--accept-waiver`, typed by the owner only).
 
 ## 6 · Evidence — the `cr/v1` note on the reviewed tip
 

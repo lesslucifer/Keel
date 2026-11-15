@@ -70,8 +70,7 @@ fn commit_on_main_is_refused_but_a_branch_is_fine() {
     // A no-op hook at the old in-tree path is just content now - it never runs.
     std::fs::create_dir_all(p.join(".keel/hooks")).unwrap();
     std::fs::write(p.join(".keel/hooks/pre-commit"), "#!/bin/sh\nexit 0\n").unwrap();
-    std::fs::set_permissions(p.join(".keel/hooks/pre-commit"), std::os::unix::fs::PermissionsExt::from_mode(0o755))
-        .unwrap();
+    std::fs::set_permissions(p.join(".keel/hooks/pre-commit"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     std::fs::write(p.join("a"), "a").unwrap();
     git(p, &["add", "a", ".keel/hooks"]);
     let c = run("git", p, &["commit", "-qm", "x"]);
@@ -95,16 +94,11 @@ fn new_worktree_is_seeded_from_gitworktreecopy() {
     assert!(keel(p, &["hooks", "install"]).status.success());
 
     let w = TempDir::new().unwrap();
-    assert!(run("git", p, &["worktree", "add", "-q", "-b", "feature", w.path().to_str().unwrap()])
-        .status
-        .success());
+    assert!(run("git", p, &["worktree", "add", "-q", "-b", "feature", w.path().to_str().unwrap()]).status.success());
 
     assert_eq!(std::fs::read_to_string(w.path().join("secret.env")).unwrap(), "TOKEN=abc");
     assert_eq!(std::fs::read_to_string(w.path().join("nested/trust.txt")).unwrap(), "trusted");
-    assert_eq!(
-        run("git", w.path(), &["config", "--local", "--get", "merge.ff"]).stdout.as_slice(),
-        b"false\n"
-    );
+    assert_eq!(run("git", w.path(), &["config", "--local", "--get", "merge.ff"]).stdout.as_slice(), b"false\n");
 }
 
 #[test]
@@ -159,11 +153,7 @@ fn notes_round_trip_on_a_fixture_tip() {
     let d = notes_fixture();
     let p = d.path();
     let head = String::from_utf8(run("git", p, &["rev-parse", "HEAD"]).stdout).unwrap();
-    let o = keel_stdin(
-        p,
-        &["notes", "write", "test"],
-        r#"{"unit":{"files":["tests/test_a.py"],"covers":"a"},"e2e":{"waived":"no ui"}}"#,
-    );
+    let o = keel_stdin(p, &["notes", "write", "test"], r#"{"unit":{"files":["tests/test_a.py"],"covers":"a"},"e2e":{"waived":"no ui"}}"#);
     assert!(o.status.success(), "{}", text(&o));
     let n = note(p, "test");
     assert_eq!(n["schema"], "test/v1");
@@ -185,7 +175,7 @@ fn claiming_a_layer_the_diff_has_no_tests_for_is_refused() {
     let d = notes_fixture();
     let p = d.path();
     for j in [
-        r#"{"integration":{"files":["README"],"covers":"x"}}"#, // untouched by the range
+        r#"{"integration":{"files":["README"],"covers":"x"}}"#,      // untouched by the range
         r#"{"integration":{"files":["docs/a.html"],"covers":"x"}}"#, // touched, declares no tests
     ] {
         let o = keel_stdin(p, &["notes", "write", "test"], j);
@@ -302,12 +292,7 @@ fn run_env(prog: &str, d: &Path, a: &[&str], envs: &[(&str, &str)], input: &str)
     use std::io::Write;
     let mut c = cmd(prog);
     c.args(a).current_dir(d).env("PATH", path_with_keel()).envs(envs.iter().copied());
-    let mut c = c
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut c = c.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
     c.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
     c.wait_with_output().unwrap()
 }
@@ -366,11 +351,7 @@ fn check_under_a_foreign_git_dir_uses_its_own_repo_and_leaves_the_other_untouche
         env!("CARGO_BIN_EXE_keel"),
         a.path(),
         &["check"],
-        &[
-            ("GIT_DIR", b_git.to_str().unwrap()),
-            ("GIT_INDEX_FILE", b_git.join("index").to_str().unwrap()),
-            ("KEEL_PROBE", probe.to_str().unwrap()),
-        ],
+        &[("GIT_DIR", b_git.to_str().unwrap()), ("GIT_INDEX_FILE", b_git.join("index").to_str().unwrap()), ("KEEL_PROBE", probe.to_str().unwrap())],
         "",
     );
 
@@ -433,6 +414,61 @@ fn pre_push_from_a_linked_worktree_checks_the_pushed_sha_in_scratch() {
     assert_eq!(std::fs::read_to_string(&probe).unwrap().trim(), pushed);
 }
 
+/// B9: an inherited GIT_INDEX_FILE (a post-commit hook that pushes, or a shell that exported it) must
+/// not reach the scratch worktree, where `worktree add` would write the pushed tree into the real index.
+#[test]
+fn a_push_check_with_an_inherited_index_file_leaves_the_real_index_alone() {
+    let a = probe_repo(r#"git rev-parse HEAD > "$KEEL_PROBE""#);
+    let p = a.path();
+    git(p, &["switch", "-q", "-c", "x"]);
+    std::fs::write(p.join("new"), "new").unwrap();
+    git(p, &["add", "new"]);
+    git(p, &["commit", "-qm", "x"]);
+    let pushed = out(p, &["rev-parse", "x"]);
+    git(p, &["switch", "-q", "main"]);
+    let index = p.join(".git/index");
+    let before = std::fs::read(&index).unwrap();
+    let probe_dir = TempDir::new().unwrap();
+    let probe = probe_dir.path().join("probe");
+
+    let o = run_env(
+        env!("CARGO_BIN_EXE_keel"),
+        p,
+        &["hook", "pre-push", "origin"],
+        &[("GIT_INDEX_FILE", index.to_str().unwrap()), ("KEEL_PROBE", probe.to_str().unwrap())],
+        &format!("refs/heads/x {pushed} refs/heads/x {}\n", "0".repeat(40)),
+    );
+
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(std::fs::read_to_string(&probe).unwrap().trim(), pushed, "the scratch checkout did not prove the pushed sha");
+    assert!(std::fs::read(&index).unwrap() == before, "the pushed tree was written into the real index");
+    assert_eq!(out(p, &["status", "--porcelain"]), "", "the real checkout now reports the pushed tree as staged");
+}
+
+/// B10: no test reads the developer's global or system git config. A spawn through `tests/common`
+/// with a hostile ~/.gitconfig and a hostile system config selector sees neither.
+#[test]
+fn every_test_spawn_ignores_the_developers_git_config() {
+    let d = TempDir::new().unwrap();
+    let home = d.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let hostile = home.join(".gitconfig");
+    std::fs::write(&hostile, "[tag]\n\tgpgSign = true\n[log]\n\tshowSignature = true\n").unwrap();
+
+    let o = cmd("git")
+        .args(["config", "--list"])
+        .current_dir(d.path())
+        .env("HOME", &home)
+        .env("XDG_CONFIG_HOME", home.join("xdg"))
+        .env("GIT_CONFIG_SYSTEM", &hostile)
+        .output()
+        .unwrap();
+
+    let list = String::from_utf8(o.stdout).unwrap();
+    assert!(o.status.success(), "{list}");
+    assert!(!list.to_lowercase().contains("gpgsign") && !list.contains("showSignature"), "the developer's git config reached git: {list}");
+}
+
 #[test]
 fn the_strip_lists_cover_gits_local_env_vars() {
     let o = run("git", Path::new("/"), &["rev-parse", "--local-env-vars"]);
@@ -455,8 +491,7 @@ fn raw_spawns(dir: &Path, git_free: &[&str]) -> Vec<String> {
             for (i, line) in std::fs::read_to_string(&f).unwrap().lines().enumerate() {
                 let wrapped = |at: usize| {
                     let rest = &line[at + needle.len()..];
-                    line[..at].trim_end_matches("std::process::").ends_with("no_git_env(")
-                        || git_free.iter().any(|p| rest.starts_with(&format!("\"{p}\")")))
+                    line[..at].trim_end_matches("std::process::").ends_with("no_git_env(") || git_free.iter().any(|p| rest.starts_with(&format!("\"{p}\")")))
                 };
                 if line.match_indices(&needle).any(|(at, _)| !wrapped(at)) {
                     bad.push(format!("{}:{}: {}", f.display(), i + 1, line.trim()));
@@ -472,6 +507,31 @@ fn raw_spawns(dir: &Path, git_free: &[&str]) -> Vec<String> {
 fn every_test_spawn_strips_gits_env() {
     let bad = raw_spawns(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests"), &["jq", "ps", "kill"]);
     assert!(bad.is_empty(), "spawn through common::cmd:\n{}", bad.join("\n"));
+}
+
+/// Review round 1 (I1): the branch-to-target grammar has one home, so the gate's review base and the
+/// writer cannot drift apart. The `--target` form and the `wu/<e>/…` to epic derivation are written
+/// in `src/notes.rs` only; `main.rs` defines the config keys, and code after a `#[cfg(test)]` marker
+/// is a test, not counted.
+#[test]
+fn the_target_grammar_is_written_once_in_notes() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut bad = vec![];
+    for e in std::fs::read_dir(&src).unwrap() {
+        let f = e.unwrap().path();
+        let name = f.file_name().unwrap().to_string_lossy().into_owned();
+        if !f.extension().is_some_and(|x| x == "rs") || name == "notes.rs" {
+            continue;
+        }
+        let mut in_tests = false;
+        for (i, line) in std::fs::read_to_string(&f).unwrap().lines().enumerate() {
+            in_tests |= line.contains("#[cfg(test)]");
+            if !in_tests && (line.contains("\"--target\"") || (name != "main.rs" && line.contains("wu_prefix"))) {
+                bad.push(format!("{name}:{}: {}", i + 1, line.trim()));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "the target grammar is written again outside src/notes.rs:\n{}", bad.join("\n"));
 }
 
 /// W13: every process keel spawns is built inside `no_git_env(..)`; ssh-keygen never reads a repository.
@@ -493,4 +553,178 @@ fn the_test_strip_list_equals_keels() {
     let body = &src[start..start + src[start..].find("];").unwrap()];
     let keels: Vec<&str> = body.split('"').skip(1).step_by(2).collect();
     assert_eq!(keels, common::GIT_HOOK_ENV);
+}
+
+// ── E-SEED3.W4: the commit hook checks more ─────────────────────────────────────────────────────
+
+/// `.keel/config.toml` with `lint` and the default code paths, one base commit on main, Keel's hooks.
+fn commit_hook_repo(lint: &str) -> TempDir {
+    let d = TempDir::new().unwrap();
+    let p = d.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.email", "t@t"]);
+    git(p, &["config", "user.name", "t"]);
+    std::fs::create_dir(p.join(".keel")).unwrap();
+    std::fs::write(
+        p.join(".keel/config.toml"),
+        format!("code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"{lint}\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n"),
+    )
+    .unwrap();
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "base"]);
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    git(p, &["switch", "-q", "-c", "work"]);
+    d
+}
+
+fn lint_runs(p: &Path) -> usize {
+    std::fs::read_to_string(p.join("lint.log")).map(|s| s.lines().count()).unwrap_or(0)
+}
+
+fn write_file(d: &Path, rel: &str, body: &str) {
+    let f = d.join(rel);
+    std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+    std::fs::write(f, body).unwrap();
+}
+
+#[test]
+fn a_code_commit_runs_lint_and_red_lint_refuses_it() {
+    let d = commit_hook_repo("echo x >> lint.log; ! grep -q BAD src/a.txt");
+    let p = d.path();
+    write_file(p, "src/a.txt", "BAD\n");
+    git(p, &["add", "src/a.txt"]);
+
+    let c = run("git", p, &["commit", "-qm", "red"]);
+    let t = text(&c);
+    assert!(!c.status.success(), "a code commit with red lint must be refused: {t}");
+    assert!(t.contains("keel lint: red") && t.contains("commit refused"), "{t}");
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "1", "the refused commit records nothing");
+    assert_eq!(lint_runs(p), 1);
+
+    write_file(p, "src/a.txt", "ok\n");
+    git(p, &["add", "src/a.txt"]);
+    assert!(run("git", p, &["commit", "-qm", "green"]).status.success());
+    assert_eq!(lint_runs(p), 2, "lint ran on the green commit too");
+}
+
+#[test]
+fn a_docs_only_commit_runs_no_lint() {
+    let d = commit_hook_repo("echo x >> lint.log; exit 1");
+    let p = d.path();
+    write_file(p, "docs/x.html", "<p>x</p>");
+    git(p, &["add", "docs/x.html"]);
+    let c = run("git", p, &["commit", "-qm", "docs"]);
+    assert!(c.status.success(), "an always-red lint proves no lint ran: {}", text(&c));
+    assert_eq!(lint_runs(p), 0);
+    assert_eq!(out(p, &["log", "-1", "--format=%s"]), "docs");
+}
+
+#[test]
+fn a_commit_a_of_a_tracked_code_file_runs_lint_through_the_temporary_index() {
+    let d = commit_hook_repo("echo x >> lint.log; ! grep -q BAD src/a.txt");
+    let p = d.path();
+    write_file(p, "src/a.txt", "ok\n");
+    git(p, &["add", "src/a.txt"]);
+    assert!(run("git", p, &["commit", "-qm", "green"]).status.success());
+
+    write_file(p, "src/a.txt", "BAD\n"); // never staged: `git commit -a` gives the hook a temporary index
+    let c = run("git", p, &["commit", "-aqm", "bad"]);
+    assert!(!c.status.success(), "git commit -a's index must reach the staged-diff read: {}", text(&c));
+    assert_eq!(lint_runs(p), 2);
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "2");
+}
+
+const WU_TEST_FILES: &str = r#"{"integration":{"files":["tests/test_a.py"],"covers":"a works"}}"#;
+
+/// main → epic/e → wu/e/a, with the same file changed on both sides, so the WU merge conflicts.
+/// HEAD is on epic/e, the merge is not started.
+fn conflicting_wu() -> TempDir {
+    let d = TempDir::new().unwrap();
+    let p = d.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.email", "t@t"]);
+    git(p, &["config", "user.name", "t"]);
+    std::fs::create_dir(p.join(".keel")).unwrap();
+    std::fs::write(
+        p.join(".keel/config.toml"),
+        "code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n",
+    )
+    .unwrap();
+    assert!(keel(p, &["mr", "setup", "--as", "t"]).status.success());
+    write_file(p, "README", "x");
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "base"]);
+    assert!(keel(p, &["hooks", "install"]).status.success());
+
+    git(p, &["switch", "-q", "-c", "epic/e"]);
+    write_file(p, "src/shared.py", "epic base\n");
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "epic shared"]);
+
+    git(p, &["switch", "-q", "-c", "wu/e/a"]);
+    write_file(p, "src/shared.py", "wu\n");
+    write_file(p, "tests/test_a.py", "def test_a():\n    pass\n");
+    write_file(p, "docs/a.html", "<p>a</p>");
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "wu a"]);
+
+    git(p, &["switch", "-q", "epic/e"]);
+    write_file(p, "src/shared.py", "epic\n");
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "epic edits shared"]);
+    d
+}
+
+/// The real merge, conflicted and resolved by hand, then finished with `git commit` as a user would.
+fn merge_and_finish_by_hand(p: &Path) -> Output {
+    let m = run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"]);
+    assert!(!m.status.success() && text(&m).contains("CONFLICT"), "a real conflict: {}", text(&m));
+    write_file(p, "src/shared.py", "merged\n");
+    git(p, &["add", "src/shared.py"]);
+    run("git", p, &["commit", "-q", "--no-edit"])
+}
+
+#[test]
+fn a_conflicted_wu_merge_finished_by_hand_into_an_epic_is_gated() {
+    let d = conflicting_wu();
+    let p = d.path();
+    let c = merge_and_finish_by_hand(p);
+    let t = text(&c);
+    assert!(!c.status.success(), "no evidence: the merge gate must refuse it: {t}");
+    assert!(t.contains("1·notes") && t.contains("fix ->"), "{t}");
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "3", "nothing landed");
+    git(p, &["merge", "--abort"]);
+
+    git(p, &["switch", "-q", "wu/e/a"]);
+    let o = run_env(env!("CARGO_BIN_EXE_keel"), p, &["notes", "write", "test"], &[], WU_TEST_FILES);
+    assert!(o.status.success(), "test note: {}", text(&o));
+    assert!(keel(p, &["notes", "write", "doc"]).status.success(), "doc note");
+    assert!(keel(p, &["notes", "write", "cr", "--verdict", "PASS"]).status.success(), "cr note");
+    let s = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"]);
+    assert!(s.status.success(), "mr confirm: {}", text(&s));
+
+    git(p, &["switch", "-q", "epic/e"]);
+    let c = merge_and_finish_by_hand(p);
+    assert!(c.status.success(), "with evidence the hand-finished merge lands: {}", text(&c));
+    assert_eq!(out(p, &["rev-list", "--parents", "-n", "1", "HEAD"]).split_whitespace().count(), 3, "a merge commit with two parents");
+}
+
+#[test]
+fn a_conflicted_merge_finished_by_hand_into_main_runs_the_epic_gate_not_the_merge_only_refusal() {
+    let d = conflicting_wu();
+    let p = d.path();
+    git(p, &["switch", "-q", "main"]);
+    write_file(p, "src/shared.py", "main\n");
+    git(p, &["add", "-A"]);
+    // Fixture state: main moved while the feature branch was open. A real move is a gated merge; the
+    // merge-only hook would refuse this direct commit, so the setup bypasses it.
+    assert!(run("git", p, &["commit", "-q", "--no-verify", "-m", "main edits shared"]).status.success());
+
+    let c = merge_and_finish_by_hand(p);
+    let t = text(&c);
+    assert!(!c.status.success(), "the epic gate has no evidence for the feature tip: {t}");
+    assert!(t.contains("1·notes"), "the gate ran: {t}");
+    assert!(!t.contains("merge-only"), "a merge on main is allowed, not refused as a direct commit: {t}");
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "2", "nothing landed");
+    git(p, &["merge", "--abort"]);
 }

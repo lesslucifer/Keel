@@ -102,12 +102,7 @@ struct Tiers {
 
 fn load_config(repo: &Path) -> Result<Config, String> {
     let path = repo.join(".keel/config.toml");
-    let text = std::fs::read_to_string(&path).map_err(|_| {
-        format!(
-            "keel: no .keel/config.toml in {}\n  run `keel init` to create one",
-            repo.display()
-        )
-    })?;
+    let text = std::fs::read_to_string(&path).map_err(|_| format!("keel: no .keel/config.toml in {}\n  run `keel init` to create one", repo.display()))?;
     toml::from_str(&text).map_err(|e| format!("keel: bad .keel/config.toml: {e}"))
 }
 
@@ -188,6 +183,16 @@ fn git(repo: &Path, args: &[&str], envs: &[(&str, &Path)]) -> Result<String, Str
     ok_text(args, o)
 }
 
+/// The push check's scratch worktree calls only (B9): an inherited `GIT_INDEX_FILE` — git exports one
+/// to its hooks, a user may export one — would make `worktree add` write the pushed tree into the
+/// caller's real index. No scratch call needs an index the caller chose; keel's other git calls keep it.
+fn git_scratch(repo: &Path, args: &[&str]) -> Result<String, String> {
+    let mut c = no_git_env(Command::new("git"), false);
+    c.args(args).current_dir(repo);
+    let o = c.output().map_err(|e| format!("keel: cannot run git: {e}"))?;
+    ok_text(args, o)
+}
+
 /// `git <args>` with `input` on its stdin, its output returned whole: the caller reads the exit
 /// code and the raw bytes (a batch read, or a command whose exit 1 is an answer, not a failure).
 fn git_raw(repo: &Path, args: &[&str], input: Option<&[u8]>) -> Result<std::process::Output, String> {
@@ -220,20 +225,14 @@ fn ok_text(args: &[&str], o: std::process::Output) -> Result<String, String> {
 /// A finished git command's stdout as raw bytes, or its failure: the one failure text.
 fn ok_bytes(args: &[&str], o: std::process::Output) -> Result<Vec<u8>, String> {
     if !o.status.success() {
-        return Err(format!(
-            "keel: git {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&o.stderr).trim()
-        ));
+        return Err(format!("keel: git {} failed: {}", args.join(" "), String::from_utf8_lossy(&o.stderr).trim()));
     }
     Ok(o.stdout)
 }
 
 fn repo_root() -> Result<PathBuf, String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    git(&cwd, &["rev-parse", "--show-toplevel"], &[])
-        .map(PathBuf::from)
-        .map_err(|_| "keel: not inside a git repository".into())
+    git(&cwd, &["rev-parse", "--show-toplevel"], &[]).map(PathBuf::from).map_err(|_| "keel: not inside a git repository".into())
 }
 
 fn sh(repo: &Path, cmd: &str) -> Result<bool, String> {
@@ -316,10 +315,10 @@ fn check_push(repo: &Path, cfg: &Config, refspecs: &str) -> Result<i32, String> 
             // ponytail: the scratch worktree's check cache dies with it; re-pushing a non-HEAD sha re-runs check.
             let dir = git_dir(repo)?.join("keel-push-proof");
             let d = dir.to_string_lossy();
-            let _ = git(repo, &["worktree", "remove", "--force", &d], &[]);
-            git(repo, &["worktree", "add", "-q", "--detach", &d, sha], &[])?;
+            let _ = git_scratch(repo, &["worktree", "remove", "--force", &d]);
+            git_scratch(repo, &["worktree", "add", "-q", "--detach", &d, sha])?;
             let code = load_config(&dir).and_then(|c| check(&dir, &c));
-            let _ = git(repo, &["worktree", "remove", "--force", &d], &[]);
+            let _ = git_scratch(repo, &["worktree", "remove", "--force", &d]);
             code?
         };
         if code != 0 {
@@ -359,11 +358,42 @@ fn pre_push(repo: &Path, cfg: &Config, remote: &str) -> Result<i32, String> {
     Ok(0)
 }
 
+/// The one source of Keel's `--version` marker line and of the install page: literals, so concat! can
+/// build the hook scripts from them; the consts below are the same text for Rust code.
+macro_rules! keel_mark {
+    () => {
+        "Keel: merge-gate workflow CLI"
+    };
+}
+macro_rules! install_page {
+    () => {
+        "https://github.com/lesslucifer/Keel/blob/main/docs/install.html"
+    };
+}
+pub(crate) const KEEL_MARK: &str = keel_mark!();
+pub(crate) const INSTALL_PAGE: &str = install_page!();
+
+/// Open point 6: a `keel` on PATH whose `--version` lacks KEEL_MARK is another program (or a Keel
+/// built before 2026-11-10, which printed no marker).
+macro_rules! keel_guard {
+    ($or:expr) => {
+        concat!("keel --version </dev/null 2>/dev/null | grep -q '^", keel_mark!(), "' || ", $or)
+    };
+}
+
 macro_rules! git_shim {
     ($exec:literal) => {
         concat!(
             "#!/bin/sh\n",
-            r#"command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install --git https://github.com/lesslucifer/Keel) or run: git config --unset core.hooksPath" >&2; echo "keel: prebuilt binaries, npm and Homebrew: https://github.com/lesslucifer/Keel/blob/main/docs/install.html" >&2; exit 1; }"#,
+            r#"command -v keel >/dev/null 2>&1 || { echo "keel: binary not on PATH; install it (cargo install --git https://github.com/lesslucifer/Keel) or run: git config --unset core.hooksPath" >&2; echo "keel: prebuilt binaries, npm and Homebrew: "#,
+            install_page!(),
+            r#"" >&2; exit 1; }"#,
+            "\n",
+            keel_guard!(concat!(
+                r#"{ echo "keel: $(command -v keel) is not Keel, the merge-gate CLI - another program is named keel (e.g. keel.so), or a Keel older than 2026-11-10 (upgrade it); put Keel first on PATH: "#,
+                install_page!(),
+                r#"" >&2; exit 1; }"#
+            )),
             "\nexec keel ",
             $exec,
             "\n"
@@ -380,7 +410,8 @@ const PRE_PUSH: &str = git_shim!(r#"hook pre-push "$1""#);
 // apply_patch carries patch text in tool_input.command, whose "*** Add/Update File:"
 // headers name the targets. Red -> exit 2 + stderr (fed back / turn refused). Needs jq.
 // ponytail: the Codex shape is best-effort (Trawler's), not verified against Codex docs.
-const DOC_POST: &str = r#"#!/bin/sh
+const DOC_POST: &str = concat!(
+    r#"#!/bin/sh
 command -v keel >/dev/null 2>&1 || exit 0
 paths=$(jq -r 'if (.tool_input.file_path? // "") != "" then .tool_input.file_path
   else (.tool_input.command? // "") | split("\n")[]
@@ -394,17 +425,24 @@ for p in $paths; do
   case "$p" in *.html) [ -f "$p" ] && set -- "$@" "$p" ;; esac
 done
 [ $# -gt 0 ] || exit 0
+"#,
+    keel_guard!("exit 0"),
+    r#"
 out=$(keel verify-doc "$@" 2>&1) && exit 0
 printf '%s\n' "$out" >&2
 exit 2
-"#;
+"#
+);
 
-const DOC_STOP: &str = r#"#!/bin/sh
-command -v keel >/dev/null 2>&1 || exit 0
+const DOC_STOP: &str = concat!(
+    "#!/bin/sh\ncommand -v keel >/dev/null 2>&1 || exit 0\n",
+    keel_guard!("exit 0"),
+    r#"
 out=$(keel verify-doc 2>&1) && exit 0
 printf 'A doc is red - fix it before ending the turn:\n%s\n' "$out" >&2
 exit 2
-"#;
+"#
+);
 
 const POST_CHECKOUT: &str = r#"#!/bin/sh
 # post-checkout: seed new worktrees from .gitworktreecopy, heal merge.ff=false.
@@ -467,9 +505,8 @@ fn hooks_install(repo: &Path, force: bool) -> Result<i32, String> {
     if !force {
         let current = git(repo, &["config", "--get", "core.hooksPath"], &[]).ok();
         let own = dir.parent().unwrap_or(&dir).join("hooks");
-        let entries: Vec<String> = std::fs::read_dir(&own)
-            .map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
-            .unwrap_or_default();
+        let entries: Vec<String> =
+            std::fs::read_dir(&own).map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect()).unwrap_or_default();
         let conflicts = hook_conflicts(current.as_deref(), &dir, &own.to_string_lossy(), &entries);
         if !conflicts.is_empty() {
             eprintln!(
@@ -491,8 +528,7 @@ fn hooks_install(repo: &Path, force: bool) -> Result<i32, String> {
     ] {
         let p = dir.join(name);
         std::fs::write(&p, body).map_err(|e| format!("keel: write {}: {e}", p.display()))?;
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| e.to_string())?;
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
     }
     // Absolute: a relative hooksPath resolves against the worktree, i.e. against branch content.
     let d = dir.to_string_lossy();
@@ -504,16 +540,58 @@ fn hooks_install(repo: &Path, force: bool) -> Result<i32, String> {
     Ok(0)
 }
 
+/// What `pre-commit` does for the commit being made. A merge finished by hand is judged by the gate
+/// git did not run; a non-merge commit on main is refused; any other commit is lint-checked.
+#[derive(Debug, PartialEq, Eq)]
+enum CommitCheck {
+    MergeGate,
+    RefuseMain,
+    Lint,
+}
+
+fn commit_check(branch: &str, main: &str, merging: bool) -> CommitCheck {
+    if merging {
+        CommitCheck::MergeGate
+    } else if branch == main {
+        CommitCheck::RefuseMain
+    } else {
+        CommitCheck::Lint
+    }
+}
+
+/// A staged diff touches a code path when git lists a staged path under `code_paths` - the same git
+/// pathspecs the gate binds (UC-GATE-5); empty `code_paths` = every path is code. Reads the index git
+/// is committing (a temporary one for `git commit -a`), as `keel check`'s own `git diff --cached` must.
+fn staged_code(repo: &Path, code_paths: &[String]) -> Result<bool, String> {
+    let mut a = vec!["diff", "--cached", "--name-only", "--no-renames", "-z", "--"];
+    a.extend(code_paths.iter().map(String::as_str));
+    Ok(!git(repo, &a, &[])?.is_empty())
+}
+
+/// `pre-commit`: main stays merge-only, lint guards a code commit, and a merge git leaves to `git commit`
+/// (a conflicted one finished by hand) gets the gate `pre-merge-commit` would have run (DEC-17, DEC-29).
 fn pre_commit(repo: &Path, cfg: &Config) -> Result<i32, String> {
     let branch = git(repo, &["symbolic-ref", "--short", "-q", "HEAD"], &[]).unwrap_or_default();
-    if branch == cfg.branches.main {
-        eprintln!(
-            "keel: commit refused - '{b}' is merge-only.\n  fix -> git switch -c <branch>   (then commit there and merge into {b})",
-            b = branch
-        );
-        return Ok(1);
+    let merging = repo.join(git(repo, &["rev-parse", "--git-path", "MERGE_HEAD"], &[])?).exists();
+    match commit_check(&branch, &cfg.branches.main, merging) {
+        CommitCheck::RefuseMain => {
+            eprintln!("keel: commit refused - '{branch}' is merge-only.\n  fix -> git switch -c <branch>   (then commit there and merge into {branch})");
+            Ok(1)
+        }
+        CommitCheck::MergeGate => gate::verify_dod(repo, &load_config_at_head(repo)?, &["hook"]),
+        CommitCheck::Lint => {
+            if !staged_code(repo, &cfg.code_paths)? {
+                return Ok(0);
+            }
+            let code = lint(repo, cfg)?;
+            if code != 0 {
+                eprintln!(
+                    "keel: commit refused - the staged diff changes a code path and keel lint is red\n  fix -> make `keel lint` green, then commit again"
+                );
+            }
+            Ok(code)
+        }
     }
-    Ok(0)
 }
 
 /// No paths: every html doc under docs.root (tracked or untracked, not ignored).
@@ -540,7 +618,7 @@ fn run() -> Result<i32, String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     if let ["--version" | "-V"] = args.as_slice() {
-        println!("keel {}\nKeel: merge-gate workflow CLI (not keel.so)", env!("CARGO_PKG_VERSION"));
+        println!("keel {}\n{KEEL_MARK} (not keel.so)", env!("CARGO_PKG_VERSION"));
         return Ok(0);
     }
     let repo = repo_root()?;
@@ -582,7 +660,10 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{hook_conflicts, hooks_problem_of, no_git_env, Config, ReportPolicy, COMMIT_MSG, GIT_HOOK_ENV, GIT_LOCAL_ENV, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH};
+    use super::{
+        commit_check, hook_conflicts, hooks_problem_of, no_git_env, CommitCheck, Config, ReportPolicy, COMMIT_MSG, DOC_POST, DOC_STOP, GIT_HOOK_ENV,
+        GIT_LOCAL_ENV, INSTALL_PAGE, KEEL_MARK, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH,
+    };
     use std::ffi::OsStr;
     use std::path::Path;
     use std::process::Command;
@@ -638,7 +719,10 @@ mod tests {
             assert!(hook_conflicts(Some(own), keel, "/r/.git/hooks", &names(&["pre-commit"])).is_empty(), "Keel's own path {own}: a re-install");
             assert_eq!(hooks_problem_of(Some(own), keel), None, "guard D agrees on {own}");
         }
-        assert_eq!(hook_conflicts(None, keel, "/r/.git/hooks", &names(&["pre-commit.sample", "pre-commit", "husky.sh"])), ["/r/.git/hooks/pre-commit", "/r/.git/hooks/husky.sh"]);
+        assert_eq!(
+            hook_conflicts(None, keel, "/r/.git/hooks", &names(&["pre-commit.sample", "pre-commit", "husky.sh"])),
+            ["/r/.git/hooks/pre-commit", "/r/.git/hooks/husky.sh"]
+        );
         assert_eq!(hook_conflicts(Some(".husky"), keel, "/r/.git/hooks", &samples), ["core.hooksPath = .husky"]);
     }
 
@@ -661,20 +745,56 @@ mod tests {
     }
 
     #[test]
+    fn commit_check_routes_a_merge_to_the_gate_main_to_a_refusal_and_the_rest_to_lint() {
+        assert_eq!(commit_check("main", "main", true), CommitCheck::MergeGate, "a merge finished by hand on main is gated, not refused");
+        assert_eq!(commit_check("epic/e", "main", true), CommitCheck::MergeGate, "a merge on an epic is gated too");
+        assert_eq!(commit_check("main", "main", false), CommitCheck::RefuseMain);
+        assert_eq!(commit_check("epic/e", "main", false), CommitCheck::Lint);
+        assert_eq!(commit_check("wu/e/a", "main", false), CommitCheck::Lint);
+        assert_eq!(commit_check("", "main", false), CommitCheck::Lint, "a detached HEAD is not main");
+    }
+
+    #[test]
     fn git_shims_guard_a_missing_keel_with_both_install_hints_then_exec_their_hook() {
+        let missing = format!(
+            r#"command -v keel >/dev/null 2>&1 || {{ echo "keel: binary not on PATH; install it (cargo install --git https://github.com/lesslucifer/Keel) or run: git config --unset core.hooksPath" >&2; echo "keel: prebuilt binaries, npm and Homebrew: {INSTALL_PAGE}" >&2; exit 1; }}"#
+        );
+        let foreign = format!(
+            r#"{}{{ echo "keel: $(command -v keel) is not Keel, the merge-gate CLI - another program is named keel (e.g. keel.so), or a Keel older than 2026-11-10 (upgrade it); put Keel first on PATH: {INSTALL_PAGE}" >&2; exit 1; }}"#,
+            foreign_guard()
+        );
         for (shim, exec) in [
-            (PRE_COMMIT, "exec keel hook pre-commit\n"),
-            (PRE_MERGE_COMMIT, "exec keel verify-dod hook\n"),
-            (COMMIT_MSG, "exec keel hook commit-msg \"$1\"\n"),
-            (PRE_PUSH, "exec keel hook pre-push \"$1\"\n"),
+            (PRE_COMMIT, "exec keel hook pre-commit"),
+            (PRE_MERGE_COMMIT, "exec keel verify-dod hook"),
+            (COMMIT_MSG, "exec keel hook commit-msg \"$1\""),
+            (PRE_PUSH, "exec keel hook pre-push \"$1\""),
         ] {
-            let lines: Vec<&str> = shim.lines().collect();
-            assert_eq!(lines.len(), 3, "{shim}");
-            assert_eq!(lines[0], "#!/bin/sh");
-            assert!(lines[1].starts_with("command -v keel >/dev/null 2>&1 || {") && lines[1].ends_with("exit 1; }"), "{shim}");
-            assert!(lines[1].contains("cargo install --git https://github.com/lesslucifer/Keel"), "{shim}");
-            assert!(lines[1].contains("https://github.com/lesslucifer/Keel/blob/main/docs/install.html"), "{shim}");
-            assert!(shim.ends_with(exec), "{shim}");
+            assert_eq!(shim.lines().collect::<Vec<_>>(), ["#!/bin/sh", missing.as_str(), foreign.as_str(), exec], "{shim}");
+            assert!(shim.ends_with('\n'));
         }
+    }
+
+    /// The shims' grep and Keel's own `--version` share one marker (open point 6).
+    fn foreign_guard() -> String {
+        format!("keel --version </dev/null 2>/dev/null | grep -q '^{KEEL_MARK}' || ")
+    }
+
+    #[test]
+    fn the_marker_and_install_page_are_the_texts_keel_prints_and_links() {
+        assert_eq!(KEEL_MARK, "Keel: merge-gate workflow CLI");
+        assert_eq!(INSTALL_PAGE, "https://github.com/lesslucifer/Keel/blob/main/docs/install.html");
+    }
+
+    #[test]
+    fn harness_hooks_exit_0_on_a_foreign_keel_as_on_a_missing_one() {
+        let guard = format!("{}exit 0", foreign_guard());
+        for hook in [DOC_POST, DOC_STOP] {
+            let lines: Vec<&str> = hook.lines().collect();
+            assert_eq!(lines[1], "command -v keel >/dev/null 2>&1 || exit 0", "{hook}");
+            let at = lines.iter().position(|l| *l == guard).unwrap_or_else(|| panic!("no guard: {hook}"));
+            assert!(lines[at + 1].starts_with("out=$(keel verify-doc"), "the guard sits right before the one keel call: {hook}");
+        }
+        let post: Vec<&str> = DOC_POST.lines().collect();
+        assert!(post.iter().position(|l| *l == "[ $# -gt 0 ] || exit 0") < post.iter().position(|l| *l == guard), "DOC_POST filters paths first");
     }
 }
