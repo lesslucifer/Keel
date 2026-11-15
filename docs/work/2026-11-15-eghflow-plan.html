@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-htmldoc-id="6af93b489f34851f0dfb2514" data-artifact="epic-plan" data-status="draft">
+<html lang="en" data-htmldoc-id="6af93b489f34851f0dfb2514" data-artifact="epic-plan" data-status="ready">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-GHFLOW · Run the flow from GitHub</h1>
       <p>A direction-finding plan: which of your actions can move to GitHub, how, and what must stay on your Mac.</p>
-      <div class="meta">Draft v3 · 2026-11-15 · T3 · epic plan · Keel · v3.1: your comments answered; docs on GitHub Pages by your ruling</div>
+      <div class="meta">Ready v4 · approved by the owner 2026-11-15 · T3 · epic plan · Keel · WUs start once E-TESTOPT is on main and main is merged into this epic</div>
     </div>
   </header>
   <main>
@@ -61,7 +61,7 @@
   </div>
   <p data-item="wu-maps-to">Owner ask (local checks become GitHub checks) · UC-GATE (new row: the gate runs in CI) · backlog e-router-v2 R43 (sandbox-only reds) and R30.</p>
   <p data-item="wu-expected"><b>Integration:</b> <code>ci-gate.sh</code> on a scratch repo with a bare "origin": a WU tip with full notes prints green checks 1–7 and the evidence table; a tip with a missing note prints the same <code>FAIL</code> block as the local gate; the script never runs a <code>[check]</code> command. A test locks the workflow file (triggers, permissions read-only, actions pinned to commits, base-built keel), like <code>tests/release.rs</code>. <b>Unit:</b> the summary renderer.</p>
-  <p data-item="wu-deps">none</p>
+  <p data-item="wu-deps">E-TESTOPT merged into main, then main merged into <code>epic/E-GHFLOW</code>: E-TESTOPT moves every test file into <code>tests/suite</code> and changes the test helpers, and W1's CI runs that suite.</p>
 </div>
 
 <div data-wu="E-GHFLOW.W2" data-c="wu-w2">
@@ -556,6 +556,7 @@ flowchart LR
 
 <h3 id="path" data-c="path-h">Incremental path</h3>
 <ol data-c="path">
+  <li><b>Before any WU:</b> E-TESTOPT merges into main, then main is merged into this epic branch. Every WU starts from that tip, so W1's CI runs the tests where E-TESTOPT puts them (<code>tests/suite</code>, with its new helpers).</li>
   <li><b>W1 first:</b> pure signal, no rule changes, no new credential. If it is all you keep, sandbox reds are gone.</li>
   <li><b>W2, then W3:</b> the bot and the watch. You can still sign and merge locally; pull requests are a view.</li>
   <li><b>W4:</b> your approval becomes a sign-off; the typed sign-off still works.</li>
@@ -601,6 +602,7 @@ flowchart LR
 <p>v2, same day, after the owner's first read ("basically matches my ideas"): manual testing is done by you on your Mac from a pull-request instruction (W6 and §6 rewritten; built binaries and Codespaces rejected as the main route); every local check audited against the code (§7); work that need not wait goes in its own pull request (W7, §8); open point 9 changed, 14–18 added.</p>
 <p>v3, same day, after the owner's comments: the router's audience and approve-to-merge are settings (open points 6, 11; §4 Settings); Keel's own repo only (open point 8); the epic sign-off is an approval, with the report as a note (open point 10, W4); waivers and roster changes by comment, with you notified (open point 12, W8); conflicts fixed on the conflicted branch (open point 18); docs as web pages proposed and left for your decision (open point 5, W9).</p>
 <p>v3.1, same day: your ruling on open point 5, "ok, go with Pages" (2026-11-15). W9 is no longer conditional; its first step checks that Pages is free here and that htmldoc comments work from a Pages page, with the htmldoc "view" endpoint as the fallback.</p>
+<p>v4, 2026-11-15: <b>approved by the owner</b> ("I am good with the GHFLow plan, can we commit and start proceeding it, but maybe we need to wait for the testopt to done and merge to there yet"). Status ready. Start condition, by the router's decision on that approval: the WUs start once E-TESTOPT has merged into main and main has been merged into <code>epic/E-GHFLOW</code> (W1's dependencies and the incremental path).</p>
 
   </main>
   <script type="module">
