@@ -1,0 +1,71 @@
+# Keel's gate on GitHub, as a signal (E-GHFLOW.W1): the tests, the merge check and the doc check
+# for every work branch and pull request. Every job is one call of scripts/ci-gate.sh; keel is built
+# from the base branch there, never from the head. Event values reach the script only through env.
+name: Keel gate
+
+on:
+  push:
+    branches:
+      - main
+      - 'epic/**'
+      - 'wu/**'
+  pull_request:
+    branches:
+      - main
+      - 'epic/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keel-gate-${{ github.event_name }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  ci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: rustup component add rustfmt clippy
+      - run: scripts/ci-gate.sh ci
+        env:
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_BRANCH: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+  gate:
+    if: github.event_name == 'push' && github.ref_name != 'main' || github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: scripts/ci-gate.sh gate
+        env:
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_BRANCH: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+  docs:
+    if: github.event_name == 'push' && github.ref_name != 'main' || github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: scripts/ci-gate.sh docs
+        env:
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_BRANCH: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}

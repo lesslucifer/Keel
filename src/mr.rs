@@ -711,10 +711,7 @@ pub(crate) fn manual_review(
         Ok(None) => return Err((format!("every {level} merge needs a human sign-off - tip {t} has no mr/v1 note"), NOT_AUTHORISED.into())),
         Err(e) => return again(format!("the mr note on {t} cannot be read: {e}")),
     };
-    let n = match serde_json::from_str::<serde_json::Value>(&raw).map_err(|e| e.to_string()).and_then(|v| match v["schema"].as_str() {
-        Some("mr/v1") => serde_json::from_value::<MrNote>(v).map_err(|e| e.to_string()),
-        other => Err(format!("declares schema {}", other.unwrap_or("none"))),
-    }) {
+    let n = match notes::parse::<MrNote>(&raw, "mr") {
         Ok(n) => n,
         Err(e) => return again(format!("the mr note on {t} is not valid mr/v1: {e}")),
     };

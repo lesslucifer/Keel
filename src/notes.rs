@@ -284,6 +284,17 @@ pub(crate) fn raw(repo: &Path, kind: &str, rev: &str) -> Result<Option<String>, 
     String::from_utf8(body.stdout).map(Some).map_err(|_| format!("the {kind} note on {rev} is not UTF-8"))
 }
 
+/// A stored note as its type: JSON declaring `<kind>/v1`, then that type's fields. The one schema
+/// rule: the gate's check 1, check 8's sign-off read and the CI page all read notes through it.
+pub(crate) fn parse<T: serde::de::DeserializeOwned>(raw: &str, kind: &str) -> Result<T, String> {
+    let schema = format!("{kind}/v1");
+    let v: serde_json::Value = serde_json::from_str(raw).map_err(|e| e.to_string())?;
+    match v["schema"].as_str() {
+        Some(s) if s == schema => serde_json::from_value(v).map_err(|e| e.to_string()),
+        other => Err(format!("declares schema {}", other.unwrap_or("none"))),
+    }
+}
+
 pub(crate) fn cr_raw(repo: &Path, rev: &str) -> Result<Option<String>, String> {
     raw(repo, "cr", rev)
 }
