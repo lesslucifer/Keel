@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-GHFLOW · Run the flow from GitHub</h1>
       <p>A direction-finding plan: which of your actions can move to GitHub, how, and what must stay on your Mac.</p>
-      <div class="meta">Draft v3 · 2026-11-15 · T3 · epic plan · Keel · v3: your comments answered (settings, epic sign-off by approval, waivers by comment, conflicts, docs as pages)</div>
+      <div class="meta">Draft v3 · 2026-11-15 · T3 · epic plan · Keel · v3.1: your comments answered; docs on GitHub Pages by your ruling</div>
     </div>
   </header>
   <main>
@@ -181,16 +181,17 @@
 </div>
 
 <div data-wu="E-GHFLOW.W9" data-c="wu-w9">
-  <h3 id="w9">W9 · Docs as web pages (if you pick it in open point 5)</h3>
+  <h3 id="w9">W9 · Docs as web pages on GitHub Pages</h3>
   <div data-item="wu-summary">
     <p><b>In short:</b> every push rebuilds one GitHub Pages site holding the docs of each live branch, so a plan or report is a link you can open anywhere. Comments and diffs stay in htmldoc, whose script loads on any host.</p>
     <ul>
+      <li><b>First, before any build work, two checks:</b> (1) Pages is available and free for this public personal-account repo (turn it on in a scratch public repo, or read the plan page for GitHub Free); (2) the htmldoc server accepts its comment and snapshot calls from the Pages origin (a test page on the scratch site, with a doc id minted only for this check, loads the comment layer and posts one comment, which is then resolved, never deleted). Either failing stops W9 and comes back to you with the htmldoc-server "view" endpoint as the fallback.</li>
       <li>A workflow on pushes to <code>main</code>, <code>epic/**</code> and <code>wu/**</code> builds the site from every live branch's <code>docs/</code> (one folder per branch) plus each epic tip's report note, and deploys it with Pages' own Actions deploy.</li>
       <li>The pull request body links each changed doc's page.</li>
       <li>Limits (verified): a site of at most 1 GB; a deploy times out after 10 minutes; a custom Actions workflow is not held to the 10-builds-an-hour soft limit. The pages are public, like the repo.</li>
     </ul>
   </div>
-  <p data-item="wu-maps-to">Your comment on open point 5 · UC-DOC (new row: where a doc is read).</p>
+  <p data-item="wu-maps-to">Your ruling on open point 5 (2026-11-15: "ok, go with Pages") · UC-DOC (new row: where a doc is read).</p>
   <p data-item="wu-expected"><b>Integration:</b> the site builder on a scratch repo with two branches: each branch's docs land under its folder, relative links resolve, a deleted branch's folder is gone on the next build, the report note renders. <b>Unit:</b> branch-to-folder naming.</p>
   <p data-item="wu-deps">W2 (W4 for the report note)</p>
 </div>
@@ -206,7 +207,7 @@
     <tr><td>2</td><td>What is your sign-off on GitHub?</td><td><b>Approving the pull request</b> (the new github tier); the typed sign-off stays as fallback</td><td>It is bound to the exact commit, needs your login, works on the phone, and shows the diff and the report</td><td>An approval gate on a workflow run (bound to a run, not a review; shows less); a signed commit (needs your Mac); keep the typed sign-off only</td></tr>
     <tr><td>3</td><td>How does the router hear you?</td><td><b>It polls GitHub</b>, about once a minute, while a watch is armed</td><td>No server, no open port, no runner on a public repo; same shape as today's watches</td><td>A self-hosted runner on your Mac rings the router's inbox (seconds, but GitHub warns against it on public repos); webhook forwarding (GitHub says testing only)</td></tr>
     <tr><td>4</td><td>What identity does the router use?</td><td><b>A GitHub App</b> you create and install on this repo only</td><td>You cannot approve your own pull request, so the author must not be you; an App has narrow permissions and short-lived tokens</td><td>A second "machine" user account (simpler, a long-lived token); your own token (rules out open point 2's answer)</td></tr>
-    <tr><td>5</td><td>Where do you read and comment on plans and reports?</td><td><b>Open, your decision.</b> Proposed: <b>GitHub Pages renders every live branch's docs</b> as web pages (W9); htmldoc keeps the comments and diffs, since its script works on any host</td><td>GitHub shows a committed HTML file as source, not as a page, and a file on disk does not open on your phone; Pages turns each pushed doc into a link the pull request carries</td><td>The htmldoc server serves its latest snapshot of a doc as a page (one change in the htmldoc-server repo, no GitHub setting; the page is only as fresh as the last snapshot); a third-party raw-HTML previewer (no setup, an outside service); keep opening files from disk on the Mac</td></tr>
+    <tr><td>5</td><td>Where do you read and comment on plans and reports?</td><td><b>GitHub Pages</b>, built from every live branch's docs (W9); htmldoc keeps the comments and diffs. <b>Your ruling, 2026-11-15:</b> "ok, go with Pages"</td><td>GitHub shows a committed HTML file as source, not as a page, and a file on disk does not open on your phone; Pages turns each pushed doc into a link the pull request carries. W9 first checks that Pages is free here and that htmldoc's comments work from a Pages page</td><td>Rejected: the htmldoc server serving its latest snapshot as a page (kept as the fallback if W9's first checks fail); a third-party raw-HTML previewer; files on disk</td></tr>
     <tr><td>6</td><td>Which of your words does the router act on?</td><td><b>Configurable</b> (your comment): a committed list of GitHub user ids that may command, and whether their free text reaches the router or only the closed commands. Default: you alone, commands plus free text</td><td>A second trusted person, or a stricter commands-only mode, then needs a config change, not code; the setting is rule-bearing, so changing it needs your approval</td><td>Hard-coded to you (no flexibility); commands only, fixed (safer, stiffer)</td></tr>
     <tr><td>7</td><td>Does Telegram stay?</td><td><b>Yes, as the fallback</b>; GitHub's phone notifications become the main channel</td><td>A GitHub outage must not silence the router</td><td>Drop it after W3 proves itself</td></tr>
     <tr><td>8</td><td>Where does this live: in Keel, or only in this repo?</td><td><b>Keel's own repo only, for now</b> (your comment). What must be in the <code>keel</code> binary to work here (the github signer tier, the CI gate script's commands) goes in, but nothing sets this up in another project. A backlog row takes "keel sets the GitHub flow up in other projects" for a later review epic</td><td>Focus: one working flow first; generalising it before it is proven would freeze guesses into <code>keel init</code></td><td>Split now (gate script and tier as an opt-in for every project); all in this repo's scripts</td></tr>
@@ -253,7 +254,7 @@
   <li>UC-MR-1, amended: no trailer on a <code>rules-</code> branch, whose sign-off covers it; UC-MR, amended: the sign-off records the manual test (W6, W7).</li>
   <li>UC-GATE, amended: the result report is required only for ranges that change code (W7).</li>
   <li>UC-MR, amended: the epic sign-off by approval, with the report as a note (W4); waivers and roster changes by comment (W8).</li>
-  <li>UC-DOC, new row: docs read as pages (W9, if chosen).</li>
+  <li>UC-DOC, new row: docs read as pages on GitHub Pages (W9).</li>
 </ul>
 
 <h3 id="non-goals-h">Out of scope</h3>
@@ -365,7 +366,7 @@
   <tbody>
     <tr><td>A1</td><td>Prompt the router</td><td>Comments on the epic's tracking issue or a pull request, read by the GitHub watch (W3)</td><td>Gains: phone, history. Loses: instant back-and-forth (≈ 1 min poll)</td><td>partial</td><td>OP 3, 6</td></tr>
     <tr><td>A2</td><td>Router → owner messages, Telegram</td><td>Pull-request review requests and router-bot comments; GitHub Mobile push</td><td>Gains: the ask sits next to the diff. Loses: nothing if Telegram stays as fallback</td><td>covers</td><td>OP 7</td></tr>
-    <tr><td>A3</td><td>Doc review in htmldoc</td><td>Pages renders each live branch's docs; the pull request links them; htmldoc keeps comments and diffs (W9, if you choose it)</td><td>Gains: docs open on a phone. Today GitHub shows HTML as source and a file on disk opens only on the Mac</td><td>partial</td><td>OP 5 (open)</td></tr>
+    <tr><td>A3</td><td>Doc review in htmldoc</td><td>Pages renders each live branch's docs; the pull request links them; htmldoc keeps comments and diffs (W9, your ruling 2026-11-15)</td><td>Gains: docs open on a phone. Today GitHub shows HTML as source and a file on disk opens only on the Mac</td><td>covers, once W9's two first checks pass</td><td>OP 5</td></tr>
     <tr><td>A4</td><td>Rulings log file</td><td>Your <code>/keel</code> answers on issues are the record; the router quotes them in briefs</td><td>Gains: dated, public, linkable. Loses: privacy</td><td>partial</td><td>—</td></tr>
     <tr><td>A5</td><td><code>keel check</code></td><td>The <b>ci</b> job on a hosted runner (W1); pre-push stops repeating it (W5)</td><td>Gains: a clean machine, no sandbox reds, faster router pushes. Workers still run it locally before review</td><td>covers</td><td>OP 17</td></tr>
     <tr><td>A6</td><td>Notes test, doc</td><td>Stay git notes, written by workers; mirrored into the gate's job summary</td><td>Notes stay the offline-checkable truth; GitHub never shows them, the summary does</td><td>partial</td><td>—</td></tr>
@@ -559,7 +560,7 @@ flowchart LR
   <li><b>W2, then W3:</b> the bot and the watch. You can still sign and merge locally; pull requests are a view.</li>
   <li><b>W4:</b> your approval becomes a sign-off; the typed sign-off still works.</li>
   <li><b>W5 last:</b> only then does GitHub refuse a red merge. Turning its rules off returns you to today's flow.</li>
-  <li><b>W8</b> after W4; <b>W9</b> any time after W2, once you pick it.</li>
+  <li><b>W8</b> after W4; <b>W9</b> any time after W2, starting with its two checks (Pages here, comments from a Pages page).</li>
   <li><b>W6</b> after W3; <b>W7</b> after W4, and first among the rest if rule edits keep stopping workers: it removes the one check that blocks work (§7, C8).</li>
 </ol>
 <p><b>Fallback, always:</b> every gate still runs locally; a typed sign-off and a local <code>--no-ff</code> merge pushed by you remain valid, because the gate judges notes, not where the merge happened.</p>
@@ -582,7 +583,7 @@ flowchart LR
 <ul data-c="facts">
   <li><b>Verified in this repo:</b> origin holds all five notes refs; <code>.github/workflows/release.yml</code> is the only workflow; the router guard already admits <code>gh pr view|list|status</code>; workers cannot use <code>gh</code> (DEC-46, R21); <code>lesslucifer</code> is a personal account.</li>
   <li><b>Verified on docs.github.com</b> (2026-11-15, through a summarising fetch tool; quotes in §2): self-approval, admin merge, ruleset rules, branch protection bypass, merge queue availability, trigger refs, <code>GITHUB_TOKEN</code> events, environments, self-hosted runner warning, check-run permission, <code>author_association</code>, webhook forwarding, Codespaces OS and quota, Actions billing, vigilant mode; auto-merge (enable per repo, write access, after required checks and reviews); Pages limits (1 GB, 10-minute deploys, custom workflows exempt from the build-rate limit); a conflicted pull request cannot be merged.</li>
-  <li><b>Unverified, from memory:</b> rulesets on a personal Free public repo; required checks pinned to a source app; job summary limits; sub-issues; Pages previews; a web-form tag triggering <code>release.yml</code>; GitHub's key on web merge commits; auto-merge on this repo; API rate budget for polling; auto-merge on a personal Free repo (the page says it must be enabled in the repo settings, not which plans have it); whether a merge made by auto-merge starts push workflows; turning a pull request back to draft through the API; the htmldoc server accepting comment calls from a Pages origin; GitHub Pages being free for a public repo; a second "machine" account being allowed by GitHub's terms; who may tick a checklist in a pull-request body and whether the API says who ticked it (not relied on: your comment is the report); whether GitHub retargets a stacked pull request when its base branch is deleted (not relied on: the code pull request targets the epic from the start); the stacked-branch merge-base claim in §8 (reasoned; the scratch probe was denied, W7 tests it). Each WU's plan verifies the ones it relies on, by a scratch repo or by reading the named page.</li>
+  <li><b>Unverified, from memory:</b> rulesets on a personal Free public repo; required checks pinned to a source app; job summary limits; sub-issues; Pages previews; a web-form tag triggering <code>release.yml</code>; GitHub's key on web merge commits; auto-merge on this repo; API rate budget for polling; auto-merge on a personal Free repo (the page says it must be enabled in the repo settings, not which plans have it); whether a merge made by auto-merge starts push workflows; turning a pull request back to draft through the API; the htmldoc server accepting comment calls from a Pages origin and GitHub Pages being free for this public repo (both are W9's first checks, run before any build work); a second "machine" account being allowed by GitHub's terms; who may tick a checklist in a pull-request body and whether the API says who ticked it (not relied on: your comment is the report); whether GitHub retargets a stacked pull request when its base branch is deleted (not relied on: the code pull request targets the epic from the start); the stacked-branch merge-base claim in §8 (reasoned; the scratch probe was denied, W7 tests it). Each WU's plan verifies the ones it relies on, by a scratch repo or by reading the named page.</li>
   <li><b>Access:</b> docs.github.com and api.github.com are refused to this worker's shell (sandbox proxy); the fetch tool reached docs.github.com; github.com was reachable for <code>git ls-remote</code>.</li>
 </ul>
 
@@ -599,6 +600,7 @@ flowchart LR
 <p>Drafted 2026-11-15 from the owner's ask of that day, by a planning worker on <code>epic/E-GHFLOW</code> off main <code>e957cb2</code>. Status draft: the owner reads, comments and tunes; WUs are provisional until the open points are answered.</p>
 <p>v2, same day, after the owner's first read ("basically matches my ideas"): manual testing is done by you on your Mac from a pull-request instruction (W6 and §6 rewritten; built binaries and Codespaces rejected as the main route); every local check audited against the code (§7); work that need not wait goes in its own pull request (W7, §8); open point 9 changed, 14–18 added.</p>
 <p>v3, same day, after the owner's comments: the router's audience and approve-to-merge are settings (open points 6, 11; §4 Settings); Keel's own repo only (open point 8); the epic sign-off is an approval, with the report as a note (open point 10, W4); waivers and roster changes by comment, with you notified (open point 12, W8); conflicts fixed on the conflicted branch (open point 18); docs as web pages proposed and left for your decision (open point 5, W9).</p>
+<p>v3.1, same day: your ruling on open point 5, "ok, go with Pages" (2026-11-15). W9 is no longer conditional; its first step checks that Pages is free here and that htmldoc comments work from a Pages page, with the htmldoc "view" endpoint as the fallback.</p>
 
   </main>
   <script type="module">
