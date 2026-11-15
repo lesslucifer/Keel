@@ -38,13 +38,17 @@ pub const GIT_HOOK_ENV: [&str; 8] = [
     "GIT_COMMITTER_DATE",
 ];
 
+/// The global git config of every test spawn: `maintenance.auto = false`, nothing else.
+pub const GIT_CONFIG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/gitconfig");
+
 pub fn no_git_env(mut c: Command) -> Command {
     for k in GIT_LOCAL_ENV.iter().chain(&GIT_HOOK_ENV) {
         c.env_remove(k);
     }
     // B10: no fixture reads the developer's global or system config (a signing key, tag.gpgSign,
     // log.showSignature). A repo's own config still applies: it is part of what a test judges.
-    c.env("GIT_CONFIG_GLOBAL", "/dev/null");
+    // The tests' own global config only turns off git's automatic maintenance (E-TESTOPT.W5).
+    c.env("GIT_CONFIG_GLOBAL", GIT_CONFIG);
     c.env("GIT_CONFIG_NOSYSTEM", "1");
     c
 }

@@ -210,3 +210,31 @@ fn a_read_only_directory_is_copied_with_its_children() {
     copied.unwrap();
     assert_eq!(std::fs::read_to_string(d.join("ro/sub/f")).unwrap(), "f");
 }
+
+/// Integration (E-TESTOPT.W5): a test's git reads one global setting, `maintenance.auto = false`,
+/// so a commit in a fixture starts no `git maintenance run --auto`.
+#[test]
+fn a_test_spawn_runs_no_automatic_git_maintenance() {
+    use crate::common::cmd;
+    let o = cmd("git").args(["config", "--global", "--list"]).output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&o.stdout), "maintenance.auto=false\n", "{}", String::from_utf8_lossy(&o.stderr));
+    let (repo, trace) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    let git = |a: &[&str]| {
+        let o = cmd("git")
+            .args(a)
+            .current_dir(repo.path())
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .env("GIT_TRACE2", trace.path())
+            .output()
+            .unwrap();
+        assert!(o.status.success(), "git {a:?}: {}", String::from_utf8_lossy(&o.stderr));
+    };
+    git(&["init", "-q"]);
+    git(&["commit", "-q", "--allow-empty", "-m", "c"]);
+    let traces: Vec<String> = std::fs::read_dir(trace.path()).unwrap().map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap()).collect();
+    assert!(traces.iter().any(|t| t.contains(" commit -q")), "git traced nothing: {traces:?}");
+    assert!(!traces.iter().any(|t| t.contains("maintenance run")), "a commit started git maintenance");
+}
