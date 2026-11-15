@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="9b413f6010839576f89e899a" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHFLOW.W3 result: the router hears you through GitHub</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHFLOW.W3 result · The router hears you through GitHub</h1>
+      <p>Delivered and tested against a mock of GitHub. It goes live once your App has three more permissions: the steps are below.</p>
+      <div class="meta">Ready v4 · 2026-11-15 · T3 · WU result · Keel · plan: 2026-11-15-eghflow-w3-plan.html</div>
+    </div>
+  </header>
+  <main>
+    <h2 id="outcome">Outcome</h2>
+    <p data-item="outcome">Delivered. <code>scripts/router-gh-watch.sh</code> watches one issue or pull request for a review, a comment, a merge or finished checks. It checks at once, then about once a minute, and exits on the first event from a commander: one event line, the text indented, control characters as <code>?</code>. Anyone else is a count, never text, and never wakes the router. An edited comment is never read as an order. A comment's first line is parsed by the closed grammar <code>/keel go|hold|retry|answer &lt;n&gt; &lt;A|B&gt;</code>. The watch keeps no state and holds no secret: each poll asks <code>router-gh.sh</code>, which mints the token, reads only the bot's own issues and pull requests, and hands back plain data. <code>router-gh.sh issue</code> keeps a tracking issue per epic with a sub-issue per WU. <code>pr-ready</code> now asks you for a review. The commanders are committed: you alone, user id 5499546 (read from the public API). The guard admits exactly the new shapes; workers are denied the watch. Against GitHub itself it is unproven until your App has the new permissions.</p>
+
+    <h2 id="changes">What changes for you</h2>
+    <table data-c="changes" data-item="owner-changes">
+      <tr><th>When</th><th>Today</th><th>After W3 and the App update</th></tr>
+      <tr><td>You give an order</td><td>In the router's chat</td><td>A comment: <code>/keel go</code>, <code>/keel hold</code>, <code>/keel retry</code>, <code>/keel answer 2 B</code>; lines below it are your message. Plain text with no command is a message too</td></tr>
+      <tr><td>You approve, comment, merge</td><td>You tell the router</td><td>The router's watch prints it within about a minute</td></tr>
+      <tr><td>A pull request turns ready</td><td>Nothing on your phone</td><td>GitHub asks you for a review</td></tr>
+      <tr><td>You want the epic's state</td><td>You ask</td><td>The epic's tracking issue: tip, docs, notes, and a row per WU; each WU a sub-issue, closed once merged</td></tr>
+      <tr><td>You edit a comment</td><td>—</td><td>The edit is never an order: the router sees <code>EDITED</code> and asks you to post again</td></tr>
+    </table>
+
+    <h2 id="steps">Your steps</h2>
+    <ol data-c="steps">
+      <li><strong>Commit the rule-bearing files</strong> (staged in this worktree: the three scripts, the jq grammar, the guard, the launcher, <code>.keel/config.toml</code> with your id). In <code>/Users/nguyenvanluong/Documents/proj/misc/Keel-E-GHFLOW-w3-gh-watch</code> run: <code>keel mr commit -m 'feat(E-GHFLOW.W3): router-gh-watch.sh, the command grammar, the tracking issue and their guard shapes' --as vuluu</code>.</li>
+      <li><strong>Give the App three more permissions</strong>: github.com → your avatar → Settings → Developer settings → GitHub Apps → your App → Permissions &amp; events. Repository permissions: <em>Issues: Read and write</em> (comments, the tracking issue), <em>Checks: Read-only</em>, <em>Commit statuses: Read-only</em>. Save. Then accept the new permissions on the installation (Settings → Applications → Installed GitHub Apps → your App → Review request).</li>
+      <li>Optional: the router's allow lines in <code>.claude/settings.json</code>, as in W2: <code>"Bash(scripts/router-gh-watch.sh *)"</code> and <code>"Bash(scripts/router-gh.sh issue *)"</code>. The guard bounds every call either way.</li>
+    </ol>
+    <p>The first live run, from a checkout that holds this WU: <code>scripts/router-gh.sh issue epic/E-GHFLOW</code> prints <code>ISSUE number=… state=opened</code>; then <code>ROUTER_WATCH_MAX=600 scripts/router-gh-watch.sh comment &lt;that number&gt;</code> (typed by you, since the guard admits no prefix), you comment <code>/keel go</code> from your phone, and within a minute it prints <code>COMMAND issue=… from=5499546 verb=go pending=0</code>. A comment from another account prints nothing until then, and then only <code>IGNORED from=other count=1</code>.</p>
+
+    <h2 id="deviations">Deviations</h2>
+    <ul data-item="deviations">
+      <li>The plan's example printed <code>from=owner</code>. The watch prints the commander's user id (<code>from=5499546</code>), since the list may hold more than you (open point 6).</li>
+      <li>The tracking issue's text comes from git only: tip, docs, notes, WU rows. It has no "waiting on you" section yet (W8 adds it) and no link to the pull request.</li>
+      <li>Done here, not in the plan's card: W2's follow-up, the review request on <code>pr-ready</code>; and the parts of <code>pr-open</code>'s body code that the issue reuses moved into functions (behaviour unchanged, W2's tests unchanged but the <code>READY</code> line).</li>
+      <li>Still unverified, each failing safe: that only a body edit moves a comment's <code>updated_at</code> (a false <code>EDITED</code> asks you to repost); that an installation token may read <code>GET /user/{id}</code> (a refusal is a <code>WARN</code> line; the pull request is still marked ready); the sub-issue and permission facts come from GitHub's docs, read 2026-11-15, not a live call.</li>
+      <li>The security review found no blocker in W3. Its findings, each fixed in this WU:
+        <ul>
+          <li><strong>P1</strong>, backlog R33, older than this WU: a worker could write the shared git dir's <code>commondir</code>, and every git in your checkout would then read another repository's config. Now: (a) the launcher's sandbox denies writing <code>&lt;git dir&gt;/commondir</code> and every other worktree's admin <code>commondir</code> and <code>gitdir</code>, and the launcher refuses to run while a main git dir holds a <code>commondir</code> file. A worker's own git use is untouched: commit and notes never write these files. A worktree added after a worker started was not in that worker's list. Your own unsandboxed git in that later worktree, <code>keel mr commit</code> included, could then run a worker's hook. Round 2 closed that (F1, below). (b) <code>router-gh.sh</code> pins its own checkout's git dir (<code>GIT_DIR</code>, <code>GIT_COMMON_DIR</code>) and refuses a <code>commondir</code> file in the main git dir, or a linked checkout's admin dir not as git makes it. (c) Every git it runs gets no hooks and no fsmonitor (<code>GIT_CONFIG_COUNT</code>), and <code>GIT_ALLOW_PROTOCOL=https</code>. That env var overrides any <code>protocol.*.allow</code> in the repository's config, which <code>-c protocol.allow=never</code> would not. R33's backlog row is left for the epic close, where the epic plan updates the backlog.</li>
+          <li><strong>I1</strong>: more than 1000 items no longer stops anything. <code>issue</code> lists only issues with the bot's <code>keel-tracking</code> label, which it creates first if missing; GitHub's docs say an unknown label is dropped. The watches read the 10 newest pages, found by the Link header's last page. When <code>since</code> lies before them, the watch prints <code>OVERFLOW … since= oldest=</code> and exits 0.</li>
+          <li><strong>I2</strong>: every event line carries <code>at=</code>, GitHub's time, and <code>since latest</code> skips everything present at the first poll. The guard admits it.</li>
+          <li><strong>Round 2</strong> (no blocker; it called the WU ready):
+            <ul>
+              <li><strong>F1</strong>, older than W3: a worker spawned earlier could write the admin dir of a worktree made later, and your git there ran its hook (reproduced by the review). Now every launcher run checks every admin dir under <code>&lt;git dir&gt;/worktrees</code>: a real directory, <code>commondir</code> exactly <code>../..</code>, no <code>config.worktree</code>, a <code>gitdir</code> naming a <code>.git</code>. Any mismatch stops every mode before any session starts. The watchdog's facts, which never fail, report it to the router instead. The sandbox also denies the globs <code>&lt;git dir&gt;/worktrees/*/commondir</code>, <code>*/gitdir</code> and <code>*/config.worktree</code>. A glob does not stop a worker renaming a whole admin dir, so the per-run check is the real one. Not done, for the router's backlog: <code>keel mr</code> checking its own checkout's admin dir (a keel source change), and an allow-list sandbox.</li>
+              <li><code>config.worktree</code>: the sandbox denies it in the git dir and in every admin dir. The launcher refuses one in the main git dir. <code>router-gh.sh</code> refuses one in the git dir or its own admin dir: git reads it even under the pins, and a <code>url.insteadOf</code> or <code>core.askPass</code> there reroutes git or runs code. Your <code>.git/config</code> holds no <code>include</code> today, so no included file is reachable.</li>
+              <li><strong>F2</strong>: OVERFLOW used to hide a commander's comment inside the pages it had read. Now those items are judged all the same. An event among them carries <code>gap=yes oldest=&lt;id&gt;</code>. With none, <code>OVERFLOW … resume=&lt;newest id read&gt;</code>, and the router re-arms with <code>since &lt;resume&gt;</code>. The reviewer's <code>resume=&lt;oldest − 1&gt;</code> would loop, since that <code>since</code> still lies before every item read.</li>
+              <li>Nits: <strong>N-a</strong> the further invisible characters print as <code>?</code>. <strong>N-b</strong> the header says N2 covers comments only. <strong>N-c</strong> a full first page with no Link header fails the read. <strong>N-d</strong> a deletion mid-read is documented in the header. <strong>N-e</strong> the launcher checks the resolved git dir's <code>commondir</code> too. <strong>N-f</strong>: no admin dir is skipped any more, and each is denied by name. A name outside <code>[A-Za-z0-9._-]</code> is not refused: git names an admin dir after its checkout, and a test makes <code>o'd-d</code>.</li>
+            </ul>
+          </li>
+          <li><strong>N1</strong>: zero-width characters, the BOM and tag characters print as <code>?</code>; check names and status contexts are cut at 100 characters. <strong>N2</strong>: a comment an App posted for a commander counts as anyone else's. Never store a commander's own token as a repository secret: GitHub would show its comments as theirs. <strong>N3</strong>, <strong>N4</strong>: documented in the watch's header. <code>DISMISSED</code> names the review's author, not who dismissed it, and REST shows no edit of a review's text. <strong>N5</strong>: the tests below.</li>
+        </ul>
+      </li>
+      <li>Otherwise none.</li>
+    </ul>
+
+    <h2 id="evidence">Evidence</h2>
+    <div data-item="evidence" data-c="evidence">
+      <p>Commits: 0b4db2f (plan), 354622a and 77de7fe (tests), db16ab0 and 04153d4 (this report, v1), f59ef17 (the security review's tests and this report, v2), 69e18a8 (round 2's tests and this report, v3), your <code>keel mr commit</code> 2e973d9, and the code review round 1 fix (tests and this report, v4). Before that commit: your <code>keel mr commit</code> of the scripts, the launcher, the guard and the config.</p>
+      <ul>
+        <li>Integration, <code>tests/suite/router_gh_watch.rs</code>, 20 tests on W2's scratch repo, fake curl and throwaway key, now serving each route's answers in turn so polls see changes without timing: an approval prints <code>APPROVED pr= sha=</code> after a stranger's approval and a pending review; a stranger's <code>/keel go</code> prints only <code>IGNORED from=other count=1</code>; each verb, a message, bad commands; <code>pending</code> and <code>since</code>; an edited comment prints <code>EDITED</code> and no text; control characters, C1, tab, separators and bidi marks as <code>?</code>; <code>free_text = false</code>; merged, closed; checks pending then done; only the bot's issues and pull requests; commanders read only from a committed file, none refused; <code>UNREACHABLE</code> after 5 failures; <code>TIMEOUT</code>; the same output twice and nothing written anywhere. From the security review: <code>since latest</code>; a 1500-comment thread read from its end (11 page reads) and, when <code>since</code> lies before it, the commander's comment inside it marked <code>gap=yes</code> (round 2's repro, <code>since 5</code>), or <code>OVERFLOW … resume=</code> with none, and re-arming there reads nothing twice; a full first page with no Link fails; an App's comment for a commander not heard; a check name with a line break, tag characters, a BOM and a zero-width space; a forged HEAD naming another commander, refused. Every run is checked for the key, the JWT and the token, and for files left in <code>$TMPDIR</code>, the run dir and the checkout.</li>
+        <li>Integration, <code>tests/suite/router_gh.rs</code>: three new tests (the epic's issue and a WU sub-issue linked by id; refresh in place, a stranger's or a pull request's marker ignored, a merged branch closed; a WU before its epic refused) and the review request in the <code>pr-ready</code> test. From the security review: a linked checkout works; a forged admin <code>commondir</code> and a main git dir's <code>commondir</code> are refused in every mode before any request, and so is a <code>config.worktree</code> in either; a repository config's hook and an <code>ext::</code> transport it allows and reroutes to both run for a plain git, never for <code>sync</code> or <code>push</code>; the https path's git gets <code>GIT_ALLOW_PROTOCOL=https</code> and no hooks.</li>
+        <li>Launcher, <code>tests/suite/router.rs</code>: the sandbox JSON denies the git dir's <code>commondir</code> and the other worktree's admin files; a <code>commondir</code> or <code>config.worktree</code> file in the main git dir stops every mode before any session starts, and the watchdog's facts report it; round 2: a later worktree's admin dir with a foreign <code>commondir</code>, a <code>config.worktree</code> or a <code>gitdir</code> naming no <code>.git</code> stops every mode; an admin dir named after a checkout holding a quote is denied by name; the globs are in the deny list.</li>
+        <li>Unit, <code>tests/suite/router_gh_watch_args.rs</code>, 4 tests: the watch's argument check with nothing reaching curl; the grammar's every form; a generated corpus of 400 comments held to a reference written from the spec. <code>tests/suite/router_gh_args.rs</code>: <code>issue</code> and <code>watch-read</code> arguments.</li>
+        <li>Guard, <code>tests/suite/router.rs</code>: the new shapes pass and 33 other spellings are denied; a generated corpus agrees with the watch's and the script's argument checks; the worker deny list and the rule-bearing list hold the new files.</li>
+        <li>Code review round 1 (FAIL, one important finding, all test-side): the watch's environment-knob cases ran with your real home, the real curl and no alarm. On a regression past the argument check they would have reached your App key and GitHub. They now run in the same isolated harness as every other argument case: a temp home, a recording curl, <code>ROUTER_WATCH_MAX=0</code> and a 60 s alarm. Nits folded in: the grammar tests assert one verdict per case; a test's doc no longer promises an UNREACHABLE it does not run; the stranger-issue refusal asserts empty output and no comment read; the dirty-checkout spawn reuses the bounded helper; the guard-against-watch corpus is sorted and deduplicated, as its W2 sibling.</li>
+        <li><code>keel check</code>: lint green; 406 passed, 10 ignored (the notify_owner loopback tests), in the sandbox.</li>
+      </ul>
+    </div>
+
+    <h2 id="distillation">Distillation</h2>
+    <p data-item="distillation">Nothing distilled at the WU. At the epic close: UC-ROUTE-1 (the GitHub watch kinds), UC-ROUTE-6 (the guard's new shapes), a new UC-ROUTE row for the GitHub command channel and its trust rules (who is heard, edits, the grammar, counts only for others), and the decision record on polling as the command channel, as the epic plan lists.</p>
+
+    <h2 id="follow-ups">Follow-ups</h2>
+    <ul data-item="follow-ups">
+      <li>Teach the router skills to arm these watches, re-arm with <code>since</code>, and refresh the tracking issue: the epic close, with the other <code>keel-router</code> edits the epic plan lists. The same edit updates project-router's sandbox description (the new <code>commondir</code> denies).</li>
+      <li>For the router's backlog (round 2): <code>keel mr</code> checking its own checkout's admin dir before it commits (a keel source change), and an allow-list sandbox for workers in place of the deny list.</li>
+      <li>Backlog R33 (the <code>commondir</code> row): marked fixed by E-GHFLOW.W3 at the epic close, with the epic plan's other backlog updates.</li>
+      <li>The <code>/keel tried …</code> verbs: W6. <code>/keel waive-review</code>, <code>confirm-waiver</code>, <code>accept-waiver</code>, <code>roster-change</code> and the issue's "waiting on you" section: W8.</li>
+      <li>The live proof (the first run above): recorded in the epic result, as the epic plan's live evidence.</li>
+    </ul>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

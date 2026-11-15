@@ -119,6 +119,37 @@ linked_ok() {
   [ "$(cd -P "$(dirname "$lk_g")" 2>/dev/null && pwd -P)" = "$(cd -P "$1" 2>/dev/null && pwd -P)" ] || return 1
   lk_admin=$lk_a
 }
+# git_dirs_ok: the shared git dir as git makes it (E-GHFLOW.W3 security review P1 and round 2 F1,
+# backlog R33). A main git dir has no commondir or config.worktree file: one there sends every git in
+# that checkout, the owner's unsandboxed git and this launcher's included, to another repository's
+# config, hooks and fsmonitor. The same holds for each worktree's admin dir under <git dir>/worktrees:
+# a real directory, commondir ../.., no config.worktree, a gitdir naming a .git (linked_ok's rule for
+# the files that live in the shared git dir; a checkout's own .git is checked by linked_ok wherever
+# the launcher runs git, and one that names no admin dir never reads this one). Workers are denied writing
+# these files (the sandbox below), but a worker spawned earlier could write an admin dir made later,
+# so every admin dir is checked on every run. Sets bad and returns 1 on the first problem.
+git_dirs_ok() {
+  bad=
+  for gf in commondir config.worktree; do
+    if [ -d "$ROOT/.git" ] && { [ -e "$ROOT/.git/$gf" ] || [ -L "$ROOT/.git/$gf" ]; }; then
+      bad="$ROOT/.git/$gf exists: a main git dir has none, so a worker may have written it; the owner removes it"; return 1
+    fi
+  done
+  common_dir || return 0
+  for gf in commondir config.worktree; do
+    if [ -e "$gd/$gf" ] || [ -L "$gd/$gf" ]; then
+      bad="$gd/$gf exists: a main git dir has none, so a worker may have written it; the owner removes it"; return 1
+    fi
+  done
+  for gw in "$gd"/worktrees/*; do
+    [ -e "$gw" ] || [ -L "$gw" ] || continue
+    unl="worktree admin dir $gw does not link to this repository as git made it"
+    [ -d "$gw" ] && [ ! -L "$gw" ] || { bad="$unl (not a directory): the owner decides"; return 1; }
+    [ "$(cat "$gw/commondir" 2>/dev/null)" = ../.. ] || { bad="$unl (its commondir is not ../..): the owner decides"; return 1; }
+    [ ! -e "$gw/config.worktree" ] && [ ! -L "$gw/config.worktree" ] || { bad="$unl (it holds a config.worktree): the owner decides"; return 1; }
+    gg=$(cat "$gw/gitdir" 2>/dev/null) && [ "$(basename "$gg")" = .git ] || { bad="$unl (its gitdir names no .git): the owner decides"; return 1; }
+  done
+}
 # a path the hook command, the sandbox and the rules quote safely: no quote, backslash or newline
 safe_path() { case "$2" in *[\'\"\\]*|*"
 "*) die "$1 $2 holds a quote, a backslash or a newline: the launcher cannot pass it safely";; esac; }
@@ -238,6 +269,14 @@ facts() {
     | if .k < ($b | length) then .out + "\n\(($b | length) - .k) more workers not shown." else .out end end'
 }
 mode=${1:-}; [ $# -ge 1 ] && shift
+# before any other git in any mode; the watchdog's facts, which never fail, report it instead
+if ! git_dirs_ok; then
+  if [ "$mode" = watchdog ] && [ "${1:-}" = facts ]; then
+    rn=router; expr "${2:-}" : '^[a-z0-9][a-z0-9-]\{0,31\}$' > /dev/null && rn=$2
+    printf 'Report to %s.\n%s\n' "$rn" "$bad" | tr -d '\000-\011\013-\037\177'; exit 0
+  fi
+  die "$bad"
+fi
 if [ "$mode" = watchdog ]; then
   [ $# -eq 2 ] || die "watchdog start|stop <router-name>"
   wmode=$1 rn=$2
@@ -414,14 +453,29 @@ snapshot
 # PreToolUse hook on every tool, fail-closed: the file tools edit only this worktree and read
 # neither ~/.ssh nor ~/.claude/channels (DEC-37), nor the router bot's key dir ~/.config/keel/router-gh
 # (E-GHFLOW.W2). The shell's denyRead of that dir is what keeps the App key from a worker; the Bash deny
-# of scripts/router-gh.sh below states intent only (a prefix rule: another spelling of the path passes). A hook is not a deny rule, so it feeds no sandbox
+# of scripts/router-gh.sh and scripts/router-gh-watch.sh (E-GHFLOW.W3) below states intent only (a prefix rule: another spelling of the path passes). A hook is not a deny rule, so it feeds no sandbox
 # path (review round 2, H1).
 hook="sh '$guard' '$wt' '$HOME' || { echo 'worker file guard: failed - tool call denied' >&2; exit 2; }"
-sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --arg hook "$hook" '{sandbox: {enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
+# The git dir's commondir and config.worktree, and every worktree's admin commondir, gitdir and
+# config.worktree, are not the worker's either (E-GHFLOW.W3 security review P1 and round 2 F1,
+# backlog R33): one there sends git in that checkout - the owner's unsandboxed git included - to a
+# config the worker wrote. Every admin dir that exists now is listed by name, and by glob for one
+# added later; a glob does not stop a worker renaming a whole admin dir, so git_dirs_ok (above)
+# checks every admin dir on every launcher run, and router-gh.sh pins its own git dir.
+others='[]'
+for d in "$gd"/worktrees/*; do
+  [ -e "$d" ] || [ -L "$d" ] || continue
+  [ -d "$d" ] && [ ! -L "$d" ] || die "worktree admin dir $d is not a directory: the owner decides"
+  [ "$d" != "$admin" ] || continue
+  others=$(printf '%s' "$others" | jq -c --arg d "$d" '. + [$d + "/commondir", $d + "/gitdir", $d + "/config.worktree"]')
+done
+sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --argjson o "$others" --arg hook "$hook" '{sandbox: {enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
   filesystem: {allowWrite: [$g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
       "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
-    denyWrite: [$g + "/config", $g + "/hooks", $g + "/keel-hooks", $g + "/info", $a + "/commondir", $a + "/gitdir",
-      $w + "/.git", $w + "/.claude/settings.json", $w + "/.claude/settings.local.json", "~/.claude.json"],
+    denyWrite: ([$g + "/config", $g + "/hooks", $g + "/keel-hooks", $g + "/info", $g + "/commondir", $g + "/config.worktree",
+        $a + "/commondir", $a + "/gitdir", $a + "/config.worktree"] + $o
+      + [$g + "/worktrees/*/commondir", $g + "/worktrees/*/gitdir", $g + "/worktrees/*/config.worktree"]
+      + [$w + "/.git", $w + "/.claude/settings.json", $w + "/.claude/settings.local.json", "~/.claude.json"]),
     denyRead: ["~/.ssh", "~/.claude/channels", "~/.config/keel/router-gh"]},
   network: {allowedDomains: ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}},
   hooks: {PreToolUse: [{matcher: "*", hooks: [{type: "command", command: $hook, timeout: 10}]}]}}')
@@ -438,7 +492,7 @@ set -- "$@" --disallowedTools
 for c in "keel mr" "cargo run" "keel init" "keel hooks" "cargo install" "cargo publish" "cargo login" \
   "git push" "git config" "git update-ref" "git symbolic-ref" "git stash" "git notes" "git switch" "git checkout" \
   "git rebase" "git worktree add" "git worktree remove" "git worktree move" "git worktree prune" "git -C" \
-  "git --git-dir" "git --work-tree" "claude" "scripts/router-worker.sh" "scripts/router-gh.sh"; do
+  "git --git-dir" "git --work-tree" "claude" "scripts/router-worker.sh" "scripts/router-gh.sh" "scripts/router-gh-watch.sh"; do
   set -- "$@" "Bash($c)" "Bash($c *)"; done
 set -- "$@" "Bash(git --git-dir=*)" "Bash(git --work-tree=*)"
 # The Read tool is also denied the sandbox's denyRead paths by rule (the file guard's realpath check is

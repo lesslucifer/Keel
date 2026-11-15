@@ -8,9 +8,17 @@
 #   router-gh.sh pr-ready <n>                              mark the bot's pull request ready for review
 #   router-gh.sh post     <n> <body-name>                  post <worktree of its head>/.router-gh/<body-name>.md
 #   router-gh.sh sync     <epic/E>                         fetch GitHub's epic; fast-forward it here unless checked out
+#   router-gh.sh issue    <branch>                         open or refresh the tracking issue of an epic, or a WU's sub-issue
 #   (router-gh.sh credential <file> <op>: git's one-shot credential helper only; never a router shape)
+#   (router-gh.sh watch-read <kind> <n>: scripts/router-gh-watch.sh's read of GitHub; never a router shape)
 # Exit 2 = refused (arguments, setup, a precondition); exit 1 = GitHub or git refused the request.
-# Output: one KEY line (PUSHED, PR, READY, POSTED, SYNCED) of k=v words; WARN lines; errors on stderr.
+# Output: one KEY line (PUSHED, PR, READY, POSTED, SYNCED, ISSUE) of k=v words; WARN lines; errors on
+# stderr. watch-read prints one line of JSON instead (E-GHFLOW.W3).
+#
+# Who the router hears (E-GHFLOW.W3): [github] commanders, numeric GitHub user ids, and free_text, in
+# .keel/config.toml. They are read from this checkout's file, which no worker can write, and only
+# while its bytes are HEAD's: HEAD alone is a ref a worker can move in the shared git dir. pr-ready
+# asks each commander for a review; watch-read hands the list to the watch, which judges.
 #
 # Secrets. The App's private key is read only here, from $HOME/.config/keel/router-gh/app.pem (a
 # regular file, not a link, the user's, mode 0600 or 0400, outside every worktree of this repository
@@ -76,7 +84,7 @@ die() { echo "router-gh: $*" >&2; exit 2; }
 fail() { echo "router-gh: $*" >&2; exit 1; }
 # an argument as printed in an error: no control character, at most 80 bytes
 shown() { printf '%s' "$1" | tr -d '\000-\037\177' | cut -c1-80; }
-usage="usage: push <branch> | pr-open <branch> [--base <main|epic/E>] | pr-ready <n> | post <n> <body-name> | sync <epic/E>"
+usage="usage: push <branch> | pr-open <branch> [--base <main|epic/E>] | pr-ready <n> | post <n> <body-name> | sync <epic/E> | issue <branch>"
 # Keel's branch policy (.keel/config.toml [branches], as scripts/router-worker.sh holds it)
 main_b=main epic_p=epic/ wu_p=wu/
 seg='[A-Za-z0-9][A-Za-z0-9._-]*'
@@ -132,6 +140,15 @@ case "$mode" in
     branch=$1; nodash "$branch"
     expr "x$branch" : "x$epic_p$seg\$" > /dev/null || die "sync takes an $epic_p<E> branch only: $(shown "$branch")"
     refname "$branch";;
+  issue)
+    [ $# -eq 1 ] || die "usage: issue <wu/E/slug|epic/E>"
+    branch=$1; work_branch "$branch";;
+  watch-read)
+    # scripts/router-gh-watch.sh's read, one per poll; read-only, never a router shape (the guard refuses it)
+    [ $# -eq 2 ] || die "usage: watch-read <review|comment|merged|checks> <n>"
+    wkind=$1 n=$2
+    case "$wkind" in review|comment|merged|checks) ;; *) die "usage: watch-read <review|comment|merged|checks> <n>";; esac
+    number "$n";;
   credential)
     # git's credential helper (`!'<this script>' credential '<file>'` + the op): get, asked for
     # protocol=https host=github.com, prints the token once and the file is gone; any other host gets
@@ -176,7 +193,37 @@ case "$1" in -rw-------|-rw-------[@.]|-r--------|-r--------[@.]) ;; *) die "the
 # one link: a hard link elsewhere (a worker's worktree) would be a second name for the key
 [ "$2" = 1 ] || die "the App key $key has $2 links: remove the others"
 kreal=$(cd "$kdir" && pwd -P) || die "cannot resolve $kdir"
-gd=$(cd "$ROOT" && cd "$(git rev-parse --git-common-dir)" && pwd -P) || die "cannot resolve this repository's git dir"
+# This checkout's own git dir, pinned for every git below (security review P1, backlog R33): never
+# one a commondir file names, since workers can write the shared git dir. A main checkout's .git has
+# no commondir file; a linked checkout's admin dir holds ../.. and names this checkout back.
+# GIT_DIR and GIT_COMMON_DIR then make any commondir moot, and every git here runs with no hooks and
+# no fsmonitor (GIT_CONFIG_COUNT) and speaks only https to GitHub (GIT_ALLOW_PROTOCOL, below), over
+# whatever the repository's config says.
+if [ -d "$ROOT/.git" ] && [ ! -L "$ROOT/.git" ]; then
+  gdir=$(cd -P "$ROOT/.git" && pwd -P) || die "cannot resolve $ROOT/.git"
+  gd=$gdir
+elif [ -f "$ROOT/.git" ] && [ ! -L "$ROOT/.git" ]; then
+  gl=$(cat "$ROOT/.git") || die "cannot read $ROOT/.git"
+  ga=${gl#gitdir: }
+  [ "$ga" != "$gl" ] || die "$ROOT/.git is not a gitdir link"
+  gdir=$(cd -P "$ga" 2> /dev/null && pwd -P) || die "cannot resolve $ROOT/.git's admin dir"
+  vg=$(cat "$gdir/gitdir" 2> /dev/null) || vg=
+  [ "$(basename "$(dirname "$gdir")")" = worktrees ] && [ "$(cat "$gdir/commondir" 2> /dev/null)" = ../.. ] \
+    && [ "$(basename "$vg")" = .git ] && [ "$(cd -P "$(dirname "$vg")" 2> /dev/null && pwd -P)" = "$ROOT" ] \
+    || die "$gdir is not this checkout's admin dir as git makes one (commondir ../.., gitdir naming $ROOT/.git): the owner decides"
+  gd=$(cd -P "$gdir/../.." && pwd -P) || die "cannot resolve this repository's git dir"
+else
+  die "$ROOT has no .git"
+fi
+[ ! -e "$gd/commondir" ] && [ ! -L "$gd/commondir" ] || die "$gd/commondir exists: a main git dir has none, so a worker may have written it; the owner removes it"
+# nor a config.worktree, in the git dir or this checkout's admin dir (round 2): git reads one even
+# under the pins, and a url.insteadOf or core.askPass there reroutes git or runs code
+for f in "$gd/config.worktree" "$gdir/config.worktree"; do
+  [ ! -e "$f" ] && [ ! -L "$f" ] || die "$f exists: this repository uses none, so a worker may have written it; the owner removes it"
+done
+GIT_DIR=$gdir GIT_COMMON_DIR=$gd GIT_WORK_TREE=$ROOT
+GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null GIT_CONFIG_KEY_1=core.fsmonitor GIT_CONFIG_VALUE_1=false
+export GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_KEY_1 GIT_CONFIG_VALUE_1
 # valid_wt <path> <row>: prints the resolved path when the entry looks as git makes one (see the
 # header): row 1, the main checkout, whose .git is our git dir; any later row, a linked worktree whose
 # .git names $gd/worktrees/<id>, whose commondir is ../.. and whose gitdir names <path>/.git back
@@ -235,6 +282,32 @@ case "$repo" in */.*|*..*) die "[github] repo must be <owner>/<name>: $(shown "$
 owner=${repo%%/*} rname=${repo#*/}
 docs=$(toml docs root) || docs=docs/
 expr "x$docs" : 'x[A-Za-z0-9_][A-Za-z0-9_./-]*/$' > /dev/null || die "[docs] root must be a relative directory ending in /"
+# gh_policy: [github] commanders (space-separated ids, maybe none) and free_text (true|false, default
+# true) from this checkout's .keel/config.toml file, refused unless its bytes are HEAD's (see the header)
+gh_policy() {
+  pf=$ROOT/.keel/config.toml
+  [ -f "$pf" ] && [ ! -L "$pf" ] || die "no .keel/config.toml file in $ROOT"
+  hb=$(git -C "$ROOT" rev-parse -q --verify "HEAD:.keel/config.toml") || die "no .keel/config.toml at HEAD of $ROOT"
+  wb=$(git -C "$ROOT" hash-object --no-filters -- "$pf") || die "cannot hash $pf"
+  [ "$hb" = "$wb" ] || die "$pf differs from HEAD's: who the router hears is read only from a committed file"
+  pol=$(awk '
+    /^[ \t]*\[/ { t = $0; sub(/[ \t]*#.*$/, "", t); on = (t == "[github]"); next }
+    on { l = $0; sub(/[ \t]*#.*$/, "", l); sub(/[ \t]+$/, "", l)
+      if (l ~ /^commanders[ \t]*=/) { c++; sub(/^commanders[ \t]*=[ \t]*/, "", l); print "c" l }
+      else if (l ~ /^free_text[ \t]*=/) { f++; sub(/^free_text[ \t]*=[ \t]*/, "", l); print "f" l } }
+    END { if (c > 1 || f > 1) exit 1 }' "$pf") || die "[github] in $pf sets commanders or free_text twice"
+  commanders= free_text=true
+  while IFS= read -r pl; do
+    case "$pl" in
+      c*) expr "x${pl#c}" : 'x\[ *[1-9][0-9]\{0,11\}\( *, *[1-9][0-9]\{0,11\}\)* *\]$' > /dev/null \
+            || die "[github] commanders must be a list of GitHub user ids, as commanders = [5499546]"
+          commanders=$(printf '%s' "${pl#c}" | tr -c '0-9' ' ' | tr -s ' ' | sed 's/^ //; s/ $//');;
+      f*) case "${pl#f}" in true|false) free_text=${pl#f};; *) die "[github] free_text must be true or false";; esac;;
+    esac
+  done <<EOF
+$pol
+EOF
+}
 API=${ROUTER_GH_API:-https://api.github.com}
 case "$API" in
   https://api.github.com) ;;
@@ -244,6 +317,10 @@ esac
 GITBASE=${ROUTER_GH_GIT:-https://github.com}
 case "$GITBASE" in https://github.com|file:///*) ;; *) die "ROUTER_GH_GIT must be https://github.com or a file:/// directory";; esac
 case "$GITBASE" in *[!A-Za-z0-9/:._-]*|*..*) die "ROUTER_GH_GIT: plain path characters only";; esac
+# only the transport the URL needs, over any protocol.*.allow or url.*.insteadOf in the repository's
+# config (git's GIT_ALLOW_PROTOCOL overrides both): https to GitHub, file only for the test seam
+case "$GITBASE" in https:*) GIT_ALLOW_PROTOCOL=https;; *) GIT_ALLOW_PROTOCOL=file;; esac
+export GIT_ALLOW_PROTOCOL
 url=$GITBASE/$repo.git
 CURL=${ROUTER_GH_CURL:-curl}
 # the run dir: under the key dir, which workers cannot read (X2), never the shared $TMPDIR
@@ -272,14 +349,14 @@ sq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 api() {
   am=$1 ap=$2 ab=${3:-} aa=${4:-}
   if [ "$aa" = jwt ]; then ah=$jwt; else ah=$tok; fi
-  rm -f "$tmp/resp"
+  rm -f "$tmp/resp" "$tmp/hdr"
   rc=0
   code=$({
     printf 'url = "%s%s"\nrequest = "%s"\n' "$API" "$ap" "$am"
     printf 'header = "Authorization: Bearer %s"\n' "$ah"
     printf 'header = "Accept: application/vnd.github+json"\nheader = "X-GitHub-Api-Version: 2022-11-28"\nheader = "User-Agent: keel-router-gh"\n'
     [ -z "$ab" ] || printf 'header = "Content-Type: application/json"\ndata-binary = "@%s"\n' "$ab"
-    printf 'output = "%s"\nwrite-out = "%%{http_code}"\nsilent\nshow-error\nproto = "=https"\nconnect-timeout = 15\nmax-time = 60\n' "$tmp/resp"
+    printf 'output = "%s"\ndump-header = "%s"\nwrite-out = "%%{http_code}"\nsilent\nshow-error\nproto = "=https"\nconnect-timeout = 15\nmax-time = 60\n' "$tmp/resp" "$tmp/hdr"
   } | "$CURL" -q --config -) || rc=$?
   [ "$rc" -eq 0 ] || fail "GitHub unreachable: $am $ap (curl exit $rc)"
   expr "x$code" : 'x[1-5][0-9][0-9]$' > /dev/null || fail "GitHub gave no status: $am $ap"
@@ -291,6 +368,42 @@ api_ok() {
   case "$code" in 2??) return 0;; esac
   msg=$(jq -r '.message // empty' "$tmp/resp" 2> /dev/null | tr -d '\000-\037\177' | cut -c1-200) || msg=
   fail "GitHub refused $1 $2: HTTP $code${msg:+: $msg}"
+}
+# pages <path> <query prefix> <jq path to the page's list>: every page of a list, 100 a page, at most
+# 10 (more is refused), joined into $tmp/all
+pages() {
+  pg=1
+  printf '[]' > "$tmp/all"
+  while :; do
+    api_ok GET "$1?$2per_page=100&page=$pg"
+    jq -c "$3 | arrays" "$tmp/resp" > "$tmp/page" 2> /dev/null && [ -s "$tmp/page" ] || fail "GitHub's answer for $1 is not a list"
+    jq -c -s '.[0] + .[1]' "$tmp/all" "$tmp/page" > "$tmp/all.new" && mv "$tmp/all.new" "$tmp/all" || fail "cannot join GitHub's pages for $1"
+    [ "$(jq length "$tmp/page")" -ge 100 ] || break
+    pg=$((pg + 1))
+    [ "$pg" -le 10 ] || die "more than 1000 items at $1: refused"
+  done
+}
+# pages_newest <path>: the newest pages of a list GitHub orders oldest first, at most 10 of 100,
+# found by the Link header's rel="last" (security review I1: a thread longer than 1000 items is read
+# from its end, never refused). Into $tmp/all; $truncated is true when older pages were skipped.
+pages_newest() {
+  api_ok GET "$1?per_page=100&page=1"
+  jq -c '. | arrays' "$tmp/resp" > "$tmp/page" 2> /dev/null && [ -s "$tmp/page" ] || fail "GitHub's answer for $1 is not a list"
+  last=$(grep -i '^link:' "$tmp/hdr" 2> /dev/null | tr ',' '\n' | sed -n 's/.*[?&]page=\([1-9][0-9]\{0,6\}\)[^>]*> *; *rel="last".*/\1/p' | head -n 1) || last=
+  if [ -z "$last" ]; then
+    # a full first page with no Link to the last one: the newest items cannot be found (round 2, N-c)
+    [ "$(jq length "$tmp/page")" -lt 100 ] || fail "GitHub's answer for $1 holds 100 items and no Link to its last page"
+    last=1
+  fi
+  truncated=false first=2
+  if [ "$last" -gt 10 ]; then truncated=true first=$((last - 9)); printf '[]' > "$tmp/all"; else cp "$tmp/page" "$tmp/all"; fi
+  pg=$first
+  while [ "$pg" -le "$last" ]; do
+    api_ok GET "$1?per_page=100&page=$pg"
+    jq -c '. | arrays' "$tmp/resp" > "$tmp/page" 2> /dev/null && [ -s "$tmp/page" ] || fail "GitHub's answer for $1 is not a list"
+    jq -c -s '.[0] + .[1]' "$tmp/all" "$tmp/page" > "$tmp/all.new" && mv "$tmp/all.new" "$tmp/all" || fail "cannot join GitHub's pages for $1"
+    pg=$((pg + 1))
+  done
 }
 b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 # the installation token, restricted to this repository; the JWT that bought it lives 10 minutes
@@ -340,6 +453,49 @@ bot_pr() {
 }
 # doc text made plain: no markup, link, mention, table cell or control character survives
 plain() { LC_ALL=C tr -d '\000-\037\177`*_[]<>@#|\\~!$^{}"' | LC_ALL=C cut -c1-200; }
+# doc_rows <merge-base> <tip> <plan role>: sets title (the plan's, made plain) and rows (a markdown
+# row per html doc the range changed, linked at the tip)
+doc_rows() {
+  title= rows=
+  for f in $(git -C "$ROOT" diff --name-only --diff-filter=AMR "$1" "$2" -- "$docs"); do
+    case "$f" in *.html) ;; *) continue;; esac
+    expr "x$f" : 'x[A-Za-z0-9_][A-Za-z0-9_./-]*$' > /dev/null || continue
+    case "$f" in *..*) continue;; esac
+    top=$(git -C "$ROOT" show "$2:$f" | head -c 8192 | LC_ALL=C tr '\n\r\t' '   ')
+    role=$(printf '%s' "$top" | LC_ALL=C sed -n 's/.*<html[^>]* data-artifact="\([a-z -]*\)".*/\1/p' | cut -c1-40)
+    status=$(printf '%s' "$top" | LC_ALL=C sed -n 's/.*<html[^>]* data-status="\([a-z-]*\)".*/\1/p' | cut -c1-20)
+    t=$(printf '%s' "$top" | LC_ALL=C sed -n 's/.*<title>\([^<]*\)<\/title>.*/\1/p' | plain)
+    [ -n "$t" ] || t=${f##*/}
+    case " $role " in *" $3 "*) [ -n "$title" ] || title=$t;; esac
+    rows="$rows| [$t](https://github.com/$repo/blob/$2/$f) | ${role:-—} | ${status:-—} |
+"
+  done
+}
+# docs_md: the docs table of doc_rows, or a line saying there is none
+docs_md() {
+  if [ -n "$rows" ]; then
+    echo "**Docs this range changed**, at the tip:"
+    echo
+    echo "| Doc | Role | Status |"
+    echo "|---|---|---|"
+    printf '%s' "$rows"
+  else
+    echo "No doc changed in this range."
+  fi
+}
+# note_state <kind> <commit>: yes, —, or the cr verdict and round
+note_state() {
+  if v=$(git -C "$ROOT" notes --ref="$1" show "$2" 2> /dev/null); then
+    if [ "$1" = cr ]; then
+      verdict=$(printf '%s' "$v" | jq -r '.verdict // empty' 2> /dev/null) || verdict=
+      round=$(printf '%s' "$v" | jq -r '.round // empty' 2> /dev/null) || round=
+      expr "x$verdict" : 'x[A-Z]\{1,12\}$' > /dev/null || verdict=unreadable
+      expr "x$round" : 'x[0-9]\{1,3\}$' > /dev/null && echo "$verdict, round $round" || echo "$verdict"
+    else echo yes; fi
+  else echo —; fi
+}
+# notes_row <commit>: the five notes as markdown cells
+notes_row() { echo "$(note_state test "$1") | $(note_state doc "$1") | $(note_state cr "$1") | $(note_state mr "$1") | $(note_state dod "$1")"; }
 
 case "$mode" in
 push)
@@ -393,30 +549,7 @@ pr-open)
   esac
   [ "$rsha" = "$tip" ] || die "push first: GitHub has $branch at $(shown "$rsha"), the local tip is $tip"
   # the docs this range changed, as they are at the tip
-  title= rows=
-  for f in $(git -C "$ROOT" diff --name-only --diff-filter=AMR "$mb" "$tip" -- "$docs"); do
-    case "$f" in *.html) ;; *) continue;; esac
-    expr "x$f" : 'x[A-Za-z0-9_][A-Za-z0-9_./-]*$' > /dev/null || continue
-    case "$f" in *..*) continue;; esac
-    top=$(git -C "$ROOT" show "$tip:$f" | head -c 8192 | LC_ALL=C tr '\n\r\t' '   ')
-    role=$(printf '%s' "$top" | LC_ALL=C sed -n 's/.*<html[^>]* data-artifact="\([a-z -]*\)".*/\1/p' | cut -c1-40)
-    status=$(printf '%s' "$top" | LC_ALL=C sed -n 's/.*<html[^>]* data-status="\([a-z-]*\)".*/\1/p' | cut -c1-20)
-    t=$(printf '%s' "$top" | LC_ALL=C sed -n 's/.*<title>\([^<]*\)<\/title>.*/\1/p' | plain)
-    [ -n "$t" ] || t=${f##*/}
-    case " $role " in *" $kind_plan "*) [ -n "$title" ] || title=$t;; esac
-    rows="$rows| [$t](https://github.com/$repo/blob/$tip/$f) | ${role:-—} | ${status:-—} |
-"
-  done
-  note_state() {
-    if v=$(git -C "$ROOT" notes --ref="$1" show "$tip" 2> /dev/null); then
-      if [ "$1" = cr ]; then
-        verdict=$(printf '%s' "$v" | jq -r '.verdict // empty' 2> /dev/null) || verdict=
-        round=$(printf '%s' "$v" | jq -r '.round // empty' 2> /dev/null) || round=
-        expr "x$verdict" : 'x[A-Z]\{1,12\}$' > /dev/null || verdict=unreadable
-        expr "x$round" : 'x[0-9]\{1,3\}$' > /dev/null && echo "$verdict, round $round" || echo "$verdict"
-      else echo yes; fi
-    else echo —; fi
-  }
+  doc_rows "$mb" "$tip" "$kind_plan"
   [ -n "$title" ] || title=$branch
   {
     echo "<!-- keel:router-gh pr-body v1 -->"
@@ -424,21 +557,13 @@ pr-open)
     echo
     echo "**Tip:** \`$tip\`"
     echo
-    if [ -n "$rows" ]; then
-      echo "**Docs this range changed**, at the tip:"
-      echo
-      echo "| Doc | Role | Status |"
-      echo "|---|---|---|"
-      printf '%s' "$rows"
-    else
-      echo "No doc changed in this range."
-    fi
+    docs_md
     echo
     echo "**Notes on the tip** when the router last opened or refreshed this page; the gate check on this pull request judges them:"
     echo
     echo "| test | doc | cr | mr | dod |"
     echo "|---|---|---|---|---|"
-    echo "| $(note_state test) | $(note_state doc) | $(note_state cr) | $(note_state mr) | $(note_state dod) |"
+    echo "| $(notes_row "$tip") |"
   } > "$tmp/body"
   api_ok GET "/repos/$repo/pulls?state=open&head=$owner:$branch&per_page=100"
   open=$(jq -r --arg bot "$bot" --arg repo "$repo" --arg b "$branch" '
@@ -462,6 +587,7 @@ pr-open)
   echo "PR number=$1 url=$2 state=$state head=$branch base=$base sha=$tip";;
 
 pr-ready)
+  gh_policy
   mint
   bot_pr "$n"
   [ "$(local_tip "$head_ref" || :)" = "$head_sha" ] || die "pull request $n's head $head_ref is $head_sha on GitHub, not the local tip: push first"
@@ -472,7 +598,22 @@ pr-ready)
     msg=$(jq -r '.errors[0].message // empty' "$tmp/resp" 2> /dev/null | tr -d '\000-\037\177' | cut -c1-200) || msg=
     fail "GitHub did not mark pull request $n ready${msg:+: $msg}"
   fi
-  echo "READY pr=$n head=$head_ref sha=$head_sha state=ready";;
+  # GitHub asks each commander for a review (W2's follow-up, W3): their logins from their ids. The
+  # pull request is ready already, so a refusal here is a WARN line, never a failure.
+  revs=
+  for cid in $commanders; do
+    api GET "/user/$cid"
+    l=$(jq -r 'if .type == "User" then .login // empty else empty end' "$tmp/resp" 2> /dev/null) || l=
+    case "$code" in 2??) ;; *) l=;; esac
+    if expr "x$l" : 'x[A-Za-z0-9][A-Za-z0-9-]\{0,38\}$' > /dev/null; then revs=$revs${revs:+,}$l
+    else echo "WARN no review request for commander $cid: GitHub names no user login (HTTP $code)"; fi
+  done
+  if [ -n "$revs" ]; then
+    jq -n --arg r "$revs" '{reviewers: ($r | split(","))}' > "$tmp/req"
+    api POST "/repos/$repo/pulls/$n/requested_reviewers" "$tmp/req"
+    case "$code" in 2??) ;; *) echo "WARN review request for $revs refused: HTTP $code"; revs=;; esac
+  fi
+  echo "READY pr=$n head=$head_ref sha=$head_sha state=ready reviewers=${revs:-none}";;
 
 post)
   mint
@@ -541,4 +682,164 @@ sync)
     git -C "$ROOT" update-ref "refs/heads/$branch" "$new" "$old" || fail "fast-forward of $branch failed"
     echo "SYNCED branch=$branch from=$old sha=$new state=fast-forward"
   fi;;
+
+issue)
+  tip=$(local_tip "$branch") || die "no local branch $branch"
+  btip=$(local_tip "$base") || die "no local base branch $base"
+  mb=$(git -C "$ROOT" merge-base "refs/heads/$base" "$tip") || die "$branch shares no history with $base"
+  merged=no
+  if [ "$tip" != "$btip" ] && git -C "$ROOT" merge-base --is-ancestor "$tip" "$btip"; then merged=yes; fi
+  case "$branch" in
+    "$epic_p"*) kind_plan=epic-plan epic=$branch;;
+    *) kind_plan=wu-plan e=${branch#"$wu_p"}; epic=$epic_p${e%%/*};;
+  esac
+  doc_rows "$mb" "$tip" "$kind_plan"
+  [ -n "$title" ] || title=$branch
+  # the issue is found again by this first line, among the bot's issues
+  marker="<!-- keel:router-gh issue v1 $branch -->" label=keel-tracking
+  {
+    echo "$marker"
+    if [ "$branch" = "$epic" ]; then
+      echo "Tracking issue of \`$branch\` into \`$base\`, kept by the Keel router bot from git. Each work unit is a sub-issue."
+    else
+      echo "Work unit \`$branch\` into \`$base\`, kept by the Keel router bot from git."
+    fi
+    echo
+    echo "**Tip:** \`$tip\` · **merged into \`$base\`:** $merged"
+    echo
+    docs_md
+    echo
+    echo "**Notes on the tip:**"
+    echo
+    echo "| test | doc | cr | mr | dod |"
+    echo "|---|---|---|---|---|"
+    echo "| $(notes_row "$tip") |"
+    if [ "$branch" = "$epic" ]; then
+      wus=$wu_p${epic#"$epic_p"}
+      echo
+      echo "**Work units**, the local \`$wus/*\` branches:"
+      echo
+      wrows=
+      for w in $(git -C "$ROOT" for-each-ref --format='%(refname:short)' "refs/heads/$wus"); do
+        expr "x$w" : "x$wus/$seg\$" > /dev/null || continue
+        wt=$(local_tip "$w") || continue
+        win=no
+        if [ "$wt" != "$tip" ] && git -C "$ROOT" merge-base --is-ancestor "$wt" "$tip"; then win=yes; fi
+        wrows="$wrows| \`$w\` | \`$(printf '%s' "$wt" | cut -c1-12)\` | $win | $(notes_row "$wt") |
+"
+      done
+      if [ -n "$wrows" ]; then
+        echo "| Branch | Tip | In the epic | test | doc | cr | mr | dod |"
+        echo "|---|---|---|---|---|---|---|---|"
+        printf '%s' "$wrows"
+      else
+        echo "No work unit branch here."
+      fi
+    fi
+  } > "$tmp/body"
+  mint
+  # only issues carrying the bot's label (security review I1): the list stays short whatever the
+  # repository holds; only users with triage rights can label, and the author is checked too
+  pages "/repos/$repo/issues" "state=all&labels=$label&" .
+  jq -r --arg bot "$bot" '.[] | select(.pull_request == null and .user.login == $bot and .user.type == "Bot")
+    | ((.body // "") | split("\n")[0] | rtrimstr("\r")) as $m
+    | select($m | startswith("<!-- keel:router-gh issue v1 ") and endswith(" -->"))
+    | "\($m | ltrimstr("<!-- keel:router-gh issue v1 ") | rtrimstr(" -->"))\t\(.number)\t\(.id)"' "$tmp/all" > "$tmp/ours" 2> /dev/null \
+    || fail "GitHub's list of issues is not readable"
+  # our_issue <branch>: "<number> <id>" of the bot's issue for it, the newest first
+  our_issue() {
+    fr=$(awk -F '\t' -v b="$1" '$1 == b { print $2 " " $3; exit }' "$tmp/ours")
+    [ -z "$fr" ] || expr "x$fr" : 'x[1-9][0-9]* [1-9][0-9]*$' > /dev/null || fail "GitHub's list of issues is not readable"
+    printf '%s' "$fr"
+  }
+  parent=-
+  if [ "$branch" != "$epic" ]; then
+    p=$(our_issue "$epic")
+    [ -n "$p" ] || die "no tracking issue for $epic yet: run router-gh.sh issue $epic first"
+    parent=${p%% *}
+  fi
+  want=open; [ "$merged" = no ] || want=closed
+  mine=$(our_issue "$branch")
+  if [ -n "$mine" ]; then
+    num=${mine%% *} iid=${mine#* }
+    jq -n --arg t "$title" --rawfile b "$tmp/body" --arg s "$want" '{title: $t, body: $b, state: $s}' > "$tmp/req"
+    api_ok PATCH "/repos/$repo/issues/$num" "$tmp/req"
+    state=refreshed
+  else
+    # the label exists before an issue carries it (GitHub may drop an unknown one)
+    api GET "/repos/$repo/labels/$label"
+    case "$code" in
+      200) ;;
+      404) jq -n --arg n "$label" '{name: $n, color: "0e8a16", description: "Kept by the Keel router bot: an epic tracking issue or a WU sub-issue"}' > "$tmp/req"
+           api_ok POST "/repos/$repo/labels" "$tmp/req";;
+      *) api_ok GET "/repos/$repo/labels/$label";;
+    esac
+    jq -n --arg t "$title" --rawfile b "$tmp/body" --arg l "$label" '{title: $t, body: $b, labels: [$l]}' > "$tmp/req"
+    api_ok POST "/repos/$repo/issues" "$tmp/req"
+    set -- $(jq -r '"\(.number) \(.id)"' "$tmp/resp" 2> /dev/null) || fail "GitHub's answer is not readable"
+    expr "x${1:-} ${2:-}" : 'x[1-9][0-9]* [1-9][0-9]*$' > /dev/null || fail "GitHub's answer names no issue"
+    num=$1 iid=$2
+    if [ "$want" = closed ]; then
+      jq -n '{state: "closed"}' > "$tmp/req"
+      api_ok PATCH "/repos/$repo/issues/$num" "$tmp/req"
+    fi
+    state=opened
+  fi
+  url=$(jq -r '.html_url // empty' "$tmp/resp" 2> /dev/null) || url=
+  case "$url" in https://github.com/*) expr "x$url" : 'x[A-Za-z0-9:/._-]*$' > /dev/null || url=-;; *) url=-;; esac
+  if [ "$parent" != - ]; then
+    # a sub-issue of the epic's, linked once (sub_issue_id is the issue's id, not its number)
+    pages "/repos/$repo/issues/$parent/sub_issues" "" .
+    if ! jq -e --argjson i "$iid" 'any(.[]; .id == $i)' "$tmp/all" > /dev/null 2>&1; then
+      jq -n --argjson i "$iid" '{sub_issue_id: $i}' > "$tmp/req"
+      api_ok POST "/repos/$repo/issues/$parent/sub_issues" "$tmp/req"
+    fi
+  fi
+  [ "$want" = open ] && o=yes || o=no
+  echo "ISSUE number=$num url=$url state=$state open=$o branch=$branch parent=$parent";;
+
+watch-read)
+  gh_policy
+  [ -n "$commanders" ] || die "no [github] commanders = [<user id>] in .keel/config.toml: the watch would hear nobody"
+  cids=$(printf '%s' "$commanders" | tr ' ' ,)
+  mint
+  # only an issue or pull request the bot opened, from this repository
+  if [ "$wkind" = comment ]; then
+    api GET "/repos/$repo/issues/$n"
+    case "$code" in 200) ;; 404|410) die "no issue or pull request $n in $repo";; *) api_ok GET "/repos/$repo/issues/$n";; esac
+    ispr=$(jq -r --arg bot "$bot" 'if (.user.login == $bot and .user.type == "Bot") then (.pull_request != null | tostring) else "foreign" end' "$tmp/resp" 2> /dev/null) || ispr=
+    case "$ispr" in true|false) ;; foreign) die "issue $n is not one the bot opened: refused";; *) fail "GitHub's answer for issue $n is not readable";; esac
+    pages_newest "/repos/$repo/issues/$n/comments"
+    jq -c --argjson c "[$cids]" --argjson ft "$free_text" --arg bot "$bot" --argjson pr "$ispr" --argjson tr "$truncated" '{kind: "comment", pr: $pr, commanders: $c, free_text: $ft, truncated: $tr,
+      items: map({id, user_id: .user.id, user_type: .user.type, self: (.user.login == $bot and .user.type == "Bot"),
+        via_app: (.performed_via_github_app != null), created_at, updated_at, body: (.body // "")})}' "$tmp/all" \
+      || fail "GitHub's comments on $n are not readable"
+    exit 0
+  fi
+  api GET "/repos/$repo/pulls/$n"
+  case "$code" in 200) ;; 404|410) die "no pull request $n in $repo";; *) api_ok GET "/repos/$repo/pulls/$n";; esac
+  head_sha=$(jq -r --arg bot "$bot" --arg repo "$repo" '
+    if (.user.login == $bot and .user.type == "Bot" and .head.repo.full_name == $repo and .base.repo.full_name == $repo)
+    then .head.sha else "foreign" end' "$tmp/resp" 2> /dev/null) || head_sha=
+  [ "$head_sha" != foreign ] || die "pull request $n is not one the bot opened from $repo: refused"
+  expr "x$head_sha" : 'x[0-9a-f]\{40\}$' > /dev/null || fail "GitHub's head sha for pull request $n is not a sha"
+  case "$wkind" in
+    review)
+      pages_newest "/repos/$repo/pulls/$n/reviews"
+      jq -c --argjson c "[$cids]" --argjson ft "$free_text" --arg bot "$bot" --arg h "$head_sha" --argjson tr "$truncated" '{kind: "review", head: $h, commanders: $c, free_text: $ft, truncated: $tr,
+        items: map({id, user_id: .user.id, user_type: .user.type, self: (.user.login == $bot and .user.type == "Bot"),
+          via_app: (.performed_via_github_app != null), state, commit_id, submitted_at, body: (.body // "")})}' "$tmp/all" \
+        || fail "GitHub's reviews of $n are not readable";;
+    merged)
+      jq -c --argjson c "[$cids]" '{kind: "merged", commanders: $c, head: .head.sha, base: .base.ref, state, merged: (.merged == true),
+        merge_commit_sha, merged_by_id: (.merged_by.id // null), merged_by_type: (.merged_by.type // null), at: (.merged_at // .closed_at)}' "$tmp/resp" \
+        || fail "GitHub's answer for pull request $n is not readable";;
+    checks)
+      pages "/repos/$repo/commits/$head_sha/check-runs" "" .check_runs
+      mv "$tmp/all" "$tmp/runs"
+      api_ok GET "/repos/$repo/commits/$head_sha/status?per_page=100"
+      jq -c -n --arg h "$head_sha" --slurpfile r "$tmp/runs" --slurpfile s "$tmp/resp" '{kind: "checks", head: $h,
+        runs: ($r[0] | map({name, status, conclusion, completed_at})), statuses: (($s[0].statuses // []) | map({context, state}))}' \
+        || fail "GitHub's checks on $head_sha are not readable";;
+  esac;;
 esac

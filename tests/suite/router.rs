@@ -871,6 +871,8 @@ fn keels_router_security_files_are_rule_bearing() {
         "scripts/router-file-guard.sh",
         "scripts/router-watch.sh",
         "scripts/router-gh.sh",
+        "scripts/router-gh-watch.sh",
+        "scripts/router-gh-command.jq",
         ".claude/agents/worker.md",
     ] {
         let body = std::fs::read_to_string(c.join(f)).unwrap();
@@ -898,7 +900,7 @@ const WORKER_GRANTS: [&str; 11] = [
     "keel check",
 ];
 /// Denied to every worker, each as `Bash(c)` and `Bash(c *)` (E-ROUTER3.W8, DEC-46).
-const WORKER_DENIES: [&str; 26] = [
+const WORKER_DENIES: [&str; 27] = [
     "keel mr",
     "cargo run",
     "keel init",
@@ -925,6 +927,7 @@ const WORKER_DENIES: [&str; 26] = [
     "claude",
     "scripts/router-worker.sh",
     "scripts/router-gh.sh",
+    "scripts/router-gh-watch.sh",
 ];
 
 fn bash_pairs<'a>(cmds: impl IntoIterator<Item = &'a str>) -> Vec<String> {
@@ -3598,7 +3601,7 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
     let g = g.to_str().unwrap();
     // E-WMODE round 2: ~/.cargo only where cargo writes (H3); the worktree's .git link, its two
     // settings files and its admin dir's link files are not the shell's (H2, M2); ~/.claude.json (M1)
-    let want = |wt: &Path, admin: &str| {
+    let want = |wt: &Path, admin: &str, other: &str| {
         serde_json::json!({"sandbox": {
             "enabled": true,
             "autoAllowBashIfSandboxed": true,
@@ -3607,7 +3610,13 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
                 "allowWrite": [g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
                     "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
                 "denyWrite": [format!("{g}/config"), format!("{g}/hooks"), format!("{g}/keel-hooks"), format!("{g}/info"),
-                    format!("{g}/worktrees/{admin}/commondir"), format!("{g}/worktrees/{admin}/gitdir"),
+                    // E-GHFLOW.W3 security review P1 (R33): the git dir's commondir, then the worker's
+                    // own admin link files, then every other worktree's
+                    format!("{g}/commondir"), format!("{g}/config.worktree"),
+                    format!("{g}/worktrees/{admin}/commondir"), format!("{g}/worktrees/{admin}/gitdir"), format!("{g}/worktrees/{admin}/config.worktree"),
+                    format!("{g}/worktrees/{other}/commondir"), format!("{g}/worktrees/{other}/gitdir"), format!("{g}/worktrees/{other}/config.worktree"),
+                    // round 2 F1: by glob too, for an admin dir made after this spawn
+                    format!("{g}/worktrees/*/commondir"), format!("{g}/worktrees/*/gitdir"), format!("{g}/worktrees/*/config.worktree"),
                     format!("{}/.git", wt.display()), format!("{}/.claude/settings.json", wt.display()),
                     format!("{}/.claude/settings.local.json", wt.display()), "~/.claude.json".to_string()],
                 "denyRead": ["~/.ssh", "~/.claude/channels", "~/.config/keel/router-gh"]
@@ -3616,13 +3625,84 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
         }})
     };
     // a second worktree of the same repository shares its git dir
-    for (name, wt, admin) in [("a", &l.wt, "wt"), ("b", &l.wt2, "wt2")] {
+    for (name, wt, admin, other) in [("a", &l.wt, "wt", "wt2"), ("b", &l.wt2, "wt2", "wt")] {
         let (ok, out) = l.run(&["spawn", name, wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
         assert!(ok, "{out}");
         let mut s: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, name), "--settings")).unwrap();
         s.as_object_mut().unwrap().remove("hooks");
-        assert_eq!(s, want(wt, admin), "{name}");
+        assert_eq!(s, want(wt, admin, other), "{name}");
     }
+}
+
+/// E-GHFLOW.W3 security review P1 (backlog R33): a commondir file in the main git dir would send
+/// every git the launcher runs to another repository's config. Workers are denied writing it; one
+/// found there stops every mode before any git runs or any session starts.
+#[test]
+fn a_commondir_file_in_the_main_git_dir_stops_the_launcher() {
+    let l = launcher();
+    let elsewhere = l.main.parent().unwrap().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let wt = l.wt.to_str().unwrap();
+    let modes = [vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"], vec!["stop", "a"], vec!["worktree", "add", "epic/E"], vec!["watchdog", "start", "r"]];
+    // E-GHFLOW.W3 round 2: config.worktree too (a url.insteadOf or core.askPass there runs code)
+    for f in ["commondir", "config.worktree"] {
+        let p = l.main.join(".git").join(f);
+        std::fs::write(&p, format!("{}\n", elsewhere.display())).unwrap();
+        for args in &modes {
+            let (ok, out) = l.run(args);
+            assert!(!ok && out.contains(&format!(".git/{f} exists: a main git dir has none")), "{f} {args:?}: {out}");
+        }
+        // the watchdog's facts never fail: they report it
+        let (ok, out) = l.run(&["watchdog", "facts", "r1"]);
+        assert!(ok && out.starts_with("Report to r1.\n") && out.contains(&format!(".git/{f} exists")), "{f} facts: {out}");
+        std::fs::remove_file(&p).unwrap();
+    }
+    assert!(calls(&l.state).is_empty(), "{:?}", calls(&l.state));
+}
+
+/// E-GHFLOW.W3 security review round 2, F1 (reproduced by the review: the owner's `git commit` in a
+/// later worktree ran a worker's pre-commit): a worker spawned earlier could write the admin dir of a
+/// worktree made later, which its spawn-time deny list does not name. Every launcher run checks every
+/// admin dir as linked_ok does, so a commondir that is not ../.., a config.worktree or a gitdir naming
+/// no .git stops every mode before any session starts; an admin dir named as git names one after a
+/// checkout holding a quote is still denied to the worker, by name.
+#[test]
+fn every_worktree_admin_dir_is_checked_on_every_run() {
+    let l = launcher();
+    let later = l.main.parent().unwrap().join("later");
+    git(&l.main, &["worktree", "add", "-q", later.to_str().unwrap(), "-b", "later"]);
+    let admin = l.main.join(".git/worktrees/later");
+    let wt = l.wt.to_str().unwrap();
+    let modes = [vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"], vec!["stop", "a"], vec!["worktree", "add", "epic/E"], vec!["watchdog", "start", "r"]];
+    let unlinked = "worktree admin dir";
+    for (what, file, body) in [
+        ("commondir", "commondir", "/tmp/evil.git\n".to_string()),
+        ("config.worktree", "config.worktree", "[core]\n\thooksPath = /tmp/evil\n".to_string()),
+        ("gitdir", "gitdir", "/tmp/elsewhere\n".to_string()),
+    ] {
+        let p = admin.join(file);
+        let before = std::fs::read_to_string(&p).ok();
+        std::fs::write(&p, body).unwrap();
+        for args in &modes {
+            let (ok, out) = l.run(args);
+            assert!(!ok && out.contains(unlinked) && out.contains("does not link to this repository as git made it"), "{what} {args:?}: {out}");
+        }
+        match before {
+            Some(b) => std::fs::write(&p, b).unwrap(),
+            None => std::fs::remove_file(&p).unwrap(),
+        }
+    }
+    assert!(calls(&l.state).is_empty(), "{:?}", calls(&l.state));
+    // restored, the launcher runs; an admin dir whose name holds a quote and a space (git names it
+    // after the checkout) is denied by name too (round 2 N-f: never skipped)
+    let odd = l.main.parent().unwrap().join("o'd d");
+    git(&l.main, &["worktree", "add", "-q", odd.to_str().unwrap(), "-b", "odd"]);
+    let (ok, out) = l.run(&["spawn", "a", wt, ".router/briefs/b.md", "opus"]);
+    assert!(ok, "restored, the launcher runs: {out}");
+    let settings: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, "a"), "--settings")).unwrap();
+    let deny = settings["sandbox"]["filesystem"]["denyWrite"].to_string();
+    assert!(deny.contains("worktrees/o'd-d/commondir") && deny.contains("worktrees/later/config.worktree"), "{deny}");
+    l.stop("a");
 }
 
 /// E-ROUTER3.W8 (DEC-46, point 4): the review runs in a fresh `--review` worker, the only one granted
@@ -4185,4 +4265,136 @@ fn the_guard_and_router_gh_take_the_same_arguments() {
         }
     }
     assert!(accepted >= 10, "the corpus must hold accepted words too ({accepted})");
+}
+
+/// E-GHFLOW.W3: the router guard admits the GitHub watch's four kinds and `router-gh.sh issue` in
+/// plain words and denies every other spelling: `since` on merged or checks, the internal
+/// watch-read, flags, extra words, a leading zero, quotes, an environment prefix, another path.
+#[test]
+fn router_guard_admits_the_github_watch_and_issue_shapes_and_no_other_spelling() {
+    for ok in [
+        "scripts/router-gh-watch.sh review 31",
+        "scripts/router-gh-watch.sh review 31 since 2468013579",
+        "scripts/router-gh-watch.sh comment 30",
+        "scripts/router-gh-watch.sh comment 9999999 since 999999999999999",
+        "scripts/router-gh-watch.sh merged 31",
+        "scripts/router-gh-watch.sh checks 31",
+        "scripts/router-gh-watch.sh comment 30 since latest",
+        "scripts/router-gh-watch.sh review 31 since latest",
+        "scripts/router-gh.sh issue epic/E-GHFLOW",
+        "scripts/router-gh.sh issue wu/E-GHFLOW/w3-gh-watch",
+        " scripts/router-gh-watch.sh merged 1 ",
+    ] {
+        assert_eq!(bash(ok), None, "{ok}");
+    }
+    for denied in [
+        "scripts/router-gh-watch.sh",
+        "scripts/router-gh-watch.sh review",
+        "scripts/router-gh-watch.sh review 0",
+        "scripts/router-gh-watch.sh review 031",
+        "scripts/router-gh-watch.sh review 12345678",
+        "scripts/router-gh-watch.sh review -1",
+        "scripts/router-gh-watch.sh review 31 since",
+        "scripts/router-gh-watch.sh review 31 since 0",
+        "scripts/router-gh-watch.sh review 31 since 1234567890123456",
+        "scripts/router-gh-watch.sh review 31 after 2",
+        "scripts/router-gh-watch.sh review 31 since 2 3",
+        "scripts/router-gh-watch.sh review 31 --since 2",
+        "scripts/router-gh-watch.sh merged 31 since 2",
+        "scripts/router-gh-watch.sh merged 31 since latest",
+        "scripts/router-gh-watch.sh comment 30 since Latest",
+        "scripts/router-gh-watch.sh comment 30 since latest 2",
+        "scripts/router-gh-watch.sh comment 30 latest",
+        "scripts/router-gh-watch.sh checks 31 since 2",
+        "scripts/router-gh-watch.sh approve 31",
+        "scripts/router-gh-watch.sh REVIEW 31",
+        "scripts/router-gh-watch.sh comment 30; id",
+        "scripts/router-gh-watch.sh comment '30'",
+        "scripts/router-gh-watch.sh comment $(id)",
+        "ROUTER_WATCH_POLL=1 scripts/router-gh-watch.sh comment 30",
+        "ROUTER_GH_CURL=/tmp/x scripts/router-gh-watch.sh comment 30",
+        "sh scripts/router-gh-watch.sh comment 30",
+        "./scripts/router-gh-watch.sh comment 30",
+        "scripts/../scripts/router-gh-watch.sh comment 30",
+        "scripts/router-gh-watch.sh  comment 30",
+        "scripts/router-gh.sh watch-read comment 30",
+        "scripts/router-gh.sh issue",
+        "scripts/router-gh.sh issue main",
+        "scripts/router-gh.sh issue 30",
+        "scripts/router-gh.sh issue wu/E",
+        "scripts/router-gh.sh issue wu/E/x extra",
+        "scripts/router-gh.sh issue -x",
+        "scripts/router-gh.sh issue epic/E --base main",
+    ] {
+        assert!(bash(denied).is_some(), "admitted: {denied}");
+    }
+    let msg = bash("rm x").unwrap();
+    assert!(
+        msg.contains("scripts/router-gh-watch.sh review|comment <n> [since <id>|latest] | merged|checks <n>") && msg.contains("issue <wu/E/slug or epic/E>"),
+        "deny message omits the new shapes: {msg}"
+    );
+}
+
+/// E-GHFLOW.W3, invariant: over generated near-miss words, the guard admits a watch or `issue` line
+/// exactly when the script's argument check accepts it, but for the names `git check-ref-format`
+/// refuses (as for W2's shapes).
+#[test]
+fn the_guard_and_the_github_watch_take_the_same_arguments() {
+    let mut seed: u64 = 0x3a7c_4b1d;
+    let mut next = |n: usize| {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (seed >> 33) as usize % n
+    };
+    let digits: Vec<char> = "0123456789-+a.".chars().collect();
+    // mostly plain numbers of every length around the bounds, else any of the near-miss characters
+    let num = |next: &mut dyn FnMut(usize) -> usize, max: usize| -> String {
+        if next(3) != 0 {
+            let lead = if next(4) != 0 { 1 + next(9) } else { 0 };
+            let rest: String = (0..next(max)).map(|_| char::from(b'0' + next(10) as u8)).collect();
+            format!("{lead}{rest}")
+        } else {
+            (0..1 + next(max)).map(|_| digits[next(digits.len())]).collect()
+        }
+    };
+    let kinds = ["review", "comment", "merged", "checks", "Review", "watch", "since"];
+    let mut corpus: Vec<Vec<String>> = Vec::new();
+    for _ in 0..60 {
+        let k = kinds[next(kinds.len())].to_string();
+        let n = num(&mut next, 8);
+        let id = num(&mut next, 16);
+        let s = |v: &[&str]| v.iter().map(|w| w.to_string()).collect::<Vec<String>>();
+        corpus.push(s(&[&k, &n]));
+        corpus.push(s(&[&k, &n, "since", &id]));
+        corpus.push(s(&[&k, "7", "since", &id]));
+        if next(2) == 0 {
+            corpus.push(s(&[&k, "7", "after", "9"]));
+        }
+        corpus.push(s(&[&k, "7", "since", ["latest", "Latest", "latest1", "last"][next(4)]]));
+    }
+    // deduplicated, as its W2 sibling's corpus (code review round 1)
+    corpus.sort();
+    corpus.dedup();
+    let (mut admitted_n, mut checked) = (0, 0);
+    for args in &corpus {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let line = format!("scripts/router-gh-watch.sh {}", args.join(" "));
+        let (admitted, ok) = (bash(&line).is_none(), crate::router_gh_watch_args::accepts(&args));
+        assert_eq!(admitted, ok, "guard and watch disagree on: {line}");
+        admitted_n += usize::from(admitted);
+        checked += 1;
+    }
+    assert!(admitted_n >= 10 && checked > admitted_n, "the corpus must hold both verdicts ({admitted_n} of {checked})");
+    let alpha: Vec<char> = "aZ09._/:=@%,+^~-".chars().collect();
+    let prefixes = ["epic/", "wu/", "wu/E/", "main", "", "-", "wu/E/x"];
+    for _ in 0..40 {
+        let mut w = prefixes[next(prefixes.len())].to_string();
+        for _ in 0..next(6) {
+            w.push(alpha[next(alpha.len())]);
+        }
+        let line = format!("scripts/router-gh.sh issue {w}");
+        let (admitted, ok) = (bash(&line).is_none(), gh_validates(&["issue", w.as_str()]));
+        let exception = w.split('/').any(|c| c.ends_with('.') || c.ends_with(".lock"));
+        assert!(!ok || admitted, "the script accepts what the guard denies: {line}");
+        assert!(!admitted || ok || exception, "the guard admits what the script refuses: {line}");
+    }
 }
