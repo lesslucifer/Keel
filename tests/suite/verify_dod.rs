@@ -72,9 +72,18 @@ fn fixture_with(top: &str, branches: &str, epic: &str, wu: &str) -> TempDir {
     build_fixture(top, branches, epic, wu, false)
 }
 
+/// A copy of the shape's template, built once per run (E-TESTOPT.W4): main (one commit, the roster,
+/// Keel's hooks) → `epic` (with `epic_work`, a commit of its own) → `wu` adding code, a python test
+/// and a doc. HEAD on `wu`.
 fn build_fixture(top: &str, branches: &str, epic: &str, wu: &str, epic_work: bool) -> TempDir {
-    let d = TempDir::new().unwrap();
-    let p = d.path();
+    common::fixture(&fixture_key(top, branches, epic, wu, epic_work), |p| build_fixture_in(p, top, branches, epic, wu, epic_work))
+}
+
+fn fixture_key(top: &str, branches: &str, epic: &str, wu: &str, epic_work: bool) -> String {
+    format!("verify_dod {top:?} {branches:?} {epic} {wu} {epic_work}")
+}
+
+fn build_fixture_in(p: &Path, top: &str, branches: &str, epic: &str, wu: &str, epic_work: bool) {
     git(p, &["init", "-q", "-b", "main"]);
     git(p, &["config", "user.email", "t@t"]);
     git(p, &["config", "user.name", "t"]);
@@ -98,7 +107,6 @@ fn build_fixture(top: &str, branches: &str, epic: &str, wu: &str, epic_work: boo
     write(p, "tests/test_a.py", "def test_a():\n    pass\n");
     write(p, "docs/a.html", "<p>a</p>");
     commit(p, "wu a");
-    d
 }
 
 /// Write the three notes on HEAD, as the workflow does before a merge.
@@ -131,6 +139,22 @@ fn assert_red(o: &Output, check: &str) {
     let t = text(o);
     assert!(!o.status.success(), "expected red on {check}: {t}");
     assert!(t.contains(check) && t.contains("fix ->"), "expected {check} with a fix line: {t}");
+}
+
+/// E-TESTOPT.W4: each test owns its copy. Its hooks are its own and its commits reach no other copy
+/// and not the template, for every shape this file builds.
+#[test]
+fn each_fixture_copy_is_independent_of_its_template_and_its_siblings() {
+    for (top, branches, epic, wu, epic_work) in [
+        ("", "", "epic/e", "wu/e/a", false),
+        ("", "", "epic/e", "wu/e/a", true),
+        ("infra_paths = [\"docs/**\"]\n", "", "epic/e", "wu/e/a", false),
+        ("", "epic_prefix = \"release/\"\nwu_prefix = \"task/\"\n", "release/e", "task/e/a", false),
+    ] {
+        let (a, b) = (build_fixture(top, branches, epic, wu, epic_work), build_fixture(top, branches, epic, wu, epic_work));
+        let template = common::template(&fixture_key(top, branches, epic, wu, epic_work), |_| unreachable!("built above"));
+        common::assert_independent(&template, a.path(), b.path());
+    }
 }
 
 #[test]
