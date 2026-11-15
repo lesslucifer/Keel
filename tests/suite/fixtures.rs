@@ -212,29 +212,49 @@ fn a_read_only_directory_is_copied_with_its_children() {
 }
 
 /// Integration (E-TESTOPT.W5): a test's git reads one global setting, `maintenance.auto = false`,
-/// so a commit in a fixture starts no `git maintenance run --auto`.
+/// so a commit in a fixture starts no `git maintenance run --auto`: through `common::cmd`, through
+/// the router tests' `hermetic()` layered on it, and through their `git_shim` for scripts that
+/// clear git's environment.
 #[test]
 fn a_test_spawn_runs_no_automatic_git_maintenance() {
     use crate::common::cmd;
-    let o = cmd("git").args(["config", "--global", "--list"]).output().unwrap();
-    assert_eq!(String::from_utf8_lossy(&o.stdout), "maintenance.auto=false\n", "{}", String::from_utf8_lossy(&o.stderr));
-    let (repo, trace) = (TempDir::new().unwrap(), TempDir::new().unwrap());
-    let git = |a: &[&str]| {
-        let o = cmd("git")
-            .args(a)
-            .current_dir(repo.path())
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .env("GIT_TRACE2", trace.path())
-            .output()
-            .unwrap();
-        assert!(o.status.success(), "git {a:?}: {}", String::from_utf8_lossy(&o.stderr));
-    };
-    git(&["init", "-q"]);
-    git(&["commit", "-q", "--allow-empty", "-m", "c"]);
-    let traces: Vec<String> = std::fs::read_dir(trace.path()).unwrap().map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap()).collect();
-    assert!(traces.iter().any(|t| t.contains(" commit -q")), "git traced nothing: {traces:?}");
-    assert!(!traces.iter().any(|t| t.contains("maintenance run")), "a commit started git maintenance");
+    use std::process::Command;
+    let shim = TempDir::new().unwrap();
+    crate::router::git_shim(shim.path());
+    type Spawn<'a> = Box<dyn Fn() -> Command + 'a>;
+    let spawns: [(&str, Spawn); 3] = [
+        ("common::cmd", Box::new(|| cmd("git"))),
+        (
+            "router hermetic()",
+            Box::new(|| {
+                let mut c = cmd("git");
+                crate::router::hermetic(&mut c);
+                c
+            }),
+        ),
+        ("router git_shim", Box::new(|| cmd(shim.path().join("git")))),
+    ];
+    for (name, spawn) in &spawns {
+        let o = spawn().args(["config", "--global", "--list"]).output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&o.stdout), "maintenance.auto=false\n", "{name}: {}", String::from_utf8_lossy(&o.stderr));
+        let (repo, trace) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+        let git = |a: &[&str]| {
+            let o = spawn()
+                .args(a)
+                .current_dir(repo.path())
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .env("GIT_TRACE2", trace.path())
+                .output()
+                .unwrap();
+            assert!(o.status.success(), "{name}: git {a:?}: {}", String::from_utf8_lossy(&o.stderr));
+        };
+        git(&["init", "-q"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "c"]);
+        let traces: Vec<String> = std::fs::read_dir(trace.path()).unwrap().map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap()).collect();
+        assert!(traces.iter().any(|t| t.contains(" commit -q")), "{name}: git traced nothing: {traces:?}");
+        assert!(!traces.iter().any(|t| t.contains("maintenance run")), "{name}: a commit started git maintenance");
+    }
 }

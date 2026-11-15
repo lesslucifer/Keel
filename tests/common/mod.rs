@@ -271,10 +271,20 @@ pub fn copy_tree(src: &Path, dst: &Path, rewrites: &[(Vec<u8>, Vec<u8>)]) -> std
 /// `body` with every `from` replaced by its `to` in one pass, the longest `from` matching at a
 /// position winning (parts `repo` and `repo.git`); None when no `from` occurs.
 pub fn rewrite(body: &[u8], rewrites: &[(Vec<u8>, Vec<u8>)]) -> Option<Vec<u8>> {
+    let mut starts = [false; 256];
+    for (from, _) in rewrites.iter().filter(|(from, _)| !from.is_empty()) {
+        starts[from[0] as usize] = true;
+    }
     let mut out = Vec::with_capacity(body.len());
     let mut changed = false;
     let mut i = 0;
     while i < body.len() {
+        let gap = body[i..].iter().position(|b| starts[*b as usize]).unwrap_or(body.len() - i);
+        out.extend_from_slice(&body[i..i + gap]);
+        i += gap;
+        if i == body.len() {
+            break;
+        }
         let hit = rewrites.iter().filter(|(from, _)| !from.is_empty() && body[i..].starts_with(from)).max_by_key(|(from, _)| from.len());
         match hit {
             Some((from, to)) => {
@@ -294,7 +304,7 @@ pub fn rewrite(body: &[u8], rewrites: &[(Vec<u8>, Vec<u8>)]) -> Option<Vec<u8>> 
 /// What every fixture copy holds, asserted once per shape: no file of `copy` names `template`, its
 /// hooks are its own, and a commit in `copy` reaches neither `sibling` nor `template`.
 pub fn assert_independent(template: &Path, copy: &Path, sibling: &Path) {
-    let named = files_naming(copy, &rewrites(&[(template.to_path_buf(), PathBuf::new())]));
+    let named = files_naming(copy, &rewrites(&[(template.to_path_buf(), template.to_path_buf())]));
     assert!(named.is_empty(), "the copy still names its template in {named:?}");
     let git = |d: &Path, a: &[&str]| {
         let o = cmd("git")

@@ -426,14 +426,14 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
 /// add, `Watcher::cmd` and the watch under it): only the repo's own config is read, so no user or
 /// system setting (tag.gpgSign, log.showSignature, core.quotePath, ...) can change what it does, and
 /// no inherited GIT_TRACE* or GIT_DEFAULT_HASH changes its output or its repos.
-fn hermetic(c: &mut Command) -> &mut Command {
+pub(crate) fn hermetic(c: &mut Command) -> &mut Command {
     let set: Vec<std::ffi::OsString> = c.get_envs().map(|(k, _)| k.to_owned()).collect();
     for k in std::env::vars_os().map(|(k, _)| k).chain(set) {
         if k.to_string_lossy().starts_with("GIT_TRACE") || k == "GIT_DEFAULT_HASH" {
             c.env_remove(k);
         }
     }
-    c.env("GIT_CONFIG_GLOBAL", "/dev/null").env("GIT_CONFIG_NOSYSTEM", "1")
+    c.env("GIT_CONFIG_GLOBAL", common::GIT_CONFIG).env("GIT_CONFIG_NOSYSTEM", "1")
 }
 
 /// Upper bound on any wait for another process; a hung script fails the test instead of hanging it.
@@ -565,7 +565,7 @@ fn build_launcher(base: &Path) {
 fn each_fixture_copy_is_independent_of_its_template_and_its_siblings() {
     let (a, b) = (launcher(), launcher());
     let t = common::template(LAUNCHER, |_| unreachable!("built above"));
-    assert!(common::files_naming(a._d.path(), &common::rewrites(&[(t.clone(), Default::default())])).is_empty());
+    assert!(common::files_naming(a._d.path(), &common::rewrites(&[(t.clone(), t.clone())])).is_empty());
     common::assert_independent(&t.join("main"), &a.main, &b.main);
     let listed = String::from_utf8(git(&a.main, &["worktree", "list", "--porcelain"]).stdout).unwrap();
     let trees: Vec<&str> = listed.lines().filter_map(|l| l.strip_prefix("worktree ")).collect();
@@ -576,7 +576,7 @@ fn each_fixture_copy_is_independent_of_its_template_and_its_siblings() {
 
     let (c, d) = (watcher(), watcher());
     let t = common::template(WATCHER, |_| unreachable!("built above"));
-    assert!(common::files_naming(c._d.path(), &common::rewrites(&[(t.clone(), Default::default())])).is_empty());
+    assert!(common::files_naming(c._d.path(), &common::rewrites(&[(t.clone(), t.clone())])).is_empty());
     let origin = String::from_utf8(git(&c.main, &["remote", "get-url", "origin"]).stdout).unwrap();
     assert_eq!(origin.trim(), c.base.join("origin.git").to_str().unwrap());
     common::assert_independent(&t.join("main"), &c.main, &d.main);
@@ -2211,10 +2211,11 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
 }
 
 /// `<dir>/git`: the real git with hermetic's config isolation, for scripts that clear every inherited GIT_*.
-fn git_shim(dir: &Path) {
+pub(crate) fn git_shim(dir: &Path) {
     let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
     std::fs::create_dir_all(dir).unwrap();
-    std::fs::write(dir.join("git"), format!("#!/bin/sh\nGIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null exec {} \"$@\"\n", real.trim())).unwrap();
+    std::fs::write(dir.join("git"), format!("#!/bin/sh\nGIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL='{}' exec {} \"$@\"\n", common::GIT_CONFIG, real.trim()))
+        .unwrap();
     std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
 
