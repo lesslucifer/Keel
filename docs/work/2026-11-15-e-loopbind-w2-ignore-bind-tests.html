@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="389fad10e9dc9bc93b7f6d37" data-artifact="epic-plan wu-plan epic-result wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>E-LOOPBIND · Ignore the loopback tests</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-LOOPBIND · A worker's check is green in its own sandbox</h1>
+      <p>Plan and result in one doc: one WU, one commit.</p>
+      <div class="meta">T3 · epic plan, WU plan, WU result, epic result · 2026-11-15 · Keel</div>
+    </div>
+  </header>
+  <main>
+    <h2 id="problem">The problem</h2>
+    <p data-item="intent" data-c="intent">Ten tests of the owner-notify sender open a local network port. A worker's sandbox refuses that, so a worker's full check is red, and you ran it by hand. Your ruling: "just drop the tests that require loopbind, that's it. I'm sick of this. They don't matter." Then: "no need CR or anything, just comment them and commit then close the epic, as quick as possible."</p>
+
+    <h2 id="for-the-owner">What changes for you</h2>
+    <table data-item="owner-changes" data-c="owner-changes">
+      <tr><th>When</th><th>Today</th><th>After</th></tr>
+      <tr><td>A worker runs the full check</td><td>Ten sandbox-only reds; you rerun it outside</td><td>Green; the ten show as ignored</td></tr>
+      <tr><td>You sign this epic off</td><td>—</td><td>You waive the code review in the sign-off, as you ruled</td></tr>
+    </table>
+
+    <h2 id="drop">What was dropped</h2>
+    <p data-c="w1-dropped">The first try let the worker's sandbox open local ports. An independent review found it lets a worker listen on every interface and reach every local service, a local proxy included, which gets around the sandbox's host allowlist. You dropped it; its branch is not merged.</p>
+
+    <h2 id="work">The work</h2>
+    <div data-item="wu-summaries" data-c="wu-summaries">
+      <div data-wu="E-LOOPBIND.W2" data-c="wu-w2">
+        <h3 id="w2">W2 · Ignore the ten loopback tests</h3>
+        <div data-item="wu-summary"><p><b>In short:</b> each of the ten tests gets an ignore mark with the reason. No other code changes.</p></div>
+        <p data-item="wu-maps-to">Owner rulings of 2026-11-15 · backlog R49 · no use case changes.</p>
+        <p data-item="wu-expected">A worker's <code>keel check</code> is green in its sandbox, with the ten counted as ignored.</p>
+        <p data-item="wu-deps">none</p>
+      </div>
+    </div>
+
+    <h2 id="open">Open points</h2>
+    <p data-item="open-questions" data-c="open">none</p>
+
+    <h2 id="details">Details</h2>
+    <p data-item="requirement" data-c="requirement">The ten tests in <code>tests/suite/notify_owner.rs</code> that bind a loopback port carry <code>#[ignore]</code>, and a worker's <code>keel check</code> is green in its own sandbox.</p>
+    <p data-item="maps-to" data-c="maps-to">E-LOOPBIND · backlog R49 · the owner rulings above.</p>
+    <p data-item="expected" data-c="expected"><code>cargo test</code> reports the ten as ignored, and everything else passes, inside a worker's sandbox.</p>
+    <p data-item="use-cases" data-c="use-cases">None changes. UC router's owner-reach row still names the sender's tests; ten of them are now ignored.</p>
+    <p data-item="non-goals" data-c="non-goals">No launcher or sandbox change. No change to <code>scripts/notify-owner.py</code>. No replacement coverage.</p>
+    <p data-item="test-plan" data-c="test-plan">No new test: the change only skips tests. <code>keel check</code> green in the worker's sandbox is the proof. Integration layer waived with that reason.</p>
+    <p data-item="e2e-plan" data-c="e2e-plan">Waived: the epic adds no behaviour, it only skips ten tests.</p>
+    <p data-item="distillation-plan" data-c="distillation-plan">Backlog R49 records the outcome and the coverage now skipped.</p>
+
+    <h3 id="result">Result</h3>
+    <p data-item="outcome" data-c="outcome">Delivered, by the second ruling: the ten tests are ignored, not deleted. The shared helpers stay in use, so the lint stays green.</p>
+    <p data-item="wu-rollup" data-c="wu-rollup">W1 (sandbox may open local ports): dropped by owner ruling, not merged. W2: delivered.</p>
+    <p data-item="deviations" data-c="deviations">The first brief said delete the tests. The second ruling said comment them out; ignoring them is the standard way and keeps the lint green. No code review, by owner ruling: the owner waives it at sign-off.</p>
+    <p data-item="evidence" data-c="evidence">One commit on <code>wu/E-LOOPBIND/w2-drop-bind-tests</code>: the ten ignore marks, this doc, R49's line. <code>keel check</code> green in the worker's sandbox. Coverage now skipped: the sender's HTTP paths (send, check, dry run, timeout, and that no output carries the credential). Still run: <code>a_missing_credential_is_one_line_naming_the_file_only</code>, <code>cleartext_http_is_refused_for_a_non_loopback_host</code>, and the router guard tests on the sender's command shapes and body path.</p>
+    <p data-item="distillation" data-c="distillation">Backlog R49 marked done by this epic, with the skipped coverage named.</p>
+    <p data-item="follow-ups" data-c="follow-ups">none: bringing the coverage back without a port is written into backlog R49's fix direction, if ever wanted.</p>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
