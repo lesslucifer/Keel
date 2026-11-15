@@ -1,6 +1,8 @@
 //! E-SEED.W4 manual review: a throwaway ssh key signs a WU tip; the merge goes green; a tampered
 //! report, an amended tip, an unlisted signer and a confirm before cr are each red.
 //! E-ROUTER3.W4: the roster is `.keel/mr-allowed` as committed on the target, never a file on disk.
+compiled!();
+
 use serde_json::{json, Value};
 use std::path::Path;
 use std::process::{Output, Stdio};

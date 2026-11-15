@@ -1,44 +1,48 @@
 //! E-TESTOPT.W3: the suite is Keel's only integration test program. Cargo builds every `tests/*.rs`,
 //! every `tests/<dir>/main.rs`, every `[[test]]` target and every example or bench marked
 //! `test = true` as a program of its own, and runs the programs one after another, stopping at the
-//! first that fails. A `.rs` file in `tests/suite/` that rustc never compiled into the suite runs
-//! none of its tests; rustc's own record of the files it read (the dep-info file cargo keeps next
-//! to the test binary) says which those are, whatever `mod`, `#[path]` or `#[cfg]` decided it.
-//! rustc opens a file only when its `mod` item survived cfg-stripping; once open, only an inner
-//! `#![cfg]` (or a `#![cfg_attr]` that expands to one) drops the whole file, and rustc still lists
-//! it. So no suite file may carry one: a cfg goes on the `mod` line, where the dep-info shows it.
-use regex::Regex;
+//! first that fails.
+//!
+//! Every `.rs` file under `tests/suite/` proves from inside the built suite that it was compiled:
+//! it calls `compiled!()` (tests/suite/main.rs), whose test prints `file!()`. The guard runs those
+//! tests in this very binary and names each file that printed nothing. Nothing reads source text,
+//! so no spelling of a `mod`, `#[path]`, `#[cfg]` or `cfg_attr` can make a file count without its
+//! content in the binary. What it does not prove: that each test inside a compiled file runs (a
+//! single test may carry its own `#[cfg]`).
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// What sits directly under `tests/`: a name, the source when it is a `.rs` file, and whether a
-/// directory holds a `main.rs`.
-type Entry = (String, Option<String>, bool);
+compiled!();
+
+/// The prefix of the line each file's `compiled_file` test prints.
+pub(crate) const MARK: &str = "suite file compiled: ";
+
+/// What sits directly under `tests/`: a name, whether it is a `.rs` file, and whether a directory
+/// holds a `main.rs`.
+type Entry = (String, bool, bool);
 
 /// The problems cargo's view of the package shows: test files outside the suite and `Cargo.toml`
 /// targets that build another test program.
 fn extra_programs(top: &[Entry], suite_names: &BTreeSet<String>, cargo_toml: &str) -> Vec<String> {
-    let decl = Regex::new(r"(?m)^\s*(#\[[^\]]*\]\s*)*(pub(\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;").unwrap();
     let mut bad = vec![];
-    for (f, src, _) in top.iter().filter(|(f, src, _)| src.is_some() && f.ends_with(".rs")) {
+    for (f, _, _) in top.iter().filter(|(f, is_rs, _)| *is_rs && f.ends_with(".rs")) {
         let m = f.trim_end_matches(".rs");
-        let mut fix = format!(
-            "Move it into the suite: `git mv tests/{f} tests/suite/{f}`, add `mod {m};` to tests/suite/main.rs, \
-             and in the moved file replace `mod common;` with `use crate::common;`"
-        );
-        if matches!(m, "main" | "common") || suite_names.contains(f) {
-            fix = format!("Rename it first: tests/suite/{f} exists or `{m}` is taken in the suite, then move it as for any other file");
-        }
-        if decl.captures_iter(src.as_deref().unwrap_or("")).any(|c| &c[4] != "common") {
-            fix.push_str(&format!(". It declares modules of its own: move their files to tests/suite/{m}/ with it"));
-        }
-        bad.push(format!("tests/{f} builds as a test program of its own. {fix}"));
+        let fix = if matches!(m, "main" | "common") || suite_names.contains(f) {
+            format!("Rename it first: tests/suite/{f} exists or `{m}` is taken in the suite, then move it as below")
+        } else {
+            "Move it into the suite".to_string()
+        };
+        bad.push(format!(
+            "tests/{f} builds as a test program of its own. {fix}: `git mv tests/{f} tests/suite/{f}`, add `mod {m};` to \
+             tests/suite/main.rs, in the moved file replace `mod common;` with `use crate::common;` and add `compiled!();`; \
+             if it declares modules of its own, move their files to tests/suite/{m}/ with it"
+        ));
     }
-    for (d, _, _) in top.iter().filter(|(d, src, has_main)| src.is_none() && *has_main && d != "suite") {
+    for (d, _, _) in top.iter().filter(|(d, is_rs, has_main)| !*is_rs && *has_main && d != "suite") {
         bad.push(format!(
             "tests/{d}/main.rs builds as a test program of its own. Move it into the suite: \
              `git mv tests/{d} tests/suite/{d}`, `git mv tests/suite/{d}/main.rs tests/suite/{d}/mod.rs`, add `mod {d};` \
-             to tests/suite/main.rs, and in the moved files replace `mod common;` with `use crate::common;`"
+             to tests/suite/main.rs, and in each moved file replace `mod common;` with `use crate::common;` and add `compiled!();`"
         ));
     }
     match cargo_toml.parse::<toml::Table>() {
@@ -62,96 +66,57 @@ fn extra_programs(top: &[Entry], suite_names: &BTreeSet<String>, cargo_toml: &st
     bad
 }
 
-/// What in one suite file's source would hide tests from the dep-info check: an inner `cfg` or
-/// `cfg_attr` attribute (spacing and a path prefix ignored, a comment between `#!` and `[` refused
-/// too), and a `.rs` file read as data, which rustc lists like a module.
-fn source_problems(shown: &str, src: &str) -> Vec<String> {
-    let flat: String = src.chars().filter(|c| !c.is_whitespace()).collect();
-    let inner_cfg = Regex::new(r"#!(/\*|\[(::)?([A-Za-z_][A-Za-z0-9_]*::)*cfg(_attr)?\()").unwrap();
-    let data = Regex::new(r#"include_(str|bytes)!\(r?#*"[^"]*\.rs""#).unwrap();
-    let mut bad = vec![];
-    if inner_cfg.is_match(&flat) {
-        bad.push(format!(
-            "{shown} has an inner #![cfg] or #![cfg_attr]: when it is false the file's tests vanish while rustc still lists \
-             the file, so the guard cannot see it; put the cfg on the file's `mod` line instead"
-        ));
-    }
-    if data.is_match(&flat) {
-        bad.push(format!("{shown} reads a .rs file with include_str!/include_bytes!, which rustc lists as if compiled; give data another extension"));
-    }
-    bad
-}
-
-/// The directory a dep-info's relative paths start from: cargo writes them relative to the
-/// workspace root, which is `root` or one of its ancestors; the one where the listed suite
-/// `main.rs` is this suite's.
-fn dep_info_base(dep_info: &str, root: &Path, suite_main: &Path) -> Option<PathBuf> {
-    let listed = dep_info_sources(dep_info, Path::new(""));
-    root.ancestors()
-        .find(|base| listed.iter().any(|p| p.is_relative() && base.join(p).canonicalize().is_ok_and(|c| c == suite_main)))
-        .map(Path::to_owned)
-        .or_else(|| listed.iter().any(|p| p == suite_main).then(|| root.to_owned()))
-}
-
-/// The source files a dep-info file lists, one `path:` rule per file, resolved against `root` when
-/// relative, with `..` folded away. Spaces in a path are written `\ `.
-fn dep_info_sources(dep_info: &str, root: &Path) -> BTreeSet<PathBuf> {
-    dep_info
-        .lines()
-        .filter(|l| !l.starts_with('#'))
-        .filter_map(|l| l.strip_suffix(':'))
-        .filter(|p| !p.is_empty())
-        .map(|p| {
-            let mut out = PathBuf::new();
-            for c in root.join(p.replace("\\ ", " ")).components() {
-                match c {
-                    std::path::Component::ParentDir => {
-                        out.pop();
-                    }
-                    std::path::Component::CurDir => {}
-                    c => out.push(c),
-                }
+fn fold(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            std::path::Component::ParentDir => {
+                out.pop();
             }
-            out
+            std::path::Component::CurDir => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+fn canonical(p: &Path) -> PathBuf {
+    p.canonicalize().unwrap_or_else(|_| fold(p))
+}
+
+/// The files the suite's `compiled_file` tests printed, as canonical paths. `file!()` is relative
+/// to where rustc ran: the crate's directory, or a workspace root above it. The base is the one
+/// that makes the printed `main.rs` this suite's; `None` when no base does.
+fn reported_files(stdout: &str, root: &Path, suite_main: &Path) -> Option<BTreeSet<PathBuf>> {
+    let printed: Vec<&Path> = stdout.lines().filter_map(|l| l.split_once(MARK)).map(|(_, f)| Path::new(f)).collect();
+    let base = root.ancestors().find(|b| printed.iter().any(|p| canonical(&b.join(p)) == suite_main))?;
+    Some(printed.iter().map(|p| canonical(&base.join(p))).collect())
+}
+
+/// Every `.rs` file under `suite` (canonical paths) that did not report itself, with what to do.
+fn not_compiled(suite: &Path, files: &[PathBuf], reported: &BTreeSet<PathBuf>) -> Vec<String> {
+    files
+        .iter()
+        .filter(|f| !reported.contains(*f))
+        .map(|f| {
+            let shown = format!("tests/suite/{}", f.strip_prefix(suite).unwrap_or(f).display());
+            format!(
+                "{shown} did not report itself from the built suite, so none of its tests are known to run: it needs \
+                 `compiled!();`, and a `mod` that reaches it with no #[cfg] or #![cfg] that leaves it out on this machine \
+                 (a main.rs below tests/suite is a program's root: rename it mod.rs). A .rs file that is data, not code, \
+                 does not belong under tests/suite"
+            )
         })
         .collect()
 }
 
-/// Every `.rs` file under `suite` (absolute paths) that the dep-info does not list, with how to
-/// make rustc compile it.
-fn not_compiled(suite: &Path, files: &[PathBuf], compiled: &BTreeSet<PathBuf>) -> Vec<String> {
-    let mut bad = vec![];
-    for f in files.iter().filter(|f| !compiled.contains(*f)) {
-        let rel = f.strip_prefix(suite).unwrap_or(f);
-        let shown = format!("tests/suite/{}", rel.display());
-        let dir = rel.parent().filter(|p| !p.as_os_str().is_empty());
-        let advice = match dir {
-            Some(dir) if rel.file_name().is_some_and(|n| n == "main.rs") => format!(
-                "a main.rs is a program's root, not a module: `git mv {shown} tests/suite/{}/mod.rs` and declare `mod {};` \
-                 in the module that owns its directory",
-                dir.display(),
-                dir.file_name().unwrap().to_string_lossy()
-            ),
-            _ => {
-                let name = if rel.file_name().is_some_and(|n| n == "mod.rs") { dir.and_then(|d| d.file_name()) } else { rel.file_stem() };
-                format!(
-                    "declare it with `mod {};` in the module that owns its directory (tests/suite/main.rs for tests/suite/), \
-                     with no #[cfg] that leaves it out on this machine",
-                    name.map(|n| n.to_string_lossy()).unwrap_or_default()
-                )
-            }
-        };
-        bad.push(format!("{shown} is not compiled into the suite, so none of its tests run: {advice}"));
-    }
-    bad
-}
-
-/// Every `.rs` file under `dir`; a symlinked directory is not entered, so a link loop cannot hang the walk.
+/// Every `.rs` path under `dir`, files and anything else so named; a symlinked directory is not
+/// entered, so a link loop cannot hang the walk.
 fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    for e in std::fs::read_dir(dir).unwrap() {
-        let e = e.unwrap();
+    for e in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
+        let e = e.unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
         let p = e.path();
-        if e.file_type().unwrap().is_dir() {
+        if e.file_type().is_ok_and(|t| t.is_dir()) {
             rs_files(&p, out);
         } else if p.extension().is_some_and(|x| x == "rs") {
             out.push(p);
@@ -159,8 +124,8 @@ fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Integration: the real tree builds exactly one integration test program, and rustc compiled every
-/// `.rs` file under `tests/suite/` into this one.
+/// Integration: the real tree builds exactly one integration test program, and every `.rs` file
+/// under `tests/suite/` reports itself from this binary.
 #[test]
 fn the_suite_is_the_only_test_program() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).canonicalize().unwrap();
@@ -170,34 +135,27 @@ fn the_suite_is_the_only_test_program() {
     for e in std::fs::read_dir(&tests).unwrap() {
         let p = e.unwrap().path();
         let name = p.file_name().unwrap().to_string_lossy().into_owned();
-        let src = (!p.is_dir() && name.ends_with(".rs")).then(|| std::fs::read_to_string(&p).unwrap());
-        top.push((name, src, p.join("main.rs").is_file()));
+        top.push((name, !p.is_dir(), p.join("main.rs").is_file()));
     }
     let suite_names = std::fs::read_dir(&suite).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
     let mut bad = extra_programs(&top, &suite_names, &std::fs::read_to_string(root.join("Cargo.toml")).unwrap());
 
-    let dep_info = std::env::current_exe().unwrap().with_extension("d");
-    match std::fs::read_to_string(&dep_info) {
-        Err(e) => bad.push(format!(
-            "{} cannot be read ({e}): this guard needs the dep-info file cargo writes next to the test binary to see which \
-             files rustc compiled; run the suite with cargo test, or a runner that keeps cargo's target layout",
-            dep_info.display()
+    let exe = std::env::current_exe().unwrap();
+    let o = crate::common::cmd(&exe).args(["compiled_file", "--nocapture", "--test-threads=1"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&o.stdout);
+    match reported_files(&stdout, &root, &suite.join("main.rs")).filter(|_| o.status.success()) {
+        None => bad.push(format!(
+            "{} compiled_file did not report tests/suite/main.rs, so the guard cannot tell which files are compiled \
+             (exit {:?}):\n{stdout}{}",
+            exe.display(),
+            o.status.code(),
+            String::from_utf8_lossy(&o.stderr)
         )),
-        Ok(text) => {
-            let canonical = |p: PathBuf| p.canonicalize().unwrap_or(p);
-            if let Some(base) = dep_info_base(&text, &root, &suite.join("main.rs")) {
-                let compiled: BTreeSet<PathBuf> = dep_info_sources(&text, &base).into_iter().map(canonical).collect();
-                let mut files = vec![];
-                rs_files(&suite, &mut files);
-                let files: Vec<PathBuf> = files.into_iter().map(canonical).collect();
-                for f in &files {
-                    let shown = format!("tests/suite/{}", f.strip_prefix(&suite).unwrap_or(f).display());
-                    bad.extend(source_problems(&shown, &std::fs::read_to_string(f).unwrap()));
-                }
-                bad.extend(not_compiled(&suite, &files, &compiled));
-            } else {
-                bad.push(format!("{} does not list tests/suite/main.rs, so it is not this suite's dep-info", dep_info.display()));
-            }
+        Some(reported) => {
+            let mut files = vec![];
+            rs_files(&suite, &mut files);
+            let files: Vec<PathBuf> = files.iter().map(|p| canonical(p)).collect();
+            bad.extend(not_compiled(&suite, &files, &reported));
         }
     }
     assert!(bad.is_empty(), "keep Keel's integration tests in one program:\n{}", bad.join("\n"));
@@ -210,38 +168,30 @@ const CARGO: &str = "[package]\nname = \"keel\"\n\n[dev-dependencies]\ntempfile 
 fn the_layout_check_names_each_extra_program() {
     let suite: BTreeSet<String> = ["main.rs", "cli.rs"].iter().map(|s| s.to_string()).collect();
     let check = |extra: Vec<Entry>| {
-        let mut top: Vec<Entry> = vec![("common".into(), None, false), ("suite".into(), None, true), ("README".into(), None, false)];
+        let mut top: Vec<Entry> = vec![("common".into(), false, false), ("suite".into(), false, true), ("README".into(), true, false)];
         top.extend(extra);
         extra_programs(&top, &suite, CARGO)
     };
     assert_eq!(check(vec![]), Vec::<String>::new());
-    let file = |n: &str, src: &str| vec![(n.to_string(), Some(src.to_string()), false)];
 
-    let got = check(file("router_inbox.rs", "use std::path::Path;\nmod common;\n"));
+    let got = check(vec![("router_inbox.rs".into(), true, false)]);
     assert_eq!(got.len(), 1, "{got:?}");
     for want in [
         "tests/router_inbox.rs builds as a test program",
-        "git mv tests/router_inbox.rs tests/suite/router_inbox.rs",
+        "Move it into the suite: `git mv tests/router_inbox.rs tests/suite/router_inbox.rs`",
         "mod router_inbox;",
         "use crate::common;",
+        "compiled!();",
+        "move their files to tests/suite/router_inbox/",
     ] {
         assert!(got[0].contains(want), "{want} missing from {}", got[0]);
     }
-    assert!(!got[0].contains("modules of its own"), "{}", got[0]);
     for clash in ["main.rs", "common.rs", "cli.rs"] {
-        let got = check(file(clash, ""));
+        let got = check(vec![(clash.into(), true, false)]);
         assert!(got.len() == 1 && got[0].contains("Rename it first"), "{clash}: {got:?}");
     }
-    for own in ["mod common;\nmod helper;\n", "pub mod helper;\n", "  pub(crate) mod helper;\n", "#[path = \"h.rs\"] mod helper;\n", "mod helper; // note\n"] {
-        let got = check(file("big.rs", own));
-        assert!(got.len() == 1 && got[0].contains("declares modules of its own: move their files to tests/suite/big/"), "{own:?}: {got:?}");
-    }
-    for none in ["mod common;\n", "// mod helper;\nfn f() {}\n", "mod inline { }\n"] {
-        let got = check(file("big.rs", none));
-        assert!(got.len() == 1 && !got[0].contains("modules of its own"), "{none:?}: {got:?}");
-    }
 
-    let got = check(vec![("slow".into(), None, true)]);
+    let got = check(vec![("slow".into(), false, true)]);
     assert!(got.len() == 1 && got[0].starts_with("tests/slow/main.rs builds as a test program"), "{got:?}");
     assert!(got[0].contains("git mv tests/suite/slow/main.rs tests/suite/slow/mod.rs") && got[0].contains("`mod slow;`"), "{got:?}");
 
@@ -257,73 +207,45 @@ fn the_layout_check_names_each_extra_program() {
     assert!(got.len() == 1 && got[0].starts_with("Cargo.toml does not parse"), "{got:?}");
 }
 
-/// Unit: the dep-info reader takes each `path:` rule, relative or absolute, escaped spaces and `..`
-/// included, and nothing from the target rules or the `#` lines.
+/// Unit: the printed files (after libtest's `test … ... ` on the same line) resolve from the crate's directory or a workspace root above it, whichever
+/// makes the printed `main.rs` this suite's; lines without the mark are not reports; with no
+/// `main.rs` of this suite printed there is no answer.
 #[test]
-fn the_dep_info_lists_what_rustc_compiled() {
-    let text = "/r/target/debug/deps/suite-1.d: tests/suite/main.rs tests/suite/../common/mod.rs\n\n\
-                /r/target/debug/deps/suite-1: tests/suite/main.rs\n\n\
-                tests/suite/main.rs:\ntests/suite/../common/mod.rs:\n/abs/tests/suite/a\\ b.rs:\n\n\
-                # env-dep:CARGO_MANIFEST_DIR=/r\n";
-    let got: Vec<PathBuf> = dep_info_sources(text, Path::new("/r")).into_iter().collect();
-    let want: Vec<PathBuf> = ["/abs/tests/suite/a b.rs", "/r/tests/common/mod.rs", "/r/tests/suite/main.rs"].iter().map(PathBuf::from).collect();
-    assert_eq!(got, want);
-}
-
-/// Unit: every suite file the dep-info leaves out is named, with the fix for its shape.
-#[test]
-fn every_suite_file_rustc_did_not_compile_is_named() {
-    let suite = Path::new("/r/tests/suite");
-    let f = |p: &str| suite.join(p);
-    let files = vec![f("main.rs"), f("cli.rs"), f("off/x.rs"), f("helpers/mod.rs"), f("slow/main.rs"), f("gated.rs")];
-    let compiled: BTreeSet<PathBuf> = [f("main.rs"), f("cli.rs"), f("gated.rs")].into_iter().collect();
-    let got = not_compiled(suite, &files, &compiled);
-    assert_eq!(got.len(), 3, "{got:#?}");
-    assert!(got[0].starts_with("tests/suite/off/x.rs is not compiled into the suite") && got[0].contains("`mod x;`"), "{got:#?}");
-    assert!(got[1].starts_with("tests/suite/helpers/mod.rs is not compiled") && got[1].contains("`mod helpers;`"), "{got:#?}");
-    assert!(got[2].contains("git mv tests/suite/slow/main.rs tests/suite/slow/mod.rs") && got[2].contains("`mod slow;`"), "{got:#?}");
-    assert_eq!(not_compiled(suite, &files[..2], &compiled), Vec::<String>::new());
-}
-
-/// Unit: an inner cfg in any spelling, and a `.rs` file read as data, are refused; an outer cfg on
-/// an item, a `#![allow]` and the word cfg in prose are not.
-#[test]
-fn a_suite_file_may_not_hide_its_tests_from_the_dep_info() {
-    let hides = [
-        "#%[cfg(any())]\n#[test]\nfn t() {}\n",
-        "//! doc\n#% [ cfg (\n    feature = \"slow\"\n) ]\n",
-        "#%[cfg_attr(unix, cfg(any()))]\n",
-        "#%[core::prelude::v1::cfg(any())]\n",
-        "#%/* why */[cfg(any())]\n",
-        "mod inline {\n    #%[cfg(windows)]\n}\n",
-    ];
-    for src in hides {
-        let got = source_problems("tests/suite/x.rs", &src.replace("#%", "#!"));
-        assert!(got.len() == 1 && got[0].starts_with("tests/suite/x.rs has an inner #!"), "{src:?}: {got:?}");
-    }
-    for src in ["const T: &str = include_str!(\"fixture.rs\");\n", "const B: &[u8] = include_bytes!( r#\"a/b.rs\"# );\n"] {
-        let got = source_problems("tests/suite/x.rs", &src.replace("#%", "#!"));
-        assert!(got.len() == 1 && got[0].contains("include_str!/include_bytes!"), "{src:?}: {got:?}");
-    }
-    for src in ["#%[allow(dead_code)]\n#[cfg(unix)]\n#[test]\nfn t() {}\n", "// a cfg(any()) here is prose\n", "const D: &str = include_str!(\"data.json\");\n"]
-    {
-        assert_eq!(source_problems("tests/suite/x.rs", &src.replace("#%", "#!")), Vec::<String>::new(), "{src:?}");
-    }
-}
-
-/// Unit: relative dep-info paths start from the workspace root, the crate's directory or an
-/// ancestor of it, whichever makes the listed suite `main.rs` this one; none when no base does.
-#[test]
-fn the_dep_info_base_is_where_the_listed_suite_is_this_one() {
+fn the_reports_resolve_from_where_rustc_ran() {
     let ws = tempfile::TempDir::new().unwrap();
     let ws = ws.path().canonicalize().unwrap();
     let krate = ws.join("crates/keel");
     std::fs::create_dir_all(krate.join("tests/suite")).unwrap();
+    std::fs::create_dir_all(krate.join("tests/common")).unwrap();
     let main = krate.join("tests/suite/main.rs");
-    std::fs::write(&main, "").unwrap();
-    let rule = |p: &str| format!("{p}:\n");
-    assert_eq!(dep_info_base(&rule("tests/suite/main.rs"), &krate, &main), Some(krate.clone()));
-    assert_eq!(dep_info_base(&rule("crates/keel/tests/suite/main.rs"), &krate, &main), Some(ws.clone()));
-    assert_eq!(dep_info_base(&rule(&main.display().to_string()), &krate, &main), Some(krate.clone()));
-    assert_eq!(dep_info_base(&rule("other/tests/suite/main.rs"), &krate, &main), None);
+    for f in ["tests/suite/main.rs", "tests/suite/cli.rs", "tests/common/mod.rs"] {
+        std::fs::write(krate.join(f), "").unwrap();
+    }
+    let out = |lines: &[&str]| lines.iter().map(|l| format!("test x::compiled_file ... {MARK}{l}\nok\n")).collect::<String>();
+    let want: BTreeSet<PathBuf> = [main.clone(), krate.join("tests/suite/cli.rs")].into_iter().collect();
+
+    let crate_rel = format!("running 2 tests\n{}test result: ok\n", out(&["tests/suite/main.rs", "tests/suite/cli.rs"]));
+    assert_eq!(reported_files(&crate_rel, &krate, &main), Some(want.clone()));
+    let ws_rel = out(&["crates/keel/tests/suite/main.rs", "crates/keel/tests/suite/cli.rs"]);
+    assert_eq!(reported_files(&ws_rel, &krate, &main), Some(want.clone()));
+    let abs = out(&[&main.display().to_string(), &format!("{}/tests/suite/../suite/cli.rs", krate.display())]);
+    assert_eq!(reported_files(&abs, &krate, &main), Some(want));
+    let common = out(&["tests/suite/main.rs", "tests/suite/../common/mod.rs"]);
+    assert!(reported_files(&common, &krate, &main).unwrap().contains(&krate.join("tests/common/mod.rs")));
+
+    assert_eq!(reported_files("tests/suite/main.rs\n", &krate, &main), None, "an unmarked line is no report");
+    assert_eq!(reported_files(&out(&["other/tests/suite/main.rs"]), &krate, &main), None);
+}
+
+/// Unit: every suite file that did not report itself is named; a reported one is not.
+#[test]
+fn every_suite_file_that_did_not_report_itself_is_named() {
+    let suite = Path::new("/r/tests/suite");
+    let files = vec![suite.join("main.rs"), suite.join("cli.rs"), suite.join("off/x.rs"), suite.join("slow/main.rs")];
+    let reported: BTreeSet<PathBuf> = [suite.join("main.rs"), suite.join("cli.rs")].into_iter().collect();
+    let got = not_compiled(suite, &files, &reported);
+    assert_eq!(got.len(), 2, "{got:#?}");
+    assert!(got[0].starts_with("tests/suite/off/x.rs did not report itself from the built suite") && got[0].contains("`compiled!();`"), "{got:#?}");
+    assert!(got[1].starts_with("tests/suite/slow/main.rs did not report itself") && got[1].contains("rename it mod.rs"), "{got:#?}");
+    assert_eq!(not_compiled(suite, &files[..2], &reported), Vec::<String>::new());
 }

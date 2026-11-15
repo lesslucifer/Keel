@@ -1,3 +1,5 @@
+compiled!();
+
 use std::path::Path;
 use std::process::Output;
 use tempfile::TempDir;

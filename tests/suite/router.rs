@@ -2,6 +2,8 @@
 //! `scripts/router-guard.jq` as `.claude/settings.json` wires it, the background-session launcher
 //! `scripts/router-worker.sh` (with a stub `claude`), the owner-action watch, and the shipped PUSHED watch probe.
 //! Needs `jq`, `sh`, `uuidgen` and `shasum` on PATH, as the guard and launcher do.
+compiled!();
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};

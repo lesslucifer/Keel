@@ -1,3 +1,5 @@
+compiled!();
+
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Output;

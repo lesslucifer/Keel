@@ -6,6 +6,8 @@
 //! this file does not prove it: the owner moved it to backlog B24 by ruling on 2026-11-14, for the
 //! reason B6 itself was deferred there on 2026-11-13 - with no fetch setup there is nothing to
 //! exercise. The plan's other three steps run here and prove the close, so no test layer is waived.
+compiled!();
+
 use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;

@@ -1,5 +1,7 @@
 //! E-CRCAP epic e2e: the 5-round review schedule ends in a fix-PASS or an owner-accepted waiver, and
 //! both merge through the real hooks of a repo `keel init` set up (UC-REV-2, UC-REV-3).
+compiled!();
+
 use serde_json::Value;
 use std::path::Path;
 use std::process::{Output, Stdio};

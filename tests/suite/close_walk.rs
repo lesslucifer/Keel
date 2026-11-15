@@ -1,5 +1,7 @@
 //! E-SEED3.W2: the push and the epic walk judge an epic-close commit by the epic-range notes it
 //! carries (B23, B20). Every merge and push runs through the real hooks into a bare local remote.
+compiled!();
+
 use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;

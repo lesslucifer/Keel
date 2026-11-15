@@ -1,4 +1,6 @@
 //! E-SEED.W3 merge gate: one red fixture per check, a green path, the epic walk, the hooks.
+compiled!();
+
 use serde_json::{json, Value};
 use std::path::Path;
 use std::process::{Output, Stdio};
