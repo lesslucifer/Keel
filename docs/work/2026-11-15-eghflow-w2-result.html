@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-GHFLOW.W2 result · The router bot pushes work branches and opens pull requests</h1>
       <p>Delivered and tested against a mock of GitHub. It goes live once you create the App and place its key: the steps are below.</p>
-      <div class="meta">Ready v2 · 2026-11-15 · T3 · WU result · Keel · plan: 2026-11-15-eghflow-w2-plan.html</div>
+      <div class="meta">Ready v3 · 2026-11-15 · T3 · WU result · Keel · plan: 2026-11-15-eghflow-w2-plan.html</div>
     </div>
   </header>
   <main>
@@ -22,7 +22,7 @@
       <tr><th>When</th><th>Today</th><th>After W2 and your App setup</th></tr>
       <tr><td>A WU is finished</td><td>You push its branch</td><td>The router runs <code>router-gh.sh push</code>: a WU's tip must carry its test note, an epic must pass the range walk; the tests themselves run in the worker's sandbox and on GitHub, never on the router's push</td></tr>
       <tr><td>You want to see the work</td><td>Nothing on GitHub</td><td>A draft pull request by <code>&lt;slug&gt;[bot]</code> into the epic, linking the plan and result at the tip and listing the notes</td></tr>
-      <tr><td>A pull request merged on GitHub</td><td>You pull by hand</td><td><code>router-gh.sh sync epic/&lt;E&gt;</code> fast-forwards the local epic, refusing anything else</td></tr>
+      <tr><td>A pull request merged on GitHub</td><td>You pull by hand</td><td><code>router-gh.sh sync epic/&lt;E&gt;</code> fetches GitHub's epic into <code>origin/epic/&lt;E&gt;</code> and fast-forwards the local branch when no worktree has it checked out; when one does, that worktree's session runs <code>git merge --ff-only origin/epic/&lt;E&gt;</code></td></tr>
     </table>
     <p>You still sign and merge as today. The router never pushes main.</p>
 
@@ -51,7 +51,7 @@
 mv ~/Downloads/&lt;the downloaded file&gt;.private-key.pem ~/.config/keel/router-gh/app.pem
 chmod 600 ~/.config/keel/router-gh/app.pem
 printf 'app_id=%s\ninstallation_id=%s\napp_slug=%s\n' &lt;APP ID&gt; &lt;INSTALLATION ID&gt; &lt;slug&gt; &gt; ~/.config/keel/router-gh/app.conf</pre></li>
-      <li>If the router session's shell runs in a sandbox with a network allowlist, it needs <code>api.github.com</code> and <code>github.com</code>. Workers need neither: they never run the script.</li>
+      <li>If the router session's shell runs in a sandbox, it needs <code>api.github.com</code> and <code>github.com</code> on its network allowlist and write access to <code>~/.config/keel/router-gh/run</code> (the script's run dir, made on first use). Workers need neither: they never run the script.</li>
     </ol>
 
     <h2 id="first-run">The first live run: what to look for</h2>
@@ -74,6 +74,14 @@ printf 'app_id=%s\ninstallation_id=%s\napp_slug=%s\n' &lt;APP ID&gt; &lt;INSTALL
           <li>N3: the comments no longer claim workers are denied the script; the denyRead of the key directory is the bound.</li>
           <li>N4: the key directory must be the user's and writable by no one else, and the key must have one link.</li>
         </ul></li>
+      <li>The security review's second round:
+        <ul>
+          <li>X1: sync no longer runs git inside a worktree. A worker can write the shared git dir, so it could forge a worktree entry naming a repository whose filters and hooks it owns. So sync only fetches GitHub's branch into <code>refs/remotes/origin/epic/&lt;E&gt;</code>. When no worktree has the branch checked out, sync moves it by <code>update-ref</code>. When one does, it reports <code>state=fetched</code>, and that worktree's own session fast-forwards it. The plan said sync "fast-forwards the local epic/ branch"; it now does so only when no worktree holds it.</li>
+          <li>X2: the run's temp dir, which holds the token while the script runs, now lies under the key directory (<code>~/.config/keel/router-gh/run/</code>), which workers cannot read, never in the shared <code>$TMPDIR</code>. The credential helper accepts only a token file there.</li>
+          <li>N1: a worktree entry is believed only when git made it for this repository, by the launcher's rule. A forged entry can neither steer post nor block every call through the key-location check.</li>
+          <li>N2 and N4: the script's header says its checks on git data are policy, not a bound, because workers can write the shared git dir; CI's gate and your sign-off are the authority. Replace refs are ignored.</li>
+          <li>N3: push sends only Keel's five notes kinds.</li>
+        </ul></li>
       <li><code>.claude/settings.json</code>'s allow lines were not added. The worker file guard refuses that edit, by design, so they are owner step 1.</li>
       <li>The epic plan named "a local mock of the GitHub API" in the notify_owner shape, a loopback server. The worker sandbox refuses every socket, loopback and Unix (probed), so the mock is a fake curl instead. That trade was decided in the WU plan, open point 1. One more test runs the real curl, to prove it reads the script's request config.</li>
       <li>No manual scratch run. My shell refused a scratch <code>git push</code> and <code>git notes</code>, both on the worker deny list, so every behaviour was exercised only through <code>cargo test</code>. The tests make a throwaway RSA key in a temp home; no real key or token was created or read.</li>
@@ -83,21 +91,22 @@ printf 'app_id=%s\ninstallation_id=%s\napp_slug=%s\n' &lt;APP ID&gt; &lt;INSTALL
     <h2 id="evidence">Evidence</h2>
     <div data-item="evidence" data-c="evidence">
       <ul>
-        <li>Commits: 353061b (plan), b3eb4d7 (tests), 3134a43 (this report, v1), the security-review fix (tests and this report), then your <code>keel mr commit</code> of the script and the rule-bearing edits.</li>
-        <li>Integration: <code>tests/suite/router_gh.rs</code>, 21 tests.
+        <li>Commits: 353061b (plan), b3eb4d7 (tests), 3134a43 (this report, v1), f9c17d6 (security review round 1: tests and report v2), the round 2 fix (tests and this report, v3), then your <code>keel mr commit</code> of the script and the rule-bearing edits.</li>
+        <li>Integration: <code>tests/suite/router_gh.rs</code>, 22 tests.
           <ul>
             <li>push: the branch and its notes land, with no hook and no <code>[check]</code> command run; a WU tip without its own test note is refused; an epic walks the range (docs-only passes, an ungated code commit is refused); a diverged branch is refused; a rejected notes ref warns; every refusal comes before any request; a hostile global git config can neither push a tag nor reroute.</li>
             <li>The https path through git's real credential layer: one token per git run, to github.com only.</li>
             <li>pr-open: the draft request; the JWT checked against the key; the derived and explicit bases; the refresh; anyone else's pull request refused.</li>
             <li>pr-ready: only the bot's draft at the local tip; GraphQL errors.</li>
             <li>post: mentions made inert; the file deleted; a link, a link to the key, a hard link, a FIFO, a linked directory or an unsafe file refused and kept.</li>
-            <li>sync: the fast-forward, in a worktree too; dirty and diverged refused.</li>
+            <li>sync: the fast-forward of an unchecked-out branch; for a checked-out one only the fetch, the worktree untouched; diverged refused.</li>
+            <li>Forged worktree entries (round 2, X1 reproduced): a repository the worker owns, holding epic/E, with marking clean and smudge filters and a post-merge hook. Sync runs no git there and is not misled. An entry at the key's parent blocks nothing, and one holding a pull request's head cannot steer post.</li>
             <li>The key, its links, its directory's mode and app.conf; HTTP errors; the credential mode, host check included; the real curl.</li>
           </ul>
-          Every run is checked for the token, the JWT, the key and a leftover temp dir.</li>
+          Every run is checked for the token, the JWT and the key in its output, for nothing left in its run dir under the key directory, and for nothing written to the shared <code>$TMPDIR</code>; every API request names an output file under the key directory.</li>
         <li>Unit: <code>tests/suite/router_gh_args.rs</code>, 6 tests: modes and word counts, the branch grammar, the bases, numbers and body names, sync, and a dash in any position (generated).</li>
         <li>Guard and workers: <code>tests/suite/router.rs</code>. New: the five shapes pass and 53 other spellings are denied, and the guard and the script agree on a generated corpus (the only gaps: names <code>git check-ref-format</code> refuses, and a branch as its own base). Updated: the worker deny list, the read rules, the sandbox's <code>denyRead</code>, the file guard (Read, Grep, Glob on the key dir) and the rule-bearing list.</li>
-        <li><code>keel check</code>: lint green; the suite 367 passed, 10 ignored (the notify_owner loopback tests), in the sandbox.</li>
+        <li><code>keel check</code>: lint green; the suite 368 passed, 10 ignored (the notify_owner loopback tests), in the sandbox.</li>
       </ul>
     </div>
 

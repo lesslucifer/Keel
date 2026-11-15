@@ -193,8 +193,35 @@ impl Gh {
         let o = c.output().unwrap();
         self.assert_no_secret(&o);
         let left: Vec<_> = std::fs::read_dir(&self.tmp).unwrap().map(|e| e.unwrap().file_name()).collect();
-        assert!(left.is_empty(), "the script left {left:?} in its temp dir");
+        assert!(left.is_empty(), "the script wrote {left:?} to the shared $TMPDIR");
+        let run = self.home.join(".config/keel/router-gh/run");
+        let left: Vec<_> = std::fs::read_dir(&run).map(|d| d.map(|e| e.unwrap().file_name()).collect()).unwrap_or_default();
+        assert!(left.is_empty(), "the script left {left:?} in its run dir");
         o
+    }
+
+    /// A worktree entry git did not make, forged in the shared git dir as a worker could (security
+    /// review round 2, X1/N1): `$g/worktrees/<id>` naming `path`, with `branch` checked out.
+    fn forge_worktree(&self, id: &str, path: &Path, branch: &str) {
+        let admin = self.repo.join(".git/worktrees").join(id);
+        std::fs::create_dir_all(&admin).unwrap();
+        std::fs::write(admin.join("gitdir"), format!("{}\n", path.join(".git").display())).unwrap();
+        std::fs::write(admin.join("HEAD"), format!("ref: refs/heads/{branch}\n")).unwrap();
+        std::fs::write(admin.join("commondir"), "../..\n").unwrap();
+    }
+
+    /// GitHub merges `what` into epic/E (a merge commit made in a clone of origin); the merge's sha.
+    fn github_merges(&self, what: &str) -> String {
+        let merger = self.root.path().join("merger");
+        if !merger.exists() {
+            git(self.root.path(), &["clone", "-q", self.origin.to_str().unwrap(), merger.to_str().unwrap()]);
+        }
+        git(&self.repo, &["push", "-q", "--no-verify", self.origin.to_str().unwrap(), what]);
+        git(&merger, &["fetch", "-q", "origin"]);
+        git(&merger, &["checkout", "-q", "-B", "epic/E", "origin/epic/E"]);
+        git(&merger, &["merge", "-q", "--no-ff", "--no-verify", "-m", what, &format!("origin/{what}")]);
+        git(&merger, &["push", "-q", "--no-verify", "origin", "epic/E"]);
+        git(&merger, &["rev-parse", "HEAD"])
     }
 
     fn run(&self, args: &[&str]) -> Output {
@@ -293,9 +320,12 @@ fn assert_auth(gh: &Gh) {
     for r in &log[1..] {
         assert_eq!(r["auth"], format!("Bearer {TOKEN}"), "{r}");
     }
+    // the response, the token's first home, lands under the key dir workers cannot read (X2)
+    let run = format!("output = \"{}/.config/keel/router-gh/run/router-gh.", gh.home.display());
     for r in &log {
         let c = r["config"].as_str().unwrap();
         assert!(c.contains("proto = \"=https\"") && c.contains("max-time = 60"), "{c}");
+        assert!(c.contains(&run), "the run dir is not under the key dir: {c}");
     }
 }
 
@@ -432,7 +462,8 @@ fn a_rejected_notes_ref_warns_and_the_branch_still_lands() {
     assert!(out.lines().any(|l| l.starts_with("WARN notes ref refs/notes/cr not pushed: ")), "{out}");
     assert!(out.ends_with(&format!("PUSHED branch=wu/E/x sha={tip} state=updated")), "{out}");
     assert_eq!(gh.origin_sha("refs/heads/wu/E/x"), Some(tip));
-    assert_eq!(gh.origin_sha("refs/notes/alt"), Some(gh.sha("refs/notes/alt")), "the other notes refs still went");
+    assert_eq!(gh.origin_sha("refs/notes/test"), Some(gh.sha("refs/notes/test")), "the other notes refs still went");
+    assert_eq!(gh.origin_sha("refs/notes/alt"), None, "only Keel's five notes kinds are pushed (N3)");
 }
 
 /// main, a tag, an unknown branch, a flag or an extra word: exit 2 before any request, origin as it was.
@@ -723,57 +754,107 @@ fn post_refuses_unsafe_files_and_keeps_them() {
     assert!(o.status.code() == Some(2) && text(&o).contains("not one the bot opened"), "{}", text(&o));
 }
 
-/// sync fast-forwards the local epic to a merge made on GitHub, in its worktree when it is checked
-/// out; a dirty worktree or a diverged local branch moves nothing.
+/// sync fetches GitHub's epic into refs/remotes/origin/epic/E and fast-forwards the local branch
+/// by update-ref when no worktree has it checked out. When one does, no git runs there (round 2,
+/// X1): sync says `fetched`, and that worktree's own session fast-forwards it. A local commit GitHub
+/// lacks is not a fast-forward.
 #[test]
-fn sync_fast_forwards_the_local_epic_to_githubs_merge() {
+fn sync_fetches_githubs_epic_and_moves_only_an_unchecked_out_branch() {
     let gh = Gh::new();
-    // GitHub merges wu/E/x into epic/E
-    let merger = gh.root.path().join("merger");
-    git(gh.root.path(), &["clone", "-q", gh.origin.to_str().unwrap(), merger.to_str().unwrap()]);
-    git(&gh.repo, &["push", "-q", "--no-verify", gh.origin.to_str().unwrap(), "wu/E/x"]);
-    let github_merges = |what: &str| {
-        git(&merger, &["fetch", "-q", "origin"]);
-        git(&merger, &["checkout", "-q", "-B", "epic/E", "origin/epic/E"]);
-        git(&merger, &["merge", "-q", "--no-ff", "--no-verify", "-m", what, &format!("origin/{what}")]);
-        git(&merger, &["push", "-q", "--no-verify", "origin", "epic/E"]);
-        git(&merger, &["rev-parse", "HEAD"])
-    };
     let old = gh.sha("epic/E");
-    let merged = github_merges("wu/E/x");
+    let merged = gh.github_merges("wu/E/x");
     let o = gh.run(&["sync", "epic/E"]);
     assert!(o.status.success(), "{}", text(&o));
     assert_eq!(stdout(&o), format!("SYNCED branch=epic/E from={old} sha={merged} state=fast-forward"));
-    assert_eq!(gh.sha("epic/E"), merged);
+    assert_eq!((gh.sha("epic/E"), gh.sha("refs/remotes/origin/epic/E")), (merged.clone(), merged.clone()));
     assert_eq!(gh.calls(), ["POST /app/installations/456/access_tokens"]);
     let o = gh.run(&["sync", "epic/E"]);
     assert_eq!(stdout(&o), format!("SYNCED branch=epic/E sha={merged} state=unchanged"));
 
-    // checked out in a worktree: the worktree moves with it
+    // checked out in a worktree: fetched only; the worktree and the branch stay put
     let wt = gh.root.path().canonicalize().unwrap().join("epic-wt");
     git(&gh.repo, &["worktree", "add", "-q", wt.to_str().unwrap(), "epic/E"]);
     git(&gh.repo, &["switch", "-q", "-c", "wu/E/y", &merged]);
     write(&gh.repo, "src/y.txt", "y");
     commit(&gh.repo, "wu y");
-    git(&gh.repo, &["push", "-q", "--no-verify", gh.origin.to_str().unwrap(), "wu/E/y"]);
-    let merged2 = github_merges("wu/E/y");
-    write(&wt, "dirt.txt", "d");
+    let merged2 = gh.github_merges("wu/E/y");
     let o = gh.run(&["sync", "epic/E"]);
-    assert!(o.status.code() == Some(2) && text(&o).contains("has uncommitted changes: nothing moved"), "{}", text(&o));
-    assert_eq!(gh.sha("epic/E"), merged);
-    std::fs::remove_file(wt.join("dirt.txt")).unwrap();
-    let o = gh.run(&["sync", "epic/E"]);
-    assert_eq!(stdout(&o), format!("SYNCED branch=epic/E from={merged} sha={merged2} state=fast-forward worktree={}", wt.display()), "{}", text(&o));
-    assert_eq!(git(&wt, &["rev-parse", "HEAD"]), merged2);
-    assert!(wt.join("src/y.txt").exists(), "the worktree's files follow the branch");
+    assert_eq!(
+        stdout(&o),
+        format!("SYNCED branch=epic/E from={merged} sha={merged2} state=fetched ref=refs/remotes/origin/epic/E worktree={}", wt.display()),
+        "{}",
+        text(&o)
+    );
+    assert_eq!((gh.sha("epic/E"), git(&wt, &["rev-parse", "HEAD"])), (merged.clone(), merged.clone()));
+    assert_eq!(gh.sha("refs/remotes/origin/epic/E"), merged2);
+    assert!(!wt.join("src/y.txt").exists());
+    // the worktree's own session finishes it
+    git(&wt, &["merge", "-q", "--ff-only", "origin/epic/E"]);
+    assert!(wt.join("src/y.txt").exists());
 
     // a local commit GitHub lacks: not a fast-forward
     write(&wt, "local.txt", "l");
     commit(&wt, "local only");
     let local = git(&wt, &["rev-parse", "HEAD"]);
+    git(&gh.repo, &["worktree", "remove", "--force", wt.to_str().unwrap()]);
     let o = gh.run(&["sync", "epic/E"]);
     assert!(o.status.code() == Some(2) && text(&o).contains("not a fast-forward"), "{}", text(&o));
     assert_eq!(gh.sha("epic/E"), local);
+}
+
+/// X1 reproduced (security review round 2): a worker can write the shared git dir, so it can forge
+/// `$g/worktrees/<id>` entries. One names a repository the worker owns, holding epic/E, whose clean
+/// and smudge filters and post-merge hook leave a mark: sync runs no git there and is not misled
+/// (the entry is not one git made, so epic/E counts as checked out nowhere). One at the key's
+/// parent no longer refuses every call (N1, a denial of service). One holding a pull request's head
+/// cannot make post read a file there (N1).
+#[test]
+fn a_forged_worktree_entry_runs_nothing_and_steers_nothing() {
+    let gh = Gh::new();
+    let base = gh.root.path().canonicalize().unwrap();
+    let mark = base.join("evil-ran");
+    let evil = base.join("evil");
+    git(&base, &["init", "-q", evil.to_str().unwrap()]);
+    let touch = format!("sh -c 'touch {}; cat'", common::sh_quote(&mark.to_string_lossy()));
+    for (k, v) in [("filter.x.clean", touch.as_str()), ("filter.x.smudge", touch.as_str()), ("filter.x.required", "true")] {
+        git(&evil, &["config", k, v]);
+    }
+    write(&evil, ".gitattributes", "* filter=x\n");
+    write(&evil, "f.txt", "f");
+    exe(&evil.join(".git/hooks/post-merge"), &format!("#!/bin/sh\ntouch {}\n", common::sh_quote(&mark.to_string_lossy())));
+    git(&evil, &["add", "-A"]);
+    git(&evil, &["commit", "-q", "--no-verify", "-m", "evil"]);
+    std::fs::remove_file(&mark).ok();
+    write(&evil, "f.txt", "changed, so status would run the clean filter");
+    gh.forge_worktree("evil", &evil, "epic/E");
+    gh.forge_worktree("home", &gh.home.join(".config"), "wu/E/z");
+    let p = base.join("p");
+    write(&p, ".router-gh/status.md", "planted\n");
+    gh.forge_worktree("p", &p, "wu/E/y");
+    let listed = git(&gh.repo, &["worktree", "list", "--porcelain"]);
+    assert!(listed.contains(&format!("worktree {}", evil.display())) && listed.contains("branch refs/heads/epic/E"), "the forge took: {listed}");
+
+    let merged = gh.github_merges("wu/E/x");
+    let o = gh.run(&["sync", "epic/E"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(stdout(&o).ends_with(&format!("sha={merged} state=fast-forward")), "a forged entry was believed: {}", text(&o));
+    assert!(!mark.exists(), "git ran in the forged worktree");
+    assert_eq!(std::fs::read_to_string(evil.join("f.txt")).unwrap(), "changed, so status would run the clean filter");
+
+    // the key-location check ignores a forged entry at the key's parent
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+
+    // post believes no forged entry for the head branch
+    git(&gh.repo, &["branch", "wu/E/y", "wu/E/x"]);
+    let mut pr = gh.pr(7, BOT, "own/Keel", &gh.sha("wu/E/x"), true);
+    pr["head"]["ref"] = "wu/E/y".into();
+    gh.routes(&[("GET", "/repos/own/Keel/pulls/7", 200, pr), ("POST", "/repos/own/Keel/issues/7/comments", 201, serde_json::json!({"id": 3}))]);
+    let o = gh.run(&["post", "7", "status"]);
+    assert!(o.status.code() == Some(2) && text(&o).contains("no worktree of this repository has wu/E/y checked out"), "{}", text(&o));
+    assert!(p.join(".router-gh/status.md").exists());
+    assert_eq!(gh.calls().len(), 2);
+    assert!(!mark.exists());
 }
 
 /// The key must be there, a regular file, the user's, 0600 or 0400, and outside every worktree;
@@ -866,13 +947,14 @@ fn an_http_error_prints_its_status_and_githubs_message_only() {
 #[test]
 fn the_credential_mode_gives_the_token_once() {
     let gh = Gh::new();
-    let dir = gh.root.path().canonicalize().unwrap().join("router-gh.AbC123");
+    let rundir = gh.home.join(".config/keel/router-gh/run");
+    let dir = rundir.join("router-gh.AbC123");
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("token");
     let ask = |f: &Path, op: &str, input: &str| {
         use std::io::Write;
         let mut c = common::cmd("sh");
-        c.arg(gh.repo.join("scripts/router-gh.sh")).arg("credential").arg(f).arg(op);
+        c.arg(gh.repo.join("scripts/router-gh.sh")).arg("credential").arg(f).arg(op).env("HOME", &gh.home);
         let mut p = c.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
         p.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
         p.wait_with_output().unwrap()
@@ -904,6 +986,8 @@ fn the_credential_mode_gives_the_token_once() {
         "/etc/passwd".into(),
         gh.root.path().join("token"),
         gh.root.path().join("router-gh.abc/token"),
+        gh.root.path().canonicalize().unwrap().join("router-gh.AbC123/token"),
+        rundir.join("router-gh.abc/token"),
         dir.join("../router-gh.AbC123/token"),
         dir.join("other"),
     ] {
