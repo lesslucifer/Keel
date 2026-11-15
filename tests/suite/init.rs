@@ -709,10 +709,7 @@ fn git_in(d: &Path, a: &[&str]) -> Output {
         .args(a)
         .current_dir(d)
         .env("PATH", common::path_with(Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap()))
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t")
+        .envs(common::TESTER)
         .output()
         .unwrap()
 }
@@ -910,16 +907,7 @@ fn a_foreign_keel_on_path_makes_init_warn_and_a_git_hook_refuse() {
 
     ok(p, &["switch", "-q", "-c", "wu/x/y"]);
     let commit = |path: &str| {
-        common::cmd("git")
-            .args(["commit", "-q", "--allow-empty", "-m", "c"])
-            .current_dir(p)
-            .env("PATH", path)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .output()
-            .unwrap()
+        common::cmd("git").args(["commit", "-q", "--allow-empty", "-m", "c"]).current_dir(p).env("PATH", path).envs(common::TESTER).output().unwrap()
     };
     let o = commit(&path);
     let t = text(&o);

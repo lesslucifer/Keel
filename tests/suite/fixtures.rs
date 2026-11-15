@@ -110,15 +110,7 @@ fn a_sweep_removes_only_old_template_directories() {
 fn a_copy_with_hooks_a_worktree_and_a_remote_is_independent() {
     use crate::common::{cmd, fixture, template};
     let git = |d: &Path, a: &[&str]| {
-        let o = cmd("git")
-            .args(a)
-            .current_dir(d)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .output()
-            .unwrap();
+        let o = cmd("git").args(a).current_dir(d).envs(crate::common::TESTER).output().unwrap();
         assert!(o.status.success(), "git {a:?}: {}", String::from_utf8_lossy(&o.stderr));
         String::from_utf8(o.stdout).unwrap().trim().to_string()
     };
@@ -213,27 +205,27 @@ fn a_read_only_directory_is_copied_with_its_children() {
 
 /// Integration (E-TESTOPT.W5): a test's git reads one global setting, `maintenance.auto = false`,
 /// so a commit in a fixture starts no `git maintenance run --auto`: through `common::cmd`, through
-/// the router tests' `hermetic()` layered on it, and through their `git_shim` for scripts that
-/// clear git's environment.
+/// `common::hermetic()` re-applied after a test's own variables, and through `common::git_shim` for
+/// scripts that clear git's environment.
 #[test]
 fn a_test_spawn_runs_no_automatic_git_maintenance() {
     use crate::common::cmd;
     use std::process::Command;
     let shim = TempDir::new().unwrap();
-    crate::router::git_shim(shim.path());
+    crate::common::git_shim(shim.path());
     type Spawn<'a> = Box<dyn Fn() -> Command + 'a>;
     let spawns: [(&str, Spawn); 3] = [
         ("common::cmd", Box::new(|| cmd("git"))),
         (
-            "router hermetic()",
+            "common::hermetic()",
             Box::new(|| {
                 let mut c = cmd("git");
-                crate::router::hermetic(&mut c);
+                crate::common::hermetic(&mut c);
                 c
             }),
         ),
         (
-            "router git_shim, with no GIT_CONFIG_GLOBAL of its own",
+            "common::git_shim, with no GIT_CONFIG_GLOBAL of its own",
             Box::new(|| {
                 let mut c = cmd(shim.path().join("git"));
                 c.env_remove("GIT_CONFIG_GLOBAL");
@@ -246,16 +238,7 @@ fn a_test_spawn_runs_no_automatic_git_maintenance() {
         assert_eq!(String::from_utf8_lossy(&o.stdout), "maintenance.auto=false\n", "{name}: {}", String::from_utf8_lossy(&o.stderr));
         let (repo, trace) = (TempDir::new().unwrap(), TempDir::new().unwrap());
         let git = |a: &[&str]| {
-            let o = spawn()
-                .args(a)
-                .current_dir(repo.path())
-                .env("GIT_AUTHOR_NAME", "t")
-                .env("GIT_AUTHOR_EMAIL", "t@t")
-                .env("GIT_COMMITTER_NAME", "t")
-                .env("GIT_COMMITTER_EMAIL", "t@t")
-                .env("GIT_TRACE2", trace.path())
-                .output()
-                .unwrap();
+            let o = spawn().args(a).current_dir(repo.path()).envs(crate::common::TESTER).env("GIT_TRACE2", trace.path()).output().unwrap();
             assert!(o.status.success(), "{name}: git {a:?}: {}", String::from_utf8_lossy(&o.stderr));
         };
         git(&["init", "-q"]);
@@ -264,4 +247,36 @@ fn a_test_spawn_runs_no_automatic_git_maintenance() {
         assert!(traces.iter().any(|t| t.contains(" commit -q")), "{name}: git traced nothing: {traces:?}");
         assert!(!traces.iter().any(|t| t.contains("maintenance run")), "{name}: a commit started git maintenance");
     }
+}
+
+/// Unit (E-TESTOPT epic review round 1): a git that `common::cmd` spawns traces nothing and makes
+/// sha1 repositories, whatever GIT_TRACE* or GIT_DEFAULT_HASH the test process inherited. Run plainly
+/// it proves little; `an_exported_git_trace_reaches_no_test_spawn` runs it with them exported.
+#[test]
+fn a_spawn_hides_the_test_process_trace_and_hash() {
+    use crate::common::cmd;
+    let d = TempDir::new().unwrap();
+    let o = cmd("git").args(["init", "-q", "r"]).current_dir(d.path()).output().unwrap();
+    assert!(o.status.success() && o.stderr.is_empty(), "git init printed: {}", String::from_utf8_lossy(&o.stderr));
+    let f = cmd("git").args(["rev-parse", "--show-object-format"]).current_dir(d.path().join("r")).output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&f.stdout), "sha1\n", "GIT_DEFAULT_HASH reached git init");
+    assert!(f.stderr.is_empty(), "a GIT_TRACE* variable reached git: {}", String::from_utf8_lossy(&f.stderr));
+}
+
+/// Integration (E-TESTOPT epic review round 1): with GIT_TRACE, GIT_TRACE2 and GIT_DEFAULT_HASH
+/// exported to the suite, the test above and the cli test that compares git's stderr stay green:
+/// `common::no_git_env` is the one home of the strip, not a layer only the router tests add.
+#[test]
+fn an_exported_git_trace_reaches_no_test_spawn() {
+    let tests = ["fixtures::a_spawn_hides_the_test_process_trace_and_hash", "cli::a_test_child_runs_its_gits_own_installation_not_the_launcher"];
+    let o = crate::common::cmd(std::env::current_exe().unwrap())
+        .args(tests)
+        .args(["--exact", "--test-threads=1"])
+        .env("GIT_TRACE", "1")
+        .env("GIT_TRACE2", "1")
+        .env("GIT_DEFAULT_HASH", "sha256")
+        .output()
+        .unwrap();
+    let out = String::from_utf8_lossy(&o.stdout);
+    assert!(o.status.success() && out.contains("2 passed"), "{out}{}", String::from_utf8_lossy(&o.stderr));
 }

@@ -422,36 +422,13 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
     assert_eq!(run(root(), empty.path().to_str().unwrap()).status.code(), Some(2), "missing jq must block");
 }
 
-/// Layered on `common::cmd` for the git W12's tests run (`git()`, the PUSHED probe, the e2e worktree
-/// add, `Watcher::cmd` and the watch under it): only the repo's own config is read, so no user or
-/// system setting (tag.gpgSign, log.showSignature, core.quotePath, ...) can change what it does, and
-/// no inherited GIT_TRACE* or GIT_DEFAULT_HASH changes its output or its repos.
-pub(crate) fn hermetic(c: &mut Command) -> &mut Command {
-    let set: Vec<std::ffi::OsString> = c.get_envs().map(|(k, _)| k.to_owned()).collect();
-    for k in std::env::vars_os().map(|(k, _)| k).chain(set) {
-        if k.to_string_lossy().starts_with("GIT_TRACE") || k == "GIT_DEFAULT_HASH" {
-            c.env_remove(k);
-        }
-    }
-    c.env("GIT_CONFIG_GLOBAL", common::GIT_CONFIG).env("GIT_CONFIG_NOSYSTEM", "1")
-}
-
 /// Upper bound on any wait for another process; a hung script fails the test instead of hanging it.
 const BOUND: Duration = Duration::from_secs(10);
 /// The bound a test passes when it expects the wait to fail: "never" holds at any length.
 const NEVER: Duration = Duration::from_millis(100);
 
 fn git(d: &Path, a: &[&str]) -> Output {
-    let o = hermetic(&mut common::cmd("git"))
-        .args(["-c", "core.hooksPath=/dev/null"])
-        .args(a)
-        .current_dir(d)
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t")
-        .output()
-        .unwrap();
+    let o = common::as_tester(common::cmd("git").args(["-c", "core.hooksPath=/dev/null"]).args(a).current_dir(d)).output().unwrap();
     assert!(o.status.success(), "git {a:?}: {}", String::from_utf8_lossy(&o.stderr));
     o
 }
@@ -502,8 +479,10 @@ fn stub_claude(stub: &Path) {
 
 /// `router-watch.sh` sleeps once per poll; this `<base>/shim/sleep` counts the polls in
 /// $STEP_DIR/polls (its argument, one per line, in $STEP_DIR/sleeps) and blocks poll n until the test
-/// creates $STEP_DIR/go-n, so each poll judges a state the test has set. It ends with its caller or the test
-/// process; it appends its pid to $STEP_DIR/pids as it starts and, as its last act, to $STEP_DIR/exited.
+/// creates $STEP_DIR/go-n, so each poll judges a state the test has set. It ends with its caller, with the
+/// test process, or once the test has stopped its watch ($STEP_DIR/stopped, `stop_shims`): a watch killed
+/// before the shim read $PPID leaves it a parent that is still alive, an adopter (E-TESTOPT epic review
+/// round 1). It appends its pid to $STEP_DIR/pids as it starts and, as its last act, to $STEP_DIR/exited.
 fn sleep_shim(base: &Path) {
     std::fs::create_dir_all(base.join("shim")).unwrap();
     std::fs::write(
@@ -511,7 +490,7 @@ fn sleep_shim(base: &Path) {
         concat!(
             "#!/bin/sh\necho $$ >> \"$STEP_DIR/pids\"\necho \"$1\" >> \"$STEP_DIR/sleeps\"\nn=$(( $(cat \"$STEP_DIR/polls\" 2>/dev/null || echo 0) + 1 ))\n",
             "echo \"$n\" > \"$STEP_DIR/polls.tmp\" && mv \"$STEP_DIR/polls.tmp\" \"$STEP_DIR/polls\"\n",
-            "while [ ! -e \"$STEP_DIR/go-$n\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null && kill -0 \"$PPID\" 2>/dev/null; do /bin/sleep 0.02; done\n",
+            "while [ ! -e \"$STEP_DIR/go-$n\" ] && [ ! -e \"$STEP_DIR/stopped\" ] && kill -0 \"$STUB_OWNER\" 2>/dev/null && kill -0 \"$PPID\" 2>/dev/null; do /bin/sleep 0.02; done\n",
             "echo $$ >> \"$STEP_DIR/exited\"\n"
         ),
     )
@@ -883,18 +862,7 @@ fn keels_router_security_files_are_rule_bearing() {
 
     let keel = Path::new(env!("CARGO_BIN_EXE_keel"));
     let path = common::path_with(keel.parent().unwrap());
-    let run = |a: &[&str]| {
-        hermetic(&mut common::cmd("git"))
-            .args(a)
-            .current_dir(&c)
-            .env("PATH", &path)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .output()
-            .unwrap()
-    };
+    let run = |a: &[&str]| common::cmd("git").args(a).current_dir(&c).env("PATH", &path).envs(common::TESTER).output().unwrap();
     assert!(common::cmd(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
     assert!(run(&["checkout", "-q", "-b", "wu/x/gate"]).status.success());
     for f in ["scripts/router-guard.jq", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", ".claude/agents/worker.md"] {
@@ -1540,7 +1508,7 @@ fn a_worktree_whose_git_link_was_changed_is_never_run_git_in() {
     let link = l.wt.join(".git");
     let good = std::fs::read_to_string(&link).unwrap();
     std::fs::write(&link, format!("gitdir: {}\n", evil.display())).unwrap();
-    let _ = hermetic(&mut common::cmd("git")).args(["status", "--porcelain"]).current_dir(&l.wt).output().unwrap();
+    let _ = common::cmd("git").args(["status", "--porcelain"]).current_dir(&l.wt).output().unwrap();
     assert!(marker.exists(), "the scratch repository did not show the threat");
     std::fs::remove_file(&marker).unwrap();
 
@@ -1598,7 +1566,7 @@ fn pushed_probe_fires_only_after_the_merge_reaches_origin() {
     git(&main, &["commit", "-q", "--allow-empty", "-m", "epic work"]);
     let t = String::from_utf8(git(&main, &["rev-parse", "HEAD"]).stdout).unwrap().trim().to_string();
     git(&main, &["switch", "-q", "main"]);
-    let fires = || hermetic(&mut common::cmd("sh")).args(["-c", probe]).env("MAIN", &main).env("T", &t).output().unwrap().status.success();
+    let fires = || common::cmd("sh").args(["-c", probe]).env("MAIN", &main).env("T", &t).output().unwrap().status.success();
 
     assert!(!fires(), "PUSHED fired when the action was only staged");
     git(&main, &["merge", "-q", "--no-ff", "-m", "merge epic", "epic/E-X"]);
@@ -1682,7 +1650,37 @@ impl Drop for Stepped {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        stop_shims(&self.dir);
     }
+}
+
+/// Tells every `sleep` shim of a stopped watch to exit, whoever its parent is now.
+fn stop_shims(dir: &Path) {
+    let _ = std::fs::write(dir.join("stopped"), "");
+}
+
+/// Unit (E-TESTOPT epic review round 1): a shim whose $PPID stays alive, as when its watch was killed
+/// before the shim read it and an adopter that `kill -0` reaches took it, still exits once the test
+/// stops the watch. The test process stands in for that adopter: it is the shim's parent here.
+#[test]
+fn a_sleep_shim_whose_parent_outlives_its_watch_exits_once_the_watch_is_stopped() {
+    let d = TempDir::new().unwrap();
+    sleep_shim(d.path());
+    let dir = d.path().join("steps");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut shim = common::cmd(d.path().join("shim/sleep")).arg("60").env("STEP_DIR", &dir).env("STUB_OWNER", std::process::id().to_string()).spawn().unwrap();
+    until("the shim to park at poll 1", || std::fs::read_to_string(dir.join("polls")).is_ok_and(|s| s.trim() == "1"));
+    stop_shims(&dir);
+    let t = Instant::now();
+    while shim.try_wait().unwrap().is_none() {
+        if t.elapsed() > Duration::from_secs(2) {
+            let _ = shim.kill();
+            let _ = shim.wait();
+            panic!("a shim whose parent is alive kept waiting after its watch was stopped");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(std::fs::read_to_string(dir.join("exited")).unwrap().trim(), shim.id().to_string());
 }
 
 /// A command bounded by BOUND: a hung script fails the test instead of hanging it. Returns whether it succeeded, then stdout then stderr.
@@ -1991,7 +1989,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     let watch_env = [hostile.clone(), vec![("ROUTER_WATCH_MAX", "0".into())]].concat();
     let home = base.join("home");
     std::fs::create_dir_all(&home).unwrap();
-    git_shim(&base.join("shim"));
+    common::git_shim(&base.join("shim"));
     let path = format!("{}:{}", base.join("shim").display(), common::path_with(keel.parent().unwrap()));
     let stub = base.join("claude");
     stub_claude(&stub);
@@ -2027,17 +2025,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     };
     let text = |o: &Output| format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
     let hooked = |dir: &Path, a: &[&str]| -> Output {
-        hermetic(&mut common::cmd("git"))
-            .args(a)
-            .current_dir(dir)
-            .env("PATH", &path)
-            .env("HOME", &home)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .output()
-            .unwrap()
+        common::cmd("git").args(a).current_dir(dir).env("PATH", &path).env("HOME", &home).envs(common::TESTER).output().unwrap()
     };
     let rev = |r: &str| String::from_utf8(git(&c, &["rev-parse", r]).stdout).unwrap().trim().to_string();
 
@@ -2139,13 +2127,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     for f in [".mr-allowed", ".keel/mr-allowed"] {
         std::fs::write(l.wt.join(f), "username: worker\n").unwrap();
     }
-    let o = hermetic(&mut common::cmd(keel))
-        .args(["mr", "confirm", "wu", "--as", "worker"])
-        .current_dir(&l.wt)
-        .env("PATH", &path)
-        .env("HOME", &home)
-        .output()
-        .unwrap();
+    let o = common::cmd(keel).args(["mr", "confirm", "wu", "--as", "worker"]).current_dir(&l.wt).env("PATH", &path).env("HOME", &home).output().unwrap();
     assert!(!o.status.success() && text(&o).contains("worker is not listed in epic/E-X:.keel/mr-allowed"), "{}", text(&o));
     let tip = rev("wu/E-X/e2e");
     assert!(!hooked(&c, &["notes", "--ref=mr", "show", &tip]).status.success(), "a refused confirm wrote a note");
@@ -2210,24 +2192,6 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     }
 }
 
-/// `<dir>/git`: the real git with hermetic's config isolation, for scripts that clear every inherited GIT_*.
-pub(crate) fn git_shim(dir: &Path) {
-    let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
-    std::fs::create_dir_all(dir).unwrap();
-    std::fs::write(dir.join("git"), git_shim_script(real.trim(), common::GIT_CONFIG)).unwrap();
-    std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-}
-
-/// The shim's body: `git` run with no system config and `config` as its global one.
-fn git_shim_script(git: &str, config: &str) -> String {
-    format!("#!/bin/sh\nGIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL={} exec {} \"$@\"\n", sh_quote(config), sh_quote(git))
-}
-
-/// `s` as one single-quoted shell word: each `'` becomes `'\''`.
-fn sh_quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
 /// Unit (E-TESTOPT.W5 round 2): the shim runs from a checkout whose path holds a quote, a space or a `$`.
 #[test]
 fn the_git_shim_runs_from_a_path_with_quotes_and_spaces() {
@@ -2238,10 +2202,10 @@ fn the_git_shim_runs_from_a_path_with_quotes_and_spaces() {
     std::fs::write(&config, "[maintenance]\n\tauto = false\n").unwrap();
     let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
     let shim = dir.join("git");
-    std::fs::write(&shim, git_shim_script(real.trim(), config.to_str().unwrap())).unwrap();
+    std::fs::write(&shim, common::git_shim_script(real.trim(), config.to_str().unwrap())).unwrap();
     let o = common::cmd("sh").arg(&shim).args(["config", "--global", "--list"]).env_remove("GIT_CONFIG_GLOBAL").output().unwrap();
     assert_eq!(String::from_utf8_lossy(&o.stdout), "maintenance.auto=false\n", "{}", String::from_utf8_lossy(&o.stderr));
-    assert_eq!(sh_quote("it's"), "'it'\\''s'");
+    assert_eq!(common::sh_quote("it's"), "'it'\\''s'");
 }
 
 /// A checkout holding scripts/router-watch.sh, cloned from a bare `origin.git` file remote (no
@@ -2271,7 +2235,7 @@ fn build_watcher(base: &Path) {
     git(&main, &["commit", "-qm", "base"]);
     git(&main, &["push", "-q", "origin", "main"]);
     sleep_shim(&base);
-    git_shim(&base.join("shim"));
+    common::git_shim(&base.join("shim"));
     std::fs::write(base.join("shim/date"), "#!/bin/sh\n[ -e \"$STEP_DIR/now\" ] && exec cat \"$STEP_DIR/now\"\nexec /bin/date \"$@\"\n").unwrap();
     std::fs::set_permissions(base.join("shim/date"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
@@ -2293,14 +2257,14 @@ impl Watcher {
 
     /// `scripts/router-watch.sh <args>` as the router runs it, its polls stepped through steps-<k>/;
     /// an exported ROUTER_WATCH_POLL or ROUTER_WATCH_MAX never reaches it, only `env` sets them. The
-    /// watch clears every GIT_* it inherits, hermetic's too, so `git_shim` restores hermetic's config
+    /// watch clears every GIT_* it inherits, `common::cmd`'s too, so `common::git_shim` restores its config
     /// isolation and HOME points into the temp dir.
     fn cmd(&self, args: &[&str], k: &str, env: &[(&str, &str)]) -> (Command, PathBuf) {
         let dir = self.base.join(format!("steps-{k}"));
         std::fs::create_dir_all(&dir).unwrap();
+        let _ = std::fs::remove_file(dir.join("stopped"));
         let mut c = common::cmd("scripts/router-watch.sh");
-        hermetic(&mut c)
-            .args(args)
+        c.args(args)
             .current_dir(&self.main)
             .env("PATH", common::path_with(self.base.join("shim")))
             .env("STEP_DIR", &dir)
@@ -2391,14 +2355,14 @@ fn hermetic_git_ignores_global_and_system_config() {
         .env("GIT_CONFIG_GLOBAL", &hostile)
         .env("GIT_CONFIG_SYSTEM", &hostile)
         .env("GIT_TRACE", "1");
-    let o = hermetic(&mut c).output().unwrap();
+    let o = common::hermetic(&mut c).output().unwrap();
     let list = String::from_utf8(o.stdout).unwrap();
     assert!(o.status.success() && !list.contains("gpgsign"), "{list}");
     assert_eq!(String::from_utf8(o.stderr).unwrap(), "", "a GIT_TRACE* variable reached git");
     let mut c = common::cmd("git");
     c.args(["init", "-q", "r"]).current_dir(d.path()).env("GIT_DEFAULT_HASH", "sha256");
-    assert!(hermetic(&mut c).status().unwrap().success());
-    let f = hermetic(&mut common::cmd("git")).args(["rev-parse", "--show-object-format"]).current_dir(d.path().join("r")).output().unwrap();
+    assert!(common::hermetic(&mut c).status().unwrap().success());
+    let f = common::cmd("git").args(["rev-parse", "--show-object-format"]).current_dir(d.path().join("r")).output().unwrap();
     assert_eq!(String::from_utf8(f.stdout).unwrap(), "sha1\n", "GIT_DEFAULT_HASH reached git init");
 }
 
@@ -2672,7 +2636,8 @@ fn watcher_run_is_bounded_when_the_watch_outpolls_its_releases() {
     });
     drop(at);
     // A shim's own last write, not a liveness probe: `kill -0` also succeeds on a zombie, which an
-    // orphaned shim stays wherever pid 1 never reaps.
+    // orphaned shim stays wherever pid 1 never reaps. A watch killed at NEVER may still be starting,
+    // so a shim may never have learnt it was orphaned: the stop marker each Drop writes ends it.
     let read = |f: &str| -> Vec<String> {
         ["unreleased", "unreleased-at", "unreleased-output"]
             .iter()

@@ -41,16 +41,58 @@ pub const GIT_HOOK_ENV: [&str; 8] = [
 /// The global git config of every test spawn: `maintenance.auto = false`, nothing else.
 pub const GIT_CONFIG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/gitconfig");
 
+/// The one home of a test spawn's git hygiene: git's local and hook variables, every GIT_TRACE* and
+/// GIT_DEFAULT_HASH (inherited, or set on `c` already) are removed, and git reads the tests' own
+/// global config and no system one.
 pub fn no_git_env(mut c: Command) -> Command {
     for k in GIT_LOCAL_ENV.iter().chain(&GIT_HOOK_ENV) {
         c.env_remove(k);
     }
+    hermetic(&mut c);
+    c
+}
+
+/// Re-applies the hygiene of `no_git_env` after a test set variables of its own on `c`: a GIT_TRACE*
+/// or GIT_DEFAULT_HASH (inherited or set) would change what git prints or creates, and a test-set
+/// GIT_CONFIG_GLOBAL or GIT_CONFIG_SYSTEM would reach the developer's config.
+pub fn hermetic(c: &mut Command) -> &mut Command {
+    let set: Vec<std::ffi::OsString> = c.get_envs().map(|(k, _)| k.to_owned()).collect();
+    for k in std::env::vars_os().map(|(k, _)| k).chain(set) {
+        if k.to_string_lossy().starts_with("GIT_TRACE") || k == "GIT_DEFAULT_HASH" {
+            c.env_remove(k);
+        }
+    }
     // B10: no fixture reads the developer's global or system config (a signing key, tag.gpgSign,
     // log.showSignature). A repo's own config still applies: it is part of what a test judges.
     // The tests' own global config only turns off git's automatic maintenance (E-TESTOPT.W5).
-    c.env("GIT_CONFIG_GLOBAL", GIT_CONFIG);
-    c.env("GIT_CONFIG_NOSYSTEM", "1");
-    c
+    c.env("GIT_CONFIG_GLOBAL", GIT_CONFIG).env("GIT_CONFIG_NOSYSTEM", "1")
+}
+
+/// The one identity every test commit is made as.
+pub const TESTER: [(&str, &str); 4] = [("GIT_AUTHOR_NAME", "t"), ("GIT_AUTHOR_EMAIL", "t@t"), ("GIT_COMMITTER_NAME", "t"), ("GIT_COMMITTER_EMAIL", "t@t")];
+
+/// `c`, committing as `TESTER`.
+pub fn as_tester(c: &mut Command) -> &mut Command {
+    c.envs(TESTER)
+}
+
+/// `<dir>/git`: the real git with `hermetic`'s config isolation, for scripts that clear every
+/// inherited GIT_* (the router's watch).
+pub fn git_shim(dir: &Path) {
+    let real = String::from_utf8(cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(dir.join("git"), git_shim_script(real.trim(), GIT_CONFIG)).unwrap();
+    std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+}
+
+/// The shim's body: `git` run with no system config and `config` as its global one.
+pub fn git_shim_script(git: &str, config: &str) -> String {
+    format!("#!/bin/sh\nGIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL={} exec {} \"$@\"\n", sh_quote(config), sh_quote(git))
+}
+
+/// `s` as one single-quoted shell word: each `'` becomes `'\''`.
+pub fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 /// A clone whose main holds `src`'s index - mid-merge the merged result, not HEAD - the tree the
@@ -60,7 +102,7 @@ pub fn no_git_env(mut c: Command) -> Command {
 pub fn self_clone(src: &std::path::Path, dst: &std::path::Path) {
     let git = |d: &std::path::Path, a: &[&str], index: Option<&std::path::Path>| {
         let mut c = cmd("git");
-        c.args(a).current_dir(d).env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t");
+        as_tester(c.args(a).current_dir(d));
         if let Some(i) = index {
             c.env("GIT_INDEX_FILE", i);
         }
@@ -307,15 +349,7 @@ pub fn assert_independent(template: &Path, copy: &Path, sibling: &Path) {
     let named = files_naming(copy, &rewrites(&[(template.to_path_buf(), template.to_path_buf())]));
     assert!(named.is_empty(), "the copy still names its template in {named:?}");
     let git = |d: &Path, a: &[&str]| {
-        let o = cmd("git")
-            .args(a)
-            .current_dir(d)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .output()
-            .unwrap();
+        let o = as_tester(cmd("git").args(a).current_dir(d)).output().unwrap();
         (o.status.success(), String::from_utf8_lossy(&o.stdout).trim().to_string())
     };
     if let (true, hooks) = git(copy, &["config", "--get", "core.hooksPath"]) {

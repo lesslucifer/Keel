@@ -114,6 +114,20 @@ fn compiled_files(
         .ok_or_else(|| format!("{exe} compiled_file did not report tests/suite/main.rs, so the guard cannot tell which files are compiled:\n{stdout}{stderr}"))
 }
 
+/// The marker tests a `--list` of the suite names: `compiled_file` at the root and in each module, and
+/// no other test whose name only contains it, so the guard's child run runs the markers alone.
+fn marker_tests(list: &str) -> Vec<String> {
+    list.lines().filter_map(|l| l.strip_suffix(": test")).filter(|n| *n == "compiled_file" || n.ends_with("::compiled_file")).map(String::from).collect()
+}
+
+/// Unit (E-TESTOPT epic review round 1): the child run's filter takes each marker and nothing else.
+#[test]
+fn the_guard_runs_only_the_marker_tests() {
+    let list = "compiled_file: test\ncli::compiled_file: test\nlayout::a_failed_compiled_file_run_is_told_apart_from_a_silent_one: test\n\
+                router::nested::compiled_file: test\nrouter::compiled_file_x: test\n\n5 tests, 0 benchmarks\n";
+    assert_eq!(marker_tests(list), ["compiled_file", "cli::compiled_file", "router::nested::compiled_file"]);
+}
+
 /// Every `.rs` file under `suite` (canonical paths) that did not report itself, with what to do.
 fn not_compiled(suite: &Path, files: &[PathBuf], reported: &BTreeSet<PathBuf>) -> Vec<String> {
     files
@@ -162,7 +176,10 @@ fn the_suite_is_the_only_test_program() {
     let mut bad = extra_programs(&top, &suite_names, &std::fs::read_to_string(root.join("Cargo.toml")).unwrap());
 
     let exe = std::env::current_exe().unwrap();
-    let o = crate::common::cmd(&exe).args(["compiled_file", "--nocapture", "--test-threads=1"]).output().unwrap();
+    let listed = crate::common::cmd(&exe).arg("--list").output().unwrap();
+    let markers = marker_tests(&String::from_utf8_lossy(&listed.stdout));
+    assert!(!markers.is_empty(), "{} --list named no compiled_file test: {listed:?}", exe.display());
+    let o = crate::common::cmd(&exe).args(&markers).args(["--exact", "--nocapture", "--test-threads=1"]).output().unwrap();
     let (stdout, stderr) = (String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
     match compiled_files(o.status.success(), o.status.code(), &stdout, &stderr, &exe, &root, &suite.join("main.rs")) {
         Err(problem) => bad.push(problem),
