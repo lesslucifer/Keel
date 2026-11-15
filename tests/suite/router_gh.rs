@@ -557,60 +557,72 @@ fn a_rejected_notes_ref_warns_and_the_branch_still_lands() {
     let o = gh.run(&["push", "wu/E/x"]);
     assert!(o.status.success(), "{}", text(&o));
     let out = stdout(&o);
-    // E-GHFLOW2.W3: GitHub's line is merged in first, so the push is a fast-forward of it
-    assert_eq!(out, format!("PUSHED branch=wu/E/x sha={tip} state=updated"), "{out}");
-    assert_eq!(gh.origin_sha("refs/notes/cr"), Some(gh.sha("refs/notes/cr")));
-    assert_eq!(git(&gh.repo, &["notes", "--ref=cr", "show", &epic]), "{}", "GitHub's note on another commit reached the checkout");
-    assert_eq!(gh.origin_sha("refs/heads/wu/E/x"), Some(tip.clone()));
-    assert_eq!(gh.origin_sha("refs/notes/test"), Some(gh.sha("refs/notes/test")), "the other notes refs still went");
-    assert_eq!(gh.origin_sha("refs/notes/alt"), None, "only Keel's notes kinds are pushed (N3)");
-    // a notes ref GitHub still refuses (a hook here) is a WARN line; the branch still lands, exit 0
-    let hook = gh.origin.join("hooks/update");
-    std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
-    exe(&hook, "#!/bin/sh\n[ \"$1\" != refs/notes/cr ] || { echo 'cr is frozen' >&2; exit 1; }\n");
-    write(&gh.repo, "src/e.txt", "e");
-    commit(&gh.repo, "more again");
-    let tip = gh.sha("wu/E/x");
-    test_note(&gh.repo, &tip);
-    git(&gh.repo, &["notes", "--ref=cr", "add", "-m", "{}", &tip]);
-    let o = gh.run(&["push", "wu/E/x"]);
-    let out = stdout(&o);
-    assert!(o.status.success(), "{}", text(&o));
     assert!(out.lines().any(|l| l.starts_with("WARN notes ref refs/notes/cr not pushed: ")), "{out}");
     assert!(out.ends_with(&format!("PUSHED branch=wu/E/x sha={tip} state=updated")), "{out}");
+    assert_eq!(gh.origin_sha("refs/heads/wu/E/x"), Some(tip));
+    assert_eq!(gh.origin_sha("refs/notes/test"), Some(gh.sha("refs/notes/test")), "the other notes refs still went");
+    assert_eq!(gh.origin_sha("refs/notes/alt"), None, "only Keel's notes kinds are pushed (N3)");
+    // E-GHFLOW2.W3 (security review I2): GitHub's cr line is never read into the checkout
+    let o = common::cmd("git").args(["notes", "--ref=cr", "list", &epic]).current_dir(&gh.repo).output().unwrap();
+    assert!(!o.status.success(), "GitHub's cr note reached the checkout");
 }
 
-/// E-GHFLOW2.W3: notes the sign-off writer wrote on GitHub reach the checkout before its own notes
-/// are pushed; where both hold a note on one commit, the checkout's is kept; the report note rides
-/// along; nothing but Keel's kinds is fetched into a Keel ref, and no temp ref is left.
+/// A github-tier mr/v1 note as the sign-off writer makes it, on `tip`.
+fn approval_note(tip: &str, id: u64) -> String {
+    serde_json::json!({"schema": "mr/v1", "tip": tip, "base": "b", "level": "wu", "signer": OWNER_ID.to_string(), "tier": "github",
+        "change_hash": "sha256:00", "review": {"id": id, "url": format!("https://github.com/own/Keel/pull/7#pullrequestreview-{id}"), "commit": tip}})
+    .to_string()
+}
+
+/// E-GHFLOW2.W3, security review I2: GitHub's sign-offs reach the checkout add-only. A note GitHub
+/// holds on a commit the checkout has and holds no mr note for is taken when it reads as the writer's;
+/// any other note is not. Nothing GitHub edits or deletes reaches a note here, and the checkout's
+/// refs/notes/mr replaces GitHub's, leased; the report note rides along; no temp ref is left.
 #[test]
-fn push_merges_githubs_notes_into_the_checkouts_first_keeping_its_own_on_a_conflict() {
+fn push_takes_githubs_sign_offs_add_only_and_never_an_edit_or_a_deletion() {
     let gh = Gh::new();
-    assert!(gh.run(&["push", "wu/E/x"]).status.success());
-    let (tip, epic) = (gh.sha("wu/E/x"), gh.sha("epic/E"));
-    // GitHub's writer signs the epic tip and, on the WU tip, a note the checkout also writes
-    git(&gh.origin, &["notes", "--ref=mr", "add", "-m", r#"{"by":"github","on":"epic"}"#, &epic]);
-    git(&gh.origin, &["notes", "--ref=mr", "add", "-m", r#"{"by":"github","on":"tip"}"#, &tip]);
-    git(&gh.origin, &["notes", "--ref=other", "add", "-m", "x", &epic]);
-    git(&gh.repo, &["notes", "--ref=mr", "add", "-m", r#"{"by":"local","on":"tip"}"#, &tip]);
+    let (tip, epic, main) = (gh.sha("wu/E/x"), gh.sha("epic/E"), gh.sha("main"));
+    git(&gh.repo, &["notes", "--ref=mr", "add", "-m", r#"{"by":"local"}"#, &tip]);
     git(&gh.repo, &["notes", "--ref=report", "add", "-m", "<html>report</html>", &tip]);
+    assert!(gh.run(&["push", "wu/E/x"]).status.success());
+    // on GitHub: the writer signs the epic tip; someone edits the tip's note, writes a username-tier
+    // note on main, a github-tier note whose review names another commit, and a cr note
+    git(&gh.origin, &["notes", "--ref=mr", "add", "-m", &approval_note(&epic, 41), &epic]);
+    git(&gh.origin, &["notes", "--ref=mr", "add", "-f", "-m", &approval_note(&tip, 42), &tip]);
+    let typed = serde_json::json!({"schema": "mr/v1", "tip": main, "tier": "username", "signer": "vuluu"}).to_string();
+    git(&gh.origin, &["notes", "--ref=mr", "add", "-m", &typed, &main]);
+    git(&gh.origin, &["notes", "--ref=cr", "add", "-m", "{}", &epic]);
     let o = gh.run(&["push", "wu/E/x"]);
     assert!(o.status.success(), "{}", text(&o));
-    assert!(!stdout(&o).contains("WARN"), "{}", text(&o));
-    assert_eq!(git(&gh.repo, &["notes", "--ref=mr", "show", &epic]), r#"{"by":"github","on":"epic"}"#, "GitHub's note reached the checkout");
-    assert_eq!(git(&gh.repo, &["notes", "--ref=mr", "show", &tip]), r#"{"by":"local","on":"tip"}"#, "the checkout's own note is kept");
-    assert_eq!(gh.origin_sha("refs/notes/mr"), Some(gh.sha("refs/notes/mr")), "the merged ref is GitHub's now");
-    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &epic]), r#"{"by":"github","on":"epic"}"#);
+    let out = stdout(&o);
+    assert!(out.contains(&format!("WARN GitHub's mr note on {main} not taken: not a sign-off by approval")), "{out}");
+    assert!(out.ends_with(&format!("PUSHED branch=wu/E/x sha={tip} state=unchanged")), "{out}");
+    let local = |rev: &str| common::cmd("git").args(["notes", "--ref=mr", "show", rev]).current_dir(&gh.repo).output().unwrap();
+    assert_eq!(String::from_utf8(local(&epic).stdout).unwrap().trim(), approval_note(&epic, 41), "the writer's sign-off was taken");
+    assert_eq!(String::from_utf8(local(&tip).stdout).unwrap().trim(), r#"{"by":"local"}"#, "a one-sided edit on GitHub never reaches the checkout");
+    assert!(!local(&main).status.success(), "a typed-tier note from GitHub is never taken");
+    let o = common::cmd("git").args(["notes", "--ref=cr", "list", &epic]).current_dir(&gh.repo).output().unwrap();
+    assert!(!o.status.success(), "no other kind is read from GitHub");
+    assert_eq!(gh.origin_sha("refs/notes/mr"), Some(gh.sha("refs/notes/mr")), "the checkout's ref replaced GitHub's, leased");
+    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &tip]), r#"{"by":"local"}"#);
     assert_eq!(gh.origin_sha("refs/notes/report"), Some(gh.sha("refs/notes/report")), "the report note is pushed");
     assert_eq!(git(&gh.repo, &["for-each-ref", "refs/notes/keel-gh/"]), "", "no temp ref is left");
-    let o = common::cmd("git").args(["rev-parse", "--verify", "-q", "refs/notes/other"]).current_dir(&gh.repo).output().unwrap();
-    assert!(!o.status.success(), "only Keel's kinds become the checkout's notes");
-    // GitHub with no notes at all, and a checkout with none of a kind GitHub holds: both work
-    let gh = Gh::new();
-    git(&gh.origin, &["notes", "--ref=dod", "add", "-m", "{}", &gh.sha("epic/E")]);
+    // a one-sided deletion on GitHub: the checkout keeps its note and puts it back
+    git(&gh.origin, &["notes", "--ref=mr", "remove", &tip]);
     let o = gh.run(&["push", "wu/E/x"]);
     assert!(o.status.success(), "{}", text(&o));
-    assert_eq!(gh.sha("refs/notes/dod"), gh.origin_sha("refs/notes/dod").unwrap());
+    assert_eq!(String::from_utf8(local(&tip).stdout).unwrap().trim(), r#"{"by":"local"}"#);
+    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &tip]), r#"{"by":"local"}"#);
+    // a forged writer note on a commit the checkout lacks a note for, whose review names another commit
+    let gh = Gh::new();
+    let (tip, epic) = (gh.sha("wu/E/x"), gh.sha("epic/E"));
+    let mut forged: serde_json::Value = serde_json::from_str(&approval_note(&epic, 43)).unwrap();
+    forged["review"]["commit"] = serde_json::json!(tip);
+    git(&gh.origin, &["notes", "--ref=mr", "add", "-m", &forged.to_string(), &epic]);
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success() && stdout(&o).contains("not taken"), "{}", text(&o));
+    let o = common::cmd("git").args(["notes", "--ref=mr", "list", &epic]).current_dir(&gh.repo).output().unwrap();
+    assert!(!o.status.success());
 }
 
 /// main, a tag, an unknown branch, a flag or an extra word: exit 2 before any request, origin as it was.
@@ -1422,8 +1434,8 @@ os.execv(REAL, [REAL] + a)
     assert!(o.status.success() && stdout(&o).contains("state=fast-forward"), "{}", text(&o));
     let runs: Vec<serde_json::Value> = std::fs::read_to_string(&log).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
     let cmds: Vec<&str> = runs.iter().map(|r| r["cmd"].as_str().unwrap()).collect();
-    // each push fetches GitHub's notes first (E-GHFLOW2.W3)
-    assert_eq!(cmds, ["fetch", "push", "ls-remote", "fetch", "push", "fetch"]);
+    // each push reads GitHub's refs/notes/mr first (E-GHFLOW2.W3); GitHub holds none here, so no fetch
+    assert_eq!(cmds, ["ls-remote", "push", "ls-remote", "ls-remote", "push", "fetch"]);
     for r in &runs {
         assert_eq!(r["evil"], "", "another host got credentials: {r}");
         assert_eq!(r["github"], format!("protocol=https\nhost=github.com\nusername=x-access-token\npassword={token}\n"), "{r}");
