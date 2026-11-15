@@ -15,7 +15,7 @@
   </header>
   <main>
     <h2 id="outcome">Outcome</h2>
-    <p data-item="outcome"><b>Delivered</b> against the requirement, hermetically. A recorded approval by <code>5499546</code> on the head, fed to <code>scripts/ci-sign-off.sh</code> with a fake GitHub, writes mr/v1 (tier <code>github</code>, the review's id, page and commit), pushes it to origin, posts <code>keel/sign-off</code> success, and <code>keel verify-dod</code> is green. A comment, an older commit, an unlisted id, a foreign page or a red check writes nothing. <code>keel mr</code> refuses a checkout whose git links git did not make and runs no git. Five files wait for your one commit (below); until then a clean checkout of the branch lacks the scripts and workflows its tests read.</p>
+    <p data-item="outcome"><b>Delivered</b> against the requirement, hermetically. A recorded approval by <code>5499546</code> on the head, fed to <code>scripts/ci-sign-off.sh</code> with a fake GitHub, writes mr/v1 (tier <code>github</code>, the review's id, page and commit), pushes it to origin, posts <code>keel/sign-off</code> success, and <code>keel verify-dod</code> is green. A comment, an older commit, an unlisted id, a foreign page or a red check writes nothing. <code>keel mr</code> refuses a checkout whose git links git did not make and runs no git. Six files wait for your one commit (below); until then a clean checkout of the branch lacks the scripts and workflows its tests read.</p>
 
     <h2 id="you">What you do now</h2>
     <ol data-c="owner-steps">
@@ -50,7 +50,7 @@
         <tr><td>Red first: the integration tests ran red before the CLI was wired; each unit test, the writer script's tests and the router-gh tests were shown red by a mutation of the code they guard (11 mutations, each caught)</td><td>this report</td></tr>
         <tr><td>G5's W2 nits</td><td><code>tests/suite/router_gh.rs</code>, <code>tests/suite/router_gh_args.rs</code></td></tr>
       </table>
-      <p>Commits: 7f4ed20 (plan), 243d7cc (core), 1be7590 (tests), f1fa8f8 (G5), 9c84c48 and 36e6f9f (fixes), 6bcba10 (backlog), then this report. Staged for your commit: <code>.github/workflows/keel-sign-off-request.yml</code>, <code>.github/workflows/keel-sign-off.yml</code>, <code>scripts/ci-sign-off.sh</code>, <code>scripts/router-gh.sh</code>, <code>.keel/config.toml</code>.</p>
+      <p>Commits: 7f4ed20 (plan), 243d7cc (core), 1be7590 (tests), f1fa8f8 (G5), 9c84c48 and 36e6f9f (fixes), 6bcba10 (backlog), then this report. Staged for your commit: <code>.github/workflows/keel-sign-off-request.yml</code>, <code>.github/workflows/keel-sign-off.yml</code>, <code>scripts/ci-sign-off.sh</code>, <code>scripts/router-gh.sh</code>, <code>.keel/config.toml</code>, and <code>.claude/skills/project-router/SKILL.md</code> (its owner-identity row states the committed tiers, which <code>tests/suite/router.rs</code> checks, and the sign-off by approval).</p>
     </div>
 
     <h2 id="distillation">Distillation</h2>
