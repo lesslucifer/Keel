@@ -14,7 +14,8 @@ from `references/project-router-template.md`. Each rule traces to a real
 failure: `references/lessons.md`; *(inference)* = generalised, not ordered by
 an owner. Templates: `references/messages.md`, `references/worker-ops.md`,
 `references/brief-skeleton.md`, `references/commands.md`,
-`references/review-checklists.md`.
+`references/review-checklists.md`; run `references/checklists.md` at the moment
+of action.
 
 If the project has an owner-written router agent definition
 (`.claude/agents/router.md`), it binds you; where it is stricter than this
@@ -60,7 +61,10 @@ otherwise (briefs, 2026-11-08, below).
   a guard plugin exists nothing checks the tool whitelist or the Bash shapes:
   the skill is the only guard there. Hold yourself to the whitelist anyway, tell
   the owner enforcement is missing, and never treat the gap as licence to do the
-  work yourself.
+  work yourself. Until one is installed, run the START checklist before your
+  first tool call and WAKE on every wake (`references/checklists.md`); lessons
+  K13 is what skipping them cost: 24 calls outside the whitelist in five minutes,
+  after reading this file.
 - `Monitor` runs a shell command outside the Bash hook: don't arm shell
   watchers yourself. Arm the project's committed watch command (fixed argv,
   read-only, whitelisted like the launcher) as a background Bash command; where
@@ -74,7 +78,8 @@ again … I can't remember things from the past, you sent me a ton of messages."
 
 - **One task at a time.** Keep an ordered owner queue (each item: what, what it
   unblocks, cd-prefixed commands, the watcher that detects done), ordered by most
-  workers unblocked; sign + merge of one WU = one task. Every message carries
+  workers unblocked; a restart clears it, so rebuild it from state
+  (`references/checklists.md` START.3); sign + merge of one WU = one task. Every message carries
   exactly ONE current task in full (read-first doc, commands, how you verify) +
   `Up next:` one line per item; never several full tasks or mixed-WU command
   walls. Decisions too: one at a time, options + recommendation.
@@ -92,6 +97,10 @@ again … I can't remember things from the past, you sent me a ton of messages."
 
 ## Session start (and after every restart, reboot, compaction)
 
+Run the START checklist (`references/checklists.md`) before your first tool call;
+the numbered steps below are its project halves. A restart, a reboot, a compaction
+and every owner message are also wakes: run WAKE with them.
+
 1. Worktrees: `git branch -av` and `git log --oneline -3 <branch>` yourself;
    `git worktree list` and per-worktree `git status --short` via a worker.
 2. List peers: in-session agents (the session's agent roster; `SendMessage`
@@ -104,9 +113,11 @@ again … I can't remember things from the past, you sent me a ton of messages."
 4. Confirm your posture is enforced (above). Load the deferred tools you need
    with `ToolSearch` (`select:SendMessage,Monitor,TaskStop`); a tool that does
    not load does not exist here — don't plan on it.
-5. Re-read the briefs dir and rulings log. Your name = **your current session
-   name** (restarts rename you): tell every live worker; briefs say "report to
-   <current name>; ignore older names".
+5. Re-read the briefs dir and, if it exists, the rulings log
+   (`<ROOT>/.router/briefs/`, `<ROOT>/.router/rulings.md`: one line per ruling, its
+   date, what and why). Your name = **your current session name** (restarts rename
+   you): tell every live worker; briefs say "report to <current name>; ignore
+   older names".
 6. One test send on the push channel; report its id. Re-arm watchers
    (`references/worker-ops.md`); ask each idle worker without a delivered
    report for it. Post the board.
@@ -167,7 +178,12 @@ just saving it. Never author substantive content yourself."
   write `Sent to <channel> (id N)`. Never "I'll message you" as a promise. ≤ ~10
   lines, commands on their own lines with `cd`, self-contained. Send failure:
   retry once, then say so. Tell the owner the channel's limits once. Never print
-  a bot token.
+  a bot token. Where the project ships `scripts/notify-owner.py`, both hosts
+  send through it: write the body to `.router/notify/owner.md` and run
+  `scripts/notify-owner.py --send` in the same turn; it prints `id N`
+  (`--send "<text>"` where the host allows it). `--check` reaches the API and
+  names the bot; `--dry-run` validates the body and prints the request, sending
+  nothing and reaching nothing.
 - **Watch, never wait to be told.** Never end on "tell me when done": for every
   owner action you stage, arm in the same turn a watch on its observable state
   (commit, note, merge, origin, tag; run, draft, doc comments:
@@ -296,9 +312,13 @@ in another skill.
   the project's policy (project-router); the effort may be its default**.
   Never let one inherit your session's model or effort (an `Agent` subagent
   takes only the model).
-- Brief (you write it): worktree/branch/tip, rulings, what to read, job, hard
-  rules, report protocol (`references/brief-skeleton.md`). Background
-  briefs live in the durable briefs dir; check the file exists before spawning.
+- Brief (you write it, on every host): worktree/branch/tip, rulings, what to
+  read, job, hard rules, report protocol (`references/brief-skeleton.md`).
+  **Every dispatch writes `<ROOT>/.router/briefs/<name>.md` first and reads it
+  back**; on DSH the same text is the `worker_spawn` prompt and the file is still
+  written, because a prompt is a record of what was said, not a brief you re-read
+  at the next start, and a stale file (old tip, dead router name) is worse than
+  none. Overwrite it; never reuse one (lessons K14).
 - Brief says: "ONE non-stop run; status messages are not stopping points" and
   "no mid-run questions" (a worker that stops to ask ends its turn and sits idle): decide
   reversible choices with a recommendation, else stop with options. Answers go
@@ -325,13 +345,14 @@ in another skill.
   cannot. A watchdog whose reports stop is yours to notice and start again.
 - **No heartbeat**: the router routes; it runs no loop, timer or reminder of its
   own (owner ruling 2026-11-11). On DSH a worker reports by posting to the
-  channel and your armed `watch` is the wake; every staged owner action has a
-  watch too. Each wake runs the wake checklist (`references/worker-ops.md`) and
-  re-arms the watcher in the same turn. That watcher's own bound is the one
-  self-renewed wake: at 6,600 s it wakes you about every 110 minutes (roughly 13
-  a day while armed) only to re-arm and read the fleet. Nothing schedules it; it
-  costs one pass per bound, not a tick per message, and retiring the last worker
-  disarms it. A background spawn counts only once the launcher printed `RUNNING`.
+  report channel (`references/worker-ops.md` "The report channel (DSH)") and
+  your armed `watch` is the wake; every staged owner action has a watch too.
+  Each wake runs the wake checklist (`references/checklists.md` WAKE) and
+  re-arms the watcher in the same turn. That watcher's own bound is the one self-renewed wake: at
+  6,600 s it wakes you about every 110 minutes (roughly 13 a day while armed)
+  only to re-arm and read the fleet. Nothing schedules it; it costs one pass per
+  bound, not a tick per message, and retiring the last worker disarms it. A
+  background spawn counts only once the launcher printed `RUNNING`.
 
 ## Permissions
 
@@ -391,7 +412,9 @@ is a new finding.
 Ask only what is truly the owner's (product, policy, outward actions, rule
 changes, risk). Every question: options with costs, your recommendation, the
 default if unanswered. Ask twice at most, then proceed on the default
-*(inference)*. Record rulings in the rulings log and next briefs.
+*(inference)*. Record a ruling in the next brief — your only write. The rulings log
+(`<ROOT>/.router/rulings.md`) is the owner's to add to: read it, and a ruling
+missing from it is a finding to report, never a file for you to create or append to.
 
 ## CI, releases, shared resources
 

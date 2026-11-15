@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af834e59f34851f0dfb245c" data-artifact="epic-plan wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-RGUARD plan: the rules a router hits at the moment of action</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-RGUARD · The rules a router hits at the moment of action</h1>
+      <p>Three working units: the shipped checklists and rule text, one sender that reaches you from either host, and the inbox channel that wakes the router when a worker posts.</p>
+      <div class="meta">T3 · epic plan + W1's plan · 2026-11-14 · epic <code>E-RGUARD</code> · W1, W2, W3</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-item="intent" data-c="intent">A router session made 24 calls its whitelist does not name, in six minutes, after reading the rules and quoting them. Nothing failed those calls: the guard that refuses one on Claude Code has no counterpart on DSH, and the plugin that would be it is backlogged as D2. Until it lands the rules must stand in front of the call, and the router must reach you in the turn it needs you.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th></th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>A router session starts</td><td>It reads the rules and works</td><td>START first, then one line: no guard on this host</td></tr>
+    <tr><td>Something wakes it</td><td>It goes to the next dispatch</td><td>WAKE: check the claim, arm a watch, name denials</td></tr>
+    <tr><td>A worker is dispatched</td><td>The brief may live only in the prompt</td><td>The brief file is written and read back on every host</td></tr>
+    <tr><td>A DSH fleet runs unattended</td><td>A turn can end with live workers and nothing armed</td><td>A worker posts its report and the router's armed inbox watcher wakes it (W3)</td></tr>
+    <tr><td>The router needs your decision</td><td>It writes the message; only a host that is not the enforced router can send it</td><td>The same script sends it from either host, and prints the id</td></tr>
+  </tbody>
+</table>
+
+<h2 id="terms">Terms</h2>
+<table data-c="terms">
+  <tbody>
+    <tr><th>Whitelist</th><td>The tools and shell shapes a router may use: read tools, brief writes, worker tools, a short git and gh list.</td></tr>
+    <tr><th>Wake</th><td>Anything that gives the router a turn: a message, a watch line, an inbox post its armed watcher prints.</td></tr>
+    <tr><th>Inbox</th><td>A directory of message files: a worker posts one report, the router's watcher prints it, consume acks it.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="work">The work</h2>
+<p data-item="requirement" data-c="requirement">A router session runs the START, WAKE and DISPATCH checklists at the moment of action, and each rule its misses named carries a trigger.</p>
+<p data-item="maps-to" data-c="maps-to">Epic <code>E-RGUARD</code> · UC-ROUTE-1, UC-ROUTE-6 (interim), UC-ROUTE-5.</p>
+<div data-item="wu-summaries" data-c="wu-summaries">
+
+<div data-wu="E-RGUARD.W1" data-c="wu-w1">
+  <h3 id="w1">W1 · The rules a router hits at the moment of action</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> a new checklist file the router skill points to, plus the shipped text that made a known rule look skippable: the brief file on every host, the DSH fleet wake, and the audit's three ambiguities. That fleet wake shipped as pending, not in force — no owner ruling granted it — and W3 replaced it with the inbox watcher.</p>
+    <ul>
+      <li><code>references/checklists.md</code> (new): START (7 rows), WAKE (5), DISPATCH (4); each row a trigger, a tool, and the cost of skipping it.</li>
+      <li><code>SKILL.md</code>: START before the first call, WAKE on every wake, the missing-enforcement line, the DSH fleet wake stated as pending, the brief file on every host.</li>
+      <li><code>worker-ops.md</code>: the wake paragraph becomes an ordered list; a new "Wake on DSH" subsection whose exception paragraph says it is not in force.</li>
+      <li><code>brief-skeleton.md</code>: every host writes the brief file; a DSH worker row.</li>
+      <li><code>lessons.md</code>: K13 (a rule known, quoted and overridden) and K14 (a prompt is not a durable brief).</li>
+      <li><code>project-router</code>: the DSH facts checked that day — the launcher denied, no fleet wake from the launcher, worktrees a worker's.</li>
+      <li>Both skill trees byte-identical; <code>src/init.rs</code> embeds the new file, <code>tests/init.rs</code> proves <code>keel init</code> plants it.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-RGUARD.W1 · UC-ROUTE-1 (the router does not do the work) and UC-ROUTE-6 (the posture, interim until D2); UC-ROUTE-5 for the DSH worker row.</p>
+  <p data-item="wu-expected"><b>Observable:</b> the shipped router skill names <code>references/checklists.md</code> at both points a router meets it (session start, every wake); <code>keel init</code> plants that file byte-equal in a scratch repo; each START/WAKE/DISPATCH row names its trigger and a cost; the four failures the D2 plugin will enforce have their checklist row.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+<div data-wu="E-RGUARD.W2" data-c="wu-w2">
+  <h3 id="w2">W2 · One sender that reaches you from both hosts</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> one script the router runs in the same turn it stages an owner action or needs a decision. It posts the message the push rule already makes it write to the paired Telegram bot and prints the id the router records as <code>Sent to &lt;channel&gt; (id N)</code>; the same code runs on DSH and Claude Code.</p>
+    <ul>
+      <li><code>scripts/notify-owner.py</code> (new, stdlib only): <code>--send</code> posts and prints <code>id N</code>, <code>--dry-run</code> validates and prints without sending, <code>--check</code> asks Telegram who the bot is and sends nothing. The credential is read from the channel's own token file and never printed.</li>
+      <li>One guard entry so the Claude router may run it: the three shapes plus a Write path for the body file <code>.router/notify/owner.md</code>, with the matching settings allow entries.</li>
+      <li>One push-channel bullet in <code>skills/keel-router/SKILL.md</code> (mirror byte-identical) naming the script as the mechanism both hosts use.</li>
+      <li><code>tests/notify_owner.rs</code>: the three modes against a local mock API, the <code>--check</code> failure line, and no credential on stdout.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-RGUARD.W2 · UC-ROUTE-6 (the owner is reached in the turn the router needs them). W1 hand-off: W1's push rule says send in the same turn; this WU gives that sentence one command that works on both hosts.</p>
+  <p data-item="wu-expected"><b>Observable:</b> <code>--check</code> names the paired bot and sends no message; <code>--dry-run "…"</code> prints the request and sends nothing; <code>--send "…"</code> prints <code>id N</code> and a real Telegram message arrives; a failed send is one line and exits non-zero; no mode prints the token; the Claude router guard allows the four shapes and refuses what it refused before.</p>
+  <p data-item="wu-deps">W1 — its push-channel rule is the sentence this WU turns into a mechanism; the branch also carries W1's unmerged epic plan, recorded in the W2 result.</p>
+</div>
+
+<div data-wu="E-RGUARD.W3" data-c="wu-w3">
+  <h3 id="w3">W3 · The inbox channel</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> on DSH a worker cannot message the router, so a finished WU waits in a transcript. W3 gives the router a file inbox: a worker posts one short report, the router's armed watcher prints it at once, and consume is the ack. It was parked on <code>wu/E-RGUARD/w3-inbox-channel</code> until your 2026-11-15 ruling to land it before this epic closes; the branch back-merges this epic so W1's and W2's text and guard shapes sit beside it.</p>
+    <ul>
+      <li><code>scripts/router-inbox.sh</code> (new): <code>init</code>, <code>post</code>, <code>watch</code>, <code>consume</code>, <code>status</code>. The inbox resolves from the git common dir, so a copy in a worktree posts to the main checkout's inbox.</li>
+      <li>The rule text: a worker's report is a post, the wake checklist's fleet half becomes the armed watcher, and W1's interim fleet-wake paragraph is deleted.</li>
+      <li><code>DEC-57</code> records the channel; the router guard admits <code>init</code>, <code>watch</code>, <code>consume</code> and <code>status</code>, and keeps <code>post</code> denied — the router never posts.</li>
+      <li><code>tests/router_inbox.rs</code>: post, immediate delivery, order, timeout, idempotent consume, junk and symlinks skipped, a read-only inbox.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-RGUARD.W3 · UC-ROUTE-5 (a DSH worker's report) and UC-ROUTE-6 (the posture and its wake).</p>
+  <p data-item="wu-expected"><b>Observable:</b> a worker posts and the router's armed watcher prints the report and its body inside its poll; <code>consume &lt;id&gt;</code> acks it once and quotes the id; no reminder and no schedule delivers a report; no shipped text claims a timer is allowed.</p>
+  <p data-item="wu-deps">W1 — it replaces the interim fleet-wake paragraph W1 shipped as pending with the inbox watcher. W2 — both add router guard shapes, so the guard and settings carry both.</p>
+</div>
+
+</div>
+
+<p>W1's plan is this doc, which was a one-unit epic when W1 wrote it. W2's plan is <a href="2026-11-14-erguard-w2-plan.html">its own doc</a>. W3's plan is <a href="2026-11-14-erguard-w3-inbox-plan.html">its own doc</a>.</p>
+
+<h2 id="open-points">Open points</h2>
+<p>Work goes on at these answers. Comment to overrule.</p>
+<table data-item="open-questions" data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Is a fleet wake on DSH the heartbeat the 2026-11-11 ruling forbids?</td><td><b>No timer</b>: you chose the inbox channel over ruling the timer, and W3 builds it. The fleet wake on DSH is the armed inbox watcher, not a reminder</td><td>DSH workers cannot message, so without a wake only the owner can wake the router. An armed watcher that prints a worker's post is a wake, not a poll loop</td></tr>
+    <tr><td>2</td><td>May the router still read a plan or a backlog row?</td><td><b>Only to dispatch, verify or relay</b> — never to derive the substance, and never a document a worker was just sent to read</td><td>The posture allows read tools; the miss was using them to do a running worker's job</td></tr>
+    <tr><td>3</td><td>When does D2 land?</td><td><b>Next epic</b>, as you decided on 2026-11-14</td><td>This epic names the four checks D2 must enforce; the checklist keeps the router honest until then</td></tr>
+    <tr><td>4</td><td>When does W3 land?</td><td><b>Before this epic closes</b>, as you ruled on 2026-11-15</td><td>Its code, rule text and decision are written and proven on the branch; merging it replaces W1's interim paragraph, which W3's result already names</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="expected-h">Acceptance</h3>
+<ul data-item="expected" data-c="expected">
+  <li>A router that reads the shipped skill meets "run START before your first tool call" and "WAKE on every wake", each one link away from the checklist.</li>
+  <li>The checklist fits one screen and every row says what skipping it cost.</li>
+  <li>A dispatch on any host writes the brief file first; a stale brief is a finding, not a template.</li>
+  <li>On DSH a worker's post wakes the router through its armed inbox watcher; no text arms a reminder, a schedule or a loop.</li>
+  <li>The router reaches the owner from either host with one command, and the message id it prints is the line it records.</li>
+  <li><code>keel init</code> in a scratch repo plants <code>checklists.md</code>, byte-equal to the source; the two skill trees stay byte-identical.</li>
+  <li>No test in the repository goes red; clippy with <code>-D warnings</code> stays green.</li>
+</ul>
+
+<h3 id="use-cases-h">Use cases</h3>
+<ul data-item="use-cases" data-c="use-cases">
+  <li>UC-ROUTE-6, amended: on DSH the skill is the only guard, so the router runs the checklists and names the gap; the owner is reached in the same turn from either host; on DSH the armed inbox watcher is the fleet wake.</li>
+  <li>UC-ROUTE-1, amended: the moment of action carries the boundary — read tools for dispatch and verification, never for the work.</li>
+  <li>UC-ROUTE-5, amended: a DSH worker's report is a post to the inbox that wakes the router, and its transcript stays the evidence; a dispatch writes a brief file on every host.</li>
+</ul>
+
+<h3 id="non-goals-h">Out of scope</h3>
+<ul data-item="non-goals" data-c="non-goals">
+  <li>The guard plugin (D2) and any plugin code.</li>
+  <li>An allow rule for the launcher in the DSH preset, and any change to the launcher, the hooks or the preset.</li>
+  <li>A second bot, token or notification service; the sender uses the chat you already paired.</li>
+  <li>Rewriting the router skill's long form; the checklists point to it, they do not replace it.</li>
+  <li>A Claude Code worker posting to the inbox: its sandbox does not allow it, and it reports by message.</li>
+</ul>
+
+<h3 id="e2e-h">Epic test</h3>
+<div data-item="e2e-plan" data-c="e2e-plan">
+  <p>This is a process epic, and each landed unit's end-to-end proof is its integration test on the shipped tree. W1: <code>keel init</code> in a scratch repo plants <code>checklists.md</code> byte-equal to the source, and the installed <code>SKILL.md</code> names it at the two points a router meets it. W2: the router's own command, <code>scripts/notify-owner.py</code>, is spawned against a local mock of the Telegram API and exercised in all three modes, including the failure line. W3: <code>tests/router_inbox.rs</code> spawns the inbox script as a worker and the router run it, and an armed watcher wakes on a live post. The live send to your phone is an outward action you trigger, not a test. Waiver intent: stated here rather than as separate flows.</p>
+</div>
+
+<h3 id="testplan-h">Test plan</h3>
+<div data-item="test-plan" data-c="test-plan">
+  <ul>
+    <li><b>Integration</b> (<code>tests/init.rs</code>): the shipped-skill inventory stays exact — every reference file is named by <code>SKILL.md</code> and the reverse; the embed list matches <code>skills/</code>, so <code>keel init</code> plants <code>checklists.md</code>; a test asserts each of the three checklists exists with its trigger and that the four failures D2 will enforce each have a row.</li>
+    <li><b>Integration</b> (<code>tests/notify_owner.rs</code>): the sender spawned as the router runs it, against a local mock API — the three modes, the failure line, the cleared and read-only body, the https rule, the injectable timeout, and no credential or chat id in any output.</li>
+    <li><b>Integration</b> (W3): <code>tests/router_inbox.rs</code> spawns the inbox script through its process boundary, one temp inbox per case.</li>
+    <li><b>Unit: waived</b> — W1's code change is one entry in a constant list, and W2's is a script whose contract is its process boundary; the behaviour each buys is the integration test above.</li>
+    <li><b>Rule text</b>: the existing rule-text tests in <code>tests/init.rs</code> and <code>tests/router.rs</code> stay green on the new wording, W2's guard test pins the sender's shapes, and W3's pins the inbox shapes and keeps <code>post</code> denied.</li>
+    <li><b>No live router session</b>: a router's conduct on DSH is not observable from a test; the evidence is the checklist a session must read, and D2 is what makes it fail a call.</li>
+  </ul>
+</div>
+
+<h3 id="case-h">The session that started it</h3>
+<ol data-c="case-steps">
+  <li>You ask the router to resume a stopped epic; it loads the router skill.</li>
+  <li>Eight seconds later it lists worktrees itself: the first of 24 calls outside the whitelist.</li>
+  <li>Six minutes on you interrupt — "you are the router, you DO NOT work" — with four workers live and nothing armed.</li>
+  <li>It dispatches an audit instead; its finding: nothing fails a wrong call here.</li>
+</ol>
+
+<h3 id="close-h">At the close</h3>
+<ul data-item="distillation-plan" data-c="distillation-plan">
+  <li>UC-ROUTE-6's "On DSH" row and UC-ROUTE-5's DSH row absorb the checklists' truth and the trigger-and-cost of a skipped row.</li>
+  <li>UC-ROUTE-6's push-channel row absorbs the sender: the script is the mechanism both hosts run in the same turn.</li>
+  <li>The DSH decision record carries the channel (DEC-57), and the interim fleet-wake paragraph is gone.</li>
+  <li><code>docs/backlog/dsh.html</code> D2 keeps the four checks the plugin must enforce and points at the checklists they replace.</li>
+  <li>These plans and the WU result reports are archived at epic close; nothing of them stays tracked.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

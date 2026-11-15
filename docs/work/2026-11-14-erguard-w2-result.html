@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af8437e9f34851f0dfb2478" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-RGUARD.W2 result: the sender, proven</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-RGUARD.W2 · The sender, proven</h1>
+      <p>One script, three modes; the real API named the bot, no message was sent, and the DSH classifier says the sender is low risk.</p>
+      <div class="meta">T3 · WU result · 2026-11-14 · epic <code>E-RGUARD</code> · WU <code>E-RGUARD.W2</code></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">What landed</h2>
+<div data-item="outcome" data-c="outcome">
+  <p><b>Delivered, with the rule-bearing commit left to you.</b> <code>scripts/notify-owner.py</code> posts the router's owner message to the already-paired Telegram bot and prints <code>id N</code>; <code>--dry-run</code> validates the body and prints the request without reaching the network; <code>--check</code> asks <code>getMe</code> and sends nothing. The same file runs on DSH and Claude Code. Neither the token nor the chat id is printed, a sent body file is emptied, and a failure is one line and exits non-zero.</p>
+  <p><b>Proven here:</b> from this checkout, <code>--check</code> reached the real API and named <code>@MyClaudeCodeAssistantbot (id 8027058808)</code> without sending; <code>--dry-run</code> printed the request and a closed port in the test proves it sends nothing; twelve integration tests cover the three modes, the failure line, the no-credential and no-chat rules, the cleared body, the read-only body, the https/loopback rule, a malformed token, the address the request actually uses, and the injectable timeout. The Claude router guard allows the three plain shapes and the body write, and the new guard test pins the boundary.</p>
+  <p><b>What is not done here:</b> the skill bullet, the guard and the settings entries are rule-bearing, so the commit is yours and this run stops at the staged command. The WU notes and preflight on the owner's new tip follow the same pattern as W1 (the tip changes under them). No real message was sent; the first one is yours.</p>
+</div>
+
+<h2 id="for-owner">What changes for you</h2>
+<table data-c="today-after">
+  <thead><tr><th></th><th>Before</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>The router needs a decision</td><td>The ask lands in a terminal you are not watching</td><td>Your phone gets it in the same turn, commands on their own lines</td></tr>
+    <tr><td>A host is swapped</td><td>Only a session that is not the enforced router can send</td><td>The same command runs on either host and prints the id</td></tr>
+  </tbody>
+</table>
+
+<h2 id="deviations">Deviations from the plan</h2>
+<div data-item="deviations" data-c="deviations">
+  <ul>
+    <li><b>The epic plan was not on the base.</b> W1's plan commit <code>c6982a5</code> is not merged into <code>epic/E-RGUARD</code>, so this branch carries that file and adds the W2 card. If W1 lands first, the merge has an add/add conflict on <code>docs/work/2026-11-14-erguard-plan.html</code>; take this tip's file, which holds W1's text verbatim plus the W2 card. The skill file is touched in a different region by each WU and should merge cleanly.</li>
+    <li><b>The body travels through a file on Claude.</b> The router guard judges plain words, so a quoted multi-line message cannot pass it; a body file <code>.router/notify/owner.md</code> does. <code>--send "&lt;text&gt;"</code> still exists and is what the DSH router may use.</li>
+    <li><b>Auto Review did not adjudicate this session.</b> The session log's <code>permission/preset</code> event says <code>danger-full-access</code>, so the gate was bypassed and the call simply ran. The plugin's own classifier was run directly instead; see the evidence.</li>
+  </ul>
+</div>
+
+<h2 id="review">Review round 1 fixes</h2>
+<table data-c="review-fixes">
+  <thead><tr><th>Finding</th><th>Fix</th></tr></thead>
+  <tbody>
+    <tr><td><b>Blocker</b> — the bot token was printed into a session transcript</td><td><b>Exposure recorded; rotation declined.</b> What was exposed: the Telegram bot credential that authorises sending as this bot. Where: a worker session transcript under <code>~/.claude/projects/</code>, readable by other sessions because <code>scripts/router-file-guard.sh</code> does not deny that path. It reached no repository file, command, test or commit. The owner considered rotating the token and <b>declined on 2026-11-14</b> because the bot is personal. The credential therefore stays valid: the exposure outlives the merge by the owner's choice.</td></tr>
+    <tr><td><b>Important</b> — a real chat id was committed</td><td>The dry-run line no longer prints it (it prints the request shape only); the test asserts it is <b>absent</b> from every output; this report no longer commits it. A repository scan for the id returns 0.</td></tr>
+    <tr><td><b>Important</b> — argument redirection</td><td>Removed <code>--body</code>, <code>--env-file</code>, <code>--access-file</code> and <code>--api-base</code>: no argument can choose a file, credential, chat or endpoint. Tests use the <code>KEEL_NOTIFY_*</code> variables only, which is the seam a normal invocation leaves unset. The endpoint must be https, or http only on loopback.</td></tr>
+    <tr><td><b>Important</b> — the skill bullet ships further than the code</td><td>The bullet now says <b>where the project ships</b> <code>scripts/notify-owner.py</code>. Cost: one conditional sentence, no new file. The alternative — planting the script from every <code>keel init</code> — would add a Telegram sender to every project, plus an embed entry and its inventory test; it is not this WU.</td></tr>
+    <tr><td>Also — dry-run wording overstated</td><td>The bullet says <code>--dry-run</code> validates the body and prints the request; it does not check the token or the connection. <code>--check</code> is the call that reaches the API.</td></tr>
+    <tr><td>Also — a sent body could be re-sent</td><td>A body read from <code>.router/notify/owner.md</code> is emptied after a successful send; a later bare <code>--send</code> fails one line as an empty message. The test pins both halves.</td></tr>
+    <tr><td>Also — cleartext <code>http://</code> to any host</td><td>https is required; http is refused unless the host is loopback. New test.</td></tr>
+    <tr><td>Also — a <code>URLError</code> reason can echo the request target</td><td>Only an OS <code>strerror</code> is printed, never the raw reason; a malformed-token test asserts neither the token nor the target appears.</td></tr>
+    <tr><td>Also — the bare-send test skipped the no-token assertion</td><td>Every case calls one <code>assert_no_credential</code> helper, bare <code>--send</code> included.</td></tr>
+    <tr><td>Also — no missing-body case</td><td>New case: a bare <code>--send</code> with no body file is one line, names <code>owner.md</code>, exits non-zero, sends nothing.</td></tr>
+    <tr><td>Also — tests ran <code>python3 &lt;path&gt;</code>, not the router's direct exec</td><td>Every case spawns <code>scripts/notify-owner.py</code> directly, as the router does.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="cr1">Code review round 1 fixes</h2>
+<table data-c="cr1-fixes">
+  <thead><tr><th>Finding</th><th>Fix and evidence</th></tr></thead>
+  <tbody>
+    <tr><td><b>Important</b> — the body clear swallowed its error and <code>id N</code> was printed first</td><td>The clear is part of success. A body that is not writable fails <b>before</b> sending, one line naming the file and saying the message was not sent; after a send the file is emptied <b>before</b> <code>id N</code> is printed, and a clear that still fails names the sent id and the file and prints no <code>id N</code>. Tests: the read-only body fails with the body unchanged (red on the old sender); the writable body is cleared; a preview and a failed send leave the body.</td></tr>
+    <tr><td><b>Important</b> — the send tests never asserted <code>chat_id</code></td><td>Both send cases parse the mock's raw request body and assert <code>chat_id</code> is the paired chat and the text is the body. A constant <code>read_chat</code> made both fail with <code>the wrong chat was addressed</code>; restored, 12/12 pass.</td></tr>
+    <tr><td>Nit — no test for a bare dry run or a failed send over a body</td><td>New case: a bare <code>--dry-run</code> and a 500 <code>--send</code> both leave <code>owner.md</code> intact.</td></tr>
+    <tr><td>Nit — the cleartext test used public <code>example.com</code></td><td>Uses <code>evil.invalid</code>; the rule is exercised with no possible egress.</td></tr>
+    <tr><td>Nit — the 15 s timeout was untested</td><td>Covered: a loopback server accepts and stalls, <code>KEEL_NOTIFY_TIMEOUT=0.2</code> makes the bound injectable, and the failure is one line (<code>cannot reach the Telegram API: timed out</code>) with no traceback. On the old sender the case failed (the bound was fixed).</td></tr>
+  </tbody>
+</table>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+  <p><b>Commits:</b> <code>eff724b</code> (epic plan W2 card and the W2 plan), <code>7fe78c1</code> (sender and its test), <code>0f189ce</code> (the owner's guard/skill/settings commit), <code>a8b5f79</code> (the owner-review fix), <code>160d8aa</code> (the corrected skill bullet), and this fix commit (the code-review-round-1 fix; code tip).</p>
+  <p><b>Real <code>--check</code> (reaches the API, sends no message):</b></p>
+  <pre>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-RGUARD-w2-notify-owner &amp;&amp; scripts/notify-owner.py --check
+check ok: @MyClaudeCodeAssistantbot (id 8027058808)</pre>
+  <p>An earlier run hit the failure path in one line: <code>notify-owner: cannot reach the Telegram API: Connection reset by peer</code> (only the OS <code>strerror</code> now, never the raw reason). The retry succeeded. That is the router's retry-once case, not a code change.</p>
+  <p><b>Real <code>--dry-run</code> (validates and prints, sends nothing):</b></p>
+  <pre>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-RGUARD-w2-notify-owner &amp;&amp; scripts/notify-owner.py --dry-run "Keel E-RGUARD.W2 dry run
+cd /Users/nguyenvanluong/Documents/proj/misc/Keel &amp;&amp; git status --short"
+dry-run: valid sendMessage request (99 chars, 2 lines); no request sent
+Keel E-RGUARD.W2 dry run
+cd /Users/nguyenvanluong/Documents/proj/misc/Keel &amp;&amp; git status --short</pre>
+  <p>The chat id is not in that line, and the test asserts it is absent from every output.</p>
+  <p><b>Host classifier, in its own words</b> (<code>classify</code> from <code>dsh-auto-review/lib/rules.js</code>, the tool name <code>bash</code>):</p>
+  <pre>scripts/notify-owner.py --check  -&gt; {"risk":"low","reason":"script contains no destructive call","script":{"kind":"python","withinWorkspace":true}}
+scripts/notify-owner.py --send   -&gt; {"risk":"low","reason":"script contains no destructive call"}
+scripts/router-worker.sh spawn x y z opus -&gt; {"risk":"high","reason":"script redirection to a system or sensitive path"}</pre>
+  <p><b>Tests (red then green):</b> with the sender absent, <code>cargo test --test notify_owner</code> failed 6/6. At the owner review the old sender failed the three then-new cases at <code>FAILED. 6 passed; 3 failed</code>. At code review round 1 the old sender failed the read-only-body and stalled-timeout cases at <code>FAILED. 10 passed; 2 failed</code>; after the fix, <code>12 passed; 0 failed</code>, every case spawning the file directly. Mutation evidence for the chat: a constant <code>read_chat</code> failed both send cases with <code>the wrong chat was addressed</code>; restored, 12/12. The guard test <code>router_guard_allows_the_owner_sender_only_as_a_plain_shape</code> passes 1/1, and <code>cargo test --test router -- --test-threads=1</code> is 59/59 (the base's R43 watch reds are parallel-load only). <code>cargo clippy --all-targets -- -D warnings</code> is green; the test file is rustfmt-clean.</p>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<div data-item="distillation" data-c="distillation">
+  <p>The durable statement is the shipped skill bullet: both hosts send through <code>scripts/notify-owner.py</code>. The epic plan's distillation plan now names UC-ROUTE-6's push-channel row as the T2 home at epic close; nothing else here is citable.</p>
+</div>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<div data-item="follow-ups" data-c="follow-ups">
+  <ol>
+    <li>After your <code>keel mr commit</code>, on its new tip: <code>keel notes write test</code> (integration: <code>tests/notify_owner.rs</code>, <code>tests/router.rs</code>; unit waived), <code>keel notes write doc</code>, then <code>keel preflight wu &lt;tip&gt; --target epic/E-RGUARD</code> and the review.</li>
+    <li>Before the sign-off, an independent review reads <code>scripts/notify-owner.py</code> and the guard change: neither is under <code>code_paths</code>, so no gate reviews them.</li>
+    <li><b>Exposure accepted.</b> While diagnosing the connection resets, one diagnostic probe printed the Telegram bot credential into this session's transcript at <code>~/.claude/projects/</code>, readable by other sessions because the worker file guard does not deny that path. It reached no repository file, command, test or commit, and the sender never prints it. The owner considered rotating it and <b>declined on 2026-11-14</b> because the bot is personal; the credential stays valid, so the exposure outlives the merge by that choice.</li>
+    <li>A probe called <code>getUpdates</code> once without an offset while testing connectivity; it confirmed nothing and is not repeated.</li>
+  </ol>
+</div>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

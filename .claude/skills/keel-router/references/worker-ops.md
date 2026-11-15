@@ -85,7 +85,8 @@ nothing else is accepted (never `bypassPermissions`, `dontAsk` or `default`). Gr
 never in the settings the router shares, so they never reach the router. `keel
 init` ships no launcher: a project commits its own and its project-router skill
 names it (`<launcher>` below). `ROOT` = the checkout holding the launcher; its
-`.router/` is git-ignored and durable (`briefs/`, `runs/`), unlike `/tmp`.
+`.router/` is git-ignored and durable (`briefs/`, `runs/`, `rulings.md`), unlike
+`/tmp`.
 
 Prerequisites: the router runs in the checkout that holds the launcher (an
 enforced whitelist allows only its relative path) and under a name, which every
@@ -316,23 +317,31 @@ echo "RUN $id"; gh run view $id --json conclusion,jobs -q '.jobs[]|"\(.name): \(
 
 ## Wake checklist (no heartbeat)
 
-The router runs no loop, timer or reminder (owner ruling 2026-11-11; the guard
-denies `loop`, `CronCreate` and `ScheduleWakeup`). It wakes on a worker's message,
-a watch line, an idle notice, the owner, or a DSH worker's post on the report
-channel. On every wake:
-"1 workers: background (`ListAgents`: each expected name listed, busy or idle;
-idle without a report → `SendMessage` asking for it; not listed unasked →
-a fresh worker from a new brief, it keeps and checks uncommitted work; confirm RUNNING;
-blocked on a prompt or silent too long → tell the owner; workers live and no
-`watchdog-<your-name>` listed → `watchdog start`) and in-session (roster;
-finished but unrelayed reports); reported and clean → `stop`. 2 worktrees:
-branch, tip, notes on tip
-(`git log -1 --notes=<ref> --format=%N`). 3 pending owner actions, runs, doc
-comments (relay to a worker), unrelayed reports; re-arm missing watchers and the
-report channel (`router-inbox.sh watch`). 4 advance anything unblocked (next WU,
-step-between worker, stage commands). 5 changed or needs the owner → terminal +
-push ending `What you need to do now:`; else one line. Never run reserved
-commands; stay inside the posture."
+The router runs no loop, timer or reminder (owner ruling 2026-11-11; the Claude
+Code guard denies `loop`, `CronCreate` and `ScheduleWakeup`). It wakes on a
+worker's message, a watch line, an idle notice, the owner, or a DSH worker's post
+on the report channel. The short ordered form is `checklists.md` WAKE; what a
+wake must cover here:
+
+1. **Workers.** Claude Code: `ListAgents` — every expected name listed, busy or
+   idle; idle without a report → `SendMessage` asking for it; not listed unasked →
+   a fresh worker from a new brief that keeps and checks uncommitted work, and
+   confirm `RUNNING`; blocked on a prompt or silent too long → tell the owner;
+   workers live and no `watchdog-<your-name>` listed → `watchdog start`; reported
+   and clean → `stop`. DSH: a `MSG` line from the report channel's watcher names
+   the post that woke you — record it, then `consume <id>`; then `worker_list`,
+   the transcript tail of each live worker with `worker_output`, and the same
+   decisions.
+2. **Worktrees.** Branch, tip, and the notes on the tip
+   (`git log -1 --notes=<ref> --format=%N`).
+3. **Pending.** Owner actions, runs and doc comments; relay a run or a comment
+   finding to a worker; re-arm every watcher that is gone, and on DSH the report
+   channel (`router-inbox.sh watch 6600`) in this turn.
+4. **Advance** anything unblocked: the next WU, the step between workers, the
+   staged owner commands.
+5. **Close.** Changed or needs the owner → terminal + push ending
+   `What you need to do now:`; else one line. Never run reserved commands; stay
+   inside the posture.
 
 ## Read failures / third-party source (a read-only worker runs these)
 ```sh
