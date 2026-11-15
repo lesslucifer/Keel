@@ -16,12 +16,16 @@ use tempfile::TempDir;
 use crate::common;
 
 const KEEL: &str = env!("CARGO_BIN_EXE_keel");
-const TOKEN: &str = "ghs_routerGhTestToken0123456789abcdefXYZ";
-const BOT: &str = "keel-router[bot]";
+pub(crate) const TOKEN: &str = "ghs_routerGhTestToken0123456789abcdefXYZ";
+pub(crate) const BOT: &str = "keel-router[bot]";
+/// The commander the scratch config names (E-GHFLOW.W3): the owner's real id, so the fixture reads
+/// as the committed config does.
+pub(crate) const OWNER_ID: u64 = 5499546;
 
 /// GitHub's API as the script reaches it: the whole request comes as a curl config on stdin.
-/// Routes: `METHOD PATH STATUS FILE` lines in $MOCK_GH/routes (first match; none is a 404).
-const FAKE_CURL: &str = r#"#!/bin/sh
+/// Routes: `METHOD PATH STATUS FILE[,FILE…]` lines in $MOCK_GH/routes (first match; none is a 404).
+/// A route's files are its answers in turn, the last repeated (E-GHFLOW.W3: a watch's polls).
+pub(crate) const FAKE_CURL: &str = r#"#!/bin/sh
 set -eu
 [ $# -eq 3 ] && [ "$1" = -q ] && [ "$2" = --config ] && [ "$3" = - ] || { echo "fake curl: unexpected argv: $*" >&2; exit 2; }
 cfg=$(cat)
@@ -31,43 +35,48 @@ auth=$(printf '%s\n' "$cfg" | sed -n 's/^header = "Authorization: \(.*\)"$/\1/p'
 path=${url#https://api.github.com}
 body=null; [ -z "$data" ] || body=$(jq -Rs . < "${data#@}")
 jq -n -c --arg m "$method" --arg p "$path" --arg a "$auth" --argjson b "$body" --arg c "$cfg" '{method: $m, path: $p, auth: $a, body: $b, config: $c}' >> "$MOCK_GH/log"
-r=$(awk -v m="$method" -v p="$path" '$1 == m && $2 == p { print $3 " " $4; exit }' "$MOCK_GH/routes")
+r=$(awk -v m="$method" -v p="$path" '$1 == m && $2 == p { print NR " " $3 " " $4; exit }' "$MOCK_GH/routes")
 if [ -z "$r" ]; then printf '{"message":"Not Found"}' > "$out"; printf 404; exit 0; fi
-cp "$MOCK_GH/${r#* }" "$out"; printf '%s' "${r%% *}"
+set -- $r
+# a route's answers are served in turn, one per call, the last repeated; status curlN is curl exit N
+k=$(cat "$MOCK_GH/seq.$1" 2> /dev/null || echo 0); echo $((k + 1)) > "$MOCK_GH/seq.$1"
+case "$2" in curl*) exit "${2#curl}";; esac
+f=$(printf '%s\n' "$3" | tr , '\n' | sed -n "$((k + 1))p"); [ -n "$f" ] || f=${3##*,}
+cp "$MOCK_GH/$f" "$out"; printf '%s' "$2"
 "#;
 
-fn text(o: &Output) -> String {
+pub(crate) fn text(o: &Output) -> String {
     format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))
 }
 
 /// Test-side git, with keel on PATH for the hooks the scratch repository runs.
-fn git(d: &Path, a: &[&str]) -> String {
+pub(crate) fn git(d: &Path, a: &[&str]) -> String {
     let o = common::as_tester(common::cmd("git").args(a).current_dir(d).env("PATH", common::path_with(Path::new(KEEL).parent().unwrap()))).output().unwrap();
     assert!(o.status.success(), "git {a:?}: {}", text(&o));
     String::from_utf8(o.stdout).unwrap().trim().to_string()
 }
 
-fn write(d: &Path, rel: &str, body: &str) {
+pub(crate) fn write(d: &Path, rel: &str, body: &str) {
     let f = d.join(rel);
     std::fs::create_dir_all(f.parent().unwrap()).unwrap();
     std::fs::write(f, body).unwrap();
 }
 
-fn exe(p: &Path, body: &str) {
+pub(crate) fn exe(p: &Path, body: &str) {
     std::fs::write(p, body).unwrap();
     std::fs::set_permissions(p, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
 
-fn chmod(p: &Path, mode: u32) {
+pub(crate) fn chmod(p: &Path, mode: u32) {
     std::fs::set_permissions(p, std::os::unix::fs::PermissionsExt::from_mode(mode)).unwrap();
 }
 
 /// The test/v1 note the push checks for on a wu/ tip (schema and tip; the gate reads the rest).
-fn test_note(d: &Path, tip: &str) {
+pub(crate) fn test_note(d: &Path, tip: &str) {
     git(d, &["notes", "--ref=test", "add", "-f", "-m", &format!(r#"{{"schema":"test/v1","tip":"{tip}"}}"#), tip]);
 }
 
-fn commit(d: &Path, msg: &str) {
+pub(crate) fn commit(d: &Path, msg: &str) {
     git(d, &["add", "-A"]);
     git(d, &["commit", "-q", "--no-verify", "-m", msg]);
 }
@@ -76,7 +85,7 @@ const PLAN_TITLE: &str = "Keel — E.W1 plan: `tick` @owner [x](y) | cell *b* #h
 
 /// The App in `home`, as the owner's setup leaves it: a throwaway key and its ids in
 /// `.config/keel/router-gh`, whatever the umask made of the directories.
-fn install_app(home: &Path) {
+pub(crate) fn install_app(home: &Path) {
     let kdir = home.join(".config/keel/router-gh");
     std::fs::create_dir_all(&kdir).unwrap();
     // as the owner's setup does (`chmod 700`): never the umask's mode
@@ -90,19 +99,19 @@ fn install_app(home: &Path) {
 
 /// main (config, the script) → epic/E (a README change) → wu/E/x (a plan, a result, code; cr and
 /// test notes), main and epic/E on origin, Keel's hooks installed, the checkout on wu/E/x.
-struct Gh {
-    root: TempDir,
-    repo: PathBuf,
-    origin: PathBuf,
-    home: PathBuf,
-    mock: PathBuf,
-    bin: PathBuf,
-    marks: PathBuf,
-    tmp: PathBuf,
+pub(crate) struct Gh {
+    pub(crate) root: TempDir,
+    pub(crate) repo: PathBuf,
+    pub(crate) origin: PathBuf,
+    pub(crate) home: PathBuf,
+    pub(crate) mock: PathBuf,
+    pub(crate) bin: PathBuf,
+    pub(crate) marks: PathBuf,
+    pub(crate) tmp: PathBuf,
 }
 
 impl Gh {
-    fn new() -> Gh {
+    pub(crate) fn new() -> Gh {
         let root = TempDir::new().unwrap();
         let base = root.path().canonicalize().unwrap();
         let [repo, home, mock, bin, marks, tmp] = ["repo", "home", "mock", "bin", "marks", "tmp"].map(|n| base.join(n));
@@ -118,13 +127,15 @@ impl Gh {
             &repo,
             ".keel/config.toml",
             &format!(
-                "code_paths = [\"src/\"]\n[check]\nlint = {}\ntest = {}\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n\n[github]   # the router bot's repository\nrepo = \"own/Keel\"\n",
+                "code_paths = [\"src/\"]\n[check]\nlint = {}\ntest = {}\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n\n[github]   # the router bot's repository\nrepo = \"own/Keel\"\ncommanders = [{OWNER_ID}]   # who the router hears\nfree_text = true\n",
                 mark("lint-ran"),
                 mark("test-ran")
             ),
         );
-        let script = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/router-gh.sh")).unwrap();
-        exe(&repo.join("scripts/router-gh.sh").tap_dir(), &script);
+        for f in ["scripts/router-gh.sh", "scripts/router-gh-watch.sh", "scripts/router-gh-command.jq"] {
+            let script = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(f)).unwrap();
+            exe(&repo.join(f).tap_dir(), &script);
+        }
         write(&repo, "README", "x");
         commit(&repo, "base");
         git(&repo, &["switch", "-q", "-c", "epic/E"]);
@@ -152,43 +163,65 @@ impl Gh {
         gh
     }
 
-    fn sha(&self, rev: &str) -> String {
+    pub(crate) fn sha(&self, rev: &str) -> String {
         git(&self.repo, &["rev-parse", rev])
     }
 
-    fn origin_sha(&self, rev: &str) -> Option<String> {
+    pub(crate) fn origin_sha(&self, rev: &str) -> Option<String> {
         let o = common::cmd("git").args(["rev-parse", "--verify", "-q", rev]).current_dir(&self.origin).output().unwrap();
         o.status.success().then(|| String::from_utf8(o.stdout).unwrap().trim().to_string())
     }
 
     /// The route table: the token exchange plus `extra` (method, path, status, JSON body).
-    fn routes(&self, extra: &[(&str, &str, u16, serde_json::Value)]) {
-        let mut all = vec![("POST", "/app/installations/456/access_tokens", 201, serde_json::json!({"token": TOKEN, "expires_at": "2026-11-15T12:00:00Z"}))];
-        all.extend(extra.iter().map(|(m, p, s, b)| (*m, *p, *s, b.clone())));
+    pub(crate) fn routes(&self, extra: &[(&str, &str, u16, serde_json::Value)]) {
+        let seq: Vec<_> = extra.iter().map(|(m, p, s, b)| (*m, *p, s.to_string(), vec![b.clone()])).collect();
+        self.routes_seq(&seq);
+    }
+
+    /// As `routes`, each route answering its bodies in turn, the last repeated; a status `curlN`
+    /// makes curl exit N (E-GHFLOW.W3).
+    pub(crate) fn routes_seq(&self, extra: &[(&str, &str, String, Vec<serde_json::Value>)]) {
+        let mut all = vec![(
+            "POST",
+            "/app/installations/456/access_tokens",
+            "201".to_string(),
+            vec![serde_json::json!({"token": TOKEN, "expires_at": "2026-11-15T12:00:00Z"})],
+        )];
+        all.extend(extra.iter().cloned());
+        for e in std::fs::read_dir(&self.mock).unwrap() {
+            std::fs::remove_file(e.unwrap().path()).unwrap();
+        }
         let mut table = String::new();
-        for (i, (m, p, s, b)) in all.iter().enumerate() {
-            std::fs::write(self.mock.join(format!("r{i}.json")), b.to_string()).unwrap();
-            table.push_str(&format!("{m} {p} {s} r{i}.json\n"));
+        for (i, (m, p, s, bodies)) in all.iter().enumerate() {
+            let files: Vec<String> = bodies
+                .iter()
+                .enumerate()
+                .map(|(j, b)| {
+                    std::fs::write(self.mock.join(format!("r{i}-{j}.json")), b.to_string()).unwrap();
+                    format!("r{i}-{j}.json")
+                })
+                .collect();
+            table.push_str(&format!("{m} {p} {s} {}\n", files.join(",")));
         }
         std::fs::write(self.mock.join("routes"), table).unwrap();
         std::fs::write(self.mock.join("log"), "").unwrap();
     }
 
     /// The requests the script sent since the last `routes`.
-    fn log(&self) -> Vec<serde_json::Value> {
+    pub(crate) fn log(&self) -> Vec<serde_json::Value> {
         std::fs::read_to_string(self.mock.join("log")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect()
     }
 
-    fn calls(&self) -> Vec<String> {
+    pub(crate) fn calls(&self) -> Vec<String> {
         self.log().iter().map(|r| format!("{} {}", r["method"].as_str().unwrap(), r["path"].as_str().unwrap())).collect()
     }
 
-    fn path(&self) -> String {
+    pub(crate) fn path(&self) -> String {
         common::test_path(&common::path_with(Path::new(KEEL).parent().unwrap()), Some(&self.bin))
     }
 
     /// The script in the scratch repository, as the router runs it; every run is checked for secrets.
-    fn run_env(&self, args: &[&str], env: &[(&str, &str)]) -> Output {
+    pub(crate) fn run_env(&self, args: &[&str], env: &[(&str, &str)]) -> Output {
         let mut c = common::cmd("sh");
         c.arg(self.repo.join("scripts/router-gh.sh")).args(args).current_dir(&self.repo);
         c.env("PATH", self.path()).env("HOME", &self.home).env("TMPDIR", &self.tmp).env("MOCK_GH", &self.mock);
@@ -207,7 +240,7 @@ impl Gh {
 
     /// A worktree entry git did not make, forged in the shared git dir as a worker could (security
     /// review round 2, X1/N1): `$g/worktrees/<id>` naming `path`, with `branch` checked out.
-    fn forge_worktree(&self, id: &str, path: &Path, branch: &str) {
+    pub(crate) fn forge_worktree(&self, id: &str, path: &Path, branch: &str) {
         let admin = self.repo.join(".git/worktrees").join(id);
         std::fs::create_dir_all(&admin).unwrap();
         std::fs::write(admin.join("gitdir"), format!("{}\n", path.join(".git").display())).unwrap();
@@ -216,7 +249,7 @@ impl Gh {
     }
 
     /// GitHub merges `what` into epic/E (a merge commit made in a clone of origin); the merge's sha.
-    fn github_merges(&self, what: &str) -> String {
+    pub(crate) fn github_merges(&self, what: &str) -> String {
         let merger = self.root.path().join("merger");
         if !merger.exists() {
             git(self.root.path(), &["clone", "-q", self.origin.to_str().unwrap(), merger.to_str().unwrap()]);
@@ -229,12 +262,12 @@ impl Gh {
         git(&merger, &["rev-parse", "HEAD"])
     }
 
-    fn run(&self, args: &[&str]) -> Output {
+    pub(crate) fn run(&self, args: &[&str]) -> Output {
         self.run_env(args, &[])
     }
 
     /// No output carries the key, a JWT the script sent, or the token.
-    fn assert_no_secret(&self, o: &Output) {
+    pub(crate) fn assert_no_secret(&self, o: &Output) {
         let out = text(o);
         assert!(!out.contains(TOKEN) && !out.contains("ghs_"), "the token leaked: {out}");
         assert!(!out.contains("PRIVATE KEY") && !out.contains("eyJ"), "key or JWT material leaked: {out}");
@@ -250,7 +283,7 @@ impl Gh {
         }
     }
 
-    fn pr(&self, number: u64, login: &str, head_repo: &str, head_sha: &str, draft: bool) -> serde_json::Value {
+    pub(crate) fn pr(&self, number: u64, login: &str, head_repo: &str, head_sha: &str, draft: bool) -> serde_json::Value {
         serde_json::json!({
             "number": number, "state": "open", "draft": draft, "node_id": "PR_kwDOtest42",
             "html_url": format!("https://github.com/own/Keel/pull/{number}"),
@@ -272,7 +305,7 @@ impl TapDir for PathBuf {
     }
 }
 
-fn stdout(o: &Output) -> String {
+pub(crate) fn stdout(o: &Output) -> String {
     String::from_utf8_lossy(&o.stdout).trim().to_string()
 }
 
@@ -317,7 +350,7 @@ fn assert_jwt(gh: &Gh, auth: &str) {
 
 /// Every API call but the token exchange carries the token, the exchange the JWT; the token is
 /// requested for this repository only.
-fn assert_auth(gh: &Gh) {
+pub(crate) fn assert_auth(gh: &Gh) {
     let log = gh.log();
     assert_eq!(log[0]["path"], "/app/installations/456/access_tokens");
     assert_eq!(serde_json::from_str::<serde_json::Value>(log[0]["body"].as_str().unwrap()).unwrap(), serde_json::json!({"repositories": ["Keel"]}));
@@ -334,7 +367,7 @@ fn assert_auth(gh: &Gh) {
     }
 }
 
-fn body_of(r: &serde_json::Value) -> serde_json::Value {
+pub(crate) fn body_of(r: &serde_json::Value) -> serde_json::Value {
     serde_json::from_str(r["body"].as_str().unwrap()).unwrap()
 }
 
@@ -621,18 +654,35 @@ fn pr_ready_marks_only_the_bots_draft_at_the_local_tip() {
     let gh = Gh::new();
     let tip = gh.sha("wu/E/x");
     let ready = serde_json::json!({"data": {"markPullRequestReadyForReview": {"pullRequest": {"isDraft": false}}}});
+    let user = serde_json::json!({"login": "lesslucifer", "id": OWNER_ID, "type": "User"});
     let with = |pr: serde_json::Value| {
-        gh.routes(&[("GET", "/repos/own/Keel/pulls/7", 200, pr), ("POST", "/graphql", 200, ready.clone())]);
+        gh.routes(&[
+            ("GET", "/repos/own/Keel/pulls/7", 200, pr),
+            ("POST", "/graphql", 200, ready.clone()),
+            ("GET", "/user/5499546", 200, user.clone()),
+            ("POST", "/repos/own/Keel/pulls/7/requested_reviewers", 201, serde_json::json!({"number": 7})),
+        ]);
         gh.run(&["pr-ready", "7"])
     };
     let o = with(gh.pr(7, BOT, "own/Keel", &tip, true));
     assert!(o.status.success(), "{}", text(&o));
-    assert_eq!(stdout(&o), format!("READY pr=7 head=wu/E/x sha={tip} state=ready"));
-    assert_eq!(gh.calls(), ["POST /app/installations/456/access_tokens", "GET /repos/own/Keel/pulls/7", "POST /graphql"]);
+    // E-GHFLOW.W3: GitHub asks each commander, by the login of their id, for a review
+    assert_eq!(stdout(&o), format!("READY pr=7 head=wu/E/x sha={tip} state=ready reviewers=lesslucifer"));
+    assert_eq!(
+        gh.calls(),
+        [
+            "POST /app/installations/456/access_tokens",
+            "GET /repos/own/Keel/pulls/7",
+            "POST /graphql",
+            "GET /user/5499546",
+            "POST /repos/own/Keel/pulls/7/requested_reviewers"
+        ]
+    );
     assert_auth(&gh);
     let q = body_of(&gh.log()[2]);
     assert_eq!(q["variables"], serde_json::json!({"id": "PR_kwDOtest42"}));
     assert!(q["query"].as_str().unwrap().contains("markPullRequestReadyForReview(input: {pullRequestId: $id})"), "{q}");
+    assert_eq!(body_of(&gh.log()[4]), serde_json::json!({"reviewers": ["lesslucifer"]}));
 
     let o = with(gh.pr(7, BOT, "own/Keel", &tip, false));
     assert_eq!(stdout(&o), format!("READY pr=7 head=wu/E/x sha={tip} state=unchanged"), "{}", text(&o));
@@ -1157,4 +1207,107 @@ fn the_fixture_holds_under_a_group_writable_umask() {
 fn keels_gitignore_holds_the_comment_files() {
     let ignore = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(".gitignore")).unwrap();
     assert!(ignore.lines().any(|l| l == ".router-gh/"), "{ignore}");
+}
+
+/// E-GHFLOW.W3: one of the bot's issues, as GitHub lists it, found again by its marker line.
+fn bot_issue(n: u64, branch: &str) -> serde_json::Value {
+    serde_json::json!({"number": n, "id": 9000 + n, "state": "open", "html_url": format!("https://github.com/own/Keel/issues/{n}"),
+        "user": {"login": BOT, "type": "Bot"}, "body": format!("<!-- keel:router-gh issue v1 {branch} -->\r\nTracking …")})
+}
+
+const ISSUE_LIST: &str = "/repos/own/Keel/issues?state=all&per_page=100&page=1";
+
+/// E-GHFLOW.W3: `issue epic/E` opens the epic's tracking issue, its body built from git (the marker,
+/// the tip, a row per WU branch with its notes); `issue wu/E/x` opens the WU's issue, titled by its
+/// plan, and links it under the epic's as a sub-issue, by the issue's id.
+#[test]
+fn issue_opens_the_epics_tracking_issue_and_a_wu_sub_issue() {
+    let gh = Gh::new();
+    let (epic, tip) = (gh.sha("epic/E"), gh.sha("wu/E/x"));
+    gh.routes(&[("GET", ISSUE_LIST, 200, serde_json::json!([])), ("POST", "/repos/own/Keel/issues", 201, bot_issue(30, "epic/E"))]);
+    let o = gh.run(&["issue", "epic/E"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(stdout(&o), "ISSUE number=30 url=https://github.com/own/Keel/issues/30 state=opened open=yes branch=epic/E parent=-");
+    assert_eq!(gh.calls(), ["POST /app/installations/456/access_tokens", format!("GET {ISSUE_LIST}").as_str(), "POST /repos/own/Keel/issues"]);
+    assert_auth(&gh);
+    let req = body_of(&gh.log()[2]);
+    assert_eq!(req["title"], "epic/E");
+    let body = req["body"].as_str().unwrap();
+    assert!(body.starts_with("<!-- keel:router-gh issue v1 epic/E -->\nTracking issue of `epic/E` into `main`"), "{body}");
+    assert!(body.contains(&format!("**Tip:** `{epic}` · **merged into `main`:** no")), "{body}");
+    assert!(body.contains(&format!("| `wu/E/x` | `{}` | no | yes | — | PASS, round 2 | — | — |", &tip[..12])), "{body}");
+
+    gh.routes(&[
+        ("GET", ISSUE_LIST, 200, serde_json::json!([bot_issue(30, "epic/E")])),
+        ("POST", "/repos/own/Keel/issues", 201, bot_issue(31, "wu/E/x")),
+        ("GET", "/repos/own/Keel/issues/30/sub_issues?per_page=100&page=1", 200, serde_json::json!([])),
+        ("POST", "/repos/own/Keel/issues/30/sub_issues", 201, bot_issue(30, "epic/E")),
+    ]);
+    let o = gh.run(&["issue", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(stdout(&o), "ISSUE number=31 url=https://github.com/own/Keel/issues/31 state=opened open=yes branch=wu/E/x parent=30");
+    let log = gh.log();
+    let req = body_of(&log[2]);
+    assert_eq!(req["title"], "Keel — E.W1 plan: tick owner x(y)  cell b h", "the plan's title, made plain");
+    let body = req["body"].as_str().unwrap();
+    assert!(body.starts_with("<!-- keel:router-gh issue v1 wu/E/x -->\nWork unit `wu/E/x` into `epic/E`"), "{body}");
+    assert!(body.contains(&format!("| {} |", "yes | — | PASS, round 2 | — | —")), "{body}");
+    assert!(body.contains("/blob/") && body.contains("docs/work/x-plan.html"), "{body}");
+    assert_eq!(body_of(&log[4]), serde_json::json!({"sub_issue_id": 9031}));
+}
+
+/// E-GHFLOW.W3: a second run refreshes the bot's issue in place (never a stranger's issue or a pull
+/// request carrying the same marker), links nothing twice, and closes a branch merged into its base.
+#[test]
+fn issue_refreshes_in_place_and_closes_a_merged_branch() {
+    let gh = Gh::new();
+    let mut stranger = bot_issue(40, "wu/E/x");
+    stranger["user"] = serde_json::json!({"login": "mallory", "type": "User"});
+    let mut pr = bot_issue(41, "wu/E/x");
+    pr["pull_request"] = serde_json::json!({});
+    let list = serde_json::json!([stranger, pr, bot_issue(31, "wu/E/x"), bot_issue(30, "epic/E")]);
+    gh.routes(&[
+        ("GET", ISSUE_LIST, 200, list.clone()),
+        ("PATCH", "/repos/own/Keel/issues/31", 200, bot_issue(31, "wu/E/x")),
+        ("GET", "/repos/own/Keel/issues/30/sub_issues?per_page=100&page=1", 200, serde_json::json!([{"id": 9031, "number": 31}])),
+    ]);
+    let o = gh.run(&["issue", "wu/E/x"]);
+    assert_eq!(stdout(&o), "ISSUE number=31 url=https://github.com/own/Keel/issues/31 state=refreshed open=yes branch=wu/E/x parent=30", "{}", text(&o));
+    assert!(!gh.calls().iter().any(|c| c.starts_with("POST /repos")), "{:?}", gh.calls());
+    assert_eq!(body_of(&gh.log()[2])["state"], "open");
+
+    git(&gh.repo, &["switch", "-q", "epic/E"]);
+    git(&gh.repo, &["merge", "-q", "--no-ff", "--no-verify", "-m", "merge wu/E/x", "wu/E/x"]);
+    git(&gh.repo, &["switch", "-q", "wu/E/x"]);
+    gh.routes(&[
+        ("GET", ISSUE_LIST, 200, list.clone()),
+        ("PATCH", "/repos/own/Keel/issues/31", 200, bot_issue(31, "wu/E/x")),
+        ("GET", "/repos/own/Keel/issues/30/sub_issues?per_page=100&page=1", 200, serde_json::json!([{"id": 9031, "number": 31}])),
+    ]);
+    let o = gh.run(&["issue", "wu/E/x"]);
+    assert_eq!(stdout(&o), "ISSUE number=31 url=https://github.com/own/Keel/issues/31 state=refreshed open=no branch=wu/E/x parent=30", "{}", text(&o));
+    let req = body_of(&gh.log()[2]);
+    assert_eq!(req["state"], "closed");
+    assert!(req["body"].as_str().unwrap().contains("**merged into `epic/E`:** yes"), "{req}");
+
+    gh.routes(&[("GET", ISSUE_LIST, 200, list), ("PATCH", "/repos/own/Keel/issues/30", 200, bot_issue(30, "epic/E"))]);
+    let o = gh.run(&["issue", "epic/E"]);
+    assert_eq!(stdout(&o), "ISSUE number=30 url=https://github.com/own/Keel/issues/30 state=refreshed open=yes branch=epic/E parent=-", "{}", text(&o));
+    let body = body_of(&gh.log()[2])["body"].as_str().unwrap().to_string();
+    assert!(body.contains(&format!("| `wu/E/x` | `{}` | yes |", &gh.sha("wu/E/x")[..12])), "{body}");
+}
+
+/// E-GHFLOW.W3: a WU's issue needs its epic's tracking issue first; nothing is created.
+#[test]
+fn a_wu_issue_needs_its_epics_issue_first() {
+    let gh = Gh::new();
+    gh.routes(&[("GET", ISSUE_LIST, 200, serde_json::json!([bot_issue(31, "wu/E/y")]))]);
+    let o = gh.run(&["issue", "wu/E/x"]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("no tracking issue for epic/E yet: run router-gh.sh issue epic/E first"), "{}", text(&o));
+    assert!(!gh.calls().iter().any(|c| !c.starts_with("GET") && !c.ends_with("/access_tokens")), "{:?}", gh.calls());
+    gh.routes(&[]);
+    let o = gh.run(&["issue", "wu/E/nope"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("no local branch wu/E/nope") && gh.calls().is_empty(), "{}", text(&o));
 }

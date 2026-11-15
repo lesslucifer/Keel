@@ -166,3 +166,25 @@ fn every_argument_starting_with_a_dash_is_refused_in_every_position() {
         }
     }
 }
+
+/// E-GHFLOW.W3: `issue` takes a work branch as push does; `watch-read` (the watch's internal read,
+/// never a router shape) takes a kind and a number.
+#[test]
+fn issue_takes_a_work_branch_and_watch_read_a_kind_and_a_number() {
+    for b in ["wu/E/x", "epic/E-GHFLOW"] {
+        accepted(&["issue", b]);
+    }
+    refused(&["issue"], "usage: issue <wu/E/slug|epic/E>");
+    refused(&["issue", "wu/E/x", "x"], "usage: issue <wu/E/slug|epic/E>");
+    for b in ["main", "wu/E", "refs/heads/wu/E/x", "epic/E/x"] {
+        refused(&["issue", b], "branch must be");
+    }
+    refused(&["issue", "-x"], "may not start with -");
+    for k in ["review", "comment", "merged", "checks"] {
+        accepted(&["watch-read", k, "31"]);
+    }
+    refused(&["watch-read", "comment"], "usage: watch-read");
+    refused(&["watch-read", "approve", "1"], "usage: watch-read");
+    refused(&["watch-read", "comment", "1", "since"], "usage: watch-read");
+    refused(&["watch-read", "comment", "0"], "must be a number");
+}

@@ -871,6 +871,8 @@ fn keels_router_security_files_are_rule_bearing() {
         "scripts/router-file-guard.sh",
         "scripts/router-watch.sh",
         "scripts/router-gh.sh",
+        "scripts/router-gh-watch.sh",
+        "scripts/router-gh-command.jq",
         ".claude/agents/worker.md",
     ] {
         let body = std::fs::read_to_string(c.join(f)).unwrap();
@@ -898,7 +900,7 @@ const WORKER_GRANTS: [&str; 11] = [
     "keel check",
 ];
 /// Denied to every worker, each as `Bash(c)` and `Bash(c *)` (E-ROUTER3.W8, DEC-46).
-const WORKER_DENIES: [&str; 26] = [
+const WORKER_DENIES: [&str; 27] = [
     "keel mr",
     "cargo run",
     "keel init",
@@ -925,6 +927,7 @@ const WORKER_DENIES: [&str; 26] = [
     "claude",
     "scripts/router-worker.sh",
     "scripts/router-gh.sh",
+    "scripts/router-gh-watch.sh",
 ];
 
 fn bash_pairs<'a>(cmds: impl IntoIterator<Item = &'a str>) -> Vec<String> {
@@ -4185,4 +4188,121 @@ fn the_guard_and_router_gh_take_the_same_arguments() {
         }
     }
     assert!(accepted >= 10, "the corpus must hold accepted words too ({accepted})");
+}
+
+/// E-GHFLOW.W3: the router guard admits the GitHub watch's four kinds and `router-gh.sh issue` in
+/// plain words and denies every other spelling: `since` on merged or checks, the internal
+/// watch-read, flags, extra words, a leading zero, quotes, an environment prefix, another path.
+#[test]
+fn router_guard_admits_the_github_watch_and_issue_shapes_and_no_other_spelling() {
+    for ok in [
+        "scripts/router-gh-watch.sh review 31",
+        "scripts/router-gh-watch.sh review 31 since 2468013579",
+        "scripts/router-gh-watch.sh comment 30",
+        "scripts/router-gh-watch.sh comment 9999999 since 999999999999999",
+        "scripts/router-gh-watch.sh merged 31",
+        "scripts/router-gh-watch.sh checks 31",
+        "scripts/router-gh.sh issue epic/E-GHFLOW",
+        "scripts/router-gh.sh issue wu/E-GHFLOW/w3-gh-watch",
+        " scripts/router-gh-watch.sh merged 1 ",
+    ] {
+        assert_eq!(bash(ok), None, "{ok}");
+    }
+    for denied in [
+        "scripts/router-gh-watch.sh",
+        "scripts/router-gh-watch.sh review",
+        "scripts/router-gh-watch.sh review 0",
+        "scripts/router-gh-watch.sh review 031",
+        "scripts/router-gh-watch.sh review 12345678",
+        "scripts/router-gh-watch.sh review -1",
+        "scripts/router-gh-watch.sh review 31 since",
+        "scripts/router-gh-watch.sh review 31 since 0",
+        "scripts/router-gh-watch.sh review 31 since 1234567890123456",
+        "scripts/router-gh-watch.sh review 31 after 2",
+        "scripts/router-gh-watch.sh review 31 since 2 3",
+        "scripts/router-gh-watch.sh review 31 --since 2",
+        "scripts/router-gh-watch.sh merged 31 since 2",
+        "scripts/router-gh-watch.sh checks 31 since 2",
+        "scripts/router-gh-watch.sh approve 31",
+        "scripts/router-gh-watch.sh REVIEW 31",
+        "scripts/router-gh-watch.sh comment 30; id",
+        "scripts/router-gh-watch.sh comment '30'",
+        "scripts/router-gh-watch.sh comment $(id)",
+        "ROUTER_WATCH_POLL=1 scripts/router-gh-watch.sh comment 30",
+        "ROUTER_GH_CURL=/tmp/x scripts/router-gh-watch.sh comment 30",
+        "sh scripts/router-gh-watch.sh comment 30",
+        "./scripts/router-gh-watch.sh comment 30",
+        "scripts/../scripts/router-gh-watch.sh comment 30",
+        "scripts/router-gh-watch.sh  comment 30",
+        "scripts/router-gh.sh watch-read comment 30",
+        "scripts/router-gh.sh issue",
+        "scripts/router-gh.sh issue main",
+        "scripts/router-gh.sh issue 30",
+        "scripts/router-gh.sh issue wu/E",
+        "scripts/router-gh.sh issue wu/E/x extra",
+        "scripts/router-gh.sh issue -x",
+        "scripts/router-gh.sh issue epic/E --base main",
+    ] {
+        assert!(bash(denied).is_some(), "admitted: {denied}");
+    }
+    let msg = bash("rm x").unwrap();
+    assert!(
+        msg.contains("scripts/router-gh-watch.sh review|comment <n> [since <id>] | merged|checks <n>") && msg.contains("issue <wu/E/slug or epic/E>"),
+        "deny message omits the new shapes: {msg}"
+    );
+}
+
+/// E-GHFLOW.W3, invariant: over generated near-miss words, the guard admits a watch or `issue` line
+/// exactly when the script's argument check accepts it, but for the names `git check-ref-format`
+/// refuses (as for W2's shapes).
+#[test]
+fn the_guard_and_the_github_watch_take_the_same_arguments() {
+    let mut seed: u64 = 0x3a7c_4b1d;
+    let mut next = |n: usize| {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (seed >> 33) as usize % n
+    };
+    let digits: Vec<char> = "0123456789-+a.".chars().collect();
+    // mostly plain numbers of every length around the bounds, else any of the near-miss characters
+    let num = |next: &mut dyn FnMut(usize) -> usize, max: usize| -> String {
+        if next(3) != 0 {
+            let lead = if next(4) != 0 { 1 + next(9) } else { 0 };
+            let rest: String = (0..next(max)).map(|_| char::from(b'0' + next(10) as u8)).collect();
+            format!("{lead}{rest}")
+        } else {
+            (0..1 + next(max)).map(|_| digits[next(digits.len())]).collect()
+        }
+    };
+    let kinds = ["review", "comment", "merged", "checks", "Review", "watch", "since"];
+    let (mut admitted_n, mut checked) = (0, 0);
+    for _ in 0..60 {
+        let k = kinds[next(kinds.len())];
+        let n = num(&mut next, 8);
+        let id = num(&mut next, 16);
+        let mut shapes = vec![vec![k, n.as_str()], vec![k, n.as_str(), "since", id.as_str()], vec![k, "7", "since", id.as_str()]];
+        if next(2) == 0 {
+            shapes.push(vec![k, "7", "after", "9"]);
+        }
+        for args in shapes {
+            let line = format!("scripts/router-gh-watch.sh {}", args.join(" "));
+            let (admitted, ok) = (bash(&line).is_none(), crate::router_gh_watch_args::accepts(&args));
+            assert_eq!(admitted, ok, "guard and watch disagree on: {line}");
+            admitted_n += usize::from(admitted);
+            checked += 1;
+        }
+    }
+    assert!(admitted_n >= 10 && checked > admitted_n, "the corpus must hold both verdicts ({admitted_n} of {checked})");
+    let alpha: Vec<char> = "aZ09._/:=@%,+^~-".chars().collect();
+    let prefixes = ["epic/", "wu/", "wu/E/", "main", "", "-", "wu/E/x"];
+    for _ in 0..40 {
+        let mut w = prefixes[next(prefixes.len())].to_string();
+        for _ in 0..next(6) {
+            w.push(alpha[next(alpha.len())]);
+        }
+        let line = format!("scripts/router-gh.sh issue {w}");
+        let (admitted, ok) = (bash(&line).is_none(), gh_validates(&["issue", w.as_str()]));
+        let exception = w.split('/').any(|c| c.ends_with('.') || c.ends_with(".lock"));
+        assert!(!ok || admitted, "the script accepts what the guard denies: {line}");
+        assert!(!admitted || ok || exception, "the guard admits what the script refuses: {line}");
+    }
 }
