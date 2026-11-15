@@ -1,11 +1,13 @@
 //! E-CRCAP epic e2e: the 5-round review schedule ends in a fix-PASS or an owner-accepted waiver, and
 //! both merge through the real hooks of a repo `keel init` set up (UC-REV-2, UC-REV-3).
+compiled!();
+
 use serde_json::Value;
 use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;
 
-mod common;
+use crate::common;
 
 fn run(prog: &str, d: &Path, a: &[&str], input: &str) -> Output {
     use std::io::Write;
@@ -13,7 +15,7 @@ fn run(prog: &str, d: &Path, a: &[&str], input: &str) -> Output {
     let mut c = common::cmd(prog)
         .args(a)
         .current_dir(d)
-        .env("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()))
+        .env("PATH", common::path_with(bin))
         .env_remove("SSH_AUTH_SOCK")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

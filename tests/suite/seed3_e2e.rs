@@ -6,15 +6,17 @@
 //! this file does not prove it: the owner moved it to backlog B24 by ruling on 2026-11-14, for the
 //! reason B6 itself was deferred there on 2026-11-13 - with no fetch setup there is nothing to
 //! exercise. The plan's other three steps run here and prove the close, so no test layer is waived.
+compiled!();
+
 use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;
 
-mod common;
+use crate::common;
 
 fn path_with_keel() -> String {
     let bin = Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().to_owned();
-    format!("{}:{}", bin.display(), std::env::var("PATH").unwrap())
+    common::path_with(bin)
 }
 
 fn run(prog: &str, d: &Path, a: &[&str], input: &str) -> Output {

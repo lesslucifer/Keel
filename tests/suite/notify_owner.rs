@@ -3,6 +3,7 @@
 //! pin its three modes against a local mock API, its failure line, the no-redirection rule,
 //! the chat it actually addresses, and that neither the credential nor the chat id reaches
 //! stdout or stderr.
+compiled!();
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -14,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
 
-mod common;
+use crate::common;
 
 /// A credential-shaped fake. The sender must never print it; a test failure never formats it.
 const TOKEN: &str = "123456789:AAHfakeTOKENfakeTOKENfakeTOKENfake00";
