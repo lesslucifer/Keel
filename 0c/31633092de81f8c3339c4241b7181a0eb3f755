@@ -1,0 +1,1 @@
+{"schema":"test/v1","tip":"0c31633092de81f8c3339c4241b7181a0eb3f755","base":"4e50e635b711943166545885ea63838e23f02446","branch":"epic/E-LOOPBIND","committer":"vuluu <quangvu.luu92@gmail.com>","timestamp":1794734389,"unit":null,"integration":null,"e2e":{"waived":"no behaviour change; ten tests ignored by owner ruling"}}
