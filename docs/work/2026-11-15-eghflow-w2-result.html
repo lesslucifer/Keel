@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-GHFLOW.W2 result · The router bot pushes work branches and opens pull requests</h1>
       <p>Delivered and tested against a mock of GitHub. It goes live once you create the App and place its key: the steps are below.</p>
-      <div class="meta">Ready v3 · 2026-11-15 · T3 · WU result · Keel · plan: 2026-11-15-eghflow-w2-plan.html</div>
+      <div class="meta">Ready v4 · 2026-11-15 · T3 · WU result · Keel · plan: 2026-11-15-eghflow-w2-plan.html</div>
     </div>
   </header>
   <main>
@@ -58,7 +58,7 @@ printf 'app_id=%s\ninstallation_id=%s\napp_slug=%s\n' &lt;APP ID&gt; &lt;INSTALL
     <ol data-c="first-run">
       <li>The router runs the script from a checkout that holds this WU, because the guard and the script come from the router's own checkout. <code>scripts/router-gh.sh push wu/E-GHFLOW/w3-…</code> (or this branch) prints <code>PUSHED branch=… sha=… state=new</code>. On GitHub, the branch's push shows the bot as pusher, and "Keel gate" starts.</li>
       <li><code>scripts/router-gh.sh pr-open &lt;branch&gt;</code> prints <code>PR number=… url=…</code>. The pull request is a draft, authored by <code>&lt;slug&gt;[bot]</code>, into the epic, and its body has the tip, the doc table and the notes row.</li>
-      <li>Three facts only the live run can prove: (1) GitHub accepts the token as <code>x-access-token</code> basic auth over https. The credential path itself is tested through git's own credential layer: the token goes once per git run, to github.com over https only, and no hook runs during the push, so nothing of the pushed code ever sees it. (2) <code>GET /repos/…/git/ref/heads/wu/E/x</code> takes a branch name with slashes. (3) The Pull requests permission lets the App comment (<code>post</code>). A failure of any one is a one-line error naming the request.</li>
+      <li>Four facts only the live run can prove: (1) GitHub accepts the token as <code>x-access-token</code> basic auth over https. The credential path itself is tested through git's own credential layer: the token goes once per git run, to github.com over https only, and no hook runs during the push, so nothing of the pushed code ever sees it. (2) <code>GET /repos/…/git/ref/heads/wu/E/x</code> takes a branch name with slashes. (3) The Pull requests permission lets the App comment (<code>post</code>). A failure of any one is a one-line error naming the request. (4) From a real worker session, with the key in place, <code>ln ~/.config/keel/router-gh/app.pem ./x</code> must fail. That proves the sandbox's denyRead also blocks hard-linking the key, or a token file in <code>run/</code>, out of the key directory. The review could not test it: its nested sandbox was refused.</li>
     </ol>
 
     <h2 id="deviations">Deviations</h2>
@@ -78,9 +78,15 @@ printf 'app_id=%s\ninstallation_id=%s\napp_slug=%s\n' &lt;APP ID&gt; &lt;INSTALL
         <ul>
           <li>X1: sync no longer runs git inside a worktree. A worker can write the shared git dir, so it could forge a worktree entry naming a repository whose filters and hooks it owns. So sync only fetches GitHub's branch into <code>refs/remotes/origin/epic/&lt;E&gt;</code>. When no worktree has the branch checked out, sync moves it by <code>update-ref</code>. When one does, it reports <code>state=fetched</code>, and that worktree's own session fast-forwards it. The plan said sync "fast-forwards the local epic/ branch"; it now does so only when no worktree holds it.</li>
           <li>X2: the run's temp dir, which holds the token while the script runs, now lies under the key directory (<code>~/.config/keel/router-gh/run/</code>), which workers cannot read, never in the shared <code>$TMPDIR</code>. The credential helper accepts only a token file there.</li>
-          <li>N1: a worktree entry is believed only when git made it for this repository, by the launcher's rule. A forged entry can neither steer post nor block every call through the key-location check.</li>
+          <li>N1 (reworded in round 3, I1): which worktree holds a branch is policy, not a bound. An entry is believed when it looks as git makes one, by the launcher's rule. Only the first row may be the main checkout. That catches a rewritten link or a half-forged entry, and an entry at the key's parent no longer blocks every call. A worker can still forge an entry whole, because it can write both halves. Then sync reports <code>fetched</code> for the worker's path and leaves the epic unmoved, and post reads, posts and deletes that directory's <code>.router-gh/&lt;name&gt;.md</code>: a comment the worker could have written anyway, still made plain and inert, possibly on another worker's pull request. No code runs, and neither the key nor the token is reached.</li>
           <li>N2 and N4: the script's header says its checks on git data are policy, not a bound, because workers can write the shared git dir; CI's gate and your sign-off are the authority. Replace refs are ignored.</li>
           <li>N3: push sends only Keel's five notes kinds.</li>
+        </ul></li>
+      <li>The security review's third round found no blocker. Three small fixes followed:
+        <ul>
+          <li>I1: the wording above; only the first worktree row may be the main checkout.</li>
+          <li>N1: HOME is normalised. A trailing <code>/</code> is stripped, and a HOME with a character outside <code>[A-Za-z0-9/._-]</code> is refused with that limit named.</li>
+          <li>N2: the exit trap is set before the run dir is made, so a signal leaves nothing behind.</li>
         </ul></li>
       <li><code>.claude/settings.json</code>'s allow lines were not added. The worker file guard refuses that edit, by design, so they are owner step 1.</li>
       <li>The epic plan named "a local mock of the GitHub API" in the notify_owner shape, a loopback server. The worker sandbox refuses every socket, loopback and Unix (probed), so the mock is a fake curl instead. That trade was decided in the WU plan, open point 1. One more test runs the real curl, to prove it reads the script's request config.</li>
@@ -91,8 +97,8 @@ printf 'app_id=%s\ninstallation_id=%s\napp_slug=%s\n' &lt;APP ID&gt; &lt;INSTALL
     <h2 id="evidence">Evidence</h2>
     <div data-item="evidence" data-c="evidence">
       <ul>
-        <li>Commits: 353061b (plan), b3eb4d7 (tests), 3134a43 (this report, v1), f9c17d6 (security review round 1: tests and report v2), the round 2 fix (tests and this report, v3), then your <code>keel mr commit</code> of the script and the rule-bearing edits.</li>
-        <li>Integration: <code>tests/suite/router_gh.rs</code>, 22 tests.
+        <li>Commits: 353061b (plan), b3eb4d7 (tests), 3134a43 (this report, v1), f9c17d6 (security review round 1: tests and report v2), a3d07ea (round 2: tests and report v3), the round 3 fix (tests and this report, v4), then your <code>keel mr commit</code> of the script and the rule-bearing edits.</li>
+        <li>Integration: <code>tests/suite/router_gh.rs</code>, 23 tests.
           <ul>
             <li>push: the branch and its notes land, with no hook and no <code>[check]</code> command run; a WU tip without its own test note is refused; an epic walks the range (docs-only passes, an ungated code commit is refused); a diverged branch is refused; a rejected notes ref warns; every refusal comes before any request; a hostile global git config can neither push a tag nor reroute.</li>
             <li>The https path through git's real credential layer: one token per git run, to github.com only.</li>
@@ -100,13 +106,14 @@ printf 'app_id=%s\ninstallation_id=%s\napp_slug=%s\n' &lt;APP ID&gt; &lt;INSTALL
             <li>pr-ready: only the bot's draft at the local tip; GraphQL errors.</li>
             <li>post: mentions made inert; the file deleted; a link, a link to the key, a hard link, a FIFO, a linked directory or an unsafe file refused and kept.</li>
             <li>sync: the fast-forward of an unchecked-out branch; for a checked-out one only the fetch, the worktree untouched; diverged refused.</li>
-            <li>Forged worktree entries (round 2, X1 reproduced): a repository the worker owns, holding epic/E, with marking clean and smudge filters and a post-merge hook. Sync runs no git there and is not misled. An entry at the key's parent blocks nothing, and one holding a pull request's head cannot steer post.</li>
+            <li>Forged worktree entries (round 2, X1 reproduced): a repository the worker owns, holding epic/E, with marking clean and smudge filters and a post-merge hook. Sync runs no git there and is not misled. An entry at the key's parent blocks nothing. Neither a half-forged entry nor a later row naming the main checkout can steer post. Two-sided: an entry forged whole is believed, and post posts that directory's file, inert (the stated residual).</li>
+            <li>HOME with a trailing <code>/</code> works for push and for the credential mode; a HOME holding a space, a relative one, or <code>/</code> is refused.</li>
             <li>The key, its links, its directory's mode and app.conf; HTTP errors; the credential mode, host check included; the real curl.</li>
           </ul>
           Every run is checked for the token, the JWT and the key in its output, for nothing left in its run dir under the key directory, and for nothing written to the shared <code>$TMPDIR</code>; every API request names an output file under the key directory.</li>
         <li>Unit: <code>tests/suite/router_gh_args.rs</code>, 6 tests: modes and word counts, the branch grammar, the bases, numbers and body names, sync, and a dash in any position (generated).</li>
         <li>Guard and workers: <code>tests/suite/router.rs</code>. New: the five shapes pass and 53 other spellings are denied, and the guard and the script agree on a generated corpus (the only gaps: names <code>git check-ref-format</code> refuses, and a branch as its own base). Updated: the worker deny list, the read rules, the sandbox's <code>denyRead</code>, the file guard (Read, Grep, Glob on the key dir) and the rule-bearing list.</li>
-        <li><code>keel check</code>: lint green; the suite 368 passed, 10 ignored (the notify_owner loopback tests), in the sandbox.</li>
+        <li><code>keel check</code>: lint green; the suite 369 passed, 10 ignored (the notify_owner loopback tests), in the sandbox.</li>
       </ul>
     </div>
 

@@ -804,12 +804,14 @@ fn sync_fetches_githubs_epic_and_moves_only_an_unchecked_out_branch() {
 
 /// X1 reproduced (security review round 2): a worker can write the shared git dir, so it can forge
 /// `$g/worktrees/<id>` entries. One names a repository the worker owns, holding epic/E, whose clean
-/// and smudge filters and post-merge hook leave a mark: sync runs no git there and is not misled
-/// (the entry is not one git made, so epic/E counts as checked out nowhere). One at the key's
-/// parent no longer refuses every call (N1, a denial of service). One holding a pull request's head
-/// cannot make post read a file there (N1).
+/// and smudge filters and post-merge hook leave a mark: sync runs no git there (it runs git in no
+/// worktree) and does not believe the entry. One at the key's parent does not refuse every call.
+/// Entries that do not look as git makes them are not believed by post: a half-forged link, and a
+/// later row naming the main checkout's .git (round 3, I1). Two-sided: an entry forged whole (both
+/// halves) is believed, and post then posts the worker's own file, made inert; that residual is
+/// policy, stated in the script's header.
 #[test]
-fn a_forged_worktree_entry_runs_nothing_and_steers_nothing() {
+fn a_forged_worktree_entry_runs_nothing() {
     let gh = Gh::new();
     let base = gh.root.path().canonicalize().unwrap();
     let mark = base.join("evil-ran");
@@ -854,6 +856,31 @@ fn a_forged_worktree_entry_runs_nothing_and_steers_nothing() {
     assert!(o.status.code() == Some(2) && text(&o).contains("no worktree of this repository has wu/E/y checked out"), "{}", text(&o));
     assert!(p.join(".router-gh/status.md").exists());
     assert_eq!(gh.calls().len(), 2);
+    assert!(!mark.exists());
+
+    // a later row naming the main checkout's .git is not the main checkout (round 3, I1)
+    gh.forge_worktree("mainlike", &gh.repo, "wu/E/w");
+    git(&gh.repo, &["branch", "wu/E/w", "wu/E/x"]);
+    write(&gh.repo, ".router-gh/status.md", "the main checkout's file\n");
+    let mut pr = gh.pr(7, BOT, "own/Keel", &gh.sha("wu/E/x"), true);
+    pr["head"]["ref"] = "wu/E/w".into();
+    gh.routes(&[("GET", "/repos/own/Keel/pulls/7", 200, pr), ("POST", "/repos/own/Keel/issues/7/comments", 201, serde_json::json!({"id": 4}))]);
+    let o = gh.run(&["post", "7", "status"]);
+    assert!(o.status.code() == Some(2) && text(&o).contains("no worktree of this repository has wu/E/w checked out"), "{}", text(&o));
+    assert!(gh.repo.join(".router-gh/status.md").exists());
+
+    // the residual: an entry forged whole is believed; post posts that directory's file, inert
+    let q = base.join("q");
+    write(&q, ".router-gh/status.md", "spoofed @owner\n");
+    std::fs::write(q.join(".git"), format!("gitdir: {}\n", gh.repo.join(".git/worktrees/q").display())).unwrap();
+    gh.forge_worktree("q", &q, "wu/E/v");
+    git(&gh.repo, &["branch", "wu/E/v", "wu/E/x"]);
+    let mut pr = gh.pr(7, BOT, "own/Keel", &gh.sha("wu/E/x"), true);
+    pr["head"]["ref"] = "wu/E/v".into();
+    gh.routes(&[("GET", "/repos/own/Keel/pulls/7", 200, pr), ("POST", "/repos/own/Keel/issues/7/comments", 201, serde_json::json!({"id": 5}))]);
+    let o = gh.run(&["post", "7", "status"]);
+    assert!(o.status.success() && stdout(&o).contains(&format!("file={}/.router-gh/status.md", q.display())), "{}", text(&o));
+    assert!(body_of(&gh.log()[2])["body"].as_str().unwrap().ends_with("spoofed @\u{2060}owner\n"));
     assert!(!mark.exists());
 }
 
@@ -1063,6 +1090,45 @@ os.execv(REAL, [REAL] + a)
         assert_eq!(r["evil"], "", "another host got credentials: {r}");
         assert_eq!(r["github"], format!("protocol=https\nhost=github.com\nusername=x-access-token\npassword={TOKEN}\n"), "{r}");
         assert_eq!(r["again"], "", "the token was given twice in one git run: {r}");
+    }
+}
+
+/// HOME is normalised (round 3, N1): a trailing / still finds the key and the credential mode still
+/// takes its own token file; a HOME holding a character a curl config cannot take is refused, naming
+/// the limit, before anything else.
+#[test]
+fn home_is_normalised_and_its_characters_bounded() {
+    let gh = Gh::new();
+    let slash = format!("{}/", gh.home.display());
+    let o = gh.run_env(&["push", "wu/E/x"], &[("HOME", &slash)]);
+    assert!(o.status.success(), "{}", text(&o));
+    let dir = gh.home.join(".config/keel/router-gh/run/router-gh.Zz9876");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("token"), TOKEN).unwrap();
+    let o = {
+        use std::io::Write;
+        let mut p = common::cmd("sh")
+            .arg(gh.repo.join("scripts/router-gh.sh"))
+            .arg("credential")
+            .arg(dir.join("token"))
+            .arg("get")
+            .env("HOME", &slash)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        p.stdin.take().unwrap().write_all(b"protocol=https\nhost=github.com\n\n").unwrap();
+        p.wait_with_output().unwrap()
+    };
+    assert_eq!(String::from_utf8_lossy(&o.stdout), format!("username=x-access-token\npassword={TOKEN}\n"));
+    std::fs::remove_dir(&dir).unwrap();
+    let spaced = gh.root.path().canonicalize().unwrap().join("a home");
+    std::fs::create_dir_all(&spaced).unwrap();
+    gh.routes(&[]);
+    for bad in [spaced.display().to_string(), "relative".to_string(), "/".to_string()] {
+        let o = gh.run_env(&["push", "wu/E/x"], &[("HOME", &bad)]);
+        assert!(o.status.code() == Some(2) && text(&o).contains("HOME must"), "{bad}: {}", text(&o));
+        assert!(gh.log().is_empty(), "{bad}");
     }
 }
 
