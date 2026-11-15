@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHFLOW2.W2 plan: the router uses the GitHub flow</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHFLOW2.W2 · The router uses the GitHub flow</h1>
+      <p>The router skills learn when to push, open and ready a pull request, how to arm the GitHub watches, and how to keep the tracking issue.</p>
+      <div class="meta">Ready v1 · 2026-11-15 · T3 · WU plan · Keel · epic plan: 2026-11-15-eghflow2-plan.html</div>
+    </div>
+  </header>
+  <main>
+    <h2 id="problem">The problem</h2>
+    <p data-c="problem">The router bot and the GitHub watch exist, but the router's instructions never mention them. So the router still asks you to push, and it cannot hear your comments on GitHub. A gap in the sign-off command also stays open until W3 fixes it.</p>
+
+    <h2 id="changes">What changes for you</h2>
+    <table data-c="changes" data-item="owner-changes">
+      <tr><th>When</th><th>Today</th><th>After W2 reaches main</th></tr>
+      <tr><td>A WU has its test evidence</td><td>The router asks you to push</td><td>The bot pushes it and opens a draft pull request</td></tr>
+      <tr><td>A WU passed its review</td><td>A chat message</td><td>The pull request turns ready and GitHub asks for your review; the typed sign-off still comes by chat and Telegram</td></tr>
+      <tr><td>You comment <code>/keel go</code> or a question on GitHub</td><td>Nobody hears it</td><td>The router hears it within a minute, like a chat message</td></tr>
+      <tr><td>You edit a comment</td><td>—</td><td>The router asks you to post it again; it never acts on an edit</td></tr>
+      <tr><td>GitHub is down</td><td>—</td><td>Chat and Telegram carry everything, as today</td></tr>
+      <tr><td>Before a typed sign-off in a work checkout</td><td>Nothing checks the checkout's git links</td><td>The router first reads the watchdog's latest check and stops on a problem</td></tr>
+    </table>
+    <p>Nothing changes until this lands on main: the router runs in the main checkout.</p>
+
+    <h2 id="example">Example</h2>
+    <ol data-c="example">
+      <li>A worker finishes a WU and writes its test evidence.</li>
+      <li>The router has the bot push the branch and open a draft pull request into the epic. It updates the tracking issue.</li>
+      <li>The review passes. The router marks the pull request ready; GitHub asks you to review.</li>
+      <li>The router sends you the sign-off command by chat and Telegram, and watches the pull request.</li>
+      <li>You comment "why is step 3 needed?". The router hears it and sends the question to the worker.</li>
+      <li>You sign and merge. The bot pushes the epic; GitHub shows the pull request merged.</li>
+    </ol>
+
+    <h2 id="terms">Terms</h2>
+    <table data-c="terms">
+      <tr><th>Term</th><th>Meaning</th></tr>
+      <tr><td>the bot</td><td>The GitHub App the router acts through (<code>scripts/router-gh.sh</code>).</td></tr>
+      <tr><td>the watch</td><td>A background command that waits for one GitHub event and wakes the router (<code>scripts/router-gh-watch.sh</code>).</td></tr>
+      <tr><td>commander</td><td>A GitHub account the router listens to; for Keel, you alone.</td></tr>
+      <tr><td>tracking issue</td><td>One GitHub issue per epic, one sub-issue per WU, written by the bot from git.</td></tr>
+    </table>
+
+    <h2 id="work">The work</h2>
+    <p data-item="requirement">The keel-router skill (both trees, byte-identical) names every router-run shape of the project's GitHub bot and watch, says when the router runs each one, how it handles each event line the watch prints, that the push channel stays the fallback, and the R50 stopgap; and the project-router skill states Keel's facts for them, so that a router reading the two skills can take a WU from push to a merged pull request with no owner command but the sign-off and the merge.</p>
+    <p data-item="maps-to">E-GHFLOW2.W2 (epic plan, W2 card). Backlog github-flow G3. UC-ROUTE-1 (the router arms the GitHub watches; amended at the landing). DEC-61 and DEC-62 (their "the router skills do not arm these watches yet"). Backlog e-router-v2 R50 (the stopgap only; W3 fixes it).</p>
+
+    <table data-c="pieces">
+      <tr><th>File</th><th>What changes</th></tr>
+      <tr><td><code>skills/keel-router/SKILL.md</code> and <code>.claude/skills/keel-router/SKILL.md</code></td><td>The posture's whitelist names the GitHub bot and watch. A short "The GitHub flow" section: the order of the bot's calls, the watches and when each is armed, how each event line is read, the push channel's role. "Epic branch first" and "Permissions": the bot pushes work branches where the project has one. "Keel pre-sign check": the R50 stopgap.</td></tr>
+      <tr><td><code>references/worker-ops.md</code> (both trees)</td><td>A section "The GitHub flow" after "Watch every staged owner action": a table of the bot's shapes, when to run each and the line it prints; a table of the watch kinds; the event table (COMMAND, MESSAGE, BADCOMMAND, EDITED, IGNORED, the review states, MERGED, CLOSED, CHECKS, OVERFLOW, TIMEOUT, UNREACHABLE); the re-arm rule.</td></tr>
+      <tr><td><code>references/checklists.md</code> (both trees)</td><td>WAKE 3 "Armed": every GitHub watch the item needs is armed too.</td></tr>
+      <tr><td><code>.claude/skills/project-router/SKILL.md</code></td><td>Keel's facts: the three GitHub scripts and the App key's place; the workers' new denies and the launcher's per-run admin-dir check (DEC-63); the bot's pushes under "Who runs what" (DEC-61); the GitHub path in the sign-off sequences, by phase; the rule-bearing list brought up to date; <code>scripts/ci-gate.sh</code> and <code>.github/workflows/keel-gate.yml</code> under "What no gate reviews"; the key dir under "Never touch".</td></tr>
+    </table>
+
+    <h2 id="open">Open points</h2>
+    <table data-c="open">
+      <tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr>
+      <tr><td>1</td><td>What do <code>/keel go</code>, <code>hold</code>, <code>retry</code> and <code>answer</code> mean to the router?</td><td><strong>go</strong>: yes to the router's open question or the step it waits on for that item. <strong>hold</strong>: start nothing new on that item until the next go. <strong>retry</strong>: run the item's last failed step again. <strong>answer n A|B</strong>: option A or B of question n in the router's latest ask.</td><td>No decision defines them yet. These are the plain readings; a later ruling can change the skill text.</td></tr>
+      <tr><td>2</td><td>Where does the detailed text go?</td><td>Short rules in SKILL.md; the tables in worker-ops.md, next to the git watch they mirror.</td><td>A new reference file must also be embedded in the keel binary (<code>src/init.rs</code>), a code change this WU does not make.</td></tr>
+      <tr><td>3</td><td>The shipped skill or project-router?</td><td>The shipped skill says "the project's GitHub bot (<code>&lt;gh&gt;</code>) and watch (<code>&lt;gh-watch&gt;</code>)" with a "Keel:" pointer, as it does for the git watch; Keel's paths, ids and phases go in project-router.</td><td><code>keel init</code> ships the skill to every project, and the init tests refuse Keel-only state in it.</td></tr>
+      <tr><td>4</td><td>What if the watchdog has not reported lately (R50 stopgap)?</td><td>The ask says the git links are unchecked since that time; the router does not stage it silently.</td><td>The stopgap needs a recent report. Starting a watchdog with no live worker is not its job.</td></tr>
+      <tr><td>5</td><td>A BADCOMMAND line?</td><td>No command runs and none is guessed. The router tells you why it was refused and the closed list. The other lines are read as your message.</td><td>A typo must not become an order.</td></tr>
+      <tr><td>6</td><td>Edit the router's allow lines in <code>.claude/settings.json</code>?</td><td>No. They stay your optional edit (install §5).</td><td>The guard bounds every call either way, and the file is yours to change.</td></tr>
+    </table>
+
+    <h2 id="details">Details</h2>
+    <p data-item="expected">After this WU: both skill trees are byte-identical; SKILL.md and worker-ops.md name <code>push</code>, <code>pr-open</code>, <code>pr-ready</code>, <code>post</code>, <code>sync</code>, <code>issue</code> and the watch kinds <code>review</code>, <code>comment</code>, <code>merged</code>, <code>checks</code> with <code>since &lt;id&gt;</code>, <code>since latest</code> and OVERFLOW's <code>resume=</code>; every event line the watch prints has a row; the R50 stopgap is in SKILL.md; project-router names the scripts, the key's place, the workers' denies, the bot's pushes and the CI files; <code>cargo test</code> (the init suite) stays green.</p>
+    <div data-item="test-plan" data-c="tests">
+      <p><strong>Integration: waived.</strong> The WU changes no code path (<code>src/</code>, <code>tests/</code>). The skill text ships through <code>include_str!</code>, so the existing init tests run against it: <code>router_skill_is_complete</code> (no Keel-only state, no orphan reference), <code>router_skill_carries_the_dsh_transport_and_the_template_its_slots</code> (both trees byte-identical), <code>router_ships_the_moment_of_action_checklists</code>, <code>embedding_is_complete_and_prefixed</code>. <code>keel check</code> must stay green.</p>
+      <p><strong>Guard check</strong> (in the result): every router-run shape the skills name, matched to a case the guard admits in <code>tests/suite/router.rs</code> (<code>router_guard_admits_the_router_bots_shapes_and_no_other_spelling</code> and <code>router_guard_admits_the_github_watch_and_issue_shapes_and_no_other_spelling</code>).</p>
+      <p><strong>Unit: none.</strong> No code.</p>
+    </div>
+    <ul data-c="more">
+      <li>Rule-bearing: <code>skills/</code> and <code>.claude/skills/</code>. The worker commits the plan and the result; the skill files are staged for one owner <code>keel mr commit</code> after them.</li>
+      <li>Sources: DEC-61 – DEC-63, UC-ROUTE-1 and UC-ROUTE-7, install §5, the headers of <code>scripts/router-gh.sh</code>, <code>scripts/router-gh-watch.sh</code>, <code>scripts/router-gh-command.jq</code> and <code>scripts/router-guard.jq</code>, the launcher's <code>facts</code> and <code>git_dirs_ok</code>.</li>
+      <li>Out of scope: try-it, conflicts and draft (W5, W6), the approval sign-off (W3), required checks and auto-merge (W4). Their skill text comes with them.</li>
+    </ul>
+  </main>
+</body>
+</html>
