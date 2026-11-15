@@ -203,7 +203,11 @@ fn the_writer_runs_from_main_on_the_requests_end_with_three_scoped_permissions()
     }
     assert_eq!(block(&y, "permissions"), ["  contents: write", "  statuses: write", "  pull-requests: read"]);
     assert_eq!(y.matches("permissions").count(), 1, "no job widens the token");
-    assert_eq!(block(&y, "concurrency"), ["  group: keel-sign-off", "  cancel-in-progress: false"], "one writer at a time, none cancelled");
+    assert_eq!(
+        block(&y, "concurrency"),
+        ["  group: keel-sign-off-${{ github.event.workflow_run.head_sha }}", "  cancel-in-progress: false"],
+        "one group per head commit, none cancelled: a later review of another commit never cancels a pending approval (security review I5)"
+    );
     assert!(!y.contains("secrets."), "no secret");
 }
 
@@ -242,20 +246,24 @@ fn the_writer_checks_out_main_only_keeps_no_credential_and_is_one_call_of_its_sc
     assert!(!y.contains("head_branch") && !y.contains("head.ref") && !y.contains("head_ref"), "no head branch is named anywhere");
 }
 
+/// Security review I4: the writer's job holds a write token, so it builds and runs no code a worker
+/// can reach - keel comes from this checkout (main, the owner's), never from the base or the head.
 #[test]
-fn the_writer_script_builds_keel_only_from_the_base_and_never_checks_out_the_head() {
+fn the_writer_script_builds_keel_only_from_main_and_never_builds_the_base_or_the_head() {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/ci-sign-off.sh");
     let mode = std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(&p).unwrap().permissions());
     assert_eq!(mode & 0o111, 0o111, "the workflow step runs it directly");
     let s = read("scripts/ci-sign-off.sh");
     assert!(s.starts_with("#!/bin/sh\n"));
     assert_eq!(s.matches("cargo build").count(), 1);
-    assert!(s.contains("\ngit worktree add -q --detach \"$scratch/base\" \"$base_sha\"\n"), "the one worktree is the base's");
-    assert!(s.contains("(cd \"$scratch/base\" && CARGO_TARGET_DIR=$scratch/target cargo build --locked --quiet)"), "keel is built inside the base worktree");
+    assert!(s.contains("\ngit worktree add -q --detach \"$scratch/base\" \"$base_sha\"\n"), "the one worktree is the base's, read as data");
+    assert!(s.contains("(cd \"$repo_dir\" && CARGO_TARGET_DIR=$scratch/target cargo build --locked --quiet)"), "keel is built in this checkout, main");
+    assert!(s.contains("\nrepo_dir=$(pwd)\n"), "the checkout the workflow made");
     assert_eq!(s.matches("worktree add").count(), 1, "no head worktree");
     let code: String = s.lines().filter(|l| !l.trim_start().starts_with('#')).collect::<Vec<_>>().join("\n");
-    for never in ["checkout", "switch", "git reset", "git merge ", "cargo test", "cargo run", "keel check"] {
+    for never in ["checkout", "switch", "git reset", "git merge ", "cargo test", "cargo run", "keel check", "cd \"$scratch/base\" &&", "$scratch/base/"] {
         assert!(!code.contains(never), "the writer runs {never}");
     }
     assert!(s.contains("unset GH_TOKEN"), "no child inherits the token");
+    assert!(s.contains("\nset -euf\n"), "no word splits into a glob");
 }

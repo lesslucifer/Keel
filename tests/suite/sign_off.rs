@@ -708,5 +708,31 @@ fn the_writer_refuses_a_base_whose_keel_cannot_sign_by_approval() {
     let o = w.run(&[("KEEL", old.to_str().unwrap())]);
     assert!(o.status.success(), "{}", text(&o));
     assert!(w.origin_note(&head).is_none());
-    assert_eq!(w.statuses(), [("error".to_string(), "The keel of epic/e predates sign-off by approval; sign with keel mr confirm".to_string())]);
+    assert_eq!(w.statuses(), [("error".to_string(), "The keel of main predates sign-off by approval; sign with keel mr confirm".to_string())]);
+}
+
+/// Security review N1, N3, N4: a run whose commit is no longer the head signs nothing; a token GitHub
+/// would never mint is refused before any request; a run that stops once it knows the head leaves an
+/// error status on it.
+#[test]
+fn the_writer_checks_the_runs_commit_and_the_token_and_reports_a_stop() {
+    let w = Writer::new(true);
+    let head = w.sha("wu/e/a");
+    w.github(json!([review(6, OWNER, "APPROVED", &head)]));
+    let older = w.sha("wu/e/a^");
+    let o = w.run(&[("RUN_HEAD_SHA", &older)]);
+    assert!(o.status.success() && text(&o).contains("no longer the head"), "{}", text(&o));
+    assert!(w.origin_note(&head).is_none() && w.statuses().is_empty());
+    for bad in ["ghs_a b", "ghs_\"x", "ghs_'x", "ghs_\\x", "ghs_\u{7f}"] {
+        w.github(json!([]));
+        let o = w.run(&[("GH_TOKEN", bad)]);
+        assert_eq!(o.status.code(), Some(2), "{bad:?}: {}", text(&o));
+        assert!(w.log().is_empty(), "{bad:?} reached GitHub");
+    }
+    // origin lost the head branch between the review and the run: the fetch fails, the status says so
+    w.github(json!([review(6, OWNER, "APPROVED", &head)]));
+    git(&w.origin, &["update-ref", "-d", "refs/heads/wu/e/a"]);
+    let o = w.run(&[]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert_eq!(w.statuses(), [("error".to_string(), "The sign-off writer stopped (exit 1); its log says why".to_string())]);
 }
