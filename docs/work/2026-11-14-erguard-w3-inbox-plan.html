@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af859b39f34851f0dfb24a1" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-RGUARD.W3 plan: the inbox channel</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-RGUARD.W3 · The inbox channel</h1>
+      <p>A worker's report wakes the router. No reminder, no schedule.</p>
+      <div class="meta">T3 · WU plan · 2026-11-14 · epic E-RGUARD · WU E-RGUARD.W3 · base <code>epic/E-RGUARD</code> at <code>cd90c16</code></p>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-item="requirement" data-c="requirement">On DeepSeek Harness (DSH) a worker cannot message the router, so a finished WU sits in a transcript until a clock or the owner wakes the router. This WU gives the router a file inbox: a worker posts one short report, the router's armed watcher prints it at once, <code>consume</code> is the ack, and the reminder that delivered reports is deleted.</p>
+<p data-item="maps-to">Epic E-RGUARD, W3 · UC-ROUTE-5 (a DSH worker's report) and UC-ROUTE-6 (the posture and its wake).</p>
+
+<h2 id="for-you">What changes for you</h2>
+<table data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>A worker finishes</td><td>The router reads the transcript at its next wake</td><td>The router wakes in a second or two with the report in hand</td></tr>
+    <tr><td>The router waits</td><td>A reminder every 10 minutes, or one fleet wake (W1)</td><td>One armed watcher; no reminder, no schedule, no loop</td></tr>
+    <tr><td>Nothing happens</td><td>A full model pass each tick</td><td>One wake when the watcher's bound ends (110 min at most); no pass in between</td></tr>
+    <tr><td>A worker wedges without posting</td><td>The tick noticed the silence</td><td>Nothing notices it; the router finds out at its next wake, and reads the status then</td></tr>
+    <tr><td>A report is acknowledged</td><td>One more message in a transcript</td><td><code>consume &lt;id&gt;</code> moves the file; the id is quoted back</td></tr>
+  </tbody>
+</table>
+
+<h2 id="case">A report, in steps</h2>
+<ol data-c="case-steps">
+  <li>The router arms <code>sh scripts/router-inbox.sh watch 6600</code> as a background command.</li>
+  <li>A worker runs <code>sh scripts/router-inbox.sh post e-rguard-w3 REPORT "W3 done: tip 1a2b3c4"</code>. The file appears at once; the command prints <code>POSTED id=…</code>.</li>
+  <li>The watcher wakes inside its poll, prints the report and its body, and exits 0.</li>
+  <li>The router runs <code>sh scripts/router-inbox.sh consume &lt;id&gt;</code> and sees <code>CONSUMED</code>.</li>
+  <li>The router acks the worker with <code>worker_send … "ack &lt;id&gt;"</code>, which names the same id.</li>
+</ol>
+
+<h2 id="terms">Terms</h2>
+<table data-c="terms">
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>Inbox</td><td><code>&lt;main checkout&gt;/.router/inbox</code>: one file per message, git-ignored, unbacked</td></tr>
+    <tr><td>Post</td><td>Write one complete message file. Atomic: a dotfile is renamed into place</td></tr>
+    <tr><td>Watch</td><td>A read-only background command that prints the oldest message, or exits 1 at its bound</td></tr>
+    <tr><td>Ack</td><td><code>consume</code> moves the file to <code>read/</code>. Delivery is at-least-once until then</td></tr>
+    <tr><td>Wedge</td><td>A worker that is alive but makes no progress and posts nothing</td></tr>
+  </tbody>
+</table>
+
+<h2 id="work">The work</h2>
+
+<h3 id="script">1 · The script</h3>
+<p><b>In short:</b> the prototype from the 2026-11-14 probe, cleaned to repo style and POSIX sh. Five verbs; read-only except the inbox itself.</p>
+<ul>
+  <li><code>scripts/router-inbox.sh</code>: <code>init</code> · <code>post &lt;from&gt; &lt;kind&gt; &lt;text&gt;…</code> · <code>watch &lt;seconds&gt;</code> · <code>consume &lt;id&gt;</code> · <code>status</code>.</li>
+  <li>The inbox resolves from the git common dir, so a copy in any worktree writes the main checkout's inbox; <code>ROUTER_INBOX_DIR</code> overrides it for tests.</li>
+  <li>No delete verb and no redirect into a system path: the host's auto review denies a script that carries one. Cleanup is the owner's manual move.</li>
+  <li>Junk files and symlinks are skipped and never followed; the header id must match the file name; <code>kind</code> is a closed set.</li>
+</ul>
+
+<h3 id="test">2 · The test</h3>
+<p><b>In short:</b> <code>tests/router_inbox.rs</code> spawns the shipped script through its process boundary, one temp inbox per case. The prototype's 27 checks are the contract.</p>
+<ul>
+  <li>Post, immediate delivery, header plus body, order, timeout, idempotent consume, two concurrent writers.</li>
+  <li>Junk and a symlink skipped, a forged header skipped, a long body bounded, a read-only inbox directory.</li>
+  <li>A killed watcher loses nothing; a symlink in the inbox is refused by <code>consume</code>.</li>
+  <li>Hermetic: <code>ROUTER_INBOX_DIR</code> under <code>tempfile</code>, no network, no repository path.</li>
+</ul>
+
+<h3 id="rules">3 · The rule text</h3>
+<p><b>In short:</b> the shipped skill says a worker posts and the router's watcher wakes it; no text may claim a timer is allowed.</p>
+<ul>
+  <li><code>skills/keel-router/references/worker-ops.md</code>: a new section for the report channel; the wake checklist's fleet half becomes the armed watcher.</li>
+  <li><code>skills/keel-router/SKILL.md</code>: the transport table's Report row and the "no heartbeat" bullet name the post, the watcher and the ack.</li>
+  <li><code>skills/keel-router/references/brief-skeleton.md</code>: a worker's report is a <code>post</code>, with the inbox path and the id rule; the <code>.router-ready.&lt;name&gt;</code> marker idea is not used.</li>
+  <li>Both skill trees byte-identical in the same commit.</li>
+</ul>
+
+<h3 id="decision">4 · The decision</h3>
+<p><b>In short:</b> one row in <code>docs/decisions/router.html</code> (DEC-58) names the channel, why a push channel beats a poll on DSH, and its limits.</p>
+
+<h3 id="guard">5 · Claude Code</h3>
+<p><b>In short:</b> the router guard admits the router's own <code>init</code>, <code>watch</code>, <code>consume</code> and <code>status</code> as plain-word shapes; <code>post</code> stays denied. The router never posts.</p>
+<p>A <b>worker</b> posting on Claude Code needs the launcher's sandbox to allow writing the inbox. That widens the bound DEC-46 sets for every worker, so it is <b>out of scope</b> here and is reported as a follow-up.</p>
+
+<h3 id="config">6 · The config proposal</h3>
+<p><b>In short:</b> <code>.keel/config.toml</code> lists each <code>scripts/router-*</code> file in <code>rule_bearing</code> by name. This WU stages one added name, <code>scripts/router-inbox.sh</code>, so a later edit to the channel cannot land unreviewed.</p>
+
+<h2 id="open-points">Open points</h2>
+<p>Work goes on at these answers. Comment to overrule.</p>
+<table data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>What replaces liveness for a worker that posts nothing?</td><td><b>Nothing.</b> The router finds out at its next wake and reads <code>worker_status</code> and the transcript then</td><td>Silence cannot tell a wedge from a long turn; a clock adds a model pass, not information. The 2026-11-11 ruling forbids the router's own loop or timer, and the watcher's bound is the wake it already has. Cost stated: a fleet where every worker wedges is noticed at the next wake, at most 110 minutes while a watcher is armed, or the owner's next message if none is</td></tr>
+    <tr><td>2</td><td>May a Claude Code worker post too?</td><td><b>Not in this WU.</b> The launcher's sandbox would have to allow <code>&lt;main&gt;/.router/inbox</code></td><td>That weakens DEC-46 for every worker, and Claude Code workers already report by <code>SendMessage</code>; it is a separate owner change</td></tr>
+    <tr><td>3</td><td>May the router post?</td><td><b>No.</b> The guard admits <code>init|watch|consume|status</code> only</td><td>A free-text body cannot pass the guard's plain-word rule, and the router has nothing to report to itself</td></tr>
+    <tr><td>4</td><td>The interim rule's fleet wake is on W1's unmerged branch; where does it go?</td><td><b>Deleted when W1 lands</b>, not merged beside this text</td><td>At this base the section, its placeholder date and <code>references/checklists.md</code> do not exist, so this branch cannot delete them; the result names the exact text to drop at reconciliation</td></tr>
+    <tr><td>5</td><td>Two messages in one second: which first?</td><td><b>The id's random suffix</b>, not write order</td><td>No gap and no loss; the doc says so instead of promising order it cannot give</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="contract">The contract</h3>
+<table data-item="expected" data-c="expected">
+  <thead><tr><th>Command</th><th>Observable</th></tr></thead>
+  <tbody>
+    <tr><td><code>init</code></td><td><code>READY dir=… read=…</code>, exit 0</td></tr>
+    <tr><td><code>post &lt;from&gt; &lt;kind&gt; &lt;text&gt;…</code></td><td><code>POSTED id=&lt;epoch&gt;-&lt;random&gt;</code>, exit 0; the body is text or stdin; 4,000 bytes at most</td></tr>
+    <tr><td><code>watch &lt;seconds&gt;</code></td><td>At once, then every poll: one <code>MSG id=… from=… kind=… age=…s bytes=…</code> line and the indented body, exit 0; <code>TIMEOUT kind=inbox</code> exit 1 at the bound; <code>NO-INBOX</code> exit 2</td></tr>
+    <tr><td><code>consume &lt;id&gt;</code></td><td><code>CONSUMED id=…</code> once, then <code>CONSUMED-ALREADY id=…</code>, exit 0; <code>MISSING</code> exit 2</td></tr>
+    <tr><td><code>status</code></td><td><code>INBOX dir=&lt;dir&gt; pending=&lt;n&gt; oldest=&lt;id|none&gt; read=&lt;n&gt; orphans=&lt;n&gt; junk=&lt;n&gt;</code> (junk added in review round 2)</td></tr>
+    <tr><td>bad input</td><td>exit 2 with a one-line reason, before any write</td></tr>
+  </tbody>
+</table>
+
+<h3 id="test-plan">Test plan</h3>
+<table data-item="test-plan" data-c="test-plan">
+  <thead><tr><th>Layer</th><th>Test</th><th>Covers</th></tr></thead>
+  <tbody>
+    <tr><td>Integration (WU)</td><td><code>tests/router_inbox.rs</code></td><td>The whole contract above, spawned as the router runs it; every prototype check, plus the killed watcher and the symlinked consume</td></tr>
+    <tr><td>Unit</td><td>waived</td><td>The script is a command; its contract is argv, stdout and the files it moves. A Rust unit test would test an implementation that is not Rust</td></tr>
+    <tr><td>Guard pin</td><td><code>tests/router.rs</code>, staged with the guard</td><td>The new shapes admitted, <code>post</code> and every non-plain-word shape denied</td></tr>
+    <tr><td>Rule text</td><td>the existing inventory tests</td><td>The two skill trees byte-identical; the reference list and the transport table unchanged in shape</td></tr>
+  </tbody>
+</table>
+
+<h3 id="acceptance">Acceptance</h3>
+<ul data-c="acceptance">
+  <li>A post delivered and consumed by the exact commands, with the ids quoted.</li>
+  <li>Twenty-seven prototype checks green, plus the killed watcher and the symlinked consume.</li>
+  <li>The guard admits <code>init|watch|consume|status</code> and refuses <code>post</code>.</li>
+  <li>No shipped text claims a reminder, schedule or loop for the router; the report timer is gone.</li>
+  <li>The rule-bearing changes are staged, never committed by this session.</li>
+</ul>
+
+<h3 id="scope">Out of scope</h3>
+<ul data-c="scope">
+  <li>Any liveness check, watchdog or reminder on DSH.</li>
+  <li>Widening the Claude Code worker sandbox (DEC-46).</li>
+  <li>Authenticity of a sender, pruning <code>read/</code>, or backing up <code>.router/</code>.</li>
+  <li>Rewriting W1's interim rule; it is reconciled when W1 lands.</li>
+</ul>
+
+<h3 id="staging">What is staged for you</h3>
+<ul data-c="staging">
+  <li><code>skills/</code> and <code>.claude/skills/</code> text, <code>docs/decisions/router.html</code>, <code>scripts/router-guard.jq</code>, <code>.claude/settings.json</code>, <code>.keel/config.toml</code>, and the guard pin in <code>tests/router.rs</code>.</li>
+  <li>One owner command commits them; the WU notes, preflight and independent review run on that new tip.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

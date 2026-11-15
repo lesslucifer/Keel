@@ -197,6 +197,56 @@ idle, reaches you without a heartbeat of your own.
   never resumed (a resume of a running session starts a copy); its recurring
   schedule expires after 7 days: if reports stop, stop it and start it again.
 
+## The report channel (DSH)
+
+On DSH a worker cannot message you: it posts one short report to a file inbox,
+and an armed watcher is the wake. One script, one watcher, no reminder. The
+script is the project's (`<inbox>`; Keel's is `scripts/router-inbox.sh`), named
+by its project-router skill; `keel init` ships none. Where the project ships
+none, a worker's report is its final transcript message alone, read at every
+wake, and a turn that ends with live workers says in one line that only the
+owner's next message can wake you. The router runs `<inbox>` bare (the guard's
+shape); a worker runs `sh <inbox> post`.
+
+- **Arm it once for the whole fleet**, before the first dispatch and again on
+  every wake: `<inbox> watch 6600` as a background Bash command
+  (`run_in_background: true`, `timeout: 7200000`), named in the ask
+  (`Watching: the report channel`). It checks at once, then every 2 s, and prints
+  one `MSG id=… from=… kind=… age=…s bytes=…` line plus the indented body, then
+  exits 0 — that exit is the wake. At its bound it prints `TIMEOUT kind=inbox`
+  and exits 1: run the wake checklist, then arm the same command again. One
+  watcher serves the fleet; a second only duplicates what it prints.
+- **A worker posts its report** to the same inbox:
+  `sh <inbox> post <name> REPORT "<summary>"` (a body on stdin also works). It
+  prints `POSTED id=…`, and the worker quotes that id in its final transcript
+  message. Keel's inbox is `<main checkout>/.router/inbox`; its script resolves
+  it from the git common dir, so a copy in the worker's worktree posts to the
+  router's inbox. The 4,000-byte cap (the watcher prints at most 80 lines) and
+  the closed kinds are the boundary: a summary, never the full report, which
+  stays the worker's final transcript message.
+- **Consume is the ack.** `<inbox> consume <id>` after you have
+  read and recorded the message; it prints `CONSUMED`, then `CONSUMED-ALREADY`
+  on a repeat. Delivery is at-least-once: an unacked message returns on the next
+  watch, so quote the id back and never treat a print as the ack. `bytes=` is the
+  cleaned, capped body the watcher printed, never the file's size. `status` counts
+  pending, read, orphan and junk files without writing, and `oldest=` is the id
+  `consume` takes. Junk (a file `post` could not have written) and symlinks are
+  skipped, never followed, and never printed; a watch judges each once. `read/`
+  is never pruned and `.router/` is one checkout, git-ignored and unbacked:
+  deleting it drops every pending message, so move old files out of `read/`, and
+  junk out of the inbox, by hand.
+- **No liveness check.** A worker that wedges without posting wakes nobody: a
+  wedge and a long turn look identical, and silence cannot tell them apart. Do
+  not arm a reminder, a schedule, a loop or a watchdog for it; at every wake read
+  `worker_status` and that worker's transcript, and that is when you find it.
+  While the watcher is armed its bound is the longest silence (110 minutes at
+  most); with none armed, only the owner's next message. Say that plainly when
+  the owner asks what detects a stuck worker.
+- **Claude Code workers do not post.** Their launcher sandbox does not allow the
+  inbox (widening it would weaken DEC-46), and they report by `SendMessage`. On
+  Claude Code the channel is a redundant path: use it only for a mixed fleet that
+  needs one inbox.
+
 ## Watch every staged owner action
 
 Under the router posture you don't run shell loops. Git-visible owner actions
@@ -274,55 +324,33 @@ until id=$(gh run list --workflow <wf>.yml --branch <br> --limit 1 --json databa
 echo "RUN $id"; gh run view $id --json conclusion,jobs -q '.jobs[]|"\(.name): \(.conclusion) · failed: \([.steps[]|select(.conclusion=="failure")|.name]|join(" | "))"'
 ```
 
-## Wake checklist (no loop; a DSH fleet wake pending a ruling)
+## Wake checklist (no heartbeat)
 
-The router runs no loop or timer (owner ruling 2026-11-11; the Claude Code guard
-denies `loop`, `CronCreate` and `ScheduleWakeup`). It wakes on a worker's message,
-a watch line, an idle notice or the owner. The short ordered form is
-`checklists.md` WAKE; what a wake must cover here:
+The router runs no loop, timer or reminder (owner ruling 2026-11-11; the Claude
+Code guard denies `loop`, `CronCreate` and `ScheduleWakeup`). It wakes on a
+worker's message, a watch line, an idle notice, the owner, or a DSH worker's post
+on the report channel. The short ordered form is `checklists.md` WAKE; what a
+wake must cover here:
 
 1. **Workers.** Claude Code: `ListAgents` — every expected name listed, busy or
    idle; idle without a report → `SendMessage` asking for it; not listed unasked →
    a fresh worker from a new brief that keeps and checks uncommitted work, and
    confirm `RUNNING`; blocked on a prompt or silent too long → tell the owner;
    workers live and no `watchdog-<your-name>` listed → `watchdog start`; reported
-   and clean → `stop`. DSH: `worker_list`, then the transcript tail of each live
-   worker with `worker_output`, and the same decisions.
+   and clean → `stop`. DSH: a `MSG` line from the report channel's watcher names
+   the post that woke you — record it, then `consume <id>`; then `worker_list`,
+   the transcript tail of each live worker with `worker_output`, and the same
+   decisions.
 2. **Worktrees.** Branch, tip, and the notes on the tip
    (`git log -1 --notes=<ref> --format=%N`).
 3. **Pending.** Owner actions, runs and doc comments; relay a run or a comment
-   finding to a worker; re-arm every watcher that is gone.
+   finding to a worker; re-arm every watcher that is gone, and on DSH the report
+   channel (`<inbox> watch 6600`) in this turn.
 4. **Advance** anything unblocked: the next WU, the step between workers, the
    staged owner commands.
 5. **Close.** Changed or needs the owner → terminal + push ending
    `What you need to do now:`; else one line. Never run reserved commands; stay
    inside the posture.
-
-### Wake on DSH
-
-A DSH worker sends nothing: `worker_spawn` has no report channel, so a worker that
-finishes cannot wake the router, and `worker_output` is a read, not a message. What
-wakes a DSH router is a host event: an owner message, a finished background job, or
-a host reminder.
-
-**No owner ruling grants the exception below, and it is not in force.** A commit
-that makes it binding may not be signed until the owner records a dated ruling;
-that ruling replaces this paragraph, and nothing else in this skill may assume the
-exception in the meantime.
-
-- **One reminder, armed once, re-armed only on a wake.** A single host reminder
-  covers the whole fleet: arm it before the first dispatch with the same 5-minute
-  cadence as the watchdog (DEC-45). Re-arm it once per wake; never a second reminder
-  beside it; stop it when the last worker is `stopped`. It is a wake, not a
-  heartbeat: one WAKE pass per firing, no loop of your own, and no poll in between.
-  It would be the one exception to "no loop or timer", and only where workers
-  cannot message.
-- **It covers every live worker.** One reminder asks about the fleet, never one
-  watch or one reminder per worker: WAKE.3 checks that this single wake is armed,
-  and one WAKE pass reads every live worker.
-- **Never close a turn with a live worker and nothing armed.** That is the DSH form
-  of "watch, never wait to be told": without it, the next thing that wakes the
-  router is the owner.
 
 ## Read failures / third-party source (a read-only worker runs these)
 ```sh

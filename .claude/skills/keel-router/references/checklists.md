@@ -38,31 +38,30 @@ and "Talking to the owner" are the long form; this file never replaces them.
 6. **Wake.** Name the wake you will arm, and arm it when its subject exists: the
    watch for a staged owner action in the turn you stage it, and the Claude Code
    watchdog once the first background worker is `RUNNING`, never before one
-   exists. On DSH no fleet wake is armed: none is in force there, because its
-   exception has no owner ruling (`worker-ops.md` "Wake on DSH"), so your message
-   says no worker's finish can wake you. Cost: a fleet that finishes into silence,
-   or a watchdog guarding nothing.
+   exists. On DSH the fleet wake is the report channel's watcher where the project
+   ships an inbox script, armed before the first dispatch (`worker-ops.md` "The
+   report channel (DSH)"); with none, your message says only the owner can wake
+   you. Cost: a fleet that finishes into silence, or a watchdog guarding nothing.
 7. **Close the first message** with `What you need to do now:` naming the one task,
    or `nothing`.
 
 ## WAKE — on every wake, before any tool call
 
-A wake is one owner message, one worker's message, one watch or job line, one host
-reminder, one idle notice.
+A wake is one owner message, one worker's message or report-channel post, one
+watch or job line, one idle notice.
 
 1. **What woke me.** Name it and the item it belongs to; do that item, not the board.
+   A report-channel post is acked with `consume <id>` once it is recorded.
 2. **Fleet.** Read every live worker's output since the last wake, digest it, verify
    its headline claim against git (a tip, a note, a status), then decide: advance,
    steer, stop. Cost: a relayed claim nobody checked.
-3. **Armed.** Is the fleet's one wake armed — the Claude Code watchdog — and every
-   staged owner action watched? Arm what is missing in this turn; if nothing can be
-   armed, say so in one line. On DSH no fleet wake is in force (`worker-ops.md`
-   "Wake on DSH" — no owner ruling): never arm one, and a turn that ends with live
-   workers names the message the owner needs to send. Where a wake is yours to arm,
-   never close a turn with a live worker and nothing armed. The exception, if it is
-   ever ruled in, is one reminder for every live worker: never one per worker, and
-   never a second reminder beside it. Cost: the owner is the only thing that can
-   wake you (2026-11-14: four live workers, no wake).
+3. **Armed.** Is the fleet's one wake armed — the Claude Code watchdog, or on DSH
+   the report channel's watcher where the project ships one (`worker-ops.md` "The
+   report channel (DSH)") — and every staged owner action watched? Arm what is
+   missing in this turn; if nothing can be armed, say so in one line. Never close a turn with a live worker and nothing armed. The
+   DSH watcher serves every live worker: never one per worker, never a second
+   watcher beside it, and never a reminder or a schedule instead. Cost: the owner
+   is the only thing that can wake you (2026-11-14: four live workers, no wake).
 4. **Denials.** Was any call denied since your last message? Name it with the exact
    command in this message. Never retry it, never hand it to a worker. Cost: a denial
    that stays invisible while a worker is asked to do the same thing (K13).

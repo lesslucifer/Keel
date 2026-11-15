@@ -263,7 +263,7 @@ in another skill.
 |---|---|---|
 | Dispatch | `<launcher> spawn <name> <worktree> <brief> <model>` (standard); `Agent` with a name and an explicit model only where the posture is not enforced | `worker_spawn` with the worktree as its workspace and the brief as its prompt; the name is its handle |
 | Follow-up | `SendMessage` to its name: a steer while busy, the next task while idle | `worker_send` queues one turn, which runs after its current one |
-| Report | its `SendMessage` to you (a subagent: its `SubagentHandback`), one self-contained report | none is sent: `worker_output` reads the transcript, at each wake and before each ask |
+| Report | its `SendMessage` to you (a subagent: its `SubagentHandback`), one self-contained report | its final transcript message, read with `worker_output` at every wake and before every ask; where the project ships an inbox script (`<inbox>`), also a short post: `sh <inbox> post <name> REPORT "<summary>"` prints `POSTED id=…`, your armed `<inbox> watch` prints it and `<inbox> consume <id>` acks it |
 | Fleet list | `ListAgents` (a subagent: the session's roster); the launcher's CLI behind it | `worker_list` |
 | Status | the `ListAgents` row says busy or idle; the watchdog reports `DONE` or `STUCK` | `worker_status`: running, idle, ready or stopped |
 | Stop | `<launcher> stop <name>` (a subagent: `TaskStop`) | `worker_stop`, idempotent; a stopped worker is never revived |
@@ -274,12 +274,20 @@ in another skill.
   `worker_spawn` starts in the worktree it names, and that directory never
   changes. Worker work goes to `worker_spawn`; a subagent is for a short
   read-only check, never for a WU.
-- **A DSH worker does not message you.** Its report is its transcript: read it
-  with `worker_output` at every wake and before every ask, digest it yourself,
-  and verify its claims against git like any report. A quiet worker is a
-  `worker_status` row plus its transcript, never a missing message. Answer or
-  steer it with `worker_send`, one turn per call; a busy worker takes it at its
-  next step.
+- **A DSH worker posts; it does not message you.** Where the project ships an
+  inbox script (`<inbox>`, named by its project-router skill; `keel init` ships
+  none), the worker's short report is `sh <inbox> post <name> REPORT "<summary>"`
+  (a body on stdin also works, up to 4,000 bytes), which prints `POSTED id=…` for
+  its final message. You arm `<inbox> watch 6600` as a background command and it
+  prints `MSG id=…`; you ack with `<inbox> consume <id>` and quote that id back.
+  With no inbox script, nothing is posted and the transcript alone is the report.
+  Its transcript stays the evidence:
+  read it with `worker_output` at every wake and before every ask, digest it
+  yourself, and verify its claims against git like any report. A worker that
+  posts nothing is invisible, and a wedge looks exactly like a long turn:
+  nothing on DSH checks for it, so read `worker_status` and the transcript at
+  your next wake. Answer or steer it with `worker_send`, one turn per call; a
+  busy worker takes it at its next step.
 - **The DSH persona is the worktree's `AGENTS.md` plus the skills plus the
   brief.** There is no project-scoped agent definition to select and no
   per-worker preset to pass: the session reads that directory's instruction
@@ -319,7 +327,10 @@ in another skill.
   reversible choices with a recommendation, else stop with options. Answers go
   in your next message.
 - Report by `SendMessage` to the router's current name: what, doc, full sha,
-  ordered cd-prefixed commands, gate state, no-independent-review list, how to try.
+  ordered cd-prefixed commands, gate state, no-independent-review list, how to
+  try. On DSH that report is the worker's final transcript message; where the
+  project ships `<inbox>`, it also posts a short summary (the verdict, the full
+  sha, the gate state) and quotes the id the post printed.
 - Retire with `<launcher> stop <name>` only when idle AND clean (its WU merged,
   or no longer needed); the launcher refuses a busy worker. Once the `merged`
   watch fired and the worker is stopped, `<launcher> worktree remove <branch>`
@@ -337,22 +348,16 @@ in another skill.
   none came), then retire it; `STUCK (quiet …)` → message the worker first;
   `STUCK (permission prompt)` → the owner answers it (`claude attach <id>`), you
   cannot. A watchdog whose reports stop is yours to notice and start again.
-- **On DSH no worker's finish can wake you yet.** `worker_spawn` sends no message,
-  so a worker's finish cannot wake you. The fleet wake that would close that gap
-  has no owner ruling and is not in force, so do not arm it
-  (`references/worker-ops.md` "Wake on DSH"). Until one is recorded, a turn that
-  ends with live workers says in one line that no worker's finish can wake you, and
-  names the message the owner needs to send.
-- **No heartbeat**: the router routes; it runs no loop or timer (owner ruling
-  2026-11-11). Workers report by message and every staged owner action has a
-  watch; each wake runs the wake checklist (`references/checklists.md` WAKE) and
-  re-arms. A background spawn counts only once the launcher printed `RUNNING`.
-  The one exception would be a host whose workers cannot message (DSH): one wake
-  for the whole fleet, armed once before the first dispatch and re-armed only on a
-  wake, never a second reminder; it is a wake, not a heartbeat. It has no owner
-  ruling yet and is not in force: no owner ruling grants it, and a commit that makes
-  it binding may not be signed until the owner records a dated ruling
-  (`references/worker-ops.md` "Wake on DSH").
+- **No heartbeat**: the router routes; it runs no loop, timer or reminder of its
+  own (owner ruling 2026-11-11). On DSH, where the project ships `<inbox>`, a
+  worker reports by posting to the report channel (`references/worker-ops.md`
+  "The report channel (DSH)") and your armed `watch` is the wake; every staged owner action has a watch too.
+  Each wake runs the wake checklist (`references/checklists.md` WAKE) and
+  re-arms the watcher in the same turn. That watcher's own bound is the one self-renewed wake: at
+  6,600 s it wakes you about every 110 minutes (roughly 13 a day while armed)
+  only to re-arm and read the fleet. Nothing schedules it; it costs one pass per
+  bound, not a tick per message; once the last worker is retired, do not re-arm it. A
+  background spawn counts only once the launcher printed `RUNNING`.
 
 ## Permissions
 
