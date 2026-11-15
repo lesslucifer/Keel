@@ -332,29 +332,68 @@ fn the_ci_job_runs_the_checkouts_check_and_a_red_test_is_red() {
     assert!(o.status.success(), "a push to main runs ci: {}", text(&o));
 }
 
-#[test]
-fn without_keel_the_script_builds_one_from_the_base_commit_and_uses_it() {
-    let ci = Ci::new(MARK_TEST);
-    ci.checkout("wu/e/a");
+/// A `cargo` that records how the script built keel - its arguments, its working directory, the
+/// commit there, and every cargo or rustup config file a real cargo would read from that directory
+/// up - and makes a keel that records its calls.
+fn fake_cargo(ci: &Ci) -> String {
     let shims = ci.tmp.join("shims");
     std::fs::create_dir_all(&shims).unwrap();
     let cargo = r#"#!/bin/sh
 printf '%s\n' "$*" > "$MARKS/cargo-args"
-while [ $# -gt 0 ]; do [ "$1" = --manifest-path ] && manifest=$2; shift; done
-git -C "$(dirname "$manifest")" rev-parse HEAD > "$MARKS/cargo-head"
+pwd -P > "$MARKS/cargo-cwd"
+git rev-parse HEAD > "$MARKS/cargo-head"
+: > "$MARKS/cargo-configs"
+d=$(pwd -P)
+while :; do
+  for f in .cargo/config.toml .cargo/config rust-toolchain.toml rust-toolchain; do
+    [ -e "$d/$f" ] && echo "$d/$f" >> "$MARKS/cargo-configs"
+  done
+  [ "$d" = / ] && break
+  d=$(dirname "$d")
+done
 mkdir -p "$CARGO_TARGET_DIR/debug"
 printf '#!/bin/sh\necho "$*" >> "$MARKS/keel-calls"\n' > "$CARGO_TARGET_DIR/debug/keel"
 chmod +x "$CARGO_TARGET_DIR/debug/keel"
 "#;
     std::fs::write(shims.join("cargo"), cargo).unwrap();
     std::fs::set_permissions(shims.join("cargo"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    common::path_with(&shims)
+}
+
+#[test]
+fn without_keel_the_script_builds_one_from_the_base_commit_out_of_the_heads_reach() {
+    let ci = Ci::new(MARK_TEST);
+    git(&ci.dev, &["switch", "-q", "wu/e/a"]);
+    write(&ci.dev, ".cargo/config.toml", "[build]\nrustc-wrapper = \"/tmp/evil\"\n");
+    write(&ci.dev, "rust-toolchain.toml", "[toolchain]\nchannel = \"evil\"\n");
+    commit(&ci.dev, "a head that would steer cargo and rustup");
+    git(&ci.dev, &["push", "-q", "--no-verify", "origin", "wu/e/a"]);
+    ci.checkout("wu/e/a");
+    let path = fake_cargo(&ci);
     let sha = ci.sha("wu/e/a");
-    let o = ci.job("ci", &[("HEAD_BRANCH", "wu/e/a"), ("HEAD_SHA", &sha)], None, Some(&common::path_with(&shims)));
+    let o = ci.job("ci", &[("HEAD_BRANCH", "wu/e/a"), ("HEAD_SHA", &sha)], None, Some(&path));
     assert!(o.status.success(), "{}", text(&o));
     let read = |f: &str| std::fs::read_to_string(ci.marks.join(f)).unwrap();
-    assert!(read("cargo-args").starts_with("build --locked "), "{}", read("cargo-args"));
+    assert_eq!(read("cargo-args"), "build --locked --quiet\n");
     assert_eq!(read("cargo-head").trim(), ci.sha("epic/e"), "keel is built from the base, not the head");
+    assert!(Path::new(read("cargo-cwd").trim()).starts_with(ci.tmp.canonicalize().unwrap()), "built outside the checkout: {}", read("cargo-cwd"));
+    assert_eq!(read("cargo-configs"), "", "no cargo or rustup file of the head is in the build's reach");
     assert_eq!(read("keel-calls"), "check\n");
+}
+
+#[test]
+fn a_fork_pull_request_from_a_branch_named_main_still_builds_keel_from_its_base() {
+    let ci = Ci::new(MARK_TEST);
+    let path = fake_cargo(&ci);
+    let (head, base) = (ci.sha("wu/e/a"), ci.sha("main"));
+    let pr = [("HEAD_BRANCH", "main"), ("HEAD_SHA", head.as_str()), ("BASE_BRANCH", "main"), ("BASE_SHA", base.as_str())];
+    let o = ci.job("ci", &pr, None, Some(&path));
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(std::fs::read_to_string(ci.marks.join("cargo-head")).unwrap().trim(), base, "the base, not the fork's head");
+    for job in ["gate", "docs"] {
+        let o = ci.job(job, &pr, Some(KEEL), None);
+        assert_eq!(o.status.code(), Some(2), "{job}: {}", text(&o));
+    }
 }
 
 #[test]

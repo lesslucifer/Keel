@@ -51,15 +51,39 @@ pub(crate) fn red_before_sign_off<'a>(failed: impl IntoIterator<Item = &'a str>)
     failed.into_iter().any(|c| c != SIGN_OFF)
 }
 
+/// The longest field the page shows, in characters as the printout shows them; GitHub keeps at most
+/// 1 MiB of one step's summary.
+pub(crate) const FIELD_CAP: usize = 500;
+/// The most failure rows, and waived lines, the page shows; the log has every one.
+pub(crate) const ROW_CAP: usize = 20;
+/// The most lines of one fix the page shows.
+const FIX_LINES: usize = 6;
+
 /// Recorded text as Markdown that renders as the same text and nothing else: made inert as the
-/// gate's printout makes it (`mr::printable`, the check ids' middle dot kept), then every ASCII
-/// punctuation character becomes a numeric entity, so no link, autolink, mention, emphasis, table
-/// cell, math or tag can form.
+/// gate's printout makes it (`mr::printable`, the check ids' middle dot kept), cut to `FIELD_CAP`
+/// characters with the count it dropped, then every ASCII punctuation character becomes a numeric
+/// entity, so no link, autolink, mention, emphasis, table cell, math or tag can form.
 pub(crate) fn md(s: &str) -> String {
-    let entities = |part: &str| -> String {
-        mr::printable(part).chars().map(|c| if c.is_ascii_punctuation() { format!("&#{};", c as u32) } else { c.to_string() }).collect()
-    };
-    s.split('·').map(entities).collect::<Vec<_>>().join("·")
+    let mut out = String::new();
+    let mut shown = 0;
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        let inert = if c == '·' { c.to_string() } else { mr::printable(c.encode_utf8(&mut [0; 4])) };
+        let width = inert.chars().count();
+        if shown + width > FIELD_CAP {
+            out += &format!(" … ({} more characters)", 1 + chars.count());
+            break;
+        }
+        shown += width;
+        for x in inert.chars() {
+            if x.is_ascii_punctuation() {
+                out += &format!("&#{};", x as u32);
+            } else {
+                out.push(x);
+            }
+        }
+    }
+    out
 }
 
 fn str_of<'v>(v: &'v Value, key: &str) -> Option<&'v str> {
@@ -184,15 +208,24 @@ pub(crate) fn render(e: &Evidence) -> String {
     }
     if !e.waived.is_empty() {
         out += "\n**Waived**\n\n";
-        for w in e.waived {
+        for w in e.waived.iter().take(ROW_CAP) {
             out += &format!("- {}\n", md(w));
+        }
+        if e.waived.len() > ROW_CAP {
+            out += &format!("- and {} more waived lines - the log lists them all\n", e.waived.len() - ROW_CAP);
         }
     }
     if !e.failures.is_empty() {
         out += "\n| Failed check | What | Fix |\n|---|---|---|\n";
-        for (check, what, fix) in e.failures {
-            let fix = fix.split('\n').map(|l| md(l.trim())).collect::<Vec<_>>().join("<br>");
-            out += &format!("| {} | {} | {fix} |\n", md(check), md(what));
+        for (check, what, fix) in e.failures.iter().take(ROW_CAP) {
+            let mut lines: Vec<String> = fix.split('\n').take(FIX_LINES).map(|l| md(l.trim())).collect();
+            if fix.split('\n').nth(FIX_LINES).is_some() {
+                lines.push("…".into());
+            }
+            out += &format!("| {} | {} | {} |\n", md(check), md(what), lines.join("<br>"));
+        }
+        if e.failures.len() > ROW_CAP {
+            out += &format!("| … | and {} more failures - the log lists them all | |\n", e.failures.len() - ROW_CAP);
         }
     }
     out
@@ -239,6 +272,29 @@ mod tests {
         for bad in ["|", "\n", "[", "](", "@", "<", ">", "$", "://", "www."] {
             assert!(!out.contains(bad), "{bad} survived in {out}");
         }
+    }
+
+    #[test]
+    fn hostile_sizes_keep_the_page_under_githubs_1_mib_step_limit() {
+        let huge = "\u{7}|".repeat(20_000);
+        let mut n: Vec<(&str, Result<Option<String>, String>)> = vec![("test", Err(huge.clone()))];
+        let note = serde_json::json!({"schema": huge, "tip": TIP, "signer": huge, "tier": huge, "level": huge, "report": huge}).to_string();
+        n.extend(["doc", "cr", "mr", "dod"].map(|k| (k, Ok(Some(note.clone())))));
+        let fix = format!("{huge}\n").repeat(10);
+        let failures: Vec<_> = (0..60).map(|i| failure(&format!("1·notes{i}{huge}"), &huge, &fix)).collect();
+        let waived: Vec<String> = (0..60).map(|_| huge.clone()).collect();
+        let p = page(&failures, &waived, false, &n);
+        assert!(p.len() < 1 << 20, "{} bytes", p.len());
+        assert!(p.contains("and 40 more failures - the log lists them all"), "only the first rows are shown");
+        assert!(p.contains("and 40 more waived lines - the log lists them all"));
+        assert_eq!(md(&"a".repeat(600)), format!("{} … (100 more characters)", "a".repeat(500)), "a capped field says how much it dropped");
+        assert_eq!(md(&"a".repeat(500)), "a".repeat(500));
+        assert_eq!(
+            md(&"\u{7}".repeat(200)),
+            format!("{} … (100 more characters)", "&#92;u&#123;7&#125;".repeat(100)),
+            "the cap counts what the printout shows"
+        );
+        assert!(p.contains("<br>…"), "a long fix shows its first lines");
     }
 
     #[test]

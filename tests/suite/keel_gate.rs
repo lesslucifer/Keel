@@ -78,6 +78,17 @@ fn its_token_reads_contents_only_and_it_uses_no_secret() {
 }
 
 #[test]
+fn a_superseded_work_branch_run_is_cancelled_but_every_main_commit_keeps_its_run() {
+    assert_eq!(
+        block(&yml(), "concurrency"),
+        [
+            "  group: keel-gate-${{ github.event_name }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}",
+            "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}"
+        ]
+    );
+}
+
+#[test]
 fn every_action_is_pinned_to_the_dist_commit_and_keeps_no_credential() {
     let y = yml();
     let dist: toml::Table = read("dist-workspace.toml").parse().unwrap();
@@ -144,5 +155,8 @@ fn the_ci_script_is_executable_and_builds_keel_only_from_the_base() {
     assert!(s.starts_with("#!/bin/sh\n"));
     assert!(s.contains("\ngit worktree add -q --detach \"$scratch/base\" \"$base_sha\"\n"), "the base worktree is made from the base commit");
     assert_eq!(s.matches("cargo build").count(), 1);
-    assert!(s.contains("cargo build --locked --quiet --manifest-path \"$scratch/base/Cargo.toml\""), "keel is built from the base worktree");
+    assert!(
+        s.contains("(cd \"$scratch/base\" && CARGO_TARGET_DIR=$scratch/target cargo build --locked --quiet) >&2"),
+        "keel is built inside the base worktree"
+    );
 }

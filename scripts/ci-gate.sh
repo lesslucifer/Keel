@@ -42,6 +42,8 @@ base_sha=${BASE_SHA:-}
 branch_ok "$head_branch" || die "HEAD_BRANCH is not a branch name: '$head_branch'"
 sha_ok "$head_sha" || die "HEAD_SHA is not a full commit id: '$head_sha'"
 
+push_to_main=
+[ "$head_branch" = main ] && [ -z "$base_branch$base_sha" ] && push_to_main=1
 case $head_branch in
 wu/*/*)
 	level=wu
@@ -52,20 +54,16 @@ epic/?*)
 	level=epic
 	derived=main
 	;;
-main)
+*)
 	level=
 	derived=main
-	;;
-*)
-	[ "$job" = ci ] && [ -n "$base_branch" ] && [ -n "$base_sha" ] ||
-		die "HEAD_BRANCH '$head_branch' is neither wu/<epic>/<name>, epic/<name> nor main"
-	level=
-	derived=$base_branch
+	[ -n "$push_to_main" ] || { [ "$job" = ci ] && [ -n "$base_branch" ] && [ -n "$base_sha" ]; } ||
+		die "HEAD_BRANCH '$head_branch' is neither wu/<epic>/<name>, epic/<name> nor a push to main"
 	;;
 esac
 [ -n "$base_branch" ] || base_branch=$derived
 branch_ok "$base_branch" || die "BASE_BRANCH is not a branch name: '$base_branch'"
-if [ "$head_branch" = main ]; then
+if [ -n "$push_to_main" ]; then
 	[ "$job" = ci ] || die "a push to main has no head and base to gate; only the ci job runs"
 	base_sha=$head_sha
 fi
@@ -92,7 +90,7 @@ trap cleanup EXIT
 git worktree add -q --detach "$scratch/base" "$base_sha"
 if [ -z "${KEEL:-}" ]; then
 	echo "ci-gate: building keel from the base $base_branch at $base_sha" >&2
-	CARGO_TARGET_DIR=$scratch/target cargo build --locked --quiet --manifest-path "$scratch/base/Cargo.toml" >&2
+	(cd "$scratch/base" && CARGO_TARGET_DIR=$scratch/target cargo build --locked --quiet) >&2
 	KEEL=$scratch/target/debug/keel
 fi
 case $KEEL in /*) ;; *) die "KEEL must be an absolute path: '$KEEL'" ;; esac
