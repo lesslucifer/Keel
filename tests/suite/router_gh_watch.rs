@@ -13,13 +13,13 @@ use serde_json::{json, Value};
 use crate::common;
 use crate::router_gh::{commit, git, stdout, text, write, Gh, BOT, OWNER_ID};
 
-const STRANGER: u64 = 777;
+pub(crate) const STRANGER: u64 = 777;
 /// When the fixture's comments and reviews were made, as every event line names it (review I2).
-const AT: &str = "2026-11-15T10:00:00Z";
+pub(crate) const AT: &str = "2026-11-15T10:00:00Z";
 
 /// The watch in the scratch repository, as the router runs it, bounded by an alarm. Every run is
 /// checked for secrets and for anything left behind: the shared $TMPDIR, the run dir, the checkout.
-fn watch_env(gh: &Gh, args: &[&str], env: &[(&str, &str)]) -> Output {
+pub(crate) fn watch_env(gh: &Gh, args: &[&str], env: &[(&str, &str)]) -> Output {
     let mut c = common::cmd("perl");
     c.args(["-e", "alarm 60; exec @ARGV", "sh"]).arg(gh.repo.join("scripts/router-gh-watch.sh")).args(args).current_dir(&gh.repo);
     c.env("PATH", gh.path()).env("HOME", &gh.home).env("TMPDIR", &gh.tmp).env("MOCK_GH", &gh.mock);
@@ -36,20 +36,20 @@ fn watch_env(gh: &Gh, args: &[&str], env: &[(&str, &str)]) -> Output {
     o
 }
 
-fn watch(gh: &Gh, args: &[&str]) -> Output {
+pub(crate) fn watch(gh: &Gh, args: &[&str]) -> Output {
     watch_env(gh, args, &[])
 }
 
 /// The first poll only: the watch stops at TIMEOUT unless the first answer is an event.
-fn once(gh: &Gh, args: &[&str]) -> Output {
+pub(crate) fn once(gh: &Gh, args: &[&str]) -> Output {
     watch_env(gh, args, &[("ROUTER_WATCH_MAX", "0")])
 }
 
-fn lines(o: &Output) -> Vec<String> {
+pub(crate) fn lines(o: &Output) -> Vec<String> {
     stdout(o).lines().map(String::from).collect()
 }
 
-fn user(id: u64) -> Value {
+pub(crate) fn user(id: u64) -> Value {
     if id == 0 {
         json!({"login": BOT, "id": 41, "type": "Bot"})
     } else {
@@ -58,17 +58,17 @@ fn user(id: u64) -> Value {
 }
 
 /// A comment by `uid` (0 = the bot itself); `edited` moves updated_at past created_at.
-fn comment(id: u64, uid: u64, body: &str, edited: bool) -> Value {
+pub(crate) fn comment(id: u64, uid: u64, body: &str, edited: bool) -> Value {
     json!({"id": id, "user": user(uid), "body": body, "author_association": "OWNER",
         "created_at": "2026-11-15T10:00:00Z", "updated_at": if edited { "2026-11-15T10:03:00Z" } else { "2026-11-15T10:00:00Z" }})
 }
 
-fn review(id: u64, uid: u64, state: &str, sha: &str, body: &str) -> Value {
+pub(crate) fn review(id: u64, uid: u64, state: &str, sha: &str, body: &str) -> Value {
     json!({"id": id, "user": user(uid), "state": state, "commit_id": sha, "body": body, "submitted_at": "2026-11-15T10:00:00Z"})
 }
 
 /// Issue `n`, opened by `login`; a pull request when `pr`.
-fn issue(n: u64, login: &str, pr: bool) -> Value {
+pub(crate) fn issue(n: u64, login: &str, pr: bool) -> Value {
     let mut i = json!({"number": n, "id": 9000 + n, "user": {"login": login, "type": if login.ends_with("[bot]") { "Bot" } else { "User" }}});
     if pr {
         i["pull_request"] = json!({"url": format!("https://api.github.com/repos/own/Keel/pulls/{n}")});

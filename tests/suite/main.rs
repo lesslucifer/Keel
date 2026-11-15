@@ -23,6 +23,7 @@ mod ci_gate;
 mod cli;
 mod close_walk;
 mod fixtures;
+mod ghflow_e2e;
 mod init;
 mod keel_gate;
 mod layout;
