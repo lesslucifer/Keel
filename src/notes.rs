@@ -291,7 +291,7 @@ pub(crate) fn parse<T: serde::de::DeserializeOwned>(raw: &str, kind: &str) -> Re
     let v: serde_json::Value = serde_json::from_str(raw).map_err(|e| e.to_string())?;
     match v["schema"].as_str() {
         Some(s) if s == schema => serde_json::from_value(v).map_err(|e| e.to_string()),
-        other => Err(format!("declares schema {}, expected {schema}", other.unwrap_or("none"))),
+        other => Err(format!("declares schema {}", other.unwrap_or("none"))),
     }
 }
 

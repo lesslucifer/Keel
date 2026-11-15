@@ -444,7 +444,7 @@ mod tests {
         assert_eq!(row(&p, "mr"), "| mr | no: names 9999999999 | mr&#47;v1 · signer &#91;x&#93;&#40;y&#41; &#40;tier username&#41;&#44; level wu |");
         assert!(row(&p, "dod").starts_with("| dod | - | not valid dod&#47;v1&#58; missing field "), "{p}");
         n[4] = ("dod", Ok(Some(r#"{"schema":"dod/v2"}"#.into())));
-        assert_eq!(row(&page(&[], &[], &n), "dod"), "| dod | - | not valid dod&#47;v1&#58; declares schema dod&#47;v2&#44; expected dod&#47;v1 |");
+        assert_eq!(row(&page(&[], &[], &n), "dod"), "| dod | - | not valid dod&#47;v1&#58; declares schema dod&#47;v2 |", "the expected schema is named once");
     }
 
     #[test]

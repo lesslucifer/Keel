@@ -145,8 +145,20 @@ fn open(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) ->
     Ok((r, names))
 }
 
-/// Check 1 for one note: present (when required), JSON, declaring `<kind>/v1`.
-fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: bool) -> Option<T> {
+/// Check 1 for one note: present (when required), JSON, declaring `<kind>/v1`. A required note that
+/// does not read records its absence on each check it `feeds` (`Judged::Missing`): the one rule for
+/// a missing input. A note not required records nothing when absent.
+fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: bool, feeds: &[&'static str]) -> Option<T> {
+    let note = read_note(repo, r, kind, required);
+    if required && note.is_none() {
+        for id in feeds {
+            r.missing(id, &format!("no readable {kind} note"));
+        }
+    }
+    note
+}
+
+fn read_note<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: bool) -> Option<T> {
     let schema = format!("{kind}/v1");
     r.ran(NOTES);
     let seen = r.seen.iter().find(|(k, _)| *k == kind).map(|(_, raw)| raw.clone());
@@ -188,15 +200,12 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
 fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: bool, own_review: bool) -> Result<(), String> {
     let review = full && own_review && matches!(r.level, Level::Wu | Level::Epic);
     let docs = notes::doc_paths(repo, cfg, &r.base, &r.tip, names)?;
-    let test = read::<TestNote>(repo, r, "test", true);
-    let cr = if review { read::<CrNote>(repo, r, "cr", true) } else { None };
-    let doc = if full { read::<DocNote>(repo, r, "doc", r.level != Level::Commit || !docs.is_empty()) } else { None };
+    let test = read::<TestNote>(repo, r, "test", true, &[MANIFEST]);
+    let cr = if review { read::<CrNote>(repo, r, "cr", true, &[REVIEW, REVIEW_BASE, DIFF_BINDING]) } else { None };
+    let doc = if full { read::<DocNote>(repo, r, "doc", r.level != Level::Commit || !docs.is_empty(), &[DOC_NOTE]) } else { None };
 
     // 2·manifest: the level's layer, and every note bound to this very commit.
     r.ran(MANIFEST);
-    if test.is_none() {
-        r.missing(MANIFEST, "no readable test note");
-    }
     if let Some(t) = &test {
         let (layer, have) = match r.level {
             Level::Commit => ("unit", &t.unit),
@@ -221,15 +230,10 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
     }
 
     // 3-5: the review verdict, its base, its binding to the code diff.
-    if review {
-        for id in [REVIEW, REVIEW_BASE, DIFF_BINDING] {
-            match cr {
-                Some(_) => r.ran(id),
-                None => r.missing(id, "no readable cr note"),
-            }
-        }
-    }
     if let Some(cr) = &cr {
+        for id in [REVIEW, REVIEW_BASE, DIFF_BINDING] {
+            r.ran(id);
+        }
         match review_verdict(cr) {
             Ok(None) => {}
             Ok(Some(why)) => {
@@ -254,10 +258,8 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
         }
     }
 
-    match &doc {
-        Some(doc) => doc_note(repo, cfg, r, &docs, doc),
-        None if full => r.missing(DOC_NOTE, "no readable doc note"),
-        None => {}
+    if let Some(doc) = &doc {
+        doc_note(repo, cfg, r, &docs, doc);
     }
     r.tip_cr = cr;
     Ok(())
@@ -324,9 +326,8 @@ fn judge(repo: &Path, cfg: &Config, mut r: Report, names: &[String], target: &st
         // An archive commit is docs-only by nature; exempting it would leave distillation unchecked.
         let docs = notes::doc_paths(repo, cfg, &r.base, &r.tip, names)?;
         if notes::archives_t3(repo, cfg, &r.tip, &docs) {
-            match read::<DocNote>(repo, &mut r, "doc", true) {
-                Some(doc) => doc_note(repo, cfg, &mut r, &docs, &doc),
-                None => r.missing(DOC_NOTE, "no readable doc note"),
+            if let Some(doc) = read::<DocNote>(repo, &mut r, "doc", true, &[DOC_NOTE]) {
+                doc_note(repo, cfg, &mut r, &docs, &doc);
             }
         }
     }
@@ -511,10 +512,12 @@ pub fn ci_gate(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> 
     }
     if red {
         eprintln!("ci gate red on {} - a check before the sign-off failed", short(&r.tip));
-    } else if r.failures.is_empty() {
-        println!("ci gate green on {} - every check passes", short(&r.tip));
     } else {
-        println!("ci gate green on {} - every check before {SIGN_OFF} passes; {SIGN_OFF} is judged at the merge", short(&r.tip));
+        let range = if r.range_exempt { " (a docs/infra-only range)" } else { "" };
+        match r.failures.is_empty() {
+            true => println!("ci gate green on {} - every check passes{range}", short(&r.tip)),
+            false => println!("ci gate green on {} - every check before {SIGN_OFF} passes{range}; {SIGN_OFF} is judged at the merge", short(&r.tip)),
+        }
     }
     Ok(red as i32)
 }
@@ -825,8 +828,41 @@ mod tests {
     use super::inert;
     use super::review_verdict as review;
     use super::{judged_as, note_range, Level, NoteRange};
-    use super::{receipt_name, summary_flag, CI_USAGE, HOOKS, SIGN_OFF};
+    use super::{receipt_name, summary_flag, verify, Judged, CI_USAGE, DOC_NOTE, HOOKS, MANIFEST, SIGN_OFF};
     use crate::notes::CrNote;
+    use crate::Config;
+
+    /// A repo whose HEAD commit changes code and no doc, judged as a standalone commit with no notes.
+    #[test]
+    fn a_note_the_gate_does_not_require_is_never_recorded_as_a_missing_input() {
+        let d = tempfile::TempDir::new().unwrap();
+        let p = d.path();
+        let git = |a: &[&str]| {
+            let o = crate::no_git_env(std::process::Command::new("git"), false)
+                .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+                .args(a)
+                .current_dir(p)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .output()
+                .unwrap();
+            assert!(o.status.success(), "git {a:?}: {}", String::from_utf8_lossy(&o.stderr));
+        };
+        git(&["init", "-q", "-b", "main"]);
+        std::fs::write(p.join("README"), "x").unwrap();
+        git(&["add", "-A"]);
+        git(&["commit", "-qm", "base"]);
+        std::fs::create_dir(p.join("src")).unwrap();
+        std::fs::write(p.join("src/a.py"), "a").unwrap();
+        git(&["add", "-A"]);
+        git(&["commit", "-qm", "code, no doc"]);
+        let cfg: Config =
+            toml::from_str("code_paths = [\"src/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n")
+                .unwrap();
+        let r = verify(p, &cfg, Level::Commit, "HEAD", "HEAD^").unwrap();
+        assert!(!r.judged.iter().any(|(id, j)| *id == DOC_NOTE && matches!(j, Judged::Missing(_))), "no doc changed, so no doc note is needed: {:?}", r.judged);
+        assert!(r.judged.contains(&(MANIFEST, Judged::Missing("no readable test note".into()))), "a required note still records: {:?}", r.judged);
+    }
 
     #[test]
     fn check_ids_name_their_receipt_in_order() {
