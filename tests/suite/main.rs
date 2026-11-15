@@ -29,6 +29,7 @@ mod keel_gate;
 mod layout;
 mod mr;
 mod notify_owner;
+mod pages_build;
 mod release;
 mod review;
 mod router;
