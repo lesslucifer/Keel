@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af93b489f34851f0dfb2514" data-artifact="epic-plan" data-status="draft">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHFLOW epic plan: run the flow from GitHub</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHFLOW · Run the flow from GitHub</h1>
+      <p>A direction-finding plan: which of your actions can move to GitHub, how, and what must stay on your Mac.</p>
+      <div class="meta">Draft v1 · 2026-11-15 · T3 · epic plan · Keel · for your comments, not yet ready</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-item="intent" data-c="intent">Today you drive the flow from your terminal. You prompt the router, read docs from disk, sign, merge and push by typed commands, and get pings on Telegram. So you must be at your Mac. This epic moves your actions to GitHub: you comment, approve and press merge on a pull request, from the browser or the phone. The router keeps running on your Mac, and the same checks still guard every merge.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>You give an order</td><td>Chat with the router</td><td>A comment on a GitHub issue or pull request</td></tr>
+    <tr><td>You are needed</td><td>Terminal text and Telegram</td><td>A GitHub review request on your phone</td></tr>
+    <tr><td>You sign off</td><td>A typed sign-off command</td><td>Approve the pull request</td></tr>
+    <tr><td>You merge or push</td><td>Typed git commands</td><td>Press merge; the router pushes work branches</td></tr>
+    <tr><td>A test is red only in a worker's sandbox</td><td>You re-run it by hand</td><td>GitHub runs the full suite on every push</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">Example: one piece of work, from your phone</h2>
+<ol data-c="example-steps">
+  <li>A worker finishes. The router pushes its branch and opens a pull request.</li>
+  <li>GitHub runs the tests and the merge check. Both turn green.</li>
+  <li>GitHub asks you to review. You read the report and approve.</li>
+  <li>Your approval becomes the sign-off. You press merge.</li>
+  <li>The router sees the merge within a minute and starts the next worker.</li>
+</ol>
+
+<h2 id="terms">Terms</h2>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Pull request</td><td>GitHub's page for one branch waiting to merge: diff, checks, reviews, comments.</td></tr>
+    <tr><td>Required check</td><td>A test GitHub must see green before the merge button works.</td></tr>
+    <tr><td>Router bot</td><td>A GitHub identity for the router, separate from yours, since nobody may approve their own pull request.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="wus">The work</h2>
+<p>Each step lands alone and keeps the local flow working.</p>
+
+<div data-item="wu-summaries" data-c="wu-summaries">
+
+<div data-wu="E-GHFLOW.W1" data-c="wu-w1">
+  <h3 id="w1">W1 · GitHub runs the checks, as a signal</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> every push of a work branch, and every pull request, runs the full test suite and the merge check on a GitHub-hosted machine. Nothing is required yet; the results are a signal and a readable evidence page. This alone ends the sandbox-only reds.</p>
+    <ul>
+      <li>A workflow <code>.github/workflows/keel-gate.yml</code> with two jobs. <b>ci</b> (<code>pull_request</code> and <code>push</code> on <code>wu/**</code>, <code>epic/**</code>): <code>keel check</code> on the merged tree, read-only token, no secrets. <b>gate</b>: fetches <code>refs/notes/*</code>, makes local branches for head and base, installs the hooks in the runner's clone, runs <code>keel verify-dod wu|epic &lt;head&gt; --target &lt;base&gt;</code> and writes the five notes as a table into the job summary.</li>
+      <li>The gate's <code>keel</code> is built from the <b>base</b> branch, never from the pull request's head: the code under review must not build its own judge.</li>
+      <li>The gate reads git data only; a test proves <code>verify-dod</code> runs no project command (<code>[check]</code>), so it is safe under a base-defined trigger.</li>
+      <li>Everything the jobs do lives in one script (<code>scripts/ci-gate.sh</code>), so it runs the same on a laptop and is testable hermetically.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Owner ask (local checks become GitHub checks) · UC-GATE (new row: the gate runs in CI) · backlog e-router-v2 R43 (sandbox-only reds) and R30.</p>
+  <p data-item="wu-expected"><b>Integration:</b> <code>ci-gate.sh</code> on a scratch repo with a bare "origin": a WU tip with full notes prints green checks 1–7 and the evidence table; a tip with a missing note prints the same <code>FAIL</code> block as the local gate; the script never runs a <code>[check]</code> command. A test locks the workflow file (triggers, permissions read-only, actions pinned to commits, base-built keel), like <code>tests/release.rs</code>. <b>Unit:</b> the summary renderer.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+<div data-wu="E-GHFLOW.W2" data-c="wu-w2">
+  <h3 id="w2">W2 · The router bot pushes work branches and opens pull requests</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> a GitHub App acts for the router. Through one fixed-shape script, the router pushes <code>wu/</code> and <code>epic/</code> branches (never main) and opens a draft pull request per WU (into its epic) and per epic (into main). Workers still never push and never touch GitHub.</p>
+    <ul>
+      <li><code>scripts/router-gh.sh push &lt;branch&gt;</code> · <code>pr-open &lt;branch&gt;</code> · <code>pr-ready &lt;n&gt;</code> · <code>post &lt;n&gt; &lt;body-name&gt;</code>; every argument validated like the launcher's; the App's private key is read only by this script, never printed, never in a worktree.</li>
+      <li>A pull request's body is built by code from the plan and result docs (links, tip, gate state). Free text it posts comes from a file a worker wrote (UC-ROUTE-3: substance comes from workers).</li>
+      <li>The local pre-push hook still runs on every router push: <code>keel check</code>, the range walk, and the notes push.</li>
+      <li>The router guard admits these shapes; <code>scripts/router-gh.sh</code> becomes rule-bearing.</li>
+      <li>Needs your ruling: DEC-46's "no worker pushes; the owner pushes" becomes "the router bot pushes non-main branches" (open point 1).</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Owner ask (actions through git/GitHub) · UC-ROUTE-1 and UC-ROUTE-6 (amended) · DEC-46 (amended).</p>
+  <p data-item="wu-expected"><b>Integration:</b> against a local mock of the GitHub API and a bare origin: <code>push</code> refuses <code>main</code>, a tag, an unknown branch and any argument starting with <code>-</code>; <code>pr-open</code> sends the expected request with base and head derived from the branch name; no output carries the key or the token. Guard tests: the new shapes pass, every other spelling is denied. <b>Unit:</b> argument validation.</p>
+  <p data-item="wu-deps">none (W1 makes its pull requests useful)</p>
+</div>
+
+<div data-wu="E-GHFLOW.W3" data-c="wu-w3">
+  <h3 id="w3">W3 · The router hears you through GitHub</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> a read-only watch, like today's owner-action watch, polls GitHub and wakes the router when you comment, review, approve or merge. Only your GitHub account is heard; everyone else's text is never read as an order.</p>
+    <ul>
+      <li><code>scripts/router-gh-watch.sh review|comment|merged|checks &lt;pr|issue&gt; [since &lt;id&gt;]</code>: checks at once, polls about every 60 s, prints one event line plus escaped detail, exits; <code>TIMEOUT</code> and <code>UNREACHABLE</code> as today.</li>
+      <li>Your identity is your numeric GitHub user id, committed in the repo (a login can be renamed; the id cannot). Events from any other id print as a count only.</li>
+      <li>A comment's first line may be a command from a closed list (<code>/keel go</code>, <code>/keel hold</code>, <code>/keel retry</code>, <code>/keel answer &lt;n&gt; &lt;A|B&gt;</code>); the rest is your message to the router, treated like a chat prompt today. Edited comments are not re-read as orders.</li>
+      <li>The router's status board becomes one tracking issue per epic (one sub-issue per WU), edited by the router bot.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Owner ask (you stop prompting the router) · UC-ROUTE-1 (amended: watch kinds) · new UC-ROUTE row (the GitHub command channel).</p>
+  <p data-item="wu-expected"><b>Integration:</b> against the mock API: your approval prints <code>APPROVED pr= sha=</code>; a stranger's comment holding a command prints <code>IGNORED from=other count=1</code>, never its text; an edited comment is not a new command; control characters print as <code>?</code>; the watch keeps no state between runs. <b>Unit:</b> the command grammar.</p>
+  <p data-item="wu-deps">W2</p>
+</div>
+
+<div data-wu="E-GHFLOW.W4" data-c="wu-w4">
+  <h3 id="w4">W4 · Your approval is the sign-off</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> a new signer tier, <code>github</code>. When you approve a pull request, a workflow defined on the base branch checks that the approver is in the committed roster and approved exactly the head commit, then writes the same <code>mr/v1</code> note your typed sign-off writes today, and sets a <code>keel/sign-off</code> status.</p>
+    <ul>
+      <li>Roster line <code>github: &lt;user-id&gt; &lt;login&gt;</code>; <code>[mr] tiers</code> must list <code>github</code> to accept it.</li>
+      <li><code>mr/v1</code> gains <code>review</code> (id, URL, approved commit). Everything else is as today: base, tip, level, diff hash, the result report's hash.</li>
+      <li>Check 8 learns the tier: offline it checks the note's bindings; in CI it also re-reads the review from the API.</li>
+      <li>The workflow runs on <code>pull_request_review</code>, which GitHub runs from the default branch, so a pull request cannot change its own sign-off logic.</li>
+      <li><code>keel mr confirm</code> stays, unchanged, as the fallback and for the key tier.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Owner ask (sign-off through GitHub) · UC-MR (new row: a sign-off by pull-request approval) · DEC-47, DEC-48 (amended: what the github tier proves).</p>
+  <p data-item="wu-expected"><b>Integration:</b> scratch repo plus a recorded review payload: an approval by a listed id on the head sha writes <code>mr/v1</code> and the gate goes green; an approval on an older sha, by an unlisted id, or a "comment" review writes nothing; a code commit after the approval turns check 8 red, as today. <b>Unit:</b> the roster line parser, the note fields.</p>
+  <p data-item="wu-deps">W1, W2</p>
+</div>
+
+<div data-wu="E-GHFLOW.W5" data-c="wu-w5">
+  <h3 id="w5">W5 · GitHub enforces the merge</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> rules on GitHub make the merge button the gate: main and every epic branch change only by a pull request whose three checks are green, merged as a merge commit. Nobody bypasses, you included. The local hooks keep guarding local merges as the fallback.</p>
+    <ul>
+      <li>Rules (you set them once in the repo settings; the WU gives the exact list): require a pull request; required checks <code>ci</code>, <code>gate</code>, <code>keel/sign-off</code>; merge commits only; no linear-history rule; block force pushes and deletions; an empty bypass list. Plus DEC-38's owed tag rule (only you create version tags).</li>
+      <li><code>.github/</code> becomes rule-bearing, so a workflow change needs your review.</li>
+      <li>A read-only check script prints the live settings against the expected list; a worker runs it.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Owner ask (local checks become git checks) · UC-GATE (amended: the merge is the gate on GitHub too) · DEC-23 (amended) · DEC-38 (its tag rule).</p>
+  <p data-item="wu-expected"><b>Integration: waived in part.</b> GitHub's settings cannot be tested hermetically; the settings-check script is tested against recorded API answers (a missing rule, a bypass actor, squash allowed: each red). The live proof is one real WU merged through the button.</p>
+  <p data-item="wu-deps">W4</p>
+</div>
+
+<div data-wu="E-GHFLOW.W6" data-c="wu-w6">
+  <h3 id="w6">W6 · Trying the build without your Mac</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> every pull request offers a built <code>keel</code> to download, a browser workspace with it ready, and a checklist of what to try that you tick on the pull request. A tick is your word, not a test; it never replaces one.</p>
+    <ul>
+      <li>The <b>ci</b> job uploads macOS and Linux binaries as artifacts (kept a short time).</li>
+      <li>A Codespaces config builds <code>keel</code> from the branch, so you can try it in a browser (Linux only).</li>
+      <li>The pull request body carries the "try in the real app" steps as a checklist; a check reads your ticks (open point 9 decides whether it is required).</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Owner ask (manual testing) · UC-ROUTE-1 (the ask's "try in the real app").</p>
+  <p data-item="wu-expected"><b>Integration:</b> the checklist reader on recorded bodies (all ticked green, one open red, no checklist neutral); the workflow test locks artifact names and retention. <b>Unit:</b> the checklist parser.</p>
+  <p data-item="wu-deps">W1, W2</p>
+</div>
+
+</div>
+
+<h2 id="open-points">Open points</h2>
+<p>Each needs your answer before its WU starts. Comment on any row to overrule.</p>
+<table data-item="open-questions" data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer (proposed)</th><th>Why</th><th>Other options</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Who pushes work branches?</td><td><b>The router bot</b>, work branches only; main changes only by a merged pull request</td><td>A pull request needs a pushed branch; if you push, you stay at the terminal</td><td>You keep pushing (nothing changes for you); workers push (gives every worker a GitHub credential)</td></tr>
+    <tr><td>2</td><td>What is your sign-off on GitHub?</td><td><b>Approving the pull request</b> (the new github tier); the typed sign-off stays as fallback</td><td>It is bound to the exact commit, needs your login, works on the phone, and shows the diff and the report</td><td>An approval gate on a workflow run (bound to a run, not a review; shows less); a signed commit (needs your Mac); keep the typed sign-off only</td></tr>
+    <tr><td>3</td><td>How does the router hear you?</td><td><b>It polls GitHub</b>, about once a minute, while a watch is armed</td><td>No server, no open port, no runner on a public repo; same shape as today's watches</td><td>A self-hosted runner on your Mac rings the router's inbox (seconds, but GitHub warns against it on public repos); webhook forwarding (GitHub says testing only)</td></tr>
+    <tr><td>4</td><td>What identity does the router use?</td><td><b>A GitHub App</b> you create and install on this repo only</td><td>You cannot approve your own pull request, so the author must not be you; an App has narrow permissions and short-lived tokens</td><td>A second "machine" user account (simpler, a long-lived token); your own token (rules out open point 2's answer)</td></tr>
+    <tr><td>5</td><td>Where do you read and comment on plans and reports?</td><td><b>htmldoc stays</b>; the pull request links to each doc's page</td><td>GitHub shows HTML as source code; htmldoc already holds your comments and diffs</td><td>Rendered previews on GitHub Pages; comments on the HTML source in the pull request</td></tr>
+    <tr><td>6</td><td>Which of your words does the router act on?</td><td><b>Yours only, by user id</b>: a closed command list, plus free text read as your message</td><td>It keeps the chat's freedom without letting strangers steer a public repo</td><td>Commands only (safer, stiffer); also trusted collaborators (none today)</td></tr>
+    <tr><td>7</td><td>Does Telegram stay?</td><td><b>Yes, as the fallback</b>; GitHub's phone notifications become the main channel</td><td>A GitHub outage must not silence the router</td><td>Drop it after W3 proves itself</td></tr>
+    <tr><td>8</td><td>Where does this live: in Keel, or only in this repo?</td><td><b>Split</b>: the CI gate script and the github tier go into Keel (any GitHub-hosted project can use them, opt-in); the router's GitHub scripts stay in this repo, like the launcher</td><td>Keel is a tool other projects use, and its gate must stay usable without GitHub</td><td>All in this repo (fastest, nothing reusable); all in Keel (ships GitHub-specific router tooling to everyone)</td></tr>
+    <tr><td>9</td><td>Is "I tried it" required before the merge?</td><td><b>No</b>: the checklist shows, it does not block</td><td>A tick is not evidence; blocking on it adds a click and no safety</td><td>Required when the plan says "try in the real app"</td></tr>
+    <tr><td>10</td><td>Does the epic sign-off move too?</td><td><b>Not in this epic</b>: it stays a typed sign-off at the close</td><td>The epic result report is kept outside git, so GitHub cannot hash the bytes you read</td><td>Commit the epic report to a side branch the check reads; post its bytes to the pull request</td></tr>
+    <tr><td>11</td><td>Does approving also merge?</td><td><b>No</b>, you press merge</td><td>One extra tap keeps "sign" and "land" apart, as today</td><td>GitHub auto-merge once the sign-off check is green (one tap; unverified on this repo)</td></tr>
+    <tr><td>13</td><td>When does the GitHub flow go live?</td><td><b>W1–W3 on this epic's branch; W4–W5 only after you let them land on main early</b>, as one owner decision</td><td>GitHub runs review- and comment-triggered workflows only from the default branch, so W4's sign-off workflow does nothing until it is on main; nothing from an unclosed epic reaches main otherwise</td><td>Wait for the epic close (W4 and W5 are then proven only after the merge); test W4 on a scratch public repo first, then land</td></tr>
+    <tr><td>12</td><td>Do review waivers and roster changes move?</td><td><b>No</b>: they stay typed at your terminal</td><td>Both are two-step, rare and trust-heavy; a comment is the wrong place for them</td><td>A two-step <code>/keel waive</code> comment command later</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="expected-h">Acceptance</h3>
+<ul data-item="expected" data-c="expected">
+  <li>A push of any <code>wu/</code> or <code>epic/</code> branch shows two checks on GitHub; the gate's job summary lists the tip's five notes.</li>
+  <li>The router opens a pull request for a finished WU with no owner command typed.</li>
+  <li>Your approval on the head commit writes a sign-off note the local <code>keel verify-dod</code> accepts; an approval on an older commit writes nothing.</li>
+  <li>With W5's rules on, the merge button refuses a pull request whose gate is red, and a direct push to main is refused, for you too.</li>
+  <li>A comment from another account never reaches the router as text.</li>
+  <li>With GitHub unreachable, the whole local flow (typed sign-off, local merge, hooks) still works.</li>
+  <li>The epic test passes.</li>
+</ul>
+
+<h3 id="use-cases-h">Use cases</h3>
+<ul data-item="use-cases" data-c="use-cases">
+  <li>UC-GATE, new row: the gate runs in CI on GitHub, judged by a keel built from the base (W1); amended: with the rules on, the merge button is the gate (W5).</li>
+  <li>UC-MR, new row: a sign-off by pull-request approval, the github tier (W4).</li>
+  <li>UC-ROUTE-1, amended: the router pushes work branches and opens pull requests; GitHub watch kinds (W2, W3).</li>
+  <li>UC-ROUTE-6, amended: the guard admits the GitHub scripts' shapes (W2, W3).</li>
+  <li>UC-ROUTE, new row: the owner's GitHub command channel and its trust rules (W3).</li>
+</ul>
+
+<h3 id="non-goals-h">Out of scope</h3>
+<ul data-item="non-goals" data-c="non-goals">
+  <li>Running the router or workers on GitHub: they stay Claude sessions on your Mac.</li>
+  <li>Code reviews run by Claude inside GitHub Actions (needs a model key in GitHub; a later epic if wanted).</li>
+  <li>Moving the epic sign-off, review waivers, roster changes and release tags off your terminal (open points 10, 12).</li>
+  <li>A self-hosted runner, webhooks to your Mac, merge queue (not available on a personal-account repo).</li>
+  <li>Making <code>keel init</code> write GitHub files for other projects (a backlog row at the close).</li>
+  <li>Changing what the gate checks: the checks stay as they are; only where they run moves.</li>
+</ul>
+
+<h3 id="e2e-h">Epic test</h3>
+<div data-item="e2e-plan" data-c="e2e-plan">
+  <p>Hermetic, no network: a scratch repo with a bare "origin" and a local mock of the GitHub API (the shape <code>tests/notify_owner.rs</code> already uses).</p>
+  <ol>
+    <li>A WU tip with its notes is pushed by <code>router-gh.sh push</code>; <code>pr-open</code> opens a pull request on the mock.</li>
+    <li><code>ci-gate.sh</code> runs both jobs' logic on it: green on checks 1–7, red only on check 8.</li>
+    <li>The mock records an approval by a listed id on the head; the sign-off step writes <code>mr/v1</code>; <code>keel verify-dod</code> goes fully green locally.</li>
+    <li><code>router-gh-watch.sh review</code> prints the approval; a stranger's command comment prints only a count.</li>
+    <li>The merge commit is made with the mock's parents; the epic walk judges the seam green.</li>
+  </ol>
+  <p>Live evidence, not a test: one real WU of this epic merged through the button with the rules on (owner-run, recorded in the result).</p>
+</div>
+
+<h3 id="close-h">At the close</h3>
+<ul data-item="distillation-plan" data-c="distillation-plan">
+  <li><code>docs/use-cases/workflow.html</code>: UC-GATE and UC-MR rows above.</li>
+  <li><code>docs/use-cases/router.html</code>: UC-ROUTE-1, UC-ROUTE-6 amended, one new row.</li>
+  <li><code>docs/decisions/</code>: new records (next free id, checked on every live branch) for the CI gate built from the base, the github tier and what it proves, the router bot pushing work branches (amending DEC-46), and polling as the command channel; DEC-23 and DEC-48 amended.</li>
+  <li><code>docs/architecture.html</code> and <code>docs/install.html</code>: the GitHub setup (App, rules, roster line).</li>
+  <li><code>docs/backlog/</code>: R21 closed or re-pointed; new rows for <code>keel init</code> GitHub files, the epic sign-off on GitHub, waivers by comment, Claude reviews in Actions.</li>
+</ul>
+
+<h3 id="inventory" data-c="inventory-h">1 · The flow today, inventoried</h3>
+<p>Every owner-facing action and every piece of state, where it lives, and who triggers it. Read from AGENTS.md, the keel-workflow, keel-router, keel-code-review, keel-distill and project-router skills, <code>docs/architecture.html</code>, the decision records and <code>scripts/</code> at <code>e957cb2</code>.</p>
+<table data-c="inventory">
+  <thead><tr><th>#</th><th>Action or state</th><th>Lives in</th><th>Triggered by</th></tr></thead>
+  <tbody>
+    <tr><td>A1</td><td>Owner prompts the router (orders, answers, "again")</td><td>The router's Claude Code chat on the Mac</td><td>Owner</td></tr>
+    <tr><td>A2</td><td>Router reports to the owner: one task, commands, <code>Up next</code></td><td>Router chat + Telegram via <code>scripts/notify-owner.py</code></td><td>Router</td></tr>
+    <tr><td>A3</td><td>Plan and doc review, comments</td><td>htmldoc server (comments, snapshots) + doc files opened from disk</td><td>Owner comments; a worker resolves</td></tr>
+    <tr><td>A4</td><td>Rulings log</td><td><code>.router/rulings.md</code>, git-ignored, main checkout</td><td>Owner writes</td></tr>
+    <tr><td>A5</td><td><code>keel check</code> (lint + test, cached by tree)</td><td>Local; cache <code>&lt;git-dir&gt;/keel-check-green</code></td><td>Worker; pre-push and pre-merge hooks</td></tr>
+    <tr><td>A6</td><td>Notes <code>test</code>, <code>doc</code></td><td><code>refs/notes/*</code> in the shared git dir; pushed by pre-push</td><td>Worker (<code>keel notes write</code>)</td></tr>
+    <tr><td>A7</td><td><code>keel preflight</code></td><td>Local, worker's worktree</td><td>Worker</td></tr>
+    <tr><td>A8</td><td>Code review rounds → <code>cr</code> note</td><td>Fresh review worker per round, local</td><td>Router spawns</td></tr>
+    <tr><td>A9</td><td>Independent review of what no gate reviews</td><td>Read-only worker, local</td><td>Router</td></tr>
+    <tr><td>A10</td><td><code>keel verify-dod</code> (checks 0–8) and the <code>dod</code> receipt</td><td>Local; hooks</td><td>Worker; hooks</td></tr>
+    <tr><td>A11</td><td>Rule-bearing commit: <code>keel mr commit</code> (Reviewed-By trailer)</td><td>Owner's terminal; commit-msg hook</td><td>Owner</td></tr>
+    <tr><td>A12</td><td>WU sign-off: <code>keel mr confirm wu</code> (username or key tier)</td><td>Owner's terminal → <code>mr</code> note</td><td>Owner</td></tr>
+    <tr><td>A13</td><td>Epic sign-off with the archived result report</td><td>Owner's terminal; report in untracked <code>docs/.archive/</code></td><td>Owner</td></tr>
+    <tr><td>A14</td><td>Review waiver / waiver acceptance / roster change (two-step codes)</td><td>Owner's terminal</td><td>Owner</td></tr>
+    <tr><td>A15</td><td>WU → epic merge (<code>--no-ff</code>, pre-merge-commit gate)</td><td>Owner's terminal, epic worktree</td><td>Owner</td></tr>
+    <tr><td>A16</td><td>Epic → main merge (+ <code>keel check</code> on the merged tree)</td><td>Owner's terminal, main checkout</td><td>Owner</td></tr>
+    <tr><td>A17</td><td>Pushes (epic branch first push, main), notes sync</td><td>Owner's terminal; pre-push hook</td><td>Owner</td></tr>
+    <tr><td>A18</td><td>Tags and releases</td><td>Owner tags; <code>release.yml</code> on GitHub (the only workflow)</td><td>Owner</td></tr>
+    <tr><td>A19</td><td>Watches on owner actions</td><td><code>scripts/router-watch.sh</code> (local git + <code>ls-remote</code>/<code>fetch</code> origin)</td><td>Router arms</td></tr>
+    <tr><td>A20</td><td>Manual testing ("try in the real app")</td><td>Owner's Mac, a tested helper at a stable path</td><td>Owner</td></tr>
+    <tr><td>A21</td><td>Sandbox-only test reds (R43)</td><td>Owner re-runs outside the sandbox</td><td>Owner</td></tr>
+    <tr><td>A22</td><td>Worker spawn / stop, worktree add / remove, watchdog</td><td><code>scripts/router-worker.sh</code>, <code>claude --bg</code>, <code>.router/</code></td><td>Router</td></tr>
+    <tr><td>A23</td><td>Worker reports (SendMessage; DSH inbox)</td><td>Session messages; <code>.router/inbox</code></td><td>Worker</td></tr>
+    <tr><td>A24</td><td>Permission prompts of a stuck worker</td><td><code>claude attach &lt;id&gt;</code></td><td>Owner</td></tr>
+    <tr><td>A25</td><td>Status board</td><td>Router chat</td><td>Router</td></tr>
+  </tbody>
+</table>
+
+<h3 id="github-surface" data-c="github-surface-h">2 · The GitHub surface, researched</h3>
+<p>Assumptions: <code>lesslucifer/Keel</code> is public and owned by a <b>personal account</b> on GitHub Free (checked: the profile page is a user profile). "Verified" = read on docs.github.com on 2026-11-15 through a fetch tool that summarises pages, or seen in this repo. "Unverified" = from memory; the last column says what would verify it.</p>
+<table data-c="github-surface">
+  <thead><tr><th>Feature</th><th>Can do for this flow</th><th>Cannot / limits</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>Pull requests, draft, reviews, review comments, suggested changes</td><td>One page per WU/epic: diff, checks, your approval, comments; draft until the worker's gates are green</td><td>"Pull request authors cannot approve their own pull requests." Owners and admins "can merge a pull request even if it hasn't received an approving review"</td><td>Verified</td></tr>
+    <tr><td>Required reviewers, CODEOWNERS</td><td>Your approval required on <code>.github/</code>, rule-bearing paths</td><td>Useless unless the author is not you (open point 4). Ruleset required reviewers are teams (organisations)</td><td>Verified (rules list); team detail unverified</td></tr>
+    <tr><td>Branch protection vs rulesets</td><td>Require a pull request, required status checks (strict = up to date), merge method restriction, block force push, restrict deletions, signed commits</td><td>Both apply together; "the most restrictive version of the rule applies". Admins bypass branch protection by default unless "Do not allow bypassing" is set. Bypass actors for required pull requests only on organisation repos. Linear history forbids merge commits: never enable it here. Rulesets on a personal Free public repo: the pages read do not say (DEC-38 already plans a tag ruleset)</td><td>Verified, except personal-repo ruleset availability: unverified, check Settings → Rules</td></tr>
+    <tr><td>Merge queue</td><td>—</td><td>"available in any public repository owned by an organization": not this repo. Needs a <code>merge_group</code> trigger</td><td>Verified</td></tr>
+    <tr><td>Actions: workflows, triggers</td><td>CI on <code>push</code>/<code>pull_request</code>; sign-off on <code>pull_request_review</code>; commands on <code>issue_comment</code>; manual runs on <code>workflow_dispatch</code></td><td><code>issue_comment</code> and <code>pull_request_review</code> run the workflow from the default branch (good: a pull request cannot rewrite them). <code>pull_request</code> runs the PR's merge ref and its workflow file. Events made with <code>GITHUB_TOKEN</code> start no new runs, except dispatch. Fork runs get no secrets</td><td>Verified</td></tr>
+    <tr><td>Actions minutes, artifacts</td><td>Free on standard GitHub-hosted runners in public repos</td><td>Private repos: a monthly allowance, macOS about 10× Linux price. Artifact storage price for public repos not stated on the page read</td><td>Verified; artifact storage unverified</td></tr>
+    <tr><td>Environments with required reviewers</td><td>An approval gate on a job: up to 6 reviewers, one suffices, "Prevent self-review", optional comment, approve from GitHub Mobile</td><td>On Free only for public repos. Admins bypass by default. Approves a run, not a review of the diff. How long a job waits before failing: not found (the 30-day figure read is the wait timer's maximum)</td><td>Verified; wait limit unverified</td></tr>
+    <tr><td>Self-hosted runners</td><td>Run a job on your Mac (macOS 11+), outbound HTTPS 443, no minutes charged</td><td>"Self-hosted runners should almost never be used for public repositories on GitHub, because any user can open pull requests against the repository and compromise the environment"</td><td>Verified</td></tr>
+    <tr><td>Secrets</td><td>Environment secrets released only after the environment's rules pass</td><td>Never to fork runs; on Free, environment secrets only in public repos</td><td>Verified</td></tr>
+    <tr><td>Job summaries</td><td>Render the notes as a table on the run page</td><td>Size limit not checked</td><td>Unverified (well known; read the job-summary page)</td></tr>
+    <tr><td>Check runs, commit statuses</td><td>Report keel gates per commit; required checks</td><td>"Only GitHub Apps can create check runs" (an Actions job is one). Others use commit statuses. Summary and text up to 65,535 characters</td><td>Verified</td></tr>
+    <tr><td>Issues, labels, sub-issues, Projects, Discussions</td><td>A tracking issue per epic, a sub-issue per WU; labels for state</td><td>Sub-issue limits and Projects automation not checked</td><td>Unverified (read the sub-issues page)</td></tr>
+    <tr><td>Comment author identity</td><td>Each comment carries <code>author_association</code> (OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, FIRST_TIMER, FIRST_TIME_CONTRIBUTOR, MANNEQUIN, NONE) and the user's id</td><td>Comments can be edited; anyone may comment on a public repo</td><td>Verified (REST issue comments)</td></tr>
+    <tr><td>Slash commands</td><td>A closed grammar parsed by the router's watch (or a workflow)</td><td>A workflow on <code>issue_comment</code> must never put the body into a <code>run:</code> line (script injection)</td><td>Verified (secure-use guide)</td></tr>
+    <tr><td>GitHub Pages</td><td>Rendered docs for reading on the phone</td><td>One site per repo; per-PR previews need a custom build; everything public</td><td>Unverified</td></tr>
+    <tr><td>Releases, deployments</td><td><code>release.yml</code> already publishes on a version tag</td><td>Whether a tag created from the web "Draft release" form triggers the <code>push</code> tag workflow: not checked</td><td>Unverified (one test tag on a scratch repo)</td></tr>
+    <tr><td>Notifications, GitHub Mobile</td><td>Push for mentions, review requests, deployment approvals; review deployments on the phone</td><td>Per-user settings; no custom routing found</td><td>Verified (GitHub changelog 2021-04-01, 2021-11-22, via search)</td></tr>
+    <tr><td>Webhooks</td><td>Instant events</td><td>Need an endpoint GitHub can reach. <code>gh webhook forward</code> "is not supported for use in production" and serves one person per repo at a time</td><td>Verified</td></tr>
+    <tr><td>Git notes on GitHub</td><td>Stored and served: origin holds <code>refs/notes/test</code>, <code>doc</code>, <code>cr</code>, <code>mr</code>, <code>dod</code> today</td><td>Not shown anywhere in the web UI (removed in 2014); a clone must fetch them by refspec (DEC-19)</td><td>Verified (<code>git ls-remote origin</code>); UI removal from the GitHub blog via search</td></tr>
+    <tr><td>Signed commits, vigilant mode</td><td>SSH signatures verified; vigilant mode marks your unsigned commits "Unverified"</td><td>A web merge commit is signed by GitHub's key, not yours</td><td>Verified; the merge-commit key unverified</td></tr>
+    <tr><td>Codespaces</td><td>Try <code>keel</code> in a browser: 120 core-hours and 15 GB-month free per month</td><td>Linux only ("Windows and macOS are not supported"); cannot run the router tooling (<code>claude --bg</code>, macOS)</td><td>Verified</td></tr>
+  </tbody>
+</table>
+
+<h3 id="mapping" data-c="mapping-h">3 · The mapping</h3>
+<p>Fit: <b>covers</b> = GitHub can replace it · <b>partial</b> = part moves, part stays · <b>does not fit</b> = stays local. Row ids are §1's.</p>
+<table data-c="mapping">
+  <thead><tr><th>#</th><th>Today</th><th>GitHub replacement</th><th>Lost / gained</th><th>Fit</th><th>Open question</th></tr></thead>
+  <tbody>
+    <tr><td>A1</td><td>Prompt the router</td><td>Comments on the epic's tracking issue or a pull request, read by the GitHub watch (W3)</td><td>Gains: phone, history. Loses: instant back-and-forth (≈ 1 min poll)</td><td>partial</td><td>OP 3, 6</td></tr>
+    <tr><td>A2</td><td>Router → owner messages, Telegram</td><td>Pull-request review requests and router-bot comments; GitHub Mobile push</td><td>Gains: the ask sits next to the diff. Loses: nothing if Telegram stays as fallback</td><td>covers</td><td>OP 7</td></tr>
+    <tr><td>A3</td><td>Doc review in htmldoc</td><td>Pull request links to the htmldoc page; htmldoc keeps comments</td><td>GitHub cannot render the HTML docs; files open from disk do not work on a phone</td><td>partial</td><td>OP 5</td></tr>
+    <tr><td>A4</td><td>Rulings log file</td><td>Your <code>/keel</code> answers on issues are the record; the router quotes them in briefs</td><td>Gains: dated, public, linkable. Loses: privacy</td><td>partial</td><td>—</td></tr>
+    <tr><td>A5</td><td><code>keel check</code></td><td>The <b>ci</b> job on a hosted runner (W1)</td><td>Gains: a clean machine, no sandbox reds. Workers still run it locally first</td><td>covers</td><td>—</td></tr>
+    <tr><td>A6</td><td>Notes test, doc</td><td>Stay git notes, written by workers; mirrored into the gate's job summary</td><td>Notes stay the offline-checkable truth; GitHub never shows them, the summary does</td><td>partial</td><td>—</td></tr>
+    <tr><td>A7</td><td>Preflight</td><td>Stays local (it gates the review run by a local worker)</td><td>—</td><td>does not fit</td><td>—</td></tr>
+    <tr><td>A8</td><td>Code review rounds</td><td>Stay local Claude workers; the router bot may post the verdict line on the pull request</td><td>Claude in Actions would need a model key on GitHub (out of scope)</td><td>does not fit</td><td>—</td></tr>
+    <tr><td>A9</td><td>Independent review</td><td>Stays local; its findings can be posted by the worker's file through the bot</td><td>—</td><td>does not fit</td><td>—</td></tr>
+    <tr><td>A10</td><td><code>verify-dod</code>, receipt</td><td>The <b>gate</b> job, a required check (W1, W5)</td><td>Gains: the merge button obeys it. Needs: keel built from the base</td><td>covers</td><td>—</td></tr>
+    <tr><td>A11</td><td><code>keel mr commit</code> trailer</td><td>CODEOWNERS approval of the pull request touching rule-bearing paths; the trailer stays for local commits</td><td>The trailer is typed text today (DEC-24); an approval is bound to a login</td><td>partial</td><td>A follow-up row: drop the trailer when the github tier is on?</td></tr>
+    <tr><td>A12</td><td>WU sign-off</td><td>Pull-request approval → <code>mr/v1</code>, github tier (W4)</td><td>Gains: phone, bound to your login and the exact commit. Loses: the key tier's offline signature (it stays available locally)</td><td>covers</td><td>OP 2</td></tr>
+    <tr><td>A13</td><td>Epic sign-off</td><td>Stays typed in this epic</td><td>The report is outside git</td><td>does not fit (yet)</td><td>OP 10</td></tr>
+    <tr><td>A14</td><td>Waivers, roster changes</td><td>Stay typed</td><td>—</td><td>does not fit (yet)</td><td>OP 12</td></tr>
+    <tr><td>A15</td><td>WU → epic merge</td><td>Merge button on the WU's pull request, merge commit only (W5)</td><td>Local hooks do not run on GitHub; the required checks run the same gate on the merge ref; the epic walk re-judges every seam anyway</td><td>covers</td><td>OP 11</td></tr>
+    <tr><td>A16</td><td>Epic → main merge</td><td>Merge button on the epic's pull request; <b>ci</b> runs on the merged tree</td><td>Same as A15; the epic sign-off before it stays typed (A13)</td><td>partial</td><td>OP 10</td></tr>
+    <tr><td>A17</td><td>Pushes, notes sync</td><td>Router bot pushes work branches (pre-push runs locally); main moves only by merges on GitHub</td><td>Gains: you never push. Changes DEC-46</td><td>covers</td><td>OP 1</td></tr>
+    <tr><td>A18</td><td>Tags, releases</td><td>Stay yours; a tag rule lets only you create version tags</td><td>Creating the tag from the web form is possible but its trigger is unverified</td><td>partial</td><td>—</td></tr>
+    <tr><td>A19</td><td>Watches</td><td>GitHub watch kinds (W3); git kinds stay for the fallback</td><td>Gains: sees your review and comments, not only git state</td><td>covers</td><td>—</td></tr>
+    <tr><td>A20</td><td>Manual testing</td><td>Artifacts, Codespaces, a checklist (W6)</td><td>Router tooling needs your Mac; a tick is not a test</td><td>partial</td><td>OP 9</td></tr>
+    <tr><td>A21</td><td>Sandbox-only reds</td><td>The <b>ci</b> job</td><td>Gone</td><td>covers</td><td>—</td></tr>
+    <tr><td>A22</td><td>Spawn, stop, worktrees, watchdog</td><td>Stay local; a <code>/keel</code> command can ask for one</td><td>Claude sessions run on your Mac</td><td>does not fit</td><td>—</td></tr>
+    <tr><td>A23</td><td>Worker reports</td><td>Stay local; the router digests and posts a status line</td><td>Workers never touch GitHub (no credential in a sandbox, R21)</td><td>does not fit</td><td>—</td></tr>
+    <tr><td>A24</td><td>Permission prompts</td><td>Stay local (<code>claude attach</code>); the router can at least tell you on GitHub</td><td>—</td><td>does not fit</td><td>—</td></tr>
+    <tr><td>A25</td><td>Status board</td><td>Tracking issue, sub-issue per WU (W3)</td><td>Gains: one page you can open anywhere</td><td>covers</td><td>—</td></tr>
+  </tbody>
+</table>
+<div class="callout warn" data-c="cannot-move">
+  <p><b>What cannot move:</b> the router and worker sessions (Claude Code on your Mac), the launcher, sandboxes and guards; code reviews by Claude; the key tier's signature and your SSH key; answering a worker's permission prompt; trying the router tooling itself (macOS, <code>claude --bg</code>); the GitHub settings, App key and secrets, which you set once by hand; and, in this epic, the epic sign-off, waivers and roster changes.</p>
+</div>
+
+<h3 id="router-fit" data-c="router-fit-h">4 · How the router fits</h3>
+<p>The router keeps running on your Mac. What changes is how it learns of your actions and how it answers.</p>
+<table data-c="architectures">
+  <thead><tr><th>Option</th><th>How the router learns</th><th>For</th><th>Against</th></tr></thead>
+  <tbody>
+    <tr><td><b>A · Poll (recommended)</b></td><td>The router arms <code>router-gh-watch.sh</code> as a background command, like today's watches; it polls the API about every 60 s and exits on the first event from you</td><td>No server, no open port, no runner; fits the no-heartbeat rule (a watch, not a loop); works the same on DSH</td><td>Up to a minute late; API rate limit (authenticated, ample for a few watches; exact budget unverified); one watch per armed thing</td></tr>
+    <tr><td>B · Self-hosted runner as a doorbell</td><td>A workflow on your comment or review, filtered by your user id at job level, runs on a runner on your Mac and posts to the router's inbox (DEC-58)</td><td>Seconds; reuses the inbox; also lets a <code>workflow_dispatch</code> run a try-it script on your Mac</td><td>GitHub warns against self-hosted runners on public repos; an always-on daemon as your user (or a second macOS user); one wrong <code>runs-on</code> exposes your Mac to any pull request</td></tr>
+    <tr><td>C · Webhooks to your Mac</td><td>GitHub posts events to a local server through a tunnel</td><td>Instant</td><td>A public endpoint or <code>gh webhook forward</code>, which GitHub supports for testing only; a new server to secure</td></tr>
+  </tbody>
+</table>
+<p><b>Recommendation: A.</b> It adds nothing that listens, and it is the shape the router already trusts. B is a later upgrade if a minute is too slow; it should never accept a job from a <code>pull_request</code> event.</p>
+<p><b>Trust model.</b></p>
+<ul data-c="trust">
+  <li><b>Who may command:</b> one GitHub user id, committed in the repo (with the roster). GitHub authenticates the account; your 2FA (ideally a passkey) is now the router's front door.</li>
+  <li><b>Every comment is untrusted input.</b> From any other id the watch prints a count, never the text. From you, the first line is matched against the closed command list; the rest reaches the router as your message, the same trust as a chat prompt today. Edits do not re-issue a command.</li>
+  <li><b>Prompt injection.</b> Pull requests from forks are ignored; the router reads only pull requests its bot opened. Workers never read GitHub, so no public text reaches a worker except through a brief the router writes, which never pastes untrusted text (UC-ROUTE-3).</li>
+  <li><b>The bot's power.</b> The App can push work branches, open pull requests, comment and set statuses. W5's rules stop it from changing main or merging; it cannot approve its own pull request.</li>
+  <li><b>What the guard and launcher need:</b> the guard admits <code>router-gh.sh</code> and <code>router-gh-watch.sh</code> in fixed shapes; the App key lives outside every worktree and outside the worker sandbox's reads; the worker deny list adds the two scripts; <code>.github/</code> and both scripts become rule-bearing.</li>
+</ul>
+
+<h3 id="gates" data-c="gates-h">5 · Gates on GitHub</h3>
+<table data-c="gate-map">
+  <thead><tr><th>Keel gate piece</th><th>On GitHub</th></tr></thead>
+  <tbody>
+    <tr><td>Checks 0–7 (<code>verify-dod</code>)</td><td>Required check <b>gate</b>, keel built from the base, notes fetched, run on the head; same <code>FAIL … fix -&gt;</code> lines in the log</td></tr>
+    <tr><td><code>keel check</code> on the merged tree</td><td>Required check <b>ci</b> on the pull request's merge ref</td></tr>
+    <tr><td>Check 8 (sign-off)</td><td>Status <code>keel/sign-off</code>, set by the base-defined review workflow after it writes <code>mr/v1</code> and runs the full gate</td></tr>
+    <tr><td>Check 4 (review base = merge-base)</td><td>Already strict; GitHub's "up to date" rule would add an extra back-merge commit, so leave it off and let check 4 judge</td></tr>
+    <tr><td><code>--no-ff</code></td><td>Merge commits only; no squash, no rebase, no linear-history rule</td></tr>
+    <tr><td>Hooks the merge runs</td><td>None on GitHub: the rules plus the required checks take their place; local merges keep the hooks</td></tr>
+  </tbody>
+</table>
+<p><b>Evidence store.</b> Git notes stay the evidence: the gate reads them offline, they travel with the code, and GitHub already stores them. Check runs, the job summary and pull-request reviews become views and inputs, never a second truth: a review is copied into <code>mr/v1</code>, not consulted instead of it.</p>
+<p><b>The sign-off options compared.</b></p>
+<table data-c="signoff-compare">
+  <thead><tr><th>Option</th><th>Bound to the exact commit</th><th>Report bytes</th><th>Phone</th><th>Checkable offline</th><th>A same-user worker can forge it</th></tr></thead>
+  <tbody>
+    <tr><td>Typed confirm, username tier (today)</td><td>Yes</td><td>Yes</td><td>No</td><td>Yes</td><td>Yes (DEC-48 item 4)</td></tr>
+    <tr><td>Typed confirm, key tier</td><td>Yes</td><td>Yes</td><td>No</td><td>Yes, signature</td><td>No, with a touch or passphrase key</td></tr>
+    <tr><td><b>PR approval, github tier</b></td><td>Yes (the review's commit)</td><td>Yes (hashed by the workflow at the head)</td><td>Yes</td><td>Fields only; the review itself online</td><td>The note offline, yes, as today; in CI, no: the review is re-read from GitHub</td></tr>
+    <tr><td>Environment approval</td><td>To a run, which names a commit</td><td>Only if the job hashes it</td><td>Yes</td><td>Fields only</td><td>Same as the github tier</td></tr>
+    <tr><td>Signed commit by you</td><td>Yes</td><td>If the commit carries it</td><td>No</td><td>Yes</td><td>No</td></tr>
+  </tbody>
+</table>
+<p><b>Does "the merge is the gate" hold?</b> Only with three conditions, all W5's: (1) main and <code>epic/*</code> change only by a pull-request merge, with no bypass for anyone; (2) every required check's logic and its <code>keel</code> come from the base branch, never the pull request (the review and comment triggers already run from the default branch; the <b>gate</b> job must not use the pull request's own workflow file to judge it, which W1 settles: a <code>pull_request_target</code> job reading git data only, or a base-pinned script, to be decided in W1's plan); (3) merge commits only. Without (1), an admin push skips everything, as <code>--no-verify</code> does locally; the epic walk would still catch it at the epic's merge, but not a direct push to main.</p>
+
+<h3 id="manual-testing" data-c="manual-h">6 · Manual testing</h3>
+<table data-c="manual">
+  <thead><tr><th>Option</th><th>What you get</th><th>Honest limits</th></tr></thead>
+  <tbody>
+    <tr><td>Artifacts (W6)</td><td>The branch's <code>keel</code> for macOS and Linux, one click from the pull request</td><td>Needs a login to download; a zip; macOS will quarantine an unsigned download (unverified detail); short retention; not on a phone</td></tr>
+    <tr><td>Pre-release per pull request</td><td>An installable build</td><td>Needs a tag per build; DEC-38 keeps tags yours. Not proposed</td></tr>
+    <tr><td>Checklist in the pull request (W6)</td><td>The "try in the real app" steps where you approve, tickable on the phone</td><td>A tick is your word, not evidence</td></tr>
+    <tr><td><code>workflow_dispatch</code> on a self-hosted runner</td><td>The try-it helper runs on your Mac from a button</td><td>Unattended, so it is a test, not a manual try; the public-repo runner risk (§4, B)</td></tr>
+    <tr><td>Codespaces (W6)</td><td>A browser terminal with the branch's <code>keel</code> built; works from a tablet</td><td>Linux only; cannot run Claude workers or the router tooling; free quota per month</td></tr>
+  </tbody>
+</table>
+
+<h3 id="path" data-c="path-h">Incremental path</h3>
+<ol data-c="path">
+  <li><b>W1 first:</b> pure signal, no rule changes, no new credential. If it is all you keep, sandbox reds are gone.</li>
+  <li><b>W2, then W3:</b> the bot and the watch. You can still sign and merge locally; pull requests are a view.</li>
+  <li><b>W4:</b> your approval becomes a sign-off; the typed sign-off still works.</li>
+  <li><b>W5 last:</b> only then does GitHub refuse a red merge. Turning its rules off returns you to today's flow.</li>
+  <li><b>W6</b> any time after W2.</li>
+</ol>
+<p><b>Fallback, always:</b> every gate still runs locally; a typed sign-off and a local <code>--no-ff</code> merge pushed by you remain valid, because the gate judges notes, not where the merge happened.</p>
+
+<h3 id="risks" data-c="risks-h">Risks</h3>
+<table data-c="risks">
+  <thead><tr><th>Risk</th><th>What it means</th><th>Handling</th></tr></thead>
+  <tbody>
+    <tr><td>Public repo exposure</td><td>Your orders, rulings and the router's status become public text; strangers can comment</td><td>Commands only from your id; keep sensitive decisions in htmldoc or local; never post secrets or paths under your home</td></tr>
+    <tr><td>Untrusted workflow code</td><td>A pull request's own workflow file decides its <code>pull_request</code> checks</td><td>The gate and sign-off logic run from the base; PRs only from the bot; <code>.github/</code> rule-bearing</td></tr>
+    <tr><td>Secrets</td><td>The App key on your Mac; <code>release.yml</code>'s tokens</td><td>Key readable only by the router's script; read-only <code>GITHUB_TOKEN</code> by default; no secret in the new workflows except the sign-off job's notes push</td></tr>
+    <tr><td>Your GitHub account</td><td>It now commands the router and signs</td><td>2FA with a passkey; the key tier stays available for epics</td></tr>
+    <tr><td>Actions minutes</td><td>Free on hosted runners for a public repo</td><td>Becomes a cost if the repo goes private (macOS about 10× Linux)</td></tr>
+    <tr><td>GitHub outage</td><td>No checks, no comments</td><td>The local flow is untouched; Telegram stays</td></tr>
+    <tr><td>Lock-in vs Keel as a tool</td><td>Keel is used by other projects, maybe not on GitHub</td><td>Notes stay the truth; the github tier is opt-in; router GitHub scripts stay in this repo (OP 8)</td></tr>
+  </tbody>
+</table>
+
+<h3 id="facts" data-c="facts-h">Verified facts vs assumptions</h3>
+<ul data-c="facts">
+  <li><b>Verified in this repo:</b> origin holds all five notes refs; <code>.github/workflows/release.yml</code> is the only workflow; the router guard already admits <code>gh pr view|list|status</code>; workers cannot use <code>gh</code> (DEC-46, R21); <code>lesslucifer</code> is a personal account.</li>
+  <li><b>Verified on docs.github.com</b> (2026-11-15, through a summarising fetch tool; quotes in §2): self-approval, admin merge, ruleset rules, branch protection bypass, merge queue availability, trigger refs, <code>GITHUB_TOKEN</code> events, environments, self-hosted runner warning, check-run permission, <code>author_association</code>, webhook forwarding, Codespaces OS and quota, Actions billing, vigilant mode.</li>
+  <li><b>Unverified, from memory:</b> rulesets on a personal Free public repo; required checks pinned to a source app; job summary limits; sub-issues; Pages previews; a web-form tag triggering <code>release.yml</code>; GitHub's key on web merge commits; auto-merge on this repo; API rate budget for polling; macOS quarantine of artifacts; a second "machine" account being allowed by GitHub's terms. Each WU's plan verifies the ones it relies on, by a scratch repo or by reading the named page.</li>
+  <li><b>Access:</b> docs.github.com and api.github.com are refused to this worker's shell (sandbox proxy); the fetch tool reached docs.github.com; github.com was reachable for <code>git ls-remote</code>.</li>
+</ul>
+
+<h3 id="sources" data-c="sources-h">Sources</h3>
+<ul data-c="sources">
+  <li><a href="https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets">Available rules for rulesets</a> · <a href="https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets">About rulesets</a> · <a href="https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches">About protected branches</a> · <a href="https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/managing-a-branch-protection-rule">Managing a branch protection rule</a></li>
+  <li><a href="https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/reviewing-changes-in-pull-requests/approving-a-pull-request-with-required-reviews">Approving a pull request with required reviews</a> · <a href="https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue">Managing a merge queue</a></li>
+  <li><a href="https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows">Events that trigger workflows</a> · <a href="https://docs.github.com/en/actions/reference/security/secure-use">Secure use reference</a> · <a href="https://docs.github.com/en/billing/concepts/product-billing/github-actions">Actions billing</a> · <a href="https://docs.github.com/en/actions/concepts/runners/self-hosted-runners">Self-hosted runners</a> · <a href="https://docs.github.com/en/actions/reference/runners/self-hosted-runners">Self-hosted runners reference</a></li>
+  <li><a href="https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments">Managing environments</a> · <a href="https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments">Deployments and environments</a> · <a href="https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/review-deployments">Reviewing deployments</a> · <a href="https://github.blog/changelog/2021-04-01-reviewing-deployments-on-github-mobile">Reviewing deployments on GitHub Mobile</a> · <a href="https://github.blog/changelog/2021-11-22-push-notifications-for-pull-request-review-activities-on-github-mobile">Mobile push for review activity</a></li>
+  <li><a href="https://docs.github.com/en/rest/checks/runs">Check runs API</a> · <a href="https://docs.github.com/en/rest/issues/comments">Issue comments API</a> · <a href="https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/using-the-github-cli-to-forward-webhooks-for-testing">Webhook forwarding</a> · <a href="https://docs.github.com/en/authentication/managing-commit-signature-verification/displaying-verification-statuses-for-all-of-your-commits">Vigilant mode</a> · <a href="https://docs.github.com/en/codespaces/overview">Codespaces overview</a> · <a href="https://docs.github.com/en/billing/concepts/product-billing/github-codespaces">Codespaces billing</a> · <a href="https://github.blog/news-insights/the-library/git-notes-display/">Git notes display (GitHub blog)</a></li>
+</ul>
+
+<h3 id="history" data-c="history-h">History</h3>
+<p>Drafted 2026-11-15 from the owner's ask of that day, by a planning worker on <code>epic/E-GHFLOW</code> off main <code>e957cb2</code>. Status draft: the owner reads, comments and tunes; WUs are provisional until the open points are answered.</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
