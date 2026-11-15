@@ -4357,23 +4357,31 @@ fn the_guard_and_the_github_watch_take_the_same_arguments() {
         }
     };
     let kinds = ["review", "comment", "merged", "checks", "Review", "watch", "since"];
-    let (mut admitted_n, mut checked) = (0, 0);
+    let mut corpus: Vec<Vec<String>> = Vec::new();
     for _ in 0..60 {
-        let k = kinds[next(kinds.len())];
+        let k = kinds[next(kinds.len())].to_string();
         let n = num(&mut next, 8);
         let id = num(&mut next, 16);
-        let mut shapes = vec![vec![k, n.as_str()], vec![k, n.as_str(), "since", id.as_str()], vec![k, "7", "since", id.as_str()]];
+        let s = |v: &[&str]| v.iter().map(|w| w.to_string()).collect::<Vec<String>>();
+        corpus.push(s(&[&k, &n]));
+        corpus.push(s(&[&k, &n, "since", &id]));
+        corpus.push(s(&[&k, "7", "since", &id]));
         if next(2) == 0 {
-            shapes.push(vec![k, "7", "after", "9"]);
+            corpus.push(s(&[&k, "7", "after", "9"]));
         }
-        shapes.push(vec![k, "7", "since", ["latest", "Latest", "latest1", "last"][next(4)]]);
-        for args in shapes {
-            let line = format!("scripts/router-gh-watch.sh {}", args.join(" "));
-            let (admitted, ok) = (bash(&line).is_none(), crate::router_gh_watch_args::accepts(&args));
-            assert_eq!(admitted, ok, "guard and watch disagree on: {line}");
-            admitted_n += usize::from(admitted);
-            checked += 1;
-        }
+        corpus.push(s(&[&k, "7", "since", ["latest", "Latest", "latest1", "last"][next(4)]]));
+    }
+    // deduplicated, as its W2 sibling's corpus (code review round 1)
+    corpus.sort();
+    corpus.dedup();
+    let (mut admitted_n, mut checked) = (0, 0);
+    for args in &corpus {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let line = format!("scripts/router-gh-watch.sh {}", args.join(" "));
+        let (admitted, ok) = (bash(&line).is_none(), crate::router_gh_watch_args::accepts(&args));
+        assert_eq!(admitted, ok, "guard and watch disagree on: {line}");
+        admitted_n += usize::from(admitted);
+        checked += 1;
     }
     assert!(admitted_n >= 10 && checked > admitted_n, "the corpus must hold both verdicts ({admitted_n} of {checked})");
     let alpha: Vec<char> = "aZ09._/:=@%,+^~-".chars().collect();

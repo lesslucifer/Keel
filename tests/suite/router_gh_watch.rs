@@ -387,7 +387,8 @@ fn only_the_bots_issues_and_pull_requests_are_read() {
     gh.routes_seq(&[("GET", "/repos/own/Keel/issues/30", "200".into(), vec![issue(30, "mallory", false)])]);
     let o = watch(&gh, &["comment", "30"]);
     assert_eq!(o.status.code(), Some(2), "{}", text(&o));
-    assert!(text(&o).contains("issue 30 is not one the bot opened"), "{}", text(&o));
+    assert!(text(&o).contains("issue 30 is not one the bot opened") && o.stdout.is_empty(), "{}", text(&o));
+    assert_eq!(gh.calls(), ["POST /app/installations/456/access_tokens", "GET /repos/own/Keel/issues/30"], "no comment read");
     gh.routes(&[]);
     let o = watch(&gh, &["merged", "32"]);
     assert_eq!(o.status.code(), Some(2), "{}", text(&o));
@@ -403,10 +404,8 @@ fn the_commanders_must_be_committed() {
     let cfg = gh.repo.join(".keel/config.toml");
     let committed = std::fs::read_to_string(&cfg).unwrap();
     std::fs::write(&cfg, committed.replace(&format!("[{OWNER_ID}]"), &format!("[{OWNER_ID}, {STRANGER}]"))).unwrap();
-    let mut c = common::cmd("perl");
-    c.args(["-e", "alarm 60; exec @ARGV", "sh"]).arg(gh.repo.join("scripts/router-gh-watch.sh")).args(["comment", "30"]).current_dir(&gh.repo);
-    c.env("PATH", gh.path()).env("HOME", &gh.home).env("TMPDIR", &gh.tmp).env("MOCK_GH", &gh.mock).env("ROUTER_GH_CURL", gh.bin.join("fake-curl"));
-    let o = c.output().unwrap();
+    // the checkout is dirty on purpose: watch_raw skips the clean-checkout check
+    let o = watch_raw(&gh, &["comment", "30"]);
     assert_eq!(o.status.code(), Some(2), "{}", text(&o));
     assert!(text(&o).contains("differs from HEAD's"), "{}", text(&o));
     assert!(gh.calls().is_empty(), "{:?}", gh.calls());
@@ -568,7 +567,8 @@ fn an_overflow_without_an_event_names_where_to_resume() {
 }
 
 /// Round 2, N-c: a full first page with no Link to the last one cannot show the newest items: the
-/// read fails (and the watch, after 5 such polls, prints UNREACHABLE) rather than judging the oldest.
+/// read (router-gh.sh watch-read, run once here) fails with exit 1 rather than judging the oldest;
+/// the watch counts an exit 1 as a failed poll, as unreachable_after_five_failed_polls_and_timeout shows.
 #[test]
 fn a_full_first_page_without_a_link_fails() {
     let gh = Gh::new();

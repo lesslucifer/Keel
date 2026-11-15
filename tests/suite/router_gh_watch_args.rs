@@ -19,16 +19,25 @@ fn scripts() -> std::path::PathBuf {
 /// Exit code and stderr of the watch on `args`; panics if curl was ever called or anything reached
 /// stdout. The guard's agreement test in router.rs reads the watch's verdict through this too.
 pub(crate) fn check(args: &[&str]) -> (Option<i32>, String) {
+    check_env(args, &[])
+}
+
+/// As `check`, with `env` over the harness's own: an empty temp HOME (no App key), a curl that only
+/// records a call, ROUTER_WATCH_MAX=0 and a 60 s alarm, so a regression past the argument check
+/// reaches neither the owner's key nor GitHub, and never hangs (code review round 1).
+fn check_env(args: &[&str], env: &[(&str, &str)]) -> (Option<i32>, String) {
     let d = TempDir::new().unwrap();
     let curl = d.path().join("curl");
     std::fs::write(&curl, format!("#!/bin/sh\ntouch {}\n", common::sh_quote(&d.path().join("called").to_string_lossy()))).unwrap();
     std::fs::set_permissions(&curl, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let o = common::cmd("sh")
+    let o = common::cmd("perl")
+        .args(["-e", "alarm 60; exec @ARGV", "sh"])
         .arg(scripts().join("router-gh-watch.sh"))
         .args(args)
         .env("HOME", d.path())
         .env("ROUTER_GH_CURL", &curl)
         .env("ROUTER_WATCH_MAX", "0")
+        .envs(env.iter().copied())
         .output()
         .unwrap();
     assert!(!d.path().join("called").exists(), "{args:?} reached curl");
@@ -95,9 +104,9 @@ fn numbers_are_plain_and_bounded() {
         assert!(err.contains("may not start with -") || err.contains("usage:"), "{a:?}: {err}");
     }
     for (k, v) in [("ROUTER_WATCH_POLL", "0"), ("ROUTER_WATCH_POLL", "1x"), ("ROUTER_WATCH_MAX", "-1"), ("ROUTER_WATCH_MAX", "1234567890")] {
-        let o = common::cmd("sh").arg(scripts().join("router-gh-watch.sh")).args(["comment", "1"]).env(k, v).output().unwrap();
-        assert_eq!(o.status.code(), Some(2));
-        assert!(String::from_utf8_lossy(&o.stderr).contains(k), "{k}={v}");
+        let (code, err) = check_env(&["comment", "1"], &[(k, v)]);
+        assert_eq!(code, Some(2), "{k}={v}: {err}");
+        assert!(err.starts_with("router-gh-watch: ") && err.contains(k), "{k}={v}: {err}");
     }
 }
 
@@ -180,6 +189,7 @@ fn the_grammar_names_each_command_and_each_bad_form() {
         ("\n/keel go", json!({"kind": "text", "rest": ["", "/keel go"]})),
     ];
     let got = parse(&cases.iter().map(|(b, _)| b.to_string()).collect::<Vec<_>>());
+    assert_eq!(got.len(), cases.len(), "one verdict per case");
     for ((body, want), got) in cases.iter().zip(got) {
         assert_eq!(&got, want, "{body:?}");
         assert_eq!(&reference(body), want, "the reference disagrees on {body:?}");
@@ -264,6 +274,7 @@ fn the_grammar_agrees_with_its_reference_on_generated_comments() {
     bodies.dedup();
     let got = parse(&bodies);
     let mut commands = 0;
+    assert_eq!(got.len(), bodies.len(), "one verdict per comment");
     for (b, g) in bodies.iter().zip(&got) {
         assert_eq!(g, &reference(b), "{b:?}");
         let first = b.split('\n').next().unwrap().trim_matches(|c| c == ' ' || c == '\t' || c == '\r');
