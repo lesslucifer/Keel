@@ -22,7 +22,7 @@ const BOT: &str = "keel-router[bot]";
 /// Routes: `METHOD PATH STATUS FILE` lines in $MOCK_GH/routes (first match; none is a 404).
 const FAKE_CURL: &str = r#"#!/bin/sh
 set -eu
-[ $# -eq 2 ] && [ "$1" = --config ] && [ "$2" = - ] || { echo "fake curl: unexpected argv: $*" >&2; exit 2; }
+[ $# -eq 3 ] && [ "$1" = -q ] && [ "$2" = --config ] && [ "$3" = - ] || { echo "fake curl: unexpected argv: $*" >&2; exit 2; }
 cfg=$(cat)
 val() { printf '%s\n' "$cfg" | sed -n "s/^$1 = \"\\(.*\\)\"\$/\\1/p" | head -n 1; }
 url=$(val url) method=$(val request) out=$(val output) data=$(val data-binary)
@@ -59,6 +59,11 @@ fn exe(p: &Path, body: &str) {
 
 fn chmod(p: &Path, mode: u32) {
     std::fs::set_permissions(p, std::os::unix::fs::PermissionsExt::from_mode(mode)).unwrap();
+}
+
+/// The test/v1 note the push checks for on a wu/ tip (schema and tip; the gate reads the rest).
+fn test_note(d: &Path, tip: &str) {
+    git(d, &["notes", "--ref=test", "add", "-f", "-m", &format!(r#"{{"schema":"test/v1","tip":"{tip}"}}"#), tip]);
 }
 
 fn commit(d: &Path, msg: &str) {
@@ -121,7 +126,7 @@ impl Gh {
         commit(&repo, "wu x");
         let tip = git(&repo, &["rev-parse", "HEAD"]);
         git(&repo, &["notes", "--ref=cr", "add", "-m", r#"{"verdict":"PASS","round":2}"#, &tip]);
-        git(&repo, &["notes", "--ref=test", "add", "-m", "{}", &tip]);
+        test_note(&repo, &tip);
         git(&repo, &["push", "-q", "--no-verify", origin.to_str().unwrap(), "main", "epic/E"]);
         let o = common::cmd(KEEL).args(["hooks", "install"]).current_dir(&repo).output().unwrap();
         assert!(o.status.success(), "{}", text(&o));
@@ -136,7 +141,6 @@ impl Gh {
         assert!(o.status.success(), "{}", text(&o));
         chmod(&kdir.join("app.pem"), 0o600);
         write(&kdir, "app.conf", "app_id=123\ninstallation_id=456\napp_slug=keel-router\n");
-        common::git_shim(&bin);
         exe(&bin.join("fake-curl"), FAKE_CURL);
         let gh = Gh { root, repo, origin, home, mock, bin, marks, tmp };
         gh.routes(&[]);
@@ -299,16 +303,18 @@ fn body_of(r: &serde_json::Value) -> serde_json::Value {
     serde_json::from_str(r["body"].as_str().unwrap()).unwrap()
 }
 
-/// push runs the pre-push hook's `[check]` and lands the branch and every notes ref on origin, as
-/// the App (a token was minted), never forced; a second push changes nothing.
+/// push lands the branch and every notes ref on origin, as the App (a token was minted), never
+/// forced; a second push changes nothing. No pushed code runs (security review B1): Keel's hooks are
+/// installed, yet neither the pre-push hook nor the branch's `[check]` commands ran.
 #[test]
-fn push_lands_the_branch_and_its_notes_after_the_pre_push_hook() {
+fn push_lands_the_branch_and_its_notes_and_runs_none_of_the_pushed_code() {
     let gh = Gh::new();
+    assert!(!git(&gh.repo, &["config", "core.hooksPath"]).is_empty(), "Keel's hooks are installed");
     let tip = gh.sha("wu/E/x");
     let o = gh.run(&["push", "wu/E/x"]);
     assert!(o.status.success(), "{}", text(&o));
     assert_eq!(stdout(&o), format!("PUSHED branch=wu/E/x sha={tip} state=new"));
-    assert!(gh.marks.join("test-ran").exists(), "the pre-push hook's keel check did not run");
+    assert_eq!(std::fs::read_dir(&gh.marks).unwrap().count(), 0, "a [check] command of the pushed branch ran");
     assert_eq!(gh.origin_sha("refs/heads/wu/E/x").as_deref(), Some(tip.as_str()));
     for n in ["cr", "test"] {
         assert_eq!(gh.origin_sha(&format!("refs/notes/{n}")), Some(gh.sha(&format!("refs/notes/{n}"))), "notes {n}");
@@ -317,20 +323,79 @@ fn push_lands_the_branch_and_its_notes_after_the_pre_push_hook() {
     assert_auth(&gh);
     let o = gh.run(&["push", "wu/E/x"]);
     assert_eq!(stdout(&o), format!("PUSHED branch=wu/E/x sha={tip} state=unchanged"), "{}", text(&o));
+    assert_eq!(std::fs::read_dir(&gh.marks).unwrap().count(), 0);
 }
 
-/// A red pre-push hook stops the push: nothing reaches origin.
+/// A wu/ tip without its test/v1 note (its worker's sandboxed keel check) is refused before any
+/// request; a note for another tip does not count.
 #[test]
-fn a_red_pre_push_hook_stops_the_push() {
+fn a_wu_tip_without_its_test_note_is_refused() {
     let gh = Gh::new();
-    let cfg = std::fs::read_to_string(gh.repo.join(".keel/config.toml")).unwrap();
-    assert!(cfg.contains("test = \"touch "), "{cfg}");
-    write(&gh.repo, ".keel/config.toml", &cfg.replace("test = \"touch ", "test = \"false && touch "));
-    commit(&gh.repo, "red check");
+    let old = gh.sha("wu/E/x");
+    write(&gh.repo, "src/d.txt", "d");
+    commit(&gh.repo, "untested");
+    let tip = gh.sha("wu/E/x");
     let o = gh.run(&["push", "wu/E/x"]);
-    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
-    assert!(text(&o).contains("push of wu/E/x refused"), "{}", text(&o));
-    assert_eq!(gh.origin_sha("refs/heads/wu/E/x"), None);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains(&format!("the tip {tip} of wu/E/x carries no test/v1 note")), "{}", text(&o));
+    git(&gh.repo, &["notes", "--ref=test", "add", "-m", &format!(r#"{{"schema":"test/v1","tip":"{old}"}}"#), &tip]);
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert_eq!(o.status.code(), Some(2), "a copied note: {}", text(&o));
+    assert!(gh.log().is_empty() && gh.origin_sha("refs/heads/wu/E/x").is_none());
+    test_note(&gh.repo, &tip);
+    assert!(gh.run(&["push", "wu/E/x"]).status.success());
+}
+
+/// An epic push GitHub already holds walks the range, as the pre-push hook would, with keel's
+/// code-free gate: an ungated code commit refuses the push; a docs-only one passes. A new epic
+/// branch has no range on GitHub to walk.
+#[test]
+fn an_epic_push_passes_the_range_walk_first() {
+    let gh = Gh::new();
+    git(&gh.repo, &["switch", "-q", "epic/E"]);
+    let old = gh.sha("epic/E");
+    write(&gh.repo, "README", "a docs-only epic commit");
+    commit(&gh.repo, "readme");
+    let o = gh.run(&["push", "epic/E"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(stdout(&o).ends_with("state=updated"), "{}", text(&o));
+    let landed = gh.sha("epic/E");
+    assert_ne!(landed, old);
+    write(&gh.repo, "src/e.txt", "ungated code");
+    commit(&gh.repo, "code on the epic");
+    let o = gh.run(&["push", "epic/E"]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("FAIL") && text(&o).contains(&format!("the range walk refused {landed}..epic/E")), "{}", text(&o));
+    assert_eq!(gh.origin_sha("refs/heads/epic/E"), Some(landed));
+    assert_eq!(std::fs::read_dir(&gh.marks).unwrap().count(), 0, "the range walk ran a [check] command");
+    git(&gh.repo, &["switch", "-q", "-c", "epic/F"]);
+    let o = gh.run(&["push", "epic/F"]);
+    assert!(o.status.success() && stdout(&o).ends_with("state=new"), "{}", text(&o));
+}
+
+/// The user's global git config is not read (security review I1): its push.followTags would push
+/// a tag, and its url.insteadOf would send the push elsewhere.
+#[test]
+fn the_users_global_git_config_cannot_widen_or_reroute_a_push() {
+    let gh = Gh::new();
+    let gh_dir = gh.origin.parent().unwrap().parent().unwrap().display().to_string();
+    let elsewhere = gh.root.path().canonicalize().unwrap().join("elsewhere");
+    std::fs::create_dir_all(elsewhere.join("own/Keel.git")).unwrap();
+    git(&elsewhere.join("own/Keel.git"), &["init", "-q", "--bare"]);
+    write(
+        &gh.home,
+        ".gitconfig",
+        &format!(
+            "[push]\n\tfollowTags = true\n[url \"file://{}/\"]\n\tinsteadOf = file://{gh_dir}/\n\tpushInsteadOf = file://{gh_dir}/\n",
+            elsewhere.display()
+        ),
+    );
+    git(&gh.repo, &["tag", "-a", "-m", "t", "v9", "wu/E/x"]);
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(gh.origin_sha("refs/heads/wu/E/x"), Some(gh.sha("wu/E/x")));
+    assert_eq!(gh.origin_sha("refs/tags/v9"), None, "a tag was pushed");
+    assert!(git(&elsewhere.join("own/Keel.git"), &["for-each-ref"]).is_empty(), "the push was rerouted");
 }
 
 /// A branch GitHub holds on another line is rejected (exit 1) and origin keeps its commit.
@@ -342,6 +407,7 @@ fn push_never_forces_a_diverged_branch() {
     git(&gh.repo, &["reset", "-q", "--hard", "epic/E"]);
     write(&gh.repo, "src/b.txt", "b");
     commit(&gh.repo, "another line");
+    test_note(&gh.repo, &gh.sha("wu/E/x"));
     let o = gh.run(&["push", "wu/E/x"]);
     assert_eq!(o.status.code(), Some(1), "{}", text(&o));
     assert!(text(&o).contains("push of wu/E/x rejected") && text(&o).contains("never forced"), "{}", text(&o));
@@ -358,6 +424,7 @@ fn a_rejected_notes_ref_warns_and_the_branch_still_lands() {
     git(&gh.repo, &["push", "-q", "--no-verify", "-f", gh.origin.to_str().unwrap(), "refs/notes/alt:refs/notes/cr"]);
     write(&gh.repo, "src/c.txt", "c");
     commit(&gh.repo, "more");
+    test_note(&gh.repo, &gh.sha("wu/E/x"));
     let tip = gh.sha("wu/E/x");
     let o = gh.run(&["push", "wu/E/x"]);
     assert!(o.status.success(), "{}", text(&o));
@@ -604,6 +671,11 @@ fn post_refuses_unsafe_files_and_keeps_them() {
     std::fs::create_dir_all(&dir).unwrap();
     write(&gh.root.path().canonicalize().unwrap(), "elsewhere.md", "outside");
     std::os::unix::fs::symlink(gh.root.path().join("elsewhere.md"), dir.join("link.md")).unwrap();
+    // a worker cannot read the key, but it can name it (B2)
+    std::os::unix::fs::symlink(gh.home.join(".config/keel/router-gh/app.pem"), dir.join("key.md")).unwrap();
+    std::fs::hard_link(gh.root.path().join("elsewhere.md"), dir.join("hard.md")).unwrap();
+    let o = common::cmd("mkfifo").arg(dir.join("fifo.md")).output().unwrap();
+    assert!(o.status.success(), "{}", text(&o));
     std::fs::write(dir.join("big.md"), "a".repeat(60_001)).unwrap();
     std::fs::write(dir.join("max.md"), "a".repeat(60_000)).unwrap();
     std::fs::write(dir.join("empty.md"), "").unwrap();
@@ -613,6 +685,9 @@ fn post_refuses_unsafe_files_and_keeps_them() {
     std::fs::write(dir.join("latin1.md"), b"caf\xe9\n").unwrap();
     for (name, why) in [
         ("link", "must be a regular file, not a link"),
+        ("key", "must be a regular file, not a link"),
+        ("hard", "has more than one link: refused"),
+        ("fifo", "must be a regular file, not a link"),
         ("big", "must hold 1 to 60000 bytes"),
         ("empty", "must hold 1 to 60000 bytes"),
         ("bell", "control character"),
@@ -641,7 +716,7 @@ fn post_refuses_unsafe_files_and_keeps_them() {
     std::os::unix::fs::symlink(gh.root.path().join("moved"), &dir).unwrap();
     gh.routes(&[("GET", "/repos/own/Keel/pulls/7", 200, gh.pr(7, BOT, "own/Keel", &tip, true))]);
     let o = gh.run(&["post", "7", "big"]);
-    assert!(o.status.code() == Some(2) && text(&o).contains("is a link: refused"), "{}", text(&o));
+    assert!(o.status.code() == Some(2) && text(&o).contains("is a link or was moved: refused"), "{}", text(&o));
     // someone else's pull request: refused before any file is read
     gh.routes(&[("GET", "/repos/own/Keel/pulls/7", 200, gh.pr(7, "mallory", "own/Keel", &tip, true))]);
     let o = gh.run(&["post", "7", "big"]);
@@ -719,8 +794,18 @@ fn key_and_app_settings_problems_are_refused_before_any_request() {
     check("must have mode 0600 or 0400");
     chmod(&key, 0o640);
     check("must have mode 0600 or 0400");
+    chmod(&key, 0o600);
+    // a second name for the key (a hard link a worker could read through) and a directory others may write (N4)
+    std::fs::hard_link(&key, gh.root.path().join("second.pem")).unwrap();
+    check("has 2 links: remove the others");
+    std::fs::remove_file(gh.root.path().join("second.pem")).unwrap();
+    for mode in [0o770, 0o702, 0o777] {
+        chmod(&kdir, mode);
+        check("must be a directory no one else may write");
+    }
+    chmod(&kdir, 0o750);
     chmod(&key, 0o400);
-    assert!(gh.run(&["push", "wu/E/x"]).status.success(), "0400 is fine");
+    assert!(gh.run(&["push", "wu/E/x"]).status.success(), "0400 in a 0750 directory is fine");
     git(&gh.origin, &["update-ref", "-d", "refs/heads/wu/E/x"]);
     gh.routes(&[]);
     std::fs::rename(&key, kdir.join("real.pem")).unwrap();
@@ -784,8 +869,27 @@ fn the_credential_mode_gives_the_token_once() {
     let dir = gh.root.path().canonicalize().unwrap().join("router-gh.AbC123");
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("token");
-    let run = |f: &Path, op: &str| common::cmd("sh").arg(gh.repo.join("scripts/router-gh.sh")).arg("credential").arg(f).arg(op).output().unwrap();
+    let ask = |f: &Path, op: &str, input: &str| {
+        use std::io::Write;
+        let mut c = common::cmd("sh");
+        c.arg(gh.repo.join("scripts/router-gh.sh")).arg("credential").arg(f).arg(op);
+        let mut p = c.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
+        p.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+        p.wait_with_output().unwrap()
+    };
+    let run = |f: &Path, op: &str| ask(f, op, "protocol=https\nhost=github.com\n\n");
     std::fs::write(&file, TOKEN).unwrap();
+    // any host but github.com over https gets nothing, and the token stays for GitHub (I1)
+    for other in [
+        "protocol=https\nhost=evil.example\n\n",
+        "protocol=http\nhost=github.com\n\n",
+        "protocol=https\nhost=github.com.evil.example\n\n",
+        "host=github.com\n\n",
+        "",
+    ] {
+        let o = ask(&file, "get", other);
+        assert!(o.status.success() && o.stdout.is_empty() && file.exists(), "{other:?}: {}", text(&o));
+    }
     let o = run(&file, "store");
     assert!(o.status.success() && o.stdout.is_empty() && file.exists());
     let o = run(&file, "get");
@@ -819,6 +923,63 @@ fn the_real_curl_reads_the_request_config() {
     let code: i32 = err.split("(curl exit ").nth(1).and_then(|r| r.split(')').next()).and_then(|n| n.parse().ok()).unwrap_or_else(|| panic!("{err}"));
     assert!(![1, 2, 3, 26, 27, 43, 48, 49].contains(&code), "curl refused the request config (exit {code}): {err}");
     assert!(err.contains("GitHub unreachable: POST /app/installations/456/access_tokens"), "{err}");
+}
+
+/// Over https (security review I2): a `git` on PATH stands for GitHub's transport. Each time the
+/// script sends git to `https://github.com/own/Keel.git`, it first asks git's own credential layer,
+/// with the script's exact `-c` options, for another host, for github.com, and for github.com again,
+/// then runs the real git against the bare origin. The token goes only to github.com over https,
+/// once per git run, and is gone after; push, the epic's ls-remote and sync each get a fresh one.
+#[test]
+fn over_https_git_gets_the_token_once_and_only_for_github() {
+    let gh = Gh::new();
+    let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap().trim().to_string();
+    let log = gh.root.path().join("cred.log");
+    let target = format!("file://{}", gh.origin.display());
+    exe(
+        &gh.bin.join("git"),
+        &format!(
+            r#"#!/usr/bin/env python3
+import json, os, subprocess, sys
+REAL, LOG, TARGET = {real:?}, {log:?}, {target:?}
+URL = "https://github.com/own/Keel.git"
+a = sys.argv[1:]
+if URL in a:
+    i = next(i for i, x in enumerate(a) if x in ("push", "fetch", "ls-remote"))
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    def fill(host):
+        p = subprocess.run([REAL] + a[:i] + ["credential", "fill"], input="protocol=https\nhost=%s\n\n" % host, capture_output=True, text=True, env=env)
+        return p.stdout
+    rec = {{"cmd": a[i], "evil": fill("evil.example"), "github": fill("github.com"), "again": fill("github.com")}}
+    with open(LOG, "a") as f:
+        f.write(json.dumps(rec) + "\n")
+    a = [TARGET if x == URL else x for x in a]
+os.execv(REAL, [REAL] + a)
+"#,
+            log = log.display().to_string()
+        ),
+    );
+    let https = [("ROUTER_GH_GIT", "https://github.com")];
+    let o = gh.run_env(&["push", "wu/E/x"], &https);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(gh.origin_sha("refs/heads/wu/E/x"), Some(gh.sha("wu/E/x")));
+    git(&gh.repo, &["switch", "-q", "epic/E"]);
+    write(&gh.repo, "README", "docs only");
+    commit(&gh.repo, "readme");
+    let o = gh.run_env(&["push", "epic/E"], &https);
+    assert!(o.status.success(), "{}", text(&o));
+    git(&gh.repo, &["reset", "-q", "--hard", "HEAD~1"]);
+    git(&gh.repo, &["switch", "-q", "wu/E/x"]);
+    let o = gh.run_env(&["sync", "epic/E"], &https);
+    assert!(o.status.success() && stdout(&o).contains("state=fast-forward"), "{}", text(&o));
+    let runs: Vec<serde_json::Value> = std::fs::read_to_string(&log).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let cmds: Vec<&str> = runs.iter().map(|r| r["cmd"].as_str().unwrap()).collect();
+    assert_eq!(cmds, ["push", "ls-remote", "push", "fetch"]);
+    for r in &runs {
+        assert_eq!(r["evil"], "", "another host got credentials: {r}");
+        assert_eq!(r["github"], format!("protocol=https\nhost=github.com\nusername=x-access-token\npassword={TOKEN}\n"), "{r}");
+        assert_eq!(r["again"], "", "the token was given twice in one git run: {r}");
+    }
 }
 
 /// The comment files workers write never reach a commit in Keel's own repository.
