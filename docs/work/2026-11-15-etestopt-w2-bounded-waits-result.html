@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af88fbe9f34851f0dfb24c1" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-TESTOPT.W2 result: bounded waits</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-TESTOPT.W2 result · The watcher test takes 0.3 s and passes in the sandbox</h1>
+      <p>It took 20.1 s and failed in every worker's sandbox. It still fails when the bound it guards is broken.</p>
+      <div class="meta">T3 · WU result · 2026-11-15 · epic <code>E-TESTOPT</code> · WU <code>E-TESTOPT.W2</code> · plan: <a href="2026-11-15-etestopt-w2-bounded-waits-plan.html">2026-11-15-etestopt-w2-bounded-waits-plan.html</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome">Delivered. <code>watcher_run_is_bounded_when_the_watch_outpolls_its_releases</code> now passes in a worker's sandbox in 0.3 s, down from 20.1 s and red. The router test program drops from 24 s to 11 to 14 s, depending on load. Waits for something that must happen keep the 10-second bound. No production script changed.</p>
+
+<table data-c="timings">
+  <thead><tr><th>Measure (worker's sandbox, CLT git first on <code>PATH</code>)</th><th>Before (base <code>1e1c6bc</code>)</th><th>After</th><th>Load (1-minute)</th></tr></thead>
+  <tbody>
+    <tr><td>The watcher test alone</td><td>20.09 s, red (<code>ps</code>: Operation not permitted)</td><td>round 1 fix: 0.28 s · 0.27 s · 0.29 s, green (first tip: 1.20 s · 1.20 s · 1.19 s)</td><td>before 2.3 · after 5.2 (first tip 2.4, 25.1)</td></tr>
+    <tr><td><code>cargo test --test router</code></td><td>24.01 s · 23.89 s; 57 pass, 1 fail</td><td>round 1 fix: 9.22 s; 58 pass (first tip: 10.59 s · 14.49 s · 13.67 s)</td><td>before 11.9 to 14.1 · after 5.3 (first tip 2.7, then 14.2 to 19.1)</td></tr>
+  </tbody>
+</table>
+<p>The first tip's after runs at load 14 to 19 shared the machine with another worker's test run. The 10.59 s run at load 2.7 is the quiet figure.</p>
+
+<h2 id="deviations">Deviations</h2>
+<div data-item="deviations" data-c="deviations">
+  <ul>
+    <li>The bound helper has no separate unit test, as the plan said: the watcher test asserts each "never" wait gives up no sooner than the bound it was given and well before 10 s.</li>
+    <li>Review round 1 (FAIL, one important): the plan's shim-exit check, <code>kill -0</code> on each pid, also succeeds on a zombie. A shim orphaned when its watch is killed stays a zombie wherever pid 1 never reaps (a container whose pid 1 is not an init), so the test would go red there for no fault. Fixed: the shim appends its pid to <code>$STEP_DIR/exited</code> as its last act, and the test waits until every pid in <code>pids</code> is in <code>exited</code>. That record is the shim's own and is written before it exits, so whether anyone reaps it does not matter. No liveness probe and no <code>ps</code>.</li>
+    <li>Round 1's two nits folded in: <code>NEVER</code> is 100 ms, not 500 ms, and the <code>run_within</code> case runs in the thread scope with the other two. Together: 1.2 s to 0.28 s.</li>
+    <li>Not in the plan: before asking for poll 2 or the output, the test waits for poll 1 under the full bound. That way the shims whose exit it checks are known to have started, and the pid check cannot pass because nothing ran.</li>
+  </ul>
+</div>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+  <ul>
+    <li><b>Code</b> (<code>tests/router.rs</code> only): <code>Stepped::at_within</code>, <code>Stepped::output_within</code> and <code>Watcher::run_within</code> take a bound; <code>at</code>, <code>output</code> and <code>run</code> pass <code>BOUND</code> (10 s). A new constant, <code>NEVER</code> (500 ms), is used for the three "never" waits. The sleep shim appends its pid to <code>$STEP_DIR/pids</code>. It appends its pid to <code>$STEP_DIR/exited</code> as its last act. The test waits until every started pid has an exit record, instead of running <code>ps</code>.</li>
+    <li><b>Red first</b>: on the base tree in the sandbox, the test fails after 20.09 s with <code>ps</code>: Operation not permitted.</li>
+    <li><b>The round 1 fault, shown on macOS</b>: a shim run under a parent that never reaps it, then released, leaves a zombie. <code>kill -0</code> on its pid still succeeds, the old check's false "alive". Its exit record is there, so the new check reads "exited". Inside the test the shim's adopter is launchd, which reaps, so the false red itself cannot be reproduced in the suite on macOS.</li>
+    <li><b>Mutant checks</b>, run on the first tip and again after the round 1 fix, with the same results (each made, run, then restored; green after restore):
+      <table data-c="mutants">
+        <thead><tr><th>Mutant</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>M1: <code>output_within</code> ignores its bound</td><td>hangs; killed by the alarm (45 s, then 30 s)</td></tr>
+          <tr><td>M2: <code>at_within</code> ignores its bound</td><td>hangs; killed by the alarm (45 s, then 30 s)</td></tr>
+          <tr><td>M3: the shim no longer exits with its caller (<code>kill -0 "$PPID"</code> removed)</td><td>fails: <code>timed out waiting for every sleep shim to exit</code> (11.2 s, then 10.3 s)</td></tr>
+          <tr><td>M4: the shim records no pid</td><td>fails: <code>the shims of the two watches held at poll 1 recorded no pid: []</code></td></tr>
+        </tbody>
+      </table>
+    </li>
+    <li><b>Sweep</b>: no other test waits out a bound on purpose. No other test catches a bound's panic. The launcher's own polls (<code>listed</code>: 50 looks, 0.2 s apart; the busy stop: 60 looks, 0.5 s apart) already run through an instant <code>sleep</code> (<code>fast_path</code>). The baseline's other slow tests (the facts block at 5.0 s, the launcher at 3.8 to 4.5 s, review, close walk, seed3, mr) spend their time starting processes, not waiting. That cost is W4's.</li>
+    <li><b>Gates</b>: <code>keel check</code> green (lint and the full <code>cargo test</code>, with the CLT git first on <code>PATH</code>; W1 fixes the stock path).</li>
+    <li><b>Commits</b>: the WU plan; the test change; this report; the round 1 fix; this report updated.</li>
+  </ul>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">Nothing citable at the WU. The rule "a 'never' wait takes a short bound; a wait for something that must happen keeps the full one" goes into DEC-84 at the epic close, as the epic plan's distillation plan says. R43's second half closes there too.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<p data-item="follow-ups" data-c="follow-ups">None new. Closing backlog R43 is E-TESTOPT.W5's job.</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
