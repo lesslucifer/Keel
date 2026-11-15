@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHFLOW2.W3 result: your approval is the sign-off</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHFLOW2.W3 · Result: your approval is the sign-off</h1>
+      <p>Built and proven hermetically: an approval on the head commit by a listed GitHub id writes the sign-off note; anything else writes nothing. It runs live after landing 2.</p>
+      <div class="meta">v1 · 2026-11-16 · T3 · WU result · Keel · plan: 2026-11-15-eghflow2-w3-plan.html</div>
+    </div>
+  </header>
+  <main>
+    <h2 id="outcome">Outcome</h2>
+    <p data-item="outcome"><b>Delivered</b> against the requirement, hermetically. A recorded approval by <code>5499546</code> on the head, fed to <code>scripts/ci-sign-off.sh</code> with a fake GitHub, writes mr/v1 (tier <code>github</code>, the review's id, page and commit), pushes it to origin, posts <code>keel/sign-off</code> success, and <code>keel verify-dod</code> is green. A comment, an older commit, an unlisted id, a foreign page or a red check writes nothing. <code>keel mr</code> refuses a checkout whose git links git did not make and runs no git. Five files wait for your one commit (below); until then a clean checkout of the branch lacks the scripts and workflows its tests read.</p>
+
+    <h2 id="you">What you do now</h2>
+    <ol data-c="owner-steps">
+      <li><b>The router's security review</b> of <code>.github/workflows/keel-sign-off.yml</code> (a write token), <code>keel-sign-off-request.yml</code>, <code>scripts/ci-sign-off.sh</code> and the <code>scripts/router-gh.sh</code> diff, against DEC-63's list plus: no head code with a write token, no cache a pull request writes, every event value through env.</li>
+      <li><b>Your roster line.</b> Add <code>github: 5499546 lesslucifer</code> to <code>.keel/mr-allowed</code> in this worktree and <code>git add .keel/mr-allowed</code>. A worker never edits the roster.</li>
+      <li><b>Your commit</b>, with a keel built from this branch first on PATH: the installed keel refuses the <code>github</code> tier in the working <code>.keel/config.toml</code>, in the command and in the commit-msg hook. The exact command is in the router's report.</li>
+      <li><b>After the merge into the epic</b>, install a keel built from the epic before the next gated merge or typed sign-off: the epic's config then lists <code>github</code>, which an older keel rejects. The sign-off of this WU needs <code>--roster-change</code> if the roster line is in it.</li>
+    </ol>
+
+    <h2 id="deviations">Deviations</h2>
+    <ul data-item="deviations">
+      <li><b>The writer's token reads pull requests</b> (plan open point 2): <code>pull-requests: read</code> beside contents and statuses write. Reading the reviews needs it; it writes nothing there.</li>
+      <li><b>No CI re-read in check 8</b> (open point 3): the writer re-reads the review before it writes; check 8 checks the note's bindings offline. Backlog github-flow G7.</li>
+      <li><b>The github tier is opt-in</b>: a config that names no <code>[mr] tiers</code> still accepts the three typed tiers only. The plan did not say; a default that let an approval sign would widen every project that never asked.</li>
+      <li><b>An approval never signs a roster change or a waived review</b>, and never bootstraps a roster: those stay the typed sign-off (W7 brings them to comments).</li>
+      <li><b>One fix beyond the plan</b>: R50's check reads a <code>gitdir</code> that git wrote relative (<code>worktree.useRelativePaths</code>) from the admin dir.</li>
+      <li><b>G5's W2 corpus cost</b>: the curl stub is written once per run now, but the 507 guard probes still run serially (left in G5).</li>
+      <li><b>Two probe commands were denied</b> by the session's permission check (a scratch <code>git notes merge</code> experiment); not routed around. The hermetic router-gh tests settled the question instead.</li>
+    </ul>
+
+    <h2 id="evidence">Evidence</h2>
+    <div data-item="evidence">
+      <table data-c="evidence">
+        <tr><th>What</th><th>Where</th></tr>
+        <tr><td>The github tier: a <code>github: &lt;id&gt; &lt;login&gt;</code> roster line; a typed confirm, commit or <code>Reviewed-By</code> by a github-only id refused; mr/v1's <code>review</code>; check 8 binds its commit to the tip and its page to its id</td><td><code>src/mr.rs</code>, <code>src/notes.rs</code></td></tr>
+        <tr><td><code>keel ci sign-off</code> (exit 0 signed, 3 nothing to sign, 1 refused) and <code>keel notes write report</code></td><td><code>src/mr.rs</code>, <code>src/notes.rs</code>, <code>src/main.rs</code></td></tr>
+        <tr><td>R50: <code>keel mr</code> checks <code>.git</code>, <code>commondir</code>, <code>gitdir</code> and <code>config.worktree</code> before any git</td><td><code>src/mr.rs</code> <code>checkout_problem</code>, called first in <code>src/main.rs</code></td></tr>
+        <tr><td>Integration: 15 tests - approval on the head signs and the gate goes green; ten kinds of review write nothing; a red check, a roster change, a policy without github; check 8 red on an edited review, a later commit, a missing review; the epic report note; R50 over seven tamperings with a git that records any call; the writer script end to end (status, push, a notes ref that moved, a base keel that predates the command, input refused before any request)</td><td><code>tests/suite/sign_off.rs</code></td></tr>
+        <tr><td>Lock test: both workflows' triggers, permissions, the one pinned checkout of the default branch, env-only event values; the script builds keel only in the base worktree and checks out nothing</td><td><code>tests/suite/keel_gate.rs</code> (4 tests)</td></tr>
+        <tr><td><code>router-gh.sh push</code> merges GitHub's notes first, keeps ours on a conflict, pushes the report note; the https and rejected-ref tests updated</td><td><code>tests/suite/router_gh.rs</code></td></tr>
+        <tr><td>Unit: the roster line (2000 generated), the typed/approval split, the approval pick (1000 generated lists), the review page</td><td><code>src/mr.rs</code> tests</td></tr>
+        <tr><td>Red first: the integration tests ran red before the CLI was wired; each unit test, the writer script's tests and the router-gh tests were shown red by a mutation of the code they guard (11 mutations, each caught)</td><td>this report</td></tr>
+        <tr><td>G5's W2 nits</td><td><code>tests/suite/router_gh.rs</code>, <code>tests/suite/router_gh_args.rs</code></td></tr>
+      </table>
+      <p>Commits: 7f4ed20 (plan), 243d7cc (core), 1be7590 (tests), f1fa8f8 (G5), 9c84c48 and 36e6f9f (fixes), 6bcba10 (backlog), then this report. Staged for your commit: <code>.github/workflows/keel-sign-off-request.yml</code>, <code>.github/workflows/keel-sign-off.yml</code>, <code>scripts/ci-sign-off.sh</code>, <code>scripts/router-gh.sh</code>, <code>.keel/config.toml</code>.</p>
+    </div>
+
+    <h2 id="distillation">Distillation</h2>
+    <p data-item="distillation">Nothing citable yet beyond the backlog: github-flow G5 (W2 rows done), G6 (R50 fixed), new G7; e-router-v2 R50 fixed. UC-MR's new row, UC-MR-1's amendment, the github tier's decision record (amending DEC-47 and DEC-48), DEC-61's notes fetch, <code>docs/install.html</code> §5's roster line and the skills' GitHub sign-off sequence go in at the epic's next landing or close, by its distillation plan (G6).</p>
+
+    <h2 id="follow-ups">Follow-ups</h2>
+    <ul data-item="follow-ups">
+      <li>The live facts of the first approval on GitHub (the payload's pull-request number, the token's reads and writes, the notes push): backlog github-flow G7, item 1, at landing 2.</li>
+      <li>A dismissed approval leaves its note: G7, item 2 (E-GHFLOW2.W7 or later).</li>
+      <li>Check 8 reads no review in CI: G7, item 3 (E-GHFLOW2.W4 if the rules need it).</li>
+      <li>The guard-agreement corpus's serial cost: G5.</li>
+    </ul>
+  </main>
+</body>
+</html>
