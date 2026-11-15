@@ -1,17 +1,23 @@
 //! `keel mr setup|commit|confirm`, the committed signer roster `.keel/mr-allowed`, gate check 8 and
 //! the commit-msg `Reviewed-By` check (UC-MR-1/2, DEC-47). Ported from Trawler's xtask/src/mr.rs
 //! (DEC-9/10/27): stock `ssh-keygen -Y` signatures, verified offline against the roster.
-use crate::notes::{self, sha256, CrNote, MrNote};
+use crate::notes::{self, sha256, CrNote, MrNote, Review};
 use crate::{gate, git, git_dir, no_git_env, review, short, verify_doc, Config, ReportPolicy};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 /// `ssh-keygen -Y -n` namespace: a Keel sign-off is never valid as a git commit signature or anything else.
 const NAMESPACE: &str = "keel-mr";
 const TRAILER: &str = "Reviewed-By";
 const ROSTER: &str = ".keel/mr-allowed";
-pub(crate) const KNOWN_TIERS: &[&str] = &["email", "username", "key"];
+pub(crate) const KNOWN_TIERS: &[&str] = &["email", "username", "key", "github"];
+/// The tiers a project accepts when its config names none: the typed ones. The github tier is opt-in.
+pub(crate) const DEFAULT_TIERS: &[&str] = &["email", "username", "key"];
+/// The tier a pull-request approval signs with (E-GHFLOW2.W3): never typed.
+const GITHUB: &str = "github";
+/// The `report` a sign-off names when it attests the epic report carried as a note on the tip.
+pub(crate) const REPORT_NOTE: &str = "refs/notes/report";
 const NOT_AUTHORISED: &str = "A HUMAN must review this and confirm - an AI agent MUST NOT self-authorise.
       after the human has read the change and said yes:
         keel mr commit -m \"<msg>\" --as <identity>          (rule-bearing commit)
@@ -25,6 +31,16 @@ struct Entry {
     key: Option<String>,
 }
 
+/// A GitHub login as GitHub allows one: letters, digits and single inner hyphens, 1 to 39 characters.
+fn valid_login(s: &str) -> bool {
+    (1..=39).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') && !s.starts_with('-') && !s.ends_with('-') && !s.contains("--")
+}
+
+/// A GitHub user id: decimal digits, no leading zero, at most 19 (so it fits a u64).
+fn valid_user_id(s: &str) -> bool {
+    (1..=19).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_digit()) && !s.starts_with('0')
+}
+
 /// Restricted so an identity can never carry allowed_signers pattern syntax (`*?,!"`) or whitespace.
 fn valid_identity(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "@._+-".contains(c))
@@ -35,12 +51,14 @@ fn roster_lines(text: &str) -> impl Iterator<Item = (usize, &str)> {
     text.lines().map(str::trim).enumerate().filter(|(_, l)| !l.is_empty() && !l.starts_with('#'))
 }
 
-/// `<tier>: <identity>` or `key:<identity> <keytype> <base64> [comment]` lines, read from `src`.
+/// `<tier>: <identity>`, `key: <identity> <keytype> <base64> [comment]` or `github: <user id> <login>`
+/// lines, read from `src`. A github line's identity is the numeric id, which a rename never changes;
+/// the login is for the reader.
 /// Lines whose tier is not in `tiers` authorise nothing; a malformed line is an error, never skipped.
 fn parse_roster(text: &str, tiers: &[String], src: &str) -> Result<Vec<Entry>, String> {
     let mut out = vec![];
     for (n, line) in roster_lines(text) {
-        let bad = || format!("keel: {src} line {}: expected `<tier>: <identity>` or `key: <identity> <ssh-pubkey>`", n + 1);
+        let bad = || format!("keel: {src} line {}: expected `<tier>: <identity>`, `key: <identity> <ssh-pubkey>` or `github: <user id> <login>`", n + 1);
         let (tier, rest) = line.split_once(':').ok_or_else(bad)?;
         let tier = tier.trim();
         let mut f = rest.split_whitespace();
@@ -49,6 +67,8 @@ fn parse_roster(text: &str, tiers: &[String], src: &str) -> Result<Vec<Entry>, S
             // Only a real key type: an options field (cert-authority, ...) never reaches allowed_signers.
             ("key", Some(t), Some(b)) if ["ssh-", "ecdsa-", "sk-"].iter().any(|p| t.starts_with(p)) => Some(format!("{t} {b}")),
             ("key", ..) => return Err(bad()),
+            (GITHUB, Some(login), None) if valid_user_id(identity) && valid_login(login) => None,
+            (GITHUB, ..) => return Err(bad()),
             (_, None, _) => None,
             _ => return Err(bad()),
         };
@@ -92,6 +112,24 @@ fn roster_change(old: &str, new: &str) -> Vec<String> {
     let lines = |t: &str| -> std::collections::BTreeSet<String> { roster_lines(t).map(|(_, l)| l.split_whitespace().collect::<Vec<_>>().join(" ")).collect() };
     let (old, new) = (lines(old), lines(new));
     new.difference(&old).map(|l| format!("+ {l}")).chain(old.difference(&new).map(|l| format!("- {l}"))).collect()
+}
+
+/// The tier that authorises `id` to sign by typing (`keel mr commit`, `confirm`, a `Reviewed-By`
+/// trailer): every tier but github, which signs only by an approval on GitHub.
+fn typed_tier<'a>(allowed: &'a [Entry], id: &str) -> Option<&'a str> {
+    let typed: Vec<&Entry> = allowed.iter().filter(|e| e.tier != GITHUB).collect();
+    let mine = || typed.iter().filter(|e| e.identity == id);
+    mine().find(|e| e.key.is_some()).or_else(|| mine().next()).map(|e| e.tier.as_str())
+}
+
+/// Whether `id` is listed under the github tier.
+fn approves(allowed: &[Entry], id: &str) -> bool {
+    allowed.iter().any(|e| e.tier == GITHUB && e.identity == id)
+}
+
+/// The refusal for a typed sign-off by an id that signs only by approval.
+fn by_approval_only(src: &str, id: &str) -> String {
+    format!("keel mr: refused - {id} is listed in {src} under the github tier only: it signs by approving the pull request on GitHub, never by a typed command\n  fix -> approve the pull request's head commit on GitHub, or sign as an identity listed under another tier")
 }
 
 /// The tier that authorises `id`; `key` wins, so a key holder can never sign off unsigned.
@@ -328,9 +366,16 @@ fn change_hash(repo: &Path, base: &str, tip: &str) -> Result<String, String> {
     Ok(sha256(notes::diff_text(repo, base, tip, &[])?.as_bytes()))
 }
 
-/// SHA-256 of the report's exact bytes: the blob at the tip, else (epic only - archived out of
-/// git by then) the raw local file. `Ok(None)` = an epic report found nowhere.
+/// SHA-256 of the report's exact bytes: the report note on the tip when `path` is `refs/notes/report`
+/// (a committed file of that name is never the report); else the blob at the tip, else (epic only -
+/// archived out of git by then) the raw local file. `Ok(None)` = an epic report found nowhere.
 fn report_hash(repo: &Path, tip: &str, path: &str, epic: bool) -> Result<Option<String>, String> {
+    if path == REPORT_NOTE {
+        return match notes::raw(repo, "report", tip)? {
+            Some(body) => Ok(Some(sha256(body.as_bytes()))),
+            None => Err(format!("the tip {} carries no {REPORT_NOTE} note (keel notes write report <path>)", short(tip))),
+        };
+    }
     let ls = git(repo, &["ls-tree", tip, "--", path], &[])?;
     if let ["100644" | "100755", "blob", id] = ls.split('\t').next().unwrap_or("").split(' ').collect::<Vec<_>>()[..] {
         let o = no_git_env(Command::new("git"), true)
@@ -492,8 +537,8 @@ fn commit(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     let msg = flag(args, "-m").filter(|m| !m.trim().is_empty()).ok_or("usage: keel mr commit -m <msg> [--as <identity>]")?;
     let (allowed, src) = roster(repo, cfg, "HEAD", "")?;
     let id = signer(&allowed, &src, args)?;
-    let Some(tier) = tier_of(&allowed, &id) else {
-        eprintln!("{}", unlisted(&src, &id));
+    let Some(tier) = typed_tier(&allowed, &id) else {
+        eprintln!("{}", if approves(&allowed, &id) { by_approval_only(&src, &id) } else { unlisted(&src, &id) });
         return Ok(1);
     };
     let body = format!("{}\n\n{TRAILER}: {tier} {id}\n", msg.trim_end());
@@ -553,8 +598,8 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     // The roster check 8 will judge by: a sign-off the gate would refuse is refused before signing.
     let (allowed, src) = roster(repo, cfg, &target, &tip)?;
     let id = signer(&allowed, &src, args)?;
-    let Some(tier) = tier_of(&allowed, &id).map(String::from) else {
-        eprintln!("{}", unlisted(&src, &id));
+    let Some(tier) = typed_tier(&allowed, &id).map(String::from) else {
+        eprintln!("{}", if approves(&allowed, &id) { by_approval_only(&src, &id) } else { unlisted(&src, &id) });
         return Ok(1);
     };
     // The one point a roster edit made inside a branch meets the signer, who reads a report, not the diff.
@@ -677,6 +722,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         waiver_hash: waiver.clone(),
         change_hash: change,
         sig,
+        review: None,
     };
     // The owner's waiver and the sign-off land together or not at all (B17).
     let mut writes = vec![];
@@ -753,13 +799,29 @@ pub(crate) fn manual_review(
         ));
     }
     let (allowed, roster) = roster(repo, cfg, target, tip).map_err(|e| (e, NOT_AUTHORISED.into()))?;
-    match tier_of(&allowed, &n.signer) {
-        None => {
-            return Err((
-                format!("{t} is signed off by {}, whom {roster} does not list (under tiers {:?})", n.signer, cfg.mr.tiers),
-                format!("a signer is added by landing their line in {ROSTER} on {target}, signed off by a signer it already lists\n      {NOT_AUTHORISED}"),
-            ))
+    let not_listed = || {
+        Err((
+            format!("{t} is signed off by {}, whom {roster} does not list (under tiers {:?})", n.signer, cfg.mr.tiers),
+            format!("a signer is added by landing their line in {ROSTER} on {target}, signed off by a signer it already lists\n      {NOT_AUTHORISED}"),
+        ))
+    };
+    // An approval binds through its review; a typed sign-off through the typed tiers (a key wins).
+    let tier = match (&n.review, typed_tier(&allowed, &n.signer)) {
+        (_, Some("key")) => Some("key"),
+        (Some(r), _) if approves(&allowed, &n.signer) => {
+            if let Some(cause) = review_problem(r, tip) {
+                return again(format!("the approval on {t}: {cause}"));
+            }
+            Some(GITHUB)
         }
+        (Some(_), _) => return not_listed(),
+        (None, None) if approves(&allowed, &n.signer) => {
+            return again(format!("{} is listed in {roster} under the github tier only, but the note on {t} carries no approval (no review)", n.signer))
+        }
+        (None, tier) => tier,
+    };
+    match tier {
+        None => return not_listed(),
         Some("key") => {
             let Some(sig) = &n.sig else {
                 return again(format!("{} is key-backed in {roster}, but the note on {t} carries no signature", n.signer));
@@ -769,7 +831,7 @@ pub(crate) fn manual_review(
                 return again(format!("{t}'s mr/v1 signature by {} does not verify over base..tip and the attested report against {roster}", n.signer));
             }
         }
-        Some(_) => {} // identity tier: listed is all it proves
+        Some(_) => {} // identity tier: listed is all it proves; github: the review is bound above
     }
     // A report in the note is re-hashed whatever the policy: an attestation is never ignored.
     let Some((path, hash)) = attested else { return Ok(None) };
@@ -786,6 +848,181 @@ fn stale_change(signed: &str, range: &str) -> String {
     } else {
         format!("the sign-off on {range} was signed by a keel older than the SHA-256 sign-off format; re-sign with keel mr confirm")
     }
+}
+
+/// Why an approval's review does not bind this tip, if it does not: it approved another commit, or its
+/// page is not that review's on a pull request of a GitHub repository.
+fn review_problem(r: &Review, tip: &str) -> Option<String> {
+    if r.commit != tip {
+        return Some(format!("its review approved {}, not this tip", printable(short(&r.commit))));
+    }
+    let page =
+        regex::Regex::new(r"^https://github\.com/[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}/pull/[1-9][0-9]{0,9}#pullrequestreview-([1-9][0-9]{0,19})$").ok()?;
+    match page.captures(&r.url).and_then(|c| c[1].parse::<u64>().ok()) {
+        Some(id) if id == r.id => None,
+        _ => Some(format!("its review link {} is not review {}'s page on a pull request", printable(&r.url), r.id)),
+    }
+}
+
+/// GitHub's review list (`GET /repos/{o}/{r}/pulls/{n}/reviews`), read as data: the newest review whose
+/// state is APPROVED, on exactly `tip`, by an id `allowed` lists under the github tier, with a page
+/// that is its own. Everything else - a comment, a change request, a dismissed or pending review,
+/// another commit, an unlisted or malformed id - is passed over.
+fn pick_approval(reviews: &serde_json::Value, tip: &str, allowed: &[Entry]) -> Option<(String, Review)> {
+    let mut best: Option<(String, Review)> = None;
+    for v in reviews.as_array()? {
+        let (Some(id), Some(user), Some("APPROVED"), Some(commit), Some(url)) =
+            (v["id"].as_u64(), v["user"]["id"].as_u64(), v["state"].as_str(), v["commit_id"].as_str(), v["html_url"].as_str())
+        else {
+            continue;
+        };
+        let review = Review { id, url: url.to_string(), commit: commit.to_string() };
+        let user = user.to_string();
+        if approves(allowed, &user) && review_problem(&review, tip).is_none() && best.as_ref().is_none_or(|(_, b)| b.id < id) {
+            best = Some((user, review));
+        }
+    }
+    best
+}
+
+pub(crate) const SIGN_OFF_USAGE: &str = "usage: keel ci sign-off <wu|epic> <tip> --target <base> --reviews <file> [--report <path>]";
+
+/// `keel ci sign-off` (E-GHFLOW2.W3): the approval writer's core, run by scripts/ci-sign-off.sh with
+/// keel built from the pull request's base. `--reviews`: GitHub's review list for the pull request,
+/// as the script fetched it. Exit 0: mr/v1 written (tier github, the review copied in); exit 3: no
+/// approval to sign, nothing written; exit 1: refused, nothing written. The roster and policy are
+/// the target's committed ones; a target with no roster signs nothing (no bootstrap by approval).
+pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
+    let ([lvl, tip_ref], Some(target), Some(file)) = (positionals(args)[..].try_into().unwrap_or(["", ""]), flag(args, "--target"), flag(args, "--reviews"))
+    else {
+        return Err(SIGN_OFF_USAGE.into());
+    };
+    let epic = match lvl {
+        "wu" => false,
+        "epic" => true,
+        _ => return Err(SIGN_OFF_USAGE.into()),
+    };
+    let refuse = |what: String| {
+        eprintln!("sign-off refused - {what}");
+        Ok(1)
+    };
+    let text = std::fs::read_to_string(file).map_err(|e| format!("keel ci sign-off: cannot read {file}: {e}"))?;
+    let reviews: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("keel ci sign-off: {file} is not JSON: {e}"))?;
+    if !reviews.is_array() {
+        return Err(format!("keel ci sign-off: {file} is not GitHub's list of reviews"));
+    }
+    if let Some(t) = cfg.mr.tiers.iter().find(|t| !KNOWN_TIERS.contains(&t.as_str())) {
+        return Err(format!("keel: unknown mr tier '{t}' in .keel/config.toml (known: {})", KNOWN_TIERS.join(", ")));
+    }
+    let tip =
+        git(repo, &["rev-parse", "--verify", "-q", &format!("{tip_ref}^{{commit}}")], &[]).map_err(|_| format!("keel ci sign-off: no commit {tip_ref}"))?;
+    let Some(listed) = roster_text(repo, target) else {
+        return refuse(format!("{target} commits no {ROSTER}, so no approval can sign: a roster is landed by a typed sign-off"));
+    };
+    let src = format!("{target}:{ROSTER}");
+    let allowed = parse_roster(&listed, &cfg.mr.tiers, &src)?;
+    let Some((id, review)) = pick_approval(&reviews, &tip, &allowed) else {
+        println!("no approval to sign on {}: none of its reviews is an APPROVED one on this commit by an id {src} lists under the github tier", short(&tip));
+        return Ok(3);
+    };
+    let Some(gate::Ready { tip, base, target, cr }) = gate::sign_ready(repo, cfg, epic, tip_ref, &["--target", target], false)? else {
+        return refuse(format!("sign last: a check before the sign-off is red on {} (above)", short(&tip)));
+    };
+    if let Some(r) = landed(&tip, &base, &target) {
+        return refuse(r);
+    }
+    if !roster_change(&listed, &roster_text(repo, &tip).unwrap_or_default()).is_empty() {
+        return refuse(format!(
+            "{}..{} changes who may sign ({ROSTER}): a roster change is signed by the typed keel mr confirm --roster-change",
+            short(&base),
+            short(&tip)
+        ));
+    }
+    if cr.as_ref().is_some_and(|c| c.waiver().is_some()) {
+        return refuse(format!("the review of {} is WAIVED: a waiver is accepted by the typed keel mr confirm --accept-waiver", short(&tip)));
+    }
+    let report = match pick_report(repo, cfg, args, &base, &tip, epic) {
+        Ok(r) => r,
+        Err((what, _)) => return refuse(what),
+    };
+    let report_hash = match &report {
+        Some(r) => match report_hash(repo, &tip, r, epic) {
+            Ok(Some(h)) => Some(h),
+            Ok(None) => return refuse(format!("cannot read {r}")),
+            Err(e) => return refuse(e),
+        },
+        None => None,
+    };
+    let note = MrNote {
+        schema: "mr/v1".into(),
+        id: notes::identity(repo, tip.clone(), base.clone(), None)?,
+        level: lvl.into(),
+        signer: id.clone(),
+        tier: GITHUB.into(),
+        report: report.clone(),
+        report_hash,
+        waiver_hash: None,
+        change_hash: change_hash(repo, &base, &tip)?,
+        sig: None,
+        review: Some(review.clone()),
+    };
+    notes::store_all(repo, &[("mr", tip.as_str(), serde_json::to_string(&note).map_err(|e| e.to_string())?)])?;
+    println!("mr/v1 on {} - github {id} approved it (review {}), attesting {}", short(&tip), review.id, report.as_deref().unwrap_or("no report"));
+    Ok(0)
+}
+
+/// R50 (E-GHFLOW2.W3): before `keel mr` runs any git, its checkout's git links must be as git makes
+/// them, by scripts/router-gh.sh's rule - workers can write the shared git dir, and the owner's
+/// unsandboxed sign-off would follow whatever they wrote there. From `start` up to the first `.git`:
+/// a directory (a main checkout) holds no `commondir`; a file (a linked checkout) names an admin dir
+/// under `<git dir>/worktrees/` whose `commondir` is `../..` and whose `gitdir` names this `.git`
+/// back; neither the git dir nor the admin dir holds a `config.worktree`. No link is followed.
+/// `Some(why)` refuses.
+pub(crate) fn checkout_problem(start: &Path) -> Option<String> {
+    let owner = "the owner checks and removes it; nothing was run";
+    let exists = |p: &Path| std::fs::symlink_metadata(p).is_ok();
+    let (root, dotgit) = start.ancestors().find_map(|d| exists(&d.join(".git")).then(|| (d.to_path_buf(), d.join(".git"))))?;
+    let meta = std::fs::symlink_metadata(&dotgit).ok()?;
+    let canon = |p: &Path| std::fs::canonicalize(p).ok();
+    let (common, admin) = if meta.file_type().is_symlink() {
+        return Some(format!("{} is a symbolic link; git makes a directory or a gitdir file: {owner}", dotgit.display()));
+    } else if meta.is_dir() {
+        (dotgit.clone(), None)
+    } else {
+        let link = std::fs::read_to_string(&dotgit).unwrap_or_default();
+        let Some(named) = link.strip_prefix("gitdir: ").map(|l| l.trim_end_matches('\n')).filter(|l| !l.is_empty() && !l.contains('\n')) else {
+            return Some(format!("{} is not a gitdir link: {owner}", dotgit.display()));
+        };
+        let named = root.join(named);
+        let bad = |why: &str| {
+            Some(format!("{} names {}, which is not this checkout's admin dir as git makes one ({why}): {owner}", dotgit.display(), named.display()))
+        };
+        if std::fs::symlink_metadata(&named).map(|m| !m.is_dir()).unwrap_or(true) {
+            return bad("not a directory");
+        }
+        let admin = canon(&named)?;
+        if admin.parent().and_then(Path::file_name).is_none_or(|n| n != "worktrees") {
+            return bad("not under <git dir>/worktrees/");
+        }
+        if std::fs::read_to_string(admin.join("commondir")).ok().as_deref().map(|c| c.strip_suffix('\n').unwrap_or(c)) != Some("../..") {
+            return bad("its commondir is not ../..");
+        }
+        let back = std::fs::read_to_string(admin.join("gitdir")).ok().map(|g| PathBuf::from(g.strip_suffix('\n').unwrap_or(&g)));
+        if back.as_deref().and_then(|g| Some((g.file_name()? == ".git", canon(g.parent()?)?))) != Some((true, canon(&root)?)) {
+            return bad("its gitdir does not name this checkout's .git");
+        }
+        (admin.join("../.."), Some(admin))
+    };
+    if exists(&common.join("commondir")) {
+        return Some(format!("{} exists: a main git dir has none, so a worker may have written it: {owner}", common.join("commondir").display()));
+    }
+    for dir in std::iter::once(&common).chain(admin.as_ref()) {
+        let f = dir.join("config.worktree");
+        if exists(&f) {
+            return Some(format!("{} exists: this repository uses none, so a worker may have written it: {owner}", f.display()));
+        }
+    }
+    None
 }
 
 /// commit-msg hook: a staged change to a rule-bearing path needs a `Reviewed-By` trailer naming a
@@ -810,7 +1047,7 @@ pub fn commit_msg(repo: &Path, cfg: &Config, msg_file: &str) -> Result<i32, Stri
         }
     };
     let id = msg.lines().filter_map(|l| l.strip_prefix(TRAILER)?.trim_start().strip_prefix(':')).next_back().and_then(|v| v.split_whitespace().next_back());
-    if id.is_some_and(|id| tier_of(&allowed, id).is_some()) {
+    if id.is_some_and(|id| typed_tier(&allowed, id).is_some()) {
         return Ok(0);
     }
     eprintln!("keel: commit refused - it touches rule-bearing {} with no {TRAILER} trailer from a listed signer\n  fix -> {NOT_AUTHORISED}", hits.join(", "));
@@ -829,10 +1066,126 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        landed, parse_roster, payload, positionals, printable, roster_change, rule_bearing, sha256, stale_change, waive_reason, waiver_code, waiver_drift,
-        waiver_listing,
+        approves, landed, parse_roster, payload, pick_approval, positionals, printable, review_problem, roster_change, rule_bearing, sha256, stale_change,
+        tier_of, typed_tier, waive_reason, waiver_code, waiver_drift, waiver_listing,
     };
-    use crate::notes::CrNote;
+    use crate::notes::{CrNote, Review};
+    use serde_json::json;
+
+    #[test]
+    fn a_github_line_is_a_numeric_id_and_a_login_and_nothing_else() {
+        let all = tiers(&["username", "github", "key"]);
+        let got = parse_roster("github: 5499546 lesslucifer\nusername: vu\n", &all, "r").unwrap();
+        assert_eq!(got.iter().map(|e| (e.tier.as_str(), e.identity.as_str())).collect::<Vec<_>>(), [("github", "5499546"), ("username", "vu")]);
+        assert!(
+            parse_roster("github: 5499546 lesslucifer\n", &tiers(&["username"]), "r").unwrap().is_empty(),
+            "a tier the policy does not accept authorises nothing"
+        );
+        for bad in [
+            "github: 5499546",
+            "github: lesslucifer 5499546",
+            "github: 05499546 lesslucifer",
+            "github: 5499546 less_lucifer",
+            "github: 5499546 -less",
+            "github: 5499546 less-",
+            "github: 5499546 le--ss",
+            "github: 5499546 lesslucifer extra",
+            "github: 12345678901234567890 x",
+            &format!("github: 1 {}", "a".repeat(40)),
+        ] {
+            let e = parse_roster(&format!("{bad}\n"), &all, "HEAD:.keel/mr-allowed").err().unwrap_or_else(|| panic!("{bad} parsed"));
+            assert!(e.contains("line 1") && e.contains("github: <user id> <login>"), "{bad}: {e}");
+        }
+        // generated lines (seeded LCG): a github line parses exactly when its id is digits without a
+        // leading zero (1 to 19 of them) and its login is GitHub's shape
+        let alphabet = b"0123456789az-_Z";
+        let mut x: u64 = 0x9e7;
+        for _ in 0..2000 {
+            let mut word = |n: u64| -> String { (0..(lcg(&mut x) % n)).map(|_| alphabet[(lcg(&mut x) % alphabet.len() as u64) as usize] as char).collect() };
+            let (id, login) = (word(22), word(42));
+            let id_ok = (1..=19).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_digit()) && !id.starts_with('0');
+            let login_ok = (1..=39).contains(&login.len())
+                && login.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                && !login.starts_with('-')
+                && !login.ends_with('-')
+                && !login.contains("--");
+            let parsed = parse_roster(&format!("github: {id} {login}\n"), &all, "r");
+            assert_eq!(parsed.is_ok(), id_ok && login_ok, "github: {id} {login}");
+        }
+    }
+
+    #[test]
+    fn a_github_id_never_signs_by_typing_and_a_typed_id_never_by_approval() {
+        let r = parse_roster("github: 77 owner\nusername: vu\nusername: 88\ngithub: 88 both\n", &tiers(&["username", "github"]), "r").unwrap();
+        assert_eq!((tier_of(&r, "77"), typed_tier(&r, "77"), approves(&r, "77")), (Some("github"), None, true));
+        assert_eq!((typed_tier(&r, "vu"), approves(&r, "vu")), (Some("username"), false));
+        assert_eq!((typed_tier(&r, "88"), approves(&r, "88")), (Some("username"), true), "listed twice: each path finds its own line");
+    }
+
+    fn rv(id: u64, user: serde_json::Value, state: &str, commit: &str, url: &str) -> serde_json::Value {
+        json!({"id": id, "user": {"id": user}, "state": state, "commit_id": commit, "html_url": url})
+    }
+
+    #[test]
+    fn the_approval_picked_is_the_newest_approved_one_on_the_tip_by_a_listed_id() {
+        let allowed = parse_roster("github: 7 a\ngithub: 8 b\nusername: 9\n", &tiers(&["username", "github"]), "r").unwrap();
+        let (tip, old) = ("t".repeat(40), "o".repeat(40));
+        let page = |id: u64| format!("https://github.com/o/r/pull/3#pullrequestreview-{id}");
+        let list =
+            json!([rv(5, json!(7), "APPROVED", &tip, &page(5)), rv(9, json!(8), "APPROVED", &tip, &page(9)), rv(4, json!(8), "APPROVED", &tip, &page(4))]);
+        let (who, r) = pick_approval(&list, &tip, &allowed).unwrap();
+        assert_eq!((who.as_str(), r), ("8", Review { id: 9, url: page(9), commit: tip.clone() }));
+        assert!(pick_approval(&json!({"id": 1}), &tip, &allowed).is_none(), "not a list");
+        // generated lists (seeded LCG): whatever is picked is APPROVED, on the tip, by a listed github id,
+        // with its own page, and no such review in the list is newer
+        let states = ["APPROVED", "COMMENTED", "CHANGES_REQUESTED", "DISMISSED", "PENDING", "approved"];
+        let mut x: u64 = 0x5160;
+        for _ in 0..1000 {
+            let n = lcg(&mut x) % 6;
+            let list: Vec<serde_json::Value> = (0..n)
+                .map(|_| {
+                    let id = 1 + lcg(&mut x) % 50;
+                    let user = match lcg(&mut x) % 4 {
+                        0 => json!(7),
+                        1 => json!(9),
+                        2 => json!("8"),
+                        _ => json!(8),
+                    };
+                    let commit = if lcg(&mut x).is_multiple_of(3) { &old } else { &tip };
+                    let url = if lcg(&mut x).is_multiple_of(5) { page(id + 1) } else { page(id) };
+                    rv(id, user, states[(lcg(&mut x) % states.len() as u64) as usize], commit, &url)
+                })
+                .collect();
+            let good = |v: &serde_json::Value| {
+                v["state"] == "APPROVED"
+                    && v["commit_id"] == json!(tip)
+                    && (v["user"]["id"] == json!(7) || v["user"]["id"] == json!(8))
+                    && v["html_url"] == json!(page(v["id"].as_u64().unwrap()))
+            };
+            let newest = list.iter().filter(|v| good(v)).map(|v| v["id"].as_u64().unwrap()).max();
+            assert_eq!(pick_approval(&json!(list), &tip, &allowed).map(|(_, r)| r.id), newest, "{list:?}");
+        }
+    }
+
+    #[test]
+    fn a_review_binds_only_its_own_page_on_a_github_pull_request_and_the_tip() {
+        let tip = "a".repeat(40);
+        let r = |url: &str, commit: &str| Review { id: 42, url: url.into(), commit: commit.into() };
+        assert_eq!(review_problem(&r("https://github.com/own/Keel/pull/7#pullrequestreview-42", &tip), &tip), None);
+        assert!(review_problem(&r("https://github.com/own/Keel/pull/7#pullrequestreview-42", &"b".repeat(40)), &tip).unwrap().contains("not this tip"));
+        for bad in [
+            "https://github.com/own/Keel/pull/7#pullrequestreview-43",
+            "https://github.com/own/Keel/pull/7#pullrequestreview-042",
+            "http://github.com/own/Keel/pull/7#pullrequestreview-42",
+            "https://github.com.evil/own/Keel/pull/7#pullrequestreview-42",
+            "https://github.com/own/Keel/issues/7#pullrequestreview-42",
+            "https://github.com/own/Keel/pull/7#pullrequestreview-42\n",
+            "https://github.com/own/Keel/pull/7/#pullrequestreview-42",
+            "https://github.com/own/Keel/pull/0#pullrequestreview-42",
+        ] {
+            assert!(review_problem(&r(bad, &tip), &tip).unwrap().contains("is not review 42's page"), "{bad}");
+        }
+    }
 
     fn lcg(x: &mut u64) -> u64 {
         *x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
