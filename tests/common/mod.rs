@@ -158,8 +158,9 @@ pub fn fixture_parts(key: &str, parts: &[&str], build: impl FnOnce(&Path)) -> Ve
     let t = template(key, build);
     let copies: Vec<tempfile::TempDir> = parts.iter().map(|_| tempfile::TempDir::new().unwrap()).collect();
     let map: Vec<(PathBuf, PathBuf)> = parts.iter().zip(&copies).map(|(p, c)| (t.join(p), c.path().to_path_buf())).collect();
+    let rewrites = rewrites(&map);
     for (from, to) in &map {
-        copy_tree(from, to, &rewrites(&map)).unwrap();
+        copy_tree(from, to, &rewrites).unwrap();
     }
     copies
 }
@@ -214,8 +215,8 @@ pub fn sweep_templates(tmp: &Path, age: std::time::Duration) {
     }
 }
 
-/// Each (template path, copy path) pair as bytes to replace, the resolved form first: a tool that
-/// canonicalises (keel hooks install) records `/private/var/…` for `/var/…` on macOS.
+/// Each (template path, copy path) pair as bytes to replace, in the resolved form too, listed first:
+/// a tool that canonicalises (keel hooks install) records `/private/var/…` for `/var/…` on macOS.
 pub fn rewrites(map: &[(PathBuf, PathBuf)]) -> Vec<(Vec<u8>, Vec<u8>)> {
     let bytes = |p: &Path| p.as_os_str().as_encoded_bytes().to_vec();
     let mut r = vec![];
@@ -237,7 +238,6 @@ pub fn rewrites(map: &[(PathBuf, PathBuf)]) -> Vec<(Vec<u8>, Vec<u8>)> {
 pub fn copy_tree(src: &Path, dst: &Path, rewrites: &[(Vec<u8>, Vec<u8>)]) -> std::io::Result<()> {
     use std::os::unix::ffi::OsStrExt;
     std::fs::create_dir_all(dst)?;
-    std::fs::set_permissions(dst, std::fs::metadata(src)?.permissions())?;
     for e in std::fs::read_dir(src)? {
         let e = e?;
         let (from, to) = (e.path(), dst.join(e.file_name()));
@@ -261,30 +261,28 @@ pub fn copy_tree(src: &Path, dst: &Path, rewrites: &[(Vec<u8>, Vec<u8>)]) -> std
             }
         }
     }
-    Ok(())
+    std::fs::set_permissions(dst, std::fs::metadata(src)?.permissions())
 }
 
-/// `body` with every `from` replaced by its `to`, in order; None when no `from` occurs.
+/// `body` with every `from` replaced by its `to` in one pass, the longest `from` matching at a
+/// position winning (parts `repo` and `repo.git`); None when no `from` occurs.
 pub fn rewrite(body: &[u8], rewrites: &[(Vec<u8>, Vec<u8>)]) -> Option<Vec<u8>> {
-    let mut out = body.to_vec();
+    let mut out = Vec::with_capacity(body.len());
     let mut changed = false;
-    for (from, to) in rewrites {
-        if from.is_empty() {
-            continue;
-        }
-        let mut next = Vec::with_capacity(out.len());
-        let mut i = 0;
-        while i < out.len() {
-            if out[i..].starts_with(from) {
-                next.extend_from_slice(to);
+    let mut i = 0;
+    while i < body.len() {
+        let hit = rewrites.iter().filter(|(from, _)| !from.is_empty() && body[i..].starts_with(from)).max_by_key(|(from, _)| from.len());
+        match hit {
+            Some((from, to)) => {
+                out.extend_from_slice(to);
                 i += from.len();
                 changed = true;
-            } else {
-                next.push(out[i]);
+            }
+            None => {
+                out.push(body[i]);
                 i += 1;
             }
         }
-        out = next;
     }
     changed.then_some(out)
 }

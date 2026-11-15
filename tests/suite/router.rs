@@ -519,11 +519,15 @@ fn sleep_shim(base: &Path) {
     std::fs::set_permissions(base.join("shim/sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
 
+/// The fixture keys of the launcher's and the watcher's templates.
+const LAUNCHER: &str = "router launcher";
+const WATCHER: &str = "router watcher";
+
 /// A repo whose main checkout holds the launcher, the worker persona and an `epic/E-X` branch, two
 /// linked worktrees and the stub claude. A copy of a template built once per run (E-TESTOPT.W4); the
 /// worktrees' links name the copy.
 fn launcher() -> Launcher {
-    let d = common::fixture("router launcher", build_launcher);
+    let d = common::fixture(LAUNCHER, build_launcher);
     let base = d.path().canonicalize().unwrap();
     let main = base.join("main");
     Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub: base.join("claude"), state: base.join("state"), _d: d }
@@ -560,7 +564,7 @@ fn build_launcher(base: &Path) {
 #[test]
 fn each_fixture_copy_is_independent_of_its_template_and_its_siblings() {
     let (a, b) = (launcher(), launcher());
-    let t = common::template("router launcher", |_| unreachable!("built above")).canonicalize().unwrap();
+    let t = common::template(LAUNCHER, |_| unreachable!("built above"));
     assert!(common::files_naming(a._d.path(), &common::rewrites(&[(t.clone(), Default::default())])).is_empty());
     common::assert_independent(&t.join("main"), &a.main, &b.main);
     let listed = String::from_utf8(git(&a.main, &["worktree", "list", "--porcelain"]).stdout).unwrap();
@@ -571,7 +575,7 @@ fn each_fixture_copy_is_independent_of_its_template_and_its_siblings() {
     assert!(git(&a.wt, &["status", "--porcelain"]).status.success());
 
     let (c, d) = (watcher(), watcher());
-    let t = common::template("router watcher", |_| unreachable!("built above")).canonicalize().unwrap();
+    let t = common::template(WATCHER, |_| unreachable!("built above"));
     assert!(common::files_naming(c._d.path(), &common::rewrites(&[(t.clone(), Default::default())])).is_empty());
     let origin = String::from_utf8(git(&c.main, &["remote", "get-url", "origin"]).stdout).unwrap();
     assert_eq!(origin.trim(), c.base.join("origin.git").to_str().unwrap());
@@ -2224,7 +2228,7 @@ struct Watcher {
 
 /// A copy of a template built once per run (E-TESTOPT.W4); the copy's origin is its own origin.git.
 fn watcher() -> Watcher {
-    let d = common::fixture("router watcher", build_watcher);
+    let d = common::fixture(WATCHER, build_watcher);
     let base = d.path().canonicalize().unwrap();
     let main = base.join("main");
     Watcher { _d: d, base, main }

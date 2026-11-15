@@ -170,3 +170,43 @@ fn a_test_process_leaves_no_template_behind() {
     let left: Vec<_> = std::fs::read_dir(tmp.path()).unwrap().flatten().map(|e| e.file_name()).collect();
     assert!(left.is_empty(), "the run left {left:?}");
 }
+
+/// Unit: a part whose path extends another's (`repo` and `repo.git`) names its own copy, not the
+/// shorter part's copy with the rest of its name kept.
+#[test]
+fn a_part_whose_path_extends_another_names_its_own_copy() {
+    let t = Path::new("/tmp/keel-fixtures-x/t1");
+    let (repo, remote) = (PathBuf::from("/tmp/c-repo"), PathBuf::from("/tmp/c-remote"));
+    let r = rewrites(&[(t.join("repo"), repo), (t.join("repo.git"), remote)]);
+    let body = b"url = /tmp/keel-fixtures-x/t1/repo.git\nhooks = /tmp/keel-fixtures-x/t1/repo/.git/hooks\n";
+    assert_eq!(String::from_utf8(rewrite(body, &r).unwrap()).unwrap(), "url = /tmp/c-remote\nhooks = /tmp/c-repo/.git/hooks\n");
+    let r = rewrites(&[(t.join("repo.git"), PathBuf::from("/tmp/c-remote")), (t.join("repo"), PathBuf::from("/tmp/c-repo"))]);
+    assert_eq!(
+        String::from_utf8(rewrite(body, &r).unwrap()).unwrap(),
+        "url = /tmp/c-remote\nhooks = /tmp/c-repo/.git/hooks\n",
+        "the order of the parts does not matter"
+    );
+}
+
+/// Unit: a read-only directory is copied with its children and keeps its mode.
+#[test]
+fn a_read_only_directory_is_copied_with_its_children() {
+    let (src, dst) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    let (s, d) = (src.path(), dst.path().join("copy"));
+    file(&s.join("ro/sub/f"), "f", 0o444);
+    let read_only = std::fs::Permissions::from_mode(0o555);
+    std::fs::set_permissions(s.join("ro/sub"), read_only.clone()).unwrap();
+    std::fs::set_permissions(s.join("ro"), read_only).unwrap();
+
+    let copied = copy_tree(s, &d, &[]);
+
+    for dir in [s.join("ro"), s.join("ro/sub"), d.join("ro"), d.join("ro/sub")] {
+        let mode = dir.exists().then(|| mode(&dir));
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755));
+        if dir.starts_with(&d) {
+            assert_eq!(mode, Some(0o555), "{} keeps its mode", dir.display());
+        }
+    }
+    copied.unwrap();
+    assert_eq!(std::fs::read_to_string(d.join("ro/sub/f")).unwrap(), "f");
+}
