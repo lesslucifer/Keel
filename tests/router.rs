@@ -339,6 +339,36 @@ fn router_guard_admits_the_inbox_watcher_and_consume_but_never_post() {
     }
 }
 
+/// Review round 2, I10: the guard and `scripts/router-inbox.sh` each hold the consume-id and the
+/// watch-seconds grammar, so every probe here must get the same verdict from both: the router is
+/// never denied an id the script takes, and never admitted to one the script refuses.
+#[test]
+fn the_guard_and_the_inbox_script_take_the_same_ids_and_seconds() {
+    let d = TempDir::new().unwrap();
+    let inbox = d.path().join("inbox");
+    std::fs::create_dir_all(inbox.join("read")).unwrap();
+    let script = |args: &[&str], dir: &Path| {
+        let o = common::cmd("sh").arg(root().join("scripts/router-inbox.sh")).args(args).env("ROUTER_INBOX_DIR", dir).output().unwrap();
+        String::from_utf8_lossy(&o.stderr).into_owned()
+    };
+    let long = "a".repeat(300);
+    for id in ["1794659383-abc123", "a", "A9", "1a.b_c-D", "x.msg", "_x", ".x", "-x", "a..b", "a/b", "a+b", "a:b", "a=b", "a@b", "a~b", &long] {
+        let err = script(&["consume", id], &inbox);
+        let by_script = err.contains("MISSING");
+        assert!(by_script || err.contains("bad id"), "consume {id:?}: {err}");
+        let by_guard = bash(&format!("scripts/router-inbox.sh consume {id}")).is_none();
+        assert_eq!(by_guard, by_script, "consume {id:?}: guard admits {by_guard}, script takes {by_script} ({err})");
+    }
+    let none = d.path().join("no-inbox");
+    for n in ["0", "1", "6600", "9999999", "01", "0000000", "12345678", "1x", "-1", "+1", "1.5"] {
+        let err = script(&["watch", n], &none);
+        let by_script = err.contains("NO-INBOX");
+        assert!(by_script || err.contains("max must be"), "watch {n:?}: {err}");
+        let by_guard = bash(&format!("scripts/router-inbox.sh watch {n}")).is_none();
+        assert_eq!(by_guard, by_script, "watch {n:?}: guard admits {by_guard}, script takes {by_script} ({err})");
+    }
+}
+
 /// Important of the close review: a hook that errors (no jq, no guard file) must deny, not allow.
 #[test]
 fn settings_run_the_guard_on_every_tool_and_fail_closed() {

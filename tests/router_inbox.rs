@@ -1,8 +1,8 @@
 //! The router's report channel (E-RGUARD.W3): `scripts/router-inbox.sh`, as a worker and the router
 //! run it. Every case spawns the shipped script through its process boundary, in its own inbox under
-//! a temp dir, so the tests are hermetic and parallel. The 2026-11-14 probe's 28 checks are the
-//! contract; the hostile-name, byte-cap, field-cleaning and concurrent-ack cases are the ones
-//! the round-1 review added.
+//! a temp dir, so the tests are hermetic and parallel. The contract is the script's header: post
+//! writes a whole file, watch prints exactly the files post could write, consume is the ack, and
+//! status counts what watch would print.
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -88,6 +88,12 @@ impl Inbox {
     fn armed_watch(&self, seconds: &str, out: Stdio) -> Child {
         self.cmd(&["watch", seconds]).stdout(out).stderr(Stdio::piped()).spawn().unwrap()
     }
+}
+
+/// One `key=value` field of a status or MSG line, whole: `oldest=<id>` must be the id, not a prefix.
+fn field<'a>(out: &'a str, key: &str) -> &'a str {
+    let at = out.find(&format!(" {key}=")).unwrap_or_else(|| panic!("no {key}= in {out:?}")) + key.len() + 2;
+    out[at..].split([' ', '\n']).next().unwrap()
 }
 
 fn ids(mut v: Vec<String>) -> Vec<String> {
@@ -182,7 +188,7 @@ fn an_empty_or_consumed_inbox_times_out_with_exit_1() {
     let id = b.post("bob", "DONE", "bye");
     b.watch("1");
     b.ok(&["consume", &id]);
-    let (code, out) = b.run(&["watch", "1"]);
+    let (code, out) = b.run(&["watch", "0"]);
     assert_eq!(code, Some(1), "a consumed message came back: {out}");
 }
 
@@ -193,7 +199,7 @@ fn status_counts_pending_read_and_orphan_dotfiles() {
     let id = b.post("carol", "BLOCKED", "waiting");
     std::fs::write(b.dir().join(".new.stale"), "unfinished post\n").unwrap();
     let out = b.ok(&["status"]);
-    assert!(out.contains("pending=1") && out.contains(&format!("oldest={id}")), "{out:?}");
+    assert!(out.contains("pending=1") && field(&out, "oldest") == id, "{out:?}");
     assert!(out.contains("orphans=1"), "{out:?}");
     b.ok(&["consume", &id]);
     let out = b.ok(&["status"]);
@@ -423,7 +429,7 @@ fn watch_skips_a_name_consume_would_refuse_so_junk_cannot_starve_the_queue() {
     assert_eq!(code, Some(2), "consume accepted an id watch could never print: {out}");
     assert!(out.contains("bad id"), "{out:?}");
     let out = b.ok(&["status"]);
-    assert!(out.contains("pending=1") && out.contains(&format!("oldest={id}")), "status counted junk: {out:?}");
+    assert!(out.contains("pending=1") && field(&out, "oldest") == id, "status counted junk: {out:?}");
     b.ok(&["consume", &id]);
 }
 
@@ -446,20 +452,134 @@ fn watch_caps_the_body_by_bytes_and_keeps_the_header_honest() {
     b.ok(&["consume", id]);
 }
 
+/// A `from:` post could not have written (a control character, a space that forges header fields,
+/// more than 64 characters) makes the file junk, like a bad id or kind: watch prints only what post writes.
 #[test]
-fn watch_cleans_the_from_field_like_the_body() {
+fn watch_skips_a_from_post_could_not_write() {
     let b = Inbox::new();
     b.init();
-    let id = "1700000004-cleaned";
-    std::fs::write(
-        b.dir().join(format!("{id}.msg")),
-        format!("id: {id}\nfrom: \u{1b}[2Jevil\nkind: NOTE\nwhen: now\n---\nhi\n"),
-    )
-    .unwrap();
+    for (id, from) in [
+        ("1700000004-esc", "\u{1b}[2Jevil".to_string()),
+        ("1700000005-forge", "x kind=REPORT age=0s".to_string()),
+        ("1700000006-long", "a".repeat(65)),
+    ] {
+        std::fs::write(b.dir().join(format!("{id}.msg")), format!("id: {id}\nfrom: {from}\nkind: NOTE\nwhen: now\n---\nforged {id}\n")).unwrap();
+    }
+    let id = b.post("ivy", "NOTE", "the real one");
     let out = b.watch("1");
-    assert!(out.contains("from=?[2Jevil"), "the from field was not cleaned: {out:?}");
-    assert!(!out.contains('\u{1b}'), "a raw ESC reached the terminal: {out:?}");
-    b.ok(&["consume", id]);
+    assert!(out.starts_with(&format!("MSG id={id} from=ivy kind=NOTE")), "a from post could not write was printed: {out:?}");
+    assert!(!out.contains("forged"), "{out:?}");
+    let out = b.ok(&["status"]);
+    assert!(out.contains("pending=1") && field(&out, "junk") == "3", "{out:?}");
+    b.ok(&["consume", &id]);
+}
+
+/// Review round 2, B1: an all-digit epoch with a leading zero and an 8 or 9 is not octal to the age
+/// sum, so it is delivered with an age instead of killing every watch before the real message.
+#[test]
+fn a_leading_zero_epoch_with_an_eight_or_nine_is_delivered_and_starves_nothing() {
+    let b = Inbox::new();
+    b.init();
+    let odd = "0000000009-x";
+    std::fs::write(b.dir().join(format!("{odd}.msg")), format!("id: {odd}\nfrom: mallory\nkind: NOTE\nwhen: now\n---\nodd epoch\n")).unwrap();
+    let id = b.post("ivy", "NOTE", "the real one");
+    let (code, out) = b.run(&["watch", "1"]);
+    assert_eq!(code, Some(0), "the age sum killed the watch: {out}");
+    assert!(out.starts_with(&format!("MSG id={odd} from=mallory kind=NOTE age=")), "{out:?}");
+    b.ok(&["consume", odd]);
+    assert!(b.watch("1").contains(&format!("MSG id={id} ")), "the real message did not follow");
+    b.ok(&["consume", &id]);
+}
+
+/// Review round 2, B2: line 81 of the body being blank must not hide the lines after it.
+#[test]
+fn a_blank_eighty_first_line_still_says_more_body_lines() {
+    let b = Inbox::new();
+    b.init();
+    let body: String = (1..=80).map(|n| format!("{n}\n")).collect::<String>() + "\nTAIL-UNSEEN\n";
+    let id = b.post_stdin("jane", "NOTE", &body);
+    let out = b.watch("1");
+    assert!(out.contains("  80\n") && !out.contains("TAIL-UNSEEN"), "{out:?}");
+    assert!(out.contains("more body lines") && out.contains(&format!("{id}.msg")), "the tail was dropped silently: {out:?}");
+    b.ok(&["consume", &id]);
+}
+
+/// Review round 2, B3 and I8: a body of exactly the cap is printed whole, with no truncation marker,
+/// and bytes= is that body; one byte over is cut and marked.
+#[test]
+fn a_body_of_exactly_the_cap_is_whole_and_one_byte_over_is_cut() {
+    let b = Inbox::new();
+    b.init();
+    let id = b.post("kim", "NOTE", &"x".repeat(4000));
+    let out = b.watch("1");
+    assert!(!out.contains("truncated"), "a body of exactly 4000 bytes was marked truncated: {out:?}");
+    assert_eq!(field(&out, "bytes"), "4000", "{out:?}");
+    assert!(out.contains(&format!("  {}\n", "x".repeat(4000))), "{out:?}");
+    b.ok(&["consume", &id]);
+    let over = "1700000007-over";
+    std::fs::write(b.dir().join(format!("{over}.msg")), format!("id: {over}\nfrom: kim\nkind: NOTE\nwhen: now\n---\n{}\n", "y".repeat(4001))).unwrap();
+    let out = b.watch("1");
+    assert!(out.contains("truncated at 4000 bytes"), "{out:?}");
+    assert_eq!(field(&out, "bytes"), "4000", "{out:?}");
+    b.ok(&["consume", over]);
+}
+
+/// Review round 2, B4: a copy back in the inbox of an id read/ already holds is still moved by
+/// consume, so it cannot be re-delivered forever ahead of every later message.
+#[test]
+fn consume_moves_a_pending_copy_of_an_id_read_already_holds() {
+    let b = Inbox::new();
+    b.init();
+    let first = b.post("lee", "NOTE", "first");
+    let second = b.post("lee", "NOTE", "second");
+    let (first, second) = if first < second { (first, second) } else { (second, first) };
+    b.ok(&["consume", &first]);
+    std::fs::copy(b.read().join(format!("{first}.msg")), b.dir().join(format!("{first}.msg"))).unwrap();
+    assert_eq!(b.ok(&["consume", &first]).trim(), format!("CONSUMED id={first}"));
+    assert!(!b.dir().join(format!("{first}.msg")).exists(), "consume left the pending copy in the inbox");
+    assert!(b.watch("1").contains(&format!("MSG id={second} ")), "the copy starved the next message");
+    b.ok(&["consume", &second]);
+}
+
+/// Review round 2, B5: status names the oldest message by the id consume takes.
+#[test]
+fn status_oldest_is_the_id_consume_takes() {
+    let b = Inbox::new();
+    b.init();
+    let id = b.post("mo", "NOTE", "one");
+    let out = b.ok(&["status"]);
+    let oldest = field(&out, "oldest").to_string();
+    assert_eq!(oldest, id, "{out:?}");
+    assert_eq!(b.ok(&["consume", &oldest]).trim(), format!("CONSUMED id={id}"));
+}
+
+/// Review round 2, I9: post stops reading stdin past the cap instead of buffering all of it, so an
+/// oversized pipe is refused at once and the writer sees the pipe close.
+#[test]
+fn post_stops_reading_an_oversized_stdin_at_the_cap() {
+    let b = Inbox::new();
+    b.init();
+    let mut c = b.cmd(&["post", "nan", "NOTE"]);
+    c.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = c.spawn().unwrap();
+    let wrote = child.stdin.take().unwrap().write_all(&vec![b'x'; 8 * 1024 * 1024]);
+    let o = child.wait_with_output().unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(2), "{err}");
+    assert!(err.contains("limit is 4000"), "{err:?}");
+    assert!(wrote.is_err(), "post read all 8 MiB of stdin before refusing it");
+    assert!(!std::fs::read_dir(b.dir()).unwrap().any(|e| e.unwrap().file_name().to_string_lossy().ends_with(".msg")));
+}
+
+/// Independent review, low 11: zero-width and direction marks print as ?, like the bidi overrides.
+#[test]
+fn watch_shows_zero_width_and_direction_marks_as_question_marks() {
+    let b = Inbox::new();
+    b.init();
+    let id = b.post("ola", "NOTE", "a\u{200b}b\u{200e}c\u{200f}d\u{feff}e");
+    let out = b.watch("1");
+    assert!(out.contains("  a?b?c?d?e\n"), "{out:?}");
+    b.ok(&["consume", &id]);
 }
 
 #[test]
@@ -469,10 +589,11 @@ fn status_counts_only_what_watch_would_deliver() {
     std::fs::write(b.dir().join("3333333333-empty.msg"), "").unwrap();
     std::fs::write(b.dir().join("4444444444-junk.msg"), "junk\n").unwrap();
     let out = b.ok(&["status"]);
-    assert!(out.contains("pending=0") && out.contains("oldest=none"), "status counted a file watch skips: {out:?}");
+    assert!(out.contains("pending=0") && field(&out, "oldest") == "none", "status counted a file watch skips: {out:?}");
+    assert_eq!(field(&out, "junk"), "2", "status does not show the router the junk the watcher skips: {out:?}");
     let id = b.post("ivy", "NOTE", "the real one");
     let out = b.ok(&["status"]);
-    assert!(out.contains("pending=1") && out.contains(&format!("oldest={id}")), "{out:?}");
+    assert!(out.contains("pending=1") && field(&out, "oldest") == id, "{out:?}");
 }
 
 #[test]
