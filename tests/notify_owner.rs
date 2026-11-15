@@ -37,10 +37,11 @@ fn channel() -> TempDir {
 }
 
 /// The sender spawned with HOME in the test's temp dir and no proxy, so a regression that falls
-/// back to the default channel files can never read the real token, and no request leaves loopback.
+/// back to the default channel files can never read the real token, and no request leaves loopback;
+/// bytecode off, so no run writes a cache into the checkout.
 fn sender(home: &Path) -> Command {
     let mut command = common::cmd(script());
-    command.env("HOME", home);
+    command.env("HOME", home).env("PYTHONDONTWRITEBYTECODE", "1");
     for proxy in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"] {
         command.env_remove(proxy);
     }

@@ -184,7 +184,9 @@ fn router_guard_allows_the_owner_sender_only_as_a_plain_shape() {
 
 /// E-RGUARD epic review round 1: the owner body's path is held twice, as the sender's
 /// `DEFAULT_BODY` and as the guard's Write rule. Both are read from their files here: the guard
-/// admits a router Write to exactly the path the sender reads from its working directory.
+/// admits a router Write to exactly the path the sender reads from its working directory. The
+/// import runs with bytecode off (`-B`, PYTHONDONTWRITEBYTECODE), so no `scripts/__pycache__`
+/// lands in the checkout.
 #[test]
 fn the_guard_admits_the_body_path_the_owner_sender_reads() {
     let load = "import importlib.util, sys\n\
@@ -192,7 +194,11 @@ fn the_guard_admits_the_body_path_the_owner_sender_reads() {
                 module = importlib.util.module_from_spec(spec)\n\
                 spec.loader.exec_module(module)\n\
                 print(module.DEFAULT_BODY.as_posix())";
-    let o = common::cmd("python3").arg("-c").arg(load).arg(root().join("scripts/notify-owner.py")).output().unwrap();
+    let cache = root().join("scripts/__pycache__");
+    let cached_before = cache.exists();
+    let o =
+        common::cmd("python3").arg("-B").env("PYTHONDONTWRITEBYTECODE", "1").arg("-c").arg(load).arg(root().join("scripts/notify-owner.py")).output().unwrap();
+    assert!(cached_before || !cache.exists(), "reading DEFAULT_BODY wrote {} into the checkout", cache.display());
     assert!(o.status.success(), "could not read DEFAULT_BODY: {}", String::from_utf8_lossy(&o.stderr));
     let body = String::from_utf8(o.stdout).unwrap().trim().to_string();
     assert!(!body.is_empty() && !body.starts_with('/'), "the sender's body is not a checkout-relative path: {body:?}");
