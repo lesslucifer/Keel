@@ -102,16 +102,33 @@ pub(crate) fn commit(d: &Path, msg: &str) {
 
 const PLAN_TITLE: &str = "Keel — E.W1 plan: `tick` @owner [x](y) | cell *b* #h";
 
+/// A temp dir whose path the script accepts as a HOME (letters, digits and / . _ -): under TMPDIR
+/// when its path is plain, else under /tmp, so a hand-set TMPDIR with another character fails no
+/// test on HOME (backlog G5, W2).
+pub(crate) fn plain_tempdir() -> TempDir {
+    let plain = |p: &Path| p.to_str().is_some_and(|s| s.bytes().all(|b| b.is_ascii_alphanumeric() || b"/._-".contains(&b)));
+    let tmp = std::env::temp_dir();
+    if plain(&tmp.canonicalize().unwrap_or(tmp.clone())) {
+        TempDir::new().unwrap()
+    } else {
+        TempDir::new_in("/tmp").unwrap()
+    }
+}
+
 /// The App in `home`, as the owner's setup leaves it: a throwaway key and its ids in
-/// `.config/keel/router-gh`, whatever the umask made of the directories.
+/// `.config/keel/router-gh`, whatever the umask made of the directories. The key is made once per
+/// run and copied (backlog G5, W2: a 2048-bit key per test cost about 0.25 s).
 pub(crate) fn install_app(home: &Path) {
     let kdir = home.join(".config/keel/router-gh");
     std::fs::create_dir_all(&kdir).unwrap();
     // as the owner's setup does (`chmod 700`): never the umask's mode
     chmod(&kdir, 0o700);
-    let o =
-        common::cmd("openssl").args(["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out"]).arg(kdir.join("app.pem")).output().unwrap();
-    assert!(o.status.success(), "{}", text(&o));
+    let made = common::template("router-gh app key", |t| {
+        let o =
+            common::cmd("openssl").args(["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out"]).arg(t.join("app.pem")).output().unwrap();
+        assert!(o.status.success(), "{}", text(&o));
+    });
+    std::fs::copy(made.join("app.pem"), kdir.join("app.pem")).unwrap();
     chmod(&kdir.join("app.pem"), 0o600);
     write(&kdir, "app.conf", "app_id=123\ninstallation_id=456\napp_slug=keel-router\n");
 }
@@ -131,7 +148,7 @@ pub(crate) struct Gh {
 
 impl Gh {
     pub(crate) fn new() -> Gh {
-        let root = TempDir::new().unwrap();
+        let root = plain_tempdir();
         let base = root.path().canonicalize().unwrap();
         let [repo, home, mock, bin, marks, tmp] = ["repo", "home", "mock", "bin", "marks", "tmp"].map(|n| base.join(n));
         for d in [&repo, &mock, &bin, &marks, &tmp] {
