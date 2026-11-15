@@ -865,7 +865,14 @@ fn keels_router_security_files_are_rule_bearing() {
     let run = |a: &[&str]| common::cmd("git").args(a).current_dir(&c).env("PATH", &path).envs(common::TESTER).output().unwrap();
     assert!(common::cmd(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
     assert!(run(&["checkout", "-q", "-b", "wu/x/gate"]).status.success());
-    for f in ["scripts/router-guard.jq", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", ".claude/agents/worker.md"] {
+    for f in [
+        "scripts/router-guard.jq",
+        "scripts/router-worker.sh",
+        "scripts/router-file-guard.sh",
+        "scripts/router-watch.sh",
+        "scripts/router-gh.sh",
+        ".claude/agents/worker.md",
+    ] {
         let body = std::fs::read_to_string(c.join(f)).unwrap();
         std::fs::write(c.join(f), format!("{body}\n")).unwrap();
         assert!(run(&["add", f]).status.success());
@@ -891,7 +898,7 @@ const WORKER_GRANTS: [&str; 11] = [
     "keel check",
 ];
 /// Denied to every worker, each as `Bash(c)` and `Bash(c *)` (E-ROUTER3.W8, DEC-46).
-const WORKER_DENIES: [&str; 25] = [
+const WORKER_DENIES: [&str; 26] = [
     "keel mr",
     "cargo run",
     "keel init",
@@ -917,6 +924,7 @@ const WORKER_DENIES: [&str; 25] = [
     "git --work-tree",
     "claude",
     "scripts/router-worker.sh",
+    "scripts/router-gh.sh",
 ];
 
 fn bash_pairs<'a>(cmds: impl IntoIterator<Item = &'a str>) -> Vec<String> {
@@ -933,7 +941,7 @@ fn worker_argv(state: &Path, name: &str) -> Vec<String> {
 
 /// The Read rules every worker gets after the Bash denies (E-WMODE, DEC-37): the sandbox's denyRead
 /// paths. The edit tools get no path rule (review round 2, H1): the worker file guard bounds them.
-const WORKER_READ_DENIES: [&str; 2] = ["Read(~/.ssh/**)", "Read(~/.claude/channels/**)"];
+const WORKER_READ_DENIES: [&str; 3] = ["Read(~/.ssh/**)", "Read(~/.claude/channels/**)", "Read(~/.config/keel/router-gh/**)"];
 
 /// The main checkout of the repository whose worktree is `dir`, as git lists it.
 fn main_of(dir: &Path) -> String {
@@ -1286,7 +1294,7 @@ fn worker_file_guard_lets_the_file_tools_edit_only_the_worktree_and_read_neither
     let d = TempDir::new().unwrap();
     let base = d.path().canonicalize().unwrap();
     let (wt, home, out) = (base.join("wt"), base.join("home"), base.join("out"));
-    for dir in [wt.join("sub"), wt.join(".claude/agents"), home.join(".ssh"), home.join(".claude/channels"), out.clone()] {
+    for dir in [wt.join("sub"), wt.join(".claude/agents"), home.join(".ssh"), home.join(".claude/channels"), home.join(".config/keel/router-gh"), out.clone()] {
         std::fs::create_dir_all(dir).unwrap();
     }
     for (f, body) in [
@@ -1296,6 +1304,8 @@ fn worker_file_guard_lets_the_file_tools_edit_only_the_worktree_and_read_neither
         (wt.join(".claude/agents/worker.md"), "w"),
         (home.join(".ssh/id"), "key"),
         (home.join(".claude/channels/c"), "c"),
+        (home.join(".config/keel/router-gh/app.pem"), "key"),
+        (home.join(".config/keel/other"), "o"),
         (home.join(".claude/settings.json"), "{}"),
         (out.join("x.txt"), "x"),
         (out.join("h.txt"), "h"),
@@ -1358,10 +1368,21 @@ fn worker_file_guard_lets_the_file_tools_edit_only_the_worktree_and_read_neither
 
     // reads: anywhere but the two denied directories, however spelled
     let read = |p: &str| ev("Read", serde_json::json!({"file_path": p}));
-    for p in [o("x.txt"), h(".claude/settings.json"), w("a.txt"), w("link-out")] {
+    for p in [o("x.txt"), h(".claude/settings.json"), w("a.txt"), w("link-out"), h(".config/keel/other")] {
         assert_eq!(guard(read(&p)), None, "Read {p}");
     }
-    for p in [h(".ssh/id"), h(".SSH/id"), h(".ssh"), w("ssh-link"), h(".claude/channels/c"), h(".claude/Channels/c")] {
+    // E-GHFLOW.W2: the router bot's App key dir joins them
+    for p in [
+        h(".ssh/id"),
+        h(".SSH/id"),
+        h(".ssh"),
+        w("ssh-link"),
+        h(".claude/channels/c"),
+        h(".claude/Channels/c"),
+        h(".config/keel/router-gh/app.pem"),
+        h(".config/keel/Router-GH/app.pem"),
+        h(".config/keel/router-gh"),
+    ] {
         assert!(guard(read(&p)).is_some_and(|r| r.contains("is not readable to a worker")), "Read {p}");
     }
     // searches: not in them, and not over a directory holding them
@@ -1369,7 +1390,15 @@ fn worker_file_guard_lets_the_file_tools_edit_only_the_worktree_and_read_neither
     assert_eq!(search("Grep", serde_json::json!({"pattern": "x"})), None, "Grep in the cwd");
     assert_eq!(search("Grep", serde_json::json!({"pattern": "x", "path": "sub"})), None, "relative to the cwd");
     assert_eq!(search("Glob", serde_json::json!({"pattern": "*", "path": o("")})), None);
-    for (tool, p) in [("Grep", h("")), ("Glob", h(".ssh")), ("Grep", base.display().to_string()), ("Glob", "/".to_string()), ("Grep", h(".claude"))] {
+    for (tool, p) in [
+        ("Grep", h("")),
+        ("Glob", h(".ssh")),
+        ("Grep", base.display().to_string()),
+        ("Glob", "/".to_string()),
+        ("Grep", h(".claude")),
+        ("Grep", h(".config")),
+        ("Glob", h(".config/keel/router-gh")),
+    ] {
         assert!(search(tool, serde_json::json!({"pattern": "*", "path": p})).is_some(), "{tool} {p}");
     }
     assert!(search("Grep", serde_json::json!({"pattern": "x", "path": "../home"})).is_some_and(|r| r.contains(". or .. component")));
@@ -3581,7 +3610,7 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
                     format!("{g}/worktrees/{admin}/commondir"), format!("{g}/worktrees/{admin}/gitdir"),
                     format!("{}/.git", wt.display()), format!("{}/.claude/settings.json", wt.display()),
                     format!("{}/.claude/settings.local.json", wt.display()), "~/.claude.json".to_string()],
-                "denyRead": ["~/.ssh", "~/.claude/channels"]
+                "denyRead": ["~/.ssh", "~/.claude/channels", "~/.config/keel/router-gh"]
             },
             "network": {"allowedDomains": ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}
         }})
@@ -4008,4 +4037,147 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
     let tiers: Vec<String> = policy["mr"]["tiers"].as_array().unwrap().iter().map(|t| format!("{t}")).collect();
     let tiers = format!("tiers = [{}]", tiers.join(", "));
     assert!(read(".claude/skills/project-router/SKILL.md").contains(&tiers), "project-router does not state {tiers}");
+}
+
+/// E-GHFLOW.W2: whether `scripts/router-gh.sh` (this checkout's) accepts `args` in its argument check:
+/// past it, with an empty home, the script stops at the missing App key, before any repository state,
+/// key, curl or network. A recording curl proves nothing further ran.
+fn gh_validates(args: &[&str]) -> bool {
+    let d = TempDir::new().unwrap();
+    let curl = d.path().join("curl");
+    std::fs::write(&curl, format!("#!/bin/sh\ntouch {}\n", common::sh_quote(&d.path().join("called").to_string_lossy()))).unwrap();
+    std::fs::set_permissions(&curl, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let o = common::cmd("sh").arg(root().join("scripts/router-gh.sh")).args(args).env("HOME", d.path()).env("ROUTER_GH_CURL", &curl).output().unwrap();
+    assert!(!d.path().join("called").exists(), "{args:?} reached curl");
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(2), "{args:?}: {err}");
+    err.contains("router-gh: no App key at ")
+}
+
+/// E-GHFLOW.W2: the router guard admits router-gh.sh's five shapes in plain words and denies every
+/// other spelling: another mode (the git-only credential helper included), a flag, an extra word,
+/// main or a tag as a push, a .. path, quotes, an environment prefix.
+#[test]
+fn router_guard_admits_the_router_bots_shapes_and_no_other_spelling() {
+    for ok in [
+        "scripts/router-gh.sh push wu/E-GHFLOW/w2-router-bot",
+        "scripts/router-gh.sh push epic/E-GHFLOW",
+        "scripts/router-gh.sh pr-open wu/E-GHFLOW/w2-router-bot",
+        "scripts/router-gh.sh pr-open wu/E/x --base main",
+        "scripts/router-gh.sh pr-open wu/E/x --base epic/F",
+        "scripts/router-gh.sh pr-open epic/E-GHFLOW",
+        "scripts/router-gh.sh pr-ready 12",
+        "scripts/router-gh.sh pr-ready 9999999",
+        "scripts/router-gh.sh post 12 review",
+        "scripts/router-gh.sh post 1 round_2-status",
+        "scripts/router-gh.sh sync epic/E-GHFLOW",
+        " scripts/router-gh.sh sync epic/E ",
+    ] {
+        assert_eq!(bash(ok), None, "{ok}");
+    }
+    for denied in [
+        "scripts/router-gh.sh",
+        "scripts/router-gh.sh push",
+        "scripts/router-gh.sh push main",
+        "scripts/router-gh.sh push v1.0",
+        "scripts/router-gh.sh push refs/tags/v1",
+        "scripts/router-gh.sh push refs/heads/wu/E/x",
+        "scripts/router-gh.sh push wu/E/x:main",
+        "scripts/router-gh.sh push +wu/E/x",
+        "scripts/router-gh.sh push wu/E/x --force",
+        "scripts/router-gh.sh push -f wu/E/x",
+        "scripts/router-gh.sh push --force-with-lease wu/E/x",
+        "scripts/router-gh.sh push wu/E/x wu/E/y",
+        "scripts/router-gh.sh push wu/E",
+        "scripts/router-gh.sh push wu/E/x/y",
+        "scripts/router-gh.sh push epic/E/x",
+        "scripts/router-gh.sh push wu/E/x..y",
+        "scripts/router-gh.sh push wu/E/-x",
+        "scripts/router-gh.sh push wu/E/x@1",
+        "scripts/router-gh.sh push epic/E~1",
+        "scripts/router-gh.sh push epic/E^",
+        "scripts/router-gh.sh push 'wu/E/x'",
+        r#"scripts/router-gh.sh push "wu/E/x""#,
+        "scripts/router-gh.sh push wu/E/x; id",
+        "scripts/router-gh.sh push $(id)",
+        "X=1 scripts/router-gh.sh push wu/E/x",
+        "ROUTER_GH_API=https://127.0.0.1:1 scripts/router-gh.sh push wu/E/x",
+        "sh scripts/router-gh.sh push wu/E/x",
+        "./scripts/router-gh.sh push wu/E/x",
+        "scripts/../scripts/router-gh.sh push wu/E/x",
+        "scripts/router-gh.sh  push wu/E/x",
+        "scripts/router-gh.sh pr-open wu/E/x --base",
+        "scripts/router-gh.sh pr-open wu/E/x --base=main",
+        "scripts/router-gh.sh pr-open wu/E/x --base wu/E/y",
+        "scripts/router-gh.sh pr-open wu/E/x --base main extra",
+        "scripts/router-gh.sh pr-open wu/E/x --head main",
+        "scripts/router-gh.sh pr-open main",
+        "scripts/router-gh.sh pr-ready 0",
+        "scripts/router-gh.sh pr-ready 012",
+        "scripts/router-gh.sh pr-ready 12345678",
+        "scripts/router-gh.sh pr-ready -1",
+        "scripts/router-gh.sh pr-ready 1 2",
+        "scripts/router-gh.sh post 12",
+        "scripts/router-gh.sh post 12 a.md",
+        "scripts/router-gh.sh post 12 ../a",
+        "scripts/router-gh.sh post 12 a/b",
+        "scripts/router-gh.sh post 12 -a",
+        "scripts/router-gh.sh post 12 a b",
+        &format!("scripts/router-gh.sh post 12 {}", "a".repeat(65)),
+        "scripts/router-gh.sh sync main",
+        "scripts/router-gh.sh sync wu/E/x",
+        "scripts/router-gh.sh credential /tmp/router-gh.abcdef/token get",
+        "scripts/router-gh.sh merge 12",
+        "scripts/router-gh.sh approve 12",
+    ] {
+        assert!(bash(denied).is_some(), "admitted: {denied}");
+    }
+    assert!(bash("rm x").unwrap().contains("scripts/router-gh.sh push <wu/E/slug or epic/E>"), "deny message omits the router bot's shapes");
+}
+
+/// E-GHFLOW.W2, invariant: over generated near-miss words, whatever the script's argument check
+/// accepts the guard admits, and the guard admits nothing the check refuses but the names
+/// `git check-ref-format` refuses (a component ending in `.` or `.lock`) and a branch as its own base.
+#[test]
+fn the_guard_and_router_gh_take_the_same_arguments() {
+    let mut seed: u64 = 0x5eed_6a7e;
+    let mut next = |n: usize| {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (seed >> 33) as usize % n
+    };
+    let alpha: Vec<char> = "aZ09._/:=@%,+^~-".chars().collect();
+    let prefixes = ["epic/", "wu/", "wu/E/", "wu/E-X/", "main", "", "refs/heads/", "-", "epic", "wu/E/x"];
+    let mut words: Vec<String> = Vec::new();
+    for _ in 0..90 {
+        let mut w = prefixes[next(prefixes.len())].to_string();
+        for _ in 0..next(7) {
+            w.push(alpha[next(alpha.len())]);
+        }
+        words.push(w);
+    }
+    words.extend(["epic/E.lock", "wu/E/x.", "wu/E./x", "epic/E", "wu/E/x", "main"].map(String::from));
+    let exception = |w: &str| w.split('/').any(|c| c.ends_with('.') || c.ends_with(".lock"));
+    let mut accepted = 0;
+    for w in &words {
+        for args in [vec!["push", w.as_str()], vec!["sync", w.as_str()], vec!["pr-open", w.as_str()], vec!["pr-open", "wu/E/x", "--base", w.as_str()]] {
+            let line = format!("scripts/router-gh.sh {}", args.join(" "));
+            let (admitted, ok) = (bash(&line).is_none(), gh_validates(&args));
+            accepted += usize::from(ok);
+            assert!(!ok || admitted, "the script accepts what the guard denies: {line}");
+            assert!(!admitted || ok || exception(w) || (args.len() == 4 && w == "wu/E/x"), "the guard admits what the script refuses: {line}");
+        }
+    }
+    let digits: Vec<char> = "0123456789-+a".chars().collect();
+    let name_alpha: Vec<char> = "aZ09_-.".chars().collect();
+    for _ in 0..40 {
+        let n: String = (0..1 + next(9)).map(|_| digits[next(digits.len())]).collect();
+        let name: String = (0..1 + next(8)).map(|_| name_alpha[next(name_alpha.len())]).collect();
+        for args in [vec!["pr-ready", n.as_str()], vec!["post", n.as_str(), "review"], vec!["post", "7", name.as_str()]] {
+            let line = format!("scripts/router-gh.sh {}", args.join(" "));
+            let (admitted, ok) = (bash(&line).is_none(), gh_validates(&args));
+            accepted += usize::from(ok);
+            assert_eq!(admitted, ok, "guard and script disagree on: {line}");
+        }
+    }
+    assert!(accepted >= 10, "the corpus must hold accepted words too ({accepted})");
 }
