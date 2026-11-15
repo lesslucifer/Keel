@@ -606,7 +606,11 @@ fn push_takes_githubs_sign_offs_add_only_and_never_an_edit_or_a_deletion() {
     assert_eq!(gh.origin_sha("refs/notes/mr"), Some(gh.sha("refs/notes/mr")), "the checkout's ref replaced GitHub's, leased");
     assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &tip]), r#"{"by":"local"}"#);
     assert_eq!(gh.origin_sha("refs/notes/report"), Some(gh.sha("refs/notes/report")), "the report note is pushed");
-    assert_eq!(git(&gh.repo, &["for-each-ref", "refs/notes/keel-gh/"]), "", "no temp ref is left");
+    assert_eq!(
+        git(&gh.repo, &["for-each-ref", "--format=%(refname)", "refs/notes/keel-gh/"]),
+        "refs/notes/keel-gh/pushed-mr",
+        "no temp ref is left, only the snapshot"
+    );
     // a one-sided deletion on GitHub: the checkout keeps its note and puts it back
     git(&gh.origin, &["notes", "--ref=mr", "remove", &tip]);
     let o = gh.run(&["push", "wu/E/x"]);
@@ -623,6 +627,93 @@ fn push_takes_githubs_sign_offs_add_only_and_never_an_edit_or_a_deletion() {
     assert!(o.status.success() && stdout(&o).contains("not taken"), "{}", text(&o));
     let o = common::cmd("git").args(["notes", "--ref=mr", "list", &epic]).current_dir(&gh.repo).output().unwrap();
     assert!(!o.status.success());
+}
+
+/// Security review round 2, F1: a sign-off GitHub holds on a commit this checkout lacks (the owner
+/// pressed "Update branch" and approved the new head) holds refs/notes/mr back from the push, so the
+/// push never erases it; the branch and the other notes still land.
+#[test]
+fn a_sign_off_on_a_commit_only_github_has_holds_the_mr_notes_back() {
+    let gh = Gh::new();
+    git(&gh.repo, &["notes", "--ref=mr", "add", "-m", r#"{"by":"local"}"#, &gh.sha("wu/E/x")]);
+    assert!(gh.run(&["push", "wu/E/x"]).status.success());
+    // GitHub makes a commit this checkout never fetched, and the writer signs it
+    let other = gh.root.path().join("other");
+    git(gh.root.path(), &["clone", "-q", gh.origin.to_str().unwrap(), other.to_str().unwrap()]);
+    git(&other, &["checkout", "-q", "-b", "wu/E/x", "origin/wu/E/x"]);
+    write(&other, "src/b.txt", "update branch");
+    commit(&other, "Merge branch 'epic/E' into wu/E/x");
+    git(&other, &["push", "-q", "--no-verify", "origin", "wu/E/x:refs/heads/wu/E/x-updated"]);
+    let only_github = git(&other, &["rev-parse", "HEAD"]);
+    git(&gh.origin, &["notes", "--ref=mr", "add", "-m", &approval_note(&only_github, 50), &only_github]);
+    let before = gh.origin_sha("refs/notes/mr");
+    write(&gh.repo, "src/c.txt", "c");
+    commit(&gh.repo, "more");
+    let tip = gh.sha("wu/E/x");
+    test_note(&gh.repo, &tip);
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let out = stdout(&o);
+    assert!(out.contains(&format!("WARN GitHub holds a sign-off on {only_github} this checkout lacks: sync first; refs/notes/mr not pushed")), "{out}");
+    assert!(out.ends_with(&format!("PUSHED branch=wu/E/x sha={tip} state=updated")), "{out}");
+    assert_eq!(gh.origin_sha("refs/notes/mr"), before, "GitHub's refs/notes/mr, and its sign-off, untouched");
+    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &only_github]), approval_note(&only_github, 50));
+    assert_eq!(gh.origin_sha("refs/notes/test"), Some(gh.sha("refs/notes/test")), "the other notes still went");
+}
+
+/// Security review round 2, F2: a sign-off removed here stays removed. Only what GitHub added since
+/// this checkout last pushed refs/notes/mr is taken, so the next push takes the removal to GitHub;
+/// a sign-off the writer adds after that is still taken.
+#[test]
+fn a_sign_off_removed_here_is_not_brought_back_by_the_next_push() {
+    let gh = Gh::new();
+    let (tip, epic) = (gh.sha("wu/E/x"), gh.sha("epic/E"));
+    git(&gh.repo, &["notes", "--ref=mr", "add", "-m", &approval_note(&tip, 60), &tip]);
+    assert!(gh.run(&["push", "wu/E/x"]).status.success());
+    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &tip]), approval_note(&tip, 60));
+    git(&gh.repo, &["notes", "--ref=mr", "remove", &tip]);
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let local = |rev: &str| common::cmd("git").args(["notes", "--ref=mr", "list", rev]).current_dir(&gh.repo).output().unwrap().status.success();
+    assert!(!local(&tip), "the removed sign-off came back");
+    let o = common::cmd("git").args(["notes", "--ref=mr", "list", &tip]).current_dir(&gh.origin).output().unwrap();
+    assert!(!o.status.success(), "the removal reached GitHub");
+    // the writer signs again on GitHub afterwards: a new note, taken
+    git(&gh.origin, &["notes", "--ref=mr", "add", "-m", &approval_note(&tip, 61), &tip]);
+    git(&gh.origin, &["notes", "--ref=mr", "add", "-m", &approval_note(&epic, 62), &epic]);
+    assert!(gh.run(&["push", "wu/E/x"]).status.success());
+    assert!(local(&tip) && local(&epic), "a sign-off GitHub added since the last push is taken");
+}
+
+/// Security review round 2, F6: GitHub's refs/notes/mr moves between the read and the push (the
+/// writer signs meanwhile): the leased push of refs/notes/mr fails with a WARN, the writer's note
+/// survives, the branch lands, and the next push takes the note in.
+#[test]
+fn a_sign_off_written_on_github_during_the_push_survives_it() {
+    let gh = Gh::new();
+    let (tip, epic) = (gh.sha("wu/E/x"), gh.sha("epic/E"));
+    git(&gh.repo, &["notes", "--ref=mr", "add", "-m", r#"{"by":"local"}"#, &tip]);
+    assert!(gh.run(&["push", "wu/E/x"]).status.success());
+    git(&gh.repo, &["notes", "--ref=mr", "add", "-f", "-m", r#"{"by":"local","again":true}"#, &tip]);
+    let hook = gh.origin.join("hooks/pre-receive");
+    std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    exe(
+        &hook,
+        &format!(
+            "#!/bin/sh\n[ -f moved ] && exit 0\ntouch moved\nunset GIT_QUARANTINE_PATH GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES\nGIT_AUTHOR_NAME=w GIT_AUTHOR_EMAIL=w@w GIT_COMMITTER_NAME=w GIT_COMMITTER_EMAIL=w@w git notes --ref=mr add -m '{}' {epic} >&2\nexit 0\n",
+            approval_note(&epic, 70)
+        ),
+    );
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let out = stdout(&o);
+    assert!(gh.origin.join("moved").exists(), "the writer signed during the push");
+    assert!(out.lines().any(|l| l.starts_with("WARN notes ref refs/notes/mr not pushed: ")), "{out}");
+    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &epic]), approval_note(&epic, 70), "the writer's note survived");
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success() && !stdout(&o).contains("WARN"), "{}", text(&o));
+    assert_eq!(git(&gh.repo, &["notes", "--ref=mr", "show", &epic]), approval_note(&epic, 70), "taken in at the next push");
+    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &tip]), r#"{"by":"local","again":true}"#);
 }
 
 /// main, a tag, an unknown branch, a flag or an extra word: exit 2 before any request, origin as it was.

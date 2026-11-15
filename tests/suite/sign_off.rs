@@ -503,7 +503,8 @@ impl Writer {
         }
         git(&base, &["init", "-q", "--bare", origin.to_str().unwrap()]);
         git(&dev, &["push", "-q", "--no-verify", origin.to_str().unwrap(), "main", "epic/e", "wu/e/a", "refs/notes/*:refs/notes/*"]);
-        git(&base, &["clone", "-q", origin.to_str().unwrap(), runner.to_str().unwrap()]);
+        // as actions/checkout leaves it: main checked out
+        git(&base, &["clone", "-q", "-b", "main", origin.to_str().unwrap(), runner.to_str().unwrap()]);
         crate::router_gh::exe(&bin.join("fake-curl"), crate::router_gh::FAKE_CURL);
         Writer { _d: d, _root: root, dev, origin, runner, mock, bin, tmp }
     }
@@ -581,7 +582,8 @@ impl Writer {
         common::hermetic(&mut c);
         let o = c.output().unwrap();
         assert!(!text(&o).contains("ghs_writerTestToken"), "the token leaked: {}", text(&o));
-        assert!(std::fs::read_dir(&self.tmp).unwrap().next().is_none(), "the scratch dir was left behind");
+        let left: Vec<_> = std::fs::read_dir(&self.tmp).unwrap().map(|e| e.unwrap().path()).collect();
+        assert!(left.is_empty(), "the scratch dir was left behind: {left:?}\n{}", text(&o));
         o
     }
 

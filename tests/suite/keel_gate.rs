@@ -266,4 +266,8 @@ fn the_writer_script_builds_keel_only_from_main_and_never_builds_the_base_or_the
     }
     assert!(s.contains("unset GH_TOKEN"), "no child inherits the token");
     assert!(s.contains("\nset -euf\n"), "no word splits into a glob");
+    // security review round 2, F9: the main the build logs is read before the script moves any ref
+    let read = s.find("\nmain_sha=$(git rev-parse -q --verify 'HEAD^{commit}')").expect("main's sha is read");
+    assert!(read < s.find("git update-ref").unwrap(), "read before the first update-ref");
+    assert!(s.contains("building keel from main at $main_sha"));
 }
