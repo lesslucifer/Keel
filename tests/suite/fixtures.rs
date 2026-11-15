@@ -153,3 +153,20 @@ fn a_copy_with_hooks_a_worktree_and_a_remote_is_independent() {
     assert!(cmd("git").args(["rev-parse", "--verify", "-q", "w"]).current_dir(b.path().join("remote.git")).output().unwrap().stdout.is_empty());
     assert!(cmd("git").args(["rev-parse", "--verify", "-q", "w"]).current_dir(t.join("remote.git")).output().unwrap().stdout.is_empty());
 }
+
+/// A run removes its templates when it exits, so neither cargo test nor nextest (one process per
+/// test) leaves one behind.
+#[test]
+fn a_test_process_leaves_no_template_behind() {
+    let tmp = TempDir::new().unwrap();
+    let exe = std::env::current_exe().unwrap();
+    let o = crate::common::cmd(&exe)
+        .args(["fixtures::a_copy_with_hooks_a_worktree_and_a_remote_is_independent", "--exact", "--test-threads=1"])
+        .env("TMPDIR", tmp.path())
+        .output()
+        .unwrap();
+    let out = String::from_utf8_lossy(&o.stdout);
+    assert!(o.status.success() && out.contains("1 passed"), "{out}{}", String::from_utf8_lossy(&o.stderr));
+    let left: Vec<_> = std::fs::read_dir(tmp.path()).unwrap().flatten().map(|e| e.file_name()).collect();
+    assert!(left.is_empty(), "the run left {left:?}");
+}

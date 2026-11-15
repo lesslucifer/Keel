@@ -164,24 +164,41 @@ pub fn fixture_parts(key: &str, parts: &[&str], build: impl FnOnce(&Path)) -> Ve
     copies
 }
 
-/// The template `key`, built on first use. Templates live for the run in one directory; runs older
-/// than a day are removed when a run starts, since a test process never drops its statics.
+/// The template `key`, built on first use. A run's templates live in one directory, removed when
+/// the test process exits; a run that was killed leaves its directory to a later run's sweep.
 pub fn template(key: &str, build: impl FnOnce(&Path)) -> PathBuf {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
-    static ROOT: OnceLock<tempfile::TempDir> = OnceLock::new();
     static SLOTS: OnceLock<Mutex<HashMap<String, Arc<OnceLock<PathBuf>>>>> = OnceLock::new();
-    let root = ROOT.get_or_init(|| {
+    let root = TEMPLATE_ROOT.get_or_init(|| {
         sweep_templates(&std::env::temp_dir(), std::time::Duration::from_secs(24 * 3600));
-        tempfile::Builder::new().prefix(TEMPLATES).tempdir().unwrap()
+        let d = tempfile::Builder::new().prefix(TEMPLATES).tempdir().unwrap().keep();
+        remove_templates_at_exit();
+        d
     });
     let slot = SLOTS.get_or_init(Default::default).lock().unwrap().entry(key.to_string()).or_default().clone();
     slot.get_or_init(|| {
-        let d = tempfile::Builder::new().prefix("t").tempdir_in(root.path()).unwrap().keep();
+        let d = tempfile::Builder::new().prefix("t").tempdir_in(root).unwrap().keep();
         build(&d);
         d
     })
     .clone()
+}
+
+static TEMPLATE_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+/// libtest ends a run by returning from main or calling exit, and neither drops a static, so the
+/// templates go through the C library's exit handlers.
+fn remove_templates_at_exit() {
+    extern "C" fn remove() {
+        if let Some(d) = TEMPLATE_ROOT.get() {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+    extern "C" {
+        fn atexit(f: extern "C" fn()) -> std::os::raw::c_int;
+    }
+    assert_eq!(unsafe { atexit(remove) }, 0, "atexit refused the template cleanup");
 }
 
 const TEMPLATES: &str = "keel-fixtures-";
