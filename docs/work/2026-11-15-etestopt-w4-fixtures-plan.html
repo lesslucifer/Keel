@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af932229f34851f0dfb250a" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-TESTOPT.W4 plan: fixtures built once</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-TESTOPT.W4 · Fixtures built once, copied per test</h1>
+      <p>The scratch repos that many tests build the same way are built once per run and copied into each test with plain file copies, so fewer git and keel processes start.</p>
+      <div class="meta">T3 · WU plan · 2026-11-15 · epic <code>E-TESTOPT</code> · WU <code>E-TESTOPT.W4</code> · branch <code>wu/E-TESTOPT/w4-fixtures</code> off <code>epic/E-TESTOPT</code> 5d2ab18 · ready without owner review (owner ruling 2026-11-15)</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p>A test run starts about 29,500 git processes (counted per test on 5d2ab18, below). Starting a process is the run's main cost, and it gets dearer when many run at once. Many tests begin by building the same scratch repo from nothing: <code>git init</code>, config, <code>keel mr setup</code>, a commit, <code>keel hooks install</code>, branches, more commits. That setup is repeated in every test that needs it.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-c="today-after">
+  <thead><tr><th></th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>Git processes per full run</td><td>29,524, of which 4,865 build fixtures</td><td>The fixture share falls to about one build per shape; the count is in the result</td></tr>
+    <tr><td>A full <code>cargo test</code></td><td>About 32.5 s this session</td><td>Measured in the result. The profile caps the gain: fixture setup is 16 % of the git processes</td></tr>
+    <tr><td>You must decide</td><td colspan="2">Nothing: the open points carry their answers</td></tr>
+  </tbody>
+</table>
+
+<h2 id="profile">What the profile says</h2>
+<p data-c="profile-summary">Each test was run alone through a git shim that logs every git process and who started it, with each fixture builder marked. 88 % of git processes come from keel and the hooks, 12 % from the test code itself. Fixture setup is 4,865 of 29,524 (16 %). Four builders hold 94 % of it: <code>verify_dod</code>'s (1,824), <code>close_walk</code>'s (1,204), <code>mr</code>'s (1,022) and <code>router</code>'s launcher and watcher (515). The other builders (<code>cli</code>, <code>init</code>, <code>verify_doc</code>, <code>seed3_e2e</code>) hold 300 together and stay as they are.</p>
+
+<h2 id="work">The work</h2>
+<p data-item="requirement" data-c="requirement">The fixtures of <code>verify_dod</code>, <code>mr</code>, <code>close_walk</code> and <code>router</code> are each built once per run as a template and copied into each test with <code>std::fs</code>, each copy independent of the template and of every other copy, with every test and assertion kept.</p>
+<p data-item="maps-to" data-c="maps-to">Epic <code>E-TESTOPT</code>, its W4 block and open points 4 and 7 · testing charter: each test owns its state and runs in parallel.</p>
+<p data-item="expected" data-c="expected">The suite's git processes per run fall by about the fixture share of the four converted files (recipe step 5); <code>cargo test</code> passes the 350 tests from before plus this WU's new ones, with 0 failures; recipe steps 2, 3 and 5 before and after are in the result, with load.</p>
+
+<ul data-c="changes">
+  <li><code>tests/common/mod.rs</code>: <code>fixture(key, build)</code> and <code>fixture_parts(key, parts, build)</code>. The first call for a key builds its template in a directory of its own (<code>OnceLock</code> per key); every call returns a fresh copy. <code>copy_tree</code> copies directories (empty ones too), files with their modes, and links as links.</li>
+  <li>Absolute paths: any file or link in the copy that names the template gets the copy's path instead, in both the written and the resolved form (<code>/var/…</code> and <code>/private/var/…</code> on macOS). That covers <code>core.hooksPath</code>, a remote's URL, a linked worktree's <code>gitdir</code> files and <code>keel.signingkey</code>.</li>
+  <li>The four files' builders build into the template; their signatures stay, so no test body changes.</li>
+</ul>
+
+<h2 id="open-points">Open points</h2>
+<table data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Which fixtures?</td><td><code>verify_dod</code>, <code>mr</code>, <code>close_walk</code>, <code>router</code></td><td>94 % of fixture setup. The rest is about 7 git processes per test</td></tr>
+    <tr><td>2</td><td>Rewrite known files (<code>.git/config</code>) or any file naming the template?</td><td>Any file</td><td>One rule for every shape: hooks, remotes, worktrees and keys need no case each. A per-shape test asserts no file of a copy names its template</td></tr>
+    <tr><td>3</td><td>Where do templates live, and who removes them?</td><td>One <code>keel-fixtures-*</code> directory per run under the temp directory; a run removes those older than a day</td><td>A test process never drops its statics, so a run cannot clean up after itself</td></tr>
+    <tr><td>4</td><td>Copy in-process?</td><td>Yes, <code>std::fs</code></td><td>Epic open point 7: a copy that spawns would put back part of the cost</td></tr>
+    <tr><td>5</td><td>Make keel call git less (epic open point 4)?</td><td>Not here: the result records keel's share for backlog row B26</td><td>It changes the gate's own code</td></tr>
+  </tbody>
+</table>
+
+<h2 id="testplan">Test plan</h2>
+<div data-item="test-plan" data-c="test-plan">
+  <ul>
+    <li><b>Integration</b>, one per converted file, each shape: two copies and the template. No file of a copy names the template; <code>core.hooksPath</code> is the copy's own; a commit in one copy reaches neither the other nor the template. <code>close_walk</code>: the copy's origin is its own remote copy, and a push from it reaches no other remote. <code>mr</code>: <code>keel.signingkey</code> names the copy's key, still mode 600. <code>router</code>: the worktree list names the copy's three checkouts, and the watcher's origin is its own. A generic shape in <code>tests/suite/fixtures.rs</code> holds hooks, a worktree and a remote at once.</li>
+    <li><b>Unit</b> (<code>tests/suite/fixtures.rs</code>): the copy keeps an empty directory, an executable hook, a 600 key, a directory's mode, relative, absolute and dangling links; a rewritten file keeps its mode; the byte rewrite; the resolved form first; the sweep removes only old template directories.</li>
+    <li><b>Red first</b>, by mutants of the helper: no rewrite; a rewritten file's mode dropped; empty directories dropped; links followed; directory modes dropped; the resolved form not rewritten. Each must turn a test red.</li>
+    <li><b>No test lost</b>: the passed count before (98 + 252) and after; no test body changed.</li>
+    <li><b>Observable</b>: recipe steps 2 (<code>cargo test --no-fail-fast</code>, stock and CLT git), 3 (<code>nextest -j 8</code> and <code>-j 14</code>, wall and kernel time) and 5 (git processes per test), before and after, twice each, load recorded.</li>
+  </ul>
+</div>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
