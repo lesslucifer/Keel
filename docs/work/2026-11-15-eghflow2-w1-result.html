@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en" data-artifact="wu-result" data-status="draft">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHFLOW2.W1 result: the first live run on GitHub</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHFLOW2.W1 · Result: the first live run on GitHub</h1>
+      <p>Draft. Filled in as the live checks run.</p>
+      <div class="meta">Draft · 2026-11-15 · T3 · WU result · Keel · plan: <a href="2026-11-15-eghflow2-w1-plan.html">E-GHFLOW2.W1 plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome">Pending. So far: the cause of "GitHub returned no usable installation token" is GitHub's stateless token format (ghs_&lt;app id&gt;_&lt;JWT&gt;, about 520 characters, with dots and dashes), which the token check refused. The fix is staged for the owner's commit.</p>
+
+<h2 id="live">Live facts</h2>
+<table data-c="live-facts">
+  <thead><tr><th>Line (epic plan, W1)</th><th>What GitHub or the script printed</th><th>Pass / fail</th></tr></thead>
+  <tbody>
+    <tr><td>push epic/E-GHFLOW2 prints PUSHED, the bot as pusher</td><td>Before the fix: <code>router-gh: GitHub returned no usable installation token</code> (exit 1), from the router and the owner's terminal</td><td>fail, fixed in this WU (pending the live rerun)</td></tr>
+    <tr><td>pr-open epic/E-GHFLOW2: a draft into main by &lt;slug&gt;[bot]</td><td>pending</td><td>—</td></tr>
+    <tr><td>issue epic/E-GHFLOW2: ISSUE … state=opened</td><td>pending</td><td>—</td></tr>
+    <tr><td>W1's branch pushed, its draft into the epic</td><td>pending</td><td>—</td></tr>
+    <tr><td>G2: the token as x-access-token basic auth over https</td><td>pending</td><td>—</td></tr>
+    <tr><td>G2: git/ref/heads/wu/E/x takes a branch with slashes</td><td>pending</td><td>—</td></tr>
+    <tr><td>G2: Pull requests write lets the App comment</td><td>pending</td><td>—</td></tr>
+    <tr><td>G2: ln of app.pem from W1's worker fails</td><td>pending</td><td>—</td></tr>
+    <tr><td>Keel gate run: ci, gate, docs; gate checks 1–7; 8 waiting; Release does not run; mention or link from an escaped @name or #n</td><td>pending</td><td>—</td></tr>
+    <tr><td>Watch: /keel go prints COMMAND … verb=go; a second account prints IGNORED</td><td>pending</td><td>—</td></tr>
+    <tr><td>Observed: updated_at moves only on a body edit; GET /user/{id} with an installation token; the sub-issue calls</td><td>pending</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<h2 id="deviations">Deviations</h2>
+<p data-item="deviations" data-c="deviations">Pending. Unplanned so far: the token fix, which W1's plan expected only as "a fact that fails is fixed in this WU".</p>
+
+<h2 id="evidence">Evidence</h2>
+<p data-item="evidence" data-c="evidence">Pending. Tests: tests/suite/router_gh.rs (the stateless fake token; a_legacy_and_a_stateless_token_both_push; ten bad answers refused with the status and the length only).</p>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">Pending. Likely: the token rule in docs/architecture.html's GitHub section.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<p data-item="follow-ups" data-c="follow-ups">Pending.</p>
+
+  </main>
+</body>
+</html>
