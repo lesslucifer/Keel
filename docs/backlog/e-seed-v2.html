@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>Backlog: E-SEED v2</h1>
       <p>Work deferred when E-SEED closed with W1–W8 (W7 v2 last). E-SEED2 absorbed B1 and B2 and closed on 2026-11-10; every other row is re-pointed to a proposed later epic.</p>
-      <div class="meta">T2 · backlog · living (strike a row when an epic absorbs it) · 2026-11-08 · Keel · B1 – B25 · re-pointed at the E-SEED2 close (owner rulings 2026-11-10); B8 and B12 done and B15 – B20 added at the E-CRCAP close (2026-11-13); B21, B22 added at the E-DOCSTYLE close; B23 added by the E-SEED3 plan (2026-11-13); B24 added by E-SEED3.W5 (B6 deferred, owner ruling D); the epic test's clone-fetch step moved into B24 by owner ruling 2026-11-14; B25 added by the E-SEED3 close (a review fix buried by a later fix)</div>
+      <div class="meta">T2 · backlog · living (strike a row when an epic absorbs it) · 2026-11-08 · Keel · B1 – B26 · re-pointed at the E-SEED2 close (owner rulings 2026-11-10); B8 and B12 done and B15 – B20 added at the E-CRCAP close (2026-11-13); B21, B22 added at the E-DOCSTYLE close; B23 added by the E-SEED3 plan (2026-11-13); B24 added by E-SEED3.W5 (B6 deferred, owner ruling D); the epic test's clone-fetch step moved into B24 by owner ruling 2026-11-14; B25 added by the E-SEED3 close (a review fix buried by a later fix)</div>
     </div>
   </header>
   <main>
@@ -25,7 +25,7 @@
       <tr><td>E-LINEAGE</td><td>B5</td></tr>
       <tr><td>E-GATEFIX</td><td>B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14</td></tr>
       <tr><td>E-MULTILANG</td><td>B3: the Python e2e first, then other languages</td></tr>
-      <tr><td>stays in the backlog</td><td>B24 (an owner pick: A, B, C or E) and B25; B21 (accepted limits); B19 (owed by the owner's reinstall); B2's unbuilt follow-ups; B7 Codex rows (all non-Claude work), native SSH signing, <code>Cargo.lock</code> currency</td></tr>
+      <tr><td>stays in the backlog</td><td>B24 (an owner pick: A, B, C or E), B25 and B26 (keel's own git calls, from E-TESTOPT); B21 (accepted limits); B19 (owed by the owner's reinstall); B2's unbuilt follow-ups; B7 Codex rows (all non-Claude work), native SSH signing, <code>Cargo.lock</code> currency</td></tr>
     </table>
 
     <h2 id="b1"><s>B1 · E-SEED.W10 release pipeline (parked branch)</s> · done</h2>
@@ -193,6 +193,9 @@ git update-ref -d refs/notes/keel-remote-&lt;kind&gt;</code></pre>
     </div>
     <h2 id="b25">B25 · A review fix buried by a later fix needs the owner's waiver <span class="badge id">backlog: unowned; the next epic that owns the walk</span></h2>
     <p data-c="b25">A code commit that carries epic-range notes stays a standalone commit when a later fix buries it, so the walk is red on it: E-DOCSTYLE's <code>ad30e30</code> is the case. E-SEED3.W2 ruled it stays red and its only relief is a <code>walk_waivers</code> entry on the epic tip's cr note. Options the W2 result named: judge such a commit over the epic (rejected: it would let un-reviewed code through), or write a <code>--target</code> note from a detached worktree (the cost the close exists to remove). Source: E-SEED3.W2 result, follow-ups; owner ruling 2026-11-13 that the case stays red.</p>
+    <h2 id="b26">B26 · Keel calls git many times per gate step <span class="badge id">backlog: unowned; an epic that owns the gate's git calls</span></h2>
+    <p data-c="b26">Most of the test suite's process cost is keel's own git calls, not the tests'. E-TESTOPT.W4 counted every git process of one run per test on <code>5d2ab18</code>: 29,524 in all; keel and Keel's hook scripts made 23,088 (78 %), the test code 3,487 (12 %), the router scripts 2,026 (7 %), git's own children 923 (3 %). After W4's fixture templates, keel's share is about 80 % of 25,554. Keel's subcommands, most used first: <code>rev-parse</code> 5,887 · <code>diff</code> 3,136 · <code>cat-file</code> 2,642 · <code>notes</code> 2,547 · <code>merge-base</code> 1,273 · <code>symbolic-ref</code> 1,142 · <code>rev-list</code> 1,136 · <code>config</code> 1,113 · <code>show</code> 884 · <code>var</code> 822. The epic baseline found only 5 % of calls in one process to be exact repeats, so a cache of identical calls buys little; batching (one <code>cat-file --batch</code> for object and note reads, one <code>rev-parse</code> for several refs) is the direction. Every user's gate pays the same calls, so it is a product change, not a test change (E-TESTOPT epic plan, open point 4).</p>
+    <p data-c="b26-maintenance">Git's automatic maintenance (<code>git maintenance run --auto</code> after a commit or merge) was 789 of those 29,524 processes. The tests turn it off since E-TESTOPT.W5: every test spawn's global config is <code>tests/common/gitconfig</code>, <code>maintenance.auto = false</code> (<a href="../decisions/workflow-gates.html#dec-59">DEC-59</a>). Keel itself leaves it alone in a user's repo: there it is the user's setting. Source: E-TESTOPT.W4 result (the profile), W5 result.</p>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
 </body>
