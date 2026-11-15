@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af96d4f9f34851f0dfb25a6" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHFLOW.W1 result: GitHub runs the checks</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHFLOW.W1 result · GitHub runs the checks, as a signal</h1>
+      <p>Delivered as planned. The live run on GitHub waits for your push.</p>
+      <div class="meta">Ready v1 · 2026-11-15 · T3 · WU result · Keel · plan: 2026-11-15-eghflow-w1-plan.html</div>
+    </div>
+  </header>
+  <main>
+    <h2 id="outcome">Outcome</h2>
+    <p data-item="outcome">Delivered. A push of <code>main</code>, <code>epic/**</code> or <code>wu/**</code>, and a pull request into <code>main</code> or <code>epic/**</code>, runs three jobs: <em>ci</em> (<code>keel check</code>), <em>gate</em> (the merge check, green when only the sign-off is missing, with a five-note evidence page) and <em>docs</em> (<code>keel verify-doc</code> on changed docs). Each uses a keel built from the base branch, a read-only token and no secret. Proven by hermetic tests and by a real run of the script in a scratch clone (bootstrap path, keel built from cbbbcc3). Not yet run on GitHub: that needs your push.</p>
+
+    <h2 id="changes">What changes for you</h2>
+    <table data-c="changes" data-item="owner-changes">
+      <tr><th>When</th><th>Today</th><th>After W1</th></tr>
+      <tr><td>A work branch is pushed</td><td>Nothing on GitHub</td><td>"Keel gate" runs ci, gate and docs</td></tr>
+      <tr><td>A test is red only in the sandbox</td><td>You re-run it by hand</td><td>The ci job's result is the answer</td></tr>
+      <tr><td>You want the evidence</td><td>A worker runs the gate</td><td>The gate job's summary page</td></tr>
+    </table>
+
+    <h2 id="try">Your first push: what to do and what to look for</h2>
+    <ol data-c="try">
+      <li>The base must be on GitHub first. Origin's <code>epic/E-GHFLOW</code> was cf8a674 when this was written, behind cbbbcc3 (main merged in). Push it: <code>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-GHFLOW &amp;&amp; git push origin epic/E-GHFLOW</code>. This push starts no Keel gate run (the epic's tree has no workflow yet).</li>
+      <li>Then push this branch: <code>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-GHFLOW-w1-ci &amp;&amp; git push origin wu/E-GHFLOW/w1-ci</code> (the pre-push hook runs keel check and sends the notes first).</li>
+      <li>Open <code>https://github.com/lesslucifer/Keel/actions</code>. Expect one run of "Keel gate" for <code>wu/E-GHFLOW/w1-ci</code>, with jobs ci, gate, docs. "Release" must not run (it runs on tags and pull requests only).</li>
+      <li><strong>ci</strong>: green. Its log shows "building keel from the base epic/E-GHFLOW", then <code>cargo fmt</code>, clippy and the test run with every <code>notify_owner</code> test passing. Its summary: "Keel check: green". A red here is new information (a runner difference or a newer clippy); the log names it.</li>
+      <li><strong>gate</strong>: red, by design, on this first push. <code>epic/E-GHFLOW</code> is at cbbbcc3, which predates <code>keel ci gate</code>, so the base's plain verify-dod judges: its summary says "Keel gate: bootstrap" and the log shows <code>FAIL 8·manual-review</code> (and nothing else if the notes reached GitHub). A <code>1·notes</code> FAIL means the notes did not reach origin: <code>git push origin 'refs/notes/*'</code>, then "Re-run jobs".</li>
+      <li><strong>docs</strong>: green; summary "Keel docs: green", 2 changed docs (this plan and this report).</li>
+      <li>The full path (evidence table, "green on checks 0–7") first runs on the first WU branch pushed after this WU is merged into <code>epic/E-GHFLOW</code> and that epic is pushed. Look for the table with rows test, doc, cr, mr, dod and "8·manual-review: waiting".</li>
+    </ol>
+    <p>Nothing on your Mac changes: no hook, no setting, no file outside the repo.</p>
+
+    <h2 id="deviations">Deviations</h2>
+    <ul data-item="deviations">
+      <li>The plan's integration list said the script refuses bad input "before any git call that uses it"; the head branch is checked with <code>git check-ref-format</code>, a git call that only validates. Same intent.</li>
+      <li>The full-path run of the script against a real built keel (base = this tip) was not run: the sandbox's auto-mode refused the scratch commit it needed. The hermetic tests cover that path with the test build of keel.</li>
+      <li>Otherwise none.</li>
+    </ul>
+
+    <h2 id="evidence">Evidence</h2>
+    <div data-item="evidence" data-c="evidence">
+      <ul>
+        <li>Commits: d87aa86 (plan), 5577115 (code, tests, script, workflow), and this report's commit.</li>
+        <li>Integration: <code>tests/suite/ci_gate.rs</code> (8 tests: green before and after the sign-off, the same FAIL block as the local gate, no <code>[check]</code> command run, hooks installed, bootstrap, epic level, docs job, ci job, build from the base commit, bad input refused) and <code>tests/suite/keel_gate.rs</code> (7 tests: triggers, token, pins, no expression in a run line, three jobs, the script's base build). The epic-level test was red first: an exempt range's printout hid check 8; fixed so the printout matches <code>verify-dod</code>.</li>
+        <li>Unit: <code>src/ci.rs</code> (escape, labels, the check-8 rule, the page for green, red, exempt, waived and broken notes) and <code>src/gate.rs</code> (the <code>--summary</code> flag).</li>
+        <li><code>keel check</code>: lint green; tests 333 passed, 10 red, all <code>notify_owner</code>, sandbox-only (loopback bind refused, R49).</li>
+        <li>Real script run in a scratch clone: <code>gate</code>, no <code>KEEL</code>, built keel from cbbbcc3 in a worktree, took the bootstrap path, printed the base's verify-dod FAIL blocks, summary "Keel gate: bootstrap", exit 1.</li>
+        <li>Docs: this report and the WU plan (both T3). No rule-bearing path changed.</li>
+      </ul>
+    </div>
+
+    <h2 id="distillation">Distillation</h2>
+    <p data-item="distillation">Nothing now; at the epic close, per the epic plan: UC-GATE gets the row "the gate runs in CI, judged by a keel built from the base"; a decision record for the CI gate built from the base and why <code>pull_request_target</code> waits for main; backlog R43 closed by the ci job once a GitHub run shows the notify_owner tests green.</p>
+
+    <h2 id="follow-ups">Follow-ups</h2>
+    <ul data-item="follow-ups">
+      <li>The first GitHub run's result is recorded in E-GHFLOW.W2's result report (its push is the first full-path run).</li>
+      <li>Base-defined workflow and script (so a branch cannot edit its own checks): E-GHFLOW.W5, with <code>.github/</code> rule-bearing and the checks required.</li>
+      <li>A range walk on pushes to main, and pinning the Rust toolchain if a newer clippy turns ci red: backlog rows taken at the E-GHFLOW close.</li>
+    </ul>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
