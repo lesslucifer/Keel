@@ -557,42 +557,55 @@ fn the_test_strip_list_equals_keels() {
 
 // ── E-TESTOPT.W1: the tests run the real git ────────────────────────────────────────────────────
 
-fn resolved_git(path: Option<&str>) -> std::path::PathBuf {
-    let mut c = cmd("sh");
-    c.args(["-c", "command -v git"]);
-    if let Some(p) = path {
-        c.env("PATH", p);
-    }
-    let o = c.output().unwrap();
-    assert!(o.status.success(), "no git on {path:?}");
-    std::fs::canonicalize(String::from_utf8(o.stdout).unwrap().trim()).unwrap()
-}
-
-fn exec_path(git: &Path) -> String {
-    let o = cmd(git).arg("--exec-path").output().unwrap();
-    assert!(o.status.success(), "{}", text(&o));
-    String::from_utf8(o.stdout).unwrap()
-}
-
-/// Every PATH a test hands a child - the shared one, one with keel's directory first, one a test makes
-/// up - resolves the real git: the same installation the inherited PATH's git runs, never the xcrun
-/// launcher in front of it, and silent on stderr (the launcher's sandbox cache error failed 12 tests).
-#[test]
-fn a_test_spawn_runs_the_real_git_not_the_launcher() {
+/// The inherited PATHs this machine can hand a test run: the session's, and each developer-tools git
+/// first (a Mac with the Command Line Tools or Xcode selected, or both installed).
+fn inherited_paths() -> Vec<String> {
     let inherited = common::inherited_path();
-    let launcher = common::on_path(&inherited, "git", |p| p.is_file()).expect("git on PATH");
-    let real = common::real_git(&exec_path(&launcher), |p| p.is_file()).map(|g| std::fs::canonicalize(g).unwrap());
+    let devs = ["/Library/Developer/CommandLineTools/usr/bin", "/Applications/Xcode.app/Contents/Developer/usr/bin"];
+    let firsts = devs.iter().filter(|d| Path::new(d).join("git").is_file()).map(|d| format!("{d}:{inherited}"));
+    std::iter::once(inherited.clone()).chain(firsts).collect()
+}
+
+/// `git <a>` exactly as a test child runs it: by name, on `path`.
+fn git_on(path: &str, d: &Path, a: &[&str]) -> Output {
+    cmd("git").args(a).current_dir(d).env("PATH", path).output().unwrap()
+}
+
+/// What a test child runs, on the test PATH built from each inherited PATH this machine can have: its
+/// `git --exec-path` is the one the inherited PATH's git reports (that git's own installation, not
+/// another's prefix a git started outside its install falls back to: round 1's blocker), a local push
+/// runs that installation's receive-pack, stderr stays silent (no launcher cache error), and on macOS
+/// the git found is never the xcrun launcher. The shared PATH, one with keel's directory first, and
+/// one a test makes up all hold.
+#[test]
+fn a_test_child_runs_its_gits_own_installation_not_the_launcher() {
+    let d = TempDir::new().unwrap();
     let keel_dir = Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap();
-    assert_eq!(Some(resolved_git(None)), real, "common::cmd's own PATH");
-    for path in [common::path().to_string(), common::path_with(keel_dir), common::real_git_first("/usr/bin:/bin")] {
-        let git = resolved_git(Some(&path));
-        assert_eq!(Some(&git), real.as_ref(), "{path}");
-        assert_eq!(exec_path(&git), exec_path(&launcher));
-        if cfg!(target_os = "macos") {
-            assert_ne!(git, Path::new("/usr/bin/git"), "the xcrun launcher on {path}");
+    for inherited in inherited_paths() {
+        let own = git_on(&inherited, d.path(), &["--exec-path"]);
+        assert!(own.status.success(), "{}", text(&own));
+        let own = String::from_utf8(own.stdout).unwrap();
+        let shared = common::test_path_for(&inherited);
+        let paths = [shared.clone(), common::test_path(&shared, Some(keel_dir)), common::test_path("/usr/bin:/bin", common::git_dir(&inherited).as_deref())];
+        for path in paths {
+            let o = git_on(&path, d.path(), &["--exec-path"]);
+            let at = format!("inherited {inherited}\ntest PATH {path}");
+            assert_eq!(String::from_utf8_lossy(&o.stdout), own, "{at}");
+            assert!(o.status.success() && o.stderr.is_empty(), "{at}: {}", text(&o));
+            if cfg!(target_os = "macos") {
+                let found = cmd("sh").args(["-c", "command -v git"]).env("PATH", &path).output().unwrap();
+                assert_ne!(String::from_utf8_lossy(&found.stdout).trim(), "/usr/bin/git", "the xcrun launcher on {path}");
+            }
         }
-        let o = cmd("git").arg("--version").env("PATH", &path).output().unwrap();
-        assert!(o.status.success() && o.stderr.is_empty(), "{}", text(&o));
+        let r = TempDir::new().unwrap();
+        let (bare, work) = (r.path().join("bare.git"), r.path().join("work"));
+        for a in [vec!["init", "-q", "--bare", bare.to_str().unwrap()], vec!["init", "-q", work.to_str().unwrap()]] {
+            assert!(git_on(&shared, r.path(), &a).status.success());
+        }
+        let commit = ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "c"];
+        assert!(git_on(&shared, &work, &commit).status.success());
+        let push = git_on(&shared, &work, &["push", "-q", bare.to_str().unwrap(), "HEAD:refs/heads/main"]);
+        assert!(push.status.success() && push.stderr.is_empty(), "inherited {inherited}: {}", text(&push));
     }
 }
 
@@ -612,78 +625,84 @@ fn fake_git(root: &Path, on_path: &str, exec_path: &str, code: i32, files: &[&st
     format!("{}:/bin", bin.display())
 }
 
-/// The resolver against the PATH's git: it links the git beside that git's exec-path and puts it first
-/// on the shared PATH, and leaves the PATH as it is when there is no other git to find - a git that
-/// already is its own real git (Linux, the developer tools first), a git that fails, an exec-path with
-/// nothing in it, no git at all. A PATH a test makes up still gets the link first.
-#[test]
-fn the_real_git_is_found_from_the_paths_git_or_the_path_is_left_alone() {
-    let d = TempDir::new().unwrap();
-    let r = d.path().canonicalize().unwrap();
-    let link = r.join("link");
-    let core = r.join("dev/libexec/git-core");
-    let path = fake_git(&r, "launcher", core.to_str().unwrap(), 0, &["dev/bin/git", "dev/libexec/git-core/git"]);
-    assert_eq!(common::real_git_dir(&path, &link), Some(link.clone()));
-    assert_eq!(std::fs::read_link(link.join("git")).unwrap(), r.join("dev/bin/git"));
-    assert_eq!(std::fs::read_dir(&link).unwrap().count(), 1, "only git: the staged name is renamed away");
-    assert_eq!(common::real_git_dir(&path, &link), Some(link.clone()), "a second run replaces the link");
-    assert_eq!(common::shared_path(&path, Some(&link)), format!("{}:{path}", link.display()));
-    assert_eq!(common::shared_path(&path, None), path);
-
-    for (what, on_path) in [("its own real git", "dev/bin"), ("its own real git, inside git-core", "dev/libexec/git-core")] {
-        let d = TempDir::new().unwrap();
-        let r = d.path().canonicalize().unwrap();
-        let path = fake_git(&r, on_path, r.join("dev/libexec/git-core").to_str().unwrap(), 0, &[]);
-        let link = r.join("link");
-        assert_eq!(common::real_git_dir(&path, &link), Some(link.clone()), "{what}");
-        assert_eq!(common::shared_path(&path, Some(&link)), path, "{what}: the shared PATH is left alone");
-        assert_eq!(common::test_path("/usr/bin:/bin", Some(&link)), format!("{}:/usr/bin:/bin", link.display()), "{what}");
+fn tree(d: &Path) -> Vec<std::path::PathBuf> {
+    let mut all = vec![];
+    for e in std::fs::read_dir(d).unwrap() {
+        let p = e.unwrap().path();
+        if p.is_dir() {
+            all.extend(tree(&p));
+        }
+        all.push(p);
     }
-
-    let cases: [(&str, &str, &str, i32, &[&str]); 3] = [
-        ("a git that fails", "launcher", "dev/libexec/git-core", 1, &["dev/bin/git"]),
-        ("nothing at its exec-path", "launcher", "dev/libexec/git-core", 0, &[]),
-        ("a relative exec-path", "launcher", "", 0, &["bin/git"]),
-    ];
-    for (what, on_path, exec, code, files) in cases {
-        let d = TempDir::new().unwrap();
-        let r = d.path().canonicalize().unwrap();
-        let exec = if exec.is_empty() { "libexec/git-core".to_string() } else { r.join(exec).display().to_string() };
-        let path = fake_git(&r, on_path, &exec, code, files);
-        let link = r.join("link");
-        assert_eq!(common::real_git_dir(&path, &link), None, "{what}");
-        assert!(!link.exists(), "{what}: made a link");
-    }
-    assert_eq!(common::real_git_dir(r.to_str().unwrap(), &r.join("none")), None, "no git on PATH");
-    assert_eq!(common::real_git_dir("", &r.join("none")), None, "an empty PATH");
+    all.sort();
+    all
 }
 
-/// Unit: where the real git sits for each install layout, given its `--exec-path` and the files there.
+/// The resolver against the PATH's git: the test PATH puts that git's exec-path first when it holds a
+/// `git`, writing nothing, and is the inherited PATH unchanged when there is no git, the git fails, or
+/// its exec-path is empty, relative or holds no `git`.
 #[test]
-fn real_git_is_beside_the_exec_path_else_inside_it() {
+fn the_git_core_directory_goes_first_or_the_path_is_left_alone() {
+    let d = TempDir::new().unwrap();
+    let r = d.path().canonicalize().unwrap();
+    let core = r.join("dev/libexec/git-core");
+    let path = fake_git(&r, "launcher", core.to_str().unwrap(), 0, &["dev/bin/git", "dev/libexec/git-core/git"]);
+    let before = tree(&r);
+    assert_eq!(common::git_dir(&path), Some(core.clone()));
+    assert_eq!(common::test_path_for(&path), format!("{}:{path}", core.display()));
+    assert_eq!(tree(&r), before, "the resolver writes nothing");
+
+    let cases: [(&str, &str, i32, &[&str]); 4] = [
+        ("a git that fails", "dev/libexec/git-core", 1, &["dev/libexec/git-core/git"]),
+        ("an exec-path with no git", "dev/libexec/git-core", 0, &["dev/bin/git"]),
+        ("a relative exec-path", "relative", 0, &["libexec/git-core/git"]),
+        ("an empty exec-path", "empty", 0, &[]),
+    ];
+    for (what, exec, code, files) in cases {
+        let d = TempDir::new().unwrap();
+        let r = d.path().canonicalize().unwrap();
+        let exec = match exec {
+            "relative" => "libexec/git-core".to_string(),
+            "empty" => String::new(),
+            e => r.join(e).display().to_string(),
+        };
+        let path = fake_git(&r, "launcher", &exec, code, files);
+        assert_eq!(common::git_dir(&path), None, "{what}");
+        assert_eq!(common::test_path_for(&path), path, "{what}");
+    }
+    assert_eq!(common::git_dir(r.to_str().unwrap()), None, "no git on PATH");
+    assert_eq!(common::test_path_for(""), "", "an empty PATH");
+}
+
+/// Unit: which exec-paths are a git-core directory to put first, for each install layout.
+#[test]
+fn a_git_core_directory_is_an_absolute_exec_path_holding_git() {
     let layouts: [(&str, &[&str], Option<&str>); 8] = [
         (
             "/Applications/Xcode.app/Contents/Developer/usr/libexec/git-core\n",
-            &["/Applications/Xcode.app/Contents/Developer/usr/bin/git"],
-            Some("/Applications/Xcode.app/Contents/Developer/usr/bin/git"),
+            &["/Applications/Xcode.app/Contents/Developer/usr/libexec/git-core/git"],
+            Some("/Applications/Xcode.app/Contents/Developer/usr/libexec/git-core"),
         ),
         (
             "/Library/Developer/CommandLineTools/usr/libexec/git-core",
-            &["/Library/Developer/CommandLineTools/usr/bin/git", "/Library/Developer/CommandLineTools/usr/libexec/git-core/git"],
-            Some("/Library/Developer/CommandLineTools/usr/bin/git"),
+            &["/Library/Developer/CommandLineTools/usr/libexec/git-core/git"],
+            Some("/Library/Developer/CommandLineTools/usr/libexec/git-core"),
         ),
-        ("/opt/homebrew/Cellar/git/2.51.0/libexec/git-core", &["/opt/homebrew/Cellar/git/2.51.0/bin/git"], Some("/opt/homebrew/Cellar/git/2.51.0/bin/git")),
-        ("/usr/lib/git-core", &["/usr/bin/git"], Some("/usr/bin/git")),
-        ("/opt/git/libexec/git-core", &["/opt/git/libexec/git-core/git"], Some("/opt/git/libexec/git-core/git")),
-        ("/opt/git/libexec/git-core", &[], None),
-        ("", &["/bin/git"], None),
-        ("libexec/git-core", &["bin/git", "libexec/git-core/git"], None),
+        (
+            "/opt/homebrew/Cellar/git/2.51.0/libexec/git-core",
+            &["/opt/homebrew/Cellar/git/2.51.0/libexec/git-core/git"],
+            Some("/opt/homebrew/Cellar/git/2.51.0/libexec/git-core"),
+        ),
+        ("/usr/lib/git-core", &["/usr/lib/git-core/git"], Some("/usr/lib/git-core")),
+        ("/usr/libexec/git-core", &["/usr/libexec/git-core/git"], Some("/usr/libexec/git-core")),
+        ("/opt/git/libexec/git-core", &["/opt/git/bin/git"], None),
+        ("", &["/git"], None),
+        ("libexec/git-core", &["libexec/git-core/git"], None),
     ];
     for (exec, files, want) in layouts {
-        let got = common::real_git(exec, |p| files.iter().any(|f| Path::new(f) == p));
+        let got = common::git_core(exec, |p| files.iter().any(|f| Path::new(f) == p));
         assert_eq!(got.as_deref(), want.map(Path::new), "{exec:?}");
     }
-    assert_eq!(common::real_git("/", |_| true).as_deref(), Some(Path::new("/git")), "a root exec-path has no prefix");
 }
 
 /// Unit: the test PATH puts its directory first, and is the inherited PATH unchanged without one.
@@ -700,12 +719,22 @@ fn the_test_path_puts_the_git_directory_first_or_nothing() {
     assert_eq!(common::on_path("/a:", "git", is), None);
 }
 
-/// No test reads the process PATH or sets a PATH of literal text: each one comes from `tests/common`,
-/// so every child a test starts runs the real git (W1). A literal goes through `common::real_git_first`.
+/// No test reads the process PATH, sets a PATH of literal or formatted text, or spawns past
+/// `common::cmd` through a bare `no_git_env`: each PATH comes from `tests/common`, so
+/// every child a test starts runs the same git (W1). A literal goes through `common::real_git_first`, a
+/// directory in front through `common::path_with`. A PATH passed in a variable is not traced.
 #[test]
 fn every_test_path_comes_from_common() {
     fn scan(dir: &Path, bad: &mut Vec<String>) {
-        let needles = [["env::var", "(\"PATH\")"].concat(), ["var_os", "(\"PATH\")"].concat(), ["\"PATH\"", ", \""].concat()];
+        let needles = [
+            ["env::var", "(\"PATH\")"].concat(),
+            ["var_os", "(\"PATH\")"].concat(),
+            ["env!", "(\"PATH\")"].concat(),
+            ["\"PATH\"", ", \""].concat(),
+            ["\"PATH\"", ", format!("].concat(),
+            ["no_git_env(", "Command"].concat(),
+            ["no_git_env(", "std::process::Command"].concat(),
+        ];
         for e in std::fs::read_dir(dir).unwrap() {
             let f = e.unwrap().path();
             if f.is_dir() && !f.ends_with("common") {
@@ -721,7 +750,7 @@ fn every_test_path_comes_from_common() {
     }
     let mut bad = vec![];
     scan(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests"), &mut bad);
-    assert!(bad.is_empty(), "build the PATH with common::path, path_with or real_git_first:\n{}", bad.join("\n"));
+    assert!(bad.is_empty(), "build the PATH with common::path, path_with or real_git_first, and spawn with common::cmd:\n{}", bad.join("\n"));
 }
 
 // ── E-SEED3.W4: the commit hook checks more ─────────────────────────────────────────────────────

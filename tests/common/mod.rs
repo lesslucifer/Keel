@@ -81,44 +81,38 @@ pub fn cmd(prog: impl AsRef<OsStr>) -> Command {
     c
 }
 
-/// The PATH every test hands a child (E-TESTOPT.W1): the inherited one, behind a directory holding only
-/// the real git when the inherited PATH's git is a launcher in front of it (macOS's xcrun shim, which
-/// costs a few ms a call and, in a sandbox, prints a cache error into git's output). Keel itself is
-/// unchanged: it runs whatever git its caller's PATH names.
+/// The PATH every test hands a child (E-TESTOPT.W1): the inherited one, behind its git's own git-core
+/// directory - the exec-path git itself puts first for its hooks and subcommands. There `git` runs from
+/// inside its installation, so it finds its own prefix (a link elsewhere falls back to a built-in
+/// prefix, another install's: round 1), and the xcrun launcher in front of it (macOS's `/usr/bin/git`,
+/// which costs a few ms a call and, in a sandbox, prints a cache error into git's output) never runs.
+/// Nothing is written: the directory is the installation's own. Keel itself is unchanged: it runs
+/// whatever git its caller's PATH names.
 pub fn path() -> &'static str {
     static PATH: OnceLock<String> = OnceLock::new();
-    PATH.get_or_init(|| shared_path(&inherited_path(), real_git_link()))
+    PATH.get_or_init(|| test_path_for(&inherited_path()))
 }
 
-/// The inherited PATH as it is when its git already is the linked real git (Linux; the developer tools'
-/// git first), else behind the link's directory.
-pub fn shared_path(inherited: &str, link: Option<&Path>) -> String {
-    let same = |l: &Path| {
-        let canon = |g: PathBuf| std::fs::canonicalize(g).ok();
-        canon(l.join("git")).is_some_and(|real| on_path(inherited, "git", |p| p.is_file()).and_then(canon) == Some(real))
-    };
-    test_path(inherited, link.filter(|l| !same(l)))
-}
-
-/// `p` behind the real git's directory, when the test PATH has one: a test that runs with a PATH of its
-/// own making (no keel on it, say) still runs the real git.
-pub fn real_git_first(p: &str) -> String {
-    test_path(p, real_git_link())
-}
-
-fn real_git_link() -> Option<&'static Path> {
-    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
-    DIR.get_or_init(|| real_git_dir(&inherited_path(), &Path::new(env!("CARGO_TARGET_TMPDIR")).join("real-git"))).as_deref()
-}
-
-/// The PATH this test program was started with; a test reads it only through here.
-pub fn inherited_path() -> String {
-    std::env::var("PATH").unwrap_or_default()
+/// The test PATH built from `inherited`.
+pub fn test_path_for(inherited: &str) -> String {
+    test_path(inherited, git_dir(inherited).as_deref())
 }
 
 /// `dir` in front of the test PATH: keel's build directory, or a test's own shims.
 pub fn path_with(dir: impl AsRef<Path>) -> String {
     test_path(path(), Some(dir.as_ref()))
+}
+
+/// `p` behind the git directory: a test that runs with a PATH of its own making (no keel on it, say)
+/// still runs the same git as every other test.
+pub fn real_git_first(p: &str) -> String {
+    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+    test_path(p, DIR.get_or_init(|| git_dir(&inherited_path())).as_deref())
+}
+
+/// The PATH this test program was started with; a test reads it only through here.
+pub fn inherited_path() -> String {
+    std::env::var("PATH").unwrap_or_default()
 }
 
 pub fn test_path(inherited: &str, first: Option<&Path>) -> String {
@@ -129,34 +123,22 @@ pub fn test_path(inherited: &str, first: Option<&Path>) -> String {
     }
 }
 
-/// The git a git with this `--exec-path` runs from: `<prefix>/bin/git` beside `<prefix>/libexec/git-core`
-/// (Xcode, the Command Line Tools, Homebrew, `/usr/lib/git-core` on Linux), else the copy most installs
-/// keep inside git-core itself.
-pub fn real_git(exec_path: &str, is_file: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+/// The git-core directory of the git `inherited` names, or None when there is no git, it fails, or its
+/// exec-path holds no `git`: then the test PATH is the inherited one.
+pub fn git_dir(inherited: &str) -> Option<PathBuf> {
+    let git = on_path(inherited, "git", |p| p.is_file())?;
+    let o = no_git_env(Command::new(git)).arg("--exec-path").env("PATH", inherited).output().ok()?;
+    git_core(&String::from_utf8_lossy(&o.stdout), |p| p.is_file()).filter(|_| o.status.success())
+}
+
+/// A git's `--exec-path`, when it is absolute and holds `git` (Xcode, the Command Line Tools, Homebrew,
+/// `/usr/lib/git-core` and `/usr/libexec/git-core` on Linux).
+pub fn git_core(exec_path: &str, is_file: impl Fn(&Path) -> bool) -> Option<PathBuf> {
     let core = Path::new(exec_path.trim());
-    if !core.is_absolute() {
-        return None;
-    }
-    let beside = core.parent().and_then(Path::parent).map(|prefix| prefix.join("bin").join("git"));
-    beside.into_iter().chain([core.join("git")]).find(|g| is_file(g))
+    (core.is_absolute() && is_file(&core.join("git"))).then(|| core.to_path_buf())
 }
 
 /// The first `prog` along `path`.
 pub fn on_path(path: &str, prog: &str, is_file: impl Fn(&Path) -> bool) -> Option<PathBuf> {
     path.split(':').filter(|d| !d.is_empty()).map(|d| Path::new(d).join(prog)).find(|p| is_file(p))
-}
-
-/// `dir`, now holding only a link to the real git the inherited PATH's git runs, or None when git cannot
-/// be found or run, or names no real git: then every test PATH is as given. The link is made under
-/// another name and renamed into place, so a parallel test program never runs a half-made link.
-pub fn real_git_dir(inherited: &str, dir: &Path) -> Option<PathBuf> {
-    let on_path_git = on_path(inherited, "git", |p| p.is_file())?;
-    let o = no_git_env(Command::new(&on_path_git)).arg("--exec-path").env("PATH", inherited).output().ok()?;
-    let real = real_git(&String::from_utf8_lossy(&o.stdout), |p| p.is_file()).filter(|_| o.status.success())?;
-    std::fs::create_dir_all(dir).ok()?;
-    let staged = dir.join(format!("git.{}", std::process::id()));
-    let _ = std::fs::remove_file(&staged);
-    std::os::unix::fs::symlink(&real, &staged).ok()?;
-    std::fs::rename(&staged, dir.join("git")).ok()?;
-    Some(dir.to_path_buf())
 }
