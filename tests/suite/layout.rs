@@ -1,347 +1,46 @@
 //! E-TESTOPT.W3: the suite is Keel's only integration test program. Cargo builds every `tests/*.rs`,
 //! every `tests/<dir>/main.rs`, every `[[test]]` target and every example or bench marked
 //! `test = true` as a program of its own, and runs the programs one after another, stopping at the
-//! first that fails. A `.rs` file in `tests/suite/` that no `mod` reaches from `main.rs` is never
-//! compiled, so its tests never run.
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+//! first that fails. A `.rs` file in `tests/suite/` that rustc never compiled into the suite runs
+//! none of its tests; rustc's own record of the files it read (the dep-info file cargo keeps next
+//! to the test binary) says which those are, whatever `mod`, `#[path]` or `#[cfg]` decided it.
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
-/// Every `.rs` file under `tests/`, keyed by its path below `tests/` with `/` separators, the names
-/// of the directories directly under `tests/` that hold a `main.rs`, and `Cargo.toml`.
-struct Layout {
-    files: BTreeMap<String, String>,
-    top_names: Vec<String>,
-    cargo_toml: String,
-}
+/// What sits directly under `tests/`: a name, the source when it is a `.rs` file, and whether a
+/// directory holds a `main.rs`.
+type Entry = (String, Option<String>, bool);
 
-#[derive(Debug, PartialEq)]
-enum Tok {
-    Ident(String),
-    Str(String),
-    Punct(char),
-}
-
-/// Rust tokens as far as module declarations need them: comments (nested block comments too),
-/// string, byte, raw and char literals are read whole, so a `mod x;` inside one is no declaration.
-fn tokens(src: &str) -> Vec<Tok> {
-    let c: Vec<char> = src.chars().collect();
-    let mut out = vec![];
-    let mut i = 0;
-    let quoted = |i: &mut usize| -> String {
-        let mut s = String::new();
-        *i += 1;
-        while *i < c.len() && c[*i] != '"' {
-            if c[*i] == '\\' {
-                *i += 1;
-            }
-            if *i < c.len() {
-                s.push(c[*i]);
-            }
-            *i += 1;
-        }
-        *i += 1;
-        s
-    };
-    while i < c.len() {
-        let ch = c[i];
-        if ch.is_whitespace() {
-            i += 1;
-        } else if ch == '/' && c.get(i + 1) == Some(&'/') {
-            while i < c.len() && c[i] != '\n' {
-                i += 1;
-            }
-        } else if ch == '/' && c.get(i + 1) == Some(&'*') {
-            let mut depth = 0;
-            while i < c.len() {
-                if c[i] == '/' && c.get(i + 1) == Some(&'*') {
-                    depth += 1;
-                    i += 2;
-                } else if c[i] == '*' && c.get(i + 1) == Some(&'/') {
-                    depth -= 1;
-                    i += 2;
-                    if depth == 0 {
-                        break;
-                    }
-                } else {
-                    i += 1;
-                }
-            }
-        } else if ch == '"' {
-            out.push(Tok::Str(quoted(&mut i)));
-        } else if ch == '\'' {
-            if c.get(i + 1) == Some(&'\\') {
-                i += 2;
-                while i < c.len() && c[i] != '\'' {
-                    i += 1;
-                }
-                i += 1;
-            } else if c.get(i + 2) == Some(&'\'') {
-                i += 3;
-            } else {
-                i += 1;
-                while i < c.len() && (c[i].is_alphanumeric() || c[i] == '_') {
-                    i += 1;
-                }
-            }
-        } else if ch.is_alphabetic() || ch == '_' {
-            let start = i;
-            while i < c.len() && (c[i].is_alphanumeric() || c[i] == '_') {
-                i += 1;
-            }
-            let word: String = c[start..i].iter().collect();
-            let prefix = matches!(word.as_str(), "r" | "b" | "br" | "c" | "cr");
-            if prefix && word.ends_with('r') && matches!(c.get(i), Some('#') | Some('"')) {
-                let mut hashes = 0;
-                while c.get(i) == Some(&'#') {
-                    hashes += 1;
-                    i += 1;
-                }
-                i += 1;
-                let start = i;
-                while i < c.len() && !(c[i] == '"' && (1..=hashes).all(|k| c.get(i + k) == Some(&'#'))) {
-                    i += 1;
-                }
-                out.push(Tok::Str(c[start..i.min(c.len())].iter().collect()));
-                i += 1 + hashes;
-            } else if prefix && c.get(i) == Some(&'"') {
-                out.push(Tok::Str(quoted(&mut i)));
-            } else if word == "b" && c.get(i) == Some(&'\'') {
-                i += 1;
-                if c.get(i) == Some(&'\\') {
-                    i += 1;
-                }
-                while i < c.len() && c[i] != '\'' {
-                    i += 1;
-                }
-                i += 1;
-            } else {
-                out.push(Tok::Ident(word));
-            }
-        } else {
-            out.push(Tok::Punct(ch));
-            i += 1;
-        }
-    }
-    out
-}
-
-/// A `cfg` predicate on this host: `Some(true)` builds, `Some(false)` does not, `None` the guard
-/// cannot tell (a feature, or a key it does not know).
-fn cfg(t: &[Tok], i: &mut usize) -> Option<bool> {
-    let Some(Tok::Ident(name)) = t.get(*i) else { return None };
-    *i += 1;
-    match (name.as_str(), t.get(*i)) {
-        ("any" | "all" | "not", Some(Tok::Punct('('))) => {
-            *i += 1;
-            let mut vals = vec![];
-            while !matches!(t.get(*i), Some(Tok::Punct(')')) | None) {
-                vals.push(cfg(t, i));
-                if t.get(*i) == Some(&Tok::Punct(',')) {
-                    *i += 1;
-                }
-            }
-            *i += 1;
-            match name.as_str() {
-                "not" => vals.first().copied().flatten().map(|v| !v),
-                "any" if vals.contains(&Some(true)) => Some(true),
-                "all" if vals.contains(&Some(false)) => Some(false),
-                _ if vals.contains(&None) => None,
-                "any" => Some(false),
-                _ => Some(true),
-            }
-        }
-        (key, Some(Tok::Punct('='))) => {
-            let Some(Tok::Str(v)) = t.get(*i + 1) else { return None };
-            *i += 2;
-            match key {
-                "target_os" => Some(v == std::env::consts::OS),
-                "target_family" => Some(v == std::env::consts::FAMILY),
-                "target_arch" => Some(v == std::env::consts::ARCH),
-                _ => None,
-            }
-        }
-        ("unix", _) => Some(cfg!(unix)),
-        ("windows", _) => Some(cfg!(windows)),
-        ("test", _) => Some(true),
-        ("debug_assertions", _) => Some(cfg!(debug_assertions)),
-        _ => None,
-    }
-}
-
-struct ModDecl {
-    name: String,
-    path: Option<String>,
-    built: Option<bool>,
-    inline: Vec<String>,
-}
-
-/// The `mod name;` items of one file, with their `#[path]`, whether their `#[cfg]` builds, and the
-/// inline modules (`mod a { … }`) they sit in.
-fn mod_decls(src: &str) -> Vec<ModDecl> {
-    let t = tokens(src);
-    let mut out = vec![];
-    let (mut path, mut built): (Option<String>, Option<bool>) = (None, Some(true));
-    let mut inline: Vec<(String, usize)> = vec![];
-    let mut depth = 0;
-    let mut i = 0;
-    while i < t.len() {
-        match &t[i] {
-            Tok::Punct('#') => {
-                let inner = t.get(i + 1) == Some(&Tok::Punct('!'));
-                let open = if inner { i + 2 } else { i + 1 };
-                if t.get(open) != Some(&Tok::Punct('[')) {
-                    i += 1;
-                    continue;
-                }
-                let mut end = open + 1;
-                let mut nest = 1;
-                while end < t.len() && nest > 0 {
-                    match t[end] {
-                        Tok::Punct('[') => nest += 1,
-                        Tok::Punct(']') => nest -= 1,
-                        _ => {}
-                    }
-                    end += 1;
-                }
-                if !inner {
-                    let a = &t[open + 1..end - 1];
-                    match (a.first(), a.get(1), a.get(2)) {
-                        (Some(Tok::Ident(k)), Some(Tok::Punct('=')), Some(Tok::Str(p))) if k == "path" => path = Some(p.clone()),
-                        (Some(Tok::Ident(k)), Some(Tok::Punct('(')), _) if k == "cfg" => {
-                            let mut j = 2;
-                            let v = cfg(a, &mut j);
-                            built = match (built, v) {
-                                (Some(false), _) | (_, Some(false)) => Some(false),
-                                (Some(true), Some(true)) => Some(true),
-                                _ => None,
-                            };
-                        }
-                        _ => {}
-                    }
-                }
-                i = end;
-                continue;
-            }
-            Tok::Ident(w) if w == "pub" => {
-                i += 1;
-                if t.get(i) == Some(&Tok::Punct('(')) {
-                    while i < t.len() && t[i] != Tok::Punct(')') {
-                        i += 1;
-                    }
-                    i += 1;
-                }
-                continue;
-            }
-            Tok::Ident(w) if w == "mod" => {
-                if let (Some(Tok::Ident(name)), Some(Tok::Punct(p))) = (t.get(i + 1), t.get(i + 2)) {
-                    if *p == ';' {
-                        out.push(ModDecl { name: name.clone(), path: path.take(), built, inline: inline.iter().map(|(n, _)| n.clone()).collect() });
-                    } else if *p == '{' {
-                        depth += 1;
-                        inline.push((name.clone(), depth));
-                        i += 3;
-                        path = None;
-                        built = Some(true);
-                        continue;
-                    }
-                }
-            }
-            Tok::Punct('{') => depth += 1,
-            Tok::Punct('}') => {
-                if inline.last().is_some_and(|(_, d)| *d == depth) {
-                    inline.pop();
-                }
-                depth -= 1;
-            }
-            _ => {}
-        }
-        path = None;
-        built = Some(true);
-        i += 1;
-    }
-    out
-}
-
-fn normalize(p: &str) -> String {
-    let mut parts: Vec<&str> = vec![];
-    for s in p.split('/') {
-        match s {
-            "" | "." => {}
-            ".." if parts.last().is_some_and(|l| *l != "..") => {
-                parts.pop();
-            }
-            s => parts.push(s),
-        }
-    }
-    parts.join("/")
-}
-
-fn parent(p: &str) -> &str {
-    p.rsplit_once('/').map_or("", |(d, _)| d)
-}
-
-/// The files the suite compiles, walked from `suite/main.rs` by rustc's rules for `mod x;`, and
-/// every declaration whose `#[cfg]` the guard cannot judge.
-fn reached(files: &BTreeMap<String, String>) -> (BTreeSet<String>, Vec<String>) {
-    let mut seen = BTreeSet::new();
-    let mut unknown = vec![];
-    let mut todo = vec!["suite/main.rs".to_owned()];
-    while let Some(f) = todo.pop() {
-        let Some(src) = files.get(&f) else { continue };
-        if !seen.insert(f.clone()) {
-            continue;
-        }
-        let dir = parent(&f);
-        let stem = f.rsplit('/').next().unwrap().trim_end_matches(".rs");
-        let mod_dir = if matches!(stem, "main" | "mod" | "lib") { dir.to_owned() } else { format!("{dir}/{stem}") };
-        for d in mod_decls(src) {
-            match d.built {
-                Some(false) => continue,
-                None => {
-                    unknown.push(format!("tests/{f} declares `mod {};` under a #[cfg] the guard cannot judge; declare it without one", d.name));
-                    continue;
-                }
-                Some(true) => {}
-            }
-            let base = if d.inline.is_empty() { mod_dir.clone() } else { format!("{mod_dir}/{}", d.inline.join("/")) };
-            match d.path {
-                Some(p) if d.inline.is_empty() => todo.push(normalize(&format!("{dir}/{p}"))),
-                Some(p) => todo.push(normalize(&format!("{base}/{p}"))),
-                None => {
-                    todo.push(normalize(&format!("{base}/{}.rs", d.name)));
-                    todo.push(normalize(&format!("{base}/{}/mod.rs", d.name)));
-                }
-            }
-        }
-    }
-    (seen, unknown)
-}
-
-fn problems(l: &Layout) -> Vec<String> {
+/// The problems cargo's view of the package shows: test files outside the suite and `Cargo.toml`
+/// targets that build another test program.
+fn extra_programs(top: &[Entry], suite_names: &BTreeSet<String>, cargo_toml: &str) -> Vec<String> {
     let mut bad = vec![];
-    for (f, src) in l.files.iter().filter(|(f, _)| !f.contains('/')) {
+    for (f, src, _) in top.iter().filter(|(f, src, _)| src.is_some() && f.ends_with(".rs")) {
         let m = f.trim_end_matches(".rs");
         let mut fix = format!(
             "Move it into the suite: `git mv tests/{f} tests/suite/{f}`, add `mod {m};` to tests/suite/main.rs, \
              and in the moved file replace `mod common;` with `use crate::common;`"
         );
-        if matches!(m, "main" | "common") || l.files.contains_key(&format!("suite/{f}")) {
+        if matches!(m, "main" | "common") || suite_names.contains(f) {
             fix = format!("Rename it first: tests/suite/{f} exists or `{m}` is taken in the suite, then move it as for any other file");
         }
-        let own: Vec<String> = mod_decls(src).into_iter().map(|d| d.name).filter(|n| n != "common").collect();
-        if !own.is_empty() {
-            fix.push_str(&format!(". It declares its own modules ({}): move them to tests/suite/{m}/ with it", own.join(", ")));
+        let declares = src.as_deref().unwrap_or("").lines().any(|l| {
+            let l = l.trim();
+            l.starts_with("mod ") && l.ends_with(';') && l != "mod common;"
+        });
+        if declares {
+            fix.push_str(&format!(". It declares modules of its own: move their files to tests/suite/{m}/ with it"));
         }
         bad.push(format!("tests/{f} builds as a test program of its own. {fix}"));
     }
-    for d in l.top_names.iter().filter(|d| d.as_str() != "suite" && l.files.contains_key(&format!("{d}/main.rs"))) {
+    for (d, _, _) in top.iter().filter(|(d, src, has_main)| src.is_none() && *has_main && d != "suite") {
         bad.push(format!(
             "tests/{d}/main.rs builds as a test program of its own. Move it into the suite: \
              `git mv tests/{d} tests/suite/{d}`, `git mv tests/suite/{d}/main.rs tests/suite/{d}/mod.rs`, add `mod {d};` \
              to tests/suite/main.rs, and in the moved files replace `mod common;` with `use crate::common;`"
         ));
     }
-    match l.cargo_toml.parse::<toml::Table>() {
+    match cargo_toml.parse::<toml::Table>() {
         Err(e) => bad.push(format!("Cargo.toml does not parse, so the guard cannot see its test targets: {e}")),
         Ok(toml) => {
             if toml.contains_key("test") {
@@ -359,138 +58,130 @@ fn problems(l: &Layout) -> Vec<String> {
             }
         }
     }
-    let (seen, unknown) = reached(&l.files);
-    bad.extend(unknown);
-    for f in l.files.keys().filter(|f| f.starts_with("suite/") && !seen.contains(*f)) {
-        if let Some(d) = f.strip_suffix("/main.rs").filter(|d| d.contains('/')) {
-            bad.push(format!(
-                "tests/{f} is not reached from tests/suite/main.rs, so none of its tests run: a main.rs is a program's root, \
-                 not a module. `git mv tests/{f} tests/{d}/mod.rs` and declare `mod {};` in the module that owns tests/{}",
-                d.rsplit('/').next().unwrap(),
-                parent(d)
-            ));
-            continue;
-        }
-        let name = f.trim_end_matches(".rs").trim_end_matches("/mod").rsplit('/').next().unwrap();
-        bad.push(format!(
-            "tests/{f} is not reached from tests/suite/main.rs, so it is never compiled and none of its tests run: \
-             declare it with `mod {name};` in the module that owns its directory (tests/suite/main.rs for tests/suite/)"
-        ));
+    bad
+}
+
+/// The source files a dep-info file lists, one `path:` rule per file, resolved against `root` when
+/// relative, with `..` folded away. Spaces in a path are written `\ `.
+fn dep_info_sources(dep_info: &str, root: &Path) -> BTreeSet<PathBuf> {
+    dep_info
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .filter_map(|l| l.strip_suffix(':'))
+        .filter(|p| !p.is_empty())
+        .map(|p| {
+            let mut out = PathBuf::new();
+            for c in root.join(p.replace("\\ ", " ")).components() {
+                match c {
+                    std::path::Component::ParentDir => {
+                        out.pop();
+                    }
+                    std::path::Component::CurDir => {}
+                    c => out.push(c),
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+/// Every `.rs` file under `suite` (absolute paths) that the dep-info does not list, with how to
+/// make rustc compile it.
+fn not_compiled(suite: &Path, files: &[PathBuf], compiled: &BTreeSet<PathBuf>) -> Vec<String> {
+    let mut bad = vec![];
+    for f in files.iter().filter(|f| !compiled.contains(*f)) {
+        let rel = f.strip_prefix(suite).unwrap_or(f);
+        let shown = format!("tests/suite/{}", rel.display());
+        let dir = rel.parent().filter(|p| !p.as_os_str().is_empty());
+        let advice = match dir {
+            Some(dir) if rel.file_name().is_some_and(|n| n == "main.rs") => format!(
+                "a main.rs is a program's root, not a module: `git mv {shown} tests/suite/{}/mod.rs` and declare `mod {};` \
+                 in the module that owns its directory",
+                dir.display(),
+                dir.file_name().unwrap().to_string_lossy()
+            ),
+            _ => {
+                let name = if rel.file_name().is_some_and(|n| n == "mod.rs") { dir.and_then(|d| d.file_name()) } else { rel.file_stem() };
+                format!(
+                    "declare it with `mod {};` in the module that owns its directory (tests/suite/main.rs for tests/suite/), \
+                     with no #[cfg] that leaves it out on this machine",
+                    name.map(|n| n.to_string_lossy()).unwrap_or_default()
+                )
+            }
+        };
+        bad.push(format!("{shown} is not compiled into the suite, so none of its tests run: {advice}"));
     }
     bad
 }
 
-fn read_layout(root: &Path) -> Layout {
-    fn walk(dir: &Path, rel: &str, files: &mut BTreeMap<String, String>) {
-        for e in std::fs::read_dir(dir).unwrap() {
-            let p = e.unwrap().path();
-            let name = p.file_name().unwrap().to_string_lossy().into_owned();
-            let key = if rel.is_empty() { name } else { format!("{rel}/{name}") };
-            if p.is_dir() {
-                walk(&p, &key, files);
-            } else if key.ends_with(".rs") {
-                files.insert(key, std::fs::read_to_string(&p).unwrap());
+/// Every `.rs` file under `dir`; a symlinked directory is not entered, so a link loop cannot hang the walk.
+fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    for e in std::fs::read_dir(dir).unwrap() {
+        let e = e.unwrap();
+        let p = e.path();
+        if e.file_type().unwrap().is_dir() {
+            rs_files(&p, out);
+        } else if p.extension().is_some_and(|x| x == "rs") {
+            out.push(p);
+        }
+    }
+}
+
+/// Integration: the real tree builds exactly one integration test program, and rustc compiled every
+/// `.rs` file under `tests/suite/` into this one.
+#[test]
+fn the_suite_is_the_only_test_program() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).canonicalize().unwrap();
+    let tests = root.join("tests");
+    let suite = tests.join("suite");
+    let mut top = vec![];
+    for e in std::fs::read_dir(&tests).unwrap() {
+        let p = e.unwrap().path();
+        let name = p.file_name().unwrap().to_string_lossy().into_owned();
+        let src = (!p.is_dir() && name.ends_with(".rs")).then(|| std::fs::read_to_string(&p).unwrap());
+        top.push((name, src, p.join("main.rs").is_file()));
+    }
+    let suite_names = std::fs::read_dir(&suite).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    let mut bad = extra_programs(&top, &suite_names, &std::fs::read_to_string(root.join("Cargo.toml")).unwrap());
+
+    let dep_info = std::env::current_exe().unwrap().with_extension("d");
+    match std::fs::read_to_string(&dep_info) {
+        Err(e) => bad.push(format!(
+            "{} cannot be read ({e}): this guard needs the dep-info file cargo writes next to the test binary to see which \
+             files rustc compiled; run the suite with cargo test, or a runner that keeps cargo's target layout",
+            dep_info.display()
+        )),
+        Ok(text) => {
+            let canonical = |p: PathBuf| p.canonicalize().unwrap_or(p);
+            let compiled: BTreeSet<PathBuf> = dep_info_sources(&text, &root).into_iter().map(canonical).collect();
+            if compiled.contains(&suite.join("main.rs")) {
+                let mut files = vec![];
+                rs_files(&suite, &mut files);
+                let files: Vec<PathBuf> = files.into_iter().map(canonical).collect();
+                bad.extend(not_compiled(&suite, &files, &compiled));
+            } else {
+                bad.push(format!("{} does not list tests/suite/main.rs, so it is not this suite's dep-info", dep_info.display()));
             }
         }
     }
-    let tests = root.join("tests");
-    let mut files = BTreeMap::new();
-    walk(&tests, "", &mut files);
-    let top_names = std::fs::read_dir(&tests).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
-    Layout { files, top_names, cargo_toml: std::fs::read_to_string(root.join("Cargo.toml")).unwrap() }
-}
-
-/// Integration: the real tree builds exactly one integration test program, and every file in the
-/// suite is compiled into it.
-#[test]
-fn the_suite_is_the_only_test_program() {
-    let bad = problems(&read_layout(Path::new(env!("CARGO_MANIFEST_DIR"))));
     assert!(bad.is_empty(), "keep Keel's integration tests in one program:\n{}", bad.join("\n"));
 }
 
 const CARGO: &str = "[package]\nname = \"keel\"\n\n[dev-dependencies]\ntempfile = \"3\"\n";
 
-fn layout(files: &[(&str, &str)], cargo: &str) -> Layout {
-    let files: BTreeMap<String, String> = files.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-    let mut top_names: Vec<String> = files.keys().filter_map(|k| k.split_once('/').map(|(d, _)| d.to_owned())).collect();
-    top_names.dedup();
-    Layout { files, top_names, cargo_toml: cargo.into() }
-}
-
-const MAIN: &str = "//! the suite\n#[path = \"../common/mod.rs\"]\nmod common;\n\nmod cli;\n";
-const CLEAN: [(&str, &str); 3] = [("common/mod.rs", "pub fn cmd() {}\n"), ("suite/main.rs", MAIN), ("suite/cli.rs", "use crate::common;\n")];
-
-fn with(extra: &[(&str, &str)], main: &str) -> Layout {
-    let mut files: Vec<(&str, &str)> = CLEAN.to_vec();
-    files.retain(|(k, _)| *k != "suite/main.rs");
-    files.push(("suite/main.rs", main));
-    files.extend_from_slice(extra);
-    layout(&files, CARGO)
-}
-
-/// Unit: every way rustc reaches a module counts, and only those: comments, strings and a cfg that
-/// does not build reach nothing, and a cfg the guard cannot judge is named.
-#[test]
-fn the_layout_check_follows_the_module_tree_from_main() {
-    assert_eq!(problems(&layout(&CLEAN, CARGO)), Vec::<String>::new());
-
-    let main = format!(
-        "{MAIN}mod a; // why\n#[cfg(test)] mod b;\npub(crate) mod c;\n#[cfg(any(unix, windows))]\npub mod d;\n\
-         mod outer {{\n    mod inner;\n}}\n#[path = \"elsewhere/e_file.rs\"] mod e;\n"
-    );
-    let reachable = [
-        ("suite/a.rs", "mod nested;\n"),
-        ("suite/a/nested.rs", "#[test]\nfn t() {}\n"),
-        ("suite/b.rs", ""),
-        ("suite/c/mod.rs", "mod d2;\n"),
-        ("suite/c/d2.rs", ""),
-        ("suite/d.rs", ""),
-        ("suite/outer/inner.rs", ""),
-        ("suite/elsewhere/e_file.rs", ""),
-    ];
-    assert_eq!(problems(&with(&reachable, &main)), Vec::<String>::new());
-
-    let hidden = format!(
-        "{MAIN}/* mod x;\n/* nested */ mod x2; */\n// mod y;\nconst S: &str = \"mod q;\";\nconst R: &str = r#\"mod r;\"#;\n\
-         #[cfg(any())]\nmod z;\n#[cfg(not(test))] mod w;\n"
-    );
-    let unreached = [
-        ("suite/x.rs", ""),
-        ("suite/x2.rs", ""),
-        ("suite/y.rs", ""),
-        ("suite/q.rs", ""),
-        ("suite/r.rs", ""),
-        ("suite/z.rs", ""),
-        ("suite/w.rs", ""),
-        ("suite/helpers/mod.rs", ""),
-        ("suite/slow/main.rs", ""),
-        ("suite/cli/extra.rs", ""),
-    ];
-    let got = problems(&with(&unreached, &hidden));
-    assert_eq!(got.len(), unreached.len(), "{got:#?}");
-    for (f, _) in unreached {
-        let p = got.iter().find(|p| p.starts_with(&format!("tests/{f} is not reached from tests/suite/main.rs")));
-        assert!(p.is_some(), "{f} not named: {got:#?}");
-    }
-    assert!(got.iter().any(|p| p.starts_with("tests/suite/helpers/mod.rs") && p.contains("`mod helpers;`")), "{got:#?}");
-    assert!(got.iter().any(|p| p.starts_with("tests/suite/cli/extra.rs") && p.contains("`mod extra;`")), "{got:#?}");
-    assert!(got.iter().any(|p| p.starts_with("tests/suite/slow/main.rs") && p.contains("tests/suite/slow/mod.rs") && p.contains("`mod slow;`")), "{got:#?}");
-
-    let feature = format!("{MAIN}#[cfg(feature = \"slow\")]\nmod f;\n");
-    let got = problems(&with(&[("suite/f.rs", "")], &feature));
-    assert_eq!(got.len(), 2, "{got:#?}");
-    assert!(got[0].contains("declares `mod f;` under a #[cfg] the guard cannot judge"), "{got:#?}");
-}
-
 /// Unit: each way cargo would build another program is named once, with a fix that works for it.
 #[test]
 fn the_layout_check_names_each_extra_program() {
-    let stray = |name: &str, src: &str| {
-        let mut files = CLEAN.to_vec();
-        files.push((name, src));
-        problems(&layout(&files, CARGO))
+    let suite: BTreeSet<String> = ["main.rs", "cli.rs"].iter().map(|s| s.to_string()).collect();
+    let check = |extra: Vec<Entry>| {
+        let mut top: Vec<Entry> = vec![("common".into(), None, false), ("suite".into(), None, true), ("README".into(), None, false)];
+        top.extend(extra);
+        extra_programs(&top, &suite, CARGO)
     };
-    let got = stray("router_inbox.rs", "use std::path::Path;\nmod common;\n");
+    assert_eq!(check(vec![]), Vec::<String>::new());
+    let file = |n: &str, src: &str| vec![(n.to_string(), Some(src.to_string()), false)];
+
+    let got = check(file("router_inbox.rs", "use std::path::Path;\nmod common;\n"));
     assert_eq!(got.len(), 1, "{got:?}");
     for want in [
         "tests/router_inbox.rs builds as a test program",
@@ -500,19 +191,19 @@ fn the_layout_check_names_each_extra_program() {
     ] {
         assert!(got[0].contains(want), "{want} missing from {}", got[0]);
     }
-    assert!(!got[0].contains("its own modules"), "{}", got[0]);
+    assert!(!got[0].contains("modules of its own"), "{}", got[0]);
     for clash in ["main.rs", "common.rs", "cli.rs"] {
-        let got = stray(clash, "");
+        let got = check(file(clash, ""));
         assert!(got.len() == 1 && got[0].contains("Rename it first"), "{clash}: {got:?}");
     }
-    let got = stray("big.rs", "mod common;\nmod helper;\n");
-    assert!(got.len() == 1 && got[0].contains("declares its own modules (helper): move them to tests/suite/big/"), "{got:?}");
+    let got = check(file("big.rs", "mod common;\nmod helper;\n"));
+    assert!(got.len() == 1 && got[0].contains("declares modules of its own: move their files to tests/suite/big/"), "{got:?}");
 
-    let got = stray("slow/main.rs", "");
+    let got = check(vec![("slow".into(), None, true)]);
     assert!(got.len() == 1 && got[0].starts_with("tests/slow/main.rs builds as a test program"), "{got:?}");
     assert!(got[0].contains("git mv tests/suite/slow/main.rs tests/suite/slow/mod.rs") && got[0].contains("`mod slow;`"), "{got:?}");
 
-    let cargo = |toml: &str| problems(&layout(&CLEAN, toml));
+    let cargo = |toml: &str| extra_programs(&[], &suite, toml);
     let got = cargo(&format!("{CARGO}\n[[test]]\nname = \"extra\"\npath = \"tests/extra.rs\"\n"));
     assert!(got.len() == 1 && got[0].contains("[[test]]"), "{got:?}");
     let got = cargo("[package]\nname = \"keel\"\nautotests = false\n");
@@ -524,10 +215,30 @@ fn the_layout_check_names_each_extra_program() {
     assert!(got.len() == 1 && got[0].starts_with("Cargo.toml does not parse"), "{got:?}");
 }
 
-/// Unit: the tokens a module declaration is read from; text inside comments and literals is none.
+/// Unit: the dep-info reader takes each `path:` rule, relative or absolute, escaped spaces and `..`
+/// included, and nothing from the target rules or the `#` lines.
 #[test]
-fn the_token_reader_skips_comments_and_literals() {
-    let t = tokens("a /* b /* c */ d */ e // f\n\"g\\\"h\" 'i' '\\n' 'life b'j' r##\"k\"#\"## br\"l\" m");
-    let want = [Tok::Ident("a".into()), Tok::Ident("e".into()), Tok::Str("g\"h".into()), Tok::Str("k\"#".into()), Tok::Str("l".into()), Tok::Ident("m".into())];
-    assert_eq!(t, want);
+fn the_dep_info_lists_what_rustc_compiled() {
+    let text = "/r/target/debug/deps/suite-1.d: tests/suite/main.rs tests/suite/../common/mod.rs\n\n\
+                /r/target/debug/deps/suite-1: tests/suite/main.rs\n\n\
+                tests/suite/main.rs:\ntests/suite/../common/mod.rs:\n/abs/tests/suite/a\\ b.rs:\n\n\
+                # env-dep:CARGO_MANIFEST_DIR=/r\n";
+    let got: Vec<PathBuf> = dep_info_sources(text, Path::new("/r")).into_iter().collect();
+    let want: Vec<PathBuf> = ["/abs/tests/suite/a b.rs", "/r/tests/common/mod.rs", "/r/tests/suite/main.rs"].iter().map(PathBuf::from).collect();
+    assert_eq!(got, want);
+}
+
+/// Unit: every suite file the dep-info leaves out is named, with the fix for its shape.
+#[test]
+fn every_suite_file_rustc_did_not_compile_is_named() {
+    let suite = Path::new("/r/tests/suite");
+    let f = |p: &str| suite.join(p);
+    let files = vec![f("main.rs"), f("cli.rs"), f("off/x.rs"), f("helpers/mod.rs"), f("slow/main.rs"), f("gated.rs")];
+    let compiled: BTreeSet<PathBuf> = [f("main.rs"), f("cli.rs"), f("gated.rs")].into_iter().collect();
+    let got = not_compiled(suite, &files, &compiled);
+    assert_eq!(got.len(), 3, "{got:#?}");
+    assert!(got[0].starts_with("tests/suite/off/x.rs is not compiled into the suite") && got[0].contains("`mod x;`"), "{got:#?}");
+    assert!(got[1].starts_with("tests/suite/helpers/mod.rs is not compiled") && got[1].contains("`mod helpers;`"), "{got:#?}");
+    assert!(got[2].contains("git mv tests/suite/slow/main.rs tests/suite/slow/mod.rs") && got[2].contains("`mod slow;`"), "{got:#?}");
+    assert_eq!(not_compiled(suite, &files[..2], &compiled), Vec::<String>::new());
 }
