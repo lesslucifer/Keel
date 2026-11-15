@@ -10,15 +10,15 @@
     <div class="inner">
       <h1>E-RGUARD.W3 · The inbox channel</h1>
       <p>Delivered: a worker's post wakes the router, and the report timer is gone.</p>
-      <div class="meta">T3 · WU result · 2026-11-14 · epic E-RGUARD · WU E-RGUARD.W3 · tip <code>efac00b</code></div>
+      <div class="meta">T3 · WU result · 2026-11-14, updated 2026-11-15 · epic E-RGUARD · WU E-RGUARD.W3 · tip <code>d4bfbb8</code> + this report</div>
     </div>
   </header>
   <main>
 
 <h2 id="outcome">Outcome</h2>
-<p data-item="outcome" data-c="outcome"><b>Delivered, with the rule-bearing commit left to you.</b> <code>scripts/router-inbox.sh</code> ships the channel: <code>init</code>, <code>post</code> (atomic, prints the id), <code>watch</code> (checks at once, then polls; exit 1 at its bound) and <code>consume</code> (the durable ack, idempotent). <code>tests/router_inbox.rs</code> drives all of it through the process boundary, 21 cases in their own temp inbox, and the 2026-11-14 probe's 28 checks are covered. The shipped router skill now says a DSH worker posts and the router's armed watcher is the wake; no shipped text allows a timer, a loop or a reminder. One decision row (DEC-57) records the channel, why a push channel beats a poll on DSH, and its limits.</p>
+<p data-item="outcome" data-c="outcome"><b>Delivered.</b> <code>scripts/router-inbox.sh</code> ships the channel: <code>init</code>, <code>post</code> (atomic, prints the id), <code>watch</code> (checks at once, then polls; exit 1 at its bound) and <code>consume</code> (the durable ack, idempotent). <code>tests/router_inbox.rs</code> drives all of it through the process boundary, 26 cases in their own temp inbox (21, plus 5 from fix round 1), and the 2026-11-14 probe's 28 checks are covered. The shipped router skill now says a DSH worker posts and the router's armed watcher is the wake; no shipped text allows a timer, a loop or a reminder. One decision row (DEC-57) records the channel, why a push channel beats a poll on DSH, and its limits.</p>
 
-<p>What did <b>not</b> land here: the skill text, the decision, the guard, the settings entry and the config line are rule-bearing, so this session stops at the staged command. Claude Code workers still cannot post; that needs the launcher's sandbox widened, which is a DEC-46 change and out of scope.</p>
+<p>You signed the rule-bearing half in <code>b006031</code>, fix round 1 in <code>503a41f</code>, and the back-merge of <code>epic/E-RGUARD</code> (W1 and W2) in <code>d4bfbb8</code>. After the merge the inbox watcher is the one DSH fleet wake: W1's interim "no worker's finish can wake you" text is gone from both skill trees, the checklists and <code>project-router</code>. Not done: Claude Code workers still cannot post. That needs the launcher's sandbox widened, which is a DEC-46 change and out of scope.</p>
 
 <h2 id="for-you">What changes for you</h2>
 <table data-c="owner-changes">
@@ -35,10 +35,11 @@
 <table data-item="deviations" data-c="deviations">
   <thead><tr><th>Plan said</th><th>What happened</th><th>Why</th></tr></thead>
   <tbody>
-    <tr><td>Delete the fleet-wake exception and its placeholder date from <code>worker-ops.md</code> "Wake on DSH"</td><td><b>Not possible at this base.</b> The exception, its placeholder date and <code>references/checklists.md</code> exist only on <code>wu/E-RGUARD/w1-interim-checklist</code> (unmerged). The channel text was written against the base instead</td><td>Hard rule: no merging another branch. When W1 lands, delete its <code>worker-ops.md</code> "Wake on DSH" subsection (its open point 1 answer "No: one wake per fleet…", the acceptance bullet "On DSH, arming the fleet wake is a bullet a router cannot miss", and the <code>checklists.md</code> rows at its lines 41-42 and 57 that name the fleet wake). Do not keep both texts</td></tr>
-    <tr><td>Carry the epic plan and add the W3 card (W2's pattern)</td><td><b>Not carried.</b> The W3 plan and this result stand alone</td><td>The only copy is on W1/W2, and its "What changes" row, open point 1, W1 card and acceptance bullet all bless the fleet wake this WU deletes. A merged copy would contradict this tip; the epic close updates it</td></tr>
+    <tr><td>Delete the fleet-wake exception and its placeholder date from <code>worker-ops.md</code> "Wake on DSH"</td><td><b>Done in the back-merge, <code>d4bfbb8</code>.</b> At first it could not be done here: the exception and <code>references/checklists.md</code> existed only on W1's unmerged branch, so the channel text was written against the base. The merge deleted W1's "Wake on DSH" subsection outright and repointed every reference to "The report channel (DSH)"</td><td>The 2026-11-15 ruling lands W3 in this epic, so the branch merged the epic. The resolution plan had said to rewrite "Wake on DSH" as channel text; W3's own channel section already is that text, and this report had said not to keep both</td></tr>
+    <tr><td>Carry the epic plan and add the W3 card (W2's pattern)</td><td><b>Carried by the back-merge.</b> <code>d4bfbb8</code> brings the epic plan in and updates it: W3 is no longer parked, open point 4 is answered by the 2026-11-15 ruling, and the owner-changes row, acceptance, use cases and close bullets name the inbox watcher</td><td>Until the merge the only copy was on W1/W2 and blessed the fleet wake this WU deletes</td></tr>
     <tr><td>The probe's cost: idle wakes drop to zero</td><td><b>Not zero.</b> The watcher's bound, and the host's 2 h background ceiling, still wake the router: about 13 a day at 6,600 s while a fleet is live</td><td>An armed blocking read must end. The 144-a-day report reminder is gone and nothing is scheduled; the decision states the remaining wakes and the plan's liveness answer</td></tr>
     <tr><td>Port the prototype's 27 checks</td><td><b>28.</b> The prototype test prints 28 PASS lines; all 28 are covered, plus a worktree-resolver case and a symlinked consume</td><td>Counted by running the prototype, not by trusting the report</td></tr>
+    <tr><td>The back-merge's expected conflicts</td><td><b>Two more files changed.</b> <code>.claude/skills/project-router/SKILL.md</code>'s fleet-wake row said no DSH fleet wake is armed; it now names <code>scripts/router-inbox.sh watch 6600</code>. <code>tests/init.rs</code> merged without a conflict, but W1's <code>router_ships_the_moment_of_action_checklists</code> pinned the interim text; it now pins the channel text and asserts the interim exception and no-wake claim are gone</td><td>The six conflicts were the expected ones. Leaving W1's pins as they were would red <code>init</code> on the merged text, and leaving <code>project-router</code> would contradict the skill it points to</td></tr>
     <tr><td>Commit <code>tests/router.rs</code> as code</td><td><b>Staged with the guard.</b> The pin test cannot be green at a commit that lacks the staged guard</td><td>W2's precedent (<code>0f189ce</code>): the guard's pin rides the guard's rule-bearing commit, so every commit stays green</td></tr>
   </tbody>
 </table>
@@ -54,7 +55,7 @@
     <tr><td><b>Nits</b> (11)</td><td>Every printed field cleaned, not only the body; <code>status</code> counts only what <code>watch</code> delivers; the symlink test's target is a valid message so only the link check can skip it; the concurrent-post test asserts both bodies; the settings entries are narrowed to the guard's four shapes (no wildcard that admits <code>post</code>); <code>SKILL.md</code> states the watcher's self-renewed 110-minute wake and its ~13 passes a day; <code>worker-ops.md</code> says <code>read/</code> is never pruned and <code>.router/</code> unbacked; DEC-57 says 28 checks; DEC-55 carries the DEC-57 amendment marker (record and index); a duplicate <code>consume</code> no longer leaks <code>mv</code> stderr; the two fixed 200 ms sleeps are gone</td></tr>
   </tbody>
 </table>
-<p>Test-first: the five new cases failed on <code>b006031</code>'s script for their stated reasons (junk printed, 5,242,950 bytes, raw ESC in <code>from=</code>, <code>pending=2</code> with header-less files, leaked <code>mv</code> stderr), then passed.</p>
+<p>Test-first: the five new cases failed on <code>b006031</code>'s script for their stated reasons (junk printed, 5,242,950 bytes, raw ESC in <code>from=</code>, <code>pending=2</code> with header-less files, leaked <code>mv</code> stderr), then passed. The tests landed in <code>72b9ce3</code>; the script, settings and rule text in your signed <code>503a41f</code>.</p>
 
 <h2 id="evidence">Evidence</h2>
 
@@ -63,7 +64,11 @@
   <li><code>f266086</code> — the WU plan.</li>
   <li><code>cd2d41a</code> — <code>scripts/router-inbox.sh</code> and <code>tests/router_inbox.rs</code> (20 cases).</li>
   <li><code>efac00b</code> — the worktree-resolver case (21 cases); code tip.</li>
-  <li>This report is the next commit. The rule-bearing changes are staged on top of it.</li>
+  <li><code>b006031</code> — the rule-bearing half, signed by you: skill text, DEC-57, guard, settings, config, guard pin.</li>
+  <li><code>1b3abfc</code> — this report, first version.</li>
+  <li><code>72b9ce3</code> — fix round 1, tests and report; <code>503a41f</code> — fix round 1, the rule-bearing half, signed by you.</li>
+  <li><code>d4bfbb8</code> — the back-merge of <code>epic/E-RGUARD</code> at <code>0970a10</code>, signed by you.</li>
+  <li>This update is the next commit.</li>
 </ul>
 
 <h3 id="red-green">Red first, then green</h3>
@@ -91,7 +96,23 @@ Finished `dev` profile …</code></pre>
 …
 test result: ok. 51 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 126.19s
 check green - cached</code></pre>
-<p>The two <code>tests/init.rs</code> self-hosting cases are red in this checkout only while the skill text is staged and uncommitted: they clone HEAD and compare <code>keel init</code>'s embedded skills against it. They are green once your commit makes the text HEAD — that is why the notes and preflight below run on your new tip.</p>
+<p>On the back-merge tip <code>d4bfbb8</code>, run in the worker's sandbox, <code>cargo test --no-fail-fast</code> is green except for tests the sandbox breaks. <code>keel check</code> stops at the first red binary, so it is red there too. The owner's run outside the sandbox is the gate.</p>
+<pre data-c="check-merge"><code># PATH with /Library/Developer/CommandLineTools/usr/bin first
+unit 80/80 · cli 19/19 · init 19/19 · mr 27/27 · release 5/5 · review 1/1
+router_inbox 26/26 · verify_doc 23/23 · verify_dod 51/51
+notify_owner: 2 passed; 10 failed     # TcpListener::bind("127.0.0.1:0"): Operation not permitted
+router: 59 passed; 1 failed           # watcher_run_is_bounded_when_the_watch_outpolls_its_releases (R43)
+
+# stock PATH: the same, except
+router: 48 passed; 12 failed          # git: couldn't create cache file …/xcrun_db-… (Operation not permitted)
+$ cargo clippy --all-targets -- -D warnings
+Finished `dev` profile …</code></pre>
+<ul data-c="sandbox-reds">
+  <li><b>notify_owner, 10 (sandbox: no local port binding):</b> <code>a_malformed_token_never_echoes_the_request_target</code>, <code>a_read_only_body_fails_before_sending_and_names_the_file</code>, <code>a_stalled_server_times_out_in_one_line</code>, <code>bare_send_reads_and_clears_the_body_so_it_cannot_resend_a_stale_message</code>, <code>bare_send_without_a_body_is_one_line_and_sends_nothing</code>, <code>check_failure_is_one_line_and_never_prints_the_credential</code>, <code>check_names_the_bot_and_sends_no_message</code>, <code>dry_run_prints_the_request_without_the_chat_or_a_send</code>, <code>preview_and_failed_send_leave_the_body_in_place</code>, <code>send_prints_the_id_and_never_the_credential</code>.</li>
+  <li><b>router, R43 (sandbox only, red at <code>cd90c16</code> too):</b> <code>watcher_run_is_bounded_when_the_watch_outpolls_its_releases</code>.</li>
+  <li><b>router, stock PATH only (the xcrun shim's stderr):</b> <code>epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end</code>, <code>a_worktree_whose_git_link_was_changed_is_never_run_git_in</code>, <code>launcher_ignores_inherited_git_variables</code>, <code>watch_refuses_bad_arguments_before_any_poll</code>, <code>stop_removes_that_sessions_brief_copies_and_reports_branch_drift</code>, <code>watchdog_facts_hold_one_block_per_live_worker_of_this_repository</code>, <code>stop_stops_then_removes_this_repositorys_idle_worker_by_id</code>, <code>watch_signed_and_merged_report_the_note_and_how_the_tip_landed</code>, <code>worktree_add_cuts_an_epic_or_wu_branch_off_its_base_at_the_derived_path</code>, <code>fact_block_states_a_worker_from_its_transcript_tail_within_its_bound</code>, <code>worktree_remove_takes_only_a_clean_merged_worktree_with_no_session_in_it</code>, and R43 again.</li>
+  <li><b>New reds: none.</b> W1's checklist test with its new pins, W2's and W3's guard tests and every inbox case are green.</li>
+</ul>
 
 <h3 id="demo">A post delivered and consumed</h3>
 <pre data-c="demo"><code>$ sh scripts/router-inbox.sh init
@@ -122,9 +143,10 @@ INBOX dir=/tmp/w3-demo/inbox pending=0 oldest=none read=1 orphans=0</code></pre>
 
 <h3 id="diff">The diff, and what no gate reviews</h3>
 <ul data-c="diff">
-  <li>Code committed: <code>scripts/router-inbox.sh</code>, <code>tests/router_inbox.rs</code> (2 commits, 21 tests).</li>
-  <li>Staged rule-bearing: both skill trees (SKILL.md, worker-ops.md, brief-skeleton.md), <code>docs/decisions/router.html</code> and <code>decisions-index.html</code>, <code>scripts/router-guard.jq</code>, <code>.claude/settings.json</code>, <code>.keel/config.toml</code>, and the guard pin in <code>tests/router.rs</code>.</li>
-  <li><b>No gate reviews</b> <code>scripts/router-inbox.sh</code>, <code>scripts/router-guard.jq</code>, <code>.claude/settings.json</code>, the skill text, the decision doc or <code>.keel/config.toml</code>: none is under <code>code_paths</code> (<code>src/</code>, <code>tests/</code>), so the cr review binds only the tests. The independent review must read the channel and the guard by hand.</li>
+  <li>Code: <code>scripts/router-inbox.sh</code>, <code>tests/router_inbox.rs</code> (26 tests), the guard pin in <code>tests/router.rs</code>, and in the merge W1's checklist test in <code>tests/init.rs</code>.</li>
+  <li>Rule-bearing, all signed by you: both skill trees (SKILL.md, worker-ops.md, brief-skeleton.md, and in the merge checklists.md), <code>.claude/skills/project-router/SKILL.md</code>, <code>docs/decisions/router.html</code> and <code>decisions-index.html</code>, <code>scripts/router-guard.jq</code>, <code>.claude/settings.json</code>, <code>.keel/config.toml</code>.</li>
+  <li>The merge resolution: <code>.claude/settings.json</code> keeps W2's three <code>notify-owner.py</code> entries and W3's four <code>router-inbox.sh</code> entries; <code>scripts/router-guard.jq</code> has one alternation with both shape sets and both clauses in the deny text.</li>
+  <li><b>No gate reviews</b> <code>scripts/router-inbox.sh</code>, <code>scripts/router-guard.jq</code>, <code>.claude/settings.json</code>, the skill text, the checklists, <code>project-router</code>, the decision doc, the epic plan or <code>.keel/config.toml</code>: none is under <code>code_paths</code> (<code>src/</code>, <code>tests/</code>), so the cr review binds only the tests. The independent review must read the channel and the guard by hand.</li>
 </ul>
 
 <h2 id="liveness">Liveness: nothing replaces it</h2>
@@ -135,14 +157,14 @@ INBOX dir=/tmp/w3-demo/inbox pending=0 oldest=none read=1 orphans=0</code></pre>
 
 <h2 id="follow-ups">Follow-ups</h2>
 <ul data-item="follow-ups" data-c="follow-ups">
-  <li><b>Your step, in order:</b> run the staged owner command below; then, on the new tip, <code>keel notes write test &lt; judgment.json</code>, <code>keel notes write doc</code>, <code>keel preflight wu &lt;new-tip&gt; --target epic/E-RGUARD</code>, and the independent review (a fresh review worker writes the <code>cr</code> note). The guard pin and the skill text count in that run.</li>
-  <li><b>Reconcile W1 when it lands:</b> delete its <code>worker-ops.md</code> "Wake on DSH" subsection and the <code>checklists.md</code> rows that name the fleet wake; keep this WU's channel text. If W1 merges after this, that is a textual conflict in <code>worker-ops.md</code>, not a silent merge.</li>
+  <li><b>Your step, in order:</b> <code>keel check</code> outside the sandbox on this report's tip; then <code>keel preflight wu &lt;tip&gt; --target epic/E-RGUARD</code>; then review round 2 (a fresh review worker writes the <code>cr</code> note). It reads <code>503a41f</code> and the merge's <code>tests/init.rs</code> change by hand.</li>
+  <li><b>DEC-57's Context</b> still says W1 is "on its own unmerged branch". That was true when the decision was written; an Amended note can record the merge if you want one.</li>
   <li><b>Claude Code workers posting</b> is a separate owner change: <code>scripts/router-worker.sh</code>'s sandbox would need <code>&lt;main&gt;/.router/inbox</code> in <code>allowWrite</code>, which weakens DEC-46 for every worker. Not done here.</li>
   <li><b>Housekeeping, manual by design:</b> <code>read/</code> grows and is never pruned by the script; the owner moves files out. <code>.router/</code> is unbacked, so deleting it drops pending messages.</li>
 </ul>
 
-<h2 id="staged">The staged owner command</h2>
-<pre data-c="staged"><code>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-RGUARD-w3-inbox-channel &amp;&amp; keel mr commit -m "feat(E-RGUARD.W3): the router wakes on a worker's post - the inbox channel, the guard shapes, the skill text and DEC-57; scripts/router-inbox.sh joins rule_bearing" --as vuluu</code></pre>
+<h2 id="next">The next owner command</h2>
+<pre data-c="next"><code>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-RGUARD-w3-inbox-channel &amp;&amp; keel check</code></pre>
 
   </main>
   <script type="module">
