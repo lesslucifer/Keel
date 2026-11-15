@@ -1425,6 +1425,20 @@ fn a_forged_commondir_is_refused_and_a_linked_checkout_works() {
     }
     let o = gh.run_in(&linked, &["issue", "epic/E"], &[]);
     assert!(o.status.code() == Some(2) && text(&o).contains("commondir exists"), "{}", text(&o));
+    std::fs::remove_file(gh.repo.join(".git/commondir")).unwrap();
+
+    // round 2: a config.worktree, in the git dir or this checkout's admin dir, is refused too
+    for (dir, at) in [(&gh.repo, gh.repo.join(".git/config.worktree")), (&linked, admin.join("config.worktree"))] {
+        std::fs::write(&at, "[url \"ext::sh -c touch% /tmp/x\"]\n\tinsteadOf = https://github.com/\n").unwrap();
+        gh.routes(&[]);
+        let o = gh.run_in(dir, &["issue", "epic/E"], &[]);
+        assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+        assert!(text(&o).contains("config.worktree exists: this repository uses none"), "{}", text(&o));
+        assert!(gh.calls().is_empty(), "{:?}", gh.calls());
+        std::fs::remove_file(&at).unwrap();
+    }
+    refresh();
+    assert!(gh.run_in(&linked, &["issue", "epic/E"], &[]).status.success());
 }
 
 /// Security review P1c: whatever the repository's config says, the script's git runs no hook and

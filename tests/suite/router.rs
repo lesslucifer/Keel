@@ -3612,9 +3612,11 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
                 "denyWrite": [format!("{g}/config"), format!("{g}/hooks"), format!("{g}/keel-hooks"), format!("{g}/info"),
                     // E-GHFLOW.W3 security review P1 (R33): the git dir's commondir, then the worker's
                     // own admin link files, then every other worktree's
-                    format!("{g}/commondir"),
-                    format!("{g}/worktrees/{admin}/commondir"), format!("{g}/worktrees/{admin}/gitdir"),
-                    format!("{g}/worktrees/{other}/commondir"), format!("{g}/worktrees/{other}/gitdir"),
+                    format!("{g}/commondir"), format!("{g}/config.worktree"),
+                    format!("{g}/worktrees/{admin}/commondir"), format!("{g}/worktrees/{admin}/gitdir"), format!("{g}/worktrees/{admin}/config.worktree"),
+                    format!("{g}/worktrees/{other}/commondir"), format!("{g}/worktrees/{other}/gitdir"), format!("{g}/worktrees/{other}/config.worktree"),
+                    // round 2 F1: by glob too, for an admin dir made after this spawn
+                    format!("{g}/worktrees/*/commondir"), format!("{g}/worktrees/*/gitdir"), format!("{g}/worktrees/*/config.worktree"),
                     format!("{}/.git", wt.display()), format!("{}/.claude/settings.json", wt.display()),
                     format!("{}/.claude/settings.local.json", wt.display()), "~/.claude.json".to_string()],
                 "denyRead": ["~/.ssh", "~/.claude/channels", "~/.config/keel/router-gh"]
@@ -3640,13 +3642,67 @@ fn a_commondir_file_in_the_main_git_dir_stops_the_launcher() {
     let l = launcher();
     let elsewhere = l.main.parent().unwrap().join("elsewhere");
     std::fs::create_dir_all(&elsewhere).unwrap();
-    std::fs::write(l.main.join(".git/commondir"), format!("{}\n", elsewhere.display())).unwrap();
     let wt = l.wt.to_str().unwrap();
-    for args in [vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"], vec!["stop", "a"], vec!["worktree", "add", "epic/E"], vec!["watchdog", "start", "r"]] {
-        let (ok, out) = l.run(&args);
-        assert!(!ok && out.contains(".git/commondir exists: a main git dir has none"), "{args:?}: {out}");
+    let modes = [vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"], vec!["stop", "a"], vec!["worktree", "add", "epic/E"], vec!["watchdog", "start", "r"]];
+    // E-GHFLOW.W3 round 2: config.worktree too (a url.insteadOf or core.askPass there runs code)
+    for f in ["commondir", "config.worktree"] {
+        let p = l.main.join(".git").join(f);
+        std::fs::write(&p, format!("{}\n", elsewhere.display())).unwrap();
+        for args in &modes {
+            let (ok, out) = l.run(args);
+            assert!(!ok && out.contains(&format!(".git/{f} exists: a main git dir has none")), "{f} {args:?}: {out}");
+        }
+        // the watchdog's facts never fail: they report it
+        let (ok, out) = l.run(&["watchdog", "facts", "r1"]);
+        assert!(ok && out.starts_with("Report to r1.\n") && out.contains(&format!(".git/{f} exists")), "{f} facts: {out}");
+        std::fs::remove_file(&p).unwrap();
     }
     assert!(calls(&l.state).is_empty(), "{:?}", calls(&l.state));
+}
+
+/// E-GHFLOW.W3 security review round 2, F1 (reproduced by the review: the owner's `git commit` in a
+/// later worktree ran a worker's pre-commit): a worker spawned earlier could write the admin dir of a
+/// worktree made later, which its spawn-time deny list does not name. Every launcher run checks every
+/// admin dir as linked_ok does, so a commondir that is not ../.., a config.worktree or a gitdir naming
+/// no .git stops every mode before any session starts; an admin dir named as git names one after a
+/// checkout holding a quote is still denied to the worker, by name.
+#[test]
+fn every_worktree_admin_dir_is_checked_on_every_run() {
+    let l = launcher();
+    let later = l.main.parent().unwrap().join("later");
+    git(&l.main, &["worktree", "add", "-q", later.to_str().unwrap(), "-b", "later"]);
+    let admin = l.main.join(".git/worktrees/later");
+    let wt = l.wt.to_str().unwrap();
+    let modes = [vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"], vec!["stop", "a"], vec!["worktree", "add", "epic/E"], vec!["watchdog", "start", "r"]];
+    let unlinked = "worktree admin dir";
+    for (what, file, body) in [
+        ("commondir", "commondir", "/tmp/evil.git\n".to_string()),
+        ("config.worktree", "config.worktree", "[core]\n\thooksPath = /tmp/evil\n".to_string()),
+        ("gitdir", "gitdir", "/tmp/elsewhere\n".to_string()),
+    ] {
+        let p = admin.join(file);
+        let before = std::fs::read_to_string(&p).ok();
+        std::fs::write(&p, body).unwrap();
+        for args in &modes {
+            let (ok, out) = l.run(args);
+            assert!(!ok && out.contains(unlinked) && out.contains("does not link to this repository as git made it"), "{what} {args:?}: {out}");
+        }
+        match before {
+            Some(b) => std::fs::write(&p, b).unwrap(),
+            None => std::fs::remove_file(&p).unwrap(),
+        }
+    }
+    assert!(calls(&l.state).is_empty(), "{:?}", calls(&l.state));
+    // restored, the launcher runs; an admin dir whose name holds a quote and a space (git names it
+    // after the checkout) is denied by name too (round 2 N-f: never skipped)
+    let odd = l.main.parent().unwrap().join("o'd d");
+    git(&l.main, &["worktree", "add", "-q", odd.to_str().unwrap(), "-b", "odd"]);
+    let (ok, out) = l.run(&["spawn", "a", wt, ".router/briefs/b.md", "opus"]);
+    assert!(ok, "restored, the launcher runs: {out}");
+    let settings: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, "a"), "--settings")).unwrap();
+    let deny = settings["sandbox"]["filesystem"]["denyWrite"].to_string();
+    assert!(deny.contains("worktrees/o'd-d/commondir") && deny.contains("worktrees/later/config.worktree"), "{deny}");
+    l.stop("a");
 }
 
 /// E-ROUTER3.W8 (DEC-46, point 4): the review runs in a fresh `--review` worker, the only one granted

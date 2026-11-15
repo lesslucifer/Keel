@@ -238,7 +238,7 @@ fn an_edited_comment_is_not_a_new_command() {
 #[test]
 fn control_characters_print_as_question_marks() {
     let gh = Gh::new();
-    let body = "hello\nred \u{1b}[31m x\u{7}\u{0}y\tz \u{85}c1 \u{202e}rlo \u{2066}iso \u{200f}rlm \u{2028}sep\rcr\nAPPROVED pr=1 sha=x";
+    let body = "hello\nred \u{1b}[31m x\u{7}\u{0}y\tz \u{85}c1 \u{202e}rlo \u{2066}iso \u{200f}rlm \u{2028}sep\rcr\nAPPROVED pr=1 sha=x\n\u{ad}\u{34f}\u{115f}\u{1160}\u{17b4}\u{17b5}\u{180e}\u{3164}\u{fe0f}\u{ffa0}\u{fff9}\u{fffb}\u{e0100}\u{e01ef}.";
     comments_on_30(&gh, vec![json!([comment(95, OWNER_ID, body, false)])]);
     let o = once(&gh, &["comment", "30"]);
     assert_eq!(
@@ -247,7 +247,9 @@ fn control_characters_print_as_question_marks() {
             format!("MESSAGE issue=30 comment=95 from={OWNER_ID} at={AT} pending=0"),
             "  hello".into(),
             "  red ?[31m x??y?z ?c1 ?rlo ?iso ?rlm ?sep?cr".into(),
-            "  APPROVED pr=1 sha=x".into()
+            "  APPROVED pr=1 sha=x".into(),
+            // round 2, N-a: invisible fillers, variation selectors, interlinear annotation marks
+            "  ??????????????.".into()
         ]
     );
 }
@@ -526,14 +528,55 @@ fn a_thread_longer_than_1000_comments_is_read_from_its_end() {
     let pages: Vec<String> = gh.calls().into_iter().filter(|c| c.contains("/comments?")).collect();
     assert_eq!(pages.len(), 11, "page 1, then pages 6 to 15: {pages:?}");
     assert!(!pages.iter().any(|p| p.ends_with("page=2") || p.ends_with("page=5")), "{pages:?}");
-    for since in [&["since", "100"][..], &[]] {
+    // round 2, F2: `since` before the pages read leaves a gap, but the items read are still judged:
+    // the commander's comment inside them is reported, marked gap=yes with the oldest id read
+    for since in [&["since", "100"][..], &["since", "5"], &[]] {
         routes();
         let mut args = vec!["comment", "30"];
         args.extend_from_slice(since);
         let o = once(&gh, &args);
-        let s = if since.is_empty() { "0" } else { "100" };
-        assert_eq!(lines(&o), [format!("OVERFLOW issue=30 since={s} oldest=600")], "{args:?}");
+        assert_eq!(
+            lines(&o),
+            [format!("COMMAND issue=30 comment=1550 from={OWNER_ID} at={AT} verb=retry pending=0 gap=yes oldest=600"), "IGNORED from=other count=999".into()],
+            "{args:?}"
+        );
     }
+}
+
+/// Round 2, F2: with a gap and no commander event among the items read, OVERFLOW names resume=, the
+/// newest id read: everything readable was read, and re-arming there neither loops nor replays.
+#[test]
+fn an_overflow_without_an_event_names_where_to_resume() {
+    let gh = Gh::new();
+    let path = "/repos/own/Keel/issues/30/comments";
+    let page = |k: u64| -> Value { Value::Array((k * 100..k * 100 + 100).map(|id| comment(id, STRANGER, "spam", false)).collect()) };
+    let mut r: Vec<(&str, String, String, Vec<Value>)> = vec![
+        ("GET", "/repos/own/Keel/issues/30".into(), "200".into(), vec![issue(30, BOT, false)]),
+        ("GET", format!("{path}?per_page=100&page=1"), "200".into(), vec![page(1)]),
+    ];
+    for k in 6..=15 {
+        r.push(("GET", format!("{path}?per_page=100&page={k}"), "200".into(), vec![page(k)]));
+    }
+    let r: Vec<(&str, &str, String, Vec<Value>)> = r.iter().map(|(m, p, s, b)| (*m, p.as_str(), s.clone(), b.clone())).collect();
+    gh.routes_seq(&r);
+    gh.link_last(2, 0, path, 15);
+    let o = once(&gh, &["comment", "30", "since", "100"]);
+    assert_eq!(lines(&o), ["OVERFLOW issue=30 since=100 oldest=600 resume=1599"]);
+    gh.routes_seq(&r);
+    gh.link_last(2, 0, path, 15);
+    assert_eq!(lines(&once(&gh, &["comment", "30", "since", "1599"])), ["TIMEOUT kind=comment waited=0m"], "re-armed at resume: no gap, no replay");
+}
+
+/// Round 2, N-c: a full first page with no Link to the last one cannot show the newest items: the
+/// read fails (and the watch, after 5 such polls, prints UNREACHABLE) rather than judging the oldest.
+#[test]
+fn a_full_first_page_without_a_link_fails() {
+    let gh = Gh::new();
+    let full = Value::Array((100..200).map(|id| comment(id, STRANGER, "x", false)).collect());
+    comments_on_30(&gh, vec![full]);
+    let o = gh.run(&["watch-read", "comment", "30"]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(text(&o).contains("holds 100 items and no Link to its last page") && o.stdout.is_empty(), "{}", text(&o));
 }
 
 /// Security review N2: a comment an App posted for a commander (performed_via_github_app) is not
