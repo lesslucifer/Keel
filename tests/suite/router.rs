@@ -2214,9 +2214,34 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
 pub(crate) fn git_shim(dir: &Path) {
     let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
     std::fs::create_dir_all(dir).unwrap();
-    std::fs::write(dir.join("git"), format!("#!/bin/sh\nGIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL='{}' exec {} \"$@\"\n", common::GIT_CONFIG, real.trim()))
-        .unwrap();
+    std::fs::write(dir.join("git"), git_shim_script(real.trim(), common::GIT_CONFIG)).unwrap();
     std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+}
+
+/// The shim's body: `git` run with no system config and `config` as its global one.
+fn git_shim_script(git: &str, config: &str) -> String {
+    format!("#!/bin/sh\nGIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL={} exec {} \"$@\"\n", sh_quote(config), sh_quote(git))
+}
+
+/// `s` as one single-quoted shell word: each `'` becomes `'\''`.
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Unit (E-TESTOPT.W5 round 2): the shim runs from a checkout whose path holds a quote, a space or a `$`.
+#[test]
+fn the_git_shim_runs_from_a_path_with_quotes_and_spaces() {
+    let d = TempDir::new().unwrap();
+    let dir = d.path().join("Bob's $HOME dir");
+    std::fs::create_dir_all(&dir).unwrap();
+    let config = dir.join("gitconfig");
+    std::fs::write(&config, "[maintenance]\n\tauto = false\n").unwrap();
+    let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
+    let shim = dir.join("git");
+    std::fs::write(&shim, git_shim_script(real.trim(), config.to_str().unwrap())).unwrap();
+    let o = common::cmd("sh").arg(&shim).args(["config", "--global", "--list"]).env_remove("GIT_CONFIG_GLOBAL").output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&o.stdout), "maintenance.auto=false\n", "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(sh_quote("it's"), "'it'\\''s'");
 }
 
 /// A checkout holding scripts/router-watch.sh, cloned from a bare `origin.git` file remote (no

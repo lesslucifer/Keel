@@ -232,7 +232,14 @@ fn a_test_spawn_runs_no_automatic_git_maintenance() {
                 c
             }),
         ),
-        ("router git_shim", Box::new(|| cmd(shim.path().join("git")))),
+        (
+            "router git_shim, with no GIT_CONFIG_GLOBAL of its own",
+            Box::new(|| {
+                let mut c = cmd(shim.path().join("git"));
+                c.env_remove("GIT_CONFIG_GLOBAL");
+                c
+            }),
+        ),
     ];
     for (name, spawn) in &spawns {
         let o = spawn().args(["config", "--global", "--list"]).output().unwrap();
