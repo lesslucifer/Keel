@@ -19,16 +19,23 @@ compiled!();
 #[path = "../common/mod.rs"]
 mod common;
 
+mod ci_gate;
 mod cli;
 mod close_walk;
 mod fixtures;
+mod ghflow_e2e;
 mod init;
+mod keel_gate;
 mod layout;
 mod mr;
 mod notify_owner;
 mod release;
 mod review;
 mod router;
+mod router_gh;
+mod router_gh_args;
+mod router_gh_watch;
+mod router_gh_watch_args;
 mod router_inbox;
 mod seed3_e2e;
 mod verify_doc;

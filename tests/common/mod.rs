@@ -91,6 +91,15 @@ pub fn git_shim_script(git: &str, config: &str) -> String {
 }
 
 /// `s` as one single-quoted shell word: each `'` becomes `'\''`.
+/// A seeded generator for the generated test corpora: each call `next(n)` steps one linear
+/// congruential sequence and answers in `0..n`, so a corpus is the same on every run.
+pub fn lcg(mut seed: u64) -> impl FnMut(usize) -> usize {
+    move |n| {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (seed >> 33) as usize % n
+    }
+}
+
 pub fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }

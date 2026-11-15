@@ -1,3 +1,4 @@
+mod ci;
 mod gate;
 mod init;
 mod mr;
@@ -645,9 +646,11 @@ fn run() -> Result<i32, String> {
         ["verify-doc", paths @ ..] => verify_doc(&repo, paths),
         ["verify-dod", "hook"] => gate::verify_dod(&repo, &load_config_at_head(&repo)?, &["hook"]),
         ["verify-dod", rest @ ..] => gate::verify_dod(&repo, &load_config(&repo)?, rest),
+        ["ci", "gate", rest @ ..] => gate::ci_gate(&repo, &load_config(&repo)?, rest),
+        ["ci", ..] => Err(gate::CI_USAGE.into()),
         ["preflight", rest @ ..] => gate::preflight_cmd(&repo, &load_config(&repo)?, rest),
         ["mr", rest @ ..] => mr::run(&repo, &load_config(&repo)?, rest),
-        _ => Err("usage: keel <init [-f] | lint | check | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install [--force] | notes write <test|doc|cr>>".into()),
+        _ => Err("usage: keel <init [-f] | lint | check | verify-doc | verify-dod | preflight | ci gate | mr <setup|commit|confirm> | hooks install [--force] | notes write <test|doc|cr>>".into()),
     }
 }
 
