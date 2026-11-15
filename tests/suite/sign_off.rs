@@ -393,3 +393,245 @@ fn keel_mr_refuses_a_checkout_whose_git_links_git_did_not_make_and_runs_no_git()
     assert!(o.status.success(), "{}", text(&o));
     assert_eq!(note(p, "mr", "wu/e/a").unwrap()["tier"], "username");
 }
+
+/// The writer as GitHub runs it: a developer's repo (the fixture) with notes, its bare origin, and a
+/// runner's clone of origin on main, where scripts/ci-sign-off.sh runs with the fake curl standing
+/// for GitHub's API (pull request 7, its reviews, the status) and a keel standing for the base's.
+struct Writer {
+    _d: TempDir,
+    _root: TempDir,
+    dev: std::path::PathBuf,
+    origin: std::path::PathBuf,
+    runner: std::path::PathBuf,
+    mock: std::path::PathBuf,
+    bin: std::path::PathBuf,
+    tmp: std::path::PathBuf,
+}
+
+impl Writer {
+    fn new(cr: bool) -> Writer {
+        let d = fixture();
+        let dev = d.path().to_path_buf();
+        if cr {
+            notes(&dev);
+        } else {
+            notes_with(&dev, &["test", "doc"], r#"{"integration":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
+        }
+        let root = TempDir::new().unwrap();
+        let base = root.path().canonicalize().unwrap();
+        let [origin, runner, mock, bin, tmp] = ["origin.git", "runner", "mock", "bin", "tmp"].map(|n| base.join(n));
+        for x in [&mock, &bin, &tmp] {
+            std::fs::create_dir_all(x).unwrap();
+        }
+        git(&base, &["init", "-q", "--bare", origin.to_str().unwrap()]);
+        git(&dev, &["push", "-q", "--no-verify", origin.to_str().unwrap(), "main", "epic/e", "wu/e/a", "refs/notes/*:refs/notes/*"]);
+        git(&base, &["clone", "-q", origin.to_str().unwrap(), runner.to_str().unwrap()]);
+        crate::router_gh::exe(&bin.join("fake-curl"), crate::router_gh::FAKE_CURL);
+        Writer { _d: d, _root: root, dev, origin, runner, mock, bin, tmp }
+    }
+
+    fn sha(&self, rev: &str) -> String {
+        git(&self.dev, &["rev-parse", rev])
+    }
+
+    fn pr(&self, head: &str, base: &str) -> Value {
+        json!({"number": 7, "state": "open", "head": {"ref": head, "sha": self.sha(head), "repo": {"full_name": "own/Keel"}},
+            "base": {"ref": base, "sha": self.sha(base), "repo": {"full_name": "own/Keel"}}})
+    }
+
+    /// The fake GitHub's answers: `(method, path, status, body)`.
+    fn routes(&self, routes: &[(&str, String, u16, Value)]) {
+        let mut table = String::new();
+        for (i, (m, p, s, b)) in routes.iter().enumerate() {
+            std::fs::write(self.mock.join(format!("r{i}.json")), b.to_string()).unwrap();
+            table.push_str(&format!("{m} {p} {s} r{i}.json\n"));
+        }
+        for e in std::fs::read_dir(&self.mock).unwrap() {
+            let e = e.unwrap();
+            if e.file_name().to_string_lossy().starts_with("seq.") {
+                std::fs::remove_file(e.path()).unwrap();
+            }
+        }
+        std::fs::write(self.mock.join("routes"), table).unwrap();
+        std::fs::write(self.mock.join("log"), "").unwrap();
+    }
+
+    /// The usual answers: pull request 7 from wu/e/a into epic/e, `reviews`, and the status post.
+    fn github(&self, reviews: Value) {
+        let head = self.sha("wu/e/a");
+        self.routes(&[
+            ("GET", "/repos/own/Keel/pulls/7".into(), 200, self.pr("wu/e/a", "epic/e")),
+            ("GET", "/repos/own/Keel/pulls/7/reviews?per_page=100&page=1".into(), 200, reviews),
+            ("POST", format!("/repos/own/Keel/statuses/{head}"), 201, json!({})),
+        ]);
+    }
+
+    fn log(&self) -> Vec<Value> {
+        std::fs::read_to_string(self.mock.join("log")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect()
+    }
+
+    /// The keel/sign-off statuses posted: (state, description).
+    fn statuses(&self) -> Vec<(String, String)> {
+        self.log()
+            .iter()
+            .filter(|r| r["method"] == "POST")
+            .map(|r| {
+                let b: Value = serde_json::from_str(r["body"].as_str().unwrap()).unwrap();
+                assert_eq!(b["context"], "keel/sign-off");
+                (b["state"].as_str().unwrap().to_string(), b["description"].as_str().unwrap().to_string())
+            })
+            .collect()
+    }
+
+    fn run(&self, env: &[(&str, &str)]) -> Output {
+        let mut c = common::cmd("sh");
+        c.arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/ci-sign-off.sh")).current_dir(&self.runner);
+        for k in ["GH_TOKEN", "REPO", "PR_NUMBER", "RUN_HEAD_SHA", "RUN_EVENT", "KEEL", "API", "CURL", "RUNNER_TEMP"] {
+            c.env_remove(k);
+        }
+        c.env("GH_TOKEN", "ghs_writerTestToken0123456789")
+            .env("REPO", "own/Keel")
+            .env("PR_NUMBER", "7")
+            .env("RUN_HEAD_SHA", self.sha("wu/e/a"))
+            .env("RUN_EVENT", "pull_request_review")
+            .env("KEEL", KEEL)
+            .env("CURL", self.bin.join("fake-curl"))
+            .env("MOCK_GH", &self.mock)
+            .env("RUNNER_TEMP", &self.tmp)
+            .env("PATH", path());
+        c.envs(env.iter().copied());
+        common::hermetic(&mut c);
+        let o = c.output().unwrap();
+        assert!(!text(&o).contains("ghs_writerTestToken"), "the token leaked: {}", text(&o));
+        assert!(std::fs::read_dir(&self.tmp).unwrap().next().is_none(), "the scratch dir was left behind");
+        o
+    }
+
+    fn origin_note(&self, rev: &str) -> Option<Value> {
+        let o = run("git", &self.origin, &["notes", "--ref=mr", "show", rev]);
+        o.status.success().then(|| serde_json::from_slice(&o.stdout).unwrap())
+    }
+}
+
+#[test]
+fn the_writer_signs_a_listed_approval_on_the_head_pushes_the_note_and_sets_the_status() {
+    let w = Writer::new(true);
+    let head = w.sha("wu/e/a");
+    w.github(json!([review(5, OWNER, "COMMENTED", &head), review(6, OWNER, "APPROVED", &head)]));
+    let o = w.run(&[]);
+    assert!(o.status.success(), "{}", text(&o));
+    let n = w.origin_note(&head).expect("the note reached origin");
+    assert_eq!((n["tier"].as_str(), n["signer"].as_str(), n["review"]["id"].as_u64()), (Some("github"), Some("5499546"), Some(6)));
+    assert_eq!(w.statuses(), [("success".to_string(), "Signed by approval (review 6)".to_string())]);
+    let auth: Vec<Value> = w.log().iter().map(|r| r["auth"].clone()).collect();
+    assert!(auth.iter().all(|a| a == "Bearer ghs_writerTestToken0123456789"), "every request carries the token on curl's stdin only: {auth:?}");
+    // the developer fetches the note: the local gate is fully green
+    git(&w.dev, &["fetch", "-q", w.origin.to_str().unwrap(), "+refs/notes/mr:refs/notes/mr"]);
+    ok(keel(&w.dev, &["verify-dod", "wu", "wu/e/a"]));
+}
+
+#[test]
+fn the_writer_writes_nothing_for_a_comment_an_older_commit_or_an_unlisted_id() {
+    let w = Writer::new(true);
+    let (head, older) = (w.sha("wu/e/a"), w.sha("wu/e/a^"));
+    for list in [json!([review(5, OWNER, "COMMENTED", &head)]), json!([review(6, OWNER, "APPROVED", &older)]), json!([review(7, 42, "APPROVED", &head)])] {
+        w.github(list.clone());
+        let o = w.run(&[]);
+        assert!(o.status.success(), "{}", text(&o));
+        assert!(w.origin_note(&head).is_none(), "{list}");
+        assert_eq!(w.statuses().len(), 1, "{list}");
+        assert_eq!(w.statuses()[0].0, "pending", "{list}");
+        assert!(w.statuses()[0].1.starts_with("Waiting for an approval of "), "{list}");
+    }
+}
+
+#[test]
+fn the_writer_reports_a_red_check_as_a_failed_sign_off_and_writes_nothing() {
+    let w = Writer::new(false);
+    let head = w.sha("wu/e/a");
+    w.github(json!([review(6, OWNER, "APPROVED", &head)]));
+    let o = w.run(&[]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(w.origin_note(&head).is_none());
+    let s = w.statuses();
+    assert_eq!(s.len(), 1);
+    assert_eq!(s[0].0, "failure");
+    assert!(s[0].1.starts_with("Approval not signed: "), "{s:?}");
+}
+
+#[test]
+fn the_writer_acts_only_on_a_review_run_and_finds_the_pull_request_by_its_head_when_unnamed() {
+    let w = Writer::new(true);
+    let head = w.sha("wu/e/a");
+    w.github(json!([review(6, OWNER, "APPROVED", &head)]));
+    for event in ["push", "pull_request", ""] {
+        let o = w.run(&[("RUN_EVENT", event)]);
+        assert!(o.status.success() && text(&o).contains("nothing to sign"), "{event}: {}", text(&o));
+        assert!(w.log().is_empty(), "{event}: GitHub was asked");
+    }
+    let mut routes = vec![("GET", format!("/repos/own/Keel/commits/{head}/pulls"), 200, json!([w.pr("wu/e/a", "epic/e")]))];
+    routes.extend([
+        ("GET", "/repos/own/Keel/pulls/7".to_string(), 200, w.pr("wu/e/a", "epic/e")),
+        ("GET", "/repos/own/Keel/pulls/7/reviews?per_page=100&page=1".to_string(), 200, json!([review(6, OWNER, "APPROVED", &head)])),
+        ("POST", format!("/repos/own/Keel/statuses/{head}"), 201, json!({})),
+    ]);
+    w.routes(&routes);
+    let o = w.run(&[("PR_NUMBER", "")]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(w.origin_note(&head).unwrap()["review"]["id"], 6);
+    // a closed pull request, or one from another repository, signs nothing and posts nothing
+    for pr in [json!({"state": "closed"}), {
+        let mut p = w.pr("wu/e/a", "epic/e");
+        p["head"]["repo"]["full_name"] = json!("fork/Keel");
+        p
+    }] {
+        w.routes(&[("GET", "/repos/own/Keel/pulls/7".into(), 200, pr.clone())]);
+        let o = w.run(&[]);
+        assert!(o.status.success() && text(&o).contains("nothing to sign"), "{pr}: {}", text(&o));
+        assert!(w.statuses().is_empty());
+    }
+    // input that is not what the workflow gives is refused before any request
+    w.routes(&[]);
+    for (k, v) in [("REPO", "own/Keel;x"), ("PR_NUMBER", "7 8"), ("PR_NUMBER", "-1"), ("GH_TOKEN", "")] {
+        let o = w.run(&[(k, v)]);
+        assert_eq!(o.status.code(), Some(2), "{k}={v}: {}", text(&o));
+        assert!(w.log().is_empty());
+    }
+}
+
+#[test]
+fn the_writer_merges_a_notes_ref_that_moved_on_origin_and_keeps_both_notes() {
+    let w = Writer::new(true);
+    let head = w.sha("wu/e/a");
+    // origin's refs/notes/mr moves once, during the writer's first push: the hook rejects that push
+    // after another sign-off landed on another commit
+    let other = w.sha("main");
+    let hook = w.origin.join("hooks/pre-receive");
+    std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    crate::router_gh::exe(
+        &hook,
+        &format!(
+            "#!/bin/sh\n[ -f moved ] && exit 0\ntouch moved\nunset GIT_QUARANTINE_PATH GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES\nGIT_AUTHOR_NAME=o GIT_AUTHOR_EMAIL=o@o GIT_COMMITTER_NAME=o GIT_COMMITTER_EMAIL=o@o git notes --ref=mr add -m '{{\"schema\":\"mr/v1\",\"other\":true}}' {other} >&2\nexit 1\n"
+        ),
+    );
+    w.github(json!([review(6, OWNER, "APPROVED", &head)]));
+    let o = w.run(&[]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(w.origin.join("moved").exists(), "the first push met the moved ref");
+    assert_eq!(w.origin_note(&head).unwrap()["review"]["id"], 6);
+    assert_eq!(w.origin_note(&other).unwrap()["other"], true, "the note that landed meanwhile is kept");
+    assert_eq!(w.statuses()[0].0, "success");
+}
+
+#[test]
+fn the_writer_refuses_a_base_whose_keel_cannot_sign_by_approval() {
+    let w = Writer::new(true);
+    let old = w.tmp.parent().unwrap().join("old-keel");
+    crate::router_gh::exe(&old, "#!/bin/sh\necho 'usage: keel ci gate <wu|epic> <tip>' >&2\nexit 1\n");
+    let head = w.sha("wu/e/a");
+    w.github(json!([review(6, OWNER, "APPROVED", &head)]));
+    let o = w.run(&[("KEEL", old.to_str().unwrap())]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(w.origin_note(&head).is_none());
+    assert_eq!(w.statuses(), [("error".to_string(), "The keel of epic/e predates sign-off by approval; sign with keel mr confirm".to_string())]);
+}
