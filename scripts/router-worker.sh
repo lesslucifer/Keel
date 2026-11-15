@@ -412,7 +412,9 @@ snapshot
 # owner's prompt, or auto's per-call review) or by the worktree's own local settings, which merge
 # with these (DEC-37); no retry outside it. The worker file guard (scripts/router-file-guard.sh) is a
 # PreToolUse hook on every tool, fail-closed: the file tools edit only this worktree and read
-# neither ~/.ssh nor ~/.claude/channels (DEC-37). A hook is not a deny rule, so it feeds no sandbox
+# neither ~/.ssh nor ~/.claude/channels (DEC-37), nor the router bot's key dir ~/.config/keel/router-gh
+# (E-GHFLOW.W2). The shell's denyRead of that dir is what keeps the App key from a worker; the Bash deny
+# of scripts/router-gh.sh below states intent only (a prefix rule: another spelling of the path passes). A hook is not a deny rule, so it feeds no sandbox
 # path (review round 2, H1).
 hook="sh '$guard' '$wt' '$HOME' || { echo 'worker file guard: failed - tool call denied' >&2; exit 2; }"
 sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --arg hook "$hook" '{sandbox: {enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
@@ -420,7 +422,7 @@ sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --arg hook "$hoo
       "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
     denyWrite: [$g + "/config", $g + "/hooks", $g + "/keel-hooks", $g + "/info", $a + "/commondir", $a + "/gitdir",
       $w + "/.git", $w + "/.claude/settings.json", $w + "/.claude/settings.local.json", "~/.claude.json"],
-    denyRead: ["~/.ssh", "~/.claude/channels"]},
+    denyRead: ["~/.ssh", "~/.claude/channels", "~/.config/keel/router-gh"]},
   network: {allowedDomains: ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}},
   hooks: {PreToolUse: [{matcher: "*", hooks: [{type: "command", command: $hook, timeout: 10}]}]}}')
 set -- --bg -n "$name" --model "$model" --effort "$effort" --agent worker --setting-sources project,local --strict-mcp-config \
@@ -436,14 +438,14 @@ set -- "$@" --disallowedTools
 for c in "keel mr" "cargo run" "keel init" "keel hooks" "cargo install" "cargo publish" "cargo login" \
   "git push" "git config" "git update-ref" "git symbolic-ref" "git stash" "git notes" "git switch" "git checkout" \
   "git rebase" "git worktree add" "git worktree remove" "git worktree move" "git worktree prune" "git -C" \
-  "git --git-dir" "git --work-tree" "claude" "scripts/router-worker.sh"; do
+  "git --git-dir" "git --work-tree" "claude" "scripts/router-worker.sh" "scripts/router-gh.sh"; do
   set -- "$@" "Bash($c)" "Bash($c *)"; done
 set -- "$@" "Bash(git --git-dir=*)" "Bash(git --work-tree=*)"
 # The Read tool is also denied the sandbox's denyRead paths by rule (the file guard's realpath check is
 # the bound; a rule is matched best-effort, and Grep/Glob are the guard's alone). The edit tools get no
 # path rule: an Edit deny rule may feed the sandbox's denyWrite, and one on the main checkout would
 # deny the shell the git dir under it (review round 2, H1).
-set -- "$@" "Read(~/.ssh/**)" "Read(~/.claude/channels/**)"
+set -- "$@" "Read(~/.ssh/**)" "Read(~/.claude/channels/**)" "Read(~/.config/keel/router-gh/**)"
 if [ -n "$review" ]; then set -- "$@" "Bash(git add)" "Bash(git add *)" "Bash(git commit)" "Bash(git commit *)" Edit Write NotebookEdit
 else set -- "$@" "Bash(keel notes write cr)" "Bash(keel notes write cr *)"; fi
 # the prompt follows a single-valued option: after a list option it would be read as a tool name
