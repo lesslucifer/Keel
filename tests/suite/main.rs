@@ -21,6 +21,7 @@ mod common;
 
 mod cli;
 mod close_walk;
+mod fixtures;
 mod init;
 mod layout;
 mod mr;

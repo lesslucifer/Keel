@@ -397,10 +397,17 @@ fn sleep_shim(base: &Path) {
 }
 
 /// A repo whose main checkout holds the launcher, the worker persona and an `epic/E-X` branch, two
-/// linked worktrees and the stub claude.
+/// linked worktrees and the stub claude. A copy of a template built once per run (E-TESTOPT.W4); the
+/// worktrees' links name the copy.
 fn launcher() -> Launcher {
-    let d = TempDir::new().unwrap();
+    let d = common::fixture("router launcher", build_launcher);
     let base = d.path().canonicalize().unwrap();
+    let main = base.join("main");
+    Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub: base.join("claude"), state: base.join("state"), _d: d }
+}
+
+fn build_launcher(base: &Path) {
+    let base = base.canonicalize().unwrap();
     let main = base.join("main");
     std::fs::create_dir_all(main.join("scripts")).unwrap();
     std::fs::create_dir_all(main.join(".router/briefs")).unwrap();
@@ -423,7 +430,29 @@ fn launcher() -> Launcher {
     stub_claude(&stub);
     let state = base.join("state");
     std::fs::create_dir_all(&state).unwrap();
-    Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub, state, _d: d }
+}
+
+/// E-TESTOPT.W4: each test owns its launcher and its watcher. No file of a copy names the template
+/// (the worktrees' links, the watcher's origin), and a commit in one copy reaches no other.
+#[test]
+fn each_fixture_copy_is_independent_of_its_template_and_its_siblings() {
+    let (a, b) = (launcher(), launcher());
+    let t = common::template("router launcher", |_| unreachable!("built above")).canonicalize().unwrap();
+    assert!(common::files_naming(a._d.path(), &common::rewrites(&[(t.clone(), Default::default())])).is_empty());
+    common::assert_independent(&t.join("main"), &a.main, &b.main);
+    let listed = String::from_utf8(git(&a.main, &["worktree", "list", "--porcelain"]).stdout).unwrap();
+    let trees: Vec<&str> = listed.lines().filter_map(|l| l.strip_prefix("worktree ")).collect();
+    assert_eq!(trees, [a.main.to_str().unwrap(), a.wt.to_str().unwrap(), a.wt2.to_str().unwrap()], "{listed}");
+    let top = String::from_utf8(git(&a.wt, &["rev-parse", "--show-toplevel"]).stdout).unwrap();
+    assert_eq!(top.trim(), a.wt.to_str().unwrap());
+    assert!(git(&a.wt, &["status", "--porcelain"]).status.success());
+
+    let (c, d) = (watcher(), watcher());
+    let t = common::template("router watcher", |_| unreachable!("built above")).canonicalize().unwrap();
+    assert!(common::files_naming(c._d.path(), &common::rewrites(&[(t.clone(), Default::default())])).is_empty());
+    let origin = String::from_utf8(git(&c.main, &["remote", "get-url", "origin"]).stdout).unwrap();
+    assert_eq!(origin.trim(), c.base.join("origin.git").to_str().unwrap());
+    common::assert_independent(&t.join("main"), &c.main, &d.main);
 }
 
 impl Launcher {
@@ -2070,9 +2099,16 @@ struct Watcher {
     main: PathBuf,
 }
 
+/// A copy of a template built once per run (E-TESTOPT.W4); the copy's origin is its own origin.git.
 fn watcher() -> Watcher {
-    let d = TempDir::new().unwrap();
+    let d = common::fixture("router watcher", build_watcher);
     let base = d.path().canonicalize().unwrap();
+    let main = base.join("main");
+    Watcher { _d: d, base, main }
+}
+
+fn build_watcher(base: &Path) {
+    let base = base.canonicalize().unwrap();
     let (origin, main) = (base.join("origin.git"), base.join("main"));
     git(&base, &["init", "-q", "--bare", "-b", "main", origin.to_str().unwrap()]);
     git(&base, &["clone", "-q", origin.to_str().unwrap(), main.to_str().unwrap()]);
@@ -2085,7 +2121,6 @@ fn watcher() -> Watcher {
     git_shim(&base.join("shim"));
     std::fs::write(base.join("shim/date"), "#!/bin/sh\n[ -e \"$STEP_DIR/now\" ] && exec cat \"$STEP_DIR/now\"\nexec /bin/date \"$@\"\n").unwrap();
     std::fs::set_permissions(base.join("shim/date"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    Watcher { _d: d, base, main }
 }
 
 impl Watcher {
