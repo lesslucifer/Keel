@@ -7,16 +7,13 @@ use std::process::Output;
 use tempfile::TempDir;
 
 use crate::common;
+use crate::router_gh::{commit, text, write};
 
 const KEEL: &str = env!("CARGO_BIN_EXE_keel");
 const WU_TESTS: &str = r#"{"integration":{"files":["tests/test_a.py"],"covers":"a works"}}"#;
 
 fn script() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/ci-gate.sh")
-}
-
-fn text(o: &Output) -> String {
-    format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))
 }
 
 fn run(prog: &str, d: &Path, a: &[&str], input: &str) -> Output {
@@ -35,19 +32,28 @@ fn git(d: &Path, a: &[&str]) -> String {
     String::from_utf8(o.stdout).unwrap().trim().to_string()
 }
 
-fn keel(d: &Path, a: &[&str], input: &str) -> Output {
+pub(crate) fn keel(d: &Path, a: &[&str], input: &str) -> Output {
     run(KEEL, d, a, input)
 }
 
-fn write(d: &Path, rel: &str, body: &str) {
-    let f = d.join(rel);
-    std::fs::create_dir_all(f.parent().unwrap()).unwrap();
-    std::fs::write(f, body).unwrap();
-}
-
-fn commit(d: &Path, msg: &str) {
-    git(d, &["add", "-A"]);
-    git(d, &["commit", "-q", "--no-verify", "-m", msg]);
+/// `ci-gate.sh <job>` in the runner's clone `runner` with the env the workflow gives it: the
+/// runner's temp dir and step summary under `tmp`, `KEEL` and `PATH` when given, then `env`.
+pub(crate) fn run_job(runner: &Path, tmp: &Path, job: &str, env: &[(&str, &str)], keel: Option<&str>, path: Option<&str>) -> Output {
+    let mut c = common::cmd("sh");
+    c.arg(script()).arg(job).current_dir(runner);
+    for k in ["HEAD_BRANCH", "HEAD_SHA", "BASE_BRANCH", "BASE_SHA", "KEEL", "GITHUB_STEP_SUMMARY", "RUNNER_TEMP", "CARGO_TARGET_DIR"] {
+        c.env_remove(k);
+    }
+    c.env("RUNNER_TEMP", tmp).env("GITHUB_STEP_SUMMARY", tmp.join("summary.md"));
+    if let Some(k) = keel {
+        c.env("KEEL", k);
+    }
+    if let Some(p) = path {
+        c.env("PATH", p);
+    }
+    c.envs(env.iter().copied());
+    common::hermetic(&mut c);
+    c.output().unwrap()
 }
 
 /// A developer's repo, its bare origin and a runner's clone, plus a directory where the fixture's
@@ -139,21 +145,9 @@ impl Ci {
 
     /// `ci-gate.sh <job>` in the runner's clone with the env the workflow gives it.
     fn job(&self, job: &str, env: &[(&str, &str)], keel: Option<&str>, path: Option<&str>) -> Output {
-        let mut c = common::cmd("sh");
-        c.arg(script()).arg(job).current_dir(&self.runner);
-        for k in ["HEAD_BRANCH", "HEAD_SHA", "BASE_BRANCH", "BASE_SHA", "KEEL", "GITHUB_STEP_SUMMARY", "RUNNER_TEMP", "CARGO_TARGET_DIR"] {
-            c.env_remove(k);
-        }
-        c.env("RUNNER_TEMP", &self.tmp).env("GITHUB_STEP_SUMMARY", self.tmp.join("summary.md")).env("MARKS", &self.marks);
-        if let Some(k) = keel {
-            c.env("KEEL", k);
-        }
-        if let Some(p) = path {
-            c.env("PATH", p);
-        }
-        c.envs(env.iter().copied());
-        common::hermetic(&mut c);
-        c.output().unwrap()
+        let marks = self.marks.to_string_lossy();
+        let env: Vec<(&str, &str)> = std::iter::once(("MARKS", marks.as_ref())).chain(env.iter().copied()).collect();
+        run_job(&self.runner, &self.tmp, job, &env, keel, path)
     }
 
     /// A push of `branch` as GitHub's push event names it.
@@ -184,7 +178,7 @@ fn gate_lines(o: &Output) -> Vec<String> {
         .collect()
 }
 
-fn fails(o: &Output) -> Vec<String> {
+pub(crate) fn fails(o: &Output) -> Vec<String> {
     String::from_utf8_lossy(&o.stderr).lines().filter_map(|l| l.strip_prefix("FAIL  ")).map(|l| l.split_whitespace().next().unwrap().to_string()).collect()
 }
 
@@ -217,6 +211,7 @@ fn the_gate_is_green_up_to_the_sign_off_before_it_and_fully_green_after() {
         assert!(s.contains(row), "{row} missing:\n{s}");
     }
     assert!(!s.contains("| 7·walk"), "a WU has no walk: {s}");
+    assert!(s.contains(&format!("over base `{}` (merge-base with epic&#47;e).", &ci.sha("epic/e")[..10])), "the target outside a code span: {s}");
     assert!(ci.marked().is_empty(), "the gate ran a [check] command: {:?}", ci.marked());
     let hooks = git(&ci.runner, &["config", "--get", "core.hooksPath"]);
     assert!(hooks.ends_with("keel-hooks"), "the runner's clone has Keel's hooks: {hooks}");
@@ -293,7 +288,7 @@ fn an_epic_push_is_judged_at_level_epic_against_main() {
     assert!(text(&o).contains(&format!("verify-dod epic red on {}", &ci.sha("epic/e")[..10])), "{}", text(&o));
     let s = ci.summary();
     assert!(s.starts_with("## Keel gate: epic green on every check before 8·manual-review, which is judged at the merge - a docs/infra-only range\n"), "{s}");
-    assert!(s.contains(&format!("over base `{}` (merge-base with `main`)", &ci.sha("main")[..10])), "{s}");
+    assert!(s.contains(&format!("over base `{}` (merge-base with main)", &ci.sha("main")[..10])), "{s}");
     for ran in ["| 6·doc&#45;note | green |", "| 7·walk | green |", "| 0·hooks | green |"] {
         assert!(s.contains(ran), "the epic layout and walk run on an exempt range (DEC-16): {ran}\n{s}");
     }

@@ -713,7 +713,7 @@ pub(crate) fn manual_review(
     };
     let n = match notes::parse::<MrNote>(&raw, "mr") {
         Ok(n) => n,
-        Err(e) => return again(format!("the mr note on {t} is not valid mr/v1: {e}")),
+        Err(e) => return again(format!("the mr note on {t} is {}", notes::invalid("mr", &e))),
     };
     if n.id.tip != tip {
         return again(format!("the mr/v1 note on {t} signs {} (copied onto an amended or other commit?)", short(&n.id.tip)));

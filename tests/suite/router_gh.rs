@@ -240,9 +240,7 @@ impl Gh {
     pub(crate) fn run_in(&self, dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Output {
         let mut c = common::cmd("sh");
         c.arg(dir.join("scripts/router-gh.sh")).args(args).current_dir(dir);
-        c.env("PATH", self.path()).env("HOME", &self.home).env("TMPDIR", &self.tmp).env("MOCK_GH", &self.mock);
-        c.env("ROUTER_GH_CURL", self.bin.join("fake-curl"))
-            .env("ROUTER_GH_GIT", format!("file://{}", self.root.path().canonicalize().unwrap().join("gh").display()));
+        self.github_env(&mut c);
         c.envs(env.iter().copied());
         let o = c.output().unwrap();
         self.assert_no_secret(&o);
@@ -252,6 +250,14 @@ impl Gh {
         let left: Vec<_> = std::fs::read_dir(&run).map(|d| d.map(|e| e.unwrap().file_name()).collect()).unwrap_or_default();
         assert!(left.is_empty(), "the script left {left:?} in its run dir");
         o
+    }
+
+    /// The scratch GitHub every script run here sees: keel on PATH, the temp home with the App,
+    /// the shared $TMPDIR the tests check, the fake curl and its routes, and origin as GitHub's git.
+    pub(crate) fn github_env(&self, c: &mut std::process::Command) {
+        c.env("PATH", self.path()).env("HOME", &self.home).env("TMPDIR", &self.tmp).env("MOCK_GH", &self.mock);
+        c.env("ROUTER_GH_CURL", self.bin.join("fake-curl"))
+            .env("ROUTER_GH_GIT", format!("file://{}", self.root.path().canonicalize().unwrap().join("gh").display()));
     }
 
     /// A worktree entry git did not make, forged in the shared git dir as a worker could (security

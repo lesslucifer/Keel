@@ -13,43 +13,19 @@
 compiled!();
 
 use std::path::Path;
-use std::process::Output;
 
 use serde_json::json;
 
-use crate::common;
+use crate::ci_gate::{fails, run_job};
 use crate::router_gh::{commit, git, stdout, text, write, Gh, BOT, OWNER_ID};
 use crate::router_gh_watch::{comment, issue, lines, once, review, watch, AT, STRANGER};
 
 const KEEL: &str = env!("CARGO_BIN_EXE_keel");
 
-fn keel(d: &Path, a: &[&str], input: &str) -> Output {
-    use std::io::Write;
-    use std::process::Stdio;
-    let mut c = common::cmd(KEEL);
-    common::as_tester(c.args(a).current_dir(d).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()));
-    let mut child = c.spawn().unwrap();
-    child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
-    let o = child.wait_with_output().unwrap();
+/// keel in the scratch repository, as a worker runs it; it must succeed.
+fn keel_ok(d: &Path, a: &[&str], input: &str) {
+    let o = crate::ci_gate::keel(d, a, input);
     assert!(o.status.success(), "keel {a:?}: {}", text(&o));
-    o
-}
-
-/// `scripts/ci-gate.sh gate` in the runner's clone, with the env a push event gives it.
-fn gate_job(runner: &Path, tmp: &Path, branch: &str, sha: &str) -> Output {
-    let mut c = common::cmd("sh");
-    c.arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/ci-gate.sh")).arg("gate").current_dir(runner);
-    for k in ["HEAD_BRANCH", "HEAD_SHA", "BASE_BRANCH", "BASE_SHA", "KEEL", "GITHUB_STEP_SUMMARY", "RUNNER_TEMP", "CARGO_TARGET_DIR"] {
-        c.env_remove(k);
-    }
-    c.env("RUNNER_TEMP", tmp).env("GITHUB_STEP_SUMMARY", tmp.join("summary.md")).env("KEEL", KEEL);
-    c.env("HEAD_BRANCH", branch).env("HEAD_SHA", sha);
-    common::hermetic(&mut c);
-    c.output().unwrap()
-}
-
-fn fails(o: &Output) -> Vec<String> {
-    String::from_utf8_lossy(&o.stderr).lines().filter_map(|l| l.strip_prefix("FAIL  ")).map(|l| l.split_whitespace().next().unwrap().to_string()).collect()
 }
 
 #[test]
@@ -63,9 +39,9 @@ fn epic_e2e_the_bot_pushes_a_wu_ci_judges_it_up_to_the_sign_off_and_the_router_h
     for r in ["test", "cr"] {
         git(&gh.repo, &["update-ref", "-d", &format!("refs/notes/{r}")]);
     }
-    keel(&gh.repo, &["notes", "write", "test"], r#"{"integration":{"files":["src/test_x.py"],"covers":"x works"}}"#);
-    keel(&gh.repo, &["notes", "write", "doc"], "");
-    keel(&gh.repo, &["notes", "write", "cr", "--verdict", "PASS"], "");
+    keel_ok(&gh.repo, &["notes", "write", "test"], r#"{"integration":{"files":["src/test_x.py"],"covers":"x works"}}"#);
+    keel_ok(&gh.repo, &["notes", "write", "doc"], "");
+    keel_ok(&gh.repo, &["notes", "write", "cr", "--verdict", "PASS"], "");
 
     // 1. The router bot pushes the branch with its notes, then opens the draft pull request.
     let o = gh.run(&["push", "wu/E/x"]);
@@ -92,7 +68,7 @@ fn epic_e2e_the_bot_pushes_a_wu_ci_judges_it_up_to_the_sign_off_and_the_router_h
     std::fs::create_dir_all(&ci_tmp).unwrap();
     git(gh.root.path(), &["clone", "-q", gh.origin.to_str().unwrap(), runner.to_str().unwrap()]);
     git(&runner, &["checkout", "-q", "-B", "wu/E/x", "origin/wu/E/x"]);
-    let o = gate_job(&runner, &ci_tmp, "wu/E/x", &tip);
+    let o = run_job(&runner, &ci_tmp, "gate", &[("HEAD_BRANCH", "wu/E/x"), ("HEAD_SHA", &tip)], Some(KEEL), None);
     assert!(o.status.success(), "{}", text(&o));
     assert_eq!(fails(&o), ["8·manual-review"], "{}", text(&o));
     let s = std::fs::read_to_string(ci_tmp.join("summary.md")).unwrap();

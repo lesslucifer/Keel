@@ -4209,31 +4209,38 @@ fn router_guard_admits_the_router_bots_shapes_and_no_other_spelling() {
     assert!(bash("rm x").unwrap().contains("scripts/router-gh.sh push <wu/E/slug or epic/E>"), "deny message omits the router bot's shapes");
 }
 
+/// A near-miss branch word for the guard-and-script agreement tests: one of `prefixes`, then up to
+/// `max - 1` characters the guard's word class holds, as `next` picks them.
+fn near_miss_branch(next: &mut dyn FnMut(usize) -> usize, prefixes: &[&str], max: usize) -> String {
+    let alpha: Vec<char> = "aZ09._/:=@%,+^~-".chars().collect();
+    let mut w = prefixes[next(prefixes.len())].to_string();
+    for _ in 0..next(max) {
+        w.push(alpha[next(alpha.len())]);
+    }
+    w
+}
+
+/// A name `git check-ref-format` refuses (a component ending in `.` or `.lock`): the guard's
+/// pattern admits it and the script refuses it, the one gap the agreement tests excuse.
+fn ref_format_refuses(w: &str) -> bool {
+    w.split('/').any(|c| c.ends_with('.') || c.ends_with(".lock"))
+}
+
 /// E-GHFLOW.W2, invariant: over generated near-miss words (deduplicated), whatever the script's
 /// argument check accepts the guard admits, and the guard admits nothing the check refuses but the
 /// names `git check-ref-format` refuses (a component ending in `.` or `.lock`) and an epic as its own
 /// base (`pr-open epic/E --base epic/E`, generated for every epic-shaped word).
 #[test]
 fn the_guard_and_router_gh_take_the_same_arguments() {
-    let mut seed: u64 = 0x5eed_6a7e;
-    let mut next = |n: usize| {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-        (seed >> 33) as usize % n
-    };
-    let alpha: Vec<char> = "aZ09._/:=@%,+^~-".chars().collect();
+    let mut next = common::lcg(0x5eed_6a7e);
     let prefixes = ["epic/", "wu/", "wu/E/", "wu/E-X/", "main", "", "refs/heads/", "-", "epic", "wu/E/x"];
     let mut words: Vec<String> = Vec::new();
     for _ in 0..90 {
-        let mut w = prefixes[next(prefixes.len())].to_string();
-        for _ in 0..next(7) {
-            w.push(alpha[next(alpha.len())]);
-        }
-        words.push(w);
+        words.push(near_miss_branch(&mut next, &prefixes, 7));
     }
     words.extend(["epic/E.lock", "wu/E/x.", "wu/E./x", "epic/E", "wu/E/x", "main"].map(String::from));
     words.sort();
     words.dedup();
-    let exception = |w: &str| w.split('/').any(|c| c.ends_with('.') || c.ends_with(".lock"));
     let (mut accepted, mut own_bases) = (0, 0);
     for w in &words {
         let mut shapes = vec![vec!["push", w.as_str()], vec!["sync", w.as_str()], vec!["pr-open", w.as_str()], vec!["pr-open", "wu/E/x", "--base", w.as_str()]];
@@ -4248,7 +4255,7 @@ fn the_guard_and_router_gh_take_the_same_arguments() {
             assert!(!ok || admitted, "the script accepts what the guard denies: {line}");
             let own_base = args.len() == 4 && args[1] == args[3];
             own_bases += usize::from(own_base && admitted && !ok);
-            assert!(!admitted || ok || exception(w) || own_base, "the guard admits what the script refuses: {line}");
+            assert!(!admitted || ok || ref_format_refuses(w) || own_base, "the guard admits what the script refuses: {line}");
         }
     }
     assert!(own_bases >= 1, "the corpus must hold an epic as its own base");
@@ -4340,11 +4347,7 @@ fn router_guard_admits_the_github_watch_and_issue_shapes_and_no_other_spelling()
 /// refuses (as for W2's shapes).
 #[test]
 fn the_guard_and_the_github_watch_take_the_same_arguments() {
-    let mut seed: u64 = 0x3a7c_4b1d;
-    let mut next = |n: usize| {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-        (seed >> 33) as usize % n
-    };
+    let mut next = common::lcg(0x3a7c_4b1d);
     let digits: Vec<char> = "0123456789-+a.".chars().collect();
     // mostly plain numbers of every length around the bounds, else any of the near-miss characters
     let num = |next: &mut dyn FnMut(usize) -> usize, max: usize| -> String {
@@ -4384,17 +4387,12 @@ fn the_guard_and_the_github_watch_take_the_same_arguments() {
         checked += 1;
     }
     assert!(admitted_n >= 10 && checked > admitted_n, "the corpus must hold both verdicts ({admitted_n} of {checked})");
-    let alpha: Vec<char> = "aZ09._/:=@%,+^~-".chars().collect();
     let prefixes = ["epic/", "wu/", "wu/E/", "main", "", "-", "wu/E/x"];
     for _ in 0..40 {
-        let mut w = prefixes[next(prefixes.len())].to_string();
-        for _ in 0..next(6) {
-            w.push(alpha[next(alpha.len())]);
-        }
+        let w = near_miss_branch(&mut next, &prefixes, 6);
         let line = format!("scripts/router-gh.sh issue {w}");
         let (admitted, ok) = (bash(&line).is_none(), gh_validates(&["issue", w.as_str()]));
-        let exception = w.split('/').any(|c| c.ends_with('.') || c.ends_with(".lock"));
         assert!(!ok || admitted, "the script accepts what the guard denies: {line}");
-        assert!(!admitted || ok || exception, "the guard admits what the script refuses: {line}");
+        assert!(!admitted || ok || ref_format_refuses(&w), "the guard admits what the script refuses: {line}");
     }
 }

@@ -11,12 +11,26 @@ use crate::common;
 /// Exit code and stderr of the script on `args`; panics if curl was ever called. The guard's
 /// agreement test in router.rs reads the script's verdict through this too.
 pub(crate) fn check(args: &[&str]) -> (Option<i32>, String) {
+    isolated("router-gh.sh", args, &[])
+}
+
+/// `scripts/<script>` on `args` in the argument checks' one harness: an empty temp HOME (no App
+/// key), a curl that only records a call, `env` over those, and a 60 s alarm, so a regression past
+/// the argument check reaches neither the owner's key nor GitHub and never hangs. Panics if curl
+/// was called or anything reached stdout.
+pub(crate) fn isolated(script: &str, args: &[&str], env: &[(&str, &str)]) -> (Option<i32>, String) {
     let d = TempDir::new().unwrap();
     let curl = d.path().join("curl");
-    std::fs::write(&curl, format!("#!/bin/sh\ntouch {}\n", common::sh_quote(&d.path().join("called").to_string_lossy()))).unwrap();
-    std::fs::set_permissions(&curl, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/router-gh.sh");
-    let o = common::cmd("sh").arg(script).args(args).env("HOME", d.path()).env("ROUTER_GH_CURL", &curl).output().unwrap();
+    crate::router_gh::exe(&curl, &format!("#!/bin/sh\ntouch {}\n", common::sh_quote(&d.path().join("called").to_string_lossy())));
+    let o = common::cmd("perl")
+        .args(["-e", "alarm 60; exec @ARGV", "sh"])
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts").join(script))
+        .args(args)
+        .env("HOME", d.path())
+        .env("ROUTER_GH_CURL", &curl)
+        .envs(env.iter().copied())
+        .output()
+        .unwrap();
     assert!(!d.path().join("called").exists(), "{args:?} reached curl");
     assert!(o.stdout.is_empty(), "{args:?} printed {}", String::from_utf8_lossy(&o.stdout));
     (o.status.code(), String::from_utf8_lossy(&o.stderr).into_owned())
@@ -147,7 +161,7 @@ fn sync_takes_an_epic_branch_only() {
 fn every_argument_starting_with_a_dash_is_refused_in_every_position() {
     let valid: [&[&str]; 6] =
         [&["push", "wu/E/x"], &["pr-open", "wu/E/x"], &["pr-open", "wu/E/x", "--base", "main"], &["pr-ready", "7"], &["post", "7", "a"], &["sync", "epic/E"]];
-    let mut seed: u64 = 7;
+    let mut next = common::lcg(7);
     let tails = ["", "x", "-", "wu/E/x", "main", "7", "force", "-"];
     for args in valid {
         for i in 1..args.len() {
@@ -155,9 +169,8 @@ fn every_argument_starting_with_a_dash_is_refused_in_every_position() {
                 continue;
             }
             for _ in 0..3 {
-                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
                 let mut a: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-                a[i] = format!("-{}", tails[(seed >> 33) as usize % tails.len()]);
+                a[i] = format!("-{}", tails[next(tails.len())]);
                 let a: Vec<&str> = a.iter().map(String::as_str).collect();
                 let (code, err) = check(&a);
                 assert_eq!(code, Some(2), "{a:?}: {err}");

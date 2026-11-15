@@ -64,7 +64,7 @@ pub(crate) fn md(s: &str) -> String {
 
 /// A stored note as its type, or why not, worded as check 1 words it.
 fn typed<T: serde::de::DeserializeOwned>(raw: &str, kind: &str) -> Result<T, String> {
-    notes::parse(raw, kind).map_err(|e| format!("not valid {kind}/v1: {e}"))
+    notes::parse(raw, kind).map_err(|e| notes::invalid(kind, &e))
 }
 
 fn layer(name: &str, l: &Option<Layer>) -> Option<String> {
@@ -178,7 +178,7 @@ pub(crate) fn render(e: &Evidence) -> String {
     };
     let range = if e.exempt { " - a docs/infra-only range" } else { "" };
     let mut out =
-        format!("## Keel gate: {} {verdict}{range}\n\nTip `{}` over base `{}` (merge-base with `{}`).\n\n", e.level, short(e.tip), short(e.base), md(e.target));
+        format!("## Keel gate: {} {verdict}{range}\n\nTip `{}` over base `{}` (merge-base with {}).\n\n", e.level, short(e.tip), short(e.base), md(e.target));
     out += "| Check | State |\n|---|---|\n";
     let rows: Vec<&str> = std::iter::once(HOOKS).chain(e.checks.iter().copied()).collect();
     for id in &rows {
@@ -287,6 +287,29 @@ mod tests {
         for bad in ["|", "\n", "[", "](", "@", "<", ">", "$", "://", "www."] {
             assert!(!out.contains(bad), "{bad} survived in {out}");
         }
+    }
+
+    /// GFM decodes no entity inside a code span, so the target, made inert by `md`, must stand
+    /// outside one to render as its own name (epic code review round 1).
+    #[test]
+    fn the_target_in_the_header_renders_as_its_branch_name() {
+        let target = "epic/E-GHFLOW";
+        let page = render(&Evidence {
+            level: "wu",
+            tip: TIP,
+            base: BASE,
+            target,
+            exempt: false,
+            checks: &WU,
+            judged: &ran_all(&WU),
+            failures: &[],
+            waived: &[],
+            notes: &[],
+        });
+        let header = page.lines().find(|l| l.starts_with("Tip ")).unwrap();
+        assert_eq!(header, "Tip `1111111111` over base `aaaaaaaaaa` (merge-base with epic&#47;E&#45;GHFLOW).");
+        let spans: Vec<&str> = header.split('`').skip(1).step_by(2).collect();
+        assert!(spans.iter().all(|s| !s.contains("&#")), "an entity inside a code span shows as its source: {header}");
     }
 
     #[test]

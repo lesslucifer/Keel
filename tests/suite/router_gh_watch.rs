@@ -22,8 +22,8 @@ pub(crate) const AT: &str = "2026-11-15T10:00:00Z";
 pub(crate) fn watch_env(gh: &Gh, args: &[&str], env: &[(&str, &str)]) -> Output {
     let mut c = common::cmd("perl");
     c.args(["-e", "alarm 60; exec @ARGV", "sh"]).arg(gh.repo.join("scripts/router-gh-watch.sh")).args(args).current_dir(&gh.repo);
-    c.env("PATH", gh.path()).env("HOME", &gh.home).env("TMPDIR", &gh.tmp).env("MOCK_GH", &gh.mock);
-    c.env("ROUTER_GH_CURL", gh.bin.join("fake-curl")).env("ROUTER_WATCH_POLL", "1").env("ROUTER_WATCH_MAX", "30");
+    gh.github_env(&mut c);
+    c.env("ROUTER_WATCH_POLL", "1").env("ROUTER_WATCH_MAX", "30");
     c.envs(env.iter().copied());
     let o = c.output().unwrap();
     gh.assert_no_secret(&o);
@@ -470,11 +470,13 @@ fn the_watch_keeps_no_state_between_runs() {
     }
 }
 
-/// The watch run without the clean-checkout check (a test that leaves the checkout dirty on purpose).
+/// The watch run, first poll only, without any of the checks `watch_env` makes after a run: no
+/// secret printed, nothing left in $TMPDIR or the run dir, and a clean checkout (for a test that
+/// leaves the checkout dirty on purpose; its callers assert that nothing was called).
 fn watch_raw(gh: &Gh, args: &[&str]) -> Output {
     let mut c = common::cmd("perl");
     c.args(["-e", "alarm 60; exec @ARGV", "sh"]).arg(gh.repo.join("scripts/router-gh-watch.sh")).args(args).current_dir(&gh.repo);
-    c.env("PATH", gh.path()).env("HOME", &gh.home).env("TMPDIR", &gh.tmp).env("MOCK_GH", &gh.mock).env("ROUTER_GH_CURL", gh.bin.join("fake-curl"));
+    gh.github_env(&mut c);
     c.env("ROUTER_WATCH_POLL", "1").env("ROUTER_WATCH_MAX", "0");
     c.output().unwrap()
 }

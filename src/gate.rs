@@ -202,7 +202,7 @@ fn read_note<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, requi
     match notes::parse::<T>(&raw, kind) {
         Ok(n) => Some(n),
         Err(e) => {
-            r.fail(NOTES, format!("{kind} note on {} is not valid {schema}: {e}", short(&r.tip)), format!("rewrite it with keel notes write {kind}"));
+            r.fail(NOTES, format!("{kind} note on {} is {}", short(&r.tip), notes::invalid(kind, &e)), format!("rewrite it with keel notes write {kind}"));
             None
         }
     }

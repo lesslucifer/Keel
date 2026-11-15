@@ -8,7 +8,6 @@ use std::io::Write as _;
 use std::path::Path;
 
 use serde_json::{json, Value};
-use tempfile::TempDir;
 
 use crate::common;
 
@@ -26,23 +25,8 @@ pub(crate) fn check(args: &[&str]) -> (Option<i32>, String) {
 /// records a call, ROUTER_WATCH_MAX=0 and a 60 s alarm, so a regression past the argument check
 /// reaches neither the owner's key nor GitHub, and never hangs (code review round 1).
 fn check_env(args: &[&str], env: &[(&str, &str)]) -> (Option<i32>, String) {
-    let d = TempDir::new().unwrap();
-    let curl = d.path().join("curl");
-    std::fs::write(&curl, format!("#!/bin/sh\ntouch {}\n", common::sh_quote(&d.path().join("called").to_string_lossy()))).unwrap();
-    std::fs::set_permissions(&curl, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let o = common::cmd("perl")
-        .args(["-e", "alarm 60; exec @ARGV", "sh"])
-        .arg(scripts().join("router-gh-watch.sh"))
-        .args(args)
-        .env("HOME", d.path())
-        .env("ROUTER_GH_CURL", &curl)
-        .env("ROUTER_WATCH_MAX", "0")
-        .envs(env.iter().copied())
-        .output()
-        .unwrap();
-    assert!(!d.path().join("called").exists(), "{args:?} reached curl");
-    assert!(o.stdout.is_empty(), "{args:?} printed {}", String::from_utf8_lossy(&o.stdout));
-    (o.status.code(), String::from_utf8_lossy(&o.stderr).into_owned())
+    let env: Vec<(&str, &str)> = std::iter::once(("ROUTER_WATCH_MAX", "0")).chain(env.iter().copied()).collect();
+    crate::router_gh_args::isolated("router-gh-watch.sh", args, &env)
 }
 
 /// Whether the watch accepts `args`: past its check, router-gh.sh stops at the missing App key.
@@ -200,11 +184,7 @@ fn the_grammar_names_each_command_and_each_bad_form() {
 /// and a first line that does not start with /keel is never a command, its every line the message.
 #[test]
 fn the_grammar_agrees_with_its_reference_on_generated_comments() {
-    let mut seed: u64 = 0x6b65_656c;
-    let mut next = |n: usize| {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-        (seed >> 33) as usize % n
-    };
+    let mut next = common::lcg(0x6b65_656c);
     let words = [
         "/keel",
         "/KEEL",

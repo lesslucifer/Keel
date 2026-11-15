@@ -286,6 +286,12 @@ pub(crate) fn raw(repo: &Path, kind: &str, rev: &str) -> Result<Option<String>, 
 
 /// A stored note as its type: JSON declaring `<kind>/v1`, then that type's fields. The one schema
 /// rule: the gate's check 1, check 8's sign-off read and the CI page all read notes through it.
+/// Why a stored note is not its kind, worded as check 1 words it; the gate, the sign-off check
+/// and the CI page all say it this way.
+pub(crate) fn invalid(kind: &str, why: &str) -> String {
+    format!("not valid {kind}/v1: {why}")
+}
+
 pub(crate) fn parse<T: serde::de::DeserializeOwned>(raw: &str, kind: &str) -> Result<T, String> {
     let schema = format!("{kind}/v1");
     let v: serde_json::Value = serde_json::from_str(raw).map_err(|e| e.to_string())?;
