@@ -62,7 +62,7 @@ fn kinds_and_word_counts_are_fixed() {
     ] {
         assert!(accepts(ok), "{ok:?}");
     }
-    let usage = "usage: review <pr> [since <id>]";
+    let usage = "usage: review <pr> [since <id>|latest]";
     for bad in [
         &[][..],
         &["frob", "1"],
@@ -74,6 +74,7 @@ fn kinds_and_word_counts_are_fixed() {
         &["review", "1", "since", "2", "x"],
         &["merged", "1", "since", "2"],
         &["checks", "1", "since", "2"],
+        &["merged", "1", "since", "latest"],
         &["merged", "1", "2"],
     ] {
         refused(bad, usage);
@@ -85,8 +86,8 @@ fn numbers_are_plain_and_bounded() {
     for n in ["0", "012", "12345678", "1a", "", " 1", "1.0", "+1", "¹"] {
         refused(&["comment", n], "must be a number");
     }
-    for id in ["0", "01", "1234567890123456", "x", "1e3"] {
-        refused(&["comment", "1", "since", id], "since must be a comment or review id");
+    for id in ["0", "01", "1234567890123456", "x", "1e3", "Latest", "latest2"] {
+        refused(&["comment", "1", "since", id], "since must be latest or a comment or review id");
     }
     for a in [&["-h"][..], &["review", "-1"], &["comment", "1", "since", "-2"], &["comment", "--since", "1"]] {
         let (code, err) = check(a);

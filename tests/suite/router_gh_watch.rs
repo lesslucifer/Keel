@@ -14,6 +14,8 @@ use crate::common;
 use crate::router_gh::{commit, git, stdout, text, write, Gh, BOT, OWNER_ID};
 
 const STRANGER: u64 = 777;
+/// When the fixture's comments and reviews were made, as every event line names it (review I2).
+const AT: &str = "2026-11-15T10:00:00Z";
 
 /// The watch in the scratch repository, as the router runs it, bounded by an alarm. Every run is
 /// checked for secrets and for anything left behind: the shared $TMPDIR, the run dir, the checkout.
@@ -121,7 +123,7 @@ fn a_commanders_approval_prints_approved_with_the_reviewed_sha() {
     assert_eq!(
         lines(&o),
         [
-            format!("APPROVED pr=31 sha={old} head={tip} review=52 from={OWNER_ID} pending=0"),
+            format!("APPROVED pr=31 sha={old} head={tip} review=52 from={OWNER_ID} at={AT} pending=0"),
             "  ship it".into(),
             "  thanks".into(),
             "IGNORED from=other count=1".into()
@@ -147,7 +149,7 @@ fn a_commanders_approval_prints_approved_with_the_reviewed_sha() {
         )],
     );
     let o = once(&gh, &["review", "31", "since", "52"]);
-    assert_eq!(lines(&o), [format!("CHANGES-REQUESTED pr=31 sha={tip} head={tip} review=53 from={OWNER_ID} pending=1"), "  fix the test".into()]);
+    assert_eq!(lines(&o), [format!("CHANGES-REQUESTED pr=31 sha={tip} head={tip} review=53 from={OWNER_ID} at={AT} pending=1"), "  fix the test".into()]);
     let o = once(&gh, &["review", "31", "since", "54"]);
     assert_eq!(lines(&o), ["TIMEOUT kind=review waited=0m"]);
 }
@@ -174,7 +176,7 @@ fn a_strangers_command_prints_only_a_count_never_its_text() {
 #[test]
 fn each_command_and_message_from_a_commander() {
     let gh = Gh::new();
-    let at = format!("issue=30 comment=70 from={OWNER_ID}");
+    let at = format!("issue=30 comment=70 from={OWNER_ID} at={AT}");
     for (body, want) in [
         ("/keel go", vec![format!("COMMAND {at} verb=go pending=0")]),
         ("/keel hold\r\nwait for the review\r\n", vec![format!("COMMAND {at} verb=hold pending=0"), "  wait for the review".into()]),
@@ -197,7 +199,7 @@ fn each_command_and_message_from_a_commander() {
         ("GET", "/repos/own/Keel/issues/31", "200".into(), vec![issue(31, BOT, true)]),
         ("GET", "/repos/own/Keel/issues/31/comments?per_page=100&page=1", "200".into(), vec![json!([comment(71, OWNER_ID, "/keel go", false)])]),
     ]);
-    assert_eq!(lines(&watch(&gh, &["comment", "31"])), [format!("COMMAND pr=31 comment=71 from={OWNER_ID} verb=go pending=0")]);
+    assert_eq!(lines(&watch(&gh, &["comment", "31"])), [format!("COMMAND pr=31 comment=71 from={OWNER_ID} at={AT} verb=go pending=0")]);
 }
 
 /// The watch waits for the owner across polls; without `since` the oldest comment is reported and
@@ -208,12 +210,12 @@ fn pending_counts_later_comments_and_since_reads_each_once() {
     let both = json!([comment(80, OWNER_ID, "/keel hold", false), comment(81, STRANGER, "spam", false), comment(82, OWNER_ID, "/keel go", false)]);
     comments_on_30(&gh, vec![json!([]), json!([comment(81, STRANGER, "spam", false)]), both.clone()]);
     let o = watch(&gh, &["comment", "30"]);
-    assert_eq!(lines(&o), [format!("COMMAND issue=30 comment=80 from={OWNER_ID} verb=hold pending=1"), "IGNORED from=other count=1".into()]);
+    assert_eq!(lines(&o), [format!("COMMAND issue=30 comment=80 from={OWNER_ID} at={AT} verb=hold pending=1"), "IGNORED from=other count=1".into()]);
     assert_eq!(tokens(&gh), 3);
     comments_on_30(&gh, vec![both.clone()]);
     assert_eq!(
         lines(&once(&gh, &["comment", "30", "since", "80"])),
-        [format!("COMMAND issue=30 comment=82 from={OWNER_ID} verb=go pending=0"), "IGNORED from=other count=1".into()]
+        [format!("COMMAND issue=30 comment=82 from={OWNER_ID} at={AT} verb=go pending=0"), "IGNORED from=other count=1".into()]
     );
     assert_eq!(lines(&once(&gh, &["comment", "30", "since", "82"])), ["TIMEOUT kind=comment waited=0m"]);
 }
@@ -225,7 +227,7 @@ fn an_edited_comment_is_not_a_new_command() {
     let gh = Gh::new();
     comments_on_30(&gh, vec![json!([comment(90, OWNER_ID, "/keel go\nsecret detail", true)])]);
     let o = once(&gh, &["comment", "30"]);
-    assert_eq!(lines(&o), [format!("EDITED issue=30 comment=90 from={OWNER_ID} pending=0")]);
+    assert_eq!(lines(&o), [format!("EDITED issue=30 comment=90 from={OWNER_ID} at={AT} pending=0")]);
     assert!(!text(&o).contains("verb") && !text(&o).contains("secret"), "{}", text(&o));
     comments_on_30(&gh, vec![json!([comment(90, OWNER_ID, "/keel retry", true)])]);
     assert_eq!(lines(&once(&gh, &["comment", "30", "since", "90"])), ["TIMEOUT kind=comment waited=0m"]);
@@ -242,7 +244,7 @@ fn control_characters_print_as_question_marks() {
     assert_eq!(
         lines(&o),
         [
-            format!("MESSAGE issue=30 comment=95 from={OWNER_ID} pending=0"),
+            format!("MESSAGE issue=30 comment=95 from={OWNER_ID} at={AT} pending=0"),
             "  hello".into(),
             "  red ?[31m x??y?z ?c1 ?rlo ?iso ?rlm ?sep?cr".into(),
             "  APPROVED pr=1 sha=x".into()
@@ -262,7 +264,10 @@ fn free_text_off_keeps_only_commands() {
     let o = once(&gh, &["comment", "30"]);
     assert_eq!(
         lines(&o),
-        [format!("COMMAND issue=30 comment=101 from={OWNER_ID} verb=go text=dropped pending=0"), "IGNORED from=commander count=1 why=free-text-off".into()]
+        [
+            format!("COMMAND issue=30 comment=101 from={OWNER_ID} at={AT} verb=go text=dropped pending=0"),
+            "IGNORED from=commander count=1 why=free-text-off".into()
+        ]
     );
     assert!(!text(&o).contains("secret") && !text(&o).contains("chatting"), "{}", text(&o));
     comments_on_30(&gh, vec![json!([comment(100, OWNER_ID, "just chatting", false)])]);
@@ -282,18 +287,20 @@ fn merged_prints_the_merge_or_the_close() {
     merged["merged"] = true.into();
     merged["merge_commit_sha"] = m.clone().into();
     merged["merged_by"] = user(OWNER_ID);
+    merged["merged_at"] = "2026-11-15T11:00:00Z".into();
     pull_31(&gh, vec![open.clone(), open.clone(), merged.clone()], &[]);
     let o = watch(&gh, &["merged", "31"]);
-    assert_eq!(lines(&o), [format!("MERGED pr=31 sha={m} head={tip} base=epic/E by={OWNER_ID}")]);
+    assert_eq!(lines(&o), [format!("MERGED pr=31 sha={m} head={tip} base=epic/E by={OWNER_ID} at=2026-11-15T11:00:00Z")]);
     assert_eq!(tokens(&gh), 3);
     merged["merged_by"] = user(STRANGER);
     pull_31(&gh, vec![merged.clone()], &[]);
-    assert_eq!(lines(&watch(&gh, &["merged", "31"])), [format!("MERGED pr=31 sha={m} head={tip} base=epic/E by=other")]);
+    assert_eq!(lines(&watch(&gh, &["merged", "31"])), [format!("MERGED pr=31 sha={m} head={tip} base=epic/E by=other at=2026-11-15T11:00:00Z")]);
     let mut closed = open;
     closed["state"] = "closed".into();
     closed["merged"] = false.into();
+    closed["closed_at"] = "2026-11-15T12:00:00Z".into();
     pull_31(&gh, vec![closed], &[]);
-    assert_eq!(lines(&watch(&gh, &["merged", "31"])), [format!("CLOSED pr=31 head={tip} base=epic/E")]);
+    assert_eq!(lines(&watch(&gh, &["merged", "31"])), [format!("CLOSED pr=31 head={tip} base=epic/E at=2026-11-15T12:00:00Z")]);
 }
 
 /// checks waits until there is a check run and every run and status on the head is done, then
@@ -304,7 +311,7 @@ fn checks_wait_for_every_check_then_print_the_result() {
     let tip = gh.sha("wu/E/x");
     let runs = format!("/repos/own/Keel/commits/{tip}/check-runs?per_page=100&page=1");
     let status = format!("/repos/own/Keel/commits/{tip}/status?per_page=100");
-    let run = |name: &str, st: &str, c: Option<&str>| json!({"name": name, "status": st, "conclusion": c});
+    let run = |name: &str, st: &str, c: Option<&str>| json!({"name": name, "status": st, "conclusion": c, "completed_at": c.map(|_| "2026-11-15T10:05:00Z")});
     pull_31(
         &gh,
         vec![gh.pr(31, BOT, "own/Keel", &tip, false)],
@@ -323,7 +330,10 @@ fn checks_wait_for_every_check_then_print_the_result() {
         ],
     );
     let o = watch(&gh, &["checks", "31"]);
-    assert_eq!(lines(&o), [format!("CHECKS pr=31 sha={tip} state=failure runs=2 statuses=0"), "  check success ci".into(), "  check failure gate".into()]);
+    assert_eq!(
+        lines(&o),
+        [format!("CHECKS pr=31 sha={tip} state=failure runs=2 statuses=0 at=2026-11-15T10:05:00Z"), "  check success ci".into(), "  check failure gate".into()]
+    );
     assert_eq!(tokens(&gh), 3);
     pull_31(
         &gh,
@@ -349,7 +359,7 @@ fn checks_wait_for_every_check_then_print_the_result() {
     assert_eq!(
         lines(&watch(&gh, &["checks", "31"])),
         [
-            format!("CHECKS pr=31 sha={tip} state=success runs=2 statuses=1"),
+            format!("CHECKS pr=31 sha={tip} state=success runs=2 statuses=1 at=2026-11-15T10:05:00Z"),
             "  check success ci".into(),
             "  check skipped docs".into(),
             "  status success keel/sign-off".into()
@@ -401,7 +411,7 @@ fn the_commanders_must_be_committed() {
     // the same edit, committed, is heard
     commit(&gh.repo, "a second commander");
     comments_on_30(&gh, vec![json!([comment(110, STRANGER, "/keel go", false)])]);
-    assert_eq!(lines(&once(&gh, &["comment", "30"])), [format!("COMMAND issue=30 comment=110 from={STRANGER} verb=go pending=0")]);
+    assert_eq!(lines(&once(&gh, &["comment", "30"])), [format!("COMMAND issue=30 comment=110 from={STRANGER} at={AT} verb=go pending=0")]);
     // no commanders: nobody to hear
     write(&gh.repo, ".keel/config.toml", &committed.replace(&format!("commanders = [{OWNER_ID}]   # who the router hears\n"), ""));
     commit(&gh.repo, "no commanders");
@@ -448,7 +458,7 @@ fn the_watch_keeps_no_state_between_runs() {
     let first = stdout(&watch(&gh, &["comment", "30"]));
     let second = stdout(&watch(&gh, &["comment", "30"]));
     assert_eq!(first, second);
-    assert_eq!(first, format!("COMMAND issue=30 comment=130 from={OWNER_ID} verb=go pending=0"));
+    assert_eq!(first, format!("COMMAND issue=30 comment=130 from={OWNER_ID} at={AT} verb=go pending=0"));
     let after = list(&gh.home);
     let new: Vec<_> = after.iter().filter(|p| !before.contains(p) && !p.ends_with("/router-gh/run")).collect();
     assert!(new.is_empty(), "the watch wrote {new:?}");
@@ -457,4 +467,130 @@ fn the_watch_keeps_no_state_between_runs() {
     for n in left {
         assert!(tracked.lines().any(|t| t == n), "the watch wrote {n} in the checkout");
     }
+}
+
+/// The watch run without the clean-checkout check (a test that leaves the checkout dirty on purpose).
+fn watch_raw(gh: &Gh, args: &[&str]) -> Output {
+    let mut c = common::cmd("perl");
+    c.args(["-e", "alarm 60; exec @ARGV", "sh"]).arg(gh.repo.join("scripts/router-gh-watch.sh")).args(args).current_dir(&gh.repo);
+    c.env("PATH", gh.path()).env("HOME", &gh.home).env("TMPDIR", &gh.tmp).env("MOCK_GH", &gh.mock).env("ROUTER_GH_CURL", gh.bin.join("fake-curl"));
+    c.env("ROUTER_WATCH_POLL", "1").env("ROUTER_WATCH_MAX", "0");
+    c.output().unwrap()
+}
+
+/// Security review I2: `since latest` skips every comment present at the first poll, so a router
+/// that does not know where it stopped never replays an old order; the event line names its time.
+#[test]
+fn since_latest_skips_what_was_there_at_the_first_poll() {
+    let gh = Gh::new();
+    let old = comment(140, OWNER_ID, "/keel go", false);
+    let mut new = comment(141, OWNER_ID, "/keel hold", false);
+    new["created_at"] = "2026-11-15T10:09:00Z".into();
+    new["updated_at"] = "2026-11-15T10:09:00Z".into();
+    comments_on_30(&gh, vec![json!([old.clone()]), json!([old.clone(), new])]);
+    let o = watch(&gh, &["comment", "30", "since", "latest"]);
+    assert_eq!(lines(&o), [format!("COMMAND issue=30 comment=141 from={OWNER_ID} at=2026-11-15T10:09:00Z verb=hold pending=0")]);
+    comments_on_30(&gh, vec![json!([])]);
+    assert_eq!(lines(&once(&gh, &["comment", "30", "since", "latest"])), ["TIMEOUT kind=comment waited=0m"]);
+}
+
+/// Security review I1: a thread longer than 1000 comments is read from its end (GitHub's Link header
+/// names the last page; the 10 newest pages are read), so a stranger's flood cannot stop the watch;
+/// when `since` lies before the pages read, it prints OVERFLOW instead of guessing.
+#[test]
+fn a_thread_longer_than_1000_comments_is_read_from_its_end() {
+    let gh = Gh::new();
+    let path = "/repos/own/Keel/issues/30/comments";
+    let page = |k: u64| -> Value {
+        Value::Array(
+            (k * 100..k * 100 + 100)
+                .map(|id| if id == 1550 { comment(id, OWNER_ID, "/keel retry", false) } else { comment(id, STRANGER, "spam", false) })
+                .collect(),
+        )
+    };
+    let routes = || {
+        let mut r: Vec<(&str, String, String, Vec<Value>)> = vec![
+            ("GET", "/repos/own/Keel/issues/30".into(), "200".into(), vec![issue(30, BOT, false)]),
+            ("GET", format!("{path}?per_page=100&page=1"), "200".into(), vec![page(1)]),
+        ];
+        for k in 6..=15 {
+            r.push(("GET", format!("{path}?per_page=100&page={k}"), "200".into(), vec![page(k)]));
+        }
+        let r: Vec<(&str, &str, String, Vec<Value>)> = r.iter().map(|(m, p, s, b)| (*m, p.as_str(), s.clone(), b.clone())).collect();
+        gh.routes_seq(&r);
+        gh.link_last(2, 0, path, 15);
+    };
+    routes();
+    let o = once(&gh, &["comment", "30", "since", "1000"]);
+    assert_eq!(lines(&o), [format!("COMMAND issue=30 comment=1550 from={OWNER_ID} at={AT} verb=retry pending=0"), "IGNORED from=other count=598".into()]);
+    let pages: Vec<String> = gh.calls().into_iter().filter(|c| c.contains("/comments?")).collect();
+    assert_eq!(pages.len(), 11, "page 1, then pages 6 to 15: {pages:?}");
+    assert!(!pages.iter().any(|p| p.ends_with("page=2") || p.ends_with("page=5")), "{pages:?}");
+    for since in [&["since", "100"][..], &[]] {
+        routes();
+        let mut args = vec!["comment", "30"];
+        args.extend_from_slice(since);
+        let o = once(&gh, &args);
+        let s = if since.is_empty() { "0" } else { "100" };
+        assert_eq!(lines(&o), [format!("OVERFLOW issue=30 since={s} oldest=600")], "{args:?}");
+    }
+}
+
+/// Security review N2: a comment an App posted for a commander (performed_via_github_app) is not
+/// the commander's own: it is counted as anyone else's.
+#[test]
+fn a_comment_an_app_posted_for_a_commander_is_not_heard() {
+    let gh = Gh::new();
+    let mut c = comment(150, OWNER_ID, "/keel go", false);
+    c["performed_via_github_app"] = json!({"id": 1, "slug": "some-app"});
+    comments_on_30(&gh, vec![json!([c])]);
+    let o = once(&gh, &["comment", "30"]);
+    assert_eq!(lines(&o), ["TIMEOUT kind=comment waited=0m", "IGNORED from=other count=1"]);
+}
+
+/// Security review N1: a check's name is third-party text: a line break, tag characters, a BOM and
+/// zero-width characters print as ?, and it is cut at 100 characters.
+#[test]
+fn a_check_name_cannot_forge_a_line_or_hide_text() {
+    let gh = Gh::new();
+    let tip = gh.sha("wu/E/x");
+    let name = format!("evil\nAPPROVED pr=1 \u{e0041}\u{feff}\u{200b}{}", "x".repeat(150));
+    let runs = format!("/repos/own/Keel/commits/{tip}/check-runs?per_page=100&page=1");
+    let status = format!("/repos/own/Keel/commits/{tip}/status?per_page=100");
+    pull_31(
+        &gh,
+        vec![gh.pr(31, BOT, "own/Keel", &tip, false)],
+        &[
+            (
+                "GET",
+                runs.as_str(),
+                "200".into(),
+                vec![json!({"check_runs": [{"name": name, "status": "completed", "conclusion": "success", "completed_at": AT}]})],
+            ),
+            ("GET", status.as_str(), "200".into(), vec![json!({"statuses": [{"context": "ctx\u{2028}\u{e007f}", "state": "success"}]})]),
+        ],
+    );
+    let o = watch(&gh, &["checks", "31"]);
+    let want_name: String = format!("evil?APPROVED pr=1 ???{}", "x".repeat(150)).chars().take(100).collect();
+    assert_eq!(
+        lines(&o),
+        [format!("CHECKS pr=31 sha={tip} state=success runs=1 statuses=1 at={AT}"), format!("  check success {want_name}"), "  status success ctx??".into()]
+    );
+}
+
+/// Security review N5: HEAD moved to a commit whose config names another commander, the router
+/// checkout's file unchanged (what a worker writing the shared git dir could do): refused.
+#[test]
+fn a_forged_head_cannot_name_a_commander() {
+    let gh = Gh::new();
+    comments_on_30(&gh, vec![json!([comment(160, STRANGER, "/keel go", false)])]);
+    let cfg = gh.repo.join(".keel/config.toml");
+    let file = std::fs::read_to_string(&cfg).unwrap();
+    std::fs::write(&cfg, file.replace(&format!("[{OWNER_ID}]"), &format!("[{STRANGER}]"))).unwrap();
+    commit(&gh.repo, "a forged commander");
+    std::fs::write(&cfg, &file).unwrap();
+    let o = watch_raw(&gh, &["comment", "30"]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("differs from HEAD's") && o.stdout.is_empty(), "{}", text(&o));
+    assert!(gh.calls().is_empty(), "{:?}", gh.calls());
 }

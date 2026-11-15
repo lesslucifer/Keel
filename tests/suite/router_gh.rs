@@ -36,13 +36,17 @@ path=${url#https://api.github.com}
 body=null; [ -z "$data" ] || body=$(jq -Rs . < "${data#@}")
 jq -n -c --arg m "$method" --arg p "$path" --arg a "$auth" --argjson b "$body" --arg c "$cfg" '{method: $m, path: $p, auth: $a, body: $b, config: $c}' >> "$MOCK_GH/log"
 r=$(awk -v m="$method" -v p="$path" '$1 == m && $2 == p { print NR " " $3 " " $4; exit }' "$MOCK_GH/routes")
-if [ -z "$r" ]; then printf '{"message":"Not Found"}' > "$out"; printf 404; exit 0; fi
+hdr=$(val dump-header)
+if [ -z "$r" ]; then printf '{"message":"Not Found"}' > "$out"; [ -z "$hdr" ] || printf 'HTTP/2 404\r\n\r\n' > "$hdr"; printf 404; exit 0; fi
 set -- $r
 # a route's answers are served in turn, one per call, the last repeated; status curlN is curl exit N
 k=$(cat "$MOCK_GH/seq.$1" 2> /dev/null || echo 0); echo $((k + 1)) > "$MOCK_GH/seq.$1"
 case "$2" in curl*) exit "${2#curl}";; esac
 f=$(printf '%s\n' "$3" | tr , '\n' | sed -n "$((k + 1))p"); [ -n "$f" ] || f=${3##*,}
-cp "$MOCK_GH/$f" "$out"; printf '%s' "$2"
+cp "$MOCK_GH/$f" "$out"
+# the response's headers: <file>.hdr when the test wrote one (a Link header), else the status line
+if [ -n "$hdr" ]; then if [ -f "$MOCK_GH/$f.hdr" ]; then cp "$MOCK_GH/$f.hdr" "$hdr"; else printf 'HTTP/2 %s\r\n\r\n' "$2" > "$hdr"; fi; fi
+printf '%s' "$2"
 "#;
 
 pub(crate) fn text(o: &Output) -> String {
@@ -207,6 +211,13 @@ impl Gh {
         std::fs::write(self.mock.join("log"), "").unwrap();
     }
 
+    /// GitHub's Link header for answer `j` of route `i` (counted from 1 after the token exchange):
+    /// the list's last page is `last` (E-GHFLOW.W3, security review I1).
+    pub(crate) fn link_last(&self, i: usize, j: usize, path: &str, last: u32) {
+        let h = format!("HTTP/2 200\r\nLink: <https://api.github.com{path}?per_page=100&page=2>; rel=\"next\", <https://api.github.com{path}?per_page=100&page={last}>; rel=\"last\"\r\n\r\n");
+        std::fs::write(self.mock.join(format!("r{i}-{j}.json.hdr")), h).unwrap();
+    }
+
     /// The requests the script sent since the last `routes`.
     pub(crate) fn log(&self) -> Vec<serde_json::Value> {
         std::fs::read_to_string(self.mock.join("log")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect()
@@ -222,8 +233,13 @@ impl Gh {
 
     /// The script in the scratch repository, as the router runs it; every run is checked for secrets.
     pub(crate) fn run_env(&self, args: &[&str], env: &[(&str, &str)]) -> Output {
+        self.run_in(&self.repo, args, env)
+    }
+
+    /// As `run_env`, with the script of the checkout `dir` (the main one, or a linked worktree).
+    pub(crate) fn run_in(&self, dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Output {
         let mut c = common::cmd("sh");
-        c.arg(self.repo.join("scripts/router-gh.sh")).args(args).current_dir(&self.repo);
+        c.arg(dir.join("scripts/router-gh.sh")).args(args).current_dir(dir);
         c.env("PATH", self.path()).env("HOME", &self.home).env("TMPDIR", &self.tmp).env("MOCK_GH", &self.mock);
         c.env("ROUTER_GH_CURL", self.bin.join("fake-curl"))
             .env("ROUTER_GH_GIT", format!("file://{}", self.root.path().canonicalize().unwrap().join("gh").display()));
@@ -1139,10 +1155,13 @@ if URL in a:
     def fill(host):
         p = subprocess.run([REAL] + a[:i] + ["credential", "fill"], input="protocol=https\nhost=%s\n\n" % host, capture_output=True, text=True, env=env)
         return p.stdout
-    rec = {{"cmd": a[i], "evil": fill("evil.example"), "github": fill("github.com"), "again": fill("github.com")}}
+    rec = {{"cmd": a[i], "evil": fill("evil.example"), "github": fill("github.com"), "again": fill("github.com"),
+        "allow": os.environ.get("GIT_ALLOW_PROTOCOL"), "hooks": os.environ.get("GIT_CONFIG_VALUE_0")}}
     with open(LOG, "a") as f:
         f.write(json.dumps(rec) + "\n")
     a = [TARGET if x == URL else x for x in a]
+    # this stand-in is GitHub's https transport: the file:// it reaches is its own business
+    os.environ["GIT_ALLOW_PROTOCOL"] = "file"
 os.execv(REAL, [REAL] + a)
 "#,
             log = log.display().to_string()
@@ -1168,6 +1187,9 @@ os.execv(REAL, [REAL] + a)
         assert_eq!(r["evil"], "", "another host got credentials: {r}");
         assert_eq!(r["github"], format!("protocol=https\nhost=github.com\nusername=x-access-token\npassword={TOKEN}\n"), "{r}");
         assert_eq!(r["again"], "", "the token was given twice in one git run: {r}");
+        // security review P1c: git to GitHub speaks only https and runs no hook, whatever the config
+        assert_eq!(r["allow"], "https", "{r}");
+        assert_eq!(r["hooks"], "/dev/null", "{r}");
     }
 }
 
@@ -1238,7 +1260,7 @@ fn bot_issue(n: u64, branch: &str) -> serde_json::Value {
         "user": {"login": BOT, "type": "Bot"}, "body": format!("<!-- keel:router-gh issue v1 {branch} -->\r\nTracking …")})
 }
 
-const ISSUE_LIST: &str = "/repos/own/Keel/issues?state=all&per_page=100&page=1";
+const ISSUE_LIST: &str = "/repos/own/Keel/issues?state=all&labels=keel-tracking&per_page=100&page=1";
 
 /// E-GHFLOW.W3: `issue epic/E` opens the epic's tracking issue, its body built from git (the marker,
 /// the tip, a row per WU branch with its notes); `issue wu/E/x` opens the WU's issue, titled by its
@@ -1247,13 +1269,30 @@ const ISSUE_LIST: &str = "/repos/own/Keel/issues?state=all&per_page=100&page=1";
 fn issue_opens_the_epics_tracking_issue_and_a_wu_sub_issue() {
     let gh = Gh::new();
     let (epic, tip) = (gh.sha("epic/E"), gh.sha("wu/E/x"));
-    gh.routes(&[("GET", ISSUE_LIST, 200, serde_json::json!([])), ("POST", "/repos/own/Keel/issues", 201, bot_issue(30, "epic/E"))]);
+    gh.routes(&[
+        ("GET", ISSUE_LIST, 200, serde_json::json!([])),
+        ("POST", "/repos/own/Keel/labels", 201, serde_json::json!({"name": "keel-tracking"})),
+        ("POST", "/repos/own/Keel/issues", 201, bot_issue(30, "epic/E")),
+    ]);
     let o = gh.run(&["issue", "epic/E"]);
     assert!(o.status.success(), "{}", text(&o));
     assert_eq!(stdout(&o), "ISSUE number=30 url=https://github.com/own/Keel/issues/30 state=opened open=yes branch=epic/E parent=-");
-    assert_eq!(gh.calls(), ["POST /app/installations/456/access_tokens", format!("GET {ISSUE_LIST}").as_str(), "POST /repos/own/Keel/issues"]);
+    // security review I1: only the bot's label is listed; the label is made before an issue carries it
+    let list = format!("GET {ISSUE_LIST}");
+    assert_eq!(
+        gh.calls(),
+        [
+            "POST /app/installations/456/access_tokens",
+            list.as_str(),
+            "GET /repos/own/Keel/labels/keel-tracking",
+            "POST /repos/own/Keel/labels",
+            "POST /repos/own/Keel/issues"
+        ]
+    );
     assert_auth(&gh);
-    let req = body_of(&gh.log()[2]);
+    assert_eq!(body_of(&gh.log()[3])["name"], "keel-tracking");
+    let req = body_of(&gh.log()[4]);
+    assert_eq!(req["labels"], serde_json::json!(["keel-tracking"]));
     assert_eq!(req["title"], "epic/E");
     let body = req["body"].as_str().unwrap();
     assert!(body.starts_with("<!-- keel:router-gh issue v1 epic/E -->\nTracking issue of `epic/E` into `main`"), "{body}");
@@ -1262,6 +1301,7 @@ fn issue_opens_the_epics_tracking_issue_and_a_wu_sub_issue() {
 
     gh.routes(&[
         ("GET", ISSUE_LIST, 200, serde_json::json!([bot_issue(30, "epic/E")])),
+        ("GET", "/repos/own/Keel/labels/keel-tracking", 200, serde_json::json!({"name": "keel-tracking"})),
         ("POST", "/repos/own/Keel/issues", 201, bot_issue(31, "wu/E/x")),
         ("GET", "/repos/own/Keel/issues/30/sub_issues?per_page=100&page=1", 200, serde_json::json!([])),
         ("POST", "/repos/own/Keel/issues/30/sub_issues", 201, bot_issue(30, "epic/E")),
@@ -1270,13 +1310,14 @@ fn issue_opens_the_epics_tracking_issue_and_a_wu_sub_issue() {
     assert!(o.status.success(), "{}", text(&o));
     assert_eq!(stdout(&o), "ISSUE number=31 url=https://github.com/own/Keel/issues/31 state=opened open=yes branch=wu/E/x parent=30");
     let log = gh.log();
-    let req = body_of(&log[2]);
+    assert_eq!(log.len(), 6, "{:?}", gh.calls());
+    let req = body_of(&log[3]);
     assert_eq!(req["title"], "Keel — E.W1 plan: tick owner x(y)  cell b h", "the plan's title, made plain");
     let body = req["body"].as_str().unwrap();
     assert!(body.starts_with("<!-- keel:router-gh issue v1 wu/E/x -->\nWork unit `wu/E/x` into `epic/E`"), "{body}");
     assert!(body.contains(&format!("| {} |", "yes | — | PASS, round 2 | — | —")), "{body}");
     assert!(body.contains("/blob/") && body.contains("docs/work/x-plan.html"), "{body}");
-    assert_eq!(body_of(&log[4]), serde_json::json!({"sub_issue_id": 9031}));
+    assert_eq!(body_of(&log[5]), serde_json::json!({"sub_issue_id": 9031}));
 }
 
 /// E-GHFLOW.W3: a second run refreshes the bot's issue in place (never a stranger's issue or a pull
@@ -1333,4 +1374,89 @@ fn a_wu_issue_needs_its_epics_issue_first() {
     let o = gh.run(&["issue", "wu/E/nope"]);
     assert_eq!(o.status.code(), Some(2));
     assert!(text(&o).contains("no local branch wu/E/nope") && gh.calls().is_empty(), "{}", text(&o));
+}
+
+/// Security review P1 (backlog R33): the script pins its own checkout's git dir. A linked checkout
+/// works as the main one does; its admin dir's commondir pointed elsewhere, or a commondir file in
+/// the main git dir (which workers could write before this fix), is refused in every mode before any
+/// request, since git would take another repository's config from it.
+#[test]
+fn a_forged_commondir_is_refused_and_a_linked_checkout_works() {
+    let gh = Gh::new();
+    let base = gh.root.path().canonicalize().unwrap();
+    let linked = base.join("linked");
+    git(&gh.repo, &["worktree", "add", "-q", "-b", "side", linked.to_str().unwrap(), "epic/E"]);
+    let refresh = || {
+        gh.routes(&[
+            ("GET", ISSUE_LIST, 200, serde_json::json!([bot_issue(30, "epic/E")])),
+            ("PATCH", "/repos/own/Keel/issues/30", 200, bot_issue(30, "epic/E")),
+        ])
+    };
+    refresh();
+    let o = gh.run_in(&linked, &["issue", "epic/E"], &[]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(stdout(&o).starts_with("ISSUE number=30 "), "{}", text(&o));
+
+    let elsewhere = base.join("elsewhere.git");
+    git(&base, &["init", "-q", "--bare", elsewhere.to_str().unwrap()]);
+    let admin = gh.repo.join(".git/worktrees/linked");
+    std::fs::write(admin.join("commondir"), format!("{}\n", elsewhere.display())).unwrap();
+    gh.routes(&[]);
+    let o = gh.run_in(&linked, &["issue", "epic/E"], &[]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("is not this checkout's admin dir as git makes one"), "{}", text(&o));
+    assert!(gh.calls().is_empty(), "{:?}", gh.calls());
+    std::fs::write(admin.join("commondir"), "../..\n").unwrap();
+
+    std::fs::write(gh.repo.join(".git/commondir"), format!("{}\n", elsewhere.display())).unwrap();
+    for args in [
+        &["push", "wu/E/x"][..],
+        &["pr-open", "wu/E/x"],
+        &["pr-ready", "7"],
+        &["post", "7", "review"],
+        &["sync", "epic/E"],
+        &["issue", "epic/E"],
+        &["watch-read", "comment", "30"],
+    ] {
+        let o = gh.run(args);
+        assert_eq!(o.status.code(), Some(2), "{args:?}: {}", text(&o));
+        assert!(text(&o).contains("commondir exists: a main git dir has none"), "{args:?}: {}", text(&o));
+        assert!(gh.calls().is_empty(), "{args:?}: {:?}", gh.calls());
+    }
+    let o = gh.run_in(&linked, &["issue", "epic/E"], &[]);
+    assert!(o.status.code() == Some(2) && text(&o).contains("commondir exists"), "{}", text(&o));
+}
+
+/// Security review P1c: whatever the repository's config says, the script's git runs no hook and
+/// speaks no transport but the one its URL needs. A reference-transaction hook the config names runs
+/// for the test's own git, never for sync's; an ext:: transport the config allows and reroutes the
+/// URL to runs for the test's own git, never for push.
+#[test]
+fn the_repositorys_config_reaches_no_hook_and_no_other_transport() {
+    let gh = Gh::new();
+    let base = gh.root.path().canonicalize().unwrap();
+    let (hooks, marks) = (base.join("hooks"), base.join("p1c"));
+    std::fs::create_dir_all(&marks).unwrap();
+    std::fs::create_dir_all(&hooks).unwrap();
+    exe(&hooks.join("reference-transaction"), &format!("#!/bin/sh\ntouch {}\n", common::sh_quote(&marks.join("hook").to_string_lossy())));
+    git(&gh.repo, &["config", "core.hooksPath", hooks.to_str().unwrap()]);
+    gh.github_merges("wu/E/x");
+    git(&gh.repo, &["update-ref", "refs/heads/probe", "HEAD"]);
+    assert!(marks.join("hook").exists(), "the probe hook must run for a plain git");
+    git(&gh.repo, &["update-ref", "-d", "refs/heads/probe"]);
+    std::fs::remove_file(marks.join("hook")).unwrap();
+    let o = gh.run(&["sync", "epic/E"]);
+    assert!(o.status.success() && stdout(&o).contains("state=fast-forward"), "{}", text(&o));
+    assert!(!marks.join("hook").exists(), "sync ran the repository's hook");
+
+    let url = format!("file://{}/gh/own/Keel.git", base.display());
+    let ext = format!("ext::sh -c touch% {}", marks.join("ext").display());
+    git(&gh.repo, &["config", "protocol.ext.allow", "always"]);
+    git(&gh.repo, &["config", &format!("url.{ext}.insteadOf"), &url]);
+    let _ = common::cmd("git").args(["ls-remote", &url]).current_dir(&gh.repo).output().unwrap();
+    assert!(marks.join("ext").exists(), "the probe transport must run for a plain git");
+    std::fs::remove_file(marks.join("ext")).unwrap();
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(!marks.join("ext").exists(), "push ran the repository's ext:: transport");
 }

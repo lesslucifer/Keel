@@ -3601,7 +3601,7 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
     let g = g.to_str().unwrap();
     // E-WMODE round 2: ~/.cargo only where cargo writes (H3); the worktree's .git link, its two
     // settings files and its admin dir's link files are not the shell's (H2, M2); ~/.claude.json (M1)
-    let want = |wt: &Path, admin: &str| {
+    let want = |wt: &Path, admin: &str, other: &str| {
         serde_json::json!({"sandbox": {
             "enabled": true,
             "autoAllowBashIfSandboxed": true,
@@ -3610,7 +3610,11 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
                 "allowWrite": [g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
                     "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
                 "denyWrite": [format!("{g}/config"), format!("{g}/hooks"), format!("{g}/keel-hooks"), format!("{g}/info"),
+                    // E-GHFLOW.W3 security review P1 (R33): the git dir's commondir, then the worker's
+                    // own admin link files, then every other worktree's
+                    format!("{g}/commondir"),
                     format!("{g}/worktrees/{admin}/commondir"), format!("{g}/worktrees/{admin}/gitdir"),
+                    format!("{g}/worktrees/{other}/commondir"), format!("{g}/worktrees/{other}/gitdir"),
                     format!("{}/.git", wt.display()), format!("{}/.claude/settings.json", wt.display()),
                     format!("{}/.claude/settings.local.json", wt.display()), "~/.claude.json".to_string()],
                 "denyRead": ["~/.ssh", "~/.claude/channels", "~/.config/keel/router-gh"]
@@ -3619,13 +3623,30 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
         }})
     };
     // a second worktree of the same repository shares its git dir
-    for (name, wt, admin) in [("a", &l.wt, "wt"), ("b", &l.wt2, "wt2")] {
+    for (name, wt, admin, other) in [("a", &l.wt, "wt", "wt2"), ("b", &l.wt2, "wt2", "wt")] {
         let (ok, out) = l.run(&["spawn", name, wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
         assert!(ok, "{out}");
         let mut s: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, name), "--settings")).unwrap();
         s.as_object_mut().unwrap().remove("hooks");
-        assert_eq!(s, want(wt, admin), "{name}");
+        assert_eq!(s, want(wt, admin, other), "{name}");
     }
+}
+
+/// E-GHFLOW.W3 security review P1 (backlog R33): a commondir file in the main git dir would send
+/// every git the launcher runs to another repository's config. Workers are denied writing it; one
+/// found there stops every mode before any git runs or any session starts.
+#[test]
+fn a_commondir_file_in_the_main_git_dir_stops_the_launcher() {
+    let l = launcher();
+    let elsewhere = l.main.parent().unwrap().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::write(l.main.join(".git/commondir"), format!("{}\n", elsewhere.display())).unwrap();
+    let wt = l.wt.to_str().unwrap();
+    for args in [vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"], vec!["stop", "a"], vec!["worktree", "add", "epic/E"], vec!["watchdog", "start", "r"]] {
+        let (ok, out) = l.run(&args);
+        assert!(!ok && out.contains(".git/commondir exists: a main git dir has none"), "{args:?}: {out}");
+    }
+    assert!(calls(&l.state).is_empty(), "{:?}", calls(&l.state));
 }
 
 /// E-ROUTER3.W8 (DEC-46, point 4): the review runs in a fresh `--review` worker, the only one granted
@@ -4202,6 +4223,8 @@ fn router_guard_admits_the_github_watch_and_issue_shapes_and_no_other_spelling()
         "scripts/router-gh-watch.sh comment 9999999 since 999999999999999",
         "scripts/router-gh-watch.sh merged 31",
         "scripts/router-gh-watch.sh checks 31",
+        "scripts/router-gh-watch.sh comment 30 since latest",
+        "scripts/router-gh-watch.sh review 31 since latest",
         "scripts/router-gh.sh issue epic/E-GHFLOW",
         "scripts/router-gh.sh issue wu/E-GHFLOW/w3-gh-watch",
         " scripts/router-gh-watch.sh merged 1 ",
@@ -4222,6 +4245,10 @@ fn router_guard_admits_the_github_watch_and_issue_shapes_and_no_other_spelling()
         "scripts/router-gh-watch.sh review 31 since 2 3",
         "scripts/router-gh-watch.sh review 31 --since 2",
         "scripts/router-gh-watch.sh merged 31 since 2",
+        "scripts/router-gh-watch.sh merged 31 since latest",
+        "scripts/router-gh-watch.sh comment 30 since Latest",
+        "scripts/router-gh-watch.sh comment 30 since latest 2",
+        "scripts/router-gh-watch.sh comment 30 latest",
         "scripts/router-gh-watch.sh checks 31 since 2",
         "scripts/router-gh-watch.sh approve 31",
         "scripts/router-gh-watch.sh REVIEW 31",
@@ -4247,7 +4274,7 @@ fn router_guard_admits_the_github_watch_and_issue_shapes_and_no_other_spelling()
     }
     let msg = bash("rm x").unwrap();
     assert!(
-        msg.contains("scripts/router-gh-watch.sh review|comment <n> [since <id>] | merged|checks <n>") && msg.contains("issue <wu/E/slug or epic/E>"),
+        msg.contains("scripts/router-gh-watch.sh review|comment <n> [since <id>|latest] | merged|checks <n>") && msg.contains("issue <wu/E/slug or epic/E>"),
         "deny message omits the new shapes: {msg}"
     );
 }
@@ -4283,6 +4310,7 @@ fn the_guard_and_the_github_watch_take_the_same_arguments() {
         if next(2) == 0 {
             shapes.push(vec![k, "7", "after", "9"]);
         }
+        shapes.push(vec![k, "7", "since", ["latest", "Latest", "latest1", "last"][next(4)]]);
         for args in shapes {
             let line = format!("scripts/router-gh-watch.sh {}", args.join(" "));
             let (admitted, ok) = (bash(&line).is_none(), crate::router_gh_watch_args::accepts(&args));
