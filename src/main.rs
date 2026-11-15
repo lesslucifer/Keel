@@ -30,6 +30,14 @@ struct Config {
     tests: TestsCfg,
     #[serde(default)]
     mr: MrCfg,
+    /// `[github]`, read by keel only for `repo`: a review page a sign-off by approval names must be on
+    /// that repository (E-GHFLOW2.W3). Its other keys are the router scripts'.
+    #[serde(default)]
+    github: GithubCfg,
+}
+#[derive(Deserialize, Default)]
+struct GithubCfg {
+    repo: Option<String>,
 }
 /// Signer tiers this project accepts from .keel/mr-allowed (Q10: configurable, Trawler's three by default),
 /// and whether a WU/epic sign-off must attest a result report.

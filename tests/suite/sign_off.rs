@@ -289,10 +289,11 @@ fn a_github_only_id_cannot_sign_by_typing() {
     ok(keel(p, &["mr", "commit", "-m", "x", "--as", "vu"]));
 }
 
-/// The epic report rides as refs/notes/report on the epic tip: the approval attests its bytes and
-/// an edit of the note afterwards turns check 8 red.
+/// The epic report rides as refs/notes/report on the epic tip. GitHub never shows a note, so an
+/// approval cannot attest it (security review I6): it is refused, and the typed sign-off attests it,
+/// whose edit afterwards turns check 8 red. An epic approval attests a report committed in the range.
 #[test]
-fn an_epic_approval_binds_the_report_note_and_an_edited_note_is_red() {
+fn an_epic_report_note_is_attested_by_the_typed_sign_off_never_by_an_approval() {
     let d = fixture();
     let p = d.path();
     notes_with(p, &["test", "doc"], r#"{"unit":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
@@ -313,16 +314,81 @@ fn an_epic_approval_binds_the_report_note_and_an_edited_note_is_red() {
 
     let reviews = json!([review(30, OWNER, "APPROVED", &tip)]);
     let o = sign_off(p, "epic", "main", &reviews, &[]);
-    assert_eq!(o.status.code(), Some(1), "an epic with no committed report names the note: {}", text(&o));
-    ok(sign_off(p, "epic", "main", &reviews, &["--report", "refs/notes/report"]));
+    assert_eq!(o.status.code(), Some(1), "an epic with no committed report: {}", text(&o));
+    let o = sign_off(p, "epic", "main", &reviews, &["--report", "refs/notes/report"]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(text(&o).contains("never showed its bytes"), "{}", text(&o));
+    assert!(note(p, "mr", &tip).is_none());
+    ok(keel(p, &["mr", "confirm", "epic", "--as", "vu", "--report", "refs/notes/report"]));
     let n = note(p, "mr", &tip).unwrap();
-    assert_eq!((n["level"].as_str(), n["report"].as_str()), (Some("epic"), Some("refs/notes/report")));
+    assert_eq!((n["level"].as_str(), n["report"].as_str(), n["tier"].as_str()), (Some("epic"), Some("refs/notes/report"), Some("username")));
     ok(keel(p, &["verify-dod", "epic", "wu/e/a"]));
 
     git(p, &["notes", "--ref=report", "add", "-f", "-m", "<html data-artifact=\"epic-result\"><p>something else</p></html>", &tip]);
     red8(p, "epic", "differs from the bytes");
     git(p, &["notes", "--ref=report", "remove", &tip]);
     red8(p, "epic", "carries no refs/notes/report note");
+
+    // a report committed in the epic's range is what GitHub showed at the approved commit: signed
+    write(p, "docs/e-result.html", EPIC_RESULT);
+    commit(p, "the epic report, committed");
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    notes_with(p, &["test", "cr"], r#"{"e2e":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
+    ok(keel(p, &["notes", "write", "doc", "--distill", "docs/work/a-result.html=docs/decisions/a.html"]));
+    ok(sign_off(p, "epic", "main", &json!([review(31, OWNER, "APPROVED", &tip)]), &[]));
+    assert_eq!(note(p, "mr", &tip).unwrap()["report"], "docs/e-result.html");
+    ok(keel(p, &["verify-dod", "epic", "wu/e/a"]));
+}
+
+/// Security review I3: GitHub's review decision on the tip, not the newest approval, decides.
+#[test]
+fn a_later_change_request_on_the_tip_withdraws_the_approval() {
+    let d = fixture();
+    let p = d.path();
+    notes(p);
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    for list in [
+        json!([review(11, OWNER, "APPROVED", &tip), review(12, OWNER, "CHANGES_REQUESTED", &tip)]),
+        json!([review(12, OWNER, "CHANGES_REQUESTED", &tip), review(11, OWNER, "APPROVED", &tip)]),
+        json!([review(11, OWNER, "DISMISSED", &tip)]),
+    ] {
+        let o = sign_off(p, "wu", "epic/e", &list, &[]);
+        assert_eq!(o.status.code(), Some(3), "{list}: {}", text(&o));
+        assert!(note(p, "mr", &tip).is_none(), "{list}");
+    }
+    ok(sign_off(
+        p,
+        "wu",
+        "epic/e",
+        &json!([review(11, OWNER, "APPROVED", &tip), review(12, OWNER, "CHANGES_REQUESTED", &tip), review(13, OWNER, "APPROVED", &tip)]),
+        &[],
+    ));
+    assert_eq!(note(p, "mr", &tip).unwrap()["review"]["id"], 13);
+}
+
+/// Security review N5: with `[github] repo` set on the target, a review page on another repository
+/// signs nothing, and a note naming one is red.
+#[test]
+fn a_review_page_must_be_on_the_targets_github_repo_when_the_policy_names_one() {
+    let d = fixture();
+    let p = d.path();
+    notes(p);
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    let signed = note(p, "mr", &tip).unwrap();
+    git(p, &["notes", "--ref=mr", "remove", &tip]);
+    git(p, &["switch", "-q", "epic/e"]);
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    write(p, ".keel/config.toml", &format!("{cfg}[github]\nrepo = \"other/Keel\"\n"));
+    commit(p, "the epic's repository is other/Keel");
+    git(p, &["switch", "-q", "wu/e/a"]);
+    write(p, ".keel/config.toml", &format!("{cfg}[github]\nrepo = \"other/Keel\"\n"));
+    let o = sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]);
+    assert_eq!(o.status.code(), Some(3), "{}", text(&o));
+    git(p, &["notes", "--ref=mr", "add", "-m", &signed.to_string(), &tip]);
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("8·manual-review") && t.contains("not on other/Keel"), "{t}");
 }
 
 /// A git on PATH that records every call and fails: `keel mr` must make none on a refused checkout.

@@ -809,7 +809,7 @@ pub(crate) fn manual_review(
     let tier = match (&n.review, typed_tier(&allowed, &n.signer)) {
         (_, Some("key")) => Some("key"),
         (Some(r), _) if approves(&allowed, &n.signer) => {
-            if let Some(cause) = review_problem(r, tip) {
+            if let Some(cause) = review_problem(r, tip, cfg.github.repo.as_deref()) {
                 return again(format!("the approval on {t}: {cause}"));
             }
             Some(GITHUB)
@@ -851,10 +851,17 @@ fn stale_change(signed: &str, range: &str) -> String {
 }
 
 /// Why an approval's review does not bind this tip, if it does not: it approved another commit, or its
-/// page is not that review's on a pull request of a GitHub repository.
-fn review_problem(r: &Review, tip: &str) -> Option<String> {
+/// page is not that review's on a pull request of a GitHub repository - of `repo` (`[github] repo`,
+/// GitHub's owner/name, compared ignoring ASCII case as GitHub does) when the policy names one.
+fn review_problem(r: &Review, tip: &str, repo: Option<&str>) -> Option<String> {
     if r.commit != tip {
         return Some(format!("its review approved {}, not this tip", printable(short(&r.commit))));
+    }
+    if let Some(repo) = repo {
+        let on = r.url.strip_prefix("https://github.com/").and_then(|u| u.split("/pull/").next()).unwrap_or("");
+        if !on.eq_ignore_ascii_case(repo) {
+            return Some(format!("its review link {} is not on {} ([github] repo)", printable(&r.url), printable(repo)));
+        }
     }
     let page =
         regex::Regex::new(r"^https://github\.com/[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}/pull/[1-9][0-9]{0,9}#pullrequestreview-([1-9][0-9]{0,19})$").ok()?;
@@ -864,25 +871,39 @@ fn review_problem(r: &Review, tip: &str) -> Option<String> {
     }
 }
 
-/// GitHub's review list (`GET /repos/{o}/{r}/pulls/{n}/reviews`), read as data: the newest review whose
-/// state is APPROVED, on exactly `tip`, by an id `allowed` lists under the github tier, with a page
-/// that is its own. Everything else - a comment, a change request, a dismissed or pending review,
-/// another commit, an unlisted or malformed id - is passed over.
-fn pick_approval(reviews: &serde_json::Value, tip: &str, allowed: &[Entry]) -> Option<(String, Review)> {
-    let mut best: Option<(String, Review)> = None;
+/// GitHub's review list (`GET /repos/{o}/{r}/pulls/{n}/reviews`), read as data, judged by GitHub's own
+/// review decision on exactly `tip`: for each id `allowed` lists under the github tier, its latest
+/// (highest id) review on the tip whose state is a decision - APPROVED, CHANGES_REQUESTED, or
+/// DISMISSED (an approval withdrawn by a maintainer). A comment decides nothing; a review on another
+/// commit does not count. Signed: none of those latest decisions is CHANGES_REQUESTED, and the newest
+/// one that is APPROVED, with a page of its own (and on `repo` when set), is the approval. A change
+/// request blocks whatever its other fields hold, so a malformed field never weakens a block.
+fn pick_approval(reviews: &serde_json::Value, tip: &str, allowed: &[Entry], repo: Option<&str>) -> Option<(String, Review)> {
+    let mut latest: std::collections::BTreeMap<String, &serde_json::Value> = Default::default();
     for v in reviews.as_array()? {
-        let (Some(id), Some(user), Some("APPROVED"), Some(commit), Some(url)) =
-            (v["id"].as_u64(), v["user"]["id"].as_u64(), v["state"].as_str(), v["commit_id"].as_str(), v["html_url"].as_str())
+        let (Some(id), Some(user), Some(state), Some(commit)) = (v["id"].as_u64(), v["user"]["id"].as_u64(), v["state"].as_str(), v["commit_id"].as_str())
         else {
             continue;
         };
-        let review = Review { id, url: url.to_string(), commit: commit.to_string() };
         let user = user.to_string();
-        if approves(allowed, &user) && review_problem(&review, tip).is_none() && best.as_ref().is_none_or(|(_, b)| b.id < id) {
-            best = Some((user, review));
+        if commit != tip || !approves(allowed, &user) || !["APPROVED", "CHANGES_REQUESTED", "DISMISSED"].contains(&state) {
+            continue;
+        }
+        if latest.get(&user).is_none_or(|w| w["id"].as_u64().is_some_and(|w| w < id)) {
+            latest.insert(user, v);
         }
     }
-    best
+    if latest.values().any(|v| v["state"] == "CHANGES_REQUESTED") {
+        return None;
+    }
+    latest
+        .into_iter()
+        .filter(|(_, v)| v["state"] == "APPROVED")
+        .filter_map(|(user, v)| {
+            let review = Review { id: v["id"].as_u64()?, url: v["html_url"].as_str()?.to_string(), commit: tip.to_string() };
+            review_problem(&review, tip, repo).is_none().then_some((user, review))
+        })
+        .max_by_key(|(_, r)| r.id)
 }
 
 pub(crate) const SIGN_OFF_USAGE: &str = "usage: keel ci sign-off <wu|epic> <tip> --target <base> --reviews <file> [--report <path>]";
@@ -921,8 +942,8 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
     };
     let src = format!("{target}:{ROSTER}");
     let allowed = parse_roster(&listed, &cfg.mr.tiers, &src)?;
-    let Some((id, review)) = pick_approval(&reviews, &tip, &allowed) else {
-        println!("no approval to sign on {}: none of its reviews is an APPROVED one on this commit by an id {src} lists under the github tier", short(&tip));
+    let Some((id, review)) = pick_approval(&reviews, &tip, &allowed, cfg.github.repo.as_deref()) else {
+        println!("no approval to sign on {}: by GitHub's review decision on this commit, no id {src} lists under the github tier approves it, or one requests changes", short(&tip));
         return Ok(3);
     };
     let Some(gate::Ready { tip, base, target, cr }) = gate::sign_ready(repo, cfg, epic, tip_ref, args, false)? else {
@@ -945,6 +966,12 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
         Ok(r) => r,
         Err((what, _)) => return refuse(what),
     };
+    // GitHub shows a pull request's files at the approved commit, never a note: an approval attests a
+    // report committed in the range, and the report note only through the typed sign-off (security
+    // review I6: a note can be rewritten after the signer last saw anything of it).
+    if report.as_deref() == Some(REPORT_NOTE) {
+        return refuse(format!("an approval cannot attest {REPORT_NOTE}: GitHub never showed its bytes to the signer; commit the report in the range, or sign with keel mr confirm --report {REPORT_NOTE}"));
+    }
     let report_hash = match &report {
         Some(r) => match report_hash(repo, &tip, r, epic) {
             Ok(Some(h)) => Some(h),
@@ -1128,24 +1155,43 @@ mod tests {
     }
 
     #[test]
-    fn the_approval_picked_is_the_newest_approved_one_on_the_tip_by_a_listed_id() {
+    fn an_approval_signs_only_under_githubs_review_decision_on_the_tip() {
         let allowed = parse_roster("github: 7 a\ngithub: 8 b\nusername: 9\n", &tiers(&["username", "github"]), "r").unwrap();
         let (tip, old) = ("t".repeat(40), "o".repeat(40));
         let page = |id: u64| format!("https://github.com/o/r/pull/3#pullrequestreview-{id}");
-        let list =
-            json!([rv(5, json!(7), "APPROVED", &tip, &page(5)), rv(9, json!(8), "APPROVED", &tip, &page(9)), rv(4, json!(8), "APPROVED", &tip, &page(4))]);
-        let (who, r) = pick_approval(&list, &tip, &allowed).unwrap();
+        let at = |id: u64, user: u64, state: &str, commit: &str| rv(id, json!(user), state, commit, &page(id));
+        let pick = |list: serde_json::Value| pick_approval(&list, &tip, &allowed, None).map(|(who, r)| (who, r.id));
+        let list = json!([at(5, 7, "APPROVED", &tip), at(9, 8, "APPROVED", &tip), at(4, 8, "APPROVED", &tip)]);
+        let (who, r) = pick_approval(&list, &tip, &allowed, None).unwrap();
         assert_eq!((who.as_str(), r), ("8", Review { id: 9, url: page(9), commit: tip.clone() }));
-        assert!(pick_approval(&json!({"id": 1}), &tip, &allowed).is_none(), "not a list");
-        // generated lists (seeded LCG): whatever is picked is APPROVED, on the tip, by a listed github id,
-        // with its own page, and no such review in the list is newer
+        assert!(pick_approval(&json!({"id": 1}), &tip, &allowed, None).is_none(), "not a list");
+        // a signer's later change request on the tip withdraws their approval; a later approval restores it
+        assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), at(6, 7, "CHANGES_REQUESTED", &tip)])), None);
+        assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), at(6, 7, "CHANGES_REQUESTED", &tip), at(7, 7, "APPROVED", &tip)])), Some(("7".into(), 7)));
+        // the order GitHub lists them in does not matter: the latest is the highest id
+        assert_eq!(pick(json!([at(6, 7, "CHANGES_REQUESTED", &tip), at(5, 7, "APPROVED", &tip)])), None);
+        // another listed signer's change request on the tip blocks; on an older commit, or by an unlisted id, it does not
+        assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), at(6, 8, "CHANGES_REQUESTED", &tip)])), None);
+        assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), at(6, 8, "CHANGES_REQUESTED", &old)])), Some(("7".into(), 5)));
+        assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), at(6, 9, "CHANGES_REQUESTED", &tip), at(7, 42, "CHANGES_REQUESTED", &tip)])), Some(("7".into(), 5)));
+        // a dismissed approval approves nothing; a comment after an approval changes nothing
+        assert_eq!(pick(json!([at(5, 7, "DISMISSED", &tip)])), None);
+        assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), at(6, 7, "COMMENTED", &tip)])), Some(("7".into(), 5)));
+        // a change request with a broken page still blocks: blocking is never weakened by a malformed field
+        let mut odd = at(6, 8, "CHANGES_REQUESTED", &tip);
+        odd["html_url"] = json!("x");
+        assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), odd])), None);
+        // generated lists (seeded LCG) against the rule written out: per listed id, its latest decision
+        // (APPROVED, CHANGES_REQUESTED, DISMISSED) on the tip; none CHANGES_REQUESTED, and the newest
+        // latest-APPROVED with its own page is signed
         let states = ["APPROVED", "COMMENTED", "CHANGES_REQUESTED", "DISMISSED", "PENDING", "approved"];
         let mut x: u64 = 0x5160;
-        for _ in 0..1000 {
-            let n = lcg(&mut x) % 6;
+        for _ in 0..2000 {
+            let n = lcg(&mut x) % 7;
+            let mut ids: Vec<u64> = (1..=60).collect();
             let list: Vec<serde_json::Value> = (0..n)
                 .map(|_| {
-                    let id = 1 + lcg(&mut x) % 50;
+                    let id = ids.remove((lcg(&mut x) % ids.len() as u64) as usize);
                     let user = match lcg(&mut x) % 4 {
                         0 => json!(7),
                         1 => json!(9),
@@ -1153,18 +1199,30 @@ mod tests {
                         _ => json!(8),
                     };
                     let commit = if lcg(&mut x).is_multiple_of(3) { &old } else { &tip };
-                    let url = if lcg(&mut x).is_multiple_of(5) { page(id + 1) } else { page(id) };
+                    let url = if lcg(&mut x).is_multiple_of(5) { page(id + 100) } else { page(id) };
                     rv(id, user, states[(lcg(&mut x) % states.len() as u64) as usize], commit, &url)
                 })
                 .collect();
-            let good = |v: &serde_json::Value| {
-                v["state"] == "APPROVED"
-                    && v["commit_id"] == json!(tip)
-                    && (v["user"]["id"] == json!(7) || v["user"]["id"] == json!(8))
-                    && v["html_url"] == json!(page(v["id"].as_u64().unwrap()))
+            let mut latest: std::collections::BTreeMap<u64, &serde_json::Value> = Default::default();
+            for v in &list {
+                let decision = ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"].contains(&v["state"].as_str().unwrap());
+                if let (Some(u @ (7 | 8)), true, true) = (v["user"]["id"].as_u64(), decision, v["commit_id"] == json!(tip)) {
+                    if latest.get(&u).is_none_or(|w| w["id"].as_u64() < v["id"].as_u64()) {
+                        latest.insert(u, v);
+                    }
+                }
+            }
+            let blocked = latest.values().any(|v| v["state"] == "CHANGES_REQUESTED");
+            let want = if blocked {
+                None
+            } else {
+                latest
+                    .values()
+                    .filter(|v| v["state"] == "APPROVED" && v["html_url"] == json!(page(v["id"].as_u64().unwrap())))
+                    .map(|v| v["id"].as_u64().unwrap())
+                    .max()
             };
-            let newest = list.iter().filter(|v| good(v)).map(|v| v["id"].as_u64().unwrap()).max();
-            assert_eq!(pick_approval(&json!(list), &tip, &allowed).map(|(_, r)| r.id), newest, "{list:?}");
+            assert_eq!(pick_approval(&json!(list), &tip, &allowed, None).map(|(_, r)| r.id), want, "{list:?}");
         }
     }
 
@@ -1172,8 +1230,8 @@ mod tests {
     fn a_review_binds_only_its_own_page_on_a_github_pull_request_and_the_tip() {
         let tip = "a".repeat(40);
         let r = |url: &str, commit: &str| Review { id: 42, url: url.into(), commit: commit.into() };
-        assert_eq!(review_problem(&r("https://github.com/own/Keel/pull/7#pullrequestreview-42", &tip), &tip), None);
-        assert!(review_problem(&r("https://github.com/own/Keel/pull/7#pullrequestreview-42", &"b".repeat(40)), &tip).unwrap().contains("not this tip"));
+        assert_eq!(review_problem(&r("https://github.com/own/Keel/pull/7#pullrequestreview-42", &tip), &tip, None), None);
+        assert!(review_problem(&r("https://github.com/own/Keel/pull/7#pullrequestreview-42", &"b".repeat(40)), &tip, None).unwrap().contains("not this tip"));
         for bad in [
             "https://github.com/own/Keel/pull/7#pullrequestreview-43",
             "https://github.com/own/Keel/pull/7#pullrequestreview-042",
@@ -1184,7 +1242,14 @@ mod tests {
             "https://github.com/own/Keel/pull/7/#pullrequestreview-42",
             "https://github.com/own/Keel/pull/0#pullrequestreview-42",
         ] {
-            assert!(review_problem(&r(bad, &tip), &tip).unwrap().contains("is not review 42's page"), "{bad}");
+            assert!(review_problem(&r(bad, &tip), &tip, None).unwrap().contains("is not review 42's page"), "{bad}");
+        }
+        // with [github] repo set, the page must be on that repository (GitHub's names ignore case)
+        let page = r("https://github.com/own/Keel/pull/7#pullrequestreview-42", &tip);
+        assert_eq!(review_problem(&page, &tip, Some("own/Keel")), None);
+        assert_eq!(review_problem(&page, &tip, Some("OWN/keel")), None);
+        for other in ["other/Keel", "own/Keel2", "own/Kee", "own"] {
+            assert!(review_problem(&page, &tip, Some(other)).unwrap().contains("not on"), "{other}");
         }
     }
 
