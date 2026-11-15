@@ -16,7 +16,22 @@ use tempfile::TempDir;
 use crate::common;
 
 const KEEL: &str = env!("CARGO_BIN_EXE_keel");
-pub(crate) const TOKEN: &str = "ghs_routerGhTestToken0123456789abcdefXYZ";
+/// An installation token as GitHub mints it since 2026-04-27 (E-GHFLOW2.W1): stateless,
+/// `ghs_<app id>_<JWT>`, about 520 characters of base64url parts (with `-` and `_`) and two dots.
+pub(crate) const TOKEN: &str = concat!(
+    "ghs_123_",
+    "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9",
+    ".",
+    "eyJpc3MiOiIxMjMiLCJpbnN0YWxsYXRpb24iOjQ1Nn0-routerGh_test-eyJpc3MiOiIxMjMiLCJpbnN0YWxsYXRpb24iOjQ1Nn0-",
+    "routerGh_test-eyJpc3MiOiIxMjMiLCJpbnN0YWxsYXRpb24iOjQ1Nn0-",
+    ".",
+    "c2lnbmF0dXJl-routerGh_Test-0123456789_abc-c2lnbmF0dXJl-routerGh_Test-0123456789_abc-c2lnbmF0dXJl-",
+    "routerGh_Test-0123456789_abc-c2lnbmF0dXJl-routerGh_Test-0123456789_abc-c2lnbmF0dXJl-routerGh_Test-",
+    "0123456789_abc-c2lnbmF0dXJl-routerGh_Test-0123456789_abc-c2lnbmF0dXJl-routerGh_Test-0123456789_abc-",
+    "c2lnbmF0dXJl-rou"
+);
+/// The legacy installation token, `ghs_` and 36 characters, which GitHub minted before the change.
+pub(crate) const LEGACY_TOKEN: &str = "ghs_routerGhTestToken0123456789abcdefXYZ";
 pub(crate) const BOT: &str = "keel-router[bot]";
 /// The commander the scratch config names (E-GHFLOW.W3): the owner's real id, so the fixture reads
 /// as the committed config does.
@@ -292,6 +307,12 @@ impl Gh {
     pub(crate) fn assert_no_secret(&self, o: &Output) {
         let out = text(o);
         assert!(!out.contains(TOKEN) && !out.contains("ghs_"), "the token leaked: {out}");
+        self.assert_no_key_or_jwt(&out);
+    }
+
+    /// No output carries a line of the key or a JWT the script sent (its signature, or any JSON
+    /// part, which starts `eyJ`): every check of `assert_no_secret` but the token's own.
+    pub(crate) fn assert_no_key_or_jwt(&self, out: &str) {
         assert!(!out.contains("PRIVATE KEY") && !out.contains("eyJ"), "key or JWT material leaked: {out}");
         let pem = std::fs::read_to_string(self.home.join(".config/keel/router-gh/app.pem")).unwrap_or_default();
         for line in pem.lines().filter(|l| l.len() > 40) {
@@ -1062,11 +1083,135 @@ fn an_http_error_prints_its_status_and_githubs_message_only() {
     );
     assert!(o.stdout.is_empty());
     assert_eq!(gh.origin_sha("refs/heads/wu/E/x"), None);
-    // a token GitHub returns that is not one is refused, not used
+    // a token GitHub returns that is not one is refused, not used; the error names the status and
+    // the length only (E-GHFLOW2.W1)
     std::fs::write(gh.mock.join("routes"), "POST /app/installations/456/access_tokens 201 t.json\n").unwrap();
-    std::fs::write(gh.mock.join("t.json"), r#"{"token":"ghs_x\"; rm -rf /"}"#).unwrap();
-    let o = gh.run(&["push", "wu/E/x"]);
-    assert!(o.status.code() == Some(1) && text(&o).contains("no usable installation token"), "{}", text(&o));
+    let long = format!("ghs_{}", "a".repeat(4093));
+    for (body, len) in [
+        (serde_json::json!({"token": "ghs_x\"; rm -rf /"}), 16),
+        (serde_json::json!({"token": "ghs_x\"y"}), 7),
+        (serde_json::json!({"token": "ghs_x y"}), 7),
+        (serde_json::json!({"token": "ghs_x'y"}), 7),
+        (serde_json::json!({"token": "ghs_x\\y"}), 7),
+        (serde_json::json!({"token": "ghs_x\ny"}), 7),
+        (serde_json::json!({"token": "ghs_x\u{e9}y"}), 8),
+        (serde_json::json!({"token": long}), 4097),
+        (serde_json::json!({"token": ""}), 0),
+        (serde_json::json!({"token": 12345678901234567890u64}), 0),
+        (serde_json::json!({"expires_at": "2026-11-15T12:00:00Z"}), 0),
+    ] {
+        std::fs::write(gh.mock.join("t.json"), body.to_string()).unwrap();
+        let o = gh.run(&["push", "wu/E/x"]);
+        assert_eq!(o.status.code(), Some(1), "{body}: {}", text(&o));
+        assert_eq!(
+            String::from_utf8_lossy(&o.stderr),
+            format!("router-gh: GitHub returned no usable installation token (HTTP 201, a token of {len} bytes)\n"),
+            "{body}"
+        );
+        assert_eq!(gh.origin_sha("refs/heads/wu/E/x"), None);
+    }
+}
+
+/// A token is opaque (E-GHFLOW2.W1): the legacy 40-character shape and the stateless one both
+/// push, each riding the API calls as it came, and the longest token taken, 4096 bytes, too.
+#[test]
+fn a_legacy_and_a_stateless_token_both_push() {
+    let long = format!("ghs_123_{}.{}.{}", "a-".repeat(500), "b_".repeat(1000), "c".repeat(1086));
+    assert_eq!(long.len(), 4096);
+    for t in [LEGACY_TOKEN, TOKEN, long.as_str()] {
+        let gh = Gh::new();
+        let tip = gh.sha("wu/E/x");
+        std::fs::write(gh.mock.join("r0-0.json"), serde_json::json!({"token": t, "expires_at": "2026-11-15T12:00:00Z"}).to_string()).unwrap();
+        let o = gh.run(&["push", "wu/E/x"]);
+        assert_eq!(stdout(&o), format!("PUSHED branch=wu/E/x sha={tip} state=new"), "{}", text(&o));
+        assert!(!text(&o).contains(t), "the token leaked");
+        // pr-open's next call carries the token exactly as GitHub minted it
+        gh.routes(&[("GET", "/repos/own/Keel/git/ref/heads/wu/E/x", 200, serde_json::json!({"object": {"sha": "0"}}))]);
+        std::fs::write(gh.mock.join("r0-0.json"), serde_json::json!({"token": t}).to_string()).unwrap();
+        let o = gh.run(&["pr-open", "wu/E/x"]);
+        assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+        assert_eq!(gh.log()[1]["auth"], format!("Bearer {t}"));
+    }
+}
+
+/// An installation token in GitHub's stateless format (`ghs_<app id>_<JWT>`, about 520 characters,
+/// base64url parts joined by dots), the shape GitHub mints since 2026-04-27 (E-GHFLOW2.W1).
+pub(crate) fn stateless_token() -> String {
+    let part = |seed: &str, n: usize| seed.repeat(n / seed.len() + 1)[..n].to_string();
+    format!("ghs_123_{}.{}.{}", part("eyJhbGciOiJSUzI1NiJ9", 36), part("eyJpc3MiOiIxMjMi-_Ab", 140), part("c2lnbmF0dXJl-_Xy0", 342))
+}
+
+/// The owner's diagnostic (ROUTER_GH_DIAG=mint, E-GHFLOW2.W1): one token request, then only facts
+/// that are no secret on stderr, exit 0, and nothing pushed; never the token, the JWT or the key.
+#[test]
+fn the_token_diagnostic_prints_the_tokens_shape_and_no_secret() {
+    let gh = Gh::new();
+    let token = stateless_token();
+    let diag = || {
+        let mut c = common::cmd("sh");
+        c.arg(gh.repo.join("scripts/router-gh.sh")).args(["push", "wu/E/x"]).current_dir(&gh.repo);
+        gh.github_env(&mut c);
+        let o = c.env("ROUTER_GH_DIAG", "mint").output().unwrap();
+        let out = text(&o);
+        assert_eq!(o.status.code(), Some(0), "{out}");
+        assert!(o.stdout.is_empty(), "{out}");
+        // no secret: no line of the key, no part of the JWT, and no 8 bytes of the token past its
+        // `ghs_` (its prefix and length are the facts it prints)
+        gh.assert_no_key_or_jwt(&out);
+        let tail = &token.as_bytes()[4..];
+        for w in tail.windows(8) {
+            let w = std::str::from_utf8(w).unwrap();
+            assert!(!out.contains(w), "the token leaked ({w:?}): {out}");
+        }
+        assert_eq!(gh.calls(), ["POST /app/installations/456/access_tokens"]);
+        assert_eq!(gh.origin_sha("refs/heads/wu/E/x"), None);
+        let run = gh.home.join(".config/keel/router-gh/run");
+        assert_eq!(std::fs::read_dir(&run).unwrap().count(), 0, "the run dir kept a file");
+        assert_eq!(std::fs::read_dir(&gh.tmp).unwrap().count(), 0, "the shared $TMPDIR got a file");
+        out
+    };
+    // a token, with GitHub's response headers: their names are printed, never a value
+    gh.routes(&[]);
+    std::fs::write(gh.mock.join("r0-0.json"), serde_json::json!({"token": token, "expires_at": "2026-11-15T12:00:00Z", "permissions": {}}).to_string())
+        .unwrap();
+    std::fs::write(
+        gh.mock.join("r0-0.json.hdr"),
+        "HTTP/2 201\r\ndate: Sat, 15 Nov 2026 10:00:00 GMT\r\ncontent-type: application/json; charset=utf-8\r\nx-github-request-id: ABCD:1234:5678\r\n\r\n",
+    )
+    .unwrap();
+    let out = diag();
+    for want in [
+        "DIAG status=201\n",
+        "DIAG status-line=HTTP/2 201\n",
+        "DIAG header-names=date content-type x-github-request-id \n",
+        "DIAG keys=token expires_at permissions\n",
+        "DIAG token-type=string\n",
+        &format!("DIAG token-length={}\n", token.len()),
+        "DIAG token-first4=ghs_\n",
+        "DIAG token-dots=2 ",
+        "DIAG token-shape=ghs_<app_id>_<more>\n",
+    ] {
+        assert!(out.contains(want), "no {want:?} in {out}");
+    }
+    for value in ["Sat", "GMT", "application/json", "charset", "ABCD", "1234:5678"] {
+        assert!(!out.contains(value), "a header value was printed ({value}): {out}");
+    }
+    assert!(!out.contains("DIAG message="), "{out}");
+    // a refusal: its status and GitHub's message, no token
+    std::fs::write(gh.mock.join("routes"), "POST /app/installations/456/access_tokens 401 e.json\n").unwrap();
+    std::fs::write(gh.mock.join("e.json"), r#"{"message":"Bad credentials\u0007","documentation_url":"https://docs.github.com"}"#).unwrap();
+    std::fs::write(gh.mock.join("log"), "").unwrap();
+    let out = diag();
+    for want in [
+        "DIAG status=401\n",
+        "DIAG keys=message documentation_url\n",
+        "DIAG token-type=null\n",
+        "DIAG token-length=0\n",
+        "DIAG token-shape=empty\n",
+        "DIAG message=Bad credentials\n",
+    ] {
+        assert!(out.contains(want), "no {want:?} in {out}");
+    }
 }
 
 /// git's credential helper: `get` prints the token once, then the file is gone and it prints
@@ -1107,8 +1252,22 @@ fn the_credential_mode_gives_the_token_once() {
     assert!(!file.exists() && std::fs::read_dir(&dir).unwrap().next().is_none(), "the token file outlived its one read");
     let o = run(&file, "get");
     assert!(o.status.success() && o.stdout.is_empty());
-    std::fs::write(&file, "not a token; id").unwrap();
-    assert!(run(&file, "get").stdout.is_empty(), "a malformed token is never printed");
+    // any token GitHub mints is handed over as it is: legacy, stateless, the longest taken (E-GHFLOW2.W1)
+    let long = format!("ghs_123_{}.{}.{}", "a-".repeat(500), "b_".repeat(1000), "c".repeat(1086));
+    for t in [LEGACY_TOKEN, TOKEN, long.as_str()] {
+        std::fs::write(&file, t).unwrap();
+        let o = run(&file, "get");
+        assert_eq!(String::from_utf8_lossy(&o.stdout), format!("username=x-access-token\npassword={t}\n"), "{}", text(&o));
+        assert!(!file.exists());
+    }
+    // a malformed token is never printed: each byte token_ok refuses, alone, and one byte too long
+    let over = format!("ghs_{}", "a".repeat(4093));
+    for bad in ["not a token; id", "ghs_x\"y", "ghs_x'y", "ghs_x\\y", "ghs_x y", "ghs_x\ty", "ghs_x\ny", "ghs_x\u{7f}y", "ghs_x\u{e9}y", over.as_str()] {
+        std::fs::write(&file, bad).unwrap();
+        let o = run(&file, "get");
+        assert!(o.status.success() && o.stdout.is_empty(), "{bad:?}: {}", text(&o));
+        assert!(!file.exists(), "{bad:?}: a refused token file outlived its one read");
+    }
     for f in [
         "/etc/passwd".into(),
         gh.root.path().join("token"),
@@ -1143,7 +1302,16 @@ fn the_real_curl_reads_the_request_config() {
 /// once per git run, and is gone after; push, the epic's ls-remote and sync each get a fresh one.
 #[test]
 fn over_https_git_gets_the_token_once_and_only_for_github() {
+    // any token GitHub mints (E-GHFLOW2.W1): the stateless one, the legacy one, the longest taken
+    let long = format!("ghs_123_{}.{}.{}", "a-".repeat(500), "b_".repeat(1000), "c".repeat(1086));
+    for t in [TOKEN, LEGACY_TOKEN, long.as_str()] {
+        over_https_with(t);
+    }
+}
+
+fn over_https_with(token: &str) {
     let gh = Gh::new();
+    std::fs::write(gh.mock.join("r0-0.json"), serde_json::json!({"token": token, "expires_at": "2026-11-15T12:00:00Z"}).to_string()).unwrap();
     let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap().trim().to_string();
     let log = gh.root.path().join("cred.log");
     let target = format!("file://{}", gh.origin.display());
@@ -1191,7 +1359,7 @@ os.execv(REAL, [REAL] + a)
     assert_eq!(cmds, ["push", "ls-remote", "push", "fetch"]);
     for r in &runs {
         assert_eq!(r["evil"], "", "another host got credentials: {r}");
-        assert_eq!(r["github"], format!("protocol=https\nhost=github.com\nusername=x-access-token\npassword={TOKEN}\n"), "{r}");
+        assert_eq!(r["github"], format!("protocol=https\nhost=github.com\nusername=x-access-token\npassword={token}\n"), "{r}");
         assert_eq!(r["again"], "", "the token was given twice in one git run: {r}");
         // security review P1c: git to GitHub speaks only https and runs no hook, whatever the config
         assert_eq!(r["allow"], "https", "{r}");

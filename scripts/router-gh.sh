@@ -73,6 +73,11 @@
 # (the curl to run), ROUTER_GH_API (https://api.github.com, or an https loopback URL), ROUTER_GH_GIT
 # (https://github.com, or a file:/// directory holding <owner>/<name>.git). The repository is
 # [github] repo in .keel/config.toml at HEAD of this checkout.
+# One diagnostic, the owner's only (E-GHFLOW2.W1; the router cannot set it, its guard admits no
+# environment prefix): ROUTER_GH_DIAG=mint makes the token request once (diag_mint), prints safe
+# facts only on stderr (the status, the response's header names and top-level keys, the token's type,
+# length, first four characters and shape) and exits 0 before any push or other request; never the
+# token, the JWT, the key or a header's value.
 set -euf
 # byte-wise, whatever the caller's locale: [A-Za-z] means ASCII letters in every check below
 LC_ALL=C; export LC_ALL
@@ -84,6 +89,14 @@ die() { echo "router-gh: $*" >&2; exit 2; }
 fail() { echo "router-gh: $*" >&2; exit 1; }
 # an argument as printed in an error: no control character, at most 80 bytes
 shown() { printf '%s' "$1" | tr -d '\000-\037\177' | cut -c1-80; }
+# token_ok <t>: an installation token as GitHub mints it, opaque (E-GHFLOW2.W1): the legacy ghs_ + 36
+# characters, or since 2026-04-27 the stateless ghs_<app id>_<JWT> of about 520, with . and -. Taken
+# as 1 to 4096 bytes of printable ASCII with no space, quote or backslash: the set that stays inert
+# in the curl config's quoted header line, git's password= line and the token file.
+token_ok() {
+  case "$1" in ''|*[!!-~]*|*\"*|*\'*|*\\*) return 1;; esac
+  [ ${#1} -le 4096 ]
+}
 usage="usage: push <branch> | pr-open <branch> [--base <main|epic/E>] | pr-ready <n> | post <n> <body-name> | sync <epic/E> | issue <branch>"
 # Keel's branch policy (.keel/config.toml [branches], as scripts/router-worker.sh holds it)
 main_b=main epic_p=epic/ wu_p=wu/
@@ -170,7 +183,7 @@ case "$mode" in
     # one reader only: the rename succeeds once
     mv "$f" "$f.used" 2> /dev/null || exit 0
     t=$(cat "$f.used"); rm -f "$f.used"
-    case "$t" in ''|*[!A-Za-z0-9_]*) exit 0;; esac
+    token_ok "$t" || exit 0
     printf 'username=x-access-token\npassword=%s\n' "$t"
     exit 0;;
   *) die "$usage";;
@@ -406,6 +419,31 @@ pages_newest() {
   done
 }
 b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+# diag_mint (ROUTER_GH_DIAG=mint, the owner's diagnostic, E-GHFLOW2.W1): the token request once,
+# then only facts that are no secret, on stderr, and exit 0 before any other step. It prints the
+# status, the response's header names and top-level keys, and the token's type, length, first four
+# characters and shape; never the token, the JWT, the key or a header's value.
+diag_mint() {
+  api POST "/app/installations/$inst/access_tokens" "$tmp/tokreq" jwt
+  jwt=
+  dt=$(jq -r '.token | strings' "$tmp/resp" 2> /dev/null) || dt=
+  {
+    echo "DIAG status=$code"
+    echo "DIAG status-line=$(head -n 1 "$tmp/hdr" 2> /dev/null | tr -cd 'A-Za-z0-9/. ')"
+    echo "DIAG header-names=$(sed -n 's/^\([A-Za-z0-9-]\{1,64\}\):.*/\1/p' "$tmp/hdr" 2> /dev/null | tr '\n' ' ')"
+    echo "DIAG body-bytes=$(wc -c < "$tmp/resp" | tr -d ' ')"
+    echo "DIAG keys=$(jq -r 'if type == "object" then keys_unsorted | join(" ") else "(a JSON " + type + ")" end' "$tmp/resp" 2> /dev/null || echo '(not JSON)')"
+    echo "DIAG token-type=$(jq -r '.token | type' "$tmp/resp" 2> /dev/null || echo '(not JSON)')"
+    echo "DIAG token-length=${#dt}"
+    echo "DIAG token-first4=$(printf '%s' "$dt" | cut -c1-4 | tr -cd 'A-Za-z0-9_')"
+    echo "DIAG token-dots=$(printf '%s' "$dt" | tr -cd . | wc -c | tr -d ' ') token-dashes=$(printf '%s' "$dt" | tr -cd - | wc -c | tr -d ' ') token-other-bytes=$(printf '%s' "$dt" | tr -d 'A-Za-z0-9_.-' | wc -c | tr -d ' ')"
+    case "$dt" in "ghs_${app_id}_"?*) echo "DIAG token-shape=ghs_<app_id>_<more>";; ghs_*) echo "DIAG token-shape=ghs_<other>";; '') echo "DIAG token-shape=empty";; *) echo "DIAG token-shape=other";; esac
+    case "$code" in 2??) ;; *) echo "DIAG message=$(jq -r '.message // empty' "$tmp/resp" 2> /dev/null | tr -d '\000-\037\177' | cut -c1-200)";; esac
+  } >&2
+  dt=
+  rm -f "$tmp/resp" "$tmp/hdr"
+  exit 0
+}
 # the installation token, restricted to this repository; the JWT that bought it lives 10 minutes
 mint() {
   now=$(date +%s)
@@ -415,12 +453,13 @@ mint() {
   [ ${#s} -ge 300 ] || die "cannot sign with the App key $key (an RSA private key in PEM form)"
   jwt=$h.$p.$s tok=
   jq -n --arg r "$rname" '{repositories: [$r]}' > "$tmp/tokreq"
+  [ "${ROUTER_GH_DIAG:-}" != mint ] || diag_mint
   api_ok POST "/app/installations/$inst/access_tokens" "$tmp/tokreq" jwt
-  tok=$(jq -r '.token // empty' "$tmp/resp" 2> /dev/null) || tok=
+  tok=$(jq -r '.token | strings' "$tmp/resp" 2> /dev/null) || tok=
   rm -f "$tmp/resp"
   jwt=
-  case "$tok" in ''|*[!A-Za-z0-9_]*) fail "GitHub returned no usable installation token";; esac
-  [ ${#tok} -ge 20 ] && [ ${#tok} -le 255 ] || fail "GitHub returned no usable installation token"
+  # the error names safe facts only: the status and the token's length, never a byte of it
+  token_ok "$tok" || fail "GitHub returned no usable installation token (HTTP $code, a token of ${#tok} bytes)"
 }
 # git to GitHub: over https the token comes from the one-shot credential helper, never a prompt
 gh_git() {
