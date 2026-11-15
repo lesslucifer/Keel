@@ -219,9 +219,12 @@ and an armed watcher is the wake. One script, one watcher, no reminder.
 - **Consume is the ack.** `scripts/router-inbox.sh consume <id>` after you have
   read and recorded the message; it prints `CONSUMED`, then `CONSUMED-ALREADY`
   on a repeat. Delivery is at-least-once: an unacked message returns on the next
-  watch, so quote the id back and never treat a print as the ack. `status` counts
+  watch, so quote the id back and never treat a print as the ack. `bytes=` is the
+  cleaned, capped body the watcher printed, never the file's size. `status` counts
   pending, read and orphan dotfiles without writing; junk files and symlinks are
-  skipped, never followed.
+  skipped, never followed. `read/` is never pruned and `.router/` is one checkout,
+  git-ignored and unbacked: deleting it drops every pending message, so move old
+  files out of `read/` by hand.
 - **No liveness check.** A worker that wedges without posting wakes nobody: a
   wedge and a long turn look identical, and silence cannot tell them apart. Do
   not arm a reminder, a schedule, a loop or a watchdog for it; at every wake read

@@ -323,12 +323,15 @@ in another skill.
   none came), then retire it; `STUCK (quiet …)` → message the worker first;
   `STUCK (permission prompt)` → the owner answers it (`claude attach <id>`), you
   cannot. A watchdog whose reports stop is yours to notice and start again.
-- **No heartbeat**: the router routes; it runs no loop, timer or reminder
-  (owner ruling 2026-11-11). On DSH a worker reports by posting to the channel
-  and your armed `watch` is the wake; every staged owner action has a watch too.
-  Each wake runs the wake checklist (`references/worker-ops.md`) and re-arms the
-  watcher in the same turn. A background spawn counts only once the launcher
-  printed `RUNNING`.
+- **No heartbeat**: the router routes; it runs no loop, timer or reminder of its
+  own (owner ruling 2026-11-11). On DSH a worker reports by posting to the
+  channel and your armed `watch` is the wake; every staged owner action has a
+  watch too. Each wake runs the wake checklist (`references/worker-ops.md`) and
+  re-arms the watcher in the same turn. That watcher's own bound is the one
+  self-renewed wake: at 6,600 s it wakes you about every 110 minutes (roughly 13
+  a day while armed) only to re-arm and read the fleet. Nothing schedules it; it
+  costs one pass per bound, not a tick per message, and retiring the last worker
+  disarms it. A background spawn counts only once the launcher printed `RUNNING`.
 
 ## Permissions
 
