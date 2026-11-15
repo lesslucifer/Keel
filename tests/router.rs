@@ -182,6 +182,25 @@ fn router_guard_allows_the_owner_sender_only_as_a_plain_shape() {
     assert!(write("/r/.router/briefs/x.txt").is_some(), "a brief is a .md file");
 }
 
+/// E-RGUARD epic review round 1: the owner body's path is held twice, as the sender's
+/// `DEFAULT_BODY` and as the guard's Write rule. Both are read from their files here: the guard
+/// admits a router Write to exactly the path the sender reads from its working directory.
+#[test]
+fn the_guard_admits_the_body_path_the_owner_sender_reads() {
+    let load = "import importlib.util, sys\n\
+                spec = importlib.util.spec_from_file_location('notify_owner', sys.argv[1])\n\
+                module = importlib.util.module_from_spec(spec)\n\
+                spec.loader.exec_module(module)\n\
+                print(module.DEFAULT_BODY.as_posix())";
+    let o = common::cmd("python3").arg("-c").arg(load).arg(root().join("scripts/notify-owner.py")).output().unwrap();
+    assert!(o.status.success(), "could not read DEFAULT_BODY: {}", String::from_utf8_lossy(&o.stderr));
+    let body = String::from_utf8(o.stdout).unwrap().trim().to_string();
+    assert!(!body.is_empty() && !body.starts_with('/'), "the sender's body is not a checkout-relative path: {body:?}");
+    let write = |p: &str| guard("router", "Write", serde_json::json!({ "file_path": format!("/r/{p}") }));
+    assert_eq!(write(&body), None, "the guard refuses the router's Write to the body the sender reads: {body}");
+    assert!(write(&format!("{body}.bak")).is_some(), "the guard admits a path beside the sender's body");
+}
+
 /// Review of 67b0de5: the guard must split gh's argv the way gh's flag parser (pflag) does. A
 /// single-dash long name is a short flag plus an attached value to gh (`-label` = `-l abel`), so
 /// the "value" after it becomes a flag of its own (`-label -R evil` really contacted evil.invalid);

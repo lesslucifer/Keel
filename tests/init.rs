@@ -406,7 +406,8 @@ fn router_skill_is_complete() {
     let mut src = BTreeMap::new();
     files(&root.join("skills"), &root.join("skills"), &mut src);
     src.insert("keel-router/references/lessons.md".into(), keel.to_string());
-    let keel_state = regex::Regex::new(r"(?:epic|wu)/E-ROUTER|\b2d7e18d\b|scripts/router-worker\.sh").unwrap();
+    // a home-directory path (E-RGUARD epic review: once only checklists.md's) is the author's machine
+    let keel_state = regex::Regex::new(r"(?:epic|wu)/E-ROUTER|\b2d7e18d\b|scripts/router-worker\.sh|/Users/|/home/|(?:^|[^A-Za-z0-9])[A-Za-z]:[\\/]").unwrap();
     for (f, body) in &src {
         let scrubbed = lineage.replace_all(body, "");
         let hit = token.find(&scrubbed);
@@ -476,32 +477,19 @@ fn router_skill_carries_the_dsh_transport_and_the_template_its_slots() {
 }
 
 /// E-RGUARD.W1 (UC-ROUTE-6, interim until backlog D2): the router ships a short checklist to run at
-/// the moment of action - both trees byte-identical, planted by `keel init` - and `SKILL.md` names it
+/// the moment of action, and `SKILL.md` names it
 /// at the two places a router meets it (the posture, session start) plus the DSH report channel where
 /// the no-heartbeat ruling lives (E-RGUARD.W3 replaced W1's interim fleet wake with it). Each list
 /// states the moment it runs at and keeps the rows the misses named, including the four
 /// turn-stopping checks the D2 guard will enforce: the durable brief, the closing line, the armed
-/// wake, the named denial.
+/// wake, the named denial. Shipping it (both trees byte-identical, planted by `keel init`) and
+/// keeping Keel's own state out of it are every shipped file's rules: `embedding_is_complete_and_prefixed`,
+/// `router_skill_is_complete` and the self-hosting no-op own them.
 #[test]
 fn router_ships_the_moment_of_action_checklists() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let src =
         std::fs::read_to_string(root.join("skills/keel-router/references/checklists.md")).expect("skills/keel-router/references/checklists.md is missing");
-    let mirror = std::fs::read_to_string(root.join(".claude/skills/keel-router/references/checklists.md")).unwrap();
-    assert_eq!(src, mirror, "skills/keel-router and .claude/skills/keel-router differ for checklists.md");
-
-    for leak in ["/Users/", "/home/", "E-ROUTER", "E-RGUARD", "E-SEED"] {
-        assert!(!src.contains(leak), "checklists.md carries Keel's own state: {leak:?}");
-    }
-    let home_path = regex::Regex::new(r"(?:/Users/|/home/|[A-Za-z]:[\\/])").unwrap();
-    assert!(home_path.find(&src).is_none(), "checklists.md carries a home-directory path: {:?}", home_path.find(&src).map(|m| m.as_str()));
-    let epic_id = regex::Regex::new(r"\bE-[A-Z][A-Z0-9]*\b").unwrap();
-    assert!(epic_id.find(&src).is_none(), "checklists.md names an epic id: {:?}", epic_id.find(&src).map(|m| m.as_str()));
-
-    let d = fresh_repo();
-    assert!(keel(d.path(), &["init"]).status.success());
-    let planted = std::fs::read_to_string(d.path().join(".claude/skills/keel-router/references/checklists.md")).expect("keel init did not plant checklists.md");
-    assert_eq!(src, planted, "keel init planted a different checklists.md");
 
     let skill = std::fs::read_to_string(root.join("skills/keel-router/SKILL.md")).unwrap();
     let section = |h: &str| {

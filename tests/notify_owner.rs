@@ -7,7 +7,7 @@
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::{Output, Stdio};
+use std::process::{Command, Output, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -36,10 +36,21 @@ fn channel() -> TempDir {
     dir
 }
 
+/// The sender spawned with HOME in the test's temp dir and no proxy, so a regression that falls
+/// back to the default channel files can never read the real token, and no request leaves loopback.
+fn sender(home: &Path) -> Command {
+    let mut command = common::cmd(script());
+    command.env("HOME", home);
+    for proxy in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"] {
+        command.env_remove(proxy);
+    }
+    command
+}
+
 /// Run the sender as the router does: the file itself, no interpreter named on the command line.
 /// The KEEL_NOTIFY_* variables are the only redirection, and only this test sets them.
 fn run_with(dir: &TempDir, args: &[&str], api_base: &str, extra: &[(&str, &str)]) -> Output {
-    let mut command = common::cmd(script());
+    let mut command = sender(dir.path());
     command
         .args(args)
         .env("KEEL_NOTIFY_ENV", dir.path().join(".env"))
@@ -259,10 +270,11 @@ fn a_read_only_body_fails_before_sending_and_names_the_file() {
 fn a_missing_credential_is_one_line_naming_the_file_only() {
     let dir = channel();
     let missing = dir.path().join("absent.env");
-    let out = common::cmd(script())
+    let out = sender(dir.path())
         .arg("--check")
         .env("KEEL_NOTIFY_ENV", &missing)
         .env("KEEL_NOTIFY_ACCESS", dir.path().join("access.json"))
+        .env("KEEL_NOTIFY_API_BASE", "http://127.0.0.1:9")
         .current_dir(dir.path())
         .output()
         .unwrap();

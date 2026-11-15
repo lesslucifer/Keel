@@ -38,7 +38,7 @@ impl Inbox {
 
     fn cmd(&self, args: &[&str]) -> Command {
         let mut c = common::cmd("sh");
-        c.arg(script()).args(args).env("ROUTER_INBOX_DIR", self.dir()).env("ROUTER_INBOX_POLL", "1");
+        c.arg(script()).args(args).env("ROUTER_INBOX_DIR", self.dir()).env("ROUTER_INBOX_POLL", "1").env_remove("ROUTER_INBOX_MAX_BYTES");
         c
     }
 
@@ -120,7 +120,14 @@ fn a_worktree_copy_resolves_the_main_checkouts_inbox() {
     git(&main, &["worktree", "add", "-q", "../wt", "-b", "w"]);
     let wt = d.path().join("wt");
     let run = |at: &Path, args: &[&str]| {
-        let o = common::cmd("sh").arg(at.join("scripts/router-inbox.sh")).args(args).output().unwrap();
+        let o = common::cmd("sh")
+            .arg(at.join("scripts/router-inbox.sh"))
+            .args(args)
+            .env_remove("ROUTER_INBOX_DIR")
+            .env_remove("ROUTER_INBOX_MAX_BYTES")
+            .env_remove("ROUTER_INBOX_POLL")
+            .output()
+            .unwrap();
         (o.status.code(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
     };
     let (code, out) = run(&wt, &["init"]);
