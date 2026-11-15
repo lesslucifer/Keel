@@ -388,6 +388,15 @@ fn keel_mr_refuses_a_checkout_whose_git_links_git_did_not_make_and_runs_no_git()
     let o = run_with(KEEL, p, &["mr", "commit", "-m", "x"], &fake);
     assert!(!o.status.success() && text(&o).contains("config.worktree exists") && !log.exists(), "{}", text(&o));
     undo();
+    // links git writes relative (worktree.useRelativePaths) are as good as absolute ones
+    let (abs_link, abs_back) = (std::fs::read_to_string(wt.join(".git")).unwrap(), std::fs::read_to_string(admin.join("gitdir")).unwrap());
+    assert_eq!(wt.parent(), Some(p), "the worktree sits in the main checkout, so the relative links below hold");
+    std::fs::write(wt.join(".git"), format!("gitdir: ../.git/worktrees/{}\n", admin.file_name().unwrap().to_str().unwrap())).unwrap();
+    std::fs::write(admin.join("gitdir"), "../../../wt/.git\n").unwrap();
+    let o = run_with(KEEL, &wt, &["mr", "setup", "--as", "vu"], &fake);
+    assert!(!text(&o).contains("keel mr: refused"), "relative links: {}", text(&o));
+    std::fs::write(wt.join(".git"), abs_link).unwrap();
+    std::fs::write(admin.join("gitdir"), abs_back).unwrap();
     // untouched, the linked checkout signs as before (with the real git)
     let o = run(KEEL, &wt, &["mr", "confirm", "wu", "--as", "vu"]);
     assert!(o.status.success(), "{}", text(&o));

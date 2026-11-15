@@ -4,7 +4,7 @@
 use crate::notes::{self, sha256, CrNote, MrNote, Review};
 use crate::{gate, git, git_dir, no_git_env, review, short, verify_doc, Config, ReportPolicy};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 /// `ssh-keygen -Y -n` namespace: a Keel sign-off is never valid as a git commit signature or anything else.
@@ -1007,7 +1007,8 @@ pub(crate) fn checkout_problem(start: &Path) -> Option<String> {
         if std::fs::read_to_string(admin.join("commondir")).ok().as_deref().map(|c| c.strip_suffix('\n').unwrap_or(c)) != Some("../..") {
             return bad("its commondir is not ../..");
         }
-        let back = std::fs::read_to_string(admin.join("gitdir")).ok().map(|g| PathBuf::from(g.strip_suffix('\n').unwrap_or(&g)));
+        // git writes it absolute, or relative to the admin dir under worktree.useRelativePaths
+        let back = std::fs::read_to_string(admin.join("gitdir")).ok().map(|g| admin.join(g.strip_suffix('\n').unwrap_or(&g)));
         if back.as_deref().and_then(|g| Some((g.file_name()? == ".git", canon(g.parent()?)?))) != Some((true, canon(&root)?)) {
             return bad("its gitdir does not name this checkout's .git");
         }
