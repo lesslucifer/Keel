@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHFLOW2.W3 plan: your approval is the sign-off</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHFLOW2.W3 · Your approval is the sign-off</h1>
+      <p>When you approve a pull request on its head commit, a workflow from main writes the same sign-off note your typed command writes.</p>
+      <div class="meta">Ready v1 · 2026-11-15 · T3 · WU plan · Keel · epic plan: 2026-11-15-eghflow2-plan.html (archived; git show 738c795:docs/work/2026-11-15-eghflow2-plan.html)</div>
+    </div>
+  </header>
+  <main>
+    <h2 id="problem">The problem</h2>
+    <p data-c="problem">You sign every WU and epic with a typed <code>keel mr confirm</code> at your Mac. GitHub already shows the diff, the report and an Approve button, on your phone too, but approving changes nothing. And the typed command trusts its checkout's git links before it runs git (backlog e-router-v2 R50).</p>
+
+    <h2 id="changes">What changes for you</h2>
+    <table data-c="changes" data-item="owner-changes">
+      <tr><th>When</th><th>Today</th><th>After W3 reaches main (landing 2) and your roster line lands</th></tr>
+      <tr><td>A pull request's checks are green</td><td>You type <code>keel mr confirm</code></td><td>You press Approve on the head commit; the sign-off note is written and the <code>keel/sign-off</code> status turns green</td></tr>
+      <tr><td>You approve an older commit, or comment</td><td>—</td><td>Nothing is written; the status says it waits for an approval on the head</td></tr>
+      <tr><td>An epic is ready</td><td>You type the sign-off with <code>--report</code></td><td>The closing worker puts the epic report on the tip as a note; your approval signs it</td></tr>
+      <tr><td>You type <code>keel mr</code> in a work checkout</td><td>It runs git there first</td><td>It checks the checkout's git links first and stops on anything git did not make</td></tr>
+      <tr><td>GitHub is down</td><td>—</td><td>The typed sign-off works as today</td></tr>
+    </table>
+
+    <h2 id="example">Example</h2>
+    <ol data-c="example">
+      <li>W5's worker finishes. The bot pushes <code>wu/E-GHFLOW2/w5-try-it</code> and opens its pull request into the epic.</li>
+      <li>The checks turn green. You read the diff and the report on your phone and press Approve.</li>
+      <li>GitHub runs "Keel sign-off request" from the pull request; it does nothing but finish.</li>
+      <li>Its end starts "Keel sign-off" from main. That reads the pull request and its reviews from GitHub, builds keel from the epic, and writes mr/v1 as <code>github 5499546</code> with your review's id, link and commit.</li>
+      <li>It pushes the note and sets <code>keel/sign-off</code> green. The router's next push brings the note to your Mac first.</li>
+    </ol>
+
+    <h2 id="terms">Terms</h2>
+    <table data-c="terms">
+      <tr><th>Term</th><th>Meaning</th></tr>
+      <tr><td>the writer</td><td>The "Keel sign-off" workflow and its script, <code>scripts/ci-sign-off.sh</code>.</td></tr>
+      <tr><td>github tier</td><td>A roster line <code>github: &lt;user id&gt; &lt;login&gt;</code>: that GitHub account signs by approving.</td></tr>
+      <tr><td>admin dir</td><td>A linked checkout's folder in the shared git dir (<code>.git/worktrees/&lt;id&gt;</code>), holding its <code>commondir</code> and <code>gitdir</code> links.</td></tr>
+    </table>
+
+    <h2 id="work">The work</h2>
+    <p data-item="requirement">A pull-request approval by an id the base's committed roster lists under the github tier, on the pull request's exact head commit, makes the writer (run from main, with keel built from the base) write an mr/v1 note that <code>keel verify-dod</code> accepts; any other review writes nothing; and <code>keel mr</code> refuses, before any git call, a checkout whose git links git did not make.</p>
+    <p data-item="maps-to">E-GHFLOW2.W3 (epic plan W3 block; open points 2 and 3) · UC-MR (new row: a sign-off by approval) · UC-MR-1 (amended: keel mr checks its checkout's admin dir) · DEC-47, DEC-48 (amended at the close) · backlog e-router-v2 R50 · backlog github-flow G1 (W4 row), G5 (W2 rows).</p>
+    <ol data-c="pieces">
+      <li><b>The github tier</b> (<code>src/mr.rs</code>). The roster parses <code>github: &lt;numeric id&gt; &lt;login&gt;</code>; <code>github</code> joins the known tiers. A typed confirm by an id listed only as github is refused: that tier signs by approval.</li>
+      <li><b>mr/v1 gains <code>review</code></b>: <code>{id, url, commit}</code>. Check 8 for a github signer: the note carries a review whose commit is the tip and whose link is that review's on this repository's pull request; everything else as today (base, diff, report, waiver).</li>
+      <li><b><code>keel ci sign-off</code></b>: the writer's core. It reads GitHub's list of the pull request's reviews from a file, keeps the newest APPROVED one on the tip by an id the target's committed roster lists under github, and writes the note through the typed confirm's own path (sign last: checks 1–7 green). No such review: exit 3, nothing written. A waiver or a roster change in the range is refused: those are W7's comments, or the typed sign-off.</li>
+      <li><b>The epic report as a note.</b> <code>keel notes write report &lt;path&gt;</code> stores an epic-result doc's exact bytes as <code>refs/notes/report</code> on the tip. A sign-off may attest it as <code>refs/notes/report</code>; check 8 re-hashes the note.</li>
+      <li><b>Two workflows.</b> "Keel sign-off request" on <code>pull_request_review</code>: no permissions, no checkout, one step that only finishes. "Keel sign-off" on <code>workflow_run</code> of it, so main's file runs: it checks out main, runs <code>scripts/ci-sign-off.sh</code>, which builds keel from the pull request's base, never runs head code, pushes <code>refs/notes/mr</code> and sets <code>keel/sign-off</code>. Token: contents and statuses write, pull-requests read.</li>
+      <li><b>Notes from GitHub reach the Mac.</b> <code>router-gh.sh push</code> fetches GitHub's notes refs and merges them into the local ones before it pushes them, and pushes <code>refs/notes/report</code> too.</li>
+      <li><b>R50.</b> Before any git call, <code>keel mr</code> finds its checkout's <code>.git</code> and checks it as <code>router-gh.sh</code> does: a main git dir has no <code>commondir</code>; a linked admin dir sits under <code>worktrees/</code>, holds <code>commondir</code> = <code>../..</code> and a <code>gitdir</code> naming this checkout back; no <code>config.worktree</code> in either.</li>
+      <li><b>G5's W2 test nits</b> in <code>tests/suite/router_gh.rs</code> and <code>router_gh_args.rs</code>: the App key made once per run; a fixture HOME that the script accepts under any TMPDIR; the dash test covers slot 0 and the <code>--base</code> word.</li>
+    </ol>
+    <div data-item="expected">
+      <p>Observable from this WU alone, hermetically (the workflows run live only after landing 2):</p>
+      <ul>
+        <li>A recorded approval by a listed id on the head, fed to <code>scripts/ci-sign-off.sh</code> with a fake GitHub, writes mr/v1 (tier github, the review's id, link and commit), pushes it to origin and posts a success status; <code>keel verify-dod</code> is green.</li>
+        <li>A COMMENTED review, an approval on an older commit, or one by an unlisted id writes nothing and posts a pending status.</li>
+        <li>A code commit after the approval turns check 8 red; an edited report note turns an epic's check 8 red.</li>
+        <li><code>keel mr</code> in a checkout whose admin dir holds a <code>config.worktree</code> or a wrong <code>commondir</code> is refused and runs no git.</li>
+        <li><code>router-gh.sh push</code> brings a note GitHub holds into the local ref before it pushes.</li>
+      </ul>
+    </div>
+
+    <h2 id="tests">Test plan</h2>
+    <div data-item="test-plan">
+      <p><b>Integration</b> (<code>tests/suite/sign_off.rs</code>, new; <code>tests/suite/mr.rs</code>; <code>tests/suite/router_gh.rs</code>): a scratch repo, a bare origin and the existing fake curl standing for GitHub's API, with recorded review payloads.</p>
+      <ul>
+        <li>The writer script: listed approval on the head → note, push, success status, gate green; COMMENTED, older commit, unlisted id → nothing written, pending; checks 1–7 red → nothing written, failure status naming it; a base with no github-tier keel → refused.</li>
+        <li><code>keel ci sign-off</code> and check 8: a code commit after the approval is red; a note whose review commit or link is wrong is red; a typed confirm by a github-only id is refused; an epic signed with the report note goes green, and editing the note turns it red.</li>
+        <li>R50: <code>keel mr</code> refuses a <code>config.worktree</code> in the admin dir or the git dir, a <code>commondir</code> other than <code>../..</code>, a <code>gitdir</code> naming another checkout, and a <code>commondir</code> in a main git dir, with a git on PATH that records any call: none is made. A clean linked checkout signs as today.</li>
+        <li>The lock test (<code>tests/suite/keel_gate.rs</code>): the request workflow's trigger, empty permissions, no checkout, no expression in a run line; the writer's <code>workflow_run</code> trigger on the request workflow only, its three permissions, its pinned checkout of the default branch with no credentials kept, no head ref anywhere, one call of the script, event values through env only.</li>
+        <li><code>router-gh.sh push</code>: GitHub's mr note on another tip appears locally after the push; a conflicting note keeps the local one; the report note is pushed.</li>
+      </ul>
+      <p><b>Unit</b> (<code>src/mr.rs</code>, <code>src/notes.rs</code>, <code>src/main.rs</code>): the roster line (generated lines, a non-numeric id, a bad login); the review pick (generated review lists: only an APPROVED review on the tip by a listed id is ever chosen, the newest); the review field's link check; the admin-dir rule on fabricated paths.</p>
+      <p>Red first for each behaviour: each test is run failing before its code lands.</p>
+    </div>
+
+    <h2 id="open">Open points</h2>
+    <p>Decided by the worker under the owner's ruling (he does not review plans); comment to overrule.</p>
+    <table data-c="open">
+      <tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr>
+      <tr><td>1</td><td>How does the writer find the review, when it trusts nothing from the run that started it?</td><td>It takes only the pull-request number from GitHub's own <code>workflow_run</code> payload, then reads the pull request and all its reviews from the API and lets keel pick the approval</td><td>Stronger than re-reading one review id: an id carried by the request run would itself come from the pull request's code. The number only points; every fact is re-read</td></tr>
+      <tr><td>2</td><td>Its token</td><td>contents write, statuses write, and pull-requests read</td><td>Reading reviews needs pull-requests read; it writes nothing there. The plan said "nothing else"; this read is the one addition</td></tr>
+      <tr><td>3</td><td>"In CI it re-reads the review": where?</td><td>In the writer, before it writes; check 8 in keel stays offline (the note's bindings)</td><td>keel has no network client; the writer is the one CI step that acts on the review, and W4 makes its <code>keel/sign-off</code> status required</td></tr>
+      <tr><td>4</td><td>A notes conflict when the router pulls GitHub's notes</td><td>The local note wins (<code>git notes merge -s ours</code>)</td><td>Conflicts need both sides to have signed the same tip; the local one is what the router already checked. GitHub's stays in the notes ref's history</td></tr>
+      <tr><td>5</td><td>Your roster line</td><td>You add it, never a worker: <code>github: 5499546 lesslucifer</code> in <code>.keel/mr-allowed</code>, in your rule-bearing commit on this branch; the sign-off then needs <code>--roster-change</code></td><td>The brief keeps the roster yours. Until a keel with this WU is the one judging, a <code>github:</code> line breaks the old parser, so the order of your steps matters (result report)</td></tr>
+      <tr><td>6</td><td>A dismissed approval</td><td>Not handled here: the note stays, and a re-run sets the status back to pending</td><td>Same as a typed sign-off, which nothing retracts either. Backlog github-flow G7 (new) carries it</td></tr>
+      <tr><td>7</td><td>Docs (UC-MR, DEC-47/48, install §5, the skills)</td><td>At the epic's next landing or close, by its distillation plan</td><td>The epic plan puts them there; keeps your commit here small</td></tr>
+    </table>
+
+    <h2 id="details">Details</h2>
+    <p>Rule-bearing files this WU stages for one owner <code>keel mr commit</code>, after the worker's commits: <code>.github/workflows/keel-sign-off-request.yml</code>, <code>.github/workflows/keel-sign-off.yml</code>, <code>scripts/ci-sign-off.sh</code>, <code>scripts/router-gh.sh</code>, <code>.keel/config.toml</code> (<code>[mr] tiers</code> gains <code>github</code>). The workflow with a write token gets the router's independent security review before that commit. The commit needs a keel built from this branch on PATH: the installed one rejects the <code>github</code> tier.</p>
+    <p>Depends on: W1 (live). Runs live only from main: landing 2.</p>
+  </main>
+</body>
+</html>
