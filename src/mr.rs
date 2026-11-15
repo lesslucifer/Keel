@@ -893,7 +893,7 @@ pub(crate) const SIGN_OFF_USAGE: &str = "usage: keel ci sign-off <wu|epic> <tip>
 /// approval to sign, nothing written; exit 1: refused, nothing written. The roster and policy are
 /// the target's committed ones; a target with no roster signs nothing (no bootstrap by approval).
 pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
-    let ([lvl, tip_ref], Some(target), Some(file)) = (positionals(args)[..].try_into().unwrap_or(["", ""]), flag(args, "--target"), flag(args, "--reviews"))
+    let ([lvl, tip_ref], Some(target), Some(file)) = (positionals(args)[..].try_into().unwrap_or(["", ""]), notes::target_flag(args), flag(args, "--reviews"))
     else {
         return Err(SIGN_OFF_USAGE.into());
     };
@@ -925,7 +925,7 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
         println!("no approval to sign on {}: none of its reviews is an APPROVED one on this commit by an id {src} lists under the github tier", short(&tip));
         return Ok(3);
     };
-    let Some(gate::Ready { tip, base, target, cr }) = gate::sign_ready(repo, cfg, epic, tip_ref, &["--target", target], false)? else {
+    let Some(gate::Ready { tip, base, target, cr }) = gate::sign_ready(repo, cfg, epic, tip_ref, args, false)? else {
         return refuse(format!("sign last: a check before the sign-off is red on {} (above)", short(&tip)));
     };
     if let Some(r) = landed(&tip, &base, &target) {
