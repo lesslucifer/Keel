@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHFLOW2.W2 result: the router uses the GitHub flow</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHFLOW2.W2 · Result: the router uses the GitHub flow</h1>
+      <p>The router skills now say when the bot pushes, opens and readies a pull request, which GitHub watches to arm, and what to do with each line they print.</p>
+      <div class="meta">Ready v1 · 2026-11-15 · T3 · WU result · Keel · plan: 2026-11-15-eghflow2-w2-plan.html</div>
+    </div>
+  </header>
+  <main>
+    <h2 id="what">What happened</h2>
+    <p data-item="outcome" data-c="outcome"><strong>Delivered</strong>, as text only. The keel-router skill (both trees, byte-identical) names every router-run shape of the GitHub bot and watch, when to run each, the action for every event line, the push channel as the fallback, and the R50 stopgap. The project-router skill states Keel's facts for them. The skill files reach the branch through your one <code>keel mr commit</code>; they reach the router when the epic lands on main.</p>
+
+    <h2 id="changes">What changes for you</h2>
+    <table data-c="changes" data-item="owner-changes">
+      <tr><th>When</th><th>Today</th><th>After this lands on main</th></tr>
+      <tr><td>A WU has its test evidence</td><td>The router asks you to push</td><td>The bot pushes it and opens a draft pull request</td></tr>
+      <tr><td>A WU passed its review</td><td>A chat message</td><td>The pull request turns ready and GitHub asks you to review; the typed sign-off still comes by chat and Telegram</td></tr>
+      <tr><td>You comment on GitHub</td><td>Nobody hears it</td><td>The router hears it within a minute; an edited comment gets a request to post again</td></tr>
+      <tr><td>Before a typed sign-off</td><td>Nothing checks the checkout's git links</td><td>The router reads the watchdog's latest check first</td></tr>
+    </table>
+
+    <h2 id="deviations">Deviations</h2>
+    <ul data-item="deviations" data-c="deviations">
+      <li>The closed command list in worker-ops.md reads "a first line <code>/keel</code> then <code>go</code>, …" rather than <code>/keel go</code>: the init test that every "keel &lt;command&gt;" in a skill exists read <code>/keel go</code> as a keel command. Same meaning.</li>
+      <li>Otherwise none: every piece and every open-point answer of the plan is in the text as planned.</li>
+    </ul>
+
+    <h2 id="details">Details</h2>
+    <div data-item="evidence" data-c="evidence">
+      <p><strong>Files</strong> (staged for your <code>keel mr commit</code>, not committed by the worker): <code>skills/keel-router/SKILL.md</code>, <code>references/worker-ops.md</code>, <code>references/checklists.md</code>, the same three under <code>.claude/skills/keel-router/</code>, and <code>.claude/skills/project-router/SKILL.md</code>.</p>
+      <ul>
+        <li>SKILL.md: the posture names the GitHub shapes; "Epic branch first" pushes through the bot; "Keel pre-sign check" carries the R50 stopgap; a new section "The GitHub flow" (when, watches, a commander's words, the push channel); "Permissions": a work branch goes only through the bot. 485 lines.</li>
+        <li>worker-ops.md: a section "The GitHub flow": the bot's six shapes with when and what each prints; exit codes; the four watch kinds and the end lines; one row per event line; the re-arm rule; one WU in five steps.</li>
+        <li>checklists.md: WAKE 3 also checks the GitHub watches.</li>
+        <li>project-router: the bot's pushes under "Who runs what"; the GitHub path in the sign-off sequences, by phase; the rule-bearing list as committed in <code>.keel/config.toml</code>; <code>scripts/ci-gate.sh</code> and <code>.github/workflows/keel-gate.yml</code> under "What no gate reviews"; the workers' new denies and the per-run admin-dir check; a "GitHub" table (scripts, repository, commanders, key place, the router's shell, tracking issue, CI, phases, what is unproven); the key dir under "Never touch".</li>
+      </ul>
+      <p><strong>Tests</strong>, run with the skill files staged (the self-hosting init tests read the index): <code>cargo test --test suite init::</code> 29 passed; <code>keel check</code> green, 408 passed, 10 ignored (the loopback tests, backlog R49). With the files unstaged, <code>self_hosting_clone_is_gated_and_init_is_a_noop</code> and <code>self_hosting_check_passes_mid_merge_of_a_skill_change</code> fail, as for any skill edit not yet in the index.</p>
+      <p><strong>Guard check</strong>: each router-run shape the skills name, against a case <code>scripts/router-guard.jq</code> admits in <code>tests/suite/router.rs</code> (both tests pass):</p>
+      <table>
+        <tr><th>Shape in the skills</th><th>Admitted case</th><th>Test</th></tr>
+        <tr><td><code>push wu/E/slug</code> · <code>push epic/E</code></td><td><code>push wu/E-GHFLOW/w2-router-bot</code> · <code>push epic/E-GHFLOW</code></td><td rowspan="5"><code>router_guard_admits_the_router_bots_shapes_and_no_other_spelling</code></td></tr>
+        <tr><td><code>pr-open &lt;branch&gt; [--base main|epic/E]</code></td><td><code>pr-open wu/E-GHFLOW/w2-router-bot</code> · <code>pr-open epic/E-GHFLOW</code> · <code>--base main</code> · <code>--base epic/F</code></td></tr>
+        <tr><td><code>pr-ready &lt;n&gt;</code></td><td><code>pr-ready 12</code></td></tr>
+        <tr><td><code>post &lt;n&gt; &lt;name&gt;</code></td><td><code>post 12 review</code></td></tr>
+        <tr><td><code>sync epic/E</code></td><td><code>sync epic/E-GHFLOW</code></td></tr>
+        <tr><td><code>issue &lt;branch&gt;</code></td><td><code>issue epic/E-GHFLOW</code> · <code>issue wu/E-GHFLOW/w3-gh-watch</code></td><td rowspan="5"><code>router_guard_admits_the_github_watch_and_issue_shapes_and_no_other_spelling</code></td></tr>
+        <tr><td><code>checks &lt;pr&gt;</code> · <code>merged &lt;pr&gt;</code></td><td><code>checks 31</code> · <code>merged 31</code></td></tr>
+        <tr><td><code>review &lt;pr&gt;</code>, <code>since &lt;id&gt;</code>, <code>since latest</code></td><td><code>review 31</code> · <code>review 31 since 2468013579</code> · <code>review 31 since latest</code></td></tr>
+        <tr><td><code>comment &lt;n&gt;</code>, <code>since &lt;id&gt;</code>, <code>since latest</code></td><td><code>comment 30</code> · <code>comment 9999999 since 999999999999999</code> · <code>comment 30 since latest</code></td></tr>
+        <tr><td>no environment prefix (the skills say so)</td><td>denied: <code>X=1 scripts/router-gh.sh push wu/E/x</code></td></tr>
+      </table>
+      <p>Shapes the skills give to someone else, not the router: <code>git merge --ff-only origin/&lt;epic&gt;</code> (the session in the epic's worktree, after <code>sync … state=fetched</code>) and <code>gh run view &lt;id&gt; --log-failed</code> (a read-only worker).</p>
+      <p><strong>Commits</strong>: the WU plan (<code>f1766d1</code>), this report, then your <code>keel mr commit</code> of the skill files.</p>
+    </div>
+    <p data-item="distillation" data-c="distillation">Nothing to distil now: the skills are the standard themselves. At landing 1 (the epic's "At each landing"): UC-ROUTE-1 gains "the router arms the GitHub watches"; DEC-61 and DEC-62 drop "the router skills do not arm these watches yet"; backlog github-flow G3 closes; e-router-v2 R50 notes the stopgap until W3.</p>
+    <ul data-item="follow-ups" data-c="follow-ups">
+      <li>The watchdog's prompt asks for one sentence per worker; a facts block that holds only an admin-dir line has never been seen relayed live. W3 removes the need (<code>keel mr</code> checks its own checkout) — E-GHFLOW2.W3.</li>
+      <li>The meanings of <code>go</code>, <code>hold</code>, <code>retry</code> and <code>answer</code> (plan open point 1) rest on no ruling; DEC-62's amendment at landing 1 records them or your overrule — E-GHFLOW2 landing 1.</li>
+      <li>Optional, yours: the router's allow lines in <code>.claude/settings.json</code> (install §5) — backlog github-flow G3.</li>
+      <li>After your commit: the test note (integration waived: no code path) and the doc note on the new tip, then <code>keel preflight wu</code> — this WU's worker, on the router's next message.</li>
+    </ul>
+  </main>
+</body>
+</html>
