@@ -5,7 +5,8 @@
 //! on its stdin and answers from a route table. Worker sandboxes refuse every socket, so the mock is
 //! the client side, not a server. The App key is a throwaway RSA key the test makes in a temp home;
 //! no real key or token is ever read.
-//! Needs `sh`, `git`, `jq`, `openssl`, `iconv` and (one test) `curl` on PATH, as the script does.
+//! Needs `sh`, `git`, `jq`, `openssl`, `iconv` and `perl` on PATH, as the script does, plus `curl`
+//! and `python3` for one test each (the real curl; the git standing for GitHub's https transport).
 compiled!();
 
 use std::path::{Path, PathBuf};
@@ -73,6 +74,20 @@ fn commit(d: &Path, msg: &str) {
 
 const PLAN_TITLE: &str = "Keel — E.W1 plan: `tick` @owner [x](y) | cell *b* #h";
 
+/// The App in `home`, as the owner's setup leaves it: a throwaway key and its ids in
+/// `.config/keel/router-gh`, whatever the umask made of the directories.
+fn install_app(home: &Path) {
+    let kdir = home.join(".config/keel/router-gh");
+    std::fs::create_dir_all(&kdir).unwrap();
+    // as the owner's setup does (`chmod 700`): never the umask's mode
+    chmod(&kdir, 0o700);
+    let o =
+        common::cmd("openssl").args(["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out"]).arg(kdir.join("app.pem")).output().unwrap();
+    assert!(o.status.success(), "{}", text(&o));
+    chmod(&kdir.join("app.pem"), 0o600);
+    write(&kdir, "app.conf", "app_id=123\ninstallation_id=456\napp_slug=keel-router\n");
+}
+
 /// main (config, the script) → epic/E (a README change) → wu/E/x (a plan, a result, code; cr and
 /// test notes), main and epic/E on origin, Keel's hooks installed, the checkout on wu/E/x.
 struct Gh {
@@ -130,17 +145,7 @@ impl Gh {
         git(&repo, &["push", "-q", "--no-verify", origin.to_str().unwrap(), "main", "epic/E"]);
         let o = common::cmd(KEEL).args(["hooks", "install"]).current_dir(&repo).output().unwrap();
         assert!(o.status.success(), "{}", text(&o));
-        // the App: a throwaway key and its ids
-        let kdir = home.join(".config/keel/router-gh");
-        std::fs::create_dir_all(&kdir).unwrap();
-        let o = common::cmd("openssl")
-            .args(["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out"])
-            .arg(kdir.join("app.pem"))
-            .output()
-            .unwrap();
-        assert!(o.status.success(), "{}", text(&o));
-        chmod(&kdir.join("app.pem"), 0o600);
-        write(&kdir, "app.conf", "app_id=123\ninstallation_id=456\napp_slug=keel-router\n");
+        install_app(&home);
         exe(&bin.join("fake-curl"), FAKE_CURL);
         let gh = Gh { root, repo, origin, home, mock, bin, marks, tmp };
         gh.routes(&[]);
@@ -1130,6 +1135,21 @@ fn home_is_normalised_and_its_characters_bounded() {
         assert!(o.status.code() == Some(2) && text(&o).contains("HOME must"), "{bad}: {}", text(&o));
         assert!(gh.log().is_empty(), "{bad}");
     }
+}
+
+/// The fixture holds under any umask (code review round 1): under umask 002, Ubuntu's default, a
+/// directory is made 0775, and the script rightly refuses a key directory others may write. Here the
+/// key directory exists 0775 before the App is installed, as such a umask leaves it.
+#[test]
+fn the_fixture_holds_under_a_group_writable_umask() {
+    let gh = Gh::new();
+    let kdir = gh.home.join(".config/keel/router-gh");
+    std::fs::remove_dir_all(&kdir).unwrap();
+    std::fs::create_dir_all(&kdir).unwrap();
+    chmod(&kdir, 0o775);
+    install_app(&gh.home);
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
 }
 
 /// The comment files workers write never reach a commit in Keel's own repository.

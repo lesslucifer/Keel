@@ -8,8 +8,9 @@ use tempfile::TempDir;
 
 use crate::common;
 
-/// Exit code and stderr of the script on `args`; panics if curl was ever called.
-fn check(args: &[&str]) -> (Option<i32>, String) {
+/// Exit code and stderr of the script on `args`; panics if curl was ever called. The guard's
+/// agreement test in router.rs reads the script's verdict through this too.
+pub(crate) fn check(args: &[&str]) -> (Option<i32>, String) {
     let d = TempDir::new().unwrap();
     let curl = d.path().join("curl");
     std::fs::write(&curl, format!("#!/bin/sh\ntouch {}\n", common::sh_quote(&d.path().join("called").to_string_lossy()))).unwrap();

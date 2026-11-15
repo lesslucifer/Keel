@@ -4040,17 +4040,11 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
 }
 
 /// E-GHFLOW.W2: whether `scripts/router-gh.sh` (this checkout's) accepts `args` in its argument check:
-/// past it, with an empty home, the script stops at the missing App key, before any repository state,
-/// key, curl or network. A recording curl proves nothing further ran.
+/// past it, with an empty home, the script stops at the missing App key (router_gh_args::check runs
+/// it, and fails if anything reached curl).
 fn gh_validates(args: &[&str]) -> bool {
-    let d = TempDir::new().unwrap();
-    let curl = d.path().join("curl");
-    std::fs::write(&curl, format!("#!/bin/sh\ntouch {}\n", common::sh_quote(&d.path().join("called").to_string_lossy()))).unwrap();
-    std::fs::set_permissions(&curl, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let o = common::cmd("sh").arg(root().join("scripts/router-gh.sh")).args(args).env("HOME", d.path()).env("ROUTER_GH_CURL", &curl).output().unwrap();
-    assert!(!d.path().join("called").exists(), "{args:?} reached curl");
-    let err = String::from_utf8_lossy(&o.stderr);
-    assert_eq!(o.status.code(), Some(2), "{args:?}: {err}");
+    let (code, err) = crate::router_gh_args::check(args);
+    assert_eq!(code, Some(2), "{args:?}: {err}");
     err.contains("router-gh: no App key at ")
 }
 
@@ -4135,9 +4129,10 @@ fn router_guard_admits_the_router_bots_shapes_and_no_other_spelling() {
     assert!(bash("rm x").unwrap().contains("scripts/router-gh.sh push <wu/E/slug or epic/E>"), "deny message omits the router bot's shapes");
 }
 
-/// E-GHFLOW.W2, invariant: over generated near-miss words, whatever the script's argument check
-/// accepts the guard admits, and the guard admits nothing the check refuses but the names
-/// `git check-ref-format` refuses (a component ending in `.` or `.lock`) and a branch as its own base.
+/// E-GHFLOW.W2, invariant: over generated near-miss words (deduplicated), whatever the script's
+/// argument check accepts the guard admits, and the guard admits nothing the check refuses but the
+/// names `git check-ref-format` refuses (a component ending in `.` or `.lock`) and an epic as its own
+/// base (`pr-open epic/E --base epic/E`, generated for every epic-shaped word).
 #[test]
 fn the_guard_and_router_gh_take_the_same_arguments() {
     let mut seed: u64 = 0x5eed_6a7e;
@@ -4156,17 +4151,27 @@ fn the_guard_and_router_gh_take_the_same_arguments() {
         words.push(w);
     }
     words.extend(["epic/E.lock", "wu/E/x.", "wu/E./x", "epic/E", "wu/E/x", "main"].map(String::from));
+    words.sort();
+    words.dedup();
     let exception = |w: &str| w.split('/').any(|c| c.ends_with('.') || c.ends_with(".lock"));
-    let mut accepted = 0;
+    let (mut accepted, mut own_bases) = (0, 0);
     for w in &words {
-        for args in [vec!["push", w.as_str()], vec!["sync", w.as_str()], vec!["pr-open", w.as_str()], vec!["pr-open", "wu/E/x", "--base", w.as_str()]] {
+        let mut shapes = vec![vec!["push", w.as_str()], vec!["sync", w.as_str()], vec!["pr-open", w.as_str()], vec!["pr-open", "wu/E/x", "--base", w.as_str()]];
+        // an epic as its own base: the guard admits it, the script refuses it
+        if w.starts_with("epic/") {
+            shapes.push(vec!["pr-open", w.as_str(), "--base", w.as_str()]);
+        }
+        for args in shapes {
             let line = format!("scripts/router-gh.sh {}", args.join(" "));
             let (admitted, ok) = (bash(&line).is_none(), gh_validates(&args));
             accepted += usize::from(ok);
             assert!(!ok || admitted, "the script accepts what the guard denies: {line}");
-            assert!(!admitted || ok || exception(w) || (args.len() == 4 && w == "wu/E/x"), "the guard admits what the script refuses: {line}");
+            let own_base = args.len() == 4 && args[1] == args[3];
+            own_bases += usize::from(own_base && admitted && !ok);
+            assert!(!admitted || ok || exception(w) || own_base, "the guard admits what the script refuses: {line}");
         }
     }
+    assert!(own_bases >= 1, "the corpus must hold an epic as its own base");
     let digits: Vec<char> = "0123456789-+a".chars().collect();
     let name_alpha: Vec<char> = "aZ09_-.".chars().collect();
     for _ in 0..40 {
