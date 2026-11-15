@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHFLOW2.W8 result: docs as web pages on GitHub Pages</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHFLOW2.W8 result · Docs as web pages on GitHub Pages</h1>
+      <p>The site builder, the Pages workflow and the pull request's page links are built and tested. Pages turns on after this is on main and you pick "GitHub Actions" as the Pages source.</p>
+      <div class="meta">Ready v1 · 2026-11-15 · T3 · WU result · Keel · plan: <a href="2026-11-15-eghflow2-w8-plan.html">2026-11-15-eghflow2-w8-plan.html</a></div>
+    </div>
+  </header>
+  <main>
+    <h2 id="outcome">Outcome</h2>
+    <div data-item="outcome" data-c="outcome">
+      <p><b>Delivered</b>, against the plan's requirement, with your one commit of the staged files still to come (below). Nothing is live yet: the workflow runs only from main, and Pages needs your one setting.</p>
+      <ul>
+        <li><b>The two first checks pass on the evidence.</b> Pages is in GitHub Free for public repositories (GitHub's plans page). The htmldoc server accepts calls from <code>https://lesslucifer.github.io</code>: it answers GET with that origin allowed, and the POST and PATCH preflight with 204. A live comment from a real page is your step 3.</li>
+        <li><b>The builder</b>, <code>scripts/pages-build.sh</code>. Each live branch's tracked docs land under <code>&lt;branch&gt;/docs/</code> byte for byte. An epic tip's report note lands at <code>&lt;branch&gt;/docs/_report/report.html</code>. Every relative link resolves within its branch. A deleted branch is gone at the next build, because each build starts from an empty folder. No branch code runs, and every file is a blob, never a link.</li>
+        <li><b>The Pages workflow</b>, <code>.github/workflows/pages.yml</code> (staged). It runs on <code>workflow_run</code> of "Keel gate", from main. The build job has <code>contents: read</code>. The deploy job has <code>pages: write</code> and <code>id-token: write</code> and runs only <code>actions/deploy-pages</code>. Every action is pinned to a commit. The only event value is the build job's <code>if</code>, which skips a run started from a fork.</li>
+        <li><b>The page link</b> (staged). The bot's pull-request body and the tracking issue's docs table gain a "Page" column: <code>https://&lt;owner, lower case&gt;.github.io/&lt;name&gt;/&lt;branch&gt;/&lt;path&gt;</code>.</li>
+      </ul>
+    </div>
+
+    <h2 id="owner">What you do</h2>
+    <ol data-c="owner-steps">
+      <li><b>Commit the staged files</b> with the one <code>keel mr commit</code> the router gives you, after its security review of the workflow and the builder. The staged files: <code>.github/workflows/pages.yml</code>, <code>scripts/router-gh.sh</code>, <code>.keel/config.toml</code>, <code>tests/suite/pages_workflow.rs</code>, <code>tests/suite/router_gh.rs</code>, <code>tests/suite/keel_gate.rs</code>, <code>tests/suite/main.rs</code>. The tests go with the files they read, so each commit on the branch stays green.</li>
+      <li><b>After W8 is on main:</b> Settings → Pages → Build and deployment → Source: "GitHub Actions". This creates the <code>github-pages</code> environment. Keep its default rule: deploys from main only.</li>
+      <li><b>After the next push of any branch:</b> the "Pages" run should show build and deploy green. Open <code>https://lesslucifer.github.io/Keel/</code>, open one doc, post one htmldoc comment, then resolve it (never delete it). Tell the router what you saw: the run's result, the page, the comment.</li>
+    </ol>
+
+    <h2 id="deviations">Deviations</h2>
+    <ul data-item="deviations" data-c="deviations">
+      <li>The pull request's links are a new "Page" column, not a second link in the "Doc" cell, so the existing body assertions hold. The tracking issue shares the table, so it gains the column too.</li>
+      <li>The builder also writes an index page for the site and one per branch. The plan named no index; without one the site's root is a 404.</li>
+      <li><code>tests/suite/keel_gate.rs</code>'s four line readers became <code>pub(crate)</code>, so the Pages lock test reads its workflow the same way.</li>
+      <li>The epic test's step 8 (the builder renders both branches and the report note) is not in <code>tests/suite/ghflow_e2e.rs</code>. That file is E-GHFLOW's epic test; E-GHFLOW2's epic test is written at its close. <code>tests/suite/pages_build.rs</code> proves the same facts at the WU level.</li>
+    </ul>
+
+    <h2 id="evidence">Evidence</h2>
+    <div data-item="evidence" data-c="evidence">
+      <table>
+        <tr><th>What</th><th>Where</th></tr>
+        <tr><td>Integration, the builder (9 tests)</td><td><code>tests/suite/pages_build.rs</code>: byte-for-byte folders and nothing outside <code>docs/</code>; every relative link in the built site resolves within its branch (walked, with a non-vacuity check); a deleted branch's folder is gone in a fresh runner clone and after <code>fetch --prune</code>, and a full out dir is refused; the report note for an epic tip only, only from origin, bytes as stored; links, a submodule, dot, <code>_report</code>, space, <code>@</code> and non-ASCII paths, and other branch shapes skipped with their log lines; bad arguments and remotes refused before any out dir is made; the scratch dir removed on every exit.</td></tr>
+        <tr><td>Unit, branch-to-folder naming</td><td><code>branch_to_folder_maps_every_published_name_to_itself_and_refuses_every_other</code>: a fixed table and 120 generated names, checked against the rule written as a spec in the test.</td></tr>
+        <tr><td>Integration, the workflow lock (7 tests)</td><td><code>tests/suite/pages_workflow.rs</code>: the trigger and no other; the three permission blocks; two jobs, the build's one run line, the deploy's lone action, every pin; <code>ref: main</code>, full depth, no credentials kept; the fork filter as the only event value, no expression in a run line, no cache or artifact download; the concurrency; the builder executable, writing only blobs and running nothing.</td></tr>
+        <tr><td>Integration, the page link (2 tests)</td><td><code>tests/suite/router_gh.rs</code>: pr-open's body carries the "Page" column with each doc's page; the host is the owner in lower case (<code>Own-Org/Keel.docs</code> gives <code>own-org.github.io/Keel.docs</code>).</td></tr>
+        <tr><td>Mutation proof</td><td>Each of these, made by hand, turned a test red. In the builder: publishing links (mode 120000), a note on every branch, a loose path set, a loose branch set. In the workflow: <code>contents: write</code> on deploy, a checkout in deploy, no <code>ref: main</code>, a <code>workflow_dispatch</code> trigger.</td></tr>
+        <tr><td>Commits</td><td><code>f987100</code> the WU plan; <code>4dcc263</code> the builder and its tests; this report; then your commit of the staged files.</td></tr>
+        <tr><td>Lint</td><td><code>cargo fmt --check</code>, <code>cargo clippy --all-targets -D warnings</code> and <code>shellcheck scripts/pages-build.sh</code> clean.</td></tr>
+      </table>
+      <p><b>Facts read, 2026-11-15.</b> GitHub's plans page ("GitHub Pages in public repositories", GitHub Free); Pages limits (1 GB a site, 10-minute deploys, the build-rate limit not applying to a custom Actions workflow); the custom-workflow page (<code>pages: write</code>, <code>id-token: write</code>, the <code>github-pages</code> environment, no links in the artifact); the events page (<code>workflow_run</code>: "GITHUB_SHA is the last commit on default branch", "GITHUB_REF is the default branch"). <code>actions/upload-pages-artifact</code> v5.0.0's <code>action.yml</code> archives with <code>--dereference --hard-dereference</code> and drops dot files. <code>actions/deploy-pages</code> v5.0.1 lists its artifact through the runtime service and asks only <code>pages: write</code> and <code>id-token: write</code>. The pins came from <code>git ls-remote</code> of each action's tags.</p>
+      <p><b>Still unverified until your steps 2 and 3:</b> that the environment's default rule admits the deploy (its ref is main); that a full-depth checkout at main holds every branch as <code>refs/remotes/origin/*</code> (<code>ci-gate.sh</code> relies on the same); that a deleted branch starts no run, so its folder goes at the next push of any branch.</p>
+    </div>
+
+    <h2 id="distillation">Distillation</h2>
+    <p data-item="distillation" data-c="distillation">Nothing distilled in this WU: you ruled that E-GHFLOW2's distillation waits for its close (backlog github-flow G6). The close takes: <code>docs/architecture.html</code>'s GitHub section (the Pages site, its layout, the two jobs); <code>docs/install.html</code> §5 (your steps 2 and 3); a UC-DOC row in <code>docs/use-cases/workflow.html</code> (a doc is read at its page; the pull request links it); a decision record in <code>docs/decisions/workflow-gates.html</code> for the site (workflow_run from main, two jobs, blobs only, the folder layout, the report note's place), next free id checked on every live branch.</p>
+
+    <h2 id="follow-ups">Follow-ups</h2>
+    <ul data-item="follow-ups" data-c="follow-ups">
+      <li>Your steps 2 and 3, and what they show: recorded in E-GHFLOW2's close result, with the live facts backlog github-flow G6 lists.</li>
+      <li>The distillation above: E-GHFLOW2's close (backlog github-flow G6).</li>
+      <li>The epic test's step 8: E-GHFLOW2's close, in its epic test.</li>
+      <li>The report note's bytes are taken as the report's HTML. If E-GHFLOW2.W3 stores it in another form, the builder's note step changes with it: E-GHFLOW2.W3 (its report note), checked again at the close.</li>
+      <li>When E-GHFLOW2.W4 makes all of <code>.github/</code> rule-bearing, the line for <code>.github/workflows/pages.yml</code> becomes redundant and can go: E-GHFLOW2.W4.</li>
+    </ul>
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
