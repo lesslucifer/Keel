@@ -38,9 +38,10 @@ and "Talking to the owner" are the long form; this file never replaces them.
 6. **Wake.** Name the wake you will arm, and arm it when its subject exists: the
    watch for a staged owner action in the turn you stage it, and the Claude Code
    watchdog once the first background worker is `RUNNING`, never before one
-   exists. On DSH the fleet wake is the report channel's watcher, armed before
-   the first dispatch (`worker-ops.md` "The report channel (DSH)"). Cost: a fleet that
-   finishes into silence, or a watchdog guarding nothing.
+   exists. On DSH the fleet wake is the report channel's watcher where the project
+   ships an inbox script, armed before the first dispatch (`worker-ops.md` "The
+   report channel (DSH)"); with none, your message says only the owner can wake
+   you. Cost: a fleet that finishes into silence, or a watchdog guarding nothing.
 7. **Close the first message** with `What you need to do now:` naming the one task,
    or `nothing`.
 
@@ -55,9 +56,9 @@ watch or job line, one idle notice.
    its headline claim against git (a tip, a note, a status), then decide: advance,
    steer, stop. Cost: a relayed claim nobody checked.
 3. **Armed.** Is the fleet's one wake armed — the Claude Code watchdog, or on DSH
-   the report channel's watcher (`worker-ops.md` "The report channel (DSH)") — and every staged
-   owner action watched? Arm what is missing in this turn; if nothing can be armed,
-   say so in one line. Never close a turn with a live worker and nothing armed. The
+   the report channel's watcher where the project ships one (`worker-ops.md` "The
+   report channel (DSH)") — and every staged owner action watched? Arm what is
+   missing in this turn; if nothing can be armed, say so in one line. Never close a turn with a live worker and nothing armed. The
    DSH watcher serves every live worker: never one per worker, never a second
    watcher beside it, and never a reminder or a schedule instead. Cost: the owner
    is the only thing that can wake you (2026-11-14: four live workers, no wake).

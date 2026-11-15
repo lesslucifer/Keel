@@ -45,8 +45,9 @@ Owner rulings: <Qn = x, ...>.
    backup/restore of any real state it touches.
 ## Report to <router name>, then end your turn (stay alive for follow-ups)
 Your report is one self-contained message: by `SendMessage` on Claude Code; on DSH by
-`sh scripts/router-inbox.sh post <your name> REPORT "<one line>"` (a short body on stdin works),
-quoting the `POSTED id=…` it printed. No report marker file: the post is the report.
+your final transcript message, plus, where the project ships an inbox script,
+`sh <inbox> post <your name> REPORT "<summary>"` (a body on stdin works, up to 4,000 bytes),
+quoting the `POSTED id=…` it printed. No report marker file.
 What is signed · doc (abs path, branch confirmed) · full tip · ordered cd-prefixed owner commands · gate state ·
 doc only or how to try · what no gate reviewed (paths outside code_paths) · follow-ups.
 ```

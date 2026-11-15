@@ -20,8 +20,9 @@ def skills: ["keel-router", "project-router", "keel-workflow", "keel-plan", "kee
 # The owner sender (E-RGUARD.W2): one plain shape per mode, so a quoted body cannot smuggle a
 # command; the body itself travels through <checkout>/.router/notify/owner.md, which Write allows.
 # Plain words only: no quote, escape, glob, brace, substitution, redirect, separator or
-# control character survives this set, so the string judged here is the argv the shell
-# builds (a quoted "--out""put=" once slipped past a substring check). "--ou" also
+# control character survives this set (jq's "$" also matches before one final newline,
+# which the shell reads as the end of the one command), so the string judged here is the
+# argv the shell builds (a quoted "--out""put=" once slipped past a substring check). "--ou" also
 # catches git's abbreviated long options. gh takes only named query flags and bare
 # words without ":" - no -R/--repo (also inside a -dR cluster), no URL argument (both
 # point gh at any host), no -q/--jq/-t/--template (gh's jq reads the environment), no --web.
