@@ -37,7 +37,7 @@
 </table>
 
 <h2 id="deviations">Deviations</h2>
-<p data-item="deviations" data-c="deviations">Pending. Unplanned so far: the token fix, which W1's plan expected only as "a fact that fails is fixed in this WU".</p>
+<p data-item="deviations" data-c="deviations">Pending. Unplanned so far: the token fix, which W1's plan expected only as "a fact that fails is fixed in this WU". Kept on purpose: the owner's diagnostic <code>ROUTER_GH_DIAG=mint</code> in scripts/router-gh.sh, with its test. The worker added it to confirm the cause. The router ruled to drop it, but removing it was denied in the worker's session (a permission rule, then the auto-mode classifier), so the router ruled to keep it as it is. It is owner only, since the router's guard admits no environment prefix. It prints safe facts only and exits 0 before any push.</p>
 
 <h2 id="evidence">Evidence</h2>
 <p data-item="evidence" data-c="evidence">Pending. Tests: tests/suite/router_gh.rs (the stateless fake token; a_legacy_and_a_stateless_token_both_push; ten bad answers refused with the status and the length only).</p>

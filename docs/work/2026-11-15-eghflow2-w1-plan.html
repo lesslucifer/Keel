@@ -34,13 +34,13 @@
 
 <h2 id="work">The work</h2>
 <ol>
-  <li><strong>The token fix</strong> (rule-bearing: your <code>keel mr commit</code>). One check, <code>token_ok</code>: 1 to 4096 bytes of printable ASCII, no space, quote or backslash. Both the mint and the credential mode use it. That set stays inert everywhere the token goes: the curl config's quoted <code>Authorization</code> line, git's <code>password=</code> line and the 0600 token file. A refused mint says <code>(HTTP &lt;status&gt;, a token of &lt;n&gt; bytes)</code>, never a byte of the token.</li>
+  <li><strong>The token fix</strong> (rule-bearing: your <code>keel mr commit</code>). One check, <code>token_ok</code>: 1 to 4096 bytes of printable ASCII, no space, quote or backslash. Both the mint and the credential mode use it. That set stays inert everywhere the token goes: the curl config's quoted <code>Authorization</code> line, git's <code>password=</code> line and the 0600 token file. A refused mint says <code>(HTTP &lt;status&gt;, a token of &lt;n&gt; bytes)</code>, never a byte of the token. The same commit carries the owner's diagnostic, <code>ROUTER_GH_DIAG=mint</code> (open point 2).</li>
   <li><strong>The live checks</strong>, run by the router (the bot's commands) and by you (anything that needs the key), in the epic plan's order. Each fact goes into the result report. A fact that fails is fixed in this WU, with a test against the fake GitHub that fails before the fix.</li>
 </ol>
 
 <h2 id="tests">Test plan</h2>
 <div data-item="test-plan" data-c="test-plan">
-  <p><strong>Integration</strong> (<code>tests/suite/router_gh.rs</code>, the fake GitHub). The fake's token is now the stateless shape: 516 characters, two dots, dashes and underscores. Every existing test runs with it, including the credential helper over https and every no-leak assertion. A new test pushes with a legacy 40-character token, the stateless one and a 4096-byte one, and checks that the next API call carries each one unchanged. The refusal test sends ten bad answers: a quote, a space, an apostrophe, a backslash, a newline, a non-ASCII byte, 4097 bytes, an empty token, a number and no token. Each must exit 1 with the status and the length only, and push nothing. Before the fix, the stateless fake fails every push test.</p>
+  <p><strong>Integration</strong> (<code>tests/suite/router_gh.rs</code>, the fake GitHub). The fake's token is now the stateless shape: 516 characters, two dots, dashes and underscores. Every existing test runs with it, including the credential helper over https and every no-leak assertion. A new test pushes with a legacy 40-character token, the stateless one and a 4096-byte one, and checks that the next API call carries each one unchanged. The diagnostic's test: one token request, the safe facts, exit 0, nothing pushed, and no token, JWT or key in the output. The refusal test sends ten bad answers: a quote, a space, an apostrophe, a backslash, a newline, a non-ASCII byte, 4097 bytes, an empty token, a number and no token. Each must exit 1 with the status and the length only, and push nothing. Before the fix, the stateless fake fails every push test.</p>
   <p><strong>Live</strong>: the result report records each W1 line from the epic plan. <strong>Unit</strong>: none; the change is a shell check covered at the script's boundary.</p>
 </div>
 
@@ -49,7 +49,7 @@
   <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
   <tbody>
     <tr><td>1</td><td>Pin the legacy format with GitHub's temporary header?</td><td>No.</td><td>GitHub stops honouring <code>X-GitHub-Stateless-S2S-Token</code> on 2026-11-30, and says to treat tokens as opaque.</td></tr>
-    <tr><td>2</td><td>A diagnostic mode for the owner?</td><td>No.</td><td>The router's ruling: no debug mode in the bot; the first live push confirms the cause.</td></tr>
+    <tr><td>2</td><td>A diagnostic mode for the owner?</td><td>Kept: <code>ROUTER_GH_DIAG=mint</code>, owner only.</td><td>Written to confirm the cause before the fix. The router then ruled to drop it, but removing it was denied in the worker's session, so the router ruled to keep it as it is. It prints safe facts only and exits before any push. The router's guard admits no environment prefix, so only the owner can set it.</td></tr>
   </tbody>
 </table>
 
