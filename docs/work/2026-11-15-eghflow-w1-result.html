@@ -15,7 +15,7 @@
   </header>
   <main>
     <h2 id="outcome">Outcome</h2>
-    <p data-item="outcome">Delivered. A push of <code>main</code>, <code>epic/**</code> or <code>wu/**</code>, and a pull request into <code>main</code> or <code>epic/**</code>, runs three jobs: <em>ci</em> (<code>keel check</code>), <em>gate</em> (the merge check, green when only the sign-off is missing, with a five-note evidence page) and <em>docs</em> (<code>keel verify-doc</code> on changed docs). Each uses a keel built from the base branch, a read-only token and no secret. Proven by hermetic tests and by a real run of the script in a scratch clone (bootstrap path, keel built from cbbbcc3). Not yet run on GitHub: that needs your push.</p>
+    <p data-item="outcome">Delivered. A push of <code>main</code>, <code>epic/**</code> or <code>wu/**</code>, and a pull request into <code>main</code> or <code>epic/**</code>, runs three jobs: <em>ci</em> (<code>keel check</code>), <em>gate</em> (the merge check, green when only the sign-off is missing, with a five-note evidence page) and <em>docs</em> (<code>keel verify-doc</code> on changed docs). Each uses a keel built from the base branch, a read-only token and no secret. Proven by hermetic tests and by a real run of the script in a scratch clone (bootstrap path, keel built from cbbbcc3). Not yet run on GitHub: that needs your push. Until W5 it is a signal the branch can edit: the workflow file and the script come from the pushed commit, so a branch (or a fork's pull request) can make its own run green. Never make it a required check before W5.</p>
 
     <h2 id="changes">What changes for you</h2>
     <table data-c="changes" data-item="owner-changes">
@@ -36,20 +36,23 @@
       <li>The full path (evidence table, "green on checks 0–7") first runs on the first WU branch pushed after this WU is merged into <code>epic/E-GHFLOW</code> and that epic is pushed. Look for the table with rows test, doc, cr, mr, dod and "8·manual-review: waiting".</li>
     </ol>
     <p>Nothing on your Mac changes: no hook, no setting, no file outside the repo.</p>
+    <p data-c="fork-runs">Recommended once, in the repo settings: Actions → General → "Fork pull request workflows from outside collaborators" → "Require approval for all outside collaborators". A stranger's pull request then runs nothing until you approve the run. The token stays read-only and holds no secret either way.</p>
 
     <h2 id="deviations">Deviations</h2>
     <ul data-item="deviations">
       <li>The plan's integration list said the script refuses bad input "before any git call that uses it"; the head branch is checked with <code>git check-ref-format</code>, a git call that only validates. Same intent.</li>
       <li>The full-path run of the script against a real built keel (base = this tip) was not run: the sandbox's auto-mode refused the scratch commit it needed. The hermetic tests cover that path with the test build of keel.</li>
+      <li>The router's independent review of <code>.github/</code> and the script (one important finding, five low) changed four things after the first report. (1) Keel is now built from inside the base worktree, so no <code>.cargo/config.toml</code> or <code>rust-toolchain.toml</code> of the head can steer the build. Before, cargo ran from the head checkout. (2) Only a push takes the "main" path; a fork's pull request from a branch named <code>main</code> builds keel from its base. (3) Each main commit has its own run group, and only work-branch runs are cancelled when superseded. (4) The evidence page caps each field at 500 characters, and failures and waived lines at 20 rows, so it stays under GitHub's 1 MiB step limit. Each fix has a test that was red first.</li>
+      <li>The workflow's <code>rustup component add</code> step still runs in the head checkout. It adds rustfmt and clippy to whatever toolchain the head picks, and that is the toolchain the head's own <code>keel check</code> uses anyway. It never touches the keel that judges.</li>
       <li>Otherwise none.</li>
     </ul>
 
     <h2 id="evidence">Evidence</h2>
     <div data-item="evidence" data-c="evidence">
       <ul>
-        <li>Commits: d87aa86 (plan), 5577115 (code, tests, script, workflow), and this report's commit.</li>
-        <li>Integration: <code>tests/suite/ci_gate.rs</code> (8 tests: green before and after the sign-off, the same FAIL block as the local gate, no <code>[check]</code> command run, hooks installed, bootstrap, epic level, docs job, ci job, build from the base commit, bad input refused) and <code>tests/suite/keel_gate.rs</code> (7 tests: triggers, token, pins, no expression in a run line, three jobs, the script's base build). The epic-level test was red first: an exempt range's printout hid check 8; fixed so the printout matches <code>verify-dod</code>.</li>
-        <li>Unit: <code>src/ci.rs</code> (escape, labels, the check-8 rule, the page for green, red, exempt, waived and broken notes) and <code>src/gate.rs</code> (the <code>--summary</code> flag).</li>
+        <li>Commits: d87aa86 (plan), 5577115 (code, tests, script, workflow), c3a60df (this report), then the review fixes and this report's update.</li>
+        <li>Integration: <code>tests/suite/ci_gate.rs</code> (9 tests: green before and after the sign-off, the same FAIL block as the local gate, no <code>[check]</code> command run, hooks installed, bootstrap, epic level, docs job, ci job, build from the base commit with a hostile <code>.cargo/config.toml</code> and <code>rust-toolchain.toml</code> in the head out of reach, a fork pull request from a branch named <code>main</code>, bad input refused) and <code>tests/suite/keel_gate.rs</code> (8 tests: triggers, token, run groups, pins, no expression in a run line, three jobs, the script's base build). The epic-level test was red first: an exempt range's printout hid check 8; fixed so the printout matches <code>verify-dod</code>.</li>
+        <li>Unit: <code>src/ci.rs</code> (escape, labels, the check-8 rule, the page for green, red, exempt, waived and broken notes, the size caps under hostile input) and <code>src/gate.rs</code> (the <code>--summary</code> flag).</li>
         <li><code>keel check</code>: lint green; tests 333 passed, 10 red, all <code>notify_owner</code>, sandbox-only (loopback bind refused, R49).</li>
         <li>Real script run in a scratch clone: <code>gate</code>, no <code>KEEL</code>, built keel from cbbbcc3 in a worktree, took the bootstrap path, printed the base's verify-dod FAIL blocks, summary "Keel gate: bootstrap", exit 1.</li>
         <li>Docs: this report and the WU plan (both T3). No rule-bearing path changed.</li>
@@ -63,6 +66,8 @@
     <ul data-item="follow-ups">
       <li>The first GitHub run's result is recorded in E-GHFLOW.W2's result report (its push is the first full-path run).</li>
       <li>Base-defined workflow and script (so a branch cannot edit its own checks): E-GHFLOW.W5, with <code>.github/</code> rule-bearing and the checks required.</li>
+      <li>Check on the first full-path run whether GitHub turns an @name or #number written as entities in a note into a mention or a link (not verified; the page encodes both). Recorded in E-GHFLOW.W2's result with the first run.</li>
+      <li>Cost: each push runs three uncached debug builds of keel (one per job). Caching the base build, or building once and sharing the binary between jobs: a backlog row at the E-GHFLOW close.</li>
       <li>A range walk on pushes to main, and pinning the Rust toolchain if a newer clippy turns ci red: backlog rows taken at the E-GHFLOW close.</li>
     </ul>
   </main>
