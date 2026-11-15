@@ -879,7 +879,10 @@ fn review_problem(r: &Review, tip: &str, repo: Option<&str>) -> Option<String> {
 /// gave (blocking is decided from the user and the state alone, before the commit or any other field,
 /// so a missing field never lifts a block). Else the newest latest decision that is an APPROVED on
 /// exactly `tip`, with a page of its own (and on `repo` when set), is the approval; a signer whose
-/// latest approval is of another commit approves nothing here.
+/// latest approval is of another commit approves nothing here. Two differences from GitHub's own
+/// reviewDecision, by design: a change request by a collaborator the roster does not list blocks
+/// nothing (the roster is the authority on who signs), and a dismissed later approval does not bring
+/// back the same signer's earlier change request (how GitHub treats that is unverified).
 fn pick_approval(reviews: &serde_json::Value, tip: &str, allowed: &[Entry], repo: Option<&str>) -> Option<(String, Review)> {
     let mut latest: std::collections::BTreeMap<String, (u64, &serde_json::Value)> = Default::default();
     for v in reviews.as_array()? {

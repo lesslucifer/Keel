@@ -629,15 +629,19 @@ fn push_takes_githubs_sign_offs_add_only_and_never_an_edit_or_a_deletion() {
     assert!(!o.status.success());
 }
 
-/// Security review round 2, F1: a sign-off GitHub holds on a commit this checkout lacks (the owner
-/// pressed "Update branch" and approved the new head) holds refs/notes/mr back from the push, so the
-/// push never erases it; the branch and the other notes still land.
+/// Security review round 2 F1 and round 3 I3-1: a sign-off GitHub holds on a commit this checkout
+/// lacks (the owner pressed "Update branch" and approved the new head) has that commit fetched by sha,
+/// so the push carries the note on and never erases it. A writer-shaped note on a commit GitHub does
+/// not serve is not taken and holds nothing back: the push goes on, every time.
 #[test]
-fn a_sign_off_on_a_commit_only_github_has_holds_the_mr_notes_back() {
+fn a_sign_off_on_a_commit_only_github_has_is_fetched_and_kept_and_an_unserved_one_holds_nothing() {
     let gh = Gh::new();
+    // GitHub serves a commit reachable from one of its branches by sha, as github.com does
+    git(&gh.origin, &["config", "uploadpack.allowReachableSHA1InWant", "true"]);
     git(&gh.repo, &["notes", "--ref=mr", "add", "-m", r#"{"by":"local"}"#, &gh.sha("wu/E/x")]);
     assert!(gh.run(&["push", "wu/E/x"]).status.success());
-    // GitHub makes a commit this checkout never fetched, and the writer signs it
+    // GitHub makes a commit this checkout never fetched, and the writer signs it; a note also names a
+    // commit GitHub never had (made in a clone, its note pushed, the commit never), as a planted one would
     let other = gh.root.path().join("other");
     git(gh.root.path(), &["clone", "-q", gh.origin.to_str().unwrap(), other.to_str().unwrap()]);
     git(&other, &["checkout", "-q", "-b", "wu/E/x", "origin/wu/E/x"]);
@@ -645,8 +649,14 @@ fn a_sign_off_on_a_commit_only_github_has_holds_the_mr_notes_back() {
     commit(&other, "Merge branch 'epic/E' into wu/E/x");
     git(&other, &["push", "-q", "--no-verify", "origin", "wu/E/x:refs/heads/wu/E/x-updated"]);
     let only_github = git(&other, &["rev-parse", "HEAD"]);
-    git(&gh.origin, &["notes", "--ref=mr", "add", "-m", &approval_note(&only_github, 50), &only_github]);
-    let before = gh.origin_sha("refs/notes/mr");
+    write(&other, "src/g.txt", "never pushed");
+    commit(&other, "a commit GitHub never had");
+    let unserved = git(&other, &["rev-parse", "HEAD"]);
+    git(&other, &["fetch", "-q", "origin", "refs/notes/mr:refs/notes/mr"]);
+    git(&other, &["notes", "--ref=mr", "add", "-m", &approval_note(&only_github, 50), &only_github]);
+    git(&other, &["notes", "--ref=mr", "add", "-m", &approval_note(&unserved, 51), &unserved]);
+    git(&other, &["push", "-q", "--no-verify", "origin", "refs/notes/mr:refs/notes/mr"]);
+    assert!(!common::cmd("git").args(["cat-file", "-e", &unserved]).current_dir(&gh.origin).output().unwrap().status.success(), "GitHub never had it");
     write(&gh.repo, "src/c.txt", "c");
     commit(&gh.repo, "more");
     let tip = gh.sha("wu/E/x");
@@ -654,11 +664,19 @@ fn a_sign_off_on_a_commit_only_github_has_holds_the_mr_notes_back() {
     let o = gh.run(&["push", "wu/E/x"]);
     assert!(o.status.success(), "{}", text(&o));
     let out = stdout(&o);
-    assert!(out.contains(&format!("WARN GitHub holds a sign-off on {only_github} this checkout lacks: sync first; refs/notes/mr not pushed")), "{out}");
+    assert_eq!(
+        out.lines().filter(|l| l.starts_with("WARN")).collect::<Vec<_>>(),
+        [format!("WARN GitHub's mr note on {unserved} not taken: GitHub serves no such commit")],
+        "{out}"
+    );
     assert!(out.ends_with(&format!("PUSHED branch=wu/E/x sha={tip} state=updated")), "{out}");
-    assert_eq!(gh.origin_sha("refs/notes/mr"), before, "GitHub's refs/notes/mr, and its sign-off, untouched");
-    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &only_github]), approval_note(&only_github, 50));
-    assert_eq!(gh.origin_sha("refs/notes/test"), Some(gh.sha("refs/notes/test")), "the other notes still went");
+    assert_eq!(git(&gh.repo, &["notes", "--ref=mr", "show", &only_github]), approval_note(&only_github, 50), "the sign-off and its commit came here");
+    assert_eq!(gh.origin_sha("refs/notes/mr"), Some(gh.sha("refs/notes/mr")), "refs/notes/mr was pushed: nothing holds it back");
+    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &only_github]), approval_note(&only_github, 50), "the push kept GitHub's sign-off");
+    assert_eq!(gh.sha("refs/notes/keel-gh/pushed-mr"), gh.sha("refs/notes/mr"), "the snapshot is the value pushed");
+    // the next push is not held either
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success() && stdout(&o).ends_with("state=unchanged"), "{}", text(&o));
 }
 
 /// Security review round 2, F2: a sign-off removed here stays removed. Only what GitHub added since
