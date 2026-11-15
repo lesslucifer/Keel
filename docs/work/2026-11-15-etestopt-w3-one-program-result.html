@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6af919b69f34851f0dfb24de" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-TESTOPT.W3 result: one test program</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-TESTOPT.W3 · One test program — result</h1>
+      <p>Every integration test now runs in one program. A full run went from about 48 s to about 33 to 40 s in this session, and a new top-level test file fails a test that says how to move it.</p>
+      <div class="meta">T3 · WU result · 2026-11-15 · Keel · branch <code>wu/E-TESTOPT/w3-one-program</code> off <code>epic/E-TESTOPT</code> 8a61edf · <a href="2026-11-15-etestopt-w3-one-program-plan.html">WU plan</a> · <a href="2026-11-15-etestopt-plan.html">epic E-TESTOPT plan</a>, block W3</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">What happened</h2>
+<p data-item="outcome" data-c="outcome">Delivered. The ten test files moved into <code>tests/suite/</code> as modules of one program; <code>tests/common</code> stayed where it was. <code>cargo test</code> now runs two programs, the unit tests and <code>suite</code>, and passes 336 tests: the 334 from before, each under its old name, plus the two new guard tests. It is green in a worker's sandbox on the stock <code>PATH</code>. No thread cap: 8 threads was not faster (open point 1 of the plan). <code>.keel/config.toml</code> is untouched; <code>[check] test</code> stays <code>cargo test</code>.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="today-after">
+  <thead><tr><th></th><th>Before</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>A full <code>cargo test --no-fail-fast</code>, this session</td><td>50.5 s and 47.7 s</td><td>33.4 s, 40.0 s and 33.2 s, under heavier load</td></tr>
+    <tr><td>A test fails</td><td>The run stops at that file</td><td>Every test runs; every failure shows</td></tr>
+    <tr><td>Someone adds <code>tests/new.rs</code></td><td>It becomes another program, run after the rest</td><td>A test fails and gives the exact move</td></tr>
+    <tr><td>You must decide</td><td colspan="2">Nothing now. When main is merged into this epic, E-RGUARD's two new test files must be moved into the suite (follow-ups)</td></tr>
+  </tbody>
+</table>
+
+<h2 id="deviations">Deviations</h2>
+<ul data-item="deviations" data-c="deviations">
+  <li>The guard does more than the epic plan's "a <code>.rs</code> file directly under <code>tests/</code>". It also fails on a second <code>tests/&lt;dir&gt;/main.rs</code>, a <code>[[test]]</code> table or <code>autotests</code> in <code>Cargo.toml</code>, and a file in <code>tests/suite/</code> that <code>main.rs</code> does not declare. That last one is new with the suite: such a file compiles into nothing and its tests silently never run. As the WU plan's open point 2 said.</li>
+  <li>The epic plan expected about 38 s from its trial. This session measured 33 to 40 s after against 48 to 50 s before; the load ran from 3 to 55 because other workers were testing, so the after figures are a range, not one number.</li>
+  <li>Two comments still name the old paths: <code>scripts/router-guard.jq</code> and <code>scripts/router-worker.sh</code> say <code>tests/router.rs</code>. Both files are rule-bearing, so changing a comment there needs the owner's <code>keel mr commit</code>; left as they are (follow-ups). The comments in <code>src/init.rs</code> and <code>tests/suite/mr.rs</code> were updated.</li>
+</ul>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+<p><b>Timings.</b> In a worker's sandbox on this machine, stock <code>PATH</code> (<code>/usr/bin/git</code>; W1 puts the real git first for every child), warm build, <code>cargo test --no-fail-fast</code>. Load is the 1-, 5- and 15-minute average before → after the run. Before is the epic tip 8a61edf; after is 5565823. Runs are in the order taken.</p>
+<table data-c="timings">
+  <thead><tr><th>Run</th><th>Threads</th><th>Wall</th><th>Result</th><th>Load</th></tr></thead>
+  <tbody>
+    <tr><td>Before #1</td><td>default (14)</td><td>50.5 s</td><td>334 pass, 0 fail, 11 programs</td><td>8.13 5.78 9.80 → 16.14 8.38 10.53</td></tr>
+    <tr><td>Before #2</td><td>default</td><td>47.7 s</td><td>334 pass, 0 fail</td><td>16.14 8.38 10.53 → 14.59 8.97 10.63</td></tr>
+    <tr><td>Before #1</td><td>8</td><td>49.5 s</td><td>334 pass, 0 fail</td><td>13.42 8.82 10.56 → 12.30 9.33 10.66</td></tr>
+    <tr><td>Before #2</td><td>8</td><td>46.1 s</td><td>334 pass, 0 fail</td><td>12.30 9.33 10.66 → 10.21 9.24 10.56</td></tr>
+    <tr><td>After #1</td><td>default</td><td>33.4 s</td><td>336 pass, 0 fail, 2 programs</td><td>3.49 7.05 9.54 → 11.39 8.63 10.02</td></tr>
+    <tr><td>After #1</td><td>8</td><td>38.2 s</td><td>336 pass, 0 fail</td><td>11.39 8.63 10.02 → 23.22 11.77 11.09</td></tr>
+    <tr><td>After #2</td><td>default</td><td>40.0 s</td><td>336 pass, 0 fail</td><td>23.22 11.77 11.09 → 55.13 21.65 14.75</td></tr>
+    <tr><td>After #2</td><td>8</td><td>36.2 s</td><td>336 pass, 0 fail</td><td>55.13 21.65 14.75 → 40.00 21.55 14.99</td></tr>
+    <tr><td>After #3</td><td>8</td><td>48.4 s</td><td>336 pass, 0 fail</td><td>34.31 20.94 14.85 → 33.81 23.03 15.96</td></tr>
+    <tr><td>After #3</td><td>default</td><td>33.2 s</td><td>336 pass, 0 fail</td><td>33.81 23.03 15.96 → 29.96 23.25 16.32</td></tr>
+  </tbody>
+</table>
+<p><b>The thread cap.</b> The rule was: cap at 8 only if 8 threads beats the default by 10 % or more in every pair. It did not: 38.2 against 33.4 s (slower), 36.2 against 40.0 s (9.5 % faster, with the load at 55), 48.4 against 33.2 s (slower). Before the move, 8 threads was 2 to 3 % faster, within noise. So no <code>.cargo/config.toml</code>. The epic's trial saw 8 threads win (29.2 against 35.1 s) with the watcher test skipped; W1 and W2 since cut the git cost per spawn and the 20 s watcher wait, which is the likely reason the gap closed. W5 re-checks it after W4, as the epic plan says.</p>
+<p><b>Same tests, same names.</b> <code>cargo test -- --list</code> before the move gave 334 names. After it, the unit tests list 98 and <code>suite</code> 238. With the module prefix dropped from the suite names, the 236 integration names before and the 238 after differ by exactly the two new tests. No test body changed; each file's <code>mod common;</code> became <code>use crate::common;</code>. Nothing in <code>tests/</code> sets environment variables or the working directory, so sharing one process reaches no other test.</p>
+<p><b>Red first</b>, on the moved tree. A planted <code>tests/stray.rs</code> turned <code>layout::the_suite_is_the_only_test_program</code> red with: <code>tests/stray.rs builds as a test program of its own. Move it into the suite: `git mv tests/stray.rs tests/suite/stray.rs`, add `mod stray;` to tests/suite/main.rs, and in the moved file replace `mod common;` with `use crate::common;`</code>. A planted, undeclared <code>tests/suite/orphan.rs</code> turned it red with <code>tests/suite/orphan.rs is not declared in tests/suite/main.rs, so none of its tests run: add `mod orphan;`</code>. Each plant removed: green.</p>
+<p><b>Tests added</b>, in <code>tests/suite/layout.rs</code>. Integration: <code>the_suite_is_the_only_test_program</code> reads the real <code>tests/</code> tree and <code>Cargo.toml</code>. Unit: <code>the_layout_check_names_each_extra_program_and_each_undeclared_file</code>, on made-up listings: a clean tree with non-<code>.rs</code> files (ignored), a stray top-level file (the message carries the full move), a second <code>&lt;dir&gt;/main.rs</code>, an undeclared module, a <code>[[test]]</code> table, <code>autotests = false</code>.</p>
+<p><b>Kept from W1</b>: its PATH guard skips exactly <code>tests/common</code>, which did not move. Its spawn guards scan <code>tests/</code> recursively and still see every file.</p>
+<p><b>Commits</b>: 53d5d99 the WU plan · 5565823 the move, the guard and the two comments · this report.</p>
+<p><b>Paths outside <code>src/</code> and <code>tests/</code></b>: the WU plan and this report, both T3. <code>src/</code> changed by one comment line in <code>src/init.rs</code>.</p>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">Nothing citable at the WU. For the epic's decision at the close (the epic plan calls it DEC-84; that number is wrong for Keel: main's next free id is DEC-58 and E-RGUARD is claiming it, so W5 picks the next id free on main and every live branch): "Keel's integration tests are one program, <code>tests/suite/</code>, with <code>tests/common</code> included by path, run by plain <code>cargo test</code>. Cargo runs test programs one after another and stops at the first that fails; one program runs every test in one pool and shows every failure. <code>layout::the_suite_is_the_only_test_program</code> fails on any other test program or an undeclared suite file. No thread cap: in E-TESTOPT.W3, 8 threads did not beat the default by 10 % (numbers above). No nextest prerequisite (the epic's open point 1)." With W3's before/after numbers.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<ul data-item="follow-ups" data-c="follow-ups">
+  <li>E-RGUARD adds <code>tests/router_inbox.rs</code> and <code>tests/notify_owner.rs</code> and changes <code>tests/router.rs</code> and <code>tests/init.rs</code>. When main is merged into this epic, git should carry the two changes into <code>tests/suite/router.rs</code> and <code>tests/suite/init.rs</code> as renames. The two new files arrive top-level, and the guard goes red on them. The merger moves each one as its message says: <code>git mv tests/router_inbox.rs tests/suite/router_inbox.rs</code>, <code>mod router_inbox;</code> in <code>tests/suite/main.rs</code>, <code>mod common;</code> → <code>use crate::common;</code>, and the same for <code>notify_owner</code>. Destination: E-TESTOPT.W5, the epic close, at its merge of main.</li>
+  <li>The comments in <code>scripts/router-guard.jq</code> (line 13) and <code>scripts/router-worker.sh</code> (line 54) name <code>tests/router.rs</code>; they should say <code>tests/suite/router.rs</code>. A rule-bearing change, so an owner <code>keel mr commit</code>. Destination: E-TESTOPT.W5.</li>
+  <li>The thread cap: re-measured after W4, as the epic plan already holds. Destination: E-TESTOPT.W5.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
