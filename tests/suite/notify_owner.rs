@@ -147,6 +147,7 @@ fn stalled_server() -> String {
 }
 
 #[test]
+#[ignore = "binds a loopback port; worker sandboxes refuse it (owner ruling 2026-11-15)"]
 fn dry_run_prints_the_request_without_the_chat_or_a_send() {
     let dir = channel();
     let base = closed_base();
@@ -161,6 +162,7 @@ fn dry_run_prints_the_request_without_the_chat_or_a_send() {
 }
 
 #[test]
+#[ignore = "binds a loopback port; worker sandboxes refuse it (owner ruling 2026-11-15)"]
 fn check_names_the_bot_and_sends_no_message() {
     let dir = channel();
     let (base, request, server) = mock("200 OK", r#"{"ok":true,"result":{"id":42,"is_bot":true,"first_name":"Keel Test","username":"keel_test_bot"}}"#);
@@ -175,6 +177,7 @@ fn check_names_the_bot_and_sends_no_message() {
 }
 
 #[test]
+#[ignore = "binds a loopback port; worker sandboxes refuse it (owner ruling 2026-11-15)"]
 fn check_failure_is_one_line_and_never_prints_the_credential() {
     let dir = channel();
     let (base, request, server) = mock("401 Unauthorized", r#"{"ok":false,"error_code":401,"description":"Unauthorized"}"#);
@@ -191,6 +194,7 @@ fn check_failure_is_one_line_and_never_prints_the_credential() {
 }
 
 #[test]
+#[ignore = "binds a loopback port; worker sandboxes refuse it (owner ruling 2026-11-15)"]
 fn send_prints_the_id_and_never_the_credential() {
     let dir = channel();
     let (base, request, server) = mock("200 OK", r#"{"ok":true,"result":{"message_id":1731}}"#);
@@ -206,6 +210,7 @@ fn send_prints_the_id_and_never_the_credential() {
 }
 
 #[test]
+#[ignore = "binds a loopback port; worker sandboxes refuse it (owner ruling 2026-11-15)"]
 fn bare_send_reads_and_clears_the_body_so_it_cannot_resend_a_stale_message() {
     let dir = channel();
     let body = dir.path().join(".router/notify/owner.md");
@@ -231,6 +236,7 @@ fn bare_send_reads_and_clears_the_body_so_it_cannot_resend_a_stale_message() {
 }
 
 #[test]
+#[ignore = "binds a loopback port; worker sandboxes refuse it (owner ruling 2026-11-15)"]
 fn preview_and_failed_send_leave_the_body_in_place() {
     let dir = channel();
     let body = dir.path().join(".router/notify/owner.md");
@@ -250,6 +256,7 @@ fn preview_and_failed_send_leave_the_body_in_place() {
 }
 
 #[test]
+#[ignore = "binds a loopback port; worker sandboxes refuse it (owner ruling 2026-11-15)"]
 fn a_read_only_body_fails_before_sending_and_names_the_file() {
     use std::os::unix::fs::PermissionsExt;
     let dir = channel();
@@ -288,6 +295,7 @@ fn a_missing_credential_is_one_line_naming_the_file_only() {
 }
 
 #[test]
+#[ignore = "binds a loopback port; worker sandboxes refuse it (owner ruling 2026-11-15)"]
 fn bare_send_without_a_body_is_one_line_and_sends_nothing() {
     let dir = channel();
     let out = run(&dir, &["--send"], &closed_base());
@@ -311,6 +319,7 @@ fn cleartext_http_is_refused_for_a_non_loopback_host() {
 }
 
 #[test]
+#[ignore = "binds a loopback port; worker sandboxes refuse it (owner ruling 2026-11-15)"]
 fn a_malformed_token_never_echoes_the_request_target() {
     let dir = channel();
     std::fs::write(dir.path().join(".env"), "TELEGRAM_BOT_TOKEN=bad token:secret\n").unwrap();
@@ -323,6 +332,7 @@ fn a_malformed_token_never_echoes_the_request_target() {
 }
 
 #[test]
+#[ignore = "binds a loopback port; worker sandboxes refuse it (owner ruling 2026-11-15)"]
 fn a_stalled_server_times_out_in_one_line() {
     let dir = channel();
     let base = stalled_server();
