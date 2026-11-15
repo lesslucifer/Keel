@@ -1,7 +1,7 @@
 //! `keel verify-dod` + `keel preflight`: the merge gate (UC-GATE-2/3/5, UC-DOC-3).
 //! Ported from Trawler's xtask gate: same check ids, same `FAIL / fix ->` blocks, no cargo.
 use crate::notes::{self, CrNote, DocNote, DodNote, TestNote};
-use crate::{check, git, hooks_problem, mr, review, short, Config, HOOKS_FIX};
+use crate::{check, ci, git, hooks_problem, mr, review, short, Config, HOOKS_FIX};
 use serde::de::DeserializeOwned;
 use std::path::Path;
 
@@ -377,6 +377,73 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, gua
     Ok(0)
 }
 
+pub(crate) const CI_USAGE: &str = "usage: keel ci gate <wu|epic> <tip> [--target R] [--summary FILE]";
+
+/// `keel ci gate` (E-GHFLOW.W1): the gate `verify-dod wu|epic` runs, printed by the same code, as a
+/// signal for CI. Green when every failure is the sign-off (check 8, judged at the merge); writes no
+/// dod receipt; appends the evidence page (`ci::render`) to `--summary FILE`.
+pub fn ci_gate(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
+    let (summary, rest) = summary_flag(args)?;
+    let [lvl, tip, rest @ ..] = rest.as_slice() else { return Err(CI_USAGE.into()) };
+    let level = level_of(lvl).map_err(|_| CI_USAGE.to_string())?;
+    let target = target_of(repo, cfg, level, tip, rest)?;
+    let mut r = verify(repo, cfg, level, tip, &target)?;
+    guard_hooks(repo, &mut r);
+    if let Err((what, fix)) = mr::manual_review(repo, cfg, level.name(), &r.tip, &r.base, &target, r.tip_cr.as_ref()) {
+        r.fail(ci::SIGN_OFF, what, fix);
+    }
+    let exempt_range = r.exempt && r.failures.iter().all(|f| f.check == ci::SIGN_OFF);
+    r.exempt &= r.failures.is_empty();
+    print(&r, "verify-dod");
+    let red = ci::red_before_sign_off(r.failures.iter().map(|f| f.check.as_str()));
+    if let Some(path) = summary {
+        let failures: Vec<(String, String, String)> = r.failures.iter().map(|f| (f.check.clone(), f.what.clone(), f.fix.clone())).collect();
+        let notes: Vec<(&str, Result<Option<String>, String>)> = ci::NOTE_KINDS.iter().map(|k| (*k, notes::raw(repo, k, &r.tip))).collect();
+        let page = ci::render(&ci::Evidence {
+            level: level.name(),
+            tip: &r.tip,
+            base: &r.base,
+            target: &target,
+            exempt: exempt_range,
+            checks: level.checks(),
+            failures: &failures,
+            waived: &r.waived,
+            notes: &notes,
+        });
+        use std::io::Write;
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .and_then(|mut f| f.write_all(page.as_bytes()))
+            .map_err(|e| format!("keel ci gate: cannot write the summary to {path}: {e}"))?;
+    }
+    if red {
+        eprintln!("ci gate red on {} - a check before the sign-off failed", short(&r.tip));
+    } else {
+        println!("ci gate green on {} - checks 0-7 pass; {} is judged at the merge", short(&r.tip), ci::SIGN_OFF);
+    }
+    Ok(red as i32)
+}
+
+/// `--summary FILE` taken out of `args`; the rest kept in order.
+fn summary_flag<'a>(args: &[&'a str]) -> Result<(Option<&'a str>, Vec<&'a str>), String> {
+    let mut summary = None;
+    let mut rest = vec![];
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if *a == "--summary" {
+            match (summary, it.next()) {
+                (None, Some(path)) if !path.is_empty() => summary = Some(*path),
+                _ => return Err(CI_USAGE.into()),
+            }
+        } else {
+            rest.push(*a);
+        }
+    }
+    Ok((summary, rest))
+}
+
 /// The range a sign-off signs, once checks 1-7 are green on it.
 pub(crate) struct Ready {
     pub tip: String,
@@ -665,7 +732,17 @@ mod tests {
     use super::inert;
     use super::review_verdict as review;
     use super::{judged_as, note_range, Level, NoteRange};
+    use super::{summary_flag, CI_USAGE};
     use crate::notes::CrNote;
+
+    #[test]
+    fn the_summary_flag_is_taken_out_once_with_its_path_and_the_rest_keeps_its_order() {
+        assert_eq!(summary_flag(&["wu", "t", "--target", "epic/e"]), Ok((None, vec!["wu", "t", "--target", "epic/e"])));
+        assert_eq!(summary_flag(&["wu", "--summary", "/s", "t"]), Ok((Some("/s"), vec!["wu", "t"])));
+        for bad in [&["wu", "t", "--summary"][..], &["--summary", "", "wu", "t"], &["--summary", "a", "--summary", "b"]] {
+            assert_eq!(summary_flag(bad), Err(CI_USAGE.to_string()), "{bad:?}");
+        }
+    }
 
     #[test]
     fn notes_are_the_epics_only_when_every_one_names_the_epic_base_and_that_is_not_the_parent() {

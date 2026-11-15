@@ -19,10 +19,12 @@ compiled!();
 #[path = "../common/mod.rs"]
 mod common;
 
+mod ci_gate;
 mod cli;
 mod close_walk;
 mod fixtures;
 mod init;
+mod keel_gate;
 mod layout;
 mod mr;
 mod notify_owner;
