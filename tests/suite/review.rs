@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;
 
-mod common;
+use crate::common;
 
 fn run(prog: &str, d: &Path, a: &[&str], input: &str) -> Output {
     use std::io::Write;

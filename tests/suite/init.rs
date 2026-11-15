@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Output;
 use tempfile::TempDir;
 
-mod common;
+use crate::common;
 
 fn keel(d: &Path, a: &[&str]) -> Output {
     common::cmd(env!("CARGO_BIN_EXE_keel")).args(a).current_dir(d).output().unwrap()
