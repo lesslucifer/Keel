@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-RGUARD.W3 · The inbox channel</h1>
       <p>Delivered: a worker's post wakes the router, and the report timer is gone.</p>
-      <div class="meta">T3 · WU result · 2026-11-14, updated 2026-11-15 · epic E-RGUARD · WU E-RGUARD.W3 · tip <code>2ac17fe</code>, this report, then your round-2 commit</div>
+      <div class="meta">T3 · WU result · 2026-11-14, updated 2026-11-15 · epic E-RGUARD · WU E-RGUARD.W3 · tip <code>6047f60</code> + this report</div>
     </div>
   </header>
   <main>
@@ -58,7 +58,7 @@
 <p>Test-first: the five new cases failed on <code>b006031</code>'s script for their stated reasons (junk printed, 5,242,950 bytes, raw ESC in <code>from=</code>, <code>pending=2</code> with header-less files, leaked <code>mv</code> stderr), then passed. The tests landed in <code>72b9ce3</code>; the script, settings and rule text in your signed <code>503a41f</code>.</p>
 
 <h2 id="fix-round-2">Fix round 2 (cr/v1 FAIL, and the independent review's round 1)</h2>
-<p>The review of <code>7957968</code> failed with 5 blockers and 5 importants; the independent review of the rule text and scripts found 1 high, 1 medium and 9 lows. Every finding is fixed or recorded below; none is refuted. The tests landed first, red, in <code>2ac17fe</code>; the script, guard comment and skill text are your round-2 commit, and the decision and docs are the commit after the tests.</p>
+<p>The review of <code>7957968</code> failed with 5 blockers and 5 importants; the independent review of the rule text and scripts found 1 high, 1 medium and 9 lows. Every finding is fixed or recorded below; none is refuted. The tests landed first, red, in <code>2ac17fe</code>; the decision and docs are <code>c244b2d</code>; the script, guard comment and skill text are your signed <code>6047f60</code>.</p>
 <table data-c="fix-round-2">
   <thead><tr><th>Finding</th><th>What was done</th></tr></thead>
   <tbody>
@@ -99,8 +99,9 @@
   <li><code>d4bfbb8</code> — the back-merge of <code>epic/E-RGUARD</code> at <code>0970a10</code>, signed by you.</li>
   <li><code>7957968</code> — this report after the back-merge.</li>
   <li><code>2ac17fe</code> — fix round 2, the tests, red.</li>
-  <li>The next commit — DEC-58, the plans and this report.</li>
-  <li>Your round-2 commit — <code>scripts/router-inbox.sh</code>, the guard comment, both skill trees and <code>project-router</code>.</li>
+  <li><code>c244b2d</code> — DEC-58, the plans and this report.</li>
+  <li><code>6047f60</code> — fix round 2, the rule-bearing half, signed by you: <code>scripts/router-inbox.sh</code>, the guard comment, both skill trees, <code>project-router</code> and its template.</li>
+  <li>This update is the next commit.</li>
 </ul>
 
 <h3 id="red-green">Red first, then green</h3>
@@ -207,14 +208,13 @@ INBOX dir=/tmp/w3-demo/inbox pending=0 oldest=none read=1 orphans=0</code></pre>
 
 <h2 id="follow-ups">Follow-ups</h2>
 <ul data-item="follow-ups" data-c="follow-ups">
-  <li><b>Your step, in order:</b> apply and sign the round-2 rule-bearing commit (below); <code>keel check</code> outside the sandbox on that tip; then notes, <code>keel preflight wu &lt;tip&gt; --target epic/E-RGUARD</code> and review round 3, which reads only the changes since <code>7957968</code>.</li>
+  <li><b>Your step, in order:</b> <code>keel check</code> outside the sandbox on this report's tip; then notes, <code>keel preflight wu &lt;tip&gt; --target epic/E-RGUARD</code> and review round 3, which reads only the changes since <code>7957968</code>.</li>
   <li><b>Claude Code workers posting</b> is a separate owner change: <code>scripts/router-worker.sh</code>'s sandbox would need <code>&lt;main&gt;/.router/inbox</code> in <code>allowWrite</code>, which weakens DEC-46 for every worker. Not done here.</li>
   <li><b>Housekeeping, manual by design:</b> <code>read/</code> grows and is never pruned by the script; the owner moves files out. <code>.router/</code> is unbacked, so deleting it drops pending messages.</li>
 </ul>
 
-<h2 id="next">The next owner commands</h2>
-<pre data-c="next"><code>sh /Users/nguyenvanluong/Documents/proj/misc/Keel-E-RGUARD-w3-inbox-channel/.router-brief.vt2A6E/round2/apply.sh
-cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-RGUARD-w3-inbox-channel &amp;&amp; keel mr commit -m "…" --as vuluu   # the message is in the router's report</code></pre>
+<h2 id="next">The next owner command</h2>
+<pre data-c="next"><code>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-RGUARD-w3-inbox-channel &amp;&amp; keel check</code></pre>
 
   </main>
   <script type="module">
