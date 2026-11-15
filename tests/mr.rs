@@ -13,7 +13,7 @@ fn run(prog: &str, d: &Path, a: &[&str]) -> Output {
     common::cmd(prog)
         .args(a)
         .current_dir(d)
-        .env("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()))
+        .env("PATH", common::path_with(bin))
         .env_remove("SSH_AUTH_SOCK") // never reach a real agent
         .stdin(Stdio::null())
         .output()
