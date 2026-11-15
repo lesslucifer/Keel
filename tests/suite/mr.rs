@@ -1,19 +1,21 @@
 //! E-SEED.W4 manual review: a throwaway ssh key signs a WU tip; the merge goes green; a tampered
 //! report, an amended tip, an unlisted signer and a confirm before cr are each red.
 //! E-ROUTER3.W4: the roster is `.keel/mr-allowed` as committed on the target, never a file on disk.
+compiled!();
+
 use serde_json::{json, Value};
 use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;
 
-mod common;
+use crate::common;
 
 fn run(prog: &str, d: &Path, a: &[&str]) -> Output {
     let bin = Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().to_owned();
     common::cmd(prog)
         .args(a)
         .current_dir(d)
-        .env("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()))
+        .env("PATH", common::path_with(bin))
         .env_remove("SSH_AUTH_SOCK") // never reach a real agent
         .stdin(Stdio::null())
         .output()
@@ -72,12 +74,21 @@ fn assert_red8_on(p: &Path, tip: &str, needle: &str) {
 
 /// A key-tier signer `vu` (throwaway ed25519, no passphrase) in the roster main commits, main →
 /// epic/e → wu/e/a with code, a test and a tracked result report. HEAD on wu/e/a. The key lives
-/// outside the repo; keel.signingkey names it.
+/// outside the repo; keel.signingkey names it. A copy of a template built once per run (E-TESTOPT.W4).
 fn fixture() -> (TempDir, TempDir) {
-    let (d, k) = (TempDir::new().unwrap(), TempDir::new().unwrap());
-    let p = d.path();
-    let key = k.path().join("id");
-    ok(run("ssh-keygen", k.path(), &["-q", "-t", "ed25519", "-N", "", "-C", "keel-test", "-f", key.to_str().unwrap()]));
+    let mut c = common::fixture_parts(FIXTURE, &["repo", "key"], |t| build_fixture(&t.join("repo"), &t.join("key")));
+    let k = c.pop().unwrap();
+    (c.pop().unwrap(), k)
+}
+
+const FIXTURE: &str = "mr key signer";
+const EPIC_WORK: &str = "mr epic has work";
+
+fn build_fixture(p: &Path, k: &Path) {
+    std::fs::create_dir_all(p).unwrap();
+    std::fs::create_dir_all(k).unwrap();
+    let key = k.join("id");
+    ok(run("ssh-keygen", k, &["-q", "-t", "ed25519", "-N", "", "-C", "keel-test", "-f", key.to_str().unwrap()]));
     git(p, &["init", "-q", "-b", "main"]);
     git(p, &["config", "user.email", "t@t"]);
     git(p, &["config", "user.name", "t"]);
@@ -98,14 +109,15 @@ fn fixture() -> (TempDir, TempDir) {
     write(p, "tests/test_a.py", "def test_a():\n    pass\n");
     write(p, "docs/work/a-result.html", RESULT);
     commit(p, "wu a");
-    (d, k)
 }
 
 /// main → epic/e (with a commit of its own) → wu/e/a, so main's merge-base with the WU tip differs
 /// from the epic's: what a bare WU tip id has to resolve (e-router-v2 R7). HEAD on wu/e/a.
 fn fixture_where_the_epic_has_work() -> TempDir {
-    let d = TempDir::new().unwrap();
-    let p = d.path();
+    common::fixture(EPIC_WORK, build_fixture_where_the_epic_has_work)
+}
+
+fn build_fixture_where_the_epic_has_work(p: &Path) {
     git(p, &["init", "-q", "-b", "main"]);
     git(p, &["config", "user.email", "t@t"]);
     git(p, &["config", "user.name", "t"]);
@@ -126,7 +138,6 @@ fn fixture_where_the_epic_has_work() -> TempDir {
     write(p, "tests/test_a.py", "def test_a():\n    pass\n");
     write(p, "docs/work/a-result.html", RESULT);
     commit(p, "wu a");
-    d
 }
 
 /// Commit `roster` on epic/e, the target that judges wu/e/a, and come back. Its first parent stays
@@ -207,6 +218,22 @@ fn notes_with(p: &Path, kinds: &[&str], judgment: &str) {
         ch.stdin.take().unwrap().write_all(if *k == "test" { judgment.as_bytes() } else { b"" }).unwrap();
         assert!(ch.wait_with_output().unwrap().status.success(), "notes write {k}");
     }
+}
+
+/// E-TESTOPT.W4: each test owns its copy, the signing key included: keel.signingkey names the
+/// copy's key, its hooks are its own, and its commits reach no other copy and not the template.
+#[test]
+fn each_fixture_copy_is_independent_of_its_template_and_its_siblings() {
+    let ((a, ka), (b, _kb)) = (fixture(), fixture());
+    let t = common::template(FIXTURE, |_| unreachable!("built above"));
+    common::assert_independent(&t.join("repo"), a.path(), b.path());
+    assert!(common::files_naming(ka.path(), &common::rewrites(&[(t.clone(), Default::default())])).is_empty());
+    let key = git(a.path(), &["config", "--get", "keel.signingkey"]);
+    assert!(Path::new(&key).starts_with(ka.path().canonicalize().unwrap()) || Path::new(&key).starts_with(ka.path()), "{key}");
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(std::fs::metadata(&key).unwrap().permissions().mode() & 0o777, 0o600, "ssh-keygen refuses a key others can read");
+    let (c, d) = (fixture_where_the_epic_has_work(), fixture_where_the_epic_has_work());
+    common::assert_independent(&common::template(EPIC_WORK, |_| unreachable!("built above")), c.path(), d.path());
 }
 
 #[test]
@@ -878,7 +905,7 @@ fn cr(p: &Path, args: &[&str]) -> Output {
 }
 
 /// A tool's waiver on HEAD: a failed round made WAIVED by hand. The writer has no reasoned form
-/// (B18) and the real cap needs five rounds (tests/verify_dod.rs runs them); the sign-off reads the
+/// (B18) and the real cap needs five rounds (tests/suite/verify_dod.rs runs them); the sign-off reads the
 /// same note either way.
 fn plant_waiver(p: &Path, reason: &str) {
     ok(cr(p, &["--verdict", "FAIL", "--blockers", "1"]));

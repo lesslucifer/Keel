@@ -15,7 +15,7 @@
 # messages in one second have no write order). Two writers cannot collide (mktemp
 # names); two watchers can both print one file, which is a duplicate, never a loss.
 # One predicate, id_ok, is the id grammar consume accepts and the name a message may
-# carry (the router guard holds the same grammar; tests/router.rs ties the two);
+# carry (the router guard holds the same grammar; tests/suite/router.rs ties the two);
 # message_ok is exactly what post can write, so it is what watch prints and status
 # counts: a hostile file cannot starve the queue or forge a header field. A file it
 # refuses is junk: one watch judges it once, and status counts it for the owner.

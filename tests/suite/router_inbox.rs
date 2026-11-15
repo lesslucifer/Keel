@@ -3,13 +3,14 @@
 //! a temp dir, so the tests are hermetic and parallel. The contract is the script's header: post
 //! writes a whole file, watch prints exactly the files post could write, consume is the ack, and
 //! status counts what watch would print.
+compiled!();
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
-mod common;
+use crate::common;
 
 fn root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))

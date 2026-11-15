@@ -10,7 +10,7 @@ use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
 /// Every file under `skills/`, embedded; written to `.claude/skills/<path>`. The completeness
-/// test (tests/init.rs) fails when a file under skills/ is missing here.
+/// test (tests/suite/init.rs) fails when a file under skills/ is missing here.
 const SKILLS: &[(&str, &str)] = &[
     ("keel-workflow/SKILL.md", include_str!("../skills/keel-workflow/SKILL.md")),
     ("keel-plan/SKILL.md", include_str!("../skills/keel-plan/SKILL.md")),

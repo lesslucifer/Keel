@@ -1,14 +1,16 @@
 //! E-SEED3.W2: the push and the epic walk judge an epic-close commit by the epic-range notes it
 //! carries (B23, B20). Every merge and push runs through the real hooks into a bare local remote.
+compiled!();
+
 use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;
 
-mod common;
+use crate::common;
 
 fn path_with_keel() -> String {
     let bin = Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().to_owned();
-    format!("{}:{}", bin.display(), std::env::var("PATH").unwrap())
+    common::path_with(bin)
 }
 
 fn run(prog: &str, d: &Path, a: &[&str], input: &str) -> Output {
@@ -74,9 +76,18 @@ const EPIC_TESTS: &str = r#"{"e2e":{"waived":"no e2e harness in the fixture"}}"#
 
 /// main → epic/e with WU a merged through the real hook (code, a test, a T3 plan, a doc), the
 /// epic pushed to a bare remote. HEAD on epic/e. The remote's TempDir is returned to keep it alive.
+/// A copy of a template built once per run (E-TESTOPT.W4); the copy's origin is the remote's copy.
 fn epic_with_a_merged_wu() -> (TempDir, TempDir) {
-    let d = TempDir::new().unwrap();
-    let p = d.path();
+    let mut c = common::fixture_parts(FIXTURE, &["repo", "remote"], |t| build_epic_with_a_merged_wu(&t.join("repo"), &t.join("remote")));
+    let remote = c.pop().unwrap();
+    (c.pop().unwrap(), remote)
+}
+
+const FIXTURE: &str = "close_walk epic with a merged wu";
+
+fn build_epic_with_a_merged_wu(p: &Path, remote: &Path) {
+    std::fs::create_dir_all(p).unwrap();
+    std::fs::create_dir_all(remote).unwrap();
     git(p, &["init", "-q", "-b", "main"]);
     git(p, &["config", "user.email", "t@t"]);
     git(p, &["config", "user.name", "t"]);
@@ -89,9 +100,8 @@ fn epic_with_a_merged_wu() -> (TempDir, TempDir) {
     write(p, "README", "x");
     commit(p, "base");
     ok(keel(p, &["hooks", "install"], ""));
-    let remote = TempDir::new().unwrap();
-    git(remote.path(), &["init", "-q", "--bare"]);
-    git(p, &["remote", "add", "origin", remote.path().to_str().unwrap()]);
+    git(remote, &["init", "-q", "--bare"]);
+    git(p, &["remote", "add", "origin", remote.to_str().unwrap()]);
     ok(push(p, "main"));
 
     git(p, &["switch", "-q", "-c", "epic/e"]);
@@ -108,7 +118,6 @@ fn epic_with_a_merged_wu() -> (TempDir, TempDir) {
     git(p, &["switch", "-q", "epic/e"]);
     ok(run("git", p, &["merge", "-q", "--no-ff", "-m", "merge wu a", "wu/e/a"], ""));
     ok(push(p, "epic/e"));
-    (d, remote)
 }
 
 /// The close's archive commit: the T3 plan distilled and removed, the epic result committed, and
@@ -146,6 +155,25 @@ fn review_fix(p: &Path, n: u32) -> String {
 fn review_and_sign_epic(p: &Path) {
     ok(keel(p, &["notes", "write", "cr", "--verdict", "PASS"], ""));
     ok(keel(p, &["mr", "confirm", "epic", "--as", "t", "--report", "docs/result.html"], ""));
+}
+
+/// E-TESTOPT.W4: each test owns its copy, its remote included: its origin is its own remote's copy,
+/// its hooks are its own, and a commit or a push from it reaches no other copy and not the template.
+#[test]
+fn each_fixture_copy_is_independent_of_its_template_and_its_siblings() {
+    let ((a, ra), (b, rb)) = (epic_with_a_merged_wu(), epic_with_a_merged_wu());
+    let t = common::template(FIXTURE, |_| unreachable!("built above"));
+    common::assert_independent(&t.join("repo"), a.path(), b.path());
+    assert!(common::files_naming(ra.path(), &common::rewrites(&[(t.clone(), Default::default())])).is_empty());
+    assert_eq!(Path::new(&git(a.path(), &["remote", "get-url", "origin"])).canonicalize().unwrap(), ra.path().canonicalize().unwrap());
+    let before = git(rb.path(), &["rev-parse", "epic/e"]);
+    let template_remote = git(&t.join("remote"), &["rev-parse", "epic/e"]);
+    ok(run("git", a.path(), &["push", "-q", "--no-verify", "origin", "HEAD:refs/heads/probe"], ""));
+    assert!(run("git", ra.path(), &["rev-parse", "--verify", "-q", "probe"], "").status.success(), "the push reached the copy's own remote");
+    assert!(!run("git", rb.path(), &["rev-parse", "--verify", "-q", "probe"], "").status.success(), "a push from one copy reached another's remote");
+    assert!(!run("git", &t.join("remote"), &["rev-parse", "--verify", "-q", "probe"], "").status.success(), "a push from a copy reached the template");
+    assert_eq!(git(rb.path(), &["rev-parse", "epic/e"]), before);
+    assert_eq!(git(&t.join("remote"), &["rev-parse", "epic/e"]), template_remote);
 }
 
 /// The real case of E-DOCSTYLE's fa355e0: after the epic merged into main, pushing its branch was

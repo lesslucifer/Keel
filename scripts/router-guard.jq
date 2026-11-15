@@ -10,7 +10,7 @@
 def deny($why): {hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny",
   permissionDecisionReason: ("router guard: " + $why + ". Delegate anything else to a worker via scripts/router-worker.sh.")}};
 
-# Must equal the tools: line of .claude/agents/router.md (tests/router.rs). No Agent:
+# Must equal the tools: line of .claude/agents/router.md (tests/suite/router.rs). No Agent:
 # a subagent runs under its own agent_type, outside this guard, with full tools.
 def tools: ["Read", "Grep", "Glob", "Write", "Bash", "Skill", "ToolSearch", "TodoWrite", "AskUserQuestion", "SendMessage", "ListAgents"];
 
