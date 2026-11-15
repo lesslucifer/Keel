@@ -34,8 +34,8 @@ fn extra_programs(top: &[Entry], suite_names: &BTreeSet<String>, cargo_toml: &st
         };
         bad.push(format!(
             "tests/{f} builds as a test program of its own. {fix}: `git mv tests/{f} tests/suite/{f}`, add `mod {m};` to \
-             tests/suite/main.rs, in the moved file replace `mod common;` with `use crate::common;` and add `compiled!();`; \
-             if it declares modules of its own, move their files to tests/suite/{m}/ with it"
+             tests/suite/main.rs; if it declares modules of its own, move their files to tests/suite/{m}/ with it; \
+             in each moved file, submodules included, replace `mod common;` with `use crate::common;` and add `compiled!();`"
         ));
     }
     for (d, _, _) in top.iter().filter(|(d, is_rs, has_main)| !*is_rs && *has_main && d != "suite") {
@@ -93,6 +93,27 @@ fn reported_files(stdout: &str, root: &Path, suite_main: &Path) -> Option<BTreeS
     Some(printed.iter().map(|p| canonical(&base.join(p))).collect())
 }
 
+/// What this binary's `compiled_file` run reported, or why the guard cannot tell: the run failed,
+/// or it passed without reporting `suite_main`.
+fn compiled_files(
+    passed: bool,
+    code: Option<i32>,
+    stdout: &str,
+    stderr: &str,
+    exe: &Path,
+    root: &Path,
+    suite_main: &Path,
+) -> Result<BTreeSet<PathBuf>, String> {
+    let exe = exe.display();
+    if !passed {
+        return Err(format!(
+            "{exe} compiled_file failed (exit {code:?}), so the guard cannot tell which files are compiled; fix that run first:\n{stdout}{stderr}"
+        ));
+    }
+    reported_files(stdout, root, suite_main)
+        .ok_or_else(|| format!("{exe} compiled_file did not report tests/suite/main.rs, so the guard cannot tell which files are compiled:\n{stdout}{stderr}"))
+}
+
 /// Every `.rs` file under `suite` (canonical paths) that did not report itself, with what to do.
 fn not_compiled(suite: &Path, files: &[PathBuf], reported: &BTreeSet<PathBuf>) -> Vec<String> {
     files
@@ -142,16 +163,10 @@ fn the_suite_is_the_only_test_program() {
 
     let exe = std::env::current_exe().unwrap();
     let o = crate::common::cmd(&exe).args(["compiled_file", "--nocapture", "--test-threads=1"]).output().unwrap();
-    let stdout = String::from_utf8_lossy(&o.stdout);
-    match reported_files(&stdout, &root, &suite.join("main.rs")).filter(|_| o.status.success()) {
-        None => bad.push(format!(
-            "{} compiled_file did not report tests/suite/main.rs, so the guard cannot tell which files are compiled \
-             (exit {:?}):\n{stdout}{}",
-            exe.display(),
-            o.status.code(),
-            String::from_utf8_lossy(&o.stderr)
-        )),
-        Some(reported) => {
+    let (stdout, stderr) = (String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    match compiled_files(o.status.success(), o.status.code(), &stdout, &stderr, &exe, &root, &suite.join("main.rs")) {
+        Err(problem) => bad.push(problem),
+        Ok(reported) => {
             let mut files = vec![];
             rs_files(&suite, &mut files);
             let files: Vec<PathBuf> = files.iter().map(|p| canonical(p)).collect();
@@ -183,6 +198,7 @@ fn the_layout_check_names_each_extra_program() {
         "use crate::common;",
         "compiled!();",
         "move their files to tests/suite/router_inbox/",
+        "in each moved file, submodules included, replace `mod common;`",
     ] {
         assert!(got[0].contains(want), "{want} missing from {}", got[0]);
     }
@@ -248,4 +264,25 @@ fn every_suite_file_that_did_not_report_itself_is_named() {
     assert!(got[0].starts_with("tests/suite/off/x.rs did not report itself from the built suite") && got[0].contains("`compiled!();`"), "{got:#?}");
     assert!(got[1].starts_with("tests/suite/slow/main.rs did not report itself") && got[1].contains("rename it mod.rs"), "{got:#?}");
     assert_eq!(not_compiled(suite, &files[..2], &reported), Vec::<String>::new());
+}
+
+/// Unit: `..` drops the component before it and `.` is skipped, for a path that does not exist.
+#[test]
+fn fold_resolves_dot_dot_and_dot_without_the_file_system() {
+    assert_eq!(fold(Path::new("/r/tests/suite/../common/./mod.rs")), Path::new("/r/tests/common/mod.rs"));
+    assert_eq!(fold(Path::new("/r/a/b/../../c")), Path::new("/r/c"));
+}
+
+/// Unit: a `compiled_file` run that failed is named as a failure with its output; a run that
+/// passed without reporting `main.rs` is named as that; a run that reported gives the files.
+#[test]
+fn a_failed_compiled_file_run_is_told_apart_from_a_silent_one() {
+    let (root, main, exe) = (Path::new("/r"), Path::new("/r/tests/suite/main.rs"), Path::new("/r/target/suite-x"));
+    let report = format!("test compiled_file ... {MARK}tests/suite/main.rs\nok\n");
+    let failed = compiled_files(false, Some(101), &report, "boom", exe, root, main).unwrap_err();
+    assert!(failed.starts_with("/r/target/suite-x compiled_file failed (exit Some(101))"), "{failed}");
+    assert!(failed.contains("boom") && !failed.contains("did not report"), "{failed}");
+    let silent = compiled_files(true, Some(0), "running 0 tests\n", "", exe, root, main).unwrap_err();
+    assert!(silent.contains("did not report tests/suite/main.rs") && !silent.contains("failed"), "{silent}");
+    assert_eq!(compiled_files(true, Some(0), &report, "", exe, root, main).unwrap(), [main.to_path_buf()].into_iter().collect());
 }

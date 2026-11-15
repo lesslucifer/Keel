@@ -38,13 +38,17 @@ pub const GIT_HOOK_ENV: [&str; 8] = [
     "GIT_COMMITTER_DATE",
 ];
 
+/// The global git config of every test spawn: `maintenance.auto = false`, nothing else.
+pub const GIT_CONFIG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/gitconfig");
+
 pub fn no_git_env(mut c: Command) -> Command {
     for k in GIT_LOCAL_ENV.iter().chain(&GIT_HOOK_ENV) {
         c.env_remove(k);
     }
     // B10: no fixture reads the developer's global or system config (a signing key, tag.gpgSign,
     // log.showSignature). A repo's own config still applies: it is part of what a test judges.
-    c.env("GIT_CONFIG_GLOBAL", "/dev/null");
+    // The tests' own global config only turns off git's automatic maintenance (E-TESTOPT.W5).
+    c.env("GIT_CONFIG_GLOBAL", GIT_CONFIG);
     c.env("GIT_CONFIG_NOSYSTEM", "1");
     c
 }
@@ -158,8 +162,9 @@ pub fn fixture_parts(key: &str, parts: &[&str], build: impl FnOnce(&Path)) -> Ve
     let t = template(key, build);
     let copies: Vec<tempfile::TempDir> = parts.iter().map(|_| tempfile::TempDir::new().unwrap()).collect();
     let map: Vec<(PathBuf, PathBuf)> = parts.iter().zip(&copies).map(|(p, c)| (t.join(p), c.path().to_path_buf())).collect();
+    let rewrites = rewrites(&map);
     for (from, to) in &map {
-        copy_tree(from, to, &rewrites(&map)).unwrap();
+        copy_tree(from, to, &rewrites).unwrap();
     }
     copies
 }
@@ -214,8 +219,8 @@ pub fn sweep_templates(tmp: &Path, age: std::time::Duration) {
     }
 }
 
-/// Each (template path, copy path) pair as bytes to replace, the resolved form first: a tool that
-/// canonicalises (keel hooks install) records `/private/var/…` for `/var/…` on macOS.
+/// Each (template path, copy path) pair as bytes to replace, in the resolved form too, listed first:
+/// a tool that canonicalises (keel hooks install) records `/private/var/…` for `/var/…` on macOS.
 pub fn rewrites(map: &[(PathBuf, PathBuf)]) -> Vec<(Vec<u8>, Vec<u8>)> {
     let bytes = |p: &Path| p.as_os_str().as_encoded_bytes().to_vec();
     let mut r = vec![];
@@ -237,7 +242,6 @@ pub fn rewrites(map: &[(PathBuf, PathBuf)]) -> Vec<(Vec<u8>, Vec<u8>)> {
 pub fn copy_tree(src: &Path, dst: &Path, rewrites: &[(Vec<u8>, Vec<u8>)]) -> std::io::Result<()> {
     use std::os::unix::ffi::OsStrExt;
     std::fs::create_dir_all(dst)?;
-    std::fs::set_permissions(dst, std::fs::metadata(src)?.permissions())?;
     for e in std::fs::read_dir(src)? {
         let e = e?;
         let (from, to) = (e.path(), dst.join(e.file_name()));
@@ -261,30 +265,38 @@ pub fn copy_tree(src: &Path, dst: &Path, rewrites: &[(Vec<u8>, Vec<u8>)]) -> std
             }
         }
     }
-    Ok(())
+    std::fs::set_permissions(dst, std::fs::metadata(src)?.permissions())
 }
 
-/// `body` with every `from` replaced by its `to`, in order; None when no `from` occurs.
+/// `body` with every `from` replaced by its `to` in one pass, the longest `from` matching at a
+/// position winning (parts `repo` and `repo.git`); None when no `from` occurs.
 pub fn rewrite(body: &[u8], rewrites: &[(Vec<u8>, Vec<u8>)]) -> Option<Vec<u8>> {
-    let mut out = body.to_vec();
+    let mut starts = [false; 256];
+    for (from, _) in rewrites.iter().filter(|(from, _)| !from.is_empty()) {
+        starts[from[0] as usize] = true;
+    }
+    let mut out = Vec::with_capacity(body.len());
     let mut changed = false;
-    for (from, to) in rewrites {
-        if from.is_empty() {
-            continue;
+    let mut i = 0;
+    while i < body.len() {
+        let gap = body[i..].iter().position(|b| starts[*b as usize]).unwrap_or(body.len() - i);
+        out.extend_from_slice(&body[i..i + gap]);
+        i += gap;
+        if i == body.len() {
+            break;
         }
-        let mut next = Vec::with_capacity(out.len());
-        let mut i = 0;
-        while i < out.len() {
-            if out[i..].starts_with(from) {
-                next.extend_from_slice(to);
+        let hit = rewrites.iter().filter(|(from, _)| !from.is_empty() && body[i..].starts_with(from)).max_by_key(|(from, _)| from.len());
+        match hit {
+            Some((from, to)) => {
+                out.extend_from_slice(to);
                 i += from.len();
                 changed = true;
-            } else {
-                next.push(out[i]);
+            }
+            None => {
+                out.push(body[i]);
                 i += 1;
             }
         }
-        out = next;
     }
     changed.then_some(out)
 }
@@ -292,7 +304,7 @@ pub fn rewrite(body: &[u8], rewrites: &[(Vec<u8>, Vec<u8>)]) -> Option<Vec<u8>> 
 /// What every fixture copy holds, asserted once per shape: no file of `copy` names `template`, its
 /// hooks are its own, and a commit in `copy` reaches neither `sibling` nor `template`.
 pub fn assert_independent(template: &Path, copy: &Path, sibling: &Path) {
-    let named = files_naming(copy, &rewrites(&[(template.to_path_buf(), PathBuf::new())]));
+    let named = files_naming(copy, &rewrites(&[(template.to_path_buf(), template.to_path_buf())]));
     assert!(named.is_empty(), "the copy still names its template in {named:?}");
     let git = |d: &Path, a: &[&str]| {
         let o = cmd("git")

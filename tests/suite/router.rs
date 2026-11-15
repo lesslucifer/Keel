@@ -426,14 +426,14 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
 /// add, `Watcher::cmd` and the watch under it): only the repo's own config is read, so no user or
 /// system setting (tag.gpgSign, log.showSignature, core.quotePath, ...) can change what it does, and
 /// no inherited GIT_TRACE* or GIT_DEFAULT_HASH changes its output or its repos.
-fn hermetic(c: &mut Command) -> &mut Command {
+pub(crate) fn hermetic(c: &mut Command) -> &mut Command {
     let set: Vec<std::ffi::OsString> = c.get_envs().map(|(k, _)| k.to_owned()).collect();
     for k in std::env::vars_os().map(|(k, _)| k).chain(set) {
         if k.to_string_lossy().starts_with("GIT_TRACE") || k == "GIT_DEFAULT_HASH" {
             c.env_remove(k);
         }
     }
-    c.env("GIT_CONFIG_GLOBAL", "/dev/null").env("GIT_CONFIG_NOSYSTEM", "1")
+    c.env("GIT_CONFIG_GLOBAL", common::GIT_CONFIG).env("GIT_CONFIG_NOSYSTEM", "1")
 }
 
 /// Upper bound on any wait for another process; a hung script fails the test instead of hanging it.
@@ -519,11 +519,15 @@ fn sleep_shim(base: &Path) {
     std::fs::set_permissions(base.join("shim/sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
 }
 
+/// The fixture keys of the launcher's and the watcher's templates.
+const LAUNCHER: &str = "router launcher";
+const WATCHER: &str = "router watcher";
+
 /// A repo whose main checkout holds the launcher, the worker persona and an `epic/E-X` branch, two
 /// linked worktrees and the stub claude. A copy of a template built once per run (E-TESTOPT.W4); the
 /// worktrees' links name the copy.
 fn launcher() -> Launcher {
-    let d = common::fixture("router launcher", build_launcher);
+    let d = common::fixture(LAUNCHER, build_launcher);
     let base = d.path().canonicalize().unwrap();
     let main = base.join("main");
     Launcher { main, wt: base.join("wt"), wt2: base.join("wt2"), stub: base.join("claude"), state: base.join("state"), _d: d }
@@ -560,8 +564,8 @@ fn build_launcher(base: &Path) {
 #[test]
 fn each_fixture_copy_is_independent_of_its_template_and_its_siblings() {
     let (a, b) = (launcher(), launcher());
-    let t = common::template("router launcher", |_| unreachable!("built above")).canonicalize().unwrap();
-    assert!(common::files_naming(a._d.path(), &common::rewrites(&[(t.clone(), Default::default())])).is_empty());
+    let t = common::template(LAUNCHER, |_| unreachable!("built above"));
+    assert!(common::files_naming(a._d.path(), &common::rewrites(&[(t.clone(), t.clone())])).is_empty());
     common::assert_independent(&t.join("main"), &a.main, &b.main);
     let listed = String::from_utf8(git(&a.main, &["worktree", "list", "--porcelain"]).stdout).unwrap();
     let trees: Vec<&str> = listed.lines().filter_map(|l| l.strip_prefix("worktree ")).collect();
@@ -571,8 +575,8 @@ fn each_fixture_copy_is_independent_of_its_template_and_its_siblings() {
     assert!(git(&a.wt, &["status", "--porcelain"]).status.success());
 
     let (c, d) = (watcher(), watcher());
-    let t = common::template("router watcher", |_| unreachable!("built above")).canonicalize().unwrap();
-    assert!(common::files_naming(c._d.path(), &common::rewrites(&[(t.clone(), Default::default())])).is_empty());
+    let t = common::template(WATCHER, |_| unreachable!("built above"));
+    assert!(common::files_naming(c._d.path(), &common::rewrites(&[(t.clone(), t.clone())])).is_empty());
     let origin = String::from_utf8(git(&c.main, &["remote", "get-url", "origin"]).stdout).unwrap();
     assert_eq!(origin.trim(), c.base.join("origin.git").to_str().unwrap());
     common::assert_independent(&t.join("main"), &c.main, &d.main);
@@ -2207,11 +2211,37 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
 }
 
 /// `<dir>/git`: the real git with hermetic's config isolation, for scripts that clear every inherited GIT_*.
-fn git_shim(dir: &Path) {
+pub(crate) fn git_shim(dir: &Path) {
     let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
     std::fs::create_dir_all(dir).unwrap();
-    std::fs::write(dir.join("git"), format!("#!/bin/sh\nGIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null exec {} \"$@\"\n", real.trim())).unwrap();
+    std::fs::write(dir.join("git"), git_shim_script(real.trim(), common::GIT_CONFIG)).unwrap();
     std::fs::set_permissions(dir.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+}
+
+/// The shim's body: `git` run with no system config and `config` as its global one.
+fn git_shim_script(git: &str, config: &str) -> String {
+    format!("#!/bin/sh\nGIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL={} exec {} \"$@\"\n", sh_quote(config), sh_quote(git))
+}
+
+/// `s` as one single-quoted shell word: each `'` becomes `'\''`.
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Unit (E-TESTOPT.W5 round 2): the shim runs from a checkout whose path holds a quote, a space or a `$`.
+#[test]
+fn the_git_shim_runs_from_a_path_with_quotes_and_spaces() {
+    let d = TempDir::new().unwrap();
+    let dir = d.path().join("Bob's $HOME dir");
+    std::fs::create_dir_all(&dir).unwrap();
+    let config = dir.join("gitconfig");
+    std::fs::write(&config, "[maintenance]\n\tauto = false\n").unwrap();
+    let real = String::from_utf8(common::cmd("sh").args(["-c", "command -v git"]).output().unwrap().stdout).unwrap();
+    let shim = dir.join("git");
+    std::fs::write(&shim, git_shim_script(real.trim(), config.to_str().unwrap())).unwrap();
+    let o = common::cmd("sh").arg(&shim).args(["config", "--global", "--list"]).env_remove("GIT_CONFIG_GLOBAL").output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&o.stdout), "maintenance.auto=false\n", "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(sh_quote("it's"), "'it'\\''s'");
 }
 
 /// A checkout holding scripts/router-watch.sh, cloned from a bare `origin.git` file remote (no
@@ -2224,7 +2254,7 @@ struct Watcher {
 
 /// A copy of a template built once per run (E-TESTOPT.W4); the copy's origin is its own origin.git.
 fn watcher() -> Watcher {
-    let d = common::fixture("router watcher", build_watcher);
+    let d = common::fixture(WATCHER, build_watcher);
     let base = d.path().canonicalize().unwrap();
     let main = base.join("main");
     Watcher { _d: d, base, main }

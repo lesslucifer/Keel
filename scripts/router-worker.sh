@@ -51,7 +51,7 @@ die() { echo "router-worker: $*" >&2; exit 2; }
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
 B="$ROOT/.router/briefs"
 C=${ROUTER_CLAUDE:-$HOME/.local/bin/claude}
-# Keel's branch policy (.keel/config.toml [branches], held equal by tests/router.rs)
+# Keel's branch policy (.keel/config.toml [branches], held equal by tests/suite/router.rs)
 main_b=main epic_p=epic/ wu_p=wu/
 # the one worker-name rule: spawn and stop check it here, and the guard does not repeat it
 valid_name() { expr "$1" : '^[a-z0-9][a-z0-9-]\{0,40\}$' >/dev/null || die "bad name"; }
