@@ -872,35 +872,41 @@ fn review_problem(r: &Review, tip: &str, repo: Option<&str>) -> Option<String> {
 }
 
 /// GitHub's review list (`GET /repos/{o}/{r}/pulls/{n}/reviews`), read as data, judged by GitHub's own
-/// review decision on exactly `tip`: for each id `allowed` lists under the github tier, its latest
-/// (highest id) review on the tip whose state is a decision - APPROVED, CHANGES_REQUESTED, or
-/// DISMISSED (an approval withdrawn by a maintainer). A comment decides nothing; a review on another
-/// commit does not count. Signed: none of those latest decisions is CHANGES_REQUESTED, and the newest
-/// one that is APPROVED, with a page of its own (and on `repo` when set), is the approval. A change
-/// request blocks whatever its other fields hold, so a malformed field never weakens a block.
+/// review decision, which is per pull request: for each id `allowed` lists under the github tier, its
+/// latest (highest id) review whose state is a decision - APPROVED, CHANGES_REQUESTED, or DISMISSED
+/// (withdrawn by a maintainer) - on any commit. A comment decides nothing. Blocked: any of those
+/// latest decisions is CHANGES_REQUESTED, or a change request names no user or review id GitHub
+/// gave (blocking is decided from the user and the state alone, before the commit or any other field,
+/// so a missing field never lifts a block). Else the newest latest decision that is an APPROVED on
+/// exactly `tip`, with a page of its own (and on `repo` when set), is the approval; a signer whose
+/// latest approval is of another commit approves nothing here.
 fn pick_approval(reviews: &serde_json::Value, tip: &str, allowed: &[Entry], repo: Option<&str>) -> Option<(String, Review)> {
-    let mut latest: std::collections::BTreeMap<String, &serde_json::Value> = Default::default();
+    let mut latest: std::collections::BTreeMap<String, (u64, &serde_json::Value)> = Default::default();
     for v in reviews.as_array()? {
-        let (Some(id), Some(user), Some(state), Some(commit)) = (v["id"].as_u64(), v["user"]["id"].as_u64(), v["state"].as_str(), v["commit_id"].as_str())
-        else {
+        let state = v["state"].as_str().unwrap_or("");
+        if !["APPROVED", "CHANGES_REQUESTED", "DISMISSED"].contains(&state) {
+            continue;
+        }
+        let user = v["user"]["id"].as_u64().map(|u| u.to_string());
+        let id = v["id"].as_u64();
+        let (Some(user), Some(id)) = (user, id) else {
+            if state == "CHANGES_REQUESTED" && v["user"]["id"].as_u64().is_none_or(|u| approves(allowed, &u.to_string())) {
+                return None;
+            }
             continue;
         };
-        let user = user.to_string();
-        if commit != tip || !approves(allowed, &user) || !["APPROVED", "CHANGES_REQUESTED", "DISMISSED"].contains(&state) {
-            continue;
-        }
-        if latest.get(&user).is_none_or(|w| w["id"].as_u64().is_some_and(|w| w < id)) {
-            latest.insert(user, v);
+        if approves(allowed, &user) && latest.get(&user).is_none_or(|(w, _)| *w < id) {
+            latest.insert(user, (id, v));
         }
     }
-    if latest.values().any(|v| v["state"] == "CHANGES_REQUESTED") {
+    if latest.values().any(|(_, v)| v["state"] == "CHANGES_REQUESTED") {
         return None;
     }
     latest
         .into_iter()
-        .filter(|(_, v)| v["state"] == "APPROVED")
-        .filter_map(|(user, v)| {
-            let review = Review { id: v["id"].as_u64()?, url: v["html_url"].as_str()?.to_string(), commit: tip.to_string() };
+        .filter(|(_, (_, v))| v["state"] == "APPROVED" && v["commit_id"].as_str() == Some(tip))
+        .filter_map(|(user, (id, v))| {
+            let review = Review { id, url: v["html_url"].as_str()?.to_string(), commit: tip.to_string() };
             review_problem(&review, tip, repo).is_none().then_some((user, review))
         })
         .max_by_key(|(_, r)| r.id)
@@ -1155,7 +1161,7 @@ mod tests {
     }
 
     #[test]
-    fn an_approval_signs_only_under_githubs_review_decision_on_the_tip() {
+    fn an_approval_signs_only_under_githubs_review_decision_on_the_pull_request() {
         let allowed = parse_roster("github: 7 a\ngithub: 8 b\nusername: 9\n", &tiers(&["username", "github"]), "r").unwrap();
         let (tip, old) = ("t".repeat(40), "o".repeat(40));
         let page = |id: u64| format!("https://github.com/o/r/pull/3#pullrequestreview-{id}");
@@ -1165,60 +1171,93 @@ mod tests {
         let (who, r) = pick_approval(&list, &tip, &allowed, None).unwrap();
         assert_eq!((who.as_str(), r), ("8", Review { id: 9, url: page(9), commit: tip.clone() }));
         assert!(pick_approval(&json!({"id": 1}), &tip, &allowed, None).is_none(), "not a list");
-        // a signer's later change request on the tip withdraws their approval; a later approval restores it
+        // a signer's later change request withdraws their approval; a later approval restores it
         assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), at(6, 7, "CHANGES_REQUESTED", &tip)])), None);
         assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), at(6, 7, "CHANGES_REQUESTED", &tip), at(7, 7, "APPROVED", &tip)])), Some(("7".into(), 7)));
         // the order GitHub lists them in does not matter: the latest is the highest id
         assert_eq!(pick(json!([at(6, 7, "CHANGES_REQUESTED", &tip), at(5, 7, "APPROVED", &tip)])), None);
-        // another listed signer's change request on the tip blocks; on an older commit, or by an unlisted id, it does not
+        // GitHub's decision is per pull request (security review round 2, F3, F5): a listed signer's
+        // change request on an OLDER commit still blocks, until that signer's own later decision
+        assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), at(6, 8, "CHANGES_REQUESTED", &old)])), None);
+        assert_eq!(pick(json!([at(4, 8, "CHANGES_REQUESTED", &old), at(5, 7, "APPROVED", &tip)])), None);
+        assert_eq!(pick(json!([at(4, 8, "CHANGES_REQUESTED", &old), at(5, 8, "APPROVED", &tip)])), Some(("8".into(), 5)));
+        assert_eq!(pick(json!([at(4, 7, "CHANGES_REQUESTED", &old), at(5, 7, "APPROVED", &tip)])), Some(("7".into(), 5)));
+        assert_eq!(pick(json!([at(4, 8, "CHANGES_REQUESTED", &old), at(5, 8, "DISMISSED", &old), at(6, 7, "APPROVED", &tip)])), Some(("7".into(), 6)));
+        // an approval counts only on exactly the tip: a signer whose latest approval is on an older commit signs nothing
+        assert_eq!(pick(json!([at(5, 7, "APPROVED", &old)])), None);
+        assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), at(6, 7, "APPROVED", &old)])), None, "the signer's latest decision approved another commit");
+        assert_eq!(pick(json!([at(5, 7, "APPROVED", &old), at(6, 7, "APPROVED", &tip)])), Some(("7".into(), 6)));
+        // another listed signer's change request blocks; an unlisted id's does not
         assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), at(6, 8, "CHANGES_REQUESTED", &tip)])), None);
-        assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), at(6, 8, "CHANGES_REQUESTED", &old)])), Some(("7".into(), 5)));
         assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), at(6, 9, "CHANGES_REQUESTED", &tip), at(7, 42, "CHANGES_REQUESTED", &tip)])), Some(("7".into(), 5)));
         // a dismissed approval approves nothing; a comment after an approval changes nothing
         assert_eq!(pick(json!([at(5, 7, "DISMISSED", &tip)])), None);
         assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), at(6, 7, "COMMENTED", &tip)])), Some(("7".into(), 5)));
-        // a change request with a broken page still blocks: blocking is never weakened by a malformed field
-        let mut odd = at(6, 8, "CHANGES_REQUESTED", &tip);
-        odd["html_url"] = json!("x");
-        assert_eq!(pick(json!([at(5, 7, "APPROVED", &tip), odd])), None);
-        // generated lists (seeded LCG) against the rule written out: per listed id, its latest decision
-        // (APPROVED, CHANGES_REQUESTED, DISMISSED) on the tip; none CHANGES_REQUESTED, and the newest
-        // latest-APPROVED with its own page is signed
+        // a change request blocks whatever else it holds (F4): a broken page, no commit, no review id,
+        // or no user GitHub could name
+        let approved = at(5, 7, "APPROVED", &tip);
+        for (why, edit) in [
+            ("a broken page", json!({"html_url": "x"})),
+            ("a null commit", json!({"commit_id": null})),
+            ("no commit", json!({"commit_id": "drop"})),
+            ("a null review id", json!({"id": null})),
+            ("a null user", json!({"user": null})),
+            ("a string user id", json!({"user": {"id": "8"}})),
+        ] {
+            let mut cr = at(6, 8, "CHANGES_REQUESTED", &tip);
+            for (k, v) in edit.as_object().unwrap() {
+                if v == "drop" {
+                    cr.as_object_mut().unwrap().remove(k);
+                } else {
+                    cr[k] = v.clone();
+                }
+            }
+            assert_eq!(pick(json!([approved.clone(), cr])), None, "{why}");
+        }
+        // generated lists (seeded LCG) against the rule written out: a change request no listed id can be
+        // told from blocks; else per listed id its latest (highest id) APPROVED, CHANGES_REQUESTED or
+        // DISMISSED on any commit; none CHANGES_REQUESTED, and the newest latest-APPROVED on exactly
+        // the tip with its own page is signed
         let states = ["APPROVED", "COMMENTED", "CHANGES_REQUESTED", "DISMISSED", "PENDING", "approved"];
         let mut x: u64 = 0x5160;
-        for _ in 0..2000 {
+        for _ in 0..3000 {
             let n = lcg(&mut x) % 7;
             let mut ids: Vec<u64> = (1..=60).collect();
             let list: Vec<serde_json::Value> = (0..n)
                 .map(|_| {
                     let id = ids.remove((lcg(&mut x) % ids.len() as u64) as usize);
-                    let user = match lcg(&mut x) % 4 {
+                    let user = match lcg(&mut x) % 6 {
                         0 => json!(7),
                         1 => json!(9),
                         2 => json!("8"),
+                        3 => json!(null),
                         _ => json!(8),
                     };
-                    let commit = if lcg(&mut x).is_multiple_of(3) { &old } else { &tip };
+                    let commit = match lcg(&mut x) % 6 {
+                        0 | 1 => json!(old),
+                        2 => json!(null),
+                        _ => json!(tip),
+                    };
                     let url = if lcg(&mut x).is_multiple_of(5) { page(id + 100) } else { page(id) };
-                    rv(id, user, states[(lcg(&mut x) % states.len() as u64) as usize], commit, &url)
+                    json!({"id": id, "user": {"id": user}, "state": states[(lcg(&mut x) % states.len() as u64) as usize], "commit_id": commit, "html_url": url})
                 })
                 .collect();
+            let listed = |v: &serde_json::Value| matches!(v["user"]["id"].as_u64(), Some(7 | 8));
+            let unknown = |v: &serde_json::Value| v["user"]["id"].as_u64().is_none();
             let mut latest: std::collections::BTreeMap<u64, &serde_json::Value> = Default::default();
-            for v in &list {
-                let decision = ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"].contains(&v["state"].as_str().unwrap());
-                if let (Some(u @ (7 | 8)), true, true) = (v["user"]["id"].as_u64(), decision, v["commit_id"] == json!(tip)) {
-                    if latest.get(&u).is_none_or(|w| w["id"].as_u64() < v["id"].as_u64()) {
-                        latest.insert(u, v);
-                    }
+            for v in list.iter().filter(|v| listed(v) && ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"].contains(&v["state"].as_str().unwrap())) {
+                let u = v["user"]["id"].as_u64().unwrap();
+                if latest.get(&u).is_none_or(|w| w["id"].as_u64() < v["id"].as_u64()) {
+                    latest.insert(u, v);
                 }
             }
-            let blocked = latest.values().any(|v| v["state"] == "CHANGES_REQUESTED");
+            let blocked = list.iter().any(|v| v["state"] == "CHANGES_REQUESTED" && unknown(v)) || latest.values().any(|v| v["state"] == "CHANGES_REQUESTED");
             let want = if blocked {
                 None
             } else {
                 latest
                     .values()
-                    .filter(|v| v["state"] == "APPROVED" && v["html_url"] == json!(page(v["id"].as_u64().unwrap())))
+                    .filter(|v| v["state"] == "APPROVED" && v["commit_id"] == json!(tip) && v["html_url"] == json!(page(v["id"].as_u64().unwrap())))
                     .map(|v| v["id"].as_u64().unwrap())
                     .max()
             };

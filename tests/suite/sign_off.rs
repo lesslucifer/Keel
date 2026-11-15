@@ -340,7 +340,8 @@ fn an_epic_report_note_is_attested_by_the_typed_sign_off_never_by_an_approval() 
     ok(keel(p, &["verify-dod", "epic", "wu/e/a"]));
 }
 
-/// Security review I3: GitHub's review decision on the tip, not the newest approval, decides.
+/// Security review I3 and round 2 F3: GitHub's review decision on the pull request, not the newest
+/// approval, decides.
 #[test]
 fn a_later_change_request_on_the_tip_withdraws_the_approval() {
     let d = fixture();
@@ -351,6 +352,8 @@ fn a_later_change_request_on_the_tip_withdraws_the_approval() {
         json!([review(11, OWNER, "APPROVED", &tip), review(12, OWNER, "CHANGES_REQUESTED", &tip)]),
         json!([review(12, OWNER, "CHANGES_REQUESTED", &tip), review(11, OWNER, "APPROVED", &tip)]),
         json!([review(11, OWNER, "DISMISSED", &tip)]),
+        // GitHub's decision is per pull request: a change request on an older commit still stands
+        json!([review(10, OWNER, "CHANGES_REQUESTED", &git(p, &["rev-parse", "wu/e/a^"])), review(9, OWNER, "APPROVED", &tip)]),
     ] {
         let o = sign_off(p, "wu", "epic/e", &list, &[]);
         assert_eq!(o.status.code(), Some(3), "{list}: {}", text(&o));
