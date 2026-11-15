@@ -683,6 +683,29 @@ fn pr_ready_marks_only_the_bots_draft_at_the_local_tip() {
     assert_eq!(q["variables"], serde_json::json!({"id": "PR_kwDOtest42"}));
     assert!(q["query"].as_str().unwrap().contains("markPullRequestReadyForReview(input: {pullRequestId: $id})"), "{q}");
     assert_eq!(body_of(&gh.log()[4]), serde_json::json!({"reviewers": ["lesslucifer"]}));
+    // the pull request is ready already: a refused review request is a warning, never a failure
+    gh.routes(&[
+        ("GET", "/repos/own/Keel/pulls/7", 200, gh.pr(7, BOT, "own/Keel", &tip, true)),
+        ("POST", "/graphql", 200, ready.clone()),
+        ("GET", "/user/5499546", 403, serde_json::json!({"message": "Resource not accessible by integration"})),
+    ]);
+    let o = gh.run(&["pr-ready", "7"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(
+        stdout(&o),
+        format!(
+            "WARN no review request for commander 5499546: GitHub names no user login (HTTP 403)\nREADY pr=7 head=wu/E/x sha={tip} state=ready reviewers=none"
+        )
+    );
+    gh.routes(&[
+        ("GET", "/repos/own/Keel/pulls/7", 200, gh.pr(7, BOT, "own/Keel", &tip, true)),
+        ("POST", "/graphql", 200, ready.clone()),
+        ("GET", "/user/5499546", 200, user.clone()),
+        ("POST", "/repos/own/Keel/pulls/7/requested_reviewers", 422, serde_json::json!({"message": "Validation Failed"})),
+    ]);
+    let o = gh.run(&["pr-ready", "7"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(stdout(&o), format!("WARN review request for lesslucifer refused: HTTP 422\nREADY pr=7 head=wu/E/x sha={tip} state=ready reviewers=none"));
 
     let o = with(gh.pr(7, BOT, "own/Keel", &tip, false));
     assert_eq!(stdout(&o), format!("READY pr=7 head=wu/E/x sha={tip} state=unchanged"), "{}", text(&o));

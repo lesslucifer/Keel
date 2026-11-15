@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="9b413f6010839576f89e899a" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHFLOW.W3 result: the router hears you through GitHub</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHFLOW.W3 result · The router hears you through GitHub</h1>
+      <p>Delivered and tested against a mock of GitHub. It goes live once your App has three more permissions: the steps are below.</p>
+      <div class="meta">Ready v1 · 2026-11-15 · T3 · WU result · Keel · plan: 2026-11-15-eghflow-w3-plan.html</div>
+    </div>
+  </header>
+  <main>
+    <h2 id="outcome">Outcome</h2>
+    <p data-item="outcome">Delivered. <code>scripts/router-gh-watch.sh</code> watches one issue or pull request for a review, a comment, a merge or finished checks. It checks at once, then about once a minute, and exits on the first event from a commander: one event line, the text indented, control characters as <code>?</code>. Anyone else is a count, never text, and never wakes the router. An edited comment is never read as an order. A comment's first line is parsed by the closed grammar <code>/keel go|hold|retry|answer &lt;n&gt; &lt;A|B&gt;</code>. The watch keeps no state and holds no secret: each poll asks <code>router-gh.sh</code>, which mints the token, reads only the bot's own issues and pull requests, and hands back plain data. <code>router-gh.sh issue</code> keeps a tracking issue per epic with a sub-issue per WU. <code>pr-ready</code> now asks you for a review. The commanders are committed: you alone, user id 5499546 (read from the public API). The guard admits exactly the new shapes; workers are denied the watch. Against GitHub itself it is unproven until your App has the new permissions.</p>
+
+    <h2 id="changes">What changes for you</h2>
+    <table data-c="changes" data-item="owner-changes">
+      <tr><th>When</th><th>Today</th><th>After W3 and the App update</th></tr>
+      <tr><td>You give an order</td><td>In the router's chat</td><td>A comment: <code>/keel go</code>, <code>/keel hold</code>, <code>/keel retry</code>, <code>/keel answer 2 B</code>; lines below it are your message. Plain text with no command is a message too</td></tr>
+      <tr><td>You approve, comment, merge</td><td>You tell the router</td><td>The router's watch prints it within about a minute</td></tr>
+      <tr><td>A pull request turns ready</td><td>Nothing on your phone</td><td>GitHub asks you for a review</td></tr>
+      <tr><td>You want the epic's state</td><td>You ask</td><td>The epic's tracking issue: tip, docs, notes, and a row per WU; each WU a sub-issue, closed once merged</td></tr>
+      <tr><td>You edit a comment</td><td>—</td><td>The edit is never an order: the router sees <code>EDITED</code> and asks you to post again</td></tr>
+    </table>
+
+    <h2 id="steps">Your steps</h2>
+    <ol data-c="steps">
+      <li><strong>Commit the rule-bearing files</strong> (staged in this worktree: the three scripts, the jq grammar, the guard, the launcher, <code>.keel/config.toml</code> with your id). In <code>/Users/nguyenvanluong/Documents/proj/misc/Keel-E-GHFLOW-w3-gh-watch</code>, first <code>git add scripts/router-gh.sh scripts/router-guard.jq scripts/router-worker.sh</code>, then: <code>keel mr commit -m 'feat(E-GHFLOW.W3): router-gh-watch.sh, the command grammar, the tracking issue and their guard shapes' --as vuluu</code>.</li>
+      <li><strong>Give the App three more permissions</strong>: github.com → your avatar → Settings → Developer settings → GitHub Apps → your App → Permissions &amp; events. Repository permissions: <em>Issues: Read and write</em> (comments, the tracking issue), <em>Checks: Read-only</em>, <em>Commit statuses: Read-only</em>. Save. Then accept the new permissions on the installation (Settings → Applications → Installed GitHub Apps → your App → Review request).</li>
+      <li>Optional: the router's allow lines in <code>.claude/settings.json</code>, as in W2: <code>"Bash(scripts/router-gh-watch.sh *)"</code> and <code>"Bash(scripts/router-gh.sh issue *)"</code>. The guard bounds every call either way.</li>
+    </ol>
+    <p>The first live run, from a checkout that holds this WU: <code>scripts/router-gh.sh issue epic/E-GHFLOW</code> prints <code>ISSUE number=… state=opened</code>; then <code>ROUTER_WATCH_MAX=600 scripts/router-gh-watch.sh comment &lt;that number&gt;</code> (typed by you, since the guard admits no prefix), you comment <code>/keel go</code> from your phone, and within a minute it prints <code>COMMAND issue=… from=5499546 verb=go pending=0</code>. A comment from another account prints nothing until then, and then only <code>IGNORED from=other count=1</code>.</p>
+
+    <h2 id="deviations">Deviations</h2>
+    <ul data-item="deviations">
+      <li>The plan's example printed <code>from=owner</code>. The watch prints the commander's user id (<code>from=5499546</code>), since the list may hold more than you (open point 6).</li>
+      <li>The tracking issue's text comes from git only: tip, docs, notes, WU rows. It has no "waiting on you" section yet (W8 adds it) and no link to the pull request.</li>
+      <li>Done here, not in the plan's card: W2's follow-up, the review request on <code>pr-ready</code>; and the parts of <code>pr-open</code>'s body code that the issue reuses moved into functions (behaviour unchanged, W2's tests unchanged but the <code>READY</code> line).</li>
+      <li>Still unverified, each failing safe: that only a body edit moves a comment's <code>updated_at</code> (a false <code>EDITED</code> asks you to repost); that an installation token may read <code>GET /user/{id}</code> (a refusal is a <code>WARN</code> line; the pull request is still marked ready); the sub-issue and permission facts come from GitHub's docs, read 2026-11-15, not a live call.</li>
+      <li>Otherwise none.</li>
+    </ul>
+
+    <h2 id="evidence">Evidence</h2>
+    <div data-item="evidence" data-c="evidence">
+      <p>Commits: 0b4db2f (plan), 354622a and 77de7fe (tests), this report, then your <code>keel mr commit</code> of the scripts and config.</p>
+      <ul>
+        <li>Integration, <code>tests/suite/router_gh_watch.rs</code>, 13 tests on W2's scratch repo, fake curl and throwaway key, now serving each route's answers in turn so polls see changes without timing: an approval prints <code>APPROVED pr= sha=</code> after a stranger's approval and a pending review; a stranger's <code>/keel go</code> prints only <code>IGNORED from=other count=1</code>; each verb, a message, bad commands; <code>pending</code> and <code>since</code>; an edited comment prints <code>EDITED</code> and no text; control characters, C1, tab, separators and bidi marks as <code>?</code>; <code>free_text = false</code>; merged, closed; checks pending then done; only the bot's issues and pull requests; commanders read only from a committed file, none refused; <code>UNREACHABLE</code> after 5 failures; <code>TIMEOUT</code>; the same output twice and nothing written anywhere. Every run is checked for the key, the JWT and the token, and for files left in <code>$TMPDIR</code>, the run dir and the checkout.</li>
+        <li>Integration, <code>tests/suite/router_gh.rs</code>: three new tests (the epic's issue and a WU sub-issue linked by id; refresh in place, a stranger's or a pull request's marker ignored, a merged branch closed; a WU before its epic refused) and the review request in the <code>pr-ready</code> test.</li>
+        <li>Unit, <code>tests/suite/router_gh_watch_args.rs</code>, 4 tests: the watch's argument check with nothing reaching curl; the grammar's every form; a generated corpus of 400 comments held to a reference written from the spec. <code>tests/suite/router_gh_args.rs</code>: <code>issue</code> and <code>watch-read</code> arguments.</li>
+        <li>Guard, <code>tests/suite/router.rs</code>: the new shapes pass and 33 other spellings are denied; a generated corpus agrees with the watch's and the script's argument checks; the worker deny list and the rule-bearing list hold the new files.</li>
+        <li><code>keel check</code>: lint green; 395 passed, 10 ignored (the notify_owner loopback tests), in the sandbox.</li>
+      </ul>
+    </div>
+
+    <h2 id="distillation">Distillation</h2>
+    <p data-item="distillation">Nothing distilled at the WU. At the epic close: UC-ROUTE-1 (the GitHub watch kinds), UC-ROUTE-6 (the guard's new shapes), a new UC-ROUTE row for the GitHub command channel and its trust rules (who is heard, edits, the grammar, counts only for others), and the decision record on polling as the command channel, as the epic plan lists.</p>
+
+    <h2 id="follow-ups">Follow-ups</h2>
+    <ul data-item="follow-ups">
+      <li>Teach the router skills to arm these watches, re-arm with <code>since</code>, and refresh the tracking issue: the epic close, with the other <code>keel-router</code> edits the epic plan lists.</li>
+      <li>The <code>/keel tried …</code> verbs: W6. <code>/keel waive-review</code>, <code>confirm-waiver</code>, <code>accept-waiver</code>, <code>roster-change</code> and the issue's "waiting on you" section: W8.</li>
+      <li>The live proof (the first run above): recorded in the epic result, as the epic plan's live evidence.</li>
+    </ul>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
