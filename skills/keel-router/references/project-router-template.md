@@ -26,6 +26,7 @@ disagrees with this file, they win — fix this file.
 | Harness | `<Claude Code \| DSH>`; its transport is the keel-router skill's table, not a fork of the skills |
 | Permission preset | `<Claude Code: the launcher's committed mode, never wider \| DSH: Always Auto Review, fixed - a medium call runs, a high-risk call is denied, no approval path>` |
 | Brief location | `<durable briefs dir; on DSH the brief is the worker_spawn prompt, so it must be self-contained>` |
+| Report channel | `<the inbox script the router arms on DSH (<inbox>), or none: a DSH worker's report is then its transcript alone>` |
 
 ## Who runs what
 | Action | Who |

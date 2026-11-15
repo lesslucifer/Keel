@@ -111,6 +111,7 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
     assert!(bash(&format!("rm -rf x{}y", " ".repeat(100_000))).is_some());
     assert!(t.elapsed() < Duration::from_secs(3), "guard took {:?} on a long command", t.elapsed());
     assert!(bash("rm x").unwrap().contains("scripts/router-watch.sh commit|signed|merged|pushed|tagged"), "deny message omits the watch shape");
+    assert!(bash("rm x").unwrap().contains("scripts/router-inbox.sh"), "deny message omits the inbox shape");
 
     let mut allowed = vec![
         "git log --oneline -5".to_string(),
@@ -142,6 +143,8 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
             Some(p) if p.ends_with(" stop") || p.ends_with(" watchdog start") => format!("{p} n"),
             Some(p) if p.ends_with(" worktree add") || p.ends_with(" worktree remove") => format!("{p} wu/E-X/w1-a"),
             Some(p) if p.ends_with("router-watch.sh") => format!("{p} signed 1a2b3c4"),
+            Some(p) if p.ends_with("router-inbox.sh watch") => format!("{p} 6600"),
+            Some(p) if p.ends_with("router-inbox.sh consume") => format!("{p} 1794659383-abc123"),
             Some(p) if p.starts_with("scripts/") => format!("{p} n /w .router/briefs/n.md opus"),
             Some(p) => format!("{p} HEAD"),
             None => a.to_string(),
@@ -158,6 +161,52 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
     for w in &worker_only {
         assert!(bash(w).is_some(), "guard allowed worker-only {w:?} to the router");
     }
+}
+
+/// E-RGUARD.W2: the router may run the owner sender as one plain shape per mode, and write the
+/// body file it reads; a quoted body or any other notify path is not a shape the guard allows.
+#[test]
+fn router_guard_allows_the_owner_sender_only_as_a_plain_shape() {
+    for ok in ["scripts/notify-owner.py --check", "scripts/notify-owner.py --send", "scripts/notify-owner.py --dry-run"] {
+        assert_eq!(bash(ok), None, "guard denied {ok:?}");
+    }
+    for bad in [
+        "scripts/notify-owner.py --send hello",
+        "scripts/notify-owner.py --send 'hello; rm -rf x'",
+        "scripts/notify-owner.py --check extra",
+        "scripts/notify-owner.py",
+    ] {
+        assert!(bash(bad).is_some(), "guard allowed {bad:?}");
+    }
+    let write = |p: &str| guard("router", "Write", serde_json::json!({ "file_path": p }));
+    assert_eq!(write("/r/.router/notify/owner.md"), None, "the owner body must be writable");
+    assert!(write("/r/.router/notify/other.md").is_some(), "only owner.md is the notify body");
+    assert!(write("/r/.router/briefs/x.txt").is_some(), "a brief is a .md file");
+}
+
+/// E-RGUARD epic review round 1: the owner body's path is held twice, as the sender's
+/// `DEFAULT_BODY` and as the guard's Write rule. Both are read from their files here: the guard
+/// admits a router Write to exactly the path the sender reads from its working directory. The
+/// import runs with bytecode off (`-B`, PYTHONDONTWRITEBYTECODE), so no `scripts/__pycache__`
+/// lands in the checkout.
+#[test]
+fn the_guard_admits_the_body_path_the_owner_sender_reads() {
+    let load = "import importlib.util, sys\n\
+                spec = importlib.util.spec_from_file_location('notify_owner', sys.argv[1])\n\
+                module = importlib.util.module_from_spec(spec)\n\
+                spec.loader.exec_module(module)\n\
+                print(module.DEFAULT_BODY.as_posix())";
+    let cache = root().join("scripts/__pycache__");
+    let cached_before = cache.exists();
+    let o =
+        common::cmd("python3").arg("-B").env("PYTHONDONTWRITEBYTECODE", "1").arg("-c").arg(load).arg(root().join("scripts/notify-owner.py")).output().unwrap();
+    assert!(cached_before || !cache.exists(), "reading DEFAULT_BODY wrote {} into the checkout", cache.display());
+    assert!(o.status.success(), "could not read DEFAULT_BODY: {}", String::from_utf8_lossy(&o.stderr));
+    let body = String::from_utf8(o.stdout).unwrap().trim().to_string();
+    assert!(!body.is_empty() && !body.starts_with('/'), "the sender's body is not a checkout-relative path: {body:?}");
+    let write = |p: &str| guard("router", "Write", serde_json::json!({ "file_path": format!("/r/{p}") }));
+    assert_eq!(write(&body), None, "the guard refuses the router's Write to the body the sender reads: {body}");
+    assert!(write(&format!("{body}.bak")).is_some(), "the guard admits a path beside the sender's body");
 }
 
 /// Review of 67b0de5: the guard must split gh's argv the way gh's flag parser (pflag) does. A
@@ -268,6 +317,80 @@ fn router_guard_allows_send_message_to_a_named_worker_as_the_harness_sends_it() 
     }
     assert_eq!(guard("router", "ListAgents", serde_json::json!({})), None);
     assert_eq!(guard("worker", "SendMessage", serde_json::json!({})), None);
+}
+
+/// E-RGUARD.W3: the router arms the report channel and acks with it; it never posts. The body is
+/// free text, so `post` is the one verb no plain-word guard can admit.
+#[test]
+fn router_guard_admits_the_inbox_watcher_and_consume_but_never_post() {
+    for ok in [
+        "scripts/router-inbox.sh init",
+        "scripts/router-inbox.sh status",
+        "scripts/router-inbox.sh watch 6600",
+        "scripts/router-inbox.sh watch 0",
+        "scripts/router-inbox.sh consume 1794659383-abc123",
+        "scripts/router-inbox.sh consume 1a.b_c-D",
+    ] {
+        assert_eq!(bash(ok), None, "guard denied documented shape {ok:?}");
+    }
+    let settings = settings();
+    let allow: Vec<&str> = settings["permissions"]["allow"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+    assert!(!allow.contains(&"Bash(scripts/router-inbox.sh *)"), "settings still admit every inbox verb: {allow:?}");
+    assert!(
+        allow.contains(&"Bash(scripts/router-inbox.sh watch *)") && allow.contains(&"Bash(scripts/router-inbox.sh consume *)"),
+        "the router's two shapes are not allowlisted: {allow:?}"
+    );
+    for denied in [
+        "scripts/router-inbox.sh",
+        "scripts/router-inbox.sh post",
+        "scripts/router-inbox.sh post e-rguard-w3 REPORT hi",
+        "scripts/router-inbox.sh watch",
+        "scripts/router-inbox.sh watch -1",
+        "scripts/router-inbox.sh watch 1x",
+        "scripts/router-inbox.sh watch 6600 extra",
+        "scripts/router-inbox.sh consume",
+        "scripts/router-inbox.sh consume ../x",
+        "scripts/router-inbox.sh consume x/y",
+        "scripts/router-inbox.sh consume 1794659383-abc extra",
+        "scripts/router-inbox.sh init extra",
+        "scripts/router-inbox.sh status extra",
+        "scripts/router-inbox.sh rm x",
+        "scripts/router-inbox.sh watch 6600; id",
+        r#"scripts/router-inbox.sh watch "6600""#,
+        "X=1 scripts/router-inbox.sh watch 6600",
+    ] {
+        assert!(bash(denied).is_some(), "guard allowed {denied:?}");
+    }
+}
+
+/// Review round 2, I10: the guard and `scripts/router-inbox.sh` each hold the consume-id and the
+/// watch-seconds grammar, so every probe here must get the same verdict from both: the router is
+/// never denied an id the script takes, and never admitted to one the script refuses.
+#[test]
+fn the_guard_and_the_inbox_script_take_the_same_ids_and_seconds() {
+    let d = TempDir::new().unwrap();
+    let inbox = d.path().join("inbox");
+    std::fs::create_dir_all(inbox.join("read")).unwrap();
+    let script = |args: &[&str], dir: &Path| {
+        let o = common::cmd("sh").arg(root().join("scripts/router-inbox.sh")).args(args).env("ROUTER_INBOX_DIR", dir).output().unwrap();
+        String::from_utf8_lossy(&o.stderr).into_owned()
+    };
+    let long = "a".repeat(300);
+    for id in ["1794659383-abc123", "a", "A9", "1a.b_c-D", "x.msg", "_x", ".x", "-x", "a..b", "a/b", "a+b", "a:b", "a=b", "a@b", "a~b", &long] {
+        let err = script(&["consume", id], &inbox);
+        let by_script = err.contains("MISSING");
+        assert!(by_script || err.contains("bad id"), "consume {id:?}: {err}");
+        let by_guard = bash(&format!("scripts/router-inbox.sh consume {id}")).is_none();
+        assert_eq!(by_guard, by_script, "consume {id:?}: guard admits {by_guard}, script takes {by_script} ({err})");
+    }
+    let none = d.path().join("no-inbox");
+    for n in ["0", "1", "6600", "9999999", "01", "0000000", "12345678", "1x", "-1", "+1", "1.5"] {
+        let err = script(&["watch", n], &none);
+        let by_script = err.contains("NO-INBOX");
+        assert!(by_script || err.contains("max must be"), "watch {n:?}: {err}");
+        let by_guard = bash(&format!("scripts/router-inbox.sh watch {n}")).is_none();
+        assert_eq!(by_guard, by_script, "watch {n:?}: guard admits {by_guard}, script takes {by_script} ({err})");
+    }
 }
 
 /// Important of the close review: a hook that errors (no jq, no guard file) must deny, not allow.

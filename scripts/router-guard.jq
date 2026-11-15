@@ -17,9 +17,12 @@ def tools: ["Read", "Grep", "Glob", "Write", "Bash", "Skill", "ToolSearch", "Tod
 # Skills that run inline; a skill that forks a subagent would escape the guard like Agent.
 def skills: ["keel-router", "project-router", "keel-workflow", "keel-plan", "keel-distill"];
 
+# The owner sender (E-RGUARD.W2): one plain shape per mode, so a quoted body cannot smuggle a
+# command; the body itself travels through <checkout>/.router/notify/owner.md, which Write allows.
 # Plain words only: no quote, escape, glob, brace, substitution, redirect, separator or
-# control character survives this set, so the string judged here is the argv the shell
-# builds (a quoted "--out""put=" once slipped past a substring check). "--ou" also
+# control character survives this set (jq's "$" also matches before one final newline,
+# which the shell reads as the end of the one command), so the string judged here is the
+# argv the shell builds (a quoted "--out""put=" once slipped past a substring check). "--ou" also
 # catches git's abbreviated long options. gh takes only named query flags and bare
 # words without ":" - no -R/--repo (also inside a -dR cluster), no URL argument (both
 # point gh at any host), no -q/--jq/-t/--template (gh's jq reads the environment), no --web.
@@ -30,7 +33,7 @@ def gh_args: "( ((--(json|state|limit|author|base|head|label|search)|-(L|s|A|B|H
 def bash_ok:
   test("^[A-Za-z0-9 ._/:=@%,+^~-]*$")
   and (test("--ou") | not)
-  and test("^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)" + gh_args + "|ps (aux|-ef)|scripts/router-worker\\.sh (spawn|stop) [A-Za-z0-9._/ -]+|scripts/router-worker\\.sh worktree (add|remove) (epic|wu)/[A-Za-z0-9._/-]+|scripts/router-worker\\.sh watchdog (start|stop) [a-z0-9][a-z0-9-]{0,31}|scripts/router-watch\\.sh (commit|signed|merged|pushed|tagged)( [.]*[A-Za-z0-9_][A-Za-z0-9._/-]*)+)$")
+  and test("^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)" + gh_args + "|ps (aux|-ef)|scripts/router-worker\\.sh (spawn|stop) [A-Za-z0-9._/ -]+|scripts/router-worker\\.sh worktree (add|remove) (epic|wu)/[A-Za-z0-9._/-]+|scripts/router-worker\\.sh watchdog (start|stop) [a-z0-9][a-z0-9-]{0,31}|scripts/router-watch\\.sh (commit|signed|merged|pushed|tagged)( [.]*[A-Za-z0-9_][A-Za-z0-9._/-]*)+|scripts/notify-owner\\.py (--check|--send|--dry-run)|scripts/router-inbox\\.sh (init|status|watch [0-9]{1,7}|consume [A-Za-z0-9][A-Za-z0-9._-]*))$")
   and ((test("^scripts/") and test("\\.\\.")) | not);
 
 if $ARGS.named.watchdog_to != null then
@@ -48,12 +51,13 @@ elif .tool_name == "Bash" then
   (.tool_input.command // "") as $c
   # length first: it bounds the regex work below (an unbounded trim once ran past the hook timeout)
   | if ($c | length) > 1000 or ($c | sub("^ +"; "") | sub(" +$"; "") | bash_ok | not)
-    then deny("Bash whitelist: git status/log/diff/show, git branch -v/-a, gh pr view/list/status (no -R), ps aux/-ef, scripts/router-worker.sh spawn|stop, scripts/router-worker.sh worktree add|remove <epic/E or wu/E/slug>, scripts/router-worker.sh watchdog start|stop <router-name>, scripts/router-watch.sh commit|signed|merged|pushed|tagged <args not starting with -> (read-only owner-action watch); one command of plain words, no quotes/$/globs/pipes/redirects, no --output")
+    then deny("Bash whitelist: git status/log/diff/show, git branch -v/-a, gh pr view/list/status (no -R), ps aux/-ef, scripts/router-worker.sh spawn|stop, scripts/router-worker.sh worktree add|remove <epic/E or wu/E/slug>, scripts/router-worker.sh watchdog start|stop <router-name>, scripts/router-watch.sh commit|signed|merged|pushed|tagged <args not starting with -> (read-only owner-action watch), scripts/notify-owner.py --send|--dry-run|--check (the owner message body lives in .router/notify/owner.md), scripts/router-inbox.sh init|status|watch <seconds>|consume <id> (the worker report channel; the router never posts); one command of plain words, no quotes/$/globs/pipes/redirects, no --output")
     else empty end
 elif .tool_name == "Write" then
   .cwd as $d | (.tool_input.file_path // "") as $p
-  | if ($p | startswith($d + "/.router/briefs/")) and ($p | ltrimstr($d + "/.router/briefs/") | test("^[A-Za-z0-9_-][A-Za-z0-9._-]*\\.md$"))
-    then empty else deny("Write only worker briefs: <checkout>/.router/briefs/<name>.md") end
+  | if (($p | startswith($d + "/.router/briefs/")) and ($p | ltrimstr($d + "/.router/briefs/") | test("^[A-Za-z0-9_-][A-Za-z0-9._-]*\\.md$")))
+      or ($p == $d + "/.router/notify/owner.md")
+    then empty else deny("Write only worker briefs <checkout>/.router/briefs/<name>.md and the owner body <checkout>/.router/notify/owner.md") end
 elif .tool_name == "Skill" then
   if (.tool_input.skill // "" | IN(skills[])) then empty else deny("Skill only \(skills | join(", "))") end
 # Any message to a named worker (DEC-42): an idle subscription or content that steers a live worker.
