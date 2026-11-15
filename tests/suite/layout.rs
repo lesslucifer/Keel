@@ -4,6 +4,10 @@
 //! first that fails. A `.rs` file in `tests/suite/` that rustc never compiled into the suite runs
 //! none of its tests; rustc's own record of the files it read (the dep-info file cargo keeps next
 //! to the test binary) says which those are, whatever `mod`, `#[path]` or `#[cfg]` decided it.
+//! rustc opens a file only when its `mod` item survived cfg-stripping; once open, only an inner
+//! `#![cfg]` (or a `#![cfg_attr]` that expands to one) drops the whole file, and rustc still lists
+//! it. So no suite file may carry one: a cfg goes on the `mod` line, where the dep-info shows it.
+use regex::Regex;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -14,6 +18,7 @@ type Entry = (String, Option<String>, bool);
 /// The problems cargo's view of the package shows: test files outside the suite and `Cargo.toml`
 /// targets that build another test program.
 fn extra_programs(top: &[Entry], suite_names: &BTreeSet<String>, cargo_toml: &str) -> Vec<String> {
+    let decl = Regex::new(r"(?m)^\s*(#\[[^\]]*\]\s*)*(pub(\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;").unwrap();
     let mut bad = vec![];
     for (f, src, _) in top.iter().filter(|(f, src, _)| src.is_some() && f.ends_with(".rs")) {
         let m = f.trim_end_matches(".rs");
@@ -24,11 +29,7 @@ fn extra_programs(top: &[Entry], suite_names: &BTreeSet<String>, cargo_toml: &st
         if matches!(m, "main" | "common") || suite_names.contains(f) {
             fix = format!("Rename it first: tests/suite/{f} exists or `{m}` is taken in the suite, then move it as for any other file");
         }
-        let declares = src.as_deref().unwrap_or("").lines().any(|l| {
-            let l = l.trim();
-            l.starts_with("mod ") && l.ends_with(';') && l != "mod common;"
-        });
-        if declares {
+        if decl.captures_iter(src.as_deref().unwrap_or("")).any(|c| &c[4] != "common") {
             fix.push_str(&format!(". It declares modules of its own: move their files to tests/suite/{m}/ with it"));
         }
         bad.push(format!("tests/{f} builds as a test program of its own. {fix}"));
@@ -59,6 +60,37 @@ fn extra_programs(top: &[Entry], suite_names: &BTreeSet<String>, cargo_toml: &st
         }
     }
     bad
+}
+
+/// What in one suite file's source would hide tests from the dep-info check: an inner `cfg` or
+/// `cfg_attr` attribute (spacing and a path prefix ignored, a comment between `#!` and `[` refused
+/// too), and a `.rs` file read as data, which rustc lists like a module.
+fn source_problems(shown: &str, src: &str) -> Vec<String> {
+    let flat: String = src.chars().filter(|c| !c.is_whitespace()).collect();
+    let inner_cfg = Regex::new(r"#!(/\*|\[(::)?([A-Za-z_][A-Za-z0-9_]*::)*cfg(_attr)?\()").unwrap();
+    let data = Regex::new(r#"include_(str|bytes)!\(r?#*"[^"]*\.rs""#).unwrap();
+    let mut bad = vec![];
+    if inner_cfg.is_match(&flat) {
+        bad.push(format!(
+            "{shown} has an inner #![cfg] or #![cfg_attr]: when it is false the file's tests vanish while rustc still lists \
+             the file, so the guard cannot see it; put the cfg on the file's `mod` line instead"
+        ));
+    }
+    if data.is_match(&flat) {
+        bad.push(format!("{shown} reads a .rs file with include_str!/include_bytes!, which rustc lists as if compiled; give data another extension"));
+    }
+    bad
+}
+
+/// The directory a dep-info's relative paths start from: cargo writes them relative to the
+/// workspace root, which is `root` or one of its ancestors; the one where the listed suite
+/// `main.rs` is this suite's.
+fn dep_info_base(dep_info: &str, root: &Path, suite_main: &Path) -> Option<PathBuf> {
+    let listed = dep_info_sources(dep_info, Path::new(""));
+    root.ancestors()
+        .find(|base| listed.iter().any(|p| p.is_relative() && base.join(p).canonicalize().is_ok_and(|c| c == suite_main)))
+        .map(Path::to_owned)
+        .or_else(|| listed.iter().any(|p| p == suite_main).then(|| root.to_owned()))
 }
 
 /// The source files a dep-info file lists, one `path:` rule per file, resolved against `root` when
@@ -153,11 +185,15 @@ fn the_suite_is_the_only_test_program() {
         )),
         Ok(text) => {
             let canonical = |p: PathBuf| p.canonicalize().unwrap_or(p);
-            let compiled: BTreeSet<PathBuf> = dep_info_sources(&text, &root).into_iter().map(canonical).collect();
-            if compiled.contains(&suite.join("main.rs")) {
+            if let Some(base) = dep_info_base(&text, &root, &suite.join("main.rs")) {
+                let compiled: BTreeSet<PathBuf> = dep_info_sources(&text, &base).into_iter().map(canonical).collect();
                 let mut files = vec![];
                 rs_files(&suite, &mut files);
                 let files: Vec<PathBuf> = files.into_iter().map(canonical).collect();
+                for f in &files {
+                    let shown = format!("tests/suite/{}", f.strip_prefix(&suite).unwrap_or(f).display());
+                    bad.extend(source_problems(&shown, &std::fs::read_to_string(f).unwrap()));
+                }
                 bad.extend(not_compiled(&suite, &files, &compiled));
             } else {
                 bad.push(format!("{} does not list tests/suite/main.rs, so it is not this suite's dep-info", dep_info.display()));
@@ -196,8 +232,14 @@ fn the_layout_check_names_each_extra_program() {
         let got = check(file(clash, ""));
         assert!(got.len() == 1 && got[0].contains("Rename it first"), "{clash}: {got:?}");
     }
-    let got = check(file("big.rs", "mod common;\nmod helper;\n"));
-    assert!(got.len() == 1 && got[0].contains("declares modules of its own: move their files to tests/suite/big/"), "{got:?}");
+    for own in ["mod common;\nmod helper;\n", "pub mod helper;\n", "  pub(crate) mod helper;\n", "#[path = \"h.rs\"] mod helper;\n", "mod helper; // note\n"] {
+        let got = check(file("big.rs", own));
+        assert!(got.len() == 1 && got[0].contains("declares modules of its own: move their files to tests/suite/big/"), "{own:?}: {got:?}");
+    }
+    for none in ["mod common;\n", "// mod helper;\nfn f() {}\n", "mod inline { }\n"] {
+        let got = check(file("big.rs", none));
+        assert!(got.len() == 1 && !got[0].contains("modules of its own"), "{none:?}: {got:?}");
+    }
 
     let got = check(vec![("slow".into(), None, true)]);
     assert!(got.len() == 1 && got[0].starts_with("tests/slow/main.rs builds as a test program"), "{got:?}");
@@ -241,4 +283,47 @@ fn every_suite_file_rustc_did_not_compile_is_named() {
     assert!(got[1].starts_with("tests/suite/helpers/mod.rs is not compiled") && got[1].contains("`mod helpers;`"), "{got:#?}");
     assert!(got[2].contains("git mv tests/suite/slow/main.rs tests/suite/slow/mod.rs") && got[2].contains("`mod slow;`"), "{got:#?}");
     assert_eq!(not_compiled(suite, &files[..2], &compiled), Vec::<String>::new());
+}
+
+/// Unit: an inner cfg in any spelling, and a `.rs` file read as data, are refused; an outer cfg on
+/// an item, a `#![allow]` and the word cfg in prose are not.
+#[test]
+fn a_suite_file_may_not_hide_its_tests_from_the_dep_info() {
+    let hides = [
+        "#%[cfg(any())]\n#[test]\nfn t() {}\n",
+        "//! doc\n#% [ cfg (\n    feature = \"slow\"\n) ]\n",
+        "#%[cfg_attr(unix, cfg(any()))]\n",
+        "#%[core::prelude::v1::cfg(any())]\n",
+        "#%/* why */[cfg(any())]\n",
+        "mod inline {\n    #%[cfg(windows)]\n}\n",
+    ];
+    for src in hides {
+        let got = source_problems("tests/suite/x.rs", &src.replace("#%", "#!"));
+        assert!(got.len() == 1 && got[0].starts_with("tests/suite/x.rs has an inner #!"), "{src:?}: {got:?}");
+    }
+    for src in ["const T: &str = include_str!(\"fixture.rs\");\n", "const B: &[u8] = include_bytes!( r#\"a/b.rs\"# );\n"] {
+        let got = source_problems("tests/suite/x.rs", &src.replace("#%", "#!"));
+        assert!(got.len() == 1 && got[0].contains("include_str!/include_bytes!"), "{src:?}: {got:?}");
+    }
+    for src in ["#%[allow(dead_code)]\n#[cfg(unix)]\n#[test]\nfn t() {}\n", "// a cfg(any()) here is prose\n", "const D: &str = include_str!(\"data.json\");\n"]
+    {
+        assert_eq!(source_problems("tests/suite/x.rs", &src.replace("#%", "#!")), Vec::<String>::new(), "{src:?}");
+    }
+}
+
+/// Unit: relative dep-info paths start from the workspace root, the crate's directory or an
+/// ancestor of it, whichever makes the listed suite `main.rs` this one; none when no base does.
+#[test]
+fn the_dep_info_base_is_where_the_listed_suite_is_this_one() {
+    let ws = tempfile::TempDir::new().unwrap();
+    let ws = ws.path().canonicalize().unwrap();
+    let krate = ws.join("crates/keel");
+    std::fs::create_dir_all(krate.join("tests/suite")).unwrap();
+    let main = krate.join("tests/suite/main.rs");
+    std::fs::write(&main, "").unwrap();
+    let rule = |p: &str| format!("{p}:\n");
+    assert_eq!(dep_info_base(&rule("tests/suite/main.rs"), &krate, &main), Some(krate.clone()));
+    assert_eq!(dep_info_base(&rule("crates/keel/tests/suite/main.rs"), &krate, &main), Some(ws.clone()));
+    assert_eq!(dep_info_base(&rule(&main.display().to_string()), &krate, &main), Some(krate.clone()));
+    assert_eq!(dep_info_base(&rule("other/tests/suite/main.rs"), &krate, &main), None);
 }
