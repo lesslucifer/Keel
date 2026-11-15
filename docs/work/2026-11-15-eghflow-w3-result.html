@@ -29,7 +29,7 @@
 
     <h2 id="steps">Your steps</h2>
     <ol data-c="steps">
-      <li><strong>Commit the rule-bearing files</strong> (staged in this worktree: the three scripts, the jq grammar, the guard, the launcher, <code>.keel/config.toml</code> with your id). In <code>/Users/nguyenvanluong/Documents/proj/misc/Keel-E-GHFLOW-w3-gh-watch</code>, first <code>git add scripts/router-gh.sh scripts/router-guard.jq scripts/router-worker.sh</code>, then: <code>keel mr commit -m 'feat(E-GHFLOW.W3): router-gh-watch.sh, the command grammar, the tracking issue and their guard shapes' --as vuluu</code>.</li>
+      <li><strong>Commit the rule-bearing files</strong> (staged in this worktree: the three scripts, the jq grammar, the guard, the launcher, <code>.keel/config.toml</code> with your id). In <code>/Users/nguyenvanluong/Documents/proj/misc/Keel-E-GHFLOW-w3-gh-watch</code> run: <code>keel mr commit -m 'feat(E-GHFLOW.W3): router-gh-watch.sh, the command grammar, the tracking issue and their guard shapes' --as vuluu</code>.</li>
       <li><strong>Give the App three more permissions</strong>: github.com → your avatar → Settings → Developer settings → GitHub Apps → your App → Permissions &amp; events. Repository permissions: <em>Issues: Read and write</em> (comments, the tracking issue), <em>Checks: Read-only</em>, <em>Commit statuses: Read-only</em>. Save. Then accept the new permissions on the installation (Settings → Applications → Installed GitHub Apps → your App → Review request).</li>
       <li>Optional: the router's allow lines in <code>.claude/settings.json</code>, as in W2: <code>"Bash(scripts/router-gh-watch.sh *)"</code> and <code>"Bash(scripts/router-gh.sh issue *)"</code>. The guard bounds every call either way.</li>
     </ol>
