@@ -16,13 +16,13 @@
   <main>
 
 <h2 id="outcome">What happened</h2>
-<p data-item="outcome" data-c="outcome">Delivered as planned. The test helpers find the real git once per test program and put a directory holding only it first on every PATH a test hands a child. With the stock PATH in a worker's sandbox, the router tests went from 12 failures to 1. The one left is the watcher test, which W2 owns. A full run with the stock PATH took 61.6 s, the same as with the developer tools' git first; the epic's baseline had it at 77 s. Keel's own code is unchanged.</p>
+<p data-item="outcome" data-c="outcome">Delivered as planned. The test helpers find the real git once per test program and put a directory holding only it first on every PATH a test hands a child. With the stock PATH in a worker's sandbox, the router tests went from 12 failures to 1. The one left was the watcher test, which W2 fixed. After W2 merged into the epic and was merged back here, the whole suite is green in the sandbox with the stock PATH: 334 pass, 0 fail. A full run with the stock PATH took 61.6 s, the same as with the developer tools' git first; the epic's baseline had it at 77 s. Keel's own code is unchanged.</p>
 
 <h2 id="for-the-owner">What changes for you</h2>
 <table data-c="owner-changes" data-item="owner-changes">
   <thead><tr><th>When</th><th>Before</th><th>After</th></tr></thead>
   <tbody>
-    <tr><td>A worker runs the router tests in its sandbox</td><td>12 failures, 11 of them the launcher's cache error</td><td>1 failure, the watcher test (W2)</td></tr>
+    <tr><td>A worker runs the router tests in its sandbox</td><td>12 failures, 11 of them the launcher's cache error</td><td>None, with W2 merged back in (334 pass)</td></tr>
     <tr><td>A full test run with the stock PATH</td><td>76.7 s and 77.6 s (baseline)</td><td>61.6 s and 61.7 s</td></tr>
     <tr><td>One git call from a test</td><td>6.5 ms through the launcher</td><td>3.1 ms</td></tr>
     <tr><td>You run keel yourself</td><td>Keel runs the git your PATH names</td><td>Unchanged</td></tr>
@@ -52,11 +52,12 @@
     <tr><td>After, CLT first #1</td><td>61.7 s</td><td>333 pass, 1 fail (watcher)</td><td>10.40 12.31 9.59 → 10.47 11.78 9.56</td></tr>
     <tr><td>After, stock #2</td><td>61.7 s</td><td>333 pass, 1 fail (watcher); 0 <code>xcrun_db</code> lines</td><td>10.47 11.78 9.56 → 10.16 11.45 9.59</td></tr>
     <tr><td>After, CLT first #2</td><td>61.7 s</td><td>333 pass, 1 fail (watcher)</td><td>10.16 11.45 9.59 → 9.44 11.00 9.56</td></tr>
+    <tr><td>After the back-merge of W2 (<code>2d932f4</code>), stock</td><td>47.6 s</td><td>334 pass, 0 fail; 0 <code>xcrun_db</code> lines; <code>keel check</code> green</td><td>21.70 47.59 50.84 → 18.38 42.72 48.86</td></tr>
     <tr><td>Router tests only, old code, stock (this session)</td><td>30.2 s</td><td>46 pass, 12 fail; 18 <code>xcrun_db</code> lines</td><td>3.18 → 7.73</td></tr>
     <tr><td>Router tests only, new code, stock (this session)</td><td>23.9 s</td><td>57 pass, 1 fail (watcher: <code>watch never returned</code>)</td><td>2.22 → 5.79</td></tr>
   </tbody>
 </table>
-<p data-c="timings-note">An earlier round of the four after-runs, before the fix in Deviations, took 66.2 to 80.9 s under load 16 to 20. It is kept only as a sign that the load moves the wall more than the git path does. One git call, 200 in a row, <code>git rev-parse --git-dir</code>, two samples each: <code>/usr/bin/git</code> 6.73 · 6.48 ms; the linked real git 3.14 · 3.16 ms; the Command Line Tools' git 3.11 · 3.12 ms (load 8.92 → 8.29).</p>
+<p data-c="timings-note">The 47.6 s run after the back-merge also carries W2's cut of the watcher test (20 s to under a second); its load was falling from about 48, so it is not a W1-only figure. An earlier round of the four after-runs, before the fix in Deviations, took 66.2 to 80.9 s under load 16 to 20. It is kept only as a sign that the load moves the wall more than the git path does. One git call, 200 in a row, <code>git rev-parse --git-dir</code>, two samples each: <code>/usr/bin/git</code> 6.73 · 6.48 ms; the linked real git 3.14 · 3.16 ms; the Command Line Tools' git 3.11 · 3.12 ms (load 8.92 → 8.29).</p>
 
 <h3 id="how">How it works</h3>
 <ul data-c="how">
@@ -69,7 +70,8 @@
 <h3 id="evidence-h">Evidence</h3>
 <div data-item="evidence" data-c="evidence">
   <ul>
-    <li>Commits: <code>762701c</code> WU plan · <code>c67b5ab</code> the helpers, the PATH migration and the tests · <code>9619347</code> the made-up PATH fix · this report.</li>
+    <li>Commits: <code>762701c</code> WU plan · <code>c67b5ab</code> the helpers, the PATH migration and the tests · <code>9619347</code> the made-up PATH fix · <code>c415333</code> this report · <code>2d932f4</code> the back-merge of <code>epic/E-TESTOPT</code> at <code>9022a1b</code> (W2), clean, no conflict; W2's new router lines read no PATH of their own, and the guard stays green · this update.</li>
+    <li><b>Green after the back-merge:</b> <code>keel check</code> with the stock PATH in the sandbox: lint green, every test program green (98 + 32 + 6 + 27 + 29 + 5 + 1 + 58 + 1 + 23 + 54 = 334 pass, 0 fail), <code>check green</code>.</li>
     <li><b>Red first,</b> on <code>1e1c6bc</code>, stock PATH, sandbox: <code>cargo test --test router</code>, 46 pass and 12 fail, with <code>git: error: couldn't create cache file '/var/folders/…/T/xcrun_db-…' (errno=Operation not permitted)</code> 18 times. The failing tests: <code>epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end</code>, <code>a_worktree_whose_git_link_was_changed_is_never_run_git_in</code>, <code>launcher_ignores_inherited_git_variables</code>, <code>stop_removes_that_sessions_brief_copies_and_reports_branch_drift</code>, <code>watch_refuses_bad_arguments_before_any_poll</code>, <code>watchdog_facts_hold_one_block_per_live_worker_of_this_repository</code>, <code>stop_stops_then_removes_this_repositorys_idle_worker_by_id</code>, <code>watch_signed_and_merged_report_the_note_and_how_the_tip_landed</code>, <code>worktree_add_cuts_an_epic_or_wu_branch_off_its_base_at_the_derived_path</code>, <code>fact_block_states_a_worker_from_its_transcript_tail_within_its_bound</code>, <code>worktree_remove_takes_only_a_clean_merged_worktree_with_no_session_in_it</code>, and <code>watcher_run_is_bounded_when_the_watch_outpolls_its_releases</code> (W2's). After: only the last.</li>
     <li><b>Integration,</b> <code>tests/cli.rs</code>: <code>a_test_spawn_runs_the_real_git_not_the_launcher</code> (<code>common::cmd</code>'s own PATH, <code>path()</code>, <code>path_with(keel's directory)</code> and <code>real_git_first("/usr/bin:/bin")</code> each resolve the real git, the same exec-path as the PATH's git, never <code>/usr/bin/git</code> on macOS, and <code>git --version</code> prints nothing on stderr) · <code>the_real_git_is_found_from_the_paths_git_or_the_path_is_left_alone</code> (scratch gits: the link and its replacement; a git that is its own real git, beside or inside git-core, leaves the shared PATH alone; a failing git, nothing at the exec-path, a relative exec-path, no git, an empty PATH make no link) · <code>every_test_path_comes_from_common</code>. <code>tests/router.rs</code>: the 11 tests above, now green in the sandbox.</li>
     <li><b>Unit,</b> <code>tests/cli.rs</code>: <code>real_git_is_beside_the_exec_path_else_inside_it</code> (Xcode, Command Line Tools, Homebrew, Linux, git-core only, nothing, empty, relative, root) · <code>the_test_path_puts_the_git_directory_first_or_nothing</code>.</li>
@@ -85,7 +87,6 @@
 <h3 id="follow-ups-h">Follow-ups</h3>
 <div data-item="follow-ups" data-c="follow-ups">
   <ul>
-    <li>The watcher test stays red in the sandbox. Destination: E-TESTOPT.W2, in flight.</li>
     <li>A same-session before-run needs a scratch clone, refused here. Destination: E-TESTOPT.W5's recipe re-run on main and the epic tip, which the epic plan already holds.</li>
     <li>W3 moves <code>tests/cli.rs</code> with these tests and the guard. The guard scans <code>tests/</code> recursively and skips only <code>tests/common</code>. Destination: E-TESTOPT.W3, which must keep that exclusion if <code>common</code> moves.</li>
   </ul>
