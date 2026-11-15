@@ -189,7 +189,7 @@ fn fails(o: &Output) -> Vec<String> {
 }
 
 #[test]
-fn the_gate_is_green_on_checks_0_to_7_before_the_sign_off_and_fully_green_after() {
+fn the_gate_is_green_up_to_the_sign_off_before_it_and_fully_green_after() {
     let ci = Ci::new(MARK_TEST);
     ci.bless(true);
     ci.checkout("wu/e/a");
@@ -197,12 +197,17 @@ fn the_gate_is_green_on_checks_0_to_7_before_the_sign_off_and_fully_green_after(
     let o = ci.push_job("gate", "wu/e/a");
     assert!(o.status.success(), "{}", text(&o));
     assert_eq!(fails(&o), ["8·manual-review"], "{}", text(&o));
-    assert!(text(&o).contains("ci gate green on"), "{}", text(&o));
+    assert!(text(&o).contains("passes; 8·manual-review is judged at the merge"), "{}", text(&o));
     let s = ci.summary();
-    assert!(s.starts_with("## Keel gate: wu green on checks 0–7"), "{s}");
+    assert!(s.starts_with("## Keel gate: wu green on every check before 8·manual-review, which is judged at the merge\n"), "{s}");
     for row in [
         "| 0·hooks | green |",
         "| 1·notes | green |",
+        "| 2·manifest | green |",
+        "| 3·review | green |",
+        "| 4·review&#45;base | green |",
+        "| 5·diff&#45;binding | green |",
+        "| 6·doc&#45;note | green |",
         "| test | yes | test&#47;v1 · integration 1 tests",
         "| doc | yes |",
         "| cr | yes | cr&#47;v1 · verdict PASS",
@@ -223,8 +228,10 @@ fn the_gate_is_green_on_checks_0_to_7_before_the_sign_off_and_fully_green_after(
     let o = ci.push_job("gate", "wu/e/a");
     assert!(o.status.success(), "{}", text(&o));
     assert!(fails(&o).is_empty(), "{}", text(&o));
+    assert!(text(&o).contains("- every check passes"), "{}", text(&o));
+    assert!(!text(&o).contains("judged at the merge"), "{}", text(&o));
     let s = ci.summary();
-    assert!(s.starts_with("## Keel gate: wu green on every check"), "{s}");
+    assert!(s.starts_with("## Keel gate: wu green on every check\n"), "{s}");
     assert!(s.contains("| mr | yes | mr&#47;v1 · signer t &#40;tier "), "{s}");
     assert!(s.contains("| 8·manual&#45;review | green |"), "{s}");
     assert!(ci.marked().is_empty(), "{:?}", ci.marked());
@@ -241,7 +248,12 @@ fn a_missing_note_prints_the_same_fail_block_as_the_local_gate() {
     assert_eq!(fails(&o), ["1·notes", "8·manual-review"], "{}", text(&o));
     assert!(text(&o).contains("ci gate red on"), "{}", text(&o));
     assert!(ci.summary().starts_with("## Keel gate: wu red\n"), "{}", ci.summary());
-    assert!(ci.summary().contains("| 1·notes | red (1) |"), "{}", ci.summary());
+    let s = ci.summary();
+    assert!(s.contains("| 1·notes | red (1) |"), "{s}");
+    for id in ["3·review", "4·review&#45;base", "5·diff&#45;binding"] {
+        assert!(s.contains(&format!("| {id} | not run: no readable cr note |")), "a check that never ran is never green: {id}\n{s}");
+    }
+    assert!(s.contains("| 2·manifest | green |") && s.contains("| 6·doc&#45;note | green |"), "{s}");
 
     assert!(keel(&ci.dev, &["hooks", "install"], "").status.success());
     let local = keel(&ci.dev, &["verify-dod", "wu", "wu/e/a"], "");
@@ -280,13 +292,58 @@ fn an_epic_push_is_judged_at_level_epic_against_main() {
     assert_eq!(fails(&o), ["8·manual-review"], "{}", text(&o));
     assert!(text(&o).contains(&format!("verify-dod epic red on {}", &ci.sha("epic/e")[..10])), "{}", text(&o));
     let s = ci.summary();
-    assert!(s.starts_with("## Keel gate: epic green on checks 0–7, the sign-off is judged at the merge - a docs/infra-only range"), "{s}");
+    assert!(s.starts_with("## Keel gate: epic green on every check before 8·manual-review, which is judged at the merge - a docs/infra-only range\n"), "{s}");
     assert!(s.contains(&format!("over base `{}` (merge-base with `main`)", &ci.sha("main")[..10])), "{s}");
     for ran in ["| 6·doc&#45;note | green |", "| 7·walk | green |", "| 0·hooks | green |"] {
         assert!(s.contains(ran), "the epic layout and walk run on an exempt range (DEC-16): {ran}\n{s}");
     }
     for skipped in ["1·notes", "2·manifest", "3·review", "4·review&#45;base", "5·diff&#45;binding"] {
         assert!(s.contains(&format!("| {skipped} | not run: docs/infra-only range |")), "{skipped}\n{s}");
+    }
+}
+
+#[test]
+fn a_docs_only_wu_runs_only_what_is_never_exempt_and_an_archive_is_judged_on_its_doc_note() {
+    let ci = Ci::new(MARK_TEST);
+    let dev = &ci.dev;
+    git(dev, &["switch", "-q", "epic/e"]);
+    write(dev, "docs/work/old.html", "<p>old plan</p>");
+    commit(dev, "a T3 doc on the epic");
+    git(dev, &["switch", "-q", "-c", "wu/e/docs"]);
+    write(dev, "docs/note.html", "<p>note</p>");
+    commit(dev, "a T1 doc");
+    git(dev, &["switch", "-q", "-c", "wu/e/arch", "epic/e"]);
+    git(dev, &["rm", "-q", "docs/work/old.html"]);
+    commit(dev, "archive the T3 doc");
+    git(dev, &["push", "-q", "--no-verify", "origin", "epic/e", "wu/e/docs", "wu/e/arch"]);
+    ci.checkout("wu/e/docs");
+
+    let o = ci.push_job("gate", "wu/e/docs");
+    assert!(o.status.success(), "{}", text(&o));
+    let s = ci.summary();
+    assert!(s.starts_with("## Keel gate: wu green on every check before 8·manual-review, which is judged at the merge - a docs/infra-only range\n"), "{s}");
+    for id in ["1·notes", "2·manifest", "3·review", "4·review&#45;base", "5·diff&#45;binding", "6·doc&#45;note"] {
+        assert!(s.contains(&format!("| {id} | not run: docs/infra-only range |")), "{id}\n{s}");
+    }
+    assert!(s.contains("| 0·hooks | green |") && s.contains("| 8·manual&#45;review | waiting"), "{s}");
+
+    std::fs::remove_file(ci.tmp.join("summary.md")).unwrap();
+    let o = ci.push_job("gate", "wu/e/arch");
+    assert_eq!(o.status.code(), Some(1), "an archive without its doc note: {}", text(&o));
+    let s = ci.summary();
+    assert!(s.contains("| 1·notes | red (1) |") && s.contains("| 6·doc&#45;note | not run: no readable doc note |"), "{s}");
+    assert!(s.contains("| 2·manifest | not run: docs/infra-only range |"), "{s}");
+
+    let o = keel(dev, &["notes", "write", "doc", "--distill", "docs/work/old.html=none: superseded by the fixture"], "");
+    assert!(o.status.success(), "{}", text(&o));
+    ci.push_notes();
+    std::fs::remove_file(ci.tmp.join("summary.md")).unwrap();
+    let o = ci.push_job("gate", "wu/e/arch");
+    assert!(o.status.success(), "{}", text(&o));
+    let s = ci.summary();
+    assert!(s.contains("| 1·notes | green |") && s.contains("| 6·doc&#45;note | green |"), "the archive's doc note is read and judged: {s}");
+    for id in ["2·manifest", "3·review", "4·review&#45;base", "5·diff&#45;binding"] {
+        assert!(s.contains(&format!("| {id} | not run: docs/infra-only range |")), "{id}\n{s}");
     }
 }
 

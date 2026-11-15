@@ -1,11 +1,10 @@
 //! `keel ci gate`'s evidence page: the Markdown job summary GitHub shows on the gate's run
-//! (E-GHFLOW.W1). A view of the notes and the gate's verdict, never a second truth: the check ids
-//! are the gate's (`gate::HOOKS` ..), the notes are read as `notes` types them.
-use crate::gate::{self, HOOKS, SIGN_OFF};
-use crate::notes::{CrNote, DocNote, DodNote, Identity, Layer, MrNote, TestNote};
+//! (E-GHFLOW.W1). A view, never a second truth: each check's row renders what the gate recorded as
+//! it ran (`gate::Judged`, its failures and waivers by check id), and the notes are read through
+//! `notes::parse`, the one schema rule.
+use crate::gate::{self, Failure, Judged, Waiver, HOOKS, SIGN_OFF};
+use crate::notes::{self, CrNote, DocNote, DodNote, Identity, Layer, MrNote, TestNote};
 use crate::short;
-use serde::de::DeserializeOwned;
-use serde_json::Value;
 
 /// The notes the page lists, in its order.
 pub(crate) const NOTE_KINDS: [&str; 5] = ["test", "doc", "cr", "mr", "dod"];
@@ -18,9 +17,9 @@ pub(crate) const ROW_CAP: usize = 20;
 /// The most lines of one fix the page shows.
 const FIX_LINES: usize = 6;
 
-/// What the page shows. `checks` are the level's check ids and `ran` those the gate ran; `failures`
-/// are (check, what, fix) as recorded, never escaped yet (a fix keeps its own line breaks); `notes`
-/// are each kind's stored note as `notes::raw` read it.
+/// What the page shows: the gate's own record. `checks` are the level's check ids; `judged`,
+/// `failures` and `waived` are the gate's, never escaped yet (a fix keeps its own line breaks);
+/// `notes` are each kind's stored note as `notes::raw` read it.
 pub(crate) struct Evidence<'a> {
     pub level: &'a str,
     pub tip: &'a str,
@@ -29,13 +28,14 @@ pub(crate) struct Evidence<'a> {
     /// The range changes no code path (UC-GATE-5).
     pub exempt: bool,
     pub checks: &'a [&'a str],
-    pub ran: &'a [&'a str],
-    pub failures: &'a [(String, String, String)],
-    pub waived: &'a [String],
+    pub judged: &'a [(&'a str, Judged)],
+    pub failures: &'a [Failure],
+    pub waived: &'a [Waiver],
     pub notes: &'a [(&'a str, Result<Option<String>, String>)],
 }
 
-/// The gate on GitHub is red when any check but the sign-off failed.
+/// The gate on GitHub is red when any check but the sign-off failed (by the id each failure counts
+/// against: a seam's sign-off is the walk's).
 pub(crate) fn red_before_sign_off<'a>(failed: impl IntoIterator<Item = &'a str>) -> bool {
     failed.into_iter().any(|c| c != SIGN_OFF)
 }
@@ -62,13 +62,9 @@ pub(crate) fn md(s: &str) -> String {
     out
 }
 
-/// A stored note as its `notes` type, after the schema check the gate's check 1 makes.
-fn typed<T: DeserializeOwned>(raw: &str, kind: &str) -> Result<T, String> {
-    let v: Value = serde_json::from_str(raw).map_err(|_| "not JSON".to_string())?;
-    match v["schema"].as_str() {
-        Some(s) if s == format!("{kind}/v1") => serde_json::from_value(v).map_err(|e| format!("not valid {kind}/v1: {e}")),
-        other => Err(format!("declares schema {}, expected {kind}/v1", other.unwrap_or("none"))),
-    }
+/// A stored note as its type, or why not, worded as check 1 words it.
+fn typed<T: serde::de::DeserializeOwned>(raw: &str, kind: &str) -> Result<T, String> {
+    notes::parse(raw, kind).map_err(|e| format!("not valid {kind}/v1: {e}"))
 }
 
 fn layer(name: &str, l: &Option<Layer>) -> Option<String> {
@@ -146,31 +142,39 @@ fn note_row(kind: &str, tip: &str, stored: &Result<Option<String>, String>) -> S
     format!("| {kind} | {on_tip} | {what} |")
 }
 
-/// One check's row state.
-fn state(e: &Evidence, id: &str, failed: &[&str]) -> String {
-    let mine = failed.iter().filter(|f| gate::belongs(f, id)).count();
-    if mine > 0 && id == SIGN_OFF {
-        "waiting: no valid sign-off yet (not judged here)".into()
-    } else if mine > 0 {
-        format!("red ({mine})")
-    } else if !e.ran.contains(&id) {
-        "not run: docs/infra-only range".into()
-    } else if e.waived.iter().any(|w| gate::belongs(w.split([' ', ':']).next().unwrap_or(""), id)) {
-        "waived".into()
-    } else {
-        "green".into()
+/// One check's row, from the gate's record alone: red when it failed; "not run" or "incomplete"
+/// when the gate recorded an input missing; waived when it recorded a waiver; green only when it
+/// recorded the check as run and nothing else; "not run" when it recorded nothing.
+fn state(e: &Evidence, id: &str) -> String {
+    let red = e.failures.iter().filter(|f| f.id == id).count();
+    let mut ran = false;
+    let mut missing = None;
+    for (_, judged) in e.judged.iter().filter(|(c, _)| *c == id) {
+        match judged {
+            Judged::Ran => ran = true,
+            Judged::Missing(why) => missing = missing.or(Some(why)),
+        }
+    }
+    match (red, missing) {
+        (1.., _) if id == SIGN_OFF => "waiting: no valid sign-off yet (not judged here)".into(),
+        (1.., _) => format!("red ({red})"),
+        (0, Some(why)) if ran => format!("incomplete: {}", md(why)),
+        (0, Some(why)) => format!("not run: {}", md(why)),
+        (0, None) if !ran && e.exempt => "not run: docs/infra-only range".into(),
+        (0, None) if !ran => "not run".into(),
+        (0, None) if e.waived.iter().any(|w| w.check == id) => "waived".into(),
+        (0, None) => "green".into(),
     }
 }
 
 /// The job summary for one gate run.
 pub(crate) fn render(e: &Evidence) -> String {
-    let failed: Vec<&str> = e.failures.iter().map(|(c, _, _)| c.as_str()).collect();
-    let verdict = if red_before_sign_off(failed.iter().copied()) {
-        "red"
-    } else if failed.is_empty() {
-        "green on every check"
+    let verdict = if red_before_sign_off(e.failures.iter().map(|f| f.id)) {
+        "red".to_string()
+    } else if e.failures.is_empty() {
+        "green on every check".to_string()
     } else {
-        "green on checks 0–7, the sign-off is judged at the merge"
+        format!("green on every check before {SIGN_OFF}, which is judged at the merge")
     };
     let range = if e.exempt { " - a docs/infra-only range" } else { "" };
     let mut out =
@@ -178,16 +182,16 @@ pub(crate) fn render(e: &Evidence) -> String {
     out += "| Check | State |\n|---|---|\n";
     let rows: Vec<&str> = std::iter::once(HOOKS).chain(e.checks.iter().copied()).collect();
     for id in &rows {
-        out += &format!("| {} | {} |\n", md(id), state(e, id, &failed));
+        out += &format!("| {} | {} |\n", md(id), state(e, id));
     }
     let mut unknown: Vec<&str> = vec![];
-    for f in failed.iter().copied().filter(|f| !rows.iter().any(|id| gate::belongs(f, id))) {
-        if !unknown.contains(&f) {
-            unknown.push(f);
+    for f in e.failures.iter().filter(|f| !rows.contains(&f.id)) {
+        if !unknown.contains(&f.id) {
+            unknown.push(f.id);
         }
     }
-    for f in unknown {
-        out += &format!("| {} | red ({}) |\n", md(f), failed.iter().filter(|x| **x == f).count());
+    for id in unknown {
+        out += &format!("| {} | {} |\n", md(id), state(e, id));
     }
     out += "\n| Note | Names this tip | Fields |\n|---|---|---|\n";
     for (kind, stored) in e.notes {
@@ -197,7 +201,7 @@ pub(crate) fn render(e: &Evidence) -> String {
     if !e.waived.is_empty() {
         out += "\n**Waived**\n\n";
         for w in e.waived.iter().take(ROW_CAP) {
-            out += &format!("- {}\n", md(w));
+            out += &format!("- {}\n", md(&w.text));
         }
         if e.waived.len() > ROW_CAP {
             out += &format!("- and {} more waived lines - the log lists them all\n", e.waived.len() - ROW_CAP);
@@ -205,12 +209,12 @@ pub(crate) fn render(e: &Evidence) -> String {
     }
     if !e.failures.is_empty() {
         out += "\n| Failed check | What | Fix |\n|---|---|---|\n";
-        for (check, what, fix) in e.failures.iter().take(ROW_CAP) {
-            let mut lines: Vec<String> = fix.split('\n').take(FIX_LINES).map(|l| md(l.trim())).collect();
-            if fix.split('\n').nth(FIX_LINES).is_some() {
+        for f in e.failures.iter().take(ROW_CAP) {
+            let mut lines: Vec<String> = f.fix.split('\n').take(FIX_LINES).map(|l| md(l.trim())).collect();
+            if f.fix.split('\n').nth(FIX_LINES).is_some() {
                 lines.push("…".into());
             }
-            out += &format!("| {} | {} | {} |\n", md(check), md(what), lines.join("<br>"));
+            out += &format!("| {} | {} | {} |\n", md(&f.check), md(&f.what), lines.join("<br>"));
         }
         if e.failures.len() > ROW_CAP {
             out += &format!("| … | and {} more failures - the log lists them all | |\n", e.failures.len() - ROW_CAP);
@@ -222,7 +226,7 @@ pub(crate) fn render(e: &Evidence) -> String {
 #[cfg(test)]
 mod tests {
     use super::{md, red_before_sign_off, render, Evidence, NOTE_KINDS};
-    use crate::gate::{DIFF_BINDING, DOC_NOTE, HOOKS, MANIFEST, NOTES, REVIEW, REVIEW_BASE, SIGN_OFF, WALK};
+    use crate::gate::{Failure, Judged, Waiver, DIFF_BINDING, DOC_NOTE, HOOKS, MANIFEST, NOTES, REVIEW, REVIEW_BASE, SIGN_OFF, WALK};
 
     const TIP: &str = "1111111111222222222233333333334444444444";
     const BASE: &str = "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd";
@@ -238,17 +242,25 @@ mod tests {
         NOTE_KINDS.iter().map(|k| (*k, Ok(if *k == "test" { test.clone() } else { None }))).collect()
     }
 
-    fn failure(check: &str, what: &str, fix: &str) -> (String, String, String) {
-        (check.into(), what.into(), fix.into())
+    fn failure(id: &'static str, what: &str, fix: &str) -> Failure {
+        Failure { id, check: id.into(), what: what.into(), fix: fix.into() }
     }
 
-    fn all_ran() -> Vec<&'static str> {
-        std::iter::once(HOOKS).chain(WU).collect()
+    fn waiver(check: &'static str, text: &str) -> Waiver {
+        Waiver { check, text: text.into() }
     }
 
-    fn page(failures: &[(String, String, String)], waived: &[String], exempt: bool, notes: &[(&str, Result<Option<String>, String>)]) -> String {
-        let ran = if exempt { vec![HOOKS, SIGN_OFF] } else { all_ran() };
-        render(&Evidence { level: "wu", tip: TIP, base: BASE, target: "epic/e", exempt, checks: &WU, ran: &ran, failures, waived, notes })
+    /// The record of a gate that ran every check of `checks` and guard D.
+    fn ran_all(checks: &[&'static str]) -> Vec<(&'static str, Judged)> {
+        std::iter::once(HOOKS).chain(checks.iter().copied()).map(|id| (id, Judged::Ran)).collect()
+    }
+
+    fn page_with(judged: &[(&str, Judged)], failures: &[Failure], waived: &[Waiver], exempt: bool, notes: &[(&str, Result<Option<String>, String>)]) -> String {
+        render(&Evidence { level: "wu", tip: TIP, base: BASE, target: "epic/e", exempt, checks: &WU, judged, failures, waived, notes })
+    }
+
+    fn page(failures: &[Failure], waived: &[Waiver], notes: &[(&str, Result<Option<String>, String>)]) -> String {
+        page_with(&ran_all(&WU), failures, waived, false, notes)
     }
 
     fn row<'a>(page: &'a str, first: &str) -> &'a str {
@@ -286,9 +298,10 @@ mod tests {
         .to_string();
         n.extend(["doc", "cr", "mr", "dod"].map(|k| (k, Ok(Some(note.clone())))));
         let fix = format!("{huge}\n").repeat(10);
-        let failures: Vec<_> = (0..60).map(|i| failure(&format!("1·notes{i}{huge}"), &huge, &fix)).collect();
-        let waived: Vec<String> = (0..60).map(|_| huge.clone()).collect();
-        let p = page(&failures, &waived, false, &n);
+        let failures: Vec<Failure> = (0..60).map(|_| Failure { id: WALK, check: format!("7·walk·{huge}"), what: huge.clone(), fix: fix.clone() }).collect();
+        let waived: Vec<Waiver> = (0..60).map(|_| waiver(REVIEW, &huge)).collect();
+        let judged: Vec<(&str, Judged)> = WU.iter().map(|id| (*id, Judged::Missing(huge.clone()))).collect();
+        let p = page_with(&judged, &failures, &waived, false, &n);
         assert!(p.len() < 1 << 20, "{} bytes", p.len());
         assert!(p.contains("and 40 more failures - the log lists them all"), "only the first rows are shown");
         assert!(p.contains("and 40 more waived lines - the log lists them all"));
@@ -307,15 +320,15 @@ mod tests {
         assert!(!red_before_sign_off([]));
         assert!(!red_before_sign_off([SIGN_OFF]));
         assert!(red_before_sign_off([SIGN_OFF, NOTES]));
-        assert!(red_before_sign_off(["7·walk·8·manual-review"]), "a seam's sign-off is part of the walk");
+        assert!(red_before_sign_off([WALK]), "a seam's sign-off counts against the walk");
         assert!(red_before_sign_off([HOOKS]));
     }
 
     #[test]
-    fn a_wu_waiting_for_its_sign_off_is_green_on_0_to_7_and_lists_every_note() {
+    fn a_wu_waiting_for_its_sign_off_is_green_before_it_and_lists_every_note() {
         let test = format!(r#"{{"schema":"test/v1",{},"integration":{{"count":3,"covers":"a works","files":[],"languages":{{}}}}}}"#, id(TIP));
-        let p = page(&[failure(SIGN_OFF, "tip has no mr/v1 note", "keel mr confirm")], &[], false, &notes(Some(test)));
-        assert!(p.starts_with("## Keel gate: wu green on checks 0–7, the sign-off is judged at the merge\n"), "{p}");
+        let p = page(&[failure(SIGN_OFF, "tip has no mr/v1 note", "keel mr confirm")], &[], &notes(Some(test)));
+        assert!(p.starts_with("## Keel gate: wu green on every check before 8·manual-review, which is judged at the merge\n"), "{p}");
         assert!(p.contains("Tip `1111111111` over base `aaaaaaaaaa`"), "{p}");
         assert_eq!(row(&p, "0·hooks"), "| 0·hooks | green |", "the middle dot is not ASCII: kept as is");
         assert_eq!(row(&p, "5·diff&#45;binding"), "| 5·diff&#45;binding | green |");
@@ -328,11 +341,12 @@ mod tests {
     }
 
     #[test]
-    fn a_red_page_names_each_failure_escaped_and_counts_it_on_its_check() {
+    fn a_red_page_names_each_failure_escaped_and_counts_it_against_its_check() {
         let f = [
             failure(NOTES, "no cr/v1 note on 1111111111", "run the review\n      then | write it"),
-            failure("7·walk·3·review", "[wu abc] verdict is FAIL", "fix it"),
+            Failure { id: WALK, check: "7·walk·3·review".into(), what: "[wu abc] verdict is FAIL".into(), fix: "fix it".into() },
         ];
+        let judged = ran_all(&EPIC);
         let p = render(&Evidence {
             level: "epic",
             tip: TIP,
@@ -340,7 +354,7 @@ mod tests {
             target: "main",
             exempt: false,
             checks: &EPIC,
-            ran: &std::iter::once(HOOKS).chain(EPIC).collect::<Vec<_>>(),
+            judged: &judged,
             failures: &f,
             waived: &[],
             notes: &notes(None),
@@ -356,31 +370,50 @@ mod tests {
 
     #[test]
     fn an_unknown_failing_check_shows_as_a_red_row() {
-        let p = page(&[failure("9·new-check", "x", "y"), failure("9·new-check", "z", "y")], &[], false, &notes(None));
+        let p = page(&[failure("9·new-check", "x", "y"), failure("9·new-check", "z", "y")], &[], &notes(None));
         assert!(p.starts_with("## Keel gate: wu red\n"), "{p}");
         assert_eq!(row(&p, "9·new&#45;check"), "| 9·new&#45;check | red (2) |", "{p}");
         assert_eq!(p.matches("| 9·new&#45;check | red").count(), 1, "one row per unknown check");
     }
 
     #[test]
-    fn checks_a_docs_only_range_skipped_say_not_run_and_the_rest_say_what_they_found() {
-        let p = page(&[failure(SIGN_OFF, "no sign-off", "sign")], &[], true, &notes(None));
-        assert!(p.starts_with("## Keel gate: wu green on checks 0–7, the sign-off is judged at the merge - a docs/infra-only range\n"), "{p}");
+    fn a_row_is_green_only_when_the_gate_recorded_its_check_as_run() {
+        let judged = vec![
+            (HOOKS, Judged::Ran),
+            (NOTES, Judged::Ran),
+            (MANIFEST, Judged::Ran),
+            (MANIFEST, Judged::Missing("no readable test note".into())),
+            (REVIEW, Judged::Missing("no readable cr note".into())),
+            (DOC_NOTE, Judged::Ran),
+        ];
+        let p = page_with(&judged, &[failure(NOTES, "no test/v1 note", "write it")], &[], false, &notes(None));
+        assert_eq!(row(&p, "2·manifest"), "| 2·manifest | incomplete: no readable test note |");
+        assert_eq!(row(&p, "3·review"), "| 3·review | not run: no readable cr note |");
+        assert_eq!(row(&p, "4·review&#45;base"), "| 4·review&#45;base | not run |", "no record is never green");
+        assert_eq!(row(&p, "6·doc&#45;note"), "| 6·doc&#45;note | green |");
+        assert_eq!(row(&p, "1·notes"), "| 1·notes | red (1) |");
+    }
+
+    #[test]
+    fn checks_a_docs_only_range_did_not_record_say_not_run_and_the_rest_say_what_they_found() {
+        let judged = vec![(HOOKS, Judged::Ran), (SIGN_OFF, Judged::Ran)];
+        let p = page_with(&judged, &[failure(SIGN_OFF, "no sign-off", "sign")], &[], true, &notes(None));
+        assert!(p.starts_with("## Keel gate: wu green on every check before 8·manual-review, which is judged at the merge - a docs/infra-only range\n"), "{p}");
         assert_eq!(row(&p, "1·notes"), "| 1·notes | not run: docs/infra-only range |");
         assert_eq!(row(&p, "6·doc&#45;note"), "| 6·doc&#45;note | not run: docs/infra-only range |");
-        assert_eq!(row(&p, "0·hooks"), "| 0·hooks | green |", "the hooks guard is never exempt");
-        let p = page(&[], &[], true, &notes(None));
+        assert_eq!(row(&p, "0·hooks"), "| 0·hooks | green |");
+        let p = page_with(&judged, &[], &[], true, &notes(None));
         assert!(p.starts_with("## Keel gate: wu green on every check - a docs/infra-only range\n"), "a judged sign-off is not 'judged at the merge': {p}");
         assert_eq!(row(&p, "8·manual&#45;review"), "| 8·manual&#45;review | green |");
     }
 
     #[test]
-    fn a_waived_review_shows_as_waived() {
-        let p = page(&[], &["3·review: owner ruling".into(), "7·walk seam abc waived: safe".into()], false, &notes(None));
+    fn a_waiver_marks_the_check_it_names_whatever_its_line_says() {
+        let p = page(&[], &[waiver(REVIEW, "the owner waived it, reworded"), waiver(WALK, "seam abc: safe")], &notes(None));
         assert!(p.starts_with("## Keel gate: wu green on every check\n"), "{p}");
         assert_eq!(row(&p, "3·review"), "| 3·review | waived |");
         assert_eq!(row(&p, "4·review&#45;base"), "| 4·review&#45;base | green |", "3·review's waiver is not 4's");
-        assert!(p.contains("**Waived**\n\n- 3·review&#58; owner ruling\n"), "{p}");
+        assert!(p.contains("**Waived**\n\n- the owner waived it&#44; reworded\n"), "{p}");
         assert!(!p.contains("Failed check"));
     }
 
@@ -388,30 +421,30 @@ mod tests {
     fn a_cr_note_shows_a_waiver_only_when_waived_and_says_not_reviewed_when_no_review_ran() {
         let mut n = notes(None);
         n[2] = ("cr", Ok(Some(cr_note("WAIVED", r#","waiver":"owner ruling","unreviewed":true"#))));
-        let p = page(&[], &[], false, &n);
+        let p = page(&[], &[], &n);
         let cr = row(&p, "cr");
         assert!(cr.contains("not reviewed") && cr.contains("waiver&#58; owner ruling"), "{cr}");
         assert!(!cr.contains("blockers"), "an unreviewed waiver's counts mean nothing: {cr}");
         n[2] = ("cr", Ok(Some(cr_note("PASS", r#","waiver":"stray","round":2,"scope":"full""#))));
-        let p = page(&[], &[], false, &n);
+        let p = page(&[], &[], &n);
         assert_eq!(row(&p, "cr"), "| cr | yes | cr&#47;v1 · verdict PASS&#44; round 2&#44; scope full&#44; blockers 0&#44; importants 0 |");
     }
 
     #[test]
-    fn a_note_that_is_missing_unreadable_invalid_or_names_another_tip_says_so() {
+    fn a_note_that_is_missing_unreadable_invalid_or_names_another_tip_says_so_as_check_1_does() {
         let mut n = notes(None);
         n[1] = ("doc", Err("bad | blob".into()));
         n[2] = ("cr", Ok(Some("{oops".into())));
         n[3] = ("mr", Ok(Some(format!(r#"{{"schema":"mr/v1",{},"signer":"[x](y)","tier":"username","level":"wu","change_hash":"h"}}"#, id("9999999999999")))));
         n[4] = ("dod", Ok(Some(r#"{"schema":"dod/v1","level":"wu","checks":["a","b"]}"#.into())));
-        let p = page(&[], &[], false, &n);
+        let p = page(&[], &[], &n);
         assert_eq!(row(&p, "test"), "| test | - | none |");
         assert_eq!(row(&p, "doc"), "| doc | - | unreadable: bad &#124; blob |");
-        assert_eq!(row(&p, "cr"), "| cr | - | not JSON |");
+        assert!(row(&p, "cr").starts_with("| cr | - | not valid cr&#47;v1&#58; key must be a string"), "{p}");
         assert_eq!(row(&p, "mr"), "| mr | no: names 9999999999 | mr&#47;v1 · signer &#91;x&#93;&#40;y&#41; &#40;tier username&#41;&#44; level wu |");
         assert!(row(&p, "dod").starts_with("| dod | - | not valid dod&#47;v1&#58; missing field "), "{p}");
         n[4] = ("dod", Ok(Some(r#"{"schema":"dod/v2"}"#.into())));
-        assert_eq!(row(&page(&[], &[], false, &n), "dod"), "| dod | - | declares schema dod&#47;v2&#44; expected dod&#47;v1 |");
+        assert_eq!(row(&page(&[], &[], &n), "dod"), "| dod | - | not valid dod&#47;v1&#58; declares schema dod&#47;v2&#44; expected dod&#47;v1 |");
     }
 
     #[test]
@@ -423,7 +456,7 @@ mod tests {
         let mr = format!(r#"{{"schema":"mr/v1",{},"signer":"vu","tier":"username","level":"wu","report":"docs/r.html","change_hash":"h"}}"#, id(TIP));
         let dod = format!(r#"{{"schema":"dod/v1",{},"level":"wu","checks":["notes","manifest"],"diff_hash":"h","review":"WAIVED"}}"#, id(TIP));
         let n = vec![("test", Ok(Some(test))), ("doc", Ok(Some(doc))), ("mr", Ok(Some(mr))), ("dod", Ok(Some(dod)))];
-        let p = page(&[], &[], false, &n);
+        let p = page(&[], &[], &n);
         assert!(row(&p, "test").ends_with("unit 2 tests &#40;c&#41;&#59; e2e waived&#58; no harness |"), "{p}");
         assert!(row(&p, "doc").contains("12 docs&#58; docs&#47;0&#46;html &#40;T3&#41;"), "{p}");
         assert!(row(&p, "doc").ends_with("&#44; and 2 more |"), "{p}");

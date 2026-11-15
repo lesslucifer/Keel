@@ -24,12 +24,6 @@ pub(crate) fn receipt_name(id: &'static str) -> &'static str {
     id.split_once('·').map_or(id, |(_, name)| name)
 }
 
-/// Whether a failure printed as `failed` is the check `id`'s: the id itself, or a walk seam's failure
-/// the walk nests under its own id (`7·walk·3·review` is check 7's, not check 3's).
-pub(crate) fn belongs(failed: &str, id: &str) -> bool {
-    failed == id || failed.strip_prefix(id).is_some_and(|rest| rest.starts_with('·'))
-}
-
 #[derive(Clone, Copy, PartialEq)]
 enum Level {
     Commit,
@@ -63,10 +57,28 @@ impl Level {
     }
 }
 
-struct Failure {
-    check: String,
-    what: String,
-    fix: String,
+/// One failed check as the gate prints it. `id` is the check it counts against - its own, or the
+/// walk's for a seam's failure, whose printed `check` nests the seam's (`7·walk·3·review`).
+pub(crate) struct Failure {
+    pub id: &'static str,
+    pub check: String,
+    pub what: String,
+    pub fix: String,
+}
+
+/// One waiver the gate accepted: the check it waives and the line it prints.
+pub(crate) struct Waiver {
+    pub check: &'static str,
+    pub text: String,
+}
+
+/// What a check did on this tip, recorded by the gate as the check ran: it ran (`Ran`), or part of
+/// it could not run because its input is missing (`Missing`, with why). A check with no record did
+/// not run. The CI page renders this record and nothing it infers.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Judged {
+    Ran,
+    Missing(String),
 }
 
 struct Report {
@@ -77,10 +89,10 @@ struct Report {
     exempt: bool,
     /// The range changes no code path (UC-GATE-5), as `open` found it; `exempt` also needs no failure.
     range_exempt: bool,
-    /// An exempt range that archives a T3 doc: its doc note is still read and judged.
-    archive: bool,
     failures: Vec<Failure>,
-    waived: Vec<String>,
+    waived: Vec<Waiver>,
+    /// Each check's record, in the order the gate made it (`Judged`).
+    judged: Vec<(&'static str, Judged)>,
     /// The tip's own review was waived: its reason, for the dod receipt.
     review_waiver: Option<String>,
     /// The tip's cr note as checks 3-5 read it, for check 8's waiver binding (read once).
@@ -90,21 +102,20 @@ struct Report {
 }
 
 impl Report {
-    /// The checks this gate ran, in order (`guard`: guard D too). A docs/infra-only range runs only
-    /// what is never exempt: an archive's doc note, the epic tip's layout and walk, the sign-off.
-    fn ran(&self, guard: bool) -> Vec<&'static str> {
-        let exempt_runs = |id: &str| match id {
-            NOTES => self.archive,
-            DOC_NOTE => self.archive || self.level == Level::Epic,
-            WALK | SIGN_OFF => true,
-            _ => false,
-        };
-        let level = self.level.checks().iter().copied().filter(|id| !self.range_exempt || exempt_runs(id));
-        guard.then_some(HOOKS).into_iter().chain(level).collect()
+    fn fail(&mut self, id: &'static str, what: String, fix: impl Into<String>) {
+        self.failures.push(Failure { id, check: id.into(), what, fix: fix.into() });
     }
 
-    fn fail(&mut self, check: &str, what: String, fix: impl Into<String>) {
-        self.failures.push(Failure { check: check.into(), what, fix: fix.into() });
+    fn ran(&mut self, id: &'static str) {
+        self.judged.push((id, Judged::Ran));
+    }
+
+    fn missing(&mut self, id: &'static str, why: &str) {
+        self.judged.push((id, Judged::Missing(why.into())));
+    }
+
+    fn waive(&mut self, check: &'static str, text: String) {
+        self.waived.push(Waiver { check, text });
     }
 }
 
@@ -124,9 +135,9 @@ fn open(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) ->
         base,
         exempt,
         range_exempt: exempt,
-        archive: false,
         failures: vec![],
         waived: vec![],
+        judged: vec![],
         review_waiver: None,
         tip_cr: None,
         seen: vec![],
@@ -137,6 +148,7 @@ fn open(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) ->
 /// Check 1 for one note: present (when required), JSON, declaring `<kind>/v1`.
 fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: bool) -> Option<T> {
     let schema = format!("{kind}/v1");
+    r.ran(NOTES);
     let seen = r.seen.iter().find(|(k, _)| *k == kind).map(|(_, raw)| raw.clone());
     let stored = match seen.unwrap_or_else(|| notes::raw(repo, kind, &r.tip)) {
         Ok(stored) => stored,
@@ -162,11 +174,7 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
         }
         return None;
     };
-    let parsed = serde_json::from_str::<serde_json::Value>(&raw).map_err(|e| e.to_string()).and_then(|v| match v["schema"].as_str() {
-        Some(s) if s == schema => serde_json::from_value::<T>(v).map_err(|e| e.to_string()),
-        other => Err(format!("declares schema {}, expected {schema}", other.unwrap_or("none"))),
-    });
-    match parsed {
+    match notes::parse::<T>(&raw, kind) {
         Ok(n) => Some(n),
         Err(e) => {
             r.fail(NOTES, format!("{kind} note on {} is not valid {schema}: {e}", short(&r.tip)), format!("rewrite it with keel notes write {kind}"));
@@ -185,6 +193,10 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
     let doc = if full { read::<DocNote>(repo, r, "doc", r.level != Level::Commit || !docs.is_empty()) } else { None };
 
     // 2·manifest: the level's layer, and every note bound to this very commit.
+    r.ran(MANIFEST);
+    if test.is_none() {
+        r.missing(MANIFEST, "no readable test note");
+    }
     if let Some(t) = &test {
         let (layer, have) = match r.level {
             Level::Commit => ("unit", &t.unit),
@@ -209,11 +221,19 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
     }
 
     // 3-5: the review verdict, its base, its binding to the code diff.
+    if review {
+        for id in [REVIEW, REVIEW_BASE, DIFF_BINDING] {
+            match cr {
+                Some(_) => r.ran(id),
+                None => r.missing(id, "no readable cr note"),
+            }
+        }
+    }
     if let Some(cr) = &cr {
         match review_verdict(cr) {
             Ok(None) => {}
             Ok(Some(why)) => {
-                r.waived.push(format!("{REVIEW}: {why}"));
+                r.waive(REVIEW, format!("{REVIEW}: {why}"));
                 r.review_waiver = Some(why);
             }
             Err((what, fix)) => r.fail(REVIEW, what, fix),
@@ -234,8 +254,10 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
         }
     }
 
-    if let Some(doc) = &doc {
-        doc_note(repo, cfg, r, &docs, doc);
+    match &doc {
+        Some(doc) => doc_note(repo, cfg, r, &docs, doc),
+        None if full => r.missing(DOC_NOTE, "no readable doc note"),
+        None => {}
     }
     r.tip_cr = cr;
     Ok(())
@@ -255,6 +277,7 @@ fn review_verdict(cr: &CrNote) -> Result<Option<String>, (String, String)> {
 
 /// 6·doc-note: every doc listed with its config tier, nothing phantom, archived T3 with lineage.
 fn doc_note(repo: &Path, cfg: &Config, r: &mut Report, docs: &[String], doc: &DocNote) {
+    r.ran(DOC_NOTE);
     for (what, fix) in notes::doc_problems(repo, cfg, &r.tip, docs, &doc.changes) {
         r.fail(DOC_NOTE, what, fix);
     }
@@ -262,6 +285,7 @@ fn doc_note(repo: &Path, cfg: &Config, r: &mut Report, docs: &[String], doc: &Do
 
 /// 6·doc-note at an epic tip (UC-DOC-3): nothing tracked under docs.root outside T0-T2.
 fn tracked_layout(repo: &Path, cfg: &Config, r: &mut Report) -> Result<(), String> {
+    r.ran(DOC_NOTE);
     let root = cfg.docs.root.trim_end_matches('/');
     for p in notes::zpaths(&git(repo, &["ls-tree", "-r", "-z", "--name-only", &r.tip, "--", root], &[])?) {
         match notes::tier_of(cfg, &p) {
@@ -300,9 +324,9 @@ fn judge(repo: &Path, cfg: &Config, mut r: Report, names: &[String], target: &st
         // An archive commit is docs-only by nature; exempting it would leave distillation unchecked.
         let docs = notes::doc_paths(repo, cfg, &r.base, &r.tip, names)?;
         if notes::archives_t3(repo, cfg, &r.tip, &docs) {
-            r.archive = true;
-            if let Some(doc) = read::<DocNote>(repo, &mut r, "doc", true) {
-                doc_note(repo, cfg, &mut r, &docs, &doc);
+            match read::<DocNote>(repo, &mut r, "doc", true) {
+                Some(doc) => doc_note(repo, cfg, &mut r, &docs, &doc),
+                None => r.missing(DOC_NOTE, "no readable doc note"),
             }
         }
     }
@@ -317,6 +341,7 @@ fn judge(repo: &Path, cfg: &Config, mut r: Report, names: &[String], target: &st
 
 /// 7·walk: every first-parent seam since the base must pass its own gate.
 fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), String> {
+    r.ran(WALK);
     let waivers = notes::cr_note(repo, &r.tip).map(|n| n.walk_waivers).unwrap_or_default();
     let lines = git(repo, &["rev-list", "--first-parent", "--parents", &format!("{}..{}", r.base, r.tip)], &[])?;
     for line in lines.lines() {
@@ -327,7 +352,9 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
             [m, main, wu] => {
                 let seam = verify(repo, cfg, Level::Wu, wu, main)?;
                 if seam.failures.is_empty() {
-                    r.waived.extend(seam.waived.iter().map(|w| format!("{WALK} [wu {}] {w}", short(m))));
+                    for w in &seam.waived {
+                        r.waive(WALK, format!("{WALK} [wu {}] {}", short(m), w.text));
+                    }
                 }
                 (*m, seam.failures, "wu")
             }
@@ -338,7 +365,7 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
             }
             [m, ..] if p.len() > 3 => {
                 let what = format!("{} is an octopus merge - parents beyond the second were never gated", short(m));
-                (*m, vec![Failure { check: String::new(), what, fix: "merge one WU per --no-ff merge commit".into() }], "merge")
+                (*m, vec![Failure { id: WALK, check: String::new(), what, fix: "merge one WU per --no-ff merge commit".into() }], "merge")
             }
             _ => continue,
         };
@@ -347,7 +374,7 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
         }
         let why = waivers.iter().find(|w| !w.seam.is_empty() && !w.why.trim().is_empty() && (seam.starts_with(&w.seam) || w.seam.starts_with(seam)));
         if let Some(w) = why {
-            r.waived.push(format!("{WALK} seam {} waived: {}", short(seam), w.why.trim()));
+            r.waive(WALK, format!("{WALK} seam {} waived: {}", short(seam), w.why.trim()));
             continue;
         }
         let hint = format!(
@@ -357,7 +384,7 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
         );
         for f in failures {
             let check = if f.check.is_empty() { WALK.to_string() } else { format!("{WALK}·{}", f.check) };
-            r.fail(&check, format!("[{level} {}] {}", short(seam), f.what), format!("{}{hint}", f.fix));
+            r.failures.push(Failure { id: WALK, check, what: format!("[{level} {}] {}", short(seam), f.what), fix: format!("{}{hint}", f.fix) });
         }
     }
     Ok(())
@@ -376,7 +403,7 @@ pub(crate) fn inert(s: &str, lines: bool) -> String {
 
 fn print(r: &Report, what: &str) {
     for w in &r.waived {
-        println!("WAIVED {}", inert(w, false));
+        println!("WAIVED {}", inert(&w.text, false));
     }
     if r.exempt {
         println!("{what} {} exempt on {} - docs/infra-only, test/cr/doc evidence not required", r.level.name(), short(&r.tip));
@@ -392,8 +419,9 @@ fn print(r: &Report, what: &str) {
 
 /// Guard D (UC-GATE-6), first in the report: a gate command run where git is not running Keel's hooks.
 fn guard_hooks(repo: &Path, r: &mut Report) {
+    r.ran(HOOKS);
     if let Some(what) = hooks_problem(repo) {
-        r.failures.insert(0, Failure { check: HOOKS.into(), what, fix: HOOKS_FIX.into() });
+        r.failures.insert(0, Failure { id: HOOKS, check: HOOKS.into(), what, fix: HOOKS_FIX.into() });
         r.exempt = false;
     }
 }
@@ -411,6 +439,7 @@ fn gated(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, g
     }
     let mut attested = None;
     if level != Level::Commit {
+        r.ran(SIGN_OFF);
         match mr::manual_review(repo, cfg, level.name(), &r.tip, &r.base, target, r.tip_cr.as_ref()) {
             Ok(a) => attested = a,
             Err((what, fix)) => r.fail(SIGN_OFF, what, fix),
@@ -457,9 +486,8 @@ pub fn ci_gate(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> 
     let level = level_of(lvl).map_err(|_| CI_USAGE.to_string())?;
     let target = target_of(repo, cfg, level, tip, rest)?;
     let (r, _) = gated(repo, cfg, level, tip, &target, true)?;
-    let red = ci::red_before_sign_off(r.failures.iter().map(|f| f.check.as_str()));
+    let red = ci::red_before_sign_off(r.failures.iter().map(|f| f.id));
     if let Some(path) = summary {
-        let failures: Vec<(String, String, String)> = r.failures.iter().map(|f| (f.check.clone(), f.what.clone(), f.fix.clone())).collect();
         let notes: Vec<(&str, Result<Option<String>, String>)> = ci::NOTE_KINDS.iter().map(|k| (*k, notes::raw(repo, k, &r.tip))).collect();
         let page = ci::render(&ci::Evidence {
             level: level.name(),
@@ -468,8 +496,8 @@ pub fn ci_gate(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> 
             target: &target,
             exempt: r.range_exempt,
             checks: level.checks(),
-            ran: &r.ran(true),
-            failures: &failures,
+            judged: &r.judged,
+            failures: &r.failures,
             waived: &r.waived,
             notes: &notes,
         });
@@ -483,8 +511,10 @@ pub fn ci_gate(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> 
     }
     if red {
         eprintln!("ci gate red on {} - a check before the sign-off failed", short(&r.tip));
+    } else if r.failures.is_empty() {
+        println!("ci gate green on {} - every check passes", short(&r.tip));
     } else {
-        println!("ci gate green on {} - checks 0-7 pass; {SIGN_OFF} is judged at the merge", short(&r.tip));
+        println!("ci gate green on {} - every check before {SIGN_OFF} passes; {SIGN_OFF} is judged at the merge", short(&r.tip));
     }
     Ok(red as i32)
 }
@@ -794,12 +824,12 @@ pub fn preflight_cmd(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, St
 mod tests {
     use super::inert;
     use super::review_verdict as review;
-    use super::{belongs, receipt_name, summary_flag, CI_USAGE, HOOKS, SIGN_OFF, WALK};
     use super::{judged_as, note_range, Level, NoteRange};
+    use super::{receipt_name, summary_flag, CI_USAGE, HOOKS, SIGN_OFF};
     use crate::notes::CrNote;
 
     #[test]
-    fn check_ids_name_their_receipt_and_a_walk_failure_is_check_7s() {
+    fn check_ids_name_their_receipt_in_order() {
         assert_eq!(receipt_name(HOOKS), "hooks");
         assert_eq!(receipt_name(SIGN_OFF), "manual-review");
         assert_eq!(Level::Epic.receipt(), ["notes", "manifest", "review", "review-base", "diff-binding", "doc-note", "walk", "manual-review"]);
@@ -808,10 +838,6 @@ mod tests {
         for (i, id) in Level::Epic.checks().iter().enumerate() {
             assert!(id.starts_with(&format!("{}·", i + 1)), "ids are numbered in order: {id}");
         }
-        assert!(belongs("7·walk·3·review", WALK));
-        assert!(belongs(WALK, WALK));
-        assert!(!belongs("7·walk·3·review", "3·review"));
-        assert!(!belongs("4·review-base", "4·review"), "a prefix of another id is not that check");
     }
 
     #[test]
