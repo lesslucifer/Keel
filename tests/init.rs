@@ -485,7 +485,8 @@ fn router_skill_carries_the_dsh_transport_and_the_template_its_slots() {
 #[test]
 fn router_ships_the_moment_of_action_checklists() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let src = std::fs::read_to_string(root.join("skills/keel-router/references/checklists.md")).expect("skills/keel-router/references/checklists.md is missing");
+    let src =
+        std::fs::read_to_string(root.join("skills/keel-router/references/checklists.md")).expect("skills/keel-router/references/checklists.md is missing");
     let mirror = std::fs::read_to_string(root.join(".claude/skills/keel-router/references/checklists.md")).unwrap();
     assert_eq!(src, mirror, "skills/keel-router and .claude/skills/keel-router differ for checklists.md");
 
@@ -512,11 +513,9 @@ fn router_ships_the_moment_of_action_checklists() {
     }
     assert!(section("## Workers").contains("The report channel (DSH)"), "the no-heartbeat ruling does not name the DSH report channel that wakes the router");
 
-    for (heading, trigger, rows) in [
-        ("## START", "before the first tool call", 7),
-        ("## WAKE", "before any tool call", 5),
-        ("## DISPATCH", "before every spawn or send", 4),
-    ] {
+    for (heading, trigger, rows) in
+        [("## START", "before the first tool call", 7), ("## WAKE", "before any tool call", 5), ("## DISPATCH", "before every spawn or send", 4)]
+    {
         let at = src.find(heading).unwrap_or_else(|| panic!("checklists.md has no {heading} list"));
         let body = &src[at..at + src[at..].find("\n## ").unwrap_or(src.len() - at)];
         assert!(body.contains(trigger), "{heading} never names its trigger ({trigger:?})");
@@ -553,11 +552,17 @@ fn router_ships_the_moment_of_action_checklists() {
     for (f, body) in [("checklists.md", &src), ("worker-ops.md", &ops)] {
         assert!(!body.contains("2026-11-__"), "{f} ships a placeholder date for a ruling nobody made");
     }
-    assert!(!ops.contains("Wake on DSH") && !ops.contains("may not be signed"), "worker-ops still carries W1's interim fleet-wake exception beside the channel");
+    assert!(
+        !ops.contains("Wake on DSH") && !ops.contains("may not be signed"),
+        "worker-ops still carries W1's interim fleet-wake exception beside the channel"
+    );
     assert!(section("## Session start").contains("rulings.md") && section("## Decisions").contains("rulings.md"), "SKILL.md does not place the rulings log");
     assert!(!skill.contains("2026-11-__"), "SKILL.md dates a ruling the owner has not made");
     assert!(skill.contains("never a file for you to create or append to"), "SKILL.md gives the rulings log back to the router");
-    assert!(skill.contains("no loop, timer or reminder") && !skill.contains("no worker's finish can wake you"), "SKILL.md allows a reminder, or keeps W1's interim no-wake claim beside the channel");
+    assert!(
+        skill.contains("no loop, timer or reminder") && !skill.contains("no worker's finish can wake you"),
+        "SKILL.md allows a reminder, or keeps W1's interim no-wake claim beside the channel"
+    );
 }
 
 fn hook_cmds(v: &serde_json::Value, ev: &str) -> Vec<String> {

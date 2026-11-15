@@ -317,11 +317,7 @@ fn watch_skips_a_symlink_and_a_forged_header_without_following_either() {
     let b = Inbox::new();
     b.init();
     let secret = b.d.path().join("secret.txt");
-    std::fs::write(
-        &secret,
-        "id: 0000000001-evil\nfrom: mallory\nkind: NOTE\nwhen: now\n---\nSECRET-VIA-SYMLINK\n",
-    )
-    .unwrap();
+    std::fs::write(&secret, "id: 0000000001-evil\nfrom: mallory\nkind: NOTE\nwhen: now\n---\nSECRET-VIA-SYMLINK\n").unwrap();
     std::os::unix::fs::symlink(&secret, b.dir().join("0000000001-evil.msg")).unwrap();
     std::fs::write(b.dir().join("0000000002-forged.msg"), "forged\n").unwrap();
     let id = b.post("hank", "NOTE", "real message after junk");
@@ -336,11 +332,7 @@ fn watch_skips_a_symlink_and_a_forged_header_without_following_either() {
 fn watch_skips_a_message_whose_header_id_does_not_match_its_file_name() {
     let b = Inbox::new();
     b.init();
-    std::fs::write(
-        b.dir().join("1700000000-mismatch.msg"),
-        "id: 1700000001-other\nfrom: x\nkind: NOTE\nwhen: now\n---\nnot this one\n",
-    )
-    .unwrap();
+    std::fs::write(b.dir().join("1700000000-mismatch.msg"), "id: 1700000001-other\nfrom: x\nkind: NOTE\nwhen: now\n---\nnot this one\n").unwrap();
     let id = b.post("iris", "NOTE", "the real one");
     let out = b.watch("1");
     assert!(out.contains(&format!("MSG id={id}")), "{out:?}");
@@ -409,17 +401,9 @@ fn watch_skips_a_name_consume_would_refuse_so_junk_cannot_starve_the_queue() {
     let b = Inbox::new();
     b.init();
     let esc = "0000000001-e\u{1b}[31mvil";
-    std::fs::write(
-        b.dir().join(format!("{esc}.msg")),
-        format!("id: {esc}\nfrom: mallory\nkind: NOTE\nwhen: now\n---\nhostile body\n"),
-    )
-    .unwrap();
+    std::fs::write(b.dir().join(format!("{esc}.msg")), format!("id: {esc}\nfrom: mallory\nkind: NOTE\nwhen: now\n---\nhostile body\n")).unwrap();
     let space = "0000000002-a b";
-    std::fs::write(
-        b.dir().join(format!("{space}.msg")),
-        format!("id: {space}\nfrom: mallory\nkind: NOTE\nwhen: now\n---\nspace body\n"),
-    )
-    .unwrap();
+    std::fs::write(b.dir().join(format!("{space}.msg")), format!("id: {space}\nfrom: mallory\nkind: NOTE\nwhen: now\n---\nspace body\n")).unwrap();
     let id = b.post("hank", "NOTE", "the real message behind the junk");
     let out = b.watch("1");
     assert!(out.contains(&format!("MSG id={id}")), "junk starved the real message: {out:?}");
@@ -439,11 +423,7 @@ fn watch_caps_the_body_by_bytes_and_keeps_the_header_honest() {
     b.init();
     let id = "1700000003-big";
     let body = "x".repeat(5 * 1024 * 1024);
-    std::fs::write(
-        b.dir().join(format!("{id}.msg")),
-        format!("id: {id}\nfrom: big\nkind: NOTE\nwhen: now\n---\n{body}\n"),
-    )
-    .unwrap();
+    std::fs::write(b.dir().join(format!("{id}.msg")), format!("id: {id}\nfrom: big\nkind: NOTE\nwhen: now\n---\n{body}\n")).unwrap();
     let out = b.watch("1");
     assert!(out.len() < 6000, "the watcher printed {} bytes for a 5 MiB body", out.len());
     assert!(out.contains("truncated at 4000 bytes"), "no byte-truncation marker: {out:?}");
@@ -458,11 +438,9 @@ fn watch_caps_the_body_by_bytes_and_keeps_the_header_honest() {
 fn watch_skips_a_from_post_could_not_write() {
     let b = Inbox::new();
     b.init();
-    for (id, from) in [
-        ("1700000004-esc", "\u{1b}[2Jevil".to_string()),
-        ("1700000005-forge", "x kind=REPORT age=0s".to_string()),
-        ("1700000006-long", "a".repeat(65)),
-    ] {
+    for (id, from) in
+        [("1700000004-esc", "\u{1b}[2Jevil".to_string()), ("1700000005-forge", "x kind=REPORT age=0s".to_string()), ("1700000006-long", "a".repeat(65))]
+    {
         std::fs::write(b.dir().join(format!("{id}.msg")), format!("id: {id}\nfrom: {from}\nkind: NOTE\nwhen: now\n---\nforged {id}\n")).unwrap();
     }
     let id = b.post("ivy", "NOTE", "the real one");
@@ -601,9 +579,7 @@ fn a_concurrent_duplicate_consume_is_silent_and_still_acks_once() {
     let b = Inbox::new();
     b.init();
     let id = b.post("jane", "NOTE", "one");
-    let children: Vec<std::process::Child> = (0..8)
-        .map(|_| b.cmd(&["consume", &id]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap())
-        .collect();
+    let children: Vec<std::process::Child> = (0..8).map(|_| b.cmd(&["consume", &id]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap()).collect();
     let mut lines = Vec::new();
     for c in children {
         let o = c.wait_with_output().unwrap();

@@ -309,7 +309,10 @@ fn router_guard_admits_the_inbox_watcher_and_consume_but_never_post() {
     let settings = settings();
     let allow: Vec<&str> = settings["permissions"]["allow"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
     assert!(!allow.contains(&"Bash(scripts/router-inbox.sh *)"), "settings still admit every inbox verb: {allow:?}");
-    assert!(allow.contains(&"Bash(scripts/router-inbox.sh watch *)") && allow.contains(&"Bash(scripts/router-inbox.sh consume *)"), "the router's two shapes are not allowlisted: {allow:?}");
+    assert!(
+        allow.contains(&"Bash(scripts/router-inbox.sh watch *)") && allow.contains(&"Bash(scripts/router-inbox.sh consume *)"),
+        "the router's two shapes are not allowlisted: {allow:?}"
+    );
     for denied in [
         "scripts/router-inbox.sh",
         "scripts/router-inbox.sh post",
