@@ -5,6 +5,31 @@ use crate::{check, ci, git, hooks_problem, mr, review, short, Config, HOOKS_FIX}
 use serde::de::DeserializeOwned;
 use std::path::Path;
 
+/// Every check id the gate prints, `<n>·<name>`: the one table. A dod receipt names a check by its
+/// name alone (`receipt_name`); the CI page labels its rows with these ids.
+pub(crate) const HOOKS: &str = "0·hooks";
+const TREE: &str = "0·tree";
+const REVIEW_CAP: &str = "0·review-cap";
+pub(crate) const NOTES: &str = "1·notes";
+pub(crate) const MANIFEST: &str = "2·manifest";
+pub(crate) const REVIEW: &str = "3·review";
+pub(crate) const REVIEW_BASE: &str = "4·review-base";
+pub(crate) const DIFF_BINDING: &str = "5·diff-binding";
+pub(crate) const DOC_NOTE: &str = "6·doc-note";
+pub(crate) const WALK: &str = "7·walk";
+pub(crate) const SIGN_OFF: &str = "8·manual-review";
+
+/// A check id's name, as a dod receipt lists it.
+pub(crate) fn receipt_name(id: &'static str) -> &'static str {
+    id.split_once('·').map_or(id, |(_, name)| name)
+}
+
+/// Whether a failure printed as `failed` is the check `id`'s: the id itself, or a walk seam's failure
+/// the walk nests under its own id (`7·walk·3·review` is check 7's, not check 3's).
+pub(crate) fn belongs(failed: &str, id: &str) -> bool {
+    failed == id || failed.strip_prefix(id).is_some_and(|rest| rest.starts_with('·'))
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Level {
     Commit,
@@ -23,13 +48,18 @@ impl Level {
             Level::Close => "close",
         }
     }
-    /// The receipt names of the checks this level runs.
+    /// The ids of the checks this level runs.
     fn checks(self) -> &'static [&'static str] {
         match self {
-            Level::Commit | Level::Close => &["notes", "manifest", "doc-note"],
-            Level::Wu => &["notes", "manifest", "review", "review-base", "diff-binding", "doc-note", "manual-review"],
-            Level::Epic => &["notes", "manifest", "review", "review-base", "diff-binding", "doc-note", "walk", "manual-review"],
+            Level::Commit | Level::Close => &[NOTES, MANIFEST, DOC_NOTE],
+            Level::Wu => &[NOTES, MANIFEST, REVIEW, REVIEW_BASE, DIFF_BINDING, DOC_NOTE, SIGN_OFF],
+            Level::Epic => &[NOTES, MANIFEST, REVIEW, REVIEW_BASE, DIFF_BINDING, DOC_NOTE, WALK, SIGN_OFF],
         }
+    }
+
+    /// The receipt names of the checks this level runs.
+    fn receipt(self) -> Vec<&'static str> {
+        self.checks().iter().map(|c| receipt_name(c)).collect()
     }
 }
 
@@ -45,6 +75,10 @@ struct Report {
     tip: String,
     base: String,
     exempt: bool,
+    /// The range changes no code path (UC-GATE-5), as `open` found it; `exempt` also needs no failure.
+    range_exempt: bool,
+    /// An exempt range that archives a T3 doc: its doc note is still read and judged.
+    archive: bool,
     failures: Vec<Failure>,
     waived: Vec<String>,
     /// The tip's own review was waived: its reason, for the dod receipt.
@@ -56,6 +90,19 @@ struct Report {
 }
 
 impl Report {
+    /// The checks this gate ran, in order (`guard`: guard D too). A docs/infra-only range runs only
+    /// what is never exempt: an archive's doc note, the epic tip's layout and walk, the sign-off.
+    fn ran(&self, guard: bool) -> Vec<&'static str> {
+        let exempt_runs = |id: &str| match id {
+            NOTES => self.archive,
+            DOC_NOTE => self.archive || self.level == Level::Epic,
+            WALK | SIGN_OFF => true,
+            _ => false,
+        };
+        let level = self.level.checks().iter().copied().filter(|id| !self.range_exempt || exempt_runs(id));
+        guard.then_some(HOOKS).into_iter().chain(level).collect()
+    }
+
     fn fail(&mut self, check: &str, what: String, fix: impl Into<String>) {
         self.failures.push(Failure { check: check.into(), what, fix: fix.into() });
     }
@@ -70,7 +117,20 @@ fn open(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) ->
     let base = git(repo, &["merge-base", target, &tip], &[])?;
     let names = notes::names(repo, &base, &tip, &[])?;
     let exempt = notes::exempt(repo, cfg, &base, &tip, &names)?;
-    let r = Report { level, tip_ref: tip_ref.into(), tip, base, exempt, failures: vec![], waived: vec![], review_waiver: None, tip_cr: None, seen: vec![] };
+    let r = Report {
+        level,
+        tip_ref: tip_ref.into(),
+        tip,
+        base,
+        exempt,
+        range_exempt: exempt,
+        archive: false,
+        failures: vec![],
+        waived: vec![],
+        review_waiver: None,
+        tip_cr: None,
+        seen: vec![],
+    };
     Ok((r, names))
 }
 
@@ -82,7 +142,7 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
         Ok(stored) => stored,
         Err(e) => {
             r.fail(
-                "1·notes",
+                NOTES,
                 format!("the {kind} note on {} cannot be read: {e}", short(&r.tip)),
                 format!("repair refs/notes/{kind} (git fsck names what is broken), then re-run"),
             );
@@ -98,7 +158,7 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
                 "doc" => format!("keel notes write doc{t}   (on {})", short(&r.tip)),
                 _ => format!("run the code review on {}, then keel notes write cr --verdict PASS   (or {})", short(&r.tip), notes::OWNER_WAIVES),
             };
-            r.fail("1·notes", format!("no {schema} note on {}", short(&r.tip)), fix);
+            r.fail(NOTES, format!("no {schema} note on {}", short(&r.tip)), fix);
         }
         return None;
     };
@@ -109,7 +169,7 @@ fn read<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, required: 
     match parsed {
         Ok(n) => Some(n),
         Err(e) => {
-            r.fail("1·notes", format!("{kind} note on {} is not valid {schema}: {e}", short(&r.tip)), format!("rewrite it with keel notes write {kind}"));
+            r.fail(NOTES, format!("{kind} note on {} is not valid {schema}: {e}", short(&r.tip)), format!("rewrite it with keel notes write {kind}"));
             None
         }
     }
@@ -133,7 +193,7 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
         };
         if have.is_none() {
             r.fail(
-                "2·manifest",
+                MANIFEST,
                 format!("level {} needs the {layer} layer - the test note has none", r.level.name()),
                 format!("add {layer} tests and rewrite the note, or record {{\"{layer}\":{{\"waived\":\"<why>\"}}}}"),
             );
@@ -142,7 +202,7 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
     let tips = [test.as_ref().map(|n| &n.id.tip), cr.as_ref().map(|n| &n.id.tip), doc.as_ref().map(|n| &n.id.tip)];
     if tips.iter().flatten().any(|t| **t != r.tip) {
         r.fail(
-            "2·manifest",
+            MANIFEST,
             format!("a note on {} names a different tip (copied from another commit?)", short(&r.tip)),
             "rewrite the notes on this tip with keel notes write",
         );
@@ -153,21 +213,21 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
         match review_verdict(cr) {
             Ok(None) => {}
             Ok(Some(why)) => {
-                r.waived.push(format!("3·review: {why}"));
+                r.waived.push(format!("{REVIEW}: {why}"));
                 r.review_waiver = Some(why);
             }
-            Err((what, fix)) => r.fail("3·review", what, fix),
+            Err((what, fix)) => r.fail(REVIEW, what, fix),
         }
         if cr.id.base != r.base {
             r.fail(
-                "4·review-base",
+                REVIEW_BASE,
                 format!("review base {} != current merge-base {}", short(&cr.id.base), short(&r.base)),
                 "the target moved since the review - re-run the review against the current base",
             );
         }
         if cr.code_diff_hash != notes::code_diff_hash(repo, cfg, &r.base, &r.tip)? {
             r.fail(
-                "5·diff-binding",
+                DIFF_BINDING,
                 "reviewed code is not byte-identical to the code this tip changes".into(),
                 "the tip changed after review - re-run the review on this exact tip",
             );
@@ -196,7 +256,7 @@ fn review_verdict(cr: &CrNote) -> Result<Option<String>, (String, String)> {
 /// 6·doc-note: every doc listed with its config tier, nothing phantom, archived T3 with lineage.
 fn doc_note(repo: &Path, cfg: &Config, r: &mut Report, docs: &[String], doc: &DocNote) {
     for (what, fix) in notes::doc_problems(repo, cfg, &r.tip, docs, &doc.changes) {
-        r.fail("6·doc-note", what, fix);
+        r.fail(DOC_NOTE, what, fix);
     }
 }
 
@@ -206,12 +266,12 @@ fn tracked_layout(repo: &Path, cfg: &Config, r: &mut Report) -> Result<(), Strin
     for p in notes::zpaths(&git(repo, &["ls-tree", "-r", "-z", "--name-only", &r.tip, "--", root], &[])?) {
         match notes::tier_of(cfg, &p) {
             Some("T3") => r.fail(
-                "6·doc-note",
+                DOC_NOTE,
                 format!("{p} is a T3 working doc still tracked at the epic tip"),
                 format!("distill it, git rm it (keep the file in {root}/.archive/, gitignored), then keel notes write doc --distill {p}=<T1/T2 doc>"),
             ),
             None => r.fail(
-                "6·doc-note",
+                DOC_NOTE,
                 format!("{p} is tracked under {root}/ but matches no docs.tiers pattern"),
                 "add a glob for it under [docs.tiers] in .keel/config.toml, or move or archive it",
             ),
@@ -240,6 +300,7 @@ fn judge(repo: &Path, cfg: &Config, mut r: Report, names: &[String], target: &st
         // An archive commit is docs-only by nature; exempting it would leave distillation unchecked.
         let docs = notes::doc_paths(repo, cfg, &r.base, &r.tip, names)?;
         if notes::archives_t3(repo, cfg, &r.tip, &docs) {
+            r.archive = true;
             if let Some(doc) = read::<DocNote>(repo, &mut r, "doc", true) {
                 doc_note(repo, cfg, &mut r, &docs, &doc);
             }
@@ -266,7 +327,7 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
             [m, main, wu] => {
                 let seam = verify(repo, cfg, Level::Wu, wu, main)?;
                 if seam.failures.is_empty() {
-                    r.waived.extend(seam.waived.iter().map(|w| format!("7·walk [wu {}] {w}", short(m))));
+                    r.waived.extend(seam.waived.iter().map(|w| format!("{WALK} [wu {}] {w}", short(m))));
                 }
                 (*m, seam.failures, "wu")
             }
@@ -286,7 +347,7 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
         }
         let why = waivers.iter().find(|w| !w.seam.is_empty() && !w.why.trim().is_empty() && (seam.starts_with(&w.seam) || w.seam.starts_with(seam)));
         if let Some(w) = why {
-            r.waived.push(format!("7·walk seam {} waived: {}", short(seam), w.why.trim()));
+            r.waived.push(format!("{WALK} seam {} waived: {}", short(seam), w.why.trim()));
             continue;
         }
         let hint = format!(
@@ -295,7 +356,7 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
             short(seam)
         );
         for f in failures {
-            let check = if f.check.is_empty() { "7·walk".to_string() } else { format!("7·walk·{}", f.check) };
+            let check = if f.check.is_empty() { WALK.to_string() } else { format!("{WALK}·{}", f.check) };
             r.fail(&check, format!("[{level} {}] {}", short(seam), f.what), format!("{}{hint}", f.fix));
         }
     }
@@ -304,7 +365,7 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
 
 /// Recorded text made inert for a terminal by the sign-off listing's rule (`mr::printable`), keeping
 /// the middle dot of the check ids. `lines`: a fix keeps its own line breaks, each line escaped.
-fn inert(s: &str, lines: bool) -> String {
+pub(crate) fn inert(s: &str, lines: bool) -> String {
     let one = |l: &str| l.split('·').map(mr::printable).collect::<Vec<_>>().join("·");
     if lines {
         s.split('\n').map(one).collect::<Vec<_>>().join("\n")
@@ -320,7 +381,7 @@ fn print(r: &Report, what: &str) {
     if r.exempt {
         println!("{what} {} exempt on {} - docs/infra-only, test/cr/doc evidence not required", r.level.name(), short(&r.tip));
     } else if r.failures.is_empty() {
-        println!("{what} {} green on {} (checks: {})", r.level.name(), short(&r.tip), r.level.checks().join(", "));
+        println!("{what} {} green on {} (checks: {})", r.level.name(), short(&r.tip), r.level.receipt().join(", "));
     } else {
         for f in &r.failures {
             eprintln!("FAIL  {:<24} {}\n      fix -> {}", inert(&f.check, false), inert(&f.what, false), inert(&f.fix, true));
@@ -332,29 +393,37 @@ fn print(r: &Report, what: &str) {
 /// Guard D (UC-GATE-6), first in the report: a gate command run where git is not running Keel's hooks.
 fn guard_hooks(repo: &Path, r: &mut Report) {
     if let Some(what) = hooks_problem(repo) {
-        r.failures.insert(0, Failure { check: "0·hooks".into(), what, fix: HOOKS_FIX.into() });
+        r.failures.insert(0, Failure { check: HOOKS.into(), what, fix: HOOKS_FIX.into() });
         r.exempt = false;
     }
 }
 
-/// Verify, print, and on a full green wu/epic write the dod/v1 receipt. `guard`: run guard D
-/// (verify-dod wu|epic by hand; the hook, range and commit gates run from Keel's hooks by construction).
-fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, guard: bool) -> Result<i32, String> {
+/// The gate `verify-dod` runs on a tip, judged and printed: checks 1-7 (`verify`), guard D when
+/// `guard` (verify-dod wu|epic by hand; the hook, range and commit gates run from Keel's hooks by
+/// construction), and 8·manual-review above the commit level - never exempt (UC-GATE-5), and only at
+/// the merge boundary: the walk never re-judges a seam's sign-off against the epic's roster (Trawler
+/// DEC-9/10; DEC-48 names the gap). Returns the report and the report the sign-off attested. Its
+/// callers differ only in what they do with the verdict: `run` writes the receipt, `ci_gate` does not.
+fn gated(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, guard: bool) -> Result<(Report, Option<(String, String)>), String> {
     let mut r = verify(repo, cfg, level, tip_ref, target)?;
     if guard {
         guard_hooks(repo, &mut r);
     }
-    // 8·manual-review: never exempt (UC-GATE-5), and only at the merge boundary - the walk never
-    // re-judges a seam's sign-off against the epic's roster (Trawler DEC-9/10; DEC-48 names the gap).
     let mut attested = None;
     if level != Level::Commit {
         match mr::manual_review(repo, cfg, level.name(), &r.tip, &r.base, target, r.tip_cr.as_ref()) {
             Ok(a) => attested = a,
-            Err((what, fix)) => r.fail("8·manual-review", what, fix),
+            Err((what, fix)) => r.fail(SIGN_OFF, what, fix),
         }
         r.exempt &= r.failures.is_empty();
     }
     print(&r, "verify-dod");
+    Ok((r, attested))
+}
+
+/// `verify-dod`: the gate, and on a full green wu/epic the dod/v1 receipt.
+fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, guard: bool) -> Result<i32, String> {
+    let (r, attested) = gated(repo, cfg, level, tip_ref, target, guard)?;
     if !r.failures.is_empty() {
         return Ok(1);
     }
@@ -365,7 +434,7 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, gua
             schema: "dod/v1".into(),
             id: notes::identity(repo, r.tip.clone(), r.base.clone(), branch)?,
             level: level.name().into(),
-            checks: level.checks().iter().map(|c| c.to_string()).collect(),
+            checks: level.receipt().iter().map(|c| c.to_string()).collect(),
             diff_hash,
             report: attested.as_ref().map(|(r, _)| r.clone()),
             report_hash: attested.map(|(_, h)| h),
@@ -387,14 +456,7 @@ pub fn ci_gate(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> 
     let [lvl, tip, rest @ ..] = rest.as_slice() else { return Err(CI_USAGE.into()) };
     let level = level_of(lvl).map_err(|_| CI_USAGE.to_string())?;
     let target = target_of(repo, cfg, level, tip, rest)?;
-    let mut r = verify(repo, cfg, level, tip, &target)?;
-    guard_hooks(repo, &mut r);
-    if let Err((what, fix)) = mr::manual_review(repo, cfg, level.name(), &r.tip, &r.base, &target, r.tip_cr.as_ref()) {
-        r.fail(ci::SIGN_OFF, what, fix);
-    }
-    let exempt_range = r.exempt && r.failures.iter().all(|f| f.check == ci::SIGN_OFF);
-    r.exempt &= r.failures.is_empty();
-    print(&r, "verify-dod");
+    let (r, _) = gated(repo, cfg, level, tip, &target, true)?;
     let red = ci::red_before_sign_off(r.failures.iter().map(|f| f.check.as_str()));
     if let Some(path) = summary {
         let failures: Vec<(String, String, String)> = r.failures.iter().map(|f| (f.check.clone(), f.what.clone(), f.fix.clone())).collect();
@@ -404,8 +466,9 @@ pub fn ci_gate(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> 
             tip: &r.tip,
             base: &r.base,
             target: &target,
-            exempt: exempt_range,
+            exempt: r.range_exempt,
             checks: level.checks(),
+            ran: &r.ran(true),
             failures: &failures,
             waived: &r.waived,
             notes: &notes,
@@ -421,7 +484,7 @@ pub fn ci_gate(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> 
     if red {
         eprintln!("ci gate red on {} - a check before the sign-off failed", short(&r.tip));
     } else {
-        println!("ci gate green on {} - checks 0-7 pass; {} is judged at the merge", short(&r.tip), ci::SIGN_OFF);
+        println!("ci gate green on {} - checks 0-7 pass; {SIGN_OFF} is judged at the merge", short(&r.tip));
     }
     Ok(red as i32)
 }
@@ -546,7 +609,7 @@ pub(crate) fn range(repo: &Path, cfg: &Config, old: &str, new: &str, branch: &st
             [_, first, wu] => {
                 let mut r = verify(repo, cfg, merges, wu, first)?;
                 if let Err((what, fix)) = mr::manual_review(repo, cfg, merges.name(), &r.tip, &r.base, first, r.tip_cr.as_ref()) {
-                    r.fail("8·manual-review", what, fix);
+                    r.fail(SIGN_OFF, what, fix);
                 }
                 r
             }
@@ -626,11 +689,11 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
         return Ok(0);
     }
     if git(repo, &["rev-parse", "HEAD"], &[])? != r.tip {
-        r.fail("0·tree", format!("the checkout is not on the tip {}", short(&r.tip)), format!("git checkout {tip_ref}, then preflight again"));
+        r.fail(TREE, format!("the checkout is not on the tip {}", short(&r.tip)), format!("git checkout {tip_ref}, then preflight again"));
     } else if !git(repo, &["status", "--porcelain", "--untracked-files=no"], &[])?.is_empty() {
-        r.fail("0·tree", "the working tree has uncommitted changes".into(), "commit or stash them, then preflight again");
+        r.fail(TREE, "the working tree has uncommitted changes".into(), "commit or stash them, then preflight again");
     } else if check(repo, cfg)? != 0 {
-        r.fail("0·tree", "keel check is red on the tip".into(), "get lint and tests green before the review runs");
+        r.fail(TREE, "keel check is red on the tip".into(), "get lint and tests green before the review runs");
     }
     check_tip(repo, cfg, &mut r, &names, false, true)?;
     let schedule =
@@ -649,7 +712,7 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
             };
             println!("{}", next.announce(&r.base, &r.tip, &commands, &changed));
         }
-        Err((what, fix)) => r.fail("0·review-cap", what, fix),
+        Err((what, fix)) => r.fail(REVIEW_CAP, what, fix),
     }
     print(&r, "preflight");
     Ok(!r.failures.is_empty() as i32)
@@ -731,9 +794,25 @@ pub fn preflight_cmd(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, St
 mod tests {
     use super::inert;
     use super::review_verdict as review;
+    use super::{belongs, receipt_name, summary_flag, CI_USAGE, HOOKS, SIGN_OFF, WALK};
     use super::{judged_as, note_range, Level, NoteRange};
-    use super::{summary_flag, CI_USAGE};
     use crate::notes::CrNote;
+
+    #[test]
+    fn check_ids_name_their_receipt_and_a_walk_failure_is_check_7s() {
+        assert_eq!(receipt_name(HOOKS), "hooks");
+        assert_eq!(receipt_name(SIGN_OFF), "manual-review");
+        assert_eq!(Level::Epic.receipt(), ["notes", "manifest", "review", "review-base", "diff-binding", "doc-note", "walk", "manual-review"]);
+        assert_eq!(Level::Wu.receipt(), ["notes", "manifest", "review", "review-base", "diff-binding", "doc-note", "manual-review"]);
+        assert_eq!(Level::Commit.receipt(), ["notes", "manifest", "doc-note"]);
+        for (i, id) in Level::Epic.checks().iter().enumerate() {
+            assert!(id.starts_with(&format!("{}·", i + 1)), "ids are numbered in order: {id}");
+        }
+        assert!(belongs("7·walk·3·review", WALK));
+        assert!(belongs(WALK, WALK));
+        assert!(!belongs("7·walk·3·review", "3·review"));
+        assert!(!belongs("4·review-base", "4·review"), "a prefix of another id is not that check");
+    }
 
     #[test]
     fn the_summary_flag_is_taken_out_once_with_its_path_and_the_rest_keeps_its_order() {

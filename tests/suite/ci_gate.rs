@@ -228,6 +228,7 @@ fn the_gate_is_green_on_checks_0_to_7_before_the_sign_off_and_fully_green_after(
     assert!(s.contains("| mr | yes | mr&#47;v1 · signer t &#40;tier "), "{s}");
     assert!(s.contains("| 8·manual&#45;review | green |"), "{s}");
     assert!(ci.marked().is_empty(), "{:?}", ci.marked());
+    assert_eq!(git(&ci.runner, &["for-each-ref", "--format=%(refname)", "refs/notes/dod"]), "", "a fully green run writes no receipt either");
 }
 
 #[test]
@@ -279,9 +280,14 @@ fn an_epic_push_is_judged_at_level_epic_against_main() {
     assert_eq!(fails(&o), ["8·manual-review"], "{}", text(&o));
     assert!(text(&o).contains(&format!("verify-dod epic red on {}", &ci.sha("epic/e")[..10])), "{}", text(&o));
     let s = ci.summary();
-    assert!(s.starts_with("## Keel gate: epic exempt"), "{s}");
+    assert!(s.starts_with("## Keel gate: epic green on checks 0–7, the sign-off is judged at the merge - a docs/infra-only range"), "{s}");
     assert!(s.contains(&format!("over base `{}` (merge-base with `main`)", &ci.sha("main")[..10])), "{s}");
-    assert!(s.contains("| 7·walk | exempt |"), "{s}");
+    for ran in ["| 6·doc&#45;note | green |", "| 7·walk | green |", "| 0·hooks | green |"] {
+        assert!(s.contains(ran), "the epic layout and walk run on an exempt range (DEC-16): {ran}\n{s}");
+    }
+    for skipped in ["1·notes", "2·manifest", "3·review", "4·review&#45;base", "5·diff&#45;binding"] {
+        assert!(s.contains(&format!("| {skipped} | not run: docs/infra-only range |")), "{skipped}\n{s}");
+    }
 }
 
 #[test]
