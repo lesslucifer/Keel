@@ -161,11 +161,14 @@ def tag_rules:
   + branch_rules("main"; "main"; ["~DEFAULT_BRANCH", "refs/heads/main", "~ALL"])
   + branch_rules("epic"; "every epic/ branch"; ["refs/heads/epic/**", "refs/heads/epic/*", "~ALL"])
   + tag_rules
-  + [ (if $o.code == 404 then red("codeowners.file"; "CODEOWNERS on the default branch names the owner for every path"; "no .github/CODEOWNERS")
-       elif $o.code != 200 then unread("codeowners.file"; "CODEOWNERS on the default branch names the owner for every path"; why($o))
-       elif ($o.body.content // "" | gsub("\\s"; "") | @base64d | split("\n") | map(sub("#.*$"; "") | gsub("^\\s+|\\s+$"; "")) | index("* @\($owner)")) != null and $owner != ""
-       then ok("codeowners.file"; "CODEOWNERS on the default branch names the owner for every path")
-       else red("codeowners.file"; "CODEOWNERS on the default branch names the owner for every path"; "no line * @\($owner)") end),
+  # GitHub takes the last rule that matches a path, so "* @owner" holds for every path only as the
+  # one rule line: any other line, before or after it, names another owner for some path (code review)
+  + [ "CODEOWNERS on the default branch is exactly one rule, * @<owner>, the owner for every path" as $cw |
+      (if $o.code == 404 then red("codeowners.file"; $cw; "no .github/CODEOWNERS")
+       elif $o.code != 200 then unread("codeowners.file"; $cw; why($o))
+       else ($o.body.content // "" | gsub("\\s"; "") | @base64d | split("\n") | map(sub("#.*$"; "") | gsub("^\\s+|\\s+$"; "") | gsub("\\s+"; " ")) | map(select(length > 0))) as $rules |
+         if $owner != "" and $rules == ["* @\($owner)"] then ok("codeowners.file"; $cw)
+         else red("codeowners.file"; $cw; "rule lines: " + ($rules | join(" | ")) + " (want only * @\($owner))") end end),
       (if $oe.code == 404 then red("codeowners.valid"; "GitHub reads CODEOWNERS without an error"; "no CODEOWNERS")
        else is($oe; "codeowners.valid"; "GitHub reads CODEOWNERS without an error"; (.errors // [1]) == []; [$oe.body.errors[]? | .message // "?"] | join("; ")) end) ]
   + [ is($t; "actions.token"; "the workflow token reads by default"; .default_workflow_permissions == "read"; $t.body.default_workflow_permissions // "?"),
