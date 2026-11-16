@@ -43,8 +43,8 @@
 # only Keel's code-free checks itself: a wu/ tip must carry its test/v1 note (its worker ran keel check
 # in its sandbox), and an epic/ push that GitHub already holds must pass the range walk (keel verify-dod
 # range, git data only), as the hook would. The tests run in the worker's sandbox and in CI. The notes
-# ride the same push: only Keel's five kinds (test, doc, cr, mr, dod). Git runs only in this checkout,
-# never in another worktree (round 2, X1): sync fetches GitHub's branch into refs/remotes/origin/<b>
+# ride the same push: only Keel's kinds (test, doc, cr, mr, dod, report), after GitHub's sign-offs are
+# taken in, add-only (see push). Git runs only in this checkout, never in another worktree (round 2, X1): sync fetches GitHub's branch into refs/remotes/origin/<b>
 # and moves the local branch by update-ref when no worktree has it checked out; else that worktree's
 # own session fast-forwards it (`git merge --ff-only origin/<b>`).
 # These checks are policy, not a bound (round 2, N2, N4): workers can write the shared git dir (refs,
@@ -86,6 +86,8 @@ GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1
 export GIT_CONFIG_NOSYSTEM GIT_CONFIG_GLOBAL GIT_NO_REPLACE_OBJECTS
 umask 077
 die() { echo "router-gh: $*" >&2; exit 2; }
+# Keel's notes kinds, the only ones pushed: the five, and the epic report (E-GHFLOW2.W3)
+NOTE_KINDS="test doc cr mr dod report"
 fail() { echo "router-gh: $*" >&2; exit 1; }
 # an argument as printed in an error: no control character, at most 80 bytes
 shown() { printf '%s' "$1" | tr -d '\000-\037\177' | cut -c1-80; }
@@ -293,6 +295,8 @@ repo=$(toml github repo) || die "no [github] repo = \"<owner>/<name>\" in .keel/
 expr "x$repo" : 'x[A-Za-z0-9][A-Za-z0-9-]\{0,38\}/[A-Za-z0-9_.-]\{1,100\}$' > /dev/null || die "[github] repo must be <owner>/<name>: $(shown "$repo")"
 case "$repo" in */.*|*..*) die "[github] repo must be <owner>/<name>: $(shown "$repo")";; esac
 owner=${repo%%/*} rname=${repo#*/}
+# the repository's Pages site (E-GHFLOW2.W8): GitHub serves a project site at the owner's host, in lower case
+pages=https://$(printf '%s' "$owner" | tr 'A-Z' 'a-z').github.io/$rname
 docs=$(toml docs root) || docs=docs/
 expr "x$docs" : 'x[A-Za-z0-9_][A-Za-z0-9_./-]*/$' > /dev/null || die "[docs] root must be a relative directory ending in /"
 # gh_policy: [github] commanders (space-separated ids, maybe none) and free_text (true|false, default
@@ -312,7 +316,7 @@ gh_policy() {
   commanders= free_text=true
   while IFS= read -r pl; do
     case "$pl" in
-      c*) expr "x${pl#c}" : 'x\[ *[1-9][0-9]\{0,11\}\( *, *[1-9][0-9]\{0,11\}\)* *\]$' > /dev/null \
+      c*) expr "x${pl#c}" : 'x\(\[ *[1-9][0-9]\{0,11\}\( *, *[1-9][0-9]\{0,11\}\)* *\]\)$' > /dev/null \
             || die "[github] commanders must be a list of GitHub user ids, as commanders = [5499546]"
           commanders=$(printf '%s' "${pl#c}" | tr -c '0-9' ' ' | tr -s ' ' | sed 's/^ //; s/ $//');;
       f*) case "${pl#f}" in true|false) free_text=${pl#f};; *) die "[github] free_text must be true or false";; esac;;
@@ -341,7 +345,10 @@ run=$kdir/run
 [ -d "$run" ] || [ -L "$run" ] || mkdir "$run" || die "cannot make $run"
 [ -d "$run" ] && [ ! -L "$run" ] || die "$run must be a directory, not a link"
 tmp=
-trap '[ -z "$tmp" ] || rm -rf "$tmp"' EXIT
+# GitHub's refs/notes/mr while push reads it: a ref of this run's own (F7), gone with the run; and
+# refs/notes/mr as this checkout last pushed it (push's snapshot, kept between runs)
+ghtmp=refs/notes/keel-gh/mr-$$ ghsnap=refs/notes/keel-gh/pushed-mr
+trap '[ -z "$tmp" ] || rm -rf "$tmp"; git -C "$ROOT" update-ref -d "$ghtmp" 2> /dev/null || :' EXIT
 trap 'exit 1' HUP INT TERM
 tmp=$(mktemp -d "$run/router-gh.XXXXXX") || die "cannot make a temp dir in $run"
 case "$tmp" in *[!A-Za-z0-9/._-]*) die "the temp dir $tmp has characters a curl config cannot hold";; esac
@@ -492,8 +499,25 @@ bot_pr() {
 }
 # doc text made plain: no markup, link, mention, table cell or control character survives
 plain() { LC_ALL=C tr -d '\000-\037\177`*_[]<>@#|\\~!$^{}"' | LC_ALL=C cut -c1-200; }
+# page_ok <branch> <path>: scripts/pages-build.sh publishes this file, by its --folder and --path
+# rules (E-GHFLOW2.W8, security review F4), so no page link is a dead one: main, epic/<E> or
+# wu/<E>/<x>; a path under docs/, whatever [docs] root says, as the builder reads; parts in
+# [A-Za-z0-9._-], not starting with a dot, at most 200 bytes; at most 400 bytes in all; nothing under
+# docs/_report/; a doc's file type. tests/suite/router_gh.rs checks it against the builder's answers.
+page_ok() {
+  for pg_x in "$1" "$2"; do
+    case "$pg_x" in ''|*[!A-Za-z0-9._/-]*|*..*) return 1;; esac
+    [ ${#pg_x} -le 400 ] || return 1
+  done
+  case "$2" in docs/_report|docs/_report/*) return 1;; esac
+  case "$2" in *.html|*.css|*.png|*.jpg|*.jpeg|*.gif|*.webp|*.svg|*.drawio) ;; *) return 1;; esac
+  pg_part='[A-Za-z0-9_-][A-Za-z0-9._-]{0,199}'
+  printf '%s\n' "$1" | grep -Eqx "main|epic/$pg_part|wu/$pg_part/$pg_part" && printf '%s\n' "$2" | grep -Eqx "docs(/$pg_part)+"
+}
 # doc_rows <merge-base> <tip> <plan role>: sets title (the plan's, made plain) and rows (a markdown
-# row per html doc the range changed, linked at the tip)
+# row per html doc the range changed, linked at the tip, and to its page on the Pages site of
+# $branch, which scripts/pages-build.sh writes at <site>/<branch>/<path> once the push's build is
+# deployed (E-GHFLOW2.W8))
 doc_rows() {
   title= rows=
   for f in $(git -C "$ROOT" diff --name-only --diff-filter=AMR "$1" "$2" -- "$docs"); do
@@ -506,7 +530,9 @@ doc_rows() {
     t=$(printf '%s' "$top" | LC_ALL=C sed -n 's/.*<title>\([^<]*\)<\/title>.*/\1/p' | plain)
     [ -n "$t" ] || t=${f##*/}
     case " $role " in *" $3 "*) [ -n "$title" ] || title=$t;; esac
-    rows="$rows| [$t](https://github.com/$repo/blob/$2/$f) | ${role:-—} | ${status:-—} |
+    page=—
+    page_ok "$branch" "$f" && page="[page]($pages/$branch/$f)"
+    rows="$rows| [$t](https://github.com/$repo/blob/$2/$f) | ${role:-—} | ${status:-—} | $page |
 "
   done
 }
@@ -515,8 +541,8 @@ docs_md() {
   if [ -n "$rows" ]; then
     echo "**Docs this range changed**, at the tip:"
     echo
-    echo "| Doc | Role | Status |"
-    echo "|---|---|---|"
+    echo "| Doc | Role | Status | Page |"
+    echo "|---|---|---|---|"
     printf '%s' "$rows"
   else
     echo "No doc changed in this range."
@@ -555,11 +581,65 @@ push)
       (cd "$ROOT" && keel verify-dod range "$rsha" "$branch") >&2 || die "the range walk refused $rsha..$branch (above): nothing pushed"
     fi
   fi
+  # GitHub's sign-offs first (E-GHFLOW2.W3, DEC-61's open consequence; security review I2 and round
+  # 2 F1, F2, F6). The sign-off writer puts github-tier mr/v1 notes on GitHub's refs/notes/mr; that
+  # ref alone is read, add-only, and only what GitHub added since this checkout's last push of it
+  # ($ghsnap, the ref as pushed): a note removed here stays removed. Such a note is taken when this
+  # checkout holds no mr note on its commit and it reads as one the writer makes (mr/v1, tier github,
+  # its tip and its review's commit that commit). Nothing is merged or fast-forwarded, so no edit or
+  # deletion made on GitHub reaches a note here, and no other kind is read. A writer-shaped note on a
+  # commit this checkout lacks (the owner pressed "Update branch") has its commit fetched by sha
+  # first, so the push carries the note on and never erases that sign-off; a commit GitHub does not
+  # serve leaves its note untaken, never a hold on every later push (security review round 3,
+  # I3-1). A note taken proves no more than a username line until check 8 re-reads the
+  # review (backlog github-flow G7): anyone who can write GitHub's notes can make one. Our
+  # refs/notes/mr then replaces GitHub's, leased on the ref as fetched.
+  lease=
+  ghmr=$(gh_git ls-remote "$url" refs/notes/mr) || fail "cannot read GitHub's refs/notes/mr: nothing pushed"
+  ghmr=$(printf '%s' "$ghmr" | awk 'NR == 1 { print $1 }')
+  if [ -n "$ghmr" ]; then
+    expr "x$ghmr" : 'x[0-9a-f]\{40\}$' > /dev/null || fail "GitHub's refs/notes/mr is not a sha"
+    gh_git fetch -q --no-tags "$url" "+refs/notes/mr:$ghtmp" || fail "cannot fetch GitHub's refs/notes/mr: nothing pushed"
+    lease=$(git -C "$ROOT" rev-parse --verify -q "$ghtmp") || fail "cannot read the fetched refs/notes/mr"
+    git -C "$ROOT" notes --ref="$ghtmp" list > "$tmp/ghmr" || fail "cannot list GitHub's mr notes"
+    : > "$tmp/snap"
+    if git -C "$ROOT" show-ref --verify -q "$ghsnap"; then
+      git -C "$ROOT" notes --ref="$ghsnap" list > "$tmp/snap" || fail "cannot list the mr notes last pushed"
+    fi
+    while read -r nb no; do
+      grep -Fqx "$nb $no" "$tmp/snap" && continue
+      git -C "$ROOT" notes --ref=mr list "$no" > /dev/null 2>&1 && continue
+      if ! git -C "$ROOT" cat-file blob "$nb" | jq -e --arg o "$no" \
+        '.schema == "mr/v1" and .tier == "github" and .tip == $o and .review.commit == $o and (.review.id | type) == "number"' > /dev/null 2>&1; then
+        echo "WARN GitHub's mr note on $no not taken: not a sign-off by approval"
+      elif ! git -C "$ROOT" cat-file -e "$no^{commit}" 2> /dev/null \
+        && ! { expr "x$no" : 'x[0-9a-f]\{40\}$' > /dev/null && gh_git fetch -q --no-tags "$url" "$no" 2> /dev/null \
+          && git -C "$ROOT" cat-file -e "$no^{commit}" 2> /dev/null; }; then
+        echo "WARN GitHub's mr note on $no not taken: GitHub serves no such commit"
+      else
+        GIT_AUTHOR_NAME=keel-router GIT_AUTHOR_EMAIL=keel-router@localhost GIT_COMMITTER_NAME=keel-router GIT_COMMITTER_EMAIL=keel-router@localhost \
+          git -C "$ROOT" notes --ref=mr add -C "$nb" "$no" || fail "cannot take GitHub's mr note on $no"
+      fi
+    done < "$tmp/ghmr"
+    git -C "$ROOT" update-ref -d "$ghtmp"
+  fi
   set -- "refs/heads/$branch:refs/heads/$branch"
-  for k in test doc cr mr dod; do
-    git -C "$ROOT" show-ref --verify -q "refs/notes/$k" && set -- "$@" "refs/notes/$k:refs/notes/$k"
+  # refs/notes/mr is pushed as its value read now, so the snapshot is exactly what was pushed (I3-2)
+  m=
+  for k in $NOTE_KINDS; do
+    git -C "$ROOT" show-ref --verify -q "refs/notes/$k" || continue
+    if [ "$k" = mr ]; then
+      m=$(git -C "$ROOT" rev-parse --verify -q refs/notes/mr) || fail "cannot read refs/notes/mr"
+      set -- "$@" "$m:refs/notes/mr"
+    else
+      set -- "$@" "refs/notes/$k:refs/notes/$k"
+    fi
   done
-  rc=0; out=$(gh_git push --porcelain --no-verify --no-follow-tags "$url" "$@") || rc=$?
+  rc=0; out=$(gh_git push --porcelain --no-verify --no-follow-tags "--force-with-lease=refs/notes/mr:$lease" "$url" "$@") || rc=$?
+  # the snapshot of refs/notes/mr as GitHub now holds it from us (F2)
+  if [ -n "$m" ] && printf '%s\n' "$out" | awk -F '\t' '$2 ~ /:refs\/notes\/mr$/ && substr($0, 1, 1) != "!" { f = 1 } END { exit !f }'; then
+    git -C "$ROOT" update-ref "$ghsnap" "$m"
+  fi
   line=$(printf '%s\n' "$out" | awk -F '\t' -v r="refs/heads/$branch:refs/heads/$branch" '$2 == r { print; exit }')
   [ -n "$line" ] || fail "push of $branch failed before any ref moved (git exit $rc; see above)"
   case "$(printf '%s' "$line" | cut -c1)" in
@@ -567,9 +647,9 @@ push)
     *) why=$(printf '%s' "$line" | awk -F '\t' '{ print $3 }' | tr -d '\000-\037\177' | cut -c1-120)
        fail "push of $branch rejected: $why (never forced: merge GitHub's branch in, or ask the owner)";;
   esac
-  bad=$(printf '%s\n' "$out" | awk -F '\t' '$2 ~ /^refs\/notes\// && substr($0, 1, 1) == "!" { print $2 "\t" $3 }')
+  bad=$(printf '%s\n' "$out" | awk -F '\t' '$2 ~ /:refs\/notes\// && substr($0, 1, 1) == "!" { print $2 "\t" $3 }')
   printf '%s\n' "$bad" | while IFS='	' read -r ref why; do
-    [ -z "$ref" ] || echo "WARN notes ref ${ref%%:*} not pushed: $(printf '%s' "$why" | tr -d '\000-\037\177' | cut -c1-120)"
+    [ -z "$ref" ] || echo "WARN notes ref ${ref#*:} not pushed: $(printf '%s' "$why" | tr -d '\000-\037\177' | cut -c1-120)"
   done
   [ "$rc" -eq 0 ] || [ -n "$bad" ] || fail "git push of $branch exited $rc"
   echo "PUSHED branch=$branch sha=$tip state=$state";;

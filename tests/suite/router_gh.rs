@@ -102,16 +102,33 @@ pub(crate) fn commit(d: &Path, msg: &str) {
 
 const PLAN_TITLE: &str = "Keel — E.W1 plan: `tick` @owner [x](y) | cell *b* #h";
 
+/// A temp dir whose path the script accepts as a HOME (letters, digits and / . _ -): under TMPDIR
+/// when its path is plain, else under /tmp, so a hand-set TMPDIR with another character fails no
+/// test on HOME (backlog G5, W2).
+pub(crate) fn plain_tempdir() -> TempDir {
+    let plain = |p: &Path| p.to_str().is_some_and(|s| s.bytes().all(|b| b.is_ascii_alphanumeric() || b"/._-".contains(&b)));
+    let tmp = std::env::temp_dir();
+    if plain(&tmp.canonicalize().unwrap_or(tmp.clone())) {
+        TempDir::new().unwrap()
+    } else {
+        TempDir::new_in("/tmp").unwrap()
+    }
+}
+
 /// The App in `home`, as the owner's setup leaves it: a throwaway key and its ids in
-/// `.config/keel/router-gh`, whatever the umask made of the directories.
+/// `.config/keel/router-gh`, whatever the umask made of the directories. The key is made once per
+/// run and copied (backlog G5, W2: a 2048-bit key per test cost about 0.25 s).
 pub(crate) fn install_app(home: &Path) {
     let kdir = home.join(".config/keel/router-gh");
     std::fs::create_dir_all(&kdir).unwrap();
     // as the owner's setup does (`chmod 700`): never the umask's mode
     chmod(&kdir, 0o700);
-    let o =
-        common::cmd("openssl").args(["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out"]).arg(kdir.join("app.pem")).output().unwrap();
-    assert!(o.status.success(), "{}", text(&o));
+    let made = common::template("router-gh app key", |t| {
+        let o =
+            common::cmd("openssl").args(["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out"]).arg(t.join("app.pem")).output().unwrap();
+        assert!(o.status.success(), "{}", text(&o));
+    });
+    std::fs::copy(made.join("app.pem"), kdir.join("app.pem")).unwrap();
     chmod(&kdir.join("app.pem"), 0o600);
     write(&kdir, "app.conf", "app_id=123\ninstallation_id=456\napp_slug=keel-router\n");
 }
@@ -131,7 +148,7 @@ pub(crate) struct Gh {
 
 impl Gh {
     pub(crate) fn new() -> Gh {
-        let root = TempDir::new().unwrap();
+        let root = plain_tempdir();
         let base = root.path().canonicalize().unwrap();
         let [repo, home, mock, bin, marks, tmp] = ["repo", "home", "mock", "bin", "marks", "tmp"].map(|n| base.join(n));
         for d in [&repo, &mock, &bin, &marks, &tmp] {
@@ -544,7 +561,177 @@ fn a_rejected_notes_ref_warns_and_the_branch_still_lands() {
     assert!(out.ends_with(&format!("PUSHED branch=wu/E/x sha={tip} state=updated")), "{out}");
     assert_eq!(gh.origin_sha("refs/heads/wu/E/x"), Some(tip));
     assert_eq!(gh.origin_sha("refs/notes/test"), Some(gh.sha("refs/notes/test")), "the other notes refs still went");
-    assert_eq!(gh.origin_sha("refs/notes/alt"), None, "only Keel's five notes kinds are pushed (N3)");
+    assert_eq!(gh.origin_sha("refs/notes/alt"), None, "only Keel's notes kinds are pushed (N3)");
+    // E-GHFLOW2.W3 (security review I2): GitHub's cr line is never read into the checkout
+    let o = common::cmd("git").args(["notes", "--ref=cr", "list", &epic]).current_dir(&gh.repo).output().unwrap();
+    assert!(!o.status.success(), "GitHub's cr note reached the checkout");
+}
+
+/// A github-tier mr/v1 note as the sign-off writer makes it, on `tip`.
+fn approval_note(tip: &str, id: u64) -> String {
+    serde_json::json!({"schema": "mr/v1", "tip": tip, "base": "b", "level": "wu", "signer": OWNER_ID.to_string(), "tier": "github",
+        "change_hash": "sha256:00", "review": {"id": id, "url": format!("https://github.com/own/Keel/pull/7#pullrequestreview-{id}"), "commit": tip}})
+    .to_string()
+}
+
+/// E-GHFLOW2.W3, security review I2: GitHub's sign-offs reach the checkout add-only. A note GitHub
+/// holds on a commit the checkout has and holds no mr note for is taken when it reads as the writer's;
+/// any other note is not. Nothing GitHub edits or deletes reaches a note here, and the checkout's
+/// refs/notes/mr replaces GitHub's, leased; the report note rides along; no temp ref is left.
+#[test]
+fn push_takes_githubs_sign_offs_add_only_and_never_an_edit_or_a_deletion() {
+    let gh = Gh::new();
+    let (tip, epic, main) = (gh.sha("wu/E/x"), gh.sha("epic/E"), gh.sha("main"));
+    git(&gh.repo, &["notes", "--ref=mr", "add", "-m", r#"{"by":"local"}"#, &tip]);
+    git(&gh.repo, &["notes", "--ref=report", "add", "-m", "<html>report</html>", &tip]);
+    assert!(gh.run(&["push", "wu/E/x"]).status.success());
+    // on GitHub: the writer signs the epic tip; someone edits the tip's note, writes a username-tier
+    // note on main, a github-tier note whose review names another commit, and a cr note
+    git(&gh.origin, &["notes", "--ref=mr", "add", "-m", &approval_note(&epic, 41), &epic]);
+    git(&gh.origin, &["notes", "--ref=mr", "add", "-f", "-m", &approval_note(&tip, 42), &tip]);
+    let typed = serde_json::json!({"schema": "mr/v1", "tip": main, "tier": "username", "signer": "vuluu"}).to_string();
+    git(&gh.origin, &["notes", "--ref=mr", "add", "-m", &typed, &main]);
+    git(&gh.origin, &["notes", "--ref=cr", "add", "-m", "{}", &epic]);
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let out = stdout(&o);
+    assert!(out.contains(&format!("WARN GitHub's mr note on {main} not taken: not a sign-off by approval")), "{out}");
+    assert!(out.ends_with(&format!("PUSHED branch=wu/E/x sha={tip} state=unchanged")), "{out}");
+    let local = |rev: &str| common::cmd("git").args(["notes", "--ref=mr", "show", rev]).current_dir(&gh.repo).output().unwrap();
+    assert_eq!(String::from_utf8(local(&epic).stdout).unwrap().trim(), approval_note(&epic, 41), "the writer's sign-off was taken");
+    assert_eq!(String::from_utf8(local(&tip).stdout).unwrap().trim(), r#"{"by":"local"}"#, "a one-sided edit on GitHub never reaches the checkout");
+    assert!(!local(&main).status.success(), "a typed-tier note from GitHub is never taken");
+    let o = common::cmd("git").args(["notes", "--ref=cr", "list", &epic]).current_dir(&gh.repo).output().unwrap();
+    assert!(!o.status.success(), "no other kind is read from GitHub");
+    assert_eq!(gh.origin_sha("refs/notes/mr"), Some(gh.sha("refs/notes/mr")), "the checkout's ref replaced GitHub's, leased");
+    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &tip]), r#"{"by":"local"}"#);
+    assert_eq!(gh.origin_sha("refs/notes/report"), Some(gh.sha("refs/notes/report")), "the report note is pushed");
+    assert_eq!(
+        git(&gh.repo, &["for-each-ref", "--format=%(refname)", "refs/notes/keel-gh/"]),
+        "refs/notes/keel-gh/pushed-mr",
+        "no temp ref is left, only the snapshot"
+    );
+    // a one-sided deletion on GitHub: the checkout keeps its note and puts it back
+    git(&gh.origin, &["notes", "--ref=mr", "remove", &tip]);
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(String::from_utf8(local(&tip).stdout).unwrap().trim(), r#"{"by":"local"}"#);
+    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &tip]), r#"{"by":"local"}"#);
+    // a forged writer note on a commit the checkout lacks a note for, whose review names another commit
+    let gh = Gh::new();
+    let (tip, epic) = (gh.sha("wu/E/x"), gh.sha("epic/E"));
+    let mut forged: serde_json::Value = serde_json::from_str(&approval_note(&epic, 43)).unwrap();
+    forged["review"]["commit"] = serde_json::json!(tip);
+    git(&gh.origin, &["notes", "--ref=mr", "add", "-m", &forged.to_string(), &epic]);
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success() && stdout(&o).contains("not taken"), "{}", text(&o));
+    let o = common::cmd("git").args(["notes", "--ref=mr", "list", &epic]).current_dir(&gh.repo).output().unwrap();
+    assert!(!o.status.success());
+}
+
+/// Security review round 2 F1 and round 3 I3-1: a sign-off GitHub holds on a commit this checkout
+/// lacks (the owner pressed "Update branch" and approved the new head) has that commit fetched by sha,
+/// so the push carries the note on and never erases it. A writer-shaped note on a commit GitHub does
+/// not serve is not taken and holds nothing back: the push goes on, every time.
+#[test]
+fn a_sign_off_on_a_commit_only_github_has_is_fetched_and_kept_and_an_unserved_one_holds_nothing() {
+    let gh = Gh::new();
+    // GitHub serves a commit reachable from one of its branches by sha, as github.com does
+    git(&gh.origin, &["config", "uploadpack.allowReachableSHA1InWant", "true"]);
+    git(&gh.repo, &["notes", "--ref=mr", "add", "-m", r#"{"by":"local"}"#, &gh.sha("wu/E/x")]);
+    assert!(gh.run(&["push", "wu/E/x"]).status.success());
+    // GitHub makes a commit this checkout never fetched, and the writer signs it; a note also names a
+    // commit GitHub never had (made in a clone, its note pushed, the commit never), as a planted one would
+    let other = gh.root.path().join("other");
+    git(gh.root.path(), &["clone", "-q", gh.origin.to_str().unwrap(), other.to_str().unwrap()]);
+    git(&other, &["checkout", "-q", "-b", "wu/E/x", "origin/wu/E/x"]);
+    write(&other, "src/b.txt", "update branch");
+    commit(&other, "Merge branch 'epic/E' into wu/E/x");
+    git(&other, &["push", "-q", "--no-verify", "origin", "wu/E/x:refs/heads/wu/E/x-updated"]);
+    let only_github = git(&other, &["rev-parse", "HEAD"]);
+    write(&other, "src/g.txt", "never pushed");
+    commit(&other, "a commit GitHub never had");
+    let unserved = git(&other, &["rev-parse", "HEAD"]);
+    git(&other, &["fetch", "-q", "origin", "refs/notes/mr:refs/notes/mr"]);
+    git(&other, &["notes", "--ref=mr", "add", "-m", &approval_note(&only_github, 50), &only_github]);
+    git(&other, &["notes", "--ref=mr", "add", "-m", &approval_note(&unserved, 51), &unserved]);
+    git(&other, &["push", "-q", "--no-verify", "origin", "refs/notes/mr:refs/notes/mr"]);
+    assert!(!common::cmd("git").args(["cat-file", "-e", &unserved]).current_dir(&gh.origin).output().unwrap().status.success(), "GitHub never had it");
+    write(&gh.repo, "src/c.txt", "c");
+    commit(&gh.repo, "more");
+    let tip = gh.sha("wu/E/x");
+    test_note(&gh.repo, &tip);
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let out = stdout(&o);
+    assert_eq!(
+        out.lines().filter(|l| l.starts_with("WARN")).collect::<Vec<_>>(),
+        [format!("WARN GitHub's mr note on {unserved} not taken: GitHub serves no such commit")],
+        "{out}"
+    );
+    assert!(out.ends_with(&format!("PUSHED branch=wu/E/x sha={tip} state=updated")), "{out}");
+    assert_eq!(git(&gh.repo, &["notes", "--ref=mr", "show", &only_github]), approval_note(&only_github, 50), "the sign-off and its commit came here");
+    assert_eq!(gh.origin_sha("refs/notes/mr"), Some(gh.sha("refs/notes/mr")), "refs/notes/mr was pushed: nothing holds it back");
+    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &only_github]), approval_note(&only_github, 50), "the push kept GitHub's sign-off");
+    assert_eq!(gh.sha("refs/notes/keel-gh/pushed-mr"), gh.sha("refs/notes/mr"), "the snapshot is the value pushed");
+    // the next push is not held either
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success() && stdout(&o).ends_with("state=unchanged"), "{}", text(&o));
+}
+
+/// Security review round 2, F2: a sign-off removed here stays removed. Only what GitHub added since
+/// this checkout last pushed refs/notes/mr is taken, so the next push takes the removal to GitHub;
+/// a sign-off the writer adds after that is still taken.
+#[test]
+fn a_sign_off_removed_here_is_not_brought_back_by_the_next_push() {
+    let gh = Gh::new();
+    let (tip, epic) = (gh.sha("wu/E/x"), gh.sha("epic/E"));
+    git(&gh.repo, &["notes", "--ref=mr", "add", "-m", &approval_note(&tip, 60), &tip]);
+    assert!(gh.run(&["push", "wu/E/x"]).status.success());
+    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &tip]), approval_note(&tip, 60));
+    git(&gh.repo, &["notes", "--ref=mr", "remove", &tip]);
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let local = |rev: &str| common::cmd("git").args(["notes", "--ref=mr", "list", rev]).current_dir(&gh.repo).output().unwrap().status.success();
+    assert!(!local(&tip), "the removed sign-off came back");
+    let o = common::cmd("git").args(["notes", "--ref=mr", "list", &tip]).current_dir(&gh.origin).output().unwrap();
+    assert!(!o.status.success(), "the removal reached GitHub");
+    // the writer signs again on GitHub afterwards: a new note, taken
+    git(&gh.origin, &["notes", "--ref=mr", "add", "-m", &approval_note(&tip, 61), &tip]);
+    git(&gh.origin, &["notes", "--ref=mr", "add", "-m", &approval_note(&epic, 62), &epic]);
+    assert!(gh.run(&["push", "wu/E/x"]).status.success());
+    assert!(local(&tip) && local(&epic), "a sign-off GitHub added since the last push is taken");
+}
+
+/// Security review round 2, F6: GitHub's refs/notes/mr moves between the read and the push (the
+/// writer signs meanwhile): the leased push of refs/notes/mr fails with a WARN, the writer's note
+/// survives, the branch lands, and the next push takes the note in.
+#[test]
+fn a_sign_off_written_on_github_during_the_push_survives_it() {
+    let gh = Gh::new();
+    let (tip, epic) = (gh.sha("wu/E/x"), gh.sha("epic/E"));
+    git(&gh.repo, &["notes", "--ref=mr", "add", "-m", r#"{"by":"local"}"#, &tip]);
+    assert!(gh.run(&["push", "wu/E/x"]).status.success());
+    git(&gh.repo, &["notes", "--ref=mr", "add", "-f", "-m", r#"{"by":"local","again":true}"#, &tip]);
+    let hook = gh.origin.join("hooks/pre-receive");
+    std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    exe(
+        &hook,
+        &format!(
+            "#!/bin/sh\n[ -f moved ] && exit 0\ntouch moved\nunset GIT_QUARANTINE_PATH GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES\nGIT_AUTHOR_NAME=w GIT_AUTHOR_EMAIL=w@w GIT_COMMITTER_NAME=w GIT_COMMITTER_EMAIL=w@w git notes --ref=mr add -m '{}' {epic} >&2\nexit 0\n",
+            approval_note(&epic, 70)
+        ),
+    );
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let out = stdout(&o);
+    assert!(gh.origin.join("moved").exists(), "the writer signed during the push");
+    assert!(out.lines().any(|l| l.starts_with("WARN notes ref refs/notes/mr not pushed: ")), "{out}");
+    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &epic]), approval_note(&epic, 70), "the writer's note survived");
+    let o = gh.run(&["push", "wu/E/x"]);
+    assert!(o.status.success() && !stdout(&o).contains("WARN"), "{}", text(&o));
+    assert_eq!(git(&gh.repo, &["notes", "--ref=mr", "show", &epic]), approval_note(&epic, 70), "taken in at the next push");
+    assert_eq!(git(&gh.origin, &["notes", "--ref=mr", "show", &tip]), r#"{"by":"local","again":true}"#);
 }
 
 /// main, a tag, an unknown branch, a flag or an extra word: exit 2 before any request, origin as it was.
@@ -613,10 +800,144 @@ fn pr_open_sends_one_draft_request_derived_from_the_branch_and_its_docs() {
         "{body}"
     );
     assert!(body.contains(&format!("| [Keel — E.W1 result](https://github.com/own/Keel/blob/{tip}/docs/work/x-result.html) | wu-result | draft |")), "{body}");
+    // each changed doc's page on the Pages site, where scripts/pages-build.sh writes it (E-GHFLOW2.W8)
+    assert!(body.contains("| Doc | Role | Status | Page |\n|---|---|---|---|\n"), "{body}");
+    assert!(body.contains("| wu-plan | ready | [page](https://own.github.io/Keel/wu/E/x/docs/work/x-plan.html) |\n"), "{body}");
+    assert!(body.contains("| wu-result | draft | [page](https://own.github.io/Keel/wu/E/x/docs/work/x-result.html) |\n"), "{body}");
     assert!(body.contains("| yes | — | PASS, round 2 | — | — |"), "{body}");
     for active in ["@owner", "`tick`", "[x]", "*b*", "#h", "| cell"] {
         assert!(!body.contains(active), "{active} survived: {body}");
     }
+}
+
+/// The page link's host is the owner in lower case, as GitHub serves a project site; its path keeps
+/// the repository name, the branch and the doc's repository path (E-GHFLOW2.W8).
+#[test]
+fn pr_open_links_each_doc_s_page_at_the_owner_s_lower_case_host() {
+    let gh = Gh::new();
+    let cfg = std::fs::read_to_string(gh.repo.join(".keel/config.toml")).unwrap();
+    assert!(cfg.contains("repo = \"own/Keel\""));
+    write(&gh.repo, ".keel/config.toml", &cfg.replace("repo = \"own/Keel\"", "repo = \"Own-Org/Keel.docs\""));
+    commit(&gh.repo, "the repository renamed");
+    let tip = gh.sha("wu/E/x");
+    git(&gh.repo, &["push", "-q", "--no-verify", gh.origin.to_str().unwrap(), "wu/E/x"]);
+    gh.routes(&[
+        ("GET", "/repos/Own-Org/Keel.docs/git/ref/heads/wu/E/x", 200, serde_json::json!({"object": {"sha": tip}})),
+        ("GET", "/repos/Own-Org/Keel.docs/pulls?state=open&head=Own-Org:wu/E/x&per_page=100", 200, serde_json::json!([])),
+        ("POST", "/repos/Own-Org/Keel.docs/pulls", 201, serde_json::json!({"number": 7, "html_url": "https://github.com/Own-Org/Keel.docs/pull/7"})),
+    ]);
+    let o = gh.run(&["pr-open", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let body = body_of(&gh.log()[3])["body"].as_str().unwrap().to_string();
+    assert!(body.contains("[page](https://own-org.github.io/Keel.docs/wu/E/x/docs/work/x-plan.html)"), "{body}");
+}
+
+/// A page link only where scripts/pages-build.sh publishes the page (security review F4): a dot
+/// part, docs/_report/, a part over 200 bytes or a path over 400 get "—", and router-gh.sh agrees
+/// with the builder's own `--path` and `--folder` answers on every one.
+#[test]
+fn pr_open_links_a_page_only_where_the_builder_publishes_it() {
+    let gh = Gh::new();
+    let a = |n: usize| "a".repeat(n);
+    let docs = [
+        ("docs/work/ok.html".to_string(), true),
+        ("docs/-dash.html".into(), true),
+        (format!("docs/{}.html", a(195)), true),
+        ("docs/.x/hidden.html".into(), false),
+        ("docs/_report/r.html".into(), false),
+        (format!("docs/{}.html", a(196)), false),
+        (format!("docs/{}/{}.html", a(200), a(190)), false),
+    ];
+    for (f, _) in &docs {
+        write(&gh.repo, f, "<html><head><title>t</title></head></html>\n");
+    }
+    commit(&gh.repo, "docs the builder may skip");
+    let tip = gh.sha("wu/E/x");
+    git(&gh.repo, &["push", "-q", "--no-verify", gh.origin.to_str().unwrap(), "wu/E/x"]);
+    gh.routes(&[
+        ("GET", "/repos/own/Keel/git/ref/heads/wu/E/x", 200, serde_json::json!({"object": {"sha": tip}})),
+        ("GET", "/repos/own/Keel/pulls?state=open&head=own:wu/E/x&per_page=100", 200, serde_json::json!([])),
+        ("POST", "/repos/own/Keel/pulls", 201, serde_json::json!({"number": 7, "html_url": "https://github.com/own/Keel/pull/7"})),
+    ]);
+    let o = gh.run(&["pr-open", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let body = body_of(&gh.log()[3])["body"].as_str().unwrap().to_string();
+    let builder = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/pages-build.sh");
+    let says = |args: &[&str]| common::cmd("sh").arg(&builder).args(args).output().unwrap().status.success();
+    assert!(says(&["--folder", "wu/E/x"]));
+    for (f, linked) in &docs {
+        let row = body.lines().find(|l| l.contains(&format!("/blob/{tip}/{f})"))).unwrap_or_else(|| panic!("no row for {f}: {body}"));
+        let want = if *linked { format!(" | [page](https://own.github.io/Keel/wu/E/x/{f}) |") } else { " | — |".to_string() };
+        assert!(row.ends_with(&want), "{f}: {row}");
+        assert_eq!(says(&["--path", f]), *linked, "router-gh.sh and the builder disagree on {f}");
+    }
+}
+
+/// page_ok's branch rule, run from router-gh.sh's own text, is the builder's `--folder` rule on main,
+/// an epic, a work unit and the edges between (review 1): every page link names a published folder.
+#[test]
+fn page_ok_links_a_page_on_exactly_the_branches_the_builder_publishes() {
+    let script = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/router-gh.sh")).unwrap();
+    let start = script.find("\npage_ok() {\n").expect("router-gh.sh defines page_ok") + 1;
+    let len = script[start..].find("\n}\n").expect("page_ok ends") + 3;
+    let page_ok = &script[start..start + len];
+    let a = |n: usize| "a".repeat(n);
+    // '|'-separated, so the empty name and names holding a space, tab or newline sit among the rest
+    let names = "main|epic/E|wu/E/x|epic/E-1.2_x|epic/-E|epic/_E|wu/E/x.y|wu/E-1/x_2|epic/E.|wu/E/x-||Main|mainx|xmain|main/x|main/|/main|\
+                 epic|epic/|epic/E/x|epic/.E|epic/a..b|epic//E|wu|wu/E|wu/E/|wu//x|wu/E/x/y|wu/.E/x|wu/E/.x|wu/E/..|release/1|\
+                 feature/x|epic/E x|epic/E\tx|epic/E\nx|epic/E\n|epic/E*|epic/[E]|wu/E/x;rm|epic/É|refs/heads/main|origin/main";
+    let mut branches: Vec<String> = names.split('|').map(String::from).collect();
+    branches.extend([
+        format!("epic/{}", a(200)),
+        format!("epic/{}", a(201)),
+        format!("wu/{}/{}", a(200), a(196)),
+        format!("wu/{}/{}", a(200), a(197)),
+        format!("wu/{}/x", a(201)),
+    ]);
+    let o = common::cmd("sh")
+        .arg("-c")
+        .arg(format!("{page_ok}for b do if page_ok \"$b\" docs/a.html; then echo 1; else echo 0; fi; done"))
+        .arg("sh")
+        .args(&branches)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", text(&o));
+    let linked: Vec<bool> = String::from_utf8(o.stdout).unwrap().lines().map(|l| l == "1").collect();
+    assert_eq!(linked.len(), branches.len());
+    let builder = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/pages-build.sh");
+    for (b, linked) in branches.iter().zip(&linked) {
+        let published = common::cmd("sh").arg(&builder).args(["--folder", b]).output().unwrap().status.success();
+        assert_eq!(*linked, published, "router-gh.sh and the builder disagree on branch {b:?}");
+    }
+    // the agreement is not both refusing everything: the three kinds are linked, their near misses not
+    let at = |b: &str| linked[branches.iter().position(|x| x == b).unwrap()];
+    for (b, want) in
+        [("main", true), ("epic/E", true), ("wu/E/x", true), (&*format!("epic/{}", a(200)), true), ("epic/E/x", false), ("wu/E", false), ("mainx", false)]
+    {
+        assert_eq!(at(b), want, "{b}");
+    }
+}
+
+/// The builder reads docs/ whatever [docs] root says, so a doc under another root gets no page link.
+#[test]
+fn pr_open_links_no_page_under_a_docs_root_other_than_docs() {
+    let gh = Gh::new();
+    let cfg = std::fs::read_to_string(gh.repo.join(".keel/config.toml")).unwrap();
+    assert!(cfg.contains("root = \"docs/\""));
+    write(&gh.repo, ".keel/config.toml", &cfg.replace("root = \"docs/\"", "root = \"pages/\""));
+    write(&gh.repo, "pages/p.html", "<html><head><title>p</title></head></html>\n");
+    commit(&gh.repo, "docs under pages/");
+    let tip = gh.sha("wu/E/x");
+    git(&gh.repo, &["push", "-q", "--no-verify", gh.origin.to_str().unwrap(), "wu/E/x"]);
+    gh.routes(&[
+        ("GET", "/repos/own/Keel/git/ref/heads/wu/E/x", 200, serde_json::json!({"object": {"sha": tip}})),
+        ("GET", "/repos/own/Keel/pulls?state=open&head=own:wu/E/x&per_page=100", 200, serde_json::json!([])),
+        ("POST", "/repos/own/Keel/pulls", 201, serde_json::json!({"number": 7, "html_url": "https://github.com/own/Keel/pull/7"})),
+    ]);
+    let o = gh.run(&["pr-open", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let body = body_of(&gh.log()[3])["body"].as_str().unwrap().to_string();
+    assert!(body.contains(&format!("| [p](https://github.com/own/Keel/blob/{tip}/pages/p.html) | — | — | — |")), "{body}");
 }
 
 /// The base comes from the name (an epic into main), or from --base main|epic/E.
@@ -1356,7 +1677,8 @@ os.execv(REAL, [REAL] + a)
     assert!(o.status.success() && stdout(&o).contains("state=fast-forward"), "{}", text(&o));
     let runs: Vec<serde_json::Value> = std::fs::read_to_string(&log).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
     let cmds: Vec<&str> = runs.iter().map(|r| r["cmd"].as_str().unwrap()).collect();
-    assert_eq!(cmds, ["push", "ls-remote", "push", "fetch"]);
+    // each push reads GitHub's refs/notes/mr first (E-GHFLOW2.W3); GitHub holds none here, so no fetch
+    assert_eq!(cmds, ["ls-remote", "push", "ls-remote", "ls-remote", "push", "fetch"]);
     for r in &runs {
         assert_eq!(r["evil"], "", "another host got credentials: {r}");
         assert_eq!(r["github"], format!("protocol=https\nhost=github.com\nusername=x-access-token\npassword={token}\n"), "{r}");
@@ -1491,6 +1813,10 @@ fn issue_opens_the_epics_tracking_issue_and_a_wu_sub_issue() {
     assert!(body.starts_with("<!-- keel:router-gh issue v1 wu/E/x -->\nWork unit `wu/E/x` into `epic/E`"), "{body}");
     assert!(body.contains(&format!("| {} |", "yes | — | PASS, round 2 | — | —")), "{body}");
     assert!(body.contains("/blob/") && body.contains("docs/work/x-plan.html"), "{body}");
+    // the issue's docs table carries the Page column too, linked where the builder publishes
+    assert!(body.contains("| Doc | Role | Status | Page |\n|---|---|---|---|\n"), "{body}");
+    assert!(body.contains("| wu-plan | ready | [page](https://own.github.io/Keel/wu/E/x/docs/work/x-plan.html) |\n"), "{body}");
+    assert!(body.contains("| wu-result | draft | [page](https://own.github.io/Keel/wu/E/x/docs/work/x-result.html) |\n"), "{body}");
     assert_eq!(body_of(&log[5]), serde_json::json!({"sub_issue_id": 9031}));
 }
 

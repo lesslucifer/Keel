@@ -11,7 +11,7 @@ code_paths = ["src/", "tests/"]
 
 # Commits touching these need a Reviewed-By trailer (`keel mr commit`).
 # A trailing / is a prefix; otherwise a glob (* and ? within a segment, ** across).
-rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json", "scripts/router-guard.jq", "scripts/router-inbox.sh", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", "scripts/router-gh.sh", "scripts/router-gh-watch.sh", "scripts/router-gh-command.jq", ".claude/agents/"]
+rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json", "scripts/router-guard.jq", "scripts/router-inbox.sh", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", "scripts/router-gh.sh", "scripts/router-gh-watch.sh", "scripts/router-gh-command.jq", ".claude/agents/", "scripts/pages-build.sh", ".github/workflows/pages.yml"]
 
 [check]
 lint = "cargo fmt --check && cargo clippy --all-targets -- -D warnings"
@@ -39,7 +39,7 @@ T3 = ["docs/work/**", "docs/.archive/**"]
 # pattern = "..."      # test-declaration regex, for the regex adapter
 
 [mr]
-tiers = ["username", "key"]   # accepted .keel/mr-allowed tiers; key-only is deferred by owner ruling 2026-11-12 (DEC-48)
+tiers = ["username", "key", "github"]   # accepted .keel/mr-allowed tiers; key-only is deferred by owner ruling 2026-11-12 (DEC-48); github: a pull-request approval signs (E-GHFLOW2.W3)
 
 [review]   # read by the keel-code-review skill, not by the CLI
 modules = ["src/*"]          # each match of a glob's * is one module (altitude finder)
@@ -52,7 +52,7 @@ worker_default_effort = "medium"
 worker_permission_mode = "auto"
 watchdog_model = "haiku"
 
-[github]   # read by scripts/router-gh.sh, not by the CLI (E-GHFLOW.W2, W3)
+[github]   # read by scripts/router-gh.sh (E-GHFLOW.W2, W3); the CLI reads repo only: a sign-off by approval names a review page on it (E-GHFLOW2.W3)
 repo = "lesslucifer/Keel"   # the repository the router bot acts on (read at HEAD)
 # Who the router hears on GitHub (E-GHFLOW.W3): numeric user ids (a login can be renamed, an id
 # cannot), and whether their free text reaches the router or only the /keel commands. Read from the
