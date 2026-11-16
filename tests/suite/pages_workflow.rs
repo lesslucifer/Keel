@@ -11,8 +11,8 @@ fn yml() -> String {
 }
 
 /// The pinned actions besides checkout, whose pin dist-workspace.toml holds; each pin is written once.
-const UPLOAD: &str = "actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9";
-const DEPLOY: &str = "actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346";
+pub(crate) const UPLOAD: &str = "actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9";
+pub(crate) const DEPLOY: &str = "actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346";
 
 fn checkout() -> String {
     let dist: toml::Table = read("dist-workspace.toml").parse().unwrap();

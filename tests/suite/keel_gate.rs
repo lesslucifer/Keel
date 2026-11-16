@@ -527,8 +527,44 @@ fn four_jobs_the_three_judges_named_keel_each_one_call_of_the_ci_script_on_ubunt
 /// this list, and so the decoded checks below, take it in.
 const WORKFLOWS: [&str; 6] = ["keel-gate.yml", "keel-main.yml", "keel-sign-off-request.yml", "keel-sign-off.yml", "pages.yml", "release.yml"];
 
-/// The names a ruleset requires: a check or status of one of these from GitHub Actions passes it.
-const RESERVED: [&str; 4] = ["keel/ci", "keel/gate", "keel/docs", "keel/sign-off"];
+/// The names a ruleset requires, read from scripts/gh-settings-check.sh's `def checks` (code review
+/// round 3), so the two lists cannot drift: a check or status of one of these from GitHub Actions
+/// passes the ruleset.
+fn reserved() -> Vec<String> {
+    let script = read("scripts/gh-settings-check.sh");
+    let line = script.lines().map(str::trim).find(|l| l.starts_with("def checks:")).expect("gh-settings-check.sh defines checks");
+    let list = &line[line.find('[').unwrap()..=line.rfind(']').unwrap()];
+    let names: Vec<String> = serde_json::from_str(list).unwrap_or_else(|e| panic!("def checks is not a JSON list of names: {line}: {e}"));
+    assert!(!names.is_empty() && names.iter().all(|n| n.starts_with("keel/")), "{names:?}");
+    names
+}
+
+/// The only actions a workflow may use, each at its pin, and the files it may appear in (code review
+/// round 3): what the six workflows use today. A deny-list of cache inputs is never complete (a
+/// Cache: key, setup-go and newer setup-node caching by default, build-push-action's gha cache,
+/// setup-ruby's bundler-cache); an allow-list closes the class at its root. Owner and repository
+/// match case-insensitively, as GitHub resolves them; the ref matches exactly.
+fn allowed_actions() -> Vec<(String, Vec<&'static str>)> {
+    let all = WORKFLOWS.to_vec();
+    vec![
+        (pin("actions/checkout"), all.clone()),
+        (pin("actions/upload-artifact"), vec!["keel-gate.yml", "release.yml"]),
+        (pin("actions/download-artifact"), vec!["keel-gate.yml", "release.yml"]),
+        // dist's npm publish job only: no checkout there, so no lockfile for it to cache
+        (pin("actions/setup-node"), vec!["release.yml"]),
+        (crate::pages_workflow::UPLOAD.to_string(), vec!["pages.yml"]),
+        (crate::pages_workflow::DEPLOY.to_string(), vec!["pages.yml"]),
+    ]
+}
+
+/// Whether `uses` in `file` is an allowed action at its pin.
+fn action_allowed(file: &str, uses: &str) -> bool {
+    let Some((repo, at)) = uses.split_once('@') else { return false };
+    allowed_actions().iter().any(|(a, files)| {
+        let (arepo, aat) = a.split_once('@').unwrap();
+        arepo.eq_ignore_ascii_case(repo) && aat == at && files.contains(&file)
+    })
+}
 
 /// The events each workflow may start on: pull_request_target is keel-gate.yml's alone, and
 /// release.yml runs on no pull request (its token can write; DEC-38 amended).
@@ -566,10 +602,12 @@ fn text_of(y: &yaml_rust2::Yaml) -> String {
 /// a quoted or double-spaced name, a flow-mapping cache input, a `pull_request: {}` slip past a line
 /// reader): the file list is WORKFLOWS; each file is one document whose `on` keys are its events;
 /// no job id or name is a reserved name but keel-gate.yml's ci, gate and docs, and a name built by an
-/// expression starts with text no reserved name starts with; no job calls a reusable workflow; no
-/// step uses a cache action or passes a cache input.
+/// expression starts with text no reserved name starts with; no job calls a reusable workflow; every
+/// step's action is on the allow-list, at its pin, in a file it may appear in (round 3); and, as a
+/// second line, no step passes a cache input under any case of its key.
 fn decoded_problems(files: &[(String, String)]) -> Vec<String> {
     use yaml_rust2::{Yaml, YamlLoader};
+    let reserved = reserved();
     let mut out = Vec::new();
     let mut names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
     names.sort();
@@ -617,7 +655,7 @@ fn decoded_problems(files: &[(String, String)]) -> Vec<String> {
                 && matches!((id.as_str(), name.as_deref()), ("ci", Some("keel/ci")) | ("gate", Some("keel/gate")) | ("docs", Some("keel/docs")));
             for shown in [Some(id.clone()), name.clone()].into_iter().flatten() {
                 let literal = shown.split("${{").next().unwrap_or_default().to_string();
-                let imitates = if shown.contains("${{") { RESERVED.iter().any(|r| r.starts_with(literal.trim())) } else { RESERVED.contains(&shown.as_str()) };
+                let imitates = if shown.contains("${{") { reserved.iter().any(|r| r.starts_with(literal.trim())) } else { reserved.contains(&shown) };
                 if imitates && !own {
                     out.push(format!("{file}: job {id} reports {shown:?}, a required name"));
                 }
@@ -626,13 +664,22 @@ fn decoded_problems(files: &[(String, String)]) -> Vec<String> {
                 out.push(format!("{file}: job {id} calls a reusable workflow"));
             }
             for step in job["steps"].as_vec().map(Vec::as_slice).unwrap_or_default() {
-                let uses = step["uses"].as_str().unwrap_or_default().to_ascii_lowercase();
-                if uses.starts_with("actions/cache") || uses.contains("rust-cache") || uses.contains("/cache@") {
-                    out.push(format!("{file}: job {id} uses {uses}"));
+                // the allow-list first: any other action, or one outside its files, is red
+                match &step["uses"] {
+                    Yaml::BadValue => {}
+                    u => {
+                        let uses = text_of(u);
+                        if !action_allowed(file, &uses) {
+                            out.push(format!("{file}: job {id} uses {uses}, not an allowed action at its pin"));
+                        }
+                    }
                 }
+                // a second line: no cache input, whatever its case (GitHub upper-cases an input's key)
                 if let Some(with) = step["with"].as_hash() {
                     for k in with.keys().map(text_of) {
-                        if ["cache", "cache-dependency-path", "save-always"].contains(&k.as_str()) {
+                        if ["cache", "cache-dependency-path", "save-always", "package-manager-cache", "bundler-cache", "cache-from", "cache-to"]
+                            .contains(&k.to_ascii_lowercase().as_str())
+                        {
                             out.push(format!("{file}: job {id} passes {k}"));
                         }
                     }
@@ -655,6 +702,11 @@ fn the_decoded_workflows_keep_the_required_names_events_and_caches_to_themselves
     let gate = yaml_rust2::YamlLoader::load_from_str(&files.iter().find(|(n, _)| n == "keel-gate.yml").unwrap().1).unwrap();
     let named: Vec<String> = gate[0]["jobs"].as_hash().unwrap().values().filter_map(|j| j["name"].as_str().map(String::from)).collect();
     assert_eq!(named, ["keel/ci", "keel/gate", "keel/docs"]);
+    // the allow-list is what the workflows use today: every entry is used in one of its files
+    for (action, may) in allowed_actions() {
+        assert!(files.iter().any(|(n, t)| may.contains(&n.as_str()) && t.contains(&format!("uses: {action}"))), "{action} is allowed but used nowhere");
+    }
+    assert_eq!(reserved(), ["keel/ci", "keel/gate", "keel/docs", "keel/sign-off"], "read from gh-settings-check.sh's def checks");
     let dist: toml::Table = read("dist-workspace.toml").parse().unwrap();
     assert_eq!(dist["dist"]["pr-run-mode"].as_str(), Some("skip"), "dist generates release.yml without its pull-request run");
 }
@@ -671,6 +723,7 @@ fn add_job(t: &str, body: &str) -> String {
 #[test]
 fn the_decoder_refuses_every_imitated_name_cache_and_trigger() {
     let files = workflow_files();
+    let node = pin("actions/setup-node");
     let with = |file: &str, f: &dyn Fn(&str) -> String| -> Vec<(String, String)> {
         files.iter().map(|(n, t)| (n.clone(), if n == file { f(t) } else { t.clone() })).collect()
     };
@@ -719,7 +772,68 @@ fn the_decoder_refuses_every_imitated_name_cache_and_trigger() {
         ),
         ("a reusable workflow call", with("release.yml", &|t: &str| add_job(t, "    uses: ./.github/workflows/x.yml\n")), "calls a reusable workflow"),
         ("a second document", with("pages.yml", &|t: &str| format!("{t}---\nname: x\n")), "2 documents"),
+        // code review round 3: caching no deny-list names, closed by the action allow-list
+        (
+            "a Cache: key on the allowed setup-node",
+            with("release.yml", &|t: &str| add_job(t, &format!("    steps:\n      - uses: {node}\n        with:\n          Cache: npm\n"))),
+            "passes Cache",
+        ),
+        (
+            "a CACHE: key on setup-python",
+            with("release.yml", &|t: &str| add_job(t, "    steps:\n      - uses: actions/setup-python@v5\n        with:\n          CACHE: pip\n")),
+            "passes CACHE",
+        ),
+        (
+            "setup-go, which caches by default",
+            with("keel-main.yml", &|t: &str| add_job(t, "    steps:\n      - uses: actions/setup-go@v5\n")),
+            "actions/setup-go@v5, not an allowed action",
+        ),
+        (
+            "setup-node@v5 with no with",
+            with("release.yml", &|t: &str| add_job(t, "    steps:\n      - uses: actions/setup-node@v5\n")),
+            "actions/setup-node@v5, not an allowed action",
+        ),
+        (
+            "build-push-action's gha cache",
+            with("release.yml", &|t: &str| {
+                add_job(t, "    steps:\n      - uses: docker/build-push-action@v6\n        with:\n          cache-from: type=gha\n          cache-to: type=gha,mode=max\n")
+            }),
+            "docker/build-push-action@v6, not an allowed action",
+        ),
+        (
+            "setup-ruby's bundler cache",
+            with("release.yml", &|t: &str| add_job(t, "    steps:\n      - uses: ruby/setup-ruby@v1\n        with:\n          bundler-cache: true\n")),
+            "ruby/setup-ruby@v1, not an allowed action",
+        ),
+        (
+            "an unknown action",
+            with("pages.yml", &|t: &str| add_job(t, "    steps:\n      - uses: someone/anything@0123456789012345678901234567890123456789\n")),
+            "not an allowed action",
+        ),
+        (
+            "an allowed action at another ref",
+            with("keel-main.yml", &|t: &str| add_job(t, "    steps:\n      - uses: actions/checkout@v4\n")),
+            "actions/checkout@v4, not an allowed action",
+        ),
+        (
+            "an allowed action outside its files",
+            with("keel-main.yml", &|t: &str| add_job(t, &format!("    steps:\n      - uses: {node}\n"))),
+            "not an allowed action",
+        ),
+        (
+            "a local action",
+            with("keel-main.yml", &|t: &str| add_job(t, "    steps:\n      - uses: ./.github/actions/x\n")),
+            "./.github/actions/x, not an allowed action",
+        ),
+        (
+            "a docker action",
+            with("keel-main.yml", &|t: &str| add_job(t, "    steps:\n      - uses: docker://alpine:3\n")),
+            "docker://alpine:3, not an allowed action",
+        ),
     ];
+    // GitHub resolves owner and repository in any case; the ref is exact
+    let upper = with("keel-main.yml", &|t: &str| t.replace("uses: actions/checkout@", "uses: Actions/Checkout@"));
+    assert_eq!(decoded_problems(&upper), Vec::<String>::new());
     for (what, set, why) in &cases {
         let got = decoded_problems(set);
         assert!(got.iter().any(|p| p.contains(why)), "{what}: want {why:?} in {got:?}");
