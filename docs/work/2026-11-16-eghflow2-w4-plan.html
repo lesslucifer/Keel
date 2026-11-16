@@ -9,8 +9,8 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>E-GHFLOW2.W4 · GitHub enforces the merge</h1>
-      <p>Rules on GitHub make the merge button the gate. The checks that judge a pull request come from main, so a branch can no longer turn its own checks green.</p>
-      <div class="meta">Ready v1 · 2026-11-16 · T3 · WU plan · Keel · off epic/E-GHFLOW2 526973a (after landing 2) · epic plan: git show 738c795:docs/work/2026-11-15-eghflow2-plan.html (archived)</div>
+      <p>Rules on GitHub make the merge button the gate. The checks that judge a pull request come from main, so a branch can no longer change them. A branch could still report a check under the same name from a workflow it adds, so the merge also needs your approval as code owner.</p>
+      <div class="meta">Ready v2 · 2026-11-16 · T3 · WU plan · Keel · off epic/E-GHFLOW2 526973a (after landing 2) · epic plan: git show 738c795:docs/work/2026-11-15-eghflow2-plan.html (archived)</div>
     </div>
   </header>
   <main>
@@ -50,7 +50,7 @@
 
     <table data-c="items">
       <tr><th>#</th><th>Item</th><th>How</th></tr>
-      <tr><td>1</td><td>Base-defined checks</td><td><code>keel-gate.yml</code> runs on <code>pull_request_target</code> (main, <code>epic/**</code>) and on a push of main only. Pushes of work branches no longer run it: the bot opens a pull request for each. Jobs: <code>build</code>, then <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code>. The checkout is main's commit; the head is git data in a worktree.</td></tr>
+      <tr><td>1</td><td>Base-defined checks</td><td><code>keel-gate.yml</code> runs on <code>pull_request_target</code> (main, <code>epic/**</code>) only; a push of main runs <code>keel-main.yml</code> (item 15). Pushes of work branches no longer run it: the bot opens a pull request for each. Jobs: <code>build</code>, then <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code>. The checkout is main's commit; the head is git data in a worktree.</td></tr>
       <tr><td>2</td><td>New check names</td><td>The jobs are named <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code>, not <code>ci</code>, <code>gate</code>, <code>docs</code>. A branch cut before W4 still carries the old workflow, which runs on its push with head code and the old names. A ruleset matches by name, so the old names could be faked; the new ones no older workflow ever made.</td></tr>
       <tr><td>3</td><td>Red, never skipped</td><td>GitHub counts a skipped job as passed. So no required job has a skip condition on a pull request: a fork's pull request, or a failed build, turns each job red.</td></tr>
       <tr><td>4</td><td>One keel per run (G4)</td><td><code>ci-gate.sh build</code> builds keel from the base once and prints its SHA-256 as a job output. The other jobs download it and refuse it unless the hash matches (<code>KEEL_SHA256</code>), since <code>keel/ci</code> runs head code that could swap the run's artifact.</td></tr>
@@ -62,13 +62,16 @@
       <tr><td>10</td><td><code>sync main</code></td><td><code>router-gh.sh sync</code> and the guard take <code>main</code> as well as <code>epic/&lt;E&gt;</code>.</td></tr>
       <tr><td>11</td><td>The settings check</td><td><code>scripts/gh-settings-check.sh</code>: GET only, an optional token from <code>GH_TOKEN</code> on curl's stdin. Prints <code>OK</code>, <code>RED</code> or <code>UNREAD</code> per rule and <code>SETTINGS green|red</code>.</td></tr>
       <tr><td>12</td><td>GitHub's merge commit</td><td>The walk reads parents, not messages. A test proves it for a GitHub-shaped merge, up to date and behind.</td></tr>
+      <tr><td>13</td><td>Its own base only (review)</td><td>The script refuses any base but the head's own level (a WU into its epic, an epic into main). The workflow also runs on <code>edited</code>, so a retargeted pull request is judged again. <code>pr-open</code> and the guard refuse a WU into main.</td></tr>
+      <tr><td>14</td><td>Your approval as code owner (review)</td><td><code>.github/CODEOWNERS</code> names you for every path. The ruleset requires one approval from a code owner and dismisses it on a push. A workflow a head adds could report <code>keel/sign-off</code> from the GitHub Actions app; your approval is still needed.</td></tr>
+      <tr><td>15</td><td>A push of main (review)</td><td>It runs <code>keel-main.yml</code>, job <code>main/ci</code>: no required name, so a pull request at main's commit never carries a skipped <code>keel/</code> check.</td></tr>
     </table>
 
     <h2 id="rules">The rules you set (the exact list)</h2>
     <table data-c="rules">
       <tr><th>Rule</th><th>Value</th></tr>
       <tr><td>Branch ruleset <code>keel-merge</code></td><td>Active; target <code>main</code> and <code>refs/heads/epic/**</code>; bypass list empty.</td></tr>
-      <tr><td>its rules</td><td>Restrict deletions; block force pushes; require a pull request (allowed merge method: merge only); require status checks <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code>, <code>keel/sign-off</code>, each with source GitHub Actions; branches need not be up to date.</td></tr>
+      <tr><td>its rules</td><td>Restrict deletions; block force pushes; require a pull request (1 approval, from a code owner, dismissed on a push; allowed merge method: merge only); require status checks <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code>, <code>keel/sign-off</code>, each with source GitHub Actions; branches need not be up to date.</td></tr>
       <tr><td>Tag ruleset <code>keel-tags</code></td><td>Active; all tags; restrict creations, updates, deletions; bypass: Repository admin (you) only (DEC-38).</td></tr>
       <tr><td>Pull requests</td><td>Allow merge commits only; allow auto-merge.</td></tr>
       <tr><td>Actions</td><td>Workflow permissions read; Actions may not approve pull requests; approval for all outside contributors; <code>pull_request_target</code> allowed for <code>.github/workflows/keel-gate.yml</code> only (GitHub blocks it by default from 2026-12-02).</td></tr>
@@ -80,7 +83,7 @@
       <li>Only <code>keel/ci</code> runs head code. It holds the read token only, and its verdict is the head's own tests, which the head could always change.</li>
       <li>What head code could still reach is the run's runtime token: the run's artifacts and the cache. The keel artifact is checked by hash. No workflow restores a cache, and a lock test keeps it so.</li>
       <li>A fork's pull request runs no head code: the build and every job refuse it first.</li>
-      <li>The check names are new, so no older workflow a branch carries can report them.</li>
+      <li>The check names are new, so no older workflow a branch carries can report them. A workflow a head adds could (only you can push one: the bot has no Workflows permission), so your approval as code owner is required too.</li>
     </ul>
 
     <h2 id="tests">Tests</h2>
@@ -104,7 +107,7 @@
       <tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr>
       <tr><td>1</td><td>Keep the names <code>ci</code>, <code>gate</code>, <code>docs</code>?</td><td>No: <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code></td><td>Old workflows on old branches still make the old names from head code (item 2).</td></tr>
       <tr><td>2</td><td>Who signs a back-merge of main into an epic?</td><td>Not in W4. Recommended: the sign-off writer sets <code>keel/sign-off</code> with no note on an approval of a main-into-epic pull request by a listed signer (W7, which edits the writer)</td><td>It changes a script that holds a write token, so it needs its own security review. Until then no back-merge can merge with the rules on; none is needed while one epic runs.</td></tr>
-      <tr><td>3</td><td>Require one approving review in the ruleset?</td><td>No</td><td><code>keel/sign-off</code> already requires your approval, and it checks the roster.</td></tr>
+      <tr><td>3</td><td>Require one approving review in the ruleset?</td><td>Yes, from a code owner, dismissed on a push (v2, the security review)</td><td>A check name alone can be imitated by a workflow a head adds; your approval cannot.</td></tr>
     </table>
   </main>
 </body>
