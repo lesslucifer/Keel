@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en" data-artifact="epic-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHFLOW2 epic plan: the rest of the GitHub flow</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHFLOW2 · The rest of the GitHub flow</h1>
+      <p>Run the three GitHub pieces live, teach the router to use them, then move your sign-off, the merge, manual tests, rule edits, waivers and doc pages to GitHub.</p>
+      <div class="meta">Ready v1 · 2026-11-15 · T3 · epic plan · Keel · off main 72cae9d · carries E-GHFLOW W4 – W9 (backlog github-flow G1 – G5)</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-item="intent" data-c="intent">You still sign, merge and give orders at your Mac. The last epic put three pieces on GitHub: it runs the checks, a bot pushes work and opens pull requests, and the router can hear your comments. None has run against GitHub yet, and the router does not use them. This epic runs them live, teaches the router, then moves the rest of your actions to GitHub. It runs through that flow itself, switching each step on as it lands.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>Work is ready</td><td>Chat or Telegram</td><td>A review request on GitHub</td></tr>
+    <tr><td>You sign off</td><td>A typed command</td><td>You approve the pull request</td></tr>
+    <tr><td>You merge</td><td>Typed git commands</td><td>GitHub merges once every check is green</td></tr>
+    <tr><td>You test by hand</td><td>Steps in the chat</td><td>Steps in the pull request; you comment the result</td></tr>
+    <tr><td>A rule edit needs your yes</td><td>The work stops for your typed commit</td><td>Its own small pull request; the work goes on</td></tr>
+    <tr><td>You waive a review</td><td>Two typed commands</td><td>Two comments</td></tr>
+    <tr><td>You read a plan</td><td>A file on your Mac</td><td>A web page</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">Example: one piece of work, at the end</h2>
+<ol data-c="example-steps">
+  <li>A worker finishes. The bot pushes its branch and opens a pull request.</li>
+  <li>GitHub's checks turn green. You get a review request.</li>
+  <li>You try the change on your Mac and comment that it passed.</li>
+  <li>You approve. That signs it, and GitHub merges it.</li>
+  <li>The router hears the merge and starts the next worker.</li>
+</ol>
+
+<h2 id="terms">Terms</h2>
+<p data-c="terms"><b>Pull request:</b> GitHub's page for one branch waiting to merge. <b>Landing:</b> this epic merged into main before it closes, because GitHub runs some steps only from main. You rule on when: open point 1.</p>
+
+<h2 id="wus">The work</h2>
+<p>Live run and skills first. Then approval signs; a landing. Then GitHub enforces; a landing. Then four in parallel.</p>
+
+<div data-item="wu-summaries" data-c="wu-summaries">
+
+<div data-wu="E-GHFLOW2.W1" data-c="wu-w1">
+  <h3 id="w1">W1 · The first live run on GitHub</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> you create the bot once and place its key. The router then pushes this epic, opens its draft pull request and tracking issue, and arms the watch. W1's worker checks every fact the fake GitHub could not prove and records each one; a fact that fails is fixed in this WU. W1 is the first WU whose branch the bot pushes.</p>
+    <ul>
+      <li><b>Your setup</b> (<code>docs/install.html</code> §5): create the App (Contents, Pull requests, Issues read and write; Checks, Commit statuses read), install it on this repository only, place <code>app.pem</code> and <code>app.conf</code>, give the router's shell <code>api.github.com</code>, <code>github.com</code> and the run dir, and set "require approval for outside collaborators". Push main first if GitHub does not hold E-GHFLOW yet.</li>
+      <li><b>The bot</b>: <code>router-gh.sh push epic/E-GHFLOW2</code> prints <code>PUSHED</code> with the bot as pusher; <code>pr-open epic/E-GHFLOW2</code> opens a draft into main authored by <code>&lt;slug&gt;[bot]</code>; <code>issue epic/E-GHFLOW2</code> prints <code>ISSUE … state=opened</code>; then W1's own branch is pushed and its draft opened into the epic.</li>
+      <li><b>The four facts only GitHub proves</b> (G2): the token as <code>x-access-token</code> basic auth over https; <code>git/ref/heads/wu/E/x</code> taking a branch with slashes; Pull requests write letting the App comment; and, from W1's worker with the key in place, <code>ln ~/.config/keel/router-gh/app.pem ./x</code> failing.</li>
+      <li><b>The Keel gate run</b>: a work-branch push shows jobs ci, gate, docs; ci green; gate green on checks 1–7 with its evidence table and "8·manual-review: waiting"; Release does not run; whether GitHub turns an entity-escaped <code>@name</code> or <code>#n</code> in a note into a mention or link.</li>
+      <li><b>The watch</b>: your <code>/keel go</code> on the tracking issue prints <code>COMMAND … from=5499546 verb=go pending=0</code> within a minute (you type <code>ROUTER_WATCH_MAX=600 scripts/router-gh-watch.sh comment &lt;n&gt;</code>; the guard admits no prefix). A second account's comment prints only <code>IGNORED from=other count=1</code> (skipped, with the reason, if you have no second account).</li>
+      <li><b>Observed, each failing safe</b>: that only a body edit moves a comment's <code>updated_at</code>; that an installation token may read <code>GET /user/{id}</code>; the sub-issue calls.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Backlog github-flow G2 · DEC-60, DEC-61, DEC-62 (their "first run owed") · UC-GATE-7, UC-ROUTE-1, UC-ROUTE-7.</p>
+  <p data-item="wu-expected"><b>Live:</b> the result report lists every G2 line with the line GitHub or the script printed, pass or fail. <b>Integration:</b> waived unless a fix lands; a fix gets a test against the fake GitHub that fails before it. <b>Unit:</b> none.</p>
+  <p data-item="wu-deps">none (your App setup comes first)</p>
+</div>
+
+<div data-wu="E-GHFLOW2.W2" data-c="wu-w2">
+  <h3 id="w2">W2 · The router uses the GitHub flow</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the router skills learn when to push, open and ready a pull request, how to arm the GitHub watches, and how to keep the tracking issue. Text only. It reaches the router when it lands on main, since the router runs in the main checkout; until then the router follows "How this epic runs" below.</p>
+    <ul>
+      <li><code>keel-router</code> (both trees, <code>skills/</code> and <code>.claude/skills/</code>): push a WU branch once its tip carries its test note; <code>pr-open</code> then; <code>pr-ready</code> once its gate and review pass; arm <code>review</code> and <code>comment</code> on ready, <code>checks</code> after a push, <code>merged</code> after a sign-off; re-arm with <code>since &lt;id&gt;</code>, or <code>resume=</code> after <code>OVERFLOW</code>; on <code>EDITED</code>, ask you to post again; <code>sync</code> after a merge made on GitHub; refresh the tracking issue on each state change; Telegram stays the fallback.</li>
+      <li><code>project-router</code>: the launcher's new denies and its per-run admin-dir check (DEC-63); the bot's pushes under "Who runs what" (DEC-61); the GitHub path in the sign-off sequences; <code>scripts/ci-gate.sh</code> and <code>.github/workflows/keel-gate.yml</code> under "What no gate reviews".</li>
+      <li>Until W3 lands, a stopgap for R50: before staging any typed <code>keel mr</code> in a linked checkout, the router reads the watchdog's latest report (its facts check every admin dir every 5 minutes) and stops on an admin-dir problem. The guard admits no check-only launcher run, so the window is up to 5 minutes, not zero.</li>
+      <li>Optional, your edit with it: the router's allow lines in <code>.claude/settings.json</code> (install §5).</li>
+      <li>Rule-bearing: your <code>keel mr commit</code>.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Backlog github-flow G3 · UC-ROUTE-1 (the router arms the GitHub watches) · DEC-61, DEC-62 (their "the router skills do not arm these watches yet").</p>
+  <p data-item="wu-expected"><b>Integration: waived.</b> The WU changes no code. The router's guard already admits every shape the skills name; a check of that list against <code>tests/suite/router.rs</code>'s guard cases goes in the result.</p>
+  <p data-item="wu-deps">none (W1 for the live use)</p>
+</div>
+
+<div data-wu="E-GHFLOW2.W3" data-c="wu-w3">
+  <h3 id="w3">W3 · Your approval is the sign-off</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> a new signer tier, <code>github</code>. When you approve a pull request, a workflow from main checks that you are in the committed roster and approved exactly the head commit. It then writes the same sign-off note your typed command writes, and sets a <code>keel/sign-off</code> status. The typed sign-off stays as the fallback.</p>
+    <ul>
+      <li><b>Changed from E-GHFLOW's plan:</b> GitHub takes a <code>pull_request_review</code> workflow from the pull request's merge commit, not from main, so a pull request could edit its own sign-off. So the review event only starts a run with no permissions; the writer runs on <code>workflow_run</code>, which GitHub takes from main. It trusts nothing from the run that started it: it re-reads the review by id (approver id, state, commit equal to the head).</li>
+      <li>The writer builds <code>keel</code> from the pull request's base and reads the base's roster and policy, as the gate does (DEC-60). It writes <code>mr/v1</code>, pushes <code>refs/notes/mr</code>, sets <code>keel/sign-off</code>. Its token: contents and statuses write, nothing else.</li>
+      <li>Roster line <code>github: &lt;user-id&gt; &lt;login&gt;</code> in <code>.keel/mr-allowed</code>; <code>[mr] tiers</code> must list <code>github</code>. This WU changes the roster, so it is signed with <code>--roster-change</code>.</li>
+      <li><code>mr/v1</code> gains <code>review</code> (id, URL, approved commit). Check 8 learns the tier: offline it checks the note's bindings; in CI it re-reads the review.</li>
+      <li>Both levels. For an epic, the result report rides as <code>refs/notes/report</code> on the epic tip, written by the closing worker; <code>router-gh.sh push</code> pushes it with the other notes, and check 8 hashes it from there.</li>
+      <li>Notes written on GitHub reach the Mac: <code>router-gh.sh</code> fetches and merges GitHub's notes before each notes push (DEC-61's open consequence).</li>
+      <li>R50: <code>keel mr</code> checks its own checkout's <code>.git</code> link and admin dir, as the launcher does, before any git call.</li>
+      <li>G5's W2 test nits, since this WU edits <code>tests/suite/router_gh.rs</code>.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-GHFLOW open points 2 and 10 · UC-MR (new row: a sign-off by approval) · DEC-47, DEC-48 (amended) · backlog e-router-v2 R50 · backlog github-flow G1 (W4), G5 (W2 rows).</p>
+  <p data-item="wu-expected"><b>Integration:</b> scratch repo plus recorded review payloads: an approval by a listed id on the head writes <code>mr/v1</code> and the gate goes green; an older sha, an unlisted id, or a "comment" review writes nothing; a code commit after the approval turns check 8 red; an epic approval binds the report note, and an edited note turns check 8 red; <code>keel mr</code> refuses a checkout whose admin dir holds a <code>config.worktree</code> or a wrong <code>commondir</code>, running no git. A lock test pins the two workflows (triggers, permissions, pinned actions, no head checkout in the writer). <b>Unit:</b> the roster line, the note fields, the notes merge.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+<div data-wu="E-GHFLOW2.W4" data-c="wu-w4">
+  <h3 id="w4">W4 · GitHub enforces the merge</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> rules on GitHub make the merge button the gate: main and every epic branch change only by a pull request whose checks are green, merged as a merge commit. Nobody bypasses, you included. The checks that judge a pull request come from main, so a branch can no longer turn its own checks green.</p>
+    <ul>
+      <li><b>Base-defined checks.</b> Main now holds the gate, so the pull-request jobs move to <code>pull_request_target</code>, which GitHub takes from main for every base (DEC-60). Same rules as today: read-only token, no secret, actions pinned, credentials not kept. No cache a pull request's run can write. <code>.github/</code> and <code>scripts/ci-gate.sh</code> become rule-bearing.</li>
+      <li><b>Rules</b> (you set them once; the WU gives the exact list): a pull request for main and <code>epic/*</code>; required checks <code>ci</code>, <code>gate</code>, <code>docs</code>, <code>keel/sign-off</code>, each pinned to GitHub Actions as its source; merge commits only; no force push or deletion; an empty bypass list. DEC-38's tag rule: only you create version tags.</li>
+      <li><b>Auto-merge</b>: <code>[github] merge_on_approve</code>, default on; <code>pr-ready</code> turns on GitHub's auto-merge (merge commit), so your approval lands a green pull request.</li>
+      <li><b>After the rules</b>: WU merges happen on GitHub; the router's <code>sync</code> brings them back; <code>sync main</code> fetches main. The close's own commits, and any merge of main into an epic, go through a pull request too.</li>
+      <li>A merge commit GitHub makes passes the epic's range walk.</li>
+      <li>A read-only script prints the live settings against the expected list.</li>
+      <li>G4: the base keel is built once per run and shared between the jobs.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-GHFLOW open points 11 and 13 · UC-GATE-7 (amended: required, base-defined) · DEC-60, DEC-23 (amended) · DEC-38 (its tag rule) · backlog github-flow G1 (W5), G4.</p>
+  <p data-item="wu-expected"><b>Integration: waived in part.</b> GitHub's settings cannot be tested hermetically. The settings script is tested on recorded answers: a missing rule, a bypass actor, squash allowed, a check from another source, each red. A lock test pins <code>pull_request_target</code>, the read-only token and no cache write. A GitHub-made merge commit walks green on a scratch repo. <b>Live:</b> the first WU merged through the button after landing 2.</p>
+  <p data-item="wu-deps">W3 on main (landing 1)</p>
+</div>
+
+<div data-wu="E-GHFLOW2.W5" data-c="wu-w5">
+  <h3 id="w5">W5 · A test you run on your Mac, from the pull request</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the worker writes try-it steps into its result report: where to check out, how to build, each step with what you should see, how to undo real changes. The pull request shows them as a checklist. You run them and comment the result; a <code>keel/tried</code> status records it on the exact commit, and the sign-off carries it.</p>
+    <ul>
+      <li>A tagged section of the WU result report, <code>data-item="try-it"</code>, optional, checked by <code>keel verify-doc</code> when present: each step has a command and an expected result; real state needs a restore step.</li>
+      <li><code>pr-open</code> copies the steps into the pull-request body as a checklist, with the head sha to test.</li>
+      <li>You comment <code>/keel tried pass</code>, <code>/keel tried fail &lt;step&gt;: &lt;what you saw&gt;</code> or <code>/keel tried skip &lt;reason&gt;</code>. A workflow on <code>issue_comment</code>, which GitHub takes from main, checks your id against the roster's github lines and the head sha, then sets <code>keel/tried</code>. With no try-it section it sets success, "nothing to try", so the check can always be required.</li>
+      <li>The command joins the router's grammar (<code>scripts/router-gh-command.jq</code>), so the watch prints it; on a fail the router sends the worker your text as data.</li>
+      <li>W3's sign-off copies it into <code>mr/v1</code> as <code>tried</code>; a typed sign-off passes <code>--tried pass|skip</code>. <code>keel/tried</code> joins W4's required checks.</li>
+      <li>G5's W3 test nits, since this WU edits the watch's tests.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-GHFLOW open point 9, §6 · UC-DOC (new row: the try-it section) · UC-MR (the sign-off records it) · UC-ROUTE-7 (amended: the grammar) · backlog github-flow G1 (W6), G5 (W3 rows).</p>
+  <p data-item="wu-expected"><b>Integration:</b> <code>keel verify-doc</code> on report fixtures: a step without an expected result, or real state without a restore step, is red; no section is green. The comment reader on recorded payloads: your <code>pass</code> on the head sets success; an older sha or another id sets nothing; a skip without a reason is refused. The sign-off writes <code>tried</code>. <b>Unit:</b> the grammar, the checklist renderer.</p>
+  <p data-item="wu-deps">W3 on main (landing 1); W4 for the required check</p>
+</div>
+
+<div data-wu="E-GHFLOW2.W6" data-c="wu-w6">
+  <h3 id="w6">W6 · Work that need not wait goes in its own pull request</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> a rule-text or T1 doc edit that needs your yes goes into a small pull request off the epic, while the code work goes on in its own. Your approval of the small one is its sign-off, so no typed commit stops a worker.</p>
+    <ul>
+      <li>New branch kinds under the WU prefix: <code>wu/&lt;E&gt;/rules-&lt;slug&gt;</code> (rule-bearing paths only) and <code>wu/&lt;E&gt;/docs-&lt;slug&gt;</code> (docs only). Each is a WU to the gate.</li>
+      <li>The commit-msg hook accepts a rule-bearing commit without a <code>Reviewed-By</code> trailer on a <code>rules-</code> branch only; that branch's sign-off is your review.</li>
+      <li>A docs-only or rules-only range needs no result report (<code>[mr] report</code> applies to ranges that change code).</li>
+      <li>When the code needs the rule change, its branch starts from the rules branch; its notes come only after the rules pull request merges.</li>
+      <li>Conflicts: GitHub refuses a conflicted merge; the router turns the pull request back to draft (a new <code>router-gh.sh draft &lt;n&gt;</code>, label <code>conflict</code>); the worker merges the synced epic into its branch, never a rebase, and re-gates.</li>
+      <li>The hook change reaches every worktree when you install a <code>keel</code> built from main, so it lands at the close or a landing.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-GHFLOW open points 14 – 16, 18, §8 · UC-MR-2 (amended: no trailer on a rules branch) · UC-MR-1 (amended: report policy for docs-only ranges) · DEC-24, DEC-40 (amended) · backlog github-flow G1 (W7).</p>
+  <p data-item="wu-expected"><b>Integration:</b> scratch repo: an untrailered rule-bearing commit is refused on <code>wu/E/x</code>, accepted on <code>wu/E/rules-x</code>; a rules branch with a code path is refused at its gate; a docs-only WU signs without a report; a code branch started from a rules branch, gated after the rules merge, has a range without the rules commits. <code>draft</code>'s argument checks and guard shape. <b>Unit:</b> the branch-kind parser.</p>
+  <p data-item="wu-deps">W3 (W4 for merges on GitHub)</p>
+</div>
+
+<div data-wu="E-GHFLOW2.W7" data-c="wu-w7">
+  <h3 id="w7">W7 · Waivers and roster changes from the pull request</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the two-step decisions you type today become two comments. The first gets back exactly what the typed command shows; the second, with the code it printed, records it. You are told each time on GitHub.</p>
+    <ul>
+      <li><code>/keel waive-review &lt;reason&gt;</code>: a workflow on <code>issue_comment</code> (from main) posts the typed preview (your reason, open findings, every review note on the branch) with a confirm code. <code>/keel confirm-waiver &lt;code&gt;</code>, then your approval, writes the WAIVED review note and the sign-off together.</li>
+      <li><code>/keel accept-waiver &lt;code&gt;</code> accepts a waiver the review's round cap wrote, after the same preview.</li>
+      <li>A pull request that changes <code>.keel/mr-allowed</code>: the preview lists the added and removed lines; the sign-off is refused until your <code>/keel roster-change</code>.</li>
+      <li>The preview mentions you and asks for your review; the pull request gets the <code>needs-owner</code> label; the tracking issue lists it under "waiting on you" (<code>router-gh.sh issue</code>). The result is posted back.</li>
+      <li>The writer builds <code>keel</code> from the base and never runs the head's code.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-GHFLOW open point 12 · UC-MR (amended: waivers and roster changes by comment) · DEC-49, DEC-47 (amended) · backlog github-flow G1 (W8).</p>
+  <p data-item="wu-expected"><b>Integration:</b> recorded payloads on a scratch repo: a waive request posts a preview with the typed preview's lines; a wrong code, another id or an older sha writes nothing; the right one writes both notes or neither; a roster change without <code>/keel roster-change</code> is refused. <b>Unit:</b> the grammar, the preview renderer.</p>
+  <p data-item="wu-deps">W3 on main (landing 1)</p>
+</div>
+
+<div data-wu="E-GHFLOW2.W8" data-c="wu-w8">
+  <h3 id="w8">W8 · Docs as web pages on GitHub Pages</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> one GitHub Pages site holds the docs of every live branch, so a plan or report is a link you open anywhere. Comments and diffs stay in htmldoc.</p>
+    <ul>
+      <li><b>First, before any build work, two checks:</b> Pages is free for this public repository, and the htmldoc server takes comment and snapshot calls from the Pages origin (a test page, a doc id minted for the check, one comment then resolved). Either failing stops W8 and comes back to you with the htmldoc "view" endpoint as the fallback.</li>
+      <li>The builder runs on <code>workflow_run</code> after "Keel gate", so it is main's code, and the Pages environment's default-branch rule admits it. Each branch's <code>docs/</code> is data, one folder per branch, plus each epic tip's report note.</li>
+      <li>The pull-request body links each changed doc's page.</li>
+      <li>Limits (verified for E-GHFLOW): 1 GB a site, 10-minute deploys. The pages are public, like the repository.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Your ruling on E-GHFLOW open point 5 (2026-11-15: "ok, go with Pages") · UC-DOC (new row: where a doc is read) · backlog github-flow G1 (W9).</p>
+  <p data-item="wu-expected"><b>Integration:</b> the builder on a scratch repo with two branches: each branch's docs land in its folder, relative links resolve, a deleted branch's folder is gone on the next build, the report note renders. <b>Unit:</b> branch-to-folder naming.</p>
+  <p data-item="wu-deps">W1 (W3 for the report note)</p>
+</div>
+
+<div data-wu="E-GHFLOW2.W9" data-c="wu-w9">
+  <h3 id="w9">W9 · CI green on Linux (added 2026-11-16)</h3>
+  <div data-item="wu-summary">
+    <p>GitHub's Ubuntu <code>cargo test</code> fails 20 router tests with "commanders must be a list of GitHub user ids"; macOS passes. The commanders check in <code>scripts/router-gh.sh</code> runs <code>expr</code> with a <code>\(</code> group, so expr prints the group's text. With one commander the group is empty: GNU expr exits 1, BSD expr exits 0. The fix wraps the whole list in one outer group, so a match always prints it. Plan: <a href="2026-11-15-eghflow2-w9-plan.html">W9 plan</a>.</p>
+  </div>
+  <p data-item="wu-maps-to">DEC-62 (only committed commanders, by numeric id; E-GHFLOW.W3) · UC-GATE-7 (CI on GitHub runs green).</p>
+  <p data-item="wu-expected"><b>Integration:</b> the router tests run green under a GNU-semantics <code>expr</code> and <code>dash</code> as <code>sh</code>, red before the fix; a new test puts GNU's rule first on the PATH, so macOS catches it too. <b>Unit:</b> none.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+</div>
+
+<h2 id="open-points">Open points</h2>
+<p>Work goes on at these answers. Comment to overrule. Point 1 needs your ruling before landing 1. E-GHFLOW's answers to its open points 1 – 12, 14 – 16 and 18 stand; point 13 is settled; its point 17 is answered below.</p>
+<table data-item="open-questions" data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th><th>Other options</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>GitHub runs the sign-off, try-it, waiver and Pages workflows only from main. How do they get there before the close?</td><td><b>Two landings, by one ruling from you now:</b> landing 1 after W1 – W3, landing 2 after W4, the close after W5 – W8. Each landing is a full epic gate on the epic tip: the landed WUs are distilled, every tracked plan and result is archived (this plan stays readable by <code>git show</code>), a short landing report is signed, and the epic merges into main. The epic branch then goes on.</td><td>Landing 1 turns your approval into the sign-off for every later WU; landing 2 turns the rules on, so the rest merges by the button. The epic gate refuses a tip that still tracks a plan or result, so each landing archives them, as E-GHFLOW's close did.</td><td>Land only at the close (W3 – W8 run on GitHub only after this epic, so it never runs through them); split into three epics now (the same gates, three plans); prove each workflow on a scratch public repository first (a second repository and App install for you)</td></tr>
+    <tr><td>2</td><td>Where does the sign-off writer run?</td><td><b>On <code>workflow_run</code>, from main</b>; the review event only starts it</td><td>GitHub takes a review event's workflow from the pull request's merge commit, so a pull request could rewrite its own sign-off. E-GHFLOW's plan assumed main; GitHub's event table says otherwise</td><td>A comment command instead of the approval (loses the one-tap sign-off)</td></tr>
+    <tr><td>3</td><td>Do the two security rows from E-GHFLOW.W3, R50 and R51, belong here?</td><td><b>R50 in W3; R51 stays in the backlog</b> for the next router epic</td><td>R50 is the typed <code>keel mr</code> in a linked checkout. W3 edits that code, and the typed path stays the fallback, so it is fixed there; W2's stopgap covers the weeks before. R51 is a new sandbox design with its own security review, and this epic gives workers no new write</td><td>Both here (doubles the security scope); both left (the fallback stays exposed)</td></tr>
+    <tr><td>4</td><td>Does pushing still re-run every test locally (E-GHFLOW point 17)?</td><td><b>Nothing to change</b></td><td>The router's push runs no hook (DEC-63). After landing 2, main moves only by pull request, so you push only tags</td><td>Drop the suite from pre-push too (saves nothing now)</td></tr>
+    <tr><td>5</td><td>Is a signer the same as a commander?</td><td><b>No: a <code>github:</code> line in the roster</b>, apart from <code>[github] commanders</code></td><td>The roster says who signs (DEC-47); the commanders say whom the router hears (DEC-62). One may be without the other</td><td>Sign by the commanders list (one list, but hearing becomes signing)</td></tr>
+    <tr><td>6</td><td>Which of E-GHFLOW's CI follow-ups come in?</td><td><b>Build cost in W4</b>; the main range walk is closed by W4's rules; the toolchain pin stays in the backlog</td><td>W4 rewrites the workflow anyway. Once main moves only by a gated pull request, the walk has run. The pin is "if it bites"</td><td>A separate CI WU</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="how-it-runs" data-c="how-it-runs-h">How this epic runs</h3>
+<p>The epic uses each GitHub step as soon as main holds it.</p>
+<table data-c="how-it-runs">
+  <thead><tr><th>Phase</th><th>Pushes and pull requests</th><th>Your orders</th><th>Sign-off</th><th>Merge</th></tr></thead>
+  <tbody>
+    <tr><td>W1 – W3</td><td>The bot pushes the epic and each WU branch; a draft per WU into the epic, one for the epic into main</td><td>Comments, heard by the watch once W1 proves it; chat and Telegram still work</td><td>Typed</td><td>You merge locally; the bot pushes the epic, and GitHub shows the WU's pull request merged</td></tr>
+    <tr><td>Landing 1</td><td>The epic's pull request into main</td><td>The same</td><td>Typed (the writer is not on main yet)</td><td>You merge and push main</td></tr>
+    <tr><td>W4</td><td>The same</td><td>The same</td><td>Your approval</td><td>As in W1 – W3</td></tr>
+    <tr><td>Landing 2</td><td>The same</td><td>The same</td><td>Your approval: the first epic signed this way</td><td>You merge and push main, then set the rules</td></tr>
+    <tr><td>W5 – W8, close</td><td>The same; the close's commits by pull request</td><td>The same</td><td>Your approval; try-it and waivers by comment as each lands at the close</td><td>GitHub, by the button or auto-merge</td></tr>
+  </tbody>
+</table>
+<div class="diagram" data-c="order-diagram">
+<pre class="mermaid">
+flowchart LR
+  W1["W1 live run"] --> W3["W3 approval signs"]
+  W2["W2 router skills"] --> L1{"Landing 1"}
+  W3 --> L1
+  L1 --> W4["W4 GitHub enforces"]
+  W4 --> L2{"Landing 2"}
+  L2 --> W5["W5 try-it"]
+  L2 --> W6["W6 own pull requests"]
+  L2 --> W7["W7 waivers"]
+  L2 --> W8["W8 Pages"]
+  W5 --> C["Close"]
+  W6 --> C
+  W7 --> C
+  W8 --> C
+</pre>
+</div>
+<p>W5 – W8 need only landing 1 to start; they wait for landing 2 so each merges by the button. W8 may start any time after W1.</p>
+
+<h3 id="built" data-c="built-h">What E-GHFLOW built that changes its plan</h3>
+<ul data-c="built">
+  <li>The router's push runs no hook (DEC-63). Its own checks stand in: a WU tip needs its test note; an epic that GitHub holds needs the range walk. E-GHFLOW's point 17 is moot (point 4).</li>
+  <li>The gate job is green when only check 8 fails (DEC-60). Check 8 becomes its own status with W3.</li>
+  <li>The workflow comes from the pushed commit (DEC-60). <code>pull_request_target</code> was rejected only because main had no gate; main has one now (W4).</li>
+  <li>A review event's workflow comes from the pull request, not main (point 2). <code>issue_comment</code> and <code>workflow_run</code> come from main.</li>
+  <li>The watch, its kinds and the closed grammar exist (DEC-62). W5 and W7 extend the grammar; who is heard stays <code>[github] commanders</code>.</li>
+  <li>The tracking issue exists (<code>router-gh.sh issue</code>). W7 adds "waiting on you".</li>
+  <li>The App holds Contents, Pull requests and Issues write; Checks and Commit statuses read. Statuses are set by the workflows' own token, never the App. Auto-merge (W4) needs only what the App holds.</li>
+  <li>Notes written on GitHub must be fetched before the router's next notes push (DEC-61). W3 adds that.</li>
+</ul>
+
+<h3 id="expected-h">Acceptance</h3>
+<ul data-item="expected" data-c="expected">
+  <li>Every G2 live check is recorded in W1's result, with what GitHub printed.</li>
+  <li>The router skills name every GitHub script shape; a WU of this epic goes from push to merged pull request with no owner command typed but the sign-off and merge (before landing 1).</li>
+  <li>Your approval on the head writes a sign-off note the local <code>keel verify-dod</code> accepts; an approval on an older commit, or by an id not in the roster, writes nothing. A pull request cannot change the writer.</li>
+  <li><code>keel mr</code> refuses a linked checkout whose admin dir git did not make, before any git call.</li>
+  <li>With the rules on, the merge button refuses a red pull request, and a direct push to main or an epic is refused, for you too. A pull request's change to its own workflow does not change its required checks.</li>
+  <li>With <code>merge_on_approve</code> on, your approval alone lands a green pull request.</li>
+  <li>With try-it steps, the merge waits for your <code>/keel tried</code> on the head, and the sign-off records it.</li>
+  <li>A rule edit lands through its own pull request while the code goes on; no typed commit stops a worker.</li>
+  <li>A waiver or roster change is recorded only after its preview and your confirm by comment.</li>
+  <li>Each live branch's docs open as pages; the pull request links them.</li>
+  <li>With GitHub unreachable, typed sign-off, local merges and hooks still work; what they merge lands on GitHub when it is back.</li>
+  <li>The epic test passes.</li>
+</ul>
+
+<h3 id="use-cases-h">Use cases</h3>
+<ul data-item="use-cases" data-c="use-cases">
+  <li>UC-GATE-7, amended: the pull-request checks are base-defined and required (W4).</li>
+  <li>UC-MR, new row: a sign-off by approval, the github tier, at both levels with the report as a note (W3); amended: the sign-off records the manual test (W5); waivers and roster changes by comment (W7).</li>
+  <li>UC-MR-1, amended: <code>keel mr</code> checks its checkout's admin dir (W3); the report is required only for ranges that change code (W6).</li>
+  <li>UC-MR-2, amended: no trailer on a <code>rules-</code> branch, whose sign-off covers it (W6).</li>
+  <li>UC-ROUTE-1, amended: the router arms the GitHub watches, syncs merges made on GitHub, turns a conflicted pull request back to draft (W2, W4, W6).</li>
+  <li>UC-ROUTE-6, amended: the guard admits <code>sync main</code> and <code>draft &lt;n&gt;</code> (W4, W6).</li>
+  <li>UC-ROUTE-7, amended: the grammar gains <code>tried</code>, <code>waive-review</code>, <code>confirm-waiver</code>, <code>accept-waiver</code>, <code>roster-change</code> (W5, W7).</li>
+  <li>UC-DOC, new rows: the try-it section (W5); docs read as pages (W8).</li>
+</ul>
+
+<h3 id="non-goals-h">Out of scope</h3>
+<ul data-item="non-goals" data-c="non-goals">
+  <li>Running the router or workers on GitHub.</li>
+  <li>Claude code reviews inside GitHub Actions (a backlog row).</li>
+  <li>Setting the GitHub flow up in other projects: Keel's repository only (E-GHFLOW point 8; a backlog row).</li>
+  <li>R51, the git-dir allow list (point 3), and the other e-router-v2 rows.</li>
+  <li>Pinning the Rust toolchain (G4, "if it bites").</li>
+  <li>Moving release tags off your terminal.</li>
+  <li>Changing what the gate checks: only where it runs and who signs move.</li>
+</ul>
+
+<h3 id="e2e-h">Epic test</h3>
+<div data-item="e2e-plan" data-c="e2e-plan">
+  <p>Hermetic, no network: a scratch repo with a bare "origin" and the fake GitHub E-GHFLOW's tests use (a fake <code>curl</code>; the worker sandbox refuses sockets). Steps 1 – 3 prove landing 1, step 4 landing 2, all of them the close.</p>
+  <ol>
+    <li>A WU tip with its notes is pushed by <code>router-gh.sh push</code>; <code>pr-open</code> opens its draft; <code>ci-gate.sh</code> is green on 1 – 7.</li>
+    <li>A recorded approval by a listed id on the head runs the writer's script: <code>mr/v1</code> is written, <code>keel verify-dod</code> is fully green; <code>router-gh-watch.sh review</code> prints the approval.</li>
+    <li>An epic tip with a report note is signed the same way; editing the note turns check 8 red. <code>router-gh.sh</code> fetches GitHub's notes before its own push.</li>
+    <li>A merge commit with GitHub's message and parents; the epic walk judges the seam green; the settings script is red on a recorded bypass actor.</li>
+    <li>A report with try-it steps: a recorded <code>/keel tried pass</code> on the head sets <code>keel/tried</code>, and <code>mr/v1</code> carries it.</li>
+    <li>A <code>rules-</code> branch with an untrailered rule-bearing commit is gated on its own; the code branch from it is gated after it merges, with a range free of the rules commits.</li>
+    <li>A <code>/keel waive-review</code> posts a preview; the confirm and an approval write the WAIVED note and the sign-off together.</li>
+    <li>The Pages builder renders both branches' docs and the report note.</li>
+  </ol>
+  <p>Live evidence, not a test: W1's run; landing 2 signed by approval; the first WU merged by the button with the rules on (recorded in its result).</p>
+</div>
+
+<h3 id="close-h">At each landing and the close</h3>
+<ul data-item="distillation-plan" data-c="distillation-plan">
+  <li><code>docs/use-cases/workflow.html</code> and <code>router.html</code>: the rows above, as each WU lands.</li>
+  <li><code>docs/decisions/</code>: new records (next free id, checked on every live branch) for the github tier and its writer (amending DEC-47, DEC-48), split pull requests (amending DEC-24, DEC-40), the try-it section, and Pages; DEC-60 (required, base-defined), DEC-61 (notes fetch, auto-merge, <code>draft</code>, <code>sync main</code>), DEC-62 (the grammar), DEC-23 and DEC-38 amended.</li>
+  <li><code>docs/architecture.html</code>, <code>docs/install.html</code> §5: the roster line, the rules, auto-merge, Pages.</li>
+  <li>The <code>keel-router</code>, <code>keel-workflow</code> and <code>project-router</code> skills: try-it, the conflict flow, the GitHub sign-off sequence.</li>
+  <li><code>docs/backlog/github-flow.html</code>: G1 – G5 closed or re-pointed; <code>e-router-v2.html</code>: R50 closed, R21 closed or re-pointed; new rows for setting the flow up in other projects and for Claude reviews in Actions.</li>
+</ul>
+
+<h3 id="security" data-c="security-h">Security reviews</h3>
+<p>W3, W4, W5, W7 and W8 add or change workflows that hold a write token. Scripts and workflows are outside <code>code_paths</code>, so the code gate never reads them. Each of these WUs gets the router's independent security review against DEC-63's list, plus: no head code runs with a write token, no cache a pull request can write, every event value through <code>env:</code>.</p>
+
+<h3 id="facts" data-c="facts-h">Verified facts vs assumptions</h3>
+<ul data-c="facts">
+  <li>Verified in this repo: <code>rule_bearing</code> already lists the three router GitHub scripts, not <code>.github/</code> or <code>ci-gate.sh</code>; <code>.keel/mr-allowed</code> holds only <code>username: vuluu</code>; the next free decision id is DEC-64; the keel-router skill has two trees.</li>
+  <li>Checked by a web search on 2026-11-15: a review event's workflow runs on the pull request's merge ref.</li>
+  <li>From E-GHFLOW's plan and DEC-60, unchanged: <code>pull_request_target</code> takes main's workflow for every base; <code>issue_comment</code> runs from the default branch; Pages limits.</li>
+  <li>Unverified, from memory, each checked by its WU first: <code>workflow_run</code> runs from the default branch with the token it declares; a ruleset can pin a required check to its source app on a free personal repository; auto-merge on this repository; whether a merge by auto-merge starts push workflows; turning a pull request back to draft through the API; the Pages environment's default-branch rule admitting a <code>workflow_run</code> deploy.</li>
+</ul>
+
+<h3 id="sources" data-c="sources-h">Sources</h3>
+<ul data-c="sources">
+  <li>E-GHFLOW epic plan v4, approved 2026-11-15: <code>git show ad97330:docs/work/2026-11-15-eghflow-plan.html</code> (archived).</li>
+  <li><a href="../backlog/github-flow.html">Backlog: the GitHub flow</a> G1 – G5 · <a href="../backlog/e-router-v2.html">Backlog: e-router-v2</a> R50, R51.</li>
+  <li><a href="../decisions/workflow-gates.html">Decisions: workflow gates</a> DEC-60 · <a href="../decisions/router.html">Decisions: router</a> DEC-61 – DEC-63.</li>
+  <li><a href="../architecture.html">Architecture</a> (GitHub) · <a href="../install.html">Install</a> §5.</li>
+  <li><a href="https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows">Events that trigger workflows</a>.</li>
+</ul>
+
+<h3 id="history" data-c="history-h">History</h3>
+<p>v1, 2026-11-15: written by a planning worker on <code>epic/E-GHFLOW2</code> off main <code>72cae9d</code>, from E-GHFLOW's approved v4 plan and its close. The owner ruled that day that W1 – W3 land early and a new epic carries the rest through the GitHub flow, and that he does not review plans: ready on writing.</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

@@ -423,6 +423,57 @@ fn the_commanders_must_be_committed() {
     assert!(gh.calls().is_empty(), "{:?}", gh.calls());
 }
 
+/// E-GHFLOW2.W9: the commanders check holds under GNU expr, as on GitHub's Linux runners, here on any
+/// host. With a `\(` group, GNU expr prints the group's text and exits 1 when that is empty; BSD expr
+/// exits 0. A shim with GNU's rule (sed reads the group) goes first on the PATH. One commander and two
+/// are heard; a list that is not ids is still refused.
+#[test]
+fn the_commanders_check_holds_under_gnu_expr() {
+    let gh = Gh::new();
+    let shim = gh.bin.join("expr");
+    std::fs::write(
+        &shim,
+        "#!/bin/sh\n\
+         # GNU expr's STRING : REGEX: with a \\( group it prints \\1 and exits 1 when that is empty\n\
+         if [ $# -eq 3 ] && [ \"$2\" = : ]; then\n\
+         \x20 case $3 in *'\\('*)\n\
+         \x20   d=$(printf '\\001')\n\
+         \x20   r=$(printf '%s\\n' \"$1\" | sed -n \"s$d^$3$d\\\\1${d}p\")\n\
+         \x20   printf '%s\\n' \"$r\"; [ -n \"$r\" ]; exit;;\n\
+         \x20 esac\n\
+         fi\n\
+         r=$(/bin/expr \"$@\"); rc=$?\n\
+         [ $rc -ge 2 ] && exit $rc\n\
+         printf '%s\\n' \"$r\"\n\
+         case $r in ''|0) exit 1;; esac\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&shim, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    // the shim has GNU's rule: an empty group fails, a matched one prints it
+    let probe = |re: &str| common::cmd("expr").env("PATH", gh.path()).args(["x[5]", ":", re]).output().unwrap();
+    let empty = probe(r"x\[ *[1-9]\( *, *[1-9]\)* *\]$");
+    assert_eq!((empty.status.code(), stdout(&empty)), (Some(1), String::new()));
+    let whole = probe(r"x\(\[ *[1-9]\( *, *[1-9]\)* *\]\)$");
+    assert_eq!((whole.status.code(), stdout(&whole)), (Some(0), "[5]".to_string()));
+    // one commander, the shape every GitHub run failed on
+    comments_on_30(&gh, vec![json!([comment(120, OWNER_ID, "/keel go", false)])]);
+    assert_eq!(lines(&once(&gh, &["comment", "30"])), [format!("COMMAND issue=30 comment=120 from={OWNER_ID} at={AT} verb=go pending=0")]);
+    // two commanders
+    let committed = std::fs::read_to_string(gh.repo.join(".keel/config.toml")).unwrap();
+    write(&gh.repo, ".keel/config.toml", &committed.replace(&format!("[{OWNER_ID}]"), &format!("[{OWNER_ID}, {STRANGER}]")));
+    commit(&gh.repo, "a second commander");
+    comments_on_30(&gh, vec![json!([comment(121, STRANGER, "/keel go", false)])]);
+    assert_eq!(lines(&once(&gh, &["comment", "30"])), [format!("COMMAND issue=30 comment=121 from={STRANGER} at={AT} verb=go pending=0")]);
+    // a login is not an id
+    write(&gh.repo, ".keel/config.toml", &committed.replace(&format!("[{OWNER_ID}]"), "[lesslucifer]"));
+    commit(&gh.repo, "a login");
+    gh.routes(&[]);
+    let o = watch(&gh, &["comment", "30"]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("commanders must be a list of GitHub user ids"), "{}", text(&o));
+    assert!(gh.calls().is_empty(), "{:?}", gh.calls());
+}
+
 /// Five failed polls in a row print UNREACHABLE with the last error; TIMEOUT carries the count of
 /// strangers seen.
 #[test]
