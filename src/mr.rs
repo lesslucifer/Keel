@@ -959,8 +959,9 @@ pub(crate) const SIGN_OFF_USAGE: &str = "usage: keel ci sign-off <wu|epic> <tip>
 
 /// `keel ci sign-off` (E-GHFLOW2.W3): the approval writer's core, run by scripts/ci-sign-off.sh with
 /// keel built from the pull request's base. `--reviews`: GitHub's review list for the pull request,
-/// as the script fetched it. Exit 0: mr/v1 written (tier github, the review copied in); exit 3: no
-/// approval to sign, nothing written; exit 1: refused, nothing written. The roster and policy are
+/// as the script fetched it. Exit 0: mr/v1 written (tier github, the review copied in); exit 4:
+/// already signed - the tip carries a note check 8 accepts, whose tier and signer are printed, and
+/// nothing is written; exit 3: no approval to sign, nothing written; exit 1: refused, nothing written. The roster and policy are
 /// the target's committed ones; a target with no roster signs nothing (no bootstrap by approval).
 pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     let ([lvl, tip_ref], Some(target), Some(file)) = (positionals(args)[..].try_into().unwrap_or(["", ""]), notes::target_flag(args), flag(args, "--reviews"))
@@ -1005,7 +1006,7 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
     // cause, for the owner to sort out.
     match notes::raw(repo, "mr", &tip) {
         Ok(None) => {}
-        Ok(Some(_)) => {
+        Ok(Some(raw)) => {
             return match manual_review(repo, cfg, lvl, &tip, &base, &target, cr.as_ref()) {
                 Ok(attested) => {
                     let theirs = attested.as_ref().map(|(r, _)| r.as_str());
@@ -1016,8 +1017,9 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
                             theirs.unwrap_or("no report")
                         ));
                     }
-                    println!("already signed on {}: its mr/v1 note passes check 8; nothing written (approval: review {})", short(&tip), review.id);
-                    Ok(0)
+                    let by = notes::parse::<MrNote>(&raw, "mr").map(|n| format!("{} {}", n.tier, n.signer)).unwrap_or_default();
+                    println!("already signed on {}: its mr/v1 note ({by}) passes check 8; nothing written", short(&tip));
+                    Ok(4)
                 }
                 Err((what, fix)) => refuse(format!(
                     "{} already carries an mr/v1 note, which check 8 refuses: {what}; an approval never replaces a sign-off\n  fix -> {fix}",
@@ -1147,18 +1149,21 @@ pub(crate) fn checkout_problem(root: &Path) -> Option<String> {
         let Some(named) = link.strip_prefix("gitdir: ").map(|l| l.trim_end_matches('\n')).filter(|l| !l.is_empty() && !l.contains('\n')) else {
             return Some(format!("{} is not a gitdir link: {owner}", dotgit.display()));
         };
-        let named = lexical(&root.join(named));
+        // as written, and as git follows it: through each link in turn, so `<link>/..` is the link's
+        // target's parent, not the text's (code review round 4)
+        let (written, named) = (root.join(named), lexical(&root.join(named)));
         let bad = |why: &str| {
             Some(format!("{} names {}, which is not this checkout's admin dir as git makes one ({why}): {owner}", dotgit.display(), named.display()))
         };
         if std::fs::symlink_metadata(&named).map(|m| !m.is_dir()).unwrap_or(true) {
             return bad("not a directory");
         }
-        let Some(admin) = canon(&named) else { return bad("it does not resolve") };
+        let Some(admin) = canon(&written) else { return bad("it does not resolve") };
         if admin.parent().and_then(Path::file_name).is_none_or(|n| n != "worktrees") {
             return bad("not under <git dir>/worktrees/");
         }
-        // a symlinked part (a planted <git dir>/worktrees) would send git, by ../.., to a git dir of its choosing
+        // a symlinked part (a planted <git dir>/worktrees, or `<link>/..`) would send git, by ../.., to a
+        // git dir of its choosing: the path git reaches must be the path as written
         if admin != named {
             return bad("a part of its path is a symbolic link");
         }

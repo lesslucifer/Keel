@@ -383,7 +383,7 @@ fn the_writer_never_overwrites_a_sign_off_and_judges_one_by_check_8() {
     let show = || git(p, &["notes", "--ref=mr", "show", &tip]);
     let already = |reviews: Value, extra: &[&str], why: &str| {
         let o = sign_off(p, "wu", "epic/e", &reviews, extra);
-        assert_eq!(o.status.code(), Some(0), "{why}: {}", text(&o));
+        assert_eq!(o.status.code(), Some(4), "{why}: {}", text(&o));
         assert!(text(&o).contains("already signed"), "{why}: {}", text(&o));
     };
     // after a typed confirm
@@ -759,6 +759,77 @@ fn keel_mr_refuses_a_fifo_in_the_git_links_without_hanging() {
     refused_before_git(&wt, &fake, &log, "a FIFO as the admin dir's commondir", "commondir is not ../..");
 }
 
+/// A git on PATH that records every call, then runs the real git: a refused checkout must log none.
+fn passthrough_git(dir: &Path) -> (String, std::path::PathBuf) {
+    let real = String::from_utf8(run("sh", dir, &["-c", "command -v git"]).stdout).unwrap().trim().to_string();
+    let bin = dir.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let log = dir.join("git-calls");
+    let q = |p: &str| common::sh_quote(p);
+    std::fs::write(bin.join("git"), format!("#!/bin/sh\necho \"$*\" >> {}\nexec {} \"$@\"\n", q(&log.to_string_lossy()), q(&real))).unwrap();
+    std::fs::set_permissions(bin.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    (common::path_with(&bin), log)
+}
+
+/// Code review round 4, B1: `wt`'s .git names `s/../<up k>/<rest>`, which reads as the real admin dir
+/// (`s/..` cancels) while git, following the link `s` first, reaches a planted admin dir and git dir
+/// whose core.fsmonitor writes `marker`. Returns the planted gitdir text.
+fn plant_dotdot(wt: &Path, admin: &Path, marker: &Path) -> String {
+    let (wt, admin) = (wt.canonicalize().unwrap(), admin.canonicalize().unwrap());
+    let shared: std::path::PathBuf = wt.components().zip(admin.components()).take_while(|(a, b)| a == b).map(|(a, _)| a).collect();
+    let k = wt.components().count() - shared.components().count();
+    let rest = admin.strip_prefix(&shared).unwrap();
+    let q = wt.join("pl");
+    let b = (0..k).fold(q.clone(), |b, i| b.join(format!("d{i}")));
+    std::fs::create_dir_all(b.join("x")).unwrap();
+    std::os::unix::fs::symlink(b.join("x"), wt.join("s")).unwrap();
+    let planted = q.join(rest);
+    let planted_git = planted.parent().unwrap().parent().unwrap();
+    git(&wt, &["init", "-q", "--bare", planted_git.to_str().unwrap()]);
+    let hook = wt.join("pl/fsmonitor");
+    std::fs::write(&hook, format!("#!/bin/sh\ntouch {}\n", common::sh_quote(&marker.to_string_lossy()))).unwrap();
+    std::fs::set_permissions(&hook, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    git(&wt, &["config", "--file", planted_git.join("config").to_str().unwrap(), "core.fsmonitor", hook.to_str().unwrap()]);
+    std::fs::create_dir_all(&planted).unwrap();
+    std::fs::write(planted.join("commondir"), "../..\n").unwrap();
+    std::fs::write(planted.join("gitdir"), format!("{}\n", wt.join(".git").display())).unwrap();
+    std::fs::copy(admin.join("HEAD"), planted.join("HEAD")).unwrap();
+    format!("gitdir: s/../{}{}\n", "../".repeat(k), rest.display())
+}
+
+/// Code review round 4, B1: a `<symlink>/..` in the .git link is judged as git follows it - the
+/// path resolved through its links must be the path as written - so neither layout runs any git,
+/// and the planted fsmonitor never fires.
+fn a_dotdot_through_a_symlink_is_refused(nested: bool) {
+    let d = fixture();
+    let p = d.path();
+    let scratch = TempDir::new().unwrap();
+    let (gitp, log) = passthrough_git(scratch.path());
+    git(p, &["switch", "-q", "main"]);
+    let wt = if nested { p.join("wt") } else { scratch.path().canonicalize().unwrap().join("wt") };
+    git(p, &["worktree", "add", "-q", wt.to_str().unwrap(), "wu/e/a"]);
+    let admin = std::path::PathBuf::from(git(&wt, &["rev-parse", "--absolute-git-dir"]));
+    let marker = scratch.path().join("fsmonitor-fired");
+    let link = plant_dotdot(&wt, &admin, &marker);
+    std::fs::write(wt.join(".git"), &link).unwrap();
+    let _ = std::fs::remove_file(&log);
+    let o = run_bounded(&wt, &["mr", "commit", "-m", "x", "--as", "vu"], &gitp);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("keel mr: refused") && t.contains("symbolic link"), "{link}: {t}");
+    assert!(!log.exists(), "{link}: git ran: {}", std::fs::read_to_string(&log).unwrap_or_default());
+    assert!(!marker.exists(), "{link}: the planted fsmonitor fired");
+}
+
+#[test]
+fn keel_mr_refuses_a_dotdot_through_a_symlink_in_a_nested_worktrees_git_link() {
+    a_dotdot_through_a_symlink_is_refused(true);
+}
+
+#[test]
+fn keel_mr_refuses_a_dotdot_through_a_symlink_in_a_sibling_worktrees_git_link() {
+    a_dotdot_through_a_symlink_is_refused(false);
+}
+
 /// Code review round 3 (refuted entry 1, a pre-existing R50 hole): a symlinked `<git dir>/worktrees`
 /// sends git to whatever dir it names (its config, its hooks) while every link still looks as git
 /// makes it; R50 refuses any symbolic link in the admin dir's path.
@@ -946,6 +1017,33 @@ fn the_writer_signs_a_listed_approval_on_the_head_pushes_the_note_and_sets_the_s
     // the developer fetches the note: the local gate is fully green
     git(&w.dev, &["fetch", "-q", w.origin.to_str().unwrap(), "+refs/notes/mr:refs/notes/mr"]);
     ok(keel(&w.dev, &["verify-dod", "wu", "wu/e/a"]));
+}
+
+/// Code review round 4, B2: on a tip already signed, the writer posts who signed, read from the note:
+/// "by approval" only for a github-tier note, never for a typed one; nothing is written or pushed.
+#[test]
+fn the_writer_says_who_signed_an_already_signed_tip_from_the_note() {
+    let w = Writer::new(true);
+    let head = w.sha("wu/e/a");
+    ok(keel(&w.dev, &["mr", "confirm", "wu", "--as", "vu"]));
+    git(&w.dev, &["push", "-q", "--no-verify", w.origin.to_str().unwrap(), "+refs/notes/mr:refs/notes/mr"]);
+    let typed = w.origin_note(&head).unwrap();
+    w.github(json!([review(6, OWNER, "APPROVED", &head)]));
+    let o = w.run(&[]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(w.statuses(), [("success".to_string(), "Already signed by vu (username)".to_string())]);
+    assert_eq!(w.origin_note(&head).unwrap(), typed, "the typed sign-off stands");
+
+    let w = Writer::new(true);
+    let head = w.sha("wu/e/a");
+    w.github(json!([review(6, OWNER, "APPROVED", &head)]));
+    ok(w.run(&[]));
+    let signed = w.origin_note(&head).unwrap();
+    w.github(json!([review(6, OWNER, "APPROVED", &head), review(8, OWNER, "APPROVED", &head)]));
+    let o = w.run(&[]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(w.statuses(), [("success".to_string(), "Already signed by approval (github 5499546, review 6)".to_string())]);
+    assert_eq!(w.origin_note(&head).unwrap(), signed);
 }
 
 #[test]
