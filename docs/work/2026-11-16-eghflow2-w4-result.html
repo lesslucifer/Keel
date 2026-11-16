@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHFLOW2.W4 result: GitHub enforces the merge</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHFLOW2.W4 result · GitHub enforces the merge</h1>
+      <p>Built and tested hermetically. Your steps: one commit, then the GitHub settings below, in order. The rules take effect only after W4 is on main.</p>
+      <div class="meta">v1 · 2026-11-16 · T3 · WU result · Keel · wu/E-GHFLOW2/w4-enforce off epic/E-GHFLOW2 526973a · plan: docs/work/2026-11-16-eghflow2-w4-plan.html</div>
+    </div>
+  </header>
+  <main>
+    <h2 id="you">What you do</h2>
+    <ol data-c="you">
+      <li>In the W4 worktree, apply the skill edits the worker's sandbox could not write: <code>git apply w4-skills.patch &amp;&amp; git add skills .claude/skills &amp;&amp; rm w4-skills.patch</code>. It changes both keel-router trees the same way and project-router.</li>
+      <li>Commit the staged rule-bearing files:<br><code>keel mr commit -m 'chore(E-GHFLOW2.W4): GitHub enforces the merge - keel-gate.yml runs from main on pull_request_target (build once, then keel/ci, keel/gate, keel/docs, a hash-checked keel, never skipped); release.yml loses its pull-request run; ci-gate.sh gains build, the hash and fork checks, the merged tree and the back-merge; gh-settings-check.sh; router-gh.sh turns on auto-merge (merge_on_approve) and takes sync main, and the guard admits it; .github/ and the gate, writer and settings scripts are rule-bearing; the router skills name the new shapes' --as vuluu</code></li>
+      <li>Then set GitHub's settings in the order below.</li>
+    </ol>
+
+    <h2 id="staged">Staged files (yours to commit)</h2>
+    <table data-c="staged">
+      <tr><th>File</th><th>Change</th></tr>
+      <tr><td><code>.github/workflows/keel-gate.yml</code></td><td><code>pull_request_target</code> (main, <code>epic/**</code>) and a push of main. Jobs <code>build</code>, <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code>.</td></tr>
+      <tr><td><code>.github/workflows/release.yml</code></td><td>No <code>pull_request</code> trigger (made by <code>dist generate</code>).</td></tr>
+      <tr><td><code>.keel/config.toml</code></td><td><code>rule_bearing</code> gains <code>.github/</code>, <code>scripts/ci-gate.sh</code>, <code>scripts/ci-sign-off.sh</code>, <code>scripts/gh-settings-check.sh</code>; <code>[github] merge_on_approve = true</code>.</td></tr>
+      <tr><td><code>scripts/ci-gate.sh</code></td><td>The <code>build</code> job, <code>KEEL_SHA256</code>, fork refusal, keel check on the merged tree, back-merge of main.</td></tr>
+      <tr><td><code>scripts/gh-settings-check.sh</code> (new)</td><td>The read-only settings check.</td></tr>
+      <tr><td><code>scripts/router-gh.sh</code></td><td><code>pr-ready</code> turns on auto-merge; <code>sync main</code>.</td></tr>
+      <tr><td><code>scripts/router-guard.jq</code></td><td>Admits <code>sync main</code>.</td></tr>
+      <tr><td><code>skills/</code>, <code>.claude/skills/</code> (from <code>w4-skills.patch</code>)</td><td>keel-router's <code>pr-ready</code> and <code>sync</code> rows; project-router's merge, rule-bearing, CI and <code>MERGED</code> rows.</td></tr>
+    </table>
+
+    <h2 id="settings">Your GitHub settings, in order</h2>
+    <table data-c="settings">
+      <tr><th>#</th><th>When</th><th>Where</th><th>Set</th></tr>
+      <tr><td>1</td><td>Any time</td><td>Settings › General › Pull Requests</td><td>Allow merge commits on; squash merging off; rebase merging off; "Allow auto-merge" on.</td></tr>
+      <tr><td>2</td><td>Any time</td><td>Settings › Actions › General</td><td>Workflow permissions: "Read repository contents"; "Allow GitHub Actions to create and approve pull requests" off; fork pull request approval: all outside contributors.</td></tr>
+      <tr><td>3</td><td>Any time</td><td>Settings › Rules › Rulesets › New tag ruleset</td><td><code>keel-tags</code>: Active; all tags; restrict creations, updates and deletions; bypass list: Repository admin only (you). DEC-38: only you tag.</td></tr>
+      <tr><td>4</td><td>When W4 lands on main; before 2026-12-02</td><td>Settings › Actions › Policies</td><td>An event policy that allows <code>pull_request_target</code> for <code>.github/workflows/keel-gate.yml</code> only. GitHub blocks that event by default in public repositories from 2026-12-02 (brownouts on 2026-11-09 and 2026-11-16).</td></tr>
+      <tr><td>5</td><td>After W4 is on main</td><td>Any pull request into the epic or main</td><td>Push to it once, or reopen it, and see "Keel gate" with <code>build</code>, <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code>. The ruleset's picker offers checks GitHub has seen.</td></tr>
+      <tr><td>6</td><td>After step 5</td><td>Settings › Rules › Rulesets › New branch ruleset</td><td><code>keel-merge</code>: Active; targets the default branch and <code>epic/**</code>; bypass list empty. Rules: restrict deletions; block force pushes; require a pull request (0 approvals; allowed merge method: Merge only); require status checks <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code>, <code>keel/sign-off</code>, each with source GitHub Actions; "Require branches to be up to date" off.</td></tr>
+      <tr><td>7</td><td>After step 6</td><td>Your Mac, in a checkout of main</td><td><code>GH_TOKEN=$(gh auth token) scripts/gh-settings-check.sh</code> prints <code>SETTINGS green (0 red, 0 unread)</code> and one BY-HAND line (step 4).</td></tr>
+    </table>
+    <p data-c="after">From step 6 on, nobody pushes main or an epic, you included. The bot's <code>push epic/&lt;E&gt;</code> is refused, so the close's commits go through a pull request. Two more effects. The bot cannot push a branch that changes <code>.github/workflows</code> (it has no Workflows permission), so you push those. Its auto-merge may also not merge them, and then you press the button.</p>
+
+    <h2 id="outcome">Outcome</h2>
+    <p data-item="outcome">Delivered against the requirement, with the deviations below, hermetically only: every item of the plan is built, and nothing has run on GitHub yet. With W4 on main, every pull request into main or an epic gets <code>keel/ci</code>, <code>keel/gate</code> and <code>keel/docs</code>. Main's workflow reports them, and so does main's script. Only <code>keel/ci</code> runs head code, with a read token. A fork or a failed build is red, never skipped, and all jobs share one keel built from the base, checked by hash. <code>pr-ready</code> turns on auto-merge, <code>sync main</code> works, the settings check reads and judges the live settings, and GitHub-made merges walk green.</p>
+
+    <h2 id="safety">Why pull_request_target holds</h2>
+    <ul data-c="safety">
+      <li>No job holds a write token or a secret: <code>contents: read</code> everywhere, no <code>secrets.</code>, no token passed, <code>persist-credentials: false</code>, pinned actions, event values through <code>env:</code> only. The lock test pins each.</li>
+      <li>Every checkout is <code>github.sha</code>, main's commit; the head is git data in scratch worktrees. Only <code>keel/ci</code> runs it, and that verdict is the head's own tests.</li>
+      <li>What head code in <code>keel/ci</code> could still take is the run's runtime token. With it, it could write the run's artifacts or a cache scoped to main. The keel artifact is refused unless its SHA-256 equals <code>build</code>'s job output, which no other job can change. No workflow reads a cache, and the lock test keeps it so for every file in <code>.github/workflows</code>.</li>
+      <li>A fork's pull request runs nothing of its own: the script refuses it before any git call, in every job.</li>
+      <li>The required names are new. A branch cut before W4 still runs its old <code>ci</code>, <code>gate</code> and <code>docs</code> with head code, but it can never report <code>keel/ci</code>, <code>keel/gate</code> or <code>keel/docs</code>.</li>
+      <li>Residual, from before W4: an old commit's <code>release.yml</code> still runs on that branch's pull request, holding <code>contents: write</code>. If the head's <code>dist-workspace.toml</code> sets <code>pr-run-mode = "upload"</code>, it builds head code with that token. Such code could write <code>refs/notes/*</code> on GitHub, but it cannot set <code>keel/sign-off</code> or move a protected branch. Open point 2 below.</li>
+    </ul>
+
+    <h2 id="deviations">Deviations</h2>
+    <ul data-item="deviations">
+      <li>Check names are <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code>, not <code>ci</code>, <code>gate</code>, <code>docs</code> (plan open point 1, the epic plan's names): old workflows on old branches still make the old names from head code.</li>
+      <li>A work branch's push no longer runs the gate; its pull request does. Every WU has a draft pull request from <code>pr-open</code>, so nothing is lost but a run before the pull request opens.</li>
+      <li><code>release.yml</code> loses its pull-request <code>plan</code> run (not in the epic plan): it held a write token, and the head could make it build head code.</li>
+      <li>The skill rows (<code>skills/</code> and <code>.claude/skills/</code>) are a patch, not staged: the worker sandbox denies writes under <code>.claude/</code>, and the two keel-router trees must stay equal (<code>init::self_hosting_*</code>).</li>
+      <li>A back-merge's sign-off is not built (plan open point 2): until it is, a pull request from main into an epic cannot merge with the rules on.</li>
+      <li>G8's CI flake (run 43797513660) was not read: this worker may not call GitHub's API.</li>
+    </ul>
+
+    <h2 id="evidence">Evidence</h2>
+    <div data-item="evidence">
+      <p>Commits: 66908f6 (the plan), d6ce4dd (tests and <code>dist-workspace.toml</code>); the rest staged. <code>keel check</code> green on the working tree with the staged change: 491 passed, 10 ignored.</p>
+      <ul>
+        <li><code>tests/suite/keel_gate.rs</code> (15): triggers, the read token, the per-pull-request group, pins and main's commit in every checkout, env only, the four jobs and their names, no skip on a pull request, no cache in any workflow, no <code>pull_request</code> in <code>release.yml</code>, the hash checked before any job runs keel.</li>
+        <li><code>tests/suite/ci_gate.rs</code> (15, 4 new): the build's hash and a wrong, empty or swapped keel refused; a fork refused by every job; keel check on the merged tree and a conflict red; a back-merge green only when its head is on main.</li>
+        <li><code>tests/suite/settings_check.rs</code> (5, new): the full list green with GET only; a missing rule, a bypass actor, squash allowed (repository or ruleset), a check from another source or any source, a check not required, force push allowed, an evaluate-only ruleset, an excluded branch, a tag bypass, a write token or Pages from a branch: each red. Hidden settings are UNREAD, never green; split rulesets count; GitHub unreachable or Pages off is red; bad input is refused before any request.</li>
+        <li><code>tests/suite/router_gh.rs</code> (2 new, 1 changed): <code>pr-ready</code> sends <code>enablePullRequestAutoMerge</code> with MERGE on both paths. <code>merge_on_approve = false</code> sends none. A refusal only warns. An uncommitted, bad or twice-set value is refused. <code>sync main</code> fast-forwards or fetches.</li>
+        <li><code>tests/suite/router.rs</code>, <code>router_gh_args.rs</code>: the guard and the script take <code>sync main</code> and refuse its near misses.</li>
+        <li><code>tests/suite/close_walk.rs</code> (1 new): GitHub-shaped merges (no hooks, GitHub committer, GitHub's message), one up to date and one behind. The epic gate, the epic's push walk and main's push walk are green. No code change was needed.</li>
+      </ul>
+      <p>Unverified until live, each checked by the first run after the rules: a <code>pull_request_target</code> job's check satisfies a required check on the head (GitHub's docs list the event as eligible); <code>keel/sign-off</code>'s source is the GitHub Actions app (15368); the artifact actions work in a <code>pull_request_target</code> run; the bot may turn on auto-merge; the Policies page's names; actor id 5 is the Repository admin role; the fork-approval value <code>all_external_contributors</code>.</p>
+    </div>
+
+    <h2 id="distillation">Distillation</h2>
+    <p data-item="distillation">Nothing yet; at the epic's close, with G6 and G8. DEC-60 amended: base-defined, required, the new names, the build job, merged tree, no work-branch push run. DEC-38 amended: no pull-request run; the tag ruleset. DEC-23 amended: GitHub merges. DEC-61: auto-merge, <code>sync main</code>. UC-GATE-7 amended. Also <code>docs/install.html</code> §5 (the settings list) and <code>docs/architecture.html</code>'s GitHub section.</p>
+
+    <h2 id="open">Open points</h2>
+    <table data-c="open">
+      <tr><th>#</th><th>Question</th><th>Recommendation</th></tr>
+      <tr><td>1</td><td>Who signs a back-merge of main into an epic?</td><td>The writer sets <code>keel/sign-off</code>, with no note, on a listed signer's approval of a main-into-epic pull request whose head is on main. Build it in W7, which edits the writer, with its security review. None is needed while one epic runs.</td></tr>
+      <tr><td>2</td><td>The old <code>release.yml</code> on pre-W4 branches (the residual above)</td><td>Your Actions policy (step 4's page) limits <code>release.yml</code> to <code>push</code>. Else accept it: such a run can write notes only, never a protected branch or <code>keel/sign-off</code>.</td></tr>
+    </table>
+
+    <h2 id="follow-ups">Follow-ups</h2>
+    <ul data-item="follow-ups">
+      <li>Open point 1, the back-merge sign-off: E-GHFLOW2.W7.</li>
+      <li>Open point 2: your ruling; the live check of an Actions policy goes in the next WU's result.</li>
+      <li>The facts listed as unverified: the first WU merged through the button after step 6 records each (epic plan, live evidence).</li>
+      <li>G8's CI flake (run 43797513660): read by you or a worker with <code>gh</code> before step 6 makes <code>keel/ci</code> required (backlog github-flow G8).</li>
+      <li>W3 round 5's nits on <code>src/mr.rs</code> stay open: W4 did not touch that file (backlog github-flow G8).</li>
+    </ul>
+  </main>
+</body>
+</html>
