@@ -497,11 +497,9 @@ fn bad_input_is_refused_before_any_git_call_uses_it() {
     assert!(ci.summary().is_empty(), "nothing ran: {}", ci.summary());
 }
 
-/// The SHA-256 of a file, as a second tool computes it.
+/// The SHA-256 of a file, hashed in-process (the script itself uses sha256sum or shasum).
 fn sha256(f: &Path) -> String {
-    let o = run("shasum", Path::new("/"), &["-a", "256", f.to_str().unwrap()], "");
-    assert!(o.status.success(), "{}", text(&o));
-    String::from_utf8(o.stdout).unwrap()[..64].to_string()
+    crate::mr::sha256_of(&std::fs::read(f).unwrap()).strip_prefix("sha256:").unwrap().to_string()
 }
 
 /// G4: the build job copies the base's keel out and prints its hash; a job given that hash runs a
@@ -531,22 +529,27 @@ fn the_build_prints_the_keels_hash_and_every_job_refuses_another_keel() {
     std::fs::set_permissions(&k, std::os::unix::fs::PermissionsExt::from_mode(0o644)).unwrap();
     let base = [("HEAD_BRANCH", "wu/e/a"), ("HEAD_SHA", sha.as_str())];
     let with = |h: &str| -> Vec<(&str, String)> { base.iter().map(|(a, b)| (*a, b.to_string())).chain([("KEEL_SHA256", h.to_string())]).collect() };
-    let job = |env: &[(&str, String)]| {
+    let job = |name: &str, env: &[(&str, String)]| {
         let env: Vec<(&str, &str)> = env.iter().map(|(a, b)| (*a, b.as_str())).collect();
-        ci.job("docs", &env, Some(k.to_str().unwrap()), None)
+        ci.job(name, &env, Some(k.to_str().unwrap()), None)
     };
-    let o = job(&with(&sum));
+    let o = job("docs", &with(&sum));
     assert!(o.status.success(), "the right hash: {}", text(&o));
+    // every judging job refuses another keel before it runs any (code review round 1)
     let wrong = format!("{}{}", if sum.starts_with('0') { "1" } else { "0" }, &sum[1..]);
-    for (h, why) in [(wrong.as_str(), "not the build job's"), ("", "did the build job fail?"), ("abc", "is not a SHA-256")] {
-        let o = job(&with(h));
-        assert_eq!(o.status.code(), Some(2), "{h:?}: {}", text(&o));
-        assert!(text(&o).contains(why), "{h:?}: {}", text(&o));
+    for name in ["ci", "gate", "docs"] {
+        for (h, why) in [(wrong.as_str(), "not the build job's"), ("", "did the build job fail?"), ("abc", "is not a SHA-256")] {
+            let o = job(name, &with(h));
+            assert_eq!(o.status.code(), Some(2), "{name} {h:?}: {}", text(&o));
+            assert!(text(&o).contains(why), "{name} {h:?}: {}", text(&o));
+        }
     }
     std::fs::write(&k, b"#!/bin/sh\necho swapped\n").unwrap();
-    let o = job(&with(&sum));
-    assert_eq!(o.status.code(), Some(2), "a swapped artifact: {}", text(&o));
-    assert!(text(&o).contains("refused"), "{}", text(&o));
+    for name in ["ci", "gate", "docs"] {
+        let o = job(name, &with(&sum));
+        assert_eq!(o.status.code(), Some(2), "{name}, a swapped artifact: {}", text(&o));
+        assert!(text(&o).contains("refused") && !text(&o).contains("swapped\n"), "{name}: {}", text(&o));
+    }
     assert!(ci.marked().is_empty(), "{:?}", ci.marked());
 }
 
@@ -557,13 +560,18 @@ fn a_head_from_another_repository_is_refused_by_every_job() {
     let ci = Ci::new(MARK_TEST);
     let sha = ci.sha("wu/e/a");
     let out = ci.tmp.join("out");
+    // a git that leaves a mark if it ever runs: the refusal comes before any git call
+    let shims = ci.tmp.join("git-shim");
+    std::fs::create_dir_all(&shims).unwrap();
+    crate::router_gh::exe(&shims.join("git"), "#!/bin/sh\n: > \"$MARKS/git-ran\"\nexit 1\n");
+    let path = common::path_with(&shims);
     for job in ["build", "ci", "gate", "docs"] {
         for head_repo in [Some("fork/Keel"), Some(""), None] {
             let mut env = vec![("HEAD_BRANCH", "wu/e/a"), ("HEAD_SHA", sha.as_str()), ("REPO", "owner/Keel"), ("KEEL_OUT", out.to_str().unwrap())];
             if let Some(r) = head_repo {
                 env.push(("HEAD_REPO", r));
             }
-            let o = ci.job(job, &env, Some(KEEL), None);
+            let o = ci.job(job, &env, Some(KEEL), Some(&path));
             assert_eq!(o.status.code(), Some(2), "{job} {head_repo:?}: {}", text(&o));
             assert!(text(&o).contains("a fork's pull request is never gated here"), "{}", text(&o));
         }

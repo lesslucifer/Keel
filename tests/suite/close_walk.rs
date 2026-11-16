@@ -71,7 +71,6 @@ fn push(p: &Path, branch: &str) -> Output {
     run("git", p, &["push", "-q", "origin", branch], "")
 }
 
-const WU_TESTS: &str = r#"{"integration":{"files":["tests/test_a.py"],"covers":"a works"}}"#;
 const EPIC_TESTS: &str = r#"{"e2e":{"waived":"no e2e harness in the fixture"}}"#;
 
 /// main → epic/e with WU a merged through the real hook (code, a test, a T3 plan, a doc), the
@@ -105,16 +104,9 @@ fn build_epic_with_a_merged_wu(p: &Path, remote: &Path) {
     ok(push(p, "main"));
 
     git(p, &["switch", "-q", "-c", "epic/e"]);
-    git(p, &["switch", "-q", "-c", "wu/e/a"]);
-    write(p, "src/a.py", "def a():\n    return 1\n");
-    write(p, "tests/test_a.py", "def test_a():\n    pass\n");
+    // the epic's T3 plan rides in WU a's commit (the close archives it)
     write(p, "docs/work/plan.html", "<p>plan</p>");
-    write(p, "docs/a.html", "<p>a</p>");
-    commit(p, "wu a");
-    ok(keel(p, &["notes", "write", "test"], WU_TESTS));
-    ok(keel(p, &["notes", "write", "doc"], ""));
-    ok(keel(p, &["notes", "write", "cr", "--verdict", "PASS"], ""));
-    ok(keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"], ""));
+    signed_wu(p, "a");
     git(p, &["switch", "-q", "epic/e"]);
     ok(run("git", p, &["merge", "-q", "--no-ff", "-m", "merge wu a", "wu/e/a"], ""));
     ok(push(p, "epic/e"));

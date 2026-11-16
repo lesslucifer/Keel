@@ -918,7 +918,7 @@ fn edit_cr(p: &Path, f: impl FnOnce(&mut Value)) {
     git(p, &["notes", "--ref=cr", "add", "-f", "-m", &n.to_string(), "HEAD"]);
 }
 
-fn sha256_of(b: &[u8]) -> String {
+pub(crate) fn sha256_of(b: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     format!("sha256:{}", Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect::<String>())
 }
