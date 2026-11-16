@@ -10,12 +10,12 @@
     <div class="inner">
       <h1>E-GHFLOW2.W4 result · GitHub enforces the merge</h1>
       <p>Built and tested hermetically, with the security review's findings fixed. Your steps: one commit, then the GitHub settings below, in order. The rules take effect only after W4 is on main.</p>
-      <div class="meta">v4 · 2026-11-16 · T3 · WU result · Keel · wu/E-GHFLOW2/w4-enforce off epic/E-GHFLOW2 526973a · plan: docs/work/2026-11-16-eghflow2-w4-plan.html (v3); rule-bearing files committed by you as 8dc6127</div>
+      <div class="meta">v5 · 2026-11-16 · T3 · WU result · Keel · wu/E-GHFLOW2/w4-enforce off epic/E-GHFLOW2 526973a · plan: docs/work/2026-11-16-eghflow2-w4-plan.html (v3); rule-bearing files committed by you as 8dc6127</div>
     </div>
   </header>
   <main>
     <h2 id="you">What you do</h2>
-    <p data-c="done">Steps 1 and 2 are done: your commit 8dc6127 (13 files, the skills patch applied). Code review round 1 (FAIL, on 8a0da69) left one more rule-bearing fix, staged: <code>scripts/gh-settings-check.sh</code>. Commit it:<br><code>keel mr commit -m 'chore(E-GHFLOW2.W4 review round 1): gh-settings-check.sh passes codeowners.file only when CODEOWNERS is exactly one rule line, * @owner - GitHub takes the last matching rule, so any other line names another owner for some path' --as vuluu</code><br>Then the GitHub settings below.</p>
+    <p data-c="done">Steps 1 and 2 are done: your commits 8dc6127 (13 files, the skills patch applied) and 25de913 (<code>scripts/gh-settings-check.sh</code>, code review round 1's fix). Nothing is staged. What is left is the GitHub settings below.</p>
     <ol data-c="you">
       <li>In the W4 worktree, apply the skill edits the worker's sandbox could not write: <code>git apply w4-skills.patch &amp;&amp; git add skills .claude/skills &amp;&amp; rm w4-skills.patch</code>. It changes both keel-router trees the same way, and project-router.</li>
       <li>Commit the staged rule-bearing files:<br><code>keel mr commit -m 'chore(E-GHFLOW2.W4): GitHub enforces the merge - keel-gate.yml runs from main on pull_request_target, edited included (build once, then keel/ci, keel/gate, keel/docs, a hash-checked keel, never skipped); keel-main.yml runs main/ci on a push of main and pages.yml follows it; CODEOWNERS names the owner; release.yml loses its pull-request run; ci-gate.sh gains build, the hash, fork and own-base checks, the merged tree and the back-merge; gh-settings-check.sh; router-gh.sh turns on auto-merge (merge_on_approve), takes sync main and refuses a WU into main, and the guard agrees; .github/ and the gate, writer and settings scripts are rule-bearing; the router skills name the new shapes' --as vuluu</code></li>
@@ -66,7 +66,21 @@
       <tr><td>Nit: <code>signed_wu</code> repeated the builder's signing</td><td>The close_walk builder calls <code>signed_wu</code> (7010b5e).</td></tr>
       <tr><td>Nit (waived by the reviewer): 19 settings cases run serially</td><td>Left as one table.</td></tr>
     </table>
-    <p data-c="round1-check"><code>keel check</code> is green on the working tree with the staged script: 496 passed, 10 ignored. Notes wait for your commit.</p>
+    <h2 id="round2">Code review round 2 (FAIL on 25de913) and its fixes</h2>
+    <table data-c="round2">
+      <tr><th>Finding</th><th>Fix</th></tr>
+      <tr><td>Important: the check that only keel-gate.yml reports <code>keel/ci</code>, <code>keel/gate</code> and <code>keel/docs</code>, that no workflow caches, and that only it runs on <code>pull_request_target</code> read substrings. So <code>name: "keel/ci"</code>, <code>name: 'keel/gate'</code>, <code>name:  keel/ci</code>, <code>with: { cache: npm }</code> and <code>pull_request: {}</code> passed it.</td><td>An exact list of the files under <code>.github/workflows</code>. Every workflow is decoded with <code>yaml-rust2</code> (<code>=0.13.0</code>, a dev-dependency) and checked on the decoded values:
+        <ul>
+          <li>each file's <code>on</code> keys are its events;</li>
+          <li>no job id or name but keel-gate.yml's three is a required name, <code>keel/sign-off</code> included, nor a name built by an expression that could become one;</li>
+          <li>no reusable workflow call;</li>
+          <li>no cache action or cache input.</li>
+        </ul>
+        Each of the reviewer's mutations, and its neighbours, is red for its reason. The exact-lines locks stay (64a3041).</td></tr>
+      <tr><td>Important: no case offered one rule line naming a second owner, or an owner whose name only starts with the owner's</td><td>Red cases <code>* @own @mallory</code> and <code>* @ownx</code>; the script already refused them (22d7a51).</td></tr>
+      <tr><td>Nits: the pin lookup rebuilt twice; the checkout step built twice and the keel env written twice; <code>code()</code> in two files</td><td>One <code>pin()</code>, one <code>checkout_step()</code> for both locks, <code>KEEL_ENV</code> reused, one <code>code()</code> that pages_workflow.rs imports (64a3041).</td></tr>
+    </table>
+    <p data-c="round1-check"><code>keel check</code> is green after round 2's fixes: 119 unit tests passed, 497 suite tests passed, 10 ignored.</p>
 
     <h2 id="outcome">Outcome</h2>
     <p data-item="outcome">Delivered against the requirement and the security review's findings, with the deviations below. Proven hermetically only: nothing has run on GitHub yet. With W4 on main, main's workflow and script judge every pull request into main or an epic: <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code>. Only <code>keel/ci</code> runs head code, with a read token. A fork, a failed build or a base other than the head's own is red, never skipped. All jobs share one keel built from the base, checked by hash. A branch can no longer change the checks that judge it. One gap remains: a workflow a head adds could report a check under a required name. Only you can push such a head, and your approval as code owner is required anyway. <code>pr-ready</code> turns on auto-merge, <code>sync main</code> works, the settings check reads and judges the live settings, and GitHub-made merges walk green.</p>
