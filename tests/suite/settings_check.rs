@@ -334,6 +334,17 @@ fn a_missing_rule_a_bypass_actor_squash_or_a_check_from_another_source_is_red() 
             edit(&format!("{R}/contents/.github/CODEOWNERS"), |v| v["content"] = json!(base64("/docs/ @mallory\n* @own\n"))),
             vec!["RED codeowners.file CODEOWNERS on the default branch is exactly one rule, * @<owner>, the owner for every path: rule lines: /docs/ @mallory | * @own (want only * @own)"],
         ),
+        // code review round 2: one rule line that is not exactly * @<owner>
+        (
+            "one rule naming a second owner",
+            edit(&format!("{R}/contents/.github/CODEOWNERS"), |v| v["content"] = json!(base64("* @own @mallory\n"))),
+            vec!["RED codeowners.file CODEOWNERS on the default branch is exactly one rule, * @<owner>, the owner for every path: rule lines: * @own @mallory (want only * @own)"],
+        ),
+        (
+            "one rule naming an owner whose name only starts with the owner's",
+            edit(&format!("{R}/contents/.github/CODEOWNERS"), |v| v["content"] = json!(base64("* @ownx\n"))),
+            vec!["RED codeowners.file CODEOWNERS on the default branch is exactly one rule, * @<owner>, the owner for every path: rule lines: * @ownx (want only * @own)"],
+        ),
         (
             "an unreadable CODEOWNERS",
             edit(&format!("{R}/codeowners/errors"), |v| v["errors"] = json!([{"message": "Unknown owner"}])),
