@@ -293,6 +293,8 @@ repo=$(toml github repo) || die "no [github] repo = \"<owner>/<name>\" in .keel/
 expr "x$repo" : 'x[A-Za-z0-9][A-Za-z0-9-]\{0,38\}/[A-Za-z0-9_.-]\{1,100\}$' > /dev/null || die "[github] repo must be <owner>/<name>: $(shown "$repo")"
 case "$repo" in */.*|*..*) die "[github] repo must be <owner>/<name>: $(shown "$repo")";; esac
 owner=${repo%%/*} rname=${repo#*/}
+# the repository's Pages site (E-GHFLOW2.W8): GitHub serves a project site at the owner's host, in lower case
+pages=https://$(printf '%s' "$owner" | tr 'A-Z' 'a-z').github.io/$rname
 docs=$(toml docs root) || docs=docs/
 expr "x$docs" : 'x[A-Za-z0-9_][A-Za-z0-9_./-]*/$' > /dev/null || die "[docs] root must be a relative directory ending in /"
 # gh_policy: [github] commanders (space-separated ids, maybe none) and free_text (true|false, default
@@ -492,8 +494,25 @@ bot_pr() {
 }
 # doc text made plain: no markup, link, mention, table cell or control character survives
 plain() { LC_ALL=C tr -d '\000-\037\177`*_[]<>@#|\\~!$^{}"' | LC_ALL=C cut -c1-200; }
+# page_ok <branch> <path>: scripts/pages-build.sh publishes this file, by its --folder and --path
+# rules (E-GHFLOW2.W8, security review F4), so no page link is a dead one: main, epic/<E> or
+# wu/<E>/<x>; a path under docs/, whatever [docs] root says, as the builder reads; parts in
+# [A-Za-z0-9._-], not starting with a dot, at most 200 bytes; at most 400 bytes in all; nothing under
+# docs/_report/; a doc's file type. tests/suite/router_gh.rs checks it against the builder's answers.
+page_ok() {
+  for pg_x in "$1" "$2"; do
+    case "$pg_x" in ''|*[!A-Za-z0-9._/-]*|*..*) return 1;; esac
+    [ ${#pg_x} -le 400 ] || return 1
+  done
+  case "$2" in docs/_report|docs/_report/*) return 1;; esac
+  case "$2" in *.html|*.css|*.png|*.jpg|*.jpeg|*.gif|*.webp|*.svg|*.drawio) ;; *) return 1;; esac
+  pg_part='[A-Za-z0-9_-][A-Za-z0-9._-]{0,199}'
+  printf '%s\n' "$1" | grep -Eqx "main|epic/$pg_part|wu/$pg_part/$pg_part" && printf '%s\n' "$2" | grep -Eqx "docs(/$pg_part)+"
+}
 # doc_rows <merge-base> <tip> <plan role>: sets title (the plan's, made plain) and rows (a markdown
-# row per html doc the range changed, linked at the tip)
+# row per html doc the range changed, linked at the tip, and to its page on the Pages site of
+# $branch, which scripts/pages-build.sh writes at <site>/<branch>/<path> once the push's build is
+# deployed (E-GHFLOW2.W8))
 doc_rows() {
   title= rows=
   for f in $(git -C "$ROOT" diff --name-only --diff-filter=AMR "$1" "$2" -- "$docs"); do
@@ -506,7 +525,9 @@ doc_rows() {
     t=$(printf '%s' "$top" | LC_ALL=C sed -n 's/.*<title>\([^<]*\)<\/title>.*/\1/p' | plain)
     [ -n "$t" ] || t=${f##*/}
     case " $role " in *" $3 "*) [ -n "$title" ] || title=$t;; esac
-    rows="$rows| [$t](https://github.com/$repo/blob/$2/$f) | ${role:-—} | ${status:-—} |
+    page=—
+    page_ok "$branch" "$f" && page="[page]($pages/$branch/$f)"
+    rows="$rows| [$t](https://github.com/$repo/blob/$2/$f) | ${role:-—} | ${status:-—} | $page |
 "
   done
 }
@@ -515,8 +536,8 @@ docs_md() {
   if [ -n "$rows" ]; then
     echo "**Docs this range changed**, at the tip:"
     echo
-    echo "| Doc | Role | Status |"
-    echo "|---|---|---|"
+    echo "| Doc | Role | Status | Page |"
+    echo "|---|---|---|---|"
     printf '%s' "$rows"
   else
     echo "No doc changed in this range."
