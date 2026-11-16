@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-GHFLOW2.W4 · GitHub enforces the merge</h1>
       <p>Rules on GitHub make the merge button the gate. The checks that judge a pull request come from main, so a branch can no longer change them. A branch could still report a check under the same name from a workflow it adds, so the merge also needs your approval as code owner.</p>
-      <div class="meta">Ready v2 · 2026-11-16 · T3 · WU plan · Keel · off epic/E-GHFLOW2 526973a (after landing 2) · epic plan: git show 738c795:docs/work/2026-11-15-eghflow2-plan.html (archived)</div>
+      <div class="meta">Ready v3 · 2026-11-16 · T3 · WU plan · Keel · off epic/E-GHFLOW2 526973a (after landing 2) · epic plan: git show 738c795:docs/work/2026-11-15-eghflow2-plan.html (archived)</div>
     </div>
   </header>
   <main>
@@ -62,8 +62,8 @@
       <tr><td>10</td><td><code>sync main</code></td><td><code>router-gh.sh sync</code> and the guard take <code>main</code> as well as <code>epic/&lt;E&gt;</code>.</td></tr>
       <tr><td>11</td><td>The settings check</td><td><code>scripts/gh-settings-check.sh</code>: GET only, an optional token from <code>GH_TOKEN</code> on curl's stdin. Prints <code>OK</code>, <code>RED</code> or <code>UNREAD</code> per rule and <code>SETTINGS green|red</code>.</td></tr>
       <tr><td>12</td><td>GitHub's merge commit</td><td>The walk reads parents, not messages. A test proves it for a GitHub-shaped merge, up to date and behind.</td></tr>
-      <tr><td>13</td><td>Its own base only (review)</td><td>The script refuses any base but the head's own level (a WU into its epic, an epic into main). The workflow also runs on <code>edited</code>, so a retargeted pull request is judged again. <code>pr-open</code> and the guard refuse a WU into main.</td></tr>
-      <tr><td>14</td><td>Your approval as code owner (review)</td><td><code>.github/CODEOWNERS</code> names you for every path. The ruleset requires one approval from a code owner and dismisses it on a push. A workflow a head adds could report <code>keel/sign-off</code> from the GitHub Actions app; your approval is still needed.</td></tr>
+      <tr><td>13</td><td>Its own base only (review)</td><td>The script refuses any base but the head's own level (a WU into its epic, an epic into main). The workflow also runs on <code>edited</code>, so a retargeted pull request is red in its own run. <code>pr-open</code> and the guard refuse a WU into main. But a check belongs to the commit, not the pull request. A second pull request with the same head into its own epic turns the same head's checks green again, through any edited or synchronize event or a re-run. The backstop is your code-owner approval, given per pull request: never approve a <code>wu/</code> pull request into main.</td></tr>
+      <tr><td>14</td><td>Your approval as code owner (review)</td><td><code>.github/CODEOWNERS</code> names you for every path; GitHub reads it from each pull request's base, so W4 must be in every live epic. The ruleset requires one approval from a code owner and dismisses it on a push. A workflow a head adds could report <code>keel/sign-off</code> from the GitHub Actions app; your approval is still needed.</td></tr>
       <tr><td>15</td><td>A push of main (review)</td><td>It runs <code>keel-main.yml</code>, job <code>main/ci</code>: no required name, so a pull request at main's commit never carries a skipped <code>keel/</code> check.</td></tr>
     </table>
 
