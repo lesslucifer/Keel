@@ -4,10 +4,11 @@
 # owner: the owner cannot approve a pull request they authored. The router's Bash hook admits only
 # these shapes, and every argument is validated here before any other step:
 #   router-gh.sh push     <branch>                         wu/<E>/<slug> or epic/<E>, with every notes ref
-#   router-gh.sh pr-open  <branch> [--base main|epic/<E>]  open a draft pull request, or refresh the bot's open one
-#   router-gh.sh pr-ready <n>                              mark the bot's pull request ready for review
+#   router-gh.sh pr-open  <branch> [--base main|epic/<E>]  open a draft pull request, or refresh the bot's open one (a wu/ never into main)
+#   router-gh.sh pr-ready <n>                              mark the bot's pull request ready for review; turn on
+#                                                          auto-merge (a merge commit) when [github] merge_on_approve
 #   router-gh.sh post     <n> <body-name>                  post <worktree of its head>/.router-gh/<body-name>.md
-#   router-gh.sh sync     <epic/E>                         fetch GitHub's epic; fast-forward it here unless checked out
+#   router-gh.sh sync     <epic/E|main>                    fetch GitHub's epic or main; fast-forward it here unless checked out
 #   router-gh.sh issue    <branch>                         open or refresh the tracking issue of an epic, or a WU's sub-issue
 #   (router-gh.sh credential <file> <op>: git's one-shot credential helper only; never a router shape)
 #   (router-gh.sh watch-read <kind> <n>: scripts/router-gh-watch.sh's read of GitHub; never a router shape)
@@ -18,7 +19,10 @@
 # Who the router hears (E-GHFLOW.W3): [github] commanders, numeric GitHub user ids, and free_text, in
 # .keel/config.toml. They are read from this checkout's file, which no worker can write, and only
 # while its bytes are HEAD's: HEAD alone is a ref a worker can move in the shared git dir. pr-ready
-# asks each commander for a review; watch-read hands the list to the watch, which judges.
+# asks each commander for a review; watch-read hands the list to the watch, which judges. The same
+# file's [github] merge_on_approve (true when absent; E-GHFLOW2.W4) makes pr-ready turn on GitHub's
+# auto-merge as a merge commit, so the owner's approval lands a green pull request; the rulesets, not
+# the bot, decide when it may merge.
 #
 # Secrets. The App's private key is read only here, from $HOME/.config/keel/router-gh/app.pem (a
 # regular file, not a link, the user's, mode 0600 or 0400, outside every worktree of this repository
@@ -99,7 +103,7 @@ token_ok() {
   case "$1" in ''|*[!!-~]*|*\"*|*\'*|*\\*) return 1;; esac
   [ ${#1} -le 4096 ]
 }
-usage="usage: push <branch> | pr-open <branch> [--base <main|epic/E>] | pr-ready <n> | post <n> <body-name> | sync <epic/E> | issue <branch>"
+usage="usage: push <branch> | pr-open <branch> [--base <main|epic/E>] | pr-ready <n> | post <n> <body-name> | sync <epic/E|main> | issue <branch>"
 # Keel's branch policy (.keel/config.toml [branches], as scripts/router-worker.sh holds it)
 main_b=main epic_p=epic/ wu_p=wu/
 seg='[A-Za-z0-9][A-Za-z0-9._-]*'
@@ -141,6 +145,8 @@ case "$mode" in
       [ "$3" = "$main_b" ] || expr "x$3" : "x$epic_p$seg\$" > /dev/null || die "base must be $main_b or $epic_p<E>: $(shown "$3")"
       refname "$3"
       [ "$3" != "$branch" ] || die "a branch cannot be its own base: $branch"
+      # a WU merges into its epic only: into main it would skip the epic's gate (E-GHFLOW2.W4 review)
+      case "$branch" in "$wu_p"*) [ "$3" != "$main_b" ] || die "a WU merges into its epic, never into $main_b: $branch";; esac
       base=$3
     fi;;
   pr-ready)
@@ -151,9 +157,9 @@ case "$mode" in
     n=$1 name=$2; number "$n"; nodash "$name"
     expr "x$name" : 'x[A-Za-z0-9][A-Za-z0-9_-]\{0,63\}$' > /dev/null || die "body name must be plain words (letters, digits, _ and -): $(shown "$name")";;
   sync)
-    [ $# -eq 1 ] || die "usage: sync <epic/E>"
+    [ $# -eq 1 ] || die "usage: sync <epic/E|main>"
     branch=$1; nodash "$branch"
-    expr "x$branch" : "x$epic_p$seg\$" > /dev/null || die "sync takes an $epic_p<E> branch only: $(shown "$branch")"
+    [ "$branch" = "$main_b" ] || expr "x$branch" : "x$epic_p$seg\$" > /dev/null || die "sync takes an $epic_p<E> branch or $main_b only: $(shown "$branch")"
     refname "$branch";;
   issue)
     [ $# -eq 1 ] || die "usage: issue <wu/E/slug|epic/E>"
@@ -311,15 +317,17 @@ gh_policy() {
     /^[ \t]*\[/ { t = $0; sub(/[ \t]*#.*$/, "", t); on = (t == "[github]"); next }
     on { l = $0; sub(/[ \t]*#.*$/, "", l); sub(/[ \t]+$/, "", l)
       if (l ~ /^commanders[ \t]*=/) { c++; sub(/^commanders[ \t]*=[ \t]*/, "", l); print "c" l }
-      else if (l ~ /^free_text[ \t]*=/) { f++; sub(/^free_text[ \t]*=[ \t]*/, "", l); print "f" l } }
-    END { if (c > 1 || f > 1) exit 1 }' "$pf") || die "[github] in $pf sets commanders or free_text twice"
-  commanders= free_text=true
+      else if (l ~ /^free_text[ \t]*=/) { f++; sub(/^free_text[ \t]*=[ \t]*/, "", l); print "f" l }
+      else if (l ~ /^merge_on_approve[ \t]*=/) { m++; sub(/^merge_on_approve[ \t]*=[ \t]*/, "", l); print "m" l } }
+    END { if (c > 1 || f > 1 || m > 1) exit 1 }' "$pf") || die "[github] in $pf sets commanders, free_text or merge_on_approve twice"
+  commanders= free_text=true merge_on_approve=true
   while IFS= read -r pl; do
     case "$pl" in
       c*) expr "x${pl#c}" : 'x\(\[ *[1-9][0-9]\{0,11\}\( *, *[1-9][0-9]\{0,11\}\)* *\]\)$' > /dev/null \
             || die "[github] commanders must be a list of GitHub user ids, as commanders = [5499546]"
           commanders=$(printf '%s' "${pl#c}" | tr -c '0-9' ' ' | tr -s ' ' | sed 's/^ //; s/ $//');;
       f*) case "${pl#f}" in true|false) free_text=${pl#f};; *) die "[github] free_text must be true or false";; esac;;
+      m*) case "${pl#m}" in true|false) merge_on_approve=${pl#m};; *) die "[github] merge_on_approve must be true or false";; esac;;
     esac
   done <<EOF
 $pol
@@ -481,6 +489,23 @@ gh_git() {
 }
 # bot_pr <n>: the pull request must be open, the bot's, from and into this repository, head wu/ or
 # epic/, base main or epic/; sets head_ref, head_sha, pr_base, draft, node
+# automerge: with [github] merge_on_approve, turn on GitHub's auto-merge for pull request $node as a
+# merge commit (E-GHFLOW2.W4). The pull request is ready already, so a refusal is a WARN line, never a
+# failure. Sets automerge_state: on, off (the policy says no) or refused.
+automerge() {
+  automerge_state=off
+  [ "$merge_on_approve" = true ] || return 0
+  jq -n --arg id "$node" '{query: "mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE}) { pullRequest { autoMergeRequest { mergeMethod } } } }", variables: {id: $id}}' > "$tmp/req"
+  api POST /graphql "$tmp/req"
+  case "$code" in 2??) ;; *) echo "WARN auto-merge not turned on: HTTP $code"; automerge_state=refused; return 0;; esac
+  if jq -e '(.errors | not) and .data.enablePullRequestAutoMerge.pullRequest.autoMergeRequest.mergeMethod == "MERGE"' "$tmp/resp" > /dev/null 2>&1; then
+    automerge_state=on
+  else
+    msg=$(jq -r '.errors[0].message // empty' "$tmp/resp" 2> /dev/null | tr -d '\000-\037\177' | cut -c1-200) || msg=
+    echo "WARN auto-merge not turned on${msg:+: $msg}"
+    automerge_state=refused
+  fi
+}
 bot_pr() {
   api_ok GET "/repos/$repo/pulls/$1"
   facts=$(jq -r --arg bot "$bot" --arg repo "$repo" '
@@ -710,7 +735,7 @@ pr-ready)
   mint
   bot_pr "$n"
   [ "$(local_tip "$head_ref" || :)" = "$head_sha" ] || die "pull request $n's head $head_ref is $head_sha on GitHub, not the local tip: push first"
-  if [ "$draft" = false ]; then echo "READY pr=$n head=$head_ref sha=$head_sha state=unchanged"; exit 0; fi
+  if [ "$draft" = false ]; then automerge; echo "READY pr=$n head=$head_ref sha=$head_sha state=unchanged automerge=$automerge_state"; exit 0; fi
   jq -n --arg id "$node" '{query: "mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft } } }", variables: {id: $id}}' > "$tmp/req"
   api_ok POST /graphql "$tmp/req"
   if ! jq -e '(.errors | not) and .data.markPullRequestReadyForReview.pullRequest.isDraft == false' "$tmp/resp" > /dev/null 2>&1; then
@@ -732,7 +757,8 @@ pr-ready)
     api POST "/repos/$repo/pulls/$n/requested_reviewers" "$tmp/req"
     case "$code" in 2??) ;; *) echo "WARN review request for $revs refused: HTTP $code"; revs=;; esac
   fi
-  echo "READY pr=$n head=$head_ref sha=$head_sha state=ready reviewers=${revs:-none}";;
+  automerge
+  echo "READY pr=$n head=$head_ref sha=$head_sha state=ready reviewers=${revs:-none} automerge=$automerge_state";;
 
 post)
   mint
