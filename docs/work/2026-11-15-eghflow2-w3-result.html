@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-GHFLOW2.W3 · Result: your approval is the sign-off</h1>
       <p>Built and proven hermetically: an approval on the head commit by a listed GitHub id, under GitHub's review decision, writes the sign-off note; anything else writes nothing. It runs live after landing 2.</p>
-      <div class="meta">v5 · 2026-11-16 · T3 · WU result · Keel · plan: 2026-11-15-eghflow2-w3-plan.html · v2 answers the router's security review (6 important, 7 nits), v3 its round 2 (3 important, 6 nits), v4 its round 3 (ready; 1 important, 2 nits), v5 records your commit c08da42</div>
+      <div class="meta">v6 · 2026-11-16 · T3 · WU result · Keel · plan: 2026-11-15-eghflow2-w3-plan.html · v2 answers the router's security review (6 important, 7 nits), v3 its round 2 (3 important, 6 nits), v4 its round 3 (ready; 1 important, 2 nits), v5 records your commit c08da42, v6 answers code review round 1 (2 blockers, 2 important, 3 nits)</div>
     </div>
   </header>
   <main>
@@ -45,6 +45,17 @@
       <tr><td>F7 – F9</td><td>A per-run temp ref; the stale config comment; the logged main sha</td><td>Fixed: <code>refs/notes/keel-gh/mr-&lt;pid&gt;</code>; the comment says the CLI reads <code>repo</code>; main's sha is read before any ref moves (lock test)</td></tr>
     </table>
 
+    <h2 id="code-review">Code review round 1</h2>
+    <table data-c="code-review">
+      <tr><th>#</th><th>Finding</th><th>Answer</th></tr>
+      <tr><td>B1</td><td>The approval writer compared the target's roster with the tip's, so a roster line the target landed after the fork refused every approval as a "roster change"</td><td>Fixed: the writer asks, as <code>keel mr confirm</code> does, about the roster change in base..tip (one helper, <code>range_roster_change</code>). Red, then green: <code>a_roster_line_landed_on_the_target_after_the_fork_does_not_refuse_an_approval</code></td></tr>
+      <tr><td>B2</td><td>R50 stopped at the first <code>.git</code>, but git skips a <code>.git</code> dir that is not a repository; a planted repository passed as a main checkout</td><td>Fixed: R50 finds the git dir as git's discovery does. A <code>.git</code> dir that is not a repository, a bare or git dir on the way up, and a checkout nested inside another repository are refused; a linked worktree inside its own main checkout is not nesting. Red, then green, from a subdirectory: <code>keel_mr_refuses_a_git_dir_planted_below_the_checkout_and_runs_no_git</code> (an empty <code>.git</code>, also over a tampered checkout; a planted full and a planted bare repository; git never runs)</td></tr>
+      <tr><td>I1</td><td>The writer copied <code>roster()</code>'s tier check and parsed the target's roster itself</td><td>Fixed: every committed-roster read goes through <code>committed_roster</code>; <code>roster()</code> adds the bootstrap the writer refuses</td></tr>
+      <tr><td>I2</td><td>Two copies of the signer-tier rule (<code>tier_of</code>, <code>typed_tier</code>)</td><td>Fixed: <code>tier_of</code> is gone; <code>typed_tier</code> carries the rule and its doc</td></tr>
+      <tr><td>Nits</td><td>Canonicalize failures in R50 passed; <code>setup</code> said "already listed (github)" for a github-only id; the writer's "already contained" refusal read "mr confirm refused"</td><td>Fixed: each unresolved path refuses (not reachable by a planted file, so not tested); <code>setup</code> judges by the typed tiers and adds the typed line (<code>setup_adds_a_typed_line_for_an_id_listed_only_under_the_github_tier</code>); <code>landed()</code> is worded per caller (<code>the_writer_refuses_a_tip_already_in_its_target_in_its_own_words</code>). Both shown red against the old code</td></tr>
+      <tr><td>Refuted</td><td><code>valid_login</code> rejects some older logins</td><td>No change, by the router's ruling: the strict, fail-closed shape stays</td></tr>
+    </table>
+
     <h2 id="deviations">Deviations</h2>
     <ul data-item="deviations">
       <li><b>keel is built from main, not from the pull request's base</b> (I4). The plan followed DEC-60's "judge built from the base"; the writer holds a write token, and the base is an epic the router bot pushes. The base's roster and policy still judge: keel reads them from a base worktree.</li>
@@ -54,7 +65,7 @@
       <li><b>Notes from GitHub</b>: the plan said "fetches and merges GitHub's notes"; the router now takes only sign-offs GitHub added since its last push, add-only, fetching a missing commit by sha first (I2, F1, F2, I3-1); the writer keeps ours on a race in its own ephemeral clone.</li>
       <li><b>The github tier is opt-in</b>: a config that names no <code>[mr] tiers</code> accepts the three typed tiers only.</li>
       <li><b>An approval never signs a roster change or a waived review</b>, and never bootstraps a roster: those stay the typed sign-off (W7 brings them to comments).</li>
-      <li><b>One fix beyond the plan</b>: R50's check reads a <code>gitdir</code> that git wrote relative (<code>worktree.useRelativePaths</code>) from the admin dir.</li>
+      <li><b>Two fixes beyond the plan</b>: R50's check reads a <code>gitdir</code> that git wrote relative (<code>worktree.useRelativePaths</code>) from the admin dir; and (code review B2) it refuses a <code>.git</code> nested inside another repository's checkout, so <code>keel mr</code> cannot run under a home-directory repository either.</li>
       <li><b>The project-router skill joins your commit</b>: its owner-identity row states the committed tiers, which <code>tests/suite/router.rs</code> checks.</li>
       <li><b>G5's W2 corpus cost</b>: the curl stub is written once per run, but the 507 guard probes still run serially (left in G5).</li>
       <li><b>Three commands were denied</b> by this session's permission check and not routed around: two scratch <code>git notes merge</code> probes, and a compound <code>keel notes write</code> line (which held a <code>git notes … show</code>). The notes are written on the final tip after your commit.</li>
@@ -66,8 +77,8 @@
         <tr><th>What</th><th>Where</th></tr>
         <tr><td>The github tier: a <code>github: &lt;id&gt; &lt;login&gt;</code> roster line; a typed confirm, commit or <code>Reviewed-By</code> by a github-only id refused; mr/v1's <code>review</code>; check 8 binds its commit to the tip, its page to its id and to <code>[github] repo</code></td><td><code>src/mr.rs</code>, <code>src/notes.rs</code>, <code>src/main.rs</code></td></tr>
         <tr><td><code>keel ci sign-off</code> (exit 0 signed, 3 nothing to sign, 1 refused) under GitHub's review decision; <code>keel notes write report</code></td><td><code>src/mr.rs</code>, <code>src/notes.rs</code></td></tr>
-        <tr><td>R50: <code>keel mr</code> checks <code>.git</code>, <code>commondir</code>, <code>gitdir</code> and <code>config.worktree</code> before any git</td><td><code>src/mr.rs</code> <code>checkout_problem</code>, called first in <code>src/main.rs</code></td></tr>
-        <tr><td>Integration: 18 tests - an approval signs and the gate goes green; ten kinds of review write nothing; a later change request (on the tip or an older commit) or a dismissal withdraws an approval; a red check, a roster change, a policy without github, a page off <code>[github] repo</code>; check 8 red on an edited review, a later commit, a missing review; the report note typed-only; R50 over seven tamperings with a git that records any call; the writer script end to end (status, push, a notes ref that moved, main's keel too old, the run's commit, the token's shape, a stop's status, input refused before any request)</td><td><code>tests/suite/sign_off.rs</code></td></tr>
+        <tr><td>R50: <code>keel mr</code> finds the git dir as git's discovery does and checks <code>.git</code>, <code>commondir</code>, <code>gitdir</code>, <code>config.worktree</code> and nesting before any git</td><td><code>src/mr.rs</code> <code>checkout_problem</code>, called first in <code>src/main.rs</code></td></tr>
+        <tr><td>Integration: 22 tests - an approval signs and the gate goes green; ten kinds of review write nothing; a later change request (on the tip or an older commit) or a dismissal withdraws an approval; a red check, a roster change, a policy without github, a page off <code>[github] repo</code>; check 8 red on an edited review, a later commit, a missing review; the report note typed-only; R50 over seven tamperings and four planted git dirs with a git that records any call; a roster line landed on the target after the fork; setup for a github-only id; the writer's own words for a tip already in its target; the writer script end to end (status, push, a notes ref that moved, main's keel too old, the run's commit, the token's shape, a stop's status, input refused before any request)</td><td><code>tests/suite/sign_off.rs</code></td></tr>
         <tr><td>Lock test: both workflows' triggers, permissions, the per-head concurrency group, the one pinned checkout of the default branch, env-only event values; the script builds keel only from main and builds or checks out nothing else</td><td><code>tests/suite/keel_gate.rs</code> (4 tests)</td></tr>
         <tr><td><code>router-gh.sh push</code> takes GitHub's sign-offs add-only and only those added since its last push, never an edit or a deletion; fetches the commit of a sign-off only GitHub has, and holds nothing back for one GitHub does not serve; pushes leased, and a sign-off written during the push survives; pushes the report note</td><td><code>tests/suite/router_gh.rs</code></td></tr>
         <tr><td>Unit: the roster line (2000 generated), the typed/approval split, the per-pull-request review decision (hand cases and 3000 generated lists), the review page and its repository</td><td><code>src/mr.rs</code> tests</td></tr>
@@ -78,7 +89,7 @@
     </div>
 
     <h2 id="distillation">Distillation</h2>
-    <p data-item="distillation">Nothing citable yet beyond the backlog: github-flow G5 (W2 rows done), G6 (R50 fixed), G7 (new); e-router-v2 R50 fixed. UC-MR's new row, UC-MR-1's amendment, the github tier's decision record (amending DEC-47 and DEC-48, with I2's limit), DEC-61's sign-off import, <code>docs/install.html</code> §5's roster line and the skills' GitHub sign-off sequence go in at the epic's next landing or close, by its distillation plan (G6).</p>
+    <p data-item="distillation">Nothing citable yet beyond the backlog: github-flow G5 (W2 rows done), G6 (R50 fixed), G7 (new); e-router-v2 R50 fixed (its row should also name code review B2's discovery and nesting rule). UC-MR's new row, UC-MR-1's amendment, the github tier's decision record (amending DEC-47 and DEC-48, with I2's limit), DEC-61's sign-off import, <code>docs/install.html</code> §5's roster line and the skills' GitHub sign-off sequence go in at the epic's next landing or close, by its distillation plan (G6).</p>
 
     <h2 id="follow-ups">Follow-ups</h2>
     <ul data-item="follow-ups">
