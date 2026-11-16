@@ -312,7 +312,7 @@ gh_policy() {
   commanders= free_text=true
   while IFS= read -r pl; do
     case "$pl" in
-      c*) expr "x${pl#c}" : 'x\[ *[1-9][0-9]\{0,11\}\( *, *[1-9][0-9]\{0,11\}\)* *\]$' > /dev/null \
+      c*) expr "x${pl#c}" : 'x\(\[ *[1-9][0-9]\{0,11\}\( *, *[1-9][0-9]\{0,11\}\)* *\]\)$' > /dev/null \
             || die "[github] commanders must be a list of GitHub user ids, as commanders = [5499546]"
           commanders=$(printf '%s' "${pl#c}" | tr -c '0-9' ' ' | tr -s ' ' | sed 's/^ //; s/ $//');;
       f*) case "${pl#f}" in true|false) free_text=${pl#f};; *) die "[github] free_text must be true or false";; esac;;
