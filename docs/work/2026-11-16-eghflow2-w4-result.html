@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-GHFLOW2.W4 result · GitHub enforces the merge</h1>
       <p>Built and tested hermetically, with the security review's findings fixed. Your steps: one commit, then the GitHub settings below, in order. The rules take effect only after W4 is on main.</p>
-      <div class="meta">v5 · 2026-11-16 · T3 · WU result · Keel · wu/E-GHFLOW2/w4-enforce off epic/E-GHFLOW2 526973a · plan: docs/work/2026-11-16-eghflow2-w4-plan.html (v3); rule-bearing files committed by you as 8dc6127</div>
+      <div class="meta">v6 · 2026-11-16 · T3 · WU result · Keel · wu/E-GHFLOW2/w4-enforce off epic/E-GHFLOW2 526973a · plan: docs/work/2026-11-16-eghflow2-w4-plan.html (v3); rule-bearing files committed by you as 8dc6127</div>
     </div>
   </header>
   <main>
@@ -80,7 +80,14 @@
       <tr><td>Important: no case offered one rule line naming a second owner, or an owner whose name only starts with the owner's</td><td>Red cases <code>* @own @mallory</code> and <code>* @ownx</code>; the script already refused them (22d7a51).</td></tr>
       <tr><td>Nits: the pin lookup rebuilt twice; the checkout step built twice and the keel env written twice; <code>code()</code> in two files</td><td>One <code>pin()</code>, one <code>checkout_step()</code> for both locks, <code>KEEL_ENV</code> reused, one <code>code()</code> that pages_workflow.rs imports (64a3041).</td></tr>
     </table>
-    <p data-c="round1-check"><code>keel check</code> is green after round 2's fixes: 119 unit tests passed, 497 suite tests passed, 10 ignored.</p>
+    <h2 id="round3">Code review round 3 (FAIL on 876410c) and its fixes</h2>
+    <table data-c="round3">
+      <tr><th>Finding</th><th>Fix</th></tr>
+      <tr><td>Important: the cache check was a case-sensitive deny-list of input names. <code>Cache:</code> or <code>CACHE:</code> keys passed it. So did setup-go and newer setup-node, which cache by default, build-push-action's gha cache and setup-ruby's bundler cache.</td><td>Every step's action must be on an allow-list: what the six workflows use today, at its pin, in its files. That is <code>actions/checkout</code> (all six), <code>actions/upload-artifact</code> and <code>actions/download-artifact</code> (keel-gate.yml, release.yml), <code>actions/setup-node</code> (release.yml only), <code>actions/upload-pages-artifact</code> and <code>actions/deploy-pages</code> (pages.yml). Owner and repository match in any case; the ref matches exactly. Cache inputs are still refused in any case of the key, as a second line. Red cases: the reviewer's probes, an unknown action, another ref, an allowed action outside its files, a local action and a docker action (c81a8c6).</td></tr>
+      <tr><td>Important: the test's reserved names copied <code>def checks</code> in gh-settings-check.sh and could drift from it</td><td>The test reads them from that line of the script (c81a8c6).</td></tr>
+      <tr><td>Nit (dependency check): yaml-rust2's default features pulled in encoding_rs</td><td><code>default-features = false</code>; encoding_rs is gone from Cargo.lock (6524f38).</td></tr>
+    </table>
+    <p data-c="round1-check"><code>keel check</code> is green after round 3's fixes: 119 unit tests passed, 497 suite tests passed, 10 ignored.</p>
 
     <h2 id="outcome">Outcome</h2>
     <p data-item="outcome">Delivered against the requirement and the security review's findings, with the deviations below. Proven hermetically only: nothing has run on GitHub yet. With W4 on main, main's workflow and script judge every pull request into main or an epic: <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code>. Only <code>keel/ci</code> runs head code, with a read token. A fork, a failed build or a base other than the head's own is red, never skipped. All jobs share one keel built from the base, checked by hash. A branch can no longer change the checks that judge it. One gap remains: a workflow a head adds could report a check under a required name. Only you can push such a head, and your approval as code owner is required anyway. <code>pr-ready</code> turns on auto-merge, <code>sync main</code> works, the settings check reads and judges the live settings, and GitHub-made merges walk green.</p>
