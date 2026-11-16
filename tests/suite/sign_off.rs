@@ -228,6 +228,26 @@ fn a_roster_change_in_the_range_is_never_signed_by_approval() {
     assert_eq!(o.status.code(), Some(3), "the branch's own roster line authorises nothing: {}", text(&o));
 }
 
+/// Code review round 1, blocker 1: the refusal is about a roster change in base..tip. A roster line
+/// that landed on the target after the fork leaves the range untouched, so the approval signs, and
+/// the target's roster (which check 8 judges by) decides who may.
+#[test]
+fn a_roster_line_landed_on_the_target_after_the_fork_does_not_refuse_an_approval() {
+    let d = fixture();
+    let p = d.path();
+    git(p, &["switch", "-q", "epic/e"]);
+    write(p, ".keel/mr-allowed", &format!("{ROSTER}username: another\n"));
+    commit(p, "the epic lists another signer");
+    git(p, &["switch", "-q", "wu/e/a"]);
+    notes(p);
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let base = git(p, &["merge-base", "epic/e", "wu/e/a"]);
+    assert_eq!(git(p, &["diff", &format!("{base}..{tip}"), "--", ".keel/mr-allowed"]), "", "the range leaves the roster untouched");
+    let o = ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    assert!(text(&o).contains("github 5499546 approved it"), "{}", text(&o));
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+}
+
 #[test]
 fn a_commit_after_the_approval_or_an_edited_review_turns_check_8_red() {
     let d = fixture();
@@ -287,6 +307,37 @@ fn a_github_only_id_cannot_sign_by_typing() {
     let o = run("git", p, &["commit", "-q", "-m", "x\n\nReviewed-By: github 5499546"]);
     assert!(!o.status.success() && text(&o).contains("Reviewed-By"), "a typed trailer naming a github-only id: {}", text(&o));
     ok(keel(p, &["mr", "commit", "-m", "x", "--as", "vu"]));
+}
+
+/// Code review round 1, nit: setup judges "already listed" by the typed tiers, so an id listed only
+/// under the github tier gets the typed line it asked for.
+#[test]
+fn setup_adds_a_typed_line_for_an_id_listed_only_under_the_github_tier() {
+    let d = fixture();
+    let p = d.path();
+    let o = ok(keel(p, &["mr", "setup", "--as", "5499546"]));
+    assert!(text(&o).contains("github tier only") && !text(&o).contains("already listed"), "{}", text(&o));
+    assert_eq!(std::fs::read_to_string(p.join(".keel/mr-allowed")).unwrap(), format!("{ROSTER}username: 5499546\n"));
+    let o = ok(keel(p, &["mr", "setup", "--as", "5499546"]));
+    assert!(text(&o).contains("already listed (username)"), "{}", text(&o));
+}
+
+/// Code review round 1, nit: a tip its target already contains is refused by the approval writer in
+/// its own words, never as `mr confirm`.
+#[test]
+fn the_writer_refuses_a_tip_already_in_its_target_in_its_own_words() {
+    let d = fixture();
+    let p = d.path();
+    notes(p);
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    git(p, &["switch", "-q", "epic/e"]);
+    git(p, &["merge", "-q", "--no-ff", "--no-verify", "-m", "merge wu a", "wu/e/a"]);
+    let o = sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("sign-off refused - ") && t.contains("already contained in epic/e") && t.contains("approve the new tip on GitHub"), "{t}");
+    assert!(!t.contains("mr confirm"), "{t}");
+    assert!(note(p, "mr", &tip).is_none());
 }
 
 /// The epic report rides as refs/notes/report on the epic tip. GitHub never shows a note, so an
@@ -470,6 +521,51 @@ fn keel_mr_refuses_a_checkout_whose_git_links_git_did_not_make_and_runs_no_git()
     let o = run(KEEL, &wt, &["mr", "confirm", "wu", "--as", "vu"]);
     assert!(o.status.success(), "{}", text(&o));
     assert_eq!(note(p, "mr", "wu/e/a").unwrap()["tier"], "username");
+}
+
+/// Code review round 1, blocker 2: R50 judges the .git git itself would use from the cwd. Run from a
+/// subdirectory: an empty .git dir there (git skips it and uses the checkout's, unchecked), a full
+/// repository planted there, or a bare one, is refused before any git; a linked worktree inside its
+/// own main checkout is not nesting and passes.
+#[test]
+fn keel_mr_refuses_a_git_dir_planted_below_the_checkout_and_runs_no_git() {
+    let d = fixture();
+    let p = d.path();
+    let scratch = TempDir::new().unwrap();
+    let (fake, log) = recording_git(scratch.path());
+    let refused = |dir: &Path, why: &str, needle: &str| {
+        let _ = std::fs::remove_file(&log);
+        let o = run_with(KEEL, dir, &["mr", "commit", "-m", "x", "--as", "vu"], &fake);
+        let t = text(&o);
+        assert!(!o.status.success() && t.contains("keel mr: refused") && t.contains(needle), "{why}: {t}");
+        assert!(!log.exists(), "{why}: git ran: {}", std::fs::read_to_string(&log).unwrap_or_default());
+    };
+    // an empty .git dir: git skips it, so the real checkout's links would go unchecked
+    let sub = p.join("src");
+    std::fs::create_dir_all(sub.join(".git")).unwrap();
+    std::fs::write(p.join(".git/config.worktree"), "[core]\n").unwrap();
+    refused(&sub, "an empty .git dir over a tampered checkout", "not a repository");
+    std::fs::remove_file(p.join(".git/config.worktree")).unwrap();
+    refused(&sub, "an empty .git dir", "not a repository");
+    let inner = sub.join("deeper");
+    std::fs::create_dir_all(&inner).unwrap();
+    refused(&inner, "an empty .git dir above the cwd", "not a repository");
+    std::fs::remove_dir(sub.join(".git")).unwrap();
+    // a full repository planted in the checkout: git would use it, its config and its hooks
+    git(&sub, &["init", "-q", "planted"]);
+    refused(&sub.join("planted"), "a planted repository", "inside another checkout");
+    // a bare one: git uses the dir itself
+    git(&sub, &["init", "-q", "--bare", "bare"]);
+    refused(&sub.join("bare"), "a planted bare repository", "is a git dir");
+    refused(&sub.join("bare/refs"), "inside a planted bare repository", "is a git dir");
+    // a linked worktree inside its main checkout is the same repository: no refusal
+    std::fs::remove_dir_all(sub.join("planted")).unwrap();
+    std::fs::remove_dir_all(sub.join("bare")).unwrap();
+    git(p, &["switch", "-q", "main"]);
+    let wt = p.join("wt");
+    git(p, &["worktree", "add", "-q", wt.to_str().unwrap(), "wu/e/a"]);
+    let o = run_with(KEEL, &wt.join("src"), &["mr", "setup", "--as", "vu"], &fake);
+    assert!(!text(&o).contains("keel mr: refused"), "a linked worktree in its main checkout: {}", text(&o));
 }
 
 /// The writer as GitHub runs it: a developer's repo (the fixture) with notes, its bare origin, and a

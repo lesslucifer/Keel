@@ -89,21 +89,29 @@ fn roster_text(repo: &Path, rev: &str) -> Option<String> {
 /// `""` for the index). Never a file on disk: whoever writes a checkout must not pick its signers.
 /// Returns the entries and where they were read, for the refusal texts.
 fn roster(repo: &Path, cfg: &Config, judge: &str, carried: &str) -> Result<(Vec<Entry>, String), String> {
-    if let Some(t) = cfg.mr.tiers.iter().find(|t| !KNOWN_TIERS.contains(&t.as_str())) {
-        return Err(format!("keel: unknown mr tier '{t}' in .keel/config.toml (known: {})", KNOWN_TIERS.join(", ")));
+    if let Some(judged) = committed_roster(repo, cfg, judge)? {
+        return Ok(judged);
     }
-    if let Some(text) = roster_text(repo, judge) {
-        let src = format!("{judge}:{ROSTER}");
-        return Ok((parse_roster(&text, &cfg.mr.tiers, &src)?, src));
-    }
-    let Some(text) = roster_text(repo, carried) else {
+    let Some(carried) = committed_roster(repo, cfg, carried)? else {
         return Err(format!(
             "nobody is listed - neither {judge} nor the change commits {ROSTER}\n  fix -> keel mr setup --as <identity> [--key <path>], then land {ROSTER} with keel mr commit; a local .mr-allowed is no longer read"
         ));
     };
-    let src = if carried.is_empty() { format!("the staged {ROSTER}") } else { format!("{carried}:{ROSTER}") };
-    eprintln!("keel: {judge} commits no {ROSTER} - bootstrap: {src} judges this change");
-    Ok((parse_roster(&text, &cfg.mr.tiers, &src)?, src))
+    eprintln!("keel: {judge} commits no {ROSTER} - bootstrap: {} judges this change", carried.1);
+    Ok(carried)
+}
+
+/// The roster committed at `rev` (`""` = the index) under the accepted tiers, and where it was read;
+/// `None` when that tree holds none. Every reader of a committed roster - `roster` (commit, confirm,
+/// check 8, the commit-msg hook) and the approval writer, which allows no bootstrap - goes through
+/// here, so one set of rules judges them all.
+fn committed_roster(repo: &Path, cfg: &Config, rev: &str) -> Result<Option<(Vec<Entry>, String)>, String> {
+    if let Some(t) = cfg.mr.tiers.iter().find(|t| !KNOWN_TIERS.contains(&t.as_str())) {
+        return Err(format!("keel: unknown mr tier '{t}' in .keel/config.toml (known: {})", KNOWN_TIERS.join(", ")));
+    }
+    let Some(text) = roster_text(repo, rev) else { return Ok(None) };
+    let src = if rev.is_empty() { format!("the staged {ROSTER}") } else { format!("{rev}:{ROSTER}") };
+    Ok(Some((parse_roster(&text, &cfg.mr.tiers, &src)?, src)))
 }
 
 /// The roster lines `new` adds (`+ `) and removes (`- `), each once; comments, blank lines,
@@ -114,8 +122,18 @@ fn roster_change(old: &str, new: &str) -> Vec<String> {
     new.difference(&old).map(|l| format!("+ {l}")).chain(old.difference(&new).map(|l| format!("- {l}"))).collect()
 }
 
-/// The tier that authorises `id` to sign by typing (`keel mr commit`, `confirm`, a `Reviewed-By`
-/// trailer): every tier but github, which signs only by an approval on GitHub.
+/// The roster change `base..tip` makes: the one a sign-off of that range is asked about (never the
+/// target's roster, which may have moved on since the fork).
+fn range_roster_change(repo: &Path, base: &str, tip: &str) -> Vec<String> {
+    roster_change(&roster_text(repo, base).unwrap_or_default(), &roster_text(repo, tip).unwrap_or_default())
+}
+
+/// The tier that authorises `id` to sign by typing (`keel mr setup`, `commit`, `confirm`, a
+/// `Reviewed-By` trailer, check 8 on a typed note): every tier but github, which signs only by an
+/// approval on GitHub. `key` wins, so a key holder can never sign off unsigned.
+///
+/// "Signed" means "a key listed in the target's committed roster signed", not "a human reviewed":
+/// that a key needs a human's touch or passphrase is the owner's setup, which Keel cannot see (DEC-48).
 fn typed_tier<'a>(allowed: &'a [Entry], id: &str) -> Option<&'a str> {
     let typed: Vec<&Entry> = allowed.iter().filter(|e| e.tier != GITHUB).collect();
     let mine = || typed.iter().filter(|e| e.identity == id);
@@ -130,15 +148,6 @@ fn approves(allowed: &[Entry], id: &str) -> bool {
 /// The refusal for a typed sign-off by an id that signs only by approval.
 fn by_approval_only(src: &str, id: &str) -> String {
     format!("keel mr: refused - {id} is listed in {src} under the github tier only: it signs by approving the pull request on GitHub, never by a typed command\n  fix -> approve the pull request's head commit on GitHub, or sign as an identity listed under another tier")
-}
-
-/// The tier that authorises `id`; `key` wins, so a key holder can never sign off unsigned.
-///
-/// "Signed" means "a key listed in the target's committed roster signed", not "a human reviewed":
-/// that a key needs a human's touch or passphrase is the owner's setup, which Keel cannot see (DEC-48).
-fn tier_of<'a>(allowed: &'a [Entry], id: &str) -> Option<&'a str> {
-    let mine = || allowed.iter().filter(|e| e.identity == id);
-    mine().find(|e| e.key.is_some()).or_else(|| mine().next()).map(|e| e.tier.as_str())
 }
 
 fn keys_of<'a>(allowed: &'a [Entry], id: &str) -> Vec<&'a str> {
@@ -495,12 +504,17 @@ fn setup(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
                 _ => return Err(format!("keel mr: {pubp} is not an OpenSSH public key")),
             }
         }
-        None => match tier_of(&allowed, id) {
+        None => match typed_tier(&allowed, id) {
             Some(t) => {
                 println!("{id} is already listed ({t})");
                 return Ok(0);
             }
-            None => format!("{}: {id}", if id.contains('@') { "email" } else { "username" }),
+            None => {
+                if approves(&allowed, id) {
+                    println!("{id} is listed under the github tier only, which signs by approval: adding a typed line");
+                }
+                format!("{}: {id}", if id.contains('@') { "email" } else { "username" })
+            }
         },
     };
     let tier = line.split(':').next().unwrap();
@@ -548,10 +562,12 @@ fn commit(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 
 /// merge-base(target, tip) = tip exactly when the target already contains the tip: the range is
 /// empty, and a sign-off would bind the empty diff over the note that attests the real change.
-fn landed(tip: &str, base: &str, target: &str) -> Option<String> {
+/// `sign`: how the caller's signer signs new work, for the fix line ("confirm the new tip", "approve
+/// the new tip on GitHub"); the caller prefixes its own command's refusal.
+fn landed(tip: &str, base: &str, target: &str, sign: &str) -> Option<String> {
     (tip == base).then(|| {
         format!(
-            "mr confirm refused - {} is already contained in {target} (merge-base = tip): the range is empty, so a sign-off here would bind the empty diff and replace the note that attests the real change\n  fix -> nothing to sign; the existing sign-off stands. To sign new work, commit it on the branch and confirm the new tip",
+            "{} is already contained in {target} (merge-base = tip): the range is empty, so a sign-off here would bind the empty diff and replace the note that attests the real change\n  fix -> nothing to sign; the existing sign-off stands. To sign new work, commit it on the branch and {sign}",
             short(tip)
         )
     })
@@ -591,8 +607,8 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         }
         return Ok(1);
     };
-    if let Some(refusal) = landed(&tip, &base, &target) {
-        eprintln!("{refusal}");
+    if let Some(refusal) = landed(&tip, &base, &target, "confirm the new tip") {
+        eprintln!("mr confirm refused - {refusal}");
         return Ok(1);
     }
     // The roster check 8 will judge by: a sign-off the gate would refuse is refused before signing.
@@ -603,7 +619,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         return Ok(1);
     };
     // The one point a roster edit made inside a branch meets the signer, who reads a report, not the diff.
-    let change = roster_change(&roster_text(repo, &base).unwrap_or_default(), &roster_text(repo, &tip).unwrap_or_default());
+    let change = range_roster_change(repo, &base, &tip);
     if !change.is_empty() && !args.contains(&"--roster-change") {
         eprintln!(
             "mr confirm refused - {}..{} changes who may sign ({ROSTER}):\n{}\n  fix -> if you mean to sign this roster change, re-run with --roster-change",
@@ -941,16 +957,12 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
     if !reviews.is_array() {
         return Err(format!("keel ci sign-off: {file} is not GitHub's list of reviews"));
     }
-    if let Some(t) = cfg.mr.tiers.iter().find(|t| !KNOWN_TIERS.contains(&t.as_str())) {
-        return Err(format!("keel: unknown mr tier '{t}' in .keel/config.toml (known: {})", KNOWN_TIERS.join(", ")));
-    }
-    let tip =
-        git(repo, &["rev-parse", "--verify", "-q", &format!("{tip_ref}^{{commit}}")], &[]).map_err(|_| format!("keel ci sign-off: no commit {tip_ref}"))?;
-    let Some(listed) = roster_text(repo, target) else {
+    // The roster check 8 judges by, read as `roster` reads it, but with no bootstrap.
+    let Some((allowed, src)) = committed_roster(repo, cfg, target)? else {
         return refuse(format!("{target} commits no {ROSTER}, so no approval can sign: a roster is landed by a typed sign-off"));
     };
-    let src = format!("{target}:{ROSTER}");
-    let allowed = parse_roster(&listed, &cfg.mr.tiers, &src)?;
+    let tip =
+        git(repo, &["rev-parse", "--verify", "-q", &format!("{tip_ref}^{{commit}}")], &[]).map_err(|_| format!("keel ci sign-off: no commit {tip_ref}"))?;
     let Some((id, review)) = pick_approval(&reviews, &tip, &allowed, cfg.github.repo.as_deref()) else {
         println!("no approval to sign on {}: by GitHub's review decision on this commit, no id {src} lists under the github tier approves it, or one requests changes", short(&tip));
         return Ok(3);
@@ -958,10 +970,11 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
     let Some(gate::Ready { tip, base, target, cr }) = gate::sign_ready(repo, cfg, epic, tip_ref, args, false)? else {
         return refuse(format!("sign last: a check before the sign-off is red on {} (above)", short(&tip)));
     };
-    if let Some(r) = landed(&tip, &base, &target) {
+    if let Some(r) = landed(&tip, &base, &target, "approve the new tip on GitHub") {
         return refuse(r);
     }
-    if !roster_change(&listed, &roster_text(repo, &tip).unwrap_or_default()).is_empty() {
+    // A change in the range, as confirm asks; a line the target landed after the fork is not one.
+    if !range_roster_change(repo, &base, &tip).is_empty() {
         return refuse(format!(
             "{}..{} changes who may sign ({ROSTER}): a roster change is signed by the typed keel mr confirm --roster-change",
             short(&base),
@@ -1007,22 +1020,51 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
     Ok(0)
 }
 
-/// R50 (E-GHFLOW2.W3): before `keel mr` runs any git, its checkout's git links must be as git makes
-/// them, by scripts/router-gh.sh's rule - workers can write the shared git dir, and the owner's
-/// unsandboxed sign-off would follow whatever they wrote there. From `start` up to the first `.git`:
-/// a directory (a main checkout) holds no `commondir`; a file (a linked checkout) names an admin dir
-/// under `<git dir>/worktrees/` whose `commondir` is `../..` and whose `gitdir` names this `.git`
-/// back; neither the git dir nor the admin dir holds a `config.worktree`. No link is followed.
+/// R50 (E-GHFLOW2.W3): before `keel mr` runs any git, the git dir git itself would use from `start`
+/// must be this checkout's, its links as git makes them, by scripts/router-gh.sh's rule - workers can
+/// write the shared git dir and any directory of their checkout, and the owner's unsandboxed sign-off
+/// would follow whatever they wrote there. Found as git's discovery finds it, from `start` up: the
+/// first directory holding a `.git`, unless a directory below it is itself a git dir (`HEAD`,
+/// `objects` and `refs`: a bare repository, or inside a git dir), which git would use - refused, as
+/// `keel mr` runs from a checkout. The `.git` found: a directory must be a git dir (git skips one
+/// that is not and looks further up - refused here, never skipped) and holds no `commondir`; a file
+/// names an admin dir under `<git dir>/worktrees/` whose `commondir` is `../..` and whose `gitdir`
+/// names this `.git` back; neither the git dir nor the admin dir holds a `config.worktree`. Above the
+/// checkout, any `.git` but this repository's own git dir (a linked worktree inside its main
+/// checkout) refuses: a repository nested in a checkout may be one a worker planted, and git would
+/// run its config and hooks. No link is followed, and a path that does not resolve refuses.
 /// `Some(why)` refuses.
 pub(crate) fn checkout_problem(start: &Path) -> Option<String> {
     let owner = "the owner checks and removes it; nothing was run";
     let exists = |p: &Path| std::fs::symlink_metadata(p).is_ok();
-    let (root, dotgit) = start.ancestors().find_map(|d| exists(&d.join(".git")).then(|| (d.to_path_buf(), d.join(".git"))))?;
-    let meta = std::fs::symlink_metadata(&dotgit).ok()?;
+    let git_dir = |d: &Path| ["HEAD", "objects", "refs"].iter().all(|n| exists(&d.join(n)));
+    let unresolved = |p: &Path| Some(format!("{} does not resolve: {owner}", p.display()));
+    let mut found = None;
+    for d in start.ancestors() {
+        if exists(&d.join(".git")) {
+            found = Some(d);
+            break;
+        }
+        if git_dir(d) {
+            return Some(format!(
+                "{} is a git dir (a bare repository, or inside a git dir), which git would use: run keel mr from the checkout; nothing was run",
+                d.display()
+            ));
+        }
+    }
+    let root = found?; // no repository here: git finds none either, and keel stops at its first call
+    let dotgit = root.join(".git");
+    let Ok(meta) = std::fs::symlink_metadata(&dotgit) else { return unresolved(&dotgit) };
     let canon = |p: &Path| std::fs::canonicalize(p).ok();
     let (common, admin) = if meta.file_type().is_symlink() {
         return Some(format!("{} is a symbolic link; git makes a directory or a gitdir file: {owner}", dotgit.display()));
     } else if meta.is_dir() {
+        if !git_dir(&dotgit) {
+            return Some(format!(
+                "{} is not a repository (no HEAD, objects and refs): git would skip it and use a .git further up, unchecked: {owner}",
+                dotgit.display()
+            ));
+        }
         (dotgit.clone(), None)
     } else {
         let link = std::fs::read_to_string(&dotgit).unwrap_or_default();
@@ -1036,16 +1078,17 @@ pub(crate) fn checkout_problem(start: &Path) -> Option<String> {
         if std::fs::symlink_metadata(&named).map(|m| !m.is_dir()).unwrap_or(true) {
             return bad("not a directory");
         }
-        let admin = canon(&named)?;
+        let Some(admin) = canon(&named) else { return bad("it does not resolve") };
         if admin.parent().and_then(Path::file_name).is_none_or(|n| n != "worktrees") {
             return bad("not under <git dir>/worktrees/");
         }
         if std::fs::read_to_string(admin.join("commondir")).ok().as_deref().map(|c| c.strip_suffix('\n').unwrap_or(c)) != Some("../..") {
             return bad("its commondir is not ../..");
         }
+        let Some(here) = canon(root) else { return unresolved(root) };
         // git writes it absolute, or relative to the admin dir under worktree.useRelativePaths
         let back = std::fs::read_to_string(admin.join("gitdir")).ok().map(|g| admin.join(g.strip_suffix('\n').unwrap_or(&g)));
-        if back.as_deref().and_then(|g| Some((g.file_name()? == ".git", canon(g.parent()?)?))) != Some((true, canon(&root)?)) {
+        if back.as_deref().and_then(|g| Some((g.file_name()? == ".git", canon(g.parent()?)?))) != Some((true, here)) {
             return bad("its gitdir does not name this checkout's .git");
         }
         (admin.join("../.."), Some(admin))
@@ -1057,6 +1100,16 @@ pub(crate) fn checkout_problem(start: &Path) -> Option<String> {
         let f = dir.join("config.worktree");
         if exists(&f) {
             return Some(format!("{} exists: this repository uses none, so a worker may have written it: {owner}", f.display()));
+        }
+    }
+    let Some(own) = canon(&common) else { return unresolved(&common) };
+    for outer in root.ancestors().skip(1).map(|d| d.join(".git")).filter(|g| exists(g)) {
+        if canon(&outer).as_ref() != Some(&own) {
+            return Some(format!(
+                "{} sits inside another checkout ({}): a repository nested in a checkout may be one a worker planted, and git would run its config and hooks: {owner}",
+                root.display(),
+                outer.display()
+            ));
         }
     }
     None
@@ -1104,7 +1157,7 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 mod tests {
     use super::{
         approves, landed, parse_roster, payload, pick_approval, positionals, printable, review_problem, roster_change, rule_bearing, sha256, stale_change,
-        tier_of, typed_tier, waive_reason, waiver_code, waiver_drift, waiver_listing,
+        typed_tier, waive_reason, waiver_code, waiver_drift, waiver_listing,
     };
     use crate::notes::{CrNote, Review};
     use serde_json::json;
@@ -1154,7 +1207,7 @@ mod tests {
     #[test]
     fn a_github_id_never_signs_by_typing_and_a_typed_id_never_by_approval() {
         let r = parse_roster("github: 77 owner\nusername: vu\nusername: 88\ngithub: 88 both\n", &tiers(&["username", "github"]), "r").unwrap();
-        assert_eq!((tier_of(&r, "77"), typed_tier(&r, "77"), approves(&r, "77")), (Some("github"), None, true));
+        assert_eq!((typed_tier(&r, "77"), approves(&r, "77")), (None, true));
         assert_eq!((typed_tier(&r, "vu"), approves(&r, "vu")), (Some("username"), false));
         assert_eq!((typed_tier(&r, "88"), approves(&r, "88")), (Some("username"), true), "listed twice: each path finds its own line");
     }
@@ -1375,15 +1428,16 @@ mod tests {
     #[test]
     fn landed_refuses_exactly_when_the_tip_is_its_own_base() {
         let t = "84ba8e3d0123456789abcdef0123456789abcdef";
-        let r = landed(t, t, "epic/e").unwrap();
+        let r = landed(t, t, "epic/e", "approve the new tip on GitHub").unwrap();
         assert!(r.contains("84ba8e3d01 is already contained in epic/e") && r.contains("fix -> nothing to sign"), "{r}");
+        assert!(r.contains("and approve the new tip on GitHub") && !r.contains("refused"), "the caller names its own command: {r}");
         // generated pairs (seeded LCG), equal and unequal alike: Some iff the two shas are equal
         let mut x: u64 = 0x5eed;
         for _ in 0..500 {
             x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
             let a = format!("{:040x}", (x >> 33) % 4);
             let b = format!("{:040x}", (x >> 13) % 4);
-            assert_eq!(landed(&a, &b, "main").is_some(), a == b, "{a} {b}");
+            assert_eq!(landed(&a, &b, "main", "confirm the new tip").is_some(), a == b, "{a} {b}");
         }
     }
 
