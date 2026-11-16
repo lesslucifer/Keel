@@ -10,25 +10,18 @@
     <div class="inner">
       <h1>E-GHFLOW2.W3 · Result: your approval is the sign-off</h1>
       <p>Built and proven hermetically: an approval on the head commit by a listed GitHub id, under GitHub's review decision, writes the sign-off note; anything else writes nothing. It runs live after landing 2.</p>
-      <div class="meta">v4 · 2026-11-16 · T3 · WU result · Keel · plan: 2026-11-15-eghflow2-w3-plan.html · v2 answers the router's security review (6 important, 7 nits), v3 its round 2 (3 important, 6 nits), v4 its round 3 (ready; 1 important, 2 nits)</div>
+      <div class="meta">v5 · 2026-11-16 · T3 · WU result · Keel · plan: 2026-11-15-eghflow2-w3-plan.html · v2 answers the router's security review (6 important, 7 nits), v3 its round 2 (3 important, 6 nits), v4 its round 3 (ready; 1 important, 2 nits), v5 records your commit c08da42</div>
     </div>
   </header>
   <main>
     <h2 id="outcome">Outcome</h2>
-    <p data-item="outcome"><b>Delivered</b> against the requirement, hermetically. A recorded approval by <code>5499546</code> on the head, fed to <code>scripts/ci-sign-off.sh</code> with a fake GitHub, writes mr/v1 (tier <code>github</code>, the review's id, page and commit), pushes it to origin, posts <code>keel/sign-off</code> success, and <code>keel verify-dod</code> is green. A comment, an approval of an older commit, an unlisted id, a foreign page, a listed signer's change request on any commit of the pull request, a dismissed approval or a red check writes nothing. <code>keel mr</code> refuses a checkout whose git links git did not make and runs no git. Six files wait for your one commit (below); until then a clean checkout of the branch lacks the scripts and workflows its tests read.</p>
+    <p data-item="outcome"><b>Delivered</b> against the requirement, hermetically. A recorded approval by <code>5499546</code> on the head, fed to <code>scripts/ci-sign-off.sh</code> with a fake GitHub, writes mr/v1 (tier <code>github</code>, the review's id, page and commit), pushes it to origin, posts <code>keel/sign-off</code> success, and <code>keel verify-dod</code> is green. A comment, an approval of an older commit, an unlisted id, a foreign page, a listed signer's change request on any commit of the pull request, a dismissed approval or a red check writes nothing. <code>keel mr</code> refuses a checkout whose git links git did not make and runs no git. Your commit <code>c08da42</code> landed the six rule-bearing files and your roster line <code>github: 5499546 lesslucifer</code> (below); the branch's tests run on a clean checkout of it.</p>
 
     <h2 id="you">What you do now</h2>
     <ol data-c="owner-steps">
-      <li><b>Check the GitHub App's permissions</b> (security review round 3): it must NOT hold "Workflows" (<code>docs/install.html</code> §5 lists it as optional). With it, a WU branch the bot pushes could ship a workflow asking for <code>contents: write</code>. Contents, Pull requests and Issues write, Checks and Commit statuses read are all it needs.</li>
-      <li><b>Your roster line</b>, in this worktree: <code>printf 'github: 5499546 lesslucifer\n' &gt;&gt; .keel/mr-allowed &amp;&amp; git add .keel/mr-allowed</code>. A worker never edits the roster.</li>
-      <li><b>Check what you commit</b>: <code>git status --short</code> shows exactly the six staged files below plus <code>M  .keel/mr-allowed</code>, and nothing else.</li>
-      <li><b>Build the reviewed keel where no worker can write</b> (security review I1: <code>target/</code> in this worktree is a worker's to write). From a fresh temp dir, export the reviewed tip from the main checkout and build it with its own cargo home and target dir:
-        <pre>d=$(mktemp -d "${TMPDIR:-/tmp}/keel-w3.XXXXXX") &amp;&amp; mkdir "$d/src"
-git -C /Users/nguyenvanluong/Documents/proj/misc/Keel archive --format=tar &lt;reviewed tip&gt; | tar -x -C "$d/src"
-(cd "$d/src" &amp;&amp; CARGO_HOME="$d/cargo-home" CARGO_TARGET_DIR="$d/target" cargo build --locked)</pre>
-        The installed keel refuses the <code>github</code> tier in the working <code>.keel/config.toml</code>, both in <code>keel mr commit</code> and in the commit-msg hook, which it finds on PATH.</li>
-      <li><b>Your commit</b>, that keel first on PATH: <code>PATH="$d/target/debug:$PATH" keel mr commit -m '&lt;msg&gt;' --as vuluu</code>. The router stages the exact text.</li>
-      <li><b>After the merge into the epic</b>, install a keel built from the epic before the next gated merge or typed sign-off: the epic's config then lists <code>github</code>, which an older keel rejects. The sign-off of this WU needs <code>--roster-change</code>, since the roster line is in its range.</li>
+      <li><b>Done</b>: you checked that the GitHub App holds no "Workflows" permission (security review round 3), added your roster line and landed the rule-bearing files in <code>c08da42</code> with a keel built from the reviewed tip (security review I1).</li>
+      <li><b>Your sign-off of this WU</b> needs <code>--roster-change</code>, since the roster line is in its range. The router stages the exact command.</li>
+      <li><b>After the merge into the epic</b>, install a keel built from the epic before the next gated merge or typed sign-off: the epic's config then lists <code>github</code>, which an older keel rejects.</li>
     </ol>
 
     <h2 id="security">The security review</h2>
@@ -81,7 +74,7 @@ git -C /Users/nguyenvanluong/Documents/proj/misc/Keel archive --format=tar &lt;r
         <tr><td>Red first: the integration tests ran red before the CLI was wired, the I3/N5 unit tests before their code; every unit, writer and router-gh test was also shown red by a mutation of the code it guards (30 mutations, each caught)</td><td>this report</td></tr>
         <tr><td>G5's W2 nits</td><td><code>tests/suite/router_gh.rs</code>, <code>tests/suite/router_gh_args.rs</code></td></tr>
       </table>
-      <p>Staged for your commit: <code>.github/workflows/keel-sign-off-request.yml</code>, <code>.github/workflows/keel-sign-off.yml</code>, <code>scripts/ci-sign-off.sh</code>, <code>scripts/router-gh.sh</code>, <code>.keel/config.toml</code>, and <code>.claude/skills/project-router/SKILL.md</code>.</p>
+      <p>Landed in your commit <code>c08da42</code>: <code>.github/workflows/keel-sign-off-request.yml</code>, <code>.github/workflows/keel-sign-off.yml</code>, <code>scripts/ci-sign-off.sh</code>, <code>scripts/router-gh.sh</code>, <code>.keel/config.toml</code>, <code>.claude/skills/project-router/SKILL.md</code> and <code>.keel/mr-allowed</code>.</p>
     </div>
 
     <h2 id="distillation">Distillation</h2>
