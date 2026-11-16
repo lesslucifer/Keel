@@ -8,7 +8,7 @@ use std::process::Output;
 use tempfile::TempDir;
 
 use crate::common;
-use crate::router_gh::{exe, text, FAKE_CURL};
+use crate::router_gh::{exe, mock_log, serve_routes, text, FAKE_CURL};
 
 const R: &str = "/repos/own/Keel";
 
@@ -102,16 +102,8 @@ impl Gh {
     }
 
     fn serve(&self, answers: &[(String, u16, Value)]) {
-        for e in std::fs::read_dir(&self.mock).unwrap() {
-            std::fs::remove_file(e.unwrap().path()).unwrap();
-        }
-        let mut routes = String::new();
-        for (i, (path, status, body)) in answers.iter().enumerate() {
-            std::fs::write(self.mock.join(format!("r{i}.json")), body.to_string()).unwrap();
-            routes.push_str(&format!("GET {path} {status} r{i}.json\n"));
-        }
-        std::fs::write(self.mock.join("routes"), routes).unwrap();
-        std::fs::write(self.mock.join("log"), "").unwrap();
+        let routes: Vec<_> = answers.iter().map(|(p, st, b)| ("GET", p.as_str(), st.to_string(), vec![b.clone()])).collect();
+        serve_routes(&self.mock, &routes);
     }
 
     fn run(&self, args: &[&str], token: Option<&str>) -> Output {
@@ -126,7 +118,7 @@ impl Gh {
     }
 
     fn log(&self) -> Vec<Value> {
-        std::fs::read_to_string(self.mock.join("log")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect()
+        mock_log(&self.mock)
     }
 }
 
@@ -324,7 +316,23 @@ fn a_missing_rule_a_bypass_actor_squash_or_a_check_from_another_source_is_red() 
         (
             "another code owner",
             edit(&format!("{R}/contents/.github/CODEOWNERS"), |v| v["content"] = json!(base64("* @mallory\n"))),
-            vec!["RED codeowners.file CODEOWNERS on the default branch names the owner for every path: no line * @own"],
+            vec!["RED codeowners.file CODEOWNERS on the default branch is exactly one rule, * @<owner>, the owner for every path: rule lines: * @mallory (want only * @own)"],
+        ),
+        // code review round 1: GitHub takes the last matching rule, so a later line overrides * @own
+        (
+            "a later rule for a path",
+            edit(&format!("{R}/contents/.github/CODEOWNERS"), |v| v["content"] = json!(base64("* @own\n/.github/ @mallory\n"))),
+            vec!["RED codeowners.file CODEOWNERS on the default branch is exactly one rule, * @<owner>, the owner for every path: rule lines: * @own | /.github/ @mallory (want only * @own)"],
+        ),
+        (
+            "a later rule for every path",
+            edit(&format!("{R}/contents/.github/CODEOWNERS"), |v| v["content"] = json!(base64("* @own\n* @mallory\n"))),
+            vec!["RED codeowners.file CODEOWNERS on the default branch is exactly one rule, * @<owner>, the owner for every path: rule lines: * @own | * @mallory (want only * @own)"],
+        ),
+        (
+            "an earlier rule, overridden for nothing but still another owner's line",
+            edit(&format!("{R}/contents/.github/CODEOWNERS"), |v| v["content"] = json!(base64("/docs/ @mallory\n* @own\n"))),
+            vec!["RED codeowners.file CODEOWNERS on the default branch is exactly one rule, * @<owner>, the owner for every path: rule lines: /docs/ @mallory | * @own (want only * @own)"],
         ),
         (
             "an unreadable CODEOWNERS",
@@ -344,6 +352,19 @@ fn a_missing_rule_a_bypass_actor_squash_or_a_check_from_another_source_is_red() 
         assert_eq!(reds, want.len(), "{what}: only what differs is red: {l:#?}");
         assert_eq!(l.last().unwrap(), &format!("SETTINGS red ({reds} red, 0 unread)"), "{what}");
     }
+}
+
+/// The repository's own .github/CODEOWNERS, comments and all, is the one rule the check wants.
+#[test]
+fn the_repositorys_own_codeowners_is_green() {
+    let gh = Gh::new();
+    let ours = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/CODEOWNERS")).unwrap();
+    let mut a = edit(&format!("{R}/contents/.github/CODEOWNERS"), |v| v["content"] = json!(base64(&ours)));
+    a[0].2["owner"]["login"] = json!("lesslucifer");
+    gh.serve(&a);
+    let o = gh.run(&["own/Keel"], Some("t"));
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(lines(&o).iter().any(|l| l.starts_with("OK codeowners.file ")), "{}", text(&o));
 }
 
 /// Without a token GitHub hides the bypass lists and the Actions settings: those lines are UNREAD,

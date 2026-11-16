@@ -64,6 +64,34 @@ if [ -n "$hdr" ]; then if [ -f "$MOCK_GH/$f.hdr" ]; then cp "$MOCK_GH/$f.hdr" "$
 printf '%s' "$2"
 "#;
 
+/// FAKE_CURL's route table in `mock`, emptied first: each route (method, path, status, bodies)
+/// answers its bodies in turn, the last repeated; the request log starts empty. Shared by every
+/// suite that serves recorded GitHub answers (E-GHFLOW2.W4 code review round 1).
+pub(crate) fn serve_routes(mock: &Path, routes: &[(&str, &str, String, Vec<serde_json::Value>)]) {
+    for e in std::fs::read_dir(mock).unwrap() {
+        std::fs::remove_file(e.unwrap().path()).unwrap();
+    }
+    let mut table = String::new();
+    for (i, (m, p, s, bodies)) in routes.iter().enumerate() {
+        let files: Vec<String> = bodies
+            .iter()
+            .enumerate()
+            .map(|(j, b)| {
+                std::fs::write(mock.join(format!("r{i}-{j}.json")), b.to_string()).unwrap();
+                format!("r{i}-{j}.json")
+            })
+            .collect();
+        table.push_str(&format!("{m} {p} {s} {}\n", files.join(",")));
+    }
+    std::fs::write(mock.join("routes"), table).unwrap();
+    std::fs::write(mock.join("log"), "").unwrap();
+}
+
+/// The requests FAKE_CURL logged in `mock` since the last `serve_routes`.
+pub(crate) fn mock_log(mock: &Path) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(mock.join("log")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect()
+}
+
 pub(crate) fn text(o: &Output) -> String {
     format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))
 }
@@ -224,23 +252,7 @@ impl Gh {
             vec![serde_json::json!({"token": TOKEN, "expires_at": "2026-11-15T12:00:00Z"})],
         )];
         all.extend(extra.iter().cloned());
-        for e in std::fs::read_dir(&self.mock).unwrap() {
-            std::fs::remove_file(e.unwrap().path()).unwrap();
-        }
-        let mut table = String::new();
-        for (i, (m, p, s, bodies)) in all.iter().enumerate() {
-            let files: Vec<String> = bodies
-                .iter()
-                .enumerate()
-                .map(|(j, b)| {
-                    std::fs::write(self.mock.join(format!("r{i}-{j}.json")), b.to_string()).unwrap();
-                    format!("r{i}-{j}.json")
-                })
-                .collect();
-            table.push_str(&format!("{m} {p} {s} {}\n", files.join(",")));
-        }
-        std::fs::write(self.mock.join("routes"), table).unwrap();
-        std::fs::write(self.mock.join("log"), "").unwrap();
+        serve_routes(&self.mock, &all);
     }
 
     /// GitHub's Link header for answer `j` of route `i` (counted from 1 after the token exchange):
@@ -252,7 +264,7 @@ impl Gh {
 
     /// The requests the script sent since the last `routes`.
     pub(crate) fn log(&self) -> Vec<serde_json::Value> {
-        std::fs::read_to_string(self.mock.join("log")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect()
+        mock_log(&self.mock)
     }
 
     pub(crate) fn calls(&self) -> Vec<String> {
