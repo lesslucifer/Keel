@@ -1,0 +1,19 @@
+# The start of a sign-off by approval (E-GHFLOW2.W3). GitHub takes a pull_request_review workflow from
+# the pull request's merge commit, so a pull request could edit this file: it therefore holds no
+# permission, checks nothing out and reads no event value. It only finishes; its end starts
+# "Keel sign-off" (keel-sign-off.yml) on workflow_run, which GitHub takes from main.
+name: Keel sign-off request
+
+on:
+  pull_request_review:
+    types:
+      - submitted
+
+permissions: {}
+
+jobs:
+  request:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - run: echo "A review was submitted; Keel sign-off, from main, reads it from GitHub."

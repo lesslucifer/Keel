@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHFLOW2.W3 result: your approval is the sign-off</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHFLOW2.W3 · Result: your approval is the sign-off</h1>
+      <p>Built and proven hermetically: an approval on the head commit by a listed GitHub id, under GitHub's review decision, writes the sign-off note; anything else writes nothing. It runs live after landing 2.</p>
+      <div class="meta">v9 · 2026-11-16 · T3 · WU result · Keel · plan: 2026-11-15-eghflow2-w3-plan.html · v2 answers the router's security review (6 important, 7 nits), v3 its round 2 (3 important, 6 nits), v4 its round 3 (ready; 1 important, 2 nits), v5 records your commit c08da42, v6 answers code review round 1 (2 blockers, 2 important, 3 nits), v7 its round 2 (3 blockers, 2 important, 4 nits), v8 its round 3 (2 blockers, 2 important, 2 nits, one pre-existing R50 hole), v9 its round 4 (2 blockers) and your commit 585f47e</div>
+    </div>
+  </header>
+  <main>
+    <h2 id="outcome">Outcome</h2>
+    <p data-item="outcome"><b>Delivered</b> against the requirement, hermetically. A recorded approval by <code>5499546</code> on the head, fed to <code>scripts/ci-sign-off.sh</code> with a fake GitHub, writes mr/v1 (tier <code>github</code>, the review's id, page and commit), pushes it to origin, posts <code>keel/sign-off</code> success, and <code>keel verify-dod</code> is green. A comment, an approval of an older commit, an unlisted id, a foreign page, a listed signer's change request on any commit of the pull request, a dismissed approval or a red check writes nothing. <code>keel mr</code> runs only from a checkout's root, refuses a checkout whose git links git did not make, and runs no git. Your commit <code>c08da42</code> landed the six rule-bearing files and your roster line <code>github: 5499546 lesslucifer</code> (below); the branch's tests run on a clean checkout of it.</p>
+
+    <h2 id="you">What you do now</h2>
+    <ol data-c="owner-steps">
+      <li><b>Done</b>: you checked that the GitHub App holds no "Workflows" permission (security review round 3), added your roster line and landed the rule-bearing files in <code>c08da42</code> with a keel built from the reviewed tip (security review I1), and committed round 4's <code>scripts/ci-sign-off.sh</code> change in <code>585f47e</code>.</li>
+      <li><b>Run every <code>keel mr</code> from the worktree's root</b> (<code>cd &lt;worktree root&gt; &amp;&amp; keel mr ...</code>), as you already do: from a subdirectory it now refuses and says so.</li>
+      <li><b>Your sign-off of this WU</b> needs <code>--roster-change</code>, since the roster line is in its range. The router stages the exact command.</li>
+      <li><b>After the merge into the epic</b>, install a keel built from the epic before the next gated merge or typed sign-off: the epic's config then lists <code>github</code>, which an older keel rejects.</li>
+    </ol>
+
+    <h2 id="security">The security review</h2>
+    <table data-c="security">
+      <tr><th>#</th><th>Finding</th><th>Answer</th></tr>
+      <tr><td>I1</td><td>The owner's command ran a keel from the worktree's <code>target/</code></td><td>Fixed: built from a <code>git archive</code> export of the reviewed tip in a fresh temp dir, with its own <code>CARGO_HOME</code> and target (above)</td></tr>
+      <tr><td>I2</td><td>The router's notes merge brought GitHub's edits and deletions into all six kinds</td><td>Fixed: only <code>refs/notes/mr</code> is read, add-only: a writer-shaped github-tier note on a commit with none here (narrowed in round 2: F1, F2); never a merge; the push is leased on the value read. Tested with a one-sided edit and a one-sided deletion. A github-tier note proves no more than a username line until check 8 re-reads the review (G7; DEC-48 at the distillation)</td></tr>
+      <tr><td>I3</td><td>The newest approval won over the same signer's later change request</td><td>Fixed: GitHub's review decision on the tip. Each listed signer's latest APPROVED, CHANGES_REQUESTED or DISMISSED review counts; none may request changes; the newest approval signs. Unit and 2000 generated cases, plus an integration test</td></tr>
+      <tr><td>I4</td><td>The base's code was built in the job holding the write token</td><td>Fixed: keel is built from main, the workflow's own checkout, which only you move (DEC-61). The base and the head are git data only. A split read-only build job was not chosen: its artifact would be untrusted data again, and it doubles the jobs</td></tr>
+      <tr><td>I5</td><td>One concurrency group let a later review cancel a pending one</td><td>Fixed: one group per head commit, never cancelled; lock test updated</td></tr>
+      <tr><td>I6</td><td>An approval attested a report note GitHub never showed</td><td>Fixed: an approval attests only a report committed in the range (GitHub shows it at the approved commit); the note is attested by the typed sign-off alone. Binding the note to an approval waits for docs as pages (G7, W8)</td></tr>
+      <tr><td>N1 – N6</td><td>The run's commit, <code>set -f</code>, the token's shape, an error status on a stop, the page's repository, the temp ref in the trap</td><td>Fixed, each with a test except N2 (the lock test checks <code>set -euf</code>) and N6 (the trap; the normal path's test shows no temp ref left)</td></tr>
+      <tr><td>N7</td><td>No request run for a WU into an epic branched before landing 2, or for a conflicted pull request</td><td>Recorded in G7</td></tr>
+      <tr><td>F1 (round 2)</td><td>A sign-off GitHub holds on a commit this checkout lacks (after "Update branch") was erased by the router's next push</td><td>Fixed: such a writer-shaped note holds <code>refs/notes/mr</code> back from the push with "WARN GitHub holds a sign-off on &lt;c&gt; this checkout lacks: sync first"; the branch and other notes still land. Tested with a commit only GitHub has</td></tr>
+      <tr><td>F2</td><td>Add-only brought back a sign-off removed here</td><td>Fixed: only notes GitHub added since this checkout last pushed <code>refs/notes/mr</code> are taken (a snapshot ref, <code>refs/notes/keel-gh/pushed-mr</code>, moved after each successful push of it); a new writer note after that is still taken. Tested</td></tr>
+      <tr><td>F3</td><td>The decision was limited to the tip, but GitHub's is per pull request</td><td>Fixed: each listed signer's latest APPROVED, CHANGES_REQUESTED or DISMISSED on any commit; any change request blocks; a signer approves only with a latest APPROVED on exactly the tip</td></tr>
+      <tr><td>F4, F5</td><td>Blocking must not depend on other fields; hand cases from GitHub's semantics</td><td>Fixed: a change request with a null or missing commit, review id or user blocks; hand cases beside a 3000-list generated oracle</td></tr>
+      <tr><td>F6</td><td>Lease on the ref as fetched; a move between read and push</td><td>Fixed and tested: the writer signs during the push, the leased update of <code>refs/notes/mr</code> fails with a WARN, its note survives and is taken at the next push</td></tr>
+      <tr><td>I3-1 (round 3)</td><td>F1's hold had no end: a writer-shaped note on a commit that exists nowhere held every later mr push</td><td>Fixed: the missing commit is fetched by sha first; served, the note is taken and the push carries it on; not served, "WARN GitHub's mr note on &lt;c&gt; not taken: GitHub serves no such commit", and nothing is held (the next push then drops that note from GitHub, by design). The hold is gone: every case it still covered was one anyone could plant. Tested with a commit only GitHub has and one GitHub never had</td></tr>
+      <tr><td>I3-2, I3-3</td><td>The snapshot should be the value pushed; a removal after a failed leased push is re-imported once</td><td>I3-2 fixed: <code>refs/notes/mr</code> is pushed as the value read just before, and that value becomes the snapshot. I3-3 recorded in G7 (it heals at the next successful push)</td></tr>
+      <tr><td>F7 – F9</td><td>A per-run temp ref; the stale config comment; the logged main sha</td><td>Fixed: <code>refs/notes/keel-gh/mr-&lt;pid&gt;</code>; the comment says the CLI reads <code>repo</code>; main's sha is read before any ref moves (lock test)</td></tr>
+    </table>
+
+    <h2 id="code-review">Code review round 1</h2>
+    <table data-c="code-review">
+      <tr><th>#</th><th>Finding</th><th>Answer</th></tr>
+      <tr><td>B1</td><td>The approval writer compared the target's roster with the tip's, so a roster line the target landed after the fork refused every approval as a "roster change"</td><td>Fixed: the writer asks, as <code>keel mr confirm</code> does, about the roster change in base..tip (one helper, <code>range_roster_change</code>). Red, then green: <code>a_roster_line_landed_on_the_target_after_the_fork_does_not_refuse_an_approval</code></td></tr>
+      <tr><td>B2</td><td>R50 stopped at the first <code>.git</code>, but git skips a <code>.git</code> dir that is not a repository; a planted repository passed as a main checkout</td><td>Fixed in round 1 by imitating git's upward discovery, which round 2 broke (B1, B2 below); replaced by the root-only rule</td></tr>
+      <tr><td>I1</td><td>The writer copied <code>roster()</code>'s tier check and parsed the target's roster itself</td><td>Fixed: every committed-roster read goes through <code>committed_roster</code>; <code>roster()</code> adds the bootstrap the writer refuses</td></tr>
+      <tr><td>I2</td><td>Two copies of the signer-tier rule (<code>tier_of</code>, <code>typed_tier</code>)</td><td>Fixed: <code>tier_of</code> is gone; <code>typed_tier</code> carries the rule and its doc</td></tr>
+      <tr><td>Nits</td><td>Canonicalize failures in R50 passed; <code>setup</code> said "already listed (github)" for a github-only id; the writer's "already contained" refusal read "mr confirm refused"</td><td>Fixed: each unresolved path refuses (not reachable by a planted file, so not tested); <code>setup</code> judges by the typed tiers and adds the typed line (<code>setup_adds_a_typed_line_for_an_id_listed_only_under_the_github_tier</code>); <code>landed()</code> is worded per caller (<code>the_writer_refuses_a_tip_already_in_its_target_in_its_own_words</code>). Both shown red against the old code</td></tr>
+      <tr><td>Refuted</td><td><code>valid_login</code> rejects some older logins</td><td>No change, by the router's ruling: the strict, fail-closed shape stays</td></tr>
+    </table>
+
+    <h2 id="code-review-2">Code review round 2</h2>
+    <table data-c="code-review-2">
+      <tr><th>#</th><th>Finding</th><th>Answer</th></tr>
+      <tr><td>B1</td><td>A dir holding only <code>HEAD</code> and <code>commondir</code> is a git dir to git, but R50's walk stepped over it</td><td>Fixed by the router's ruling: <code>keel mr</code> runs only from the checkout's root (the cwd holds the <code>.git</code>) and never walks up; elsewhere it refuses and says to cd to the worktree root. Red, then green: <code>keel_mr_refuses_a_planted_head_and_commondir_dir_and_runs_no_git</code> (the dir as the cwd, and as a <code>.git</code>)</td></tr>
+      <tr><td>B2</td><td>A FIFO planted as <code>.git</code> made <code>keel mr</code> hang</td><td>Fixed: <code>.git</code> is judged by its own metadata, a directory or a regular file only, and only a regular file is opened (also the admin dir's <code>commondir</code> and <code>gitdir</code>). Red (hung until the test's 20 s limit), then green: <code>keel_mr_refuses_a_fifo_in_the_git_links_without_hanging</code></td></tr>
+      <tr><td>B3</td><td>The approval writer ignored check 8's "a key wins" and overwrote a key-signed note with an unsigned one</td><td>Fixed: a note on the tip is never replaced, and a key holder's approval never signs. Round 3 found the field comparison and the separate key test wrong (below); both now go through check 8's own rules</td></tr>
+      <tr><td>I4</td><td><code>signer()</code> counted github lines, so Keel's own roster needed <code>--as</code> again</td><td>Fixed: it picks among typed ids only. <code>a_typed_sign_off_without_as_picks_the_only_typed_identity</code></td></tr>
+      <tr><td>I5</td><td><code>keel ci sign-off --report</code> took any path, even a local file</td><td>Fixed, flag kept (it names one report when several qualify): the path must be a result report committed in base..tip and present at the tip. <code>the_writer_attests_only_a_report_committed_in_the_range</code>, and a local epic report in the epic test</td></tr>
+      <tr><td>Nits</td><td>Check 8's "does not list" for a typed-only signer's review; the copied refusal choice; the <code>git_dir</code> closure; the owner/name cut twice</td><td>Fixed: "listed under a typed tier only, so the approval does not bind" (tested); <code>typed_refusal</code>; the root-only rewrite renamed it <code>is_git_dir</code>; <code>review_problem</code> compares the page's own regex capture, and a regex that fails to build refuses</td></tr>
+    </table>
+
+    <h2 id="code-review-3">Code review round 3</h2>
+    <table data-c="code-review-3">
+      <tr><th>#</th><th>Finding</th><th>Answer</th></tr>
+      <tr><td>B1</td><td>A validly signed tip read as a failed sign-off for any approval but the note's own (a second approver, a re-approval, an approval after a typed confirm)</td><td>Fixed by the router's ruling: the writer asks check 8 (<code>manual_review</code>, the gate's judge) about a note already on the tip. One it accepts is "already signed", exit 0, nothing written, whoever approved. Red, then green: <code>the_writer_never_overwrites_a_sign_off_and_judges_one_by_check_8</code></td></tr>
+      <tr><td>B2</td><td>A stale note (the target moved to the tip's parent) was reported "already signed"</td><td>Fixed by the same ruling: a note check 8 refuses is refused with its cause, never overwritten. Red, then green: <code>a_stale_sign_off_on_the_tip_is_refused_not_already_signed</code>, and a tampered note in the test above</td></tr>
+      <tr><td>I3</td><td><code>signer()</code> carried its own copy of the typed-tier rule</td><td>Fixed: it calls <code>typed_tier</code></td></tr>
+      <tr><td>I4</td><td>The writer's key test and <code>pick_approval</code> had drifted: a key holder's later approval hid a github-only approver's valid one</td><td>Fixed: one rule, <code>signs_by_approval</code> (listed under github, backed by no key), used by check 8 and <code>pick_approval</code>. The writer's separate key test is gone, so a key holder's approval alone means "no approval to sign" (exit 3). Red, then green: <code>only_an_approval_check_8_accepts_is_picked_and_a_key_holders_never_is</code> (777 and 5499546)</td></tr>
+      <tr><td>Nits</td><td><code>--report</code> unchecked on an already-signed tip; <code>run_bounded</code> repeated <code>run_with</code>'s setup</td><td>Fixed: on a signed tip, a <code>--report</code> other than the note's is refused; one test command builder, <code>command</code></td></tr>
+      <tr><td>R50 hole</td><td>Pre-existing (refuted as out of round 3's scope): a symlinked <code>&lt;git dir&gt;/worktrees</code> passed R50 while git followed it to a planted git dir</td><td>Fixed here, as W3 owns R50: no part of the admin dir's path may be a symbolic link (its resolved path must equal its path read as text). Red, then green: <code>keel_mr_refuses_a_symlink_in_the_admin_dirs_path_and_runs_no_git</code>. <code>scripts/router-gh.sh</code> resolves the same path with <code>cd -P</code> and is not changed here (follow-ups)</td></tr>
+    </table>
+
+    <h2 id="code-review-4">Code review round 4</h2>
+    <table data-c="code-review-4">
+      <tr><th>#</th><th>Finding</th><th>Answer</th></tr>
+      <tr><td>B1</td><td>A <code>.git</code> link of <code>s/../…</code>, with <code>s</code> a symbolic link, read as the real admin dir (R50 judged the text) while git followed <code>s</code> to a planted admin dir and git dir, and ran its <code>core.fsmonitor</code></td><td>Fixed by the router's ruling: R50 resolves the named path as git does, through each link, and refuses unless it equals the path as written. Red, then green, for a worktree inside the main checkout and one beside it: <code>keel_mr_refuses_a_dotdot_through_a_symlink_in_a_nested_worktrees_git_link</code>, <code>…_in_a_sibling_worktrees_git_link</code> (no git call, the planted fsmonitor never fires)</td></tr>
+      <tr><td>B2</td><td>"Already signed" exited 0, so <code>ci-sign-off.sh</code> took it as a new sign-off and posted "Signed by approval (review null)" for a typed note</td><td>Fixed: <code>keel ci sign-off</code> exits 4 for "already signed" (0 written, 1 refused, 2 the script's bad input, 3 nothing to sign) and prints the note's tier and signer. <code>ci-sign-off.sh</code> (your <code>585f47e</code>) posts success read from the note: "Already signed by approval (github &lt;id&gt;, review &lt;n&gt;)" for a github note, "Already signed by &lt;signer&gt; (&lt;tier&gt;)" for a typed one, error for an unknown tier. Red, then green: <code>the_writer_says_who_signed_an_already_signed_tip_from_the_note</code></td></tr>
+    </table>
+
+    <h2 id="deviations">Deviations</h2>
+    <ul data-item="deviations">
+      <li><b>keel is built from main, not from the pull request's base</b> (I4). The plan followed DEC-60's "judge built from the base"; the writer holds a write token, and the base is an epic the router bot pushes. The base's roster and policy still judge: keel reads them from a base worktree.</li>
+      <li><b>An approval never attests the epic report note</b> (I6): an epic signed by approval needs its report committed in the range until W8.</li>
+      <li><b>The writer's token reads pull requests</b> (plan open point 2): <code>pull-requests: read</code> beside contents and statuses write; reading reviews needs it.</li>
+      <li><b>No CI re-read in check 8</b> (open point 3): the writer re-reads the reviews before it writes; check 8 checks the note's bindings offline (G7).</li>
+      <li><b>Notes from GitHub</b>: the plan said "fetches and merges GitHub's notes"; the router now takes only sign-offs GitHub added since its last push, add-only, fetching a missing commit by sha first (I2, F1, F2, I3-1); the writer keeps ours on a race in its own ephemeral clone.</li>
+      <li><b>The github tier is opt-in</b>: a config that names no <code>[mr] tiers</code> accepts the three typed tiers only.</li>
+      <li><b>An approval never signs a roster change or a waived review</b>, and never bootstraps a roster: those stay the typed sign-off (W7 brings them to comments).</li>
+      <li><b>Two fixes beyond the plan</b>: R50's check reads a <code>gitdir</code> that git wrote relative (<code>worktree.useRelativePaths</code>) from the admin dir; and (code review rounds 1 and 2) <code>keel mr</code> runs only from a checkout's root and refuses a checkout nested inside another repository, so it cannot run under a home-directory repository either.</li>
+      <li><b>The project-router skill joins your commit</b>: its owner-identity row states the committed tiers, which <code>tests/suite/router.rs</code> checks.</li>
+      <li><b>G5's W2 corpus cost</b>: the curl stub is written once per run, but the 507 guard probes still run serially (left in G5).</li>
+      <li><b>Three commands were denied</b> by this session's permission check and not routed around: two scratch <code>git notes merge</code> probes, and a compound <code>keel notes write</code> line (which held a <code>git notes … show</code>). The notes are written on the final tip after your commit.</li>
+    </ul>
+
+    <h2 id="evidence">Evidence</h2>
+    <div data-item="evidence">
+      <table data-c="evidence">
+        <tr><th>What</th><th>Where</th></tr>
+        <tr><td>The github tier: a <code>github: &lt;id&gt; &lt;login&gt;</code> roster line; a typed confirm, commit or <code>Reviewed-By</code> by a github-only id refused; mr/v1's <code>review</code>; check 8 binds its commit to the tip, its page to its id and to <code>[github] repo</code></td><td><code>src/mr.rs</code>, <code>src/notes.rs</code>, <code>src/main.rs</code></td></tr>
+        <tr><td><code>keel ci sign-off</code> (exit 0 signed, 4 already signed, 3 nothing to sign, 1 refused) under GitHub's review decision; <code>keel notes write report</code></td><td><code>src/mr.rs</code>, <code>src/notes.rs</code></td></tr>
+        <tr><td>R50: <code>keel mr</code> runs from the checkout's root only and checks <code>.git</code> (a directory or a regular file, by its metadata; a link's path resolved as git follows it), <code>commondir</code>, <code>gitdir</code>, <code>config.worktree</code> and nesting before any git</td><td><code>src/mr.rs</code> <code>checkout_problem</code>, called first in <code>src/main.rs</code></td></tr>
+        <tr><td>Integration: 33 tests - an approval signs and the gate goes green; ten kinds of review write nothing; a later change request (on the tip or an older commit) or a dismissal withdraws an approval; a red check, a roster change, a policy without github, a page off <code>[github] repo</code>; check 8 red on an edited review, a later commit, a missing review; the report note typed-only; R50 over seven tamperings, a symlinked <code>worktrees</code>, a <code>&lt;link&gt;/..</code> in two layouts, a subdirectory and six planted forms (two FIFOs under a time limit) with a git that records any call; a key holder's approval never picked; a note on the tip judged by check 8 and never overwritten (a stale one refused), and the status posted for it; a report outside the range; a typed sign-off without --as; a roster line landed on the target after the fork; setup for a github-only id; the writer's own words for a tip already in its target; the writer script end to end (status, push, a notes ref that moved, main's keel too old, the run's commit, the token's shape, a stop's status, input refused before any request)</td><td><code>tests/suite/sign_off.rs</code></td></tr>
+        <tr><td>Lock test: both workflows' triggers, permissions, the per-head concurrency group, the one pinned checkout of the default branch, env-only event values; the script builds keel only from main and builds or checks out nothing else</td><td><code>tests/suite/keel_gate.rs</code> (4 tests)</td></tr>
+        <tr><td><code>router-gh.sh push</code> takes GitHub's sign-offs add-only and only those added since its last push, never an edit or a deletion; fetches the commit of a sign-off only GitHub has, and holds nothing back for one GitHub does not serve; pushes leased, and a sign-off written during the push survives; pushes the report note</td><td><code>tests/suite/router_gh.rs</code></td></tr>
+        <tr><td>Unit: the roster line (2000 generated), the typed/approval split, the per-pull-request review decision (hand cases and 3000 generated lists), the review page and its repository</td><td><code>src/mr.rs</code> tests</td></tr>
+        <tr><td>Red first: the integration tests ran red before the CLI was wired, the I3/N5 unit tests before their code; every unit, writer and router-gh test was also shown red by a mutation of the code it guards (30 mutations, each caught)</td><td>this report</td></tr>
+        <tr><td>G5's W2 nits</td><td><code>tests/suite/router_gh.rs</code>, <code>tests/suite/router_gh_args.rs</code></td></tr>
+      </table>
+      <p>Landed in your commit <code>c08da42</code>: <code>.github/workflows/keel-sign-off-request.yml</code>, <code>.github/workflows/keel-sign-off.yml</code>, <code>scripts/ci-sign-off.sh</code>, <code>scripts/router-gh.sh</code>, <code>.keel/config.toml</code>, <code>.claude/skills/project-router/SKILL.md</code> and <code>.keel/mr-allowed</code>. Landed in your commit <code>585f47e</code>: <code>scripts/ci-sign-off.sh</code>'s exit-4 status.</p>
+    </div>
+
+    <h2 id="distillation">Distillation</h2>
+    <p data-item="distillation">Nothing citable yet beyond the backlog: github-flow G5 (W2 rows done), G6 (R50 fixed), G7 (new); e-router-v2 R50 fixed (its row should also name the root-only and nesting rules from code review rounds 1 and 2). UC-MR's new row, UC-MR-1's amendment, the github tier's decision record (amending DEC-47 and DEC-48, with I2's limit), DEC-61's sign-off import, <code>docs/install.html</code> §5's roster line and the skills' GitHub sign-off sequence go in at the epic's next landing or close, by its distillation plan (G6).</p>
+
+    <h2 id="follow-ups">Follow-ups</h2>
+    <ul data-item="follow-ups">
+      <li>The live facts of the first approval on GitHub (the payload's pull-request number, the token's reads and writes, the notes push): backlog github-flow G7, item 1, at landing 2.</li>
+      <li>A dismissed approval leaves its note: G7, item 2 (E-GHFLOW2.W7 or later).</li>
+      <li>Check 8 reads no review in CI, so a github-tier note proves no more than a username line: G7, item 3 (E-GHFLOW2.W4 if the rules need it).</li>
+      <li>The report note bound to an approval: G7, item 4 (E-GHFLOW2.W8).</li>
+      <li>No request run before landing 2 or on a conflict: G7, item 5 (E-GHFLOW2.W4, W6).</li>
+      <li>The guard-agreement corpus's serial cost: G5.</li>
+      <li><b>For the backlog</b>: <code>scripts/router-gh.sh</code> resolves a linked checkout's admin dir with <code>cd -P</code> and takes <code>../..</code> as the git dir, so a symlinked <code>&lt;git dir&gt;/worktrees</code> sends it to a planted git dir (code review round 3, refuted entry 1). Its pinned <code>core.hooksPath</code> and <code>core.fsmonitor</code> limit what that git dir can run, but its config is still read. It is a rule-bearing script, outside this WU's paths. <code>keel mr</code>'s R50 now refuses any link in that path (rounds 3 and 4); <code>router-gh.sh</code> needs the same rule.</li>
+      <li><b>For the backlog</b>: R50 never checks that a linked checkout's common dir is this repository's git dir, so a <code>.git</code> rewritten to name a planted <code>&lt;dir&gt;/worktrees/&lt;id&gt;</code> (with a valid <code>commondir</code> and <code>gitdir</code> back) passes and git runs with the planted common dir (code review round 4, refuted as pre-existing). Only a worker that can write its checkout's <code>.git</code> can reach it: a Claude Code worker cannot (the sandbox and <code>scripts/router-file-guard.sh</code> deny it); a DeepSeek Harness worker with full access can.</li>
+    </ul>
+  </main>
+</body>
+</html>

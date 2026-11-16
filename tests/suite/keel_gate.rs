@@ -160,3 +160,114 @@ fn the_ci_script_is_executable_and_builds_keel_only_from_the_base() {
         "keel is built inside the base worktree"
     );
 }
+
+/// E-GHFLOW2.W3: the sign-off by approval's two workflows. The request runs from the pull request's
+/// merge commit (GitHub's rule for pull_request_review), so it holds nothing; the writer runs on
+/// workflow_run, from main, and never checks out or builds the head.
+fn request_yml() -> String {
+    read(".github/workflows/keel-sign-off-request.yml")
+}
+
+fn writer_yml() -> String {
+    read(".github/workflows/keel-sign-off.yml")
+}
+
+#[test]
+fn the_sign_off_request_runs_on_a_submitted_review_with_no_permission_and_no_checkout() {
+    let y = request_yml();
+    assert!(y.contains("\nname: Keel sign-off request\n"));
+    assert_eq!(block(&y, "on"), ["  pull_request_review:", "    types:", "      - submitted"]);
+    assert!(y.contains("\npermissions: {}\n"), "the request's token can do nothing");
+    assert_eq!(y.matches("permissions").count(), 1, "no job widens it");
+    assert_eq!(jobs(&y), ["request"]);
+    let j = job(&y, "request");
+    let steps: Vec<&String> = j.iter().filter(|l| l.trim_start().starts_with("- ")).collect();
+    assert_eq!(steps.len(), 1, "one step");
+    assert!(steps[0].trim().starts_with("- run: echo "), "{}", steps[0]);
+    for never in ["uses:", "${{", "secrets", "env:", "checkout", "GITHUB_TOKEN", "github.token"] {
+        assert!(!y.contains(never), "the request holds {never}");
+    }
+}
+
+#[test]
+fn the_writer_runs_from_main_on_the_requests_end_with_three_scoped_permissions() {
+    let y = writer_yml();
+    assert!(y.contains("\nname: Keel sign-off\n"));
+    assert_eq!(block(&y, "on"), ["  workflow_run:", "    workflows:", "      - Keel sign-off request", "    types:", "      - completed"]);
+    assert_eq!(
+        y.lines().filter(|l| !l.starts_with(' ') && !l.starts_with('#') && l.ends_with(':')).collect::<Vec<_>>(),
+        ["on:", "permissions:", "concurrency:", "jobs:"]
+    );
+    for never in ["pull_request:", "pull_request_target", "issue_comment", "push:", "workflow_dispatch", "schedule"] {
+        assert!(!y.contains(never), "the writer is started by {never}");
+    }
+    assert_eq!(block(&y, "permissions"), ["  contents: write", "  statuses: write", "  pull-requests: read"]);
+    assert_eq!(y.matches("permissions").count(), 1, "no job widens the token");
+    assert_eq!(
+        block(&y, "concurrency"),
+        ["  group: keel-sign-off-${{ github.event.workflow_run.head_sha }}", "  cancel-in-progress: false"],
+        "one group per head commit, none cancelled: a later review of another commit never cancels a pending approval (security review I5)"
+    );
+    assert!(!y.contains("secrets."), "no secret");
+}
+
+#[test]
+fn the_writer_checks_out_main_only_keeps_no_credential_and_is_one_call_of_its_script() {
+    let y = writer_yml();
+    assert_eq!(jobs(&y), ["sign-off"]);
+    let j = job(&y, "sign-off");
+    assert!(j.iter().any(|l| l == "    if: github.event.workflow_run.event == 'pull_request_review'"));
+    assert!(j.iter().any(|l| l == "    runs-on: ubuntu-24.04"));
+    assert!(j.iter().any(|l| l.starts_with("    timeout-minutes: ")));
+    let dist: toml::Table = read("dist-workspace.toml").parse().unwrap();
+    let pin = dist["dist"]["github-action-commits"]["actions/checkout"].as_str().unwrap();
+    let uses: Vec<&str> = y.lines().filter_map(|l| l.trim().strip_prefix("- uses: ")).collect();
+    assert_eq!(uses, [format!("actions/checkout@{pin}")], "one checkout, pinned to dist's commit");
+    let with: Vec<&str> = y.lines().map(str::trim).filter(|l| l.starts_with("ref:")).collect();
+    assert_eq!(with, ["ref: ${{ github.event.repository.default_branch }}"], "the default branch, never the head");
+    assert!(y.contains("persist-credentials: false") && y.contains("fetch-depth: 0"));
+    let runs: Vec<&str> = j.iter().filter_map(|l| l.trim().strip_prefix("- run: ")).collect();
+    assert_eq!(runs, ["scripts/ci-sign-off.sh"]);
+    for l in y.lines().filter(|l| l.trim_start().starts_with("- run:")) {
+        assert!(!l.contains("${{") && !l.trim_end().ends_with('|') && !l.trim_end().ends_with('>'), "{l}");
+    }
+    let env: Vec<&str> = j.iter().map(|l| l.trim()).skip_while(|l| *l != "env:").skip(1).collect();
+    assert_eq!(
+        env,
+        [
+            "GH_TOKEN: ${{ github.token }}",
+            "REPO: ${{ github.repository }}",
+            "PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}",
+            "RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}",
+            "RUN_EVENT: ${{ github.event.workflow_run.event }}"
+        ],
+        "event values reach the script through env only, and no head branch or ref is named"
+    );
+    assert!(!y.contains("head_branch") && !y.contains("head.ref") && !y.contains("head_ref"), "no head branch is named anywhere");
+}
+
+/// Security review I4: the writer's job holds a write token, so it builds and runs no code a worker
+/// can reach - keel comes from this checkout (main, the owner's), never from the base or the head.
+#[test]
+fn the_writer_script_builds_keel_only_from_main_and_never_builds_the_base_or_the_head() {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/ci-sign-off.sh");
+    let mode = std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(&p).unwrap().permissions());
+    assert_eq!(mode & 0o111, 0o111, "the workflow step runs it directly");
+    let s = read("scripts/ci-sign-off.sh");
+    assert!(s.starts_with("#!/bin/sh\n"));
+    assert_eq!(s.matches("cargo build").count(), 1);
+    assert!(s.contains("\ngit worktree add -q --detach \"$scratch/base\" \"$base_sha\"\n"), "the one worktree is the base's, read as data");
+    assert!(s.contains("(cd \"$repo_dir\" && CARGO_TARGET_DIR=$scratch/target cargo build --locked --quiet)"), "keel is built in this checkout, main");
+    assert!(s.contains("\nrepo_dir=$(pwd)\n"), "the checkout the workflow made");
+    assert_eq!(s.matches("worktree add").count(), 1, "no head worktree");
+    let code: String = s.lines().filter(|l| !l.trim_start().starts_with('#')).collect::<Vec<_>>().join("\n");
+    for never in ["checkout", "switch", "git reset", "git merge ", "cargo test", "cargo run", "keel check", "cd \"$scratch/base\" &&", "$scratch/base/"] {
+        assert!(!code.contains(never), "the writer runs {never}");
+    }
+    assert!(s.contains("unset GH_TOKEN"), "no child inherits the token");
+    assert!(s.contains("\nset -euf\n"), "no word splits into a glob");
+    // security review round 2, F9: the main the build logs is read before the script moves any ref
+    let read = s.find("\nmain_sha=$(git rev-parse -q --verify 'HEAD^{commit}')").expect("main's sha is read");
+    assert!(read < s.find("git update-ref").unwrap(), "read before the first update-ref");
+    assert!(s.contains("building keel from main at $main_sha"));
+}

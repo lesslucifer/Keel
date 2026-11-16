@@ -343,6 +343,18 @@ pub struct MrNote {
     /// Armored SSH SIGNATURE (namespace keel-mr), key-backed signers only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sig: Option<String>,
+    /// The pull-request approval this sign-off copies (github tier, E-GHFLOW2.W3); absent on a typed one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<Review>,
+}
+
+/// A GitHub pull-request review as a github-tier sign-off records it: its id, its page, and the
+/// commit it approved. Check 8 binds the commit to the tip and the page to the id.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Review {
+    pub id: u64,
+    pub url: String,
+    pub commit: String,
 }
 
 /// The merge gate's receipt, written on green.
@@ -1015,8 +1027,30 @@ fn cr_counts(findings: Option<&serde_json::Value>, blockers: Option<u32>, import
     Ok(open)
 }
 
+/// `keel notes write report <path>` (E-GHFLOW2.W3): the epic result report rides on the epic tip as
+/// `refs/notes/report`, its exact bytes (the blob is stored first and the note takes it whole, so no
+/// message cleanup touches it), for a sign-off by approval to attest and check 8 to re-hash. Only a
+/// doc whose role is epic-result; written on HEAD, replacing an earlier one.
+fn write_report(repo: &Path, args: &[&str]) -> Result<i32, String> {
+    let [path] = args else { return Err("usage: keel notes write report <path of the epic-result doc>".into()) };
+    let body = std::fs::read(path).map_err(|e| format!("keel: cannot read {path}: {e}"))?;
+    let role = crate::verify_doc::result_role(true);
+    if !std::str::from_utf8(&body).is_ok_and(|t| crate::verify_doc::has_role(t, role)) {
+        return refuse(format!("{path} is not an {role} doc (data-artifact=\"{role}\")"), "the report note carries the epic's result report only");
+    }
+    let tip = git(repo, &["rev-parse", "HEAD"], &[])?;
+    let args = ["hash-object", "-w", "--stdin"];
+    let blob = ok_text(&args, git_raw(repo, &args, Some(&body))?)?;
+    git(repo, &["notes", "--ref=report", "add", "-f", "-C", &blob, &tip], &[])?;
+    println!("wrote refs/notes/report on {} ({path}, {} bytes)", tip.get(..8).unwrap_or(&tip), body.len());
+    Ok(0)
+}
+
 /// `args` are the flags after `notes write <kind>`.
 pub fn write(repo: &Path, cfg: &Config, kind: &str, args: &[&str]) -> Result<i32, String> {
+    if kind == "report" {
+        return write_report(repo, args);
+    }
     let r = range(repo, cfg, args)?;
     let tip = r.id.tip.clone();
     match kind {

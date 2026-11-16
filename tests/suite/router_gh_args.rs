@@ -4,7 +4,6 @@
 compiled!();
 
 use std::path::Path;
-use tempfile::TempDir;
 
 use crate::common;
 
@@ -19,15 +18,16 @@ pub(crate) fn check(args: &[&str]) -> (Option<i32>, String) {
 /// the argument check reaches neither the owner's key nor GitHub and never hangs. Panics if curl
 /// was called or anything reached stdout.
 pub(crate) fn isolated(script: &str, args: &[&str], env: &[(&str, &str)]) -> (Option<i32>, String) {
-    let d = TempDir::new().unwrap();
-    let curl = d.path().join("curl");
-    crate::router_gh::exe(&curl, &format!("#!/bin/sh\ntouch {}\n", common::sh_quote(&d.path().join("called").to_string_lossy())));
+    // a HOME the script accepts under any TMPDIR (backlog G5, W2), and one curl stub per run
+    let d = crate::router_gh::plain_tempdir();
+    let curl = common::template("router-gh args curl", |t| crate::router_gh::exe(&t.join("curl"), "#!/bin/sh\ntouch \"$CURL_CALLED\"\n")).join("curl");
     let o = common::cmd("perl")
         .args(["-e", "alarm 60; exec @ARGV", "sh"])
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts").join(script))
         .args(args)
         .env("HOME", d.path())
         .env("ROUTER_GH_CURL", &curl)
+        .env("CURL_CALLED", d.path().join("called"))
         .envs(env.iter().copied())
         .output()
         .unwrap();
@@ -156,7 +156,8 @@ fn sync_takes_an_epic_branch_only() {
 }
 
 /// Invariant: for every mode, any argument starting with `-` in any position is refused before
-/// anything else runs (seeded generator over the valid argument lists).
+/// anything else runs (seeded generator over the valid argument lists): the mode word and the
+/// `--base` word as a usage error, every other word for its dash (backlog G5, W2).
 #[test]
 fn every_argument_starting_with_a_dash_is_refused_in_every_position() {
     let valid: [&[&str]; 6] =
@@ -164,10 +165,7 @@ fn every_argument_starting_with_a_dash_is_refused_in_every_position() {
     let mut next = common::lcg(7);
     let tails = ["", "x", "-", "wu/E/x", "main", "7", "force", "-"];
     for args in valid {
-        for i in 1..args.len() {
-            if args[i] == "--base" {
-                continue;
-            }
+        for i in 0..args.len() {
             for _ in 0..3 {
                 let mut a: Vec<String> = args.iter().map(|s| s.to_string()).collect();
                 a[i] = format!("-{}", tails[next(tails.len())]);
@@ -175,6 +173,8 @@ fn every_argument_starting_with_a_dash_is_refused_in_every_position() {
                 let (code, err) = check(&a);
                 assert_eq!(code, Some(2), "{a:?}: {err}");
                 assert!(!err.contains("no App key"), "{a:?} passed the argument check");
+                let why = if i == 0 || args[i] == "--base" { "usage: " } else { "may not start with -" };
+                assert!(err.contains(why), "{a:?}: wanted {why:?} in {err:?}");
             }
         }
     }
