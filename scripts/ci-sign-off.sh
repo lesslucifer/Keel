@@ -216,6 +216,19 @@ cat "$scratch/keel.out" >&2
 short=$(printf '%s' "$head_sha" | cut -c1-10)
 case $rc in
 0) ;;
+4)
+	# already signed: a note check 8 accepts is on the head; nothing was written. Say who signed, as
+	# the note says - "by approval" only for a github-tier note
+	note=$(git notes --ref=mr show "$head_sha") || fail "keel says $short is already signed, but its note cannot be read"
+	tier=$(printf '%s' "$note" | jq -r '.tier // empty')
+	signer=$(printf '%s' "$note" | jq -r '.signer // empty')
+	case $tier in
+	github) status success "Already signed by approval (github $signer, review $(printf '%s' "$note" | jq -r '.review.id // empty'))" ;;
+	email | username | key) status success "Already signed by $signer ($tier)" ;;
+	*) status error "Already signed, but the note on $short names no known tier" ;;
+	esac
+	exit 0
+	;;
 3)
 	status pending "Waiting for an approval of $short by a signer the roster lists"
 	exit 0
