@@ -11,7 +11,7 @@ code_paths = ["src/", "tests/"]
 
 # Commits touching these need a Reviewed-By trailer (`keel mr commit`).
 # A trailing / is a prefix; otherwise a glob (* and ? within a segment, ** across).
-rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json", "scripts/router-guard.jq", "scripts/router-inbox.sh", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", "scripts/router-gh.sh", "scripts/router-gh-watch.sh", "scripts/router-gh-command.jq", ".claude/agents/", "scripts/pages-build.sh", ".github/workflows/pages.yml"]
+rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json", "scripts/router-guard.jq", "scripts/router-inbox.sh", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", "scripts/router-gh.sh", "scripts/router-gh-watch.sh", "scripts/router-gh-command.jq", ".claude/agents/", "scripts/pages-build.sh", ".github/", "scripts/ci-gate.sh", "scripts/ci-sign-off.sh", "scripts/gh-settings-check.sh"]   # .github/ and the gate, writer and settings scripts since E-GHFLOW2.W4: the checks are base-defined and required
 
 [check]
 lint = "cargo fmt --check && cargo clippy --all-targets -- -D warnings"
@@ -59,3 +59,6 @@ repo = "lesslucifer/Keel"   # the repository the router bot acts on (read at HEA
 # router checkout's file, only while it matches HEAD's.
 commanders = [5499546]   # lesslucifer, the owner
 free_text = true
+# E-GHFLOW2.W4: router-gh.sh pr-ready turns on GitHub's auto-merge (a merge commit), so the owner's approval
+# lands a green pull request; false leaves the merge to his button. Read like commanders: committed only.
+merge_on_approve = true

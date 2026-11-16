@@ -1,5 +1,6 @@
 //! E-GHFLOW.W1: scripts/ci-gate.sh, the gate's CI jobs, on a scratch repo with a bare "origin" and a
-//! runner's clone of it, as GitHub's runner sees them.
+//! runner's clone of it, as GitHub's runner sees them. E-GHFLOW2.W4: the build job and its hash, the
+//! fork refusal, keel check on the merged tree, and a back-merge of main.
 compiled!();
 
 use std::path::{Path, PathBuf};
@@ -41,7 +42,21 @@ pub(crate) fn keel(d: &Path, a: &[&str], input: &str) -> Output {
 pub(crate) fn run_job(runner: &Path, tmp: &Path, job: &str, env: &[(&str, &str)], keel: Option<&str>, path: Option<&str>) -> Output {
     let mut c = common::cmd("sh");
     c.arg(script()).arg(job).current_dir(runner);
-    for k in ["HEAD_BRANCH", "HEAD_SHA", "BASE_BRANCH", "BASE_SHA", "KEEL", "GITHUB_STEP_SUMMARY", "RUNNER_TEMP", "CARGO_TARGET_DIR"] {
+    for k in [
+        "HEAD_BRANCH",
+        "HEAD_SHA",
+        "BASE_BRANCH",
+        "BASE_SHA",
+        "KEEL",
+        "KEEL_SHA256",
+        "KEEL_OUT",
+        "REPO",
+        "HEAD_REPO",
+        "GITHUB_OUTPUT",
+        "GITHUB_STEP_SUMMARY",
+        "RUNNER_TEMP",
+        "CARGO_TARGET_DIR",
+    ] {
         c.env_remove(k);
     }
     c.env("RUNNER_TEMP", tmp).env("GITHUB_STEP_SUMMARY", tmp.join("summary.md"));
@@ -369,7 +384,7 @@ fn the_docs_job_reads_only_the_docs_the_range_changed() {
 }
 
 #[test]
-fn the_ci_job_runs_the_checkouts_check_and_a_red_test_is_red() {
+fn the_ci_job_runs_keel_check_and_a_red_test_is_red() {
     let ci = Ci::new(MARK_TEST);
     ci.checkout("wu/e/a");
     let o = ci.push_job("ci", "wu/e/a");
@@ -480,4 +495,183 @@ fn bad_input_is_refused_before_any_git_call_uses_it() {
         assert!(String::from_utf8_lossy(&o.stderr).starts_with("ci-gate: "), "{}", text(&o));
     }
     assert!(ci.summary().is_empty(), "nothing ran: {}", ci.summary());
+}
+
+/// The SHA-256 of a file, hashed in-process (the script itself uses sha256sum or shasum).
+fn sha256(f: &Path) -> String {
+    crate::mr::sha256_of(&std::fs::read(f).unwrap()).strip_prefix("sha256:").unwrap().to_string()
+}
+
+/// G4: the build job copies the base's keel out and prints its hash; a job given that hash runs a
+/// keel with it - made executable, since an artifact keeps no mode bits - and refuses any other.
+#[test]
+fn the_build_prints_the_keels_hash_and_every_job_refuses_another_keel() {
+    let ci = Ci::new(MARK_TEST);
+    let (out, output) = (ci.tmp.join("keel-bin"), ci.tmp.join("github-output"));
+    let sha = ci.sha("wu/e/a");
+    let o = ci.job(
+        "build",
+        &[("HEAD_BRANCH", "wu/e/a"), ("HEAD_SHA", &sha), ("KEEL_OUT", out.to_str().unwrap()), ("GITHUB_OUTPUT", output.to_str().unwrap())],
+        Some(KEEL),
+        None,
+    );
+    assert!(o.status.success(), "{}", text(&o));
+    let sum = sha256(&out.join("keel"));
+    assert_eq!(String::from_utf8_lossy(&o.stdout).trim(), format!("keel_sha256={sum}"));
+    assert_eq!(std::fs::read_to_string(&output).unwrap(), format!("keel_sha256={sum}\n"), "the job output the other jobs read");
+    assert_eq!(sum, sha256(Path::new(KEEL)), "the keel it was given, copied whole");
+    assert!(ci.summary().contains(&format!("SHA-256 `{sum}`")), "{}", ci.summary());
+
+    let downloaded = ci.tmp.join("downloaded");
+    std::fs::create_dir_all(&downloaded).unwrap();
+    let k = downloaded.join("keel");
+    std::fs::copy(out.join("keel"), &k).unwrap();
+    std::fs::set_permissions(&k, std::os::unix::fs::PermissionsExt::from_mode(0o644)).unwrap();
+    let base = [("HEAD_BRANCH", "wu/e/a"), ("HEAD_SHA", sha.as_str())];
+    let with = |h: &str| -> Vec<(&str, String)> { base.iter().map(|(a, b)| (*a, b.to_string())).chain([("KEEL_SHA256", h.to_string())]).collect() };
+    let job = |name: &str, env: &[(&str, String)]| {
+        let env: Vec<(&str, &str)> = env.iter().map(|(a, b)| (*a, b.as_str())).collect();
+        ci.job(name, &env, Some(k.to_str().unwrap()), None)
+    };
+    let o = job("docs", &with(&sum));
+    assert!(o.status.success(), "the right hash: {}", text(&o));
+    // every judging job refuses another keel before it runs any (code review round 1)
+    let wrong = format!("{}{}", if sum.starts_with('0') { "1" } else { "0" }, &sum[1..]);
+    for name in ["ci", "gate", "docs"] {
+        for (h, why) in [(wrong.as_str(), "not the build job's"), ("", "did the build job fail?"), ("abc", "is not a SHA-256")] {
+            let o = job(name, &with(h));
+            assert_eq!(o.status.code(), Some(2), "{name} {h:?}: {}", text(&o));
+            assert!(text(&o).contains(why), "{name} {h:?}: {}", text(&o));
+        }
+    }
+    std::fs::write(&k, b"#!/bin/sh\necho swapped\n").unwrap();
+    for name in ["ci", "gate", "docs"] {
+        let o = job(name, &with(&sum));
+        assert_eq!(o.status.code(), Some(2), "{name}, a swapped artifact: {}", text(&o));
+        assert!(text(&o).contains("refused") && !text(&o).contains("swapped\n"), "{name}: {}", text(&o));
+    }
+    assert!(ci.marked().is_empty(), "{:?}", ci.marked());
+}
+
+/// A fork's pull request is refused by every job before any git call: red, never skipped, and no
+/// head code runs.
+#[test]
+fn a_head_from_another_repository_is_refused_by_every_job() {
+    let ci = Ci::new(MARK_TEST);
+    let sha = ci.sha("wu/e/a");
+    let out = ci.tmp.join("out");
+    // a git that leaves a mark if it ever runs: the refusal comes before any git call
+    let shims = ci.tmp.join("git-shim");
+    std::fs::create_dir_all(&shims).unwrap();
+    crate::router_gh::exe(&shims.join("git"), "#!/bin/sh\n: > \"$MARKS/git-ran\"\nexit 1\n");
+    let path = common::path_with(&shims);
+    for job in ["build", "ci", "gate", "docs"] {
+        for head_repo in [Some("fork/Keel"), Some(""), None] {
+            let mut env = vec![("HEAD_BRANCH", "wu/e/a"), ("HEAD_SHA", sha.as_str()), ("REPO", "owner/Keel"), ("KEEL_OUT", out.to_str().unwrap())];
+            if let Some(r) = head_repo {
+                env.push(("HEAD_REPO", r));
+            }
+            let o = ci.job(job, &env, Some(KEEL), Some(&path));
+            assert_eq!(o.status.code(), Some(2), "{job} {head_repo:?}: {}", text(&o));
+            assert!(text(&o).contains("a fork's pull request is never gated here"), "{}", text(&o));
+        }
+    }
+    assert!(ci.summary().is_empty() && ci.marked().is_empty(), "nothing ran: {} {:?}", ci.summary(), ci.marked());
+    let o = ci.job("docs", &[("HEAD_BRANCH", "wu/e/a"), ("HEAD_SHA", &sha), ("REPO", "owner/Keel"), ("HEAD_REPO", "owner/Keel")], Some(KEEL), None);
+    assert!(o.status.success(), "the same repository: {}", text(&o));
+    let o = ci.job("docs", &[("HEAD_BRANCH", "wu/e/a"), ("HEAD_SHA", &sha), ("REPO", "-x"), ("HEAD_REPO", "-x")], Some(KEEL), None);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+}
+
+/// DEC-60's ci: keel check on the head merged into the base, as GitHub merges it - the base's newer
+/// commits included. A head that does not merge cleanly is red.
+#[test]
+fn ci_checks_the_head_merged_into_the_base_and_a_conflict_is_red() {
+    let ci = Ci::new("test -f epic-later && touch {marks}/merged-tree");
+    let dev = &ci.dev;
+    git(dev, &["switch", "-q", "epic/e"]);
+    write(dev, "epic-later", "x");
+    commit(dev, "the epic moves on after wu/e/a left it");
+    git(dev, &["push", "-q", "--no-verify", "origin", "epic/e"]);
+    git(&ci.runner, &["fetch", "-q", "origin"]);
+    let (head, base) = (ci.sha("wu/e/a"), ci.sha("epic/e"));
+    let pr = [("HEAD_BRANCH", "wu/e/a"), ("HEAD_SHA", head.as_str()), ("BASE_BRANCH", "epic/e"), ("BASE_SHA", base.as_str())];
+    let o = ci.job("ci", &pr, Some(KEEL), None);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(ci.marked().contains(&"merged-tree".to_string()), "the test saw the base's newer file: {:?}", ci.marked());
+    assert!(ci.summary().contains(&format!("Head `{head}` merged into base `{base}`")), "{}", ci.summary());
+
+    git(dev, &["switch", "-q", "epic/e"]);
+    write(dev, "README", "the epic's");
+    commit(dev, "epic README");
+    git(dev, &["switch", "-q", "wu/e/a"]);
+    write(dev, "README", "the WU's");
+    commit(dev, "wu README");
+    git(dev, &["push", "-q", "--no-verify", "origin", "epic/e", "wu/e/a"]);
+    git(&ci.runner, &["fetch", "-q", "origin"]);
+    std::fs::remove_file(ci.tmp.join("summary.md")).unwrap();
+    let (head, base) = (ci.sha("wu/e/a"), ci.sha("epic/e"));
+    let pr = [("HEAD_BRANCH", "wu/e/a"), ("HEAD_SHA", head.as_str()), ("BASE_BRANCH", "epic/e"), ("BASE_SHA", base.as_str())];
+    let o = ci.job("ci", &pr, Some(KEEL), None);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(ci.summary().contains("does not merge cleanly into base"), "{}", ci.summary());
+    assert_eq!(git(&ci.runner, &["worktree", "list", "--porcelain"]).matches("worktree ").count(), 1, "no scratch worktree is left");
+}
+
+/// A pull request from main into an epic carries only main's commits: gate and docs are green when
+/// the head is on origin's main, red when a head named main is not; ci checks the merged tree.
+#[test]
+fn a_back_merge_of_main_is_green_on_gate_and_docs_only_when_its_head_is_on_main() {
+    let ci = Ci::new(MARK_TEST);
+    let (main, epic, wu) = (ci.sha("main"), ci.sha("epic/e"), ci.sha("wu/e/a"));
+    for job in ["gate", "docs"] {
+        std::fs::remove_file(ci.tmp.join("summary.md")).ok();
+        let pr = [("HEAD_BRANCH", "main"), ("HEAD_SHA", main.as_str()), ("BASE_BRANCH", "epic/e"), ("BASE_SHA", epic.as_str())];
+        let o = ci.job(job, &pr, Some(KEEL), None);
+        assert!(o.status.success(), "{job}: {}", text(&o));
+        assert!(ci.summary().contains(&format!("## Keel {job}: back-merge of main")), "{}", ci.summary());
+        let forged = [("HEAD_BRANCH", "main"), ("HEAD_SHA", wu.as_str()), ("BASE_BRANCH", "epic/e"), ("BASE_SHA", epic.as_str())];
+        let o = ci.job(job, &forged, Some(KEEL), None);
+        assert_eq!(o.status.code(), Some(1), "{job}: a head named main that is not on main: {}", text(&o));
+        assert!(text(&o).contains("is named main but is not on origin's main"), "{}", text(&o));
+    }
+    let pr = [("HEAD_BRANCH", "main"), ("HEAD_SHA", main.as_str()), ("BASE_BRANCH", "epic/e"), ("BASE_SHA", epic.as_str())];
+    let o = ci.job("ci", &pr, Some(KEEL), None);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(ci.marked().contains(&"test-ran".to_string()), "{:?}", ci.marked());
+    for base in ["main", "wu/e/a"] {
+        let o = ci.job("gate", &[("HEAD_BRANCH", "main"), ("HEAD_SHA", &main), ("BASE_BRANCH", base), ("BASE_SHA", &epic)], Some(KEEL), None);
+        assert_eq!(o.status.code(), Some(2), "main into {base} is no back-merge: {}", text(&o));
+    }
+}
+
+/// Security review (E-GHFLOW2.W4): a pull request retargeted away from its own level - a WU into
+/// main, an epic into another epic - is refused by every job, so it never stays green past the gate
+/// it skips. The derived base, given or not, still runs.
+#[test]
+fn a_base_other_than_the_heads_own_is_refused_by_every_job() {
+    let ci = Ci::new(MARK_TEST);
+    let (wu, epic, main) = (ci.sha("wu/e/a"), ci.sha("epic/e"), ci.sha("main"));
+    let out = ci.tmp.join("out");
+    for (head, sha, base, base_sha) in [("wu/e/a", &wu, "main", &main), ("wu/e/a", &wu, "epic/f", &epic), ("epic/e", &epic, "epic/f", &main)] {
+        for job in ["build", "ci", "gate", "docs"] {
+            let env = [
+                ("HEAD_BRANCH", head),
+                ("HEAD_SHA", sha.as_str()),
+                ("BASE_BRANCH", base),
+                ("BASE_SHA", base_sha.as_str()),
+                ("KEEL_OUT", out.to_str().unwrap()),
+            ];
+            let o = ci.job(job, &env, Some(KEEL), None);
+            assert_eq!(o.status.code(), Some(2), "{job} {head} into {base}: {}", text(&o));
+            assert!(
+                text(&o).contains(&format!("merges into {}, not {base}: retarget the pull request", if head == "epic/e" { "main" } else { "epic/e" })),
+                "{}",
+                text(&o)
+            );
+        }
+    }
+    assert!(ci.summary().is_empty() && ci.marked().is_empty(), "nothing ran: {} {:?}", ci.summary(), ci.marked());
+    let o = ci.job("docs", &[("HEAD_BRANCH", "wu/e/a"), ("HEAD_SHA", &wu), ("BASE_BRANCH", "epic/e"), ("BASE_SHA", &epic)], Some(KEEL), None);
+    assert!(o.status.success(), "its own base: {}", text(&o));
 }

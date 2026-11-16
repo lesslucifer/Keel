@@ -71,7 +71,6 @@ fn push(p: &Path, branch: &str) -> Output {
     run("git", p, &["push", "-q", "origin", branch], "")
 }
 
-const WU_TESTS: &str = r#"{"integration":{"files":["tests/test_a.py"],"covers":"a works"}}"#;
 const EPIC_TESTS: &str = r#"{"e2e":{"waived":"no e2e harness in the fixture"}}"#;
 
 /// main → epic/e with WU a merged through the real hook (code, a test, a T3 plan, a doc), the
@@ -105,16 +104,9 @@ fn build_epic_with_a_merged_wu(p: &Path, remote: &Path) {
     ok(push(p, "main"));
 
     git(p, &["switch", "-q", "-c", "epic/e"]);
-    git(p, &["switch", "-q", "-c", "wu/e/a"]);
-    write(p, "src/a.py", "def a():\n    return 1\n");
-    write(p, "tests/test_a.py", "def test_a():\n    pass\n");
+    // the epic's T3 plan rides in WU a's commit (the close archives it)
     write(p, "docs/work/plan.html", "<p>plan</p>");
-    write(p, "docs/a.html", "<p>a</p>");
-    commit(p, "wu a");
-    ok(keel(p, &["notes", "write", "test"], WU_TESTS));
-    ok(keel(p, &["notes", "write", "doc"], ""));
-    ok(keel(p, &["notes", "write", "cr", "--verdict", "PASS"], ""));
-    ok(keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"], ""));
+    signed_wu(p, "a");
     git(p, &["switch", "-q", "epic/e"]);
     ok(run("git", p, &["merge", "-q", "--no-ff", "-m", "merge wu a", "wu/e/a"], ""));
     ok(push(p, "epic/e"));
@@ -302,4 +294,62 @@ fn an_epic_branch_push_still_refuses_an_octopus_merge() {
     git(p, &["merge", "-q", "--no-verify", "--no-ff", "-m", "octopus", "x", "y"]);
     red(&push(p, "epic/e"), &["octopus merge"]);
     assert_eq!(git(remote.path(), &["rev-parse", "epic/e"]), before, "nothing landed");
+}
+
+/// A signed WU off epic/e: code, its test, a doc, its test, doc and cr notes and its sign-off.
+fn signed_wu(p: &Path, name: &str) -> String {
+    git(p, &["switch", "-q", "-c", &format!("wu/e/{name}"), "epic/e"]);
+    write(p, &format!("src/{name}.py"), "def f():\n    return 1\n");
+    write(p, &format!("tests/test_{name}.py"), "def test_f():\n    pass\n");
+    write(p, &format!("docs/{name}.html"), "<p>result</p>");
+    let tip = commit(p, &format!("wu {name}"));
+    ok(keel(p, &["notes", "write", "test"], &format!(r#"{{"integration":{{"files":["tests/test_{name}.py"],"covers":"f works"}}}}"#)));
+    ok(keel(p, &["notes", "write", "doc"], ""));
+    ok(keel(p, &["notes", "write", "cr", "--verdict", "PASS"], ""));
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", &format!("docs/{name}.html")], ""));
+    tip
+}
+
+/// A merge as GitHub's merge button makes one: no hook of ours runs, GitHub is the committer, and
+/// the message is GitHub's. Its first parent is `into`'s tip at the time, its second `what`'s tip.
+fn github_merge(p: &Path, into: &str, what: &str, n: u32) -> String {
+    git(p, &["switch", "-q", into]);
+    let msg = format!("Merge pull request #{n} from own/{what}\n\n{what}");
+    let o = common::cmd("git")
+        .args(["-c", "core.hooksPath=/dev/null", "merge", "-q", "--no-ff", "--no-verify", "-m", &msg, what])
+        .current_dir(p)
+        .env("GIT_COMMITTER_NAME", "GitHub")
+        .env("GIT_COMMITTER_EMAIL", "noreply@github.com")
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", text(&o));
+    git(p, &["rev-parse", "HEAD"])
+}
+
+/// E-GHFLOW2.W4: once the rules are on, GitHub merges every WU and the epic. Its merge commits are
+/// seams like ours: the walk reads parents, never the message or the committer. Here one WU merges
+/// while up to date and one while behind the epic; the epic gate, the epic's push walk and main's
+/// push walk are all green.
+#[test]
+fn merge_commits_made_by_github_walk_green_up_to_date_or_behind() {
+    let (d, remote) = epic_with_a_merged_wu();
+    let p = d.path();
+    signed_wu(p, "b");
+    signed_wu(p, "c");
+    let first = github_merge(p, "epic/e", "wu/e/b", 12);
+    let behind = github_merge(p, "epic/e", "wu/e/c", 13);
+    assert_eq!(git(p, &["rev-parse", &format!("{behind}^1")]), first, "c merged while behind: its first parent holds b");
+    assert!(!run("git", p, &["merge-base", "--is-ancestor", "wu/e/b", "wu/e/c"], "").status.success(), "c never had b");
+    assert_eq!(git(p, &["log", "-1", "--format=%cn %s", &behind]), "GitHub Merge pull request #13 from own/wu/e/c");
+
+    ok(push(p, "epic/e"));
+    assert_eq!(git(remote.path(), &["rev-parse", "epic/e"]), behind, "the epic's push walk took both seams");
+    archive_commit(p);
+    review_and_sign_epic(p);
+    let o = ok(keel(p, &["verify-dod", "epic", "epic/e"], ""));
+    assert!(text(&o).contains("verify-dod epic green"), "{}", text(&o));
+    ok(push(p, "epic/e"));
+    let landed = github_merge(p, "main", "epic/e", 14);
+    ok(push(p, "main"));
+    assert_eq!(git(remote.path(), &["rev-parse", "main"]), landed, "main's push walk took GitHub's epic merge");
 }

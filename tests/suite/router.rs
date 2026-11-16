@@ -411,7 +411,12 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
             .spawn()
             .unwrap();
         let ev = r#"{"agent_type":"router","tool_name":"Agent","tool_input":{}}"#;
-        std::io::Write::write_all(&mut p.stdin.take().unwrap(), ev.as_bytes()).unwrap();
+        // a fail-closed hook (no guard file, no jq) exits before it reads the event: a closed pipe
+        // is its answer, not a test failure (backlog github-flow G8's CI flake)
+        match std::io::Write::write_all(&mut p.stdin.take().unwrap(), ev.as_bytes()) {
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
+            r => r.unwrap(),
+        }
         p.wait_with_output().unwrap()
     };
     let path = common::path().to_string();
@@ -4137,8 +4142,8 @@ fn router_guard_admits_the_router_bots_shapes_and_no_other_spelling() {
         "scripts/router-gh.sh push wu/E-GHFLOW/w2-router-bot",
         "scripts/router-gh.sh push epic/E-GHFLOW",
         "scripts/router-gh.sh pr-open wu/E-GHFLOW/w2-router-bot",
-        "scripts/router-gh.sh pr-open wu/E/x --base main",
         "scripts/router-gh.sh pr-open wu/E/x --base epic/F",
+        "scripts/router-gh.sh pr-open epic/E --base main",
         "scripts/router-gh.sh pr-open epic/E-GHFLOW",
         "scripts/router-gh.sh pr-ready 12",
         "scripts/router-gh.sh pr-ready 9999999",
@@ -4146,6 +4151,8 @@ fn router_guard_admits_the_router_bots_shapes_and_no_other_spelling() {
         "scripts/router-gh.sh post 1 round_2-status",
         "scripts/router-gh.sh sync epic/E-GHFLOW",
         " scripts/router-gh.sh sync epic/E ",
+        // E-GHFLOW2.W4: main moves only on GitHub once the rules are on; sync brings it back
+        "scripts/router-gh.sh sync main",
     ] {
         assert_eq!(bash(ok), None, "{ok}");
     }
@@ -4180,6 +4187,8 @@ fn router_guard_admits_the_router_bots_shapes_and_no_other_spelling() {
         "./scripts/router-gh.sh push wu/E/x",
         "scripts/../scripts/router-gh.sh push wu/E/x",
         "scripts/router-gh.sh  push wu/E/x",
+        // E-GHFLOW2.W4 review: a WU into main would skip its epic's gate
+        "scripts/router-gh.sh pr-open wu/E/x --base main",
         "scripts/router-gh.sh pr-open wu/E/x --base",
         "scripts/router-gh.sh pr-open wu/E/x --base=main",
         "scripts/router-gh.sh pr-open wu/E/x --base wu/E/y",
@@ -4198,8 +4207,10 @@ fn router_guard_admits_the_router_bots_shapes_and_no_other_spelling() {
         "scripts/router-gh.sh post 12 -a",
         "scripts/router-gh.sh post 12 a b",
         &format!("scripts/router-gh.sh post 12 {}", "a".repeat(65)),
-        "scripts/router-gh.sh sync main",
         "scripts/router-gh.sh sync wu/E/x",
+        "scripts/router-gh.sh sync main2",
+        "scripts/router-gh.sh sync main epic/E",
+        "scripts/router-gh.sh sync refs/heads/main",
         "scripts/router-gh.sh credential /tmp/router-gh.abcdef/token get",
         "scripts/router-gh.sh merge 12",
         "scripts/router-gh.sh approve 12",

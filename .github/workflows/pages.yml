@@ -1,5 +1,5 @@
 # The docs of every live branch as web pages on GitHub Pages (E-GHFLOW2.W8). It runs after each
-# "Keel gate" run, from main: GitHub takes a workflow_run workflow from the default branch, so no
+# "Keel gate" (a pull request) or "Keel main" (a push of main, E-GHFLOW2.W4) run, from main: GitHub takes a workflow_run workflow from the default branch, so no
 # branch can change this file or the builder it runs. The build job reads git data only, with a read
 # token; the deploy job holds the Pages token and runs no repository code. No event value reaches a
 # run line; the one the jobs read is the build job's if, which skips a run started from a fork.
@@ -9,6 +9,7 @@ on:
   workflow_run:
     workflows:
       - Keel gate
+      - Keel main
     types:
       - completed
 
