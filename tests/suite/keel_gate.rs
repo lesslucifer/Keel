@@ -212,28 +212,28 @@ jobs:
           REPO: ${{ github.repository }}
           HEAD_REPO: ${{ github.repository }}";
 
-fn gate_lock() -> String {
-    let checkout = format!(
+/// The checkout step both locks hold: main's commit, all history, no credential kept.
+fn checkout_step() -> String {
+    format!(
         "      - uses: {}\n        with:\n          ref: ${{{{ github.sha }}}}\n          fetch-depth: 0\n          persist-credentials: false",
         pin("actions/checkout")
-    );
+    )
+}
+
+fn gate_lock() -> String {
     let download =
         format!("      - uses: {}\n        with:\n          name: keel\n          path: ${{{{ runner.temp }}}}/keel-bin", pin("actions/download-artifact"));
     GATE_LOCK
-        .replace("{checkout}", &checkout)
+        .replace("{checkout}", &checkout_step())
         .replace("{download}", &download)
         .replace("{upload}", &pin("actions/upload-artifact"))
         .replace("{env}", PR_ENV)
         .replace("{judge}", JUDGE)
-        .replace("{keel}", "          KEEL: ${{ runner.temp }}/keel-bin/keel\n          KEEL_SHA256: ${{ needs.build.outputs.keel_sha256 }}")
+        .replace("{keel}", &KEEL_ENV.join("\n"))
 }
 
 fn main_lock() -> String {
-    let checkout = format!(
-        "      - uses: {}\n        with:\n          ref: ${{{{ github.sha }}}}\n          fetch-depth: 0\n          persist-credentials: false",
-        pin("actions/checkout")
-    );
-    MAIN_LOCK.replace("{checkout}", &checkout)
+    MAIN_LOCK.replace("{checkout}", &checkout_step())
 }
 
 /// Code review round 1: the readers below go line by line, so both workflows are held to their exact
@@ -363,13 +363,14 @@ fn it_runs_from_main_on_pull_requests_into_main_or_an_epic_only_and_again_when_o
         "github.repository ||",
         "|| github",
     ] {
-        assert!(!code(&y).contains(never), "keel-gate.yml mentions {never}");
+        assert!(!code(&y).join("\n").contains(never), "keel-gate.yml mentions {never}");
     }
 }
 
-/// The workflow without its comment lines.
-fn code(y: &str) -> String {
-    y.lines().filter(|l| !l.trim_start().starts_with('#')).collect::<Vec<_>>().join("\n")
+/// A workflow's lines that are not comments, so a word in a comment proves nothing; shared with
+/// pages_workflow.rs.
+pub(crate) fn code(y: &str) -> Vec<&str> {
+    y.lines().filter(|l| !l.trim_start().starts_with('#')).collect()
 }
 
 /// A push of main runs keel-main.yml: its one job is main/ci, never a required name, so a back-merge
@@ -382,8 +383,7 @@ fn a_push_of_main_runs_main_ci_under_a_name_no_ruleset_requires() {
     assert_eq!(block(&y, "concurrency"), ["  group: keel-main-${{ github.sha }}", "  cancel-in-progress: false"]);
     assert_eq!(jobs(&y), ["ci"]);
     let j = job(&y, "ci");
-    let dist: toml::Table = read("dist-workspace.toml").parse().unwrap();
-    let checkout = format!("actions/checkout@{}", dist["dist"]["github-action-commits"]["actions/checkout"].as_str().unwrap());
+    let checkout = pin("actions/checkout");
     for l in [
         "    name: main/ci",
         "    runs-on: ubuntu-24.04",
@@ -400,7 +400,7 @@ fn a_push_of_main_runs_main_ci_under_a_name_no_ruleset_requires() {
         assert!(j.iter().any(|x| x == l), "keel-main.yml lacks {l}");
     }
     for never in ["secrets.", "github.token", "GITHUB_TOKEN", "if:", "keel/"] {
-        assert!(!code(&y).contains(never), "keel-main.yml has {never}");
+        assert!(!code(&y).join("\n").contains(never), "keel-main.yml has {never}");
     }
     for l in y.lines().filter(|l| l.contains("run:")) {
         assert!(!l.contains("${{"), "{l}");
@@ -426,8 +426,6 @@ fn a_superseded_pull_request_run_is_cancelled() {
 #[test]
 fn every_action_is_pinned_to_the_dist_commit_and_every_checkout_is_mains_commit_keeping_no_credential() {
     let y = yml();
-    let dist: toml::Table = read("dist-workspace.toml").parse().unwrap();
-    let pin = |a: &str| format!("{a}@{}", dist["dist"]["github-action-commits"][a].as_str().unwrap());
     let (checkout, upload, download) = (pin("actions/checkout"), pin("actions/upload-artifact"), pin("actions/download-artifact"));
     let uses = |name: &str| -> Vec<String> { job(&y, name).iter().filter_map(|l| l.trim().strip_prefix("- uses: ")).map(String::from).collect() };
     assert_eq!(uses("build"), [checkout.clone(), upload]);
@@ -525,33 +523,207 @@ fn four_jobs_the_three_judges_named_keel_each_one_call_of_the_ci_script_on_ubunt
     assert!(!y.contains("name: ci\n") && !y.contains("name: gate\n") && !y.contains("name: docs\n"));
 }
 
-/// No workflow reads or writes a cache: a pull_request_target run's cache is the default branch's,
-/// and head code in keel/ci could write one. Only keel-gate.yml runs on pull_request_target, and
-/// release.yml no longer runs on a pull request (its token can write; DEC-38 amended).
-#[test]
-fn no_workflow_uses_a_cache_and_only_the_gate_runs_on_pull_request_target() {
+/// The files under .github/workflows, exactly (code review round 2): a new workflow fails here until
+/// this list, and so the decoded checks below, take it in.
+const WORKFLOWS: [&str; 6] = ["keel-gate.yml", "keel-main.yml", "keel-sign-off-request.yml", "keel-sign-off.yml", "pages.yml", "release.yml"];
+
+/// The names a ruleset requires: a check or status of one of these from GitHub Actions passes it.
+const RESERVED: [&str; 4] = ["keel/ci", "keel/gate", "keel/docs", "keel/sign-off"];
+
+/// The events each workflow may start on: pull_request_target is keel-gate.yml's alone, and
+/// release.yml runs on no pull request (its token can write; DEC-38 amended).
+fn events(file: &str) -> Vec<&'static str> {
+    match file {
+        "keel-gate.yml" => vec!["pull_request_target"],
+        "keel-main.yml" | "release.yml" => vec!["push"],
+        "keel-sign-off-request.yml" => vec!["pull_request_review"],
+        "keel-sign-off.yml" | "pages.yml" => vec!["workflow_run"],
+        _ => vec![],
+    }
+}
+
+/// Workflow files, as (file name, text).
+type Files = Vec<(String, String)>;
+
+/// The workflow files on disk, by name.
+fn workflow_files() -> Files {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows");
-    let mut seen = 0;
-    for e in std::fs::read_dir(&dir).unwrap() {
-        let p = e.unwrap().path();
-        let y = std::fs::read_to_string(&p).unwrap();
-        let name = p.file_name().unwrap().to_string_lossy().into_owned();
-        seen += 1;
-        for never in ["actions/cache", "rust-cache", "cache-dependency-path", "save-always"] {
-            assert!(!y.contains(never), "{name} uses {never}");
+    let mut files: Vec<(String, String)> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(&p).unwrap()))
+        .collect();
+    files.sort();
+    files
+}
+
+/// A decoded key or scalar as text; anything else as its debug form, which never equals a name.
+fn text_of(y: &yaml_rust2::Yaml) -> String {
+    y.as_str().map(String::from).unwrap_or_else(|| format!("{y:?}"))
+}
+
+/// What the workflows break, decoded by a YAML loader rather than read by line (code review round 2:
+/// a quoted or double-spaced name, a flow-mapping cache input, a `pull_request: {}` slip past a line
+/// reader): the file list is WORKFLOWS; each file is one document whose `on` keys are its events;
+/// no job id or name is a reserved name but keel-gate.yml's ci, gate and docs, and a name built by an
+/// expression starts with text no reserved name starts with; no job calls a reusable workflow; no
+/// step uses a cache action or passes a cache input.
+fn decoded_problems(files: &[(String, String)]) -> Vec<String> {
+    use yaml_rust2::{Yaml, YamlLoader};
+    let mut out = Vec::new();
+    let mut names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
+    names.sort();
+    let mut want = WORKFLOWS.to_vec();
+    want.sort();
+    if names != want {
+        out.push(format!("the workflow files are {names:?}, not {want:?}"));
+    }
+    for (file, src) in files {
+        let docs = match YamlLoader::load_from_str(src) {
+            Ok(d) => d,
+            Err(e) => {
+                out.push(format!("{file}: not YAML: {e}"));
+                continue;
+            }
+        };
+        if docs.len() != 1 {
+            out.push(format!("{file}: {} documents", docs.len()));
+            continue;
         }
-        assert!(!y.lines().any(|l| l.trim_start().starts_with("cache:")), "{name} has a cache: input");
-        assert_eq!(y.contains("pull_request_target"), name == "keel-gate.yml", "{name}");
-        // the required names come from keel-gate.yml alone
-        for req in ["keel/ci", "keel/gate", "keel/docs"] {
-            assert_eq!(y.contains(&format!("name: {req}")), name == "keel-gate.yml", "{name} names {req}");
+        let w = &docs[0];
+        let mut on: Vec<String> = match &w["on"] {
+            Yaml::String(s) => vec![s.clone()],
+            Yaml::Array(a) => a.iter().map(text_of).collect(),
+            Yaml::Hash(h) => h.keys().map(text_of).collect(),
+            other => vec![format!("{other:?}")],
+        };
+        on.sort();
+        let mut want = events(file);
+        want.sort();
+        if on != want {
+            out.push(format!("{file}: starts on {on:?}, not {want:?}"));
+        }
+        let Some(jobs) = w["jobs"].as_hash() else {
+            out.push(format!("{file}: no jobs"));
+            continue;
+        };
+        for (id, job) in jobs {
+            let id = text_of(id);
+            let name = match &job["name"] {
+                Yaml::BadValue => None,
+                n => Some(text_of(n)),
+            };
+            let own = file == "keel-gate.yml"
+                && matches!((id.as_str(), name.as_deref()), ("ci", Some("keel/ci")) | ("gate", Some("keel/gate")) | ("docs", Some("keel/docs")));
+            for shown in [Some(id.clone()), name.clone()].into_iter().flatten() {
+                let literal = shown.split("${{").next().unwrap_or_default().to_string();
+                let imitates = if shown.contains("${{") { RESERVED.iter().any(|r| r.starts_with(literal.trim())) } else { RESERVED.contains(&shown.as_str()) };
+                if imitates && !own {
+                    out.push(format!("{file}: job {id} reports {shown:?}, a required name"));
+                }
+            }
+            if !matches!(job["uses"], Yaml::BadValue) {
+                out.push(format!("{file}: job {id} calls a reusable workflow"));
+            }
+            for step in job["steps"].as_vec().map(Vec::as_slice).unwrap_or_default() {
+                let uses = step["uses"].as_str().unwrap_or_default().to_ascii_lowercase();
+                if uses.starts_with("actions/cache") || uses.contains("rust-cache") || uses.contains("/cache@") {
+                    out.push(format!("{file}: job {id} uses {uses}"));
+                }
+                if let Some(with) = step["with"].as_hash() {
+                    for k in with.keys().map(text_of) {
+                        if ["cache", "cache-dependency-path", "save-always"].contains(&k.as_str()) {
+                            out.push(format!("{file}: job {id} passes {k}"));
+                        }
+                    }
+                }
+            }
         }
     }
-    assert!(seen >= 5, "{seen} workflows read");
-    let release = read(".github/workflows/release.yml");
-    assert!(!release.lines().any(|l| l == "  pull_request:"), "release.yml runs on no pull request");
+    out
+}
+
+/// No workflow reads or writes a cache (a pull_request_target run's cache is the default branch's,
+/// and head code in keel/ci could write one); only keel-gate.yml runs on pull_request_target and
+/// only it reports keel/ci, keel/gate and keel/docs; release.yml runs on no pull request. Decoded,
+/// over an exact file list (code review round 2), beside the exact-lines locks.
+#[test]
+fn the_decoded_workflows_keep_the_required_names_events_and_caches_to_themselves() {
+    let files = workflow_files();
+    assert_eq!(decoded_problems(&files), Vec::<String>::new());
+    // non-vacuous: the decoder sees keel-gate.yml's three judges under their names
+    let gate = yaml_rust2::YamlLoader::load_from_str(&files.iter().find(|(n, _)| n == "keel-gate.yml").unwrap().1).unwrap();
+    let named: Vec<String> = gate[0]["jobs"].as_hash().unwrap().values().filter_map(|j| j["name"].as_str().map(String::from)).collect();
+    assert_eq!(named, ["keel/ci", "keel/gate", "keel/docs"]);
     let dist: toml::Table = read("dist-workspace.toml").parse().unwrap();
-    assert_eq!(dist["dist"]["pr-run-mode"].as_str(), Some("skip"), "dist generates it so");
+    assert_eq!(dist["dist"]["pr-run-mode"].as_str(), Some("skip"), "dist generates release.yml without its pull-request run");
+}
+
+/// `t` with one more job, `imitate`, whose lines after its runs-on are `body`.
+fn add_job(t: &str, body: &str) -> String {
+    format!("{t}  imitate:\n    runs-on: ubuntu-24.04\n{body}")
+}
+
+/// The round-2 reviewer's mutations and their neighbours, each red: a new file, and in a file the
+/// list allows, a quoted, single-quoted, double-spaced, anchored or expression-built required name, a
+/// cache input in a flow mapping, a cache action, a pull-request trigger in any form, a reusable
+/// workflow call, a second document.
+#[test]
+fn the_decoder_refuses_every_imitated_name_cache_and_trigger() {
+    let files = workflow_files();
+    let with = |file: &str, f: &dyn Fn(&str) -> String| -> Vec<(String, String)> {
+        files.iter().map(|(n, t)| (n.clone(), if n == file { f(t) } else { t.clone() })).collect()
+    };
+    let mut new_file = files.clone();
+    new_file.push((
+        "imitate.yml".into(),
+        "name: x\non: push\njobs:\n  ci:\n    name: keel/ci\n    runs-on: ubuntu-24.04\n    steps:\n      - run: 'true'\n".into(),
+    ));
+    let cases: Vec<(&str, Files, &str)> = vec![
+        ("a new workflow file", new_file, "the workflow files are"),
+        ("a double-quoted name", with("release.yml", &|t: &str| add_job(t, "    name: \"keel/ci\"\n")), "reports \"keel/ci\""),
+        ("a single-quoted name", with("release.yml", &|t: &str| add_job(t, "    name: 'keel/gate'\n")), "reports \"keel/gate\""),
+        ("a double-spaced name", with("release.yml", &|t: &str| add_job(t, "    name:  keel/ci\n")), "reports \"keel/ci\""),
+        ("the sign-off status as a job name", with("keel-sign-off.yml", &|t: &str| add_job(t, "    name: keel/sign-off\n")), "reports \"keel/sign-off\""),
+        ("an anchored name", with("pages.yml", &|t: &str| add_job(t, "    name: &n keel/docs\n")), "reports \"keel/docs\""),
+        ("an expression-built name", with("release.yml", &|t: &str| add_job(t, "    name: ${{ 'keel/ci' }}\n")), "a required name"),
+        ("a keel/ prefix and an expression", with("release.yml", &|t: &str| add_job(t, "    name: keel/${{ 'ci' }}\n")), "a required name"),
+        (
+            "a required name on another keel-gate.yml job",
+            with("keel-gate.yml", &|t: &str| mutated_in(t, "    name: keel/ci", "    name: keel/gate", true)),
+            "job ci reports \"keel/gate\"",
+        ),
+        (
+            "a cache input in a flow mapping",
+            with("release.yml", &|t: &str| add_job(t, "    steps:\n      - uses: actions/setup-node@v4\n        with: { cache: npm }\n")),
+            "passes cache",
+        ),
+        (
+            "a cache action",
+            with("keel-main.yml", &|t: &str| {
+                add_job(t, "    steps:\n      - uses: actions/cache/restore@v4\n        with:\n          path: x\n          key: y\n")
+            }),
+            "uses actions/cache/restore",
+        ),
+        ("a rust cache", with("keel-main.yml", &|t: &str| add_job(t, "    steps:\n      - uses: Swatinem/rust-cache@v2\n")), "rust-cache"),
+        ("pull_request: {} on release.yml", with("release.yml", &|t: &str| mutated_in(t, "on:", "  pull_request: {}", false)), "release.yml: starts on"),
+        (
+            "a quoted pull_request_target key",
+            with("keel-sign-off.yml", &|t: &str| mutated_in(t, "on:", "  \"pull_request_target\":", false)),
+            "keel-sign-off.yml: starts on",
+        ),
+        (
+            "a flow-style trigger list",
+            with("keel-main.yml", &|t: &str| t.replace("on:\n  push:\n    branches:\n      - main\n", "on: [push, pull_request]\n")),
+            "keel-main.yml: starts on",
+        ),
+        ("a reusable workflow call", with("release.yml", &|t: &str| add_job(t, "    uses: ./.github/workflows/x.yml\n")), "calls a reusable workflow"),
+        ("a second document", with("pages.yml", &|t: &str| format!("{t}---\nname: x\n")), "2 documents"),
+    ];
+    for (what, set, why) in &cases {
+        let got = decoded_problems(set);
+        assert!(got.iter().any(|p| p.contains(why)), "{what}: want {why:?} in {got:?}");
+    }
 }
 
 #[test]

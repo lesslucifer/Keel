@@ -4,7 +4,7 @@
 //! exact lines those readers understand.
 compiled!();
 
-use crate::keel_gate::{block, exact_lines, job, jobs, mutated_in, read};
+use crate::keel_gate::{block, code, exact_lines, job, jobs, mutated_in, read};
 
 fn yml() -> String {
     read(".github/workflows/pages.yml")
@@ -137,11 +137,6 @@ fn the_lock_refuses_every_layout_the_line_readers_would_misread() {
     ] {
         assert_eq!(locked(&y), Ok(()), "{what}");
     }
-}
-
-/// The workflow's lines that are not comments, so a word in the header comment proves nothing.
-fn code(y: &str) -> Vec<&str> {
-    y.lines().filter(|l| !l.trim_start().starts_with('#')).collect()
 }
 
 #[test]
