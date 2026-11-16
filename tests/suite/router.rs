@@ -4146,6 +4146,8 @@ fn router_guard_admits_the_router_bots_shapes_and_no_other_spelling() {
         "scripts/router-gh.sh post 1 round_2-status",
         "scripts/router-gh.sh sync epic/E-GHFLOW",
         " scripts/router-gh.sh sync epic/E ",
+        // E-GHFLOW2.W4: main moves only on GitHub once the rules are on; sync brings it back
+        "scripts/router-gh.sh sync main",
     ] {
         assert_eq!(bash(ok), None, "{ok}");
     }
@@ -4198,8 +4200,10 @@ fn router_guard_admits_the_router_bots_shapes_and_no_other_spelling() {
         "scripts/router-gh.sh post 12 -a",
         "scripts/router-gh.sh post 12 a b",
         &format!("scripts/router-gh.sh post 12 {}", "a".repeat(65)),
-        "scripts/router-gh.sh sync main",
         "scripts/router-gh.sh sync wu/E/x",
+        "scripts/router-gh.sh sync main2",
+        "scripts/router-gh.sh sync main epic/E",
+        "scripts/router-gh.sh sync refs/heads/main",
         "scripts/router-gh.sh credential /tmp/router-gh.abcdef/token get",
         "scripts/router-gh.sh merge 12",
         "scripts/router-gh.sh approve 12",

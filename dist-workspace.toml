@@ -21,6 +21,8 @@ npm-scope = "@lesslucifer"
 tap = "lesslucifer/homebrew-tap"
 # Jobs that publish after the GitHub Release is created
 publish-jobs = ["npm", "homebrew"]
+# No pull-request run: a pull request's head never runs here with the release token (E-GHFLOW2.W4)
+pr-run-mode = "skip"
 
 # Actions pinned to the commits their major tags pointed to on 2026-11-09 (DEC-38)
 [dist.github-action-commits]

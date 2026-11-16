@@ -66,8 +66,8 @@ fn modes_and_word_counts_are_fixed() {
     refused(&["pr-ready", "1", "2"], "usage: pr-ready <n>");
     refused(&["post", "1"], "usage: post <n> <body-name>");
     refused(&["post", "1", "a", "b"], "usage: post <n> <body-name>");
-    refused(&["sync"], "usage: sync <epic/E>");
-    refused(&["sync", "epic/E", "x"], "usage: sync <epic/E>");
+    refused(&["sync"], "usage: sync <epic/E|main>");
+    refused(&["sync", "epic/E", "x"], "usage: sync <epic/E|main>");
     refused(&["credential", "/x"], "usage: credential <file> <op>");
 }
 
@@ -146,10 +146,12 @@ fn a_pull_request_is_a_number_and_a_body_a_plain_name() {
 }
 
 #[test]
-fn sync_takes_an_epic_branch_only() {
+fn sync_takes_an_epic_branch_or_main_only() {
     accepted(&["sync", "epic/E-GHFLOW"]);
-    for b in ["main", "wu/E/x", "epic/E/x", "epic"] {
-        refused(&["sync", b], "sync takes an epic/<E> branch only");
+    // E-GHFLOW2.W4: with the rules on, main moves only on GitHub
+    accepted(&["sync", "main"]);
+    for b in ["wu/E/x", "epic/E/x", "epic", "main2", "Main", "refs/heads/main"] {
+        refused(&["sync", b], "sync takes an epic/<E> branch or main only");
     }
     refused(&["sync", "-epic/E"], "may not start with -");
     refused(&["sync", "epic/E.lock"], "not a valid branch name");
