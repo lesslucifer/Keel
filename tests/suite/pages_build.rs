@@ -275,7 +275,7 @@ fn the_report_note_renders_for_an_epic_tip_only_and_only_from_origin() {
 }
 
 #[test]
-fn links_submodules_hidden_reserved_and_odd_paths_and_branches_are_skipped_and_logged() {
+fn links_submodules_scripts_binaries_hidden_reserved_long_and_odd_paths_and_branches_are_skipped_and_logged() {
     let s = Site::new();
     git(&s.dev, &["switch", "-q", "epic/E"]);
     std::os::unix::fs::symlink("/etc/passwd", s.dev.join("docs/leak.html")).unwrap();
@@ -288,6 +288,22 @@ fn links_submodules_hidden_reserved_and_odd_paths_and_branches_are_skipped_and_l
         "docs/caf\u{e9}.html",
         "docs/a@b.html",
         "docs/ok-1_2.v3.html",
+        "docs/style.css",
+        "docs/img/a.png",
+        "docs/img/b.jpg",
+        "docs/img/c.jpeg",
+        "docs/img/d.gif",
+        "docs/img/e.webp",
+        "docs/img/f.svg",
+        "docs/diagrams/g.drawio",
+        "docs/app.js",
+        "docs/app.mjs",
+        "docs/tool.exe",
+        "docs/data.json",
+        "docs/bundle.zip",
+        "docs/notes.md",
+        "docs/UPPER.HTML",
+        "docs/noext",
     ] {
         write(&s.dev, f, "<html>x</html>\n");
     }
@@ -296,6 +312,12 @@ fn links_submodules_hidden_reserved_and_odd_paths_and_branches_are_skipped_and_l
     git(&s.dev, &["add", "-A"]);
     let main = s.sha("main");
     git(&s.dev, &["update-index", "--add", "--cacheinfo", &format!("160000,{main},docs/sub")]);
+    // a part of 200 bytes is published; one of 201, or of 300 (over a file system's 255: written,
+    // it would abort the build), is skipped. Made in the index: no file system holds the 300.
+    let blob = git(&s.dev, &["hash-object", "-w", "docs/ok-1_2.v3.html"]);
+    for n in [195, 196, 295] {
+        git(&s.dev, &["update-index", "--add", "--cacheinfo", &format!("100644,{blob},docs/{}.html", "a".repeat(n))]);
+    }
     git(&s.dev, &["commit", "-q", "--no-verify", "-m", "odd paths"]);
     for b in ["feature/x", "epic/x@y", "wu/F", "epic-E"] {
         git(&s.dev, &["branch", b, "epic/E"]);
@@ -308,9 +330,25 @@ fn links_submodules_hidden_reserved_and_odd_paths_and_branches_are_skipped_and_l
     let o = build_in(&runner, &s.tmp, &[site.to_str().unwrap()], &[]);
     assert!(o.status.success(), "{}", text(&o));
     let got: BTreeSet<String> = files(&site).into_iter().filter(|f| f.starts_with("epic/E/")).collect();
-    let want: BTreeSet<String> = ["index.html", "docs/architecture.html", "docs/decisions/d.html", "docs/work/plan.html", "docs/ok-1_2.v3.html", "docs/run.sh"]
-        .map(|f| format!("epic/E/{f}"))
-        .into();
+    let long_ok = format!("docs/{}.html", "a".repeat(195));
+    let want: BTreeSet<String> = [
+        "index.html",
+        "docs/architecture.html",
+        "docs/decisions/d.html",
+        "docs/work/plan.html",
+        "docs/ok-1_2.v3.html",
+        "docs/style.css",
+        "docs/img/a.png",
+        "docs/img/b.jpg",
+        "docs/img/c.jpeg",
+        "docs/img/d.gif",
+        "docs/img/e.webp",
+        "docs/img/f.svg",
+        "docs/diagrams/g.drawio",
+        long_ok.as_str(),
+    ]
+    .map(|f| format!("epic/E/{f}"))
+    .into();
     assert_eq!(got, want);
     let tops: BTreeSet<String> = files(&site).iter().map(|f| f.split('/').next().unwrap().to_string()).collect();
     assert_eq!(tops, ["epic", "index.html", "main", "wu"].map(String::from).into(), "no folder for feature/x, epic-E");
@@ -325,6 +363,16 @@ fn links_submodules_hidden_reserved_and_odd_paths_and_branches_are_skipped_and_l
         "skipped epic/E:docs/_report/report.html: outside the published paths",
         "skipped epic/E:docs/we ird.html: outside the published paths",
         "skipped epic/E:docs/a@b.html: outside the published paths",
+        &format!("skipped epic/E:docs/{}", "a".repeat(100)),
+        "skipped epic/E:docs/app.js: not a published file type (html css png jpg jpeg gif webp svg drawio)",
+        "skipped epic/E:docs/app.mjs: not a published file type",
+        "skipped epic/E:docs/tool.exe: not a published file type",
+        "skipped epic/E:docs/data.json: not a published file type",
+        "skipped epic/E:docs/bundle.zip: not a published file type",
+        "skipped epic/E:docs/notes.md: not a published file type",
+        "skipped epic/E:docs/UPPER.HTML: not a published file type",
+        "skipped epic/E:docs/noext: not a published file type",
+        "skipped epic/E:docs/run.sh: not a published file type",
         "skipped branch feature/x: not main, epic/<E> or wu/<E>/<x>",
         "skipped branch epic/x@y: not main",
         "skipped branch wu/F: not main",
@@ -333,7 +381,7 @@ fn links_submodules_hidden_reserved_and_odd_paths_and_branches_are_skipped_and_l
         assert!(log.contains(line), "missing log line {line:?} in:\n{log}");
     }
     assert!(log.contains("skipped epic/E:\"docs/caf"), "a path git quotes is skipped: {log}");
-    assert_eq!(read(&site.join("epic/E/docs/run.sh")), "#!/bin/sh\necho never run\n", "a script is data, copied, never run");
+    assert_eq!(log.matches(&format!("docs/{}", "a".repeat(100))).count(), 2, "the 201 and the 300 are skipped, the 200 is not: {log}");
 }
 
 #[test]
@@ -354,6 +402,11 @@ fn bad_input_is_refused_before_anything_is_written() {
         (vec!["-x"], vec![], "usage:"),
         (vec![&fresh, &fresh], vec![], "usage:"),
         (vec!["--folder"], vec![], "usage:"),
+        (vec!["--path"], vec![], "usage:"),
+        (vec!["--path", "a", "b"], vec![], "usage:"),
+        (vec![&fresh], vec![("PAGES_BRANCH_BUDGET", "1e9")], "PAGES_BRANCH_BUDGET is not a number of bytes"),
+        (vec![&fresh], vec![("PAGES_SITE_BUDGET", "12x")], "PAGES_SITE_BUDGET is not a number of bytes"),
+        (vec![&fresh], vec![("PAGES_SITE_BUDGET", "-1")], "PAGES_SITE_BUDGET is not a number of bytes"),
         (vec![full.to_str().unwrap()], vec![], "must be absent or empty"),
         (vec![file.to_str().unwrap()], vec![], "is not a directory"),
         (vec![link.to_str().unwrap()], vec![], "is not a directory"),
@@ -376,9 +429,9 @@ fn bad_input_is_refused_before_anything_is_written() {
 }
 
 /// The naming rule, as the spec: main, epic/<part>, wu/<part>/<part>; a part is [A-Za-z0-9._-],
-/// not starting with a dot; no ".."; at most 400 bytes.
+/// not starting with a dot, at most 200 bytes; no ".."; at most 400 bytes in all.
 fn published(b: &str) -> bool {
-    let part = |p: &str| !p.is_empty() && !p.starts_with('.') && p.bytes().all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c));
+    let part = |p: &str| !p.is_empty() && p.len() <= 200 && !p.starts_with('.') && p.bytes().all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c));
     let parts: Vec<&str> = b.split('/').collect();
     let shape = match parts.as_slice() {
         ["main"] => true,
@@ -412,11 +465,13 @@ fn branch_to_folder_maps_every_published_name_to_itself_and_refuses_every_other(
         ("-main", false),
         ("Main", false),
     ];
-    let long_ok = format!("epic/{}", "a".repeat(395));
-    let long_bad = format!("epic/{}", "a".repeat(396));
     let mut cases: Vec<(String, bool)> = fixed.iter().map(|(b, ok)| (b.to_string(), *ok)).collect();
-    cases.push((long_ok, true));
-    cases.push((long_bad, false));
+    let a = |n: usize| "a".repeat(n);
+    cases.push((format!("epic/{}", a(200)), true));
+    cases.push((format!("epic/{}", a(201)), false));
+    cases.push((format!("wu/{}/{}", a(200), a(196)), true));
+    cases.push((format!("wu/{}/{}", a(200), a(197)), false));
+    cases.push((format!("wu/E/{}", a(201)), false));
     // generated names over an alphabet of the safe set, the separators and bytes it refuses
     let alphabet: Vec<char> = "aZ09._-/@ #%\\:~^?*[\t".chars().collect();
     let heads = ["main", "epic/", "wu/", "wu/E/", "epic/E/", ""];
@@ -441,4 +496,91 @@ fn branch_to_folder_maps_every_published_name_to_itself_and_refuses_every_other(
             assert!(o.stdout.is_empty() && o.stderr.is_empty(), "{b:?}: {}", text(&o));
         }
     }
+}
+
+#[test]
+fn the_path_rule_publishes_only_doc_file_types_under_docs_in_the_safe_set() {
+    let tmp = TempDir::new().unwrap();
+    let a = |n: usize| "a".repeat(n);
+    let cases = [
+        ("docs/architecture.html".to_string(), true),
+        ("docs/work/x-plan.html".into(), true),
+        ("docs/s.css".into(), true),
+        ("docs/i/x.png".into(), true),
+        ("docs/i/x.jpg".into(), true),
+        ("docs/i/x.jpeg".into(), true),
+        ("docs/i/x.gif".into(), true),
+        ("docs/i/x.webp".into(), true),
+        ("docs/i/x.svg".into(), true),
+        ("docs/diagrams/x.drawio".into(), true),
+        ("docs/-x.html".into(), true),
+        (format!("docs/{}.html", a(195)), true),
+        (format!("docs/{}/{}.html", a(200), a(185)), true),
+        ("docs/x.js".into(), false),
+        ("docs/x.exe".into(), false),
+        ("docs/x.HTML".into(), false),
+        ("docs/x.html.zip".into(), false),
+        ("docs/html".into(), false),
+        ("docs".into(), false),
+        ("docs/".into(), false),
+        ("src/x.html".into(), false),
+        ("x.html".into(), false),
+        ("docs/.x.html".into(), false),
+        ("docs/.archive/x.html".into(), false),
+        ("docs/_report/report.html".into(), false),
+        ("docs/_report".into(), false),
+        ("docs/_reports/x.html".into(), true),
+        ("docs/a..b.html".into(), false),
+        ("docs//x.html".into(), false),
+        ("docs/x y.html".into(), false),
+        ("docs/x\n.html".into(), false),
+        (format!("docs/{}.html", a(196)), false),
+        (format!("docs/{}/{}.html", a(200), a(190)), false),
+    ];
+    for (p, ok) in &cases {
+        let o = build_in(tmp.path(), tmp.path(), &["--path", p], &[]);
+        assert_eq!(o.status.code(), Some(if *ok { 0 } else { 1 }), "{p:?}: {}", text(&o));
+        assert!(o.stdout.is_empty() && o.stderr.is_empty(), "{p:?}: {}", text(&o));
+    }
+}
+
+#[test]
+fn a_branch_over_its_budget_or_past_the_site_s_is_skipped_whole_and_the_rest_still_deploys() {
+    let s = Site::new();
+    git(&s.dev, &["switch", "-q", "wu/E/x"]);
+    write(&s.dev, "docs/big.html", &"x".repeat(20_000));
+    commit(&s.dev, "a big doc");
+    git(&s.dev, &["push", "-q", "--no-verify", "origin", "wu/E/x"]);
+    // each file costs its size rounded up to 4 KiB: main 2 files (8 KiB), epic/E 3 (12 KiB), wu/E/x
+    // 3 + big.html at 20 KiB (32 KiB)
+    let runner = s.runner("runner");
+    let site = s.root.path().join("site-branch");
+    let o = build_in(&runner, &s.tmp, &[site.to_str().unwrap()], &[("PAGES_BRANCH_BUDGET", "16384")]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("skipped branch wu/E/x: its files cost 32768 bytes, over the branch budget of 16384"), "{}", text(&o));
+    assert!(!site.join("wu").exists());
+    assert!(site.join("main/docs/architecture.html").is_file() && site.join("epic/E/docs/work/plan.html").is_file());
+    assert!(!read(&site.join("index.html")).contains("wu/E/x"));
+
+    // the site budget: main and epic/E are taken first, whatever the branch names' order
+    let site = s.root.path().join("site-total");
+    let o = build_in(&runner, &s.tmp, &[site.to_str().unwrap()], &[("PAGES_SITE_BUDGET", "40000")]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("skipped branch wu/E/x: its 32768 bytes would take the site past its budget of 40000 (20480 spent)"), "{}", text(&o));
+    assert_eq!(
+        files(&site).iter().map(|f| f.split('/').next().unwrap().to_string()).collect::<BTreeSet<_>>(),
+        ["epic", "index.html", "main"].map(String::from).into()
+    );
+    let index = read(&site.join("index.html"));
+    assert!(index.find("main/index.html").unwrap() < index.find("epic/E/index.html").unwrap(), "main first: {index}");
+
+    // a report note counts toward its epic's budget
+    git(&s.dev, &["notes", "--ref=report", "add", "-m", &"r".repeat(9000), &s.sha("epic/E")]);
+    git(&s.dev, &["push", "-q", "--no-verify", "origin", "refs/notes/report"]);
+    let runner = s.runner("runner-note");
+    let site = s.root.path().join("site-note");
+    let o = build_in(&runner, &s.tmp, &[site.to_str().unwrap()], &[("PAGES_BRANCH_BUDGET", "16384")]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("skipped branch epic/E: its files cost 24576 bytes, over the branch budget of 16384"), "{}", text(&o));
+    assert!(site.join("main/index.html").is_file() && !site.join("epic").exists());
 }

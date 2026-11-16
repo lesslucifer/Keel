@@ -30,6 +30,7 @@ mod layout;
 mod mr;
 mod notify_owner;
 mod pages_build;
+mod pages_workflow;
 mod release;
 mod review;
 mod router;

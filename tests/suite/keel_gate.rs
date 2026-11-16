@@ -4,7 +4,7 @@ compiled!();
 
 use std::path::Path;
 
-fn read(rel: &str) -> String {
+pub(crate) fn read(rel: &str) -> String {
     std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(rel)).unwrap()
 }
 
@@ -13,7 +13,7 @@ fn yml() -> String {
 }
 
 /// The lines of the top-level `key:` block, up to the next top-level key.
-fn block(yml: &str, key: &str) -> Vec<String> {
+pub(crate) fn block(yml: &str, key: &str) -> Vec<String> {
     let header = format!("{key}:");
     let mut lines = yml.lines().skip_while(|l| *l != header);
     assert!(lines.next().is_some(), "no top-level {key}");
@@ -21,14 +21,14 @@ fn block(yml: &str, key: &str) -> Vec<String> {
 }
 
 /// The lines of job `name`, up to the next job.
-fn job(yml: &str, name: &str) -> Vec<String> {
+pub(crate) fn job(yml: &str, name: &str) -> Vec<String> {
     let header = format!("  {name}:");
     let mut lines = yml.lines().skip_while(|l| *l != header);
     assert!(lines.next().is_some(), "job {name} missing");
     lines.take_while(|l| l.is_empty() || l.starts_with("   ")).filter(|l| !l.trim().is_empty()).map(String::from).collect()
 }
 
-fn jobs(yml: &str) -> Vec<String> {
+pub(crate) fn jobs(yml: &str) -> Vec<String> {
     block(yml, "jobs")
         .iter()
         .filter(|l| l.starts_with("  ") && !l.starts_with("   ") && l.ends_with(':'))

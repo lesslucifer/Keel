@@ -613,10 +613,99 @@ fn pr_open_sends_one_draft_request_derived_from_the_branch_and_its_docs() {
         "{body}"
     );
     assert!(body.contains(&format!("| [Keel — E.W1 result](https://github.com/own/Keel/blob/{tip}/docs/work/x-result.html) | wu-result | draft |")), "{body}");
+    // each changed doc's page on the Pages site, where scripts/pages-build.sh writes it (E-GHFLOW2.W8)
+    assert!(body.contains("| Doc | Role | Status | Page |\n|---|---|---|---|\n"), "{body}");
+    assert!(body.contains("| wu-plan | ready | [page](https://own.github.io/Keel/wu/E/x/docs/work/x-plan.html) |\n"), "{body}");
+    assert!(body.contains("| wu-result | draft | [page](https://own.github.io/Keel/wu/E/x/docs/work/x-result.html) |\n"), "{body}");
     assert!(body.contains("| yes | — | PASS, round 2 | — | — |"), "{body}");
     for active in ["@owner", "`tick`", "[x]", "*b*", "#h", "| cell"] {
         assert!(!body.contains(active), "{active} survived: {body}");
     }
+}
+
+/// The page link's host is the owner in lower case, as GitHub serves a project site; its path keeps
+/// the repository name, the branch and the doc's repository path (E-GHFLOW2.W8).
+#[test]
+fn pr_open_links_each_doc_s_page_at_the_owner_s_lower_case_host() {
+    let gh = Gh::new();
+    let cfg = std::fs::read_to_string(gh.repo.join(".keel/config.toml")).unwrap();
+    assert!(cfg.contains("repo = \"own/Keel\""));
+    write(&gh.repo, ".keel/config.toml", &cfg.replace("repo = \"own/Keel\"", "repo = \"Own-Org/Keel.docs\""));
+    commit(&gh.repo, "the repository renamed");
+    let tip = gh.sha("wu/E/x");
+    git(&gh.repo, &["push", "-q", "--no-verify", gh.origin.to_str().unwrap(), "wu/E/x"]);
+    gh.routes(&[
+        ("GET", "/repos/Own-Org/Keel.docs/git/ref/heads/wu/E/x", 200, serde_json::json!({"object": {"sha": tip}})),
+        ("GET", "/repos/Own-Org/Keel.docs/pulls?state=open&head=Own-Org:wu/E/x&per_page=100", 200, serde_json::json!([])),
+        ("POST", "/repos/Own-Org/Keel.docs/pulls", 201, serde_json::json!({"number": 7, "html_url": "https://github.com/Own-Org/Keel.docs/pull/7"})),
+    ]);
+    let o = gh.run(&["pr-open", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let body = body_of(&gh.log()[3])["body"].as_str().unwrap().to_string();
+    assert!(body.contains("[page](https://own-org.github.io/Keel.docs/wu/E/x/docs/work/x-plan.html)"), "{body}");
+}
+
+/// A page link only where scripts/pages-build.sh publishes the page (security review F4): a dot
+/// part, docs/_report/, a part over 200 bytes or a path over 400 get "—", and router-gh.sh agrees
+/// with the builder's own `--path` and `--folder` answers on every one.
+#[test]
+fn pr_open_links_a_page_only_where_the_builder_publishes_it() {
+    let gh = Gh::new();
+    let a = |n: usize| "a".repeat(n);
+    let docs = [
+        ("docs/work/ok.html".to_string(), true),
+        ("docs/-dash.html".into(), true),
+        (format!("docs/{}.html", a(195)), true),
+        ("docs/.x/hidden.html".into(), false),
+        ("docs/_report/r.html".into(), false),
+        (format!("docs/{}.html", a(196)), false),
+        (format!("docs/{}/{}.html", a(200), a(190)), false),
+    ];
+    for (f, _) in &docs {
+        write(&gh.repo, f, "<html><head><title>t</title></head></html>\n");
+    }
+    commit(&gh.repo, "docs the builder may skip");
+    let tip = gh.sha("wu/E/x");
+    git(&gh.repo, &["push", "-q", "--no-verify", gh.origin.to_str().unwrap(), "wu/E/x"]);
+    gh.routes(&[
+        ("GET", "/repos/own/Keel/git/ref/heads/wu/E/x", 200, serde_json::json!({"object": {"sha": tip}})),
+        ("GET", "/repos/own/Keel/pulls?state=open&head=own:wu/E/x&per_page=100", 200, serde_json::json!([])),
+        ("POST", "/repos/own/Keel/pulls", 201, serde_json::json!({"number": 7, "html_url": "https://github.com/own/Keel/pull/7"})),
+    ]);
+    let o = gh.run(&["pr-open", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let body = body_of(&gh.log()[3])["body"].as_str().unwrap().to_string();
+    let builder = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/pages-build.sh");
+    let says = |args: &[&str]| common::cmd("sh").arg(&builder).args(args).output().unwrap().status.success();
+    assert!(says(&["--folder", "wu/E/x"]));
+    for (f, linked) in &docs {
+        let row = body.lines().find(|l| l.contains(&format!("/blob/{tip}/{f})"))).unwrap_or_else(|| panic!("no row for {f}: {body}"));
+        let want = if *linked { format!(" | [page](https://own.github.io/Keel/wu/E/x/{f}) |") } else { " | — |".to_string() };
+        assert!(row.ends_with(&want), "{f}: {row}");
+        assert_eq!(says(&["--path", f]), *linked, "router-gh.sh and the builder disagree on {f}");
+    }
+}
+
+/// The builder reads docs/ whatever [docs] root says, so a doc under another root gets no page link.
+#[test]
+fn pr_open_links_no_page_under_a_docs_root_other_than_docs() {
+    let gh = Gh::new();
+    let cfg = std::fs::read_to_string(gh.repo.join(".keel/config.toml")).unwrap();
+    assert!(cfg.contains("root = \"docs/\""));
+    write(&gh.repo, ".keel/config.toml", &cfg.replace("root = \"docs/\"", "root = \"pages/\""));
+    write(&gh.repo, "pages/p.html", "<html><head><title>p</title></head></html>\n");
+    commit(&gh.repo, "docs under pages/");
+    let tip = gh.sha("wu/E/x");
+    git(&gh.repo, &["push", "-q", "--no-verify", gh.origin.to_str().unwrap(), "wu/E/x"]);
+    gh.routes(&[
+        ("GET", "/repos/own/Keel/git/ref/heads/wu/E/x", 200, serde_json::json!({"object": {"sha": tip}})),
+        ("GET", "/repos/own/Keel/pulls?state=open&head=own:wu/E/x&per_page=100", 200, serde_json::json!([])),
+        ("POST", "/repos/own/Keel/pulls", 201, serde_json::json!({"number": 7, "html_url": "https://github.com/own/Keel/pull/7"})),
+    ]);
+    let o = gh.run(&["pr-open", "wu/E/x"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let body = body_of(&gh.log()[3])["body"].as_str().unwrap().to_string();
+    assert!(body.contains(&format!("| [p](https://github.com/own/Keel/blob/{tip}/pages/p.html) | — | — | — |")), "{body}");
 }
 
 /// The base comes from the name (an epic into main), or from --base main|epic/E.
