@@ -113,7 +113,8 @@ fn a_branch_is_wu_e_slug_or_epic_e_in_plain_words() {
 
 #[test]
 fn pr_open_takes_main_or_an_epic_as_its_base() {
-    accepted(&["pr-open", "wu/E/x", "--base", "main"]);
+    // E-GHFLOW2.W4 review: a WU into main would skip its epic's gate
+    refused(&["pr-open", "wu/E/x", "--base", "main"], "a WU merges into its epic, never into main");
     accepted(&["pr-open", "wu/E/x", "--base", "epic/F"]);
     accepted(&["pr-open", "epic/E", "--base", "main"]);
     refused(&["pr-open", "wu/E/x", "--base=main"], "usage: pr-open <branch>");
@@ -163,7 +164,7 @@ fn sync_takes_an_epic_branch_or_main_only() {
 #[test]
 fn every_argument_starting_with_a_dash_is_refused_in_every_position() {
     let valid: [&[&str]; 6] =
-        [&["push", "wu/E/x"], &["pr-open", "wu/E/x"], &["pr-open", "wu/E/x", "--base", "main"], &["pr-ready", "7"], &["post", "7", "a"], &["sync", "epic/E"]];
+        [&["push", "wu/E/x"], &["pr-open", "wu/E/x"], &["pr-open", "wu/E/x", "--base", "epic/E"], &["pr-ready", "7"], &["post", "7", "a"], &["sync", "epic/E"]];
     let mut next = common::lcg(7);
     let tails = ["", "x", "-", "wu/E/x", "main", "7", "force", "-"];
     for args in valid {

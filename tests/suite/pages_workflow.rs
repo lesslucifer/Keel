@@ -31,6 +31,7 @@ on:
   workflow_run:
     workflows:
       - Keel gate
+      - Keel main
     types:
       - completed
 permissions: {}
@@ -176,9 +177,11 @@ fn code(y: &str) -> Vec<&str> {
 #[test]
 fn it_runs_only_after_a_keel_gate_run_ends_never_on_a_push_a_pull_request_or_by_hand() {
     let y = yml();
-    assert_eq!(block(&y, "on"), ["  workflow_run:", "    workflows:", "      - Keel gate", "    types:", "      - completed"]);
-    let gate_name = read(".github/workflows/keel-gate.yml").lines().find_map(|l| l.strip_prefix("name: ").map(String::from));
-    assert_eq!(gate_name.as_deref(), Some("Keel gate"), "the workflow it follows keeps that name");
+    assert_eq!(block(&y, "on"), ["  workflow_run:", "    workflows:", "      - Keel gate", "      - Keel main", "    types:", "      - completed"]);
+    for (file, name) in [("keel-gate.yml", "Keel gate"), ("keel-main.yml", "Keel main")] {
+        let got = read(&format!(".github/workflows/{file}")).lines().find_map(|l| l.strip_prefix("name: ").map(String::from));
+        assert_eq!(got.as_deref(), Some(name), "the workflows it follows keep their names");
+    }
     for never in
         ["push", "pull_request", "pull_request_target", "pull_request_review", "workflow_dispatch", "issue_comment", "schedule", "tags", "branches", "release"]
     {

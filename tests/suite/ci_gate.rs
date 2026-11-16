@@ -636,3 +636,34 @@ fn a_back_merge_of_main_is_green_on_gate_and_docs_only_when_its_head_is_on_main(
         assert_eq!(o.status.code(), Some(2), "main into {base} is no back-merge: {}", text(&o));
     }
 }
+
+/// Security review (E-GHFLOW2.W4): a pull request retargeted away from its own level - a WU into
+/// main, an epic into another epic - is refused by every job, so it never stays green past the gate
+/// it skips. The derived base, given or not, still runs.
+#[test]
+fn a_base_other_than_the_heads_own_is_refused_by_every_job() {
+    let ci = Ci::new(MARK_TEST);
+    let (wu, epic, main) = (ci.sha("wu/e/a"), ci.sha("epic/e"), ci.sha("main"));
+    let out = ci.tmp.join("out");
+    for (head, sha, base, base_sha) in [("wu/e/a", &wu, "main", &main), ("wu/e/a", &wu, "epic/f", &epic), ("epic/e", &epic, "epic/f", &main)] {
+        for job in ["build", "ci", "gate", "docs"] {
+            let env = [
+                ("HEAD_BRANCH", head),
+                ("HEAD_SHA", sha.as_str()),
+                ("BASE_BRANCH", base),
+                ("BASE_SHA", base_sha.as_str()),
+                ("KEEL_OUT", out.to_str().unwrap()),
+            ];
+            let o = ci.job(job, &env, Some(KEEL), None);
+            assert_eq!(o.status.code(), Some(2), "{job} {head} into {base}: {}", text(&o));
+            assert!(
+                text(&o).contains(&format!("merges into {}, not {base}: retarget the pull request", if head == "epic/e" { "main" } else { "epic/e" })),
+                "{}",
+                text(&o)
+            );
+        }
+    }
+    assert!(ci.summary().is_empty() && ci.marked().is_empty(), "nothing ran: {} {:?}", ci.summary(), ci.marked());
+    let o = ci.job("docs", &[("HEAD_BRANCH", "wu/e/a"), ("HEAD_SHA", &wu), ("BASE_BRANCH", "epic/e"), ("BASE_SHA", &epic)], Some(KEEL), None);
+    assert!(o.status.success(), "its own base: {}", text(&o));
+}

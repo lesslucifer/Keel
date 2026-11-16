@@ -945,7 +945,7 @@ fn pr_open_links_no_page_under_a_docs_root_other_than_docs() {
     assert!(body.contains(&format!("| [p](https://github.com/own/Keel/blob/{tip}/pages/p.html) | — | — | — |")), "{body}");
 }
 
-/// The base comes from the name (an epic into main), or from --base main|epic/E.
+/// The base comes from the name (an epic into main), or from --base main|epic/E; a WU never into main.
 #[test]
 fn pr_open_derives_main_for_an_epic_and_takes_an_explicit_base() {
     let gh = Gh::new();
@@ -968,9 +968,15 @@ fn pr_open_derives_main_for_an_epic_and_takes_an_explicit_base() {
         ("GET", "/repos/own/Keel/pulls?state=open&head=own:wu/E/x&per_page=100", 200, serde_json::json!([])),
         ("POST", "/repos/own/Keel/pulls", 201, serde_json::json!({"number": 9, "html_url": "https://github.com/own/Keel/pull/9"})),
     ]);
+    let o = gh.run(&["pr-open", "wu/E/x", "--base", "epic/E"]);
+    assert!(stdout(&o).ends_with(&format!("state=opened head=wu/E/x base=epic/E sha={tip}")), "{}", text(&o));
+    assert_eq!(body_of(&gh.log()[3])["base"], "epic/E");
+    // E-GHFLOW2.W4 review: a WU into main would skip its epic's gate; refused before any request
+    gh.routes(&[]);
     let o = gh.run(&["pr-open", "wu/E/x", "--base", "main"]);
-    assert!(stdout(&o).ends_with(&format!("state=opened head=wu/E/x base=main sha={tip}")), "{}", text(&o));
-    assert_eq!(body_of(&gh.log()[3])["base"], "main");
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("a WU merges into its epic, never into main: wu/E/x"), "{}", text(&o));
+    assert!(gh.calls().is_empty(), "{:?}", gh.calls());
 }
 
 /// The bot's open pull request for the head is refreshed (PATCH), never doubled; someone else's, or

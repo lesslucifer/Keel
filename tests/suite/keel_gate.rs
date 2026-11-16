@@ -55,12 +55,80 @@ fn block_and_job_end_at_the_next_key() {
 
 /// E-GHFLOW2.W4: GitHub takes a pull_request_target workflow from main for every base, so no pull
 /// request changes what judges it; a work branch's push runs nothing here (its pull request does).
+/// `edited` re-judges a retargeted pull request (security review: a WU retargeted to main).
 #[test]
-fn it_runs_from_main_on_pull_requests_into_main_or_an_epic_and_on_a_push_of_main_only() {
+fn it_runs_from_main_on_pull_requests_into_main_or_an_epic_only_and_again_when_one_is_edited() {
     let y = yml();
-    assert_eq!(block(&y, "on"), ["  push:", "    branches:", "      - main", "  pull_request_target:", "    branches:", "      - main", "      - 'epic/**'"]);
-    for never in ["wu/**", "tags", "  pull_request:", "workflow_run", "workflow_dispatch", "release:", "issue_comment", "schedule", "merge_group"] {
-        assert!(!y.contains(never), "keel-gate.yml mentions {never}");
+    assert_eq!(
+        block(&y, "on"),
+        [
+            "  pull_request_target:",
+            "    types:",
+            "      - opened",
+            "      - synchronize",
+            "      - reopened",
+            "      - edited",
+            "    branches:",
+            "      - main",
+            "      - 'epic/**'"
+        ]
+    );
+    for never in [
+        "wu/**",
+        "tags",
+        "push",
+        "  pull_request:",
+        "workflow_run",
+        "workflow_dispatch",
+        "release:",
+        "issue_comment",
+        "schedule",
+        "merge_group",
+        "github.ref_name",
+        "github.repository ||",
+        "|| github",
+    ] {
+        assert!(!code(&y).contains(never), "keel-gate.yml mentions {never}");
+    }
+}
+
+/// The workflow without its comment lines.
+fn code(y: &str) -> String {
+    y.lines().filter(|l| !l.trim_start().starts_with('#')).collect::<Vec<_>>().join("\n")
+}
+
+/// A push of main runs keel-main.yml: its one job is main/ci, never a required name, so a back-merge
+/// pull request at main's commit never carries a skipped or main-defined keel/ check.
+#[test]
+fn a_push_of_main_runs_main_ci_under_a_name_no_ruleset_requires() {
+    let y = read(".github/workflows/keel-main.yml");
+    assert_eq!(block(&y, "on"), ["  push:", "    branches:", "      - main"]);
+    assert_eq!(block(&y, "permissions"), ["  contents: read"]);
+    assert_eq!(block(&y, "concurrency"), ["  group: keel-main-${{ github.sha }}", "  cancel-in-progress: false"]);
+    assert_eq!(jobs(&y), ["ci"]);
+    let j = job(&y, "ci");
+    let dist: toml::Table = read("dist-workspace.toml").parse().unwrap();
+    let checkout = format!("actions/checkout@{}", dist["dist"]["github-action-commits"]["actions/checkout"].as_str().unwrap());
+    for l in [
+        "    name: main/ci",
+        "    runs-on: ubuntu-24.04",
+        &format!("      - uses: {checkout}"),
+        "          ref: ${{ github.sha }}",
+        "          persist-credentials: false",
+        "      - run: rustup component add rustfmt clippy",
+        "      - run: scripts/ci-gate.sh ci",
+        "          HEAD_BRANCH: ${{ github.ref_name }}",
+        "          HEAD_SHA: ${{ github.sha }}",
+        "          REPO: ${{ github.repository }}",
+        "          HEAD_REPO: ${{ github.repository }}",
+    ] {
+        assert!(j.iter().any(|x| x == l), "keel-main.yml lacks {l}");
+    }
+    for never in ["secrets.", "github.token", "GITHUB_TOKEN", "if:", "keel/"] {
+        assert!(!code(&y).contains(never), "keel-main.yml has {never}");
+    }
+    for l in y.lines().filter(|l| l.contains("run:")) {
+        assert!(!l.contains("${{"), "{l}");
     }
 }
 
@@ -75,14 +143,8 @@ fn its_token_reads_contents_only_and_it_uses_no_secret() {
 
 /// github.ref is main for every pull_request_target run, so the group is the pull request's number.
 #[test]
-fn a_superseded_pull_request_run_is_cancelled_but_every_main_commit_keeps_its_run() {
-    assert_eq!(
-        block(&yml(), "concurrency"),
-        [
-            "  group: keel-gate-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}",
-            "  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}"
-        ]
-    );
+fn a_superseded_pull_request_run_is_cancelled() {
+    assert_eq!(block(&yml(), "concurrency"), ["  group: keel-gate-${{ github.event.pull_request.number }}", "  cancel-in-progress: true"]);
 }
 
 /// Every checkout is main's commit (the workflow's own), never the head's; the head is git data.
@@ -118,12 +180,7 @@ fn no_run_line_holds_an_expression_and_event_values_come_through_env() {
         assert!(!l.trim_end().ends_with('|') && !l.trim_end().ends_with('>'), "no multi-line run block: {l}");
     }
     let has = |name: &str, env: &str| assert!(job(&y, name).iter().any(|l| l == env), "{name} lacks {env}");
-    for name in ["build", "ci"] {
-        has(name, "          HEAD_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}");
-        has(name, "          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}");
-        has(name, "          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}");
-    }
-    for name in ["gate", "docs"] {
+    for name in ["build", "ci", "gate", "docs"] {
         has(name, "          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}");
         has(name, "          HEAD_SHA: ${{ github.event.pull_request.head.sha }}");
         has(name, "          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}");
@@ -168,12 +225,7 @@ fn four_jobs_the_three_judges_named_keel_each_one_call_of_the_ci_script_on_ubunt
     }
     let ifs: Vec<String> = ["build", "ci", "gate", "docs"].iter().flat_map(|n| job(&y, n).into_iter().filter(|l| l.starts_with("    if:"))).collect();
     assert_eq!(
-        ifs,
-        [
-            "    if: ${{ !cancelled() }}",
-            "    if: ${{ !cancelled() && github.event_name == 'pull_request_target' }}",
-            "    if: ${{ !cancelled() && github.event_name == 'pull_request_target' }}",
-        ],
+        ifs, ["    if: ${{ !cancelled() }}"; 3],
         "no job skips a pull request (a skipped job counts as passed): a failed build or a fork is red in each"
     );
     let b = job(&y, "build");
@@ -181,7 +233,7 @@ fn four_jobs_the_three_judges_named_keel_each_one_call_of_the_ci_script_on_ubunt
         "    outputs:",
         "      keel_sha256: ${{ steps.build.outputs.keel_sha256 }}",
         "      - id: build",
-        "          retention-days: 1",
+        "          retention-days: 7",
         "          if-no-files-found: error",
     ] {
         assert!(b.iter().any(|x| x == l), "build lacks {l}");
@@ -206,6 +258,10 @@ fn no_workflow_uses_a_cache_and_only_the_gate_runs_on_pull_request_target() {
         }
         assert!(!y.lines().any(|l| l.trim_start().starts_with("cache:")), "{name} has a cache: input");
         assert_eq!(y.contains("pull_request_target"), name == "keel-gate.yml", "{name}");
+        // the required names come from keel-gate.yml alone
+        for req in ["keel/ci", "keel/gate", "keel/docs"] {
+            assert_eq!(y.contains(&format!("name: {req}")), name == "keel-gate.yml", "{name} names {req}");
+        }
     }
     assert!(seen >= 5, "{seen} workflows read");
     let release = read(".github/workflows/release.yml");

@@ -30,7 +30,10 @@ fn green() -> Answers {
         "rules": [
             {"type": "deletion"},
             {"type": "non_fast_forward"},
-            {"type": "pull_request", "parameters": {"required_approving_review_count": 0, "allowed_merge_methods": ["merge"]}},
+            {"type": "pull_request", "parameters": {
+                "required_approving_review_count": 1, "require_code_owner_review": true, "dismiss_stale_reviews_on_push": true,
+                "require_last_push_approval": false, "allowed_merge_methods": ["merge"]
+            }},
             {"type": "required_status_checks", "parameters": {"strict_required_status_checks_policy": false, "required_status_checks": [
                 {"context": "keel/ci", "integration_id": 15368},
                 {"context": "keel/gate", "integration_id": 15368},
@@ -49,7 +52,10 @@ fn green() -> Answers {
         (
             R.into(),
             200,
-            json!({"full_name": "own/Keel", "allow_merge_commit": true, "allow_squash_merge": false, "allow_rebase_merge": false, "allow_auto_merge": true}),
+            json!({
+                "full_name": "own/Keel", "owner": {"login": "own"}, "permissions": {"admin": true},
+                "allow_merge_commit": true, "allow_squash_merge": false, "allow_rebase_merge": false, "allow_auto_merge": true
+            }),
         ),
         (format!("{R}/rulesets?includes_parents=true&per_page=100"), 200, json!([{"id": 1, "name": "keel-merge"}, {"id": 2, "name": "keel-tags"}])),
         (format!("{R}/rulesets/1"), 200, branch),
@@ -67,7 +73,22 @@ fn green() -> Answers {
             200,
             json!({"total_count": 1, "branch_policies": [{"id": 9, "name": "main", "type": "branch"}]}),
         ),
+        (format!("{R}/contents/.github/CODEOWNERS"), 200, json!({"encoding": "base64", "content": base64("# every path\n* @own\n")})),
+        (format!("{R}/codeowners/errors"), 200, json!({"errors": []})),
     ]
+}
+
+/// A file as GitHub's contents API sends it: base64, in lines of 60 characters.
+fn base64(text: &str) -> String {
+    const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for c in text.as_bytes().chunks(3) {
+        let n = (u32::from(c[0]) << 16) | (u32::from(*c.get(1).unwrap_or(&0)) << 8) | u32::from(*c.get(2).unwrap_or(&0));
+        for i in 0..4 {
+            out.push(if i <= c.len() { A[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+        }
+    }
+    out.as_bytes().chunks(60).map(|l| std::str::from_utf8(l).unwrap()).collect::<Vec<_>>().join("\n") + "\n"
 }
 
 impl Gh {
@@ -144,6 +165,10 @@ fn every_setting_as_listed_is_green_and_the_check_only_reads() {
         "main.ruleset",
         "main.bypass",
         "main.pull-request",
+        "main.review",
+        "epic.review",
+        "codeowners.file",
+        "codeowners.valid",
         "main.check.keel/ci",
         "main.check.keel/gate",
         "main.check.keel/docs",
@@ -169,7 +194,7 @@ fn every_setting_as_listed_is_green_and_the_check_only_reads() {
     }
     assert!(l.iter().any(|x| x.starts_with("BY-HAND actions.pull_request_target ")), "{l:#?}");
     let log = gh.log();
-    assert_eq!(log.len(), 9, "{log:#?}");
+    assert_eq!(log.len(), 11, "{log:#?}");
     for r in &log {
         assert_eq!(r["method"], "GET", "read-only: {r}");
         assert_eq!(r["auth"], "Bearer tok-123");
@@ -272,6 +297,40 @@ fn a_missing_rule_a_bypass_actor_squash_or_a_check_from_another_source_is_red() 
             edit(&format!("{R}/pages"), |v| v["build_type"] = json!("legacy")),
             vec!["RED pages.source Pages builds from GitHub Actions: legacy"],
         ),
+        (
+            "no approval required",
+            edit(&rs1, |v| rule(v, "pull_request")["parameters"]["required_approving_review_count"] = json!(0)),
+            vec![
+                "RED main.review a code owner approves, and a push dismisses the approval: approvals 0, code owner true, dismiss stale true",
+                "RED epic.review a code owner approves, and a push dismisses the approval: approvals 0, code owner true, dismiss stale true",
+            ],
+        ),
+        (
+            "any reviewer will do",
+            edit(&rs1, |v| rule(v, "pull_request")["parameters"]["require_code_owner_review"] = json!(false)),
+            vec![
+                "RED main.review a code owner approves, and a push dismisses the approval: approvals 1, code owner false, dismiss stale true",
+                "RED epic.review a code owner approves, and a push dismisses the approval: approvals 1, code owner false, dismiss stale true",
+            ],
+        ),
+        (
+            "a stale approval stands",
+            edit(&rs1, |v| rule(v, "pull_request")["parameters"]["dismiss_stale_reviews_on_push"] = json!(false)),
+            vec![
+                "RED main.review a code owner approves, and a push dismisses the approval: approvals 1, code owner true, dismiss stale false",
+                "RED epic.review a code owner approves, and a push dismisses the approval: approvals 1, code owner true, dismiss stale false",
+            ],
+        ),
+        (
+            "another code owner",
+            edit(&format!("{R}/contents/.github/CODEOWNERS"), |v| v["content"] = json!(base64("* @mallory\n"))),
+            vec!["RED codeowners.file CODEOWNERS on the default branch names the owner for every path: no line * @own"],
+        ),
+        (
+            "an unreadable CODEOWNERS",
+            edit(&format!("{R}/codeowners/errors"), |v| v["errors"] = json!([{"message": "Unknown owner"}])),
+            vec!["RED codeowners.valid GitHub reads CODEOWNERS without an error: Unknown owner"],
+        ),
     ];
     for (what, answers, want) in cases {
         gh.serve(&answers);
@@ -307,8 +366,8 @@ fn what_github_hides_is_unread_never_green_and_split_rulesets_count() {
     assert_eq!(o.status.code(), Some(1), "{}", text(&o));
     let l = lines(&o);
     for w in [
-        "UNREAD main.bypass nobody bypasses the rules of main: GitHub hides the bypass list: run with GH_TOKEN",
-        "UNREAD tags.bypass only a repository admin (the owner) bypasses the tag rule: GitHub hides the bypass list: run with GH_TOKEN",
+        "UNREAD main.bypass nobody bypasses the rules of main: only an admin token shows the bypass list: run with GH_TOKEN=$(gh auth token)",
+        "UNREAD tags.bypass only a repository admin (the owner) bypasses the tag rule: only an admin token shows the bypass list: run with GH_TOKEN=$(gh auth token)",
         "UNREAD actions.token the workflow token reads by default: HTTP 403",
         "UNREAD actions.forks every outside contributor waits for approval: HTTP 403",
     ] {
@@ -316,6 +375,15 @@ fn what_github_hides_is_unread_never_green_and_split_rulesets_count() {
     }
     assert_eq!(l.last().unwrap(), "SETTINGS red (0 red, 6 unread)", "three bypass lists and three Actions settings");
     assert!(gh.log().iter().all(|r| r["auth"] == ""), "no token, no Authorization header");
+
+    // a token that is not an admin's may see an empty bypass list: never read as "nobody bypasses"
+    gh.serve(&edit(R, |v| v["permissions"]["admin"] = json!(false)));
+    let o = gh.run(&["own/Keel"], Some("t"));
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    let l = lines(&o);
+    let unread: Vec<&String> = l.iter().filter(|x| x.starts_with("UNREAD ")).collect();
+    assert_eq!(unread.len(), 3, "main, epic and tag bypass lists: {l:#?}");
+    assert!(unread.iter().all(|x| x.contains(".bypass ")), "{l:#?}");
 
     // one ruleset per branch kind
     let mut a = green();
