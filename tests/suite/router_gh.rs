@@ -686,6 +686,51 @@ fn pr_open_links_a_page_only_where_the_builder_publishes_it() {
     }
 }
 
+/// page_ok's branch rule, run from router-gh.sh's own text, is the builder's `--folder` rule on main,
+/// an epic, a work unit and the edges between (review 1): every page link names a published folder.
+#[test]
+fn page_ok_links_a_page_on_exactly_the_branches_the_builder_publishes() {
+    let script = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/router-gh.sh")).unwrap();
+    let start = script.find("\npage_ok() {\n").expect("router-gh.sh defines page_ok") + 1;
+    let len = script[start..].find("\n}\n").expect("page_ok ends") + 3;
+    let page_ok = &script[start..start + len];
+    let a = |n: usize| "a".repeat(n);
+    // '|'-separated, so the empty name and names holding a space, tab or newline sit among the rest
+    let names = "main|epic/E|wu/E/x|epic/E-1.2_x|epic/-E|epic/_E|wu/E/x.y|wu/E-1/x_2|epic/E.|wu/E/x-||Main|mainx|xmain|main/x|main/|/main|\
+                 epic|epic/|epic/E/x|epic/.E|epic/a..b|epic//E|wu|wu/E|wu/E/|wu//x|wu/E/x/y|wu/.E/x|wu/E/.x|wu/E/..|release/1|\
+                 feature/x|epic/E x|epic/E\tx|epic/E\nx|epic/E\n|epic/E*|epic/[E]|wu/E/x;rm|epic/É|refs/heads/main|origin/main";
+    let mut branches: Vec<String> = names.split('|').map(String::from).collect();
+    branches.extend([
+        format!("epic/{}", a(200)),
+        format!("epic/{}", a(201)),
+        format!("wu/{}/{}", a(200), a(196)),
+        format!("wu/{}/{}", a(200), a(197)),
+        format!("wu/{}/x", a(201)),
+    ]);
+    let o = common::cmd("sh")
+        .arg("-c")
+        .arg(format!("{page_ok}for b do if page_ok \"$b\" docs/a.html; then echo 1; else echo 0; fi; done"))
+        .arg("sh")
+        .args(&branches)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", text(&o));
+    let linked: Vec<bool> = String::from_utf8(o.stdout).unwrap().lines().map(|l| l == "1").collect();
+    assert_eq!(linked.len(), branches.len());
+    let builder = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/pages-build.sh");
+    for (b, linked) in branches.iter().zip(&linked) {
+        let published = common::cmd("sh").arg(&builder).args(["--folder", b]).output().unwrap().status.success();
+        assert_eq!(*linked, published, "router-gh.sh and the builder disagree on branch {b:?}");
+    }
+    // the agreement is not both refusing everything: the three kinds are linked, their near misses not
+    let at = |b: &str| linked[branches.iter().position(|x| x == b).unwrap()];
+    for (b, want) in
+        [("main", true), ("epic/E", true), ("wu/E/x", true), (&*format!("epic/{}", a(200)), true), ("epic/E/x", false), ("wu/E", false), ("mainx", false)]
+    {
+        assert_eq!(at(b), want, "{b}");
+    }
+}
+
 /// The builder reads docs/ whatever [docs] root says, so a doc under another root gets no page link.
 #[test]
 fn pr_open_links_no_page_under_a_docs_root_other_than_docs() {
@@ -1580,6 +1625,10 @@ fn issue_opens_the_epics_tracking_issue_and_a_wu_sub_issue() {
     assert!(body.starts_with("<!-- keel:router-gh issue v1 wu/E/x -->\nWork unit `wu/E/x` into `epic/E`"), "{body}");
     assert!(body.contains(&format!("| {} |", "yes | — | PASS, round 2 | — | —")), "{body}");
     assert!(body.contains("/blob/") && body.contains("docs/work/x-plan.html"), "{body}");
+    // the issue's docs table carries the Page column too, linked where the builder publishes
+    assert!(body.contains("| Doc | Role | Status | Page |\n|---|---|---|---|\n"), "{body}");
+    assert!(body.contains("| wu-plan | ready | [page](https://own.github.io/Keel/wu/E/x/docs/work/x-plan.html) |\n"), "{body}");
+    assert!(body.contains("| wu-result | draft | [page](https://own.github.io/Keel/wu/E/x/docs/work/x-result.html) |\n"), "{body}");
     assert_eq!(body_of(&log[5]), serde_json::json!({"sub_issue_id": 9031}));
 }
 

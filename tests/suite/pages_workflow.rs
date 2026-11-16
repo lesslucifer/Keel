@@ -41,15 +41,52 @@ fn the_build_job_reads_with_contents_read_and_only_the_deploy_job_holds_the_page
     assert!(!y.contains("GITHUB_TOKEN") && !y.contains("github.token"), "the token is never handed to a step");
 }
 
+/// The commands of every `run:` key in job lines `j` - a step's first key (`- run: x`) or a later one
+/// (`run: x` under `- name: y`) - or `Err` naming a line that mentions run in a form this reader does
+/// not parse (a flow mapping `- {run: x}`, a quoted key, `run :`), so no command hides from it.
+/// `runs-on:`, the `runner.` context and the fork filter's `event.workflow_run.` are the only other
+/// words holding "run" a job may use.
+fn runs(j: &[String]) -> Result<Vec<String>, String> {
+    let mut out = vec![];
+    for l in j {
+        let key = l.trim().trim_start_matches("- ").trim_start();
+        if let Some(c) = key.strip_prefix("run:") {
+            out.push(c.trim().to_string());
+        } else if l.replace("runs-on:", "").replace("runner.", "").replace("event.workflow_run.", "").to_ascii_lowercase().contains("run") {
+            return Err(l.clone());
+        }
+    }
+    Ok(out)
+}
+
+#[test]
+fn the_run_reader_sees_a_run_key_wherever_a_step_puts_it() {
+    let y = yml();
+    let deploy_end = "        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346";
+    assert!(y.trim_end().ends_with(deploy_end), "the deploy job is the file's last block");
+    let with = |extra: &str| format!("{}\n{extra}", y.trim_end());
+    let cases: [(&str, Result<Vec<String>, String>); 6] = [
+        ("      - run: curl x", Ok(vec!["curl x".into()])),
+        ("      - name: x\n        run: curl x", Ok(vec!["curl x".into()])),
+        ("      - name: x\n        shell: sh\n        run: curl x", Ok(vec!["curl x".into()])),
+        ("      - {run: curl x}", Err("      - {run: curl x}".into())),
+        ("      - name: x\n        \"run\": curl x", Err("        \"run\": curl x".into())),
+        ("      - name: x\n        RUN : curl x", Err("        RUN : curl x".into())),
+    ];
+    for (extra, want) in cases {
+        assert_eq!(runs(&job(&with(extra), "deploy")), want, "{extra:?}");
+    }
+    assert_eq!(runs(&job(&with("      - name: x\n        run: curl x"), "build")), runs(&job(&y, "build")), "the other job is untouched");
+}
+
 #[test]
 fn two_jobs_build_runs_main_s_builder_and_deploy_runs_only_the_deploy_action() {
     let y = yml();
     assert_eq!(jobs(&y), ["build", "deploy"]);
     let build = job(&y, "build");
     let deploy = job(&y, "deploy");
-    let runs = |j: &[String]| -> Vec<String> { j.iter().filter_map(|l| l.trim().strip_prefix("- run: ").map(String::from)).collect() };
-    assert_eq!(runs(&build), [r#"scripts/pages-build.sh "$RUNNER_TEMP/site""#]);
-    assert!(runs(&deploy).is_empty(), "the deploy job runs no command");
+    assert_eq!(runs(&build), Ok(vec![r#"scripts/pages-build.sh "$RUNNER_TEMP/site""#.to_string()]));
+    assert_eq!(runs(&deploy), Ok(vec![]), "the deploy job runs no command");
     let uses = |j: &[String]| -> Vec<String> { j.iter().filter_map(|l| l.trim().trim_start_matches("- ").strip_prefix("uses: ").map(String::from)).collect() };
     let dist: toml::Table = read("dist-workspace.toml").parse().unwrap();
     let checkout = dist["dist"]["github-action-commits"]["actions/checkout"].as_str().unwrap();

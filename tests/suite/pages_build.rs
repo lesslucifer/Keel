@@ -14,11 +14,12 @@ fn script() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/pages-build.sh")
 }
 
-/// `pages-build.sh <args>` in `dir`, its scratch under `tmp`, with `env` on top.
+/// `pages-build.sh <args>` in `dir`, its scratch under `tmp`, with `env` on top; no inherited
+/// PAGES_* setting reaches it.
 fn build_in(dir: &Path, tmp: &Path, args: &[&str], env: &[(&str, &str)]) -> Output {
     let mut c = common::cmd("sh");
     c.arg(script()).args(args).current_dir(dir);
-    for k in ["PAGES_REMOTE", "RUNNER_TEMP"] {
+    for k in ["PAGES_REMOTE", "RUNNER_TEMP", "PAGES_BRANCH_BUDGET", "PAGES_SITE_BUDGET"] {
         c.env_remove(k);
     }
     c.env("RUNNER_TEMP", tmp).envs(env.iter().copied());
@@ -40,36 +41,47 @@ const REPORT: &str = r#"<html><body>epic report <a href="../architecture.html">a
 "#;
 
 /// A developer's repo and its bare origin: main (two linked docs, a README and code outside docs/)
-/// → epic/E (a plan) → wu/E/x (its own architecture.html); all pushed.
+/// → epic/E (a plan) → wu/E/x (its own architecture.html); all pushed. Both are copies of a template
+/// built once per run (`common::fixture_parts`); `root` holds the runners, the sites and `tmp`.
 struct Site {
     root: TempDir,
+    _parts: Vec<TempDir>,
     dev: PathBuf,
     origin: PathBuf,
     tmp: PathBuf,
 }
 
+const SITE: &str = "pages_build site";
+
+fn build_site(t: &Path) {
+    let dev = t.join("dev");
+    std::fs::create_dir_all(&dev).unwrap();
+    git(&dev, &["init", "-q", "-b", "main"]);
+    write(&dev, "docs/architecture.html", ARCH);
+    write(&dev, "docs/decisions/d.html", DEC);
+    write(&dev, "README.md", "not a doc\n");
+    write(&dev, "src/lib.rs", "// code\n");
+    commit(&dev, "main");
+    git(&dev, &["switch", "-q", "-c", "epic/E"]);
+    write(&dev, "docs/work/plan.html", PLAN);
+    commit(&dev, "epic plan");
+    git(&dev, &["switch", "-q", "-c", "wu/E/x"]);
+    write(&dev, "docs/architecture.html", &ARCH.replace("<body>", "<body>wu x "));
+    commit(&dev, "wu x");
+    git(t, &["init", "-q", "--bare", "origin.git"]);
+    git(&dev, &["remote", "add", "origin", t.join("origin.git").to_str().unwrap()]);
+    git(&dev, &["push", "-q", "--no-verify", "origin", "main", "epic/E", "wu/E/x"]);
+}
+
 impl Site {
     fn new() -> Site {
         let root = TempDir::new().unwrap();
-        let [dev, origin, tmp] = ["dev", "origin.git", "tmp"].map(|n| root.path().join(n));
-        std::fs::create_dir_all(&dev).unwrap();
+        let tmp = root.path().join("tmp");
         std::fs::create_dir_all(&tmp).unwrap();
-        git(&dev, &["init", "-q", "-b", "main"]);
-        write(&dev, "docs/architecture.html", ARCH);
-        write(&dev, "docs/decisions/d.html", DEC);
-        write(&dev, "README.md", "not a doc\n");
-        write(&dev, "src/lib.rs", "// code\n");
-        commit(&dev, "main");
-        git(&dev, &["switch", "-q", "-c", "epic/E"]);
-        write(&dev, "docs/work/plan.html", PLAN);
-        commit(&dev, "epic plan");
-        git(&dev, &["switch", "-q", "-c", "wu/E/x"]);
-        write(&dev, "docs/architecture.html", &ARCH.replace("<body>", "<body>wu x "));
-        commit(&dev, "wu x");
-        git(root.path(), &["init", "-q", "--bare", "origin.git"]);
-        git(&dev, &["remote", "add", "origin", origin.to_str().unwrap()]);
-        git(&dev, &["push", "-q", "--no-verify", "origin", "main", "epic/E", "wu/E/x"]);
-        Site { root, dev, origin, tmp }
+        let parts = common::fixture_parts(SITE, &["dev", "origin.git"], build_site);
+        let (dev, origin) = (parts[0].path().to_path_buf(), parts[1].path().to_path_buf());
+        assert_eq!(git(&dev, &["remote", "get-url", "origin"]), origin.to_str().unwrap(), "the copy's origin is the origin's copy");
+        Site { root, _parts: parts, dev, origin, tmp }
     }
 
     fn sha(&self, rev: &str) -> String {
@@ -89,7 +101,13 @@ impl Site {
         let site = self.root.path().join(format!("{name}-site"));
         let o = build_in(&runner, &self.tmp, &[site.to_str().unwrap()], &[]);
         assert!(o.status.success(), "{}", text(&o));
+        self.assert_no_scratch();
         site
+    }
+
+    /// The builder's scratch directory is gone, on success as on a refusal.
+    fn assert_no_scratch(&self) {
+        assert_eq!(std::fs::read_dir(&self.tmp).unwrap().count(), 0, "a scratch directory survived");
     }
 
     fn show(&self, rev_path: &str) -> Vec<u8> {
@@ -243,10 +261,12 @@ fn a_deleted_branch_s_folder_is_gone_on_the_next_build_and_an_old_site_is_never_
     git(&r1, &["fetch", "-q", "--prune", "origin"]);
     let o = build_in(&r1, &s.tmp, &[first.to_str().unwrap()], &[]);
     assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    s.assert_no_scratch();
     assert!(text(&o).contains("the out dir must be absent or empty"), "{}", text(&o));
     let third = s.root.path().join("runner1-again");
     let o = build_in(&r1, &s.tmp, &[third.to_str().unwrap()], &[]);
     assert!(o.status.success(), "{}", text(&o));
+    s.assert_no_scratch();
     assert_eq!(files(&third), files(&second));
 }
 
@@ -262,6 +282,7 @@ fn the_report_note_renders_for_an_epic_tip_only_and_only_from_origin() {
     let site0 = s.root.path().join("site0");
     let o = build_in(&runner, &s.tmp, &[site0.to_str().unwrap()], &[]);
     assert!(o.status.success(), "{}", text(&o));
+    s.assert_no_scratch();
     assert!(!files(&site0).iter().any(|f| f.contains("_report")), "{:?}", files(&site0));
 
     git(&s.dev, &["notes", "--ref=report", "add", "-f", "-m", REPORT.trim_end(), &s.sha("epic/E")]);
@@ -329,6 +350,7 @@ fn links_submodules_scripts_binaries_hidden_reserved_long_and_odd_paths_and_bran
     let site = s.root.path().join("site");
     let o = build_in(&runner, &s.tmp, &[site.to_str().unwrap()], &[]);
     assert!(o.status.success(), "{}", text(&o));
+    s.assert_no_scratch();
     let got: BTreeSet<String> = files(&site).into_iter().filter(|f| f.starts_with("epic/E/")).collect();
     let long_ok = format!("docs/{}.html", "a".repeat(195));
     let want: BTreeSet<String> = [
@@ -386,16 +408,21 @@ fn links_submodules_scripts_binaries_hidden_reserved_long_and_odd_paths_and_bran
 
 #[test]
 fn bad_input_is_refused_before_anything_is_written() {
-    let s = Site::new();
-    let runner = s.runner("runner");
-    let full = s.root.path().join("full");
+    // every case refuses before a branch is read, so a runner cloned from an empty bare origin will do
+    let root = TempDir::new().unwrap();
+    let tmp = root.path().join("tmp");
+    std::fs::create_dir_all(&tmp).unwrap();
+    git(root.path(), &["init", "-q", "--bare", "origin.git"]);
+    git(root.path(), &["clone", "-q", "origin.git", "runner"]);
+    let runner = root.path().join("runner");
+    let full = root.path().join("full");
     write(&full, "old.html", "old\n");
-    let file = s.root.path().join("a-file");
+    let file = root.path().join("a-file");
     std::fs::write(&file, "x").unwrap();
-    let link = s.root.path().join("a-link");
-    std::os::unix::fs::symlink(s.root.path().join("empty-target"), &link).unwrap();
-    std::fs::create_dir(s.root.path().join("empty-target")).unwrap();
-    let fresh = s.root.path().join("fresh").to_str().unwrap().to_string();
+    let link = root.path().join("a-link");
+    std::os::unix::fs::symlink(root.path().join("empty-target"), &link).unwrap();
+    std::fs::create_dir(root.path().join("empty-target")).unwrap();
+    let fresh = root.path().join("fresh").to_str().unwrap().to_string();
     type Case<'a> = (Vec<&'a str>, Vec<(&'a str, &'a str)>, &'a str);
     let cases: Vec<Case> = vec![
         (vec![], vec![], "usage:"),
@@ -415,17 +442,17 @@ fn bad_input_is_refused_before_anything_is_written() {
         (vec![&fresh], vec![("PAGES_REMOTE", "nowhere")], "cannot read the remote nowhere"),
     ];
     for (args, env, why) in cases {
-        let o = build_in(&runner, &s.tmp, &args, &env);
+        let o = build_in(&runner, &tmp, &args, &env);
         assert_eq!(o.status.code(), Some(2), "{args:?} {env:?}: {}", text(&o));
         assert!(text(&o).contains(why), "{args:?} {env:?}: want {why:?}, got {}", text(&o));
     }
     assert_eq!(files(&full), ["old.html".to_string()].into(), "a full out dir is left as it was");
-    let o = build_in(s.root.path(), &s.tmp, &[&fresh], &[]);
+    let o = build_in(root.path(), &tmp, &[&fresh], &[]);
     assert_eq!(o.status.code(), Some(2));
     assert!(text(&o).contains("not in a git repository"), "{}", text(&o));
     assert!(!Path::new(&fresh).exists(), "no out dir is made for a refused run");
     // the scratch directory is removed on every exit
-    assert_eq!(std::fs::read_dir(&s.tmp).unwrap().count(), 0);
+    assert_eq!(std::fs::read_dir(&tmp).unwrap().count(), 0);
 }
 
 /// The naming rule, as the spec: main, epic/<part>, wu/<part>/<part>; a part is [A-Za-z0-9._-],
@@ -557,6 +584,7 @@ fn a_branch_over_its_budget_or_past_the_site_s_is_skipped_whole_and_the_rest_sti
     let site = s.root.path().join("site-branch");
     let o = build_in(&runner, &s.tmp, &[site.to_str().unwrap()], &[("PAGES_BRANCH_BUDGET", "16384")]);
     assert!(o.status.success(), "{}", text(&o));
+    s.assert_no_scratch();
     assert!(text(&o).contains("skipped branch wu/E/x: its files cost 32768 bytes, over the branch budget of 16384"), "{}", text(&o));
     assert!(!site.join("wu").exists());
     assert!(site.join("main/docs/architecture.html").is_file() && site.join("epic/E/docs/work/plan.html").is_file());
@@ -566,6 +594,7 @@ fn a_branch_over_its_budget_or_past_the_site_s_is_skipped_whole_and_the_rest_sti
     let site = s.root.path().join("site-total");
     let o = build_in(&runner, &s.tmp, &[site.to_str().unwrap()], &[("PAGES_SITE_BUDGET", "40000")]);
     assert!(o.status.success(), "{}", text(&o));
+    s.assert_no_scratch();
     assert!(text(&o).contains("skipped branch wu/E/x: its 32768 bytes would take the site past its budget of 40000 (20480 spent)"), "{}", text(&o));
     assert_eq!(
         files(&site).iter().map(|f| f.split('/').next().unwrap().to_string()).collect::<BTreeSet<_>>(),
@@ -581,6 +610,7 @@ fn a_branch_over_its_budget_or_past_the_site_s_is_skipped_whole_and_the_rest_sti
     let site = s.root.path().join("site-note");
     let o = build_in(&runner, &s.tmp, &[site.to_str().unwrap()], &[("PAGES_BRANCH_BUDGET", "16384")]);
     assert!(o.status.success(), "{}", text(&o));
+    s.assert_no_scratch();
     assert!(text(&o).contains("skipped branch epic/E: its files cost 24576 bytes, over the branch budget of 16384"), "{}", text(&o));
     assert!(site.join("main/index.html").is_file() && !site.join("epic").exists());
 }
