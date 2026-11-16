@@ -66,8 +66,8 @@ fn modes_and_word_counts_are_fixed() {
     refused(&["pr-ready", "1", "2"], "usage: pr-ready <n>");
     refused(&["post", "1"], "usage: post <n> <body-name>");
     refused(&["post", "1", "a", "b"], "usage: post <n> <body-name>");
-    refused(&["sync"], "usage: sync <epic/E>");
-    refused(&["sync", "epic/E", "x"], "usage: sync <epic/E>");
+    refused(&["sync"], "usage: sync <epic/E|main>");
+    refused(&["sync", "epic/E", "x"], "usage: sync <epic/E|main>");
     refused(&["credential", "/x"], "usage: credential <file> <op>");
 }
 
@@ -113,7 +113,8 @@ fn a_branch_is_wu_e_slug_or_epic_e_in_plain_words() {
 
 #[test]
 fn pr_open_takes_main_or_an_epic_as_its_base() {
-    accepted(&["pr-open", "wu/E/x", "--base", "main"]);
+    // E-GHFLOW2.W4 review: a WU into main would skip its epic's gate
+    refused(&["pr-open", "wu/E/x", "--base", "main"], "a WU merges into its epic, never into main");
     accepted(&["pr-open", "wu/E/x", "--base", "epic/F"]);
     accepted(&["pr-open", "epic/E", "--base", "main"]);
     refused(&["pr-open", "wu/E/x", "--base=main"], "usage: pr-open <branch>");
@@ -146,10 +147,12 @@ fn a_pull_request_is_a_number_and_a_body_a_plain_name() {
 }
 
 #[test]
-fn sync_takes_an_epic_branch_only() {
+fn sync_takes_an_epic_branch_or_main_only() {
     accepted(&["sync", "epic/E-GHFLOW"]);
-    for b in ["main", "wu/E/x", "epic/E/x", "epic"] {
-        refused(&["sync", b], "sync takes an epic/<E> branch only");
+    // E-GHFLOW2.W4: with the rules on, main moves only on GitHub
+    accepted(&["sync", "main"]);
+    for b in ["wu/E/x", "epic/E/x", "epic", "main2", "Main", "refs/heads/main"] {
+        refused(&["sync", b], "sync takes an epic/<E> branch or main only");
     }
     refused(&["sync", "-epic/E"], "may not start with -");
     refused(&["sync", "epic/E.lock"], "not a valid branch name");
@@ -161,7 +164,7 @@ fn sync_takes_an_epic_branch_only() {
 #[test]
 fn every_argument_starting_with_a_dash_is_refused_in_every_position() {
     let valid: [&[&str]; 6] =
-        [&["push", "wu/E/x"], &["pr-open", "wu/E/x"], &["pr-open", "wu/E/x", "--base", "main"], &["pr-ready", "7"], &["post", "7", "a"], &["sync", "epic/E"]];
+        [&["push", "wu/E/x"], &["pr-open", "wu/E/x"], &["pr-open", "wu/E/x", "--base", "epic/E"], &["pr-ready", "7"], &["post", "7", "a"], &["sync", "epic/E"]];
     let mut next = common::lcg(7);
     let tails = ["", "x", "-", "wu/E/x", "main", "7", "force", "-"];
     for args in valid {

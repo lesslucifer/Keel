@@ -64,6 +64,34 @@ if [ -n "$hdr" ]; then if [ -f "$MOCK_GH/$f.hdr" ]; then cp "$MOCK_GH/$f.hdr" "$
 printf '%s' "$2"
 "#;
 
+/// FAKE_CURL's route table in `mock`, emptied first: each route (method, path, status, bodies)
+/// answers its bodies in turn, the last repeated; the request log starts empty. Shared by every
+/// suite that serves recorded GitHub answers (E-GHFLOW2.W4 code review round 1).
+pub(crate) fn serve_routes(mock: &Path, routes: &[(&str, &str, String, Vec<serde_json::Value>)]) {
+    for e in std::fs::read_dir(mock).unwrap() {
+        std::fs::remove_file(e.unwrap().path()).unwrap();
+    }
+    let mut table = String::new();
+    for (i, (m, p, s, bodies)) in routes.iter().enumerate() {
+        let files: Vec<String> = bodies
+            .iter()
+            .enumerate()
+            .map(|(j, b)| {
+                std::fs::write(mock.join(format!("r{i}-{j}.json")), b.to_string()).unwrap();
+                format!("r{i}-{j}.json")
+            })
+            .collect();
+        table.push_str(&format!("{m} {p} {s} {}\n", files.join(",")));
+    }
+    std::fs::write(mock.join("routes"), table).unwrap();
+    std::fs::write(mock.join("log"), "").unwrap();
+}
+
+/// The requests FAKE_CURL logged in `mock` since the last `serve_routes`.
+pub(crate) fn mock_log(mock: &Path) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(mock.join("log")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect()
+}
+
 pub(crate) fn text(o: &Output) -> String {
     format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))
 }
@@ -224,23 +252,7 @@ impl Gh {
             vec![serde_json::json!({"token": TOKEN, "expires_at": "2026-11-15T12:00:00Z"})],
         )];
         all.extend(extra.iter().cloned());
-        for e in std::fs::read_dir(&self.mock).unwrap() {
-            std::fs::remove_file(e.unwrap().path()).unwrap();
-        }
-        let mut table = String::new();
-        for (i, (m, p, s, bodies)) in all.iter().enumerate() {
-            let files: Vec<String> = bodies
-                .iter()
-                .enumerate()
-                .map(|(j, b)| {
-                    std::fs::write(self.mock.join(format!("r{i}-{j}.json")), b.to_string()).unwrap();
-                    format!("r{i}-{j}.json")
-                })
-                .collect();
-            table.push_str(&format!("{m} {p} {s} {}\n", files.join(",")));
-        }
-        std::fs::write(self.mock.join("routes"), table).unwrap();
-        std::fs::write(self.mock.join("log"), "").unwrap();
+        serve_routes(&self.mock, &all);
     }
 
     /// GitHub's Link header for answer `j` of route `i` (counted from 1 after the token exchange):
@@ -252,7 +264,7 @@ impl Gh {
 
     /// The requests the script sent since the last `routes`.
     pub(crate) fn log(&self) -> Vec<serde_json::Value> {
-        std::fs::read_to_string(self.mock.join("log")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect()
+        mock_log(&self.mock)
     }
 
     pub(crate) fn calls(&self) -> Vec<String> {
@@ -304,15 +316,20 @@ impl Gh {
 
     /// GitHub merges `what` into epic/E (a merge commit made in a clone of origin); the merge's sha.
     pub(crate) fn github_merges(&self, what: &str) -> String {
+        self.github_merges_into(what, "epic/E")
+    }
+
+    /// GitHub merges `what` into `into` (a merge commit made in a clone of origin); the merge's sha.
+    pub(crate) fn github_merges_into(&self, what: &str, into: &str) -> String {
         let merger = self.root.path().join("merger");
         if !merger.exists() {
             git(self.root.path(), &["clone", "-q", self.origin.to_str().unwrap(), merger.to_str().unwrap()]);
         }
         git(&self.repo, &["push", "-q", "--no-verify", self.origin.to_str().unwrap(), what]);
         git(&merger, &["fetch", "-q", "origin"]);
-        git(&merger, &["checkout", "-q", "-B", "epic/E", "origin/epic/E"]);
+        git(&merger, &["checkout", "-q", "-B", into, &format!("origin/{into}")]);
         git(&merger, &["merge", "-q", "--no-ff", "--no-verify", "-m", what, &format!("origin/{what}")]);
-        git(&merger, &["push", "-q", "--no-verify", "origin", "epic/E"]);
+        git(&merger, &["push", "-q", "--no-verify", "origin", into]);
         git(&merger, &["rev-parse", "HEAD"])
     }
 
@@ -940,7 +957,7 @@ fn pr_open_links_no_page_under_a_docs_root_other_than_docs() {
     assert!(body.contains(&format!("| [p](https://github.com/own/Keel/blob/{tip}/pages/p.html) | — | — | — |")), "{body}");
 }
 
-/// The base comes from the name (an epic into main), or from --base main|epic/E.
+/// The base comes from the name (an epic into main), or from --base main|epic/E; a WU never into main.
 #[test]
 fn pr_open_derives_main_for_an_epic_and_takes_an_explicit_base() {
     let gh = Gh::new();
@@ -963,9 +980,15 @@ fn pr_open_derives_main_for_an_epic_and_takes_an_explicit_base() {
         ("GET", "/repos/own/Keel/pulls?state=open&head=own:wu/E/x&per_page=100", 200, serde_json::json!([])),
         ("POST", "/repos/own/Keel/pulls", 201, serde_json::json!({"number": 9, "html_url": "https://github.com/own/Keel/pull/9"})),
     ]);
+    let o = gh.run(&["pr-open", "wu/E/x", "--base", "epic/E"]);
+    assert!(stdout(&o).ends_with(&format!("state=opened head=wu/E/x base=epic/E sha={tip}")), "{}", text(&o));
+    assert_eq!(body_of(&gh.log()[3])["base"], "epic/E");
+    // E-GHFLOW2.W4 review: a WU into main would skip its epic's gate; refused before any request
+    gh.routes(&[]);
     let o = gh.run(&["pr-open", "wu/E/x", "--base", "main"]);
-    assert!(stdout(&o).ends_with(&format!("state=opened head=wu/E/x base=main sha={tip}")), "{}", text(&o));
-    assert_eq!(body_of(&gh.log()[3])["base"], "main");
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("a WU merges into its epic, never into main: wu/E/x"), "{}", text(&o));
+    assert!(gh.calls().is_empty(), "{:?}", gh.calls());
 }
 
 /// The bot's open pull request for the head is refreshed (PATCH), never doubled; someone else's, or
@@ -1020,18 +1043,19 @@ fn pr_ready_marks_only_the_bots_draft_at_the_local_tip() {
     let ready = serde_json::json!({"data": {"markPullRequestReadyForReview": {"pullRequest": {"isDraft": false}}}});
     let user = serde_json::json!({"login": "lesslucifer", "id": OWNER_ID, "type": "User"});
     let with = |pr: serde_json::Value| {
-        gh.routes(&[
-            ("GET", "/repos/own/Keel/pulls/7", 200, pr),
-            ("POST", "/graphql", 200, ready.clone()),
-            ("GET", "/user/5499546", 200, user.clone()),
-            ("POST", "/repos/own/Keel/pulls/7/requested_reviewers", 201, serde_json::json!({"number": 7})),
+        gh.routes_seq(&[
+            ("GET", "/repos/own/Keel/pulls/7", "200".into(), vec![pr]),
+            ("POST", "/graphql", "200".into(), vec![ready.clone(), auto_merge_on()]),
+            ("GET", "/user/5499546", "200".into(), vec![user.clone()]),
+            ("POST", "/repos/own/Keel/pulls/7/requested_reviewers", "201".into(), vec![serde_json::json!({"number": 7})]),
         ]);
         gh.run(&["pr-ready", "7"])
     };
     let o = with(gh.pr(7, BOT, "own/Keel", &tip, true));
     assert!(o.status.success(), "{}", text(&o));
-    // E-GHFLOW.W3: GitHub asks each commander, by the login of their id, for a review
-    assert_eq!(stdout(&o), format!("READY pr=7 head=wu/E/x sha={tip} state=ready reviewers=lesslucifer"));
+    // E-GHFLOW.W3: GitHub asks each commander, by the login of their id, for a review; E-GHFLOW2.W4:
+    // then auto-merge goes on, as a merge commit
+    assert_eq!(stdout(&o), format!("READY pr=7 head=wu/E/x sha={tip} state=ready reviewers=lesslucifer automerge=on"));
     assert_eq!(
         gh.calls(),
         [
@@ -1039,7 +1063,8 @@ fn pr_ready_marks_only_the_bots_draft_at_the_local_tip() {
             "GET /repos/own/Keel/pulls/7",
             "POST /graphql",
             "GET /user/5499546",
-            "POST /repos/own/Keel/pulls/7/requested_reviewers"
+            "POST /repos/own/Keel/pulls/7/requested_reviewers",
+            "POST /graphql"
         ]
     );
     assert_auth(&gh);
@@ -1047,33 +1072,40 @@ fn pr_ready_marks_only_the_bots_draft_at_the_local_tip() {
     assert_eq!(q["variables"], serde_json::json!({"id": "PR_kwDOtest42"}));
     assert!(q["query"].as_str().unwrap().contains("markPullRequestReadyForReview(input: {pullRequestId: $id})"), "{q}");
     assert_eq!(body_of(&gh.log()[4]), serde_json::json!({"reviewers": ["lesslucifer"]}));
+    assert_auto_merge_request(&gh.log()[5]);
     // the pull request is ready already: a refused review request is a warning, never a failure
-    gh.routes(&[
-        ("GET", "/repos/own/Keel/pulls/7", 200, gh.pr(7, BOT, "own/Keel", &tip, true)),
-        ("POST", "/graphql", 200, ready.clone()),
-        ("GET", "/user/5499546", 403, serde_json::json!({"message": "Resource not accessible by integration"})),
+    gh.routes_seq(&[
+        ("GET", "/repos/own/Keel/pulls/7", "200".into(), vec![gh.pr(7, BOT, "own/Keel", &tip, true)]),
+        ("POST", "/graphql", "200".into(), vec![ready.clone(), auto_merge_on()]),
+        ("GET", "/user/5499546", "403".into(), vec![serde_json::json!({"message": "Resource not accessible by integration"})]),
     ]);
     let o = gh.run(&["pr-ready", "7"]);
     assert!(o.status.success(), "{}", text(&o));
     assert_eq!(
         stdout(&o),
         format!(
-            "WARN no review request for commander 5499546: GitHub names no user login (HTTP 403)\nREADY pr=7 head=wu/E/x sha={tip} state=ready reviewers=none"
+            "WARN no review request for commander 5499546: GitHub names no user login (HTTP 403)\nREADY pr=7 head=wu/E/x sha={tip} state=ready reviewers=none automerge=on"
         )
     );
-    gh.routes(&[
-        ("GET", "/repos/own/Keel/pulls/7", 200, gh.pr(7, BOT, "own/Keel", &tip, true)),
-        ("POST", "/graphql", 200, ready.clone()),
-        ("GET", "/user/5499546", 200, user.clone()),
-        ("POST", "/repos/own/Keel/pulls/7/requested_reviewers", 422, serde_json::json!({"message": "Validation Failed"})),
+    gh.routes_seq(&[
+        ("GET", "/repos/own/Keel/pulls/7", "200".into(), vec![gh.pr(7, BOT, "own/Keel", &tip, true)]),
+        ("POST", "/graphql", "200".into(), vec![ready.clone(), auto_merge_on()]),
+        ("GET", "/user/5499546", "200".into(), vec![user.clone()]),
+        ("POST", "/repos/own/Keel/pulls/7/requested_reviewers", "422".into(), vec![serde_json::json!({"message": "Validation Failed"})]),
     ]);
     let o = gh.run(&["pr-ready", "7"]);
     assert!(o.status.success(), "{}", text(&o));
-    assert_eq!(stdout(&o), format!("WARN review request for lesslucifer refused: HTTP 422\nREADY pr=7 head=wu/E/x sha={tip} state=ready reviewers=none"));
+    assert_eq!(
+        stdout(&o),
+        format!("WARN review request for lesslucifer refused: HTTP 422\nREADY pr=7 head=wu/E/x sha={tip} state=ready reviewers=none automerge=on")
+    );
 
-    let o = with(gh.pr(7, BOT, "own/Keel", &tip, false));
-    assert_eq!(stdout(&o), format!("READY pr=7 head=wu/E/x sha={tip} state=unchanged"), "{}", text(&o));
-    assert_eq!(gh.calls().len(), 2);
+    // a ready pull request: no mark and no review request, but auto-merge goes on (a retry after a refusal)
+    gh.routes(&[("GET", "/repos/own/Keel/pulls/7", 200, gh.pr(7, BOT, "own/Keel", &tip, false)), ("POST", "/graphql", 200, auto_merge_on())]);
+    let o = gh.run(&["pr-ready", "7"]);
+    assert_eq!(stdout(&o), format!("READY pr=7 head=wu/E/x sha={tip} state=unchanged automerge=on"), "{}", text(&o));
+    assert_eq!(gh.calls().len(), 3);
+    assert_auto_merge_request(&gh.log()[2]);
 
     let older = gh.sha("epic/E");
     for (pr, why) in [
@@ -1111,6 +1143,110 @@ fn pr_ready_marks_only_the_bots_draft_at_the_local_tip() {
     let o = gh.run(&["pr-ready", "7"]);
     assert_eq!(o.status.code(), Some(1), "{}", text(&o));
     assert!(text(&o).contains("did not mark pull request 7 ready: Resource not accessible by integration"), "{}", text(&o));
+}
+
+/// GitHub's answer to the auto-merge mutation: on, as a merge commit.
+fn auto_merge_on() -> serde_json::Value {
+    serde_json::json!({"data": {"enablePullRequestAutoMerge": {"pullRequest": {"autoMergeRequest": {"mergeMethod": "MERGE"}}}}})
+}
+
+/// The auto-merge request: the pull request's node id, merge commits only.
+fn assert_auto_merge_request(r: &serde_json::Value) {
+    assert_eq!(r["path"], "/graphql");
+    let q = body_of(r);
+    assert_eq!(q["variables"], serde_json::json!({"id": "PR_kwDOtest42"}));
+    assert!(q["query"].as_str().unwrap().contains("enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE})"), "{q}");
+}
+
+/// E-GHFLOW2.W4: [github] merge_on_approve, read from the committed config only. Off: no auto-merge
+/// request. A refusal (an error, an HTTP error, another merge method) is a WARN line: the pull
+/// request is ready already. A bad or twice-set value is refused before any request.
+#[test]
+fn pr_ready_turns_auto_merge_on_only_as_merge_on_approve_says_and_a_refusal_only_warns() {
+    let gh = Gh::new();
+    let tip = gh.sha("wu/E/x");
+    let ready_pr = gh.pr(7, BOT, "own/Keel", &tip, false);
+    for (status, body, warn) in [
+        (
+            "200",
+            serde_json::json!({"errors": [{"message": "Auto merge is not allowed for this repository"}]}),
+            "WARN auto-merge not turned on: Auto merge is not allowed for this repository",
+        ),
+        (
+            "200",
+            serde_json::json!({"data": {"enablePullRequestAutoMerge": {"pullRequest": {"autoMergeRequest": {"mergeMethod": "SQUASH"}}}}}),
+            "WARN auto-merge not turned on",
+        ),
+        ("403", serde_json::json!({"message": "Resource not accessible by integration"}), "WARN auto-merge not turned on: HTTP 403"),
+    ] {
+        gh.routes_seq(&[("GET", "/repos/own/Keel/pulls/7", "200".into(), vec![ready_pr.clone()]), ("POST", "/graphql", status.into(), vec![body])]);
+        let o = gh.run(&["pr-ready", "7"]);
+        assert!(o.status.success(), "{}", text(&o));
+        assert_eq!(stdout(&o), format!("{warn}\nREADY pr=7 head=wu/E/x sha={tip} state=unchanged automerge=refused"), "{}", text(&o));
+    }
+
+    let cfg = gh.repo.join(".keel/config.toml");
+    let orig = std::fs::read_to_string(&cfg).unwrap();
+    git(&gh.repo, &["switch", "-q", "main"]);
+    let set = |line: &str| {
+        std::fs::write(&cfg, format!("{orig}{line}")).unwrap();
+        git(&gh.repo, &["commit", "-qam", "policy", "--no-verify"]);
+    };
+    set("merge_on_approve = false   # the owner merges by hand\n");
+    gh.routes(&[("GET", "/repos/own/Keel/pulls/7", 200, ready_pr.clone()), ("POST", "/graphql", 200, auto_merge_on())]);
+    let o = gh.run(&["pr-ready", "7"]);
+    assert_eq!(stdout(&o), format!("READY pr=7 head=wu/E/x sha={tip} state=unchanged automerge=off"), "{}", text(&o));
+    assert!(!gh.calls().contains(&"POST /graphql".to_string()), "{:?}", gh.calls());
+
+    // uncommitted: refused, as for commanders (a worker can write the file, not HEAD)
+    std::fs::write(&cfg, format!("{orig}merge_on_approve = true\n")).unwrap();
+    let o = gh.run(&["pr-ready", "7"]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("differs from HEAD's"), "{}", text(&o));
+    git(&gh.repo, &["checkout", "-q", "--", ".keel/config.toml"]);
+    for (line, why) in [
+        ("merge_on_approve = yes\n", "merge_on_approve must be true or false"),
+        ("merge_on_approve = true\nmerge_on_approve = true\n", "sets commanders, free_text or merge_on_approve twice"),
+    ] {
+        git(&gh.repo, &["reset", "-q", "--hard", "HEAD~1"]);
+        set(line);
+        gh.routes(&[]);
+        let o = gh.run(&["pr-ready", "7"]);
+        assert_eq!(o.status.code(), Some(2), "{line}: {}", text(&o));
+        assert!(text(&o).contains(why), "{line}: {}", text(&o));
+        assert!(gh.calls().is_empty(), "refused before any request: {:?}", gh.calls());
+    }
+}
+
+/// E-GHFLOW2.W4: once the rules are on, main moves only on GitHub; sync brings it back like an
+/// epic. The main checkout holds main, so it is fetched only, and that checkout fast-forwards it.
+#[test]
+fn sync_main_fetches_githubs_main_and_moves_the_branch_only_when_no_worktree_holds_it() {
+    let gh = Gh::new();
+    let old = gh.sha("main");
+    let at = git(&gh.repo, &["rev-parse", "--abbrev-ref", "HEAD"]);
+    assert_eq!(at, "wu/E/x", "the fixture's checkout holds the WU, not main");
+    let merged = gh.github_merges_into("epic/E", "main");
+    let o = gh.run(&["sync", "main"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(stdout(&o), format!("SYNCED branch=main from={old} sha={merged} state=fast-forward"));
+    assert_eq!((gh.sha("main"), gh.sha("refs/remotes/origin/main")), (merged.clone(), merged.clone()));
+    assert_eq!(gh.calls(), ["POST /app/installations/456/access_tokens"]);
+
+    git(&gh.repo, &["switch", "-q", "main"]);
+    git(&gh.repo, &["switch", "-q", "-c", "epic/F"]);
+    write(&gh.repo, "README", "F");
+    commit(&gh.repo, "epic F");
+    git(&gh.repo, &["switch", "-q", "main"]);
+    let merged2 = gh.github_merges_into("epic/F", "main");
+    let o = gh.run(&["sync", "main"]);
+    assert_eq!(
+        stdout(&o),
+        format!("SYNCED branch=main from={merged} sha={merged2} state=fetched ref=refs/remotes/origin/main worktree={}", gh.repo.display()),
+        "{}",
+        text(&o)
+    );
+    assert_eq!(gh.sha("main"), merged);
 }
 
 /// post sends the head's worker's file under a fixed header, mentions inert, then deletes it.

@@ -4,15 +4,15 @@
 //! exact lines those readers understand.
 compiled!();
 
-use crate::keel_gate::{block, job, jobs, read};
+use crate::keel_gate::{block, code, exact_lines, job, jobs, mutated_in, read};
 
 fn yml() -> String {
     read(".github/workflows/pages.yml")
 }
 
 /// The pinned actions besides checkout, whose pin dist-workspace.toml holds; each pin is written once.
-const UPLOAD: &str = "actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9";
-const DEPLOY: &str = "actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346";
+pub(crate) const UPLOAD: &str = "actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9";
+pub(crate) const DEPLOY: &str = "actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346";
 
 fn checkout() -> String {
     let dist: toml::Table = read("dist-workspace.toml").parse().unwrap();
@@ -31,6 +31,7 @@ on:
   workflow_run:
     workflows:
       - Keel gate
+      - Keel main
     types:
       - completed
 permissions: {}
@@ -70,23 +71,7 @@ jobs:
 
 /// `Err` naming the first line where `y`'s code lines leave `LOCK`, or a missing or extra line.
 fn locked(y: &str) -> Result<(), String> {
-    let want = LOCK.replace("{checkout}", &checkout()).replace("{upload}", UPLOAD).replace("{deploy}", DEPLOY);
-    // code review 3: every byte is printable ASCII or '\n' before a line is judged, so no other line
-    // break (CR, NEL, LS, PS), BOM or Unicode space can make a line YAML reads differently from the
-    // one this compares; then a blank line is all spaces and a comment line is spaces, then '#'. A tab
-    // is refused here only for a clearer error: those two rules already keep a tab line as code, and
-    // the lock fails it as an unlisted line
-    if let Some((at, c)) = y.char_indices().find(|&(_, c)| c != '\n' && !(' '..='~').contains(&c)) {
-        return Err(format!("byte {at}: {c:?} is not printable ASCII or a newline"));
-    }
-    let got: Vec<&str> = y.split('\n').filter(|l| !l.bytes().all(|b| b == b' ') && !l.trim_start_matches(' ').starts_with('#')).collect();
-    let want: Vec<&str> = want.lines().collect();
-    for i in 0..got.len().max(want.len()) {
-        if got.get(i) != want.get(i) {
-            return Err(format!("line {}: got {:?}, want {:?}", i + 1, got.get(i), want.get(i)));
-        }
-    }
-    Ok(())
+    exact_lines(y, &LOCK.replace("{checkout}", &checkout()).replace("{upload}", UPLOAD).replace("{deploy}", DEPLOY))
 }
 
 #[test]
@@ -97,21 +82,7 @@ fn the_workflow_is_exactly_the_locked_lines() {
 /// pages.yml with `add` put after its line `after` (which must be there once), or `after` replaced
 /// by `add` when `replace`.
 fn mutated(after: &str, add: &str, replace: bool) -> String {
-    let y = yml();
-    assert_eq!(y.lines().filter(|l| *l == after).count(), 1, "{after:?} is one line of pages.yml");
-    y.lines()
-        .flat_map(|l| {
-            if l != after {
-                vec![l.to_string()]
-            } else if replace {
-                vec![add.to_string()]
-            } else {
-                vec![l.to_string(), add.to_string()]
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-        + "\n"
+    mutated_in(&yml(), after, add, replace)
 }
 
 /// Each mutation class code reviews 2 and 3 found passing the line readers is refused by the lock; a
@@ -168,17 +139,14 @@ fn the_lock_refuses_every_layout_the_line_readers_would_misread() {
     }
 }
 
-/// The workflow's lines that are not comments, so a word in the header comment proves nothing.
-fn code(y: &str) -> Vec<&str> {
-    y.lines().filter(|l| !l.trim_start().starts_with('#')).collect()
-}
-
 #[test]
 fn it_runs_only_after_a_keel_gate_run_ends_never_on_a_push_a_pull_request_or_by_hand() {
     let y = yml();
-    assert_eq!(block(&y, "on"), ["  workflow_run:", "    workflows:", "      - Keel gate", "    types:", "      - completed"]);
-    let gate_name = read(".github/workflows/keel-gate.yml").lines().find_map(|l| l.strip_prefix("name: ").map(String::from));
-    assert_eq!(gate_name.as_deref(), Some("Keel gate"), "the workflow it follows keeps that name");
+    assert_eq!(block(&y, "on"), ["  workflow_run:", "    workflows:", "      - Keel gate", "      - Keel main", "    types:", "      - completed"]);
+    for (file, name) in [("keel-gate.yml", "Keel gate"), ("keel-main.yml", "Keel main")] {
+        let got = read(&format!(".github/workflows/{file}")).lines().find_map(|l| l.strip_prefix("name: ").map(String::from));
+        assert_eq!(got.as_deref(), Some(name), "the workflows it follows keep their names");
+    }
     for never in
         ["push", "pull_request", "pull_request_target", "pull_request_review", "workflow_dispatch", "issue_comment", "schedule", "tags", "branches", "release"]
     {
