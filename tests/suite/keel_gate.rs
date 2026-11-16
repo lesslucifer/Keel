@@ -45,6 +45,281 @@ const BASE_ENV: [&str; 3] = [
 /// What each judging job adds: the build job's keel and its hash.
 const KEEL_ENV: [&str; 2] = ["          KEEL: ${{ runner.temp }}/keel-bin/keel", "          KEEL_SHA256: ${{ needs.build.outputs.keel_sha256 }}"];
 
+/// `Err` naming the first line where `y`'s code lines leave `want`, or a missing or extra line; the
+/// exact-lines rule E-GHFLOW2.W8 made for pages.yml (its code reviews 2 and 3), shared by every
+/// workflow lock. A line reader is sound only on a file held to the exact lines it understands: any
+/// other line - a plain scalar's continuation, an anchor or alias, a flow mapping, a quoted or escaped
+/// key, an unlisted key at any level (env, defaults, shell, a step-level if, container, services), a
+/// trailing comment, a CR inside a line - is refused, never parsed. A comment line at any column is
+/// dropped first, so a comment can neither hide a step from the readers nor fail the lock.
+pub(crate) fn exact_lines(y: &str, want: &str) -> Result<(), String> {
+    // every byte is printable ASCII or '\n' before a line is judged, so no other line break (CR, NEL,
+    // LS, PS), BOM or Unicode space can make a line YAML reads differently from the one this compares;
+    // then a blank line is all spaces and a comment line is spaces, then '#'. A tab line is never blank
+    // or a comment here, so the lock fails it as an unlisted line
+    if let Some((at, c)) = y.char_indices().find(|&(_, c)| c != '\n' && !(' '..='~').contains(&c)) {
+        return Err(format!("byte {at}: {c:?} is not printable ASCII or a newline"));
+    }
+    let got: Vec<&str> = y.split('\n').filter(|l| !l.bytes().all(|b| b == b' ') && !l.trim_start_matches(' ').starts_with('#')).collect();
+    let want: Vec<&str> = want.lines().collect();
+    for i in 0..got.len().max(want.len()) {
+        if got.get(i) != want.get(i) {
+            return Err(format!("line {}: got {:?}, want {:?}", i + 1, got.get(i), want.get(i)));
+        }
+    }
+    Ok(())
+}
+
+/// `y` with `add` put after its line `after` (which must be there once), or `after` replaced by `add`
+/// when `replace`.
+pub(crate) fn mutated_in(y: &str, after: &str, add: &str, replace: bool) -> String {
+    assert_eq!(y.lines().filter(|l| *l == after).count(), 1, "{after:?} is one line");
+    y.lines()
+        .flat_map(|l| {
+            if l != after {
+                vec![l.to_string()]
+            } else if replace {
+                vec![add.to_string()]
+            } else {
+                vec![l.to_string(), add.to_string()]
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
+}
+
+/// The lines of job `name`'s scripts/ci-gate.sh step, from its run line to the next step.
+fn script_step(y: &str, name: &str) -> Vec<String> {
+    let j = job(y, name);
+    let at = j
+        .iter()
+        .position(|l| l.trim_start().trim_start_matches("- ") == format!("run: scripts/ci-gate.sh {name}"))
+        .unwrap_or_else(|| panic!("{name} runs no ci-gate.sh"));
+    j[at..].iter().enumerate().take_while(|(i, l)| *i == 0 || !l.starts_with("      - ")).map(|(_, l)| l.clone()).collect()
+}
+
+/// The pinned action `a` as dist-workspace.toml pins it.
+fn pin(a: &str) -> String {
+    let dist: toml::Table = read("dist-workspace.toml").parse().unwrap();
+    format!("{a}@{}", dist["dist"]["github-action-commits"][a].as_str().unwrap())
+}
+
+/// The env of a ci-gate.sh step that judges a pull request: its head and base, both repositories.
+const PR_ENV: &str = "        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          REPO: ${{ github.repository }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}";
+
+/// A judging job's head: its required name, after build, never skipped (code review round 1).
+const JUDGE: &str = "    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04";
+
+/// Every code line of keel-gate.yml (security review and code review round 1, E-GHFLOW2.W4).
+const GATE_LOCK: &str = "name: Keel gate
+on:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
+    branches:
+      - main
+      - 'epic/**'
+permissions:
+  contents: read
+concurrency:
+  group: keel-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      keel_sha256: ${{ steps.build.outputs.keel_sha256 }}
+    steps:
+{checkout}
+      - id: build
+        run: scripts/ci-gate.sh build
+{env}
+          KEEL_OUT: ${{ runner.temp }}/keel-bin
+      - uses: {upload}
+        with:
+          name: keel
+          path: ${{ runner.temp }}/keel-bin/keel
+          retention-days: 7
+          if-no-files-found: error
+  ci:
+    name: keel/ci
+{judge}
+    timeout-minutes: 45
+    steps:
+{checkout}
+{download}
+      - run: rustup component add rustfmt clippy
+      - run: scripts/ci-gate.sh ci
+{env}
+{keel}
+  gate:
+    name: keel/gate
+{judge}
+    timeout-minutes: 20
+    steps:
+{checkout}
+{download}
+      - run: scripts/ci-gate.sh gate
+{env}
+{keel}
+  docs:
+    name: keel/docs
+{judge}
+    timeout-minutes: 20
+    steps:
+{checkout}
+{download}
+      - run: scripts/ci-gate.sh docs
+{env}
+{keel}";
+
+/// Every code line of keel-main.yml.
+const MAIN_LOCK: &str = "name: Keel main
+on:
+  push:
+    branches:
+      - main
+permissions:
+  contents: read
+concurrency:
+  group: keel-main-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  ci:
+    name: main/ci
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+{checkout}
+      - run: rustup component add rustfmt clippy
+      - run: scripts/ci-gate.sh ci
+        env:
+          HEAD_BRANCH: ${{ github.ref_name }}
+          HEAD_SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          HEAD_REPO: ${{ github.repository }}";
+
+fn gate_lock() -> String {
+    let checkout = format!(
+        "      - uses: {}\n        with:\n          ref: ${{{{ github.sha }}}}\n          fetch-depth: 0\n          persist-credentials: false",
+        pin("actions/checkout")
+    );
+    let download =
+        format!("      - uses: {}\n        with:\n          name: keel\n          path: ${{{{ runner.temp }}}}/keel-bin", pin("actions/download-artifact"));
+    GATE_LOCK
+        .replace("{checkout}", &checkout)
+        .replace("{download}", &download)
+        .replace("{upload}", &pin("actions/upload-artifact"))
+        .replace("{env}", PR_ENV)
+        .replace("{judge}", JUDGE)
+        .replace("{keel}", "          KEEL: ${{ runner.temp }}/keel-bin/keel\n          KEEL_SHA256: ${{ needs.build.outputs.keel_sha256 }}")
+}
+
+fn main_lock() -> String {
+    let checkout = format!(
+        "      - uses: {}\n        with:\n          ref: ${{{{ github.sha }}}}\n          fetch-depth: 0\n          persist-credentials: false",
+        pin("actions/checkout")
+    );
+    MAIN_LOCK.replace("{checkout}", &checkout)
+}
+
+/// Code review round 1: the readers below go line by line, so both workflows are held to their exact
+/// code lines; a key they never read (a step-level if, a shell, a job's defaults) cannot slip in.
+#[test]
+fn both_gate_workflows_are_exactly_their_locked_lines() {
+    assert_eq!(exact_lines(&yml(), &gate_lock()), Ok(()));
+    assert_eq!(exact_lines(&read(".github/workflows/keel-main.yml"), &main_lock()), Ok(()));
+}
+
+/// Each mutation the round-1 reviewer showed turning keel/ci, keel/gate and keel/docs green without
+/// running the script, and each class W8's reviews found passing a line reader, is refused by the
+/// lock; a comment at any column, or a blank line, alone, is not.
+#[test]
+fn the_gate_locks_refuse_every_layout_that_could_skip_or_steer_the_script() {
+    let y = yml();
+    let m = |after: &str, add: &str, replace: bool| mutated_in(&y, after, add, replace);
+    let step = |job: &str| format!("      - run: scripts/ci-gate.sh {job}");
+    let build_head = "    timeout-minutes: 30";
+    let gate_head = "    name: keel/gate";
+    let refused: Vec<(&str, String)> = vec![
+        // the round-1 reviewer's three: the script never runs, the job is green
+        ("a step-level if: false on ci's script", m(&step("ci"), "        if: false", false)),
+        ("a step-level if: false on gate's script", m(&step("gate"), "        if: false", false)),
+        ("a step-level if on docs' script undoing edited", m(&step("docs"), "        if: github.event.action != 'edited'", false)),
+        ("a step shell that runs nothing on ci", m(&step("ci"), "        shell: 'true {0}'", false)),
+        ("a step shell that runs nothing on docs", m(&step("docs"), "        shell: 'true {0}'", false)),
+        ("a job-level defaults shell on gate", m(gate_head, "    defaults:\n      run:\n        shell: 'true {0}'", false)),
+        ("a job-level defaults working-directory on gate", m(gate_head, "    defaults:\n      run:\n        working-directory: /tmp", false)),
+        ("continue-on-error on ci's script", m(&step("ci"), "        continue-on-error: true", false)),
+        ("continue-on-error on the gate job", m(gate_head, "    continue-on-error: true", false)),
+        ("KEEL moved off docs' script step", m(&step("docs"), "      - run: true\n        env:\n          KEEL: x", false)),
+        // W8's classes
+        ("a plain scalar's continuation line under ci's run", m(&step("ci"), "        ; true", false)),
+        ("an anchor on gate's script step", m(&step("gate"), &step("gate").replace("- run:", "- &g run:"), true)),
+        ("an alias reusing a step in docs", m(&step("docs"), "      - *g", false)),
+        ("a flow-mapping step in docs", m(&step("docs"), "      - {run: 'true'}", false)),
+        ("a quoted run key in docs", m(&step("docs"), "      - name: x\n        \"run\": curl x", false)),
+        ("an escaped run key in docs", m(&step("docs"), "      - name: x\n        \"\\x72un\": curl x", false)),
+        ("a run after - name: in gate", m(&step("gate"), "      - name: x\n        run: curl x", false)),
+        ("a step after a column-0 comment", m(&step("gate"), "# note\n      - run: curl x", false)),
+        ("an unpinned action after a comment", m(&step("ci"), "  # note\n      - uses: evil/action@main", false)),
+        ("a permission after a comment", m("  contents: read", "  # note\n  pull-requests: write", false)),
+        ("a top-level env", m("  contents: read", "env:\n  BASH_ENV: x", false)),
+        ("a top-level defaults", m("  contents: read", "defaults:\n  run:\n    shell: 'true {0}'", false)),
+        ("a container on gate", m(gate_head, "    container: alpine", false)),
+        ("services on gate", m(gate_head, "    services:\n      x:\n        image: y", false)),
+        ("an env on gate", m(gate_head, "    env:\n      KEEL: x", false)),
+        ("a trailing comment", m("    timeout-minutes: 45", "    timeout-minutes: 45 # x", true)),
+        ("a CR inside a line", m("    timeout-minutes: 45", "    timeout-minutes: 45\r    if: false", true)),
+        ("a fifth job", format!("{y}  extra:\n    runs-on: ubuntu-24.04\n")),
+        ("a second document", format!("{y}---\nname: x\n")),
+        ("a lone CR after a comment", m(&step("gate"), "      # note\r      - uses: evil/action@main", false)),
+        ("a NEL after a comment", m(&step("gate"), "      # note\u{85}      - uses: evil/action@main", false)),
+        ("an LS after a comment", m(&step("gate"), "      # note\u{2028}      - uses: evil/action@main", false)),
+        ("a PS after a comment", m(&step("gate"), "      # note\u{2029}      - uses: evil/action@main", false)),
+        ("an NBSP-then-# line under ci's run", m(&step("ci"), "          \u{a0}#|| true", false)),
+        ("a U+3000 'blank' line", m(build_head, "        \u{3000}", false)),
+        ("a tab-indented comment, kept as code", m("    timeout-minutes: 45", "\t# note", false)),
+        ("a tab-only line, kept as code", m("    timeout-minutes: 45", "\t", false)),
+        ("a BOM", format!("\u{feff}{y}")),
+        ("CRLF line ends", y.replace('\n', "\r\n")),
+    ];
+    for (what, bad) in &refused {
+        assert!(exact_lines(bad, &gate_lock()).is_err(), "{what} passed the lock:\n{bad}");
+    }
+    for (what, ok) in [
+        ("a column-0 comment in a job", m(&step("gate"), "# note", false)),
+        ("an indented comment", m("    timeout-minutes: 45", "      # note", false)),
+        ("a blank line", m("    timeout-minutes: 45", "", false)),
+    ] {
+        assert_eq!(exact_lines(&ok, &gate_lock()), Ok(()), "{what}");
+    }
+    let main = read(".github/workflows/keel-main.yml");
+    let mm = |after: &str, add: &str| mutated_in(&main, after, add, false);
+    for (what, bad) in [
+        ("a step-level if: false", mm("      - run: scripts/ci-gate.sh ci", "        if: false")),
+        ("a step shell", mm("      - run: scripts/ci-gate.sh ci", "        shell: 'true {0}'")),
+        ("a job-level defaults", mm("    name: main/ci", "    defaults:\n      run:\n        shell: 'true {0}'")),
+        ("a required name", mutated_in(&main, "    name: main/ci", "    name: keel/ci", true)),
+        ("a trigger on a work branch", mm("      - main", "      - 'wu/**'")),
+    ] {
+        assert!(exact_lines(&bad, &main_lock()).is_err(), "keel-main.yml: {what} passed the lock");
+    }
+}
+
 #[test]
 fn block_and_job_end_at_the_next_key() {
     let y = "on:\n  push:\n\n    branches: [a]\njobs:\n  a:\n    x: 1\n  b:\n    y: 2\n";
@@ -179,7 +454,8 @@ fn no_run_line_holds_an_expression_and_event_values_come_through_env() {
         assert!(!l.contains("${{"), "an expression in a run line: {l}");
         assert!(!l.trim_end().ends_with('|') && !l.trim_end().ends_with('>'), "no multi-line run block: {l}");
     }
-    let has = |name: &str, env: &str| assert!(job(&y, name).iter().any(|l| l == env), "{name} lacks {env}");
+    // bound to the job's scripts/ci-gate.sh step, not just somewhere in the job (code review round 1)
+    let has = |name: &str, env: &str| assert!(script_step(&y, name).iter().any(|l| l == env), "{name}'s ci-gate.sh step lacks {env}");
     for name in ["build", "ci", "gate", "docs"] {
         has(name, "          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}");
         has(name, "          HEAD_SHA: ${{ github.event.pull_request.head.sha }}");
@@ -223,9 +499,17 @@ fn four_jobs_the_three_judges_named_keel_each_one_call_of_the_ci_script_on_ubunt
             assert!(j.iter().any(|l| l == "    needs: build"), "{name}");
         }
     }
-    let ifs: Vec<String> = ["build", "ci", "gate", "docs"].iter().flat_map(|n| job(&y, n).into_iter().filter(|l| l.starts_with("    if:"))).collect();
+    // each job's own if: line, so one moved from a judge to build is seen (code review round 1)
+    let ifs: Vec<Vec<String>> =
+        ["build", "ci", "gate", "docs"].iter().map(|n| job(&y, n).into_iter().filter(|l| l.trim_start().starts_with("if:")).collect()).collect();
     assert_eq!(
-        ifs, ["    if: ${{ !cancelled() }}"; 3],
+        ifs,
+        [
+            vec![],
+            vec!["    if: ${{ !cancelled() }}".to_string()],
+            vec!["    if: ${{ !cancelled() }}".to_string()],
+            vec!["    if: ${{ !cancelled() }}".to_string()]
+        ],
         "no job skips a pull request (a skipped job counts as passed): a failed build or a fork is red in each"
     );
     let b = job(&y, "build");

@@ -4,7 +4,7 @@
 //! exact lines those readers understand.
 compiled!();
 
-use crate::keel_gate::{block, job, jobs, read};
+use crate::keel_gate::{block, exact_lines, job, jobs, mutated_in, read};
 
 fn yml() -> String {
     read(".github/workflows/pages.yml")
@@ -71,23 +71,7 @@ jobs:
 
 /// `Err` naming the first line where `y`'s code lines leave `LOCK`, or a missing or extra line.
 fn locked(y: &str) -> Result<(), String> {
-    let want = LOCK.replace("{checkout}", &checkout()).replace("{upload}", UPLOAD).replace("{deploy}", DEPLOY);
-    // code review 3: every byte is printable ASCII or '\n' before a line is judged, so no other line
-    // break (CR, NEL, LS, PS), BOM or Unicode space can make a line YAML reads differently from the
-    // one this compares; then a blank line is all spaces and a comment line is spaces, then '#'. A tab
-    // is refused here only for a clearer error: those two rules already keep a tab line as code, and
-    // the lock fails it as an unlisted line
-    if let Some((at, c)) = y.char_indices().find(|&(_, c)| c != '\n' && !(' '..='~').contains(&c)) {
-        return Err(format!("byte {at}: {c:?} is not printable ASCII or a newline"));
-    }
-    let got: Vec<&str> = y.split('\n').filter(|l| !l.bytes().all(|b| b == b' ') && !l.trim_start_matches(' ').starts_with('#')).collect();
-    let want: Vec<&str> = want.lines().collect();
-    for i in 0..got.len().max(want.len()) {
-        if got.get(i) != want.get(i) {
-            return Err(format!("line {}: got {:?}, want {:?}", i + 1, got.get(i), want.get(i)));
-        }
-    }
-    Ok(())
+    exact_lines(y, &LOCK.replace("{checkout}", &checkout()).replace("{upload}", UPLOAD).replace("{deploy}", DEPLOY))
 }
 
 #[test]
@@ -98,21 +82,7 @@ fn the_workflow_is_exactly_the_locked_lines() {
 /// pages.yml with `add` put after its line `after` (which must be there once), or `after` replaced
 /// by `add` when `replace`.
 fn mutated(after: &str, add: &str, replace: bool) -> String {
-    let y = yml();
-    assert_eq!(y.lines().filter(|l| *l == after).count(), 1, "{after:?} is one line of pages.yml");
-    y.lines()
-        .flat_map(|l| {
-            if l != after {
-                vec![l.to_string()]
-            } else if replace {
-                vec![add.to_string()]
-            } else {
-                vec![l.to_string(), add.to_string()]
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-        + "\n"
+    mutated_in(&yml(), after, add, replace)
 }
 
 /// Each mutation class code reviews 2 and 3 found passing the line readers is refused by the lock; a
