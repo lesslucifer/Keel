@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHFLOW2.W9 result: CI green on Linux</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHFLOW2.W9 · Result: CI green on Linux</h1>
+      <p>The commanders check now gives the same answer under GNU and BSD expr; a test catches the difference on a Mac.</p>
+      <div class="meta">Ready v1 · 2026-11-16 · T3 · WU result · Keel · plan: <a href="2026-11-15-eghflow2-w9-plan.html">E-GHFLOW2.W9 plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="outcome">Outcome</h2>
+<p data-item="outcome" data-c="outcome">Delivered, with the fix staged for your commit. Line 315 of <code>scripts/router-gh.sh</code> now wraps the whole list in one outer group, <code>'x\(\[ *[1-9][0-9]\{0,11\}\( *, *[1-9][0-9]\{0,11\}\)* *\]\)$'</code>, so a match prints the list and a miss prints nothing, under either expr. Nothing else in the script changed. GitHub's own run is still to be seen, after your commit and the bot's push.</p>
+
+<h2 id="deviations">Deviations</h2>
+<p data-item="deviations" data-c="deviations">One. The epic plan had been archived by landing 1 (6ea4d37). W9's block needed it tracked, so it was restored from 6ea4d37^ with the block added; the next landing archives it again.</p>
+
+<h2 id="evidence">Evidence</h2>
+<div data-item="evidence" data-c="evidence">
+  <p><strong>Red, then green.</strong> A scratch <code>expr</code> with GNU's rule (Python: a <code>\(</code> group prints <code>\1</code>, empty when unmatched, else the match length; an empty or 0 result exits 1) and <code>sh</code> linked to <code>dash</code>, first on the PATH. At 6ea4d37: <code>cargo test --test suite -- router_gh ghflow_e2e</code> gave 49 passed, 20 failed, the 20 GitHub lists. With the fix: 70 passed, under the shim and natively (69 plus the new test).</p>
+  <p><strong>The probe</strong> (old and new pattern, GNU-rule exit / BSD exit): <code>[5499546]</code> old 1/0, new 0/0; <code>[1, 22 ,333]</code> 0/0 both; <code>[]</code>, <code>[0]</code>, <code>[1,]</code>, <code>x</code>, <code>[1234567890123]</code> 1/1 both.</p>
+  <p><strong>Test added</strong>: <code>router_gh_watch::the_commanders_check_holds_under_gnu_expr</code> (an sh shim with GNU's rule in the test's own bin directory). On macOS before the fix it fails at the one-commander line; after, it passes.</p>
+  <p><strong>Commits</strong>: 2589906 (this plan, the epic plan's W9 block), e4ff8a5 (the test), the report commit; the fix waits for your <code>keel mr commit</code>.</p>
+</div>
+
+<h2 id="distillation">Distillation</h2>
+<p data-item="distillation" data-c="distillation">Nothing citable: a portability fix. The rule of thumb, "an expr pattern with a group must group the whole match", is in this report and the plan.</p>
+
+<h2 id="follow-ups">Follow-ups</h2>
+<p data-item="follow-ups" data-c="follow-ups">GitHub's Ubuntu run green on the pushed tip: the router reads it after the owner's commit (E-GHFLOW2, backlog github-flow G6's live facts).</p>
+
+  </main>
+</body>
+</html>
