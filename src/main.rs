@@ -630,7 +630,7 @@ fn run() -> Result<i32, String> {
         println!("keel {}\n{KEEL_MARK} (not keel.so)", env!("CARGO_PKG_VERSION"));
         return Ok(0);
     }
-    // R50: the sign-off commands check their checkout's git links before the first git call.
+    // R50: the sign-off commands run from their checkout's root and check its git links before the first git call.
     if args.first() == Some(&"mr") {
         if let Some(why) = mr::checkout_problem(&std::env::current_dir().map_err(|e| e.to_string())?) {
             eprintln!("keel mr: refused - {why}");

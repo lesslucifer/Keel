@@ -145,6 +145,16 @@ fn approves(allowed: &[Entry], id: &str) -> bool {
     allowed.iter().any(|e| e.tier == GITHUB && e.identity == id)
 }
 
+/// The refusal for a typed sign-off by `id`, which no typed tier lists: it signs only by approval,
+/// or it is not listed at all.
+fn typed_refusal(allowed: &[Entry], src: &str, id: &str) -> String {
+    if approves(allowed, id) {
+        by_approval_only(src, id)
+    } else {
+        unlisted(src, id)
+    }
+}
+
 /// The refusal for a typed sign-off by an id that signs only by approval.
 fn by_approval_only(src: &str, id: &str) -> String {
     format!("keel mr: refused - {id} is listed in {src} under the github tier only: it signs by approving the pull request on GitHub, never by a typed command\n  fix -> approve the pull request's head commit on GitHub, or sign as an identity listed under another tier")
@@ -460,18 +470,19 @@ fn flag<'a>(args: &[&'a str], k: &str) -> Option<&'a str> {
     args.windows(2).find(|w| w[0] == k).map(|w| w[1])
 }
 
-/// `--as`, else the roster's only identity.
+/// `--as`, else the roster's only identity that signs by typing: a github line, which signs only by
+/// approval, is never picked and never makes the pick ambiguous.
 fn signer(allowed: &[Entry], src: &str, args: &[&str]) -> Result<String, String> {
     if let Some(id) = flag(args, "--as") {
         return Ok(id.into());
     }
-    let mut ids: Vec<&str> = allowed.iter().map(|e| e.identity.as_str()).collect();
+    let mut ids: Vec<&str> = allowed.iter().filter(|e| e.tier != GITHUB).map(|e| e.identity.as_str()).collect();
     ids.sort();
     ids.dedup();
     match ids[..] {
         [one] => Ok(one.into()),
         [] => {
-            Err(format!("keel mr: refused - {src} lists nobody\n  fix -> keel mr setup --as <identity> [--key <path>], then land {ROSTER} with keel mr commit"))
+            Err(format!("keel mr: refused - {src} lists nobody who signs by typing\n  fix -> keel mr setup --as <identity> [--key <path>], then land {ROSTER} with keel mr commit"))
         }
         _ => Err("keel mr: several identities are listed - pass --as <identity>".into()),
     }
@@ -552,7 +563,7 @@ fn commit(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     let (allowed, src) = roster(repo, cfg, "HEAD", "")?;
     let id = signer(&allowed, &src, args)?;
     let Some(tier) = typed_tier(&allowed, &id) else {
-        eprintln!("{}", if approves(&allowed, &id) { by_approval_only(&src, &id) } else { unlisted(&src, &id) });
+        eprintln!("{}", typed_refusal(&allowed, &src, &id));
         return Ok(1);
     };
     let body = format!("{}\n\n{TRAILER}: {tier} {id}\n", msg.trim_end());
@@ -615,7 +626,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     let (allowed, src) = roster(repo, cfg, &target, &tip)?;
     let id = signer(&allowed, &src, args)?;
     let Some(tier) = typed_tier(&allowed, &id).map(String::from) else {
-        eprintln!("{}", if approves(&allowed, &id) { by_approval_only(&src, &id) } else { unlisted(&src, &id) });
+        eprintln!("{}", typed_refusal(&allowed, &src, &id));
         return Ok(1);
     };
     // The one point a roster edit made inside a branch meets the signer, who reads a report, not the diff.
@@ -830,7 +841,10 @@ pub(crate) fn manual_review(
             }
             Some(GITHUB)
         }
-        (Some(_), _) => return not_listed(),
+        (Some(_), Some(_)) => {
+            return again(format!("{} is listed in {roster} under a typed tier only, so the approval the note on {t} carries does not bind", n.signer))
+        }
+        (Some(_), None) => return not_listed(),
         (None, None) if approves(&allowed, &n.signer) => {
             return again(format!("{} is listed in {roster} under the github tier only, but the note on {t} carries no approval (no review)", n.signer))
         }
@@ -873,17 +887,19 @@ fn review_problem(r: &Review, tip: &str, repo: Option<&str>) -> Option<String> {
     if r.commit != tip {
         return Some(format!("its review approved {}, not this tip", printable(short(&r.commit))));
     }
-    if let Some(repo) = repo {
-        let on = r.url.strip_prefix("https://github.com/").and_then(|u| u.split("/pull/").next()).unwrap_or("");
-        if !on.eq_ignore_ascii_case(repo) {
-            return Some(format!("its review link {} is not on {} ([github] repo)", printable(&r.url), printable(repo)));
-        }
+    let not_page = || Some(format!("its review link {} is not review {}'s page on a pull request", printable(&r.url), r.id));
+    let Ok(page) =
+        regex::Regex::new(r"^https://github\.com/([A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100})/pull/[1-9][0-9]{0,9}#pullrequestreview-([1-9][0-9]{0,19})$")
+    else {
+        return not_page();
+    };
+    let Some(c) = page.captures(&r.url) else { return not_page() };
+    if c[2].parse::<u64>().ok() != Some(r.id) {
+        return not_page();
     }
-    let page =
-        regex::Regex::new(r"^https://github\.com/[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}/pull/[1-9][0-9]{0,9}#pullrequestreview-([1-9][0-9]{0,19})$").ok()?;
-    match page.captures(&r.url).and_then(|c| c[1].parse::<u64>().ok()) {
-        Some(id) if id == r.id => None,
-        _ => Some(format!("its review link {} is not review {}'s page on a pull request", printable(&r.url), r.id)),
+    match repo {
+        Some(repo) if !c[1].eq_ignore_ascii_case(repo) => Some(format!("its review link {} is not on {} ([github] repo)", printable(&r.url), printable(repo))),
+        _ => None,
     }
 }
 
@@ -967,6 +983,29 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
         println!("no approval to sign on {}: by GitHub's review decision on this commit, no id {src} lists under the github tier approves it, or one requests changes", short(&tip));
         return Ok(3);
     };
+    // Check 8's rule: a key wins, so a key holder's sign-off is signed, never an approval's note.
+    if typed_tier(&allowed, &id) == Some("key") {
+        return refuse(format!(
+            "{id} is key-backed in {src}: a key holder signs with the key, never by approval (check 8 would refuse an unsigned note)\n  fix -> keel mr confirm {lvl} --as {id}"
+        ));
+    }
+    // A sign-off on the tip is never replaced; this approval's own note, written before, is no change.
+    match notes::raw(repo, "mr", &tip) {
+        Ok(None) => {}
+        Ok(Some(raw)) => {
+            let same =
+                notes::parse::<MrNote>(&raw, "mr").is_ok_and(|n| n.tier == GITHUB && n.id.tip == tip && n.signer == id && n.review.as_ref() == Some(&review));
+            if same {
+                println!("already signed on {}: its mr/v1 note is this approval's (review {}); nothing written", short(&tip), review.id);
+                return Ok(0);
+            }
+            return refuse(format!(
+                "{} already carries an mr/v1 note, and an approval never replaces a sign-off\n  fix -> nothing to sign; the sign-off on the tip stands",
+                short(&tip)
+            ));
+        }
+        Err(e) => return refuse(format!("the mr note on {} cannot be read: {e}", short(&tip))),
+    }
     let Some(gate::Ready { tip, base, target, cr }) = gate::sign_ready(repo, cfg, epic, tip_ref, args, false)? else {
         return refuse(format!("sign last: a check before the sign-off is red on {} (above)", short(&tip)));
     };
@@ -994,6 +1033,22 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
     if report.as_deref() == Some(REPORT_NOTE) {
         return refuse(format!("an approval cannot attest {REPORT_NOTE}: GitHub never showed its bytes to the signer; commit the report in the range, or sign with keel mr confirm --report {REPORT_NOTE}"));
     }
+    // A report named with --report is held to the rule one is picked by (security review I6 again):
+    // committed in base..tip and present at the tip, never a local file or an older one.
+    if let Some(r) = &report {
+        match report_candidates(repo, cfg, &base, &tip, epic) {
+            Ok(found) if found.contains(r) => {}
+            Ok(_) => {
+                return refuse(format!(
+                    "{r} is not a {} report committed in {}..{} and present at the tip: an approval attests only what GitHub showed at the approved commit\n  fix -> commit it in the range, or sign with keel mr confirm --report {r}",
+                    verify_doc::result_role(epic),
+                    short(&base),
+                    short(&tip)
+                ))
+            }
+            Err(e) => return refuse(e),
+        }
+    }
     let report_hash = match &report {
         Some(r) => match report_hash(repo, &tip, r, epic) {
             Ok(Some(h)) => Some(h),
@@ -1020,54 +1075,44 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
     Ok(0)
 }
 
-/// R50 (E-GHFLOW2.W3): before `keel mr` runs any git, the git dir git itself would use from `start`
-/// must be this checkout's, its links as git makes them, by scripts/router-gh.sh's rule - workers can
-/// write the shared git dir and any directory of their checkout, and the owner's unsandboxed sign-off
-/// would follow whatever they wrote there. Found as git's discovery finds it, from `start` up: the
-/// first directory holding a `.git`, unless a directory below it is itself a git dir (`HEAD`,
-/// `objects` and `refs`: a bare repository, or inside a git dir), which git would use - refused, as
-/// `keel mr` runs from a checkout. The `.git` found: a directory must be a git dir (git skips one
-/// that is not and looks further up - refused here, never skipped) and holds no `commondir`; a file
-/// names an admin dir under `<git dir>/worktrees/` whose `commondir` is `../..` and whose `gitdir`
-/// names this `.git` back; neither the git dir nor the admin dir holds a `config.worktree`. Above the
-/// checkout, any `.git` but this repository's own git dir (a linked worktree inside its main
-/// checkout) refuses: a repository nested in a checkout may be one a worker planted, and git would
-/// run its config and hooks. No link is followed, and a path that does not resolve refuses.
+/// R50 (E-GHFLOW2.W3): before `keel mr` runs any git, its checkout's git links must be as git makes
+/// them, by scripts/router-gh.sh's rule - workers can write the shared git dir and any directory of
+/// their checkout, and the owner's unsandboxed sign-off would follow whatever they wrote there.
+/// `keel mr` runs from a checkout's root only (code review round 2): `root`, the cwd, holds a `.git`
+/// that is a directory (a main checkout) or a regular file (a linked one), by its own metadata - never
+/// a link, a FIFO or another type, and never opened unless it is a regular file. No walk up as git's
+/// discovery does: a dir git would take for a git dir below the root can then never be stepped over.
+/// A `.git` directory is a git dir (`HEAD`, `objects`, `refs`) with no `commondir`; a file names an
+/// admin dir under `<git dir>/worktrees/` whose `commondir` is `../..` and whose `gitdir` names this
+/// `.git` back; neither the git dir nor the admin dir holds a `config.worktree`. Above the root, any
+/// `.git` but this repository's own git dir (a linked worktree inside its main checkout) refuses: a
+/// repository nested in a checkout may be one a worker planted. A path that does not resolve refuses.
 /// `Some(why)` refuses.
-pub(crate) fn checkout_problem(start: &Path) -> Option<String> {
+pub(crate) fn checkout_problem(root: &Path) -> Option<String> {
     let owner = "the owner checks and removes it; nothing was run";
     let exists = |p: &Path| std::fs::symlink_metadata(p).is_ok();
-    let git_dir = |d: &Path| ["HEAD", "objects", "refs"].iter().all(|n| exists(&d.join(n)));
+    let is_git_dir = |d: &Path| ["HEAD", "objects", "refs"].iter().all(|n| exists(&d.join(n)));
     let unresolved = |p: &Path| Some(format!("{} does not resolve: {owner}", p.display()));
-    let mut found = None;
-    for d in start.ancestors() {
-        if exists(&d.join(".git")) {
-            found = Some(d);
-            break;
-        }
-        if git_dir(d) {
-            return Some(format!(
-                "{} is a git dir (a bare repository, or inside a git dir), which git would use: run keel mr from the checkout; nothing was run",
-                d.display()
-            ));
-        }
-    }
-    let root = found?; // no repository here: git finds none either, and keel stops at its first call
+    // A regular file's text; never opens anything else (a FIFO would block for ever).
+    let read = |p: &Path| std::fs::symlink_metadata(p).ok().filter(|m| m.file_type().is_file()).and_then(|_| std::fs::read_to_string(p).ok());
     let dotgit = root.join(".git");
-    let Ok(meta) = std::fs::symlink_metadata(&dotgit) else { return unresolved(&dotgit) };
+    let Ok(meta) = std::fs::symlink_metadata(&dotgit) else {
+        return Some(format!(
+            "keel mr runs from a checkout's root, and {} holds no .git: cd to the worktree root (the directory holding .git) and run it there; nothing was run",
+            root.display()
+        ));
+    };
     let canon = |p: &Path| std::fs::canonicalize(p).ok();
-    let (common, admin) = if meta.file_type().is_symlink() {
+    let kind = meta.file_type();
+    let (common, admin) = if kind.is_symlink() {
         return Some(format!("{} is a symbolic link; git makes a directory or a gitdir file: {owner}", dotgit.display()));
-    } else if meta.is_dir() {
-        if !git_dir(&dotgit) {
-            return Some(format!(
-                "{} is not a repository (no HEAD, objects and refs): git would skip it and use a .git further up, unchecked: {owner}",
-                dotgit.display()
-            ));
+    } else if kind.is_dir() {
+        if !is_git_dir(&dotgit) {
+            return Some(format!("{} is not a repository (no HEAD, objects and refs of its own): {owner}", dotgit.display()));
         }
         (dotgit.clone(), None)
-    } else {
-        let link = std::fs::read_to_string(&dotgit).unwrap_or_default();
+    } else if kind.is_file() {
+        let link = read(&dotgit).unwrap_or_default();
         let Some(named) = link.strip_prefix("gitdir: ").map(|l| l.trim_end_matches('\n')).filter(|l| !l.is_empty() && !l.contains('\n')) else {
             return Some(format!("{} is not a gitdir link: {owner}", dotgit.display()));
         };
@@ -1082,16 +1127,18 @@ pub(crate) fn checkout_problem(start: &Path) -> Option<String> {
         if admin.parent().and_then(Path::file_name).is_none_or(|n| n != "worktrees") {
             return bad("not under <git dir>/worktrees/");
         }
-        if std::fs::read_to_string(admin.join("commondir")).ok().as_deref().map(|c| c.strip_suffix('\n').unwrap_or(c)) != Some("../..") {
+        if read(&admin.join("commondir")).as_deref().map(|c| c.strip_suffix('\n').unwrap_or(c)) != Some("../..") {
             return bad("its commondir is not ../..");
         }
         let Some(here) = canon(root) else { return unresolved(root) };
         // git writes it absolute, or relative to the admin dir under worktree.useRelativePaths
-        let back = std::fs::read_to_string(admin.join("gitdir")).ok().map(|g| admin.join(g.strip_suffix('\n').unwrap_or(&g)));
+        let back = read(&admin.join("gitdir")).map(|g| admin.join(g.strip_suffix('\n').unwrap_or(&g)));
         if back.as_deref().and_then(|g| Some((g.file_name()? == ".git", canon(g.parent()?)?))) != Some((true, here)) {
             return bad("its gitdir does not name this checkout's .git");
         }
         (admin.join("../.."), Some(admin))
+    } else {
+        return Some(format!("{} is neither a directory nor a regular file (a FIFO, socket or device); git makes one or the other: {owner}", dotgit.display()));
     };
     if exists(&common.join("commondir")) {
         return Some(format!("{} exists: a main git dir has none, so a worker may have written it: {owner}", common.join("commondir").display()));
