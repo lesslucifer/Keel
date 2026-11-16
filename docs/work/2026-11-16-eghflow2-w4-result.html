@@ -10,12 +10,12 @@
     <div class="inner">
       <h1>E-GHFLOW2.W4 result · GitHub enforces the merge</h1>
       <p>Built and tested hermetically, with the security review's findings fixed. Your steps: one commit, then the GitHub settings below, in order. The rules take effect only after W4 is on main.</p>
-      <div class="meta">v3 · 2026-11-16 · T3 · WU result · Keel · wu/E-GHFLOW2/w4-enforce off epic/E-GHFLOW2 526973a · plan: docs/work/2026-11-16-eghflow2-w4-plan.html (v3); rule-bearing files committed by you as 8dc6127</div>
+      <div class="meta">v4 · 2026-11-16 · T3 · WU result · Keel · wu/E-GHFLOW2/w4-enforce off epic/E-GHFLOW2 526973a · plan: docs/work/2026-11-16-eghflow2-w4-plan.html (v3); rule-bearing files committed by you as 8dc6127</div>
     </div>
   </header>
   <main>
     <h2 id="you">What you do</h2>
-    <p data-c="done">Steps 1 and 2 are done: your commit 8dc6127 (13 files, the skills patch applied). What is left is the GitHub settings.</p>
+    <p data-c="done">Steps 1 and 2 are done: your commit 8dc6127 (13 files, the skills patch applied). Code review round 1 (FAIL, on 8a0da69) left one more rule-bearing fix, staged: <code>scripts/gh-settings-check.sh</code>. Commit it:<br><code>keel mr commit -m 'chore(E-GHFLOW2.W4 review round 1): gh-settings-check.sh passes codeowners.file only when CODEOWNERS is exactly one rule line, * @owner - GitHub takes the last matching rule, so any other line names another owner for some path' --as vuluu</code><br>Then the GitHub settings below.</p>
     <ol data-c="you">
       <li>In the W4 worktree, apply the skill edits the worker's sandbox could not write: <code>git apply w4-skills.patch &amp;&amp; git add skills .claude/skills &amp;&amp; rm w4-skills.patch</code>. It changes both keel-router trees the same way, and project-router.</li>
       <li>Commit the staged rule-bearing files:<br><code>keel mr commit -m 'chore(E-GHFLOW2.W4): GitHub enforces the merge - keel-gate.yml runs from main on pull_request_target, edited included (build once, then keel/ci, keel/gate, keel/docs, a hash-checked keel, never skipped); keel-main.yml runs main/ci on a push of main and pages.yml follows it; CODEOWNERS names the owner; release.yml loses its pull-request run; ci-gate.sh gains build, the hash, fork and own-base checks, the merged tree and the back-merge; gh-settings-check.sh; router-gh.sh turns on auto-merge (merge_on_approve), takes sync main and refuses a WU into main, and the guard agrees; .github/ and the gate, writer and settings scripts are rule-bearing; the router skills name the new shapes' --as vuluu</code></li>
@@ -52,6 +52,21 @@
     <p data-c="bot-opens">Let the bot open every pull request (<code>pr-open</code>), including those for branches you push yourself. A pull request you open can never merge: you cannot approve your own pull request, and you are the only code owner.</p>
     <p data-c="after">From step 6 on, nobody pushes main or an epic, you included. The bot's <code>push epic/&lt;E&gt;</code> is refused, so the close's commits go through a pull request. The bot may also be unable to create a new <code>epic/&lt;E&gt;</code> branch under these rules (UNVERIFIED); if so, you create it. The bot cannot push a branch that changes <code>.github/workflows</code> (it has no Workflows permission), so you push those. Its auto-merge may also not merge them, and then you press the button. <code>merge_on_approve</code> ships on: before step 6, <code>pr-ready</code> prints <code>automerge=refused</code> with a WARN, which is harmless.</p>
     <p data-c="trade">"Branches need not be up to date" is a deliberate trade-off. If it were required, every WU merge would force every other open WU to merge its epic again. That gives the WU a new head, which dismisses your approval and the sign-off. <code>keel/ci</code> already tests the head merged into its base at the run, and the epic's own gate tests the result before main.</p>
+
+    <h2 id="round1">Code review round 1 (FAIL on 8a0da69) and its fixes</h2>
+    <table data-c="round1">
+      <tr><th>Finding</th><th>Fix</th></tr>
+      <tr><td>Important: the keel-gate.yml lock read lines it knew, so a step-level <code>if: false</code>, a step <code>shell: 'true {0}'</code> or a job-level <code>defaults: run: shell</code> could turn all three checks green with every test passing (W8's lesson)</td><td>keel-gate.yml and keel-main.yml are now held to their exact code lines. <code>exact_lines</code> and <code>mutated_in</code> are shared with pages.yml's lock. The reviewer's mutations and W8's classes are each refused (1c31f0f).</td></tr>
+      <tr><td>Important: <code>codeowners.file</code> was OK for <code>* @own</code> followed by <code>/.github/ @mallory</code>, or by <code>* @mallory</code>; GitHub takes the last matching rule</td><td>The check is OK only when CODEOWNERS has exactly one rule line, <code>* @&lt;owner&gt;</code>. Red cases: a later rule for a path, a later rule for every path, an earlier rule naming another owner. The repository's own file is green (fb97e53; the script is staged).</td></tr>
+      <tr><td>Nit: env and <code>if:</code> bound to the job, not the step</td><td>Each ci-gate.sh step's env is read from that step; each job's <code>if:</code> from its own job (1c31f0f).</td></tr>
+      <tr><td>Nit: the hash refusal ran on docs only</td><td>ci, gate and docs each refuse a wrong, empty or swapped keel (7010b5e).</td></tr>
+      <tr><td>Nit: the fork test claimed "before any git call" without proving it</td><td>It runs with a git that marks its run; none does (7010b5e).</td></tr>
+      <tr><td>Nit: shasum spawned three times on the keel</td><td>Hashed in-process with sha2, <code>mr::sha256_of</code> (7010b5e).</td></tr>
+      <tr><td>Nit: the settings tests repeated the fake GitHub's route writer and log reader</td><td>One shared <code>serve_routes</code> and <code>mock_log</code> (fb97e53).</td></tr>
+      <tr><td>Nit: <code>signed_wu</code> repeated the builder's signing</td><td>The close_walk builder calls <code>signed_wu</code> (7010b5e).</td></tr>
+      <tr><td>Nit (waived by the reviewer): 19 settings cases run serially</td><td>Left as one table.</td></tr>
+    </table>
+    <p data-c="round1-check"><code>keel check</code> is green on the working tree with the staged script: 496 passed, 10 ignored. Notes wait for your commit.</p>
 
     <h2 id="outcome">Outcome</h2>
     <p data-item="outcome">Delivered against the requirement and the security review's findings, with the deviations below. Proven hermetically only: nothing has run on GitHub yet. With W4 on main, main's workflow and script judge every pull request into main or an epic: <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code>. Only <code>keel/ci</code> runs head code, with a read token. A fork, a failed build or a base other than the head's own is red, never skipped. All jobs share one keel built from the base, checked by hash. A branch can no longer change the checks that judge it. One gap remains: a workflow a head adds could report a check under a required name. Only you can push such a head, and your approval as code owner is required anyway. <code>pr-ready</code> turns on auto-merge, <code>sync main</code> works, the settings check reads and judges the live settings, and GitHub-made merges walk green.</p>
@@ -147,7 +162,7 @@
       <li>Open points 2 and 3: your rulings; the router records them.</li>
       <li>The facts listed as unverified: the first WU merged through the button after step 6 records each (epic plan, live evidence).</li>
       <li>W3 round 5's nits on <code>src/mr.rs</code> stay open: W4 did not touch that file (backlog github-flow G8).</li>
-      <li>Round 2 nit 3: <code>gh-settings-check.sh</code>'s <code>codeowners.file</code> passes when any line is <code>* @owner</code>. A later line wins in CODEOWNERS, so it should require that line to be the only rule line or the last. Takes: a new backlog github-flow row at the close (with G8's list).</li>
+      <li>Security round 2's nit 3 (<code>codeowners.file</code> and a later rule) is fixed by code review round 1's important finding: exactly one rule line.</li>
       <li>Round 2 nit 5: <code>router-gh.sh pr-open</code> takes <code>--base epic/&lt;other&gt;</code> for a WU. The gate refuses that base, but the script should refuse any base other than the WU's own epic, and the guard with it. Takes: the same backlog row.</li>
       <li>The per-commit residual (a WU-into-main pull request turned green by its sibling): a check that knows the pull request, not only the commit, would close it. Takes: the same backlog row, for a later epic.</li>
     </ul>
