@@ -16,8 +16,15 @@ const KEEL: &str = env!("CARGO_BIN_EXE_keel");
 const OWNER: u64 = 5499546;
 const REPO_URL: &str = "https://github.com/own/Keel/pull/7";
 
+/// `prog` with `a` in `d`, as every spawn here runs it: the tester's env, `path`, no agent, no stdin.
+fn command(prog: &str, d: &Path, a: &[&str], path: &str) -> std::process::Command {
+    let mut c = common::cmd(prog);
+    common::as_tester(c.args(a).current_dir(d).env("PATH", path).env_remove("SSH_AUTH_SOCK").stdin(Stdio::null()));
+    c
+}
+
 fn run_with(prog: &str, d: &Path, a: &[&str], path: &str) -> Output {
-    common::as_tester(common::cmd(prog).args(a).current_dir(d).env("PATH", path).env_remove("SSH_AUTH_SOCK").stdin(Stdio::null())).output().unwrap()
+    command(prog, d, a, path).output().unwrap()
 }
 
 fn path() -> String {
@@ -323,22 +330,24 @@ fn a_typed_sign_off_without_as_picks_the_only_typed_identity() {
     assert_eq!(note(p, "mr", "wu/e/a").unwrap()["signer"], "vu");
 }
 
-/// The fixture with the key tier accepted on the target and `5499546` key-backed there too.
+/// The fixture with the key tier accepted on the target, `5499546` key-backed there too, and `777`
+/// listed under the github tier only.
 fn key_backed_owner(p: &Path) {
     git(p, &["switch", "-q", "epic/e"]);
     let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap().replace("\"username\", \"github\"", "\"username\", \"key\", \"github\"");
     write(p, ".keel/config.toml", &cfg);
-    write(p, ".keel/mr-allowed", &format!("{ROSTER}key: 5499546 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKeelTestKeyOnly\n"));
-    commit(p, "the owner's key");
+    write(p, ".keel/mr-allowed", &format!("{ROSTER}key: 5499546 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKeelTestKeyOnly\ngithub: 777 other\n"));
+    commit(p, "the owner's key, another approver");
     git(p, &["switch", "-q", "wu/e/a"]);
     git(p, &["merge", "-q", "--no-ff", "--no-verify", "-m", "sync", "epic/e"]);
     write(p, ".keel/config.toml", &cfg);
 }
 
-/// Code review round 2, B3: check 8's rule - a key wins - applies to the approval writer: an id the
-/// roster lists with a key never gets an (unsigned) github-tier note.
+/// Code review rounds 2 and 3: the writer picks only an approval check 8 accepts - a key holder signs
+/// with the key, never by approval - so a key holder's approval signs nothing, and a later one never
+/// hides a github-only approver's.
 #[test]
-fn an_approval_by_a_key_backed_id_is_refused_and_writes_nothing() {
+fn only_an_approval_check_8_accepts_is_picked_and_a_key_holders_never_is() {
     let d = fixture();
     let p = d.path();
     key_backed_owner(p);
@@ -346,36 +355,83 @@ fn an_approval_by_a_key_backed_id_is_refused_and_writes_nothing() {
     let tip = git(p, &["rev-parse", "wu/e/a"]);
     let o = sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]);
     let t = text(&o);
-    assert_eq!(o.status.code(), Some(1), "{t}");
-    assert!(t.contains("sign-off refused") && t.contains("key-backed") && t.contains("keel mr confirm"), "{t}");
+    assert_eq!(o.status.code(), Some(3), "{t}");
+    assert!(t.contains("no approval to sign") && t.contains("key"), "{t}");
     assert!(note(p, "mr", &tip).is_none());
+    let o = ok(sign_off(p, "wu", "epic/e", &json!([review(12, 777, "APPROVED", &tip), review(13, OWNER, "APPROVED", &tip)]), &[]));
+    assert!(text(&o).contains("github 777 approved it (review 12)"), "{}", text(&o));
+    assert_eq!(note(p, "mr", &tip).unwrap()["signer"], "777");
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
 }
 
-/// Code review round 2, B3: the writer never replaces a sign-off on the tip. The same approval again
-/// writes nothing and says it is signed; any other note on the tip is refused, kept as it was.
+/// Code review rounds 2 and 3: the writer never replaces a sign-off on the tip, and judges one there
+/// by check 8, never by comparing fields: a note check 8 accepts is "already signed" (exit 0, nothing
+/// written) whoever approved this time - the same approver, another listed one, or after a typed
+/// confirm; a note check 8 refuses is refused with its cause, never overwritten. A --report that is
+/// not the note's is refused.
 #[test]
-fn the_writer_never_overwrites_a_sign_off_on_the_tip() {
+fn the_writer_never_overwrites_a_sign_off_and_judges_one_by_check_8() {
     let d = fixture();
     let p = d.path();
+    git(p, &["switch", "-q", "epic/e"]);
+    write(p, ".keel/mr-allowed", &format!("{ROSTER}github: 777 other\n"));
+    commit(p, "another approver");
+    git(p, &["switch", "-q", "wu/e/a"]);
+    git(p, &["merge", "-q", "--no-ff", "--no-verify", "-m", "sync", "epic/e"]);
     notes(p);
     let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let show = || git(p, &["notes", "--ref=mr", "show", &tip]);
+    let already = |reviews: Value, extra: &[&str], why: &str| {
+        let o = sign_off(p, "wu", "epic/e", &reviews, extra);
+        assert_eq!(o.status.code(), Some(0), "{why}: {}", text(&o));
+        assert!(text(&o).contains("already signed"), "{why}: {}", text(&o));
+    };
+    // after a typed confirm
     ok(keel(p, &["mr", "confirm", "wu", "--as", "vu"]));
-    let typed = git(p, &["notes", "--ref=mr", "show", &tip]);
+    let typed = show();
+    already(json!([review(13, OWNER, "APPROVED", &tip)]), &[], "an approval after a typed confirm");
+    assert_eq!(show(), typed, "the typed sign-off stands");
+    git(p, &["notes", "--ref=mr", "remove", &tip]);
+    // after an approval: the same one, a re-approval, another listed approver
+    ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    let signed = show();
+    already(json!([review(13, OWNER, "APPROVED", &tip)]), &[], "the same approval");
+    already(json!([review(13, OWNER, "APPROVED", &tip), review(14, OWNER, "APPROVED", &tip)]), &[], "a re-approval");
+    already(json!([review(13, OWNER, "APPROVED", &tip), review(15, 777, "APPROVED", &tip)]), &[], "a second listed approver");
+    already(json!([review(13, OWNER, "APPROVED", &tip)]), &["--report", "docs/work/a-result.html"], "the note's own report");
+    assert_eq!(show(), signed, "nothing written");
+    let o = sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &["--report", "docs/work/other.html"]);
+    assert!(o.status.code() == Some(1) && text(&o).contains("sign-off refused") && text(&o).contains("docs/work/a-result.html"), "{}", text(&o));
+    // a note check 8 refuses: refused with check 8's cause, kept as it was
+    let mut bad: Value = serde_json::from_str(&signed).unwrap();
+    bad["change_hash"] = json!(format!("sha256:{}", "0".repeat(64)));
+    git(p, &["notes", "--ref=mr", "add", "-f", "-m", &bad.to_string(), &tip]);
+    let tampered = show();
     let o = sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]);
     let t = text(&o);
     assert_eq!(o.status.code(), Some(1), "{t}");
-    assert!(t.contains("sign-off refused") && t.contains("already carries"), "{t}");
-    assert_eq!(git(p, &["notes", "--ref=mr", "show", &tip]), typed, "the typed sign-off stands");
+    assert!(t.contains("sign-off refused") && t.contains("changed since the sign-off") && !t.contains("already signed"), "{t}");
+    assert_eq!(show(), tampered, "never overwritten");
+}
 
-    git(p, &["notes", "--ref=mr", "remove", &tip]);
+/// Code review round 3, B2: a sign-off gone stale because the target moved on (here: fast-forwarded to
+/// the tip's parent, so the merge-base moved) is refused, never reported "already signed".
+#[test]
+fn a_stale_sign_off_on_the_tip_is_refused_not_already_signed() {
+    let d = fixture();
+    let p = d.path();
+    write(p, "src/b.py", "def b():\n    return 2\n");
+    commit(p, "wu a, second commit");
+    notes(p);
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
     ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
     let signed = git(p, &["notes", "--ref=mr", "show", &tip]);
-    let o = ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
-    assert!(text(&o).contains("already signed") && text(&o).contains("review 13"), "{}", text(&o));
-    assert_eq!(git(p, &["notes", "--ref=mr", "show", &tip]), signed, "the same approval again writes nothing");
-    let o = sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip), review(14, OWNER, "APPROVED", &tip)]), &[]);
-    assert_eq!(o.status.code(), Some(1), "another approval does not replace the note: {}", text(&o));
-    assert_eq!(git(p, &["notes", "--ref=mr", "show", &tip]), signed);
+    git(p, &["branch", "-f", "epic/e", "wu/e/a^"]);
+    let o = sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip), review(14, 1, "COMMENTED", &tip)]), &[]);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("refused") && !t.contains("already signed"), "{t}");
+    assert_eq!(git(p, &["notes", "--ref=mr", "show", &tip]), signed, "never overwritten");
 }
 
 /// Code review round 2, I5: a report named with --report is held to the rule the writer picks one by:
@@ -634,11 +690,7 @@ fn keel_mr_refuses_a_checkout_whose_git_links_git_did_not_make_and_runs_no_git()
 
 /// `keel mr` with a time limit: a hang (a FIFO opened for reading) fails the test, never blocks it.
 fn run_bounded(dir: &Path, a: &[&str], path: &str) -> Output {
-    let mut c = common::cmd(KEEL);
-    let ch = common::as_tester(c.args(a).current_dir(dir).env("PATH", path).env_remove("SSH_AUTH_SOCK").stdin(Stdio::null()))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut ch = ch.spawn().unwrap();
+    let mut ch = command(KEEL, dir, a, path).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     let start = std::time::Instant::now();
     while ch.try_wait().unwrap().is_none() {
         if start.elapsed() > std::time::Duration::from_secs(20) {
@@ -705,6 +757,27 @@ fn keel_mr_refuses_a_fifo_in_the_git_links_without_hanging() {
     std::fs::remove_file(admin.join("commondir")).unwrap();
     mkfifo(&admin.join("commondir"));
     refused_before_git(&wt, &fake, &log, "a FIFO as the admin dir's commondir", "commondir is not ../..");
+}
+
+/// Code review round 3 (refuted entry 1, a pre-existing R50 hole): a symlinked `<git dir>/worktrees`
+/// sends git to whatever dir it names (its config, its hooks) while every link still looks as git
+/// makes it; R50 refuses any symbolic link in the admin dir's path.
+#[test]
+fn keel_mr_refuses_a_symlink_in_the_admin_dirs_path_and_runs_no_git() {
+    let d = fixture();
+    let p = d.path();
+    let scratch = TempDir::new().unwrap();
+    let (fake, log) = recording_git(scratch.path());
+    git(p, &["switch", "-q", "main"]);
+    let wt = scratch.path().canonicalize().unwrap().join("wt");
+    git(p, &["worktree", "add", "-q", wt.to_str().unwrap(), "wu/e/a"]);
+    let o = run_bounded(&wt, &["mr", "setup", "--as", "vu"], &fake);
+    assert!(!text(&o).contains("keel mr: refused"), "untouched: {}", text(&o));
+    let elsewhere = scratch.path().canonicalize().unwrap().join("planted/worktrees");
+    std::fs::create_dir_all(elsewhere.parent().unwrap()).unwrap();
+    std::fs::rename(p.join(".git/worktrees"), &elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, p.join(".git/worktrees")).unwrap();
+    refused_before_git(&wt, &fake, &log, "a symlinked <git dir>/worktrees", "symbolic link");
 }
 
 /// Code review rounds 1 and 2, R50: `keel mr` runs from a checkout's root only - the cwd holds a
