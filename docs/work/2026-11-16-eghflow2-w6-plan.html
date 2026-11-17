@@ -9,17 +9,18 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>E-GHFLOW2.W6 · Work that need not wait goes in its own pull request</h1>
-      <p>A rule or skill edit that needs your yes goes in its own small pull request, and the code work goes on beside it. Your approval of the small one is its sign-off. When two pull requests clash, the router sends the second back to its worker.</p>
-      <div class="meta">Ready v1 (for your review) · 2026-11-16 · T3 · WU plan · Keel · off epic/E-GHFLOW2 366a9eb (after landing 3) · epic plan: git show 738c795:docs/work/2026-11-15-eghflow2-plan.html (archived), its W6 card and E-GHFLOW's §8</div>
+      <p>When part of a WU waits, for your yes, a decision or anything else, that part goes in its own pull request and the rest of the WU goes on beside it. One WU can have several pull requests. The usual case is a rule or skill edit that needs your yes: it goes in its own small pull request, and your approval of it is its sign-off. When two pull requests clash, the router sends the second back to its worker.</p>
+      <div class="meta">Ready v2 (for your review) · 2026-11-17 · T3 · WU plan · Keel · off epic/E-GHFLOW2 366a9eb (after landing 3) · epic plan: git show 738c795:docs/work/2026-11-15-eghflow2-plan.html (archived), its W6 card and E-GHFLOW's §8</div>
     </div>
   </header>
   <main>
     <h2 id="problem">The problem</h2>
-    <p data-c="problem">A change to a rule file needs your typed commit. So a worker that edits a skill or a rule in the middle of its work stops until you are at your Mac. A pull request with no code still needs a result report, which is paperwork for a three-line edit. And when two pull requests touch the same file, GitHub refuses the second merge, but nobody is told.</p>
+    <p data-c="problem">A WU is one branch and one pull request today. So when any part of it waits, for your yes, an answer, a review or another WU, the whole WU waits. The most common wait: a change to a rule file needs your typed commit. So a worker that edits a skill or a rule in the middle of its work stops until you are at your Mac. A pull request with no code still needs a result report, which is paperwork for a three-line edit. And when two pull requests touch the same file, GitHub refuses the second merge, but nobody is told.</p>
 
     <h2 id="changes">What changes for you</h2>
     <table data-c="changes" data-item="owner-changes">
       <tr><th>When</th><th>Today</th><th>After W6</th></tr>
+      <tr><td>Part of a WU waits (your yes, an answer, a review, another WU)</td><td>The whole WU waits</td><td>That part goes in its own pull request; the rest goes on in another. Each is checked on its own and signed by your approval</td></tr>
       <tr><td>A skill or rule text needs your yes</td><td>The worker stops for your typed commit</td><td>It goes in its own small pull request; you approve it on GitHub; the code work goes on</td></tr>
       <tr><td>A pull request holds no code</td><td>It needs a result report</td><td>It needs none: the diff and your approval are the record</td></tr>
       <tr><td>Code needs that rule change</td><td>The code waits, or carries the rule with your typed commit</td><td>Its branch starts from the rule's branch; its checks run once the rule's pull request is merged</td></tr>
@@ -28,30 +29,41 @@
 
     <h2 id="example">Example</h2>
     <ol data-c="example">
-      <li>A worker building a feature finds a skill needs one more line.</li>
-      <li>The router starts a second worker on a rules branch off the epic. It commits the line with no typed trailer. The commit check allows that on a rules branch only.</li>
+      <li>A worker building W9 finds a skill needs one more line.</li>
+      <li>The router starts a second worker on a rules branch of W9, off the epic. It commits the line with no typed trailer. The commit check allows that on a rules branch only.</li>
       <li>The bot pushes the branch and opens its pull request. It changes no code, so it needs no review, no tests and no report. Only your sign-off is required.</li>
       <li>You read the diff and approve. GitHub merges it into the epic.</li>
-      <li>The feature worker never stopped. Its own pull request merges later, by your approval.</li>
+      <li>The W9 worker never stopped. Its own pull request merges later, by your approval. W9 had two pull requests, and is done when the last one merges.</li>
       <li>Had both edited one file, GitHub could not merge the second. The router would mark it a draft with a "conflict" label. Its worker merges the epic in, fixes the clash, and re-runs its checks. The router marks it ready, and you approve again.</li>
     </ol>
+    <p data-c="example-2">The same holds for any wait. Say W9's second half waits for a GitHub setting only you can make. Its first half goes up as its own pull request now, and you approve it. The second half follows later on a new branch of W9.</p>
 
     <h2 id="terms">Terms</h2>
     <table data-c="terms">
       <tr><th>Term</th><th>Meaning</th></tr>
-      <tr><td>rules branch</td><td>A work branch named <code>wu/&lt;epic&gt;/rules-&lt;name&gt;</code>. It holds rule text: skills, AGENTS.md, flat docs pages, config, router scripts. No code.</td></tr>
-      <tr><td>docs branch</td><td>A work branch named <code>wu/&lt;epic&gt;/docs-&lt;name&gt;</code> for other docs. The name is a habit only; nothing reads it.</td></tr>
+      <tr><td>part</td><td>One of a WU's work branches, each with its own pull request: <code>wu/&lt;epic&gt;/&lt;name&gt;</code>, off the epic. A WU has one or more. By habit the name starts with the WU's (<code>w9-…</code>).</td></tr>
+      <tr><td>rules branch</td><td>A part named <code>wu/&lt;epic&gt;/rules-&lt;name&gt;</code> (by habit <code>rules-w9-…</code>). It holds rule text: skills, AGENTS.md, flat docs pages, config, router scripts. No code. The one name the commit check reads.</td></tr>
       <tr><td>code</td><td>The paths the gate reviews and tests: <code>src/</code> and <code>tests/</code> here.</td></tr>
       <tr><td>trailer</td><td>The "Reviewed-By" line your typed commit adds. Today the commit check needs it on any commit that changes a rule file.</td></tr>
       <tr><td>conflict</td><td>Two branches changed the same lines, so git cannot merge the second by itself.</td></tr>
     </table>
 
     <h2 id="work">The work</h2>
-    <p data-item="requirement">On a <code>wu/&lt;E&gt;/rules-&lt;slug&gt;</code> branch the commit-msg hook accepts a commit that changes a rule-bearing path and no code path without a <code>Reviewed-By</code> trailer, and on every other branch, or with a code path staged, refuses it as today; a WU or epic range that changes no code path is signed - typed, by approval, and at check 8 - without a result report under <code>[mr] report = "required"</code>, while a range that changes code still needs one; and <code>router-gh.sh draft &lt;n&gt;</code> turns a bot pull request that GitHub reports as conflicted back to draft with the <code>conflict</code> label and changes nothing otherwise, while <code>pr-ready</code> removes that label.</p>
-    <p data-item="maps-to">E-GHFLOW2.W6 (epic plan, W6 card; the epic test's step 6). UC-MR-2 (amended: no trailer on a rules branch, whose sign-off covers it), UC-MR-1 (amended: a report only for a range that changes code), UC-ROUTE-1 (amended: a conflicted pull request goes back to draft), UC-ROUTE-6 (amended: the guard admits <code>draft &lt;n&gt;</code>). DEC-24, DEC-40 (amended at the close). E-GHFLOW open points 14 – 16 and 18, §8. Backlog github-flow G1 (E-GHFLOW W7), G7 (the conflict half of N7), G8 (W3's four review nits), G9 (W4's <code>pr-open</code> follow-up).</p>
+    <p data-item="requirement">Two parts of one WU, each a <code>wu/&lt;E&gt;/&lt;slug&gt;</code> branch off the epic with its own pull request, are each gated and signed on their own range, and the epic is green once both are merged; on a <code>wu/&lt;E&gt;/rules-&lt;slug&gt;</code> branch the commit-msg hook accepts a commit that changes a rule-bearing path and no code path without a <code>Reviewed-By</code> trailer, and on every other branch, or with a code path staged, refuses it as today; a WU or epic range that changes no code path is signed - typed, by approval, and at check 8 - without a result report under <code>[mr] report = "required"</code>, while a range that changes code still needs one; and <code>router-gh.sh draft &lt;n&gt;</code> turns a bot pull request that GitHub reports as conflicted back to draft with the <code>conflict</code> label and changes nothing otherwise, while <code>pr-ready</code> removes that label.</p>
+    <p data-item="maps-to">E-GHFLOW2.W6 (epic plan, W6 card, widened by your comment of 2026-11-17: one WU can have several pull requests; the epic test's step 6). UC-MR-2 (amended: no trailer on a rules branch, whose sign-off covers it), UC-MR-1 (amended: a report only for a range that changes code), UC-ROUTE-1 (amended: a conflicted pull request goes back to draft), UC-ROUTE-6 (amended: the guard admits <code>draft &lt;n&gt;</code>). DEC-24, DEC-40 (amended at the close). E-GHFLOW open points 14 – 16 and 18, §8. Backlog github-flow G1 (E-GHFLOW W7), G7 (the conflict half of N7), G8 (W3's four review nits), G9 (W4's <code>pr-open</code> follow-up).</p>
 
-    <h3 id="w1">1 · No trailer on a rules branch</h3>
-    <p><strong>In short:</strong> the commit check lets a rule-file commit through with no trailer when the branch is a rules branch and the commit stages no code. Your sign-off of that branch's pull request is the yes. Everywhere else the trailer rule stands.</p>
+    <h3 id="parts">1 · One WU, several pull requests</h3>
+    <p><strong>In short:</strong> when part of a WU waits, that part goes up as its own pull request and the rest goes on in another. Each is gated and signed on its own. Little is built for this: the gate already judges a range, not a WU. Items 2 – 5 are the pieces that make it work for the common waits.</p>
+    <ul>
+      <li>What can wait: anything outside the worker's hands. Your typed commit or approval, an open point only you answer, the router's security review, a GitHub setting, another WU's merge. A part goes up as its own pull request as soon as it is done and waiting; the rest goes on.</li>
+      <li>A part is a branch <code>wu/&lt;E&gt;/&lt;slug&gt;</code> off the epic, or off the part it needs (item 4), in its own worktree with its own worker. A worktree's branch never changes, so the next part is a new worktree, never new commits on a branch whose pull request is waiting. By habit the slug starts with the WU's: <code>w9-…</code>, or <code>rules-w9-…</code> for a rules part (item 2).</li>
+      <li>Each part's pull request is gated on its own range (its tests, its review when it has code, its notes) and signed by your approval. Nothing new in the gate: it takes the target from the branch's epic (<code>notes::target</code>) and the report from the range's diff (<code>mr::pick_report</code>); nothing ties a WU to one branch. A test proves it: two parts of one WU, gated and signed on their own, then the epic is green.</li>
+      <li>The WU's docs. Its plan goes in its first pull request and lists the parts known up front; a part split off later is named in the result. Each part that changes code carries its own result report (<code>…-w9-result.html</code>, <code>…-w9-&lt;part&gt;-result.html</code>), so no two parts edit one file. A part without code needs none (item 3).</li>
+      <li>The WU is done when its last pull request merges. The router keeps the list of a WU's pull requests; each part branch gets its own sub-issue from <code>router-gh.sh issue</code>, as today.</li>
+    </ul>
+
+    <h3 id="w1">2 · No trailer on a rules branch</h3>
+    <p><strong>In short:</strong> a rule edit waits on your yes, so it is the part most often split off. The commit check lets a rule-file commit through with no trailer when the branch is a rules branch and the commit stages no code. Your sign-off of that branch's pull request is the yes. Everywhere else the trailer rule stands.</p>
     <ul>
       <li><code>src/mr.rs</code> <code>commit_msg</code>: before reading the trailer, the current branch (<code>git symbolic-ref --short -q HEAD</code>) is read. When it is a rules branch and no staged path is a code path, the hook prints one line naming the rule-bearing paths and "its pull request's sign-off covers them", and allows the commit.</li>
       <li>The branch-kind parser, next to the branch grammar in <code>src/notes.rs</code>: exactly <code>&lt;wu_prefix&gt;&lt;E&gt;/rules-&lt;slug&gt;</code>, with <code>E</code> and <code>slug</code> plain words (<code>[A-Za-z0-9][A-Za-z0-9._-]*</code>). Anything else is not a rules branch: a detached HEAD, a third segment, an empty slug, another case, an epic branch. It refuses the unusual instead of modelling it.</li>
@@ -59,7 +71,7 @@
       <li>The relaxation lives in the keel binary, which every worktree's hook calls. It reaches a worktree when you install a keel built from main (the close, or a landing).</li>
     </ul>
 
-    <h3 id="w2">2 · No result report for a range without code</h3>
+    <h3 id="w2">3 · No result report for a range without code</h3>
     <p><strong>In short:</strong> <code>[mr] report = "required"</code> now asks for a report only when the range changes code. The test is the one the gate already uses to exempt a docs-only range. The sign-off itself is still required everywhere.</p>
     <ul>
       <li>One helper in <code>src/mr.rs</code>: the policy that applies to a range is <code>required</code> turned to <code>optional</code> when <code>notes::exempt</code> holds for <code>base..tip</code>; <code>optional</code> and <code>none</code> are unchanged.</li>
@@ -68,15 +80,15 @@
       <li>Unchanged: check 8 is never exempt; a roster change still needs your typed sign-off with <code>--roster-change</code>; the approval writer's other refusals stand.</li>
     </ul>
 
-    <h3 id="w3">3 · Code that needs the rule change</h3>
-    <p><strong>In short:</strong> nothing new is built. The code branch starts from the rules branch's tip, and its notes and review are written after the rules pull request merges. A test proves that git then leaves the rules commits out of the code's range.</p>
+    <h3 id="w3">4 · A part that needs another part</h3>
+    <p><strong>In short:</strong> nothing new is built. A part that needs another part's work (code that needs a rule change, say) starts from that part's tip, and its notes and review are written after that part's pull request merges. A test proves that git then leaves the first part's commits out of the second's range.</p>
     <ul>
-      <li>Once the rules pull request merges as a merge commit, the rules tip is in the epic. The code branch's merge-base with the epic is then that tip, so its range holds only its own commits.</li>
+      <li>Once the first part's pull request merges as a merge commit, its tip is in the epic. The second part's merge-base with the epic is then that tip, so its range holds only its own commits.</li>
       <li>Notes written before that merge name the old base; check 4 turns red after it, and the worker writes them again. The gate enforces the order.</li>
-      <li>The router never marks such a code pull request ready while its rules pull request is open (a skill rule, item 5). If the rules pull request is closed unmerged, the worker reverts the rule commits on its branch with a new commit, never a rebase.</li>
+      <li>The router never marks the second part's pull request ready while the first's is open (a skill rule, item 6). If the first is closed unmerged, the worker reverts its commits on the second branch with a new commit, never a rebase.</li>
     </ul>
 
-    <h3 id="w4">4 · A conflict goes back to its worker</h3>
+    <h3 id="w4">5 · A conflict goes back to its worker</h3>
     <p><strong>In short:</strong> a new bot command asks GitHub whether a pull request can merge. When GitHub says it conflicts, the command turns it back to draft and labels it. The worker fixes it on its own branch and re-runs its checks; then the router marks it ready again.</p>
     <ul>
       <li><code>router-gh.sh draft &lt;n&gt;</code>: only a bot pull request (the same <code>bot_pr</code> check as <code>pr-ready</code>). It reads the pull request once. When <code>mergeable</code> is <code>false</code> and <code>mergeable_state</code> is <code>dirty</code>, it converts it to draft (GraphQL <code>convertPullRequestToDraft</code>), adds the <code>conflict</code> label (created if missing, as <code>issue</code> creates its labels) and prints <code>DRAFT pr=&lt;n&gt; head=… sha=… state=drafted</code>. When <code>mergeable</code> is <code>true</code> it prints <code>state=clean</code>. Anything else prints <code>state=pending</code> and writes nothing; the router asks again later.</li>
@@ -86,15 +98,15 @@
       <li>The worker's side is today's flow: merge the synced epic into its branch (<code>git merge --no-ff</code>, never a rebase), resolve, re-gate (new notes, a new review when it has code), and the bot pushes. The walk skips the back-merge as a seam. You approve the new head again, because a push dismisses an approval. This also closes G7 N7's second half: a conflicted pull request has no merge commit, so the sign-off writer could not run; after the fix it can.</li>
     </ul>
 
-    <h3 id="w5">5 · The skills</h3>
-    <p><strong>In short:</strong> the router and its workers learn the two branch kinds and the conflict flow. Text only, staged for your typed commit.</p>
+    <h3 id="w5">6 · The skills</h3>
+    <p><strong>In short:</strong> the router and its workers learn that a WU can have several pull requests, the rules branch and the conflict flow. Text only, staged for your typed commit.</p>
     <ul>
-      <li><code>keel-workflow</code> (both trees, <code>skills/</code> and <code>.claude/skills/</code>): rules and docs branches; no trailer on a rules branch commit without code; no report for a range without code; a rules or docs WU needs no plan or result doc, its pull request is the record; the stacked order (item 3); the conflict fix (item 4).</li>
-      <li><code>keel-router</code> (both trees): when to split a rule or doc edit into its own branch; never mark ready a code pull request whose rules pull request is open; <code>draft</code> after each merge into an epic; <code>pr-ready</code> after the re-gate; the independent security review still runs on a rules pull request that changes a script or the guard.</li>
-      <li><code>project-router</code>: the guard's new shape.</li>
+      <li><code>keel-workflow</code> (both trees, <code>skills/</code> and <code>.claude/skills/</code>): one WU, several pull requests (item 1): when a part waits, it goes up on its own and the rest goes on in a new part; the naming habit; one result report per part with code, none for a part without; the WU is done at its last merge. The rules branch; no trailer on a rules branch commit without code; no report for a range without code; the stacked order (item 4); the conflict fix (item 5).</li>
+      <li><code>keel-router</code> (both trees): when to split a WU: a part that waits on anything goes up as its own pull request, and the router starts a worker on a new part for the rest; one live session per part branch, no longer per WU; the router keeps each WU's list of pull requests; never mark ready a pull request whose needed part is open; <code>draft</code> after each merge into an epic; <code>pr-ready</code> after the re-gate; the independent security review still runs on a rules pull request that changes a script or the guard.</li>
+      <li><code>project-router</code>: the guard's new shape; a worktree and a sub-issue per part branch.</li>
     </ul>
 
-    <h3 id="w6">6 · Taken along, since W6 edits these files</h3>
+    <h3 id="w6">7 · Taken along, since W6 edits these files</h3>
     <ul>
       <li>W4's follow-up (G9): <code>pr-open</code> of a WU takes no <code>--base</code> but its own epic; the guard admits <code>pr-open wu/E/x</code> with no <code>--base</code> at all, since the default is that epic.</li>
       <li>G8's four nits from W3's round 5, in <code>src/mr.rs</code> and <code>tests/suite/sign_off.rs</code>: the stale "already signed exits 0" doc comment; R50's refusal names the path as written as well as the resolved one; <code>passthrough_git</code> reuses <code>recording_git</code>; <code>a_dotdot_through_a_symlink_is_refused</code> calls <code>refused_before_git</code>.</li>
@@ -105,12 +117,12 @@
       <tr><th>File</th><th>Change</th><th>Rule-bearing</th></tr>
       <tr><td><code>src/mr.rs</code></td><td>The hook's rules branch; the report policy per range; G8 nits</td><td>no (code)</td></tr>
       <tr><td><code>src/notes.rs</code></td><td>The branch-kind parser and its unit test</td><td>no (code)</td></tr>
-      <tr><td><code>tests/suite/split_prs.rs</code> (new), <code>main.rs</code></td><td>The WU's integration tests (items 1 – 3)</td><td>no (code)</td></tr>
+      <tr><td><code>tests/suite/split_prs.rs</code> (new), <code>main.rs</code></td><td>The WU's integration tests (items 1 – 4)</td><td>no (code)</td></tr>
       <tr><td><code>tests/suite/sign_off.rs</code></td><td>The approval writer without a report; G8 nits</td><td>no (code)</td></tr>
       <tr><td><code>tests/suite/router_gh.rs</code>, <code>router_gh_args.rs</code>, <code>router.rs</code></td><td><code>draft</code>, the label in <code>pr-ready</code>, <code>pr-open</code>'s base, the guard's shapes</td><td>no (code)</td></tr>
       <tr><td><code>scripts/router-gh.sh</code></td><td><code>draft &lt;n&gt;</code>; <code>pr-ready</code> clears the label; <code>pr-open</code>'s base</td><td><strong>yes</strong></td></tr>
       <tr><td><code>scripts/router-guard.jq</code></td><td>Admits <code>draft &lt;n&gt;</code>; <code>pr-open</code> of a WU without <code>--base</code></td><td><strong>yes</strong></td></tr>
-      <tr><td><code>skills/keel-workflow/</code>, <code>.claude/skills/keel-workflow/</code>, <code>skills/keel-router/</code>, <code>.claude/skills/keel-router/</code>, <code>.claude/skills/project-router/</code></td><td>Item 5</td><td><strong>yes</strong></td></tr>
+      <tr><td><code>skills/keel-workflow/</code>, <code>.claude/skills/keel-workflow/</code>, <code>skills/keel-router/</code>, <code>.claude/skills/keel-router/</code>, <code>.claude/skills/project-router/</code></td><td>Item 6</td><td><strong>yes</strong></td></tr>
       <tr><td><code>docs/work/2026-11-16-eghflow2-w6-plan.html</code>, <code>-w6-result.html</code></td><td>This plan; the result</td><td>no (T3)</td></tr>
     </table>
     <p>No workflow changes, so the exact-lines lock and the decoder checks in <code>tests/suite/keel_gate.rs</code> are untouched, and the bot can push this branch. No change to <code>ci-gate.sh</code>, <code>ci-sign-off.sh</code> or <code>gh-settings-check.sh</code>: the gate and the writer get the new report rule from the keel they build from the base.</p>
@@ -119,7 +131,7 @@
     <ol>
       <li>Now: read this plan. Comment to overrule an open point, then give the go.</li>
       <li>At the end of the build, after the router's independent security review of <code>router-gh.sh</code>, the guard and the hook change: run the <code>keel mr commit</code> the router stages for the rule-bearing files.</li>
-      <li>Sign W6 off by approving its pull request. Its range changes code, so it carries a result report.</li>
+      <li>Sign W6 off by approving its pull request (each of them, if a part is split off while it waits). A range that changes code carries a result report.</li>
       <li>When W6 is on main (the close or a landing): install a keel built from main, so every worktree's commit check knows rules branches.</li>
     </ol>
     <p>No GitHub settings change. The <code>conflict</code> label is created by the bot on first use.</p>
@@ -130,16 +142,20 @@
       <tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr>
       <tr><td>1</td><td>Must the gate refuse a rules branch that changes code?</td><td>No. Such a branch is a code WU, held to tests, review and report like any other. Only the commit check reads the branch name.</td><td>The local merge sees a commit, not a branch name, so a gate rule on the name could not hold there. And the gate already asks a branch with code for everything; the epic plan's "refused at its gate" test becomes "needs full evidence".</td></tr>
       <tr><td>2</td><td>Does the gate re-check trailers on code branches, now that a rules commit can travel without one?</td><td>No. The router never marks ready a code pull request whose rules pull request is open, and your approval covers what GitHub's diff shows you.</td><td>The trailer is typed text that stops an honest agent only (DEC-24); skipping the hook already gets past it today. A gate re-check would add no real bound.</td></tr>
-      <tr><td>3</td><td>Does a docs branch need code of its own?</td><td>No. The name is a habit. The report rule follows from what the range changes, on any branch.</td><td>Less to build and test; nothing new to parse.</td></tr>
+      <tr><td>3</td><td>Does a docs part need a branch name of its own?</td><td>No. The epic plan's <code>docs-&lt;slug&gt;</code> kind is dropped: the report rule follows from what the range changes, so any part without code needs no report, whatever its name.</td><td>Less to build and test; nothing new to parse. Only the rules branch keeps a name, because the commit check must read it.</td></tr>
       <tr><td>4</td><td>Does the report rule apply to epics too?</td><td>Yes, both levels, by the gate's own docs-only test (it honours <code>infra_paths</code>).</td><td>One rule for every sign-off is easier to check; an epic without code is rare.</td></tr>
       <tr><td>5</td><td>How does the router learn of a conflict?</td><td>It asks: <code>draft &lt;n&gt;</code> after each merge into an epic. GitHub's answer decides; anything unclear changes nothing.</td><td>A new watch kind would be more code to review for the same signal. The merge is the only moment a new conflict appears.</td></tr>
       <tr><td>6</td><td>Does W6 take the review nits on files it edits?</td><td>Yes for W4's <code>pr-open</code> base and G8's four W3 nits. No for G5's: they stay in the backlog.</td><td>The first two are small and in the code W6 changes. G5's are test-harness cost and the owner-only diagnostic, which W6 does not touch; taking them would widen the review.</td></tr>
+      <tr><td>7</td><td>Does W6 group a WU's pull requests on GitHub, for example one sub-issue per WU listing its parts?</td><td>No. Each part branch gets its own sub-issue, as today. The naming habit keeps a WU's parts together in the epic's list, the router keeps the list, and the WU's result names them all.</td><td>Grouping needs a branch-to-WU map in <code>router-gh.sh</code>: more script for the security review, while you may revamp the epic's GitHub commands. It can come later without changing anything here.</td></tr>
+      <tr><td>8</td><td>Should the commit check drop the trailer on any part without code, not only on a rules branch?</td><td>No. Only on a rules branch.</td><td>A rule edit in its own small pull request is easy for you to read. A rule line inside a larger part still needs your typed commit, as today, so rule text never hides in a big diff.</td></tr>
+      <tr><td>9</td><td>One result report for the whole WU, or one per part with code?</td><td>One per part with code.</td><td>Two parts editing one result file would conflict at the second merge for no gain (item 5). Each report covers its own range, which is what check 8 attests.</td></tr>
     </table>
 
     <h2 id="details">Details</h2>
     <div data-item="expected">
       <p>What a reader can check when W6 is done:</p>
       <ul>
+        <li>Two parts of one WU, each off the epic, one with code and one without, are each gated and signed on their own (the code part with its own report, the other with none); after both merge, the epic is green.</li>
         <li>On a scratch repo, an untrailered commit of a skill file is refused on <code>wu/E/x</code> and accepted on <code>wu/E/rules-x</code>; with a <code>src/</code> file staged too it is refused on <code>wu/E/rules-x</code>.</li>
         <li>A WU that changes only docs signs with <code>keel mr confirm</code>, and by the approval writer, with no report under <code>report = "required"</code>; <code>verify-dod wu</code> is green. A WU with code and no report is still refused at both and red at check 8.</li>
         <li>A code branch started from a rules branch, gated after the rules merge, has a range without the rules commits and is green at check 4; notes written before that merge are red at check 4 after it.</li>
@@ -149,7 +165,7 @@
     </div>
     <div data-item="test-plan">
       <p><strong>Unit:</strong> the branch-kind parser in <code>src/notes.rs</code>, with a generated-input test (seeded): a name is a rules branch exactly when it is the prefix, one plain word, <code>/rules-</code> and one plain word. The report-policy helper is git-bound, so it is tested at the integration layer.</p>
-      <p><strong>Integration:</strong> <code>tests/suite/split_prs.rs</code> (new, scratch repos): the commit check on a rules branch, a code branch, a rules branch with code staged, a detached HEAD, an epic branch and a third-segment name; the report rule through <code>keel mr confirm</code> and <code>verify-dod wu</code> for a docs-only and a code range, under <code>required</code>, <code>optional</code> and <code>none</code>; the stacked range and check 4 before and after the rules merge; a back-merge after a conflict, re-gated green. <code>tests/suite/sign_off.rs</code>: the approval writer signs a docs-only range with no report. <code>tests/suite/router_gh.rs</code> on the fake GitHub: <code>draft</code> on conflicted, clean, pending and foreign pull requests; the label in <code>pr-ready</code> (removed, absent, refused); <code>pr-open</code> refusing another epic as base. <code>router_gh_args.rs</code> and <code>router.rs</code>: <code>draft</code>'s argument checks and the guard's shapes, in the guard-agreement corpus.</p>
+      <p><strong>Integration:</strong> <code>tests/suite/split_prs.rs</code> (new, scratch repos): two parts of one WU, each off the epic, gated, signed and merged on their own, then <code>verify-dod epic</code> green; the commit check on a rules branch, a code branch, a rules branch with code staged, a detached HEAD, an epic branch and a third-segment name; the report rule through <code>keel mr confirm</code> and <code>verify-dod wu</code> for a docs-only and a code range, under <code>required</code>, <code>optional</code> and <code>none</code>; the stacked range and check 4 before and after the rules merge; a back-merge after a conflict, re-gated green. <code>tests/suite/sign_off.rs</code>: the approval writer signs a docs-only range with no report. <code>tests/suite/router_gh.rs</code> on the fake GitHub: <code>draft</code> on conflicted, clean, pending and foreign pull requests; the label in <code>pr-ready</code> (removed, absent, refused); <code>pr-open</code> refusing another epic as base. <code>router_gh_args.rs</code> and <code>router.rs</code>: <code>draft</code>'s argument checks and the guard's shapes, in the guard-agreement corpus.</p>
       <p><strong>E2E:</strong> the epic test's step 6 is written at the close with the epic's other steps, as for W3 and W4; this WU's integration tests cover each piece of it.</p>
       <p><strong>Live:</strong> the first rules pull request after W6 is on main and keel is installed from main; the first conflict the router turns back to draft. Recorded in the close's result.</p>
     </div>
@@ -170,10 +186,12 @@
       <li>The decision record and use-case rows: written at the epic's close with G6, G8 and G9's lists (UC-MR-2, UC-MR-1, UC-ROUTE-1, UC-ROUTE-6; a record for split pull requests amending DEC-24 and DEC-40).</li>
       <li>Who signs a back-merge of main into an epic: W7 (W4 open point 2).</li>
       <li>Anything of the dropped try-it work: nothing here depends on it.</li>
+      <li>Grouping a WU's pull requests on GitHub (open point 7). No new <code>/keel</code> command either: you may revamp that set.</li>
     </ul>
 
     <h3 id="history">History</h3>
     <p>v1, 2026-11-16: written by the W6 worker from the epic plan's W6 card, E-GHFLOW's §8 and open points 14 – 16 and 18, and backlog github-flow G1, G7 – G9. For your review before any build work.</p>
+    <p>v2, 2026-11-17: your comment on "The work": the idea is wider than rule edits. Any part of a WU that waits, for any reason, goes in its own pull request, so one WU can have several. New item 1 says so; the rules branch (item 2) is now its common case; item 4 covers any part that needs another; the docs branch kind is dropped (open point 3); open points 7 – 9 added; the requirement, the example, the terms, the skills and the tests follow.</p>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
 </body>
