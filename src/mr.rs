@@ -350,10 +350,22 @@ fn report_candidates(repo: &Path, cfg: &Config, base: &str, tip: &str, epic: boo
     Ok(found)
 }
 
+/// `[mr] report` as it applies to `base..tip` (E-GHFLOW2.W6): `required` asks for a report only when
+/// the range changes code, by the gate's own docs-only test (`notes::exempt`); `optional` and `none`
+/// stand. The one reading of the policy, so a sign-off check 8 accepts is one the writers write.
+fn report_policy(repo: &Path, cfg: &Config, base: &str, tip: &str) -> Result<ReportPolicy, String> {
+    if cfg.mr.report != ReportPolicy::Required {
+        return Ok(cfg.mr.report);
+    }
+    let names = notes::names(repo, base, tip, &[])?;
+    Ok(if notes::exempt(repo, cfg, base, tip, &names)? { ReportPolicy::Optional } else { ReportPolicy::Required })
+}
+
 /// The report this sign-off attests under `[mr] report`, or `Err((what, fix))` refusing the confirm.
 fn pick_report(repo: &Path, cfg: &Config, args: &[&str], base: &str, tip: &str, epic: bool) -> Result<Option<String>, (String, String)> {
     let given = flag(args, "--report");
-    if cfg.mr.report == ReportPolicy::None {
+    let policy = report_policy(repo, cfg, base, tip).map_err(|e| (e, "fix the repo state, then re-run".into()))?;
+    if policy == ReportPolicy::None {
         return match given {
             Some(r) => Err((
                 format!("--report {r} given, but [mr] report = \"none\": this project's sign-offs attest no report"),
@@ -369,7 +381,7 @@ fn pick_report(repo: &Path, cfg: &Config, args: &[&str], base: &str, tip: &str, 
     let found = report_candidates(repo, cfg, base, tip, epic).map_err(|e| (e, "fix the repo state, then re-run".into()))?;
     match &found[..] {
         [one] => Ok(Some(one.clone())),
-        [] if cfg.mr.report == ReportPolicy::Optional => Ok(None),
+        [] if policy == ReportPolicy::Optional => Ok(None),
         [] => Err((
             format!(
                 "[mr] report = \"required\", and no {role} doc (data-artifact=\"{role}\") under {} is committed in this {}'s diff {}..{}",
@@ -825,7 +837,7 @@ pub(crate) fn manual_review(
         (None, None) => None,
         _ => return again(format!("the mr/v1 note on {t} names a report or a report_hash without the other")),
     };
-    if attested.is_none() && cfg.mr.report == ReportPolicy::Required {
+    if attested.is_none() && report_policy(repo, cfg, base, tip).map_err(|e| (e, "fix the repo state, then re-run".into()))? == ReportPolicy::Required {
         let role = verify_doc::result_role(level == "epic");
         return Err((
             format!("the {level} sign-off on {t} attests no result report, but [mr] report = \"required\" (the target's committed policy)"),
@@ -1151,9 +1163,15 @@ pub(crate) fn checkout_problem(root: &Path) -> Option<String> {
         };
         // as written, and as git follows it: through each link in turn, so `<link>/..` is the link's
         // target's parent, not the text's (code review round 4)
-        let (written, named) = (root.join(named), lexical(&root.join(named)));
+        // the refusal names both: the text git follows, and where it leads (code review round 5, nit)
+        let text = named;
+        let (written, named) = (root.join(text), lexical(&root.join(text)));
         let bad = |why: &str| {
-            Some(format!("{} names {}, which is not this checkout's admin dir as git makes one ({why}): {owner}", dotgit.display(), named.display()))
+            Some(format!(
+                "{} names {text}, which leads to {}, not this checkout's admin dir as git makes one ({why}): {owner}",
+                dotgit.display(),
+                named.display()
+            ))
         };
         if std::fs::symlink_metadata(&named).map(|m| !m.is_dir()).unwrap_or(true) {
             return bad("not a directory");
@@ -1214,6 +1232,22 @@ pub fn commit_msg(repo: &Path, cfg: &Config, msg_file: &str) -> Result<i32, Stri
     let hits: Vec<&str> = staged.iter().map(String::as_str).filter(|p| rule_bearing(&cfg.rule_bearing, p)).collect();
     if hits.is_empty() {
         return Ok(0);
+    }
+    // E-GHFLOW2.W6: on a task branch, rule text alone needs no trailer - the owner's merge of the
+    // task's pull request is the yes. A code path or the roster staged too: the trailer, as anywhere.
+    let branch = git(repo, &["symbolic-ref", "--short", "-q", "HEAD"], &[]).ok();
+    if let Some(wu) = branch.as_deref().and_then(|b| notes::task_of(cfg, b)) {
+        let mut a = vec!["diff", "--cached", "--name-only", "--no-renames", "-z", "--"];
+        a.extend(cfg.code_paths.iter().map(String::as_str));
+        let code = !notes::zpaths(&git(repo, &a, &[])?).is_empty();
+        if !code && !hits.contains(&ROSTER) {
+            println!(
+                "keel: rule-bearing {} on task branch {} of {wu}, no code: your merge of the task covers them",
+                hits.join(", "),
+                branch.unwrap_or_default()
+            );
+            return Ok(0);
+        }
     }
     let msg = std::fs::read_to_string(msg_file).map_err(|e| format!("keel: cannot read {msg_file}: {e}"))?;
     // HEAD's roster: a commit that edits the roster is judged by the one it replaces.

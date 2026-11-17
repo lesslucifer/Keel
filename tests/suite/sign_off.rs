@@ -365,7 +365,7 @@ fn only_an_approval_check_8_accepts_is_picked_and_a_key_holders_never_is() {
 }
 
 /// Code review rounds 2 and 3: the writer never replaces a sign-off on the tip, and judges one there
-/// by check 8, never by comparing fields: a note check 8 accepts is "already signed" (exit 0, nothing
+/// by check 8, never by comparing fields: a note check 8 accepts is "already signed" (exit 4, nothing
 /// written) whoever approved this time - the same approver, another listed one, or after a typed
 /// confirm; a note check 8 refuses is refused with its cause, never overwritten. A --report that is
 /// not the note's is refused.
@@ -458,6 +458,36 @@ fn the_writer_attests_only_a_report_committed_in_the_range() {
     }
     ok(sign_off(p, "wu", "epic/e", &reviews, &["--report", "docs/work/a-result.html"]));
     assert_eq!(note(p, "mr", &tip).unwrap()["report"], "docs/work/a-result.html");
+}
+
+/// E-GHFLOW2.W6: under `report = "required"` the writer signs a WU that changes no code with no
+/// report, and check 8 accepts it; the same WU with a code path added still needs one.
+#[test]
+fn the_writer_signs_a_range_without_code_with_no_report() {
+    let d = fixture();
+    let p = d.path();
+    git(p, &["switch", "-q", "-c", "wu/e/docs", "epic/e"]);
+    git(p, &["branch", "-f", "wu/e/a"]);
+    git(p, &["switch", "-q", "wu/e/a"]);
+    git(p, &["branch", "-D", "wu/e/docs"]);
+    write(p, "docs/guide.md", "how to\n");
+    commit(p, "docs only");
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let o = ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    assert!(text(&o).contains("approved it"), "{}", text(&o));
+    let n = note(p, "mr", &tip).unwrap();
+    assert!(n.get("report").is_none() && n.get("report_hash").is_none(), "{n}");
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+
+    write(p, "src/a.py", "def a():\n    return 1\n");
+    write(p, "tests/test_a.py", "def test_a():\n    pass\n");
+    commit(p, "now with code");
+    notes(p);
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let o = sign_off(p, "wu", "epic/e", &json!([review(14, OWNER, "APPROVED", &tip)]), &[]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("report = \"required\""), "{t}");
+    assert!(note(p, "mr", &tip).is_none());
 }
 
 /// Code review round 1, nit: setup judges "already listed" by the typed tiers, so an id listed only
@@ -604,10 +634,16 @@ fn a_review_page_must_be_on_the_targets_github_repo_when_the_policy_names_one() 
 
 /// A git on PATH that records every call and fails: `keel mr` must make none on a refused checkout.
 fn recording_git(dir: &Path) -> (String, std::path::PathBuf) {
+    logging_git(dir, "exit 1")
+}
+
+/// A `git` on a PATH of its own in `dir/bin` that logs each call to `dir/git-calls`, then runs
+/// `last` (its last line). Returns the PATH and the log.
+fn logging_git(dir: &Path, last: &str) -> (String, std::path::PathBuf) {
     let bin = dir.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     let log = dir.join("git-calls");
-    std::fs::write(bin.join("git"), format!("#!/bin/sh\necho \"$*\" >> {}\nexit 1\n", common::sh_quote(&log.to_string_lossy()))).unwrap();
+    std::fs::write(bin.join("git"), format!("#!/bin/sh\necho \"$*\" >> {}\n{last}\n", common::sh_quote(&log.to_string_lossy()))).unwrap();
     std::fs::set_permissions(bin.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     (common::path_with(&bin), log)
 }
@@ -709,12 +745,13 @@ fn mkfifo(p: &Path) {
 }
 
 /// `keel mr commit` from `dir` with the recording git: refused with `needle`, no git run, no hang.
-fn refused_before_git(dir: &Path, fake: &str, log: &Path, why: &str, needle: &str) {
+fn refused_before_git(dir: &Path, fake: &str, log: &Path, why: &str, needle: &str) -> String {
     let _ = std::fs::remove_file(log);
     let o = run_bounded(dir, &["mr", "commit", "-m", "x", "--as", "vu"], fake);
     let t = text(&o);
     assert!(!o.status.success() && t.contains("keel mr: refused") && t.contains(needle), "{why}: {t}");
     assert!(!log.exists(), "{why}: git ran: {}", std::fs::read_to_string(log).unwrap_or_default());
+    t
 }
 
 /// Code review round 2, B1: a dir holding only HEAD and commondir is a git dir to git, which would use
@@ -762,13 +799,7 @@ fn keel_mr_refuses_a_fifo_in_the_git_links_without_hanging() {
 /// A git on PATH that records every call, then runs the real git: a refused checkout must log none.
 fn passthrough_git(dir: &Path) -> (String, std::path::PathBuf) {
     let real = String::from_utf8(run("sh", dir, &["-c", "command -v git"]).stdout).unwrap().trim().to_string();
-    let bin = dir.join("bin");
-    std::fs::create_dir_all(&bin).unwrap();
-    let log = dir.join("git-calls");
-    let q = |p: &str| common::sh_quote(p);
-    std::fs::write(bin.join("git"), format!("#!/bin/sh\necho \"$*\" >> {}\nexec {} \"$@\"\n", q(&log.to_string_lossy()), q(&real))).unwrap();
-    std::fs::set_permissions(bin.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    (common::path_with(&bin), log)
+    logging_git(dir, &format!("exec {} \"$@\"", common::sh_quote(&real)))
 }
 
 /// Code review round 4, B1: `wt`'s .git names `s/../<up k>/<rest>`, which reads as the real admin dir
@@ -812,11 +843,9 @@ fn a_dotdot_through_a_symlink_is_refused(nested: bool) {
     let marker = scratch.path().join("fsmonitor-fired");
     let link = plant_dotdot(&wt, &admin, &marker);
     std::fs::write(wt.join(".git"), &link).unwrap();
-    let _ = std::fs::remove_file(&log);
-    let o = run_bounded(&wt, &["mr", "commit", "-m", "x", "--as", "vu"], &gitp);
-    let t = text(&o);
-    assert!(!o.status.success() && t.contains("keel mr: refused") && t.contains("symbolic link"), "{link}: {t}");
-    assert!(!log.exists(), "{link}: git ran: {}", std::fs::read_to_string(&log).unwrap_or_default());
+    let t = refused_before_git(&wt, &gitp, &log, &link, "symbolic link");
+    let written = link.trim_end().trim_start_matches("gitdir: ");
+    assert!(t.contains(&format!("names {written},")), "the refusal shows the text git follows: {t}");
     assert!(!marker.exists(), "{link}: the planted fsmonitor fired");
 }
 
