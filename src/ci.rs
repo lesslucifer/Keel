@@ -40,6 +40,15 @@ pub(crate) fn red_before_sign_off<'a>(failed: impl IntoIterator<Item = &'a str>)
     failed.into_iter().any(|c| c != SIGN_OFF)
 }
 
+/// What the gate on GitHub says of a tip's review that did not pass (E-GHFLOW2.W7).
+pub(crate) const REVIEW_LEFT: &str = "the review did not pass: the owner's approval decides at the sign-off";
+
+/// The gate on GitHub (E-GHFLOW2.W7): red when any check but the sign-off failed, the tip's own
+/// review excepted - an approval signs over it, so it is decided with the sign-off, after this run.
+pub(crate) fn red_on_github(failures: &[Failure]) -> bool {
+    red_before_sign_off(failures.iter().filter(|f| !f.review).map(|f| f.id))
+}
+
 /// Recorded text as Markdown that renders as the same text and nothing else: made inert as the
 /// gate's printout makes it (`gate::inert`), cut to `FIELD_CAP` of those characters with the count
 /// it dropped, then every ASCII punctuation character becomes a numeric entity, so no link,
@@ -169,10 +178,12 @@ fn state(e: &Evidence, id: &str) -> String {
 
 /// The job summary for one gate run.
 pub(crate) fn render(e: &Evidence) -> String {
-    let verdict = if red_before_sign_off(e.failures.iter().map(|f| f.id)) {
+    let verdict = if red_on_github(e.failures) {
         "red".to_string()
     } else if e.failures.is_empty() {
         "green on every check".to_string()
+    } else if e.failures.iter().any(|f| f.review) {
+        "green on every check but the review, which did not pass: the owner's approval decides at the sign-off".to_string()
     } else {
         format!("green on every check before {SIGN_OFF}, which is judged at the merge")
     };
@@ -225,7 +236,7 @@ pub(crate) fn render(e: &Evidence) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{md, red_before_sign_off, render, Evidence, NOTE_KINDS};
+    use super::{md, red_before_sign_off, red_on_github, render, Evidence, NOTE_KINDS};
     use crate::gate::{Failure, Judged, Waiver, DIFF_BINDING, DOC_NOTE, HOOKS, MANIFEST, NOTES, REVIEW, REVIEW_BASE, SIGN_OFF, WALK};
 
     const TIP: &str = "1111111111222222222233333333334444444444";
@@ -243,7 +254,7 @@ mod tests {
     }
 
     fn failure(id: &'static str, what: &str, fix: &str) -> Failure {
-        Failure { id, check: id.into(), what: what.into(), fix: fix.into() }
+        Failure { id, check: id.into(), what: what.into(), fix: fix.into(), review: false }
     }
 
     fn waiver(check: &'static str, text: &str) -> Waiver {
@@ -321,7 +332,8 @@ mod tests {
         .to_string();
         n.extend(["doc", "cr", "mr", "dod"].map(|k| (k, Ok(Some(note.clone())))));
         let fix = format!("{huge}\n").repeat(10);
-        let failures: Vec<Failure> = (0..60).map(|_| Failure { id: WALK, check: format!("7·walk·{huge}"), what: huge.clone(), fix: fix.clone() }).collect();
+        let failures: Vec<Failure> =
+            (0..60).map(|_| Failure { id: WALK, check: format!("7·walk·{huge}"), what: huge.clone(), fix: fix.clone(), review: false }).collect();
         let waived: Vec<Waiver> = (0..60).map(|_| waiver(REVIEW, &huge)).collect();
         let judged: Vec<(&str, Judged)> = WU.iter().map(|id| (*id, Judged::Missing(huge.clone()))).collect();
         let p = page_with(&judged, &failures, &waived, false, &n);
@@ -340,6 +352,10 @@ mod tests {
 
     #[test]
     fn only_a_failure_outside_the_sign_off_turns_the_gate_red() {
+        let review = |id| Failure { review: true, ..failure(id, "w", "f") };
+        assert!(!red_on_github(&[review(NOTES), review(REVIEW), failure(SIGN_OFF, "w", "f")]), "the review is left to the approval");
+        assert!(red_on_github(&[review(REVIEW), failure(NOTES, "w", "f")]), "any other check is not");
+        assert!(red_on_github(&[failure(REVIEW, "w", "f")]), "a seam's or an unmarked review failure is not");
         assert!(!red_before_sign_off([]));
         assert!(!red_before_sign_off([SIGN_OFF]));
         assert!(red_before_sign_off([SIGN_OFF, NOTES]));
@@ -367,7 +383,7 @@ mod tests {
     fn a_red_page_names_each_failure_escaped_and_counts_it_against_its_check() {
         let f = [
             failure(NOTES, "no cr/v1 note on 1111111111", "run the review\n      then | write it"),
-            Failure { id: WALK, check: "7·walk·3·review".into(), what: "[wu abc] verdict is FAIL".into(), fix: "fix it".into() },
+            Failure { id: WALK, check: "7·walk·3·review".into(), what: "[wu abc] verdict is FAIL".into(), fix: "fix it".into(), review: false },
         ];
         let judged = ran_all(&EPIC);
         let p = render(&Evidence {

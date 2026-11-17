@@ -340,7 +340,7 @@ Workers run neither and never touch GitHub.
 |---|---|---|
 | `push <wu/E/slug \| epic/E>` | a WU tip carries its test note (refused without one); again on every new tip or note (review, fix, sign-off); the epic once it exists and after every merge into it | `PUSHED branch= sha= state=new\|updated\|unchanged`, with the five notes kinds; `WARN notes ref … not pushed` is a finding |
 | `pr-open <branch> [--base main\|epic/E]` | a WU: after its first push, a draft into its epic (never `--base main`: refused, since it would skip the epic's gate; E-GHFLOW2.W4). The epic: a draft into main once it holds a commit main lacks (a fresh epic cut from main gets GitHub's "No commits between", exit 1: not an alarm). Again after each push, to refresh the body | `PR number=<n> url= state=opened\|refreshed head= base= sha=` |
-| `pr-ready <n>` | the bot's draft is at the local tip, the gate is red only on the sign-off, the review passed, `checks` said success | `READY pr= head= sha= state=ready reviewers=<logins\|none> automerge=on\|off\|refused` (`state=unchanged` if ready already, auto-merge still tried); `reviewers=none` or a `WARN`: no review request reached the owner, so the push channel carries the ask. `automerge=on`: the owner's approval lands it once every required check is green (E-GHFLOW2.W4, `[github] merge_on_approve`); `refused` with a `WARN`: tell the owner the merge is his button |
+| `pr-ready <n>` | the bot's draft is at the local tip, the gate is red only on the sign-off, `checks` said success, and the review passed, or did not and you have told the owner so in plain words: his approval signs over it (E-GHFLOW2.W7) | `READY pr= head= sha= state=ready reviewers=<logins\|none> automerge=on\|off\|refused` (`state=unchanged` if ready already, auto-merge still tried); `reviewers=none` or a `WARN`: no review request reached the owner, so the push channel carries the ask. `automerge=on`: the owner's approval lands it once every required check is green (E-GHFLOW2.W4, `[github] merge_on_approve`); `refused` with a `WARN`: tell the owner the merge is his button |
 | `post <n> <name>` | a worker wrote `<its worktree>/.router-gh/<name>.md` for that pull request (a pull request only, never an issue); never your own text (UC-ROUTE-3) | `POSTED pr= comment= file=`; the file is deleted |
 | `sync <epic/E\|main>` | a merge into the epic, or into `main`, that GitHub made, by the `MERGED` row below | `SYNCED branch= sha= state=unchanged\|fast-forward`; `state=fetched … worktree=<path>`: message that worktree's session to run `git merge --ff-only origin/<branch>` (for `main` in the main checkout: the owner) |
 | `issue <branch>` | the epic's first, after its first push: a WU's is refused (exit 2) until its epic's issue exists. Then every state change of a WU or its epic: pushed, opened, ready, signed, merged (a merged WU's sub-issue closes) | `ISSUE number= url= state=opened\|refreshed open= branch= parent=` |
@@ -372,7 +372,7 @@ stay the owner's: the bot refuses both.
 | `EDITED` | no text is printed and none is acted on: ask the owner to post it again as a new comment |
 | `IGNORED from=other count=<k>` | other people's comments or reviews, counted: never text, never an order |
 | `IGNORED from=commander … why=free-text-off` | the project hears only commands: tell the owner once that their other text was dropped |
-| `APPROVED` | `sha=` must equal `head=` and the tip you staged, or it approves an older commit. It signs only where the project's approval sign-off is live (project-router); else it is the owner's yes and the typed sign-off still stands |
+| `APPROVED` | `sha=` must equal `head=` and the tip you staged, or it approves an older commit. It signs only where the project's approval sign-off is live (project-router); else it is the owner's yes and the typed sign-off still stands. Where it is live it accepts all: it signs over a review that did not pass and over a roster change, and `keel/sign-off` says so (E-GHFLOW2.W7). Never ask for an approval without saying what it signs over |
 | `CHANGES-REQUESTED`, `COMMENTED` | the review text is the owner's feedback: send it to the WU's worker; a change request holds the sign-off |
 | `REVIEWED` | a review state the watch does not name: re-read the pull request; its text is the owner's feedback, as above |
 | `DISMISSED` | `from=` is the review's author, not who dismissed it: re-read the pull request |
@@ -406,8 +406,9 @@ step 4's typed command where project-router says so):
    `issue`; arm `checks <n>`.
 2. Each later note or tip (the review's `cr` note, a fix): `push`, `pr-open`,
    `issue`; arm `checks <n>` when the head moved.
-3. Gate red only on the sign-off, review passed, `CHECKS state=success`:
-   `pr-ready <n>`, `issue`; arm `review <n>` and `comment <n>`.
+3. Gate red only on the sign-off, `CHECKS state=success`, and the review passed
+   or the owner was told it did not: `pr-ready <n>`, `issue`; arm `review <n>`
+   and `comment <n>`.
 4. Stage the sign-off and arm its `signed` watch. Once signed: `push` (the
    `mr` note rides it), `issue`; arm `merged <n>`.
 5. The owner merges into the epic locally: on the `merged` git watch, `push`

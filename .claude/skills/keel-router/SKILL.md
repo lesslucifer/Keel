@@ -387,8 +387,8 @@ printed lines and what to do on each: `references/worker-ops.md` "The GitHub flo
 - **When.** `push` a WU branch once its tip carries its test note, and again on
   every new tip or note; `pr-open` after the first push (a draft; an epic's once
   it holds a commit main lacks) and after each later one (it refreshes the body);
-  `pr-ready` once its gate is red only on the sign-off, its review passed and its
-  checks are green (a WU's base is derived from its name: never pass `--base`); `sync` after a merge GitHub made, by the phase rule in
+  `pr-ready` once its gate is red only on the sign-off (and the review, when the
+  owner will approve over it) and its checks are green (a WU's base is derived from its name: never pass `--base`); `sync` after a merge GitHub made, by the phase rule in
   worker-ops; `issue` on every state change of a WU or its epic, the epic's
   first; `post` only a file a worker wrote. A WU goes from push to merged pull
   request with no owner command but the sign-off and the merge.
