@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-GHFLOW2.W6 result · Work that need not wait goes in its own pull request</h1>
       <p>A piece of a WU that waits can now go on a task branch, with its own small pull request into the WU branch that you merge. A WU with no code needs no result report. The router can watch every open pull request for a conflict.</p>
-      <div class="meta">Ready v3 · 2026-11-17 · T3 · WU result · Keel · plan: <a href="2026-11-16-eghflow2-w6-plan.html">2026-11-16-eghflow2-w6-plan.html</a> (v5, f3efcac) · tip ea69e93 plus this report; the rule-bearing files staged, not committed</div>
+      <div class="meta">Ready v4 · 2026-11-17 · T3 · WU result · Keel · plan: <a href="2026-11-16-eghflow2-w6-plan.html">2026-11-16-eghflow2-w6-plan.html</a> (v5, f3efcac) · tip 167962b plus this report; the rule-bearing files in your commit bc524b8</div>
     </div>
   </header>
   <main>
@@ -52,9 +52,18 @@
       <tr><td>5c: the <code>a_b_c</code> split, and the fast-forward wording</td><td>nit</td><td>Left as they are, by the router's ruling</td></tr>
     </table>
 
+    <h2 id="review">Code review</h2>
+    <p>Round 1 (the cr note on <code>bc524b8</code>): FAIL, 0 blockers, 3 importants, each fixed in <code>167962b</code> (src and tests only; the scripts you committed are untouched).</p>
+    <table data-c="review">
+      <tr><th>Round</th><th>Finding</th><th>Fix</th></tr>
+      <tr><td>1</td><td><code>src/mr.rs</code>: the task relaxation rebuilt <code>staged_code</code> by hand</td><td>It calls <code>crate::staged_code</code> with HEAD's <code>code_paths</code>, so one function says what staged code is</td></tr>
+      <tr><td>1</td><td><code>src/notes.rs</code>: no test tied keel's <code>task_of</code> to the bot's rule; the test's oracle was a third hand copy</td><td>The unit test reads its oracle from <code>router-gh.sh</code> (<code>word=</code> and its task pattern) and checks <code>router-worker.sh</code>'s and the guard's copies, so a drift fails a test</td></tr>
+      <tr><td>1</td><td><code>src/mr.rs</code>: R50's refusal named the lexical path, not where git leads through the link</td><td>It names the canonical path git reaches; the test asserting that path was red first, on both dotdot cases</td></tr>
+    </table>
+
     <h2 id="evidence">Evidence</h2>
     <div data-item="evidence">
-      <p><strong>Commits</strong> on <code>wu/E-GHFLOW2/w6-split-prs</code>: <code>ca65c2c</code> (keel: tasks, the commit check, the report rule per range, G8 nits, with their tests), <code>a1e8739</code> (the scripts' tests), <code>ea69e93</code> (the security review's fixes and their tests), and this report. Staged for your commit: the four scripts. In <code>w6-skills.patch</code>: the five skill files.</p>
+      <p><strong>Commits</strong> on <code>wu/E-GHFLOW2/w6-split-prs</code>: <code>ca65c2c</code> (keel: tasks, the commit check, the report rule per range, G8 nits, with their tests), <code>a1e8739</code> (the scripts' tests), <code>ea69e93</code> (the security review's fixes and their tests), your <code>bc524b8</code> (the scripts and the skills), <code>167962b</code> (code review round 1's fixes), and this report. Staged for your commit: the four scripts. In <code>w6-skills.patch</code>: the five skill files.</p>
       <p><strong>Tests added:</strong></p>
       <ul>
         <li>Unit: <code>notes::tests::a_task_branch_is_exactly_three_plain_words_and_names_its_wu</code>, 20,000 seeded generated names judged against a regex oracle.</li>
