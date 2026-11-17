@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-GHSETUP · Set the GitHub flow up in any project</h1>
       <p>Today only Keel's own repository has the GitHub flow, set up by hand. After this epic, keel sets it up in any project, with two clicks in a browser.</p>
-      <div class="meta">Ready v1 · 2026-11-17 · T3 · epic plan · Keel · off main 6cf3127 · carries backlog github-flow G10 (open steps, live facts, the /keel question), parts of G4 and G5</div>
+      <div class="meta">Ready v2 · 2026-11-17 · T3 · epic plan · Keel · off main 6cf3127 · carries backlog github-flow G10 (open steps, live facts), parts of G4 and G5</div>
     </div>
   </header>
   <main>
@@ -143,11 +143,11 @@
   <tbody>
     <tr><td>1</td><td>How do this epic's plan and close reach GitHub, now that nobody pushes an epic?</td><td><b>By pull request</b>: the router pushes this plan's commit as <code>wu/E-GHSETUP/plan</code> into the epic; your approval approves it. W2 makes it the rule</td><td>A bot bypass breaks "nobody bypasses". The commit is unchanged, so the local epic fast-forwards to GitHub's merge</td></tr>
     <tr><td>2</td><td>One command or several?</td><td><b>One</b>, <code>keel github setup</code>, resumable; each step also alone</td><td>Your commit splits it anyway; a rerun picks up where it stopped</td></tr>
-    <tr><td>3</td><td>Where do the scripts live in a project?</td><td><b>As files keel writes</b>, locked like the skills</td><td>The same tested scripts; GitHub runs them from main</td></tr>
-    <tr><td>4</td><td>Which keel do a project's checks run?</td><td><b>A release, pinned in the committed config, hash-checked</b></td><td>No Rust toolchain in other projects; a pull request still cannot change its judge</td></tr>
+    <tr><td>3</td><td>Where do the flow's scripts live in a project? They are seven: <code>ci-gate.sh</code> runs the checks on a pull request; <code>ci-sign-off.sh</code> turns your approval into the sign-off; <code>pages-build.sh</code> builds the docs site; <code>router-gh.sh</code>, <code>router-gh-watch.sh</code> and <code>router-gh-command.jq</code> are the bot (push, pull requests, hearing your comments); <code>gh-settings-check.sh</code> checks the settings. Today they sit in Keel's <code>scripts/</code> only</td><td><b>As files keel writes into the project</b>, locked like the skills</td><td>The same tested scripts; GitHub runs the CI ones from main, so a pull request cannot change them</td></tr>
+    <tr><td>4</td><td>On GitHub, the checks run the keel program. Where does that program come from in a project? In Keel's repository the checks compile it from Keel's own source; another project has no Keel source to compile</td><td><b>The checks download a released keel</b>, at the version written in the project's committed config, and refuse it unless its hash matches the release's</td><td>Works in any project, with no Rust toolchain. The version comes from the target branch's config, so a pull request cannot swap the program that judges it</td></tr>
     <tr><td>5</td><td>One App per project, or one for all?</td><td><b>One App per account</b>, installed per repository</td><td>One key to guard; one click per project</td></tr>
     <tr><td>6</td><td>Pages and private repositories?</td><td><b>Pages off by default. A private repository without a paid plan is refused, with the reason</b></td><td>Rulesets on a private repository need a paid plan; the site needs a public one</td></tr>
-    <tr><td>7</td><td>The /keel commands (go, hold, retry, answer)?</td><td><b>The setup leaves them out</b>; removing them goes to a router backlog row</td><td>You want the flow simple. Comments and approvals already carry it</td></tr>
+    <tr><td>7</td><td>Does this epic change the /keel commands (go, hold, retry, answer)?</td><td><b>No.</b> The setup writes the list of who the router hears, so they work in a new project as they do today</td><td>This epic only sets the flow up. Their meanings stay an open backlog question (G10), outside this epic</td></tr>
   </tbody>
 </table>
 
@@ -176,7 +176,7 @@
   <li>A GitHub flow without an App, GitHub Enterprise Server, other forges.</li>
   <li>Changing what the gate or the sign-off judges. G7's walk-waiver item stays in the backlog.</li>
   <li>Claude reviews inside Actions; G4's range walk on main.</li>
-  <li>Removing the /keel commands (open point 7).</li>
+  <li>Any change to the /keel commands (open point 7).</li>
   <li>The docs split (E-DOCSPLIT).</li>
 </ul>
 
@@ -199,7 +199,7 @@
   <li>docs/architecture.html: the CLI table and "What setup installs" gain the GitHub pieces.</li>
   <li>docs/use-cases/workflow.html: UC-INIT-2; UC-GATE-7 and UC-MR-3 amended.</li>
   <li>docs/decisions: one record for the setup (manifest App, settings by API, released keel in CI); DEC-65 amended (<code>do_not_enforce_on_create</code>, plan and close by pull request).</li>
-  <li>docs/backlog/github-flow.html: G10's taken rows closed, the rest re-pointed; the /keel row added.</li>
+  <li>docs/backlog/github-flow.html: G10's taken rows closed, the rest re-pointed.</li>
 </ul>
 
 <h3 id="facts-h">Facts this plan stands on</h3>
