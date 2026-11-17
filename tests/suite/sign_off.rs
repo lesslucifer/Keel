@@ -1260,6 +1260,10 @@ impl Writer {
         git(&dev, &["push", "-q", "--no-verify", origin.to_str().unwrap(), "main", "epic/e", "wu/e/a", "refs/notes/*:refs/notes/*"]);
         // as actions/checkout leaves it: main checked out
         git(&base, &["clone", "-q", "-b", "main", origin.to_str().unwrap(), runner.to_str().unwrap()]);
+        // as GitHub's ubuntu runner: no [user] anywhere and no identity git may guess (E-GHFLOW2.W10).
+        // macOS guesses one from the host name; this makes it refuse, as Linux does, so an identity the
+        // writer forgets to set fails here, never on GitHub only. The harness sets none of its own.
+        git(&runner, &["config", "user.useConfigOnly", "true"]);
         crate::router_gh::exe(&bin.join("fake-curl"), crate::router_gh::FAKE_CURL);
         Writer { _d: d, _root: root, dev, origin, runner, mock, bin, tmp }
     }
@@ -1320,7 +1324,7 @@ impl Writer {
     fn run(&self, env: &[(&str, &str)]) -> Output {
         let mut c = common::cmd("sh");
         c.arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/ci-sign-off.sh")).current_dir(&self.runner);
-        for k in ["GH_TOKEN", "REPO", "PR_NUMBER", "RUN_HEAD_SHA", "RUN_EVENT", "KEEL", "API", "CURL", "RUNNER_TEMP"] {
+        for k in ["GH_TOKEN", "REPO", "PR_NUMBER", "RUN_HEAD_SHA", "RUN_EVENT", "KEEL", "API", "CURL", "RUNNER_TEMP", "EMAIL"] {
             c.env_remove(k);
         }
         c.env("GH_TOKEN", "ghs_writerTestToken0123456789")
@@ -1357,6 +1361,13 @@ fn the_writer_signs_a_listed_approval_on_the_head_pushes_the_note_and_sets_the_s
     assert!(o.status.success(), "{}", text(&o));
     let n = w.origin_note(&head).expect("the note reached origin");
     assert_eq!((n["tier"].as_str(), n["signer"].as_str(), n["review"]["id"].as_u64()), (Some("github"), Some("5499546"), Some(6)));
+    // the writer signs as itself, whatever identity the runner has (none, on GitHub: E-GHFLOW2.W10)
+    assert_eq!(n["committer"], "keel-sign-off <keel-sign-off@users.noreply.github.com>");
+    assert_eq!(
+        git(&w.origin, &["log", "-1", "--format=%an <%ae>|%cn <%ce>", "refs/notes/mr"]),
+        "keel-sign-off <keel-sign-off@users.noreply.github.com>|keel-sign-off <keel-sign-off@users.noreply.github.com>",
+        "the notes commit too"
+    );
     assert_eq!(w.statuses(), [("success".to_string(), "Signed by approval (review 6)".to_string())]);
     let auth: Vec<Value> = w.log().iter().map(|r| r["auth"].clone()).collect();
     assert!(auth.iter().all(|a| a == "Bearer ghs_writerTestToken0123456789"), "every request carries the token on curl's stdin only: {auth:?}");
@@ -1451,6 +1462,27 @@ fn the_writers_status_for_a_docs_only_range_names_no_review() {
     assert!(o.status.success(), "{}", text(&o));
     assert!(w.origin_note(&head).expect("the note reached origin").get("covers").is_none());
     assert_eq!(w.statuses(), [("success".to_string(), "Signed by approval (review 6)".to_string())]);
+}
+
+/// E-GHFLOW2.W10: a keel that stops on an error of its own (here, as when git had no identity) is
+/// named by its own line in the status, never taken for a red check; nothing is written.
+#[test]
+fn the_writer_names_a_keel_error_in_the_status_never_a_red_check() {
+    let w = Writer::new();
+    let head = w.sha("wu/e/a");
+    w.github(json!([review(6, OWNER, "APPROVED", &head)]));
+    let stub = w.bin.join("keel-stub");
+    crate::router_gh::exe(
+        &stub,
+        "#!/bin/sh\ncase \"$1 $#\" in\n'ci 1') echo 'keel ci sign-off <wu|epic> ...' ;;\nci*) echo 'keel: git var GIT_COMMITTER_IDENT failed: Committer identity unknown' >&2; exit 1 ;;\nesac\n",
+    );
+    let o = w.run(&[("KEEL", stub.to_str().unwrap())]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(w.origin_note(&head).is_none());
+    assert_eq!(
+        w.statuses(),
+        [("failure".to_string(), "Approval not signed: keel: git var GIT_COMMITTER_IDENT failed: Committer identity unknown".to_string())]
+    );
 }
 
 #[test]
