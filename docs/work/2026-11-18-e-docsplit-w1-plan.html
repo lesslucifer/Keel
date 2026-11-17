@@ -35,7 +35,7 @@
   <li>You open the inventory page. The table comes first. The field lists, the slimming rules and the caps follow. Two links open the examples.</li>
   <li>You comment in the pages. The worker fixes each point and resolves the comment.</li>
   <li>You tell the router "W1 approved", or what to change.</li>
-  <li>The worker records the decision and writes the result. You sign off this part. The next parts may then start.</li>
+  <li>The worker records the decision and writes the result. The work reaches the epic as a pull request on GitHub. You approve it there, and it merges itself. The next parts may then start.</li>
 </ol>
 
 <h3 id="terms">Terms</h3>
@@ -110,7 +110,7 @@
     <tr><td>3</td><td>Do the example data files get their own files now?</td><td><b>No: shown inline on the inventory page.</b> W2 can turn them into its test fixtures.</td><td>A YAML file under <code>docs/work/</code> is a doc kind today's archive check does not know yet. W3 teaches it pairs.</td></tr>
     <tr><td>4</td><td>Do field names keep the tag names?</td><td><b>Yes</b> (<code>maps-to</code>, not <code>maps_to</code>).</td><td>One name per fact across tags, fields, skills and messages. Less to relearn in W4.</td></tr>
     <tr><td>5</td><td>Is a page over its cap red, or a warning?</td><td><b>Red on a ready page</b>, like the 300-word top today.</td><td>A warning gets ignored. A draft stays silent, so writing is not blocked.</td></tr>
-    <tr><td>6</td><td>Does W1 need tests or a code review?</td><td><b>No: it changes no code.</b> The checks below and your read stand in.</td><td>Keel's rule: a change with no code path needs no test, review or doc evidence. Your sign-off is still needed.</td></tr>
+    <tr><td>6</td><td>Does W1 need tests or a code review?</td><td><b>No: it changes no code.</b> The checks below and your read stand in.</td><td>Keel's rule: a change with no code path needs no test, review or doc evidence. Your approval of its pull request is still needed.</td></tr>
   </tbody>
 </table>
 
@@ -141,7 +141,7 @@
   <p><b>Unit, integration, e2e:</b> none. W1 touches no code path (<code>src/</code>, <code>tests/</code>), so Keel exempts it from test, review and doc evidence. If a gate asks anyway, each layer is waived with the reason "docs-only WU: no code".</p>
   <p><b>Stand-ins:</b> the six checks above. The epic's end-to-end test (W2 to W4) proves the split in the tool.</p>
   <p><b>Review:</b> no code review: there is no code. Your read of the inventory is the review.</p>
-  <p><b>Sign-off:</b> <code>keel mr confirm wu</code> on the tip with the WU result, as always.</p>
+  <p><b>Sign-off:</b> the WU reaches its epic as a pull request on GitHub, with the WU result in it. Your approval of the pull request signs it, and auto-merge merges it.</p>
 </div>
 
 <h3 id="files">Files</h3>
