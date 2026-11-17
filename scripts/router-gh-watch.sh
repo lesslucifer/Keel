@@ -6,6 +6,8 @@
 #   router-gh-watch.sh comment <n>  [since <id>|latest]   COMMAND | MESSAGE | BADCOMMAND | EDITED (an issue or a pull request)
 #   router-gh-watch.sh merged  <pr>                MERGED | CLOSED
 #   router-gh-watch.sh checks  <pr>                CHECKS ... state=success|failure, once every check on the head is done
+#   router-gh-watch.sh conflict <pr>               CONFLICT, once GitHub says it cannot merge (mergeable false, state dirty);
+#                                                  MERGED | CLOSED if it leaves first (E-GHFLOW2.W6)
 # It checks at once, then once per poll, until an event: one event line of k=v words, detail lines
 # indented two spaces, then an `IGNORED from=other count=N` line when anyone else wrote meanwhile.
 # Every event line carries at=<GitHub's time> (security review I2), so a replayed one shows its age;
@@ -51,10 +53,10 @@ for v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 LC_ALL=C; export LC_ALL
 die() { echo "router-gh-watch: $*" >&2; exit 2; }
 shown() { printf '%s' "$1" | tr -d '\000-\037\177' | cut -c1-80; }
-usage="usage: review <pr> [since <id>|latest] | comment <n> [since <id>|latest] | merged <pr> | checks <pr>"
+usage="usage: review <pr> [since <id>|latest] | comment <n> [since <id>|latest] | merged <pr> | checks <pr> | conflict <pr>"
 DIR=$(cd "$(dirname "$0")" && pwd -P)
 kind=${1:-}; [ $# -ge 1 ] && shift
-case "$kind" in review|comment|merged|checks) ;; *) die "$usage";; esac
+case "$kind" in review|comment|merged|checks|conflict) ;; *) die "$usage";; esac
 for a; do case "$a" in -*) die "an argument may not start with -: $(shown "$a")";; esac; done
 since=0
 case "$kind:$#" in
@@ -142,6 +144,14 @@ def counted($k): if $k > 0 then "IGNORED from=other count=\($k)" else empty end;
              then "failure" else "success" end) as $s
        | {line: "CHECKS pr=\($n) sha=\($r.head | sha) state=\($s) runs=\($r.runs | length) statuses=\($r.statuses | length) at=\([$r.runs[].completed_at | ts] | max | ts)",
           detail: ([$r.runs[] | "check \(.conclusion // "none" | word) \(.name // "" | short)"] + [$r.statuses[] | "status \(.state // "none" | word) \(.context // "" | short)"])} end)}
+  elif $r.kind == "conflict" then
+    {ignored: [],
+     ev: (if $r.state == "closed" then
+         (if $r.merged == true then "MERGED" else "CLOSED" end) as $w
+         | {line: "\($w) pr=\($n) head=\($r.head | sha) base=\($r.base | word) at=\($r.at | ts)", detail: []}
+       elif $r.mergeable == false and $r.mergeable_state == "dirty" then
+         {line: "CONFLICT pr=\($n) head=\($r.head | sha) base=\($r.base | word) at=\($r.at | ts)", detail: []}
+       else null end)}
   else error("unknown kind") end
 | if .ev == null then "WAIT" else .ev.line, (.ev.detail | trimtail | .[] | "  " + clean) end,
   (if (.ev.line // "" | startswith("OVERFLOW")) then empty else .ignored[] end)'

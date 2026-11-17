@@ -42,5 +42,6 @@ mod router_inbox;
 mod seed3_e2e;
 mod settings_check;
 mod sign_off;
+mod split_prs;
 mod verify_doc;
 mod verify_dod;

@@ -1,7 +1,9 @@
 //! E-GHFLOW2.W3: a pull-request approval is the sign-off. `keel ci sign-off`, the writer's core, on a
 //! scratch repo with recorded review lists as GitHub's API returns them; check 8 on the note it
 //! writes; the github tier refused on every typed path; the epic report carried as a note; and R50,
-//! `keel mr` checking its checkout's git links before any git call.
+//! `keel mr` checking its checkout's git links before any git call. E-GHFLOW2.W7: the approval accepts
+//! all - it signs over a review in any state and over a roster change, records what it covered, and
+//! the gate and the epic walk take that cover; a typed sign-off never gets it.
 compiled!();
 
 use serde_json::{json, Value};
@@ -153,6 +155,7 @@ fn an_approval_by_a_listed_id_on_the_head_signs_and_the_gate_goes_green() {
     assert_eq!(n["review"], json!({"id": 13, "url": format!("{REPO_URL}#pullrequestreview-13"), "commit": tip}));
     assert_eq!(n["report"], "docs/work/a-result.html");
     assert!(n.get("sig").is_none());
+    assert!(n.get("covers").is_none() && n.get("waiver_hash").is_none(), "an approval over a passing review writes today's note: {n}");
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
 }
 
@@ -211,7 +214,8 @@ fn the_github_tier_counts_only_when_the_targets_policy_accepts_it() {
 fn nothing_is_written_while_a_check_before_the_sign_off_is_red() {
     let d = fixture();
     let p = d.path();
-    notes_with(p, &["test", "doc"], r#"{"integration":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
+    // W7: the review is the approval's to cover; any other red check still refuses
+    notes_with(p, &["doc", "cr"], "");
     let tip = git(p, &["rev-parse", "wu/e/a"]);
     let o = sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]);
     assert_eq!(o.status.code(), Some(1), "{}", text(&o));
@@ -219,20 +223,360 @@ fn nothing_is_written_while_a_check_before_the_sign_off_is_red() {
     assert!(note(p, "mr", &tip).is_none());
 }
 
+/// W7: an approval signs a range that changes the roster and records the lines it covered; the
+/// branch's own roster line still authorises nothing (the target's roster judges the signer).
 #[test]
-fn a_roster_change_in_the_range_is_never_signed_by_approval() {
+fn an_approval_signs_a_roster_change_and_records_its_lines() {
     let d = fixture();
     let p = d.path();
     write(p, ".keel/mr-allowed", &format!("{ROSTER}github: 42 intruder\n"));
     commit(p, "list another approver");
     notes(p);
     let tip = git(p, &["rev-parse", "wu/e/a"]);
-    let o = sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]);
-    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
-    assert!(text(&o).contains("changes who may sign") && text(&o).contains("--roster-change"), "{}", text(&o));
-    assert!(note(p, "mr", &tip).is_none());
     let o = sign_off(p, "wu", "epic/e", &json!([review(14, 42, "APPROVED", &tip)]), &[]);
     assert_eq!(o.status.code(), Some(3), "the branch's own roster line authorises nothing: {}", text(&o));
+    assert!(note(p, "mr", &tip).is_none());
+    let o = ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    assert!(text(&o).contains("github 5499546 approved it (review 13)") && text(&o).contains("roster"), "{}", text(&o));
+    let n = note(p, "mr", &tip).unwrap();
+    assert_eq!(n["covers"], json!({"roster": ["+ github: 42 intruder"]}), "{n}");
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+}
+
+/// W7 security review, nit: the cover takes the review's failures and nothing else. An approval
+/// over a failed review whose tip then loses its test note is red on that note, locally and as a
+/// seam of the epic's walk, though the review itself stays covered.
+#[test]
+fn an_approval_covered_review_beside_another_red_check_stays_red_locally_and_in_the_walk() {
+    let d = fixture();
+    let p = d.path();
+    review_in(p, "FAIL");
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    git(p, &["notes", "--ref=test", "remove", &tip]);
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("FAIL  1·notes") && t.contains("no test/v1 note"), "{t}");
+    assert!(t.contains("covered by the approval of 5499546 (review 13)") && !t.contains("FAIL  3·review"), "the review alone is covered: {t}");
+    assert!(note(p, "dod", &tip).is_none(), "a red gate writes no receipt");
+    github_merge(p, "epic/e", "wu/e/a");
+    let w = walk_lines(p);
+    assert!(w.contains("FAIL  7·walk·1·notes") && w.contains("no test/v1 note"), "{w}");
+    assert!(!w.contains("FAIL  7·walk·3·review"), "{w}");
+}
+
+/// The fixture's main and epic/e pushed through the real hooks to a new bare remote, kept alive by
+/// the returned TempDir. The epic is on the remote first, so the next push of it is an update, which
+/// the pre-push hook walks (a new branch's push has no old tip to walk from).
+fn with_origin(p: &Path) -> TempDir {
+    let remote = TempDir::new().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(p, &["remote", "add", "origin", remote.path().to_str().unwrap()]);
+    for b in ["main", "epic/e"] {
+        let o = run("git", p, &["push", "-q", "origin", b]);
+        assert!(o.status.success(), "{b}: {}", text(&o));
+    }
+    remote
+}
+
+/// W7 code review round 1, important: the pre-push walk of an epic branch takes an approval's cover
+/// of a merged WU's review, through a real `git push` and its hook: a WU an approval signed over a
+/// failed review is pushed; the same WU signed by a typed sign-off over a failed review is refused.
+#[test]
+fn a_push_takes_a_wu_an_approval_signed_over_its_review_and_refuses_a_typed_one() {
+    let d = fixture();
+    let p = d.path();
+    let remote = with_origin(p);
+    review_in(p, "FAIL");
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    github_merge(p, "epic/e", "wu/e/a");
+    let o = run("git", p, &["push", "-q", "origin", "epic/e"]);
+    assert!(o.status.success(), "the hook takes the approval's cover: {}", text(&o));
+    assert_eq!(git(remote.path(), &["rev-parse", "epic/e"]), git(p, &["rev-parse", "epic/e"]), "the epic landed on the remote");
+
+    let d = fixture();
+    let p = d.path();
+    let remote = with_origin(p);
+    notes(p);
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "vu"]));
+    edit_cr(p, |n| (n["verdict"], n["blockers"]) = (json!("FAIL"), json!(1)));
+    github_merge(p, "epic/e", "wu/e/a");
+    let o = run("git", p, &["push", "-q", "origin", "epic/e"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("FAIL  3·review") && !t.contains("covered by the approval"), "{t}");
+    assert_eq!(git(remote.path(), &["rev-parse", "epic/e"]), git(p, &["rev-parse", "main"]), "nothing landed");
+}
+
+/// W7 code review round 1, nit 8: 2·manifest is the review's only when the cr note alone names
+/// another tip. Then an approval covers it; a test or doc note naming another tip stays red.
+#[test]
+fn only_a_cr_note_naming_another_tip_is_covered_and_a_test_or_doc_note_stays_red() {
+    let d = fixture();
+    let p = d.path();
+    notes(p);
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let older = git(p, &["rev-parse", "wu/e/a^"]);
+    edit_cr(p, |n| n["tip"] = json!(older));
+    let o = ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    assert!(text(&o).contains("over a review that did not pass (stale)"), "{}", text(&o));
+    let o = ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    let t = text(&o);
+    assert!(t.contains("WAIVED 2·manifest") && t.contains("names a different tip") && t.contains("covered by the approval of 5499546 (review 13)"), "{t}");
+
+    for kind in ["test", "doc"] {
+        let d = fixture();
+        let p = d.path();
+        review_in(p, "FAIL");
+        let tip = git(p, &["rev-parse", "wu/e/a"]);
+        ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+        let mut n = note(p, kind, &tip).unwrap();
+        n["tip"] = json!(git(p, &["rev-parse", "wu/e/a^"]));
+        git(p, &["notes", &format!("--ref={kind}"), "add", "-f", "-m", &n.to_string(), &tip]);
+        let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+        let t = text(&o);
+        assert!(!o.status.success() && t.contains("FAIL  2·manifest") && t.contains("names a different tip"), "{kind}: {t}");
+        assert!(t.contains("WAIVED 3·review") && !t.contains("WAIVED 2·manifest"), "{kind}: only the review is covered: {t}");
+    }
+}
+
+/// wu/e/a remade as a docs-only range (UC-GATE-5): only its result report, no code. HEAD on it.
+fn docs_only(p: &Path) {
+    git(p, &["reset", "-q", "--hard", "epic/e"]);
+    write(p, "docs/work/a-result.html", RESULT);
+    commit(p, "wu a: docs only");
+}
+
+/// W7 code review round 2, blocker 1: on a docs-only range the gate needs no review, so neither does
+/// the writer. A typed sign-off there is "already signed" (exit 4), as before W7.
+#[test]
+fn a_typed_sign_off_of_a_docs_only_range_is_already_signed() {
+    let d = fixture();
+    let p = d.path();
+    docs_only(p);
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "vu"]));
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let o = sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(4), "{t}");
+    assert!(t.contains("already signed") && !t.contains("did not pass"), "{t}");
+}
+
+/// W7 code review round 2, blocker 2: an approval of a docs-only range covers no review, since the
+/// gate requires none: no covers.review, and nothing says a review did not pass.
+#[test]
+fn an_approval_of_a_docs_only_range_records_no_review_state() {
+    let d = fixture();
+    let p = d.path();
+    docs_only(p);
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let o = ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    assert!(!text(&o).contains("did not pass"), "{}", text(&o));
+    let n = note(p, "mr", &tip).unwrap();
+    assert!(n.get("covers").is_none(), "{n}");
+    let o = ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    assert!(text(&o).contains("exempt") && !text(&o).contains("covered by"), "{}", text(&o));
+}
+
+/// W7 code review round 2, important: the writer tells an approval from a typed sign-off by the rule
+/// check 8 and the gate use (the roster's github tier, never a key holder), not by the note carrying
+/// a review. A key holder's note with a review field copied in is a typed sign-off: over a failed
+/// review it is not "already signed", and the gate covers nothing.
+#[test]
+fn a_key_signed_note_carrying_a_review_is_a_typed_sign_off_to_the_writer() {
+    let d = fixture();
+    let p = d.path();
+    let k = TempDir::new().unwrap();
+    let key = k.path().join("id");
+    ok(run("ssh-keygen", k.path(), &["-q", "-t", "ed25519", "-N", "", "-C", "keel-test", "-f", key.to_str().unwrap()]));
+    let public = std::fs::read_to_string(k.path().join("id.pub")).unwrap();
+    let public = public.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
+    git(p, &["switch", "-q", "epic/e"]);
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap().replace("\"username\", \"github\"", "\"username\", \"key\", \"github\"");
+    write(p, ".keel/config.toml", &cfg);
+    write(p, ".keel/mr-allowed", &format!("{ROSTER}key: 5499546 {public}\ngithub: 777 other\n"));
+    commit(p, "the owner's key, another approver");
+    git(p, &["switch", "-q", "wu/e/a"]);
+    git(p, &["merge", "-q", "--no-ff", "--no-verify", "-m", "sync", "epic/e"]);
+    notes(p);
+    git(p, &["config", "keel.signingkey", key.to_str().unwrap()]);
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "5499546"]));
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let mut n = note(p, "mr", &tip).unwrap();
+    assert_eq!(n["tier"], "key");
+    n["review"] = json!({"id": 13, "url": format!("{REPO_URL}#pullrequestreview-13"), "commit": tip});
+    git(p, &["notes", "--ref=mr", "add", "-f", "-m", &n.to_string(), &tip]);
+    edit_cr(p, |c| (c["verdict"], c["blockers"]) = (json!("FAIL"), json!(1)));
+    let signed = git(p, &["notes", "--ref=mr", "show", &tip]);
+    let o = sign_off(p, "wu", "epic/e", &json!([review(12, 777, "APPROVED", &tip), review(13, OWNER, "APPROVED", &tip)]), &[]);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("typed sign-off") && t.contains("did not pass") && !t.contains("already signed"), "{t}");
+    assert_eq!(git(p, &["notes", "--ref=mr", "show", &tip]), signed, "never replaced");
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("FAIL  3·review") && !t.contains("covered by"), "{t}");
+}
+
+/// The cr note's stored bytes on `rev`, if it has one.
+fn cr_blob(p: &Path, rev: &str) -> Option<Vec<u8>> {
+    let o = run("git", p, &["notes", "--ref=cr", "list", rev]);
+    o.status.success().then(|| run("git", p, &["cat-file", "blob", String::from_utf8_lossy(&o.stdout).trim()]).stdout)
+}
+
+/// HEAD's cr note, edited by `f` and stored back as is.
+fn edit_cr(p: &Path, f: impl FnOnce(&mut Value)) {
+    let mut n = note(p, "cr", "HEAD").unwrap();
+    f(&mut n);
+    git(p, &["notes", "--ref=cr", "add", "-f", "-m", &n.to_string(), "HEAD"]);
+}
+
+const TESTS: &str = r#"{"integration":{"files":["tests/test_a.py"],"covers":"a works"}}"#;
+
+/// The fixture's tip with its test and doc notes and a review in `state`, as W7's review states name
+/// them: missing, unreadable, FAIL, stale (a review of other code) or WAIVED (the round limit's).
+fn review_in(p: &Path, state: &str) {
+    notes_with(p, &["test", "doc"], TESTS);
+    let cr = |a: &[&str]| ok(keel(p, &[&["notes", "write", "cr"][..], a].concat()));
+    match state {
+        "missing" => {}
+        "unreadable" => {
+            git(p, &["notes", "--ref=cr", "add", "-f", "-m", "not a note", "HEAD"]);
+        }
+        "FAIL" => {
+            cr(&["--verdict", "FAIL", "--blockers", "1"]);
+        }
+        "stale" => {
+            cr(&["--verdict", "PASS"]);
+            edit_cr(p, |n| n["code_diff_hash"] = json!(format!("sha256:{}", "0".repeat(64))));
+        }
+        "WAIVED" => {
+            cr(&["--verdict", "FAIL", "--blockers", "1"]);
+            edit_cr(p, |n| (n["verdict"], n["waiver"]) = (json!("WAIVED"), json!("review cap reached: round 5 of 5 failed")));
+        }
+        _ => unreachable!(),
+    }
+}
+
+/// W7: the owner's approval accepts all. Over a review in each state it signs, writes no cr note,
+/// and records the state and the cr note's hash; the gate on this tip is green, the review's
+/// failures printed as covered by the approval, and the receipt says COVERED.
+#[test]
+fn an_approval_signs_over_a_review_in_any_state_and_records_it() {
+    for state in ["missing", "unreadable", "FAIL", "stale", "WAIVED"] {
+        let d = fixture();
+        let p = d.path();
+        review_in(p, state);
+        let tip = git(p, &["rev-parse", "wu/e/a"]);
+        let before = cr_blob(p, &tip);
+        let o = ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+        let t = text(&o);
+        assert!(t.contains("github 5499546 approved it (review 13)") && t.contains(&format!("over a review that did not pass ({state})")), "{state}: {t}");
+        let n = note(p, "mr", &tip).unwrap();
+        assert_eq!(n["covers"]["review"], state, "{state}: {n}");
+        match &before {
+            Some(b) => assert_eq!(n["covers"]["cr"], crate::mr::sha256_of(b), "{state}: {n}"),
+            None => assert!(n["covers"].get("cr").is_none(), "{state}: {n}"),
+        }
+        assert!(n["covers"].get("roster").is_none() && n.get("waiver_hash").is_none(), "{state}: {n}");
+        assert_eq!(cr_blob(p, &tip), before, "{state}: the writer writes no cr note");
+        let o = ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+        let t = text(&o);
+        let dod = note(p, "dod", &tip).unwrap();
+        if state == "WAIVED" {
+            // a reasoned waiver passes 3·review on its own; check 8 takes the approval as covering it
+            assert!(!t.contains("covered by the approval"), "{t}");
+            assert_eq!(dod["review"], "WAIVED", "{dod}");
+        } else {
+            assert!(t.contains("WAIVED 3·review") || t.contains("WAIVED 1·notes") || t.contains("WAIVED 5·diff-binding"), "{state}: {t}");
+            assert!(t.contains("covered by the approval of 5499546 (review 13)"), "{state}: {t}");
+            assert_eq!(dod["review"], "COVERED", "{state}: {dod}");
+            assert!(dod["waiver"].as_str().unwrap().contains("review 13"), "{state}: {dod}");
+        }
+    }
+}
+
+/// W7: an approval note on the tip counts as "already signed" only while GitHub's list still holds
+/// that review, by that signer, approving this commit; otherwise it is refused, never replaced.
+#[test]
+fn an_approval_note_github_no_longer_lists_is_not_already_signed() {
+    let d = fixture();
+    let p = d.path();
+    notes(p);
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    let signed = git(p, &["notes", "--ref=mr", "show", &tip]);
+    let older = git(p, &["rev-parse", "wu/e/a^"]);
+    for (why, list) in [
+        ("review 13 gone", json!([review(14, OWNER, "APPROVED", &tip)])),
+        ("review 13 by someone else", json!([review(13, 777, "APPROVED", &tip), review(14, OWNER, "APPROVED", &tip)])),
+        ("review 13 of another commit", json!([review(13, OWNER, "APPROVED", &older), review(14, OWNER, "APPROVED", &tip)])),
+        ("review 13 a comment", json!([review(13, OWNER, "COMMENTED", &tip), review(14, OWNER, "APPROVED", &tip)])),
+    ] {
+        let o = sign_off(p, "wu", "epic/e", &list, &[]);
+        let t = text(&o);
+        assert_eq!(o.status.code(), Some(1), "{why}: {t}");
+        assert!(t.contains("sign-off refused") && t.contains("review 13") && !t.contains("already signed"), "{why}: {t}");
+        assert_eq!(git(p, &["notes", "--ref=mr", "show", &tip]), signed, "{why}: never replaced");
+    }
+}
+
+/// W7: a typed sign-off never gets the approval's cover. Over a review that no longer passes, the
+/// writer does not call it signed, and the gate stays red on the review.
+#[test]
+fn a_typed_sign_off_over_a_review_that_did_not_pass_is_neither_already_signed_nor_covered() {
+    let d = fixture();
+    let p = d.path();
+    notes(p);
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "vu"]));
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let typed = git(p, &["notes", "--ref=mr", "show", &tip]);
+    edit_cr(p, |n| (n["verdict"], n["blockers"]) = (json!("FAIL"), json!(1)));
+    let o = sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("sign-off refused") && t.contains("typed") && t.contains("did not pass") && !t.contains("already signed"), "{t}");
+    assert_eq!(git(p, &["notes", "--ref=mr", "show", &tip]), typed, "never replaced");
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("FAIL  3·review") && !t.contains("covered by the approval"), "{t}");
+}
+
+/// A merge as GitHub's merge button makes one (no hook of ours runs), of `what` into `into`.
+fn github_merge(p: &Path, into: &str, what: &str) {
+    git(p, &["switch", "-q", into]);
+    git(p, &["-c", "core.hooksPath=/dev/null", "merge", "-q", "--no-ff", "--no-verify", "-m", &format!("Merge pull request #7 from own/{what}"), what]);
+}
+
+/// The epic gate's 7·walk lines: its FAIL blocks and its WAIVED lines.
+fn walk_lines(p: &Path) -> String {
+    let o = keel(p, &["verify-dod", "epic", "epic/e"]);
+    text(&o).lines().filter(|l| l.contains("7·walk")).collect::<Vec<_>>().join("\n")
+}
+
+/// W7: the epic's walk takes a WU whose review the approval covered - judged against the seam's
+/// first parent, as at the WU's own merge - and still fails one a typed sign-off signed over a
+/// review that did not pass.
+#[test]
+fn the_epic_walk_takes_a_wu_an_approval_signed_over_its_review_and_no_other() {
+    let d = fixture();
+    let p = d.path();
+    review_in(p, "FAIL");
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    github_merge(p, "epic/e", "wu/e/a");
+    let w = walk_lines(p);
+    assert!(!w.lines().any(|l| l.starts_with("FAIL")), "{w}");
+    assert!(w.contains("WAIVED 7·walk") && w.contains("covered by the approval of 5499546 (review 13)"), "{w}");
+
+    let d = fixture();
+    let p = d.path();
+    notes(p);
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "vu"]));
+    edit_cr(p, |n| (n["verdict"], n["blockers"]) = (json!("FAIL"), json!(1)));
+    github_merge(p, "epic/e", "wu/e/a");
+    let w = walk_lines(p);
+    assert!(w.contains("FAIL  7·walk·3·review") && !w.contains("covered"), "{w}");
 }
 
 /// Code review round 1, blocker 1: the refusal is about a roster change in base..tip. A roster line
@@ -365,7 +709,7 @@ fn only_an_approval_check_8_accepts_is_picked_and_a_key_holders_never_is() {
 }
 
 /// Code review rounds 2 and 3: the writer never replaces a sign-off on the tip, and judges one there
-/// by check 8, never by comparing fields: a note check 8 accepts is "already signed" (exit 0, nothing
+/// by check 8, never by comparing fields: a note check 8 accepts is "already signed" (exit 4, nothing
 /// written) whoever approved this time - the same approver, another listed one, or after a typed
 /// confirm; a note check 8 refuses is refused with its cause, never overwritten. A --report that is
 /// not the note's is refused.
@@ -458,6 +802,36 @@ fn the_writer_attests_only_a_report_committed_in_the_range() {
     }
     ok(sign_off(p, "wu", "epic/e", &reviews, &["--report", "docs/work/a-result.html"]));
     assert_eq!(note(p, "mr", &tip).unwrap()["report"], "docs/work/a-result.html");
+}
+
+/// E-GHFLOW2.W6: under `report = "required"` the writer signs a WU that changes no code with no
+/// report, and check 8 accepts it; the same WU with a code path added still needs one.
+#[test]
+fn the_writer_signs_a_range_without_code_with_no_report() {
+    let d = fixture();
+    let p = d.path();
+    git(p, &["switch", "-q", "-c", "wu/e/docs", "epic/e"]);
+    git(p, &["branch", "-f", "wu/e/a"]);
+    git(p, &["switch", "-q", "wu/e/a"]);
+    git(p, &["branch", "-D", "wu/e/docs"]);
+    write(p, "docs/guide.md", "how to\n");
+    commit(p, "docs only");
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let o = ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    assert!(text(&o).contains("approved it"), "{}", text(&o));
+    let n = note(p, "mr", &tip).unwrap();
+    assert!(n.get("report").is_none() && n.get("report_hash").is_none(), "{n}");
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+
+    write(p, "src/a.py", "def a():\n    return 1\n");
+    write(p, "tests/test_a.py", "def test_a():\n    pass\n");
+    commit(p, "now with code");
+    notes(p);
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let o = sign_off(p, "wu", "epic/e", &json!([review(14, OWNER, "APPROVED", &tip)]), &[]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("report = \"required\""), "{t}");
+    assert!(note(p, "mr", &tip).is_none());
 }
 
 /// Code review round 1, nit: setup judges "already listed" by the typed tiers, so an id listed only
@@ -604,10 +978,16 @@ fn a_review_page_must_be_on_the_targets_github_repo_when_the_policy_names_one() 
 
 /// A git on PATH that records every call and fails: `keel mr` must make none on a refused checkout.
 fn recording_git(dir: &Path) -> (String, std::path::PathBuf) {
+    logging_git(dir, "exit 1")
+}
+
+/// A `git` on a PATH of its own in `dir/bin` that logs each call to `dir/git-calls`, then runs
+/// `last` (its last line). Returns the PATH and the log.
+fn logging_git(dir: &Path, last: &str) -> (String, std::path::PathBuf) {
     let bin = dir.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     let log = dir.join("git-calls");
-    std::fs::write(bin.join("git"), format!("#!/bin/sh\necho \"$*\" >> {}\nexit 1\n", common::sh_quote(&log.to_string_lossy()))).unwrap();
+    std::fs::write(bin.join("git"), format!("#!/bin/sh\necho \"$*\" >> {}\n{last}\n", common::sh_quote(&log.to_string_lossy()))).unwrap();
     std::fs::set_permissions(bin.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     (common::path_with(&bin), log)
 }
@@ -709,12 +1089,13 @@ fn mkfifo(p: &Path) {
 }
 
 /// `keel mr commit` from `dir` with the recording git: refused with `needle`, no git run, no hang.
-fn refused_before_git(dir: &Path, fake: &str, log: &Path, why: &str, needle: &str) {
+fn refused_before_git(dir: &Path, fake: &str, log: &Path, why: &str, needle: &str) -> String {
     let _ = std::fs::remove_file(log);
     let o = run_bounded(dir, &["mr", "commit", "-m", "x", "--as", "vu"], fake);
     let t = text(&o);
     assert!(!o.status.success() && t.contains("keel mr: refused") && t.contains(needle), "{why}: {t}");
     assert!(!log.exists(), "{why}: git ran: {}", std::fs::read_to_string(log).unwrap_or_default());
+    t
 }
 
 /// Code review round 2, B1: a dir holding only HEAD and commondir is a git dir to git, which would use
@@ -762,13 +1143,7 @@ fn keel_mr_refuses_a_fifo_in_the_git_links_without_hanging() {
 /// A git on PATH that records every call, then runs the real git: a refused checkout must log none.
 fn passthrough_git(dir: &Path) -> (String, std::path::PathBuf) {
     let real = String::from_utf8(run("sh", dir, &["-c", "command -v git"]).stdout).unwrap().trim().to_string();
-    let bin = dir.join("bin");
-    std::fs::create_dir_all(&bin).unwrap();
-    let log = dir.join("git-calls");
-    let q = |p: &str| common::sh_quote(p);
-    std::fs::write(bin.join("git"), format!("#!/bin/sh\necho \"$*\" >> {}\nexec {} \"$@\"\n", q(&log.to_string_lossy()), q(&real))).unwrap();
-    std::fs::set_permissions(bin.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    (common::path_with(&bin), log)
+    logging_git(dir, &format!("exec {} \"$@\"", common::sh_quote(&real)))
 }
 
 /// Code review round 4, B1: `wt`'s .git names `s/../<up k>/<rest>`, which reads as the real admin dir
@@ -812,11 +1187,12 @@ fn a_dotdot_through_a_symlink_is_refused(nested: bool) {
     let marker = scratch.path().join("fsmonitor-fired");
     let link = plant_dotdot(&wt, &admin, &marker);
     std::fs::write(wt.join(".git"), &link).unwrap();
-    let _ = std::fs::remove_file(&log);
-    let o = run_bounded(&wt, &["mr", "commit", "-m", "x", "--as", "vu"], &gitp);
-    let t = text(&o);
-    assert!(!o.status.success() && t.contains("keel mr: refused") && t.contains("symbolic link"), "{link}: {t}");
-    assert!(!log.exists(), "{link}: git ran: {}", std::fs::read_to_string(&log).unwrap_or_default());
+    let t = refused_before_git(&wt, &gitp, &log, &link, "symbolic link");
+    let written = link.trim_end().trim_start_matches("gitdir: ");
+    assert!(t.contains(&format!("names {written},")), "the refusal shows the text git follows: {t}");
+    // W6 code review round 1: and where git really leads through the link, not the text's lexical reading
+    let real = std::fs::canonicalize(wt.join(written)).unwrap();
+    assert!(t.contains(&format!("which leads to {},", real.display())), "the refusal names the dir git reaches, {}: {t}", real.display());
     assert!(!marker.exists(), "{link}: the planted fsmonitor fired");
 }
 
@@ -896,14 +1272,16 @@ struct Writer {
 }
 
 impl Writer {
-    fn new(cr: bool) -> Writer {
+    fn new() -> Writer {
+        Writer::with(&["test", "doc", "cr"], |_| {})
+    }
+
+    /// The writer's setup with the notes `kinds` on wu/e/a, after `prep` ran in the developer's repo.
+    fn with(kinds: &[&str], prep: impl FnOnce(&Path)) -> Writer {
         let d = fixture();
         let dev = d.path().to_path_buf();
-        if cr {
-            notes(&dev);
-        } else {
-            notes_with(&dev, &["test", "doc"], r#"{"integration":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
-        }
+        prep(&dev);
+        notes_with(&dev, kinds, TESTS);
         let root = TempDir::new().unwrap();
         let base = root.path().canonicalize().unwrap();
         let [origin, runner, mock, bin, tmp] = ["origin.git", "runner", "mock", "bin", "tmp"].map(|n| base.join(n));
@@ -914,6 +1292,10 @@ impl Writer {
         git(&dev, &["push", "-q", "--no-verify", origin.to_str().unwrap(), "main", "epic/e", "wu/e/a", "refs/notes/*:refs/notes/*"]);
         // as actions/checkout leaves it: main checked out
         git(&base, &["clone", "-q", "-b", "main", origin.to_str().unwrap(), runner.to_str().unwrap()]);
+        // as GitHub's ubuntu runner: no [user] anywhere and no identity git may guess (E-GHFLOW2.W10).
+        // macOS guesses one from the host name; this makes it refuse, as Linux does, so an identity the
+        // writer forgets to set fails here, never on GitHub only. The harness sets none of its own.
+        git(&runner, &["config", "user.useConfigOnly", "true"]);
         crate::router_gh::exe(&bin.join("fake-curl"), crate::router_gh::FAKE_CURL);
         Writer { _d: d, _root: root, dev, origin, runner, mock, bin, tmp }
     }
@@ -974,7 +1356,7 @@ impl Writer {
     fn run(&self, env: &[(&str, &str)]) -> Output {
         let mut c = common::cmd("sh");
         c.arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/ci-sign-off.sh")).current_dir(&self.runner);
-        for k in ["GH_TOKEN", "REPO", "PR_NUMBER", "RUN_HEAD_SHA", "RUN_EVENT", "KEEL", "API", "CURL", "RUNNER_TEMP"] {
+        for k in ["GH_TOKEN", "REPO", "PR_NUMBER", "RUN_HEAD_SHA", "RUN_EVENT", "KEEL", "API", "CURL", "RUNNER_TEMP", "EMAIL"] {
             c.env_remove(k);
         }
         c.env("GH_TOKEN", "ghs_writerTestToken0123456789")
@@ -1004,13 +1386,20 @@ impl Writer {
 
 #[test]
 fn the_writer_signs_a_listed_approval_on_the_head_pushes_the_note_and_sets_the_status() {
-    let w = Writer::new(true);
+    let w = Writer::new();
     let head = w.sha("wu/e/a");
     w.github(json!([review(5, OWNER, "COMMENTED", &head), review(6, OWNER, "APPROVED", &head)]));
     let o = w.run(&[]);
     assert!(o.status.success(), "{}", text(&o));
     let n = w.origin_note(&head).expect("the note reached origin");
     assert_eq!((n["tier"].as_str(), n["signer"].as_str(), n["review"]["id"].as_u64()), (Some("github"), Some("5499546"), Some(6)));
+    // the writer signs as itself, whatever identity the runner has (none, on GitHub: E-GHFLOW2.W10)
+    assert_eq!(n["committer"], "keel-sign-off <keel-sign-off@users.noreply.github.com>");
+    assert_eq!(
+        git(&w.origin, &["log", "-1", "--format=%an <%ae>|%cn <%ce>", "refs/notes/mr"]),
+        "keel-sign-off <keel-sign-off@users.noreply.github.com>|keel-sign-off <keel-sign-off@users.noreply.github.com>",
+        "the notes commit too"
+    );
     assert_eq!(w.statuses(), [("success".to_string(), "Signed by approval (review 6)".to_string())]);
     let auth: Vec<Value> = w.log().iter().map(|r| r["auth"].clone()).collect();
     assert!(auth.iter().all(|a| a == "Bearer ghs_writerTestToken0123456789"), "every request carries the token on curl's stdin only: {auth:?}");
@@ -1023,7 +1412,7 @@ fn the_writer_signs_a_listed_approval_on_the_head_pushes_the_note_and_sets_the_s
 /// "by approval" only for a github-tier note, never for a typed one; nothing is written or pushed.
 #[test]
 fn the_writer_says_who_signed_an_already_signed_tip_from_the_note() {
-    let w = Writer::new(true);
+    let w = Writer::new();
     let head = w.sha("wu/e/a");
     ok(keel(&w.dev, &["mr", "confirm", "wu", "--as", "vu"]));
     git(&w.dev, &["push", "-q", "--no-verify", w.origin.to_str().unwrap(), "+refs/notes/mr:refs/notes/mr"]);
@@ -1034,7 +1423,7 @@ fn the_writer_says_who_signed_an_already_signed_tip_from_the_note() {
     assert_eq!(w.statuses(), [("success".to_string(), "Already signed by vu (username)".to_string())]);
     assert_eq!(w.origin_note(&head).unwrap(), typed, "the typed sign-off stands");
 
-    let w = Writer::new(true);
+    let w = Writer::new();
     let head = w.sha("wu/e/a");
     w.github(json!([review(6, OWNER, "APPROVED", &head)]));
     ok(w.run(&[]));
@@ -1048,7 +1437,7 @@ fn the_writer_says_who_signed_an_already_signed_tip_from_the_note() {
 
 #[test]
 fn the_writer_writes_nothing_for_a_comment_an_older_commit_or_an_unlisted_id() {
-    let w = Writer::new(true);
+    let w = Writer::new();
     let (head, older) = (w.sha("wu/e/a"), w.sha("wu/e/a^"));
     for list in [json!([review(5, OWNER, "COMMENTED", &head)]), json!([review(6, OWNER, "APPROVED", &older)]), json!([review(7, 42, "APPROVED", &head)])] {
         w.github(list.clone());
@@ -1063,7 +1452,7 @@ fn the_writer_writes_nothing_for_a_comment_an_older_commit_or_an_unlisted_id() {
 
 #[test]
 fn the_writer_reports_a_red_check_as_a_failed_sign_off_and_writes_nothing() {
-    let w = Writer::new(false);
+    let w = Writer::with(&["doc", "cr"], |_| {});
     let head = w.sha("wu/e/a");
     w.github(json!([review(6, OWNER, "APPROVED", &head)]));
     let o = w.run(&[]);
@@ -1075,9 +1464,62 @@ fn the_writer_reports_a_red_check_as_a_failed_sign_off_and_writes_nothing() {
     assert!(s[0].1.starts_with("Approval not signed: "), "{s:?}");
 }
 
+/// W7: the green status says what the approval covered, in fixed words.
+#[test]
+fn the_writer_says_what_the_approval_covered_in_its_status() {
+    let w = Writer::with(&["test", "doc"], |p| {
+        write(p, ".keel/mr-allowed", &format!("{ROSTER}github: 42 intruder\n"));
+        commit(p, "list another approver");
+    });
+    let head = w.sha("wu/e/a");
+    w.github(json!([review(6, OWNER, "APPROVED", &head)]));
+    let o = w.run(&[]);
+    assert!(o.status.success(), "{}", text(&o));
+    let n = w.origin_note(&head).expect("the note reached origin");
+    assert_eq!(n["covers"]["review"], "missing", "{n}");
+    assert_eq!(
+        w.statuses(),
+        [("success".to_string(), "Signed by approval (review 6), over a review that did not pass (missing), with a roster change".to_string())]
+    );
+}
+
+/// W7 code review round 2, blocker 2: an approval of a docs-only range covers nothing, so the
+/// status is the plain one.
+#[test]
+fn the_writers_status_for_a_docs_only_range_names_no_review() {
+    let w = Writer::with(&[], docs_only);
+    let head = w.sha("wu/e/a");
+    w.github(json!([review(6, OWNER, "APPROVED", &head)]));
+    let o = w.run(&[]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(w.origin_note(&head).expect("the note reached origin").get("covers").is_none());
+    assert_eq!(w.statuses(), [("success".to_string(), "Signed by approval (review 6)".to_string())]);
+}
+
+/// E-GHFLOW2.W10: a keel that stops on an error of its own (here, as when git had no identity) is
+/// named by its own line in the status, never taken for a red check; nothing is written.
+#[test]
+fn the_writer_names_a_keel_error_in_the_status_never_a_red_check() {
+    let w = Writer::new();
+    let head = w.sha("wu/e/a");
+    w.github(json!([review(6, OWNER, "APPROVED", &head)]));
+    let stub = w.bin.join("keel-stub");
+    crate::router_gh::exe(
+        &stub,
+        "#!/bin/sh\ncase \"$1 $#\" in\n'ci 1') echo 'keel ci sign-off <wu|epic> ...' ;;\nci*) echo 'keel: git var GIT_COMMITTER_IDENT failed: Committer identity unknown' >&2; exit 1 ;;\nesac\n",
+    );
+    let o = w.run(&[("KEEL", stub.to_str().unwrap())]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(w.origin_note(&head).is_none());
+    assert_eq!(
+        w.statuses(),
+        [("failure".to_string(), "Approval not signed: keel: git var GIT_COMMITTER_IDENT failed: Committer identity unknown".to_string())]
+    );
+}
+
 #[test]
 fn the_writer_acts_only_on_a_review_run_and_finds_the_pull_request_by_its_head_when_unnamed() {
-    let w = Writer::new(true);
+    let w = Writer::new();
     let head = w.sha("wu/e/a");
     w.github(json!([review(6, OWNER, "APPROVED", &head)]));
     for event in ["push", "pull_request", ""] {
@@ -1117,7 +1559,7 @@ fn the_writer_acts_only_on_a_review_run_and_finds_the_pull_request_by_its_head_w
 
 #[test]
 fn the_writer_merges_a_notes_ref_that_moved_on_origin_and_keeps_both_notes() {
-    let w = Writer::new(true);
+    let w = Writer::new();
     let head = w.sha("wu/e/a");
     // origin's refs/notes/mr moves once, during the writer's first push: the hook rejects that push
     // after another sign-off landed on another commit
@@ -1141,7 +1583,7 @@ fn the_writer_merges_a_notes_ref_that_moved_on_origin_and_keeps_both_notes() {
 
 #[test]
 fn the_writer_refuses_a_base_whose_keel_cannot_sign_by_approval() {
-    let w = Writer::new(true);
+    let w = Writer::new();
     let old = w.tmp.parent().unwrap().join("old-keel");
     crate::router_gh::exe(&old, "#!/bin/sh\necho 'usage: keel ci gate <wu|epic> <tip>' >&2\nexit 1\n");
     let head = w.sha("wu/e/a");
@@ -1157,7 +1599,7 @@ fn the_writer_refuses_a_base_whose_keel_cannot_sign_by_approval() {
 /// error status on it.
 #[test]
 fn the_writer_checks_the_runs_commit_and_the_token_and_reports_a_stop() {
-    let w = Writer::new(true);
+    let w = Writer::new();
     let head = w.sha("wu/e/a");
     w.github(json!([review(6, OWNER, "APPROVED", &head)]));
     let older = w.sha("wu/e/a^");

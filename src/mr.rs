@@ -1,7 +1,7 @@
 //! `keel mr setup|commit|confirm`, the committed signer roster `.keel/mr-allowed`, gate check 8 and
 //! the commit-msg `Reviewed-By` check (UC-MR-1/2, DEC-47). Ported from Trawler's xtask/src/mr.rs
 //! (DEC-9/10/27): stock `ssh-keygen -Y` signatures, verified offline against the roster.
-use crate::notes::{self, sha256, CrNote, MrNote, Review};
+use crate::notes::{self, sha256, Covers, CrNote, MrNote, Review};
 use crate::{gate, git, git_dir, no_git_env, review, short, verify_doc, Config, ReportPolicy};
 use std::io::Write;
 use std::path::Path;
@@ -350,10 +350,22 @@ fn report_candidates(repo: &Path, cfg: &Config, base: &str, tip: &str, epic: boo
     Ok(found)
 }
 
+/// `[mr] report` as it applies to `base..tip` (E-GHFLOW2.W6): `required` asks for a report only when
+/// the range changes code, by the gate's own docs-only test (`notes::exempt`); `optional` and `none`
+/// stand. The one reading of the policy, so a sign-off check 8 accepts is one the writers write.
+fn report_policy(repo: &Path, cfg: &Config, base: &str, tip: &str) -> Result<ReportPolicy, String> {
+    if cfg.mr.report != ReportPolicy::Required {
+        return Ok(cfg.mr.report);
+    }
+    let names = notes::names(repo, base, tip, &[])?;
+    Ok(if notes::exempt(repo, cfg, base, tip, &names)? { ReportPolicy::Optional } else { ReportPolicy::Required })
+}
+
 /// The report this sign-off attests under `[mr] report`, or `Err((what, fix))` refusing the confirm.
 fn pick_report(repo: &Path, cfg: &Config, args: &[&str], base: &str, tip: &str, epic: bool) -> Result<Option<String>, (String, String)> {
     let given = flag(args, "--report");
-    if cfg.mr.report == ReportPolicy::None {
+    let policy = report_policy(repo, cfg, base, tip).map_err(|e| (e, "fix the repo state, then re-run".into()))?;
+    if policy == ReportPolicy::None {
         return match given {
             Some(r) => Err((
                 format!("--report {r} given, but [mr] report = \"none\": this project's sign-offs attest no report"),
@@ -369,7 +381,7 @@ fn pick_report(repo: &Path, cfg: &Config, args: &[&str], base: &str, tip: &str, 
     let found = report_candidates(repo, cfg, base, tip, epic).map_err(|e| (e, "fix the repo state, then re-run".into()))?;
     match &found[..] {
         [one] => Ok(Some(one.clone())),
-        [] if cfg.mr.report == ReportPolicy::Optional => Ok(None),
+        [] if policy == ReportPolicy::Optional => Ok(None),
         [] => Err((
             format!(
                 "[mr] report = \"required\", and no {role} doc (data-artifact=\"{role}\") under {} is committed in this {}'s diff {}..{}",
@@ -757,6 +769,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         change_hash: change,
         sig,
         review: None,
+        covers: None,
     };
     // The owner's waiver and the sign-off land together or not at all (B17).
     let mut writes = vec![];
@@ -817,15 +830,19 @@ pub(crate) fn manual_review(
         }
     };
     let waiver = cr.and_then(CrNote::waiver_hash);
-    if let Some(cause) = waiver_drift(n.waiver_hash.as_deref(), waiver.as_deref(), cr.and_then(CrNote::reason_hash).as_deref(), t) {
-        return again(cause);
+    // An approval covers the review as a whole, whatever it says later (E-GHFLOW2.W7); a note that
+    // claims a review is judged below as an approval, or as a key's signature, which signs the waiver.
+    if n.review.is_none() {
+        if let Some(cause) = waiver_drift(n.waiver_hash.as_deref(), waiver.as_deref(), cr.and_then(CrNote::reason_hash).as_deref(), t) {
+            return again(cause);
+        }
     }
     let attested = match (&n.report, &n.report_hash) {
         (Some(r), Some(h)) => Some((r.as_str(), h.as_str())),
         (None, None) => None,
         _ => return again(format!("the mr/v1 note on {t} names a report or a report_hash without the other")),
     };
-    if attested.is_none() && cfg.mr.report == ReportPolicy::Required {
+    if attested.is_none() && report_policy(repo, cfg, base, tip).map_err(|e| (e, "fix the repo state, then re-run".into()))? == ReportPolicy::Required {
         let role = verify_doc::result_role(level == "epic");
         return Err((
             format!("the {level} sign-off on {t} attests no result report, but [mr] report = \"required\" (the target's committed policy)"),
@@ -877,6 +894,31 @@ pub(crate) fn manual_review(
         Err(e) => again(e),
         _ => Ok(Some((path.to_string(), hash.to_string()))),
     }
+}
+
+/// Whose approval covers `tip`'s review (E-GHFLOW2.W7), as the gate words it: "the approval of
+/// <signer> (review <id>)" when its mr/v1 note is an approval check 8 binds as one - it carries a
+/// review and `target`'s roster lists its signer under the github tier only - else `None`. Called
+/// once check 8 has passed on that note; a typed sign-off covers nothing.
+pub(crate) fn approval_cover(repo: &Path, cfg: &Config, tip: &str, target: &str) -> Option<String> {
+    let n = notes::parse::<MrNote>(&notes::raw(repo, "mr", tip).ok()??, "mr").ok()?;
+    let review = n.review.as_ref()?;
+    let (allowed, _) = roster(repo, cfg, target, tip).ok()?;
+    signs_by_approval(&allowed, &n.signer).then(|| format!("the approval of {} (review {})", printable(&n.signer), review.id))
+}
+
+/// GitHub's review list holds the review an approval note copied (E-GHFLOW2.W7): the same id, by the
+/// note's signer, APPROVED, on `tip`. The writer takes a note on the head at its word no longer.
+fn listed(reviews: &serde_json::Value, n: &MrNote, tip: &str) -> bool {
+    let Some(r) = &n.review else { return false };
+    reviews.as_array().is_some_and(|list| {
+        list.iter().any(|v| {
+            v["id"].as_u64() == Some(r.id)
+                && v["user"]["id"].as_u64().map(|u| u.to_string()).as_deref() == Some(n.signer.as_str())
+                && v["state"] == "APPROVED"
+                && v["commit_id"].as_str() == Some(tip)
+        })
+    })
 }
 
 fn stale_change(signed: &str, range: &str) -> String {
@@ -963,6 +1005,9 @@ pub(crate) const SIGN_OFF_USAGE: &str = "usage: keel ci sign-off <wu|epic> <tip>
 /// already signed - the tip carries a note check 8 accepts, whose tier and signer are printed, and
 /// nothing is written; exit 3: no approval to sign, nothing written; exit 1: refused, nothing written. The roster and policy are
 /// the target's committed ones; a target with no roster signs nothing (no bootstrap by approval).
+/// Since E-GHFLOW2.W7 the approval accepts all: every check but the review must be green, and the
+/// note records in `covers` the review's state when it is not green and any roster change in the
+/// range, which it signs over instead of refusing.
 pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     let ([lvl, tip_ref], Some(target), Some(file)) = (positionals(args)[..].try_into().unwrap_or(["", ""]), notes::target_flag(args), flag(args, "--reviews"))
     else {
@@ -995,7 +1040,8 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
         );
         return Ok(3);
     };
-    let Some(gate::Ready { tip, base, target, cr }) = gate::sign_ready(repo, cfg, epic, tip_ref, args, false)? else {
+    // Everything but the review must be green: the approval accepts the review, whatever its state.
+    let Some(gate::Ready { tip, base, target, .. }) = gate::sign_ready(repo, cfg, epic, tip_ref, args, true)? else {
         return refuse(format!("sign last: a check before the sign-off is red on {} (above)", short(&tip)));
     };
     if let Some(r) = landed(&tip, &base, &target, "approve the new tip on GitHub") {
@@ -1004,11 +1050,36 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
     // A sign-off on the tip is never replaced, and is judged by check 8, the gate's own judge: one it
     // accepts now is "already signed", whoever approved this time; one it refuses is refused with its
     // cause, for the owner to sort out.
+    let (state, cr_raw) = gate::review_state(repo, cfg, &tip, &base)?;
+    let cr = cr_raw.as_deref().and_then(|raw| notes::parse::<CrNote>(raw, "cr").ok());
     match notes::raw(repo, "mr", &tip) {
         Ok(None) => {}
         Ok(Some(raw)) => {
             return match manual_review(repo, cfg, lvl, &tip, &base, &target, cr.as_ref()) {
                 Ok(attested) => {
+                    // An approval note counts while GitHub still lists its review; a typed one only
+                    // over a review the gate passes (W7: a typed sign-off never gets the cover). An
+                    // approval by check 8's and the gate's own rule (`approval_cover`): a review on
+                    // the note and a signer the roster lists under the github tier only, never a key.
+                    let by_approval = approval_cover(repo, cfg, &tip, &target).is_some();
+                    match notes::parse::<MrNote>(&raw, "mr") {
+                        Ok(n) if by_approval && !listed(&reviews, &n, &tip) => {
+                            let id = n.review.as_ref().map_or(0, |r| r.id);
+                            return refuse(format!(
+                                "{} carries a sign-off by approval naming review {id}, which GitHub's list no longer holds as {}'s approval of this commit; an approval never replaces a sign-off\n  fix -> the owner re-signs with keel mr confirm, or removes the stale note",
+                                short(&tip),
+                                printable(&n.signer)
+                            ));
+                        }
+                        Ok(_) if !by_approval && !matches!(state, None | Some("WAIVED")) => {
+                            return refuse(format!(
+                                "{} carries a typed sign-off, but its review did not pass ({}): a typed sign-off needs the review green, and only an approval covers one that is not; an approval never replaces a sign-off",
+                                short(&tip),
+                                state.unwrap_or_default()
+                            ));
+                        }
+                        _ => {}
+                    }
                     let theirs = attested.as_ref().map(|(r, _)| r.as_str());
                     if let Some(r) = flag(args, "--report").filter(|r| Some(*r) != theirs) {
                         return refuse(format!(
@@ -1029,17 +1100,14 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
         }
         Err(e) => return refuse(format!("the mr note on {} cannot be read: {e}", short(&tip))),
     }
-    // A change in the range, as confirm asks; a line the target landed after the fork is not one.
-    if !range_roster_change(repo, &base, &tip).is_empty() {
-        return refuse(format!(
-            "{}..{} changes who may sign ({ROSTER}): a roster change is signed by the typed keel mr confirm --roster-change",
-            short(&base),
-            short(&tip)
-        ));
+    // What the approval signs over (W7): the review when it is not green, and a roster change in
+    // the range (a line the target landed after the fork is not one). Recorded, never refused.
+    let covers = Covers {
+        review: state.map(String::from),
+        cr: state.and(cr_raw.as_deref()).map(|raw| notes::sha256(raw.as_bytes())),
+        roster: range_roster_change(repo, &base, &tip),
     }
-    if cr.as_ref().is_some_and(|c| c.waiver().is_some()) {
-        return refuse(format!("the review of {} is WAIVED: a waiver is accepted by the typed keel mr confirm --accept-waiver", short(&tip)));
-    }
+    .of();
     let report = match pick_report(repo, cfg, args, &base, &tip, epic) {
         Ok(r) => r,
         Err((what, _)) => return refuse(what),
@@ -1086,9 +1154,17 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
         change_hash: change_hash(repo, &base, &tip)?,
         sig: None,
         review: Some(review.clone()),
+        covers: covers.clone(),
     };
     notes::store_all(repo, &[("mr", tip.as_str(), serde_json::to_string(&note).map_err(|e| e.to_string())?)])?;
-    println!("mr/v1 on {} - github {id} approved it (review {}), attesting {}", short(&tip), review.id, report.as_deref().unwrap_or("no report"));
+    let mut over = String::new();
+    if let Some(state) = covers.as_ref().and_then(|c| c.review.as_deref()) {
+        over += &format!(", over a review that did not pass ({state})");
+    }
+    if covers.as_ref().is_some_and(|c| !c.roster.is_empty()) {
+        over += ", with a roster change";
+    }
+    println!("mr/v1 on {} - github {id} approved it (review {}), attesting {}{over}", short(&tip), review.id, report.as_deref().unwrap_or("no report"));
     Ok(0)
 }
 
@@ -1151,9 +1227,17 @@ pub(crate) fn checkout_problem(root: &Path) -> Option<String> {
         };
         // as written, and as git follows it: through each link in turn, so `<link>/..` is the link's
         // target's parent, not the text's (code review round 4)
-        let (written, named) = (root.join(named), lexical(&root.join(named)));
+        // the refusal names both: the text git follows, and where git really leads through any link
+        // (W3 code review round 5, nit; W6 code review round 1) - the text's own reading if it resolves nowhere
+        let text = named;
+        let (written, named) = (root.join(text), lexical(&root.join(text)));
+        let leads = canon(&written).unwrap_or_else(|| named.clone());
         let bad = |why: &str| {
-            Some(format!("{} names {}, which is not this checkout's admin dir as git makes one ({why}): {owner}", dotgit.display(), named.display()))
+            Some(format!(
+                "{} names {text}, which leads to {}, not this checkout's admin dir as git makes one ({why}): {owner}",
+                dotgit.display(),
+                leads.display()
+            ))
         };
         if std::fs::symlink_metadata(&named).map(|m| !m.is_dir()).unwrap_or(true) {
             return bad("not a directory");
@@ -1215,6 +1299,28 @@ pub fn commit_msg(repo: &Path, cfg: &Config, msg_file: &str) -> Result<i32, Stri
     if hits.is_empty() {
         return Ok(0);
     }
+    // E-GHFLOW2.W6: on a task branch, rule text alone needs no trailer - the owner's merge of the
+    // task's pull request is the yes. A code path, the roster or any .keel/ path staged too: the
+    // trailer, as anywhere. The branch prefix and code_paths are HEAD's committed ones, so neither a
+    // staged nor an unstaged config can widen this for the commit it rides in (W6 security review).
+    let branch = git(repo, &["symbolic-ref", "--short", "-q", "HEAD"], &[]).ok();
+    let head = crate::load_config_at_head(repo).ok();
+    if let Some((head, wu)) = head.as_ref().zip(branch.as_deref()).and_then(|(h, b)| Some((h, notes::task_of(h, b)?))) {
+        if !crate::staged_code(repo, &head.code_paths)? && !staged.iter().any(|p| p.starts_with(".keel/")) {
+            println!(
+                "keel: rule-bearing {} on task branch {} of {wu}, no code: your merge of the task covers them",
+                hits.join(", "),
+                branch.unwrap_or_default()
+            );
+            return Ok(0);
+        }
+    }
+    trailer(repo, cfg, msg_file, &hits)
+}
+
+/// The commit check's trailer rule: a listed signer's `Reviewed-By` trailer on a commit staging the
+/// rule-bearing `hits`, judged by HEAD's roster.
+fn trailer(repo: &Path, cfg: &Config, msg_file: &str, hits: &[&str]) -> Result<i32, String> {
     let msg = std::fs::read_to_string(msg_file).map_err(|e| format!("keel: cannot read {msg_file}: {e}"))?;
     // HEAD's roster: a commit that edits the roster is judged by the one it replaces.
     let allowed = match roster(repo, cfg, "HEAD", "") {

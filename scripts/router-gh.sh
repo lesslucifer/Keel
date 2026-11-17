@@ -4,12 +4,16 @@
 # owner: the owner cannot approve a pull request they authored. The router's Bash hook admits only
 # these shapes, and every argument is validated here before any other step:
 #   router-gh.sh push     <branch>                         wu/<E>/<slug> or epic/<E>, with every notes ref
-#   router-gh.sh pr-open  <branch> [--base main|epic/<E>]  open a draft pull request, or refresh the bot's open one (a wu/ never into main)
+#   router-gh.sh pr-open  <branch> [--base main|epic/<E>]  open a draft pull request, or refresh the bot's open one: an epic into
+#                                                          main or --base; a WU into its epic; a task into its WU branch
 #   router-gh.sh pr-ready <n>                              mark the bot's pull request ready for review; turn on
 #                                                          auto-merge (a merge commit) when [github] merge_on_approve
 #   router-gh.sh post     <n> <body-name>                  post <worktree of its head>/.router-gh/<body-name>.md
-#   router-gh.sh sync     <epic/E|main>                    fetch GitHub's epic or main; fast-forward it here unless checked out
+#   router-gh.sh sync     <epic/E|main|wu/E/slug>          fetch GitHub's branch; fast-forward it here unless checked out (never a task)
 #   router-gh.sh issue    <branch>                         open or refresh the tracking issue of an epic, or a WU's sub-issue
+# A task (E-GHFLOW2.W6) is wu/<E>/<wu>_<task>, three words without _: a piece of the WU wu/<E>/<wu>
+# that waits on something, in its own pull request into that WU branch, which the owner merges. It
+# gets no gate, notes, auto-merge, sync or issue of its own; nothing here merges a pull request.
 #   (router-gh.sh credential <file> <op>: git's one-shot credential helper only; never a router shape)
 #   (router-gh.sh watch-read <kind> <n>: scripts/router-gh-watch.sh's read of GitHub; never a router shape)
 # Exit 2 = refused (arguments, setup, a precondition); exit 1 = GitHub or git refused the request.
@@ -103,10 +107,12 @@ token_ok() {
   case "$1" in ''|*[!!-~]*|*\"*|*\'*|*\\*) return 1;; esac
   [ ${#1} -le 4096 ]
 }
-usage="usage: push <branch> | pr-open <branch> [--base <main|epic/E>] | pr-ready <n> | post <n> <body-name> | sync <epic/E|main> | issue <branch>"
+usage="usage: push <branch> | pr-open <branch> [--base <main|epic/E>] | pr-ready <n> | post <n> <body-name> | sync <epic/E|main|wu/E/slug> | issue <branch>"
 # Keel's branch policy (.keel/config.toml [branches], as scripts/router-worker.sh holds it)
 main_b=main epic_p=epic/ wu_p=wu/
 seg='[A-Za-z0-9][A-Za-z0-9._-]*'
+# a word of a task's name: no _, the task separator (as src/notes.rs task_of reads it)
+word='[A-Za-z0-9][A-Za-z0-9.-]*'
 # HOME, normalised: absolute, no trailing /, and only characters a curl config and a case pattern
 # take as they are (the run dir lies under it)
 home_ok() {
@@ -120,10 +126,12 @@ refname() {
   case "$1" in *..*) die "not a valid branch name: $(shown "$1")";; esac
   git check-ref-format "refs/heads/$1" || die "not a valid branch name: $(shown "$1")"
 }
-# work_branch <b>: wu/<E>/<slug> or epic/<E>; sets base to the branch it merges into
+# work_branch <b>: wu/<E>/<slug> or epic/<E>; sets base to the branch it merges into, and task to
+# yes for a task wu/<E>/<wu>_<task>, whose base is its WU branch wu/<E>/<wu>
 work_branch() {
-  nodash "$1"
+  nodash "$1"; task=no
   if expr "x$1" : "x$epic_p$seg\$" > /dev/null; then base=$main_b
+  elif expr "x$1" : "x$wu_p$word/${word}_$word\$" > /dev/null; then t=${1#"$wu_p"}; base=$wu_p${t%%_*}; task=yes
   elif expr "x$1" : "x$wu_p$seg/$seg\$" > /dev/null; then e=${1#"$wu_p"}; base=$epic_p${e%%/*}
   else die "branch must be $epic_p<E> or $wu_p<E>/<slug> in plain words: $(shown "$1")"; fi
   refname "$1"
@@ -145,8 +153,9 @@ case "$mode" in
       [ "$3" = "$main_b" ] || expr "x$3" : "x$epic_p$seg\$" > /dev/null || die "base must be $main_b or $epic_p<E>: $(shown "$3")"
       refname "$3"
       [ "$3" != "$branch" ] || die "a branch cannot be its own base: $branch"
-      # a WU merges into its epic only: into main it would skip the epic's gate (E-GHFLOW2.W4 review)
-      case "$branch" in "$wu_p"*) [ "$3" != "$main_b" ] || die "a WU merges into its epic, never into $main_b: $branch";; esac
+      # a WU merges into its epic only, never into main (E-GHFLOW2.W4 review) nor another epic (W4
+      # review, nit 5; E-GHFLOW2.W6): its base is derived from its name, a task's too
+      case "$branch" in "$wu_p"*) die "$branch goes into $base, derived from its name: drop --base";; esac
       base=$3
     fi;;
   pr-ready)
@@ -157,18 +166,22 @@ case "$mode" in
     n=$1 name=$2; number "$n"; nodash "$name"
     expr "x$name" : 'x[A-Za-z0-9][A-Za-z0-9_-]\{0,63\}$' > /dev/null || die "body name must be plain words (letters, digits, _ and -): $(shown "$name")";;
   sync)
-    [ $# -eq 1 ] || die "usage: sync <epic/E|main>"
+    [ $# -eq 1 ] || die "usage: sync <epic/E|main|wu/E/slug>"
     branch=$1; nodash "$branch"
-    [ "$branch" = "$main_b" ] || expr "x$branch" : "x$epic_p$seg\$" > /dev/null || die "sync takes an $epic_p<E> branch or $main_b only: $(shown "$branch")"
-    refname "$branch";;
+    # a WU branch too (E-GHFLOW2.W6): the owner merges a task into it on GitHub
+    [ "$branch" = "$main_b" ] || expr "x$branch" : "x$epic_p$seg\$" > /dev/null || expr "x$branch" : "x$wu_p$seg/$seg\$" > /dev/null \
+      || die "sync takes $main_b, an $epic_p<E> or a $wu_p<E>/<slug> branch only: $(shown "$branch")"
+    refname "$branch"
+    case "$branch" in "$wu_p"*) work_branch "$branch"; [ "$task" = no ] || die "a task is not synced: sync its WU branch, $base";; esac;;
   issue)
     [ $# -eq 1 ] || die "usage: issue <wu/E/slug|epic/E>"
-    branch=$1; work_branch "$branch";;
+    branch=$1; work_branch "$branch"
+    [ "$task" = no ] || die "a task has no issue of its own: the sub-issue of its WU, $base, is the record";;
   watch-read)
     # scripts/router-gh-watch.sh's read, one per poll; read-only, never a router shape (the guard refuses it)
-    [ $# -eq 2 ] || die "usage: watch-read <review|comment|merged|checks> <n>"
+    [ $# -eq 2 ] || die "usage: watch-read <review|comment|merged|checks|conflict> <n>"
     wkind=$1 n=$2
-    case "$wkind" in review|comment|merged|checks) ;; *) die "usage: watch-read <review|comment|merged|checks> <n>";; esac
+    case "$wkind" in review|comment|merged|checks|conflict) ;; *) die "usage: watch-read <review|comment|merged|checks|conflict> <n>";; esac
     number "$n";;
   credential)
     # git's credential helper (`!'<this script>' credential '<file>'` + the op): get, asked for
@@ -488,12 +501,15 @@ gh_git() {
   fi
 }
 # bot_pr <n>: the pull request must be open, the bot's, from and into this repository, head wu/ or
-# epic/, base main or epic/; sets head_ref, head_sha, pr_base, draft, node
+# epic/, base main or epic/ (a task's: its WU branch); sets head_ref, head_sha, pr_base, draft, node, task
 # automerge: with [github] merge_on_approve, turn on GitHub's auto-merge for pull request $node as a
 # merge commit (E-GHFLOW2.W4). The pull request is ready already, so a refusal is a WARN line, never a
-# failure. Sets automerge_state: on, off (the policy says no) or refused.
+# failure. Sets automerge_state: on, off (the policy says no), task (never for a task) or refused.
 automerge() {
   automerge_state=off
+  # a task's pull request is the owner's to merge (E-GHFLOW2.W6): no ruleset covers its WU branch,
+  # so GitHub would merge it at once or refuse
+  if [ "$task" = yes ]; then automerge_state=task; return 0; fi
   [ "$merge_on_approve" = true ] || return 0
   jq -n --arg id "$node" '{query: "mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE}) { pullRequest { autoMergeRequest { mergeMethod } } } }", variables: {id: $id}}' > "$tmp/req"
   api POST /graphql "$tmp/req"
@@ -518,7 +534,11 @@ bot_pr() {
   [ "$1" = open ] || die "pull request $n is $(shown "$1"), not open"
   head_ref=$2 head_sha=$3 pr_base=$4 draft=$5 node=$6
   work_branch "$head_ref"
-  [ "$pr_base" = "$main_b" ] || expr "x$pr_base" : "x$epic_p$seg\$" > /dev/null || die "pull request $n merges into $(shown "$pr_base"), not $main_b or an epic"
+  # a WU's or a task's base is the one its name gives (W6 security review); an epic's, main or an epic
+  case "$head_ref" in
+    "$wu_p"*) [ "$pr_base" = "$base" ] || die "pull request $n merges into $(shown "$pr_base"), not $base, which its head's name gives";;
+    *) [ "$pr_base" = "$main_b" ] || expr "x$pr_base" : "x$epic_p$seg\$" > /dev/null || die "pull request $n merges into $(shown "$pr_base"), not $main_b or an epic";;
+  esac
   expr "x$head_sha" : 'x[0-9a-f]\{40\}$' > /dev/null || fail "GitHub's head sha for pull request $n is not a sha"
   expr "x$node" : 'x[A-Za-z0-9_=-]\{1,100\}$' > /dev/null || fail "GitHub's node id for pull request $n is not readable"
 }
@@ -590,8 +610,9 @@ notes_row() { echo "$(note_state test "$1") | $(note_state doc "$1") | $(note_st
 case "$mode" in
 push)
   tip=$(local_tip "$branch") || die "no local branch $branch"
-  # Keel's code-free checks only; the pre-push hook, which runs the pushed code, is skipped (B1)
-  if [ "$base" != "$main_b" ]; then
+  # Keel's code-free checks only; the pre-push hook, which runs the pushed code, is skipped (B1). A
+  # task carries no notes: its WU's last commit does (E-GHFLOW2.W6, security review 3a)
+  if [ "$base" != "$main_b" ] && [ "$task" = no ]; then
     git -C "$ROOT" notes --ref=test show "$tip" 2> /dev/null | jq -e --arg t "$tip" '.schema == "test/v1" and .tip == $t' > /dev/null 2>&1 \
       || die "the tip $tip of $branch carries no test/v1 note: its worker runs keel check and writes the note first"
   fi
@@ -692,12 +713,20 @@ pr-open)
     *) api_ok GET "/repos/$repo/git/ref/heads/$branch";;
   esac
   [ "$rsha" = "$tip" ] || die "push first: GitHub has $branch at $(shown "$rsha"), the local tip is $tip"
+  if [ "$task" = yes ]; then
+    api GET "/repos/$repo/git/ref/heads/$base"
+    case "$code" in 200) ;; 404) die "push first: $branch's WU branch $base is not on GitHub";; *) api_ok GET "/repos/$repo/git/ref/heads/$base";; esac
+  fi
   # the docs this range changed, as they are at the tip
   doc_rows "$mb" "$tip" "$kind_plan"
   [ -n "$title" ] || title=$branch
   {
     echo "<!-- keel:router-gh pr-body v1 -->"
     echo "Opened by the Keel router bot for \`$branch\` into \`$base\`."
+    if [ "$task" = yes ]; then
+      echo
+      echo "A task of \`$base\`: no gate runs on it and no review of its own. The owner merges it; the WU is reviewed and signed as a whole."
+    fi
     echo
     echo "**Tip:** \`$tip\`"
     echo
@@ -819,8 +848,13 @@ sync)
   gh_git fetch --no-tags --quiet "$url" "+refs/heads/$branch:$track" || fail "fetch of $branch from GitHub failed"
   new=$(git -C "$ROOT" rev-parse --verify -q "$track^{commit}") || fail "fetch of $branch gave no commit"
   if [ "$new" = "$old" ]; then echo "SYNCED branch=$branch sha=$new state=unchanged"; exit 0; fi
-  git -C "$ROOT" merge-base --is-ancestor "$old" "$new" || die "not a fast-forward: the local $branch ($old) has commits GitHub's ($new, in $track) lacks; the owner decides"
   at=$(checked_out_at "$branch")
+  if ! git -C "$ROOT" merge-base --is-ancestor "$old" "$new"; then
+    # a WU branch with commits of its own after the owner merged a task on GitHub: its worker merges
+    # the fetched ref in (E-GHFLOW2.W6); nothing moves here
+    case "$branch" in "$wu_p"*) echo "SYNCED branch=$branch from=$old sha=$new state=diverged ref=$track${at:+ worktree=$at}"; exit 0;; esac
+    die "not a fast-forward: the local $branch ($old) has commits GitHub's ($new, in $track) lacks; the owner decides"
+  fi
   if [ -n "$at" ]; then
     echo "SYNCED branch=$branch from=$old sha=$new state=fetched ref=$track worktree=$at"
   else
@@ -979,6 +1013,11 @@ watch-read)
       jq -c --argjson c "[$cids]" '{kind: "merged", commanders: $c, head: .head.sha, base: .base.ref, state, merged: (.merged == true),
         merge_commit_sha, merged_by_id: (.merged_by.id // null), merged_by_type: (.merged_by.type // null), at: (.merged_at // .closed_at)}' "$tmp/resp" \
         || fail "GitHub's answer for pull request $n is not readable";;
+    conflict)
+      # E-GHFLOW2.W6: whether GitHub can merge it; the watch judges mergeable as a JSON boolean and
+      # mergeable_state as an exact word
+      jq -c '{kind: "conflict", head: .head.sha, base: .base.ref, state, merged: (.merged == true), mergeable, mergeable_state,
+        at: (.merged_at // .closed_at // .updated_at)}' "$tmp/resp" || fail "GitHub's answer for pull request $n is not readable";;
     checks)
       pages "/repos/$repo/commits/$head_sha/check-runs" "" .check_runs
       mv "$tmp/all" "$tmp/runs"

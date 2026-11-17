@@ -248,16 +248,22 @@ fn the_gate_is_green_up_to_the_sign_off_before_it_and_fully_green_after() {
     assert_eq!(git(&ci.runner, &["for-each-ref", "--format=%(refname)", "refs/notes/dod"]), "", "a fully green run writes no receipt either");
 }
 
+/// E-GHFLOW2.W7: on GitHub the review is the owner's approval's to decide, as the sign-off is: a
+/// missing review leaves the gate green, saying so, while the local gate prints the same red block.
 #[test]
-fn a_missing_note_prints_the_same_fail_block_as_the_local_gate() {
+fn a_missing_review_is_left_to_the_approval_on_github_and_prints_the_local_gates_fail_block() {
     let ci = Ci::new(MARK_TEST);
     ci.bless(false);
     ci.checkout("wu/e/a");
     let o = ci.push_job("gate", "wu/e/a");
-    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
     assert_eq!(fails(&o), ["1·notes", "8·manual-review"], "{}", text(&o));
-    assert!(text(&o).contains("ci gate red on"), "{}", text(&o));
-    assert!(ci.summary().starts_with("## Keel gate: wu red\n"), "{}", ci.summary());
+    assert!(text(&o).contains("the review did not pass: the owner's approval decides"), "{}", text(&o));
+    assert!(
+        ci.summary().starts_with("## Keel gate: wu green on every check but the review, which did not pass: the owner's approval decides at the sign-off\n"),
+        "{}",
+        ci.summary()
+    );
     let s = ci.summary();
     assert!(s.contains("| 1·notes | red (1) |"), "{s}");
     for id in ["3·review", "4·review&#45;base", "5·diff&#45;binding"] {
@@ -270,6 +276,21 @@ fn a_missing_note_prints_the_same_fail_block_as_the_local_gate() {
     assert_eq!(local.status.code(), Some(1), "{}", text(&local));
     assert_eq!(gate_lines(&o), gate_lines(&local), "CI:\n{}\nlocal:\n{}", text(&o), text(&local));
     assert!(!gate_lines(&o).is_empty());
+}
+
+/// E-GHFLOW2.W7: only the review is left to the approval; any other red check is red on GitHub.
+#[test]
+fn a_red_check_beside_a_missing_review_is_still_red_on_github() {
+    let ci = Ci::new(MARK_TEST);
+    ci.bless(false);
+    git(&ci.dev, &["notes", "--ref=test", "remove", "wu/e/a"]);
+    ci.push_notes();
+    ci.checkout("wu/e/a");
+    let o = ci.push_job("gate", "wu/e/a");
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert_eq!(fails(&o), ["1·notes", "1·notes", "8·manual-review"], "{}", text(&o));
+    assert!(text(&o).contains("ci gate red on"), "{}", text(&o));
+    assert!(ci.summary().starts_with("## Keel gate: wu red\n"), "{}", ci.summary());
 }
 
 #[test]

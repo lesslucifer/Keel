@@ -42,7 +42,8 @@
 # session id, so the run dir records it once the session is listed.
 # One live session per name, whatever its directory: SendMessage addresses by name; a launch holds
 # .router/runs/.lock-<name> from its live check to its start.
-# worktree add cuts epic/E off main and wu/E/slug off epic/E (an existing branch is used as it is) at
+# worktree add cuts epic/E off main, wu/E/slug off epic/E and a task wu/E/wu_task (E-GHFLOW2.W6: three
+# words without _) off its WU branch wu/E/wu (an existing branch is used as it is) at
 # <main checkout>-<branch without its prefix, / as ->; worktree remove takes only a clean worktree
 # whose branch is merged into its base and in which no session runs, and keeps the branch.
 set -eu
@@ -349,8 +350,9 @@ if [ "$mode" = worktree ]; then
   [ $# -eq 2 ] || die "worktree add|remove <branch>"
   op=$1 b=$2
   case "$op" in add|remove) ;; *) die "worktree add|remove <branch>";; esac
-  seg='[A-Za-z0-9][A-Za-z0-9._-]*'
+  seg='[A-Za-z0-9][A-Za-z0-9._-]*' word='[A-Za-z0-9][A-Za-z0-9.-]*'
   if expr "$b" : "^$epic_p$seg\$" > /dev/null; then base=$main_b
+  elif expr "$b" : "^$wu_p$word/${word}_$word\$" > /dev/null; then t=${b#"$wu_p"}; base=$wu_p${t%%_*}
   elif expr "$b" : "^$wu_p$seg/$seg\$" > /dev/null; then e=${b#"$wu_p"}; base=$epic_p${e%%/*}
   else die "branch must be $epic_p<E> or $wu_p<E>/<slug> in plain words"; fi
   case "$b" in *..*) die "branch must be $epic_p<E> or $wu_p<E>/<slug> in plain words";; esac

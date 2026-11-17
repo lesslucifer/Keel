@@ -471,6 +471,25 @@ fn push_lands_the_branch_and_its_notes_and_runs_none_of_the_pushed_code() {
     assert_eq!(std::fs::read_dir(&gh.marks).unwrap().count(), 0);
 }
 
+/// W6 security review, 3a: a task carries no notes (its WU's last commit does), so its push asks for
+/// none, and lands as a WU branch's does.
+#[test]
+fn a_task_is_pushed_with_no_test_note() {
+    let gh = Gh::new();
+    git(&gh.repo, &["switch", "-q", "-c", "wu/E/x_t", "wu/E/x"]);
+    write(&gh.repo, "docs/guide.html", "<p>a task's line</p>");
+    commit(&gh.repo, "task t");
+    let tip = gh.sha("wu/E/x_t");
+    assert!(
+        !common::cmd("git").args(["notes", "--ref=test", "show", &tip]).current_dir(&gh.repo).output().unwrap().status.success(),
+        "the task tip has no test note"
+    );
+    let o = gh.run(&["push", "wu/E/x_t"]);
+    assert_eq!(stdout(&o), format!("PUSHED branch=wu/E/x_t sha={tip} state=new"), "{}", text(&o));
+    assert_eq!(gh.origin_sha("refs/heads/wu/E/x_t").as_deref(), Some(tip.as_str()));
+    assert_eq!(std::fs::read_dir(&gh.marks).unwrap().count(), 0, "a [check] command of the pushed branch ran");
+}
+
 /// A wu/ tip without its test/v1 note (its worker's sandboxed keel check) is refused before any
 /// request; a note for another tip does not count.
 #[test]
@@ -957,7 +976,7 @@ fn pr_open_links_no_page_under_a_docs_root_other_than_docs() {
     assert!(body.contains(&format!("| [p](https://github.com/own/Keel/blob/{tip}/pages/p.html) | — | — | — |")), "{body}");
 }
 
-/// The base comes from the name (an epic into main), or from --base main|epic/E; a WU never into main.
+/// The base comes from the name (an epic into main, a WU into its epic), or for an epic from --base main|epic/E.
 #[test]
 fn pr_open_derives_main_for_an_epic_and_takes_an_explicit_base() {
     let gh = Gh::new();
@@ -980,15 +999,136 @@ fn pr_open_derives_main_for_an_epic_and_takes_an_explicit_base() {
         ("GET", "/repos/own/Keel/pulls?state=open&head=own:wu/E/x&per_page=100", 200, serde_json::json!([])),
         ("POST", "/repos/own/Keel/pulls", 201, serde_json::json!({"number": 9, "html_url": "https://github.com/own/Keel/pull/9"})),
     ]);
-    let o = gh.run(&["pr-open", "wu/E/x", "--base", "epic/E"]);
+    let o = gh.run(&["pr-open", "wu/E/x"]);
     assert!(stdout(&o).ends_with(&format!("state=opened head=wu/E/x base=epic/E sha={tip}")), "{}", text(&o));
     assert_eq!(body_of(&gh.log()[3])["base"], "epic/E");
+    // W4 review nit 5, E-GHFLOW2.W6: a WU's base is derived, so even its own epic as --base is refused
+    gh.routes(&[]);
+    let o = gh.run(&["pr-open", "wu/E/x", "--base", "epic/E"]);
+    assert!(o.status.code() == Some(2) && text(&o).contains("drop --base"), "{}", text(&o));
+    assert!(gh.calls().is_empty(), "{:?}", gh.calls());
     // E-GHFLOW2.W4 review: a WU into main would skip its epic's gate; refused before any request
     gh.routes(&[]);
     let o = gh.run(&["pr-open", "wu/E/x", "--base", "main"]);
     assert_eq!(o.status.code(), Some(2), "{}", text(&o));
-    assert!(text(&o).contains("a WU merges into its epic, never into main: wu/E/x"), "{}", text(&o));
+    assert!(text(&o).contains("wu/E/x goes into epic/E, derived from its name: drop --base"), "{}", text(&o));
     assert!(gh.calls().is_empty(), "{:?}", gh.calls());
+}
+
+/// A task branch `wu/E/x_t` off `wu/E/x` (E-GHFLOW2.W6), committed and pushed to the fake GitHub
+/// with its WU branch; its tip.
+fn task_branch(gh: &Gh) -> String {
+    git(&gh.repo, &["switch", "-q", "-c", "wu/E/x_t", "wu/E/x"]);
+    write(&gh.repo, "docs/guide.html", "<p>a task's line</p>");
+    commit(&gh.repo, "task t");
+    git(&gh.repo, &["push", "-q", "--no-verify", gh.origin.to_str().unwrap(), "wu/E/x", "wu/E/x_t"]);
+    gh.sha("wu/E/x_t")
+}
+
+/// E-GHFLOW2.W6: a task's pull request goes into its WU branch, which must be on GitHub; it says the
+/// owner merges it and no gate runs; `--base` and `issue` are refused for a task before any request.
+#[test]
+fn pr_open_opens_a_task_into_its_wu_branch_only() {
+    let gh = Gh::new();
+    let (wu, tip) = (gh.sha("wu/E/x"), task_branch(&gh));
+    gh.routes(&[
+        ("GET", "/repos/own/Keel/git/ref/heads/wu/E/x_t", 200, serde_json::json!({"object": {"sha": tip}})),
+        ("GET", "/repos/own/Keel/git/ref/heads/wu/E/x", 200, serde_json::json!({"object": {"sha": wu}})),
+        ("GET", "/repos/own/Keel/pulls?state=open&head=own:wu/E/x_t&per_page=100", 200, serde_json::json!([])),
+        ("POST", "/repos/own/Keel/pulls", 201, serde_json::json!({"number": 12, "html_url": "https://github.com/own/Keel/pull/12"})),
+    ]);
+    let o = gh.run(&["pr-open", "wu/E/x_t"]);
+    assert_eq!(stdout(&o), format!("PR number=12 url=https://github.com/own/Keel/pull/12 state=opened head=wu/E/x_t base=wu/E/x sha={tip}"), "{}", text(&o));
+    assert_eq!(gh.calls()[2], "GET /repos/own/Keel/git/ref/heads/wu/E/x");
+    let req = body_of(&gh.log()[4]);
+    assert_eq!((req["base"].as_str(), req["head"].as_str(), req["draft"].as_bool()), (Some("wu/E/x"), Some("wu/E/x_t"), Some(true)));
+    assert!(req["body"].as_str().unwrap().contains("A task of `wu/E/x`: no gate runs on it"), "{req}");
+
+    gh.routes(&[
+        ("GET", "/repos/own/Keel/git/ref/heads/wu/E/x_t", 200, serde_json::json!({"object": {"sha": tip}})),
+        ("GET", "/repos/own/Keel/git/ref/heads/wu/E/x", 404, serde_json::json!({"message": "Not Found"})),
+    ]);
+    let o = gh.run(&["pr-open", "wu/E/x_t"]);
+    assert!(o.status.code() == Some(2) && text(&o).contains("push first: wu/E/x_t's WU branch wu/E/x is not on GitHub"), "{}", text(&o));
+    assert!(!gh.calls().iter().any(|c| c.starts_with("POST /repos")), "{:?}", gh.calls());
+
+    for args in [&["pr-open", "wu/E/x_t", "--base", "epic/E"][..], &["issue", "wu/E/x_t"]] {
+        gh.routes(&[]);
+        let o = gh.run(args);
+        assert_eq!(o.status.code(), Some(2), "{args:?}: {}", text(&o));
+        assert!(gh.calls().is_empty(), "{args:?}: {:?}", gh.calls());
+    }
+}
+
+/// E-GHFLOW2.W6: pr-ready on a task's pull request asks for the owner's review and never turns on
+/// auto-merge (the owner merges a task); one whose base is not its WU branch is refused.
+#[test]
+fn pr_ready_on_a_task_asks_for_review_and_sends_no_auto_merge() {
+    let gh = Gh::new();
+    let tip = task_branch(&gh);
+    let ready = serde_json::json!({"data": {"markPullRequestReadyForReview": {"pullRequest": {"isDraft": false}}}});
+    let user = serde_json::json!({"login": "lesslucifer", "id": OWNER_ID, "type": "User"});
+    let mut pr = gh.pr(12, BOT, "own/Keel", &tip, true);
+    pr["head"]["ref"] = "wu/E/x_t".into();
+    pr["base"]["ref"] = "wu/E/x".into();
+    gh.routes_seq(&[
+        ("GET", "/repos/own/Keel/pulls/12", "200".into(), vec![pr.clone()]),
+        ("POST", "/graphql", "200".into(), vec![ready.clone(), auto_merge_on()]),
+        ("GET", "/user/5499546", "200".into(), vec![user]),
+        ("POST", "/repos/own/Keel/pulls/12/requested_reviewers", "201".into(), vec![serde_json::json!({"number": 12})]),
+    ]);
+    let o = gh.run(&["pr-ready", "12"]);
+    assert_eq!(stdout(&o), format!("READY pr=12 head=wu/E/x_t sha={tip} state=ready reviewers=lesslucifer automerge=task"), "{}", text(&o));
+    assert_eq!(gh.calls().iter().filter(|c| *c == "POST /graphql").count(), 1, "no auto-merge request: {:?}", gh.calls());
+
+    pr["base"]["ref"] = "epic/E".into();
+    gh.routes_seq(&[("GET", "/repos/own/Keel/pulls/12", "200".into(), vec![pr])]);
+    let o = gh.run(&["pr-ready", "12"]);
+    assert!(o.status.code() == Some(2) && text(&o).contains("merges into epic/E, not wu/E/x, which its head's name gives"), "{}", text(&o));
+    assert!(!gh.calls().iter().any(|c| c == "POST /graphql"), "{:?}", gh.calls());
+    // W6 security review nit: every WU's pull request too must go into the base its name gives
+    let mut wu = gh.pr(7, BOT, "own/Keel", &gh.sha("wu/E/x"), true);
+    wu["base"]["ref"] = "epic/F".into();
+    gh.routes_seq(&[("GET", "/repos/own/Keel/pulls/7", "200".into(), vec![wu])]);
+    let o = gh.run(&["pr-ready", "7"]);
+    assert!(o.status.code() == Some(2) && text(&o).contains("merges into epic/F, not epic/E, which its head's name gives"), "{}", text(&o));
+    assert!(!gh.calls().iter().any(|c| c == "POST /graphql"), "{:?}", gh.calls());
+}
+
+/// E-GHFLOW2.W6: the owner merges a task into its WU branch on GitHub; sync fetches the WU branch,
+/// fast-forwards it when no worktree has it, else names the ref; a WU branch with commits of its own
+/// is "diverged", and nothing moves until its worker merges the ref in.
+#[test]
+fn sync_fetches_a_wu_branch_the_owner_merged_a_task_into() {
+    let gh = Gh::new();
+    task_branch(&gh);
+    git(&gh.repo, &["switch", "-q", "epic/E"]);
+    let old = gh.sha("wu/E/x");
+    let merged = gh.github_merges_into("wu/E/x_t", "wu/E/x");
+    let o = gh.run(&["sync", "wu/E/x"]);
+    assert_eq!(stdout(&o), format!("SYNCED branch=wu/E/x from={old} sha={merged} state=fast-forward"), "{}", text(&o));
+    assert_eq!(gh.sha("wu/E/x"), merged);
+
+    // the WU's worker has gone on; the owner merges a second task meanwhile
+    git(&gh.repo, &["switch", "-q", "wu/E/x"]);
+    write(&gh.repo, "src/b.txt", "b");
+    commit(&gh.repo, "the WU goes on");
+    let local = gh.sha("wu/E/x");
+    git(&gh.repo, &["switch", "-q", "-c", "wu/E/x_u", &merged]);
+    write(&gh.repo, "docs/other.html", "<p>u</p>");
+    commit(&gh.repo, "task u");
+    git(&gh.repo, &["switch", "-q", "wu/E/x"]);
+    let merged2 = gh.github_merges_into("wu/E/x_u", "wu/E/x");
+    let o = gh.run(&["sync", "wu/E/x"]);
+    assert_eq!(
+        stdout(&o),
+        format!("SYNCED branch=wu/E/x from={local} sha={merged2} state=diverged ref=refs/remotes/origin/wu/E/x worktree={}", gh.repo.display()),
+        "{}",
+        text(&o)
+    );
+    assert_eq!(gh.sha("wu/E/x"), local, "nothing moves");
+    git(&gh.repo, &["merge", "-q", "--no-ff", "--no-verify", "-m", "take the owner's merge", "refs/remotes/origin/wu/E/x"]);
+    assert!(gh.repo.join("docs/other.html").exists() && gh.repo.join("src/b.txt").exists());
 }
 
 /// The bot's open pull request for the head is refreshed (PATCH), never doubled; someone else's, or

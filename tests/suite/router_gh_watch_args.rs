@@ -52,6 +52,7 @@ fn kinds_and_word_counts_are_fixed() {
         &["comment", "9999999", "since", "999999999999999"],
         &["merged", "12"],
         &["checks", "12"],
+        &["conflict", "12"],
     ] {
         assert!(accepts(ok), "{ok:?}");
     }
@@ -67,6 +68,8 @@ fn kinds_and_word_counts_are_fixed() {
         &["review", "1", "since", "2", "x"],
         &["merged", "1", "since", "2"],
         &["checks", "1", "since", "2"],
+        &["conflict", "1", "since", "2"],
+        &["conflict", "1", "2"],
         &["merged", "1", "since", "latest"],
         &["merged", "1", "2"],
     ] {

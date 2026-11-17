@@ -10,7 +10,8 @@
 # reach (security review I4): keel is built from this checkout, main, which only the owner moves
 # (DEC-61); the base (an epic, which the router bot pushes) and the head are git data only - read
 # by keel from a base worktree, never built or run. The note goes to origin's refs/notes/mr, and the
-# keel/sign-off status says what happened on the head commit; a run that stops after it knows the
+# keel/sign-off status says what happened on the head commit, and what the approval signed over
+# (E-GHFLOW2.W7: a review that did not pass, a roster change); a run that stops after it knows the
 # head says so too (status error).
 # Input, from the workflow's env (never from a run: line):
 #   GH_TOKEN      the workflow's token (contents and statuses write, pull-requests read)
@@ -26,6 +27,13 @@
 set -euf
 LC_ALL=C
 export LC_ALL
+# the writer's own identity, for keel's notes (their committer) and every git commit it makes: a
+# GitHub runner has no [user] and Linux git guesses none, so without these keel stops (E-GHFLOW2.W10)
+GIT_AUTHOR_NAME=keel-sign-off
+GIT_AUTHOR_EMAIL=keel-sign-off@users.noreply.github.com
+GIT_COMMITTER_NAME=$GIT_AUTHOR_NAME
+GIT_COMMITTER_EMAIL=$GIT_AUTHOR_EMAIL
+export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
 
 die() {
 	printf 'ci-sign-off: %s\n' "$*" >&2
@@ -234,7 +242,9 @@ case $rc in
 	exit 0
 	;;
 1)
-	why=$(grep -m 1 -E 'refused|FAIL' "$scratch/keel.out" || echo "a check before the sign-off is red")
+	# a refusal or a red check names itself; any other keel error is named by its own line, never
+	# taken for a red check
+	why=$(grep -m 1 -E 'refused|FAIL' "$scratch/keel.out" || grep -m 1 '^keel: ' "$scratch/keel.out" || echo "keel stopped (exit 1); the run's log says why")
 	status failure "Approval not signed: $why"
 	exit 0
 	;;
@@ -258,9 +268,7 @@ for try in 1 2 3; do
 		break
 	fi
 	git fetch -q --no-tags origin "+refs/notes/mr:refs/notes/keel-origin-mr" || fail "cannot fetch origin's refs/notes/mr"
-	GIT_AUTHOR_NAME=keel-sign-off GIT_AUTHOR_EMAIL=keel-sign-off@users.noreply.github.com \
-		GIT_COMMITTER_NAME=keel-sign-off GIT_COMMITTER_EMAIL=keel-sign-off@users.noreply.github.com \
-		git notes --ref=mr merge -q -s ours refs/notes/keel-origin-mr || fail "cannot merge origin's refs/notes/mr"
+	git notes --ref=mr merge -q -s ours refs/notes/keel-origin-mr || fail "cannot merge origin's refs/notes/mr"
 	git update-ref -d refs/notes/keel-origin-mr
 	echo "ci-sign-off: origin's refs/notes/mr moved; merged, push $try failed" >&2
 done
@@ -268,5 +276,17 @@ done
 	status error "Signed, but the note could not be pushed"
 	exit 1
 }
-id=$(git notes --ref=mr show "$head_sha" | jq -r '.review.id')
-status success "Signed by approval (review $id)"
+note=$(git notes --ref=mr show "$head_sha")
+id=$(printf '%s' "$note" | jq -r '.review.id')
+# what the approval signed over (E-GHFLOW2.W7), in fixed words: the review's state only when it is
+# one keel writes, and whether the roster changed
+over=
+case $(printf '%s' "$note" | jq -r '.covers.review // ""') in
+'') ;;
+missing | unreadable | FAIL | stale | WAIVED) over=", over a review that did not pass ($(printf '%s' "$note" | jq -r '.covers.review'))" ;;
+*) over=", over a review in an unknown state" ;;
+esac
+if [ "$(printf '%s' "$note" | jq -r '(.covers.roster // []) | length > 0')" = true ]; then
+	over="$over, with a roster change"
+fi
+status success "Signed by approval (review $id)$over"
