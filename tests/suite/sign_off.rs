@@ -340,6 +340,84 @@ fn only_a_cr_note_naming_another_tip_is_covered_and_a_test_or_doc_note_stays_red
     }
 }
 
+/// wu/e/a remade as a docs-only range (UC-GATE-5): only its result report, no code. HEAD on it.
+fn docs_only(p: &Path) {
+    git(p, &["reset", "-q", "--hard", "epic/e"]);
+    write(p, "docs/work/a-result.html", RESULT);
+    commit(p, "wu a: docs only");
+}
+
+/// W7 code review round 2, blocker 1: on a docs-only range the gate needs no review, so neither does
+/// the writer. A typed sign-off there is "already signed" (exit 4), as before W7.
+#[test]
+fn a_typed_sign_off_of_a_docs_only_range_is_already_signed() {
+    let d = fixture();
+    let p = d.path();
+    docs_only(p);
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "vu"]));
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let o = sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(4), "{t}");
+    assert!(t.contains("already signed") && !t.contains("did not pass"), "{t}");
+}
+
+/// W7 code review round 2, blocker 2: an approval of a docs-only range covers no review, since the
+/// gate requires none: no covers.review, and nothing says a review did not pass.
+#[test]
+fn an_approval_of_a_docs_only_range_records_no_review_state() {
+    let d = fixture();
+    let p = d.path();
+    docs_only(p);
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let o = ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    assert!(!text(&o).contains("did not pass"), "{}", text(&o));
+    let n = note(p, "mr", &tip).unwrap();
+    assert!(n.get("covers").is_none(), "{n}");
+    let o = ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    assert!(text(&o).contains("exempt") && !text(&o).contains("covered by"), "{}", text(&o));
+}
+
+/// W7 code review round 2, important: the writer tells an approval from a typed sign-off by the rule
+/// check 8 and the gate use (the roster's github tier, never a key holder), not by the note carrying
+/// a review. A key holder's note with a review field copied in is a typed sign-off: over a failed
+/// review it is not "already signed", and the gate covers nothing.
+#[test]
+fn a_key_signed_note_carrying_a_review_is_a_typed_sign_off_to_the_writer() {
+    let d = fixture();
+    let p = d.path();
+    let k = TempDir::new().unwrap();
+    let key = k.path().join("id");
+    ok(run("ssh-keygen", k.path(), &["-q", "-t", "ed25519", "-N", "", "-C", "keel-test", "-f", key.to_str().unwrap()]));
+    let public = std::fs::read_to_string(k.path().join("id.pub")).unwrap();
+    let public = public.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
+    git(p, &["switch", "-q", "epic/e"]);
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap().replace("\"username\", \"github\"", "\"username\", \"key\", \"github\"");
+    write(p, ".keel/config.toml", &cfg);
+    write(p, ".keel/mr-allowed", &format!("{ROSTER}key: 5499546 {public}\ngithub: 777 other\n"));
+    commit(p, "the owner's key, another approver");
+    git(p, &["switch", "-q", "wu/e/a"]);
+    git(p, &["merge", "-q", "--no-ff", "--no-verify", "-m", "sync", "epic/e"]);
+    notes(p);
+    git(p, &["config", "keel.signingkey", key.to_str().unwrap()]);
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "5499546"]));
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let mut n = note(p, "mr", &tip).unwrap();
+    assert_eq!(n["tier"], "key");
+    n["review"] = json!({"id": 13, "url": format!("{REPO_URL}#pullrequestreview-13"), "commit": tip});
+    git(p, &["notes", "--ref=mr", "add", "-f", "-m", &n.to_string(), &tip]);
+    edit_cr(p, |c| (c["verdict"], c["blockers"]) = (json!("FAIL"), json!(1)));
+    let signed = git(p, &["notes", "--ref=mr", "show", &tip]);
+    let o = sign_off(p, "wu", "epic/e", &json!([review(12, 777, "APPROVED", &tip), review(13, OWNER, "APPROVED", &tip)]), &[]);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("typed sign-off") && t.contains("did not pass") && !t.contains("already signed"), "{t}");
+    assert_eq!(git(p, &["notes", "--ref=mr", "show", &tip]), signed, "never replaced");
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("FAIL  3·review") && !t.contains("covered by"), "{t}");
+}
+
 /// The cr note's stored bytes on `rev`, if it has one.
 fn cr_blob(p: &Path, rev: &str) -> Option<Vec<u8>> {
     let o = run("git", p, &["notes", "--ref=cr", "list", rev]);
