@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afc66ad9f34851f0dfb267e" data-artifact="epic-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHSETUP epic plan: set the GitHub flow up in any project</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHSETUP · Set the GitHub flow up in any project</h1>
+      <p>Today only Keel's own repository has the GitHub flow, set up by hand. After this epic, keel sets it up in any project, with two clicks in a browser.</p>
+      <div class="meta">Ready v1 · 2026-11-17 · T3 · epic plan · Keel · off main 6cf3127 · carries backlog github-flow G10 (open steps, live facts, the /keel question), parts of G4 and G5</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-item="intent" data-c="intent">The GitHub flow (GitHub runs the checks, a bot pushes work, you sign by approving, GitHub merges) works only in Keel's own repository. It took you a page of web steps and two loose scripts, and still hit a refused push. Another project gets nothing: its checks would build Keel from source, and the scripts live only in Keel. This epic makes keel set the flow up in any project, as automatically as GitHub allows.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>A tool is missing</td><td>You find out mid-way</td><td>One list of what is missing, first</td></tr>
+    <tr><td>The bot (a GitHub App)</td><td>A form, a key download, three ids typed</td><td>Two clicks; keel stores the key</td></tr>
+    <tr><td>Workflows and owner files</td><td>Keel's repository only</td><td>Written into your project</td></tr>
+    <tr><td>Repository settings</td><td>Seven web steps, in an order you must know</td><td>Applied by keel, in order, then checked</td></tr>
+    <tr><td>You run it again</td><td>Unknown</td><td>It changes nothing that is already right</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">Example: a new project</h2>
+<ol data-c="example-steps">
+  <li>You run the setup in your project. It says jq is missing. You install it and run again.</li>
+  <li>A browser page opens. You click "Create GitHub App", then "Install".</li>
+  <li>The setup writes the files and prints your one commit.</li>
+  <li>You commit and push. The setup applies the settings and prints green.</li>
+</ol>
+
+<h2 id="wus">The work</h2>
+<p>W1 comes first: you approve its list before W3 – W6 are planned. W2 can run any time.</p>
+
+<div data-item="wu-summaries" data-c="wu-summaries">
+
+<div data-wu="E-GHSETUP.W1" data-c="wu-w1">
+  <h3 id="w1">W1 · The list of every piece, for your approval</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> one table of every piece the flow needs, where it lives, and how far each can be automated. GitHub's real limits are checked against its docs. You choose; W3 – W6 follow your choice.</p>
+    <ul>
+      <li>Pieces: the tools (git, gh logged in as an admin, jq, curl, openssl, keel); the repository (public, or a paid plan for rulesets on a private one); the App; the committed files (five workflows, <code>.github/CODEOWNERS</code>, the CI and router scripts, <code>.keel/config.toml</code> <code>[github]</code>, the <code>github:</code> roster line, <code>rule_bearing</code>); the settings (merge methods and auto-merge, the Actions token, fork approval, the <code>pull_request_target</code> policy, the <code>keel-tags</code> and <code>keel-merge</code> rulesets, Pages).</li>
+      <li>For each: automated by the GitHub REST API, one click, your commit, or by hand; and what must come before it (the workflows on main before the policy and <code>keel-merge</code>; a first gate run seen before <code>keel-merge</code>).</li>
+      <li>Fixes today's errors: <code>keel-merge</code> gets <code>do_not_enforce_on_create = true</code> (the bot's first push of a new epic was refused, GH013), and the deletion and non-fast-forward rules; Pages comes before the check.</li>
+      <li>Its result report records G10's live facts owed, as read on Keel's repository.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Your 2026-11-17 brief ("W1 lists every piece and dependency") · backlog github-flow G10.</p>
+  <p data-item="wu-expected"><b>Integration: waived.</b> The WU is a doc. Its proof is your approval of the table.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+<div data-wu="E-GHSETUP.W2" data-c="wu-w2">
+  <h3 id="w2">W2 · Plan and close commits reach an epic by pull request</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> with <code>keel-merge</code> on <code>epic/**</code>, nobody pushes an epic. The epic plan and the close work go on <code>wu/&lt;E&gt;/plan</code> and <code>wu/&lt;E&gt;/close</code>, each a pull request into the epic. Your approval approves the plan and signs it.</p>
+    <ul>
+      <li>The skills say so (keel-workflow, keel-router, project-router): rule-bearing, your commit.</li>
+      <li>The gate accepts a close made this way: the archive commit's epic-range notes, judged by the walk inside a WU seam. Code changes only if a test shows it refused.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">keel-1c's live fact of 2026-11-17 · UC-GATE-7 and UC-MR-3 amended.</p>
+  <p data-item="wu-expected"><b>Integration:</b> in a scratch repository, an epic whose plan came in by <code>wu/E/plan</code> and whose close came in by <code>wu/E/close</code> passes <code>keel verify-dod epic</code> and <code>keel ci gate</code>. <b>Unit:</b> any gate change.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+<div data-wu="E-GHSETUP.W3" data-c="wu-w3">
+  <h3 id="w3">W3 · keel writes the project's GitHub files</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> keel carries the workflows, <code>CODEOWNERS</code> and the scripts, and writes them into a project. Its checks install a released keel at a pinned version instead of building Keel's source.</p>
+    <ul>
+      <li>Embedded like the skills, with lock entries, so an upgrade replaces only unedited files.</li>
+      <li>A workflow downloads the keel version named in the base's committed config and checks its SHA-256 before running it. Keel's own repository keeps building from the base.</li>
+      <li>The printable-ASCII guard covers every workflow (G10, W4's residual). Pages ships only when chosen.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">UC-INIT-2 (new: GitHub setup) · DEC-60 and DEC-65 amended.</p>
+  <p data-item="wu-expected"><b>Integration:</b> in a scratch repository the files appear once; a rerun changes nothing; an edited file is kept; every workflow parses and names only allowed triggers; the install step refuses a binary whose hash differs (a fake release from a temp dir). <b>Unit:</b> the templates' fill-in.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+<div data-wu="E-GHSETUP.W4" data-c="wu-w4">
+  <h3 id="w4">W4 · The App in two clicks</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> keel opens a one-time local page that sends GitHub the App's description. You click "Create" and "Install". keel stores the key and reads the ids from GitHub.</p>
+    <ul>
+      <li>GitHub's manifest flow: a page posts the manifest; GitHub returns a one-hour code; keel trades it for the App id, slug and key (<code>POST /app-manifests/{code}/conversions</code>).</li>
+      <li>The key goes to <code>~/.config/keel/router-gh/</code>, mode 0600, under the rules <code>router-gh.sh</code> checks. keel reads the installation id with the App's own token, never from the redirect.</li>
+      <li>A second project reuses the App: one click adds the repository. <code>router-gh.sh</code> learns which installation serves which repository.</li>
+      <li>Takes G5's <code>router_gh.rs</code> nits.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Your brief: "the GitHub App stays required; automate everything around it" · UC-INIT-2 · DEC-61 amended.</p>
+  <p data-item="wu-expected"><b>Integration:</b> against a fake GitHub, the flow stores a 0600 key and the three ids; a wrong mode, a second link or an expired code is refused; a second repository reuses the key. <b>Unit:</b> the manifest and the id parsing.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+<div data-wu="E-GHSETUP.W5" data-c="wu-w5">
+  <h3 id="w5">W5 · keel applies the repository settings, in order</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> what the two loose scripts did, for any repository and every setting. Each setting is written only when missing. A differing ruleset stops the run and shows the difference.</p>
+    <ul>
+      <li>Order: merge methods; the Actions token and fork approval; <code>keel-tags</code>; then, once the workflows are on main, the <code>pull_request_target</code> policy; a first gate run on a pull request's head; <code>keel-merge</code>; auto-merge; Pages if chosen.</li>
+      <li>Uses your gh login, never the App.</li>
+      <li>The check reads the Actions policy and <code>do_not_enforce_on_create</code>, so no line is left by hand.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">install.html §5 steps 1 – 7 · UC-INIT-2 · DEC-65 amended.</p>
+  <p data-item="wu-expected"><b>Integration:</b> against a fake GitHub, the writes come in that order; a rerun on a green repository writes nothing; a differing <code>keel-merge</code> stops with no write; the check is green only with every rule. <b>Unit:</b> each setting's diff.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+<div data-wu="E-GHSETUP.W6" data-c="wu-w6">
+  <h3 id="w6">W6 · One setup command, and the install page</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> one command runs W3 – W5 in order, and lists every missing tool before it changes anything. It stops where your commit is needed and goes on when run again.</p>
+    <ul>
+      <li>Fills <code>[github]</code> and the <code>github:</code> roster line from your gh login (numeric id, login), and adds the new files to <code>rule_bearing</code>.</li>
+      <li>Never pushes main, never merges: it prints your commit and push.</li>
+      <li>install.html §5 becomes "any project": the command, the two clicks, what it changes.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Your brief: "as automatic as possible, missing deps listed" · UC-INIT-2.</p>
+  <p data-item="wu-expected"><b>Integration:</b> with jq off PATH it lists jq and changes nothing; with every tool it runs to your commit, then to green on the rerun. <b>Unit:</b> the tool checks.</p>
+  <p data-item="wu-deps">W3, W4, W5</p>
+</div>
+
+</div>
+
+<h2 id="open-points">Open points</h2>
+<p>Work goes on at these answers. Comment to overrule.</p>
+<table data-item="open-questions" data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>How do this epic's plan and close reach GitHub, now that nobody pushes an epic?</td><td><b>By pull request</b>: the router pushes this plan's commit as <code>wu/E-GHSETUP/plan</code> into the epic; your approval approves it. W2 makes it the rule</td><td>A bot bypass breaks "nobody bypasses". The commit is unchanged, so the local epic fast-forwards to GitHub's merge</td></tr>
+    <tr><td>2</td><td>One command or several?</td><td><b>One</b>, <code>keel github setup</code>, resumable; each step also alone</td><td>Your commit splits it anyway; a rerun picks up where it stopped</td></tr>
+    <tr><td>3</td><td>Where do the scripts live in a project?</td><td><b>As files keel writes</b>, locked like the skills</td><td>The same tested scripts; GitHub runs them from main</td></tr>
+    <tr><td>4</td><td>Which keel do a project's checks run?</td><td><b>A release, pinned in the committed config, hash-checked</b></td><td>No Rust toolchain in other projects; a pull request still cannot change its judge</td></tr>
+    <tr><td>5</td><td>One App per project, or one for all?</td><td><b>One App per account</b>, installed per repository</td><td>One key to guard; one click per project</td></tr>
+    <tr><td>6</td><td>Pages and private repositories?</td><td><b>Pages off by default. A private repository without a paid plan is refused, with the reason</b></td><td>Rulesets on a private repository need a paid plan; the site needs a public one</td></tr>
+    <tr><td>7</td><td>The /keel commands (go, hold, retry, answer)?</td><td><b>The setup leaves them out</b>; removing them goes to a router backlog row</td><td>You want the flow simple. Comments and approvals already carry it</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="expected-h">Acceptance</h3>
+<ul data-item="expected" data-c="expected">
+  <li>In a fresh repository, one command lists any missing tool before changing anything.</li>
+  <li>The App is made and installed with two clicks; the key is stored mode 0600 and never printed.</li>
+  <li>The workflows, <code>CODEOWNERS</code>, scripts, <code>[github]</code> and the roster line are written; your one commit lands them.</li>
+  <li>The settings are applied in GitHub's order. The check prints SETTINGS green with no hand-checked line left.</li>
+  <li>A rerun on a set-up repository writes nothing.</li>
+  <li>The bot's first push of a new epic branch is accepted (<code>do_not_enforce_on_create</code>).</li>
+  <li>An epic's plan and close reach it by pull request and pass the epic gate.</li>
+  <li>The epic test passes.</li>
+</ul>
+
+<h3 id="use-cases-h">Use cases</h3>
+<ul data-item="use-cases" data-c="use-cases">
+  <li>UC-INIT-2, new: keel sets the GitHub flow up in a project (W3 – W6).</li>
+  <li>UC-GATE-7 and UC-MR-3, amended: an epic's plan and close come in by pull request (W2).</li>
+</ul>
+
+<h3 id="non-goals-h">Out of scope</h3>
+<ul data-item="non-goals" data-c="non-goals">
+  <li>A GitHub flow without an App, GitHub Enterprise Server, other forges.</li>
+  <li>Changing what the gate or the sign-off judges. G7's walk-waiver item stays in the backlog.</li>
+  <li>Claude reviews inside Actions; G4's range walk on main.</li>
+  <li>Removing the /keel commands (open point 7).</li>
+  <li>The docs split (E-DOCSPLIT).</li>
+</ul>
+
+<h3 id="e2e-h">Epic test</h3>
+<div data-item="e2e-plan" data-c="e2e-plan">
+  <p>Hermetic: a scratch repository and a bare remote, a fake gh and a fake GitHub API (the <code>API</code> and <code>CURL</code> seams the scripts already take), the browser played by the test. No live GitHub.</p>
+  <ol>
+    <li>Setup with jq off PATH: it lists jq and nothing is written.</li>
+    <li>Setup with every tool: the fake App is converted, the key stored 0600, the ids read; the files written; it stops at your commit.</li>
+    <li>The test commits and pushes as you would. Setup again: the settings come in GitHub's order; the check is green.</li>
+    <li>Setup a third time: no write.</li>
+    <li>An epic whose plan and close came in by <code>wu/E/plan</code> and <code>wu/E/close</code> passes the epic gate.</li>
+  </ol>
+  <p>The live run on Keel's own repository (the check green, the bot's first epic push) is your step, recorded in W1's and the epic's result reports.</p>
+</div>
+
+<h3 id="close-h">At the close</h3>
+<ul data-item="distillation-plan" data-c="distillation-plan">
+  <li>docs/install.html §5: the setup for any project, in place of the web steps.</li>
+  <li>docs/architecture.html: the CLI table and "What setup installs" gain the GitHub pieces.</li>
+  <li>docs/use-cases/workflow.html: UC-INIT-2; UC-GATE-7 and UC-MR-3 amended.</li>
+  <li>docs/decisions: one record for the setup (manifest App, settings by API, released keel in CI); DEC-65 amended (<code>do_not_enforce_on_create</code>, plan and close by pull request).</li>
+  <li>docs/backlog/github-flow.html: G10's taken rows closed, the rest re-pointed; the /keel row added.</li>
+</ul>
+
+<h3 id="facts-h">Facts this plan stands on</h3>
+<ul data-c="facts">
+  <li>The checks build keel with <code>cargo build</code> from the base (<code>scripts/ci-gate.sh</code> line 155, <code>scripts/ci-sign-off.sh</code> line 205): only Keel's repository can do that.</li>
+  <li><code>keel init</code> writes no workflow, script or <code>[github]</code> section (<code>src/init.rs</code> <code>run</code>).</li>
+  <li><code>gh-settings-apply.sh</code> and <code>-tags.sh</code> (untracked, E-GHFLOW2 worktree) hard-code <code>lesslucifer/Keel</code> and set <code>do_not_enforce_on_create: false</code>.</li>
+  <li><code>gh-settings-check.sh</code> prints the <code>pull_request_target</code> policy as BY-HAND and does not read <code>do_not_enforce_on_create</code>.</li>
+  <li>GitHub's manifest flow (docs, read 2026-11-17): a browser form posts the manifest; the code lasts one hour; the conversion returns the id and the key. Installing is a separate step. The setup page's <code>installation_id</code> may be spoofed, so keel reads it from the API. Whether GitHub takes a <code>localhost</code> redirect is W1's to confirm.</li>
+  <li>keel-1c, 2026-11-17: you set <code>do_not_enforce_on_create = true</code>; the bot then pushed <code>epic/E-GHSETUP</code> and <code>epic/E-DOCSPLIT</code>.</li>
+</ul>
+
+<h3 id="overlap-h">Overlap with E-DOCSPLIT</h3>
+<p data-c="overlap">Both epics edit <code>src/init.rs</code>, install.html and architecture.html. The <code>keel/docs</code> job and <code>pages-build.sh</code> read the docs it splits. Whichever lands second merges main in first; W3 builds on the doc check as it stands then.</p>
+
+<h3 id="tests-h">Test notes</h3>
+<ul data-c="test-notes">
+  <li>W4's local page needs a local port. If the sandbox refuses binding, that test runs where binding is allowed; the rest uses the curl seam.</li>
+  <li>The router reads the live facts on Keel's repository. No test calls GitHub.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
