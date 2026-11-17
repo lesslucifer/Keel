@@ -1440,6 +1440,19 @@ fn the_writer_says_what_the_approval_covered_in_its_status() {
     );
 }
 
+/// W7 code review round 2, blocker 2: an approval of a docs-only range covers nothing, so the
+/// status is the plain one.
+#[test]
+fn the_writers_status_for_a_docs_only_range_names_no_review() {
+    let w = Writer::with(&[], docs_only);
+    let head = w.sha("wu/e/a");
+    w.github(json!([review(6, OWNER, "APPROVED", &head)]));
+    let o = w.run(&[]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(w.origin_note(&head).expect("the note reached origin").get("covers").is_none());
+    assert_eq!(w.statuses(), [("success".to_string(), "Signed by approval (review 6)".to_string())]);
+}
+
 #[test]
 fn the_writer_acts_only_on_a_review_run_and_finds_the_pull_request_by_its_head_when_unnamed() {
     let w = Writer::new();
