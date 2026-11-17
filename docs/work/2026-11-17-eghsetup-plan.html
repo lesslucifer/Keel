@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-GHSETUP · Set the GitHub flow up in any project</h1>
       <p>Today only Keel's own repository has the GitHub flow, set up by hand. After this epic, keel sets it up in any project, with two clicks in a browser.</p>
-      <div class="meta">Ready v2 · 2026-11-17 · T3 · epic plan · Keel · off main 6cf3127 · carries backlog github-flow G10 (open steps, live facts), parts of G4 and G5</div>
+      <div class="meta">Ready v3 · 2026-11-17 · T3 · epic plan · Keel · off main 6cf3127 · carries backlog github-flow G10 (open steps, live facts), parts of G4 and G5</div>
     </div>
   </header>
   <main>
@@ -76,10 +76,10 @@
 <div data-wu="E-GHSETUP.W3" data-c="wu-w3">
   <h3 id="w3">W3 · keel writes the project's GitHub files</h3>
   <div data-item="wu-summary">
-    <p><b>In short:</b> keel carries the workflows, <code>CODEOWNERS</code> and the scripts, and writes them into a project. Its checks install a released keel at a pinned version instead of building Keel's source.</p>
+    <p><b>In short:</b> keel carries the workflows, <code>CODEOWNERS</code> and the scripts, and writes them into a project. One more script, <code>keel-install.sh</code>, gives the checks their keel: GitHub executes it from main instead of building Keel's source.</p>
     <ul>
       <li>Embedded like the skills, with lock entries, so an upgrade replaces only unedited files.</li>
-      <li>A workflow downloads the keel version named in the base's committed config and checks its SHA-256 before running it. Keel's own repository keeps building from the base.</li>
+      <li><code>keel-install.sh</code>, an executable script keel writes like the other seven, holds the pinned keel version and the release's SHA-256. It downloads that keel and refuses it on a mismatch. An upgrade rewrites the script, so the pin changes only by a commit. Keel's own repository keeps building from the base.</li>
       <li>The printable-ASCII guard covers every workflow (G10, W4's residual). Pages ships only when chosen.</li>
     </ul>
   </div>
@@ -144,7 +144,7 @@
     <tr><td>1</td><td>How do this epic's plan and close reach GitHub, now that nobody pushes an epic?</td><td><b>By pull request</b>: the router pushes this plan's commit as <code>wu/E-GHSETUP/plan</code> into the epic; your approval approves it. W2 makes it the rule</td><td>A bot bypass breaks "nobody bypasses". The commit is unchanged, so the local epic fast-forwards to GitHub's merge</td></tr>
     <tr><td>2</td><td>One command or several?</td><td><b>One</b>, <code>keel github setup</code>, resumable; each step also alone</td><td>Your commit splits it anyway; a rerun picks up where it stopped</td></tr>
     <tr><td>3</td><td>Where do the flow's scripts live in a project? They are seven: <code>ci-gate.sh</code> runs the checks on a pull request; <code>ci-sign-off.sh</code> turns your approval into the sign-off; <code>pages-build.sh</code> builds the docs site; <code>router-gh.sh</code>, <code>router-gh-watch.sh</code> and <code>router-gh-command.jq</code> are the bot (push, pull requests, hearing your comments); <code>gh-settings-check.sh</code> checks the settings. Today they sit in Keel's <code>scripts/</code> only</td><td><b>As files keel writes into the project</b>, locked like the skills</td><td>The same tested scripts; GitHub runs the CI ones from main, so a pull request cannot change them</td></tr>
-    <tr><td>4</td><td>On GitHub, the checks run the keel program. Where does that program come from in a project? In Keel's repository the checks compile it from Keel's own source; another project has no Keel source to compile</td><td><b>The checks download a released keel</b>, at the version written in the project's committed config, and refuse it unless its hash matches the release's</td><td>Works in any project, with no Rust toolchain. The version comes from the target branch's config, so a pull request cannot swap the program that judges it</td></tr>
+    <tr><td>4</td><td>On GitHub, the checks run the keel program. Where does that program come from in a project? In Keel's repository the checks compile it from Keel's own source; another project has no Keel source to compile</td><td><b>As in #3: an executable script in the project, <code>keel-install.sh</code>, that GitHub runs.</b> keel writes it with the pinned version and the release's hash; it downloads that keel and refuses a mismatch</td><td>Works in any project, with no Rust toolchain. GitHub runs main's copy, so a pull request cannot swap the program that judges it. Committing the keel binary itself also works, but adds megabytes to git on every upgrade</td></tr>
     <tr><td>5</td><td>One App per project, or one for all?</td><td><b>One App per account</b>, installed per repository</td><td>One key to guard; one click per project</td></tr>
     <tr><td>6</td><td>Pages and private repositories?</td><td><b>Pages off by default. A private repository without a paid plan is refused, with the reason</b></td><td>Rulesets on a private repository need a paid plan; the site needs a public one</td></tr>
     <tr><td>7</td><td>Does this epic change the /keel commands (go, hold, retry, answer)?</td><td><b>No.</b> The setup writes the list of who the router hears, so they work in a new project as they do today</td><td>This epic only sets the flow up. Their meanings stay an open backlog question (G10), outside this epic</td></tr>
