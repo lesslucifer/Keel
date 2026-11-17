@@ -35,6 +35,32 @@ skeleton, hooks), then follow the bootstrap and `keel mr setup` lines it prints.
   local `wu/<e>/…` branch that holds it, else the one local `epic/<e>` branch that
   holds it, and refuses asking for `--target` when none or more than one epic holds
   it. It never falls back to main.
+- **Tasks: one WU, several pull requests** (E-GHFLOW2.W6). When a piece of a WU
+  waits on something outside the worker's hands (the owner's yes on a rule
+  edit, an answer, a security review, a GitHub setting, another WU), it goes on
+  a task branch `wu/<e>/<wu>_<task>` (three plain words, no `_` inside one) cut
+  off the WU branch, in its own worktree with its own worker, and the rest of
+  the WU goes on. The task's pull request goes into its WU branch, and **the
+  owner merges it** on GitHub: an agent never merges a pull request. A task
+  gets no gate, notes, code review or report of its own: the WU's tests,
+  review, result report and sign-off go on the WU branch's last commit, and the
+  WU reaches its epic in one pull request. **Never merge a task branch
+  locally**: take in only the fetched WU ref after the owner's merge. Its WU's
+  worker merges that ref in (`git merge --no-ff`, never a rebase) before the
+  next push. A task that needs another starts from the WU
+  branch once that one is merged. The WU plan lists the tasks known up front;
+  the result names every task. The WU is done when its pull request into the
+  epic merges.
+- **No trailer on a task commit without code.** On a task branch the commit-msg
+  hook takes a rule-bearing commit that stages no code path (by HEAD's
+  committed `code_paths`) and no `.keel/` path without a `Reviewed-By` trailer:
+  the owner's merge of the task is the yes. With a code path or any `.keel/`
+  path staged, or on any other branch, the trailer stands.
+- **A conflict goes back to its worker.** GitHub refuses to merge a conflicted
+  pull request; the router learns it from its watch and tells the worker, who
+  merges the target (the epic, or for a task its WU branch) into its own
+  branch, resolves, re-gates a WU (new notes, a new review when it has code),
+  and the bot pushes. Never a rebase.
 - **Main is merge-only**: the pre-commit hook refuses every non-merge commit on
   `branches.main`. All work, docs included, starts on an `epic/*` or `wu/*`
   branch.
@@ -83,7 +109,8 @@ only the human types them, after reading what the sign-off shows (§5–§6).
 role (`wu-result`, `epic-result`; a collapsed doc counts for both), whatever its
 file name. `[mr] report` in the target's committed `.keel/config.toml` decides
 whether the sign-off must attest one: `required` (default) · `optional` ·
-`none`. `keel mr confirm` finds it among the html docs under `docs.root`
+`none`. `required` asks for one only when the range changes code (the gate's
+docs-only test, at both levels): a WU or epic with no code signs without one. `keel mr confirm` finds it among the html docs under `docs.root`
 changed in the range and present at the tip — never an untracked or archived
 file — and refuses, writing nothing, when a required one is missing (pass
 `--report <path>`), when several match (it lists them: pass `--report`), or on

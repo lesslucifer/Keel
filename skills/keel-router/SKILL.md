@@ -311,7 +311,7 @@ in another skill.
   chain and the skills through the shared root, and the brief travels as
   `worker_spawn`'s prompt. Put the goal, the hard rules and the report protocol
   in the brief in full.
-- **One live session per WU.** A worker stays alive between tasks (owner
+- **One live session per work branch** (a WU, or a task of it). A worker stays alive between tasks (owner
   ruling 2026-11-11). A follow-up round of its own work (fix round, notes step,
   close) goes to its live session as a `SendMessage`. Start a fresh worker only
   when the earlier context must not carry over (an independent check, a review,
@@ -388,13 +388,31 @@ printed lines and what to do on each: `references/worker-ops.md` "The GitHub flo
   every new tip or note; `pr-open` after the first push (a draft; an epic's once
   it holds a commit main lacks) and after each later one (it refreshes the body);
   `pr-ready` once its gate is red only on the sign-off, its review passed and its
-  checks are green; `sync` after a merge GitHub made, by the phase rule in
+  checks are green (a WU's base is derived from its name: never pass `--base`); `sync` after a merge GitHub made, by the phase rule in
   worker-ops; `issue` on every state change of a WU or its epic, the epic's
   first; `post` only a file a worker wrote. A WU goes from push to merged pull
   request with no owner command but the sign-off and the merge.
+- **Tasks** (E-GHFLOW2.W6, skill keel-workflow §1). When a piece of a WU waits
+  on anything outside its worker's hands, split it off: `worktree add
+  wu/<E>/<wu>_<task>` (cut off its WU branch), a worker in it, then `push`,
+  `pr-open` (into its WU branch; never `--base`) and `pr-ready` (asks the
+  owner's review; never auto-merge). **Never merge a pull request**: the owner
+  merges a task on GitHub. Act on a task's `MERGED` only when it says
+  `by=<a commander's id>` and the `SYNCED` sha of the WU branch equals
+  `MERGED`'s merge `sha=`; otherwise stop and tell the owner (no ruleset covers
+  `wu/`, so anyone with write can push there). Then tell the WU's worker to
+  merge the fetched ref in (`state=fetched` or `diverged`). Never
+  mark ready a task whose needed task is open. A task gets no `issue`; the WU's
+  result names its tasks. The independent security review still runs on a
+  task that changes a script or the guard.
+- **Keep every pull request ready to merge.** Your job on GitHub is to keep each
+  open pull request, task or WU, mergeable for the owner: send a red check, a
+  conflict or the owner's review text to its worker, and `pr-ready` again after
+  the fix and the push.
 - **Watches**, armed in the turn their subject exists: `checks <n>` after every
-  push that moves a pull request's head; `review <n>` and `comment <n>` once it
-  is ready; `merged <n>` once it is signed; `comment <issue>` on the epic's
+  push that moves a pull request's head; `conflict <n>` on every open pull
+  request, re-armed as `merged` is; `review <n>` and `comment <n>` once it
+  is ready; `merged <n>` once it is signed (a task: once it is ready); `comment <issue>` on the epic's
   tracking issue while the epic runs. Re-arm each in the turn it exits: `review`
   and `comment` with `since <the id it printed>`, or the same `since` after a
   `TIMEOUT`; `checks` and `merged` as they were. `since latest` only when you
