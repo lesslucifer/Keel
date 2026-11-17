@@ -447,6 +447,22 @@ pub(crate) fn epic_of(cfg: &Config, branch: &str) -> Option<String> {
         .map(|(epic, _)| format!("{}{epic}", b.epic_prefix))
 }
 
+/// One word of a branch name as the router scripts take it: `[A-Za-z0-9][A-Za-z0-9.-]*`. No `_`:
+/// that is the task separator (E-GHFLOW2.W6).
+fn plain_word(w: &str) -> bool {
+    w.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric) && w.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+}
+
+/// The WU branch a task branch `<wu_prefix><e>/<wu>_<task>` belongs to (E-GHFLOW2.W6): exactly
+/// that shape, each of `e`, `wu` and `task` a plain word. Anything else - a fourth segment, an
+/// empty side, a second `_`, an epic branch - is not a task: the unusual is refused, not modelled.
+pub(crate) fn task_of(cfg: &Config, branch: &str) -> Option<String> {
+    let rest = branch.strip_prefix(cfg.branches.wu_prefix.as_str())?;
+    let (e, name) = rest.split_once('/')?;
+    let (wu, task) = name.split_once('_')?;
+    [e, wu, task].iter().all(|w| plain_word(w)).then(|| format!("{}{e}/{wu}", cfg.branches.wu_prefix))
+}
+
 /// The epic branch `<epic_prefix><e>` names, if `name` is one.
 pub(crate) fn epic_branch(cfg: &Config, name: &str) -> Option<String> {
     let b = &cfg.branches;
@@ -1282,11 +1298,58 @@ mod tests {
 
     use super::{changed_text, own_diff_argv, own_diff_commands, parse_batch, shell_quote, union_of_z, OwnDiff};
     use super::{cr_counts, cr_lists, cr_verdict, waive, waiver_reason, CrNote, CrWrite, Identity};
-    use super::{epic_branch, epic_of, target, target_flag, target_from_holders};
+    use super::{epic_branch, epic_of, target, target_flag, target_from_holders, task_of};
     use crate::Config;
 
     fn cfg_with(branches: &str) -> Config {
         toml::from_str(&format!("[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n{branches}[docs]\nroot = \"docs/\"\n")).unwrap()
+    }
+
+    /// E-GHFLOW2.W6: a task is exactly `<wu_prefix><e>/<wu>_<task>`, three plain words; its WU is
+    /// the name before the `_`. A seeded run of generated names, judged against a regex oracle.
+    #[test]
+    fn a_task_branch_is_exactly_three_plain_words_and_names_its_wu() {
+        let cfg = cfg_with("");
+        assert_eq!(task_of(&cfg, "wu/E-X/w9-export_skill-line").as_deref(), Some("wu/E-X/w9-export"));
+        assert_eq!(task_of(&cfg, "wu/e/a_b").as_deref(), Some("wu/e/a"));
+        for not in
+            ["wu/e/a", "wu/e/a_", "wu/e/_a", "wu/e/a_b_c", "wu/e/a_b/c", "wu//a_b", "epic/e", "epic/e_x", "main", "", "wu/e/.a_b", "wu/e/a_-b", "Wu/e/a_b"]
+        {
+            assert_eq!(task_of(&cfg, not), None, "{not}");
+        }
+        let task = toml::from_str::<Config>(
+            "[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\nwu_prefix = \"task/\"\n[docs]\nroot = \"docs/\"\n",
+        )
+        .unwrap();
+        assert_eq!(task_of(&task, "task/e/a_b").as_deref(), Some("task/e/a"), "the configured prefix");
+        assert_eq!(task_of(&task, "wu/e/a_b"), None);
+        // The oracle is the scripts' own rule, read from them (W6 code review round 1): router-gh.sh's
+        // `word` and its task pattern, router-worker.sh's and the guard's copies of both, so a drift
+        // between keel and the bot fails here.
+        let read = |p: &str| std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(p)).unwrap();
+        let (gh, worker, guard) = (read("scripts/router-gh.sh"), read("scripts/router-worker.sh"), read("scripts/router-guard.jq"));
+        let word = gh.lines().find_map(|l| l.strip_prefix("word='")?.strip_suffix('\'')).expect("router-gh.sh defines word='...'");
+        assert!(gh.contains("main_b=main epic_p=epic/ wu_p=wu/"), "router-gh.sh's wu prefix is wu/");
+        assert!(gh.contains(r#"expr "x$1" : "x$wu_p$word/${word}_$word\$""#), "router-gh.sh's task pattern is <wu_p><word>/<word>_<word>");
+        assert!(
+            worker.contains(&format!("word='{word}'")) && worker.contains(r#"expr "$b" : "^$wu_p$word/${word}_$word\$""#),
+            "router-worker.sh holds the same task rule"
+        );
+        assert_eq!(guard.matches(&format!("(?!wu/{word}/{word}_{word}$)")).count(), 2, "the guard's sync and issue exclusions hold the same task rule");
+        let oracle = regex::Regex::new(&format!("^wu/({word})/({word})_({word})$")).unwrap();
+        let alphabet: Vec<char> = "aZ09.-_/".chars().collect();
+        let mut seed: u64 = 0x5eed_0006;
+        let mut next = |n: usize| {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((seed >> 33) as usize) % n
+        };
+        for _ in 0..20_000 {
+            let len = next(10);
+            let tail: String = (0..len).map(|_| alphabet[next(alphabet.len())]).collect();
+            let name = format!("wu/{tail}");
+            let want = oracle.captures(&name).map(|c| format!("wu/{}/{}", &c[1], &c[2]));
+            assert_eq!(task_of(&cfg, &name), want, "{name}");
+        }
     }
 
     #[test]
