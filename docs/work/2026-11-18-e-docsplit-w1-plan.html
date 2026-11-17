@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afc7a039f34851f0dfb2703" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-DOCSPLIT.W1 plan: where each doc lives</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-DOCSPLIT.W1 · Where each doc lives</h1>
+      <p>Before any code, you approve one table: every doc Keel writes or reads, who reads it, and what it becomes. With it, a new shape for the two pages you read most, shown by example.</p>
+      <div class="meta">Ready v1 · 2026-11-18 · T3 · WU plan · Keel · off epic/E-DOCSPLIT 3666a43 · epic plan: <a href="2026-11-17-e-docsplit-plan.html">2026-11-17-e-docsplit-plan.html</a> · plan only: no work before your go</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">The epic splits each plan and result into a short page for you and a data file for agents and checks. It also slims today's long docs. Nobody has yet listed which docs that touches, what each keeps, or how short "short" is. The rest of the epic builds on that list, so you approve it first.</p>
+
+<h2 id="for-you">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After W1</th></tr></thead>
+  <tbody>
+    <tr><td>You ask where a doc's facts go</td><td>No list; each epic decides</td><td>One approved table, one row per doc</td></tr>
+    <tr><td>You read an epic or WU plan</td><td>Long, its shape set by the tags</td><td>A proposed shape for each, with a real example to compare</td></tr>
+    <tr><td>You ask how long a page may be</td><td>Only the epic plan's top is capped</td><td>A word cap per page kind, for W2 to enforce</td></tr>
+  </tbody>
+</table>
+<p>Nothing in the tool changes in W1. It is a doc, a decision and your approval.</p>
+
+<h2 id="example">How you approve</h2>
+<ol data-c="example">
+  <li>The worker writes the inventory page and the two example pages.</li>
+  <li>You open the inventory page. The table comes first. The field lists, the slimming rules and the caps follow. Two links open the examples.</li>
+  <li>You comment in the pages. The worker fixes each point and resolves the comment.</li>
+  <li>You tell the router "W1 approved", or what to change.</li>
+  <li>The worker records the decision and writes the result. You sign off this part. The next parts may then start.</li>
+</ol>
+
+<h3 id="terms">Terms</h3>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Page</td><td>The short HTML doc you read.</td></tr>
+    <tr><td>Data file</td><td>The YAML file beside it, for agents and checks.</td></tr>
+    <tr><td>Field</td><td>One named entry in a data file, such as the requirement or the test plan.</td></tr>
+    <tr><td>Word cap</td><td>The most words a page kind may hold before the check turns red.</td></tr>
+    <tr><td>Decision</td><td>A numbered record (DEC) of a rule you approved.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="work">The work</h2>
+<p data-item="requirement" data-c="requirement">W1 delivers one inventory page that gives every doc Keel writes or reads a row (reader, page part, data part, where the data part lives and why, word cap, slimming rule), lists the data-file fields for each of the four plan and result roles, and links one example epic plan page and one example WU plan page in a new shape; the owner approves it, and the approved rules are recorded as a new decision.</p>
+<p data-item="maps-to" data-c="maps-to">E-DOCSPLIT.W1 (epic plan, W1 block; open points 1, 4, 5 and 7). The owner's request of 2026-11-17. Amends DEC-10 (docs are HTML only), DEC-27 (tiers and lineage) and DEC-52 (the tool checks what it can count). No use case changes in W1; the epic's UC changes land in W2 to W4.</p>
+
+<h3 id="part-a">A · The inventory table</h3>
+<p><b>In short:</b> one row per doc kind. Each row says who reads it and what it becomes. The rows come from the code, not from memory.</p>
+<ul data-c="part-a">
+  <li>Rows: epic plan, WU plan, WU result, epic result, decisions, use cases, backlog, the decision, use-case and backlog indexes, architecture, install, <code>AGENTS.md</code>, the report note, the Pages index. Plus any kind the code scan finds.</li>
+  <li>Columns: reader · tier · page part · data part · where the data part lives (a committed file or a git note) and why · word cap · slimming rule.</li>
+  <li>Open point 1 of the epic answered per row: a committed file beside the page, unless the row says why a note fits better.</li>
+  <li>Open point 5 of the epic carried in: the decision and use-case indexes become data files; the backlog order stays a short page.</li>
+  <li>The data file's name: the page's name with <code>.yaml</code>.</li>
+</ul>
+
+<h3 id="part-b">B · The data file's fields</h3>
+<p><b>In short:</b> what today's tags hold becomes named fields, one table per role. W2's check reads these lists.</p>
+<ul data-c="part-b">
+  <li>Shared fields: role, status, title, date, epic, WU id, page path.</li>
+  <li>Epic plan: the nine tags of today, with each WU as a list entry holding its summary, maps-to, expected and dependencies.</li>
+  <li>WU plan, WU result, epic result: their tags of today, one field each.</li>
+  <li>A field keeps its tag's name (<code>maps-to</code>, <code>test-plan</code>), so skills and agents change little.</li>
+  <li>For each field: required or optional, text or list, and which role a collapsed epic merges.</li>
+  <li>One example data file per example page, shown inline on the inventory page.</li>
+</ul>
+
+<h3 id="part-c">C · The two plan pages, redesigned</h3>
+<p><b>In short:</b> for the epic plan and the WU plan, what the page shows you, in what order, and how long. Each comes with a real example, so you judge the shape, not a description of it.</p>
+<ul data-c="part-c">
+  <li>Per page: the sections in order, what each holds, its cap. What moves to the data file (file lists, test lists, grounding) is named.</li>
+  <li>Example epic page: this epic's own plan, rewritten in the new shape. You have read the old one, so you can compare.</li>
+  <li>Example WU page: this W1 plan, rewritten the same way.</li>
+  <li>Both are plain pages with no checklist tags. Today's check reads only their links and diagram labels.</li>
+  <li>This epic's own plans keep today's tags until W2 reaches the epic branch (epic open point 7).</li>
+</ul>
+
+<h3 id="part-d">D · Slimming rules and word caps</h3>
+<p><b>In short:</b> what each kept doc drops, and a cap per page kind. W5 and W6 apply the rules. W2 enforces the caps.</p>
+<ul data-c="part-d">
+  <li>Rules: a replaced decision keeps its id and one line; use cases drop their build history; the backlog drops done and struck rows; architecture and install drop history and rules the skills already hold.</li>
+  <li>Caps: set from today's word counts per kind, measured over the docs on main and the archived plans in git history. The epic plan's 300-word top stays.</li>
+  <li>Each cap is shown beside today's median and largest doc of that kind.</li>
+</ul>
+
+<h3 id="part-e">E · The decision</h3>
+<p><b>In short:</b> once you approve, the table's rules become one new decision. It amends the three decisions above.</p>
+<ul data-c="part-e">
+  <li>The next free DEC id, checked on every branch first: E-GHSETUP and E-LOCALTOOL may mint ids too.</li>
+  <li>Written in <code>docs/decisions/workflow-gates.html</code> and the decision index, in today's form. W5 turns the index into data.</li>
+  <li>Written only after your approval: a decision records what you approved, not a proposal.</li>
+</ul>
+
+<h2 id="open">Open points</h2>
+<p>Work goes on at these answers once you say go. Comment to overrule.</p>
+<table data-c="open">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Where do W1's outputs live?</td><td><b>One inventory page and two example pages, all under <code>docs/work/</code>.</b> The decision goes to the decisions file.</td><td>One page to read, linking out. The examples as real pages show the look, not just the outline.</td></tr>
+    <tr><td>2</td><td>What do the examples rewrite?</td><td><b>This epic's plan and this W1 plan.</b></td><td>You have read both. Comparing old and new is the fastest way to judge the shape.</td></tr>
+    <tr><td>3</td><td>Do the example data files get their own files now?</td><td><b>No: shown inline on the inventory page.</b> W2 can turn them into its test fixtures.</td><td>A YAML file under <code>docs/work/</code> is a doc kind today's archive check does not know yet. W3 teaches it pairs.</td></tr>
+    <tr><td>4</td><td>Do field names keep the tag names?</td><td><b>Yes</b> (<code>maps-to</code>, not <code>maps_to</code>).</td><td>One name per fact across tags, fields, skills and messages. Less to relearn in W4.</td></tr>
+    <tr><td>5</td><td>Is a page over its cap red, or a warning?</td><td><b>Red on a ready page</b>, like the 300-word top today.</td><td>A warning gets ignored. A draft stays silent, so writing is not blocked.</td></tr>
+    <tr><td>6</td><td>Does W1 need tests or a code review?</td><td><b>No: it changes no code.</b> The checks below and your read stand in.</td><td>Keel's rule: a change with no code path needs no test, review or doc evidence. Your sign-off is still needed.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="expected">Acceptance</h3>
+<ul data-item="expected" data-c="expected">
+  <li><code>docs/work/2026-11-18-e-docsplit-w1-inventory.html</code> exists, approved by you: a row for every doc kind listed in part A and every kind the scan below finds, each column filled.</li>
+  <li>It lists the fields of all four roles. Every <code>data-item</code> tag in <code>src/verify_doc.rs</code>'s checklists, plus <code>data-wu</code>, <code>data-artifact</code> and <code>data-status</code>, maps to exactly one field.</li>
+  <li>It shows a cap per page kind, beside today's median and largest of that kind.</li>
+  <li>Two example pages exist, the epic plan's and this plan's rewrite, each under its proposed cap, with an example data file for each shown inline.</li>
+  <li>The new decision is in <code>docs/decisions/workflow-gates.html</code> and the index, under an id no branch uses, naming the three it amends.</li>
+  <li><code>keel verify-doc</code> is green on every doc W1 adds or edits.</li>
+</ul>
+
+<h3 id="checks">How it is checked</h3>
+<ol data-c="checks">
+  <li><b>Coverage:</b> a one-off scan of <code>src/</code>, <code>scripts/</code>, <code>skills/</code> and <code>templates/</code> for every doc path, role or note Keel reads or writes. Each hit maps to a row. The scan and its result go in the WU result.</li>
+  <li><b>Tags to fields:</b> the checklist tags in <code>src/verify_doc.rs</code> are compared with the field tables. None missing, none extra.</li>
+  <li><b>Caps:</b> word counts per kind, counted the way <code>keel verify-doc</code> counts the top, over main and the archived plans. Each example page counted against its cap.</li>
+  <li><b>DEC id:</b> a search of <code>docs/decisions</code> on every local and remote branch.</li>
+  <li><b>Doc check:</b> <code>keel verify-doc</code> on each page.</li>
+  <li><b>You:</b> the approval of step 4 above, quoted in the result.</li>
+</ol>
+<p>Scripts run from a scratch directory and are not committed.</p>
+
+<div data-item="test-plan" data-c="test-plan">
+  <p><b>Unit, integration, e2e:</b> none. W1 touches no code path (<code>src/</code>, <code>tests/</code>), so Keel exempts it from test, review and doc evidence. If a gate asks anyway, each layer is waived with the reason "docs-only WU: no code".</p>
+  <p><b>Stand-ins:</b> the six checks above. The epic's end-to-end test (W2 to W4) proves the split in the tool.</p>
+  <p><b>Review:</b> no code review: there is no code. Your read of the inventory is the review.</p>
+  <p><b>Sign-off:</b> <code>keel mr confirm wu</code> on the tip with the WU result, as always.</p>
+</div>
+
+<h3 id="files">Files</h3>
+<table data-c="files">
+  <thead><tr><th>File</th><th>Change</th></tr></thead>
+  <tbody>
+    <tr><td><code>docs/work/2026-11-18-e-docsplit-w1-plan.html</code></td><td>This plan.</td></tr>
+    <tr><td><code>docs/work/2026-11-18-e-docsplit-w1-inventory.html</code></td><td>Parts A, B, D, the page shapes of part C, the inline example data files.</td></tr>
+    <tr><td><code>docs/work/2026-11-18-e-docsplit-example-epic-plan.html</code>, <code>…-example-wu-plan.html</code></td><td>The two example pages. No <code>data-artifact</code>: today's checklist does not apply to them.</td></tr>
+    <tr><td><code>docs/decisions/workflow-gates.html</code>, <code>docs/decisions/decisions-index.html</code></td><td>The new decision, after your approval.</td></tr>
+    <tr><td><code>docs/work/2026-11-18-e-docsplit-w1-result.html</code></td><td>The WU result.</td></tr>
+  </tbody>
+</table>
+<p>None is rule-bearing: plain commits. Not touched: code, skills, <code>AGENTS.md</code>, templates, architecture, install.</p>
+
+<h3 id="overlap">Overlap with other epics</h3>
+<ul data-c="overlap">
+  <li>E-LOCALTOOL (planning): its W4 asks where you read and approve, and what happens to this epic's short pages. W1's page shapes are an input to it. No shared file.</li>
+  <li>E-GHSETUP (paused): may mint a DEC id; the id check covers its branch. Install's GitHub section stays its own; W1 sets only install's cap and rule.</li>
+</ul>
+
+<h3 id="close">At the close</h3>
+<p>The new decision carries W1's truth. The inventory and example pages are T3: archived at the epic's close, after W2 to W6 have used them.</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
