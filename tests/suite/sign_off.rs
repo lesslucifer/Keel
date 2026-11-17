@@ -243,6 +243,28 @@ fn an_approval_signs_a_roster_change_and_records_its_lines() {
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
 }
 
+/// W7 security review, nit: the cover takes the review's failures and nothing else. An approval
+/// over a failed review whose tip then loses its test note is red on that note, locally and as a
+/// seam of the epic's walk, though the review itself stays covered.
+#[test]
+fn an_approval_covered_review_beside_another_red_check_stays_red_locally_and_in_the_walk() {
+    let d = fixture();
+    let p = d.path();
+    review_in(p, "FAIL");
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    git(p, &["notes", "--ref=test", "remove", &tip]);
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("FAIL  1·notes") && t.contains("no test/v1 note"), "{t}");
+    assert!(t.contains("covered by the approval of 5499546 (review 13)") && !t.contains("FAIL  3·review"), "the review alone is covered: {t}");
+    assert!(note(p, "dod", &tip).is_none(), "a red gate writes no receipt");
+    github_merge(p, "epic/e", "wu/e/a");
+    let w = walk_lines(p);
+    assert!(w.contains("FAIL  7·walk·1·notes") && w.contains("no test/v1 note"), "{w}");
+    assert!(!w.contains("FAIL  7·walk·3·review"), "{w}");
+}
+
 /// The cr note's stored bytes on `rev`, if it has one.
 fn cr_blob(p: &Path, rev: &str) -> Option<Vec<u8>> {
     let o = run("git", p, &["notes", "--ref=cr", "list", rev]);
