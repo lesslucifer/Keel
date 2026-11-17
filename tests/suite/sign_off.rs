@@ -391,7 +391,7 @@ fn the_epic_walk_takes_a_wu_an_approval_signed_over_its_review_and_no_other() {
     ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
     github_merge(p, "epic/e", "wu/e/a");
     let w = walk_lines(p);
-    assert!(!w.contains("FAIL"), "{w}");
+    assert!(!w.lines().any(|l| l.starts_with("FAIL")), "{w}");
     assert!(w.contains("WAIVED 7·walk") && w.contains("covered by the approval of 5499546 (review 13)"), "{w}");
 
     let d = fixture();

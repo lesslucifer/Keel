@@ -64,6 +64,9 @@ pub(crate) struct Failure {
     pub check: String,
     pub what: String,
     pub fix: String,
+    /// The failure is the tip's review's (E-GHFLOW2.W7): its cr note missing or unreadable, or
+    /// checks 3-5 on it. An approval's sign-off covers it; on GitHub the sign-off decides it.
+    pub review: bool,
 }
 
 /// One waiver the gate accepted: the check it waives and the line it prints.
@@ -95,6 +98,8 @@ struct Report {
     judged: Vec<(&'static str, Judged)>,
     /// The tip's own review was waived: its reason, for the dod receipt.
     review_waiver: Option<String>,
+    /// The tip's review failed and an approval covered it (E-GHFLOW2.W7): whose, for the receipt.
+    review_covered: Option<String>,
     /// The tip's cr note as checks 3-5 read it, for check 8's waiver binding (read once).
     tip_cr: Option<CrNote>,
     /// Notes already read from the tip (kind, as `notes::raw` gave it): check 1 reads them from here.
@@ -103,7 +108,20 @@ struct Report {
 
 impl Report {
     fn fail(&mut self, id: &'static str, what: String, fix: impl Into<String>) {
-        self.failures.push(Failure { id, check: id.into(), what, fix: fix.into() });
+        self.failures.push(Failure { id, check: id.into(), what, fix: fix.into(), review: false });
+    }
+
+    /// A failure of the tip's review (`Failure::review`).
+    fn fail_review(&mut self, id: &'static str, what: String, fix: impl Into<String>) {
+        self.failures.push(Failure { id, check: id.into(), what, fix: fix.into(), review: true });
+    }
+
+    /// Check 1's failure for a note of `kind`: the review's when it is the cr note.
+    fn fail_note(&mut self, kind: &str, what: String, fix: impl Into<String>) {
+        match kind {
+            "cr" => self.fail_review(NOTES, what, fix),
+            _ => self.fail(NOTES, what, fix),
+        }
     }
 
     fn ran(&mut self, id: &'static str) {
@@ -139,6 +157,7 @@ fn open(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) ->
         waived: vec![],
         judged: vec![],
         review_waiver: None,
+        review_covered: None,
         tip_cr: None,
         seen: vec![],
     };
@@ -178,8 +197,8 @@ fn read_note<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, requi
     let stored = match seen.unwrap_or_else(|| notes::raw(repo, kind, &r.tip)) {
         Ok(stored) => stored,
         Err(e) => {
-            r.fail(
-                NOTES,
+            r.fail_note(
+                kind,
                 format!("the {kind} note on {} cannot be read: {e}", short(&r.tip)),
                 format!("repair refs/notes/{kind} (git fsck names what is broken), then re-run"),
             );
@@ -195,14 +214,14 @@ fn read_note<T: DeserializeOwned>(repo: &Path, r: &mut Report, kind: &str, requi
                 "doc" => format!("keel notes write doc{t}   (on {})", short(&r.tip)),
                 _ => format!("run the code review on {}, then keel notes write cr --verdict PASS   (or {})", short(&r.tip), notes::OWNER_WAIVES),
             };
-            r.fail(NOTES, format!("no {schema} note on {}", short(&r.tip)), fix);
+            r.fail_note(kind, format!("no {schema} note on {}", short(&r.tip)), fix);
         }
         return None;
     };
     match notes::parse::<T>(&raw, kind) {
         Ok(n) => Some(n),
         Err(e) => {
-            r.fail(NOTES, format!("{kind} note on {} is {}", short(&r.tip), notes::invalid(kind, &e)), format!("rewrite it with keel notes write {kind}"));
+            r.fail_note(kind, format!("{kind} note on {} is {}", short(&r.tip), notes::invalid(kind, &e)), format!("rewrite it with keel notes write {kind}"));
             None
         }
     }
@@ -235,11 +254,13 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
     }
     let tips = [test.as_ref().map(|n| &n.id.tip), cr.as_ref().map(|n| &n.id.tip), doc.as_ref().map(|n| &n.id.tip)];
     if tips.iter().flatten().any(|t| **t != r.tip) {
-        r.fail(
-            MANIFEST,
-            format!("a note on {} names a different tip (copied from another commit?)", short(&r.tip)),
-            "rewrite the notes on this tip with keel notes write",
-        );
+        let what = format!("a note on {} names a different tip (copied from another commit?)", short(&r.tip));
+        let fix = "rewrite the notes on this tip with keel notes write";
+        // the review's alone when only the cr note names another tip
+        match [tips[0], tips[2]].iter().flatten().any(|t| **t != r.tip) {
+            true => r.fail(MANIFEST, what, fix),
+            false => r.fail_review(MANIFEST, what, fix),
+        }
     }
 
     // 3-5: the review verdict, its base, its binding to the code diff.
@@ -250,17 +271,17 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
                 r.waive(REVIEW, format!("{REVIEW}: {why}"));
                 r.review_waiver = Some(why);
             }
-            Err((what, fix)) => r.fail(REVIEW, what, fix),
+            Err((what, fix)) => r.fail_review(REVIEW, what, fix),
         }
         if cr.id.base != r.base {
-            r.fail(
+            r.fail_review(
                 REVIEW_BASE,
                 format!("review base {} != current merge-base {}", short(&cr.id.base), short(&r.base)),
                 "the target moved since the review - re-run the review against the current base",
             );
         }
         if cr.code_diff_hash != notes::code_diff_hash(repo, cfg, &r.base, &r.tip)? {
-            r.fail(
+            r.fail_review(
                 DIFF_BINDING,
                 "reviewed code is not byte-identical to the code this tip changes".into(),
                 "the tip changed after review - re-run the review on this exact tip",
@@ -285,6 +306,43 @@ fn review_verdict(cr: &CrNote) -> Result<Option<String>, (String, String)> {
             .map_err(|_| ("review verdict is WAIVED with no reason".into(), format!("a waiver needs its reason in words: {}", notes::OWNER_WAIVES))),
         (v, None) => Err((format!("review verdict is {v}"), "fix the verified findings and re-run the review until PASS".into())),
     }
+}
+
+/// The tip's review as an approval signs over it (E-GHFLOW2.W7): the first thing that keeps it from
+/// being a plain PASS of this range's code - `missing` (no cr note), `unreadable`, `FAIL` (any
+/// verdict check 3 refuses), `stale` (a note of another tip, base or code) or `WAIVED` (check 3
+/// accepts it, but no review passed) - or `None` for a PASS bound to this range. With the cr
+/// note's stored bytes, when there are any.
+pub(crate) fn review_state(repo: &Path, cfg: &Config, tip: &str, base: &str) -> Result<(Option<&'static str>, Option<String>), String> {
+    let raw = match notes::raw(repo, "cr", tip) {
+        Ok(Some(raw)) => raw,
+        Ok(None) => return Ok((Some("missing"), None)),
+        Err(_) => return Ok((Some("unreadable"), None)),
+    };
+    let Ok(cr) = notes::parse::<CrNote>(&raw, "cr") else { return Ok((Some("unreadable"), Some(raw))) };
+    let state = match review_verdict(&cr) {
+        Err(_) => Some("FAIL"),
+        _ if cr.id.tip != tip || cr.id.base != base || cr.code_diff_hash != notes::code_diff_hash(repo, cfg, base, tip)? => Some("stale"),
+        Ok(Some(_)) => Some("WAIVED"),
+        Ok(None) => None,
+    };
+    Ok((state, Some(raw)))
+}
+
+/// The tip's review covered (E-GHFLOW2.W7): when the sign-off check 8 just passed is an approval's,
+/// each failure of the tip's review becomes a waived line naming that approval. A typed sign-off
+/// covers nothing.
+fn cover_review(repo: &Path, cfg: &Config, r: &mut Report, target: &str) {
+    if !r.failures.iter().any(|f| f.review) {
+        return;
+    }
+    let Some(by) = mr::approval_cover(repo, cfg, &r.tip, target) else { return };
+    let (covered, kept): (Vec<Failure>, Vec<Failure>) = std::mem::take(&mut r.failures).into_iter().partition(|f| f.review);
+    r.failures = kept;
+    for f in covered {
+        r.waive(f.id, format!("{}: {} - covered by {by}", f.check, f.what));
+    }
+    r.review_covered = Some(format!("covered by {by}"));
 }
 
 /// 6·doc-note: every doc listed with its config tier, nothing phantom, archived T3 with lineage.
@@ -360,7 +418,11 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
             // Parent 2 already reachable from the mainline or the target: a back-merge, not a seam.
             [_, main, wu] if is_ancestor(repo, wu, main) || is_ancestor(repo, wu, target) => continue,
             [m, main, wu] => {
-                let seam = verify(repo, cfg, Level::Wu, wu, main)?;
+                let mut seam = verify(repo, cfg, Level::Wu, wu, main)?;
+                // a WU whose review an approval covered at its merge, judged as it was then (W7)
+                if seam.failures.iter().any(|f| f.review) && mr::manual_review(repo, cfg, "wu", &seam.tip, &seam.base, main, seam.tip_cr.as_ref()).is_ok() {
+                    cover_review(repo, cfg, &mut seam, main);
+                }
                 if seam.failures.is_empty() {
                     for w in &seam.waived {
                         r.waive(WALK, format!("{WALK} [wu {}] {}", short(m), w.text));
@@ -375,7 +437,7 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
             }
             [m, ..] if p.len() > 3 => {
                 let what = format!("{} is an octopus merge - parents beyond the second were never gated", short(m));
-                (*m, vec![Failure { id: WALK, check: String::new(), what, fix: "merge one WU per --no-ff merge commit".into() }], "merge")
+                (*m, vec![Failure { id: WALK, check: String::new(), what, fix: "merge one WU per --no-ff merge commit".into(), review: false }], "merge")
             }
             _ => continue,
         };
@@ -394,7 +456,7 @@ fn walk(repo: &Path, cfg: &Config, r: &mut Report, target: &str) -> Result<(), S
         );
         for f in failures {
             let check = if f.check.is_empty() { WALK.to_string() } else { format!("{WALK}·{}", f.check) };
-            r.failures.push(Failure { id: WALK, check, what: format!("[{level} {}] {}", short(seam), f.what), fix: format!("{}{hint}", f.fix) });
+            r.failures.push(Failure { id: WALK, check, what: format!("[{level} {}] {}", short(seam), f.what), fix: format!("{}{hint}", f.fix), review: false });
         }
     }
     Ok(())
@@ -431,7 +493,7 @@ fn print(r: &Report, what: &str) {
 fn guard_hooks(repo: &Path, r: &mut Report) {
     r.ran(HOOKS);
     if let Some(what) = hooks_problem(repo) {
-        r.failures.insert(0, Failure { id: HOOKS, check: HOOKS.into(), what, fix: HOOKS_FIX.into() });
+        r.failures.insert(0, Failure { id: HOOKS, check: HOOKS.into(), what, fix: HOOKS_FIX.into(), review: false });
         r.exempt = false;
     }
 }
@@ -451,7 +513,10 @@ fn gated(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, g
     if level != Level::Commit {
         r.ran(SIGN_OFF);
         match mr::manual_review(repo, cfg, level.name(), &r.tip, &r.base, target, r.tip_cr.as_ref()) {
-            Ok(a) => attested = a,
+            Ok(a) => {
+                attested = a;
+                cover_review(repo, cfg, &mut r, target);
+            }
             Err((what, fix)) => r.fail(SIGN_OFF, what, fix),
         }
         r.exempt &= r.failures.is_empty();
@@ -477,8 +542,12 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, gua
             diff_hash,
             report: attested.as_ref().map(|(r, _)| r.clone()),
             report_hash: attested.map(|(_, h)| h),
-            review: r.review_waiver.is_some().then(|| "WAIVED".into()),
-            waiver: r.review_waiver.clone(),
+            review: match (&r.review_covered, &r.review_waiver) {
+                (Some(_), _) => Some("COVERED".into()),
+                (None, Some(_)) => Some("WAIVED".into()),
+                (None, None) => None,
+            },
+            waiver: r.review_covered.clone().or_else(|| r.review_waiver.clone()),
         };
         notes::store(repo, "dod", &r.tip, &note)?;
     }
@@ -496,7 +565,7 @@ pub fn ci_gate(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> 
     let level = level_of(lvl).map_err(|_| CI_USAGE.to_string())?;
     let target = target_of(repo, cfg, level, tip, rest)?;
     let (r, _) = gated(repo, cfg, level, tip, &target, true)?;
-    let red = ci::red_before_sign_off(r.failures.iter().map(|f| f.id));
+    let red = ci::red_on_github(&r.failures);
     if let Some(path) = summary {
         let notes: Vec<(&str, Result<Option<String>, String>)> = ci::NOTE_KINDS.iter().map(|k| (*k, notes::raw(repo, k, &r.tip))).collect();
         let page = ci::render(&ci::Evidence {
@@ -523,9 +592,10 @@ pub fn ci_gate(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> 
         eprintln!("ci gate red on {} - a check before the sign-off failed", short(&r.tip));
     } else {
         let range = if r.range_exempt { " (a docs/infra-only range)" } else { "" };
-        match r.failures.is_empty() {
-            true => println!("ci gate green on {} - every check passes{range}", short(&r.tip)),
-            false => println!("ci gate green on {} - every check before {SIGN_OFF} passes{range}; {SIGN_OFF} is judged at the merge", short(&r.tip)),
+        match (r.failures.is_empty(), r.failures.iter().any(|f| f.review)) {
+            (true, _) => println!("ci gate green on {} - every check passes{range}", short(&r.tip)),
+            (false, true) => println!("ci gate green on {} - every check but the review passes{range}; {}", short(&r.tip), ci::REVIEW_LEFT),
+            (false, false) => println!("ci gate green on {} - every check before {SIGN_OFF} passes{range}; {SIGN_OFF} is judged at the merge", short(&r.tip)),
         }
     }
     Ok(red as i32)
@@ -650,8 +720,9 @@ pub(crate) fn range(repo: &Path, cfg: &Config, old: &str, new: &str, branch: &st
             [_, first, wu] if is_ancestor(repo, wu, first) || is_ancestor(repo, wu, old) || (merges == Level::Wu && is_ancestor(repo, wu, main)) => continue,
             [_, first, wu] => {
                 let mut r = verify(repo, cfg, merges, wu, first)?;
-                if let Err((what, fix)) = mr::manual_review(repo, cfg, merges.name(), &r.tip, &r.base, first, r.tip_cr.as_ref()) {
-                    r.fail(SIGN_OFF, what, fix);
+                match mr::manual_review(repo, cfg, merges.name(), &r.tip, &r.base, first, r.tip_cr.as_ref()) {
+                    Ok(_) => cover_review(repo, cfg, &mut r, first),
+                    Err((what, fix)) => r.fail(SIGN_OFF, what, fix),
                 }
                 r
             }
@@ -854,8 +925,26 @@ mod tests {
             waived: vec![],
             judged: vec![],
             review_waiver: None,
+            review_covered: None,
             tip_cr: None,
             seen: vec![(seen.0, Ok(seen.1))],
+        }
+    }
+
+    /// E-GHFLOW2.W7: a missing or unreadable cr note is the review's failure, which an approval
+    /// covers; the same failure of the test or doc note is not.
+    #[test]
+    fn only_the_cr_notes_check_1_failure_is_the_reviews() {
+        let nowhere = std::path::Path::new("/nonexistent");
+        for (kind, body, review) in [("cr", None, true), ("cr", Some("not json"), true), ("test", None, false), ("doc", Some("{}"), false)] {
+            let mut r = report((kind, body.map(String::from)));
+            let _ = match kind {
+                "cr" => read::<CrNote>(nowhere, &mut r, kind, true).is_some(),
+                "test" => read::<TestNote>(nowhere, &mut r, kind, true).is_some(),
+                _ => read::<DocNote>(nowhere, &mut r, kind, true).is_some(),
+            };
+            assert_eq!(r.failures.len(), 1, "{kind} {body:?}");
+            assert_eq!((r.failures[0].id, r.failures[0].review), (NOTES, review), "{kind} {body:?}");
         }
     }
 
