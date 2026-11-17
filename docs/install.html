@@ -52,7 +52,7 @@ dsh plugin --profile &lt;name&gt; add &lt;path&gt;/dsh-worker-workspace   # a wo
 <p><code>keel init</code> and <code>keel hooks install</code> refuse to replace another hook manager: when <code>core.hooksPath</code> points elsewhere, or is unset and <code>.git/hooks/</code> holds anything but <code>*.sample</code> files, init writes its files, then exits non-zero with Keel's hooks not installed. Keel runs alone; the owner decides, then runs <code>keel hooks install --force</code> (init's <code>-f</code> does not imply it).</p>
 <p>Upgrading across the SHA-256 sign-off format (E-SEED2.W2): an <code>mr/v1</code> sign-off written by an older keel no longer verifies. A WU or epic signed before the upgrade and not yet merged must be re-signed with <code>keel mr confirm</code> on its tip.</p>
 <h2 id="github-app">5. The GitHub App (Keel's own repository only)</h2>
-<p>Keel's own repository runs part of its flow on GitHub: GitHub runs the gate as a signal, a router bot pushes work branches and opens pull requests, and the router hears your comments and reviews (<a href="architecture.html#github">architecture: GitHub</a>). <code>keel init</code> sets none of this up in another project. The bot is a GitHub App you own; nothing works until you do these steps once.</p>
+<p>Keel's own repository runs its flow on GitHub: GitHub runs the gate from main as required checks, you sign off by approving a pull request and GitHub merges it, a router bot pushes work branches and opens pull requests, and the router hears your comments and reviews (<a href="architecture.html#github">architecture: GitHub</a>). <code>keel init</code> sets none of this up in another project. The bot is a GitHub App you own; nothing works until you do these steps once.</p>
 <ol>
   <li><b>Create the App.</b> github.com → your avatar → Settings → Developer settings → GitHub Apps → New GitHub App.
     <ul>
@@ -74,6 +74,17 @@ printf 'app_id=%s\ninstallation_id=%s\napp_slug=%s\n' &lt;APP ID&gt; &lt;INSTALL
   <li><b>Recommended once, in the repository settings:</b> Actions → General → "Fork pull request workflows from outside collaborators" → "Require approval for all outside collaborators". A stranger's pull request then runs nothing until you approve the run. The workflow's token stays read-only and holds no secret either way.</li>
 </ol>
 <p><b>Who the router hears</b> is committed in <code>.keel/config.toml</code> <code>[github] commanders</code>: numeric GitHub user ids (the owner, <code>5499546</code>). A change there is rule-bearing.</p>
-<p><b>The first live run.</b> Each behaviour is tested against a fake GitHub; the first run against GitHub itself is still owed, with the checks to make in <a href="backlog/github-flow.html#g2">backlog G2</a>. One of them is yours, from a real worker session with the key in place: <code>ln ~/.config/keel/router-gh/app.pem ./x</code> must fail, which proves the worker sandbox also blocks hard-linking the key out of its directory.</p>
+<p id="github-settings"><b>Your sign-off by approval.</b> The committed <code>.keel/mr-allowed</code> lists you as <code>github: 5499546 lesslucifer</code> (your numeric user id, then your login), and <code>[mr] tiers</code> names <code>github</code>. Your approval of a WU's or epic's pull request then signs it; the typed <code>keel mr confirm</code> still works. A roster change is rule-bearing and judged by the target's roster.</p>
+<p><b>The repository settings, in order.</b> Until step 5 nothing is enforced.</p>
+<ol data-c="github-settings">
+  <li>Any time: Settings → General → Pull Requests: merge commits only (squash and rebase off); "Allow auto-merge" off until step 5.</li>
+  <li>Any time: Actions → General: workflow permissions "Read repository contents"; Actions may not create or approve pull requests; fork approval for all outside contributors. Rules → Rulesets: the <code>keel-tags</code> tag ruleset (all tags; creations, updates and deletions restricted; bypass: Repository admin only).</li>
+  <li>First after <code>.github/workflows/keel-gate.yml</code> reaches main, and before 2026-12-02: Actions → Policies, allow <code>pull_request_target</code> for <code>.github/workflows/keel-gate.yml</code> only. GitHub blocks that event by default in public repositories from that date.</li>
+  <li>Check one pull-request run: "Keel gate" shows build, <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code>, and the three checks sit on the pull request's head commit, not on main's. If they sit on main's, stop and tell the router.</li>
+  <li>The <code>keel-merge</code> branch ruleset: the default branch and <code>epic/**</code>; no bypass; merge only; one approval with code-owner review; stale approvals dismissed; required <code>keel/ci</code>, <code>keel/gate</code>, <code>keel/docs</code>, <code>keel/sign-off</code> from GitHub Actions; up to date not required. Then "Allow auto-merge" on.</li>
+  <li><code>GH_TOKEN=$(gh auth token) scripts/gh-settings-check.sh</code> in a checkout of main, with an admin token: green.</li>
+  <li>Pages: Settings → Pages, source "GitHub Actions"; Environments → <code>github-pages</code>, deployments from main only. The repository must stay public: the site builder reads it without credentials.</li>
+</ol>
+<p>With the ruleset on, nobody pushes main or an epic, and only you merge. Never approve a <code>wu/</code> pull request into main. What is still owed live is in <a href="backlog/github-flow.html#g10">backlog G10</a>.</p>
 </body>
 </html>
