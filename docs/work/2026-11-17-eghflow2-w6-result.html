@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-GHFLOW2.W6 result · Work that need not wait goes in its own pull request</h1>
       <p>A piece of a WU that waits can now go on a task branch, with its own small pull request into the WU branch that you merge. A WU with no code needs no result report. The router can watch every open pull request for a conflict.</p>
-      <div class="meta">Ready v2 · 2026-11-17 · T3 · WU result · Keel · plan: <a href="2026-11-16-eghflow2-w6-plan.html">2026-11-16-eghflow2-w6-plan.html</a> (v5, f3efcac) · tip ea69e93 plus this report; the rule-bearing files staged, not committed</div>
+      <div class="meta">Ready v3 · 2026-11-17 · T3 · WU result · Keel · plan: <a href="2026-11-16-eghflow2-w6-plan.html">2026-11-16-eghflow2-w6-plan.html</a> (v5, f3efcac) · tip ea69e93 plus this report; the rule-bearing files staged, not committed</div>
     </div>
   </header>
   <main>
@@ -24,7 +24,7 @@
     </ol>
 
     <h2 id="outcome">Outcome</h2>
-    <p data-item="outcome">Delivered against the requirement, with the deviations below. A task branch <code>wu/&lt;E&gt;/&lt;wu&gt;_&lt;task&gt;</code> is read by keel (<code>notes::task_of</code>) and by the scripts: the bot pushes it, opens its pull request into its WU branch only, never turns on auto-merge for it and gives it no issue; <code>sync</code> fetches a WU branch after you merge a task into it; <code>worktree add</code> cuts a task off its WU branch. On a task branch the commit check takes rule text with no code and no roster without a trailer, and refuses it everywhere else as before. A WU whose tasks were merged into it is gated, reviewed and signed on its own last commit, and the epic is green after it merges (tested; no gate change was needed). <code>[mr] report = "required"</code> asks for a report only when the range changes code. <code>router-gh-watch.sh conflict &lt;n&gt;</code> wakes the router once GitHub says a pull request cannot merge, and writes nothing. W4's <code>pr-open</code> follow-up and G8's four W3 nits are done. The skills are in <code>w6-skills.patch</code>.</p>
+    <p data-item="outcome">Delivered against the requirement, with the deviations below. A task branch <code>wu/&lt;E&gt;/&lt;wu&gt;_&lt;task&gt;</code> is read by keel (<code>notes::task_of</code>) and by the scripts: the bot pushes it, opens its pull request into its WU branch only, never turns on auto-merge for it and gives it no issue; <code>sync</code> fetches a WU branch after you merge a task into it; <code>worktree add</code> cuts a task off its WU branch. On a task branch the commit check takes rule text with no code path (by HEAD's committed <code>code_paths</code>) and no <code>.keel/</code> path without a trailer, and refuses it everywhere else as before. A WU whose tasks were merged into it is gated, reviewed and signed on its own last commit, and the epic is green after it merges (tested; no gate change was needed). <code>[mr] report = "required"</code> asks for a report only when the range changes code. <code>router-gh-watch.sh conflict &lt;n&gt;</code> wakes the router once GitHub says a pull request cannot merge, and writes nothing. W4's <code>pr-open</code> follow-up and G8's four W3 nits are done. The skills are in <code>w6-skills.patch</code>.</p>
 
     <h2 id="deviations">Deviations from the plan</h2>
     <ul data-item="deviations">
@@ -60,7 +60,7 @@
         <li>Unit: <code>notes::tests::a_task_branch_is_exactly_three_plain_words_and_names_its_wu</code>, 20,000 seeded generated names judged against a regex oracle.</li>
         <li>Integration, new <code>tests/suite/split_prs.rs</code>:
           <ul>
-            <li>the commit check on a task, a WU branch, with code or the roster staged;</li>
+            <li>the commit check on a task, a WU branch, with a code path or a <code>.keel/</code> path (the roster, the config) staged, and with an unstaged config redefining <code>code_paths</code>;</li>
             <li>the commit check on an epic branch, a detached HEAD and four malformed names;</li>
             <li>two tasks merged into a WU, gated, reviewed and signed on its last commit, then merged into the epic;</li>
             <li>the report rule under <code>required</code>, <code>optional</code> and <code>none</code>, for a docs-only and a code range.</li>
@@ -84,7 +84,7 @@
     </div>
 
     <h2 id="distillation">Distillation</h2>
-    <p data-item="distillation">Nothing citable yet. By your ruling, distillation waits for the epic's close, with G6, G8 and G9's lists. W6 adds to that list: UC-MR-1 (a report only for a range that changes code), UC-MR-2 (no trailer on a task commit without code or roster), UC-ROUTE-1 (tasks; only the owner merges; the conflict watch), UC-ROUTE-6 (the guard's new shapes), and a decision record for tasks amending DEC-24 and DEC-40.</p>
+    <p data-item="distillation">Nothing citable yet. By your ruling, distillation waits for the epic's close, with G6, G8 and G9's lists. W6 adds to that list: UC-MR-1 (a report only for a range that changes code), UC-MR-2 (no trailer on a task commit with no code path by HEAD's committed <code>code_paths</code> and no <code>.keel/</code> path), UC-ROUTE-1 (tasks; only the owner merges; the conflict watch), UC-ROUTE-6 (the guard's new shapes), and a decision record for tasks amending DEC-24 and DEC-40.</p>
 
     <h2 id="follow-ups">Follow-ups</h2>
     <ul data-item="follow-ups">
