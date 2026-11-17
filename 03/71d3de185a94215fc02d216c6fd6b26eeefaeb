@@ -1,0 +1,1 @@
+{"schema":"test/v1","tip":"0371d3de185a94215fc02d216c6fd6b26eeefaeb","base":"6cf312760fbf811afa57d6f8e299f5a226ff4318","branch":"epic/E-GHSETUP","committer":"vuluu <quangvu.luu92@gmail.com>","timestamp":1794928597,"unit":null,"integration":{"waived":"docs-only: the epic plan alone (docs/work/2026-11-17-eghsetup-plan.html), no code path changed"},"e2e":null}
