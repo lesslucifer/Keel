@@ -58,12 +58,13 @@
     <ul>
       <li>One row per doc kind: epic plan, WU plan, WU result, epic result, decisions, use cases, backlog, the three indexes, architecture, install, <code>AGENTS.md</code>, the report note, the Pages index. Columns: reader, page part, data part, and where the data part lives (a committed file or a note), with the reason.</li>
       <li>The data file's fields per role: what today's <code>data-item</code> and <code>data-wu</code> tags hold, as YAML keys.</li>
+      <li>A review of the epic plan and WU plan pages, the docs you read most: what each shows you, in what order, how long. One example of each.</li>
       <li>The slimming rules: what each kept doc drops (build history, replaced rows, done backlog rows), and a word cap per page kind.</li>
       <li>Recorded as a new decision (the next free DEC id, checked against every live branch, E-GHSETUP's included).</li>
     </ul>
   </div>
   <p data-item="wu-maps-to">The owner's request of 2026-11-17 · amends DEC-10 (docs are HTML only), DEC-27 (tiers and lineage) and DEC-52 (the tool checks what it can count).</p>
-  <p data-item="wu-expected">The table and the decision, approved by you. No code: the WU is exempt from tests and review.</p>
+  <p data-item="wu-expected">The table, the two plan-page examples and the decision, approved by you. No code: the WU is exempt from tests and review.</p>
   <p data-item="wu-deps">none</p>
 </div>
 
@@ -118,7 +119,7 @@
 <div data-wu="E-DOCSPLIT.W5" data-c="wu-w5">
   <h3 id="w5">W5 · Slim the knowledge bases</h3>
   <div data-item="wu-summary">
-    <p><b>In short:</b> decisions, use cases and backlog keep only current truth, about 60,000 words today. Their indexes move where W1 says.</p>
+    <p><b>In short:</b> decisions, use cases and backlog keep only current truth, about 60,000 words today. The decision and use-case indexes become data files; the backlog order stays a short page.</p>
     <ul>
       <li>Decisions (28,000 words): a replaced record shrinks to its id and one line (open point 2).</li>
       <li>Use cases: the build history goes ("built by", "amended by").</li>
@@ -154,11 +155,11 @@
   <tbody>
     <tr><td>1</td><td>Does a data file live in a committed file or a note?</td><td><b>A committed file beside its page</b>, for plans and results. W1 confirms per doc.</td><td>A plan exists before there is a commit to hang a note on. A file shows in the pull request, and the sign-off's hash binds it. Notes stay for facts written at the gate.</td></tr>
     <tr><td>2</td><td>Decisions are append-only. Do replaced ones go?</td><td><b>The id and one line stay ("replaced by DEC-m"); the body goes.</b></td><td>Ids are never reused, and a cited id must resolve. Git history keeps the text.</td></tr>
-    <tr><td>3</td><td>Other projects have plans in today's tags. What does an upgrade do?</td><td><b>The old tags are ignored, with one warning line, for one release.</b> Then the warning goes.</td><td>No plan in the middle of an epic turns red on an upgrade.</td></tr>
+    <tr><td>3</td><td>Other projects have plans in today's tags. What does an upgrade do?</td><td><b>Nothing to handle: a clean cut.</b> The old tags are simply no longer read. <i>Answered by you.</i></td><td>No other project uses Keel yet.</td></tr>
     <tr><td>4</td><td>Is every page length-checked?</td><td><b>Yes, a cap per page kind, set in W1.</b> The epic plan's 300-word top stays.</td><td>You asked for short docs. A word count is the one shortness test a tool can do.</td></tr>
-    <tr><td>5</td><td>Do the indexes become data files?</td><td><b>Decisions and use cases: yes. The backlog order stays a short page.</b></td><td>Agents read the indexes; you read the backlog order.</td></tr>
+    <tr><td>5</td><td>Do the indexes become data files?</td><td><b>Decisions and use cases: yes. The backlog order stays a short page.</b> <i>Confirmed by you.</i></td><td>Nobody reads the decision index as a page; agents read the indexes. You read the backlog order.</td></tr>
     <tr><td>6</td><td>May W4 change <code>AGENTS.md</code>?</td><td><b>Yes: approving this plan is the explicit request.</b> One line changes: "all docs are HTML".</td><td>A rule file changes only on your request.</td></tr>
-    <tr><td>7</td><td>What format do this epic's own plans use?</td><td><b>Today's.</b> The new one starts after the merge.</td><td>The write hook runs the installed keel, built from main, until you reinstall.</td></tr>
+    <tr><td>7</td><td>Epic and WU plans are what you read most. How does the epic review their pages?</td><td><b>W1 proposes a new page shape for each, with one example, for you to approve with the table.</b> This epic's own WU plans follow that shape from W2 on. They keep today's tags until the merge. <i>Your comment; reading pending.</i></td><td>The write hook runs the installed keel, built from main, until you reinstall. Another reading of your comment, a review of every plan before you read it, is a new step; W1 can add it if you mean that.</td></tr>
     <tr><td>8</td><td>Should a check now prove that a follow-up names a real backlog row?</td><td><b>No: a backlog row.</b></td><td>It becomes possible once rows are data. It is not part of the split.</td></tr>
   </tbody>
 </table>
