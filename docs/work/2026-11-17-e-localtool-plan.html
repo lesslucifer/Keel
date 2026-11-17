@@ -8,9 +8,9 @@
 <body>
   <header class="doc-hero">
     <div class="inner">
-      <h1>E-LOCALTOOL · A desktop app for your flow, in place of GitHub</h1>
+      <h1>E-LOCALTOOL · A desktop app for your flow, in place of GitHub's</h1>
       <p>Ideas and draft screens only. No code.</p>
-      <div class="meta">T3 · epic plan · v2 · 2026-11-18 · your comments of 2026-11-17 applied · Keel · off main 6cf3127</div>
+      <div class="meta">T3 · epic plan · v3 · 2026-11-18 · your comments and answers of 2026-11-17 applied · Keel · off main 6cf3127</div>
     </div>
   </header>
   <main>
@@ -26,7 +26,7 @@
     <tr><td>You want to see the work</td><td>Ask the router</td><td>A drafted dashboard: router, workers, epics, work units</td></tr>
     <tr><td>Checks and merges</td><td>On GitHub, after your approval there</td><td>Designed to run on your Mac, by your command</td></tr>
     <tr><td>Reading and approving</td><td>A browser, GitHub, a terminal command</td><td>Your choice: docs in your browser, sign-off in your terminal; the app links to both</td></tr>
-    <tr><td>GitHub</td><td>Required; its setup epic paused</td><td>Dropped: a plan to retire it; its setup epic closed</td></tr>
+    <tr><td>GitHub</td><td>Required; its setup epic paused</td><td>Flow dropped; kept for releases and backup; setup epic paused</td></tr>
   </tbody>
 </table>
 
@@ -122,26 +122,26 @@
 </div>
 
 <div data-wu="E-LOCALTOOL.W5" data-c="wu-w5">
-  <h3 id="w5">W5 · Retiring GitHub, closing E-GHSETUP, and the build order</h3>
+  <h3 id="w5">W5 · Retiring GitHub's flow, E-GHSETUP's fate, and the build order</h3>
   <div data-item="wu-summary">
-    <p><b>In short:</b> you dropped GitHub. List every GitHub piece on main, what replaces it on your Mac, and which later epic removes it. Then order the build of the app, smallest useful step first.</p>
+    <p><b>In short:</b> you dropped GitHub's flow: pull requests, checks, approval, auto-merge. GitHub stays for releases and as a backup copy of the code, until a replacement exists. List every flow piece on main, what replaces it on your Mac, and which later epic removes it. Decide E-GHSETUP's fate. Then order the build of the app, smallest useful step first.</p>
     <ul>
       <li>What to switch off first: the GitHub checks and the sign-off by approval. GitHub's 2026-12-02 <code>pull_request_target</code> change may break them before any removal.</li>
       <li>The pieces to retire: the five flow workflows (the release workflow is separate), <code>ci-gate.sh</code>, <code>ci-sign-off.sh</code>, <code>router-gh.sh</code>, <code>router-gh-watch.sh</code>, <code>pages-build.sh</code>, <code>gh-settings-check.sh</code>, the <code>[github]</code> config, the <code>github</code> signer tier, DEC-60 – DEC-62 and DEC-64 – DEC-68, the github-flow backlog.</li>
-      <li>The release builds and where the code lives off your Mac: the options for open point 10, with the cost of each.</li>
-      <li>E-GHSETUP: closed as dropped (open point 7). Its "list what is missing first" idea may move to the app's setup.</li>
+      <li>What stays on GitHub: <code>release.yml</code> and the backup copy (main, epics and notes). Who pushes the copy once the bot's pull requests are gone, and what a later replacement for each would need.</li>
+      <li>E-GHSETUP, paused: close it, or shrink it to setting up releases and the backup copy (open point 7). Its "list what is missing first" idea may move to the app's setup.</li>
       <li>The build order: proposed implementation epics, each with its first use. Likely first: alerts and "waits on you", then the local sign-off and merge, then the dashboards.</li>
     </ul>
   </div>
-  <p data-item="wu-maps-to">Your worries: lock-in, slow loop · your "drop GitHub" (open point 6) · E-GHSETUP's pause.</p>
-  <p data-item="wu-expected">A doc with every GitHub piece, its local replacement and the epic that removes it; your answer on open point 10; the implementation epics in order. Tests waived: a doc, no code.</p>
+  <p data-item="wu-maps-to">Your worries: lock-in, slow loop · your "drop GitHub's flow" (open point 6) · E-GHSETUP's pause.</p>
+  <p data-item="wu-expected">A doc with every GitHub flow piece, its local replacement and the epic that removes it; what stays on GitHub and what it needs; your ruling on E-GHSETUP; the implementation epics in order. Tests waived: a doc, no code.</p>
   <p data-item="wu-deps">W1, W2, W4</p>
 </div>
 
 </div>
 
 <h2 id="open-points">Open points</h2>
-<p>Points 1 – 9 are answered by you (comments of 2026-11-17). Point 10 is open.</p>
+<p>All points are answered by you (comments and answers of 2026-11-17).</p>
 <table data-item="open-questions" data-c="open-points">
   <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
   <tbody>
@@ -150,11 +150,10 @@
     <tr><td>3</td><td>Which stack?</td><td><b>Electron, your choice</b> ("let's try Electron this time"). W2 designs it</td><td>Your comment. My pick, Tauri, is withdrawn. Electron costs size and cannot link keel's Rust code directly, so the app runs keel's CLI; W2 names how to keep that small</td></tr>
     <tr><td>4</td><td>What does a Sign off click sign with?</td><td><b>Your username</b>, as <code>keel mr confirm</code> does today; confirmed by you. With option B the app has no Sign off button: you type that command</td><td>An ideas epic sets no new trust model; key-only signing was deferred (DEC-48)</td></tr>
     <tr><td>5</td><td>Alerts when you are away from the Mac?</td><td><b>Telegram stays</b> for away; the app alerts at the desk. Confirmed by you</td><td>A desktop app cannot reach your phone. You asked to replace or complement Telegram</td></tr>
-    <tr><td>6</td><td>What is GitHub for, after the app?</td><td><b>Nothing: dropped</b>, your comment on W5 ("Drop GH"). W5 plans the retirement; the GitHub code on main stays until a later epic removes it</td><td>Your comment overrules my pick, a backup copy only. Removing code is not an ideas epic's job</td></tr>
-    <tr><td>7</td><td>E-GHSETUP?</td><td><b>Closed as dropped</b>, confirmed by you; W5 records it</td><td>Its whole aim is GitHub setup, which you dropped</td></tr>
+    <tr><td>6</td><td>What is GitHub for, after the app?</td><td><b>Releases and a backup copy of the code</b>, your answer. Only its flow drops: pull requests, checks, approval, auto-merge. Both stay until a replacement exists. W5 plans the flow's retirement; its code on main stays until a later epic removes it</td><td>Your comment on W5 ("Drop GH") and your answer of 2026-11-17. The flow is what you worried about; releases and the copy need a replacement first. Removing code is not an ideas epic's job</td></tr>
+    <tr><td>7</td><td>E-GHSETUP?</td><td><b>Stays paused</b>; W5 decides its fate. Your answer</td><td>Its aim, GitHub's setup, shrinks with the flow; releases and the copy may still need one</td></tr>
     <tr><td>8</td><td>Does the router stay a Claude Code session?</td><td><b>Yes</b>, confirmed by you. The app shows it and passes your messages; it replaces only the watching and alerting around it</td><td>The router's judgment is the model's. The watch scripts and the notifier are the plumbing an app does better</td></tr>
     <tr><td>9</td><td>One project or many?</td><td><b>Many</b>, a project list; designed on Keel first. Confirmed by you</td><td>Keel is meant for any project, and you may run two at once</td></tr>
-    <tr><td>10</td><td>Does dropping GitHub also drop the release builds and the code's only copy off your Mac?</td><td><b>Open, yours.</b> Options: (a) keep both on GitHub until a replacement exists; the flow alone drops it. (b) A plain git remote elsewhere (a server, a disk) for the copy, and releases built on your Mac. (c) No remote and no releases for now. W5 gives the cost of each</td><td>Keel's releases (<code>release.yml</code>) and its one off-Mac copy live on GitHub. Your comment did not say whether they go too</td></tr>
   </tbody>
 </table>
 
@@ -166,7 +165,7 @@
   <li>Every job named in W1's table has a row: taken over, a button, or left, with its source file.</li>
   <li>Every must-have need appears on a W3 or W4 screen, and every screen field names its source or is marked new.</li>
   <li>The Electron app's parts are sketched, with their cost and how each reads keel, git and the sessions.</li>
-  <li>Every waiting item has its link and its command (W4). Every GitHub piece has a replacement and a removing epic, and open point 10 has your answer (W5).</li>
+  <li>Every waiting item has its link and its command (W4). Every GitHub flow piece has a replacement and a removing epic, what stays on GitHub is listed, and E-GHSETUP's fate has your ruling (W5).</li>
   <li>A list of implementation epics, in order, sits in the backlog.</li>
   <li>No file under <code>src/</code>, <code>tests/</code>, <code>scripts/</code> or <code>.github/</code> changes.</li>
 </ul>
@@ -196,9 +195,9 @@
 <h3 id="close-h">At the close</h3>
 <ul data-item="distillation-plan" data-c="distillation-plan">
   <li>A new T1 doc, <code>docs/local-app.html</code>: the needs, the chosen stack, the screens. It is the implementation epics' source until the app exists. A rule-bearing path: your commit.</li>
-  <li>The decisions: one record for the app (judges nothing, Electron, review in your browser and terminal, GitHub dropped), at the next free DEC id, checked against every live branch. DEC-60 – DEC-62 and DEC-64 – DEC-68 are marked replaced when the retiring epic lands.</li>
+  <li>The decisions: one record for the app (judges nothing, Electron, review in your browser and terminal, GitHub's flow dropped, releases and the backup copy kept), at the next free DEC id, checked against every live branch. DEC-60 – DEC-62 and DEC-64 – DEC-68 are marked replaced when the retiring epic lands.</li>
   <li>The backlog: a new <code>docs/backlog/local-app.html</code> with the implementation epics in order; github-flow rows re-pointed or struck by W5's ruling.</li>
-  <li><code>docs/architecture.html</code>, "GitHub": one line saying it is dropped, and which epic removes it.</li>
+  <li><code>docs/architecture.html</code>, "GitHub": one line saying its flow is dropped, what stays, and which epic removes the flow.</li>
 </ul>
 
 <h3 id="today-flow">What today's flow does, and the app's likely part</h3>
@@ -215,9 +214,9 @@
     <tr><td>htmldoc</td><td>Docs in a browser, with comments and versions on a server</td><td>Kept: the app opens docs there</td></tr>
     <tr><td><code>keel-gate.yml</code>, <code>ci-gate.sh</code></td><td>The gate again, on GitHub, as required checks</td><td>Replaced by the local gate</td></tr>
     <tr><td><code>keel-sign-off.yml</code>, <code>ci-sign-off.sh</code>, auto-merge</td><td>Your approval becomes the sign-off; GitHub merges</td><td>Replaced by the local sign-off and merge</td></tr>
-    <tr><td><code>router-gh.sh</code>, <code>router-gh-watch.sh</code></td><td>The bot pushes and opens pull requests; the router hears your reviews and comments</td><td>Replaced by the app's messages</td></tr>
+    <tr><td><code>router-gh.sh</code>, <code>router-gh-watch.sh</code></td><td>The bot pushes and opens pull requests; the router hears your reviews and comments</td><td>Replaced by the app's messages; a push may stay for the backup copy (W5)</td></tr>
     <tr><td><code>pages-build.sh</code>, Pages</td><td>Every branch's docs on a website</td><td>Replaced: docs open from disk in your browser</td></tr>
-    <tr><td><code>gh-settings-check.sh</code></td><td>Checks GitHub's settings</td><td>Retired with GitHub</td></tr>
+    <tr><td><code>gh-settings-check.sh</code></td><td>Checks GitHub's settings</td><td>Retired with the flow</td></tr>
   </tbody>
 </table>
 
@@ -236,13 +235,14 @@ flowchart LR
   W -->|"commit, notes"| G
   K -->|"reads, writes"| G
   A -.->|"alerts when away"| T["Telegram"]
+  G -.->|"backup copy, releases"| H["GitHub"]
 </pre>
-<div class="caption">The app shows and alerts. You read in your browser and sign in your terminal. Keel judges. No GitHub.</div>
+<div class="caption">The app shows and alerts. You read in your browser and sign in your terminal. Keel judges. GitHub keeps only releases and a backup copy.</div>
 </div>
 
 <h3 id="overlap">Overlap with the other epics</h3>
 <ul data-c="overlap">
-  <li>E-GHSETUP: closed as dropped (open point 7); closing it is the router's and your step. Nothing here edits its files.</li>
+  <li>E-GHSETUP: paused; W5 decides its fate (open point 7). Nothing here edits its files.</li>
   <li>E-DOCSPLIT: changes the docs you open in the browser. W4 states how its short pages fit; no file overlap.</li>
   <li>DEC ids: E-DOCSPLIT and this epic may each mint one; check every live branch first.</li>
 </ul>
