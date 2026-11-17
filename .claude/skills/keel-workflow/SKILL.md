@@ -63,7 +63,7 @@ preference:
 | 1 | the work, its tests, its docs, the result report (skill `keel-plan`) — all committed | — |
 | 2 | test + doc notes on the tip | `keel notes write test < judgment.json` · `keel notes write doc` |
 | 3 | preflight, then the code review → `cr/v1` PASS on the code paths, round by round on the schedule (skill `keel-code-review` §5); or the human waives it at step 5 (§5) | `keel preflight wu <tip>` · skill `keel-code-review` |
-| 4 | check: red **only** on `8·manual-review` (and on `1·notes` for the missing cr note, when the human will waive the review at step 5) | `keel verify-dod wu <tip>` |
+| 4 | check: red **only** on `8·manual-review` (and on `1·notes` for the missing cr note, and the review's checks, when the human will waive the review at step 5, or approve over it on GitHub, §5) | `keel verify-dod wu <tip>` |
 | 5 | **the human** signs last | `keel mr confirm wu <tip> --as <id>` |
 | 6 | the human merges | `git switch epic/<slug> && git merge --no-ff wu/<slug>/<x>` |
 
@@ -114,8 +114,8 @@ note between tips is a bypass: always use the writer.
 | `test/v1` | per layer (`unit`, `integration`, `e2e`): `count`, `covers`, `files`, `languages` — or `waived` | `keel notes write test` reads the judgment on stdin; counts come from the named files at the tip via `tests.adapter` (rust, ts, python, go, regex), never typed |
 | `doc/v1` | every changed doc (under `docs.root`, or T0) listed with its tier; archived T3 docs carry `distilled_to` | `keel notes write doc [--distill <t3>=<doc>[,<doc>] \| <t3>=none: <why>]` |
 | `cr/v1` | an independent review judged exactly this diff's code paths: `verdict`, `blockers`, `importants`, `code_diff_hash`, `round` and `scope` (`full`, or `since <sha>`: from round 3 a round reviews only the last fix); optional `walk_waivers` — or a **fix-PASS**: a PASS written on a fix with no reviewers, with `fixes` (the reviewed commit), `round` (the round it answers), `fix_diff_hash` and `answers` — or no review passed and it was waived: `verdict` `WAIVED` + `waiver` (the reason), the counts left open, the same `code_diff_hash`, and `unreviewed: true` when no review ran (its counts of 0 then mean nothing). Every form binds the whole range's code | the `keel-code-review` skill, via `keel notes write cr --verdict PASS\|FAIL` (a fix-PASS: `--verdict PASS --fixes <commit>`); a waiver by the human's `keel mr confirm --waive-review`, or the review's cap (§5). The writer takes no `--reason` |
-| `mr/v1` | a listed human attested this tip: `signer`, `tier`, `change_hash`, `report` + `report_hash` when a report is attested, `waiver_hash` when a review waiver is accepted, `sig` when key-backed (payload `keel-mr/v2`; hashes `sha256:<hex>`) | the human: `keel mr confirm` |
-| `dod/v1` | the gate ran green here; names the attested `report` + `report_hash`, if any, and `review: WAIVED` + `waiver` when the tip's review was waived | `keel verify-dod` on a green, non-exempt wu/epic, only |
+| `mr/v1` | a listed human attested this tip: `signer`, `tier`, `change_hash`, `report` + `report_hash` when a report is attested, `waiver_hash` when a review waiver is accepted, `sig` when key-backed (payload `keel-mr/v2`; hashes `sha256:<hex>`); by approval: `review` (the GitHub review it copies) and, when it signed over something, `covers` (`review`: the review's state, `cr`: the cr note's hash, `roster`: the lines the range adds and removes) | the human: `keel mr confirm`, or his approval of the pull request's head on GitHub (the sign-off writer, §5) |
+| `dod/v1` | the gate ran green here; names the attested `report` + `report_hash`, if any, and `review: WAIVED` + `waiver` when the tip's review was waived, or `review: COVERED` + `waiver: covered by the approval of <id> (review <n>)` when an approval signed over a review that did not pass | `keel verify-dod` on a green, non-exempt wu/epic, only |
 
 A sign-off written by a Keel binary older than the `sha256:` hashes no longer
 verifies (check 8 names that cause): after upgrading Keel, re-sign every unmerged WU or
@@ -155,7 +155,7 @@ keel lint                               # check.lint only
 | 0 | `0·review-cap` (preflight only): the review schedule reaches this round — not past `[review] max_rounds` (the target's committed config, default 5; a value that is not a whole number of 1 or more is red too), no round 5 or later after a round with no blocker, every earlier cr note on the branch readable. Green prints `review round n of N` and the scope | preflight |
 | 1 | `1·notes`: required notes present, JSON, declaring `<kind>/v1` | all |
 | 2 | `2·manifest`: the level's layer (commit ⇒ unit, WU ⇒ integration, epic ⇒ e2e) counted or waived; every note names this tip | all |
-| 3 | `3·review`: `cr/v1` verdict PASS, or WAIVED with a reason — printed `WAIVED 3·review: <reason>`, and by the epic walk for a waived WU | wu, epic |
+| 3 | `3·review`: `cr/v1` verdict PASS, or WAIVED with a reason — printed `WAIVED 3·review: <reason>`, and by the epic walk for a waived WU. On a tip an approval signed (check 8 passes on a github-tier note), checks 1 (the cr note), 3, 4 and 5 are covered whatever the review says, and 2·manifest when only the cr note names another tip, printed `WAIVED <check>: … covered by the approval of <id> (review <n>)`; the walk and pre-push take a WU's the same way; a typed sign-off covers nothing. On GitHub `keel/gate` leaves the review to the sign-off, as it leaves check 8 | wu, epic |
 | 4 | `4·review-base`: review base = current merge-base | wu, epic |
 | 5 | `5·diff-binding`: `code_diff_hash` = the code-path diff recomputed now | wu, epic |
 | 6 | `6·doc-note`: `doc/v1` lists exactly the changed docs with their `docs.tiers` tier; archived T3 docs carry lineage to tracked T1/T2 docs; at an epic tip nothing T3 (or tier-less) is tracked under `docs.root` | all |
@@ -179,6 +179,13 @@ Green ⇒ exit 0 and, for a non-exempt wu/epic, the `dod/v1` receipt. Red ⇒ ex
   It rides `cr/v1` because it is a review judgment bound to the reviewed code.
   The waived seam prints as `WAIVED`; check 8 is never waivable.
 
+- **Review, on GitHub** (E-GHFLOW2.W7): the human's approval of a WU's or an
+  epic's pull request accepts all. Once every check but the review is green, the
+  sign-off writer signs over a review that is missing, unreadable, FAIL, stale
+  (of other code) or the cap's WAIVED, and over a range that changes the roster;
+  it writes no cr note and records what it covered in `mr/v1`'s `covers`. A
+  task's pull request (into its WU) has no review and no sign-off. An agent never
+  approves; the router tells the human plainly when the review did not pass.
 - **Review** (the human skips a review, or stops one that did not pass): never
   recorded as PASS, and never written by a session. The human waives it in the
   sign-off, in two steps: `keel mr confirm wu|epic <tip> --as <id>
@@ -222,7 +229,8 @@ parent), `HEAD` for a commit; where that has none, the change's own roster
 judges and a bootstrap line says so. No file on disk is read. The roster
 path is rule-bearing whatever `rule_bearing` lists. A sign-off whose
 `base..tip` changes the roster prints the added and removed lines and is
-refused without `--roster-change`. `--waive-review "<reason>"` is typed by the
+refused without `--roster-change` (an approval on GitHub signs it and records
+the lines in `covers`, §5). `--waive-review "<reason>"` is typed by the
 human to waive the tip's review: its first run shows the reason, what is open
 and every `cr/v1` note on the branch's first-parent line (each tagged with its
 round and scope, or as a fix-PASS with the files changed since the reviewed
