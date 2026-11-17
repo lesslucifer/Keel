@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afc67219f34851f0dfb2680" data-artifact="epic-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-DOCSPLIT epic plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-DOCSPLIT · A short doc for you, a data file for agents</h1>
+      <p>Split each plan and result in two, and slim today's docs.</p>
+      <div class="meta">T3 · epic plan · draft v1 · 2026-11-17 · Keel</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-item="intent" data-c="intent">Each plan and result is one HTML file with three readers: you, an agent, and Keel's checks. It serves none of them well. You get long pages full of tags. Agents spend tokens writing HTML. The checks dig facts out of it. This epic gives each its own doc: a short page for you, and a data file for agents and checks. It also slims today's docs to current truth.</p>
+
+<h2 id="for-you">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>You read a plan or result</td><td>One long page, written for three readers</td><td>A short page, written only for you</td></tr>
+    <tr><td>A check finds a gap</td><td>It names a missing tag in the page</td><td>It names a missing field in the data file</td></tr>
+    <tr><td>You open the decisions, use cases, backlog or architecture</td><td>Long, with history and replaced rows</td><td>Short: current truth only</td></tr>
+    <tr><td>You approve</td><td>The epic plan, then each WU plan</td><td>The same, and first a table of where each doc lives</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">Example: a WU plan after this epic</h2>
+<ol data-c="example-steps">
+  <li>An agent writes the plan's data file: the requirement, the tests, its epic.</li>
+  <li>The check reads it and names a missing test plan. The agent adds it.</li>
+  <li>The agent writes a one-screen page for you, in plain words.</li>
+  <li>You comment on the page. The agent fixes both.</li>
+</ol>
+
+<h3 id="terms">Terms</h3>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Data file</td><td>A YAML file for agents and checks. You never need to read it.</td></tr>
+    <tr><td>Note</td><td>Data git keeps beside a commit, outside the files.</td></tr>
+    <tr><td>Distill</td><td>Move a finished doc's lasting truth into a permanent doc, then archive it.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="wus">The work</h2>
+<p>W1 comes first: you approve where each doc lives. W2 and W3 change the tool, W4 the skills. W5 and W6 slim today's docs, and can run beside W2–W4.</p>
+
+<div data-item="wu-summaries" data-c="wu-summaries">
+
+<div data-wu="E-DOCSPLIT.W1" data-c="wu-w1">
+  <h3 id="w1">W1 · Where each doc lives</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> list every doc Keel writes or reads, who reads it, and what it becomes. You approve the table before any code.</p>
+    <ul>
+      <li>One row per doc kind: epic plan, WU plan, WU result, epic result, decisions, use cases, backlog, the three indexes, architecture, install, <code>AGENTS.md</code>, the report note, the Pages index. Columns: reader, page part, data part, and where the data part lives (a committed file or a note), with the reason.</li>
+      <li>The data file's fields per role: what today's <code>data-item</code> and <code>data-wu</code> tags hold, as YAML keys.</li>
+      <li>A review of the epic plan and WU plan pages, the docs you read most: what each shows you, in what order, how long. One example of each.</li>
+      <li>The slimming rules: what each kept doc drops (build history, replaced rows, done backlog rows), and a word cap per page kind.</li>
+      <li>Recorded as a new decision (the next free DEC id, checked against every live branch, E-GHSETUP's included).</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">The owner's request of 2026-11-17 · amends DEC-10 (docs are HTML only), DEC-27 (tiers and lineage) and DEC-52 (the tool checks what it can count).</p>
+  <p data-item="wu-expected">The table, the two plan-page examples and the decision, approved by you. No code: the WU is exempt from tests and review.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+<div data-wu="E-DOCSPLIT.W2" data-c="wu-w2">
+  <h3 id="w2">W2 · The check reads the data file</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> <code>keel verify-doc</code> checks a plan's or result's data file against its role's fields. The page is checked only for what a reader needs: links, diagram labels, length.</p>
+    <ul>
+      <li><code>src/verify_doc.rs</code>: a data-file module. Per role: required fields present and non-empty, unknown keys named (the typo guard), <code>status: draft</code> silent, WU ids and their dependencies resolve, a collapsed epic is the union of both roles.</li>
+      <li>The page side keeps the link and label checks and gains W1's word caps. The <code>data-item</code> / <code>data-wu</code> scan goes.</li>
+      <li><code>src/main.rs</code>: <code>verify-doc</code> with no path, and the write hook (<code>DOC_POST</code>, today <code>*.html</code> only), take data files too. The DSH <code>dsh-doc-gate</code> plugin's file filter is checked the same way.</li>
+      <li><code>yaml-rust2</code> (already a pinned test dependency) becomes a runtime one.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-DOCSPLIT · UC-DOC-1 rewritten; UC-DOC-2 and UC-DOC-4 kept.</p>
+  <p data-item="wu-expected"><b>Integration</b> (<code>tests/suite/verify_doc.rs</code>): a ready data file missing a field is red and names it; a misspelt key is named; a draft is silent; a page over its cap is red with the count; a page's old tags are not read; links and labels as before. <b>Unit:</b> the field table per role, the caps.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+<div data-wu="E-DOCSPLIT.W3" data-c="wu-w3">
+  <h3 id="w3">W3 · Sign-off, pull request and archive read the pair</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> everything else that reads a doc's role, or archives a doc, reads the data file and treats page and data file as one doc. The sign-off still attests the page: it is what you read.</p>
+    <ul>
+      <li><code>src/mr.rs · report_candidates, pick_report</code>: the result report is found by its data file's role.</li>
+      <li><code>src/notes.rs · write_report</code> (the report note) and <code>doc --distill</code>: one lineage covers a pair; <code>doc_problems</code> (check 6) accounts the data file with its page. Or the notes W1 chose, when it chose notes.</li>
+      <li><code>scripts/router-gh.sh · doc_rows</code>: the pull request's doc table takes role, status and title from the data file. Rule-bearing: your sign-off.</li>
+      <li><code>templates/config.toml</code>: the <code>[mr] report</code> comment.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-DOCSPLIT · UC-MR-1, UC-MR-2, UC-DOC-3 and UC-DOC-5 amended.</p>
+  <p data-item="wu-expected"><b>Integration:</b> <code>keel mr confirm wu</code> finds the report through its data file, and refuses when two qualify; a pair archived with one <code>--distill</code> leaves the epic gate green; the pull request body names the plan by its data file. <b>Unit:</b> the pair matcher.</p>
+  <p data-item="wu-deps">W2</p>
+</div>
+
+<div data-wu="E-DOCSPLIT.W4" data-c="wu-w4">
+  <h3 id="w4">W4 · The skills and the rule file teach the split</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the doc skills and <code>AGENTS.md</code> say what goes where. Every file here is rule-bearing, so each edit is yours to sign; the WU runs them as tasks.</p>
+    <ul>
+      <li><code>keel-plan</code>: the data-file fields replace the markup contract. <code>keel-write</code>: pages only, with the caps. <code>keel-distill</code>: tiers and archiving of a pair. <code>keel-workflow</code> and <code>keel-router</code> (<code>commands.md</code>, the brief skeleton): how the report is found.</li>
+      <li><code>keel-write/references/example.html</code> becomes an example pair, embedded by <code>src/init.rs</code>.</li>
+      <li><code>AGENTS.md</code> and <code>templates/AGENTS.md</code>, "Documentation": a T0 change, on your explicit request (open point 6).</li>
+      <li>Both skill copies, <code>skills/</code> and <code>.claude/skills/</code>.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-DOCSPLIT · W1's decision.</p>
+  <p data-item="wu-expected"><b>Integration:</b> <code>keel init</code> in a temp repo writes the new skills and the example pair; the example pair is green under <code>keel verify-doc</code>. <b>Unit:</b> the embedded file list.</p>
+  <p data-item="wu-deps">W2, W3</p>
+</div>
+
+<div data-wu="E-DOCSPLIT.W5" data-c="wu-w5">
+  <h3 id="w5">W5 · Slim the knowledge bases</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> decisions, use cases and backlog keep only current truth, about 60,000 words today. The decision and use-case indexes become data files; the backlog order stays a short page.</p>
+    <ul>
+      <li>Decisions (28,000 words): a replaced record shrinks to its id and one line (open point 2).</li>
+      <li>Use cases: the build history goes ("built by", "amended by").</li>
+      <li>Backlog (20,000 words): done and struck rows go.</li>
+      <li>The result shows word counts before and after, per file.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-DOCSPLIT · the owner's "migrate and shrink".</p>
+  <p data-item="wu-expected">Each file under W1's cap; every DEC, UC and backlog id cited in code, skills or docs still found; <code>keel verify-doc</code> green. No code: exempt from tests; a one-off script lists the cited ids, and the result shows none lost.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+<div data-wu="E-DOCSPLIT.W6" data-c="wu-w6">
+  <h3 id="w6">W6 · Slim architecture and install</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the two shape docs drop history and rules the skills already hold. Install's GitHub section stays E-GHSETUP's.</p>
+    <ul>
+      <li><code>docs/architecture.html</code> (6,300 words) and <code>docs/install.html</code> (2,000) to W1's caps.</li>
+      <li>Both are rule-bearing: your sign-off on each commit.</li>
+      <li>Starts after E-GHSETUP's install edits reach main; main is merged in first.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">E-DOCSPLIT · the owner's "migrate and shrink".</p>
+  <p data-item="wu-expected">Both under W1's cap, green under <code>keel verify-doc</code>, every link from other docs still resolving. No code: exempt from tests.</p>
+  <p data-item="wu-deps">W1</p>
+</div>
+
+</div>
+
+<h2 id="open">Open points</h2>
+<table data-item="open-questions" data-c="open-questions">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Does a data file live in a committed file or a note?</td><td><b>A committed file beside its page</b>, for plans and results. W1 confirms per doc.</td><td>A plan exists before there is a commit to hang a note on. A file shows in the pull request, and the sign-off's hash binds it. Notes stay for facts written at the gate.</td></tr>
+    <tr><td>2</td><td>Decisions are append-only. Do replaced ones go?</td><td><b>The id and one line stay ("replaced by DEC-m"); the body goes.</b></td><td>Ids are never reused, and a cited id must resolve. Git history keeps the text.</td></tr>
+    <tr><td>3</td><td>Other projects have plans in today's tags. What does an upgrade do?</td><td><b>Nothing to handle: a clean cut.</b> The old tags are simply no longer read. <i>Answered by you.</i></td><td>No other project uses Keel yet.</td></tr>
+    <tr><td>4</td><td>Is every page length-checked?</td><td><b>Yes, a cap per page kind, set in W1.</b> The epic plan's 300-word top stays.</td><td>You asked for short docs. A word count is the one shortness test a tool can do.</td></tr>
+    <tr><td>5</td><td>Do the indexes become data files?</td><td><b>Decisions and use cases: yes. The backlog order stays a short page.</b> <i>Confirmed by you.</i></td><td>Nobody reads the decision index as a page; agents read the indexes. You read the backlog order.</td></tr>
+    <tr><td>6</td><td>May W4 change <code>AGENTS.md</code>?</td><td><b>Yes: approving this plan is the explicit request.</b> One line changes: "all docs are HTML".</td><td>A rule file changes only on your request.</td></tr>
+    <tr><td>7</td><td>Epic and WU plans are what you read most. How does the epic review their pages?</td><td><b>W1 proposes a new page shape for each, with one example, for you to approve with the table.</b> This epic's own WU plans follow that shape from W2 on. They keep today's tags until the merge. <i>Chosen by you.</i></td><td>The write hook runs the installed keel, built from main, until you reinstall. An agent review of every plan was not chosen.</td></tr>
+    <tr><td>8</td><td>Should a check now prove that a follow-up names a real backlog row?</td><td><b>No: a backlog row.</b></td><td>It becomes possible once rows are data. It is not part of the split.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="expected">Acceptance</h3>
+<ul data-item="expected" data-c="expected">
+  <li>A ready plan or result with a missing or empty field in its data file is red at the write, and the message names the field.</li>
+  <li>A page carries no checklist tags; it is checked only for links, diagram labels and W1's cap.</li>
+  <li><code>keel mr confirm</code> finds the result report through its data file and attests the page's bytes.</li>
+  <li>A page and its data file archive together under one lineage, and the epic gate is green.</li>
+  <li>The four doc skills and <code>AGENTS.md</code> describe the split; <code>keel init</code> ships it.</li>
+  <li>Decisions, use cases, backlog, architecture and install are each under W1's cap, with every cited id still found.</li>
+</ul>
+
+<h3 id="use-cases">Use cases</h3>
+<p data-item="use-cases" data-c="use-cases">UC-DOC-1 rewritten: the checklist is read from the data file. UC-DOC-3 amended: a pair archives as one doc. UC-DOC-5 amended: the pull request names a doc by its data file. UC-MR-1 and UC-MR-2 amended: the report is found by its data file's role. A new UC-DOC-6: every page kind has a word cap. UC-DOC-2 and UC-DOC-4 unchanged.</p>
+
+<h3 id="non-goals">Not in this epic</h3>
+<ul data-item="non-goals" data-c="non-goals">
+  <li>Generating one doc from the other: both are written by hand, each for its reader.</li>
+  <li>The gate's notes (test, cr, mr, dod) keep their schemas; the doc note changes only for pairs.</li>
+  <li>htmldoc itself, and skill files (they stay markdown).</li>
+  <li>E-GHSETUP's work: GitHub setup for any project, and install's GitHub section.</li>
+  <li>Checking follow-up destinations (open point 8).</li>
+</ul>
+
+<h3 id="e2e">End-to-end test</h3>
+<p data-item="e2e-plan" data-c="e2e-plan">One flow through the built binary in a temp repo (<code>tests/suite/docsplit_e2e.rs</code>): an epic with one WU writes its plan pair, and a data file missing a field is red at <code>keel verify-doc</code>; fixed, it is green. The WU commits its result pair, writes its notes, and the test signer's <code>keel mr confirm wu</code> finds the report through its data file; the WU merges. At close the pairs are archived with one <code>--distill</code> each, and <code>keel verify-dod epic</code> is green. No waiver.</p>
+
+<h3 id="distill">Distillation</h3>
+<p data-item="distillation-plan" data-c="distillation-plan">W1's new decision (amending DEC-10, DEC-27, DEC-52); <code>docs/use-cases/workflow.html</code>: UC-DOC-1, 3, 5, 6 and UC-MR-1, 2; <code>docs/architecture.html</code>: the doc check and the doc process; the backlog: open point 8's row and anything deferred. The skills are already current from W4.</p>
+
+<h3 id="overlap">Overlap with E-GHSETUP</h3>
+<ul data-c="overlap">
+  <li><code>docs/install.html</code>: E-GHSETUP owns the GitHub section; W6 slims the rest, after E-GHSETUP's edits land.</li>
+  <li>DEC ids: both epics may mint one; check every live branch first.</li>
+  <li><code>scripts/router-gh.sh</code>, <code>src/init.rs</code> and <code>templates/</code>: W3 and W4 touch the doc parts only; a conflict goes back to its worker.</li>
+</ul>
+
+<h3 id="grounding">Where the code reads docs today</h3>
+<ul data-c="grounding">
+  <li><code>src/verify_doc.rs · verify, checklist</code>: the four role checklists, the 300-word top, links, diagram labels, from the HTML.</li>
+  <li><code>src/verify_doc.rs · has_role</code>, used by <code>src/mr.rs · report_candidates</code> and <code>src/notes.rs · write_report</code>: the result report by its <code>data-artifact</code>.</li>
+  <li><code>src/notes.rs · doc_paths, doc_problems, tier_of</code>: the doc note and check 6, by path and tier.</li>
+  <li><code>src/main.rs · DOC_POST</code>, <code>verify_doc</code>: the write hook and the no-path run, <code>*.html</code> only.</li>
+  <li><code>scripts/router-gh.sh · doc_rows</code>: role and status from the HTML, for the pull request body.</li>
+  <li><code>scripts/pages-build.sh</code>: publishes pages only; data files stay off the site.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
