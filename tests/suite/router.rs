@@ -3895,6 +3895,17 @@ fn worktree_add_cuts_an_epic_or_wu_branch_off_its_base_at_the_derived_path() {
         assert_eq!(tip(b), at, "{b}");
     }
     assert_ne!(tip("epic/E-X"), tip("main"));
+    // E-GHFLOW2.W6: a task is cut off its WU branch; with no WU branch it is refused
+    git(&l.main, &["commit", "-q", "--allow-empty", "-m", "the WU moves on", "--no-verify"]);
+    git(&l.main, &["branch", "-f", "wu/E-X/w5-e", "HEAD"]);
+    let (ok, out) = l.run(&["worktree", "add", "wu/E-X/w5-e_skill-line"]);
+    assert!(ok, "{out}");
+    assert_eq!(
+        out.lines().last().unwrap(),
+        format!("WORKTREE path={m}-E-X-w5-e_skill-line branch=wu/E-X/w5-e_skill-line base=wu/E-X/w5-e tip={}", tip("wu/E-X/w5-e"))
+    );
+    let (ok, out) = l.run(&["worktree", "add", "wu/E-X/w6-f_t"]);
+    assert!(!ok && out.contains("base branch wu/E-X/w6-f does not exist"), "{out}");
     let (ok, out) = l.run(&["spawn", "n", &format!("{m}-E-X-w1-a"), ".router/briefs/b.md", "opus"]);
     assert!(ok && out.contains(" branch=wu/E-X/w1-a "), "{out}");
 
@@ -3999,6 +4010,9 @@ fn router_guard_admits_the_two_worktree_shapes_in_plain_words_only() {
         "scripts/router-worker.sh worktree add wu/E-X/w1-a",
         "scripts/router-worker.sh worktree remove epic/E-X",
         "scripts/router-worker.sh worktree remove wu/E-X/w1-a",
+        // E-GHFLOW2.W6: a task
+        "scripts/router-worker.sh worktree add wu/E-X/w1-a_skill-line",
+        "scripts/router-worker.sh worktree remove wu/E-X/w1-a_skill-line",
     ] {
         assert_eq!(bash(ok), None, "guard denied {ok:?}");
     }
@@ -4142,8 +4156,11 @@ fn router_guard_admits_the_router_bots_shapes_and_no_other_spelling() {
         "scripts/router-gh.sh push wu/E-GHFLOW/w2-router-bot",
         "scripts/router-gh.sh push epic/E-GHFLOW",
         "scripts/router-gh.sh pr-open wu/E-GHFLOW/w2-router-bot",
-        "scripts/router-gh.sh pr-open wu/E/x --base epic/F",
         "scripts/router-gh.sh pr-open epic/E --base main",
+        // E-GHFLOW2.W6: a task, and sync of a WU branch the owner merged a task into
+        "scripts/router-gh.sh push wu/E-X/w9-export_skill-line",
+        "scripts/router-gh.sh pr-open wu/E/x_t",
+        "scripts/router-gh.sh sync wu/E/x",
         "scripts/router-gh.sh pr-open epic/E-GHFLOW",
         "scripts/router-gh.sh pr-ready 12",
         "scripts/router-gh.sh pr-ready 9999999",
@@ -4189,6 +4206,10 @@ fn router_guard_admits_the_router_bots_shapes_and_no_other_spelling() {
         "scripts/router-gh.sh  push wu/E/x",
         // E-GHFLOW2.W4 review: a WU into main would skip its epic's gate
         "scripts/router-gh.sh pr-open wu/E/x --base main",
+        // W4 review nit 5, E-GHFLOW2.W6: a WU's base, and a task's, is derived
+        "scripts/router-gh.sh pr-open wu/E/x --base epic/F",
+        "scripts/router-gh.sh pr-open wu/E/x --base epic/E",
+        "scripts/router-gh.sh pr-open wu/E/x_t --base wu/E/x",
         "scripts/router-gh.sh pr-open wu/E/x --base",
         "scripts/router-gh.sh pr-open wu/E/x --base=main",
         "scripts/router-gh.sh pr-open wu/E/x --base wu/E/y",
@@ -4207,7 +4228,7 @@ fn router_guard_admits_the_router_bots_shapes_and_no_other_spelling() {
         "scripts/router-gh.sh post 12 -a",
         "scripts/router-gh.sh post 12 a b",
         &format!("scripts/router-gh.sh post 12 {}", "a".repeat(65)),
-        "scripts/router-gh.sh sync wu/E/x",
+        "scripts/router-gh.sh sync wu/E",
         "scripts/router-gh.sh sync main2",
         "scripts/router-gh.sh sync main epic/E",
         "scripts/router-gh.sh sync refs/heads/main",
@@ -4297,6 +4318,7 @@ fn router_guard_admits_the_github_watch_and_issue_shapes_and_no_other_spelling()
         "scripts/router-gh-watch.sh comment 9999999 since 999999999999999",
         "scripts/router-gh-watch.sh merged 31",
         "scripts/router-gh-watch.sh checks 31",
+        "scripts/router-gh-watch.sh conflict 31",
         "scripts/router-gh-watch.sh comment 30 since latest",
         "scripts/router-gh-watch.sh review 31 since latest",
         "scripts/router-gh.sh issue epic/E-GHFLOW",
@@ -4324,6 +4346,10 @@ fn router_guard_admits_the_github_watch_and_issue_shapes_and_no_other_spelling()
         "scripts/router-gh-watch.sh comment 30 since latest 2",
         "scripts/router-gh-watch.sh comment 30 latest",
         "scripts/router-gh-watch.sh checks 31 since 2",
+        "scripts/router-gh-watch.sh conflict 31 since 2",
+        "scripts/router-gh-watch.sh conflict 0",
+        "scripts/router-gh-watch.sh conflict 31 x",
+        "scripts/router-gh-watch.sh conflict -1",
         "scripts/router-gh-watch.sh approve 31",
         "scripts/router-gh-watch.sh REVIEW 31",
         "scripts/router-gh-watch.sh comment 30; id",
@@ -4348,7 +4374,8 @@ fn router_guard_admits_the_github_watch_and_issue_shapes_and_no_other_spelling()
     }
     let msg = bash("rm x").unwrap();
     assert!(
-        msg.contains("scripts/router-gh-watch.sh review|comment <n> [since <id>|latest] | merged|checks <n>") && msg.contains("issue <wu/E/slug or epic/E>"),
+        msg.contains("scripts/router-gh-watch.sh review|comment <n> [since <id>|latest] | merged|checks|conflict <n>")
+            && msg.contains("issue <wu/E/slug or epic/E>"),
         "deny message omits the new shapes: {msg}"
     );
 }
@@ -4370,7 +4397,7 @@ fn the_guard_and_the_github_watch_take_the_same_arguments() {
             (0..1 + next(max)).map(|_| digits[next(digits.len())]).collect()
         }
     };
-    let kinds = ["review", "comment", "merged", "checks", "Review", "watch", "since"];
+    let kinds = ["review", "comment", "merged", "checks", "conflict", "Review", "watch", "since"];
     let mut corpus: Vec<Vec<String>> = Vec::new();
     for _ in 0..60 {
         let k = kinds[next(kinds.len())].to_string();

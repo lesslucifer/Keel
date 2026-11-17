@@ -305,6 +305,50 @@ fn merged_prints_the_merge_or_the_close() {
     assert_eq!(lines(&watch(&gh, &["merged", "31"])), [format!("CLOSED pr=31 head={tip} base=epic/E at=2026-11-15T12:00:00Z")]);
 }
 
+/// E-GHFLOW2.W6: conflict waits while GitHub computes or can merge, and prints CONFLICT once it says
+/// the pull request cannot merge (mergeable false, state dirty, compared exactly); MERGED or CLOSED
+/// when it leaves first. It sends no write: the watch only reads.
+#[test]
+fn conflict_prints_once_github_says_the_pull_request_cannot_merge() {
+    let gh = Gh::new();
+    let tip = gh.sha("wu/E/x");
+    let open = gh.pr(31, BOT, "own/Keel", &tip, false);
+    let with = |mergeable: Value, state: &str| {
+        let mut p = open.clone();
+        p["mergeable"] = mergeable;
+        p["mergeable_state"] = state.into();
+        p["updated_at"] = "2026-11-15T11:30:00Z".into();
+        p
+    };
+    let computing = with(Value::Null, "unknown");
+    let clean = with(true.into(), "clean");
+    let dirty = with(false.into(), "dirty");
+    pull_31(&gh, vec![computing.clone(), clean.clone(), with(false.into(), "blocked"), with("false".into(), "dirty"), dirty.clone()], &[]);
+    let o = watch(&gh, &["conflict", "31"]);
+    assert_eq!(lines(&o), [format!("CONFLICT pr=31 head={tip} base=epic/E at=2026-11-15T11:30:00Z")], "{}", text(&o));
+    assert_eq!(tokens(&gh), 5, "one poll per answer, the first four no event");
+    assert!(gh.calls().iter().all(|c| c.starts_with("GET ") || c.ends_with("/access_tokens")), "{:?}", gh.calls());
+
+    let mut merged = clean.clone();
+    merged["state"] = "closed".into();
+    merged["merged"] = true.into();
+    merged["merged_at"] = "2026-11-15T12:00:00Z".into();
+    pull_31(&gh, vec![merged], &[]);
+    assert_eq!(lines(&watch(&gh, &["conflict", "31"])), [format!("MERGED pr=31 head={tip} base=epic/E at=2026-11-15T12:00:00Z")]);
+    let mut closed = dirty;
+    closed["state"] = "closed".into();
+    closed["closed_at"] = "2026-11-15T13:00:00Z".into();
+    pull_31(&gh, vec![closed], &[]);
+    assert_eq!(lines(&watch(&gh, &["conflict", "31"])), [format!("CLOSED pr=31 head={tip} base=epic/E at=2026-11-15T13:00:00Z")]);
+
+    pull_31(&gh, vec![clean], &[]);
+    let o = once(&gh, &["conflict", "31"]);
+    assert!(stdout(&o).starts_with("TIMEOUT kind=conflict"), "a clean pull request is no event: {}", text(&o));
+    pull_31(&gh, vec![gh.pr(31, "mallory", "own/Keel", &tip, false)], &[]);
+    let o = once(&gh, &["conflict", "31"]);
+    assert!(o.status.code() == Some(2) && text(&o).contains("not one the bot opened"), "{}", text(&o));
+}
+
 /// checks waits until there is a check run and every run and status on the head is done, then
 /// prints the result and each check.
 #[test]

@@ -66,8 +66,8 @@ fn modes_and_word_counts_are_fixed() {
     refused(&["pr-ready", "1", "2"], "usage: pr-ready <n>");
     refused(&["post", "1"], "usage: post <n> <body-name>");
     refused(&["post", "1", "a", "b"], "usage: post <n> <body-name>");
-    refused(&["sync"], "usage: sync <epic/E|main>");
-    refused(&["sync", "epic/E", "x"], "usage: sync <epic/E|main>");
+    refused(&["sync"], "usage: sync <epic/E|main|wu/E/slug>");
+    refused(&["sync", "epic/E", "x"], "usage: sync <epic/E|main|wu/E/slug>");
     refused(&["credential", "/x"], "usage: credential <file> <op>");
 }
 
@@ -111,11 +111,32 @@ fn a_branch_is_wu_e_slug_or_epic_e_in_plain_words() {
     }
 }
 
+/// E-GHFLOW2.W6: a task, `wu/<E>/<wu>_<task>` in three words without `_`, is pushed and opened like a
+/// WU branch; a name with `_` that is no task stays a WU branch, as before.
+#[test]
+fn a_task_branch_is_a_work_branch_of_three_words() {
+    for b in ["wu/E/x_t", "wu/E-X/w9-export_skill-line", "wu/E.2/a.b_c-d"] {
+        accepted(&["push", b]);
+        accepted(&["pr-open", b]);
+        accepted(&["sync", b]);
+    }
+    for b in ["wu/E/x_", "wu/E/x_t_u", "wu/E_F/x_t"] {
+        accepted(&["push", b]);
+    }
+    for b in ["wu/E/_t", "wu/_/x", "wu/E/x_t/u"] {
+        refused(&["push", b], "branch must be epic/<E> or wu/<E>/<slug>");
+    }
+    refused(&["push", "wu/E/x_t.lock"], "not a valid branch name");
+}
+
 #[test]
 fn pr_open_takes_main_or_an_epic_as_its_base() {
     // E-GHFLOW2.W4 review: a WU into main would skip its epic's gate
     refused(&["pr-open", "wu/E/x", "--base", "main"], "a WU merges into its epic, never into main");
-    accepted(&["pr-open", "wu/E/x", "--base", "epic/F"]);
+    // W4 review nit 5, E-GHFLOW2.W6: a WU's base, and a task's, is derived from its name
+    for (b, base) in [("wu/E/x", "epic/F"), ("wu/E/x", "epic/E"), ("wu/E/x_t", "epic/E")] {
+        refused(&["pr-open", b, "--base", base], "drop --base");
+    }
     accepted(&["pr-open", "epic/E", "--base", "main"]);
     refused(&["pr-open", "wu/E/x", "--base=main"], "usage: pr-open <branch>");
     refused(&["pr-open", "wu/E/x", "--base", "-main"], "may not start with -");
@@ -151,8 +172,12 @@ fn sync_takes_an_epic_branch_or_main_only() {
     accepted(&["sync", "epic/E-GHFLOW"]);
     // E-GHFLOW2.W4: with the rules on, main moves only on GitHub
     accepted(&["sync", "main"]);
-    for b in ["wu/E/x", "epic/E/x", "epic", "main2", "Main", "refs/heads/main"] {
-        refused(&["sync", b], "sync takes an epic/<E> branch or main only");
+    // E-GHFLOW2.W6: a WU branch, which the owner merges a task into on GitHub
+    for b in ["wu/E/x", "wu/E-X/w9-export", "wu/E/x_t"] {
+        accepted(&["sync", b]);
+    }
+    for b in ["wu/E", "wu/E/x/y", "epic/E/x", "epic", "main2", "Main", "refs/heads/main"] {
+        refused(&["sync", b], "sync takes main, an epic/<E> or a wu/<E>/<slug> branch only");
     }
     refused(&["sync", "-epic/E"], "may not start with -");
     refused(&["sync", "epic/E.lock"], "not a valid branch name");
@@ -164,7 +189,7 @@ fn sync_takes_an_epic_branch_or_main_only() {
 #[test]
 fn every_argument_starting_with_a_dash_is_refused_in_every_position() {
     let valid: [&[&str]; 6] =
-        [&["push", "wu/E/x"], &["pr-open", "wu/E/x"], &["pr-open", "wu/E/x", "--base", "epic/E"], &["pr-ready", "7"], &["post", "7", "a"], &["sync", "epic/E"]];
+        [&["push", "wu/E/x"], &["pr-open", "wu/E/x"], &["pr-open", "epic/E", "--base", "main"], &["pr-ready", "7"], &["post", "7", "a"], &["sync", "epic/E"]];
     let mut next = common::lcg(7);
     let tails = ["", "x", "-", "wu/E/x", "main", "7", "force", "-"];
     for args in valid {
@@ -196,7 +221,12 @@ fn issue_takes_a_work_branch_and_watch_read_a_kind_and_a_number() {
         refused(&["issue", b], "branch must be");
     }
     refused(&["issue", "-x"], "may not start with -");
-    for k in ["review", "comment", "merged", "checks"] {
+    // E-GHFLOW2.W6: a task has no issue of its own; a name that is no task is a WU as before
+    refused(&["issue", "wu/E/x_t"], "a task has no issue of its own: the sub-issue of its WU, wu/E/x, is the record");
+    for b in ["wu/E/x_", "wu/E/x_t_u", "wu/E_F/x_t"] {
+        accepted(&["issue", b]);
+    }
+    for k in ["review", "comment", "merged", "checks", "conflict"] {
         accepted(&["watch-read", k, "31"]);
     }
     refused(&["watch-read", "comment"], "usage: watch-read");
