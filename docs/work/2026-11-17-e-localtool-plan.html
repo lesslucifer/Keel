@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-LOCALTOOL · A desktop app for your flow, in place of GitHub</h1>
       <p>Ideas and draft screens only. No code.</p>
-      <div class="meta">T3 · epic plan · draft v1 · 2026-11-17 · Keel · off main 6cf3127</div>
+      <div class="meta">T3 · epic plan · v2 · 2026-11-18 · your comments of 2026-11-17 applied · Keel · off main 6cf3127</div>
     </div>
   </header>
   <main>
@@ -24,19 +24,19 @@
   <tbody>
     <tr><td>Something waits on you</td><td>Telegram, the router's terminal, GitHub mail</td><td>A drafted single list, with alerts</td></tr>
     <tr><td>You want to see the work</td><td>Ask the router</td><td>A drafted dashboard: router, workers, epics, work units</td></tr>
-    <tr><td>Checks and merges</td><td>On GitHub, after your approval there</td><td>A proposal: on your Mac, on your click</td></tr>
-    <tr><td>Reading and approving</td><td>A browser, GitHub, a terminal command</td><td>Options with mockups; you choose</td></tr>
-    <tr><td>GitHub</td><td>Required; its setup epic paused</td><td>A recommendation: backup copy only, or less</td></tr>
+    <tr><td>Checks and merges</td><td>On GitHub, after your approval there</td><td>Designed to run on your Mac, by your command</td></tr>
+    <tr><td>Reading and approving</td><td>A browser, GitHub, a terminal command</td><td>Your choice: docs in your browser, sign-off in your terminal; the app links to both</td></tr>
+    <tr><td>GitHub</td><td>Required; its setup epic paused</td><td>Dropped: a plan to retire it; its setup epic closed</td></tr>
   </tbody>
 </table>
 
 <h2 id="example">The target: a sign-off with the app</h2>
 <ol data-c="example-steps">
   <li>A worker finishes its part. Your Mac shows: "W2 waits on you".</li>
-  <li>You open the app. It shows the result, the review and the checks, all green.</li>
-  <li>You click Sign off. Keel signs and merges on your Mac, in seconds.</li>
-  <li>If GitHub is kept, the app copies the result there. Nothing waits on it.</li>
-</ol>
+  <li>The app shows the review and the checks, all green.</li>
+  <li>You click the result. It opens in your browser, as docs do today.</li>
+  <li>You run the sign-off command the app shows, in your terminal. Both the sign-off and the merge run on your Mac.</li>
+  </ol>
 
 <h3 id="terms">Terms</h3>
 <table data-c="terms">
@@ -56,7 +56,7 @@
 <div data-wu="E-LOCALTOOL.W1" data-c="wu-w1">
   <h3 id="w1">W1 · What the app must do, and what it replaces</h3>
   <div data-item="wu-summary">
-    <p><b>In short:</b> one table of every job today's flow does for you, read from the code, and what the app does with each: takes it over, puts a button on it, or leaves it. Then your needs, ranked. You approve both before W2 – W5.</p>
+    <p><b>In short:</b> one table of every job today's flow does for you, read from the code, and what the app does with each: takes it over, links to it, or leaves it. Then your needs, ranked. You approve both before W2 – W5.</p>
     <ul>
       <li>The jobs: the gate (<code>keel verify-dod</code>, the hooks), the notes, the sign-off (<code>keel mr confirm</code>, <code>keel mr commit</code>); the router guard, the launcher (<code>router-worker.sh</code>) and its watchdog; the inbox (<code>router-inbox.sh</code>), the watch (<code>router-watch.sh</code>), <code>notify-owner.py</code>; htmldoc's comments and versions; the GitHub pieces (the gate and sign-off workflows, auto-merge, the router bot, the GitHub watch, tasks, the conflict watch, Pages, the settings check).</li>
       <li>Per job: where its state lives today (a git note, a ref, a file under <code>.router/</code>, a background session, GitHub) — what the app would read.</li>
@@ -71,20 +71,19 @@
 </div>
 
 <div data-wu="E-LOCALTOOL.W2" data-c="wu-w2">
-  <h3 id="w2">W2 · How the app is built, and how it talks to keel, git and the sessions</h3>
+  <h3 id="w2">W2 · The Electron app, and how it talks to keel, git and the sessions</h3>
   <div data-item="wu-summary">
-    <p><b>In short:</b> compare three or four ways to build a Mac desktop app, and how each would read keel's state and drive it. Recommend one, with what it costs.</p>
+    <p><b>In short:</b> you chose Electron. Sketch the app's parts, and how each reads keel's state and runs keel. Name what Electron costs and how to keep that small.</p>
     <ul>
-      <li>Stacks: Tauri (Rust, the system web view), Electron, native SwiftUI, and a page that <code>keel</code> itself serves in a browser window. Size, effort, sharing keel's Rust code, showing today's HTML docs as they are, Windows and Linux later.</li>
-      <li>Talking to keel: run the CLI and read its output (a JSON output mode would be new), or link keel's code as a library. Talking to git: the <code>git</code> CLI, watching <code>refs/notes/*</code> and branch refs instead of polling.</li>
+      <li>The parts: the main process (runs commands, watches files, sends alerts) and the window (the screens). Packaging and signing on macOS; size; Windows and Linux later.</li>
+      <li>Talking to keel: run the CLI and read its output (a JSON output mode would be new), or a Node binding of keel's Rust code. Recommend one. Talking to git: the <code>git</code> CLI, watching <code>refs/notes/*</code> and branch refs instead of polling.</li>
       <li>Talking to the sessions: the router's inbox, <code>claude --bg</code> sessions (what Claude Code exposes: list, status, send), the watchdog's facts; DeepSeek Harness's worker tools as a second host.</li>
       <li>Alerts: macOS notifications at the desk; Telegram (<code>notify-owner.py</code>) kept for when you are away.</li>
-      <li>What a click signs with: your username, as <code>keel mr confirm</code> does today, or a key the app holds (DEC-48 deferred key-only signers).</li>
       <li>Safety: the app runs on your account, so it must not become a door for a worker (the router guard and the file guard stay as they are).</li>
     </ul>
   </div>
-  <p data-item="wu-maps-to">Your choice of a desktop app · W1's needs.</p>
-  <p data-item="wu-expected">A doc with the comparison table, one recommendation, and a sketch of the app's parts and what each reads or runs. Each claim about Claude Code or a stack is checked against its docs, with the date read. Tests waived: a doc, no code.</p>
+  <p data-item="wu-maps-to">Your choice of a desktop app, and of Electron (open point 3) · W1's needs.</p>
+  <p data-item="wu-expected">A doc with a sketch of the app's parts, what each reads or runs, and Electron's cost (size, packaging, updates). Each claim about Claude Code or a stack is checked against its docs, with the date read. Tests waived: a doc, no code.</p>
   <p data-item="wu-deps">W1</p>
 </div>
 
@@ -97,7 +96,7 @@
       <li>Fleet: the router, each worker (running, idle, stuck, gone), its worktree, branch, last report; the watchdog's view.</li>
       <li>Epics: each epic, its work units, each gate check, the review verdict, what is merged.</li>
       <li>Alerts: what notifies you, where, and when it stays quiet.</li>
-      <li>The review screen is W4's.</li>
+      <li>Each waiting item links out to its doc and its command (W4).</li>
     </ul>
   </div>
   <p data-item="wu-maps-to">W1's needs: notifications, the fleet dashboard, the dashboard.</p>
@@ -106,53 +105,56 @@
 </div>
 
 <div data-wu="E-LOCALTOOL.W4" data-c="wu-w4">
-  <h3 id="w4">W4 · Where you read and approve</h3>
+  <h3 id="w4">W4 · The hand-off to your browser and terminal</h3>
   <div data-item="wu-summary">
-    <p><b>In short:</b> the open question from your idea. Two or three ways to read a plan, a result and a diff, and to approve them, each as a mockup. You choose one.</p>
+    <p><b>In short:</b> you chose option B. The app alerts you and shows the state. You read in your browser and sign in your terminal, as today. W4 designs that hand-off, so no step makes you look for a file or type a long command from memory.</p>
     <ul>
-      <li>A · In the app: the doc as it renders today (htmldoc comments kept), the diff and the checks beside it, Sign off and Send back buttons.</li>
-      <li>B · The app alerts and links out: the doc in your browser, the sign-off in the terminal, as today.</li>
-      <li>C · Mixed: read in your browser, approve in the app.</li>
-      <li>Per option: how many places you visit for one sign-off; what happens to htmldoc and to E-DOCSPLIT's short pages; what a plan approval is (today: a message to the router).</li>
+      <li>Per waiting item (a plan, a result, a rule-file commit, a question): what the app opens (the doc file, with htmldoc's comments), and the command it shows ready to copy (<code>keel mr confirm …</code>, <code>keel mr commit …</code>).</li>
+      <li>Where you read a code diff: your terminal, your editor, or a static page. W4 compares and recommends one.</li>
+      <li>How the app sees that you acted: the sign-off note or the merge appears, and the item leaves your list.</li>
+      <li>A plan approval stays a message to the router; the app shows where to send it.</li>
+      <li>How E-DOCSPLIT's short pages fit: they open in the browser like any doc.</li>
     </ul>
   </div>
-  <p data-item="wu-maps-to">Your worry about review on GitHub · open point 1.</p>
-  <p data-item="wu-expected">A doc with one mockup per option and a side-by-side table, and your choice recorded. Tests waived: a doc, no code.</p>
+  <p data-item="wu-maps-to">Your worry about review on GitHub · your choice of option B (open point 1).</p>
+  <p data-item="wu-expected">A doc with, per waiting item, the link and the command, a mockup of the alert and the list's hand-off, and how the app sees you acted. Tests waived: a doc, no code.</p>
   <p data-item="wu-deps">W1</p>
 </div>
 
 <div data-wu="E-LOCALTOOL.W5" data-c="wu-w5">
-  <h3 id="w5">W5 · GitHub's future, E-GHSETUP, and the build order</h3>
+  <h3 id="w5">W5 · Retiring GitHub, closing E-GHSETUP, and the build order</h3>
   <div data-item="wu-summary">
-    <p><b>In short:</b> what to keep of the GitHub pieces on main, what becomes of the paused E-GHSETUP, and how to build the app in steps, smallest useful step first.</p>
+    <p><b>In short:</b> you dropped GitHub. List every GitHub piece on main, what replaces it on your Mac, and which later epic removes it. Then order the build of the app, smallest useful step first.</p>
     <ul>
-      <li>GitHub options: a backup copy only (push main, epics and notes; no required checks, no bot); a second opinion (the checks run, nothing waits on them); or gone. Effect of GitHub's 2026-12-02 <code>pull_request_target</code> change on each.</li>
-      <li>The pieces each option keeps or retires: the five flow workflows (the release workflow is separate), <code>ci-gate.sh</code>, <code>ci-sign-off.sh</code>, <code>router-gh.sh</code>, <code>router-gh-watch.sh</code>, <code>pages-build.sh</code>, <code>gh-settings-check.sh</code>, the <code>[github]</code> config, the <code>github</code> signer tier, DEC-60 – DEC-62 and DEC-64 – DEC-68, the github-flow backlog.</li>
-      <li>E-GHSETUP: close it as dropped, shrink it to a backup-copy setup, or resume. Its "list what is missing first" idea may move to the app's setup.</li>
+      <li>What to switch off first: the GitHub checks and the sign-off by approval. GitHub's 2026-12-02 <code>pull_request_target</code> change may break them before any removal.</li>
+      <li>The pieces to retire: the five flow workflows (the release workflow is separate), <code>ci-gate.sh</code>, <code>ci-sign-off.sh</code>, <code>router-gh.sh</code>, <code>router-gh-watch.sh</code>, <code>pages-build.sh</code>, <code>gh-settings-check.sh</code>, the <code>[github]</code> config, the <code>github</code> signer tier, DEC-60 – DEC-62 and DEC-64 – DEC-68, the github-flow backlog.</li>
+      <li>The release builds and where the code lives off your Mac: the options for open point 10, with the cost of each.</li>
+      <li>E-GHSETUP: closed as dropped (open point 7). Its "list what is missing first" idea may move to the app's setup.</li>
       <li>The build order: proposed implementation epics, each with its first use. Likely first: alerts and "waits on you", then the local sign-off and merge, then the dashboards.</li>
     </ul>
   </div>
-  <p data-item="wu-maps-to">Your worries: lock-in, slow loop · E-GHSETUP's pause.</p>
-  <p data-item="wu-expected">A doc with the options table, a recommendation per piece, the list of implementation epics in order, and your ruling on E-GHSETUP recorded. Tests waived: a doc, no code.</p>
+  <p data-item="wu-maps-to">Your worries: lock-in, slow loop · your "drop GitHub" (open point 6) · E-GHSETUP's pause.</p>
+  <p data-item="wu-expected">A doc with every GitHub piece, its local replacement and the epic that removes it; your answer on open point 10; the implementation epics in order. Tests waived: a doc, no code.</p>
   <p data-item="wu-deps">W1, W2, W4</p>
 </div>
 
 </div>
 
 <h2 id="open-points">Open points</h2>
-<p>Work goes on at these answers. Comment to overrule.</p>
+<p>Points 1 – 9 are answered by you (comments of 2026-11-17). Point 10 is open.</p>
 <table data-item="open-questions" data-c="open-points">
   <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
   <tbody>
-    <tr><td>1</td><td>Where do you read and approve plans, results and diffs?</td><td><b>In the app</b> (W4's option A) as the default to mock up first. You choose in W4</td><td>Review on GitHub is one of your worries. An app that only alerts keeps today's browser-and-terminal hops</td></tr>
-    <tr><td>2</td><td>Does the app decide anything itself?</td><td><b>No.</b> It shows keel's state and runs keel's commands. The gate, the notes and the sign-off stay in keel and its hooks</td><td>One judge. The terminal keeps working without the app, and the app cannot weaken the gate</td></tr>
-    <tr><td>3</td><td>Which stack?</td><td><b>Tauri</b>, unless W2 finds a blocker</td><td>Keel is Rust, so the app can share its code. The system web view shows today's HTML docs. Electron is heavy; SwiftUI is Mac-only and shares nothing</td></tr>
-    <tr><td>4</td><td>What does a Sign off click sign with?</td><td><b>Your username</b>, exactly as <code>keel mr confirm</code> does today. A key is W2's comparison</td><td>An ideas epic sets no new trust model; key-only signing was deferred (DEC-48)</td></tr>
-    <tr><td>5</td><td>Alerts when you are away from the Mac?</td><td><b>Telegram stays</b> for away; the app alerts at the desk</td><td>A desktop app cannot reach your phone. You asked to replace or complement Telegram</td></tr>
-    <tr><td>6</td><td>What is GitHub for, after the app?</td><td><b>A backup copy only</b>, to confirm in W5. The GitHub code on main stays until a later epic removes it</td><td>It meets every worry and keeps a copy off your Mac. Removing code is not an ideas epic's job</td></tr>
-    <tr><td>7</td><td>E-GHSETUP?</td><td><b>Stays paused until W5</b>, then most likely closed as dropped. Yours to rule</td><td>Its whole aim is GitHub setup, which open point 6 drops</td></tr>
-    <tr><td>8</td><td>Does the router stay a Claude Code session?</td><td><b>Yes.</b> The app shows it and passes your messages; it replaces only the watching and alerting around it</td><td>The router's judgment is the model's. The watch scripts and the notifier are the plumbing an app does better</td></tr>
-    <tr><td>9</td><td>One project or many?</td><td><b>Many</b>, a project list; designed on Keel first</td><td>Keel is meant for any project, and you may run two at once</td></tr>
+    <tr><td>1</td><td>Where do you read and approve plans, results and diffs?</td><td><b>Option B, your choice:</b> the app alerts and links out. You read in your browser and sign in your terminal, as today. W4 designs the hand-off</td><td>Your comment on W4. My pick, reading in the app, is withdrawn</td></tr>
+    <tr><td>2</td><td>Does the app decide anything itself?</td><td><b>No</b>, confirmed by you. It shows keel's state and runs keel's read commands. The gate, the notes and the sign-off stay in keel and its hooks</td><td>One judge. The terminal keeps working without the app, and the app cannot weaken the gate</td></tr>
+    <tr><td>3</td><td>Which stack?</td><td><b>Electron, your choice</b> ("let's try Electron this time"). W2 designs it</td><td>Your comment. My pick, Tauri, is withdrawn. Electron costs size and cannot link keel's Rust code directly, so the app runs keel's CLI; W2 names how to keep that small</td></tr>
+    <tr><td>4</td><td>What does a Sign off click sign with?</td><td><b>Your username</b>, as <code>keel mr confirm</code> does today; confirmed by you. With option B the app has no Sign off button: you type that command</td><td>An ideas epic sets no new trust model; key-only signing was deferred (DEC-48)</td></tr>
+    <tr><td>5</td><td>Alerts when you are away from the Mac?</td><td><b>Telegram stays</b> for away; the app alerts at the desk. Confirmed by you</td><td>A desktop app cannot reach your phone. You asked to replace or complement Telegram</td></tr>
+    <tr><td>6</td><td>What is GitHub for, after the app?</td><td><b>Nothing: dropped</b>, your comment on W5 ("Drop GH"). W5 plans the retirement; the GitHub code on main stays until a later epic removes it</td><td>Your comment overrules my pick, a backup copy only. Removing code is not an ideas epic's job</td></tr>
+    <tr><td>7</td><td>E-GHSETUP?</td><td><b>Closed as dropped</b>, confirmed by you; W5 records it</td><td>Its whole aim is GitHub setup, which you dropped</td></tr>
+    <tr><td>8</td><td>Does the router stay a Claude Code session?</td><td><b>Yes</b>, confirmed by you. The app shows it and passes your messages; it replaces only the watching and alerting around it</td><td>The router's judgment is the model's. The watch scripts and the notifier are the plumbing an app does better</td></tr>
+    <tr><td>9</td><td>One project or many?</td><td><b>Many</b>, a project list; designed on Keel first. Confirmed by you</td><td>Keel is meant for any project, and you may run two at once</td></tr>
+    <tr><td>10</td><td>Does dropping GitHub also drop the release builds and the code's only copy off your Mac?</td><td><b>Open, yours.</b> Options: (a) keep both on GitHub until a replacement exists; the flow alone drops it. (b) A plain git remote elsewhere (a server, a disk) for the copy, and releases built on your Mac. (c) No remote and no releases for now. W5 gives the cost of each</td><td>Keel's releases (<code>release.yml</code>) and its one off-Mac copy live on GitHub. Your comment did not say whether they go too</td></tr>
   </tbody>
 </table>
 
@@ -163,8 +165,8 @@
   <li>Five design docs under <code>docs/work/</code>, one per work unit, each green under <code>keel verify-doc</code> and approved by you.</li>
   <li>Every job named in W1's table has a row: taken over, a button, or left, with its source file.</li>
   <li>Every must-have need appears on a W3 or W4 screen, and every screen field names its source or is marked new.</li>
-  <li>One stack is recommended, with its cost and how it reads keel, git and the sessions.</li>
-  <li>Your choices are recorded: the review option (W4), GitHub's role and E-GHSETUP (W5).</li>
+  <li>The Electron app's parts are sketched, with their cost and how each reads keel, git and the sessions.</li>
+  <li>Every waiting item has its link and its command (W4). Every GitHub piece has a replacement and a removing epic, and open point 10 has your answer (W5).</li>
   <li>A list of implementation epics, in order, sits in the backlog.</li>
   <li>No file under <code>src/</code>, <code>tests/</code>, <code>scripts/</code> or <code>.github/</code> changes.</li>
 </ul>
@@ -175,7 +177,7 @@
 <h3 id="non-goals-h">Out of scope</h3>
 <ul data-item="non-goals" data-c="non-goals">
   <li>Any code: no app, no running prototype, no change to keel, the scripts or the workflows.</li>
-  <li>Changing a GitHub setting or removing a GitHub piece. W5 recommends; a later epic acts.</li>
+  <li>Changing a GitHub setting or removing a GitHub piece. W5 plans it; a later epic acts.</li>
   <li>A phone app.</li>
   <li>E-DOCSPLIT's doc split; this plan uses today's format.</li>
   <li>Replacing the router with the app (open point 8).</li>
@@ -194,9 +196,9 @@
 <h3 id="close-h">At the close</h3>
 <ul data-item="distillation-plan" data-c="distillation-plan">
   <li>A new T1 doc, <code>docs/local-app.html</code>: the needs, the chosen stack, the screens. It is the implementation epics' source until the app exists. A rule-bearing path: your commit.</li>
-  <li>The decisions: one record for the app (judges nothing, the stack, GitHub's role), at the next free DEC id, checked against every live branch.</li>
+  <li>The decisions: one record for the app (judges nothing, Electron, review in your browser and terminal, GitHub dropped), at the next free DEC id, checked against every live branch. DEC-60 – DEC-62 and DEC-64 – DEC-68 are marked replaced when the retiring epic lands.</li>
   <li>The backlog: a new <code>docs/backlog/local-app.html</code> with the implementation epics in order; github-flow rows re-pointed or struck by W5's ruling.</li>
-  <li><code>docs/architecture.html</code>, "GitHub": one line on GitHub's new role, if you changed it.</li>
+  <li><code>docs/architecture.html</code>, "GitHub": one line saying it is dropped, and which epic removes it.</li>
 </ul>
 
 <h3 id="today-flow">What today's flow does, and the app's likely part</h3>
@@ -205,17 +207,17 @@
   <thead><tr><th>Piece</th><th>What it does for you today</th><th>Likely part for the app</th></tr></thead>
   <tbody>
     <tr><td><code>keel verify-dod</code>, git hooks</td><td>The gate, at every merge and push</td><td>Left as is; the app shows its result</td></tr>
-    <tr><td><code>keel mr confirm</code>, <code>keel mr commit</code></td><td>Your sign-off and your rule-file commits, typed in a terminal</td><td>A button over the same command</td></tr>
+    <tr><td><code>keel mr confirm</code>, <code>keel mr commit</code></td><td>Your sign-off and your rule-file commits, typed in a terminal</td><td>Left: you type it; the app shows it ready to copy</td></tr>
     <tr><td><code>refs/notes/*</code></td><td>The evidence: tests, docs, review, sign-off, receipt</td><td>Read for the epic screen</td></tr>
     <tr><td><code>router-worker.sh</code> and the watchdog</td><td>Start and stop workers; a check on them every 5 minutes</td><td>Left; the app shows what they report</td></tr>
     <tr><td><code>router-inbox.sh</code>, <code>router-watch.sh</code></td><td>Workers' messages to the router; the router waits for your commit, sign-off, merge or push</td><td>The app's event source, or replaced by it</td></tr>
     <tr><td><code>notify-owner.py</code></td><td>Telegram message when you must act</td><td>Kept for away; desktop alerts added</td></tr>
-    <tr><td>htmldoc</td><td>Docs in a browser, with comments and versions on a server</td><td>W4 decides</td></tr>
+    <tr><td>htmldoc</td><td>Docs in a browser, with comments and versions on a server</td><td>Kept: the app opens docs there</td></tr>
     <tr><td><code>keel-gate.yml</code>, <code>ci-gate.sh</code></td><td>The gate again, on GitHub, as required checks</td><td>Replaced by the local gate</td></tr>
     <tr><td><code>keel-sign-off.yml</code>, <code>ci-sign-off.sh</code>, auto-merge</td><td>Your approval becomes the sign-off; GitHub merges</td><td>Replaced by the local sign-off and merge</td></tr>
-    <tr><td><code>router-gh.sh</code>, <code>router-gh-watch.sh</code></td><td>The bot pushes and opens pull requests; the router hears your reviews and comments</td><td>Replaced by the app's messages; push kept only for a backup copy</td></tr>
-    <tr><td><code>pages-build.sh</code>, Pages</td><td>Every branch's docs on a website</td><td>Replaced by the app's doc view</td></tr>
-    <tr><td><code>gh-settings-check.sh</code></td><td>Checks GitHub's settings</td><td>Not needed for a backup copy</td></tr>
+    <tr><td><code>router-gh.sh</code>, <code>router-gh-watch.sh</code></td><td>The bot pushes and opens pull requests; the router hears your reviews and comments</td><td>Replaced by the app's messages</td></tr>
+    <tr><td><code>pages-build.sh</code>, Pages</td><td>Every branch's docs on a website</td><td>Replaced: docs open from disk in your browser</td></tr>
+    <tr><td><code>gh-settings-check.sh</code></td><td>Checks GitHub's settings</td><td>Retired with GitHub</td></tr>
   </tbody>
 </table>
 
@@ -223,23 +225,25 @@
 <div class="diagram" data-c="shape-diagram">
 <pre class="mermaid">
 flowchart LR
-  O["You"] -->|"read, click"| A["Desktop app"]
-  A -->|"runs"| K["keel: gate, notes, sign-off"]
+  A["Desktop app"] -->|"alerts, links"| O["You"]
+  O -->|"read docs"| B["Browser: htmldoc"]
+  O -->|"type the sign-off"| X["Terminal"]
+  X -->|"runs"| K["keel: gate, notes, sign-off"]
+  A -->|"runs read commands"| K
   A -->|"reads"| G["git: branches and notes"]
   A -->|"shows, messages"| R["Router session"]
   R -->|"starts"| W["Workers"]
   W -->|"commit, notes"| G
   K -->|"reads, writes"| G
   A -.->|"alerts when away"| T["Telegram"]
-  G -.->|"backup copy"| H["GitHub"]
 </pre>
-<div class="caption">The app is a view and buttons. Keel judges. GitHub, if kept, only holds a copy.</div>
+<div class="caption">The app shows and alerts. You read in your browser and sign in your terminal. Keel judges. No GitHub.</div>
 </div>
 
 <h3 id="overlap">Overlap with the other epics</h3>
 <ul data-c="overlap">
-  <li>E-GHSETUP: paused; W5 recommends its fate. Nothing here edits its files.</li>
-  <li>E-DOCSPLIT: changes the docs the app would show. W4 states how each review option reads a short page; no file overlap.</li>
+  <li>E-GHSETUP: closed as dropped (open point 7); closing it is the router's and your step. Nothing here edits its files.</li>
+  <li>E-DOCSPLIT: changes the docs you open in the browser. W4 states how its short pages fit; no file overlap.</li>
   <li>DEC ids: E-DOCSPLIT and this epic may each mint one; check every live branch first.</li>
 </ul>
 
