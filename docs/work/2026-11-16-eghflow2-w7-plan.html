@@ -3,205 +3,200 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Keel — E-GHFLOW2.W7 plan: waivers and roster changes from the pull request</title>
+  <title>Keel — E-GHFLOW2.W7 plan: your approval accepts all</title>
 </head>
 <body>
   <header class="doc-hero">
     <div class="inner">
-      <h1>E-GHFLOW2.W7 · Waivers and roster changes from the pull request</h1>
-      <p>Three sign-off decisions still need your Mac: waiving a review, accepting a waiver the review wrote, and signing a change to who may sign. After W7 you make each one on GitHub, in the text of your approval. You see the same preview the typed command shows, and you confirm it with its code.</p>
-      <div class="meta">Ready v1 · 2026-11-16 · T3 · WU plan · Keel · off epic/E-GHFLOW2 366a9eb (after landing 3) · epic plan: git show 738c795:docs/work/2026-11-15-eghflow2-plan.html (archived) · plan only: no build before your go</div>
+      <h1>E-GHFLOW2.W7 · Your approval accepts all</h1>
+      <p>Today your approval on GitHub cannot sign a pull request whose review did not pass, or one that changes who may sign. After W7 it can. Approving is the whole decision, and the sign-off records what you approved over.</p>
+      <div class="meta">Ready v2 · 2026-11-17 · T3 · WU plan · Keel · off epic/E-GHFLOW2 366a9eb (after landing 3) · replaces v1 (737cd09) by your ruling of 2026-11-17 · epic plan: git show 738c795:docs/work/2026-11-15-eghflow2-plan.html (archived) · plan only: no build before your go</div>
     </div>
   </header>
   <main>
     <h2 id="problem">The problem</h2>
-    <p data-c="problem">Your approval signs most pull requests now. It cannot sign three kinds: one whose review did not pass, one whose review its round limit waived, and one that changes who may sign. For each, the approval's status turns red and tells you to type the sign-off at your Mac. So the decisions that most need your eyes are the ones you cannot make from your phone.</p>
+    <p data-c="problem">Your approval signs most pull requests now. It refuses three kinds: a review that failed or never ran, a review its round limit gave up on, and a change to who may sign. For each, you must go to your Mac and type the sign-off. Plan v1 moved those decisions into extra lines and codes in your approval. You ruled that too complicated: the approve button should accept all.</p>
 
     <h2 id="changes">What changes for you</h2>
     <table data-c="changes" data-item="owner-changes">
-      <tr><th>You want to</th><th>Today</th><th>After W7 is on main</th></tr>
-      <tr><td>Skip a review, or stop one that did not pass</td><td>Two typed commands at your Mac</td><td>Approve with the line <code>/keel waive-review</code> and your reason. Then approve again with the line the status gives you</td></tr>
-      <tr><td>Accept the waiver a review wrote when it hit its round limit</td><td>Two typed commands</td><td>Approve. Then approve again with the line the status gives you</td></tr>
-      <tr><td>Sign a change to who may sign</td><td>A typed sign-off with a flag</td><td>Approve. Then approve again with the line the status gives you</td></tr>
-      <tr><td>See what you are agreeing to</td><td>The typed command prints it</td><td>The same text, in the sign-off run that the status's Details link opens</td></tr>
+      <tr><th>The pull request has</th><th>Today</th><th>After W7 is on main</th></tr>
+      <tr><td>A review that failed, never ran, or reviewed older code</td><td>The gate is red. You type a waiver at your Mac, in two steps</td><td>The gate says "your approval decides". You approve. It merges</td></tr>
+      <tr><td>A review the round limit gave up on</td><td>You type the sign-off, accepting the waiver with its code</td><td>You approve. It merges</td></tr>
+      <tr><td>A change to who may sign</td><td>You type the sign-off with a roster-change flag</td><td>You approve. It merges</td></tr>
+      <tr><td>A red build, test or doc check</td><td>Blocked</td><td>Still blocked</td></tr>
     </table>
-    <p>Nothing else changes. No new workflow, no new permission, no new GitHub setting. The typed commands stay as the fallback.</p>
+    <p>The sign-off note says what your approval covered: the review's state, and any change to who may sign. The status on the pull request says it too. The typed commands at your Mac stay as they are.</p>
+    <p>You decide: say go, or overrule one of the seven open points below.</p>
 
-    <h2 id="example">Example: you skip the review of a landing</h2>
+    <h2 id="example">Example: a WU whose review failed</h2>
     <ol data-c="example">
-      <li>The epic's pull request into main is ready. You chose to skip its code review, so no review ran.</li>
-      <li>You approve, and in the approval's text box you write <code>/keel waive-review landing only; tested by hand</code>.</li>
-      <li>The sign-off runs. It writes nothing. Its status turns yellow: "Waiver preview (Details): approve with <code>/keel confirm-waiver 3f2a9c01b7de</code>".</li>
-      <li>Details opens the run. Its log shows what the typed preview shows: your reason, what the review left open, and every review note on the branch.</li>
-      <li>You approve again, with the text <code>/keel confirm-waiver 3f2a9c01b7de</code>.</li>
-      <li>The sign-off writes the waiver and your sign-off together, and the status turns green. The router takes both notes and refreshes the pull request, so the gate runs again and turns green. GitHub merges.</li>
+      <li>A WU's code review fails on one finding you think is wrong.</li>
+      <li>You open its pull request on your phone. The build, tests and docs are green. The gate is green too, and its page says "the review did not pass: your approval decides", with the finding.</li>
+      <li>You approve.</li>
+      <li>The sign-off is written. Its note records "approved over a failed review". The sign-off status turns green: "Signed by approval, over a review that did not pass".</li>
+      <li>GitHub merges.</li>
     </ol>
-    <p>The other two decisions start at step 3: your plain approval gets the preview and the line, <code>/keel accept-waiver &lt;code&gt;</code> or <code>/keel roster-change &lt;code&gt;</code>.</p>
 
     <h2 id="terms">Terms</h2>
     <table data-c="terms">
       <tr><th>Term</th><th>Meaning</th></tr>
-      <tr><td>Approval text</td><td>The text box GitHub shows when you approve a pull request (on the phone too). Today the sign-off ignores it.</td></tr>
       <tr><td>The writer</td><td>The sign-off run GitHub starts from main after any review. It turns your approval into the sign-off note and sets the <code>keel/sign-off</code> status.</td></tr>
-      <tr><td>Preview and code</td><td>What you are about to accept, and a 12-character code made from exactly that text. If anything in it changes, the code changes and the old code stops working.</td></tr>
+      <tr><td>The gate</td><td><code>keel/gate</code> on GitHub, and <code>keel verify-dod</code> on your Mac: checks 1 to 8.</td></tr>
+      <tr><td>The roster</td><td><code>.keel/mr-allowed</code>, the committed list of who may sign. The base branch's copy decides.</td></tr>
+      <tr><td>Covered</td><td>A review check that failed but no longer blocks, because an approval signed the tip. The gate prints it as a WAIVED line, naming the approval.</td></tr>
     </table>
 
     <h2 id="work">The work</h2>
-    <p data-item="requirement">On a Keel pull request on GitHub, a reviewer whose id the base's roster lists under the github tier can waive the head's review, accept a waiver the review's round limit wrote, or sign a change to the roster, by approving the head commit with a <code>/keel</code> line in the approval text; the existing sign-off writer then writes exactly the notes the typed <code>keel mr confirm</code> writes for that decision, and only after the reviewer gave back the code of a preview that matches what the writer computes from the current notes.</p>
-    <p data-item="maps-to">E-GHFLOW2.W7 (epic plan, W7 card; the epic test's step 7, reworded below). E-GHFLOW open point 12. UC-MR (amended at the close: waivers and roster changes by approval text). DEC-49 and DEC-47 (amended at the close). Backlog github-flow G1 (E-GHFLOW W8's row).</p>
+    <p data-item="requirement">On a Keel pull request on GitHub, an approval of the head commit by a github-tier signer that the base's committed roster lists signs the tip even when its review failed, is missing, reviewed other code or was waived by the round limit, and even when the range changes the roster; the sign-off note records the review state and the roster lines it covered; every other check still blocks the merge.</p>
+    <p data-item="maps-to">E-GHFLOW2.W7, re-scoped by your ruling of 2026-11-17 (the epic plan's W7 card: waivers from GitHub). E-GHFLOW open point 12. UC-MR-1, DEC-47, DEC-49 and DEC-60, each amended at the close. Backlog github-flow G1 (E-GHFLOW W8's row) and G7 (one item, below). W5 (try-it) is dropped by the same ruling.</p>
 
-    <h3 id="part-a">A · The sign-off reads your approval text</h3>
-    <p><b>In short:</b> <code>keel ci sign-off</code> already gets every review of the pull request, as GitHub lists it. It now also reads the text of one review: the newest review of the head commit by the signer whose approval it signs. A line in it starting <code>/keel</code> is a decision. The preview and its code come from the very functions the typed command uses.</p>
+    <h3 id="part-a">A · The writer signs over the review and the roster</h3>
+    <p><b>In short:</b> <code>keel ci sign-off</code> stops refusing for the review and for a roster change. It still requires everything else green. It records what it covered in the note.</p>
     <table data-c="part-a">
       <tr><th>#</th><th>Item</th><th>How</th></tr>
-      <tr><td>A1</td><td>Whose text</td><td>The signer is the one the writer picks today: a github-tier id in the base's roster whose latest decision approves the head. Only that signer's reviews of the head commit (GitHub's <code>commit_id</code>) are read, newest first. Anyone else's text is never parsed.</td></tr>
-      <tr><td>A2</td><td>The lines</td><td>Every line of the newest such review (any state) that starts with <code>/keel</code>, after spaces. The keyword and verb in any case; words split on spaces and tabs; CRLF read as LF. Verbs: <code>waive-review &lt;reason&gt;</code>, <code>confirm-waiver &lt;code&gt;</code>, <code>accept-waiver &lt;code&gt;</code>, <code>roster-change &lt;code&gt;</code>. A code is 12 hex digits. A reason is the rest of its line: printable, no control character, at most 500 characters, not blank. At most one line per verb, and never both <code>waive-review</code> and <code>confirm-waiver</code> or <code>accept-waiver</code>. Anything else starting <code>/keel</code> refuses the run with why; other text is ignored.</td></tr>
-      <tr><td>A3</td><td>Roster change</td><td>A range that changes <code>.keel/mr-allowed</code>: without <code>roster-change &lt;code&gt;</code>, keel prints the added and removed lines (the typed refusal's list) and the line to approve with. The code is a hash of the tip, the base and those lines. Checked first, as the typed command does.</td></tr>
-      <tr><td>A4</td><td>A waiver the round limit wrote</td><td>The head's review note is WAIVED by the review tool: without <code>accept-waiver &lt;code&gt;</code>, keel prints the typed listing and the line. With the right code it signs, carrying the waiver's hash (<code>waiver_hash</code>), as <code>--accept-waiver</code> does.</td></tr>
-      <tr><td>A5</td><td>Your own waiver</td><td><code>waive-review &lt;reason&gt;</code>: keel checks everything but the review is green (the typed waiver's rule), builds the waiver note it would write, prints the listing and the line, and writes nothing. <code>confirm-waiver &lt;code&gt;</code>: the reason is taken from the signer's newest earlier review of the head that holds <code>waive-review</code>; keel rebuilds the preview from the notes as they are now, and with a matching code writes the WAIVED review note and the sign-off in one transaction, as <code>--confirm-waiver</code> does. Refused over a review that passed, as typed.</td></tr>
-      <tr><td>A6</td><td>No line</td><td>As today. A review that did not pass is refused, now with the line to use: <code>/keel waive-review &lt;reason&gt;</code>.</td></tr>
-      <tr><td>A7</td><td>Exit codes</td><td>0 signed · 1 refused, nothing written · 2 keel failed (usage, an unreadable file, git), new: today a failure exits 1 like a refusal · 3 no approval to sign · 4 already signed · 5 your decision is needed, nothing written, new: the last stdout line is the line to approve with.</td></tr>
+      <tr><td>A1</td><td>Sign last, but the review</td><td><code>sign_off</code> calls <code>gate::sign_ready</code> with the review not required: the path the typed <code>--waive-review</code> already uses. Checks 1, 2, 6 and 7 must be green. Only the review (the cr note and checks 3 to 5) is left out.</td></tr>
+      <tr><td>A2</td><td>Refusals dropped</td><td>Three: a review that is not green (today "a check before the sign-off is red"), a range that changes the roster (today "signed by the typed <code>--roster-change</code>"), and a review the tool waived (today "accepted by the typed <code>--accept-waiver</code>").</td></tr>
+      <tr><td>A3</td><td>The review's state</td><td>One new function in <code>src/gate.rs</code> runs the review checks alone on the tip and names the first problem: <code>missing</code>, <code>unreadable</code>, <code>FAIL</code>, <code>WAIVED</code>, or <code>stale</code> (a review of another base or other code). None when the review is green.</td></tr>
+      <tr><td>A4</td><td>The record</td><td>A new optional field on mr/v1: <code>covers: {review, cr, roster}</code>. <code>review</code>: the state from A3. <code>cr</code>: <code>sha256:</code> of the cr note's bytes at signing, or absent. <code>roster</code>: the added and removed lines, as the typed refusal lists them. Written only when one is non-empty, so a plain approval's note is byte-for-byte today's. <code>waiver_hash</code> stays empty on an approval.</td></tr>
+      <tr><td>A5</td><td>Already signed: an approval note</td><td>A tip that already has a github-tier note counts as signed only when GitHub's review list, which the writer already reads, holds that review: same id, by that signer, APPROVED, on the head. Otherwise refused. New: today the note is taken at its word.</td></tr>
+      <tr><td>A6</td><td>Already signed: a typed note</td><td>Counts as signed only when the review checks are also green, a WAIVED review accepted by the typed flag included, as the typed sign-off requires. A typed sign-off never gets the approval's cover.</td></tr>
+      <tr><td>A7</td><td>Kept</td><td>Who may approve (see “Why this is safe”), the landed check, the report rules, "no roster on the base signs nothing", and "an approval never replaces a sign-off". The exit codes stay 0, 1, 3 and 4.</td></tr>
     </table>
 
-    <h3 id="part-b">B · The writer script shows the line and pushes both notes</h3>
-    <p><b>In short:</b> <code>scripts/ci-sign-off.sh</code> maps the two new exits, links the status to its run, and pushes the review note with the sign-off when it wrote both. Its workflow file does not change.</p>
+    <h3 id="part-b">B · The gate counts the review as covered</h3>
+    <p><b>In short:</b> on GitHub the gate runs before you approve, and does not run again when a note arrives. So it treats the review the way it treats the sign-off today: judged by <code>keel/sign-off</code>. On your Mac, and in the epic's walk, a review is covered when an approval signed that tip.</p>
     <table data-c="part-b">
       <tr><th>#</th><th>Item</th><th>How</th></tr>
-      <tr><td>B1</td><td>Exit 5</td><td><code>keel/sign-off</code> pending: "Your decision (Details): approve with <code>&lt;line&gt;</code>". The line must match one fixed shape (a verb of A2 and 12 hex digits, or the waive-review hint); anything else is exit 2's handling.</td></tr>
-      <tr><td>B2</td><td>Exit 2 and any unknown exit</td><td><code>keel/sign-off</code> error, the run fails. Never read as "nothing to sign".</td></tr>
-      <tr><td>B3</td><td>Details link</td><td>Every status links to its run: <code>https://github.com/&lt;repo&gt;/actions/runs/&lt;id&gt;</code>, the id from the runner's own <code>GITHUB_RUN_ID</code>, digits only, else no link.</td></tr>
-      <tr><td>B4</td><td>Both notes</td><td>When keel wrote a review note too, one <code>git push --atomic</code> of <code>refs/notes/cr</code> and <code>refs/notes/mr</code>. If GitHub's review note on the head is no longer the one read at the start, nothing is pushed and the status says to approve again. Otherwise a moved ref is merged in, keeping ours, as today for the sign-off alone.</td></tr>
-      <tr><td>B5</td><td>Text</td><td>Control characters are stripped from every status and from keel's output before the log; keel's listing already escapes them.</td></tr>
+      <tr><td>B1</td><td>Mark the review's failures</td><td>Each failure from the review checks is marked as the review's: the missing or unreadable cr note (still printed under <code>1·notes</code>), <code>3·review</code>, <code>4·review-base</code>, <code>5·diff-binding</code>. The ids and texts do not change.</td></tr>
+      <tr><td>B2</td><td>On GitHub</td><td><code>ci::red_before_sign_off</code> ignores the review's failures, as it ignores <code>8·manual-review</code>. <code>keel/gate</code> is green when only those fail. Its page says "the review did not pass: the owner's approval decides", and lists the failures.</td></tr>
+      <tr><td>B3</td><td>On your Mac</td><td>In <code>gated()</code>: when check 8 passes on a note by approval (github tier, carrying a review), the review's failures become WAIVED lines: "review covered by the approval of &lt;signer&gt; (review &lt;id&gt;)". A typed note never covers them.</td></tr>
+      <tr><td>B4</td><td>The walk (check 7)</td><td>A WU seam red only on its review is covered when check 8 accepts an approval note on that WU's tip, judged against the seam's first parent, as the pre-push walk judges a seam. Otherwise the epic stays red, as today.</td></tr>
+      <tr><td>B5</td><td>Check 8</td><td>For a note by approval only, the waiver rule (<code>waiver_drift</code>) is not applied: the approval covers the review as a whole, whatever it says later. Typed notes keep the rule unchanged.</td></tr>
+      <tr><td>B6</td><td>The receipt</td><td>dod/v1 records <code>review: "COVERED"</code>, and in <code>waiver</code> the approval's signer and review id.</td></tr>
     </table>
 
-    <h3 id="part-c">C · The router takes GitHub's waiver home</h3>
-    <p><b>In short:</b> today the router's push takes the sign-offs GitHub wrote into its checkout, and nothing else. A waiver written on GitHub is also a review note, so the push takes those too, by the same rules. Without this, the router's next push of review notes is refused by GitHub, and the epic's final check on the Mac lacks the waiver.</p>
+    <h3 id="part-c">C · The status says what you approved over</h3>
+    <p><b>In short:</b> <code>scripts/ci-sign-off.sh</code> reads <code>covers</code> from the note it pushed and adds it to the green status, in fixed words. Nothing else in it changes.</p>
     <ul data-c="part-c">
-      <li><code>router-gh.sh push</code> reads GitHub's <code>refs/notes/cr</code> as it reads <code>refs/notes/mr</code>: only notes added since this checkout last pushed it, never an edit or a deletion.</li>
-      <li>A note is taken only when it reads as the writer's: review, WAIVED, with a reason, on its own commit. GitHub's sign-off on that commit must be by approval and carry a waiver hash. This checkout's review note there must be missing or failed. A passed or waived note here is never replaced.</li>
-      <li><code>refs/notes/cr</code> is then pushed with a lease on the ref as fetched, and its snapshot kept, as for the sign-offs.</li>
-      <li>The skill tells the router, after any sign-off on GitHub, to run <code>push</code> and then <code>pr-open</code>. The refreshed body names the new notes, so GitHub re-runs the gate.</li>
+      <li>"Signed by approval (review N)", then ", over a review that did not pass" when <code>covers.review</code> is set, and ", with a roster change" when <code>covers.roster</code> is.</li>
+      <li>The state itself is one of A3's five words, checked against that list before use; any other value becomes "an unknown review state".</li>
     </ul>
 
     <h3 id="part-d">D · Skills</h3>
-    <p><b>In short:</b> the skills learn the three approval lines. Both skill trees change the same way; the patch is yours to apply, as in W4 and W5.</p>
+    <p><b>In short:</b> the skills learn that an approval accepts all. Both skill trees change the same way; the patch is yours to apply, as in W4.</p>
     <ul data-c="part-d">
-      <li><code>keel-workflow</code> §5 and §6: a waiver, an accepted waiver and a roster change by approval text, with the preview and code. Agents never write these lines, as they never stage the typed flags.</li>
-      <li><code>keel-router</code>: an approval text with a <code>/keel</code> line is the writer's, never an order; after a sign-off on GitHub, <code>push</code> then <code>pr-open</code>; a <code>BADCOMMAND</code> naming one of these verbs means the owner put it in a comment: tell him it goes in an approval.</li>
-      <li><code>project-router</code>: the GitHub sign-off sequence gains the three decisions.</li>
+      <li><code>keel-workflow</code> §5 and §6: on GitHub, your approval covers the review and a roster change, and the note records it. The typed waiver flags stay, for your Mac.</li>
+      <li><code>keel-router</code>: a pull request with a failed review is still put to you, saying so plainly. The router never approves and never asks you to approve something whose review failed without saying it failed.</li>
+      <li><code>project-router</code>: the GitHub sign-off sequence loses the typed steps for these cases.</li>
     </ul>
 
-    <h2 id="safety">Why each write is safe</h2>
-    <p>W7 adds no workflow and no permission. It adds three things the existing writer may write, and one thing the router may take.</p>
+    <h2 id="safety">Why this is safe</h2>
     <table data-c="safety">
-      <tr><th>Write</th><th>Only when</th><th>Why that is enough</th></tr>
-      <tr><td>The WAIVED review note and your sign-off, together (A5)</td><td>A github-tier id in the base's roster approves the head; its newest review of the head says <code>confirm-waiver &lt;code&gt;</code>; the code equals the preview keel builds now, from that signer's earlier reason and the notes on GitHub; every check but the review is green.</td><td>The code is the typed command's code, made by the same function from the same listing. A new review round, a new commit, a changed reason or another base changes it, so you confirm exactly what you were shown. The two notes land in one transaction and one atomic push, or not at all.</td></tr>
-      <tr><td>A sign-off accepting the round limit's waiver (A4)</td><td>The same approval, with <code>accept-waiver &lt;code&gt;</code> matching the typed accept code.</td><td>As typed: the hash of the whole waiver goes into the note, and check 8 rebuilds it.</td></tr>
-      <tr><td>A sign-off of a roster change (A3)</td><td>The same approval, with <code>roster-change &lt;code&gt;</code> over the tip, the base and the changed lines.</td><td>A new line in the range, or a moved head, changes the code. The base's roster judges the signer, never the head's.</td></tr>
-      <tr><td>The pending status with the line (B1)</td><td>keel exits 5 and its line has the fixed shape.</td><td>Status write is the token's existing right. The text is built from fixed words and hex digits. The link is built by the script, not taken from any text.</td></tr>
-      <tr><td>The router taking GitHub's waiver (C)</td><td>Writer-shaped, add-only since the last push, over a missing or failed note only, beside a sign-off by approval with a waiver hash.</td><td>The same trust as the sign-offs it already takes (backlog github-flow G7): anyone who can write GitHub's notes can already forge a sign-off by approval. Check 8 on the Mac still rebuilds the waiver hash from the note.</td></tr>
-    </table>
-    <p>What does not change, and still holds: the writer runs main's code, from <code>workflow_run</code>, which GitHub takes from main. It builds keel from main. The base and the head are git data only, never built or run. Its token writes contents and statuses, and reads pull requests. Event values reach the script only through <code>env:</code>, and it re-reads the pull request and every review from GitHub.</p>
-
-    <h3 id="lessons">W5's lessons, one by one</h3>
-    <table data-c="lessons">
-      <tr><th>Lesson</th><th>Here</th></tr>
-      <tr><td>A new <code>issue_comment</code> workflow runs main's code, with the least token, and re-reads everything</td><td>No new workflow. The writer already meets each part.</td></tr>
-      <tr><td>Group runs per pull request, commenter and command, so no one cancels yours</td><td>The writer's group is per head commit and never cancels a running job. A newer review may replace a waiting run. That loses nothing: each run judges the whole pull request as GitHub holds it then, never the event that started it.</td></tr>
-      <tr><td>Filter the job on a User and the author's association</td><td>Nothing to filter: a stranger's review starts a run that finds no command it may read, as today. Only the roster's ids are read.</td></tr>
-      <tr><td>The comment names the full head sha</td><td>Not needed. GitHub records the commit each review was made on, and only reviews of the head count. The code binds the tip as well.</td></tr>
-      <tr><td>Refuse re-runs</td><td>Not needed, for the same reason as the group: a re-run reads the current state, as a new run would.</td></tr>
-      <tr><td>Strip control characters before any log or status</td><td>B5; a reason with one is refused (A2).</td></tr>
-      <tr><td>Map every keel exit; an error is never "nothing to do"</td><td>A7, B2: keel's failures get their own exit, 2.</td></tr>
-      <tr><td>Rule-bearing files staged, never committed, after an independent security review</td><td>Yes: the list below.</td></tr>
-      <tr><td>Lock every workflow added or changed</td><td>None is. The exact-lines lock on <code>keel-sign-off.yml</code> stays as it is, which proves it.</td></tr>
-      <tr><td>No new parser of untrusted text</td><td>The only text read is the roster signer's own, split into lines and words. No HTML, no Markdown.</td></tr>
-    </table>
-
-    <h3 id="simpler">Is there a simpler design?</h3>
-    <p>This is the simpler one. The epic plan's card asked for a comment workflow that posts the preview, then mentions you, labels the pull request and lists it on the tracking issue.</p>
-    <table data-c="simpler">
-      <tr><th>Design</th><th>Cost</th><th>Verdict</th></tr>
-      <tr><td>A second workflow on comments posts the preview as a comment (the epic plan)</td><td>A new write-token workflow, an Actions policy line, a comment parser, the full head sha in each comment, a run group, a re-run guard: W5's five review rounds</td><td>Rejected</td></tr>
-      <tr><td>Comments that only the writer reads</td><td>No new workflow, but the writer must read comments too, and each comment must name the full head sha, since a comment is bound to no commit</td><td>Rejected: more text to parse, and a sha to type</td></tr>
-      <tr><td>Lines in your approval text (this plan)</td><td>One more approval per decision. The review is already bound to its commit, already re-read by id, already judged by the roster</td><td>Chosen</td></tr>
+      <tr><th>Question</th><th>Answer</th></tr>
+      <tr><td>Who can approve?</td><td>Only a GitHub id that the base branch's committed roster lists under the github tier: today, you (5499546). Never a key holder, who signs by typing. Never by the head's roster, so a branch cannot add its own signer. The approval must be your latest decision and be on the head commit. A change request by any listed id blocks.</td></tr>
+      <tr><td>Why may a failed review no longer block?</td><td>Your ruling: the review advises you, and you take responsibility for what you approve. The gate still shows the failure on the pull request before you approve, and the note records it after.</td></tr>
+      <tr><td>What still blocks a merge on GitHub?</td><td>Every required check but the review. <code>keel/ci</code> (the build and the tests), <code>keel/docs</code>, and <code>keel/gate</code> on everything else: the test note and its layer, the doc note, the walk, the hooks. <code>keel/sign-off</code> until a listed id approves. A required result report that is missing, or only in a note. A base that already holds the tip. A sign-off already there that check 8 refuses. A base with no roster.</td></tr>
+      <tr><td>Does a red build still block?</td><td>Yes. <code>keel/ci</code>, <code>keel/gate</code> and <code>keel/docs</code> stay required, and none of their workflows changes.</td></tr>
+      <tr><td>Can the gate going green on a failed review be abused?</td><td>Only <code>keel/sign-off</code> then stands between it and a merge, and it is required. The writer is its only setter. It turns green only for a new approval (A1), an approval GitHub still lists (A5), or a typed sign-off whose review is green (A6).</td></tr>
+      <tr><td>What new trust does W7 add?</td><td>None on GitHub: no workflow, permission, token or setting. The writer still runs main's code. It gets tighter there: an approval note is checked against GitHub's own list (A5), closing one item of backlog G7 on GitHub. On your Mac nothing changes: a same-user shell could already write a github-tier note (G7) or a passing cr note, so a cover opens nothing new. DEC-48 records it at the close.</td></tr>
     </table>
 
     <h2 id="open">Open points</h2>
     <p>Work goes on at these answers once you say go. Comment to overrule.</p>
     <table data-c="open">
       <tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr>
-      <tr><td>1</td><td>Where do you type the decision?</td><td><b>In your approval text</b>, read only by the writer</td><td>The comparison above: no new workflow, policy or permission, and GitHub binds each review to its commit.</td></tr>
-      <tr><td>2</td><td>Does a roster change need a code, or only <code>/keel roster-change</code>?</td><td><b>A code</b>, made from the tip, the base and the changed lines</td><td>On GitHub the status is the only place you see the lines; a code proves you opened them. The typed <code>--roster-change</code> stays a bare flag, since the terminal prints the lines above it. Fallback: the bare line.</td></tr>
-      <tr><td>3</td><td>The gate was red on the missing review and does not re-run when notes change. Who re-runs it?</td><td><b>The router</b>: <code>push</code> takes the notes, then <code>pr-open</code> refreshes the body, which re-runs the gate</td><td>The gate re-runs when the pull request's text is edited. No new permission. Fallback: you press "Re-run all jobs". Giving the writer <code>actions: write</code> would widen its token.</td></tr>
-      <tr><td>4</td><td>The card's mention, <code>needs-owner</code> label and "waiting on you" list on the tracking issue: in W7?</td><td><b>No</b>; a backlog row if you want them</td><td>You start every preview yourself by approving, so you are already on the page. Each would add text the bot writes.</td></tr>
-      <tr><td>5</td><td>The back-merge sign-off (backlog G9 names W7): a pull request from main into an epic never gets <code>keel/sign-off</code></td><td><b>Not in W7</b>; its own small WU before the close, if this epic needs one</td><td>It is not a waiver: a new rule ("a back-merge passes once a signer approves") with its own review. This epic's close needs no back-merge unless main gains a commit the epic lacks beyond its own landings.</td></tr>
-      <tr><td>6</td><td>Retracting a sign-off when an approval is dismissed (backlog G7)</td><td><b>Not in W7</b>; stays in G7 for a later epic</td><td>A new rule; W7 keeps to the three decisions the typed command has.</td></tr>
-      <tr><td>7</td><td>How long may a reason be?</td><td><b>500 printable characters</b>, one line</td><td>Enough for a reason; keeps the status, log and note clean. The typed reason keeps no limit.</td></tr>
+      <tr><td>1</td><td>Should the gate on GitHub stay red on a failed review until you approve?</td><td><b>No</b>: green, with "your approval decides" on its page</td><td>The gate does not run again when the sign-off note lands. Red would need a re-run after every such approval: a step for you or the router (v1's open point 3). The required sign-off status still blocks until you approve.</td></tr>
+      <tr><td>2</td><td>Does a later change to the review undo your approval?</td><td><b>No</b>: the approval covers the review as a whole; the note records the state you saw</td><td>You approved the code, bound by commit and diff hash. Binding the review too would leave a tip stuck if a review note changed after you approved: the writer never replaces a sign-off. Fallback: bind a round-limit waiver as the typed accept does.</td></tr>
+      <tr><td>3</td><td>Does a roster change need anything more than your approval?</td><td><b>No</b></td><td>The changed lines are in the pull request's files, the base's roster judges you, and the note records the lines. The typed sign-off keeps <code>--roster-change</code>.</td></tr>
+      <tr><td>4</td><td>Should the sign-off status name what you approved over (part C)?</td><td><b>Yes</b></td><td>It is the one place on the pull request that shows it after you approve. It is a small change to a rule-bearing script. Fallback: no script change; only the note records it.</td></tr>
+      <tr><td>5</td><td>Keep the typed waiver flags (<code>--waive-review</code>, <code>--confirm-waiver</code>, <code>--accept-waiver</code>, <code>--roster-change</code>)?</td><td><b>Yes, unchanged</b></td><td>They are the path at your Mac, and for a key holder. Nothing in W7 needs them changed. Removing them is a separate cleanup, if you want it.</td></tr>
+      <tr><td>6</td><td>Do the router's four commands (<code>/keel go</code>, <code>hold</code>, <code>retry</code>, <code>answer</code>) change?</td><td><b>Not in W7</b></td><td>The approval is a GitHub review, not a command. Whether to simplify the commands is yours to decide on its own.</td></tr>
+      <tr><td>7</td><td>The back-merge sign-off (G9) and retracting a dismissed approval (G7)?</td><td><b>Not in W7</b></td><td>Each is a new rule with its own review. A dismissed approval still sets <code>keel/sign-off</code> back to pending on the next run, as today.</td></tr>
     </table>
 
     <h2 id="details">Details</h2>
 
+    <h3 id="rules">Every rule that changes</h3>
+    <table data-c="rules">
+      <tr><th>Rule</th><th>Today</th><th>After W7</th><th>Where</th></tr>
+      <tr><td>The writer's refusals</td><td>Refuses a non-green review, a roster change, a tool waiver</td><td>Signs all three and records them (A2, A4). Every other refusal stays</td><td><code>src/mr.rs</code> <code>sign_off</code></td></tr>
+      <tr><td>The writer's "already signed"</td><td>Any note check 8 accepts</td><td>An approval note GitHub still lists; a typed note only with a green review (A5, A6)</td><td><code>src/mr.rs</code> <code>sign_off</code></td></tr>
+      <tr><td>Check 1 (the cr note) and checks 3 to 5</td><td>Red without a passing or accepted-waiver review</td><td>Covered on a tip an approval signed (B3); on GitHub, judged by <code>keel/sign-off</code> (B2)</td><td><code>src/gate.rs</code>, <code>src/ci.rs</code></td></tr>
+      <tr><td>Check 7, the walk</td><td>A seam red on its review is red</td><td>Covered when an approval signed that WU (B4)</td><td><code>src/gate.rs</code> <code>walk</code></td></tr>
+      <tr><td>Check 8</td><td>The waiver rule for every note</td><td>Not for a note by approval (B5); everything else unchanged</td><td><code>src/mr.rs</code> <code>manual_review</code></td></tr>
+      <tr><td>DEC-47</td><td>A roster change is refused without <code>--roster-change</code></td><td>Or signed by an approval, which records the lines</td><td>Amended at the close</td></tr>
+      <tr><td>DEC-49</td><td>Only the owner accepts a waiver, by a typed flag</td><td>Or by an approval, which covers any review state and writes no cr note</td><td>Amended at the close</td></tr>
+      <tr><td>DEC-60</td><td>The gate on GitHub defers check 8 alone</td><td>It defers the review too</td><td>Amended at the close</td></tr>
+      <tr><td>UC-MR-1</td><td>Sign last; waivers typed</td><td>An approval covers the review and a roster change</td><td>Amended at the close</td></tr>
+      <tr><td>The typed <code>keel mr confirm</code></td><td colspan="2">Unchanged: not needed by this scope</td><td>—</td></tr>
+    </table>
+
     <h3 id="files">Every file touched</h3>
     <table data-c="files">
       <tr><th>File</th><th>Rule-bearing</th><th>Change</th></tr>
-      <tr><td><code>src/mr.rs</code></td><td>no (code)</td><td>Part A: the approval-text reader, the roster code, the three paths in <code>sign_off</code>, exits 2 and 5. The preview and code functions are shared with the typed command, not copied.</td></tr>
-      <tr><td><code>tests/suite/sign_off.rs</code></td><td>no (code)</td><td>Integration tests below.</td></tr>
-      <tr><td><code>tests/suite/router_gh.rs</code></td><td>no (code)</td><td>The push taking GitHub's waiver notes.</td></tr>
-      <tr><td><code>scripts/ci-sign-off.sh</code></td><td><b>yes</b>, staged</td><td>Part B.</td></tr>
-      <tr><td><code>scripts/router-gh.sh</code></td><td><b>yes</b>, staged</td><td>Part C.</td></tr>
+      <tr><td><code>src/mr.rs</code></td><td>no (code)</td><td>A1, A2, A4 to A6 in <code>sign_off</code>; B5 in <code>manual_review</code>.</td></tr>
+      <tr><td><code>src/gate.rs</code></td><td>no (code)</td><td>A3, B1, B3, B4, B6.</td></tr>
+      <tr><td><code>src/ci.rs</code></td><td>no (code)</td><td>B2: the verdict and the page's line.</td></tr>
+      <tr><td><code>src/notes.rs</code></td><td>no (code)</td><td>A4: the optional <code>covers</code> field.</td></tr>
+      <tr><td><code>tests/suite/sign_off.rs</code>, <code>verify_dod.rs</code>, <code>close_walk.rs</code>, <code>ci_gate.rs</code></td><td>no (code)</td><td>The integration tests below.</td></tr>
+      <tr><td><code>scripts/ci-sign-off.sh</code></td><td><b>yes</b>, staged</td><td>Part C (open point 4).</td></tr>
       <tr><td><code>skills/keel-workflow</code>, <code>skills/keel-router</code> and their <code>.claude/skills</code> copies; <code>.claude/skills/project-router</code></td><td><b>yes</b>, a patch</td><td>Part D. The worker's sandbox cannot write <code>.claude/skills</code>.</td></tr>
       <tr><td><code>docs/work/2026-11-16-eghflow2-w7-plan.html</code>, the result</td><td>no (T3)</td><td>This plan; the result at the end.</td></tr>
     </table>
-    <p>Not touched: every <code>.github/workflows</code> file (so the bot can push the branch), <code>scripts/router-gh-command.jq</code>, <code>scripts/gh-settings-check.sh</code>, <code>.keel/config.toml</code>, <code>.keel/mr-allowed</code>, check 8.</p>
+    <p>Not touched: every <code>.github/workflows</code> file, <code>scripts/router-gh.sh</code> (its push already takes these notes: it checks the schema, tier, tip and review, and ignores other fields), <code>scripts/router-gh-command.jq</code>, <code>scripts/gh-settings-check.sh</code>, <code>.keel/config.toml</code>, <code>.keel/mr-allowed</code>, the typed <code>keel mr confirm</code>.</p>
 
     <div data-item="expected">
       <p>Observable, hermetic, before W7 reaches main:</p>
       <ul>
-        <li>A plain approval of a head whose review the round limit waived leaves nothing written and asks for <code>/keel accept-waiver &lt;code&gt;</code>, where the code equals the one <code>keel mr confirm</code> prints for the same tip; the approval with that line signs with the waiver's hash, and <code>keel verify-dod</code> is green.</li>
-        <li><code>/keel waive-review &lt;reason&gt;</code> previews the typed preview's listing and code; the approval with <code>/keel confirm-waiver &lt;code&gt;</code> writes the WAIVED review note and the sign-off together, and the gate is green; a review note added between the two changes the code and nothing is written.</li>
-        <li>A range that changes the roster signs only with <code>/keel roster-change &lt;code&gt;</code> over its lines.</li>
-        <li>A wrong code, a code from a review of an older commit, a line in another person's review, a reason with a control character, or a waive-review over a passed review writes nothing.</li>
-        <li><code>keel/sign-off</code> shows the line to approve with and links its run; a keel failure is an error status, never "nothing to sign".</li>
-        <li>The router's push takes GitHub's waiver beside its sign-off, and never over a passed or waived note here.</li>
+        <li>An approval of a head whose review is FAIL, missing, stale, unreadable or WAIVED by the round limit signs, writes no cr note, and records that state and the cr note's hash in <code>covers</code>; <code>keel verify-dod</code> on that tip is green with a "covered" WAIVED line.</li>
+        <li>An approval of a range that changes the roster signs and records the lines.</li>
+        <li>An approval of a head whose review passed writes today's note, byte for byte.</li>
+        <li>The writer still refuses a red test note, doc note or walk, a landed tip, a report only in a note, a base with no roster; a key holder's approval and a listed change request still sign nothing.</li>
+        <li>An approval note on the head that GitHub's list does not hold is not "already signed"; neither is a typed note over a failed review.</li>
+        <li><code>keel ci gate</code> is green when only the review fails, with "your approval decides" on its page, and red when any other check fails.</li>
+        <li>The epic's walk passes a WU seam whose review an approval covered, and fails one a typed sign-off signed over a failed review.</li>
+        <li>The green <code>keel/sign-off</code> status names the cover.</li>
       </ul>
     </div>
 
     <div data-item="test-plan">
-      <p><b>Unit</b> (<code>src/mr.rs</code>): the approval-text reader (case, CRLF, leading spaces, each verb, a bad or second line, a reason that is blank, too long or holds a control character, a code of the wrong length or not hex); the roster code changes with the tip, the base or any line.</p>
-      <p><b>Integration</b>: <code>tests/suite/sign_off.rs</code> runs <code>keel ci sign-off</code> on a scratch repo with recorded review lists, for each row of "expected" above, and compares each preview's code with the typed <code>keel mr confirm</code> on the same tip. The writer script runs against the existing fake GitHub and bare origin: exit 5 sets the pending status with the line and the run link; both notes are pushed atomically; a review note moved on origin pushes nothing; exit 2 and an unknown exit set error; a reason with ESC or CR never reaches the log or a status raw. <code>tests/suite/router_gh.rs</code>: the push takes a writer-made waiver over a missing or failed note, refuses one over a passed or waived note or without a sign-off carrying a waiver hash, skips one already pushed, and leases <code>refs/notes/cr</code>. <code>tests/suite/keel_gate.rs</code> runs unchanged: the workflow locks prove no workflow changed.</p>
-      <p><b>E2E</b>: the epic test's step 7, reworded: "An approval with <code>/keel waive-review</code> gets a preview; the approval with its code writes the WAIVED note and the sign-off together; the router's push takes both". Written and run at the close, like the other steps.</p>
-      <p><b>Live</b>: the first waiver on GitHub after the close, recorded in the close's report.</p>
+      <p><b>Unit</b>: the review state of A3 for each of the five states and for a green review; <code>covers</code> absent on a plain note, and an older note without it parses; <code>red_before_sign_off</code> with the review's failures and with one other; check 8's waiver rule skipped for an approval note only.</p>
+      <p><b>Integration</b>: <code>tests/suite/sign_off.rs</code> runs <code>keel ci sign-off</code> on a scratch repo with recorded review lists for each line of "expected" about the writer, and runs <code>scripts/ci-sign-off.sh</code> against the existing fake GitHub for part C's status text. <code>tests/suite/verify_dod.rs</code>: the cover on the Mac, and none for a typed note. <code>tests/suite/close_walk.rs</code>: a covered seam passes, an uncovered one fails. <code>tests/suite/ci_gate.rs</code>: green on the review alone, red on anything else. <code>tests/suite/mr.rs</code> runs unchanged: the typed path is untouched. <code>tests/suite/keel_gate.rs</code> runs unchanged: its workflow locks prove no workflow changed.</p>
+      <p><b>E2E</b>: the epic test's step 7, reworded: "an approval over a failed review signs, records the review's state, and the gate and the walk pass". Written and run at the close, like the other steps.</p>
+      <p><b>Live</b>: your first approval over a failed review after the close lands on main, recorded in the close's report.</p>
       <p><b>Review</b>: the code review of the WU, and an independent security review of the staged rule-bearing files before your <code>keel mr commit</code>.</p>
     </div>
 
     <h3 id="steps">Your steps</h3>
     <ol data-c="steps">
       <li>Now: read this plan and say go, or overrule an open point.</li>
-      <li>At the end of the build: apply the skills patch; then <code>keel mr commit</code> of the staged files. The router stages the exact command.</li>
-      <li>The bot pushes the branch: it changes no workflow file.</li>
+      <li>At the end of the build: apply the skills patch; then <code>keel mr commit</code> of the staged script. The router stages the exact command.</li>
       <li>No GitHub setting changes: no new event, permission, policy or required check.</li>
-      <li>After the close lands on main: your first waiver on GitHub is the live check. Until then, waivers stay typed.</li>
+      <li>After the close lands on main, the writer has W7. The gate of a WU pull request has it once its epic does, since the gate is built from the base. Until then, a failed review still needs the typed sign-off.</li>
     </ol>
 
     <h3 id="deviations">How this differs from the epic plan's W7 card</h3>
     <ul data-c="deviations">
-      <li>Lines in your approval text, not comments, and no second workflow (open point 1).</li>
-      <li><code>/keel waive-review</code> goes in an approval and its preview is the status plus the run's log, not a posted comment.</li>
-      <li>No mention, label or tracking-issue list (open point 4).</li>
+      <li>No comment, no command line, no preview code: your approval is the whole decision.</li>
+      <li>No WAIVED cr note is written on GitHub; the sign-off note records the cover instead.</li>
+      <li>No mention, label or tracking-issue list.</li>
       <li>The router's command grammar does not change; UC-ROUTE-7 gains no verb.</li>
-      <li>New: the router's push takes GitHub's waiver notes (part C), which the card did not foresee.</li>
+      <li>W5 (try-it) is dropped by the same ruling.</li>
     </ul>
 
     <h3 id="distill">At the close</h3>
-    <p>UC-MR amended (waivers and roster changes by approval text). DEC-49 amended (the waiver confirmed by an approval with the preview's code; the writer is not a session). DEC-47 amended (a roster change signed by approval needs its code). DEC-61 amended (the router takes GitHub's waiver notes). <code>docs/architecture.html</code>'s GitHub section.</p>
+    <p>UC-MR-1 amended (an approval covers the review and a roster change, and the note records it). DEC-47 amended (a roster change signed by approval). DEC-49 amended (an approval accepts any review state; the typed flags stay). DEC-60 amended (the gate on GitHub defers the review to the sign-off). DEC-48 notes the Mac gap of the safety section. Backlog G7: its first open item closed on GitHub by A5. <code>docs/architecture.html</code>'s GitHub section.</p>
 
     <h3 id="live">Unverified until live</h3>
     <ul data-c="live">
-      <li>GitHub's review list carries each review's text and commit for a review by the owner (its documented fields).</li>
-      <li>GitHub accepts an atomic push of two notes refs from the workflow's token. If not, the run fails safe: nothing is pushed.</li>
-      <li>A status's link shows as Details next to <code>keel/sign-off</code>.</li>
-      <li>Editing the pull request's body through the bot re-runs the gate (<code>edited</code>).</li>
+      <li>GitHub's review list carries each review's id, user id, state and commit for the owner's review (its documented fields; W3 already reads them).</li>
+      <li>The gate's page is where you look before approving, on the phone.</li>
+    </ul>
+
+    <h3 id="history">History</h3>
+    <ul data-c="history">
+      <li>v1, 2026-11-16 (737cd09): <b>replaced.</b> Lines in your approval text (<code>/keel waive-review</code>, <code>confirm-waiver</code>, <code>accept-waiver</code>, <code>roster-change</code>), each with a preview and a 12-character code, a WAIVED cr note written with the sign-off, and the router taking GitHub's cr notes home. Your ruling of 2026-11-17 dropped all of it: "Just let the approve button accept all."</li>
+      <li>v2, 2026-11-17: this plan.</li>
     </ul>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
