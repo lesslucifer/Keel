@@ -1046,9 +1046,12 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
             return match manual_review(repo, cfg, lvl, &tip, &base, &target, cr.as_ref()) {
                 Ok(attested) => {
                     // An approval note counts while GitHub still lists its review; a typed one only
-                    // over a review the gate passes (W7: a typed sign-off never gets the cover).
+                    // over a review the gate passes (W7: a typed sign-off never gets the cover). An
+                    // approval by check 8's and the gate's own rule (`approval_cover`): a review on
+                    // the note and a signer the roster lists under the github tier only, never a key.
+                    let by_approval = approval_cover(repo, cfg, &tip, &target).is_some();
                     match notes::parse::<MrNote>(&raw, "mr") {
-                        Ok(n) if n.review.is_some() && !listed(&reviews, &n, &tip) => {
+                        Ok(n) if by_approval && !listed(&reviews, &n, &tip) => {
                             let id = n.review.as_ref().map_or(0, |r| r.id);
                             return refuse(format!(
                                 "{} carries a sign-off by approval naming review {id}, which GitHub's list no longer holds as {}'s approval of this commit; an approval never replaces a sign-off\n  fix -> the owner re-signs with keel mr confirm, or removes the stale note",
@@ -1056,7 +1059,7 @@ pub(crate) fn sign_off(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, 
                                 printable(&n.signer)
                             ));
                         }
-                        Ok(n) if n.review.is_none() && !matches!(state, None | Some("WAIVED")) => {
+                        Ok(_) if !by_approval && !matches!(state, None | Some("WAIVED")) => {
                             return refuse(format!(
                                 "{} carries a typed sign-off, but its review did not pass ({}): a typed sign-off needs the review green, and only an approval covers one that is not; an approval never replaces a sign-off",
                                 short(&tip),

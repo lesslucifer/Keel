@@ -141,11 +141,19 @@ fn is_ancestor(repo: &Path, commit: &str, of: &str) -> bool {
     git(repo, &["merge-base", "--is-ancestor", commit, of], &[]).is_ok()
 }
 
+/// The paths `base..tip` changes, and whether UC-GATE-5 exempts the range from test, cr and doc
+/// evidence: the one decision the gate (`open`, then `judge`) and the approval writer's
+/// `review_state` both read, so they cannot drift.
+fn range_exempt(repo: &Path, cfg: &Config, base: &str, tip: &str) -> Result<(Vec<String>, bool), String> {
+    let names = notes::names(repo, base, tip, &[])?;
+    let exempt = notes::exempt(repo, cfg, base, tip, &names)?;
+    Ok((names, exempt))
+}
+
 fn open(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str) -> Result<(Report, Vec<String>), String> {
     let tip = git(repo, &["rev-parse", &format!("{tip_ref}^{{commit}}")], &[])?;
     let base = git(repo, &["merge-base", target, &tip], &[])?;
-    let names = notes::names(repo, &base, &tip, &[])?;
-    let exempt = notes::exempt(repo, cfg, &base, &tip, &names)?;
+    let (names, exempt) = range_exempt(repo, cfg, &base, &tip)?;
     let r = Report {
         level,
         tip_ref: tip_ref.into(),
@@ -311,9 +319,13 @@ fn review_verdict(cr: &CrNote) -> Result<Option<String>, (String, String)> {
 /// The tip's review as an approval signs over it (E-GHFLOW2.W7): the first thing that keeps it from
 /// being a plain PASS of this range's code - `missing` (no cr note), `unreadable`, `FAIL` (any
 /// verdict check 3 refuses), `stale` (a note of another tip, base or code) or `WAIVED` (check 3
-/// accepts it, but no review passed) - or `None` for a PASS bound to this range. With the cr
-/// note's stored bytes, when there are any.
+/// accepts it, but no review passed) - or `None` for a PASS bound to this range, and for a range
+/// UC-GATE-5 exempts, where the gate requires and judges no review (`range_exempt`). With the cr
+/// note's stored bytes, when there are any and the review is judged.
 pub(crate) fn review_state(repo: &Path, cfg: &Config, tip: &str, base: &str) -> Result<(Option<&'static str>, Option<String>), String> {
+    if range_exempt(repo, cfg, base, tip)?.1 {
+        return Ok((None, None));
+    }
     let raw = match notes::raw(repo, "cr", tip) {
         Ok(Some(raw)) => raw,
         Ok(None) => return Ok((Some("missing"), None)),

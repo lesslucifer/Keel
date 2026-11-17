@@ -396,9 +396,12 @@ pub struct DodNote {
     pub report: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_hash: Option<String>,
-    /// "WAIVED" when the tip's own review was waived; absent after a reviewed PASS.
+    /// "WAIVED" when the tip's own review was waived; "COVERED" when it did not pass and an
+    /// approval signed over it (E-GHFLOW2.W7); absent after a reviewed PASS.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<String>,
+    /// With "WAIVED", the waiver's reason; with "COVERED", whose approval covered the review:
+    /// "covered by the approval of <signer> (review <id>)".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waiver: Option<String>,
 }
