@@ -265,6 +265,81 @@ fn an_approval_covered_review_beside_another_red_check_stays_red_locally_and_in_
     assert!(!w.contains("FAIL  7·walk·3·review"), "{w}");
 }
 
+/// The fixture's main and epic/e pushed through the real hooks to a new bare remote, kept alive by
+/// the returned TempDir. The epic is on the remote first, so the next push of it is an update, which
+/// the pre-push hook walks (a new branch's push has no old tip to walk from).
+fn with_origin(p: &Path) -> TempDir {
+    let remote = TempDir::new().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(p, &["remote", "add", "origin", remote.path().to_str().unwrap()]);
+    for b in ["main", "epic/e"] {
+        let o = run("git", p, &["push", "-q", "origin", b]);
+        assert!(o.status.success(), "{b}: {}", text(&o));
+    }
+    remote
+}
+
+/// W7 code review round 1, important: the pre-push walk of an epic branch takes an approval's cover
+/// of a merged WU's review, through a real `git push` and its hook: a WU an approval signed over a
+/// failed review is pushed; the same WU signed by a typed sign-off over a failed review is refused.
+#[test]
+fn a_push_takes_a_wu_an_approval_signed_over_its_review_and_refuses_a_typed_one() {
+    let d = fixture();
+    let p = d.path();
+    let remote = with_origin(p);
+    review_in(p, "FAIL");
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    github_merge(p, "epic/e", "wu/e/a");
+    let o = run("git", p, &["push", "-q", "origin", "epic/e"]);
+    assert!(o.status.success(), "the hook takes the approval's cover: {}", text(&o));
+    assert_eq!(git(remote.path(), &["rev-parse", "epic/e"]), git(p, &["rev-parse", "epic/e"]), "the epic landed on the remote");
+
+    let d = fixture();
+    let p = d.path();
+    let remote = with_origin(p);
+    notes(p);
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "vu"]));
+    edit_cr(p, |n| (n["verdict"], n["blockers"]) = (json!("FAIL"), json!(1)));
+    github_merge(p, "epic/e", "wu/e/a");
+    let o = run("git", p, &["push", "-q", "origin", "epic/e"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("FAIL  3·review") && !t.contains("covered by the approval"), "{t}");
+    assert_eq!(git(remote.path(), &["rev-parse", "epic/e"]), git(p, &["rev-parse", "main"]), "nothing landed");
+}
+
+/// W7 code review round 1, nit 8: 2·manifest is the review's only when the cr note alone names
+/// another tip. Then an approval covers it; a test or doc note naming another tip stays red.
+#[test]
+fn only_a_cr_note_naming_another_tip_is_covered_and_a_test_or_doc_note_stays_red() {
+    let d = fixture();
+    let p = d.path();
+    notes(p);
+    let tip = git(p, &["rev-parse", "wu/e/a"]);
+    let older = git(p, &["rev-parse", "wu/e/a^"]);
+    edit_cr(p, |n| n["tip"] = json!(older));
+    let o = ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+    assert!(text(&o).contains("over a review that did not pass (stale)"), "{}", text(&o));
+    let o = ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    let t = text(&o);
+    assert!(t.contains("WAIVED 2·manifest") && t.contains("names a different tip") && t.contains("covered by the approval of 5499546 (review 13)"), "{t}");
+
+    for kind in ["test", "doc"] {
+        let d = fixture();
+        let p = d.path();
+        review_in(p, "FAIL");
+        let tip = git(p, &["rev-parse", "wu/e/a"]);
+        ok(sign_off(p, "wu", "epic/e", &json!([review(13, OWNER, "APPROVED", &tip)]), &[]));
+        let mut n = note(p, kind, &tip).unwrap();
+        n["tip"] = json!(git(p, &["rev-parse", "wu/e/a^"]));
+        git(p, &["notes", &format!("--ref={kind}"), "add", "-f", "-m", &n.to_string(), &tip]);
+        let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+        let t = text(&o);
+        assert!(!o.status.success() && t.contains("FAIL  2·manifest") && t.contains("names a different tip"), "{kind}: {t}");
+        assert!(t.contains("WAIVED 3·review") && !t.contains("WAIVED 2·manifest"), "{kind}: only the review is covered: {t}");
+    }
+}
+
 /// The cr note's stored bytes on `rev`, if it has one.
 fn cr_blob(p: &Path, rev: &str) -> Option<Vec<u8>> {
     let o = run("git", p, &["notes", "--ref=cr", "list", rev]);
