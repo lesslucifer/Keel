@@ -846,6 +846,9 @@ fn a_dotdot_through_a_symlink_is_refused(nested: bool) {
     let t = refused_before_git(&wt, &gitp, &log, &link, "symbolic link");
     let written = link.trim_end().trim_start_matches("gitdir: ");
     assert!(t.contains(&format!("names {written},")), "the refusal shows the text git follows: {t}");
+    // W6 code review round 1: and where git really leads through the link, not the text's lexical reading
+    let real = std::fs::canonicalize(wt.join(written)).unwrap();
+    assert!(t.contains(&format!("which leads to {},", real.display())), "the refusal names the dir git reaches, {}: {t}", real.display());
     assert!(!marker.exists(), "{link}: the planted fsmonitor fired");
 }
 

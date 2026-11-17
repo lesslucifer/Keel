@@ -1163,14 +1163,16 @@ pub(crate) fn checkout_problem(root: &Path) -> Option<String> {
         };
         // as written, and as git follows it: through each link in turn, so `<link>/..` is the link's
         // target's parent, not the text's (code review round 4)
-        // the refusal names both: the text git follows, and where it leads (code review round 5, nit)
+        // the refusal names both: the text git follows, and where git really leads through any link
+        // (W3 code review round 5, nit; W6 code review round 1) - the text's own reading if it resolves nowhere
         let text = named;
         let (written, named) = (root.join(text), lexical(&root.join(text)));
+        let leads = canon(&written).unwrap_or_else(|| named.clone());
         let bad = |why: &str| {
             Some(format!(
                 "{} names {text}, which leads to {}, not this checkout's admin dir as git makes one ({why}): {owner}",
                 dotgit.display(),
-                named.display()
+                leads.display()
             ))
         };
         if std::fs::symlink_metadata(&named).map(|m| !m.is_dir()).unwrap_or(true) {
@@ -1240,10 +1242,7 @@ pub fn commit_msg(repo: &Path, cfg: &Config, msg_file: &str) -> Result<i32, Stri
     let branch = git(repo, &["symbolic-ref", "--short", "-q", "HEAD"], &[]).ok();
     let head = crate::load_config_at_head(repo).ok();
     if let Some((head, wu)) = head.as_ref().zip(branch.as_deref()).and_then(|(h, b)| Some((h, notes::task_of(h, b)?))) {
-        let mut a = vec!["diff", "--cached", "--name-only", "--no-renames", "-z", "--"];
-        a.extend(head.code_paths.iter().map(String::as_str));
-        let code = !notes::zpaths(&git(repo, &a, &[])?).is_empty();
-        if !code && !staged.iter().any(|p| p.starts_with(".keel/")) {
+        if !crate::staged_code(repo, &head.code_paths)? && !staged.iter().any(|p| p.starts_with(".keel/")) {
             println!(
                 "keel: rule-bearing {} on task branch {} of {wu}, no code: your merge of the task covers them",
                 hits.join(", "),

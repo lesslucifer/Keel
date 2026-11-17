@@ -1296,7 +1296,19 @@ mod tests {
         .unwrap();
         assert_eq!(task_of(&task, "task/e/a_b").as_deref(), Some("task/e/a"), "the configured prefix");
         assert_eq!(task_of(&task, "wu/e/a_b"), None);
-        let word = "[A-Za-z0-9][A-Za-z0-9.-]*";
+        // The oracle is the scripts' own rule, read from them (W6 code review round 1): router-gh.sh's
+        // `word` and its task pattern, router-worker.sh's and the guard's copies of both, so a drift
+        // between keel and the bot fails here.
+        let read = |p: &str| std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(p)).unwrap();
+        let (gh, worker, guard) = (read("scripts/router-gh.sh"), read("scripts/router-worker.sh"), read("scripts/router-guard.jq"));
+        let word = gh.lines().find_map(|l| l.strip_prefix("word='")?.strip_suffix('\'')).expect("router-gh.sh defines word='...'");
+        assert!(gh.contains("main_b=main epic_p=epic/ wu_p=wu/"), "router-gh.sh's wu prefix is wu/");
+        assert!(gh.contains(r#"expr "x$1" : "x$wu_p$word/${word}_$word\$""#), "router-gh.sh's task pattern is <wu_p><word>/<word>_<word>");
+        assert!(
+            worker.contains(&format!("word='{word}'")) && worker.contains(r#"expr "$b" : "^$wu_p$word/${word}_$word\$""#),
+            "router-worker.sh holds the same task rule"
+        );
+        assert_eq!(guard.matches(&format!("(?!wu/{word}/{word}_{word}$)")).count(), 2, "the guard's sync and issue exclusions hold the same task rule");
         let oracle = regex::Regex::new(&format!("^wu/({word})/({word})_({word})$")).unwrap();
         let alphabet: Vec<char> = "aZ09.-_/".chars().collect();
         let mut seed: u64 = 0x5eed_0006;
