@@ -120,6 +120,22 @@ fn a_task_commit_with_rule_text_only_needs_no_trailer() {
     let o = try_commit(p, &["skills/s/SKILL.md", ".keel/mr-allowed"], "skill and roster");
     assert!(!o.status.success() && text(&o).contains("Reviewed-By"), "the roster staged too: {}", text(&o));
     git(p, &["reset", "-q", ".keel/mr-allowed"]);
+    std::fs::write(p.join(".keel/mr-allowed"), &roster).unwrap();
+
+    // W6 security review: any .keel/ path staged gets no relaxation, so a commit cannot redefine
+    // code_paths for itself; and the relaxation reads code_paths from HEAD's committed config, so an
+    // unstaged edit of the working-tree config does not either
+    let config = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    write(p, ".keel/config.toml", &config.replace("code_paths = [\"src/\", \"tests/\"]", "code_paths = [\"nothing/\"]"));
+    let o = try_commit(p, &["skills/s/SKILL.md", ".keel/config.toml"], "skill and config");
+    assert!(!o.status.success() && text(&o).contains("Reviewed-By"), "a .keel/ path staged too: {}", text(&o));
+    git(p, &["reset", "-q", ".keel/config.toml"]);
+    write(p, "src/b.py", "def b():\n    return 2\n");
+    let o = try_commit(p, &["skills/s/SKILL.md", "src/b.py"], "skill and code, the working-tree config redefining code");
+    assert!(!o.status.success() && text(&o).contains("Reviewed-By"), "HEAD's code_paths judge: {}", text(&o));
+    git(p, &["reset", "-q", "src/b.py"]);
+    std::fs::remove_file(p.join("src/b.py")).unwrap();
+    write(p, ".keel/config.toml", &config);
     ok(try_commit(p, &["skills/s/SKILL.md"], "the skill line alone, again"));
 }
 

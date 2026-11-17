@@ -4229,6 +4229,10 @@ fn router_guard_admits_the_router_bots_shapes_and_no_other_spelling() {
         "scripts/router-gh.sh post 12 a b",
         &format!("scripts/router-gh.sh post 12 {}", "a".repeat(65)),
         "scripts/router-gh.sh sync wu/E",
+        // W6 security review: a task is neither synced nor given an issue
+        "scripts/router-gh.sh sync wu/E/x_t",
+        " scripts/router-gh.sh sync wu/E/x_t ",
+        "scripts/router-gh.sh issue wu/E-X/w9-export_skill-line",
         "scripts/router-gh.sh sync main2",
         "scripts/router-gh.sh sync main epic/E",
         "scripts/router-gh.sh sync refs/heads/main",

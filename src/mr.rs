@@ -1234,13 +1234,16 @@ pub fn commit_msg(repo: &Path, cfg: &Config, msg_file: &str) -> Result<i32, Stri
         return Ok(0);
     }
     // E-GHFLOW2.W6: on a task branch, rule text alone needs no trailer - the owner's merge of the
-    // task's pull request is the yes. A code path or the roster staged too: the trailer, as anywhere.
+    // task's pull request is the yes. A code path, the roster or any .keel/ path staged too: the
+    // trailer, as anywhere. The branch prefix and code_paths are HEAD's committed ones, so neither a
+    // staged nor an unstaged config can widen this for the commit it rides in (W6 security review).
     let branch = git(repo, &["symbolic-ref", "--short", "-q", "HEAD"], &[]).ok();
-    if let Some(wu) = branch.as_deref().and_then(|b| notes::task_of(cfg, b)) {
+    let head = crate::load_config_at_head(repo).ok();
+    if let Some((head, wu)) = head.as_ref().zip(branch.as_deref()).and_then(|(h, b)| Some((h, notes::task_of(h, b)?))) {
         let mut a = vec!["diff", "--cached", "--name-only", "--no-renames", "-z", "--"];
-        a.extend(cfg.code_paths.iter().map(String::as_str));
+        a.extend(head.code_paths.iter().map(String::as_str));
         let code = !notes::zpaths(&git(repo, &a, &[])?).is_empty();
-        if !code && !hits.contains(&ROSTER) {
+        if !code && !staged.iter().any(|p| p.starts_with(".keel/")) {
             println!(
                 "keel: rule-bearing {} on task branch {} of {wu}, no code: your merge of the task covers them",
                 hits.join(", "),
@@ -1249,6 +1252,12 @@ pub fn commit_msg(repo: &Path, cfg: &Config, msg_file: &str) -> Result<i32, Stri
             return Ok(0);
         }
     }
+    trailer(repo, cfg, msg_file, &hits)
+}
+
+/// The commit check's trailer rule: a listed signer's `Reviewed-By` trailer on a commit staging the
+/// rule-bearing `hits`, judged by HEAD's roster.
+fn trailer(repo: &Path, cfg: &Config, msg_file: &str, hits: &[&str]) -> Result<i32, String> {
     let msg = std::fs::read_to_string(msg_file).map_err(|e| format!("keel: cannot read {msg_file}: {e}"))?;
     // HEAD's roster: a commit that edits the roster is judged by the one it replaces.
     let allowed = match roster(repo, cfg, "HEAD", "") {

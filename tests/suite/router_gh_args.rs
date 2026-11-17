@@ -118,7 +118,8 @@ fn a_task_branch_is_a_work_branch_of_three_words() {
     for b in ["wu/E/x_t", "wu/E-X/w9-export_skill-line", "wu/E.2/a.b_c-d"] {
         accepted(&["push", b]);
         accepted(&["pr-open", b]);
-        accepted(&["sync", b]);
+        refused(&["sync", b], "a task is not synced");
+        refused(&["issue", b], "a task has no issue of its own");
     }
     for b in ["wu/E/x_", "wu/E/x_t_u", "wu/E_F/x_t"] {
         accepted(&["push", b]);
@@ -132,7 +133,7 @@ fn a_task_branch_is_a_work_branch_of_three_words() {
 #[test]
 fn pr_open_takes_main_or_an_epic_as_its_base() {
     // E-GHFLOW2.W4 review: a WU into main would skip its epic's gate
-    refused(&["pr-open", "wu/E/x", "--base", "main"], "a WU merges into its epic, never into main");
+    refused(&["pr-open", "wu/E/x", "--base", "main"], "drop --base");
     // W4 review nit 5, E-GHFLOW2.W6: a WU's base, and a task's, is derived from its name
     for (b, base) in [("wu/E/x", "epic/F"), ("wu/E/x", "epic/E"), ("wu/E/x_t", "epic/E")] {
         refused(&["pr-open", b, "--base", base], "drop --base");
@@ -172,10 +173,11 @@ fn sync_takes_an_epic_branch_or_main_only() {
     accepted(&["sync", "epic/E-GHFLOW"]);
     // E-GHFLOW2.W4: with the rules on, main moves only on GitHub
     accepted(&["sync", "main"]);
-    // E-GHFLOW2.W6: a WU branch, which the owner merges a task into on GitHub
-    for b in ["wu/E/x", "wu/E-X/w9-export", "wu/E/x_t"] {
+    // E-GHFLOW2.W6: a WU branch, which the owner merges a task into on GitHub; a task is never synced
+    for b in ["wu/E/x", "wu/E-X/w9-export", "wu/E/x_", "wu/E/x_t_u"] {
         accepted(&["sync", b]);
     }
+    refused(&["sync", "wu/E/x_t"], "a task is not synced: sync its WU branch, wu/E/x");
     for b in ["wu/E", "wu/E/x/y", "epic/E/x", "epic", "main2", "Main", "refs/heads/main"] {
         refused(&["sync", b], "sync takes main, an epic/<E> or a wu/<E>/<slug> branch only");
     }
