@@ -386,7 +386,9 @@ fn verify_with(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &
 fn judge(repo: &Path, cfg: &Config, mut r: Report, names: &[String], target: &str, own_review: bool) -> Result<Report, String> {
     let level = r.level;
     // UC-GATE-5 never exempts W8's archive/tier-layout checks (below). W4's 8·manual-review runs in
-    // `run()` instead - this fn is re-entered per walk seam and by mr confirm, neither of which may judge it.
+    // `gated()` and `range()` instead - this fn is re-entered per walk seam and by mr confirm, neither of
+    // which judges a sign-off as check 8. The walk reads a WU seam's sign-off only to take an
+    // approval's cover of that seam's review (E-GHFLOW2.W7), never as a check of its own.
     if !r.exempt {
         check_tip(repo, cfg, &mut r, names, true, own_review)?;
     } else {
@@ -501,8 +503,10 @@ fn guard_hooks(repo: &Path, r: &mut Report) {
 /// The gate `verify-dod` runs on a tip, judged and printed: checks 1-7 (`verify`), guard D when
 /// `guard` (verify-dod wu|epic by hand; the hook, range and commit gates run from Keel's hooks by
 /// construction), and 8·manual-review above the commit level - never exempt (UC-GATE-5), and only at
-/// the merge boundary: the walk never re-judges a seam's sign-off against the epic's roster (Trawler
-/// DEC-9/10; DEC-48 names the gap). Returns the report and the report the sign-off attested. Its
+/// the merge boundary: the walk never re-judges a seam's sign-off as check 8 against the epic's roster
+/// (Trawler DEC-9/10; DEC-48 names the gap); it reads one only to take an approval's cover of that
+/// seam's review, judged against the seam's first parent (E-GHFLOW2.W7). A sign-off check 8 accepts
+/// here, if an approval's, covers the tip's review (`cover_review`). Returns the report and the report the sign-off attested. Its
 /// callers differ only in what they do with the verdict: `run` writes the receipt, `ci_gate` does not.
 fn gated(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, guard: bool) -> Result<(Report, Option<(String, String)>), String> {
     let mut r = verify(repo, cfg, level, tip_ref, target)?;
