@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-GHFLOW2.W7 result · Your approval accepts all</h1>
       <p>Built as plan v3 says. Your approval of a WU's or an epic's pull request now signs over a review that did not pass and over a change to who may sign. The note records what it covered. Everything else still blocks.</p>
-      <div class="meta">Ready v1 · 2026-11-17 · T3 · WU result · Keel · wu/E-GHFLOW2/w7-waivers off epic/E-GHFLOW2 366a9eb · plan: docs/work/2026-11-16-eghflow2-w7-plan.html (v3, 6bac067)</div>
+      <div class="meta">Ready v2 · 2026-11-17 · T3 · WU result · Keel · wu/E-GHFLOW2/w7-waivers off epic/E-GHFLOW2 366a9eb · plan: docs/work/2026-11-16-eghflow2-w7-plan.html (v3, 6bac067)</div>
     </div>
   </header>
   <main>
@@ -35,9 +35,20 @@
       <li><b>One test assertion fixed after the build:</b> the walk test looked for "FAIL" in lines that quote the covered verdict ("review verdict is FAIL"); it now looks for a FAIL block.</li>
     </ul>
 
+    <h2 id="security">Security review</h2>
+    <p data-c="security-verdict">The independent security review (e-ghflow2-w7-indep, read-only, of the staged script, the skills patch and where <code>src</code> relaxes the review) says <b>OK to commit</b>: no blockers, no importants, 4 nits. Its findings reached this report through the router's summary, which named these:</p>
+    <table data-c="security">
+      <tr><th>Nit</th><th>Done</th></tr>
+      <tr><td>The skills patch: the keel-workflow dod/v1 row does not name <code>review: COVERED</code> and its waiver text</td><td>Fixed in <code>w7-skills.patch</code>, both trees</td></tr>
+      <tr><td>The skills patch: the check-3 row does not name 2·manifest, when only the cr note names another tip</td><td>Fixed, both trees</td></tr>
+      <tr><td>The skills patch: step 4 of the WU table names only <code>1·notes</code></td><td>Fixed: "1·notes for the missing cr note, and the review's checks", both trees</td></tr>
+      <tr><td>A test gap: no test where an approval-covered review sits beside another red check</td><td>Fixed in 71de020: <code>an_approval_covered_review_beside_another_red_check_stays_red_locally_and_in_the_walk</code> (a missing test note: red in <code>verify-dod</code> and as a walk seam, the review alone covered)</td></tr>
+      <tr><td>Walk waivers are still read from a cr note an approval covered, even a FAIL or stale one</td><td>Not fixed now, by the router's call: a follow-up below</td></tr>
+    </table>
+
     <h2 id="details">Details</h2>
     <div data-item="evidence" data-c="evidence">
-      <p><b>Commits</b> (plain): 6d41feb the failing tests first; f2aca63 the code; this report. Staged, not committed: <code>scripts/ci-sign-off.sh</code>. In <code>w7-skills.patch</code> at the worktree root: <code>skills/keel-workflow/SKILL.md</code>, <code>skills/keel-router/SKILL.md</code>, <code>skills/keel-router/references/worker-ops.md</code>, their <code>.claude/skills</code> copies, and <code>.claude/skills/project-router/SKILL.md</code>.</p>
+      <p><b>Commits</b> (plain): 6d41feb the failing tests first; f2aca63 the code; c2fc42f this report, v1; 71de020 the security review's test; this report, v2. Staged, not committed: <code>scripts/ci-sign-off.sh</code>. In <code>w7-skills.patch</code> at the worktree root: <code>skills/keel-workflow/SKILL.md</code>, <code>skills/keel-router/SKILL.md</code>, <code>skills/keel-router/references/worker-ops.md</code>, their <code>.claude/skills</code> copies, and <code>.claude/skills/project-router/SKILL.md</code>.</p>
       <p><b>What changed, by the plan's builder table</b>:</p>
       <table>
         <tr><th>#</th><th>Done</th></tr>
@@ -50,13 +61,14 @@
         <tr><td>8</td><td>Check 8's waiver rule skipped for a note that carries a review.</td></tr>
         <tr><td>9</td><td>The status: "Signed by approval (review N), over a review that did not pass (state), with a roster change".</td></tr>
       </table>
-      <p><b>Tests</b>: unit 120 → 122; integration 482 → 488 (<code>cargo test</code>: 121 unit and 503 suite pass, 10 ignored as before). New in <code>tests/suite/sign_off.rs</code>: <code>an_approval_signs_over_a_review_in_any_state_and_records_it</code>, <code>an_approval_signs_a_roster_change_and_records_its_lines</code> (replaces the old refusal test), <code>an_approval_note_github_no_longer_lists_is_not_already_signed</code>, <code>a_typed_sign_off_over_a_review_that_did_not_pass_is_neither_already_signed_nor_covered</code>, <code>the_epic_walk_takes_a_wu_an_approval_signed_over_its_review_and_no_other</code>, <code>the_writer_says_what_the_approval_covered_in_its_status</code>; <code>nothing_is_written_while_a_check_before_the_sign_off_is_red</code> now uses a missing test note. In <code>tests/suite/ci_gate.rs</code>: <code>a_missing_review_is_left_to_the_approval_on_github_and_prints_the_local_gates_fail_block</code> (was the red missing-note test) and <code>a_red_check_beside_a_missing_review_is_still_red_on_github</code>. Unit: <code>gate::tests::only_the_cr_notes_check_1_failure_is_the_reviews</code>, <code>notes::tests::an_mr_note_carries_covers_only_when_an_approval_covered_something</code>, and <code>ci::tests::only_a_failure_outside_the_sign_off_turns_the_gate_red</code> extended. <code>tests/suite/mr.rs</code> and <code>tests/suite/keel_gate.rs</code> pass unchanged: the typed path and the workflows are untouched. <code>keel check</code> is green on the working tree with the staged script.</p>
+      <p><b>Tests</b>: unit 120 → 122; integration 482 → 489 (<code>cargo test</code>: 121 unit and 504 suite pass, 10 ignored as before). New in <code>tests/suite/sign_off.rs</code>: <code>an_approval_signs_over_a_review_in_any_state_and_records_it</code>, <code>an_approval_signs_a_roster_change_and_records_its_lines</code> (replaces the old refusal test), <code>an_approval_note_github_no_longer_lists_is_not_already_signed</code>, <code>a_typed_sign_off_over_a_review_that_did_not_pass_is_neither_already_signed_nor_covered</code>, <code>the_epic_walk_takes_a_wu_an_approval_signed_over_its_review_and_no_other</code>, <code>the_writer_says_what_the_approval_covered_in_its_status</code>, <code>an_approval_covered_review_beside_another_red_check_stays_red_locally_and_in_the_walk</code>; <code>nothing_is_written_while_a_check_before_the_sign_off_is_red</code> now uses a missing test note. In <code>tests/suite/ci_gate.rs</code>: <code>a_missing_review_is_left_to_the_approval_on_github_and_prints_the_local_gates_fail_block</code> (was the red missing-note test) and <code>a_red_check_beside_a_missing_review_is_still_red_on_github</code>. Unit: <code>gate::tests::only_the_cr_notes_check_1_failure_is_the_reviews</code>, <code>notes::tests::an_mr_note_carries_covers_only_when_an_approval_covered_something</code>, and <code>ci::tests::only_a_failure_outside_the_sign_off_turns_the_gate_red</code> extended. <code>tests/suite/mr.rs</code> and <code>tests/suite/keel_gate.rs</code> pass unchanged: the typed path and the workflows are untouched. <code>keel check</code> is green on the working tree with the staged script.</p>
       <p><b>Not touched</b>: every workflow file, <code>scripts/router-gh.sh</code>, <code>.keel/</code>, the typed <code>keel mr confirm</code>.</p>
     </div>
     <p data-item="distillation" data-c="distillation">Nothing now: the epic's close distils it, as the plan says. UC-MR-1, DEC-47 (a roster change signed by approval), DEC-49 (an approval accepts any review state), DEC-60 (the gate on GitHub leaves the review to the sign-off), DEC-48 (the Mac gap: a same-user shell can write a github-tier note, which now also covers the review), and backlog github-flow G7's first item.</p>
     <ul data-item="follow-ups" data-c="follow-ups">
       <li>The epic test's step 7, reworded ("an approval over a failed review signs, records the state, and the gate and the walk pass"): E-GHFLOW2's close.</li>
       <li>The live check, your first approval over a failed review after the close lands: E-GHFLOW2's close report.</li>
+      <li>The walk waivers (<code>walk_waivers</code>) of an epic tip are still read from its cr note when an approval covered that note as FAIL or stale, so a waiver from a review that did not pass can still pass a seam. Read them only from a review that passed, or name them in <code>covers</code>: backlog github-flow G7, for a later epic.</li>
       <li>W6 (<code>wu/E-GHFLOW2/w6-split-prs</code>) also edits <code>src/mr.rs</code> and <code>tests/suite/sign_off.rs</code>. Whichever lands second merges the other in; W7's edits stay in <code>sign_off</code>, <code>manual_review</code> and new functions: E-GHFLOW2's landing order, kept by the router.</li>
     </ul>
   </main>
