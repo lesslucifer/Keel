@@ -10,7 +10,8 @@
 # reach (security review I4): keel is built from this checkout, main, which only the owner moves
 # (DEC-61); the base (an epic, which the router bot pushes) and the head are git data only - read
 # by keel from a base worktree, never built or run. The note goes to origin's refs/notes/mr, and the
-# keel/sign-off status says what happened on the head commit; a run that stops after it knows the
+# keel/sign-off status says what happened on the head commit, and what the approval signed over
+# (E-GHFLOW2.W7: a review that did not pass, a roster change); a run that stops after it knows the
 # head says so too (status error).
 # Input, from the workflow's env (never from a run: line):
 #   GH_TOKEN      the workflow's token (contents and statuses write, pull-requests read)
@@ -275,5 +276,17 @@ done
 	status error "Signed, but the note could not be pushed"
 	exit 1
 }
-id=$(git notes --ref=mr show "$head_sha" | jq -r '.review.id')
-status success "Signed by approval (review $id)"
+note=$(git notes --ref=mr show "$head_sha")
+id=$(printf '%s' "$note" | jq -r '.review.id')
+# what the approval signed over (E-GHFLOW2.W7), in fixed words: the review's state only when it is
+# one keel writes, and whether the roster changed
+over=
+case $(printf '%s' "$note" | jq -r '.covers.review // ""') in
+'') ;;
+missing | unreadable | FAIL | stale | WAIVED) over=", over a review that did not pass ($(printf '%s' "$note" | jq -r '.covers.review'))" ;;
+*) over=", over a review in an unknown state" ;;
+esac
+if [ "$(printf '%s' "$note" | jq -r '(.covers.roster // []) | length > 0')" = true ]; then
+	over="$over, with a roster change"
+fi
+status success "Signed by approval (review $id)$over"

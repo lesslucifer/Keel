@@ -346,6 +346,30 @@ pub struct MrNote {
     /// The pull-request approval this sign-off copies (github tier, E-GHFLOW2.W3); absent on a typed one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<Review>,
+    /// What an approval signed over (E-GHFLOW2.W7); absent when it covered nothing, so a plain
+    /// approval's note is the same bytes as before. A record: no check rebuilds it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub covers: Option<Covers>,
+}
+
+/// What an approval signed over: the tip's review when it was not green (its state as
+/// `gate::review_state` names it, and the `sha256:` of the cr note's stored bytes when there is
+/// one), and the roster lines the range adds (`+ `) and removes (`- `).
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+pub struct Covers {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cr: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roster: Vec<String>,
+}
+
+impl Covers {
+    /// `None` when there is nothing to record.
+    pub fn of(self) -> Option<Covers> {
+        (self != Covers::default()).then_some(self)
+    }
 }
 
 /// A GitHub pull-request review as a github-tier sign-off records it: its id, its page, and the
@@ -372,9 +396,12 @@ pub struct DodNote {
     pub report: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_hash: Option<String>,
-    /// "WAIVED" when the tip's own review was waived; absent after a reviewed PASS.
+    /// "WAIVED" when the tip's own review was waived; "COVERED" when it did not pass and an
+    /// approval signed over it (E-GHFLOW2.W7); absent after a reviewed PASS.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<String>,
+    /// With "WAIVED", the waiver's reason; with "COVERED", whose approval covered the review:
+    /// "covered by the approval of <signer> (review <id>)".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waiver: Option<String>,
 }
@@ -1564,5 +1591,22 @@ mod tests {
         .unwrap();
         let open: Vec<_> = n.open_findings().iter().map(|f| f["claim"].as_str().unwrap()).collect();
         assert_eq!(open, ["null", "false", "blank", "none"]);
+    }
+
+    /// E-GHFLOW2.W7: `covers` is written only when there is something to record, and a note written
+    /// before it (or by a typed sign-off) reads with none.
+    #[test]
+    fn an_mr_note_carries_covers_only_when_an_approval_covered_something() {
+        use super::{Covers, MrNote};
+        assert_eq!(Covers::default().of(), None);
+        let roster = Covers { roster: vec!["+ github: 42 x".into()], ..Covers::default() }.of();
+        assert_eq!(roster.as_ref().map(|c| c.roster.len()), Some(1));
+        let old = r#"{"schema":"mr/v1","tip":"t","base":"b","branch":null,"committer":"c","timestamp":0,"level":"wu","signer":"vu","tier":"username","change_hash":"sha256:0"}"#;
+        let n: MrNote = serde_json::from_str(old).unwrap();
+        assert!(n.covers.is_none());
+        assert!(!serde_json::to_string(&n).unwrap().contains("covers"), "absent, not null");
+        let with = MrNote { covers: Covers { review: Some("FAIL".into()), cr: Some("sha256:1".into()), roster: vec![] }.of(), ..n };
+        let v: serde_json::Value = serde_json::from_str(&serde_json::to_string(&with).unwrap()).unwrap();
+        assert_eq!(v["covers"], serde_json::json!({"review": "FAIL", "cr": "sha256:1"}), "an empty roster list is left out");
     }
 }
