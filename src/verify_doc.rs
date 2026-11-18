@@ -291,21 +291,13 @@ fn artifact_roles(a: &Yaml) -> Result<Vec<Result<String, &Yaml>>, &Yaml> {
     }
 }
 
-/// The doc pages a list of changed paths names (DEC-69): a page `<stem>.html` for itself, a data file
-/// `<stem>.yaml` under docs.root (`in_docs`) for its page, each page once, in first-named order; any
-/// other path is dropped. Whether the page is there is the caller's to ask.
+/// The doc pages a list of changed paths names (DEC-69): each path's `pair_named` page - a page for
+/// itself, a data file under docs.root (`in_docs`) for its page - each page once, in first-named
+/// order; a path that names no pair is dropped. Whether the page is there is the caller's to ask.
 pub fn pages_of(names: &[String], in_docs: impl Fn(&Path) -> bool) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     for n in names {
-        let p = Path::new(n);
-        let page = match p.extension().and_then(|e| e.to_str()) {
-            Some("html") => n.clone(),
-            Some("yaml") => match pair_named(p, &in_docs) {
-                Some(pair) => pair.page.to_string_lossy().into_owned(),
-                None => continue,
-            },
-            _ => continue,
-        };
+        let Some(page) = pair_named(Path::new(n), &in_docs).map(|p| p.page.to_string_lossy().into_owned()) else { continue };
         if !out.contains(&page) {
             out.push(page);
         }
@@ -364,11 +356,14 @@ pub fn partner_named(path: &Path, in_docs: impl Fn(&Path) -> bool) -> Option<Pat
 /// "cannot read file"). A `.yaml` outside docs.root is no doc (`None`); any other path is a page
 /// alone. Two paths of one doc give one pair.
 pub fn pair_of(path: &Path, in_docs: impl Fn(&Path) -> bool) -> Option<Pair> {
-    if path.extension().is_some_and(|e| e == "yaml") {
-        return pair_named(path, in_docs);
+    let is_data = |pair: &Pair| pair.data.as_deref() == Some(path);
+    match pair_named(path, in_docs) {
+        Some(pair) if is_data(&pair) => Some(pair),
+        Some(Pair { page, data }) => Some(Pair { page, data: data.filter(|d| d.is_file()) }),
+        // No pair: a data file's name outside docs.root is no doc, any other path is a page alone.
+        None if pair_named(path, |_| true).is_some_and(|p| is_data(&p)) => None,
+        None => Some(Pair { page: path.to_owned(), data: None }),
     }
-    let Pair { page, data } = pair_named(path, in_docs).unwrap_or_else(|| Pair { page: path.to_owned(), data: None });
-    Some(Pair { page, data: data.filter(|d| d.is_file()) })
 }
 
 /// Problems with one doc - a page and the data file beside it, either one possibly absent; empty =
@@ -1310,6 +1305,49 @@ mod tests {
         assert_eq!(pages_of(&names, in_docs), ["docs/work/a-plan.html", "docs/work/b-result.html", "docs/d.html"]);
         assert!(pages_of(&[], in_docs).is_empty());
         assert_eq!(pages_of(&["src/c.yaml".to_string()], |_: &Path| true), ["src/c.html"], "in_docs decides what a .yaml is");
+    }
+
+    #[test]
+    fn pages_of_and_pair_of_follow_pair_named_odd_names_too() {
+        // pair_named is the one pairing rule: pages_of gives each name's pair page, and pair_of its
+        // pair, a data file named there or not, a page's data file only when it is on disk.
+        let d = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(d.path().join("docs")).unwrap();
+        std::fs::write(d.path().join("docs/a.yaml"), "").unwrap();
+        let in_docs = |p: &Path| p.starts_with(d.path().join("docs"));
+        let names = [
+            "docs/a.html",
+            "docs/a.yaml",
+            "docs/b.html",
+            "docs/b.yaml",
+            "docs/.html",
+            "docs/.yaml",
+            "docs/a.yml",
+            "docs/a.HTML",
+            "docs/a.YAML",
+            "notes/a.html",
+            "notes/a.yaml",
+            "notes/a.md",
+            "README",
+        ];
+        for n in names.map(|n| d.path().join(n)) {
+            let named = pair_named(&n, in_docs);
+            let s = n.to_string_lossy().into_owned();
+            let want: Vec<String> = named.iter().map(|p| p.page.to_string_lossy().into_owned()).collect();
+            assert_eq!(pages_of(std::slice::from_ref(&s), in_docs), want, "{s}");
+            let on_disk = match named {
+                Some(Pair { page, data }) if page == n => Some(Pair { page, data: data.filter(|x| x.is_file()) }),
+                Some(data_file) => Some(data_file),
+                None if n.extension().is_some_and(|e| e == "yaml") => None,
+                None => Some(Pair { page: n.clone(), data: None }),
+            };
+            assert_eq!(pair_of(&n, in_docs), on_disk, "{s}");
+        }
+        let p = |n: &str| pair_of(&d.path().join(n), in_docs);
+        assert_eq!(p("docs/b.yaml").and_then(|x| x.data), Some(d.path().join("docs/b.yaml")), "a data file is named, there or not");
+        assert_eq!(p("docs/b.html").and_then(|x| x.data), None, "a page's data file only when it is there");
+        assert_eq!(p("notes/a.yaml"), None, "a .yaml outside docs.root is no doc");
+        assert_eq!(p("docs/a.yml").map(|x| x.page), Some(d.path().join("docs/a.yml")), "any other path is a page alone");
     }
 
     #[test]
