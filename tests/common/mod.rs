@@ -393,3 +393,24 @@ pub fn files_naming(dir: &Path, rewrites: &[(Vec<u8>, Vec<u8>)]) -> Vec<PathBuf>
     }
     found
 }
+
+/// A doc as DEC-69 pairs it (E-DOCSPLIT.W3): the page `page` (a path ending `.html`, relative to
+/// `dir`) holding `body`, and the data file beside it, `<stem>.yaml`, whose `artifact` is `roles`
+/// (space-separated). The sign-off, the report note and the archive find a doc's role here, never on
+/// the page. Returns the data file's path, relative to `dir`.
+pub fn doc_pair(dir: &Path, page: &str, roles: &str, body: &str) -> String {
+    let name = Path::new(page).file_name().unwrap().to_string_lossy().into_owned();
+    doc_pair_data(dir, page, body, &format!("artifact: {roles}\nstatus: ready\npage: {name}\n"))
+}
+
+/// `doc_pair` with the data file's text given whole.
+pub fn doc_pair_data(dir: &Path, page: &str, body: &str, data: &str) -> String {
+    let stem = page.strip_suffix(".html").unwrap_or_else(|| panic!("a page ends .html: {page}"));
+    let yaml = format!("{stem}.yaml");
+    for (rel, text) in [(page, body), (yaml.as_str(), data)] {
+        let f = dir.join(rel);
+        std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+        std::fs::write(f, text).unwrap();
+    }
+    yaml
+}

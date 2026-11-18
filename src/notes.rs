@@ -792,6 +792,30 @@ pub(crate) fn archives_t3(repo: &Path, cfg: &Config, tip: &str, docs: &[String])
     docs.iter().any(|p| archived(repo, cfg, tip, p))
 }
 
+/// The other file of the doc a path names (DEC-69): `<stem>.yaml` for a page `<stem>.html`, the page
+/// for a data file; `None` for any other path.
+pub(crate) fn partner(path: &str) -> Option<String> {
+    if let Some(stem) = path.strip_suffix(".html") {
+        Some(format!("{stem}.yaml"))
+    } else {
+        path.strip_suffix(".yaml").map(|stem| format!("{stem}.html"))
+    }
+}
+
+/// A doc archived by half (E-DOCSPLIT.W3): the other file of the archived `path`'s pair when it is
+/// still at the tip (`at_tip`), named so it can be git rm'd too; `None` when the pair went whole, or
+/// the path has no partner.
+pub(crate) fn half_archived(path: &str, at_tip: impl Fn(&str) -> bool) -> Option<String> {
+    partner(path).filter(|q| at_tip(q))
+}
+
+/// The `--distill` value an archived doc takes (DEC-69, E-DOCSPLIT.W3): its own, else the one its
+/// pair's other file names when that file is archived too (`gone`), so one line covers a page and
+/// its data file; each keeps its own when both are named.
+fn distill_of<'a>(path: &str, gone: &[String], distill: &BTreeMap<&str, &'a str>) -> Option<&'a str> {
+    distill.get(path).or_else(|| partner(path).filter(|q| gone.contains(q)).and_then(|q| distill.get(q.as_str()))).copied()
+}
+
 const REWRITE: &str = "keel notes write doc   (on the tip)";
 
 /// Check 6 and the doc writer's refusals: (what, fix) per problem; empty = green.
@@ -815,6 +839,12 @@ pub(crate) fn doc_problems(repo: &Path, cfg: &Config, tip: &str, docs: &[String]
         }
         if tier != "T3" || at_tip(repo, tip, p) {
             continue;
+        }
+        if let Some(left) = half_archived(p, |q| at_tip(repo, tip, q)) {
+            out.push((
+                format!("{p} is archived but {left}, the other half of its doc, is still at the tip"),
+                format!("git rm {left} in the same range: a page and its data file are one doc, archived together (DEC-69)"),
+            ));
         }
         let why = match &c.distilled_to {
             Some(DistilledTo::DeadEnd(s)) if s.strip_prefix("none:").is_some_and(|w| !w.trim().is_empty()) => None,
@@ -1078,13 +1108,34 @@ fn cr_counts(findings: Option<&serde_json::Value>, blockers: Option<u32>, import
 /// `keel notes write report <path>` (E-GHFLOW2.W3): the epic result report rides on the epic tip as
 /// `refs/notes/report`, its exact bytes (the blob is stored first and the note takes it whole, so no
 /// message cleanup touches it), for a sign-off by approval to attest and check 8 to re-hash. Only a
-/// doc whose role is epic-result; written on HEAD, replacing an earlier one.
+/// page whose data file beside it has `artifact` epic-result (DEC-69, E-DOCSPLIT.W3); the note keeps
+/// the page's bytes only, the one the signer reads. Written on HEAD, replacing an earlier one.
 fn write_report(repo: &Path, args: &[&str]) -> Result<i32, String> {
-    let [path] = args else { return Err("usage: keel notes write report <path of the epic-result doc>".into()) };
-    let body = std::fs::read(path).map_err(|e| format!("keel: cannot read {path}: {e}"))?;
+    let [path] = args else { return Err("usage: keel notes write report <path of the epic-result page>".into()) };
     let role = crate::verify_doc::result_role(true);
-    if !std::str::from_utf8(&body).is_ok_and(|t| crate::verify_doc::has_role(t, role)) {
-        return refuse(format!("{path} is not an {role} doc (data-artifact=\"{role}\")"), "the report note carries the epic's result report only");
+    let pair = crate::verify_doc::pair_of(Path::new(path), |_| true).ok_or_else(|| format!("keel: cannot read {path}"))?;
+    let page = pair.page.to_string_lossy().into_owned();
+    if !path.ends_with(".html") {
+        let fix = if path.ends_with(".yaml") { format!("keel notes write report {page}") } else { "name the epic-result page (.html)".into() };
+        return refuse(format!("{path} is not a page: the report note keeps the page the signer reads"), &fix);
+    }
+    let body = std::fs::read(path).map_err(|e| format!("keel: cannot read {path}: {e}"))?;
+    let data = Path::new(path).with_extension("yaml");
+    let Some(data) = pair.data else {
+        return refuse(
+            format!("{path} has no data file beside it ({}): a page is a report only through its data file's artifact", data.display()),
+            &format!("write {} with artifact: {role} beside the page", data.display()),
+        );
+    };
+    let src = std::fs::read_to_string(&data).map_err(|e| format!("keel: cannot read {}: {e}", data.display()))?;
+    match crate::verify_doc::data_roles(&src) {
+        Ok(roles) if roles.iter().any(|r| r == role) => {}
+        Ok(roles) => {
+            return refuse(format!("{} has artifact {}, not {role}", data.display(), roles.join(" ")), "the report note carries the epic's result report only")
+        }
+        Err(e) => {
+            return refuse(format!("{} gives its page no role: {e}", data.display()), &format!("give it artifact: {role} (keel verify-doc {})", data.display()))
+        }
     }
     let tip = git(repo, &["rev-parse", "HEAD"], &[])?;
     let args = ["hash-object", "-w", "--stdin"];
@@ -1120,12 +1171,14 @@ pub fn write(repo: &Path, cfg: &Config, kind: &str, args: &[&str]) -> Result<i32
                 let (p, to) = v.split_once('=').ok_or("usage: --distill <t3-path>=<doc>[,<doc>] | <t3-path>=none: <why>")?;
                 distill.insert(p, to);
             }
+            let gone: Vec<String> = docs.iter().filter(|p| archived(repo, cfg, &tip, p)).cloned().collect();
+            let lineage = |p: &str| distill_of(p, &gone, &distill);
             let changes: Vec<DocChange> = docs
                 .iter()
                 .map(|p| DocChange {
                     path: p.clone(),
                     tier: tier_of(cfg, p).unwrap_or("?").into(),
-                    distilled_to: archived(repo, cfg, &tip, p).then(|| distill.remove(p.as_str())).flatten().map(|to| {
+                    distilled_to: gone.contains(p).then(|| lineage(p)).flatten().map(|to| {
                         if to.starts_with("none:") {
                             DistilledTo::DeadEnd(to.into())
                         } else {
@@ -1134,6 +1187,7 @@ pub fn write(repo: &Path, cfg: &Config, kind: &str, args: &[&str]) -> Result<i32
                     }),
                 })
                 .collect();
+            distill.retain(|p, _| !gone.iter().any(|g| g == p));
             if let Some(p) = distill.keys().next() {
                 return refuse(format!("--distill names {p}, which is not a T3 doc archived in this range"), "--distill only the T3 docs this range git rm's");
             }
@@ -1303,7 +1357,47 @@ mod tests {
 
     use super::{changed_text, own_diff_argv, own_diff_commands, parse_batch, shell_quote, union_of_z, OwnDiff};
     use super::{cr_counts, cr_lists, cr_verdict, waive, waiver_reason, CrNote, CrWrite, Identity};
+    use super::{distill_of, half_archived, partner};
     use super::{epic_branch, epic_of, target, target_flag, target_from_holders, task_of};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn the_partner_of_a_doc_file_is_the_other_half_of_its_pair() {
+        assert_eq!(partner("docs/work/a-plan.html").as_deref(), Some("docs/work/a-plan.yaml"));
+        assert_eq!(partner("docs/work/a-plan.yaml").as_deref(), Some("docs/work/a-plan.html"));
+        assert_eq!(partner("docs/.archive/e.result.html").as_deref(), Some("docs/.archive/e.result.yaml"), "the last dot only");
+        for none in ["docs/work/a.md", "docs/work/a.yml", "docs/work/a", "AGENTS.md"] {
+            assert_eq!(partner(none), None, "{none}");
+        }
+    }
+
+    #[test]
+    fn one_distill_gives_both_files_of_an_archived_pair_the_same_lineage() {
+        let gone: Vec<String> =
+            ["docs/work/a-plan.html", "docs/work/a-plan.yaml", "docs/work/b.yaml", "docs/work/b.html", "docs/work/c.html"].map(String::from).to_vec();
+        let distill = BTreeMap::from([("docs/work/a-plan.html", "docs/x.html"), ("docs/work/b.yaml", "none: nothing"), ("docs/work/c.yaml", "docs/y.html")]);
+        // the page names the pair, or the data file does
+        assert_eq!(distill_of("docs/work/a-plan.html", &gone, &distill), Some("docs/x.html"));
+        assert_eq!(distill_of("docs/work/a-plan.yaml", &gone, &distill), Some("docs/x.html"));
+        assert_eq!(distill_of("docs/work/b.html", &gone, &distill), Some("none: nothing"));
+        assert_eq!(distill_of("docs/work/b.yaml", &gone, &distill), Some("none: nothing"));
+        // a key naming a file that is not archived covers nothing: c.yaml is not gone
+        assert_eq!(distill_of("docs/work/c.html", &gone, &distill), None);
+        // each keeps its own when both are named
+        let both = BTreeMap::from([("docs/work/a-plan.html", "docs/x.html"), ("docs/work/a-plan.yaml", "docs/z.html")]);
+        assert_eq!(distill_of("docs/work/a-plan.yaml", &gone, &both), Some("docs/z.html"));
+        assert_eq!(distill_of("docs/work/a-plan.html", &gone, &both), Some("docs/x.html"));
+    }
+
+    #[test]
+    fn a_pair_archived_by_half_names_the_file_left() {
+        let tip = ["docs/work/a-result.yaml", "docs/work/b-plan.html"];
+        let at = |q: &str| tip.contains(&q);
+        assert_eq!(half_archived("docs/work/a-result.html", at).as_deref(), Some("docs/work/a-result.yaml"));
+        assert_eq!(half_archived("docs/work/b-plan.yaml", at).as_deref(), Some("docs/work/b-plan.html"));
+        assert_eq!(half_archived("docs/work/c-plan.html", at), None, "the pair went whole, or had no data file");
+        assert_eq!(half_archived("docs/work/notes.md", |_| true), None, "no pair");
+    }
     use crate::Config;
 
     fn cfg_with(branches: &str) -> Config {

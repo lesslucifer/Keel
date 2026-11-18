@@ -503,6 +503,95 @@ fn epic_tip_rejects_a_tracked_t3_doc_and_an_archive_without_lineage() {
     assert_red(&keel(p, &["verify-dod", "epic", "epic/e"]), "6·doc-note");
 }
 
+/// E-DOCSPLIT.W3 (DEC-69): a page and its data file are one doc. At the epic close a plan pair and a
+/// result pair archive under one --distill each, the key naming the page or the data file, and
+/// check 6 and the epic gate are green. A pair archived by half - the result page git rm'd, its data
+/// file still at the tip - is refused by the doc writer and red at check 6, naming the file left.
+#[test]
+fn a_pair_archives_under_one_distill_and_a_pair_archived_by_half_is_red() {
+    let d = fixture();
+    let p = d.path();
+    common::doc_pair(p, "docs/work/a-plan.html", "wu-plan", "<p>plan</p>");
+    common::doc_pair(p, "docs/work/a-result.html", "wu-result", "<p>result</p>");
+    commit(p, "wu plan and result");
+    bless(p, WU_TESTS, "PASS");
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "t"]);
+    assert!(o.status.success(), "the report is found through its data file: {}", text(&o));
+    assert_eq!(note(p, "mr", "HEAD")["report"], "docs/work/a-result.html");
+    git(p, &["switch", "-q", "epic/e"]);
+    git(p, &["merge", "-q", "--no-ff", "-m", "merge wu a", "wu/e/a"]);
+
+    // The close, by half: the plan pair goes whole, the result page goes without its data file.
+    git(p, &["rm", "-q", "docs/work/a-plan.html", "docs/work/a-plan.yaml", "docs/work/a-result.html"]);
+    write(p, "docs/decisions/d.html", "<p>why</p>");
+    write(p, "docs/result.html", "<p>epic result</p>");
+    commit(p, "distill + archive, by half");
+    for (args, input) in [(&["notes", "write", "test"][..], EPIC_TESTS), (&["notes", "write", "cr", "--verdict", "PASS"][..], "")] {
+        assert!(run(env!("CARGO_BIN_EXE_keel"), p, args, input).status.success());
+    }
+    let left = "docs/work/a-result.html is archived but docs/work/a-result.yaml, the other half of its doc, is still at the tip";
+    let o = keel(
+        p,
+        &["notes", "write", "doc", "--distill", "docs/work/a-plan.html=docs/decisions/d.html", "--distill", "docs/work/a-result.html=docs/decisions/d.html"],
+    );
+    assert!(!o.status.success() && text(&o).contains(left) && text(&o).contains("git rm docs/work/a-result.yaml"), "{}", text(&o));
+    // the same note written by hand is red at check 6, for the same reason
+    let tip = git(p, &["rev-parse", "HEAD"]);
+    let mut n = note(p, "doc", "wu/e/a");
+    n["tip"] = json!(tip);
+    n["base"] = json!(git(p, &["merge-base", "main", &tip]));
+    n["branch"] = json!("epic/e");
+    let to = json!(["docs/decisions/d.html"]);
+    n["changes"] = json!([
+        {"path": "docs/a.html", "tier": "T1"},
+        {"path": "docs/decisions/d.html", "tier": "T2"},
+        {"path": "docs/result.html", "tier": "T1"},
+        {"path": "docs/work/a-result.yaml", "tier": "T3"},
+        {"path": "docs/work/a-plan.html", "tier": "T3", "distilled_to": to},
+        {"path": "docs/work/a-plan.yaml", "tier": "T3", "distilled_to": to},
+        {"path": "docs/work/a-result.html", "tier": "T3", "distilled_to": to},
+    ]);
+    git(p, &["notes", "--ref=doc", "add", "-f", "-m", &n.to_string(), &tip]);
+    let o = keel(p, &["verify-dod", "epic", "epic/e"]);
+    assert_red(&o, "6·doc-note");
+    assert!(text(&o).contains(left), "{}", text(&o));
+
+    // Whole: the data file goes in the same archive commit (a later one would leave this seam red in
+    // the epic walk). One --distill per pair, naming the plan's data file or the result's page,
+    // gives both files of each pair the same lineage.
+    git(p, &["rm", "-q", "docs/work/a-result.yaml"]);
+    git(p, &["commit", "-q", "--amend", "-m", "distill + archive"]);
+    for (args, input) in [(&["notes", "write", "test"][..], EPIC_TESTS), (&["notes", "write", "cr", "--verdict", "PASS"][..], "")] {
+        assert!(run(env!("CARGO_BIN_EXE_keel"), p, args, input).status.success());
+    }
+    let o = keel(
+        p,
+        &[
+            "notes",
+            "write",
+            "doc",
+            "--distill",
+            "docs/work/a-plan.yaml=docs/decisions/d.html",
+            "--distill",
+            "docs/work/a-result.html=none: the epic result says it",
+        ],
+    );
+    assert!(o.status.success(), "{}", text(&o));
+    let changes = note(p, "doc", "HEAD")["changes"].as_array().unwrap().clone();
+    let lineage = |path: &str| changes.iter().find(|c| c["path"] == path).unwrap_or_else(|| panic!("{path} not in {changes:?}"))["distilled_to"].clone();
+    assert_eq!(lineage("docs/work/a-plan.html"), json!(["docs/decisions/d.html"]), "the data file's line covers the page");
+    assert_eq!(lineage("docs/work/a-plan.yaml"), json!(["docs/decisions/d.html"]));
+    assert_eq!(lineage("docs/work/a-result.html"), json!("none: the epic result says it"));
+    assert_eq!(lineage("docs/work/a-result.yaml"), json!("none: the epic result says it"), "the page's line covers the data file");
+    sign(p, "epic", "docs/result.html");
+    let o = keel(p, &["verify-dod", "epic", "epic/e"]);
+    assert!(o.status.success(), "{}", text(&o));
+
+    // a --distill naming a file of no archived doc is still refused
+    let o = keel(p, &["notes", "write", "doc", "--distill", "docs/work/b-plan.yaml=docs/decisions/d.html"]);
+    assert!(!o.status.success() && text(&o).contains("not a T3 doc archived in this range"), "{}", text(&o));
+}
+
 /// cr blocker 1: a merge smuggled past the commit hooks (`--no-verify`), then fast-forwarded into
 /// main, leaves the push range as the only gate - it must judge merge seams, not skip them.
 #[test]

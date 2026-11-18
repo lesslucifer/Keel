@@ -335,16 +335,25 @@ fn positionals<'a>(args: &[&'a str]) -> Vec<&'a str> {
     pos
 }
 
-/// The docs whose `data-artifact` carries the level's result role: html under docs.root changed in
-/// base..tip and present at the tip. Never an untracked or archived file: an epic whose report is
-/// archived out of git by sign-off time names it with `--report` (owner ruling, DEC-40).
+/// The result reports this range could attest (DEC-69, E-DOCSPLIT.W3): the pages under docs.root
+/// the range changes, by the page or by its data file (`verify_doc::pages_of`), whose page and data
+/// file are both at the tip and whose data file's `artifact` carries the level's result role. Page
+/// paths: the page is what the signer reads and attests. A page with no data file is never one,
+/// whatever tag it carries. Never an untracked or archived file: an epic whose report is archived
+/// out of git by sign-off time names it with `--report` (owner ruling, DEC-40).
 fn report_candidates(repo: &Path, cfg: &Config, base: &str, tip: &str, epic: bool) -> Result<Vec<String>, String> {
     let role = verify_doc::result_role(epic);
     let root = cfg.docs.root.trim_end_matches('/');
+    let names = notes::names(repo, base, tip, &[root.to_string()])?;
     let mut found = vec![];
-    for n in notes::names(repo, base, tip, &[root.to_string()])?.iter().filter(|n| n.ends_with(".html")) {
-        if git(repo, &["show", &format!("{tip}:{n}")], &[]).is_ok_and(|body| verify_doc::has_role(&body, role)) {
-            found.push(n.clone());
+    for page in verify_doc::pages_of(&names, |p| p.starts_with(root)) {
+        let data = Path::new(&page).with_extension("yaml").to_string_lossy().into_owned();
+        if !notes::at_tip(repo, tip, &page) {
+            continue;
+        }
+        let roles = git(repo, &["show", &format!("{tip}:{data}")], &[]).ok().and_then(|src| verify_doc::data_roles(&src).ok()).unwrap_or_default();
+        if roles.iter().any(|r| r == role) {
+            found.push(page);
         }
     }
     Ok(found)
@@ -375,6 +384,12 @@ fn pick_report(repo: &Path, cfg: &Config, args: &[&str], base: &str, tip: &str, 
         };
     }
     if let Some(r) = given {
+        if let Some(stem) = r.strip_suffix(".yaml") {
+            return Err((
+                format!("--report {r} names a data file: the report is the page beside it, the one you read and sign"),
+                format!("keel mr confirm ... --report {stem}.html"),
+            ));
+        }
         return Ok(Some(r.to_string()));
     }
     let role = verify_doc::result_role(epic);
@@ -384,16 +399,16 @@ fn pick_report(repo: &Path, cfg: &Config, args: &[&str], base: &str, tip: &str, 
         [] if policy == ReportPolicy::Optional => Ok(None),
         [] => Err((
             format!(
-                "[mr] report = \"required\", and no {role} doc (data-artifact=\"{role}\") under {} is committed in this {}'s diff {}..{}",
+                "[mr] report = \"required\", and no {role} report (a page with a data file whose artifact is {role}) under {} is committed in this {}'s diff {}..{}",
                 cfg.docs.root,
                 if epic { "epic" } else { "WU" },
                 short(base),
                 short(tip)
             ),
-            format!("commit the {role} report (skill keel-plan) on the tip, then keel mr confirm again - or name the one you read: keel mr confirm ... --report <path>"),
+            format!("commit the {role} report, a page and its data file (skill keel-plan), on the tip, then keel mr confirm again - or name the one you read: keel mr confirm ... --report <path>"),
         )),
         several => Err((
-            format!("{} {role} docs could be the report: {}", several.len(), several.join(", ")),
+            format!("{} {role} reports could be the one (pages whose data file says {role}): {}", several.len(), several.join(", ")),
             "name the one you read: keel mr confirm ... --report <path>".into(),
         )),
     }

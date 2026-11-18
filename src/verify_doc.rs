@@ -235,13 +235,6 @@ fn root<'a, 'b>(ts: &'b [Tag<'a>]) -> Option<&'b Tag<'a>> {
     ts.iter().find(|t| t.name == "html" && !t.closing)
 }
 
-/// The root `<html>`'s `data-artifact` (its governed role(s)); `None` for an ungoverned doc.
-pub fn artifact(raw: &str) -> Option<String> {
-    let html = scannable(raw);
-    let ts = tags(&html);
-    attr(root(&ts)?, "data-artifact").map(String::from)
-}
-
 /// The result role a sign-off at this level attests.
 pub fn result_role(epic: bool) -> &'static str {
     if epic {
@@ -251,9 +244,53 @@ pub fn result_role(epic: bool) -> &'static str {
     }
 }
 
-/// Does the doc's root `data-artifact` carry `role`? A collapsed doc carries each of its roles.
-pub fn has_role(raw: &str, role: &str) -> bool {
-    artifact(raw).is_some_and(|a| a.split_whitespace().any(|r| r == role))
+/// The roles a data file's `artifact` gives its page (DEC-69, E-DOCSPLIT.W3): its text split on
+/// white space, or its list. Read through the same loader and anchor refusal as the doc check; a file
+/// of several YAML documents gives the one holding `artifact`. `Err` names why there are none: the
+/// text is no YAML, holds an anchor, has no `artifact`, or one that is neither text nor a list.
+pub fn data_roles(src: &str) -> Result<Vec<String>, String> {
+    let src = src.strip_prefix('\u{feff}').unwrap_or(src);
+    if anchored(src) {
+        return Err(ANCHORS.into());
+    }
+    let docs = YamlLoader::load_from_str(src).map_err(|e| format!("not valid YAML: {e}"))?;
+    let key = Yaml::String("artifact".into());
+    let Some(a) = docs.iter().find_map(|d| d.as_hash().and_then(|h| h.get(&key))) else {
+        return Err("no field \"artifact\"".into());
+    };
+    let roles: Vec<String> = match a {
+        Yaml::String(s) => s.split_whitespace().map(String::from).collect(),
+        Yaml::Array(l) => {
+            l.iter().map(|r| r.as_str().map(String::from).ok_or_else(|| format!("artifact holds {}, not a role", shown(r)))).collect::<Result<_, _>>()?
+        }
+        other => return Err(format!("artifact {} is neither text nor a list", shown(other))),
+    };
+    if roles.is_empty() {
+        return Err("field \"artifact\" is empty".into());
+    }
+    Ok(roles)
+}
+
+/// The doc pages a list of changed paths names (DEC-69): a page `<stem>.html` for itself, a data file
+/// `<stem>.yaml` under docs.root (`in_docs`) for its page, each page once, in first-named order; any
+/// other path is dropped. Whether the page is there is the caller's to ask.
+pub fn pages_of(names: &[String], in_docs: impl Fn(&Path) -> bool) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    for n in names {
+        let p = Path::new(n);
+        let page = match p.extension().and_then(|e| e.to_str()) {
+            Some("html") => n.clone(),
+            Some("yaml") => match pair_of(p, &in_docs) {
+                Some(pair) => pair.page.to_string_lossy().into_owned(),
+                None => continue,
+            },
+            _ => continue,
+        };
+        if !out.contains(&page) {
+            out.push(page);
+        }
+    }
+    out
 }
 
 /// One problem: the file it is in, and what is wrong.
@@ -1129,26 +1166,10 @@ fn scan(s: &str, out: &mut Vec<Hit>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        artifact, decode, decode_mapped, fields, has_role, hits, page_words, pair_of, read_data, result_role, role_cap, tags, unquoted_labels, Data, Pair,
-        ROLES,
+        data_roles, decode, decode_mapped, fields, hits, page_words, pages_of, pair_of, read_data, result_role, role_cap, tags, unquoted_labels, Data, Pair,
+        ANCHORS, ROLES,
     };
     use std::path::Path;
-
-    #[test]
-    fn a_stray_closing_html_before_the_root_does_not_hide_the_role() {
-        let doc = r#"<p>see </html> below</p><html data-artifact="wu-result" data-status="final"><p>done</p></html>"#;
-        assert_eq!(artifact(doc).as_deref(), Some("wu-result"), "the doc is a wu-result report");
-    }
-
-    #[test]
-    fn artifact_reads_the_root_role_and_is_none_for_an_ungoverned_doc() {
-        let doc = r#"<!doctype html><html lang="en" data-artifact="wu-result" data-status="final"><body><div data-artifact="epic-plan"></div></body></html>"#;
-        assert_eq!(artifact(doc).as_deref(), Some("wu-result"));
-        assert_eq!(artifact(r#"<html data-artifact="epic-result wu-result">"#).as_deref(), Some("epic-result wu-result"));
-        assert_eq!(artifact("<html lang=\"en\"><p>x-result</p></html>"), None);
-        assert_eq!(artifact("<p>wu a: done</p>"), None);
-        assert_eq!(artifact(r#"<script>"<html data-artifact=\"wu-result\">"</script><html>"#), None);
-    }
 
     #[test]
     fn the_result_role_a_sign_off_attests_is_one_the_data_file_knows() {
@@ -1161,12 +1182,74 @@ mod tests {
     }
 
     #[test]
-    fn a_collapsed_result_doc_has_both_roles_and_an_ungoverned_one_none() {
-        let collapsed = r#"<html data-artifact="epic-result wu-result">"#;
-        assert!(has_role(collapsed, "wu-result") && has_role(collapsed, "epic-result"));
-        assert!(has_role(r#"<html data-artifact="wu-result">"#, "wu-result"));
-        assert!(!has_role(r#"<html data-artifact="wu-result">"#, "epic-result"));
-        assert!(!has_role("<p>x-result</p>", "wu-result"));
+    fn data_roles_reads_artifact_as_text_or_a_list() {
+        assert_eq!(data_roles("artifact: wu-result\nstatus: ready\n"), Ok(vec!["wu-result".to_string()]));
+        let both = Ok(vec!["epic-result".to_string(), "wu-result".to_string()]);
+        assert_eq!(data_roles("artifact: epic-result wu-result\n"), both);
+        assert_eq!(data_roles("artifact: [epic-result, wu-result]\n"), both);
+        assert_eq!(data_roles("artifact:\n  - epic-result\n  - wu-result\n"), both);
+        assert_eq!(data_roles("\u{feff}artifact: wu-plan\n"), Ok(vec!["wu-plan".to_string()]), "a byte-order mark is read past");
+        assert_eq!(data_roles("x: 1\n---\nartifact: wu-result\n"), Ok(vec!["wu-result".to_string()]), "the document holding artifact");
+        // a role the doc check does not know is still the data file's text: the caller compares
+        assert_eq!(data_roles("artifact: notes\n"), Ok(vec!["notes".to_string()]));
+    }
+
+    #[test]
+    fn data_roles_names_a_data_file_that_gives_no_role() {
+        let err = |src: &str| data_roles(src).unwrap_err();
+        assert!(err("artifact: [wu-result\n").starts_with("not valid YAML"), "{}", err("artifact: [wu-result\n"));
+        assert_eq!(err("status: ready\n"), "no field \"artifact\"");
+        assert_eq!(err("- artifact\n"), "no field \"artifact\"", "a list is no mapping");
+        assert_eq!(err(""), "no field \"artifact\"");
+        assert_eq!(err("artifact: \"\"\n"), "field \"artifact\" is empty");
+        assert_eq!(err("artifact: []\n"), "field \"artifact\" is empty");
+        assert_eq!(err("artifact: 3\n"), "artifact 3 is neither text nor a list");
+        assert_eq!(err("artifact: [wu-result, 3]\n"), "artifact holds 3, not a role");
+        assert_eq!(err("a: &x wu-result\nartifact: *x\n"), ANCHORS);
+    }
+
+    #[test]
+    fn a_page_tag_gives_no_role() {
+        // DEC-69's clean cut: a page is never read as a data file, whatever tag it carries.
+        assert!(data_roles(r#"<html data-artifact="wu-result"><p>done</p></html>"#).is_err());
+    }
+
+    #[test]
+    fn pages_of_maps_changed_paths_to_doc_pages_each_once() {
+        let names: Vec<String> =
+            ["docs/work/a-plan.yaml", "docs/work/a-plan.html", "docs/work/b-result.yaml", "docs/x.css", "src/c.yaml", "docs/d.html", "README"]
+                .map(String::from)
+                .to_vec();
+        let in_docs = |p: &Path| p.starts_with("docs");
+        assert_eq!(pages_of(&names, in_docs), ["docs/work/a-plan.html", "docs/work/b-result.html", "docs/d.html"]);
+        assert!(pages_of(&[], in_docs).is_empty());
+        assert_eq!(pages_of(&["src/c.yaml".to_string()], |_: &Path| true), ["src/c.html"], "in_docs decides what a .yaml is");
+    }
+
+    #[test]
+    fn pages_of_names_each_page_once_whatever_the_order_of_its_paths() {
+        let mut seed: u64 = 7;
+        let mut next = |n: usize| {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (seed >> 33) as usize % n
+        };
+        let stems = ["docs/work/a", "docs/work/b", "docs/c"];
+        for _ in 0..200 {
+            let names: Vec<String> = (0..next(8)).map(|_| format!("{}.{}", stems[next(3)], ["html", "yaml"][next(2)])).collect();
+            let pages = pages_of(&names, |p: &Path| p.starts_with("docs"));
+            let mut want: Vec<String> = names.iter().map(|n| format!("{}.html", n.rsplit_once('.').unwrap().0)).collect();
+            want.dedup();
+            let mut seen = vec![];
+            want.retain(|w| {
+                if seen.contains(w) {
+                    false
+                } else {
+                    seen.push(w.clone());
+                    true
+                }
+            });
+            assert_eq!(pages, want, "{names:?}");
+        }
     }
 
     fn labels(src: &str) -> Vec<String> {
