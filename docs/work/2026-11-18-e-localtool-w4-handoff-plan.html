@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afd9c2c9f34851f0dfb282c" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-LOCALTOOL.W4 plan: the hand-off to your browser and terminal</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-LOCALTOOL.W4 · The hand-off to your browser and terminal</h1>
+      <p>The plan for designing how each waiting item hands you over to your browser and your terminal. You read it before the work starts.</p>
+      <div class="meta">T3 · WU plan · 2026-11-18 · epic <code>E-LOCALTOOL</code> · WU <code>E-LOCALTOOL.W4</code> · branch <code>wu/E-LOCALTOOL/w4-handoff</code> off <code>epic/E-LOCALTOOL</code> cf4c752</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="picture">The picture</h2>
+<div class="diagram" data-c="picture">
+<pre class="mermaid">
+flowchart LR
+  A["Mac alert: W2 waits on you"] -->|"click"| L["The app's list: one item"]
+  L -->|"1 Open"| B["Your browser: the doc, with comments"]
+  L -->|"2 Copy"| T["Your terminal: you paste and run the command"]
+  L -.->|"3 the diff"| D["Where you read the code: W4 picks one"]
+  T -->|"keel writes"| G["git: the sign-off or the merge"]
+  G -->|"the app sees it"| X["The item leaves your list"]
+</pre>
+<div class="caption">One waiting item, from the alert to its leaving. W4 designs the three numbered hand-offs and the last step, for every kind of item.</div>
+</div>
+
+<div class="callout" data-c="item-sketch">
+  <p><b>A rough sketch of one item</b> (W3 draws the real screen):</p>
+  <div style="border:1px solid var(--line);border-radius:6px;padding:10px 14px;background:var(--paper)">
+    <p style="margin:0"><b>E-LOCALTOOL.W2 · result ready to sign</b> <span style="color:var(--muted)">· review PASS · gate green but your sign-off</span></p>
+    <p style="margin:6px 0">[ Open the result ] &nbsp; [ Show the code changes ] &nbsp; [ Copy the sign-off command ]</p>
+    <p style="margin:0"><code>keel mr confirm wu 02ba88a --as vuluu --target epic/E-LOCALTOOL</code></p>
+    <p style="margin:6px 0 0;color:var(--muted)">Leaves your list when your sign-off appears on 02ba88a.</p>
+  </div>
+</div>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">You chose to read in your browser and sign in your terminal; the app only alerts and links out. Today you find the doc yourself and type the sign-off from memory or from the router's message. With GitHub's flow gone, there is also no pull-request page to read the code on. W4 designs, on paper, what each waiting item opens, what command it hands you, and how the app knows you acted.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After W4</th></tr></thead>
+  <tbody>
+    <tr><td>Something waits on you</td><td>The router's message or GitHub's mail; you find the doc</td><td>Per kind of item: the doc it opens and where</td></tr>
+    <tr><td>You must sign or merge</td><td>The router stages the command; you copy it from its terminal</td><td>Per kind of item: the exact command the app would copy, checked against keel's code</td></tr>
+    <tr><td>You want to read the code</td><td>GitHub's pull-request page</td><td>Three ways compared, one recommended</td></tr>
+    <tr><td>You acted</td><td>The router notices and tells you</td><td>Per kind of item: the sign of it in git, and the item leaves</td></tr>
+    <tr><td>You must decide</td><td colspan="2">Approve the hand-off design, or comment where you disagree. W5 orders the build from it</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">How you approve it</h2>
+<ol data-c="example-steps">
+  <li>You read this plan and comment, or tell the router it is fine.</li>
+  <li>The worker reads the code and W1 to W3, and writes one result doc. It opens with a picture.</li>
+  <li>The router tells you it is ready. You open it in your browser and comment.</li>
+  <li>The router opens a pull request into the epic. You approve it on GitHub. Your approval is the sign-off, and auto-merge merges it.</li>
+</ol>
+
+<h3 id="terms">Terms</h3>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Waiting item</td><td>One thing that needs you: a plan to approve, a result to sign, a merge, a rule-file commit, a question.</td></tr>
+    <tr><td>Hand-off</td><td>What the item gives you: a doc to open, a command to copy, or both.</td></tr>
+    <tr><td>Done-signal</td><td>What the app sees in git once you acted, such as your sign-off on the tip. Then the item leaves.</td></tr>
+    <tr><td>Diff</td><td>The code changes of a work unit or an epic.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="work">The work</h2>
+<p data-item="requirement" data-c="requirement">W4's result report gives every kind of waiting item, at least those in W1's needs and the epic's W4 block, its link, its command and its done-signal; checks every command against keel's code; compares three places to read a diff and recommends one; and shows the alert and the list's hand-off as a mockup.</p>
+<p data-item="maps-to" data-c="maps-to">Epic <code>E-LOCALTOOL</code>, its W4 block and the acceptance line "every waiting item has its link and its command (W4)" · epic open points 1 (option B), 2 (the app judges nothing) and 4 (you sign with your username, no button) · W1's needs n1, n2, n3 and n6, and its "a button" jobs j9, j10, j12 and j22 · W2's bridge requests (open a doc, copy a command), Q3 and Q6. No use case: an ideas epic.</p>
+<p data-item="expected" data-c="expected">One doc, <code>docs/work/2026-11-18-e-localtool-w4-handoff-result.html</code> or the same name on the day it lands, green under <code>keel verify-doc</code>. It opens with a picture. It has one row per kind of waiting item, each with its link, its command and its done-signal. Each command is checked against keel's code. Three ways to read a diff are compared and one is recommended. A mockup shows the alert and one item's hand-off. You approve it by approving the WU's pull request. No file outside <code>docs/work/</code> changes.</p>
+
+<p data-c="work-in-short"><b>In short:</b> list every kind of waiting item, then design its three hand-offs: the doc, the command, the done-signal. Pick where you read a diff. Draw the alert and one item. Nothing is built.</p>
+
+<table data-c="parts">
+  <thead><tr><th>#</th><th>Part</th><th>What W4 writes</th></tr></thead>
+  <tbody>
+    <tr><td>H1</td><td>The items</td><td>Every kind of waiting item, each traced to W1 (a need or a job) or to the epic plan. A kind that is not yours, such as a red doc the router fixes, is named with who acts.</td></tr>
+    <tr><td>H2</td><td>The link</td><td>What each item opens: the plan, the result, the rule file or the router's question. The doc opens from disk in your browser, with htmldoc's comments; a re-read opens with what changed. E-DOCSPLIT's short page opens like any doc, never its data file.</td></tr>
+    <tr><td>H3</td><td>The command</td><td>The exact command each item copies, with every value filled: the tip, the target, your name, the report path. Where each value comes from, and how it is checked so a branch name cannot smuggle a second command into your terminal. A plan approval has no command: it stays a message to the router, and the item says where to send it.</td></tr>
+    <tr><td>H4</td><td>The done-signal</td><td>What the app sees in git once you acted: your sign-off on the tip, the merge on the epic, your trailer on the commit. Each is read with W2's read-only commands. Where no git sign exists, such as a plan approval or an answer to a question, W4 says how the item leaves.</td></tr>
+    <tr><td>H5</td><td>The diff</td><td>Three places compared: your terminal, your editor, and a static page the app makes. Same yardsticks for each: nothing new to learn, a large diff stays readable, a worker's text cannot run, it works without the app. One recommended.</td></tr>
+    <tr><td>H6</td><td>The mockup</td><td>The macOS alert, and one item's buttons and command, as static HTML. Only the hand-off part: W3 owns the list screen around it.</td></tr>
+  </tbody>
+</table>
+
+<ul data-c="work-list">
+  <li><b>The shared edge with W3.</b> W3 draws the screens, including the list. W4 owns each item's link, command and done-signal. If W3's list and W4's items differ, the comment round settles it.</li>
+  <li><b>What W4 does not do:</b> draw the list or other screens (W3), change how a task reaches its work unit or who pushes the backup copy (W5), change keel, or write any code.</li>
+</ul>
+
+<h2 id="open-points">Open points</h2>
+<p>Work goes on at these answers. Comment to overrule.</p>
+<table data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Does the app ever run the command for you?</td><td><b>No.</b> It copies; you paste and run it</td><td>Your choice of option B: no sign-off button. The app judges nothing</td></tr>
+    <tr><td>2</td><td>A plan approval or an answer leaves no mark in git. How does its item leave?</td><td><b>W4 compares and recommends.</b> The default: a mark the router already makes, such as the work's first commit after the plan. The app never reads your messages</td><td>The app reads git and the session list only (W2). A message is between you and the router</td></tr>
+    <tr><td>3</td><td>Are a failed gate and a merge conflict yours?</td><td><b>Shown, not yours,</b> unless the router asks you. W4 marks who acts</td><td>Today the router or a worker fixes them. Your list should hold only what needs you</td></tr>
+    <tr><td>4</td><td>Does the list hold the push of main after an epic merge?</td><td><b>Yes, marked "W5 decides".</b> W4 gives it a command only if today's flow already has one</td><td>Who pushes the backup copy is W5's question (W1 j23)</td></tr>
+    <tr><td>5</td><td>Does the result open with a picture?</td><td><b>Yes,</b> then short plain text</td><td>Your ask of 2026-11-18</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="sources-h">Where the facts come from</h3>
+<ul data-c="sources">
+  <li><b>Commands:</b> keel's code at cf4c752. The sign-off's usage text is in <code>src/mr.rs</code> (<code>confirm</code> l.607, <code>commit</code> l.581, the <code>mr</code> usage l.1346). The order sign, then merge, is in skill <code>keel-workflow</code> (the sign-off table) and in skill <code>project-router</code> (the sign-off sequences). The worker reads them; it never runs <code>keel mr</code>.</li>
+  <li><b>Items and jobs:</b> W1's result (the jobs table, needs n1 to n10). <b>Reads:</b> W2's result (the commands that write nothing, the bridge). <b>Screens:</b> W3's plan or result, as far as it has landed.</li>
+  <li><b>Docs in the browser:</b> skill <code>htmldoc</code> (open from disk, comments by the doc's id, <code>?diff=latest</code>) and DEC-69 on <code>epic/E-DOCSPLIT</code> (a short page plus a data file).</li>
+  <li><b>Diff tools:</b> each tool named is one already on your Mac or in today's scripts, or marked "not checked".</li>
+</ul>
+
+<h3 id="test-plan-h">Tests and checks</h3>
+<div data-item="test-plan" data-c="test-plan">
+  <p><b>Unit and integration: waived.</b> W4 changes only <code>docs/work/</code>, so no code path changes. The range is exempt from test, review and doc notes. Your sign-off still runs.</p>
+  <p>The checks the worker runs instead, by a script in a scratch folder, with raw output in the result's evidence:</p>
+  <ol>
+    <li><b>Every item covered.</b> Each W1 "a button" job (j9, j10, j12, j22), each must or should need that waits on you (n1, n2, n3, n6), and each item the epic's W4 and W3 blocks name (plan, result, rule-file commit, question, failed gate, merge conflict) has a row, or a line saying who acts instead.</li>
+    <li><b>Every command real.</b> Each copied command's subcommand and flags appear in keel's usage text at cf4c752 (<code>src/mr.rs</code>), or are plain git. The order matches the skills' sign-off sequence.</li>
+    <li><b>Every value checked.</b> Each placeholder in a command names its source and its check, such as a full commit id or a branch name of the expected shape.</li>
+    <li><b>Every done-signal read-only.</b> Each is read by a command on W2's list of commands that write nothing.</li>
+    <li><b>The diff compared.</b> Three places, the same yardsticks, one recommendation.</li>
+    <li><b>Local sources exist.</b> Every repository path cited passes <code>git cat-file -e cf4c752:&lt;path&gt;</code>.</li>
+    <li><b>Doc check.</b> <code>keel verify-doc</code> is green on the result.</li>
+    <li><b>Scope.</b> <code>git diff --name-only cf4c752..&lt;tip&gt;</code> lists only <code>docs/work/</code> files.</li>
+  </ol>
+</div>
+
+<h3 id="sign-off-h">Sign-off and merge</h3>
+<ul data-c="sign-off">
+  <li>The WU reaches <code>epic/E-LOCALTOOL</code> as a pull request, opened by the router. Your approval of it signs it (the <code>github</code> tier), and auto-merge merges it.</li>
+  <li>The result report is in the range, so the sign-off attests its bytes.</li>
+  <li>GitHub's flow is still today's flow. W4 designs the hand-off for after it; nothing about today's flow changes here.</li>
+</ul>
+
+<h3 id="overlap-h">Overlap</h3>
+<ul data-c="overlap">
+  <li>W3 runs beside W4 in its own worktree. No shared file. The shared edge is the list: W3 draws it, W4 fills each item's hand-off.</li>
+  <li>E-DOCSPLIT (DEC-69) will split each plan and result into a short page and a data file. W4 only states which one opens: the page. This plan uses today's format. No shared file.</li>
+  <li>W5 owns the task merge (W1 point 2), the backup push (j23) and keel's GitHub commands. W4 links to those questions and answers none.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    // keep diagram source readable for the diff layer (mermaid replaces it with SVG)
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
