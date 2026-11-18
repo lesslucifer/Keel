@@ -324,7 +324,8 @@ pub struct Pair {
 }
 
 /// Whether a path is under docs.root (`root`, as `[docs] root` writes it), component by component:
-/// the `in_docs` the pairing helpers take when the paths are repo-relative, as at a tip.
+/// the one docs.root test, the `in_docs` the pairing helpers take for a repo-relative path, at a tip
+/// or (keel verify-doc) on disk.
 pub fn under_root(root: &str) -> impl Fn(&Path) -> bool {
     let root = PathBuf::from(root.trim_end_matches('/'));
     move |p: &Path| p.starts_with(&root)
