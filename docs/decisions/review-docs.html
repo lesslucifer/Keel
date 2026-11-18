@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afdb6699f34851f0dfb28cb">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — Decisions: reviews and docs</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>Decisions: reviews and docs</h1>
+      <p>How code is reviewed (scope, waivers, the 5-round schedule, nits) and how docs are written, checked and kept short. Check here before "fixing" anything that looks deliberate.</p>
+      <div class="meta">T2 · decisions · current truth · 2026-11-18 · Keel · DEC-26 – DEC-28, DEC-49 – DEC-52, DEC-54, DEC-68, DEC-69</div>
+    </div>
+  </header>
+  <main>
+    <p data-c="how-to-read">Current truth: each record says what stands today, why, and what was rejected. A later decision that changes one is folded in and named. A record replaced whole keeps its id and one line. Ids are never reused; git keeps the history.</p>
+
+    <h2 id="review">Code review</h2>
+    <h3 id="dec-26">DEC-26 · Review scope, nits and modules</h3>
+    <table data-c="dec-26">
+      <tr><th>Choice</th><td>A standalone code commit gets no review of its own; the epic review covers it (Trawler DEC-51 not restored). <code>[review] modules</code> globs define a module for the altitude finder (each <code>*</code> match is one module) and <code>[review] rubric</code> points at an optional project-local rubric. The skill reads <code>[review]</code>; the CLI reads <code>[review] max_rounds</code> from the target's committed config (<a href="#dec-50">DEC-50</a>). The cr writer takes a third verdict, WAIVED (<a href="#dec-49">DEC-49</a>), and the round's lists (<code>--findings</code>, <code>--refuted</code>, <code>--nits</code>, <code>--fleet</code>) go on the note through its flags, not a jq step (<a href="#dec-50">DEC-50</a>). The gate reads none of them, and no disposition check will be built. The shipped rubric holds dimensions, severities, principles P1–P5 in general form, the <a href="#dec-50">DEC-50</a> corpus numbers as lineage, and the nit cases and repeat-finding rule of <a href="#dec-51">DEC-51</a>; project instances go in the project rubric.</td></tr>
+      <tr><th>Why</th><td>One epic review sees every commit; reviewing each costs more. Nits and the fleet bill are record, not gate.</td></tr>
+    </table>
+
+    <h3 id="dec-49">DEC-49 · A waived review is its own verdict, and only the owner accepts it</h3>
+    <table data-c="dec-49">
+      <tr><th>Choice</th><td><code>verdict: "WAIVED"</code> with <code>waiver: "&lt;reason&gt;"</code> in <code>cr/v1</code>, bound to the code like a review. Check 3 accepts it with a non-blank reason; the walk carries a waived WU up; <code>dod/v1</code> records it. The owner waives in the sign-off, in two steps: <code>--waive-review "&lt;reason&gt;"</code> previews, <code>--confirm-waiver &lt;code&gt;</code> writes the cr note and the sign-off together in one ref transaction (the code hashes what was shown). A waiver the tool wrote (the cap, <a href="#dec-50">DEC-50</a>) is signed only with <code>--accept-waiver &lt;code&gt;</code>. The sign-off covers the whole waiver: <code>waiver_hash</code> on <code>mr/v1</code> and a signed payload line (<a href="workflow-gates.html#dec-40">DEC-40</a>); the hash covers the reason, open counts, <code>unreviewed</code>, open findings and walk waivers, so any change turns check 8 red. One writer, <code>notes::waive</code>, never over a PASS; the cr writer takes no <code>--reason</code>. Every cr note is read through plumbing (<code>notes list</code>, <code>cat-file</code>), so no git setting alters a row. A GitHub approval signs over a review in any state, with no waiver written (<a href="workflow-gates.html#dec-66">DEC-66</a>).</td></tr>
+      <tr><th>Why</th><td>A waived review could only be written as PASS, so records said "reviewed, PASS" where the owner skipped it (backlog B12).</td></tr>
+      <tr><th>Rejected</th><td>PASS plus a waiver field (an older keel passes it silently; WAIVED fails safe as "not PASS"). A separate CAPPED verdict. Print-only consent or a bare flag (no proof the owner saw it). A session recording the owner's ruling with the WAIVED writer (only a review worker may write cr notes, <a href="router.html#dec-46">DEC-46</a>).</td></tr>
+    </table>
+
+    <h3 id="dec-50">DEC-50 · The review follows a 5-round schedule the tool derives from the notes</h3>
+    <table data-c="dec-50">
+      <tr><th>Choice</th><td>Rounds 1–2 review the whole range, rounds 3–5 only the code since the last reviewed commit; nits are fixed after the verdict under a fix-PASS (<code>--fixes</code>); from round 4 importants with no blocker too; only a blocker earns round 5, and a blocker in round 5 ends in the cap's WAIVED. The round is derived from the cr notes on the branch's own first-parent line, never typed. Preflight and the writer enforce it (<code>0·review-cap</code>), and the writer stamps <code>round</code> and <code>scope</code>. A narrow round still binds the whole range's code hash. <code>[review] max_rounds</code> comes from the target's committed config (default 5), so a branch cannot raise its own cap. A commit that changes no code path carries a fix-PASS for the same round, even over a fix-PASS; a docs-only commit after a failed round fixes nothing; a FAIL with nothing counted is recorded and needs a round; a second code fix from round 4 ends in the owner's waiver. "Changed since a round" counts only the branch's own changes: each first-parent commit of <code>since..tip</code> against its parent; a merge against git's automatic merge of its parents (<code>merge-tree --write-tree</code>, attributes from the first parent's tree); an octopus merge whole. It needs git 2.40; a git error refuses.</td></tr>
+      <tr><th>Why</th><td>Reviews looped: each round found something and the fix reopened the WU.</td></tr>
+      <tr><th>Rejected</th><td>Schedule in skill text only. A typed round number. Binding a narrow round to its narrow diff. A new owner command. A one-verifier check of each fix-PASS. Stacking fix-PASSes. A merge check on nit dispositions (<a href="#dec-26">DEC-26</a>).</td></tr>
+    </table>
+
+    <h3 id="dec-51">DEC-51 · Two nit cases, and a later round refutes a repeat of an earlier finding</h3>
+    <table data-c="dec-51">
+      <tr><th>Choice</th><td>The shipped rubric names two nits: a missing test for an edge case the code already handles correctly, and a test-harness tidy-up that changes no test's result. Wrong code on an untested case stays a blocker. From round 2 the orchestrator gives verifiers (not finders) every earlier cr note on the branch's line. A claim is a repeat only when it is surely the same defect in the same code. A repeat of a fixed finding is refuted unless the verifier names a failing case at the tip that shows the fix does not hold; then it is judged as a finding against that fix. A repeat of a waived or refuted entry is refuted only while the code it judged, and every file its reason names, is unchanged; in doubt the claim is new. The router's own extra reviews follow the same schedule (1–4 severity: blocker/high, medium, low).</td></tr>
+      <tr><th>Why</th><td>Reviews reopened work over a missing edge-case test or a harness tidy-up, and later rounds re-judged defects an earlier round had found and the author fixed.</td></tr>
+      <tr><th>Rejected</th><td>Always refuting a repeat (a fix that did not work passes unseen). Re-judging repeats normally (what looped). Giving finders the list too (it would change what reviewers look for).</td></tr>
+    </table>
+
+    <h2 id="docs">Documentation</h2>
+    <h3 id="dec-27">DEC-27 · Doc tiers by config globs; archiving needs lineage</h3>
+    <table data-c="dec-27">
+      <tr><th>Choice</th><td>Tiers come from <code>[docs.tiers]</code> globs (default: Trawler's layout under docs.root, design-rules dropped), matched T3 → T2 → T1 → T0 so a broad glob never hides a working doc. "Archived" means deleted in the range and absent at the tip; the local copy in gitignored <code>docs/.archive/</code> is not checked. An archived T3 doc needs <code>distilled_to</code>: T1/T2 docs tracked at the tip (not necessarily changed in the same range), or <code>"none: &lt;why&gt;"</code>. A page and its data file are one doc for tiers and lineage (<a href="#dec-69">DEC-69</a>). A doc matching no glob is red. The doc set includes T0 files, so an AGENTS.md edit needs a doc note. Only verify-dod enforces this; verify-doc has no range.</td></tr>
+      <tr><th>Rejected</th><td>A per-doc <code>data-tier</code> tag (a T3 doc could relabel itself to escape archiving). Trawler's <code>t2_waived</code> and <code>distills</code> sentence (judgment text the gate can only check for non-emptiness).</td></tr>
+    </table>
+
+    <h3 id="dec-28">DEC-28 · verify-doc: drafts fully silent</h3>
+    <table data-c="dec-28">
+      <tr><th>Choice</th><td>A draft (or status-less) governed doc is silent on its checklist <em>and</em> its relative links, unlike Trawler. Since <a href="#dec-69">DEC-69</a> the checklist is read from the data file, keyed by its role; collapsed roles need the union. The Codex <code>apply_patch</code> payload parsing in verify-doc-post is ported from Trawler, not verified against Codex docs (backlog B7).</td></tr>
+    </table>
+
+    <h3 id="dec-52">DEC-52 · Docs are written by a shipped writing skill; the tool checks only what it can count</h3>
+    <table data-c="dec-52">
+      <tr><th>Choice</th><td>A shipped skill, <code>keel-write</code>, holds nine writing rules, each with a before/after, a self-check and one short epic plan as example. <code>keel init</code> installs it; keel-plan, keel-distill, <code>AGENTS.md</code> and its template point to it. It covers every doc a person reads, not skill files or agent messages. Existing docs are rewritten only when edited. <code>keel verify-doc</code> checks only what a tool can judge: the checklist from the data file, where <code>owner-changes</code> is required in an epic plan (<a href="#dec-69">DEC-69</a>); every Mermaid flowchart label in a non-draft page in quotes (best effort: refusing a valid diagram is a bug, a missed label a known limit; backlog B21); and the page's word cap (<a href="#dec-69">DEC-69</a>): by its data file's role, else by path from <code>[docs.caps]</code> in <code>.keel/config.toml</code>. An epic plan's top (at most 300 words, diagram source and ids counted) ends at the heading with id <code>work</code>; with no such heading the whole page is the top. A page with no data file gets links, labels and its path cap only.</td></tr>
+      <tr><th>Why</th><td>Agents wrote long, dense plans: one epic plan had 1,575 words above its work. The owner wanted docs "short, direct and easy to understand". The router skill and briefs are not yet covered (backlog R46).</td></tr>
+      <tr><th>Rejected</th><td>Rules as a keel-plan section or in <code>AGENTS.md</code> alone (no room for examples). A length cap on every doc. A label check that must catch every label.</td></tr>
+    </table>
+
+    <h3 id="dec-54">DEC-54 · The doc check runs at the write, from a host plugin; a review or a merge is no substitute</h3>
+    <table data-c="dec-54">
+      <tr><th>Choice</th><td>The trigger is the write, on any host. A host with shell hooks (Claude Code, <a href="distribution.html#dec-5">DEC-5</a>) runs <code>keel verify-doc &lt;path&gt;</code> on each first-party write or edit and <code>keel verify-doc</code> over all docs at turn end. DeepSeek Harness (DSH) has no shell-hook surface, so a plugin reaches the same two points: <code>tools/post-execute</code> runs the per-path check after the bytes land and returns <code>{kind:'block', feedback}</code> on a red doc; <code>agent/turn-stopping</code> runs the whole-tree check and calls <code>agent.steer()</code> with the problems, so the turn takes another step instead of closing. Exit 0 and a draft are silent; flipping to <code>ready</code> is the checkpoint. The check fails the write; it cannot prevent it. The gate stays facts-only: it never reads a document's form.</td></tr>
+      <tr><th>Why</th><td>On DSH nothing ran <code>keel verify-doc</code>, and a broken doc surfaced at a review or never. A red doc's bytes still land; the cost is one fixing turn. The plugin lives in its own repo (the desktop-dsh project), a profile dependency named by the install line; without it nothing checks doc form in a DSH session. Shipped skills are tested for this text (<code>tests/suite/init.rs</code>).</td></tr>
+      <tr><th>Rejected</th><td>Vetoing at <code>tools/pre-execute</code> (it cannot rewrite arguments, and a veto loses the work). <code>tools/result</code> (observe-only). Checking at the review or the merge (too late; the merge never checked form). A project-side script on DSH. The plugin's code in this repo.</td></tr>
+    </table>
+
+    <h3 id="dec-68">DEC-68 · Docs are read as web pages, built from every live branch</h3>
+    <table data-c="dec-68">
+      <tr><th>Choice</th><td><code>.github/workflows/pages.yml</code> runs on <code>workflow_run</code> of "Keel gate" and "Keel main", from main. Its build job (<code>contents: read</code>) runs <code>scripts/pages-build.sh</code>: each live branch's tracked docs land under <code>&lt;branch&gt;/docs/</code> byte for byte, an epic tip's report note at <code>&lt;branch&gt;/docs/_report/report.html</code>; only doc file types (html, css, png, jpg, jpeg, gif, webp, svg, drawio), every file a blob, no branch code run, a path part at most 200 bytes, a branch over its size budget skipped whole. Each build starts empty, so a deleted branch disappears. The deploy job (<code>pages: write</code>, <code>id-token: write</code>) runs only <code>actions/deploy-pages</code>; a fork's run is skipped. The bot's pull request and tracking issue link each doc's page.</td></tr>
+      <tr><th>Why</th><td>The owner ruled for docs as pages on GitHub Pages (2026-11-15): he read plans as files on his Mac, not readable on the phone. The builder reads GitHub without credentials, so the repository must stay public. The owner sets Pages' source to "GitHub Actions" and limits the <code>github-pages</code> environment to main (backlog G10).</td></tr>
+      <tr><th>Rejected</th><td>A site per branch or per pull request (one site per repository). Rendering on the owner's Mac.</td></tr>
+    </table>
+
+    <h3 id="dec-69">DEC-69 · Docs split: a short page for the owner, a data file for agents and checks</h3>
+    <table data-c="dec-69">
+      <tr><th>Choice</th><td>Each plan and result is a page plus a YAML data file beside it, named like the page and ending <code>.yaml</code>. The data file holds the checklist as fields named like the old tags (<code>data-wu</code> becomes <code>wu</code>), plus <code>artifact</code>, <code>status</code>, <code>id</code>, <code>epic</code> (WU roles), <code>title</code>, <code>date</code> (a quoted string) and <code>page</code>; extra facts go under one free field, <code>details</code>, and any other unknown field is red. An epic plan's data file repeats its today/after table. The doc check reads the data file (a draft is silent); the page carries no checklist tags and is checked for links, diagram labels and its word cap. An epic plan's top (problem, what changes, an example, terms) is at most 300 words and ends at the heading with id <code>work</code>; a result page marks each "how you'll know" check met or not and runs the main case for real. <b>Word caps</b> for a ready page: epic plan 700, WU plan 500, WU result 500, epic result 700 (a one-part epic takes the epic caps), a decision file 5,000 (a record about 250), architecture 3,000, install 1,500; other work pages none. A plan or result finds its cap by its data file's role, any other page by path. The sign-off still attests the page; the data file is in the signed diff. An epic result's data file sits beside its page in <code>docs/.archive/</code>, untracked. <b>Data, no page:</b> the decision and use-case indexes, the use cases (contracts, no build history), the backlog (open rows only) and its order. <b>Current truth only:</b> a replaced decision keeps "DEC-n · title · replaced by DEC-m", lineage rows go; architecture and install drop history and the rules a skill holds; a decision file over its cap is split by topic. Ids are never reused, and every id cited in code, skills or docs still resolves.</td></tr>
+      <tr><th>Why</th><td>One HTML file served the owner, agents and <code>keel verify-doc</code> badly: long pages full of checklist tags. The owner asked (2026-11-17) for a short doc for him and a data file for agents. A data file has no htmldoc id; the owner comments on the page and asks an agent about use cases and backlog.</td></tr>
+      <tr><th>Rejected</th><td>The data in git notes (a plan exists before any commit to hang a note on). One doc generated from the other. Dropping the use cases (code, reviews and plans cite their ids). Reading the old tags for a while (no other project yet).</td></tr>
+    </table>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
