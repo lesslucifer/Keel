@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afd68b79f34851f0dfb2819" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-DOCSPLIT.W2 result: the check reads the data file</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-DOCSPLIT.W2 result · The check reads the data file</h1>
+      <p>The doc check now reads each plan's and result's data file, and caps every page.</p>
+      <div class="meta">Result · 2026-11-18 · T3 · Keel · per <a href="2026-11-18-e-docsplit-w2-plan.html">the W2 plan</a> · its data file sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="happened">What happened</h2>
+<p data-c="outcome" data-item="outcome"><b>Delivered, one part waiting for you.</b> The doc check reads the data file: a missing, empty or misspelt field is red and named; a draft is silent. Every ready plan and result page has its word cap. The GitHub docs check and the template are ready as a task, for you to merge.</p>
+
+<h2 id="checklist">Checklist</h2>
+<table data-c="checklist">
+  <thead><tr><th>The plan said to expect</th><th>Met?</th><th>Where to see it</th></tr></thead>
+  <tbody>
+    <tr><td>A data file missing a field is red at the write, naming it; a draft stays silent</td><td>Yes</td><td>The example below; the epic's end-to-end test</td></tr>
+    <tr><td>A WU plan page of 501 words is red; at 500, green</td><td>Yes</td><td>The integration test on caps, with the count in the message</td></tr>
+    <tr><td>Every doc in <code>docs/</code> stays green</td><td>Yes</td><td>The check over all docs: exit 0</td></tr>
+    <tr><td>The GitHub docs check and the template</td><td>Waiting</td><td>Prepared as a task; your merge lands it</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">The main case: this result's own data file, run for real</h2>
+<ol data-c="example">
+  <li>The data file was written before this page. The check said: <code>page 2026-11-18-e-docsplit-w2-result.html is not beside the data file</code>.</li>
+  <li>With the page written, the outcome field was deleted. The check said: <code>missing field "outcome"</code>, exit 1.</li>
+  <li>Marked draft, the same file was silent: exit 0.</li>
+  <li>Restored and ready: exit 0. The page counts 404 words of its 500.</li>
+</ol>
+
+<h2 id="differences">Differences from the plan</h2>
+<ul data-c="deviations" data-item="deviations">
+  <li><b>DEC-10's change sits in the distribution decisions</b>, where DEC-10 lives. The plan named the gates file for both.</li>
+  <li><b>The task is not merged yet.</b> Its test for GitHub's docs check waits with it: it fails until the script changes.</li>
+  <li><b>A page with no data file is checked as a plain page:</b> links, labels and its cap by path. Page tags are no longer read, so the check cannot tell a forgotten data file from a page that needs none.</li>
+</ul>
+
+<h2 id="left">What is left</h2>
+<ul data-c="follow-ups" data-item="follow-ups">
+  <li>You merge the task; the worker then commits its prepared test: E-DOCSPLIT.W2, before its pull request.</li>
+  <li>The sign-off and the doc note still read the page's role: E-DOCSPLIT.W3.</li>
+  <li>The writing skills teach the pair; their example becomes one: E-DOCSPLIT.W4.</li>
+  <li>Keel's own caps for decisions, architecture and install: E-DOCSPLIT.W5 and W6.</li>
+</ul>
+
+<h2 id="details">Details</h2>
+<p data-c="distillation" data-item="distillation">Amended rows on <a href="../decisions/distribution.html#dec-10">DEC-10</a> and <a href="../decisions/workflow-gates.html#dec-52">DEC-52</a>. UC-DOC-1 and the new UC-DOC-6 are written at the epic close.</p>
+<p data-c="evidence" data-item="evidence">Commits <code>4a2cd48</code> (the check and its tests) and <code>e6ef395</code> (the decisions), then this result. Tests: unit in <code>src/verify_doc.rs</code> and <code>src/main.rs</code>; integration in <code>tests/suite/verify_doc.rs</code>; the epic's end-to-end test starts in <code>tests/suite/docsplit_e2e.rs</code>. The data file lists the rest.</p>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
