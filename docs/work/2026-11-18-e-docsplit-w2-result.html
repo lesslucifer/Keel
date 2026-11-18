@@ -42,6 +42,7 @@
   <li><b>DEC-10's change sits in the distribution decisions</b>, where DEC-10 lives. The plan named the gates file for both.</li>
   <li><b>The test for GitHub's docs check came after the task</b>, in its own commit: it fails until the script changes.</li>
   <li><b>A page with no data file is checked as a plain page:</b> links, labels and its cap by path. Page tags are no longer read, so the check cannot tell a forgotten data file from a page that needs none.</li>
+  <li><b>After the code review, the check refuses more:</b> a data file with YAML anchors or aliases, a field that should be text but is not, a broken config when paths are given, and a caps key written as a bare folder.</li>
 </ul>
 
 <h2 id="left">What is left</h2>
@@ -53,7 +54,7 @@
 
 <h2 id="details">Details</h2>
 <p data-c="distillation" data-item="distillation">Amended rows on <a href="../decisions/distribution.html#dec-10">DEC-10</a> and <a href="../decisions/workflow-gates.html#dec-52">DEC-52</a>. UC-DOC-1 and the new UC-DOC-6 are written at the epic close.</p>
-<p data-c="evidence" data-item="evidence">Commits <code>4a2cd48</code> (the check and its tests) and <code>e6ef395</code> (the decisions), then this result; the task <code>666544b</code> (pull request #15) and its test <code>6799bc8</code>. Tests: unit in <code>src/verify_doc.rs</code> and <code>src/main.rs</code>; integration in <code>tests/suite/verify_doc.rs</code> and <code>tests/suite/ci_gate.rs</code>; the epic's end-to-end test starts in <code>tests/suite/docsplit_e2e.rs</code>. The data file lists the rest.</p>
+<p data-c="evidence" data-item="evidence">Commits <code>4a2cd48</code> (the check and its tests) and <code>e6ef395</code> (the decisions), then this result; the task <code>666544b</code> (pull request #15) and its test <code>6799bc8</code>; the review fixes <code>85db9e1</code> and <code>8c706c9</code>. Tests: unit in <code>src/verify_doc.rs</code> and <code>src/main.rs</code>; integration in <code>tests/suite/verify_doc.rs</code> and <code>tests/suite/ci_gate.rs</code>; the epic's end-to-end test starts in <code>tests/suite/docsplit_e2e.rs</code>. The data file lists the rest.</p>
 
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
