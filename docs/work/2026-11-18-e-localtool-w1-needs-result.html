@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afd2afc9f34851f0dfb2762" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-LOCALTOOL.W1 result: what the app must do, and what it replaces</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-LOCALTOOL.W1 · What the app must do, and what it replaces</h1>
+      <p>Every job today's flow does for you, what the app does with each, and your needs, ranked. You approve it before the epic's next steps start.</p>
+      <div class="meta">T3 · WU result · 2026-11-18 · epic <code>E-LOCALTOOL</code> · WU <code>E-LOCALTOOL.W1</code> · branch <code>wu/E-LOCALTOOL/w1-needs</code> · read from the code at 92611ac</div>
+    </div>
+  </header>
+  <main>
+
+<p data-c="map-link">The same needs and jobs as a picture, each need with the jobs under it: <a href="2026-11-18-e-localtool-w1-needs-map.html">the needs map</a>.</p>
+
+<h2 id="outcome">What happened</h2>
+<p data-item="outcome" data-c="outcome"><b>Delivered.</b> Today's flow does 39 jobs for you, and 9 more for the router and the workers. Each is listed below with the file it lives in, where its state lives and what the app does with it. The app takes over 4 jobs, all watching or alerting. It gives you a button for 4, leaves 16 alone and drops the 15 GitHub ones. Your needs are ranked: 3 must, 4 should, 3 later. Every check the plan named passed.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Before W1</th><th>Now</th></tr></thead>
+  <tbody>
+    <tr><td>You ask "what does the flow do for me?"</td><td>No single answer</td><td>The jobs table below: 39 rows, each with its file</td></tr>
+    <tr><td>You ask "what must the app do first?"</td><td>Your idea, in a message</td><td>Three musts: an alert at your desk, one list of what waits on you, and the sign-off and merge on your Mac</td></tr>
+    <tr><td>You must decide</td><td colspan="2">Approve the tables and the ranking, or comment where you disagree. Five points below run on my answer unless you overrule them</td></tr>
+  </tbody>
+</table>
+
+<h3 id="terms">Terms</h3>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Job</td><td>One thing the flow does that you would notice. A script with three jobs gets three rows.</td></tr>
+    <tr><td>Taken over</td><td>The app does the job itself. Only watching, alerting and listing. The old way keeps working without the app.</td></tr>
+    <tr><td>A button</td><td>The job stays where it is. The app opens its doc or copies its command.</td></tr>
+    <tr><td>Left alone</td><td>The job stays as it is. The app may show its result.</td></tr>
+    <tr><td>Dropped</td><td>A piece of GitHub's flow that goes away. The row names what covers it on your Mac. W5 plans the removal.</td></tr>
+    <tr><td>Judges</td><td>Decides whether work may merge: the gate, the notes, the sign-off. The app never does this.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="jobs">The jobs today's flow does for you</h2>
+<p>Read from the code at 92611ac. "Lives in" names the file and the function or line. Scope says whether the state belongs to one project or to your Mac.</p>
+<table data-c="jobs-owner" id="jobs-owner">
+  <thead><tr><th>#</th><th>Job, for you</th><th>Lives in</th><th>State</th><th>Scope</th><th>Mark</th><th>What the app does, or what covers it</th></tr></thead>
+  <tbody>
+    <tr><td colspan="7"><b>Judging, and your own actions</b></td></tr>
+    <tr id="j1"><td>j1</td><td>Judges a work unit or an epic before it merges, and records the green run</td><td><code>src/gate.rs</code> verify_dod (l.899), judge (l.398); <code>src/main.rs</code> PRE_MERGE_COMMIT (l.414)</td><td>notes <code>refs/notes/test</code>, <code>doc</code>, <code>cr</code>, <code>mr</code>, <code>dod</code>; the branches</td><td>project</td><td>left alone</td><td>Shows the result. <code>keel verify-dod</code> writes a receipt when green, so it is no pure read (point 5)</td></tr>
+    <tr id="j2"><td>j2</td><td>Refuses a bad commit: none on main, lint on code, your trailer on a rule file</td><td><code>src/main.rs</code> pre_commit (l.582); <code>src/mr.rs</code> commit_msg (l.1292)</td><td>the staged tree; <code>.keel/config.toml</code>, <code>.keel/mr-allowed</code></td><td>project</td><td>left alone</td><td>Nothing</td></tr>
+    <tr id="j3"><td>j3</td><td>Checks every push: tests on each pushed tree, the gate on main and epic ranges, the notes sent along</td><td><code>src/main.rs</code> pre_push (l.342); <code>src/gate.rs</code> hook (l.664)</td><td>refs, the remote</td><td>project</td><td>left alone</td><td>Nothing</td></tr>
+    <tr id="j4"><td>j4</td><td>Keeps keel's git hooks installed, and every merge a real merge</td><td><code>src/main.rs</code> hooks_install (l.511), POST_CHECKOUT (l.456); <code>src/gate.rs</code> guard_hooks (l.507)</td><td><code>core.hooksPath</code>, the hooks folder in the git dir</td><td>project, per clone</td><td>left alone</td><td>May show the "hooks are off" warning</td></tr>
+    <tr id="j5"><td>j5</td><td>Runs the project's lint and tests</td><td><code>src/main.rs</code> lint (l.276), check (l.285)</td><td>the tree; <code>[check]</code> in the config</td><td>project</td><td>left alone</td><td>Nothing</td></tr>
+    <tr id="j6"><td>j6</td><td>Records the evidence of tests and docs</td><td><code>src/notes.rs</code> write (l.1093)</td><td><code>refs/notes/test</code>, <code>refs/notes/doc</code></td><td>project</td><td>left alone</td><td>Reads them for the epics screen</td></tr>
+    <tr id="j7"><td>j7</td><td>Reviews the code and records the verdict</td><td><code>src/gate.rs</code> preflight (l.813); <code>.claude/skills/keel-code-review/SKILL.md</code></td><td><code>refs/notes/cr</code></td><td>project</td><td>left alone</td><td>Shows the verdict</td></tr>
+    <tr id="j8"><td>j8</td><td>Keeps the epic's result report in git</td><td><code>src/notes.rs</code> write_report (l.1077)</td><td><code>refs/notes/report</code></td><td>project</td><td>left alone</td><td>Nothing. Pages reads it today, but so can you (point 3)</td></tr>
+    <tr id="j9"><td>j9</td><td>Your sign-off of a work unit or an epic</td><td><code>src/mr.rs</code> confirm (l.606)</td><td><code>refs/notes/mr</code>; <code>.keel/mr-allowed</code></td><td>project</td><td>a button</td><td>Copies <code>keel mr confirm …</code>, ready to paste (W4)</td></tr>
+    <tr id="j10"><td>j10</td><td>Your commit of a rule file</td><td><code>src/mr.rs</code> commit (l.580)</td><td>the commit's <code>Reviewed-By</code> trailer</td><td>project</td><td>a button</td><td>Copies <code>keel mr commit …</code> (W4)</td></tr>
+    <tr id="j11"><td>j11</td><td>Keeps your signer list</td><td><code>src/mr.rs</code> setup (l.514)</td><td><code>.keel/mr-allowed</code></td><td>project</td><td>left alone</td><td>Nothing</td></tr>
+    <tr id="j12"><td>j12</td><td>Merges a signed work unit into its epic, or an epic into main, by your <code>git merge</code></td><td><code>src/main.rs</code> PRE_MERGE_COMMIT (l.414); <code>src/gate.rs</code> hook (l.664)</td><td>the branches</td><td>project</td><td>a button</td><td>Copies the merge command (W4). On GitHub today: g4</td></tr>
+    <tr id="j13"><td>j13</td><td>Checks a doc's form</td><td><code>src/verify_doc.rs</code> verify (l.247); <code>src/main.rs</code> verify_doc (l.607)</td><td>the doc file</td><td>project</td><td>left alone</td><td>May show a red doc</td></tr>
+    <tr id="j14"><td>j14</td><td>Sets a project up for keel</td><td><code>src/init.rs</code> run (l.459)</td><td><code>.keel/</code>, the hooks</td><td>project</td><td>left alone</td><td>The app's project list starts from a set-up project (need n7)</td></tr>
+
+    <tr><td colspan="7"><b>Watching, alerting and showing</b></td></tr>
+    <tr id="j15"><td>j15</td><td>Starts a worker on a work unit, in its own worktree</td><td><code>scripts/router-worker.sh</code> spawn (l.389), worktree (l.349)</td><td><code>.router/briefs/</code>, <code>.router/runs/</code>; a background session; the worktree</td><td>project and Mac</td><td>left alone</td><td>The router starts it. The app lists it (j17)</td></tr>
+    <tr id="j16"><td>j16</td><td>Stops an idle worker</td><td><code>scripts/router-worker.sh</code> stop (l.318)</td><td>a background session</td><td>Mac</td><td>left alone</td><td>Nothing</td></tr>
+    <tr id="j17"><td>j17</td><td>Shows you which workers are busy, idle or stuck. Today the router tells you, from the watchdog</td><td><code>scripts/router-worker.sh</code> facts (l.210)</td><td><code>claude agents --json</code>; transcripts under <code>~/.claude/projects/</code>; each worktree's branch</td><td>Mac</td><td>taken over</td><td>Lists the same facts itself. The watchdog stays for the router (r4)</td></tr>
+    <tr id="j18"><td>j18</td><td>Tells you, at the desk, that something waits on you. Today the router's terminal says it</td><td><code>.claude/skills/keel-router/SKILL.md</code> "Talking to the owner" (l.170)</td><td>the router session</td><td>Mac</td><td>taken over</td><td>A macOS alert. The router still says it</td></tr>
+    <tr id="j19"><td>j19</td><td>Lists what waits on you. Today there is no list: the router's messages and GitHub's review requests</td><td><code>.claude/skills/keel-router/SKILL.md</code> (l.170); <code>scripts/router-gh.sh</code> pr-ready (l.161)</td><td>the router session; GitHub</td><td>project</td><td>taken over</td><td>One list, read from the notes, the branches and the router (W3, W4)</td></tr>
+    <tr id="j20"><td>j20</td><td>Tells you on Telegram when you must act</td><td><code>scripts/notify-owner.py</code> main (l.168)</td><td><code>.router/notify/owner.md</code>; the Telegram token under <code>~/.claude/channels/</code></td><td>project and Mac</td><td>left alone</td><td>Kept for when you are away (epic point 5)</td></tr>
+    <tr id="j21"><td>j21</td><td>Shows each epic, its work units and their evidence. Today: the router on ask, GitHub's tracking issue, the notes table on a pull request</td><td><code>scripts/router-gh.sh</code> notes_row (l.608), issue (l.176)</td><td>the notes; the branches; GitHub issues</td><td>project</td><td>taken over</td><td>Reads the notes and branches itself (W3)</td></tr>
+    <tr id="j22"><td>j22</td><td>Shows a doc in your browser, with comments and versions</td><td>the htmldoc tag in each doc, such as <code>docs/work/2026-11-17-e-localtool-plan.html</code>; <code>AGENTS.md</code> (l.45)</td><td>the htmldoc server, by the doc's id</td><td>off the Mac</td><td>a button</td><td>Opens the doc file. Comments stay on the server</td></tr>
+    <tr id="j23"><td>j23</td><td>Keeps a copy of the code and notes off your Mac</td><td>your <code>git push</code> of main, with the notes: <code>src/main.rs</code> pre_push (l.342); the bot's push: <code>scripts/router-gh.sh</code> push (l.144)</td><td>GitHub</td><td>project</td><td>left alone</td><td>Stays on GitHub. W5 says who pushes work branches once the bot's pull requests go</td></tr>
+    <tr id="j24"><td>j24</td><td>Builds a release from a tag</td><td><code>.github/workflows/release.yml</code>; <code>dist-workspace.toml</code></td><td>GitHub Releases</td><td>project</td><td>left alone</td><td>Stays on GitHub</td></tr>
+
+    <tr><td colspan="7"><b>GitHub's flow</b></td></tr>
+    <tr id="g1"><td>g1</td><td>Runs the tests, the gate and the doc check on every pull request</td><td><code>.github/workflows/keel-gate.yml</code>; <code>scripts/ci-gate.sh</code>; <code>src/gate.rs</code> ci_gate (l.578)</td><td>GitHub checks</td><td>project</td><td>dropped</td><td>j1, j3, j5, j13 on your Mac</td></tr>
+    <tr id="g2"><td>g2</td><td>Tests each push of main</td><td><code>.github/workflows/keel-main.yml</code></td><td>GitHub checks</td><td>project</td><td>dropped</td><td>j3: the push runs the tests first</td></tr>
+    <tr id="g3"><td>g3</td><td>Turns your approval into the sign-off</td><td><code>.github/workflows/keel-sign-off-request.yml</code>, <code>.github/workflows/keel-sign-off.yml</code>; <code>scripts/ci-sign-off.sh</code>; <code>src/mr.rs</code> sign_off (l.1011)</td><td>GitHub reviews; <code>refs/notes/mr</code></td><td>project</td><td>dropped</td><td>j9: you type the sign-off</td></tr>
+    <tr id="g4"><td>g4</td><td>Merges an approved pull request</td><td><code>scripts/router-gh.sh</code> automerge (l.508), pr-ready (l.161); <code>merge_on_approve</code> in <code>.keel/config.toml</code></td><td>GitHub</td><td>project</td><td>dropped</td><td>j12: you merge</td></tr>
+    <tr id="g5"><td>g5</td><td>Opens a pull request with its docs and notes, and marks it ready</td><td><code>scripts/router-gh.sh</code> pr-open (l.147), docs_md (l.585)</td><td>GitHub pull requests</td><td>project</td><td>dropped</td><td>j19, j21, j22</td></tr>
+    <tr id="g6"><td>g6</td><td>Posts a worker's file on a pull request</td><td><code>scripts/router-gh.sh</code> post (l.164)</td><td>GitHub comments</td><td>project</td><td>dropped</td><td>j22: the doc opens from disk</td></tr>
+    <tr id="g7"><td>g7</td><td>Hears your reviews, comments and <code>/keel</code> commands</td><td><code>scripts/router-gh-watch.sh</code> review, comment (l.59); <code>scripts/router-gh-command.jq</code></td><td>GitHub; <code>commanders</code> in the config</td><td>project</td><td>dropped</td><td>The router's terminal and Telegram; later the app (need n8)</td></tr>
+    <tr id="g8"><td>g8</td><td>Waits for the checks and the merge on GitHub</td><td><code>scripts/router-gh-watch.sh</code> checks, merged (l.59)</td><td>GitHub</td><td>project</td><td>dropped</td><td>r6 and j1, on your Mac</td></tr>
+    <tr id="g9"><td>g9</td><td>Tells the router a pull request conflicts</td><td><code>scripts/router-gh-watch.sh</code> conflict (l.59)</td><td>GitHub</td><td>project</td><td>dropped</td><td>git refuses a conflicted merge; the worker merges its target in</td></tr>
+    <tr id="g10"><td>g10</td><td>Lands a task's pull request into its work unit, by your merge on GitHub</td><td><code>scripts/router-gh.sh</code> pr-open (l.147); <code>scripts/router-worker.sh</code> worktree (l.349)</td><td>GitHub pull requests; the task branch</td><td>project</td><td>dropped</td><td>Your local merge of the task. Today's rule forbids it, so W5 must say how (point 2)</td></tr>
+    <tr id="g11"><td>g11</td><td>Tracks each epic and work unit in an issue</td><td><code>scripts/router-gh.sh</code> issue (l.176)</td><td>GitHub issues</td><td>project</td><td>dropped</td><td>j21</td></tr>
+    <tr id="g12"><td>g12</td><td>Brings a merge made on GitHub back to your Mac</td><td><code>scripts/router-gh.sh</code> sync (l.168)</td><td>GitHub</td><td>project</td><td>dropped</td><td>Nothing needed: every merge is local</td></tr>
+    <tr id="g13"><td>g13</td><td>Publishes every branch's docs as a website</td><td><code>.github/workflows/pages.yml</code>; <code>scripts/pages-build.sh</code></td><td>GitHub Pages</td><td>project</td><td>dropped</td><td>j22: docs open from disk</td></tr>
+    <tr id="g14"><td>g14</td><td>Checks GitHub's settings for the flow: rulesets, merge methods, the token, Pages</td><td><code>scripts/gh-settings-check.sh</code></td><td>GitHub settings</td><td>project</td><td>dropped</td><td>Nothing to check once the flow goes. Release settings: W5</td></tr>
+    <tr id="g15"><td>g15</td><td>Makes your approval required, as code owner</td><td><code>.github/CODEOWNERS</code></td><td>GitHub rulesets</td><td>project</td><td>dropped</td><td>j9</td></tr>
+  </tbody>
+</table>
+
+<h3 id="rules">Two rules the marks obey</h3>
+<ul data-c="rules">
+  <li><b>The app judges nothing.</b> The judging jobs j1, j2, j3, j6, j7, j9, j10, j11, j12 and j13 are left alone or a button. None is taken over.</li>
+  <li><b>The terminal works without the app.</b> The four jobs taken over (j17, j18, j19, j21) only watch, alert or list. Each keeps today's way: the router still tells you, the watchdog still reports, the notes stay in git.</li>
+</ul>
+
+<h2 id="router-jobs">Jobs for the router and the workers</h2>
+<p>You rarely see these. They keep a worker in its lane, so the app must not become a way round them (W2).</p>
+<table data-c="jobs-router" id="jobs-router">
+  <thead><tr><th>#</th><th>Job</th><th>Lives in</th><th>State</th><th>Scope</th><th>Mark</th><th>Note</th></tr></thead>
+  <tbody>
+    <tr id="r1"><td>r1</td><td>Keeps the router to coordinating: its tools and its commands</td><td><code>scripts/router-guard.jq</code>; <code>.claude/settings.json</code> (agent, allow list, PreToolUse); <code>.claude/agents/router.md</code></td><td>the settings</td><td>project</td><td>left alone</td><td>W2: the app must not widen it</td></tr>
+    <tr id="r2"><td>r2</td><td>Keeps a worker's file tools inside its worktree</td><td><code>scripts/router-file-guard.sh</code>, passed by <code>scripts/router-worker.sh</code> spawn (l.389)</td><td>the worker's launch settings</td><td>project</td><td>left alone</td><td></td></tr>
+    <tr id="r3"><td>r3</td><td>Bounds a worker's shell: its sandbox, its allowed and denied commands, its model and effort</td><td><code>scripts/router-worker.sh</code> read_policy (l.179), spawn (l.389); <code>[router]</code> in <code>.keel/config.toml</code></td><td>the worker's launch settings</td><td>project</td><td>left alone</td><td></td></tr>
+    <tr id="r4"><td>r4</td><td>Reports the live workers to the router every 5 minutes</td><td><code>scripts/router-worker.sh</code> watchdog (l.291), facts (l.210)</td><td>the session <code>watchdog-&lt;router&gt;</code></td><td>Mac</td><td>left alone</td><td>The app reads the same facts for j17</td></tr>
+    <tr id="r5"><td>r5</td><td>Carries a worker's report to the router, on hosts without messages between sessions</td><td><code>scripts/router-inbox.sh</code> post (l.128), watch (l.162), consume (l.194)</td><td><code>.router/inbox/</code></td><td>project</td><td>left alone</td><td>W2 may read it</td></tr>
+    <tr id="r6"><td>r6</td><td>Wakes the router when you commit, sign, merge, push or tag</td><td><code>scripts/router-watch.sh</code> check_commit (l.73) to check_tagged (l.124)</td><td>refs; the remote</td><td>project</td><td>left alone</td><td>The app watches the same refs for its list (W2)</td></tr>
+    <tr id="r7"><td>r7</td><td>Checks each doc after a write and at the end of a turn</td><td><code>.claude/settings.json</code> PostToolUse, Stop; <code>src/main.rs</code> DOC_POST, DOC_STOP (l.535)</td><td>the hooks folder in the git dir</td><td>project</td><td>left alone</td><td></td></tr>
+    <tr id="r8"><td>r8</td><td>Gives a worker its rules</td><td><code>.claude/agents/worker.md</code></td><td>the file</td><td>project</td><td>left alone</td><td>The launcher refuses a worktree without it</td></tr>
+    <tr id="r9"><td>r9</td><td>Watches your doc comments, so the worker answers them</td><td><code>.claude/skills/keel-router/references/worker-ops.md</code> (l.313)</td><td>the htmldoc server</td><td>off the Mac</td><td>left alone</td><td>The app may show the open count (W3)</td></tr>
+  </tbody>
+</table>
+
+<h2 id="needs">Your needs, ranked</h2>
+<p><b>Must</b>: the first build is useless without it. <b>Should</b>: in the first build if cheap. <b>Later</b>: after it. The rank is my proposal; your words come first.</p>
+<table data-c="needs" id="needs">
+  <thead><tr><th>#</th><th>Need</th><th>Rank</th><th>Rests on</th><th>Your words</th></tr></thead>
+  <tbody>
+    <tr id="n1"><td>n1</td><td>An alert at your desk when something waits on you</td><td><b>must</b></td><td>j18, j19</td><td>"notifications", your idea of 2026-11-17; epic point 5, confirmed 2026-11-17</td></tr>
+    <tr id="n2"><td>n2</td><td>One list of what waits on you. Each item opens its doc and copies its command, and leaves the list once you act</td><td><b>must</b></td><td>j19, j9, j10, j12, j22</td><td>Epic point 1, option B, your choice of 2026-11-17</td></tr>
+    <tr id="n3"><td>n3</td><td>The gate, the sign-off and the merge on your Mac, with GitHub's flow gone</td><td><b>must</b></td><td>j1, j9, j12, g1 to g15</td><td>"the local gate and merge", your idea of 2026-11-17; "Drop GH", your comment of 2026-11-17</td></tr>
+    <tr id="n4"><td>n4</td><td>The fleet: the router and each worker, busy, idle or stuck, with its worktree, branch and last report</td><td>should</td><td>j15, j16, j17, r4</td><td>"a fleet dashboard", your idea of 2026-11-17</td></tr>
+    <tr id="n5"><td>n5</td><td>The epics: each epic, its work units, each gate check, the review verdict, what is merged</td><td>should</td><td>j1, j6, j7, j21</td><td>"a dashboard", your idea of 2026-11-17</td></tr>
+    <tr id="n6"><td>n6</td><td>Read a code diff before you sign, where W4 says</td><td>should</td><td>j7, j9</td><td>Your worry about review on GitHub; epic point 1, 2026-11-17</td></tr>
+    <tr id="n7"><td>n7</td><td>Many projects, in one list</td><td>should</td><td>j14; the scope column</td><td>Epic point 9, confirmed 2026-11-17</td></tr>
+    <tr id="n8"><td>n8</td><td>Send the router a message from the app</td><td>later</td><td>g7; the router</td><td>Epic point 8, confirmed 2026-11-17</td></tr>
+    <tr id="n9"><td>n9</td><td>Alerts when you are away, sent by the app itself. Until then Telegram stays</td><td>later</td><td>j20</td><td>Epic point 5: "replace or complement Telegram", 2026-11-17</td></tr>
+    <tr id="n10"><td>n10</td><td>A replacement for GitHub's releases and the off-Mac copy</td><td>later</td><td>j23, j24</td><td>Epic point 6, your answer of 2026-11-17</td></tr>
+  </tbody>
+</table>
+
+<h3 id="use-cases">Candidate use cases</h3>
+<p>Drafts. They are recorded only when an implementation epic plans them.</p>
+<table data-c="use-cases">
+  <tbody>
+    <tr><td><code>UC-APP-1</code> draft</td><td>Something waits on you: the app alerts you at the desk (n1).</td></tr>
+    <tr><td><code>UC-APP-2</code> draft</td><td>You open a waiting item: its doc opens in your browser, its command is copied, and the item leaves when the note or merge appears (n2, n3).</td></tr>
+    <tr><td><code>UC-APP-3</code> draft</td><td>You look at the fleet: the router and each worker, with its state (n4).</td></tr>
+    <tr><td><code>UC-APP-4</code> draft</td><td>You look at an epic: its work units and their evidence (n5).</td></tr>
+    <tr><td><code>UC-APP-5</code> draft</td><td>You switch project (n7).</td></tr>
+    <tr><td><code>UC-APP-6</code> draft</td><td>You send the router a message (n8, later).</td></tr>
+  </tbody>
+</table>
+
+<h2 id="open-points">Open points</h2>
+<p>Work goes on at these answers. Comment to overrule.</p>
+<table data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Are the fleet and the epics screens musts?</td><td><b>No, should</b></td><td>Without them the first build still alerts you and lets you sign. The epic expects the dashboards after those</td></tr>
+    <tr><td>2</td><td>A task's pull request goes. How does a task reach its work unit?</td><td><b>W5 rules it</b>. Likely: you merge it locally, as a work unit into its epic</td><td>Today's rule forbids a local task merge, because GitHub made it. That rule must change with the flow</td></tr>
+    <tr><td>3</td><td>Does the report note go with Pages?</td><td><b>No, it stays</b></td><td>It keeps the epic's result report in git after the doc is archived. Pages was one reader only</td></tr>
+    <tr><td>4</td><td>The app and the watchdog read the same worker facts. Merge them?</td><td><b>No, two readers</b></td><td>The router must work without the app. W2 may share the reading code</td></tr>
+    <tr><td>5</td><td>May the app run the gate to show its result?</td><td><b>Not as it is: W2 decides</b></td><td>When green, the gate writes a receipt note, so running it changes git. The app reads the receipt, or W2 asks for a read-only mode</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="deviations-h">Deviations from the plan</h3>
+<ul data-item="deviations" data-c="deviations">
+  <li>j22's source is a doc's script tag and <code>AGENTS.md</code>. The htmldoc runtime lives on its server, outside this repository.</li>
+  <li>j18 and j19 cite a skill file. Today the router does those jobs, and its rules are that file.</li>
+  <li>The keel subcommands <code>ci gate</code> and <code>ci sign-off</code> sit under g1 and g3. Whether keel keeps them is W5's call.</li>
+  <li>Otherwise none.</li>
+</ul>
+
+<h3 id="evidence-h">Evidence</h3>
+<div data-item="evidence" data-c="evidence">
+  <p>Tests: none added; integration waived, docs only. Docs touched: this file. Commits: this result, on <code>wu/E-LOCALTOOL/w1-needs</code> after the plan (5a9d7de).</p>
+  <p>The plan's checks, run by a script in a scratch folder on this doc as committed, then again at the tip. Check 6 is <code>keel verify-doc</code>. Raw output:</p>
+  <pre id="check-output">PASS 1·sources 36 source paths, git cat-file -e 92611ac:&lt;path&gt; ok for 36
+PASS 2·nothing-missed 19 files under scripts/ and .github/workflows/ each in a row's sources; 12 keel subcommands ['check', 'ci', 'hook', 'hooks', 'init', 'lint', 'mr', 'notes', 'preflight', 'verify-doc', 'verify-dod', '--version']; 3 settings hooks ['PostToolUse', 'PreToolUse', 'Stop']; 7 installed git hooks ['pre-commit', 'commit-msg', 'pre-merge-commit', 'pre-push', 'post-checkout', 'verify-doc-post', 'verify-doc-stop']; all in the coverage table, its rows exist
+PASS 3·pieces 31 pieces of the epic plan's W1 block and today-flow table, each found in a row
+PASS 4·marks 48 rows, one mark each; owner rows {'a button': 4, 'dropped': 15, 'left alone': 16, 'taken over': 4}; router rows {'a button': 0, 'dropped': 0, 'left alone': 9, 'taken over': 0}; judging rows ['j1', 'j2', 'j3', 'j6', 'j7', 'j9', 'j10', 'j11', 'j12', 'j13'] none taken over; dropped exactly on the GitHub rows
+PASS 5·needs 10 needs {'must': 3, 'should': 4, 'later': 3}, each with existing job rows and your dated words
+PASS 7·scope git diff --cached --name-only 92611ac (the commit to be made): ['docs/work/2026-11-18-e-localtool-w1-needs-plan.html', 'docs/work/2026-11-18-e-localtool-w1-needs-result.html']
+CHECKS green
+$ keel verify-doc docs/work/2026-11-18-e-localtool-w1-needs-result.html; echo exit=$?
+exit=0</pre>
+  <p>What each item maps to (check 2):</p>
+  <table data-c="coverage">
+    <thead><tr><th>Item</th><th>Rows</th></tr></thead>
+    <tbody>
+      <tr><td><code>scripts/ci-gate.sh</code></td><td>g1, g2</td></tr>
+      <tr><td><code>scripts/ci-sign-off.sh</code></td><td>g3</td></tr>
+      <tr><td><code>scripts/gh-settings-check.sh</code></td><td>g14</td></tr>
+      <tr><td><code>scripts/notify-owner.py</code></td><td>j20</td></tr>
+      <tr><td><code>scripts/pages-build.sh</code></td><td>g13</td></tr>
+      <tr><td><code>scripts/router-file-guard.sh</code></td><td>r2</td></tr>
+      <tr><td><code>scripts/router-gh-command.jq</code></td><td>g7</td></tr>
+      <tr><td><code>scripts/router-gh-watch.sh</code></td><td>g7, g8, g9</td></tr>
+      <tr><td><code>scripts/router-gh.sh</code></td><td>g4, g5, g6, g10, g11, g12, j19, j21, j23</td></tr>
+      <tr><td><code>scripts/router-guard.jq</code></td><td>r1</td></tr>
+      <tr><td><code>scripts/router-inbox.sh</code></td><td>r5</td></tr>
+      <tr><td><code>scripts/router-watch.sh</code></td><td>r6</td></tr>
+      <tr><td><code>scripts/router-worker.sh</code></td><td>j15, j16, j17, g10, r2, r3, r4</td></tr>
+      <tr><td><code>.github/workflows/keel-gate.yml</code></td><td>g1</td></tr>
+      <tr><td><code>.github/workflows/keel-main.yml</code></td><td>g2</td></tr>
+      <tr><td><code>.github/workflows/keel-sign-off-request.yml</code></td><td>g3</td></tr>
+      <tr><td><code>.github/workflows/keel-sign-off.yml</code></td><td>g3</td></tr>
+      <tr><td><code>.github/workflows/pages.yml</code></td><td>g13</td></tr>
+      <tr><td><code>.github/workflows/release.yml</code></td><td>j24</td></tr>
+      <tr><td><code>keel init</code></td><td>j14</td></tr>
+      <tr><td><code>keel lint</code>, <code>keel check</code></td><td>j5</td></tr>
+      <tr><td><code>keel verify-doc</code></td><td>j13</td></tr>
+      <tr><td><code>keel verify-dod</code> (wu, epic, commit, hook, range)</td><td>j1, j3, j12</td></tr>
+      <tr><td><code>keel preflight</code></td><td>j7</td></tr>
+      <tr><td><code>keel ci gate</code></td><td>g1</td></tr>
+      <tr><td><code>keel ci sign-off</code></td><td>g3</td></tr>
+      <tr><td><code>keel mr setup</code>, <code>keel mr commit</code>, <code>keel mr confirm</code></td><td>j11, j10, j9</td></tr>
+      <tr><td><code>keel hooks install</code></td><td>j4</td></tr>
+      <tr><td><code>keel notes write</code> test, doc, cr, report</td><td>j6, j6, j7, j8</td></tr>
+      <tr><td><code>keel hook</code> pre-commit, commit-msg, pre-push</td><td>j2, j2, j3: the git hooks call them</td></tr>
+      <tr><td><code>keel --version</code></td><td>No job for you: it prints the version</td></tr>
+      <tr><td><code>.claude/settings.json</code> PreToolUse</td><td>r1</td></tr>
+      <tr><td><code>.claude/settings.json</code> PostToolUse, Stop</td><td>r7</td></tr>
+      <tr><td>git hooks pre-commit, commit-msg</td><td>j2</td></tr>
+      <tr><td>git hook pre-merge-commit</td><td>j1, j12</td></tr>
+      <tr><td>git hook pre-push</td><td>j3, j23</td></tr>
+      <tr><td>git hook post-checkout</td><td>j4</td></tr>
+      <tr><td>hooks verify-doc-post, verify-doc-stop</td><td>r7</td></tr>
+    </tbody>
+  </table>
+  <p>Each piece the epic plan names (check 3): the gate j1, j3, j4; the notes j6, j7, j8; the sign-off j9, j10; the router guard r1; the file guard r2; the launcher j15, j16; its watchdog j17, r4; <code>router-inbox.sh</code> r5; <code>router-watch.sh</code> r6; <code>notify-owner.py</code> j20; the doc hooks r7; htmldoc's comments and versions j22, r9; the five flow workflows g1, g2, g3, g13; <code>ci-gate.sh</code> g1; <code>ci-sign-off.sh</code> g3; auto-merge g4; <code>router-gh.sh</code> g4 to g6, g10 to g12; <code>router-gh-watch.sh</code> g7 to g9; tasks g10; the conflict watch g9; Pages g13; <code>gh-settings-check.sh</code> g14; <code>release.yml</code> j24; the backup push j23.</p>
+</div>
+
+<h3 id="distillation-h">Distillation</h3>
+<p data-item="distillation" data-c="distillation">Nothing citable yet. The tables go into the new <code>docs/local-app.html</code> at the epic's close, as the epic plan says.</p>
+
+<h3 id="follow-ups-h">Follow-ups</h3>
+<ul data-item="follow-ups" data-c="follow-ups">
+  <li>How a task reaches its work unit without GitHub (point 2): E-LOCALTOOL.W5.</li>
+  <li>How the app shows the gate without writing a receipt (point 5): E-LOCALTOOL.W2.</li>
+  <li>Who pushes work branches for the off-Mac copy (j23): E-LOCALTOOL.W5.</li>
+  <li>Whether keel keeps <code>ci gate</code> and <code>ci sign-off</code>: E-LOCALTOOL.W5.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    // keep diagram source readable for the diff layer (mermaid replaces it with SVG)
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
