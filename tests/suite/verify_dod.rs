@@ -596,6 +596,26 @@ fn a_pair_archives_under_one_distill_and_a_pair_archived_by_half_is_red() {
     assert!(!o.status.success() && text(&o).contains("not a T3 doc archived in this range"), "{}", text(&o));
 }
 
+/// E-DOCSPLIT.W3 review round 1: a page and a `.yaml` beside it pair only under docs.root
+/// (`verify_doc::pair_of`). A T3 page outside docs.root (`T3 = ["notes/**"]`) archived with a
+/// same-stem `.yaml` left at the tip is a doc archived whole, not by half: the doc writer takes it.
+#[test]
+fn a_t3_page_outside_docs_root_has_no_data_file_to_archive_with_it() {
+    let d = fixture();
+    let p = d.path();
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    write(p, ".keel/config.toml", &format!("{cfg}[docs.tiers]\nT1 = [\"docs/*\"]\nT3 = [\"docs/work/**\", \"notes/**\"]\n"));
+    write(p, "notes/x.html", "<p>x</p>");
+    write(p, "notes/x.yaml", "artifact: wu-plan\n");
+    commit(p, "notes");
+    git(p, &["rm", "-q", "notes/x.html"]);
+    commit(p, "archive the notes page");
+    let o = keel(p, &["notes", "write", "doc", "--distill", "notes/x.html=docs/a.html"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let changes = note(p, "doc", "HEAD")["changes"].clone();
+    assert!(changes.as_array().unwrap().iter().all(|c| c["path"] != "notes/x.yaml"), "{changes}");
+}
+
 /// cr blocker 1: a merge smuggled past the commit hooks (`--no-verify`), then fast-forwarded into
 /// main, leaves the push range as the only gate - it must judge merge seams, not skip them.
 #[test]

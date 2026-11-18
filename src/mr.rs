@@ -345,13 +345,14 @@ fn report_candidates(repo: &Path, cfg: &Config, base: &str, tip: &str, epic: boo
     let role = verify_doc::result_role(epic);
     let root = cfg.docs.root.trim_end_matches('/');
     let names = notes::names(repo, base, tip, &[root.to_string()])?;
+    let in_docs = verify_doc::under_root(root);
     let mut found = vec![];
-    for page in verify_doc::pages_of(&names, |p| p.starts_with(root)) {
-        let data = Path::new(&page).with_extension("yaml").to_string_lossy().into_owned();
+    for page in verify_doc::pages_of(&names, &in_docs) {
+        let Some(data) = verify_doc::pair_named(Path::new(&page), &in_docs).and_then(|p| p.data) else { continue };
         if !notes::at_tip(repo, tip, &page) {
             continue;
         }
-        let roles = git(repo, &["show", &format!("{tip}:{data}")], &[]).ok().and_then(|src| verify_doc::data_roles(&src).ok()).unwrap_or_default();
+        let roles = git(repo, &["show", &format!("{tip}:{}", data.display())], &[]).ok().and_then(|src| verify_doc::data_roles(&src).ok()).unwrap_or_default();
         if roles.iter().any(|r| r == role) {
             found.push(page);
         }
@@ -384,11 +385,14 @@ fn pick_report(repo: &Path, cfg: &Config, args: &[&str], base: &str, tip: &str, 
         };
     }
     if let Some(r) = given {
-        if let Some(stem) = r.strip_suffix(".yaml") {
-            return Err((
-                format!("--report {r} names a data file: the report is the page beside it, the one you read and sign"),
-                format!("keel mr confirm ... --report {stem}.html"),
-            ));
+        // A typed report is taken wherever it is (no docs.root condition): every .yaml names a data file.
+        if let Some(verify_doc::Pair { page, data: Some(data) }) = verify_doc::pair_named(Path::new(r), |_| true) {
+            if data == Path::new(r) {
+                return Err((
+                    format!("--report {r} names a data file: the report is the page beside it, the one you read and sign"),
+                    format!("keel mr confirm ... --report {}", page.display()),
+                ));
+            }
         }
         return Ok(Some(r.to_string()));
     }

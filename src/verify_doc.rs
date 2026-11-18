@@ -244,31 +244,51 @@ pub fn result_role(epic: bool) -> &'static str {
     }
 }
 
-/// The roles a data file's `artifact` gives its page (DEC-69, E-DOCSPLIT.W3): its text split on
-/// white space, or its list. Read through the same loader and anchor refusal as the doc check; a file
-/// of several YAML documents gives the one holding `artifact`. `Err` names why there are none: the
-/// text is no YAML, holds an anchor, has no `artifact`, or one that is neither text nor a list.
+/// The roles a data file's `artifact` gives its page (DEC-69, E-DOCSPLIT.W3), read as the doc check
+/// reads them (`load_data`, `holding_artifact`, `artifact_roles`): its text split on white space, or
+/// its list. A file of several YAML documents gives the one holding `artifact`. `Err` names why there
+/// are none: the text is no YAML, holds an anchor, has no `artifact`, or one that is neither text nor
+/// a list.
 pub fn data_roles(src: &str) -> Result<Vec<String>, String> {
-    let src = src.strip_prefix('\u{feff}').unwrap_or(src);
-    if anchored(src) {
-        return Err(ANCHORS.into());
-    }
-    let docs = YamlLoader::load_from_str(src).map_err(|e| format!("not valid YAML: {e}"))?;
-    let key = Yaml::String("artifact".into());
-    let Some(a) = docs.iter().find_map(|d| d.as_hash().and_then(|h| h.get(&key))) else {
+    let docs = load_data(src)?;
+    let Some(a) = holding_artifact(&docs).and_then(|d| d.as_hash()).and_then(|h| h.get(&Yaml::String("artifact".into()))) else {
         return Err("no field \"artifact\"".into());
     };
-    let roles: Vec<String> = match a {
-        Yaml::String(s) => s.split_whitespace().map(String::from).collect(),
-        Yaml::Array(l) => {
-            l.iter().map(|r| r.as_str().map(String::from).ok_or_else(|| format!("artifact holds {}, not a role", shown(r)))).collect::<Result<_, _>>()?
-        }
-        other => return Err(format!("artifact {} is neither text nor a list", shown(other))),
-    };
+    let roles: Vec<String> = artifact_roles(a)
+        .map_err(|other| format!("artifact {} is neither text nor a list", shown(other)))?
+        .into_iter()
+        .map(|r| r.map_err(|r| format!("artifact holds {}, not a role", shown(r))))
+        .collect::<Result<_, _>>()?;
     if roles.is_empty() {
         return Err("field \"artifact\" is empty".into());
     }
     Ok(roles)
+}
+
+/// A data file's text as YAML documents: a byte-order mark read past, an anchor refused. `Err` is
+/// the problem: the anchor refusal, or "not valid YAML".
+fn load_data(src: &str) -> Result<Vec<Yaml>, String> {
+    // A byte-order mark may open a YAML stream; the parser would read it as part of the first key.
+    let src = src.strip_prefix('\u{feff}').unwrap_or(src);
+    if anchored(src) {
+        return Err(ANCHORS.into());
+    }
+    YamlLoader::load_from_str(src).map_err(|e| format!("not valid YAML: {e}"))
+}
+
+/// The first document that is a mapping holding `artifact`: the one a data file of several is read by.
+fn holding_artifact(docs: &[Yaml]) -> Option<&Yaml> {
+    docs.iter().find(|d| matches!(d, Yaml::Hash(h) if h.contains_key(&Yaml::String("artifact".into()))))
+}
+
+/// The roles an `artifact` value names (DEC-69): text split on white space, or a list's items, each
+/// item that is not text kept as `Err(item)`; `Err(value)` when it is neither text nor a list.
+fn artifact_roles(a: &Yaml) -> Result<Vec<Result<String, &Yaml>>, &Yaml> {
+    match a {
+        Yaml::String(s) => Ok(s.split_whitespace().map(|r| Ok(r.to_string())).collect()),
+        Yaml::Array(l) => Ok(l.iter().map(|r| r.as_str().map(String::from).ok_or(r)).collect()),
+        other => Err(other),
+    }
 }
 
 /// The doc pages a list of changed paths names (DEC-69): a page `<stem>.html` for itself, a data file
@@ -280,7 +300,7 @@ pub fn pages_of(names: &[String], in_docs: impl Fn(&Path) -> bool) -> Vec<String
         let p = Path::new(n);
         let page = match p.extension().and_then(|e| e.to_str()) {
             Some("html") => n.clone(),
-            Some("yaml") => match pair_of(p, &in_docs) {
+            Some("yaml") => match pair_named(p, &in_docs) {
                 Some(pair) => pair.page.to_string_lossy().into_owned(),
                 None => continue,
             },
@@ -303,21 +323,51 @@ pub struct Pair {
     pub data: Option<PathBuf>,
 }
 
-/// The pair a path names (DEC-69): a page `<stem>.html` and its data file `<stem>.yaml`, side by
-/// side. A `.yaml` is a data file only under docs.root (`in_docs`), else no doc (`None`); its page is
-/// `<stem>.html`, there or not, and the data file is named even when it is not there (it is read, and
-/// a missing one is "cannot read file"). A `.html` page's data file is `<stem>.yaml` when that file
-/// is there and under docs.root. Any other path is a page alone. Two paths of one doc give one pair.
-pub fn pair_of(path: &Path, in_docs: impl Fn(&Path) -> bool) -> Option<Pair> {
+/// Whether a path is under docs.root (`root`, as `[docs] root` writes it), component by component:
+/// the `in_docs` the pairing helpers take when the paths are repo-relative, as at a tip.
+pub fn under_root(root: &str) -> impl Fn(&Path) -> bool {
+    let root = PathBuf::from(root.trim_end_matches('/'));
+    move |p: &Path| p.starts_with(&root)
+}
+
+/// The pair a path names, by name only (DEC-69): the one pairing rule, so it also works at a tip,
+/// where no file is on disk. A page `<stem>.html` and its data file `<stem>.yaml`, side by side; a
+/// `.yaml` is a data file only under docs.root (`in_docs`), else no doc (`None`), and its page is
+/// `<stem>.html`. A `.html` page's data file is `<stem>.yaml` when that name is under docs.root,
+/// there or not. Any other path names no pair (`None`).
+pub fn pair_named(path: &Path, in_docs: impl Fn(&Path) -> bool) -> Option<Pair> {
     match path.extension().and_then(|e| e.to_str()) {
         Some("yaml") => in_docs(path).then(|| Pair { page: path.with_extension("html"), data: Some(path.to_owned()) }),
         Some("html") => {
             let data = path.with_extension("yaml");
-            let data = (data.is_file() && in_docs(&data)).then_some(data);
-            Some(Pair { page: path.to_owned(), data })
+            Some(Pair { page: path.to_owned(), data: in_docs(&data).then_some(data) })
         }
-        _ => Some(Pair { page: path.to_owned(), data: None }),
+        _ => None,
     }
+}
+
+/// The other file of the doc a path names (`pair_named`): the data file's name for a page that has
+/// one under docs.root, the page's for a data file; `None` for a page outside docs.root or any other
+/// path.
+pub fn partner_named(path: &Path, in_docs: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    let Pair { page, data } = pair_named(path, in_docs)?;
+    if page == path {
+        data
+    } else {
+        Some(page)
+    }
+}
+
+/// The pair a path names on disk (DEC-69): `pair_named`, with a page's data file only when that file
+/// is there. A data file is named even when it is not there (it is read, and a missing one is
+/// "cannot read file"). A `.yaml` outside docs.root is no doc (`None`); any other path is a page
+/// alone. Two paths of one doc give one pair.
+pub fn pair_of(path: &Path, in_docs: impl Fn(&Path) -> bool) -> Option<Pair> {
+    if path.extension().is_some_and(|e| e == "yaml") {
+        return pair_named(path, in_docs);
+    }
+    let Pair { page, data } = pair_named(path, in_docs).unwrap_or_else(|| Pair { page: path.to_owned(), data: None });
+    Some(Pair { page, data: data.filter(|d| d.is_file()) })
 }
 
 /// Problems with one doc - a page and the data file beside it, either one possibly absent; empty =
@@ -360,14 +410,9 @@ enum Data {
 /// Reads one data file's text against its role's fields (DEC-69). `page` is the page file name the
 /// data file must serve (its own name, ending `.html`); `page_exists`, whether that file is beside it.
 fn read_data(src: &str, page: &str, page_exists: bool) -> Data {
-    // A byte-order mark may open a YAML stream; the parser would read it as part of the first key.
-    let src = src.strip_prefix('\u{feff}').unwrap_or(src);
-    if anchored(src) {
-        return Data::Checked { roles: vec![], problems: vec![ANCHORS.into()] };
-    }
-    let docs = match YamlLoader::load_from_str(src) {
+    let docs = match load_data(src) {
         Ok(d) => d,
-        Err(e) => return Data::Checked { roles: vec![], problems: vec![format!("not valid YAML: {e}")] },
+        Err(p) => return Data::Checked { roles: vec![], problems: vec![p] },
     };
     match docs.as_slice() {
         [d] => check_doc(d, page, page_exists),
@@ -376,8 +421,7 @@ fn read_data(src: &str, page: &str, page_exists: bool) -> Data {
             // Several documents: a data file still when one of them holds `artifact`; that one is
             // checked as a single document would be, and the file is red for its several documents.
             let many = format!("the data file holds {} YAML documents; it is one", docs.len());
-            let holds = |d: &&Yaml| matches!(d, Yaml::Hash(h) if h.contains_key(&Yaml::String("artifact".into())));
-            let Some(d) = docs.iter().find(holds) else {
+            let Some(d) = holding_artifact(&docs) else {
                 return unfit(many, page_exists);
             };
             match check_doc(d, page, page_exists) {
@@ -414,9 +458,10 @@ fn check_doc(doc: &Yaml, page: &str, page_exists: bool) -> Data {
     let mut problems = vec![];
     let roles: Vec<String> = match get("artifact") {
         None => return Data::Checked { roles: vec![], problems: vec!["missing field \"artifact\"".into()] },
-        Some(Yaml::String(s)) => s.split_whitespace().map(String::from).collect(),
-        Some(Yaml::Array(a)) => a.iter().map(|r| r.as_str().map_or_else(|| format!("{r:?}"), String::from)).collect(),
-        Some(other) => vec![format!("{other:?}")],
+        Some(a) => match artifact_roles(a) {
+            Ok(rs) => rs.into_iter().map(|r| r.unwrap_or_else(|r| format!("{r:?}"))).collect(),
+            Err(other) => vec![format!("{other:?}")],
+        },
     };
     if roles.is_empty() {
         return Data::Checked { roles, problems: vec!["field \"artifact\" is empty".into()] };
@@ -1166,8 +1211,8 @@ fn scan(s: &str, out: &mut Vec<Hit>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        data_roles, decode, decode_mapped, fields, hits, page_words, pages_of, pair_of, read_data, result_role, role_cap, tags, unquoted_labels, Data, Pair,
-        ANCHORS, ROLES,
+        data_roles, decode, decode_mapped, fields, hits, page_words, pages_of, pair_named, pair_of, partner_named, read_data, result_role, role_cap, tags,
+        under_root, unquoted_labels, Data, Pair, ANCHORS, ROLES,
     };
     use std::path::Path;
 
@@ -1206,6 +1251,46 @@ mod tests {
         assert_eq!(err("artifact: 3\n"), "artifact 3 is neither text nor a list");
         assert_eq!(err("artifact: [wu-result, 3]\n"), "artifact holds 3, not a role");
         assert_eq!(err("a: &x wu-result\nartifact: *x\n"), ANCHORS);
+    }
+
+    /// Review round 1 (E-DOCSPLIT.W3): the doc check and `data_roles` read `artifact` through one
+    /// loader and one roles reading, so a data file gives its page the same roles in both.
+    #[test]
+    fn the_doc_check_and_data_roles_read_the_same_roles() {
+        for src in [
+            "artifact: wu-result\n",
+            "artifact: \"  wu-plan \"\n",
+            "artifact: [epic-plan]\n",
+            "\u{feff}artifact: wu-result\n",
+            "x: 1\n---\nartifact: epic-result\n",
+        ] {
+            let Data::Checked { roles, .. } = read_data(src, "a.html", true) else { panic!("{src:?} is checked") };
+            assert_eq!(Ok(roles), data_roles(src), "{src:?}");
+        }
+        for src in ["artifact: 3\n", "artifact: [wu-result, 3]\n", "a: &x wu-result\nartifact: *x\n", "artifact: [wu-result\n"] {
+            let Data::Checked { roles, problems } = read_data(src, "a.html", true) else { panic!("{src:?} is checked") };
+            assert!(roles.is_empty() && !problems.is_empty() && data_roles(src).is_err(), "{src:?}: {problems:?}");
+        }
+    }
+
+    #[test]
+    fn pair_named_pairs_by_name_alone_under_docs_root_only() {
+        // Nothing is on disk: the names alone decide, as at a tip.
+        let in_docs = under_root("docs/");
+        let pair = |page: &str, data: Option<&str>| Some(Pair { page: page.into(), data: data.map(Into::into) });
+        assert_eq!(pair_named(Path::new("docs/w/a.html"), &in_docs), pair("docs/w/a.html", Some("docs/w/a.yaml")), "named, there or not");
+        assert_eq!(pair_named(Path::new("docs/w/a.yaml"), &in_docs), pair("docs/w/a.html", Some("docs/w/a.yaml")));
+        assert_eq!(pair_named(Path::new("notes/a.html"), &in_docs), pair("notes/a.html", None), "a page outside docs.root has no data file");
+        assert_eq!(pair_named(Path::new("notes/a.yaml"), &in_docs), None, "a .yaml outside docs.root is no doc");
+        assert_eq!(pair_named(Path::new("docsx/a.yaml"), &in_docs), None, "docs.root by component, not by prefix");
+        for none in ["docs/a.md", "docs/a.yml", "docs/.yaml", "docs/.html"] {
+            assert_eq!(pair_named(Path::new(none), &in_docs), None, "{none}");
+        }
+        assert_eq!(partner_named(Path::new("docs/a.html"), &in_docs), Some("docs/a.yaml".into()));
+        assert_eq!(partner_named(Path::new("docs/a.yaml"), &in_docs), Some("docs/a.html".into()));
+        assert_eq!(partner_named(Path::new("notes/a.html"), &in_docs), None);
+        assert_eq!(partner_named(Path::new("notes/a.yaml"), &in_docs), None);
+        assert!(under_root("docs")(Path::new("docs/a.html")) && !under_root("docs")(Path::new("src/docs/a.html")));
     }
 
     #[test]
