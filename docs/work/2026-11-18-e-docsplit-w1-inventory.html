@@ -19,9 +19,9 @@
 <p data-c="ask">This page is the list the rest of the epic builds on. Nothing in the tool changes until you approve it. Four things:</p>
 <ol data-c="ask-list">
   <li><b>The table</b> below: for each doc, what goes on the page you read and what goes in the data file.</li>
-  <li><b>The two page shapes</b>, and their examples: <a href="2026-11-18-e-docsplit-example-epic-plan.html">the epic plan</a> and <a href="2026-11-18-e-docsplit-example-wu-plan.html">the W1 plan</a>, rewritten. Compare them with the pages you read.</li>
+  <li><b>The page shapes</b>: the two plan pages, with their examples (<a href="2026-11-18-e-docsplit-example-epic-plan.html">the epic plan</a> and <a href="2026-11-18-e-docsplit-example-wu-plan.html">the W1 plan</a>, rewritten), and the two result pages.</li>
   <li><b>The word caps</b> and what each slimmed doc drops.</li>
-  <li><b>Seven questions</b>, each with an answer you can keep or overrule.</li>
+  <li><b>Nine questions</b>, each with an answer you can keep or overrule.</li>
 </ol>
 <p>Then one decision records it. Its draft is under Details.</p>
 
@@ -41,17 +41,17 @@
 <table data-c="inventory">
   <thead><tr><th>Doc</th><th>Who reads it</th><th>The page, for you</th><th>The data part</th><th>Where the data lives, and why</th><th>Cap · slimming</th></tr></thead>
   <tbody>
-    <tr id="row-epic-plan"><td><b>Epic plan</b><br>T3, <code>docs/work/</code></td><td>You approve it. Router and workers act on it. The doc check. The pull request's doc table.</td><td>Problem, what changes, example, terms, the parts table, what you decide, how you'll know, not in this epic</td><td>Every checklist field; each part's files and tests; use cases; the end-to-end test; the distillation plan</td><td><b>A file beside the page.</b> A plan exists before any commit a note could hang on. A file shows in the pull request, and your sign-off's diff hash binds it.</td><td>700 words; its top 300 · archived at close, never slimmed</td></tr>
+    <tr id="row-epic-plan"><td><b>Epic plan</b><br>T3, <code>docs/work/</code></td><td>You approve it. Router and workers act on it. The doc check. The pull request's doc table.</td><td>Problem, what changes, example, terms, the parts in build order (a diagram and a table: what each builds, what you get), what you decide, how you'll know, not in this epic</td><td>Every checklist field; each part's files and tests; use cases; the end-to-end test; the distillation plan</td><td><b>A file beside the page.</b> A plan exists before any commit a note could hang on. A file shows in the pull request, and your sign-off's diff hash binds it.</td><td>700 words; its top 300 · archived at close, never slimmed</td></tr>
     <tr id="row-wu-plan"><td><b>WU plan</b><br>T3</td><td>You approve it. Its worker. The doc check.</td><td>Problem, what you get, how you approve, what it makes, what you decide, how you'll know</td><td>Requirement, maps-to, expected, test plan; files and mechanics under <code>details</code></td><td>A file beside the page, as above</td><td>500 · archived</td></tr>
-    <tr id="row-wu-result"><td><b>WU result</b><br>T3</td><td>You read it to sign. The sign-off finds it by its role and attests its bytes. The report note.</td><td>What happened, what changed for you, differences from the plan, what is left and who takes it</td><td>Outcome, deviations, evidence (tests, commits), distillation, follow-ups with their owners</td><td>A file beside the page. The sign-off still attests the page, the thing you read. The data file is in the signed diff.</td><td>400 · archived</td></tr>
-    <tr id="row-epic-result"><td><b>Epic result</b><br>T3, <code>docs/.archive/</code>, untracked</td><td>You read it to sign the landing. The sign-off names it with <code>--report</code>. Pages publishes its note.</td><td>What the epic delivered, each part's outcome, differences, what is left</td><td>Outcome, part roll-up, deviations, evidence, distillation, follow-ups</td><td>A file beside the page in <code>docs/.archive/</code>, untracked like the page. The report note keeps the page's bytes only (question 6).</td><td>600 · stays archived</td></tr>
+    <tr id="row-wu-result"><td><b>WU result</b><br>T3</td><td>You read it to sign. The sign-off finds it by its role and attests its bytes. The report note.</td><td>What happened; <b>a checklist</b> of what the plan said to expect, each met or not; <b>an example</b> of the main case, run for real, in steps; differences from the plan; what is left and who takes it</td><td>Outcome, deviations, evidence (tests, commits), distillation, follow-ups with their owners</td><td>A file beside the page. The sign-off still attests the page, the thing you read. The data file is in the signed diff.</td><td>500 · archived</td></tr>
+    <tr id="row-epic-result"><td><b>Epic result</b><br>T3, <code>docs/.archive/</code>, untracked</td><td>You read it to sign the landing. The sign-off names it with <code>--report</code>. Pages publishes its note.</td><td>What the epic delivered; <b>a checklist</b> of what the plan said to expect, each met or not; <b>an example</b> of the main case, in steps; each part's outcome; differences; what is left</td><td>Outcome, part roll-up, deviations, evidence, distillation, follow-ups</td><td>A file beside the page in <code>docs/.archive/</code>, untracked like the page. The report note keeps the page's bytes only (question 6).</td><td>700 · stays archived</td></tr>
     <tr id="row-collapsed"><td><b>One-part epic</b> (plan, result)</td><td>As an epic</td><td>The epic page's shape</td><td>Both roles' fields; a shared field once</td><td>A file beside the page</td><td>The epic caps</td></tr>
     <tr id="row-decisions"><td><b>Decision files</b><br>T2: <code>workflow-gates</code>, <code>router</code>, <code>distribution</code></td><td>Agents cite ids. Reviews check findings against them. You, rarely.</td><td>Each live decision: choice, why, what was rejected. A replaced one: its id and one line</td><td>None: the page is the record</td><td>—</td><td>5,000 a file; about 250 a record · drop lineage rows; a replaced record becomes "DEC-n · replaced by DEC-m"</td></tr>
     <tr id="row-dec-index"><td><b>Decision index</b><br>T2</td><td>Agents: the next free id, which file holds a record</td><td>None: the page goes</td><td>Per record: id, title, file, live or replaced-by. The next free id.</td><td><b>A file</b>, <code>docs/decisions/decisions-index.yaml</code>. Nobody reads the page (your comment).</td><td>No cap: data · W5</td></tr>
-    <tr id="row-use-cases"><td><b>Use-case files</b><br>T2: <code>workflow</code>, <code>router</code>, <code>dsh</code></td><td>Agents and reviews read the contracts. You, when one changes.</td><td>Each use case: trigger, expected, failure</td><td>None</td><td>—</td><td>4,000 a file · drop build history</td></tr>
+    <tr id="row-use-cases"><td><b>Use-case files</b><br>T2: <code>workflow</code>, <code>router</code>, <code>dsh</code></td><td>Agents and reviews check code against them. Code comments cite their ids. Not you (your comment).</td><td>None: the pages go</td><td>Each use case: id, title, trigger, expected, failure</td><td><b>A file per area</b>, <code>docs/use-cases/&lt;area&gt;.yaml</code>. Not dropped: the cited ids must resolve (question 8).</td><td>No cap: data · drop build history · W5</td></tr>
     <tr id="row-uc-index"><td><b>Use-case index</b><br>T2</td><td>Agents</td><td>None: the page goes</td><td>Per use case: id, title, file</td><td><b>A file</b>, <code>docs/use-cases/use-cases-index.yaml</code>. The "built by" history goes; git keeps it.</td><td>No cap: data · W5</td></tr>
-    <tr id="row-backlog"><td><b>Backlog files</b><br>T2: <code>e-router-v2</code>, <code>e-seed-v2</code>, <code>github-flow</code>, <code>dsh</code></td><td>You choose the next work. Agents add rows. Follow-ups name rows.</td><td>Open rows only</td><td>None</td><td>—</td><td>3,000 a file · drop done and struck rows; their ids stay unused</td></tr>
-    <tr id="row-backlog-order"><td><b>Backlog order</b><br>T2, <code>backlog-index</code></td><td>You</td><td>The ranked list, one line a row</td><td>None</td><td>Stays a page (your answer)</td><td>600</td></tr>
+    <tr id="row-backlog"><td><b>Backlog files</b><br>T2: <code>e-router-v2</code>, <code>e-seed-v2</code>, <code>github-flow</code>, <code>dsh</code></td><td>Agents add rows and answer your questions about them. Follow-ups name rows.</td><td>None: the pages go</td><td>Open rows only: id, title, the problem, the proposal</td><td><b>A file per area</b>, <code>docs/backlog/&lt;area&gt;.yaml</code>. You ask an agent (your comment; question 9).</td><td>No cap: data · drop done and struck rows; their ids stay unused · W5</td></tr>
+    <tr id="row-backlog-order"><td><b>Backlog order</b><br>T2, <code>backlog-index</code></td><td>Agents. You, through an agent.</td><td>None: the page goes</td><td>The ranked row ids</td><td><b>A file</b>, <code>docs/backlog/backlog-index.yaml</code>. You rarely read the page (your comment).</td><td>No cap: data · W5</td></tr>
     <tr id="row-architecture"><td><b>Architecture</b><br>T1, rule-bearing</td><td>Agents, you</td><td>The current shape of Keel</td><td>None</td><td>—</td><td>3,000 · drop history and rules the skills hold · W6</td></tr>
     <tr id="row-install"><td><b>Install</b><br>T1, rule-bearing</td><td>You, a new project</td><td>The steps</td><td>None</td><td>—</td><td>1,500 · drop history; the GitHub section stays E-GHSETUP's · W6</td></tr>
     <tr id="row-agents"><td><b><code>AGENTS.md</code></b>, its template<br>T0, markdown</td><td>Every agent</td><td>The rule file</td><td>None</td><td>—</td><td>No tool cap: the doc check reads HTML only. 376 words today. One line changes in W4.</td></tr>
@@ -67,8 +67,29 @@
   </tbody>
 </table>
 
-<h2 id="shapes">The two plan pages</h2>
-<p>Each page holds only what you need to approve. Everything else moves to its data file. Compare the examples with the pages you read: <a href="2026-11-18-e-docsplit-example-epic-plan.html">epic plan, 641 words</a> (today 2,024) and <a href="2026-11-18-e-docsplit-example-wu-plan.html">W1 plan, 356 words</a> (today 1,735).</p>
+<h2 id="shapes">The page shapes</h2>
+<p>Each page holds only what you need to approve or sign. Everything else moves to its data file. Compare the examples with the pages you read: <a href="2026-11-18-e-docsplit-example-epic-plan.html">epic plan, 690 words</a> (today 2,024) and <a href="2026-11-18-e-docsplit-example-wu-plan.html">W1 plan, 356 words</a> (today 1,735).</p>
+<div class="diagram" data-c="shape-diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph PAGE["Epic plan page: for you, at most 700 words"]
+    direction TB
+    subgraph TOP["The top: at most 300 words"]
+      direction TB
+      A["The problem"] --> B["What changes for you"] --> C["Example"] --> D["Terms"]
+    end
+    D --> E["The parts, in build order"] --> F["What you decide"] --> G["How you'll know"] --> H["Not in this epic"]
+  end
+  subgraph DATA["Data file: for agents and checks"]
+    direction TB
+    X["Checklist fields"] --> Y["Each part: files, tests, what it waits for"] --> Z["Use cases, end-to-end test, distillation"]
+  end
+  Y -->|"gives the order"| E
+  PAGE -->|"you approve"| OK["Approved plan"]
+  DATA -->|"the check passes"| OK
+</pre>
+<div class="caption">One plan, two files. The page is what you read and sign; the check reads only the data file.</div>
+</div>
 <table data-c="shape-epic">
   <thead><tr><th>Epic plan page, in order</th><th>What it holds</th><th>Length</th></tr></thead>
   <tbody>
@@ -76,7 +97,7 @@
     <tr><td>What changes for you</td><td>A today/after table</td></tr>
     <tr><td>Example</td><td>A real case in steps, when the flow is new</td></tr>
     <tr><td>Terms</td><td>Only words not explained where used</td></tr>
-    <tr><td>The parts</td><td>One row per part: what you get from it, and after which part. No files, no tests.</td><td>About 40 words a part</td></tr>
+    <tr><td>The parts, in build order</td><td>A diagram of the order, then one row per part: what it builds, what you get, and after which part. No files, no tests.</td><td>About 40 words a part</td></tr>
     <tr><td>What you decide</td><td>Open questions only, answer first, why in one sentence. Settled ones in one line.</td><td>One row each</td></tr>
     <tr><td>How you'll know it worked</td><td>Three to five checks you could do yourself</td><td></td></tr>
     <tr><td>Not in this epic</td><td>Up to five lines</td><td></td></tr>
@@ -93,7 +114,18 @@
     <tr><td>How you'll know it worked</td><td>Three to five checks</td></tr>
   </tbody>
 </table>
-<p>What leaves the pages for the data file: the requirement sentence, maps-to, file lists, test plans per level, function names, the grounding and overlap notes, the distillation plan. Results follow the same idea: what happened and what is left on the page; evidence in the data file.</p>
+<table data-c="shape-result">
+  <thead><tr><th>Result page, in order</th><th>What it holds</th></tr></thead>
+  <tbody>
+    <tr><td>What happened</td><td>Two to four sentences: delivered, changed or dropped</td></tr>
+    <tr><td>Checklist</td><td>Each check from the plan's "How you'll know it worked", met or not, and where you can see it</td></tr>
+    <tr><td>Example</td><td>The main case, run for real, in numbered steps</td></tr>
+    <tr><td>The parts (epic only)</td><td>One line per part: its outcome</td></tr>
+    <tr><td>Differences from the plan</td><td>Each with why, or "none"</td></tr>
+    <tr><td>What is left</td><td>Each item, and the part or backlog row that takes it</td></tr>
+  </tbody>
+</table>
+<p>What leaves the pages for the data file: the requirement sentence, maps-to, file lists, test plans per level, function names, the grounding and overlap notes, the distillation plan, and a result's evidence (tests, commits).</p>
 
 <h2 id="caps">Word caps</h2>
 <p>Counted the way the doc check counts today: the text inside <code>&lt;main&gt;</code>, as a reader sees it. Today's numbers are from every plan and result in git history, and the docs on this branch.</p>
@@ -102,13 +134,13 @@
   <tbody>
     <tr><td>Epic plan</td><td><b>700</b>, top 300</td><td>2,685</td><td>11,760</td><td>9 since the writing rules (2026-11-12); 13 in all, median 3,337</td></tr>
     <tr><td>WU plan</td><td><b>500</b></td><td>1,184</td><td>4,976</td><td>37 since; 62 in all, median 1,299, largest 6,342</td></tr>
-    <tr><td>WU result</td><td><b>400</b></td><td>1,420</td><td>4,649</td><td>38 since; 58 in all, median 1,312</td></tr>
-    <tr><td>Epic result</td><td><b>600</b></td><td>603</td><td>603</td><td>1: most stay untracked in the archive</td></tr>
+    <tr><td>WU result</td><td><b>500</b></td><td>1,420</td><td>4,649</td><td>38 since; 58 in all, median 1,312</td></tr>
+    <tr><td>Epic result</td><td><b>700</b></td><td>603</td><td>603</td><td>1: most stay untracked in the archive</td></tr>
     <tr><td>One-part epic</td><td>The epic caps</td><td>2,134</td><td>3,187</td><td>4 plans</td></tr>
     <tr><td>Decision file</td><td><b>5,000</b></td><td>10,854</td><td>13,274</td><td>3 files, 68 records; a record's median is 126 to 587 words by file</td></tr>
-    <tr><td>Use-case file</td><td><b>4,000</b></td><td>3,645</td><td>4,541</td><td>3 files</td></tr>
-    <tr><td>Backlog file</td><td><b>3,000</b></td><td>5,014</td><td>7,188</td><td>4 files</td></tr>
-    <tr><td>Backlog order</td><td><b>600</b></td><td>1,103</td><td>1,103</td><td>1</td></tr>
+    <tr><td>Use-case file</td><td>None: data</td><td>3,645</td><td>4,541</td><td>3 files</td></tr>
+    <tr><td>Backlog file</td><td>None: data</td><td>5,014</td><td>7,188</td><td>4 files</td></tr>
+    <tr><td>Backlog order</td><td>None: data</td><td>1,103</td><td>1,103</td><td>1</td></tr>
     <tr><td>Architecture</td><td><b>3,000</b></td><td>5,847</td><td>5,847</td><td>1</td></tr>
     <tr><td>Install</td><td><b>1,500</b></td><td>1,916</td><td>1,916</td><td>1</td></tr>
     <tr><td>Decision and use-case indexes</td><td>None: they become data</td><td>356</td><td>394</td><td>2</td></tr>
@@ -119,24 +151,27 @@
 <h3 id="slimming">What each slimmed doc drops</h3>
 <ul data-c="slimming">
   <li><b>Decisions:</b> lineage rows go. A replaced record keeps only "DEC-n · title · replaced by DEC-m". A live record keeps its choice, its why and what was rejected, about 250 words at most. Ids are never reused.</li>
-  <li><b>Use cases:</b> the build history goes ("built by", "amended by"). The contracts stay.</li>
-  <li><b>Backlog:</b> done and struck rows go. Their ids are never reused.</li>
+  <li><b>Use cases:</b> the build history goes ("built by", "amended by"). The contracts stay, as data.</li>
+  <li><b>Backlog:</b> done and struck rows go as it becomes data. Their ids are never reused.</li>
   <li><b>Architecture and install:</b> history goes, and any rule a skill already holds becomes a pointer to that skill.</li>
   <li><b>Every slimmed doc:</b> every id cited in code, skills or docs still resolves. Git keeps what went.</li>
 </ul>
 
 <h2 id="questions">Questions for you</h2>
 <p>Work waits for your approval. Comment to overrule any answer.</p>
+<p data-c="answered">Your comments of 2026-11-18 answered none of questions 1 to 7 outright. They changed question 1: the WU result cap rose from 400 to 500 and the epic result cap from 600 to 700, and use cases, backlog and backlog order lost their caps as they became data. The epic example still fits, at 690 of 700. They raised questions 8 and 9.</p>
 <table data-c="questions">
   <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
   <tbody>
-    <tr><td>1</td><td>Are the caps right?</td><td><b>Yes, as in the table.</b> Both examples fit with room: 641 of 700, 356 of 500.</td><td>About a third of today's median. You asked for short docs.</td></tr>
+    <tr><td>1</td><td>Are the caps right?</td><td><b>Yes, as in the table.</b> Both examples fit: 690 of 700, 356 of 500.</td><td>About a third of today's median. You asked for short docs. The result caps rose by 100 for the checklist and example.</td></tr>
     <tr><td>2</td><td>Where does an epic plan's top end, with no tags?</td><td><b>At the heading "The parts".</b> The page marks it with the id <code>work</code>.</td><td>One id is enough to find it. The 300-word top stays, as the epic plan says.</td></tr>
     <tr><td>3</td><td>The "what changes for you" table is on the page. Does the data file repeat it?</td><td><b>Yes, for the epic plan, where today's check requires it.</b></td><td>The check can then prove it exists. The cost: a short table written twice.</td></tr>
-    <tr><td>4</td><td>Do other work pages get a cap?</td><td><b>No.</b></td><td>They have no fixed shape: logs, notes, this inventory (about 4,400 words). All are archived at close.</td></tr>
+    <tr><td>4</td><td>Do other work pages get a cap?</td><td><b>No.</b></td><td>They have no fixed shape: logs, notes, this inventory (about 4,900 words). All are archived at close.</td></tr>
     <tr><td>5</td><td>A decision file over 5,000 words after slimming?</td><td><b>W5 splits it by topic.</b></td><td>The router file is 13,274 words today, in 21 records. Dropping lineage and replaced bodies may not be enough.</td></tr>
     <tr><td>6</td><td>Where does an epic result's data file live?</td><td><b>Beside its page in the archive, untracked.</b> The report note keeps the page only.</td><td>The page is what you sign. The data is for the check at write time.</td></tr>
     <tr><td>7</td><td>Can a data file hold extra facts?</td><td><b>Yes, under one free field, <code>details</code>.</b> Any other unknown field is red.</td><td>Agents need room for files and mechanics. The check still catches a misspelt required field.</td></tr>
+    <tr><td>8</td><td>Do the use cases go completely?</td><td><b>No: the pages go, the contracts stay as data.</b></td><td>Code comments, reviews and plans cite their ids, such as UC-REV-3. Dropped, those would point at nothing.</td></tr>
+    <tr><td>9</td><td>Does the whole backlog become data, not only its order?</td><td><b>Yes, open rows only.</b></td><td>You ask an agent about the backlog. Follow-ups still name a row, and its id still resolves.</td></tr>
   </tbody>
 </table>
 
@@ -229,9 +264,9 @@ owner-changes:
   - when: A check finds a gap
     today: It names a missing tag in the page
     after: It names a missing field in the data file
-  - when: You open the decisions, use cases, backlog or architecture
-    today: Long, with history and replaced rows
-    after: "Short: current truth only"
+  - when: You look up a decision, use case, backlog row or the architecture
+    today: Long pages, with history and replaced rows
+    after: "Decisions and architecture: short, current truth only. Use cases and backlog: you ask an agent."
   - when: You approve
     today: The epic plan, then each WU plan
     after: The same, and first a table of where each doc lives
@@ -305,14 +340,14 @@ wu-summaries:
     wu-deps: [E-DOCSPLIT.W2, E-DOCSPLIT.W3]
   - wu: E-DOCSPLIT.W5
     wu-summary: &gt;-
-      Decisions, use cases and backlog keep current truth: a replaced decision
-      shrinks to its id and one line, use cases drop build history, the backlog
-      drops done and struck rows; the decision and use-case indexes become data
-      files; word counts before and after per file.
+      Decisions keep current truth: a replaced decision shrinks to its id and
+      one line. Use cases (without build history), the backlog (open rows
+      only), its order and the decision and use-case indexes become data files,
+      with no page. Word counts before and after per file.
     wu-maps-to: The owner's "migrate and shrink".
     wu-expected: &gt;-
-      Each file under W1's cap; every cited DEC, UC and backlog id still found;
-      keel verify-doc green. No code: exempt; a one-off script lists the cited
+      Each decision file under W1's cap; every cited DEC, UC and backlog id
+      still found; keel verify-doc green. No code: exempt; a one-off script lists the cited
       ids.
     wu-deps: [E-DOCSPLIT.W1]
   - wu: E-DOCSPLIT.W6
@@ -348,7 +383,7 @@ open-questions:
     answer: No; a backlog row.
     why: Not part of the split.
 details:
-  settled: [clean cut for old tags, indexes as data, W1 redesigns the plan pages, a cap per page kind]
+  settled: [clean cut for old tags, indexes and backlog order as data, W1 redesigns the plan pages, a cap per page kind]
   grounding:
     - src/verify_doc.rs verify, checklist, has_role
     - src/mr.rs report_candidates; src/notes.rs write_report, doc_paths, doc_problems, tier_of
@@ -418,7 +453,7 @@ details:
   <tbody>
     <tr><td>1</td><td><b>Coverage.</b> A scan of <code>src/</code>, <code>scripts/</code>, <code>skills/</code> and <code>templates/</code> for doc paths, doc roles, the page attributes and note refs.</td><td><b>Pass.</b> 166 distinct hits in 30 files. Every file maps to a row (table below). The scan added one row the epic plan did not list: the gate summary on GitHub. The htmldoc row comes from the htmldoc skill, not the code.</td></tr>
     <tr><td>2</td><td><b>Tags to fields.</b> The checklist tags in <code>src/verify_doc.rs</code>, plus <code>data-wu</code>, <code>data-artifact</code> and <code>data-status</code>, against the field tables above.</td><td><b>Pass.</b> 25 tags and attributes. Epic plan 16, WU plan 7, WU result 8, epic result 9: each maps to exactly one field, and no field claims a tag the code lacks. The first run failed: <code>data-wu</code> mapped to two fields; fixed. Both example data files parse, hold every required field, and no unknown one.</td></tr>
-    <tr><td>3</td><td><b>Caps.</b> Word counts per kind, counted as the doc check counts the top; each example against its cap.</td><td><b>Pass.</b> The counter matched keel's own count on 134 of 135 docs over 300 words (one off by one). Keel counts the examples at 641 (top 238) and 356: under 700 (top 300) and 500.</td></tr>
+    <tr><td>3</td><td><b>Caps.</b> Word counts per kind, counted as the doc check counts the top; each example against its cap.</td><td><b>Pass.</b> The counter matched keel's own count on 134 of 135 docs over 300 words (one off by one). Keel counts the examples at 690 (top 253) and 356: under 700 (top 300) and 500. Rerun after your comments: the epic example grew by its build-order diagram and table.</td></tr>
     <tr><td>4</td><td><b>Decision id.</b> A search of <code>docs/decisions</code> on every local and remote branch.</td><td><b>Pass: DEC-69 is free.</b> The highest Keel record is DEC-68 on all 134 refs. Higher numbers in the docs are Trawler's. The index says the same: next free DEC-69.</td></tr>
     <tr><td>5</td><td><b>Doc check.</b> <code>keel verify-doc</code> on each W1 page, and over all docs.</td><td><b>Green</b>: exit 0, no output, on all four W1 pages and over every doc.</td></tr>
     <tr><td>6</td><td><b>You.</b> Your approval of this page and the examples.</td><td><b>Waiting.</b> The W1 plan was approved: "doc split w1 looks fine, let's go". The decision is written after this approval.</td></tr>
@@ -449,7 +484,7 @@ details:
 </table>
 
 <h3 id="dec-draft">The decision, as it will be written</h3>
-<p data-c="dec-draft"><b>DEC-69 · Docs split: a short page for the owner, a data file for agents and checks.</b> Choice: each plan and result is a page plus a YAML data file beside it, named alike. The data file holds the checklist as fields (the field tables above); the doc check reads it. The page holds what the owner approves, in the shapes above, under a word cap per page kind; it carries no checklist tags. The sign-off still attests the page. The decision and use-case indexes become data files. Decisions, use cases, backlog, architecture and install keep current truth only, under their caps. Amends DEC-10 (docs are HTML only: a data file is YAML), DEC-27 (a page and its data file are one doc for tiers and lineage) and DEC-52 (the tool also counts a page's words). Rejected: data in git notes (a plan exists before any commit); one doc generated from the other (each is written for its reader). Written after your approval, in <code>docs/decisions/workflow-gates.html</code> and the index.</p>
+<p data-c="dec-draft"><b>DEC-69 · Docs split: a short page for the owner, a data file for agents and checks.</b> Choice: each plan and result is a page plus a YAML data file beside it, named alike. The data file holds the checklist as fields (the field tables above); the doc check reads it. The page holds what the owner approves or signs, in the shapes above, under a word cap per page kind; it carries no checklist tags. The sign-off still attests the page. The indexes, the use cases and the backlog become data files, with no page. Decisions, architecture and install keep current truth only, under their caps; use cases and backlog drop their history as they move. Amends DEC-10 (docs are HTML only: a data file is YAML), DEC-27 (a page and its data file are one doc for tiers and lineage) and DEC-52 (the tool also counts a page's words). Rejected: data in git notes (a plan exists before any commit); one doc generated from the other (each is written for its reader). Written after your approval, in <code>docs/decisions/workflow-gates.html</code> and the index.</p>
 
 <h3 id="overlap">Overlap</h3>
 <ul data-c="overlap">
