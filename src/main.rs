@@ -659,16 +659,23 @@ fn path_cap<'a>(caps: &[(&'a str, usize, regex::Regex)], rel: &str) -> Option<(&
     caps.iter().filter(|(_, _, r)| r.is_match(rel)).map(|(g, c, _)| (*g, *c)).min_by_key(|(_, c)| *c)
 }
 
-/// `[docs.caps]` keys with no glob shape (`docs/decisions/`, `docs/decisions`, `docs/v1.0`): a glob
+/// `[docs.caps]` keys with no glob shape (`docs/decisions/`, `docs/decisions`, `docs/a.yaml`): a glob
 /// matches the whole path, so such a key never matches a page and its cap would be silently off. A
-/// key with `*` or `?`, or that names a page (`docs/install.html`), is a glob.
+/// key with `*` or `?`, or that names a page (`docs/install.html`), is a glob. A key whose last part
+/// holds a dot (`docs/a.yaml`, `docs/v1.0`) may be a file, so it is named as no page before its
+/// folder form is offered; `<key>/**` alone would leave a file's cap off.
 fn caps_problem(caps: &std::collections::BTreeMap<String, usize>) -> Option<String> {
     let bad: Vec<String> = caps
         .keys()
         .filter(|k| !k.contains(['*', '?']) && !k.ends_with(".html"))
         .map(|k| {
-            let glob = if k.ends_with('/') { format!("{k}**") } else { format!("{k}/**") };
-            format!("[docs.caps] key \"{k}\" is a prefix, not a glob: write \"{glob}\"")
+            let folder = k.trim_end_matches('/');
+            let glob = format!("{folder}/**");
+            if folder.rsplit('/').next().is_some_and(|last| last.contains('.')) {
+                format!("[docs.caps] key \"{k}\" names no page: a cap glob matches .html pages; a folder is \"{glob}\"")
+            } else {
+                format!("[docs.caps] key \"{k}\" is a prefix, not a glob: write \"{glob}\"")
+            }
         })
         .collect();
     (!bad.is_empty()).then(|| bad.join("\n"))
@@ -915,7 +922,7 @@ mod tests {
         }
     }
     /// E-DOCSPLIT.W2 review round 1: a bare-prefix `[docs.caps]` key is named with its glob form;
-    /// globs and file paths pass.
+    /// globs and file paths pass. Round 3: a key whose last part holds a dot is named as no page.
     #[test]
     fn a_prefix_caps_key_is_named_with_its_glob_form() {
         let caps = |keys: &[&str]| keys.iter().map(|k| (k.to_string(), 1)).collect::<std::collections::BTreeMap<_, _>>();
@@ -924,10 +931,14 @@ mod tests {
             caps_problem(&caps(&["docs/decisions/", "docs/work", "docs/*.html"])).as_deref(),
             Some("[docs.caps] key \"docs/decisions/\" is a prefix, not a glob: write \"docs/decisions/**\"\n[docs.caps] key \"docs/work\" is a prefix, not a glob: write \"docs/work/**\"")
         );
-        assert_eq!(
-            caps_problem(&caps(&["docs/v1.0", "docs/install.html"])).as_deref(),
-            Some("[docs.caps] key \"docs/v1.0\" is a prefix, not a glob: write \"docs/v1.0/**\""),
-            "a folder with a dot in its name is no page"
-        );
+        for (key, glob) in
+            [("docs/v1.0", "docs/v1.0/**"), ("docs/a.yaml", "docs/a.yaml/**"), ("docs/install.htm", "docs/install.htm/**"), ("docs/v1.0/", "docs/v1.0/**")]
+        {
+            assert_eq!(
+                caps_problem(&caps(&[key, "docs/install.html"])),
+                Some(format!("[docs.caps] key \"{key}\" names no page: a cap glob matches .html pages; a folder is \"{glob}\"")),
+                "a key with a dot in its last part is no page, a file or a folder"
+            );
+        }
     }
 }

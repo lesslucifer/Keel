@@ -693,19 +693,26 @@ fn a_malformed_config_is_a_config_error_with_explicit_paths_too() {
 }
 
 /// E-DOCSPLIT.W2 review round 1: a [docs.caps] key written as a bare prefix never matches a path, so
-/// it is refused, naming the glob form.
+/// it is refused, naming the glob form. Round 3: a key whose last part holds a dot is named as no page.
 #[test]
 fn a_prefix_style_caps_key_is_refused_naming_its_glob() {
     let d = repo();
     let p = d.path();
     std::fs::write(p.join("docs/a.html"), page_of(10, None)).unwrap();
     let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
-    for (key, glob) in [("docs/decisions/", "docs/decisions/**"), ("docs/decisions", "docs/decisions/**"), ("docs/v1.0", "docs/v1.0/**")] {
+    let prefix = |key: &str, glob: &str| format!("[docs.caps] key \"{key}\" is a prefix, not a glob: write \"{glob}\"");
+    let no_page = |key: &str, glob: &str| format!("[docs.caps] key \"{key}\" names no page: a cap glob matches .html pages; a folder is \"{glob}\"");
+    for (key, want) in [
+        ("docs/decisions/", prefix("docs/decisions/", "docs/decisions/**")),
+        ("docs/decisions", prefix("docs/decisions", "docs/decisions/**")),
+        ("docs/v1.0", no_page("docs/v1.0", "docs/v1.0/**")),
+        ("docs/a.yaml", no_page("docs/a.yaml", "docs/a.yaml/**")),
+    ] {
         std::fs::write(p.join(".keel/config.toml"), format!("{cfg}[docs.caps]\n\"{key}\" = 50\n")).unwrap();
         for args in [&["verify-doc", "docs/a.html"][..], &["verify-doc"]] {
             let o = keel(p, args);
             let t = text(&o);
-            assert!(o.status.code() == Some(1) && t.contains(&format!("[docs.caps] key \"{key}\" is a prefix, not a glob: write \"{glob}\"")), "{key}: {t}");
+            assert!(o.status.code() == Some(1) && t.contains(&want), "{key}: {t}");
         }
     }
     for key in ["docs/*.html", "docs/install.html", "docs/**"] {
