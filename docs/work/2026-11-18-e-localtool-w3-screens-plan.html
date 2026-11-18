@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afd9bfa9f34851f0dfb282a" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-LOCALTOOL.W3 plan: draft screens</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-LOCALTOOL.W3 · Draft screens</h1>
+      <p>The plan for drawing the app's screens. You read it before any screen is drawn.</p>
+      <div class="meta">T3 · WU plan · 2026-11-18 · epic <code>E-LOCALTOOL</code> · WU <code>E-LOCALTOOL.W3</code> · branch <code>wu/E-LOCALTOOL/w3-screens</code> off <code>epic/E-LOCALTOOL</code> cf4c752</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="picture">The picture</h2>
+<div class="diagram" data-c="picture">
+<pre class="mermaid">
+flowchart LR
+  AL["1 Alert: a work unit waits on you"] -->|"click"| WL["2 Waits on you: one list"]
+  WL -->|"pick an item"| WU["3 Work unit: its checks, review, sign-off"]
+  EP["4 Epics: each epic and its work units"] -->|"pick one"| WU
+  FL["5 Fleet: the router and each worker"]
+  PR["6 Projects: switch project"] -->|"every screen"| WL
+  WL -.->|"open the doc, copy the command: W4"| OUT["Your browser and terminal"]
+  WU -.->|"W4"| OUT
+</pre>
+<div class="caption">The six screens W3 draws, and how you move between them. The dashed lines are W4's: what an item opens and which command it copies.</div>
+</div>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">You have approved what the app must do (W1) and how it is built (W2). You have not yet seen it. A list of needs is hard to picture. W3 draws the screens, filled with a real day of Keel's own work, so you can say "yes, that is what I want" or "this is missing" before anything is built.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After W3</th></tr></thead>
+  <tbody>
+    <tr><td>You ask "what would the app look like?"</td><td>Words in W1 and W2</td><td>Six drawn screens, opened in your browser</td></tr>
+    <tr><td>You ask "is this real?"</td><td>No example</td><td>Each screen shows Keel's own state on the evening of 18 November</td></tr>
+    <tr><td>You ask "where does this number come from?"</td><td>Not said</td><td>Under each screen, one line per field: where the app reads it, or "new"</td></tr>
+    <tr><td>You must decide</td><td colspan="2">Approve this plan, or comment. Later, approve the screens or comment on any field</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">How you approve it</h2>
+<ol data-c="example-steps">
+  <li>You read this plan and comment, or tell the router it is fine.</li>
+  <li>The worker draws the screens in one result doc. It opens with the screens.</li>
+  <li>The router tells you it is ready. You open it in your browser and comment on any screen or field.</li>
+  <li>The router opens a pull request into the epic. You approve it on GitHub. Your approval is the sign-off, and GitHub merges it.</li>
+</ol>
+
+<h3 id="terms">Terms</h3>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Screen</td><td>One view of the app's window, drawn as a static picture in HTML. Nothing on it works.</td></tr>
+    <tr><td>Field</td><td>One piece of data a screen shows, such as a worker's branch.</td></tr>
+    <tr><td>Source</td><td>Where the app reads a field: keel, git, or a session. "New" means nothing records it today.</td></tr>
+    <tr><td>Sample day</td><td>The real state of Keel's own work that fills the screens.</td></tr>
+    <tr><td>Slot</td><td>A marked place on a screen that W4 fills: the doc an item opens and the command it copies.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="work">The work</h2>
+<p data-item="requirement" data-c="requirement">W3's result doc draws the app's six screens below as static HTML mockups filled with Keel's real state on the evening of 2026-11-18, shows each must need of W1 (n1 to n3) on a screen, and names for every field its source in keel, git or session state, or marks it new.</p>
+<p data-item="maps-to" data-c="maps-to">Epic <code>E-LOCALTOOL</code>, its W3 block and the acceptance line "every must-have need appears on a W3 or W4 screen, and every screen field names its source or is marked new" · W1's needs n1 to n5 and n7 · W2's parts, its window requests (Q1), session fields (Q5), alerts (Q6) and projects (Q9), and its follow-up "the session fields and the bridge's requests, for the screens". No use case: an ideas epic.</p>
+<p data-item="expected" data-c="expected">One doc, <code>docs/work/2026-11-18-e-localtool-w3-screens-result.html</code> or the same name on the day it lands, green under <code>keel verify-doc</code>. It opens with the six screens. Each screen has its field list folded under it. n1, n2 and n3 each point to the fields that show them. Every field has a source or the mark "new". Every sample value traces to a commit, note or file of 2026-11-18, or is marked "sample". Each waiting item has two empty slots for W4. You approve it by approving the WU's pull request. No file outside <code>docs/work/</code> changes.</p>
+
+<p data-c="work-in-short"><b>In short:</b> draw six screens in one doc, fill them with one real evening of Keel's work, and say where every field comes from. The screens settle what the app shows, not how it looks. Nothing is built.</p>
+
+<h3 id="screens-h">The six screens</h3>
+<table data-c="screens">
+  <thead><tr><th>#</th><th>Screen</th><th>What it shows</th><th>Needs</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Alert</td><td>The macOS alert: its words, when it fires, and when it stays quiet (one per new item; a burst shares one). A small settings view: what alerts, and Telegram left to the router</td><td>n1 must</td></tr>
+    <tr><td>2</td><td>Waits on you</td><td>One list across projects. One row per item: a sign-off, a rule-file commit, a plan or result to read, a question from the router, a failed gate, a merge conflict. Each row: what, which work unit, since when, why it waits, and the two W4 slots</td><td>n2 must, n3 must</td></tr>
+    <tr><td>3</td><td>Work unit</td><td>One work unit before you sign: each gate check and its state, the review verdict and its rounds, its docs, whether it is signed and merged. The two W4 slots</td><td>n3 must, n5</td></tr>
+    <tr><td>4</td><td>Epics</td><td>Each epic, its work units, and what is merged</td><td>n5 should</td></tr>
+    <tr><td>5</td><td>Fleet</td><td>The router and each worker: busy, idle, stuck or gone; its worktree, branch, last report; unread reports in the inbox; the watchdog's last word</td><td>n4 should</td></tr>
+    <tr><td>6</td><td>Projects</td><td>Your project list and the switch at the top of every screen</td><td>n7 should</td></tr>
+  </tbody>
+</table>
+<p data-c="not-drawn">Not drawn: reading a code diff (n6, W4's), sending the router a message (n8, later), alerts when away (n9, later), releases and the off-Mac copy (n10, W5's).</p>
+
+<h3 id="form-h">The form</h3>
+<ul data-c="form">
+  <li><b>Static HTML and CSS,</b> inside the result doc. No script but the doc's usual two. Each screen sits in a plain window frame at desktop width.</li>
+  <li><b>Plain look.</b> Grey frames, one colour per state (green, amber, red). Fonts and colours are the build's job.</li>
+  <li><b>Fields folded.</b> Under each screen, a closed "Where each field comes from" table: field, source, the W2 part that reads it, mark. You open it only when you want it.</li>
+  <li><b>Each screen names the one window request it uses,</b> from W2's list (the waiting list, the fleet, one epic, the projects). A screen that needs another request names it as new.</li>
+</ul>
+
+<h3 id="sample-h">The sample day</h3>
+<p data-c="sample-in-short">The evening of 2026-11-18. It was a busy day: E-DOCSPLIT.W2 went through three review rounds and merged a task, E-LOCALTOOL's W1 and W2 merged by your approval, and the W3 and W4 plans waited on you. The worker picks one moment that evening and records every commit it read.</p>
+<table data-c="sample-sources">
+  <thead><tr><th>Data</th><th>Read from</th></tr></thead>
+  <tbody>
+    <tr><td>Branches, commits, merges</td><td>git, as of the chosen moment: each value names its commit</td></tr>
+    <tr><td>Tests, docs, review, sign-off, receipt</td><td>The notes on each tip, read with <code>git log --notes=&lt;kind&gt; --format=%N -1 &lt;tip&gt;</code>, which writes nothing</td></tr>
+    <tr><td>Workers and their worktrees</td><td>The launcher's run records under <code>.router/runs/</code> in the main checkout: name, branch, worktree, start time</td></tr>
+    <tr><td>Unread reports</td><td>The count of files in the router's inbox, never their content</td></tr>
+    <tr><td>A session's live state (busy, idle, stuck)</td><td>No record keeps it after the fact, and the worker never runs <code>claude</code>. Shown as "sample", with the field named from W2 (<code>claude agents --json</code>)</td></tr>
+  </tbody>
+</table>
+<p data-c="sample-rules">Pull request numbers are not shown: the flow is dropped, so a merge shows as a merge. No token, address or secret appears. You are "you".</p>
+
+<h3 id="w4-edge-h">The edge with W4</h3>
+<p data-c="w4-edge-in-short">W4 runs beside W3. W3 draws what the screens show. W4 owns what an item opens and which command it copies. Neither draws the other's part.</p>
+<table data-c="w4-edge">
+  <thead><tr><th>Piece</th><th>W3 draws</th><th>W4 owns</th></tr></thead>
+  <tbody>
+    <tr><td>The alert</td><td>Its words, when it fires, when it is quiet</td><td>Nothing: a click opens the app on the item (W2 Q6)</td></tr>
+    <tr><td>A waiting item</td><td>Its row: kind, work unit, since, why. Two empty slots: "Open" and "Copy"</td><td>The doc each slot opens and the command each copies</td></tr>
+    <tr><td>Leaving the list</td><td>The list as it stands at the moment drawn</td><td>How the app sees you acted, and when the item leaves</td></tr>
+    <tr><td>A code diff</td><td>Nothing</td><td>Where you read it (n6)</td></tr>
+  </tbody>
+</table>
+<p data-c="w4-edge-merge">If W4 lands first, W3 fills its slots in its comment round. If W3 lands first, W4 fills them on the drawn screens. The epic's walk-through checks both.</p>
+
+<h2 id="open-points">Open points</h2>
+<p>Work goes on at these answers. Comment to overrule.</p>
+<table data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>One doc for the screens and the report, or two?</td><td><b>One,</b> screens first, field lists folded, the report's parts last. Split off like W1's map if it grows too long</td><td>The epic asks for one doc. You asked for the picture first</td></tr>
+    <tr><td>2</td><td>Which day fills the screens?</td><td><b>The evening of 2026-11-18</b></td><td>A real, busy day: a review in three rounds, a task merged, two work units merged, two plans waiting on you, several workers</td></tr>
+    <tr><td>3</td><td>Is the sample made to look perfect?</td><td><b>No.</b> What the day shows, gaps included. A value no record holds is marked "sample"</td><td>A gap on a real day is a finding. A made-up value hides it</td></tr>
+    <tr><td>4</td><td>Does W3 replay E-GHFLOW2's close, the epic's walk-through?</td><td><b>No.</b> The epic's close does it on these screens</td><td>That sign-off was another day. Mixing days would make the sample unreal</td></tr>
+    <tr><td>5</td><td>Do the screens fix the look?</td><td><b>No.</b> They fix what is shown. The look is the build's</td><td>A content review is quick. A look review now would be thrown away with Electron's own styling</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="test-plan-h">Tests and checks</h3>
+<div data-item="test-plan" data-c="test-plan">
+  <p><b>Unit and integration: waived.</b> W3 changes only <code>docs/work/</code>, so no code path changes. The range is exempt from test, review and doc notes. Your sign-off still runs.</p>
+  <p>The checks the worker runs instead, by a script in a scratch folder, with the raw output in the result's evidence:</p>
+  <ol>
+    <li><b>Every must need shown.</b> n1, n2 and n3 each name the screen and fields that show them. n4, n5 and n7 too. n6 and n8 to n10 are listed as not drawn, each with who takes it.</li>
+    <li><b>Every field sourced.</b> Each field's row names keel (a read command, or a file and line at cf4c752), git (a ref or a read command), or a session (a <code>claude agents --json</code> field, a run record, the inbox count), or the mark "new". Each names the W2 part that reads it.</li>
+    <li><b>The app judges nothing.</b> Every source is one of W2's read commands. A field that needs anything else is marked "new", and the result lists what keel would gain, as W2 listed K1 to K3.</li>
+    <li><b>Every item kind drawn.</b> Screen 2 has a row of each kind the epic names: a sign-off, a rule-file commit, a question from the router, a failed gate, a merge conflict. A kind the day did not have is drawn and marked "sample".</li>
+    <li><b>Every sample value traced.</b> Each value names its commit, note or file of 2026-11-18, or is marked "sample".</li>
+    <li><b>W4's edge kept.</b> Each waiting item has its two slots, empty and marked W4. No link target or command text is drawn by W3.</li>
+    <li><b>Local sources exist.</b> Every repository path cited passes <code>git cat-file -e cf4c752:&lt;path&gt;</code>.</li>
+    <li><b>Static.</b> The doc has no script but the mermaid one and htmldoc's.</li>
+    <li><b>Doc check.</b> <code>keel verify-doc</code> is green on the result.</li>
+    <li><b>Scope.</b> <code>git diff --name-only cf4c752..&lt;tip&gt;</code> lists only <code>docs/work/</code> files.</li>
+  </ol>
+</div>
+
+<h3 id="sign-off-h">Sign-off and merge</h3>
+<ul data-c="sign-off">
+  <li>The WU reaches <code>epic/E-LOCALTOOL</code> as a pull request, opened by the router. Your approval of it signs it (the <code>github</code> tier), and auto-merge merges it.</li>
+  <li>The result report is in the range, so the sign-off attests its bytes.</li>
+  <li>GitHub's flow is still today's flow. W5 plans its retirement; nothing about it changes here.</li>
+</ul>
+
+<h3 id="overlap-h">Overlap</h3>
+<ul data-c="overlap">
+  <li>W4 runs beside W3, in its own worktree. The shared edge is the table above. No shared file.</li>
+  <li>E-DOCSPLIT (DEC-69) will split each plan into a short page and a data file. The doc check does not ask for it on this branch yet, so W3 uses today's format.</li>
+  <li>E-GHSETUP stays paused. W3 reads none of its files.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    // keep diagram source readable for the diff layer (mermaid replaces it with SVG)
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
