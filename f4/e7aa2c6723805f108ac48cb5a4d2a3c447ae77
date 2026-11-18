@@ -1,0 +1,1 @@
+{"schema":"test/v1","tip":"f4e7aa2c6723805f108ac48cb5a4d2a3c447ae77","base":"cf4c752afd36d213dbbad34bb4916f9c466d20db","branch":"wu/E-LOCALTOOL/w4-handoff","committer":"vuluu <quangvu.luu92@gmail.com>","timestamp":1795009689,"unit":null,"integration":{"waived":"docs only: the range changes only docs/work/ (the W4 plan and result), no code path"},"e2e":null}
