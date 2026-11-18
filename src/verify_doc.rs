@@ -251,9 +251,32 @@ pub fn has_role(raw: &str, role: &str) -> bool {
 /// One problem: the file it is in, and what is wrong.
 pub type Problem = (PathBuf, String);
 
+/// One doc as DEC-69 pairs it: a page and, when it has one, the data file beside it.
+#[derive(Debug, PartialEq)]
+pub struct Pair {
+    pub page: PathBuf,
+    pub data: Option<PathBuf>,
+}
+
+/// The pair a path names (DEC-69): a page `<stem>.html` and its data file `<stem>.yaml`, side by
+/// side. A `.yaml` is a data file only under docs.root (`in_docs`), else no doc (`None`); its page is
+/// `<stem>.html`, there or not, and the data file is named even when it is not there (it is read, and
+/// a missing one is "cannot read file"). A `.html` page's data file is `<stem>.yaml` when that file
+/// is there and under docs.root. Any other path is a page alone. Two paths of one doc give one pair.
+pub fn pair_of(path: &Path, in_docs: impl Fn(&Path) -> bool) -> Option<Pair> {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("yaml") => in_docs(path).then(|| Pair { page: path.with_extension("html"), data: Some(path.to_owned()) }),
+        Some("html") => {
+            let data = path.with_extension("yaml");
+            let data = (data.is_file() && in_docs(&data)).then_some(data);
+            Some(Pair { page: path.to_owned(), data })
+        }
+        _ => Some(Pair { page: path.to_owned(), data: None }),
+    }
+}
+
 /// Problems with one doc - a page and the data file beside it, either one possibly absent; empty =
-/// green. `data` is the data file to read, when there is one (the caller finds it: same name, ending
-/// `.yaml`, under docs.root). `path_cap` is the `[docs.caps]` glob and cap that match the page's path,
+/// green. `data` is the data file to read, when there is one (`pair_of` finds it). `path_cap` is the `[docs.caps]` glob and cap that match the page's path,
 /// used when no ready data file gives the page a role. A data file marked draft silences the pair; a
 /// page with no data file is silenced by its own `data-status="draft"`.
 pub fn verify_pair(page: &Path, data: Option<&Path>, path_cap: Option<(&str, usize)>) -> Vec<Problem> {
@@ -630,8 +653,12 @@ fn page_problems(path: &Path, roles: Option<&[String]>, path_cap: Option<(&str, 
         }
     }
 
+    let roles = roles.filter(|r| !r.is_empty());
+    if roles.is_none() && path_cap.is_none() {
+        return errs; // no cap applies: no words to count
+    }
     let (words, top, marked) = page_words(&html, &ts);
-    match (roles.filter(|r| !r.is_empty()), path_cap) {
+    match (roles, path_cap) {
         (Some(roles), _) => {
             let role = roles.join(" + ");
             if let Some(cap) = role_cap(roles).filter(|c| words > *c) {
@@ -754,7 +781,8 @@ fn page_words(html: &str, ts: &[Tag]) -> (usize, usize, bool) {
         let words = decode_with(&text(html, ts, start, b.max(start)), Some('\u{fffd}'));
         words.split_whitespace().filter(|w| w.chars().any(char::is_alphanumeric)).count()
     };
-    (count(end), count(work.unwrap_or(end)), work.is_some())
+    let words = count(end);
+    (words, work.map_or(words, count), work.is_some())
 }
 
 const FLOWCHARTS: &[&str] = &["flowchart", "graph", "flowchart-elk"];
@@ -1060,7 +1088,11 @@ fn scan(s: &str, out: &mut Vec<Hit>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{artifact, decode, decode_mapped, fields, has_role, hits, page_words, read_data, result_role, role_cap, tags, unquoted_labels, Data, ROLES};
+    use super::{
+        artifact, decode, decode_mapped, fields, has_role, hits, page_words, pair_of, read_data, result_role, role_cap, tags, unquoted_labels, Data, Pair,
+        ROLES,
+    };
+    use std::path::Path;
 
     #[test]
     fn a_stray_closing_html_before_the_root_does_not_hide_the_role() {
@@ -1495,6 +1527,26 @@ mod tests {
         assert_eq!(p, ["artifact epic-plan and wu-result cannot share one doc: a one-part epic pairs epic-plan with wu-plan, or epic-result with wu-result"]);
         let p = problems(&EPIC_PLAN.replace("artifact: epic-plan", "artifact: epic-plna"));
         assert_eq!(p, ["unknown artifact \"epic-plna\" (expected one of: epic-plan, wu-plan, wu-result, epic-result)"]);
+    }
+
+    #[test]
+    fn pair_of_pairs_a_page_with_the_data_file_beside_it_under_docs_root_only() {
+        let d = tempfile::TempDir::new().unwrap();
+        let (docs, out) = (d.path().join("docs"), d.path().join("out"));
+        for dir in [&docs, &out] {
+            std::fs::create_dir(dir).unwrap();
+            std::fs::write(dir.join("a.yaml"), "").unwrap();
+        }
+        let in_docs = |p: &Path| p.starts_with(&docs);
+        let pair = |page: &Path, data: Option<&Path>| Some(Pair { page: page.to_owned(), data: data.map(Path::to_owned) });
+        let (page, data) = (docs.join("a.html"), docs.join("a.yaml"));
+        assert_eq!(pair_of(&page, in_docs), pair(&page, Some(&data)), "a page finds its data file, there or not");
+        assert_eq!(pair_of(&data, in_docs), pair(&page, Some(&data)), "a data file finds its page: one pair");
+        assert_eq!(pair_of(&docs.join("gone.yaml"), in_docs), pair(&docs.join("gone.html"), Some(&docs.join("gone.yaml"))), "named, to be read");
+        assert_eq!(pair_of(&docs.join("b.html"), in_docs), pair(&docs.join("b.html"), None), "no data file beside it");
+        assert_eq!(pair_of(&out.join("a.yaml"), in_docs), None, "a .yaml outside docs.root is no doc");
+        assert_eq!(pair_of(&out.join("a.html"), in_docs), pair(&out.join("a.html"), None), "a page outside docs.root has no data file");
+        assert_eq!(pair_of(&docs.join("a.md"), in_docs), pair(&docs.join("a.md"), None));
     }
 
     #[test]

@@ -609,10 +609,14 @@ fn pre_commit(repo: &Path, cfg: &Config) -> Result<i32, String> {
 }
 
 /// No paths: every page (`.html`) and data file (`.yaml`) under docs.root, tracked or untracked, not
-/// ignored. Each path checks its pair: a page and the data file beside it (same name, `.yaml`), each
-/// pair once. A `.yaml` outside docs.root is no doc and is skipped; a page outside it has no data file.
+/// ignored. Each path checks its pair (`verify_doc::pair_of`), each pair once. A config that is there
+/// but malformed is an error with paths too; with paths and no config file, every path is checked
+/// and no page is capped by path.
 fn verify_doc(repo: &Path, paths: &[&str]) -> Result<i32, String> {
-    let cfg = if paths.is_empty() { Some(load_config(repo)?) } else { load_config(repo).ok() };
+    let cfg = if paths.is_empty() || repo.join(".keel/config.toml").exists() { Some(load_config(repo)?) } else { None };
+    if let Some(bad) = cfg.as_ref().and_then(|c| caps_problem(&c.docs.caps)) {
+        return Err(format!("keel: bad .keel/config.toml: {bad}"));
+    }
     let files: Vec<String> = match &cfg {
         Some(cfg) if paths.is_empty() => {
             let root = cfg.docs.root.trim_end_matches('/');
@@ -622,32 +626,19 @@ fn verify_doc(repo: &Path, paths: &[&str]) -> Result<i32, String> {
         }
         _ => paths.iter().map(|s| s.to_string()).collect(),
     };
-    let in_docs = |p: &Path| match &cfg {
-        Some(c) => repo_rel(repo, p).is_some_and(|r| r.starts_with(&format!("{}/", c.docs.root.trim_end_matches('/')))),
-        None => true,
-    };
+    let rel = RepoRel::new(repo);
+    let docs = cfg.as_ref().map(|c| format!("{}/", c.docs.root.trim_end_matches('/')));
+    let in_docs = |p: &Path| docs.as_ref().is_none_or(|d| rel.of(p).is_some_and(|r| r.starts_with(d.as_str())));
+    let caps = cfg.as_ref().map(|c| &c.docs.caps).filter(|c| !c.is_empty());
     let mut seen = std::collections::BTreeSet::new();
     let mut red = false;
     for f in &files {
-        let (stem, is_data) = match (f.strip_suffix(".yaml"), f.strip_suffix(".html")) {
-            (Some(s), _) => (s, true),
-            (_, Some(s)) => (s, false),
-            _ => (f.as_str(), false),
-        };
-        if (is_data && !in_docs(Path::new(f))) || !seen.insert(stem.to_string()) {
+        let Some(pair) = verify_doc::pair_of(Path::new(f), in_docs) else { continue };
+        if !seen.insert(pair.page.clone()) {
             continue;
         }
-        if is_data && !Path::new(f).is_file() {
-            eprintln!("{f}: cannot read file");
-            red = true;
-            continue;
-        }
-        let page = if is_data || f.ends_with(".html") { format!("{stem}.html") } else { f.clone() };
-        let data = PathBuf::from(format!("{stem}.yaml"));
-        let data = (stem != f && data.is_file() && in_docs(&data)).then_some(data);
-        let rel = repo_rel(repo, Path::new(&page));
-        let cap = rel.as_deref().and_then(|r| cfg.as_ref().and_then(|c| path_cap(&c.docs.caps, r)));
-        let errs = verify_doc::verify_pair(Path::new(&page), data.as_deref(), cap);
+        let cap = caps.and_then(|c| rel.of(&pair.page).and_then(|r| path_cap(c, &r)));
+        let errs = verify_doc::verify_pair(&pair.page, pair.data.as_deref(), cap);
         for (file, e) in &errs {
             eprintln!("{}: {e}", file.display());
         }
@@ -661,13 +652,45 @@ fn path_cap<'a>(caps: &'a std::collections::BTreeMap<String, usize>, rel: &str) 
     caps.iter().filter(|(g, _)| notes::glob(g, rel)).map(|(g, c)| (g.as_str(), *c)).min_by_key(|(_, c)| *c)
 }
 
-/// A path's place in the repo, `/`-separated, when it is inside it (the file or its directory must exist).
-fn repo_rel(repo: &Path, p: &Path) -> Option<String> {
-    let abs = if p.is_absolute() { p.to_owned() } else { std::env::current_dir().ok()?.join(p) };
-    let (dir, name) = (abs.parent()?, abs.file_name()?);
-    let full = std::fs::canonicalize(dir).ok()?.join(name);
-    let rel = full.strip_prefix(std::fs::canonicalize(repo).ok()?).ok()?;
-    Some(rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"))
+/// `[docs.caps]` keys written as a bare prefix (`docs/decisions/`, `docs/decisions`): a glob matches
+/// the whole path, so such a key never matches a page and its cap would be silently off. A key with
+/// `*` or `?`, or whose last part names a file (`docs/install.html`), is a glob.
+fn caps_problem(caps: &std::collections::BTreeMap<String, usize>) -> Option<String> {
+    let bad: Vec<String> = caps
+        .keys()
+        .filter_map(|k| {
+            let glob = if k.ends_with('/') {
+                format!("{k}**")
+            } else if !k.contains(['*', '?']) && !k.rsplit('/').next().unwrap_or(k).contains('.') {
+                format!("{k}/**")
+            } else {
+                return None;
+            };
+            Some(format!("[docs.caps] key \"{k}\" is a prefix, not a glob: write \"{glob}\""))
+        })
+        .collect();
+    (!bad.is_empty()).then(|| bad.join("\n"))
+}
+
+/// A path's place in the repo, `/`-separated, when it is inside it (the file or its directory must
+/// exist). The repo and the working directory are resolved once.
+struct RepoRel {
+    repo: Option<PathBuf>,
+    cwd: Option<PathBuf>,
+}
+
+impl RepoRel {
+    fn new(repo: &Path) -> Self {
+        RepoRel { repo: std::fs::canonicalize(repo).ok(), cwd: std::env::current_dir().ok() }
+    }
+
+    fn of(&self, p: &Path) -> Option<String> {
+        let abs = if p.is_absolute() { p.to_owned() } else { self.cwd.as_ref()?.join(p) };
+        let (dir, name) = (abs.parent()?, abs.file_name()?);
+        let full = std::fs::canonicalize(dir).ok()?.join(name);
+        let rel = full.strip_prefix(self.repo.as_ref()?).ok()?;
+        Some(rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"))
+    }
 }
 
 fn run() -> Result<i32, String> {
@@ -727,8 +750,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        commit_check, hook_conflicts, hooks_problem_of, no_git_env, path_cap, CommitCheck, Config, ReportPolicy, COMMIT_MSG, DOC_POST, DOC_STOP, GIT_HOOK_ENV,
-        GIT_LOCAL_ENV, INSTALL_PAGE, KEEL_MARK, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH,
+        caps_problem, commit_check, hook_conflicts, hooks_problem_of, no_git_env, path_cap, CommitCheck, Config, ReportPolicy, COMMIT_MSG, DOC_POST, DOC_STOP,
+        GIT_HOOK_ENV, GIT_LOCAL_ENV, INSTALL_PAGE, KEEL_MARK, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH,
     };
     use std::ffi::OsStr;
     use std::path::Path;
@@ -887,5 +910,16 @@ mod tests {
         for bad in ["\"docs/a.html\" = \"many\"", "\"docs/a.html\" = -1", "\"docs/a.html\" = 1.5"] {
             assert!(toml::from_str::<Config>(&format!("{base}[docs.caps]\n{bad}\n")).is_err(), "{bad}");
         }
+    }
+    /// E-DOCSPLIT.W2 review round 1: a bare-prefix `[docs.caps]` key is named with its glob form;
+    /// globs and file paths pass.
+    #[test]
+    fn a_prefix_caps_key_is_named_with_its_glob_form() {
+        let caps = |keys: &[&str]| keys.iter().map(|k| (k.to_string(), 1)).collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(caps_problem(&caps(&["docs/*.html", "docs/**", "docs/install.html", "docs/a?.html"])), None);
+        assert_eq!(
+            caps_problem(&caps(&["docs/decisions/", "docs/work", "docs/*.html"])).as_deref(),
+            Some("[docs.caps] key \"docs/decisions/\" is a prefix, not a glob: write \"docs/decisions/**\"\n[docs.caps] key \"docs/work\" is a prefix, not a glob: write \"docs/work/**\"")
+        );
     }
 }
