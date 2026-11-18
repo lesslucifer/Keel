@@ -236,7 +236,7 @@ fn epic_a_wu_signs_by_its_result_s_data_file_and_the_epic_closes_with_one_lineag
     assert!(!o.status.success(), "a pair archived by half: {}", text(&o));
     assert!(
         text(&o).contains(&format!("{result} is archived but {result_data}, the other half of its doc, is still at the tip"))
-            && text(&o).contains(&format!("git rm {result_data}")),
+            && text(&o).contains(&format!("git rm {result_data} too, in the archive commit itself")),
         "{}",
         text(&o)
     );

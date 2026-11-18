@@ -843,7 +843,7 @@ pub(crate) fn doc_problems(repo: &Path, cfg: &Config, tip: &str, docs: &[String]
         if let Some(left) = half_archived(p, |q| at_tip(repo, tip, q)) {
             out.push((
                 format!("{p} is archived but {left}, the other half of its doc, is still at the tip"),
-                format!("git rm {left} in the same range: a page and its data file are one doc, archived together (DEC-69)"),
+                format!("git rm {left} too, in the archive commit itself (git commit --amend, before its notes): a page and its data file are one doc, archived together (DEC-69); a later commit leaves this one red in the epic walk"),
             ));
         }
         let why = match &c.distilled_to {

@@ -534,7 +534,11 @@ fn a_pair_archives_under_one_distill_and_a_pair_archived_by_half_is_red() {
         p,
         &["notes", "write", "doc", "--distill", "docs/work/a-plan.html=docs/decisions/d.html", "--distill", "docs/work/a-result.html=docs/decisions/d.html"],
     );
-    assert!(!o.status.success() && text(&o).contains(left) && text(&o).contains("git rm docs/work/a-result.yaml"), "{}", text(&o));
+    assert!(
+        !o.status.success() && text(&o).contains(left) && text(&o).contains("git rm docs/work/a-result.yaml too, in the archive commit itself"),
+        "{}",
+        text(&o)
+    );
     // the same note written by hand is red at check 6, for the same reason
     let tip = git(p, &["rev-parse", "HEAD"]);
     let mut n = note(p, "doc", "wu/e/a");
