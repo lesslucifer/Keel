@@ -323,7 +323,6 @@ enum Data {
 /// Reads one data file's text against its role's fields (DEC-69). `page` is the page file name the
 /// data file must serve (its own name, ending `.html`); `page_exists`, whether that file is beside it.
 fn read_data(src: &str, page: &str, page_exists: bool) -> Data {
-    let bad = |p: String| if page_exists { Data::Checked { roles: vec![], problems: vec![p] } } else { Data::None };
     // A byte-order mark may open a YAML stream; the parser would read it as part of the first key.
     let src = src.strip_prefix('\u{feff}').unwrap_or(src);
     if anchored(src) {
@@ -333,22 +332,40 @@ fn read_data(src: &str, page: &str, page_exists: bool) -> Data {
         Ok(d) => d,
         Err(e) => return Data::Checked { roles: vec![], problems: vec![format!("not valid YAML: {e}")] },
     };
-    let doc = match docs.as_slice() {
-        [d] => d,
-        [] => return bad("the data file is empty: it needs its role's fields".into()),
+    match docs.as_slice() {
+        [d] => check_doc(d, page, page_exists),
+        [] => unfit("the data file is empty: it needs its role's fields".into(), page_exists),
         _ => {
-            // Several documents: a data file still when one of them holds `artifact`, so its page
-            // must be there; with none and no page, other data.
+            // Several documents: a data file still when one of them holds `artifact`; that one is
+            // checked as a single document would be, and the file is red for its several documents.
             let many = format!("the data file holds {} YAML documents; it is one", docs.len());
-            let artifact = docs.iter().any(|d| matches!(d, Yaml::Hash(h) if h.contains_key(&Yaml::String("artifact".into()))));
-            if page_exists || !artifact {
-                return bad(many);
+            let holds = |d: &&Yaml| matches!(d, Yaml::Hash(h) if h.contains_key(&Yaml::String("artifact".into())));
+            let Some(d) = docs.iter().find(holds) else {
+                return unfit(many, page_exists);
+            };
+            match check_doc(d, page, page_exists) {
+                Data::Checked { roles, problems } => Data::Checked { roles, problems: std::iter::once(many).chain(problems).collect() },
+                // A draft does not silence a file of several documents (it holds `artifact`, so never None).
+                Data::None | Data::Draft => Data::Checked { roles: vec![], problems: vec![many] },
             }
-            return Data::Checked { roles: vec![], problems: vec![many, format!("page {page} is not beside the data file")] };
         }
-    };
+    }
+}
+
+/// A data file of the wrong shape: red beside its page, other data with none.
+fn unfit(problem: String, page_exists: bool) -> Data {
+    if page_exists {
+        Data::Checked { roles: vec![], problems: vec![problem] }
+    } else {
+        Data::None
+    }
+}
+
+/// Checks one YAML document of a data file against its role's fields (DEC-69); `page` and
+/// `page_exists` as in `read_data`.
+fn check_doc(doc: &Yaml, page: &str, page_exists: bool) -> Data {
     let Yaml::Hash(h) = doc else {
-        return bad("the data file is not a mapping of fields".into());
+        return unfit("the data file is not a mapping of fields".into(), page_exists);
     };
     let get = |k: &str| h.get(&Yaml::String(k.into()));
     if get("artifact").is_none() && !page_exists {
@@ -1637,6 +1654,29 @@ mod tests {
         assert_eq!(pageless(&format!("x: 1\n---\n{WU_PLAN}")), [want, "page x.html is not beside the data file"]);
         assert_eq!(read_data("rows: [a]\n---\nx: 1\n", "x.html", false), Data::None);
         assert_eq!(read_data("- a\n---\n- b\n", "x.html", false), Data::None);
+    }
+
+    /// E-DOCSPLIT.W2 review round 3: a data file of several documents checks the one holding
+    /// `artifact` as a single document would be checked, so both name a missing or wrong page alike.
+    #[test]
+    fn several_documents_name_a_missing_or_wrong_page_as_one_document_does() {
+        let many = "the data file holds 2 YAML documents; it is one".to_string();
+        for one in [WU_PLAN.to_string(), WU_PLAN.replace("page: x.html", "page: y.html"), WU_PLAN.replace("id: E-X.W1", "id: E-Y.W1")] {
+            for (two, page_exists) in [(format!("{one}---\nx: 1\n"), false), (format!("x: 1\n---\n{one}"), false), (format!("{one}---\nx: 1\n"), true)] {
+                let single = match read_data(&one, "x.html", page_exists) {
+                    Data::Checked { problems, .. } => problems,
+                    other => panic!("{other:?}"),
+                };
+                let want: Vec<String> = std::iter::once(many.clone()).chain(single).collect();
+                match read_data(&two, "x.html", page_exists) {
+                    Data::Checked { problems, .. } => assert_eq!(problems, want, "{two}"),
+                    other => panic!("{other:?}"),
+                }
+            }
+        }
+        let gone = pageless(&format!("{}---\nx: 1\n", WU_PLAN.replace("page: x.html", "page: y.html")));
+        assert_eq!(gone, [many.as_str(), "page \"y.html\" is not this data file's page: write \"x.html\""]);
+        assert_eq!(pageless(&format!("{}---\nx: 1\n", WU_PLAN.replace("status: ready", "status: draft"))), [many.as_str()], "a draft does not silence it");
     }
 
     #[test]
