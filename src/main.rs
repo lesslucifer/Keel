@@ -629,7 +629,7 @@ fn verify_doc(repo: &Path, paths: &[&str]) -> Result<i32, String> {
     let rel = RepoRel::new(repo);
     let docs = cfg.as_ref().map(|c| format!("{}/", c.docs.root.trim_end_matches('/')));
     let in_docs = |p: &Path| docs.as_ref().is_none_or(|d| rel.of(p).is_some_and(|r| r.starts_with(d.as_str())));
-    let caps = cfg.as_ref().map(|c| &c.docs.caps).filter(|c| !c.is_empty());
+    let caps = cfg.as_ref().map(|c| compile_caps(&c.docs.caps)).unwrap_or_default();
     let mut seen = std::collections::BTreeSet::new();
     let mut red = false;
     for f in &files {
@@ -637,7 +637,7 @@ fn verify_doc(repo: &Path, paths: &[&str]) -> Result<i32, String> {
         if !seen.insert(pair.page.clone()) {
             continue;
         }
-        let cap = caps.and_then(|c| rel.of(&pair.page).and_then(|r| path_cap(c, &r)));
+        let cap = if caps.is_empty() { None } else { rel.of(&pair.page).and_then(|r| path_cap(&caps, &r)) };
         let errs = verify_doc::verify_pair(&pair.page, pair.data.as_deref(), cap);
         for (file, e) in &errs {
             eprintln!("{}: {e}", file.display());
@@ -647,26 +647,28 @@ fn verify_doc(repo: &Path, paths: &[&str]) -> Result<i32, String> {
     Ok(red as i32)
 }
 
-/// The `[docs.caps]` entry for a repo path: the smallest cap among the globs that match it.
-fn path_cap<'a>(caps: &'a std::collections::BTreeMap<String, usize>, rel: &str) -> Option<(&'a str, usize)> {
-    caps.iter().filter(|(g, _)| notes::glob(g, rel)).map(|(g, c)| (g.as_str(), *c)).min_by_key(|(_, c)| *c)
+/// `[docs.caps]` as (glob, cap, compiled glob), each glob compiled once per run.
+type Caps<'a> = Vec<(&'a str, usize, regex::Regex)>;
+
+fn compile_caps(caps: &std::collections::BTreeMap<String, usize>) -> Caps<'_> {
+    caps.iter().filter_map(|(g, c)| notes::glob_re(g).map(|r| (g.as_str(), *c, r))).collect()
 }
 
-/// `[docs.caps]` keys written as a bare prefix (`docs/decisions/`, `docs/decisions`): a glob matches
-/// the whole path, so such a key never matches a page and its cap would be silently off. A key with
-/// `*` or `?`, or whose last part names a file (`docs/install.html`), is a glob.
+/// The `[docs.caps]` entry for a repo path: the smallest cap among the globs that match it.
+fn path_cap<'a>(caps: &[(&'a str, usize, regex::Regex)], rel: &str) -> Option<(&'a str, usize)> {
+    caps.iter().filter(|(_, _, r)| r.is_match(rel)).map(|(g, c, _)| (*g, *c)).min_by_key(|(_, c)| *c)
+}
+
+/// `[docs.caps]` keys with no glob shape (`docs/decisions/`, `docs/decisions`, `docs/v1.0`): a glob
+/// matches the whole path, so such a key never matches a page and its cap would be silently off. A
+/// key with `*` or `?`, or that names a page (`docs/install.html`), is a glob.
 fn caps_problem(caps: &std::collections::BTreeMap<String, usize>) -> Option<String> {
     let bad: Vec<String> = caps
         .keys()
-        .filter_map(|k| {
-            let glob = if k.ends_with('/') {
-                format!("{k}**")
-            } else if !k.contains(['*', '?']) && !k.rsplit('/').next().unwrap_or(k).contains('.') {
-                format!("{k}/**")
-            } else {
-                return None;
-            };
-            Some(format!("[docs.caps] key \"{k}\" is a prefix, not a glob: write \"{glob}\""))
+        .filter(|k| !k.contains(['*', '?']) && !k.ends_with(".html"))
+        .map(|k| {
+            let glob = if k.ends_with('/') { format!("{k}**") } else { format!("{k}/**") };
+            format!("[docs.caps] key \"{k}\" is a prefix, not a glob: write \"{glob}\"")
         })
         .collect();
     (!bad.is_empty()).then(|| bad.join("\n"))
@@ -750,8 +752,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        caps_problem, commit_check, hook_conflicts, hooks_problem_of, no_git_env, path_cap, CommitCheck, Config, ReportPolicy, COMMIT_MSG, DOC_POST, DOC_STOP,
-        GIT_HOOK_ENV, GIT_LOCAL_ENV, INSTALL_PAGE, KEEL_MARK, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH,
+        caps_problem, commit_check, compile_caps, hook_conflicts, hooks_problem_of, no_git_env, path_cap, CommitCheck, Config, ReportPolicy, COMMIT_MSG,
+        DOC_POST, DOC_STOP, GIT_HOOK_ENV, GIT_LOCAL_ENV, INSTALL_PAGE, KEEL_MARK, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH,
     };
     use std::ffi::OsStr;
     use std::path::Path;
@@ -901,10 +903,11 @@ mod tests {
         let base = "[check]\nlint=\"true\"\ntest=\"true\"\n[branches]\nmain=\"main\"\n[docs]\nroot=\"docs/\"\n";
         let cfg: Config =
             toml::from_str(&format!("{base}[docs.caps]\n\"docs/decisions/*.html\" = 5000\n\"docs/**\" = 9000\n\"docs/install.html\" = 1500\n")).unwrap();
-        assert_eq!(path_cap(&cfg.docs.caps, "docs/decisions/router.html"), Some(("docs/decisions/*.html", 5000)));
-        assert_eq!(path_cap(&cfg.docs.caps, "docs/install.html"), Some(("docs/install.html", 1500)));
-        assert_eq!(path_cap(&cfg.docs.caps, "docs/work/x.html"), Some(("docs/**", 9000)));
-        assert_eq!(path_cap(&cfg.docs.caps, "README.html"), None);
+        let caps = compile_caps(&cfg.docs.caps);
+        assert_eq!(path_cap(&caps, "docs/decisions/router.html"), Some(("docs/decisions/*.html", 5000)));
+        assert_eq!(path_cap(&caps, "docs/install.html"), Some(("docs/install.html", 1500)));
+        assert_eq!(path_cap(&caps, "docs/work/x.html"), Some(("docs/**", 9000)));
+        assert_eq!(path_cap(&caps, "README.html"), None);
         let none: Config = toml::from_str(base).unwrap();
         assert!(none.docs.caps.is_empty());
         for bad in ["\"docs/a.html\" = \"many\"", "\"docs/a.html\" = -1", "\"docs/a.html\" = 1.5"] {
@@ -920,6 +923,11 @@ mod tests {
         assert_eq!(
             caps_problem(&caps(&["docs/decisions/", "docs/work", "docs/*.html"])).as_deref(),
             Some("[docs.caps] key \"docs/decisions/\" is a prefix, not a glob: write \"docs/decisions/**\"\n[docs.caps] key \"docs/work\" is a prefix, not a glob: write \"docs/work/**\"")
+        );
+        assert_eq!(
+            caps_problem(&caps(&["docs/v1.0", "docs/install.html"])).as_deref(),
+            Some("[docs.caps] key \"docs/v1.0\" is a prefix, not a glob: write \"docs/v1.0/**\""),
+            "a folder with a dot in its name is no page"
         );
     }
 }

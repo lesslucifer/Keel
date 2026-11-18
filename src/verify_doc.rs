@@ -2,6 +2,7 @@
 //! relative links, quoted diagram labels and word cap (UC-DOC-1/2/4, DEC-69).
 //! ponytail: hand-rolled tag scanner, not an HTML parser; fine for htmldoc's
 //! well-formed output, swap in a real parser if docs start using odd markup.
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use yaml_rust2::parser::{Event, EventReceiver, Parser};
 use yaml_rust2::{Yaml, YamlLoader};
@@ -169,16 +170,23 @@ fn walk<'h>(html: &'h str, ts: &[Tag], a: usize, b: usize, mut f: impl FnMut(&'h
     f(&html[at..b.max(at)], None);
 }
 
-/// The text of html[a..b] as a reader sees its words: tags dropped, a block tag one space.
-fn text(html: &str, ts: &[Tag], a: usize, b: usize) -> String {
+/// The text of html[a..b] as a reader sees its words: tags dropped, a block tag one space. With it,
+/// the offset in that text where the tag starting at html offset `cut` stands (the text's length
+/// when no tag starts there).
+fn text(html: &str, ts: &[Tag], a: usize, b: usize, cut: Option<usize>) -> (String, usize) {
     let mut out = String::new();
+    let mut at = None;
     walk(html, ts, a, b, |run, t| {
         out.push_str(run);
+        if at.is_none() && t.is_some_and(|t| Some(t.start) == cut) {
+            at = Some(out.len());
+        }
         if t.is_some_and(|t| BLOCK.iter().any(|n| n.eq_ignore_ascii_case(t.name))) {
             out.push(' ');
         }
     });
-    out
+    let at = at.unwrap_or(out.len());
+    (out, at)
 }
 
 /// The source of html[a..b] as Mermaid reads it: markup kept, comments and CDATA hidden unless
@@ -551,7 +559,7 @@ fn wu_summaries(w: &Yaml, epic: Option<&str>) -> Vec<String> {
         return vec!["field \"wu-summaries\" is not a list: write one entry per WU".into()];
     };
     let key = |k: &str| Yaml::String(k.into());
-    let mut ids: Vec<&str> = vec![];
+    let mut ids: HashSet<&str> = HashSet::new();
     for (n, e) in entries.iter().enumerate() {
         let n = n + 1;
         let Yaml::Hash(h) = e else {
@@ -580,10 +588,9 @@ fn wu_summaries(w: &Yaml, epic: Option<&str>) -> Vec<String> {
             if epic.is_some_and(|e| !is_wu_of(wu, e)) {
                 out.push(format!("{at}: wu \"{wu}\" is not a WU of this epic: write {}.W<n>", epic.unwrap_or_default()));
             }
-            if ids.contains(&wu) {
+            if !ids.insert(wu) {
                 out.push(format!("{at}: wu \"{wu}\" is listed twice"));
             }
-            ids.push(wu);
         }
     }
     for e in entries {
@@ -788,12 +795,17 @@ fn page_words(html: &str, ts: &[Tag]) -> (usize, usize, bool) {
         None => (0, html.len()),
     };
     let work = ts.iter().find(|t| !t.closing && t.start >= start && t.start < end && attr(t, "id") == Some(WORK_ID)).map(|t| t.start);
-    let count = |b: usize| {
-        let words = decode_with(&text(html, ts, start, b.max(start)), Some('\u{fffd}'));
-        words.split_whitespace().filter(|w| w.chars().any(char::is_alphanumeric)).count()
-    };
-    let words = count(end);
-    (words, work.map_or(words, count), work.is_some())
+    // The text is built and decoded once; a word is in the top when it starts before the work heading.
+    let (raw, cut) = text(html, ts, start, end, work);
+    let mut map = vec![];
+    let words = decode_core(&raw, Some('\u{fffd}'), work.is_some().then_some(&mut map));
+    let top_end = if work.is_some() { map.partition_point(|&m| m < cut) } else { words.len() };
+    let (mut all, mut top) = (0, 0);
+    for w in words.split_whitespace().filter(|w| w.chars().any(char::is_alphanumeric)) {
+        all += 1;
+        top += usize::from(w.as_ptr() as usize - (words.as_ptr() as usize) < top_end);
+    }
+    (all, top, work.is_some())
 }
 
 const FLOWCHARTS: &[&str] = &["flowchart", "graph", "flowchart-elk"];
@@ -1380,6 +1392,9 @@ mod tests {
         let html = "<main><p data-htmldoc-id=\"work\">one</p><p>two</p></main>";
         let ts = tags(html);
         assert_eq!(page_words(html, &ts), (2, 2, false), "only an id attribute marks the work");
+        let html = "<main><p>a &amp; b &mdash; c&#32;d &zz;</p><h2 id=\"work\">e&nbsp;f</h2><p>g</p></main>";
+        let ts = tags(html);
+        assert_eq!(page_words(html, &ts), (7, 4, true), "decoded once, the top split where the heading stands");
     }
 
     #[test]

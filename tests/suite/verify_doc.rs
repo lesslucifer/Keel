@@ -700,7 +700,7 @@ fn a_prefix_style_caps_key_is_refused_naming_its_glob() {
     let p = d.path();
     std::fs::write(p.join("docs/a.html"), page_of(10, None)).unwrap();
     let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
-    for (key, glob) in [("docs/decisions/", "docs/decisions/**"), ("docs/decisions", "docs/decisions/**")] {
+    for (key, glob) in [("docs/decisions/", "docs/decisions/**"), ("docs/decisions", "docs/decisions/**"), ("docs/v1.0", "docs/v1.0/**")] {
         std::fs::write(p.join(".keel/config.toml"), format!("{cfg}[docs.caps]\n\"{key}\" = 50\n")).unwrap();
         for args in [&["verify-doc", "docs/a.html"][..], &["verify-doc"]] {
             let o = keel(p, args);

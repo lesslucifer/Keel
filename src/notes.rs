@@ -718,6 +718,11 @@ pub(crate) fn exempt(repo: &Path, cfg: &Config, base: &str, tip: &str, names: &[
 
 /// `*` = within one segment, `**` = any depth, `?` = one char.
 pub(crate) fn glob(pattern: &str, path: &str) -> bool {
+    glob_re(pattern).is_some_and(|r| r.is_match(path))
+}
+
+/// `glob`'s pattern compiled once, for a caller that matches it against many paths.
+pub(crate) fn glob_re(pattern: &str) -> Option<regex::Regex> {
     let mut re = String::from("^");
     let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {
@@ -732,7 +737,7 @@ pub(crate) fn glob(pattern: &str, path: &str) -> bool {
         }
     }
     re.push('$');
-    regex::Regex::new(&re).is_ok_and(|r| r.is_match(path))
+    regex::Regex::new(&re).ok()
 }
 
 /// T0-T3 by `docs.tiers` globs (default: Trawler's layout under docs.root).
