@@ -39,17 +39,19 @@ evidence:
     - fc49eb4 the task merged (PR #19, d850653)
     - 7f0cc36 the router_gh.rs tests follow the task's doc table
     - bfbf607 review round 1 - one pairing rule (pair_named, under docs.root) and one roles reading (load_data, artifact_roles)
+    - 366cd62 review round 2 - keel verify-doc reads docs.root through under_root too
+    - 76ad585 review round 2 - pages_of and pair_of build on pair_named
     - this result update
   task:
     branch: wu/E-DOCSPLIT/w3-pair_doc-rows-pairs
     files: scripts/router-gh.sh, templates/config.toml
     state: merged, PR #19 (d850653, merge fc49eb4)
   tests:
-    unit: src/verify_doc.rs data_roles (text, list, block list, byte-order mark, several documents; no YAML, anchors, no artifact, wrong types, empty, a page tag), pages_of (and a generated-input property), pair_named by name alone under docs.root, the doc check and data_roles reading the same roles; src/notes.rs partner, distill_of, half_archived (a pair outside docs.root is none)
+    unit: src/verify_doc.rs data_roles (text, list, block list, byte-order mark, several documents; no YAML, anchors, no artifact, wrong types, empty, a page tag), pages_of (and a generated-input property), pair_named by name alone under docs.root, pages_of and pair_of following pair_named (odd names too), the doc check and data_roles reading the same roles; src/main.rs keel verify-doc and under_root reading odd docs.root spellings alike; src/notes.rs partner, distill_of, half_archived (a pair outside docs.root is none)
     integration: tests/suite/mr.rs the report found by its data file, two refused naming both pages, a page tag alone no report, a one-part epic's artifact list, a range changing only the data file, --report .yaml refused; tests/suite/sign_off.rs the approval writer refuses a tag-only page, the report note reads the data file and keeps the page, refuses a .yaml and a page with no data file; tests/suite/verify_dod.rs one --distill per pair (the data file's line covers the page), a half-archived pair refused by the writer and red at check 6, a T3 page outside docs.root archived with a same-stem .yaml left taken; tests/suite/router_gh.rs the fixture as pairs, the doc table and title read from data files (id · title, made plain), a page with no data file shows dashes, an orphan data file adds no row, the title the plan the range committed last (an epic plan on a WU branch with no WU plan)
     e2e: tests/suite/docsplit_e2e.rs a WU signed by its result's data file, merged, and the epic closed with one lineage line per pair - half-archived first refused, epic gate green, no waiver
     fixtures: mr, sign_off, split_prs, review, router, seed3_e2e now write pairs through common::doc_pair
-    totals: cargo test 149 unit, 541 suite passed, 10 ignored; keel check green
+    totals: cargo test 151 unit, 541 suite passed, 10 ignored; keel check green
   docs:
     - docs/decisions/workflow-gates.html (DEC-27, DEC-40 Amended)
     - docs/backlog/github-flow.html (G11; G10's nit done) and docs/backlog/backlog-index.html
