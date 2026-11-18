@@ -128,7 +128,12 @@ pub(crate) fn commit(d: &Path, msg: &str) {
     git(d, &["commit", "-q", "--no-verify", "-m", msg]);
 }
 
-const PLAN_TITLE: &str = "Keel — E.W1 plan: `tick` @owner [x](y) | cell *b* #h";
+/// The page's own title: the doc table reads the data file's (E-DOCSPLIT.W3), never this one.
+const PLAN_TITLE: &str = "Keel — E.W1 plan";
+/// The plan's title in its data file, with markup that must not survive into GitHub.
+const DATA_TITLE: &str = "Sign-off `tick` @owner [x](y) | cell *b* #h";
+/// DATA_TITLE as the doc table shows it, after the id: made plain.
+const SHOWN_TITLE: &str = "E.W1 · Sign-off tick owner x(y)  cell b h";
 
 /// A temp dir whose path the script accepts as a HOME (letters, digits and / . _ -): under TMPDIR
 /// when its path is plain, else under /tmp, so a hand-set TMPDIR with another character fails no
@@ -206,11 +211,17 @@ impl Gh {
         write(&repo, "README", "epic");
         commit(&repo, "epic work");
         git(&repo, &["switch", "-q", "-c", "wu/E/x"]);
-        write(&repo, "docs/work/x-plan.html", &format!("<!DOCTYPE html>\n<html lang=\"en\" data-artifact=\"wu-plan\" data-status=\"ready\">\n<head>\n  <title>{PLAN_TITLE}</title>\n</head><body></body></html>\n"));
-        write(
+        common::doc_pair_data(
+            &repo,
+            "docs/work/x-plan.html",
+            &format!("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <title>{PLAN_TITLE}</title>\n</head><body></body></html>\n"),
+            &format!("artifact: wu-plan\nstatus: ready\nid: E.W1\nepic: E\ntitle: \"{DATA_TITLE}\"\npage: x-plan.html\n"),
+        );
+        common::doc_pair_data(
             &repo,
             "docs/work/x-result.html",
-            "<!DOCTYPE html>\n<html lang=\"en\" data-artifact=\"wu-result\" data-status=\"draft\">\n<head><title>Keel — E.W1 result</title></head></html>\n",
+            "<!DOCTYPE html>\n<html lang=\"en\">\n<head><title>Keel — E.W1 result</title></head></html>\n",
+            "artifact: [wu-result]\nstatus: draft   # not yet\nid: 'E.W1'\nepic: E\ntitle: The result\npage: x-result.html\n",
         );
         write(&repo, "src/a.txt", "a");
         commit(&repo, "wu x");
@@ -826,16 +837,13 @@ fn pr_open_sends_one_draft_request_derived_from_the_branch_and_its_docs() {
     assert_eq!(req["base"], "epic/E");
     assert_eq!(req["draft"], true);
     let title = req["title"].as_str().unwrap();
-    assert_eq!(title, "Keel — E.W1 plan: tick owner x(y)  cell b h", "the plan's title, made plain");
+    assert_eq!(title, SHOWN_TITLE, "the plan's id and title from its data file, made plain");
     let body = req["body"].as_str().unwrap();
     assert!(body.contains(&format!("**Tip:** `{tip}`")), "{body}");
-    assert!(
-        body.contains(&format!(
-            "| [Keel — E.W1 plan: tick owner x(y)  cell b h](https://github.com/own/Keel/blob/{tip}/docs/work/x-plan.html) | wu-plan | ready |"
-        )),
-        "{body}"
-    );
-    assert!(body.contains(&format!("| [Keel — E.W1 result](https://github.com/own/Keel/blob/{tip}/docs/work/x-result.html) | wu-result | draft |")), "{body}");
+    assert!(body.contains(&format!("| [{SHOWN_TITLE}](https://github.com/own/Keel/blob/{tip}/docs/work/x-plan.html) | wu-plan | ready |")), "{body}");
+    assert!(body.contains(&format!("| [E.W1 · The result](https://github.com/own/Keel/blob/{tip}/docs/work/x-result.html) | wu-result | draft |")), "{body}");
+    assert_eq!(body.matches("/docs/work/x-plan").count(), 2, "one row per doc, its data file no row of its own: {body}");
+    assert!(!body.contains(".yaml") && !body.contains(PLAN_TITLE), "{body}");
     // each changed doc's page on the Pages site, where scripts/pages-build.sh writes it (E-GHFLOW2.W8)
     assert!(body.contains("| Doc | Role | Status | Page |\n|---|---|---|---|\n"), "{body}");
     assert!(body.contains("| wu-plan | ready | [page](https://own.github.io/Keel/wu/E/x/docs/work/x-plan.html) |\n"), "{body}");
@@ -844,6 +852,68 @@ fn pr_open_sends_one_draft_request_derived_from_the_branch_and_its_docs() {
     for active in ["@owner", "`tick`", "[x]", "*b*", "#h", "| cell"] {
         assert!(!body.contains(active), "{active} survived: {body}");
     }
+}
+
+/// pr-open's request body for `branch`, pushed first, with GitHub answering as a new pull request.
+fn pr_request(gh: &Gh, branch: &str) -> serde_json::Value {
+    let tip = gh.sha(branch);
+    git(&gh.repo, &["push", "-q", "--no-verify", gh.origin.to_str().unwrap(), branch]);
+    let (r, p) = (format!("/repos/own/Keel/git/ref/heads/{branch}"), format!("/repos/own/Keel/pulls?state=open&head=own:{branch}&per_page=100"));
+    gh.routes(&[
+        ("GET", &r, 200, serde_json::json!({"object": {"sha": tip}})),
+        ("GET", &p, 200, serde_json::json!([])),
+        ("POST", "/repos/own/Keel/pulls", 201, serde_json::json!({"number": 7, "html_url": "https://github.com/own/Keel/pull/7"})),
+    ]);
+    let o = gh.run(&["pr-open", branch]);
+    assert!(o.status.success(), "{}", text(&o));
+    body_of(gh.log().last().unwrap())
+}
+
+/// E-DOCSPLIT.W3: a range that changes only a data file shows its page's row, read from the data
+/// file; a page with no data file shows a dash for role and status, and its own title, whatever
+/// tag it carries; a data file whose page is not at the tip, or one that gives no plain value, adds
+/// no row or a dash.
+#[test]
+fn the_doc_table_reads_each_doc_s_data_file_and_shows_a_page_without_one_as_a_dash() {
+    let gh = Gh::new();
+    git(&gh.repo, &["switch", "-q", "epic/E"]);
+    write(&gh.repo, "docs/work/z-plan.html", "<html><head><title>z page</title></head></html>\n");
+    commit(&gh.repo, "a page on the epic");
+    git(&gh.repo, &["switch", "-q", "-c", "wu/E/z"]);
+    write(&gh.repo, "docs/work/z-plan.yaml", "artifact:\n  - wu-plan\nstatus: ready\nid: E.W2\ntitle: \"Zed: the plan\"\n");
+    write(&gh.repo, "docs/work/tagged.html", "<html data-artifact=\"wu-result\" data-status=\"ready\"><head><title>Tagged page</title></head></html>\n");
+    write(&gh.repo, "docs/work/orphan.yaml", "artifact: wu-result\nstatus: ready\n");
+    write(&gh.repo, "docs/work/odd.html", "<html><head><title>Odd page</title></head></html>\n");
+    write(&gh.repo, "docs/work/odd.yaml", "artifact: {a: b}\nstatus: <b>ready</b>\ntitle: >-\n  folded\n");
+    commit(&gh.repo, "a data file alone, a tagged page, an orphan data file, an odd one");
+    let req = pr_request(&gh, "wu/E/z");
+    let body = req["body"].as_str().unwrap();
+    let tip = gh.sha("wu/E/z");
+    assert!(body.contains(&format!("| [E.W2 · Zed: the plan](https://github.com/own/Keel/blob/{tip}/docs/work/z-plan.html) | wu-plan | ready |")), "{body}");
+    assert!(body.contains(&format!("| [Tagged page](https://github.com/own/Keel/blob/{tip}/docs/work/tagged.html) | — | — |")), "{body}");
+    assert!(body.contains(&format!("| [Odd page](https://github.com/own/Keel/blob/{tip}/docs/work/odd.html) | — | — |")), "{body}");
+    assert!(!body.contains("orphan"), "a data file with no page at the tip has no row: {body}");
+    assert_eq!(req["title"], "E.W2 · Zed: the plan");
+}
+
+/// E-DOCSPLIT.W3 (PR #14's title): two plans in the range, the older sorting first, give the newest
+/// as the title; a WU branch holding only an epic plan (wu/<E>/plan) takes the epic plan's.
+#[test]
+fn the_title_is_the_plan_the_range_committed_last() {
+    let gh = Gh::new();
+    // x-plan (the fixture's, older) sorts before y-plan (newer): path order would pick x
+    common::doc_pair_data(&gh.repo, "docs/work/y-plan.html", "<html></html>\n", "artifact: wu-plan\nstatus: ready\nid: E.W2\ntitle: The newer plan\n");
+    commit(&gh.repo, "a second plan");
+    assert_eq!(pr_request(&gh, "wu/E/x")["title"], "E.W2 · The newer plan");
+    // the older plan edited last is the newest again
+    write(&gh.repo, "docs/work/x-plan.yaml", &format!("artifact: wu-plan\nstatus: ready\nid: E.W1\ntitle: \"{DATA_TITLE}\"\n"));
+    commit(&gh.repo, "the first plan edited");
+    assert_eq!(pr_request(&gh, "wu/E/x")["title"], SHOWN_TITLE);
+
+    git(&gh.repo, &["switch", "-q", "-c", "wu/E/plan", "epic/E"]);
+    common::doc_pair_data(&gh.repo, "docs/work/e-plan.html", "<html></html>\n", "artifact: epic-plan\nstatus: ready\nid: E\ntitle: The epic\n");
+    commit(&gh.repo, "the epic plan");
+    assert_eq!(pr_request(&gh, "wu/E/plan")["title"], "E · The epic", "a WU branch with no WU plan takes the epic plan");
 }
 
 /// The page link's host is the owner in lower case, as GitHub serves a project site; its path keeps
@@ -2084,7 +2154,7 @@ fn issue_opens_the_epics_tracking_issue_and_a_wu_sub_issue() {
     let log = gh.log();
     assert_eq!(log.len(), 6, "{:?}", gh.calls());
     let req = body_of(&log[3]);
-    assert_eq!(req["title"], "Keel — E.W1 plan: tick owner x(y)  cell b h", "the plan's title, made plain");
+    assert_eq!(req["title"], SHOWN_TITLE, "the plan's id and title from its data file, made plain");
     let body = req["body"].as_str().unwrap();
     assert!(body.starts_with("<!-- keel:router-gh issue v1 wu/E/x -->\nWork unit `wu/E/x` into `epic/E`"), "{body}");
     assert!(body.contains(&format!("| {} |", "yes | — | PASS, round 2 | — | —")), "{body}");
