@@ -9,14 +9,14 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>E-DOCSPLIT.W3 result · Sign-off, pull request and archive read the pair</h1>
-      <p>The sign-off and the archive find a doc through its data file. The pull request page waits for your merge of the task.</p>
+      <p>The sign-off, the archive and the pull request page find a doc through its data file.</p>
       <div class="meta">Result · 2026-11-18 · T3 · Keel · per <a href="2026-11-18-e-docsplit-w3-plan.html">the W3 plan</a> · its data file sits beside this page</div>
     </div>
   </header>
   <main>
 
 <h2 id="happened">What happened</h2>
-<p data-c="outcome" data-item="outcome"><b>Delivered, except the pull request page.</b> The sign-off finds the result through its data file; a page tag alone is no report. One archive line covers a page and its data file; archiving half of one is refused. The pull request page's change is a task waiting for your merge.</p>
+<p data-c="outcome" data-item="outcome"><b>Delivered.</b> The sign-off finds the result through its data file; a page tag alone is no report. One archive line covers a page and its data file; archiving half of one is refused. The pull request page reads each doc's data file; you merged that task.</p>
 
 <h2 id="checklist">Checklist</h2>
 <table data-c="checklist">
@@ -27,7 +27,7 @@
     <tr><td>An epic closes with one archive line per doc, and its gate is green</td><td>Yes</td><td>The example below; the gate tests</td></tr>
     <tr><td>A doc archived by half is red, naming the file left</td><td>Yes</td><td>The example below; check 6's test</td></tr>
     <tr><td>The report note keeps the page and refuses a data file</td><td>Yes</td><td>The sign-off tests</td></tr>
-    <tr><td>A pull request page shows each doc's role, status and title from its data file</td><td>Not yet</td><td>The task, after your merge; its tests fail before it and pass after</td></tr>
+    <tr><td>A pull request page shows each doc's role, status and title from its data file</td><td>Yes</td><td>The task you merged (PR #19); the pull request tests</td></tr>
   </tbody>
 </table>
 
@@ -46,18 +46,18 @@
   <li><b>A report you name yourself is not checked for a data file,</b> as before. The search and the approval check it; you sign what you read.</li>
   <li><b>An old test nit was taken:</b> backlog G10's shim test.</li>
   <li><b>The main case ran in the epic test,</b> not on this repository: the sandbox refused the scratch-clone commands.</li>
+  <li><b>The pull request tests came after the task's merge,</b> in their own commit: they fail without the task's script.</li>
 </ul>
 
 <h2 id="left">What is left</h2>
 <ul data-c="follow-ups" data-item="follow-ups">
-  <li>The pull request page and the template comment: the task, then its tests on this branch. E-DOCSPLIT.W3.</li>
   <li>The bot measuring from a stale copy of the target: backlog <a href="../backlog/github-flow.html#g11">G11</a>, the next GitHub-flow epic.</li>
   <li>The skills teach the pair: E-DOCSPLIT.W4.</li>
 </ul>
 
 <h2 id="details">Details</h2>
 <p data-c="distillation" data-item="distillation">Amended rows on <a href="../decisions/workflow-gates.html#dec-27">DEC-27</a> and <a href="../decisions/workflow-gates.html#dec-40">DEC-40</a>. UC-MR-1, UC-MR-2, UC-DOC-3 and UC-DOC-5 change at the epic close.</p>
-<p data-c="evidence" data-item="evidence">Commits <code>8b61b83</code> (the code and its tests), <code>86ee92a</code> (the decisions), <code>48fd680</code> (the nit), <code>01e40a9</code> (backlog G11), <code>1f690c3</code> (the archive fix line), then this result. Tests: unit in <code>src/verify_doc.rs</code> and <code>src/notes.rs</code>; integration in <code>tests/suite/mr.rs</code>, <code>sign_off.rs</code> and <code>verify_dod.rs</code>; the epic test in <code>tests/suite/docsplit_e2e.rs</code>. The data file lists the rest.</p>
+<p data-c="evidence" data-item="evidence">Commits <code>8b61b83</code> (the code and its tests), <code>86ee92a</code> (the decisions), <code>48fd680</code> (the nit), <code>01e40a9</code> (backlog G11), <code>1f690c3</code> (the archive fix line), the task <code>d850653</code> merged as <code>fc49eb4</code>, <code>7f0cc36</code> (the pull request tests), then this result. Tests: unit in <code>src/verify_doc.rs</code> and <code>src/notes.rs</code>; integration in <code>tests/suite/mr.rs</code>, <code>sign_off.rs</code>, <code>verify_dod.rs</code> and <code>router_gh.rs</code>; the epic test in <code>tests/suite/docsplit_e2e.rs</code>. The data file lists the rest.</p>
 
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
