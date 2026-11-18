@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-DOCSPLIT.W1 · Where each doc lives</h1>
       <p>Every doc Keel writes or reads, who reads it, and what it becomes. With the new shape of the two plan pages, and a word cap for every kind of page.</p>
-      <div class="meta">For your approval · v1 · 2026-11-18 · T3 · Keel · W1 of <a href="2026-11-17-e-docsplit-plan.html">the epic plan</a>, per <a href="2026-11-18-e-docsplit-w1-plan.html">the W1 plan</a></div>
+      <div class="meta">Approved · v2 · 2026-11-18 · T3 · Keel · W1 of <a href="2026-11-17-e-docsplit-plan.html">the epic plan</a>, per <a href="2026-11-18-e-docsplit-w1-plan.html">the W1 plan</a></div>
     </div>
   </header>
   <main>
@@ -23,7 +23,7 @@
   <li><b>The word caps</b> and what each slimmed doc drops.</li>
   <li><b>Nine questions</b>, each with an answer you can keep or overrule.</li>
 </ol>
-<p>Then one decision records it. Its draft is under Details.</p>
+<p data-c="approved"><b>Approved</b> on 2026-11-18: "it's LGTM". This covers the pages at <code>ee23a24</code> and the answers to all nine questions, as recommended. <a href="../decisions/workflow-gates.html#dec-69">DEC-69</a> records it.</p>
 
 <h3 id="terms">Terms</h3>
 <table data-c="terms">
@@ -158,7 +158,7 @@ flowchart LR
 </ul>
 
 <h2 id="questions">Questions for you</h2>
-<p>Work waits for your approval. Comment to overrule any answer.</p>
+<p><b>All nine settled as answered below</b>, by your approval of 2026-11-18. Question 8 is settled too: the use-case pages go and the contracts stay as data. Question 9: the whole backlog becomes data, open rows only.</p>
 <p data-c="answered">Your comments of 2026-11-18 answered none of questions 1 to 7 outright. They changed question 1: the WU result cap rose from 400 to 500 and the epic result cap from 600 to 700, and use cases, backlog and backlog order lost their caps as they became data. The epic example still fits, at 690 of 700. They raised questions 8 and 9.</p>
 <table data-c="questions">
   <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
@@ -456,7 +456,7 @@ details:
     <tr><td>3</td><td><b>Caps.</b> Word counts per kind, counted as the doc check counts the top; each example against its cap.</td><td><b>Pass.</b> The counter matched keel's own count on 134 of 135 docs over 300 words (one off by one). Keel counts the examples at 690 (top 253) and 356: under 700 (top 300) and 500. Rerun after your comments: the epic example grew by its build-order diagram and table.</td></tr>
     <tr><td>4</td><td><b>Decision id.</b> A search of <code>docs/decisions</code> on every local and remote branch.</td><td><b>Pass: DEC-69 is free.</b> The highest Keel record is DEC-68 on all 134 refs. Higher numbers in the docs are Trawler's. The index says the same: next free DEC-69.</td></tr>
     <tr><td>5</td><td><b>Doc check.</b> <code>keel verify-doc</code> on each W1 page, and over all docs.</td><td><b>Green</b>: exit 0, no output, on all four W1 pages and over every doc.</td></tr>
-    <tr><td>6</td><td><b>You.</b> Your approval of this page and the examples.</td><td><b>Waiting.</b> The W1 plan was approved: "doc split w1 looks fine, let's go". The decision is written after this approval.</td></tr>
+    <tr><td>6</td><td><b>You.</b> Your approval of this page and the examples.</td><td><b>Pass.</b> The W1 plan was approved: "doc split w1 looks fine, let's go". This page and the examples were approved on 2026-11-18: "it's LGTM". The decision was then written as DEC-69.</td></tr>
   </tbody>
 </table>
 
@@ -483,8 +483,8 @@ details:
   </tbody>
 </table>
 
-<h3 id="dec-draft">The decision, as it will be written</h3>
-<p data-c="dec-draft"><b>DEC-69 · Docs split: a short page for the owner, a data file for agents and checks.</b> Choice: each plan and result is a page plus a YAML data file beside it, named alike. The data file holds the checklist as fields (the field tables above); the doc check reads it. The page holds what the owner approves or signs, in the shapes above, under a word cap per page kind; it carries no checklist tags. The sign-off still attests the page. The indexes, the use cases and the backlog become data files, with no page. Decisions, architecture and install keep current truth only, under their caps; use cases and backlog drop their history as they move. Amends DEC-10 (docs are HTML only: a data file is YAML), DEC-27 (a page and its data file are one doc for tiers and lineage) and DEC-52 (the tool also counts a page's words). Rejected: data in git notes (a plan exists before any commit); one doc generated from the other (each is written for its reader). Written after your approval, in <code>docs/decisions/workflow-gates.html</code> and the index.</p>
+<h3 id="dec-draft">The decision, as written</h3>
+<p data-c="dec-draft"><b>DEC-69 · Docs split: a short page for the owner, a data file for agents and checks.</b> Choice: each plan and result is a page plus a YAML data file beside it, named alike. The data file holds the checklist as fields (the field tables above); the doc check reads it. The page holds what the owner approves or signs, in the shapes above, under a word cap per page kind; it carries no checklist tags. The sign-off still attests the page. The indexes, the use cases and the backlog become data files, with no page. Decisions, architecture and install keep current truth only, under their caps; use cases and backlog drop their history as they move. Amends DEC-10 (docs are HTML only: a data file is YAML), DEC-27 (a page and its data file are one doc for tiers and lineage) and DEC-52 (the tool also counts a page's words). Rejected: data in git notes (a plan exists before any commit); one doc generated from the other (each is written for its reader). Written after your approval as <a href="../decisions/workflow-gates.html#dec-69">DEC-69</a>, with its index entry.</p>
 
 <h3 id="overlap">Overlap</h3>
 <ul data-c="overlap">
