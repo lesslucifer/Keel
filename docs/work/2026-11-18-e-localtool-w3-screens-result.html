@@ -9,24 +9,37 @@
     .screen .bar { display: flex; flex-wrap: wrap; gap: .5em 1.2em; align-items: center; padding: .45em .9em; border-bottom: 1px solid var(--line); font-size: .85em; color: var(--muted); }
     .screen .bar b { color: var(--ink); }
     .screen .body { padding: .7em .9em 1em; font-size: .92em; }
-    .screen h4 { margin: .8em 0 .3em; font-size: .8em; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    .screen h4 { margin: .9em 0 .3em; font-size: .8em; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
     .screen table { font-size: .95em; margin: .2em 0 .6em; }
     .item { display: grid; grid-template-columns: 11em 1fr 4.5em auto; gap: .2em .8em; align-items: baseline; padding: .45em .5em; border-top: 1px solid var(--line); }
     .item .what { font-weight: 600; }
     .item .why { color: var(--muted); grid-column: 2 / 3; font-size: .92em; }
     .item .slots { grid-column: 4; grid-row: 1 / span 2; white-space: nowrap; }
-    .slot { display: inline-block; border: 1px dashed var(--muted); border-radius: 5px; padding: 0 .55em; margin-left: .3em; color: var(--muted); font-size: .82em; }
+    .slot { display: inline-block; border: 1px dashed var(--accent); border-radius: 5px; padding: 0 .55em; margin-left: .3em; color: var(--accent); font-size: .82em; }
+    .slot.off { border-color: var(--line); color: var(--muted); }
+    .badges { display: flex; flex-wrap: wrap; gap: .35em; margin: .3em 0 .2em; }
+    .badge-s { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 0 .6em; font-size: .82em; }
+    .badge-s.ok { border-color: var(--ok); } .badge-s.warn { border-color: var(--warn); }
+    .lnk { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+    .field { border: 1px solid var(--line); border-radius: 5px; padding: .25em .5em; color: var(--muted); background: var(--bg); margin: .3em 0; max-width: 40em; }
+    .act { display: grid; grid-template-columns: 1.6em 1fr; gap: .25em .4em; align-items: baseline; margin: .25em 0; }
+    .act .n { color: var(--muted); }
     .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--danger); } .dim { color: var(--muted); }
     .smp { text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }
     .note { border-left: 3px solid var(--line); padding: .1em .7em; color: var(--muted); font-size: .9em; margin: .5em 0; }
     .alerts { display: flex; flex-wrap: wrap; gap: .8em; }
     .alert { width: 20em; border: 1px solid var(--line); border-radius: 12px; padding: .55em .8em; background: var(--bg); }
+    .alert.tpl { border-style: dashed; }
     .alert .t { display: flex; justify-content: space-between; font-size: .8em; color: var(--muted); }
     .alert .h { font-weight: 600; }
     .alert .m { font-size: .9em; }
+    .alert .u { font-size: .78em; color: var(--muted); margin-top: .25em; }
+    table.hist td:first-child { white-space: nowrap; color: var(--muted); }
+    table.hist td:nth-child(2) { white-space: nowrap; font-weight: 600; }
     pre.facts { font-size: .82em; background: var(--bg); border: 1px solid var(--line); padding: .5em .7em; white-space: pre-wrap; }
     details.fields { margin: 0 0 1.6em; }
-    details.fields summary { cursor: pointer; color: var(--accent); }
+    details.fields summary, details.rounds summary { cursor: pointer; color: var(--accent); }
+    details.rounds { margin: .6em 0 .2em; }
     table.fields td.mark { white-space: nowrap; font-weight: 600; }
   </style>
 </head>
@@ -34,181 +47,241 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>E-LOCALTOOL.W3 · Draft screens</h1>
-      <p>The app's six screens, drawn and filled with one real evening of Keel's work. You say what is missing before anything is built.</p>
-      <div class="meta">T3 · WU result · 2026-11-18 · epic <code>E-LOCALTOOL</code> · WU <code>E-LOCALTOOL.W3</code> · branch <code>wu/E-LOCALTOOL/w3-screens</code> · plan 6834699 · read from the code at cf4c752 · the moment drawn: 18 Nov, 20:45</div>
+      <p>The app's six screens, drawn and filled with one real evening of Keel's work. Revised on your comments.</p>
+      <div class="meta">T3 · WU result · 2026-11-18 · revision 2, on your 8 comments · epic <code>E-LOCALTOOL</code> · WU <code>E-LOCALTOOL.W3</code> · branch <code>wu/E-LOCALTOOL/w3-screens</code> · plan 6834699 · read from the code at cf4c752 · W4's result at f4e7aa2 · the moment drawn: 18 Nov, 20:45</div>
     </div>
   </header>
   <main>
 
 <h2 id="what-happened">What happened</h2>
-<p data-item="outcome" data-c="outcome"><b>Delivered.</b> Six screens below, drawn as plain pictures, filled with Keel at 20:45 on 18 November: one work unit waited for your sign-off and two plans waited for you to read. Every field says where the app would read it. 14 fields are marked "new": 8 are the app's own state, 6 have no source today. The waiting items have empty Open and Run slots for W4.</p>
+<p data-item="outcome" data-c="outcome"><b>Delivered, then revised on your comments.</b> Six screens, filled with Keel at 20:45 on 18 November: one work unit waited for your sign-off, two plans waited for you to read. The alert is now one layout the router fills. The work-unit screen now leads with what you can do, the work's history and its docs; the checks shrink to badges. W4's buttons fill the slots.</p>
+
+<h2 id="your-comments">Your comments, and what changed</h2>
+<table data-c="your-comments">
+  <thead><tr><th>You said</th><th>Now</th></tr></thead>
+  <tbody>
+    <tr><td>The alert: a generic layout, the router fills the data</td><td>Screen 1 is one layout. The router writes the headline, the lines and the work unit. The app adds project and time</td></tr>
+    <tr><td>The gate: a list of badges, no section</td><td>Screen 3: one row of badges under the title</td></tr>
+    <tr><td>Tests: same as the gate</td><td>In the same badge row</td></tr>
+    <tr><td>Review rounds: collapsible</td><td>Folded, closed by default. Each round is also one line of the history</td></tr>
+    <tr><td>Tasks: what the work was, the status history</td><td>"The work" and "History": every step with its time, from the plan to now</td></tr>
+    <tr><td>Docs: important, with links</td><td>Each doc is a link that opens it</td></tr>
+    <tr><td>Actions on this work unit</td><td>"What you can do now", first on the screen: read, sign off, merge, send a note</td></tr>
+    <tr><td>Your input goes to the worker and joins the history</td><td>A note box. The note goes to the worker through the router and shows in the history</td></tr>
+  </tbody>
+</table>
 
 <h2 id="picture">How you move between the screens</h2>
 <div class="diagram" data-c="picture">
 <pre class="mermaid">
 flowchart LR
-  AL["1 Alert"] -->|"click"| WL["2 Waits on you"]
-  WL -->|"pick an item"| WU["3 Work unit"]
+  RT["The router"] -->|"writes the alert"| AL["1 Alert"]
+  AL -->|"click"| WU["3 Work unit"]
+  AL -->|"click, no work unit named"| WL["2 Waits on you"]
+  WL -->|"pick an item"| WU
   EP["4 Epics"] -->|"pick one"| WU
   FL["5 Fleet"]
   PR["6 Projects"] -->|"switch, on every screen"| WL
-  WL -.->|"Open and Run: W4"| OUT["Your browser, keel or git"]
-  WU -.->|"Open, Run, the code changes: W4"| OUT
+  WU -->|"your note"| RT
+  WL -.->|"Open, Sign off, Merge: W4"| OUT["Your browser, keel or git"]
+  WU -.->|"Open, Sign off, Merge, Code changes: W4"| OUT
 </pre>
-<div class="caption">The six screens. Dashed lines are W4's: what an item opens and the command its button runs.</div>
+<div class="caption">The six screens. The router fills the alert; your note goes back to it. Dashed lines are W4's buttons.</div>
 </div>
 
 <h3 id="how-to-read">How to read a screen</h3>
 <table data-c="legend">
   <tbody>
-    <tr><td><span class="slot">Open · W4</span> <span class="slot">Run · W4</span></td><td>A slot. W4 decides what it opens or runs. W3 draws only the place.</td></tr>
-    <tr><td><span class="smp">dotted</span></td><td>A sample value. No record of that evening holds it, so it is made up to show the field.</td></tr>
+    <tr><td><span class="slot">Sign off…</span></td><td>A button W4 designed. W3 places it; W4's result says what it opens or runs.</td></tr>
+    <tr><td><span class="smp">dotted</span></td><td>A sample value. No record of that evening holds it.</td></tr>
     <tr><td><span class="ok">green</span> · <span class="warn">amber</span> · <span class="bad">red</span></td><td>Done or passing · waits on someone · failed or stuck.</td></tr>
     <tr><td>Where each field comes from</td><td>Folded under each screen. "New" means nothing records it today.</td></tr>
   </tbody>
 </table>
 
 <h2 id="s1">Screen 1 · The alert</h2>
-<p data-c="s1-short">One macOS alert when an item first enters your list. Never twice for one item. A click opens screen 2 on that item.</p>
+<p data-c="s1-short">One layout. The router fills it. A click opens the work unit it names.</p>
 <div class="screen" data-c="screen-1">
-  <div class="bar"><b>macOS, top right of your screen</b><span>the three alerts of the evening, newest first</span></div>
+  <div class="bar"><b>macOS, top right of your screen</b><span>the layout, then the evening's alerts</span></div>
   <div class="body">
+    <h4>The layout</h4>
     <div class="alerts">
-      <div class="alert"><div class="t"><span>Keel · waits on you</span><span>20:44</span></div><div class="h">E-DOCSPLIT.W2 · result to sign</div><div class="m">Review passed in round 4. Only your sign-off is missing.</div></div>
-      <div class="alert"><div class="t"><span>Keel · waits on you</span><span>20:39</span></div><div class="h">E-LOCALTOOL.W3 · plan to read</div><div class="m">Draft screens</div></div>
-      <div class="alert"><div class="t"><span>Keel · waits on you</span><span>20:39</span></div><div class="h">E-LOCALTOOL.W4 · plan to read</div><div class="m">The hand-off to your browser and terminal</div></div>
-      <div class="alert"><div class="t"><span>Keel · <i class="smp">3 wait on you</i></span><span><i class="smp">20:40</i></span></div><div class="h"><i class="smp">E-DOCSPLIT.W2 and 2 more</i></div><div class="m">A burst: items within 5 seconds share one alert</div></div>
+      <div class="alert tpl"><div class="t"><span>Keel · &lt;project&gt;</span><span>&lt;time&gt;</span></div><div class="h">&lt;headline&gt;</div><div class="m">&lt;one or two lines&gt;</div><div class="u">click opens: &lt;work unit&gt;, else the list</div></div>
     </div>
-    <h4>Stays quiet</h4>
+    <table>
+      <tbody>
+        <tr><td>The router writes</td><td>the headline, the lines, the work unit it is about (optional)</td></tr>
+        <tr><td>The app adds</td><td>the project and the time</td></tr>
+      </tbody>
+    </table>
+    <h4>The evening, as the router might have filled it</h4>
+    <div class="alerts">
+      <div class="alert"><div class="t"><span>Keel · Keel</span><span>20:44</span></div><div class="h"><i class="smp">E-DOCSPLIT.W2 is ready for your sign-off</i></div><div class="m"><i class="smp">Review passed in round 4. Only your sign-off is missing.</i></div><div class="u">click opens: E-DOCSPLIT.W2</div></div>
+      <div class="alert"><div class="t"><span>Keel · Keel</span><span>20:39</span></div><div class="h"><i class="smp">Two plans to read</i></div><div class="m"><i class="smp">E-LOCALTOOL.W3, draft screens, and W4, the hand-off.</i></div><div class="u">click opens: the list</div></div>
+    </div>
+    <h4>Rules</h4>
     <ul>
-      <li>An item already shown, even after a restart.</li>
-      <li>An item that left before its alert went out.</li>
-      <li>A failed gate or a merge conflict: not yours. Shown on screen 2, no alert.</li>
-      <li>A "sent" item: you already acted.</li>
-      <li>A worker's commit, a review round, a note: not an item.</li>
+      <li>The router decides what to say and when. The app never alerts on its own.</li>
+      <li>Each message shows once, even after a restart.</li>
+      <li>No button on an alert. A click opens; nothing runs (W4).</li>
+      <li>A message that names no work unit, or one with no branch, opens screen 2.</li>
+      <li>Over two lines, the text is cut. The full text sits on the item.</li>
     </ul>
     <h4>Alert settings (a small view in the app)</h4>
     <table>
       <tbody>
-        <tr><td>Alert me for</td><td>☑ results to sign · ☑ plans to read · ☑ rule-file commits · ☑ questions from the router · ☐ failed gates and conflicts</td></tr>
-        <tr><td>Burst</td><td>items within <i class="smp">5 seconds</i> share one alert</td></tr>
+        <tr><td>Alerts from the router</td><td>☑ Keel · ☑ <i class="smp">Another project</i></td></tr>
+        <tr><td>Sound</td><td>☑ on</td></tr>
         <tr><td>Telegram</td><td>The router's, not set here. It still messages you when you are away.</td></tr>
       </tbody>
     </table>
   </div>
 </div>
-<p class="note" data-c="s1-words">The alert's words, for W4 to reuse: <b>&lt;work unit&gt; · &lt;kind&gt;</b>, then one "why" line. The kinds: result to sign · plan to read · rule-file commit to sign · question from the router · gate failed · merge conflict · main not pushed. Window request: none. The alerter in the app's main part sends it.</p>
 <details class="fields" data-c="fields-1">
 <summary>Where each field comes from · screen 1</summary>
 <table class="fields">
   <thead><tr><th>#</th><th>Field</th><th>Drawn</th><th>Value from</th><th>Source</th><th>W2 part</th><th>Mark</th></tr></thead>
   <tbody>
     <tr><td>1.1</td><td>Project name</td><td>Keel</td><td class="from">the main checkout's folder name, from git worktree list</td><td class="src">The app's own project list (W2 Q9)</td><td class="part">Project list</td><td class="mark">new</td></tr>
-    <tr><td>1.2</td><td>Work unit id</td><td>E-DOCSPLIT.W2</td><td class="from">branch wu/E-DOCSPLIT/w2-check at 7cca9ff</td><td class="src">git: the branch name from <code>git for-each-ref</code>, by keel's naming rule <code>wu/&lt;epic&gt;/&lt;slug&gt;</code></td><td class="part">Reader</td><td class="mark">git</td></tr>
-    <tr><td>1.3</td><td>Kind</td><td>result to sign</td><td class="from">note cr@7cca9ff (PASS), no note mr@7cca9ff</td><td class="src">As 2.1: keel's notes, read with <code>git log --notes</code></td><td class="part">Reader</td><td class="mark">keel</td></tr>
-    <tr><td>1.4</td><td>Why line</td><td>Review passed in round 4</td><td class="from">note cr@7cca9ff: verdict PASS, round 4</td><td class="src">keel's notes, read with <code>git log --notes=cr --format=%N -1 &lt;tip&gt;</code></td><td class="part">Reader</td><td class="mark">keel</td></tr>
-    <tr><td>1.5</td><td>Time</td><td>20:44 · 20:39 · 20:39</td><td class="from">note cr@7cca9ff timestamp 20:44:31; commits 6834699 20:39:53 and e9cdafd 20:39:17</td><td class="src">git: the note's timestamp (<code>git log --notes</code>), else the commit time (<code>git log -1</code>)</td><td class="part">Watcher</td><td class="mark">git</td></tr>
-    <tr><td>1.6</td><td>When it fires</td><td>once per new item</td><td class="from">W2 Q6</td><td class="src">The waiting list (screen 2), compared with the alerts already shown</td><td class="part">Alerter</td><td class="mark">new</td></tr>
-    <tr><td>1.7</td><td>Burst count</td><td>3 wait on you</td><td class="from">sample: the evening had no burst; the two plans came 36 seconds apart</td><td class="src">The alerter's own count</td><td class="part">Alerter</td><td class="mark">new</td></tr>
-    <tr><td>1.8</td><td>Alert settings</td><td>the checkboxes, 5 seconds</td><td class="from">sample</td><td class="src">The app's own folder (W2 Q9)</td><td class="part">Project list</td><td class="mark">new</td></tr>
-    <tr><td>1.9</td><td>Telegram line</td><td>the router's</td><td class="from"><code class="path">scripts/notify-owner.py</code> l.34: the router's message body</td><td class="src">Fixed words. The app reads nothing of Telegram</td><td class="part">Window</td><td class="mark">new</td></tr>
+    <tr><td>1.2</td><td>Headline</td><td>E-DOCSPLIT.W2 is ready …</td><td class="from">sample: the router's messages of that evening are not kept</td><td class="src">The router's message, its first line. Today the router writes it to <code>.router/notify/owner.md</code>, and <code class="path">scripts/notify-owner.py</code> empties that file after Telegram's send (l.11 to l.15)</td><td class="part">Alerter</td><td class="mark">new</td></tr>
+    <tr><td>1.3</td><td>One or two lines</td><td>Review passed in round 4 …</td><td class="from">sample, as 1.2</td><td class="src">The router's message, the lines after the first, shown as text</td><td class="part">Alerter</td><td class="mark">new</td></tr>
+    <tr><td>1.4</td><td>The work unit it opens</td><td>E-DOCSPLIT.W2 · the list</td><td class="from">sample, as 1.2</td><td class="src">A work-unit line in the router's message; the app opens screen 3 only if <code>git for-each-ref</code> finds its branch</td><td class="part">Alerter</td><td class="mark">new</td></tr>
+    <tr><td>1.5</td><td>Time</td><td>20:44 · 20:39</td><td class="from">the moments the items appeared: note cr@7cca9ff 20:44:31; commits 6834699 20:39:53 and e9cdafd 20:39:17</td><td class="src">When the app read the router's message: its own clock</td><td class="part">Alerter</td><td class="mark">new</td></tr>
+    <tr><td>1.6</td><td>Shown once</td><td>once per message</td><td class="from">W2 Q6</td><td class="src">The app's own record of the messages already shown, in its folder</td><td class="part">Alerter</td><td class="mark">new</td></tr>
+    <tr><td>1.7</td><td>Alert settings</td><td>per project, sound</td><td class="from">sample</td><td class="src">The app's own folder (W2 Q9)</td><td class="part">Project list</td><td class="mark">new</td></tr>
+    <tr><td>1.8</td><td>Telegram line</td><td>the router's</td><td class="from"><code class="path">scripts/notify-owner.py</code> l.2: the router's message to Telegram</td><td class="src">Fixed words. The app reads nothing of Telegram</td><td class="part">Window</td><td class="mark">new</td></tr>
   </tbody>
 </table>
 </details>
 
 <h2 id="s2">Screen 2 · Waits on you</h2>
-<p data-c="s2-short">One list across your projects. Each row: what, which work unit, since when, why, and W4's two slots. Rows that are not yours are shown below, without alerts.</p>
+<p data-c="s2-short">One list across your projects. Each row: what, which work unit, since when, why, and W4's buttons. Rows that are not yours sit below, with no button that runs.</p>
 <div class="screen" data-c="screen-2">
   <div class="bar"><b>Project: Keel ▾</b><span>Waits on you <b class="warn">3</b></span><span>Workers <b><i class="smp">4</i></b></span><span>Wed 18 Nov, 20:45</span><span>Waits on you · Epics · Fleet · Projects</span></div>
   <div class="body">
     <h4>Yours</h4>
-    <div class="item k-signoff"><span class="what warn">Result to sign</span><span><b>E-DOCSPLIT.W2</b> · The check reads the data file · tip 7cca9ff</span><span>20:44</span><span class="slots"><span class="slot">Open · W4</span><span class="slot">Run · W4</span></span><span class="why">Review passed, round 4. Tests, docs and review recorded. Your sign-off is missing.</span></div>
-    <div class="item k-plan"><span class="what warn">Plan to read</span><span><b>E-LOCALTOOL.W3</b> · Draft screens · tip 6834699</span><span>20:39</span><span class="slots"><span class="slot">Open · W4</span><span class="slot">Run · W4</span></span><span class="why">The plan is the only commit on the branch.</span></div>
-    <div class="item k-plan"><span class="what warn">Plan to read</span><span><b>E-LOCALTOOL.W4</b> · The hand-off to your browser and terminal · tip e9cdafd</span><span>20:39</span><span class="slots"><span class="slot">Open · W4</span><span class="slot">Run · W4</span></span><span class="why">The plan is the only commit on the branch.</span></div>
-    <div class="item k-rulefile"><span class="what warn"><i class="smp">Rule-file commit to sign</i></span><span><b>E-DOCSPLIT.W2</b> · <i class="smp">task ci-gate-caps · tip 666544b</i></span><span><i class="smp">19:31</i></span><span class="slots"><span class="slot">Open · W4</span><span class="slot">Run · W4</span></span><span class="why"><i class="smp">Changes templates/config.toml and scripts/ci-gate.sh: rule files need your yes.</i></span></div>
-    <div class="item k-question"><span class="what warn"><i class="smp">Question from the router</i></span><span><b><i class="smp">E-LOCALTOOL.W4</i></b> · <i class="smp">keel-1c</i></span><span><i class="smp">20:41</i></span><span class="slots"><span class="slot">Open · W4</span><span class="slot">Run · W4</span></span><span class="why"><i class="smp">The router waits for your answer in its session.</i></span></div>
+    <div class="item k-signoff"><span class="what warn">Result to sign</span><span><b>E-DOCSPLIT.W2</b> · The check reads the data file · tip 7cca9ff</span><span>20:44</span><span class="slots"><span class="slot">Open the result</span><span class="slot">Sign off…</span></span><span class="why">Review passed, round 4. Your sign-off is missing. Once signed, the same row offers Merge…</span></div>
+    <div class="item k-plan"><span class="what warn">Plan to read</span><span><b>E-LOCALTOOL.W3</b> · Draft screens · tip 6834699</span><span>20:39</span><span class="slots"><span class="slot">Open the plan</span><span class="slot">Mark sent</span></span><span class="why">The plan is the only commit on the branch.</span></div>
+    <div class="item k-plan"><span class="what warn">Plan to read</span><span><b>E-LOCALTOOL.W4</b> · The hand-off to your browser and terminal · tip e9cdafd</span><span>20:39</span><span class="slots"><span class="slot">Open the plan</span><span class="slot">Mark sent</span></span><span class="why">The plan is the only commit on the branch.</span></div>
+    <div class="item k-rulefile"><span class="what warn"><i class="smp">Rule-file commit to sign</i></span><span><b><i class="smp">E-DOCSPLIT.W4</i></b> · <i class="smp">in Keel-E-DOCSPLIT-w4-skills</i></span><span><i class="smp">20:30</i></span><span class="slots"><span class="slot">Open the change</span><span class="slot">Commit…</span></span><span class="why"><i class="smp">Staged: skills/keel-plan/SKILL.md. A rule file: keel commits it with your message.</i></span></div>
+    <div class="item k-question"><span class="what warn"><i class="smp">Question from the router</i></span><span><b><i class="smp">E-LOCALTOOL.W4</i></b> · <i class="smp">keel-1c</i></span><span><i class="smp">20:41</i></span><span class="slots"><span class="slot">Open the question</span><span class="slot">Mark sent</span></span><span class="why"><i class="smp">The router waits for your answer in its session.</i></span></div>
     <h4>Not yours, shown (a worker acts)</h4>
-    <div class="item k-gate"><span class="what bad"><i class="smp">Gate failed</i></span><span><b><i class="smp">E-DOCSPLIT.W3</i></b></span><span><i class="smp">20:30</i></span><span class="slots"><span class="slot">Open · W4</span><span class="slot">Run · W4</span></span><span class="why"><i class="smp">1·notes: no test note on the tip. Its worker fixes it.</i></span></div>
-    <div class="item k-conflict"><span class="what bad"><i class="smp">Merge conflict</i></span><span><b><i class="smp">E-DOCSPLIT.W3</i></b></span><span><i class="smp">20:31</i></span><span class="slots"><span class="slot">Open · W4</span><span class="slot">Run · W4</span></span><span class="why"><i class="smp">Conflicts with epic/E-DOCSPLIT in src/verify_doc.rs. Its worker merges the epic in.</i></span></div>
+    <div class="item k-gate"><span class="what bad"><i class="smp">Gate failed</i></span><span><b><i class="smp">E-DOCSPLIT.W3</i></b></span><span><i class="smp">20:30</i></span><span class="slots"><span class="slot">Open</span></span><span class="why"><i class="smp">notes: no test note on the tip. Its worker fixes it.</i></span></div>
+    <div class="item k-conflict"><span class="what bad"><i class="smp">Merge conflict</i></span><span><b><i class="smp">E-DOCSPLIT.W3</i></b></span><span><i class="smp">20:31</i></span><span class="slots"><span class="slot">Open</span></span><span class="why"><i class="smp">Conflicts with epic/E-DOCSPLIT in src/verify_doc.rs. Its worker merges the epic in.</i></span></div>
     <h4>Sent, waiting for a sign</h4>
     <p class="dim">Nothing at 20:45.</p>
     <h4>W5 decides</h4>
-    <div class="item k-push"><span class="what dim"><i class="smp">Main not pushed</i></span><span><i class="smp">main is 1 merge ahead of the off-Mac copy</i></span><span><i class="smp">—</i></span><span class="slots"><span class="slot">Open · W4</span><span class="slot">Run · W4</span></span><span class="why"><i class="smp">Who pushes it is W5's question.</i></span></div>
+    <div class="item k-push"><span class="what dim"><i class="smp">Main not pushed</i></span><span><i class="smp">main is 1 merge ahead of the off-Mac copy</i></span><span><i class="smp">—</i></span><span class="slots"><span class="slot off">today's line, as text</span></span><span class="why"><i class="smp">Who pushes it is W5's question.</i></span></div>
+    <div class="item k-task"><span class="what dim"><i class="smp">Task into its work unit</i></span><span><b>E-DOCSPLIT.W2</b> · task ci-gate-caps · tip 666544b</span><span><i class="smp">19:31</i></span><span class="slots"><span class="slot">Open the change</span></span><span class="why"><i class="smp">How a task lands is W5's question.</i> It waited 19:31 to 19:41.</span></div>
   </div>
 </div>
 <div class="screen" data-c="screen-2-later">
   <div class="bar"><b>The sent group, a little later</b><span><i class="smp">21:16</i>, after you told the router "just do it" on the W3 plan</span></div>
   <div class="body">
     <h4>Sent, waiting for a sign</h4>
-    <div class="item k-sent"><span class="what dim">Plan approval sent</span><span><b>E-LOCALTOOL.W3</b> · Draft screens · tip 6834699</span><span><i class="smp">21:16</i></span><span class="slots"><span class="slot">Open · W4</span><span class="slot">Run · W4</span></span><span class="why">Leaves when the work's next commit appears on the branch.</span></div>
+    <div class="item k-sent"><span class="what dim">Plan approval sent</span><span><b>E-LOCALTOOL.W3</b> · Draft screens · tip 6834699</span><span><i class="smp">21:16</i></span><span class="slots"><span class="slot">Open the plan</span><span class="slot">Not sent</span></span><span class="why">Leaves when the branch moves past 6834699.</span></div>
   </div>
 </div>
-<p class="note" data-c="s2-request">Window request: the waiting list. The "sent" group follows W4's plan at 6fbfe5b: you mark an item sent, the app keeps the mark in memory only.</p>
 <details class="fields" data-c="fields-2">
 <summary>Where each field comes from · screen 2</summary>
 <table class="fields">
   <thead><tr><th>#</th><th>Field</th><th>Drawn</th><th>Value from</th><th>Source</th><th>W2 part</th><th>Mark</th></tr></thead>
   <tbody>
-    <tr><td>2.1</td><td>Kind: result to sign</td><td>E-DOCSPLIT.W2</td><td class="from">notes test@7cca9ff, doc@7cca9ff, cr@7cca9ff (PASS); no note mr@7cca9ff</td><td class="src">keel: the notes on the tip, and <code>keel ci gate wu &lt;tip&gt; --target &lt;epic&gt;</code> red only on 8·manual-review</td><td class="part">Reader</td><td class="mark">keel</td></tr>
+    <tr><td>2.1</td><td>Kind: result to sign</td><td>E-DOCSPLIT.W2</td><td class="from">notes test@7cca9ff, doc@7cca9ff, cr@7cca9ff (PASS); no note mr@7cca9ff before 20:51</td><td class="src">keel: the notes on the tip, and <code>keel ci gate wu &lt;tip&gt; --target &lt;epic&gt;</code> red only on manual-review</td><td class="part">Reader</td><td class="mark">keel</td></tr>
     <tr><td>2.2</td><td>Kind: plan to read</td><td>E-LOCALTOOL.W3, W4</td><td class="from">commits 6834699 and e9cdafd, each the only commit over cf4c752</td><td class="src">Nothing records that a plan waits for you. The app would guess from git (a branch that holds only a plan doc), and a guess is judging</td><td class="part">Reader</td><td class="mark">new</td></tr>
-    <tr><td>2.3</td><td>Kind: rule-file commit</td><td>task ci-gate-caps</td><td class="from">sample, modelled on 666544b, which waited for your merge 19:31 to 19:41 (merged at c028ddb)</td><td class="src">Which changed paths are rule files: <code>rule_bearing</code> in <code class="path">.keel/config.toml</code> l.14. Only keel's commit hook decides it today, at commit time</td><td class="part">Reader</td><td class="mark">new</td></tr>
+    <tr><td>2.3</td><td>Kind: rule-file commit</td><td>E-DOCSPLIT.W4, staged skill</td><td class="from">sample, as W4's result draws it (f4e7aa2)</td><td class="src">The staged files in a worktree, <code>git --no-optional-locks diff --cached --name-only</code>. Which are rule files: <code>rule_bearing</code> in <code class="path">.keel/config.toml</code> l.14, decided only by keel's commit hook today</td><td class="part">Reader</td><td class="mark">new</td></tr>
     <tr><td>2.4</td><td>Kind: question from the router</td><td>keel-1c</td><td class="from">sample</td><td class="src">session: <code>claude agents --json</code>, the router's status "waiting" and its "waiting for" text, shown as text</td><td class="part">Reader</td><td class="mark">session</td></tr>
     <tr><td>2.5</td><td>Kind: gate failed</td><td>E-DOCSPLIT.W3</td><td class="from">sample: no gate failed that evening; E-DOCSPLIT.W3 had no branch at 20:45</td><td class="src">keel: the FAIL lines of <code>keel ci gate</code> on a work unit's tip</td><td class="part">Reader</td><td class="mark">keel</td></tr>
     <tr><td>2.6</td><td>Kind: merge conflict</td><td>E-DOCSPLIT.W3</td><td class="from">sample</td><td class="src">No command on W2's list finds a conflict without writing: <code>git merge-tree</code> writes objects. GitHub's watch finds it today</td><td class="part">Reader</td><td class="mark">new</td></tr>
     <tr><td>2.7</td><td>Kind: main not pushed</td><td>1 merge ahead</td><td class="from">sample: main and origin/main were both 6cf3127</td><td class="src">git: <code>git for-each-ref --format=%(upstream:track) refs/heads/main</code></td><td class="part">Reader</td><td class="mark">git</td></tr>
     <tr><td>2.8</td><td>Work unit and title</td><td>E-DOCSPLIT.W2 · The check reads the data file</td><td class="from">branch wu/E-DOCSPLIT/w2-check; the epic plan at 959cf50, its block E-DOCSPLIT.W2</td><td class="src">git: the branch name (<code>git for-each-ref</code>); the title from the epic plan's work-unit block, <code>git cat-file blob &lt;epic&gt;:&lt;plan&gt;</code></td><td class="part">Reader</td><td class="mark">git</td></tr>
-    <tr><td>2.9</td><td>Tip</td><td>7cca9ff · 6834699 · e9cdafd</td><td class="from">7cca9ff, 6834699, e9cdafd</td><td class="src">git: <code>git for-each-ref</code> on the branches</td><td class="part">Reader</td><td class="mark">git</td></tr>
+    <tr><td>2.9</td><td>Tip</td><td>7cca9ff · 6834699 · e9cdafd · 666544b</td><td class="from">7cca9ff, 6834699, e9cdafd, 666544b</td><td class="src">git: <code>git for-each-ref</code> on the branches</td><td class="part">Reader</td><td class="mark">git</td></tr>
     <tr><td>2.10</td><td>Since</td><td>20:44 · 20:39 · 20:39</td><td class="from">note cr@7cca9ff timestamp; commits 6834699, e9cdafd</td><td class="src">git: the note's timestamp (<code>git log --notes</code>) for a sign-off, the commit time (<code>git log -1</code>) for a plan</td><td class="part">Reader</td><td class="mark">git</td></tr>
     <tr><td>2.11</td><td>Why line</td><td>Review passed, round 4 …</td><td class="from">note cr@7cca9ff: PASS, round 4; notes test@7cca9ff, doc@7cca9ff</td><td class="src">keel: the notes, or the FAIL line of <code>keel ci gate</code>; a session's text for a question</td><td class="part">Reader</td><td class="mark">keel</td></tr>
-    <tr><td>2.12</td><td>Group: yours or not yours</td><td>two groups</td><td class="from">W4 plan at 6fbfe5b, open point 3</td><td class="src">A fixed rule per kind: a failed gate and a conflict are a worker's</td><td class="part">Reader</td><td class="mark">new</td></tr>
-    <tr><td>2.13</td><td>Sent group</td><td>E-LOCALTOOL.W3 plan approval</td><td class="from">sample time; the W3 build started at 21:17 (run e-localtool-w3-build-20261118211720-86847-spawn)</td><td class="src">Your mark, kept in the app's memory only (W4 at 6fbfe5b, open point 2). It leaves on the next commit of the branch (git)</td><td class="part">Reader</td><td class="mark">new</td></tr>
+    <tr><td>2.12</td><td>Group: yours, not yours, W5 decides</td><td>three groups</td><td class="from">W4's result at f4e7aa2, its item table</td><td class="src">A fixed rule per kind: a failed gate and a conflict are a worker's; main not pushed and a task are W5's</td><td class="part">Reader</td><td class="mark">new</td></tr>
+    <tr><td>2.13</td><td>Sent group</td><td>E-LOCALTOOL.W3 plan approval</td><td class="from">sample time; the W3 build started at 21:17 (run e-localtool-w3-build-20261118211720-86847-spawn)</td><td class="src">Your mark, kept in the app's memory only (W4). It leaves when the branch moves past the plan (git)</td><td class="part">Reader</td><td class="mark">new</td></tr>
     <tr><td>2.14</td><td>Counters in the top bar</td><td>3 · 4</td><td class="from">this list's yours group; screen 5's worker count (sample)</td><td class="src">The same reads as this list (<code>git log --notes</code>) and screen 5 (<code>claude agents --json</code>)</td><td class="part">Reader</td><td class="mark">git</td></tr>
-    <tr><td>2.15</td><td>Open slot</td><td>empty</td><td class="from">W4</td><td class="src">W4: the doc it opens</td><td class="part">Bridge</td><td class="mark">W4</td></tr>
-    <tr><td>2.16</td><td>Run slot</td><td>empty</td><td class="from">W4</td><td class="src">W4: the command it runs, shown beside it</td><td class="part">Bridge</td><td class="mark">W4</td></tr>
+    <tr><td>2.15</td><td>Open buttons</td><td>Open the result · the plan · the change · the question · Open</td><td class="from">W4's result at f4e7aa2, its item table</td><td class="src">W4: a copy of the committed page; a diff page for a rule-file commit or a task; the question as text; screen 3 for a gate or a conflict</td><td class="part">Bridge</td><td class="mark">W4</td></tr>
+    <tr><td>2.16</td><td>Second buttons</td><td>Sign off… · Commit… · Mark sent · Not sent</td><td class="from">W4's result at f4e7aa2, R1 and R5, and its sent marks</td><td class="src">W4: the line each runs, shown in its dialog. None on a failed gate, a conflict, main not pushed or a task</td><td class="part">Bridge</td><td class="mark">W4</td></tr>
+    <tr><td>2.17</td><td>Kind: task into its work unit</td><td>ci-gate-caps · 666544b</td><td class="from">branch wu/E-DOCSPLIT/w2-check_ci-gate-caps at 666544b, 19:31; merged 19:41 (c028ddb), so not waiting at 20:45</td><td class="src">git: branches named <code>wu/&lt;epic&gt;/&lt;wu&gt;_&lt;task&gt;</code> by <code>git for-each-ref</code>, not yet in their work unit by <code>git merge-base --is-ancestor</code></td><td class="part">Reader</td><td class="mark">git</td></tr>
   </tbody>
 </table>
 </details>
 
 <h2 id="s3">Screen 3 · One work unit</h2>
-<p data-c="s3-short">Everything you check before you sign, on one screen. Drawn for E-DOCSPLIT.W2, the one waiting for your sign-off at 20:45.</p>
+<p data-c="s3-short">What you can do first, then what the work was and how it went. Drawn for E-DOCSPLIT.W2, waiting for your sign-off at 20:45.</p>
 <div class="screen" data-c="screen-3">
   <div class="bar"><b>Project: Keel ▾</b><span>Waits on you · <b>Epics › E-DOCSPLIT › W2</b> · Fleet · Projects</span></div>
   <div class="body">
-    <p><b>E-DOCSPLIT.W2 · The check reads the data file</b> <span class="warn">· waits for your sign-off</span><span class="slots"><span class="slot">Open · W4</span><span class="slot">Run · W4</span><span class="slot">Code changes · W4</span></span><br><span class="dim">branch wu/E-DOCSPLIT/w2-check · tip 7cca9ff · into epic/E-DOCSPLIT at d1ec96a · 12 code files changed</span></p>
-    <h4>The gate</h4>
-    <table>
+    <p><b>E-DOCSPLIT.W2 · The check reads the data file</b> · <span class="warn">waits for your sign-off</span><br><span class="dim">branch wu/E-DOCSPLIT/w2-check · tip 7cca9ff · into epic/E-DOCSPLIT at d1ec96a · 12 code files changed</span></p>
+    <div class="badges">
+      <span class="badge-s ok">notes 3 of 4</span>
+      <span class="badge-s ok">tests counted</span>
+      <span class="badge-s ok">review PASS</span>
+      <span class="badge-s ok">review base</span>
+      <span class="badge-s ok">diff bound</span>
+      <span class="badge-s ok">docs listed</span>
+      <span class="badge-s warn">your sign-off</span>
+      <span class="badge-s">unit 57</span>
+      <span class="badge-s">integration 76</span>
+      <span class="badge-s">e2e 1</span>
+    </div>
+
+    <h4>What you can do now</h4>
+    <div class="act"><span class="n">1</span><span>Read it: <span class="slot">Open the result</span> <span class="slot">Code changes</span></span></div>
+    <div class="act"><span class="n">2</span><span>Sign it: <span class="slot">Sign off…</span> then <span class="slot off">Merge…</span> <span class="dim">(on once signed)</span></span></div>
+    <div class="act"><span class="n">3</span><span>Tell the worker something:
+      <div class="field">Your note to E-DOCSPLIT.W2's worker…</div>
+      <span class="slot">Send</span> <span class="dim">It goes to the router, which passes it on. It joins the history below.</span></span></div>
+
+    <h4>The work</h4>
+    <p>keel verify-doc checks each plan's and result's data file, and checks the page only for what you read: links, diagram labels, length. One task, ci-gate-caps, changed the CI docs job and the config template.</p>
+
+    <h4>History</h4>
+    <table class="hist">
+      <thead><tr><th>When</th><th>Step</th><th>What happened</th></tr></thead>
       <tbody>
-        <tr><td>0·hooks</td><td class="ok"><i class="smp">green</i></td><td></td></tr>
-        <tr><td>1·notes</td><td class="warn">3 of 4</td><td>tests ✓ · docs ✓ · review ✓ · your sign-off missing</td></tr>
-        <tr><td>2·manifest</td><td class="ok">green</td><td>integration: 76 tests counted</td></tr>
-        <tr><td>3·review</td><td class="ok">PASS</td><td>round 4</td></tr>
-        <tr><td>4·review-base</td><td class="ok"><i class="smp">green</i></td><td></td></tr>
-        <tr><td>5·diff-binding</td><td class="ok"><i class="smp">green</i></td><td></td></tr>
-        <tr><td>6·doc-note</td><td class="ok"><i class="smp">green</i></td><td>5 docs listed</td></tr>
-        <tr><td>8·manual-review</td><td class="warn">yours</td><td>no sign-off yet</td></tr>
+        <tr><td>15:34</td><td>Plan</td><td>The plan, for you to read (3c27d33)</td></tr>
+        <tr><td><i class="smp">by 16:58</i></td><td>Plan approved</td><td><i class="smp">You said go, to the router</i></td></tr>
+        <tr><td>16:58</td><td>Built</td><td>keel verify-doc reads the data file (4a2cd48); two decision records amended (e6ef395); the result (09715ac)</td></tr>
+        <tr><td>19:31</td><td>Task waits on you</td><td>ci-gate-caps: the CI docs job and the config template (666544b)</td></tr>
+        <tr><td>19:41–19:44</td><td>Task merged</td><td>Merged by your approval (c028ddb); its test (6799bc8); the result (a1891be)</td></tr>
+        <tr><td>19:56</td><td class="bad">Review 1: FAIL</td><td>2 blockers, 2 importants</td></tr>
+        <tr><td>20:01–20:07</td><td>Fixed</td><td>85db9e1, 8c706c9; the result (4af254d)</td></tr>
+        <tr><td>20:19</td><td class="bad">Review 2: FAIL</td><td>2 blockers</td></tr>
+        <tr><td>20:20–20:26</td><td>Fixed</td><td>00d81f9, 72fb91d; the result (ad0c814)</td></tr>
+        <tr><td><i class="smp">20:28</i></td><td>Your note</td><td><i class="smp">"Fix the blockers first; nits can wait." Sent to the worker by the router</i></td></tr>
+        <tr><td>20:34</td><td class="bad">Review 3: FAIL</td><td>1 important</td></tr>
+        <tr><td>20:37–20:39</td><td>Fixed</td><td>9c3b240, 27ecd53; the result (7cca9ff)</td></tr>
+        <tr><td>20:44</td><td class="ok">Review 4: PASS</td><td>Waits for your sign-off</td></tr>
       </tbody>
     </table>
-    <h4>Tests</h4>
-    <p>unit 57 · integration 76 · e2e 1</p>
-    <h4>Review, round by round</h4>
-    <table>
-      <thead><tr><th>Round</th><th>On</th><th>Read</th><th>Verdict</th><th>Found</th><th>At</th></tr></thead>
-      <tbody>
-        <tr><td>1</td><td>a1891be</td><td>everything</td><td class="bad">FAIL</td><td>2 blockers · 2 importants</td><td>19:56</td></tr>
-        <tr><td>2</td><td>4af254d</td><td>everything</td><td class="bad">FAIL</td><td>2 blockers</td><td>20:19</td></tr>
-        <tr><td>3</td><td>ad0c814</td><td>the fixes since 4af254d</td><td class="bad">FAIL</td><td>1 important</td><td>20:34</td></tr>
-        <tr><td>4</td><td>7cca9ff</td><td>the fixes since ad0c814</td><td class="ok">PASS</td><td>nothing</td><td>20:44</td></tr>
-      </tbody>
-    </table>
-    <h4>Tasks</h4>
-    <p>ci-gate-caps · <span class="ok">merged into the work unit at 19:41</span> (c028ddb)</p>
+
     <h4>Docs</h4>
-    <p>the plan · the result · the result's data file · decisions: distribution, workflow gates</p>
-    <h4>Signed and merged</h4>
-    <p><span class="warn">Not signed</span> · <span class="dim">not merged</span></p>
+    <table>
+      <tbody>
+        <tr><td><span class="lnk">The result</span></td><td>docs/work/2026-11-18-e-docsplit-w2-result.html</td><td>the page you sign</td></tr>
+        <tr><td><span class="lnk">The plan</span></td><td>docs/work/2026-11-18-e-docsplit-w2-plan.html</td><td></td></tr>
+        <tr><td><span class="lnk">Decisions: workflow gates</span></td><td>docs/decisions/workflow-gates.html</td><td>amended</td></tr>
+        <tr><td><span class="lnk">Decisions: distribution and adoption</span></td><td>docs/decisions/distribution.html</td><td>amended</td></tr>
+        <tr><td class="dim">The result's data file</td><td class="dim">docs/work/2026-11-18-e-docsplit-w2-result.yaml</td><td class="dim">for agents; not opened</td></tr>
+      </tbody>
+    </table>
+
+    <details class="rounds">
+      <summary>Review, round by round · 4 rounds, PASS in round 4</summary>
+      <table>
+        <thead><tr><th>Round</th><th>On</th><th>Read</th><th>Verdict</th><th>Found</th><th>At</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>a1891be</td><td>everything</td><td class="bad">FAIL</td><td>2 blockers · 2 importants</td><td>19:56</td></tr>
+          <tr><td>2</td><td>4af254d</td><td>everything</td><td class="bad">FAIL</td><td>2 blockers</td><td>20:19</td></tr>
+          <tr><td>3</td><td>ad0c814</td><td>the fixes since 4af254d</td><td class="bad">FAIL</td><td>1 important</td><td>20:34</td></tr>
+          <tr><td>4</td><td>7cca9ff</td><td>the fixes since ad0c814</td><td class="ok">PASS</td><td>nothing</td><td>20:44</td></tr>
+        </tbody>
+      </table>
+    </details>
   </div>
 </div>
-<p class="note" data-c="s3-request">Window request: one work unit, new. W2 listed "one epic"; a work unit's checks and rounds are too many to fetch for every unit of an epic. The gate rows marked sample need <code>keel ci gate</code>, which this worker could not run (see deviations).</p>
 <details class="fields" data-c="fields-3">
 <summary>Where each field comes from · screen 3</summary>
 <table class="fields">
@@ -217,15 +290,22 @@ flowchart LR
     <tr><td>3.1</td><td>Id, title, branch, tip</td><td>E-DOCSPLIT.W2 · 7cca9ff</td><td class="from">branch wu/E-DOCSPLIT/w2-check at 7cca9ff; the epic plan at 959cf50</td><td class="src">git: <code>git for-each-ref</code>, <code>git cat-file blob</code>, as 2.8 and 2.9</td><td class="part">Reader</td><td class="mark">git</td></tr>
     <tr><td>3.2</td><td>Target and its tip</td><td>epic/E-DOCSPLIT at d1ec96a</td><td class="from">note test@7cca9ff: base d1ec96a</td><td class="src">git: the target from the branch name; its tip by <code>git for-each-ref</code> on origin/epic/… while GitHub merges</td><td class="part">Reader</td><td class="mark">git</td></tr>
     <tr><td>3.3</td><td>Code files changed</td><td>12</td><td class="from">git diff --name-only d1ec96a 7cca9ff, under src/ and tests/</td><td class="src">git: <code>git diff --name-only</code>, filtered by <code>code_paths</code> in <code class="path">.keel/config.toml</code> l.6</td><td class="part">Reader</td><td class="mark">git</td></tr>
-    <tr><td>3.4</td><td>Gate rows read from notes: 1, 2, 3, 8</td><td>3 of 4 · 76 · PASS · yours</td><td class="from">notes test@7cca9ff, doc@7cca9ff, cr@7cca9ff; no note mr@7cca9ff</td><td class="src">keel's notes, read with <code>git log --notes=&lt;kind&gt; --format=%N -1 &lt;tip&gt;</code></td><td class="part">Reader</td><td class="mark">keel</td></tr>
-    <tr><td>3.5</td><td>Gate rows that need a run: 0, 4, 5, 6</td><td>green</td><td class="from">sample: <code>keel ci gate</code> was refused in this worker's sandbox</td><td class="src">keel: <code>keel ci gate wu &lt;tip&gt; --target &lt;epic&gt;</code>, its printed lines, not its exit code (W2 Q3; <code class="path">src/gate.rs</code> l.578)</td><td class="part">Reader</td><td class="mark">keel</td></tr>
-    <tr><td>3.6</td><td>Tests</td><td>57 · 76 · 1</td><td class="from">note test@7cca9ff</td><td class="src">keel's test note, <code>git log --notes=test</code>: each layer's count</td><td class="part">Reader</td><td class="mark">keel</td></tr>
-    <tr><td>3.7</td><td>Review rounds</td><td>4 rows</td><td class="from">notes cr@a1891be, cr@4af254d, cr@ad0c814, cr@7cca9ff</td><td class="src">keel's review notes on each commit of the branch, read with <code>git log --notes=cr --format=%N</code> over the range</td><td class="part">Reader</td><td class="mark">keel</td></tr>
-    <tr><td>3.8</td><td>Tasks</td><td>ci-gate-caps, merged 19:41</td><td class="from">branch wu/E-DOCSPLIT/w2-check_ci-gate-caps at 666544b; merge c028ddb</td><td class="src">git: branches named <code>wu/&lt;epic&gt;/&lt;wu&gt;_&lt;task&gt;</code> by <code>git for-each-ref</code>, and <code>git merge-base --is-ancestor</code></td><td class="part">Reader</td><td class="mark">git</td></tr>
-    <tr><td>3.9</td><td>Docs</td><td>5 docs</td><td class="from">note doc@7cca9ff</td><td class="src">keel's doc note, <code>git log --notes=doc</code>: each changed doc and its tier</td><td class="part">Reader</td><td class="mark">keel</td></tr>
-    <tr><td>3.10</td><td>Signed</td><td>not signed</td><td class="from">no note mr@7cca9ff at 20:45 (refs/notes/mr last changed 17:03)</td><td class="src">keel's sign-off note, <code>git log --notes=mr</code></td><td class="part">Reader</td><td class="mark">keel</td></tr>
-    <tr><td>3.11</td><td>Merged</td><td>not merged</td><td class="from">origin/epic/E-DOCSPLIT was d1ec96a at 20:45; the merge 959cf50 came at 20:52</td><td class="src">git: <code>git merge-base --is-ancestor &lt;tip&gt; &lt;epic&gt;</code></td><td class="part">Reader</td><td class="mark">git</td></tr>
-    <tr><td>3.12</td><td>Open, Run, Code changes slots</td><td>empty</td><td class="from">W4</td><td class="src">W4: the doc, the command, where you read the diff (need n6)</td><td class="part">Bridge</td><td class="mark">W4</td></tr>
+    <tr><td>3.4</td><td>Status</td><td>waits for your sign-off</td><td class="from">note cr@7cca9ff (PASS); note mr@7cca9ff written 20:51, after the moment drawn</td><td class="src">keel's notes, as 2.1</td><td class="part">Reader</td><td class="mark">keel</td></tr>
+    <tr><td>3.5</td><td>Badges from the notes: notes, tests counted, review, your sign-off</td><td>3 of 4 · ✓ · PASS · missing</td><td class="from">notes test@7cca9ff, doc@7cca9ff, cr@7cca9ff; no note mr@7cca9ff at 20:45</td><td class="src">keel's notes, read with <code>git log --notes=&lt;kind&gt; --format=%N -1 &lt;tip&gt;</code></td><td class="part">Reader</td><td class="mark">keel</td></tr>
+    <tr><td>3.6</td><td>Badges that need a run: review base, diff bound, docs listed</td><td>✓ ✓ ✓</td><td class="from"><code>keel ci gate wu 7cca9ff --target d1ec96a</code>, run for this revision: green on every check (raw line in the evidence)</td><td class="src">keel: <code>keel ci gate wu &lt;tip&gt; --target &lt;epic&gt;</code>, its printed lines, not its exit code (W2 Q3; <code class="path">src/gate.rs</code> l.578)</td><td class="part">Reader</td><td class="mark">keel</td></tr>
+    <tr><td>3.7</td><td>Test counts</td><td>57 · 76 · 1</td><td class="from">note test@7cca9ff</td><td class="src">keel's test note, <code>git log --notes=test</code>: each layer's count</td><td class="part">Reader</td><td class="mark">keel</td></tr>
+    <tr><td>3.8</td><td>Read and sign buttons</td><td>Open the result · Code changes · Sign off… · Merge…</td><td class="from">W4's result at f4e7aa2: R1, R2, its diff page</td><td class="src">W4: the committed page, the diff page, the sign-off and the merge, each after one confirm</td><td class="part">Bridge</td><td class="mark">W4</td></tr>
+    <tr><td>3.9</td><td>Your note and Send</td><td>an empty box</td><td class="from">your comment of 18 Nov on this doc</td><td class="src">Nothing passes a note from a program to a worker today. See K11</td><td class="part">Bridge</td><td class="mark">new</td></tr>
+    <tr><td>3.10</td><td>The work</td><td>keel verify-doc checks each plan's …</td><td class="from">the WU plan at 7cca9ff, its one-line purpose; branch wu/E-DOCSPLIT/w2-check_ci-gate-caps</td><td class="src">git: the WU plan at the tip, found by its role <code>wu-plan</code>, <code>git cat-file blob</code>; the tasks as 2.17</td><td class="part">Reader</td><td class="mark">git</td></tr>
+    <tr><td>3.11</td><td>History: plan, build, fixes</td><td>15:34 … 20:39</td><td class="from">commits 3c27d33, 4a2cd48, e6ef395, 09715ac, 6799bc8, a1891be, 85db9e1, 8c706c9, 4af254d, 00d81f9, 72fb91d, ad0c814, 9c3b240, 27ecd53, 7cca9ff</td><td class="src">git: <code>git log --first-parent &lt;base&gt;..&lt;tip&gt;</code>, each commit's time, and its subject's type: plan, build, fix, result</td><td class="part">Reader</td><td class="mark">git</td></tr>
+    <tr><td>3.12</td><td>History: review rounds</td><td>4 lines</td><td class="from">notes cr@a1891be, cr@4af254d, cr@ad0c814, cr@7cca9ff: their timestamps and verdicts</td><td class="src">keel's review notes, <code>git log --notes=cr --format=%N</code> over the range</td><td class="part">Reader</td><td class="mark">keel</td></tr>
+    <tr><td>3.13</td><td>History: task waits, task merged</td><td>19:31 · 19:41</td><td class="from">666544b at 19:31; merge c028ddb at 19:41</td><td class="src">git: the task branch's tip time (<code>git log -1</code>) and its merge, <code>git rev-list --first-parent --merges</code></td><td class="part">Reader</td><td class="mark">git</td></tr>
+    <tr><td>3.14</td><td>History: plan approved</td><td>by 16:58</td><td class="from">sample: your go was a message to the router</td><td class="src">Nothing records it, as 2.2. See K4</td><td class="part">Reader</td><td class="mark">new</td></tr>
+    <tr><td>3.15</td><td>History: your notes</td><td>20:28, one note</td><td class="from">sample</td><td class="src">Your notes as the app sent them, read back as text. See K11</td><td class="part">Reader</td><td class="mark">new</td></tr>
+    <tr><td>3.16</td><td>Docs, and each one's link</td><td>5 docs, 4 links</td><td class="from">note doc@7cca9ff; titles from each page at 7cca9ff</td><td class="src">keel's doc note, <code>git log --notes=doc</code>: each changed doc; its title by <code>git cat-file blob</code>. A link opens W4's copy of the committed page; a data file is never opened (W4)</td><td class="part">Reader</td><td class="mark">keel</td></tr>
+    <tr><td>3.17</td><td>Review rounds, folded</td><td>4 rows</td><td class="from">notes cr@a1891be, cr@4af254d, cr@ad0c814, cr@7cca9ff</td><td class="src">keel's review notes, <code>git log --notes=cr --format=%N</code> over the range, as 3.12: round, scope, verdict, counts</td><td class="part">Reader</td><td class="mark">keel</td></tr>
+    <tr><td>3.18</td><td>Signed</td><td>not signed</td><td class="from">note mr@7cca9ff, written 20:51:46, after the moment drawn</td><td class="src">keel's sign-off note, <code>git log --notes=mr</code></td><td class="part">Reader</td><td class="mark">keel</td></tr>
+    <tr><td>3.19</td><td>Merged</td><td>not merged (Merge… off)</td><td class="from">origin/epic/E-DOCSPLIT was d1ec96a at 20:45; the merge 959cf50 came at 20:52</td><td class="src">git: <code>git merge-base --is-ancestor &lt;tip&gt; &lt;epic&gt;</code></td><td class="part">Reader</td><td class="mark">git</td></tr>
   </tbody>
 </table>
 </details>
@@ -267,7 +347,6 @@ flowchart LR
     <p class="dim">epic/E-GHFLOW3 · no plan, nothing on it beyond main · last closed: E-GHFLOW2, merged into main on 17 Nov</p>
   </div>
 </div>
-<p class="note" data-c="s4-request">Window request: one epic, once per open epic. Picking a work unit opens screen 3.</p>
 <details class="fields" data-c="fields-4">
 <summary>Where each field comes from · screen 4</summary>
 <table class="fields">
@@ -311,7 +390,6 @@ e-docsplit-w2-task2: STUCK (quiet 18m) · quiet 18m · wu/E-DOCSPLIT/w2-check_ci
 e-localtool-w3-plan: DONE · quiet 4m · wu/E-LOCALTOOL/w3-screens · 6834699 docs(E-LOCALTOOL.W3 plan): draft screens … · dirty 0</i></pre>
   </div>
 </div>
-<p class="note" data-c="s5-request">Window request: the fleet. Each worker's text is shown as text. The app never consumes an inbox report; it counts them.</p>
 <details class="fields" data-c="fields-5">
 <summary>Where each field comes from · screen 5</summary>
 <table class="fields">
@@ -350,7 +428,6 @@ e-localtool-w3-plan: DONE · quiet 4m · wu/E-LOCALTOOL/w3-screens · 6834699 do
     <p><b>Project: Keel ▾</b> · Keel <span class="warn">3</span> · <i class="smp">Another project 0</i> · All projects</p>
   </div>
 </div>
-<p class="note" data-c="s6-request">Window request: the projects. Screen 2 can show all projects at once, each row then naming its project.</p>
 <details class="fields" data-c="fields-6">
 <summary>Where each field comes from · screen 6</summary>
 <table class="fields">
@@ -370,9 +447,10 @@ e-localtool-w3-plan: DONE · quiet 4m · wu/E-LOCALTOOL/w3-screens · 6834699 do
   <thead><tr><th>When</th><th>Before W3</th><th>Now</th></tr></thead>
   <tbody>
     <tr><td>You ask "what would the app look like?"</td><td>Words in W1 and W2</td><td>Six screens above, with a real evening in them</td></tr>
-    <tr><td>You ask "where does this number come from?"</td><td>Not said</td><td>Folded under each screen, one row per field</td></tr>
-    <tr><td>You ask "what can the app not see today?"</td><td>Not known</td><td>6 fields with no source today, listed below with who takes each</td></tr>
-    <tr><td>You must decide</td><td colspan="2">Comment on any screen or field, or approve the WU's pull request. Nothing here is yours alone</td></tr>
+    <tr><td>Something needs you</td><td>The router's Telegram message</td><td>The same router's words, as a Mac alert that opens the work unit</td></tr>
+    <tr><td>You open a work unit</td><td>GitHub's pull request</td><td>What you can do first, then the work, its history and its docs</td></tr>
+    <tr><td>You want to tell a worker something</td><td>A message to the router</td><td>A note on the work unit; the router passes it on, and it stays in the history</td></tr>
+    <tr><td>You must decide</td><td colspan="2">Open points 2 to 4 below went on at a default. Comment to overrule, or approve the WU's pull request</td></tr>
   </tbody>
 </table>
 
@@ -380,45 +458,51 @@ e-localtool-w3-plan: DONE · quiet 4m · wu/E-LOCALTOOL/w3-screens · 6834699 do
 <table data-c="needs">
   <thead><tr><th>Need</th><th>Rank</th><th>Shown on</th><th>Fields</th></tr></thead>
   <tbody>
-    <tr><td>n1 An alert at your desk</td><td>must</td><td>Screen 1</td><td>1.1 to 1.9</td></tr>
-    <tr><td>n2 One list of what waits on you</td><td>must</td><td>Screen 2</td><td>2.1 to 2.16</td></tr>
-    <tr><td>n3 The gate, the sign-off and the merge on your Mac</td><td>must</td><td>Screen 3, and screen 2's sign-off row</td><td>3.4, 3.5, 3.10, 3.11, 3.12, 2.1, 2.16</td></tr>
+    <tr><td>n1 An alert at your desk</td><td>must</td><td>Screen 1</td><td>1.1 to 1.8</td></tr>
+    <tr><td>n2 One list of what waits on you</td><td>must</td><td>Screen 2</td><td>2.1 to 2.17</td></tr>
+    <tr><td>n3 The gate, the sign-off and the merge on your Mac</td><td>must</td><td>Screen 3, and screen 2's sign-off row</td><td>3.4 to 3.8, 3.18, 3.19, 2.1, 2.16</td></tr>
     <tr><td>n4 The fleet</td><td>should</td><td>Screen 5</td><td>5.1 to 5.12</td></tr>
-    <tr><td>n5 The epics</td><td>should</td><td>Screens 4 and 3</td><td>4.1 to 4.9, 3.6, 3.7</td></tr>
+    <tr><td>n5 The epics</td><td>should</td><td>Screens 4 and 3</td><td>4.1 to 4.9, 3.10 to 3.17</td></tr>
+    <tr><td>n6 Read a code diff</td><td>should</td><td>Screen 3's Code changes, and the Open of a rule-file commit or a task (W4's diff page)</td><td>3.8, 2.15</td></tr>
     <tr><td>n7 Many projects</td><td>should</td><td>Screen 6, and the switch on every screen</td><td>6.1 to 6.5, 1.1</td></tr>
-    <tr><td>n6 Read a code diff</td><td>should</td><td>Not drawn: W4. Screen 3 holds its slot</td><td>3.12</td></tr>
-    <tr><td>n8 Message the router</td><td>later</td><td>Not drawn: the later epic E-LOCALTOOL.W5 names</td><td></td></tr>
+    <tr><td>n8 Message the router</td><td>later</td><td>A note on one work unit, on screen 3 (your comment). A free message to the router: not drawn, E-LOCALTOOL.W5 places it</td><td>3.9, 3.15</td></tr>
     <tr><td>n9 Alerts when away</td><td>later</td><td>Not drawn: Telegram stays the router's; E-LOCALTOOL.W5 places it</td><td></td></tr>
     <tr><td>n10 Releases and the off-Mac copy</td><td>later</td><td>Not drawn: E-LOCALTOOL.W5. Screen 2 holds a "W5 decides" row</td><td>2.7</td></tr>
   </tbody>
 </table>
 
 <h2 id="new-fields">What the app cannot read today</h2>
-<p data-c="new-in-short"><b>In short:</b> 14 fields are marked new. 8 are the app's own state or fixed words, new by design. The other 6 need something from keel or a host: five gaps, K4 to K8, after W2's K1 to K3.</p>
+<p data-c="new-in-short"><b>In short:</b> 20 fields are marked new. 8 are the app's own state or fixed words, new by design. The other 12 need something from keel, the router or a host: seven gaps, K4 to K8, K10 and K11. K1 to K3 are W2's; K9 is W4's.</p>
 <table data-c="new-fields">
   <thead><tr><th>Field</th><th>Why it is new</th><th>What would close it</th></tr></thead>
   <tbody>
-    <tr><td>1.1, 6.1 project list · 1.8 alert settings · 1.6, 1.7 alerts shown · 2.13 sent marks</td><td>The app's own state, in its folder or memory (W2 Q9, W4 at 6fbfe5b)</td><td>Nothing: by design</td></tr>
-    <tr><td>1.9 Telegram line · 2.12 yours or not</td><td>Fixed words and a fixed rule per kind</td><td>Nothing: by design</td></tr>
-    <tr><td>2.2, 4.6 a plan to read</td><td>No record says a plan waits for your yes. Guessing it from git is judging</td><td><b>K4</b> keel names a work unit's stage (plan, build, review, sign-off, merged) in one read</td></tr>
-    <tr><td>2.3 a rule-file commit</td><td>Only the commit hook decides which paths are rule files, at commit time</td><td><b>K5</b> keel names the rule files a range changes, as a read</td></tr>
+    <tr><td>1.1, 6.1 project list · 1.7 alert settings · 1.5, 1.6 alerts shown · 2.13 sent marks</td><td>The app's own state, in its folder or memory (W2 Q9, W4)</td><td>Nothing: by design</td></tr>
+    <tr><td>1.8 Telegram line · 2.12 the groups</td><td>Fixed words and a fixed rule per kind</td><td>Nothing: by design</td></tr>
+    <tr><td>2.2, 4.6 a plan to read · 3.14 plan approved</td><td>No record says a plan waits for your yes, or that you gave it. Guessing from git is judging</td><td><b>K4</b> keel names a work unit's stage (plan, build, review, sign-off, merged) in one read, with when each began</td></tr>
+    <tr><td>2.3 a rule-file commit</td><td>Only the commit hook decides which paths are rule files, at commit time</td><td><b>K5</b> keel names the rule files among a folder's staged files, as a read</td></tr>
     <tr><td>2.6 a merge conflict</td><td>Finding one writes objects into git</td><td><b>K6</b> a conflict check that writes nothing, or the worker reports it</td></tr>
     <tr><td>4.8 a paused epic</td><td>Only a plan's words say it</td><td><b>K7</b> a paused mark keel can read, or W5 closes E-GHSETUP</td></tr>
     <tr><td>5.10 a worker's last report</td><td>On Claude Code a report is a message no other program reads</td><td><b>K8</b> the host shows it, or a worker also writes it to a file the app reads as text</td></tr>
+    <tr><td>1.2, 1.3, 1.4 the router's alert</td><td>The router's message to you is emptied once Telegram has it, and names no work unit in a fixed place</td><td><b>K10</b> the router keeps each message to you as a file the app reads as text: a headline, lines, and an optional work-unit line. A change to <code class="path">scripts/notify-owner.py</code> and the router's skill, not keel</td></tr>
+    <tr><td>3.9 your note · 3.15 notes in the history</td><td>No program can pass you a note to a worker, and none keeps it</td><td><b>K11</b> the app posts your note to the router's inbox as a NOTE naming the work unit (<code class="path">scripts/router-inbox.sh</code> post, l.135); the router passes it to the worker; the inbox keeps the file, which the app reads back as text. The router's skill learns the pass-on. A new write for the app, on your Send</td></tr>
   </tbody>
 </table>
 
 <p class="note" data-c="reads-added">Two reads the screens use that W2's list of commands does not name. Both write nothing. <code>git log --notes=&lt;kind&gt; --format=%N -1 &lt;tip&gt;</code> reads a note, allowed by your ruling of 2026-11-18 in place of <code>git notes</code>. <code>git diff --name-only</code> counts a work unit's code files (3.3); W2 Q4 already names the flags any diff runs with.</p>
 
-<h2 id="w4-shift">What may shift with W4</h2>
-<p data-c="w4-in-short">The edge follows W4's plan at 6fbfe5b, revised on your comments and not yet approved. If W4's result moves, these move with it:</p>
-<ul data-c="w4-shift-list">
-  <li>The second slot is "Run", not "Copy". It runs today's command after you confirm. W2's window request "copy an item's command" becomes "run an item's command".</li>
-  <li>The "sent" group, for plan approvals and answers, is W4's. Its time and how an item leaves may change.</li>
-  <li>A rule-file commit's message, which you type, would add a field to that row. W4 draws it.</li>
-  <li>Failed gates and conflicts sit under "not yours", with no alert, following W4's open point 3.</li>
-  <li>The alert's words are written to be reused by W4. W4 may rename a kind.</li>
-</ul>
+<h2 id="w4">W4's differences, taken</h2>
+<p data-c="w4-in-short">W4's result (f4e7aa2) differs from W3's first draw in five places. All five are taken, one in part: your comment on the alert changes its words.</p>
+<table data-c="w4-taken">
+  <thead><tr><th>#</th><th>W4 says</th><th>On the screens now</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>The merge is the second step of "result to sign"</td><td>Screen 2's row and screen 3: Sign off…, then Merge…. No merge kind, no second alert</td></tr>
+    <tr><td>2</td><td>A rule-file commit is staged files; a task is its own row, "W5 decides"</td><td>Screen 2: the rule-file row shows staged files and Commit…; ci-gate-caps moves to a task row under "W5 decides"</td></tr>
+    <tr><td>3</td><td>No run button on a failed gate, a conflict, main not pushed or a task; plans and questions get "Mark sent"</td><td>Screen 2, drawn so</td></tr>
+    <tr><td>4</td><td>The alert's words unchanged; no button on the alert</td><td><b>In part.</b> No button: taken. The words are now the router's, by your comment</td></tr>
+    <tr><td>5</td><td>"Code changes" on screen 3; a rule-file commit's and a task's Open show the diff page</td><td>Screen 3's first action; screen 2's "Open the change"</td></tr>
+  </tbody>
+</table>
+<p class="note" data-c="w4-effects">Two of your comments reach W4. The alert's words come from the router, so W4's alert mockup (step 1) shows the router's words, not W3's kinds. The note on screen 3 is a new write the app makes on your Send, beside W4's three commands (K11).</p>
 
 <h2 id="open-points">Open points</h2>
 <p>Work went on at these answers. Comment to overrule.</p>
@@ -426,37 +510,54 @@ e-localtool-w3-plan: DONE · quiet 4m · wu/E-LOCALTOOL/w3-screens · 6834699 do
   <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
   <tbody>
     <tr><td>1</td><td>Which moment fills the screens?</td><td><b>20:45 on 18 Nov</b></td><td>The busiest real moment: a sign-off and two plans waited at once. At 20:52 the sign-off was done</td></tr>
-    <tr><td>2</td><td>Does a failed gate or a conflict alert you?</td><td><b>No.</b> Shown, no alert</td><td>A worker fixes it. W4's open point 3</td></tr>
-    <tr><td>3</td><td>Where is the sent group drawn?</td><td><b>A second view, at 21:16</b></td><td>At 20:45 nothing was sent. Your "just do it" on the W3 plan came before 21:17</td></tr>
-    <tr><td>4</td><td>Is one work unit its own window request?</td><td><b>Yes, new</b></td><td>Its checks and review rounds are too many to fetch for every unit of an epic</td></tr>
-    <tr><td>5</td><td>Which epic branch does the app read while GitHub merges?</td><td><b>The fetched one,</b> origin/epic/…</td><td>The local epic/E-LOCALTOOL was still 92611ac; the merges were on origin. After W5, merges are local</td></tr>
+    <tr><td>2</td><td>Does the app ever alert on its own, without the router?</td><td><b>No.</b> The list still shows every item</td><td>Two senders would alert twice for one thing. You asked for the router to fill the alert</td></tr>
+    <tr><td>3</td><td>How does your note reach the worker?</td><td><b>Through the router's inbox</b>, as a note naming the work unit. The router passes it on</td><td>The inbox is the one channel a program can write to today. The router knows which worker holds the unit</td></tr>
+    <tr><td>4</td><td>Is your note kept beyond this Mac?</td><td><b>No.</b> It stays in the main checkout's inbox, untracked</td><td>Making it a keel record is a keel change; W5 decides with K4 to K11</td></tr>
+    <tr><td>5</td><td>Is one work unit its own window request?</td><td><b>Yes, new</b></td><td>Its history, rounds and docs are too many to fetch for every unit of an epic</td></tr>
+    <tr><td>6</td><td>Which epic branch does the app read while GitHub merges?</td><td><b>The fetched one,</b> origin/epic/…</td><td>The local epic/E-LOCALTOOL was still 92611ac; the merges were on origin. After W5, merges are local</td></tr>
+    <tr><td>7</td><td>Does the history list every commit?</td><td><b>No.</b> One line per step; a round's fixes share a line</td><td>Code changes holds every line of the diff</td></tr>
   </tbody>
 </table>
 
 <h2 id="details">Details</h2>
 
+<h3 id="window-requests">Window requests</h3>
+<ul data-c="window-requests">
+  <li>Screen 1: none. The app's main part sends the alert.</li>
+  <li>Screen 2: the waiting list. The sent group is W4's: your mark, in memory only.</li>
+  <li>Screen 3: one work unit, new. Send a note, new (K11).</li>
+  <li>Screen 4: one epic, once per open epic.</li>
+  <li>Screen 5: the fleet. A worker's text is shown as text. The app never consumes an inbox report; it counts them.</li>
+  <li>Screen 6: the projects. Screen 2 can show all projects at once, each row then naming its project.</li>
+</ul>
+
 <h3 id="deviations-h">Deviations from the plan</h3>
 <ul data-item="deviations" data-c="deviations">
-  <li><b>The edge follows W4 at 6fbfe5b,</b> not at e9cdafd: the second slot is "Run", and a "sent" group is drawn. The router passed this on during the work.</li>
-  <li><b>Four gate rows are sample.</b> The worker's run of <code>keel ci gate wu 7cca9ff --target d1ec96a</code> was refused by its sandbox. The rows the notes hold (1, 2, 3, 8) are real.</li>
-  <li><b>Screen 3 adds a third slot,</b> "Code changes", for need n6. It is W4's, empty like the other two.</li>
-  <li><b>The sign-off note of 20:52 is not on this Mac.</b> refs/notes/mr was last fetched at 17:03, so the app would show E-DOCSPLIT.W2 merged but unsigned until the notes are fetched. This is today's GitHub flow; after W5 the sign-off is local.</li>
+  <li><b>Revised on your 8 comments.</b> The alert is a layout the router fills; the plan had the app word it from fixed kinds. Screen 3 adds actions, a history, linked docs and a note box, and folds the review rounds.</li>
+  <li><b>Your note draws part of need n8,</b> which the plan left for later. It is one note on one work unit, not a free message.</li>
+  <li><b>The edge follows W4's result at f4e7aa2,</b> not its plan. W4's button names fill the slots; the plan had W3 draw them empty.</li>
+  <li><b>Screen 3 holds "Code changes",</b> for need n6. It is W4's.</li>
+  <li><b>The gate is now read, not sample.</b> <code>keel ci gate</code> ran in this revision's sandbox; the first draw's run was refused.</li>
   <li>Otherwise none.</li>
 </ul>
 
 <h3 id="evidence-h">Evidence</h3>
 <div data-item="evidence" data-c="evidence">
-  <p>Tests: none added; integration waived, docs only. Docs touched: this file. Commits: this result, on <code>wu/E-LOCALTOOL/w3-screens</code> after the plan (6834699).</p>
-  <p>Where the sample day was read, all without writing: branches and notes with <code>git for-each-ref</code> and <code>git log --notes=&lt;kind&gt; --format=%N -1 &lt;tip&gt;</code>; the run records under <code>.router/runs/</code> in the main checkout; the inbox folder's listing. No session was asked: the worker never runs <code>claude</code>.</p>
+  <p>Tests: none added; integration waived, docs only. Docs touched: this file. Commits: the first draw 06c74f3, then this revision, on <code>wu/E-LOCALTOOL/w3-screens</code> after the plan (6834699).</p>
+  <p>Where the sample day was read, all without writing: branches and notes with <code>git for-each-ref</code> and <code>git log --notes=&lt;kind&gt; --format=%N -1 &lt;tip&gt;</code>; the commits of wu/E-DOCSPLIT/w2-check with <code>git log --first-parent d1ec96a..7cca9ff</code>; the run records under <code>.router/runs/</code> in the main checkout; the inbox folder's listing; W4's result with <code>git show f4e7aa2:&lt;path&gt;</code>. No session was asked: the worker never runs <code>claude</code>.</p>
+  <p>The gate on the drawn work unit, run for this revision (the sign-off note it counts was written at 20:51, after the moment drawn):</p>
+<pre id="gate-raw">$ keel ci gate wu 7cca9ff --target d1ec96a
+verify-dod wu green on 7cca9ff70c (checks: notes, manifest, review, review-base, diff-binding, doc-note, manual-review)
+ci gate green on 7cca9ff70c - every check passes</pre>
   <p>The plan's ten checks, run by a script in a scratch folder. Raw output:</p>
-<pre id="checks-raw">$ python3 check.py   # in a scratch folder, run from the worktree root, before the commit
-PASS 1·needs shown: n1 n2 n3 n4 n5 n7 -&gt; n1=Screen 1 [1.1 to 1.9]; n2=Screen 2 [2.1 to 2.16]; n3=Screen 3, and screen 2's sign-off row [3.4, 3.5, 3.10, 3.11, 3.12, 2.1, 2.16]; n4=Screen 5 [5.1 to 5.12]; n5=Screens 4 and 3 [4.1 to 4.9, 3.6, 3.7]; n7=Screen 6, and the switch on every screen [6.1 to 6.5, 1.1] | not drawn, with taker: n6=Not drawn: W4. Screen 3 holds its slot; n8=Not drawn: the later epic E-LOCALTOOL.W5 names; n9=Not drawn: Telegram stays the router's; E-LOCALTOOL.W5 places it; n10=Not drawn: E-LOCALTOOL.W5. Screen 2 holds a "W5 decides" row
-PASS 2·sourced 63 fields on 6 screens ['1', '2', '3', '4', '5', '6']; marks {'new': 14, 'git': 25, 'keel': 12, 'session': 9, 'W4': 3}; parts {'Project list': 5, 'Reader': 50, 'Watcher': 2, 'Alerter': 2, 'Window': 1, 'Bridge': 3}
-PASS 3·judges-nothing 46 read fields, each by a read command {'git for-each-ref': 10, 'git log --notes': 12, 'git log -1': 4, 'keel ci gate': 4, 'claude agents --json': 6, 'git cat-file': 5, 'git diff --name-only': 1, 'git merge-base': 3, 'git rev-list': 2, 'git worktree list': 2, 'router-inbox.sh': 1, 'run record': 4, 'facts': 2, 'git branch --show-current': 1}; 14 new fields ['1.1', '1.6', '1.7', '1.8', '1.9', '2.2', '2.3', '2.6', '2.12', '2.13', '4.6', '4.8', '5.10', '6.1'], each in the new-fields table; keel gains ['K4', 'K5', 'K6', 'K7', 'K8']
-PASS 4·kinds screen 2 rows 10: k-signoff=real, k-plan=real, k-rulefile=sample, k-question=sample, k-gate=sample, k-conflict=sample, k-push=sample, k-sent=real
-PASS 5·traced 63 fields: 18 commits named and present ['02ba88a', '3052507', '4af254d', '666544b', '6834699', '6cf3127', '6fbfe5b', '7cca9ff', '959cf50', '9b82aca', 'a1891be', 'ad0c814', 'c028ddb', 'cf4c752', 'd1ec96a', 'd839492', 'e00f1ec', 'e9cdafd']; 6 run records present; 17 fields marked sample; 55 sample values drawn (dotted) in the screens
-PASS 6·w4-edge 10 waiting rows, each Open · W4 and Run · W4, empty; screen 3: ['Open · W4', 'Run · W4', 'Code changes · W4']; no link, no command text in any screen
-PASS 7·sources 6 paths, git cat-file -e cf4c752:&lt;path&gt; ok for 6: ['.keel/config.toml', 'docs/work/2026-11-17-e-localtool-plan.html', 'scripts/notify-owner.py', 'scripts/router-inbox.sh', 'scripts/router-worker.sh', 'src/gate.rs']
+<pre id="checks-raw">$ python3 check.py   # in a scratch folder, run from the worktree root, on this doc marked ready, before the commit
+PASS 1·needs shown: n1=Screen 1 [1.1 to 1.8]; n2=Screen 2 [2.1 to 2.17]; n3=Screen 3, and screen 2's sign-off row [3.4 to 3.8, 3.18, 3.19, 2.1, 2.16]; n4=Screen 5 [5.1 to 5.12]; n5=Screens 4 and 3 [4.1 to 4.9, 3.10 to 3.17]; n7=Screen 6, and the switch on every screen [6.1 to 6.5, 1.1]; n6=Screen 3's Code changes, and the Open of a rule-file commit or a task (W4's diff page) [3.8, 2.15] | later, each placed: n8=A note on one work unit, on screen 3 (your comment). A free message to the router: not drawn, E-LOCALTOOL.W5 places it [3.9, 3.15]; n9=Not drawn: Telegram stays the router's; E-LOCALTOOL.W5 places it []; n10=Not drawn: E-LOCALTOOL.W5. Screen 2 holds a "W5 decides" row [2.7]
+PASS 2·sourced 70 fields on 6 screens ['1', '2', '3', '4', '5', '6']; marks {'new': 20, 'keel': 12, 'session': 9, 'git': 26, 'W4': 3}; parts {'Project list': 5, 'Alerter': 5, 'Window': 1, 'Reader': 54, 'Bridge': 4, 'Watcher': 1}; incomplete []
+PASS 3·judges-nothing 47 read fields, each by a read command {'keel ci gate': 4, 'claude agents --json': 6, 'git for-each-ref': 9, 'git cat-file': 7, 'git log --notes': 10, 'git log -1': 4, 'git merge-base': 3, 'as 2.8': 1, 'git diff --name-only': 1, 'As 2.1': 2, 'git log --first-parent': 1, 'git rev-list': 3, 'git worktree list': 2, 'router-inbox.sh': 1, 'run record': 4, 'facts': 2, 'git branch --show-current': 1}; without one []; 20 new fields ['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '2.2', '2.3', '2.6', '2.12', '2.13', '3.9', '3.14', '3.15', '4.6', '4.8', '5.10', '6.1'], missing from the new-fields table []; gaps ['K4', 'K5', 'K6', 'K7', 'K8', 'K10', 'K11']
+PASS 4·kinds screen 2 rows 10: k-signoff=real, k-plan=real, k-rulefile=sample, k-question=sample, k-gate=sample, k-conflict=sample, k-push=sample, k-task=sample, k-sent=real
+PASS 5·traced 70 fields: 31 commits named, missing []; 6 run records, missing []; 20 fields marked sample; 59 sample values drawn (dotted)
+PASS 6·w4-edge 10 rows, buttons as W4's item table: wrong []; screen 3: ['Open the result', 'Code changes', 'Sign off…', 'Merge…', 'Send']; alert has a button: False; links in screens 0; command text in screens []
+PASS 7·sources 6 paths, git cat-file -e cf4c752:&lt;path&gt; ok for 6: ['.keel/config.toml', 'docs/work/2026-11-17-e-localtool-plan.html', 'scripts/notify-owner.py', 'scripts/router-inbox.sh', 'scripts/router-worker.sh', 'src/gate.rs']; missing []; line refs past the end []
 PASS 8·static 2 script tags: ['mermaid', 'htmldoc']; no on* handlers: True
 PASS 9·verify-doc keel verify-doc docs/work/2026-11-18-e-localtool-w3-screens-result.html: exit=0 
 PASS 10·scope git diff --name-only cf4c752 + untracked: ['docs/work/2026-11-18-e-localtool-w3-screens-plan.html', 'docs/work/2026-11-18-e-localtool-w3-screens-result.html']
@@ -471,8 +572,8 @@ exit=0</pre>
 
 <h3 id="follow-ups-h">Follow-ups</h3>
 <ul data-item="follow-ups" data-c="follow-ups">
-  <li>K4 to K8, and "one work unit" as a new window request, in the build order: E-LOCALTOOL.W5.</li>
-  <li>Fill the Open, Run and Code changes slots on these screens: E-LOCALTOOL.W4, in its result or its comment round.</li>
+  <li>K4 to K8, K10, K11, and "one work unit" as a new window request, in the build order: E-LOCALTOOL.W5.</li>
+  <li>W4's alert mockup shows the router's words, and the note joins the app's writes: E-LOCALTOOL.W4, in its comment round (pull request #18), else the epic's walk-through at its close.</li>
   <li>Replay a sign-off on these screens, the epic's walk-through: the E-LOCALTOOL close.</li>
 </ul>
 
