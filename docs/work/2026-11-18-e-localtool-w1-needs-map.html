@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afd477f9f34851f0dfb27a4">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-LOCALTOOL.W1 map: your needs and the jobs under each</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-LOCALTOOL.W1 · Your needs, as a map</h1>
+      <p>Each need the app must meet, and under it the jobs it rests on. The same facts as the W1 result, laid out as a picture. Nothing new.</p>
+      <div class="meta">T3 · map of the WU result · 2026-11-18 · epic <code>E-LOCALTOOL</code> · WU <code>E-LOCALTOOL.W1</code> · source: <a href="2026-11-18-e-localtool-w1-needs-result.html">the W1 result</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="how-to-read">How to read it</h2>
+<ul data-c="how-to-read">
+  <li>The root is your needs. Each branch is one need, grouped by rank: must, should, later.</li>
+  <li>Under each need sit the jobs it rests on, as the result's needs table lists them. Each job shows its number and what the app does with it (the legend is below the maps).</li>
+  <li>A job can sit under two needs. Jobs no need rests on get a branch of their own, so none is lost.</li>
+  <li>The first map shows only the needs. The next four open each rank.</li>
+</ul>
+
+<h2 id="overview">All your needs</h2>
+<div class="diagram" data-c="map-overview">
+<pre class="mermaid">
+mindmap
+  root((Your needs))
+    Must
+      n1 Desk alert
+      n2 One waiting list
+      n3 Gate, sign-off and merge on your Mac
+    Should
+      n4 The fleet
+      n5 The epics
+      n6 Read a diff before you sign
+      n7 Many projects in one list
+    Later
+      n8 Message the router from the app
+      n9 Alerts when you are away
+      n10 Releases and the off-Mac copy
+    No need rests on them
+      15 jobs, all left alone
+</pre>
+<div class="caption">Map 1 — the 10 needs by rank: 3 must, 4 should, 3 later.</div>
+</div>
+
+<h2 id="must">Must: the first build is useless without these</h2>
+<div class="diagram" data-c="map-must">
+<pre class="mermaid">
+mindmap
+  root((Must))
+    n1 Desk alert
+      j18 Tells you at the desk · taken over
+      j19 Lists what waits on you · taken over
+    n2 One waiting list
+      j19 Lists what waits on you · taken over
+      j9 Your sign-off · a button
+      j10 Your commit of a rule file · a button
+      j12 Merges, by your git merge · a button
+      j22 Shows a doc in your browser · a button
+    n3 Gate, sign-off and merge on your Mac
+      On your Mac
+        j1 Judges before a merge · left alone
+        j9 Your sign-off · a button
+        j12 Merges, by your git merge · a button
+      GitHub's flow
+        g1 Gate on each pull request · dropped
+        g2 Tests each push of main · dropped
+        g3 Approval into sign-off · dropped
+        g4 Merges an approved pull request · dropped
+        g5 Opens a pull request · dropped
+        g6 Posts a file on a pull request · dropped
+        g7 Hears your reviews and commands · dropped
+        g8 Waits for checks and the merge · dropped
+        g9 Flags a conflict · dropped
+        g10 Lands a task's pull request · dropped
+        g11 Tracks work in an issue · dropped
+        g12 Brings a GitHub merge back · dropped
+        g13 Publishes docs as a website · dropped
+        g14 Checks GitHub's settings · dropped
+        g15 Makes your approval required · dropped
+</pre>
+<div class="caption">Map 2 — the 3 musts. n3 holds all 15 GitHub jobs: they go, and the Mac covers them.</div>
+</div>
+
+<h2 id="should">Should: in the first build if cheap</h2>
+<div class="diagram" data-c="map-should">
+<pre class="mermaid">
+mindmap
+  root((Should))
+    n4 The fleet
+      j15 Starts a worker · left alone
+      j16 Stops an idle worker · left alone
+      j17 Shows which workers are busy, idle or stuck · taken over
+      r4 Reports the workers every 5 minutes · left alone
+    n5 The epics
+      j1 Judges before a merge · left alone
+      j6 Records test and doc evidence · left alone
+      j7 Reviews the code · left alone
+      j21 Shows each epic and its evidence · taken over
+    n6 Read a diff before you sign
+      j7 Reviews the code · left alone
+      j9 Your sign-off · a button
+    n7 Many projects in one list
+      j14 Sets a project up · left alone
+      the scope column of the jobs table
+</pre>
+<div class="caption">Map 3 — the 4 shoulds.</div>
+</div>
+
+<h2 id="later">Later: after the first build</h2>
+<div class="diagram" data-c="map-later">
+<pre class="mermaid">
+mindmap
+  root((Later))
+    n8 Message the router from the app
+      g7 Hears your reviews and commands · dropped
+      the router
+    n9 Alerts when you are away
+      j20 Tells you on Telegram · left alone
+    n10 Releases and the off-Mac copy
+      j23 Keeps a copy off your Mac · left alone
+      j24 Builds a release · left alone
+</pre>
+<div class="caption">Map 4 — the 3 laters.</div>
+</div>
+
+<h2 id="no-need">Jobs no need rests on</h2>
+<div class="diagram" data-c="map-no-need">
+<pre class="mermaid">
+mindmap
+  root((No need rests on them))
+    Judging and checks
+      j2 Refuses a bad commit · left alone
+      j3 Checks every push · left alone
+      j4 Keeps the git hooks on · left alone
+      j5 Runs lint and tests · left alone
+      j8 Keeps the epic report in git · left alone
+      j11 Keeps your signer list · left alone
+      j13 Checks a doc's form · left alone
+    For the router and the workers
+      r1 Keeps the router to coordinating · left alone
+      r2 Keeps a worker's files in its worktree · left alone
+      r3 Bounds a worker's shell · left alone
+      r5 Carries a worker's report · left alone
+      r6 Wakes the router on your git actions · left alone
+      r7 Checks each doc after a write · left alone
+      r8 Gives a worker its rules · left alone
+      r9 Watches your doc comments · left alone
+</pre>
+<div class="caption">Map 5 — 15 jobs, all left alone. They keep working as today.</div>
+</div>
+<p data-c="no-need-note">Some still help a need indirectly. On your Mac, j3, j5 and j13 cover g1, and r6 covers g8 (both under need n3).</p>
+
+<h2 id="legend">Legend: what the app does with a job</h2>
+<table data-c="legend">
+  <thead><tr><th>Mark</th><th>Meaning</th><th>Jobs</th></tr></thead>
+  <tbody>
+    <tr><td><b>taken over</b></td><td>The app does the job itself: only watching, alerting and listing. The old way keeps working without the app.</td><td>4</td></tr>
+    <tr><td><b>a button</b></td><td>The job stays where it is. The app opens its doc or copies its command.</td><td>4</td></tr>
+    <tr><td><b>left alone</b></td><td>The job stays as it is. The app may show its result.</td><td>25</td></tr>
+    <tr><td><b>dropped</b></td><td>A piece of GitHub's flow that goes away. Something on your Mac covers it.</td><td>15</td></tr>
+  </tbody>
+</table>
+<p data-c="legend-ids">Numbers: <b>n</b> a need, <b>j</b> a job for you, <b>g</b> a GitHub job, <b>r</b> a job for the router and the workers. Each row, with its file and state, is in the result: <a href="2026-11-18-e-localtool-w1-needs-result.html#jobs-owner">your jobs</a>, <a href="2026-11-18-e-localtool-w1-needs-result.html#jobs-router">the router's jobs</a>, <a href="2026-11-18-e-localtool-w1-needs-result.html#needs">the needs</a>.</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    // keep diagram source readable for the diff layer (mermaid replaces it with SVG)
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
