@@ -559,27 +559,98 @@ page_ok() {
   pg_part='[A-Za-z0-9_-][A-Za-z0-9._-]{0,199}'
   printf '%s\n' "$1" | grep -Eqx "main|epic/$pg_part|wu/$pg_part/$pg_part" && printf '%s\n' "$2" | grep -Eqx "docs(/$pg_part)+"
 }
-# doc_rows <merge-base> <tip> <plan role>: sets title (the plan's, made plain) and rows (a markdown
-# row per html doc the range changed, linked at the tip, and to its page on the Pages site of
-# $branch, which scripts/pages-build.sh writes at <site>/<branch>/<path> once the push's build is
-# deployed (E-GHFLOW2.W8))
+# data_keys: a data file on stdin (DEC-69) -> four lines, its top-level artifact, status, id and title,
+# each empty when absent or not a plain value. artifact as text, [a, b] or a block list of "- a"
+# lines; the others as a one-line plain or quoted scalar (a block scalar, an anchor, a flow value is
+# empty). The first of a repeated key wins. Every value is still filtered by its caller.
+data_keys() {
+  LC_ALL=C awk '
+    function scalar(v,  q) {
+      q = substr(v, 1, 1)
+      if (q == "\"" || q == "'\''") return (length(v) >= 2 && substr(v, length(v), 1) == q) ? substr(v, 2, length(v) - 2) : ""
+      if (v ~ /^[>|&*!{[%@`]/) return ""
+      sub(/[ \t]+#.*$/, "", v)
+      return v
+    }
+    /^[^ \t#-][^:]*:([ \t]|$)/ {
+      blk = 0
+      k = $0; sub(/:.*/, "", k)
+      v = $0; sub(/^[^:]*:[ \t]*/, "", v); sub(/[ \t\r]+$/, "", v)
+      if (k in seen) next
+      seen[k] = 1
+      if (k == "artifact") {
+        if (v == "") { blk = 1; next }
+        if (v ~ /^\[.*\]$/) { v = substr(v, 2, length(v) - 2); gsub(/,/, " ", v) }
+        role = scalar(v)
+      } else if (k == "status") status = scalar(v)
+      else if (k == "id") id = scalar(v)
+      else if (k == "title") title = scalar(v)
+      next
+    }
+    blk && /^[ \t]+-[ \t]/ { x = $0; sub(/^[ \t]+-[ \t]*/, "", x); sub(/[ \t\r]+$/, "", x); role = role " " scalar(x); next }
+    /^[^ \t]/ { blk = 0 }
+    END { print role; print status; print id; print title }
+  '
+}
+# doc_rows <merge-base> <tip> <plan role>: sets title and rows. rows: a markdown row per doc the
+# range changed - a page, or the page of a changed data file (<stem>.yaml beside <stem>.html), each
+# once, when the page is at the tip - linked at the tip, and to its page on the Pages site of $branch,
+# which scripts/pages-build.sh writes at <site>/<branch>/<path> once the push's build is deployed
+# (E-GHFLOW2.W8). Role, status and "id · title" come from the data file at the tip (DEC-69,
+# E-DOCSPLIT.W3); a page with none shows a dash for both and its <title>. title: the row text of the
+# plan of $3's kind the range committed last (a WU branch with no WU plan takes an epic plan), all
+# made plain.
 doc_rows() {
-  title= rows=
+  title= rows= dr_seen= dr_plans= dr_epics=
   for f in $(git -C "$ROOT" diff --name-only --diff-filter=AMR "$1" "$2" -- "$docs"); do
-    case "$f" in *.html) ;; *) continue;; esac
+    case "$f" in *.html) ;; *.yaml) f=${f%.yaml}.html;; *) continue;; esac
     expr "x$f" : 'x[A-Za-z0-9_][A-Za-z0-9_./-]*$' > /dev/null || continue
     case "$f" in *..*) continue;; esac
-    top=$(git -C "$ROOT" show "$2:$f" | head -c 8192 | LC_ALL=C tr '\n\r\t' '   ')
-    role=$(printf '%s' "$top" | LC_ALL=C sed -n 's/.*<html[^>]* data-artifact="\([a-z -]*\)".*/\1/p' | cut -c1-40)
-    status=$(printf '%s' "$top" | LC_ALL=C sed -n 's/.*<html[^>]* data-status="\([a-z-]*\)".*/\1/p' | cut -c1-20)
-    t=$(printf '%s' "$top" | LC_ALL=C sed -n 's/.*<title>\([^<]*\)<\/title>.*/\1/p' | plain)
+    case "
+$dr_seen
+" in *"
+$f
+"*) continue;; esac
+    dr_seen="$dr_seen
+$f"
+    git -C "$ROOT" cat-file -e "$2:$f" 2> /dev/null || continue
+    role= status= id= dt=
+    if git -C "$ROOT" cat-file -e "$2:${f%.html}.yaml" 2> /dev/null; then
+      keys=$(git -C "$ROOT" show "$2:${f%.html}.yaml" | head -c 65536 | data_keys)
+      role=$(printf '%s\n' "$keys" | sed -n 1p | LC_ALL=C sed -n 's/^ *\([a-z -]*[a-z]\) *$/\1/p' | tr -s ' ' | cut -c1-40)
+      status=$(printf '%s\n' "$keys" | sed -n 2p | LC_ALL=C sed -n '/^[a-z-]*$/p' | cut -c1-20)
+      id=$(printf '%s\n' "$keys" | sed -n 3p | plain)
+      dt=$(printf '%s\n' "$keys" | sed -n 4p | plain)
+    fi
+    if [ -n "$dt" ]; then
+      t=$dt
+      [ -z "$id" ] || t="$id · $dt"
+    else
+      top=$(git -C "$ROOT" show "$2:$f" | head -c 8192 | LC_ALL=C tr '\n\r\t' '   ')
+      t=$(printf '%s' "$top" | LC_ALL=C sed -n 's/.*<title>\([^<]*\)<\/title>.*/\1/p' | plain)
+    fi
     [ -n "$t" ] || t=${f##*/}
-    case " $role " in *" $3 "*) [ -n "$title" ] || title=$t;; esac
+    case " $role " in
+      *" $3 "*) dr_plans="$dr_plans
+$f	$t";;
+      *" epic-plan "*) dr_epics="$dr_epics
+$f	$t";;
+    esac
     page=—
     page_ok "$branch" "$f" && page="[page]($pages/$branch/$f)"
     rows="$rows| [$t](https://github.com/$repo/blob/$2/$f) | ${role:-—} | ${status:-—} | $page |
 "
   done
+  # the plan the range committed last: commits newest first (plumbing, so no display config adds a
+  # line), the first that touches a plan's page or data file
+  [ -n "$dr_plans" ] || dr_plans=$dr_epics
+  [ -n "$dr_plans" ] || return 0
+  for g in $(git -C "$ROOT" rev-list "$1..$2" | git -C "$ROOT" diff-tree --stdin -r --no-commit-id --name-only -- "$docs"); do
+    case "$g" in *.yaml) g=${g%.yaml}.html;; esac
+    title=$(printf '%s\n' "$dr_plans" | awk -F '	' -v f="$g" '$1 == f { print $2; exit }')
+    [ -z "$title" ] || return 0
+  done
+  title=$(printf '%s\n' "$dr_plans" | sed -n 2p | cut -f2)
 }
 # docs_md: the docs table of doc_rows, or a line saying there is none
 docs_md() {
