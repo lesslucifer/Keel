@@ -644,3 +644,28 @@ fn a_signed_character_reference_is_text() {
         assert!(!ok && t.contains(named), "{body}: {t}");
     }
 }
+
+/// E-DOCSPLIT.W2 review round 1: a text field of another type is red, never green as ready; a data
+/// file with nested anchors (billion laughs) is refused at once, by path and in the no-path run.
+#[test]
+fn a_wrong_typed_field_is_red_and_a_billion_laughs_data_file_is_refused_at_once() {
+    let d = repo();
+    let p = d.path();
+    std::fs::write(p.join("docs/a.html"), page_of(10, None)).unwrap();
+    for (from, to) in [("status: ready", "status: true"), ("id: E-X.W1", "id: 7"), ("epic: E-X", "epic: [E-X]")] {
+        std::fs::write(p.join("docs/a.yaml"), wu_plan_data("a.html", "").replace(from, to)).unwrap();
+        let o = keel(p, &["verify-doc", "docs/a.yaml"]);
+        assert!(o.status.code() == Some(1) && text(&o).contains("is the wrong type"), "{to}: {}", text(&o));
+    }
+    let mut lol = wu_plan_data("a.html", "details:\n  a0: &a0 [lol]\n");
+    for i in 1..=12 {
+        lol.push_str(&format!("  a{i}: &a{i} [{}]\n", vec![format!("*a{}", i - 1); 10].join(", ")));
+    }
+    std::fs::write(p.join("docs/a.yaml"), lol).unwrap();
+    let t = std::time::Instant::now();
+    for args in [&["verify-doc", "docs/a.yaml"][..], &["verify-doc"]] {
+        let o = keel(p, args);
+        assert!(o.status.code() == Some(1) && text(&o).contains("docs/a.yaml: the data file uses a YAML anchor or alias"), "{}", text(&o));
+    }
+    assert!(t.elapsed() < std::time::Duration::from_secs(10), "took {:?}", t.elapsed());
+}

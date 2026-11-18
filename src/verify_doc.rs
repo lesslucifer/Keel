@@ -3,6 +3,7 @@
 //! ponytail: hand-rolled tag scanner, not an HTML parser; fine for htmldoc's
 //! well-formed output, swap in a real parser if docs start using odd markup.
 use std::path::{Path, PathBuf};
+use yaml_rust2::parser::{Event, EventReceiver, Parser};
 use yaml_rust2::{Yaml, YamlLoader};
 
 const EPIC_PLAN: &[&str] =
@@ -292,6 +293,9 @@ enum Data {
 /// data file must serve (its own name, ending `.html`); `page_exists`, whether that file is beside it.
 fn read_data(src: &str, page: &str, page_exists: bool) -> Data {
     let bad = |p: String| if page_exists { Data::Checked { roles: vec![], problems: vec![p] } } else { Data::None };
+    if anchored(src) {
+        return Data::Checked { roles: vec![], problems: vec![ANCHORS.into()] };
+    }
     let docs = match YamlLoader::load_from_str(src) {
         Ok(d) => d,
         Err(e) => return Data::Checked { roles: vec![], problems: vec![format!("not valid YAML: {e}")] },
@@ -344,6 +348,12 @@ fn read_data(src: &str, page: &str, page_exists: bool) -> Data {
             _ => {}
         }
     }
+    let wu_doc = rs.iter().all(|r| r.starts_with("wu-"));
+    for (f, like) in [("status", Some("ready")), ("id", Some(if wu_doc { WU_ID } else { EPIC_ID })), ("epic", Some(EPIC_ID)), ("title", None)] {
+        if let Some(p) = get(f).and_then(|v| wrong_type(f, v, like)) {
+            problems.push(p);
+        }
+    }
     let text = |k: &str| get(k).and_then(Yaml::as_str).map(str::trim).filter(|s| !s.is_empty());
     if let Some(s) = text("status").filter(|s| *s != "ready") {
         problems.push(format!("status \"{s}\" is neither draft nor ready"));
@@ -361,7 +371,7 @@ fn read_data(src: &str, page: &str, page_exists: bool) -> Data {
         }
     }
     let id = text("id");
-    if rs.iter().all(|r| r.starts_with("wu-")) {
+    if wu_doc {
         if let (Some(id), Some(epic)) = (id, text("epic")) {
             if !is_wu_of(id, epic) {
                 problems.push(format!("id \"{id}\" is not a WU of epic \"{epic}\": write {epic}.W<n>"));
@@ -428,6 +438,45 @@ fn role_cap(roles: &[String]) -> Option<usize> {
     roles.iter().filter_map(|r| ROLE_CAPS.iter().find(|(n, _)| n == r).map(|(_, c)| *c)).max()
 }
 
+/// A data file's anchors and aliases are refused, not expanded: the loader copies an alias's value
+/// at each use with no bound, so a few hundred bytes of nested ones (billion laughs) would hang.
+const ANCHORS: &str = "the data file uses a YAML anchor or alias (&name, *name): write each value out";
+
+/// Does the YAML text hold an anchor or an alias? Read from the parser's events, which never expand
+/// an alias; text that does not parse holds none here and is named by the loader.
+fn anchored(src: &str) -> bool {
+    struct Seen(bool);
+    impl EventReceiver for Seen {
+        fn on_event(&mut self, ev: Event) {
+            self.0 |= match ev {
+                Event::Alias(_) => true,
+                Event::Scalar(_, _, a, _) | Event::SequenceStart(a, _) | Event::MappingStart(a, _) => a > 0,
+                _ => false,
+            };
+        }
+    }
+    let mut seen = Seen(false);
+    let _ = Parser::new_from_str(src).load(&mut seen, true);
+    seen.0
+}
+
+const WU_ID: &str = "E-<CODE>.W<n>";
+const EPIC_ID: &str = "E-<CODE>";
+
+/// A field that must be text but holds another non-empty type (`true`, `7`, a list): its problem.
+fn wrong_type(field: &str, v: &Yaml, like: Option<&str>) -> Option<String> {
+    if v.as_str().is_some() || empty(v) {
+        return None;
+    }
+    let what = match v {
+        Yaml::Array(_) => "a list".to_string(),
+        Yaml::Hash(_) => "a mapping".to_string(),
+        other => shown(other),
+    };
+    let like = like.map(|l| format!(", such as \"{l}\"")).unwrap_or_default();
+    Some(format!("field \"{field}\" is the wrong type ({what}): write it as text{like}"))
+}
+
 /// Empty: null, blank text, or a list or mapping holding nothing but empty values.
 fn empty(y: &Yaml) -> bool {
     match y {
@@ -477,6 +526,9 @@ fn wu_summaries(w: &Yaml, epic: Option<&str>) -> Vec<String> {
         };
         let wu = h.get(&key("wu")).and_then(Yaml::as_str).map(str::trim).filter(|s| !s.is_empty());
         let at = format!("wu-summaries entry {n} ({})", wu.unwrap_or("no wu"));
+        if let Some(p) = h.get(&key("wu")).and_then(|v| wrong_type("wu", v, Some(WU_ID))) {
+            out.push(format!("{at}: {p}"));
+        }
         for k in h.keys() {
             let name = k.as_str().map_or_else(|| format!("{k:?}"), String::from);
             if !WU_SUB.contains(&name.as_str()) {
@@ -1443,6 +1495,38 @@ mod tests {
         assert_eq!(p, ["artifact epic-plan and wu-result cannot share one doc: a one-part epic pairs epic-plan with wu-plan, or epic-result with wu-result"]);
         let p = problems(&EPIC_PLAN.replace("artifact: epic-plan", "artifact: epic-plna"));
         assert_eq!(p, ["unknown artifact \"epic-plna\" (expected one of: epic-plan, wu-plan, wu-result, epic-result)"]);
+    }
+
+    #[test]
+    fn a_text_field_of_another_type_is_named_wrong_type_never_green() {
+        let p = problems(&WU_PLAN.replace("status: ready", "status: true"));
+        assert_eq!(p, ["field \"status\" is the wrong type (true): write it as text, such as \"ready\""]);
+        let p = problems(&WU_PLAN.replace("id: E-X.W1", "id: 7"));
+        assert_eq!(p, ["field \"id\" is the wrong type (7): write it as text, such as \"E-<CODE>.W<n>\""]);
+        let p = problems(&WU_PLAN.replace("epic: E-X", "epic: [E-X]"));
+        assert_eq!(p, ["field \"epic\" is the wrong type (a list): write it as text, such as \"E-<CODE>\""]);
+        let p = problems(&WU_PLAN.replace("title: t", "title: {a: b}"));
+        assert_eq!(p, ["field \"title\" is the wrong type (a mapping): write it as text"]);
+        let p = problems(&EPIC_PLAN.replace("id: E-X\n", "id: [E-X]\n"));
+        assert_eq!(p, ["field \"id\" is the wrong type (a list): write it as text, such as \"E-<CODE>\""]);
+        let p = problems(&EPIC_PLAN.replace("{wu: E-X.W1,", "{wu: 1.5,").replace("wu-deps: [E-X.W1]", "wu-deps: none"));
+        assert_eq!(p, ["wu-summaries entry 1 (no wu): field \"wu\" is the wrong type (1.5): write it as text, such as \"E-<CODE>.W<n>\""]);
+    }
+
+    #[test]
+    fn a_data_file_with_anchors_or_aliases_is_refused_before_it_is_expanded() {
+        let want = ["the data file uses a YAML anchor or alias (&name, *name): write each value out"];
+        assert_eq!(problems(&format!("{WU_PLAN}details: {{a: &x [1], b: *x}}\n")), want);
+        assert_eq!(problems(&WU_PLAN.replace("requirement: r", "requirement: &r r")), want, "an anchor alone");
+        // Billion laughs: ten levels of ten aliases each, 10^10 nodes once expanded; refused at once.
+        let mut lol = String::from("artifact: wu-plan\na0: &a0 [lol]\n");
+        for i in 1..=10 {
+            let refs = vec![format!("*a{}", i - 1); 10].join(", ");
+            lol.push_str(&format!("a{i}: &a{i} [{refs}]\n"));
+        }
+        let t = std::time::Instant::now();
+        assert_eq!(problems(&lol), want);
+        assert!(t.elapsed() < std::time::Duration::from_secs(2), "took {:?}", t.elapsed());
     }
 
     #[test]
