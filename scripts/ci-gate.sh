@@ -21,8 +21,9 @@
 #   GITHUB_OUTPUT        optional, build only: where keel_sha256=<hex> is written
 # Jobs. build: keel from the base, its hash printed. ci: keel check on the head merged into the base,
 # in a scratch worktree (git hooks off); a push of main checks main's tree. gate: keel ci gate, from
-# a base worktree, on git data only. docs: keel verify-doc on the docs the range changed, in a head
-# worktree. Only ci runs head code (its tests and build scripts); its token is read-only.
+# a base worktree, on git data only. docs: keel verify-doc on the docs the range changed (pages and
+# their data files, E-DOCSPLIT.W2), in a head worktree. Only ci runs head code (its tests and build
+# scripts); its token is read-only.
 # A back-merge (head main, base epic/<E>): gate and docs are green when the head is on origin's main,
 # whose every commit passed its own gate; anything else named main is refused.
 # The checkout's remote "origin" holds the branches and notes.
@@ -219,7 +220,7 @@ gate)
 docs)
 	git worktree add -q --detach "$scratch/head" "$head_sha"
 	from=$(git merge-base "$base_sha" "$head_sha")
-	git diff -z --name-only --no-renames --diff-filter=d "$from" "$head_sha" -- ':(glob)docs/**/*.html' >"$scratch/docs"
+	git diff -z --name-only --no-renames --diff-filter=d "$from" "$head_sha" -- ':(glob)docs/**/*.html' ':(glob)docs/**/*.yaml' >"$scratch/docs"
 	if [ ! -s "$scratch/docs" ]; then
 		printf '## Keel docs: no changed doc\n' >>"$summary"
 		echo "ci-gate: no changed doc under docs/" >&2

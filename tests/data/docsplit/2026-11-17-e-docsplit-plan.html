@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afc82379f34851f0dfb2745" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-DOCSPLIT example: the epic plan page, new shape</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-DOCSPLIT · A short doc for you, a data file for agents</h1>
+      <p>Split each plan and result in two, and slim today's docs.</p>
+      <div class="meta">Example of the new epic plan page · a rewrite of <a href="2026-11-17-e-docsplit-plan.html">the approved epic plan</a> · its data file is shown on <a href="2026-11-18-e-docsplit-w1-inventory.html#example-data">the inventory page</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">Each plan and result is one HTML file with three readers: you, an agent, and Keel's checks. It serves none of them well. You get long pages full of tags. Agents spend tokens writing HTML. The checks dig facts out of it. The other docs keep history you no longer need.</p>
+
+<h2 id="for-you">What changes for you</h2>
+<table data-c="for-you">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>You read a plan or result</td><td>One long page, written for three readers</td><td>A short page, written only for you</td></tr>
+    <tr><td>A check finds a gap</td><td>It names a missing tag in the page</td><td>It names a missing field in the data file</td></tr>
+    <tr><td>You look up a decision, use case, backlog row or the architecture</td><td>Long pages, with history and replaced rows</td><td>Decisions and architecture: short, current truth only. Use cases and backlog: you ask an agent.</td></tr>
+    <tr><td>You approve</td><td>The epic plan, then each part's plan</td><td>The same, and first a table of where each doc lives</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">Example: a part's plan after this epic</h2>
+<ol data-c="example">
+  <li>An agent writes the plan's data file: the requirement, the tests, its epic.</li>
+  <li>The check reads it and names a missing test plan. The agent adds it.</li>
+  <li>The agent writes a one-screen page for you, in plain words.</li>
+  <li>You comment on the page. The agent fixes both.</li>
+</ol>
+
+<h3 id="terms">Terms</h3>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Data file</td><td>A file of named facts for agents and checks. You never need to read it.</td></tr>
+    <tr><td>Word cap</td><td>The most words a kind of page may hold.</td></tr>
+    <tr><td>Distill</td><td>Move a finished doc's lasting truth into a permanent doc, then archive it.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="work">The parts, in build order</h2>
+<div class="diagram" data-c="order">
+<pre class="mermaid">
+flowchart LR
+  W1["W1 Where each doc lives"] --> W2["W2 The check reads data"]
+  W2 --> W3["W3 Sign-off reads the pair"]
+  W3 --> W4["W4 Skills teach it"]
+  W1 --> W5["W5 Slim knowledge bases"]
+  W1 --> W6["W6 Slim architecture, install"]
+</pre>
+<div class="caption">An arrow means "starts after".</div>
+</div>
+<table data-c="parts">
+  <thead><tr><th>Part</th><th>What it builds</th><th>What you get</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>W1 · Where each doc lives</td><td>A table of every doc and what it becomes. Page shapes, by example. Word caps.</td><td>Your approval, before any code.</td><td>—</td></tr>
+    <tr><td>W2 · The check reads the data file</td><td>The doc check reads the data file and counts page words.</td><td>A missing fact is red, and named.</td><td>W1</td></tr>
+    <tr><td>W3 · Sign-off and archive read the pair</td><td>Sign-off, archive and pull request table read the data file.</td><td>Your sign-off still signs the page you read.</td><td>W2</td></tr>
+    <tr><td>W4 · The skills teach the split</td><td>The doc skills, their example, one line of the rule file.</td><td>Agents write the pair. You sign each change.</td><td>W2, W3</td></tr>
+    <tr><td>W5 · Slim the knowledge bases</td><td>Decisions keep current truth. Use cases, backlog and indexes become data.</td><td>Short decisions. For the rest, you ask an agent.</td><td>W1</td></tr>
+    <tr><td>W6 · Slim architecture and install</td><td>History goes from both.</td><td>Both under their caps.</td><td>W1</td></tr>
+  </tbody>
+</table>
+
+<h2 id="decide">What you decide</h2>
+<table data-c="decide">
+  <thead><tr><th>#</th><th>Question</th><th>Answer, and why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Where does a data file live?</td><td><b>In a file beside its page.</b> A plan exists before there is a commit to attach a note to, and your sign-off binds the file.</td></tr>
+    <tr><td>2</td><td>Do replaced decisions go?</td><td><b>The id and one line stay; the rest goes.</b> Old ids are cited and must still resolve. Git keeps the text.</td></tr>
+    <tr><td>3</td><td>May W4 change the rule file?</td><td><b>Yes: approving this plan asks for it.</b> One line changes.</td></tr>
+    <tr><td>4</td><td>Should a check prove each follow-up names a real backlog row?</td><td><b>Not here: a backlog row.</b> It is not part of the split.</td></tr>
+  </tbody>
+</table>
+<p>Settled with you: a clean cut for old tags; the indexes and the backlog order become data; W1 redesigns the plan pages; every page kind gets a cap.</p>
+
+<h2 id="done">How you'll know it worked</h2>
+<ul data-c="done">
+  <li>A plan missing a fact is red when written, and the message names the fact.</li>
+  <li>Pages carry no tags.</li>
+  <li>Every slimmed doc is under its cap, and every decision, use case and backlog id still resolves.</li>
+  <li>One test runs the whole flow: plan, check, result, sign-off, archive.</li>
+</ul>
+
+<h2 id="not">Not in this epic</h2>
+<ul data-c="not">
+  <li>Writing one doc from the other: each is written for its reader.</li>
+  <li>The gate's notes keep their formats.</li>
+  <li>htmldoc, and the skill files' format.</li>
+  <li>E-GHSETUP's GitHub setup, and install's GitHub part.</li>
+</ul>
+<p>For agents: the data file holds each part's files and tests, the use cases, the end-to-end test and the distillation plan.</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

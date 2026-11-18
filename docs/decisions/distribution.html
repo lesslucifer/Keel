@@ -91,6 +91,7 @@
       <tr><th>Choice</th><td>Project docs are HTML via htmldoc, never markdown (AGENTS.md and skill files are infrastructure). Every WU gets a plan doc for the record and for distillation, but a worker is dispatched once the doc exists and dependencies are met; the owner reviews plans and results asynchronously through htmldoc comments. Owner rulings during an epic go into an append-only rulings log and then into this KB at close.</td></tr>
       <tr><th>Rejected</th><td>A per-WU plan-review gate before dispatch (tried early in E-SEED, then dropped).</td></tr>
       <tr><th>Lineage</th><td>Q6; seed plan "Per-WU process".</td></tr>
+      <tr><th>Amended</th><td>By <a href="workflow-gates.html#dec-69">DEC-69</a> (E-DOCSPLIT.W2): a plan's or result's checklist lives in a YAML data file beside its HTML page, named like it; <code>keel verify-doc</code> reads it, and the write hook passes on a written <code>.yaml</code> under <code>docs/</code> as it does a page.</td></tr>
     </table>
 
     <h3 id="dec-11">DEC-11 · What the extraction left out</h3>

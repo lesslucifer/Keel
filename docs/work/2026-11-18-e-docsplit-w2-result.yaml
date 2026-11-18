@@ -1,0 +1,68 @@
+artifact: wu-result
+status: ready
+id: E-DOCSPLIT.W2
+epic: E-DOCSPLIT
+title: The check reads the data file
+date: "2026-11-18"
+page: 2026-11-18-e-docsplit-w2-result.html
+outcome: >-
+  Delivered. keel verify-doc reads each plan's and result's data file against
+  its role's fields and caps every ready page; the write hook and the no-path
+  run take .yaml. The task (scripts/ci-gate.sh checks changed data files on
+  GitHub, templates/config.toml sets caps by path) is merged, pull request #15,
+  and its docs-job test is added.
+deviations:
+  - what: DEC-10's Amended row is in docs/decisions/distribution.html.
+    why: DEC-10 lives there; the plan named workflow-gates.html for both rows.
+  - what: The docs-job test for data files came after the task, in its own commit.
+    why: Rule-bearing files went through the owner's task pull request #15; the test fails until the script changes.
+  - what: A page with no data file is checked as a plain page (links, labels, path cap).
+    why: Page tags are not read (DEC-69's clean cut), so a missing data file cannot be told from a page that needs none.
+  - what: Red-page fixtures in tests/suite/ci_gate.rs and tests/suite/init.rs became a dangling link.
+    why: They were red by a missing tag, which is no longer read.
+  - what: >-
+      The check refuses more after code review rounds 1 and 2: a data file with a YAML anchor or
+      alias, a field that should be text but is not, a data file of several YAML documents with an
+      artifact and no page, a malformed config when paths are given, and a [docs.caps] key with no
+      glob shape; a data file that opens with a byte-order mark is read like one without.
+    why: The review found each passing green or hanging; the plan did not name them.
+evidence:
+  commits:
+    - 4a2cd48 the check, its tests, yaml-rust2 at runtime
+    - e6ef395 Amended rows on DEC-10 and DEC-52
+    - this result and its data file
+    - 666544b the task (scripts/ci-gate.sh, templates/config.toml), merged by c028ddb, pull request #15
+    - 6799bc8 the docs-job test for data files
+    - this update of the result
+    - 85db9e1 review round 1 blockers (wrong-type fields, YAML anchors refused)
+    - 8c706c9 review round 1 importants and nits (verify_doc::pair_of, config error, caps keys)
+    - this update for round 1
+    - 00d81f9 review round 2 blockers (byte-order mark, several YAML documents)
+    - 72fb91d review round 2 nits (caps keys by glob shape, caps globs compiled once, one decode, HashSet)
+    - this update for round 2
+    - 9c3b240 review round 3 important (several YAML documents checked as one, check_doc)
+    - 27ecd53 review round 3 nit (a caps key with a dot in its last part names no page)
+    - this update for round 3
+  tests:
+    unit: src/verify_doc.rs fields per role, caps, page words, data-file shapes, wrong types, anchors, byte-order mark, several documents, pair_of; src/main.rs hook filter, [docs.caps], prefix keys
+    integration: tests/suite/verify_doc.rs, 31 tests, 16 new or rewritten for data files and caps; tests/suite/ci_gate.rs the_docs_job_checks_a_changed_data_file_with_its_page
+    e2e: tests/suite/docsplit_e2e.rs started; the E-DOCSTYLE e2e rewritten for pairs
+    totals: cargo test 142 unit, 534 suite passed, 10 ignored; keel check green
+  docs:
+    - docs/decisions/workflow-gates.html (DEC-52 Amended)
+    - docs/decisions/distribution.html (DEC-10 Amended)
+    - docs/work/2026-11-18-e-docsplit-w2-result.html and this data file
+distillation: >-
+  DEC-10 and DEC-52 carry Amended rows. UC-DOC-1 is rewritten and UC-DOC-6
+  added at the epic close, as the plan says.
+follow-ups:
+  - item: The sign-off, the doc note and the pull request still read the page's data-artifact.
+    taken-by: E-DOCSPLIT.W3
+  - item: keel-plan and keel-write teach the pair; keel-write's example becomes a pair, its parts' heading marked work.
+    taken-by: E-DOCSPLIT.W4
+  - item: Keel's own [docs.caps] for decisions, architecture and install.
+    taken-by: E-DOCSPLIT.W5 and W6
+details:
+  task-branch: wu/E-DOCSPLIT/w2-check_ci-gate-caps
+  caps-rule: a page several [docs.caps] globs match takes the smallest cap
+  nested-fields: unknown keys are named inside wu-summaries entries; test-plan needs unit, integration and e2e, other keys free
