@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afd54449f34851f0dfb27f7" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-DOCSPLIT.W2 plan: the check reads the data file</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-DOCSPLIT.W2 · The check reads the data file</h1>
+      <p><code>keel verify-doc</code> checks each plan's and result's data file, and checks the page only for what you read: links, diagram labels, length.</p>
+      <div class="meta">WU plan · v1 · 2026-11-18 · T3 · Keel · W2 of <a href="2026-11-17-e-docsplit-plan.html">the epic plan</a> · page shape and fields from <a href="2026-11-18-e-docsplit-w1-inventory.html">the W1 inventory</a> (DEC-69)</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">DEC-69 moved each plan's and result's checklist from tags in the page to a data file beside it. The check still reads the tags, so a wrong data file passes silently, and no page has a length limit.</p>
+<p data-item="requirement" data-c="requirement">After W2, <code>keel verify-doc</code> on either file of a ready plan or result is red, naming the field, when its data file misses, empties or misspells one, and red with the count when its page is over its cap; a draft is silent, and page tags are not read.</p>
+
+<h2 id="for-you">What you get</h2>
+<table data-item="owner-changes" data-c="for-you">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>A plan or result is incomplete</td><td>The check names a missing page tag</td><td>It names a missing data-file field</td></tr>
+    <tr><td>A page is long</td><td>Only an epic plan's top is capped</td><td>Every plan and result page has a cap</td></tr>
+  </tbody>
+</table>
+
+<h2 id="approve">How you approve</h2>
+<ol data-c="approve">
+  <li>You comment here; the worker answers. You tell the router "W2 approved"; the build starts.</li>
+  <li>Two rule files go as a task pull request into the W2 branch. You merge it on GitHub.</li>
+  <li>W2 reaches the epic as a pull request. Your approval signs it; auto-merge merges it.</li>
+</ol>
+
+<h2 id="work">What it changes, per file</h2>
+<ul data-c="work">
+  <li><code>src/verify_doc.rs</code>: reads the data file: its role's fields present and not empty, unknown fields named, a draft silent, WU ids and dependencies resolving, a one-part epic needing both roles. The page keeps links and labels, gains its cap, loses the tag scan.</li>
+  <li><code>src/main.rs</code>: the write hook and the no-path run take <code>.yaml</code> too; either file checks the pair.</li>
+  <li><code>Cargo.toml</code>: <code>yaml-rust2</code> becomes a runtime dependency.</li>
+  <li><code>docs/decisions/workflow-gates.html</code>: Amended rows on DEC-10 and DEC-52.</li>
+  <li>The task: <code>scripts/ci-gate.sh</code> checks changed data files on GitHub; <code>templates/config.toml</code> sets caps by path.</li>
+  <li>The DSH doc plugin: unbuilt (backlog D1), so nothing changes.</li>
+</ul>
+
+<h2 id="tests">Tests</h2>
+<ul data-item="test-plan" data-c="tests">
+  <li><b>Integration</b>, <code>tests/suite/verify_doc.rs</code>: a missing or empty field is red and named; a misspelt one is named; a draft is silent; a page over its cap, or an epic top over 300, is red with the count; old tags are not read; links and labels unchanged; W1's example data files green.</li>
+  <li><b>Unit</b>: the fields per role, the caps, the hook's file filter.</li>
+  <li><b>End to end:</b> W2 starts the epic's <code>tests/suite/docsplit_e2e.rs</code>: the installed hooks refuse a data file missing a field, and pass it fixed. W3 extends it.</li>
+</ul>
+
+<h2 id="decide">What you decide</h2>
+<table data-c="decide">
+  <thead><tr><th>#</th><th>Question</th><th>Answer, and why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Where are the caps for decisions, architecture and install set?</td><td><b>In the config, by path; off in Keel's own until W5 and W6 slim those docs.</b> All three are over today: every edit would be red.</td></tr>
+    <tr><td>2</td><td>Does W2 change the GitHub check and the template?</td><td><b>Yes, as the task above.</b> Else a broken data file passes GitHub.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="done">How you'll know it worked</h2>
+<ul data-item="expected" data-c="done">
+  <li>A data file missing a field is red at the write, naming it; a draft stays silent.</li>
+  <li>A WU plan page of 501 words is red; at 500, green.</li>
+  <li>Every doc in <code>docs/</code> stays green.</li>
+</ul>
+<p data-item="maps-to" data-c="maps-to">Maps to E-DOCSPLIT.W2, DEC-69; UC-DOC-1 rewritten, UC-DOC-6 new (at the epic close), UC-DOC-2 and 4 kept.</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
