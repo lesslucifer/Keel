@@ -6,16 +6,16 @@ title: The check reads the data file
 date: "2026-11-18"
 page: 2026-11-18-e-docsplit-w2-result.html
 outcome: >-
-  Delivered, one part pending. keel verify-doc reads each plan's and result's
-  data file against its role's fields and caps every ready page; the write
-  hook and the no-path run take .yaml. The task (scripts/ci-gate.sh checks
-  changed data files on GitHub, templates/config.toml sets caps by path) is
-  prepared and waits for the owner's task pull request.
+  Delivered. keel verify-doc reads each plan's and result's data file against
+  its role's fields and caps every ready page; the write hook and the no-path
+  run take .yaml. The task (scripts/ci-gate.sh checks changed data files on
+  GitHub, templates/config.toml sets caps by path) is merged, pull request #15,
+  and its docs-job test is added.
 deviations:
   - what: DEC-10's Amended row is in docs/decisions/distribution.html.
     why: DEC-10 lives there; the plan named workflow-gates.html for both rows.
-  - what: The task is prepared, not merged; the docs-job test for data files waits with it.
-    why: Rule-bearing files go through the owner's task pull request; the test fails until the script changes.
+  - what: The docs-job test for data files came after the task, in its own commit.
+    why: Rule-bearing files went through the owner's task pull request #15; the test fails until the script changes.
   - what: A page with no data file is checked as a plain page (links, labels, path cap).
     why: Page tags are not read (DEC-69's clean cut), so a missing data file cannot be told from a page that needs none.
   - what: Red-page fixtures in tests/suite/ci_gate.rs and tests/suite/init.rs became a dangling link.
@@ -25,11 +25,14 @@ evidence:
     - 4a2cd48 the check, its tests, yaml-rust2 at runtime
     - e6ef395 Amended rows on DEC-10 and DEC-52
     - this result and its data file
+    - 666544b the task (scripts/ci-gate.sh, templates/config.toml), merged by c028ddb, pull request #15
+    - 6799bc8 the docs-job test for data files
+    - this update of the result
   tests:
     unit: src/verify_doc.rs fields per role, caps, page words, data-file shapes; src/main.rs hook filter, [docs.caps]
-    integration: tests/suite/verify_doc.rs, 29 tests, 12 new or rewritten for data files and caps
+    integration: tests/suite/verify_doc.rs, 29 tests, 12 new or rewritten for data files and caps; tests/suite/ci_gate.rs the_docs_job_checks_a_changed_data_file_with_its_page
     e2e: tests/suite/docsplit_e2e.rs started; the E-DOCSTYLE e2e rewritten for pairs
-    totals: cargo test 135 unit, 529 suite passed, 10 ignored; keel check green
+    totals: cargo test 135 unit, 530 suite passed, 10 ignored; keel check green
   docs:
     - docs/decisions/workflow-gates.html (DEC-52 Amended)
     - docs/decisions/distribution.html (DEC-10 Amended)
@@ -38,8 +41,6 @@ distillation: >-
   DEC-10 and DEC-52 carry Amended rows. UC-DOC-1 is rewritten and UC-DOC-6
   added at the epic close, as the plan says.
 follow-ups:
-  - item: The owner merges the task pull request (scripts/ci-gate.sh, templates/config.toml); the worker merges the WU branch's fetched ref and commits the prepared docs-job test.
-    taken-by: E-DOCSPLIT.W2, before its pull request into the epic
   - item: The sign-off, the doc note and the pull request still read the page's data-artifact.
     taken-by: E-DOCSPLIT.W3
   - item: keel-plan and keel-write teach the pair; keel-write's example becomes a pair, its parts' heading marked work.
