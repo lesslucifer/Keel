@@ -316,6 +316,8 @@ enum Data {
 /// data file must serve (its own name, ending `.html`); `page_exists`, whether that file is beside it.
 fn read_data(src: &str, page: &str, page_exists: bool) -> Data {
     let bad = |p: String| if page_exists { Data::Checked { roles: vec![], problems: vec![p] } } else { Data::None };
+    // A byte-order mark may open a YAML stream; the parser would read it as part of the first key.
+    let src = src.strip_prefix('\u{feff}').unwrap_or(src);
     if anchored(src) {
         return Data::Checked { roles: vec![], problems: vec![ANCHORS.into()] };
     }
@@ -326,7 +328,16 @@ fn read_data(src: &str, page: &str, page_exists: bool) -> Data {
     let doc = match docs.as_slice() {
         [d] => d,
         [] => return bad("the data file is empty: it needs its role's fields".into()),
-        _ => return bad(format!("the data file holds {} YAML documents; it is one", docs.len())),
+        _ => {
+            // Several documents: a data file still when one of them holds `artifact`, so its page
+            // must be there; with none and no page, other data.
+            let many = format!("the data file holds {} YAML documents; it is one", docs.len());
+            let artifact = docs.iter().any(|d| matches!(d, Yaml::Hash(h) if h.contains_key(&Yaml::String("artifact".into()))));
+            if page_exists || !artifact {
+                return bad(many);
+            }
+            return Data::Checked { roles: vec![], problems: vec![many, format!("page {page} is not beside the data file")] };
+        }
     };
     let Yaml::Hash(h) = doc else {
         return bad("the data file is not a mapping of fields".into());
@@ -1579,6 +1590,38 @@ mod tests {
         let t = std::time::Instant::now();
         assert_eq!(problems(&lol), want);
         assert!(t.elapsed() < std::time::Duration::from_secs(2), "took {:?}", t.elapsed());
+    }
+
+    /// Its problems when the page is not there.
+    fn pageless(yaml: &str) -> Vec<String> {
+        match read_data(yaml, "x.html", false) {
+            Data::Checked { problems, .. } => problems,
+            other => panic!("not checked: {other:?}"),
+        }
+    }
+
+    /// E-DOCSPLIT.W2 review round 2: a leading UTF-8 byte-order mark (legal at a YAML stream's start)
+    /// is not glued to the first key, so a valid data file is green beside its page and red without it.
+    #[test]
+    fn a_leading_byte_order_mark_is_not_part_of_the_first_key() {
+        let bom = format!("\u{feff}{WU_PLAN}");
+        assert_eq!(problems(&bom), Vec::<String>::new());
+        assert_eq!(pageless(&bom), ["page x.html is not beside the data file"]);
+        assert_eq!(read_data("\u{feff}rows: [a]\n", "x.html", false), Data::None, "other data stays other data");
+    }
+
+    /// E-DOCSPLIT.W2 review round 2: a data file whose YAML documents hold an `artifact` is a data
+    /// file, red with or without its page; pageless data of several documents with none is other data.
+    #[test]
+    fn a_second_yaml_document_after_an_artifact_is_red_with_or_without_its_page() {
+        let two = format!("{WU_PLAN}---\nx: 1\n");
+        let want = "the data file holds 2 YAML documents; it is one";
+        assert_eq!(problems(&two), [want]);
+        assert_eq!(pageless(&two), [want, "page x.html is not beside the data file"]);
+        assert_eq!(pageless(&format!("{WU_PLAN}---\n")), [want, "page x.html is not beside the data file"]);
+        assert_eq!(pageless(&format!("x: 1\n---\n{WU_PLAN}")), [want, "page x.html is not beside the data file"]);
+        assert_eq!(read_data("rows: [a]\n---\nx: 1\n", "x.html", false), Data::None);
+        assert_eq!(read_data("- a\n---\n- b\n", "x.html", false), Data::None);
     }
 
     #[test]

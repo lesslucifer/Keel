@@ -713,3 +713,24 @@ fn a_prefix_style_caps_key_is_refused_naming_its_glob() {
         assert!(keel(p, &["verify-doc"]).status.success(), "{key}");
     }
 }
+
+/// E-DOCSPLIT.W2 review round 2: a data file that starts with a UTF-8 byte-order mark is read like
+/// one without it, green beside its page and red without it; a data file with an artifact and a
+/// second YAML document is red with or without its page.
+#[test]
+fn a_byte_order_mark_or_a_second_document_never_hides_a_data_file() {
+    let d = repo();
+    let p = d.path();
+    std::fs::write(p.join("docs/a.html"), page_of(10, None)).unwrap();
+    std::fs::write(p.join("docs/a.yaml"), format!("\u{feff}{}", wu_plan_data("a.html", ""))).unwrap();
+    let o = keel(p, &["verify-doc", "docs/a.yaml"]);
+    assert!(o.status.success(), "a BOM is not part of the first key: {}", text(&o));
+    std::fs::remove_file(p.join("docs/a.html")).unwrap();
+    for (what, src) in [("a BOM", format!("\u{feff}{}", wu_plan_data("a.html", ""))), ("a second document", wu_plan_data("a.html", "---\nx: 1\n"))] {
+        std::fs::write(p.join("docs/a.yaml"), src).unwrap();
+        for args in [&["verify-doc", "docs/a.yaml"][..], &["verify-doc"]] {
+            let o = keel(p, args);
+            assert!(o.status.code() == Some(1) && text(&o).contains("docs/a.yaml: page a.html is not beside the data file"), "{what} {args:?}: {}", text(&o));
+        }
+    }
+}
