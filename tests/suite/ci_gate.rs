@@ -379,6 +379,33 @@ fn a_docs_only_wu_runs_only_what_is_never_exempt_and_an_archive_is_judged_on_its
     }
 }
 
+/// E-DOCSPLIT.W2: the docs job checks a changed data file with its page: one missing a field is red
+/// and named; fixed, green. A YAML file outside docs/ is no doc.
+#[test]
+fn the_docs_job_checks_a_changed_data_file_with_its_page() {
+    let ci = Ci::new(MARK_TEST);
+    git(&ci.dev, &["switch", "-q", "wu/e/a"]);
+    write(&ci.dev, "docs/work/p.html", "<html><body><main><p>a short page</p></main></body></html>");
+    let data = "artifact: wu-plan\nstatus: ready\nid: E-E.W1\nepic: E-E\ntitle: t\ndate: \"2026-11-18\"\npage: p.html\nmaps-to: m\nexpected: [e]\ntest-plan: {unit: u, integration: i, e2e: none}\n";
+    write(&ci.dev, "docs/work/p.yaml", data);
+    write(&ci.dev, ".github/x.yaml", "on: [push\n");
+    commit(&ci.dev, "a plan missing its requirement");
+    git(&ci.dev, &["push", "-q", "--no-verify", "origin", "wu/e/a"]);
+    git(&ci.runner, &["fetch", "-q", "origin"]);
+    let o = ci.push_job("docs", "wu/e/a");
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(text(&o).contains("p.yaml: missing field \"requirement\""), "{}", text(&o));
+    assert!(!text(&o).contains(".github"), "{}", text(&o));
+
+    write(&ci.dev, "docs/work/p.yaml", &format!("{data}requirement: r\n"));
+    commit(&ci.dev, "the requirement");
+    git(&ci.dev, &["push", "-q", "--no-verify", "origin", "wu/e/a"]);
+    git(&ci.runner, &["fetch", "-q", "origin"]);
+    let o = ci.push_job("docs", "wu/e/a");
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(ci.summary().contains("## Keel docs: green\n\n3 changed docs"), "{}", ci.summary());
+}
+
 #[test]
 fn the_docs_job_reads_only_the_docs_the_range_changed() {
     let ci = Ci::new(MARK_TEST);
