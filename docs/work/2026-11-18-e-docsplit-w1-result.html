@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afd4e1e9f34851f0dfb27d3" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-DOCSPLIT.W1 result: where each doc lives</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-DOCSPLIT.W1 result · Where each doc lives</h1>
+      <p>The list the rest of the epic builds on, approved, and recorded as DEC-69.</p>
+      <div class="meta">Result · 2026-11-18 · T3 · Keel · per <a href="2026-11-18-e-docsplit-w1-plan.html">the W1 plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="happened">What happened</h2>
+<p data-c="outcome" data-item="outcome"><b>Delivered.</b> <a href="2026-11-18-e-docsplit-w1-inventory.html">The inventory</a> gives every doc Keel writes or reads a row, with the data-file fields per role, the page shapes, word caps and nine questions. Two example pages show the new shape. You approved all of it on 2026-11-18: "it's LGTM". DEC-69 records it. No code changed.</p>
+
+<h2 id="checklist">Checklist</h2>
+<table data-c="checklist">
+  <thead><tr><th>The plan said to expect</th><th>Met?</th><th>Where to see it</th></tr></thead>
+  <tbody>
+    <tr><td>A row for every doc kind, plus any the code scan finds</td><td>Yes</td><td>The inventory's table: 23 rows. Check 1 added the gate summary.</td></tr>
+    <tr><td>Every checklist tag maps to exactly one field</td><td>Yes</td><td>Check 2: 25 tags and attributes, four field tables</td></tr>
+    <tr><td>A cap per page kind, beside today's median and largest</td><td>Yes</td><td>The word caps table, from 144 docs</td></tr>
+    <tr><td>Two example pages under their caps, with data files shown</td><td>Yes</td><td>Epic plan 690 of 700 (top 253 of 300); W1 plan 356 of 500. Both data files parse.</td></tr>
+    <tr><td>The decision, under a free id, naming the three it amends</td><td>Yes</td><td><a href="../decisions/workflow-gates.html#dec-69">DEC-69</a>; the index's next free id is DEC-70</td></tr>
+    <tr><td><code>keel verify-doc</code> green on every doc W1 touches</td><td>Yes</td><td>Exit 0, no output, over all docs</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">The main case: your review, run for real</h2>
+<ol data-c="example">
+  <li>The worker wrote the inventory and the two examples.</li>
+  <li>You left five comments: results need a checklist and an example; use cases and the backlog order are not read by you; the epic page needs its parts in build order, with a diagram.</li>
+  <li>The worker changed the pages and replied in each thread. Four were resolved; the use-case one stayed open, because the pages go but the contracts stay as data.</li>
+  <li>You said "it's LGTM". The last thread was resolved, and DEC-69 written.</li>
+</ol>
+
+<h2 id="differences">Differences from the plan</h2>
+<ul data-c="deviations" data-item="deviations">
+  <li><b>Use cases, the backlog and its order become data, with no page.</b> The plan kept the backlog order a page. Why: your comments.</li>
+  <li><b>Result pages got a shape too</b>, with caps raised to 500 and 700. Why: your comments.</li>
+  <li><b>Nine questions, not seven.</b> Questions 8 and 9 came from your comments.</li>
+  <li><b>The coverage scan sits in the inventory</b>, not here (check 1). Why: one place to read it.</li>
+</ul>
+
+<h2 id="left">What is left</h2>
+<ul data-c="follow-ups" data-item="follow-ups">
+  <li>The Amended rows on DEC-10, DEC-27 and DEC-52, written as the tool changes: E-DOCSPLIT.W2, W3 and W4.</li>
+  <li>Moving use cases and the whole backlog to data, not only the indexes: E-DOCSPLIT.W5's plan carries it.</li>
+</ul>
+
+<h2 id="details">Details</h2>
+<p data-c="distillation" data-item="distillation">Distilled to <a href="../decisions/workflow-gates.html#dec-69">DEC-69</a> in <code>docs/decisions/workflow-gates.html</code> and its line in <code>docs/decisions/decisions-index.html</code>.</p>
+<p data-c="evidence" data-item="evidence">Commits <code>bdc3451</code> and <code>0008e7e</code> (plan), <code>8374efc</code> (examples), <code>59c5cdc</code> (inventory), <code>ee23a24</code> (your comments), then the approval, DEC-69 and this result. Tests: none, no code path changes; the six checks stand in. Approvals: the plan, "doc split w1 looks fine, let's go"; the pages, "it's LGTM". htmldoc snapshots before and after each edit round.</p>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
