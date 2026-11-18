@@ -1,0 +1,263 @@
+# Keel backlog: github-flow. Data only, no page (DEC-69). Open rows in full; a closed row is its id, title and how it closed.
+# Ids are never reused. Order and next free ids: backlog-index.yaml.
+title: "Backlog: the GitHub flow"
+letter: G
+about: >-
+  What E-GHFLOW left for the next GitHub-flow epic: six planned work units, the live checks owed on GitHub, the router
+  skills, and the follow-ups of the three units that landed. E-GHFLOW closed on 2026-11-15 with three of its nine work
+  units: GitHub runs the checks as a signal (DEC-60), the router bot pushes work branches and opens pull requests
+  (DEC-61), and the router hears its commanders through GitHub (DEC-62). The owner ruled that day: land those three on
+  main early, close the epic, and start a new epic for the rest, run through the GitHub flow. The contracts are
+  UC-GATE-7, UC-ROUTE-1, UC-ROUTE-6 and UC-ROUTE-7. Distilled from E-GHFLOW (epic plan v4, W1 - W3 results, close);
+  E-GHFLOW2 landings 1, 2 and 3, and its close.
+open:
+  - id: G4
+    title: "CI follow-ups from W1"
+    status: open
+    problem: >-
+      Three W1 follow-ups on the CI workflow, listed as items.
+    proposal: >-
+      See the fix direction in each item.
+    source: >-
+      E-GHFLOW.W1 plan open points 4 and 6, and its result's follow-ups.
+    taken-by: "unowned"
+    items:
+      - >-
+        row 1, Cost: each push runs three uncached debug builds of keel, one per job. Fix direction: cache the base
+        build, or build once and share the binary between jobs.
+      - >-
+        row 2, A range walk on pushes to `main`: a push to `main` runs `ci` only (W1 plan open point 4); the pushed
+        range's seams are the local pre-push walk's job. Fix direction: a CI `keel verify-dod range` job, if wanted once
+        `main` moves only on GitHub (github-flow G1, W5).
+      - >-
+        row 3, Pinning the Rust toolchain: `ci` uses the runner's stable plus `rustup component add rustfmt clippy`, so
+        a newer clippy shows on GitHub first. Fix direction: a toolchain file, if it bites.
+
+  - id: G5
+    title: "Test nits W2, W3 and E-GHFLOW2.W1 left open"
+    status: >-
+      open (still open after E-GHFLOW2)
+    problem: >-
+      Test-only nits from the passing code reviews; none changes a result. W2's were waived by its round 2 PASS; W3's
+      round 2 PASS left them "to fix after this PASS", and no fix followed before the close. E-GHFLOW2.W5 fixed W3's
+      test-strength rows on its own branch (`b365291` on `wu/E-GHFLOW2/w5-tryit`), but W5 was dropped unmerged, so
+      those rows stay open here. E-GHFLOW2.W6 did github-flow G8's four W3 code-review nits. W2's four rows (items 1 -
+      4) are done by E-GHFLOW2.W3, but the corpus's serial cost: the App key is made once per run and copied; the
+      fixture and the argument checks take a `HOME` the script accepts under any `TMPDIR`; the argument checks share
+      one curl stub; the dash invariant covers the mode word and `--base` and asserts each reason. The guard-agreement
+      corpus still runs its 507 probes serially.
+    proposal: >-
+      Take them in whichever WU next touches these files.
+    source: >-
+      the `cr/v1` notes on `wu/E-GHFLOW/w2-router-bot` (52171f8) and `wu/E-GHFLOW/w3-gh-watch` (36222c7); E-GHFLOW.W2
+      result; E-GHFLOW2.W1's code review round 1 and security review.
+    taken-by: "whichever WU next touches these files"
+    items:
+      - >-
+        row 1, W2 - the fixture rebuild (done by E-GHFLOW2.W3): `tests/suite/router_gh.rs` rebuilds the `Gh` fixture,
+        an RSA key included, per test (about 0.25 s each; round 1's waiver).
+      - >-
+        row 2, W2 - a fixture `HOME` under an odd `TMPDIR` (done by E-GHFLOW2.W3): the fixture and
+        `router_gh_args::check` use a raw temp dir as the script's `HOME`, which the script refuses outside
+        `[A-Za-z0-9/._-]`; under a hand-set `TMPDIR` with such a character 28 tests fail, naming `HOME`.
+      - >-
+        row 3, W2 - the dash test proves less than its doc (done by E-GHFLOW2.W3):
+        `every_argument_starting_with_a_dash_is_refused_in_every_position` skips slot 0 and the `--base` word and
+        never asserts the reason `may not start with -`.
+      - >-
+        row 4, W2 - the guard-agreement corpus costs about 7.7 s serial (507 probes), and `router_gh_args::check`
+        writes a fresh curl stub on each of its 646 calls (done by E-GHFLOW2.W3 except that the corpus still runs its
+        507 probes serially).
+      - >-
+        row 5, W3 - `tests/suite/router_gh_watch.rs` harness: `watch_env` sets `ROUTER_WATCH_MAX=30` for single-event
+        cases (a regression polls 30 s); `lines()` trims the whole output, so the CRLF case could pass a regression.
+        (Fixed at the E-GHFLOW close, with the epic review's nits: both watch helpers now take `ROUTER_GH_GIT` from
+        `Gh::github_env`, and `watch_raw`'s doc names every check it skips.)
+      - >-
+        row 6, W3 - test strength: `merged_prints_the_merge_or_the_close` serves a redundant open answer (a 1 s
+        sleep); the `merged 32` refusal asserts neither empty output nor the calls; reviews have no test for
+        `free_text = false`, `DISMISSED` or their `OVERFLOW` path; the Kelvin-sign corpus word never stands alone in
+        `tests/suite/router_gh_watch_args.rs`; the issue half of the guard-agreement test in `tests/suite/router.rs`
+        has no non-vacuity assert.
+      - >-
+        row 7, E-GHFLOW2.W1 - the token fix and its diagnostic (`scripts/router-gh.sh`, `tests/suite/router_gh.rs`).
+        The review's nits: `DIAG keys=` prints the response's key names unfiltered (`scripts/router-gh.sh` line 435,
+        in `diag_mint`); the mint loop's bad-token cases hold no tab and no DEL byte; the diagnostic lacks shape and
+        size cases (its `token-shape` and `token-length` lines are untested for an odd shape or an oversize token). The
+        security review's advice: N1, the diagnostic's `echo` lines should be `printf '%s\n'`, so no value is read as an
+        option or escape; N2, `ROUTER_GH_DIAG=mint` exits 0 even when the mint fails, so a caller cannot tell from the
+        status.
+
+  - id: G7
+    title: "Sign-off by approval: what E-GHFLOW2.W3 leaves"
+    status: >-
+      open (at the E-GHFLOW2 close: items 2 - 4 stay open for a later epic; item 1 moved to github-flow G10; item 5 closed)
+    problem: >-
+      E-GHFLOW2.W3 made a pull-request approval the sign-off (the github tier, `keel ci sign-off`, the two workflows).
+      Proven hermetically only: the workflows run from main, so live after landing 2. At the E-GHFLOW2 close: item 1's
+      live facts moved to github-flow G10. Item 5 (when no request run starts) is closed: W4 merges main into an epic
+      after landing 2, and W6's conflict watch sends a conflicted pull request back to its worker. Items 2 - 4 stay
+      open for a later epic; item 3's limit is recorded in DEC-64 and DEC-48 amended, and since DEC-66 such a note
+      also covers the review. New, from E-GHFLOW2.W7: the epic walk still reads `walk_waivers` from a cr note an
+      approval covered as FAIL or stale, so a waiver from a review that did not pass can pass a seam.
+    proposal: >-
+      For the W7 point: read `walk_waivers` only from a passing review, or name them in `covers`. The rest is in the
+      items.
+    source: >-
+      E-GHFLOW2.W3 plan open points 1 - 3 and 6, and its result.
+    taken-by: "a later GitHub-flow epic"
+    items:
+      - >-
+        row 1, Live facts owed at landing 2 (moved to github-flow G10), each checked by the first approval on GitHub:
+        that a `pull_request_review` run's `workflow_run` payload carries `pull_requests[0].number` for a
+        same-repository pull request (the writer falls back to `GET /repos/{o}/{r}/commits/{sha}/pulls`); that
+        `workflow_run` takes main's file with the token it declares; that `pull-requests: read` reads the reviews and
+        `statuses: write` sets `keel/sign-off`; that `contents: write` pushes `refs/notes/mr`; and that GitHub asks no
+        approval to run the request workflow for the owner's own review. Takes: the epic's landing 2 report.
+      - >-
+        row 2, A dismissed approval: the note it wrote stays, as a typed sign-off does; a later run sets
+        `keel/sign-off` back to pending. Retracting a sign-off is a new rule (W7's comments could carry it). Takes:
+        E-GHFLOW2.W7 or a later epic.
+      - >-
+        row 3, Check 8 re-reads nothing in CI: it checks an approval note's bindings offline; the writer is the one CI
+        step that reads the review, and W4 makes its status required. Until a check re-reads the review, a github-tier
+        note proves no more than a `username:` line: anyone who can write GitHub's notes, or a same-user shell here,
+        can write one (security review I2). The router takes GitHub's sign-offs into the checkout add-only
+        (writer-shaped ones GitHub added since the router last pushed `refs/notes/mr`), never an edit or a deletion,
+        fetching by sha the commit of a sign-off it lacks; a note on a commit GitHub does not serve is not taken, and
+        the next push drops it from GitHub. One known wrinkle, self-healing (security review round 3, I3-3): a
+        sign-off removed here after an import whose leased push failed is taken back once, since the snapshot moves
+        only on a successful push; the next successful push carries the removal. DEC-48 records this at the
+        distillation (github-flow G6). Takes: E-GHFLOW2.W4, if the rules need more.
+      - >-
+        row 4, The epic report note and an approval: GitHub never shows a note, and a worker can rewrite one before
+        the push, so an approval attests only a report committed in the range; the report note is attested by the
+        typed sign-off alone (security review I6). Binding the note to what the signer saw (its hash shown on the page
+        he reads, as of the review) waits for docs as pages. Takes: E-GHFLOW2.W8.
+      - >-
+        row 5 (done: closed at the E-GHFLOW2 close, W4 merges main into an epic after landing 2 and W6's conflict watch
+        sends a conflicted pull request back to its worker), When no request run starts (security review N7): GitHub
+        takes a `pull_request_review` workflow from the pull request's merge commit: a WU pull request into an epic
+        branched before landing 2 holds no request workflow on either side, and a conflicted pull request has no merge
+        commit, so neither runs the writer; `keel/sign-off` stays unset and the typed sign-off signs. Merging main into
+        the epic after landing 2 (W4's rule) fixes the first; the conflict flow (W6) the second. Takes: E-GHFLOW2.W4
+        and W6.
+
+  - id: G10
+    title: "E-GHFLOW2 closed: what is still open"
+    status: open
+    problem: >-
+      E-GHFLOW2 closed on 2026-11-17 with W1 - W4 and W6 - W10; W5 was dropped. Everything is proven by hermetic tests;
+      almost nothing has run on GitHub. The owner waived the epic's code review and its close review ("it can be tested
+      later"). The rows are the owner's GitHub steps still open, the live facts owed, and the follow-ups; each item
+      names what takes it.
+    proposal: >-
+      The owner's GitHub steps still open (the full list is in `docs/install.html` section 5). W6, W7 and W10 were
+      merged on GitHub as pull requests #6 - #8; the steps before the ruleset are not re-checked here,
+      `gh-settings-check.sh` reads them. Takes: the owner. Live facts owed: takes the router, which reads each after the
+      close lands, and records it in the next GitHub-flow epic's first result report.
+    source: >-
+      the owner's rulings of 2026-11-15 and 2026-11-17; E-GHFLOW2's plans and results (archived); its epic result report
+      (archived).
+    taken-by: "mixed, per item: the owner (the GitHub steps), the router (live facts), the next GitHub-flow epic (follow-ups), a later epic (the new rows)"
+    items:
+      - >-
+        owner step 1 (takes: the owner): the `keel-merge` branch ruleset (default branch and `epic/**`, no bypass,
+        merge only, one approval with code-owner review, stale approvals dismissed, required `keel/ci`, `keel/gate`,
+        `keel/docs`, `keel/sign-off` from GitHub Actions, up to date not required).
+      - >-
+        owner step 2 (takes: the owner): then "Allow auto-merge" on.
+      - >-
+        owner step 3 (takes: the owner): `GH_TOKEN=$(gh auth token) scripts/gh-settings-check.sh` green with an admin
+        token, in a checkout of main.
+      - >-
+        owner step 4 (takes: the owner): Pages, if not yet set: source "GitHub Actions", the `github-pages`
+        environment limited to main, and a ruling on what the site serves: (a) doc file types only, in place; (b) main
+        and `epic/` only; (c) everything.
+      - >-
+        live fact 1 (takes: the router): the first real sign-off by approval on GitHub's runner (W3, with W10's
+        identity fix): `mr/v1` written, `keel/sign-off` green, and github-flow G7 item 1's facts (the `workflow_run`
+        payload's pull-request number, main's file and token, the permissions, no approval asked for the owner's own
+        review). Then the first approval over a review that did not pass (W7).
+      - >-
+        live fact 2 (takes: the router): not yet recorded in a committed doc: where the `pull_request_target` checks
+        attach (on the head commit, not main's); the first merge through the button with the ruleset on (W4's
+        unverified facts: the check source, the artifact actions under `pull_request_target`, the bot's auto-merge and
+        its merge of a workflow change, the Policies page's names, actor id 5, the fork-approval value); whether the
+        bot can create `epic/<E>` under required checks.
+      - >-
+        live fact 3 (takes: the router): the first task pull request (W6) and the first `CONFLICT` the watch prints.
+      - >-
+        live fact 4 (takes: the router): Pages' first deploy from main: the run green, a page open at
+        `https://lesslucifer.github.io/Keel/`, one htmldoc comment posted and resolved (W8).
+      - >-
+        live fact 5 (takes: the router): github-flow G2's leftovers: who GitHub shows as the pusher of the bot's push;
+        `git/ref/heads/wu/E/x` with slashes; the App commenting; the watch hearing `/keel go` and ignoring another
+        account; escaped `@name` and `#n`; `updated_at`, `GET /user/{id}` and the sub-issue calls.
+      - >-
+        follow-up 1, The epic test was not written: the plan's hermetic e2e (bot push to sign-off by approval to
+        GitHub-made merge, a task end to end, the report rule at the epic level) is waived at the close by the owner's
+        ruling; each WU's integration tests stand. Takes: the next GitHub-flow epic.
+      - >-
+        follow-up 2, The router's `/keel` commands (`go`, `hold`, `retry`, `answer`): the owner wants the GitHub flow
+        simple and questioned them on 2026-11-17. Open question, no change; their meanings were never recorded
+        (DEC-62 amended). Takes: the owner's ruling, then the next GitHub-flow epic.
+      - >-
+        follow-up 3, W5, dropped: `wu/E-GHFLOW2/w5-tryit` (tip `6283efd`, with the owner's commits `36f37a6` and
+        `e991921`) holds the try-it section, `keel/tried` and `/keel tried` through code review round 3, unmerged.
+        Reason: "approval = sign; the owner takes responsibility for testing by hand" (DEC-66). Kept for the record
+        only; deleting the branch is the owner's call.
+      - >-
+        follow-up 4, The back-merge sign-off: a pull request from main into an epic never gets `keel/sign-off`, so with
+        the rules on it cannot merge (W4 open point 1; not taken by W7). Until built, the owner back-merges locally.
+        Takes: the next GitHub-flow epic.
+      - >-
+        follow-up 5, W4's residuals: a check belongs to a commit, so a WU-into-main pull request could be turned green
+        by the same head's pull request into its epic: never approve a `wu/` pull request into main. The
+        printable-ASCII guard covers `keel-gate.yml`, `keel-main.yml` and `pages.yml`, not `release.yml` or the two
+        sign-off workflows: run it over every workflow. Optional: an Actions policy limiting `release.yml` to push.
+        Takes: the next GitHub-flow epic.
+      - >-
+        follow-up 6, A CI flake: of W8's two `ci` runs on `fbe8394`, one failed (run 43797513660); the cause is not
+        read. Takes: the first live runs above.
+      - >-
+        follow-up 7, Security, from W3: `scripts/router-gh.sh` resolves the admin dir with `cd -P`, so a symlinked
+        `<git dir>/worktrees` passes it while R50 refuses one; R50 does not compare a linked checkout's common dir with
+        git's. Takes: the next router epic, with e-router-v2 R51.
+      - >-
+        follow-up 8, A lesson for the keel-workflow skill: merge the target into a WU before its last review round, not
+        after a PASS (a merge after the PASS changes the range the review bound). Takes: an owner commit of the skill.
+      - >-
+        follow-up 9, W9's nit: the GNU `expr` test writes its own sh shim instead of reaching the script through
+        `crate::router_gh::exe`. Takes: whichever WU next touches `tests/suite/router_gh.rs`.
+      - >-
+        follow-up 10, New rows from the E-GHFLOW plan's close list: `keel` setting the GitHub flow up in other
+        projects (E-GHFLOW open point 8), and Claude code reviews inside GitHub Actions. Takes: a later epic each, not
+        yet planned.
+      - >-
+        follow-up 11, After W6 is on main, install a keel built from main so every worktree's commit check knows task
+        branches. Takes: the owner, after the close lands.
+closed:
+  - id: G1
+    title: "W4 - W9, carried to the next GitHub-flow epic"
+    closed: >-
+      closed at the E-GHFLOW2 close (2026-11-17), its sub-rows delivered there: W4 sign-off by approval by
+      E-GHFLOW2.W3 (DEC-64); W5 GitHub enforces the merge by E-GHFLOW2.W4 (DEC-65); W6 try-it test dropped by the owner
+      (E-GHFLOW2.W5, DEC-66); W7 split pull requests replaced by tasks of a WU by E-GHFLOW2.W6 (DEC-67); W8 waiver
+      comments replaced by the owner's approval accepting all by E-GHFLOW2.W7 (DEC-66); W9 docs as pages by E-GHFLOW2.W8
+      (DEC-68); its two new rows (the flow in other projects, Claude reviews in Actions) are in github-flow G10
+  - id: G2
+    title: "The live checks owed on GitHub"
+    closed: "re-pointed to G10 (W1's facts are recorded in G6; W4 changed what a push runs, so the first-run checks are replaced by G10's)"
+  - id: G3
+    title: "The router skills arm the GitHub watches"
+    closed: "done by E-GHFLOW2.W2 (the optional allow lines in .claude/settings.json were left to the owner)"
+  - id: G6
+    title: "E-GHFLOW2 landing 1: W1 + W2 on main, distillation deferred to the close"
+    closed: "distilled at the E-GHFLOW2 close (2026-11-17): the token rule in docs/architecture.html, UC-ROUTE-1, DEC-61 and DEC-62 amended; what was still open moved to G10, G5 and G7"
+  - id: G8
+    title: "E-GHFLOW2 landing 2: W3 + W8 + W9 on main, distillation deferred to the close"
+    closed: "distilled at the E-GHFLOW2 close (2026-11-17): UC-MR-3, UC-MR-1, DEC-64, DEC-68, UC-DOC-5, docs/install.html section 5, docs/architecture.html; its W3 code-review nits done by E-GHFLOW2.W6; its CI flake, security follow-up, lesson, W9 nit and live facts moved to G10, the rest stays in G5 and G7"
+  - id: G9
+    title: "E-GHFLOW2 landing 3: W4 on main, distillation deferred to the close"
+    closed: "distilled at the E-GHFLOW2 close (2026-11-17): DEC-65, UC-GATE-7, docs/install.html section 5, docs/architecture.html; what was still open moved to G10, or stays in G5 and G7"
