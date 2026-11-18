@@ -6,14 +6,14 @@ title: Slim the knowledge bases
 date: "2026-11-18"
 page: 2026-11-18-e-docsplit-w5-result.html
 outcome: >-
-  Delivered, one rule file pending. Decisions keep current truth: workflow-gates and router split by topic
+  Delivered. Decisions keep current truth: workflow-gates and router split by topic
   (review-docs.html, router-hosts.html), every decision page under 5,000 words (largest 4,231). Use cases, the
   backlog and the three indexes are data files with no page. The one-off id check passes: every id defined at
   af61d42 is defined after, every cited id resolves, each index names the file holding the id. keel verify-doc
   over all docs exits 0 with the installed and the branch-built keel. The rule files .keel/config.toml (the
-  decisions cap), docs/architecture.html and docs/install.html (links re-pointed) are staged, uncommitted, for the
-  owner's keel mr commit; the fourth, the .claude/skills/project-router/SKILL.md line, was refused by the sandbox
-  and is not edited.
+  decisions cap), docs/architecture.html and docs/install.html (links re-pointed) are committed by the owner's keel
+  mr commit b186a38; the fourth, the .claude/skills/project-router/SKILL.md line, was refused by the sandbox, is
+  not edited, and moves to E-DOCSPLIT.W4.
 deviations:
   - what: .claude/skills/project-router/SKILL.md line 107 is not edited.
     why: >-
@@ -21,9 +21,9 @@ deviations:
       Operation not permitted"); not routed around. The line should read: "lands (backlog D2 in
       `docs/backlog/dsh.yaml`). Until then the router runs keel-router" in place of "lands
       (`docs/backlog/dsh.html#d2`). Until then the router runs keel-router". Until then it names a removed page
-      (no doc check reads skill files).
+      (no doc check reads skill files). E-DOCSPLIT.W4 makes the edit.
   - what: The result pair is committed before the owner's commit of the rule files.
-    why: The router's brief asks for everything else committed first; the plan put the result after.
+    why: The router's brief asks for everything else committed first; the plan put the result after. Updated after the owner's commit b186a38.
   - what: 18 live records stay over about 250 words (list under details.records-over-250).
     why: Each holds named files, flags, limits or accepted risks that are part of the choice; the pages are under the 5,000 cap.
   - what: Pages are above the plan's estimates - workflow-gates 4,164 (about 3,900), router 4,231 (3,300), router-hosts 2,352 (1,600), review-docs 2,263 (2,000), distribution 1,815 (1,600).
@@ -37,7 +37,7 @@ deviations:
   - what: docs/architecture.html's "Read next" list gains two lines for the new decision pages; its workflow-gates and router lines lose the topics that moved.
     why: Re-pointing links to the moved decisions; the slimming itself is W6.
   - what: The committed trees of the W5 commits have dangling links in architecture and install until the owner's commit.
-    why: The plan's route keeps those rule files uncommitted; the disk was green at each commit.
+    why: The plan's route kept those rule files uncommitted until b186a38; the disk was green at each commit, and the tree is green from b186a38 on.
 evidence:
   commits:
     - 203d3cd use cases to data files, the page deleted in the same commit
@@ -45,7 +45,8 @@ evidence:
     - 7737c49 decisions slimmed and split, the index to data
     - 18b0e1b links in docs/work re-pointed
     - this result and its data file
-    - "pending: the owner's keel mr commit of .keel/config.toml, docs/architecture.html, docs/install.html"
+    - "b186a38 the owner's keel mr commit of .keel/config.toml (the decisions cap), docs/architecture.html, docs/install.html (links re-pointed)"
+    - this result and its data file updated after b186a38
   tests:
     unit: "none: waived, no code path changed (DEC-16)"
     integration: "none: waived for the same reason"
@@ -61,11 +62,12 @@ evidence:
     - docs/use-cases/workflow.yaml, router.yaml, dsh.yaml, use-cases-index.yaml replace their pages
     - docs/backlog/e-router-v2.yaml, github-flow.yaml, e-seed-v2.yaml, dsh.yaml, backlog-index.yaml replace their pages
     - docs/work W1 inventory, W1 result, W2 result (links)
+    - docs/architecture.html, docs/install.html (T1, links re-pointed; the owner's commit b186a38)
     - this result and its data file
 distillation: Nothing citable. DEC-69 records the rule W5 applies; W5 is that rule carried out.
 follow-ups:
-  - item: The owner's keel mr commit of the three staged rule files, and the project-router line the sandbox refused.
-    taken-by: E-DOCSPLIT.W5, before its sign-off (the router stages the command)
+  - item: The .claude/skills/project-router/SKILL.md line the sandbox refused (deviations, first entry).
+    taken-by: E-DOCSPLIT.W4
   - item: W3 adds Amended rows on DEC-27 and DEC-40; DEC-27 now sits in review-docs.html, DEC-40 in workflow-gates.html, both slimmed with amendments folded into the choice.
     taken-by: whichever of E-DOCSPLIT.W3 and W5 merges second carries the other's change, in the slimmed shape
   - item: The owner rules whether DEC-31, DEC-36, DEC-43, DEC-20 or DEC-60 is replaced whole (details.suspects).
