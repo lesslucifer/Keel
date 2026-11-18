@@ -40,11 +40,14 @@ evidence:
     - 00d81f9 review round 2 blockers (byte-order mark, several YAML documents)
     - 72fb91d review round 2 nits (caps keys by glob shape, caps globs compiled once, one decode, HashSet)
     - this update for round 2
+    - 9c3b240 review round 3 important (several YAML documents checked as one, check_doc)
+    - 27ecd53 review round 3 nit (a caps key with a dot in its last part names no page)
+    - this update for round 3
   tests:
     unit: src/verify_doc.rs fields per role, caps, page words, data-file shapes, wrong types, anchors, byte-order mark, several documents, pair_of; src/main.rs hook filter, [docs.caps], prefix keys
     integration: tests/suite/verify_doc.rs, 31 tests, 16 new or rewritten for data files and caps; tests/suite/ci_gate.rs the_docs_job_checks_a_changed_data_file_with_its_page
     e2e: tests/suite/docsplit_e2e.rs started; the E-DOCSTYLE e2e rewritten for pairs
-    totals: cargo test 141 unit, 534 suite passed, 10 ignored; keel check green
+    totals: cargo test 142 unit, 534 suite passed, 10 ignored; keel check green
   docs:
     - docs/decisions/workflow-gates.html (DEC-52 Amended)
     - docs/decisions/distribution.html (DEC-10 Amended)
