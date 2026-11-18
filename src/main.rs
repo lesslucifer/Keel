@@ -95,6 +95,11 @@ struct Docs {
     root: String,
     /// Glob lists per tier; None = Trawler's layout under `root` (notes::tier_of).
     tiers: Option<Tiers>,
+    /// `[docs.caps]`: a ready page's word cap by its repo path, glob -> words (the `docs.tiers`
+    /// matcher; a page several globs match takes the smallest cap). A plan or result is capped by
+    /// its data file's role instead (DEC-69, E-DOCSPLIT.W2). Unset: no page is capped by path.
+    #[serde(default)]
+    caps: std::collections::BTreeMap<String, usize>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -431,7 +436,7 @@ IFS='
 '
 set --
 for p in $paths; do
-  case "$p" in *.html) [ -f "$p" ] && set -- "$@" "$p" ;; esac
+  case "$p" in *.html|*.yaml) [ -f "$p" ] && set -- "$@" "$p" ;; esac
 done
 [ $# -gt 0 ] || exit 0
 "#,
@@ -603,24 +608,66 @@ fn pre_commit(repo: &Path, cfg: &Config) -> Result<i32, String> {
     }
 }
 
-/// No paths: every html doc under docs.root (tracked or untracked, not ignored).
+/// No paths: every page (`.html`) and data file (`.yaml`) under docs.root, tracked or untracked, not
+/// ignored. Each path checks its pair: a page and the data file beside it (same name, `.yaml`), each
+/// pair once. A `.yaml` outside docs.root is no doc and is skipped; a page outside it has no data file.
 fn verify_doc(repo: &Path, paths: &[&str]) -> Result<i32, String> {
-    let files: Vec<String> = if paths.is_empty() {
-        let glob = format!("{}/*.html", load_config(repo)?.docs.root.trim_end_matches('/'));
-        let ls = git(repo, &["ls-files", "--cached", "--others", "--exclude-standard", "--", &glob], &[])?;
-        ls.lines().map(|l| repo.join(l).to_string_lossy().into_owned()).collect()
-    } else {
-        paths.iter().map(|s| s.to_string()).collect()
+    let cfg = if paths.is_empty() { Some(load_config(repo)?) } else { load_config(repo).ok() };
+    let files: Vec<String> = match &cfg {
+        Some(cfg) if paths.is_empty() => {
+            let root = cfg.docs.root.trim_end_matches('/');
+            let (html, yaml) = (format!("{root}/*.html"), format!("{root}/*.yaml"));
+            let ls = git(repo, &["ls-files", "--cached", "--others", "--exclude-standard", "--", &html, &yaml], &[])?;
+            ls.lines().map(|l| repo.join(l).to_string_lossy().into_owned()).collect()
+        }
+        _ => paths.iter().map(|s| s.to_string()).collect(),
     };
+    let in_docs = |p: &Path| match &cfg {
+        Some(c) => repo_rel(repo, p).is_some_and(|r| r.starts_with(&format!("{}/", c.docs.root.trim_end_matches('/')))),
+        None => true,
+    };
+    let mut seen = std::collections::BTreeSet::new();
     let mut red = false;
     for f in &files {
-        let errs = verify_doc::verify(Path::new(f));
-        for e in &errs {
-            eprintln!("{f}: {e}");
+        let (stem, is_data) = match (f.strip_suffix(".yaml"), f.strip_suffix(".html")) {
+            (Some(s), _) => (s, true),
+            (_, Some(s)) => (s, false),
+            _ => (f.as_str(), false),
+        };
+        if (is_data && !in_docs(Path::new(f))) || !seen.insert(stem.to_string()) {
+            continue;
+        }
+        if is_data && !Path::new(f).is_file() {
+            eprintln!("{f}: cannot read file");
+            red = true;
+            continue;
+        }
+        let page = if is_data || f.ends_with(".html") { format!("{stem}.html") } else { f.clone() };
+        let data = PathBuf::from(format!("{stem}.yaml"));
+        let data = (stem != f && data.is_file() && in_docs(&data)).then_some(data);
+        let rel = repo_rel(repo, Path::new(&page));
+        let cap = rel.as_deref().and_then(|r| cfg.as_ref().and_then(|c| path_cap(&c.docs.caps, r)));
+        let errs = verify_doc::verify_pair(Path::new(&page), data.as_deref(), cap);
+        for (file, e) in &errs {
+            eprintln!("{}: {e}", file.display());
         }
         red |= !errs.is_empty();
     }
     Ok(red as i32)
+}
+
+/// The `[docs.caps]` entry for a repo path: the smallest cap among the globs that match it.
+fn path_cap<'a>(caps: &'a std::collections::BTreeMap<String, usize>, rel: &str) -> Option<(&'a str, usize)> {
+    caps.iter().filter(|(g, _)| notes::glob(g, rel)).map(|(g, c)| (g.as_str(), *c)).min_by_key(|(_, c)| *c)
+}
+
+/// A path's place in the repo, `/`-separated, when it is inside it (the file or its directory must exist).
+fn repo_rel(repo: &Path, p: &Path) -> Option<String> {
+    let abs = if p.is_absolute() { p.to_owned() } else { std::env::current_dir().ok()?.join(p) };
+    let (dir, name) = (abs.parent()?, abs.file_name()?);
+    let full = std::fs::canonicalize(dir).ok()?.join(name);
+    let rel = full.strip_prefix(std::fs::canonicalize(repo).ok()?).ok()?;
+    Some(rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"))
 }
 
 fn run() -> Result<i32, String> {
@@ -680,7 +727,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        commit_check, hook_conflicts, hooks_problem_of, no_git_env, CommitCheck, Config, ReportPolicy, COMMIT_MSG, DOC_POST, DOC_STOP, GIT_HOOK_ENV,
+        commit_check, hook_conflicts, hooks_problem_of, no_git_env, path_cap, CommitCheck, Config, ReportPolicy, COMMIT_MSG, DOC_POST, DOC_STOP, GIT_HOOK_ENV,
         GIT_LOCAL_ENV, INSTALL_PAGE, KEEL_MARK, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH,
     };
     use std::ffi::OsStr;
@@ -815,5 +862,30 @@ mod tests {
         }
         let post: Vec<&str> = DOC_POST.lines().collect();
         assert!(post.iter().position(|l| *l == "[ $# -gt 0 ] || exit 0") < post.iter().position(|l| *l == guard), "DOC_POST filters paths first");
+    }
+
+    /// E-DOCSPLIT.W2: the after-write hook passes a written page or data file on, nothing else.
+    #[test]
+    fn the_after_write_hook_takes_pages_and_data_files_only() {
+        let case: Vec<&str> = DOC_POST.lines().filter(|l| l.trim_start().starts_with("case \"$p\" in")).collect();
+        assert_eq!(case, [r#"  case "$p" in *.html|*.yaml) [ -f "$p" ] && set -- "$@" "$p" ;; esac"#]);
+    }
+
+    /// E-DOCSPLIT.W2: `[docs.caps]` maps path globs to words; a page several globs match takes the
+    /// smallest; no table, no cap; a cap that is not a whole number refuses the config.
+    #[test]
+    fn docs_caps_map_globs_to_words_and_the_smallest_match_wins() {
+        let base = "[check]\nlint=\"true\"\ntest=\"true\"\n[branches]\nmain=\"main\"\n[docs]\nroot=\"docs/\"\n";
+        let cfg: Config =
+            toml::from_str(&format!("{base}[docs.caps]\n\"docs/decisions/*.html\" = 5000\n\"docs/**\" = 9000\n\"docs/install.html\" = 1500\n")).unwrap();
+        assert_eq!(path_cap(&cfg.docs.caps, "docs/decisions/router.html"), Some(("docs/decisions/*.html", 5000)));
+        assert_eq!(path_cap(&cfg.docs.caps, "docs/install.html"), Some(("docs/install.html", 1500)));
+        assert_eq!(path_cap(&cfg.docs.caps, "docs/work/x.html"), Some(("docs/**", 9000)));
+        assert_eq!(path_cap(&cfg.docs.caps, "README.html"), None);
+        let none: Config = toml::from_str(base).unwrap();
+        assert!(none.docs.caps.is_empty());
+        for bad in ["\"docs/a.html\" = \"many\"", "\"docs/a.html\" = -1", "\"docs/a.html\" = 1.5"] {
+            assert!(toml::from_str::<Config>(&format!("{base}[docs.caps]\n{bad}\n")).is_err(), "{bad}");
+        }
     }
 }

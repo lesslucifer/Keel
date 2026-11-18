@@ -1,20 +1,32 @@
-//! `keel verify-doc`: htmldoc checklist, relative links, quoted diagram labels (UC-DOC-1/2/4).
+//! `keel verify-doc`: a plan's or result's data file against its role's fields, and every page's
+//! relative links, quoted diagram labels and word cap (UC-DOC-1/2/4, DEC-69).
 //! ponytail: hand-rolled tag scanner, not an HTML parser; fine for htmldoc's
 //! well-formed output, swap in a real parser if docs start using odd markup.
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use yaml_rust2::{Yaml, YamlLoader};
 
 const EPIC_PLAN: &[&str] =
     &["intent", "owner-changes", "use-cases", "expected", "non-goals", "wu-summaries", "e2e-plan", "distillation-plan", "open-questions"];
 const WU_PLAN: &[&str] = &["requirement", "maps-to", "expected", "test-plan"];
 const WU_RESULT: &[&str] = &["outcome", "deviations", "evidence", "distillation", "follow-ups"];
 const EPIC_RESULT: &[&str] = &["outcome", "wu-rollup", "deviations", "evidence", "distillation", "follow-ups"];
-/// Known in every governed doc, required only where a checklist lists it (keel-write's today/after table).
-const OPTIONAL: &[&str] = &["owner-changes"];
-const WU_SUB: &[&str] = &["wu-summary", "wu-maps-to", "wu-expected", "wu-deps"];
+/// Every data file's own fields (DEC-69): what it is, whether it is done, and which page it serves.
+const COMMON: &[&str] = &["artifact", "status", "id", "title", "date", "page"];
+/// Known in every data file, required only where a role lists it; `details` is free and never checked.
+const OPTIONAL: &[&str] = &["owner-changes", "details"];
+/// Each entry of an epic plan's `wu-summaries`, one per WU.
+const WU_SUB: &[&str] = &["wu", "wu-summary", "wu-maps-to", "wu-expected", "wu-deps"];
+/// The levels a WU plan's `test-plan` names; other keys under it are free.
+const TEST_LEVELS: &[&str] = &["unit", "integration", "e2e"];
+const ROLES: &[&str] = &["epic-plan", "wu-plan", WU_RESULT_ROLE, EPIC_RESULT_ROLE];
 const WU_RESULT_ROLE: &str = "wu-result";
-/// Words allowed in an epic plan's top: its main content above the first WU.
-const TOP_CAP: usize = 300;
 const EPIC_RESULT_ROLE: &str = "epic-result";
+/// Words allowed in a ready page by its data file's role (DEC-69); a one-part epic takes the epic caps.
+const ROLE_CAPS: &[(&str, usize)] = &[("epic-plan", 700), ("wu-plan", 500), (WU_RESULT_ROLE, 500), (EPIC_RESULT_ROLE, 700)];
+/// Words allowed in an epic plan page's top: its main content above the heading with id `work`.
+const TOP_CAP: usize = 300;
+/// The id that marks where an epic plan page's top ends: the heading of its parts.
+const WORK_ID: &str = "work";
 
 struct Tag<'a> {
     name: &'a str,
@@ -196,14 +208,6 @@ fn in_quote(src: &str) -> bool {
     quoted
 }
 
-fn filled(html: &str, ts: &[Tag], i: usize) -> bool {
-    let mut any = false;
-    if let Some((a, b)) = span(ts, i) {
-        walk(html, ts, a, b, |run, _| any |= run.chars().any(|c| !c.is_whitespace()));
-    }
-    any
-}
-
 fn strip_blocks(html: &str, tag: &str) -> String {
     let (open, close) = (format!("<{tag}"), format!("</{tag}>"));
     let mut s = html.to_string();
@@ -243,26 +247,307 @@ pub fn has_role(raw: &str, role: &str) -> bool {
     artifact(raw).is_some_and(|a| a.split_whitespace().any(|r| r == role))
 }
 
-/// Problems with one doc; empty = green. Drafts are fully silent: no checklist, no link check.
-pub fn verify(path: &Path) -> Vec<String> {
+/// One problem: the file it is in, and what is wrong.
+pub type Problem = (PathBuf, String);
+
+/// Problems with one doc - a page and the data file beside it, either one possibly absent; empty =
+/// green. `data` is the data file to read, when there is one (the caller finds it: same name, ending
+/// `.yaml`, under docs.root). `path_cap` is the `[docs.caps]` glob and cap that match the page's path,
+/// used when no ready data file gives the page a role. A data file marked draft silences the pair; a
+/// page with no data file is silenced by its own `data-status="draft"`.
+pub fn verify_pair(page: &Path, data: Option<&Path>, path_cap: Option<(&str, usize)>) -> Vec<Problem> {
+    let mut out = vec![];
+    let name = page.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let mut roles = None;
+    if let Some(d) = data {
+        let Ok(src) = std::fs::read_to_string(d) else {
+            return vec![(d.to_owned(), "cannot read file".into())];
+        };
+        match read_data(&src, &name, page.is_file()) {
+            Data::None => {}
+            Data::Draft => return out,
+            Data::Checked { roles: r, problems } => {
+                out.extend(problems.into_iter().map(|p| (d.to_owned(), p)));
+                roles = Some(r);
+            }
+        }
+    }
+    if data.is_some() && !page.is_file() {
+        return out; // read_data named the missing page, or the file is other data with no page
+    }
+    out.extend(page_problems(page, roles.as_deref(), path_cap).into_iter().map(|p| (page.to_owned(), p)));
+    out
+}
+
+/// What a data file is: not one (no `artifact` field, no page beside it - another kind of data), a
+/// draft (silent), or one to check: its roles (empty when unknown) and its problems.
+#[derive(Debug, PartialEq)]
+enum Data {
+    None,
+    Draft,
+    Checked { roles: Vec<String>, problems: Vec<String> },
+}
+
+/// Reads one data file's text against its role's fields (DEC-69). `page` is the page file name the
+/// data file must serve (its own name, ending `.html`); `page_exists`, whether that file is beside it.
+fn read_data(src: &str, page: &str, page_exists: bool) -> Data {
+    let bad = |p: String| if page_exists { Data::Checked { roles: vec![], problems: vec![p] } } else { Data::None };
+    let docs = match YamlLoader::load_from_str(src) {
+        Ok(d) => d,
+        Err(e) => return Data::Checked { roles: vec![], problems: vec![format!("not valid YAML: {e}")] },
+    };
+    let doc = match docs.as_slice() {
+        [d] => d,
+        [] => return bad("the data file is empty: it needs its role's fields".into()),
+        _ => return bad(format!("the data file holds {} YAML documents; it is one", docs.len())),
+    };
+    let Yaml::Hash(h) = doc else {
+        return bad("the data file is not a mapping of fields".into());
+    };
+    let get = |k: &str| h.get(&Yaml::String(k.into()));
+    if get("artifact").is_none() && !page_exists {
+        return Data::None;
+    }
+    if get("status").and_then(Yaml::as_str) == Some("draft") {
+        return Data::Draft;
+    }
+    let mut problems = vec![];
+    let roles: Vec<String> = match get("artifact") {
+        None => return Data::Checked { roles: vec![], problems: vec!["missing field \"artifact\"".into()] },
+        Some(Yaml::String(s)) => s.split_whitespace().map(String::from).collect(),
+        Some(Yaml::Array(a)) => a.iter().map(|r| r.as_str().map_or_else(|| format!("{r:?}"), String::from)).collect(),
+        Some(other) => vec![format!("{other:?}")],
+    };
+    if roles.is_empty() {
+        return Data::Checked { roles, problems: vec!["field \"artifact\" is empty".into()] };
+    }
+    if let Some(r) = roles.iter().find(|r| !ROLES.contains(&r.as_str())) {
+        problems.push(format!("unknown artifact \"{r}\" (expected one of: {})", ROLES.join(", ")));
+        return Data::Checked { roles: vec![], problems };
+    }
+    let rs: Vec<&str> = roles.iter().map(String::as_str).collect();
+    if let Some(p) = combination_problem(&rs) {
+        problems.push(p);
+        return Data::Checked { roles: vec![], problems };
+    }
+    let (required, known) = fields(&rs);
+    for k in h.keys() {
+        let key = k.as_str().map_or_else(|| format!("{k:?}"), String::from);
+        if !known.contains(&key.as_str()) {
+            problems.push(format!("unknown field \"{key}\" (typo? expected one of: {})", known.join(", ")));
+        }
+    }
+    for f in known.iter().filter(|f| **f != "details") {
+        match get(f) {
+            None if required.contains(f) => problems.push(format!("missing field \"{f}\"")),
+            Some(v) if empty(v) => problems.push(format!("field \"{f}\" is empty")),
+            _ => {}
+        }
+    }
+    let text = |k: &str| get(k).and_then(Yaml::as_str).map(str::trim).filter(|s| !s.is_empty());
+    if let Some(s) = text("status").filter(|s| *s != "ready") {
+        problems.push(format!("status \"{s}\" is neither draft nor ready"));
+    }
+    if let Some(d) = get("date").filter(|d| !empty(d)) {
+        if !d.as_str().is_some_and(is_date) {
+            problems.push(format!("date {} is not a quoted \"YYYY-MM-DD\"", shown(d)));
+        }
+    }
+    if let Some(p) = get("page").filter(|p| !empty(p)) {
+        if p.as_str() != Some(page) {
+            problems.push(format!("page {} is not this data file's page: write \"{page}\"", shown(p)));
+        } else if !page_exists {
+            problems.push(format!("page {page} is not beside the data file"));
+        }
+    }
+    let id = text("id");
+    if rs.iter().all(|r| r.starts_with("wu-")) {
+        if let (Some(id), Some(epic)) = (id, text("epic")) {
+            if !is_wu_of(id, epic) {
+                problems.push(format!("id \"{id}\" is not a WU of epic \"{epic}\": write {epic}.W<n>"));
+            }
+        }
+    }
+    if rs.contains(&"epic-plan") {
+        if let Some(w) = get("wu-summaries").filter(|w| !empty(w)) {
+            problems.extend(wu_summaries(w, id));
+        }
+    }
+    if rs.contains(&"wu-plan") {
+        if let Some(t) = get("test-plan").filter(|t| !empty(t)) {
+            problems.extend(test_plan(t));
+        }
+    }
+    Data::Checked { roles, problems }
+}
+
+/// A one-part epic pairs an epic role with the WU role of the same kind; nothing else shares a doc.
+fn combination_problem(roles: &[&str]) -> Option<String> {
+    let mut set = roles.to_vec();
+    set.sort();
+    set.dedup();
+    match set.as_slice() {
+        [_] | ["epic-plan", "wu-plan"] | ["epic-result", "wu-result"] => None,
+        _ => Some(format!("artifact {} cannot share one doc: a one-part epic pairs epic-plan with wu-plan, or epic-result with wu-result", set.join(" and "))),
+    }
+}
+
+/// (required, known) fields for these roles: the common ones, `epic` for a WU's own doc, and the
+/// union of the roles' checklists, a shared field once.
+fn fields(roles: &[&str]) -> (Vec<&'static str>, Vec<&'static str>) {
+    let mut required = COMMON.to_vec();
+    let add = |v: &mut Vec<&'static str>, f: &'static str| {
+        if !v.contains(&f) {
+            v.push(f);
+        }
+    };
+    if !roles.is_empty() && roles.iter().all(|r| r.starts_with("wu-")) {
+        add(&mut required, "epic");
+    }
+    for r in roles {
+        let list = match *r {
+            "epic-plan" => EPIC_PLAN,
+            "wu-plan" => WU_PLAN,
+            WU_RESULT_ROLE => WU_RESULT,
+            EPIC_RESULT_ROLE => EPIC_RESULT,
+            _ => &[],
+        };
+        for f in list {
+            add(&mut required, f);
+        }
+    }
+    let mut known = required.clone();
+    for f in OPTIONAL {
+        add(&mut known, f);
+    }
+    (required, known)
+}
+
+/// The cap a page with these roles holds (DEC-69): a one-part epic takes the larger, its epic's.
+fn role_cap(roles: &[String]) -> Option<usize> {
+    roles.iter().filter_map(|r| ROLE_CAPS.iter().find(|(n, _)| n == r).map(|(_, c)| *c)).max()
+}
+
+/// Empty: null, blank text, or a list or mapping holding nothing but empty values.
+fn empty(y: &Yaml) -> bool {
+    match y {
+        Yaml::Null | Yaml::BadValue => true,
+        Yaml::String(s) => s.trim().is_empty(),
+        Yaml::Array(a) => a.iter().all(empty),
+        Yaml::Hash(h) => h.values().all(empty),
+        _ => false,
+    }
+}
+
+/// A value as a problem line shows it: text quoted, anything else as YAML would read it.
+fn shown(y: &Yaml) -> String {
+    match y {
+        Yaml::String(s) => format!("\"{s}\""),
+        Yaml::Integer(i) => i.to_string(),
+        Yaml::Real(r) => r.clone(),
+        Yaml::Boolean(b) => b.to_string(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn is_date(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 10 && b.iter().enumerate().all(|(i, c)| if i == 4 || i == 7 { *c == b'-' } else { c.is_ascii_digit() })
+}
+
+/// `wu` is `<epic>.W<n>`.
+fn is_wu_of(wu: &str, epic: &str) -> bool {
+    wu.strip_prefix(epic).and_then(|r| r.strip_prefix(".W")).is_some_and(|n| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit()))
+}
+
+/// An epic plan's `wu-summaries`: a list, one entry per WU, each with its five fields; each `wu` is
+/// `<id>.W<n>` and listed once; each `wu-deps` is "none" or names other WUs of this list.
+fn wu_summaries(w: &Yaml, epic: Option<&str>) -> Vec<String> {
+    let mut out = vec![];
+    let Yaml::Array(entries) = w else {
+        return vec!["field \"wu-summaries\" is not a list: write one entry per WU".into()];
+    };
+    let key = |k: &str| Yaml::String(k.into());
+    let mut ids: Vec<&str> = vec![];
+    for (n, e) in entries.iter().enumerate() {
+        let n = n + 1;
+        let Yaml::Hash(h) = e else {
+            out.push(format!("wu-summaries entry {n} is not a mapping of {}", WU_SUB.join(", ")));
+            continue;
+        };
+        let wu = h.get(&key("wu")).and_then(Yaml::as_str).map(str::trim).filter(|s| !s.is_empty());
+        let at = format!("wu-summaries entry {n} ({})", wu.unwrap_or("no wu"));
+        for k in h.keys() {
+            let name = k.as_str().map_or_else(|| format!("{k:?}"), String::from);
+            if !WU_SUB.contains(&name.as_str()) {
+                out.push(format!("{at}: unknown field \"{name}\" (typo? expected one of: {})", WU_SUB.join(", ")));
+            }
+        }
+        for f in WU_SUB {
+            match h.get(&key(f)) {
+                None => out.push(format!("{at}: missing field \"{f}\"")),
+                Some(v) if empty(v) => out.push(format!("{at}: field \"{f}\" is empty")),
+                _ => {}
+            }
+        }
+        if let Some(wu) = wu {
+            if epic.is_some_and(|e| !is_wu_of(wu, e)) {
+                out.push(format!("{at}: wu \"{wu}\" is not a WU of this epic: write {}.W<n>", epic.unwrap_or_default()));
+            }
+            if ids.contains(&wu) {
+                out.push(format!("{at}: wu \"{wu}\" is listed twice"));
+            }
+            ids.push(wu);
+        }
+    }
+    for e in entries {
+        let Yaml::Hash(h) = e else { continue };
+        let Some(wu) = h.get(&key("wu")).and_then(Yaml::as_str).map(str::trim) else { continue };
+        let deps: Vec<&Yaml> = match h.get(&key("wu-deps")) {
+            Some(Yaml::String(s)) if s.trim().eq_ignore_ascii_case("none") => vec![],
+            Some(Yaml::Array(a)) => a.iter().collect(),
+            Some(d) if !empty(d) => vec![d],
+            _ => vec![],
+        };
+        for d in deps {
+            match d.as_str().map(str::trim) {
+                Some(d) if d == wu => out.push(format!("wu-deps of {wu} names {wu} itself")),
+                Some(d) if ids.contains(&d) => {}
+                _ => out.push(format!("wu-deps of {wu} names {}, which is not a WU of this plan (write \"none\" when it waits for none)", shown(d))),
+            }
+        }
+    }
+    out
+}
+
+/// A WU plan's `test-plan`: a mapping that gives each level its tests, or "none" or a waiver with why.
+fn test_plan(t: &Yaml) -> Vec<String> {
+    let Yaml::Hash(h) = t else {
+        return vec![format!("field \"test-plan\" is not a mapping: give each level, {}", TEST_LEVELS.join(", "))];
+    };
+    let mut out = vec![];
+    for l in TEST_LEVELS {
+        match h.get(&Yaml::String((*l).into())) {
+            None => out.push(format!("test-plan: missing level \"{l}\" (its tests, or \"none: <why>\")")),
+            Some(v) if empty(v) => out.push(format!("test-plan: level \"{l}\" is empty")),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// A page's own problems: diagram labels and relative links, and its word cap - by `roles` when a
+/// ready data file gives it some, else by `path_cap`. With no data file (`roles` is `None`), a page
+/// marked `data-status="draft"` is silent.
+fn page_problems(path: &Path, roles: Option<&[String]>, path_cap: Option<(&str, usize)>) -> Vec<String> {
     let Ok(raw) = std::fs::read_to_string(path) else {
         return vec!["cannot read file".into()];
     };
     let html = scannable(&raw);
     let ts = tags(&html);
     let mut errs = vec![];
-
-    let root = root(&ts);
-    if root.is_some_and(|r| attr(r, "data-status") == Some("draft")) {
+    if roles.is_none() && root(&ts).is_some_and(|r| attr(r, "data-status") == Some("draft")) {
         return errs;
-    }
-    if let Some(root) = root {
-        let status = attr(root, "data-status").unwrap_or("");
-        if let Some(art) = attr(root, "data-artifact") {
-            if !status.is_empty() && status != "draft" {
-                checklist(&html, &ts, art, &mut errs);
-            }
-        }
     }
 
     let mut scanned = 0;
@@ -292,69 +577,28 @@ pub fn verify(path: &Path) -> Vec<String> {
             errs.push(format!("dangling relative link: {h}"));
         }
     }
-    errs
-}
 
-fn checklist(html: &str, ts: &[Tag], artifact: &str, errs: &mut Vec<String>) {
-    // Collapsed roles ("epic-plan wu-plan"): union of the checklists, a shared tag counts once.
-    let mut expected: Vec<&str> = vec![];
-    for a in artifact.split_whitespace() {
-        expected.extend(match a {
-            "epic-plan" => EPIC_PLAN,
-            "wu-plan" => WU_PLAN,
-            WU_RESULT_ROLE => WU_RESULT,
-            EPIC_RESULT_ROLE => EPIC_RESULT,
-            _ => {
-                errs.push(format!("unknown data-artifact: {a}"));
-                return;
+    let (words, top, marked) = page_words(&html, &ts);
+    match (roles.filter(|r| !r.is_empty()), path_cap) {
+        (Some(roles), _) => {
+            let role = roles.join(" + ");
+            if let Some(cap) = role_cap(roles).filter(|c| words > *c) {
+                errs.push(format!("page has {words} words, over the {role} cap of {cap}: cut it, or move details to the data file"));
             }
-        });
-    }
-    let epic = artifact.split_whitespace().any(|a| a == "epic-plan");
-    let mut known: Vec<&str> = vec![];
-    for k in expected.iter().chain(OPTIONAL) {
-        if !known.contains(k) {
-            known.push(k);
-        }
-    }
-    let mut seen: Vec<&str> = vec![];
-    for (i, t) in ts.iter().enumerate().filter(|(_, t)| !t.closing) {
-        let Some(item) = attr(t, "data-item") else { continue };
-        if known.contains(&item) {
-            if filled(html, ts, i) {
-                seen.push(item);
-            } else {
-                errs.push(format!("item \"{item}\" is empty"));
-            }
-        } else if !(epic && WU_SUB.contains(&item)) {
-            errs.push(format!("unknown tag data-item=\"{item}\" (typo? expected one of: {})", known.join(", ")));
-        }
-    }
-    for e in &expected {
-        if !seen.contains(e) && !errs.iter().any(|m| m.starts_with(&format!("item \"{e}\" is empty"))) {
-            errs.push(format!("missing item \"{e}\""));
-        }
-    }
-    if epic {
-        let wus = wu_blocks(ts);
-        let n = top_words(html, ts, &wus);
-        if n > TOP_CAP {
-            errs.push(format!("epic plan top has {n} words above the first WU, over the cap of {TOP_CAP}: cut it, or move details below the work"));
-        }
-        if wus.is_empty() {
-            errs.push("epic plan has no data-wu block".into());
-        }
-        for i in wus {
-            let (a, b) = span(ts, i).unwrap_or((ts[i].end, html.len()));
-            for sub in WU_SUB {
-                let ok = (0..ts.len())
-                    .any(|j| !ts[j].closing && ts[j].start >= a && ts[j].start < b && attr(&ts[j], "data-item") == Some(sub) && filled(html, ts, j));
-                if !ok {
-                    errs.push(format!("data-wu {}: missing or empty \"{sub}\"", attr(&ts[i], "data-wu").unwrap_or("?")));
-                }
+            if roles.iter().any(|r| r == "epic-plan") && top > TOP_CAP {
+                errs.push(if marked {
+                    format!("epic plan top has {top} words above the heading with id=\"{WORK_ID}\", over the cap of {TOP_CAP}: cut it, or move details below the parts")
+                } else {
+                    format!("epic plan top has {top} words, over the cap of {TOP_CAP}: no heading has id=\"{WORK_ID}\", so the whole page is the top - mark the parts' heading with it, or cut")
+                });
             }
         }
+        (None, Some((glob, cap))) if words > cap => {
+            errs.push(format!("page has {words} words, over the cap of {cap} that [docs.caps] sets for {glob}: cut it"));
+        }
+        _ => {}
     }
+    errs
 }
 
 /// Decodes numeric character references (decimal and hex) and the named entities docs use; any
@@ -442,21 +686,23 @@ fn entity(name: &str) -> Option<char> {
     })
 }
 
-/// The open tags carrying `data-wu`, in document order.
-fn wu_blocks(ts: &[Tag]) -> Vec<usize> {
-    (0..ts.len()).filter(|&i| !ts[i].closing && attr(&ts[i], "data-wu").is_some()).collect()
-}
-
-/// Words in an epic plan's top: the text from the start of `<main>` (else `<body>`) up to the
-/// first `data-wu` block (`wus`, from `wu_blocks`). A word is a whitespace-separated run, entities
-/// decoded, holding a letter or digit: a dash, arrow, `·` or unknown `&name;` is not one; inline
-/// tags join the text around them, block tags (`BLOCK`) separate it.
-fn top_words(html: &str, ts: &[Tag], wus: &[usize]) -> usize {
-    let open = |n: &str| ts.iter().find(|t| t.name == n && !t.closing).map(|t| t.end);
-    let start = open("main").or_else(|| open("body")).unwrap_or(0);
-    let end = wus.iter().map(|&i| ts[i].start).find(|&s| s >= start).unwrap_or(html.len());
-    let words = decode_with(&text(html, ts, start, end.max(start)), Some('\u{fffd}'));
-    words.split_whitespace().filter(|w| w.chars().any(char::is_alphanumeric)).count()
+/// Words on a page and in its top, and whether a heading with id `work` ends that top: the text of
+/// `<main>` (else `<body>`, else the whole file), the top running from its start to the element with
+/// id `work`, or to its end when none has it. A word is a whitespace-separated run, entities decoded,
+/// holding a letter or digit: a dash, arrow, `·` or unknown `&name;` is not one; inline tags join
+/// the text around them, block tags (`BLOCK`) separate it.
+fn page_words(html: &str, ts: &[Tag]) -> (usize, usize, bool) {
+    let open = |n: &str| ts.iter().position(|t| t.name == n && !t.closing);
+    let (start, end) = match open("main").or_else(|| open("body")) {
+        Some(i) => span(ts, i).unwrap_or((ts[i].end, html.len())),
+        None => (0, html.len()),
+    };
+    let work = ts.iter().find(|t| !t.closing && t.start >= start && t.start < end && attr(t, "id") == Some(WORK_ID)).map(|t| t.start);
+    let count = |b: usize| {
+        let words = decode_with(&text(html, ts, start, b.max(start)), Some('\u{fffd}'));
+        words.split_whitespace().filter(|w| w.chars().any(char::is_alphanumeric)).count()
+    };
+    (count(end), count(work.unwrap_or(end)), work.is_some())
 }
 
 const FLOWCHARTS: &[&str] = &["flowchart", "graph", "flowchart-elk"];
@@ -762,17 +1008,12 @@ fn scan(s: &str, out: &mut Vec<Hit>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{artifact, decode, decode_mapped, has_role, hits, result_role, tags, top_words, unquoted_labels, verify, wu_blocks};
+    use super::{artifact, decode, decode_mapped, fields, has_role, hits, page_words, read_data, result_role, role_cap, tags, unquoted_labels, Data, ROLES};
 
     #[test]
-    fn a_stray_closing_html_before_the_root_neither_hides_the_checklist_nor_the_role() {
-        let doc = r#"<p>see </html> below</p><html data-artifact="wu-result" data-status="final"><p data-item="outcome">done</p></html>"#;
-        let path = std::env::temp_dir().join(format!("keel-stray-root-{}.html", std::process::id()));
-        std::fs::write(&path, doc).unwrap();
-        let errs = verify(&path);
-        std::fs::remove_file(&path).unwrap();
+    fn a_stray_closing_html_before_the_root_does_not_hide_the_role() {
+        let doc = r#"<p>see </html> below</p><html data-artifact="wu-result" data-status="final"><p>done</p></html>"#;
         assert_eq!(artifact(doc).as_deref(), Some("wu-result"), "the doc is a wu-result report");
-        assert!(errs.iter().any(|e| e == "missing item \"deviations\""), "the checklist judges the same root: {errs:?}");
     }
 
     #[test]
@@ -786,14 +1027,12 @@ mod tests {
     }
 
     #[test]
-    fn the_result_role_a_sign_off_attests_is_one_the_checklist_knows() {
+    fn the_result_role_a_sign_off_attests_is_one_the_data_file_knows() {
         for epic in [false, true] {
             let role = result_role(epic);
-            let path = std::env::temp_dir().join(format!("keel-role-{epic}-{}.html", std::process::id()));
-            std::fs::write(&path, format!(r#"<html data-artifact="{role}" data-status="final"></html>"#)).unwrap();
-            let errs = verify(&path);
-            std::fs::remove_file(&path).unwrap();
-            assert!(errs.contains(&"missing item \"outcome\"".to_string()) && !errs.iter().any(|e| e.starts_with("unknown")), "{role}: {errs:?}");
+            assert!(ROLES.contains(&role), "{role}");
+            let (required, _) = fields(&[role]);
+            assert!(required.contains(&"outcome") && required.contains(&"follow-ups"), "{role}: {required:?}");
         }
     }
 
@@ -1020,17 +1259,202 @@ mod tests {
 
     fn top(html: &str) -> usize {
         let ts = tags(html);
-        top_words(html, &ts, &wu_blocks(&ts))
+        page_words(html, &ts).1
     }
 
     #[test]
-    fn the_top_runs_from_main_or_body_to_the_first_wu_and_counts_words_with_a_letter_or_digit() {
-        assert_eq!(top("<body><header>one two</header><main><p>three four</p><div data-wu=\"W1\">five</div></main></body>"), 2);
-        assert_eq!(top("<body><header>one two</header><p>three</p><div data-wu=\"W1\">four</div></body>"), 3);
+    fn the_top_runs_from_main_or_body_to_the_work_heading_and_counts_words_with_a_letter_or_digit() {
+        assert_eq!(top("<body><header>one two</header><main><p>three four</p><h2 id=\"work\">five</h2><p>six</p></main></body>"), 2);
+        assert_eq!(top("<body><header>one two</header><p>three</p><h2 id=\"work\">four</h2></body>"), 3);
         assert_eq!(top("<main><p>a · b — c --> | 1</p></main>"), 4);
         assert_eq!(top("<main><td>a</td><td>b</td>x&amp;y A &lt;-- B</main>"), 5);
         assert_eq!(top("<main><pre>A <-- B</pre></main>"), 2);
         assert_eq!(top("<main><!-- hidden words --><p>shown</p></main>"), 1);
-        assert_eq!(top("<p>no main nor body</p><div data-wu=\"W1\">x</div>"), 4);
+        assert_eq!(top("<p>no main nor body</p><h2 id=\"work\">x</h2>"), 4);
+        assert_eq!(top("<main><p>one</p><div data-wu=\"W1\">two</div></main>"), 2, "a data-wu tag no longer ends the top");
+    }
+
+    #[test]
+    fn a_page_counts_its_main_and_marks_whether_a_work_heading_ends_its_top() {
+        let html = "<html><head><title>t t</title></head><body><header>a b c</header><main><p>one two</p><h2 id=\"work\">three</h2><p>four</p></main><footer>x</footer></body></html>";
+        let ts = tags(html);
+        assert_eq!(page_words(html, &ts), (4, 2, true));
+        let html = "<body><p>one two</p><h2 id=\"other\">three</h2></body>";
+        let ts = tags(html);
+        assert_eq!(page_words(html, &ts), (3, 3, false));
+        let html = "<main><p data-htmldoc-id=\"work\">one</p><p>two</p></main>";
+        let ts = tags(html);
+        assert_eq!(page_words(html, &ts), (2, 2, false), "only an id attribute marks the work");
+    }
+
+    #[test]
+    fn the_caps_are_dec_69s_and_a_one_part_epic_takes_the_epic_cap() {
+        let cap = |r: &[&str]| role_cap(&r.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(cap(&["epic-plan"]), Some(700));
+        assert_eq!(cap(&["wu-plan"]), Some(500));
+        assert_eq!(cap(&["wu-result"]), Some(500));
+        assert_eq!(cap(&["epic-result"]), Some(700));
+        assert_eq!(cap(&["epic-plan", "wu-plan"]), Some(700));
+        assert_eq!(cap(&["wu-result", "epic-result"]), Some(700));
+        assert_eq!(cap(&[]), None);
+        assert_eq!(super::TOP_CAP, 300);
+    }
+
+    #[test]
+    fn the_fields_per_role_are_the_checklists_plus_the_common_ones() {
+        let common = ["artifact", "status", "id", "title", "date", "page"];
+        for (roles, own) in [
+            (
+                &["epic-plan"][..],
+                &["intent", "owner-changes", "use-cases", "expected", "non-goals", "wu-summaries", "e2e-plan", "distillation-plan", "open-questions"][..],
+            ),
+            (&["wu-plan"], &["epic", "requirement", "maps-to", "expected", "test-plan"]),
+            (&["wu-result"], &["epic", "outcome", "deviations", "evidence", "distillation", "follow-ups"]),
+            (&["epic-result"], &["outcome", "wu-rollup", "deviations", "evidence", "distillation", "follow-ups"]),
+        ] {
+            let (required, known) = fields(roles);
+            let want: Vec<&str> = common.iter().chain(own).copied().collect();
+            assert_eq!(required, want, "{roles:?}");
+            assert!(known.contains(&"details") && known.contains(&"owner-changes"), "{roles:?}: {known:?}");
+        }
+        let (required, _) = fields(&["epic-plan", "wu-plan"]);
+        assert!(!required.contains(&"epic"), "a one-part epic is its own epic");
+        assert_eq!(required.iter().filter(|f| **f == "expected").count(), 1, "a shared field once");
+        assert!(required.contains(&"test-plan") && required.contains(&"wu-summaries"), "the union: {required:?}");
+    }
+
+    fn problems(yaml: &str) -> Vec<String> {
+        match read_data(yaml, "x.html", true) {
+            Data::Checked { problems, .. } => problems,
+            other => panic!("not checked: {other:?}"),
+        }
+    }
+
+    const WU_PLAN: &str = "artifact: wu-plan\nstatus: ready\nid: E-X.W1\nepic: E-X\ntitle: t\ndate: \"2026-11-18\"\npage: x.html\nrequirement: r\nmaps-to: m\nexpected: [e]\ntest-plan: {unit: u, integration: i, e2e: none}\n";
+
+    #[test]
+    fn a_complete_wu_plan_is_green_and_each_missing_or_empty_field_is_named() {
+        assert_eq!(problems(WU_PLAN), Vec::<String>::new());
+        for f in ["artifact", "status", "id", "epic", "title", "date", "page", "requirement", "maps-to", "expected", "test-plan"] {
+            let gone: String = WU_PLAN.lines().filter(|l| !l.starts_with(&format!("{f}:"))).map(|l| format!("{l}\n")).collect();
+            let p = problems(&gone);
+            assert_eq!(p, vec![format!("missing field \"{f}\"")], "{f}");
+        }
+        let p = problems(&WU_PLAN.replace("requirement: r", "requirement: \"  \"").replace("expected: [e]", "expected: []"));
+        assert_eq!(p, ["field \"requirement\" is empty", "field \"expected\" is empty"]);
+    }
+
+    #[test]
+    fn a_misspelt_field_is_named_with_the_known_ones_and_details_is_free() {
+        let p = problems(&WU_PLAN.replace("expected:", "expcted:"));
+        assert!(p.iter().any(|e| e.starts_with("unknown field \"expcted\" (typo? expected one of: ") && e.contains("owner-changes")), "{p:?}");
+        assert!(p.contains(&"missing field \"expected\"".to_string()), "{p:?}");
+        assert!(problems(&format!("{WU_PLAN}details:\n  files: [a]\n  anything: {{}}\n")).is_empty());
+        assert!(problems(&format!("{WU_PLAN}details:\n")).is_empty(), "details is never checked");
+        let p = problems(&format!("{WU_PLAN}intent: i\n"));
+        assert!(p.iter().any(|e| e.starts_with("unknown field \"intent\"")), "a field of another role is unknown: {p:?}");
+    }
+
+    #[test]
+    fn a_draft_is_silent_and_a_yaml_with_no_artifact_and_no_page_is_no_data_file() {
+        assert_eq!(read_data("artifact: wu-plan\nstatus: draft\nexpcted: x\n", "x.html", true), Data::Draft);
+        assert_eq!(read_data("rows: [a, b]\n", "x.html", false), Data::None);
+        assert_eq!(read_data("- a\n- b\n", "x.html", false), Data::None);
+        assert_eq!(read_data("", "x.html", false), Data::None);
+        assert!(matches!(read_data("rows: [a]\n", "x.html", true), Data::Checked { .. }), "beside a page it is that page's data file");
+        assert!(matches!(read_data("a: [\n", "x.html", false), Data::Checked { .. }), "broken YAML is named");
+    }
+
+    #[test]
+    fn status_date_and_page_are_checked_by_value() {
+        let p = problems(&WU_PLAN.replace("status: ready", "status: final").replace("\"2026-11-18\"", "18 Nov").replace("page: x.html", "page: y.html"));
+        assert_eq!(
+            p,
+            [
+                "status \"final\" is neither draft nor ready",
+                "date \"18 Nov\" is not a quoted \"YYYY-MM-DD\"",
+                "page \"y.html\" is not this data file's page: write \"x.html\""
+            ]
+        );
+        assert!(problems(&WU_PLAN.replace("\"2026-11-18\"", "2026-11-18")).is_empty(), "a bare date reads as text here");
+        let gone = match read_data(WU_PLAN, "x.html", false) {
+            Data::Checked { problems, .. } => problems,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(gone, ["page x.html is not beside the data file"]);
+    }
+
+    #[test]
+    fn a_wu_id_must_belong_to_its_epic_and_test_plan_names_each_level() {
+        let p = problems(&WU_PLAN.replace("id: E-X.W1", "id: E-Y.W1"));
+        assert_eq!(p, ["id \"E-Y.W1\" is not a WU of epic \"E-X\": write E-X.W<n>"]);
+        let p = problems(&WU_PLAN.replace("test-plan: {unit: u, integration: i, e2e: none}", "test-plan: {unit: u, e2e: \"\", checks: [a]}"));
+        assert_eq!(p, ["test-plan: missing level \"integration\" (its tests, or \"none: <why>\")", "test-plan: level \"e2e\" is empty"]);
+        let p = problems(&WU_PLAN.replace("test-plan: {unit: u, integration: i, e2e: none}", "test-plan: all of them"));
+        assert_eq!(p, ["field \"test-plan\" is not a mapping: give each level, unit, integration, e2e"]);
+    }
+
+    const EPIC_PLAN: &str = "artifact: epic-plan\nstatus: ready\nid: E-X\ntitle: t\ndate: \"2026-11-18\"\npage: x.html\nintent: i\nowner-changes: [{when: a, today: b, after: c}]\nuse-cases: none\nexpected: [e]\nnon-goals: [n]\nwu-summaries:\n  - {wu: E-X.W1, wu-summary: s, wu-maps-to: m, wu-expected: e, wu-deps: none}\n  - {wu: E-X.W2, wu-summary: s, wu-maps-to: m, wu-expected: e, wu-deps: [E-X.W1]}\ne2e-plan: p\ndistillation-plan: d\nopen-questions: none\n";
+
+    #[test]
+    fn an_epic_plan_needs_its_wus_listed_once_each_with_five_fields_and_deps_that_resolve() {
+        assert_eq!(problems(EPIC_PLAN), Vec::<String>::new());
+        let p = problems(&EPIC_PLAN.replace("owner-changes: [{when: a, today: b, after: c}]\n", ""));
+        assert_eq!(p, ["missing field \"owner-changes\""]);
+        let p = problems(&EPIC_PLAN.replace(", wu-deps: [E-X.W1]}", "}"));
+        assert_eq!(p, ["wu-summaries entry 2 (E-X.W2): missing field \"wu-deps\""]);
+        let p = problems(&EPIC_PLAN.replace("wu-deps: [E-X.W1]", "wu-deps: [E-X.W9, E-X.W2]"));
+        assert_eq!(
+            p,
+            [
+                "wu-deps of E-X.W2 names \"E-X.W9\", which is not a WU of this plan (write \"none\" when it waits for none)",
+                "wu-deps of E-X.W2 names E-X.W2 itself"
+            ]
+        );
+        let p = problems(&EPIC_PLAN.replace("{wu: E-X.W2,", "{wu: E-X.W1,").replace("wu-deps: [E-X.W1]", "wu-deps: none"));
+        assert_eq!(p, ["wu-summaries entry 2 (E-X.W1): wu \"E-X.W1\" is listed twice"]);
+        let p = problems(
+            &EPIC_PLAN
+                .replace("{wu: E-X.W2,", "{wu: E-Y.W2,")
+                .replace("wu-deps: [E-X.W1]", "wu-deps: none")
+                .replace("wu-expected: e, wu-deps: none}\n  -", "wu-expectd: e, wu-deps: none}\n  -"),
+        );
+        assert_eq!(
+            p,
+            [
+                "wu-summaries entry 1 (E-X.W1): unknown field \"wu-expectd\" (typo? expected one of: wu, wu-summary, wu-maps-to, wu-expected, wu-deps)",
+                "wu-summaries entry 1 (E-X.W1): missing field \"wu-expected\"",
+                "wu-summaries entry 2 (E-Y.W2): wu \"E-Y.W2\" is not a WU of this epic: write E-X.W<n>"
+            ]
+        );
+        assert_eq!(problems(&EPIC_PLAN.replace("wu-summaries:\n", "wu-summaries: x\nold:\n")).first().map(String::as_str), Some("unknown field \"old\" (typo? expected one of: artifact, status, id, title, date, page, intent, owner-changes, use-cases, expected, non-goals, wu-summaries, e2e-plan, distillation-plan, open-questions, details)"));
+    }
+
+    #[test]
+    fn a_one_part_epic_needs_both_roles_fields_and_only_matching_roles_share_a_doc() {
+        let p = problems(&EPIC_PLAN.replace("artifact: epic-plan", "artifact: [epic-plan, wu-plan]"));
+        assert_eq!(p, ["missing field \"requirement\"", "missing field \"maps-to\"", "missing field \"test-plan\""]);
+        let both = format!(
+            "{}requirement: r\nmaps-to: m\ntest-plan: {{unit: u, integration: i, e2e: e}}\n",
+            EPIC_PLAN.replace("artifact: epic-plan", "artifact: epic-plan wu-plan")
+        );
+        assert_eq!(problems(&both), Vec::<String>::new());
+        let p = problems(&EPIC_PLAN.replace("artifact: epic-plan", "artifact: [epic-plan, wu-result]"));
+        assert_eq!(p, ["artifact epic-plan and wu-result cannot share one doc: a one-part epic pairs epic-plan with wu-plan, or epic-result with wu-result"]);
+        let p = problems(&EPIC_PLAN.replace("artifact: epic-plan", "artifact: epic-plna"));
+        assert_eq!(p, ["unknown artifact \"epic-plna\" (expected one of: epic-plan, wu-plan, wu-result, epic-result)"]);
+    }
+
+    #[test]
+    fn broken_yaml_and_odd_shapes_are_named_never_a_panic() {
+        assert!(problems("a: [\n")[0].starts_with("not valid YAML: "));
+        assert!(problems("a: 1\na: 2\n")[0].starts_with("not valid YAML: "), "a duplicated key");
+        assert_eq!(problems("--- \na: 1\n---\nb: 2\n"), ["the data file holds 2 YAML documents; it is one"]);
+        assert_eq!(problems("- a\n"), ["the data file is not a mapping of fields"]);
+        assert_eq!(problems(""), ["the data file is empty: it needs its role's fields"]);
+        let p = problems(&EPIC_PLAN.replace("wu-summaries:\n  - {wu: E-X.W1", "wu-summaries:\n  - 5\n  - {wu: E-X.W1"));
+        assert_eq!(p, ["wu-summaries entry 1 is not a mapping of wu, wu-summary, wu-maps-to, wu-expected, wu-deps"]);
+        let p = problems(&WU_PLAN.replace("artifact: wu-plan", "artifact: 7"));
+        assert_eq!(p, ["unknown artifact \"Integer(7)\" (expected one of: epic-plan, wu-plan, wu-result, epic-result)"]);
     }
 }

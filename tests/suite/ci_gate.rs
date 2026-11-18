@@ -181,7 +181,8 @@ impl Ci {
     }
 }
 
-const READY_RED: &str = r#"<html data-artifact="wu-plan" data-status="ready"><body><p>no items</p></body></html>"#;
+/// A finished page the doc check turns red: its link points at nothing (E-DOCSPLIT.W2: page tags are no longer read).
+const READY_RED: &str = r#"<html data-artifact="wu-plan" data-status="ready"><body><a href="nowhere.html">no target</a></body></html>"#;
 const MARK_TEST: &str = "touch {marks}/test-ran";
 
 /// The gate's printout lines: the FAIL blocks and the verdict line, as the local gate prints them.

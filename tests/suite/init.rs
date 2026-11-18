@@ -1,5 +1,8 @@
 compiled!();
 
+/// A finished page the doc check turns red: its link points at nothing (E-DOCSPLIT.W2: page tags are no longer read).
+const RED_PAGE: &str = r#"<html data-status="ready"><body><a href="nowhere.html">no target</a></body></html>"#;
+
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Output;
@@ -75,8 +78,8 @@ fn init_twice_produces_the_same_tree_and_keeps_user_edits() {
     assert!(String::from_utf8_lossy(&hooks.stdout).trim().ends_with("keel-hooks"));
     // the written config loads
     assert!(keel(p, &["verify-doc"]).status.success());
-    // the Codex PostToolUse command reaches the installed hook script: a red doc -> exit 2
-    std::fs::write(p.join("docs/work/x.html"), r#"<html data-artifact="wu-plan" data-status="ready"></html>"#).unwrap();
+    // the Codex PostToolUse command reaches the installed hook script: a red doc (a link to nothing) -> exit 2
+    std::fs::write(p.join("docs/work/x.html"), RED_PAGE).unwrap();
     let hooks_json: serde_json::Value = serde_json::from_str(&after_first[".codex/hooks.json"]).unwrap();
     let cmd = hooks_json["hooks"]["PostToolUse"][0]["hooks"][0]["command"].as_str().unwrap();
     let bin = Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display().to_string();
@@ -592,7 +595,7 @@ fn settings_merge() {
     };
     let post = &hook_cmds(&v, "PostToolUse")[0];
     let payload = r#"{"tool_input":{"file_path":"docs/work/x.html"}}"#;
-    std::fs::write(p.join("docs/work/x.html"), r#"<html data-artifact="wu-plan" data-status="ready"></html>"#).unwrap();
+    std::fs::write(p.join("docs/work/x.html"), RED_PAGE).unwrap();
     let nogit = TempDir::new().unwrap();
     let o = run(post, nogit.path(), payload);
     assert!(o.status.success() && o.stderr.is_empty(), "outside git must be inert");

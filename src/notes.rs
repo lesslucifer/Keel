@@ -717,7 +717,7 @@ pub(crate) fn exempt(repo: &Path, cfg: &Config, base: &str, tip: &str, names: &[
 }
 
 /// `*` = within one segment, `**` = any depth, `?` = one char.
-fn glob(pattern: &str, path: &str) -> bool {
+pub(crate) fn glob(pattern: &str, path: &str) -> bool {
     let mut re = String::from("^");
     let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {

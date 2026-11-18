@@ -22,6 +22,7 @@ mod common;
 mod ci_gate;
 mod cli;
 mod close_walk;
+mod docsplit_e2e;
 mod fixtures;
 mod ghflow_e2e;
 mod init;
