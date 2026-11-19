@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afeaa156fe57137d756dc23">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — the local app</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>Keel — the local app</h1>
+      <p>A desktop app on your Mac that tells you what waits on you, shows the work, and runs your sign-off and merge on a click you confirm. Designed, not built: this page is the build epics' source until the app exists.</p>
+      <div class="meta">T1 · 2026-11-19 · Keel · distilled from E-LOCALTOOL (epic plan v3, W1 – W5 results, archived at its close) · why: <a href="decisions/workflow-gates.html#dec-70">DEC-70</a> · the epics: <a href="backlog/local-app.html">backlog local-app</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="why">Why</h2>
+<p>What waits on you arrives by Telegram, the router's terminal and GitHub mail. You learn the state of the work by asking the router. GitHub ran the checks, your approval and the merge, and it was heavy, slow and one company's. Its flow is dropped (<a href="#github">below</a>). The app takes over the watching and the alerting, and puts your few commands one click away. Keel stays the judge.</p>
+
+<h2 id="rules">Three rules</h2>
+<ol data-c="rules">
+  <li><b>The app judges nothing.</b> The gate, the notes and the sign-off stay in keel and its git hooks. The app never runs <code>keel verify-dod</code>, <code>keel preflight</code>, <code>keel notes write</code>, a fetch or a push.</li>
+  <li><b>It runs only your commands, by a button with a confirm.</b> Three commands, listed under <a href="#handoff">The hand-off</a>. Each shows its full line, asks once, and runs exactly what you would type.</li>
+  <li><b>The terminal works without it.</b> Every line the app runs is shown, and works pasted in a terminal. The router, the watchdog and the notes keep working with the app closed.</li>
+</ol>
+
+<h2 id="shape">The shape</h2>
+<div class="diagram" data-c="shape-diagram">
+<pre class="mermaid">
+flowchart LR
+  RT["The router"] -->|"one line per change"| LOG["Update log in .router/app/"]
+  WD["Its watchdog"] -->|"workers, heartbeat"| LOG
+  G["git, keel's notes, docs, run records"] -->|"read"| APP["The app"]
+  LOG -->|"read"| APP
+  APP -->|"alert"| O["You"]
+  O -->|"read docs and diffs"| B["Your browser"]
+  O -->|"click, confirm"| APP
+  APP -->|"runs your three commands"| K["keel and git: judge, sign, merge"]
+  APP -->|"your note"| IN["The router's inbox"]
+  O -.->|"the same lines, typed"| T["Your terminal"]
+  T -.-> K
+</pre>
+<div class="caption">The app reads git and the router's log, alerts you, and runs only your three commands. Keel judges. Your terminal still works alone.</div>
+</div>
+
+<h2 id="needs">Your needs</h2>
+<table data-c="needs">
+  <thead><tr><th>#</th><th>Need</th><th>Rank</th><th>Epic</th></tr></thead>
+  <tbody>
+    <tr><td>n1</td><td>An alert at your desk when something waits on you</td><td>must</td><td>A3 E-APPLIST</td></tr>
+    <tr><td>n2</td><td>One list of what waits on you; each item opens its doc, runs its command, and leaves once you act</td><td>must</td><td>A3, its buttons A4</td></tr>
+    <tr><td>n3</td><td>The gate, the sign-off and the merge on your Mac, with GitHub's flow gone</td><td>must</td><td>A1 E-GHREVERT, A2, then A4 from the app</td></tr>
+    <tr><td>n4</td><td>The fleet: the router and each worker, busy, idle or stuck</td><td>should</td><td>A5 E-APPFLEET</td></tr>
+    <tr><td>n5</td><td>The epics: each epic, its work units, their evidence, what is merged</td><td>should</td><td>A5</td></tr>
+    <tr><td>n6</td><td>Read the code before you sign</td><td>should</td><td>A4 E-APPSIGN</td></tr>
+    <tr><td>n7</td><td>Many projects in one list</td><td>should</td><td>A5</td></tr>
+    <tr><td>n8</td><td>Send the router a message</td><td>later</td><td>L1</td></tr>
+    <tr><td>n9</td><td>Alerts when you are away, sent by the app; Telegram until then</td><td>later</td><td>L2</td></tr>
+    <tr><td>n10</td><td>A home other than GitHub for releases and your pushes</td><td>later</td><td>L3</td></tr>
+  </tbody>
+</table>
+<p data-c="jobs">Of the 39 jobs today's flow does for you, the app <b>takes over</b> four, all watching or alerting: which workers are busy, idle or stuck; the alert at your desk; the list of what waits on you; each epic and its evidence. It gives <b>a button</b> to four: your sign-off, your rule-file commit, the merge, and opening a doc. It <b>leaves</b> sixteen as they are (the gate, the hooks, the notes, the review, the signer list, the launcher, Telegram, releases, your pushes). The fifteen GitHub-flow jobs are <b>dropped</b>. The router's and the workers' own nine jobs (the router guard, the file guard, the sandbox, the watchdog, the inbox, the owner-action watch, the doc hooks, the worker's rules, the comment watch) are untouched: the app must never become a way round them.</p>
+
+<h2 id="stack">The stack: Electron</h2>
+<table data-c="parts">
+  <thead><tr><th>Part</th><th>Does</th><th>Never</th></tr></thead>
+  <tbody>
+    <tr><td>Window</td><td>Shows the screens. Asks the main part by about ten named requests, each naming an item.</td><td>Reads or writes a file, runs a command, opens a web page, passes free text to a command</td></tr>
+    <tr><td>Bridge</td><td>The named requests, each checked in the main part: the waiting list, one work unit, one epic, one worker, the fleet, the projects, open an item's doc, run an item's command, Attach, send a note.</td><td>Takes a command, a path or a commit from the window</td></tr>
+    <tr><td>Reader</td><td>Reads branches, notes, worktrees, run records and the inbox's listing as files or by <code>git</code>; holds the router's data in memory by the log's keys.</td><td>Runs <code>claude</code>; consumes an inbox report; runs a writing command</td></tr>
+    <tr><td>Watcher</td><td>Watches the git folder's branch and note files, waits a second for the burst, re-reads; re-reads once a minute anyway. Follows the update log by whole lines.</td><td>Trusts a file watch alone</td></tr>
+    <tr><td>Alerter</td><td>One macOS alert per alert line the router writes; a click opens the item.</td><td>Alerts on its own; shows a line twice</td></tr>
+    <tr><td>Project list</td><td>One list per Mac, in the app's own folder: each project's main checkout, set up for keel.</td><td>Stores anything inside a project</td></tr>
+  </tbody>
+</table>
+<ul data-c="safety">
+  <li><b>Closed to workers.</b> No network port, no web server, no link another program can call except the app's own link scheme for alerts. Every branch name, note, commit message, report and brief is a worker's text: shown as text, control characters blanked, never as a page or a command.</li>
+  <li><b>Fixed commands, no shell.</b> Each program runs with a fixed list of values. <code>keel</code>, <code>git</code> and <code>claude</code> run from paths set in the app, never from a repository; the PATH is filled once from your login shell, because git's hooks call keel by PATH.</li>
+  <li><b>Locked-down git.</b> No inherited <code>GIT_*</code> settings, <code>-c core.fsmonitor=false</code>, <code>--no-optional-locks</code>, and <code>--no-ext-diff --no-textconv</code> on any diff, as the watchdog's facts do (<code>scripts/router-worker.sh</code>). Notes are read with <code>git log --notes=&lt;kind&gt; --format=%N -1 &lt;tip&gt;</code>.</li>
+  <li><b>The gate, read-only.</b> What happened is read from the notes on the tip. "Would it pass now?" waits for K2 (a gate run that writes no receipt); <code>keel verify-dod</code> as it is writes one.</li>
+  <li><b>Cost.</b> A large download; a major Electron upgrade at least every 6 months (a new major every 8 weeks, the latest three supported); a signed app, or alerts fail. Whether a free signature on your Mac is enough is decided at the first build; Apple's paid membership only if not. Packaged with Electron Forge. No automatic updates at first. Windows and Linux later, in their own epic.</li>
+</ul>
+
+<h2 id="sources">Two sources</h2>
+<p>Every field on every screen has one source.</p>
+<table data-c="two-sources">
+  <thead><tr><th>Source</th><th>What</th><th>Lives</th></tr></thead>
+  <tbody>
+    <tr><td>Persistent</td><td>Docs, git, keel's notes, the run records under <code>.router/runs/</code>, the inbox's files, the app's own files (project list, alerts shown)</td><td>Read from disk; survives any restart</td></tr>
+    <tr><td>Router</td><td>A work unit's stage, a question, a conflict, a paused epic, a worker's last report, the live workers, the alerts</td><td>Told by the router; kept in the app's memory; gone when the router restarts</td></tr>
+  </tbody>
+</table>
+<ul data-c="router-data">
+  <li><b>Where it travels.</b> Two files in the main checkout's <code>.router/app/</code>, untracked: <code>log.jsonl</code>, one numbered line per change, and <code>state.json</code>, every value as it stands with the number of the last line folded in. Only the router's command (<code>scripts/router-app.sh</code>: start, set, del, alert; K14) and its watchdog (K15) write them, under a lock. The app only reads them.</li>
+  <li><b>One line, one change.</b> About 200 bytes, never a snapshot. <code>set</code> replaces one key; <code>del</code> removes it; <code>alert</code> carries a headline, one or two lines, an optional work unit and a link (the state keeps the last 20). Keys: <code>router</code>, <code>wu/&lt;id&gt;/stage</code>, <code>wu/&lt;id&gt;/conflict</code>, <code>epic/&lt;id&gt;/paused</code>, <code>question/&lt;id&gt;</code>, <code>worker/&lt;name&gt;</code>, <code>worker/&lt;name&gt;/report</code>, <code>facts</code>. The line's form, a contract between the router and the app:
+<pre>{"run":"keel-1c.20261118-203011","n":104,"at":"2026-11-18T20:39:53+07:00",
+ "op":"set","key":"wu/E-LOCALTOOL.W3/stage","value":{"stage":"plan to read","tip":"6834699"}}</pre></li>
+  <li><b>Applying a line.</b> A new run: drop every router value and read the state. The next number: apply it. A number already seen: skip it. A missing number (the log restarts from the state past 2,000 lines): read the state once. A half-written line or an unknown key: skip it.</li>
+  <li><b>Refetch.</b> On start the app reads git, then the state once, then follows the log; it asks no one. When the router starts, it wipes both files and begins a new run; the watchdog's next tick writes each live worker, and the router writes each stage it knows.</li>
+  <li><b>Defaults.</b> A router field the router has not written shows its persistent part, else "not heard", grey: a stage shows what the notes and git prove (signed, merged, waits for your sign-off), else "last run: plan"; questions and conflicts are not shown and the top bar says the router is not heard; after three silent watchdog ticks (15 minutes) live states go grey and Attach is off.</li>
+</ul>
+
+<h2 id="screens">The screens</h2>
+<table data-c="screens">
+  <thead><tr><th>#</th><th>Screen</th><th>Shows</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>The alert</td><td>One layout the router fills: headline, one or two lines, the work unit it opens; the app adds project and time. No button. The router's Telegram message carries the same link.</td></tr>
+    <tr><td>2</td><td>Waits on you</td><td>One list across projects: yours (each with Open and its button), then not yours (naming the worker who acts), then sent, waiting for a sign.</td></tr>
+    <tr><td>3</td><td>One work unit</td><td>What you can do now (read, code changes, sign off then merge, Attach, a note to the worker); a badge row for the gate, tests and review; the work; who works on it; its history; its docs; review rounds folded.</td></tr>
+    <tr><td>4</td><td>Epics, and one epic</td><td>Each open epic and its work units; one epic opens like a work unit, with "Sign off the epic…" then "Merge into main…".</td></tr>
+    <tr><td>5</td><td>Fleet, and one worker</td><td>The router and each worker: state, work unit, tip, Attach; the watchdog's last facts. One worker opens like a work unit.</td></tr>
+    <tr><td>6</td><td>Projects</td><td>Your project list and the switch at the top of every screen. A project has no detail view.</td></tr>
+  </tbody>
+</table>
+<p data-c="principles-intro">The design principles, your comments of 2026-11-18 read as rules for every screen (W3's result, archived):</p>
+<ol data-c="principles">
+  <li><b>The router speaks, the app shows.</b> The router words and sends every alert.</li>
+  <li><b>Machine checks are badges.</b> The gate, the tests and the reviews sit in one row of badges, never a section.</li>
+  <li><b>Fold what you rarely read.</b> Round-by-round detail is closed by default.</li>
+  <li><b>Show the work and its history.</b> What it is in one line, then each step with its time and the run that made it.</li>
+  <li><b>Docs are links.</b> Each opens in one click.</li>
+  <li><b>Actions first.</b> A screen about one thing opens with what you can do now.</li>
+  <li><b>Your words reach the worker and stay.</b> A note box; the router passes the note on; it joins the history.</li>
+  <li><b>Every path leads into the app.</b> An alert, a Telegram message, any name on any screen opens that thing.</li>
+  <li><b>Every thing opens the same way.</b> A work unit, an epic and a worker each have actions, what it is, links, history, docs, folded detail.</li>
+  <li><b>Links go both ways.</b> A work unit or epic names its workers; a worker names its work unit and epic.</li>
+  <li><b>You can always step in.</b> Every live session has Attach: it opens that session in your terminal.</li>
+  <li><b>Two sources: what lasts, and what the router tells.</b> As <a href="#sources">above</a>.</li>
+</ol>
+<p data-c="screens-source">The six screens drawn with one real evening (18 November, 20:45) and their 104 fields, each with its source, are in W3's result and its field page, archived: <code>git show 7401665:docs/work/2026-11-18-e-localtool-w3-screens-result.html</code> and <code>…-w3-screens-fields.html</code>.</p>
+
+<h2 id="handoff">The hand-off</h2>
+<p>You read in your browser and act by a button. Each kind of waiting item:</p>
+<table data-c="items">
+  <thead><tr><th>Item</th><th>Who acts</th><th>Open</th><th>Button</th><th>Moves on or leaves when</th></tr></thead>
+  <tbody>
+    <tr><td>Result to sign (a work unit)</td><td>you</td><td>The result page as committed at the tip; Code changes: the diff page</td><td>Sign off… (R1), then Merge… (R2)</td><td>A sign-off note on the tip; then the tip is in the epic</td></tr>
+    <tr><td>Result to sign (an epic)</td><td>you</td><td>The epic result in the epic's folder, <code>docs/.archive/</code>: the file keel hashes</td><td>Sign off the epic… (R3), then Merge into main… (R4)</td><td>A sign-off note; then the tip is in main, and "main not pushed" appears</td></tr>
+    <tr><td>Rule-file commit to sign</td><td>you</td><td>The staged change as a diff page</td><td>Commit… (R5), with the message you type</td><td>The branch's new tip carries your <code>Reviewed-By</code> trailer</td></tr>
+    <tr><td>Plan to read</td><td>you, by a message to the router</td><td>The plan page</td><td>Mark sent</td><td>Enters on the router's stage line; leaves on "plan approved" (backstop: the branch moves past the plan)</td></tr>
+    <tr><td>Question from the router</td><td>you, by a message</td><td>The question, as text</td><td>Mark sent</td><td>The router removes its question line</td></tr>
+    <tr><td>Worker waits on a permission</td><td>you</td><td>—</td><td>Attach</td><td>The watchdog's worker line no longer says it waits</td></tr>
+    <tr><td>Gate failed · merge conflict</td><td>its worker</td><td>Screen 3</td><td>none</td><td>The FAIL lines are gone · the branch holds its target</td></tr>
+    <tr><td>Main not pushed</td><td>you</td><td>—</td><td>Push… (after E-GHREVERT, A4); until then the line as text</td><td>main matches its upstream</td></tr>
+    <tr><td>Task into its work unit</td><td>you, on your Mac</td><td>The task's diff page</td><td>Merge task… (A4)</td><td>The task tip is in its work unit</td></tr>
+  </tbody>
+</table>
+<table data-c="run-lines">
+  <thead><tr><th>#</th><th>Button</th><th>Line</th><th>Folder</th></tr></thead>
+  <tbody>
+    <tr><td>R1</td><td>Sign off… (a work unit)</td><td><code>keel mr confirm wu &lt;tip&gt; --as &lt;id&gt; --target &lt;epic&gt; --report &lt;report&gt;</code></td><td>the epic's folder</td></tr>
+    <tr><td>R2</td><td>Merge…</td><td><code>git merge --no-ff --no-edit &lt;wu branch&gt;</code></td><td>the epic's folder</td></tr>
+    <tr><td>R3</td><td>Sign off the epic…</td><td><code>keel mr confirm epic &lt;tip&gt; --as &lt;id&gt; --report &lt;report&gt;</code></td><td>the epic's folder</td></tr>
+    <tr><td>R4</td><td>Merge into main…</td><td><code>git merge --no-ff --no-edit &lt;epic&gt;</code></td><td>the main folder</td></tr>
+    <tr><td>R5</td><td>Commit…</td><td><code>keel mr commit -m &lt;message&gt; --as &lt;id&gt;</code></td><td>the branch's folder</td></tr>
+  </tbody>
+</table>
+<ol data-c="one-run">
+  <li>You click. The window names the item, never a command.</li>
+  <li>The main part re-reads every value from git and rebuilds the line. If the tip moved, the item is redrawn and nothing runs.</li>
+  <li>A macOS dialog from the main part shows the folder and the full line. You confirm once.</li>
+  <li>It runs the program with its values, with no shell, one run at a time per project, with no timeout (a merge stopped half-way leaves git mid-merge).</li>
+  <li>Keel's words appear under the item as text. The app reads nothing into the exit code; the watcher sees the note or the merge and moves the item on.</li>
+</ol>
+<ul data-c="values">
+  <li><b>Values are checked before the button is on.</b> The tip: 40 lowercase hex. A branch: keel's naming shape and <code>git check-ref-format</code>. The folder: listed by <code>git worktree list --porcelain</code> with exactly that branch and nothing uncommitted. The signer id: listed in the target's committed <code>.keel/mr-allowed</code>. The report: under the docs folder, the right role, present at the tip (an epic's: a file in the folder's <code>docs/.archive/</code>). The message: typed by you, starting empty, never starting with <code>-</code>.</li>
+  <li><b>Open shows the committed bytes.</b> The app copies the tip's docs from git into its own folder and opens the page there, so you read what keel hashes; links between docs and htmldoc's comments still work. Only an epic result opens in place.</li>
+  <li><b>Code changes</b> is a page the app writes in its folder from <code>git diff --no-ext-diff --no-textconv -M &lt;base&gt; &lt;tip&gt;</code>, every byte escaped and no script allowed, and opens in your browser: the only place a worker's text cannot reach anything that runs.</li>
+  <li><b>Beside the three commands</b> the app only opens a terminal window on a live session (Attach, <code>claude attach &lt;id&gt;</code>, no confirm: it writes nothing; K13) and posts your note to the router's inbox on your Send (K11).</li>
+  <li><b>Not designed:</b> signing with a key (no terminal for a passphrase; your username signs) and a sign-off that waives a review (you type <code>--waive-review</code>, then <code>--confirm-waiver</code>, in the terminal); both are A4's.</li>
+</ul>
+
+<h2 id="build">The build order</h2>
+<table data-c="epics">
+  <thead><tr><th>#</th><th>Epic</th><th>First use</th><th>K-numbers</th><th>Waits on</th></tr></thead>
+  <tbody>
+    <tr><td>A1</td><td>E-GHREVERT · back to before GitHub</td><td>n3: typed sign-off, local merge, your pushes</td><td>—</td><td>—</td></tr>
+    <tr><td>A2</td><td>E-KEELFIX · keel fixes</td><td>n3: safe rule-file commits; the gate with nothing written</td><td>K9, K2</td><td>A1</td></tr>
+    <tr><td>A3</td><td>E-APPLIST · alerts and your list</td><td>n1, n2, read-only</td><td>K14, K15, K4, K10, K12</td><td>A1</td></tr>
+    <tr><td>A4</td><td>E-APPSIGN · sign off and merge from the app</td><td>n3 from the app, n6</td><td>K1, K5</td><td>A1, A2, A3</td></tr>
+    <tr><td>A5</td><td>E-APPFLEET · fleet, epics, many projects</td><td>n4, n5, n7</td><td>K6, K7, K8, K11, K13</td><td>A3, A4</td></tr>
+  </tbody>
+</table>
+<table data-c="k-numbers">
+  <thead><tr><th>K</th><th>Change the app needs</th><th>Epic</th></tr></thead>
+  <tbody>
+    <tr><td>K1</td><td>The gate's checks as JSON</td><td>A4</td></tr>
+    <tr><td>K2</td><td><code>keel verify-dod … --no-receipt</code></td><td>A2</td></tr>
+    <tr><td>K3</td><td>The watchdog's facts as JSON: dropped, replaced by K15</td><td>—</td></tr>
+    <tr><td>K4</td><td>The router writes a work unit's stage: plan in work, plan to read, plan approved, building, in review</td><td>A3</td></tr>
+    <tr><td>K5</td><td>keel names the rule files among a folder's staged files, as a read</td><td>A4</td></tr>
+    <tr><td>K6</td><td>The router's conflict line, written from the worker's report, removed once it merged its target in</td><td>A5</td></tr>
+    <tr><td>K7</td><td>The router's paused-epic line</td><td>A5</td></tr>
+    <tr><td>K8</td><td>A worker's last report line, written when the router reads it</td><td>A5</td></tr>
+    <tr><td>K9</td><td>The commit hooks read the committed <code>.keel/config.toml</code>, not the folder's file</td><td>A2</td></tr>
+    <tr><td>K10</td><td>The router's alert line, written by the same notify step that feeds Telegram</td><td>A3</td></tr>
+    <tr><td>K11</td><td>Your note to a worker, posted to the router's inbox as a NOTE naming the item; the router passes it on</td><td>A5</td></tr>
+    <tr><td>K12</td><td>The app's own link scheme; the router puts the link in its alert line and its Telegram message; one test message</td><td>A3</td></tr>
+    <tr><td>K13</td><td>Attach: a new terminal window on <code>claude attach &lt;id&gt;</code>, the id from the router's state</td><td>A5</td></tr>
+    <tr><td>K14</td><td><code>scripts/router-app.sh</code>: the update log and the state, start wipes both</td><td>A3</td></tr>
+    <tr><td>K15</td><td>The watchdog writes each changed worker and the router's heartbeat line, at most one per worker per tick</td><td>A3</td></tr>
+  </tbody>
+</table>
+<p data-c="later">Later, with no epic yet: L1 message the router (n8), L2 alerts when away (n9), L3 a home other than GitHub (n10), L4 the app on DeepSeek Harness. Rows: <a href="backlog/local-app.html">backlog local-app</a>.</p>
+
+<h2 id="github">GitHub</h2>
+<p data-c="github">Its flow is dropped: the checks, the sign-off by approval, auto-merge, the bot, the watch, the docs site, the settings check. E-GHREVERT reverts it first, after you switch your GitHub settings off. Two things stay: releases (<code>release.yml</code> on a version tag, with no pull-request run) and your own pushes of main, the epics, the notes and the tags. E-GHSETUP is closed.</p>
+
+<h2 id="read-next">Read next</h2>
+<ul data-c="read-next">
+  <li><a href="decisions/workflow-gates.html#dec-70">DEC-70</a>: why, and what was rejected.</li>
+  <li><a href="backlog/local-app.html">backlog local-app</a>: the five epics and the later rows.</li>
+  <li><a href="architecture.html">architecture.html</a>: keel itself, which the app only reads and runs.</li>
+  <li>The design in full, archived at the E-LOCALTOOL close: <code>git show 90ee37b:docs/work/&lt;doc&gt;</code> for the epic plan (<code>2026-11-17-e-localtool-plan.html</code>) and the W1 – W5 results (<code>2026-11-18-e-localtool-w1-needs-result.html</code>, <code>…-w2-app-result.html</code>, <code>…-w3-screens-result.html</code>, <code>…-w4-handoff-result.html</code>, <code>2026-11-19-e-localtool-w5-retire-result.html</code>).</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    // keep diagram source readable for the diff layer (mermaid replaces it with SVG)
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
