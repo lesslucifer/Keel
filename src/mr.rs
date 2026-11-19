@@ -101,9 +101,9 @@ fn roster_text(repo: &Path, rev: &str) -> Option<String> {
 /// `""` for the index). Never a file on disk: whoever writes a checkout must not pick its signers.
 /// Returns the entries and where they were read, for the refusal texts.
 fn roster(repo: &Path, cfg: &Config, judge: &str, carried: &str) -> Result<(Vec<Entry>, String), String> {
-    if let Some(t) = cfg.mr.tiers.iter().find(|t| !KNOWN_TIERS.contains(&t.as_str())) {
-        return Err(format!("keel: unknown mr tier '{t}' in .keel/config.toml (known: {})", KNOWN_TIERS.join(", ")));
-    }
+    crate::validate(cfg).map_err(|why| {
+        format!("keel: {why}\n  fix -> name only known tiers in [mr] tiers; where that .keel/config.toml is committed: {}", crate::HEAD_CONFIG_FIX)
+    })?;
     if let Some(text) = roster_text(repo, judge) {
         let src = format!("{judge}:{ROSTER}");
         return Ok((parse_roster(&text, &cfg.mr.tiers, &src)?, src));
