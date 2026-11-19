@@ -23,14 +23,13 @@ files:
       kept as history; the topic closes when E-GHREVERT lands.
     next-free: G12
   - letter: A
-    file: local-app.html
+    file: local-app.yaml
     scope: >-
       From the E-LOCALTOOL close: back to before GitHub (A1, E-GHREVERT), keel fixes (A2), the app's three build epics
-      (A3 - A5), in order. Still a page until E-DOCSPLIT.W6's owner commit makes it local-app.yaml and re-points the
-      links docs/architecture.html and docs/local-app.html hold.
+      (A3 - A5), in order.
     next-free: A6
   - letter: L
-    file: local-app.html
+    file: local-app.yaml
     scope: >-
       The local app's later needs: message the router (L1), alerts when away (L2), a home other than GitHub (L3),
       DeepSeek Harness (L4); E-GHSETUP's install script re-pointed (L5).
