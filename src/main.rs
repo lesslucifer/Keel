@@ -39,10 +39,9 @@ struct MrCfg {
     #[serde(default)]
     report: ReportPolicy,
 }
-/// The default policy: every tier that signs. The github tier is read only where a policy names it
-/// (E-GHREVERT.W1, keep 3), as before the GitHub flow.
+/// The default policy, which mr owns: every tier that signs (E-GHREVERT.W1, keep 3).
 fn known_tiers() -> Vec<String> {
-    mr::KNOWN_TIERS.iter().filter(|t| **t != "github").map(|t| t.to_string()).collect()
+    mr::default_tiers()
 }
 impl Default for MrCfg {
     fn default() -> Self {
