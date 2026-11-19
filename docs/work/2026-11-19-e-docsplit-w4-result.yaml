@@ -61,6 +61,17 @@ deviations:
       check does not read is red; role_fields's comment says "the role's own
       required checklist"; embedding_is_complete_and_prefixed's comment names
       every check it makes. Behaviour is unchanged; no skill text changed.
+  - what: Code review round 3 (the cr note on f4cf9ba) was FAIL - one important, three nits, all in src/ and tests/ - fixed in 2a21c62, a01378a and 3e8fef5.
+    why: >-
+      check_doc still kept two maps keyed by field name, list_entries() for the
+      entries and a match for the checker, so a field could keep its entries
+      after its checker went and the field test still demanded them. One table,
+      LIST_FIELDS, now holds each list field with its entries and its checker;
+      check_doc calls through it, and the test reads its entries from it. The
+      nits: a one-part epic listed [wu-plan, epic-plan] names wu-summaries
+      problems first again, now pinned; the field test joins only a paragraph
+      that opens with one of the role's list fields; the init test's comment
+      names its two other checks. Behaviour is unchanged; no skill text changed.
 evidence:
   commits:
     - f1388ac the W4 plan and its data file
@@ -74,12 +85,16 @@ evidence:
     - 9cd1ad4 this result after review round 1
     - 6054b32 list_entries(), one map from a list field to its entries, read by the check and the field test (review round 2)
     - 85c2593 embedding_is_complete_and_prefixed's doc comment (review round 2 nit)
+    - f4cf9ba this result after review round 2
+    - 2a21c62 LIST_FIELDS, one map from a list field to its entries and its checker; the old problem order, pinned (review round 3)
+    - a01378a taught() joins only a list field's paragraph (review round 3 nit)
+    - 3e8fef5 embedding_is_complete_and_prefixed's doc comment names all its checks (review round 3 nit)
     - this result update
   tests:
-    unit: src/init.rs the_skills_name_each_path_once_and_ship_the_example_pair; src/verify_doc.rs keel_plan_names_every_field_the_check_reads (per role, entries from list_entries(), both directions; mutation cases outcome into the WU plan, expected into the WU result, a field fields() adds outside a role's list, unit cut from the WU plan paragraph, a new entry-checked list field, a field named only in §3's closing prose, a field the check no longer reads)
+    unit: src/init.rs the_skills_name_each_path_once_and_ship_the_example_pair; src/verify_doc.rs keel_plan_names_every_field_the_check_reads (per role, entries from LIST_FIELDS, both directions; mutation cases outcome into the WU plan, expected into the WU result, a field fields() adds outside a role's list, unit cut from the WU plan paragraph, a new entry-checked list field, a field named only in §3's closing prose, also when that prose opens with it in backticks, a field the check no longer reads); each_list_field_is_a_roles_field_listed_once_with_entries; a_one_part_epic_needs_both_roles_fields_and_only_matching_roles_share_a_doc (wu-summaries problems before test-plan's, in either artifact order)
     integration: tests/suite/init.rs writing_skill_ships_with_a_passing_example_and_is_pointed_to (rewritten - keel init writes the pair, both green, no old tag on the page, intent removed is red), embedding_is_complete_and_prefixed (now also no old page tag in any file keel init writes, and the installed AGENTS.md checks), router_skill_carries_the_dsh_transport_and_the_template_its_slots, self_hosting_clone_is_gated_and_init_is_a_noop; tests/suite/verify_doc.rs every_doc_in_docs_and_the_writing_example_pass_the_checks (copies the pair)
     e2e: tests/suite/verify_doc.rs epic_the_installed_hooks_refuse_each_doc_fault_and_pass_the_fixed_plan over the installed example pair as shipped; tests/suite/docsplit_e2e.rs unchanged and green. No waiver.
-    totals: on 85c2593, cargo test 153 unit, 541 suite passed, 10 ignored; cargo fmt --check and cargo clippy -D warnings clean; keel check green
+    totals: on 3e8fef5, cargo test 154 unit, 541 suite passed, 10 ignored; cargo fmt --check and cargo clippy -D warnings clean; keel check green
   checks:
     - git grep -nE 'data-(artifact|status|item|wu)' -- skills .claude/skills AGENTS.md templates/AGENTS.md - no hits
     - diff -rq skills .claude/skills - only "Only in .claude/skills - project-router"
