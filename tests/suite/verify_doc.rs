@@ -104,6 +104,21 @@ fn a_ready_data_file_missing_or_emptying_a_field_is_red_and_names_it() {
     assert_eq!(t.matches("field \"maps-to\" is empty").count(), 1, "a pair is checked once: {t}");
 }
 
+/// Epic review round 1 (E-DOCSPLIT close, blocker): a data file nested thousands of levels deep is
+/// a red doc naming the bound, not a crash of keel verify-doc (exit 134, stack overflow).
+#[test]
+fn a_deeply_nested_data_file_is_red_not_a_crash() {
+    let d = repo();
+    let p = d.path();
+    std::fs::write(p.join("docs/a.html"), page_of(10, None)).unwrap();
+    std::fs::write(p.join("docs/a.yaml"), format!("artifact: wu-result\nx:\n{}a\n", "- ".repeat(5000))).unwrap();
+    for args in [&["verify-doc", "docs/a.yaml"][..], &["verify-doc"][..]] {
+        let o = keel(p, args);
+        assert_eq!(o.status.code(), Some(1), "{args:?}: {}", text(&o));
+        assert!(text(&o).contains("docs/a.yaml: the data file nests deeper than"), "{args:?}: {}", text(&o));
+    }
+}
+
 /// UC-DOC-1: a misspelt field is named next to the missing one; a draft data file is silent, page included.
 #[test]
 fn a_misspelt_field_is_named_and_a_draft_is_silent() {

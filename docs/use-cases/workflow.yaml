@@ -131,7 +131,8 @@ areas:
           committed config at the merge) asks for one, the result report's bytes. The report is the page whose data file
           beside it (`<stem>.yaml`) has an `artifact` carrying the level's role (`wu-result`, `epic-result`; a collapsed
           doc counts for both): a page under docs.root that the range changes, by the page or by its data file, with
-          both files at the tip. A page with no data file is never one. `--report <path>` names the page and is taken as
+          both files at the tip. A page with no data file is never one, nor one whose data file's `artifact` the doc
+          check refuses (an unknown role, roles that cannot share a doc, a data file it cannot load). `--report <path>` names the page and is taken as
           named; naming the `.yaml` is refused. No untracked or archived doc is searched, so an epic sign-off passes `--report <path>` unless its
           result doc is committed in the epic's diff (DEC-40). The signed payload is `keel-mr/v2`, with `sha256:<hex>`
           change and report hashes. `keel mr confirm` refuses while checks 1–7 are red (sign last), when a required
@@ -186,13 +187,14 @@ areas:
           empty field is red and named; an unknown field is named (the typo guard); an unknown artifact, a status other
           than `draft` or `ready`, an unquoted date, a `page` that does not name the page beside it, a WU id not under
           its `epic`, an incomplete or repeated `wu-summaries` entry, a `wu-deps` naming no WU of the plan, a missing
-          `test-plan` level and a YAML anchor or alias are red. `status: draft` silences the pair, page included. An
+          `test-plan` level and a YAML anchor or alias are red. A data file over 1 MiB, or nested deeper than 64
+          levels (the root mapping is one), is refused before it is loaded, red with the bound it passed. `status: draft` silences the pair, page included. An
           epic plan must carry `owner-changes` (what changes for the owner, today and after); any other role may carry
           it. The page carries no checklist markup; it is checked for links (UC-DOC-2), diagram labels (UC-DOC-4) and
           its word cap (UC-DOC-6). A page's old `data-artifact` and `data-item` tags are not read.
         failure: >-
           a ready data file with a missing or misspelt field passes; a draft is reported; a page's old tags are read
-          as its fields. A result report's `follow-ups` field is present, or says `none`; every follow-up in it names
+          as its fields; any data file crashes the check instead of turning it red. A result report's `follow-ups` field is present, or says `none`; every follow-up in it names
           the WU, epic or backlog row that takes it — a rule, not a check, because no gate can tell a real destination
           from an invented one (DEC-57, backlog B28).
       - id: UC-DOC-2

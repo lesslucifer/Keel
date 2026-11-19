@@ -4,7 +4,7 @@
 //! well-formed output, swap in a real parser if docs start using odd markup.
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use yaml_rust2::parser::{Event, EventReceiver, Parser};
+use yaml_rust2::parser::{Event, Parser};
 use yaml_rust2::{Yaml, YamlLoader};
 
 const EPIC_PLAN: &[&str] =
@@ -20,11 +20,22 @@ const OPTIONAL: &[&str] = &["owner-changes", "details"];
 const WU_SUB: &[&str] = &["wu", "wu-summary", "wu-maps-to", "wu-expected", "wu-deps"];
 /// The levels a WU plan's `test-plan` names; other keys under it are free.
 const TEST_LEVELS: &[&str] = &["unit", "integration", "e2e"];
-const ROLES: &[&str] = &["epic-plan", "wu-plan", WU_RESULT_ROLE, EPIC_RESULT_ROLE];
 const WU_RESULT_ROLE: &str = "wu-result";
 const EPIC_RESULT_ROLE: &str = "epic-result";
-/// Words allowed in a ready page by its data file's role (DEC-69); a one-part epic takes the epic caps.
-const ROLE_CAPS: &[(&str, usize)] = &[("epic-plan", 700), ("wu-plan", 500), (WU_RESULT_ROLE, 500), (EPIC_RESULT_ROLE, 700)];
+/// The one table of roles (DEC-69): each role, its own required fields (beyond the common ones and
+/// `epic`), and the words a ready page with that role may hold; a one-part epic takes the epic cap.
+const ROLE_TABLE: &[(&str, &[&str], usize)] =
+    &[("epic-plan", EPIC_PLAN, 700), ("wu-plan", WU_PLAN, 500), (WU_RESULT_ROLE, WU_RESULT, 500), (EPIC_RESULT_ROLE, EPIC_RESULT, 700)];
+/// The role names, in the table's order.
+const ROLES: [&str; ROLE_TABLE.len()] = {
+    let mut names = [""; ROLE_TABLE.len()];
+    let mut i = 0;
+    while i < ROLE_TABLE.len() {
+        names[i] = ROLE_TABLE[i].0;
+        i += 1;
+    }
+    names
+};
 /// Words allowed in an epic plan page's top: its main content above the heading with id `work`.
 const TOP_CAP: usize = 300;
 /// The id that marks where an epic plan page's top ends: the heading of its parts.
@@ -245,10 +256,10 @@ pub fn result_role(epic: bool) -> &'static str {
 }
 
 /// The roles a data file's `artifact` gives its page (DEC-69, E-DOCSPLIT.W3), read as the doc check
-/// reads them (`load_data`, `holding_artifact`, `artifact_roles`): its text split on white space, or
-/// its list. A file of several YAML documents gives the one holding `artifact`. `Err` names why there
-/// are none: the text is no YAML, holds an anchor, has no `artifact`, or one that is neither text nor
-/// a list.
+/// reads them (`load_data`, `holding_artifact`, `artifact_roles`, `role_problem`): its text split on
+/// white space, or its list. A file of several YAML documents gives the one holding `artifact`. `Err`
+/// names why there are none: the text is no YAML, is too large or too deeply nested, holds an
+/// anchor, has no `artifact`, one that is neither text nor a list, or roles the doc check refuses.
 pub fn data_roles(src: &str) -> Result<Vec<String>, String> {
     let docs = load_data(src)?;
     let Some(a) = holding_artifact(&docs).and_then(|d| d.as_hash()).and_then(|h| h.get(&Yaml::String("artifact".into()))) else {
@@ -259,19 +270,20 @@ pub fn data_roles(src: &str) -> Result<Vec<String>, String> {
         .into_iter()
         .map(|r| r.map_err(|r| format!("artifact holds {}, not a role", shown(r))))
         .collect::<Result<_, _>>()?;
-    if roles.is_empty() {
-        return Err("field \"artifact\" is empty".into());
+    match role_problem(&roles) {
+        Some(p) => Err(p),
+        None => Ok(roles),
     }
-    Ok(roles)
 }
 
-/// A data file's text as YAML documents: a byte-order mark read past, an anchor refused. `Err` is
-/// the problem: the anchor refusal, or "not valid YAML".
+/// A data file's text as YAML documents: a byte-order mark read past; its shape read first
+/// (`shape_problem`: size, nesting, anchors). `Err` is the problem: a shape refusal, or "not valid
+/// YAML".
 fn load_data(src: &str) -> Result<Vec<Yaml>, String> {
     // A byte-order mark may open a YAML stream; the parser would read it as part of the first key.
     let src = src.strip_prefix('\u{feff}').unwrap_or(src);
-    if anchored(src) {
-        return Err(ANCHORS.into());
+    if let Some(p) = shape_problem(src) {
+        return Err(p);
     }
     YamlLoader::load_from_str(src).map_err(|e| format!("not valid YAML: {e}"))
 }
@@ -459,18 +471,11 @@ fn check_doc(doc: &Yaml, page: &str, page_exists: bool) -> Data {
             Err(other) => vec![format!("{other:?}")],
         },
     };
-    if roles.is_empty() {
-        return Data::Checked { roles, problems: vec!["field \"artifact\" is empty".into()] };
-    }
-    if let Some(r) = roles.iter().find(|r| !ROLES.contains(&r.as_str())) {
-        problems.push(format!("unknown artifact \"{r}\" (expected one of: {})", ROLES.join(", ")));
-        return Data::Checked { roles: vec![], problems };
-    }
-    let rs: Vec<&str> = roles.iter().map(String::as_str).collect();
-    if let Some(p) = combination_problem(&rs) {
+    if let Some(p) = role_problem(&roles) {
         problems.push(p);
         return Data::Checked { roles: vec![], problems };
     }
+    let rs: Vec<&str> = roles.iter().map(String::as_str).collect();
     let (required, known) = fields(&rs);
     for k in h.keys() {
         let key = k.as_str().map_or_else(|| format!("{k:?}"), String::from);
@@ -523,6 +528,18 @@ fn check_doc(doc: &Yaml, page: &str, page_exists: bool) -> Data {
     Data::Checked { roles, problems }
 }
 
+/// Why these `artifact` roles give a page no role, if they do not: none, a name that is no role, or
+/// roles that cannot share one doc. The one rule the doc check and the sign-off's finder share.
+fn role_problem(roles: &[String]) -> Option<String> {
+    if roles.is_empty() {
+        return Some("field \"artifact\" is empty".into());
+    }
+    if let Some(r) = roles.iter().find(|r| !ROLES.contains(&r.as_str())) {
+        return Some(format!("unknown artifact \"{r}\" (expected one of: {})", ROLES.join(", ")));
+    }
+    combination_problem(&roles.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
 /// A one-part epic pairs an epic role with the WU role of the same kind; nothing else shares a doc.
 fn combination_problem(roles: &[&str]) -> Option<String> {
     let mut set = roles.to_vec();
@@ -558,15 +575,10 @@ fn fields(roles: &[&str]) -> (Vec<&'static str>, Vec<&'static str>) {
     (required, known)
 }
 
-/// A role's own required checklist, beyond the common fields and `epic`.
+/// A role's own required checklist, beyond the common fields and `epic` (`ROLE_TABLE`); none for a
+/// name that is no role.
 fn role_fields(role: &str) -> &'static [&'static str] {
-    match role {
-        "epic-plan" => EPIC_PLAN,
-        "wu-plan" => WU_PLAN,
-        WU_RESULT_ROLE => WU_RESULT,
-        EPIC_RESULT_ROLE => EPIC_RESULT,
-        _ => &[],
-    }
+    ROLE_TABLE.iter().find(|(n, ..)| *n == role).map_or(&[], |(_, f, _)| f)
 }
 
 /// What reads a list field's entries: its value, its entries, the doc's `id`; its problems.
@@ -579,29 +591,48 @@ const LIST_FIELDS: &[(&str, &[&str], EntryCheck)] = &[("wu-summaries", WU_SUB, w
 
 /// The cap a page with these roles holds (DEC-69): a one-part epic takes the larger, its epic's.
 fn role_cap(roles: &[String]) -> Option<usize> {
-    roles.iter().filter_map(|r| ROLE_CAPS.iter().find(|(n, _)| n == r).map(|(_, c)| *c)).max()
+    roles.iter().filter_map(|r| ROLE_TABLE.iter().find(|(n, ..)| n == r).map(|(.., c)| *c)).max()
 }
 
 /// A data file's anchors and aliases are refused, not expanded: the loader copies an alias's value
 /// at each use with no bound, so a few hundred bytes of nested ones (billion laughs) would hang.
+/// How deep a data file's collections may nest, the root mapping counted as one level. The loader
+/// recurses once per level, so a few thousand levels overflow the stack; a plan or result needs a
+/// handful.
+const MAX_DEPTH: usize = 64;
+/// How many bytes a data file may hold; the largest of Keel's own is under 50 KB.
+const MAX_DATA_BYTES: usize = 1 << 20;
+
 const ANCHORS: &str = "the data file uses a YAML anchor or alias (&name, *name): write each value out";
 
-/// Does the YAML text hold an anchor or an alias? Read from the parser's events, which never expand
-/// an alias; text that does not parse holds none here and is named by the loader.
-fn anchored(src: &str) -> bool {
-    struct Seen(bool);
-    impl EventReceiver for Seen {
-        fn on_event(&mut self, ev: Event) {
-            self.0 |= match ev {
-                Event::Alias(_) => true,
-                Event::Scalar(_, _, a, _) | Event::SequenceStart(a, _) | Event::MappingStart(a, _) => a > 0,
-                _ => false,
-            };
+/// Why a data file's text must not reach the loader, if it must not: over `MAX_DATA_BYTES`, nested
+/// deeper than `MAX_DEPTH`, or holding an anchor or an alias (`ANCHORS`). Read from the parser's
+/// events one at a time, in a loop with a depth count: no recursion, and no alias expanded. Text that
+/// does not parse stops the walk; the loader names it.
+fn shape_problem(src: &str) -> Option<String> {
+    if src.len() > MAX_DATA_BYTES {
+        return Some(format!("the data file is {} bytes, over the {MAX_DATA_BYTES} a data file may hold", src.len()));
+    }
+    let mut parser = Parser::new_from_str(src);
+    let mut depth = 0usize;
+    loop {
+        match parser.next_token() {
+            Err(_) | Ok((Event::StreamEnd, _)) => return None,
+            Ok((Event::Alias(_), _)) => return Some(ANCHORS.into()),
+            Ok((Event::Scalar(_, _, a, _), _)) if a > 0 => return Some(ANCHORS.into()),
+            Ok((Event::SequenceStart(a, _) | Event::MappingStart(a, _), _)) => {
+                if a > 0 {
+                    return Some(ANCHORS.into());
+                }
+                depth += 1;
+                if depth > MAX_DEPTH {
+                    return Some(format!("the data file nests deeper than {MAX_DEPTH} levels: write it flatter"));
+                }
+            }
+            Ok((Event::SequenceEnd | Event::MappingEnd, _)) => depth = depth.saturating_sub(1),
+            Ok(_) => {}
         }
     }
-    let mut seen = Seen(false);
-    let _ = Parser::new_from_str(src).load(&mut seen, true);
-    seen.0
 }
 
 const WU_ID: &str = "E-<CODE>.W<n>";
@@ -1216,7 +1247,7 @@ fn scan(s: &str, out: &mut Vec<Hit>) {
 mod tests {
     use super::{
         data_roles, decode, decode_mapped, fields, hits, page_words, pages_of, pair_named, pair_of, partner_named, read_data, result_role, role_cap,
-        role_fields, tags, under_root, unquoted_labels, Data, Pair, ANCHORS, LIST_FIELDS, ROLES,
+        role_fields, tags, under_root, unquoted_labels, Data, Pair, ANCHORS, LIST_FIELDS, MAX_DATA_BYTES, MAX_DEPTH, ROLES,
     };
     use std::path::Path;
 
@@ -1239,8 +1270,55 @@ mod tests {
         assert_eq!(data_roles("artifact:\n  - epic-result\n  - wu-result\n"), both);
         assert_eq!(data_roles("\u{feff}artifact: wu-plan\n"), Ok(vec!["wu-plan".to_string()]), "a byte-order mark is read past");
         assert_eq!(data_roles("x: 1\n---\nartifact: wu-result\n"), Ok(vec!["wu-result".to_string()]), "the document holding artifact");
-        // a role the doc check does not know is still the data file's text: the caller compares
-        assert_eq!(data_roles("artifact: notes\n"), Ok(vec!["notes".to_string()]));
+    }
+
+    /// Epic review round 1 (E-DOCSPLIT close, important): the sign-off's report finder reads the
+    /// roles the doc check accepts, or none - a data file red at the doc check is never a report.
+    #[test]
+    fn data_roles_gives_no_role_where_the_doc_check_finds_a_role_problem() {
+        let err = |src: &str| data_roles(src).unwrap_err();
+        assert!(err("artifact: notes\n").starts_with("unknown artifact \"notes\""), "{}", err("artifact: notes\n"));
+        assert!(err("artifact: wu-result bogus\n").starts_with("unknown artifact \"bogus\""), "{}", err("artifact: wu-result bogus\n"));
+        assert!(err("artifact: [wu-result, bogus]\n").starts_with("unknown artifact \"bogus\""));
+        assert!(err("artifact: wu-result epic-plan\n").contains("cannot share one doc"), "{}", err("artifact: wu-result epic-plan\n"));
+        for src in ["artifact: notes\n", "artifact: wu-result bogus\n", "artifact: wu-result epic-plan\n"] {
+            let Data::Checked { roles, problems } = read_data(src, "a.html", true) else { panic!("{src:?} is checked") };
+            assert!(roles.is_empty() && problems.iter().any(|p| p == &err(src)), "{src:?}: {problems:?} vs {}", err(src));
+        }
+    }
+
+    /// Epic review round 1 (E-DOCSPLIT close, blocker): the YAML loader recurses once per nesting
+    /// level, so a deeply nested data file overflowed the stack (exit 134) in the doc check and the
+    /// sign-off. Its shape is read first, without recursion, and refused past the bounds.
+    #[test]
+    fn a_deeply_nested_or_oversized_data_file_is_refused_before_it_is_loaded() {
+        let deep = format!("artifact: wu-result\nx:\n{}a\n", "- ".repeat(5000));
+        let nested = |e: &str| e.contains("nests deeper than") && e.contains(&MAX_DEPTH.to_string());
+        assert!(data_roles(&deep).is_err_and(|e| nested(&e)), "{:?}", data_roles(&deep));
+        let Data::Checked { roles, problems } = read_data(&deep, "a.html", true) else { panic!("checked") };
+        assert!(roles.is_empty() && problems.len() == 1 && nested(&problems[0]), "{problems:?}");
+        // flow collections nest too; and the bound counts levels, not lines
+        let flow = format!("artifact: wu-result\nx: {}a{}\n", "[".repeat(MAX_DEPTH + 1), "]".repeat(MAX_DEPTH + 1));
+        assert!(data_roles(&flow).is_err_and(|e| nested(&e)), "{:?}", data_roles(&flow));
+        // the root mapping is level 1: MAX_DEPTH levels in all pass, one more is refused
+        let at = |n: usize| format!("artifact: wu-result\nx:\n{}a\n", "- ".repeat(n));
+        assert_eq!(data_roles(&at(MAX_DEPTH - 1)), Ok(vec!["wu-result".to_string()]));
+        assert!(data_roles(&at(MAX_DEPTH)).is_err_and(|e| nested(&e)));
+        let big = format!("artifact: wu-result\nx: \"{}\"\n", "a".repeat(MAX_DATA_BYTES));
+        assert!(data_roles(&big).is_err_and(|e| e.contains("bytes") && e.contains(&MAX_DATA_BYTES.to_string())), "{:?}", data_roles(&big).map_err(|e| e.len()));
+        // an anchor is still named, wherever it sits
+        assert_eq!(data_roles("artifact: wu-result\nx:\n  - &a [1]\n"), Err(ANCHORS.to_string()));
+    }
+
+    /// Epic review round 1 (E-DOCSPLIT close, important): each role has its fields and its cap from
+    /// one table, so a role cannot be known to the check without both.
+    #[test]
+    fn every_role_has_its_own_fields_and_a_cap() {
+        for role in ROLES {
+            assert!(!role_fields(role).is_empty(), "{role} has no fields of its own");
+            assert!(role_cap(&[role.to_string()]).is_some_and(|c| c > 0), "{role} has no cap");
+            assert_eq!(data_roles(&format!("artifact: {role}\n")), Ok(vec![role.to_string()]), "{role} is a role data_roles accepts");
+        }
     }
 
     #[test]
