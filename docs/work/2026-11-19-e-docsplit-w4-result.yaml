@@ -22,12 +22,31 @@ outcome: >-
 deviations:
   - what: The main case - keel init in a scratch repo, the example pair copied into docs/work/ and checked - ran through the integration test (tests/suite/init.rs writing_skill_ships_with_a_passing_example_and_is_pointed_to, through the built binary), not by hand.
     why: The finishing worker's hand run of keel init in a mktemp scratch repo was denied by the session's permission classifier; the worker did not route around it. The test drives the same steps (keel init in a temp repo, the pair copied, keel verify-doc green, the data file without intent red naming it).
+  - what: A second owner keel mr commit of skill fixes after an independent skills review of 79d6409 (the owner chose "ok fix now", 2026-11-19).
+    why: >-
+      The review found two issues and seven nits, all fixed in skills/ and copied
+      to .claude/skills/ by the owner. I1 keel-write rule 3 sent the check id to
+      the work list - now the data file, or Details in any other doc. I2
+      keel-workflow and keel-plan did not say a typed --report is taken as named
+      (only a .yaml is refused; src/mr.rs pick_report), while the search, the
+      approval path and keel notes write report check the data file. N1 bare
+      keel verify-doc skips git-ignored files, so an archived epic result is
+      checked by path. N2 a one-part doc takes the epic id and has no epic
+      field. N3 the data file is in the signed diff for a WU; an epic's sits
+      untracked beside its page. N4 keel-distill's archive line drops the .yaml
+      for a page with no data file. N5 "every relative link (<a href>)". N6 a
+      decision file's 5,000 is its [docs.caps] path cap; a record's 250 is not
+      checked. N7 keel-write's self-check says "checklist markup", not "tag".
+      N8 example.html's Terms heading is an h2; the pair stays green, 465 of
+      700 words, top 216 of 300.
 evidence:
   commits:
     - f1388ac the W4 plan and its data file
     - 534d184 origin/epic/E-DOCSPLIT (55320fd, W3 and W5) merged in
     - 79d6409 the owner's keel mr commit - the skills in both copies, AGENTS.md and its template, the example pair, src/init.rs, src/verify_doc.rs, tests (23 files)
-    - this result
+    - 6e173fb this result
+    - b10946a the owner's keel mr commit of the skills review fixes (skills/ and .claude/skills/, 10 files)
+    - this result update
   tests:
     unit: src/init.rs the_skills_name_each_path_once_and_ship_the_example_pair; src/verify_doc.rs keel_plan_names_every_field_the_check_reads
     integration: tests/suite/init.rs writing_skill_ships_with_a_passing_example_and_is_pointed_to (rewritten - keel init writes the pair, both green, no old tag on the page, intent removed is red), installed_skills_and_rule_file_name_no_old_page_tag (new), embedding_is_complete_and_prefixed, router_skill_carries_the_dsh_transport_and_the_template_its_slots, self_hosting_clone_is_gated_and_init_is_a_noop; tests/suite/verify_doc.rs every_doc_in_docs_and_the_writing_example_pass_the_checks (copies the pair)
