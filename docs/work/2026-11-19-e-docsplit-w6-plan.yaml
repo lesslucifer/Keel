@@ -1,0 +1,117 @@
+artifact: wu-plan
+status: ready
+id: E-DOCSPLIT.W6
+epic: E-DOCSPLIT
+title: Slim architecture and install
+date: "2026-11-19"
+page: 2026-11-19-e-docsplit-w6-plan.html
+requirement: >-
+  After W6, docs/architecture.html has at most 3,000 words and docs/install.html
+  at most 1,500, each counted by keel verify-doc from [docs.caps] entries in
+  .keel/config.toml; their GitHub parts (E-GHREVERT's) are unchanged in words;
+  every rule they drop is still held by a skill, a decision, a use case, a
+  backlog row or the code; every link into them still resolves; the backlog
+  page local-app.html is a data file; keel verify-doc over all docs is green.
+maps-to: >-
+  E-DOCSPLIT.W6 (epic plan, W6 block; W1's caps: architecture 3,000, install
+  1,500, "drop history and rules the skills hold"); DEC-69; the owner's ruling
+  of 2026-11-19 (start W6; E-GHSETUP closed by DEC-70, so its install edits
+  never come; E-GHREVERT removes the GitHub parts, W6 leaves them). No use case
+  changes.
+owner-changes:
+  - when: You open architecture or install
+    today: 5,917 and 1,920 words, with build history and rules the skills repeat
+    after: Under 3,000 and 1,500, current shape only, each rule in one place
+  - when: A later edit makes either page long again
+    today: Nothing counts their words
+    after: The doc check refuses a page over its cap
+expected:
+  - keel verify-doc (a keel built from this branch) is green over all docs with "docs/architecture.html" = 3000 and "docs/install.html" = 1500 in .keel/config.toml [docs.caps].
+  - The GitHub parts listed under details.github-parts are unchanged in words (a word diff of each against the W6 base shows no change but the one link in commit 3).
+  - Every id (DEC, UC, backlog row) the two pages cite at the base is still found in the repository at the tip, and every link into the two pages from docs, skills, src, templates and tests resolves (anchors github and github-app kept).
+  - docs/backlog/local-app.html is gone, docs/backlog/local-app.yaml holds A1 - A5 and L1 - L5, and no doc links the old page.
+test-plan:
+  unit: "none: no code changes (docs and config only; the range touches no code_paths)"
+  integration: "none: no code changes; keel verify-doc with the new caps is the check"
+  e2e: "none: no code changes; the epic's e2e (tests/suite/docsplit_e2e.rs) is unchanged"
+  checks:
+    - target/debug/keel verify-doc (built from the W6 tip) over all docs, green, with both caps set
+    - a one-off script lists every DEC-, UC- and backlog id in both pages at the base and greps the tip for each; none lost
+    - git grep for architecture.html# and install.html# - each anchor still exists
+    - a word diff of the GitHub parts against the base
+details:
+  measured:
+    how: >-
+      keel verify-doc built from 68a1520, in a scratch repo with a 10-word cap
+      on docs/*.html; sections by the same rule (text of <main>, else <body>).
+    architecture:
+      total: 5917
+      cap: 3000
+      sections: {shape: 336, cli: 782, init: 832, config: 854, evidence: 452, router: 769, close: 708, gaps: 267, github: 472, not-gated: 331, next: 114}
+    install:
+      total: 1920
+      cap: 1500
+      sections: {intro: 40, "1-install": 304, "2-path": 44, "3-adopt": 431, "4-upgrade": 272, "5-github-app": 829}
+  github-parts:
+    note: >-
+      Left as they are for E-GHREVERT (backlog local-app A1), which removes
+      them; about 1,000 words in architecture, 829 in install. W6 trims around
+      them and changes no word in them.
+    architecture:
+      - "#github, the whole section (472 words), including main's dropped-flow note"
+      - "#shape: the sentence on Keel's own repository mirroring the flow on GitHub"
+      - "#cli: the keel ci gate and keel ci sign-off rows"
+      - "#config: the [github] rows and the github tier in [mr] tiers"
+      - "#evidence: the by-approval parts of mr/v1 and dod/v1"
+      - "#router: the router bot and GitHub watch rows"
+      - "#not-gated: GitHub's settings and an approval note's review"
+    install:
+      - "§5, the GitHub App, whole (829 words)"
+  targets:
+    architecture:
+      shape: "150 + its GitHub sentence; the tier paragraph becomes one line (keel-distill §1, DEC-27)"
+      cli: "260 + two GitHub rows; one line per command, the Notes column goes (keel-workflow §4 - §6, keel --help)"
+      init: "280; one line per installed file; the lock becomes a pointer (DEC in distribution.html, UC-INIT, install §4); the notes-refspec section becomes one line (DEC-19, backlog B24)"
+      config: "280 + GitHub rows; key, reader, one-line effect; defaults and comments stay in templates/config.toml; the [router] reader detail goes to DEC-39 and scripts/router-worker.sh"
+      evidence: "170 + by-approval parts; one row per note (keel-workflow §3, DEC-13 - DEC-18)"
+      router: "220 + two GitHub rows; one line per tool, may-not lists go (keel-router skill; DEC-46, DEC-48, DEC-63); the DSH worker plugin paragraph becomes one line (UC-DSH-1 - UC-DSH-4, DEC-55, DEC-56)"
+      close: "130; a pointer to keel-workflow §2 and §4 and keel-distill §3 - §4; the E-SEED3 amendment list (history) goes; W2 and W3 subsections become one line each (keel-workflow §3, §4)"
+      gaps: "60; the resolved row (history) goes; the refspec row folds into init's line; the DSH doc-check row stays (backlog D1)"
+      not-gated: "130 + two GitHub bullets"
+      next: "70"
+      header: "the meta line's E-SEED3 tip (history) becomes the current date"
+      aim: "about 2,770 with the GitHub parts"
+    install:
+      intro: "40"
+      "1-install": "190; the shell profile list becomes one sentence; the name-clash list becomes two sentences (the hooks name the fix)"
+      "2-path": "40"
+      "3-adopt": "260; the harness-hook detail goes (architecture #init, keel-workflow §7); the DSH plugin lines stay, their reasons become ids (UC-DSH-1 - 4, DEC-55, DEC-56); the doc-gate placeholder becomes one line (backlog D1)"
+      "4-upgrade": "110; the lock mechanics become one line (architecture #init); the E-SEED2.W2 SHA-256 note (history) goes - keel-workflow §3 holds the re-sign rule"
+      aim: "about 1,470 with §5"
+  links-in:
+    anchors-kept: ["architecture.html#github (from install.html)", "install.html#github-app (from architecture.html, decisions/router-hosts.html, decisions/workflow-gates.html)"]
+    whole-page: "docs/local-app.html, the backlog and use-case data files, templates/config.toml, src/main.rs (the install URL), tests (pages_build.rs fixtures only; no test pins either page's text)"
+    internal: "architecture's own #init, #targets, #gaps, #github links are kept or re-pointed in the same commit"
+  local-app-backlog:
+    why: >-
+      Main's merge (68a1520) kept docs/backlog/local-app.html as a page:
+      docs/architecture.html (#github note, A1) and docs/local-app.html (three
+      links), both signed on main, link it. DEC-69 makes the backlog data only.
+    change: >-
+      local-app.yaml in github-flow.yaml's form (open rows A1 - A5, L1 - L5 in
+      full); backlog-index.yaml's A and L entries name it; the four links become
+      plain backlog/local-app.yaml text (architecture's note keeps its words).
+  commits:
+    steps:
+      - "1, owner keel mr commit: docs/architecture.html slimmed, and .keel/config.toml gains \"docs/architecture.html\" = 3000 (the W6 comment updated)"
+      - "2, owner keel mr commit: docs/install.html slimmed, and \"docs/install.html\" = 1500"
+      - "3, owner keel mr commit: the backlog local-app page becomes local-app.yaml, backlog-index.yaml updated, links in docs/architecture.html and docs/local-app.html re-pointed"
+      - "then plain worker commits: the W6 result pair; test and doc notes on the tip"
+    how: >-
+      The worker edits and stages each; the router gives the owner the command;
+      nothing of commits 1 - 3 is committed by an agent. The installed keel (from
+      main) has no page caps, so the worker checks with target/debug/keel built
+      from the branch.
+  not-in-w6: >-
+    docs/local-app.html (2,901 words) has no cap in W1's table and is
+    E-LOCALTOOL's design; it stays as it is. The GitHub parts. Any code.
