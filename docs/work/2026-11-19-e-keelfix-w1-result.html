@@ -19,7 +19,7 @@
   <main>
 
 <h2 id="what-happened">What happened</h2>
-<p data-item="outcome" data-c="outcome"><b>Delivered.</b> The pre-commit hook, the commit-msg hook and <code>keel mr commit</code> read the rules file committed at the branch's tip. When nothing is committed yet, they read the staged file and say so in one line. With neither, the commit is refused and told to stage the file. Every other command still reads the folder's file, as planned.</p>
+<p data-item="outcome" data-c="outcome"><b>Delivered.</b> The pre-commit hook, the commit-msg hook and <code>keel mr commit</code> read the rules file committed at the branch's tip. When nothing is committed yet, they read the staged file and say so in one line. With neither, the commit is refused and told to stage the file. Every other command still reads the folder's file, as planned. After review round 1, a commit that stages a rules file keel cannot read is refused before it lands.</p>
 
 <h2 id="for-the-owner">What changes for you</h2>
 <table data-c="owner-changes">
@@ -29,6 +29,8 @@
     <tr><td>A worker edits the rules and does not commit</td><td>Its commits followed the edit</td><td>Its commits follow the committed rules</td></tr>
     <tr><td>A new repository's first commit</td><td>The folder's rules ran</td><td>The staged rules run, and one line says so</td></tr>
     <tr><td>Rules only in the folder</td><td>They ran</td><td>The commit is refused: <code>fix -&gt; git add .keel/config.toml</code></td></tr>
+    <tr><td>A commit stages a rules file with a typo</td><td>Refused (the folder's file was read)</td><td>Still refused, now by a check on the staged file</td></tr>
+    <tr><td>A rules file with a typo reached the tip past the hooks</td><td>The folder's file ran instead</td><td>Every commit is refused; the fix line says how to recover</td></tr>
   </tbody>
 </table>
 
@@ -41,6 +43,13 @@
     </ul>
   </li>
   <li><b>One more test helper than planned:</b> <code>unborn_hooked_repo(lint)</code>, a repository with no commit, Keel's hooks and the rules only in the folder. The two first-commit tests share it. Two constants too, <code>BAD_LINT</code> and <code>BOOTSTRAP</code>.</li>
+  <li><b>Review round 1 (FAIL, 2 importants) added work the plan did not have:</b>
+    <ul>
+      <li>Finding 1: the planned tiers test passed even with the <code>mr commit</code> arm reverted, because the commit-msg hook refused either way. A reverse test now pins the arm: <code>keel_mr_commit_signs_by_the_committed_tiers_when_the_folder_narrows_them</code>. No code change.</li>
+      <li>Finding 2: on b80e9c9 a staged typo in the rules file was refused, because the folder's file was parsed. Reading <code>HEAD</code> instead let the typo land, and then every later commit was refused with no fix line. Now <code>check_staged_config</code> (pre-commit and <code>keel mr commit</code>) parses the staged file when the commit changes it, and refuses with a fix line. The <code>HEAD</code>-parse error gains a fix line (<code>git reset --soft HEAD~1</code>, or the owner's hand recovery per DEC-47). Open point 4 stands: an unreadable <code>HEAD</code> is still refused, never bypassed.</li>
+      <li>Nit 2 taken: <code>repo_with_rules</code> is shared by <code>commit_hook_repo_with</code> and <code>unborn_hooked_repo</code>. Nit 1 stays as waived.</li>
+    </ul>
+  </li>
   <li><b>The <code>mr commit</code> arm</b> is <code>["mr", "commit", ..]</code> passing <code>&amp;args[1..]</code> to <code>mr::run</code>, the slice form Rust accepts. Its behaviour is as planned.</li>
 </ul>
 
@@ -58,7 +67,10 @@
     <li><code>ef36b20</code>: the plan.</li>
     <li><code>520c93e</code>: the tests, red.</li>
     <li><code>a529416</code>: the code and the unit test, green.</li>
-    <li>This report.</li>
+    <li><code>9c53bed</code>: this report (review round 1 ran on this tip).</li>
+    <li><code>cee971f</code>: the round-1 tests, red, and nit 2.</li>
+    <li><code>2c90f78</code>: the finding-2 fix and its unit test, green.</li>
+    <li>This report's round-1 update.</li>
   </ol>
   <p><b>Red first.</b> The six tests were run on b80e9c9's code (the tests commit's tree). All six failed, for the reasons the plan gave:</p>
   <table>
@@ -72,14 +84,27 @@
       <tr><td><code>a_commit_with_no_committed_or_staged_rules_is_refused_naming_the_fix</code></td><td>The commit landed</td><td>ok</td></tr>
     </tbody>
   </table>
-  <p><b>Unit</b> (<code>src/main.rs</code>): <code>committed_config_takes_heads_text_else_the_staged_one_as_a_bootstrap_else_refuses</code>, over all four cases.</p>
-  <p><b>Green at <code>a529416</code>:</b></p>
+  <p><b>Review round 1, red first:</b></p>
+  <table>
+    <thead><tr><th>Test (<code>tests/suite/cli.rs</code>)</th><th>Red</th><th>After</th></tr></thead>
+    <tbody>
+      <tr><td><code>keel_mr_commit_signs_by_the_committed_tiers_when_the_folder_narrows_them</code></td><td>With the <code>mr commit</code> arm switched back to <code>load_config</code>: <code>t is not listed in HEAD:.keel/mr-allowed</code></td><td>ok (the arm restored)</td></tr>
+      <tr><td><code>a_staged_rules_file_that_does_not_parse_is_refused_before_it_lands</code></td><td>On 9c53bed: the typo commit landed</td><td>ok</td></tr>
+      <tr><td><code>an_unreadable_committed_rules_file_names_the_recovery</code></td><td>On 9c53bed: <code>bad .keel/config.toml at HEAD</code> with no fix line</td><td>ok, and the reset it names recovers</td></tr>
+    </tbody>
+  </table>
+  <p><b>Unit</b> (<code>src/main.rs</code>):</p>
   <ul>
-    <li><code>cargo test</code>: unit 102 passed; suite 336 passed, 0 failed, 10 ignored (the 10 <code>#[ignore]</code> tests already in the tree).</li>
+    <li><code>committed_config_takes_heads_text_else_the_staged_one_as_a_bootstrap_else_refuses</code>, over all four cases.</li>
+    <li><code>a_staged_rules_file_is_refused_only_when_it_does_not_parse</code>.</li>
+  </ul>
+  <p><b>Green at <code>2c90f78</code>:</b></p>
+  <ul>
+    <li><code>cargo test</code>: unit 103 passed; suite 339 passed, 0 failed, 10 ignored (the 10 <code>#[ignore]</code> tests already in the tree).</li>
     <li><code>cargo fmt --check</code> and <code>cargo clippy --all-targets -- -D warnings</code>: clean.</li>
     <li><code>keel check</code>: green.</li>
   </ul>
-  <p><b>Code:</b> <code>src/main.rs</code> gains <code>committed_config</code> and <code>load_config_committed</code>, and three <code>run()</code> arms change. <code>src/mr.rs</code> changes one doc comment. Docs touched: this WU's plan and this report only.</p>
+  <p><b>Code:</b> <code>src/main.rs</code> gains <code>committed_config</code>, <code>load_config_committed</code>, <code>staged_config_refusal</code>, <code>check_staged_config</code> and <code>HEAD_CONFIG_FIX</code>, and three <code>run()</code> arms change. <code>src/mr.rs</code> changes one doc comment. Docs touched: this WU's plan and this report only.</p>
 </div>
 
 <h3 id="distillation-h">Distillation</h3>
