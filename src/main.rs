@@ -39,8 +39,10 @@ struct MrCfg {
     #[serde(default)]
     report: ReportPolicy,
 }
+/// The default policy: every tier that signs. The github tier is read only where a policy names it
+/// (E-GHREVERT.W1, keep 3), as before the GitHub flow.
 fn known_tiers() -> Vec<String> {
-    mr::KNOWN_TIERS.iter().map(|t| t.to_string()).collect()
+    mr::KNOWN_TIERS.iter().filter(|t| **t != "github").map(|t| t.to_string()).collect()
 }
 impl Default for MrCfg {
     fn default() -> Self {
@@ -620,6 +622,13 @@ fn run() -> Result<i32, String> {
     if let ["--version" | "-V"] = args.as_slice() {
         println!("keel {}\n{KEEL_MARK} (not keel.so)", env!("CARGO_PKG_VERSION"));
         return Ok(0);
+    }
+    // R50: the sign-off commands run from their checkout's root and check its git links before the first git call.
+    if args.first() == Some(&"mr") {
+        if let Some(why) = mr::checkout_problem(&std::env::current_dir().map_err(|e| e.to_string())?) {
+            eprintln!("keel mr: refused - {why}");
+            return Ok(1);
+        }
     }
     let repo = repo_root()?;
     match args.as_slice() {

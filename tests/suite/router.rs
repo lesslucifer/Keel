@@ -3569,7 +3569,7 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
     let g = g.to_str().unwrap();
     // E-WMODE round 2: ~/.cargo only where cargo writes (H3); the worktree's .git link, its two
     // settings files and its admin dir's link files are not the shell's (H2, M2); ~/.claude.json (M1)
-    let want = |wt: &Path, admin: &str| {
+    let want = |wt: &Path, admin: &str, other: &str| {
         serde_json::json!({"sandbox": {
             "enabled": true,
             "autoAllowBashIfSandboxed": true,
@@ -3578,7 +3578,13 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
                 "allowWrite": [g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
                     "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
                 "denyWrite": [format!("{g}/config"), format!("{g}/hooks"), format!("{g}/keel-hooks"), format!("{g}/info"),
-                    format!("{g}/worktrees/{admin}/commondir"), format!("{g}/worktrees/{admin}/gitdir"),
+                    // backlog R33 (DEC-37): the git dir's commondir, then the worker's
+                    // own admin link files, then every other worktree's
+                    format!("{g}/commondir"), format!("{g}/config.worktree"),
+                    format!("{g}/worktrees/{admin}/commondir"), format!("{g}/worktrees/{admin}/gitdir"), format!("{g}/worktrees/{admin}/config.worktree"),
+                    format!("{g}/worktrees/{other}/commondir"), format!("{g}/worktrees/{other}/gitdir"), format!("{g}/worktrees/{other}/config.worktree"),
+                    // by glob too, for an admin dir made after this spawn
+                    format!("{g}/worktrees/*/commondir"), format!("{g}/worktrees/*/gitdir"), format!("{g}/worktrees/*/config.worktree"),
                     format!("{}/.git", wt.display()), format!("{}/.claude/settings.json", wt.display()),
                     format!("{}/.claude/settings.local.json", wt.display()), "~/.claude.json".to_string()],
                 "denyRead": ["~/.ssh", "~/.claude/channels"]
@@ -3587,13 +3593,84 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
         }})
     };
     // a second worktree of the same repository shares its git dir
-    for (name, wt, admin) in [("a", &l.wt, "wt"), ("b", &l.wt2, "wt2")] {
+    for (name, wt, admin, other) in [("a", &l.wt, "wt", "wt2"), ("b", &l.wt2, "wt2", "wt")] {
         let (ok, out) = l.run(&["spawn", name, wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
         assert!(ok, "{out}");
         let mut s: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, name), "--settings")).unwrap();
         s.as_object_mut().unwrap().remove("hooks");
-        assert_eq!(s, want(wt, admin), "{name}");
+        assert_eq!(s, want(wt, admin, other), "{name}");
     }
+}
+
+/// Backlog R33 (DEC-37): a commondir file in the main git dir would send
+/// every git the launcher runs to another repository's config. Workers are denied writing it; one
+/// found there stops every mode before any git runs or any session starts.
+#[test]
+fn a_commondir_file_in_the_main_git_dir_stops_the_launcher() {
+    let l = launcher();
+    let elsewhere = l.main.parent().unwrap().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let wt = l.wt.to_str().unwrap();
+    let modes = [vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"], vec!["stop", "a"], vec!["worktree", "add", "epic/E"], vec!["watchdog", "start", "r"]];
+    // R33: config.worktree too (a url.insteadOf or core.askPass there runs code)
+    for f in ["commondir", "config.worktree"] {
+        let p = l.main.join(".git").join(f);
+        std::fs::write(&p, format!("{}\n", elsewhere.display())).unwrap();
+        for args in &modes {
+            let (ok, out) = l.run(args);
+            assert!(!ok && out.contains(&format!(".git/{f} exists: a main git dir has none")), "{f} {args:?}: {out}");
+        }
+        // the watchdog's facts never fail: they report it
+        let (ok, out) = l.run(&["watchdog", "facts", "r1"]);
+        assert!(ok && out.starts_with("Report to r1.\n") && out.contains(&format!(".git/{f} exists")), "{f} facts: {out}");
+        std::fs::remove_file(&p).unwrap();
+    }
+    assert!(calls(&l.state).is_empty(), "{:?}", calls(&l.state));
+}
+
+/// R33, its second finding (reproduced by a security review: the owner's `git commit` in a
+/// later worktree ran a worker's pre-commit): a worker spawned earlier could write the admin dir of a
+/// worktree made later, which its spawn-time deny list does not name. Every launcher run checks every
+/// admin dir as linked_ok does, so a commondir that is not ../.., a config.worktree or a gitdir naming
+/// no .git stops every mode before any session starts; an admin dir named as git names one after a
+/// checkout holding a quote is still denied to the worker, by name.
+#[test]
+fn every_worktree_admin_dir_is_checked_on_every_run() {
+    let l = launcher();
+    let later = l.main.parent().unwrap().join("later");
+    git(&l.main, &["worktree", "add", "-q", later.to_str().unwrap(), "-b", "later"]);
+    let admin = l.main.join(".git/worktrees/later");
+    let wt = l.wt.to_str().unwrap();
+    let modes = [vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"], vec!["stop", "a"], vec!["worktree", "add", "epic/E"], vec!["watchdog", "start", "r"]];
+    let unlinked = "worktree admin dir";
+    for (what, file, body) in [
+        ("commondir", "commondir", "/tmp/evil.git\n".to_string()),
+        ("config.worktree", "config.worktree", "[core]\n\thooksPath = /tmp/evil\n".to_string()),
+        ("gitdir", "gitdir", "/tmp/elsewhere\n".to_string()),
+    ] {
+        let p = admin.join(file);
+        let before = std::fs::read_to_string(&p).ok();
+        std::fs::write(&p, body).unwrap();
+        for args in &modes {
+            let (ok, out) = l.run(args);
+            assert!(!ok && out.contains(unlinked) && out.contains("does not link to this repository as git made it"), "{what} {args:?}: {out}");
+        }
+        match before {
+            Some(b) => std::fs::write(&p, b).unwrap(),
+            None => std::fs::remove_file(&p).unwrap(),
+        }
+    }
+    assert!(calls(&l.state).is_empty(), "{:?}", calls(&l.state));
+    // restored, the launcher runs; an admin dir whose name holds a quote and a space (git names it
+    // after the checkout) is denied by name too (never skipped)
+    let odd = l.main.parent().unwrap().join("o'd d");
+    git(&l.main, &["worktree", "add", "-q", odd.to_str().unwrap(), "-b", "odd"]);
+    let (ok, out) = l.run(&["spawn", "a", wt, ".router/briefs/b.md", "opus"]);
+    assert!(ok, "restored, the launcher runs: {out}");
+    let settings: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, "a"), "--settings")).unwrap();
+    let deny = settings["sandbox"]["filesystem"]["denyWrite"].to_string();
+    assert!(deny.contains("worktrees/o'd-d/commondir") && deny.contains("worktrees/later/config.worktree"), "{deny}");
+    l.stop("a");
 }
 
 /// E-ROUTER3.W8 (DEC-46, point 4): the review runs in a fresh `--review` worker, the only one granted
@@ -3781,6 +3858,17 @@ fn worktree_add_cuts_an_epic_or_wu_branch_off_its_base_at_the_derived_path() {
         assert_eq!(tip(b), at, "{b}");
     }
     assert_ne!(tip("epic/E-X"), tip("main"));
+    // E-GHREVERT.W1, keep 4: a task is cut off its WU branch; with no WU branch it is refused
+    git(&l.main, &["commit", "-q", "--allow-empty", "-m", "the WU moves on", "--no-verify"]);
+    git(&l.main, &["branch", "-f", "wu/E-X/w5-e", "HEAD"]);
+    let (ok, out) = l.run(&["worktree", "add", "wu/E-X/w5-e_skill-line"]);
+    assert!(ok, "{out}");
+    assert_eq!(
+        out.lines().last().unwrap(),
+        format!("WORKTREE path={m}-E-X-w5-e_skill-line branch=wu/E-X/w5-e_skill-line base=wu/E-X/w5-e tip={}", tip("wu/E-X/w5-e"))
+    );
+    let (ok, out) = l.run(&["worktree", "add", "wu/E-X/w6-f_t"]);
+    assert!(!ok && out.contains("base branch wu/E-X/w6-f does not exist"), "{out}");
     let (ok, out) = l.run(&["spawn", "n", &format!("{m}-E-X-w1-a"), ".router/briefs/b.md", "opus"]);
     assert!(ok && out.contains(" branch=wu/E-X/w1-a "), "{out}");
 
@@ -3885,6 +3973,9 @@ fn router_guard_admits_the_two_worktree_shapes_in_plain_words_only() {
         "scripts/router-worker.sh worktree add wu/E-X/w1-a",
         "scripts/router-worker.sh worktree remove epic/E-X",
         "scripts/router-worker.sh worktree remove wu/E-X/w1-a",
+        // E-GHREVERT.W1, keep 4: a task, which the guard admits as it did on 15 November
+        "scripts/router-worker.sh worktree add wu/E-X/w1-a_skill-line",
+        "scripts/router-worker.sh worktree remove wu/E-X/w1-a_skill-line",
     ] {
         assert_eq!(bash(ok), None, "guard denied {ok:?}");
     }

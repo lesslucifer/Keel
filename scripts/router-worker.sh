@@ -42,7 +42,8 @@
 # session id, so the run dir records it once the session is listed.
 # One live session per name, whatever its directory: SendMessage addresses by name; a launch holds
 # .router/runs/.lock-<name> from its live check to its start.
-# worktree add cuts epic/E off main and wu/E/slug off epic/E (an existing branch is used as it is) at
+# worktree add cuts epic/E off main, wu/E/slug off epic/E and a task wu/E/wu_task (three words
+# without _; E-GHREVERT.W1 keep 4) off its WU branch wu/E/wu (an existing branch is used as it is) at
 # <main checkout>-<branch without its prefix, / as ->; worktree remove takes only a clean worktree
 # whose branch is merged into its base and in which no session runs, and keeps the branch.
 set -eu
@@ -118,6 +119,37 @@ linked_ok() {
   lk_g=$(cat "$lk_a/gitdir" 2>/dev/null) && [ "$(basename "$lk_g")" = .git ] || return 1
   [ "$(cd -P "$(dirname "$lk_g")" 2>/dev/null && pwd -P)" = "$(cd -P "$1" 2>/dev/null && pwd -P)" ] || return 1
   lk_admin=$lk_a
+}
+# git_dirs_ok: the shared git dir as git makes it (backlog R33, DEC-37;
+# E-GHREVERT.W1 keep 2). A main git dir has no commondir or config.worktree file: one there sends every git in
+# that checkout, the owner's unsandboxed git and this launcher's included, to another repository's
+# config, hooks and fsmonitor. The same holds for each worktree's admin dir under <git dir>/worktrees:
+# a real directory, commondir ../.., no config.worktree, a gitdir naming a .git (linked_ok's rule for
+# the files that live in the shared git dir; a checkout's own .git is checked by linked_ok wherever
+# the launcher runs git, and one that names no admin dir never reads this one). Workers are denied writing
+# these files (the sandbox below), but a worker spawned earlier could write an admin dir made later,
+# so every admin dir is checked on every run. Sets bad and returns 1 on the first problem.
+git_dirs_ok() {
+  bad=
+  for gf in commondir config.worktree; do
+    if [ -d "$ROOT/.git" ] && { [ -e "$ROOT/.git/$gf" ] || [ -L "$ROOT/.git/$gf" ]; }; then
+      bad="$ROOT/.git/$gf exists: a main git dir has none, so a worker may have written it; the owner removes it"; return 1
+    fi
+  done
+  common_dir || return 0
+  for gf in commondir config.worktree; do
+    if [ -e "$gd/$gf" ] || [ -L "$gd/$gf" ]; then
+      bad="$gd/$gf exists: a main git dir has none, so a worker may have written it; the owner removes it"; return 1
+    fi
+  done
+  for gw in "$gd"/worktrees/*; do
+    [ -e "$gw" ] || [ -L "$gw" ] || continue
+    unl="worktree admin dir $gw does not link to this repository as git made it"
+    [ -d "$gw" ] && [ ! -L "$gw" ] || { bad="$unl (not a directory): the owner decides"; return 1; }
+    [ "$(cat "$gw/commondir" 2>/dev/null)" = ../.. ] || { bad="$unl (its commondir is not ../..): the owner decides"; return 1; }
+    [ ! -e "$gw/config.worktree" ] && [ ! -L "$gw/config.worktree" ] || { bad="$unl (it holds a config.worktree): the owner decides"; return 1; }
+    gg=$(cat "$gw/gitdir" 2>/dev/null) && [ "$(basename "$gg")" = .git ] || { bad="$unl (its gitdir names no .git): the owner decides"; return 1; }
+  done
 }
 # a path the hook command, the sandbox and the rules quote safely: no quote, backslash or newline
 safe_path() { case "$2" in *[\'\"\\]*|*"
@@ -238,6 +270,14 @@ facts() {
     | if .k < ($b | length) then .out + "\n\(($b | length) - .k) more workers not shown." else .out end end'
 }
 mode=${1:-}; [ $# -ge 1 ] && shift
+# before any other git in any mode; the watchdog's facts, which never fail, report it instead
+if ! git_dirs_ok; then
+  if [ "$mode" = watchdog ] && [ "${1:-}" = facts ]; then
+    rn=router; expr "${2:-}" : '^[a-z0-9][a-z0-9-]\{0,31\}$' > /dev/null && rn=$2
+    printf 'Report to %s.\n%s\n' "$rn" "$bad" | tr -d '\000-\011\013-\037\177'; exit 0
+  fi
+  die "$bad"
+fi
 if [ "$mode" = watchdog ]; then
   [ $# -eq 2 ] || die "watchdog start|stop <router-name>"
   wmode=$1 rn=$2
@@ -310,8 +350,9 @@ if [ "$mode" = worktree ]; then
   [ $# -eq 2 ] || die "worktree add|remove <branch>"
   op=$1 b=$2
   case "$op" in add|remove) ;; *) die "worktree add|remove <branch>";; esac
-  seg='[A-Za-z0-9][A-Za-z0-9._-]*'
+  seg='[A-Za-z0-9][A-Za-z0-9._-]*' word='[A-Za-z0-9][A-Za-z0-9.-]*'
   if expr "$b" : "^$epic_p$seg\$" > /dev/null; then base=$main_b
+  elif expr "$b" : "^$wu_p$word/${word}_$word\$" > /dev/null; then t=${b#"$wu_p"}; base=$wu_p${t%%_*}
   elif expr "$b" : "^$wu_p$seg/$seg\$" > /dev/null; then e=${b#"$wu_p"}; base=$epic_p${e%%/*}
   else die "branch must be $epic_p<E> or $wu_p<E>/<slug> in plain words"; fi
   case "$b" in *..*) die "branch must be $epic_p<E> or $wu_p<E>/<slug> in plain words";; esac
@@ -415,11 +456,26 @@ snapshot
 # neither ~/.ssh nor ~/.claude/channels (DEC-37). A hook is not a deny rule, so it feeds no sandbox
 # path (review round 2, H1).
 hook="sh '$guard' '$wt' '$HOME' || { echo 'worker file guard: failed - tool call denied' >&2; exit 2; }"
-sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --arg hook "$hook" '{sandbox: {enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
+# The git dir's commondir and config.worktree, and every worktree's admin commondir, gitdir and
+# config.worktree, are not the worker's either (backlog R33,
+# DEC-37): one there sends git in that checkout - the owner's unsandboxed git included - to a
+# config the worker wrote. Every admin dir that exists now is listed by name, and by glob for one
+# added later; a glob does not stop a worker renaming a whole admin dir, so git_dirs_ok (above)
+# checks every admin dir on every launcher run.
+others='[]'
+for d in "$gd"/worktrees/*; do
+  [ -e "$d" ] || [ -L "$d" ] || continue
+  [ -d "$d" ] && [ ! -L "$d" ] || die "worktree admin dir $d is not a directory: the owner decides"
+  [ "$d" != "$admin" ] || continue
+  others=$(printf '%s' "$others" | jq -c --arg d "$d" '. + [$d + "/commondir", $d + "/gitdir", $d + "/config.worktree"]')
+done
+sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --argjson o "$others" --arg hook "$hook" '{sandbox: {enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
   filesystem: {allowWrite: [$g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
       "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
-    denyWrite: [$g + "/config", $g + "/hooks", $g + "/keel-hooks", $g + "/info", $a + "/commondir", $a + "/gitdir",
-      $w + "/.git", $w + "/.claude/settings.json", $w + "/.claude/settings.local.json", "~/.claude.json"],
+    denyWrite: ([$g + "/config", $g + "/hooks", $g + "/keel-hooks", $g + "/info", $g + "/commondir", $g + "/config.worktree",
+        $a + "/commondir", $a + "/gitdir", $a + "/config.worktree"] + $o
+      + [$g + "/worktrees/*/commondir", $g + "/worktrees/*/gitdir", $g + "/worktrees/*/config.worktree"]
+      + [$w + "/.git", $w + "/.claude/settings.json", $w + "/.claude/settings.local.json", "~/.claude.json"]),
     denyRead: ["~/.ssh", "~/.claude/channels"]},
   network: {allowedDomains: ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}},
   hooks: {PreToolUse: [{matcher: "*", hooks: [{type: "command", command: $hook, timeout: 10}]}]}}')

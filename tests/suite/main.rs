@@ -22,6 +22,7 @@ mod common;
 mod cli;
 mod close_walk;
 mod fixtures;
+mod ghrevert_e2e;
 mod init;
 mod layout;
 mod mr;

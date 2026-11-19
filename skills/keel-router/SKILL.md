@@ -300,6 +300,14 @@ in another skill.
   when the earlier context must not carry over (an independent check, a review,
   a new WU) or is gone; the launcher has no resume (a plain `claude --bg
   --resume` drops every launch flag: persona, sandbox, settings).
+- **Tasks** (skill keel-workflow §1). When a piece of a WU waits on anything
+  outside its worker's hands, split it off: `<launcher> worktree add
+  wu/<E>/<wu>_<task>` (cut off its WU branch) and a worker in it. When the task
+  is done, stage the owner's merge: `git merge --no-ff wu/<E>/<wu>_<task>` in
+  the WU's worktree, while the WU's worker is idle; then tell that worker the
+  WU branch moved. **Never merge a task yourself**, and never give a worker a
+  merge. A task's rule-file commit is the owner's `keel mr commit`, as on any
+  branch. The WU's result names its tasks.
 - **The author never reviews its own diff.** Each review round runs in a fresh
   review worker (`<launcher> spawn … --review`) in the author's worktree while
   the author is idle: it runs the keel-code-review skill and writes the `cr`

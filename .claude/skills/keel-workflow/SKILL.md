@@ -35,6 +35,18 @@ skeleton, hooks), then follow the bootstrap and `keel mr setup` lines it prints.
   local `wu/<e>/…` branch that holds it, else the one local `epic/<e>` branch that
   holds it, and refuses asking for `--target` when none or more than one epic holds
   it. It never falls back to main.
+- **Tasks: one WU, several branches.** When a piece of a WU waits on something
+  outside its worker's hands (the owner's yes on a rule edit, an answer, a
+  review, another WU), it goes on a task branch `wu/<e>/<wu>_<task>` (three
+  plain words, no `_` inside one) cut off the WU branch, in its own worktree
+  with its own worker, and the rest of the WU goes on. A task gets no gate,
+  notes, review or report of its own; its rule-file commit carries the
+  `Reviewed-By` trailer like any other. **The owner merges a task into its WU
+  on his Mac**: `git merge --no-ff wu/<e>/<wu>_<task>` with the WU branch
+  checked out, never a rebase; an agent never merges one. The WU's tests,
+  review, result report and sign-off go on the WU branch's last commit, after
+  every task is merged in. The WU plan lists the tasks known up front; the
+  result names every task.
 - **Main is merge-only**: the pre-commit hook refuses every non-merge commit on
   `branches.main`. All work, docs included, starts on an `epic/*` or `wu/*`
   branch.

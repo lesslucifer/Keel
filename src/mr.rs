@@ -11,7 +11,10 @@ use std::process::{Command, Stdio};
 const NAMESPACE: &str = "keel-mr";
 const TRAILER: &str = "Reviewed-By";
 const ROSTER: &str = ".keel/mr-allowed";
-pub(crate) const KNOWN_TIERS: &[&str] = &["email", "username", "key"];
+pub(crate) const KNOWN_TIERS: &[&str] = &["email", "username", "key", "github"];
+/// A tier keel reads and never signs by (E-GHREVERT.W1, keep 3): the GitHub flow that signed by it is
+/// reverted, but a roster or policy still carrying it (E-DOCSPLIT's, until it is on main) must read.
+const GITHUB: &str = "github";
 const NOT_AUTHORISED: &str = "A HUMAN must review this and confirm - an AI agent MUST NOT self-authorise.
       after the human has read the change and said yes:
         keel mr commit -m \"<msg>\" --as <identity>          (rule-bearing commit)
@@ -25,6 +28,16 @@ struct Entry {
     key: Option<String>,
 }
 
+/// A GitHub login as GitHub allows one: letters, digits and single inner hyphens, 1 to 39 characters.
+fn valid_login(s: &str) -> bool {
+    (1..=39).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') && !s.starts_with('-') && !s.ends_with('-') && !s.contains("--")
+}
+
+/// A GitHub user id: decimal digits, no leading zero, at most 19 (so it fits a u64).
+fn valid_user_id(s: &str) -> bool {
+    (1..=19).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_digit()) && !s.starts_with('0')
+}
+
 /// Restricted so an identity can never carry allowed_signers pattern syntax (`*?,!"`) or whitespace.
 fn valid_identity(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "@._+-".contains(c))
@@ -35,12 +48,13 @@ fn roster_lines(text: &str) -> impl Iterator<Item = (usize, &str)> {
     text.lines().map(str::trim).enumerate().filter(|(_, l)| !l.is_empty() && !l.starts_with('#'))
 }
 
-/// `<tier>: <identity>` or `key:<identity> <keytype> <base64> [comment]` lines, read from `src`.
-/// Lines whose tier is not in `tiers` authorise nothing; a malformed line is an error, never skipped.
+/// `<tier>: <identity>`, `key: <identity> <keytype> <base64> [comment]` or `github: <user id> <login>`
+/// lines, read from `src`. A github line is read so a roster carrying one still parses; it signs
+/// nothing (`tier_of`). Lines whose tier is not in `tiers` authorise nothing; a malformed line is an error, never skipped.
 fn parse_roster(text: &str, tiers: &[String], src: &str) -> Result<Vec<Entry>, String> {
     let mut out = vec![];
     for (n, line) in roster_lines(text) {
-        let bad = || format!("keel: {src} line {}: expected `<tier>: <identity>` or `key: <identity> <ssh-pubkey>`", n + 1);
+        let bad = || format!("keel: {src} line {}: expected `<tier>: <identity>`, `key: <identity> <ssh-pubkey>` or `github: <user id> <login>`", n + 1);
         let (tier, rest) = line.split_once(':').ok_or_else(bad)?;
         let tier = tier.trim();
         let mut f = rest.split_whitespace();
@@ -49,6 +63,8 @@ fn parse_roster(text: &str, tiers: &[String], src: &str) -> Result<Vec<Entry>, S
             // Only a real key type: an options field (cert-authority, ...) never reaches allowed_signers.
             ("key", Some(t), Some(b)) if ["ssh-", "ecdsa-", "sk-"].iter().any(|p| t.starts_with(p)) => Some(format!("{t} {b}")),
             ("key", ..) => return Err(bad()),
+            (GITHUB, Some(login), None) if valid_user_id(identity) && valid_login(login) => None,
+            (GITHUB, ..) => return Err(bad()),
             (_, None, _) => None,
             _ => return Err(bad()),
         };
@@ -94,13 +110,25 @@ fn roster_change(old: &str, new: &str) -> Vec<String> {
     new.difference(&old).map(|l| format!("+ {l}")).chain(old.difference(&new).map(|l| format!("- {l}"))).collect()
 }
 
-/// The tier that authorises `id`; `key` wins, so a key holder can never sign off unsigned.
+/// The tier that authorises `id` to sign (`keel mr setup`, `commit`, `confirm`, a `Reviewed-By`
+/// trailer, check 8): every tier but github, which signs nothing. `key` wins, so a key holder can
+/// never sign off unsigned.
 ///
 /// "Signed" means "a key listed in the target's committed roster signed", not "a human reviewed":
 /// that a key needs a human's touch or passphrase is the owner's setup, which Keel cannot see (DEC-48).
 fn tier_of<'a>(allowed: &'a [Entry], id: &str) -> Option<&'a str> {
-    let mine = || allowed.iter().filter(|e| e.identity == id);
+    let mine = || allowed.iter().filter(|e| e.tier != GITHUB && e.identity == id);
     mine().find(|e| e.key.is_some()).or_else(|| mine().next()).map(|e| e.tier.as_str())
+}
+
+/// The refusal for a sign-off by `id`, which no signing tier lists: listed under the github tier
+/// only, or not at all.
+fn typed_refusal(allowed: &[Entry], src: &str, id: &str) -> String {
+    if allowed.iter().any(|e| e.tier == GITHUB && e.identity == id) {
+        format!("keel mr: refused - {id} is listed in {src} under the github tier only, which signs nothing: the sign-off is typed, by an identity listed under another tier\n  fix -> sign as an identity listed under the username, email or key tier")
+    } else {
+        unlisted(src, id)
+    }
 }
 
 fn keys_of<'a>(allowed: &'a [Entry], id: &str) -> Vec<&'a str> {
@@ -406,12 +434,12 @@ fn flag<'a>(args: &[&'a str], k: &str) -> Option<&'a str> {
     args.windows(2).find(|w| w[0] == k).map(|w| w[1])
 }
 
-/// `--as`, else the roster's only identity.
+/// `--as`, else the roster's only identity that can sign (a github line signs nothing).
 fn signer(allowed: &[Entry], src: &str, args: &[&str]) -> Result<String, String> {
     if let Some(id) = flag(args, "--as") {
         return Ok(id.into());
     }
-    let mut ids: Vec<&str> = allowed.iter().map(|e| e.identity.as_str()).collect();
+    let mut ids: Vec<&str> = allowed.iter().filter(|e| e.tier != GITHUB).map(|e| e.identity.as_str()).collect();
     ids.sort();
     ids.dedup();
     match ids[..] {
@@ -493,7 +521,7 @@ fn commit(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     let (allowed, src) = roster(repo, cfg, "HEAD", "")?;
     let id = signer(&allowed, &src, args)?;
     let Some(tier) = tier_of(&allowed, &id) else {
-        eprintln!("{}", unlisted(&src, &id));
+        eprintln!("{}", typed_refusal(&allowed, &src, &id));
         return Ok(1);
     };
     let body = format!("{}\n\n{TRAILER}: {tier} {id}\n", msg.trim_end());
@@ -554,7 +582,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     let (allowed, src) = roster(repo, cfg, &target, &tip)?;
     let id = signer(&allowed, &src, args)?;
     let Some(tier) = tier_of(&allowed, &id).map(String::from) else {
-        eprintln!("{}", unlisted(&src, &id));
+        eprintln!("{}", typed_refusal(&allowed, &src, &id));
         return Ok(1);
     };
     // The one point a roster edit made inside a branch meets the signer, who reads a report, not the diff.
@@ -791,6 +819,125 @@ fn stale_change(signed: &str, range: &str) -> String {
     }
 }
 
+/// `p` with `.` and `..` resolved by the text alone, as if no part were a link.
+fn lexical(p: &Path) -> std::path::PathBuf {
+    let mut out = std::path::PathBuf::new();
+    for c in p.components() {
+        match c {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// R50 (backlog e-router-v2, kept by E-GHREVERT.W1): before `keel mr` runs any git, its checkout's
+/// git links must be as git makes them, by the launcher's rule (scripts/router-worker.sh, git_dirs_ok):
+/// workers can write the shared git dir and any directory of their checkout, and the owner's unsandboxed sign-off would follow whatever they wrote there.
+/// `keel mr` runs from a checkout's root only (code review round 2): `root`, the cwd, holds a `.git`
+/// that is a directory (a main checkout) or a regular file (a linked one), by its own metadata - never
+/// a link, a FIFO or another type, and never opened unless it is a regular file. No walk up as git's
+/// discovery does: a dir git would take for a git dir below the root can then never be stepped over.
+/// A `.git` directory is a git dir (`HEAD`, `objects`, `refs`) with no `commondir`; a file names an
+/// admin dir under `<git dir>/worktrees/`, no part of whose path is a symbolic link (code review
+/// round 3), whose `commondir` is `../..` and whose `gitdir` names this `.git` back; neither the git
+/// dir nor the admin dir holds a `config.worktree`. Above the root, any
+/// `.git` but this repository's own git dir (a linked worktree inside its main checkout) refuses: a
+/// repository nested in a checkout may be one a worker planted. A path that does not resolve refuses.
+/// `Some(why)` refuses.
+pub(crate) fn checkout_problem(root: &Path) -> Option<String> {
+    let owner = "the owner checks and removes it; nothing was run";
+    let exists = |p: &Path| std::fs::symlink_metadata(p).is_ok();
+    let is_git_dir = |d: &Path| ["HEAD", "objects", "refs"].iter().all(|n| exists(&d.join(n)));
+    let unresolved = |p: &Path| Some(format!("{} does not resolve: {owner}", p.display()));
+    // A regular file's text; never opens anything else (a FIFO would block for ever).
+    let read = |p: &Path| std::fs::symlink_metadata(p).ok().filter(|m| m.file_type().is_file()).and_then(|_| std::fs::read_to_string(p).ok());
+    let dotgit = root.join(".git");
+    let Ok(meta) = std::fs::symlink_metadata(&dotgit) else {
+        return Some(format!(
+            "keel mr runs from a checkout's root, and {} holds no .git: cd to the worktree root (the directory holding .git) and run it there; nothing was run",
+            root.display()
+        ));
+    };
+    let canon = |p: &Path| std::fs::canonicalize(p).ok();
+    let kind = meta.file_type();
+    let (common, admin) = if kind.is_symlink() {
+        return Some(format!("{} is a symbolic link; git makes a directory or a gitdir file: {owner}", dotgit.display()));
+    } else if kind.is_dir() {
+        if !is_git_dir(&dotgit) {
+            return Some(format!("{} is not a repository (no HEAD, objects and refs of its own): {owner}", dotgit.display()));
+        }
+        (dotgit.clone(), None)
+    } else if kind.is_file() {
+        let link = read(&dotgit).unwrap_or_default();
+        let Some(named) = link.strip_prefix("gitdir: ").map(|l| l.trim_end_matches('\n')).filter(|l| !l.is_empty() && !l.contains('\n')) else {
+            return Some(format!("{} is not a gitdir link: {owner}", dotgit.display()));
+        };
+        // as written, and as git follows it: through each link in turn, so `<link>/..` is the link's
+        // target's parent, not the text's (code review round 4)
+        // the refusal names both: the text git follows, and where git really leads through any link
+        // (W3 code review round 5, nit; W6 code review round 1) - the text's own reading if it resolves nowhere
+        let text = named;
+        let (written, named) = (root.join(text), lexical(&root.join(text)));
+        let leads = canon(&written).unwrap_or_else(|| named.clone());
+        let bad = |why: &str| {
+            Some(format!(
+                "{} names {text}, which leads to {}, not this checkout's admin dir as git makes one ({why}): {owner}",
+                dotgit.display(),
+                leads.display()
+            ))
+        };
+        if std::fs::symlink_metadata(&named).map(|m| !m.is_dir()).unwrap_or(true) {
+            return bad("not a directory");
+        }
+        let Some(admin) = canon(&written) else { return bad("it does not resolve") };
+        if admin.parent().and_then(Path::file_name).is_none_or(|n| n != "worktrees") {
+            return bad("not under <git dir>/worktrees/");
+        }
+        // a symlinked part (a planted <git dir>/worktrees, or `<link>/..`) would send git, by ../.., to a
+        // git dir of its choosing: the path git reaches must be the path as written
+        if admin != named {
+            return bad("a part of its path is a symbolic link");
+        }
+        if read(&admin.join("commondir")).as_deref().map(|c| c.strip_suffix('\n').unwrap_or(c)) != Some("../..") {
+            return bad("its commondir is not ../..");
+        }
+        let Some(here) = canon(root) else { return unresolved(root) };
+        // git writes it absolute, or relative to the admin dir under worktree.useRelativePaths
+        let back = read(&admin.join("gitdir")).map(|g| admin.join(g.strip_suffix('\n').unwrap_or(&g)));
+        if back.as_deref().and_then(|g| Some((g.file_name()? == ".git", canon(g.parent()?)?))) != Some((true, here)) {
+            return bad("its gitdir does not name this checkout's .git");
+        }
+        let Some(common) = admin.parent().and_then(Path::parent).map(Path::to_path_buf) else { return bad("it has no git dir above it") };
+        (common, Some(admin))
+    } else {
+        return Some(format!("{} is neither a directory nor a regular file (a FIFO, socket or device); git makes one or the other: {owner}", dotgit.display()));
+    };
+    if exists(&common.join("commondir")) {
+        return Some(format!("{} exists: a main git dir has none, so a worker may have written it: {owner}", common.join("commondir").display()));
+    }
+    for dir in std::iter::once(&common).chain(admin.as_ref()) {
+        let f = dir.join("config.worktree");
+        if exists(&f) {
+            return Some(format!("{} exists: this repository uses none, so a worker may have written it: {owner}", f.display()));
+        }
+    }
+    let Some(own) = canon(&common) else { return unresolved(&common) };
+    for outer in root.ancestors().skip(1).map(|d| d.join(".git")).filter(|g| exists(g)) {
+        if canon(&outer).as_ref() != Some(&own) {
+            return Some(format!(
+                "{} sits inside another checkout ({}): a repository nested in a checkout may be one a worker planted, and git would run its config and hooks: {owner}",
+                root.display(),
+                outer.display()
+            ));
+        }
+    }
+    None
+}
+
 /// commit-msg hook: a staged change to a rule-bearing path needs a `Reviewed-By` trailer naming a
 /// signer HEAD's roster lists. The trailer is typed text, so this stops an honest agent only (DEC-24).
 pub fn commit_msg(repo: &Path, cfg: &Config, msg_file: &str) -> Result<i32, String> {
@@ -832,8 +979,8 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        landed, parse_roster, payload, positionals, printable, roster_change, rule_bearing, sha256, stale_change, waive_reason, waiver_code, waiver_drift,
-        waiver_listing,
+        landed, parse_roster, payload, positionals, printable, roster_change, rule_bearing, sha256, stale_change, tier_of, typed_refusal, waive_reason,
+        waiver_code, waiver_drift, waiver_listing,
     };
     use crate::notes::CrNote;
 
@@ -878,6 +1025,59 @@ mod tests {
                 assert!(policy.contains(&e.tier), "{} under {policy:?}", e.tier);
             }
         }
+    }
+
+    /// E-GHREVERT.W1, keep 3: a github line is a numeric id and a login, read under any policy.
+    #[test]
+    fn a_github_line_is_a_numeric_id_and_a_login_and_nothing_else() {
+        let all = tiers(&["username", "key", "github"]);
+        let got = parse_roster("github: 5499546 lesslucifer\nusername: vu\n", &all, "r").unwrap();
+        assert_eq!(got.iter().map(|e| (e.tier.as_str(), e.identity.as_str())).collect::<Vec<_>>(), [("github", "5499546"), ("username", "vu")]);
+        let typed = parse_roster("username: vu\ngithub: 5499546 lesslucifer\n", &tiers(&["username", "key"]), "r").unwrap();
+        assert_eq!(typed.iter().map(|e| e.tier.as_str()).collect::<Vec<_>>(), ["username"], "a policy without the tier reads the line and ignores it");
+        for bad in [
+            "github: 5499546",
+            "github: lesslucifer 5499546",
+            "github: 05499546 lesslucifer",
+            "github: 5499546 less_lucifer",
+            "github: 5499546 -less",
+            "github: 5499546 less-",
+            "github: 5499546 le--ss",
+            "github: 5499546 lesslucifer extra",
+            "github: 12345678901234567890 x",
+            &format!("github: 1 {}", "a".repeat(40)),
+        ] {
+            let e = parse_roster(&format!("{bad}\n"), &all, "HEAD:.keel/mr-allowed").err().unwrap_or_else(|| panic!("{bad} parsed"));
+            assert!(e.contains("line 1") && e.contains("github: <user id> <login>"), "{bad}: {e}");
+        }
+        // generated lines (seeded LCG): a github line parses exactly when its id is digits without a
+        // leading zero (1 to 19 of them) and its login is GitHub's shape
+        let alphabet = b"0123456789az-_Z";
+        let mut x: u64 = 0x9e7;
+        for _ in 0..2000 {
+            let mut word = |n: u64| -> String { (0..(lcg(&mut x) % n)).map(|_| alphabet[(lcg(&mut x) % alphabet.len() as u64) as usize] as char).collect() };
+            let (id, login) = (word(22), word(42));
+            let id_ok = (1..=19).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_digit()) && !id.starts_with('0');
+            let login_ok = (1..=39).contains(&login.len())
+                && login.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                && !login.starts_with('-')
+                && !login.ends_with('-')
+                && !login.contains("--");
+            let parsed = parse_roster(&format!("github: {id} {login}\n"), &all, "r");
+            assert_eq!(parsed.is_ok(), id_ok && login_ok, "github: {id} {login}");
+        }
+    }
+
+    /// Keep 3: the github tier signs nothing - an id listed only there has no signing tier and is
+    /// told so; an id listed under another tier too signs by that one.
+    #[test]
+    fn a_github_id_never_signs() {
+        let r = parse_roster("github: 77 owner\nusername: vu\nusername: 88\ngithub: 88 both\n", &tiers(&["username", "github"]), "r").unwrap();
+        assert_eq!(tier_of(&r, "77"), None);
+        assert_eq!(tier_of(&r, "vu"), Some("username"));
+        assert_eq!(tier_of(&r, "88"), Some("username"), "listed twice: the typed line signs");
+        assert!(typed_refusal(&r, "r", "77").contains("github tier only"));
+        assert!(typed_refusal(&r, "r", "99").contains("is not listed in r"));
     }
 
     #[test]
