@@ -34,6 +34,9 @@ T1 = ["docs/*"]
 T2 = ["docs/use-cases/**", "docs/decisions/**", "docs/backlog/**"]
 T3 = ["docs/work/**", "docs/.archive/**"]
 
+[docs.caps]
+"docs/decisions/*.html" = 5000   # E-DOCSPLIT.W5 (DEC-69); the architecture and install caps wait for W6
+
 [tests]
 # adapter = "python"   # rust | ts | python | go | regex; default: by file extension
 # pattern = "..."      # test-declaration regex, for the regex adapter

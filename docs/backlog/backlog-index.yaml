@@ -1,0 +1,71 @@
+# Keel backlog index: data only, no page (DEC-69). Read it first, then open only the file you need.
+# Each backlog file holds its open rows in full and each closed row as its id, title and how it closed.
+# Ids are never reused: a new row takes its letter's next-free id, checked on every live branch first.
+files:
+  - letter: B
+    file: e-seed-v2.yaml
+    scope: >-
+      Work deferred at the E-SEED, E-SEED2, E-SEED3, E-CRCAP, E-DOCSTYLE and E-TESTOPT closes: release, per-language
+      e2e, Trawler re-records, the gate fixes, the notes fetch, accepted limits of the doc check, small follow-ups.
+    next-free: B28
+  - letter: R
+    file: e-router-v2.yaml
+    scope: >-
+      Router work deferred at the E-ROUTER close and since: the launcher, the worker environment and sandbox, the
+      watchdog, the report channel, the shared git dir; rows for the next router epic.
+    next-free: R52
+  - letter: G
+    file: github-flow.yaml
+    scope: >-
+      The GitHub flow after the E-GHFLOW and E-GHFLOW2 closes: CI follow-ups, test nits, what the sign-off by
+      approval leaves, the owner's GitHub steps and the live facts still owed.
+    next-free: G11
+  - letter: D
+    file: dsh.yaml
+    scope: >-
+      DeepSeek Harness host plugins, each in its own repo in the desktop-dsh project: the doc gate, the router guard,
+      the worker plugin's cold resume.
+    next-free: D4
+# The ranked open work. Owner ruling 2026-11-10: the proposed epics are proposals, not commitments; the owner
+# orders them. Rank 1 holds the four proposed epics, unordered among themselves.
+order:
+  - rank: 1
+    epic: E-RELEASE
+    status: proposed
+    rows: >-
+      What backlog B1 left before a real release: the owner prerequisites, the owner's `dist plan` / `dist generate`
+      check, a prerelease-tag run, the first stable tag, the accepted-risk revisits of DEC-38, and the fixed `keel` on
+      `PATH` (DEC-41).
+  - rank: 1
+    epic: E-LINEAGE
+    status: proposed
+    rows: B5
+  - rank: 1
+    epic: E-GATEFIX
+    status: proposed
+    rows: "B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14"
+  - rank: 1
+    epic: E-MULTILANG
+    status: proposed
+    rows: "B3: the Python e2e first, then other languages"
+  - rank: 2
+    epic: the next GitHub-flow epic
+    status: not yet planned
+    rows: G4, G5, G7, G10
+  - rank: 3
+    epic: the next router epic
+    status: not yet proposed; the owner orders it
+    rows: >-
+      R5's live part, R6 row 4's note, R7's open rows, R14 (DEC-48 item 4), R20 - R29, R31, R32, R34 - R42,
+      R44 - R48, R50, R51. R40, the live check of `auto`, is owed at the first spawn after E-WMODE's merge; R47's L3
+      is wanted soon.
+  - rank: none
+    epic: the desktop-dsh project, not a Keel epic
+    status: open
+    rows: D1, D2, D3
+  - rank: none
+    epic: stays in the backlog, unowned
+    status: open
+    rows: >-
+      B24 (an owner pick: A, B, C or E, then an epic), B25, B26 and B27; B21 (accepted limits); B19 (owed by the
+      owner's reinstall); B7's open rows; B2's unbuilt follow-ups, only if asked.
