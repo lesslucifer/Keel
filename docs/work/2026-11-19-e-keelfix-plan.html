@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afef2eb9f34851f0dfb2a1e" data-artifact="epic-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-KEELFIX epic plan: keel fixes</title>
+  <style>
+    td code, td { word-break: break-word; }
+  </style>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-KEELFIX · Keel fixes</h1>
+      <p>Your commits follow the committed rules. A gate run or a help request writes nothing. The GitHub signer line goes last.</p>
+      <div class="meta">T3 · epic plan · 2026-11-19 · epic <code>E-KEELFIX</code> · branch <code>wu/E-KEELFIX/plan</code> off <code>epic/E-KEELFIX</code> at main 8196b71 · your ruling "Let's start E-KEELFIX" (2026-11-19) · backlog <a href="../backlog/local-app.html#a2">local-app A2</a> · <a href="../local-app.html">local-app</a> K2, K9</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-item="intent" data-c="intent">Your rule-file commit runs whatever rules sit in that folder, committed or not. So you check the folder's rules file by hand before each one. A worker could also loosen its own folder's rules and commit past them. Separately, keel writes when you only asked: a gate run always leaves a record, and a help request can write a note, a record or even a sign-off. The planned desktop app needs both fixed. This epic fixes them now, while they are small.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>You make a rule-file commit</td><td>The folder's rules run; you check them by hand first</td><td>The branch's committed rules run; no check by hand</td></tr>
+    <tr><td>A worker edits its rules without committing</td><td>Its commits follow the edit</td><td>Its commits follow the committed rules</td></tr>
+    <tr><td>You ask "would the gate pass?"</td><td>Each run writes a record</td><td>One option runs it and writes nothing</td></tr>
+    <tr><td>You ask a command for help</td><td>Some run and write</td><td>Help is printed; nothing is written</td></tr>
+    <tr><td>A signer list holds a GitHub line</td><td>Read, signs nothing</td><td>Refused, by line number</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">Example: a worker loosens its rules</h2>
+<ol data-c="example-steps">
+  <li>The committed lint refuses a code change.</li>
+  <li>The worker edits its folder's rules to skip lint and does not commit the edit.</li>
+  <li>Today its commit lands. After W1 it is refused by the committed lint.</li>
+</ol>
+
+<h2 id="wus">The work</h2>
+<p>W1 and W2 are independent. W3 waits until E-DOCSPLIT is on main.</p>
+
+<div data-item="wu-summaries" data-c="wu-summaries">
+
+<div data-wu="E-KEELFIX.W1" data-c="wu-w1">
+  <h3 id="w1">W1 · Commits follow the committed rules (K9)</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the two commit hooks and <code>keel mr commit</code> read <code>.keel/config.toml</code> as committed at <code>HEAD</code>, never the folder's file. The merge hook already does. This closes DEC-24's accepted gap 1.</p>
+    <ul>
+      <li><code>src/main.rs</code>: a new <code>load_config_committed</code>: <code>HEAD:.keel/config.toml</code>, else the staged <code>:.keel/config.toml</code> with one bootstrap line on stderr (as the signer list's bootstrap reads), else today's "run <code>keel init</code>" error.</li>
+      <li><code>src/main.rs</code> <code>run()</code>: <code>hook pre-commit</code>, <code>hook commit-msg</code> and <code>mr commit</code> get it; <code>mr setup</code>, <code>mr confirm</code>, <code>lint</code>, <code>check</code> and the rest keep <code>load_config</code>.</li>
+      <li>Read through it: <code>branches.main</code> (merge-only), <code>code_paths</code> and <code>check.lint</code> (pre-commit), <code>rule_bearing</code> and <code>mr.tiers</code> (commit-msg, <code>mr commit</code>).</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Backlog local-app A2, K9 · UC-GATE-1 and UC-MR-2 amended · DEC-24 gap 1 closed.</p>
+  <p data-item="wu-expected"><b>Integration</b> (<code>tests/suite/cli.rs</code>, red first): with the folder's file edited and not committed, a code commit runs the committed lint; a rule-file commit with no trailer is refused; a commit on main is refused; <code>keel mr commit</code> under widened tiers is refused. A first commit with no committed rules uses the staged file and says so. <b>Unit:</b> the source choice.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+<div data-wu="E-KEELFIX.W2" data-c="wu-w2">
+  <h3 id="w2">W2 · Nothing written unless asked (K2, help)</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> <code>keel verify-dod wu|epic &lt;tip&gt; --no-receipt</code> runs the whole gate and writes no <code>dod/v1</code> note. <code>--help</code> or <code>-h</code> on any keel command prints its usage, exits 0 and writes nothing. An unknown flag is refused, so a typo never writes.</p>
+    <ul>
+      <li><code>src/gate.rs</code>: <code>verify_dod</code> parses <code>--target R</code> and <code>--no-receipt</code>, refuses any other flag; <code>run()</code> skips <code>notes::store</code> and prints <code>no receipt written (--no-receipt)</code> on green. <code>preflight</code> takes <code>--target</code> only.</li>
+      <li><code>src/main.rs</code> <code>run()</code>: help is checked first, before the repo lookup and <code>mr</code>'s checkout check; one usage text per command.</li>
+      <li><code>src/notes.rs</code> <code>write()</code>: each kind's known flags checked before <code>range()</code> (test: <code>--target</code>; doc: <code>--target</code>, <code>--distill</code>; cr: today's list).</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Backlog local-app A2, K2 and the help fix · UC-GATE-2 and UC-NOTE-1 amended.</p>
+  <p data-item="wu-expected"><b>Integration</b> (red first): <code>--no-receipt</code> on a green tip exits 0 and leaves <code>refs/notes/*</code> unchanged, on a red one exits 1; <code>--no-reciept</code> is refused; <code>--help</code> on <code>notes write doc|test|cr</code>, <code>verify-dod wu</code>, <code>mr confirm</code> and <code>mr commit</code> prints usage and leaves notes, <code>HEAD</code> and the index unchanged. <b>Unit:</b> help detection; each kind's flag list.</p>
+  <p data-item="wu-deps">none</p>
+</div>
+
+<div data-wu="E-KEELFIX.W3" data-c="wu-w3">
+  <h3 id="w3">W3 · The GitHub signer line removed</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> keel stops reading the <code>github</code> tier and the <code>github: &lt;id&gt; &lt;login&gt;</code> line that E-GHREVERT kept. Starts only once E-DOCSPLIT is on main and no live branch commits either.</p>
+    <ul>
+      <li>First: <code>git grep -n github</code> over <code>.keel/</code> on main and every <code>epic/*</code> and <code>wu/*</code> branch is empty. If main still has one, your <code>keel mr commit</code> removing it comes first.</li>
+      <li><code>src/mr.rs</code>: <code>KNOWN_TIERS</code> loses <code>github</code>; <code>GITHUB</code>, <code>signs_tier</code>, <code>signs</code>, <code>valid_login</code>, <code>valid_user_id</code>, <code>github_only</code> go; <code>typed_refusal</code> becomes <code>unlisted</code>; check 8 loses its github branch.</li>
+      <li>Tests: <code>src/mr.rs</code>'s three github units, <code>tests/suite/mr.rs</code>'s github fixture and its three tests replaced; <code>tests/suite/ghrevert_e2e.rs</code> drops the github line and its two asserts.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Backlog local-app A2 · E-GHREVERT.W1 result follow-up 1 · DEC-70 amended · UC-MR-1 unchanged.</p>
+  <p data-item="wu-expected"><b>Integration</b> (red first): a signer list with a github line is refused with its line number; <code>[mr] tiers</code> naming <code>github</code> is refused as unknown. <b>Unit:</b> the parser and the tier list.</p>
+  <p data-item="wu-deps">E-DOCSPLIT on main, and main merged into <code>epic/E-KEELFIX</code></p>
+</div>
+
+</div>
+
+<h2 id="open-points">Open points</h2>
+<p>Work goes on at these answers. Comment to overrule.</p>
+<table data-item="open-questions" data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>W3 as this epic's last WU, or later?</td><td><b>Last WU, gated.</b> If E-DOCSPLIT is not on main when W2 merges, W3 leaves for its own backlog row and the epic closes without it</td><td>W1 and W2 are wanted now; W3 is one file and should not hold them</td></tr>
+    <tr><td>2</td><td>With no committed rules yet (a new repository's first commit), what judges?</td><td><b>The staged rules file</b>, with one line saying so</td><td>The signer list does the same today; a first commit has nothing else</td></tr>
+    <tr><td>3</td><td>A commit changes the lint command and code together: which lint runs?</td><td><b>The committed one.</b> Commit the rules change alone first; with no code it runs no lint</td><td>Otherwise a commit picks its own lint, the gap W1 closes</td></tr>
+    <tr><td>4</td><td>Should the sign-off, <code>keel check</code> and a gate run by hand also read committed rules?</td><td><b>No, not here</b></td><td>The merge hook already judges by the target's committed rules; the push hook checks committed trees; by-hand runs are your folder. A backlog row if you want it</td></tr>
+    <tr><td>5</td><td>Help on every command, or only the notes writer?</td><td><b>Every command.</b> Help wins over any other word, even a message reading <code>--help</code></td><td>Today <code>mr confirm wu &lt;tip&gt; --help</code> signs and <code>verify-dod wu &lt;tip&gt; --help</code> writes a receipt</td></tr>
+    <tr><td>6</td><td>Refuse unknown flags on the gate, preflight and the notes writer?</td><td><b>Yes</b></td><td>Today a misspelt <code>--no-receipt</code> is ignored and the receipt is written</td></tr>
+    <tr><td>7</td><td>A GitHub line after W3: its own message, or the plain "expected …" line error?</td><td><b>The plain error</b>, with the line number</td><td>Only this repository ever had one</td></tr>
+    <tr><td>8</td><td>A new decision?</td><td><b>No.</b> Amendment rows: DEC-24 (gap 1 closed, W1), DEC-70 (the github tier gone, W3)</td><td>Both apply rules already decided (DEC-47: no file on disk judges)</td></tr>
+    <tr><td>9</td><td>How many rule-file commits by you?</td><td><b>One, at the close</b> (architecture, both keel-workflow skill copies), plus W3's first commit only if main still lists GitHub</td><td>The code paths are not rule files</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="expected-h">Acceptance</h3>
+<ul data-item="expected" data-c="expected">
+  <li>With the folder's rules file edited and not committed, the commit hooks and <code>keel mr commit</code> apply the committed rules: lint, rule files, main's name and signer tiers.</li>
+  <li><code>keel verify-dod wu|epic &lt;tip&gt; --no-receipt</code> prints the same checks and exit code as without it and writes nothing under <code>refs/notes/</code>.</li>
+  <li><code>--help</code> or <code>-h</code> on any keel command prints usage, exits 0 and changes no ref, note, index or file.</li>
+  <li>An unknown flag on <code>verify-dod</code>, <code>preflight</code> or <code>notes write</code> is refused and writes nothing.</li>
+  <li>W3, if in this epic: no <code>github</code> word is read by keel; a roster or policy carrying one is refused.</li>
+  <li>The epic test passes; <code>cargo test</code>, <code>cargo clippy</code> and <code>keel check</code> are green.</li>
+</ul>
+
+<h3 id="use-cases-h">Use cases</h3>
+<ul data-item="use-cases" data-c="use-cases">
+  <li>UC-GATE-1, amended: merge-only and lint by <code>HEAD</code>'s committed rules (W1).</li>
+  <li>UC-MR-2, amended: <code>rule_bearing</code> and the tiers from <code>HEAD</code>'s committed rules; its "known gap" sentence goes (W1).</li>
+  <li>UC-GATE-2, amended: a gate run by hand may write no receipt (W2).</li>
+  <li>UC-NOTE-1, amended: help and an unknown flag write nothing (W2).</li>
+</ul>
+
+<h3 id="non-goals-h">Out of scope</h3>
+<ul data-item="non-goals" data-c="non-goals">
+  <li>The gate's checks as JSON (K1, E-APPSIGN) and every other K-number.</li>
+  <li>Committed rules for <code>keel mr confirm</code>, <code>keel check</code>, <code>keel lint</code> and <code>verify-dod</code> by hand (open point 4).</li>
+  <li>The push hook: it checks committed trees already (in place only when the folder is clean).</li>
+  <li>E-DOCSPLIT's own port of E-GHREVERT's removals, and the <code>[docs.caps]</code> lines.</li>
+</ul>
+
+<h3 id="e2e-h">Epic test</h3>
+<div data-item="e2e-plan" data-c="e2e-plan">
+  <p><code>tests/suite/keelfix_e2e.rs</code>, a scratch repository, no network:</p>
+  <ol>
+    <li>Main commits rules whose lint refuses a marker in <code>src/</code>. On a WU, the folder's rules are edited to skip lint, not committed: a code commit with the marker is refused.</li>
+    <li>The folder's tiers widened, not committed: a rule-file commit by <code>keel mr commit</code> as a signer only the widened tiers accept is refused; as a committed signer it lands.</li>
+    <li>Notes written, review recorded. <code>verify-dod wu --no-receipt</code>: green, no <code>dod</code> note. <code>notes write doc --help</code> and <code>mr confirm wu --help</code>: usage, nothing written.</li>
+    <li>The owner signs; <code>verify-dod wu</code> writes the receipt; the WU merges into the epic and the epic into main through the hooks.</li>
+    <li>W3, if in this epic: a roster with a GitHub line is refused by line number.</li>
+  </ol>
+  <p>No waiver.</p>
+</div>
+
+<h3 id="close-h">At the close</h3>
+<ul data-item="distillation-plan" data-c="distillation-plan">
+  <li><code>docs/use-cases/workflow.html</code>: UC-GATE-1, UC-GATE-2, UC-NOTE-1, UC-MR-2.</li>
+  <li><code>docs/decisions/workflow-gates.html</code>: DEC-24 amendment (gap 1 closed); DEC-70 amendment (W3).</li>
+  <li><code>docs/architecture.html</code>: the hooks' config source, <code>--no-receipt</code>, help; the <code>[mr] tiers</code> row (W3). Your <code>keel mr commit</code>.</li>
+  <li><code>skills/keel-workflow</code> and <code>.claude/skills/keel-workflow</code> §4 and §7. Same commit.</li>
+  <li>Backlog local-app A2 done (and W3's row if it moved); the backlog index.</li>
+</ul>
+
+<h3 id="docsplit-h">Overlap with E-DOCSPLIT</h3>
+<table data-c="docsplit-overlap">
+  <thead><tr><th>File</th><th>E-DOCSPLIT changes (at <code>epic/E-DOCSPLIT</code> 4aabc66; W7 merging main in, no commits yet)</th><th>This epic changes</th><th>To avoid a clash</th></tr></thead>
+  <tbody>
+    <tr><td><code>src/main.rs</code></td><td><code>Docs.caps</code>; <code>DOC_POST</code>'s <code>case</code>; <code>verify_doc()</code> rewritten with new helpers; the tests' <code>use super::{…}</code> line and three tests</td><td>W1: a loader beside <code>load_config_at_head</code>, three <code>run()</code> arms. W2: help at the top of <code>run()</code></td><td>Never edit the tests' <code>use super::{…}</code> line: new tests name <code>super::</code> paths. Leave <code>verify_doc()</code> alone</td></tr>
+    <tr><td><code>src/notes.rs</code></td><td><code>glob</code> public, <code>glob_re</code>, pair helpers; the <code>doc</code> arm of <code>write()</code> (pair lineage)</td><td>W2: a flag check at the top of <code>write()</code>, before <code>range()</code></td><td>No edit inside the <code>doc</code> arm</td></tr>
+    <tr><td><code>src/mr.rs</code></td><td><code>report_candidates</code>, <code>pick_report</code> (data-file pairs)</td><td>W3: the tier rules, parser, refusals and check 8's github branch; tests</td><td>Disjoint hunks. W3 starts after E-DOCSPLIT is on main, so it is written on its code</td></tr>
+    <tr><td><code>.keel/config.toml</code>, <code>.keel/mr-allowed</code></td><td>Still <code>tiers = [… "github"]</code> and a <code>github:</code> line</td><td>W3's precondition: none left on main or any live branch</td><td>Whichever lands second merges main in. If E-DOCSPLIT keeps them on main, W3's first commit is your <code>keel mr commit</code> removing them</td></tr>
+  </tbody>
+</table>
+
+<h3 id="code-h">The code read at 8196b71</h3>
+<ul data-c="code-read">
+  <li><b>K9.</b> <code>run()</code> passes <code>load_config(&amp;repo)</code>, the folder's file, to <code>hook pre-commit</code>, <code>hook commit-msg</code> and <code>mr</code> (<code>src/main.rs</code> lines 649, 650, 657). <code>pre_commit</code> reads <code>branches.main</code>, <code>code_paths</code> and <code>check.lint</code>; <code>mr::commit_msg</code> reads <code>rule_bearing</code> and <code>mr.tiers</code>; <code>mr::commit</code> reads <code>mr.tiers</code>. Only its <code>MergeGate</code> path and <code>verify-dod hook</code> use <code>load_config_at_head</code>. Test fixture: <code>commit_hook_repo</code> in <code>tests/suite/cli.rs</code>.</li>
+  <li><b>K2.</b> <code>gate::run</code> writes the receipt by <code>notes::store(repo, "dod", …)</code> on any green, non-exempt wu or epic; it is the gate's only write by hand. <code>verify_dod</code> passes extra arguments to <code>target_of</code>, which reads <code>--target</code> and ignores the rest. Test fixture: <code>tests/suite/verify_dod.rs</code> <code>fixture()</code>.</li>
+  <li><b>Help.</b> No keel command reads <code>--help</code>. <code>notes::write</code> computes the range, then the <code>doc</code> arm ignores unknown flags and stores a note; <code>test</code> waits on stdin. <code>mr::positionals</code> treats <code>--help</code> as a flag with a value, so <code>mr confirm wu &lt;tip&gt; --help</code> runs the sign-off.</li>
+  <li><b>GitHub tier.</b> <code>src/mr.rs</code> lines 14–33, 47–56, 67–90, 130–166, 471, 823–825; tests 1067–1140; <code>tests/suite/mr.rs</code> from line 1161; <code>tests/suite/ghrevert_e2e.rs</code>. <code>docs/architecture.html</code> line 136 says E-KEELFIX removes it.</li>
+  <li><b>E-GHREVERT follow-ups taken here:</b> the W1 result's first two (the github tier, K9). The W2 result routes nothing here.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
