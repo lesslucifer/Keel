@@ -281,6 +281,19 @@ fn embedding_is_complete_and_prefixed() {
     let mut got = BTreeMap::new();
     let sk = d.path().join(".claude/skills");
     files(&sk, &sk, &mut got);
+    // E-DOCSPLIT.W4: no file init writes - a skill, the project-router it fills in, its AGENTS.md -
+    // names a page tag the skills no longer teach; the AGENTS.md points to skill `keel-write` and
+    // says a plan or result has a data file, not that all docs are HTML
+    let installed = std::fs::read_to_string(d.path().join("AGENTS.md")).unwrap();
+    for (f, body) in got.iter().chain([(&"AGENTS.md".to_string(), &installed)]) {
+        for tag in ["data-artifact", "data-status", "data-item", "data-wu"] {
+            assert!(!body.contains(tag), "{f} names the old page tag {tag}");
+        }
+    }
+    let flat = installed.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(flat.contains("skill `keel-write`"), "init's AGENTS.md does not name the skill");
+    assert!(!flat.contains("All project docs are HTML"), "AGENTS.md still says all docs are HTML");
+    assert!(flat.contains("a plan or result also has a YAML data file beside it"), "AGENTS.md does not name the data file");
     // project-router is the template, written once, project-owned
     assert_eq!(got.remove("project-router/SKILL.md").as_deref(), src.get("keel-router/references/project-router-template.md").map(String::as_str));
     assert_eq!(src, got, "skills/ and .claude/skills differ (file missing from SKILLS?)");
@@ -318,9 +331,10 @@ fn embedding_is_complete_and_prefixed() {
 }
 
 /// E-DOCSTYLE.W1, E-DOCSPLIT.W4: `keel init` ships the writing skill and its example pair - a page
-/// with no checklist tag and its data file, a ready epic plan the doc check passes when both are
-/// copied into docs/work/ under their own names; the data file without a required field is red and
-/// names it; every place that tells an agent how to write a doc points to the skill.
+/// and its data file, a ready epic plan the doc check passes when both are copied into docs/work/
+/// under their own names; the data file without a required field is red and names it; every place
+/// that tells an agent how to write a doc points to the skill. That no installed file names an old
+/// page tag is embedding_is_complete_and_prefixed's, over the same keel init output.
 #[test]
 fn writing_skill_ships_with_a_passing_example_and_is_pointed_to() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -333,9 +347,6 @@ fn writing_skill_ships_with_a_passing_example_and_is_pointed_to() {
     let refs = p.join(".claude/skills/keel-write/references");
     let page = std::fs::read_to_string(refs.join("example.html")).expect("keel init did not install the example page");
     let data = std::fs::read_to_string(refs.join("example.yaml")).expect("keel init did not install the example data file");
-    for tag in ["data-item", "data-wu", "data-artifact"] {
-        assert!(!page.contains(tag), "the example page still carries {tag}");
-    }
     std::fs::write(p.join("docs/work/example.html"), &page).unwrap();
     std::fs::write(p.join("docs/work/example.yaml"), &data).unwrap();
     let o = keel(p, &["verify-doc", "docs/work/example.html", "docs/work/example.yaml"]);
@@ -363,31 +374,6 @@ fn writing_skill_ships_with_a_passing_example_and_is_pointed_to() {
         assert!(body.contains("skill `keel-write`"), "{f} does not point to skill `keel-write`");
         assert!(!body.contains("AI readers") && !body.contains("target an AI reader"), "{f} still writes docs for AI readers only");
     }
-    assert!(std::fs::read_to_string(p.join("AGENTS.md")).unwrap().contains("skill `keel-write`"), "init's AGENTS.md does not name the skill");
-}
-
-/// E-DOCSPLIT.W4: no skill file `keel init` writes, and not the AGENTS.md it writes, names a page
-/// tag the doc check no longer reads; the AGENTS.md says a plan or result has a data file, not that
-/// all docs are HTML.
-#[test]
-fn installed_skills_and_rule_file_name_no_old_page_tag() {
-    let d = fresh_repo();
-    let p = d.path();
-    assert!(keel(p, &["init"]).status.success());
-    let mut got = BTreeMap::new();
-    let sk = p.join(".claude/skills");
-    files(&sk, &sk, &mut got);
-    let agents = std::fs::read_to_string(p.join("AGENTS.md")).unwrap();
-    got.insert("AGENTS.md".into(), agents.clone());
-    assert!(got.len() > 10, "keel init wrote only {} files", got.len());
-    for (f, body) in &got {
-        for tag in ["data-artifact", "data-status", "data-item", "data-wu"] {
-            assert!(!body.contains(tag), "{f} names the old page tag {tag}");
-        }
-    }
-    let flat = agents.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(!flat.contains("All project docs are HTML"), "AGENTS.md still says all docs are HTML");
-    assert!(flat.contains("a plan or result also has a YAML data file beside it"), "AGENTS.md does not name the data file");
 }
 
 /// E-DSH.W2: the doc check runs at the write on every host, not at a review or a merge; a red

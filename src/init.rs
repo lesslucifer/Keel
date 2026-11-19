@@ -598,8 +598,7 @@ mod tests {
             assert!(seen.insert(*p), "{p} is listed twice");
         }
         let file = |p: &str| SKILLS.iter().find(|(s, _)| *s == p).map(|(_, b)| *b).unwrap_or_else(|| panic!("{p} is not embedded"));
-        let page = file("keel-write/references/example.html");
-        assert!(!page.contains("data-artifact") && !page.contains("data-item"), "the example page carries checklist tags");
+        file("keel-write/references/example.html");
         let docs = yaml_rust2::YamlLoader::load_from_str(file("keel-write/references/example.yaml")).expect("the example data file is no YAML");
         let [data] = docs.as_slice() else { panic!("the example data file holds {} documents", docs.len()) };
         assert_eq!(data["artifact"].as_str(), Some("epic-plan"));
