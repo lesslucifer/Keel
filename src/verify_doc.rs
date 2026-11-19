@@ -258,9 +258,16 @@ pub fn result_role(epic: bool) -> &'static str {
 /// The roles a data file's `artifact` gives its page (DEC-69, E-DOCSPLIT.W3), read as the doc check
 /// reads them (`load_data`, `holding_artifact`, `artifact_roles`, `role_problem`): its text split on
 /// white space, or its list. A file of several YAML documents gives the one holding `artifact`. `Err`
-/// names why there are none: the text is no YAML, is too large or too deeply nested, holds an
-/// anchor, has no `artifact`, one that is neither text nor a list, or roles the doc check refuses.
-pub fn data_roles(src: &str) -> Result<Vec<String>, String> {
+/// names why there are none: the bytes are too many or not UTF-8 text, the text is no YAML, is too
+/// deeply nested, holds an anchor, has no `artifact`, one that is neither text nor a list, or roles
+/// the doc check refuses. `src` is the file's bytes as they are - never trimmed, never decoded
+/// lossily - so the sign-off reads a committed data file as the doc check reads it on disk.
+pub fn data_roles(src: impl AsRef<[u8]>) -> Result<Vec<String>, String> {
+    let bytes = src.as_ref();
+    if let Some(p) = size_problem(bytes.len() as u64) {
+        return Err(p);
+    }
+    let src = std::str::from_utf8(bytes).map_err(|_| "the data file is not UTF-8 text".to_string())?;
     let docs = load_data(src)?;
     let Some(a) = holding_artifact(&docs).and_then(|d| d.as_hash()).and_then(|h| h.get(&Yaml::String("artifact".into()))) else {
         return Err("no field \"artifact\"".into());
@@ -387,6 +394,9 @@ pub fn verify_pair(page: &Path, data: Option<&Path>, path_cap: Option<(&str, usi
     let name = page.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let mut roles = None;
     if let Some(d) = data {
+        if let Some(p) = std::fs::metadata(d).ok().and_then(|m| size_problem(m.len())) {
+            return vec![(d.to_owned(), p)];
+        }
         let Ok(src) = std::fs::read_to_string(d) else {
             return vec![(d.to_owned(), "cannot read file".into())];
         };
@@ -594,15 +604,23 @@ fn role_cap(roles: &[String]) -> Option<usize> {
     roles.iter().filter_map(|r| ROLE_TABLE.iter().find(|(n, ..)| n == r).map(|(.., c)| *c)).max()
 }
 
-/// A data file's anchors and aliases are refused, not expanded: the loader copies an alias's value
-/// at each use with no bound, so a few hundred bytes of nested ones (billion laughs) would hang.
 /// How deep a data file's collections may nest, the root mapping counted as one level. The loader
 /// recurses once per level, so a few thousand levels overflow the stack; a plan or result needs a
 /// handful.
 const MAX_DEPTH: usize = 64;
-/// How many bytes a data file may hold; the largest of Keel's own is under 50 KB.
+/// How many bytes a data file may hold; the largest of Keel's own is under 50 KB. Checked on the
+/// file's size before it is read (`size_problem`).
 const MAX_DATA_BYTES: usize = 1 << 20;
 
+/// Why a data file of `len` bytes is not read at all, if it is not: over `MAX_DATA_BYTES`. Asked of
+/// a file's size before its bytes are read (the doc check's metadata, the sign-off's `git cat-file
+/// -s`), and again of the text in hand.
+pub fn size_problem(len: u64) -> Option<String> {
+    (len > MAX_DATA_BYTES as u64).then(|| format!("the data file is {len} bytes, over the {MAX_DATA_BYTES} a data file may hold"))
+}
+
+/// A data file's anchors and aliases are refused, not expanded: the loader copies an alias's value
+/// at each use with no bound, so a few hundred bytes of nested ones (billion laughs) would hang.
 const ANCHORS: &str = "the data file uses a YAML anchor or alias (&name, *name): write each value out";
 
 /// Why a data file's text must not reach the loader, if it must not: over `MAX_DATA_BYTES`, nested
@@ -610,8 +628,8 @@ const ANCHORS: &str = "the data file uses a YAML anchor or alias (&name, *name):
 /// events one at a time, in a loop with a depth count: no recursion, and no alias expanded. Text that
 /// does not parse stops the walk; the loader names it.
 fn shape_problem(src: &str) -> Option<String> {
-    if src.len() > MAX_DATA_BYTES {
-        return Some(format!("the data file is {} bytes, over the {MAX_DATA_BYTES} a data file may hold", src.len()));
+    if let Some(p) = size_problem(src.len() as u64) {
+        return Some(p);
     }
     let mut parser = Parser::new_from_str(src);
     let mut depth = 0usize;
@@ -1247,7 +1265,7 @@ fn scan(s: &str, out: &mut Vec<Hit>) {
 mod tests {
     use super::{
         data_roles, decode, decode_mapped, fields, hits, page_words, pages_of, pair_named, pair_of, partner_named, read_data, result_role, role_cap,
-        role_fields, tags, under_root, unquoted_labels, Data, Pair, ANCHORS, LIST_FIELDS, MAX_DATA_BYTES, MAX_DEPTH, ROLES,
+        role_fields, size_problem, tags, under_root, unquoted_labels, Data, Pair, ANCHORS, LIST_FIELDS, MAX_DATA_BYTES, MAX_DEPTH, ROLES,
     };
     use std::path::Path;
 
@@ -1302,12 +1320,26 @@ mod tests {
         assert!(data_roles(&flow).is_err_and(|e| nested(&e)), "{:?}", data_roles(&flow));
         // the root mapping is level 1: MAX_DEPTH levels in all pass, one more is refused
         let at = |n: usize| format!("artifact: wu-result\nx:\n{}a\n", "- ".repeat(n));
-        assert_eq!(data_roles(&at(MAX_DEPTH - 1)), Ok(vec!["wu-result".to_string()]));
-        assert!(data_roles(&at(MAX_DEPTH)).is_err_and(|e| nested(&e)));
+        assert_eq!(data_roles(at(MAX_DEPTH - 1)), Ok(vec!["wu-result".to_string()]));
+        assert!(data_roles(at(MAX_DEPTH)).is_err_and(|e| nested(&e)));
         let big = format!("artifact: wu-result\nx: \"{}\"\n", "a".repeat(MAX_DATA_BYTES));
         assert!(data_roles(&big).is_err_and(|e| e.contains("bytes") && e.contains(&MAX_DATA_BYTES.to_string())), "{:?}", data_roles(&big).map_err(|e| e.len()));
         // an anchor is still named, wherever it sits
         assert_eq!(data_roles("artifact: wu-result\nx:\n  - &a [1]\n"), Err(ANCHORS.to_string()));
+    }
+
+    /// Epic review round 2 (E-DOCSPLIT close, important): `data_roles` takes the file's bytes as they
+    /// are - no trim, no lossy decoding - so it refuses what the doc check refuses.
+    #[test]
+    fn data_roles_reads_the_bytes_as_the_doc_check_reads_the_file() {
+        let not_utf8: &[u8] = b"artifact: wu-result\ntitle: caf\xe9\n";
+        assert!(data_roles(not_utf8).is_err_and(|e| e.contains("UTF-8")), "{:?}", data_roles(not_utf8));
+        let indented = "  x: 1\nartifact: wu-result\n";
+        assert!(data_roles(indented).is_err_and(|e| e.starts_with("not valid YAML")), "{:?}", data_roles(indented));
+        assert!(matches!(read_data(indented, "a.html", true), Data::Checked { ref roles, .. } if roles.is_empty()));
+        assert_eq!(data_roles("artifact: wu-result\n".as_bytes()), Ok(vec!["wu-result".to_string()]));
+        assert_eq!(size_problem(MAX_DATA_BYTES as u64), None);
+        assert!(size_problem(MAX_DATA_BYTES as u64 + 1).is_some_and(|e| e.contains("bytes")));
     }
 
     /// Epic review round 1 (E-DOCSPLIT close, important): each role has its fields and its cap from
@@ -1317,7 +1349,7 @@ mod tests {
         for role in ROLES {
             assert!(!role_fields(role).is_empty(), "{role} has no fields of its own");
             assert!(role_cap(&[role.to_string()]).is_some_and(|c| c > 0), "{role} has no cap");
-            assert_eq!(data_roles(&format!("artifact: {role}\n")), Ok(vec![role.to_string()]), "{role} is a role data_roles accepts");
+            assert_eq!(data_roles(format!("artifact: {role}\n")), Ok(vec![role.to_string()]), "{role} is a role data_roles accepts");
         }
     }
 

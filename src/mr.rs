@@ -2,7 +2,7 @@
 //! the commit-msg `Reviewed-By` check (UC-MR-1/2, DEC-47). Ported from Trawler's xtask/src/mr.rs
 //! (DEC-9/10/27): stock `ssh-keygen -Y` signatures, verified offline against the roster.
 use crate::notes::{self, sha256, CrNote, MrNote};
-use crate::{gate, git, git_dir, no_git_env, review, short, verify_doc, Config, ReportPolicy};
+use crate::{gate, git, git_dir, git_raw, no_git_env, ok_bytes, review, short, verify_doc, Config, ReportPolicy};
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -350,12 +350,24 @@ fn report_candidates(repo: &Path, cfg: &Config, base: &str, tip: &str, epic: boo
         if !notes::at_tip(repo, tip, &page) {
             continue;
         }
-        let roles = git(repo, &["show", &format!("{tip}:{}", data.display())], &[]).ok().and_then(|src| verify_doc::data_roles(&src).ok()).unwrap_or_default();
+        let roles = data_blob(repo, &format!("{tip}:{}", data.display())).and_then(|b| verify_doc::data_roles(b).ok()).unwrap_or_default();
         if roles.iter().any(|r| r == role) {
             found.push(page);
         }
     }
     Ok(found)
+}
+
+/// A committed data file's bytes as they are (`<rev>:<path>`), the size asked first: `None` when it
+/// is not there, cannot be read, or is over the doc check's size bound (`verify_doc::size_problem`).
+/// Never trimmed or decoded here: `verify_doc::data_roles` reads them as the doc check reads the file.
+fn data_blob(repo: &Path, spec: &str) -> Option<Vec<u8>> {
+    let size: u64 = git(repo, &["cat-file", "-s", spec], &[]).ok()?.parse().ok()?;
+    if verify_doc::size_problem(size).is_some() {
+        return None;
+    }
+    let args = ["cat-file", "blob", spec];
+    ok_bytes(&args, git_raw(repo, &args, None).ok()?).ok()
 }
 
 /// The report this sign-off attests under `[mr] report`, or `Err((what, fix))` refusing the confirm.

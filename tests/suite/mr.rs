@@ -593,6 +593,32 @@ fn a_page_tag_with_no_data_file_is_no_report() {
     assert!(mr_note(p, "HEAD").is_none());
 }
 
+/// Epic review round 2 (E-DOCSPLIT close, important): the sign-off reads a data file's committed
+/// bytes as the doc check reads the file - untrimmed, strict UTF-8, size first - so a data file the
+/// doc check refuses (not UTF-8, indented into no valid YAML, over its size bound) is never the report.
+#[test]
+fn a_data_file_the_doc_check_refuses_is_no_report() {
+    let big = format!("artifact: wu-result\nstatus: ready\nx: \"{}\"\n", "a".repeat(1 << 20));
+    let cases: [(&str, Vec<u8>); 3] = [
+        ("not UTF-8", b"artifact: wu-result\nstatus: ready\ntitle: caf\xe9\n".to_vec()),
+        ("indented", b"  x: 1\nartifact: wu-result\nstatus: ready\n".to_vec()),
+        ("over 1 MiB", big.into_bytes()),
+    ];
+    for (what, bytes) in cases {
+        let (d, _k) = fixture();
+        let p = d.path();
+        drop_fixture_report(p);
+        write(p, "docs/work/a-result.html", "<html><p>done</p></html>");
+        std::fs::write(p.join("docs/work/a-result.yaml"), &bytes).unwrap();
+        let o = keel(p, &["verify-doc", "docs/work/a-result.yaml"]);
+        assert_eq!(o.status.code(), Some(1), "{what}: the doc check refuses it: {}", text(&o));
+        commit(p, what);
+        notes(p, &["test", "doc", "cr"]);
+        refused(&keel(p, &["mr", "confirm", "wu"]), &["required", "--report <path>"]);
+        assert!(mr_note(p, "HEAD").is_none(), "{what}: signed as the report");
+    }
+}
+
 /// A range that changes only the data file of a report still finds its page (E-DOCSPLIT.W3), and a
 /// data file whose role is not the level's is no candidate.
 #[test]
