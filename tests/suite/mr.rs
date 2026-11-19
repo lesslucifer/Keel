@@ -1227,6 +1227,21 @@ fn a_github_line_is_read_and_signs_nothing() {
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
 }
 
+/// Keep 3 at the gate (E-GHREVERT epic review round 1): check 8 on a sign-off by an id the roster
+/// lists under the github tier only - an approval-era note, as a pending E-DOCSPLIT seam carries -
+/// is red with the same cause and fix as a typed sign-off by that id, never "does not list".
+#[test]
+fn check_8_on_a_github_only_signer_names_the_github_tier() {
+    let d = github_fixture();
+    let p = d.path();
+    notes(p, &["test", "doc", "cr"]);
+    forge(p, "wu/e/a", "epic/e", "5499546", "github", None);
+    assert_red8(p, "5499546 is listed in epic/e:.keel/mr-allowed under the github tier only, which signs nothing");
+    assert_red8(p, "fix -> sign as an identity listed under the username or key tier");
+    let t = text(&keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    assert!(!t.contains("does not list") && !t.contains("land their line"), "{t}");
+}
+
 /// Keep 3, the policy at 8d48a44 (no github tier) under a roster that still holds a github line, as
 /// on E-DOCSPLIT after it merges main: the line is read, authorises nothing, and the username signs.
 #[test]

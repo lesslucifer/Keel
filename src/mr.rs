@@ -137,19 +137,31 @@ fn tier_of<'a>(allowed: &'a [Entry], id: &str) -> Option<&'a str> {
     mine().find(|e| e.key.is_some()).or_else(|| mine().next()).map(|e| e.tier.as_str())
 }
 
+/// Why `id`, which no signing tier lists, cannot sign, when `src` lists it under the github tier
+/// only: the cause and the fix, one wording for a sign-off (`typed_refusal`) and for check 8. The fix
+/// names only the tiers the policy (`tiers`) accepts that sign. `None` when no github line names it.
+fn github_only(allowed: &[Entry], tiers: &[String], src: &str, id: &str) -> Option<(String, String)> {
+    if !allowed.iter().any(|e| e.tier == GITHUB && e.identity == id) {
+        return None;
+    }
+    let names: Vec<&str> = tiers.iter().map(String::as_str).filter(|t| signs_tier(t)).collect();
+    let fix = match names.split_last() {
+        None => "add a tier that signs to [mr] tiers in .keel/config.toml, then list the signer under it".to_string(),
+        Some((last, [])) => format!("sign as an identity listed under the {last} tier"),
+        Some((last, rest)) => format!("sign as an identity listed under the {} or {last} tier", rest.join(", ")),
+    };
+    Some((
+        format!("{id} is listed in {src} under the github tier only, which signs nothing: the sign-off is typed, by an identity listed under another tier"),
+        fix,
+    ))
+}
+
 /// The refusal for a sign-off by `id`, which no signing tier lists: listed under the github tier
-/// only, or not at all. The advice names only the tiers the policy (`tiers`) accepts that sign.
+/// only (`github_only`), or not at all.
 fn typed_refusal(allowed: &[Entry], tiers: &[String], src: &str, id: &str) -> String {
-    if allowed.iter().any(|e| e.tier == GITHUB && e.identity == id) {
-        let names: Vec<&str> = tiers.iter().map(String::as_str).filter(|t| signs_tier(t)).collect();
-        let fix = match names.split_last() {
-            None => "add a tier that signs to [mr] tiers in .keel/config.toml, then list the signer under it".to_string(),
-            Some((last, [])) => format!("sign as an identity listed under the {last} tier"),
-            Some((last, rest)) => format!("sign as an identity listed under the {} or {last} tier", rest.join(", ")),
-        };
-        format!("keel mr: refused - {id} is listed in {src} under the github tier only, which signs nothing: the sign-off is typed, by an identity listed under another tier\n  fix -> {fix}")
-    } else {
-        unlisted(src, id)
+    match github_only(allowed, tiers, src, id) {
+        Some((cause, fix)) => format!("keel mr: refused - {cause}\n  fix -> {fix}"),
+        None => unlisted(src, id),
     }
 }
 
@@ -467,7 +479,7 @@ fn signer(allowed: &[Entry], src: &str, args: &[&str]) -> Result<String, String>
     match ids[..] {
         [one] => Ok(one.into()),
         [] => {
-            Err(format!("keel mr: refused - {src} lists nobody\n  fix -> keel mr setup --as <identity> [--key <path>], then land {ROSTER} with keel mr commit"))
+            Err(format!("keel mr: refused - {src} lists nobody who signs by typing\n  fix -> keel mr setup --as <identity> [--key <path>], then land {ROSTER} with keel mr commit"))
         }
         _ => Err("keel mr: several identities are listed - pass --as <identity>".into()),
     }
@@ -808,10 +820,13 @@ pub(crate) fn manual_review(
     let (allowed, roster) = roster(repo, cfg, target, tip).map_err(|e| (e, NOT_AUTHORISED.into()))?;
     match tier_of(&allowed, &n.signer) {
         None => {
+            if let Some((cause, fix)) = github_only(&allowed, &cfg.mr.tiers, &roster, &n.signer) {
+                return Err((format!("{t} is signed off by {}, but {cause}", n.signer), format!("{fix}\n      {NOT_AUTHORISED}")));
+            }
             return Err((
                 format!("{t} is signed off by {}, whom {roster} does not list (under tiers {:?})", n.signer, cfg.mr.tiers),
                 format!("a signer is added by landing their line in {ROSTER} on {target}, signed off by a signer it already lists\n      {NOT_AUTHORISED}"),
-            ))
+            ));
         }
         Some("key") => {
             let Some(sig) = &n.sig else {
@@ -1001,8 +1016,8 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        default_tiers, landed, parse_roster, payload, positionals, printable, roster_change, rule_bearing, sha256, stale_change, tier_of, typed_refusal,
-        waive_reason, waiver_code, waiver_drift, waiver_listing,
+        default_tiers, landed, parse_roster, payload, positionals, printable, roster_change, rule_bearing, sha256, signer, stale_change, tier_of,
+        typed_refusal, waive_reason, waiver_code, waiver_drift, waiver_listing,
     };
     use crate::notes::CrNote;
 
@@ -1101,6 +1116,10 @@ mod tests {
         let policy = tiers(&["username", "github"]);
         assert!(typed_refusal(&r, &policy, "r", "77").contains("github tier only"));
         assert!(typed_refusal(&r, &policy, "r", "99").contains("is not listed in r"));
+        // E-GHREVERT epic review round 1, the nit: a roster of github lines only names nobody who signs.
+        let only = parse_roster("github: 77 owner\n", &policy, "r").unwrap();
+        assert!(signer(&only, "r", &[]).unwrap_err().contains("r lists nobody who signs by typing"));
+        assert_eq!(signer(&r, "r", &[]).unwrap_err(), "keel mr: several identities are listed - pass --as <identity>");
     }
 
     /// W1 review round 1, nits 1 and 3: the default policy is every known tier that signs, and the
