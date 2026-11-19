@@ -19,7 +19,7 @@
   <main>
 
 <h2 id="what-happened">What happened</h2>
-<p data-item="outcome" data-c="outcome"><b>Delivered.</b> The pre-commit hook, the commit-msg hook and <code>keel mr commit</code> read the rules file committed at the branch's tip. When nothing is committed yet, they read the staged file and say so in one line. With neither, the commit is refused and told to stage the file. Every other command still reads the folder's file, as planned. After review round 1, a commit that stages a rules file keel cannot read is refused before it lands.</p>
+<p data-item="outcome" data-c="outcome"><b>Delivered.</b> The pre-commit hook, the commit-msg hook and <code>keel mr commit</code> read the rules file committed at the branch's tip. When nothing is committed yet, they read the staged file and say so in one line. With neither, the commit is refused and told to stage the file. Every other command still reads the folder's file, as planned. After review rounds 1 and 2, a commit that stages a rules file keel cannot judge by is refused before it lands: one that does not parse, or one that names an unknown signer tier.</p>
 
 <h2 id="for-the-owner">What changes for you</h2>
 <table data-c="owner-changes">
@@ -50,11 +50,32 @@
       <li>Nit 2 taken: <code>repo_with_rules</code> is shared by <code>commit_hook_repo_with</code> and <code>unborn_hooked_repo</code>. Nit 1 stays as waived.</li>
     </ul>
   </li>
+  <li><b>Review round 2 (FAIL, 1 blocker):</b>
+    <ul>
+      <li>Finding 1: a staged rules file that parsed but named an unknown signer tier (<code>usrname</code>) landed. After that, every rule-file commit was refused with no fix line, the signed repair included. On b80e9c9 the typo was refused. Now <code>validate(&amp;Config)</code> is the one tier check, shared by <code>mr::roster</code> and the staged-file check, so the typo is refused before it lands. Roster's "unknown mr tier" refusal gains a fix line.</li>
+      <li>Nits taken:
+        <ul>
+          <li>Nit 1: a test pins the <code>mr commit</code> arm's own staged-file check, with no hooks installed.</li>
+          <li>Nit 2: <code>load_config_for_commit</code> folds the two calls for pre-commit and <code>keel mr commit</code>.</li>
+          <li>Nit 4: the no-rules refusal names the restore, <code>git checkout HEAD~1 -- .keel/config.toml</code>.</li>
+          <li>Nit 5: the doc comment names what skips pre-commit, and the recovery line names <code>git revert</code>.</li>
+        </ul>
+        Nit 3 stays as waived.</li>
+      <li><b>Not changed: the push hook still reads the folder's file.</b> The epic plan's open point 4 and its out-of-scope list say the push hook already checks committed trees. That is half true. The trees it checks are committed, but the folder's file decides:
+        <ul>
+          <li>which pushes are gated (<code>branches.main</code>, <code>epic_prefix</code>);</li>
+          <li>the lint and test commands run on each pushed tree;</li>
+          <li>every policy the range gate applies.</li>
+        </ul>
+        So a folder edit can un-gate a push to main. The epic plan, as approved, keeps the push hook out of scope, and which commit's rules should judge a push is a policy choice. It waits on the owner; see Follow-ups.</li>
+    </ul>
+  </li>
   <li><b>The <code>mr commit</code> arm</b> is <code>["mr", "commit", ..]</code> passing <code>&amp;args[1..]</code> to <code>mr::run</code>, the slice form Rust accepts. Its behaviour is as planned.</li>
 </ul>
 
 <h2 id="follow-ups-h">Follow-ups</h2>
 <ul data-item="follow-ups" data-c="follow-ups">
+  <li>The push hook reads the folder's file (round 2's third item). Options went to the router for the owner: a change in W1, a new WU in E-KEELFIX, or a backlog row. Taken by E-KEELFIX: by whichever of the three the owner picks.</li>
   <li>Distil at the epic close (<a href="2026-11-19-e-keelfix-plan.html#close-h">epic plan, "At the close"</a>): UC-GATE-1 and UC-MR-2 in <code>docs/use-cases/workflow.html</code> (UC-MR-2's "the hook reads <code>rule_bearing</code> from the working tree" goes), DEC-24's amendment (gap 1 closed) in <code>docs/decisions/workflow-gates.html</code>, and the hooks' config source in <code>docs/architecture.html</code> and both keel-workflow skill copies §7. Taken by E-KEELFIX's close.</li>
 </ul>
 
@@ -70,7 +91,10 @@
     <li><code>9c53bed</code>: this report (review round 1 ran on this tip).</li>
     <li><code>cee971f</code>: the round-1 tests, red, and nit 2.</li>
     <li><code>2c90f78</code>: the finding-2 fix and its unit test, green.</li>
-    <li>This report's round-1 update.</li>
+    <li><code>e2f4dad</code>: this report's round-1 update (review round 2 ran on this tip).</li>
+    <li><code>144ae73</code>: the round-2 tests, red.</li>
+    <li><code>265fd3e</code>: the round-2 fix and its unit tests, green.</li>
+    <li>This report's round-2 update.</li>
   </ol>
   <p><b>Red first.</b> The six tests were run on b80e9c9's code (the tests commit's tree). All six failed, for the reasons the plan gave:</p>
   <table>
@@ -93,18 +117,29 @@
       <tr><td><code>an_unreadable_committed_rules_file_names_the_recovery</code></td><td>On 9c53bed: <code>bad .keel/config.toml at HEAD</code> with no fix line</td><td>ok, and the reset it names recovers</td></tr>
     </tbody>
   </table>
+  <p><b>Review round 2, red first:</b></p>
+  <table>
+    <thead><tr><th>Test (<code>tests/suite/cli.rs</code>)</th><th>Red</th><th>After</th></tr></thead>
+    <tbody>
+      <tr><td><code>a_staged_rules_file_naming_an_unknown_tier_is_refused_before_it_lands</code></td><td>On e2f4dad: the tier typo landed</td><td>ok</td></tr>
+      <tr><td><code>an_unknown_tier_at_head_names_the_recovery</code></td><td>On e2f4dad: <code>unknown mr tier 'usrname'</code> with no fix line</td><td>ok</td></tr>
+      <tr><td><code>keel_mr_commit_refuses_a_bad_staged_rules_file_without_the_hooks</code></td><td>With the arm's own check removed: the typo committed</td><td>ok (the check restored)</td></tr>
+      <tr><td><code>a_deleted_rules_file_names_its_restore</code></td><td>On e2f4dad: the fix line named only <code>git add</code></td><td>ok, and the restore it names works</td></tr>
+    </tbody>
+  </table>
   <p><b>Unit</b> (<code>src/main.rs</code>):</p>
   <ul>
     <li><code>committed_config_takes_heads_text_else_the_staged_one_as_a_bootstrap_else_refuses</code>, over all four cases.</li>
-    <li><code>a_staged_rules_file_is_refused_only_when_it_does_not_parse</code>.</li>
+    <li><code>a_staged_rules_file_is_refused_only_when_it_does_not_parse</code>, an unknown tier included.</li>
+    <li><code>validate_refuses_exactly_the_tiers_keel_does_not_know</code>.</li>
   </ul>
-  <p><b>Green at <code>2c90f78</code>:</b></p>
+  <p><b>Green at <code>265fd3e</code>:</b></p>
   <ul>
-    <li><code>cargo test</code>: unit 103 passed; suite 339 passed, 0 failed, 10 ignored (the 10 <code>#[ignore]</code> tests already in the tree).</li>
+    <li><code>cargo test</code>: unit 104 passed; suite 343 passed, 0 failed, 10 ignored (the 10 <code>#[ignore]</code> tests already in the tree).</li>
     <li><code>cargo fmt --check</code> and <code>cargo clippy --all-targets -- -D warnings</code>: clean.</li>
     <li><code>keel check</code>: green.</li>
   </ul>
-  <p><b>Code:</b> <code>src/main.rs</code> gains <code>committed_config</code>, <code>load_config_committed</code>, <code>staged_config_refusal</code>, <code>check_staged_config</code> and <code>HEAD_CONFIG_FIX</code>, and three <code>run()</code> arms change. <code>src/mr.rs</code> changes one doc comment. Docs touched: this WU's plan and this report only.</p>
+  <p><b>Code:</b> <code>src/main.rs</code> gains <code>committed_config</code>, <code>load_config_committed</code>, <code>validate</code>, <code>staged_config_refusal</code>, <code>check_staged_config</code>, <code>load_config_for_commit</code> and <code>HEAD_CONFIG_FIX</code>, and three <code>run()</code> arms change. <code>src/mr.rs</code>: <code>roster</code> runs <code>validate</code> and adds a fix line; one doc comment. Docs touched: this WU's plan and this report only.</p>
 </div>
 
 <h3 id="distillation-h">Distillation</h3>
