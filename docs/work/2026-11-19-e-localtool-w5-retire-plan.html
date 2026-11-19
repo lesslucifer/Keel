@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Keel — E-LOCALTOOL.W5 plan: retiring GitHub's flow, E-GHSETUP's fate, and the build order</title>
+  <title>Keel — E-LOCALTOOL.W5 plan: going back to before GitHub, closing E-GHSETUP, and the build order</title>
 </head>
 <body>
   <header class="doc-hero">
     <div class="inner">
-      <h1>E-LOCALTOOL.W5 · Retiring GitHub's flow, E-GHSETUP's fate, and the build order</h1>
-      <p>The plan for the last design step: what switches GitHub's flow off and removes it, what stays on GitHub, and the order to build the app in. You read it before the work starts.</p>
-      <div class="meta">T3 · WU plan · v1 · 2026-11-19 · epic <code>E-LOCALTOOL</code> · WU <code>E-LOCALTOOL.W5</code> · branch <code>wu/E-LOCALTOOL/w5-retire</code> off <code>epic/E-LOCALTOOL</code> 8ad8ad8 (W1 to W4 merged)</div>
+      <h1>E-LOCALTOOL.W5 · Going back to before GitHub, closing E-GHSETUP, and the build order</h1>
+      <p>The plan for the last design step: what the revert to before GitHub undoes, what stays on GitHub, and the order to build the app in. You read it before the work starts.</p>
+      <div class="meta">T3 · WU plan · v2, on your 6 comments · 2026-11-19 · epic <code>E-LOCALTOOL</code> · WU <code>E-LOCALTOOL.W5</code> · branch <code>wu/E-LOCALTOOL/w5-retire</code> off <code>epic/E-LOCALTOOL</code> 8ad8ad8 (W1 to W4 merged)</div>
     </div>
   </header>
   <main>
@@ -19,109 +19,117 @@
 <div class="diagram" data-c="picture">
 <pre class="mermaid">
 flowchart LR
-  subgraph GH["Retire GitHub's flow"]
-    E1["1 Switch the flow off, before 2 December"]
-    E5["5 Remove its code and its records"]
-  end
+  E1["1 Go back to before GitHub: code and settings, as soon as possible"]
+  E2["2 Keel fixes"]
   subgraph APP["Build the app"]
     E3["3 Alerts and your list"]
     E4["4 Sign off and merge from the app"]
-    E6["6 Fleet, epics, many projects"]
+    E5["5 Fleet, epics, many projects"]
   end
-  E2["2 Two keel fixes"]
-  E1 --> E2 --> E3 --> E4 --> E6
-  E4 -->|"the gate's no-receipt mode lands"| E5
-  OE["The open epics merged into main"] --> E5
-  E1 -.->|"stays"| S["GitHub keeps: releases, the backup copy"]
-  E6 -.-> L["Later: message the router, alerts when away, a home other than GitHub"]
+  E1 --> E2 --> E3 --> E4 --> E5
+  E1 -.->|"stays"| S["GitHub keeps: releases, and the code you push there"]
+  E5 -.-> L["Later: message the router, alerts when away, a home other than GitHub"]
 </pre>
-<div class="caption">A draft of the order W5 will check and complete. Six epics, smallest useful step first. The flow switches off first, with no code removed. Its code goes once nothing still needs it. GitHub keeps only releases and a copy of the code.</div>
+<div class="caption">A draft of the order W5 will check and complete. Five epics, smallest useful step first. The first takes Keel back to how it worked before GitHub's flow: the code, your settings on GitHub, the signing and the local merge. GitHub keeps only releases and your pushes.</div>
+</div>
+
+<div class="callout" data-c="principles">
+  <p><b>Your comments of 19 November, read as rules for the whole plan:</b></p>
+  <ol>
+    <li><b>Go back to before GitHub, as soon as possible.</b> One epic reverts the code and the settings. No separate switch-off and removal.</li>
+    <li><b>Signing comes back.</b> Your typed sign-off, as before. W5 itself lands that way.</li>
+    <li><b>A task merges locally, as before.</b></li>
+    <li><b>The GitHub setup epic closes.</b></li>
+    <li><b>The router's new line for reading GitHub's check logs is dropped.</b></li>
+    <li><b>Plain names for things.</b> "Backup copy" was my word; it now reads "your pushes to GitHub".</li>
+  </ol>
 </div>
 
 <div class="callout" data-c="result-sketch">
   <p><b>What W5's result gives you, in five parts:</b></p>
   <ol>
-    <li>Every piece of GitHub's flow, what replaces it on your Mac, and the epic that removes it.</li>
-    <li>What stays on GitHub, what it needs, and what a later replacement would need.</li>
-    <li>The paused GitHub setup epic: two or three options, one recommended. Yours to rule.</li>
+    <li>Every piece of GitHub's flow, how Keel did it before, and how the revert undoes it.</li>
+    <li>What stays on GitHub: releases and your pushes, and what each needs.</li>
+    <li>The GitHub setup epic, closed: where its work units and its two good ideas go.</li>
     <li>The build epics in order, each with its first use and every open follow-up placed in one.</li>
     <li>The backlog rows to add, strike or re-point.</li>
   </ol>
 </div>
 
 <h2 id="problem">The problem</h2>
-<p data-c="problem">You dropped GitHub's flow. Its pieces still run: the checks, the sign-off by approval, auto-merge, the bot's pull requests. On 2 December GitHub changes how such checks run, which may break them before anyone removes them. The four earlier designs also left about thirty follow-ups, and none has an epic yet. W5 decides what goes when, and in which order the app is built.</p>
+<p data-c="problem">You dropped GitHub's flow. Its pieces still run: the checks, the sign-off by approval, auto-merge, the bot's pull requests. On 2 December GitHub changes how such checks run, which may break them. You asked to go back to how Keel worked before GitHub, as soon as possible. The four earlier designs also left about thirty follow-ups, and none has an epic yet. W5 lists what the revert undoes and orders the epics that build the app.</p>
 
 <h2 id="for-the-owner">What changes for you</h2>
 <table data-item="owner-changes" data-c="owner-changes">
   <thead><tr><th>When</th><th>Today</th><th>After W5</th></tr></thead>
   <tbody>
-    <tr><td>You ask "when does GitHub's flow stop?"</td><td>Not planned</td><td>A first small epic switches it off, with no code removed. A later one removes the code</td></tr>
-    <tr><td>You ask "what is left on GitHub?"</td><td>"Releases and a backup copy", one line</td><td>Each piece that stays, what it needs, and who pushes the copy</td></tr>
-    <tr><td>The GitHub setup epic</td><td>Paused</td><td>Options with one recommendation, for your ruling</td></tr>
-    <tr><td>You ask "what do we build first?"</td><td>"Likely alerts first"</td><td>Six epics in order, each with its first use and its parts</td></tr>
-    <tr><td>You must decide</td><td colspan="2">Approve this plan, or comment. Later, in the result: the setup epic's fate, who pushes the copy, and how a task lands (open points 2, 3, 6)</td></tr>
+    <tr><td>You ask "when does GitHub's flow stop?"</td><td>Not planned</td><td>The first epic, as soon as W5 lands: it reverts the code and the settings to before GitHub</td></tr>
+    <tr><td>You ask "what is left on GitHub?"</td><td>"Releases and a backup copy", one line</td><td>Releases, and the code you push there, as before. What each needs</td></tr>
+    <tr><td>You sign off a work unit</td><td>By approving its pull request on GitHub</td><td>By your typed sign-off, then your local merge, as before. W5 lands that way</td></tr>
+    <tr><td>The GitHub setup epic</td><td>Paused</td><td>Closed, by your ruling. Its two good ideas go to the backlog</td></tr>
+    <tr><td>You ask "what do we build first?"</td><td>"Likely alerts first"</td><td>Five epics in order, each with its first use and its parts</td></tr>
+    <tr><td>You must decide</td><td colspan="2">Approve this plan, or comment. Your comments answered points 1, 3, 5, 6 and 7; point 2 follows from point 1. Nothing else waits on you</td></tr>
   </tbody>
 </table>
 
 <h2 id="example">How you approve it</h2>
 <ol data-c="example-steps">
   <li>You read this plan and comment, or tell the router it is fine.</li>
-  <li>The worker reads the four earlier designs, the code on main and the setup epic's plans, and writes one result doc. It opens with a picture.</li>
+  <li>The worker reads the four earlier designs, the code on main before and after GitHub's flow, and the setup epic's plans. It writes one result doc that opens with a picture.</li>
   <li>The router tells you it is ready. You open it in your browser and comment.</li>
-  <li>The router opens a pull request into the epic. You approve it on GitHub. Your approval is the sign-off, and auto-merge merges it. This may be one of the last work units to land that way.</li>
+  <li>You sign it off by your typed command, and merge it locally into the epic, as before GitHub. No pull request.</li>
 </ol>
 
 <h3 id="terms">Terms</h3>
 <table data-c="terms">
   <tbody>
-    <tr><td>GitHub's flow</td><td>Pull requests, the checks GitHub runs, your approval as the sign-off, auto-merge, the bot that pushes and opens pull requests, the docs website. Not releases, not the backup copy.</td></tr>
-    <tr><td>Switch off</td><td>Stop using a piece, and stop GitHub running it. Its files may stay; a revert brings it back.</td></tr>
-    <tr><td>Remove</td><td>Delete its code, its tests and its rules, and mark its decision records replaced.</td></tr>
-    <tr><td>Backup copy</td><td>Main, the epic branches, keel's notes and the tags, pushed to GitHub so the work survives this Mac.</td></tr>
+    <tr><td>GitHub's flow</td><td>Pull requests, the checks GitHub runs, your approval as the sign-off, auto-merge, the bot that pushes and opens pull requests, the docs website. Not releases, and not your pushes to GitHub.</td></tr>
+    <tr><td>Before GitHub</td><td>Keel as main was on 15 November, before the first GitHub-flow epic merged.</td></tr>
+    <tr><td>Revert</td><td>Put a piece back as it was before GitHub: its code, tests, rules and settings. Pieces new with the flow are deleted. Its decision records are marked replaced.</td></tr>
+    <tr><td>Your pushes to GitHub</td><td>Main, the epic branches, keel's notes and the tags, which you push to GitHub as before the flow. The code on GitHub is that copy.</td></tr>
     <tr><td>Build epic</td><td>An epic that builds part of the app, or a keel or router change the app needs.</td></tr>
     <tr><td>K-number</td><td>A change to keel or the router that W2, W3 or W4 found the app needs: K1 to K15.</td></tr>
   </tbody>
 </table>
 
 <h2 id="work">The work</h2>
-<p data-item="requirement" data-c="requirement">W5's result report lists every piece of GitHub's flow on main, each with what replaces it on your Mac and the epic that switches it off and removes it; lists what stays on GitHub, what each needs and what a later replacement would need; gives E-GHSETUP's options with one recommendation for your ruling; orders the build epics, smallest useful step first, each with its first use and its dependencies; places every K-number and every follow-up W1 to W4 hand to W5 in exactly one epic, or drops it with the reason; and lists the backlog rows to add, strike or re-point.</p>
-<p data-item="maps-to" data-c="maps-to">Epic <code>E-LOCALTOOL</code>, its W5 block, and the acceptance lines "every GitHub flow piece has a replacement and a removing epic, what stays on GitHub is listed, and E-GHSETUP's fate has your ruling (W5)" and "a list of implementation epics, in order, sits in the backlog" · epic open points 6 (GitHub keeps releases and the backup copy; only its flow drops) and 7 (E-GHSETUP stays paused; W5 decides its fate) · W1 need n10 and its follow-ups (point 2, the task; j23, the push; <code>keel ci gate</code> and <code>keel ci sign-off</code>) · W2's follow-ups (K1 to K3, Apple's membership, need n8) · W3's follow-ups (K4 to K8, K10 to K15, the two sources) · W4's follow-ups (the run buttons, K9, key signing, the two checks). No use case: an ideas epic.</p>
-<p data-item="expected" data-c="expected">One doc, <code>docs/work/2026-11-19-e-localtool-w5-retire-result.html</code> or the same name on the day it lands, green under <code>keel verify-doc</code> and under 100 KB. It opens with a picture of the build order. It has the five parts named under "What W5's result gives you", each check below passing with its raw output in the doc. You approve it by approving the WU's pull request. No file outside <code>docs/work/</code> changes, and no setting on GitHub.</p>
+<p data-item="requirement" data-c="requirement">W5's result report lists every piece of GitHub's flow on main, each with how Keel did it before the flow and how the revert epic undoes it; lists what stays on GitHub (releases and your pushes) and what each needs; records E-GHSETUP's close, by your ruling, with each of its work units dropped or moved; orders the build epics, the revert first and smallest useful step next, each with its first use and its dependencies; places every K-number and every follow-up W1 to W4 hand to W5 in exactly one epic, or drops it with the reason; and lists the backlog rows to add, strike or re-point.</p>
+<p data-item="maps-to" data-c="maps-to">Epic <code>E-LOCALTOOL</code>, its W5 block, and the acceptance lines "every GitHub flow piece has a replacement and a removing epic, what stays on GitHub is listed, and E-GHSETUP's fate has your ruling (W5)" and "a list of implementation epics, in order, sits in the backlog" · epic open points 6 (GitHub keeps releases and the backup copy; only its flow drops) and 7 (E-GHSETUP stays paused; W5 decides its fate) · your comments on this plan of 2026-11-19 (revert, signing, local task merge, E-GHSETUP closed, the guard line dropped) · W1 need n10 and its follow-ups (point 2, the task; j23, the push; <code>keel ci gate</code> and <code>keel ci sign-off</code>) · W2's follow-ups (K1 to K3, Apple's membership, need n8) · W3's follow-ups (K4 to K8, K10 to K15, the two sources) · W4's follow-ups (the run buttons, K9, key signing, the two checks). No use case: an ideas epic.</p>
+<p data-item="expected" data-c="expected">One doc, <code>docs/work/2026-11-19-e-localtool-w5-retire-result.html</code> or the same name on the day it lands, green under <code>keel verify-doc</code> and under 100 KB. It opens with a picture of the build order. It has the five parts named under "What W5's result gives you", each check below passing with its raw output in the doc. You sign it off by your typed command and merge it locally. No file outside <code>docs/work/</code> changes, and no setting on GitHub.</p>
 
-<p data-c="work-in-short"><b>In short:</b> take stock of every GitHub piece and every open follow-up. Give each a home: an epic that replaces it, switches it off or removes it, or a reason to drop it. Then order the epics so each one is useful on its own. Nothing is built, removed or switched off.</p>
+<p data-c="work-in-short"><b>In short:</b> take stock of every GitHub piece and every open follow-up. For each piece: how Keel did it before, and how the revert undoes it. For each follow-up: the epic that takes it, or a reason to drop it. Then order the epics so each one is useful on its own. Nothing is built, reverted or switched off.</p>
 
 <table data-c="parts">
   <thead><tr><th>#</th><th>Part</th><th>What W5 writes</th></tr></thead>
   <tbody>
-    <tr><td>P1</td><td>The flow's pieces</td><td>One row per piece, read from main at 6cf3127: the five flow workflows and <code>.github/CODEOWNERS</code>; the seven scripts (<code>ci-gate.sh</code>, <code>ci-sign-off.sh</code>, <code>router-gh.sh</code>, <code>router-gh-watch.sh</code>, <code>router-gh-command.jq</code>, <code>pages-build.sh</code>, <code>gh-settings-check.sh</code>); keel's GitHub code (<code>keel ci gate</code>, <code>keel ci sign-off</code>, <code>src/ci.rs</code>, the <code>github</code> signer tier and what an approval covers, the <code>[github]</code> config, <code>merge_on_approve</code>); the router guard's <code>gh</code> and bot shapes and the launcher's bot denials; the tests that cover them; <code>rule_bearing</code> entries and the <code>github:</code> roster line; DEC-60 to DEC-62 and DEC-64 to DEC-68, and the use cases they carry; the skills' GitHub paths; install §5 and architecture's "GitHub"; your settings on GitHub (rulesets, auto-merge, Pages, the App). Per row: what replaces it on your Mac (W1's job, W4's run line, or nothing needed), the epic that switches it off, and the epic that removes it.</td></tr>
-    <tr><td>P2</td><td>What stays on GitHub</td><td><code>release.yml</code> and its tag trigger; the backup copy (main, epics, notes, tags). For each: who pushes, what it needs from GitHub (its token, Actions for release only, a small rule against deleting or force-pushing main), what the switch-off must not break, and what a later replacement would need (need n10). The router's push and tag watch (<code>router-watch.sh pushed</code>, <code>tagged</code>) stays with them.</td></tr>
-    <tr><td>P3</td><td>E-GHSETUP</td><td>Its plan, its W1 plan at 968350c, and each of its six work units: kept, moved or dropped once the flow is gone. Two or three options for its fate, one recommended, for your ruling. Where its good ideas go: "list what is missing first" to the app's "Add a project", <code>keel-install.sh</code> to the release backlog.</td></tr>
-    <tr><td>P4</td><td>The build order</td><td>The epics in order, each with: its first use for you (the need it serves, n1 to n10), its parts, the K-numbers it carries, what it waits on, and a working name. The picture above is the draft. Rule: no epic waits on a later one, and each is useful alone.</td></tr>
-    <tr><td>P5</td><td>Every follow-up placed</td><td>One table: each K-number (K1 to K15) and each follow-up line W1 to W4 name for W5, with the epic that takes it, or "dropped" and why (K3 is replaced by K15). Includes W3's "what two sources change in W2 and W4" rows, W4's overruled "copy" text (to the epic's close), and the facts learned since W1 (Details).</td></tr>
-    <tr><td>P6</td><td>The backlog</td><td>The rows for a new <code>docs/backlog/local-app.html</code>, one per build epic and one per later need; each github-flow row, G1 to G11, struck, re-pointed or kept, with why; the backlog index's "next GitHub-flow epic" row replaced. Drafted in the result; written into the backlog at the epic's close, as its distillation plan says.</td></tr>
+    <tr><td>P1</td><td>The flow's pieces</td><td>One row per piece, read from main at 6cf3127 against main before the flow at 8d48a44 (68 files differ): the five flow workflows and <code>.github/CODEOWNERS</code>; the seven scripts (<code>ci-gate.sh</code>, <code>ci-sign-off.sh</code>, <code>router-gh.sh</code>, <code>router-gh-watch.sh</code>, <code>router-gh-command.jq</code>, <code>pages-build.sh</code>, <code>gh-settings-check.sh</code>); keel's GitHub code (<code>keel ci gate</code>, <code>keel ci sign-off</code>, <code>src/ci.rs</code>, the <code>github</code> signer tier and what an approval covers, the <code>[github]</code> config, <code>merge_on_approve</code>); the router guard's <code>gh</code> and bot shapes and the launcher's bot denials; the tests that cover them; <code>rule_bearing</code> entries and the <code>github:</code> roster line; DEC-60 to DEC-62 and DEC-64 to DEC-68, and the use cases they carry; the skills' GitHub paths; install §5 and architecture's "GitHub"; your settings on GitHub (rulesets, auto-merge, Pages, the App and its key). Per row: how Keel did it at 8d48a44, or "new with the flow"; how the revert undoes it (a <code>git revert</code> of the commits that brought it, or by hand where later work built on it; rule files by your <code>keel mr commit</code>, settings by your hand); and anything the revert must keep working (releases, the open epics' approval sign-offs, point 4). A piece that predates the flow but changed with it goes back to its 8d48a44 form unless a later epic needs the change; then the row says why.</td></tr>
+    <tr><td>P2</td><td>What stays on GitHub</td><td><code>release.yml</code> (there before the flow) and its tag trigger; your pushes (main, epics, notes, tags), as before the flow. For each: who pushes (you), what it needs from GitHub (your token; Actions for releases only), what the revert must not break, and what a later replacement would need (need n10). The router's push and tag watch (<code>router-watch.sh pushed</code>, <code>tagged</code>) stays with them.</td></tr>
+    <tr><td>P3</td><td>E-GHSETUP, closed</td><td>Your ruling of 2026-11-19, recorded. Its plan, its W1 plan at 968350c, and each of its six work units: dropped, or moved to the backlog with where. Its two good ideas: "list what is missing first" to the app's "Add a project", <code>keel-install.sh</code> to the release backlog. Its branches stay until you delete them.</td></tr>
+    <tr><td>P4</td><td>The build order</td><td>The epics in order, each with: its first use for you (the need it serves, n1 to n10), its parts, the K-numbers it carries, what it waits on, and a working name. The picture above is the draft. Rules: the revert comes first; no epic waits on a later one; each is useful alone.</td></tr>
+    <tr><td>P5</td><td>Every follow-up placed</td><td>One table: each K-number (K1 to K15) and each follow-up line W1 to W4 name for W5, with the epic that takes it, or "dropped" and why (K3 is replaced by K15; <code>keel ci gate</code>'s keeping, W2 point 3, ends with the revert, point 8). Includes W3's "what two sources change in W2 and W4" rows, W4's overruled "copy" text (to the epic's close), and the facts learned since W1 (Details).</td></tr>
+    <tr><td>P6</td><td>The backlog</td><td>The rows for a new <code>docs/backlog/local-app.html</code>, one per build epic and one per later need; each github-flow row, G1 to G11, struck with the revert, re-pointed or kept, with why; E-GHSETUP's row marked closed; the backlog index's "next GitHub-flow epic" row replaced. Drafted in the result; written into the backlog at the epic's close, as its distillation plan says.</td></tr>
   </tbody>
 </table>
 
 <ul data-c="work-list">
-  <li><b>What W5 does not do:</b> switch anything off, change a GitHub setting, delete a file or a branch, edit a merged doc, or write code. The epics it plans do that.</li>
-  <li><b>The draft order and why:</b> (1) switch off first, because 2 December is close and the flow already blocks open epics (Details, facts). (2) Two keel fixes next: K9 is a risk you run today when you type a rule-file commit, and the app's Commit… button would run it too. (3) Alerts and your list: the two musts n1 and n2, read-only. (4) Sign off and merge: must n3 and should n6, the first writes. (5) Removal, once the open epics are on main and the gate has its own no-receipt mode. (6) The dashboards: should n4, n5, n7. Later: n8, n9, n10.</li>
-  <li><b>Where the K-numbers go, as a draft:</b> K14, K15, K4, K10, K12 to epic 3; K9 to epic 2; K1, K2, K5 to epic 4; K6, K7, K8, K11, K13 to epic 6; K3 dropped. W5 checks each against what it needs and when.</li>
+  <li><b>What W5 does not do:</b> revert or switch off anything, change a GitHub setting, delete a file or a branch, edit a merged doc, or write code. The revert epic does that.</li>
+  <li><b>The draft order and why:</b> (1) The revert, first and as soon as W5 lands: your ruling; 2 December is close; the flow already blocks open epics (Details, facts). W5 writes P1 first, so the router may plan the revert from it before the other parts land. (2) Keel fixes: K9, a risk you run today when you type a rule-file commit; <code>notes write --help</code>; and K2, since the revert removes <code>keel ci gate</code>, the app's way to read the gate until K2. (3) Alerts and your list: the two musts n1 and n2, read-only. (4) Sign off and merge from the app: must n3 and should n6, the first writes; the app runs your typed sign-off. (5) The dashboards: should n4, n5, n7. Later: n8, n9, n10. The separate removal epic of v1 is gone: the revert does it.</li>
+  <li><b>Where the K-numbers go, as a draft:</b> K9 and K2 to epic 2; K14, K15, K4, K10, K12 to epic 3; K1, K5 to epic 4; K6, K7, K8, K11, K13 to epic 5; K3 dropped. W5 checks each against what it needs and when.</li>
 </ul>
 
 <h2 id="open-points">Open points</h2>
-<p>Work goes on at these answers. Comment to overrule. Points 2, 3 and 6 are yours: the result asks you again with its options.</p>
+<p>Work goes on at these answers. Comment to overrule. Your comments of 2026-11-19 answered points 1, 3, 5, 6 and 7. Point 2 follows from your answer on point 1.</p>
 <table data-c="open-points">
   <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
   <tbody>
-    <tr><td>1</td><td>When does the flow switch off?</td><td><b>First, before 2 December,</b> in a small epic with no code: your steps on GitHub (auto-merge off, the merge ruleset off if set, the flow's workflows off), <code>merge_on_approve = false</code> by your commit, and the router's skills back to the typed sign-off and the local merge</td><td>GitHub's <code>pull_request_target</code> change of 2026-12-02 may break the checks. Main's keel already refused a newer epic's sign-off (PR #20). Switching off is reversible; removal is not</td></tr>
-    <tr><td>2</td><td>Who pushes the backup copy once the bot's pull requests are gone?</td><td><b>You:</b> main and the epic branches, with their notes, after each merge. Work branches stay on this Mac until merged into their epic. The app later gets a Push… button, on one confirm, in the sign-off epic</td><td>Your push already carries the notes and runs the gate in its hook. The bot's App key exists for pull requests; without it there is one secret less. The cost: unmerged work lives only on this Mac. The result also shows the other option, the bot keeping its push only</td></tr>
-    <tr><td>3</td><td>How does a task reach its work unit?</td><td><b>You merge it locally</b> into its work unit's branch, as W1 guessed. The rule "never merge a task branch locally" changes in the switch-off epic. The app gets a Merge task… button in the sign-off epic</td><td>Tasks let two workers share a work unit; only the pull request was GitHub's. The result also weighs dropping tasks: simpler, but the pieces then wait in line</td></tr>
-    <tr><td>4</td><td>When does the <code>github</code> signer tier go?</td><td><b>In the removal epic,</b> after every epic holding a work unit signed by approval is merged into main: E-LOCALTOOL and E-DOCSPLIT today</td><td>E-LOCALTOOL's W1 to W4 sign-offs carry the tier <code>github</code>. W5 reads in the code whether an epic's sign-off or a push re-checks them by tier; until that is known, the tier stays</td></tr>
-    <tr><td>5</td><td>What replaces "your approval accepts all" (DEC-66)?</td><td><b>The typed sign-off's waiver flags</b> (<code>--waive-review</code>, <code>--accept-waiver</code>, <code>--roster-change</code>), which keel has today</td><td>They came before GitHub. W5 checks that each case an approval covered has a typed way</td></tr>
-    <tr><td>6</td><td>E-GHSETUP's fate?</td><td><b>Close it,</b> my recommendation. The result shows three options: close; shrink it to releases and the backup copy in other projects; keep it paused until the app exists</td><td>Its aim was GitHub's flow in any project, and the flow is dropped. Releases already work for Keel, and a backup copy is a plain git remote. Its two good ideas move to the backlog</td></tr>
-    <tr><td>7</td><td>The router guard now admits <code>gh run view &lt;id&gt; [--log|--log-failed]</code>, an uncommitted edit of yours on main. Is it carried into an epic?</td><td><b>No, dropped</b> when the flow switches off: no GitHub check run remains to read. If the switch-off waits, the next epic carries it by your <code>keel mr commit</code></td><td>A guard line for a dead flow is one more thing to remove later</td></tr>
-    <tr><td>8</td><td>When do <code>keel ci gate</code> and <code>keel ci sign-off</code> go?</td><td><b><code>ci sign-off</code> in the removal epic. <code>ci gate</code> only after K2 lands</b> in the sign-off epic</td><td>The app reads the gate through <code>ci gate</code> until <code>keel verify-dod</code> has its own no-receipt mode (W2 point 3)</td></tr>
+    <tr><td>1</td><td>When does the flow switch off?</td><td><b>As soon as possible, by a revert epic:</b> your answer of 2026-11-19, "a code revert / setup revert epic. We go back to the previous state before GitHub." It comes first, right after W5: the code back to main before the flow, your settings on GitHub undone (auto-merge, rulesets, Pages, the App and its key), rule files by your <code>keel mr commit</code>, the skills back to the typed sign-off and the local merge, the decision records marked replaced. No separate switch-off or removal epic</td><td>Your comment. Also: GitHub's <code>pull_request_target</code> change of 2026-12-02 may break the checks, and main's keel already refused a newer epic's sign-off (PR #20)</td></tr>
+    <tr><td>2</td><td>Who pushes to GitHub once the bot is gone? (v1 called this "the backup copy"; you asked what it was: the code on GitHub, which you push there)</td><td><b>You, as before the flow:</b> main and the epic branches, with their notes, after each merge. Work branches stay on this Mac until merged into their epic. The app later gets a Push… button, on one confirm, in the sign-off epic</td><td>Follows from your answer on point 1. Your push already carries the notes and runs the gate in its hook. Without the bot there is one secret less</td></tr>
+    <tr><td>3</td><td>How does a task reach its work unit?</td><td><b>You merge it locally, as before:</b> your answer of 2026-11-19. The rule "never merge a task branch locally" goes with the revert. The app gets a Merge task… button in the sign-off epic</td><td>Your comment. Only the pull request was GitHub's</td></tr>
+    <tr><td>4</td><td>When does the <code>github</code> signer tier go?</td><td><b>With the revert.</b> One exception, if W5 finds that keel re-checks a past sign-off by its tier when an open epic is signed or pushed: the revert keeps only the reading of past approvals, until E-LOCALTOOL and E-DOCSPLIT are on main. No new approval can sign</td><td>E-LOCALTOOL's W1 to W4 sign-offs carry the tier <code>github</code>. Going back must not strand them</td></tr>
+    <tr><td>5</td><td>What replaces "your approval accepts all" (DEC-66)?</td><td><b>The signing, as before:</b> your answer of 2026-11-19, "bring the signing back". Your typed <code>keel mr confirm</code>, with its waiver flags (<code>--waive-review</code>, <code>--accept-waiver</code>, <code>--roster-change</code>) for the cases an approval covered. W5 itself lands this way</td><td>Your comment. The flags came before GitHub. W5 checks that each case an approval covered has a typed way</td></tr>
+    <tr><td>6</td><td>E-GHSETUP's fate?</td><td><b>Closed:</b> your answer of 2026-11-19. W5 places each of its six work units, dropped or moved, and its two good ideas (P3)</td><td>Your comment. Its aim was GitHub's flow in any project, and the flow is gone</td></tr>
+    <tr><td>7</td><td>The router guard now admits <code>gh run view &lt;id&gt; [--log|--log-failed]</code>, an uncommitted edit of yours on main. Is it carried into an epic?</td><td><b>No, dropped:</b> your answer of 2026-11-19, "no longer needed". The revert removes the guard's other <code>gh</code> shapes. The uncommitted line is yours to discard from main's checkout</td><td>Your comment. No GitHub check run remains to read</td></tr>
+    <tr><td>8</td><td>When do <code>keel ci gate</code> and <code>keel ci sign-off</code> go?</td><td><b>Both with the revert.</b> K2, the gate's own no-receipt mode, moves to the keel-fixes epic, so the app never needs <code>ci gate</code></td><td>Your answer on point 1. W2 point 3 kept <code>ci gate</code> only as the app's way to read the gate until K2</td></tr>
     <tr><td>9</td><td>Does the result open with a picture?</td><td><b>Yes,</b> then short plain text, under 100 KB; a second page if needed, as W3's field page</td><td>Your ask of 2026-11-19. htmldoc's snapshot limit is about 100 KB</td></tr>
   </tbody>
 </table>
@@ -132,6 +140,7 @@ flowchart LR
 <table data-c="inputs">
   <thead><tr><th>From</th><th>Follow-ups handed to W5</th></tr></thead>
   <tbody>
+    <tr><td>Your comments on this plan</td><td>Six, 2026-11-19: the revert as soon as possible (point 1), "what backup copy?" (point 2), the local task merge (3), the signing back (5), E-GHSETUP closed (6), the guard line dropped (7)</td></tr>
     <tr><td>Epic plan</td><td>Open points 6 and 7; the W5 block's list of pieces; the 2026-12-02 <code>pull_request_target</code> change; the acceptance lines on W5 and the backlog</td></tr>
     <tr><td>W1 result</td><td>15 GitHub rows g1 to g15 marked "dropped"; point 2, a task without a pull request; j23, who pushes; j24, releases; n10; whether keel keeps <code>ci gate</code> and <code>ci sign-off</code></td></tr>
     <tr><td>W2 result</td><td>K1 to K3; keep <code>ci gate</code> until K2 (point 3); Apple's membership, tried in the first build (point 1); need n8 in a later epic; DeepSeek Harness later (point 5); no automatic updates (point 4)</td></tr>
@@ -143,14 +152,15 @@ flowchart LR
 </table>
 
 <h3 id="facts-h">Facts learned since W1</h3>
-<p data-c="facts-why">Each is a source W5 weighs, named with where it comes from. None is a ruling.</p>
+<p data-c="facts-why">Each is a source W5 weighs, named with where it comes from. None is a ruling; your rulings sit in the open points.</p>
 <table data-c="facts">
   <thead><tr><th>Fact</th><th>Source</th><th>Bears on</th></tr></thead>
   <tbody>
+    <tr><td>Main before the flow is 8d48a44 (E-LOOPBIND's merge, 2026-11-15). Five merges brought the flow, E-GHFLOW's 72cae9d to E-GHFLOW2's 6cf3127. 68 files differ; <code>release.yml</code> was already there</td><td><code>git log --merges --first-parent main</code> and <code>git diff --shortstat 8d48a44 6cf3127</code>, read for this revision</td><td>P1: what "before GitHub" is, and the revert's size</td></tr>
     <tr><td>Until an epic merges into main, GitHub's sign-off runs main's keel, which refused PR #20 (two result pages in one range)</td><td>The router's brief of 2026-11-19</td><td>Point 1: open epics finish by the typed sign-off and the local merge</td></tr>
-    <tr><td>A task's pull request opens as a draft and must be marked ready before it can merge</td><td>The router's brief of 2026-11-19</td><td>Point 3: one more hand step the local merge drops</td></tr>
-    <tr><td>The bot measures a pull request's range from the router's stale local base</td><td>Backlog G11, on <code>wu/E-DOCSPLIT/w3-pair</code></td><td>P6: struck with the bot, not fixed</td></tr>
-    <tr><td>The router guard admits <code>gh run view &lt;id&gt; [--log|--log-failed]</code>: an uncommitted owner edit on main</td><td>The router's brief of 2026-11-19</td><td>Point 7</td></tr>
+    <tr><td>A task's pull request opens as a draft and must be marked ready before it can merge</td><td>The router's brief of 2026-11-19</td><td>Point 3: a hand step the local merge drops</td></tr>
+    <tr><td>The bot measures a pull request's range from the router's stale local base</td><td>Backlog G11, on <code>wu/E-DOCSPLIT/w3-pair</code></td><td>P6: struck with the revert, not fixed</td></tr>
+    <tr><td>The router guard admits <code>gh run view &lt;id&gt; [--log|--log-failed]</code>: an uncommitted owner edit on main</td><td>The router's brief of 2026-11-19</td><td>Point 7: dropped</td></tr>
     <tr><td>K9: <code>keel mr commit</code> in a worker's folder runs that folder's uncommitted <code>.keel/config.toml</code></td><td>W4's result, "a risk found on the way"</td><td>Epic 2, before the app's Commit… button</td></tr>
     <tr><td><code>keel notes write … --help</code> writes a note instead of printing help</td><td>The router's brief of 2026-11-19</td><td>Epic 2, with K9</td></tr>
     <tr><td>The htmldoc snapshot limit is about 100 KB</td><td>W3's result, its deviations</td><td>Point 9, and the size of the T1 app doc at the close</td></tr>
@@ -162,11 +172,12 @@ flowchart LR
   <p><b>Unit and integration: waived.</b> W5 changes only <code>docs/work/</code>, so no code path changes. The range is exempt from test, review and doc notes. Your sign-off still runs.</p>
   <p>The checks the worker runs instead, by a script in a scratch folder, with raw output in the result's evidence:</p>
   <ol>
-    <li><b>Every piece covered.</b> Each file under <code>.github/</code>, each of the seven scripts, each GitHub subcommand, config key, signer tier and test file, each of DEC-60 to DEC-62 and DEC-64 to DEC-68, and each W1 row g1 to g15 has a P1 row with its replacement, its switch-off epic and its removal epic, or "stays" with a P2 row. Read from main at 6cf3127.</li>
+    <li><b>Every piece covered.</b> Each file that differs between 8d48a44 and 6cf3127, each GitHub subcommand, config key, signer tier and setting, each of DEC-60 to DEC-62 and DEC-64 to DEC-68, and each W1 row g1 to g15 has a P1 row: how it was before, and how the revert undoes it; or "stays" with a P2 row or a reason.</li>
     <li><b>Every follow-up placed.</b> K1 to K15 each sit in exactly one epic, or are dropped with a reason. Each follow-up line in W1 to W4 that names W5, and each row of W3's two-source table, has a P5 row.</li>
-    <li><b>The order holds.</b> Each epic names its first use (a need, n1 to n10) and what it waits on; no epic waits on a later one; the removal epic waits on the open epics' merge and on K2.</li>
-    <li><b>What stays is complete.</b> <code>release.yml</code> and the backup copy each have who pushes, what they need from GitHub, and what a replacement needs.</li>
-    <li><b>E-GHSETUP has options.</b> At least two, one recommended, each of its six work units placed, marked for your ruling.</li>
+    <li><b>The order holds.</b> The revert comes first. Each epic names its first use (a need, n1 to n10) and what it waits on; no epic waits on a later one.</li>
+    <li><b>What stays is complete.</b> <code>release.yml</code> and your pushes each have who pushes, what they need from GitHub, and what a replacement needs.</li>
+    <li><b>E-GHSETUP closed.</b> Your ruling recorded; each of its six work units dropped or moved, with where.</li>
+    <li><b>Your rulings recorded.</b> Each of your six comments of 2026-11-19 shows in the result where it applies, quoted with its date.</li>
     <li><b>The backlog.</b> Each github-flow row G1 to G11 is struck, re-pointed or kept, with why; each build epic and each later need has a drafted row.</li>
     <li><b>Facts named.</b> Each fact in the table above is cited with its source, never as a ruling.</li>
     <li><b>Local sources exist.</b> Every repository path cited passes <code>git cat-file -e &lt;commit&gt;:&lt;path&gt;</code> at the commit it is read from.</li>
@@ -177,22 +188,22 @@ flowchart LR
 
 <h3 id="sign-off-h">Sign-off and merge</h3>
 <ul data-c="sign-off">
-  <li>The WU reaches <code>epic/E-LOCALTOOL</code> as a pull request, opened by the router. Your approval of it signs it (the <code>github</code> tier), and auto-merge merges it.</li>
+  <li>Your typed sign-off, <code>keel mr confirm wu &lt;tip&gt; --as vuluu --target epic/E-LOCALTOOL</code>, then your local <code>git merge --no-ff</code> into the epic, as before GitHub (point 5). No pull request.</li>
   <li>The result report is in the range, so the sign-off attests its bytes.</li>
-  <li>If the flow is switched off before W5's result lands, the result lands by your typed sign-off and your local merge instead.</li>
 </ul>
 
 <h3 id="overlap-h">Overlap</h3>
 <ul data-c="overlap">
-  <li>E-GHSETUP: paused. W5 reads its branches and edits none of its files.</li>
-  <li>E-DOCSPLIT: open, with work units signed by approval (point 4). No shared file.</li>
+  <li>E-GHSETUP: closed by your ruling. W5 reads its branches and edits none of its files.</li>
+  <li>E-DOCSPLIT: open, with work units signed by approval (point 4). It finishes by the typed sign-off. No shared file.</li>
   <li>The epic's close: writes the T1 app doc, the decision record (with W4's overruled "copy" text) and the backlog from W5's drafts. W5 writes only <code>docs/work/</code>.</li>
 </ul>
 
 <h3 id="sources-h">Where the facts come from</h3>
 <ul data-c="sources">
   <li><b>The epic and its parts:</b> <a href="2026-11-17-e-localtool-plan.html">the epic plan</a>; the results of <a href="2026-11-18-e-localtool-w1-needs-result.html">W1</a>, <a href="2026-11-18-e-localtool-w2-app-result.html">W2</a>, <a href="2026-11-18-e-localtool-w3-screens-result.html">W3</a> with its <a href="2026-11-18-e-localtool-w3-screens-fields.html">field page</a>, and <a href="2026-11-18-e-localtool-w4-handoff-result.html">W4</a>.</li>
-  <li><b>The pieces:</b> main at 6cf3127: <code>.github/</code>, <code>scripts/</code>, <code>src/ci.rs</code>, <code>src/gate.rs</code>, <code>src/mr.rs</code>, <code>src/main.rs</code>, <code>.keel/config.toml</code>, <code>.keel/mr-allowed</code>, <code>tests/suite/</code>, <code>docs/decisions/</code>, <code>docs/backlog/github-flow.html</code>, <code>docs/install.html</code>, <code>docs/architecture.html</code>, the skills <code>keel-workflow</code>, <code>keel-router</code>, <code>project-router</code>.</li>
+  <li><b>Your comments:</b> the six htmldoc threads on this plan, 2026-11-19.</li>
+  <li><b>The pieces:</b> main at 6cf3127, against main before the flow at 8d48a44: <code>.github/</code>, <code>scripts/</code>, <code>src/ci.rs</code>, <code>src/gate.rs</code>, <code>src/mr.rs</code>, <code>src/main.rs</code>, <code>src/notes.rs</code>, <code>.keel/config.toml</code>, <code>.keel/mr-allowed</code>, <code>tests/suite/</code>, <code>docs/decisions/</code>, <code>docs/use-cases/</code>, <code>docs/backlog/github-flow.html</code>, <code>docs/install.html</code>, <code>docs/architecture.html</code>, the skills <code>keel-workflow</code>, <code>keel-router</code>, <code>project-router</code>.</li>
   <li><b>Sign-off notes:</b> read with <code>git log --notes=mr</code>, never <code>git notes</code>.</li>
   <li><b>E-GHSETUP:</b> <code>epic/E-GHSETUP</code> at d839492 and <code>wu/E-GHSETUP/w1-inventory</code> at 968350c.</li>
 </ul>
