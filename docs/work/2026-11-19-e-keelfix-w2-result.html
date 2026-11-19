@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afefb119f34851f0dfb2a4c" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-KEELFIX.W2 result: nothing written unless asked</title>
+  <style>
+    td code, td { word-break: break-word; }
+  </style>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-KEELFIX.W2 result · Nothing written unless asked</h1>
+      <p>Delivered as planned. A gate run can skip its record, help never runs a command, and a mistyped option is refused.</p>
+      <div class="meta">T3 · WU result · 2026-11-19 · epic <code>E-KEELFIX</code> · WU <code>E-KEELFIX.W2</code> · branch <code>wu/E-KEELFIX/w2-noreceipt</code> off <code>epic/E-KEELFIX</code> b80e9c9 · <a href="2026-11-19-e-keelfix-w2-plan.html">the plan</a>, approved by you 2026-11-19 with every open point on its default</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="what-happened">What happened</h2>
+<p data-item="outcome" data-c="outcome"><b>Delivered.</b> <code>keel verify-dod wu|epic &lt;tip&gt; --no-receipt</code> prints the same checks and exit code and writes no record. <code>--help</code> or <code>-h</code> anywhere on any keel command prints that command's usage, exits 0 and changes nothing, in a repository or outside one. <code>verify-dod</code>, <code>preflight</code> and <code>notes write</code> refuse an argument they do not know, exit 1, before anything is read or written. The six new tests failed on b80e9c9's code and pass now. Every earlier test passes unchanged.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-c="owner-changes">
+  <thead><tr><th>When</th><th>Before</th><th>Now</th></tr></thead>
+  <tbody>
+    <tr><td>You ask "would the gate pass?"</td><td>A green run leaves a pass record</td><td><code>--no-receipt</code> runs the same gate and says "no receipt written"</td></tr>
+    <tr><td>You ask a command for help</td><td>The sign-off signs, the notes writer writes, setup edits your signer file, the signed commit commits</td><td>Its usage is printed; nothing changes</td></tr>
+    <tr><td>You mistype an option on the gate, preflight or the notes writer</td><td>Ignored; the command runs and may write</td><td>Refused, naming the word; nothing written</td></tr>
+  </tbody>
+</table>
+
+<h2 id="deviations-h">Deviations from the plan</h2>
+<ul data-item="deviations" data-c="deviations">
+  <li><b>The strict option reader lives in <code>src/notes.rs</code></b> (<code>notes::args_problem</code>), shared by <code>gate::opts</code> and <code>notes::known_args</code>. The plan gave the gate its own parser. The existing guard <code>cli::the_target_grammar_is_written_once_in_notes</code> refuses the <code>--target</code> form outside <code>src/notes.rs</code>, so the gate's first version failed it. <code>gate::opts</code> now returns only whether to write the receipt; the target is still read by <code>target_of</code>, unchanged.</li>
+  <li><b>One line in <code>main()</code>, not two:</b> <code>help::exit_if_asked();</code> reads the arguments, prints and exits. <code>src/main.rs</code> changes by that line and <code>mod help;</code> only.</li>
+  <li><b>The notes writer's refusal reads</b> <code>keel notes: refused - notes write doc: unknown argument '--distil'</code>, with the kind's usage on its <code>fix -&gt;</code> line. The plan wrote <code>unknown argument '&lt;a&gt;' for notes write &lt;kind&gt;</code>; same content.</li>
+  <li><b>A test fixed before green:</b> <code>no_receipt_runs_the_whole_gate_and_writes_nothing</code> expected the dry run's output to be the gate's plus one line. The gate prints <code>wrote refs/notes/dod on …</code> last, so the dry run's output is the gate's with that line replaced by <code>no receipt written (--no-receipt)</code>. The test now asserts that.</li>
+  <li><b>Open point 2:</b> W1 had not landed in <code>epic/E-KEELFIX</code> when W2 was built, so <code>run()</code>'s top and <code>init</code> usage lines stay literals; <code>src/help.rs</code> holds equal copies, kept equal by <code>each_usage_error_prints_the_help_text</code>.</li>
+</ul>
+
+<h2 id="details">Details</h2>
+
+<h3 id="evidence-h">Evidence</h3>
+<div data-item="evidence" data-c="evidence">
+  <p><b>Commits</b> on <code>wu/E-KEELFIX/w2-noreceipt</code>:</p>
+  <ul>
+    <li><code>264e9fe</code> the plan.</li>
+    <li><code>73376d2</code> the six integration tests, red first.</li>
+    <li><code>6c99611</code> the code, its unit tests, and the test fix above.</li>
+    <li>This report.</li>
+  </ul>
+  <p><b>Red, on b80e9c9's code</b> (all six failed):</p>
+  <ul>
+    <li><code>no_receipt_runs_the_whole_gate_and_writes_nothing</code>: "--no-receipt writes no note": <code>refs/notes/dod</code> appeared.</li>
+    <li><code>an_unknown_argument_is_refused_and_changes_nothing</code>: 13 of 13 wrong; <code>--no-reciept</code> wrote the receipt, the notes writer wrote past <code>--distil</code>, <code>stray</code>, <code>--tagret</code>, <code>--blokers</code>.</li>
+    <li><code>help_on_every_command_prints_its_usage_and_changes_nothing</code>: 48 of 48 wrong; <code>verify-dod wu</code>, <code>notes write test|doc|cr</code>, <code>mr setup</code> and <code>mr commit</code> wrote.</li>
+    <li><code>help_on_a_sign_off_signs_nothing</code>: <code>mr confirm wu wu/e/a … --help</code> wrote <code>refs/notes/mr</code> ("attests docs/a.html").</li>
+    <li><code>help_needs_no_repository</code>: "keel: not inside a git repository".</li>
+    <li><code>each_usage_error_prints_the_help_text</code>: help printed nothing on stdout.</li>
+  </ul>
+  <p><b>Green, at the code commit:</b> <code>cargo test</code>: 110 unit (101 before, 9 new) and 336 suite (330 before, 6 new), 0 failed, 10 ignored as before. <code>cargo fmt --check</code> and <code>cargo clippy --all-targets -- -D warnings</code> clean. <code>keel check</code> green.</p>
+  <p><b>Tests added:</b></p>
+  <ul>
+    <li>Integration, the end of <code>tests/suite/verify_dod.rs</code>: the six above.</li>
+    <li>Unit, <code>src/help.rs</code>: no help word is no help (<code>--help=x</code>, <code>-hv</code>, <code>-H</code>, <code>help</code>); either help word at every position of 17 command lines gives that line's usage; an unknown command or leading flag gives the top usage, and a message reading <code>--help</code> is help; every usage names its command.</li>
+    <li>Unit, <code>src/gate.rs</code>: <code>opts</code> in either order, and nine refused forms.</li>
+    <li>Unit, <code>src/notes.rs</code>: <code>known_args</code> accepts each kind's flags, refuses eight wrong lists and an unknown kind, and passes <code>cr</code> with <code>--reason</code> to its own refusal.</li>
+  </ul>
+  <p><b>Files:</b> <code>src/gate.rs</code>, <code>src/notes.rs</code>, <code>src/mr.rs</code> (four usage literals lifted to consts), new <code>src/help.rs</code>, <code>src/main.rs</code> (two lines), <code>tests/suite/verify_dod.rs</code>.</p>
+  <p><b>W1:</b> <code>git merge-tree --write-tree wu/E-KEELFIX/w1-k9 HEAD</code> at <code>6c99611</code> merges clean (exit 0), <code>src/main.rs</code> and <code>src/mr.rs</code> included.</p>
+</div>
+
+<h3 id="distillation-h">Distillation</h3>
+<p data-item="distillation" data-c="distillation">Nothing in W2. At the epic close, per the epic plan: UC-GATE-2 (a gate run by hand may write no receipt) and UC-NOTE-1 (help and an unknown argument write nothing) in <code>docs/use-cases/workflow.html</code>; <code>--no-receipt</code> and help in <code>docs/architecture.html</code>; <code>skills/keel-workflow</code> and <code>.claude/skills/keel-workflow</code> §4.</p>
+
+<h3 id="follow-ups-h">Follow-ups</h3>
+<ul data-item="follow-ups" data-c="follow-ups">
+  <li>Point <code>run()</code>'s top and <code>init</code> usage lines at <code>src/help.rs</code>'s texts once W1 is in <code>epic/E-KEELFIX</code>: taken by E-KEELFIX.W3, or, if W3 leaves the epic, by the backlog row the epic close writes for it.</li>
+  <li>Unknown options on <code>mr setup|commit|confirm</code> (open point 4): not taken here; the epic close writes a local-app backlog row beside A2 if you want it.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
