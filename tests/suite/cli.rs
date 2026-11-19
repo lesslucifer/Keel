@@ -766,6 +766,21 @@ fn commit_hook_repo(lint: &str) -> TempDir {
 /// `commit_hook_repo`, its base commit also carrying `top` (top-level config lines), `mr` (an `[mr]`
 /// table) and, when not empty, `roster` as `.keel/mr-allowed`.
 fn commit_hook_repo_with(lint: &str, top: &str, mr: &str, roster: &str) -> TempDir {
+    let d = repo_with_rules(lint, top, mr);
+    let p = d.path();
+    if !roster.is_empty() {
+        std::fs::write(p.join(".keel/mr-allowed"), roster).unwrap();
+    }
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-qm", "base"]);
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    git(p, &["switch", "-q", "-c", "work"]);
+    d
+}
+
+/// A repository with no commit on main and `.keel/config.toml` in the folder only: `lint`, the
+/// default code paths, `top` (top-level lines) and `mr` (an `[mr]` table).
+fn repo_with_rules(lint: &str, top: &str, mr: &str) -> TempDir {
     let d = TempDir::new().unwrap();
     let p = d.path();
     git(p, &["init", "-q", "-b", "main"]);
@@ -777,13 +792,6 @@ fn commit_hook_repo_with(lint: &str, top: &str, mr: &str, roster: &str) -> TempD
         format!("code_paths = [\"src/\", \"tests/\"]\n{top}[check]\nlint = \"{lint}\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n{mr}"),
     )
     .unwrap();
-    if !roster.is_empty() {
-        std::fs::write(p.join(".keel/mr-allowed"), roster).unwrap();
-    }
-    git(p, &["add", "-A"]);
-    git(p, &["commit", "-qm", "base"]);
-    assert!(keel(p, &["hooks", "install"]).status.success());
-    git(p, &["switch", "-q", "-c", "work"]);
     d
 }
 
@@ -919,19 +927,68 @@ fn keel_mr_commit_accepts_only_the_committed_tiers() {
     assert!(out(p, &["log", "-1", "--format=%B"]).contains("Reviewed-By: email t@t"));
 }
 
-/// A repository with no commit yet: `.keel/config.toml` (lint `lint`, code under `src/`) in the
-/// folder only, Keel's hooks, HEAD on the unborn branch `work`.
-fn unborn_hooked_repo(lint: &str) -> TempDir {
-    let d = TempDir::new().unwrap();
+/// The reverse of the test above: only the `mr commit` arm's loader decides it, because the commit-msg
+/// hook accepts the signer either way (review round 1, finding 1).
+#[test]
+fn keel_mr_commit_signs_by_the_committed_tiers_when_the_folder_narrows_them() {
+    let d = commit_hook_repo_with("true", "rule_bearing = [\"docs/rules.html\"]\n", "[mr]\ntiers = [\"username\", \"key\"]\n", "username: t\n");
     let p = d.path();
-    git(p, &["init", "-q", "-b", "main"]);
-    git(p, &["config", "user.email", "t@t"]);
-    git(p, &["config", "user.name", "t"]);
-    write_file(
-        p,
-        ".keel/config.toml",
-        &format!("code_paths = [\"src/\"]\n[check]\nlint = \"{lint}\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n"),
-    );
+    edit_folder_config(p, "tiers = [\"username\", \"key\"]", "tiers = [\"key\"]");
+    write_file(p, "docs/rules.html", "<p>a rule</p>");
+    git(p, &["add", "docs/rules.html"]);
+
+    let o = keel(p, &["mr", "commit", "-m", "a rule", "--as", "t"]);
+    assert!(o.status.success(), "the committed tiers list username t, whatever the folder's file says: {}", text(&o));
+    assert!(out(p, &["log", "-1", "--format=%B"]).contains("Reviewed-By: username t"));
+}
+
+/// A commit never lands a rules file keel cannot read: every later commit would be judged by it
+/// (review round 1, finding 2).
+#[test]
+fn a_staged_rules_file_that_does_not_parse_is_refused_before_it_lands() {
+    let d = commit_hook_repo_with("true", "", "", "username: t\n");
+    let p = d.path();
+    edit_folder_config(p, "[branches]", "[branches");
+    git(p, &["add", ".keel/config.toml"]);
+
+    let c = run("git", p, &["commit", "-qm", "a typo"]);
+    let t = text(&c);
+    assert!(!c.status.success() && t.contains("the staged .keel/config.toml does not parse") && t.contains("fix ->"), "{t}");
+    let o = keel(p, &["mr", "commit", "-m", "a typo", "--as", "t"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("the staged .keel/config.toml does not parse"), "keel mr commit refuses before it commits: {t}");
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "1", "nothing landed");
+}
+
+/// A rules file that does not parse reached HEAD past the hooks: the refusal says how to recover,
+/// and the recovery it names works.
+#[test]
+fn an_unreadable_committed_rules_file_names_the_recovery() {
+    let d = commit_hook_repo("true");
+    let p = d.path();
+    edit_folder_config(p, "[branches]", "[branches");
+    git(p, &["add", ".keel/config.toml"]);
+    git(p, &["commit", "-q", "--no-verify", "-m", "a typo past the hooks"]);
+
+    write_file(p, "docs/x.html", "<p>x</p>");
+    git(p, &["add", "docs/x.html"]);
+    let c = run("git", p, &["commit", "-qm", "docs"]);
+    let t = text(&c);
+    assert!(!c.status.success() && t.contains("bad .keel/config.toml at HEAD"), "{t}");
+    assert!(t.contains("fix -> ") && t.contains("git reset --soft HEAD~1"), "{t}");
+
+    git(p, &["reset", "-q", "--soft", "HEAD~1"]);
+    edit_folder_config(p, "[branches\n", "[branches]\n");
+    git(p, &["add", ".keel/config.toml"]);
+    let c = run("git", p, &["commit", "-qm", "docs"]);
+    assert!(c.status.success(), "after the reset, HEAD's rules judge again: {}", text(&c));
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "2");
+}
+
+/// `repo_with_rules` plus Keel's hooks, HEAD on the unborn branch `work`: no rules committed or staged.
+fn unborn_hooked_repo(lint: &str) -> TempDir {
+    let d = repo_with_rules(lint, "", "");
+    let p = d.path();
     assert!(keel(p, &["hooks", "install"]).status.success());
     git(p, &["symbolic-ref", "HEAD", "refs/heads/work"]);
     d
