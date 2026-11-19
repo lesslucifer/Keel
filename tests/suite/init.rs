@@ -271,6 +271,11 @@ fn files(dir: &Path, base: &Path, out: &mut BTreeMap<String, String>) {
     }
 }
 
+/// What keel init writes into a fresh repo: every skill, byte for byte, under `.claude/skills`
+/// (project-router from its template); no file it writes, AGENTS.md included, names an old page tag
+/// (`data-artifact`, `data-status`, `data-item`, `data-wu`); and the installed AGENTS.md points to
+/// skill `keel-write` and to a plan's or result's data file; each skill is a `keel-*` dir with that
+/// name and a frontmatter Claude Code can list; no shipped file uses a bare skill name.
 #[test]
 fn embedding_is_complete_and_prefixed() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
