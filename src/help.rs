@@ -70,7 +70,7 @@ mod tests {
         (&["hooks", "install", "--force"], super::HOOKS),
         (&["lint"], super::LINT),
         (&["check"], super::CHECK),
-        (&["hook", "commit-msg", ".git/COMMIT_EDITMSG"], super::HOOK),
+        (&["hook"], super::HOOK),
         (&["verify-doc", "docs/a.html"], super::VERIFY_DOC),
         (&["verify-dod", "wu", "wu/e/a", "--target", "epic/e", "--no-receipt"], gate::USAGE),
         (&["preflight", "epic", "epic/e"], gate::USAGE),
@@ -127,6 +127,62 @@ mod tests {
             for w in cmd {
                 assert!(usage.contains(w), "{words:?}: {usage}");
             }
+        }
+    }
+
+    /// Round 1 blocker: after a hook's name every word is git's (a remote named `-h`), never help.
+    #[test]
+    fn a_hooks_arguments_are_gits_never_help() {
+        for args in [&["hook", "pre-push", "-h"][..], &["hook", "pre-push", "--help", "url"], &["hook", "commit-msg", "-h"], &["hook", "pre-commit", "--help"]]
+        {
+            assert_eq!(usage_for(args), None, "{args:?}");
+        }
+        for args in [&["hook", "-h"][..], &["hook", "--help", "pre-push"], &["-h", "hook", "pre-push", "origin"]] {
+            assert_eq!(usage_for(args), Some(super::HOOK), "{args:?}: a person asking");
+        }
+    }
+
+    /// The command paths each dispatcher matches, read from its source: `run()`'s slice patterns,
+    /// `gate::verify_dod`'s (under `verify-dod`), `mr::run`'s (under `mr`) and `notes::write`'s kinds
+    /// (under `notes write`). Flags and bindings end a path.
+    fn dispatched() -> Vec<Vec<String>> {
+        fn body<'a>(src: &'a str, sig: &str) -> &'a str {
+            let at = src.find(sig).unwrap_or_else(|| panic!("no {sig}"));
+            &src[at..at + src[at..].find("\n}\n").unwrap()]
+        }
+        let slices = |body: &str, under: &[&str]| -> Vec<Vec<String>> {
+            body.lines()
+                .filter_map(|l| l.trim().strip_prefix('[').filter(|_| l.contains("=>")))
+                .map(|l| {
+                    let words = l.split(['[', ']', ',', ' ', '|']).take_while(|w| w.is_empty() || (w.starts_with('"') && !w.starts_with("\"-")));
+                    under.iter().map(|w| w.to_string()).chain(words.filter(|w| !w.is_empty()).map(|w| w.trim_matches('"').to_string())).collect()
+                })
+                .filter(|p: &Vec<String>| p.len() > under.len())
+                .collect()
+        };
+        let mut all = slices(body(include_str!("main.rs"), "fn run() ->"), &[]);
+        all.extend(slices(body(include_str!("gate.rs"), "pub fn verify_dod("), &["verify-dod"]));
+        all.extend(slices(body(include_str!("mr.rs"), "pub fn run("), &["mr"]));
+        let kinds = body(include_str!("notes.rs"), "pub fn write(")
+            .lines()
+            .filter_map(|l| l.trim().split_once("\" =>").map(|(k, _)| k.trim_start_matches('"').to_string()));
+        all.extend(kinds.map(|k| vec!["notes".into(), "write".into(), k]));
+        all
+    }
+
+    /// Round 1, I1: a command a dispatcher matches has its own usage - its own row, or its parent's
+    /// usage naming it - so a new subcommand never prints its parent's text in silence.
+    #[test]
+    fn every_dispatched_command_has_its_own_usage() {
+        let paths = dispatched();
+        for want in [&["mr", "confirm"][..], &["notes", "write", "cr"], &["hook", "pre-push"], &["verify-dod", "range"], &["hooks", "install"], &["init"]] {
+            assert!(paths.iter().any(|p| p == want), "the source reader missed {want:?}: {paths:?}");
+        }
+        for path in paths {
+            let words: Vec<&str> = path.iter().map(String::as_str).collect();
+            let (key, usage) = TABLE.iter().filter(|(k, _)| words.starts_with(k)).max_by_key(|(k, _)| k.len()).unwrap();
+            let named = |w: &str| usage.split(|c: char| !(c.is_alphanumeric() || c == '-')).any(|t| t == w);
+            assert!(words[key.len()..].iter().all(|w| named(w)), "{words:?} gets the usage of {key:?}, which does not name it: {usage}");
         }
     }
 }

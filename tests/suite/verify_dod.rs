@@ -1997,26 +1997,29 @@ fn an_unknown_argument_is_refused_and_changes_nothing() {
     let p = d.path();
     bless(p, WU_TESTS, "PASS");
     sign(p, "wu", "docs/a.html");
+    let before = repo_state(p);
     let mut bad = vec![];
     for (args, input, needle) in [
-        (&["verify-dod", "wu", "wu/e/a", "--no-reciept"][..], "", "--no-reciept"),
-        (&["verify-dod", "wu", "wu/e/a", "stray"], "", "stray"),
-        (&["verify-dod", "wu", "wu/e/a", "--target"], "", "--target"),
-        (&["verify-dod", "wu", "wu/e/a", "--target=epic/e"], "", "--target=epic/e"),
-        (&["verify-dod", "wu", "wu/e/a", "--target", "epic/e", "--target", "epic/e"], "", "--target"),
-        (&["verify-dod", "wu", "wu/e/a", "--no-receipt", "--no-receipt"], "", "--no-receipt"),
-        (&["preflight", "wu", "wu/e/a", "--no-receipt"], "", "--no-receipt"),
-        (&["notes", "write", "doc", "--distil", "x=y"], "", "--distil"),
-        (&["notes", "write", "doc", "stray"], "", "stray"),
-        (&["notes", "write", "doc", "--target"], "", "--target"),
-        (&["notes", "write", "test", "--tagret", "epic/e"], WU_TESTS, "--tagret"),
-        (&["notes", "write", "cr", "--verdict", "PASS", "--blokers", "0"], "", "--blokers"),
-        (&["notes", "write", "cr", "--verdict", "PASS", "--verdict", "PASS"], "", "--verdict"),
+        (&["verify-dod", "wu", "wu/e/a", "--no-reciept"][..], "", "unknown argument '--no-reciept'"),
+        (&["verify-dod", "wu", "wu/e/a", "stray"], "", "unknown argument 'stray'"),
+        (&["verify-dod", "wu", "wu/e/a", "--target"], "", "--target needs a value"),
+        (&["verify-dod", "wu", "wu/e/a", "--target=epic/e"], "", "unknown argument '--target=epic/e'"),
+        (&["verify-dod", "wu", "wu/e/a", "--target", "epic/e", "--target", "epic/e"], "", "--target given twice"),
+        (&["verify-dod", "wu", "wu/e/a", "--no-receipt", "--no-receipt"], "", "--no-receipt given twice"),
+        (&["preflight", "wu", "wu/e/a", "--no-receipt"], "", "unknown argument '--no-receipt'"),
+        (&["notes", "write", "doc", "--distil", "x=y"], "", "unknown argument '--distil'"),
+        (&["notes", "write", "doc", "stray"], "", "unknown argument 'stray'"),
+        (&["notes", "write", "doc", "--target"], "", "--target needs a value"),
+        // Round 1, I2: one argv, one reading - a flag's value is never another known flag.
+        (&["notes", "write", "doc", "--distill", "--target", "--target", "epic/e"], "", "--distill needs a value"),
+        (&["notes", "write", "test", "--tagret", "epic/e"], WU_TESTS, "unknown argument '--tagret'"),
+        (&["notes", "write", "cr", "--verdict", "PASS", "--blokers", "0"], "", "unknown argument '--blokers'"),
+        (&["notes", "write", "cr", "--verdict", "PASS", "--verdict", "PASS"], "", "--verdict given twice"),
     ] {
-        let before = repo_state(p);
         let o = run(env!("CARGO_BIN_EXE_keel"), p, args, input);
-        if o.status.code() != Some(1) || !stderr(&o).contains(needle) || repo_state(p) != before {
-            bad.push(format!("{args:?}: exit {:?}, changed {}: {}", o.status.code(), repo_state(p) != before, text(&o)));
+        let changed = repo_state(p) != before;
+        if o.status.code() != Some(1) || !stderr(&o).contains(needle) || changed {
+            bad.push(format!("{args:?}: exit {:?}, changed {changed}: {}", o.status.code(), text(&o)));
         }
     }
     assert!(bad.is_empty(), "{} refused wrongly:\n{}", bad.len(), bad.join("\n"));
@@ -2030,7 +2033,8 @@ fn help_on_every_command_prints_its_usage_and_changes_nothing() {
     sign(p, "wu", "docs/a.html");
     write(p, "CLAUDE.md", "staged, so a commit has something to commit");
     git(p, &["add", "CLAUDE.md"]);
-    let mut bad = vec![];
+    let before = repo_state(p);
+    let (mut bad, mut runs) = (vec![], 0);
     for (args, input, usage) in [
         (&[][..], "", "usage: keel <init"),
         (&["bogus"], "", "usage: keel <init"),
@@ -2039,9 +2043,7 @@ fn help_on_every_command_prints_its_usage_and_changes_nothing() {
         (&["hooks", "install"], "", "usage: keel hooks install"),
         (&["lint"], "", "usage: keel lint"),
         (&["check"], "", "usage: keel check"),
-        (&["hook", "pre-commit"], "", "usage: keel hook"),
-        (&["hook", "commit-msg"], "", "usage: keel hook"),
-        (&["hook", "pre-push", "origin"], "", "usage: keel hook"),
+        (&["hook"], "", "usage: keel hook"),
         (&["verify-doc"], "", "usage: keel verify-doc"),
         (&["verify-dod", "wu", "wu/e/a"], "", "usage: keel verify-dod"),
         (&["verify-dod", "hook"], "", "usage: keel verify-dod"),
@@ -2058,7 +2060,7 @@ fn help_on_every_command_prints_its_usage_and_changes_nothing() {
         (&["mr", "confirm", "wu", "wu/e/a", "--as", "t", "--report", "docs/a.html"], "", "usage: keel mr confirm"),
     ] {
         for help in [[args, &["--help"]].concat(), [&["-h"], args].concat()] {
-            let before = repo_state(p);
+            runs += 1;
             let o = run(env!("CARGO_BIN_EXE_keel"), p, &help, input);
             let changed = repo_state(p) != before;
             if !o.status.success() || !stdout(&o).starts_with(usage) || !stderr(&o).is_empty() || changed {
@@ -2066,7 +2068,7 @@ fn help_on_every_command_prints_its_usage_and_changes_nothing() {
             }
         }
     }
-    assert!(bad.is_empty(), "{} of 48 wrong:\n{}", bad.len(), bad.join("\n"));
+    assert!(bad.is_empty(), "{} of {runs} wrong:\n{}", bad.len(), bad.join("\n"));
 }
 
 /// The case that signed: `mr::positionals` took `--help` for a flag with a value.
@@ -2082,6 +2084,34 @@ fn help_on_a_sign_off_signs_nothing() {
     }
     sign(p, "wu", "docs/a.html");
     assert!(has_note(p, "mr", "wu/e/a"), "the tip was ready to sign");
+}
+
+/// Round 1 blocker: git runs `keel hook pre-push "$1"` with the remote's name, and a remote may be
+/// named `-h` or `--help`. That argv is git's, never a help request: the push is still gated.
+#[test]
+fn a_push_to_a_remote_named_like_help_is_still_gated() {
+    for name in ["-h", "--help"] {
+        let d = fixture();
+        let p = d.path();
+        bless(p, WU_TESTS, "PASS");
+        sign(p, "wu", "docs/a.html");
+        git(p, &["switch", "-q", "epic/e"]);
+        let m = run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"], "");
+        assert!(m.status.success(), "{}", text(&m));
+        let landed = git(p, &["rev-parse", "epic/e"]);
+        let remote = TempDir::new().unwrap();
+        git(remote.path(), &["init", "-q", "--bare"]);
+        git(p, &["remote", "add", "--", name, remote.path().to_str().unwrap()]);
+        let push = run("git", p, &["push", "-q", "--", name, "epic/e"], "");
+        assert!(push.status.success(), "{name}: {}", text(&push));
+
+        write(p, "src/c.py", "def c():\n    return 3\n");
+        commit(p, "noteless code straight on the epic");
+        let push = run("git", p, &["push", "-q", "--", name, "epic/e"], "");
+        assert_red(&push, "1·notes");
+        assert!(!stdout(&push).contains("usage:"), "{name}: the hook printed help: {}", text(&push));
+        assert_eq!(git(remote.path(), &["rev-parse", "epic/e"]), landed, "{name}: nothing ungated landed");
+    }
 }
 
 #[test]

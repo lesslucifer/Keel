@@ -1581,7 +1581,6 @@ mod tests {
             ("doc", &["--distill", "a=b", "--target", "epic/e", "--distill", "c=none: why"]),
             ("cr", &["--verdict", "FAIL", "--blockers", "1", "--importants", "0", "--findings", "[]", "--refuted", "[]", "--nits", "[]"]),
             ("cr", &["--verdict", "PASS", "--fixes", "abc", "--fleet", "{}", "--target", "epic/e"]),
-            ("cr", &["--verdict", "PASS", "--findings", "--blockers"]),
         ] {
             assert_eq!(known_args(kind, args), Ok(()), "{kind} {args:?}");
         }
@@ -1598,6 +1597,9 @@ mod tests {
             ("cr", &["--verdict", "PASS", "--blokers", "0"], "unknown argument '--blokers'", CR_USAGE),
             ("cr", &["--verdict", "PASS", "--verdict", "FAIL"], "--verdict given twice", CR_USAGE),
             ("cr", &["--verdict", "PASS", "--help"], "unknown argument '--help'", CR_USAGE),
+            // Round 1, I2: a value that is a known flag gives the argv two readings, so it is refused.
+            ("doc", &["--distill", "--target", "--target", "epic/x"], "--distill needs a value", DOC_USAGE),
+            ("cr", &["--verdict", "PASS", "--findings", "--blockers", "1"], "--findings needs a value", CR_USAGE),
         ] {
             let e = known_args(kind, args).unwrap_err();
             assert!(e.starts_with("keel notes: refused - ") && e.contains(needle) && e.contains(&format!("fix -> {usage}")), "{kind} {args:?}: {e}");
