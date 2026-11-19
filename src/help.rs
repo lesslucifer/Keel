@@ -15,17 +15,27 @@ const HOOK: &str = "usage: keel hook <pre-commit | commit-msg <file> | pre-push 
 const VERIFY_DOC: &str = "usage: keel verify-doc [<path>...]";
 
 /// Each command's leading words and its usage; the longest match wins, no match is the top usage.
+/// Every command a dispatcher matches has its own row here (the test
+/// `every_dispatched_command_has_its_own_usage` reads every dispatcher and holds this to it).
 const TABLE: &[(&[&str], &str)] = &[
     (&[], TOP),
     (&["init"], INIT),
     (&["hooks"], HOOKS),
+    (&["hooks", "install"], HOOKS),
     (&["lint"], LINT),
     (&["check"], CHECK),
     (&["hook"], HOOK),
+    (&["hook", "pre-commit"], HOOK),
+    (&["hook", "commit-msg"], HOOK),
+    (&["hook", "pre-push"], HOOK),
     (&["verify-doc"], VERIFY_DOC),
     (&["verify-dod"], gate::USAGE),
+    (&["verify-dod", "commit"], gate::USAGE),
+    (&["verify-dod", "hook"], gate::USAGE),
+    (&["verify-dod", "range"], gate::USAGE),
     (&["preflight"], gate::USAGE),
     (&["notes"], notes::NOTES_USAGE),
+    (&["notes", "write"], notes::NOTES_USAGE),
     (&["notes", "write", "test"], notes::TEST_USAGE),
     (&["notes", "write", "doc"], notes::DOC_USAGE),
     (&["notes", "write", "cr"], notes::CR_USAGE),
