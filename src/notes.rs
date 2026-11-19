@@ -284,23 +284,6 @@ pub(crate) fn raw(repo: &Path, kind: &str, rev: &str) -> Result<Option<String>, 
     String::from_utf8(body.stdout).map(Some).map_err(|_| format!("the {kind} note on {rev} is not UTF-8"))
 }
 
-/// A stored note as its type: JSON declaring `<kind>/v1`, then that type's fields. The one schema
-/// rule: the gate's check 1, check 8's sign-off read and the CI page all read notes through it.
-/// Why a stored note is not its kind, worded as check 1 words it; the gate, the sign-off check
-/// and the CI page all say it this way.
-pub(crate) fn invalid(kind: &str, why: &str) -> String {
-    format!("not valid {kind}/v1: {why}")
-}
-
-pub(crate) fn parse<T: serde::de::DeserializeOwned>(raw: &str, kind: &str) -> Result<T, String> {
-    let schema = format!("{kind}/v1");
-    let v: serde_json::Value = serde_json::from_str(raw).map_err(|e| e.to_string())?;
-    match v["schema"].as_str() {
-        Some(s) if s == schema => serde_json::from_value(v).map_err(|e| e.to_string()),
-        other => Err(format!("declares schema {}", other.unwrap_or("none"))),
-    }
-}
-
 pub(crate) fn cr_raw(repo: &Path, rev: &str) -> Result<Option<String>, String> {
     raw(repo, "cr", rev)
 }
@@ -343,42 +326,6 @@ pub struct MrNote {
     /// Armored SSH SIGNATURE (namespace keel-mr), key-backed signers only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sig: Option<String>,
-    /// The pull-request approval this sign-off copies (github tier, E-GHFLOW2.W3); absent on a typed one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub review: Option<Review>,
-    /// What an approval signed over (E-GHFLOW2.W7); absent when it covered nothing, so a plain
-    /// approval's note is the same bytes as before. A record: no check rebuilds it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub covers: Option<Covers>,
-}
-
-/// What an approval signed over: the tip's review when it was not green (its state as
-/// `gate::review_state` names it, and the `sha256:` of the cr note's stored bytes when there is
-/// one), and the roster lines the range adds (`+ `) and removes (`- `).
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
-pub struct Covers {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub review: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cr: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub roster: Vec<String>,
-}
-
-impl Covers {
-    /// `None` when there is nothing to record.
-    pub fn of(self) -> Option<Covers> {
-        (self != Covers::default()).then_some(self)
-    }
-}
-
-/// A GitHub pull-request review as a github-tier sign-off records it: its id, its page, and the
-/// commit it approved. Check 8 binds the commit to the tip and the page to the id.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Review {
-    pub id: u64,
-    pub url: String,
-    pub commit: String,
 }
 
 /// The merge gate's receipt, written on green.
@@ -396,12 +343,9 @@ pub struct DodNote {
     pub report: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_hash: Option<String>,
-    /// "WAIVED" when the tip's own review was waived; "COVERED" when it did not pass and an
-    /// approval signed over it (E-GHFLOW2.W7); absent after a reviewed PASS.
+    /// "WAIVED" when the tip's own review was waived; absent after a reviewed PASS.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<String>,
-    /// With "WAIVED", the waiver's reason; with "COVERED", whose approval covered the review:
-    /// "covered by the approval of <signer> (review <id>)".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waiver: Option<String>,
 }
@@ -445,22 +389,6 @@ pub(crate) fn epic_of(cfg: &Config, branch: &str) -> Option<String> {
         .and_then(|r| r.split_once('/'))
         .filter(|(epic, _)| !epic.is_empty())
         .map(|(epic, _)| format!("{}{epic}", b.epic_prefix))
-}
-
-/// One word of a branch name as the router scripts take it: `[A-Za-z0-9][A-Za-z0-9.-]*`. No `_`:
-/// that is the task separator (E-GHFLOW2.W6).
-fn plain_word(w: &str) -> bool {
-    w.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric) && w.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
-}
-
-/// The WU branch a task branch `<wu_prefix><e>/<wu>_<task>` belongs to (E-GHFLOW2.W6): exactly
-/// that shape, each of `e`, `wu` and `task` a plain word. Anything else - a fourth segment, an
-/// empty side, a second `_`, an epic branch - is not a task: the unusual is refused, not modelled.
-pub(crate) fn task_of(cfg: &Config, branch: &str) -> Option<String> {
-    let rest = branch.strip_prefix(cfg.branches.wu_prefix.as_str())?;
-    let (e, name) = rest.split_once('/')?;
-    let (wu, task) = name.split_once('_')?;
-    [e, wu, task].iter().all(|w| plain_word(w)).then(|| format!("{}{e}/{wu}", cfg.branches.wu_prefix))
 }
 
 /// The epic branch `<epic_prefix><e>` names, if `name` is one.
@@ -1102,55 +1030,8 @@ fn cr_counts(findings: Option<&serde_json::Value>, blockers: Option<u32>, import
     Ok(open)
 }
 
-/// `keel notes write report <path>` (E-GHFLOW2.W3): the epic result report rides on the epic tip as
-/// `refs/notes/report`, its exact bytes (the blob is stored first and the note takes it whole, so no
-/// message cleanup touches it), for a sign-off by approval to attest and check 8 to re-hash. Only a
-/// page whose data file beside it has `artifact` epic-result (DEC-69, E-DOCSPLIT.W3); the note keeps
-/// the page's bytes only, the one the signer reads. Written on HEAD, replacing an earlier one.
-fn write_report(repo: &Path, args: &[&str]) -> Result<i32, String> {
-    let [path] = args else { return Err("usage: keel notes write report <path of the epic-result page>".into()) };
-    let role = crate::verify_doc::result_role(true);
-    // A named report is taken wherever it is (no docs.root condition): every .yaml names a data file.
-    let (page, data) = match crate::verify_doc::pair_named(Path::new(path), |_| true) {
-        Some(crate::verify_doc::Pair { page, data: Some(data) }) => (page, data),
-        _ => return refuse(format!("{path} is not a page: the report note keeps the page the signer reads"), "name the epic-result page (.html)"),
-    };
-    if data == Path::new(path) {
-        return refuse(
-            format!("{path} is not a page: the report note keeps the page the signer reads"),
-            &format!("keel notes write report {}", page.display()),
-        );
-    }
-    let body = std::fs::read(path).map_err(|e| format!("keel: cannot read {path}: {e}"))?;
-    if !data.is_file() {
-        return refuse(
-            format!("{path} has no data file beside it ({}): a page is a report only through its data file's artifact", data.display()),
-            &format!("write {} with artifact: {role} beside the page", data.display()),
-        );
-    }
-    let src = std::fs::read_to_string(&data).map_err(|e| format!("keel: cannot read {}: {e}", data.display()))?;
-    match crate::verify_doc::data_roles(&src) {
-        Ok(roles) if roles.iter().any(|r| r == role) => {}
-        Ok(roles) => {
-            return refuse(format!("{} has artifact {}, not {role}", data.display(), roles.join(" ")), "the report note carries the epic's result report only")
-        }
-        Err(e) => {
-            return refuse(format!("{} gives its page no role: {e}", data.display()), &format!("give it artifact: {role} (keel verify-doc {})", data.display()))
-        }
-    }
-    let tip = git(repo, &["rev-parse", "HEAD"], &[])?;
-    let args = ["hash-object", "-w", "--stdin"];
-    let blob = ok_text(&args, git_raw(repo, &args, Some(&body))?)?;
-    git(repo, &["notes", "--ref=report", "add", "-f", "-C", &blob, &tip], &[])?;
-    println!("wrote refs/notes/report on {} ({path}, {} bytes)", tip.get(..8).unwrap_or(&tip), body.len());
-    Ok(0)
-}
-
 /// `args` are the flags after `notes write <kind>`.
 pub fn write(repo: &Path, cfg: &Config, kind: &str, args: &[&str]) -> Result<i32, String> {
-    if kind == "report" {
-        return write_report(repo, args);
-    }
     let r = range(repo, cfg, args)?;
     let tip = r.id.tip.clone();
     match kind {
@@ -1360,7 +1241,7 @@ mod tests {
     use super::{changed_text, own_diff_argv, own_diff_commands, parse_batch, shell_quote, union_of_z, OwnDiff};
     use super::{cr_counts, cr_lists, cr_verdict, waive, waiver_reason, CrNote, CrWrite, Identity};
     use super::{distill_of, half_archived, partner};
-    use super::{epic_branch, epic_of, target, target_flag, target_from_holders, task_of};
+    use super::{epic_branch, epic_of, target, target_flag, target_from_holders};
     use std::collections::BTreeMap;
 
     fn in_docs(p: &std::path::Path) -> bool {
@@ -1416,53 +1297,6 @@ mod tests {
 
     fn cfg_with(branches: &str) -> Config {
         toml::from_str(&format!("[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n{branches}[docs]\nroot = \"docs/\"\n")).unwrap()
-    }
-
-    /// E-GHFLOW2.W6: a task is exactly `<wu_prefix><e>/<wu>_<task>`, three plain words; its WU is
-    /// the name before the `_`. A seeded run of generated names, judged against a regex oracle.
-    #[test]
-    fn a_task_branch_is_exactly_three_plain_words_and_names_its_wu() {
-        let cfg = cfg_with("");
-        assert_eq!(task_of(&cfg, "wu/E-X/w9-export_skill-line").as_deref(), Some("wu/E-X/w9-export"));
-        assert_eq!(task_of(&cfg, "wu/e/a_b").as_deref(), Some("wu/e/a"));
-        for not in
-            ["wu/e/a", "wu/e/a_", "wu/e/_a", "wu/e/a_b_c", "wu/e/a_b/c", "wu//a_b", "epic/e", "epic/e_x", "main", "", "wu/e/.a_b", "wu/e/a_-b", "Wu/e/a_b"]
-        {
-            assert_eq!(task_of(&cfg, not), None, "{not}");
-        }
-        let task = toml::from_str::<Config>(
-            "[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\nwu_prefix = \"task/\"\n[docs]\nroot = \"docs/\"\n",
-        )
-        .unwrap();
-        assert_eq!(task_of(&task, "task/e/a_b").as_deref(), Some("task/e/a"), "the configured prefix");
-        assert_eq!(task_of(&task, "wu/e/a_b"), None);
-        // The oracle is the scripts' own rule, read from them (W6 code review round 1): router-gh.sh's
-        // `word` and its task pattern, router-worker.sh's and the guard's copies of both, so a drift
-        // between keel and the bot fails here.
-        let read = |p: &str| std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(p)).unwrap();
-        let (gh, worker, guard) = (read("scripts/router-gh.sh"), read("scripts/router-worker.sh"), read("scripts/router-guard.jq"));
-        let word = gh.lines().find_map(|l| l.strip_prefix("word='")?.strip_suffix('\'')).expect("router-gh.sh defines word='...'");
-        assert!(gh.contains("main_b=main epic_p=epic/ wu_p=wu/"), "router-gh.sh's wu prefix is wu/");
-        assert!(gh.contains(r#"expr "x$1" : "x$wu_p$word/${word}_$word\$""#), "router-gh.sh's task pattern is <wu_p><word>/<word>_<word>");
-        assert!(
-            worker.contains(&format!("word='{word}'")) && worker.contains(r#"expr "$b" : "^$wu_p$word/${word}_$word\$""#),
-            "router-worker.sh holds the same task rule"
-        );
-        assert_eq!(guard.matches(&format!("(?!wu/{word}/{word}_{word}$)")).count(), 2, "the guard's sync and issue exclusions hold the same task rule");
-        let oracle = regex::Regex::new(&format!("^wu/({word})/({word})_({word})$")).unwrap();
-        let alphabet: Vec<char> = "aZ09.-_/".chars().collect();
-        let mut seed: u64 = 0x5eed_0006;
-        let mut next = |n: usize| {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            ((seed >> 33) as usize) % n
-        };
-        for _ in 0..20_000 {
-            let len = next(10);
-            let tail: String = (0..len).map(|_| alphabet[next(alphabet.len())]).collect();
-            let name = format!("wu/{tail}");
-            let want = oracle.captures(&name).map(|c| format!("wu/{}/{}", &c[1], &c[2]));
-            assert_eq!(task_of(&cfg, &name), want, "{name}");
-        }
     }
 
     #[test]
@@ -1767,22 +1601,5 @@ mod tests {
         .unwrap();
         let open: Vec<_> = n.open_findings().iter().map(|f| f["claim"].as_str().unwrap()).collect();
         assert_eq!(open, ["null", "false", "blank", "none"]);
-    }
-
-    /// E-GHFLOW2.W7: `covers` is written only when there is something to record, and a note written
-    /// before it (or by a typed sign-off) reads with none.
-    #[test]
-    fn an_mr_note_carries_covers_only_when_an_approval_covered_something() {
-        use super::{Covers, MrNote};
-        assert_eq!(Covers::default().of(), None);
-        let roster = Covers { roster: vec!["+ github: 42 x".into()], ..Covers::default() }.of();
-        assert_eq!(roster.as_ref().map(|c| c.roster.len()), Some(1));
-        let old = r#"{"schema":"mr/v1","tip":"t","base":"b","branch":null,"committer":"c","timestamp":0,"level":"wu","signer":"vu","tier":"username","change_hash":"sha256:0"}"#;
-        let n: MrNote = serde_json::from_str(old).unwrap();
-        assert!(n.covers.is_none());
-        assert!(!serde_json::to_string(&n).unwrap().contains("covers"), "absent, not null");
-        let with = MrNote { covers: Covers { review: Some("FAIL".into()), cr: Some("sha256:1".into()), roster: vec![] }.of(), ..n };
-        let v: serde_json::Value = serde_json::from_str(&serde_json::to_string(&with).unwrap()).unwrap();
-        assert_eq!(v["covers"], serde_json::json!({"review": "FAIL", "cr": "sha256:1"}), "an empty roster list is left out");
     }
 }
