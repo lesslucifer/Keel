@@ -19,7 +19,7 @@
   <main>
 
 <h2 id="what-happened">What happened</h2>
-<p data-item="outcome" data-c="outcome"><b>Delivered.</b> <code>keel verify-dod wu|epic &lt;tip&gt; --no-receipt</code> prints the same checks and exit code and writes no record. <code>--help</code> or <code>-h</code> anywhere on any keel command prints that command's usage, exits 0 and changes nothing, in a repository or outside one. <code>verify-dod</code>, <code>preflight</code> and <code>notes write</code> refuse an argument they do not know, exit 1, before anything is read or written. The six new tests failed on b80e9c9's code and pass now. Every earlier test passes unchanged.</p>
+<p data-item="outcome" data-c="outcome"><b>Delivered.</b> <code>keel verify-dod wu|epic &lt;tip&gt; --no-receipt</code> prints the same checks and exit code and writes no record. <code>--help</code> or <code>-h</code> anywhere on any keel command prints that command's usage, exits 0 and changes nothing, in a repository or outside one. The one exception: words after <code>keel hook &lt;name&gt;</code> are git's, never help, so a push to a remote named <code>-h</code> is still gated. <code>verify-dod</code>, <code>preflight</code> and <code>notes write</code> refuse an argument they do not know, exit 1, before anything is read or written. The new tests failed first and pass now. Every earlier test passes unchanged. Review round 1 found one blocker and two importants; each is fixed, test first.</p>
 
 <h2 id="for-the-owner">What changes for you</h2>
 <table data-c="owner-changes">
@@ -37,6 +37,9 @@
   <li><b>One line in <code>main()</code>, not two:</b> <code>help::exit_if_asked();</code> reads the arguments, prints and exits. <code>src/main.rs</code> changes by that line and <code>mod help;</code> only.</li>
   <li><b>The notes writer's refusal reads</b> <code>keel notes: refused - notes write doc: unknown argument '--distil'</code>, with the kind's usage on its <code>fix -&gt;</code> line. The plan wrote <code>unknown argument '&lt;a&gt;' for notes write &lt;kind&gt;</code>; same content.</li>
   <li><b>A test fixed before green:</b> <code>no_receipt_runs_the_whole_gate_and_writes_nothing</code> expected the dry run's output to be the gate's plus one line. The gate prints <code>wrote refs/notes/dod on …</code> last, so the dry run's output is the gate's with that line replaced by <code>no receipt written (--no-receipt)</code>. The test now asserts that.</li>
+  <li><b>Open point 6 reversed (review round 1, B1):</b> help on the <code>hook</code> commands is limited to <code>keel hook</code> alone (or with help before <code>hook</code>). Git runs <code>keel hook pre-push "$1"</code> with the remote's name, and a remote may be named <code>-h</code> or <code>--help</code>; reading that as help skipped the whole push gate. Every word after a hook's name is now git's.</li>
+  <li><b>A flag's value is never another known flag (review round 1, I2).</b> <code>notes write doc --distill --target --target epic/x</code> passed the strict check, then the flag-by-flag readers took <code>--target</code> as the target. <code>notes::args_problem</code> now refuses such a value, so both readings agree.</li>
+  <li><b>A guard that each dispatched command has its own usage (review round 1, I1):</b> <code>every_dispatched_command_has_its_own_usage</code> reads <code>run()</code>, <code>gate::verify_dod</code>, <code>mr::run</code> and <code>notes::write</code>'s arms from the source and checks each gets its own row or a parent usage that names it.</li>
   <li><b>Open point 2:</b> W1 had not landed in <code>epic/E-KEELFIX</code> when W2 was built, so <code>run()</code>'s top and <code>init</code> usage lines stay literals; <code>src/help.rs</code> holds equal copies, kept equal by <code>each_usage_error_prints_the_help_text</code>.</li>
 </ul>
 
@@ -49,7 +52,10 @@
     <li><code>264e9fe</code> the plan.</li>
     <li><code>73376d2</code> the six integration tests, red first.</li>
     <li><code>6c99611</code> the code, its unit tests, and the test fix above.</li>
-    <li>This report.</li>
+    <li><code>ba67654</code> this report.</li>
+    <li><code>ff85dc7</code> review round 1's tests, red first (the two nits folded in: each refusal row's needle is its own words; one state snapshot per test).</li>
+    <li><code>556fc4a</code> review round 1's fixes.</li>
+    <li>This report's round-1 update.</li>
   </ul>
   <p><b>Red, on b80e9c9's code</b> (all six failed):</p>
   <ul>
@@ -60,16 +66,23 @@
     <li><code>help_needs_no_repository</code>: "keel: not inside a git repository".</li>
     <li><code>each_usage_error_prints_the_help_text</code>: help printed nothing on stdout.</li>
   </ul>
-  <p><b>Green, at the code commit:</b> <code>cargo test</code>: 110 unit (101 before, 9 new) and 336 suite (330 before, 6 new), 0 failed, 10 ignored as before. <code>cargo fmt --check</code> and <code>cargo clippy --all-targets -- -D warnings</code> clean. <code>keel check</code> green.</p>
+  <p><b>Red, review round 1</b> (on <code>ba67654</code>'s code):</p>
+  <ul>
+    <li>B1: <code>a_push_to_a_remote_named_like_help_is_still_gated</code>: a real <code>git push -- -h epic/e</code> of a noteless epic commit succeeded; the hook printed "usage: keel hook …". <code>a_hooks_arguments_are_gits_never_help</code> failed too.</li>
+    <li>I2: <code>an_unknown_argument_is_refused_and_changes_nothing</code>'s new row failed with "git merge-base --target HEAD failed"; the <code>known_args</code> unit rows failed.</li>
+    <li>I1: the guard passes on the current table. A mutant <code>mr waive</code> arm with no row turns it red ("[mr, waive] gets the usage of [mr], which does not name it").</li>
+    <li>Nit: the reviewer's mutant (the gate refusing with the bare usage) now fails 7 of 7 gate rows; it failed 3 before.</li>
+  </ul>
+  <p><b>Green, at <code>556fc4a</code>:</b> <code>cargo test</code>: 112 unit (101 before W2) and 337 suite (330 before W2), 0 failed, 10 ignored as before. <code>cargo fmt --check</code> and <code>cargo clippy --all-targets -- -D warnings</code> clean. <code>keel check</code> green.</p>
   <p><b>Tests added:</b></p>
   <ul>
-    <li>Integration, the end of <code>tests/suite/verify_dod.rs</code>: the six above.</li>
-    <li>Unit, <code>src/help.rs</code>: no help word is no help (<code>--help=x</code>, <code>-hv</code>, <code>-H</code>, <code>help</code>); either help word at every position of 17 command lines gives that line's usage; an unknown command or leading flag gives the top usage, and a message reading <code>--help</code> is help; every usage names its command.</li>
+    <li>Integration, the end of <code>tests/suite/verify_dod.rs</code>: the six above, and <code>a_push_to_a_remote_named_like_help_is_still_gated</code> (review round 1).</li>
+    <li>Unit, <code>src/help.rs</code>: no help word is no help (<code>--help=x</code>, <code>-hv</code>, <code>-H</code>, <code>help</code>); either help word at every position of 17 command lines gives that line's usage; an unknown command or leading flag gives the top usage, and a message reading <code>--help</code> is help; every usage names its command; a hook's arguments are git's; every dispatched command has its own usage.</li>
     <li>Unit, <code>src/gate.rs</code>: <code>opts</code> in either order, and nine refused forms.</li>
-    <li>Unit, <code>src/notes.rs</code>: <code>known_args</code> accepts each kind's flags, refuses eight wrong lists and an unknown kind, and passes <code>cr</code> with <code>--reason</code> to its own refusal.</li>
+    <li>Unit, <code>src/notes.rs</code>: <code>known_args</code> accepts each kind's flags, refuses ten wrong lists (a value that is another flag among them) and an unknown kind, and passes <code>cr</code> with <code>--reason</code> to its own refusal.</li>
   </ul>
   <p><b>Files:</b> <code>src/gate.rs</code>, <code>src/notes.rs</code>, <code>src/mr.rs</code> (four usage literals lifted to consts), new <code>src/help.rs</code>, <code>src/main.rs</code> (two lines), <code>tests/suite/verify_dod.rs</code>.</p>
-  <p><b>W1:</b> <code>git merge-tree --write-tree wu/E-KEELFIX/w1-k9 HEAD</code> at <code>6c99611</code> merges clean (exit 0), <code>src/main.rs</code> and <code>src/mr.rs</code> included.</p>
+  <p><b>W1:</b> <code>git merge-tree --write-tree wu/E-KEELFIX/w1-k9 HEAD</code> at <code>6c99611</code> merged clean, and still does at <code>556fc4a</code> (exit 0), <code>src/main.rs</code> and <code>src/mr.rs</code> included.</p>
 </div>
 
 <h3 id="distillation-h">Distillation</h3>
@@ -78,6 +91,7 @@
 <h3 id="follow-ups-h">Follow-ups</h3>
 <ul data-item="follow-ups" data-c="follow-ups">
   <li>Point <code>run()</code>'s top and <code>init</code> usage lines at <code>src/help.rs</code>'s texts once W1 is in <code>epic/E-KEELFIX</code>: taken by E-KEELFIX.W3, or, if W3 leaves the epic, by the backlog row the epic close writes for it.</li>
+  <li>Found while fixing B1, not changed by W2: the pre-push hook's notes sync runs <code>git push --no-verify --quiet &lt;remote&gt; …</code>, so a remote named <code>-h</code> reads as git's own option and the sync fails with a warning (the gate itself runs). Taken by the local-app backlog row the epic close writes beside A2.</li>
   <li>Unknown options on <code>mr setup|commit|confirm</code> (open point 4): not taken here; the epic close writes a local-app backlog row beside A2 if you want it.</li>
 </ul>
 
