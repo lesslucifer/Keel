@@ -2090,23 +2090,25 @@ fn help_on_a_sign_off_signs_nothing() {
 /// named `-h` or `--help`. That argv is git's, never a help request: the push is still gated.
 #[test]
 fn a_push_to_a_remote_named_like_help_is_still_gated() {
-    for name in ["-h", "--help"] {
-        let d = fixture();
-        let p = d.path();
-        bless(p, WU_TESTS, "PASS");
-        sign(p, "wu", "docs/a.html");
-        git(p, &["switch", "-q", "epic/e"]);
-        let m = run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"], "");
-        assert!(m.status.success(), "{}", text(&m));
-        let landed = git(p, &["rev-parse", "epic/e"]);
-        let remote = TempDir::new().unwrap();
+    let d = fixture();
+    let p = d.path();
+    bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
+    git(p, &["switch", "-q", "epic/e"]);
+    let m = run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"], "");
+    assert!(m.status.success(), "{}", text(&m));
+    let landed = git(p, &["rev-parse", "epic/e"]);
+    let remotes = [("-h", TempDir::new().unwrap()), ("--help", TempDir::new().unwrap())];
+    for (name, remote) in &remotes {
         git(remote.path(), &["init", "-q", "--bare"]);
         git(p, &["remote", "add", "--", name, remote.path().to_str().unwrap()]);
         let push = run("git", p, &["push", "-q", "--", name, "epic/e"], "");
         assert!(push.status.success(), "{name}: {}", text(&push));
+    }
 
-        write(p, "src/c.py", "def c():\n    return 3\n");
-        commit(p, "noteless code straight on the epic");
+    write(p, "src/c.py", "def c():\n    return 3\n");
+    commit(p, "noteless code straight on the epic");
+    for (name, remote) in &remotes {
         let push = run("git", p, &["push", "-q", "--", name, "epic/e"], "");
         assert_red(&push, "1·notes");
         assert!(!stdout(&push).contains("usage:"), "{name}: the hook printed help: {}", text(&push));

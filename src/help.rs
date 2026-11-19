@@ -145,47 +145,126 @@ mod tests {
         }
     }
 
-    /// The command paths each dispatcher matches, read from its source: `run()`'s slice patterns,
-    /// `gate::verify_dod`'s (under `verify-dod`), `mr::run`'s (under `mr`) and `notes::write`'s kinds
-    /// (under `notes write`). Flags and bindings end a path.
-    fn dispatched() -> Vec<Vec<String>> {
-        fn body<'a>(src: &'a str, sig: &str) -> &'a str {
-            let at = src.find(sig).unwrap_or_else(|| panic!("no {sig}"));
-            &src[at..at + src[at..].find("\n}\n").unwrap()]
+    /// Every module `main.rs` declares, as compiled, so the guard below reads the whole program.
+    const SOURCES: &[(&str, &str)] = &[
+        ("main.rs", include_str!("main.rs")),
+        ("gate.rs", include_str!("gate.rs")),
+        ("help.rs", include_str!("help.rs")),
+        ("init.rs", include_str!("init.rs")),
+        ("mr.rs", include_str!("mr.rs")),
+        ("notes.rs", include_str!("notes.rs")),
+        ("review.rs", include_str!("review.rs")),
+        ("verify_doc.rs", include_str!("verify_doc.rs")),
+    ];
+
+    /// Where keel dispatches a command: the function, and the words that lead to it.
+    const DISPATCHERS: &[(&str, &str, &[&str])] = &[
+        ("main.rs", "fn run() ->", &[]),
+        ("gate.rs", "pub fn verify_dod(", &["verify-dod"]),
+        ("gate.rs", "pub fn preflight_cmd(", &["preflight"]),
+        ("mr.rs", "pub fn run(", &["mr"]),
+        ("notes.rs", "pub fn write(", &["notes", "write"]),
+    ];
+
+    /// Slice patterns that lead with a literal word yet dispatch no command, and why.
+    const NOT_COMMANDS: &[(&str, &str)] = &[("mr.rs", r#"if let ["100644" | "100755", "blob", id]"#)]; // a `git ls-tree` line
+
+    /// The leading literal words of each slice pattern at the start of `t` (`[..] | [..]` alternatives
+    /// and `"a" | "b"` elements included); a flag, a binding or `..` ends a path.
+    fn slice_paths(mut t: &str) -> Vec<Vec<String>> {
+        let mut out = vec![];
+        while let Some(rest) = t.strip_prefix('[') {
+            let end = rest.find(']').unwrap_or(rest.len());
+            let mut paths = vec![vec![]];
+            for e in rest[..end].split(',') {
+                let alts: Vec<&str> = e.split('|').map(str::trim).collect();
+                if !alts.iter().all(|a| a.len() > 2 && a.starts_with('"') && a.ends_with('"') && !a.starts_with("\"-")) {
+                    break;
+                }
+                paths =
+                    paths.iter().flat_map(|p: &Vec<String>| alts.iter().map(move |a| [p.clone(), vec![a.trim_matches('"').to_string()]].concat())).collect();
+            }
+            out.extend(paths.into_iter().filter(|p| !p.is_empty()));
+            t = rest[end..].trim_start_matches(']').trim_start();
+            t = t.strip_prefix('|').map(str::trim_start).unwrap_or("");
         }
-        let slices = |body: &str, under: &[&str]| -> Vec<Vec<String>> {
-            body.lines()
-                .filter_map(|l| l.trim().strip_prefix('[').filter(|_| l.contains("=>")))
-                .map(|l| {
-                    let words = l.split(['[', ']', ',', ' ', '|']).take_while(|w| w.is_empty() || (w.starts_with('"') && !w.starts_with("\"-")));
-                    under.iter().map(|w| w.to_string()).chain(words.filter(|w| !w.is_empty()).map(|w| w.trim_matches('"').to_string())).collect()
-                })
-                .filter(|p: &Vec<String>| p.len() > under.len())
-                .collect()
-        };
-        let mut all = slices(body(include_str!("main.rs"), "fn run() ->"), &[]);
-        all.extend(slices(body(include_str!("gate.rs"), "pub fn verify_dod("), &["verify-dod"]));
-        all.extend(slices(body(include_str!("mr.rs"), "pub fn run("), &["mr"]));
-        let kinds = body(include_str!("notes.rs"), "pub fn write(")
-            .lines()
-            .filter_map(|l| l.trim().split_once("\" =>").map(|(k, _)| k.trim_start_matches('"').to_string()));
-        all.extend(kinds.map(|k| vec!["notes".into(), "write".into(), k]));
-        all
+        out
     }
 
-    /// Round 1, I1: a command a dispatcher matches has its own usage - its own row, or its parent's
-    /// usage naming it - so a new subcommand never prints its parent's text in silence.
+    /// Every command path keel dispatches: each slice pattern leading with a literal word, in any
+    /// module (`match` arms and `let` patterns alike), placed under the dispatcher it sits in, plus
+    /// `notes::write`'s kinds. A pattern outside every dispatcher, or a module the guard does not
+    /// read, is an error: the guard never passes a dispatcher it cannot see.
+    fn dispatched() -> Result<Vec<Vec<String>>, Vec<String>> {
+        let main = SOURCES[0].1;
+        let mut problems: Vec<String> = main
+            .lines()
+            .filter_map(|l| l.strip_prefix("mod ").and_then(|m| m.strip_suffix(';')))
+            .filter(|m| !SOURCES.iter().any(|(f, _)| *f == format!("{m}.rs")))
+            .map(|m| format!("module {m} is not read by this guard: add it to SOURCES"))
+            .collect();
+        let mut paths = vec![];
+        for (file, src) in SOURCES {
+            let code = &src[..src.find("#[cfg(test)]").unwrap_or(src.len())];
+            let bodies: Vec<(std::ops::Range<usize>, &[&str])> = DISPATCHERS
+                .iter()
+                .filter(|(f, ..)| f == file)
+                .map(|(_, sig, under)| {
+                    let at = code.find(sig).unwrap_or_else(|| panic!("{file}: no {sig}"));
+                    (at..at + code[at..].find("\n}\n").unwrap(), *under)
+                })
+                .collect();
+            let mut offset = 0;
+            for line in code.split_inclusive('\n') {
+                let at = offset;
+                offset += line.len();
+                let t = line.trim_start();
+                let pat = if t.starts_with('[') && t.contains("=>") { Some(t) } else { t.find("let [").map(|i| &t[i + 4..]) };
+                let found = pat.map(slice_paths).unwrap_or_default();
+                if found.is_empty() || NOT_COMMANDS.iter().any(|(f, text)| f == file && t.contains(text)) {
+                    continue;
+                }
+                match bodies.iter().find(|(r, _)| r.contains(&at)) {
+                    Some((_, under)) => paths.extend(found.into_iter().map(|p| [under.iter().map(|w| w.to_string()).collect(), p].concat())),
+                    None => problems.push(format!("{file}: a pattern outside every dispatcher the guard reads: {}", t.trim_end())),
+                }
+            }
+            if *file == "notes.rs" {
+                let (r, _) = &bodies[0];
+                let kinds = code[r.clone()].lines().filter_map(|l| l.trim().split_once("\" =>").map(|(k, _)| k.trim_start_matches('"').to_string()));
+                paths.extend(kinds.map(|k| vec!["notes".into(), "write".into(), k]));
+            }
+        }
+        if problems.is_empty() {
+            Ok(paths)
+        } else {
+            Err(problems)
+        }
+    }
+
+    /// Review rounds 1 and 2, I1: every command a dispatcher matches has its own TABLE row - never
+    /// its parent's usage, whatever that usage names - and every row leads to a dispatched command.
     #[test]
     fn every_dispatched_command_has_its_own_usage() {
-        let paths = dispatched();
+        let paths = dispatched().unwrap_or_else(|p| panic!("the guard cannot read every dispatcher:\n{}", p.join("\n")));
         for want in [&["mr", "confirm"][..], &["notes", "write", "cr"], &["hook", "pre-push"], &["verify-dod", "range"], &["hooks", "install"], &["init"]] {
             assert!(paths.iter().any(|p| p == want), "the source reader missed {want:?}: {paths:?}");
         }
-        for path in paths {
-            let words: Vec<&str> = path.iter().map(String::as_str).collect();
-            let (key, usage) = TABLE.iter().filter(|(k, _)| words.starts_with(k)).max_by_key(|(k, _)| k.len()).unwrap();
-            let named = |w: &str| usage.split(|c: char| !(c.is_alphanumeric() || c == '-')).any(|t| t == w);
-            assert!(words[key.len()..].iter().all(|w| named(w)), "{words:?} gets the usage of {key:?}, which does not name it: {usage}");
-        }
+        let rows: Vec<Vec<String>> = TABLE.iter().map(|(k, _)| k.iter().map(|w| w.to_string()).collect()).collect();
+        let missing: Vec<&Vec<String>> = paths.iter().filter(|p| !rows.contains(p)).collect();
+        assert!(missing.is_empty(), "dispatched with no usage row of their own: {missing:?}");
+        let dead: Vec<&Vec<String>> = rows.iter().filter(|r| !r.is_empty() && !paths.iter().any(|p| p.starts_with(r))).collect();
+        assert!(dead.is_empty(), "usage rows for no dispatched command: {dead:?}");
+    }
+
+    #[test]
+    fn the_slice_reader_reads_alternatives_and_stops_at_a_flag_or_binding() {
+        let p = |v: &[&[&str]]| v.iter().map(|p| p.iter().map(|w| w.to_string()).collect()).collect::<Vec<Vec<String>>>();
+        assert_eq!(slice_paths(r#"["hooks", "install", "--force"] => x"#), p(&[&["hooks", "install"]]));
+        assert_eq!(slice_paths(r#"["init", flags @ ..] => match flags {"#), p(&[&["init"]]));
+        assert_eq!(slice_paths(r#"["--force"] | ["-f"] => y"#), p(&[]));
+        assert_eq!(slice_paths(r#"["lint"] | ["doctor", path] => z"#), p(&[&["lint"], &["doctor"]]));
+        assert_eq!(slice_paths(r#"["a" | "b", "c", rest @ ..] = args"#), p(&[&["a", "c"], &["b", "c"]]));
+        assert_eq!(slice_paths(r#"[lvl, tip, rest @ ..] => {"#), p(&[]));
     }
 }
