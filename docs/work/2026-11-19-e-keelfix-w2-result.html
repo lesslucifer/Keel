@@ -39,7 +39,7 @@
   <li><b>A test fixed before green:</b> <code>no_receipt_runs_the_whole_gate_and_writes_nothing</code> expected the dry run's output to be the gate's plus one line. The gate prints <code>wrote refs/notes/dod on …</code> last, so the dry run's output is the gate's with that line replaced by <code>no receipt written (--no-receipt)</code>. The test now asserts that.</li>
   <li><b>Open point 6 reversed (review round 1, B1):</b> help on the <code>hook</code> commands is limited to <code>keel hook</code> alone (or with help before <code>hook</code>). Git runs <code>keel hook pre-push "$1"</code> with the remote's name, and a remote may be named <code>-h</code> or <code>--help</code>; reading that as help skipped the whole push gate. Every word after a hook's name is now git's.</li>
   <li><b>A flag's value is never another known flag (review round 1, I2).</b> <code>notes write doc --distill --target --target epic/x</code> passed the strict check, then the flag-by-flag readers took <code>--target</code> as the target. <code>notes::args_problem</code> now refuses such a value, so both readings agree.</li>
-  <li><b>A guard that each dispatched command has its own usage (review round 1, I1):</b> <code>every_dispatched_command_has_its_own_usage</code> reads <code>run()</code>, <code>gate::verify_dod</code>, <code>mr::run</code> and <code>notes::write</code>'s arms from the source and checks each gets its own row or a parent usage that names it.</li>
+  <li><b>A guard that each dispatched command has its own usage (review rounds 1 and 2, I1 and I2):</b> <code>every_dispatched_command_has_its_own_usage</code> reads every slice pattern that leads with a literal word, in every module <code>main.rs</code> declares (match arms, <code>let</code> and <code>if let</code> patterns, alternatives). It places each under its dispatcher (<code>run()</code>, <code>gate::verify_dod</code>, <code>gate::preflight_cmd</code>, <code>mr::run</code>, <code>notes::write</code>'s kinds). It fails on a pattern outside them and on a module it does not read. Each dispatched command must have its own help row; a parent usage that names it no longer counts. Each row must lead to a dispatched command. So the help table gained eight rows: <code>hooks install</code>, the three <code>hook</code> names, <code>notes write</code>, and <code>verify-dod commit|hook|range</code>. One command list that drives both dispatch and help was the review's preferred fix; it would mean rewriting <code>run()</code>, which W1 and E-DOCSPLIT edit and which the plan leaves alone.</li>
   <li><b>Open point 2:</b> W1 had not landed in <code>epic/E-KEELFIX</code> when W2 was built, so <code>run()</code>'s top and <code>init</code> usage lines stay literals; <code>src/help.rs</code> holds equal copies, kept equal by <code>each_usage_error_prints_the_help_text</code>.</li>
 </ul>
 
@@ -55,7 +55,10 @@
     <li><code>ba67654</code> this report.</li>
     <li><code>ff85dc7</code> review round 1's tests, red first (the two nits folded in: each refusal row's needle is its own words; one state snapshot per test).</li>
     <li><code>556fc4a</code> review round 1's fixes.</li>
-    <li>This report's round-1 update.</li>
+    <li><code>68f1788</code> this report's round-1 update.</li>
+    <li><code>8bbf2ca</code> review round 2's test, red first (the push-test nit folded in: one fixture, both remotes).</li>
+    <li><code>3553163</code> review round 2's fix.</li>
+    <li>This report's round-2 update.</li>
   </ul>
   <p><b>Red, on b80e9c9's code</b> (all six failed):</p>
   <ul>
@@ -73,16 +76,25 @@
     <li>I1: the guard passes on the current table. A mutant <code>mr waive</code> arm with no row turns it red ("[mr, waive] gets the usage of [mr], which does not name it").</li>
     <li>Nit: the reviewer's mutant (the gate refusing with the bare usage) now fails 7 of 7 gate rows; it failed 3 before.</li>
   </ul>
-  <p><b>Green, at <code>556fc4a</code>:</b> <code>cargo test</code>: 112 unit (101 before W2) and 337 suite (330 before W2), 0 failed, 10 ignored as before. <code>cargo fmt --check</code> and <code>cargo clippy --all-targets -- -D warnings</code> clean. <code>keel check</code> green.</p>
+  <p><b>Red, review round 2:</b> the rewritten guard failed on the table as it stood: "dispatched with no usage row of their own" for ten paths. With the eight rows added, each of the round-2 note's mutants turns it red:</p>
+  <ul>
+    <li>A new module with its own dispatcher: "module doctor is not read by this guard".</li>
+    <li>The same module added to the read list: "a pattern outside every dispatcher the guard reads".</li>
+    <li><code>["status"]</code> in <code>gate::preflight_cmd</code>: no row for <code>[preflight, status]</code>.</li>
+    <li><code>if let ["doctor", ..]</code> before <code>run()</code>'s match: no row for <code>[doctor]</code>.</li>
+    <li><code>["doctor", path]</code> with the top usage updated: no row for <code>[doctor]</code>.</li>
+    <li><code>["tip", ..]</code> in <code>mr::run</code>: no row for <code>[mr, tip]</code>.</li>
+  </ul>
+  <p><b>Green, at <code>3553163</code>:</b> <code>cargo test</code>: 113 unit (101 before W2) and 337 suite (330 before W2), 0 failed, 10 ignored as before. <code>cargo fmt --check</code> and <code>cargo clippy --all-targets -- -D warnings</code> clean. <code>keel check</code> green.</p>
   <p><b>Tests added:</b></p>
   <ul>
     <li>Integration, the end of <code>tests/suite/verify_dod.rs</code>: the six above, and <code>a_push_to_a_remote_named_like_help_is_still_gated</code> (review round 1).</li>
-    <li>Unit, <code>src/help.rs</code>: no help word is no help (<code>--help=x</code>, <code>-hv</code>, <code>-H</code>, <code>help</code>); either help word at every position of 17 command lines gives that line's usage; an unknown command or leading flag gives the top usage, and a message reading <code>--help</code> is help; every usage names its command; a hook's arguments are git's; every dispatched command has its own usage.</li>
+    <li>Unit, <code>src/help.rs</code>: no help word is no help (<code>--help=x</code>, <code>-hv</code>, <code>-H</code>, <code>help</code>); either help word at every position of 17 command lines gives that line's usage; an unknown command or leading flag gives the top usage, and a message reading <code>--help</code> is help; every usage names its command; a hook's arguments are git's; every dispatched command has its own usage; the slice-pattern reader.</li>
     <li>Unit, <code>src/gate.rs</code>: <code>opts</code> in either order, and nine refused forms.</li>
     <li>Unit, <code>src/notes.rs</code>: <code>known_args</code> accepts each kind's flags, refuses ten wrong lists (a value that is another flag among them) and an unknown kind, and passes <code>cr</code> with <code>--reason</code> to its own refusal.</li>
   </ul>
   <p><b>Files:</b> <code>src/gate.rs</code>, <code>src/notes.rs</code>, <code>src/mr.rs</code> (four usage literals lifted to consts), new <code>src/help.rs</code>, <code>src/main.rs</code> (two lines), <code>tests/suite/verify_dod.rs</code>.</p>
-  <p><b>W1:</b> <code>git merge-tree --write-tree wu/E-KEELFIX/w1-k9 HEAD</code> at <code>6c99611</code> merged clean, and still does at <code>556fc4a</code> (exit 0), <code>src/main.rs</code> and <code>src/mr.rs</code> included.</p>
+  <p><b>W1:</b> <code>git merge-tree --write-tree wu/E-KEELFIX/w1-k9 HEAD</code> at <code>6c99611</code> merged clean, and still does at <code>3553163</code> (exit 0); W1's three new slice patterns (<code>hook pre-commit</code>, <code>hook commit-msg</code>, <code>mr commit</code>) each have a row, <code>src/main.rs</code> and <code>src/mr.rs</code> included.</p>
 </div>
 
 <h3 id="distillation-h">Distillation</h3>
