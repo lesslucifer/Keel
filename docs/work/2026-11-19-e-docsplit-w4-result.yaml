@@ -39,6 +39,17 @@ deviations:
       checked. N7 keel-write's self-check says "checklist markup", not "tag".
       N8 example.html's Terms heading is an h2; the pair stays green, 465 of
       700 words, top 216 of 300.
+  - what: Code review round 1 (the cr note on 135341e) was FAIL - two importants, four nits, all in src/ and tests/ - fixed in 1fb6b38 and 0b9fdc1.
+    why: >-
+      keel_plan_names_every_field_the_check_reads pooled every role's fields
+      into one hand-copied list, so a field moved between roles stayed green.
+      It now takes each role's checklist from role_fields(), the list fields()
+      reads, and wants it in that role's paragraph of keel-plan §3 (WU_SUB under
+      wu-summaries, TEST_LEVELS under test-plan); every other field
+      fields(&[role]) knows must be a §2 table row. The nits: the old-tag scan
+      and the AGENTS.md checks moved into embedding_is_complete_and_prefixed,
+      one list in one keel init; installed_skills_and_rule_file_name_no_old_page_tag
+      and the two narrower tag lists went. No skill text changed.
 evidence:
   commits:
     - f1388ac the W4 plan and its data file
@@ -46,12 +57,15 @@ evidence:
     - 79d6409 the owner's keel mr commit - the skills in both copies, AGENTS.md and its template, the example pair, src/init.rs, src/verify_doc.rs, tests (23 files)
     - 6e173fb this result
     - b10946a the owner's keel mr commit of the skills review fixes (skills/ and .claude/skills/, 10 files)
+    - 135341e this result after the skills review
+    - 1fb6b38 keel-plan's fields checked per role, from fields() (review round 1, both importants)
+    - 0b9fdc1 one old-tag scan in the one keel init that walks the skills (review round 1 nits)
     - this result update
   tests:
-    unit: src/init.rs the_skills_name_each_path_once_and_ship_the_example_pair; src/verify_doc.rs keel_plan_names_every_field_the_check_reads
-    integration: tests/suite/init.rs writing_skill_ships_with_a_passing_example_and_is_pointed_to (rewritten - keel init writes the pair, both green, no old tag on the page, intent removed is red), installed_skills_and_rule_file_name_no_old_page_tag (new), embedding_is_complete_and_prefixed, router_skill_carries_the_dsh_transport_and_the_template_its_slots, self_hosting_clone_is_gated_and_init_is_a_noop; tests/suite/verify_doc.rs every_doc_in_docs_and_the_writing_example_pass_the_checks (copies the pair)
+    unit: src/init.rs the_skills_name_each_path_once_and_ship_the_example_pair; src/verify_doc.rs keel_plan_names_every_field_the_check_reads (per role; mutation cases outcome into the WU plan, expected into the WU result, a field fields() adds outside a role's list, unit cut from the WU plan paragraph)
+    integration: tests/suite/init.rs writing_skill_ships_with_a_passing_example_and_is_pointed_to (rewritten - keel init writes the pair, both green, no old tag on the page, intent removed is red), embedding_is_complete_and_prefixed (now also no old page tag in any file keel init writes, and the installed AGENTS.md checks), router_skill_carries_the_dsh_transport_and_the_template_its_slots, self_hosting_clone_is_gated_and_init_is_a_noop; tests/suite/verify_doc.rs every_doc_in_docs_and_the_writing_example_pass_the_checks (copies the pair)
     e2e: tests/suite/verify_doc.rs epic_the_installed_hooks_refuse_each_doc_fault_and_pass_the_fixed_plan over the installed example pair as shipped; tests/suite/docsplit_e2e.rs unchanged and green. No waiver.
-    totals: on 79d6409, cargo test 153 unit, 542 suite passed, 10 ignored; cargo fmt --check and cargo clippy clean; keel check green
+    totals: on 0b9fdc1, cargo test 153 unit, 541 suite passed, 10 ignored; cargo fmt --check and cargo clippy -D warnings clean; keel check green
   checks:
     - git grep -nE 'data-(artifact|status|item|wu)' -- skills .claude/skills AGENTS.md templates/AGENTS.md - no hits
     - diff -rq skills .claude/skills - only "Only in .claude/skills - project-router"
