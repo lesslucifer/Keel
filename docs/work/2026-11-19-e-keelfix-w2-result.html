@@ -39,13 +39,19 @@
   <li><b>A test fixed before green:</b> <code>no_receipt_runs_the_whole_gate_and_writes_nothing</code> expected the dry run's output to be the gate's plus one line. The gate prints <code>wrote refs/notes/dod on …</code> last, so the dry run's output is the gate's with that line replaced by <code>no receipt written (--no-receipt)</code>. The test now asserts that.</li>
   <li><b>Open point 6 reversed (review round 1, B1):</b> help on the <code>hook</code> commands is limited to <code>keel hook</code> alone (or with help before <code>hook</code>). Git runs <code>keel hook pre-push "$1"</code> with the remote's name, and a remote may be named <code>-h</code> or <code>--help</code>; reading that as help skipped the whole push gate. Every word after a hook's name is now git's.</li>
   <li><b>A flag's value is never another known flag (review round 1, I2).</b> <code>notes write doc --distill --target --target epic/x</code> passed the strict check, then the flag-by-flag readers took <code>--target</code> as the target. <code>notes::args_problem</code> now refuses such a value, so both readings agree.</li>
-  <li><b>A guard that each dispatched command has its own usage (review rounds 1 to 3):</b> the test <code>every_dispatched_command_has_its_own_usage</code> reads the whole program's production code and fails closed. A command keel dispatches must have its own help row, and every row must lead to a dispatched command. A shape the guard cannot read is an error, "unreadable dispatch at file:line", never skipped.
+  <li><b>A guard that each dispatched command has its own usage (review rounds 1 to 4):</b> the test <code>every_dispatched_command_has_its_own_usage</code> reads the whole program's production code and fails closed. A command keel dispatches must have its own help row, and every row must lead to a dispatched command. A shape the guard cannot read is an error, "unreadable dispatch at file:line", never skipped.
     <ul>
       <li><b>Read:</b> every module <code>main.rs</code> declares and every module those declare (<code>mod</code>, <code>pub mod</code>, <code>pub(crate) mod</code>), each cut at <code>#[cfg(test)]</code> + <code>mod tests</code>.</li>
       <li><b>Understood, in a dispatcher</b> (<code>run()</code>, <code>gate::verify_dod</code>, <code>gate::preflight_cmd</code>, <code>mr::run</code>, <code>notes::write</code>, <code>notes::known_args</code>): slice-pattern arms (wrapped <code>| [..] =&gt;</code> lines too), <code>let</code>, <code>if let</code> and <code>matches!</code> patterns, <code>args.first() == Some(&amp;"w")</code>, and string arms. A pattern nested under <code>=&gt; match &lt;name&gt; {</code> is placed under its arm's words.</li>
       <li><b>Refused anywhere:</b> a declared module it does not read; a slice pattern holding a word outside every dispatcher; <code>Some([</code>, <code>Ok([</code>, <code>Err([</code>, <code>@ [</code> or <code>@ (</code> with a word.</li>
-      <li><b>Refused in an argv reader</b> (a dispatcher, or any fn with an <code>args</code>, <code>rest</code>, <code>flags</code> or <code>paths</code> parameter of type <code>&amp;[&amp;str]</code>): any other word compared or matched, a tuple arm, a const, tuple or nested element, a <code>[</code> with no <code>]</code>, and an arm nested any other way.</li>
-      <li><b>Reviewed exceptions:</b> eight lines that compare a word yet select no command (a git ls-tree line, <code>mr confirm</code>'s level, tip and tier, the cr writer's verdict, help's own <code>hook</code> check).</li>
+      <li><b>Refused by default in an argv reader</b> (a dispatcher, or any fn with an <code>args</code>, <code>rest</code>, <code>flags</code> or <code>paths</code> parameter of type <code>&amp;[&amp;str]</code>). Every literal word is refused unless one of three things holds:
+        <ul>
+          <li>it is read: a slice pattern's leading word, a string arm's head, or <code>w</code> in <code>args.first() == Some(&amp;"w")</code>;</li>
+          <li>it is a plain value: not in an arm's head or guard, not in a <code>let</code> pattern, not inside <code>matches!</code>, not next to <code>==</code> or <code>!=</code>, and not inside <code>Some(</code>, <code>Ok(</code>, <code>Err(</code> or a comparing method;</li>
+          <li>it is on a reviewed line.</li>
+        </ul>
+        So a word bound then compared in a guard, <code>Some("x")</code> in an arm or an <code>if let</code>, a tuple arm, a word after a binding, a const, tuple or nested element, and a <code>[</code> with no <code>]</code> are each refused.</li>
+      <li><b>Reviewed exceptions:</b> nine lines that compare a word yet select no command (a git ls-tree line, <code>mr setup</code>'s key-type prefixes, <code>mr confirm</code>'s level, tip and tier, the cr writer's verdict, help's own <code>hook</code> check).</li>
       <li><b>Known limit:</b> a word reaching a dispatch through a function that is not an argv reader, such as <code>gate::level_of</code>, whose levels are values, not commands.</li>
     </ul>
     One command list driving both dispatch and help was the review's preferred fix; it would mean rewriting <code>run()</code>, which W1 and E-DOCSPLIT edit and which the plan leaves alone.</li>
@@ -69,7 +75,9 @@
     <li><code>3553163</code> review round 2's fix.</li>
     <li><code>c176071</code> this report's round-2 update.</li>
     <li><code>8c0a1cc</code> review round 3's fix: the guard fails closed.</li>
-    <li>This report's round-3 update.</li>
+    <li><code>bf3d9cf</code> this report's round-3 update.</li>
+    <li><code>70f45e0</code> review round 4's fix: in an argv reader a literal word is refused by default.</li>
+    <li>This report's round-4 update.</li>
   </ul>
   <p><b>Red, on b80e9c9's code</b> (all six failed):</p>
   <ul>
@@ -103,7 +111,16 @@
     <li><code>["doctor", sub @ ..] =&gt; match sub { ["fix"] =&gt; .. }</code>: red, no rows for <code>[doctor]</code> and <code>[doctor, fix]</code>; green with exactly those rows; red with round 2's only green fix, rows <code>[doctor]</code> and <code>[fix]</code>. The same <code>["fix"]</code> in a block arm's <code>if let</code>: red, "a dispatch nested in an arm other than <code>=&gt; match &lt;name&gt; {</code>".</li>
     <li>The nits: <code>pub mod doctor;</code>, <code>pub(crate) mod doctor;</code> and <code>mod sub;</code> in <code>gate.rs</code>: red, "module … is not read". A <code>["lint"]</code> arm wrapped onto <code>| ["doctor"] =&gt;</code>: red, no row for <code>[doctor]</code>. <code>Some(["doctor"])</code>, <code>[_cmd @ ("doctor" | "fix"), ..]</code>, a tuple arm <code>(Some("doctor"), _)</code> and a const element <code>[DOCTOR, ..]</code>: each red, "unreadable dispatch at …". Round 2's guard passed every one of these but the wrapped arm.</li>
   </ul>
-  <p><b>Green, at <code>3553163</code> and <code>8c0a1cc</code>:</b> <code>cargo test</code>: 113 unit (101 before W2) and 337 suite (330 before W2), 0 failed, 10 ignored as before. <code>cargo fmt --check</code> and <code>cargo clippy --all-targets -- -D warnings</code> clean. <code>keel check</code> green.</p>
+  <p><b>Red, review round 4:</b> each mutant, against the new guard and against round 3's:</p>
+  <ul>
+    <li><code>[w, ..] if *w == "tip" =&gt;</code> and <code>[w, ..] if w == &amp;"tip" =&gt;</code> in <code>mr::run</code>: red, "a literal word in an arm's guard". Round 3's guard: green.</li>
+    <li><code>if let Some("tip") = args.first().copied()</code> in <code>mr::run</code> and in <code>run()</code>, and the same as a <code>let … else</code>: red, "a literal word in a <code>let</code> pattern the guard cannot read". Round 3's guard: green.</li>
+    <li><code>Some("tip") =&gt;</code> and <code>Ok("tip") =&gt;</code> arms in <code>mr::run</code>: red, "an arm the guard cannot read holding a literal word". Round 3's guard: green.</li>
+    <li><code>args.contains(&amp;"tip")</code> in <code>run()</code>: red, "a literal word compared". Round 3's guard: green. <code>"tip" == args[0]</code>: red under both.</li>
+    <li>A string arm's guard <code>"doc" if args.first() == Some(&amp;"fix") =&gt;</code> in <code>notes::write</code>: red, "a literal word in an arm's guard". Round 3's guard: green.</li>
+    <li>Every round-3 mutant is still red, and the nested <code>[doctor, fix]</code> placement is still green with exactly its rows.</li>
+  </ul>
+  <p><b>Green, at <code>3553163</code>, <code>8c0a1cc</code> and <code>70f45e0</code>:</b> <code>cargo test</code>: 114 unit at <code>70f45e0</code> (113 before it, 101 before W2) and 337 suite (330 before W2), 0 failed, 10 ignored as before. <code>cargo fmt --check</code> and <code>cargo clippy --all-targets -- -D warnings</code> clean. <code>keel check</code> green.</p>
   <p><b>Tests added:</b></p>
   <ul>
     <li>Integration, the end of <code>tests/suite/verify_dod.rs</code>: the six above, and <code>a_push_to_a_remote_named_like_help_is_still_gated</code> (review round 1).</li>
@@ -112,7 +129,7 @@
     <li>Unit, <code>src/notes.rs</code>: <code>known_args</code> accepts each kind's flags, refuses ten wrong lists (a value that is another flag among them) and an unknown kind, and passes <code>cr</code> with <code>--reason</code> to its own refusal.</li>
   </ul>
   <p><b>Files:</b> <code>src/gate.rs</code>, <code>src/notes.rs</code>, <code>src/mr.rs</code> (four usage literals lifted to consts), new <code>src/help.rs</code>, <code>src/main.rs</code> (two lines), <code>tests/suite/verify_dod.rs</code>.</p>
-  <p><b>W1:</b> <code>git merge-tree --write-tree wu/E-KEELFIX/w1-k9 HEAD</code> at <code>6c99611</code> merged clean, and still does at <code>8c0a1cc</code> (exit 0); the guard passes on the merged tree (built in a scratch copy); W1's three new slice patterns (<code>hook pre-commit</code>, <code>hook commit-msg</code>, <code>mr commit</code>) each have a row, <code>src/main.rs</code> and <code>src/mr.rs</code> included.</p>
+  <p><b>W1:</b> <code>git merge-tree --write-tree wu/E-KEELFIX/w1-k9 HEAD</code> at <code>6c99611</code> merged clean, and still does at <code>70f45e0</code> (exit 0); the guard passes on the merged tree (built in a scratch copy); W1's three new slice patterns (<code>hook pre-commit</code>, <code>hook commit-msg</code>, <code>mr commit</code>) each have a row, <code>src/main.rs</code> and <code>src/mr.rs</code> included.</p>
 </div>
 
 <h3 id="distillation-h">Distillation</h3>
