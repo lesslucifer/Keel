@@ -515,17 +515,9 @@ fn check_doc(doc: &Yaml, page: &str, page_exists: bool) -> Data {
             }
         }
     }
-    for f in &required {
-        let entries = list_entries(f);
-        if entries.is_empty() {
-            continue;
-        }
+    for (f, entries, check) in LIST_FIELDS.iter().filter(|(f, ..)| required.contains(f)) {
         if let Some(v) = get(f).filter(|v| !empty(v)) {
-            problems.extend(match *f {
-                "wu-summaries" => wu_summaries(v, entries, id),
-                "test-plan" => test_plan(v, entries),
-                _ => vec![],
-            });
+            problems.extend(check(v, entries, id));
         }
     }
     Data::Checked { roles, problems }
@@ -577,16 +569,13 @@ fn role_fields(role: &str) -> &'static [&'static str] {
     }
 }
 
-/// The entries the check reads inside a list field, none for any other field: each WU's fields in
-/// an epic plan's `wu-summaries`, each level in a WU plan's `test-plan`. The one map from a field
-/// to its entries: check_doc checks a field's entries only when this names them.
-fn list_entries(field: &str) -> &'static [&'static str] {
-    match field {
-        "wu-summaries" => WU_SUB,
-        "test-plan" => TEST_LEVELS,
-        _ => &[],
-    }
-}
+/// What reads a list field's entries: its value, its entries, the doc's `id`; its problems.
+type EntryCheck = fn(&Yaml, &[&str], Option<&str>) -> Vec<String>;
+
+/// The list fields whose entries the check reads, each with its entries and the checker that reads
+/// them, in the order their problems come: an epic plan's `wu-summaries` and each WU's fields, a WU
+/// plan's `test-plan` and each level. The one map from a field to its entries and its checker.
+const LIST_FIELDS: &[(&str, &[&str], EntryCheck)] = &[("wu-summaries", WU_SUB, wu_summaries), ("test-plan", TEST_LEVELS, |t, levels, _| test_plan(t, levels))];
 
 /// The cap a page with these roles holds (DEC-69): a one-part epic takes the larger, its epic's.
 fn role_cap(roles: &[String]) -> Option<usize> {
@@ -1226,8 +1215,8 @@ fn scan(s: &str, out: &mut Vec<Hit>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        data_roles, decode, decode_mapped, fields, hits, list_entries, page_words, pages_of, pair_named, pair_of, partner_named, read_data, result_role,
-        role_cap, role_fields, tags, under_root, unquoted_labels, Data, Pair, ANCHORS, ROLES,
+        data_roles, decode, decode_mapped, fields, hits, page_words, pages_of, pair_named, pair_of, partner_named, read_data, result_role, role_cap,
+        role_fields, tags, under_root, unquoted_labels, Data, Pair, ANCHORS, LIST_FIELDS, ROLES,
     };
     use std::path::Path;
 
@@ -1676,6 +1665,22 @@ mod tests {
         assert!(required.contains(&"test-plan") && required.contains(&"wu-summaries"), "the union: {required:?}");
     }
 
+    /// The entries LIST_FIELDS gives `field`, none for a field it does not hold.
+    fn list_entries(field: &str) -> &'static [&'static str] {
+        LIST_FIELDS.iter().find(|(f, ..)| *f == field).map_or(&[], |(_, e, _)| e)
+    }
+
+    /// E-DOCSPLIT.W4: each row of the one map from a list field to its entries and its checker is
+    /// a role's own field, listed once, with entries for its checker to read.
+    #[test]
+    fn each_list_field_is_a_roles_field_listed_once_with_entries() {
+        for (n, (f, entries, _)) in LIST_FIELDS.iter().enumerate() {
+            assert!(!entries.is_empty(), "{f} has a checker and no entries");
+            assert!(ROLES.iter().any(|r| role_fields(r).contains(f)), "{f} is no role's field");
+            assert!(LIST_FIELDS[..n].iter().all(|(g, ..)| g != f), "{f} is listed twice");
+        }
+    }
+
     /// The text of the skill's section that starts with `head` (`## 3 ·`), up to the next `## `.
     fn section<'a>(skill: &'a str, head: &str) -> &'a str {
         let at = skill.find(head).unwrap_or_else(|| panic!("skill keel-plan has no section {head:?}"));
@@ -1894,6 +1899,16 @@ mod tests {
             EPIC_PLAN.replace("artifact: epic-plan", "artifact: epic-plan wu-plan")
         );
         assert_eq!(problems(&both), Vec::<String>::new());
+        // a list field's entry problems come in one order, wu-summaries then test-plan, whichever role it lists first
+        let bad = both.replace(", wu-deps: [E-X.W1]}", "}").replace(", e2e: e}", "}");
+        for listed in ["artifact: epic-plan wu-plan", "artifact: [wu-plan, epic-plan]"] {
+            let p = problems(&bad.replace("artifact: epic-plan wu-plan", listed));
+            assert_eq!(
+                p,
+                ["wu-summaries entry 2 (E-X.W2): missing field \"wu-deps\"", "test-plan: missing level \"e2e\" (its tests, or \"none: <why>\")"],
+                "{listed}"
+            );
+        }
         let p = problems(&EPIC_PLAN.replace("artifact: epic-plan", "artifact: [epic-plan, wu-result]"));
         assert_eq!(p, ["artifact epic-plan and wu-result cannot share one doc: a one-part epic pairs epic-plan with wu-plan, or epic-result with wu-result"]);
         let p = problems(&EPIC_PLAN.replace("artifact: epic-plan", "artifact: epic-plna"));
