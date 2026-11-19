@@ -218,6 +218,7 @@ flowchart LR
 <p>Rules that exist only in a skill, with no code behind them: the review's depth and severity rubric (<code>keel-code-review</code>), the router posture on DSH (<code>keel-router</code>), every "never push / never amend / never sign" rule, and the follow-up rule that every follow-up must name the WU, epic or backlog row that takes it. They are rules, not gates. A gate can check presence and bytes; it cannot tell a real destination from an invented one, which is why that last rule is written down and not enforced.</p>
 
 <h2 id="github">GitHub</h2>
+<p data-c="github-dropped"><b>This flow is dropped</b> (owner ruling 2026-11-19, <a href="decisions/workflow-gates.html#dec-70">DEC-70</a>): releases and the owner's own pushes stay on GitHub; everything else below stands until E-GHREVERT reverts it (<a href="backlog/local-app.html#a1">backlog local-app A1</a>), and the local app replaces it (<a href="local-app.html">local-app.html</a>).</p>
 <p>Keel&#39;s own repository only: <code>keel init</code> sets none of this up in another project. Every workflow runs from main, so a branch cannot change what judges it. The checks hold a merge only while the owner&#39;s <code>keel-merge</code> ruleset is on; the typed sign-off and local merges still work without GitHub.</p>
 <table data-c="github">
   <thead><tr><th>Piece</th><th>What it does</th><th>Trust</th></tr></thead>

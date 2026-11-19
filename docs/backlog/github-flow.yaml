@@ -9,18 +9,23 @@ about: >-
   (DEC-61), and the router hears its commanders through GitHub (DEC-62). The owner ruled that day: land those three on
   main early, close the epic, and start a new epic for the rest, run through the GitHub flow. The contracts are
   UC-GATE-7, UC-ROUTE-1, UC-ROUTE-6 and UC-ROUTE-7. Distilled from E-GHFLOW (epic plan v4, W1 - W3 results, close);
-  E-GHFLOW2 landings 1, 2 and 3, and its close.
+  E-GHFLOW2 landings 1, 2 and 3, and its close. The flow is dropped (E-LOCALTOOL close, 2026-11-19): the owner ruled to
+  go back to before GitHub's flow, as soon as possible, in one revert epic, E-GHREVERT (backlog local-app A1), recorded
+  in DEC-70. G2, G4, G5, G7 and G10 are struck to it: their live checks, CI follow-ups, test nits and approval follow-ups
+  belong to code the revert deletes, and the owner's setup steps become its step 1, switching the settings off. G11
+  (the bot's stale base) is struck the same way. G1, G3, G6, G8 and G9 stay as history. The flow and its records stand
+  until E-GHREVERT lands; this topic is closed then. The rows keep their text.
 open:
   - id: G4
     title: "CI follow-ups from W1"
-    status: open
+    status: "struck at the E-LOCALTOOL close (2026-11-19): taken by E-GHREVERT"
     problem: >-
       Three W1 follow-ups on the CI workflow, listed as items.
     proposal: >-
       See the fix direction in each item.
     source: >-
       E-GHFLOW.W1 plan open points 4 and 6, and its result's follow-ups.
-    taken-by: "unowned"
+    taken-by: "E-GHREVERT (backlog local-app A1)"
     items:
       - >-
         row 1, Cost: each push runs three uncached debug builds of keel, one per job. Fix direction: cache the base
@@ -35,8 +40,7 @@ open:
 
   - id: G5
     title: "Test nits W2, W3 and E-GHFLOW2.W1 left open"
-    status: >-
-      open (still open after E-GHFLOW2)
+    status: "struck at the E-LOCALTOOL close (2026-11-19): taken by E-GHREVERT"
     problem: >-
       Test-only nits from the passing code reviews; none changes a result. W2's were waived by its round 2 PASS; W3's
       round 2 PASS left them "to fix after this PASS", and no fix followed before the close. E-GHFLOW2.W5 fixed W3's
@@ -51,7 +55,7 @@ open:
     source: >-
       the `cr/v1` notes on `wu/E-GHFLOW/w2-router-bot` (52171f8) and `wu/E-GHFLOW/w3-gh-watch` (36222c7); E-GHFLOW.W2
       result; E-GHFLOW2.W1's code review round 1 and security review.
-    taken-by: "whichever WU next touches these files"
+    taken-by: "E-GHREVERT (backlog local-app A1)"
     items:
       - >-
         row 1, W2 - the fixture rebuild (done by E-GHFLOW2.W3): `tests/suite/router_gh.rs` rebuilds the `Gh` fixture,
@@ -90,8 +94,7 @@ open:
 
   - id: G7
     title: "Sign-off by approval: what E-GHFLOW2.W3 leaves"
-    status: >-
-      open (at the E-GHFLOW2 close: items 2 - 4 stay open for a later epic; item 1 moved to github-flow G10; item 5 closed)
+    status: "struck at the E-LOCALTOOL close (2026-11-19): taken by E-GHREVERT"
     problem: >-
       E-GHFLOW2.W3 made a pull-request approval the sign-off (the github tier, `keel ci sign-off`, the two workflows).
       Proven hermetically only: the workflows run from main, so live after landing 2. At the E-GHFLOW2 close: item 1's
@@ -105,7 +108,7 @@ open:
       items.
     source: >-
       E-GHFLOW2.W3 plan open points 1 - 3 and 6, and its result.
-    taken-by: "a later GitHub-flow epic"
+    taken-by: "E-GHREVERT (backlog local-app A1)"
     items:
       - >-
         row 1, Live facts owed at landing 2 (moved to github-flow G10), each checked by the first approval on GitHub:
@@ -145,7 +148,7 @@ open:
 
   - id: G10
     title: "E-GHFLOW2 closed: what is still open"
-    status: open
+    status: "struck at the E-LOCALTOOL close (2026-11-19): taken by E-GHREVERT"
     problem: >-
       E-GHFLOW2 closed on 2026-11-17 with W1 - W4 and W6 - W10; W5 was dropped. Everything is proven by hermetic tests;
       almost nothing has run on GitHub. The owner waived the epic's code review and its close review ("it can be tested
@@ -159,7 +162,7 @@ open:
     source: >-
       the owner's rulings of 2026-11-15 and 2026-11-17; E-GHFLOW2's plans and results (archived); its epic result report
       (archived).
-    taken-by: "mixed, per item: the owner (the GitHub steps), the router (live facts), the next GitHub-flow epic (follow-ups), a later epic (the new rows)"
+    taken-by: "E-GHREVERT (backlog local-app A1)"
     items:
       - >-
         owner step 1 (takes: the owner): the `keel-merge` branch ruleset (default branch and `epic/**`, no bypass,
@@ -240,7 +243,7 @@ open:
 
   - id: G11
     title: "The bot measures a pull request's range from its own copy of the base"
-    status: open
+    status: "struck at the E-LOCALTOOL close (2026-11-19): taken by E-GHREVERT"
     problem: >-
       A pull request page can list the wrong docs, or none. `router-gh.sh pr-open` and `issue` take the range from the
       merge-base of the router checkout's local base branch and the tip. When that copy lags GitHub's base (PR #14: a
@@ -252,7 +255,7 @@ open:
       changes when the bot refuses, so it is a GitHub-flow change, not part of the docs split.
     source: >-
       the E-DOCSPLIT.W3 plan's bot defects and the owner's ruling of 2026-11-18 ("doc split w3 lgtm", question 1).
-    taken-by: "the next GitHub-flow epic"
+    taken-by: "E-GHREVERT (backlog local-app A1)"
 closed:
   - id: G1
     title: "W4 - W9, carried to the next GitHub-flow epic"
@@ -264,7 +267,7 @@ closed:
       (DEC-68); its two new rows (the flow in other projects, Claude reviews in Actions) are in github-flow G10
   - id: G2
     title: "The live checks owed on GitHub"
-    closed: "re-pointed to G10 (W1's facts are recorded in G6; W4 changed what a push runs, so the first-run checks are replaced by G10's)"
+    closed: "re-pointed to G10 (W1's facts are recorded in G6; W4 changed what a push runs, so the first-run checks are replaced by G10's); struck at the E-LOCALTOOL close (2026-11-19): taken by E-GHREVERT"
   - id: G3
     title: "The router skills arm the GitHub watches"
     closed: "done by E-GHFLOW2.W2 (the optional allow lines in .claude/settings.json were left to the owner)"
