@@ -57,9 +57,7 @@ watch or job line, one idle notice.
    steer, stop. Cost: a relayed claim nobody checked.
 3. **Armed.** Is the fleet's one wake armed — the Claude Code watchdog, or on DSH
    the report channel's watcher where the project ships one (`worker-ops.md` "The
-   report channel (DSH)") — every staged owner action watched, and, where the
-   project has a GitHub watch, every one its open items need (`worker-ops.md`
-   "The GitHub flow")? Arm what is
+   report channel (DSH)") — and every staged owner action watched? Arm what is
    missing in this turn; if nothing can be armed, say so in one line. Never close a turn with a live worker and nothing armed. The
    DSH watcher serves every live worker: never one per worker, never a second
    watcher beside it, and never a reminder or a schedule instead. Cost: the owner

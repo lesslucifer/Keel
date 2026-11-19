@@ -176,8 +176,7 @@ its data file — the page whose data file's `artifact` carries the level's
 result role — never by file name and never by a page with no data file;
 `--report` names the page, never the `.yaml`. A typed `--report` is taken as
 named (only a `.yaml` is refused): the owner names the page whose data file
-carries the level's result role. The search, the approval path and
-`keel notes write report` check the data file. Depth of content is judgment —
+carries the level's result role. The search checks the data file. Depth of content is judgment —
 the owner's comment round and the reviews read these docs.
 
 ## 6 · Writing one

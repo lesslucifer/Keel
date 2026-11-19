@@ -1,3 +1,0 @@
-# Every path needs the owner's approval as code owner (E-GHFLOW2.W4 security review): the branch ruleset
-# requires a code owner's review, so a check a pull request makes for itself never merges it alone.
-* @lesslucifer

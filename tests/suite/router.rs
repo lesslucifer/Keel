@@ -411,12 +411,7 @@ fn settings_run_the_guard_on_every_tool_and_fail_closed() {
             .spawn()
             .unwrap();
         let ev = r#"{"agent_type":"router","tool_name":"Agent","tool_input":{}}"#;
-        // a fail-closed hook (no guard file, no jq) exits before it reads the event: a closed pipe
-        // is its answer, not a test failure (backlog github-flow G8's CI flake)
-        match std::io::Write::write_all(&mut p.stdin.take().unwrap(), ev.as_bytes()) {
-            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
-            r => r.unwrap(),
-        }
+        std::io::Write::write_all(&mut p.stdin.take().unwrap(), ev.as_bytes()).unwrap();
         p.wait_with_output().unwrap()
     };
     let path = common::path().to_string();
@@ -870,16 +865,7 @@ fn keels_router_security_files_are_rule_bearing() {
     let run = |a: &[&str]| common::cmd("git").args(a).current_dir(&c).env("PATH", &path).envs(common::TESTER).output().unwrap();
     assert!(common::cmd(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
     assert!(run(&["checkout", "-q", "-b", "wu/x/gate"]).status.success());
-    for f in [
-        "scripts/router-guard.jq",
-        "scripts/router-worker.sh",
-        "scripts/router-file-guard.sh",
-        "scripts/router-watch.sh",
-        "scripts/router-gh.sh",
-        "scripts/router-gh-watch.sh",
-        "scripts/router-gh-command.jq",
-        ".claude/agents/worker.md",
-    ] {
+    for f in ["scripts/router-guard.jq", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", ".claude/agents/worker.md"] {
         let body = std::fs::read_to_string(c.join(f)).unwrap();
         std::fs::write(c.join(f), format!("{body}\n")).unwrap();
         assert!(run(&["add", f]).status.success());
@@ -905,7 +891,7 @@ const WORKER_GRANTS: [&str; 11] = [
     "keel check",
 ];
 /// Denied to every worker, each as `Bash(c)` and `Bash(c *)` (E-ROUTER3.W8, DEC-46).
-const WORKER_DENIES: [&str; 27] = [
+const WORKER_DENIES: [&str; 25] = [
     "keel mr",
     "cargo run",
     "keel init",
@@ -931,8 +917,6 @@ const WORKER_DENIES: [&str; 27] = [
     "git --work-tree",
     "claude",
     "scripts/router-worker.sh",
-    "scripts/router-gh.sh",
-    "scripts/router-gh-watch.sh",
 ];
 
 fn bash_pairs<'a>(cmds: impl IntoIterator<Item = &'a str>) -> Vec<String> {
@@ -949,7 +933,7 @@ fn worker_argv(state: &Path, name: &str) -> Vec<String> {
 
 /// The Read rules every worker gets after the Bash denies (E-WMODE, DEC-37): the sandbox's denyRead
 /// paths. The edit tools get no path rule (review round 2, H1): the worker file guard bounds them.
-const WORKER_READ_DENIES: [&str; 3] = ["Read(~/.ssh/**)", "Read(~/.claude/channels/**)", "Read(~/.config/keel/router-gh/**)"];
+const WORKER_READ_DENIES: [&str; 2] = ["Read(~/.ssh/**)", "Read(~/.claude/channels/**)"];
 
 /// The main checkout of the repository whose worktree is `dir`, as git lists it.
 fn main_of(dir: &Path) -> String {
@@ -1302,7 +1286,7 @@ fn worker_file_guard_lets_the_file_tools_edit_only_the_worktree_and_read_neither
     let d = TempDir::new().unwrap();
     let base = d.path().canonicalize().unwrap();
     let (wt, home, out) = (base.join("wt"), base.join("home"), base.join("out"));
-    for dir in [wt.join("sub"), wt.join(".claude/agents"), home.join(".ssh"), home.join(".claude/channels"), home.join(".config/keel/router-gh"), out.clone()] {
+    for dir in [wt.join("sub"), wt.join(".claude/agents"), home.join(".ssh"), home.join(".claude/channels"), out.clone()] {
         std::fs::create_dir_all(dir).unwrap();
     }
     for (f, body) in [
@@ -1312,8 +1296,6 @@ fn worker_file_guard_lets_the_file_tools_edit_only_the_worktree_and_read_neither
         (wt.join(".claude/agents/worker.md"), "w"),
         (home.join(".ssh/id"), "key"),
         (home.join(".claude/channels/c"), "c"),
-        (home.join(".config/keel/router-gh/app.pem"), "key"),
-        (home.join(".config/keel/other"), "o"),
         (home.join(".claude/settings.json"), "{}"),
         (out.join("x.txt"), "x"),
         (out.join("h.txt"), "h"),
@@ -1376,21 +1358,10 @@ fn worker_file_guard_lets_the_file_tools_edit_only_the_worktree_and_read_neither
 
     // reads: anywhere but the two denied directories, however spelled
     let read = |p: &str| ev("Read", serde_json::json!({"file_path": p}));
-    for p in [o("x.txt"), h(".claude/settings.json"), w("a.txt"), w("link-out"), h(".config/keel/other")] {
+    for p in [o("x.txt"), h(".claude/settings.json"), w("a.txt"), w("link-out")] {
         assert_eq!(guard(read(&p)), None, "Read {p}");
     }
-    // E-GHFLOW.W2: the router bot's App key dir joins them
-    for p in [
-        h(".ssh/id"),
-        h(".SSH/id"),
-        h(".ssh"),
-        w("ssh-link"),
-        h(".claude/channels/c"),
-        h(".claude/Channels/c"),
-        h(".config/keel/router-gh/app.pem"),
-        h(".config/keel/Router-GH/app.pem"),
-        h(".config/keel/router-gh"),
-    ] {
+    for p in [h(".ssh/id"), h(".SSH/id"), h(".ssh"), w("ssh-link"), h(".claude/channels/c"), h(".claude/Channels/c")] {
         assert!(guard(read(&p)).is_some_and(|r| r.contains("is not readable to a worker")), "Read {p}");
     }
     // searches: not in them, and not over a directory holding them
@@ -1398,15 +1369,7 @@ fn worker_file_guard_lets_the_file_tools_edit_only_the_worktree_and_read_neither
     assert_eq!(search("Grep", serde_json::json!({"pattern": "x"})), None, "Grep in the cwd");
     assert_eq!(search("Grep", serde_json::json!({"pattern": "x", "path": "sub"})), None, "relative to the cwd");
     assert_eq!(search("Glob", serde_json::json!({"pattern": "*", "path": o("")})), None);
-    for (tool, p) in [
-        ("Grep", h("")),
-        ("Glob", h(".ssh")),
-        ("Grep", base.display().to_string()),
-        ("Glob", "/".to_string()),
-        ("Grep", h(".claude")),
-        ("Grep", h(".config")),
-        ("Glob", h(".config/keel/router-gh")),
-    ] {
+    for (tool, p) in [("Grep", h("")), ("Glob", h(".ssh")), ("Grep", base.display().to_string()), ("Glob", "/".to_string()), ("Grep", h(".claude"))] {
         assert!(search(tool, serde_json::json!({"pattern": "*", "path": p})).is_some(), "{tool} {p}");
     }
     assert!(search("Grep", serde_json::json!({"pattern": "x", "path": "../home"})).is_some_and(|r| r.contains(". or .. component")));
@@ -3615,16 +3578,16 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
                 "allowWrite": [g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
                     "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
                 "denyWrite": [format!("{g}/config"), format!("{g}/hooks"), format!("{g}/keel-hooks"), format!("{g}/info"),
-                    // E-GHFLOW.W3 security review P1 (R33): the git dir's commondir, then the worker's
+                    // backlog R33 (DEC-37): the git dir's commondir, then the worker's
                     // own admin link files, then every other worktree's
                     format!("{g}/commondir"), format!("{g}/config.worktree"),
                     format!("{g}/worktrees/{admin}/commondir"), format!("{g}/worktrees/{admin}/gitdir"), format!("{g}/worktrees/{admin}/config.worktree"),
                     format!("{g}/worktrees/{other}/commondir"), format!("{g}/worktrees/{other}/gitdir"), format!("{g}/worktrees/{other}/config.worktree"),
-                    // round 2 F1: by glob too, for an admin dir made after this spawn
+                    // by glob too, for an admin dir made after this spawn
                     format!("{g}/worktrees/*/commondir"), format!("{g}/worktrees/*/gitdir"), format!("{g}/worktrees/*/config.worktree"),
                     format!("{}/.git", wt.display()), format!("{}/.claude/settings.json", wt.display()),
                     format!("{}/.claude/settings.local.json", wt.display()), "~/.claude.json".to_string()],
-                "denyRead": ["~/.ssh", "~/.claude/channels", "~/.config/keel/router-gh"]
+                "denyRead": ["~/.ssh", "~/.claude/channels"]
             },
             "network": {"allowedDomains": ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}
         }})
@@ -3639,7 +3602,7 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
     }
 }
 
-/// E-GHFLOW.W3 security review P1 (backlog R33): a commondir file in the main git dir would send
+/// Backlog R33 (DEC-37): a commondir file in the main git dir would send
 /// every git the launcher runs to another repository's config. Workers are denied writing it; one
 /// found there stops every mode before any git runs or any session starts.
 #[test]
@@ -3649,7 +3612,7 @@ fn a_commondir_file_in_the_main_git_dir_stops_the_launcher() {
     std::fs::create_dir_all(&elsewhere).unwrap();
     let wt = l.wt.to_str().unwrap();
     let modes = [vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"], vec!["stop", "a"], vec!["worktree", "add", "epic/E"], vec!["watchdog", "start", "r"]];
-    // E-GHFLOW.W3 round 2: config.worktree too (a url.insteadOf or core.askPass there runs code)
+    // R33: config.worktree too (a url.insteadOf or core.askPass there runs code)
     for f in ["commondir", "config.worktree"] {
         let p = l.main.join(".git").join(f);
         std::fs::write(&p, format!("{}\n", elsewhere.display())).unwrap();
@@ -3665,7 +3628,7 @@ fn a_commondir_file_in_the_main_git_dir_stops_the_launcher() {
     assert!(calls(&l.state).is_empty(), "{:?}", calls(&l.state));
 }
 
-/// E-GHFLOW.W3 security review round 2, F1 (reproduced by the review: the owner's `git commit` in a
+/// R33, its second finding (reproduced by a security review: the owner's `git commit` in a
 /// later worktree ran a worker's pre-commit): a worker spawned earlier could write the admin dir of a
 /// worktree made later, which its spawn-time deny list does not name. Every launcher run checks every
 /// admin dir as linked_ok does, so a commondir that is not ../.., a config.worktree or a gitdir naming
@@ -3699,7 +3662,7 @@ fn every_worktree_admin_dir_is_checked_on_every_run() {
     }
     assert!(calls(&l.state).is_empty(), "{:?}", calls(&l.state));
     // restored, the launcher runs; an admin dir whose name holds a quote and a space (git names it
-    // after the checkout) is denied by name too (round 2 N-f: never skipped)
+    // after the checkout) is denied by name too (never skipped)
     let odd = l.main.parent().unwrap().join("o'd d");
     git(&l.main, &["worktree", "add", "-q", odd.to_str().unwrap(), "-b", "odd"]);
     let (ok, out) = l.run(&["spawn", "a", wt, ".router/briefs/b.md", "opus"]);
@@ -3895,7 +3858,7 @@ fn worktree_add_cuts_an_epic_or_wu_branch_off_its_base_at_the_derived_path() {
         assert_eq!(tip(b), at, "{b}");
     }
     assert_ne!(tip("epic/E-X"), tip("main"));
-    // E-GHFLOW2.W6: a task is cut off its WU branch; with no WU branch it is refused
+    // E-GHREVERT.W1, keep 4: a task is cut off its WU branch; with no WU branch it is refused
     git(&l.main, &["commit", "-q", "--allow-empty", "-m", "the WU moves on", "--no-verify"]);
     git(&l.main, &["branch", "-f", "wu/E-X/w5-e", "HEAD"]);
     let (ok, out) = l.run(&["worktree", "add", "wu/E-X/w5-e_skill-line"]);
@@ -4010,7 +3973,7 @@ fn router_guard_admits_the_two_worktree_shapes_in_plain_words_only() {
         "scripts/router-worker.sh worktree add wu/E-X/w1-a",
         "scripts/router-worker.sh worktree remove epic/E-X",
         "scripts/router-worker.sh worktree remove wu/E-X/w1-a",
-        // E-GHFLOW2.W6: a task
+        // E-GHREVERT.W1, keep 4: a task, which the guard admits as it did on 15 November
         "scripts/router-worker.sh worktree add wu/E-X/w1-a_skill-line",
         "scripts/router-worker.sh worktree remove wu/E-X/w1-a_skill-line",
     ] {
@@ -4136,305 +4099,4 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
     let tiers: Vec<String> = policy["mr"]["tiers"].as_array().unwrap().iter().map(|t| format!("{t}")).collect();
     let tiers = format!("tiers = [{}]", tiers.join(", "));
     assert!(read(".claude/skills/project-router/SKILL.md").contains(&tiers), "project-router does not state {tiers}");
-}
-
-/// E-GHFLOW.W2: whether `scripts/router-gh.sh` (this checkout's) accepts `args` in its argument check:
-/// past it, with an empty home, the script stops at the missing App key (router_gh_args::check runs
-/// it, and fails if anything reached curl).
-fn gh_validates(args: &[&str]) -> bool {
-    let (code, err) = crate::router_gh_args::check(args);
-    assert_eq!(code, Some(2), "{args:?}: {err}");
-    err.contains("router-gh: no App key at ")
-}
-
-/// E-GHFLOW.W2: the router guard admits router-gh.sh's five shapes in plain words and denies every
-/// other spelling: another mode (the git-only credential helper included), a flag, an extra word,
-/// main or a tag as a push, a .. path, quotes, an environment prefix.
-#[test]
-fn router_guard_admits_the_router_bots_shapes_and_no_other_spelling() {
-    for ok in [
-        "scripts/router-gh.sh push wu/E-GHFLOW/w2-router-bot",
-        "scripts/router-gh.sh push epic/E-GHFLOW",
-        "scripts/router-gh.sh pr-open wu/E-GHFLOW/w2-router-bot",
-        "scripts/router-gh.sh pr-open epic/E --base main",
-        // E-GHFLOW2.W6: a task, and sync of a WU branch the owner merged a task into
-        "scripts/router-gh.sh push wu/E-X/w9-export_skill-line",
-        "scripts/router-gh.sh pr-open wu/E/x_t",
-        "scripts/router-gh.sh sync wu/E/x",
-        "scripts/router-gh.sh pr-open epic/E-GHFLOW",
-        "scripts/router-gh.sh pr-ready 12",
-        "scripts/router-gh.sh pr-ready 9999999",
-        "scripts/router-gh.sh post 12 review",
-        "scripts/router-gh.sh post 1 round_2-status",
-        "scripts/router-gh.sh sync epic/E-GHFLOW",
-        " scripts/router-gh.sh sync epic/E ",
-        // E-GHFLOW2.W4: main moves only on GitHub once the rules are on; sync brings it back
-        "scripts/router-gh.sh sync main",
-    ] {
-        assert_eq!(bash(ok), None, "{ok}");
-    }
-    for denied in [
-        "scripts/router-gh.sh",
-        "scripts/router-gh.sh push",
-        "scripts/router-gh.sh push main",
-        "scripts/router-gh.sh push v1.0",
-        "scripts/router-gh.sh push refs/tags/v1",
-        "scripts/router-gh.sh push refs/heads/wu/E/x",
-        "scripts/router-gh.sh push wu/E/x:main",
-        "scripts/router-gh.sh push +wu/E/x",
-        "scripts/router-gh.sh push wu/E/x --force",
-        "scripts/router-gh.sh push -f wu/E/x",
-        "scripts/router-gh.sh push --force-with-lease wu/E/x",
-        "scripts/router-gh.sh push wu/E/x wu/E/y",
-        "scripts/router-gh.sh push wu/E",
-        "scripts/router-gh.sh push wu/E/x/y",
-        "scripts/router-gh.sh push epic/E/x",
-        "scripts/router-gh.sh push wu/E/x..y",
-        "scripts/router-gh.sh push wu/E/-x",
-        "scripts/router-gh.sh push wu/E/x@1",
-        "scripts/router-gh.sh push epic/E~1",
-        "scripts/router-gh.sh push epic/E^",
-        "scripts/router-gh.sh push 'wu/E/x'",
-        r#"scripts/router-gh.sh push "wu/E/x""#,
-        "scripts/router-gh.sh push wu/E/x; id",
-        "scripts/router-gh.sh push $(id)",
-        "X=1 scripts/router-gh.sh push wu/E/x",
-        "ROUTER_GH_API=https://127.0.0.1:1 scripts/router-gh.sh push wu/E/x",
-        "sh scripts/router-gh.sh push wu/E/x",
-        "./scripts/router-gh.sh push wu/E/x",
-        "scripts/../scripts/router-gh.sh push wu/E/x",
-        "scripts/router-gh.sh  push wu/E/x",
-        // E-GHFLOW2.W4 review: a WU into main would skip its epic's gate
-        "scripts/router-gh.sh pr-open wu/E/x --base main",
-        // W4 review nit 5, E-GHFLOW2.W6: a WU's base, and a task's, is derived
-        "scripts/router-gh.sh pr-open wu/E/x --base epic/F",
-        "scripts/router-gh.sh pr-open wu/E/x --base epic/E",
-        "scripts/router-gh.sh pr-open wu/E/x_t --base wu/E/x",
-        "scripts/router-gh.sh pr-open wu/E/x --base",
-        "scripts/router-gh.sh pr-open wu/E/x --base=main",
-        "scripts/router-gh.sh pr-open wu/E/x --base wu/E/y",
-        "scripts/router-gh.sh pr-open wu/E/x --base main extra",
-        "scripts/router-gh.sh pr-open wu/E/x --head main",
-        "scripts/router-gh.sh pr-open main",
-        "scripts/router-gh.sh pr-ready 0",
-        "scripts/router-gh.sh pr-ready 012",
-        "scripts/router-gh.sh pr-ready 12345678",
-        "scripts/router-gh.sh pr-ready -1",
-        "scripts/router-gh.sh pr-ready 1 2",
-        "scripts/router-gh.sh post 12",
-        "scripts/router-gh.sh post 12 a.md",
-        "scripts/router-gh.sh post 12 ../a",
-        "scripts/router-gh.sh post 12 a/b",
-        "scripts/router-gh.sh post 12 -a",
-        "scripts/router-gh.sh post 12 a b",
-        &format!("scripts/router-gh.sh post 12 {}", "a".repeat(65)),
-        "scripts/router-gh.sh sync wu/E",
-        // W6 security review: a task is neither synced nor given an issue
-        "scripts/router-gh.sh sync wu/E/x_t",
-        " scripts/router-gh.sh sync wu/E/x_t ",
-        "scripts/router-gh.sh issue wu/E-X/w9-export_skill-line",
-        "scripts/router-gh.sh sync main2",
-        "scripts/router-gh.sh sync main epic/E",
-        "scripts/router-gh.sh sync refs/heads/main",
-        "scripts/router-gh.sh credential /tmp/router-gh.abcdef/token get",
-        "scripts/router-gh.sh merge 12",
-        "scripts/router-gh.sh approve 12",
-    ] {
-        assert!(bash(denied).is_some(), "admitted: {denied}");
-    }
-    assert!(bash("rm x").unwrap().contains("scripts/router-gh.sh push <wu/E/slug or epic/E>"), "deny message omits the router bot's shapes");
-}
-
-/// A near-miss branch word for the guard-and-script agreement tests: one of `prefixes`, then up to
-/// `max - 1` characters the guard's word class holds, as `next` picks them.
-fn near_miss_branch(next: &mut dyn FnMut(usize) -> usize, prefixes: &[&str], max: usize) -> String {
-    let alpha: Vec<char> = "aZ09._/:=@%,+^~-".chars().collect();
-    let mut w = prefixes[next(prefixes.len())].to_string();
-    for _ in 0..next(max) {
-        w.push(alpha[next(alpha.len())]);
-    }
-    w
-}
-
-/// A name `git check-ref-format` refuses (a component ending in `.` or `.lock`): the guard's
-/// pattern admits it and the script refuses it, the one gap the agreement tests excuse.
-fn ref_format_refuses(w: &str) -> bool {
-    w.split('/').any(|c| c.ends_with('.') || c.ends_with(".lock"))
-}
-
-/// E-GHFLOW.W2, invariant: over generated near-miss words (deduplicated), whatever the script's
-/// argument check accepts the guard admits, and the guard admits nothing the check refuses but the
-/// names `git check-ref-format` refuses (a component ending in `.` or `.lock`) and an epic as its own
-/// base (`pr-open epic/E --base epic/E`, generated for every epic-shaped word).
-#[test]
-fn the_guard_and_router_gh_take_the_same_arguments() {
-    let mut next = common::lcg(0x5eed_6a7e);
-    let prefixes = ["epic/", "wu/", "wu/E/", "wu/E-X/", "main", "", "refs/heads/", "-", "epic", "wu/E/x"];
-    let mut words: Vec<String> = Vec::new();
-    for _ in 0..90 {
-        words.push(near_miss_branch(&mut next, &prefixes, 7));
-    }
-    words.extend(["epic/E.lock", "wu/E/x.", "wu/E./x", "epic/E", "wu/E/x", "main"].map(String::from));
-    words.sort();
-    words.dedup();
-    let (mut accepted, mut own_bases) = (0, 0);
-    for w in &words {
-        let mut shapes = vec![vec!["push", w.as_str()], vec!["sync", w.as_str()], vec!["pr-open", w.as_str()], vec!["pr-open", "wu/E/x", "--base", w.as_str()]];
-        // an epic as its own base: the guard admits it, the script refuses it
-        if w.starts_with("epic/") {
-            shapes.push(vec!["pr-open", w.as_str(), "--base", w.as_str()]);
-        }
-        for args in shapes {
-            let line = format!("scripts/router-gh.sh {}", args.join(" "));
-            let (admitted, ok) = (bash(&line).is_none(), gh_validates(&args));
-            accepted += usize::from(ok);
-            assert!(!ok || admitted, "the script accepts what the guard denies: {line}");
-            let own_base = args.len() == 4 && args[1] == args[3];
-            own_bases += usize::from(own_base && admitted && !ok);
-            assert!(!admitted || ok || ref_format_refuses(w) || own_base, "the guard admits what the script refuses: {line}");
-        }
-    }
-    assert!(own_bases >= 1, "the corpus must hold an epic as its own base");
-    let digits: Vec<char> = "0123456789-+a".chars().collect();
-    let name_alpha: Vec<char> = "aZ09_-.".chars().collect();
-    for _ in 0..40 {
-        let n: String = (0..1 + next(9)).map(|_| digits[next(digits.len())]).collect();
-        let name: String = (0..1 + next(8)).map(|_| name_alpha[next(name_alpha.len())]).collect();
-        for args in [vec!["pr-ready", n.as_str()], vec!["post", n.as_str(), "review"], vec!["post", "7", name.as_str()]] {
-            let line = format!("scripts/router-gh.sh {}", args.join(" "));
-            let (admitted, ok) = (bash(&line).is_none(), gh_validates(&args));
-            accepted += usize::from(ok);
-            assert_eq!(admitted, ok, "guard and script disagree on: {line}");
-        }
-    }
-    assert!(accepted >= 10, "the corpus must hold accepted words too ({accepted})");
-}
-
-/// E-GHFLOW.W3: the router guard admits the GitHub watch's four kinds and `router-gh.sh issue` in
-/// plain words and denies every other spelling: `since` on merged or checks, the internal
-/// watch-read, flags, extra words, a leading zero, quotes, an environment prefix, another path.
-#[test]
-fn router_guard_admits_the_github_watch_and_issue_shapes_and_no_other_spelling() {
-    for ok in [
-        "scripts/router-gh-watch.sh review 31",
-        "scripts/router-gh-watch.sh review 31 since 2468013579",
-        "scripts/router-gh-watch.sh comment 30",
-        "scripts/router-gh-watch.sh comment 9999999 since 999999999999999",
-        "scripts/router-gh-watch.sh merged 31",
-        "scripts/router-gh-watch.sh checks 31",
-        "scripts/router-gh-watch.sh conflict 31",
-        "scripts/router-gh-watch.sh comment 30 since latest",
-        "scripts/router-gh-watch.sh review 31 since latest",
-        "scripts/router-gh.sh issue epic/E-GHFLOW",
-        "scripts/router-gh.sh issue wu/E-GHFLOW/w3-gh-watch",
-        " scripts/router-gh-watch.sh merged 1 ",
-    ] {
-        assert_eq!(bash(ok), None, "{ok}");
-    }
-    for denied in [
-        "scripts/router-gh-watch.sh",
-        "scripts/router-gh-watch.sh review",
-        "scripts/router-gh-watch.sh review 0",
-        "scripts/router-gh-watch.sh review 031",
-        "scripts/router-gh-watch.sh review 12345678",
-        "scripts/router-gh-watch.sh review -1",
-        "scripts/router-gh-watch.sh review 31 since",
-        "scripts/router-gh-watch.sh review 31 since 0",
-        "scripts/router-gh-watch.sh review 31 since 1234567890123456",
-        "scripts/router-gh-watch.sh review 31 after 2",
-        "scripts/router-gh-watch.sh review 31 since 2 3",
-        "scripts/router-gh-watch.sh review 31 --since 2",
-        "scripts/router-gh-watch.sh merged 31 since 2",
-        "scripts/router-gh-watch.sh merged 31 since latest",
-        "scripts/router-gh-watch.sh comment 30 since Latest",
-        "scripts/router-gh-watch.sh comment 30 since latest 2",
-        "scripts/router-gh-watch.sh comment 30 latest",
-        "scripts/router-gh-watch.sh checks 31 since 2",
-        "scripts/router-gh-watch.sh conflict 31 since 2",
-        "scripts/router-gh-watch.sh conflict 0",
-        "scripts/router-gh-watch.sh conflict 31 x",
-        "scripts/router-gh-watch.sh conflict -1",
-        "scripts/router-gh-watch.sh approve 31",
-        "scripts/router-gh-watch.sh REVIEW 31",
-        "scripts/router-gh-watch.sh comment 30; id",
-        "scripts/router-gh-watch.sh comment '30'",
-        "scripts/router-gh-watch.sh comment $(id)",
-        "ROUTER_WATCH_POLL=1 scripts/router-gh-watch.sh comment 30",
-        "ROUTER_GH_CURL=/tmp/x scripts/router-gh-watch.sh comment 30",
-        "sh scripts/router-gh-watch.sh comment 30",
-        "./scripts/router-gh-watch.sh comment 30",
-        "scripts/../scripts/router-gh-watch.sh comment 30",
-        "scripts/router-gh-watch.sh  comment 30",
-        "scripts/router-gh.sh watch-read comment 30",
-        "scripts/router-gh.sh issue",
-        "scripts/router-gh.sh issue main",
-        "scripts/router-gh.sh issue 30",
-        "scripts/router-gh.sh issue wu/E",
-        "scripts/router-gh.sh issue wu/E/x extra",
-        "scripts/router-gh.sh issue -x",
-        "scripts/router-gh.sh issue epic/E --base main",
-    ] {
-        assert!(bash(denied).is_some(), "admitted: {denied}");
-    }
-    let msg = bash("rm x").unwrap();
-    assert!(
-        msg.contains("scripts/router-gh-watch.sh review|comment <n> [since <id>|latest] | merged|checks|conflict <n>")
-            && msg.contains("issue <wu/E/slug or epic/E>"),
-        "deny message omits the new shapes: {msg}"
-    );
-}
-
-/// E-GHFLOW.W3, invariant: over generated near-miss words, the guard admits a watch or `issue` line
-/// exactly when the script's argument check accepts it, but for the names `git check-ref-format`
-/// refuses (as for W2's shapes).
-#[test]
-fn the_guard_and_the_github_watch_take_the_same_arguments() {
-    let mut next = common::lcg(0x3a7c_4b1d);
-    let digits: Vec<char> = "0123456789-+a.".chars().collect();
-    // mostly plain numbers of every length around the bounds, else any of the near-miss characters
-    let num = |next: &mut dyn FnMut(usize) -> usize, max: usize| -> String {
-        if next(3) != 0 {
-            let lead = if next(4) != 0 { 1 + next(9) } else { 0 };
-            let rest: String = (0..next(max)).map(|_| char::from(b'0' + next(10) as u8)).collect();
-            format!("{lead}{rest}")
-        } else {
-            (0..1 + next(max)).map(|_| digits[next(digits.len())]).collect()
-        }
-    };
-    let kinds = ["review", "comment", "merged", "checks", "conflict", "Review", "watch", "since"];
-    let mut corpus: Vec<Vec<String>> = Vec::new();
-    for _ in 0..60 {
-        let k = kinds[next(kinds.len())].to_string();
-        let n = num(&mut next, 8);
-        let id = num(&mut next, 16);
-        let s = |v: &[&str]| v.iter().map(|w| w.to_string()).collect::<Vec<String>>();
-        corpus.push(s(&[&k, &n]));
-        corpus.push(s(&[&k, &n, "since", &id]));
-        corpus.push(s(&[&k, "7", "since", &id]));
-        if next(2) == 0 {
-            corpus.push(s(&[&k, "7", "after", "9"]));
-        }
-        corpus.push(s(&[&k, "7", "since", ["latest", "Latest", "latest1", "last"][next(4)]]));
-    }
-    // deduplicated, as its W2 sibling's corpus (code review round 1)
-    corpus.sort();
-    corpus.dedup();
-    let (mut admitted_n, mut checked) = (0, 0);
-    for args in &corpus {
-        let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        let line = format!("scripts/router-gh-watch.sh {}", args.join(" "));
-        let (admitted, ok) = (bash(&line).is_none(), crate::router_gh_watch_args::accepts(&args));
-        assert_eq!(admitted, ok, "guard and watch disagree on: {line}");
-        admitted_n += usize::from(admitted);
-        checked += 1;
-    }
-    assert!(admitted_n >= 10 && checked > admitted_n, "the corpus must hold both verdicts ({admitted_n} of {checked})");
-    let prefixes = ["epic/", "wu/", "wu/E/", "main", "", "-", "wu/E/x"];
-    for _ in 0..40 {
-        let w = near_miss_branch(&mut next, &prefixes, 6);
-        let line = format!("scripts/router-gh.sh issue {w}");
-        let (admitted, ok) = (bash(&line).is_none(), gh_validates(&["issue", w.as_str()]));
-        assert!(!ok || admitted, "the script accepts what the guard denies: {line}");
-        assert!(!admitted || ok || ref_format_refuses(&w), "the guard admits what the script refuses: {line}");
-    }
 }

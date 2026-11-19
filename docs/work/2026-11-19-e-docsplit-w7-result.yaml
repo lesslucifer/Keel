@@ -1,0 +1,64 @@
+artifact: wu-result
+status: ready
+id: E-DOCSPLIT.W7
+epic: E-DOCSPLIT
+title: Bring main into E-DOCSPLIT
+date: "2026-11-19"
+page: 2026-11-19-e-docsplit-w7-result.html
+outcome: >-
+  Delivered as the approved plan (0d5b822, every open point on its default) routed it. Main 8196b71 (E-GHREVERT
+  closed) is merged into E-DOCSPLIT in the owner's keel mr commit 6890058, the 22 conflicts resolved exactly as
+  rehearsed: its tree equals the rehearsal merge f30a7ad outside docs/work. The two caps landed in the owner's
+  keel mr commit e11dd55, equal to the rehearsal's 5134de1 config. E-GHREVERT.W2's removals are ported into the 10
+  epic-only files in 2cf381b, equal to the rehearsal's 63f45b4. No GitHub-flow code, record, row or page is left: the
+  only hits for the removed ids are the three "never reused" lines. The github tier is still read and signs nothing
+  (E-KEELFIX removes it). cargo test (133 unit, 345 suite, 10 ignored), fmt, clippy, keel check and keel verify-doc
+  are green, with the caps in force.
+deviations:
+  - what: Before the owner's skills copy, five tests were red, not the three the router expected.
+    why: >-
+      All five failed at one point (tests/common/mod.rs:110): git write-tree refused while
+      .claude/skills/keel-workflow/SKILL.md was unmerged. The self-hosting tests (init::self_hosting_check_passes_mid_merge_of_a_skill_change,
+      init::self_hosting_clone_is_gated_and_init_is_a_noop,
+      init::self_hosting_new_worktree_reads_the_committed_roster_and_copies_no_local_one,
+      router::epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end,
+      router::keels_router_security_files_are_rule_bearing) snapshot this repository's index. After the owner's
+      cp -R skills/. .claude/skills/ and git add, the suite was 345 passed, 0 failed, as in the rehearsal.
+  - what: Some commands were refused in the rehearsal, so the plan's hook finding came from the source, not a live run.
+    why: >-
+      Refused: git clone -q --shared -b epic/E-DOCSPLIT from this worktree's path (a clone from the main checkout
+      was allowed and used); git switch, git worktree add, and git symbolic-ref with reset --hard inside the scratch
+      clone (a second clone with --branch was used); keel hooks install in the scratch clone (auto mode classifier,
+      "Undermining Oversight"). The finding has since held live: both owner commits, the merge 6890058 and the caps
+      e11dd55, went through Keel's hooks in this worktree with keel mr commit.
+  - what: In the rehearsal the port first left two YAML entries mis-indented.
+    why: >-
+      backlog-index.yaml (the closed E-GHREVERT rank) and e-router-v2.yaml (the closed R50) were indented one level
+      too deep by the edit script; keel verify-doc refused both as invalid YAML and they were fixed before the
+      rehearsal commit, so 63f45b4 and 2cf381b carry the fixed files.
+evidence:
+  commits:
+    - "0d5b822 the W7 plan pair (plain); test note waived (plan only) and doc note"
+    - "6890058 the merge, the owner's keel mr commit (Reviewed-By: username vuluu); parents 0d5b822 and 8196b71; git diff f30a7ad 6890058 outside docs/work is empty"
+    - "e11dd55 the caps, the owner's keel mr commit (Reviewed-By: username vuluu); .keel/config.toml equal to the rehearsal's 5134de1"
+    - "2cf381b the port, 10 files under docs/ (plain); its tree outside docs/work equals the rehearsal's 5134de1"
+    - "this result pair (plain), then test and doc notes on its tip"
+  tests:
+    integration: "tests/suite/mr.rs (github_fixture's report a pair: the three keep-3 tests) and tests/suite/ghrevert_e2e.rs (its plan, result and epic result pairs) - main's tests made to read E-DOCSPLIT's pairs; red in the rehearsal before (4 failed: 'no wu-result report (a page with a data file whose artifact is wu-result)'), green after"
+    runs: "at 2cf381b: test result ok, 133 passed (unit); ok, 345 passed, 0 failed, 10 ignored (suite, 31.05s); cargo fmt --check 0; cargo clippy --all-targets -D warnings 0; keel check (branch build) 0, 'check green - cached'; keel verify-doc 0 with the caps"
+    noise: "the suite prints one line 'jq: parse error: Invalid numeric literal at line 1, column 4' from a guard test that feeds bad JSON; the run is green"
+  checks:
+    - "git grep -P 'DEC-6[0-8]\\b|UC-(GATE-7|MR-3|ROUTE-7|DOC-5)\\b|github-flow' -- docs ':(exclude)docs/work': three lines, the never-reused notes in backlog-index.yaml, decisions-index.yaml and use-cases-index.yaml"
+    - "none of scripts/ci-gate.sh, ci-sign-off.sh, router-gh.sh, router-gh-watch.sh, src/ci.rs, tests/suite/ci_gate.rs, router_gh.rs, sign_off.rs, split_prs.rs exists; .github/ holds only workflows/release.yml (the keep, as on main)"
+    - "src/notes.rs has no write_report"
+    - "diff -rq skills .claude/skills: only 'Only in .claude/skills: project-router'"
+    - "the conflict list at the owner's merge equalled the rehearsal's: 22 unmerged (8 UU: both keel-workflow skill copies, src/notes.rs, architecture, install and three decision pages; 7 DU pages the epic made data files; 7 UD scripts and tests) and 44 merged clean"
+  docs: "docs/architecture.html, docs/install.html, decisions/distribution.html, router.html, workflow-gates.html (the merge); the 10 port files; this pair and the plan pair"
+  rehearsal: "/tmp/claude-502/w7-rehearse.talM (bundle w7-rehearsal.bundle, caps.patch); fetched to FETCH_HEAD only, no ref"
+distillation: >-
+  Nothing citable: W7 makes E-DOCSPLIT's records equal main's. The truth it carries is already in T1/T2 on main and
+  now on the epic: DEC-70's amendment (no record replaces the flow's), the never-reused lines in the decision and
+  use-case indexes, architecture's keeps, and backlog local-app A1 closed with part 5 done by this WU.
+follow-ups:
+  - "This page and the W7 plan page keep their old tags until the epic reaches main (main's sign-off still reads them). Takes: the E-DOCSPLIT close."
+  - "The github tier's reading in keel (read, signs nothing). Takes: E-KEELFIX (backlog local-app A2), once E-DOCSPLIT is on main."

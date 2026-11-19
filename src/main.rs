@@ -1,4 +1,3 @@
-mod ci;
 mod gate;
 mod init;
 mod mr;
@@ -30,14 +29,6 @@ struct Config {
     tests: TestsCfg,
     #[serde(default)]
     mr: MrCfg,
-    /// `[github]`, read by keel only for `repo`: a review page a sign-off by approval names must be on
-    /// that repository (E-GHFLOW2.W3). Its other keys are the router scripts'.
-    #[serde(default)]
-    github: GithubCfg,
-}
-#[derive(Deserialize, Default)]
-struct GithubCfg {
-    repo: Option<String>,
 }
 /// Signer tiers this project accepts from .keel/mr-allowed (Q10: configurable, Trawler's three by default),
 /// and whether a WU/epic sign-off must attest a result report.
@@ -48,8 +39,9 @@ struct MrCfg {
     #[serde(default)]
     report: ReportPolicy,
 }
+/// The default policy, which mr owns: every tier that signs (E-GHREVERT.W1, keep 3).
 fn known_tiers() -> Vec<String> {
-    mr::DEFAULT_TIERS.iter().map(|t| t.to_string()).collect()
+    mr::default_tiers()
 }
 impl Default for MrCfg {
     fn default() -> Self {
@@ -746,12 +738,9 @@ fn run() -> Result<i32, String> {
         ["verify-doc", paths @ ..] => verify_doc(&repo, paths),
         ["verify-dod", "hook"] => gate::verify_dod(&repo, &load_config_at_head(&repo)?, &["hook"]),
         ["verify-dod", rest @ ..] => gate::verify_dod(&repo, &load_config(&repo)?, rest),
-        ["ci", "gate", rest @ ..] => gate::ci_gate(&repo, &load_config(&repo)?, rest),
-        ["ci", "sign-off", rest @ ..] => mr::sign_off(&repo, &load_config(&repo)?, rest),
-        ["ci", ..] => Err(format!("{}\n       {}", gate::CI_USAGE, mr::SIGN_OFF_USAGE)),
         ["preflight", rest @ ..] => gate::preflight_cmd(&repo, &load_config(&repo)?, rest),
         ["mr", rest @ ..] => mr::run(&repo, &load_config(&repo)?, rest),
-        _ => Err("usage: keel <init [-f] | lint | check | verify-doc | verify-dod | preflight | ci gate | mr <setup|commit|confirm> | hooks install [--force] | notes write <test|doc|cr|report>>".into()),
+        _ => Err("usage: keel <init [-f] | lint | check | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install [--force] | notes write <test|doc|cr>>".into()),
     }
 }
 

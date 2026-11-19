@@ -10,37 +10,15 @@ about: >-
   under "The build order"; the needs n1 - n10 are listed there too. Distilled from E-LOCALTOOL (W5 result, P4 to P6,
   and the close).
 open:
-  - id: A1
-    title: "E-GHREVERT · Back to before GitHub"
-    status: next
-    problem: >-
-      First use: the gate, the sign-off and the merge on your Mac again, with GitHub's flow gone (n3); you push as
-      before.
-    proposal: >-
-      In order: (1) your GitHub settings off: the `keel-merge` ruleset, auto-merge, Pages, the App and its key folder;
-      until then GitHub refuses your push of main or an epic. (2) One revert of the five merges that brought the flow
-      (`6cf3127`, `e0a31c5`, `481e2b5`, `e0536b7`, `72cae9d`, newest first, `git revert --no-commit -m 1`), so main's
-      files are as at `8d48a44`; the rule files by your `keel mr commit`. (3) Four keeps: `release.yml` with no
-      pull-request run; the shared git-folder checks (e-router-v2 R33); keel's checkout check before `keel mr` (R50)
-      and keel reading the github tier and line, signing nothing; task branches merged on your Mac. (4) The records by
-      hand: DEC-60 - DEC-62 and DEC-64 - DEC-68 marked replaced by its own record (DEC-63 stays); UC-GATE-7, UC-MR-3,
-      UC-ROUTE-7, UC-DOC-5 marked replaced; the GitHub section of the architecture and install docs removed; the
-      github-flow topic closed. (5) E-LOCALTOOL and E-DOCSPLIT merge main in. Its test: in a scratch repository, a
-      typed sign-off and a local merge pass, the push hook passes, and a signer list with a github line still reads.
-      Takes: github-flow G2, G4, G5, G7, G10, and G11 (on E-DOCSPLIT's branch). Waits on: nothing.
-    source: >-
-      E-LOCALTOOL.W5 result, P1 and P4 (archived).
-    taken-by: "E-GHREVERT"
-
   - id: A2
     title: "E-KEELFIX · Keel fixes"
-    status: after A1
+    status: next; A1 done
     problem: >-
       First use: your rule-file commit runs the committed rules, and the gate can run with nothing written (n3).
     proposal: >-
-      Parts: K9, the commit hooks read the committed `.keel/config.toml`, not the folder's file; K2,
-      `keel verify-dod … --no-receipt`; `keel notes write … --help` prints help and writes no note; the github tier's
-      reading removed once E-LOCALTOOL and E-DOCSPLIT are on main. Waits on: A1.
+      Parts: K9, the commit hooks read the committed `.keel/config.toml`, not the folder's file; K2, `keel verify-dod
+      … --no-receipt`; `keel notes write … --help` prints help and writes no note; the github tier's reading removed
+      once E-DOCSPLIT is on main (E-LOCALTOOL is). Waits on: A1 (done).
     source: >-
       E-LOCALTOOL.W5 result, P4 to P6, and the close.
     taken-by: "E-KEELFIX"
@@ -148,4 +126,13 @@ open:
     source: >-
       E-GHSETUP W3, at its close (2026-11-19).
     taken-by: "E-RELEASE"
-closed: []
+closed:
+  - id: A1
+    title: "E-GHREVERT · Back to before GitHub"
+    closed: >-
+      done by E-GHREVERT, closed 2026-11-19: your GitHub settings off; one revert of the five merges, so main's files
+      are as at `8d48a44`; four keeps (`release.yml` with no pull-request run, the shared git-folder checks R33, the
+      checkout check before `keel mr` R50 with the github tier read and signing nothing, task branches merged on your
+      Mac); the records back to before GitHub, no new decision (the owner's ruling of 2026-11-19); the epic test
+      `tests/suite/ghrevert_e2e.rs`. The github tier is read until E-DOCSPLIT is on main (A2 removes it); part 5 is
+      E-DOCSPLIT's merge of main (E-DOCSPLIT.W7). Result: the E-GHREVERT epic result (archived).

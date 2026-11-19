@@ -19,7 +19,6 @@ disagrees with this file, they win — fix this file.
 | Remote | `<origin url>` |
 | Owner identity | `--as <id>` (listed in the committed `.keel/mr-allowed`; key-backed where `[mr] tiers` asks for keys) |
 | Shared resources | `<fixed ports, single-instance sockets, real app data dirs>` |
-| GitHub bot · watch | `<the project's <gh> and <gh-watch> scripts (keel-router "The GitHub flow"), whether its watchdog checks the git links, or none: the owner pushes>` |
 
 ## Harness and permissions
 | Thing | Value |
@@ -35,8 +34,7 @@ disagrees with this file, they win — fix this file.
 | Plans, code, tests, results, distillation, `keel notes write`, `keel preflight`, `keel verify-dod`, the keel-code-review skill | worker |
 | Independent read-only review of what no gate reviews; reading CI runs and git state | router (strongest-model subagent) |
 | `keel mr commit` / `keel mr confirm` | **owner only** — the router stages, never runs |
-| Pushing work branches, their pull requests | router through `<gh>` where the project has one; else owner |
-| `git merge --no-ff`, `git push` of main, tags, `<CI dispatch, secret uploads>` | owner |
+| `git merge --no-ff`, `git push`, tags, `<CI dispatch, secret uploads>` | owner |
 
 ## Sign-off sequences
 Default per the keel-workflow skill; exact owner commands in the keel-router skill's `references/commands.md`. Record only where this project differs:

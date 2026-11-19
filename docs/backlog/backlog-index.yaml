@@ -1,6 +1,7 @@
 # Keel backlog index: data only, no page (DEC-69). Read it first, then open only the file you need.
 # Each backlog file holds its open rows in full and each closed row as its id, title and how it closed.
 # Ids are never reused: a new row takes its letter's next-free id, checked on every live branch first.
+# Letter G (github-flow, G1 - G11) went with the GitHub flow (E-GHREVERT, 2026-11-19); it is not reused.
 files:
   - letter: B
     file: e-seed-v2.yaml
@@ -14,19 +15,11 @@ files:
       Router work deferred at the E-ROUTER close and since: the launcher, the worker environment and sandbox, the
       watchdog, the report channel, the shared git dir; rows for the next router epic.
     next-free: R52
-  - letter: G
-    file: github-flow.yaml
-    scope: >-
-      The GitHub flow after the E-GHFLOW and E-GHFLOW2 closes: CI follow-ups, test nits, what the sign-off by
-      approval leaves, the owner's GitHub steps and the live facts still owed; the bot's pull-request range (G11).
-      The flow is dropped (DEC-70): G2, G4, G5, G7, G10 and G11 struck to E-GHREVERT at the E-LOCALTOOL close, the rest
-      kept as history; the topic closes when E-GHREVERT lands.
-    next-free: G12
   - letter: A
     file: local-app.yaml
     scope: >-
-      From the E-LOCALTOOL close: back to before GitHub (A1, E-GHREVERT), keel fixes (A2), the app's three build epics
-      (A3 - A5), in order.
+      From the E-LOCALTOOL close: back to before GitHub (A1, done by E-GHREVERT), keel fixes (A2), the app's three
+      build epics (A3 - A5), in order.
     next-free: A6
   - letter: L
     file: local-app.yaml
@@ -41,59 +34,55 @@ files:
       the worker plugin's cold resume.
     next-free: D4
 # The ranked open work. Owner ruling 2026-11-10: the proposed epics are proposals, not commitments; the owner
-# orders them. Ranks 1 - 5 drafted by E-LOCALTOOL.W5, E-GHREVERT first by the owner's ruling of 2026-11-19. Rank 6 holds
+# orders them. Ranks 1 - 4 drafted by E-LOCALTOOL.W5, after E-GHREVERT (its first, closed 2026-11-19). Rank 5 holds
 # the four proposed epics, unordered among themselves.
 order:
   - rank: 1
-    epic: E-GHREVERT · back to before GitHub
-    status: next, as soon as possible (owner ruling 2026-11-19)
-    rows: local-app A1; takes github-flow G2, G4, G5, G7, G10 and G11
-  - rank: 2
     epic: E-KEELFIX · keel fixes
-    status: proposed, after E-GHREVERT
+    status: next (E-GHREVERT closed)
     rows: local-app A2
-  - rank: 3
+  - rank: 2
     epic: E-APPLIST · alerts and your list
-    status: proposed, after E-GHREVERT
+    status: proposed; E-GHREVERT closed
     rows: local-app A3
-  - rank: 4
+  - rank: 3
     epic: E-APPSIGN · sign off and merge from the app
     status: proposed, after E-KEELFIX and E-APPLIST
     rows: local-app A4
-  - rank: 5
+  - rank: 4
     epic: E-APPFLEET · fleet, epics, many projects
     status: proposed, after E-APPLIST and E-APPSIGN
     rows: local-app A5
-  - rank: 6
+  - rank: 5
     epic: E-RELEASE
     status: proposed
     rows: >-
       What backlog B1 left before a real release: the owner prerequisites, the owner's `dist plan` / `dist generate`
       check, a prerelease-tag run, the first stable tag, the accepted-risk revisits of DEC-38, and the fixed `keel` on
       `PATH` (DEC-41); local-app L5, the pinned install script, when planned.
-  - rank: 6
+  - rank: 5
     epic: E-LINEAGE
     status: proposed
     rows: B5
-  - rank: 6
+  - rank: 5
     epic: E-GATEFIX
     status: proposed
     rows: "B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14"
-  - rank: 6
+  - rank: 5
     epic: E-MULTILANG
     status: proposed
     rows: "B3: the Python e2e first, then other languages"
-  - rank: 7
+  - rank: 6
     epic: the next router epic
     status: not yet proposed; the owner orders it
     rows: >-
-      R5's live part, R6 row 4's note, R7's open rows, R14 (DEC-48 item 4), R20 - R29, R31, R32, R34 - R42,
-      R44 - R48, R50, R51. R40, the live check of `auto`, is owed at the first spawn after E-WMODE's merge; R47's L3
-      is wanted soon.
+      R5's live part, R6 row 4's note, R7's open rows, R14 (DEC-48 item 4), R20 - R29, R31, R32, R34 - R42, R44 -
+      R48, R51. R40, the live check of `auto`, is owed at the first spawn after E-WMODE's merge; R47's L3 is wanted
+      soon.
   - rank: none
-    epic: the next GitHub-flow epic
-    status: struck 2026-11-19, the flow is dropped (DEC-70)
-    rows: its rows go to E-GHREVERT (rank 1)
+    epic: E-GHREVERT · back to before GitHub
+    status: "closed 2026-11-19: the flow reverted, the five keeps kept, typed sign-off and local merge back"
+    rows: local-app A1 done
   - rank: none
     epic: E-GHSETUP
     status: closed 2026-11-19 by the owner's ruling, not merged; its six work units dropped
@@ -101,7 +90,7 @@ order:
   - rank: none
     epic: E-LOCALTOOL
     status: "closed 2026-11-19: ideas and draft screens, no code"
-    rows: local-app A1 - A5 and L1 - L5 added; github-flow G2, G4, G5, G7, G10 struck to E-GHREVERT
+    rows: local-app A1 - A5 and L1 - L5 added
   - rank: none
     epic: the desktop-dsh project, not a Keel epic
     status: open

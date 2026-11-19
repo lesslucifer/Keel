@@ -11,7 +11,7 @@ code_paths = ["src/", "tests/"]
 
 # Commits touching these need a Reviewed-By trailer (`keel mr commit`).
 # A trailing / is a prefix; otherwise a glob (* and ? within a segment, ** across).
-rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json", "scripts/router-guard.jq", "scripts/router-inbox.sh", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", "scripts/router-gh.sh", "scripts/router-gh-watch.sh", "scripts/router-gh-command.jq", ".claude/agents/", "scripts/pages-build.sh", ".github/", "scripts/ci-gate.sh", "scripts/ci-sign-off.sh", "scripts/gh-settings-check.sh"]   # .github/ and the gate, writer and settings scripts since E-GHFLOW2.W4: the checks are base-defined and required
+rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json", "scripts/router-guard.jq", "scripts/router-inbox.sh", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", ".claude/agents/"]
 
 [check]
 lint = "cargo fmt --check && cargo clippy --all-targets -- -D warnings"
@@ -35,14 +35,16 @@ T2 = ["docs/use-cases/**", "docs/decisions/**", "docs/backlog/**"]
 T3 = ["docs/work/**", "docs/.archive/**"]
 
 [docs.caps]
-"docs/decisions/*.html" = 5000   # E-DOCSPLIT.W5 (DEC-69); the architecture and install caps wait for W6
+"docs/decisions/*.html" = 5000   # E-DOCSPLIT.W5 (DEC-69)
+"docs/architecture.html" = 3000   # E-DOCSPLIT.W7: holds now that E-GHREVERT removed the GitHub parts
+"docs/install.html" = 1500
 
 [tests]
 # adapter = "python"   # rust | ts | python | go | regex; default: by file extension
 # pattern = "..."      # test-declaration regex, for the regex adapter
 
 [mr]
-tiers = ["username", "key", "github"]   # accepted .keel/mr-allowed tiers; key-only is deferred by owner ruling 2026-11-12 (DEC-48); github: a pull-request approval signs (E-GHFLOW2.W3)
+tiers = ["username", "key"]   # accepted .keel/mr-allowed tiers; key-only is deferred by owner ruling 2026-11-12 (DEC-48)
 
 [review]   # read by the keel-code-review skill, not by the CLI
 modules = ["src/*"]          # each match of a glob's * is one module (altitude finder)
@@ -54,14 +56,3 @@ worker_efforts = ["medium", "high"]
 worker_default_effort = "medium"
 worker_permission_mode = "auto"
 watchdog_model = "haiku"
-
-[github]   # read by scripts/router-gh.sh (E-GHFLOW.W2, W3); the CLI reads repo only: a sign-off by approval names a review page on it (E-GHFLOW2.W3)
-repo = "lesslucifer/Keel"   # the repository the router bot acts on (read at HEAD)
-# Who the router hears on GitHub (E-GHFLOW.W3): numeric user ids (a login can be renamed, an id
-# cannot), and whether their free text reaches the router or only the /keel commands. Read from the
-# router checkout's file, only while it matches HEAD's.
-commanders = [5499546]   # lesslucifer, the owner
-free_text = true
-# E-GHFLOW2.W4: router-gh.sh pr-ready turns on GitHub's auto-merge (a merge commit), so the owner's approval
-# lands a green pull request; false leaves the merge to his button. Read like commanders: committed only.
-merge_on_approve = true

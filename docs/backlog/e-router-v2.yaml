@@ -519,28 +519,6 @@ open:
     source: >-
       E-RGUARD.W3 result, follow-ups (the report channel, from the E-RGUARD close, 2026-11-15; DEC-58).
     taken-by: "the owner (a launcher change)"
-  - id: R50
-    title: "`keel mr` does not check its own checkout's admin dir before it runs git"
-    status: "open on the page (badge open): the `keel mr` check is fixed by E-GHFLOW2.W3; github-flow G8 item 2 left open"
-    problem: >-
-      The launcher checks every worktree's admin dir on each run, but a worktree added after a worker started, or a
-      change made between two launcher runs, is seen only at the next run. The owner's unsandboxed `keel mr commit`
-      or `keel mr confirm` in a linked checkout would then follow a `commondir`, `gitdir` or `config.worktree` a
-      worker wrote, and git would run that repository's hooks or config. Medium severity. Fixed by E-GHFLOW2.W3:
-      every `keel mr` command checks, before any git call, that its checkout's `.git` is a directory with no
-      `commondir`, or a link to an admin dir under `worktrees/` whose `commondir` is `../..` and whose `gitdir`
-      names it back, with no `config.worktree` in either dir, and refuses otherwise. It runs only from the
-      checkout's root (never walks up), refuses a checkout nested in another repository, and resolves the `.git`
-      link and the admin dir's path as git follows them, refusing any symbolic link on the way
-      (`tests/suite/sign_off.rs`). Left open: github-flow G8 item 2.
-    proposal: >-
-      Original fix direction: `keel mr` (a keel source change, `src/mr.rs`) checks the checkout's `.git` link and
-      admin dir as the launcher does (`commondir` exactly `../..`, no `config.worktree`, a `gitdir` naming this
-      `.git`) and refuses before any git call. Done by E-GHFLOW2.W3; what is left is github-flow G8 item 2.
-    source: >-
-      E-GHFLOW.W3 result, security review round 2, F1 follow-up (the shared git dir, left after R33's fix, DEC-63).
-      For the next router epic.
-    taken-by: "unowned: the next router epic (github-flow G8 item 2 for the remainder)"
   - id: R51
     title: "The worker sandbox is a deny list over a writable git dir"
     status: "open: severity medium"
@@ -553,8 +531,7 @@ open:
       ref and its reflog, `refs/notes/` but `cr` for an author, `index` and lock files in its own admin dir),
       checked against git's own writes.
     source: >-
-      E-GHFLOW.W3 result, security review round 2 (the shared git dir, left after R33's fix, DEC-63). For the next
-      router epic.
+      E-GHFLOW.W3 result, security review round 2 (the shared git dir, left after R33's fix; DEC-37, amended). For the next router epic.
     taken-by: "unowned: the next router epic"
 closed:
   - id: R1
@@ -604,13 +581,19 @@ closed:
     closed: "done by E-ROUTER3.W5 (keel-router lessons K12) and E-ROUTER3.W8 (launcher side)"
   - id: R30
     title: "A full cargo test run inside a worker's sandbox"
-    closed: "done: the full suite runs in a worker's sandbox (E-TESTOPT, E-LOOPBIND, E-GHFLOW.W1 - W3; DEC-60)"
+    closed: "done: the full suite runs in a worker's sandbox (E-TESTOPT, E-LOOPBIND, E-GHFLOW.W1 - W3)"
   - id: R33
     title: "The git dir's commondir is shell-writable"
-    closed: "fixed by E-GHFLOW.W3 (DEC-63); what is left is R50 and R51"
+    closed: "fixed by E-GHFLOW.W3, kept by E-GHREVERT (DEC-37, amended); R50 fixed too, what is left is R51"
   - id: R43
     title: "The full suite is red in a worker's sandbox for sandbox reasons"
-    closed: "done by E-TESTOPT.W1 and W2 (DEC-59); closed for good by E-GHFLOW.W1 (DEC-60)"
+    closed: "done by E-TESTOPT.W1 and W2 (DEC-59); one sandbox-only red left, R49"
+  - id: R50
+    title: "`keel mr` does not check its own checkout's admin dir before it runs git"
+    closed: >-
+      fixed by E-GHFLOW2.W3, kept by E-GHREVERT: every `keel mr` command checks its checkout's `.git` link and admin
+      dir, from the checkout's root only, and refuses before any git call; its refusal names where git really leads
+      through a link (E-GHFLOW2.W6)
   - id: R49
     title: "notify_owner's ten tests bind a loopback port, which a worker's sandbox refuses"
     closed: "done by E-LOOPBIND (the ten tests carry #[ignore])"
