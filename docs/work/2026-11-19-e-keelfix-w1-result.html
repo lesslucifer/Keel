@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afefa5a9f34851f0dfb2a47" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-KEELFIX.W1 result: commits follow the committed rules</title>
+  <style>
+    td code, td { word-break: break-word; }
+  </style>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-KEELFIX.W1 result · Commits follow the committed rules</h1>
+      <p>Delivered as planned. A commit is now judged by the rules the branch committed, not by an edit in the folder.</p>
+      <div class="meta">T3 · WU result · 2026-11-19 · <code>E-KEELFIX.W1</code> (K9) · branch <code>wu/E-KEELFIX/w1-k9</code> off <code>epic/E-KEELFIX</code> at b80e9c9 · <a href="2026-11-19-e-keelfix-w1-plan.html">W1 plan</a> (your approval, 2026-11-19, every open point on its default)</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="what-happened">What happened</h2>
+<p data-item="outcome" data-c="outcome"><b>Delivered.</b> The pre-commit hook, the commit-msg hook and <code>keel mr commit</code> read the rules file committed at the branch's tip. When nothing is committed yet, they read the staged file and say so in one line. With neither, the commit is refused and told to stage the file. Every other command still reads the folder's file, as planned.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-c="owner-changes">
+  <thead><tr><th>When</th><th>Before</th><th>Now</th></tr></thead>
+  <tbody>
+    <tr><td>You make a rule-file commit</td><td>The folder's rules ran; you checked them first</td><td>The branch's committed rules run; nothing to check</td></tr>
+    <tr><td>A worker edits the rules and does not commit</td><td>Its commits followed the edit</td><td>Its commits follow the committed rules</td></tr>
+    <tr><td>A new repository's first commit</td><td>The folder's rules ran</td><td>The staged rules run, and one line says so</td></tr>
+    <tr><td>Rules only in the folder</td><td>They ran</td><td>The commit is refused: <code>fix -&gt; git add .keel/config.toml</code></td></tr>
+  </tbody>
+</table>
+
+<h2 id="deviations-h">Differences from the plan</h2>
+<ul data-item="deviations" data-c="deviations">
+  <li><b>Two existing tests had relied on rules that sat only in the folder</b>, as the plan expected might happen. Each now stages the rules before its first commit; what they assert is unchanged.
+    <ul>
+      <li><code>tests/suite/cli.rs</code> <code>commit_on_main_is_refused_but_a_branch_is_fine</code>, fixed in the tests commit.</li>
+      <li><code>tests/suite/init.rs</code> <code>a_foreign_keel_on_path_makes_init_warn_and_a_git_hook_refuse</code>, fixed in the code commit. It runs <code>keel init</code> and commits without staging what init wrote.</li>
+    </ul>
+  </li>
+  <li><b>One more test helper than planned:</b> <code>unborn_hooked_repo(lint)</code>, a repository with no commit, Keel's hooks and the rules only in the folder. The two first-commit tests share it. Two constants too, <code>BAD_LINT</code> and <code>BOOTSTRAP</code>.</li>
+  <li><b>The <code>mr commit</code> arm</b> is <code>["mr", "commit", ..]</code> passing <code>&amp;args[1..]</code> to <code>mr::run</code>, the slice form Rust accepts. Its behaviour is as planned.</li>
+</ul>
+
+<h2 id="follow-ups-h">Follow-ups</h2>
+<ul data-item="follow-ups" data-c="follow-ups">
+  <li>Distil at the epic close (<a href="2026-11-19-e-keelfix-plan.html#close-h">epic plan, "At the close"</a>): UC-GATE-1 and UC-MR-2 in <code>docs/use-cases/workflow.html</code> (UC-MR-2's "the hook reads <code>rule_bearing</code> from the working tree" goes), DEC-24's amendment (gap 1 closed) in <code>docs/decisions/workflow-gates.html</code>, and the hooks' config source in <code>docs/architecture.html</code> and both keel-workflow skill copies §7. Taken by E-KEELFIX's close.</li>
+</ul>
+
+<h2 id="details">Details</h2>
+
+<h3 id="evidence-h">Evidence</h3>
+<div data-item="evidence" data-c="evidence">
+  <p><b>Commits</b> on <code>wu/E-KEELFIX/w1-k9</code>:</p>
+  <ol>
+    <li><code>ef36b20</code>: the plan.</li>
+    <li><code>520c93e</code>: the tests, red.</li>
+    <li><code>a529416</code>: the code and the unit test, green.</li>
+    <li>This report.</li>
+  </ol>
+  <p><b>Red first.</b> The six tests were run on b80e9c9's code (the tests commit's tree). All six failed, for the reasons the plan gave:</p>
+  <table>
+    <thead><tr><th>Test (<code>tests/suite/cli.rs</code>)</th><th>On b80e9c9</th><th>After</th></tr></thead>
+    <tbody>
+      <tr><td><code>a_code_commit_runs_the_committed_lint_not_the_folders</code></td><td>The commit landed: the folder's lint passed</td><td>ok</td></tr>
+      <tr><td><code>a_rule_file_commit_is_judged_by_the_committed_rule_bearing</code></td><td>The trailer-less commit landed</td><td>ok</td></tr>
+      <tr><td><code>main_stays_merge_only_by_the_committed_branch_name</code></td><td>The commit on main landed</td><td>ok</td></tr>
+      <tr><td><code>keel_mr_commit_accepts_only_the_committed_tiers</code></td><td><code>--as t</code> landed (<code>[work a04403b] a rule</code>)</td><td>ok</td></tr>
+      <tr><td><code>a_first_commit_with_no_committed_rules_uses_the_staged_file_and_says_so</code></td><td>Refused by lint, but no bootstrap line</td><td>ok</td></tr>
+      <tr><td><code>a_commit_with_no_committed_or_staged_rules_is_refused_naming_the_fix</code></td><td>The commit landed</td><td>ok</td></tr>
+    </tbody>
+  </table>
+  <p><b>Unit</b> (<code>src/main.rs</code>): <code>committed_config_takes_heads_text_else_the_staged_one_as_a_bootstrap_else_refuses</code>, over all four cases.</p>
+  <p><b>Green at <code>a529416</code>:</b></p>
+  <ul>
+    <li><code>cargo test</code>: unit 102 passed; suite 336 passed, 0 failed, 10 ignored (the 10 <code>#[ignore]</code> tests already in the tree).</li>
+    <li><code>cargo fmt --check</code> and <code>cargo clippy --all-targets -- -D warnings</code>: clean.</li>
+    <li><code>keel check</code>: green.</li>
+  </ul>
+  <p><b>Code:</b> <code>src/main.rs</code> gains <code>committed_config</code> and <code>load_config_committed</code>, and three <code>run()</code> arms change. <code>src/mr.rs</code> changes one doc comment. Docs touched: this WU's plan and this report only.</p>
+</div>
+
+<h3 id="distillation-h">Distillation</h3>
+<p data-item="distillation" data-c="distillation">Nothing distilled in this WU, as planned (open point 6). The truth lands at the epic close, as the follow-up says.</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
