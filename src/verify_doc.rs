@@ -1689,14 +1689,15 @@ mod tests {
     }
 
     /// What skill keel-plan teaches `role` with in §3: the paragraph that opens with its bold head
-    /// (`**WU plan**` for wu-plan), and each paragraph after it that opens with a backticked field
-    /// (the `wu-summaries` entries), up to the next bold head or prose paragraph.
-    fn taught(skill: &str, role: &str) -> String {
+    /// (`**WU plan**` for wu-plan), and each paragraph right after it that opens with one of its
+    /// fields `own` that `entries` gives entries for, in backticks (`` `wu-summaries` is a list ``).
+    fn taught(skill: &str, role: &str, own: &[&str], entries: fn(&str) -> &'static [&'static str]) -> String {
         let head = role.replace('-', " ");
         let opens = |p: &str| p.strip_prefix("**").and_then(|p| p.split_once("**")).is_some_and(|(h, _)| h.eq_ignore_ascii_case(&head));
+        let lists = |p: &&str| own.iter().any(|f| !entries(f).is_empty() && p.starts_with(&format!("`{f}` ")));
         let mut paras = section(skill, "## 3 ·").split("\n\n").map(str::trim).skip_while(|p| !opens(p));
         let Some(first) = paras.next() else { return String::new() };
-        std::iter::once(first).chain(paras.take_while(|p| p.starts_with('`'))).collect::<Vec<_>>().join("\n\n")
+        std::iter::once(first).chain(paras.take_while(lists)).collect::<Vec<_>>().join("\n\n")
     }
 
     /// The field-like names in backticks in `text`: lowercase words and `-` (not `UC-*` or `<epic>.W<n>`).
@@ -1710,7 +1711,7 @@ mod tests {
     /// (`known`) that is not a row of §2's table; and back, a name in its §3 text the check does not
     /// read for it.
     fn unnamed(skill: &str, role: &str, own: &[&str], known: &[&str], entries: fn(&str) -> &'static [&'static str]) -> Vec<String> {
-        let para = taught(skill, role);
+        let para = taught(skill, role, own, entries);
         let table = section(skill, "## 2 ·");
         let read: Vec<&str> = own.iter().flat_map(|f| std::iter::once(*f).chain(entries(f).iter().copied())).collect();
         let mut out = Vec::new();
@@ -1776,6 +1777,11 @@ mod tests {
         let cut = skill.replace("archived) · `follow-ups`.\n\nEvery follow-up", "archived).\n\nEvery `follow-ups` entry");
         assert_ne!(cut, skill);
         let (_, known) = fields(&["epic-result"]);
+        assert_eq!(unnamed(&cut, "epic-result", role_fields("epic-result"), &known, list_entries), ["epic-result: `follow-ups` is not in its §3 paragraph"]);
+        // nor is one named only in prose that opens with a backticked name that is not a list field
+        let cut =
+            skill.replace("archived) · `follow-ups`.\n\nEvery follow-up, in either report,", "archived).\n\n`follow-ups`: every follow-up, in either report,");
+        assert_ne!(cut, skill);
         assert_eq!(unnamed(&cut, "epic-result", role_fields("epic-result"), &known, list_entries), ["epic-result: `follow-ups` is not in its §3 paragraph"]);
         // and back: a field the check no longer reads is red while the skill still teaches it
         let own: Vec<&str> = role_fields("wu-plan").iter().copied().filter(|f| *f != "requirement").collect();
