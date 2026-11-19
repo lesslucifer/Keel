@@ -40,9 +40,12 @@ fn is_help(a: &str) -> bool {
 }
 
 /// The usage to print when any argument is exactly `--help` or `-h`; `None` otherwise. The command
-/// is read from the other arguments' leading words, up to the first that starts with `-`.
+/// is read from the other arguments' leading words, up to the first that starts with `-`. Git runs
+/// `keel hook <name> <git's arguments>`, and a remote may be named `-h` or `--help`: every word after
+/// a hook's name is git's, never a help request, so the hook always runs (review round 1, B1).
 pub(crate) fn usage_for(args: &[&str]) -> Option<&'static str> {
-    if !args.iter().any(|a| is_help(a)) {
+    let gits = args.first() == Some(&"hook") && args.get(1).is_some_and(|a| !is_help(a));
+    if gits || !args.iter().any(|a| is_help(a)) {
         return None;
     }
     let words: Vec<&str> = args.iter().copied().filter(|a| !is_help(a)).take_while(|a| !a.starts_with('-')).collect();

@@ -928,15 +928,17 @@ pub(crate) const CR_USAGE: &str = "usage: keel notes write cr --verdict PASS|FAI
 
 pub(crate) const TARGET: &str = "--target";
 
-/// Each kind's flags, every one taking the next word as its value (as the readers below take it).
+/// Each kind's flags, every one taking the next word as its value.
 const TEST_FLAGS: &[&str] = &[TARGET];
 const DOC_FLAGS: &[&str] = &[TARGET, "--distill"];
 const CR_FLAGS: &[&str] = &["--verdict", "--blockers", "--importants", "--findings", "--refuted", "--nits", "--fleet", "--fixes", TARGET];
 
 /// The one strict reader of a keel flag list (K2), for the notes writer and the gate alike: `valued`
-/// flags take the next word, `bare` ones none, and only `repeatable` ones may come twice. A `--target`
-/// value never starts with `-` (no ref does). `Some(what is wrong)`: an unknown argument, a stray
-/// word, a repeat, or a missing value.
+/// flags take the next word, `bare` ones none, and only `repeatable` ones may come twice. A value is
+/// never one of the known flags, and a `--target` value never starts with `-` (no ref does): so the
+/// flag-by-flag readers (`target_flag`, `write_cr`'s, the `--distill` filter, `cr_lists`), which take
+/// the word after a flag's first appearance, read every argv this accepts as it pairs them (review
+/// round 1, I2). `Some(what is wrong)`: an unknown argument, a stray word, a repeat, a missing value.
 pub(crate) fn args_problem(args: &[&str], valued: &[&str], bare: &[&str], repeatable: &[&str]) -> Option<String> {
     let mut seen = vec![];
     let mut i = 0;
@@ -952,7 +954,7 @@ pub(crate) fn args_problem(args: &[&str], valued: &[&str], bare: &[&str], repeat
         }
         if takes_value {
             match args.get(i + 1) {
-                Some(v) if !(a == TARGET && v.starts_with('-')) => i += 1,
+                Some(v) if !valued.contains(v) && !bare.contains(v) && !(a == TARGET && v.starts_with('-')) => i += 1,
                 _ if a == TARGET => return Some("--target needs a value: --target <ref>".into()),
                 _ => return Some(format!("{a} needs a value")),
             }
