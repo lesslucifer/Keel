@@ -1,12 +1,17 @@
 ---
 name: keel-write
-description: How to write any doc a person reads - plans, result reports, use cases, decisions, backlog rows - short, direct and in plain words, problem first and details last. Nine rules, each with a before/after example, which rules apply to which doc, a self-check to run before a doc is marked ready, and a short ready epic plan as the example (references/example.html). Use before writing or editing any such doc. Not for skill files or messages between agents.
+description: How to write any doc a person reads - plans, result reports, use cases, decisions, backlog rows - short, direct and in plain words, problem first and details last. Nine rules, each with a before/after example, which rules apply to which doc, a self-check to run before a doc is marked ready, and a short ready epic plan pair as the example (references/example.html and references/example.yaml). Use before writing or editing any such doc. Not for skill files or messages between agents.
 ---
 
 # Writing docs people can read
 
 A doc has two readers. A person reads it first, with little time. An agent
 acts on it later. Write for the person; keep every fact exact for the agent.
+
+A plan or result report is two files (skill `keel-plan`). **The page** is for
+the person: what this skill is about. **The data file** beside it is for the
+agent: exact facts (files, functions, tests, evidence) go there, never on the
+page.
 
 This covers every doc a person reads. Skill files and messages between agents
 are out.
@@ -18,18 +23,22 @@ first screen. The title may carry the id.
 ## Which rules apply
 
 - **Every doc:** rules 1, 2, 7, 8 and 9, and rule 3's terms.
-- **Plans and result reports:** all nine rules, and the order below.
-- **A decision record, use case or backlog row** keeps its own fields. Write
+- **Plans and result reports:** all nine rules, and the page shapes below.
+- **A use case or backlog row** is a set of data fields, with no page. Write
   each field by rules 1–3.
+- **A decision record** keeps its own fields (choice, why, rejected), each
+  written by rules 1–3. About 250 words.
 - **A doc you edit:** rewrite only what you touch. Never restructure the rest.
 
 ## The rules
 
 ### 1 · Short
 
-Cut every word you can. The top fits on one screen. In an epic plan the doc
-check counts it: at most 300 words from the start of `<main>` (the title
-block sits outside it), else from `<body>`, to the first WU.
+Cut every word you can. The top fits on one screen. The doc check counts a
+ready page's words, from the start of `<main>` (the title block sits outside
+it), else from `<body>`: an epic plan 700, its top 300 (up to the heading with
+`id="work"`); a WU plan 500; a WU result 500; an epic result 700; a decision
+file 5,000, about 250 a record.
 
 - Before: "This section provides an overview of the changes this epic will introduce."
 - After: "What changes:"
@@ -65,10 +74,12 @@ Each open point is a question. Its answer comes first, then why.
 
 ### 6 · Details last
 
-Mechanics, tests, evidence and history go at the end, under one heading.
+Mechanics, tests, evidence and history go last. In a plan or result report
+they leave the page for the data file. In any other doc they go at the end,
+under one heading.
 
 - Before: the test list sits between the problem and the work.
-- After: the test list sits under "Details", after the open points.
+- After: the test list sits in the data file; the page says what you'll see.
 
 ### 7 · Diagram labels in quotes and plain words
 
@@ -94,22 +105,31 @@ Explain a flow with a real case, in numbered steps.
 Run the self-check below. Fix what it finds, then mark the doc ready.
 
 - Before: the doc check passes, so the plan is marked ready. Its first screen is a list of files.
-- After: the self-check finds the file list. It moves to Details, the problem moves up, and then the plan is marked ready.
+- After: the self-check finds the file list. It moves to the data file, the problem moves up, and then the plan is marked ready.
 
-## The order of a plan
+## The shape of a plan or result page
 
-1. The problem, in two or three sentences.
-2. What changes for the reader: a today/after table.
+**Epic plan:**
+
+1. The problem, in two to four sentences.
+2. What changes for you: a today/after table.
 3. A real case in numbered steps, when the flow is new.
 4. Terms, for any term not defined where it is first used.
-5. The work. For each part: one "In short" of two or three sentences, then a
-   list.
-6. Open points: questions, answer first.
-7. Details: acceptance, tests, scope, evidence, history.
+5. The parts, in build order, under the heading with `id="work"`: a diagram
+   of the order, then a table — what each part builds, what you get, after
+   which part. No files, no tests.
+6. What you decide: questions, answer first.
+7. How you'll know it worked: three to five checks.
+8. Not in this epic: up to five lines.
 
-Items 1–4 are the top. A result report keeps the same order: what happened,
-what changed, details. Skill `keel-plan` says which tags a plan needs. They
-go wherever the content is.
+Items 1–4 are the top.
+
+**WU plan:** the problem · what you get · how it works, or how you approve ·
+what it makes · what you decide · how you'll know it worked.
+
+**Result report:** what happened · each "how you'll know" check, met or not ·
+the main case, run for real, in steps · (an epic: one line per part) ·
+differences from the plan · what is left, and who takes it.
 
 ## Self-check
 
@@ -118,7 +138,9 @@ For a plan or result report, read only the top. Can the owner say:
 1. the problem?
 2. what changes for them?
 3. what they must decide, if anything?
-4. Is there code or an id in the top? Move it to the work or Details.
+4. Is there code or an id in the top? Move it to the work or the data file.
+5. Is there a file list, function name, test list or tag on the page? Move it
+   to the data file.
 
 For every doc, check what you wrote:
 
@@ -129,7 +151,10 @@ For every doc, check what you wrote:
 
 ## The example
 
-`references/example.html` is a short, ready epic plan. It passes
-`keel verify-doc`. Read it before you write your first plan. Start from the
-htmldoc skeleton, then copy the example's shape, not its words. The example
-has no htmldoc id: your doc gets its own.
+`references/example.html` is a short, ready epic plan page, and
+`references/example.yaml` is its data file. Together they pass
+`keel verify-doc`. Read both before you write your first plan. Copy them under
+one stem (`<date>-<slug>-plan.html` and `.yaml`, with `page` set to the new
+page's name). Start the page from the htmldoc skeleton, then copy the
+example's shape, not its words. The example has no htmldoc id: your page gets
+its own.

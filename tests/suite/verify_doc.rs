@@ -399,8 +399,8 @@ fn copy_docs(from: &Path, to: &Path) {
     }
 }
 
-/// E-DOCSTYLE.W2, E-DOCSPLIT.W2: the checks turn no existing doc red - every page and data file in
-/// Keel's docs/ and the writing skill's example pass.
+/// E-DOCSTYLE.W2, E-DOCSPLIT.W2, W4: the checks turn no existing doc red - every page and data file
+/// in Keel's docs/ and the writing skill's example pair pass.
 #[test]
 fn every_doc_in_docs_and_the_writing_example_pass_the_checks() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -408,16 +408,18 @@ fn every_doc_in_docs_and_the_writing_example_pass_the_checks() {
     let p = d.path();
     copy_docs(&root.join("docs"), &p.join("docs"));
     std::fs::create_dir_all(p.join("docs/work")).unwrap();
-    std::fs::copy(root.join("skills/keel-write/references/example.html"), p.join("docs/work/keel-write-example.html")).unwrap();
+    for f in ["example.html", "example.yaml"] {
+        std::fs::copy(root.join("skills/keel-write/references").join(f), p.join("docs/work").join(f)).unwrap();
+    }
     let o = keel(p, &["verify-doc"]);
     assert!(o.status.success(), "{}", text(&o));
 }
 
-/// E-DOCSTYLE epic test, rewritten for E-DOCSPLIT.W2: `keel init` in a scratch repo installs the
-/// writing skill; its example, written as a plan page (its parts' heading marked `work`, as the
-/// split's pages are) with a data file beside it, passes the installed after-write hook; an
-/// unquoted label, a data file missing "what changes for you" and a top over the cap each make the
-/// after-write and end-of-turn hooks fail and name the fault; fixed, the end-of-turn hook passes.
+/// E-DOCSTYLE epic test, rewritten for E-DOCSPLIT.W2 and W4: `keel init` in a scratch repo installs
+/// the writing skill; its example pair, copied as shipped into docs/work/, passes the installed
+/// after-write hook on each file; an unquoted label, a data file missing "what changes for you" and
+/// a top over the cap each make the after-write and end-of-turn hooks fail and name the fault;
+/// fixed, the end-of-turn hook passes.
 #[test]
 fn epic_the_installed_hooks_refuse_each_doc_fault_and_pass_the_fixed_plan() {
     let d = TempDir::new().unwrap();
@@ -429,13 +431,12 @@ fn epic_the_installed_hooks_refuse_each_doc_fault_and_pass_the_fixed_plan() {
     let cmd = |ev: &str| settings["hooks"][ev][0]["hooks"][0]["command"].as_str().unwrap().to_string();
     let (post, stop) = (cmd("PostToolUse"), cmd("Stop"));
     let hook = |c: &str, payload: &str| run("sh", p, &["-c", c], payload);
-    let (plan, data) = ("docs/work/2026-01-01-x-epic-plan.html", "docs/work/2026-01-01-x-epic-plan.yaml");
+    let (plan, data) = ("docs/work/example.html", "docs/work/example.yaml");
     let payload = |f: &str| format!(r#"{{"tool_input":{{"file_path":"{f}"}}}}"#);
 
-    let example = std::fs::read_to_string(p.join(".claude/skills/keel-write/references/example.html")).expect("keel init did not install the writing example");
-    let page = example.replacen(r#"<h2 id="wus">"#, r#"<h2 id="work">"#, 1);
-    assert_ne!(page, example, "the example has no parts heading to mark");
-    let fields = epic_plan_data("2026-01-01-x-epic-plan.html", "epic-plan", TWO_WUS);
+    let refs = p.join(".claude/skills/keel-write/references");
+    let page = std::fs::read_to_string(refs.join("example.html")).expect("keel init did not install the writing example's page");
+    let fields = std::fs::read_to_string(refs.join("example.yaml")).expect("keel init did not install the writing example's data file");
     std::fs::write(p.join(plan), &page).unwrap();
     std::fs::write(p.join(data), &fields).unwrap();
     for f in [plan, data] {

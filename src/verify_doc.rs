@@ -1657,6 +1657,29 @@ mod tests {
         assert!(required.contains(&"test-plan") && required.contains(&"wu-summaries"), "the union: {required:?}");
     }
 
+    /// E-DOCSPLIT.W4: skill keel-plan names every field the check reads, so a field added to the
+    /// check without the skill is red.
+    #[test]
+    fn keel_plan_names_every_field_the_check_reads() {
+        let skill = include_str!("../skills/keel-plan/SKILL.md");
+        let lists = [
+            super::COMMON,
+            super::OPTIONAL,
+            super::EPIC_PLAN,
+            super::WU_PLAN,
+            super::WU_RESULT,
+            super::EPIC_RESULT,
+            super::WU_SUB,
+            super::TEST_LEVELS,
+            &["epic"],
+        ];
+        let missing: Vec<&str> = lists.iter().flat_map(|l| l.iter()).filter(|f| !skill.contains(&format!("`{f}`"))).copied().collect();
+        assert!(missing.is_empty(), "skill keel-plan does not name the fields {missing:?}");
+        for role in ROLES {
+            assert!(skill.contains(&format!("`{role}`")), "skill keel-plan does not name the role {role}");
+        }
+    }
+
     fn problems(yaml: &str) -> Vec<String> {
         match read_data(yaml, "x.html", true) {
             Data::Checked { problems, .. } => problems,

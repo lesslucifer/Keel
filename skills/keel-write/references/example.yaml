@@ -1,0 +1,74 @@
+artifact: epic-plan
+status: ready
+id: E-CRCAP
+title: A code review stops after 3 failed rounds
+date: "2026-11-12"
+page: example.html
+intent: >-
+  A code review can loop without end: one piece of work ran 7 rounds until the
+  owner stopped it, and a waived review is still recorded as PASS. After this
+  epic, the tool refuses a 4th failed round and asks the owner, and a waiver is
+  recorded as WAIVED with its reason.
+owner-changes:
+  - {when: "A review keeps failing", today: "Rounds go on until you notice", after: "After 3 failed rounds, the tool stops and asks you"}
+  - {when: "You must decide", today: "No defined choices", after: "Three: one more round, waive, or stop"}
+  - {when: "You waive a review", today: "Recorded as PASS", after: "Recorded as WAIVED, with your reason"}
+  - {when: "You sign off", today: "Nothing shows a waiver", after: "You must accept the waiver"}
+use-cases:
+  - "UC-REV-1, amended: the two nit cases (W3)"
+  - "UC-REV-2, new: a waiver is recorded as WAIVED (W1)"
+  - "UC-REV-3, new: the round limit (W2)"
+expected:
+  - A 4th review round is refused, and the message lists the three choices.
+  - A waived review reads WAIVED with its reason, in the note and in the merge check's output.
+  - Sign-off on waived work needs an explicit acceptance.
+  - A code change after a waiver undoes it.
+  - The epic test passes.
+non-goals:
+  - What reviewers look for.
+  - The merge check's other steps.
+wu-summaries:
+  - wu: E-CRCAP.W1
+    wu-summary: >-
+      The agent records the owner's waiver with a reason; the merge check
+      accepts and prints it; sign-off refuses a waived commit without
+      --accept-waiver; a code change after the waiver undoes it.
+    wu-maps-to: The owner's ruling on waivers; UC-REV-2 (new).
+    wu-expected: >-
+      Integration: a waiver without a reason is refused; with one, the merge
+      check passes and prints it; sign-off without the flag is refused. Unit:
+      the flag parsing.
+    wu-deps: none
+  - wu: E-CRCAP.W2
+    wu-summary: >-
+      Preflight counts the failed review notes on the branch (no new state);
+      at [review] max_rounds, default 3, it refuses another round and lists
+      the owner's three choices.
+    wu-maps-to: "The owner's ruling: 3 rounds, then the owner decides; UC-REV-3 (new)."
+    wu-expected: >-
+      Integration: after 3 failed rounds, preflight refuses and lists the
+      choices; a passing round is not counted. Unit: the count.
+    wu-deps: [E-CRCAP.W1]
+  - wu: E-CRCAP.W3
+    wu-summary: >-
+      The review rubric names two cases that never fail a review: a missing
+      test for code that already works, and a tidy-up of test helpers.
+    wu-maps-to: The owner's ruling on nits; UC-REV-1 (amended).
+    wu-expected: "Integration: waived - the WU changes no code."
+    wu-deps: none
+e2e-plan: >-
+  A scratch repo, no network: three review rounds fail and the 4th is refused;
+  the owner's waiver is recorded and the merge check passes and prints it;
+  sign-off without acceptance is refused, and with it the merge lands.
+distillation-plan:
+  - "The use-case file: UC-REV-1, UC-REV-2, UC-REV-3."
+  - "The decisions file: one record for the limit and the waiver."
+open-questions:
+  - "How many failed rounds before the owner decides? 3, changeable in the config: fewer stops good reviews, more is today's loop."
+  - "Can the owner waive before any round runs? Yes: some work needs no review, such as a revert."
+  - "Does a later code change undo a waiver? Yes: a waiver covers only the code it saw."
+details:
+  files:
+    W1: [src/notes.rs, src/mr.rs, tests/suite/review.rs]
+    W2: [src/preflight.rs, templates/config.toml, tests/suite/preflight.rs]
+    W3: [skills/keel-code-review/rubric.md]
