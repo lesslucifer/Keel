@@ -1,0 +1,79 @@
+# Keel backlog: dsh. Data only, no page (DEC-69). Open rows in full; a closed row is its id, title and how it closed.
+# Ids are never reused. Order and next free ids: backlog-index.yaml.
+title: "Backlog: DeepSeek Harness"
+letter: D
+about: >-
+  Host plugins deferred at E-DSH's close: the doc gate, the router guard, and the worker plugin's cold resume. All three
+  live in the desktop-dsh project, never in a Keel project. Each row names the source it was deferred from. The
+  contracts are use-cases/dsh.html and the DSH use cases it points at; the why is DEC-54 and DEC-55. Distilled from
+  E-DSH (plan, W2 and W3 results, close); D2 from E-RGUARD (W1 result, close).
+open:
+  - id: D1
+    title: "The DSH doc-gate plugin"
+    status: open
+    problem: >-
+      DEC-54 records the contract and `keel init` prints the install line, but no such repo exists (checked
+      2026-11-14), so a DSH session has no doc check at all: a red doc's write comes back a success and the turn can
+      close on it.
+    proposal: >-
+      Build it in its own repo in the desktop-dsh project. The plugin runs `keel verify-doc <path>` in
+      `tools/post-execute` after a first-party doc write or edit and returns `{kind:'block', feedback}` with the
+      problem lines; it runs `keel verify-doc` over all docs in `agent/turn-stopping` and calls `agent.steer()` with
+      the problems. Exit 0 is silent, and a draft is silent by construction. Its repo carries its own tests. The
+      install line names the repo `dsh-doc-gate`, a placeholder until the repo is created.
+    source: "E-DSH plan open point 3; E-DSH.W2 result."
+    taken-by: "unowned"
+
+  - id: D2
+    title: "The DSH router guard plugin"
+    status: open
+    problem: >-
+      DSH has no shell-hook surface, so today the `keel-router` skill is the only guard on that host: nothing checks
+      the whitelist, the brief path or the inline skills, and the skill tells the router to say that enforcement is
+      missing (UC-ROUTE-6, DEC-55). Until the plugin lands, the skill's checklists
+      (`skills/keel-router/references/checklists.md`: START, WAKE, DISPATCH) are what stands in front of the call. A
+      rule the router knows does not stop a call: the session that started E-RGUARD quoted the rules and made 24 calls
+      outside them.
+    proposal: >-
+      A plugin that enforces the router's tool whitelist and Bash shapes on DSH. Where a Claude Code project runs
+      `scripts/router-guard.jq` as one fail-closed `PreToolUse` hook, the plugin would judge the same shapes at
+      `tools/pre-execute` and deny every call the whitelist does not name, fail-closed. The plugin is a profile
+      package; the whitelist itself stays the project's. What it must enforce (E-RGUARD.W1) is in the items; the
+      plugin replaces the checklists.
+    source: "E-DSH plan open point 4; E-DSH.W3 result (\"the honest gap\"); E-RGUARD.W1 result and the E-RGUARD close."
+    taken-by: "unowned"
+    items:
+      - >-
+        1. A deny at `tools/pre-execute`, fail-closed, over every call reduced to plain words exactly as
+        `scripts/router-guard.jq` reduces it: the read tools, writes under `.router/briefs/` and the owner body
+        `.router/notify/owner.md`, the worker tools, the project's watch and inbox shapes and the launcher's shapes
+        pass; everything else is denied with the rule and the alternative named. `keel mr`, merge, push, tag,
+        `claude`, `kill`, an inbox `post` and any other script never pass.
+      - >-
+        2. Four `agent/turn-stopping` checks that call `agent.steer()`, one per failure the checklists name: a worker
+        spawned with no brief file written that turn (DISPATCH.1); a closing message with no
+        `What you need to do now:` (START.7, WAKE.5); live workers with no wake armed (START.6, WAKE.3); a call denied
+        that turn that the closing message does not name (WAKE.4).
+      - >-
+        3. The fleet wake stays the report channel's armed watcher (DEC-58). If the plugin can wake the router on a
+        worker's turn end, the watcher's idle wakes can go with it.
+      - >-
+        4. An allow rule for the launcher in the Always Auto Review preset, which today denies
+        `scripts/router-worker.sh` to the router (DEC-56).
+      - >-
+        5. When the plugin lands, the checklists are deleted or demoted to a pointer: two guards for one rule is how
+        they drift.
+
+  - id: D3
+    title: "The worker plugin's cold resume"
+    status: open
+    problem: >-
+      `dsh-worker-workspace` (its own repo in the desktop-dsh project, HEAD `a93dff2`) starts a worker session in a
+      worktree; there is no resume, so a worker that dies takes its context with it, and the router starts a fresh
+      session with a new brief (DEC-55). Deferred out of E-DSH as out of scope.
+    proposal: >-
+      Wake a stopped worker's session instead of spawning a fresh one. A cold resume would wake that session with its
+      workspace root, its transcript and its instructions intact, so a crashed worker's round does not start over.
+    source: "E-DSH plan non-goals; E-DSH.W3 result."
+    taken-by: "unowned"
+closed: []

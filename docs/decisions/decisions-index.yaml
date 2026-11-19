@@ -1,0 +1,310 @@
+# Keel decision index: data only, no page (DEC-69). Read it first, then open only the decision page you need.
+# Per record: id, title, the page that holds it, live or replaced-by. Ids are never reused: check every live
+# branch before minting next-free. Trawler lineage: git history of decisions-index.html; backlog B5 holds what is open.
+next-free: DEC-70
+pages:
+  - file: distribution.html
+    title: "Decisions: distribution and adoption"
+    scope: >-
+      Why Keel is one CLI that carries its own rules, how a project adopts it, and how Keel itself is run.
+    topics: ["One CLI that carries its rules", "Install channels and release", "Adoption and defaults"]
+  - file: workflow-gates.html
+    title: "Decisions: workflow gates"
+    scope: >-
+      Why the notes, the merge gate, the human sign-off, the work process, Keel's own test suite and the GitHub flow
+      are the way they are. Check here before "fixing" anything that looks deliberate.
+    topics: ["Notes", "Merge gate", "Human sign-off", "Workflow process", "Keel's own test suite", "GitHub"]
+  - file: review-docs.html
+    title: "Decisions: reviews and docs"
+    scope: >-
+      How code is reviewed (scope, waivers, the 5-round schedule, nits) and how docs are written, checked and kept
+      short. Check here before "fixing" anything that looks deliberate.
+    topics: ["Code review", "Documentation"]
+  - file: router.html
+    title: "Decisions: the router and its workers"
+    scope: >-
+      Why Keel's router has the posture it has, how its workers are started, bounded and watched, and what risk the
+      owner accepted.
+    topics: ["The router", "Workers: model, messages, sessions, watchdog", "Worker limits and accepted risk"]
+  - file: router-hosts.html
+    title: "Decisions: router hosts and GitHub"
+    scope: >-
+      The router on DeepSeek Harness, the inbox that wakes it, and the router bot on GitHub.
+    topics: ["DeepSeek Harness (DSH)", "The inbox", "GitHub"]
+records:
+  - id: DEC-1
+    title: "One project-agnostic Rust CLI, extracted from Trawler"
+    file: distribution.html
+    status: live
+  - id: DEC-2
+    title: "The rules ship inside the binary; no Claude Code plugin"
+    file: distribution.html
+    status: live
+  - id: DEC-3
+    title: "init never clobbers; skill upgrades ask per file"
+    file: distribution.html
+    status: live
+  - id: DEC-4
+    title: "One AGENTS.md as T0; skills only in .claude/skills"
+    file: distribution.html
+    status: live
+  - id: DEC-5
+    title: "Harness hooks are merged into settings.json, guarded, fail-open"
+    file: distribution.html
+    status: live
+  - id: DEC-6
+    title: "Install channels and the binary name"
+    file: distribution.html
+    status: live
+  - id: DEC-7
+    title: "Unix only"
+    file: distribution.html
+    status: live
+  - id: DEC-8
+    title: "Bootstrapping: the policy lands once, ungated"
+    file: distribution.html
+    status: live
+  - id: DEC-9
+    title: "Config defaults and Keel's own policy"
+    file: distribution.html
+    status: live
+  - id: DEC-10
+    title: "Docs: HTML only; plans do not gate dispatch"
+    file: distribution.html
+    status: live
+  - id: DEC-11
+    title: "What the extraction left out"
+    file: distribution.html
+    status: live
+  - id: DEC-12
+    title: "Repo conventions: worktrees, and nothing unclosed on main"
+    file: distribution.html
+    status: live
+  - id: DEC-13
+    title: "Schemas start at /v1, with no legacy readers"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-14
+    title: "Evidence is derived from the tree, bound by git hashes"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-15
+    title: "One range resolver; configurable branch prefixes"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-16
+    title: "The docs/infra exemption, and what it never covers"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-17
+    title: "keel check: where trees are proven"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-18
+    title: "The epic walk and walk_waivers"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-19
+    title: "Notes sync is push-only"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-20
+    title: "Trust model: a local roster; \"signed\" means a listed key signed"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-21
+    title: "The signature payload"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-22
+    title: "Sign last, strictly; check 8 at the boundary only"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-23
+    title: "The merge boundary judges by the target's policy and untracked hooks"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-24
+    title: "Rule-bearing commits: a trailer, not a signature; known gaps accepted"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-25
+    title: "W4 security review M3 and L1–L5 are not pursued"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-26
+    title: "Review scope, nits and modules"
+    file: review-docs.html
+    status: live
+  - id: DEC-27
+    title: "Doc tiers by config globs; archiving needs lineage"
+    file: review-docs.html
+    status: live
+  - id: DEC-28
+    title: "verify-doc: drafts fully silent"
+    file: review-docs.html
+    status: live
+  - id: DEC-29
+    title: "Conflicted merges are handled by the workflow, not the CLI"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-30
+    title: "The router has no general shell: a whitelist, a launcher and one fail-closed guard"
+    file: router.html
+    status: live
+  - id: DEC-31
+    title: "Headless workers are the standard; an enforced router has no Agent tool"
+    file: router.html
+    status: live
+  - id: DEC-32
+    title: "The router writes worker briefs itself"
+    file: router.html
+    status: live
+  - id: DEC-33
+    title: "Accepted risk: workers inherit the owner's broad allowlist"
+    file: router.html
+    status: live
+  - id: DEC-34
+    title: "E-ROUTER's WUs ran ungated; its close carries walk waivers"
+    file: router.html
+    status: live
+  - id: DEC-35
+    title: "Router skill shape: the remaining plan defaults"
+    file: router.html
+    status: live
+  - id: DEC-36
+    title: "The router may subscribe to a worker's end, never message it"
+    file: router.html
+    status: live
+  - id: DEC-37
+    title: "Worker grants travel on the launcher's command line; the committed policy picks a worker's mode from a closed set, and the router may only narrow it"
+    file: router.html
+    status: live
+  - id: DEC-38
+    title: "Release pipeline: one cargo-dist config, tag-triggered, CI a signal"
+    file: distribution.html
+    status: live
+  - id: DEC-39
+    title: "Workers run on opus at medium or high effort; the policy lives in `.keel/config.toml` `[router]` and the launcher enforces it"
+    file: router.html
+    status: live
+  - id: DEC-40
+    title: "The result report is a configurable, role-found receipt; sign-off hashes are SHA-256"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-41
+    title: "Keel finds the repository from its working directory; git's local environment is never forwarded"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-42
+    title: "The router may message a live worker; a new task still travels as a brief"
+    file: router.html
+    status: live
+  - id: DEC-43
+    title: "Workers are long-running sessions the router closes; the router runs no heartbeat"
+    file: router.html
+    status: live
+  - id: DEC-44
+    title: "Workers are native background sessions; the worker's message is its report"
+    file: router.html
+    status: live
+  - id: DEC-45
+    title: "A watchdog session reports the router's workers every 5 minutes"
+    file: router.html
+    status: live
+  - id: DEC-46
+    title: "Router and worker scope; a worker's environment and limits"
+    file: router.html
+    status: live
+  - id: DEC-47
+    title: "The signer roster is committed, and the target's copy judges"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-48
+    title: "Accepted risk re-recorded: what a same-user worker can still do after the committed roster"
+    file: router.html
+    status: live
+  - id: DEC-49
+    title: "A waived review is its own verdict, and only the owner accepts it"
+    file: review-docs.html
+    status: live
+  - id: DEC-50
+    title: "The review follows a 5-round schedule the tool derives from the notes"
+    file: review-docs.html
+    status: live
+  - id: DEC-51
+    title: "Two nit cases, and a later round refutes a repeat of an earlier finding"
+    file: review-docs.html
+    status: live
+  - id: DEC-52
+    title: "Docs are written by a shipped writing skill; the tool checks only what it can count"
+    file: review-docs.html
+    status: live
+  - id: DEC-53
+    title: "One shared skill root: .agents/skills is a relative link to .claude/skills"
+    file: distribution.html
+    status: live
+  - id: DEC-54
+    title: "The doc check runs at the write, from a host plugin; a review or a merge is no substitute"
+    file: review-docs.html
+    status: live
+  - id: DEC-55
+    title: "A DSH worker is a workspace-rooted session whose report is its transcript"
+    file: router-hosts.html
+    status: live
+  - id: DEC-56
+    title: "A Keel DSH session runs under Always Auto Review"
+    file: router-hosts.html
+    status: live
+  - id: DEC-57
+    title: "Every follow-up names the work that takes it"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-58
+    title: "A worker's report is a post to a file inbox; the router's armed watch is the wake"
+    file: router-hosts.html
+    status: live
+  - id: DEC-59
+    title: "Keel's suite is one test program run by plain `cargo test`"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-60
+    title: "GitHub runs the gate, judged by a keel built from the base"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-61
+    title: "The router bot pushes work branches and opens pull requests, as a GitHub App"
+    file: router-hosts.html
+    status: live
+  - id: DEC-62
+    title: "The router hears the owner on GitHub by polling, and only committed commanders by numeric id"
+    file: router-hosts.html
+    status: live
+  - id: DEC-63
+    title: "Scripts the router runs never run worker-controlled code"
+    file: router-hosts.html
+    status: live
+  - id: DEC-64
+    title: "The owner's approval of a pull request is the sign-off: the github signer tier"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-65
+    title: "GitHub enforces the merge: required checks defined by main"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-66
+    title: "The owner's approval accepts all; he tests by hand"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-67
+    title: "Tasks: one WU, several pull requests, and only the owner merges"
+    file: workflow-gates.html
+    status: live
+  - id: DEC-68
+    title: "Docs are read as web pages, built from every live branch"
+    file: review-docs.html
+    status: live
+  - id: DEC-69
+    title: "Docs split: a short page for the owner, a data file for agents and checks"
+    file: review-docs.html
+    status: live

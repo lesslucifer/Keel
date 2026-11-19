@@ -1,0 +1,86 @@
+# Keel use cases: DeepSeek Harness. Data only, no page (DEC-69). Contract level: trigger, expected, failure.
+# Ids are never reused. Index: use-cases-index.yaml.
+title: "DeepSeek Harness"
+about: >-
+  Contract level only: trigger, expected behaviour, what counts as failure. The standard is the skills
+  (`skills/`); the why lives in DEC-53, DEC-54, DEC-55 and DEC-56. Ids are never reused or renumbered.
+areas:
+  - area: UC-DSH
+    title: "the same rules on DeepSeek Harness"
+    summary: >-
+      DeepSeek Harness (DSH) is an agent host beside Claude Code. A project holds no DSH-specific file: init plants
+      one shared skill root, the doc check comes from a plugin in the DSH profile, and the router learns the host's
+      transport from one table in its skill.
+    use-cases:
+      - id: UC-DSH-1
+        title: "init gives DSH the skills through one shared root"
+        trigger: >-
+          `keel init` in a repo of any host, then a DSH session in that repo or in a worktree of it.
+        expected: >-
+          The six `keel-*` skills are written once, under `.claude/skills`. Init then plants `.agents/skills` as a
+          relative link to `../.claude/skills`, so a DSH session's skill catalog lists all six and each load resolves
+          its base directory under `.agents/skills/`. The link is relative, so a `git worktree add` checkout carries it
+          and it resolves there too. `.agents/` is created when missing; a real `.agents/skills` directory, a regular
+          file, an unreadable link or a link aimed elsewhere is kept and reported, never replaced; a symlinked or
+          non-directory `.agents` gets nothing planted, because a relative target resolves only from a real `.agents` at
+          the repo root. A second run prints `unchanged.agents/skills (->../.claude/skills)`. The link rides the first
+          commit: the hand-off's `git add` names `.agents`. The hand-off also prints the three DSH profile install lines
+          (Auto Review, worker sessions, doc gate) and says a plugin lives in the DSH profile, never in the project.
+        failure: >-
+          A DSH session on an adopted repo with an empty or unreadable skill catalog; init replacing a project's own
+          `.agents/skills`; a link that resolves in the main checkout and dangles in a worktree; a second run that
+          changes the tree; a plugin file written into the project.
+      - id: UC-DSH-2
+        title: "the doc check runs at the write on a host without hooks"
+        trigger: >-
+          A first-party write or edit of a doc under the docs root in a DSH session, with the doc-gate plugin installed
+          in the profile.
+        expected: >-
+          DSH has no shell-hook surface, so the plugin runs the same two checks at the same points. On each write or
+          edit, `tools/post-execute` runs `keel verify-doc <path>` after the bytes land: exit 0 is silent, and a draft
+          is silent by construction. A red doc returns `{kind:'block', feedback}` with the problem lines, so that
+          write's result is a failure and the agent fixes it in the same turn. At turn end, `agent/turn-stopping` runs
+          `keel verify-doc` over all docs and calls `agent.steer()` with the problems, so the turn takes another step
+          instead of closing. The check fails the write; it cannot prevent it, and no post-write surface could. A review
+          or a merge is too late and no substitute: the merge reads doc facts, never a document's form.
+        failure: >-
+          A red doc's write reported as a success; a turn that closes with a red doc under the docs root; the check
+          treated as a review or merge step; the plugin's code committed into the project instead of installed in the
+          profile; a draft's problems reported as red.
+      - id: UC-DSH-3
+        title: "a DSH router's workers and their transcripts"
+        trigger: >-
+          A router session on DSH that starts, steers, reads or stops a worker.
+        expected: >-
+          `worker_spawn` starts the worker with the worktree as its workspace, the brief as its prompt and a handle as
+          its name; a session's directory never changes, so the worker stays in its worktree. A follow-up is one
+          `worker_send`, which runs after the worker's current turn. A subagent is not a worker: it inherits the
+          router's directory and works in the router's checkout, so it is only ever a short read-only check. A worker
+          sends no message. Where the project ships an inbox script it posts a short report there, and the router's
+          armed watcher wakes the router with it (UC-ROUTE-5, DEC-58); its transcript, read with `worker_output` at
+          every wake and before every ask, stays the evidence, and its claims are verified against git like any other
+          report. `worker_list`, `worker_status` (running, idle, ready, stopped) and `worker_stop` (idempotent; a
+          stopped worker is never revived) give the fleet view, the state and the end. The persona is the worktree's
+          `AGENTS.md`, the skills through the shared root and the brief: DSH has no project-scoped agent definition to
+          select and no per-worker preset, so the brief carries the goal, the hard rules and the report protocol in
+          full.
+        failure: >-
+          Worker work dispatched to a subagent that lands in the router's checkout; a router waiting for a message a DSH
+          worker never sends; a transcript claim relayed without a check against git; a stopped worker revived; a worker
+          started outside its own worktree; a brief that leaves the report protocol out.
+      - id: UC-DSH-4
+        title: "permissions for an unattended DSH session"
+        trigger: >-
+          A DSH session, router or worker, in a Keel project.
+        expected: >-
+          Every Keel DSH session runs under Always Auto Review, fixed by the owner: a medium call (an add, a commit,
+          minting a request) runs, a high-risk call is denied, and no approval prompt is offered, so a denial is final.
+          A denial is surfaced with the exact command, never retried, never handed to another session. A worker in a
+          linked git worktree runs `danger-full-access` because the git directory lives outside it; one in a plain
+          directory runs `workspace-write`: the workspace root is the bound. The preset is a session fact and settings
+          are user-level, so a project cannot set it and the router passes none per worker. The preset is never the
+          owner's approval: `keel mr`, a merge, a push and a tag stay the owner's.
+        failure: >-
+          A session whose approvals are off with nothing deciding its calls, so every medium call is rejected; a denial
+          retried or laundered to a peer; a worker granted a scope wider than the workspace it was started in; a preset
+          treated as the owner's sign-off; a project trying to pin the preset for its own sessions.

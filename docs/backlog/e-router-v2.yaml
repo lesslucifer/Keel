@@ -1,0 +1,616 @@
+# Keel backlog: e-router-v2. Data only, no page (DEC-69). Open rows in full; a closed row is its id, title and how it closed.
+# Ids are never reused. Order and next free ids: backlog-index.yaml.
+title: "Backlog: E-ROUTER v2"
+letter: R
+about: >-
+  Router work deferred at E-ROUTER's close: open launcher issues, gate coverage of the router's security files,
+  the epic e2e, and the accepted worker risk. Each row names the source it was deferred from. E-ROUTER's plan is
+  archived out of git; `git show 9787799:docs/work/2026-11-07-router-plan.html` recovers it. Why things are as they
+  are: decisions/router.html (DEC-42 - DEC-48 shaped the router as it is now). Rows R1 - R51.
+open:
+  - id: R5
+    title: "Epic e2e for the router"
+    status: "hermetic part done by E-ROUTER3.W7; the live-session part is still manual"
+    problem: >-
+      Automated by E-ROUTER3.W7 as far as a stub `claude` reaches: `tests/suite/router.rs`
+      `epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end` runs, through the settings-wired guard
+      and with every launcher call under `GIT_*` naming a decoy repository, worktree add (epic, then WU) -> watchdog
+      start -> spawn in plan mode -> the router's messages -> the watchdog's tick -> stop -> a `--review` spawn and
+      stop -> a sign-off the worker forges as itself, refused by keel's merge hook at 8·manual-review -> worktree
+      remove -> watchdog stop. Still manual, because it needs a real model and real sessions: a router session
+      loading `keel-router` and `project-router`, and live two-way delivery between sessions. The plan's original
+      e2e (a scratch repo after `keel init`; a fresh session asked to "be the router for a new epic" loads
+      `keel-router` and `project-router`, cuts and pushes the epic branch before any plan, stages rather than runs
+      `keel mr confirm` with a watcher armed; refusals for a plan before the branch and for the router running
+      `keel mr`) was never automated as a skill-loading session flow; W4 ran its try-recipe once by hand (skills
+      listed and picked); `tests/suite/init.rs` and `tests/suite/router.rs` cover the installed files and the
+      enforcement.
+    proposal: >-
+      The live part runs once by hand per epic as a try-recipe; the W7 run (2026-11-12) is recorded in the W7 result.
+      An epic's `test/v1` counts its e2e layer and names that slice as waived in its covers sentence. Like
+      e-seed-v2 B3: until built, an E-ROUTER-style epic `test/v1` waives its e2e layer.
+    source: >-
+      E-ROUTER plan e2e; E-ROUTER3.W7 (hermetic part automated). The page's badge: hermetic part done.
+    taken-by: "unowned"
+  - id: R6
+    title: "Smaller follow-ups"
+    status: "open: only row 4 (a note) remains; rows 1 - 3 are decided or done"
+    source: >-
+      E-ROUTER close review (altitude, re-check, `ponytail:` comment in the launcher); E-ROUTER3 for the decisions.
+      Open after the E-ROUTER3 close, for the next router epic (not yet proposed): row 4's note.
+    taken-by: "unowned: the next router epic (not yet proposed)"
+    items:
+      - >-
+        row 1: (decided by E-ROUTER3, epic plan open point 3) Ship the enforcement with `keel init` (launcher, guard,
+        agent files, settings) or keep it per project: it stays per project; `keel init` ships the skill only
+        (DEC-30). Today the skill tells adopters it is theirs to commit. Source: close review (altitude).
+      - >-
+        row 2: (done by E-ROUTER3.W8) The launcher leaves one `.router-brief.*` dir per run in the worker's worktree
+        until the worktree is removed; `stop` now removes that session's copies. Source: launcher `ponytail:` comment.
+      - >-
+        row 3: (done by E-ROUTER3.W8) The launcher's live-run check reads `<name>.pid` then launches (not atomic); two
+        launches in the same second collide on the run dir and the second dies; fixed by a per-name lock
+        `.router/runs/.lock-<name>` over the live check and the start. Source: close review re-check.
+      - >-
+        row 4: `.router/runs/` keeps one read-only dir per run and `stop` scans them all for its session (about 1 ms
+        per dir measured; `resume`, which scanned them before, is deleted). Source: close review (refuted as a
+        defect, kept as a note).
+  - id: R7
+    title: "Open after E-ROUTERFIX"
+    status: "open: rows 8, 10, 11 and 12 remain; the other rows are done or obsolete"
+    source: >-
+      E-ROUTERFIX's plans and results are archived out of git; `git show 5e953aa:docs/work/<doc>` recovers any of
+      them. Each row below has its own source. Open after the E-ROUTER3 close, for the next router epic (not yet
+      proposed): R7's remaining rows. Two R7 rows were Keel product items, not router tooling (the bare-SHA target
+      inference, row 6, and the `cargo fmt` drift, row 9); they were re-pointed to E-SEED3 (e-seed-v2) and are done.
+    taken-by: "unowned: the next router epic (not yet proposed)"
+    items:
+      - >-
+        row 1: (done by E-SEED2.W12) Watch recipe fails for launcher workers. A headless watch worker's Bash refused
+        every polling `until`/`for` loop (variables, quoting, compound commands all need approval), so worker-ops.md
+        "Watch every staged owner action" did not work under the launcher and the router could not watch an owner
+        action; `wait` (DEC-36) covered a worker's end only. Options were a launcher mode or committed script per
+        probe (fixed argv, guard-whitelisted, like `wait`), or a granted watch command on the launcher's allow list.
+        Done: the router arms `scripts/router-watch.sh` itself (DEC-30 amendment, UC-ROUTE-1). Source: E-ROUTERFIX W5
+        watch worker (router's `.router/out/e-routerfix-w5-watch.out`).
+      - >-
+        row 2: (done 2026-11-09, as recorded by the dropped E-SEED2.W9) Owner, after E-ROUTERFIX reaches `main`:
+        remove the temporary user-level `cargo`/`keel` allow entries, then run one dogfood worker through the
+        launcher to prove the grant comes from the launcher alone (DEC-37). A launcher-only worker ran `cargo test`,
+        `keel preflight` and `keel verify-doc`, and was refused `keel mr --help`. Source: epic plan open point 1; W1
+        follow-up.
+      - >-
+        row 3: (done by E-ROUTER3.W5; partly done earlier by E-SEED2.W12) Rule-bearing skill text not yet landed
+        (owner's `keel mr commit`): the "Wait" step in `skills/keel-router/references/worker-ops.md` and its
+        `.claude/skills/` mirror (router's `.router/w4-worker-ops-wait.patch`); `.claude/skills/project-router/SKILL.md`
+        "Owner identity" still said there is no `.gitworktreecopy` (`.router/w3-project-router.patch`); optional
+        `.claude/agents/router.md` posture bullet for the subscribe-only `SendMessage` and `ListAgents`. The
+        project-router `.gitworktreecopy` row landed with E-SEED2.W12 (73cbe78); the Wait step became R9; the posture
+        bullet is done by E-ROUTER3.W5: `.claude/agents/router.md` and the keel-router `SKILL.md` posture name
+        `SendMessage` to a named session and `ListAgents`. Source: W2, W3, W4 results.
+      - >-
+        row 4: (done by E-SEED2.W12, b997c0a) `.claude/settings.json` lacked `Bash(scripts/router-worker.sh wait *)`,
+        so an interactive router was prompted each time it armed `wait` (the guard test already maps it to a valid
+        shape; rule-bearing). Source: W4 result.
+      - >-
+        row 5: (done by E-ROUTER3.W8) Telegram dual poller: every headless worker loaded the user's Telegram channel
+        plugin, and two pollers on one bot token conflict; workers now load no user setting source and no MCP server
+        (probe P1: no plugin, no poller). Source: W4 / E-SEED2.W8 results.
+      - >-
+        row 6: (done by E-SEED3.W3) Keel product: `keel mr confirm` / `verify-dod` on a bare-SHA tip inferred `main` as
+        the target and reported a false `4·review-base` red. Now the epic of a `wu/` holder, else one `epic/` holder,
+        else a refusal asking for `--target`; main is never a guess (DEC-15). Source: W3 result.
+      - >-
+        row 7: (done) E-SEED2 hand-off: its epic plan and W8 plan/result rode into this epic with W8 and were dropped
+        from git here (E-SEED2.W8 became E-ROUTERFIX.W4). Done: E-SEED2.W10's main merge kept the live epic plan,
+        which marks W8 moved. DEC-38 - DEC-41 have since been taken, so Trawler re-records start at the next free id
+        (proposed E-LINEAGE). Source: W1, W4 results; E-ROUTERFIX close.
+      - >-
+        row 8: Test nits (waived, fix when touching the code): `tests/suite/router.rs` e2e's `PATH` prefix for
+        `git worktree add` is inert; `wired_guard` duplicates the spawn head of the other guard helper. (Obsolete:
+        the `wait` test pinned the default stall-min to the range 11 - 16, not exactly 15 (899 s / 901 s would);
+        `wait` was deleted by E-ROUTER3.W10, DEC-44.) E-ROUTER3.W6, which would have taken test nits, was dropped:
+        they are fixed by whichever WU touches the code. Source: W5 and W4 reviews.
+      - >-
+        row 9: (done by E-SEED3.W1) `cargo fmt --check` reported drift in `src/gate.rs`, predating this epic;
+        `rustfmt.toml` and one formatter pass, and `[check] lint` runs `cargo fmt --check` before clippy (UC-GATE-4).
+        Source: W1 result.
+      - >-
+        row 10: Optional live checks: break the guard wiring by hand (clone's PreToolUse command -> `cat >/dev/null`)
+        and see the e2e's denials go red; the guard-wiring check stays optional. (Done by E-ROUTER3: watching an
+        interactive router wake on the idle notice, after which the heartbeat could drop its per-worker `ps` check:
+        an idle router wakes on a worker's message (W2 probe 2) and on the watchdog's (W9 live run); there is no
+        heartbeat, DEC-45.) Source: W5, W2 results.
+      - >-
+        row 11: Owner-action watch kinds beyond git (follow-up to row 1): `scripts/router-watch.sh` covers commit,
+        signed, merged, pushed and tagged only. A draft release published, a CI run finished and htmldoc comments
+        need `gh release`/`gh run`/`curl`, outside the router's whitelist; they stay with read-only workers.
+        Options: `gh`-backed kinds in the script with fixed argv, or keep them worker-run. Decided by E-ROUTER3
+        (epic plan open point 4, W6 dropped): they stay worker-run. Source: E-SEED2.W12 plan, D5.
+      - >-
+        row 12: `router-watch.sh` test-coverage follow-ups (capped by the owner's 2026-11-10 review ruling: a missing
+        edge-case test or a harness tidy-up is a nit and does not reopen W12). (a) No test covers `pushed` on a
+        branch that exists only as `refs/remotes/origin/<b>`. (b) Prepared but not run: mutants for the peeled
+        annotated-tag commit, the 5-failure threshold, the `[[:cntrl:]]` pass of `clean`, the `no-ff` second-parent
+        check and the `commits=` count. (c) When the test binary dies mid-test (a killed `cargo test`), the `sleep`
+        shim returns at once, so the orphaned watch keeps polling until its real 110-minute `TIMEOUT`; eleven such
+        processes were seen after the W12 mutant sweeps; the shim could kill its caller once `STUB_OWNER` is gone.
+        (d) `Launcher::cmd` and the e2e and wired-guard spawns of `router-worker.sh` do not go through `hermetic()`.
+        (e) On git 2.50, `-c remote.origin.followRemoteHEAD=never` on the explicit-refspec fetch makes no observable
+        difference, so no test can pin it. (f) The watch's sha check accepts up to 40 hex characters, so sha256
+        repositories are unsupported. (g) In production the watch reads the user's git config (for example
+        `log.showSignature` or `core.quotePath`); detail lines are cleaned, but output shape under such settings is
+        untested. Source: E-SEED2.W12 code-review rounds, owner ruling 2026-11-10 (that ruling is now the rubric's
+        nit rows and the 5-round schedule: UC-REV-1, UC-REV-3).
+  - id: R14
+    title: "A granted worker can sign as the owner (key-only tiers)"
+    status: "partly done by E-ROUTER3.W4 (DEC-47, DEC-48); the key-only flip is open (owner ruling 2026-11-12)"
+    problem: >-
+      Done by E-ROUTER3.W4 (DEC-47, DEC-48): the roster is `.keel/mr-allowed` committed on the target, nothing reads
+      `.mr-allowed`, `.gitworktreecopy` no longer seeds it. Open (owner ruling 2026-11-12): Keel's tiers keep
+      `username`, so a same-user process can still sign as the owner by name. The original finding (L2; owner
+      decision was open): `.gitworktreecopy` seeded every new worktree with the main checkout's `.mr-allowed`, and
+      the `email`/`username` tiers are a string match with no key. A launcher worker can edit `.keel/config.toml`
+      `[check] test` to run `keel mr confirm --as <owner>`, then run `keel check` (granted, DEC-37); the `keel mr`
+      deny does not stop it. Same class as `src/mr.rs` `tier_of`'s accepted limitation, DEC-33 and DEC-37, but
+      seeding made it reachable in every worktree.
+    proposal: >-
+      The remaining fix is an owner commit setting `tiers = ["key"]` with a presence key (DEC-48 item 4). Original
+      fix options: key-only `[mr] tiers`, or stop seeding `.mr-allowed` (the second is done).
+    source: >-
+      Carried over from the dropped E-SEED2.W9 (branch `wu/E-SEED2/w9-router-followups`, a51bb88; dropped by owner
+      ruling 2026-11-10; `git show a51bb88:docs/work/2026-11-09-w9-router-followups-wu-plan.html` recovers its plan):
+      the E-ROUTERFIX independent review (L2), via the W9 plan. Key-only flip deferred by E-ROUTER3 (DEC-48 item 4).
+    taken-by: "unowned: the next router epic (not yet proposed)"
+  - id: R20
+    title: "The router loops on a red doc it cannot fix"
+    status: open
+    problem: >-
+      The project's `Stop` hook (`verify-doc-stop`) refuses every turn end while a doc in the checkout is red;
+      workers keep it (they must leave their docs green), but a router cannot edit docs.
+    proposal: >-
+      Next router epic.
+    source: >-
+      W9 follow-up; W8 point 11. Deferred by E-ROUTER3.W8 (owner, 2026-11-11; the W8 plan's open points and probes,
+      DEC-46).
+    taken-by: "unowned: the next router epic (not yet proposed)"
+  - id: R21
+    title: "`gh` for a sandboxed worker"
+    status: open
+    problem: >-
+      `gh` needs the keychain and `api.github.com`, both outside the sandbox; no worker reads CI today.
+    proposal: >-
+      Add a sandbox exclusion with read-only grants when one is next needed.
+    source: >-
+      W8 point 19. Deferred by E-ROUTER3.W8 (owner, 2026-11-11; DEC-46).
+    taken-by: "unowned: the next router epic (not yet proposed)"
+  - id: R22
+    title: "A worker editing its own worktree's settings or hooks"
+    status: open
+    problem: >-
+      A worker editing its own worktree's settings or hooks (`.claude/settings.json`, `.claude/settings.local.json`,
+      which `--setting-sources project,local` loads) is the remaining way around the sandbox. Probe P4 (a): an `Edit`
+      outside the worktree waits on a permission prompt (the watchdog reports it). P4 (b), a valid hook edit inside
+      the worktree, is unprobed (the probe's edit failed Claude Code's settings schema).
+    proposal: >-
+      Pairs with R3 (those files under a gate; R3 is done for the router's security files, see its entry).
+    source: >-
+      W8 point 16. Deferred by E-ROUTER3.W8 (owner, 2026-11-11; DEC-46).
+    taken-by: "unowned: the next router epic (not yet proposed)"
+  - id: R23
+    title: "Reviving a stopped worker"
+    status: open
+    problem: >-
+      Probe P5: `claude --bg -n <name> --resume <sid>` with spawn's full flag set keeps the sandbox, the persona,
+      the name, no MCP server and the earlier conversation (a plain `--bg --resume` drops every flag, so W8 deleted
+      `resume`).
+    proposal: >-
+      A revival design would start from that argv.
+    source: >-
+      W8 probe P5. Deferred by E-ROUTER3.W8 (owner, 2026-11-11; DEC-46).
+    taken-by: "unowned: the next router epic (not yet proposed)"
+  - id: R24
+    title: "A launch killed mid-way leaves its lock"
+    status: open
+    problem: >-
+      A launch killed mid-way leaves its lock (`.router/runs/.lock-<name>`); the refusal names the directory for the
+      owner to remove. Stale-lock recovery is not built.
+    source: >-
+      W8 "Not built". Deferred by E-ROUTER3.W8 (owner, 2026-11-11; DEC-46).
+    taken-by: "unowned: the next router epic (not yet proposed)"
+  - id: R25
+    title: "The epic gate re-judges each inner sign-off by the epic target's roster"
+    status: open
+    problem: >-
+      A same-user shell can commit its key onto `epic/<E>` with plumbing and forge an inner WU merge against that
+      rewritten roster (DEC-48, threat T6); check 8 runs at the boundary only (DEC-22), so the epic walk never
+      re-verifies a WU's `mr/v1`.
+    proposal: >-
+      Re-verifying every inner sign-off against main's roster at the epic gate would make that forgery visible
+      before main.
+    source: >-
+      E-ROUTER3.W4 plan, threat table T6. Deferred by E-ROUTER3.W4 (owner, 2026-11-12).
+    taken-by: "unowned: the next router epic (not yet proposed)"
+  - id: R26
+    title: "A worker repointing its worktree at a git dir it controls (the gitfile / `commondir` escape)"
+    status: "unverified"
+    problem: >-
+      The sandbox lets a worker write its worktree and the shared git dir except `config`, `hooks`, `keel-hooks` and
+      `info`. The worktree's `.git` file and the git dir's `worktrees/<name>/commondir` are both writable, so a worker
+      could point its worktree at a git dir whose config and hooks it controls. Read from the launcher, never
+      probed. Pairs with R22; residual of R3.
+    source: >-
+      Carried from E-ROUTER3.W4 into the E-ROUTER3.W5 plan (open point 7). Deferred by E-ROUTER3.W4 (owner,
+      2026-11-12).
+    taken-by: "unowned: the next router epic (not yet proposed)"
+  - id: R27
+    title: "The router passes `spawn` an absolute worktree path"
+    status: open
+    problem: >-
+      In the W7 manual run (2026-11-12), `spawn w7-live .wt/worker ...` failed with `router-worker: no such
+      worktree`, because a relative path resolves from the router's cwd (`.wt/router`). `../worker` was refused by
+      the guard. Only the absolute path ran.
+    proposal: >-
+      The keel-router skill (worker-ops, Spawn) or the brief text should tell the router to pass the absolute path.
+      This is a rule-bearing text change (owner `keel mr commit`), for the next router epic (proposed to the owner at
+      the E-ROUTER3 close).
+    source: >-
+      E-ROUTER3.W7 result, hand-off (a). Found by E-ROUTER3.W7 (2026-11-12).
+    taken-by: "unowned: the next router epic"
+  - id: R28
+    title: "A review worker can still write through Bash"
+    status: open
+    problem: >-
+      The `--review` worker is denied every edit tool, `git add` and `git commit` (DEC-46), but `cat > file` in the
+      sandboxed shell is not denied, and `sh -c 'git commit ...'` passes the deny list.
+    proposal: >-
+      Closing it needs a review-specific sandbox that denies writes to the worktree while the `target/` that
+      `keel check` needs stays writable. Pairs with R10 (R10 is done; see its entry).
+    source: >-
+      E-ROUTER3.W8 result. Found at the E-ROUTER3 close: follow-ups the E-ROUTER3 WU results named that no WU
+      absorbed.
+    taken-by: "unowned: the next router epic (not yet proposed)"
+  - id: R29
+    title: "The watchdog's schedule expires"
+    status: open
+    problem: >-
+      The watchdog's `CronCreate` recurring job ends after 7 days; the keel-router skill tells the router to restart
+      a watchdog whose reports stop. Nothing is built for it.
+    source: >-
+      E-ROUTER3.W9 result. Found at the E-ROUTER3 close: follow-ups the E-ROUTER3 WU results named that no WU
+      absorbed.
+    taken-by: "unowned: the next router epic (not yet proposed)"
+  - id: R31
+    title: "The worker file guard misses Unicode case-fold variants"
+    status: "open: severity high; owner-waived in E-WMODE.W1 (review round 3, 2026-11-12)"
+    problem: >-
+      `tr` lowercases ASCII only, and APFS folds U+017F (the long s) to "s", so a `Read` or `Grep` of `~/.<long s>ssh`
+      and a `Write` of `<wt>/.claude/<long s>ettings.json` pass (reproduced at guard level).
+    proposal: >-
+      Compare through the file system (inode or `realpath` of the deny target), not by spelling.
+    source: >-
+      E-WMODE.W1 review round 3, the last round under the 3-round cap. The owner ruled option C on 2026-11-12: no
+      further rounds, no code change, signed with these findings recorded (DEC-37, "Review round 3"). Owner-waived;
+      fix in a later router epic. R32 and R33 are live for every worker today, whatever its permission mode.
+    taken-by: "unowned: a later router epic"
+  - id: R32
+    title: "Dependency sources stay shell-writable"
+    status: "open: severity high; live for every worker; owner-waived in E-WMODE.W1 (review round 3, 2026-11-12)"
+    problem: >-
+      `~/.cargo/registry/src` and `~/.cargo/git/checkouts` are under the worker's `allowWrite`, so a worker can edit
+      a dependency's `build.rs`, which runs unsandboxed at the owner's next cargo build. Live since DEC-46,
+      whatever the mode.
+    proposal: >-
+      A per-worktree `CARGO_HOME`, or deny `registry/src` and `git/checkouts` after a vendored or pre-fetched build.
+    source: >-
+      E-WMODE.W1 review round 3, the last round under the 3-round cap. The owner ruled option C on 2026-11-12: no
+      further rounds, no code change, signed with these findings recorded (DEC-37, "Review round 3"). Owner-waived;
+      fix in a later router epic. R32 and R33 are live for every worker today, whatever its permission mode.
+    taken-by: "unowned: a later router epic"
+  - id: R34
+    title: "The guard passes tools it does not name"
+    status: "open: severity high; owner-waived in E-WMODE.W1 (review round 3, 2026-11-12)"
+    problem: >-
+      `Artifact` (`out_dir`), `ArtifactData`, `Workflow` (`scriptPath`) and `EnterWorktree` (`path`) take paths and
+      are not judged.
+    proposal: >-
+      Deny every tool not on a known list, or judge every `tool_input` string that looks like a path.
+    source: >-
+      E-WMODE.W1 review round 3, the last round under the 3-round cap. The owner ruled option C on 2026-11-12: no
+      further rounds, no code change, signed with these findings recorded (DEC-37, "Review round 3"). Owner-waived;
+      fix in a later router epic.
+    taken-by: "unowned: a later router epic"
+  - id: R35
+    title: "A trailing newline escapes the guard"
+    status: "open: severity medium; owner-waived in E-WMODE.W1 (review round 3, 2026-11-12)"
+    problem: >-
+      Command substitution strips it from `file_path`, so the guard judges a different path than the tool opens
+      (reproduced at guard level).
+    proposal: >-
+      Read the path with a sentinel, or refuse any control character in jq.
+    source: >-
+      E-WMODE.W1 review round 3, the last round under the 3-round cap. The owner ruled option C on 2026-11-12: no
+      further rounds, no code change, signed with these findings recorded (DEC-37, "Review round 3"). Owner-waived;
+      fix in a later router epic.
+    taken-by: "unowned: a later router epic"
+  - id: R36
+    title: "TOCTOU between the guard's resolution and the tool's open"
+    status: "open: severity medium; owner-waived in E-WMODE.W1 (review round 3, 2026-11-12)"
+    problem: >-
+      A worker's shell can swap a path component for a symlink after the hook judged it.
+    source: >-
+      E-WMODE.W1 review round 3, the last round under the 3-round cap. The owner ruled option C on 2026-11-12: no
+      further rounds, no code change, signed with these findings recorded (DEC-37, "Review round 3"). Owner-waived;
+      fix in a later router epic.
+    taken-by: "unowned: a later router epic"
+  - id: R37
+    title: "`linked_ok` checks only the last component for a symlink"
+    status: "open: severity low; owner-waived in E-WMODE.W1 (review round 3, 2026-11-12)"
+    problem: >-
+      A symlinked parent of the admin dir or of the `.git` file is not caught.
+    source: >-
+      E-WMODE.W1 review round 3, the last round under the 3-round cap. The owner ruled option C on 2026-11-12: no
+      further rounds, no code change, signed with these findings recorded (DEC-37, "Review round 3"). Owner-waived;
+      fix in a later router epic.
+    taken-by: "unowned: a later router epic"
+  - id: R38
+    title: "`git worktree remove` runs with the fsmonitor hook on"
+    status: "open: severity low; owner-waived in E-WMODE.W1 (review round 3, 2026-11-12)"
+    problem: >-
+      `git worktree remove` runs with the fsmonitor hook on (`scripts/router-worker.sh`, worktree remove), after
+      `linked_ok` has passed.
+    source: >-
+      E-WMODE.W1 review round 3, the last round under the 3-round cap. The owner ruled option C on 2026-11-12: no
+      further rounds, no code change, signed with these findings recorded (DEC-37, "Review round 3"). Owner-waived;
+      fix in a later router epic.
+    taken-by: "unowned: a later router epic"
+  - id: R39
+    title: "No test pins `-c core.fsmonitor=false`"
+    status: "open: severity nit; owner-waived in E-WMODE.W1 (review round 3, 2026-11-12)"
+    problem: >-
+      No test pins `-c core.fsmonitor=false` on the launcher's and the watchdog's git calls.
+    source: >-
+      E-WMODE.W1 review round 3, the last round under the 3-round cap. The owner ruled option C on 2026-11-12: no
+      further rounds, no code change, signed with these findings recorded (DEC-37, "Review round 3"). Owner-waived;
+      fix in a later router epic.
+    taken-by: "unowned: a later router epic"
+  - id: R40
+    title: "The live check of `auto`"
+    status: "owed at the first spawn after E-WMODE's merge"
+    problem: >-
+      Nothing before the merge ran `claude --bg --permission-mode auto`, the guard hook from `--settings` under
+      `--bg`, or cargo under the narrowed `~/.cargo` `allowWrite`.
+    proposal: >-
+      The router's first spawn from a checkout whose HEAD carries E-WMODE checks it: expect
+      `RUNNING ... permission-mode=auto`, not `DEAD` with the CLI's text. Then the worker, in order: one `Edit` and
+      one `Write` in the router checkout, both refused at once with `worker file guard: ... outside the worktree`; a
+      `Read` under `~/.ssh`, refused; one `Edit` in its own worktree, allowed; one `git commit` and one
+      `keel notes write`, both succeed; one `cargo build`, succeeds; a read outside its worktree with no prompt row
+      in `claude agents --json`. Also note whether a plan-mode or auto-memory write is denied. A `DEAD` spawn, a
+      guard that does not fire, or a failed commit or build is fixed by an owner `keel mr commit`:
+      `worker_permission_mode = "acceptEdits"`, or a launcher change. The result goes to DEC-37 as an Amended row.
+    source: >-
+      E-WMODE plan open point 9, W1 result. Found at the E-WMODE close (epic closed 2026-11-12; why: DEC-37's E-WMODE
+      row): follow-ups the E-WMODE.W1 result named that no WU absorbed.
+    taken-by: "the router's first spawn after E-WMODE's merge (owner commits any fix)"
+  - id: R41
+    title: "What remains after the worker file guard"
+    status: "accepted residual (DEC-37, 'What remains')"
+    problem: >-
+      Owner code execution: (1) the worktree's own `.claude/agents/worker.md` and `.claude/skills/`, editable by the
+      worker and loaded by the next session there; (2) other worktrees' admin dirs under the git dir, which the
+      worker's shell can still rewrite, unchecked when the owner or the router runs git there (the router's checkout
+      included when it is a linked worktree). Data exposure: under `auto` the classifier judges reads outside the
+      worktree and extra hosts, so what a worker may read it may send.
+    proposal: >-
+      A guard or sandbox bound on the worktree's `.claude/agents/` and `.claude/skills/`, a `linked_ok`-style check
+      before any owner or router git in a worktree, and a read allowlist or host pin for `auto` workers.
+    source: >-
+      E-WMODE plan open point 7, W1 review round 2 (M4). Found at the E-WMODE close (epic closed 2026-11-12).
+    taken-by: "unowned"
+  - id: R42
+    title: "An `acceptEdits` worker reached a host outside the five"
+    status: "unverified"
+    problem: >-
+      The E-CRCAP planner ran `npm install` from `registry.npmjs.org` and was not stopped. Candidate causes, none
+      verified: the owner answered a `sandbox request` prompt; that worktree's `settings.local.json` added the host
+      or a `WebFetch(domain:...)` allow; the session was not started by this launcher. The router or the owner can
+      tell from that session's transcript and worktree.
+    source: >-
+      E-WMODE.W1 result, review round 1 (L3). Found at the E-WMODE close (epic closed 2026-11-12).
+    taken-by: "unowned"
+  - id: R44
+    title: "`ListAgents` once omitted an idle worker"
+    status: open
+    problem: >-
+      The router could not see a worker that was alive and waiting for a follow-up, so it could not address it by
+      name. Not reproduced; cause unknown (harness listing or the worker's state).
+    proposal: >-
+      The router cross-checks the launcher's own worker list before it treats a worker as gone.
+    source: >-
+      Router keel-77, E-CRCAP (router tooling seen during E-CRCAP).
+    taken-by: "unowned"
+  - id: R45
+    title: "The watchdog once labelled an idle worker STUCK"
+    status: open
+    problem: >-
+      A worker that had sent its report and was waiting, as the brief tells it to, read as stuck.
+    proposal: >-
+      The watchdog tells "reported and idle" from "no progress", for example from the worker's last SendMessage.
+    source: >-
+      Router keel-77, E-CRCAP (router tooling seen during E-CRCAP).
+    taken-by: "unowned"
+  - id: R46
+    title: "The router skill and briefs follow the writing skill"
+    status: open
+    problem: >-
+      The router's skill and the briefs it writes are long and dense, like plans were before `keel-write`.
+    proposal: >-
+      Apply the writing skill to them: briefs short, problem first, details last.
+    source: >-
+      E-DOCSTYLE close. Deferred because E-CRCAP was editing the router skill (E-DOCSTYLE epic open point 8);
+      E-CRCAP has closed.
+    taken-by: "unowned"
+  - id: R47
+    title: "The inbox reader's four lows, and the idle wakes nobody ruled on"
+    status: "open: L3 wanted soon"
+    problem: >-
+      What the inbox channel (DEC-58, `scripts/router-inbox.sh`) left open when E-RGUARD closed on 2026-11-15. R47
+      holds the four lows of E-RGUARD.W3's independent review, five script observations from the epic's code review,
+      and one judgment the owner has not made; L3 is wanted soon. The ten sub-items are in `items`.
+    source: >-
+      E-RGUARD.W3 independent review (L1 - L4 and the judgment it raised); the E-RGUARD epic code review round 1,
+      outside its code scope (S1 - S5); E-RGUARD close.
+    taken-by: "unowned"
+    items:
+      - >-
+        L1 (a huge header line defeats the read bound): The reader takes the body with `tail -n +6` before it caps
+        the bytes (`scripts/router-inbox.sh` `show`), so a file whose `when:` or `---` line is huge makes `tail`
+        read the whole file. DEC-58 says only a header's first 512 bytes and a body's first 4,002 are read. Fix
+        direction: cap the bytes before finding line 6.
+      - >-
+        L2 (header lines 4 and 5 are never checked): `message_ok` checks the `id:`, `from:` and kind lines only, so a
+        file `post` did not write is delivered with those two lines dropped instead of being judged junk. Fix
+        direction: check them as `post` writes them.
+      - >-
+        L3 (the cleaner passes hidden characters; wanted soon): `clean` turns C0, DEL, C1, U+200B - 200F, U+FEFF,
+        U+2028 - 202E and U+2066 - 2069 into `?`, but passes U+2060 - 2064, U+00AD, U+180E, U+FFF9 - FFFB and the tag
+        block U+E0000 - E007F. A post can carry text the router reads and a person does not see. Fix direction:
+        print those as `?` too, with a test per range.
+      - >-
+        L4 (one wake step orders the inbox unconditionally): `worker-ops.md` "Wake" step 3 says to re-arm
+        `<inbox> watch 6600` on DSH without "where the project ships one", which every other mention carries. Fix
+        direction: add the clause, both skill trees.
+      - >-
+        S1 (the sender reads a response with no size cap): `scripts/notify-owner.py` `request` reads the whole
+        response body, and the error body too, with no byte cap. Fix direction: read at most a bound, as the inbox
+        reader does.
+      - >-
+        S2 (a dry run fails on a read-only body): the check that the body can be cleared runs before the dry-run
+        branch, so `--dry-run` refuses a body it would never clear. Fix direction: run that check for `--send` only.
+      - >-
+        S3 (the length cap counts the wrong unit): `MAX_TEXT` counts code points; Telegram counts UTF-16 code units,
+        so a message with characters outside the Basic Multilingual Plane (emoji) can pass the check and still be
+        refused by the API. Fix direction: count UTF-16 units.
+      - >-
+        S4 (GNU `expr` refuses keyword ids): `scripts/router-inbox.sh` `id_ok` and `name_ok` run `expr "$1" : ...`;
+        under GNU `expr` an id such as `length` or `match` is read as an operator and refused, while the guard
+        admits it. BSD `expr` (macOS) is unaffected. Fix direction: match with `case` or put a fixed prefix before
+        the operand.
+      - >-
+        S5 (the guard's id pattern leans on other rules): the guard's `consume` pattern has no `..` clause and no
+        length bound of its own. It refuses `a..b` only through its general rule that no `scripts/` command holds
+        `..`, and neither the guard nor the script bounds an id's length; the shared-probe test ties the two today.
+        Fix direction: state both in the pattern.
+      - >-
+        Owner judgment (the watcher's idle wakes): while armed, the watcher's 6,600 s bound wakes the router about 13
+        times a day with no news. The owner approved the channel on 2026-11-14; no ruling accepts those idle wakes
+        beyond that approval. The owner rules: accept them, or ask for a longer bound or a wake on a worker's turn
+        end (dsh D2 item 3).
+  - id: R48
+    title: "A Claude Code worker cannot post"
+    status: "open: owner change"
+    problem: >-
+      The launcher's sandbox does not let a worker write `<main checkout>/.router/inbox`, so a Claude Code worker
+      reports by `SendMessage` only.
+    proposal: >-
+      Adding the inbox to its `allowWrite` would weaken DEC-46 for every worker, so it is the owner's call and a
+      launcher change.
+    source: >-
+      E-RGUARD.W3 result, follow-ups (the report channel, from the E-RGUARD close, 2026-11-15; DEC-58).
+    taken-by: "the owner (a launcher change)"
+  - id: R50
+    title: "`keel mr` does not check its own checkout's admin dir before it runs git"
+    status: "open on the page (badge open): the `keel mr` check is fixed by E-GHFLOW2.W3; github-flow G8 item 2 left open"
+    problem: >-
+      The launcher checks every worktree's admin dir on each run, but a worktree added after a worker started, or a
+      change made between two launcher runs, is seen only at the next run. The owner's unsandboxed `keel mr commit`
+      or `keel mr confirm` in a linked checkout would then follow a `commondir`, `gitdir` or `config.worktree` a
+      worker wrote, and git would run that repository's hooks or config. Medium severity. Fixed by E-GHFLOW2.W3:
+      every `keel mr` command checks, before any git call, that its checkout's `.git` is a directory with no
+      `commondir`, or a link to an admin dir under `worktrees/` whose `commondir` is `../..` and whose `gitdir`
+      names it back, with no `config.worktree` in either dir, and refuses otherwise. It runs only from the
+      checkout's root (never walks up), refuses a checkout nested in another repository, and resolves the `.git`
+      link and the admin dir's path as git follows them, refusing any symbolic link on the way
+      (`tests/suite/sign_off.rs`). Left open: github-flow G8 item 2.
+    proposal: >-
+      Original fix direction: `keel mr` (a keel source change, `src/mr.rs`) checks the checkout's `.git` link and
+      admin dir as the launcher does (`commondir` exactly `../..`, no `config.worktree`, a `gitdir` naming this
+      `.git`) and refuses before any git call. Done by E-GHFLOW2.W3; what is left is github-flow G8 item 2.
+    source: >-
+      E-GHFLOW.W3 result, security review round 2, F1 follow-up (the shared git dir, left after R33's fix, DEC-63).
+      For the next router epic.
+    taken-by: "unowned: the next router epic (github-flow G8 item 2 for the remainder)"
+  - id: R51
+    title: "The worker sandbox is a deny list over a writable git dir"
+    status: "open: severity medium"
+    problem: >-
+      A worker may write the whole shared git dir except the files named and globbed in its deny list. Every new
+      file git learns to read there is open until someone denies it; a glob does not stop renaming a whole admin
+      dir, which only the launcher's per-run check catches.
+    proposal: >-
+      An allow list for the git dir: only what a commit and a notes write need (`objects/`, the worker's own branch
+      ref and its reflog, `refs/notes/` but `cr` for an author, `index` and lock files in its own admin dir),
+      checked against git's own writes.
+    source: >-
+      E-GHFLOW.W3 result, security review round 2 (the shared git dir, left after R33's fix, DEC-63). For the next
+      router epic.
+    taken-by: "unowned: the next router epic"
+closed:
+  - id: R1
+    title: "Worker persona missing in branches without it"
+    closed: "done by E-ROUTER3.W8 (DEC-46)"
+  - id: R2
+    title: "Do headless workers stall under acceptEdits?"
+    closed: "answered and fixed by E-ROUTERFIX.W1 (DEC-37)"
+  - id: R3
+    title: "Put the router's security files under a gate"
+    closed: "done by E-ROUTER3.W4 (DEC-48); residual R26"
+  - id: R4
+    title: "Revisit the accepted worker risk"
+    closed: "accepted: DEC-48"
+  - id: R8
+    title: "Router-worker messaging: a fix"
+    closed: "done by E-ROUTER3.W1 (DEC-42)"
+  - id: R9
+    title: "Worker-ops Wait step and Report wording (as W9 wrote them)"
+    closed: "superseded by E-ROUTER3.W10 (DEC-44)"
+  - id: R10
+    title: "The deny wording states intent, not a sandbox"
+    closed: "done by E-ROUTER3.W5"
+  - id: R11
+    title: "Plan mode for read-only checkers is unverified"
+    closed: "done by E-ROUTER3.W5"
+  - id: R12
+    title: "An expired subscription falls back to wait or ps"
+    closed: "merged into R8, done by E-ROUTER3.W1; the wait fallback deleted by W10 (DEC-44)"
+  - id: R13
+    title: "Mark DEC-31 as amended by DEC-36 and DEC-37"
+    closed: "done by E-ROUTER3.W5"
+  - id: R15
+    title: "Follow-up rounds resume the worker's session by default (R-a)"
+    closed: "superseded by DEC-44 (a follow-up is a message to the live worker); resume deleted (DEC-46)"
+  - id: R16
+    title: "Remove the launcher's $25 per-run budget cap (R-b)"
+    closed: "done by E-ROUTER3.W10 (DEC-44)"
+  - id: R17
+    title: "A router heartbeat (R-c)"
+    closed: "done by E-ROUTER3.W9 (DEC-45)"
+  - id: R18
+    title: "The router long-polls for owner actions until router-watch.sh reaches main (R-d)"
+    closed: "obsolete once E-SEED2 merges into main (W12's script)"
+  - id: R19
+    title: "Lesson from the 2026-11-10 GIT_DIR leak (R-e)"
+    closed: "done by E-ROUTER3.W5 (keel-router lessons K12) and E-ROUTER3.W8 (launcher side)"
+  - id: R30
+    title: "A full cargo test run inside a worker's sandbox"
+    closed: "done: the full suite runs in a worker's sandbox (E-TESTOPT, E-LOOPBIND, E-GHFLOW.W1 - W3; DEC-60)"
+  - id: R33
+    title: "The git dir's commondir is shell-writable"
+    closed: "fixed by E-GHFLOW.W3 (DEC-63); what is left is R50 and R51"
+  - id: R43
+    title: "The full suite is red in a worker's sandbox for sandbox reasons"
+    closed: "done by E-TESTOPT.W1 and W2 (DEC-59); closed for good by E-GHFLOW.W1 (DEC-60)"
+  - id: R49
+    title: "notify_owner's ten tests bind a loopback port, which a worker's sandbox refuses"
+    closed: "done by E-LOOPBIND (the ten tests carry #[ignore])"

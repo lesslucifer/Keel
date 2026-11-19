@@ -1,0 +1,138 @@
+artifact: wu-result
+status: ready
+id: E-DOCSPLIT.W5
+epic: E-DOCSPLIT
+title: Slim the knowledge bases
+date: "2026-11-18"
+page: 2026-11-18-e-docsplit-w5-result.html
+outcome: >-
+  Delivered. Decisions keep current truth: workflow-gates and router split by topic
+  (review-docs.html, router-hosts.html), every decision page under 5,000 words (largest 4,231). Use cases, the
+  backlog and the three indexes are data files with no page. The one-off id check passes: every id defined at
+  af61d42 is defined after, every cited id resolves, each index names the file holding the id. keel verify-doc
+  over all docs exits 0 with the installed and the branch-built keel. The rule files .keel/config.toml (the
+  decisions cap), docs/architecture.html and docs/install.html (links re-pointed) are committed by the owner's keel
+  mr commit b186a38; the fourth, the .claude/skills/project-router/SKILL.md line, was refused by the sandbox, is
+  not edited, and moves to E-DOCSPLIT.W4.
+deviations:
+  - what: .claude/skills/project-router/SKILL.md line 107 is not edited.
+    why: >-
+      The worker sandbox denies writes under .claude/skills ("sed: .claude/skills/project-router/SKILL.md:
+      Operation not permitted"); not routed around. The line should read: "lands (backlog D2 in
+      `docs/backlog/dsh.yaml`). Until then the router runs keel-router" in place of "lands
+      (`docs/backlog/dsh.html#d2`). Until then the router runs keel-router". Until then it names a removed page
+      (no doc check reads skill files). E-DOCSPLIT.W4 makes the edit.
+  - what: The result pair is committed before the owner's commit of the rule files.
+    why: The router's brief asks for everything else committed first; the plan put the result after. Updated after the owner's commit b186a38.
+  - what: 18 live records stay over about 250 words (list under details.records-over-250).
+    why: Each holds named files, flags, limits or accepted risks that are part of the choice; the pages are under the 5,000 cap.
+  - what: Pages are above the plan's estimates - workflow-gates 4,164 (about 3,900), router 4,231 (3,300), router-hosts 2,352 (1,600), review-docs 2,263 (2,000), distribution 1,815 (1,600).
+    why: The second pass restored current choices the first cut dropped; all under the cap.
+  - what: Backlog R5 is open and R33 closed, against the plan's lists.
+    why: R5's page badge says only its hermetic part is done (the live part is manual); R33's page says fixed by E-GHFLOW.W3.
+  - what: 18 workflow use cases have no trigger field and 9 no failure field.
+    why: They were written as prose; the converter splits only where the text says "Trigger:" or "Failure:", and keeps the rest whole in expected rather than inventing a trigger.
+  - what: Open backlog rows keep their done sub-items, marked done (R6 rows 1 - 3, R7, B7, G5, G7).
+    why: Tests and scripts cite done sub-items such as "backlog R6 row 3"; the row is open, so it is kept in full.
+  - what: docs/architecture.html's "Read next" list gains two lines for the new decision pages; its workflow-gates and router lines lose the topics that moved.
+    why: Re-pointing links to the moved decisions; the slimming itself is W6.
+  - what: The committed trees of the W5 commits have dangling links in architecture and install until the owner's commit.
+    why: The plan's route kept those rule files uncommitted until b186a38; the disk was green at each commit, and the tree is green from b186a38 on.
+  - what: The W1 and W2 result pages keep their old #dec-69 and #dec-52 anchors until they are archived at the epic close; the page tags stay until the epic merges into main.
+    why: >-
+      The sign-off keel built from main finds the report by the page tag among the pages the range changes; 18b0e1b's
+      re-pointed links made W1's and W2's results candidates too. Their bytes are back at 959cf50's, and this page carries the wu-result tags.
+evidence:
+  commits:
+    - 203d3cd use cases to data files, the page deleted in the same commit
+    - a639f72 the backlog to data files
+    - 7737c49 decisions slimmed and split, the index to data
+    - 18b0e1b links in docs/work re-pointed
+    - this result and its data file
+    - "b186a38 the owner's keel mr commit of .keel/config.toml (the decisions cap), docs/architecture.html, docs/install.html (links re-pointed)"
+    - this result and its data file updated after b186a38
+  tests:
+    unit: "none: waived, no code path changed (DEC-16)"
+    integration: "none: waived for the same reason"
+    e2e: "none: W5 adds no flow"
+    checks:
+      - "id check: PASS - lost 0, unresolved 0, index mismatches 0 (details.id-check)"
+      - keel verify-doc over all docs, installed keel and branch-built keel, exit 0
+      - cargo test --test suite every_doc_in_docs_and_the_writing_example_pass_the_checks, ok
+      - "the cap: router.html grown to 5,001 words is red (page has 5001 words, over the cap of 5000 that [docs.caps] sets for docs/decisions/*.html), at 5,000 green"
+      - every slimmed record read against its text at af61d42, a second time (details.review)
+  docs:
+    - docs/decisions/distribution.html, workflow-gates.html, router.html slimmed; review-docs.html, router-hosts.html new; decisions-index.yaml replaces its page
+    - docs/use-cases/workflow.yaml, router.yaml, dsh.yaml, use-cases-index.yaml replace their pages
+    - docs/backlog/e-router-v2.yaml, github-flow.yaml, e-seed-v2.yaml, dsh.yaml, backlog-index.yaml replace their pages
+    - docs/work W1 inventory, W1 result, W2 result (links)
+    - docs/architecture.html, docs/install.html (T1, links re-pointed; the owner's commit b186a38)
+    - this result and its data file
+distillation: Nothing citable. DEC-69 records the rule W5 applies; W5 is that rule carried out.
+follow-ups:
+  - item: The .claude/skills/project-router/SKILL.md line the sandbox refused (deviations, first entry).
+    taken-by: E-DOCSPLIT.W4
+  - item: W3 adds Amended rows on DEC-27 and DEC-40; DEC-27 now sits in review-docs.html, DEC-40 in workflow-gates.html, both slimmed with amendments folded into the choice.
+    taken-by: whichever of E-DOCSPLIT.W3 and W5 merges second carries the other's change, in the slimmed shape
+  - item: The owner rules whether DEC-31, DEC-36, DEC-43, DEC-20 or DEC-60 is replaced whole (details.suspects).
+    taken-by: the E-DOCSPLIT close
+  - item: Caps for docs/architecture.html and docs/install.html.
+    taken-by: E-DOCSPLIT.W6
+details:
+  words:
+    counter: "keel's own: each page checked in a scratch repo with [docs.caps] \"docs/**\" = 1, so keel prints its count"
+    before: {decisions/distribution: 2761, decisions/workflow-gates: 11672, decisions/router: 13274, decisions/decisions-index: 421, use-cases/workflow: 4541, use-cases/router: 3645, use-cases/dsh: 1057, use-cases/use-cases-index: 318, backlog/e-router-v2: 7188, backlog/github-flow: 5286, backlog/e-seed-v2: 4742, backlog/dsh: 636, backlog/backlog-index: 1103, total: 56644}
+    after-pages: {decisions/distribution: 1815, decisions/workflow-gates: 4164, decisions/review-docs: 2263, decisions/router: 4231, decisions/router-hosts: 2352, total: 14825}
+    after-data-files: "wc -w, no page, no cap: decisions-index 1534; use-cases workflow 4738, router 3721, dsh 1058, index 662; backlog e-router-v2 5892 (32 open, 19 closed), github-flow 2971 (4 open, 6 closed), e-seed-v2 3506 (12 open, 15 closed), dsh 778 (3 open), index 482"
+  records-over-250:
+    - "DEC-30 309: the router's whitelist, the guard's rules and the router-watch shapes"
+    - "DEC-37 657: the worker grant, the mode policy, the file guard, the worktree-link check, the cargo allow list and the owner-waived round-3 gaps"
+    - "DEC-38 311: the release pipeline's targets, secrets, owner setup and accepted risks"
+    - "DEC-39 331: the [router] policy grammar and its refusals"
+    - "DEC-40 251: the report policy and its candidates"
+    - "DEC-44 349: the background-session launcher's exact shapes"
+    - "DEC-45 335: the watchdog's flags, facts and limits"
+    - "DEC-46 669: 15 numbered points that tests cite by number"
+    - "DEC-48 445: six accepted risks, each named"
+    - "DEC-50 270: the review schedule's rules"
+    - "DEC-55 260: the DSH worker's tool set"
+    - "DEC-58 427: the inbox script's verbs, formats and limits"
+    - "DEC-60 269: the gate workflow's jobs and evidence page"
+    - "DEC-61 487: the router bot's identity, key handling and six shapes"
+    - "DEC-62 393: the GitHub watch, commanders and command grammar"
+    - "DEC-63 490: six rules for scripts the router runs"
+    - "DEC-65 254: the required checks and the owner's settings"
+    - "DEC-69 421: the docs split, its fields and caps"
+  suspects:
+    - DEC-31 - its `claude -p` form is replaced by DEC-44; the no-Agent rule stands
+    - DEC-36 - its "never message" half is reversed by DEC-42 and its `wait` gone with DEC-44; the subscription stands
+    - DEC-43 - its mechanism is replaced by DEC-44; the long-running worker and no-heartbeat rule stand
+    - DEC-20 - its roster location is replaced by DEC-47; the tiers and the accepted limitation stand
+    - DEC-60 - its "signal, not a gate" is replaced by DEC-65; the workflow, jobs and base-built judge stand
+  review: >-
+    Three workers slimmed the decision files; the WU's own worker then read every record against its text at
+    af61d42 (old and new rows side by side) and restored what stands today but had been cut: DEC-2 (source
+    directories named like install directories), DEC-10 (the rulings log), DEC-38 (keel --version outside a repo;
+    the hook shims' install line), DEC-30 (the guard's plain-words reduction, --ou* deny, gh flags, 1000-character
+    cap, the one-source rule, the router-watch shapes, init ships the skill not the enforcement), DEC-37 (DEC-63's
+    commondir deny stated exactly), DEC-61 (the script's checks are policy, not a bound), DEC-40 (candidates
+    present at the tip), DEC-50 (a fix-PASS over a fix-PASS, a docs-only commit fixes nothing, a FAIL with
+    nothing counted needs a round), DEC-60 (recorded text inert and capped), DEC-65 (a cut sentence). DEC-46's
+    point numbers match the points tests cite (2, 4, 5, 12, 15). The use-case conversion was checked word by word:
+    only build-history labels went.
+  id-check:
+    script: >-
+      One-off Python in a mktemp -d scratch directory, not committed. Defined ids: DEC from h3 id="dec-n" anchors and
+      decisions-index.yaml; UC from the use-case h3 anchors or the use-case files' id fields; backlog ids from row
+      anchors and "Xn ·" headings or the backlog files' id fields, open and closed. Cited ids: git grep over src/,
+      tests/, scripts/, templates/, skills/, .claude/, AGENTS.md and docs/ (untracked files too after) for DEC-n,
+      UC-AREA-n, "backlog Xn", "<area> Xn" (ranges expanded), "<area>.html#xn" and "<area>.yaml (Xn)". Passes when
+      every id defined before is defined after, every cited id resolves, and each index names the file holding the id.
+    before: "at af61d42: defined DEC 69, UC 31, backlog 91; cited DEC 76, UC 32, backlog 57; not defined: DEC-70, 72, 74, 75, 77, 83, 84, UC-DOC-6"
+    after: "working tree at 18b0e1b: defined DEC 69, UC 31, backlog 91; cited DEC 75, UC 32, backlog 43; RESULT PASS - lost 0, unresolved 0, index mismatches 0"
+    known-not-keel-ids: "DEC-70 the next free id; DEC-72, 74, 75, 77, 83, 84 Trawler's numbering; UC-DOC-6 written at the E-DOCSPLIT close - each unresolved at the base too"
+  overlap: >-
+    E-DOCSPLIT.W3 (wu/E-DOCSPLIT/w3-pair) adds Amended rows on DEC-27 and DEC-40: whichever merges second carries the
+    other's change. E-LOCALTOOL's W5 re-points or strikes github-flow rows, and E-GHSETUP may edit decisions or mint
+    an id: whichever lands second writes the other's change in its shape. The epic tip (959cf50) was already in this
+    branch before commit 3.
