@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Keel — E-GHREVERT.W2 plan: the records say the flow is gone</title>
+  <title>Keel — E-GHREVERT.W2 plan: the records back to before GitHub</title>
   <style>
     td code, td { word-break: break-word; }
   </style>
@@ -11,24 +11,25 @@
 <body>
   <header class="doc-hero">
     <div class="inner">
-      <h1>E-GHREVERT.W2 · The records say the flow is gone</h1>
-      <p>The plan for the docs half of the revert: what each record will say, which edits need your sign-off as a rule file, and what E-DOCSPLIT must copy. You read it before the records change.</p>
-      <div class="meta">T3 · WU plan · v1 · 2026-11-19 · epic <code>E-GHREVERT</code> · WU <code>E-GHREVERT.W2</code> · branch <code>wu/E-GHREVERT/w2-docs</code> off <code>epic/E-GHREVERT</code> 3800bf8 (the epic plan merged) · main 89cedfd</div>
+      <h1>E-GHREVERT.W2 · The records back to before GitHub</h1>
+      <p>The plan for the docs half of the revert: the flow's records are removed, not marked, and every page goes back to how it read before GitHub, keeping only what is still true. You read it before the records change.</p>
+      <div class="meta">T3 · WU plan · v2 · 2026-11-19 · epic <code>E-GHREVERT</code> · WU <code>E-GHREVERT.W2</code> · branch <code>wu/E-GHREVERT/w2-docs</code> off <code>epic/E-GHREVERT</code> 3800bf8 (the epic plan merged) · main 89cedfd · v2: your comment on part 1, "do not add a new decision; remove the flow completely; bring back the state before GitHub"</div>
     </div>
   </header>
   <main>
 
 <h2 id="problem">The problem</h2>
-<p data-c="problem">W1 takes GitHub's flow out of the code. The docs still describe it as the way you work: install tells you to set up the bot, architecture explains the checks, eight decisions and four use cases say the flow is current, and the backlog still owes it live checks. Once W1 lands, a reader who trusts them is told to approve on GitHub, which no longer signs anything.</p>
-<p data-item="requirement" data-c="requirement">After W2, every record of GitHub's flow is marked replaced by one new decision, that decision says what replaced the flow and what was kept, and install and architecture describe only the typed sign-off, the merge on your Mac and your push.</p>
+<p data-c="problem">W1 takes GitHub's flow out of the code. The docs still describe it as the way you work: install tells you to set up the bot, architecture explains the checks, nine decisions, four use cases and a whole backlog page describe it. Once W1 lands, a reader who trusts them is told to approve on GitHub, which no longer signs anything.</p>
+<p data-item="requirement" data-c="requirement">After W2, no record describes GitHub's flow: every page reads as it did on 15 November, before the flow, plus only what is still true without it (the five keeps and the local-app records), and no new decision is added.</p>
 
 <h2 id="for-the-owner">What changes for you</h2>
 <table data-item="owner-changes" data-c="owner-changes">
   <thead><tr><th>When</th><th>Today</th><th>After W2</th></tr></thead>
   <tbody>
     <tr><td>You open the install guide</td><td>Section 5 walks you through the bot and the repository settings</td><td>Four sections, as on 15 November</td></tr>
-    <tr><td>You read how Keel is built</td><td>A GitHub section, a line saying it is dropped, and approval wording in five other places</td><td>One line: releases and your pushes stay on GitHub; the flow was reverted</td></tr>
-    <tr><td>You check why something is so</td><td>The flow's decisions read as current</td><td>Each is marked replaced; one new record holds the revert and its keeps</td></tr>
+    <tr><td>You read how Keel is built</td><td>A GitHub section, a line saying it is dropped, and approval wording in five other places</td><td>As on 15 November, plus the keeps; no GitHub section</td></tr>
+    <tr><td>You check why something is so</td><td>Nine decisions and four use cases describe the flow</td><td>They are gone. Their numbers are never used again</td></tr>
+    <tr><td>You look at the backlog</td><td>A page of GitHub-flow rows</td><td>That page is deleted; rows that point to it are reworded</td></tr>
     <tr><td>You sign W2</td><td>—</td><td>One rule-file commit (install and architecture), then the usual typed sign-off and merge</td></tr>
   </tbody>
 </table>
@@ -36,49 +37,49 @@
 <h2 id="terms">Terms</h2>
 <table data-c="terms">
   <tbody>
-    <tr><td>Marked replaced</td><td>The record keeps its id and its text; its title gets a badge naming the record that replaces it. Decisions are append-only, so nothing is deleted.</td></tr>
-    <tr><td>A keep</td><td>Something that came with the flow but is not GitHub's, so the revert leaves it (the epic plan lists five).</td></tr>
+    <tr><td>Before GitHub</td><td>The docs as on main at 15 November, before the five flow merges.</td></tr>
+    <tr><td>A keep</td><td>Something that came with the flow but is not GitHub's, so the revert leaves it (the epic plan lists five). Its facts stay in the docs.</td></tr>
     <tr><td>Rule file</td><td>A file whose commit needs your typed rule-file sign-off. Here: the pages directly in the docs folder, install and architecture.</td></tr>
-    <tr><td>Port list</td><td>The table in W2's result that tells E-DOCSPLIT which row of which of its data files to change the same way.</td></tr>
+    <tr><td>Port list</td><td>The table in W2's result that tells E-DOCSPLIT which entries of which of its files to remove or change the same way.</td></tr>
   </tbody>
 </table>
 
 <h2 id="work">The work</h2>
-<p>Four parts, three commits. The records come first, so DEC-71 exists before the reference docs point to it. The result report, with the port list, is the last commit.</p>
+<p>One rule for every part: <b>each flow addition since 8d48a44 is removed, by hand; what stays is only what holds without GitHub</b>. That is the five keeps (in their 8d48a44 wording where one existed), the E-LOCALTOOL records, and facts the flow happened to settle that do not depend on GitHub. No decision is added, none is marked replaced. Four parts, three commits; the result report, with the port list, is the last.</p>
 
 <h3 id="part-1">1 · The decisions</h3>
-<p><b>In short:</b> one new record, DEC-71, holds the revert. The flow's eight records and the amendments they made to older ones are marked replaced by it. DEC-63 stays.</p>
+<p><b>In short:</b> the nine flow decisions are deleted from their pages, with every amendment row they added to older ones. The older records read as on 15 November. DEC-70 stays and loses its links to the deleted records.</p>
 <ul data-c="part-1">
-  <li><b>DEC-71</b> in <code>docs/decisions/workflow-gates.html</code>, after DEC-70: "GitHub's flow is reverted: typed sign-off, local merge, your push". Context: DEC-70 and your ruling of 2026-11-19. Choice: the code outside <code>docs/</code> back to 8d48a44 with the five keeps, each with its "until when" (release with no pull-request run; the shared git-folder checks, R33; the checkout check, R50, and the github tier read but signing nothing until E-DOCSPLIT is on main, removed by E-KEELFIX; task branches merged on your Mac; the YAML library test-only until E-DOCSPLIT). Rejected: a plain <code>git revert -m 1</code> of the five merges (conflicts on the docs the E-LOCALTOOL close changed); switching off without removing the code. Consequences: the records below; your GitHub steps; E-DOCSPLIT takes the revert at its next merge of main. Lineage: the epic plan, the W1 and W2 plans and results.</li>
-  <li><b>Replaced by DEC-71</b>, a badge in each title, text kept: DEC-60, DEC-64 – DEC-68 (<code>workflow-gates.html</code>), DEC-61, DEC-62 (<code>router.html</code>).</li>
-  <li><b>Amendments the flow made to older records</b>, each amendment row gets one closing sentence, "Replaced by DEC-71 (E-GHREVERT)": DEC-23, DEC-24, DEC-40, DEC-49 (by DEC-65, DEC-67, DEC-66), DEC-46 (by DEC-61), DEC-48 (by DEC-64 and DEC-66). DEC-47's (the github line) says instead: still read, signing nothing, until E-DOCSPLIT is on main (DEC-71).</li>
-  <li><b>Stay as they are:</b> DEC-63 (its rule holds without GitHub) gets an "Amended by DEC-71" row: the two GitHub scripts are gone; the rule binds the launcher. DEC-37's amendment (R33 fixed) and DEC-38's (no pull-request release run) stand: keeps 2 and 1. DEC-70 stands.</li>
-  <li><code>decisions-index.html</code>: DEC-71 in the workflow-gates row; the scope words for the flow say "reverted (DEC-71)"; next free id DEC-72. Each page's meta line lists DEC-71 where it holds it.</li>
+  <li><b>Deleted:</b> DEC-60, DEC-64 – DEC-68 (<code>workflow-gates.html</code>), DEC-61 – DEC-63 (<code>router.html</code>). DEC-63 goes too: it is about the two GitHub scripts; the launcher's part of it is already in DEC-37's amendment (open point 2).</li>
+  <li><b>Amendment rows removed</b>, the record back to its 8d48a44 text: DEC-23 (by DEC-65), DEC-24 (task-branch trailer, by DEC-67), DEC-40 (report per range, by DEC-67), DEC-47 (the github line, by DEC-64), DEC-49 (by DEC-66), DEC-46 (by DEC-61), DEC-48 (by DEC-64, DEC-66).</li>
+  <li><b>Amendment rows kept, because their keep stays:</b> DEC-37's (R33 fixed: the worker sandbox's deny list and the launcher's check, keep 2) and DEC-38's (no pull-request release run, keep 1). Each loses its link to the deleted record and names its epic instead ("by E-GHFLOW.W3", "by E-GHFLOW2.W4"); the GitHub-only clauses in them go.</li>
+  <li><b>DEC-70 stays</b> (the local app; not the flow). Its context and consequences lose the links and the sentence "E-GHREVERT marks DEC-60 – … replaced by its own record"; one row is added: "Amended (E-GHREVERT): the flow's records were removed, not marked replaced, by the owner's ruling of 2026-11-19" (open point 3).</li>
+  <li><code>decisions-index.html</code>: the topic rows back to 8d48a44's ids and scope words, plus DEC-70; next free id stays DEC-71; one line: "DEC-60 – DEC-68 were GitHub's flow, removed by E-GHREVERT; never reused". The two pages' meta lines drop the deleted ids.</li>
 </ul>
 
 <h3 id="part-2">2 · The use cases</h3>
-<p><b>In short:</b> four use cases describe behaviour the code no longer has; they are marked replaced. Four others were widened by the flow; they go back to their 15 November text, except where a keep needs a sentence.</p>
+<p><b>In short:</b> the four flow use cases are deleted. Four others go back to their 15 November text; one keeps a sentence for a keep.</p>
 <ul data-c="part-2">
-  <li><b>Replaced by DEC-71:</b> UC-GATE-7, UC-MR-3, UC-DOC-5 (<code>use-cases/workflow.html</code>), UC-ROUTE-7 (<code>use-cases/router.html</code>). Heading and id stay, with the badge; the body becomes one line saying what it was and that the code is gone (open point 3).</li>
-  <li><b>Back to 8d48a44:</b> UC-MR-1 (its "report rule per range" paragraph goes; the checkout sentence stays, keep 3); UC-MR-2 (the task-branch trailer relaxation goes, keep 4 puts the trailer back); UC-ROUTE-1 (the bot sentence, the "On GitHub" row and the bot's failure clause go); UC-ROUTE-6 (the two GitHub scripts leave the whitelist and the agreement tests).</li>
-  <li>UC-DOC-1 and UC-DOC-4: nothing to do. Their text on main already equals 8d48a44's (the epic plan named them; the diff shows no change).</li>
-  <li>Both pages' meta lines and <code>router.html</code>'s decision list; <code>use-cases-index.html</code>: the UC-GATE, UC-MR, UC-DOC and UC-ROUTE rows lose the flow's scope words and note the four replaced.</li>
+  <li><b>Deleted:</b> UC-GATE-7, UC-MR-3, UC-DOC-5 (<code>use-cases/workflow.html</code>), UC-ROUTE-7 (<code>use-cases/router.html</code>).</li>
+  <li><b>Back to 8d48a44:</b> UC-MR-1 (the "report rule per range" paragraph goes; one sentence on the checkout check stays, keep 3); UC-MR-2 (the task-branch trailer relaxation goes); UC-ROUTE-1 (the bot sentence, the "On GitHub" row and the bot's failure clause go); UC-ROUTE-6 (the two GitHub scripts leave the whitelist and the agreement tests). UC-DOC-1 and UC-DOC-4 already read as on 8d48a44.</li>
+  <li>Both pages' meta lines and <code>router.html</code>'s decision list back to 8d48a44. <code>use-cases-index.html</code>: the rows back to 8d48a44, plus one line: "UC-GATE-7, UC-MR-3, UC-ROUTE-7, UC-DOC-5 were GitHub's flow, removed by E-GHREVERT; never reused".</li>
 </ul>
 
 <h3 id="part-3">3 · The backlog</h3>
-<p><b>In short:</b> the flow's backlog page says it was reverted, and the five rows E-GHREVERT took are closed by it. The two fixes the revert keeps stay done.</p>
+<p><b>In short:</b> the GitHub-flow backlog page is deleted. Rows elsewhere that came with the flow go; facts that hold without GitHub stay, with the GitHub words cut.</p>
 <ul data-c="part-3">
-  <li><code>backlog/github-flow.html</code>: one line at the top, "reverted by E-GHREVERT (DEC-71)"; G2, G4, G5, G7, G10 badged "closed by E-GHREVERT: the code they name is gone". No row is deleted.</li>
-  <li><code>backlog/e-router-v2.html</code>: R33 stays done; R50 stays fixed, plus "kept by E-GHREVERT"; R51 stays open.</li>
-  <li><code>backlog/backlog-index.html</code>: the github-flow row's status reads "reverted by E-GHREVERT". Row 5 and <code>local-app.html</code> A1 change at the epic close, not here.</li>
+  <li><code>backlog/github-flow.html</code>: deleted (<code>git rm</code>).</li>
+  <li><code>backlog/backlog-index.html</code>: the github-flow topic row and the E-GHFLOW, E-GHFLOW2 and "next GitHub-flow epic" rows go. The E-LOCALTOOL and E-GHREVERT rows stay, without "takes github-flow G2 …" and "struck to E-GHREVERT".</li>
+  <li><code>backlog/e-router-v2.html</code>: R30 stays done and R43 closed (E-TESTOPT and E-LOOPBIND did that), their GitHub sentences cut; R33 stays fixed (keep 2) and R50 fixed (keep 3), each "by E-GHFLOW…, kept by E-GHREVERT", the link to DEC-63 replaced by DEC-37; R51 stays open (a real gap in the worker sandbox, not GitHub's).</li>
+  <li><code>backlog/local-app.html</code> A1: its five links into the deleted page and its "marked replaced by its own record" wording go; it says the records go back to before GitHub. Marking A1 done stays for the epic close.</li>
 </ul>
 
 <h3 id="part-4">4 · The reference docs (your rule-file commit)</h3>
-<p><b>In short:</b> install loses section 5. Architecture loses its GitHub section and every other approval line, and keeps one line on what stays on GitHub. Both are rule files, so they land in one commit you type.</p>
+<p><b>In short:</b> install and architecture go back to their 15 November text. Architecture keeps three short facts for the keeps. Both are rule files, so they land in one commit you type.</p>
 <ul data-c="part-4">
   <li><code>docs/install.html</code>: section 5 removed; the page is then 8d48a44's text (the flow only added to it).</li>
-  <li><code>docs/architecture.html</code>, each flow addition back to 8d48a44's text: the shape paragraph's GitHub sentence; the <code>keel ci gate</code> and <code>keel ci sign-off</code> rows; the four <code>[github]</code> rows; "by approval" in <code>mr/v1</code> and "COVERED" in <code>dod/v1</code>; the router bot and GitHub watch rows; the two GitHub items under "What no gate reviews".</li>
-  <li>Architecture, kept or added: the <code>[mr] tiers</code> row says <code>github</code> is read and signs nothing until E-DOCSPLIT is on main (keep 3, DEC-71); the launcher row keeps its shared git-folder checks (keep 2) and adds the task worktree off its WU (keep 4); the GitHub section becomes one paragraph: releases and your pushes stay on GitHub, the flow was reverted (DEC-71).</li>
+  <li><code>docs/architecture.html</code>: every flow addition removed, the GitHub section whole, including the E-LOCALTOOL close's "dropped" line: the shape paragraph's GitHub sentence; the <code>keel ci</code> rows; the <code>[github]</code> rows; "by approval" in <code>mr/v1</code> and "COVERED" in <code>dod/v1</code>; the router bot and GitHub watch rows; the two GitHub items under "What no gate reviews".</li>
+  <li>Architecture's keeps: the <code>[mr] tiers</code> row adds "<code>github</code> is still read and signs nothing, until E-DOCSPLIT is on main; E-KEELFIX removes it" (keep 3); the launcher row keeps its shared git-folder checks, linked to DEC-37 (keep 2), and adds the task worktree off its WU (keep 4).</li>
 </ul>
 
 <h2 id="open-points">Open points</h2>
@@ -86,67 +87,70 @@
 <table data-c="open-points">
   <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
   <tbody>
-    <tr><td>1</td><td>Does W2 add the two word caps (architecture 3,000, install 1,500)?</td><td><b>No.</b> W2 records them as a follow-up for whichever epic reaches main second. Today that is E-DOCSPLIT: it adds both lines to its own caps table when it merges main, after W6's slimming. If E-DOCSPLIT lands first, this epic adds them at its close</td><td>Main's keel has no caps check, so the lines would do nothing on main. Architecture is still about 5,000 words once the GitHub parts are gone: a cap can only hold where W6's slimming and this removal meet, on E-DOCSPLIT's branch. Adding them here makes a second caps table that collides with E-DOCSPLIT's, and puts the config file in W2 against the epic's "only the keeps' files" check</td></tr>
-    <tr><td>2</td><td>DEC-63: cut its GitHub examples, or add an amendment?</td><td><b>An amendment row</b> ("Amended by DEC-71"), text kept</td><td>Decision pages are append-only. The epic plan said "cut"; the row says the same without rewriting history</td></tr>
-    <tr><td>3</td><td>The four replaced use cases: keep their text?</td><td><b>No</b>: heading, id and badge, and one line. The full text stays in git history and in the replaced decisions</td><td>Use cases are current truth; an id is never reused, so the heading stays</td></tr>
-    <tr><td>4</td><td>Does UC-ROUTE-1 get a sentence on task branches (keep 4)?</td><td><b>No</b>, back to its 15 November text as the epic plan says. The skills carry the task rule</td><td>No keel code judges a task; the launcher's task worktree is in architecture</td></tr>
-    <tr><td>5</td><td>Where does the port list go?</td><td><b>In W2's result</b>, a table per E-DOCSPLIT data file, plus the caps follow-up</td><td>The result is tracked at W2's tip and reaches main with the epic, where E-DOCSPLIT reads it</td></tr>
-    <tr><td>6</td><td>One rule-file commit for both reference docs, or two?</td><td><b>One</b></td><td>One <code>keel mr commit</code> for you to type; both have the same reason</td></tr>
+    <tr><td>1</td><td>Does W2 add the two word caps (architecture 3,000, install 1,500)?</td><td><b>No.</b> A follow-up for whichever epic reaches main second. Today that is E-DOCSPLIT: it adds both lines to its own caps table when it merges main, after W6's slimming. If E-DOCSPLIT lands first, this epic adds them at its close</td><td>Main's keel has no caps check, so the lines would do nothing on main. Architecture as on 15 November is 4,794 words: a 3,000 cap holds only where W6's slimming and this removal meet, on E-DOCSPLIT's branch. Adding them here makes a second caps table that collides with E-DOCSPLIT's, and puts the config file in W2 against the epic's "only the keeps' files" check</td></tr>
+    <tr><td>2</td><td>DEC-63 (scripts the router runs never run worker code): delete it too?</td><td><b>Yes</b>, delete it with the flow. DEC-37's amendment keeps the launcher's part</td><td>Its subject is the two GitHub scripts, which W1 deletes. The epic plan kept it; your "remove the flow completely" overrules that</td></tr>
+    <tr><td>3</td><td>DEC-70 says "E-GHREVERT marks them replaced by its own record". Change it?</td><td><b>Yes</b>: that sentence and the links to deleted records go, and one amendment row says the records were removed by your ruling. It is a row, not a decision</td><td>DEC-70 is the local-app decision and stays; left as is, it would promise a record that will never exist</td></tr>
+    <tr><td>4</td><td>Note the deleted ids in the two indexes?</td><td><b>Yes</b>, one line each: what they were, never reused</td><td>Ids are never reused; without the line the gap looks like a free number</td></tr>
+    <tr><td>5</td><td>Keep facts the flow settled that hold without GitHub (R30 done, R43 closed, R33 and R50 fixed, R51 open)?</td><td><b>Yes</b>, with the GitHub words cut</td><td>The work behind them is real and kept: reopening them would say something false</td></tr>
+    <tr><td>6</td><td>Where does the epic's truth go at the close, now there is no DEC-71?</td><td><b>Architecture</b> (the keeps), <b>DEC-70's amendment row</b>, and <b>backlog local-app A1</b> marked done. The epic plan's W2 summary and distillation plan still name DEC-71; the result records that your comment overruled them</td><td>No new decision, as you said; the keeps are code facts, which architecture holds</td></tr>
+    <tr><td>7</td><td>Where does the port list go? One rule-file commit for both reference docs?</td><td><b>In W2's result</b>; <b>one</b> commit</td><td>The result reaches main with the epic, where E-DOCSPLIT reads it; one <code>keel mr commit</code> for you to type</td></tr>
   </tbody>
 </table>
 
 <h2 id="details">Details</h2>
 
 <h3 id="maps">Maps to</h3>
-<p data-item="maps-to" data-c="maps-to">E-GHREVERT, its W2 summary · DEC-70 ("nothing marked replaced: E-GHREVERT does that") · backlog local-app A1, part 4 · use cases UC-GATE-7, UC-MR-3, UC-ROUTE-7, UC-DOC-5 (replaced) and UC-MR-1, UC-MR-2, UC-ROUTE-1, UC-ROUTE-6 (back to 8d48a44).</p>
+<p data-item="maps-to" data-c="maps-to">E-GHREVERT, its W2 summary, as amended by your comment of 2026-11-19 (no new decision; the flow's records removed) · DEC-70 · backlog local-app A1, part 4 · use cases UC-GATE-7, UC-MR-3, UC-ROUTE-7, UC-DOC-5 (removed) and UC-MR-1, UC-MR-2, UC-ROUTE-1, UC-ROUTE-6 (back to 8d48a44).</p>
 
 <h3 id="files">Files and who commits them</h3>
 <table data-c="files">
   <thead><tr><th>Commit</th><th>Files</th><th>Rule-bearing?</th><th>Who</th></tr></thead>
   <tbody>
-    <tr><td>1 · the records</td><td><code>docs/decisions/workflow-gates.html</code>, <code>router.html</code>, <code>decisions-index.html</code>; <code>docs/use-cases/workflow.html</code>, <code>router.html</code>, <code>use-cases-index.html</code>; <code>docs/backlog/github-flow.html</code>, <code>e-router-v2.html</code>, <code>backlog-index.html</code></td><td>No (T2, not flat <code>docs/*.html</code>)</td><td>The worker</td></tr>
+    <tr><td>1 · the records</td><td><code>docs/decisions/workflow-gates.html</code>, <code>router.html</code>, <code>distribution.html</code>, <code>decisions-index.html</code>; <code>docs/use-cases/workflow.html</code>, <code>router.html</code>, <code>use-cases-index.html</code>; <code>docs/backlog/github-flow.html</code> (deleted), <code>e-router-v2.html</code>, <code>backlog-index.html</code>, <code>local-app.html</code></td><td>No (T2, not flat <code>docs/*.html</code>)</td><td>The worker</td></tr>
     <tr><td>2 · the reference docs</td><td><code>docs/install.html</code>, <code>docs/architecture.html</code></td><td><b>Yes</b> (<code>docs/*.html</code>)</td><td>The worker stages; you run <code>keel mr commit -m "…" --as vuluu</code></td></tr>
     <tr><td>3 · the result</td><td><code>docs/work/2026-11-19-e-ghrevert-w2-result.html</code></td><td>No</td><td>The worker</td></tr>
   </tbody>
 </table>
-<p>Not touched: <code>.keel/config.toml</code>, <code>.keel/mr-allowed</code> (W1's), <code>docs/decisions/distribution.html</code> (DEC-38 stands), <code>docs/local-app.html</code> and <code>docs/backlog/local-app.html</code> (the close's), anything outside <code>docs/</code>.</p>
+<p>Not touched: <code>.keel/config.toml</code>, <code>.keel/mr-allowed</code> (W1's), <code>docs/local-app.html</code> (E-LOCALTOOL's design; it names no flow record), the epic plan, anything outside <code>docs/</code>.</p>
 
 <h3 id="port">The port list, as W2's result will give it</h3>
-<p>Read on <code>wu/E-DOCSPLIT/w6-shape</code> 77d14e6. E-DOCSPLIT turned the use-case, backlog and index pages into data files and moved some decisions to new pages:</p>
+<p>Read on <code>wu/E-DOCSPLIT/w6-shape</code> 77d14e6. E-DOCSPLIT turned the use-case, backlog and index pages into data files and moved some decisions to new pages. Each row is a removal unless it says otherwise:</p>
 <table data-c="port">
   <thead><tr><th>W2 edits</th><th>On main</th><th>On E-DOCSPLIT</th></tr></thead>
   <tbody>
-    <tr><td>DEC-71; DEC-60, DEC-64 – DEC-67 replaced; DEC-23, 24, 40, 47 amendments</td><td><code>decisions/workflow-gates.html</code></td><td>the same page</td></tr>
-    <tr><td>DEC-68 replaced; DEC-49 amendment</td><td><code>decisions/workflow-gates.html</code></td><td><code>decisions/review-docs.html</code></td></tr>
-    <tr><td>DEC-61, DEC-62 replaced; DEC-63 amended</td><td><code>decisions/router.html</code></td><td><code>decisions/router-hosts.html</code></td></tr>
-    <tr><td>DEC-46, DEC-48 amendments</td><td><code>decisions/router.html</code></td><td>the same page</td></tr>
-    <tr><td>Index rows, next free DEC-72</td><td><code>decisions/decisions-index.html</code></td><td><code>decisions/decisions-index.yaml</code>: <code>status</code> of DEC-60 – 62, 64 – 68; a DEC-71 entry; <code>next-free</code></td></tr>
-    <tr><td>UC-GATE-7, UC-MR-1 – 3, UC-DOC-5</td><td><code>use-cases/workflow.html</code></td><td><code>use-cases/workflow.yaml</code></td></tr>
-    <tr><td>UC-ROUTE-1, 6, 7</td><td><code>use-cases/router.html</code></td><td><code>use-cases/router.yaml</code></td></tr>
-    <tr><td>Use-case index rows</td><td><code>use-cases/use-cases-index.html</code></td><td><code>use-cases/use-cases-index.yaml</code></td></tr>
-    <tr><td>G2, G4, G5, G7, G10; the top line</td><td><code>backlog/github-flow.html</code></td><td><code>backlog/github-flow.yaml</code></td></tr>
-    <tr><td>R50</td><td><code>backlog/e-router-v2.html</code></td><td><code>backlog/e-router-v2.yaml</code></td></tr>
-    <tr><td>The github-flow row</td><td><code>backlog/backlog-index.html</code></td><td><code>backlog/backlog-index.yaml</code></td></tr>
+    <tr><td>DEC-60, DEC-64 – DEC-67; amendment rows on DEC-23, 24, 40, 47; DEC-70 reworded and amended</td><td><code>decisions/workflow-gates.html</code></td><td>the same page</td></tr>
+    <tr><td>DEC-68; DEC-49's amendment row</td><td><code>decisions/workflow-gates.html</code></td><td><code>decisions/review-docs.html</code></td></tr>
+    <tr><td>DEC-61 – DEC-63</td><td><code>decisions/router.html</code></td><td><code>decisions/router-hosts.html</code> (its GitHub part; the page may then be empty)</td></tr>
+    <tr><td>Amendment rows on DEC-46, 48 removed; DEC-37's relinked</td><td><code>decisions/router.html</code></td><td>the same page</td></tr>
+    <tr><td>DEC-38's amendment relinked</td><td><code>decisions/distribution.html</code></td><td>the same page</td></tr>
+    <tr><td>Index: the nine entries out, the "never reused" line, next free DEC-71</td><td><code>decisions/decisions-index.html</code></td><td><code>decisions/decisions-index.yaml</code></td></tr>
+    <tr><td>UC-GATE-7, UC-MR-3, UC-DOC-5 out; UC-MR-1, UC-MR-2 back</td><td><code>use-cases/workflow.html</code></td><td><code>use-cases/workflow.yaml</code></td></tr>
+    <tr><td>UC-ROUTE-7 out; UC-ROUTE-1, 6 back</td><td><code>use-cases/router.html</code></td><td><code>use-cases/router.yaml</code></td></tr>
+    <tr><td>Use-case index rows, the "never reused" line</td><td><code>use-cases/use-cases-index.html</code></td><td><code>use-cases/use-cases-index.yaml</code></td></tr>
+    <tr><td>The whole page</td><td><code>backlog/github-flow.html</code></td><td><code>backlog/github-flow.yaml</code> (G11 included)</td></tr>
+    <tr><td>R30, R43, R33, R50 reworded</td><td><code>backlog/e-router-v2.html</code></td><td><code>backlog/e-router-v2.yaml</code></td></tr>
+    <tr><td>The flow rows and words</td><td><code>backlog/backlog-index.html</code></td><td><code>backlog/backlog-index.yaml</code></td></tr>
+    <tr><td>A1's wording and links</td><td><code>backlog/local-app.html</code></td><td>the same page</td></tr>
     <tr><td>Install section 5; architecture's flow parts</td><td><code>install.html</code>, <code>architecture.html</code></td><td>the same pages, which its W6 slims: a text conflict, resolved by keeping W2's removals</td></tr>
-    <tr><td>Follow-up (open point 1)</td><td>—</td><td><code>.keel/config.toml</code> <code>[docs.caps]</code>: <code>"docs/architecture.html" = 3000</code>, <code>"docs/install.html" = 1500</code>, added after W6's slimming and its merge of main</td></tr>
+    <tr><td>Follow-up (open point 1), an addition</td><td>—</td><td><code>.keel/config.toml</code> <code>[docs.caps]</code>: <code>"docs/architecture.html" = 3000</code>, <code>"docs/install.html" = 1500</code>, after W6's slimming and its merge of main</td></tr>
   </tbody>
 </table>
-<p>The result names the commit on E-DOCSPLIT the list was read at, so a later change there can be checked against it.</p>
+<p>The result names the commit on E-DOCSPLIT the list was read at. Any other E-DOCSPLIT text that cites a removed id is E-DOCSPLIT's to find; the result gives the ids.</p>
 
 <h3 id="expected-h">Acceptance</h3>
 <ul data-item="expected" data-c="expected">
-  <li><code>keel verify-doc</code> green over every doc at W2's tip.</li>
-  <li>DEC-60 – DEC-62, DEC-64 – DEC-68, UC-GATE-7, UC-MR-3, UC-ROUTE-7 and UC-DOC-5 each show "replaced by DEC-71" in their title. DEC-71 exists once, on <code>workflow-gates.html</code>; the index gives DEC-72 as next free.</li>
-  <li><code>docs/install.html</code> has sections 1 – 4 only. <code>git diff 8d48a44 &lt;tip&gt; -- docs/install.html</code> shows at most the meta line.</li>
-  <li>No reference doc (<code>install.html</code>, <code>architecture.html</code>) tells you to approve on GitHub, wait for auto-merge, or set up the bot: <code>grep -inE 'approv|auto-merge|router-gh|keel ci' docs/install.html docs/architecture.html</code> finds nothing about the flow.</li>
-  <li>DEC-63, DEC-37's and DEC-38's amendments and DEC-70 read as before, plus DEC-63's new amendment row.</li>
+  <li><code>keel verify-doc</code> green over every doc at W2's tip, links included (nothing links to the deleted page).</li>
+  <li>No new decision: no record defines DEC-71, and the index still gives it as the next free id.</li>
+  <li><code>grep -rnE 'DEC-6[0-8]|UC-(GATE-7|MR-3|ROUTE-7|DOC-5)|github-flow' docs --include=*.html</code>, outside <code>docs/work/</code>, finds only the two "never reused" lines.</li>
+  <li><code>git diff 8d48a44 &lt;tip&gt; -- docs/install.html</code> is empty. <code>git diff 8d48a44 &lt;tip&gt; -- docs/use-cases docs/decisions docs/architecture.html</code> shows only DEC-70 and its index line, the "never reused" lines, and the keeps' sentences.</li>
+  <li>No reference doc tells you to approve on GitHub, wait for auto-merge, or set up the bot: <code>grep -inE 'approv|auto-merge|router-gh|keel ci' docs/install.html docs/architecture.html</code> finds nothing about the flow.</li>
   <li><code>git diff --name-only 3800bf8 &lt;tip&gt;</code> lists only the files in the table above.</li>
 </ul>
 
 <h3 id="tests">Test plan</h3>
 <div data-item="test-plan" data-c="test-plan">
   <p><b>Integration: waived</b>, no code path changes (docs only). <b>Unit: none</b>, for the same reason. The test note says <code>{"integration": {"waived": "docs only: W2 edits records, no code path"}}</code>.</p>
-  <p>The checks instead: <code>keel verify-doc</code> after each write and over all docs; the greps in Acceptance; <code>keel notes write doc</code> lists exactly the changed docs with their tiers; <code>keel verify-dod wu &lt;tip&gt;</code> red only on <code>8·manual-review</code> before your sign-off.</p>
+  <p>The checks instead: <code>keel verify-doc</code> after each write and over all docs; the greps and diffs in Acceptance; <code>keel notes write doc</code> lists exactly the changed docs with their tiers, the deleted page included; <code>keel verify-dod wu &lt;tip&gt;</code> red only on <code>8·manual-review</code> before your sign-off.</p>
 </div>
 
 <h3 id="landing">How W2 lands</h3>
@@ -160,10 +164,11 @@
 
 <h3 id="facts">Facts checked for this plan</h3>
 <ul data-c="facts">
-  <li>DEC-71 is free on every local and remote branch: no record defines it. DEC-72 – DEC-75 appear only as Trawler's numbers. E-DOCSPLIT's newest index (<code>wu/E-DOCSPLIT/w6-shape</code>) gives DEC-71 as next free; its pushed epic still says DEC-70.</li>
-  <li>Main's keel, and 8d48a44's, ignores a <code>[docs.caps]</code> table: its config reader rejects unknown keys only inside <code>[docs.tiers]</code>. So the caps lines would be harmless to main's keel, and also unread.</li>
-  <li>Word counts at 89cedfd: architecture 5,891, its GitHub section 472; install 1,923, its section 5 829.</li>
-  <li>Since 8d48a44 the flow only added to <code>install.html</code>; <code>architecture.html</code> changed only in the places part 4 lists.</li>
+  <li>Since 8d48a44 the flow only added to <code>install.html</code>; <code>architecture.html</code>, the decision, use-case and backlog pages changed only in the places parts 1 – 4 list, plus E-LOCALTOOL's records (DEC-70, the local-app pages and rows), which stay.</li>
+  <li>Pages that link into the flow's records today: architecture, install, the three decision pages, both use-case pages and their index, backlog-index, e-router-v2 and backlog local-app. Each is in the table above, so no link is left dangling.</li>
+  <li>Main's keel, and 8d48a44's, ignores a <code>[docs.caps]</code> table: its config reader rejects unknown keys only inside <code>[docs.tiers]</code>. So caps lines would be harmless to main's keel, and also unread.</li>
+  <li>Word counts: architecture 5,891 at 89cedfd, 4,794 at 8d48a44; install 1,923 at 89cedfd, of which section 5 is 829.</li>
+  <li>v1 of this plan (snapshot 2026-11-19T10-15-07-364Z) added DEC-71 and marked the records replaced. Your comment on part 1 replaced that with the rule above.</li>
 </ul>
 
   </main>
