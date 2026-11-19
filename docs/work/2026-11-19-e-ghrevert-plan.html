@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afeb71cfbb1a605f8970572" data-artifact="epic-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-GHREVERT epic plan: back to before GitHub</title>
+  <style>
+    td code, td { word-break: break-word; }
+    .dim { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-GHREVERT · Back to before GitHub</h1>
+      <p>Your settings off first, then the code back to 15 November with four keeps, then the records. Releases and your pushes stay on GitHub.</p>
+      <div class="meta">T3 · epic plan · 2026-11-19 · epic <code>E-GHREVERT</code> · branch <code>wu/E-GHREVERT/plan</code> off <code>epic/E-GHREVERT</code> at main 89cedfd · design approved in E-LOCALTOOL.W5 (archived: <code>git show 23cfcfd:docs/work/2026-11-19-e-localtool-w5-retire-result.html</code>), DEC-70, backlog local-app A1</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-item="intent" data-c="intent">GitHub runs your sign-off, your merges and the docs site today. You ruled on 19 November: go back to before that, as soon as possible. This epic does it. After it you sign by typing, merge on your Mac and push, as on 15 November. Releases stay on GitHub.</p>
+
+<h2 id="for-the-owner">What changes for you</h2>
+<table data-item="owner-changes" data-c="owner-changes">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>You push main or an epic</td><td>Refused: only a merged pull request moves them</td><td>You push, as before</td></tr>
+    <tr><td>You sign off</td><td>You approve on GitHub</td><td>You type the sign-off command</td></tr>
+    <tr><td>A piece of work is done</td><td>GitHub merges it</td><td>You merge it on your Mac</td></tr>
+    <tr><td>You release</td><td>You push a version tag</td><td>The same</td></tr>
+  </tbody>
+</table>
+
+<h2 id="your-steps">Your steps first, on GitHub</h2>
+<ol data-c="owner-steps">
+  <li>Merge or close every open pull request.</li>
+  <li>Switch the merge rule off.</li>
+  <li>Switch auto-merge off.</li>
+  <li>Switch the docs site off.</li>
+  <li>Uninstall and delete the bot.</li>
+  <li>Delete the bot's key folder on your Mac.</li>
+</ol>
+<p>Leave the tag rule, merge commits only and the read-only token as they are. Where to click: Details.</p>
+
+<h2 id="terms">Terms</h2>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Merge rule</td><td>Your GitHub rule that main and every epic move only by a merged pull request.</td></tr>
+    <tr><td>A keep</td><td>Something that came with GitHub's flow but is not GitHub's, so the revert leaves it.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="wus">The work</h2>
+<p>Only pushes need your steps; nothing on your Mac does. So your steps come first, and every part of this epic, this plan included, lands as on 15 November. W1 and W2 run side by side.</p>
+
+<div data-item="wu-summaries" data-c="wu-summaries">
+
+<div data-wu="E-GHREVERT.W1" data-c="wu-w1">
+  <h3 id="w1">W1 · The code back to 15 November, with four keeps</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> every file outside <code>docs/</code> goes back to main before the flow, 8d48a44, in one commit. A second commit puts back the four keeps and the tests that hold them. Both are rule-file commits, so each lands by your <code>keel mr commit</code>.</p>
+    <ul>
+      <li><b>Commit 1, the revert</b> (56 files): <code>git diff --binary 89cedfd 8d48a44 -- . ':(exclude)docs' | git apply --index</code>. That is the revert of the five merges <code>6cf3127 e0a31c5 481e2b5 e0536b7 72cae9d</code> outside <code>docs/</code>, file for file (tried in a scratch clone: afterwards <code>git diff 8d48a44 --cached -- . ':(exclude)docs'</code> is empty). A plain <code>git revert -m 1</code> conflicts on the five docs the E-LOCALTOOL close changed; <code>docs/</code> is W2's, by hand.</li>
+      <li><b>Commit 2, the keeps:</b>
+        <ol>
+          <li><code>.github/workflows/release.yml</code> with no <code>pull_request</code> run, and <code>dist-workspace.toml</code>'s <code>pr-run-mode = "skip"</code>: a pull request never runs with the release token.</li>
+          <li>The shared git-folder checks in <code>scripts/router-worker.sh</code> (backlog R33) and their two tests in <code>tests/suite/router.rs</code>.</li>
+          <li><code>mr::checkout_problem</code> in <code>src/mr.rs</code> and its call in <code>src/main.rs</code> (R50). Its tests lived in <code>tests/suite/sign_off.rs</code>, which goes: they move to <code>tests/suite/mr.rs</code>. And keel reads a <code>github:</code> line in <code>.keel/mr-allowed</code> and <code>github</code> in <code>[mr] tiers</code>, signing nothing, until E-DOCSPLIT is on main (E-KEELFIX removes it).</li>
+          <li>Task branches: the launcher's task worktree in <code>scripts/router-worker.sh</code>, and a short section in the keel-workflow and keel-router skills (both copies): a task merges into its WU on your Mac with <code>git merge --no-ff</code>; its rule-file commit carries the trailer again.</li>
+          <li>Proposed (open point 3): <code>yaml-rust2</code> stays a test-only dependency in <code>Cargo.toml</code> and <code>Cargo.lock</code> until E-DOCSPLIT, which makes it a runtime one.</li>
+        </ol>
+      </li>
+      <li><code>.keel/config.toml</code> changes only in commit 1, exactly back to 8d48a44: the eight flow <code>rule_bearing</code> entries, <code>github</code> in <code>[mr] tiers</code> and the <code>[github]</code> section go. Read its staged diff before you type (K9: the commit hook reads the folder's config). Commit 2 does not touch it.</li>
+      <li><code>.keel/mr-allowed</code> loses the <code>github:</code> line, so the W1 and epic sign-offs ask you for <code>--roster-change</code>.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">Your ruling of 2026-11-19 · DEC-70 · local-app A1, parts 2 and 3 · UC-GATE-7, UC-MR-3, UC-ROUTE-7, UC-DOC-5 (their code goes) · backlog github-flow G2, G4, G5, G7, G10.</p>
+  <p data-item="wu-expected"><b>Integration:</b> the suite as at 8d48a44 passes, plus: the R50 tests in <code>tests/suite/mr.rs</code>; a roster with a <code>github:</code> line and a config with the <code>github</code> tier are read, a typed sign-off by the username is written and one by the github id refused; the two R33 tests; the epic test (below), in this WU as the epic's only code. <b>Mechanical:</b> <code>git diff --name-only 8d48a44 &lt;tip&gt; -- . ':(exclude)docs'</code> lists only the keeps' files; <code>keel check</code> green. <b>Unit:</b> the tier and roster reading.</p>
+  <p data-item="wu-deps">this plan merged into the epic</p>
+</div>
+
+<div data-wu="E-GHREVERT.W2" data-c="wu-w2">
+  <h3 id="w2">W2 · The records say the flow is gone</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> the docs by hand, not by revert, so their history stays. The two reference docs lose their GitHub parts. The flow's decisions and use cases are marked replaced by one new record. The backlog closes the topic.</p>
+    <ul>
+      <li><code>docs/install.html</code> §5 and <code>docs/architecture.html</code>'s GitHub section removed; architecture keeps one line: releases and your pushes on GitHub, the flow reverted (DEC-71). Rule files: your <code>keel mr commit</code>.</li>
+      <li>DEC-71 in <code>docs/decisions/workflow-gates.html</code>: the flow reverted, typed sign-off and local merge back, the keeps and until when. DEC-60 – DEC-62 and DEC-64 – DEC-68 marked replaced by it, in their files; DEC-63 stays, its GitHub examples cut; DEC-38's amendment in <code>distribution.html</code> stays (keep 1). <code>decisions-index.html</code>: the rows, next free DEC-72.</li>
+      <li>UC-GATE-7, UC-MR-3, UC-ROUTE-7, UC-DOC-5 marked replaced. UC-MR-1, UC-MR-2, UC-ROUTE-1, UC-ROUTE-6, UC-DOC-1, UC-DOC-4 back to their 8d48a44 text; UC-MR-1 keeps its checkout line (keep 3). <code>use-cases-index.html</code>.</li>
+      <li>Backlog: <code>github-flow.html</code> marked reverted by E-GHREVERT, G2, G4, G5, G7, G10 closed by it; <code>e-router-v2.html</code>: R33 and R50 stay done, R51 open; <code>backlog-index.html</code> and <code>local-app.html</code> A1 at the close.</li>
+      <li>Every row it changes in a page E-DOCSPLIT turned into a data file is listed in its result, for E-DOCSPLIT to port.</li>
+    </ul>
+  </div>
+  <p data-item="wu-maps-to">DEC-70 ("nothing marked replaced: E-GHREVERT does that") · local-app A1, part 4.</p>
+  <p data-item="wu-expected"><b>Integration: waived</b>, no code. <code>keel verify-doc</code> green; every flow record named above reads replaced, with DEC-71; no reference doc tells you to approve on GitHub or wait for auto-merge.</p>
+  <p data-item="wu-deps">this plan merged into the epic</p>
+</div>
+
+</div>
+
+<h2 id="open-points">Open points</h2>
+<p>Work goes on at these answers. Comment to overrule.</p>
+<table data-item="open-questions" data-c="open-points">
+  <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Your steps or this plan first?</td><td><b>Your steps</b>, then you sign this plan by typing and merge it on your Mac. If you would rather approve this plan on GitHub, that works too: do your steps before the first push of W1 or W2</td><td>Only a push needs them. A pull request left open across step 2 would wait for an auto-merge that no longer comes, so step 1 closes them</td></tr>
+    <tr><td>2</td><td>Switch the merge rule off, or delete it?</td><td><b>Off</b> (disabled). Delete it after the close if you like</td><td>Off can be undone in one click</td></tr>
+    <tr><td>3</td><td>A fifth keep: the YAML library stays as a test-only dependency?</td><td><b>Yes</b>, until E-DOCSPLIT is on main</td><td>E-DOCSPLIT makes it a runtime one. Dropping it now breaks E-DOCSPLIT's lock file at its next merge of main. Nothing to remove later</td></tr>
+    <tr><td>4</td><td>Does W1's revert get a code review?</td><td><b>Yes</b>, a normal one. The mechanical check proves the 56 reverted files; the finders read the keeps</td><td>The keeps are the only hand-written code. You can still waive it at sign-off</td></tr>
+    <tr><td>5</td><td>When do you install the reverted keel?</td><td><b>After the epic is on main</b>: <code>cargo install --path . --locked</code> from main</td><td>The keel on your PATH now signs by typing too, so nothing waits on it. Keep 3 lets the new one read E-DOCSPLIT's github line</td></tr>
+    <tr><td>6</td><td>When does E-DOCSPLIT take the revert?</td><td><b>At its next merge of main</b>, after this epic lands. Its open W6 lands by typing, like this epic</td><td>"As soon as possible" puts this epic first. The conflict list is in Details</td></tr>
+  </tbody>
+</table>
+
+<h2 id="details">Details</h2>
+
+<h3 id="clicks">Your steps, where to click</h3>
+<ol data-c="owner-clicks">
+  <li>Every open pull request: merge it on GitHub (by approval, as today) or close it. The router lists them.</li>
+  <li>Repository Settings → Rules → Rulesets → <code>keel-merge</code> → Enforcement status: <b>Disabled</b> → Save. Covers main and <code>epic/**</code>.</li>
+  <li>Settings → General → Pull Requests → untick <b>Allow auto-merge</b>.</li>
+  <li>Settings → Pages → <b>Unpublish site</b>; then Settings → Environments → <code>github-pages</code> → Delete.</li>
+  <li>Settings → Integrations → GitHub Apps → the router's App → Configure → <b>Uninstall</b>. Then your account Settings → Developer settings → GitHub Apps → that App → Advanced → <b>Delete GitHub App</b>. This one cannot be undone.</li>
+  <li>On your Mac: <code>rm -r ~/.config/keel/router-gh</code>.</li>
+  <li>Nothing to do: the <code>pull_request_target</code> policy was never set; leave it.</li>
+  <li>On main's checkout, discard the uncommitted <code>gh run view</code> line in the router guard (your point 7 in W5: "Drop, no longer needed").</li>
+</ol>
+<p>Kept as they are: the <code>keel-tags</code> ruleset, merge commits only, the read-only Actions token, approval for fork pull requests. Until the revert reaches main, a push of main still starts the old "Keel main" run and a failing Pages run; ignore both. The push of the revert itself starts neither: the workflows are gone in it.</p>
+
+<h3 id="landing">How each part lands</h3>
+<ol data-c="landing">
+  <li>Your steps 1 – 8.</li>
+  <li>This plan: test note waived and doc note on its tip; you run <code>keel mr confirm wu &lt;tip&gt; --as vuluu</code>, then <code>git merge --no-ff wu/E-GHREVERT/plan</code> into <code>epic/E-GHREVERT</code>, then push the epic branch (it creates it on GitHub).</li>
+  <li>W1 and W2 the same way: their notes, W1's review, your <code>keel mr confirm wu … --as vuluu</code> (W1 with <code>--roster-change</code>), your local merge, your push of the epic. Work branches stay on your Mac.</li>
+  <li>The close: main merged in if it moved, distil and archive, the epic test note, the epic review, your <code>keel mr confirm epic … --as vuluu --roster-change --report docs/.archive/…</code>, your merge into main, your push of main with its notes.</li>
+  <li>You install keel from main (open point 5). E-DOCSPLIT merges main in (open point 6).</li>
+</ol>
+<p>If you approve this plan on GitHub instead (open point 1), step 2 becomes its pull request; steps 1 and 3 – 5 do not change. Nothing is ever half on GitHub and half on your Mac: no pull request is open after step 1.</p>
+<div class="diagram" data-c="landing-diagram">
+<pre class="mermaid">
+flowchart LR
+  S["Your steps on GitHub"] --> P["This plan: typed sign-off, local merge"]
+  P --> W1["W1 the code back"]
+  P --> W2["W2 the records"]
+  W1 --> C["Close: typed epic sign-off, merge, push main"]
+  W2 --> C
+  C --> K["You install keel from main"]
+  C --> D["E-DOCSPLIT merges main in"]
+</pre>
+</div>
+
+<h3 id="expected-h">Acceptance</h3>
+<ul data-item="expected" data-c="expected">
+  <li><code>git diff --name-only 8d48a44 &lt;epic tip&gt; -- . ':(exclude)docs'</code> lists only the keeps' files: <code>.github/workflows/release.yml</code>, <code>dist-workspace.toml</code>, <code>scripts/router-worker.sh</code>, <code>tests/suite/router.rs</code>, <code>src/mr.rs</code>, <code>src/main.rs</code>, <code>tests/suite/mr.rs</code>, the keel-workflow and keel-router skills (<code>.claude/skills/…/SKILL.md</code> and their copies under <code>skills/</code>), and with open point 3 <code>Cargo.toml</code> and <code>Cargo.lock</code>.</li>
+  <li><code>.github/</code> holds only <code>workflows/release.yml</code>, as on 15 November; <code>keel ci</code> and <code>keel notes write report</code> are unknown commands.</li>
+  <li>You sign by typing, merge on your Mac and push main; the push hook passes and pushes the notes.</li>
+  <li>The reverted keel reads E-DOCSPLIT's committed roster and config (with the github line and tier) without error, and the github line signs nothing.</li>
+  <li>DEC-60 – DEC-62, DEC-64 – DEC-68 and UC-GATE-7, UC-MR-3, UC-ROUTE-7, UC-DOC-5 read replaced by DEC-71.</li>
+  <li>GitHub: the merge rule off, auto-merge off, no Pages site, no App; a version tag still releases.</li>
+  <li>The epic test passes.</li>
+</ul>
+
+<h3 id="use-cases-h">Use cases</h3>
+<ul data-item="use-cases" data-c="use-cases">
+  <li>Replaced: UC-GATE-7 (the gate on GitHub), UC-MR-3 (sign-off by approval), UC-ROUTE-7 (the watch on GitHub), UC-DOC-5 (the docs site).</li>
+  <li>Back to their 15 November text: UC-MR-1 (keeping its checkout line), UC-MR-2, UC-ROUTE-1, UC-ROUTE-6, UC-DOC-1, UC-DOC-4.</li>
+  <li>No new use case.</li>
+</ul>
+
+<h3 id="non-goals-h">Out of scope</h3>
+<ul data-item="non-goals" data-c="non-goals">
+  <li>K9 (the commit hooks read the committed config), K2, <code>keel notes write … --help</code>, and removing the github tier's reading: E-KEELFIX (local-app A2).</li>
+  <li>The app: E-APPLIST and later (A3 – A5).</li>
+  <li>Releases: unchanged. A home other than GitHub: backlog L3.</li>
+  <li>E-DOCSPLIT's own merge of main and its port of W2's rows: E-DOCSPLIT's work.</li>
+  <li>Deleting the flow epics' old branches.</li>
+</ul>
+
+<h3 id="e2e-h">Epic test</h3>
+<div data-item="e2e-plan" data-c="e2e-plan">
+  <p><code>tests/suite/ghrevert_e2e.rs</code>, written in W1. A scratch repository and a bare remote in a temp dir, no network:</p>
+  <ol>
+    <li>main's config lists the <code>username</code>, <code>key</code> and <code>github</code> tiers, and its roster a username line and a <code>github:</code> line, as E-DOCSPLIT's do.</li>
+    <li>A WU with code and its notes: a typed sign-off as the github id is refused; as the username it is written.</li>
+    <li><code>git merge --no-ff</code> into the epic: the merge hook's gate passes.</li>
+    <li>The epic, signed by typing, merged into main and pushed to the bare remote: the push hook passes and the notes refs arrive.</li>
+    <li><code>keel ci gate</code>, <code>keel ci sign-off</code> and <code>keel notes write report</code> are refused as unknown.</li>
+  </ol>
+  <p>No waiver.</p>
+</div>
+
+<h3 id="close-h">At the close</h3>
+<ul data-item="distillation-plan" data-c="distillation-plan">
+  <li>DEC-71 (written in W2) takes the epic's truth: the revert, the keeps and until when, the landing order.</li>
+  <li><code>docs/local-app.html</code>: the build order's step 1 done. <code>docs/backlog/local-app.html</code>: A1 done. <code>docs/backlog/backlog-index.html</code>: E-GHREVERT closed, A2 next.</li>
+  <li>This plan and the W1 and W2 plans and results archived, with lineage to DEC-71.</li>
+</ul>
+
+<h3 id="docsplit">E-DOCSPLIT, so the two epics do not collide</h3>
+<p>E-DOCSPLIT is open at <code>origin/epic/E-DOCSPLIT</code> 57a4f42 (plan, W1 – W5 merged; W6 open). It left main at 6cf3127, after the flow. 31 files are changed by both it and this epic:</p>
+<table data-c="docsplit-overlap">
+  <thead><tr><th>Files</th><th>E-DOCSPLIT</th><th>This epic</th><th>At E-DOCSPLIT's merge of main</th></tr></thead>
+  <tbody>
+    <tr><td><code>scripts/ci-gate.sh</code>, <code>scripts/router-gh.sh</code>, <code>tests/suite/ci_gate.rs</code>, <code>router_gh.rs</code>, <code>router_gh_watch.rs</code>, <code>sign_off.rs</code>, <code>split_prs.rs</code></td><td>Edits them for data files</td><td>Deletes them</td><td>Deleted; its edits dropped. Its typed-path report tests in <code>sign_off.rs</code> move to <code>tests/suite/mr.rs</code> if it wants them</td></tr>
+    <tr><td><code>src/notes.rs</code></td><td>Pairs in <code>write_report</code>; <code>glob_re</code>, <code>partner</code>, <code>distill_of</code></td><td>Deletes <code>write_report</code></td><td>Its pair helpers stay; its <code>write_report</code> edit dropped. Its epic report is signed by <code>--report docs/.archive/…</code></td></tr>
+    <tr><td><code>src/mr.rs</code>, <code>src/main.rs</code></td><td><code>report_candidates</code> and <code>pick_report</code> by pairs; verify-doc by pairs and caps</td><td>Removes the approval paths, the report rule by range, <code>keel ci</code>; keeps R50 and the tier reading</td><td>Text conflicts. Its pair logic sits on 8d48a44's rule: a report is always required</td></tr>
+    <tr><td><code>Cargo.toml</code>, <code>Cargo.lock</code></td><td>Moves <code>yaml-rust2</code> to a runtime dependency</td><td>Keeps it (open point 3)</td><td>Clean</td></tr>
+    <tr><td><code>.keel/config.toml</code></td><td>Adds <code>[docs.caps]</code></td><td>Back to 8d48a44</td><td>Separate hunks. keel's config reader ignores unknown sections, so neither side's sections break the other's keel</td></tr>
+    <tr><td><code>tests/common/mod.rs</code>, <code>tests/suite/main.rs</code>, <code>mr.rs</code>, <code>router.rs</code></td><td>Helpers, a module line, report pairs</td><td>Flow helpers out, R50 tests in</td><td>Text conflicts</td></tr>
+    <tr><td>The keel-workflow skill (both copies), the project-router skill</td><td>Rewritten for data files</td><td>Flow sections out, task section in</td><td>Text conflicts, by hand</td></tr>
+    <tr><td>12 docs: architecture, install, the decisions, use-case and backlog pages</td><td>Turned into page and data-file pairs; several pages deleted</td><td>W2's edits</td><td>E-DOCSPLIT ports W2's rows into its data files, from W2's list, as it ports the E-LOCALTOOL close's</td></tr>
+  </tbody>
+</table>
+<p>What the revert keeps reading for E-DOCSPLIT, until it is on main:</p>
+<ul data-c="docsplit-keeps">
+  <li>The <code>github:</code> roster line and the <code>github</code> tier (keep 3): its committed roster and config carry both, and every sign-off or gate run on it reads them.</li>
+  <li><code>yaml-rust2</code> (open point 3).</li>
+  <li>Its six merges were signed by approval. The reverted gate needs none of those sign-offs: the epic walk reads one only to take an approval's cover of a failed or missing review; its code WUs W2, W3 and W4 carry a PASS review and the plan, W1 and W5 change no code (read from their notes at 57a4f42). The push hook skips merges already on GitHub.</li>
+</ul>
+
+<h3 id="facts">W5's facts, checked again on main 89cedfd</h3>
+<table data-c="facts">
+  <thead><tr><th>Fact</th><th>At 23cfcfd (W5)</th><th>Now</th></tr></thead>
+  <tbody>
+    <tr><td>Main's first-parent line since 8d48a44</td><td>The five flow merges</td><td>Those five, then 89cedfd (E-LOCALTOOL), which changes 7 docs only (<code>git diff --name-only 6cf3127 89cedfd</code>). The 56 files outside <code>docs/</code> are as at 6cf3127</td></tr>
+    <tr><td>The flow's files</td><td>68</td><td>68: 56 outside <code>docs/</code>, 12 docs. Five of the docs changed again at the E-LOCALTOOL close, hence W1's apply in place of a plain revert</td></tr>
+    <tr><td>Open epics</td><td>E-LOCALTOOL and E-DOCSPLIT</td><td>E-DOCSPLIT only. Keep 3 lasts until it is on main</td></tr>
+    <tr><td>E-DOCSPLIT's tip</td><td>55320fd</td><td>57a4f42: W4 merged, PASS review, signed by approval</td></tr>
+    <tr><td>R50's tests</td><td>Not named</td><td>In <code>tests/suite/sign_off.rs</code>, which the revert deletes: W1 moves them</td></tr>
+    <tr><td>Task code in keel</td><td>Not named</td><td><code>notes::task_of</code> serves only the trailer relaxation, which goes. Keep 4 is the launcher and the skills</td></tr>
+    <tr><td>Next free decision id</td><td>—</td><td>DEC-71 (main's index). E-DOCSPLIT's index still gives DEC-70 as next free; main took DEC-70</td></tr>
+  </tbody>
+</table>
+<p>Not checked: the router guard's uncommitted line on main's checkout (reading that checkout was denied to this session); the GitHub settings (no GitHub API call).</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    // keep diagram source readable for the diff layer (mermaid replaces it with SVG)
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
