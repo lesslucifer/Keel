@@ -298,6 +298,20 @@ open:
         `/var/...` on macOS): a copy that names the template only in the resolved form would pass. The tests are green
         today. `common::assert_independent` and the router's check pass the template as both paths, which checks both
         forms. Fix direction: the same at the three call sites.
+
+  - id: B28
+    title: "A check that every follow-up names a real WU, epic or backlog row"
+    status: "backlog: unowned; an epic that owns the doc check"
+    problem: >-
+      Every follow-up in a result report names the WU, epic or backlog row that takes it (DEC-57), but no check proves
+      the name is real: the doc check reads `follow-ups` as text. Since E-DOCSPLIT the backlog rows and the result
+      reports are data files, so a check could now resolve a backlog id against the backlog files and a WU or epic id
+      against the plans.
+    proposal: >-
+      `keel verify-doc` resolves each follow-up's backlog id (`B28`, `R51`) against `docs/backlog/`; WU and epic ids
+      stay a review question.
+    source: "E-DOCSPLIT epic plan, open point 8 (answered: a backlog row, not part of the split)."
+    taken-by: "unowned: an epic that owns the doc check"
 closed:
   - id: B1
     title: "E-SEED.W10 release pipeline (parked branch)"

@@ -23,8 +23,8 @@ areas:
   - area: UC-DOC
     file: workflow.yaml
     scope: >-
-      verify-doc checklists, links, epic doc layout, quoted diagram labels, the epic plan's owner-changes item and
-      300-word top, the write-time check on any host
+      verify-doc on a page and its data file: the role's fields, links, epic doc layout and pairs archived whole,
+      quoted diagram labels, word caps and the epic plan's 300-word top, the write-time check on any host
   - area: UC-REV
     file: workflow.yaml
     scope: >-
@@ -82,6 +82,9 @@ use-cases:
     file: workflow.yaml
   - id: UC-DOC-4
     title: "diagram labels are in quotes"
+    file: workflow.yaml
+  - id: UC-DOC-6
+    title: "every ready page has a word cap"
     file: workflow.yaml
   - id: UC-REV-1
     title: "the review is bound to the code diff"

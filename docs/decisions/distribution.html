@@ -92,7 +92,7 @@
 
     <h3 id="dec-10">DEC-10 · Docs: HTML only; plans do not gate dispatch</h3>
     <table data-c="dec-10">
-      <tr><th>Choice</th><td>Project docs are HTML via htmldoc, never markdown (AGENTS.md and skill files are infrastructure). Every WU gets a plan doc for the record and for distillation, but a worker is dispatched once the doc exists and dependencies are met; the owner reviews plans and results asynchronously through htmldoc comments. Since <a href="workflow-gates.html#dec-69">DEC-69</a>, a plan's or result's checklist lives in a YAML data file beside its page, named like it; <code>keel verify-doc</code> reads it, and the write hook passes on a written <code>.yaml</code> under <code>docs/</code> as it does a page. Owner rulings during an epic go into an append-only rulings log, then into this knowledge base at close.</td></tr>
+      <tr><th>Choice</th><td>Project docs are HTML via htmldoc, never markdown (AGENTS.md and skill files are infrastructure). Every WU gets a plan doc for the record and for distillation, but a worker is dispatched once the doc exists and dependencies are met; the owner reviews plans and results asynchronously through htmldoc comments. A plan's or result's fields live in a YAML data file beside its page, named like it (<a href="review-docs.html#dec-69">DEC-69</a>); <code>keel verify-doc</code> reads it, and the write hook passes on a written <code>.yaml</code> under <code>docs/</code> as it does a page. Owner rulings during an epic go into an append-only rulings log, then into this knowledge base at close.</td></tr>
       <tr><th>Rejected</th><td>A per-WU plan-review gate before dispatch.</td></tr>
     </table>
 

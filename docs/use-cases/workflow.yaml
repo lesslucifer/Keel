@@ -128,10 +128,11 @@ areas:
           the target commits no roster, the one the tip carries judges and keel prints one bootstrap line; with none on
           either side nobody may sign. No file on disk is read, so a checkout cannot change who may sign (DEC-47). It
           attests the change hash and, when `[mr] report` (`required` by default, `optional`, `none`; the target's
-          committed config at the merge) asks for one, the result report's bytes. The report is the doc whose
-          `data-artifact` carries the level's role (`wu-result`, `epic-result`; a collapsed doc counts for both), or the
-          one named by `--report <path>`: at either level, an html doc under docs.root changed in the range and present
-          at the tip. No untracked or archived doc is searched, so an epic sign-off passes `--report <path>` unless its
+          committed config at the merge) asks for one, the result report's bytes. The report is the page whose data file
+          beside it (`<stem>.yaml`) has an `artifact` carrying the level's role (`wu-result`, `epic-result`; a collapsed
+          doc counts for both): a page under docs.root that the range changes, by the page or by its data file, with
+          both files at the tip. A page with no data file is never one. `--report <path>` names the page and is taken as
+          named; naming the `.yaml` is refused. No untracked or archived doc is searched, so an epic sign-off passes `--report <path>` unless its
           result doc is committed in the epic's diff (DEC-40). The signed payload is `keel-mr/v2`, with `sha256:<hex>`
           change and report hashes. `keel mr confirm` refuses while checks 1–7 are red (sign last), when a required
           report is missing, when several candidates match (it lists them; fix `--report`), and on `--report` under
@@ -175,22 +176,25 @@ areas:
       - id: UC-DOC-1
         title: "ready governed docs stay green"
         expected: >-
-          A doc whose `data-artifact` is `epic-plan`, `wu-plan`, `wu-result` or `epic-result` (or a space-separated
-          union) and whose status is not draft is verified against its checklist at the write, on every host: the shell
-          hook where the host has one (`PostToolUse`), a host plugin where it has none (a red write returns failed with
+          A plan or result is a page plus a YAML data file beside it, named like the page and ending `.yaml` (DEC-69).
+          A data file whose `artifact` is `epic-plan`, `wu-plan`, `wu-result` or `epic-result` (or a list: a one-part
+          epic's `[epic-plan, wu-plan]` or `[epic-result, wu-result]`) and whose `status` is `ready` is checked at the
+          write against its role's fields, on every host: the shell hook where the host has one (`PostToolUse`, on a
+          written page or data file under docs.root), a host plugin where it has none (a red write returns failed with
           the problem lines), and again at every turn end, where a red doc keeps the turn open instead of letting it
-          close. The trigger is the write; a review or a merge is too late and no substitute (DEC-54). An empty item
-          counts as missing, an unknown `data-item` is named, an unknown artifact is red. Drafts are fully silent, links
-          included. An epic plan must carry `owner-changes` (what changes for the owner, today and after); any other
-          governed doc may carry it. An epic plan's top, its `<main>` content (else `<body>`) above the first `data-wu`
-          block, holds at most 300 words; over that is red with the count. Words are counted as a reader sees them: a
-          word has a letter or digit, inline tags join the text around them, block tags separate it, an entity is one
-          symbol, and diagram source counts.
+          close. The trigger is the write; a review or a merge is too late and no substitute (DEC-54). A missing or
+          empty field is red and named; an unknown field is named (the typo guard); an unknown artifact, a status other
+          than `draft` or `ready`, an unquoted date, a `page` that does not name the page beside it, a WU id not under
+          its `epic`, an incomplete or repeated `wu-summaries` entry, a `wu-deps` naming no WU of the plan, a missing
+          `test-plan` level and a YAML anchor or alias are red. `status: draft` silences the pair, page included. An
+          epic plan must carry `owner-changes` (what changes for the owner, today and after); any other role may carry
+          it. The page carries no checklist markup; it is checked for links (UC-DOC-2), diagram labels (UC-DOC-4) and
+          its word cap (UC-DOC-6). A page's old `data-artifact` and `data-item` tags are not read.
         failure: >-
-          a ready epic plan with no `owner-changes` or a longer top passes; a count that differs from what a reader sees
-          (DEC-52). A result report's `follow-ups` item is present, or says `none`; every follow-up in it names the WU,
-          epic or backlog row that takes it — a rule, not a check, because no gate can tell a real destination from an
-          invented one (DEC-57).
+          a ready data file with a missing or misspelt field passes; a draft is reported; a page's old tags are read
+          as its fields. A result report's `follow-ups` field is present, or says `none`; every follow-up in it names
+          the WU, epic or backlog row that takes it — a rule, not a check, because no gate can tell a real destination
+          from an invented one (DEC-57, backlog B28).
       - id: UC-DOC-2
         title: "relative links resolve"
         expected: >-
@@ -201,7 +205,9 @@ areas:
         expected: >-
           Every changed doc (under docs.root or T0, plus T3 docs deleted anywhere in the range) is listed in `doc/v1`
           with its tier from `[docs.tiers]`; an archived T3 doc carries `distilled_to` (T1/T2 docs tracked at the tip,
-          or `"none: <why>"`). At an epic tip, every path tracked under docs.root classifies as T0–T2; a tracked T3 or
+          or `"none: <why>"`). A page and its data file are one doc: one `--distill` naming either file gives both the
+          same lineage, and a pair archived by half (one file still tracked at the tip) is red, naming the file left
+          to `git rm`. At an epic tip, every path tracked under docs.root classifies as T0–T2; a tracked T3 or
           unclassified path is red under `6·doc-note`.
       - id: UC-DOC-4
         title: "diagram labels are in quotes"
@@ -216,6 +222,19 @@ areas:
           best-effort lint for htmldoc output: a missed label is a known limit (backlog B21).
         failure: >-
           a valid diagram is refused, or a fix changes the diagram (DEC-52).
+      - id: UC-DOC-6
+        title: "every ready page has a word cap"
+        expected: >-
+          A ready page is counted as a reader sees the text of its `<main>` (else `<body>`): a word has a letter or
+          digit, inline tags join the text around them, block tags separate it, an entity is one symbol, and diagram
+          source counts. A plan or result takes its cap from its data file's role: epic plan 700, WU plan 500, WU
+          result 500, epic result 700; a one-part epic takes the epic cap. An epic plan's top, from the start of
+          `<main>` to the heading with `id="work"` (the whole page when there is none), holds at most 300 words. Any
+          other page takes the cap `[docs.caps]` sets for its path (a glob), if any; Keel's own: decision files 5,000,
+          architecture 3,000, install 1,500. Over a cap is red with the count and the cap; a draft is silent.
+        failure: >-
+          a page over its cap passes; a count that differs from what a reader sees (DEC-52); a data file's role and a
+          path cap both applied to one page.
   - area: UC-REV
     title: "code review"
     use-cases:

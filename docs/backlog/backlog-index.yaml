@@ -8,7 +8,7 @@ files:
     scope: >-
       Work deferred at the E-SEED, E-SEED2, E-SEED3, E-CRCAP, E-DOCSTYLE and E-TESTOPT closes: release, per-language
       e2e, Trawler re-records, the gate fixes, the notes fetch, accepted limits of the doc check, small follow-ups.
-    next-free: B28
+    next-free: B29
   - letter: R
     file: e-router-v2.yaml
     scope: >-
