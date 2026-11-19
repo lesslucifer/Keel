@@ -1962,7 +1962,7 @@ fn no_receipt_runs_the_whole_gate_and_writes_nothing() {
     assert!(stderr(&dry).contains("8·manual-review"), "{}", text(&dry));
     assert_eq!((stdout(&dry), stderr(&dry)), (stdout(&gate), stderr(&gate)), "a red run prints the same with or without the flag");
 
-    // Green: the same checks, one line more, and no receipt.
+    // Green: the same checks, the receipt line replaced, and no receipt.
     sign(p, "wu", "docs/a.html");
     let notes = git(p, &["for-each-ref", "refs/notes"]);
     let dry = keel(p, &["verify-dod", "wu", "wu/e/a", "--no-receipt"]);
@@ -1971,7 +1971,9 @@ fn no_receipt_runs_the_whole_gate_and_writes_nothing() {
     assert!(!has_note(p, "dod", "wu/e/a"), "no receipt: {}", text(&dry));
     let gate = keel(p, &["verify-dod", "wu", "wu/e/a"]);
     assert!(gate.status.success() && has_note(p, "dod", "wu/e/a"), "without the flag the receipt is written: {}", text(&gate));
-    assert_eq!(stdout(&dry), format!("{}no receipt written (--no-receipt)\n", stdout(&gate)));
+    let wrote = format!("wrote refs/notes/dod on {}\n", &git(p, &["rev-parse", "wu/e/a"])[..8]);
+    assert!(stdout(&gate).ends_with(&wrote), "{}", text(&gate));
+    assert_eq!(stdout(&dry), stdout(&gate).replace(&wrote, "no receipt written (--no-receipt)\n"), "the same checks, the receipt line replaced");
     assert_eq!(stderr(&dry), stderr(&gate));
 
     // The epic level.

@@ -1,4 +1,5 @@
 mod gate;
+mod help;
 mod init;
 mod mr;
 mod notes;
@@ -660,6 +661,7 @@ fn run() -> Result<i32, String> {
 }
 
 fn main() {
+    help::exit_if_asked();
     std::process::exit(run().unwrap_or_else(|e| {
         eprintln!("{e}");
         1

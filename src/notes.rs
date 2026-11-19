@@ -921,7 +921,63 @@ pub(crate) fn hash_blob(repo: &Path, data: &str) -> Result<String, String> {
     Ok(id)
 }
 
-const CR_USAGE: &str = "usage: keel notes write cr --verdict PASS|FAIL [--blockers N] [--importants N] [--findings <json>] [--refuted <json>] [--nits <json>] [--fleet <json>]\n       keel notes write cr --verdict PASS --fixes <reviewed commit>   (a fix-PASS: no new round)\n       keel notes write cr --verdict WAIVED   (the review cap: the tool writes the reason)";
+pub(crate) const NOTES_USAGE: &str = "usage: keel notes write <test|doc|cr>";
+pub(crate) const TEST_USAGE: &str = "usage: keel notes write test [--target R] < judgment.json";
+pub(crate) const DOC_USAGE: &str = "usage: keel notes write doc [--target R] [--distill <t3-path>=<doc>[,<doc>] | <t3-path>=none: <why>]...";
+pub(crate) const CR_USAGE: &str = "usage: keel notes write cr --verdict PASS|FAIL [--blockers N] [--importants N] [--findings <json>] [--refuted <json>] [--nits <json>] [--fleet <json>] [--target R]\n       keel notes write cr --verdict PASS --fixes <reviewed commit>   (a fix-PASS: no new round)\n       keel notes write cr --verdict WAIVED   (the review cap: the tool writes the reason)";
+
+pub(crate) const TARGET: &str = "--target";
+
+/// Each kind's flags, every one taking the next word as its value (as the readers below take it).
+const TEST_FLAGS: &[&str] = &[TARGET];
+const DOC_FLAGS: &[&str] = &[TARGET, "--distill"];
+const CR_FLAGS: &[&str] = &["--verdict", "--blockers", "--importants", "--findings", "--refuted", "--nits", "--fleet", "--fixes", TARGET];
+
+/// The one strict reader of a keel flag list (K2), for the notes writer and the gate alike: `valued`
+/// flags take the next word, `bare` ones none, and only `repeatable` ones may come twice. A `--target`
+/// value never starts with `-` (no ref does). `Some(what is wrong)`: an unknown argument, a stray
+/// word, a repeat, or a missing value.
+pub(crate) fn args_problem(args: &[&str], valued: &[&str], bare: &[&str], repeatable: &[&str]) -> Option<String> {
+    let mut seen = vec![];
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i];
+        let takes_value = match (valued.contains(&a), bare.contains(&a)) {
+            (true, _) => true,
+            (false, true) => false,
+            (false, false) => return Some(format!("unknown argument '{a}'")),
+        };
+        if seen.contains(&a) && !repeatable.contains(&a) {
+            return Some(format!("{a} given twice"));
+        }
+        if takes_value {
+            match args.get(i + 1) {
+                Some(v) if !(a == TARGET && v.starts_with('-')) => i += 1,
+                _ if a == TARGET => return Some("--target needs a value: --target <ref>".into()),
+                _ => return Some(format!("{a} needs a value")),
+            }
+        }
+        seen.push(a);
+        i += 1;
+    }
+    None
+}
+
+/// `notes write`'s arguments checked before the range is computed or stdin read (K2), so a typo never
+/// writes a note. `cr` with `--reason` is left to `cr_verdict`'s own refusal (B18).
+fn known_args(kind: &str, args: &[&str]) -> Result<(), String> {
+    let (flags, usage) = match kind {
+        "test" => (TEST_FLAGS, TEST_USAGE),
+        "doc" => (DOC_FLAGS, DOC_USAGE),
+        "cr" if args.contains(&"--reason") => return Ok(()),
+        "cr" => (CR_FLAGS, CR_USAGE),
+        _ => return Err(NOTES_USAGE.into()),
+    };
+    match args_problem(args, flags, &[], &["--distill"]) {
+        Some(what) => refuse(format!("notes write {kind}: {what}"), usage),
+        None => Ok(()),
+    }
+}
 
 /// What a `keel notes write cr` call records.
 #[derive(Debug, PartialEq)]
@@ -1000,6 +1056,7 @@ fn cr_counts(findings: Option<&serde_json::Value>, blockers: Option<u32>, import
 
 /// `args` are the flags after `notes write <kind>`.
 pub fn write(repo: &Path, cfg: &Config, kind: &str, args: &[&str]) -> Result<i32, String> {
+    known_args(kind, args)?;
     let r = range(repo, cfg, args)?;
     let tip = r.id.tip.clone();
     match kind {
@@ -1044,7 +1101,7 @@ pub fn write(repo: &Path, cfg: &Config, kind: &str, args: &[&str]) -> Result<i32
             store(repo, "doc", &tip, &DocNote { schema: "doc/v1".into(), id: r.id, changes })?;
         }
         "cr" => write_cr(repo, cfg, r, args)?,
-        _ => return Err("usage: keel notes write <test|doc|cr>".into()),
+        _ => return Err(NOTES_USAGE.into()),
     }
     Ok(0)
 }
@@ -1205,6 +1262,7 @@ mod tests {
     use super::{changed_text, own_diff_argv, own_diff_commands, parse_batch, shell_quote, union_of_z, OwnDiff};
     use super::{cr_counts, cr_lists, cr_verdict, waive, waiver_reason, CrNote, CrWrite, Identity};
     use super::{epic_branch, epic_of, target, target_flag, target_from_holders};
+    use super::{known_args, CR_USAGE, DOC_USAGE, NOTES_USAGE, TEST_USAGE};
     use crate::Config;
 
     fn cfg_with(branches: &str) -> Config {
@@ -1513,5 +1571,44 @@ mod tests {
         .unwrap();
         let open: Vec<_> = n.open_findings().iter().map(|f| f["claim"].as_str().unwrap()).collect();
         assert_eq!(open, ["null", "false", "blank", "none"]);
+    }
+
+    #[test]
+    fn known_args_accept_each_kinds_flags_with_their_values() {
+        for (kind, args) in [
+            ("test", &[][..]),
+            ("test", &["--target", "epic/e"]),
+            ("doc", &["--distill", "a=b", "--target", "epic/e", "--distill", "c=none: why"]),
+            ("cr", &["--verdict", "FAIL", "--blockers", "1", "--importants", "0", "--findings", "[]", "--refuted", "[]", "--nits", "[]"]),
+            ("cr", &["--verdict", "PASS", "--fixes", "abc", "--fleet", "{}", "--target", "epic/e"]),
+            ("cr", &["--verdict", "PASS", "--findings", "--blockers"]),
+        ] {
+            assert_eq!(known_args(kind, args), Ok(()), "{kind} {args:?}");
+        }
+    }
+
+    #[test]
+    fn known_args_refuse_an_unknown_flag_a_stray_word_a_missing_value_a_repeat_and_an_unknown_kind() {
+        for (kind, args, needle, usage) in [
+            ("doc", &["--distil", "x=y"][..], "notes write doc: unknown argument '--distil'", DOC_USAGE),
+            ("doc", &["stray"], "unknown argument 'stray'", DOC_USAGE),
+            ("doc", &["--target"], "--target needs a value", DOC_USAGE),
+            ("test", &["--distill", "a=b"], "notes write test: unknown argument '--distill'", TEST_USAGE),
+            ("test", &["--target", "a", "--target", "b"], "--target given twice", TEST_USAGE),
+            ("cr", &["--verdict", "PASS", "--blokers", "0"], "unknown argument '--blokers'", CR_USAGE),
+            ("cr", &["--verdict", "PASS", "--verdict", "FAIL"], "--verdict given twice", CR_USAGE),
+            ("cr", &["--verdict", "PASS", "--help"], "unknown argument '--help'", CR_USAGE),
+        ] {
+            let e = known_args(kind, args).unwrap_err();
+            assert!(e.starts_with("keel notes: refused - ") && e.contains(needle) && e.contains(&format!("fix -> {usage}")), "{kind} {args:?}: {e}");
+        }
+        assert_eq!(known_args("report", &["x.html"]), Err(NOTES_USAGE.to_string()));
+    }
+
+    #[test]
+    fn a_cr_reason_is_left_to_its_own_refusal() {
+        for args in [&["--verdict", "WAIVED", "--reason"][..], &["--verdict", "WAIVED", "--reason", "--blockers", "2"]] {
+            assert_eq!(known_args("cr", args), Ok(()), "{args:?}: cr_verdict refuses it, naming --waive-review");
+        }
     }
 }

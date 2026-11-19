@@ -489,8 +489,10 @@ fn unlisted(src: &str, id: &str) -> String {
     format!("keel mr: refused - {id} is not listed in {src}\n  fix -> {NOT_AUTHORISED}")
 }
 
+pub(crate) const SETUP_USAGE: &str = "usage: keel mr setup --as <identity> [--key <path>]";
+
 fn setup(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
-    let id = flag(args, "--as").ok_or("usage: keel mr setup --as <identity> [--key <path>]")?;
+    let id = flag(args, "--as").ok_or(SETUP_USAGE)?;
     if !valid_identity(id) {
         return Err(format!("keel mr: identity '{id}' may only use letters, digits and @._+-"));
     }
@@ -550,8 +552,10 @@ fn setup(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     Ok(0)
 }
 
+pub(crate) const COMMIT_USAGE: &str = "usage: keel mr commit -m <msg> [--as <identity>]";
+
 fn commit(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
-    let msg = flag(args, "-m").filter(|m| !m.trim().is_empty()).ok_or("usage: keel mr commit -m <msg> [--as <identity>]")?;
+    let msg = flag(args, "-m").filter(|m| !m.trim().is_empty()).ok_or(COMMIT_USAGE)?;
     let (allowed, src) = roster(repo, cfg, "HEAD", "")?;
     let id = signer(&allowed, &src, args)?;
     let Some(tier) = tier_of(&allowed, &id) else {
@@ -574,18 +578,19 @@ fn landed(tip: &str, base: &str, target: &str) -> Option<String> {
     })
 }
 
+pub(crate) const CONFIRM_USAGE: &str = "usage: keel mr confirm <wu|epic> [<tip>] [--as <identity>] [--target R] [--report <path>] [--roster-change] [--accept-waiver <code> | --waive-review \"<reason>\" [--confirm-waiver <code>]]";
+
 fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
-    const USAGE: &str = "usage: keel mr confirm <wu|epic> [<tip>] [--as <identity>] [--target R] [--report <path>] [--roster-change] [--accept-waiver <code> | --waive-review \"<reason>\" [--confirm-waiver <code>]]";
     let pos = positionals(args);
     let (level, tip_ref) = match pos[..] {
         [l] => (l, "HEAD"),
         [l, t] => (l, t),
-        _ => return Err(USAGE.into()),
+        _ => return Err(CONFIRM_USAGE.into()),
     };
     let epic = match level {
         "wu" => false,
         "epic" => true,
-        _ => return Err(USAGE.into()),
+        _ => return Err(CONFIRM_USAGE.into()),
     };
     // The branch name decides a WU's default target, so name HEAD by its branch.
     let tip_ref = match tip_ref {
@@ -1004,12 +1009,14 @@ pub fn commit_msg(repo: &Path, cfg: &Config, msg_file: &str) -> Result<i32, Stri
     Ok(1)
 }
 
+pub(crate) const MR_USAGE: &str = "usage: keel mr <setup --as <id> [--key <path>] | commit -m <msg> [--as <id>] | confirm <wu|epic> [<tip>] [--as <id>] [--target R] [--report <path>] [--roster-change]>";
+
 pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     match args {
         ["setup", rest @ ..] => setup(repo, cfg, rest),
         ["commit", rest @ ..] => commit(repo, cfg, rest),
         ["confirm", rest @ ..] => confirm(repo, cfg, rest),
-        _ => Err("usage: keel mr <setup --as <id> [--key <path>] | commit -m <msg> [--as <id>] | confirm <wu|epic> [<tip>] [--as <id>] [--target R] [--report <path>] [--roster-change]>".into()),
+        _ => Err(MR_USAGE.into()),
     }
 }
 
