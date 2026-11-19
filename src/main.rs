@@ -118,6 +118,30 @@ fn load_config_at_head(repo: &Path) -> Result<Config, String> {
     toml::from_str(&text).map_err(|e| format!("keel: bad .keel/config.toml at HEAD: {e}"))
 }
 
+/// The commit level's policy text: HEAD's committed `.keel/config.toml` when it has one (a differing
+/// staged file is never read then), else - bootstrap, `true` - the staged one, else a refusal. Never
+/// the working tree: an uncommitted edit must not pick the rules its own commit is judged by (DEC-24).
+fn committed_config(head: Option<String>, staged: Option<String>) -> Result<(String, bool), String> {
+    match (head, staged) {
+        (Some(text), _) => Ok((text, false)),
+        (None, Some(text)) => Ok((text, true)),
+        (None, None) => Err("keel: commit refused - neither HEAD nor the index holds .keel/config.toml, so no committed rules judge this commit\n  fix -> git add .keel/config.toml (or run keel init to create one)".into()),
+    }
+}
+
+/// The policy of `hook pre-commit`, `hook commit-msg` and `keel mr commit`: HEAD's committed file,
+/// else the staged one with a bootstrap line (as the roster's), else a refusal. The index read is the
+/// one git is committing (a temporary one for `git commit -a`): `git` keeps `GIT_INDEX_FILE`.
+fn load_config_committed(repo: &Path) -> Result<Config, String> {
+    let head = git(repo, &["show", "HEAD:.keel/config.toml"], &[]).ok();
+    let staged = if head.is_none() { git(repo, &["show", ":.keel/config.toml"], &[]).ok() } else { None };
+    let (text, bootstrap) = committed_config(head, staged)?;
+    if bootstrap {
+        eprintln!("keel: HEAD commits no .keel/config.toml - bootstrap: the staged .keel/config.toml judges this commit");
+    }
+    toml::from_str(&text).map_err(|e| format!("keel: bad .keel/config.toml {}: {e}", if bootstrap { "staged" } else { "at HEAD" }))
+}
+
 /// `git rev-parse --local-env-vars`: what git exports to its hooks to pin a repository (absolute
 /// from a linked worktree). Keel finds the repo from its working directory alone (DEC-41).
 const GIT_LOCAL_ENV: [&str; 15] = [
@@ -646,14 +670,16 @@ fn run() -> Result<i32, String> {
             }
             check(&repo, &cfg)
         }
-        ["hook", "pre-commit"] => pre_commit(&repo, &load_config(&repo)?),
-        ["hook", "commit-msg", file] => mr::commit_msg(&repo, &load_config(&repo)?, file),
+        // The commit level is judged by HEAD's committed rules, never the folder's file (E-KEELFIX.W1).
+        ["hook", "pre-commit"] => pre_commit(&repo, &load_config_committed(&repo)?),
+        ["hook", "commit-msg", file] => mr::commit_msg(&repo, &load_config_committed(&repo)?, file),
         ["hook", "pre-push", remote, ..] => pre_push(&repo, &load_config(&repo)?, remote),
         ["notes", "write", kind, rest @ ..] => notes::write(&repo, &load_config(&repo)?, kind, rest),
         ["verify-doc", paths @ ..] => verify_doc(&repo, paths),
         ["verify-dod", "hook"] => gate::verify_dod(&repo, &load_config_at_head(&repo)?, &["hook"]),
         ["verify-dod", rest @ ..] => gate::verify_dod(&repo, &load_config(&repo)?, rest),
         ["preflight", rest @ ..] => gate::preflight_cmd(&repo, &load_config(&repo)?, rest),
+        ["mr", "commit", ..] => mr::run(&repo, &load_config_committed(&repo)?, &args[1..]),
         ["mr", rest @ ..] => mr::run(&repo, &load_config(&repo)?, rest),
         _ => Err("usage: keel <init [-f] | lint | check | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install [--force] | notes write <test|doc|cr>>".into()),
     }
@@ -785,6 +811,16 @@ mod tests {
     /// The shims' grep and Keel's own `--version` share one marker (open point 6).
     fn foreign_guard() -> String {
         format!("keel --version </dev/null 2>/dev/null | grep -q '^{KEEL_MARK}' || ")
+    }
+
+    #[test]
+    fn committed_config_takes_heads_text_else_the_staged_one_as_a_bootstrap_else_refuses() {
+        let t = |s: &str| Some(s.to_string());
+        assert_eq!(super::committed_config(t("head"), t("staged")), Ok(("head".to_string(), false)), "HEAD wins over a differing staged file");
+        assert_eq!(super::committed_config(t("head"), None), Ok(("head".to_string(), false)));
+        assert_eq!(super::committed_config(None, t("staged")), Ok(("staged".to_string(), true)), "staged alone is a bootstrap");
+        let e = super::committed_config(None, None).unwrap_err();
+        assert!(e.contains("commit refused") && e.contains("fix -> git add .keel/config.toml"), "{e}");
     }
 
     #[test]

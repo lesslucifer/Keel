@@ -975,8 +975,9 @@ pub(crate) fn checkout_problem(root: &Path) -> Option<String> {
     None
 }
 
-/// commit-msg hook: a staged change to a rule-bearing path needs a `Reviewed-By` trailer naming a
-/// signer HEAD's roster lists. The trailer is typed text, so this stops an honest agent only (DEC-24).
+/// commit-msg hook: a staged change to a path HEAD's committed rules call rule-bearing (`cfg`, from
+/// `load_config_committed`) needs a `Reviewed-By` trailer naming a signer HEAD's roster lists. The
+/// trailer is typed text, so this stops an honest agent only (DEC-24).
 pub fn commit_msg(repo: &Path, cfg: &Config, msg_file: &str) -> Result<i32, String> {
     // A merge authors nothing new; its commits were authorised on their branch.
     if git(repo, &["rev-parse", "--verify", "-q", "MERGE_HEAD"], &[]).is_ok() {
