@@ -38,6 +38,10 @@ deviations:
     why: Re-pointing links to the moved decisions; the slimming itself is W6.
   - what: The committed trees of the W5 commits have dangling links in architecture and install until the owner's commit.
     why: The plan's route kept those rule files uncommitted until b186a38; the disk was green at each commit, and the tree is green from b186a38 on.
+  - what: The W1 and W2 result pages keep their old #dec-69 and #dec-52 anchors until they are archived at the epic close; the page tags stay until the epic merges into main.
+    why: >-
+      The sign-off keel built from main finds the report by the page tag among the pages the range changes; 18b0e1b's
+      re-pointed links made W1's and W2's results candidates too. Their bytes are back at 959cf50's, and this page carries the wu-result tags.
 evidence:
   commits:
     - 203d3cd use cases to data files, the page deleted in the same commit
