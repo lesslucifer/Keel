@@ -37,7 +37,8 @@ The data file's `artifact` field says which doc it is:
 (`artifact: [epic-plan, wu-plan]`) and the results
 (`artifact: [epic-result, wu-result]`). The data file holds the union of both
 roles' fields, a shared field once, and the page takes the epic's shape and
-cap. No other roles share a doc.
+cap. The doc is the epic's: its `id` is the epic id, and it has no `epic`
+field. No other roles share a doc.
 
 ## 2 · The data file
 
@@ -50,8 +51,8 @@ The fields every role knows (each required unless its row says otherwise):
 |---|---|
 | `artifact` | the role (§1); a list for a one-part epic |
 | `status` | `draft` while authoring — the whole pair is silent; `ready` — checked on every write. Flipping back to draft to silence a red doc is visible to every reviewer |
-| `id` | the epic id (`E-CAP`), or for a WU role the WU id (`E-CAP.W2`) |
-| `epic` | for a WU role only: its epic's id; `id` must be `<epic>.W<n>` |
+| `id` | the epic id (`E-CAP`), or for a WU role the WU id (`E-CAP.W2`); a one-part epic's doc takes the epic id |
+| `epic` | for a WU role only (never a one-part epic's doc): its epic's id; `id` must be `<epic>.W<n>` |
 | `title` | the page's title, as text |
 | `date` | a quoted string, `"YYYY-MM-DD"` (a bare date is read as a date, not text) |
 | `page` | the page's file name, beside the data file |
@@ -128,8 +129,10 @@ stated defaults.
 
 ```
 keel verify-doc <path> [<path>…]   # a page or a data file names its pair · exit 0 green / draft · exit 1 red
-keel verify-doc                    # every page and data file under docs.root (tracked or untracked)
+keel verify-doc                    # every page and data file under docs.root, tracked or untracked, that git does not ignore
 ```
+
+`docs/.archive/` is ignored, so check an epic result there by its path.
 
 It checks exactly this, nothing cleverer. **The data file**: every field its
 role requires, present and not empty; no unknown field; `artifact` a known
@@ -138,7 +141,7 @@ date; `page` naming the page beside it; a WU's `id` under its `epic`; each
 `wu-summaries` entry complete, its `wu` under the epic, listed once, its
 `wu-deps` naming WUs of the plan; each `test-plan` level given. **The page**,
 when the pair is not a draft: its word cap and, for an epic plan, its top;
-**every relative `href` resolves** (absolute URLs, `mailto:`, root-relative
+**every relative link (`<a href>`) resolves** (absolute URLs, `mailto:`, root-relative
 paths and fragments are not checked); and **every Mermaid flowchart node and
 edge label is in double quotes** (node shapes like `A["…"]`, `Q{"…"}`, and
 edge labels `-->|"…"|`, `-- "…" -->`, spaced or not). The label check is a
@@ -171,7 +174,10 @@ and the result page's bytes matching the human's `mr/v1` signature (skill
 `keel-workflow`, checks 6 and 8). The sign-off finds a result report through
 its data file — the page whose data file's `artifact` carries the level's
 result role — never by file name and never by a page with no data file;
-`--report` names the page, never the `.yaml`. Depth of content is judgment —
+`--report` names the page, never the `.yaml`. A typed `--report` is taken as
+named (only a `.yaml` is refused): the owner names the page whose data file
+carries the level's result role. The search, the approval path and
+`keel notes write report` check the data file. Depth of content is judgment —
 the owner's comment round and the reviews read these docs.
 
 ## 6 · Writing one

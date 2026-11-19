@@ -38,7 +38,8 @@ Cut every word you can. The top fits on one screen. The doc check counts a
 ready page's words, from the start of `<main>` (the title block sits outside
 it), else from `<body>`: an epic plan 700, its top 300 (up to the heading with
 `id="work"`); a WU plan 500; a WU result 500; an epic result 700; a decision
-file 5,000, about 250 a record.
+file 5,000, by its path (`[docs.caps]`). A decision record keeps to about 250
+words; that one is not checked.
 
 - Before: "This section provides an overview of the changes this epic will introduce."
 - After: "What changes:"
@@ -56,7 +57,7 @@ No code or ids in the top. Define each term in a Terms table or where you
 first use it.
 
 - Before: "W2 adds `0·review-cap` to preflight via `[review] max_rounds`."
-- After: "The tool refuses a 4th review round." The check id and the config key go in the work list or under Details.
+- After: "The tool refuses a 4th review round." The check id and the config key go in the data file (a plan or result), or under Details in any other doc.
 
 ### 4 · Problem first
 
@@ -139,8 +140,8 @@ For a plan or result report, read only the top. Can the owner say:
 2. what changes for them?
 3. what they must decide, if anything?
 4. Is there code or an id in the top? Move it to the work or the data file.
-5. Is there a file list, function name, test list or tag on the page? Move it
-   to the data file.
+5. Is there a file list, function name, test list or checklist markup on the
+   page? Move it to the data file.
 
 For every doc, check what you wrote:
 

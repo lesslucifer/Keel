@@ -85,6 +85,7 @@ doc:
    mkdir -p docs/.archive && cp docs/work/<doc>.html docs/work/<doc>.yaml docs/.archive/ && git rm -q docs/work/<doc>.html docs/work/<doc>.yaml
    git commit -m "docs: archive <doc> (distilled to <targets>)"
    ```
+   For a page with no data file, drop the `.yaml` from both lists.
    A pair archived by half (one file gone, the other still tracked) is red:
    `git rm` the other in the archive commit itself, before its notes.
    (`docs/.archive/` is gitignored; history keeps the content. Sessions never

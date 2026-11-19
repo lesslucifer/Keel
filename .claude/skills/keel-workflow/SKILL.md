@@ -110,7 +110,10 @@ only the human types them, after reading what the sign-off shows (§5–§6).
 level's role (`wu-result`, `epic-result`; a collapsed doc counts for both),
 whatever its file name; a page with no data file is never one. The sign-off
 attests the page's bytes, the thing the human reads; the data file is in the
-signed diff. `--report` names the page; a `.yaml` is refused. `[mr] report` in the target's committed `.keel/config.toml` decides
+signed diff (a WU's; an epic's sits untracked beside its page). `--report`
+names the page; a `.yaml` is refused. A typed `--report` is taken as named, so
+name the page whose data file carries the level's result role; the search, the
+approval path and `keel notes write report` check the data file. `[mr] report` in the target's committed `.keel/config.toml` decides
 whether the sign-off must attest one: `required` (default) · `optional` ·
 `none`. `required` asks for one only when the range changes code (the gate's
 docs-only test, at both levels): a WU or epic with no code signs without one. `keel mr confirm` finds it among the pages under `docs.root`
