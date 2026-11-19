@@ -162,22 +162,32 @@ mod tests {
     //
     // Read: every module `main.rs` declares and every module those declare (`mod x;`, `pub mod x;`,
     // `pub(crate) mod x;`), each cut at its `#[cfg(test)]` + `mod tests` (an item-level
-    // `#[cfg(test)]` fn is read). Refused anywhere in that code:
+    // `#[cfg(test)]` fn is read). A literal word is a string literal that starts with a letter or
+    // digit (a flag is no command).
+    //
+    // Refused anywhere in that code:
     //   - a declared module the guard does not read;
     //   - a slice pattern holding a literal word (`[..] =>` arms, wrapped `| [..] =>` lines,
     //     `let [`, `if let [`, `matches!(.., [..])`) outside every dispatcher in DISPATCHERS;
     //   - `Some([`, `Ok([`, `Err([`, `@ [` or `@ (` on a line holding a literal word.
-    // Refused in an argv reader - a dispatcher, or any fn with an `args`, `rest`, `flags` or `paths`
-    // parameter of type `&[&str]` - unless read below: a literal word compared (`==`, `!=`,
-    // `Some(&"..")`), matched in a string or tuple arm, or a pattern line it cannot parse (a const,
-    // a tuple or nested slice element, a `[` with no `]`).
-    // Read, in a dispatcher: slice-pattern arms and `let`/`matches!` patterns, `args.first() ==
-    // Some(&"w")`, and string arms (`"w" =>`, `"a" | "b" =>`, `"w" if .. =>`). A pattern is placed
-    // under the dispatcher's words, or under its enclosing arm's words when that arm's body is
-    // `match <name> {`; an arm nested any other way is refused. A literal word is a string literal
-    // that starts with a letter or digit (a flag is no command). NOT_COMMANDS lists the reviewed
-    // exceptions. Known limit: a word reaching a dispatch through a variable or a function that
-    // is not an argv reader (e.g. `gate::level_of(s)`, whose levels are values, not commands).
+    //
+    // An argv reader is a dispatcher, or any fn with an `args`, `rest`, `flags` or `paths`
+    // parameter of type `&[&str]`. In one, every literal word is refused by default unless it is
+    //   (a) read: a leading word of a slice pattern (an arm, `let [`, `matches!(.., [..])`), the
+    //       head of a string arm (`"w" =>`, `"a" | "b" =>`), or `w` in `args.first() == Some(&"w")`;
+    //   (b) a plain value: not in an arm's head or guard, not in a `let` pattern, not inside
+    //       `matches!`, not next to `==` or `!=`, and not the argument of `Some(`, `Ok(`, `Err(` or
+    //       a comparing method (`.contains(`, `.starts_with(`, `.ends_with(`, `.eq(`, `.ne(`,
+    //       `.strip_prefix(`, `.strip_suffix(`, `.find(`, `.rfind(`, `.matches(`); or
+    //   (c) on a reviewed line in NOT_COMMANDS.
+    // So a word bound then compared in an arm's guard (`[w, ..] if *w == "x" =>`), `Some("x")` in
+    // an arm or an `if let`, a tuple arm, a word after a binding in a slice, a const, tuple or nested
+    // element, and a `[` with no `]` are each refused.
+    //
+    // A read word is placed under the dispatcher's words, or under its enclosing arm's words when
+    // that arm's body is `match <name> {`; an arm nested any other way is refused. Known limit: a
+    // word reaching a dispatch through a variable, or through a fn that is not an argv reader
+    // (e.g. `gate::level_of(s)`, whose levels are values, not commands).
 
     /// Every module the program compiles, as compiled.
     const SOURCES: &[(&str, &str)] = &[
@@ -211,16 +221,17 @@ mod tests {
         ("mr.rs", r#"if tier == "key""#, "mr confirm's signer tier, from the roster"),
         ("notes.rs", r#"verdict != "PASS""#, "the cr writer's --verdict value"),
         ("help.rs", r#"args.first() == Some(&"hook")"#, "help's exemption for git's hook arguments; `hook` has its row"),
+        ("mr.rs", r#"[t, b, ..] if ["ssh-", "ecdsa-", "sk-"]"#, "mr setup reads a public key's type prefix, not argv"),
     ];
 
-    /// The string literals on a line, as written between their quotes.
-    fn literals(line: &str) -> Vec<&str> {
+    /// The string literals on a line: the offset of each opening quote, and the text between.
+    fn literals(line: &str) -> Vec<(usize, &str)> {
         let (mut out, mut start, mut esc) = (vec![], None, false);
         for (i, c) in line.char_indices() {
             match (start, c) {
                 (Some(_), '\\') if !esc => esc = true,
                 (Some(s), '"') if !esc => {
-                    out.push(&line[s..i]);
+                    out.push((s - 1, &line[s..i]));
                     start = None;
                 }
                 (None, '"') => start = Some(i + 1),
@@ -234,12 +245,59 @@ mod tests {
         lit.chars().next().is_some_and(|c| c.is_ascii_alphanumeric()) && lit.chars().all(|c| c.is_ascii_alphanumeric() || "-_./".contains(c))
     }
 
-    /// The leading literal words of each slice pattern at the start of `t` (`[..] | [..]`
-    /// alternatives and `"a" | "b"` elements included); a flag, a binding or `..` ends a path.
+    /// Where `=>` stands outside every string literal, if anywhere.
+    fn arrow(t: &str) -> Option<usize> {
+        let lits = literals(t);
+        let mut from = 0;
+        while let Some(i) = t[from..].find("=>").map(|i| i + from) {
+            if !lits.iter().any(|(q, c)| i > *q && i <= q + c.len() + 1) {
+                return Some(i);
+            }
+            from = i + 2;
+        }
+        None
+    }
+
+    const BEFORE: &[&str] = &[
+        "==",
+        "!=",
+        "Some(",
+        "Ok(",
+        "Err(",
+        ".contains(",
+        ".starts_with(",
+        ".ends_with(",
+        ".eq(",
+        ".ne(",
+        ".strip_prefix(",
+        ".strip_suffix(",
+        ".find(",
+        ".rfind(",
+        ".matches(",
+    ];
+    const AFTER: &[&str] = &["==", "!=", ".eq(", ".ne("];
+
+    /// Whether the literal whose opening quote is at `q` is compared, not a plain value.
+    fn compared(t: &str, q: usize, len: usize) -> bool {
+        let before = t[..q].trim_end_matches(['&', '*', ' ']);
+        let after = t[q + len + 2..].trim_start();
+        BEFORE.iter().any(|b| before.ends_with(b)) || AFTER.iter().any(|a| after.starts_with(a))
+    }
+
+    /// The slice pattern(s) at the start of `t` (`[..] | [..]` alternatives, `"a" | "b"` elements).
+    struct Slice {
+        /// The leading literal words of each; a flag, a binding or `..` ends a path.
+        paths: Vec<Vec<String>>,
+        /// Where the patterns end in `t`.
+        end: usize,
+        /// A literal word after a path ended (`[x, "w"]`): matched, but not as a command path.
+        stray: bool,
+    }
+
     /// `Err` for an element it cannot read: a const, a tuple or a nested slice, or no `]`.
-    fn slice_paths(mut t: &str) -> Result<Vec<Vec<String>>, String> {
-        let mut out = vec![];
-        while let Some(rest) = t.strip_prefix('[') {
+    fn slice_paths(t: &str) -> Result<Slice, String> {
+        let (mut paths_all, mut stray, mut rest_all) = (vec![], false, t);
+        while let Some(rest) = rest_all.strip_prefix('[') {
             let end = rest.find(']').ok_or("a slice pattern with no `]` on its line")?;
             let mut paths = vec![vec![]];
             let mut open = true;
@@ -249,18 +307,24 @@ mod tests {
                 if alts.iter().any(|a| a.starts_with(['(', '[']) || a.chars().next().is_some_and(|c| c.is_ascii_uppercase())) {
                     return Err(format!("an element it cannot read: {e}"));
                 }
-                if !open || !alts.iter().all(lit) || alts.iter().any(|a| a.starts_with("\"-")) {
+                if open && alts.iter().all(lit) && !alts.iter().any(|a| a.starts_with("\"-")) {
+                    paths = paths
+                        .iter()
+                        .flat_map(|p: &Vec<String>| alts.iter().map(move |a| [p.clone(), vec![a.trim_matches('"').to_string()]].concat()))
+                        .collect();
+                } else {
                     open = false;
-                    continue;
+                    stray |= alts.iter().any(|a| lit(a) && word(a.trim_matches('"')));
                 }
-                paths =
-                    paths.iter().flat_map(|p: &Vec<String>| alts.iter().map(move |a| [p.clone(), vec![a.trim_matches('"').to_string()]].concat())).collect();
             }
-            out.extend(paths.into_iter().filter(|p| !p.is_empty()));
-            t = rest[end..].trim_start_matches(']').trim_start();
-            t = t.strip_prefix('|').map(str::trim_start).unwrap_or("");
+            paths_all.extend(paths.into_iter().filter(|p| !p.is_empty()));
+            rest_all = rest[end + 1..].trim_start();
+            match rest_all.strip_prefix('|').map(str::trim_start) {
+                Some(next) if next.starts_with('[') => rest_all = next,
+                _ => break,
+            }
         }
-        Ok(out)
+        Ok(Slice { paths: paths_all, end: t.len() - rest_all.len(), stray })
     }
 
     /// A fn in production code: its name, its line span, the words it dispatches under (when it is
@@ -295,6 +359,80 @@ mod tests {
         out
     }
 
+    /// What one line (a wrapped arm joined) dispatches, or why the guard refuses it.
+    struct Line {
+        /// The command paths it reads.
+        found: Vec<Vec<String>>,
+        /// It is an arm: whether its body is `match <name> {`.
+        arm: Option<bool>,
+    }
+
+    /// Read one line of an argv reader (`argv`) or of other code, per the rules above.
+    fn read_line(text: &str, argv: bool) -> Result<Line, String> {
+        let lits: Vec<(usize, &str)> = literals(text).into_iter().filter(|(_, c)| word(c)).collect();
+        let arw = arrow(text);
+        let mut consumed: Vec<std::ops::Range<usize>> = vec![];
+        let mut line = Line { found: vec![], arm: None };
+        let words_in = |r: std::ops::Range<usize>| lits.iter().any(|(q, _)| r.contains(q));
+        if let (Some(a), true) = (arw, text.starts_with('[')) {
+            let s = slice_paths(text)?;
+            if argv && s.stray {
+                return Err("a literal word after a binding in a slice pattern".into());
+            }
+            if argv && words_in(s.end..a) {
+                return Err("a literal word in an arm's guard".into());
+            }
+            consumed.push(0..s.end);
+            line = Line { found: s.paths, arm: Some(text.trim_end().ends_with('{') && text[a + 2..].trim_start().starts_with("match ")) };
+        } else if let (Some(a), true) = (arw, argv && text.starts_with('"')) {
+            let head = text[..a].split(" if ").next().unwrap_or("").trim();
+            let alts: Vec<&str> = head.split('|').map(str::trim).collect();
+            if !alts.iter().all(|a| a.len() > 2 && a.starts_with('"') && a.ends_with('"')) {
+                return Err("a string arm the guard cannot read".into());
+            }
+            if argv && words_in(head.len()..a) {
+                return Err("a literal word in an arm's guard".into());
+            }
+            consumed.push(0..head.len());
+            let found = alts.iter().map(|a| a.trim_matches('"')).filter(|a| word(a)).map(|a| vec![a.to_string()]).collect();
+            line = Line { found, arm: Some(text.trim_end().ends_with('{') && text[a + 2..].trim_start().starts_with("match ")) };
+        } else if arw.is_some_and(|a| argv && words_in(0..a)) {
+            return Err("an arm the guard cannot read holding a literal word".into());
+        } else if let Some(i) = text.find("let [").map(|i| i + 4).or_else(|| text.find("matches!(").and_then(|i| text[i..].find('[').map(|j| i + j))) {
+            let s = slice_paths(&text[i..])?;
+            if argv && s.stray {
+                return Err("a literal word after a binding in a slice pattern".into());
+            }
+            consumed.push(i..i + s.end);
+            line.found = s.paths;
+        } else if let Some(i) = text.find(".first() == Some(&\"") {
+            let (q, w) = literals(&text[i..])[0];
+            consumed.push(i + q..i + q + w.len() + 2);
+            line.found = vec![vec![w.to_string()]].into_iter().filter(|_| word(w)).collect();
+        }
+        if !argv {
+            return Ok(line);
+        }
+        // Default refusal: every other literal word in an argv reader is a plain value, or refused.
+        let in_let = text.find("let ").map(|i| i..text[i..].find(" = ").map_or(text.len(), |e| i + e));
+        let in_matches = text.find("matches!(").map(|i| i..text.len());
+        for (q, w) in &lits {
+            if consumed.iter().any(|r| r.contains(q)) {
+                continue;
+            }
+            if in_let.as_ref().is_some_and(|r| r.contains(q)) {
+                return Err("a literal word in a `let` pattern the guard cannot read".into());
+            }
+            if in_matches.as_ref().is_some_and(|r| r.contains(q)) {
+                return Err("a literal word in a `matches!` the guard cannot read".into());
+            }
+            if compared(text, *q, w.len()) {
+                return Err("a literal word compared".into());
+            }
+        }
+        Ok(line)
+    }
+
     /// Every command path keel dispatches, or every line the guard refuses (see the comment above).
     fn dispatched() -> Result<Vec<Vec<String>>, Vec<String>> {
         let mut problems = vec![];
@@ -313,12 +451,12 @@ mod tests {
             let code = &src[..src.find("#[cfg(test)]\nmod tests").unwrap_or(src.len())];
             let lines: Vec<&str> = code.lines().collect();
             let fns = fns(file, &lines);
-            for (want, ..) in DISPATCHERS.iter().filter(|(f, ..)| f == file).map(|(_, n, u)| (n, u)) {
-                if !fns.iter().any(|f| f.name == **want && f.under.is_some()) {
+            for want in DISPATCHERS.iter().filter(|(f, ..)| f == file).map(|(_, n, _)| n) {
+                if !fns.iter().any(|f| f.name == *want && f.under.is_some()) {
                     problems.push(format!("{file}: dispatcher {want} not found"));
                 }
             }
-            // Arms seen in the current dispatcher: (indent, its words, whether its body is `match <name> {`).
+            // Arms seen in the current fn: (indent, its words, whether its body is `match <name> {`).
             let mut arms: Vec<(usize, Vec<Vec<String>>, bool)> = vec![];
             let mut skip = 0;
             for (n, line) in lines.iter().enumerate() {
@@ -332,108 +470,65 @@ mod tests {
                     continue;
                 }
                 let t = line.trim_start();
-                if t.starts_with("//") {
+                if t.starts_with("//") || NOT_COMMANDS.iter().any(|(nf, text, _)| nf == file && t.contains(text)) {
                     continue;
                 }
                 let indent = line.len() - t.len();
-                let words = literals(t).into_iter().any(word);
-                let excused = NOT_COMMANDS.iter().any(|(nf, text, _)| nf == file && t.contains(text));
                 let (argv, under) = (f.is_some_and(|f| f.argv), f.and_then(|f| f.under));
+                let words = literals(t).into_iter().any(|(_, c)| word(c));
                 let mut refuse = |why: &str| problems.push(format!("unreadable dispatch at {at}: {why}: {}", t.trim_end()));
-                if excused {
-                    continue;
-                }
                 if words && ["Some([", "Ok([", "Err([", "@ [", "@ ("].iter().any(|s| t.contains(s)) {
                     refuse("a pattern shape the guard does not read");
                     continue;
                 }
-                // A pattern: an arm (possibly wrapped over `|` lines), a `let`, or a `matches!`.
-                let mut pat: Option<(String, bool)> = None;
-                if t.starts_with('[') || t.starts_with("| [") {
-                    let mut joined = t.trim_start_matches("| ").to_string();
+                // A slice arm may wrap over `|` lines: join it.
+                let mut text = t.strip_prefix("| ").filter(|r| r.starts_with('[')).unwrap_or(t).to_string();
+                if text.starts_with('[') && arrow(&text).is_none() {
                     let mut k = n;
-                    while !joined.contains("=>") && lines.get(k + 1).is_some_and(|l| ["|", "=>", "if "].iter().any(|p| l.trim_start().starts_with(p))) {
+                    while arrow(&text).is_none() && lines.get(k + 1).is_some_and(|l| ["|", "=>", "if "].iter().any(|p| l.trim_start().starts_with(p))) {
                         k += 1;
-                        joined = format!("{joined} {}", lines[k].trim());
+                        text = format!("{text} {}", lines[k].trim());
                     }
-                    if joined.contains("=>") {
+                    if arrow(&text).is_some() {
                         skip = k - n;
-                        pat = Some((joined, true));
                     } else if argv && !t.contains(']') {
                         refuse("a slice pattern with no `]` on its line");
                         continue;
-                    }
-                } else if let Some(i) = t.find("let [") {
-                    pat = Some((t[i + 4..].to_string(), false));
-                } else if let Some(i) = t.find("matches!(") {
-                    if let Some(j) = t[i..].find('[') {
-                        pat = Some((t[i + j..].to_string(), false));
-                    } else if argv && words {
-                        refuse("a matches! the guard does not read");
-                        continue;
+                    } else {
+                        text = t.to_string();
                     }
                 }
-                let scalar_arm = t.starts_with('"') && t.contains("=>");
-                let tuple_arm = t.starts_with('(') && t.contains("=>") && words;
-                let first = t.find(".first() == Some(&\"").map(|i| literals(&t[i..])[0].to_string());
-                let compared = words && (t.contains("==") || t.contains("!=") || t.contains("Some(&\""));
-                let found: Vec<Vec<String>> = if let Some((p, arm)) = &pat {
-                    match slice_paths(p) {
-                        Err(why) if argv || words => {
-                            refuse(&why);
-                            continue;
-                        }
-                        Err(_) => continue,
-                        Ok(found) => {
-                            if *arm {
-                                let opens = p.trim_end().ends_with('{') && p.split("=>").nth(1).is_some_and(|b| b.trim().starts_with("match "));
-                                arms.retain(|(i, ..)| *i < indent);
-                                arms.push((indent, found.clone(), opens));
-                            }
-                            found
-                        }
-                    }
-                } else if scalar_arm && argv {
-                    let head = t[..t.find("=>").unwrap()].split(" if ").next().unwrap().trim();
-                    let alts: Vec<&str> = head.split('|').map(str::trim).collect();
-                    if !alts.iter().all(|a| a.len() > 2 && a.starts_with('"') && a.ends_with('"')) {
-                        refuse("a string arm the guard cannot read");
+                let read = match read_line(&text, argv) {
+                    Ok(read) => read,
+                    Err(why) if argv || words => {
+                        refuse(&why);
                         continue;
                     }
-                    let found: Vec<Vec<String>> = alts.iter().map(|a| a.trim_matches('"')).filter(|a| word(a)).map(|a| vec![a.to_string()]).collect();
-                    arms.retain(|(i, ..)| *i < indent);
-                    arms.push((indent, found.clone(), t.trim_end().ends_with('{') && t.contains("=> match ")));
-                    found
-                } else if tuple_arm && argv {
-                    refuse("a tuple arm holding a literal word");
-                    continue;
-                } else if let Some(w) = first.filter(|w| word(w)) {
-                    vec![vec![w]]
-                } else if compared && argv {
-                    refuse("a literal word compared");
-                    continue;
-                } else {
-                    continue;
+                    Err(_) => continue,
                 };
-                if found.is_empty() {
+                // Place it: at the dispatcher's root, or under the arm whose `match` it sits in.
+                let parent = arms.iter().rev().find(|(i, ..)| *i < indent).cloned();
+                if let Some(opens) = read.arm {
+                    arms.retain(|(i, ..)| *i < indent);
+                    arms.push((indent, read.found.clone(), opens));
+                }
+                if read.found.is_empty() {
                     continue;
                 }
                 let Some(under) = under else {
                     refuse("a dispatch outside every dispatcher in DISPATCHERS");
                     continue;
                 };
-                // Place it: at the dispatcher's root, or under the arm whose `match` it sits in.
-                let parent = arms.iter().rev().find(|(i, ..)| *i < indent);
                 let base: Vec<Vec<String>> = match parent {
                     None => vec![vec![]],
-                    Some((_, words, true)) => words.clone(),
+                    Some((_, words, true)) => words,
                     Some(_) => {
                         refuse("a dispatch nested in an arm other than `=> match <name> {`");
                         continue;
                     }
                 };
                 for b in &base {
-                    for p in &found {
+                    for p in &read.found {
                         paths.push([under.iter().map(|w| w.to_string()).collect(), b.clone(), p.clone()].concat());
                     }
                 }
@@ -467,17 +562,53 @@ mod tests {
 
     #[test]
     fn the_slice_reader_reads_alternatives_stops_at_a_flag_or_binding_and_refuses_what_it_cannot_read() {
-        let p = |v: &[&[&str]]| Ok(v.iter().map(|p| p.iter().map(|w| w.to_string()).collect()).collect::<Vec<Vec<String>>>());
-        assert_eq!(slice_paths(r#"["hooks", "install", "--force"] => x"#), p(&[&["hooks", "install"]]));
-        assert_eq!(slice_paths(r#"["init", flags @ ..] => match flags {"#), p(&[&["init"]]));
-        assert_eq!(slice_paths(r#"["--force"] | ["-f"] => y"#), p(&[]));
-        assert_eq!(slice_paths(r#"["lint"] | ["doctor", path] => z"#), p(&[&["lint"], &["doctor"]]));
-        assert_eq!(slice_paths(r#"["a" | "b", "c", rest @ ..] = args"#), p(&[&["a", "c"], &["b", "c"]]));
-        assert_eq!(slice_paths(r#"[lvl, tip, rest @ ..] => {"#), p(&[]));
+        let p = |t: &str| slice_paths(t).map(|s| s.paths);
+        let w = |v: &[&[&str]]| Ok(v.iter().map(|p| p.iter().map(|w| w.to_string()).collect()).collect::<Vec<Vec<String>>>());
+        assert_eq!(p(r#"["hooks", "install", "--force"] => x"#), w(&[&["hooks", "install"]]));
+        assert_eq!(p(r#"["init", flags @ ..] => match flags {"#), w(&[&["init"]]));
+        assert_eq!(p(r#"["--force"] | ["-f"] => y"#), w(&[]));
+        assert_eq!(p(r#"["lint"] | ["doctor", path] => z"#), w(&[&["lint"], &["doctor"]]));
+        assert_eq!(p(r#"["a" | "b", "c", rest @ ..] = args"#), w(&[&["a", "c"], &["b", "c"]]));
+        assert_eq!(p(r#"[lvl, tip, rest @ ..] => {"#), w(&[]));
+        let s = slice_paths(r#"[x, "w"] if y => z"#).unwrap();
+        assert!(s.stray && s.paths.is_empty() && &r#"[x, "w"] if y => z"#[s.end..] == "if y => z");
         for bad in [r#"[DOCTOR, ..] =>"#, r#"["a", ("b", c)] =>"#, r#"["a", ["b"]] =>"#, r#"["a","#] {
             assert!(slice_paths(bad).is_err(), "{bad}");
         }
-        assert_eq!(literals(r#"x == Some(&"a\"b") || "c""#), [r#"a\"b"#, "c"]);
+        assert_eq!(literals(r#"x == Some(&"a\"b") || "c""#), [(11, r#"a\"b"#), (22, "c")]);
         assert!(word("mr") && word("verify-dod") && !word("--target") && !word("") && !word("a b"));
+    }
+
+    /// Review round 4: in an argv reader a literal word is read, a plain value, or refused.
+    #[test]
+    fn in_an_argv_reader_a_literal_word_is_read_a_plain_value_or_refused() {
+        let found = |t: &str| read_line(t, true).map(|l| l.found);
+        assert_eq!(found(r#"["mr", rest @ ..] => mr::run(&repo, rest),"#), Ok(vec![vec!["mr".to_string()]]));
+        assert_eq!(found(r#"if args.first() == Some(&"mr") {"#), Ok(vec![vec!["mr".to_string()]]));
+        assert_eq!(found(r#""doc" => (DOC_FLAGS, DOC_USAGE),"#), Ok(vec![vec!["doc".to_string()]]));
+        for value in
+            [r#"let tip = git(repo, &["rev-parse", "HEAD"], &[])?;"#, r#"[l] => (l, "HEAD"),"#, r#"let receipt = opts("verify-dod", tip, rest, true)?;"#]
+        {
+            assert_eq!(found(value), Ok(vec![]), "a plain value: {value}");
+        }
+        for refused in [
+            r#"[w, ..] if *w == "tip" => Ok(0),"#,
+            r#"[w, ..] if w == &"tip" => Ok(0),"#,
+            r#"if let Some("tip") = args.first().copied() {"#,
+            r#"Some("tip") => Ok(0),"#,
+            r#"Ok("tip") => Ok(0),"#,
+            r#"(Some("tip"), _) => Ok(0),"#,
+            r#"[x, "tip"] => Ok(0),"#,
+            r#"if args.get(1) == Some(&"tip") {"#,
+            r#"if "tip" == args[0] {"#,
+            r#"if args.contains(&"tip") {"#,
+            r#"if args[0].starts_with("tip") {"#,
+            r#"if matches!(args.first(), Some(&"tip")) {"#,
+            r#"let Some("tip") = args.first().copied() else { return Ok(1) };"#,
+            r#""tip" if *x == "fix" => Ok(0),"#,
+        ] {
+            assert!(read_line(refused, true).is_err(), "not refused: {refused}");
+            assert!(read_line(refused, false).is_ok(), "outside an argv reader only slice dispatch is read: {refused}");
+        }
     }
 }
