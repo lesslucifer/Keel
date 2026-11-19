@@ -74,7 +74,8 @@ fn commit_on_main_is_refused_but_a_branch_is_fine() {
     std::fs::write(p.join(".keel/hooks/pre-commit"), "#!/bin/sh\nexit 0\n").unwrap();
     std::fs::set_permissions(p.join(".keel/hooks/pre-commit"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     std::fs::write(p.join("a"), "a").unwrap();
-    git(p, &["add", "a", ".keel/hooks"]);
+    // The rules are staged: with nothing committed yet, the staged rules judge the commit (E-KEELFIX.W1).
+    git(p, &["add", "a", ".keel/hooks", ".keel/config.toml", ".gitignore"]);
     let c = run("git", p, &["commit", "-qm", "x"]);
     assert!(!c.status.success());
     assert!(text(&c).contains("merge-only"), "{}", text(&c));
@@ -759,6 +760,12 @@ fn every_test_path_comes_from_common() {
 
 /// `.keel/config.toml` with `lint` and the default code paths, one base commit on main, Keel's hooks.
 fn commit_hook_repo(lint: &str) -> TempDir {
+    commit_hook_repo_with(lint, "", "", "")
+}
+
+/// `commit_hook_repo`, its base commit also carrying `top` (top-level config lines), `mr` (an `[mr]`
+/// table) and, when not empty, `roster` as `.keel/mr-allowed`.
+fn commit_hook_repo_with(lint: &str, top: &str, mr: &str, roster: &str) -> TempDir {
     let d = TempDir::new().unwrap();
     let p = d.path();
     git(p, &["init", "-q", "-b", "main"]);
@@ -767,9 +774,12 @@ fn commit_hook_repo(lint: &str) -> TempDir {
     std::fs::create_dir(p.join(".keel")).unwrap();
     std::fs::write(
         p.join(".keel/config.toml"),
-        format!("code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"{lint}\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n"),
+        format!("code_paths = [\"src/\", \"tests/\"]\n{top}[check]\nlint = \"{lint}\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n{mr}"),
     )
     .unwrap();
+    if !roster.is_empty() {
+        std::fs::write(p.join(".keel/mr-allowed"), roster).unwrap();
+    }
     git(p, &["add", "-A"]);
     git(p, &["commit", "-qm", "base"]);
     assert!(keel(p, &["hooks", "install"]).status.success());
@@ -832,6 +842,133 @@ fn a_commit_a_of_a_tracked_code_file_runs_lint_through_the_temporary_index() {
     assert!(!c.status.success(), "git commit -a's index must reach the staged-diff read: {}", text(&c));
     assert_eq!(lint_runs(p), 2);
     assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "2");
+}
+
+// ── E-KEELFIX.W1: the commit level reads the committed rules ────────────────────────────────────
+
+/// Rewrites the folder's `.keel/config.toml` (one exact `from` -> `to`) and never stages it.
+fn edit_folder_config(p: &Path, from: &str, to: &str) {
+    let f = p.join(".keel/config.toml");
+    let body = std::fs::read_to_string(&f).unwrap();
+    assert!(body.contains(from), "{from} not in {body}");
+    std::fs::write(f, body.replace(from, to)).unwrap();
+}
+
+const BAD_LINT: &str = "echo x >> lint.log; ! grep -q BAD src/a.txt";
+const BOOTSTRAP: &str = "keel: HEAD commits no .keel/config.toml - bootstrap: the staged .keel/config.toml judges this commit";
+
+#[test]
+fn a_code_commit_runs_the_committed_lint_not_the_folders() {
+    let d = commit_hook_repo(BAD_LINT);
+    let p = d.path();
+    edit_folder_config(p, &format!("lint = \"{BAD_LINT}\""), "lint = \"true\"");
+    write_file(p, "src/a.txt", "BAD\n");
+    git(p, &["add", "src/a.txt"]);
+
+    let c = run("git", p, &["commit", "-qm", "red"]);
+    let t = text(&c);
+    assert!(!c.status.success(), "the committed lint is red, whatever the folder's file says: {t}");
+    assert!(t.contains("keel lint: red") && t.contains("commit refused"), "{t}");
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "1", "the refused commit records nothing");
+    assert_eq!(lint_runs(p), 1, "the committed lint ran once");
+}
+
+#[test]
+fn a_rule_file_commit_is_judged_by_the_committed_rule_bearing() {
+    let d = commit_hook_repo_with("true", "rule_bearing = [\"docs/rules.html\"]\n", "", "username: t\n");
+    let p = d.path();
+    edit_folder_config(p, "rule_bearing = [\"docs/rules.html\"]", "rule_bearing = []");
+    write_file(p, "docs/rules.html", "<p>a rule</p>");
+    git(p, &["add", "docs/rules.html"]);
+
+    let c = run("git", p, &["commit", "-qm", "loosen a rule"]);
+    let t = text(&c);
+    assert!(!c.status.success() && t.contains("docs/rules.html") && t.contains("Reviewed-By"), "the committed rule files judge: {t}");
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "1");
+    let c = run("git", p, &["commit", "-qm", "a rule\n\nReviewed-By: username t"]);
+    assert!(c.status.success(), "a listed trailer lands it: {}", text(&c));
+}
+
+#[test]
+fn main_stays_merge_only_by_the_committed_branch_name() {
+    let d = commit_hook_repo("true");
+    let p = d.path();
+    git(p, &["switch", "-q", "main"]);
+    edit_folder_config(p, "main = \"main\"", "main = \"trunk\"");
+    write_file(p, "docs/x.html", "<p>x</p>");
+    git(p, &["add", "docs/x.html"]);
+
+    let c = run("git", p, &["commit", "-qm", "direct"]);
+    assert!(!c.status.success() && text(&c).contains("merge-only"), "main is the committed main: {}", text(&c));
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "1");
+}
+
+#[test]
+fn keel_mr_commit_accepts_only_the_committed_tiers() {
+    let d = commit_hook_repo_with("true", "rule_bearing = [\"docs/rules.html\"]\n", "[mr]\ntiers = [\"email\", \"key\"]\n", "email: t@t\nusername: t\n");
+    let p = d.path();
+    edit_folder_config(p, "tiers = [\"email\", \"key\"]", "tiers = [\"email\", \"username\", \"key\"]");
+    write_file(p, "docs/rules.html", "<p>a rule</p>");
+    git(p, &["add", "docs/rules.html"]);
+
+    let o = keel(p, &["mr", "commit", "-m", "a rule", "--as", "t"]);
+    assert!(!o.status.success(), "only the folder's tiers accept username t: {}", text(&o));
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "1", "nothing committed");
+    let o = keel(p, &["mr", "commit", "-m", "a rule", "--as", "t@t"]);
+    assert!(o.status.success(), "a signer under the committed tiers lands: {}", text(&o));
+    assert!(out(p, &["log", "-1", "--format=%B"]).contains("Reviewed-By: email t@t"));
+}
+
+/// A repository with no commit yet: `.keel/config.toml` (lint `lint`, code under `src/`) in the
+/// folder only, Keel's hooks, HEAD on the unborn branch `work`.
+fn unborn_hooked_repo(lint: &str) -> TempDir {
+    let d = TempDir::new().unwrap();
+    let p = d.path();
+    git(p, &["init", "-q", "-b", "main"]);
+    git(p, &["config", "user.email", "t@t"]);
+    git(p, &["config", "user.name", "t"]);
+    write_file(
+        p,
+        ".keel/config.toml",
+        &format!("code_paths = [\"src/\"]\n[check]\nlint = \"{lint}\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n"),
+    );
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    git(p, &["symbolic-ref", "HEAD", "refs/heads/work"]);
+    d
+}
+
+#[test]
+fn a_first_commit_with_no_committed_rules_uses_the_staged_file_and_says_so() {
+    let d = unborn_hooked_repo("! grep -q BAD src/a.txt");
+    let p = d.path();
+    write_file(p, "src/a.txt", "BAD\n");
+    git(p, &["add", "-A"]);
+
+    let c = run("git", p, &["commit", "-qm", "first"]);
+    let t = text(&c);
+    assert!(!c.status.success() && t.contains("keel lint: red"), "the staged lint runs: {t}");
+    assert!(t.contains(BOOTSTRAP), "{t}");
+    assert_eq!(out(p, &["rev-list", "--count", "--all"]), "0");
+
+    write_file(p, "src/a.txt", "ok\n");
+    git(p, &["add", "src/a.txt"]);
+    let c = run("git", p, &["commit", "-qm", "first"]);
+    assert!(c.status.success() && text(&c).contains(BOOTSTRAP), "{}", text(&c));
+    assert_eq!(out(p, &["rev-list", "--count", "HEAD"]), "1");
+}
+
+#[test]
+fn a_commit_with_no_committed_or_staged_rules_is_refused_naming_the_fix() {
+    let d = unborn_hooked_repo("true");
+    let p = d.path();
+    write_file(p, "src/x.txt", "x\n");
+    git(p, &["add", "src/x.txt"]);
+
+    let c = run("git", p, &["commit", "-qm", "first"]);
+    let t = text(&c);
+    assert!(!c.status.success(), "rules only in the folder judge nothing: {t}");
+    assert!(t.contains("fix -> git add .keel/config.toml"), "{t}");
+    assert_eq!(out(p, &["rev-list", "--count", "--all"]), "0", "nothing committed");
 }
 
 const WU_TEST_FILES: &str = r#"{"integration":{"files":["tests/test_a.py"],"covers":"a works"}}"#;
