@@ -1,7 +1,7 @@
 # Keel decision index: data only, no page (DEC-69). Read it first, then open only the decision page you need.
 # Per record: id, title, the page that holds it, live or replaced-by. Ids are never reused: check every live
 # branch before minting next-free. Trawler lineage: git history of decisions-index.html; backlog B5 holds what is open.
-next-free: DEC-70
+next-free: DEC-71
 pages:
   - file: distribution.html
     title: "Decisions: distribution and adoption"
@@ -11,9 +11,9 @@ pages:
   - file: workflow-gates.html
     title: "Decisions: workflow gates"
     scope: >-
-      Why the notes, the merge gate, the human sign-off, the work process, Keel's own test suite and the GitHub flow
-      are the way they are. Check here before "fixing" anything that looks deliberate.
-    topics: ["Notes", "Merge gate", "Human sign-off", "Workflow process", "Keel's own test suite", "GitHub"]
+      Why the notes, the merge gate, the human sign-off, the work process, Keel's own test suite, the GitHub flow and
+      the local app are the way they are. Check here before "fixing" anything that looks deliberate.
+    topics: ["Notes", "Merge gate", "Human sign-off", "Workflow process", "Keel's own test suite", "GitHub", "The local app"]
   - file: review-docs.html
     title: "Decisions: reviews and docs"
     scope: >-
@@ -307,4 +307,8 @@ records:
   - id: DEC-69
     title: "Docs split: a short page for the owner, a data file for agents and checks"
     file: review-docs.html
+    status: live
+  - id: DEC-70
+    title: "A desktop app shows the flow and runs only the owner's commands; GitHub's flow is dropped"
+    file: workflow-gates.html
     status: live
