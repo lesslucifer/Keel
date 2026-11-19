@@ -17,31 +17,31 @@
 
 <h2 id="problem">The problem</h2>
 <p data-c="problem">The architecture page has 5,917 words; its cap is 3,000. The install page has 1,920; its cap is 1,500. Both carry build history and rules the skills and decisions already hold. Nothing counts their words, so they only grow.</p>
-<p data-item="requirement" data-c="requirement">After W6, both pages are under their caps, the check enforces the caps, and no rule, id or link is lost.</p>
+<p data-item="requirement" data-c="requirement">After W6, both pages, counted without their GitHub parts, are under their caps, and no rule, id or link is lost.</p>
 
 <h2 id="for-you">What you get</h2>
 <table data-item="owner-changes" data-c="for-you">
   <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
   <tbody>
     <tr><td>You open architecture or install</td><td>Long, with history</td><td>Current shape only; each rule in one place</td></tr>
-    <tr><td>An edit makes either page long again</td><td>Nothing notices</td><td>The doc check refuses it</td></tr>
+    <tr><td>An edit makes either page long again</td><td>Nothing notices</td><td>Once E-GHREVERT lands, the doc check refuses it</td></tr>
   </tbody>
 </table>
 
 <h2 id="work">What it changes</h2>
 <table data-c="work">
-  <thead><tr><th>Page</th><th>Now</th><th>Cap</th><th>What goes, and where it already lives</th></tr></thead>
+  <thead><tr><th>Page</th><th>Now, without GitHub</th><th>Cap</th><th>What goes, and where it already lives</th></tr></thead>
   <tbody>
-    <tr><td>Architecture</td><td>5,917</td><td>3,000</td><td>The close steps (the workflow skill); the router tools' limits (the router skill, the router decisions); each command's notes and each config key's detail (the template, the help); history (git)</td></tr>
-    <tr><td>Install</td><td>1,920</td><td>1,500</td><td>The upgrade's lock mechanics (architecture); the name-clash list (the hooks print the fix); an old upgrade note (git)</td></tr>
+    <tr><td>Architecture</td><td>about 4,900</td><td>3,000</td><td>The close steps (the workflow skill); the router tools' limits (the router skill, the router decisions); each command's notes and each config key's detail (the template, the help); history (git)</td></tr>
+    <tr><td>Install</td><td>1,091</td><td>1,500</td><td>The upgrade's lock mechanics (architecture); the name-clash list (the hooks print the fix); an old upgrade note (git)</td></tr>
   </tbody>
 </table>
-<p data-c="github">The GitHub parts stay word for word: install's section 5 (829 words) and about 1,000 words of architecture. They belong to E-GHREVERT, which removes them. The rest of each page is cut harder to fit.</p>
+<p data-c="github">The GitHub parts stay as they are and do not count: install's section 5 (829 words) and about 1,000 words of architecture. E-GHREVERT removes them soon. Install is already under its cap without them, so it only drops history and repeated rules.</p>
 
 <h2 id="approve">How you approve</h2>
 <ol data-c="approve">
   <li>You comment; the worker answers. You tell the router "W6 approved".</li>
-  <li>The worker edits and stages each change. The router gives you three commands, one per commit. You read each staged diff, then run it.</li>
+  <li>The worker edits and stages everything. The router gives you one command. You read the staged diff, then run it.</li>
   <li>The result; your sign-off. No code, so no tests and no code review.</li>
 </ol>
 
@@ -49,21 +49,21 @@
 <table data-c="decide">
   <thead><tr><th>#</th><th>Question</th><th>Answer, and why</th></tr></thead>
   <tbody>
-    <tr><td>1</td><td>Do the GitHub parts count toward the caps?</td><td><b>Yes: both pages under their caps now.</b> The check counts the whole page. After E-GHREVERT both have room.</td></tr>
-    <tr><td>2</td><td>Main's merge kept one backlog page, the local app's, because two signed pages link it. Does W6 make it a data file?</td><td><b>Yes, in its own commit.</b> One link in architecture's GitHub note and three in the local-app page change; their words do not.</td></tr>
-    <tr><td>3</td><td>Three commits, or one?</td><td><b>Three: architecture, install, the backlog page.</b> Each diff stays small to read. Say "one" to fold them.</td></tr>
+    <tr><td>1</td><td>Do the GitHub parts count toward the caps?</td><td><b>No.</b> E-GHREVERT removes them soon. The check counts the whole page, so E-GHREVERT adds the two caps to the check once they are gone. <i>Answered by you.</i></td></tr>
+    <tr><td>2</td><td>Main's merge kept one backlog page, the local app's, because two signed pages link it. Does W6 make it a data file?</td><td><b>Yes, in the same commit.</b> One link in architecture's GitHub note and three in the local-app page change; their words do not.</td></tr>
+    <tr><td>3</td><td>Three commits, or one?</td><td><b>One: architecture, install and the backlog page together.</b> <i>Answered by you.</i></td></tr>
     <tr><td>4</td><td>Does the local-app page (2,901 words) get a cap?</td><td><b>No, not in W6.</b> W1 set no cap for it.</td></tr>
   </tbody>
 </table>
 
 <h2 id="done">How you'll know it worked</h2>
 <ul data-item="expected" data-c="done">
-  <li>The doc check, built from this branch, is green over all docs with both caps set.</li>
+  <li>The doc check is green over all docs. A count without the GitHub parts puts both pages under their caps.</li>
   <li>The GitHub parts read as before.</li>
   <li>Every decision, use case and backlog id the pages cite is still found; every link into them still works.</li>
   <li>The backlog has no page left.</li>
 </ul>
-<p data-item="test-plan" data-c="tests">Tests: none at any level, since no code changes. A one-off script checks the cited ids; the doc check checks the caps and links.</p>
+<p data-item="test-plan" data-c="tests">Tests: none at any level, since no code changes. One-off scripts count the words and check the cited ids; the doc check checks the links.</p>
 <p data-item="maps-to" data-c="maps-to">Maps to E-DOCSPLIT.W6, W1's caps, DEC-69 and your ruling of 2026-11-19. Sections, targets and commits are in the data file.</p>
 
   </main>
