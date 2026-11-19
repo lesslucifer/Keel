@@ -35,7 +35,9 @@ T2 = ["docs/use-cases/**", "docs/decisions/**", "docs/backlog/**"]
 T3 = ["docs/work/**", "docs/.archive/**"]
 
 [docs.caps]
-"docs/decisions/*.html" = 5000   # E-DOCSPLIT.W5 (DEC-69); the architecture and install caps wait for W6
+"docs/decisions/*.html" = 5000   # E-DOCSPLIT.W5 (DEC-69)
+"docs/architecture.html" = 3000   # E-DOCSPLIT.W7: holds now that E-GHREVERT removed the GitHub parts
+"docs/install.html" = 1500
 
 [tests]
 # adapter = "python"   # rust | ts | python | go | regex; default: by file extension
