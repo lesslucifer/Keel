@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afeaa15d6231a9d02949205">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — Backlog: the local app</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>Backlog: the local app</h1>
+      <p>Going back to before GitHub's flow, then building the desktop app in place of it: five epics in order, then four later needs and one re-pointed idea.</p>
+      <div class="meta">T2 · backlog · living · 2026-11-19 · Keel · A1 – A5, L1 – L5 · distilled from E-LOCALTOOL (W5 result, P4 to P6, and the close)</div>
+    </div>
+  </header>
+  <main>
+    <p data-c="how-to-read">E-LOCALTOOL closed on 2026-11-19 with a design and no code: <a href="../local-app.html">docs/local-app.html</a> is the app as designed, and <a href="../decisions/workflow-gates.html#dec-70">DEC-70</a> records why. Each epic below waits only on the ones before it and is useful on its own. Its parts and K-numbers (the keel or router changes the app needs) are in docs/local-app.html, under "The build order". The needs n1 – n10 are listed there too.</p>
+
+    <h2 id="a1">A1 · E-GHREVERT · Back to before GitHub <span class="badge approval">next</span></h2>
+    <p data-c="a1"><b>First use:</b> the gate, the sign-off and the merge on your Mac again, with GitHub's flow gone (n3); you push as before. <b>In order:</b> (1) your GitHub settings off: the <code>keel-merge</code> ruleset, auto-merge, Pages, the App and its key folder; until then GitHub refuses your push of main or an epic. (2) One revert of the five merges that brought the flow (<code>6cf3127</code>, <code>e0a31c5</code>, <code>481e2b5</code>, <code>e0536b7</code>, <code>72cae9d</code>, newest first, <code>git revert --no-commit -m 1</code>), so main's files are as at <code>8d48a44</code>; the rule files by your <code>keel mr commit</code>. (3) Four keeps: <code>release.yml</code> with no pull-request run; the shared git-folder checks (e-router-v2 R33); keel's checkout check before <code>keel mr</code> (R50) and keel reading the github tier and line, signing nothing; task branches merged on your Mac. (4) The records by hand: DEC-60 – DEC-62 and DEC-64 – DEC-68 marked replaced by its own record (DEC-63 stays); UC-GATE-7, UC-MR-3, UC-ROUTE-7, UC-DOC-5 marked replaced; the GitHub section of the architecture and install docs removed; the github-flow topic closed. (5) E-LOCALTOOL and E-DOCSPLIT merge main in. <b>Its test:</b> in a scratch repository, a typed sign-off and a local merge pass, the push hook passes, and a signer list with a github line still reads. <b>Takes:</b> github-flow <a href="github-flow.html#g2">G2</a>, <a href="github-flow.html#g4">G4</a>, <a href="github-flow.html#g5">G5</a>, <a href="github-flow.html#g7">G7</a>, <a href="github-flow.html#g10">G10</a>, and G11 (on E-DOCSPLIT's branch). <b>Waits on:</b> nothing. Source: E-LOCALTOOL.W5 result, P1 and P4 (archived).</p>
+
+    <h2 id="a2">A2 · E-KEELFIX · Keel fixes <span class="badge approval">after A1</span></h2>
+    <p data-c="a2"><b>First use:</b> your rule-file commit runs the committed rules, and the gate can run with nothing written (n3). <b>Parts:</b> K9, the commit hooks read the committed <code>.keel/config.toml</code>, not the folder's file; K2, <code>keel verify-dod … --no-receipt</code>; <code>keel notes write … --help</code> prints help and writes no note; the github tier's reading removed once E-LOCALTOOL and E-DOCSPLIT are on main. <b>Waits on:</b> A1.</p>
+
+    <h2 id="a3">A3 · E-APPLIST · Alerts and your list <span class="badge approval">after A1</span></h2>
+    <p data-c="a3"><b>First use:</b> an alert at your desk (n1) and one list of what waits on you (n2). Read-only. <b>Parts:</b> the app's frame; the Reader, Watcher and Alerter on the two sources; screens 1, 2 and one project on 6; the router's update log (K14) and the watchdog's lines (K15), with their defaults and the "router not heard" bar, tested by an app restart and a router restart; the router's stage lines (K4) and alert line (K10); Open with a copy of the committed page, and the PATH setting; the alert's link and one Telegram test (K12); <code>?diff=latest</code> on a file link checked; the app reads the local epic branch; Apple's membership decided at the first signed build. <b>Waits on:</b> A1.</p>
+
+    <h2 id="a4">A4 · E-APPSIGN · Sign off and merge from the app <span class="badge approval">after A2, A3</span></h2>
+    <p data-c="a4"><b>First use:</b> the sign-off and the merge from the app (n3), and the code read before you sign (n6). <b>Parts:</b> the five run lines, the dialog and keel's words; the diff page; screen 3 (one work unit); Commit… for a rule-file commit (K5, keel names the rule files among staged files); Merge task… and Push…; the gate's checks as JSON for the dialog (K1); signing with a key; Cursor's guard of a worker's folder checked. From the E-LOCALTOOL close's walk-through: the epic sign-off's waiver step (the typed <code>--waive-review</code> then <code>--confirm-waiver</code>, or <code>--accept-waiver</code>), and which archived epic result the epic item opens and signs when its folder holds several. <b>Waits on:</b> A1, A2, A3.</p>
+
+    <h2 id="a5">A5 · E-APPFLEET · Fleet, epics, many projects <span class="badge approval">after A3, A4</span></h2>
+    <p data-c="a5"><b>First use:</b> the fleet (n4), the epics (n5) and many projects (n7). <b>Parts:</b> screens 4 and 5 (one epic, one worker); Attach (K13); your note to a worker through the router's inbox (K11); the router's conflict and paused-epic lines (K6, K7) and a worker's last report line (K8); many projects on screen 6, with "Add a project" listing what is missing first (E-GHSETUP W6's idea). From the close's walk-through: an alert about an epic opens that epic's view, not the list. <b>Waits on:</b> A3, A4.</p>
+
+    <h2 id="l1">L1 · Message the router from the app <span class="badge approval">later</span></h2>
+    <p data-c="l1">Need n8. A free message to the router, by a way only you can use (never the inbox, where a worker can post). Candidates: Claude Code's channels or its per-session message socket; how an outside program posts on the socket is not checked. No epic yet.</p>
+
+    <h2 id="l2">L2 · Alerts when you are away <span class="badge approval">later</span></h2>
+    <p data-c="l2">Need n9. The app sends both the desk alert and the away alert and picks one; until then Telegram stays the router's, and one event may alert you twice at the desk. No epic yet.</p>
+
+    <h2 id="l3">L3 · A home other than GitHub for releases and your pushes <span class="badge approval">later</span></h2>
+    <p data-c="l3">Need n10. Releases need a build on your Mac (<code>dist build</code>), a place for the binaries, and the npm and Homebrew tap tokens. Your pushes need another remote, such as a bare repository on a disk, with the same push hook. No epic yet.</p>
+
+    <h2 id="l4">L4 · The app on DeepSeek Harness <span class="badge approval">later</span></h2>
+    <p data-c="l4">One small adapter per host. DeepSeek Harness shows no session list an outside program can read (its README, read 2026-11-18). No epic yet.</p>
+
+    <h2 id="l5">L5 · A pinned, hash-checked install script <span class="badge approval">re-pointed</span></h2>
+    <p data-c="l5">E-GHSETUP W3's idea, kept when that epic closed. Re-pointed to the release rows of <a href="e-seed-v2.html#proposed-epics">e-seed-v2</a>: E-RELEASE takes it when planned.</p>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
