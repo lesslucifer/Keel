@@ -72,8 +72,8 @@ fn note(d: &Path, kind: &str, rev: &str) -> Option<Value> {
     o.status.success().then(|| serde_json::from_slice(&o.stdout).unwrap())
 }
 
-const RESULT: &str = "<html data-artifact=\"wu-result\"><p>wu a: done</p></html>";
-const EPIC_RESULT: &str = "<html data-artifact=\"epic-result\"><p>epic e: done</p></html>";
+const RESULT: &str = "<html><p>wu a: done</p></html>";
+const EPIC_RESULT: &str = "<html><p>epic e: done</p></html>";
 const ROSTER: &str = "username: vu\ngithub: 5499546 lesslucifer\n";
 
 /// main (config accepting the username and github tiers, the roster above) → epic/e → wu/e/a with
@@ -94,7 +94,7 @@ fn fixture() -> TempDir {
         git(p, &["switch", "-q", "-c", "wu/e/a"]);
         write(p, "src/a.py", "def a():\n    return 1\n");
         write(p, "tests/test_a.py", "def test_a():\n    pass\n");
-        write(p, "docs/work/a-result.html", RESULT);
+        common::doc_pair(p, "docs/work/a-result.html", "wu-result", RESULT);
         commit(p, "wu a");
     })
 }
@@ -343,7 +343,7 @@ fn only_a_cr_note_naming_another_tip_is_covered_and_a_test_or_doc_note_stays_red
 /// wu/e/a remade as a docs-only range (UC-GATE-5): only its result report, no code. HEAD on it.
 fn docs_only(p: &Path) {
     git(p, &["reset", "-q", "--hard", "epic/e"]);
-    write(p, "docs/work/a-result.html", RESULT);
+    common::doc_pair(p, "docs/work/a-result.html", "wu-result", RESULT);
     commit(p, "wu a: docs only");
 }
 
@@ -785,15 +785,18 @@ fn the_writer_attests_only_a_report_committed_in_the_range() {
     let d = fixture();
     let p = d.path();
     git(p, &["switch", "-q", "epic/e"]);
-    write(p, "docs/work/old-result.html", RESULT);
+    common::doc_pair(p, "docs/work/old-result.html", "wu-result", RESULT);
     commit(p, "an older report, already on the epic");
     git(p, &["switch", "-q", "wu/e/a"]);
     git(p, &["merge", "-q", "--no-ff", "--no-verify", "-m", "sync", "epic/e"]);
+    // E-DOCSPLIT.W3: committed in the range, but a page tag with no data file is no report
+    write(p, "docs/work/tagged-result.html", "<html data-artifact=\"wu-result\"><p>done</p></html>");
+    commit(p, "a result page the old way");
     notes(p);
     let tip = git(p, &["rev-parse", "wu/e/a"]);
     let reviews = json!([review(13, OWNER, "APPROVED", &tip)]);
-    write(p, "docs/work/local-result.html", RESULT);
-    for r in ["docs/work/old-result.html", "docs/work/local-result.html"] {
+    common::doc_pair(p, "docs/work/local-result.html", "wu-result", RESULT);
+    for r in ["docs/work/old-result.html", "docs/work/local-result.html", "docs/work/tagged-result.html"] {
         let o = sign_off(p, "wu", "epic/e", &reviews, &["--report", r]);
         let t = text(&o);
         assert_eq!(o.status.code(), Some(1), "{r}: {t}");
@@ -873,18 +876,27 @@ fn an_epic_report_note_is_attested_by_the_typed_sign_off_never_by_an_approval() 
     let d = fixture();
     let p = d.path();
     notes_with(p, &["test", "doc"], r#"{"unit":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
-    git(p, &["rm", "-q", "docs/work/a-result.html"]);
+    git(p, &["rm", "-q", "docs/work/a-result.html", "docs/work/a-result.yaml"]);
     write(p, "docs/decisions/a.html", "<p>why a</p>");
     commit(p, "distill + archive wu a's report");
     let tip = git(p, &["rev-parse", "wu/e/a"]);
     notes_with(p, &["test", "cr"], r#"{"e2e":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
     ok(keel(p, &["notes", "write", "doc", "--distill", "docs/work/a-result.html=docs/decisions/a.html"]));
     let dir = TempDir::new().unwrap();
-    std::fs::write(dir.path().join("wu.html"), RESULT).unwrap();
-    let o = keel(p, &["notes", "write", "report", dir.path().join("wu.html").to_str().unwrap()]);
+    let at = |f: &str| dir.path().join(f).to_str().unwrap().to_string();
+    common::doc_pair(dir.path(), "wu.html", "wu-result", RESULT);
+    let o = keel(p, &["notes", "write", "report", &at("wu.html")]);
     assert!(!o.status.success() && text(&o).contains("epic-result"), "only an epic report rides as the note: {}", text(&o));
-    std::fs::write(dir.path().join("e.html"), format!("{EPIC_RESULT}\n\n  trailing  \n")).unwrap();
-    ok(keel(p, &["notes", "write", "report", dir.path().join("e.html").to_str().unwrap()]));
+    // E-DOCSPLIT.W3: the role is the data file's; a page tag with no data file is no report
+    std::fs::write(at("tagged.html"), "<html data-artifact=\"epic-result\"><p>done</p></html>").unwrap();
+    let o = keel(p, &["notes", "write", "report", &at("tagged.html")]);
+    assert!(!o.status.success() && text(&o).contains("no data file beside it") && text(&o).contains("tagged.yaml"), "{}", text(&o));
+    common::doc_pair(dir.path(), "e.html", "epic-result", &format!("{EPIC_RESULT}\n\n  trailing  \n"));
+    // the note keeps the page you read: a data file is refused, naming its page
+    let o = keel(p, &["notes", "write", "report", &at("e.yaml")]);
+    assert!(!o.status.success() && text(&o).contains(&format!("keel notes write report {}", at("e.html"))), "{}", text(&o));
+    assert!(git(p, &["notes", "--ref=report", "list"]).is_empty(), "nothing written");
+    ok(keel(p, &["notes", "write", "report", &at("e.html")]));
     let stored = git(p, &["notes", "--ref=report", "list", &tip]);
     assert_eq!(run("git", p, &["cat-file", "blob", &stored]).stdout, format!("{EPIC_RESULT}\n\n  trailing  \n").as_bytes(), "the exact bytes");
 
@@ -896,10 +908,11 @@ fn an_epic_report_note_is_attested_by_the_typed_sign_off_never_by_an_approval() 
     assert!(text(&o).contains("never showed its bytes"), "{}", text(&o));
     assert!(note(p, "mr", &tip).is_none());
     // a local file GitHub never showed either (round 2, I5)
-    write(p, "docs/local-e.html", EPIC_RESULT);
+    common::doc_pair(p, "docs/local-e.html", "epic-result", EPIC_RESULT);
     let o = sign_off(p, "epic", "main", &reviews, &["--report", "docs/local-e.html"]);
     assert!(o.status.code() == Some(1) && text(&o).contains("committed in"), "{}", text(&o));
     std::fs::remove_file(p.join("docs/local-e.html")).unwrap();
+    std::fs::remove_file(p.join("docs/local-e.yaml")).unwrap();
     assert!(note(p, "mr", &tip).is_none());
     ok(keel(p, &["mr", "confirm", "epic", "--as", "vu", "--report", "refs/notes/report"]));
     let n = note(p, "mr", &tip).unwrap();
@@ -912,7 +925,7 @@ fn an_epic_report_note_is_attested_by_the_typed_sign_off_never_by_an_approval() 
     red8(p, "epic", "carries no refs/notes/report note");
 
     // a report committed in the epic's range is what GitHub showed at the approved commit: signed
-    write(p, "docs/e-result.html", EPIC_RESULT);
+    common::doc_pair(p, "docs/e-result.html", "epic-result", EPIC_RESULT);
     commit(p, "the epic report, committed");
     let tip = git(p, &["rev-parse", "wu/e/a"]);
     notes_with(p, &["test", "cr"], r#"{"e2e":{"files":["tests/test_a.py"],"covers":"a works"}}"#);

@@ -11,7 +11,7 @@ use std::process::Output;
 use serde_json::{json, Value};
 
 use crate::common;
-use crate::router_gh::{commit, git, stdout, text, write, Gh, BOT, OWNER_ID};
+use crate::router_gh::{commit, exe, git, stdout, text, write, Gh, BOT, OWNER_ID};
 
 pub(crate) const STRANGER: u64 = 777;
 /// When the fixture's comments and reviews were made, as every event line names it (review I2).
@@ -474,9 +474,8 @@ fn the_commanders_must_be_committed() {
 #[test]
 fn the_commanders_check_holds_under_gnu_expr() {
     let gh = Gh::new();
-    let shim = gh.bin.join("expr");
-    std::fs::write(
-        &shim,
+    exe(
+        &gh.bin.join("expr"),
         "#!/bin/sh\n\
          # GNU expr's STRING : REGEX: with a \\( group it prints \\1 and exits 1 when that is empty\n\
          if [ $# -eq 3 ] && [ \"$2\" = : ]; then\n\
@@ -490,9 +489,7 @@ fn the_commanders_check_holds_under_gnu_expr() {
          [ $rc -ge 2 ] && exit $rc\n\
          printf '%s\\n' \"$r\"\n\
          case $r in ''|0) exit 1;; esac\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(&shim, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    );
     // the shim has GNU's rule: an empty group fails, a matched one prints it
     let probe = |re: &str| common::cmd("expr").env("PATH", gh.path()).args(["x[5]", ":", re]).output().unwrap();
     let empty = probe(r"x\[ *[1-9]\( *, *[1-9]\)* *\]$");

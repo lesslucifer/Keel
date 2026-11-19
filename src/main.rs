@@ -627,13 +627,12 @@ fn verify_doc(repo: &Path, paths: &[&str]) -> Result<i32, String> {
         _ => paths.iter().map(|s| s.to_string()).collect(),
     };
     let rel = RepoRel::new(repo);
-    let docs = cfg.as_ref().map(|c| format!("{}/", c.docs.root.trim_end_matches('/')));
-    let in_docs = |p: &Path| docs.as_ref().is_none_or(|d| rel.of(p).is_some_and(|r| r.starts_with(d.as_str())));
+    let in_docs = in_docs(&rel, cfg.as_ref().map(|c| c.docs.root.as_str()));
     let caps = cfg.as_ref().map(|c| compile_caps(&c.docs.caps)).unwrap_or_default();
     let mut seen = std::collections::BTreeSet::new();
     let mut red = false;
     for f in &files {
-        let Some(pair) = verify_doc::pair_of(Path::new(f), in_docs) else { continue };
+        let Some(pair) = verify_doc::pair_of(Path::new(f), &in_docs) else { continue };
         if !seen.insert(pair.page.clone()) {
             continue;
         }
@@ -645,6 +644,13 @@ fn verify_doc(repo: &Path, paths: &[&str]) -> Result<i32, String> {
         red |= !errs.is_empty();
     }
     Ok(red as i32)
+}
+
+/// Whether a path on disk is under docs.root (`root`; with no config, every path is): the path made
+/// repo-relative, then `verify_doc::under_root`, the one docs.root test the tip-side callers use too.
+fn in_docs<'a>(rel: &'a RepoRel, root: Option<&str>) -> impl Fn(&Path) -> bool + 'a {
+    let under = root.map(verify_doc::under_root);
+    move |p: &Path| under.as_ref().is_none_or(|u| rel.of(p).is_some_and(|r| u(Path::new(&r))))
 }
 
 /// `[docs.caps]` as (glob, cap, compiled glob), each glob compiled once per run.
@@ -759,8 +765,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        caps_problem, commit_check, compile_caps, hook_conflicts, hooks_problem_of, no_git_env, path_cap, CommitCheck, Config, ReportPolicy, COMMIT_MSG,
-        DOC_POST, DOC_STOP, GIT_HOOK_ENV, GIT_LOCAL_ENV, INSTALL_PAGE, KEEL_MARK, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH,
+        caps_problem, commit_check, compile_caps, hook_conflicts, hooks_problem_of, in_docs, no_git_env, path_cap, CommitCheck, Config, RepoRel, ReportPolicy,
+        COMMIT_MSG, DOC_POST, DOC_STOP, GIT_HOOK_ENV, GIT_LOCAL_ENV, INSTALL_PAGE, KEEL_MARK, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH,
     };
     use std::ffi::OsStr;
     use std::path::Path;
@@ -770,6 +776,27 @@ mod tests {
         let mut r: Vec<String> = c.get_envs().filter(|(_, v)| v.is_none()).map(|(k, _)| k.to_string_lossy().into_owned()).collect();
         r.sort();
         r
+    }
+
+    #[test]
+    fn verify_doc_reads_docs_root_as_the_tip_side_does_odd_roots_too() {
+        // keel verify-doc tests paths on disk; check 6, the doc writer and keel mr test repo-relative
+        // names with verify_doc::under_root. One docs.root reading: the two agree on every root.
+        let d = tempfile::TempDir::new().unwrap();
+        for dir in ["docs/work", "docsx", "src/docs"] {
+            std::fs::create_dir_all(d.path().join(dir)).unwrap();
+        }
+        let rel = RepoRel::new(d.path());
+        let names = ["docs/work/a.yaml", "docs/a.html", "docsx/a.yaml", "src/docs/a.yaml", "a.yaml"];
+        for root in ["docs", "docs/", "docs/.", "docs//", "./docs", "docs/work", "", "/", "."] {
+            let (disk, tip) = (in_docs(&rel, Some(root)), crate::verify_doc::under_root(root));
+            for n in names {
+                assert_eq!(disk(&d.path().join(n)), tip(Path::new(n)), "root {root:?}, {n}");
+            }
+        }
+        let disk = in_docs(&rel, Some("docs/."));
+        assert!(disk(&d.path().join("docs/work/a.yaml")) && !disk(&d.path().join("docsx/a.yaml")), "docs/. is docs");
+        assert!(in_docs(&rel, None)(&d.path().join("src/docs/a.yaml")), "no config: every path is under docs.root");
     }
 
     #[test]

@@ -86,13 +86,13 @@ fn fixture() -> TempDir {
         git(p, &["switch", "-q", "-c", "wu/e/x"]);
         write(p, "src/a.py", "def a():\n    return 1\n");
         write(p, "tests/test_a.py", "def test_a():\n    pass\n");
-        write(p, "docs/work/x-result.html", RESULT);
+        common::doc_pair(p, "docs/work/x-result.html", "wu-result", RESULT);
         git(p, &["add", "-A"]);
         git(p, &["commit", "-qm", "wu x"]);
     })
 }
 
-const RESULT: &str = "<html data-artifact=\"wu-result\"><p>wu x: done</p></html>";
+const RESULT: &str = "<html><p>wu x: done</p></html>";
 
 /// Item 3: an untrailered skill edit is refused on a WU branch and taken on a task branch; with a
 /// code path or the roster staged too it is refused on the task branch as anywhere.

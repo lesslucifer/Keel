@@ -229,7 +229,7 @@ open:
         after a PASS (a merge after the PASS changes the range the review bound). Takes: an owner commit of the skill.
       - >-
         follow-up 9, W9's nit: the GNU `expr` test writes its own sh shim instead of reaching the script through
-        `crate::router_gh::exe`. Takes: whichever WU next touches `tests/suite/router_gh.rs`.
+        `crate::router_gh::exe`. Done in E-DOCSPLIT.W3.
       - >-
         follow-up 10, New rows from the E-GHFLOW plan's close list: `keel` setting the GitHub flow up in other
         projects (E-GHFLOW open point 8), and Claude code reviews inside GitHub Actions. Takes: a later epic each, not
@@ -237,6 +237,22 @@ open:
       - >-
         follow-up 11, After W6 is on main, install a keel built from main so every worktree's commit check knows task
         branches. Takes: the owner, after the close lands.
+
+  - id: G11
+    title: "The bot measures a pull request's range from its own copy of the base"
+    status: open
+    problem: >-
+      A pull request page can list the wrong docs, or none. `router-gh.sh pr-open` and `issue` take the range from the
+      merge-base of the router checkout's local base branch and the tip. When that copy lags GitHub's base (PR #14: a
+      local `epic/E-DOCSPLIT` still before W1's merge), the range holds another WU's docs; when it already holds the
+      tip's docs, the page says "No doc changed in this range". E-DOCSPLIT.W3 fixed the title alone: the newest plan,
+      read from its data file.
+    proposal: >-
+      Refuse when the local base is not GitHub's base, or measure from GitHub's base sha (fetched first). Either
+      changes when the bot refuses, so it is a GitHub-flow change, not part of the docs split.
+    source: >-
+      the E-DOCSPLIT.W3 plan's bot defects and the owner's ruling of 2026-11-18 ("doc split w3 lgtm", question 1).
+    taken-by: "the next GitHub-flow epic"
 closed:
   - id: G1
     title: "W4 - W9, carried to the next GitHub-flow epic"

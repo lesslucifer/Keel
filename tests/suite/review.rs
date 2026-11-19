@@ -97,7 +97,7 @@ fn last_fix(n: u32, since: &str, tip: &str) -> String {
     format!("review round {n} of 5 - scope: the last fix, {since}..{tip}")
 }
 
-const RESULT: &str = "<html data-artifact=\"wu-result\"><p>done</p></html>";
+const RESULT: &str = "<html><p>done</p></html>";
 
 #[test]
 fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver() {
@@ -130,14 +130,14 @@ fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver()
     git(p, &["commit", "-q", "--no-verify", "-m", "keel init"]);
 
     git(p, &["switch", "-q", "-c", "epic/e"]);
-    write(p, "docs/work/e-plan.html", "<html data-artifact=\"epic-plan\"><p>plan</p></html>");
+    common::doc_pair(p, "docs/work/e-plan.html", "epic-plan", "<html><p>plan</p></html>");
     commit(p, "epic plan");
 
     // WU A: round 1 finds only nits; the fix gets a fix-PASS, no new round.
     git(p, &["switch", "-q", "-c", "wu/e/a"]);
     write(p, "src/a.py", "def a():\n    return 1\n");
     write(p, "tests/test_a.py", "def test_a():\n    pass\n");
-    write(p, "docs/work/a-result.html", RESULT);
+    common::doc_pair(p, "docs/work/a-result.html", "wu-result", RESULT);
     let a1 = commit(p, "wu a");
     let a_tests = r#"{"integration":{"files":["tests/test_a.py"],"covers":"a works"}}"#;
     notes(p, a_tests, &[]);
@@ -159,7 +159,7 @@ fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver()
     git(p, &["switch", "-q", "-c", "wu/e/b"]);
     write(p, "src/b.py", "def b():\n    return 1\n");
     write(p, "tests/test_b.py", "def test_b():\n    pass\n");
-    write(p, "docs/work/b-result.html", RESULT);
+    common::doc_pair(p, "docs/work/b-result.html", "wu-result", RESULT);
     let mut tips = vec![commit(p, "wu b")];
     let b_tests = r#"{"integration":{"files":["tests/test_b.py"],"covers":"b works"}}"#;
     notes(p, b_tests, &[]);
@@ -226,9 +226,10 @@ fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver()
 
     // The epic: its own round 1 (its WUs' rounds are theirs), the walk shows WU B waived, then main.
     git(p, &["rm", "-q", "docs/work/e-plan.html", "docs/work/a-result.html", "docs/work/b-result.html"]);
+    git(p, &["rm", "-q", "docs/work/e-plan.yaml", "docs/work/a-result.yaml", "docs/work/b-result.yaml"]);
     write(p, "docs/use-cases/review.html", "<p>UC-REV-3: the review schedule</p>");
     let e = commit(p, "distill and archive");
-    write(p, "docs/.archive/e-result.html", "<html data-artifact=\"epic-result\"><p>done</p></html>");
+    common::doc_pair(p, "docs/.archive/e-result.html", "epic-result", "<html><p>done</p></html>");
     ok(run(
         env!("CARGO_BIN_EXE_keel"),
         p,
