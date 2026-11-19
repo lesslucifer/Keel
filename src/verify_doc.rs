@@ -552,14 +552,7 @@ fn fields(roles: &[&str]) -> (Vec<&'static str>, Vec<&'static str>) {
         add(&mut required, "epic");
     }
     for r in roles {
-        let list = match *r {
-            "epic-plan" => EPIC_PLAN,
-            "wu-plan" => WU_PLAN,
-            WU_RESULT_ROLE => WU_RESULT,
-            EPIC_RESULT_ROLE => EPIC_RESULT,
-            _ => &[],
-        };
-        for f in list {
+        for f in role_fields(r) {
             add(&mut required, f);
         }
     }
@@ -568,6 +561,17 @@ fn fields(roles: &[&str]) -> (Vec<&'static str>, Vec<&'static str>) {
         add(&mut known, f);
     }
     (required, known)
+}
+
+/// A role's own checklist, the fields only its paragraph in skill keel-plan §3 names.
+fn role_fields(role: &str) -> &'static [&'static str] {
+    match role {
+        "epic-plan" => EPIC_PLAN,
+        "wu-plan" => WU_PLAN,
+        WU_RESULT_ROLE => WU_RESULT,
+        EPIC_RESULT_ROLE => EPIC_RESULT,
+        _ => &[],
+    }
 }
 
 /// The cap a page with these roles holds (DEC-69): a one-part epic takes the larger, its epic's.
@@ -1207,8 +1211,8 @@ fn scan(s: &str, out: &mut Vec<Hit>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        data_roles, decode, decode_mapped, fields, hits, page_words, pages_of, pair_named, pair_of, partner_named, read_data, result_role, role_cap, tags,
-        under_root, unquoted_labels, Data, Pair, ANCHORS, ROLES,
+        data_roles, decode, decode_mapped, fields, hits, page_words, pages_of, pair_named, pair_of, partner_named, read_data, result_role, role_cap,
+        role_fields, tags, under_root, unquoted_labels, Data, Pair, ANCHORS, ROLES, TEST_LEVELS, WU_SUB,
     };
     use std::path::Path;
 
@@ -1657,27 +1661,67 @@ mod tests {
         assert!(required.contains(&"test-plan") && required.contains(&"wu-summaries"), "the union: {required:?}");
     }
 
-    /// E-DOCSPLIT.W4: skill keel-plan names every field the check reads, so a field added to the
-    /// check without the skill is red.
+    /// The text of the skill's section that starts with `head` (`## 3 ·`), up to the next `## `.
+    fn section<'a>(skill: &'a str, head: &str) -> &'a str {
+        let at = skill.find(head).unwrap_or_else(|| panic!("skill keel-plan has no section {head:?}"));
+        let rest = &skill[at..];
+        rest[1..].find("\n## ").map_or(rest, |n| &rest[..n + 1])
+    }
+
+    /// The fields of `role` that skill keel-plan does not name where they belong: its own checklist
+    /// `own` (with the entries of a list field it holds, `WU_SUB` under `wu-summaries` and
+    /// `TEST_LEVELS` under `test-plan`) in the role's §3 paragraph, from its bold head
+    /// (`**WU plan**` for wu-plan) to the next one; every other field it knows in §2's table.
+    fn unnamed(skill: &str, role: &str, own: &[&str], known: &[&str]) -> Vec<String> {
+        let head = role.replace('-', " ");
+        let para = section(skill, "## 3 ·").split("\n**").find(|p| p.split_once("**").is_some_and(|(h, _)| h.eq_ignore_ascii_case(&head))).unwrap_or("");
+        let table = section(skill, "## 2 ·");
+        let entries = |f: &str| match f {
+            "wu-summaries" => WU_SUB,
+            "test-plan" => TEST_LEVELS,
+            _ => &[],
+        };
+        let mut out = Vec::new();
+        for f in own.iter().flat_map(|f| std::iter::once(*f).chain(entries(f).iter().copied())) {
+            if !para.contains(&format!("`{f}`")) {
+                out.push(format!("{role}: `{f}` is not in its §3 paragraph"));
+            }
+        }
+        for f in known.iter().filter(|f| !own.contains(f)) {
+            if !table.contains(&format!("| `{f}` |")) {
+                out.push(format!("{role}: `{f}` is not in the §2 table"));
+            }
+        }
+        out
+    }
+
+    /// E-DOCSPLIT.W4: skill keel-plan names every field the check reads for a role where that role
+    /// is taught - its own checklist in its §3 paragraph, the rest of what fields() knows for it in
+    /// §2's table - so a field added to the check, or moved to another role, without the skill is red.
     #[test]
     fn keel_plan_names_every_field_the_check_reads() {
         let skill = include_str!("../skills/keel-plan/SKILL.md");
-        let lists = [
-            super::COMMON,
-            super::OPTIONAL,
-            super::EPIC_PLAN,
-            super::WU_PLAN,
-            super::WU_RESULT,
-            super::EPIC_RESULT,
-            super::WU_SUB,
-            super::TEST_LEVELS,
-            &["epic"],
-        ];
-        let missing: Vec<&str> = lists.iter().flat_map(|l| l.iter()).filter(|f| !skill.contains(&format!("`{f}`"))).copied().collect();
-        assert!(missing.is_empty(), "skill keel-plan does not name the fields {missing:?}");
         for role in ROLES {
+            let (_, known) = fields(&[role]);
+            let missing = unnamed(skill, role, role_fields(role), &known);
+            assert!(missing.is_empty(), "skill keel-plan does not name {missing:?}");
             assert!(skill.contains(&format!("`{role}`")), "skill keel-plan does not name the role {role}");
         }
+        // a field moved between roles is red in the role it moved to, though another role names it
+        let (_, known) = fields(&["wu-plan"]);
+        let own: Vec<&str> = role_fields("wu-plan").iter().copied().chain(["outcome"]).collect();
+        assert_eq!(unnamed(skill, "wu-plan", &own, &known), ["wu-plan: `outcome` is not in its §3 paragraph"]);
+        let (_, known) = fields(&["wu-result"]);
+        let own: Vec<&str> = role_fields("wu-result").iter().copied().chain(["expected"]).collect();
+        assert_eq!(unnamed(skill, "wu-result", &own, &known), ["wu-result: `expected` is not in its §3 paragraph"]);
+        // a field fields() knows outside a role's checklist must be a §2 row
+        let known: Vec<&str> = fields(&["epic-result"]).1.into_iter().chain(["x"]).collect();
+        assert_eq!(unnamed(skill, "epic-result", role_fields("epic-result"), &known), ["epic-result: `x` is not in the §2 table"]);
+        // an entry of a list field is named in its role's paragraph
+        let cut = skill.replace("`unit`, `integration`", "`integration`");
+        assert_ne!(cut, skill);
+        let (_, known) = fields(&["wu-plan"]);
+        assert_eq!(unnamed(&cut, "wu-plan", role_fields("wu-plan"), &known), ["wu-plan: `unit` is not in its §3 paragraph"]);
     }
 
     fn problems(yaml: &str) -> Vec<String> {
