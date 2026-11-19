@@ -42,8 +42,8 @@
 # session id, so the run dir records it once the session is listed.
 # One live session per name, whatever its directory: SendMessage addresses by name; a launch holds
 # .router/runs/.lock-<name> from its live check to its start.
-# worktree add cuts epic/E off main, wu/E/slug off epic/E and a task wu/E/wu_task (E-GHFLOW2.W6: three
-# words without _) off its WU branch wu/E/wu (an existing branch is used as it is) at
+# worktree add cuts epic/E off main, wu/E/slug off epic/E and a task wu/E/wu_task (three words
+# without _; E-GHREVERT.W1 keep 4) off its WU branch wu/E/wu (an existing branch is used as it is) at
 # <main checkout>-<branch without its prefix, / as ->; worktree remove takes only a clean worktree
 # whose branch is merged into its base and in which no session runs, and keeps the branch.
 set -eu
@@ -120,8 +120,8 @@ linked_ok() {
   [ "$(cd -P "$(dirname "$lk_g")" 2>/dev/null && pwd -P)" = "$(cd -P "$1" 2>/dev/null && pwd -P)" ] || return 1
   lk_admin=$lk_a
 }
-# git_dirs_ok: the shared git dir as git makes it (E-GHFLOW.W3 security review P1 and round 2 F1,
-# backlog R33). A main git dir has no commondir or config.worktree file: one there sends every git in
+# git_dirs_ok: the shared git dir as git makes it (backlog R33, DEC-37;
+# E-GHREVERT.W1 keep 2). A main git dir has no commondir or config.worktree file: one there sends every git in
 # that checkout, the owner's unsandboxed git and this launcher's included, to another repository's
 # config, hooks and fsmonitor. The same holds for each worktree's admin dir under <git dir>/worktrees:
 # a real directory, commondir ../.., no config.worktree, a gitdir naming a .git (linked_ok's rule for
@@ -453,17 +453,15 @@ snapshot
 # owner's prompt, or auto's per-call review) or by the worktree's own local settings, which merge
 # with these (DEC-37); no retry outside it. The worker file guard (scripts/router-file-guard.sh) is a
 # PreToolUse hook on every tool, fail-closed: the file tools edit only this worktree and read
-# neither ~/.ssh nor ~/.claude/channels (DEC-37), nor the router bot's key dir ~/.config/keel/router-gh
-# (E-GHFLOW.W2). The shell's denyRead of that dir is what keeps the App key from a worker; the Bash deny
-# of scripts/router-gh.sh and scripts/router-gh-watch.sh (E-GHFLOW.W3) below states intent only (a prefix rule: another spelling of the path passes). A hook is not a deny rule, so it feeds no sandbox
+# neither ~/.ssh nor ~/.claude/channels (DEC-37). A hook is not a deny rule, so it feeds no sandbox
 # path (review round 2, H1).
 hook="sh '$guard' '$wt' '$HOME' || { echo 'worker file guard: failed - tool call denied' >&2; exit 2; }"
 # The git dir's commondir and config.worktree, and every worktree's admin commondir, gitdir and
-# config.worktree, are not the worker's either (E-GHFLOW.W3 security review P1 and round 2 F1,
-# backlog R33): one there sends git in that checkout - the owner's unsandboxed git included - to a
+# config.worktree, are not the worker's either (backlog R33,
+# DEC-37): one there sends git in that checkout - the owner's unsandboxed git included - to a
 # config the worker wrote. Every admin dir that exists now is listed by name, and by glob for one
 # added later; a glob does not stop a worker renaming a whole admin dir, so git_dirs_ok (above)
-# checks every admin dir on every launcher run, and router-gh.sh pins its own git dir.
+# checks every admin dir on every launcher run.
 others='[]'
 for d in "$gd"/worktrees/*; do
   [ -e "$d" ] || [ -L "$d" ] || continue
@@ -478,7 +476,7 @@ sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --argjson o "$ot
         $a + "/commondir", $a + "/gitdir", $a + "/config.worktree"] + $o
       + [$g + "/worktrees/*/commondir", $g + "/worktrees/*/gitdir", $g + "/worktrees/*/config.worktree"]
       + [$w + "/.git", $w + "/.claude/settings.json", $w + "/.claude/settings.local.json", "~/.claude.json"]),
-    denyRead: ["~/.ssh", "~/.claude/channels", "~/.config/keel/router-gh"]},
+    denyRead: ["~/.ssh", "~/.claude/channels"]},
   network: {allowedDomains: ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}},
   hooks: {PreToolUse: [{matcher: "*", hooks: [{type: "command", command: $hook, timeout: 10}]}]}}')
 set -- --bg -n "$name" --model "$model" --effort "$effort" --agent worker --setting-sources project,local --strict-mcp-config \
@@ -494,14 +492,14 @@ set -- "$@" --disallowedTools
 for c in "keel mr" "cargo run" "keel init" "keel hooks" "cargo install" "cargo publish" "cargo login" \
   "git push" "git config" "git update-ref" "git symbolic-ref" "git stash" "git notes" "git switch" "git checkout" \
   "git rebase" "git worktree add" "git worktree remove" "git worktree move" "git worktree prune" "git -C" \
-  "git --git-dir" "git --work-tree" "claude" "scripts/router-worker.sh" "scripts/router-gh.sh" "scripts/router-gh-watch.sh"; do
+  "git --git-dir" "git --work-tree" "claude" "scripts/router-worker.sh"; do
   set -- "$@" "Bash($c)" "Bash($c *)"; done
 set -- "$@" "Bash(git --git-dir=*)" "Bash(git --work-tree=*)"
 # The Read tool is also denied the sandbox's denyRead paths by rule (the file guard's realpath check is
 # the bound; a rule is matched best-effort, and Grep/Glob are the guard's alone). The edit tools get no
 # path rule: an Edit deny rule may feed the sandbox's denyWrite, and one on the main checkout would
 # deny the shell the git dir under it (review round 2, H1).
-set -- "$@" "Read(~/.ssh/**)" "Read(~/.claude/channels/**)" "Read(~/.config/keel/router-gh/**)"
+set -- "$@" "Read(~/.ssh/**)" "Read(~/.claude/channels/**)"
 if [ -n "$review" ]; then set -- "$@" "Bash(git add)" "Bash(git add *)" "Bash(git commit)" "Bash(git commit *)" Edit Write NotebookEdit
 else set -- "$@" "Bash(keel notes write cr)" "Bash(keel notes write cr *)"; fi
 # the prompt follows a single-valued option: after a list option it would be read as a tool name

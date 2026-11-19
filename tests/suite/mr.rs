@@ -918,7 +918,7 @@ fn edit_cr(p: &Path, f: impl FnOnce(&mut Value)) {
     git(p, &["notes", "--ref=cr", "add", "-f", "-m", &n.to_string(), "HEAD"]);
 }
 
-pub(crate) fn sha256_of(b: &[u8]) -> String {
+fn sha256_of(b: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     format!("sha256:{}", Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect::<String>())
 }
@@ -1155,4 +1155,375 @@ fn the_review_history_keeps_every_row_when_git_log_shows_signatures() {
     for (sha, verdict) in [(&tip, "WAIVED"), (&round1, "FAIL")] {
         assert!(t.lines().any(|l| l.trim_start().starts_with(&format!("{} {verdict}", &sha[..10]))), "history row {} {verdict} missing: {t}", &sha[..10]);
     }
+}
+
+// E-GHREVERT.W1, keeps 3 and 4: R50 (keel mr checks its checkout's git links before any git call)
+// and the github tier read but never signing, until E-DOCSPLIT is on main. R50's tests came from
+// the deleted sign-off suite, unchanged in what they assert.
+
+const KEEL: &str = env!("CARGO_BIN_EXE_keel");
+const GH_FIXTURE: &str = "mr github line read";
+const GH_ROSTER: &str = "username: vu\ngithub: 5499546 lesslucifer\n";
+
+/// `prog` with `a` in `d` on `path` (a test's own shims first), committing as the tester.
+fn command(prog: &str, d: &Path, a: &[&str], path: &str) -> std::process::Command {
+    let mut c = common::cmd(prog);
+    common::as_tester(c.args(a).current_dir(d).env("PATH", path).env_remove("SSH_AUTH_SOCK").stdin(Stdio::null()));
+    c
+}
+
+fn run_with(prog: &str, d: &Path, a: &[&str], path: &str) -> Output {
+    command(prog, d, a, path).output().unwrap()
+}
+
+/// main (a policy accepting the username, key and github tiers; a roster with a username and a
+/// github line, as E-DOCSPLIT's) → epic/e → wu/e/a with code, a test and a result report; hooks
+/// installed; HEAD on wu/e/a, no notes yet.
+fn github_fixture() -> TempDir {
+    common::fixture(GH_FIXTURE, |p| {
+        git(p, &["init", "-q", "-b", "main"]);
+        git(p, &["config", "user.email", "t@t"]);
+        git(p, &["config", "user.name", "t"]);
+        write(
+            p,
+            ".keel/config.toml",
+            "code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n[mr]\ntiers = [\"username\", \"key\", \"github\"]\n",
+        );
+        write(p, ".keel/mr-allowed", GH_ROSTER);
+        write(p, "README", "x");
+        commit(p, "base");
+        ok(keel(p, &["hooks", "install"]));
+        git(p, &["switch", "-q", "-c", "epic/e"]);
+        git(p, &["switch", "-q", "-c", "wu/e/a"]);
+        write(p, "src/a.py", "def a():\n    return 1\n");
+        write(p, "tests/test_a.py", "def test_a():\n    pass\n");
+        write(p, "docs/work/a-result.html", RESULT);
+        commit(p, "wu a");
+    })
+}
+
+/// Keep 3: a github line and the github tier are read, and sign nothing - a typed sign-off, a
+/// typed commit and a trailer by the github id are refused, and the username signs as before (it
+/// is the only typed identity, so it needs no --as) with check 8 green.
+#[test]
+fn a_github_line_is_read_and_signs_nothing() {
+    let d = github_fixture();
+    let p = d.path();
+    notes(p, &["test", "doc", "cr"]);
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "5499546"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("github tier only") && t.contains("fix ->"), "{t}");
+    assert!(mr_note(p, "wu/e/a").is_none());
+    write(p, ".keel/mr-allowed", &format!("{GH_ROSTER}# touched\n"));
+    git(p, &["add", "-A"]);
+    let o = keel(p, &["mr", "commit", "-m", "x", "--as", "5499546"]);
+    assert!(!o.status.success() && text(&o).contains("github tier only"), "{}", text(&o));
+    let o = run("git", p, &["commit", "-q", "-m", "x\n\nReviewed-By: github 5499546"]);
+    assert!(!o.status.success() && text(&o).contains("Reviewed-By"), "a typed trailer naming the github id: {}", text(&o));
+    git(p, &["reset", "-q", "--hard"]);
+    ok(keel(p, &["mr", "confirm", "wu"]));
+    let n = mr_note(p, "wu/e/a").unwrap();
+    assert_eq!((n["signer"].as_str(), n["tier"].as_str()), (Some("vu"), Some("username")));
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+}
+
+/// Keep 3, the policy at 8d48a44 (no github tier) under a roster that still holds a github line, as
+/// on E-DOCSPLIT after it merges main: the line is read, authorises nothing, and the username signs.
+#[test]
+fn a_github_line_under_a_policy_without_the_tier_is_read_and_ignored() {
+    let d = github_fixture();
+    let p = d.path();
+    git(p, &["switch", "-q", "epic/e"]);
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap().replace("\"username\", \"key\", \"github\"", "\"username\", \"key\"");
+    write(p, ".keel/config.toml", &cfg);
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-q", "--no-verify", "-m", "the target's policy, no github tier"]);
+    git(p, &["switch", "-q", "wu/e/a"]);
+    git(p, &["merge", "-q", "--no-ff", "--no-verify", "-m", "sync", "epic/e"]);
+    notes(p, &["test", "doc", "cr"]);
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "5499546"]);
+    assert!(!o.status.success() && text(&o).contains("not listed"), "{}", text(&o));
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "vu"]));
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+}
+
+/// A git on PATH that records every call and fails: `keel mr` must make none on a refused checkout.
+fn recording_git(dir: &Path) -> (String, std::path::PathBuf) {
+    logging_git(dir, "exit 1")
+}
+
+/// A `git` on a PATH of its own in `dir/bin` that logs each call to `dir/git-calls`, then runs
+/// `last` (its last line). Returns the PATH and the log.
+fn logging_git(dir: &Path, last: &str) -> (String, std::path::PathBuf) {
+    let bin = dir.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let log = dir.join("git-calls");
+    std::fs::write(bin.join("git"), format!("#!/bin/sh\necho \"$*\" >> {}\n{last}\n", common::sh_quote(&log.to_string_lossy()))).unwrap();
+    std::fs::set_permissions(bin.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    (common::path_with(&bin), log)
+}
+
+/// R50: a linked checkout of the fixture, its admin dir tampered as a worker could, refused by
+/// every `keel mr` command before any git runs; a clean one signs as before. `keel mr` runs from the
+/// checkout's root only (code review round 2): a subdirectory is refused, tampered or not.
+#[test]
+fn keel_mr_refuses_a_checkout_whose_git_links_git_did_not_make_and_runs_no_git() {
+    let d = github_fixture();
+    let p = d.path();
+    notes(p, &["test", "doc", "cr"]);
+    git(p, &["switch", "-q", "main"]);
+    let wt = d.path().join("wt");
+    git(p, &["worktree", "add", "-q", wt.to_str().unwrap(), "wu/e/a"]);
+    let admin = std::path::PathBuf::from(git(&wt, &["rev-parse", "--absolute-git-dir"]));
+    let common_dir = p.join(".git");
+    let sub = wt.join("src");
+    let scratch = TempDir::new().unwrap();
+    let (fake, log) = recording_git(scratch.path());
+    type Tamper = Box<dyn Fn()>;
+    type Undo = Box<dyn Fn()>;
+    let file = |f: std::path::PathBuf, body: &'static str| -> (Tamper, Undo) {
+        let g = f.clone();
+        (Box::new(move || std::fs::write(&f, body).unwrap()), Box::new(move || std::fs::remove_file(&g).unwrap()))
+    };
+    let swap = |f: std::path::PathBuf, body: String| -> (Tamper, Undo) {
+        let old = std::fs::read_to_string(&f).unwrap();
+        let g = f.clone();
+        (Box::new(move || std::fs::write(&f, &body).unwrap()), Box::new(move || std::fs::write(&g, &old).unwrap()))
+    };
+    let cases: Vec<(&str, (Tamper, Undo), &str)> = vec![
+        ("config.worktree in the admin dir", file(admin.join("config.worktree"), "[core]\n\thooksPath = /tmp/evil\n"), "config.worktree exists"),
+        ("config.worktree in the git dir", file(common_dir.join("config.worktree"), "[core]\n"), "config.worktree exists"),
+        ("a commondir in the main git dir", file(common_dir.join("commondir"), "../elsewhere\n"), "commondir exists"),
+        ("a wrong commondir", swap(admin.join("commondir"), "../../../other/.git\n".into()), "commondir is not ../.."),
+        ("a gitdir naming another checkout", swap(admin.join("gitdir"), format!("{}\n", p.join("x/.git").display())), "gitdir does not name"),
+        ("a .git naming a dir outside worktrees/", swap(wt.join(".git"), format!("gitdir: {}\n", common_dir.display())), "not under <git dir>/worktrees/"),
+        ("a .git that is no link", swap(wt.join(".git"), "nothing\n".into()), "not a gitdir link"),
+    ];
+    for (why, (tamper, undo), needle) in cases {
+        tamper();
+        for (dir, a) in [(&wt, &["mr", "confirm", "wu"][..]), (&wt, &["mr", "commit", "-m", "x", "--as", "vu"][..]), (&wt, &["mr", "setup", "--as", "x"][..])] {
+            let _ = std::fs::remove_file(&log);
+            let o = run_with(KEEL, dir, a, &fake);
+            let t = text(&o);
+            assert!(!o.status.success() && t.contains("keel mr: refused") && t.contains(needle), "{why} {a:?}: {t}");
+            assert!(!log.exists(), "{why} {a:?}: git ran: {}", std::fs::read_to_string(&log).unwrap_or_default());
+        }
+        undo();
+    }
+    // a subdirectory of the clean checkout: refused, the owner is told to cd to the root
+    for a in [&["mr", "confirm", "wu"][..], &["mr", "commit", "-m", "x", "--as", "vu"][..], &["mr", "setup", "--as", "x"][..]] {
+        let _ = std::fs::remove_file(&log);
+        let o = run_with(KEEL, &sub, a, &fake);
+        let t = text(&o);
+        assert!(!o.status.success() && t.contains("keel mr: refused") && t.contains("cd to the worktree root"), "{a:?}: {t}");
+        assert!(!log.exists(), "{a:?}: git ran: {}", std::fs::read_to_string(&log).unwrap_or_default());
+    }
+    // the main checkout's own links, tampered the same way, are refused too
+    let (tamper, undo) = file(common_dir.join("config.worktree"), "[core]\n");
+    tamper();
+    let o = run_with(KEEL, p, &["mr", "commit", "-m", "x"], &fake);
+    assert!(!o.status.success() && text(&o).contains("config.worktree exists") && !log.exists(), "{}", text(&o));
+    undo();
+    // links git writes relative (worktree.useRelativePaths) are as good as absolute ones
+    let (abs_link, abs_back) = (std::fs::read_to_string(wt.join(".git")).unwrap(), std::fs::read_to_string(admin.join("gitdir")).unwrap());
+    assert_eq!(wt.parent(), Some(p), "the worktree sits in the main checkout, so the relative links below hold");
+    std::fs::write(wt.join(".git"), format!("gitdir: ../.git/worktrees/{}\n", admin.file_name().unwrap().to_str().unwrap())).unwrap();
+    std::fs::write(admin.join("gitdir"), "../../../wt/.git\n").unwrap();
+    let o = run_with(KEEL, &wt, &["mr", "setup", "--as", "vu"], &fake);
+    assert!(!text(&o).contains("keel mr: refused"), "relative links: {}", text(&o));
+    std::fs::write(wt.join(".git"), abs_link).unwrap();
+    std::fs::write(admin.join("gitdir"), abs_back).unwrap();
+    // untouched, the linked checkout signs as before (with the real git)
+    let o = run(KEEL, &wt, &["mr", "confirm", "wu", "--as", "vu"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(mr_note(p, "wu/e/a").unwrap()["tier"], "username");
+}
+
+/// `keel mr` with a time limit: a hang (a FIFO opened for reading) fails the test, never blocks it.
+fn run_bounded(dir: &Path, a: &[&str], path: &str) -> Output {
+    let mut ch = command(KEEL, dir, a, path).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let start = std::time::Instant::now();
+    while ch.try_wait().unwrap().is_none() {
+        if start.elapsed() > std::time::Duration::from_secs(20) {
+            let _ = ch.kill();
+            let _ = ch.wait();
+            panic!("keel {a:?} in {} hung for 20s", dir.display());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    ch.wait_with_output().unwrap()
+}
+
+fn mkfifo(p: &Path) {
+    let o = common::cmd("mkfifo").arg(p).output().unwrap();
+    assert!(o.status.success(), "mkfifo {}: {}", p.display(), text(&o));
+}
+
+/// `keel mr commit` from `dir` with the recording git: refused with `needle`, no git run, no hang.
+fn refused_before_git(dir: &Path, fake: &str, log: &Path, why: &str, needle: &str) -> String {
+    let _ = std::fs::remove_file(log);
+    let o = run_bounded(dir, &["mr", "commit", "-m", "x", "--as", "vu"], fake);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("keel mr: refused") && t.contains(needle), "{why}: {t}");
+    assert!(!log.exists(), "{why}: git ran: {}", std::fs::read_to_string(log).unwrap_or_default());
+    t
+}
+
+/// Code review round 2, B1: a dir holding only HEAD and commondir is a git dir to git, which would use
+/// the planted dir it names (its config, its hooks). `keel mr` runs from a checkout's root only, so
+/// such a dir is refused as a cwd, and as a .git it is no repository of its own.
+#[test]
+fn keel_mr_refuses_a_planted_head_and_commondir_dir_and_runs_no_git() {
+    let d = github_fixture();
+    let p = d.path();
+    let scratch = TempDir::new().unwrap();
+    let (fake, log) = recording_git(scratch.path());
+    let target = scratch.path().join("planted.git");
+    git(scratch.path(), &["init", "-q", "--bare", target.to_str().unwrap()]);
+    let hc = p.join("src/hc");
+    write(&hc, "HEAD", "ref: refs/heads/main\n");
+    write(&hc, "commondir", &format!("{}\n", target.display()));
+    refused_before_git(&hc, &fake, &log, "a dir holding HEAD and commondir", "cd to the worktree root");
+    let dot = p.join("src/hcdot");
+    write(&dot, ".git/HEAD", "ref: refs/heads/main\n");
+    write(&dot, ".git/commondir", &format!("{}\n", target.display()));
+    refused_before_git(&dot, &fake, &log, "a .git dir holding HEAD and commondir", "not a repository");
+}
+
+/// Code review round 2, B2: a FIFO is never opened. As .git, or as the admin dir's commondir, it is
+/// refused at once; before, `keel mr` blocked for ever in open().
+#[test]
+fn keel_mr_refuses_a_fifo_in_the_git_links_without_hanging() {
+    let d = github_fixture();
+    let p = d.path();
+    let scratch = TempDir::new().unwrap();
+    let (fake, log) = recording_git(scratch.path());
+    let fifo = p.join("src/fifo");
+    std::fs::create_dir_all(&fifo).unwrap();
+    mkfifo(&fifo.join(".git"));
+    refused_before_git(&fifo, &fake, &log, "a FIFO as .git", "neither a directory nor a regular file");
+    git(p, &["switch", "-q", "main"]);
+    let wt = scratch.path().join("wt");
+    git(p, &["worktree", "add", "-q", wt.to_str().unwrap(), "wu/e/a"]);
+    let admin = std::path::PathBuf::from(git(&wt, &["rev-parse", "--absolute-git-dir"]));
+    std::fs::remove_file(admin.join("commondir")).unwrap();
+    mkfifo(&admin.join("commondir"));
+    refused_before_git(&wt, &fake, &log, "a FIFO as the admin dir's commondir", "commondir is not ../..");
+}
+
+/// A git on PATH that records every call, then runs the real git: a refused checkout must log none.
+fn passthrough_git(dir: &Path) -> (String, std::path::PathBuf) {
+    let real = String::from_utf8(run("sh", dir, &["-c", "command -v git"]).stdout).unwrap().trim().to_string();
+    logging_git(dir, &format!("exec {} \"$@\"", common::sh_quote(&real)))
+}
+
+/// Code review round 4, B1: `wt`'s .git names `s/../<up k>/<rest>`, which reads as the real admin dir
+/// (`s/..` cancels) while git, following the link `s` first, reaches a planted admin dir and git dir
+/// whose core.fsmonitor writes `marker`. Returns the planted gitdir text.
+fn plant_dotdot(wt: &Path, admin: &Path, marker: &Path) -> String {
+    let (wt, admin) = (wt.canonicalize().unwrap(), admin.canonicalize().unwrap());
+    let shared: std::path::PathBuf = wt.components().zip(admin.components()).take_while(|(a, b)| a == b).map(|(a, _)| a).collect();
+    let k = wt.components().count() - shared.components().count();
+    let rest = admin.strip_prefix(&shared).unwrap();
+    let q = wt.join("pl");
+    let b = (0..k).fold(q.clone(), |b, i| b.join(format!("d{i}")));
+    std::fs::create_dir_all(b.join("x")).unwrap();
+    std::os::unix::fs::symlink(b.join("x"), wt.join("s")).unwrap();
+    let planted = q.join(rest);
+    let planted_git = planted.parent().unwrap().parent().unwrap();
+    git(&wt, &["init", "-q", "--bare", planted_git.to_str().unwrap()]);
+    let hook = wt.join("pl/fsmonitor");
+    std::fs::write(&hook, format!("#!/bin/sh\ntouch {}\n", common::sh_quote(&marker.to_string_lossy()))).unwrap();
+    std::fs::set_permissions(&hook, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    git(&wt, &["config", "--file", planted_git.join("config").to_str().unwrap(), "core.fsmonitor", hook.to_str().unwrap()]);
+    std::fs::create_dir_all(&planted).unwrap();
+    std::fs::write(planted.join("commondir"), "../..\n").unwrap();
+    std::fs::write(planted.join("gitdir"), format!("{}\n", wt.join(".git").display())).unwrap();
+    std::fs::copy(admin.join("HEAD"), planted.join("HEAD")).unwrap();
+    format!("gitdir: s/../{}{}\n", "../".repeat(k), rest.display())
+}
+
+/// Code review round 4, B1: a `<symlink>/..` in the .git link is judged as git follows it - the
+/// path resolved through its links must be the path as written - so neither layout runs any git,
+/// and the planted fsmonitor never fires.
+fn a_dotdot_through_a_symlink_is_refused(nested: bool) {
+    let d = github_fixture();
+    let p = d.path();
+    let scratch = TempDir::new().unwrap();
+    let (gitp, log) = passthrough_git(scratch.path());
+    git(p, &["switch", "-q", "main"]);
+    let wt = if nested { p.join("wt") } else { scratch.path().canonicalize().unwrap().join("wt") };
+    git(p, &["worktree", "add", "-q", wt.to_str().unwrap(), "wu/e/a"]);
+    let admin = std::path::PathBuf::from(git(&wt, &["rev-parse", "--absolute-git-dir"]));
+    let marker = scratch.path().join("fsmonitor-fired");
+    let link = plant_dotdot(&wt, &admin, &marker);
+    std::fs::write(wt.join(".git"), &link).unwrap();
+    let t = refused_before_git(&wt, &gitp, &log, &link, "symbolic link");
+    let written = link.trim_end().trim_start_matches("gitdir: ");
+    assert!(t.contains(&format!("names {written},")), "the refusal shows the text git follows: {t}");
+    // W6 code review round 1: and where git really leads through the link, not the text's lexical reading
+    let real = std::fs::canonicalize(wt.join(written)).unwrap();
+    assert!(t.contains(&format!("which leads to {},", real.display())), "the refusal names the dir git reaches, {}: {t}", real.display());
+    assert!(!marker.exists(), "{link}: the planted fsmonitor fired");
+}
+
+#[test]
+fn keel_mr_refuses_a_dotdot_through_a_symlink_in_a_nested_worktrees_git_link() {
+    a_dotdot_through_a_symlink_is_refused(true);
+}
+
+#[test]
+fn keel_mr_refuses_a_dotdot_through_a_symlink_in_a_sibling_worktrees_git_link() {
+    a_dotdot_through_a_symlink_is_refused(false);
+}
+
+/// Code review round 3 (refuted entry 1, a pre-existing R50 hole): a symlinked `<git dir>/worktrees`
+/// sends git to whatever dir it names (its config, its hooks) while every link still looks as git
+/// makes it; R50 refuses any symbolic link in the admin dir's path.
+#[test]
+fn keel_mr_refuses_a_symlink_in_the_admin_dirs_path_and_runs_no_git() {
+    let d = github_fixture();
+    let p = d.path();
+    let scratch = TempDir::new().unwrap();
+    let (fake, log) = recording_git(scratch.path());
+    git(p, &["switch", "-q", "main"]);
+    let wt = scratch.path().canonicalize().unwrap().join("wt");
+    git(p, &["worktree", "add", "-q", wt.to_str().unwrap(), "wu/e/a"]);
+    let o = run_bounded(&wt, &["mr", "setup", "--as", "vu"], &fake);
+    assert!(!text(&o).contains("keel mr: refused"), "untouched: {}", text(&o));
+    let elsewhere = scratch.path().canonicalize().unwrap().join("planted/worktrees");
+    std::fs::create_dir_all(elsewhere.parent().unwrap()).unwrap();
+    std::fs::rename(p.join(".git/worktrees"), &elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, p.join(".git/worktrees")).unwrap();
+    refused_before_git(&wt, &fake, &log, "a symlinked <git dir>/worktrees", "symbolic link");
+}
+
+/// Code review rounds 1 and 2, R50: `keel mr` runs from a checkout's root only - the cwd holds a
+/// `.git` that is a directory or a regular file - and judges that `.git`; it never walks up as git
+/// does. Refused before any git: a subdirectory, an empty .git dir, a full or bare repository planted
+/// in the checkout. A linked worktree inside its own main checkout, run from its root, passes.
+#[test]
+fn keel_mr_runs_only_from_the_checkout_root_and_runs_no_git_elsewhere() {
+    let d = github_fixture();
+    let p = d.path();
+    let scratch = TempDir::new().unwrap();
+    let (fake, log) = recording_git(scratch.path());
+    let sub = p.join("src");
+    refused_before_git(&sub, &fake, &log, "a subdirectory", "cd to the worktree root");
+    let empty = sub.join("empty");
+    std::fs::create_dir_all(empty.join(".git")).unwrap();
+    refused_before_git(&empty, &fake, &log, "an empty .git dir", "not a repository");
+    git(&sub, &["init", "-q", "planted"]);
+    refused_before_git(&sub.join("planted"), &fake, &log, "a planted repository", "inside another checkout");
+    git(&sub, &["init", "-q", "--bare", "bare"]);
+    refused_before_git(&sub.join("bare"), &fake, &log, "a planted bare repository", "cd to the worktree root");
+    for x in ["empty", "planted", "bare"] {
+        std::fs::remove_dir_all(sub.join(x)).unwrap();
+    }
+    // a linked worktree inside its main checkout is the same repository: no refusal from its root
+    git(p, &["switch", "-q", "main"]);
+    let wt = p.join("wt");
+    git(p, &["worktree", "add", "-q", wt.to_str().unwrap(), "wu/e/a"]);
+    let o = run_bounded(&wt, &["mr", "setup", "--as", "vu"], &fake);
+    assert!(!text(&o).contains("keel mr: refused"), "a linked worktree in its main checkout: {}", text(&o));
 }
