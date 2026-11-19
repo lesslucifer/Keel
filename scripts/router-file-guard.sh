@@ -8,9 +8,8 @@
 #   Edit, Write, MultiEdit, NotebookEdit: allowed only on a path whose resolved form lies under the
 #     resolved worktree, and never on its .git (the link git follows, H2) or its .claude/settings.json
 #     and settings.local.json (loaded, hooks and all, by the next session there).
-#   Read: denied under <home>/.ssh, <home>/.claude/channels and <home>/.config/keel/router-gh (the
-#     router bot's GitHub App key, E-GHFLOW.W2): the sandbox's denyRead for the shell.
-#   Grep, Glob: denied when their path is, lies under, or contains one of those three directories.
+#   Read: denied under <home>/.ssh and <home>/.claude/channels (the sandbox's denyRead for the shell).
+#   Grep, Glob: denied when their path is, lies under, or contains one of those two directories.
 #   Every other tool passes untouched.
 # Resolution: every existing component is resolved (symlinks too: a link in the worktree to a file
 # outside it is judged by its target); a path that does not exist yet is judged by its deepest
@@ -94,7 +93,7 @@ if [ "$kind" = edit ]; then
   fi
   exit 0
 fi
-for d in "$home/.ssh" "$home/.claude/channels" "$home/.config/keel/router-gh"; do
+for d in "$home/.ssh" "$home/.claude/channels"; do
   d=$(canon "$d") || deny "$tool: $d cannot be resolved"
   within_ci "$c" "$d" && deny "$tool of $p: $d is not readable to a worker"
   [ "$kind" = search ] && within_ci "$d" "$c" && deny "$tool over $p: it contains $d, which is not readable to a worker"
