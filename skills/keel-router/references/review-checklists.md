@@ -10,7 +10,7 @@ Ported from Trawler's `trawler-router/references/review-checklists.md`
 "(Trawler: …)" text is the evidence, the hunt above it is the generic rule.
 Trawler's A–C were about its own code (desktop-app quit paths, a native login-item
 crate, the updater signing key); here they are generalised. D–F are generic as
-they were.
+they were. G is Keel's own (E-DOCSPLIT close): its ★ evidence names Keel.
 
 **A. Exit / shutdown paths** (anything that quits, restarts or tears down)
 - ★ Every exit path runs the same safety check (Trawler: a failed window reopen exited without restoring the system proxy; a stale quit flag quit later).
@@ -44,3 +44,11 @@ they were.
 **F. Back-merges** (main into an epic, an epic into a WU)
 - ★ Per conflicted file, compare the result with both parents (Trawler: a dropped guard; `lessons.md` B9).
 - No duplicated rows in index docs (decisions, use cases); the merge message's claims match its content.
+
+**G. Skills and rule files** (`skills/`, `.claude/skills/`, `AGENTS.md`, `templates/`: rule-bearing, outside `code_paths`)
+- ★ Every command, flag, field, check id and behaviour a skill names exists in the code as written; read the source, not another skill (Keel: E-DOCSPLIT.W4's review found keel-workflow and keel-plan silent that a typed `--report` is taken as named, `src/mr.rs · pick_report`).
+- ★ A rule says where its fact goes, in the words of the doc it governs (Keel: keel-write rule 3 sent a check id to "the work list" instead of the data file).
+- No term, tag or field the change retired is still taught: grep both copies and `AGENTS.md` for the old names.
+- `skills/` and `.claude/skills/` are byte-equal (`diff -rq`, only `project-router` local); every shipped file is embedded by `src/init.rs`, and `keel init` in a temp repo writes it.
+- An example a skill ships passes the check that skill teaches (`keel verify-doc` on the example pair).
+- Two skills that state one rule state it the same way; the rule lives in one, the other links to it.

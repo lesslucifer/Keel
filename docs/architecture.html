@@ -149,7 +149,7 @@ flowchart LR
 <p>An epic closes on its own branch, then lands on main. The code enforces the evidence at each step; the owner signs, merges and pushes. In full: skill <code>keel-workflow</code> §2, and skill <code>keel-distill</code> for distilling.</p>
 <ol data-c="close-steps">
   <li>Merge main in if it moved.</li>
-  <li>Distil each T3 doc into T1/T2, then <code>git rm</code> it; a copy stays in the ignored <code>docs/.archive/</code>.</li>
+  <li>Distil each T3 doc into T1/T2, then <code>git rm</code> it, a page and its data file together; a copy stays in the ignored <code>docs/.archive/</code>.</li>
   <li>On that archive commit, write the epic's test (e2e) and doc notes, with no <code>--target</code>.</li>
   <li>Write the epic result pair into <code>docs/.archive/</code>.</li>
   <li><code>keel preflight epic</code>, the epic code review, then <code>keel verify-dod epic</code>: only check 8 is red.</li>
