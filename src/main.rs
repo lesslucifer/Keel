@@ -139,7 +139,33 @@ fn load_config_committed(repo: &Path) -> Result<Config, String> {
     if bootstrap {
         eprintln!("keel: HEAD commits no .keel/config.toml - bootstrap: the staged .keel/config.toml judges this commit");
     }
-    toml::from_str(&text).map_err(|e| format!("keel: bad .keel/config.toml {}: {e}", if bootstrap { "staged" } else { "at HEAD" }))
+    toml::from_str(&text).map_err(|e| {
+        if bootstrap {
+            format!("keel: bad .keel/config.toml staged: {e}\n  fix -> correct .keel/config.toml, git add it, then commit again")
+        } else {
+            format!("keel: bad .keel/config.toml at HEAD: {e}\n  fix -> {HEAD_CONFIG_FIX}")
+        }
+    })
+}
+
+/// How to get past a HEAD whose rules file does not parse: nothing at the commit level can judge
+/// a commit by it, the repair included.
+const HEAD_CONFIG_FIX: &str = "undo the commit that broke it (git reset --soft HEAD~1), correct .keel/config.toml and commit again; on a branch that commit is already on, the owner lands the repaired file by hand outside the hooks (the recovery DEC-47 describes)";
+
+/// A commit must not land a rules file keel cannot read: every later commit would be judged by it.
+/// `staged` is the index's `.keel/config.toml` when this commit changes it (None: unchanged or deleted).
+fn staged_config_refusal(staged: Option<&str>) -> Option<String> {
+    let e = toml::from_str::<Config>(staged?).err()?;
+    Some(format!(
+        "keel: commit refused - the staged .keel/config.toml does not parse, and every later commit would be judged by it: {e}\n  fix -> correct .keel/config.toml, git add it, then commit again"
+    ))
+}
+
+/// `staged_config_refusal` for the commit being made, read from the index git is committing.
+fn check_staged_config(repo: &Path) -> Result<(), String> {
+    let changed = !git(repo, &["diff", "--cached", "--name-only", "--no-renames", "-z", "--", ".keel/config.toml"], &[])?.is_empty();
+    let staged = if changed { git(repo, &["show", ":.keel/config.toml"], &[]).ok() } else { None };
+    staged_config_refusal(staged.as_deref()).map_or(Ok(()), Err)
 }
 
 /// `git rev-parse --local-env-vars`: what git exports to its hooks to pin a repository (absolute
@@ -671,7 +697,11 @@ fn run() -> Result<i32, String> {
             check(&repo, &cfg)
         }
         // The commit level is judged by HEAD's committed rules, never the folder's file (E-KEELFIX.W1).
-        ["hook", "pre-commit"] => pre_commit(&repo, &load_config_committed(&repo)?),
+        ["hook", "pre-commit"] => {
+            let cfg = load_config_committed(&repo)?;
+            check_staged_config(&repo)?;
+            pre_commit(&repo, &cfg)
+        }
         ["hook", "commit-msg", file] => mr::commit_msg(&repo, &load_config_committed(&repo)?, file),
         ["hook", "pre-push", remote, ..] => pre_push(&repo, &load_config(&repo)?, remote),
         ["notes", "write", kind, rest @ ..] => notes::write(&repo, &load_config(&repo)?, kind, rest),
@@ -679,7 +709,11 @@ fn run() -> Result<i32, String> {
         ["verify-dod", "hook"] => gate::verify_dod(&repo, &load_config_at_head(&repo)?, &["hook"]),
         ["verify-dod", rest @ ..] => gate::verify_dod(&repo, &load_config(&repo)?, rest),
         ["preflight", rest @ ..] => gate::preflight_cmd(&repo, &load_config(&repo)?, rest),
-        ["mr", "commit", ..] => mr::run(&repo, &load_config_committed(&repo)?, &args[1..]),
+        ["mr", "commit", ..] => {
+            let cfg = load_config_committed(&repo)?;
+            check_staged_config(&repo)?;
+            mr::run(&repo, &cfg, &args[1..])
+        }
         ["mr", rest @ ..] => mr::run(&repo, &load_config(&repo)?, rest),
         _ => Err("usage: keel <init [-f] | lint | check | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install [--force] | notes write <test|doc|cr>>".into()),
     }
@@ -821,6 +855,17 @@ mod tests {
         assert_eq!(super::committed_config(None, t("staged")), Ok(("staged".to_string(), true)), "staged alone is a bootstrap");
         let e = super::committed_config(None, None).unwrap_err();
         assert!(e.contains("commit refused") && e.contains("fix -> git add .keel/config.toml"), "{e}");
+    }
+
+    #[test]
+    fn a_staged_rules_file_is_refused_only_when_it_does_not_parse() {
+        let good = "[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n";
+        assert_eq!(super::staged_config_refusal(None), None, "unchanged or deleted: nothing to parse");
+        assert_eq!(super::staged_config_refusal(Some(good)), None);
+        for bad in [good.replace("[branches]", "[branches"), good.replace("[docs]\nroot = \"docs/\"\n", ""), "lint = ".into()] {
+            let e = super::staged_config_refusal(Some(&bad)).unwrap_or_else(|| panic!("{bad:?} passed"));
+            assert!(e.contains("does not parse") && e.contains("fix -> "), "{e}");
+        }
     }
 
     #[test]
