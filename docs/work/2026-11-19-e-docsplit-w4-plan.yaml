@@ -1,0 +1,209 @@
+artifact: wu-plan
+status: ready
+id: E-DOCSPLIT.W4
+epic: E-DOCSPLIT
+title: The skills and the rule file teach the split
+date: "2026-11-19"
+page: 2026-11-19-e-docsplit-w4-plan.html
+requirement: >-
+  After W4, keel-plan, keel-write, keel-distill, keel-workflow, keel-router's
+  references/commands.md and references/brief-skeleton.md, AGENTS.md and
+  templates/AGENTS.md teach DEC-69's split (a plan or result is a page plus the
+  YAML data file beside it; the check reads the data file; every page kind has a
+  word cap; the sign-off finds the report through the data file; a pair archives
+  as one doc; use cases, backlog and the indexes are data files) and none of
+  them names data-artifact, data-status, data-item or data-wu; keel init writes
+  keel-write's example as a pair, references/example.html and
+  references/example.yaml, that keel verify-doc passes; skills/keel-* and
+  .claude/skills/keel-* stay byte-equal.
+maps-to: >-
+  E-DOCSPLIT.W4 (epic plan, W4 block; open point 6 - the owner's approval of
+  the epic plan is the explicit request for the AGENTS.md change); DEC-69; the
+  follow-ups W2 and W3 gave W4 (keel-plan and keel-write teach the pair, the
+  example becomes a pair with its parts' heading marked work, keel-plan's
+  report-by-data-artifact line); W5's carried edit (project-router line 107)
+  and its flag on the knowledge-base wording (keel-distill, "index-first"). No
+  use case changes.
+owner-changes:
+  - when: An agent writes a plan or result
+    today: The skills teach page tags the check no longer reads
+    after: They teach the short page and the data file beside it, field by field
+  - when: An agent copies the writing example
+    today: An epic plan in the old tags
+    after: An example pair the check passes
+  - when: A new project gets AGENTS.md
+    today: '"All project docs are HTML"'
+    after: Pages are HTML; a plan or result has a YAML data file beside it
+expected:
+  - keel init in a temp repo writes .claude/skills/keel-write/references/example.html and example.yaml; both, copied into docs/work/ under their own names, pass keel verify-doc, and the page carries no checklist tag.
+  - No file under skills/ or .claude/skills/keel-*, nor AGENTS.md or templates/AGENTS.md, names data-artifact, data-status, data-item or data-wu; keel-plan names every field src/verify_doc.rs requires.
+  - skills/keel-* and .claude/skills/keel-* are byte-equal; AGENTS.md equals templates/AGENTS.md; .claude/skills/project-router/SKILL.md names backlog D2 in docs/backlog/dsh.yaml.
+  - cargo test and keel check green on the W4 tip; keel verify-doc over all docs green.
+test-plan:
+  unit: >-
+    src/init.rs - the embedded list (SKILLS) names each path once and holds
+    both files of keel-write's example pair; the example's data file parses
+    (yaml-rust2) as a ready epic-plan whose page is example.html.
+    src/verify_doc.rs - every field the check requires (COMMON, EPIC_PLAN,
+    WU_PLAN, WU_RESULT, EPIC_RESULT, WU_SUB, TEST_LEVELS) is named in
+    keel-plan's text (include_str!), so a field added to the check without the
+    skill is red.
+  integration: >-
+    tests/suite/init.rs - writing_skill_ships_with_a_passing_example_and_is_pointed_to
+    rewritten: keel init in a temp repo writes example.html and example.yaml;
+    both copied into docs/work/ are green under keel verify-doc; the page has
+    no data-item, data-wu or data-artifact attribute; the data file with its
+    intent field removed is red, naming it. A new test: no skill file keel init
+    writes, and not the AGENTS.md it writes, names an old page tag, and the
+    installed AGENTS.md no longer says all docs are HTML.
+    embedding_is_complete_and_prefixed passes with the new file.
+    tests/suite/verify_doc.rs - every_doc_in_docs_and_the_writing_example_pass_the_checks
+    copies the example pair, not the page alone.
+  e2e: >-
+    The E-DOCSTYLE epic test (tests/suite/verify_doc.rs
+    epic_the_installed_hooks_refuse_each_doc_fault_and_pass_the_fixed_plan)
+    drives the installed hooks over the installed example pair as shipped - no
+    heading rewrite, no generated data file - then its three faults as today.
+    tests/suite/docsplit_e2e.rs (W2, W3) is unchanged. No waiver.
+  checks:
+    - git grep over skills/, .claude/skills/, AGENTS.md and templates/AGENTS.md for the four old tag names - none
+    - diff -r skills .claude/skills (project-router aside) - none
+    - keel verify-doc over all docs, and on the example pair copied into a scratch docs/work/
+    - the pinned skill phrases still hold (tests/suite/init.rs, tests/suite/router.rs)
+details:
+  files:
+    - path: skills/keel-plan/SKILL.md
+      gains: >-
+        Description: a page for the owner plus a YAML data file beside it that
+        keel verify-doc checks. §1 the four roles, set by the data file's
+        artifact (a list for a one-part epic); a pair is <stem>.html and
+        <stem>.yaml. §2 "The data file" replaces the markup contract - the
+        common fields (artifact, status, id, epic for WU roles, title, date as
+        a quoted string, page; owner-changes where a role needs it; details
+        free and never checked), draft silent, an unknown field red, one YAML
+        document, no anchors or aliases. §3 the fields per role, as the check
+        names them (wu-summaries entries with wu, wu-summary, wu-maps-to,
+        wu-expected, wu-deps; test-plan with unit, integration, e2e). The page
+        shapes per role from DEC-69 and their caps - epic plan 700 with a top
+        of 300 ending at the heading id="work", WU plan 500, WU result 500,
+        epic result 700, a one-part epic the epic caps - and a page with no
+        data file checked as a plain page under its [docs.caps] path cap. §4
+        what the check reads now; the sign-off finds the report by its data
+        file's artifact and attests the page's bytes; --report names the page.
+        §5 writing one - the data file first, as a draft; then the page; then
+        both ready.
+      loses: >-
+        The markup contract (data-artifact, data-status, data-item, data-wu) and
+        "the tag is the contract"; the top counted to the first data-wu block;
+        the report found by a page tag.
+      keeps: >-
+        The phrases tests pin - "problem lines", "no substitute", "trigger is
+        the write"; no host or hook name; "skill `keel-write`"; a one-line
+        description under 1,024 characters; no bare skill names.
+    - path: skills/keel-write/SKILL.md
+      gains: >-
+        The page is for the person, the data file for the agent: exact facts
+        (files, functions, tests, evidence) go to the data file. Rule 1 names
+        the cap per page kind, and a decision record's about 250 words. "The
+        order of a plan" becomes the page shapes - epic plan, WU plan, result.
+        A use case or backlog row is a set of data fields, each written by
+        rules 1 - 3. Self-check - a file list, function name, test list or tag
+        on a page moves to the data file. The example section names both files
+        and says to copy them under one stem.
+      loses: '"Skill keel-plan says which tags a plan needs. They go wherever the content is"; Details as a page section for files and tests.'
+    - path: skills/keel-write/references/example.html
+      becomes: >-
+        The E-CRCAP plan rewritten in DEC-69's epic plan page shape - the
+        problem, what changes for you, an example, terms, the parts in build
+        order under h2 id="work" (a diagram and a table), what you decide, how
+        you'll know, not in this epic. No checklist tags, no data-artifact or
+        data-status; under 700 words, top under 300. Its name stays (tests and
+        three skills cite references/example.html).
+    - path: skills/keel-write/references/example.yaml
+      becomes: "New: the example's data file - a ready epic-plan, page: example.html, every field the role requires."
+    - path: skills/keel-distill/SKILL.md
+      gains: >-
+        A plan or result is a pair and one doc for tiers and lineage - archive
+        both files, one --distill naming either covers both, a pair archived by
+        half is red and fixed in the archive commit itself (W3). The KB table -
+        decisions are current truth (an amendment is folded into the choice; a
+        record replaced whole keeps "DEC-n · title · replaced by DEC-m"; a file
+        over its 5,000-word cap splits by topic); use cases and the backlog are
+        YAML data files with no page (open backlog rows in full, a closed row
+        one line); each KB's index is *-index.yaml. Index-first reading stays.
+      loses: '"exactly one *-index.html"; decisions "append-only, superseded"; backlog rows "struck when an epic absorbs them".'
+    - path: skills/keel-workflow/SKILL.md
+      gains: >-
+        The result report is the page whose data file's artifact carries the
+        level's role; a page with no data file is never one; --report names the
+        page and a .yaml is refused. The collapse rule names the artifact list.
+        Step 1 commits the result pair. Epic close - the epic result pair in
+        docs/.archive/, one --distill per pair. doc/v1 and check 6 - a pair
+        archived by half is red. The hook row - a write of a page or a data
+        file.
+      loses: The "root data-artifact" wording (lines 71, 108).
+    - path: skills/keel-router/references/commands.md
+      becomes: "The --report paragraph: the role is the data file's artifact; --report names the page."
+    - path: skills/keel-router/references/brief-skeleton.md
+      becomes: "The docs line: a plan or result is a page plus its data file (skill keel-plan). The epic-close row: the epic result pair in docs/.archive/; --report names its page."
+    - path: AGENTS.md and templates/AGENTS.md
+      becomes: >-
+        Documentation, its first sentence only (T0; open point 6): "Pages a
+        person reads are HTML via the **htmldoc** skill, never markdown (this
+        file and skill files are infrastructure); a plan or result also has a
+        YAML data file beside it (skill `keel-plan`), and use cases, the
+        backlog and the indexes are data files alone." The page shows it
+        without the parentheses.
+        "Index-first" stays - the indexes are still read first. Both files stay
+        identical (keel init over Keel's own tree must stay a no-op).
+    - path: .claude/skills/keel-* (the files above)
+      becomes: Byte copies of skills/keel-*, made by the owner's command.
+    - path: .claude/skills/project-router/SKILL.md
+      becomes: 'Line 107: "lands (`docs/backlog/dsh.html#d2`)" becomes "lands (backlog D2 in `docs/backlog/dsh.yaml`)" (W5 deviations, first entry).'
+    - path: src/init.rs
+      becomes: SKILLS gains keel-write/references/example.yaml; the unit test above.
+    - path: src/verify_doc.rs
+      becomes: The unit test above only; no behaviour change.
+    - path: tests/suite/init.rs, tests/suite/verify_doc.rs
+      becomes: As test-plan says.
+    - path: docs/work/2026-11-19-e-docsplit-w4-result.html and .yaml
+      becomes: >-
+        The result pair. Until the epic merges into main, the sign-off runs
+        main's keel and finds the report by the page tag, so the page keeps
+        data-artifact="wu-result", data-status and its data-item tags. W4 edits
+        no other WU's result page.
+    - path: unchanged
+      becomes: keel-code-review, keel-router SKILL.md and its other references (they say "result report" generically); templates/config.toml (its [mr] report comment is W3's task).
+  writer:
+    worker: skills/, templates/AGENTS.md, AGENTS.md, src/, tests/, the result pair - all writable in the worker sandbox (probed 2026-11-19).
+    owner: >-
+      .claude/skills/ - the worker sandbox refuses every write there
+      ("touch: .claude/skills/keel-write/references/.w4probe: Operation not
+      permitted"), so the owner copies the keel-* files and edits the
+      project-router line himself.
+  route: >-
+    One owner keel mr commit on wu/E-DOCSPLIT/w4-skills, not a task. Why - the
+    example pair must land with src/init.rs (include_str! needs the file) and
+    the tests that pin the old example, or every tree between is red, and
+    pre-push runs keel check (cargo test) on the pushed tip; a task may carry
+    no code path (DEC-67). The mirror tests also need .claude/skills/ and
+    AGENTS.md in the same tree as skills/ and templates/AGENTS.md. A task could
+    carry the skill text alone, with the owner's copy committed on it, and the
+    owner would still run a second commit for the example - three owner steps,
+    not one. AGENTS.md is T0: its own text says it lands as a keel mr commit.
+  order:
+    - W3 merges into epic/E-DOCSPLIT; the worker merges the epic tip in (--no-ff).
+    - The worker edits every worker-writable file, then runs cargo test - only tests that compare the two skill copies may be red (such as init.rs router_skill_carries_the_dsh_transport_and_the_template_its_slots and self_hosting_clone_is_gated_and_init_is_a_noop), each named in its report; keel verify-doc on the example pair in a scratch docs/work/; the tag grep.
+    - The worker stages exactly its files (git add) and commits nothing; it reports the staged list.
+    - "The router stages the owner's command, run in the W4 worktree: cp -R skills/ .claude/skills/ && perl -pi -e 's{\\(`docs/backlog/dsh\\.html#d2`\\)}{(backlog D2 in `docs/backlog/dsh.yaml`)}' .claude/skills/project-router/SKILL.md && git add .claude/skills && keel mr commit -m \"docs(E-DOCSPLIT.W4): the skills and the rule file teach the split\" --as vuluu. The owner reads git diff --cached first."
+    - A fresh worker on the new tip - cargo test, keel check, diff -r, the tag grep, all green; then the result pair, notes, preflight; a fresh review worker writes the cr note (the code paths are src/init.rs, src/verify_doc.rs and the tests).
+    - W4 reaches the epic as a pull request; the owner's approval signs it; auto-merge merges it.
+  fix-round: A change the owner or the review asks for in rule-bearing text is staged by the worker the same way and committed by the owner (with the .claude/skills copy when a skill changes).
+  overlap:
+    - E-DOCSPLIT.W3 (wu/E-DOCSPLIT/w3-pair, not merged) - W4 teaches its behaviour, so W4's build starts after W3 is in the epic; W3's task owns templates/config.toml's [mr] report comment.
+    - E-DOCSPLIT.W6 slims architecture and install, which point at the skills; no shared file.
+    - E-GHSETUP may edit templates/ or AGENTS.md; whichever lands second carries the other's change, AGENTS.md and its template kept identical.
+  distillation: >-
+    Nothing citable - DEC-69 records the rule and the amendments on DEC-10,
+    DEC-27, DEC-40 and DEC-52 are W2's and W3's; W4 teaches it. UC-INIT-1
+    already says init writes every embedded skill file.

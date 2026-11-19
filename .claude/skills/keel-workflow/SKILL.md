@@ -68,7 +68,8 @@ skeleton, hooks), then follow the bootstrap and `keel mr setup` lines it prints.
   tip stays addressable from main.
 - **Collapse rule**: a small epic may be one WU, a small WU one commit — every
   gate is still met explicitly, with all notes written. A one-WU epic may
-  combine its plans (`data-artifact="epic-plan wu-plan"`) and its results.
+  combine its plans (its data file's `artifact: [epic-plan, wu-plan]`) and
+  its results (`artifact: [epic-result, wu-result]`).
 - **Code vs docs/infra**: a path is code when it starts with one of
   `code_paths` (every path, when the list is empty). A diff touching no code path
   is **exempt** from test, cr and doc evidence — never from the human sign-off
@@ -86,7 +87,7 @@ preference:
 
 | # | Step | Command |
 |---|---|---|
-| 1 | the work, its tests, its docs, the result report (skill `keel-plan`) — all committed | — |
+| 1 | the work, its tests, its docs, the result report — its page and data file (skill `keel-plan`) — all committed | — |
 | 2 | test + doc notes on the tip | `keel notes write test < judgment.json` · `keel notes write doc` |
 | 3 | preflight, then the code review → `cr/v1` PASS on the code paths, round by round on the schedule (skill `keel-code-review` §5); or the human waives it at step 5 (§5) | `keel preflight wu <tip>` · skill `keel-code-review` |
 | 4 | check: red **only** on `8·manual-review` (and on `1·notes` for the missing cr note, and the review's checks, when the human will waive the review at step 5, or approve over it on GitHub, §5) | `keel verify-dod wu <tip>` |
@@ -105,14 +106,19 @@ for an epic unless its result doc is committed in the epic's diff), print it,
 stop. Never stage `--waive-review`, `--confirm-waiver` or `--accept-waiver`:
 only the human types them, after reading what the sign-off shows (§5–§6).
 
-**The result report** is the doc whose root `data-artifact` carries the level's
-role (`wu-result`, `epic-result`; a collapsed doc counts for both), whatever its
-file name. `[mr] report` in the target's committed `.keel/config.toml` decides
+**The result report** is the page whose data file's `artifact` carries the
+level's role (`wu-result`, `epic-result`; a collapsed doc counts for both),
+whatever its file name; a page with no data file is never one. The sign-off
+attests the page's bytes, the thing the human reads; the data file is in the
+signed diff (a WU's; an epic's sits untracked beside its page). `--report`
+names the page; a `.yaml` is refused. A typed `--report` is taken as named, so
+name the page whose data file carries the level's result role; the search, the
+approval path and `keel notes write report` check the data file. `[mr] report` in the target's committed `.keel/config.toml` decides
 whether the sign-off must attest one: `required` (default) · `optional` ·
 `none`. `required` asks for one only when the range changes code (the gate's
-docs-only test, at both levels): a WU or epic with no code signs without one. `keel mr confirm` finds it among the html docs under `docs.root`
-changed in the range and present at the tip — never an untracked or archived
-file — and refuses, writing nothing, when a required one is missing (pass
+docs-only test, at both levels): a WU or epic with no code signs without one. `keel mr confirm` finds it among the pages under `docs.root`
+changed in the range (by the page or its data file), with both files present
+at the tip — never an untracked or archived file — and refuses, writing nothing, when a required one is missing (pass
 `--report <path>`), when several match (it lists them: pass `--report`), or on
 `--report` under `none`.
 
@@ -123,10 +129,11 @@ cannot tell a real destination from an invented one.
 
 **Epic close**: merge main into the epic if it moved → distill (skill
 `distill`) → archive commit (`git rm` every T3 doc, keep the files in
-`docs/.archive/`) with `keel notes write doc --distill …` → epic result report
-in `docs/.archive/` → epic test note (e2e) → `keel preflight epic <tip>` →
+`docs/.archive/`, a page and its data file together) with
+`keel notes write doc --distill …` (one per pair) → epic result report, its
+page and data file, in `docs/.archive/` → epic test note (e2e) → `keel preflight epic <tip>` →
 epic-scope review vs main → `keel verify-dod epic <tip>` → the human runs
-`keel mr confirm epic <tip> --as <id> --report docs/.archive/<the epic-result doc>`
+`keel mr confirm epic <tip> --as <id> --report docs/.archive/<the epic-result page>`
 → the human merges into main and pushes. (An epic sign-off passes
 `--report <path>` unless its result doc is committed in the epic's diff.)
 
@@ -139,7 +146,7 @@ note between tips is a bypass: always use the writer.
 | Note | Proves | Written by |
 |---|---|---|
 | `test/v1` | per layer (`unit`, `integration`, `e2e`): `count`, `covers`, `files`, `languages` — or `waived` | `keel notes write test` reads the judgment on stdin; counts come from the named files at the tip via `tests.adapter` (rust, ts, python, go, regex), never typed |
-| `doc/v1` | every changed doc (under `docs.root`, or T0) listed with its tier; archived T3 docs carry `distilled_to` | `keel notes write doc [--distill <t3>=<doc>[,<doc>] \| <t3>=none: <why>]` |
+| `doc/v1` | every changed doc (under `docs.root`, or T0) listed with its tier; archived T3 docs carry `distilled_to` (a page and its data file share one `--distill`) | `keel notes write doc [--distill <t3>=<doc>[,<doc>] \| <t3>=none: <why>]` |
 | `cr/v1` | an independent review judged exactly this diff's code paths: `verdict`, `blockers`, `importants`, `code_diff_hash`, `round` and `scope` (`full`, or `since <sha>`: from round 3 a round reviews only the last fix); optional `walk_waivers` — or a **fix-PASS**: a PASS written on a fix with no reviewers, with `fixes` (the reviewed commit), `round` (the round it answers), `fix_diff_hash` and `answers` — or no review passed and it was waived: `verdict` `WAIVED` + `waiver` (the reason), the counts left open, the same `code_diff_hash`, and `unreviewed: true` when no review ran (its counts of 0 then mean nothing). Every form binds the whole range's code | the `keel-code-review` skill, via `keel notes write cr --verdict PASS\|FAIL` (a fix-PASS: `--verdict PASS --fixes <commit>`); a waiver by the human's `keel mr confirm --waive-review`, or the review's cap (§5). The writer takes no `--reason` |
 | `mr/v1` | a listed human attested this tip: `signer`, `tier`, `change_hash`, `report` + `report_hash` when a report is attested, `waiver_hash` when a review waiver is accepted, `sig` when key-backed (payload `keel-mr/v2`; hashes `sha256:<hex>`); by approval: `review` (the GitHub review it copies) and, when it signed over something, `covers` (`review`: the review's state, `cr`: the cr note's hash, `roster`: the lines the range adds and removes) | the human: `keel mr confirm`, or his approval of the pull request's head on GitHub (the sign-off writer, §5) |
 | `dod/v1` | the gate ran green here; names the attested `report` + `report_hash`, if any, and `review: WAIVED` + `waiver` when the tip's review was waived, or `review: COVERED` + `waiver: covered by the approval of <id> (review <n>)` when an approval signed over a review that did not pass | `keel verify-dod` on a green, non-exempt wu/epic, only |
@@ -185,7 +192,7 @@ keel lint                               # check.lint only
 | 3 | `3·review`: `cr/v1` verdict PASS, or WAIVED with a reason — printed `WAIVED 3·review: <reason>`, and by the epic walk for a waived WU. On a tip an approval signed (check 8 passes on a github-tier note), checks 1 (the cr note), 3, 4 and 5 are covered whatever the review says, and 2·manifest when only the cr note names another tip, printed `WAIVED <check>: … covered by the approval of <id> (review <n>)`; the walk and pre-push take a WU's the same way; a typed sign-off covers nothing. On GitHub `keel/gate` leaves the review to the sign-off, as it leaves check 8 | wu, epic |
 | 4 | `4·review-base`: review base = current merge-base | wu, epic |
 | 5 | `5·diff-binding`: `code_diff_hash` = the code-path diff recomputed now | wu, epic |
-| 6 | `6·doc-note`: `doc/v1` lists exactly the changed docs with their `docs.tiers` tier; archived T3 docs carry lineage to tracked T1/T2 docs; at an epic tip nothing T3 (or tier-less) is tracked under `docs.root` | all |
+| 6 | `6·doc-note`: `doc/v1` lists exactly the changed docs with their `docs.tiers` tier; archived T3 docs carry lineage to tracked T1/T2 docs; a pair archived by half (one file still tracked) is red; at an epic tip nothing T3 (or tier-less) is tracked under `docs.root` | all |
 | 7 | `7·walk`: every first-parent seam since the base passes its own gate (merges as WUs, plain commits as standalone); back-merges skipped; octopus refused. A plain commit that changes no code and carries **epic-range** notes (every test or doc note on it names the epic's base — where the branch left main — and that base is not the commit's parent: the archive commit) is judged on them over the epic: checks 1, 2 (e2e layer), 6 without the tracked-doc layout. The first commit on an epic, whose parent is that base, is judged as a commit. A code commit stays a commit: a review fix buried by a later fix needs its own notes or a walk waiver | epic |
 | 8 | `8·manual-review`: a valid `mr/v1` from a signer in the target's committed `.keel/mr-allowed`, bound to tip, base, level, diff, the attested report's bytes (re-hashed whatever the policy) and the accepted review waiver (`waiver_hash`); no report under `[mr] report = "required"` is red; signature verified for key-backed signers. Never exempt, never waivable, boundary-only (the walk never re-judges a seam's sign-off) | wu, epic |
 
@@ -306,7 +313,7 @@ off: `keel preflight` and `keel verify-dod wu|epic` are red on `0·hooks`,
 | `pre-merge-commit` | `keel verify-dod hook`, judged by the target's **committed** `.keel/config.toml`: into `epic/*` ⇒ wu gate, into main ⇒ epic gate then `keel check` on the merged tree; other targets ungated; a back-merge of landed history into an epic passes; an octopus or an unknowable merge head (`git pull`) is refused — fetch, then `git merge --no-ff <branch>` |
 | `pre-push` | `keel check` on every pushed tree (clean HEAD in place, others in a scratch worktree) · `verify-dod range` on main/`epic/*` updates (on an epic branch: commits already on main skipped; a plain commit with epic-range notes judged on them over the epic, like check 7's archive commit — inside the range only when it changes no code, as the pushed tip even when it changes code; review and sign-off stay at the merge into main) · pushes `refs/notes/*` |
 | `post-checkout` | heals `merge.ff=false` · copies `.gitworktreecopy` entries into a new worktree |
-| `verify-doc-post` · `verify-doc-stop` | shell hooks: `keel verify-doc <path>` on each first-party write or edit of a doc, and `keel verify-doc` over all docs at turn end; a red doc feeds the problem lines back and the turn does not close until it is green (skill `keel-plan`) |
+| `verify-doc-post` · `verify-doc-stop` | shell hooks: `keel verify-doc <path>` on each first-party write or edit of a page or a data file, and `keel verify-doc` over all docs at turn end; a red doc feeds the problem lines back and the turn does not close until it is green (skill `keel-plan`) |
 | doc check · no shell hooks | a host plugin runs the same two checks at the same points: a red write returns failed with the problem lines, and at turn end the problems are steered back so the turn takes another step; exit 0 is silent, and a draft is silent |
 
 - **No substitute**: the doc check runs at the write, never at a review or a merge.

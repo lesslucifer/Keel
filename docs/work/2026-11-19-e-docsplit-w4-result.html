@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afe9f589f34851f0dfb2964" data-artifact="wu-result" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-DOCSPLIT.W4 result: the skills and the rule file teach the split</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-DOCSPLIT.W4 result · The skills and the rule file teach the split</h1>
+      <p>Agents now learn to write a short page and a data file. <code>keel init</code> ships an example pair the check passes.</p>
+      <div class="meta">Result · 2026-11-19 · T3 · Keel · per <a href="2026-11-19-e-docsplit-w4-plan.html">the W4 plan</a> · its data file sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="happened">What happened</h2>
+<p data-c="outcome" data-item="outcome"><b>Delivered.</b> The skills teach a page plus the data file beside it, field by field, and name no old page tag. The writing example is now a pair. <code>AGENTS.md</code> says a plan or result has a data file. It landed in your commit, as planned. A review of the skills then found two errors and seven small points; a second commit you run fixes them all.</p>
+
+<h2 id="checklist">Checklist</h2>
+<table data-c="checklist">
+  <thead><tr><th>The plan said to expect</th><th>Met?</th><th>Where to see it</th></tr></thead>
+  <tbody>
+    <tr><td><code>keel init</code> in an empty repo writes the example pair, and the check passes it</td><td>Yes</td><td>The example below</td></tr>
+    <tr><td>No skill names an old tag; <code>keel-plan</code> names every field the check needs</td><td>Yes</td><td>A search finds none; a unit test fails if a role's field is missing from that role's paragraph</td></tr>
+    <tr><td>The two skill copies match</td><td>Yes</td><td>Only the router's own project skill differs, as it should</td></tr>
+    <tr><td>All tests pass; the check over all docs is green</td><td>Yes</td><td>Run on your commit</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">The main case: a new project gets the example</h2>
+<ol data-c="example">
+  <li>An empty scratch repo runs <code>keel init</code>, through the built tool.</li>
+  <li>The writing skill arrives with both files: the example page and its data file.</li>
+  <li>Both, copied into the project's <code>docs/work/</code>, pass the check. The page carries no old tag.</li>
+  <li>With one required field removed from the data file, the check is red and names that field.</li>
+</ol>
+
+<h2 id="differences">Differences from the plan</h2>
+<ul data-c="deviations" data-item="deviations">
+  <li><b>The main case ran in its test, not by hand.</b> The hand run in a scratch repo was refused by the worker's permissions; the test takes the same steps.</li>
+  <li><b>A second commit of skill fixes,</b> after an independent review of the skills. The two errors: the writing rules still sent ids to a work list, and the skills did not say that a report you name yourself is taken as named. The example's Terms heading also became a main heading.</li>
+  <li><b>The code review's first round failed</b> on the field test: it pooled all roles, so a field moved between roles stayed green. It now checks each role's paragraph, from the list the check itself reads. Two commits fix it and four small points; no skill text changed.</li>
+  <li><b>The second round failed</b> on the same test: it kept its own copy of which list holds which entries. The check and the test now read one map. Two commits fix it and four small points.</li>
+  <li><b>The third round failed</b> on the check: it still picked each list's checker from a second map. One table now holds each list's entries and its checker. Three commits fix it and three small points.</li>
+</ul>
+
+<h2 id="left">What is left</h2>
+<ul data-c="follow-ups" data-item="follow-ups">
+  <li>This page keeps its old tags until the epic reaches main, because main's sign-off still reads them. They go at the epic close.</li>
+</ul>
+
+<h2 id="details">Details</h2>
+<p data-c="distillation" data-item="distillation">Nothing citable: DEC-69 holds the rule; W4 teaches it.</p>
+<p data-c="evidence" data-item="evidence">Commits from <code>f1388ac</code> (the plan) through <code>79d6409</code> and <code>b10946a</code> (your commits) to <code>2a21c62</code>, <code>a01378a</code> and <code>3e8fef5</code> (the round 3 fixes), then this update. The data file lists each commit, the tests and the checks.</p>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

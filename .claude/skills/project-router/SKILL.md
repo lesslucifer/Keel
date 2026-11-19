@@ -104,7 +104,7 @@ Keel facts change there, from that day's router session
 
 The guard (`scripts/router-guard.jq` run by `.claude/settings.json`) is Claude Code
 only; on DSH the keel-router skill is the only guard until the router guard plugin
-lands (`docs/backlog/dsh.html#d2`). Until then the router runs keel-router
+lands (backlog D2 in `docs/backlog/dsh.yaml`). Until then the router runs keel-router
 `references/checklists.md` START before its first call and WAKE on every wake.
 
 ## Never touch

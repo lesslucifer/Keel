@@ -1,0 +1,119 @@
+artifact: wu-result
+status: ready
+id: E-DOCSPLIT.W4
+epic: E-DOCSPLIT
+title: The skills and the rule file teach the split
+date: "2026-11-19"
+page: 2026-11-19-e-docsplit-w4-result.html
+outcome: >-
+  Delivered. keel-plan, keel-write, keel-distill, keel-workflow and
+  keel-router's references/commands.md and references/brief-skeleton.md teach
+  DEC-69's split - a plan or result is a page plus the YAML data file beside
+  it, the check reads the data file, every page kind has a word cap, the
+  sign-off finds the report through the data file, a pair archives as one doc,
+  use cases, the backlog and the indexes are data files. None of them, nor
+  AGENTS.md or templates/AGENTS.md, names data-artifact, data-status,
+  data-item or data-wu. keel-write's example is a pair (references/example.html
+  in the epic plan page shape, references/example.yaml a ready epic-plan) that
+  src/init.rs ships and keel verify-doc passes. skills/keel-* and
+  .claude/skills/keel-* are byte-equal; AGENTS.md equals its template;
+  project-router names backlog D2 in docs/backlog/dsh.yaml. All landed in the
+  owner's one keel mr commit 79d6409, as the plan routed it.
+deviations:
+  - what: The main case - keel init in a scratch repo, the example pair copied into docs/work/ and checked - ran through the integration test (tests/suite/init.rs writing_skill_ships_with_a_passing_example_and_is_pointed_to, through the built binary), not by hand.
+    why: The finishing worker's hand run of keel init in a mktemp scratch repo was denied by the session's permission classifier; the worker did not route around it. The test drives the same steps (keel init in a temp repo, the pair copied, keel verify-doc green, the data file without intent red naming it).
+  - what: A second owner keel mr commit of skill fixes after an independent skills review of 79d6409 (the owner chose "ok fix now", 2026-11-19).
+    why: >-
+      The review found two issues and seven nits, all fixed in skills/ and copied
+      to .claude/skills/ by the owner. I1 keel-write rule 3 sent the check id to
+      the work list - now the data file, or Details in any other doc. I2
+      keel-workflow and keel-plan did not say a typed --report is taken as named
+      (only a .yaml is refused; src/mr.rs pick_report), while the search, the
+      approval path and keel notes write report check the data file. N1 bare
+      keel verify-doc skips git-ignored files, so an archived epic result is
+      checked by path. N2 a one-part doc takes the epic id and has no epic
+      field. N3 the data file is in the signed diff for a WU; an epic's sits
+      untracked beside its page. N4 keel-distill's archive line drops the .yaml
+      for a page with no data file. N5 "every relative link (<a href>)". N6 a
+      decision file's 5,000 is its [docs.caps] path cap; a record's 250 is not
+      checked. N7 keel-write's self-check says "checklist markup", not "tag".
+      N8 example.html's Terms heading is an h2; the pair stays green, 465 of
+      700 words, top 216 of 300.
+  - what: Code review round 1 (the cr note on 135341e) was FAIL - two importants, four nits, all in src/ and tests/ - fixed in 1fb6b38 and 0b9fdc1.
+    why: >-
+      keel_plan_names_every_field_the_check_reads pooled every role's fields
+      into one hand-copied list, so a field moved between roles stayed green.
+      It now takes each role's checklist from role_fields(), the list fields()
+      reads, and wants it in that role's paragraph of keel-plan §3 (WU_SUB under
+      wu-summaries, TEST_LEVELS under test-plan); every other field
+      fields(&[role]) knows must be a §2 table row. The nits: the old-tag scan
+      and the AGENTS.md checks moved into embedding_is_complete_and_prefixed,
+      one list in one keel init; installed_skills_and_rule_file_name_no_old_page_tag
+      and the two narrower tag lists went. No skill text changed.
+  - what: Code review round 2 (the cr note on 9cd1ad4) was FAIL - one important, four nits, all in src/ and tests/ - fixed in 6054b32 and 85c2593.
+    why: >-
+      The field test kept its own map of which list field holds which entries,
+      a copy of check_doc's dispatch, so a new entry-checked list field stayed
+      green. list_entries() is now that one map: check_doc checks a field's
+      entries only when it names them and hands them to wu_summaries and
+      test_plan, and the test reads it. The nits: a role's §3 text ends at the
+      prose after it; the test scans back, so a field the skill teaches but the
+      check does not read is red; role_fields's comment says "the role's own
+      required checklist"; embedding_is_complete_and_prefixed's comment names
+      every check it makes. Behaviour is unchanged; no skill text changed.
+  - what: Code review round 3 (the cr note on f4cf9ba) was FAIL - one important, three nits, all in src/ and tests/ - fixed in 2a21c62, a01378a and 3e8fef5.
+    why: >-
+      check_doc still kept two maps keyed by field name, list_entries() for the
+      entries and a match for the checker, so a field could keep its entries
+      after its checker went and the field test still demanded them. One table,
+      LIST_FIELDS, now holds each list field with its entries and its checker;
+      check_doc calls through it, and the test reads its entries from it. The
+      nits: a one-part epic listed [wu-plan, epic-plan] names wu-summaries
+      problems first again, now pinned; the field test joins only a paragraph
+      that opens with one of the role's list fields; the init test's comment
+      names its two other checks. Behaviour is unchanged; no skill text changed.
+evidence:
+  commits:
+    - f1388ac the W4 plan and its data file
+    - 534d184 origin/epic/E-DOCSPLIT (55320fd, W3 and W5) merged in
+    - 79d6409 the owner's keel mr commit - the skills in both copies, AGENTS.md and its template, the example pair, src/init.rs, src/verify_doc.rs, tests (23 files)
+    - 6e173fb this result
+    - b10946a the owner's keel mr commit of the skills review fixes (skills/ and .claude/skills/, 10 files)
+    - 135341e this result after the skills review
+    - 1fb6b38 keel-plan's fields checked per role, from fields() (review round 1, both importants)
+    - 0b9fdc1 one old-tag scan in the one keel init that walks the skills (review round 1 nits)
+    - 9cd1ad4 this result after review round 1
+    - 6054b32 list_entries(), one map from a list field to its entries, read by the check and the field test (review round 2)
+    - 85c2593 embedding_is_complete_and_prefixed's doc comment (review round 2 nit)
+    - f4cf9ba this result after review round 2
+    - 2a21c62 LIST_FIELDS, one map from a list field to its entries and its checker; the old problem order, pinned (review round 3)
+    - a01378a taught() joins only a list field's paragraph (review round 3 nit)
+    - 3e8fef5 embedding_is_complete_and_prefixed's doc comment names all its checks (review round 3 nit)
+    - this result update
+  tests:
+    unit: src/init.rs the_skills_name_each_path_once_and_ship_the_example_pair; src/verify_doc.rs keel_plan_names_every_field_the_check_reads (per role, entries from LIST_FIELDS, both directions; mutation cases outcome into the WU plan, expected into the WU result, a field fields() adds outside a role's list, unit cut from the WU plan paragraph, a new entry-checked list field, a field named only in §3's closing prose, also when that prose opens with it in backticks, a field the check no longer reads); each_list_field_is_a_roles_field_listed_once_with_entries; a_one_part_epic_needs_both_roles_fields_and_only_matching_roles_share_a_doc (wu-summaries problems before test-plan's, in either artifact order)
+    integration: tests/suite/init.rs writing_skill_ships_with_a_passing_example_and_is_pointed_to (rewritten - keel init writes the pair, both green, no old tag on the page, intent removed is red), embedding_is_complete_and_prefixed (now also no old page tag in any file keel init writes, and the installed AGENTS.md checks), router_skill_carries_the_dsh_transport_and_the_template_its_slots, self_hosting_clone_is_gated_and_init_is_a_noop; tests/suite/verify_doc.rs every_doc_in_docs_and_the_writing_example_pass_the_checks (copies the pair)
+    e2e: tests/suite/verify_doc.rs epic_the_installed_hooks_refuse_each_doc_fault_and_pass_the_fixed_plan over the installed example pair as shipped; tests/suite/docsplit_e2e.rs unchanged and green. No waiver.
+    totals: on 3e8fef5, cargo test 154 unit, 541 suite passed, 10 ignored; cargo fmt --check and cargo clippy -D warnings clean; keel check green
+  checks:
+    - git grep -nE 'data-(artifact|status|item|wu)' -- skills .claude/skills AGENTS.md templates/AGENTS.md - no hits
+    - diff -rq skills .claude/skills - only "Only in .claude/skills - project-router"
+    - keel verify-doc, installed and ./target/debug/keel, over all docs - exit 0
+  docs:
+    - skills/keel-plan, keel-write (and references/example.html, example.yaml), keel-distill, keel-workflow SKILL.md; skills/keel-router/references/commands.md and brief-skeleton.md; the same under .claude/skills/
+    - .claude/skills/project-router/SKILL.md (the D2 line)
+    - AGENTS.md and templates/AGENTS.md (the documentation sentence)
+    - docs/work/2026-11-19-e-docsplit-w4-result.html and this data file
+distillation: >-
+  Nothing citable - DEC-69 records the rule; the amendments on DEC-10, DEC-27,
+  DEC-40 and DEC-52 are W2's and W3's; W4 teaches it. UC-INIT-1 already says
+  init writes every embedded skill file.
+follow-ups:
+  - item: The page keeps data-artifact, data-status and data-item until the epic merges into main, because main's keel finds the report by the page tag.
+    taken-by: E-DOCSPLIT epic close (the tags drop once main reads the data file)
+details:
+  route: >-
+    The worker sandbox cannot write .claude/skills/, so the owner copied the
+    skills, edited the project-router line and committed with keel mr commit;
+    this finishing worker wrote the result pair and the notes.
+  page-tags: The page carries data-artifact="wu-result", data-status="ready" and data-item tags for main's sign-off, as the plan's details say.

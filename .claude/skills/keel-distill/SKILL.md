@@ -39,17 +39,17 @@ defaults `keel init` writes:
 
 ## 2 · T2 knowledge bases
 
-Each KB directory holds topical files behind exactly one `*-index.html`, a
-pure routing table (topic file · id prefix · one-line scope · status) with no
-knowledge of its own. Read **index-first**: open only the relevant topic files,
-synthesise back into only those, never bulk-read a KB. Split a topic file when
-it outgrows one comfortable read.
+Each KB directory holds topical files behind exactly one `*-index.yaml`, a
+data file that routes (topic file · id prefix · one-line scope · status, and
+the next free id) with no knowledge of its own. Read **index-first**: open only
+the relevant topic files, synthesise back into only those, never bulk-read a
+KB.
 
-| KB | Entries | Lifecycle |
-|---|---|---|
-| `use-cases/` | `UC-<AREA>-<n>`: trigger, expected behaviour, edge cases, what counts as failure — contract-level | current truth: updated in place, superseded behaviour deleted |
-| `decisions/` | `DEC-<n>`: context, options, the choice, consequences | append-only: a reversal marks the old record *superseded by DEC-m* and adds a new one. Check here before "fixing" anything that looks deliberate |
-| `backlog/` | roadmap and deferred work | living: rows added when work is deferred, struck when an epic absorbs them |
+| KB | Files | Entries | Lifecycle |
+|---|---|---|---|
+| `use-cases/` | YAML data files, one per area; no page | `UC-<AREA>-<n>`: trigger, expected behaviour, edge cases, what counts as failure — contract-level, no build history | current truth: updated in place, superseded behaviour deleted |
+| `decisions/` | HTML pages, by topic | `DEC-<n>`: the choice, why, what was rejected; about 250 words | current truth: an amendment is folded into the choice; a record replaced whole keeps only "DEC-n · title · replaced by DEC-m". A file over its 5,000-word cap splits by topic. Check here before "fixing" anything that looks deliberate |
+| `backlog/` | YAML data files, one per area; no page | roadmap and deferred work | living: rows added when work is deferred; an open row in full, a closed row one line (its id, title and how it closed) |
 
 Ids are never reused or renumbered. Check every live branch before minting a
 new DEC number.
@@ -73,22 +73,28 @@ the process.
 ## 4 · Archiving a T3 doc
 
 WU plans and results stay tracked until the epic closes (a WU result must be at
-its WU tip for the sign-off). At epic close — or earlier for a finished scratch
+its WU tip for the sign-off). A plan or result is a **pair**, a page and the
+data file beside it (skill `keel-plan`), and one doc for tiers and lineage:
+archive both files together. At epic close — or earlier for a finished scratch
 doc:
 
 1. **Distill** per §3. Write the durable content into the T1/T2 targets and
    commit them; each target must be tracked at the tip that archives the doc.
 2. **Archive**: keep the file, drop it from git.
    ```sh
-   mkdir -p docs/.archive && cp docs/work/<doc>.html docs/.archive/ && git rm -q docs/work/<doc>.html
+   mkdir -p docs/.archive && cp docs/work/<doc>.html docs/work/<doc>.yaml docs/.archive/ && git rm -q docs/work/<doc>.html docs/work/<doc>.yaml
    git commit -m "docs: archive <doc> (distilled to <targets>)"
    ```
+   For a page with no data file, drop the `.yaml` from both lists.
+   A pair archived by half (one file gone, the other still tracked) is red:
+   `git rm` the other in the archive commit itself, before its notes.
    (`docs/.archive/` is gitignored; history keeps the content. Sessions never
    read the archive — if it still holds something needed, that fact wasn't
    distilled.)
-3. **Record the lineage** on the tip, one `--distill` per archived doc:
+3. **Record the lineage** on the tip, one `--distill` per archived doc; for a
+   pair, one `--distill` naming either file covers both:
    ```sh
-   keel notes write doc --distill docs/work/<doc>.html=docs/use-cases/<topic>.html,docs/decisions/<dec>.html
+   keel notes write doc --distill docs/work/<doc>.html=docs/use-cases/<topic>.yaml,docs/decisions/<dec>.html
    keel notes write doc --distill docs/work/<scratch>.html="none: dead end, nothing citable"
    ```
    The writer refuses a doc it cannot account for: an archived T3 doc with no

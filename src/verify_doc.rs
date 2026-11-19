@@ -515,14 +515,9 @@ fn check_doc(doc: &Yaml, page: &str, page_exists: bool) -> Data {
             }
         }
     }
-    if rs.contains(&"epic-plan") {
-        if let Some(w) = get("wu-summaries").filter(|w| !empty(w)) {
-            problems.extend(wu_summaries(w, id));
-        }
-    }
-    if rs.contains(&"wu-plan") {
-        if let Some(t) = get("test-plan").filter(|t| !empty(t)) {
-            problems.extend(test_plan(t));
+    for (f, entries, check) in LIST_FIELDS.iter().filter(|(f, ..)| required.contains(f)) {
+        if let Some(v) = get(f).filter(|v| !empty(v)) {
+            problems.extend(check(v, entries, id));
         }
     }
     Data::Checked { roles, problems }
@@ -552,14 +547,7 @@ fn fields(roles: &[&str]) -> (Vec<&'static str>, Vec<&'static str>) {
         add(&mut required, "epic");
     }
     for r in roles {
-        let list = match *r {
-            "epic-plan" => EPIC_PLAN,
-            "wu-plan" => WU_PLAN,
-            WU_RESULT_ROLE => WU_RESULT,
-            EPIC_RESULT_ROLE => EPIC_RESULT,
-            _ => &[],
-        };
-        for f in list {
+        for f in role_fields(r) {
             add(&mut required, f);
         }
     }
@@ -569,6 +557,25 @@ fn fields(roles: &[&str]) -> (Vec<&'static str>, Vec<&'static str>) {
     }
     (required, known)
 }
+
+/// A role's own required checklist, beyond the common fields and `epic`.
+fn role_fields(role: &str) -> &'static [&'static str] {
+    match role {
+        "epic-plan" => EPIC_PLAN,
+        "wu-plan" => WU_PLAN,
+        WU_RESULT_ROLE => WU_RESULT,
+        EPIC_RESULT_ROLE => EPIC_RESULT,
+        _ => &[],
+    }
+}
+
+/// What reads a list field's entries: its value, its entries, the doc's `id`; its problems.
+type EntryCheck = fn(&Yaml, &[&str], Option<&str>) -> Vec<String>;
+
+/// The list fields whose entries the check reads, each with its entries and the checker that reads
+/// them, in the order their problems come: an epic plan's `wu-summaries` and each WU's fields, a WU
+/// plan's `test-plan` and each level. The one map from a field to its entries and its checker.
+const LIST_FIELDS: &[(&str, &[&str], EntryCheck)] = &[("wu-summaries", WU_SUB, wu_summaries), ("test-plan", TEST_LEVELS, |t, levels, _| test_plan(t, levels))];
 
 /// The cap a page with these roles holds (DEC-69): a one-part epic takes the larger, its epic's.
 fn role_cap(roles: &[String]) -> Option<usize> {
@@ -646,9 +653,9 @@ fn is_wu_of(wu: &str, epic: &str) -> bool {
     wu.strip_prefix(epic).and_then(|r| r.strip_prefix(".W")).is_some_and(|n| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit()))
 }
 
-/// An epic plan's `wu-summaries`: a list, one entry per WU, each with its five fields; each `wu` is
-/// `<id>.W<n>` and listed once; each `wu-deps` is "none" or names other WUs of this list.
-fn wu_summaries(w: &Yaml, epic: Option<&str>) -> Vec<String> {
+/// An epic plan's `wu-summaries`: a list, one entry per WU, each with its fields `subs`; each `wu`
+/// is `<id>.W<n>` and listed once; each `wu-deps` is "none" or names other WUs of this list.
+fn wu_summaries(w: &Yaml, subs: &[&str], epic: Option<&str>) -> Vec<String> {
     let mut out = vec![];
     let Yaml::Array(entries) = w else {
         return vec!["field \"wu-summaries\" is not a list: write one entry per WU".into()];
@@ -658,7 +665,7 @@ fn wu_summaries(w: &Yaml, epic: Option<&str>) -> Vec<String> {
     for (n, e) in entries.iter().enumerate() {
         let n = n + 1;
         let Yaml::Hash(h) = e else {
-            out.push(format!("wu-summaries entry {n} is not a mapping of {}", WU_SUB.join(", ")));
+            out.push(format!("wu-summaries entry {n} is not a mapping of {}", subs.join(", ")));
             continue;
         };
         let wu = h.get(&key("wu")).and_then(Yaml::as_str).map(str::trim).filter(|s| !s.is_empty());
@@ -668,11 +675,11 @@ fn wu_summaries(w: &Yaml, epic: Option<&str>) -> Vec<String> {
         }
         for k in h.keys() {
             let name = k.as_str().map_or_else(|| format!("{k:?}"), String::from);
-            if !WU_SUB.contains(&name.as_str()) {
-                out.push(format!("{at}: unknown field \"{name}\" (typo? expected one of: {})", WU_SUB.join(", ")));
+            if !subs.contains(&name.as_str()) {
+                out.push(format!("{at}: unknown field \"{name}\" (typo? expected one of: {})", subs.join(", ")));
             }
         }
-        for f in WU_SUB {
+        for f in subs {
             match h.get(&key(f)) {
                 None => out.push(format!("{at}: missing field \"{f}\"")),
                 Some(v) if empty(v) => out.push(format!("{at}: field \"{f}\" is empty")),
@@ -708,13 +715,14 @@ fn wu_summaries(w: &Yaml, epic: Option<&str>) -> Vec<String> {
     out
 }
 
-/// A WU plan's `test-plan`: a mapping that gives each level its tests, or "none" or a waiver with why.
-fn test_plan(t: &Yaml) -> Vec<String> {
+/// A WU plan's `test-plan`: a mapping that gives each level of `levels` its tests, or "none" or a
+/// waiver with why.
+fn test_plan(t: &Yaml, levels: &[&str]) -> Vec<String> {
     let Yaml::Hash(h) = t else {
-        return vec![format!("field \"test-plan\" is not a mapping: give each level, {}", TEST_LEVELS.join(", "))];
+        return vec![format!("field \"test-plan\" is not a mapping: give each level, {}", levels.join(", "))];
     };
     let mut out = vec![];
-    for l in TEST_LEVELS {
+    for l in levels {
         match h.get(&Yaml::String((*l).into())) {
             None => out.push(format!("test-plan: missing level \"{l}\" (its tests, or \"none: <why>\")")),
             Some(v) if empty(v) => out.push(format!("test-plan: level \"{l}\" is empty")),
@@ -1207,8 +1215,8 @@ fn scan(s: &str, out: &mut Vec<Hit>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        data_roles, decode, decode_mapped, fields, hits, page_words, pages_of, pair_named, pair_of, partner_named, read_data, result_role, role_cap, tags,
-        under_root, unquoted_labels, Data, Pair, ANCHORS, ROLES,
+        data_roles, decode, decode_mapped, fields, hits, page_words, pages_of, pair_named, pair_of, partner_named, read_data, result_role, role_cap,
+        role_fields, tags, under_root, unquoted_labels, Data, Pair, ANCHORS, LIST_FIELDS, ROLES,
     };
     use std::path::Path;
 
@@ -1657,6 +1665,130 @@ mod tests {
         assert!(required.contains(&"test-plan") && required.contains(&"wu-summaries"), "the union: {required:?}");
     }
 
+    /// The entries LIST_FIELDS gives `field`, none for a field it does not hold.
+    fn list_entries(field: &str) -> &'static [&'static str] {
+        LIST_FIELDS.iter().find(|(f, ..)| *f == field).map_or(&[], |(_, e, _)| e)
+    }
+
+    /// E-DOCSPLIT.W4: each row of the one map from a list field to its entries and its checker is
+    /// a role's own field, listed once, with entries for its checker to read.
+    #[test]
+    fn each_list_field_is_a_roles_field_listed_once_with_entries() {
+        for (n, (f, entries, _)) in LIST_FIELDS.iter().enumerate() {
+            assert!(!entries.is_empty(), "{f} has a checker and no entries");
+            assert!(ROLES.iter().any(|r| role_fields(r).contains(f)), "{f} is no role's field");
+            assert!(LIST_FIELDS[..n].iter().all(|(g, ..)| g != f), "{f} is listed twice");
+        }
+    }
+
+    /// The text of the skill's section that starts with `head` (`## 3 ·`), up to the next `## `.
+    fn section<'a>(skill: &'a str, head: &str) -> &'a str {
+        let at = skill.find(head).unwrap_or_else(|| panic!("skill keel-plan has no section {head:?}"));
+        let rest = &skill[at..];
+        rest[1..].find("\n## ").map_or(rest, |n| &rest[..n + 1])
+    }
+
+    /// What skill keel-plan teaches `role` with in §3: the paragraph that opens with its bold head
+    /// (`**WU plan**` for wu-plan), and each paragraph right after it that opens with one of its
+    /// fields `own` that `entries` gives entries for, in backticks (`` `wu-summaries` is a list ``).
+    fn taught(skill: &str, role: &str, own: &[&str], entries: fn(&str) -> &'static [&'static str]) -> String {
+        let head = role.replace('-', " ");
+        let opens = |p: &str| p.strip_prefix("**").and_then(|p| p.split_once("**")).is_some_and(|(h, _)| h.eq_ignore_ascii_case(&head));
+        let lists = |p: &&str| own.iter().any(|f| !entries(f).is_empty() && p.starts_with(&format!("`{f}` ")));
+        let mut paras = section(skill, "## 3 ·").split("\n\n").map(str::trim).skip_while(|p| !opens(p));
+        let Some(first) = paras.next() else { return String::new() };
+        std::iter::once(first).chain(paras.take_while(lists)).collect::<Vec<_>>().join("\n\n")
+    }
+
+    /// The field-like names in backticks in `text`: lowercase words and `-` (not `UC-*` or `<epic>.W<n>`).
+    fn named(text: &str) -> Vec<&str> {
+        let field = |t: &&str| t.starts_with(|c: char| c.is_ascii_lowercase()) && t.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        text.split('`').skip(1).step_by(2).filter(field).collect()
+    }
+
+    /// Where skill keel-plan and the check disagree on `role`: a field of its own checklist `own`, or
+    /// an entry `entries` gives for one, that its §3 text does not name; any other field it knows
+    /// (`known`) that is not a row of §2's table; and back, a name in its §3 text the check does not
+    /// read for it.
+    fn unnamed(skill: &str, role: &str, own: &[&str], known: &[&str], entries: fn(&str) -> &'static [&'static str]) -> Vec<String> {
+        let para = taught(skill, role, own, entries);
+        let table = section(skill, "## 2 ·");
+        let read: Vec<&str> = own.iter().flat_map(|f| std::iter::once(*f).chain(entries(f).iter().copied())).collect();
+        let mut out = Vec::new();
+        for f in &read {
+            if !para.contains(&format!("`{f}`")) {
+                out.push(format!("{role}: `{f}` is not in its §3 paragraph"));
+            }
+        }
+        for f in known.iter().filter(|f| !own.contains(f)) {
+            if !table.contains(&format!("| `{f}` |")) {
+                out.push(format!("{role}: `{f}` is not in the §2 table"));
+            }
+        }
+        for f in named(&para) {
+            let gone = format!("{role}: `{f}` is in its §3 paragraph, which the check does not read");
+            if !read.contains(&f) && !known.contains(&f) && !out.contains(&gone) {
+                out.push(gone);
+            }
+        }
+        out
+    }
+
+    /// E-DOCSPLIT.W4: skill keel-plan names every field the check reads for a role where that role
+    /// is taught - its own checklist, with the entries list_entries() gives for a list field, in its
+    /// §3 paragraph; the rest of what fields() knows for it in §2's table - and names no field there
+    /// the check does not read, so a field added to the check, moved to another role or dropped from
+    /// it, without the skill, is red.
+    #[test]
+    fn keel_plan_names_every_field_the_check_reads() {
+        let skill = include_str!("../skills/keel-plan/SKILL.md");
+        for role in ROLES {
+            let (_, known) = fields(&[role]);
+            let missing = unnamed(skill, role, role_fields(role), &known, list_entries);
+            assert!(missing.is_empty(), "skill keel-plan does not name {missing:?}");
+            assert!(skill.contains(&format!("`{role}`")), "skill keel-plan does not name the role {role}");
+        }
+        // a field moved between roles is red in the role it moved to, though another role names it
+        let (_, known) = fields(&["wu-plan"]);
+        let own: Vec<&str> = role_fields("wu-plan").iter().copied().chain(["outcome"]).collect();
+        assert_eq!(unnamed(skill, "wu-plan", &own, &known, list_entries), ["wu-plan: `outcome` is not in its §3 paragraph"]);
+        let (_, known) = fields(&["wu-result"]);
+        let own: Vec<&str> = role_fields("wu-result").iter().copied().chain(["expected"]).collect();
+        assert_eq!(unnamed(skill, "wu-result", &own, &known, list_entries), ["wu-result: `expected` is not in its §3 paragraph"]);
+        // a field fields() knows outside a role's checklist must be a §2 row
+        let known: Vec<&str> = fields(&["epic-result"]).1.into_iter().chain(["x"]).collect();
+        assert_eq!(unnamed(skill, "epic-result", role_fields("epic-result"), &known, list_entries), ["epic-result: `x` is not in the §2 table"]);
+        // an entry of a list field is named in its role's paragraph
+        let cut = skill.replace("`unit`, `integration`", "`integration`");
+        assert_ne!(cut, skill);
+        let (_, known) = fields(&["wu-plan"]);
+        assert_eq!(unnamed(&cut, "wu-plan", role_fields("wu-plan"), &known, list_entries), ["wu-plan: `unit` is not in its §3 paragraph"]);
+        // a new list field whose entries the check reads is red until the skill names its entries
+        fn more(f: &str) -> &'static [&'static str] {
+            if f == "e2e-plan" {
+                &["smoke"]
+            } else {
+                list_entries(f)
+            }
+        }
+        let (_, known) = fields(&["epic-plan"]);
+        assert_eq!(unnamed(skill, "epic-plan", role_fields("epic-plan"), &known, more), ["epic-plan: `smoke` is not in its §3 paragraph"]);
+        // the last paragraph ends where §3's prose starts: a field named only there is not taught
+        let cut = skill.replace("archived) · `follow-ups`.\n\nEvery follow-up", "archived).\n\nEvery `follow-ups` entry");
+        assert_ne!(cut, skill);
+        let (_, known) = fields(&["epic-result"]);
+        assert_eq!(unnamed(&cut, "epic-result", role_fields("epic-result"), &known, list_entries), ["epic-result: `follow-ups` is not in its §3 paragraph"]);
+        // nor is one named only in prose that opens with a backticked name that is not a list field
+        let cut =
+            skill.replace("archived) · `follow-ups`.\n\nEvery follow-up, in either report,", "archived).\n\n`follow-ups`: every follow-up, in either report,");
+        assert_ne!(cut, skill);
+        assert_eq!(unnamed(&cut, "epic-result", role_fields("epic-result"), &known, list_entries), ["epic-result: `follow-ups` is not in its §3 paragraph"]);
+        // and back: a field the check no longer reads is red while the skill still teaches it
+        let own: Vec<&str> = role_fields("wu-plan").iter().copied().filter(|f| *f != "requirement").collect();
+        let known: Vec<&str> = fields(&["wu-plan"]).1.into_iter().filter(|f| *f != "requirement").collect();
+        assert_eq!(unnamed(skill, "wu-plan", &own, &known, list_entries), ["wu-plan: `requirement` is in its §3 paragraph, which the check does not read"]);
+    }
+
     fn problems(yaml: &str) -> Vec<String> {
         match read_data(yaml, "x.html", true) {
             Data::Checked { problems, .. } => problems,
@@ -1773,6 +1905,16 @@ mod tests {
             EPIC_PLAN.replace("artifact: epic-plan", "artifact: epic-plan wu-plan")
         );
         assert_eq!(problems(&both), Vec::<String>::new());
+        // a list field's entry problems come in one order, wu-summaries then test-plan, whichever role it lists first
+        let bad = both.replace(", wu-deps: [E-X.W1]}", "}").replace(", e2e: e}", "}");
+        for listed in ["artifact: epic-plan wu-plan", "artifact: [wu-plan, epic-plan]"] {
+            let p = problems(&bad.replace("artifact: epic-plan wu-plan", listed));
+            assert_eq!(
+                p,
+                ["wu-summaries entry 2 (E-X.W2): missing field \"wu-deps\"", "test-plan: missing level \"e2e\" (its tests, or \"none: <why>\")"],
+                "{listed}"
+            );
+        }
         let p = problems(&EPIC_PLAN.replace("artifact: epic-plan", "artifact: [epic-plan, wu-result]"));
         assert_eq!(p, ["artifact epic-plan and wu-result cannot share one doc: a one-part epic pairs epic-plan with wu-plan, or epic-result with wu-result"]);
         let p = problems(&EPIC_PLAN.replace("artifact: epic-plan", "artifact: epic-plna"));

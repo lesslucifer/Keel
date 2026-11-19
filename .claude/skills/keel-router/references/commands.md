@@ -54,10 +54,11 @@ cd $EWT && keel mr confirm epic $T --as $ID --report docs/.archive/<date>-<slug>
 cd $MAIN && git merge --no-ff epic/$E
 cd $MAIN && git push origin main
 ```
-`--report` is required when more than one doc carries the level's result role
-(`data-artifact="wu-result"` / `"epic-result"`), and an epic sign-off passes
-`--report <path>` unless its result doc is committed in the epic's diff; always
-passing the one the owner read is simplest. Under `[mr] report = "none"`, drop `--report` (it is refused). `git switch epic/$E` fails if
+`--report` is required when more than one page carries the level's result role
+(its data file's `artifact: wu-result` / `epic-result`), and an epic sign-off
+passes `--report <path>` unless its result doc is committed in the epic's diff;
+`--report` names the page, never its `.yaml`. Always passing the page the owner
+read is simplest. Under `[mr] report = "none"`, drop `--report` (it is refused). `git switch epic/$E` fails if
 the epic branch is checked out in another worktree: then `EWT` is that worktree.
 Without the owner's identity in the target's committed `.keel/mr-allowed`, `keel mr`
 refuses before signing ("<id> is not listed in <target>:.keel/mr-allowed"). A
