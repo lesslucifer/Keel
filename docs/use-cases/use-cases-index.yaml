@@ -1,5 +1,8 @@
 # Keel use-case index: data only, no page (DEC-69). Per use case: id, title, the file that holds it.
 # Read it first, then open only the file you need. Ids are never reused or renumbered.
+removed: >-
+  Never reused: UC-GATE-7, UC-MR-3, UC-ROUTE-7 and UC-DOC-5 were GitHub's flow (E-GHFLOW, E-GHFLOW2). E-GHREVERT
+  removed them with the flow (the owner's ruling of 2026-11-19, DEC-70, amended); git history keeps their text.
 areas:
   - area: UC-INIT
     file: workflow.yaml
@@ -8,8 +11,7 @@ areas:
   - area: UC-GATE
     file: workflow.yaml
     scope: >-
-      main merge-only, merge gate, epic walk, keel check, docs/infra exemption, Keel's hooks are the ones git runs,
-      the gate GitHub enforces, defined by main, with a keel built from the base
+      main merge-only, merge gate, epic walk, keel check, docs/infra exemption, Keel's hooks are the ones git runs
   - area: UC-NOTE
     file: workflow.yaml
     scope: >-
@@ -17,12 +19,12 @@ areas:
   - area: UC-MR
     file: workflow.yaml
     scope: >-
-      human sign-off (mr/v1), Reviewed-By trailers, the sign-off by approval on GitHub
+      human sign-off (mr/v1), Reviewed-By trailers
   - area: UC-DOC
     file: workflow.yaml
     scope: >-
       verify-doc checklists, links, epic doc layout, quoted diagram labels, the epic plan's owner-changes item and
-      300-word top, the write-time check on any host, docs read as pages
+      300-word top, the write-time check on any host
   - area: UC-REV
     file: workflow.yaml
     scope: >-
@@ -32,8 +34,7 @@ areas:
     scope: >-
       router: owner/worker split, epic branch first, substance from workers, shipped skill, worker modes and
       launcher, enforced posture on Claude Code, an unenforced posture on DSH, the moment-of-action checklists, the
-      report channel and the owner sender, the router bot on GitHub, the GitHub command channel, tasks of a WU and
-      the conflict watch
+      report channel and the owner sender
   - area: UC-DSH
     file: dsh.yaml
     scope: >-
@@ -61,9 +62,6 @@ use-cases:
   - id: UC-GATE-6
     title: "the hooks git runs are Keel's"
     file: workflow.yaml
-  - id: UC-GATE-7
-    title: "GitHub enforces the gate, defined by main and judged by a keel built from the base"
-    file: workflow.yaml
   - id: UC-NOTE-1
     title: "notes are derived, not typed"
     file: workflow.yaml
@@ -72,9 +70,6 @@ use-cases:
     file: workflow.yaml
   - id: UC-MR-2
     title: "rule-bearing commits carry Reviewed-By"
-    file: workflow.yaml
-  - id: UC-MR-3
-    title: "the owner's approval on GitHub signs, and accepts all"
     file: workflow.yaml
   - id: UC-DOC-1
     title: "ready governed docs stay green"
@@ -87,9 +82,6 @@ use-cases:
     file: workflow.yaml
   - id: UC-DOC-4
     title: "diagram labels are in quotes"
-    file: workflow.yaml
-  - id: UC-DOC-5
-    title: "a doc is read at its page"
     file: workflow.yaml
   - id: UC-REV-1
     title: "the review is bound to the code diff"
@@ -117,9 +109,6 @@ use-cases:
     file: router.yaml
   - id: UC-ROUTE-6
     title: "the router posture is enforced, fail-closed"
-    file: router.yaml
-  - id: UC-ROUTE-7
-    title: "the owner commands the router through GitHub, and only commanders are heard"
     file: router.yaml
   - id: UC-DSH-1
     title: "init gives DSH the skills through one shared root"

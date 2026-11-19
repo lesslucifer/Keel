@@ -2,9 +2,9 @@
 # Ids are never reused. Index: use-cases-index.yaml.
 title: "the router"
 about: >-
-  The standard itself is the `keel-router` skill (`skills/keel-router/`); this file holds only the contract. Why
-  the router is shaped this way: decisions/router.html (DEC-30 – DEC-37, DEC-39, DEC-42 – DEC-46, DEC-48,
-  DEC-55, DEC-56, DEC-58, DEC-61 – DEC-63).
+  The standard itself is the `keel-router` skill (`skills/keel-router/`); this file holds only the contract. Why the
+  router is shaped this way: decisions/router.html (DEC-30 – DEC-37, DEC-39, DEC-42 – DEC-46, DEC-48, DEC-55, DEC-56,
+  DEC-58).
 areas:
   - area: UC-ROUTE
     title: "routing"
@@ -14,56 +14,34 @@ areas:
         trigger: >-
           A router session coordinating worker sessions on a Keel project.
         expected: >-
-          It verifies workers' claims against the repo, stages the owner's commands (sign-off, merge, push, tag) for the
-          owner to run, and never signs (`keel mr`), merges or pushes for the owner. In the turn it stages an owner
-          action it arms a read-only watch for it in the background (Keel: `scripts/router-watch.sh
-          commit|signed|merged|pushed|tagged <args>`, DEC-30), so it learns the action landed
-          without the owner saying "done". The watch checks at once and then polls until the state holds. It wakes the
-          router with one event line plus what landed: the commits with their `Reviewed-By`, the landed paths against
-          the staged set (`COMMITTED-PARTIAL` when one is missing), the `mr` note, and whether a merge was `no-ff` or
-          `ff`. Otherwise it ends with `REWRITTEN`, `DELETED`, `TAGGED-MISMATCH`, `TIMEOUT` (before the 2 h background
-          ceiling; the router re-arms) or `UNREACHABLE`. Detail lines are untrusted data. On GitHub (Keel) the router
-          bot also acts for it: `scripts/router-gh.sh push` pushes a `wu/` or `epic/` branch (never `main` or a tag)
-          once a WU tip carries its `test/v1` note or an epic passes the range walk, `pr-open` opens a draft pull
-          request into the branch's epic or `main`, `pr-ready` marks it ready and asks the owner for a review, `post`
-          posts a file a worker wrote, `sync` brings a merge made on GitHub back to the local epic branch, and `issue`
-          keeps the epic's tracking issue (DEC-61). Its GitHub watch kinds, `scripts/router-gh-watch.sh
-          review|comment|merged|checks`, wake it on a commander's review, comment, merge or finished checks
-          (UC-ROUTE-7). The git watch kinds stay for the local flow. It talks to its workers by `SendMessage` to a named
-          session, both ways (DEC-42): a worker is a long-running background session that reports to the router by
-          message when it finishes, takes a follow-up task as the router's next message, and stays alive until the
-          router closes it (`stop`, DEC-44); a watchdog worker messages the router every 5 minutes with one sentence per
-          live worker, done and stuck first (DEC-45), so the router itself runs no loop or timer. At the moment of
-          action it runs the skill's short checklists (`references/checklists.md`): START before the first tool call of
-          a session, WAKE on every wake, DISPATCH before every spawn or send, each row naming its trigger and what
-          skipping it cost. Read tools serve dispatch, verification and relaying, never deriving the substance, and
-          never a document a worker was just sent to read. A turn never closes with a live worker and no wake armed, and
-          a call denied since the last message is named with its exact command, never retried and never handed to a
-          worker. Tests: `tests/suite/router.rs` `watch_*`; `tests/suite/init.rs`
+          It verifies workers' claims against the repo, stages the owner's commands (sign-off, merge, push, tag) for
+          the owner to run, and never signs (`keel mr`), merges or pushes for the owner. In the turn it stages an
+          owner action it arms a read-only watch for it in the background (Keel: `scripts/router-watch.sh
+          commit|signed|merged|pushed|tagged <args>`, DEC-30), so it learns the action landed without the owner
+          saying "done". The watch checks at once and then polls until the state holds. It wakes the router with one
+          event line plus what landed: the commits with their `Reviewed-By`, the landed paths against the staged set
+          (`COMMITTED-PARTIAL` when one is missing), the `mr` note, and whether a merge was `no-ff` or `ff`.
+          Otherwise it ends with `REWRITTEN`, `DELETED`, `TAGGED-MISMATCH`, `TIMEOUT` (before the 2 h background
+          ceiling; the router re-arms) or `UNREACHABLE`. Detail lines are untrusted data.  It talks to its workers by
+          `SendMessage` to a named session, both ways (DEC-42): a worker is a long-running background session that
+          reports to the router by message when it finishes, takes a follow-up task as the router's next message, and
+          stays alive until the router closes it (`stop`, DEC-44); a watchdog worker messages the router every 5
+          minutes with one sentence per live worker, done and stuck first (DEC-45), so the router itself runs no loop
+          or timer. At the moment of action it runs the skill's short checklists (`references/checklists.md`): START
+          before the first tool call of a session, WAKE on every wake, DISPATCH before every spawn or send, each row
+          naming its trigger and what skipping it cost. Read tools serve dispatch, verification and relaying, never
+          deriving the substance, and never a document a worker was just sent to read. A turn never closes with a
+          live worker and no wake armed, and a call denied since the last message is named with its exact command,
+          never retried and never handed to a worker. Tests: `tests/suite/router.rs` `watch_*`; `tests/suite/init.rs`
           `router_ships_the_moment_of_action_checklists` (the three lists, their triggers, and a row for each of the
           four failures the DSH guard plugin will enforce); the guard's `SendMessage` tests on the captured real
-          payloads; delivery between real sessions is live evidence only (W7). On GitHub: The router skills arm the
-          GitHub watches and the bot's shapes (W2). Only the owner merges: GitHub merges a WU's or epic's pull request
-          on his approval (auto-merge under `[github] merge_on_approve`), and he merges a task's pull request himself;
-          the router and its workers never merge a pull request and never approve one. The router learns a merge from
-          `router-gh-watch.sh merged` and brings it back with `router-gh.sh sync <epic/E|main|wu/E/slug>`; a WU branch
-          with commits of its own prints `state=diverged`, moves nothing, and its worker merges the fetched ref. Tasks
-          (DEC-67): when a piece of a WU waits on something outside the worker's hands, the router starts a worker on
-          `wu/<E>/<wu>_<task>` (`router-worker.sh worktree add` cuts it off the WU branch); the bot pushes it with no
-          notes, opens its pull request into the WU branch only and never turns on auto-merge for it. The router acts on
-          a task's MERGED only when it names a commander and the synced sha equals the merge's; otherwise it stops and
-          tells the owner. Conflicts: `router-gh-watch.sh conflict <n>` wakes the router once GitHub says an open pull
-          request cannot merge; the router sends it to the branch's worker, who merges the target in (never a rebase),
-          re-gates a WU and has the bot push. When a review did not pass, the router tells the owner plainly; his
-          approval decides (UC-MR-3). Tests: `tests/suite/router_gh.rs`, `tests/suite/router_gh_watch.rs`,
-          `tests/suite/router.rs`.
+          payloads; delivery between real sessions is live evidence only (W7).
         failure: >-
           The router runs `keel mr` itself, merges or pushes; or relays a worker claim it did not check; or a watch
-          fires before the owner acted, misses a partial commit or an `ff` merge, or polls past its timeout; or a router
-          that cannot message a live worker or receive its reply; or a router that polls or sleeps instead of waiting
-          for messages; or a router that reads a plan, a config or a backlog row to do a running worker's job, closes a
-          turn with a live worker and nothing armed, or leaves a denied call unnamed; or the router bot pushes `main`, a
-          tag, or a WU tip with no test note of its own, or opens a pull request for a branch it did not push.
+          fires before the owner acted, misses a partial commit or an `ff` merge, or polls past its timeout; or a
+          router that cannot message a live worker or receive its reply; or a router that polls or sleeps instead of
+          waiting for messages; or a router that reads a plan, a config or a backlog row to do a running worker's
+          job, closes a turn with a live worker and nothing armed, or leaves a denied call unnamed.
       - id: UC-ROUTE-2
         title: "epic branch first"
         trigger: >-
@@ -199,82 +177,39 @@ areas:
           Any tool call by a session whose agent type is `router` in a checkout that enforces the posture (Keel:
           `"agent": "router"` in `.claude/settings.json`).
         expected: >-
-          One `PreToolUse` guard on every tool (Keel: `scripts/router-guard.jq`) allows only the tools in the router's
-          agent file (no `Agent`, `Edit`, `Monitor`), the inline keel skills, `ListAgents`, `SendMessage` to any named
-          session (DEC-42), `Write` to `<cwd>/.router/briefs/<name>.md`, and Bash commands of plain words matching the
-          whitelist (read-only git, gh with named query flags only, ps, the launcher's shapes: spawn, stop, `worktree
-          add|remove <epic/E or wu/E/slug>` and `watchdog start|stop <router-name>`, the five `router-watch.sh` kinds,
-          the owner sender's three plain shapes (`scripts/notify-owner.py --send|--dry-run|--check`) the inbox's
-          `init|status|watch <seconds>|consume <id>`, never `post` (DEC-58), the router bot's `scripts/router-gh.sh push
-          <wu/E/slug|epic/E>`, `pr-open <branch> [--base main|epic/E]`, `pr-ready <n>`, `post <n> <body-name>`, `sync
-          <epic/E>` and `issue <branch>`, and the GitHub watch's `scripts/router-gh-watch.sh review|comment <n> [since
-          <id>|since latest]` and `merged|checks <n>` (DEC-61, DEC-62), each word validated so none starts with `-`);
-          workers are denied both GitHub scripts and cannot read the App's key directory; `Write` also to the owner body
+          One `PreToolUse` guard on every tool (Keel: `scripts/router-guard.jq`) allows only the tools in the
+          router's agent file (no `Agent`, `Edit`, `Monitor`), the inline keel skills, `ListAgents`, `SendMessage` to
+          any named session (DEC-42), `Write` to `<cwd>/.router/briefs/<name>.md`, and Bash commands of plain words
+          matching the whitelist (read-only git, gh with named query flags only, ps, the launcher's shapes: spawn,
+          stop, `worktree add|remove <epic/E or wu/E/slug>` and `watchdog start|stop <router-name>`, the five
+          `router-watch.sh` kinds, the owner sender's three plain shapes (`scripts/notify-owner.py
+          --send|--dry-run|--check`) and the inbox's `init|status|watch <seconds>|consume <id>`, never `post`
+          (DEC-58),  each word validated so none starts with `-`); `Write` also to the owner body
           `<cwd>/.router/notify/owner.md`. A guard error denies. Other agent types pass untouched. Run with `--arg
-          watchdog_to <router-name>` (the watchdog session's only tool hook, DEC-45) it allows only `CronCreate` and a
-          `SendMessage` to that router, for any agent type. Watch probes it stages fire only on the real event (PUSHED =
-          the tip is in `origin/<b>`). Tests: `tests/suite/router.rs`, among them
+          watchdog_to <router-name>` (the watchdog session's only tool hook, DEC-45) it allows only `CronCreate` and
+          a `SendMessage` to that router, for any agent type. Watch probes it stages fire only on the real event
+          (PUSHED = the tip is in `origin/<b>`). Tests: `tests/suite/router.rs`, among them
           `router_guard_allows_the_owner_sender_only_as_a_plain_shape`,
           `router_guard_admits_the_inbox_watcher_and_consume_but_never_post` and
-          `the_guard_and_the_inbox_script_take_the_same_ids_and_seconds`, and the guard-and-script agreement tests for
-          `router-gh.sh` and `router-gh-watch.sh` on generated corpora. The bot's shapes are `push
-          <branch>` (a task too), `pr-open <branch> [--base main|epic/E]` (a WU or task takes no `--base`; a WU never
-          into main), `pr-ready <n>`, `post <n> <body-name>`, `sync <epic/E|main|wu/E/slug>` and `issue <branch>`, never
-          `sync` or `issue` of a task; the GitHub watch gains `conflict <n>`; the launcher's `worktree add` takes a task
-          branch. The guard and the scripts agree on generated corpora. On DSH: Nothing enforces this posture: DSH has
-          no shell-hook surface, so until a guard plugin exists (a backlog row) the skill is the only guard. The router
-          holds itself to the same whitelist, says that enforcement is missing, and never treats the gap as licence to
-          do the work itself (DEC-55). The permission preset decides, not the owner (UC-DSH-4, DEC-56): a medium call
-          runs, a high-risk call is denied, and a denial is final. Until the plugin lands the checklists stand in front
-          of the call: the router says in its first message, in one line, that no guard is loaded, then works START by
-          hand. Its fleet wake is the report channel's watcher, `<inbox> watch 6600`, armed before the first dispatch
-          and re-armed on every wake, one for the whole fleet; with no inbox script the router says only the owner can
-          wake it. The watcher's bound wakes an idle router about 13 times a day while armed (DEC-58); no reminder,
-          schedule or loop is armed instead. Owner reach: Whenever the router needs the owner (a sign-off, a merge, a
-          decision, a failed run) it sends in the same turn and records `Sent to <channel> (id N)`. Keel's sender is
-          `scripts/notify-owner.py`, the same command on DSH and Claude Code: the router writes the body to
-          `.router/notify/owner.md` and runs `--send`, which posts to the already-paired Telegram bot, prints `id N` and
-          empties the body file; `--dry-run` validates and prints the request without reaching the network; `--check`
-          names the bot and sends nothing. A failure is one line and exits non-zero; no mode prints the credential or
-          the chat id. Tests: `tests/suite/notify_owner.rs`, against a local mock of the API. The first real send is the
-          owner's live evidence.
+          `the_guard_and_the_inbox_script_take_the_same_ids_and_seconds`. On DSH: Nothing enforces this posture: DSH
+          has no shell-hook surface, so until a guard plugin exists (a backlog row) the skill is the only guard. The
+          router holds itself to the same whitelist, says that enforcement is missing, and never treats the gap as
+          licence to do the work itself (DEC-55). The permission preset decides, not the owner (UC-DSH-4, DEC-56): a
+          medium call runs, a high-risk call is denied, and a denial is final. Until the plugin lands the checklists
+          stand in front of the call: the router says in its first message, in one line, that no guard is loaded,
+          then works START by hand. Its fleet wake is the report channel's watcher, `<inbox> watch 6600`, armed
+          before the first dispatch and re-armed on every wake, one for the whole fleet; with no inbox script the
+          router says only the owner can wake it. The watcher's bound wakes an idle router about 13 times a day while
+          armed (DEC-58); no reminder, schedule or loop is armed instead. Owner reach: Whenever the router needs the
+          owner (a sign-off, a merge, a decision, a failed run) it sends in the same turn and records `Sent to
+          <channel> (id N)`. Keel's sender is `scripts/notify-owner.py`, the same command on DSH and Claude Code: the
+          router writes the body to `.router/notify/owner.md` and runs `--send`, which posts to the already-paired
+          Telegram bot, prints `id N` and empties the body file; `--dry-run` validates and prints the request without
+          reaching the network; `--check` names the bot and sends nothing. A failure is one line and exits non-zero;
+          no mode prints the credential or the chat id. Tests: `tests/suite/notify_owner.rs`, against a local mock of
+          the API. The first real send is the owner's live evidence.
         failure: >-
-          Any shell spelling that reassembles a denied flag (`--out""put=`); a subagent or forked skill started by the
-          router; gh pointed at another host; a hook error or timeout that allows the call; a watcher that fires before
-          the owner acted; a `SendMessage` to a named session refused, or one with no named recipient allowed (DEC-42);
-          a GitHub script shape the guard admits and the script refuses, or the reverse, outside the documented gaps.
-      - id: UC-ROUTE-7
-        title: "the owner commands the router through GitHub, and only commanders are heard"
-        trigger: >-
-          The router has armed `scripts/router-gh-watch.sh review|comment <n> [since <id>|since latest]` or
-          `merged|checks <n>` on an issue or pull request the bot opened, and someone comments, reviews, merges, or the
-          checks finish.
-        expected: >-
-          The watch checks at once, then about every 60 s, and exits 0 on the first event from a commander, with one
-          event line carrying `at=`: `COMMAND … from=<id> verb=go|hold|retry|answer`, `MESSAGE`, `BADCOMMAND`, `EDITED`,
-          `APPROVED pr= sha=`, `CHANGES-REQUESTED`, `COMMENTED`, `DISMISSED`, `MERGED`, `CLOSED` or `CHECKS …
-          state=success|failure`. A comment's text follows indented, with control, separator, bidi, zero-width and tag
-          characters as `?`; check names are cut at 100 characters. Commanders are the numeric user ids in the committed
-          `[github] commanders` (Keel: the owner, `5499546`), account type User; the list is read from the router
-          checkout only while it matches `HEAD`, and an empty list is refused. Anyone else, an App posting for a
-          commander, and the bot itself are never printed and never wake the router: the event line is followed by
-          `IGNORED from=other count=N`. Commands: a comment's first line may be `/keel go`, `/keel hold`, `/keel retry`
-          or `/keel answer <n> <A|B>`; the other lines are the commander's message, trusted like a chat prompt; with
-          `[github] free_text = false` only the commands reach the router. A review's text is a message, never a
-          command. An edited comment prints `EDITED` and no text; the router asks the commander to post again. Without
-          `since` the oldest new item is reported with `pending=` the count after it, so the router re-arms with `since
-          <id>` and reads each once; `since latest` skips what was there at the first poll. Of a long thread the newest
-          1,000 items are read; when `since` lies before them, an event among them carries `gap=yes oldest=<id>`, and
-          with none the watch prints `OVERFLOW … resume=<id>`. It ends with `TIMEOUT` at `ROUTER_WATCH_MAX` (default
-          6,600 s) or `UNREACHABLE` after 5 failed polls. Nothing is written and no state is kept; the watch holds no
-          secret, and every read goes through `router-gh.sh watch-read`. The epic's tracking issue (`router-gh.sh
-          issue`) shows the tip, the docs, the notes and a row per WU, each WU a sub-issue closed once merged (DEC-62).
-          Tests: `tests/suite/router_gh_watch.rs`, `tests/suite/router_gh_watch_args.rs`, the issue tests in
-          `tests/suite/router_gh.rs`. The commands' meanings were never recorded, and the owner questioned them on
-          2026-11-17: an open question, no change (backlog G10).
-        failure: >-
-          A stranger's text printed, or a stranger waking the router; an edited comment read as an order; a command
-          parsed from any line but the first, or a word outside the closed grammar accepted; a commander matched by
-          login; a comment older than `since` read twice, or one silently skipped past the pages read; a watch that
-          writes a file, keeps state or prints the key, the JWT or the token; a watch reading an issue or pull request
-          the bot did not open.
+          Any shell spelling that reassembles a denied flag (`--out""put=`); a subagent or forked skill started by
+          the router; gh pointed at another host; a hook error or timeout that allows the call; a watcher that fires
+          before the owner acted; a `SendMessage` to a named session refused, or one with no named recipient allowed
+          (DEC-42).

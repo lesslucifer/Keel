@@ -103,28 +103,6 @@ areas:
           and keeps its exit code.
         failure: >-
           a gate that is silently not running, or another tool's hooks replaced without `--force`.
-      - id: UC-GATE-7
-        title: "GitHub enforces the gate, defined by main and judged by a keel built from the base"
-        expected: >-
-          A pull request into `main` or `epic/` runs the workflow "Keel gate" (`.github/workflows/keel-gate.yml`) on
-          `pull_request_target`, so main's workflow and `scripts/ci-gate.sh` judge it, never the head's. A build job
-          makes one keel from the base commit; each check job uses it only after its hash matches. `keel/ci` runs `keel
-          check` on the merged tree, the only job that runs head code, with a read-only token. `keel/gate` runs `keel ci
-          gate <wu|epic> <head> --target <base>` with the notes fetched, Keel's hooks installed in the runner's clone
-          and the base's committed policy: the same checks and `FAIL` blocks as `keel verify-dod`, green when only
-          `8·manual-review` and the review's checks fail (both are the sign-off's, UC-MR-3; its page says "the owner's
-          approval decides"), no receipt, no `[check]` command run, and a job summary listing the tip, base, the five
-          notes and each check as the gate recorded it (a check with no record says "not run"). `keel/docs` runs `keel
-          verify-doc` on the changed docs. A fork's pull request, a failed build, a swapped keel and a base other than
-          the head's own are red, never skipped; a back-merge of main into an epic passes. A push of `main` runs
-          `main/ci` (`keel-main.yml`); a work branch's push runs nothing. With the owner's `keel-merge` ruleset on,
-          `keel/ci`, `keel/gate`, `keel/docs` and `keel/sign-off` are required, merges are merge commits, nobody
-          bypasses, and `scripts/gh-settings-check.sh` is red on any missing setting (DEC-65).
-        failure: >-
-          a gate whose keel or workflow the head built or steered; a check shown green that did not run; recorded note
-          text that becomes a link, a mention or markup on the page; a job that reads a secret or runs a tag. Tests:
-          `tests/suite/ci_gate.rs`, `tests/suite/keel_gate.rs`, `tests/suite/settings_check.rs`,
-          `tests/suite/close_walk.rs` (GitHub-made merges walk green).
   - area: UC-NOTE
     title: "evidence notes"
     use-cases:
@@ -178,10 +156,8 @@ areas:
           an agent never stages them. The listing shows the whole waiver and its history: the reason, the open counts,
           whether a review ran, the open findings and the seam waivers, over every cr note on the branch's first-parent
           line. A sign-off whose note write fails leaves neither note. A sign-off whose hash covers the reason alone was
-          made by a Keel before E-SEED3; check 8 names it, and the fix is to re-sign. Details in UC-REV-2. The report
-          rule per range, and the checkout. Under `[mr] report = "required"` a report is asked for only when the range
-          changes a `code_paths` path; a WU or epic with no code signs without one, typed, by approval, and at check 8
-          (DEC-67). `keel mr` runs only from a checkout's root, refuses a checkout nested in another repository and one
+          made by a Keel before E-SEED3; check 8 names it, and the fix is to re-sign. Details in UC-REV-2. The checkout
+          (E-GHFLOW2, kept by E-GHREVERT). `keel mr` runs only from a checkout's root, refuses a checkout nested in another repository and one
           whose git links git did not make, all before any git call (e-router-v2 R50).
       - id: UC-MR-2
         title: "rule-bearing commits carry Reviewed-By"
@@ -192,32 +168,7 @@ areas:
           whatever `rule_bearing` lists. `keel mr setup --as <id> [--key <path>]` writes the working roster file and
           prints the commit that lands it; it authorises nothing until committed. Merge commits are skipped. Known gap
           (DEC-24): the trailer is typed text, the hook reads `rule_bearing` from the working tree, and nothing
-          downstream re-checks trailers. On a task branch `wu/<E>/<wu>_<task>` (exactly three words without `_`), a
-          commit that stages no code path, by `HEAD`'s committed `code_paths`, and no `.keel/` path needs no trailer:
-          the owner's merge of the task's pull request is the yes. With a code path or any `.keel/` path staged, or on
-          any other branch, the trailer stands (DEC-67). Tests: `tests/suite/split_prs.rs`.
-      - id: UC-MR-3
-        title: "the owner's approval on GitHub signs, and accepts all"
-        trigger: >-
-          a review is submitted on a WU's pull request into its epic or an epic's into main.
-        expected: >-
-          `keel-sign-off.yml` runs from main and `scripts/ci-sign-off.sh` re-reads the pull request and its reviews;
-          `keel ci sign-off` takes an approval of exactly the head by an id the base's committed roster lists as
-          `github: <id> <login>` (with `github` in `[mr] tiers`). Once every check but the review and check 8 is green,
-          it writes `mr/v1` (tier `github`, the review's id, page and commit), pushes it to `refs/notes/mr`, and sets
-          `keel/sign-off` green, saying what it signed over. It signs whatever the review's state, missing, unreadable,
-          FAIL, stale or the cap's WAIVED, and a range that changes the roster; it writes no cr note, and `covers`
-          records the review's state, the cr note's hash and the roster lines. The gate on the Mac, the epic walk and
-          the pre-push walk then take the review as covered by that approval (`WAIVED … covered by the approval of <id>
-          (review <n>)`; `dod/v1` `review: COVERED`); a typed sign-off covers nothing. Nothing is written for a comment,
-          an approval of an older commit, an unlisted id, a change request by a listed signer, a dismissed approval, a
-          red check, a missing required report, or a task's pull request. An approval attests only a report committed in
-          the range. "Already signed" means an approval GitHub still lists, or a typed note over a passing review. The
-          writer signs as `keel-sign-off`, since a runner has no git identity.
-        failure: >-
-          a note written for an approval the roster on the base does not list, or of another commit; a review covered by
-          a typed note; a red check other than the review signed over (DEC-64, DEC-66). Tests:
-          `tests/suite/sign_off.rs`, `tests/suite/ci_gate.rs`.
+          downstream re-checks trailers.
   - area: UC-DOC
     title: "documentation"
     use-cases:
@@ -265,16 +216,6 @@ areas:
           best-effort lint for htmldoc output: a missed label is a known limit (backlog B21).
         failure: >-
           a valid diagram is refused, or a fix changes the diagram (DEC-52).
-      - id: UC-DOC-5
-        title: "a doc is read at its page"
-        expected: >-
-          After a "Keel gate" or "Keel main" run, `pages.yml` (from main) rebuilds one GitHub Pages site from every live
-          branch: each branch's tracked doc files under `<branch>/docs/`, byte for byte, and an epic tip's report note
-          at `<branch>/docs/_report/report.html`. Relative links resolve within the branch; a deleted branch is gone at
-          the next build. The bot's pull request and the tracking issue link each doc's page.
-        failure: >-
-          branch code run by the build; a link or a non-doc file published; one oversized branch failing the whole build
-          (DEC-68). Tests: `tests/suite/pages_build.rs`, `tests/suite/pages_workflow.rs`.
   - area: UC-REV
     title: "code review"
     use-cases:
