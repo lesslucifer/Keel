@@ -1,0 +1,140 @@
+artifact: wu-plan
+status: ready
+id: E-DOCSPLIT.W3
+epic: E-DOCSPLIT
+title: Sign-off, pull request and archive read the pair
+date: "2026-11-18"
+page: 2026-11-18-e-docsplit-w3-plan.html
+requirement: >-
+  After W3, keel mr confirm (typed and by approval), keel notes write report,
+  keel notes write doc with check 6, and scripts/router-gh.sh's doc table read a
+  doc's role, status and title from its data file (DEC-69); a page and the data
+  file beside it archive under one --distill value; a page whose data file is
+  absent is never a result report, whatever tag it carries.
+maps-to: >-
+  E-DOCSPLIT.W3 (epic plan wu-summaries), DEC-69; UC-MR-1, UC-MR-2, UC-DOC-3 and
+  UC-DOC-5 amended at the epic close; DEC-27 and DEC-40 get Amended rows here.
+owner-changes:
+  - when: The owner signs a WU
+    today: The sign-off finds the result report by the page's data-artifact tag
+    after: It finds it by the data file's artifact; the page's bytes are still attested
+  - when: The owner opens a pull request page
+    today: The title is the first plan in path order, which can be another WU's
+    after: The title is the newest plan the range commits, as id and title from its data file
+  - when: An epic closes
+    today: A page and its data file each need their own --distill
+    after: One --distill (naming either file) gives both the same lineage
+expected:
+  - keel mr confirm wu on a range committing one result pair names its page as the report; two result pairs are refused, naming both pages.
+  - A page with data-artifact="wu-result" and no data file is no report candidate (DEC-69's clean cut).
+  - keel notes write doc --distill <page or data file>=<docs> writes the same distilled_to on both files of an archived pair; check 6 is green.
+  - A pair archived by half (one file git rm'd, the other still at the tip) is red at check 6, naming the file left.
+  - keel notes write report <epic-result page> checks the data file beside it and stores the page's bytes only; a .yaml path is refused, naming its page.
+  - The pull request body shows one row per changed doc, its page linked, role, status and "id · title" from its data file; the PR title is the newest plan the range commits.
+test-plan:
+  unit: >-
+    src/verify_doc.rs - data_roles(src) reads artifact as text or a list, and
+    names a data file that does not parse or has no artifact; pages_of(names,
+    in_docs) maps changed paths to doc pages (a .yaml under docs.root to its
+    .html, each page once, other paths dropped). src/notes.rs - the partner of
+    an archived path (stem.html / stem.yaml, both T3 and gone at the tip) gets
+    the same distilled_to; half_archived(...) finds a pair with one file left.
+  integration: >-
+    tests/suite/mr.rs - the report is found through its data file's role, not a
+    page tag or a file name; two candidates are refused naming both pages; a
+    one-part epic data file (artifact list) is a WU report; a range changing only
+    the data file still finds the page; --report naming a .yaml is refused naming
+    the page. tests/suite/sign_off.rs - the approval writer attests only a
+    pair-found report committed in the range; keel notes write report reads the
+    data file and keeps the page's bytes. tests/suite/verify_dod.rs - a plan pair
+    and a result pair archived with one --distill each leave check 6 and
+    keel verify-dod epic green; a half-archived pair is red naming the file left;
+    --distill naming the data file covers the page. tests/suite/router_gh.rs -
+    the doc table reads role, status and title from data files; a changed data
+    file alone gives its page's row; a page with no data file shows role and
+    status as a dash; two plans in range (the older sorting first) give the
+    newest as the title; a wu/<E>/plan branch holding only an epic plan takes
+    its title. Fixtures that mark a report with a page tag (mr, sign_off,
+    split_prs, review, router, seed3_e2e, router_gh, verify_dod) become pairs
+    through one helper.
+  e2e: >-
+    tests/suite/docsplit_e2e.rs gains the rest of the epic flow in a scratch repo
+    through the built binary - an epic with one WU, its plan pair and result
+    pair committed, test/doc/cr notes, the test signer's keel mr confirm wu
+    names the result page found through its data file, the WU merges into the
+    epic; at close the plan pair and the result pair are archived with one
+    --distill each, the epic result pair sits in docs/.archive, keel mr confirm
+    epic --report names its page, and keel verify-dod epic is green. Archiving
+    only the result page first is red, naming its data file. No waiver.
+details:
+  files:
+    src/mr.rs: >-
+      report_candidates - the changed paths under docs.root (pages_of) whose
+      page and data file are both at the tip and whose data file's artifact
+      carries the level's result role; returns page paths. pick_report - the
+      none-found message names "a data file with artifact <role>"; --report
+      naming a .yaml is refused with the page as the fix. sign_off (the
+      approval writer) keeps calling report_candidates, so it follows. Doc
+      comments that cite data-artifact are rewritten.
+    src/notes.rs: >-
+      write_report - pair_of the given path; refuse a .yaml (the report is the
+      page you read); the data file beside the page must carry epic-result; the
+      note body stays the page's bytes (DEC-69, inventory question 6). write doc
+      - a --distill key may name either file of an archived pair; the value is
+      given to both. doc_problems - a pair archived by half is red, the fix
+      "git rm <the other> in the same range". DocNote's schema does not change -
+      both files keep their own entry.
+    src/verify_doc.rs: >-
+      data_roles(src) for mr and notes, through the same YAML loader and anchor
+      refusal as read_data; pages_of for report_candidates; has_role and the
+      page-tag artifact reader go once nothing calls them (the page with no data
+      file keeps reading its own data-status for draft, as W2 left it).
+    scripts/router-gh.sh: >-
+      doc_rows - one row per doc (a changed .html, or a changed .yaml's page at
+      the tip); role, status, id and title from the data file at the tip by a
+      small awk reader of top-level keys (artifact as text, [a, b] or a block
+      list; title as a one-line plain or quoted scalar; anything else falls back
+      to a dash, or to the page's title tag for the title); every value still
+      goes through plain and the role and status character filters. The title
+      plan - among the changed plans of the branch's kind (a WU branch takes an
+      epic plan when it holds no WU plan), the one the range committed last
+      (git log newest first), not the first in path order. Rule-bearing.
+    templates/config.toml: >-
+      the [mr] report comment says the report is the doc whose data file has
+      artifact wu-result or epic-result. Rule-bearing.
+    docs/decisions/workflow-gates.html: >-
+      Amended rows - DEC-27 (a page and its data file are one doc for tiers and
+      lineage - one --distill, archived together) and DEC-40 (the report is found
+      by its data file's role; the page is attested).
+  task:
+    branch: wu/E-DOCSPLIT/w3-pair_doc-rows-pairs
+    files: scripts/router-gh.sh, templates/config.toml
+    route: >-
+      a task pull request into wu/E-DOCSPLIT/w3-pair that the owner merges on
+      GitHub (DEC-67); its router_gh.rs tests land on the W3 branch after the
+      merge, red before it, as W2's ci_gate test did.
+  bot-defects: >-
+    Re-derived from scripts/router-gh.sh. "No doc changed in this range" prints
+    only when git diff merge-base(local base, tip)..tip lists no .html under
+    docs.root - the range is measured from this checkout's refs/heads/<base>,
+    so a local base that already holds the tip's docs gives an empty range.
+    PR #14's title - the range from a local epic/E-DOCSPLIT still at 3666a43
+    (before W1's merge, d1ec96a) held both the W1 and the W2 plan, and doc_rows
+    takes the first wu-plan in path order, which is W1's. W3's doc_rows change
+    fixes the title (newest plan, read by its data file). The stale or ahead
+    local base is outside doc_rows (pr-open and issue compute mb) - a
+    follow-up, a backlog row in docs/backlog/github-flow, unless the owner
+    folds it in (decide question 1). Also outside doc_rows today - a
+    wu/<E>/plan branch carrying the epic plan looked only for a wu-plan title;
+    W3's title rule takes the epic plan there.
+  follow-ups:
+    - item: pr-open and issue measure the range from the local base branch, which can lag or lead GitHub's; refuse, or measure from GitHub's base sha.
+      taken-by: a new backlog row in docs/backlog/github-flow (or W3's task, if the owner says so)
+  overlap: >-
+    W5 slims docs/decisions/workflow-gates.html in parallel; the two Amended
+    rows are short and a merge conflict goes back to the worker that merges
+    second. W4 teaches the pair in the skills; keel-plan's "the sign-off finds a
+    result report by its data-artifact role" line is W4's.
+  plan-shape: >-
+    W1's approved WU plan page shape and its 500-word cap; today's data-item
+    tags kept until the installed keel reads data files (epic open point 7).

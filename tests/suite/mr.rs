@@ -107,7 +107,7 @@ fn build_fixture(p: &Path, k: &Path) {
     git(p, &["switch", "-q", "-c", "wu/e/a"]);
     write(p, "src/a.py", "def a():\n    return 1\n");
     write(p, "tests/test_a.py", "def test_a():\n    pass\n");
-    write(p, "docs/work/a-result.html", RESULT);
+    common::doc_pair(p, "docs/work/a-result.html", "wu-result", RESULT);
     commit(p, "wu a");
 }
 
@@ -136,7 +136,7 @@ fn build_fixture_where_the_epic_has_work(p: &Path) {
     git(p, &["switch", "-q", "-c", "wu/e/a"]);
     write(p, "src/a.py", "def a():\n    return 1\n");
     write(p, "tests/test_a.py", "def test_a():\n    pass\n");
-    write(p, "docs/work/a-result.html", RESULT);
+    common::doc_pair(p, "docs/work/a-result.html", "wu-result", RESULT);
     commit(p, "wu a");
 }
 
@@ -179,7 +179,7 @@ fn forge(p: &Path, tip: &str, target: &str, signer: &str, tier: &str, key: Optio
     put_note(p, &tip, &n);
 }
 
-const RESULT: &str = "<html data-artifact=\"wu-result\"><p>wu a: done</p></html>";
+const RESULT: &str = "<html><p>wu a: done</p></html>";
 
 /// Commit `[mr] report = "<policy>"` on the current branch.
 fn set_policy(p: &Path, policy: &str) {
@@ -190,7 +190,7 @@ fn set_policy(p: &Path, policy: &str) {
 
 /// The WU as if it never wrote a result report (amended out, so no T3 archive lineage is owed).
 fn drop_fixture_report(p: &Path) {
-    git(p, &["rm", "-q", "docs/work/a-result.html"]);
+    git(p, &["rm", "-q", "docs/work/a-result.html", "docs/work/a-result.yaml"]);
     git(p, &["commit", "-q", "--amend", "--no-edit"]);
 }
 
@@ -333,7 +333,7 @@ fn an_epic_report_edited_after_signing_is_rehashed_and_red() {
     // The walk sees "wu a" as a direct commit below the tip: commit-level notes.
     notes_with(p, &["test", "doc"], r#"{"unit":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
     // Epic close (W8, UC-DOC-3): no T3 doc tracked at the tip, so the WU report is distilled + archived...
-    git(p, &["rm", "-q", "docs/work/a-result.html"]);
+    git(p, &["rm", "-q", "docs/work/a-result.html", "docs/work/a-result.yaml"]);
     write(p, "docs/decisions/a.html", "<p>why a</p>");
     commit(p, "distill + archive wu a's report");
     // ...and the epic report is archived out of git by gate time: an untracked local file.
@@ -539,35 +539,82 @@ fn report_policy_matrix_at_wu_level() {
     }
 }
 
-/// I2: the report is the doc whose data-artifact carries the level's role, whatever its file name.
+/// I2, as DEC-69 reads it (E-DOCSPLIT.W3): the report is the page whose data file's `artifact`
+/// carries the level's role, whatever its file name; a page tag alone makes no report.
 #[test]
 fn the_wu_report_is_found_by_role_not_by_file_name() {
     let (d, _k) = fixture();
     let p = d.path();
     drop_fixture_report(p);
-    write(p, "docs/work/outcome.html", RESULT);
+    common::doc_pair(p, "docs/work/outcome.html", "wu-result", RESULT);
     write(p, "docs/work/x-result.html", "<p>an ungoverned doc named like a report</p>");
+    write(p, "docs/work/tagged.html", "<html data-artifact=\"wu-result\" data-status=\"ready\"><p>a page tag, no data file</p></html>");
+    common::doc_pair(p, "docs/work/a-plan.html", "wu-plan", "<p>a plan</p>");
     commit(p, "a report by role");
     notes(p, &["test", "doc", "cr"]);
     ok(keel(p, &["mr", "confirm", "wu"]));
-    assert_eq!(mr_note(p, "HEAD").unwrap()["report"], "docs/work/outcome.html");
+    assert_eq!(mr_note(p, "HEAD").unwrap()["report"], "docs/work/outcome.html", "the page is attested, found through its data file");
 
-    write(p, "docs/work/second.html", RESULT);
+    common::doc_pair(p, "docs/work/second.html", "wu-result", RESULT);
     commit(p, "a second wu-result");
     notes(p, &["test", "doc", "cr"]);
     let o = keel(p, &["mr", "confirm", "wu"]);
     refused(&o, &["docs/work/outcome.html", "docs/work/second.html", "--report"]);
+    assert!(!text(&o).contains("tagged.html") && !text(&o).contains(".yaml"), "pages only, and no page tag: {}", text(&o));
+    assert!(mr_note(p, "HEAD").is_none());
+    let o = keel(p, &["mr", "confirm", "wu", "--report", "docs/work/second.yaml"]);
+    refused(&o, &["names a data file", "--report docs/work/second.html"]);
     assert!(mr_note(p, "HEAD").is_none());
     ok(keel(p, &["mr", "confirm", "wu", "--report", "docs/work/second.html"]));
     assert_eq!(mr_note(p, "HEAD").unwrap()["report"], "docs/work/second.html");
 
+    // A one-part epic's data file lists both roles: it is the WU's report.
     let (d, _k) = fixture();
     let p = d.path();
-    write(p, "docs/work/a-result.html", "<html data-artifact=\"epic-result wu-result\"><p>one-WU epic</p></html>");
+    write(p, "docs/work/a-result.html", "<html><p>one-WU epic</p></html>");
+    write(p, "docs/work/a-result.yaml", "artifact:\n  - epic-result\n  - wu-result\nstatus: ready\n");
     commit(p, "collapsed result doc");
     notes(p, &["test", "doc", "cr"]);
     ok(keel(p, &["mr", "confirm", "wu"]));
     assert_eq!(mr_note(p, "HEAD").unwrap()["report"], "docs/work/a-result.html");
+}
+
+/// DEC-69's clean cut (E-DOCSPLIT.W3): a page carrying the role as a tag, with no data file beside
+/// it, is no report: a required sign-off is refused, naming the data file it looks for.
+#[test]
+fn a_page_tag_with_no_data_file_is_no_report() {
+    let (d, _k) = fixture();
+    let p = d.path();
+    drop_fixture_report(p);
+    write(p, "docs/work/a-result.html", "<html data-artifact=\"wu-result\" data-status=\"ready\"><p>done</p></html>");
+    commit(p, "a result page the old way");
+    notes(p, &["test", "doc", "cr"]);
+    refused(&keel(p, &["mr", "confirm", "wu"]), &["required", "a page with a data file whose artifact is wu-result", "--report <path>"]);
+    assert!(mr_note(p, "HEAD").is_none());
+}
+
+/// A range that changes only the data file of a report still finds its page (E-DOCSPLIT.W3), and a
+/// data file whose role is not the level's is no candidate.
+#[test]
+fn a_range_changing_only_the_data_file_finds_its_page() {
+    let d = fixture_where_the_epic_has_work();
+    let p = d.path();
+    // the page lands on the epic first, so the WU's range holds the data file alone
+    git(p, &["switch", "-q", "epic/e"]);
+    write(p, "docs/work/b-result.html", "<html><p>wu b: done</p></html>");
+    write(p, "docs/work/c-result.html", "<html><p>c</p></html>");
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-q", "--no-verify", "-m", "pages on the epic"]);
+    git(p, &["switch", "-q", "wu/e/a"]);
+    git(p, &["rm", "-q", "docs/work/a-result.html", "docs/work/a-result.yaml"]);
+    git(p, &["commit", "-q", "--amend", "--no-edit"]);
+    git(p, &["rebase", "-q", "epic/e"]);
+    write(p, "docs/work/b-result.yaml", "artifact: wu-result\nstatus: ready\n");
+    write(p, "docs/work/c-result.yaml", "artifact: wu-plan\nstatus: ready\n");
+    commit(p, "the data files");
+    notes(p, &["test", "doc", "cr"]);
+    ok(keel(p, &["mr", "confirm", "wu", "wu/e/a", "--as", "t", "--target", "epic/e"]));
+    assert_eq!(mr_note(p, "HEAD").unwrap()["report"], "docs/work/b-result.html");
 }
 
 /// I3: the merge hook judges the sign-off by the target's committed policy, not the WU's own.
@@ -610,16 +657,16 @@ fn a_forged_report_hash_is_red_under_optional() {
 /// the epic's own diff - never an untracked or archived file found by search.
 #[test]
 fn the_epic_report_is_named_or_committed_never_searched_for() {
-    const EPIC: &str = "<html data-artifact=\"epic-result\"><p>epic e: done</p></html>";
+    const EPIC: &str = "<html><p>epic e: done</p></html>";
     let (d, _k) = fixture();
     let p = d.path();
     notes_with(p, &["test", "doc"], r#"{"unit":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
-    git(p, &["rm", "-q", "docs/work/a-result.html"]);
+    git(p, &["rm", "-q", "docs/work/a-result.html", "docs/work/a-result.yaml"]);
     write(p, "docs/decisions/a.html", "<p>why a</p>");
     write(p, ".gitignore", "docs/.archive/\n");
     commit(p, "distill + archive wu a's report");
-    write(p, "docs/.archive/e-result.html", EPIC);
-    write(p, "docs/work/f-result.html", EPIC);
+    common::doc_pair(p, "docs/.archive/e-result.html", "epic-result", EPIC);
+    common::doc_pair(p, "docs/work/f-result.html", "epic-result", EPIC);
     notes_with(p, &["test", "cr"], r#"{"e2e":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
     ok(keel(p, &["notes", "write", "doc", "--distill", "docs/work/a-result.html=docs/decisions/a.html"]));
     refused(&keel(p, &["mr", "confirm", "epic"]), &["required", "epic-result", "--report <path>"]);
@@ -632,11 +679,11 @@ fn the_epic_report_is_named_or_committed_never_searched_for() {
     let (d, _k) = fixture();
     let p = d.path();
     // An epic tip tracks no T3 doc (check 6), so a committed epic report sits outside docs/work/.
-    git(p, &["rm", "-q", "docs/work/a-result.html"]);
-    write(p, "docs/e-result.html", EPIC);
+    git(p, &["rm", "-q", "docs/work/a-result.html", "docs/work/a-result.yaml"]);
+    common::doc_pair(p, "docs/e-result.html", "epic-result", EPIC);
     git(p, &["add", "-A"]);
     git(p, &["commit", "-q", "--amend", "-m", "wu a\n\nReviewed-By: key vu"]);
-    write(p, "docs/work/f-result.html", EPIC);
+    common::doc_pair(p, "docs/work/f-result.html", "epic-result", EPIC);
     notes_with(p, &["test", "doc", "cr"], r#"{"e2e":{"files":["tests/test_a.py"],"covers":"a works"}}"#);
     ok(keel(p, &["mr", "confirm", "epic"]));
     assert_eq!(mr_note(p, "HEAD").unwrap()["report"], "docs/e-result.html");
@@ -720,7 +767,7 @@ fn a_roster_change_inside_a_branch_is_judged_by_the_target_and_needs_the_signers
     git(p, &["switch", "-q", "-c", "wu/e/b"]);
     write(p, "src/b.py", "def b():\n    return 2\n");
     write(p, "tests/test_b.py", "def test_b():\n    pass\n");
-    write(p, "docs/work/b-result.html", RESULT);
+    common::doc_pair(p, "docs/work/b-result.html", "wu-result", RESULT);
     commit(p, "wu b");
     notes_with(p, &["test", "doc", "cr"], r#"{"integration":{"files":["tests/test_b.py"],"covers":"b works"}}"#);
     git(p, &["config", "keel.signingkey", &two_key]);
@@ -744,7 +791,7 @@ fn a_target_without_a_roster_is_judged_by_the_one_the_change_carries_and_says_so
     git(p, &["switch", "-q", "-c", "wu/e/c"]);
     write(p, "src/a.py", "def a():\n    return 1\n");
     write(p, "tests/test_a.py", "def test_a():\n    pass\n");
-    write(p, "docs/work/a-result.html", RESULT);
+    common::doc_pair(p, "docs/work/a-result.html", "wu-result", RESULT);
     commit(p, "wu c, no roster");
     notes(p, &["test", "doc", "cr"]);
     let o = keel(p, &["mr", "confirm", "wu", "--as", "vu"]);
@@ -823,7 +870,7 @@ fn pre_push_judges_each_merge_by_the_roster_of_its_own_first_parent() {
     git(p, &["switch", "-q", "-c", "wu/e/b"]);
     write(p, "src/b.py", "def b():\n    return 2\n");
     write(p, "tests/test_b.py", "def test_b():\n    pass\n");
-    write(p, "docs/work/b-result.html", RESULT);
+    common::doc_pair(p, "docs/work/b-result.html", "wu-result", RESULT);
     commit(p, "wu b");
     notes_with(p, &["test", "doc", "cr"], r#"{"integration":{"files":["tests/test_b.py"],"covers":"b works"}}"#);
     git(p, &["config", "keel.signingkey", &two_key]);

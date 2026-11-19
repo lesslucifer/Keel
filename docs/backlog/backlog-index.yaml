@@ -18,8 +18,8 @@ files:
     file: github-flow.yaml
     scope: >-
       The GitHub flow after the E-GHFLOW and E-GHFLOW2 closes: CI follow-ups, test nits, what the sign-off by
-      approval leaves, the owner's GitHub steps and the live facts still owed.
-    next-free: G11
+      approval leaves, the owner's GitHub steps and the live facts still owed; the bot's pull-request range (G11).
+    next-free: G12
   - letter: D
     file: dsh.yaml
     scope: >-
@@ -51,7 +51,7 @@ order:
   - rank: 2
     epic: the next GitHub-flow epic
     status: not yet planned
-    rows: G4, G5, G7, G10
+    rows: G4, G5, G7, G10, G11
   - rank: 3
     epic: the next router epic
     status: not yet proposed; the owner orders it

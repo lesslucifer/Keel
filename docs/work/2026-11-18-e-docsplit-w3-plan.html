@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afda6c99f34851f0dfb2861" data-artifact="wu-plan" data-status="ready">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-DOCSPLIT.W3 plan: sign-off, pull request and archive read the pair</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-DOCSPLIT.W3 · Sign-off, pull request and archive read the pair</h1>
+      <p>The sign-off, the pull request page and the archive find a doc through its data file, and treat page and data file as one doc.</p>
+      <div class="meta">WU plan · v1 · 2026-11-18 · T3 · Keel · W3 of <a href="2026-11-17-e-docsplit-plan.html">the epic plan</a> · after <a href="2026-11-18-e-docsplit-w2-result.html">W2</a> · its data file sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">W2 moved each doc's role into a data file. Three readers still look for it in the page: the sign-off picking the result report, the pull request's doc table, and the archive. A result written the new way is not found, and archiving a pair takes two lineage lines.</p>
+<p data-item="requirement" data-c="requirement">After W3, the sign-off, the report note, the doc note and the pull request's doc table read a doc's role, status and title from its data file; a page and its data file archive under one <code>--distill</code>; a page tag alone makes no report.</p>
+
+<h2 id="for-you">What you get</h2>
+<table data-item="owner-changes" data-c="for-you">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>You sign a WU</td><td>The report is found by a page tag</td><td>Found by its data file; you still sign the page</td></tr>
+    <tr><td>You open a pull request</td><td>Its title can name another WU's plan</td><td>It names the newest plan, by its data file</td></tr>
+    <tr><td>An epic closes</td><td>A page and its data file need a line each</td><td>One line archives both</td></tr>
+  </tbody>
+</table>
+
+<h2 id="approve">How you approve</h2>
+<ol data-c="approve">
+  <li>You comment here; the worker answers. You tell the router "W3 approved"; the build starts.</li>
+  <li>Two rule files go as a task pull request into the W3 branch. You merge it on GitHub.</li>
+  <li>W3 reaches the epic as a pull request. Your approval signs it; auto-merge merges it.</li>
+</ol>
+
+<h2 id="work">What it changes, per file</h2>
+<ul data-c="work">
+  <li><code>src/mr.rs</code>: the report is the page whose data file carries the result role; two are refused, naming both. The sign-off by approval uses the same rule.</li>
+  <li><code>src/notes.rs</code>: the report note checks the data file and keeps the page. One <code>--distill</code> covers a pair; a page archived without its data file is red.</li>
+  <li><code>src/verify_doc.rs</code>: reads a data file's role; the page-tag reader goes.</li>
+  <li>The task, rule-bearing: <code>scripts/router-gh.sh</code> builds the doc table from data files; <code>templates/config.toml</code>'s report comment.</li>
+  <li><code>docs/decisions/workflow-gates.html</code>: Amended rows on DEC-27 and DEC-40.</li>
+</ul>
+
+<h2 id="tests">Tests</h2>
+<ul data-item="test-plan" data-c="tests">
+  <li><b>Integration:</b> <code>keel mr confirm wu</code> finds the report through its data file and refuses two; one <code>--distill</code> archives a pair and the epic gate is green; the pull request body reads the data file. Old fixtures become pairs.</li>
+  <li><b>Unit:</b> the pair matcher, a data file's role, the shared lineage.</li>
+  <li><b>End to end:</b> <code>tests/suite/docsplit_e2e.rs</code> goes on to the sign-off, the merge and the close.</li>
+</ul>
+
+<h2 id="decide">What you decide</h2>
+<table data-c="decide">
+  <thead><tr><th>#</th><th>Question</th><th>Answer, and why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Pull request pages named the wrong plan, or no doc. Does W3 fix it?</td><td><b>The title, yes; the cause, as a follow-up.</b> The bot measures from this checkout's copy of the target, which can lag GitHub's. Fixing that changes when the bot refuses: not the split.</td></tr>
+    <tr><td>2</td><td>Is a page archived without its data file refused?</td><td><b>Yes.</b> They are one doc; half of it would stay behind.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="done">How you'll know it worked</h2>
+<ul data-item="expected" data-c="done">
+  <li>A WU's sign-off names its result page, found through the data file.</li>
+  <li>An epic closes with one archive line per doc, and its gate is green.</li>
+  <li>A pull request page shows each doc's role, status and title from its data file.</li>
+</ul>
+<p data-item="maps-to" data-c="maps-to">Maps to E-DOCSPLIT.W3, DEC-69; UC-MR-1, UC-MR-2, UC-DOC-3 and UC-DOC-5 amended at the epic close.</p>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
