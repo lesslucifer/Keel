@@ -1919,3 +1919,200 @@ fn the_automatic_merge_reads_the_attributes_of_the_merges_first_parent_not_the_c
     doc_note(p);
     ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1]));
 }
+
+// E-KEELFIX.W2: nothing written unless asked - a gate run without its receipt, help on every
+// command, and an unknown argument refused before anything is read or written (K2).
+
+/// What a command could change: every ref (notes included) and `HEAD`, the index, the working
+/// tree (ignored files too), the local config and Keel's installed hooks.
+fn repo_state(p: &Path) -> String {
+    let hooks = p.join(".git/keel-hooks");
+    let mut installed: Vec<String> = std::fs::read_dir(&hooks)
+        .map(|d| d.map(|e| e.unwrap().path()).map(|f| format!("{} {}", f.display(), std::fs::read_to_string(&f).unwrap_or_default())).collect())
+        .unwrap_or_default();
+    installed.sort();
+    [
+        git(p, &["for-each-ref"]),
+        git(p, &["symbolic-ref", "-q", "HEAD"]),
+        git(p, &["rev-parse", "HEAD"]),
+        git(p, &["ls-files", "-s"]),
+        git(p, &["status", "--porcelain", "--ignored", "-uall"]),
+        std::fs::read_to_string(p.join(".git/config")).unwrap(),
+        installed.join("\n"),
+    ]
+    .join("\n--\n")
+}
+
+fn stdout(o: &Output) -> String {
+    String::from_utf8_lossy(&o.stdout).into_owned()
+}
+
+fn stderr(o: &Output) -> String {
+    String::from_utf8_lossy(&o.stderr).into_owned()
+}
+
+#[test]
+fn no_receipt_runs_the_whole_gate_and_writes_nothing() {
+    let d = fixture();
+    let p = d.path();
+    bless(p, WU_TESTS, "PASS");
+    // Red (no sign-off yet): the same failure either way, and nothing written.
+    let (dry, gate) = (keel(p, &["verify-dod", "wu", "wu/e/a", "--no-receipt"]), keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    assert!(!dry.status.success() && !gate.status.success(), "{}", text(&dry));
+    assert!(stderr(&dry).contains("8·manual-review"), "{}", text(&dry));
+    assert_eq!((stdout(&dry), stderr(&dry)), (stdout(&gate), stderr(&gate)), "a red run prints the same with or without the flag");
+
+    // Green: the same checks, one line more, and no receipt.
+    sign(p, "wu", "docs/a.html");
+    let notes = git(p, &["for-each-ref", "refs/notes"]);
+    let dry = keel(p, &["verify-dod", "wu", "wu/e/a", "--no-receipt"]);
+    assert!(dry.status.success(), "{}", text(&dry));
+    assert_eq!(git(p, &["for-each-ref", "refs/notes"]), notes, "--no-receipt writes no note");
+    assert!(!has_note(p, "dod", "wu/e/a"), "no receipt: {}", text(&dry));
+    let gate = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    assert!(gate.status.success() && has_note(p, "dod", "wu/e/a"), "without the flag the receipt is written: {}", text(&gate));
+    assert_eq!(stdout(&dry), format!("{}no receipt written (--no-receipt)\n", stdout(&gate)));
+    assert_eq!(stderr(&dry), stderr(&gate));
+
+    // The epic level.
+    git(p, &["switch", "-q", "epic/e"]);
+    git(p, &["merge", "-q", "--no-ff", "-m", "merge wu a", "wu/e/a"]);
+    write(p, "docs/result.html", "<p>result</p>");
+    commit(p, "close epic");
+    bless(p, EPIC_TESTS, "PASS");
+    sign(p, "epic", "docs/result.html");
+    let notes = git(p, &["for-each-ref", "refs/notes"]);
+    let dry = keel(p, &["verify-dod", "epic", "epic/e", "--no-receipt"]);
+    assert!(dry.status.success() && stdout(&dry).ends_with("no receipt written (--no-receipt)\n"), "{}", text(&dry));
+    assert_eq!(git(p, &["for-each-ref", "refs/notes"]), notes);
+    assert!(!has_note(p, "dod", "epic/e"));
+    assert!(keel(p, &["verify-dod", "epic", "epic/e"]).status.success() && has_note(p, "dod", "epic/e"));
+}
+
+#[test]
+fn an_unknown_argument_is_refused_and_changes_nothing() {
+    let d = fixture();
+    let p = d.path();
+    bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
+    let mut bad = vec![];
+    for (args, input, needle) in [
+        (&["verify-dod", "wu", "wu/e/a", "--no-reciept"][..], "", "--no-reciept"),
+        (&["verify-dod", "wu", "wu/e/a", "stray"], "", "stray"),
+        (&["verify-dod", "wu", "wu/e/a", "--target"], "", "--target"),
+        (&["verify-dod", "wu", "wu/e/a", "--target=epic/e"], "", "--target=epic/e"),
+        (&["verify-dod", "wu", "wu/e/a", "--target", "epic/e", "--target", "epic/e"], "", "--target"),
+        (&["verify-dod", "wu", "wu/e/a", "--no-receipt", "--no-receipt"], "", "--no-receipt"),
+        (&["preflight", "wu", "wu/e/a", "--no-receipt"], "", "--no-receipt"),
+        (&["notes", "write", "doc", "--distil", "x=y"], "", "--distil"),
+        (&["notes", "write", "doc", "stray"], "", "stray"),
+        (&["notes", "write", "doc", "--target"], "", "--target"),
+        (&["notes", "write", "test", "--tagret", "epic/e"], WU_TESTS, "--tagret"),
+        (&["notes", "write", "cr", "--verdict", "PASS", "--blokers", "0"], "", "--blokers"),
+        (&["notes", "write", "cr", "--verdict", "PASS", "--verdict", "PASS"], "", "--verdict"),
+    ] {
+        let before = repo_state(p);
+        let o = run(env!("CARGO_BIN_EXE_keel"), p, args, input);
+        if o.status.code() != Some(1) || !stderr(&o).contains(needle) || repo_state(p) != before {
+            bad.push(format!("{args:?}: exit {:?}, changed {}: {}", o.status.code(), repo_state(p) != before, text(&o)));
+        }
+    }
+    assert!(bad.is_empty(), "{} refused wrongly:\n{}", bad.len(), bad.join("\n"));
+}
+
+#[test]
+fn help_on_every_command_prints_its_usage_and_changes_nothing() {
+    let d = fixture();
+    let p = d.path();
+    bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
+    write(p, "CLAUDE.md", "staged, so a commit has something to commit");
+    git(p, &["add", "CLAUDE.md"]);
+    let mut bad = vec![];
+    for (args, input, usage) in [
+        (&[][..], "", "usage: keel <init"),
+        (&["bogus"], "", "usage: keel <init"),
+        (&["--version"], "", "usage: keel <init"),
+        (&["init"], "", "usage: keel init"),
+        (&["hooks", "install"], "", "usage: keel hooks install"),
+        (&["lint"], "", "usage: keel lint"),
+        (&["check"], "", "usage: keel check"),
+        (&["hook", "pre-commit"], "", "usage: keel hook"),
+        (&["hook", "commit-msg"], "", "usage: keel hook"),
+        (&["hook", "pre-push", "origin"], "", "usage: keel hook"),
+        (&["verify-doc"], "", "usage: keel verify-doc"),
+        (&["verify-dod", "wu", "wu/e/a"], "", "usage: keel verify-dod"),
+        (&["verify-dod", "hook"], "", "usage: keel verify-dod"),
+        (&["preflight", "wu", "wu/e/a"], "", "usage: keel verify-dod"),
+        (&["notes"], "", "usage: keel notes write <test|doc|cr>"),
+        (&["notes", "write"], "", "usage: keel notes write <test|doc|cr>"),
+        (&["notes", "write", "test"], WU_TESTS, "usage: keel notes write test"),
+        (&["notes", "write", "doc"], "", "usage: keel notes write doc"),
+        (&["notes", "write", "cr", "--verdict", "PASS"], "", "usage: keel notes write cr"),
+        (&["mr"], "", "usage: keel mr <"),
+        (&["mr", "setup", "--as", "t2"], "", "usage: keel mr setup"),
+        (&["mr", "commit", "-m", "x", "--as", "t"], "", "usage: keel mr commit"),
+        (&["mr", "commit", "-m"], "", "usage: keel mr commit"),
+        (&["mr", "confirm", "wu", "wu/e/a", "--as", "t", "--report", "docs/a.html"], "", "usage: keel mr confirm"),
+    ] {
+        for help in [[args, &["--help"]].concat(), [&["-h"], args].concat()] {
+            let before = repo_state(p);
+            let o = run(env!("CARGO_BIN_EXE_keel"), p, &help, input);
+            let changed = repo_state(p) != before;
+            if !o.status.success() || !stdout(&o).starts_with(usage) || !stderr(&o).is_empty() || changed {
+                bad.push(format!("{help:?}: exit {:?}, changed {changed}: {}", o.status.code(), text(&o).lines().next().unwrap_or("")));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "{} of 48 wrong:\n{}", bad.len(), bad.join("\n"));
+}
+
+/// The case that signed: `mr::positionals` took `--help` for a flag with a value.
+#[test]
+fn help_on_a_sign_off_signs_nothing() {
+    let d = fixture();
+    let p = d.path();
+    bless(p, WU_TESTS, "PASS");
+    for args in [&["mr", "confirm", "wu", "wu/e/a", "--as", "t", "--report", "docs/a.html", "--help"][..], &["mr", "confirm", "wu", "--help"]] {
+        let o = keel(p, args);
+        assert!(o.status.success() && stdout(&o).starts_with("usage: keel mr confirm"), "{args:?}: {}", text(&o));
+        assert!(!has_note(p, "mr", "wu/e/a"), "{args:?} signed: {}", text(&o));
+    }
+    sign(p, "wu", "docs/a.html");
+    assert!(has_note(p, "mr", "wu/e/a"), "the tip was ready to sign");
+}
+
+#[test]
+fn help_needs_no_repository() {
+    let d = TempDir::new().unwrap();
+    for (args, usage) in [
+        (&["--help"][..], "usage: keel <init"),
+        (&["mr", "confirm", "--help"], "usage: keel mr confirm"),
+        (&["notes", "write", "doc", "-h"], "usage: keel notes write doc"),
+    ] {
+        let o = keel(d.path(), args);
+        assert!(o.status.success() && stdout(&o).starts_with(usage), "{args:?}: {}", text(&o));
+    }
+    assert_eq!(std::fs::read_dir(d.path()).unwrap().count(), 0, "nothing written");
+}
+
+#[test]
+fn each_usage_error_prints_the_help_text() {
+    let d = fixture();
+    let p = d.path();
+    for (error, help) in [
+        (&["bogus"][..], &["bogus", "--help"][..]),
+        (&["init", "--bogus"], &["init", "--help"]),
+        (&["verify-dod"], &["verify-dod", "--help"]),
+        (&["preflight"], &["preflight", "--help"]),
+        (&["notes", "write", "bogus"], &["notes", "write", "--help"]),
+        (&["mr"], &["mr", "--help"]),
+        (&["mr", "setup"], &["mr", "setup", "--help"]),
+        (&["mr", "commit"], &["mr", "commit", "--help"]),
+        (&["mr", "confirm"], &["mr", "confirm", "--help"]),
+    ] {
+        let (e, h) = (keel(p, error), keel(p, help));
+        assert!(!e.status.success() && h.status.success(), "{error:?}: {}{}", text(&e), text(&h));
+        assert_eq!(stderr(&e), stdout(&h), "{error:?} and {help:?} print one text");
+    }
+}
