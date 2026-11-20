@@ -107,11 +107,14 @@ open:
     proposal: >-
       Take any of them when the file is next edited.
     source: >-
-      E-KEELFIX.W1 review rounds 1 to 3, W2 review round 1 and its result's follow-ups, W3 review round 1, and the
-      independent read of the close's rule-file commit 26c4731 (GREEN, wording nits N1 to N5).
+      E-KEELFIX.W1 review rounds 1 to 3, W2 review round 1 and its result's follow-ups, W3 review round 1, the
+      independent read of the close's rule-file commit 26c4731 (GREEN, wording nits N1 to N5), and the epic review
+      (PASS round 1 on 00653f1, three nits waived).
     taken-by: "unowned: the next WU that edits the named file"
     items:
-      - "`src/main.rs` `run()`: the top and `init` usage texts are literals beside `src/help.rs`'s `TOP` and `INIT`; point them at those (W2 nit, owed by W3, not done)."
+      - "`src/main.rs` `run()`: the top and `init` usage texts are literals beside `src/help.rs`'s `TOP` and `INIT`; share one const, as gate, mr and notes do (W2 nit, owed by W3, not done; raised again as an epic review nit)."
+      - "`tests/suite/cli.rs` `keel_mr_commit_accepts_only_the_committed_tiers`: its first assertion also passes when `keel mr commit` reads the folder's rules (the commit-msg hook refuses anyway), so its message claims a cause it does not tell apart; reword it or drop it (epic review nit; the later asserts and the epic e2e catch that mutant)."
+      - "`notes::args_problem` is a general argument reader that `src/gate.rs` uses too, but it lives in `src/notes.rs`; move it to a shared module at the next refactor (epic review nit)."
       - "The pre-push hook's notes sync runs `git push --no-verify --quiet <remote> …`, so a remote named `-h` reads as git's option and the sync fails with a warning; the gate itself runs (W2 result)."
       - "`keel mr setup|commit|confirm` do not refuse an unknown option, as `verify-dod`, `preflight` and `notes write` now do (W2 plan, open point 4)."
       - "`HEAD_CONFIG_FIX` says `git reset --soft HEAD~1`, which may undo an unrelated commit when the bad rules landed around the hooks; name the commit that broke it (W1 round 3)."
