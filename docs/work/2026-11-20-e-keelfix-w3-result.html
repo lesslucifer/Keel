@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6affbdda9f34851f0dfb2ae1">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-KEELFIX.W3 result: the GitHub signer line removed</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-KEELFIX.W3 · The GitHub signer line removed</h1>
+      <p>Keel knows three signer kinds now. A GitHub line, or any other kind, is refused by its line number.</p>
+      <div class="meta">T3 · WU result · 2026-11-20 · Keel · epic E-KEELFIX · delivered</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="happened">What happened</h2>
+<p data-c="happened">Keel knows three signer kinds: email, user name and key. A signer-list line of any other kind is refused, with its line number. This covers setup, signing off, rule-file commits and the gate. Rules that name GitHub as a signer kind are refused as unknown. All tests pass.</p>
+
+<h2 id="checks">How you'll know it worked</h2>
+<table data-c="checks">
+  <thead><tr><th>Check from the plan</th><th>Met?</th></tr></thead>
+  <tbody>
+    <tr><td>The keel source names GitHub nowhere.</td><td><b>Met for the signer kind.</b> The word stays in the install links and in the tests that refuse it. See below.</td></tr>
+    <tr><td>A list with a GitHub line on line 2 is refused at sign-off, at a rule-file commit and at the gate, each naming line 2.</td><td><b>Met.</b> Setup refuses it too. Nothing is written.</td></tr>
+    <tr><td>Rules naming GitHub as a signer kind are refused as unknown.</td><td><b>Met.</b> At sign-off and at the gate.</td></tr>
+    <tr><td>Tests, lint and the doc check are green.</td><td><b>Met.</b></td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">The main case, run for real</h2>
+<p data-c="example-intro">From the test run, in a scratch project:</p>
+<ol data-c="example">
+  <li>The epic's signer list holds your user name on line 1 and a GitHub line on line 2.</li>
+  <li>A sign-off as you is refused: "line 2: expected …, tier one of email, username, key". No sign-off is written.</li>
+  <li>A rule-file commit with your name on it is refused the same way. No commit is made.</li>
+  <li>The gate, given a sign-off, is red and names line 2.</li>
+  <li>On a list with no GitHub line, the earlier revert's full test signs off by typing, merges and pushes as before.</li>
+</ol>
+
+<h2 id="diff">Differences from the plan</h2>
+<ul data-c="diff">
+  <li><b>"Names GitHub nowhere" was too strong.</b> The install links point at github.com, and the plan kept them. The new tests feed keel a GitHub line to check it is refused.</li>
+  <li><b>One new test was not red before.</b> An old GitHub-approval sign-off on a clean list already read "not listed". The old "GitHub only" wording needed a GitHub line in the list, which is now refused outright. The test stays, to hold the new wording.</li>
+  <li><b>Only a unit test catches a lone unknown kind.</b> A GitHub line with two words also fails the line-shape check, so the larger tests stay green without the new rule. The unit test covers one-word lines and typos.</li>
+  <li>The example comes from the tests. A by-hand run was blocked: workers may not run the sign-off command.</li>
+</ul>
+
+<h2 id="left">What is left, and who takes it</h2>
+<table data-c="left">
+  <thead><tr><th>What</th><th>Who</th></tr></thead>
+  <tbody>
+    <tr><td>The architecture row on signer kinds.</td><td>This epic's close, in your one rule-file commit.</td></tr>
+    <tr><td>The decision note's amendment and the backlog row marked done.</td><td>This epic's close, plain commits.</td></tr>
+    <tr><td>The epic test's GitHub-line step.</td><td>This epic's close.</td></tr>
+    <tr><td>Review, your sign-off, and the merge into the epic.</td><td>The router starts the review; you sign.</td></tr>
+  </tbody>
+</table>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
