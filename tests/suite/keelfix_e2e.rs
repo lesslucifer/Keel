@@ -130,8 +130,15 @@ fn keelfix_commits_follow_the_committed_rules_and_nothing_is_written_unless_aske
     write(p, "docs/rules.html", "<p>the rules, amended</p>");
     git(p, &["add", "docs/rules.html"]);
     let head = git(p, &["rev-parse", "HEAD"]);
+    // keel mr commit's own check refuses, by HEAD's tiers, before any git commit runs.
     let o = keel(p, &["mr", "commit", "-m", "docs: amend the rules", "--as", "t@t"], "");
-    assert!(!o.status.success(), "only the folder's tiers accept email t@t: {}", text(&o));
+    let (out, refusal) = (text(&o), "keel mr: refused - t@t is not listed in HEAD:.keel/mr-allowed");
+    assert!(!o.status.success() && out.contains(refusal) && !out.contains("commit refused"), "only the folder's tiers accept email t@t: {out}");
+    assert_eq!(git(p, &["rev-parse", "HEAD"]), head, "nothing committed");
+    // The commit-msg hook judges a typed trailer by HEAD's tiers too, the folder's still widened.
+    let o = run("git", p, &["commit", "-qm", "docs: amend the rules\n\nReviewed-By: email t@t"], "");
+    let (out, refusal) = (text(&o), "keel: commit refused - it touches rule-bearing docs/rules.html with no Reviewed-By trailer from a listed signer");
+    assert!(!o.status.success() && out.contains(refusal), "the commit-msg hook: only the folder's tiers accept email t@t: {out}");
     assert_eq!(git(p, &["rev-parse", "HEAD"]), head, "nothing committed");
     ok(keel(p, &["mr", "commit", "-m", "docs: amend the rules", "--as", "t"], ""));
     assert!(git(p, &["log", "-1", "--format=%B"]).contains("Reviewed-By: username t"));
@@ -149,15 +156,18 @@ fn keelfix_commits_follow_the_committed_rules_and_nothing_is_written_unless_aske
     ok(keel(p, &["notes", "write", "cr", "--verdict", "PASS"], ""));
     let before = state(p);
     let o = keel(p, &["verify-dod", "wu", "wu/e/a", "--no-receipt"], "");
-    assert!(!o.status.success() && text(&o).contains("8·manual-review"), "red only on the sign-off: {}", text(&o));
-    assert!(!text(&o).contains("FAIL 1") && !text(&o).contains("FAIL 6"), "{}", text(&o));
+    let out = text(&o);
+    assert!(!o.status.success() && out.contains("FAIL  8·manual-review"), "red on the sign-off: {out}");
+    assert!(!out.contains("FAIL  1·") && !out.contains("FAIL  6·"), "red only on the sign-off: {out}");
     for (args, usage) in
         [(&["notes", "write", "doc", "--help"][..], "usage: keel notes write doc"), (&["mr", "confirm", "wu", "--as", "t", "--help"], "usage: keel mr confirm")]
     {
         let o = keel(p, args, "");
         assert!(o.status.success() && String::from_utf8_lossy(&o.stdout).starts_with(usage), "{args:?}: {}", text(&o));
     }
-    assert_eq!(state(p), before, "a dry run and two help requests wrote nothing");
+    // The red run stops before its receipt branch; this guards the two help requests (the green
+    // --no-receipt run is step 4's).
+    assert_eq!(state(p), before, "a red gate run and two help requests wrote nothing");
     assert!(!has_note(p, "mr", &wu) && !has_note(p, "dod", &wu));
 
     // ── 4. the owner signs; the receipt only when asked; the merges go through the hooks ──────
@@ -170,7 +180,8 @@ fn keelfix_commits_follow_the_committed_rules_and_nothing_is_written_unless_aske
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"], ""));
     assert!(has_note(p, "dod", &wu), "the gate without the flag writes its receipt");
     git(p, &["switch", "-q", "epic/e"]);
-    ok(run("git", p, &["merge", "-q", "--no-ff", "-m", "Merge E2E.W1: a returns one", "wu/e/a"], ""));
+    let o = ok(run("git", p, &["merge", "-q", "--no-ff", "-m", "Merge E2E.W1: a returns one", "wu/e/a"], ""));
+    assert!(text(&o).contains(&format!("verify-dod wu green on {}", &wu[..10])), "the merge hook ran the wu gate: {}", text(&o));
 
     let data = |page: &str| page.replace(".html", ".yaml");
     git(p, &["rm", "-q", WU_PLAN, &data(WU_PLAN), WU_RESULT, &data(WU_RESULT)]);
@@ -205,8 +216,10 @@ fn keelfix_commits_follow_the_committed_rules_and_nothing_is_written_unless_aske
     let head = git(p, &["rev-parse", "HEAD"]);
     write(p, "docs/rules.html", "<p>the rules, amended again</p>");
     git(p, &["add", "docs/rules.html"]);
+    // mr commit's own roster check refuses before git commit runs: no hook's refusal in its output.
     let o = keel(p, &["mr", "commit", "-m", "docs: amend the rules", "--as", "t"], "");
-    assert!(!o.status.success() && text(&o).contains("HEAD:.keel/mr-allowed line 2"), "keel mr commit: {}", text(&o));
+    let err = String::from_utf8_lossy(&o.stderr).to_string();
+    assert!(!o.status.success() && err.starts_with("keel: HEAD:.keel/mr-allowed line 2") && !err.contains("commit refused"), "keel mr commit: {}", text(&o));
     let o = run("git", p, &["commit", "-qm", "docs: amend the rules\n\nReviewed-By: username t"], "");
     assert!(!o.status.success() && text(&o).contains("HEAD:.keel/mr-allowed line 2"), "the commit-msg hook: {}", text(&o));
     assert_eq!(git(p, &["rev-parse", "HEAD"]), head, "no commit written");
