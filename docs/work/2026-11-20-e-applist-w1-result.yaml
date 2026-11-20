@@ -1,0 +1,265 @@
+artifact: wu-result
+status: ready
+id: E-APPLIST.W1
+epic: E-APPLIST
+title: "E-APPLIST.W1 · The router's update log"
+date: "2026-11-20"
+page: 2026-11-20-e-applist-w1-result.html
+outcome: >-
+  Delivered. scripts/router-app.sh is the one writer of <main checkout>/.router/app/log.jsonl and state.json: start
+  wipes both and begins a new run (run id <router-name>.<YYYYMMDD-HHMMSS>.<pid>); stage, set, del and alert each
+  write one numbered line, keys in the contract's order (run, n, at, op, key, value), and fold it into the state
+  under one mkdir lock; sixteen writers at once keep the numbers whole; past 2,000 lines a file holding only the
+  new line replaces the log; a refused call exits 2 and writes nothing. scripts/router-guard.jq admits exactly the
+  router's plain-word shapes (start <name>, stage <wu> <stage> [<tip>], del question/<id>, del wu/<wu>/stage) and
+  denies set, alert and every other form; .claude/settings.json allows the same three shapes; .claude/agents/router.md
+  names them. The four rule files landed in the owner's one typed commit 83b393d. An independent re-gate on 83b393d
+  was GREEN: cargo test 137 unit and 361 suite pass (10 ignored), fmt, clippy and keel check green, no blocker, no
+  important finding, six nits. Code review round 1 on 3509e4c FAILED (0 blockers, 6 importants, 4 nits waived, 1
+  refuted): six contract clauses the tests did not pin, the script right. The fix commit 17c505f adds the tests that
+  pin them (scripts/ unchanged): unit 137, suite 367 pass (10 ignored). Code review round 2 on 282f7f1 FAILED (0
+  blockers, 3 importants, 3 nits waived, 2 refuted): three more clauses unpinned (start replacing the log by a
+  rename, start writing the state first, the lock's pid mark), the script right again. The fix commit 34308bb pins
+  them and every survivor of a sweep of 236 mutants over the whole script that is a contract clause (scripts/
+  unchanged): unit 137, suite 372 pass (10 ignored). Code review round 3 on 458ba28 FAILED (0 blockers, 1
+  important, 2 nits waived): the signal test was a false red when the suite was launched with SIGINT or SIGHUP
+  ignored (cargo test &, nohup), the script right. The round-3 fix c24e2c4 (tests/ only) starts the paused writer with
+  HUP, INT and TERM at their defaults, in a process group the harness kills if a test fails first, and takes both
+  nits: unit 137, suite 373 pass (10 ignored), router_app green 10 of 10 in each of nine launch modes. Code review
+  round 4 on d350cc7 FAILED (0 blockers, 1 important, 1 nit waived): the dropped-writer test judged the writer's group
+  gone only once every orphan was reaped, a false red where PID 1 never reaps (a container without an init). The
+  round-4 fix 98eb076 (tests/ only) judges it gone by the writer's stderr reaching EOF, takes the nit (the writer
+  stays in the test binary's process group, so a ^C reaches it) and a sibling (the sixteen writers are all waited
+  for before any is judged): unit 137, suite 373 pass (10 ignored). A fix-PASS answers round 4; no round 5.
+deviations:
+  - >-
+    Write order: the state first, then the log. The plan's details.order and details.rotation say the log is written
+    before the state. The script renames the new state into place and then appends (or rotates) the log. Why: a
+    writer killed between the two then leaves a gap (the state ahead of the log), which the app already handles by
+    reading the state once (docs/local-app.html "Applying a line"); log-first would leave a line the state lacks, and
+    the next writer would read the old n and repeat that number. start also writes the state first. The re-gate
+    judged this departure right. The plan YAML's order and rotation text are left as written (a T3 plan, archived at
+    the close); this entry records the change.
+  - >-
+    The tests took two commits, not one: d46a271 (the tests, red first) and 09f5cf4 (a refused call before start
+    once left an empty .state.* temp file behind; the refused calls and the sixteen writers now assert .router/app
+    holds only log.jsonl and state.json). The script creates its temp files only once nothing can refuse the change.
+  - >-
+    The worker could not write .claude/settings.json or .claude/agents/router.md in its worktree (the sandbox denies
+    them); their intended diff went to the router as a file and the owner applied it in the typed commit. Before
+    that, the worker's tree was green except the two tests that read those files (settings entries, router.md's
+    posture): suite 359 passed, 2 failed.
+  - >-
+    docs/local-app.html "Where it travels" lists start, set, del and alert, not stage: a T1/T2 doc, changed at the
+    epic close by distillation, not in this WU.
+evidence:
+  commits:
+    - "7b0a40e docs: the WU plan pair"
+    - "d46a271 test: tests/suite/router_app.rs (new), tests/suite/router.rs, tests/suite/main.rs - red first"
+    - "09f5cf4 test: a writer leaves its two files and nothing else"
+    - "83b393d rules: the owner's typed commit (keel mr commit, Reviewed-By trailer) of scripts/router-app.sh, scripts/router-guard.jq, .claude/settings.json, .claude/agents/router.md"
+    - "3509e4c docs: this result pair (review round 1 judged this tip: FAIL)"
+    - "17c505f test: review round 1's six importants pinned, four nits taken (tests/ only)"
+    - "282f7f1 docs: this result pair, updated for round 1 (review round 2 judged this tip: FAIL)"
+    - "34308bb test: review round 2's three importants pinned, three nits taken, a sweep's survivors pinned (tests/ only)"
+    - "458ba28 docs: this result pair, updated for round 2 (review round 3 judged this tip: FAIL)"
+    - "c24e2c4 test: review round 3 - the paused writer's signals reset, its process group killed on drop, two state shapes pinned (tests/ only)"
+    - "d350cc7 docs: this result pair, updated for round 3 (review round 4 judged this tip: FAIL)"
+    - "98eb076 test: review round 4 - a dropped writer judged gone by its stderr's EOF, the writer in the binary's process group, the sixteen writers all waited (tests/ only)"
+    - "this result pair, updated for round 4: plain commit; test note and doc note on the tip, --target epic/E-APPLIST"
+  baseline: "epic/E-APPLIST 1f96ca3"
+  red-before: >-
+    At d46a271 (no script, no guard shape, no settings entry), cargo test --test suite router: 16 failed, every test the WU adds or changes;
+    1 passed, router_app::compiled_file, the layout marker every suite file carries (router_app:: tests: the script is missing, ENOENT at router_app.rs:34; router::
+    settings_allow_exactly_the_app_shapes_the_guard_admits, the_guard_and_the_app_script_take_the_same_words,
+    router_guard_admits_the_update_log_in_plain_words_only, router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag,
+    keels_router_security_files_are_rule_bearing, router_text_names_what_the_launcher_prints_and_no_retired_mechanism).
+  worker-tree-before-commit: "the four rule files in the worktree, settings.json and router.md denied by the sandbox: unit 137 passed; suite 359 passed, 2 failed (the two tests reading those files), 10 ignored."
+  green-after: "The re-gate at 83b393d: cargo test unit 137 passed; suite 361 passed, 10 ignored; cargo fmt --check and cargo clippy -D warnings clean; keel check green. After the round-1 fix at 17c505f: unit 137 passed; suite 367 passed, 10 ignored; fmt, clippy and keel check green. After the round-2 fix at 34308bb: unit 137 passed; suite 372 passed, 10 ignored; fmt, clippy and keel check green. After the round-3 fix at c24e2c4: unit 137 passed; suite 373 passed, 10 ignored; fmt, clippy and keel check green. After the round-4 fix at 98eb076: unit 137 passed; suite 373 passed, 10 ignored; fmt, clippy and keel check green."
+  review-round-1: >-
+    FAIL on 3509e4c (cr note): 0 blockers, 6 importants, 4 nits (waived), 1 refuted (the INT/TERM trap, equivalent
+    under bash 3.2's sh). Every important was a test that did not pin a contract clause; the reviewer's mutants
+    survived. Fixed in 17c505f, tests/ only, each new assertion red against its mutant in a scratch copy and green on
+    the shipped script: I1 rotation at 1,999 lines (kills -ge 1999, -ge 1000); I2 a 1,024-byte line taken, 1,025
+    refused (kills cap 1300, cap 1000, measuring the value only); I3 an inherited GIT_DIR, GIT_WORK_TREE and
+    GIT_COMMON_DIR naming a decoy repo (kills dropping the GIT_* unset); I4 a mv shim failing a writer between its
+    writes: no line ahead of the state, no repeated number (kills log-first); I5 a sleep shim counting 99-100 polls
+    of 0.05 s (kills a 10 s wait, a 0.1 s poll); I6 state.json's inode changes on every verb (kills writing it in
+    place). The four nits were taken too: a symlinked .router, the shebang and mode, umask 077 (dirs 0700, files
+    0600 under a caller's umask 022), router.md's set and alert sentence (each killed its mutant). Round 2 reviews
+    the fix.
+  review-round-2: >-
+    FAIL on 282f7f1 (cr note): 0 blockers, 3 importants, 3 nits (waived), 2 refuted (the empty dirs a refused call
+    before start makes; the guard-parity loop's 2 s). Every round-1 fix held. Fixed in 34308bb, tests/ only, each
+    pin red against its mutant in a scratch copy (and the same mutant green on the round-1 tests), green on the
+    shipped script: I1 log.jsonl's inode changes on start and on the restart past 2,000 lines, a reader holding the
+    old log reads it whole (kills A1, start writing the log in place, and R1, the restart in place); I2 a start whose
+    state rename fails changes neither file, one whose log rename fails leaves the new run's state and the old log
+    (kills M29c, start placing the log first); I3 a writer paused inside the lock (a date shim on a fifo) holds
+    .lock/<its pid>; the owner replaces the lock, bare or with another pid's mark, and the writer leaves it (kills
+    B1, B1b rm -rf, B1c and B1d, traps that ignore the mark). The three nits were taken: no real sleep in the lock
+    test (a sleep shim frees the lock on its third poll), the took < 4 s check dropped, and a link made while a
+    writer waits refused under the lock (kills S05). The sweep (236 mutants: each statement of
+    scripts/router-app.sh deleted, each bound, code, message and branch of the words, start, the verbs, the lock
+    and the traps changed; 212 killed) added these pins, each red against its mutant: a writer stopped by TERM, INT
+    or HUP inside the lock exits 1, writes nothing and leaves no lock (the plan's trap clause); a copy outside any
+    checkout exits 1 and makes nothing (without the check it wrote .router in the caller's directory); a log or
+    state that is a directory exits 1; a state of the wrong shape exits 1 until a start; a first start whose log
+    rename fails is followed by a writer that makes the log (kills deleting lines=0); refusals go to stderr alone;
+    start's OK line n=1, its state's key order and the local offset of at; the wu id's literal dot; the 512-byte
+    value cap counted in bytes. 24 survivors left, none a plan clause: unreachable failure paths (a jq or a temp
+    write failing, a mark mkdir failing, jq printing two lines or two values, the app dir not a dir after mkdir
+    -p); equivalent (set -eu, the jq-on-PATH check, the pre-lock link check that the post-lock one repeats, stage
+    with one word refused either way, the start line measured with its name, 100 polls instead of 99: 5.0 s is
+    still "up to 5 s"); no clause (LC_ALL=C, as round 2 found; the state's trailing newline; key order inside a
+    state alert; the unknown-verb wording). Round 3 reviews the fix.
+  review-round-3: >-
+    FAIL on 458ba28 (cr note, scope since 282f7f1): 0 blockers, 1 important, 2 nits (waived). Every round-2 fix held.
+    The important: a_writer_stopped_by_a_signal_releases_its_lock_and_writes_nothing failed on the unchanged script
+    when the test process started with SIGINT ignored (cargo test & from a non-interactive shell: INT left exit 0)
+    or SIGHUP ignored (nohup: HUP), since a non-interactive sh cannot trap a signal ignored on entry and the spawn
+    passed the disposition on. Reproduced at 458ba28: INT red in the background, HUP red under nohup, green in the
+    foreground. The fix, c24e2c4 (tests/ only): Paused::spawn resets HUP, INT and TERM to their defaults in the child
+    (pre_exec, signal(2) from the libc already linked, no crate added), with stdin null. Red/green in a scratch copy:
+    without the reset INT is red in the background and HUP under nohup (each reset alone dropped: the same); with
+    it, the shipped script is green in the foreground, the background and nohup, and the script mutants stay red
+    in all three (no INT/TERM/HUP trap, no HUP, no INT, no TERM, trap exit 0). Nit 1 taken: Paused starts the
+    writer in a process group of its own and, dropped unreleased, kills the group and reaps the writer; the date
+    shim waits on the fifo with a builtin read, so nothing is being forked when the group is killed (with cat on
+    the fifo, a cat forked during the kill escaped it: router_app red 1 of 50 runs under nohup, and 2 of 90 across
+    the nine launch modes, both under nohup; with the read shim 0 red in 650 runs). A new test drops an unreleased writer and waits for its group to empty (red at 30 s without
+    the drop, without the group kill, or without the group). A deliberately failing test in a scratch copy left
+    its group alive without the drop, and none with it. Nit 2 taken: the wrong-shape test sends a state with no n
+    through a set and values [] through an alert (each red against deleting its check, router-app.sh:163-164,
+    which survived the round-2 test). Launch modes, router_app 10 runs each, beside the full suite running: the
+    foreground, cargo test & under sh, nohup, stdin closed, TMPDIR with a space, umask 000, umask 077, ulimit -n
+    256, and nohup plus background plus stdin closed: 90 of 90 green. The full suite: 10 of 10 green in the
+    foreground, 10 of 10 under nohup in the background with stdin closed. Side note from the review: the plan's
+    lock clause (plan.yaml details) names EXIT, INT and TERM; the script also traps HUP and the test asserts it,
+    a stricter reading of the clause; the plan is left as written. Round 4 reviews the fix.
+  review-round-4: >-
+    FAIL on d350cc7 (cr note, scope since 458ba28): 0 blockers, 1 important, 1 nit (waived). Every round-3 finding
+    held. The important: a_paused_writer_dropped_unreleased_leaves_no_process counted the writer's group gone only
+    at ESRCH, which needs every orphan (the $(...) subshell, the date shim, sed) reaped; on Linux kill(-pgid, 0)
+    succeeds while zombies remain, so where PID 1 does not reap (docker run without --init, a CI container job) the
+    test fails at 30 s although the drop worked. Shown here in a scratch copy: a Drop that kills the writer but
+    leaves it unreaped makes the old check red (an all-zombie group answers EPERM on macOS), every process exited;
+    the new check is green on it. The fix, 98eb076 (tests/ only): every process of the writer's tree holds its
+    stderr and an exited process holds no fd, reaped or not, so the test reads that pipe to EOF (30 s bound), after
+    checking it is still open while the writer is paused. Red against each mutant of the round-3 harness: no Drop,
+    no group kill, no process group (2 of 2 runs each, the tree left running). The nit, taken: process_group(0)
+    kept a ^C or a group kill of the test binary from the writer, its subshell, sed and the shim, which then waited
+    on the fifo for ever with the lock mark left. The writer now stays in the binary's group (the test asserts
+    getpgid(writer) = getpgrp()); Drop kills it by pid, reaps it, then lets the shim go by writing the fifo opened
+    O_RDWR|O_NONBLOCK; the shim opens the fifo read-write before it marks ready, so the fifo always has a reader
+    when Drop or release writes. Each red: no Drop, no pid kill (the writer wrote), no fifo write, the writer in a
+    group of its own. A group INT to the test binary in a paused window, 50 runs: at d350cc7 the writer's tree outlived
+    the binary and the lock stayed in 50 of 50; at 98eb076 INT, TERM and HUP each left no process and no lock in 50
+    of 50. Sibling check (launch-, reaping- and leak-dependence on every exit path):
+    every other process the tests start (18 more tests in router_app.rs, the start and set calls of the three
+    Paused tests, and router.rs's guard-parity test) is waited for inside .output(), so none runs when an assertion
+    fails, and a ^C reaches it in the binary's group; sixteen_writers judged
+    writer i before waiting for writers i+1..15, so a failure left them running (5 runs with writer 0 failed: the
+    tree outlived the binary 2 times past 5 s, by up to 511 ms in the others); it now waits for all sixteen first
+    (0 ms in 5 of 5). Proofs, each run under a wrapper whose descendants inherit one extra pipe (EOF: every one has
+    exited): a test failing by assert or by panic after Paused::spawn leaves nothing, 10 runs in each of five
+    launch modes (the foreground, sh's &, nohup, stdin closed, INT/HUP/TERM ignored); the signal test, the drop
+    test and the lock-mark test green 10 of 10 in each mode, the tree empty; the script mutants (no INT/TERM/HUP
+    trap, no HUP, no INT, no TERM, trap exit 0) red in every mode; router_app 23 of 23 green in 5 of 5 runs per
+    mode.
+  re-gate: >-
+    A fresh read-only worker (opus, high effort) on 83b393d: GREEN. The four files read against the review checklists
+    (security path for router-app.sh and router-guard.jq: one lock, every value through jq, writes only .router/app,
+    symlinks refused, fail-closed guard admitting only the four shapes, the guard and the script agreeing; settings
+    entries equal to the guard's shapes; router.md's tools line equal to the guard's). No blocker, no important
+    finding; six nits (follow-ups below), none re-committed.
+  by-hand-run: >-
+    The script copied into a scratch git repo under TMPDIR: start keel-1c -> OK n=1; stage E-APPLIST.W1 plan-to-read
+    83b393d -> OK n=2, line {"run":"keel-1c.20261120-123337.46108","n":2,"at":"2026-11-20T12:33:38+08:00","op":"set",
+    "key":"wu/E-APPLIST.W1/stage","value":{"stage":"plan to read","tip":"83b393d"}}; del question/q1 -> OK n=3;
+    stage E-APPLIST.W1 shipped -> exit 2 "the stage must be ...", nothing written; state.json n 3 holding the stage;
+    .router/app holds only log.jsonl and state.json. The guard, fed router PreToolUse events: the stage and del
+    shapes allowed; alert {}, set router x and a stage with extra words denied.
+  tests-added:
+    integration:
+      - tests/suite/router_app.rs (new) start_wipes_both_files_and_begins_a_new_run
+      - tests/suite/router_app.rs each_verb_writes_one_line_with_the_next_number_and_the_state_folds_it
+      - tests/suite/router_app.rs a_stage_line_is_the_contract_the_app_reads (snapshot)
+      - tests/suite/router_app.rs sixteen_writers_at_once_keep_the_numbers_whole
+      - tests/suite/router_app.rs the_2001st_line_restarts_the_log_from_the_state
+      - tests/suite/router_app.rs a_refused_call_writes_nothing
+      - tests/suite/router_app.rs a_held_lock_makes_a_writer_wait_and_a_stale_one_refuse
+      - tests/suite/router_app.rs a_symlinked_app_dir_or_file_is_refused
+      - tests/suite/router_app.rs a_worktree_copy_writes_the_main_checkouts_log
+      - tests/suite/router_app.rs text_with_a_newline_or_quote_stays_one_escaped_line
+      - tests/suite/router.rs router_guard_admits_the_update_log_in_plain_words_only (new)
+      - tests/suite/router.rs the_guard_and_the_app_script_take_the_same_words (new)
+      - tests/suite/router.rs settings_allow_exactly_the_app_shapes_the_guard_admits (new)
+      - tests/suite/router.rs router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag (learns router-app.sh)
+      - tests/suite/router.rs keels_router_security_files_are_rule_bearing (learns router-app.sh)
+      - tests/suite/router.rs router_text_names_what_the_launcher_prints_and_no_retired_mechanism (learns router-app.sh; round 1 - set and alert are the watchdog's and the sender's)
+      - tests/suite/router_app.rs a_log_of_1999_lines_takes_the_2000th_before_it_restarts (review round 1, I1)
+      - tests/suite/router_app.rs a_line_of_exactly_1024_bytes_is_taken_and_one_byte_more_refused (round 1, I2)
+      - tests/suite/router_app.rs an_inherited_git_dir_never_moves_the_log (round 1, I3)
+      - tests/suite/router_app.rs a_writer_that_fails_between_its_writes_leaves_a_gap_never_a_repeat (round 1, I4)
+      - tests/suite/router_app.rs a_held_lock_makes_a_writer_wait_and_a_stale_one_refuse (round 1, I5 - polls counted by a sleep shim)
+      - tests/suite/router_app.rs the_state_is_replaced_by_a_rename_never_rewritten_in_place (round 1, I6)
+      - tests/suite/router_app.rs the_script_runs_by_its_shebang_and_keeps_the_log_private (round 1 nits)
+      - tests/suite/router_app.rs a_symlinked_app_dir_or_file_is_refused (round 1 nit - .router itself)
+      - tests/suite/router_app.rs the_state_is_replaced_by_a_rename_never_rewritten_in_place (round 2, I1 - the log on start and restart)
+      - tests/suite/router_app.rs a_writer_that_fails_between_its_writes_leaves_a_gap_never_a_repeat (round 2, I2 - start)
+      - tests/suite/router_app.rs a_writer_releases_only_the_lock_that_still_holds_its_mark (round 2, I3)
+      - tests/suite/router_app.rs a_held_lock_makes_a_writer_wait_and_a_stale_one_refuse (round 2 nits - no real sleep, no clock check)
+      - tests/suite/router_app.rs a_link_made_while_a_writer_waits_is_refused_under_the_lock (round 2 nit)
+      - tests/suite/router_app.rs a_writer_stopped_by_a_signal_releases_its_lock_and_writes_nothing (round 2 sweep)
+      - tests/suite/router_app.rs a_copy_outside_a_checkout_or_a_file_that_is_not_regular_is_refused (round 2 sweep)
+      - tests/suite/router_app.rs a_state_of_the_wrong_shape_is_refused_until_a_start (round 2 sweep)
+      - "tests/suite/router_app.rs start_wipes_both_files_and_begins_a_new_run, a_refused_call_writes_nothing, a_writer_that_fails_between_its_writes_leaves_a_gap_never_a_repeat (round 2 sweep: OK line, key order, offset, stderr, wu dot, byte cap, a state with no log)"
+      - tests/suite/router_app.rs a_writer_stopped_by_a_signal_releases_its_lock_and_writes_nothing (round 3 - green whatever signals the launch ignores; Paused resets them)
+      - tests/suite/router_app.rs a_paused_writer_dropped_unreleased_leaves_no_process (round 3 nit 1, new)
+      - tests/suite/router_app.rs a_state_of_the_wrong_shape_is_refused_until_a_start (round 3 nit 2 - no n under a set, values [] under an alert)
+      - tests/suite/router_app.rs a_paused_writer_dropped_unreleased_leaves_no_process (round 4 - gone at the writer's stderr EOF, reaping aside; the writer in the binary's group)
+      - tests/suite/router_app.rs sixteen_writers_at_once_keep_the_numbers_whole (round 4 sibling - all sixteen waited before any is judged)
+    unit: "waived: a shell script and a jq filter have no unit layer in this repo"
+    e2e: "none at the WU: the epic test at the close runs the real script's start and stage lines"
+  docs: "this result pair (new); the plan pair at 7b0a40e; no other doc touched"
+distillation: >-
+  Nothing in W1. At the epic close: UC-ROUTE-8 (new: the router's update log) and UC-ROUTE-6 (amended: the guard
+  admits the update command in plain words); docs/local-app.html "Where it travels" gains stage and the state-first
+  write order, per the epic's distillation plan.
+follow-ups:
+  - >-
+    N1 (nit) router-app.sh:119-121: a hardlinked log.jsonl or state.json passes the regular-file check (needs a
+    same-user write). Fix idea: refuse a link count over 1. Taken by: a later small WU of E-APPLIST, or the A5 epic
+    (the router's own follow-ups), the owner's choice.
+  - >-
+    N2 (nit) :162-181: a hand-corrupted state.json holding two JSON values, or a non-integer .n, garbles the parse or
+    is carried on. Round 2's sweep found a third case of the same cause: an empty state.json makes a writer exit 0,
+    append an empty line to the log and write a blank state, and every writer after it does the same until a
+    start (only a hand edit or a truncation outside the script makes one: the script replaces the state by a
+    rename). Fix idea: read it with jq -s and check it holds exactly one value and n is a whole number; the
+    wrong-shape test then takes the three cases. Taken by: the same WU as N1.
+  - >-
+    N3 (nit) :33: an exported CDPATH makes the script fail closed (exit 1). Fix idea: HERE=$(CDPATH= cd -P -- ...).
+    Taken by: the same WU as N1.
+  - >-
+    N4 (nit) :131-138: a signal between mkdir and the trap leaves a stale lock; any mkdir failure (an unwritable dir)
+    reports LOCKED after 5 s. Fix idea: set the trap before the loop; fail at once when the dir is not writable.
+    Taken by: the same WU as N1.
+  - >-
+    N5 (nit) :55: the alert link grammar (the plan's) admits keel://../../etc. alert is not reachable by the router.
+    Fix idea: tighten the grammar (no .. segment) in the script, or check it in the app's link handler. Taken by: W3
+    (the sender writes alerts) or the app's link handler, in E-APPLIST.
+  - "N6 (nit) the guard is stricter than the script for a name containing --ou: safe, no fix. Taken by: none needed."
+  - "docs/local-app.html 'Where it travels' lacks stage: E-APPLIST's close, distillation."
+  - "A fix-PASS on 98eb076 answering round 4 (keel notes write cr --verdict PASS --fixes d350cc7c5e, written by a fresh reviewer, no round 5), the owner's sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
+details:
+  base: "wu/E-APPLIST/w1-update-log off epic/E-APPLIST at 1f96ca3"
+  files:
+    plain-commits: [tests/suite/router_app.rs (new), tests/suite/router.rs, tests/suite/main.rs, docs/work/2026-11-20-e-applist-w1-plan.*, docs/work/2026-11-20-e-applist-w1-result.*]
+    rule-bearing: [scripts/router-app.sh (new), scripts/router-guard.jq, .claude/settings.json, .claude/agents/router.md]
+  code-review-scope: "tests/ only: scripts/ and .claude/ are not code paths; the rule files were read by the re-gate and carry the owner's Reviewed-By trailer"
+  known: "What the tests and the re-gate prove: the contract lines, the numbering under 16 writers, rotation at its boundary, the 1,024-byte line cap, refusals, the lock wait's polls, symlink refusal, the state-first order and rename (start included), the lock's pid mark and its release on exit and on a signal (whatever signals the suite's launch ignores), a copy outside a checkout refused, an inherited GIT_DIR ignored, the guard and settings shapes."
+  not-known: "Not yet shown: the app reading these files (W4 onward and the epic test); the router calling the shapes in a live run (the keel-router skill text is W3's); hardlinks and a corrupted state of two values, a fractional n or no bytes (N1, N2) are untested; an empty state is carried on today (N2)."
+  htmldoc:
+    id: 6affcd5c9f34851f0dfb2af5

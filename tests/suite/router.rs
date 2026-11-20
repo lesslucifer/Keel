@@ -112,6 +112,7 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
     assert!(t.elapsed() < Duration::from_secs(3), "guard took {:?} on a long command", t.elapsed());
     assert!(bash("rm x").unwrap().contains("scripts/router-watch.sh commit|signed|merged|pushed|tagged"), "deny message omits the watch shape");
     assert!(bash("rm x").unwrap().contains("scripts/router-inbox.sh"), "deny message omits the inbox shape");
+    assert!(bash("rm x").unwrap().contains("scripts/router-app.sh"), "deny message omits the update log's shapes");
 
     let mut allowed = vec![
         "git log --oneline -5".to_string(),
@@ -145,6 +146,9 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
             Some(p) if p.ends_with("router-watch.sh") => format!("{p} signed 1a2b3c4"),
             Some(p) if p.ends_with("router-inbox.sh watch") => format!("{p} 6600"),
             Some(p) if p.ends_with("router-inbox.sh consume") => format!("{p} 1794659383-abc123"),
+            Some(p) if p.ends_with("router-app.sh start") => format!("{p} keel-1c"),
+            Some(p) if p.ends_with("router-app.sh stage") => format!("{p} E-APPLIST.W1 plan-to-read 1a2b3c4"),
+            Some(p) if p.ends_with("router-app.sh del") => format!("{p} question/q1"),
             Some(p) if p.starts_with("scripts/") => format!("{p} n /w .router/briefs/n.md opus"),
             Some(p) => format!("{p} HEAD"),
             None => a.to_string(),
@@ -360,6 +364,147 @@ fn router_guard_admits_the_inbox_watcher_and_consume_but_never_post() {
         "X=1 scripts/router-inbox.sh watch 6600",
     ] {
         assert!(bash(denied).is_some(), "guard allowed {denied:?}");
+    }
+}
+
+/// E-APPLIST.W1 (K14): the router writes its update log in plain words only - start with its name, a
+/// work unit's stage, and the del of a question or a stage. `set` and `alert` carry free JSON, which no
+/// plain-word guard can admit (the inbox's post precedent): they are for programs called without a shell.
+#[test]
+fn router_guard_admits_the_update_log_in_plain_words_only() {
+    for ok in [
+        "scripts/router-app.sh start keel-1c",
+        "scripts/router-app.sh start a",
+        "scripts/router-app.sh stage E-APPLIST.W1 plan-in-work",
+        "scripts/router-app.sh stage E-APPLIST.W1 plan-to-read 1a2b3c4",
+        "scripts/router-app.sh stage E-X.W12 plan-approved",
+        "scripts/router-app.sh stage E-X.W1 building fa5a25d16d953d5858c35b58e6025a6a7903ff8b",
+        "scripts/router-app.sh stage E-X.W1 in-review",
+        "scripts/router-app.sh del question/q-1",
+        "scripts/router-app.sh del wu/E-X.W1/stage",
+    ] {
+        assert_eq!(bash(ok), None, "guard denied documented shape {ok:?}");
+    }
+    for denied in [
+        "scripts/router-app.sh",
+        "scripts/router-app.sh start",
+        "scripts/router-app.sh start keel-1c extra",
+        "scripts/router-app.sh set worker/w1 1",
+        "scripts/router-app.sh set router keel-1c",
+        r#"scripts/router-app.sh set question/q1 "x""#,
+        r#"scripts/router-app.sh alert {"headline":"h"}"#,
+        "scripts/router-app.sh alert x",
+        "scripts/router-app.sh del router",
+        "scripts/router-app.sh del facts",
+        "scripts/router-app.sh del worker/w1",
+        "scripts/router-app.sh del worker/w1/report",
+        "scripts/router-app.sh del epic/E-X/paused",
+        "scripts/router-app.sh del wu/E-X.W1/conflict",
+        "scripts/router-app.sh del question/q1 extra",
+        "scripts/router-app.sh stage E-X.W1",
+        "scripts/router-app.sh stage E-X.W1 done",
+        "scripts/router-app.sh stage E-X.W1 building 1a2b3c4 extra",
+        "scripts/router-app.sh stage E-X.W1 building HEAD",
+        "scripts/router-app.sh stage E-X.W1 building HEAD~1",
+        "scripts/router-app.sh start 'keel-1c'",
+        r#"scripts/router-app.sh start "keel-1c""#,
+        "scripts/router-app.sh start $USER",
+        "scripts/router-app.sh start keel-1c > x",
+        "scripts/router-app.sh start keel-1c; id",
+        "scripts/router-app.sh start keel-1c && id",
+        "X=1 scripts/router-app.sh start keel-1c",
+        "scripts/../scripts/router-app.sh start keel-1c",
+        "scripts/router-app.sh del question/../x",
+        "scripts/router-app.sh wipe",
+        "sh scripts/router-app.sh start keel-1c",
+        "./scripts/router-app.sh start keel-1c",
+    ] {
+        assert!(bash(denied).is_some(), "guard allowed {denied:?}");
+    }
+    assert!(
+        bash("scripts/router-app.sh set worker/w1 1")
+            .unwrap()
+            .contains("router-app.sh start <name>|stage <wu> <stage> [<tip>]|del question/<id>|del wu/<wu>/stage"),
+        "the deny message does not name the update log's shapes"
+    );
+}
+
+/// E-APPLIST.W1: the guard and `scripts/router-app.sh` each hold the router's words, so every probe of
+/// the router's three shapes gets the same verdict from both, as the inbox pair does: the router is
+/// never denied a word the script takes, and never admitted to one the script refuses.
+#[test]
+fn the_guard_and_the_app_script_take_the_same_words() {
+    let d = TempDir::new().unwrap();
+    let main = d.path().join("main");
+    std::fs::create_dir_all(main.join("scripts")).unwrap();
+    std::fs::copy(root().join("scripts/router-app.sh"), main.join("scripts/router-app.sh")).unwrap();
+    common::git_shim(&d.path().join("shim"));
+    let path = common::path_with(d.path().join("shim"));
+    assert!(common::cmd("git").args(["init", "-q"]).current_dir(&main).output().unwrap().status.success());
+    let script = |words: &str| {
+        let o = common::cmd("sh").arg(main.join("scripts/router-app.sh")).args(words.split(' ')).env("PATH", &path).output().unwrap();
+        let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+        match o.status.code() {
+            Some(0) => true,
+            Some(2) => false,
+            c => panic!("{words:?}: exit {c:?}: {out}"),
+        }
+    };
+    assert!(script("start keel-1c"), "the script refuses its own start");
+    let long = |n: usize| "a".repeat(n);
+    let mut probes: Vec<String> = Vec::new();
+    for name in ["keel-1c", "a", "0", "a-", "-a", "A", "a_b", "a.b", "a:b", &long(32), &long(33)] {
+        probes.push(format!("start {name}"));
+    }
+    for wu in [
+        "E-X.W1",
+        "E-APPLIST.W1",
+        "E-A1B2.W999",
+        "E-X.W1000",
+        "E-x.W1",
+        "E-.W1",
+        "E-X.W",
+        "E-X.w1",
+        "X-X.W1",
+        &format!("E-{}.W1", "A".repeat(16)),
+        &format!("E-{}.W1", "A".repeat(17)),
+    ] {
+        probes.push(format!("stage {wu} building"));
+        probes.push(format!("del wu/{wu}/stage"));
+    }
+    for stage in ["plan-in-work", "plan-to-read", "plan-approved", "building", "in-review", "plan", "done", "Building", "in_review"] {
+        probes.push(format!("stage E-X.W1 {stage}"));
+    }
+    for tip in ["1a2b3c4", "1a2b3c", &"f".repeat(40), &"f".repeat(41), "1A2B3C4", "1a2b3cg", "HEAD"] {
+        probes.push(format!("stage E-X.W1 building {tip}"));
+    }
+    for id in ["q1", "q-1", "0", "-q", "Q1", "q_1", "q.1", "q:1", &long(41), &long(42)] {
+        probes.push(format!("del question/{id}"));
+    }
+    for p in &probes {
+        let by_guard = bash(&format!("scripts/router-app.sh {p}")).is_none();
+        let by_script = script(p);
+        assert_eq!(by_guard, by_script, "{p:?}: guard admits {by_guard}, script takes {by_script}");
+    }
+}
+
+/// E-APPLIST.W1: the settings allow exactly the three update-log verbs the guard admits, never the
+/// whole script: `set` and `alert` stay a prompt and a guard denial.
+#[test]
+fn settings_allow_exactly_the_app_shapes_the_guard_admits() {
+    let mut verbs: Vec<String> = settings()["permissions"]["allow"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a.as_str().unwrap().strip_prefix("Bash(scripts/router-app.sh").map(String::from))
+        .collect();
+    verbs.sort();
+    assert_eq!(verbs, [" del *)", " stage *)", " start *)"], "the settings' update-log entries");
+    for (v, arg) in [("start", "keel-1c"), ("stage", "E-X.W1 building"), ("del", "question/q1")] {
+        assert_eq!(bash(&format!("scripts/router-app.sh {v} {arg}")), None, "the guard refuses the allowed {v}");
+    }
+    for v in ["set worker/w1 1", "alert x"] {
+        assert!(bash(&format!("scripts/router-app.sh {v}")).is_some(), "the guard admits {v}");
     }
 }
 
@@ -865,7 +1010,14 @@ fn keels_router_security_files_are_rule_bearing() {
     let run = |a: &[&str]| common::cmd("git").args(a).current_dir(&c).env("PATH", &path).envs(common::TESTER).output().unwrap();
     assert!(common::cmd(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
     assert!(run(&["checkout", "-q", "-b", "wu/x/gate"]).status.success());
-    for f in ["scripts/router-guard.jq", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", ".claude/agents/worker.md"] {
+    for f in [
+        "scripts/router-guard.jq",
+        "scripts/router-worker.sh",
+        "scripts/router-file-guard.sh",
+        "scripts/router-watch.sh",
+        "scripts/router-app.sh",
+        ".claude/agents/worker.md",
+    ] {
         let body = std::fs::read_to_string(c.join(f)).unwrap();
         std::fs::write(c.join(f), format!("{body}\n")).unwrap();
         assert!(run(&["add", f]).status.success());
@@ -4094,6 +4246,16 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
     for t in ["SendMessage", "ListAgents"] {
         assert!(body.contains(&format!("`{t}`")), "router.md's posture omits {t}");
     }
+    // E-APPLIST.W1: the router's three update-log verbs, in the words the guard admits
+    for shape in ["scripts/router-app.sh", "start <name>", "stage <wu> <stage> [<tip>]", "del question/<id>", "del wu/<wu>/stage"] {
+        assert!(body.contains(shape), "router.md's Bash posture omits {shape:?}");
+    }
+    // and the two verbs it never runs are named as the watchdog's and the sender's (review round 1 nit)
+    let flat = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains("its `set` and `alert` carry free JSON and are the watchdog's and the sender's, never the router's"),
+        "router.md does not give set and alert to the watchdog and the sender"
+    );
 
     let policy: toml::Value = read(".keel/config.toml").parse().unwrap();
     let tiers: Vec<String> = policy["mr"]["tiers"].as_array().unwrap().iter().map(|t| format!("{t}")).collect();
