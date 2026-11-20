@@ -1,0 +1,139 @@
+artifact: wu-plan
+status: ready
+id: E-KEELFIX.W3
+epic: E-KEELFIX
+title: The GitHub signer line removed
+date: "2026-11-20"
+page: 2026-11-20-e-keelfix-w3-plan.html
+requirement: >-
+  After W3, keel knows three signer tiers (email, username, key) and names github nowhere in src/: a roster line
+  of any other tier, the `github: <user id> <login>` line among them, is refused with its line number by every
+  reader of the committed or working roster (keel mr setup, commit, confirm, the commit-msg hook, check 8), and
+  `[mr] tiers` naming github is refused as an unknown tier.
+maps-to: >-
+  E-KEELFIX, its W3 block (docs/work/2026-11-19-e-keelfix-plan.html) and open points 1, 7 and 8; backlog local-app
+  A2 (docs/backlog/local-app.yaml, "the github tier's reading removed once E-DOCSPLIT is on main"); E-GHREVERT.W1
+  result follow-up 1. DEC-70 amended at the epic close; UC-MR-1 unchanged. The gate on W3 (E-DOCSPLIT on main,
+  main merged into epic/E-KEELFIX) is met: main 6c3ee00, merged at fb97430.
+owner-changes:
+  - when: A signer list holds a GitHub line
+    today: Read; it signs nothing, with its own message
+    after: Refused, naming the line number
+  - when: The rules name github among the signer tiers
+    today: Accepted; github signs nothing
+    after: Refused as an unknown tier
+  - when: A signer list holds a line of a tier keel does not know (a typo like usrname)
+    today: Skipped in silence; that signer is then "not listed"
+    after: Refused, naming the line number
+  - when: Someone checks an old GitHub-approval sign-off by hand
+    today: Red, "listed under the github tier only"
+    after: Red, "does not list" - the same outcome, the plain wording
+expected:
+  - git grep -n -i github -- src/ is empty.
+  - A committed roster holding `github: 5499546 lesslucifer` on line 2 makes keel mr confirm, keel mr commit, keel mr setup and a rule-file commit refuse, each naming line 2, and writes no note or commit.
+  - "A committed `[mr] tiers = [\"username\", \"key\", \"github\"]` makes keel mr confirm refuse with \"unknown mr tier 'github'\" and writes nothing; verify-dod is red on 8·manual-review with the same cause."
+  - "An mr/v1 note naming tier github (as the 14 GitHub-approval sign-offs on main do) is red on check 8 with \"does not list\", never \"github tier only\"."
+  - The R50 tests and tests/suite/ghrevert_e2e.rs pass on a roster and policy with no github in them, asserting the same as before but for the two github asserts.
+  - cargo test, cargo fmt --check, cargo clippy --all-targets -D warnings, keel check and keel verify-doc are green on the tip.
+test-plan:
+  unit: >-
+    src/mr.rs, replacing a_github_line_is_a_numeric_id_and_a_login_and_nothing_else, a_github_id_never_signs and
+    the_github_only_refusal_names_only_the_policys_signing_tiers with:
+    a_roster_line_of_a_tier_keel_does_not_know_is_refused_with_its_line_number (the github line on line 2 under
+    every policy; generated lines from a seeded LCG over known and unknown tiers: a line parses exactly when its
+    tier is known and its shape is that tier's; the message names no github shape) and
+    every_known_tier_signs (KNOWN_TIERS == [email, username, key]; default_tiers() equals it; tier_of and signer
+    find a listed username; an unlisted id gets unlisted()'s "is not listed in"). src/main.rs:
+    validate_refuses_exactly_the_tiers_keel_does_not_know gains "github" in its bad list. Red first: on fb97430
+    the github line parses and github is a known tier.
+  integration: >-
+    tests/suite/mr.rs: github_fixture becomes typed_fixture (policy ["username", "key"], roster "username: vu\n");
+    the R50 tests run on it unchanged. The three keep-3 tests (a_github_line_is_read_and_signs_nothing,
+    check_8_on_a_github_only_signer_names_the_github_tier,
+    a_github_line_under_a_policy_without_the_tier_is_read_and_ignored) are replaced by
+    a_roster_with_a_github_line_is_refused_by_its_line_number (mr confirm wu --as vu, mr commit, mr setup and a
+    rule-file commit with a username trailer each refused naming line 2, nothing written; check 8 red naming line 2
+    on a forged username sign-off), a_policy_naming_github_is_refused_as_an_unknown_tier (mr confirm refused,
+    nothing written; check 8 red) and an_old_sign_off_under_the_github_tier_is_red_at_check_8 (forge(..,
+    "5499546", "github", None) on a clean roster: red with "does not list", no "github tier only").
+    tests/suite/ghrevert_e2e.rs: ROSTER "username: t\n", tiers ["username", "key"], its two github asserts (the
+    WU's and the epic's "github tier only" refusals) dropped, the rest unchanged. Red first: the three new tests
+    fail on fb97430 (the line parses, the tier is known, the message says "github tier only").
+  e2e: >-
+    none at the WU: the epic test tests/suite/keelfix_e2e.rs is written at the close (the epic plan's "Epic test");
+    its step 5, a roster with a GitHub line refused by line number, covers W3.
+details:
+  base: "wu/E-KEELFIX/w3-github-tier off epic/E-KEELFIX at fb97430 (W1 b148c50 and W2 283a968 merged; main 6c3ee00 merged in)"
+  commits-so-far:
+    - "03973c4 docs: the epic plan's and the W2 plan's link ../backlog/local-app.html#a2 re-pointed to ../backlog/local-app.yaml; keel verify-doc was red on both (E-DOCSPLIT split the backlog page), and the turn-end doc hook blocks on it"
+    - "this plan pair"
+  precondition:
+    check: "git grep -n -i -E '^github:|\"github\"' <branch> -- .keel/ over main and every local epic/* and wu/* branch (22 epic/main, every wu/)"
+    result: >-
+      Empty on main and on every branch that is live or merged into main, epic/E-KEELFIX and epic/E-DOCSPLIT among
+      them. Still present only on branches cut before E-GHREVERT that are not merged and never will be:
+      epic/E-GHSETUP, wu/E-GHSETUP/plan, wu/E-GHSETUP/w1-inventory (a dropped epic's plan docs only) and
+      wu/E-GHFLOW2/w5-tryit (a dropped WU). None of them adds the line; each inherits it from before the revert, so
+      a merge of one would keep the target's .keel/ unchanged. Branches merged into main (E-GHFLOW, E-GHFLOW2,
+      E-GHFLOW3, E-LOCALTOOL) hold it in history only. No keel mr commit by the owner is needed first.
+  changes:
+    src/mr.rs:
+      - "KNOWN_TIERS = [\"email\", \"username\", \"key\"]; default_tiers() returns it (main.rs's known_tiers still reads it)."
+      - "Removed: const GITHUB, signs_tier, signs, valid_login, valid_user_id, github_only, typed_refusal."
+      - "parse_roster: the two github arms go; a line whose tier is not in KNOWN_TIERS is refused by bad() before the policy filter; bad()'s text drops the github alternative: expected `<tier>: <identity>` or `key: <identity> <ssh-pubkey>`, tier one of email, username, key. A known tier the policy leaves out still authorises nothing, as today."
+      - "tier_of and signer lose the signs() filter (every known tier signs)."
+      - "commit and confirm: typed_refusal(..) becomes unlisted(&src, &id)."
+      - "manual_review (check 8): the github_only branch goes; an unlisted signer gets today's \"whom <roster> does not list\" cause and fix."
+      - "Doc comments naming github or keep 3 (top constants, parse_roster, tier_of, signer) reworded."
+      - "Tests module: its use super::{..} line loses typed_refusal; the three github units replaced (test-plan)."
+    src/main.rs:
+      - "known_tiers()'s comment loses \"(E-GHREVERT.W1, keep 3)\"; validate() unchanged (it reads KNOWN_TIERS)."
+      - "validate_refuses_exactly_the_tiers_keel_does_not_know: \"github\" added to the bad list."
+    tests/suite/mr.rs: "GH_FIXTURE, GH_ROSTER, github_fixture renamed to the typed fixture without github; the section comment (keeps 3 and 4) reworded to R50 only; three tests replaced, three added (test-plan)."
+    tests/suite/ghrevert_e2e.rs: "module doc, ROSTER, init_project's policy and two asserts (test-plan)."
+    untouched-on-purpose:
+      - ".keel/config.toml line 39's comment says E-GHREVERT removed \"the GitHub parts\" of architecture: history, not the tier; and .keel/ is never edited by a worker."
+      - "templates/config.toml already lists [\"email\", \"username\", \"key\"]; skills/, .claude/skills/, AGENTS.md and templates/ name no github tier (their github words are the remote URL and .github/ workflows)."
+      - "src/main.rs's github.com URLs (install page, hooks' install hint) and tests/suite/release.rs, verify_doc.rs, docsplit_e2e.rs, router.rs (.github/ workflows, the sandbox's github.com host): not the tier."
+  rule-bearing:
+    in-w3: "none: W3 changes src/, tests/ and docs/work/ only; rule_bearing lists none of them. No owner's typed commit inside W3."
+    at-the-close: >-
+      docs/architecture.html line 114 (the [mr] tiers row: its sentence "A github tier and a github: <user id> <login>
+      roster line are still read and sign nothing; E-KEELFIX removes them" becomes "A roster line of a tier keel
+      does not know, a github line among them, is refused by its line number") rides the epic's one rule-file
+      commit at the close (epic open point 9), by the owner's keel mr commit, reviewed in the epic-scope review.
+      Not rule-bearing, plain commits at the close: docs/decisions/workflow-gates.html DEC-70 amendment row (its
+      sentence "The revert keeps keel reading the github tier and line ... E-KEELFIX removes it" gets the date
+      and "removed by E-KEELFIX.W3"); docs/backlog/local-app.yaml A2 done.
+  old-signatures:
+    found: >-
+      git log --all --notes=mr: 15 mr/v1 notes carry tier github (signer 5499546, the GitHub-approval era,
+      2026-11-17 to 2026-11-19): 14 on tips merged into main (d81acb5, 99759fa, 23cfcfd, 71bafcf, 035dbb9, 7401665,
+      f4e7aa2, 06c74f3, 7cca9ff, 02ba88a, 9b82aca, 3052507, 2742160, ed3ed04), one on the dropped epic/E-GHSETUP's
+      0371d3d. No commit's Reviewed-By trailer names the github tier; no cr note does.
+    after-w3: >-
+      Kept exactly as written: a note is never edited or copied by hand. Nothing re-judges them: check 8 is
+      boundary-only and the epic walk never re-judges a seam's sign-off; the pre-push hook judges only ranges new
+      to the remote. A by-hand keel verify-dod on one of those tips is red today ("github tier only") and stays
+      red after W3 ("does not list"). Their dod/v1 receipts stay. A dead branch whose committed .keel/ still names
+      github (precondition) is refused by any keel run judged by its own rules; none is meant to merge.
+  close-and-old-pages:
+    facts: >-
+      The epic plan and the W1 and W2 plans and results are pages with no data file (pre-DOCSPLIT). keel treats a
+      page with no data file as a plain page: links, Mermaid labels and a [docs.caps] cap only, never a plan or
+      result. W1 and W2 are already signed and merged; the walk never re-judges a seam's sign-off, and check 6
+      asks only that doc/v1 list each changed doc with its tier.
+    default: >-
+      No data files for the old pages. At the close each is git rm'd as a single page with one --distill each; this
+      W3 pair is one --distill. Only the epic result is a pair (page and data file in docs/.archive/, artifact
+      epic-result): keel mr confirm epic --report finds it through its data file. The close rehearses the archive
+      commit, the epic notes and keel verify-dod epic in a scratch clone first; if anything there asks for a data
+      file, the close adds one per page (artifact and fields from the page) and says so in the epic result.
+  open-points:
+    - "Refuse every tier keel does not know, not only github? Yes. One rule makes every shape of a github line red (a one-field `github: 5499546` would otherwise be skipped in silence) and turns today's silent typo into a line-numbered refusal. Narrower alternative: drop only the github arm, so `github: <id> <login>` fails the shape check and a one-field line is skipped. No test today uses an unknown tier other than github."
+    - "A committed roster holding a github line refuses the commit that removes it (commit-msg and keel mr commit read HEAD's roster). Fine? Yes: no live branch holds one, and a malformed line does the same today. A project in that state removes the line in the commit that lands the new keel, with the old keel's hooks."
+    - "The 15 old GitHub-approval sign-offs stay as written? Yes: they are history, nothing re-reads them, and editing a note is a bypass."
+    - "The old W1/W2 and epic plan pages need data files at the close? No (close-and-old-pages): archived as single pages; only the epic result is a pair; the close rehearses it first."
+    - "The four dead branches still naming github (precondition): leave them? Yes, they never merge. Deleting a branch is yours; a backlog row only if you want them gone."
+    - "Docs in W3 or at the close? At the close: the architecture row in the epic's one rule-file commit (epic open point 9), DEC-70's amendment and backlog A2 in plain commits. W3 changes code and tests only."
+  baseline: "W2's result: 114 unit, 337 suite green at its tip; the W3 result records the counts at its own tip"
