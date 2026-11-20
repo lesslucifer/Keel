@@ -25,7 +25,12 @@ outcome: >-
   important, 2 nits waived): the signal test was a false red when the suite was launched with SIGINT or SIGHUP
   ignored (cargo test &, nohup), the script right. The round-3 fix c24e2c4 (tests/ only) starts the paused writer with
   HUP, INT and TERM at their defaults, in a process group the harness kills if a test fails first, and takes both
-  nits: unit 137, suite 373 pass (10 ignored), router_app green 10 of 10 in each of nine launch modes.
+  nits: unit 137, suite 373 pass (10 ignored), router_app green 10 of 10 in each of nine launch modes. Code review
+  round 4 on d350cc7 FAILED (0 blockers, 1 important, 1 nit waived): the dropped-writer test judged the writer's group
+  gone only once every orphan was reaped, a false red where PID 1 never reaps (a container without an init). The
+  round-4 fix 98eb076 (tests/ only) judges it gone by the writer's stderr reaching EOF, takes the nit (the writer
+  stays in the test binary's process group, so a ^C reaches it) and a sibling (the sixteen writers are all waited
+  for before any is judged): unit 137, suite 373 pass (10 ignored). A fix-PASS answers round 4; no round 5.
 deviations:
   - >-
     Write order: the state first, then the log. The plan's details.order and details.rotation say the log is written
@@ -59,7 +64,9 @@ evidence:
     - "34308bb test: review round 2's three importants pinned, three nits taken, a sweep's survivors pinned (tests/ only)"
     - "458ba28 docs: this result pair, updated for round 2 (review round 3 judged this tip: FAIL)"
     - "c24e2c4 test: review round 3 - the paused writer's signals reset, its process group killed on drop, two state shapes pinned (tests/ only)"
-    - "this result pair, updated for round 3: plain commit; test note and doc note on the tip, --target epic/E-APPLIST"
+    - "d350cc7 docs: this result pair, updated for round 3 (review round 4 judged this tip: FAIL)"
+    - "98eb076 test: review round 4 - a dropped writer judged gone by its stderr's EOF, the writer in the binary's process group, the sixteen writers all waited (tests/ only)"
+    - "this result pair, updated for round 4: plain commit; test note and doc note on the tip, --target epic/E-APPLIST"
   baseline: "epic/E-APPLIST 1f96ca3"
   red-before: >-
     At d46a271 (no script, no guard shape, no settings entry), cargo test --test suite router: 16 failed, every test the WU adds or changes;
@@ -68,7 +75,7 @@ evidence:
     router_guard_admits_the_update_log_in_plain_words_only, router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag,
     keels_router_security_files_are_rule_bearing, router_text_names_what_the_launcher_prints_and_no_retired_mechanism).
   worker-tree-before-commit: "the four rule files in the worktree, settings.json and router.md denied by the sandbox: unit 137 passed; suite 359 passed, 2 failed (the two tests reading those files), 10 ignored."
-  green-after: "The re-gate at 83b393d: cargo test unit 137 passed; suite 361 passed, 10 ignored; cargo fmt --check and cargo clippy -D warnings clean; keel check green. After the round-1 fix at 17c505f: unit 137 passed; suite 367 passed, 10 ignored; fmt, clippy and keel check green. After the round-2 fix at 34308bb: unit 137 passed; suite 372 passed, 10 ignored; fmt, clippy and keel check green. After the round-3 fix at c24e2c4: unit 137 passed; suite 373 passed, 10 ignored; fmt, clippy and keel check green."
+  green-after: "The re-gate at 83b393d: cargo test unit 137 passed; suite 361 passed, 10 ignored; cargo fmt --check and cargo clippy -D warnings clean; keel check green. After the round-1 fix at 17c505f: unit 137 passed; suite 367 passed, 10 ignored; fmt, clippy and keel check green. After the round-2 fix at 34308bb: unit 137 passed; suite 372 passed, 10 ignored; fmt, clippy and keel check green. After the round-3 fix at c24e2c4: unit 137 passed; suite 373 passed, 10 ignored; fmt, clippy and keel check green. After the round-4 fix at 98eb076: unit 137 passed; suite 373 passed, 10 ignored; fmt, clippy and keel check green."
   review-round-1: >-
     FAIL on 3509e4c (cr note): 0 blockers, 6 importants, 4 nits (waived), 1 refuted (the INT/TERM trap, equivalent
     under bash 3.2's sh). Every important was a test that did not pin a contract clause; the reviewer's mutants
@@ -130,6 +137,36 @@ evidence:
     foreground, 10 of 10 under nohup in the background with stdin closed. Side note from the review: the plan's
     lock clause (plan.yaml details) names EXIT, INT and TERM; the script also traps HUP and the test asserts it,
     a stricter reading of the clause; the plan is left as written. Round 4 reviews the fix.
+  review-round-4: >-
+    FAIL on d350cc7 (cr note, scope since 458ba28): 0 blockers, 1 important, 1 nit (waived). Every round-3 finding
+    held. The important: a_paused_writer_dropped_unreleased_leaves_no_process counted the writer's group gone only
+    at ESRCH, which needs every orphan (the $(...) subshell, the date shim, sed) reaped; on Linux kill(-pgid, 0)
+    succeeds while zombies remain, so where PID 1 does not reap (docker run without --init, a CI container job) the
+    test fails at 30 s although the drop worked. Shown here in a scratch copy: a Drop that kills the writer but
+    leaves it unreaped makes the old check red (an all-zombie group answers EPERM on macOS), every process exited;
+    the new check is green on it. The fix, 98eb076 (tests/ only): every process of the writer's tree holds its
+    stderr and an exited process holds no fd, reaped or not, so the test reads that pipe to EOF (30 s bound), after
+    checking it is still open while the writer is paused. Red against each mutant of the round-3 harness: no Drop,
+    no group kill, no process group (2 of 2 runs each, the tree left running). The nit, taken: process_group(0)
+    kept a ^C or a group kill of the test binary from the writer, its subshell, sed and the shim, which then waited
+    on the fifo for ever with the lock mark left. The writer now stays in the binary's group (the test asserts
+    getpgid(writer) = getpgrp()); Drop kills it by pid, reaps it, then lets the shim go by writing the fifo opened
+    O_RDWR|O_NONBLOCK; the shim opens the fifo read-write before it marks ready, so the fifo always has a reader
+    when Drop or release writes. Each red: no Drop, no pid kill (the writer wrote), no fifo write, the writer in a
+    group of its own. A group INT to the test binary in a paused window, 50 runs: at d350cc7 the writer's tree outlived
+    the binary and the lock stayed in 50 of 50; at 98eb076 INT, TERM and HUP each left no process and no lock in 50
+    of 50. Sibling check (launch-, reaping- and leak-dependence on every exit path):
+    every other process the tests start (18 more tests in router_app.rs, the start and set calls of the three
+    Paused tests, and router.rs's guard-parity test) is waited for inside .output(), so none runs when an assertion
+    fails, and a ^C reaches it in the binary's group; sixteen_writers judged
+    writer i before waiting for writers i+1..15, so a failure left them running (5 runs with writer 0 failed: the
+    tree outlived the binary 2 times past 5 s, by up to 511 ms in the others); it now waits for all sixteen first
+    (0 ms in 5 of 5). Proofs, each run under a wrapper whose descendants inherit one extra pipe (EOF: every one has
+    exited): a test failing by assert or by panic after Paused::spawn leaves nothing, 10 runs in each of five
+    launch modes (the foreground, sh's &, nohup, stdin closed, INT/HUP/TERM ignored); the signal test, the drop
+    test and the lock-mark test green 10 of 10 in each mode, the tree empty; the script mutants (no INT/TERM/HUP
+    trap, no HUP, no INT, no TERM, trap exit 0) red in every mode; router_app 23 of 23 green in 5 of 5 runs per
+    mode.
   re-gate: >-
     A fresh read-only worker (opus, high effort) on 83b393d: GREEN. The four files read against the review checklists
     (security path for router-app.sh and router-guard.jq: one lock, every value through jq, writes only .router/app,
@@ -181,6 +218,8 @@ evidence:
       - tests/suite/router_app.rs a_writer_stopped_by_a_signal_releases_its_lock_and_writes_nothing (round 3 - green whatever signals the launch ignores; Paused resets them)
       - tests/suite/router_app.rs a_paused_writer_dropped_unreleased_leaves_no_process (round 3 nit 1, new)
       - tests/suite/router_app.rs a_state_of_the_wrong_shape_is_refused_until_a_start (round 3 nit 2 - no n under a set, values [] under an alert)
+      - tests/suite/router_app.rs a_paused_writer_dropped_unreleased_leaves_no_process (round 4 - gone at the writer's stderr EOF, reaping aside; the writer in the binary's group)
+      - tests/suite/router_app.rs sixteen_writers_at_once_keep_the_numbers_whole (round 4 sibling - all sixteen waited before any is judged)
     unit: "waived: a shell script and a jq filter have no unit layer in this repo"
     e2e: "none at the WU: the epic test at the close runs the real script's start and stage lines"
   docs: "this result pair (new); the plan pair at 7b0a40e; no other doc touched"
@@ -213,7 +252,7 @@ follow-ups:
     (the sender writes alerts) or the app's link handler, in E-APPLIST.
   - "N6 (nit) the guard is stricter than the script for a name containing --ou: safe, no fix. Taken by: none needed."
   - "docs/local-app.html 'Where it travels' lacks stage: E-APPLIST's close, distillation."
-  - "Code review round 4 (the last full round) on the round-3 fix, the owner's sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
+  - "A fix-PASS on 98eb076 answering round 4 (keel notes write cr --verdict PASS --fixes d350cc7c5e, written by a fresh reviewer, no round 5), the owner's sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
 details:
   base: "wu/E-APPLIST/w1-update-log off epic/E-APPLIST at 1f96ca3"
   files:
