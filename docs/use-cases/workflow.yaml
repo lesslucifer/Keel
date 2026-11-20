@@ -1,0 +1,316 @@
+# Keel use cases: the workflow: init, the gate, notes, sign-off, docs, review. Data only, no page (DEC-69). Contract level: trigger, expected, failure.
+# Ids are never reused. Index: use-cases-index.yaml.
+title: "the workflow: init, the gate, notes, sign-off, docs, review"
+about: >-
+  Contract level only: trigger, expected behaviour, edge cases, what counts as failure. The how lives in the
+  code (`src/`); the why lives in decisions. Ids are never reused or renumbered.
+areas:
+  - area: UC-INIT
+    title: "adopting a project"
+    use-cases:
+      - id: UC-INIT-1
+        title: "keel init wires a repo of any language"
+        trigger: >-
+          `keel init [--force | -f]` in a git repo.
+        expected: >-
+          Writes `.keel/config.toml` (check commands detected for Rust, Python, Node, Go; otherwise a command that fails
+          with "set check.lint/test"), `AGENTS.md` (T0), `.codex/hooks.json`, every embedded skill file under
+          `.claude/skills/keel-*`, the `project-router` template, the shared skill root `.agents/skills` as a relative
+          link to `../.claude/skills` (kept and reported when the path holds anything else; nothing planted under a
+          symlinked, non-directory or unreadable `.agents`), merges the PostToolUse `Write|Edit` and Stop hooks into
+          `.claude/settings.json`, appends `docs/.archive/` and the `[paths] worktrees` directory to `.gitignore`, and
+          runs `keel hooks install`. On a repo with another hook manager the files are still written, then init stops
+          non-zero with the hooks refusal and its `keel hooks install --force` fix (UC-GATE-6); `-f` never implies
+          `--force`. Prints the install line when keel is not on PATH, the bootstrap commit, the three DSH profile
+          install lines (a plugin lives in the DSH profile, never the project; UC-DSH-1), and `keel mr setup` as a
+          hand-off. Idempotent: A second run on an unchanged tree changes nothing. Never clobbers: Project-owned files
+          (config, AGENTS.md,.codex/hooks.json, project-router) are create-or-keep: a differing file is kept and
+          reported. A differing `keel-*` skill file is overwritten only after a per-file `[y/N]` answer, or with `-f`;
+          end of input counts as N. Missing skill files are created without asking; extra files are reported, never
+          deleted. An invalid `settings.json` is left untouched with a warning; a valid one keeps every key in order.
+          Skills and a foreign keel: A `keel-*` skill file that still matches its `.keel/skills.lock` entry is upgraded
+          without asking; an edited file, a lock that cannot be read or written, or a lock entry that is not a hash
+          keeps the file and asks as above, and `-f` overwrites and records. Another program named `keel` first on
+          `PATH` makes init warn and each of the four gate hooks refuse, naming the clash; the two harness hooks treat
+          it like a missing keel and exit 0. init's not-on-`PATH` warning names `docs/install.html`.
+        failure: >-
+          Any user edit lost without confirmation; a second run that changes the tree; an unknown flag accepted.
+  - area: UC-GATE
+    title: "the merge gate"
+    use-cases:
+      - id: UC-GATE-1
+        title: "main is merge-only"
+        expected: >-
+          With hooks installed, a non-merge commit on `branches.main` is refused with branch guidance. A commit whose
+          staged diff touches a `code_paths` path runs `keel lint` first and is refused while it is red, on any branch;
+          a commit touching no code path runs no lint, and tests never run at commit. A merge commit on main is allowed
+          and judged by the gate (UC-GATE-2).
+        failure: >-
+          a direct commit lands on main, or a code commit lands with red lint.
+      - id: UC-GATE-2
+        title: "a merge needs bound evidence"
+        expected: >-
+          A `--no-ff` merge of a WU into its epic, or of an epic into main, is refused unless every required note is
+          present, parses, declares its `/v1` schema and is bound to the exact diff (checks 1–6, plus 8 for sign-off).
+          The policy that judges the merge is the target's committed `.keel/config.toml`. A merge whose heads cannot be
+          determined (for example `git pull --no-ff`) is refused on gated branches. A merge finished with `git commit`
+          (a conflicted one, or one started with `--no-commit`) is judged by the same gate, run from `pre-commit`
+          because git skips `pre-merge-commit` then; it runs the gate instead of a separate lint, as the clean path
+          does, and into main the gate runs `keel check` on the merged tree. On green, a `dod/v1` receipt is written on
+          the tip; it names the report the sign-off attested (`report`, `report_hash`, copied from the verified
+          `mr/v1`), and has neither field when the sign-off attested none. A WU tip given as a bare commit id is
+          measured against the epic branch a local `wu/<e>/…` branch that holds it names, else the one local `epic/<e>`
+          branch that holds it; no holder, or two epics, is a refusal whose fix line asks for `--target`. The gate never
+          guesses `main` for a bare id.
+        failure: >-
+          a merge lands with missing, stale or unbound evidence, or under a policy the incoming branch rewrote.
+      - id: UC-GATE-3
+        title: "the epic gate re-walks every seam"
+        expected: >-
+          The epic gate re-verifies every first-parent seam since the merge-base: a 2-parent merge as a WU, a plain
+          commit as a commit; a plain commit that changes no code and carries epic-range notes is judged on them over
+          the epic (checks 1, 2, 6); an octopus merge is always red; back-merges of landed history are skipped. A
+          fast-forward or `--no-verify` merge turns the epic red (`7·walk·<id>`). Only a `walk_waivers` entry with a
+          non-blank reason, on the epic tip's cr note, overrides one seam. The epic tip itself is covered by the epic's
+          own checks, not walked. A merged WU whose own review is WAIVED (UC-REV-2) passes its seam, and the epic prints
+          `WAIVED 7·walk [wu <sha>] 3·review: <reason>`. A push of an epic branch skips plain commits already on main,
+          and judges a tip carrying epic-range notes the same way.
+      - id: UC-GATE-4
+        title: "keel check proves trees"
+        expected: >-
+          `keel check` runs the configured lint and test commands. It proves the reviewed tip at preflight, the merged
+          tree of every epic → main merge (docs/infra-only ones included), and every pushed tree. A WU → epic merge
+          checks notes only, so two WUs green alone but red together are caught by the epic's preflight, its merge into
+          main, or a push. A tree whose content already passed under the same commands is skipped. Keel finds the
+          repository from its working directory: git's local environment (an absolute `GIT_DIR` from a linked worktree's
+          hook, for one) never reaches the lint and test commands, and a pushed sha other than HEAD is proven in a
+          scratch worktree at that sha (DEC-41). Keel's own `[check] lint` runs `cargo fmt --check` first, then clippy,
+          so a formatted tree is part of what lint proves.
+      - id: UC-GATE-5
+        title: "docs/infra-only diffs are exempt from evidence"
+        expected: >-
+          A range touching no `code_paths` (and, when `infra_paths` is set, only paths matching it) is exempt from test,
+          cr and doc evidence and writes no receipt. It is never exempt from the human sign-off (check 8), the epic
+          tracked-doc layout, or the lineage of a T3 doc it archives.
+      - id: UC-GATE-6
+        title: "the hooks git runs are Keel's"
+        expected: >-
+          `keel hooks install` refuses (exit 1, nothing changed) to replace another hook setup: an effective
+          `core.hooksPath` that is not Keel's, or, with none set, any non-`*.sample` entry in the git common dir's
+          `hooks/`. It names what it would replace; `--force` replaces it; a re-install over Keel's own path (a trailing
+          `/` included) refreshes the shims. `keel preflight` and `keel verify-dod wu|epic` are red (`0·hooks`, fix
+          `keel hooks install`) while `core.hooksPath` is unset or not Keel's, and write no receipt; `keel check` warns
+          and keeps its exit code.
+        failure: >-
+          a gate that is silently not running, or another tool's hooks replaced without `--force`.
+  - area: UC-NOTE
+    title: "evidence notes"
+    use-cases:
+      - id: UC-NOTE-1
+        title: "notes are derived, not typed"
+        expected: >-
+          `keel notes write test|doc|cr` derives the range (same target rule as the gate), the identity, the doc tiers
+          and the test counts from the tree, and stores JSON in `refs/notes/<kind>`. It refuses a judgment the diff
+          contradicts: a test file not touched in the range or with zero detected tests, a layer with both files and a
+          waiver, a PASS with blockers or importants, an unclassified doc, an archived T3 doc without `--distill`, a
+          distillation target that is not a T1/T2 doc tracked at the tip, and an empty range. A target is read from the
+          branch a tip sits on. A tip that names no local branch — a bare commit id, `HEAD` on a detached checkout — is
+          resolved from the branches that hold it, or refused; the writer is unaffected because it always writes on
+          `HEAD`'s branch.
+  - area: UC-MR
+    title: "human sign-off"
+    use-cases:
+      - id: UC-MR-1
+        title: "every WU and epic tip is signed last"
+        expected: >-
+          Every WU tip and epic tip needs an `mr/v1` note from a signer listed, under an accepted `[mr] tiers` entry, in
+          the roster `.keel/mr-allowed` committed on the merge target (at pre-push: on the merge's first parent). Where
+          the target commits no roster, the one the tip carries judges and keel prints one bootstrap line; with none on
+          either side nobody may sign. No file on disk is read, so a checkout cannot change who may sign (DEC-47). It
+          attests the change hash and, when `[mr] report` (`required` by default, `optional`, `none`; the target's
+          committed config at the merge) asks for one, the result report's bytes. The report is the page whose data file
+          beside it (`<stem>.yaml`) has an `artifact` carrying the level's role (`wu-result`, `epic-result`; a collapsed
+          doc counts for both): a page under docs.root that the range changes, by the page or by its data file, with
+          both files at the tip. A page with no data file is never one, nor one whose data file's `artifact` the doc
+          check refuses (an unknown role, roles that cannot share a doc, a data file it cannot load). `--report <path>` names the page and is taken as
+          named; naming the `.yaml` is refused. No untracked or archived doc is searched, so an epic sign-off passes `--report <path>` unless its
+          result doc is committed in the epic's diff (DEC-40). The signed payload is `keel-mr/v2`, with `sha256:<hex>`
+          change and report hashes. `keel mr confirm` refuses while checks 1–7 are red (sign last), when a required
+          report is missing, when several candidates match (it lists them; fix `--report`), and on `--report` under
+          `none`, when the target already contains the tip (merge-base = tip: nothing left to sign, DEC-41), when the
+          signer is not listed in the target's roster or the signing key is not one it lists for them, and when
+          `base..tip` changes the roster (it prints every added and removed line) unless `--roster-change` is passed; a
+          refusal writes nothing. A key-backed signer's signature verifies offline with `ssh-keygen -Y verify`; an
+          identity listed with a key must sign. Red at the merge (`8·manual-review`): no note, wrong tip/level/base,
+          changed diff, a signer the target's roster does not list (the reason names `<target>:.keel/mr-allowed`),
+          nobody listed (fix: `keel mr setup`, then land the roster with `keel mr commit`), a malformed roster, a
+          signature that does not verify against the target's roster or is missing, re-hashed report differs (re-hashed
+          whatever the policy), no report under `required`, a pre-W2 note (payload `keel-mr/v1`, SHA-1 hashes; no legacy
+          reader). Review history and waivers. On a tip whose cr note is WAIVED, or whose line holds a fix-PASS, `keel
+          mr confirm` first prints the review history: every cr note on a first-parent commit of base..tip, newest
+          first, tagged `[round n, full]`, `[round n, since <sha>]` or `[fix-PASS of round n on <sha>; no reviewers ran;
+          changed: <files>]`; a note it cannot read shows as an unreadable row, never dropped. A waived tip is refused,
+          writing nothing, until the owner passes `--accept-waiver <code>` with the code that listing printed. The
+          owner's own waiver is the one exception to sign-last, in two steps: `--waive-review "<reason>"` previews and
+          writes nothing, the same command with `--confirm-waiver <code>` writes the WAIVED cr note and the sign-off
+          together; the tip's own review (its cr note, checks 3–5) is not required first, everything else is. It is
+          refused over a PASS, with a blank reason, and with `--accept-waiver`. Only the owner types these three flags;
+          an agent never stages them. The listing shows the whole waiver and its history: the reason, the open counts,
+          whether a review ran, the open findings and the seam waivers, over every cr note on the branch's first-parent
+          line. A sign-off whose note write fails leaves neither note. A sign-off whose hash covers the reason alone was
+          made by a Keel before E-SEED3; check 8 names it, and the fix is to re-sign. Details in UC-REV-2. The checkout
+          (E-GHFLOW2, kept by E-GHREVERT). `keel mr` runs only from a checkout's root, refuses a checkout nested in another repository and one
+          whose git links git did not make, all before any git call (e-router-v2 R50).
+      - id: UC-MR-2
+        title: "rule-bearing commits carry Reviewed-By"
+        expected: >-
+          A commit whose staged diff touches a `rule_bearing` path needs a `Reviewed-By` trailer naming a signer listed
+          in `HEAD`'s committed roster (`keel mr commit` adds it), so a commit that edits the roster is judged by the
+          one it replaces; only when `HEAD` has no roster does the staged one count. `.keel/mr-allowed` is rule-bearing
+          whatever `rule_bearing` lists. `keel mr setup --as <id> [--key <path>]` writes the working roster file and
+          prints the commit that lands it; it authorises nothing until committed. Merge commits are skipped. Known gap
+          (DEC-24): the trailer is typed text, the hook reads `rule_bearing` from the working tree, and nothing
+          downstream re-checks trailers.
+  - area: UC-DOC
+    title: "documentation"
+    use-cases:
+      - id: UC-DOC-1
+        title: "ready governed docs stay green"
+        expected: >-
+          A plan or result is a page plus a YAML data file beside it, named like the page and ending `.yaml` (DEC-69).
+          A data file whose `artifact` is `epic-plan`, `wu-plan`, `wu-result` or `epic-result` (or a list: a one-part
+          epic's `[epic-plan, wu-plan]` or `[epic-result, wu-result]`) and whose `status` is `ready` is checked at the
+          write against its role's fields, on every host: the shell hook where the host has one (`PostToolUse`, on a
+          written page or data file under docs.root), a host plugin where it has none (a red write returns failed with
+          the problem lines), and again at every turn end, where a red doc keeps the turn open instead of letting it
+          close. The trigger is the write; a review or a merge is too late and no substitute (DEC-54). A missing or
+          empty field is red and named; an unknown field is named (the typo guard); an unknown artifact, a status other
+          than `draft` or `ready`, an unquoted date, a `page` that does not name the page beside it, a WU id not under
+          its `epic`, an incomplete or repeated `wu-summaries` entry, a `wu-deps` naming no WU of the plan, a missing
+          `test-plan` level and a YAML anchor or alias are red. A data file over 1 MiB, or nested deeper than 64
+          levels (the root mapping is one), is refused before it is loaded, red with the bound it passed. `status: draft` silences the pair, page included. An
+          epic plan must carry `owner-changes` (what changes for the owner, today and after); any other role may carry
+          it. The page carries no checklist markup; it is checked for links (UC-DOC-2), diagram labels (UC-DOC-4) and
+          its word cap (UC-DOC-6). A page's old `data-artifact` and `data-item` tags are not read.
+        failure: >-
+          a ready data file with a missing or misspelt field passes; a draft is reported; a page's old tags are read
+          as its fields; any data file crashes the check instead of turning it red. A result report's `follow-ups` field is present, or says `none`; every follow-up in it names
+          the WU, epic or backlog row that takes it — a rule, not a check, because no gate can tell a real destination
+          from an invented one (DEC-57, backlog B28).
+      - id: UC-DOC-2
+        title: "relative links resolve"
+        expected: >-
+          Any non-draft doc with a relative `<a href>` that does not resolve on disk (relative to the doc, `#`/`?`
+          stripped) is red. Absolute URLs and root-relative paths are skipped.
+      - id: UC-DOC-3
+        title: "epic tips hold no working docs"
+        expected: >-
+          Every changed doc (under docs.root or T0, plus T3 docs deleted anywhere in the range) is listed in `doc/v1`
+          with its tier from `[docs.tiers]`; an archived T3 doc carries `distilled_to` (T1/T2 docs tracked at the tip,
+          or `"none: <why>"`). A page and its data file are one doc: one `--distill` naming either file gives both the
+          same lineage, and a pair archived by half (one file still tracked at the tip) is red, naming the file left
+          to `git rm`. At an epic tip, every path tracked under docs.root classifies as T0–T2; a tracked T3 or
+          unclassified path is red under `6·doc-note`.
+      - id: UC-DOC-4
+        title: "diagram labels are in quotes"
+        expected: >-
+          In any non-draft doc, governed or not, every Mermaid flowchart (`flowchart`, `graph`, `flowchart-elk`) node
+          label and edge label is in double quotes: shapes like `A["…"]` and `Q{"…"}`, edge labels `-->|"…"|` and `--
+          "…" -->`, spaced or not. The label is read from the diagram's source, as Mermaid reads it, so markup like
+          `<br>` is part of it. An unquoted one is red, named as written, with a fix that keeps its text exact, markup
+          and entities included (a `"` becomes `#quot;`). Edge text may open with a tag (`A--<b>x</b>-->B`). HTML
+          comments outside a quoted string, `%%{…}%%` directives and `accDescr` blocks are skipped. Each directive form
+          has a test that names an unquoted label after it, so a scan that stops at the directive fails. It is a
+          best-effort lint for htmldoc output: a missed label is a known limit (backlog B21).
+        failure: >-
+          a valid diagram is refused, or a fix changes the diagram (DEC-52).
+      - id: UC-DOC-6
+        title: "every ready page has a word cap"
+        expected: >-
+          A ready page is counted as a reader sees the text of its `<main>` (else `<body>`): a word has a letter or
+          digit, inline tags join the text around them, block tags separate it, an entity is one symbol, and diagram
+          source counts. A plan or result takes its cap from its data file's role: epic plan 700, WU plan 500, WU
+          result 500, epic result 700; a one-part epic takes the epic cap. An epic plan's top, from the start of
+          `<main>` to the heading with `id="work"` (the whole page when there is none), holds at most 300 words. Any
+          other page takes the cap `[docs.caps]` sets for its path (a glob), if any; Keel's own: decision files 5,000,
+          architecture 3,000, install 1,500. Over a cap is red with the count and the cap; a draft is silent.
+        failure: >-
+          a page over its cap passes; a count that differs from what a reader sees (DEC-52); a data file's role and a
+          path cap both applied to one page.
+  - area: UC-REV
+    title: "code review"
+    use-cases:
+      - id: UC-REV-1
+        title: "the review is bound to the code diff"
+        expected: >-
+          The `keel-code-review` skill judges only the configured code paths and writes a `cr/v1` verdict bound to the
+          git blob hash of `git diff base tip -- code_paths`. Verified blockers and importants fail it. Verified nits
+          are recorded on the note with a disposition by the skill and do not fail it; no CLI check reads them (DEC-26).
+          Every form of the note binds the whole range's code the same way: a review, a fix-PASS and a WAIVED note
+          alike, so a code commit after any of them leaves the new tip with no valid review. Each round records its
+          verified findings, refuted candidates, nits and fleet on its note (`--findings`, `--refuted`, `--nits`,
+          `--fleet`; with `--findings` the counts come from the entries without a `waived` reason). Two cases are always
+          nits: a missing test for an edge case the code already handles correctly, and a test-harness tidy-up that
+          changes no test's result. Wrong code on an untested case is a blocker against the code, never against the
+          test, and a WU's own contract test is judged against its test note. From round 2 the verifiers get the earlier
+          cr notes on the branch: a repeat of an earlier finding (the same defect in the same code) is refuted, unless
+          the verifier names a failing case at the tip that shows the earlier fix does not hold; a repeat of a waived or
+          refuted entry is refuted only while the code it judged, and every file its reason names, is unchanged
+          (DEC-51).
+        failure: >-
+          a nit fails a review or starts a round; a fixed defect is re-judged from scratch.
+      - id: UC-REV-2
+        title: "a waived review says so"
+        expected: >-
+          A review that did not run or did not pass is recorded as `verdict: "WAIVED"` with the reason in `waiver`,
+          never as PASS. Two writers only, both through one waiver rule: the owner at sign-off (`keel mr confirm …
+          --waive-review "<reason>"`, then `--confirm-waiver <code>`; UC-MR-1), and the review's cap (`keel notes write
+          cr --verdict WAIVED` with no reason, UC-REV-3). The cr writer has no reasoned form: `--reason` is refused with
+          every verdict, because a session never writes a waiver in its own words (backlog B18); a blank reason and a
+          reason on PASS or FAIL are refused too. A waiver is refused over a PASS. Over a failed review of the same
+          range (base and code hash) it keeps that note whole: counts, findings (the open ones are those without
+          `waived`), refuted, nits, walk waivers. Over a review of another range it is `unreviewed: true`, keeps the old
+          note under `replaced` (one level) and carries only its walk waivers; with no review on the tip it is
+          `unreviewed` and listed as "not reviewed". Check 3 passes WAIVED with a non-blank reason and prints `WAIVED
+          3·review: <reason>`; checks 4–5 bind it like a review. The `dod/v1` receipt gains `review: "WAIVED"` and
+          `waiver`. An accepted waiver puts `waiver_hash` on `mr/v1` — the `sha256` of the whole waiver: its reason, its
+          open counts, whether a review ran, its open findings and its walk waivers, and a key-backed signature also
+          signs a last payload line `review: WAIVED sha256:<hex>`; a tip with no waiver signs byte-for-byte as before.
+          Check 8 rebuilds the hash from the current cr note: a reworded reason, a signed PASS turned into a waiver, or
+          a signed waiver turned into anything else is red. The waiver and the sign-off land in one ref transaction:
+          both, or neither. A sign-off whose hash covers the reason alone was made by a Keel before E-SEED3; check 8
+          names that cause, and re-signing is the fix.
+        failure: >-
+          a waived review reads as PASS anywhere; a waiver lands without the owner's explicit acceptance (DEC-49).
+      - id: UC-REV-3
+        title: "the review follows a fixed schedule"
+        expected: >-
+          A round is a reviewed cr note (PASS or FAIL, or a WAIVED note that kept a reviewed round of this range) on a
+          first-parent commit of base..tip; a fix-PASS and an `unreviewed` WAIVED are not rounds. The tip's own note
+          never counts, so a re-run on the same commit is the same round; an epic counts only its own line, never its
+          WUs'. `keel preflight wu|epic` prints `review round n of N` and the scope: the whole range in rounds 1–2; from
+          round 3 the branch's own changes in `<since>..<tip>` on the code paths, `since` being the last reviewed
+          commit: each first-parent commit against its first parent, a merge against git's automatic merge of its
+          parents, so what a back-merge brought from its second parent is never "the last fix" (git 2.40 or later; an
+          older git is refused). Preflight prints the commands that show that diff and the files it changed. It is red
+          `0·review-cap` for a round past the cap, a round 5 or later after a round with no blocker, an unreadable
+          earlier note, and a `max_rounds` that is not a whole number of 1 or more. The cap is `[review] max_rounds` in
+          the target's committed config (default 5). `keel notes write cr` applies the same refusals, stamps `round` and
+          `scope` (`full` or `since <sha>`), still binds the whole range's code, and prints the next step. A fix-PASS
+          (`--verdict PASS --fixes <reviewed commit>`, full commit name) runs no reviewers and records `fixes`, `round`,
+          `fix_diff_hash` and `answers`. It is allowed only for the latest round, only when the branch itself changed a
+          code path since a failed round (a back-merge alone changes nothing of its own), and only for findings that
+          need no new round: nits in any round; importants with no blocker from round 4, or in the last round when the
+          cap is below 4. A FAIL with nothing counted (for example `keel check` red) gets no fix-PASS. A later commit
+          that changes no code path of its own (the result report, a clean back-merge) gets a fix-PASS for the same
+          round where one is allowed, even on top of a fix-PASS; a second code fix on top of a fix-PASS is refused:
+          before round 4 it needs the next round, from round 4 or at the cap only the owner's waiver. A fix-PASS never
+          replaces the tip's own reviewed note. When round N fails with a blocker, the writer says the cap is reached;
+          `--verdict WAIVED` with no reason, on that tip only, writes `review cap: N rounds, <b> blockers open` and
+          keeps the round's findings. The merge check reads a fix-PASS as PASS; its rules live in the writer, and the
+          owner sees each one at sign-off (DEC-50).
+        failure: >-
+          a round the table does not reach runs, or a fix-PASS answers what needs a round. The history tag of a fix-PASS
+          names the recorded round it answers, and a fix-PASS written over the owner's waiver prints that it stands on a
+          waiver and names the way on. The schedule counts only the branch's own line, and keeps the tip's own entry: a
+          re-run on the same commit is the same round.

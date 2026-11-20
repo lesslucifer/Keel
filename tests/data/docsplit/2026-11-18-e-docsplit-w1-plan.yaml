@@ -1,0 +1,53 @@
+artifact: wu-plan
+status: ready
+id: E-DOCSPLIT.W1
+epic: E-DOCSPLIT
+title: Where each doc lives
+date: "2026-11-18"
+page: 2026-11-18-e-docsplit-w1-plan.html
+requirement: >-
+  W1 delivers one inventory page that gives every doc Keel writes or reads a
+  row (reader, page part, data part, where the data part lives and why, word
+  cap, slimming rule), lists the data-file fields for each of the four plan and
+  result roles, and links one example epic plan page and one example WU plan
+  page in a new shape; the owner approves it, and the approved rules are
+  recorded as a new decision.
+maps-to: >-
+  E-DOCSPLIT.W1 (epic plan, W1 block; open points 1, 4, 5, 7); the owner's
+  request of 2026-11-17; amends DEC-10, DEC-27, DEC-52; no use case changes.
+owner-changes:
+  - when: You ask where a doc's facts go
+    today: No list; each epic decides
+    after: One approved table, one row per doc
+  - when: You read an epic or WU plan
+    today: Long, its shape set by the tags
+    after: A set shape, shown by example
+  - when: You ask how long a page may be
+    today: Only the epic plan's top is capped
+    after: A word cap per page kind, for W2 to enforce
+expected:
+  - docs/work/2026-11-18-e-docsplit-w1-inventory.html, approved, with a row for every doc kind part A lists and every kind the code scan finds.
+  - Every data-item tag in src/verify_doc.rs, plus data-wu, data-artifact and data-status, maps to exactly one field.
+  - A cap per page kind beside today's median and largest.
+  - Two example pages under their caps, each with its data file shown inline.
+  - The decision in docs/decisions/workflow-gates.html and the index, under an id no branch uses.
+  - keel verify-doc green on every doc W1 adds or edits.
+test-plan:
+  unit: "none: exempt, no code path changes"
+  integration: "none: exempt, no code path changes"
+  e2e: covered by the epic's end-to-end test, W2 to W4
+  checks:
+    - coverage scan of src/, scripts/, skills/, templates/
+    - checklist tags against the field tables
+    - word counts per kind and per example page
+    - DEC id free on every branch
+    - keel verify-doc on each page
+    - the owner's approval, quoted in the result
+details:
+  files:
+    - docs/work/2026-11-18-e-docsplit-w1-inventory.html
+    - docs/work/2026-11-18-e-docsplit-example-epic-plan.html
+    - docs/work/2026-11-18-e-docsplit-example-wu-plan.html
+    - docs/decisions/workflow-gates.html and decisions-index.html, after approval
+    - docs/work/2026-11-18-e-docsplit-w1-result.html
+  sign-off: the owner's approval of the WU's pull request; auto-merge merges it

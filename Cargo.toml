@@ -13,10 +13,10 @@ toml = "0.8"
 serde_json = { version = "1", features = ["preserve_order"] }
 regex = "1"
 sha2 = "0.10"
+yaml-rust2 = { version = "=0.13.0", default-features = false }   # keel verify-doc reads a doc's data file (E-DOCSPLIT.W2)
 
 [dev-dependencies]
 tempfile = "3"
-yaml-rust2 = { version = "=0.13.0", default-features = false }
 
 # The profile that 'dist' will build with
 [profile.dist]

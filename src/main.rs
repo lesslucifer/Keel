@@ -87,6 +87,11 @@ struct Docs {
     root: String,
     /// Glob lists per tier; None = Trawler's layout under `root` (notes::tier_of).
     tiers: Option<Tiers>,
+    /// `[docs.caps]`: a ready page's word cap by its repo path, glob -> words (the `docs.tiers`
+    /// matcher; a page several globs match takes the smallest cap). A plan or result is capped by
+    /// its data file's role instead (DEC-69, E-DOCSPLIT.W2). Unset: no page is capped by path.
+    #[serde(default)]
+    caps: std::collections::BTreeMap<String, usize>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -423,7 +428,7 @@ IFS='
 '
 set --
 for p in $paths; do
-  case "$p" in *.html) [ -f "$p" ] && set -- "$@" "$p" ;; esac
+  case "$p" in *.html|*.yaml) [ -f "$p" ] && set -- "$@" "$p" ;; esac
 done
 [ $# -gt 0 ] || exit 0
 "#,
@@ -595,24 +600,104 @@ fn pre_commit(repo: &Path, cfg: &Config) -> Result<i32, String> {
     }
 }
 
-/// No paths: every html doc under docs.root (tracked or untracked, not ignored).
+/// No paths: every page (`.html`) and data file (`.yaml`) under docs.root, tracked or untracked, not
+/// ignored. Each path checks its pair (`verify_doc::pair_of`), each pair once. A config that is there
+/// but malformed is an error with paths too; with paths and no config file, every path is checked
+/// and no page is capped by path.
 fn verify_doc(repo: &Path, paths: &[&str]) -> Result<i32, String> {
-    let files: Vec<String> = if paths.is_empty() {
-        let glob = format!("{}/*.html", load_config(repo)?.docs.root.trim_end_matches('/'));
-        let ls = git(repo, &["ls-files", "--cached", "--others", "--exclude-standard", "--", &glob], &[])?;
-        ls.lines().map(|l| repo.join(l).to_string_lossy().into_owned()).collect()
-    } else {
-        paths.iter().map(|s| s.to_string()).collect()
+    let cfg = if paths.is_empty() || repo.join(".keel/config.toml").exists() { Some(load_config(repo)?) } else { None };
+    if let Some(bad) = cfg.as_ref().and_then(|c| caps_problem(&c.docs.caps)) {
+        return Err(format!("keel: bad .keel/config.toml: {bad}"));
+    }
+    let files: Vec<String> = match &cfg {
+        Some(cfg) if paths.is_empty() => {
+            let root = cfg.docs.root.trim_end_matches('/');
+            let (html, yaml) = (format!("{root}/*.html"), format!("{root}/*.yaml"));
+            let ls = git(repo, &["ls-files", "--cached", "--others", "--exclude-standard", "--", &html, &yaml], &[])?;
+            ls.lines().map(|l| repo.join(l).to_string_lossy().into_owned()).collect()
+        }
+        _ => paths.iter().map(|s| s.to_string()).collect(),
     };
+    let rel = RepoRel::new(repo);
+    let in_docs = in_docs(&rel, cfg.as_ref().map(|c| c.docs.root.as_str()));
+    let caps = cfg.as_ref().map(|c| compile_caps(&c.docs.caps)).unwrap_or_default();
+    let mut seen = std::collections::BTreeSet::new();
     let mut red = false;
     for f in &files {
-        let errs = verify_doc::verify(Path::new(f));
-        for e in &errs {
-            eprintln!("{f}: {e}");
+        let Some(pair) = verify_doc::pair_of(Path::new(f), &in_docs) else { continue };
+        if !seen.insert(pair.page.clone()) {
+            continue;
+        }
+        let cap = if caps.is_empty() { None } else { rel.of(&pair.page).and_then(|r| path_cap(&caps, &r)) };
+        let errs = verify_doc::verify_pair(&pair.page, pair.data.as_deref(), cap);
+        for (file, e) in &errs {
+            eprintln!("{}: {e}", file.display());
         }
         red |= !errs.is_empty();
     }
     Ok(red as i32)
+}
+
+/// Whether a path on disk is under docs.root (`root`; with no config, every path is): the path made
+/// repo-relative, then `verify_doc::under_root`, the one docs.root test the tip-side callers use too.
+fn in_docs<'a>(rel: &'a RepoRel, root: Option<&str>) -> impl Fn(&Path) -> bool + 'a {
+    let under = root.map(verify_doc::under_root);
+    move |p: &Path| under.as_ref().is_none_or(|u| rel.of(p).is_some_and(|r| u(Path::new(&r))))
+}
+
+/// `[docs.caps]` as (glob, cap, compiled glob), each glob compiled once per run.
+type Caps<'a> = Vec<(&'a str, usize, regex::Regex)>;
+
+fn compile_caps(caps: &std::collections::BTreeMap<String, usize>) -> Caps<'_> {
+    caps.iter().filter_map(|(g, c)| notes::glob_re(g).map(|r| (g.as_str(), *c, r))).collect()
+}
+
+/// The `[docs.caps]` entry for a repo path: the smallest cap among the globs that match it.
+fn path_cap<'a>(caps: &[(&'a str, usize, regex::Regex)], rel: &str) -> Option<(&'a str, usize)> {
+    caps.iter().filter(|(_, _, r)| r.is_match(rel)).map(|(g, c, _)| (*g, *c)).min_by_key(|(_, c)| *c)
+}
+
+/// `[docs.caps]` keys with no glob shape (`docs/decisions/`, `docs/decisions`, `docs/a.yaml`): a glob
+/// matches the whole path, so such a key never matches a page and its cap would be silently off. A
+/// key with `*` or `?`, or that names a page (`docs/install.html`), is a glob. A key whose last part
+/// holds a dot (`docs/a.yaml`, `docs/v1.0`) may be a file, so it is named as no page before its
+/// folder form is offered; `<key>/**` alone would leave a file's cap off.
+fn caps_problem(caps: &std::collections::BTreeMap<String, usize>) -> Option<String> {
+    let bad: Vec<String> = caps
+        .keys()
+        .filter(|k| !k.contains(['*', '?']) && !k.ends_with(".html"))
+        .map(|k| {
+            let folder = k.trim_end_matches('/');
+            let glob = format!("{folder}/**");
+            if folder.rsplit('/').next().is_some_and(|last| last.contains('.')) {
+                format!("[docs.caps] key \"{k}\" names no page: a cap glob matches .html pages; a folder is \"{glob}\"")
+            } else {
+                format!("[docs.caps] key \"{k}\" is a prefix, not a glob: write \"{glob}\"")
+            }
+        })
+        .collect();
+    (!bad.is_empty()).then(|| bad.join("\n"))
+}
+
+/// A path's place in the repo, `/`-separated, when it is inside it (the file or its directory must
+/// exist). The repo and the working directory are resolved once.
+struct RepoRel {
+    repo: Option<PathBuf>,
+    cwd: Option<PathBuf>,
+}
+
+impl RepoRel {
+    fn new(repo: &Path) -> Self {
+        RepoRel { repo: std::fs::canonicalize(repo).ok(), cwd: std::env::current_dir().ok() }
+    }
+
+    fn of(&self, p: &Path) -> Option<String> {
+        let abs = if p.is_absolute() { p.to_owned() } else { self.cwd.as_ref()?.join(p) };
+        let (dir, name) = (abs.parent()?, abs.file_name()?);
+        let full = std::fs::canonicalize(dir).ok()?.join(name);
+        let rel = full.strip_prefix(self.repo.as_ref()?).ok()?;
+        Some(rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"))
+    }
 }
 
 fn run() -> Result<i32, String> {
@@ -669,8 +754,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        commit_check, hook_conflicts, hooks_problem_of, no_git_env, CommitCheck, Config, ReportPolicy, COMMIT_MSG, DOC_POST, DOC_STOP, GIT_HOOK_ENV,
-        GIT_LOCAL_ENV, INSTALL_PAGE, KEEL_MARK, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH,
+        caps_problem, commit_check, compile_caps, hook_conflicts, hooks_problem_of, in_docs, no_git_env, path_cap, CommitCheck, Config, RepoRel, ReportPolicy,
+        COMMIT_MSG, DOC_POST, DOC_STOP, GIT_HOOK_ENV, GIT_LOCAL_ENV, INSTALL_PAGE, KEEL_MARK, PRE_COMMIT, PRE_MERGE_COMMIT, PRE_PUSH,
     };
     use std::ffi::OsStr;
     use std::path::Path;
@@ -680,6 +765,27 @@ mod tests {
         let mut r: Vec<String> = c.get_envs().filter(|(_, v)| v.is_none()).map(|(k, _)| k.to_string_lossy().into_owned()).collect();
         r.sort();
         r
+    }
+
+    #[test]
+    fn verify_doc_reads_docs_root_as_the_tip_side_does_odd_roots_too() {
+        // keel verify-doc tests paths on disk; check 6, the doc writer and keel mr test repo-relative
+        // names with verify_doc::under_root. One docs.root reading: the two agree on every root.
+        let d = tempfile::TempDir::new().unwrap();
+        for dir in ["docs/work", "docsx", "src/docs"] {
+            std::fs::create_dir_all(d.path().join(dir)).unwrap();
+        }
+        let rel = RepoRel::new(d.path());
+        let names = ["docs/work/a.yaml", "docs/a.html", "docsx/a.yaml", "src/docs/a.yaml", "a.yaml"];
+        for root in ["docs", "docs/", "docs/.", "docs//", "./docs", "docs/work", "", "/", "."] {
+            let (disk, tip) = (in_docs(&rel, Some(root)), crate::verify_doc::under_root(root));
+            for n in names {
+                assert_eq!(disk(&d.path().join(n)), tip(Path::new(n)), "root {root:?}, {n}");
+            }
+        }
+        let disk = in_docs(&rel, Some("docs/."));
+        assert!(disk(&d.path().join("docs/work/a.yaml")) && !disk(&d.path().join("docsx/a.yaml")), "docs/. is docs");
+        assert!(in_docs(&rel, None)(&d.path().join("src/docs/a.yaml")), "no config: every path is under docs.root");
     }
 
     #[test]
@@ -804,5 +910,51 @@ mod tests {
         }
         let post: Vec<&str> = DOC_POST.lines().collect();
         assert!(post.iter().position(|l| *l == "[ $# -gt 0 ] || exit 0") < post.iter().position(|l| *l == guard), "DOC_POST filters paths first");
+    }
+
+    /// E-DOCSPLIT.W2: the after-write hook passes a written page or data file on, nothing else.
+    #[test]
+    fn the_after_write_hook_takes_pages_and_data_files_only() {
+        let case: Vec<&str> = DOC_POST.lines().filter(|l| l.trim_start().starts_with("case \"$p\" in")).collect();
+        assert_eq!(case, [r#"  case "$p" in *.html|*.yaml) [ -f "$p" ] && set -- "$@" "$p" ;; esac"#]);
+    }
+
+    /// E-DOCSPLIT.W2: `[docs.caps]` maps path globs to words; a page several globs match takes the
+    /// smallest; no table, no cap; a cap that is not a whole number refuses the config.
+    #[test]
+    fn docs_caps_map_globs_to_words_and_the_smallest_match_wins() {
+        let base = "[check]\nlint=\"true\"\ntest=\"true\"\n[branches]\nmain=\"main\"\n[docs]\nroot=\"docs/\"\n";
+        let cfg: Config =
+            toml::from_str(&format!("{base}[docs.caps]\n\"docs/decisions/*.html\" = 5000\n\"docs/**\" = 9000\n\"docs/install.html\" = 1500\n")).unwrap();
+        let caps = compile_caps(&cfg.docs.caps);
+        assert_eq!(path_cap(&caps, "docs/decisions/router.html"), Some(("docs/decisions/*.html", 5000)));
+        assert_eq!(path_cap(&caps, "docs/install.html"), Some(("docs/install.html", 1500)));
+        assert_eq!(path_cap(&caps, "docs/work/x.html"), Some(("docs/**", 9000)));
+        assert_eq!(path_cap(&caps, "README.html"), None);
+        let none: Config = toml::from_str(base).unwrap();
+        assert!(none.docs.caps.is_empty());
+        for bad in ["\"docs/a.html\" = \"many\"", "\"docs/a.html\" = -1", "\"docs/a.html\" = 1.5"] {
+            assert!(toml::from_str::<Config>(&format!("{base}[docs.caps]\n{bad}\n")).is_err(), "{bad}");
+        }
+    }
+    /// E-DOCSPLIT.W2 review round 1: a bare-prefix `[docs.caps]` key is named with its glob form;
+    /// globs and file paths pass. Round 3: a key whose last part holds a dot is named as no page.
+    #[test]
+    fn a_prefix_caps_key_is_named_with_its_glob_form() {
+        let caps = |keys: &[&str]| keys.iter().map(|k| (k.to_string(), 1)).collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(caps_problem(&caps(&["docs/*.html", "docs/**", "docs/install.html", "docs/a?.html"])), None);
+        assert_eq!(
+            caps_problem(&caps(&["docs/decisions/", "docs/work", "docs/*.html"])).as_deref(),
+            Some("[docs.caps] key \"docs/decisions/\" is a prefix, not a glob: write \"docs/decisions/**\"\n[docs.caps] key \"docs/work\" is a prefix, not a glob: write \"docs/work/**\"")
+        );
+        for (key, glob) in
+            [("docs/v1.0", "docs/v1.0/**"), ("docs/a.yaml", "docs/a.yaml/**"), ("docs/install.htm", "docs/install.htm/**"), ("docs/v1.0/", "docs/v1.0/**")]
+        {
+            assert_eq!(
+                caps_problem(&caps(&[key, "docs/install.html"])),
+                Some(format!("[docs.caps] key \"{key}\" names no page: a cap glob matches .html pages; a folder is \"{glob}\"")),
+                "a key with a dot in its last part is no page, a file or a folder"
+            );
+        }
     }
 }

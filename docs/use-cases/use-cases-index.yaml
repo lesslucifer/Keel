@@ -1,0 +1,127 @@
+# Keel use-case index: data only, no page (DEC-69). Per use case: id, title, the file that holds it.
+# Read it first, then open only the file you need. Ids are never reused or renumbered.
+removed: >-
+  Never reused: UC-GATE-7, UC-MR-3, UC-ROUTE-7 and UC-DOC-5 were GitHub's flow (E-GHFLOW, E-GHFLOW2). E-GHREVERT
+  removed them with the flow (the owner's ruling of 2026-11-19, DEC-70, amended); git history keeps their text.
+areas:
+  - area: UC-INIT
+    file: workflow.yaml
+    scope: >-
+      keel init: config, T0, skills, the shared skill root, settings hooks, git hooks
+  - area: UC-GATE
+    file: workflow.yaml
+    scope: >-
+      main merge-only, merge gate, epic walk, keel check, docs/infra exemption, Keel's hooks are the ones git runs
+  - area: UC-NOTE
+    file: workflow.yaml
+    scope: >-
+      keel notes write: derived evidence, refusals
+  - area: UC-MR
+    file: workflow.yaml
+    scope: >-
+      human sign-off (mr/v1), Reviewed-By trailers
+  - area: UC-DOC
+    file: workflow.yaml
+    scope: >-
+      verify-doc on a page and its data file: the role's fields, links, epic doc layout and pairs archived whole,
+      quoted diagram labels, word caps and the epic plan's 300-word top, the write-time check on any host
+  - area: UC-REV
+    file: workflow.yaml
+    scope: >-
+      code review bound to the code diff, a waived review says so, the 5-round schedule
+  - area: UC-ROUTE
+    file: router.yaml
+    scope: >-
+      router: owner/worker split, epic branch first, substance from workers, shipped skill, worker modes and
+      launcher, enforced posture on Claude Code, an unenforced posture on DSH, the moment-of-action checklists, the
+      report channel and the owner sender
+  - area: UC-DSH
+    file: dsh.yaml
+    scope: >-
+      DeepSeek Harness: the skills through one shared root, the doc check at the write, a router's workers and
+      transcripts, the permissions of an unattended session
+use-cases:
+  - id: UC-INIT-1
+    title: "keel init wires a repo of any language"
+    file: workflow.yaml
+  - id: UC-GATE-1
+    title: "main is merge-only"
+    file: workflow.yaml
+  - id: UC-GATE-2
+    title: "a merge needs bound evidence"
+    file: workflow.yaml
+  - id: UC-GATE-3
+    title: "the epic gate re-walks every seam"
+    file: workflow.yaml
+  - id: UC-GATE-4
+    title: "keel check proves trees"
+    file: workflow.yaml
+  - id: UC-GATE-5
+    title: "docs/infra-only diffs are exempt from evidence"
+    file: workflow.yaml
+  - id: UC-GATE-6
+    title: "the hooks git runs are Keel's"
+    file: workflow.yaml
+  - id: UC-NOTE-1
+    title: "notes are derived, not typed"
+    file: workflow.yaml
+  - id: UC-MR-1
+    title: "every WU and epic tip is signed last"
+    file: workflow.yaml
+  - id: UC-MR-2
+    title: "rule-bearing commits carry Reviewed-By"
+    file: workflow.yaml
+  - id: UC-DOC-1
+    title: "ready governed docs stay green"
+    file: workflow.yaml
+  - id: UC-DOC-2
+    title: "relative links resolve"
+    file: workflow.yaml
+  - id: UC-DOC-3
+    title: "epic tips hold no working docs"
+    file: workflow.yaml
+  - id: UC-DOC-4
+    title: "diagram labels are in quotes"
+    file: workflow.yaml
+  - id: UC-DOC-6
+    title: "every ready page has a word cap"
+    file: workflow.yaml
+  - id: UC-REV-1
+    title: "the review is bound to the code diff"
+    file: workflow.yaml
+  - id: UC-REV-2
+    title: "a waived review says so"
+    file: workflow.yaml
+  - id: UC-REV-3
+    title: "the review follows a fixed schedule"
+    file: workflow.yaml
+  - id: UC-ROUTE-1
+    title: "the router coordinates, the owner acts"
+    file: router.yaml
+  - id: UC-ROUTE-2
+    title: "epic branch first"
+    file: router.yaml
+  - id: UC-ROUTE-3
+    title: "substance comes from workers"
+    file: router.yaml
+  - id: UC-ROUTE-4
+    title: "the router skill ships complete"
+    file: router.yaml
+  - id: UC-ROUTE-5
+    title: "worker modes, each with a full recipe"
+    file: router.yaml
+  - id: UC-ROUTE-6
+    title: "the router posture is enforced, fail-closed"
+    file: router.yaml
+  - id: UC-DSH-1
+    title: "init gives DSH the skills through one shared root"
+    file: dsh.yaml
+  - id: UC-DSH-2
+    title: "the doc check runs at the write on a host without hooks"
+    file: dsh.yaml
+  - id: UC-DSH-3
+    title: "a DSH router's workers and their transcripts"
+    file: dsh.yaml
+  - id: UC-DSH-4
+    title: "permissions for an unattended DSH session"
+    file: dsh.yaml

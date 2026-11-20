@@ -1,0 +1,360 @@
+# Keel backlog: e-seed-v2. Data only, no page (DEC-69). Open rows in full; a closed row is its id, title and how it closed.
+# Ids are never reused. Order and next free ids: backlog-index.yaml.
+title: "Backlog: E-SEED v2"
+letter: B
+about: >-
+  Work deferred when E-SEED closed with W1 - W8 (W7 v2 last). E-SEED2 absorbed B1 and B2 and closed on 2026-11-10;
+  every other row is re-pointed to a proposed later epic (the proposed-epics table is in proposed-epics.yaml). Each row
+  names the source it was deferred from. The E-SEED working docs are archived out of git; `git show
+  0c8baea:docs/work/<file>` recovers any of them. E-SEED2's are archived too; `git show f059eb4:docs/work/<file>`
+  recovers them.
+open:
+  - id: B3
+    title: "Epic e2e per fixture language"
+    status: "proposed: E-MULTILANG"
+    problem: >-
+      The seed plan's expected result: one hermetic e2e per fixture language (a Python repo with no Rust, then other
+      languages) running init -> epic + WU -> notes -> preflight -> cr fixture -> mr confirm with a test key -> merges,
+      plus the four refusals (edit after cr -> check 5, skip mr -> check 8, ff-merge a WU -> walk, commit on main ->
+      pre-commit). Planned as E-SEED2.W3, then moved out by owner ruling 2026-11-10: Python and every other language
+      form their own late epic. Until built, an epic-level `test/v1` waives its e2e layer (E-SEED2's did, for this
+      reason).
+    proposal: "The Python e2e first, then other languages."
+    source: "the seed plan's expected result; E-SEED2.W3, moved out by owner ruling 2026-11-10."
+    taken-by: "E-MULTILANG (proposed)"
+
+  - id: B5
+    title: "Re-record the remaining Trawler decisions"
+    status: "proposed: E-LINEAGE"
+    problem: >-
+      The distillation plan committed to re-recording Trawler DEC-2, 3, 4, 6, 7, 8, 9, 10, 11, 27, 43, 44, 45, 47, 50,
+      51, 52, 54, 72, 74, 83 in Keel with "lineage: Trawler DEC-n". Keel's records cite most of them by lineage (see the
+      decision index); full generalised records of DEC-2, 3, 6, 7, 8, 43, 45, 47 need Trawler's
+      `docs/decisions/workflow-gates.html` as source.
+    proposal: >-
+      Re-records take new Keel ids from the index's next free id (DEC-42 at the E-SEED2 close), never Trawler's number.
+    source: "E-SEED2.W5, deferred 2026-11-10."
+    taken-by: "E-LINEAGE (proposed)"
+
+  - id: B7
+    title: "Smaller deferred follow-ups"
+    status: "open (the rows not marked done stay in the backlog)"
+    problem: >-
+      Smaller deferred follow-ups, one row per item with its source and destination; the rows below that are not marked
+      done are still open.
+    proposal: >-
+      Rows 3, 4, 6 and 9 wait: non-Claude work (the Codex rows) waits for a later epic, native SSH signing is a later
+      epic, and the `Cargo.lock` check needs the network.
+    source: "W7 v2 open points 4, 12, 16; W5 open point 3; W4 open points 3, 7 (R9); W6 open points 9, 10; E-SEED2.W2 review r1 F6 (per row below)."
+    taken-by: "unowned (stays in the backlog: B7 Codex rows, native SSH signing, `Cargo.lock` currency)"
+    items:
+      - >-
+        row 1 (done by E-SEED3.W5, DEC-3): `.keel/skills.lock` so init can tell a hand edit from an upstream update.
+        Source: W7 v2 open point 4.
+      - >-
+        row 2 (done by E-SEED3.W5, UC-INIT-1): init and hook shims run `keel --version` and warn when it is not Keel's
+        (keel.so collision); init's not-on-PATH warning names `docs/install.html` too. Source: W7 v2 open point 12;
+        E-SEED2.W1 result.
+      - >-
+        row 3: Guard `.codex/hooks.json` commands like the settings hooks (`[ -f ] || exit 0`). Source: W7 v2 open
+        point 16. Destination: backlog: non-Claude work waits for a later epic.
+      - >-
+        row 4: Validate verify-doc-post's Codex `apply_patch` payload parsing against real Codex output. Source: W5
+        open point 3. Destination: backlog: non-Claude.
+      - >-
+        row 5 (done, absorbed by E-SEED2.W2, DEC-40): SHA-256 for change/report hashes (payload `keel-mr/v2`).
+        Source: W4 open point 3.
+      - >-
+        row 6: Native SSH signing of rule-bearing commits, verified at pre-push. Source: W4 open point 7, R9.
+        Destination: backlog: a later epic.
+      - >-
+        row 7 (done by E-SEED3.W4, UC-GATE-1): pre-commit runs `keel lint`. Source: W6 open point 9.
+      - >-
+        row 8 (done by E-SEED3.W4, UC-GATE-2): pre-commit runs the merge gate when MERGE_HEAD exists (conflicted
+        merges). Source: W6 open point 10.
+      - >-
+        row 9: Check `Cargo.lock` currency and yanked status (needs the network: `cargo audit` / registry; not
+        checkable offline). Source: E-SEED2.W2 review r1 F6. Destination: backlog.
+
+  - id: B11
+    title: "W2 rule-text review round 3 follow-ups"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      The owner signed E-SEED2.W2 without fixing these, and ruled on 2026-11-10 that they get their own later epic for
+      review and fix. The items are listed with their severity.
+    proposal: "Review, then fix, in E-GATEFIX (after B13)."
+    source: "E-SEED2.W2 rule-text review round 3; owner ruling 2026-11-10."
+    taken-by: "E-GATEFIX (proposed)"
+    items:
+      - >-
+        R3-1 (medium): DEC-40's Consequence says a one-WU epic's collapsed result doc is found without `--report`, but
+        check 6 refuses it first, as a T3 doc tracked in `docs/work/` at the epic tip.
+      - "R3-2 (low): UC-MR-1 wording in `docs/use-cases/workflow.html`."
+      - "R3-3 (low): `src/mr.rs`'s check-8 `fix ->` line does not mention `--report`."
+      - "R3-4 (moot): stale lines in the W2 WU result; that result is archived."
+
+  - id: B13
+    title: "Check 8 passes when an archived epic report is missing"
+    status: "proposed: E-GATEFIX; blocker, waived once for the E-SEED2 close"
+    problem: >-
+      Finding. When an epic's attested report is untracked or archived (`docs/.archive/`) and the local file is missing
+      or unreadable, `src/mr.rs` `report_hash` returns `Ok(None)`. `manual_review`'s match has three arms:
+      `Ok(Some(h)) if h != hash` (red), `Err` (red) and a catch-all `_`, which returns `Ok(Some((path, hash)))`. So
+      check `8·manual-review` passes without re-hashing anything. `src/gate.rs` then copies that report and hash into
+      the `dod/v1` receipt as attested, although nothing was verified on this machine. Editing an archived report
+      turns check 8 red (`tests/suite/mr.rs`), but deleting it turns check 8 green. That breaks the stated contract:
+      the comment above the match says "an attestation is never ignored", and DEC-40 says a report in a note is
+      re-hashed whatever the policy.
+      Origin. Pre-existing on main `0dad93f`: `report_hash` already returned `Ok(None)`, and the arm was
+      `_ => Ok(())`. E-SEED2.W2 rewrote that match and widened the gap into the new `dod/v1` receipt. Found by the
+      E-SEED2 epic review (one round, epic tip `e184f1e`, correctness finder; a fresh verifier confirmed it and raised
+      it to blocker).
+      Waiver. Owner ruling 2026-11-10, one time, the E-SEED2 close only: the blocker is waived, not fixed, and the
+      epic's `cr/v1` records PASS by this waiver. `keel notes write cr` takes only the verdict and counts, so the
+      waiver lives here (and in the archived E-SEED2 epic result), not on the note (see backlog B12). Until the fix
+      lands, an archived epic report must stay on disk at its path until the epic merges, because the gate would not
+      notice it missing. Since E-CRCAP a waiver like this one is recordable as WAIVED (UC-REV-2); this note stays as it
+      was written.
+    proposal: >-
+      Fix sketch. A missing or unreadable local report is red at check 8, with a `fix ->` line naming the path.
+      Regression test first: delete an archived epic report after `mr confirm`, and `verify-dod epic` turns red on
+      `8·manual-review`, writing no `dod/v1`.
+    source: >-
+      E-SEED2 epic review (one round, epic tip `e184f1e`); owner ruling 2026-11-10 (one-time waiver for the E-SEED2
+      close).
+    taken-by: "E-GATEFIX (proposed): B13 first, then B11"
+    items:
+      - >-
+        Review nit 1 (same round, not fixed): `src/mr.rs` `report_candidates` runs one `git show <tip>:<path>` per
+        changed `.html`, deleted paths included, at sign-off; one `git cat-file --batch` or a `--diff-filter=d`
+        pre-filter would do.
+      - >-
+        Review nit 2 (same round, not fixed): `src/main.rs` `hook_conflicts` / `hooks_problem_of` call a stale Keel
+        `core.hooksPath` (the repo was moved or renamed) "another tool's setup". The refusal is the DEC-23 contract and
+        `--force` is the documented recovery, but the message is wrong for that case.
+
+  - id: B14
+    title: "The check cache ignores HEAD and MERGE_HEAD"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      Finding. `src/main.rs` `tree_key` keys the `keel check` green cache on the working tree's hash plus the lint and
+      test commands only. A test whose result depends on HEAD or on a merge in progress can reuse a green verdict
+      cached for the same tree under another HEAD.
+      History. On 2026-11-10 the owner's merge of `epic/E-SEED2` into main (`0dad93f`) was refused: the
+      pre-merge-commit `keel check` failed `self_hosting_clone_is_gated_and_init_is_a_noop`. The test cloned the
+      committed HEAD, which was still main's, while the build embedded the merged `skills/`. So every merge that
+      changes a shipped skill failed, though `skills/` and `.claude/skills/` agreed on both branches. E-SEED2.W14
+      fixed the test: the clone now takes the source's index, the merged result. The regression test is
+      `self_hosting_check_passes_mid_merge_of_a_skill_change`. The cache did not cause that failure, because the main
+      checkout ran fresh. Owner ruling 2026-11-10: every code review of W14 and of the E-SEED2 re-gate is waived, and
+      their `cr/v1` PASS records the waiver, not a review (see backlog B12; since E-CRCAP such a waiver is recorded as
+      WAIVED, UC-REV-2).
+      Second refusal (E-SEED2.W15). The re-gated merge was refused again, in the hook's `keel check`. Six
+      `tests/suite/mr.rs` fixtures failed with `git rev-parse epic/E-SEED2^{commit}`. Git exports
+      `GIT_REFLOG_ACTION="merge epic/E-SEED2"` to its hooks. A fixture's own `git merge` keeps an inherited value, and
+      the fixture's keel then reads it (`src/gate.rs`) as its merge source. W14's mid-merge test ran `cargo test` by
+      hand, outside the hook, so it could not catch this. W15 fixes it: keel's child spawns and the tests'
+      `common::cmd` strip `GIT_HOOK_ENV` (the reflog action, editor, author and committer variables). That real merge
+      then exposed five `tests/suite/router.rs` fixtures that read Keel's config through HEAD, the W14 class again;
+      cargo's stop at the first failing binary had hidden them. They now read the file from disk or use
+      `common::self_clone`. Both fixes were proven by the real `git merge --no-ff epic/E-SEED2` in a scratch clone
+      with hooks installed. The owner waived every review. Lesson: a gate fix is done only when the real merge, through
+      the real hook, passes in a scratch clone.
+    proposal: >-
+      Fix sketch. Add HEAD and MERGE_HEAD (when present) to the cache key. Regression test: the same tree under two
+      HEADs runs the check twice.
+    source: "E-SEED2.W14 and W15 (the merge of `epic/E-SEED2` into main, 2026-11-10); owner ruling 2026-11-10."
+    taken-by: "E-GATEFIX (proposed)"
+
+  - id: B19
+    title: "The live check of the review schedule"
+    status: "owed after the owner reinstalls keel from main"
+    problem: >-
+      E-CRCAP's own reviews ran on the installed keel, with the schedule applied by hand (epic open point 11); no
+      fix-PASS or WAIVED note was written on its commits.
+    proposal: >-
+      After E-CRCAP merges and the owner reinstalls keel from main, the first real review checks it: `keel preflight`
+      prints `review round n of 5` with its scope; a fix-PASS is written and the gate accepts it; the writer stores
+      `--findings`, `--refuted`, `--nits`, `--fleet`; the first real round 2 exercises the earlier-notes reader end to
+      end (E-CRCAP.W3's smoke check ran the jq filters only); `keel mr confirm` shows the history rows.
+    source: "E-CRCAP epic plan open point 11; W2 and W3 results."
+    taken-by: "unowned: owed by the owner's reinstall, then the first real review (stays in the backlog)"
+
+  - id: B21
+    title: "Diagram labels the quote check misses"
+    status: "accepted limits (owner ruling 2026-11-13); no decision records it, so it stays open as a known limit"
+    problem: >-
+      The label check (UC-DOC-4) is a best-effort lint; these unquoted labels pass unseen.
+    proposal: "Fix one only if real docs hit it."
+    source: "E-DOCSTYLE.W2 code review round 2 and the owner's ruling; listed in keel-plan section 4."
+    taken-by: "unowned: only if real docs hit one"
+    items:
+      - "A `>...]` shape after an id that ends in a non-ASCII or punctuation character."
+      - "A statement after a `;` on a `classDef`, `style`, `linkStyle`, `direction` or `accTitle` line."
+      - "A subgraph title without brackets."
+      - "`N@{ ... }` shapes."
+      - "Diagram kinds other than flowcharts."
+
+  - id: B24
+    title: "A notes fetch that neither drops nor blocks"
+    status: "backlog: needs an owner pick (A, B, C or E), then an epic"
+    problem: >-
+      A fresh clone still fetches evidence by hand (DEC-19 stays push-only). backlog B6's plan was a non-forced
+      `refs/notes/*:refs/notes/*` on `remote.origin.fetch`. Git rejects that fetch whenever a local note ref is ahead
+      of origin's, not only when it diverged: `! [rejected] refs/notes/test -> refs/notes/test (non-fast-forward)`,
+      exit 1. So every `git fetch`, in any worktree, fails between a `keel notes write` and the next push. Seen in an
+      E-SEED3.W5 scratch-repo test, right after a clean `git notes merge` made the local ref a descendant of origin's.
+      The options (D was the deferral itself) are in the items.
+    proposal: |-
+      The owner picks A, B, C or E, then an epic builds it. The fix for a diverged note ref, per note kind:
+
+          git fetch --refmap= origin +refs/notes/<kind>:refs/notes/keel-remote-<kind> &&
+            git notes --ref=<kind> merge -s ours refs/notes/keel-remote-<kind>
+          git update-ref -d refs/notes/keel-remote-<kind>
+
+      `--refmap=` stops the configured refspec retrying the rejected ref. The `+` lets a re-run replace a temporary ref
+      a failed run left behind. `git notes merge` expands any name into `refs/notes/`, so the temporary ref must live
+      there. The last line runs whatever happened before it, so the pre-push sync of `refs/notes/*` never sends it.
+      Keel writes notes with `git notes add -f`, so two machines noting one commit conflict. The default strategy
+      (manual) then stops mid-merge. `-s ours` keeps your note on such a commit; `-s theirs` takes origin's. Which one
+      is right is part of the pick above. Tested in E-SEED3.W5: the earlier form (no `+`, no strategy, delete chained
+      with `&&`) on a clean merge. This form is not tested.
+      The E-SEED3 epic test's fourth step belongs here (owner ruling 2026-11-14). The epic plan made "a fresh clone set
+      up by `init` fetches the evidence with a plain fetch, and `keel verify-dod epic` is green there" part of
+      E-SEED3's epic e2e. It cannot run while the fetch is deferred: there is no fetch setup to exercise. The owner
+      moved it here for that same reason (B6 was deferred to B24 by the same owner, ruling D, 2026-11-13), kept the
+      plan's other three steps as E-SEED3's e2e, and claimed no waiver - those three run and prove the close. What
+      this work must prove: once the fetch setup this row picks exists, a fresh clone set up by `keel init` fetches
+      the evidence with a plain `git fetch`, and `keel verify-dod epic` is green in that clone. E-SEED3 does not prove
+      it, and its e2e names the step as this row's obligation.
+    source: >-
+      E-SEED3.W5 (B6 deferred by owner ruling D, 2026-11-13). The E-SEED3 epic test's "a fresh clone fetches the
+      evidence" step changes with it (moved here by owner ruling 2026-11-14).
+    taken-by: "an owner pick (A, B, C or E), then an epic; stays in the backlog until then"
+    items:
+      - >-
+        option A, forced `+refs/notes/*:refs/notes/*`: fetch always works; unpushed local notes are dropped. Rejected
+        by E-SEED3 open point 5.
+      - "option B, non-forced, as B6 planned: fetch fails after every local note write until the push."
+      - >-
+        option C, forced mirror `+refs/notes/*:refs/notes-origin/*`: holds nothing local, so force is safe. Keel's note
+        readers fall back to it, or a merge step runs `git notes merge`. Touches the note reader and the hooks.
+      - >-
+        option E, an explicit `keel notes pull`: no refspec, `git fetch` is untouched. The command runs the fix line
+        below for each note kind, and says what it merged or which note conflicted. (D was the deferral itself.)
+
+  - id: B25
+    title: "A review fix buried by a later fix needs the owner's waiver"
+    status: "backlog: unowned; the next epic that owns the walk"
+    problem: >-
+      A code commit that carries epic-range notes stays a standalone commit when a later fix buries it, so the walk is
+      red on it: E-DOCSTYLE's `ad30e30` is the case. E-SEED3.W2 ruled it stays red and its only relief is a
+      `walk_waivers` entry on the epic tip's cr note.
+    proposal: >-
+      Options the W2 result named: judge such a commit over the epic (rejected: it would let un-reviewed code
+      through), or write a `--target` note from a detached worktree (the cost the close exists to remove).
+    source: "E-SEED3.W2 result, follow-ups; owner ruling 2026-11-13 that the case stays red."
+    taken-by: "unowned: the next epic that owns the walk"
+
+  - id: B26
+    title: "Keel calls git many times per gate step"
+    status: "backlog: unowned; an epic that owns the gate's git calls"
+    problem: >-
+      Most of the test suite's process cost is keel's own git calls, not the tests'. E-TESTOPT.W4 counted every git
+      process of one run per test on `5d2ab18`: 29,524 in all; keel and Keel's hook scripts made 23,088 (78 %), the
+      test code 3,487 (12 %), the router scripts 2,026 (7 %), git's own children 923 (3 %). After W4's fixture
+      templates, keel's share is about 80 % of 25,554. Keel's subcommands, most used first: `rev-parse` 5,887 · `diff`
+      3,136 · `cat-file` 2,642 · `notes` 2,547 · `merge-base` 1,273 · `symbolic-ref` 1,142 · `rev-list` 1,136 ·
+      `config` 1,113 · `show` 884 · `var` 822. The epic baseline found only 5 % of calls in one process to be exact
+      repeats, so a cache of identical calls buys little. Every user's gate pays the same calls, so it is a product
+      change, not a test change (E-TESTOPT epic plan, open point 4). Git's automatic maintenance (`git maintenance run
+      --auto` after a commit or merge) was 789 of those 29,524 processes. The tests turn it off since E-TESTOPT.W5:
+      every test spawn's global config is `tests/common/gitconfig`, `maintenance.auto = false` (DEC-59). Keel itself
+      leaves it alone in a user's repo: there it is the user's setting.
+    proposal: >-
+      Batching is the direction: one `cat-file --batch` for object and note reads, one `rev-parse` for several refs.
+    source: "E-TESTOPT.W4 result (the profile), W5 result; E-TESTOPT epic plan open point 4."
+    taken-by: "unowned: an epic that owns the gate's git calls"
+
+  - id: B27
+    title: "Two test-helper nits left at the E-TESTOPT close"
+    status: "backlog: unowned; the next epic or WU that edits `tests/common` or `tests/suite/router.rs`"
+    problem: >-
+      Two test-helper nits left at the E-TESTOPT close, listed as items.
+    proposal: "See the fix direction in each item."
+    source: "E-TESTOPT epic close, the W5 review's round-3 nit (nit 1); E-TESTOPT.W5 result, review round 1, nit 2 (nit 2)."
+    taken-by: "unowned: the next epic or WU that edits `tests/common` or `tests/suite/router.rs`"
+    items:
+      - >-
+        nit 1, the shim test skips the shim builder: `router::the_git_shim_runs_from_a_path_with_quotes_and_spaces`
+        (`tests/suite/router.rs`) builds its script with `common::git_shim_script`, not with `common::git_shim` (both
+        in `tests/common/mod.rs` since the epic review's round 1), so a change to how `git_shim` finds git or writes
+        the file is not covered by it. Fix direction: drive `git_shim` itself, with the config path as a parameter or
+        through a directory whose path holds a quote.
+      - >-
+        nit 2, an empty "to" skips the resolved form: the independence checks in `tests/suite/close_walk.rs`, `mr.rs`
+        and `fixtures.rs` call `common::rewrites` with an empty copy path. An empty path cannot be resolved, so
+        `rewrites` lists only the template's path as written, not its resolved form (`/private/var/...` for
+        `/var/...` on macOS): a copy that names the template only in the resolved form would pass. The tests are green
+        today. `common::assert_independent` and the router's check pass the template as both paths, which checks both
+        forms. Fix direction: the same at the three call sites.
+
+  - id: B28
+    title: "A check that every follow-up names a real WU, epic or backlog row"
+    status: "backlog: unowned; an epic that owns the doc check"
+    problem: >-
+      Every follow-up in a result report names the WU, epic or backlog row that takes it (DEC-57), but no check proves
+      the name is real: the doc check reads `follow-ups` as text. Since E-DOCSPLIT the backlog rows and the result
+      reports are data files, so a check could now resolve a backlog id against the backlog files and a WU or epic id
+      against the plans.
+    proposal: >-
+      `keel verify-doc` resolves each follow-up's backlog id (`B28`, `R51`) against `docs/backlog/`; WU and epic ids
+      stay a review question.
+    source: "E-DOCSPLIT epic plan, open point 8 (answered: a backlog row, not part of the split)."
+    taken-by: "unowned: an epic that owns the doc check"
+closed:
+  - id: B1
+    title: "E-SEED.W10 release pipeline (parked branch)"
+    closed: "done: absorbed by E-SEED2.W1 and hardened by E-SEED2.W11 (DEC-38); what remains before a real release is the proposed E-RELEASE epic"
+  - id: B2
+    title: "E-SEED.W9 report binding and hook coexistence"
+    closed: "done by E-SEED2.W2 (DEC-40; DEC-23 options B + D, UC-GATE-6); not built, follow-ups only if asked: chaining other tools' hooks (rejected unless needed: it re-imports branch-controlled code), a per-level report policy"
+  - id: B4
+    title: "T1 architecture doc"
+    closed: "done by E-SEED3.W8"
+  - id: B6
+    title: "Notes fetch on init"
+    closed: "re-pointed to B24 (owner ruling D, 2026-11-13)"
+  - id: B8
+    title: "Port Trawler's code-review limits into keel-code-review"
+    closed: "done by E-CRCAP (UC-REV-3, DEC-50, UC-REV-1, DEC-51)"
+  - id: B9
+    title: "Strip GIT_INDEX_FILE in check_push's scratch path"
+    closed: "done by E-SEED3.W3 (DEC-41)"
+  - id: B10
+    title: "Keep the test suite away from the developer's ~/.gitconfig"
+    closed: "done by E-SEED3.W3 (DEC-41)"
+  - id: B12
+    title: "The cr note cannot carry a waiver"
+    closed: "done by E-CRCAP.W1 (UC-REV-2, DEC-49)"
+  - id: B15
+    title: "Every follow-up names a WU or an epic"
+    closed: "done by E-SEED3.W7 (DEC-57, UC-DOC-1)"
+  - id: B16
+    title: "E-CRCAP.W2 code review round 3 nits"
+    closed: "done by E-SEED3.W6 (nits 1 - 5 fixed; item 6 kept by the W6 plan decision)"
+  - id: B17
+    title: "E-CRCAP.W1 follow-ups not yet done"
+    closed: "done by E-SEED3.W6 (DEC-49)"
+  - id: B18
+    title: "Restrict `--verdict WAIVED --reason` to the cap?"
+    closed: "done by E-SEED3.W6 (answered yes, DEC-49)"
+  - id: B20
+    title: "An epic-close archive commit becomes a walked seam when a review fix follows"
+    closed: "done by E-SEED3.W2 (DEC-18)"
+  - id: B22
+    title: "A directive test cannot fail on a missed label"
+    closed: "done by E-SEED3.W6 (UC-DOC-4)"
+  - id: B23
+    title: "A push of an epic branch judges its close commit as a plain commit"
+    closed: "done by E-SEED3.W2 (DEC-18)"

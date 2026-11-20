@@ -21,6 +21,7 @@ mod common;
 
 mod cli;
 mod close_walk;
+mod docsplit_e2e;
 mod fixtures;
 mod ghrevert_e2e;
 mod init;

@@ -1,0 +1,146 @@
+artifact: epic-plan
+status: ready
+id: E-DOCSPLIT
+title: A short doc for you, a data file for agents
+date: "2026-11-17"
+page: 2026-11-17-e-docsplit-plan.html
+intent: >-
+  Each plan and result is one HTML file read by the owner, by agents and by
+  Keel's checks, and serves none of them well. Split each into a short page for
+  the owner and a data file for agents and checks; slim today's docs to current
+  truth.
+owner-changes:
+  - when: You read a plan or result
+    today: One long page, written for three readers
+    after: A short page, written only for you
+  - when: A check finds a gap
+    today: It names a missing tag in the page
+    after: It names a missing field in the data file
+  - when: You look up a decision, use case, backlog row or the architecture
+    today: Long pages, with history and replaced rows
+    after: "Decisions and architecture: short, current truth only. Use cases and backlog: you ask an agent."
+  - when: You approve
+    today: The epic plan, then each WU plan
+    after: The same, and first a table of where each doc lives
+use-cases: >-
+  UC-DOC-1 rewritten (the checklist is read from the data file); UC-DOC-3
+  amended (a pair archives as one doc); UC-DOC-5 amended (the pull request names
+  a doc by its data file); UC-MR-1 and UC-MR-2 amended (the report is found by
+  its data file's role); new UC-DOC-6 (every page kind has a word cap); UC-DOC-2
+  and UC-DOC-4 unchanged.
+expected:
+  - A ready plan or result whose data file misses a field is red at the write, naming the field.
+  - A page carries no checklist tags; it is checked for links, diagram labels and its cap.
+  - The sign-off finds the result report through its data file and attests the page's bytes.
+  - A page and its data file archive together under one lineage; the epic gate is green.
+  - The four doc skills and AGENTS.md describe the split; keel init ships it.
+  - Decisions, use cases, backlog, architecture and install are under W1's caps, every cited id still found.
+non-goals:
+  - Generating one doc from the other.
+  - New schemas for the gate's notes (the doc note changes only for pairs).
+  - htmldoc itself, and the skill files' format.
+  - E-GHSETUP's work, including install's GitHub section.
+  - Checking follow-up destinations (open point 8).
+wu-summaries:
+  - wu: E-DOCSPLIT.W1
+    wu-summary: >-
+      Inventory of every doc Keel writes or reads (reader, page part, data
+      part, where the data lives, cap, slimming rule); the data-file fields per
+      role; the epic and WU plan pages redesigned with one example each; the
+      decision. Approved by the owner before any code.
+    wu-maps-to: The owner's request of 2026-11-17; amends DEC-10, DEC-27, DEC-52.
+    wu-expected: The table, the two examples and the decision, approved. No code; exempt from tests and review.
+    wu-deps: none
+  - wu: E-DOCSPLIT.W2
+    wu-summary: >-
+      keel verify-doc checks a data file against its role's fields (present,
+      non-empty, unknown keys named, draft silent, WU ids and deps resolve,
+      collapsed roles unioned); the page keeps links and labels and gains the
+      caps; the data-item scan goes. src/verify_doc.rs, src/main.rs (no-path
+      run, DOC_POST), the dsh-doc-gate filter; yaml-rust2 becomes a runtime
+      dependency.
+    wu-maps-to: UC-DOC-1 rewritten; UC-DOC-2 and UC-DOC-4 kept.
+    wu-expected: >-
+      Integration (tests/suite/verify_doc.rs): a missing field is red and
+      named; a misspelt key is named; a draft is silent; a page over its cap is
+      red with the count; old tags are not read. Unit: the field table, the caps.
+    wu-deps: [E-DOCSPLIT.W1]
+  - wu: E-DOCSPLIT.W3
+    wu-summary: >-
+      Everything that reads a doc's role or archives a doc reads the data file
+      and treats the pair as one doc: src/mr.rs report_candidates and
+      pick_report; src/notes.rs write_report, doc --distill, doc_problems;
+      scripts/router-gh.sh doc_rows; the [mr] report comment in
+      templates/config.toml.
+    wu-maps-to: UC-MR-1, UC-MR-2, UC-DOC-3 and UC-DOC-5 amended.
+    wu-expected: >-
+      Integration: keel mr confirm wu finds the report through its data file and
+      refuses when two qualify; a pair archived with one --distill leaves the
+      epic gate green; the pull request body names the plan by its data file.
+      Unit: the pair matcher.
+    wu-deps: [E-DOCSPLIT.W2]
+  - wu: E-DOCSPLIT.W4
+    wu-summary: >-
+      keel-plan, keel-write, keel-distill, keel-workflow and keel-router teach
+      the split; keel-write's example becomes a pair embedded by src/init.rs;
+      AGENTS.md and templates/AGENTS.md change one line. Both skill copies.
+      Rule-bearing: the owner signs each edit.
+    wu-maps-to: W1's decision.
+    wu-expected: >-
+      Integration: keel init writes the new skills and the example pair, and the
+      pair is green under keel verify-doc. Unit: the embedded file list.
+    wu-deps: [E-DOCSPLIT.W2, E-DOCSPLIT.W3]
+  - wu: E-DOCSPLIT.W5
+    wu-summary: >-
+      Decisions keep current truth: a replaced decision shrinks to its id and
+      one line. Use cases (without build history), the backlog (open rows
+      only), its order and the decision and use-case indexes become data files,
+      with no page. Word counts before and after per file.
+    wu-maps-to: The owner's "migrate and shrink".
+    wu-expected: >-
+      Each decision file under W1's cap; every cited DEC, UC and backlog id
+      still found; keel verify-doc green. No code: exempt; a one-off script lists the cited
+      ids.
+    wu-deps: [E-DOCSPLIT.W1]
+  - wu: E-DOCSPLIT.W6
+    wu-summary: >-
+      docs/architecture.html and docs/install.html drop history and rules the
+      skills hold, to W1's caps. Rule-bearing. Starts after E-GHSETUP's install
+      edits reach main.
+    wu-maps-to: The owner's "migrate and shrink".
+    wu-expected: Both under W1's cap, green, every link from other docs resolving. No code; exempt.
+    wu-deps: [E-DOCSPLIT.W1]
+e2e-plan: >-
+  tests/suite/docsplit_e2e.rs, through the built binary in a temp repo: an epic
+  with one WU writes its plan pair; a data file missing a field is red, fixed it
+  is green; the WU commits its result pair and notes; the test signer's
+  sign-off finds the report through its data file; the WU merges; at close the
+  pairs archive with one --distill each and keel verify-dod epic is green. No
+  waiver.
+distillation-plan: >-
+  W1's decision (amending DEC-10, DEC-27, DEC-52); docs/use-cases/workflow.html
+  (UC-DOC-1, 3, 5, 6 and UC-MR-1, 2); docs/architecture.html (the doc check and
+  the doc process); the backlog (open point 8's row and anything deferred).
+open-questions:
+  - q: Does a data file live in a committed file or a note?
+    answer: A committed file beside its page.
+    why: A plan exists before there is a commit; the sign-off's hash binds the file.
+  - q: Do replaced decisions go?
+    answer: The id and one line stay; the body goes.
+    why: Ids are never reused and a cited id must resolve; git keeps the text.
+  - q: May W4 change AGENTS.md?
+    answer: Yes; approving the plan is the explicit request.
+    why: A rule file changes only on the owner's request.
+  - q: Should a check prove a follow-up names a real backlog row?
+    answer: No; a backlog row.
+    why: Not part of the split.
+details:
+  settled: [clean cut for old tags, indexes and backlog order as data, W1 redesigns the plan pages, a cap per page kind]
+  grounding:
+    - src/verify_doc.rs verify, checklist, has_role
+    - src/mr.rs report_candidates; src/notes.rs write_report, doc_paths, doc_problems, tier_of
+    - src/main.rs DOC_POST, verify_doc
+    - scripts/router-gh.sh doc_rows; scripts/pages-build.sh
+  overlap:
+    - E-GHSETUP owns install's GitHub section and may mint a DEC id.
+    - scripts/router-gh.sh, src/init.rs, templates/ touched for the doc parts only.
