@@ -1,0 +1,1 @@
+{"schema":"test/v1","tip":"811756ee5022c36612e20273f98d97b763fac380","base":"1f96ca3d24b52e5dc3cb78874db52c46cbcf7df4","branch":"wu/E-APPLIST/w4-app-frame","committer":"vuluu <quangvu.luu92@gmail.com>","timestamp":1795145227,"unit":null,"integration":{"waived":"plan only: the W4 plan doc and its data file, no code; the WU code commits carry the tests"},"e2e":null}
