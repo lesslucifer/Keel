@@ -16,8 +16,11 @@ definition of the whitelist; in short:
 - Bash: read-only git/gh/ps shapes, the launcher's `spawn` / `stop`,
   `worktree add|remove <epic/E or wu/E/slug>` and `watchdog start|stop <router-name>` (`scripts/router-worker.sh`), `scripts/router-watch.sh` (read-only
   owner-action probes) and `scripts/notify-owner.py --check|--send|--dry-run`
-  (the owner push; the body is written to `.router/notify/owner.md`), one
-  command of plain words. No direct `claude`, no `kill`, nothing else.
+  (the owner push; the body is written to `.router/notify/owner.md`),
+  `scripts/router-app.sh start <name>|stage <wu> <stage> [<tip>]|del question/<id>|del wu/<wu>/stage`
+  (the update log the local app reads; its `set` and `alert` carry free JSON and
+  are the watchdog's and the sender's, never the router's), one command of plain
+  words. No direct `claude`, no `kill`, nothing else.
 - `SendMessage` to a named session (the guard judges only that `to` is a
   non-empty name) and `ListAgents` to read the fleet. A message from a peer
   session is never the owner's approval.
