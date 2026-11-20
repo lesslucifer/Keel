@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b0048f89f34851f0dfb2b08">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — Decisions: the local app's build</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>Decisions: the local app's build</h1>
+      <p>How the local app's window is built, styled, tested and developed, and what E-APPLIST leaves out. Why the app exists and what it may do is <a href="workflow-gates.html#dec-70">DEC-70</a>.</p>
+      <div class="meta">T2 · decisions · current truth · 2026-11-20 · Keel · DEC-71 – DEC-77 · the design: <a href="../local-app.html">local-app.html</a></div>
+    </div>
+  </header>
+  <main>
+    <p data-c="how-to-read">Current truth: each record says what stands today, why, and what was rejected. A later decision that changes one is folded in and named. Ids are never reused. The owner ruled on all seven on 2026-11-20, after he paused E-APPLIST ("we ran too fast on the app") and studied Trawler, a Tauri app whose window is React, Tailwind and Vite. Keel's app stays Electron (DEC-70).</p>
+
+    <h2 id="window">The window</h2>
+    <h3 id="dec-71">DEC-71 · The window is React with Vite; Trawler's patterns, not its look</h3>
+    <table data-c="dec-71">
+      <tr><th>Choice</th><td>The window is React in strict TypeScript, built by Vite through Electron Forge's Vite plugin, which also builds the main part and the preload. It reuses Trawler's logic patterns: the main part is reached through one injectable bridge object, state lives in hooks and context, and stores are small. It does not reuse Trawler's design, look or components: Keel draws its own. This replaces the superseded W4 plan's default of a plain TypeScript window built with <code>textContent</code>.</td></tr>
+      <tr><th>Why</th><td>The six screens hold lists that change live from two sources, folded detail and actions per item. Trawler's patterns keep such a window testable without its back end: a test injects a stub bridge and renders a screen. Its components belong to a different app.</td></tr>
+      <tr><th>Rejected</th><td>The W4 plan's plain DOM window. Trawler's components or look, as they are.</td></tr>
+    </table>
+
+    <h3 id="dec-72">DEC-72 · Tailwind with Keel's own closed tokens, held by a lint rule</h3>
+    <table data-c="dec-72">
+      <tr><th>Choice</th><td>The window is styled with Tailwind on a closed token config of Keel's own: its palette, spacing and type scale replace Tailwind's defaults, so no other value exists. A lint rule, modelled on Trawler's <code>ui/eslint-rules</code>, refuses any class outside the config, any arbitrary value (such as <code>p-[13px]</code>) and any class built at run time from fragments. Light and dark follow the Mac's setting. The font is the system's: no font file ships, so the content policy needs no font source.</td></tr>
+      <tr><th>Why</th><td>Tailwind drops an unknown class silently, so a closed config alone shows nothing; the lint rule is the alarm, as in Trawler. A closed set stops agents, who draw most of the window, from inventing a size or a colour per screen. The system font keeps the content policy as tight as the W4 plan had it.</td></tr>
+      <tr><th>Rejected</th><td>Trawler's palette and fonts. Tailwind's default scales.</td></tr>
+    </table>
+
+    <h3 id="dec-73">DEC-73 · Window tests run on Vitest, by hand; keel check keeps node --test for the main part</h3>
+    <table data-c="dec-73">
+      <tr><th>Choice</th><td>The window's tests use Vitest with jsdom and Testing Library, the bridge injected as a stub. Workers and reviewers run them by hand and record the run in the result. <code>keel check</code> does not run them: it runs <code>cargo test</code> and <code>node --test</code> over the main part's tests, which need no package installed.</td></tr>
+      <tr><th>Why</th><td>Vitest needs npm packages, and <code>keel check</code> runs on every push and installs nothing. To be revisited: backlog local-app L6.</td></tr>
+      <tr><th>Rejected</th><td>Vitest inside <code>keel check</code> now.</td></tr>
+    </table>
+
+    <h3 id="dec-74">DEC-74 · The window is developed without packaging the app</h3>
+    <table data-c="dec-74">
+      <tr><th>Choice</th><td>Two loops. <code>electron-forge start</code> runs the whole app unpackaged, with live reload. A browser mode serves the window alone from Vite against a fake <code>window.keel</code> built from fixtures, so a screen is drawn and checked in a browser with no Electron and no main part. The fake exists only in the dev build: the shipped app adds no port and no server. A packaged, signed build is made and checked live only at the close of the app-shell WU and at the epic's close, never per UI change.</td></tr>
+      <tr><th>Why</th><td>Packaging is slow, and the alert check needs the owner's Mac; a UI change needs neither. Trawler draws its window against a headless core, but Keel's window has no port to reach: the main part answers only through the preload, so the browser mode's stand-in is a fake bridge, not a server.</td></tr>
+      <tr><th>Rejected</th><td>A dev-only Vite middleware over the real main-part handlers, now: backlog local-app L7, added if the fixtures prove too thin. A packaged build per change.</td></tr>
+    </table>
+
+    <h3 id="dec-75">DEC-75 · The window's end-to-end test is Playwright on an unpackaged build</h3>
+    <table data-c="dec-75">
+      <tr><th>Choice</th><td>The epic test drives the real window with Playwright's Electron launcher (<code>_electron.launch</code>) on an unpackaged build, on temp repos with the real router scripts. It is part of E-APPLIST's epic test, a must, never a backlog item. What no test reaches (the macOS alert on a signed build, its click, Launch Services) is checked live at the epic's close and recorded in its result.</td></tr>
+      <tr><th>Why</th><td>The window is where the owner sees every item. A test of the main part alone, the old plan's epic test, never shows that a router line reaches the screen. The Electron launcher drives the app with no package built.</td></tr>
+      <tr><th>Rejected</th><td>Trawler's WebdriverIO run on a built app. An epic test with no window.</td></tr>
+    </table>
+
+    <h2 id="scope">E-APPLIST's scope</h2>
+    <h3 id="dec-76">DEC-76 · W4's code is dropped; W1 stays</h3>
+    <table data-c="dec-76">
+      <tr><th>Choice</th><td>The work on <code>wu/E-APPLIST/w4-app-frame</code> (tip <code>83fdd8f</code>) is discarded as work: never merged, never signed. Its branch stays in git as reference. The new app-shell WU (E-APPLIST.W7) may re-derive its main part, bridge, handlers and tests, red first, and assumes none of it is reused. W4's <code>[check]</code> commit <code>717f2b9</code> was never on the epic. W4's plan, merged on the epic, is superseded by W7's and archived. The id W4 is not reused. W1 (the router's update log, <code>scripts/router-app.sh</code>, on <code>wu/E-APPLIST/w1-update-log</code>) is unchanged and goes on to its sign-off.</td></tr>
+      <tr><th>Why</th><td>The app ran ahead of its design. W4 built a plain DOM window and a bridge with requests only. The window now needs React, Keel's tokens and a push channel, by which the main part tells the window that something changed; these reshape the bridge and the window. W1 is the router's side, and none of this touches it.</td></tr>
+      <tr><th>Rejected</th><td>Merging W4's code and reshaping it in later WUs.</td></tr>
+    </table>
+
+    <h3 id="dec-77">DEC-77 · No tray, menu or login item in E-APPLIST</h3>
+    <table data-c="dec-77">
+      <tr><th>Choice</th><td>E-APPLIST builds no tray (menu-bar) icon, no menu of its own and no start at login. The app keeps running when its window is closed, so alerts still come.</td></tr>
+      <tr><th>Why</th><td>An alert needs only the app running, with no window open. The three are conveniences: backlog local-app L9.</td></tr>
+      <tr><th>Rejected</th><td>Building them in this epic.</td></tr>
+    </table>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

@@ -10,6 +10,9 @@ intent: >-
   local app as designed (DEC-70, backlog local-app A3): the router writes what only it knows to an update log (K14,
   K15, K4, K10), the app reads that log and git, alerts at the desk, and lists what waits on the owner, each item
   opening its committed doc. Now, because A1 (E-GHREVERT) is closed and A3 waits on nothing else; A4 and A5 build on it.
+  Replanned 2026-11-20 after the owner paused the app ("we ran too fast on the app") and studied Trawler: the window is
+  React with Vite on Keel's own closed Tailwind tokens, developed without packaging, tested by Vitest by hand and by a
+  Playwright epic test; W4's code is dropped and its plan superseded (DEC-71 - DEC-77).
 owner-changes:
   - {when: "Something waits on you", today: "A Telegram message, or you see it in the router's terminal", after: "A macOS alert at your desk; a click opens the item in the app. Telegram still comes"}
   - {when: "You want to know what waits on you", today: "You ask the router", after: "One list in the app: yours, then not yours, then sent"}
@@ -18,8 +21,8 @@ owner-changes:
   - {when: "A Telegram message from the router", today: "Plain text", after: "The same text, plus a link that may open the app (one test tells)"}
   - {when: "Setting up", today: "Nothing", after: "Install the app once and set where keel, git and claude are; one typed rules commit before work starts"}
 use-cases:
-  - "UC-APP-1, new: something waits on you, and the app alerts you at your desk (n1) - W3, W5"
-  - "UC-APP-2, new: you open a waiting item; its committed doc opens in your browser, and the item leaves when its note, merge or router line appears (n2, read-only; its buttons are A4's) - W6"
+  - "UC-APP-1, new: something waits on you, and the app alerts you at your desk (n1) - W3, W5, W7"
+  - "UC-APP-2, new: you open a waiting item; its committed doc opens in your browser, and the item leaves when its note, merge or router line appears (n2, read-only; its buttons are A4's) - W6, W8"
   - "UC-ROUTE-8, new: the router tells the app what only it knows - one numbered line per change in .router/app/, written only by its command and its watchdog (K14, K15, K4, K10) - W1, W2, W3"
   - "UC-ROUTE-6, amended: the router guard admits the update command in plain words - W1"
   - "UC-APP-3 to UC-APP-6 stay unrecorded: A5 and L1 plan them (DEC-70)"
@@ -30,13 +33,16 @@ expected:
   - "After a router restart the router's fields show their defaults; after 15 minutes with no heartbeat the bar says the router is not heard."
   - "With the app closed, the router, the watchdog, Telegram and every terminal command work as today; the app runs no command that writes into a project."
   - "The Telegram message carries the app's link; one test message records whether Telegram on the owner's Mac opens it."
-  - "The epic test passes."
+  - "The window's lint refuses any class outside Keel's tokens, any arbitrary value and any class built at run time; its Vitest tests pass, run by hand and recorded."
+  - "The window is drawn in a browser against the fake bridge with no Electron; the shipped app opens no port."
+  - "The epic test passes: Playwright drives the unpackaged app from a router line to the item on screen and out again."
 non-goals:
   - "Any button that runs a command: sign off, merge, commit, push, merge task (A4, E-APPSIGN), and the code-changes page (A4)."
   - "Screens 3 to 5, Attach, the owner's note to a worker, conflict, paused-epic and report lines (A5, E-APPFLEET); gate-failed and conflict items (A5, with K6)."
   - "Many projects at once (A5); a message to the router (L1); alerts when away (L2)."
   - "The app on DeepSeek Harness (L4); Windows and Linux; automatic updates."
   - "Any change to keel's own code (src/): E-KEELFIX (A2) runs beside it."
+  - "A tray (menu-bar) icon, a menu of its own, a start at login (DEC-77, backlog local-app L9); the window's tests in keel check (L6); a dev middleware over the real handlers (L7); design specimens (L8)."
 wu-summaries:
   - wu: E-APPLIST.W1
     wu-summary: >-
@@ -77,96 +83,151 @@ wu-summaries:
     wu-deps: [E-APPLIST.W1]
   - wu: E-APPLIST.W4
     wu-summary: >-
-      The app's frame in app/: Electron with its security checklist (isolation, sandbox, no Node in the window, a
-      content policy, no navigation, each request's sender checked), the main part and about ten named requests;
-      fixed commands with no shell and locked-down git; settings for keel, git and claude, the PATH read once from the
-      login shell; the project list with one project (screen 6); packaged with Electron Forge, signed for free on the
-      owner's Mac; one test alert, which decides whether Apple's membership is needed.
-    wu-maps-to: "local-app.html 'The stack: Electron', screen 6; backlog A3's PATH setting and Apple's membership."
-    wu-expected: >-
-      Integration: an unknown request, a foreign sender or free text is refused; a git run carries no GIT_* and the
-      locked-down flags; settings and the project list round-trip in a temp folder and never write inside a project;
-      the PATH read returns the login shell's. Unit: each value check. Live: the owner sees the test alert from a
-      signed build, or decides the membership.
+      Superseded on 2026-11-20 (DEC-76): the app's frame as planned (plain DOM window, requests only). Its branch
+      wu/E-APPLIST/w4-app-frame (83fdd8f) is never merged and stays as reference; its plan is archived by the replan.
+      W7 and W8 take its work. The id is not reused.
+    wu-maps-to: "Nothing now: W7 (the app shell) and W8 (the window's foundation) carry what it mapped to."
+    wu-expected: "Nothing: dropped. W7 and W8 carry its checks."
     wu-deps: none
+  - wu: E-APPLIST.W7
+    wu-summary: >-
+      The app shell in app/, replacing W4: Electron with its security checklist (isolation, sandbox, no Node in the
+      window, a pinned content policy, an app:// scheme, navigation, windows, webviews and permissions refused, fuses);
+      a preload bridge of two channels, six named requests each checked for sender and argument slots and a push
+      channel of named events sent only to the app's window, both from one wire contract; fixed shell-free git with
+      locked-down flags and no GIT_*; the PATH read once from the login shell; settings and a one-project list in the
+      app's folder; the app keeps running with no window; a bare React page built by Forge's Vite plugin; a Forge
+      build signed for free, one test alert, which decides Apple's membership; the owner's [check] commit so keel
+      check runs the main part's node tests.
+    wu-maps-to: "local-app.html 'The stack: Electron', screen 6's main-part side; backlog A3's app shell, PATH setting and Apple's membership; DEC-70, DEC-71, DEC-74, DEC-76, DEC-77."
+    wu-expected: >-
+      Integration (node --test): an unknown request, a foreign sender, free text or an unlisted push event is
+      refused; a git run carries no GIT_* and the locked-down flags; settings and the project list round-trip in a
+      temp folder and never write inside a project; the PATH read returns the login shell's; the contract's names are
+      snapshot-locked. Unit: each value check and the preload's bridge factory. Live, at its close: the signed build
+      opens, its test alert shows (or the owner decides the membership), the app stays running with its window closed.
+    wu-deps: none
+  - wu: E-APPLIST.W8
+    wu-summary: >-
+      Outline, planned when W7 merges. The window's foundation: React in strict TypeScript; Tailwind on Keel's own
+      closed tokens (palette, spacing, type; light and dark from the Mac; the system font) and an ESLint rule modelled
+      on Trawler's that refuses an off-list class, an arbitrary value or a class built at run time; one bridge module
+      the window reaches window.keel through, with hooks and context over it; a fake bridge built from fixtures and a
+      browser mode (Vite serves the window alone, no Electron); the Vitest, jsdom and Testing Library harness with a
+      bridge stub; short design rules for Keel's own look; screen 6 (the project, Add, Remove, each tool's path,
+      Choose, Reset, the PATH's source, the test alert) as the first real screen, replacing W7's bare page.
+    wu-maps-to: "local-app.html 'The screens' 6 and 'The design principles'; DEC-71, DEC-72, DEC-73, DEC-74."
+    wu-expected: >-
+      Integration (Vitest, by hand, recorded): screen 6 against the bridge stub: each request sent with its slot, a
+      push event redraws, a refusal shown as text; the fake bridge answers every request in the contract (a test
+      fails when the contract gains a name the fake lacks). Lint: a fixture file with an off-list class, an arbitrary
+      value and a built class each fails, a clean one passes. Unit: the hooks and the fake's fixtures. Live: none
+      (screen 6 in the packaged app is seen at the epic's close).
+    wu-deps: [E-APPLIST.W7]
   - wu: E-APPLIST.W5
     wu-summary: >-
-      The Reader, the Watcher and the Alerter on the two sources: git (local branches, the epic branch read locally,
-      notes, worktrees), run records and the inbox listing; the log applied by its rules (new run, next number, seen,
-      missing, half line, unknown key) and its defaults; the 'router not heard' bar after three silent ticks; one
-      macOS alert per alert line, recorded as shown in the app's own folder; the app's link scheme (K12, app side)
-      opens the item.
+      Outline, planned when W7 merges. The Reader, the Watcher and the Alerter in the main part, on the two sources:
+      git (local branches, the epic branch read locally, notes, worktrees), run records and the inbox listing; the log
+      applied by its rules (new run, next number, seen, missing, half line, unknown key) and its defaults; the 'router
+      not heard' bar after three silent ticks; one macOS alert per alert line, recorded as shown in the app's own
+      folder; the app's link scheme (K12, app side) opens the item; the waiting list's requests and push events added
+      to W7's contract.
     wu-maps-to: "local-app.html 'Two sources', 'The shape'; UC-APP-1 (new); K12."
     wu-expected: >-
-      Integration: on a temp repo and a log written by the real router-app.sh: an app restart rebuilds the same view
-      with no second alert; a router restart drops the router's values to their defaults; a missing number re-reads
-      the state once; a half line and an unknown key are skipped; three silent ticks turn on the bar; a branch or
-      note change is seen within the debounce. Unit: the apply step, the defaults, the link parse.
-    wu-deps: [E-APPLIST.W1, E-APPLIST.W4]
+      Integration (node --test): on a temp repo and a log written by the real router-app.sh: an app restart rebuilds
+      the same view with no second alert; a router restart drops the router's values to their defaults; a missing
+      number re-reads the state once; a half line and an unknown key are skipped; three silent ticks turn on the bar;
+      a branch or note change is seen within the debounce and pushed to the window. Unit: the apply step, the
+      defaults, the link parse.
+    wu-deps: [E-APPLIST.W1, E-APPLIST.W7]
   - wu: E-APPLIST.W6
     wu-summary: >-
-      Screens 1 and 2 and Open: the alert's layout; the list (yours, not yours, sent) with this epic's kinds, each
-      entering and leaving on its source; Mark sent, kept in the app's folder; Open copies the tip's docs from git
-      into the app's folder and opens the page in the browser (an epic result in place); ?diff=latest on a file link
-      checked once.
+      Outline, planned when W5 and W8 merge. Screens 1 and 2 and Open, on W8's foundation: the alert's layout; the
+      list (yours, not yours, sent) with this epic's kinds, each entering and leaving on its source; Mark sent, kept
+      in the app's folder; Open copies the tip's docs from git into the app's folder and opens the page in the browser
+      (an epic result in place); ?diff=latest on a file link checked once; the fake bridge's fixtures gain each kind.
     wu-maps-to: "local-app.html 'The screens' 1, 2, 'The hand-off' item table; UC-APP-2 (new); backlog A3's Open and ?diff=latest."
     wu-expected: >-
-      Integration: on fixture repos each kind enters and leaves (a sign-off note, a merge, a router line, the
-      watchdog's waiting state, main matching its upstream); Open serves the committed bytes while the working file
-      differs; Mark sent moves an item to sent and survives a restart. Unit: the item rules. Live: the ?diff=latest
-      check, recorded in the result.
-    wu-deps: [E-APPLIST.W5]
+      Integration: on fixture repos (node --test) each kind enters and leaves (a sign-off note, a merge, a router
+      line, the watchdog's waiting state, main matching its upstream); Open serves the committed bytes while the
+      working file differs; Mark sent survives a restart. The list screen (Vitest, by hand) draws each kind from the
+      bridge stub and redraws on a push. Unit: the item rules. Live: the ?diff=latest check, recorded in the result.
+    wu-deps: [E-APPLIST.W5, E-APPLIST.W8]
+  - wu: E-APPLIST.W9
+    wu-summary: >-
+      Outline, planned when W6 merges. The epic's close: the epic test (e2e-plan), the packaged build's live checks
+      at the owner's Mac, the distillation (distillation-plan) and the owner's rule-file commit for the T1 pages, then
+      the archive of every T3 doc.
+    wu-maps-to: "E-APPLIST's e2e-plan and distillation-plan; DEC-75."
+    wu-expected: >-
+      The epic test passes, run by hand and recorded; the live checks are recorded in the epic result; every T3 doc
+      is archived with its lineage.
+    wu-deps: [E-APPLIST.W1, E-APPLIST.W2, E-APPLIST.W3, E-APPLIST.W5, E-APPLIST.W6, E-APPLIST.W7, E-APPLIST.W8]
 e2e-plan: >-
-  One Node test, app/test/applist.e2e.test.ts, hermetic: a temp git repo set up as a keel project with an epic and a
-  WU branch; the real scripts/router-app.sh start and stage lines; scripts/notify-owner.py --send against a loopback
-  fake Telegram API (its test seam) writing the alert line; the watchdog's facts step with a fake claude session list
-  writing worker lines and the heartbeat; the app's main part (no window) reading git and the log, with a recording
-  alert sink. It walks: plan to read appears and leaves on 'plan approved'; one alert per alert line; a sign-off note
-  on the WU tip makes a 'result to sign' leave; an app restart (no second alert, same list); a router restart (router
-  fields to defaults); silence past three ticks (injected clock) turns on 'router not heard'. Waived from the
-  automated e2e, checked live at the close and recorded in the epic result: the window and the macOS alert on the
-  signed build, the alert's click, the Telegram link test, ?diff=latest.
+  One Playwright test (DEC-75), app/e2e/applist.e2e.spec.ts, run by hand at W9 and recorded (not in keel check,
+  DEC-73): _electron.launch on the unpackaged build, hermetic: a temp git repo set up as a keel project with an epic
+  and a WU branch; a temp app folder; the real scripts/router-app.sh start and stage lines; scripts/notify-owner.py
+  --send against a loopback fake Telegram API (its test seam) writing the alert line; the watchdog's facts step with a
+  fake claude session list writing worker lines and the heartbeat; a recording alert sink in place of the macOS alert
+  (a seam present only when not packaged). It walks, on screen: plan to read appears in the list and leaves on 'plan
+  approved'; one alert recorded per alert line; a sign-off note on the WU tip makes a 'result to sign' leave; an app
+  restart (no second alert, same list); a router restart (router fields to defaults); silence past three ticks
+  (injected clock) shows 'router not heard'; Open copies the committed page into the app's folder. Checked live at the
+  close on the signed build and recorded in the epic result: the macOS alert and its click, screen 6, the Telegram
+  link test, ?diff=latest.
 distillation-plan:
-  - "docs/local-app.html (T1): A3's parts built; the update line, its verbs and the link scheme as built; the waiting kinds this epic covers."
+  - "docs/local-app.html (T1): A3's parts built; the update line, its verbs and the link scheme as built; the waiting kinds this epic covers; the window's stack (React, Vite, Tailwind tokens) and its design rules."
   - "docs/use-cases/app.yaml (new T2 file) with UC-APP-1 and UC-APP-2, and its rows in use-cases-index.yaml; docs/use-cases/router.yaml: UC-ROUTE-8 new, UC-ROUTE-6 amended."
-  - "docs/decisions/workflow-gates.html: one record (the next free DEC id, checked on every live branch) for this epic's choices - app/ in this repo under the gate, TypeScript tested by Node's own runner, the keel:// link scheme, the alert written before Telegram, questions on the alert body."
+  - "docs/decisions/app.html: DEC-71 - DEC-77 are recorded by the replan; at the close one more record (the next free DEC id, checked on every live branch) for the rest of this epic's choices - app/ in this repo under the gate, the main part tested by Node's own runner, the keel:// link scheme, the alert written before Telegram, questions on the alert body."
   - "docs/architecture.html and docs/install.html: the app's place in the repo and how to build and install it."
   - "docs/backlog/local-app.yaml: A3 closed; backlog-index.yaml; any follow-up to its row (A4, A5 or a new row)."
 open-questions:
   - "Where does the app's code live? In app/ in this repo, under the gate: one repo, one review, and the app only reads keel's CLI."
-  - "How is the app tested? TypeScript, run by Node's own test runner with no packages installed, so keel check needs no npm install; Electron only runs and packages the app."
-  - "Does the gate cover app/? Yes: your typed commit before W1 and W4 adds app/ to the code paths and the two router scripts to the rule files. Main's gate judges the epic's merge by main's rules, which list app/ only once this epic is on main; the epic review reads app/ anyway."
-  - "What is the link scheme? keel://, e.g. keel://wu/E-APPLIST.W2: short and readable in Telegram; W4 checks no other app on your Mac claims it."
+  - "How is the app tested? Its main part by Node's own test runner, no packages installed, inside keel check (W7's typed [check] commit); its window by Vitest, by hand (DEC-73); the epic by Playwright on the unpackaged app, by hand (DEC-75)."
+  - "Does the gate cover app/? Yes: the opening commit added app/ to the code paths and the two router scripts to the rule files. Main's gate judges the epic's merge by main's rules, which list app/ only once this epic is on main; the epic review reads app/ anyway."
+  - "Why W7, W8 and W9, not a new W4? The W4 id is taken by the dropped plan (DEC-76); ids are never reused. W5 and W6 keep their ids and roles, re-pointed at W7 and W8."
+  - "Does W8 wait for W7 to merge? Yes: W8 builds on W7's wire contract and window entry. Starting it from W7's contract commit would save time but plan on a moving base."
+  - "Which Tailwind? 3, unless W8's plan finds 4 can carry the closed config and the lint rule: Trawler's rule reads Tailwind 3's class list, so it ports with little change. W8's plan settles it, from the versions current then."
+  - "Where do the design rules live? In W8's result while the epic runs, then in docs/local-app.html beside 'The design principles' at the close (a rule file: the owner's typed commit at W9). No new page."
+  - "Does Playwright run in the worker's sandbox? Tried first; if the sandbox refuses to launch Electron, the refusal goes to the router with the exact command and the run happens at the owner's Mac."
+  - "What is the link scheme? keel://, e.g. keel://wu/E-APPLIST.W2: short and readable in Telegram; W7 checks no other app on your Mac claims it."
   - "Is the desk alert written when Telegram fails? Yes: the alert line is written first, so a Telegram failure never loses the desk alert."
   - "How does the router ask a question? On the alert's body (a first line naming the question); the router deletes the question line once answered. No new free-text channel past the guard."
   - "Are 'gate failed' and 'merge conflict' on the list? No: nothing records a red gate today; they come with K6 in A5."
   - "How do workers fetch npm packages and Electron? Per call, through the auto permission review; no launcher change. A refusal goes to you with the exact command."
-  - "Buy Apple's developer membership? Only if the free signature on your Mac shows no alert at W4; yours to decide then."
+  - "Buy Apple's developer membership? Only if the free signature on your Mac shows no alert at W7; yours to decide then."
 details:
+  replan:
+    date: "2026-11-20"
+    why: "The owner paused the epic and ruled DEC-71 - DEC-77; this replan WU (wu/E-APPLIST/replan) carries them into this plan."
+    build-order: "W1 (merged) -> W2, W3 (router side, parallel). W7 -> W8. W1 + W7 -> W5. W5 + W8 -> W6. All -> W9."
+    planned-now: "W7 (its plan replaces W4's). W2, W3 keep their summaries and get their plans when started; W5, W6, W8, W9 are outlines, each planned when its deps merge."
   epic-branch-opening:
     what: >-
-      Before W1 and W4 are cut: the owner's typed `keel mr commit` on epic/E-APPLIST, only .keel/config.toml staged:
-      code_paths += "app/"; rule_bearing += "scripts/router-app.sh", "scripts/notify-owner.py". W4 adds the app's
-      tests to [check] test in its own owner-typed commit, once app/ holds tests (`cargo test && node --test app/`
-      or the shape W4's plan fixes).
+      Done (1f96ca3), before W1 and W4 were cut: the owner's typed `keel mr commit` on epic/E-APPLIST, only
+      .keel/config.toml staged: code_paths += "app/"; rule_bearing += "scripts/router-app.sh",
+      "scripts/notify-owner.py". W7 adds the main part's tests to [check] test in its own owner-typed commit, once
+      app/ holds them (the shape W7's plan fixes; W4's plan held it first and is superseded).
     why: >-
       The WU gates judge a merge into the epic by the epic branch's committed config, so app/ must be code there
-      before W4 merges; a router script the router runs is a rule file like its siblings.
+      before W7 merges; a router script the router runs is a rule file like its siblings.
   files:
     W1: [scripts/router-app.sh (new), scripts/router-guard.jq, .claude/agents/router.md, tests/suite/router_app.rs (new), tests/suite/router.rs, tests/suite/main.rs]
     W2: [scripts/router-worker.sh, tests/suite/router.rs]
     W3: [scripts/notify-owner.py, .claude/skills/keel-router/SKILL.md, .claude/skills/keel-router/references/commands.md, skills/keel-router/SKILL.md, skills/keel-router/references/commands.md, .claude/skills/project-router/SKILL.md, tests/suite/notify_owner.rs, tests/suite/init.rs]
-    W4: [app/package.json, app/package-lock.json, app/forge.config.ts, app/tsconfig.json, app/src/main/, app/src/preload/, app/src/window/, app/test/, .gitignore, ".keel/config.toml, its [check] table"]
-    W5: [app/src/main/reader/, app/src/main/watcher/, app/src/main/alerter/, app/test/]
-    W6: [app/src/window/, app/src/main/items/, app/src/main/open/, app/test/]
-    close: [app/test/applist.e2e.test.ts, the distillation docs above]
+    W4: "none: superseded (DEC-76); its plan archived by the replan"
+    W7: [app/package.json, app/package-lock.json, app/forge.config.ts, app/tsconfig.json, app/vite.*.config.ts, app/src/shared/contract.ts, app/src/main/, app/src/preload/, app/src/window/ (a bare page), app/test/, .gitignore, ".keel/config.toml, its [check] table"]
+    W8: [app/src/window/, app/src/window/fake/, app/tailwind.config.*, app/eslint.config.js, app/eslint-rules/, app/vitest.config.ts or the renderer's Vite config, app/package.json, app/package-lock.json]
+    W5: [app/src/main/reader/, app/src/main/watcher/, app/src/main/alerter/, app/src/shared/contract.ts, app/test/]
+    W6: [app/src/window/, app/src/window/fake/, app/src/main/items/, app/src/main/open/, app/test/]
+    W9: [app/e2e/applist.e2e.spec.ts, app/playwright.config.ts, the distillation docs above]
   rule-bearing-and-unreviewed:
     note: >-
       Each rule-bearing file is committed alone by the owner's typed `keel mr commit … --as vuluu` and gets an
       independent read-only review (keel-router references/review-checklists.md) before the WU's sign-off; the cr gate
       covers only code_paths.
     rows:
-      - {file: .keel/config.toml, wu: "opening, W4", kind: rule-bearing, review: "config checklist; no gate reviews it"}
+      - {file: .keel/config.toml, wu: "opening, W7", kind: rule-bearing, review: "config checklist; no gate reviews it"}
       - {file: scripts/router-guard.jq, wu: W1, kind: rule-bearing, review: "security path: the router posture, fail-closed"}
       - {file: scripts/router-app.sh, wu: W1, kind: "rule-bearing after the opening commit", review: "security path: lock, no free text into JSON unescaped, writes only .router/app/"}
       - {file: .claude/agents/router.md, wu: W1, kind: rule-bearing, review: "the tools line equals the guard's"}
@@ -174,34 +235,38 @@ details:
       - {file: scripts/notify-owner.py, wu: W3, kind: "rule-bearing after the opening commit", review: "no token or chat printed; the alert line written before the send"}
       - {file: ".claude/skills/keel-router/ and skills/keel-router/", wu: W3, kind: rule-bearing, review: "skills checklist section G; both copies equal"}
       - {file: .claude/skills/project-router/SKILL.md, wu: W3, kind: rule-bearing, review: "skills checklist section G"}
-      - {file: docs/local-app.html, wu: close, kind: "rule-bearing (docs/*.html)", review: "distillation read"}
-      - {file: docs/architecture.html, wu: close, kind: "rule-bearing (docs/*.html)", review: "distillation read"}
-      - {file: docs/install.html, wu: close, kind: "rule-bearing (docs/*.html)", review: "distillation read"}
-      - {file: .gitignore, wu: W4, kind: "neither code nor rule-bearing", review: "independent read: app/node_modules/ and app/out/ only"}
+      - {file: docs/local-app.html, wu: "W9 (close)", kind: "rule-bearing (docs/*.html)", review: "distillation read"}
+      - {file: docs/architecture.html, wu: "W9 (close)", kind: "rule-bearing (docs/*.html)", review: "distillation read"}
+      - {file: docs/install.html, wu: "W9 (close)", kind: "rule-bearing (docs/*.html)", review: "distillation read"}
+      - {file: .gitignore, wu: W7, kind: "neither code nor rule-bearing", review: "independent read: app/node_modules/, app/out/ and app/.vite/ only"}
   overlap-with-E-KEELFIX:
     shared-files: >-
       None of src/main.rs, src/notes.rs, src/mr.rs or the hooks (strings in src/main.rs): this epic changes no src/
       file. Possible small overlaps: tests/suite/main.rs (each epic may add a suite module; a one-line merge), and at
       the close docs/backlog/local-app.yaml, backlog-index.yaml, docs/architecture.html,
-      docs/decisions/workflow-gates.html and decisions-index.yaml (each epic's next free DEC id: check every live
+      docs/decisions/app.html and decisions-index.yaml (each epic's next free DEC id: check every live
       branch before minting).
     behaviour: >-
       K9 (the commit hooks read the committed config) changes how this epic's rule-file commits are judged once
       E-KEELFIX is on main; either way they need the Reviewed-By trailer.
   test-layers:
-    epic: "e2e: app/test/applist.e2e.test.ts (above); the GUI and Telegram parts live, at the close"
-    wu: "integration per WU (wu-expected); Rust suite files for the scripts, node --test for app/"
+    epic: "e2e: app/e2e/applist.e2e.spec.ts, Playwright on the unpackaged app, by hand (above); the signed build's alert and Telegram parts live, at the close"
+    wu: "integration per WU (wu-expected); Rust suite files for the scripts, node --test for the main part (in keel check), Vitest for the window (by hand, recorded in the result)"
     commit: "unit for app/ code; shell scripts have no unit layer, their cases are integration"
+    counted: "keel's ts adapter counts test( and it( in .ts and .tsx files, so Vitest and Playwright files count in a test note like node's"
   owner-steps:
     - "Approve this plan (sign with --report on the page)."
-    - "The opening rules commit (keel mr commit), then W4's [check] commit, then each WU's rule-file commits."
-    - "Install the signed build once (W4) and say whether the test alert showed; decide Apple's membership only if not."
+    - "The opening rules commit (keel mr commit), then W7's [check] commit, then each WU's rule-file commits."
+    - "Install the signed build once (W7) and say whether the test alert showed; decide Apple's membership only if not; again at the close (W9)."
     - "The one Telegram test message (W3/W6): did the link open the app?"
     - "Each WU sign-off and merge; the epic sign-off, merge into main and push."
   sources:
     - docs/local-app.html
     - docs/backlog/local-app.yaml (A3)
     - docs/decisions/workflow-gates.html (DEC-70)
+    - docs/decisions/app.html (DEC-71 - DEC-77, the replan)
+    - "Trawler, read only: ui/ (React, Vite, Tailwind 3 closed config, ui/eslint-rules, apiStub and coreStub, Vitest with jsdom)"
+    - "git show 83fdd8f (wu/E-APPLIST/w4-app-frame, reference only) and git show d448d97:docs/work/2026-11-20-e-applist-w4-plan.yaml"
     - "git show 90ee37b:docs/work/2026-11-19-e-localtool-w5-retire-result.html (P4, P5)"
     - "git show 7401665:docs/work/2026-11-18-e-localtool-w3-screens-result.html (K14, K15, the update line)"
     - scripts/router-worker.sh (facts), scripts/router-guard.jq, scripts/notify-owner.py

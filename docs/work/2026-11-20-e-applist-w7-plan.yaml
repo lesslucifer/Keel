@@ -1,0 +1,240 @@
+artifact: wu-plan
+status: ready
+id: E-APPLIST.W7
+epic: E-APPLIST
+title: "E-APPLIST.W7 · The app shell"
+date: "2026-11-20"
+page: 2026-11-20-e-applist-w7-plan.html
+requirement: >-
+  app/ holds an Electron app whose window reaches its main part only through a preload bridge of two channels - six
+  named requests, each from the app's own window with checked arguments, and a push channel carrying only named events
+  from the main part to that window - whose main part runs git only as fixed, shell-free, locked-down commands with no
+  inherited GIT_* and a PATH read once from the login shell, keeps its settings and a one-project list in its own folder
+  and never writes inside a project, keeps running with no window open, and which packages with Electron Forge into a
+  signed Keel.app that shows one macOS test alert on the owner's Mac (or names the signing step that does not).
+maps-to: >-
+  Epic E-APPLIST, its W7 summary (wu-maps-to: local-app.html 'The stack: Electron', screen 6's main-part side; backlog
+  local-app A3's app shell, PATH setting and Apple's membership). DEC-70 (Electron; named requests; fixed commands;
+  paths set in the app; no port), DEC-71 (React with Vite: the window's build), DEC-74 (forge start; packaged only at
+  this WU's close), DEC-76 (replaces W4's plan; W4's branch is reference only), DEC-77 (runs with no window). No use
+  case is recorded by W7: UC-APP-1 and UC-APP-2 are W5's and W6's.
+expected:
+  - "An unknown request name, a request from any frame but the app's own window's main frame, or an argument that is not one of its slot's values (free text, an extra key, a wrong type) is refused, and nothing runs."
+  - "The push channel sends only an event name in its fixed list, only to the app's own window, with every string passed through plain(); the window can subscribe only to a listed name and gets an unsubscribe back."
+  - "Every git run starts with -c core.fsmonitor=false --no-optional-locks, carries no GIT_* variable whatever the app's own environment holds, runs with no shell, and a value with $( ), ; or a space reaches git as one literal argument."
+  - "The PATH is read once at start from the owner's login shell, relative entries dropped; a hung or failing shell falls back to the system PATH plus the tools' folders, and state.get says which."
+  - "Settings (where keel, git and claude are) and the project list round-trip through the app's own folder; adding and removing a project leaves every file of that project, and its git status, unchanged; a second project is refused; a project is only a main checkout whose HEAD commits .keel/config.toml."
+  - "Closing the window leaves the app running (alerts still come); opening it again from the Dock shows the window."
+  - "The main part's tests run with node --test and no packages installed; once the owner's [check] commit lands, keel check runs them beside cargo test and never runs a window test."
+  - "Live, on the owner's Mac: the signed build opens, its bare page shows the three tools and the PATH's source, and its test alert shows; or the result names the signing rung that failed and the owner decides Apple's membership."
+test-plan:
+  unit: >-
+    app/test/unit/*.test.ts, node:test and node:assert only, each a top-level test( so keel's ts counter counts it;
+    each written red first against the module's empty export, the red run noted in the result. Covered: each argument
+    slot check (enum, project id, length cap, control characters), with a seeded generated-input test that no random
+    string passes a slot unless it matches it; the sender check; the push event list and the push payload pass through
+    plain(); the preload's bridge factory (built from an injected ipc object: ask sends {name, args} on the request
+    channel, on() refuses an unlisted name, returns an unsubscribe, hands the callback a copy); the PATH marker parse
+    and entry filter; the tool-path check; the settings and project-list parse (half file, unknown version, extra
+    keys); the asset resolver (.., %2e%2e, %2f, absolute, NUL refused); the window options pinned (each webPreferences
+    value, the packaged CSP string, the dev CSP only when not packaged); the navigation and permission policies refuse
+    everything; the window-all-closed policy keeps the app running; plain() blanks control characters; two static
+    guards: no file under app/src/window/ uses innerHTML, outerHTML, insertAdjacentHTML, document.write, eval, new
+    Function or dangerouslySetInnerHTML, and every module a node test reaches imports only node: built-ins and relative
+    .ts files (so keel check needs no npm).
+  integration: >-
+    app/test/integration/*.test.ts, hermetic (temp dirs from fs.mkdtemp under os.tmpdir(), real git, fake tools as
+    shell scripts in the temp dir), red first. (1) bridge: the whole request table against a recorded sender, every
+    name and slot, refusals for an unknown name, a foreign frame, a subframe, another window, a missing frame, free
+    text, an extra key; the push side against a recorded window: a listed event reaches only the app's window, an
+    unlisted one is refused, a destroyed window drops it; the request names, slots and push events snapshot-locked as
+    the window's wire contract (app/src/shared/contract.ts). (2) run: a fake git records argv and env: the locked flags
+    first, no GIT_* though the test sets GIT_DIR, GIT_CONFIG_PARAMETERS and GIT_EXTERNAL_DIFF, an argument
+    "$(touch pwned); x" arrives whole and creates nothing; real git in a temp repo answers from that repo, not GIT_DIR's.
+    (3) login PATH: a fake login shell printing profile noise around the markers gives the PATH; relative and empty
+    entries dropped; a hung shell is killed at the timeout and the fallback carries its reason; a non-zero exit falls
+    back. (4) settings and projects in a temp app folder: round-trip across a fresh load; a broken file set aside and
+    defaults loaded; a tool path that is relative, a folder, not executable, or inside a listed project refused; a temp
+    main checkout with a committed .keel/config.toml accepted; a linked worktree, a plain folder, a config only in the
+    working tree, and a second project refused; a tree snapshot (every path, size, mtime, bytes) and git status
+    --porcelain of the project equal before and after add, remove and every settings write; projects.add and
+    settings.choose each push state.changed once.
+  e2e: >-
+    none: a WU's level is integration; the epic test (Playwright on the unpackaged app, DEC-75) is W9's. What no
+    hermetic test reaches (the window on screen, the macOS alert, codesign, Launch Services) is checked live at W7's
+    close on the owner's Mac and recorded in the result (details.live-checks).
+details:
+  base: "epic/E-APPLIST at the tip this replan merges into (d448d97 plus this WU)"
+  replaces: >-
+    The W4 plan (2026-11-20-e-applist-w4-plan, archived by this replan; git show d448d97:docs/work/2026-11-20-e-applist-w4-plan.yaml).
+    What changed from it: the window is React built by Vite (DEC-71), a bare page only, its design and screen 6 are W8's;
+    the preload gains a push channel; the app keeps running with no window (DEC-77); the window's tests are not this
+    WU's and never run in keel check (DEC-73). Kept: the security checklist, the six requests, the fixed commands, the
+    login PATH, the app's folder, one project, the Forge build, the signing ladder, the owner's [check] commit.
+  reference-branch: >-
+    wu/E-APPLIST/w4-app-frame (tip 83fdd8f, never merged) may be read as reference: its main part, bridge, handlers
+    and tests may be re-derived, each test red first in this WU. Nothing is cherry-picked or merged from it (DEC-76).
+  versions: >-
+    Each package pinned exactly at the first install (save-exact) and recorded in the result: electron (a major within
+    the three supported), @electron-forge/cli, plugin-vite, plugin-fuses, maker-zip, @electron/fuses, typescript,
+    vite, react, react-dom, @vitejs/plugin-react, their @types. Local node v24 (seen v24.18.0 on 2026-11-20). React's
+    major is an open point.
+  layout:
+    app/package.json: >-
+      name keel-app, productName Keel, private, "type": "module", engines node >=24, main pointing at Forge's Vite
+      build; scripts start (electron-forge start), package, make, typecheck (tsc --noEmit), test:main
+      (node --test 'test/**/*.test.ts'); W8 adds dev:browser, lint and test:window. react and react-dom are
+      dependencies; the rest devDependencies.
+    app/package-lock.json: "committed; npm ci only"
+    app/tsconfig.json: >-
+      strict, noEmit, allowImportingTsExtensions, erasableSyntaxOnly (node's type stripping runs the main part's files),
+      verbatimModuleSyntax, module nodenext, target es2024, jsx react-jsx for the window.
+    app/forge.config.ts: >-
+      packagerConfig: name Keel, appBundleId dev.keel.app, asar true, osxSign with identity from KEEL_SIGN_IDENTITY
+      (default "-": ad-hoc), no osxNotarize, protocols [{name: Keel, schemes: [keel]}] (declared here, handled by W5).
+      makers: zip for darwin. plugins: vite (main, preload, renderer) and fuses: RunAsNode off,
+      EnableNodeOptionsEnvironmentVariable off, EnableNodeCliInspectArguments off, EnableCookieEncryption on,
+      EnableEmbeddedAsarIntegrityValidation on, OnlyLoadAppFromAsar on, GrantFileProtocolExtraPrivileges off.
+    app/vite.main.config.ts, app/vite.preload.config.ts: "Forge's Vite template, nothing added"
+    app/vite.renderer.config.ts: "Forge's template plus @vitejs/plugin-react; W8 adds Tailwind and the browser mode"
+    app/src/shared/contract.ts: >-
+      the wire contract, types and plain data only (no electron, no react): request names and their slots, reply
+      shapes, push event names (W7: state.changed) and payloads. The main part, the preload, the window and W8's fake
+      bridge all import it; its names snapshot-locked.
+    app/src/main/index.ts: >-
+      The Electron shell, the only main-part file that imports electron: single instance lock; the app:// scheme
+      registered privileged and served by the asset resolver; one BrowserWindow from window-options; will-navigate,
+      will-frame-navigate and will-attach-webview prevented, setWindowOpenHandler deny, the session's permission
+      request and check handlers deny; ipcMain.handle('keel:ask') passes each call through bridge.check, then the
+      handler; push(event, payload) sends on 'keel:push' to the app's window only; window-all-closed does not quit;
+      activate re-opens the window; the dialogs and the Notification live here. Not unit-tested (needs Electron); its
+      logic is the pure modules below; checked live.
+    app/src/main/window-options.ts: "pure: webPreferences, the CSP (packaged; and the dev one only when not packaged), the navigation and permission policies, the window-all-closed policy"
+    app/src/main/assets.ts: "pure: resolve an app:// path to a file under the renderer folder, or null"
+    app/src/main/bridge.ts: "pure: check(call, sender, expected) -> {name, args} or {refused}; pushable(event) -> bool; both from contract.ts"
+    app/src/main/commands.ts: >-
+      the fixed commands: named git shapes with typed slots; run(name, slots) builds [git, '-c',
+      'core.fsmonitor=false', '--no-optional-locks', ...shape], adds --no-ext-diff --no-textconv to any diff, log -p
+      or show shape, spawns with execFile (shell false, stdin ignored, 10 s timeout for reads), env built from nothing:
+      PATH (the login PATH), HOME, USER, LOGNAME, LANG, TMPDIR.
+    app/src/main/login-path.ts: >-
+      the login shell from os.userInfo().shell (else /bin/zsh), args -ilc and a fixed script printing the PATH between
+      two markers, env HOME, USER, LOGNAME, SHELL, TERM=dumb, stdin ignored, 5 s timeout; non-absolute and empty entries
+      dropped. Fallback /usr/bin:/bin:/usr/sbin:/sbin plus the set tools' folders, with the reason. The one place a
+      shell runs: a fixed script, no value from the app in it.
+    app/src/main/tools.ts: "the three tool paths: from settings, else looked up on the login PATH; absolute, a regular executable file, basename keel, git or claude, not inside a listed project"
+    app/src/main/store.ts: "the app folder's files: read, parse, write atomically (temp file, rename); a broken file renamed aside with a time suffix, defaults loaded"
+    app/src/main/settings.ts: "settings.json: {version: 1, tools: {keel?, git?, claude?}}"
+    app/src/main/projects.ts: >-
+      projects.json: {version: 1, projects: [{id, path, name}]}; id 'p' plus 8 hex, minted in the main part; add
+      checks the folder with the fixed commands (show-toplevel equals its real path; the absolute git-common-dir is its
+      .git; HEAD holds .keel/config.toml); at most one project in E-APPLIST.
+    app/src/main/text.ts: "plain(s): control characters blanked, length capped; every string to the window passes it"
+    app/src/preload/index.ts: >-
+      contextBridge.exposeInMainWorld('keel', makeBridge(ipcRenderer)); makeBridge in app/src/preload/bridge.ts is pure:
+      {ask(name, args) -> invoke('keel:ask', {name, args}), on(event, cb) -> unsubscribe}, on() accepting only
+      contract.ts's push names. Nothing else is exposed.
+    app/src/window/: >-
+      index.html (CSP meta, one script), main.tsx and App.tsx: a bare page, unstyled - the three tools and their
+      state, the PATH's source, the version, a "Send a test alert" button and its outcome, refreshed on state.changed.
+      The window reaches window.keel only through one module (app/src/window/bridge.ts), so W8 injects a fake. W8
+      replaces the page with screen 6.
+    app/test/unit/, app/test/integration/: "as test-plan; the main part only"
+    .gitignore: "app/node_modules/, app/out/, app/.vite/"
+  named-requests:
+    rule: >-
+      The window sends {name, args}. The main part refuses unless: the sender frame is the main frame of the app's one
+      window and its URL is the app's own page (app://keel/index.html packaged, the Vite dev URL only when not
+      packaged); the name is in the table; args is a plain object with exactly the slot keys; each value matches its
+      slot (an enum, or the project id ^p[0-9a-f]{8}$). No slot takes a path, a command, a commit or free text; a path
+      is only ever chosen in a main-part dialog.
+    w7:
+      - {name: state.get, args: none, does: "settings with each tool's state, the PATH and its source, the project list, the app's version"}
+      - {name: projects.add, args: none, does: "main-part folder dialog; the project checks; saved; refused while one project is listed; pushes state.changed"}
+      - {name: projects.remove, args: "{project: id}", does: "removes it from the list; the project's folder is not touched; pushes state.changed"}
+      - {name: settings.choose, args: "{tool: keel | git | claude}", does: "main-part file dialog; the tool check; saved; pushes state.changed"}
+      - {name: settings.reset, args: "{tool: keel | git | claude}", does: "drops the setting; looked up on the PATH again; pushes state.changed"}
+      - {name: alert.test, args: none, does: "one Notification (title Keel, body 'Test alert: alerts work on this Mac.'); answers shown, not shown within 5 s, or not supported"}
+    push:
+      - {event: state.changed, payload: none, when: "a project or a setting changed; the window calls state.get again"}
+    later: "W5 adds the waiting list's requests and its push events (the list changed, the router heard or not, a link opened); same table, same checks, each added to contract.ts and its snapshot"
+  fixed-commands-w7:
+    - {name: toplevel, line: "git -C <project> rev-parse --show-toplevel"}
+    - {name: common-dir, line: "git -C <project> rev-parse --path-format=absolute --git-common-dir"}
+    - {name: has-config, line: "git -C <project> cat-file -e HEAD:.keel/config.toml"}
+    - note: "each prefixed with -c core.fsmonitor=false --no-optional-locks; <project> is a real path from the main-part dialog or the list; W7 runs no keel and no claude"
+  security-checklist: >-
+    Electron's checklist, each item and where: remote content none (app:// only); nodeIntegration false,
+    contextIsolation true, sandbox true, webSecurity true, allowRunningInsecureContent false, no experimentalFeatures or
+    enableBlinkFeatures, webviewTag false (window-options, unit-pinned); packaged CSP default-src 'none', script-src
+    'self', style-src 'self', img-src 'self', base-uri 'none', form-action 'none', no font-src (system font, DEC-72)
+    (meta tag; unit-pinned); the dev CSP adds only what Vite's dev server and React's refresh need, and only when not
+    packaged; navigation, new windows and webviews refused; every permission denied; every request's sender checked and
+    every push sent only to the app's window (bridge); no file:// (a privileged app:// scheme); fuses as forge.config.ts;
+    Electron current (a major within the three supported). shell.openExternal is not used in W7.
+  order-of-commits:
+    - "1. This plan, committed with the replan; the owner approves and signs it with --report on the page."
+    - "2. Worker: app/ skeleton, contract.ts, the pure main-part modules, the preload's bridge factory and their unit and integration tests, .gitignore. node --test green, cargo test green."
+    - >-
+      3. The owner's typed rules commit on wu/E-APPLIST/w7-app-shell, only .keel/config.toml staged, one line changed
+      in [check]: test = "cargo test && node --test 'app/test/**/*.test.ts'" (quoted: keel check runs it with sh -c and
+      node expands the glob; it never matches the window's *.test.tsx under app/src/window/). Command:
+      keel mr commit -m "chore(E-APPLIST.W7): [check] test runs the app's main-part tests" --as vuluu. After step 2, so
+      the glob never matches nothing. An independent read-only review of the config change (config checklist) before
+      the WU's sign-off.
+    - "4. Re-gate: the worker runs keel check on that tip; green means cargo test and the main part's tests both pass; a red stops the WU and goes to the router."
+    - "5. Worker: the Electron shell, preload, the bare React page, Forge config, package.json and package-lock.json (npm ci in the sandbox, below), typecheck green, electron-forge package green."
+    - "6. Owner at the Mac: the live checks below; the worker records them."
+    - "7. Result report, test and doc notes, preflight, review, verify-dod wu, the owner's sign-off and merge."
+  sandbox-and-network:
+    worker-can: >-
+      Write the code and tests; node --test; cargo test; keel check; npm ci, npm run typecheck and npm run package in
+      app/ with npm_config_cache and ELECTRON_CACHE under $TMPDIR (the sandbox cannot write ~/.npm or
+      ~/Library/Caches/electron; seen 2026-11-20); npx @electron/fuses read on the packaged app.
+    network: >-
+      Under auto mode, per call with allowed_domains: registry.npmjs.org, and for Electron's binary github.com plus
+      its download host (objects.githubusercontent.com or release-assets.githubusercontent.com). A refusal goes to the
+      router with the exact command; nothing is routed around.
+    owner-only: >-
+      Opening the app (the sandbox blocks Launch Services), electron-forge start, the macOS notification permission
+      and the alert itself, a signing identity in the login keychain, and the Launch Services check of the keel scheme.
+  live-checks:
+    why: "no hermetic test reaches the window on screen, the notification center, codesign or Launch Services"
+    steps:
+      - "1. cd app && npm ci && npm run make (KEEL_SIGN_IDENTITY unset: ad-hoc). Copy out/Keel-darwin-arm64/Keel.app to /Applications and open it."
+      - "2. The bare page shows keel, git and claude found and says 'PATH from your login shell'."
+      - "3. Send a test alert; allow notifications when macOS asks. Seen, or not."
+      - "4. Close the window: the app stays in the Dock; click the Dock icon: the window comes back."
+      - "5. codesign -dv /Applications/Keel.app (the signature) and npx @electron/fuses read --app /Applications/Keel.app (the fuses)."
+      - "6. lsregister -dump | grep -i 'keel:' lists only Keel.app (the link scheme is unclaimed by another app)."
+      - "7. cd app && npm start (electron-forge start): the same page opens unpackaged."
+    signing-ladder:
+      - "rung 1, free: ad-hoc (identity '-'; if Forge's signer refuses it, codesign --force --deep --sign - after package, recorded)"
+      - "rung 2, free: an Apple Development certificate from a free Apple ID in Xcode (KEEL_SIGN_IDENTITY='Apple Development: …')"
+      - "rung 3, paid: Apple's Developer Program membership (Developer ID); the owner's decision, only if rungs 1 and 2 show no alert"
+    stop-at: "the first rung whose alert shows; the result names it and the steps that showed it"
+  open-points:
+    - q: "What window does W7 ship?"
+      a: "A bare React page: the tools, the PATH's source and the test alert, unstyled. W8 builds screen 6 on Keel's tokens; a styled page here would be drawn twice."
+    - q: "How does the main part tell the window something changed?"
+      a: "One push channel with a fixed list of event names, sent only to the app's own window; W7 lists one, state.changed. The window then asks again: an event carries no data a request could not fetch."
+    - q: "Which React major?"
+      a: "The current major at the first install, pinned exactly (React 19 if still current); Trawler's patterns are hooks and context, which port across 18 and 19."
+    - q: "npm or pnpm?"
+      a: "npm: it ships with Node 24 and is Forge's default; Trawler's pnpm adds a tool to install."
+    - q: "Does the dev build loosen the content policy?"
+      a: "Only when not packaged, and only what Vite's dev server and React's live reload need; a unit test pins the packaged policy exactly."
+    - q: "How many projects?"
+      a: "One; a second is refused. The file already holds a list, so A5 lifts the cap with no migration."
+    - q: "Which signature first?"
+      a: "Ad-hoc, then a free Apple Development certificate, then the paid membership only if both fail."
+    - q: "Does keel check type-check app/?"
+      a: "No: tsc needs npm install, and keel check must not. The worker runs npm run typecheck before each app commit and the review runs it."
+    - q: "Bundle id?"
+      a: "dev.keel.app: notifications are keyed to it; changing it later loses the notification permission once."
+    - q: "Where do the app's files live?"
+      a: "~/Library/Application Support/Keel (Electron's userData): settings.json, projects.json; W5 adds the shown alerts there."
+    - q: "Is W4's code reused?"
+      a: "No: its branch is read as reference only; each module is re-derived with its test red first (DEC-76)."
+  htmldoc:
+    id: 6b0048f99f34851f0dfb2b0a
