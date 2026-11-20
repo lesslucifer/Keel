@@ -16,7 +16,7 @@
   <main>
 
 <h2 id="happened">What happened</h2>
-<p data-c="happened">The update command is built. It keeps two files: a log of numbered lines and the current state. The router may start a run, set a work unit's stage and delete a question or a stage. Nothing else, and only in plain words. You committed the four rule files with one typed command. A fresh worker then re-checked them: green, no blocker, six small notes. Two code reviews failed on gaps in the tests, none in the command: six, then three more. A sweep that broke each line of the command found a few others. Tests close them all, each shown to catch its fault. An empty state file is not refused: see the state note below.</p>
+<p data-c="happened">The update command is built. It keeps two files: a log of numbered lines and the current state. The router may start a run, set a work unit's stage and delete a question or a stage. Nothing else, and only in plain words. You committed the four rule files with one typed command. A fresh worker then re-checked them: green, no blocker, six small notes. Three code reviews failed on the tests, never the command: six gaps, three more, then a test that failed falsely in a background run. Tests, and a sweep breaking each line of the command, close them all, each shown to catch its fault. An empty state file is not refused: see the state note below.</p>
 
 <h2 id="checks">How you'll know it worked</h2>
 <table data-c="checks">
@@ -44,8 +44,8 @@
 <h2 id="diff">Differences from the plan</h2>
 <ul data-c="diff">
   <li><b>The state is written before the log, not after.</b> If a writer dies between the two, the app sees a missing number and reads the state, which it already does. The other order could repeat a number. The re-check agreed.</li>
-  <li><b>Two test commits, not one.</b> The second checks that a refused call leaves no stray file. One once did.</li>
-  <li><b>You applied two of the four files.</b> The worker's sandbox may not write the settings and the router's persona, so it handed you their change.</li>
+  <li><b>Two test commits, not one.</b> The second checks that a refused call leaves no stray file.</li>
+  <li><b>You applied two of the four files.</b> The worker's sandbox may not write the settings and the router's persona.</li>
 </ul>
 
 <h2 id="left">What is left, and who takes it</h2>
