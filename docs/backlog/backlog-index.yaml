@@ -18,9 +18,11 @@ files:
   - letter: A
     file: local-app.yaml
     scope: >-
-      From the E-LOCALTOOL close: back to before GitHub (A1, done by E-GHREVERT), keel fixes (A2), the app's three
-      build epics (A3 - A5), in order.
-    next-free: A6
+      From the E-LOCALTOOL close: back to before GitHub (A1, done by E-GHREVERT), keel fixes (A2, done by
+      E-KEELFIX), the app's three build epics (A3 - A5), in order. From the E-KEELFIX close: the plan-WU flow review
+      (A6), the push hook's rules (A7, accepted), the dispatch guard (A8), the roster lock-out (A9), small follow-ups
+      (A10).
+    next-free: A11
   - letter: L
     file: local-app.yaml
     scope: >-
@@ -34,51 +36,55 @@ files:
       the worker plugin's cold resume.
     next-free: D4
 # The ranked open work. Owner ruling 2026-11-10: the proposed epics are proposals, not commitments; the owner
-# orders them. Ranks 1 - 4 drafted by E-LOCALTOOL.W5, after E-GHREVERT (its first, closed 2026-11-19). Rank 5 holds
-# the four proposed epics, unordered among themselves.
+# orders them. Ranks 1 - 3 drafted by E-LOCALTOOL.W5, after E-GHREVERT and E-KEELFIX (its first two, closed). Rank 4
+# holds the four proposed epics, unordered among themselves.
 order:
   - rank: 1
-    epic: E-KEELFIX · keel fixes
-    status: next (E-GHREVERT closed)
-    rows: local-app A2
-  - rank: 2
     epic: E-APPLIST · alerts and your list
-    status: proposed; E-GHREVERT closed
+    status: proposed; E-GHREVERT and E-KEELFIX closed
     rows: local-app A3
-  - rank: 3
+  - rank: 2
     epic: E-APPSIGN · sign off and merge from the app
-    status: proposed, after E-KEELFIX and E-APPLIST
+    status: proposed, after E-APPLIST
     rows: local-app A4
-  - rank: 4
+  - rank: 3
     epic: E-APPFLEET · fleet, epics, many projects
     status: proposed, after E-APPLIST and E-APPSIGN
     rows: local-app A5
-  - rank: 5
+  - rank: 4
     epic: E-RELEASE
     status: proposed
     rows: >-
       What backlog B1 left before a real release: the owner prerequisites, the owner's `dist plan` / `dist generate`
       check, a prerelease-tag run, the first stable tag, the accepted-risk revisits of DEC-38, and the fixed `keel` on
       `PATH` (DEC-41); local-app L5, the pinned install script, when planned.
-  - rank: 5
+  - rank: 4
     epic: E-LINEAGE
     status: proposed
     rows: B5
-  - rank: 5
+  - rank: 4
     epic: E-GATEFIX
     status: proposed
     rows: "B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14"
-  - rank: 5
+  - rank: 4
     epic: E-MULTILANG
     status: proposed
     rows: "B3: the Python e2e first, then other languages"
-  - rank: 6
+  - rank: 5
     epic: the next router epic
     status: not yet proposed; the owner orders it
     rows: >-
       R5's live part, R6 row 4's note, R7's open rows, R14 (DEC-48 item 4), R20 - R29, R31, R32, R34 - R42, R44 -
       R48, R51. R40, the live check of `auto`, is owed at the first spawn after E-WMODE's merge; R47's L3 is wanted
       soon.
+  - rank: none
+    epic: E-KEELFIX · keel fixes
+    status: "closed: the commit level reads the committed rules, a gate run or help writes nothing unless asked, the github tier removed; W4 dropped by the owner's ruling of 2026-11-20"
+    rows: local-app A2 done; A6 - A10 added (A7 closed as accepted)
+  - rank: none
+    epic: the plan-WU flow review
+    status: not yet proposed; the owner orders it
+    rows: local-app A6
   - rank: none
     epic: E-GHREVERT · back to before GitHub
     status: "closed 2026-11-19: the flow reverted, the five keeps kept, typed sign-off and local merge back"
@@ -100,4 +106,4 @@ order:
     status: open
     rows: >-
       B24 (an owner pick: A, B, C or E, then an epic), B25, B26 and B27; B21 (accepted limits); B19 (owed by the
-      owner's reinstall); B7's open rows; B2's unbuilt follow-ups, only if asked.
+      owner's reinstall); B7's open rows; B2's unbuilt follow-ups, only if asked; local-app A8, A9, A10.

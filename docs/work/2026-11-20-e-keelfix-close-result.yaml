@@ -1,0 +1,95 @@
+artifact: wu-result
+status: ready
+id: E-KEELFIX.W6
+epic: E-KEELFIX
+title: The epic's close - its end-to-end test and its lasting docs
+date: "2026-11-20"
+page: 2026-11-20-e-keelfix-close-result.html
+outcome: >-
+  Delivered. The close WU (branch wu/E-KEELFIX/close, off epic/E-KEELFIX 6abc010) carries the three things the
+  epic plan put at the close: (1) the epic e2e, tests/suite/keelfix_e2e.rs (36d78e9), one scratch project with
+  Keel's hooks and no network, its five steps covering W1, W2, W3 and W5; red first on main 6c3ee00 (step 1: the
+  commit lands, the folder's lint ran) and on epic 708e8f4 before W3 (step 5: setup registers a line under a
+  roster with a github line), green on 6abc010's code; (2) the T2 distillation (5523e3c): UC-GATE-1, UC-GATE-2,
+  UC-NOTE-1, UC-MR-2, DEC-24, DEC-70, backlog local-app A2 closed and A6 to A10 added (A7 closed as accepted),
+  and the backlog index; (3) the owner's rule-file commit 26c4731 (Reviewed-By username vuluu): architecture,
+  local-app and both keel-workflow skill copies carry the epic's truth. An independent read of 26c4731 was GREEN
+  with five wording nits, N1 to N5, recorded in backlog local-app A10 by this commit.
+deviations:
+  - >-
+    The epic plan has no plan for a close WU (it lists W1, W2, W3, W5 and the close's work under "At the close").
+    The result needs a WU id of the form <epic>.W<n>; it takes E-KEELFIX.W6, the next free number (W4 was dropped
+    by the owner's ruling of 2026-11-20, backlog local-app A7). A router ruling, reversible.
+  - >-
+    This result pair was not planned: keel mr confirm wu refuses without a wu-result page in the range, so it was
+    added after 26c4731 (router ruling: the clean option). Its commit also adds N1 to N5 to backlog A10, so the
+    test and doc notes are rewritten on the new tip.
+  - >-
+    The epic plan's close list names docs/use-cases/workflow.html; the use cases live in
+    docs/use-cases/workflow.yaml since E-DOCSPLIT, so that file took them. docs/local-app.html was not on the list
+    and was added to 26c4731: its gate bullet still said K2 (a gate run writing no receipt) was missing.
+  - >-
+    No T3 doc is archived here. The archive commit (git rm of every docs/work/ pair and page, with keel notes write
+    doc --distill) is the epic close's part 2, on the epic branch after this WU merges.
+  - >-
+    Review round 1 (cr FAIL on f59655a: 0 blockers, 3 importants, 3 nits) found three e2e assertions a mutant
+    survives; the production code was right. Fix commit dbce3bc changes tests/suite/keelfix_e2e.rs only: (1) step
+    2's keel mr commit --as t@t must print its own "t@t is not listed in HEAD:.keel/mr-allowed" and no hook's
+    "commit refused"; (2) step 2, the folder's tiers still widened, a raw git commit with "Reviewed-By: email t@t"
+    is refused by the commit-msg hook naming docs/rules.html; (3) step 5's keel mr commit stderr starts with its
+    own "keel: HEAD:.keel/mr-allowed line 2" and holds no "commit refused". The nits are taken too: two-space
+    needles "FAIL  1·"/"FAIL  6·" plus a positive "FAIL  8·manual-review", the step-3 state message names a red
+    run and the two help requests, and the WU-into-epic merge asserts the hook's "verify-dod wu green on <tip>".
+    Review round 2 is next, on the fix.
+evidence:
+  commits:
+    - "36d78e9 test: the epic e2e, tests/suite/keelfix_e2e.rs (+213), registered in tests/suite/main.rs (+1)"
+    - "5523e3c docs: the T2 distillation - docs/use-cases/workflow.yaml, docs/decisions/workflow-gates.html, docs/backlog/local-app.yaml, docs/backlog/backlog-index.yaml"
+    - "26c4731 docs (owner's rule-file commit, Reviewed-By username vuluu): docs/architecture.html, docs/local-app.html, skills/keel-workflow/SKILL.md, .claude/skills/keel-workflow/SKILL.md"
+    - "f59655a docs: this result pair; backlog local-app A10 gains N1 to N5"
+    - "dbce3bc test: review round 1 fix, tests/suite/keelfix_e2e.rs (+19 -6)"
+    - "this commit: this result pair records round 1 and its fix"
+  e2e: >-
+    tests/suite/keelfix_e2e.rs, one test,
+    keelfix_commits_follow_the_committed_rules_and_nothing_is_written_unless_asked. Red first on main 6c3ee00 at
+    step 1; on epic 708e8f4 (W1, W2, W5; before W3) steps 1 to 4 pass and step 5 fails. Green on 6abc010's code.
+    After the round-1 fix, each strengthened assertion is red against its mutant in a scratch copy and the f59655a
+    test green on every one: M2a (mr commit on the folder's rules) red at :136; M2b (the commit-msg hook on the
+    folder's rules) red at :141, the commit lands; M5c (mr commit running git commit past a roster error) red at
+    :222, the hook's "keel: commit refused - keel: HEAD:.keel/mr-allowed line 2" in its output; N3 (the merge
+    hook passing merges into an epic ungated) red at :184. Green on the real code.
+  keel-check: "keel check green on the working tree before f59655a and again after dbce3bc: cargo fmt, clippy -D warnings, cargo test (unit 152 passed; suite 369 passed, 0 failed, 10 ignored)"
+  review: "round 1 FAIL on f59655a (0 blockers, 3 importants, 3 nits waived), fixed in dbce3bc; round 2 on the fix is the router's next step"
+  independent-read: >-
+    26c4731 read against the code and T2 docs: GREEN. Wording nits, none changing a rule: N1 the architecture CLI
+    paragraph's "before reading anything" is too strong; N2 the pre-commit row's "cannot read" should be "cannot
+    judge by"; N3 the rule_bearing row lists mr commit, which never reads it; N4 the --no-receipt last line prints
+    only on a green, non-exempt run; N5 an optional hook note. All five are items of backlog local-app A10.
+  docs: >-
+    T1 docs/architecture.html, docs/local-app.html; T2 docs/use-cases/workflow.yaml,
+    docs/decisions/workflow-gates.html, docs/backlog/local-app.yaml, docs/backlog/backlog-index.yaml; T3 this
+    result pair. The two keel-workflow skill copies are rule-bearing, outside docs.root.
+distillation: >-
+  The epic's truth went to T2 (UC-GATE-1, UC-GATE-2, UC-NOTE-1, UC-MR-2, DEC-24, DEC-70, backlog local-app A2 and
+  A6 to A10, the backlog index) and T1 (architecture, local-app), plus both keel-workflow skill copies. This
+  result itself carries nothing citable beyond them.
+follow-ups:
+  - "N1 to N5, the wording nits of the read of 26c4731: backlog local-app A10, taken by the next WU that edits the named file."
+  - "The W1, W2 and W3 review nits and result follow-ups: backlog local-app A10, as above."
+  - "The dispatch guard's substring match (W5's follow-up): backlog local-app A8."
+  - "A bad roster line committed by mr commit locks the branch out: backlog local-app A9."
+  - "Review the plan-WU flow: backlog local-app A6."
+  - "Review round 2 on the fix dbce3bc: the router starts it; then the owner's sign-off and the merge into epic/E-KEELFIX."
+  - "The archive commit, the epic result report, the epic review and the epic sign-off: E-KEELFIX's close, part 2, on epic/E-KEELFIX after this WU merges."
+details:
+  base: "epic/E-KEELFIX at 6abc010"
+  branch: "wu/E-KEELFIX/close"
+  epic-e2e-steps:
+    - "1 the folder's rules skip lint, not committed: a code commit with the marker is refused by the committed lint, nothing recorded"
+    - "2 the folder's tiers widened, not committed: keel mr commit as email t@t refused; as username t it lands with its trailer"
+    - "3 notes and review recorded: verify-dod wu --no-receipt red only on 8; notes write doc --help and mr confirm wu --help print usage, nothing written"
+    - "4 the owner signs; --no-receipt green with no dod note; verify-dod wu writes it; the WU merges into the epic and, after the archive commit and epic sign-off, the epic into main through the merge hook"
+    - "5 a github line on the roster's line 2 refused by mr setup (working file), mr commit and the commit-msg hook (HEAD's), naming line 2, nothing written"
+  test-note: "unit null; integration and e2e both tests/suite/keelfix_e2e.rs (the close WU's one requirement is the epic flow itself)"
+  htmldoc:
+    id: 6affd0ee9f34851f0dfb2afa

@@ -25,6 +25,7 @@ mod docsplit_e2e;
 mod fixtures;
 mod ghrevert_e2e;
 mod init;
+mod keelfix_e2e;
 mod layout;
 mod mr;
 mod notify_owner;

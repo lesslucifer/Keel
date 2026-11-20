@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6affd0ee9f34851f0dfb2afa">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-KEELFIX.W6 result: the epic closed</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-KEELFIX.W6 · The epic's close: its test and its lasting docs</h1>
+      <p>The whole epic now has one end-to-end test, and the docs that stay say what it changed.</p>
+      <div class="meta">T3 · WU result · 2026-11-20 · Keel · epic E-KEELFIX · delivered</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="happened">What happened</h2>
+<ul data-c="happened">
+  <li><b>One test runs the whole epic.</b> It builds a scratch project with Keel's hooks and walks a piece of work from first commit to main. It failed on main before the epic, and on the epic before the GitHub line was removed. It passes now.</li>
+  <li><b>The lasting docs carry the epic.</b> The use cases, two decisions and the backlog say what changed. Your signed commit updated the architecture page, the app page and both copies of the workflow skill.</li>
+  <li><b>A second reader checked your commit.</b> Verdict: correct. It found five wording nits. None changes a rule. All five are now on the backlog.</li>
+  <li><b>The first review failed; the test is fixed.</b> Three of its checks still passed with the code broken. Each now fails on that broken code and passes on the real code.</li>
+</ul>
+
+<h2 id="checks">How you'll know it worked</h2>
+<table data-c="checks">
+  <thead><tr><th>Check from the epic plan</th><th>Met?</th></tr></thead>
+  <tbody>
+    <tr><td>The epic test passes.</td><td><b>Met.</b> Red first twice, as planned; green on the epic's code.</td></tr>
+    <tr><td>All tests, the linter and Keel's own check are green.</td><td><b>Met.</b> Green before this report was committed; the review's first step reruns them.</td></tr>
+    <tr><td>The lasting docs absorb the epic, as the plan's close list says.</td><td><b>Met.</b> The app page was added: it still said a dry run was missing.</td></tr>
+    <tr><td>One rule-file commit by you, at the close.</td><td><b>Met.</b></td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">The main case, run for real</h2>
+<ol data-c="example">
+  <li>A worker edits its folder's rules to skip the linter and does not commit them. A commit with a banned word in code is refused.</li>
+  <li>It widens the signer list the same way. Signing as a name only the edit allows is refused; signing as a listed name works.</li>
+  <li>A dry run of the gate writes no receipt. Asking two commands for help writes nothing.</li>
+  <li>The owner signs. The work merges into its epic, and the epic into main, through the real hooks.</li>
+  <li>A GitHub line in the signer list is refused by every reader, naming line 2.</li>
+</ol>
+
+<h2 id="diff">Differences from the plan</h2>
+<ul data-c="diff">
+  <li>The plan had no part for the close. This report numbers it part 6; part 4 was dropped.</li>
+  <li>This report was added after your commit, because a sign-off needs one. Its commit also puts the five nits on the backlog.</li>
+  <li>Moving the working docs out of the repository comes next, on the epic branch, not here.</li>
+</ul>
+
+<h2 id="left">What is left, and who takes it</h2>
+<table data-c="left">
+  <thead><tr><th>What</th><th>Who</th></tr></thead>
+  <tbody>
+    <tr><td>The five wording nits, and the earlier parts' small leftovers.</td><td>Backlog row A10: the next change to each file.</td></tr>
+    <tr><td>The help guard's loose match; the signer-list lockout; a look at how parts are planned.</td><td>Backlog rows A8, A9 and A6.</td></tr>
+    <tr><td>Review round 2, your sign-off, the merge into the epic.</td><td>The router starts the review; you sign.</td></tr>
+    <tr><td>Archive the working docs, the epic report, its review and sign-off, the merge into main.</td><td>The epic's close, second half.</td></tr>
+  </tbody>
+</table>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
