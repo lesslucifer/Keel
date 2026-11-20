@@ -41,7 +41,7 @@
 </ol>
 
 <h2 id="wus">The work</h2>
-<p>W1 and W2 are independent. W3 waits until E-DOCSPLIT is on main.</p>
+<p>W1 and W2 are independent. W3 waits until E-DOCSPLIT is on main. W5 repairs main's merge into the epic and lands before W3's code.</p>
 
 <div data-item="wu-summaries" data-c="wu-summaries">
 
@@ -90,6 +90,16 @@
   <p data-item="wu-deps">E-DOCSPLIT on main, and main merged into <code>epic/E-KEELFIX</code></p>
 </div>
 
+<div data-wu="E-KEELFIX.W5" data-c="wu-w5">
+  <h3 id="w5">W5 · The merged tree green again</h3>
+  <div data-item="wu-summary">
+    <p><b>In short:</b> after main's merge (fb97430), W2's dispatch guard refuses E-DOCSPLIT's role check in <code>src/verify_doc.rs</code> (<code>combination_problem</code>'s slice of artifact roles) as a dispatch outside every dispatcher. That line joins the guard's reviewed <code>NOT_COMMANDS</code> list, word for word; the guard's rules do not change. The two dangling backlog links are W3's (its plan's commit 03973c4). Plan: <a href="2026-11-20-e-keelfix-w5-plan.html">E-KEELFIX.W5</a>.</p>
+  </div>
+  <p data-item="wu-maps-to">The merge of main 6c3ee00 (E-DOCSPLIT) into the epic · W2's guard · no use case.</p>
+  <p data-item="wu-expected"><b>Unit:</b> <code>help::tests::every_dispatched_command_has_its_own_usage</code>, red at fb97430, green; a mutant of the reviewed line is red again. <b>Integration:</b> waived, no test file changes; the whole suite green once W3's plan is in the epic.</p>
+  <p data-item="wu-deps">main merged into <code>epic/E-KEELFIX</code> (fb97430); lands before W3's code</p>
+</div>
+
 </div>
 
 <h2 id="open-points">Open points</h2>
@@ -106,6 +116,7 @@
     <tr><td>7</td><td>A GitHub line after W3: its own message, or the plain "expected …" line error?</td><td><b>The plain error</b>, with the line number</td><td>Only this repository ever had one</td></tr>
     <tr><td>8</td><td>A new decision?</td><td><b>No.</b> Amendment rows: DEC-24 (gap 1 closed, W1), DEC-70 (the github tier gone, W3)</td><td>Both apply rules already decided (DEC-47: no file on disk judges)</td></tr>
     <tr><td>9</td><td>How many rule-file commits by you?</td><td><b>One, at the close</b> (architecture, both keel-workflow skill copies), plus W3's first commit only if main still lists GitHub</td><td>The code paths are not rule files</td></tr>
+    <tr><td>10</td><td>Main's merge left W2's guard red: fix it here or on main?</td><td><b>Here, as W5</b>, before W3's code</td><td>The guard exists only on this epic; main is green alone</td></tr>
   </tbody>
 </table>
 
