@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6affb6c49f34851f0dfb2aa4">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-KEELFIX.W3 plan: the GitHub signer line removed</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-KEELFIX.W3 · The GitHub signer line removed</h1>
+      <p>Keel still reads a GitHub line in the signer list. After this part, it refuses one.</p>
+      <div class="meta">WU plan · v1 · 2026-11-20 · T3 · Keel · W3 of <a href="2026-11-19-e-keelfix-plan.html">the epic plan</a> · its data file sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">The revert of GitHub's flow left one piece behind on purpose. Keel still reads a GitHub line in the signer list, and a GitHub entry among the accepted signer kinds. Both sign nothing. They were kept until the docs epic reached main. It has, so they can go.</p>
+
+<h2 id="for-you">What you get</h2>
+<table data-c="for-you">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>Your signer list holds a GitHub line</td><td>Read, signs nothing</td><td>Refused, by line number</td></tr>
+    <tr><td>Your rules accept GitHub as a signer kind</td><td>Accepted, signs nothing</td><td>Refused as unknown</td></tr>
+    <tr><td>A line has a typo in its kind</td><td>Skipped in silence</td><td>Refused, by line number</td></tr>
+    <tr><td>Someone re-checks an old GitHub-approval sign-off</td><td>Red, "GitHub only"</td><td>Red, "not listed"</td></tr>
+  </tbody>
+</table>
+
+<h2 id="how">How it works</h2>
+<p data-c="how">Keel knows three signer kinds: email, user name and key. Every place that reads the signer list refuses any other kind, with the line number. That covers signing off, rule-file commits and the gate.</p>
+<ol data-c="example">
+  <li>A signer list has your user name on line 1 and a GitHub line on line 2.</li>
+  <li>You run the sign-off as yourself.</li>
+  <li>Keel refuses: "line 2: expected …". Nothing is written.</li>
+  <li>The line goes; the sign-off works as before.</li>
+</ol>
+<p data-c="old">Old sign-offs made by GitHub approval stay as written. Fifteen exist, fourteen on main. Nothing checks them again: the gate judges a sign-off only where it merges.</p>
+
+<h2 id="work">What it makes</h2>
+<table data-c="work">
+  <thead><tr><th>Where</th><th>What changes</th></tr></thead>
+  <tbody>
+    <tr><td>The sign-off code</td><td>The GitHub kind, its line shape and its special refusals go. One plain refusal stays.</td></tr>
+    <tr><td>Its tests</td><td>Three GitHub tests become three refusal tests, written red first.</td></tr>
+    <tr><td>The earlier revert's test</td><td>Runs on a list with no GitHub line.</td></tr>
+    <tr><td>Docs</td><td>At the epic close: the architecture row in your one rule-file commit, and the decision note.</td></tr>
+  </tbody>
+</table>
+<p data-c="rules">No rule file changes in this part, so it needs no typed commit from you. No live branch still lists GitHub, so nothing of yours comes first.</p>
+
+<h2 id="decide">What you decide</h2>
+<table data-c="decide">
+  <thead><tr><th>#</th><th>Question</th><th>Answer, and why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Refuse every unknown signer kind, not only GitHub?</td><td><b>Yes.</b> One rule catches every shape of a GitHub line, and a typo stops being silent.</td></tr>
+    <tr><td>2</td><td>A list with a GitHub line blocks the commit that removes it. Fine?</td><td><b>Yes.</b> No live branch has one, and a broken line does the same today.</td></tr>
+    <tr><td>3</td><td>Leave the old GitHub-approval sign-offs as written?</td><td><b>Yes.</b> They are history. Editing one would be a bypass.</td></tr>
+    <tr><td>4</td><td>Do the older pages of this epic need data files at the close?</td><td><b>No.</b> They are archived as plain pages. Only the epic result needs one. The close rehearses this in a scratch copy first.</td></tr>
+    <tr><td>5</td><td>Four dropped branches still list GitHub. Leave them?</td><td><b>Yes.</b> They never merge. Deleting them is yours.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="done">How you'll know it worked</h2>
+<ul data-c="done">
+  <li>The keel source names GitHub nowhere.</li>
+  <li>A list with a GitHub line on line 2 is refused at sign-off, at a rule-file commit and at the gate, each naming line 2.</li>
+  <li>Rules naming GitHub as a signer kind are refused as unknown.</li>
+  <li>Tests, lint and the doc check are green.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
