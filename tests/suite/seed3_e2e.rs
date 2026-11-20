@@ -114,8 +114,8 @@ fn wu_a(p: &Path) -> String {
     git(p, &["switch", "-q", "-c", "wu/e/a", "epic/e"]);
     write(p, "src/a.py", "def a():\n    return 1\n");
     write(p, "tests/test_a.py", "def test_a():\n    assert 1\n");
-    write(p, "docs/work/2026-11-14-e-seed3-e2e-wu-a-plan.html", "<p data-artifact=\"wu-plan\" data-status=\"ready\">plan</p>");
-    write(p, "docs/work/2026-11-14-e-seed3-e2e-wu-a-result.html", "<p data-artifact=\"wu-result\" data-status=\"ready\">result</p>");
+    common::doc_pair(p, "docs/work/2026-11-14-e-seed3-e2e-wu-a-plan.html", "wu-plan", "<p>plan</p>");
+    common::doc_pair(p, "docs/work/2026-11-14-e-seed3-e2e-wu-a-result.html", "wu-result", "<p>result</p>");
     write(p, "docs/use-cases/e2e.html", "<p>what the project must do</p>");
     let sha = commit(p, "feat(e2e.W1): a returns one");
     ok(keel(p, &["notes", "write", "test"], r#"{"integration":{"files":["tests/test_a.py"],"covers":"a returns one"}}"#));
@@ -161,8 +161,8 @@ fn seed3_epic_close_merges_pushes_and_keeps_the_evidence() {
     // b gets its evidence at its own tip, then the same hand-finished merge lands.
     git(p, &["switch", "-q", "wu/e/b"]);
     write(p, "tests/test_b.py", "def test_b():\n    assert 2\n");
-    write(p, "docs/work/2026-11-14-e-seed3-e2e-wu-b-plan.html", "<p data-artifact=\"wu-plan\" data-status=\"ready\">plan</p>");
-    write(p, "docs/work/2026-11-14-e-seed3-e2e-wu-b-result.html", "<p data-artifact=\"wu-result\" data-status=\"ready\">result</p>");
+    common::doc_pair(p, "docs/work/2026-11-14-e-seed3-e2e-wu-b-plan.html", "wu-plan", "<p>plan</p>");
+    common::doc_pair(p, "docs/work/2026-11-14-e-seed3-e2e-wu-b-result.html", "wu-result", "<p>result</p>");
     commit(p, "test(e2e.W2): b returns two");
     ok(keel(p, &["notes", "write", "test"], r#"{"integration":{"files":["tests/test_b.py"],"covers":"a returns two"}}"#));
     ok(keel(p, &["notes", "write", "doc"], ""));
@@ -186,11 +186,14 @@ fn seed3_epic_close_merges_pushes_and_keeps_the_evidence() {
         "docs/work/2026-11-14-e-seed3-e2e-wu-b-plan.html",
         "docs/work/2026-11-14-e-seed3-e2e-wu-b-result.html",
     ];
+    // E-DOCSPLIT.W3: a page and its data file are one doc, archived together under one --distill
+    let data: Vec<String> = archived.iter().map(|a| a.replace(".html", ".yaml")).collect();
     let mut rm = vec!["rm", "-q"];
     rm.extend(archived.iter().copied());
+    rm.extend(data.iter().map(String::as_str));
     git(p, &rm);
     write(p, "docs/decisions/close.html", "<p>what the close taught</p>");
-    write(p, "docs/.archive/2026-11-14-e2e-epic-result.html", "<p data-artifact=\"epic-result\" data-status=\"ready\">result</p>");
+    common::doc_pair(p, "docs/.archive/2026-11-14-e2e-epic-result.html", "epic-result", "<p>result</p>");
     git(p, &["add", "docs/decisions/close.html"]);
     git(p, &["commit", "-qm", "docs(E2E close): archive the working docs, distilled to the T2 set"]);
     let archive = git(p, &["rev-parse", "HEAD"]);

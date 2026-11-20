@@ -1,0 +1,138 @@
+# Keel backlog: local-app. Data only, no page (DEC-69). Open rows in full; a closed row is its id, title and how it closed.
+# Ids are never reused. Order and next free ids: backlog-index.yaml.
+title: "Backlog: the local app"
+letters: [A, L]
+about: >-
+  Going back to before GitHub's flow, then building the desktop app in place of it: five epics in order (A1 - A5),
+  then four later needs and one re-pointed idea (L1 - L5). E-LOCALTOOL closed on 2026-11-19 with a design and no code:
+  docs/local-app.html is the app as designed, and DEC-70 records why. Each epic waits only on the ones before it and is
+  useful on its own. Its parts and K-numbers (the keel or router changes the app needs) are in docs/local-app.html,
+  under "The build order"; the needs n1 - n10 are listed there too. Distilled from E-LOCALTOOL (W5 result, P4 to P6,
+  and the close).
+open:
+  - id: A2
+    title: "E-KEELFIX · Keel fixes"
+    status: next; A1 done
+    problem: >-
+      First use: your rule-file commit runs the committed rules, and the gate can run with nothing written (n3).
+    proposal: >-
+      Parts: K9, the commit hooks read the committed `.keel/config.toml`, not the folder's file; K2, `keel verify-dod
+      … --no-receipt`; `keel notes write … --help` prints help and writes no note; the github tier's reading removed
+      once E-DOCSPLIT is on main (E-LOCALTOOL is). Waits on: A1 (done).
+    source: >-
+      E-LOCALTOOL.W5 result, P4 to P6, and the close.
+    taken-by: "E-KEELFIX"
+
+  - id: A3
+    title: "E-APPLIST · Alerts and your list"
+    status: after A1
+    problem: >-
+      First use: an alert at your desk (n1) and one list of what waits on you (n2). Read-only.
+    proposal: >-
+      Parts: the app's frame; the Reader, Watcher and Alerter on the two sources; screens 1, 2 and one project on 6;
+      the router's update log (K14) and the watchdog's lines (K15), with their defaults and the "router not heard"
+      bar, tested by an app restart and a router restart; the router's stage lines (K4) and alert line (K10); Open with
+      a copy of the committed page, and the PATH setting; the alert's link and one Telegram test (K12); `?diff=latest`
+      on a file link checked; the app reads the local epic branch; Apple's membership decided at the first signed
+      build. Waits on: A1.
+    source: >-
+      E-LOCALTOOL.W5 result, P4 to P6, and the close.
+    taken-by: "E-APPLIST"
+
+  - id: A4
+    title: "E-APPSIGN · Sign off and merge from the app"
+    status: after A2, A3
+    problem: >-
+      First use: the sign-off and the merge from the app (n3), and the code read before you sign (n6).
+    proposal: >-
+      Parts: the five run lines, the dialog and keel's words; the diff page; screen 3 (one work unit); Commit… for a
+      rule-file commit (K5, keel names the rule files among staged files); Merge task… and Push…; the gate's checks as
+      JSON for the dialog (K1); signing with a key; Cursor's guard of a worker's folder checked. From the E-LOCALTOOL
+      close's walk-through: the epic sign-off's waiver step (the typed `--waive-review` then `--confirm-waiver`, or
+      `--accept-waiver`), and which archived epic result the epic item opens and signs when its folder holds several.
+      Waits on: A1, A2, A3.
+    source: >-
+      E-LOCALTOOL.W5 result, P4 to P6, and the close's walk-through.
+    taken-by: "E-APPSIGN"
+
+  - id: A5
+    title: "E-APPFLEET · Fleet, epics, many projects"
+    status: after A3, A4
+    problem: >-
+      First use: the fleet (n4), the epics (n5) and many projects (n7).
+    proposal: >-
+      Parts: screens 4 and 5 (one epic, one worker); Attach (K13); your note to a worker through the router's inbox
+      (K11); the router's conflict and paused-epic lines (K6, K7) and a worker's last report line (K8); many projects
+      on screen 6, with "Add a project" listing what is missing first (E-GHSETUP W6's idea). From the close's
+      walk-through: an alert about an epic opens that epic's view, not the list. Waits on: A3, A4.
+    source: >-
+      E-LOCALTOOL.W5 result, P4 to P6, and the close's walk-through.
+    taken-by: "E-APPFLEET"
+
+  - id: L1
+    title: "Message the router from the app"
+    status: later
+    problem: >-
+      Need n8: a free message to the router, by a way only you can use (never the inbox, where a worker can post).
+    proposal: >-
+      Candidates: Claude Code's channels or its per-session message socket; how an outside program posts on the
+      socket is not checked.
+    source: >-
+      E-LOCALTOOL close.
+    taken-by: "no epic yet"
+
+  - id: L2
+    title: "Alerts when you are away"
+    status: later
+    problem: >-
+      Need n9. Until the app sends both alerts, Telegram stays the router's, and one event may alert you twice at the
+      desk.
+    proposal: >-
+      The app sends both the desk alert and the away alert and picks one.
+    source: >-
+      E-LOCALTOOL close.
+    taken-by: "no epic yet"
+
+  - id: L3
+    title: "A home other than GitHub for releases and your pushes"
+    status: later
+    problem: >-
+      Need n10. Releases need a build on your Mac (`dist build`), a place for the binaries, and the npm and Homebrew
+      tap tokens.
+    proposal: >-
+      Your pushes need another remote, such as a bare repository on a disk, with the same push hook.
+    source: >-
+      E-LOCALTOOL close.
+    taken-by: "no epic yet"
+
+  - id: L4
+    title: "The app on DeepSeek Harness"
+    status: later
+    problem: >-
+      DeepSeek Harness shows no session list an outside program can read (its README, read 2026-11-18).
+    proposal: >-
+      One small adapter per host.
+    source: >-
+      E-LOCALTOOL close.
+    taken-by: "no epic yet"
+
+  - id: L5
+    title: "A pinned, hash-checked install script"
+    status: re-pointed
+    problem: >-
+      E-GHSETUP W3's idea, kept when that epic closed.
+    proposal: >-
+      Re-pointed to the release rows of e-seed-v2 (`e-seed-v2.yaml`): E-RELEASE takes it when planned.
+    source: >-
+      E-GHSETUP W3, at its close (2026-11-19).
+    taken-by: "E-RELEASE"
+closed:
+  - id: A1
+    title: "E-GHREVERT · Back to before GitHub"
+    closed: >-
+      done by E-GHREVERT, closed 2026-11-19: your GitHub settings off; one revert of the five merges, so main's files
+      are as at `8d48a44`; four keeps (`release.yml` with no pull-request run, the shared git-folder checks R33, the
+      checkout check before `keel mr` R50 with the github tier read and signing nothing, task branches merged on your
+      Mac); the records back to before GitHub, no new decision (the owner's ruling of 2026-11-19); the epic test
+      `tests/suite/ghrevert_e2e.rs`. The github tier is read until E-DOCSPLIT is on main (A2 removes it); part 5 is
+      E-DOCSPLIT's merge of main (E-DOCSPLIT.W7). Result: the E-GHREVERT epic result (archived).

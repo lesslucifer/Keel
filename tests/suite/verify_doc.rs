@@ -34,6 +34,8 @@ fn text(o: &Output) -> String {
     format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))
 }
 
+/// A page with no data file: today's shape, its tags no longer read. `status` is its own
+/// `data-status`, which silences it when "draft".
 fn doc(status: &str, item: &str, body: &str) -> String {
     format!(
         r#"<html data-artifact="wu-plan" data-status="{status}"><body>
@@ -52,39 +54,270 @@ fn repo() -> TempDir {
     d
 }
 
-#[test]
-fn complete_epic_plan_is_green_and_each_wu_block_needs_its_sub_items() {
-    let d = repo();
-    let p = d.path();
-    let items: String = ["intent", "owner-changes", "use-cases", "expected", "non-goals", "wu-summaries", "e2e-plan", "distillation-plan", "open-questions"]
-        .map(|i| format!(r#"<p data-item="{i}">x</p>"#))
-        .concat();
-    let plan = |subs: &[&str]| {
-        let wu: String = subs.iter().map(|i| format!(r#"<p data-item="{i}">x</p>"#)).collect();
-        format!(r#"<html data-artifact="epic-plan" data-status="ready"><body>{items}<section data-wu="W1">{wu}</section></body></html>"#)
-    };
-    std::fs::write(p.join("docs/e.html"), plan(&["wu-summary", "wu-maps-to", "wu-expected", "wu-deps"])).unwrap();
-    let o = keel(p, &["verify-doc", "docs/e.html"]);
-    assert!(o.status.success(), "{}", text(&o));
-    std::fs::write(p.join("docs/e.html"), plan(&["wu-summary", "wu-maps-to", "wu-expected"])).unwrap();
-    let t = text(&keel(p, &["verify-doc", "docs/e.html"]));
-    assert!(t.contains("data-wu W1: missing or empty \"wu-deps\""), "{t}");
+/// A ready WU plan's data file serving `page`, with `extra` lines appended.
+fn wu_plan_data(page: &str, extra: &str) -> String {
+    format!(
+        "artifact: wu-plan\nstatus: ready\nid: E-X.W1\nepic: E-X\ntitle: t\ndate: \"2026-11-18\"\npage: {page}\nrequirement: r\nmaps-to: m\nexpected: [e]\ntest-plan:\n  unit: u\n  integration: i\n  e2e: none\n{extra}"
+    )
 }
 
+/// A ready epic plan's data file serving `page`, its two WUs as given (`wus`, YAML list entries).
+fn epic_plan_data(page: &str, roles: &str, wus: &str) -> String {
+    format!(
+        "artifact: {roles}\nstatus: ready\nid: E-X\ntitle: t\ndate: \"2026-11-18\"\npage: {page}\nintent: i\nowner-changes:\n  - {{when: w, today: t, after: a}}\nuse-cases: none\nexpected: [e]\nnon-goals: [n]\nwu-summaries:\n{wus}e2e-plan: p\ndistillation-plan: d\nopen-questions: none\n"
+    )
+}
+
+const TWO_WUS: &str = "  - {wu: E-X.W1, wu-summary: s, wu-maps-to: m, wu-expected: e, wu-deps: none}\n  - {wu: E-X.W2, wu-summary: s, wu-maps-to: m, wu-expected: e, wu-deps: [E-X.W1]}\n";
+
+/// A page of `n` words in its main, `top` of them above the heading with id "work" (all when `top` is None).
+fn page_of(n: usize, top: Option<usize>) -> String {
+    let body = match top {
+        Some(t) => format!("<p>{}</p><h2 id=\"work\">{}</h2>", words(t), words(n - t)),
+        None => format!("<p>{}</p>", words(n)),
+    };
+    format!(r#"<html lang="en"><head><title>a long title here</title></head><body><header><h1>{}</h1></header><main>{body}</main></body></html>"#, words(40))
+}
+
+/// UC-DOC-1 (E-DOCSPLIT.W2): a ready data file's missing or empty field is red and named, at the
+/// page's path or the data file's; complete, the pair is green.
 #[test]
-fn misspelled_tag_is_reported_by_name_and_draft_is_silent() {
+fn a_ready_data_file_missing_or_emptying_a_field_is_red_and_names_it() {
+    let d = repo();
+    let p = d.path();
+    std::fs::write(p.join("docs/a.html"), page_of(10, None)).unwrap();
+    std::fs::write(p.join("docs/a.yaml"), wu_plan_data("a.html", "")).unwrap();
+    for f in ["docs/a.html", "docs/a.yaml"] {
+        let o = keel(p, &["verify-doc", f]);
+        assert!(o.status.success(), "{f}: {}", text(&o));
+    }
+    std::fs::write(p.join("docs/a.yaml"), wu_plan_data("a.html", "").replace("requirement: r\n", "")).unwrap();
+    for f in ["docs/a.html", "docs/a.yaml"] {
+        let o = keel(p, &["verify-doc", f]);
+        assert_eq!(o.status.code(), Some(1), "{f}");
+        assert!(text(&o).contains("docs/a.yaml: missing field \"requirement\""), "{f}: {}", text(&o));
+    }
+    std::fs::write(p.join("docs/a.yaml"), wu_plan_data("a.html", "").replace("maps-to: m", "maps-to: \"\"")).unwrap();
+    let t = text(&keel(p, &["verify-doc", "docs/a.yaml"]));
+    assert!(t.contains("docs/a.yaml: field \"maps-to\" is empty"), "{t}");
+    let t = text(&keel(p, &["verify-doc", "docs/a.html", "docs/a.yaml"]));
+    assert_eq!(t.matches("field \"maps-to\" is empty").count(), 1, "a pair is checked once: {t}");
+}
+
+/// Epic review round 1 (E-DOCSPLIT close, blocker): a data file nested thousands of levels deep is
+/// a red doc naming the bound, not a crash of keel verify-doc (exit 134, stack overflow).
+#[test]
+fn a_deeply_nested_data_file_is_red_not_a_crash() {
+    let d = repo();
+    let p = d.path();
+    std::fs::write(p.join("docs/a.html"), page_of(10, None)).unwrap();
+    std::fs::write(p.join("docs/a.yaml"), format!("artifact: wu-result\nx:\n{}a\n", "- ".repeat(5000))).unwrap();
+    for args in [&["verify-doc", "docs/a.yaml"][..], &["verify-doc"][..]] {
+        let o = keel(p, args);
+        assert_eq!(o.status.code(), Some(1), "{args:?}: {}", text(&o));
+        assert!(text(&o).contains("docs/a.yaml: the data file nests deeper than"), "{args:?}: {}", text(&o));
+    }
+}
+
+/// UC-DOC-1: a misspelt field is named next to the missing one; a draft data file is silent, page included.
+#[test]
+fn a_misspelt_field_is_named_and_a_draft_is_silent() {
+    let d = repo();
+    let p = d.path();
+    std::fs::write(p.join("docs/a.html"), page_of(900, None) + r#"<a href="gone.html">x</a>"#).unwrap();
+    std::fs::write(p.join("docs/a.yaml"), wu_plan_data("a.html", "").replace("expected:", "expcted:")).unwrap();
+    let o = keel(p, &["verify-doc", "docs/a.yaml"]);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(t.contains("unknown field \"expcted\"") && t.contains("missing field \"expected\""), "{t}");
+    std::fs::write(p.join("docs/a.yaml"), wu_plan_data("a.html", "").replace("expected:", "expcted:").replace("status: ready", "status: draft")).unwrap();
+    let o = keel(p, &["verify-doc", "docs/a.yaml"]);
+    assert!(o.status.success(), "a draft silences the pair: {}", text(&o));
+    assert!(keel(p, &["verify-doc"]).status.success());
+}
+
+/// UC-DOC-1: the page's old checklist tags are not read - a page whose tags are wrong but whose
+/// data file is complete is green, and a page with tags but no data file is checked as a plain page.
+#[test]
+fn old_page_tags_are_not_read() {
     let d = repo();
     let p = d.path();
     std::fs::write(p.join("docs/a.html"), doc("ready", "expcted", "")).unwrap();
     let o = keel(p, &["verify-doc", "docs/a.html"]);
-    let t = text(&o);
+    assert!(o.status.success(), "no data file: links and labels only: {}", text(&o));
+    std::fs::write(p.join("docs/a.yaml"), wu_plan_data("a.html", "")).unwrap();
+    let o = keel(p, &["verify-doc", "docs/a.html"]);
+    assert!(o.status.success(), "a complete data file and a mistagged page: {}", text(&o));
+    std::fs::write(p.join("docs/e.html"), r#"<html data-artifact="epic-plan" data-status="ready"><body><p data-item="intent">x</p></body></html>"#).unwrap();
+    let o = keel(p, &["verify-doc", "docs/e.html"]);
+    assert!(o.status.success(), "a tagged epic plan page with no data file: {}", text(&o));
+}
+
+/// UC-DOC-1: an epic plan's data file lists its WUs once each, every entry with its five fields,
+/// every dependency a WU of the plan.
+#[test]
+fn an_epic_plan_data_file_needs_each_wu_and_its_dependencies_to_resolve() {
+    let d = repo();
+    let p = d.path();
+    std::fs::write(p.join("docs/e.html"), page_of(100, Some(50))).unwrap();
+    std::fs::write(p.join("docs/e.yaml"), epic_plan_data("e.html", "epic-plan", TWO_WUS)).unwrap();
+    let o = keel(p, &["verify-doc", "docs/e.yaml"]);
+    assert!(o.status.success(), "{}", text(&o));
+    std::fs::write(p.join("docs/e.yaml"), epic_plan_data("e.html", "epic-plan", &TWO_WUS.replace(", wu-deps: none}", "}").replace("[E-X.W1]", "[E-X.W3]")))
+        .unwrap();
+    let t = text(&keel(p, &["verify-doc", "docs/e.yaml"]));
+    assert!(t.contains("wu-summaries entry 1 (E-X.W1): missing field \"wu-deps\""), "{t}");
+    assert!(t.contains("wu-deps of E-X.W2 names \"E-X.W3\", which is not a WU of this plan"), "{t}");
+    std::fs::write(p.join("docs/e.yaml"), epic_plan_data("e.html", "epic-plan", "").replace("wu-summaries:\n", "wu-summaries: []\n")).unwrap();
+    let t = text(&keel(p, &["verify-doc", "docs/e.yaml"]));
+    assert!(t.contains("field \"wu-summaries\" is empty"), "{t}");
+}
+
+/// UC-DOC-1: a one-part epic's data file needs both roles' fields, a shared one once.
+#[test]
+fn a_one_part_epic_needs_the_union() {
+    let d = repo();
+    let p = d.path();
+    std::fs::write(p.join("docs/e.html"), page_of(100, Some(50))).unwrap();
+    std::fs::write(p.join("docs/e.yaml"), epic_plan_data("e.html", "[epic-plan, wu-plan]", TWO_WUS)).unwrap();
+    let t = text(&keel(p, &["verify-doc", "docs/e.yaml"]));
+    assert!(t.contains("missing field \"requirement\"") && t.contains("missing field \"test-plan\"") && !t.contains("missing field \"expected\""), "{t}");
+    let full = epic_plan_data("e.html", "[epic-plan, wu-plan]", TWO_WUS) + "requirement: r\nmaps-to: m\ntest-plan: {unit: u, integration: i, e2e: e}\n";
+    std::fs::write(p.join("docs/e.yaml"), full).unwrap();
+    let o = keel(p, &["verify-doc", "docs/e.yaml"]);
+    assert!(o.status.success(), "{}", text(&o));
+}
+
+/// UC-DOC-6 (E-DOCSPLIT.W2): a ready page is capped by its data file's role - a WU plan page of 501
+/// words is red with the count, of 500 green; the title block outside main is not counted; a
+/// draft is silent.
+#[test]
+fn a_page_over_its_role_cap_is_red_with_the_count() {
+    let d = repo();
+    let p = d.path();
+    std::fs::write(p.join("docs/a.yaml"), wu_plan_data("a.html", "")).unwrap();
+    std::fs::write(p.join("docs/a.html"), page_of(500, None)).unwrap();
+    let o = keel(p, &["verify-doc", "docs/a.html"]);
+    assert!(o.status.success(), "500 words: {}", text(&o));
+    std::fs::write(p.join("docs/a.html"), page_of(501, None)).unwrap();
+    let o = keel(p, &["verify-doc", "docs/a.html"]);
     assert_eq!(o.status.code(), Some(1));
-    assert!(t.contains("unknown tag data-item=\"expcted\"") && t.contains("missing item \"expected\""), "{t}");
-    std::fs::write(p.join("docs/a.html"), doc("ready", "owner-chages", "")).unwrap();
+    assert!(text(&o).contains("docs/a.html: page has 501 words, over the wu-plan cap of 500"), "{}", text(&o));
+    for (role, cap) in [("wu-result", 500), ("epic-result", 700)] {
+        let data = format!("artifact: {role}\nstatus: ready\nid: E-X.W1\nepic: E-X\ntitle: t\ndate: \"2026-11-18\"\npage: r.html\noutcome: delivered\nwu-rollup: [x]\ndeviations: none\nevidence: e\ndistillation: nothing citable\nfollow-ups: none\n");
+        let data = if role == "wu-result" { data.replace("wu-rollup: [x]\n", "") } else { data.replace("epic: E-X\n", "").replace("id: E-X.W1", "id: E-X") };
+        std::fs::write(p.join("docs/r.yaml"), &data).unwrap();
+        std::fs::write(p.join("docs/r.html"), page_of(cap, None)).unwrap();
+        let o = keel(p, &["verify-doc", "docs/r.yaml"]);
+        assert!(o.status.success(), "{role} at {cap}: {}", text(&o));
+        std::fs::write(p.join("docs/r.html"), page_of(cap + 1, None)).unwrap();
+        let t = text(&keel(p, &["verify-doc", "docs/r.yaml"]));
+        assert!(t.contains(&format!("page has {} words, over the {role} cap of {cap}", cap + 1)), "{t}");
+    }
+    std::fs::write(p.join("docs/a.yaml"), wu_plan_data("a.html", "").replace("status: ready", "status: draft")).unwrap();
+    std::fs::write(p.join("docs/a.html"), page_of(900, None)).unwrap();
+    assert!(keel(p, &["verify-doc", "docs/a.html"]).status.success(), "a draft is silent");
+}
+
+/// UC-DOC-6: an epic plan page holds 700 words, its top - main above the heading with id "work" -
+/// 300; with no such heading the whole page is the top.
+#[test]
+fn an_epic_plan_page_over_700_or_its_top_over_300_is_red_with_the_count() {
+    let d = repo();
+    let p = d.path();
+    std::fs::write(p.join("docs/e.yaml"), epic_plan_data("e.html", "epic-plan", TWO_WUS)).unwrap();
+    for (n, top, ok, named) in [
+        (700, Some(300), true, ""),
+        (701, Some(300), false, "page has 701 words, over the epic-plan cap of 700"),
+        (400, Some(301), false, "epic plan top has 301 words above the heading with id=\"work\", over the cap of 300"),
+        (301, None, false, "epic plan top has 301 words, over the cap of 300: no heading has id=\"work\""),
+        (300, None, true, ""),
+    ] {
+        std::fs::write(p.join("docs/e.html"), page_of(n, top)).unwrap();
+        let o = keel(p, &["verify-doc", "docs/e.yaml"]);
+        assert_eq!(o.status.success(), ok, "{n} {top:?}: {}", text(&o));
+        assert!(text(&o).contains(named), "{n} {top:?}: {}", text(&o));
+    }
+    std::fs::write(
+        p.join("docs/e.yaml"),
+        epic_plan_data("e.html", "[epic-plan, wu-plan]", TWO_WUS) + "requirement: r\nmaps-to: m\ntest-plan: {unit: u, integration: i, e2e: e}\n",
+    )
+    .unwrap();
+    std::fs::write(p.join("docs/e.html"), page_of(700, Some(300))).unwrap();
+    assert!(keel(p, &["verify-doc", "docs/e.yaml"]).status.success(), "a one-part epic takes the epic caps");
+}
+
+/// UC-DOC-6: any other page is capped by its path, from [docs.caps]; with no table, by nothing.
+#[test]
+fn a_page_with_no_data_file_is_capped_by_its_path_from_the_config() {
+    let d = repo();
+    let p = d.path();
+    std::fs::create_dir_all(p.join("docs/decisions")).unwrap();
+    std::fs::write(p.join("docs/decisions/d.html"), page_of(60, None)).unwrap();
+    std::fs::write(p.join("docs/install.html"), page_of(60, None)).unwrap();
+    assert!(keel(p, &["verify-doc"]).status.success(), "no [docs.caps]: no path cap");
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    std::fs::write(p.join(".keel/config.toml"), format!("{cfg}[docs.caps]\n\"docs/decisions/*.html\" = 50\n\"docs/install.html\" = 60\n")).unwrap();
+    let o = keel(p, &["verify-doc"]);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("d.html: page has 60 words, over the cap of 50 that [docs.caps] sets for docs/decisions/*.html"), "{t}");
+    assert!(!t.contains("install.html"), "60 of 60 is green: {t}");
+    let abs = p.join("docs/decisions/d.html");
+    assert_eq!(keel(&p.join("docs"), &["verify-doc", abs.to_str().unwrap()]).status.code(), Some(1), "an absolute path from a subdirectory finds its glob");
+    std::fs::write(p.join("docs/decisions/d.html"), page_of(60, None).replace("<html lang=\"en\">", "<html lang=\"en\" data-status=\"draft\">")).unwrap();
+    assert!(keel(p, &["verify-doc"]).status.success(), "a draft page is silent");
+}
+
+/// E-DOCSPLIT.W2: a .yaml outside docs.root is no data file and is skipped; one under it with no
+/// artifact and no page is other data (W5's), skipped too; broken YAML beside a page is named; a
+/// data file must name its own page, and that page must be there.
+#[test]
+fn yaml_outside_docs_and_other_data_are_skipped_and_a_data_file_names_its_page() {
+    let d = repo();
+    let p = d.path();
+    std::fs::create_dir_all(p.join(".github/workflows")).unwrap();
+    std::fs::write(p.join(".github/workflows/x.yaml"), "on: [push]\nnot: [valid\n").unwrap();
+    let o = keel(p, &["verify-doc", ".github/workflows/x.yaml"]);
+    assert!(o.status.success() && text(&o).is_empty(), "{}", text(&o));
+    std::fs::write(p.join("docs/index.yaml"), "rows:\n  - DEC-1\n").unwrap();
+    assert!(keel(p, &["verify-doc"]).status.success());
+    std::fs::write(p.join("docs/a.html"), page_of(10, None)).unwrap();
+    std::fs::write(p.join("docs/a.yaml"), "artifact: [wu-plan\n").unwrap();
     let t = text(&keel(p, &["verify-doc", "docs/a.html"]));
-    assert!(t.contains("unknown tag data-item=\"owner-chages\"") && t.contains("owner-changes"), "the hint names the optional item: {t}");
-    std::fs::write(p.join("docs/a.html"), doc("draft", "expcted", "")).unwrap();
-    assert!(keel(p, &["verify-doc", "docs/a.html"]).status.success());
+    assert!(t.contains("docs/a.yaml: not valid YAML"), "{t}");
+    std::fs::write(p.join("docs/a.yaml"), wu_plan_data("b.html", "")).unwrap();
+    let t = text(&keel(p, &["verify-doc", "docs/a.yaml"]));
+    assert!(t.contains("page \"b.html\" is not this data file's page: write \"a.html\""), "{t}");
+    std::fs::remove_file(p.join("docs/a.html")).unwrap();
+    std::fs::write(p.join("docs/a.yaml"), wu_plan_data("a.html", "")).unwrap();
+    let t = text(&keel(p, &["verify-doc"]));
+    assert!(t.contains("docs/a.yaml: page a.html is not beside the data file"), "{t}");
+    let o = keel(p, &["verify-doc", "docs/gone.yaml"]);
+    assert!(o.status.code() == Some(1) && text(&o).contains("docs/gone.yaml: cannot read file"), "{}", text(&o));
+}
+
+/// E-DOCSPLIT.W1's two example data files, beside their pages, are green.
+#[test]
+fn w1s_example_data_files_are_green() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/docsplit");
+    let d = repo();
+    let p = d.path();
+    std::fs::create_dir_all(p.join("docs/work")).unwrap();
+    for e in std::fs::read_dir(&root).unwrap().map(Result::unwrap).filter(|e| e.file_type().unwrap().is_file()) {
+        std::fs::copy(e.path(), p.join("docs/work").join(e.file_name())).unwrap();
+    }
+    std::fs::write(p.join("docs/work/2026-11-18-e-docsplit-w1-inventory.html"), "<html><body><h2 id=\"example-data\">x</h2></body></html>").unwrap();
+    for f in ["2026-11-17-e-docsplit-plan.yaml", "2026-11-18-e-docsplit-w1-plan.yaml"] {
+        let o = keel(p, &["verify-doc", &format!("docs/work/{f}")]);
+        assert!(o.status.success(), "{f}: {}", text(&o));
+        let data = std::fs::read_to_string(p.join("docs/work").join(f)).unwrap();
+        std::fs::write(p.join("docs/work").join(f), data.replace("\nexpected:", "\nexpcted:")).unwrap();
+        let t = text(&keel(p, &["verify-doc", &format!("docs/work/{f}")]));
+        assert!(t.contains("missing field \"expected\"") && t.contains("unknown field \"expcted\""), "{f}: {t}");
+        std::fs::write(p.join("docs/work").join(f), data).unwrap();
+    }
+    assert!(keel(p, &["verify-doc"]).status.success());
 }
 
 #[test]
@@ -98,16 +331,6 @@ fn dangling_relative_link_is_red_existing_is_not() {
     assert!(text(&keel(p, &["verify-doc", "docs/a.html"])).contains("dangling relative link: gone.html"));
     std::fs::write(p.join("docs/a.html"), doc("draft", "expected", r#"<a href="gone.html">bad</a>"#)).unwrap();
     assert!(keel(p, &["verify-doc", "docs/a.html"]).status.success());
-}
-
-#[test]
-fn collapsed_roles_need_the_union() {
-    let d = repo();
-    let p = d.path();
-    let both = doc("ready", "expected", "").replace("wu-plan", "wu-plan wu-result");
-    std::fs::write(p.join("docs/a.html"), both).unwrap();
-    let t = text(&keel(p, &["verify-doc", "docs/a.html"]));
-    assert!(t.contains("missing item \"outcome\"") && !t.contains("missing item \"expected\""), "{t}");
 }
 
 #[test]
@@ -136,20 +359,6 @@ fn stop_refuses_a_red_doc_and_post_hook_reads_claude_and_codex_payloads() {
     assert!(run(post.to_str().unwrap(), p, &[], claude).status.success());
 }
 
-/// A ready epic plan: `header` sits in the title block, `top` and two one-word items in the main
-/// content above the first WU, `after` below it. `skip` leaves one checklist item out.
-fn epic_plan(skip: &str, header: &str, top: &str, after: &str) -> String {
-    let item = |i: &str| if i == skip { String::new() } else { format!(r#"<p data-item="{i}">x</p>"#) };
-    let wu: String = ["wu-summary", "wu-maps-to", "wu-expected", "wu-deps"].map(|i| format!(r#"<p data-item="{i}">x</p>"#)).concat();
-    let rest: String = ["use-cases", "expected", "non-goals", "e2e-plan", "distillation-plan", "open-questions"].map(item).concat();
-    format!(
-        r#"<html data-artifact="epic-plan" data-status="ready"><head><title>t</title></head><body><header><h1>{header}</h1></header><main>
-<p>{top}</p>{}{}<div data-item="wu-summaries"><div data-wu="E-X.W1">{wu}</div></div>{after}{rest}</main></body></html>"#,
-        item("intent"),
-        item("owner-changes")
-    )
-}
-
 fn words(n: usize) -> String {
     "word ".repeat(n)
 }
@@ -162,36 +371,6 @@ fn verify(p: &Path, file: &str, body: &str) -> (bool, String) {
     std::fs::write(p.join("docs").join(file), body).unwrap();
     let o = keel(p, &["verify-doc", &format!("docs/{file}")]);
     (o.status.success(), text(&o))
-}
-
-/// E-DOCSTYLE.W2: an epic plan carries the "what changes for you" item; a WU plan does not need it.
-#[test]
-fn an_epic_plan_without_what_changes_for_you_is_red_a_wu_plan_needs_none() {
-    let d = repo();
-    let p = d.path();
-    let (ok, t) = verify(p, "e.html", &epic_plan("owner-changes", "", "", ""));
-    assert!(!ok && t.contains("missing item \"owner-changes\""), "{t}");
-    let (ok, t) = verify(p, "e.html", &epic_plan("", "", "", ""));
-    assert!(ok, "{t}");
-    let (ok, t) = verify(p, "w.html", &doc("ready", "expected", ""));
-    assert!(ok, "{t}");
-}
-
-/// E-DOCSTYLE.W2: an epic plan's top - its main content above the first WU - holds at most 300
-/// words; the title block and everything from the first WU on are not counted.
-#[test]
-fn an_epic_plan_top_over_300_words_is_red_with_its_count() {
-    let d = repo();
-    let p = d.path();
-    let (ok, t) = verify(p, "e.html", &epic_plan("", &words(500), &words(298), &words(500)));
-    assert!(ok, "300 words must pass: {t}");
-    let (ok, t) = verify(p, "e.html", &epic_plan("", "", &words(299), ""));
-    assert!(!ok && t.contains("301 words above the first WU") && t.contains("300"), "{t}");
-    let (ok, t) = verify(p, "e.html", &epic_plan("", "", "· — --> | 1 a", ""));
-    assert!(ok, "{t}");
-    let draft = epic_plan("owner-changes", "", &words(999), "").replace("data-status=\"ready\"", "data-status=\"draft\"");
-    let (ok, t) = verify(p, "e.html", &draft);
-    assert!(ok, "a draft is silent: {t}");
 }
 
 /// E-DOCSTYLE.W2 (UC-DOC-4): every finished doc's flowchart labels are quoted; the error names the
@@ -229,30 +408,33 @@ fn copy_docs(from: &Path, to: &Path) {
         }
         if e.file_type().unwrap().is_dir() {
             copy_docs(&e.path(), &to.join(&name));
-        } else if name.to_string_lossy().ends_with(".html") {
+        } else if [".html", ".yaml"].iter().any(|x| name.to_string_lossy().ends_with(x)) {
             std::fs::copy(e.path(), to.join(&name)).unwrap();
         }
     }
 }
 
-/// E-DOCSTYLE.W2: the three checks turn no existing doc red - every doc in Keel's docs/ and the
-/// writing skill's example pass.
+/// E-DOCSTYLE.W2, E-DOCSPLIT.W2, W4: the checks turn no existing doc red - every page and data file
+/// in Keel's docs/ and the writing skill's example pair pass.
 #[test]
-fn every_doc_in_docs_and_the_writing_example_pass_the_new_checks() {
+fn every_doc_in_docs_and_the_writing_example_pass_the_checks() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let d = repo();
     let p = d.path();
     copy_docs(&root.join("docs"), &p.join("docs"));
     std::fs::create_dir_all(p.join("docs/work")).unwrap();
-    std::fs::copy(root.join("skills/keel-write/references/example.html"), p.join("docs/work/keel-write-example.html")).unwrap();
+    for f in ["example.html", "example.yaml"] {
+        std::fs::copy(root.join("skills/keel-write/references").join(f), p.join("docs/work").join(f)).unwrap();
+    }
     let o = keel(p, &["verify-doc"]);
     assert!(o.status.success(), "{}", text(&o));
 }
 
-/// E-DOCSTYLE epic test: `keel init` in a scratch repo installs the writing skill; its example,
-/// written as a plan, passes the installed after-write hook; an unquoted label, a missing "what
-/// changes for you" section and a top over the cap each make the after-write and end-of-turn
-/// hooks fail and name the fault; fixed, the end-of-turn hook passes.
+/// E-DOCSTYLE epic test, rewritten for E-DOCSPLIT.W2 and W4: `keel init` in a scratch repo installs
+/// the writing skill; its example pair, copied as shipped into docs/work/, passes the installed
+/// after-write hook on each file; an unquoted label, a data file missing "what changes for you" and
+/// a top over the cap each make the after-write and end-of-turn hooks fail and name the fault;
+/// fixed, the end-of-turn hook passes.
 #[test]
 fn epic_the_installed_hooks_refuse_each_doc_fault_and_pass_the_fixed_plan() {
     let d = TempDir::new().unwrap();
@@ -264,52 +446,40 @@ fn epic_the_installed_hooks_refuse_each_doc_fault_and_pass_the_fixed_plan() {
     let cmd = |ev: &str| settings["hooks"][ev][0]["hooks"][0]["command"].as_str().unwrap().to_string();
     let (post, stop) = (cmd("PostToolUse"), cmd("Stop"));
     let hook = |c: &str, payload: &str| run("sh", p, &["-c", c], payload);
-    let plan = "docs/work/2026-01-01-x-epic-plan.html";
-    let payload = format!(r#"{{"tool_input":{{"file_path":"{plan}"}}}}"#);
+    let (plan, data) = ("docs/work/example.html", "docs/work/example.yaml");
+    let payload = |f: &str| format!(r#"{{"tool_input":{{"file_path":"{f}"}}}}"#);
 
-    let example = std::fs::read_to_string(p.join(".claude/skills/keel-write/references/example.html")).expect("keel init did not install the writing example");
-    std::fs::write(p.join(plan), &example).unwrap();
-    let o = hook(&post, &payload);
-    assert!(o.status.success(), "the example fails the after-write hook: {}", text(&o));
+    let refs = p.join(".claude/skills/keel-write/references");
+    let page = std::fs::read_to_string(refs.join("example.html")).expect("keel init did not install the writing example's page");
+    let fields = std::fs::read_to_string(refs.join("example.yaml")).expect("keel init did not install the writing example's data file");
+    std::fs::write(p.join(plan), &page).unwrap();
+    std::fs::write(p.join(data), &fields).unwrap();
+    for f in [plan, data] {
+        let o = hook(&post, &payload(f));
+        assert!(o.status.success(), "the example pair fails the after-write hook on {f}: {}", text(&o));
+    }
 
-    let unquoted = example.replacen(r#"R["Review round"]"#, "R[Review round]", 1);
-    let no_section = example.replacen(r#" data-item="owner-changes""#, "", 1);
-    let long = example.replacen(r#"<h2 id="wus">"#, &format!(r#"<p>{}</p><h2 id="wus">"#, words(300)), 1);
-    for (fault, broken, named) in [
-        ("unquoted label", unquoted, "[Review round]"),
-        ("missing section", no_section, "missing item \"owner-changes\""),
-        ("long top", long, "words above the first WU"),
+    let unquoted = page.replacen(r#"R["Review round"]"#, "R[Review round]", 1);
+    let long = page.replacen(r#"<h2 id="work">"#, &format!(r#"<p>{}</p><h2 id="work">"#, words(300)), 1);
+    let no_table: String = fields.lines().filter(|l| !l.starts_with("owner-changes") && !l.starts_with("  - {when")).map(|l| format!("{l}\n")).collect();
+    for (fault, file, broken, named) in [
+        ("unquoted label", plan, unquoted, "[Review round]"),
+        ("missing field", data, no_table, "missing field \"owner-changes\""),
+        ("long top", plan, long, "words above the heading with id=\"work\""),
     ] {
-        assert_ne!(broken, example, "{fault}: the fixture did not change the example");
-        std::fs::write(p.join(plan), &broken).unwrap();
-        for (name, c) in [("after-write", &post), ("end-of-turn", &stop)] {
-            let o = hook(c, &payload);
+        let good = if file == plan { &page } else { &fields };
+        assert_ne!(&broken, good, "{fault}: the fixture did not change the pair");
+        std::fs::write(p.join(file), &broken).unwrap();
+        for (name, c, pay) in [("after-write", &post, payload(file)), ("end-of-turn", &stop, String::new())] {
+            let o = hook(c, &pay);
             assert_eq!(o.status.code(), Some(2), "{fault}: the {name} hook did not refuse: {}", text(&o));
             assert!(text(&o).contains(named), "{fault}: the {name} hook does not name it: {}", text(&o));
         }
+        std::fs::write(p.join(file), good).unwrap();
     }
 
-    std::fs::write(p.join(plan), &example).unwrap();
     let o = hook(&stop, "");
     assert!(o.status.success(), "the fixed plan fails the end-of-turn hook: {}", text(&o));
-}
-
-/// E-DOCSTYLE.W2 review round 1: every plan and result follows keel-write's order, so any governed
-/// doc may tag its "what changes for you" table; only an epic plan must have one.
-#[test]
-fn any_governed_doc_may_tag_what_changes_for_you_and_only_an_epic_plan_must() {
-    let d = repo();
-    let p = d.path();
-    let table = r#"<table data-item="owner-changes"><tr><td>today</td><td>after</td></tr></table>"#;
-    let (ok, t) = verify(p, "w.html", &doc("ready", "expected", table));
-    assert!(ok, "a WU plan with the tag: {t}");
-    let result = r#"<html data-artifact="wu-result" data-status="ready"><body><p data-item="outcome">o</p><p data-item="deviations">d</p><p data-item="evidence">e</p><p data-item="distillation">x</p><p data-item="follow-ups">f</p>TABLE</body></html>"#;
-    let (ok, t) = verify(p, "r.html", &result.replace("TABLE", table));
-    assert!(ok, "a WU result with the tag: {t}");
-    let (ok, t) = verify(p, "r.html", &result.replace("TABLE", ""));
-    assert!(ok, "a WU result without it: {t}");
-    let (ok, t) = verify(p, "w.html", &doc("ready", "expected", r#"<table data-item="owner-changes"> </table>"#));
-    assert!(!ok && t.contains("item \"owner-changes\" is empty"), "{t}");
 }
 
 /// Code review round 1, important 6: an HTML comment in a diagram block is not diagram source.
@@ -335,13 +505,25 @@ fn a_diagram_block_ends_at_its_own_closing_tag() {
     assert!(!ok && t.contains("[raw]"), "a nested div does not end the block: {t}");
 }
 
-/// Code review round 1, nit: an epic plan's typo hint names each known item once.
+/// Code review round 1, nit (E-DOCSPLIT.W2: of the data file): a typo hint names each known field
+/// once, a one-part epic's shared fields included, and every role may carry its today/after table.
 #[test]
-fn an_epic_plan_typo_hint_names_each_item_once() {
+fn a_typo_hint_names_each_field_once_and_any_role_may_carry_owner_changes() {
     let d = repo();
     let p = d.path();
-    let (ok, t) = verify(p, "e.html", &epic_plan("", "", "", r#"<p data-item="owner-chages">x</p>"#));
-    assert!(!ok && t.matches("owner-changes").count() == 1, "{t}");
+    std::fs::write(p.join("docs/e.html"), page_of(10, None)).unwrap();
+    let both = epic_plan_data("e.html", "[epic-plan, wu-plan]", TWO_WUS)
+        + "requirement: r\nmaps-to: m\ntest-plan: {unit: u, integration: i, e2e: e}\nowner-chages: x\n";
+    std::fs::write(p.join("docs/e.yaml"), both).unwrap();
+    let t = text(&keel(p, &["verify-doc", "docs/e.yaml"]));
+    assert!(t.contains("unknown field \"owner-chages\"") && t.matches("owner-changes").count() == 1 && t.matches("expected,").count() == 1, "{t}");
+    std::fs::write(p.join("docs/w.html"), page_of(10, None)).unwrap();
+    std::fs::write(p.join("docs/w.yaml"), wu_plan_data("w.html", "owner-changes:\n  - {when: w, today: t, after: a}\n")).unwrap();
+    let o = keel(p, &["verify-doc", "docs/w.yaml"]);
+    assert!(o.status.success(), "a WU plan with the table: {}", text(&o));
+    std::fs::write(p.join("docs/w.yaml"), wu_plan_data("w.html", "owner-changes: []\n")).unwrap();
+    let t = text(&keel(p, &["verify-doc", "docs/w.yaml"]));
+    assert!(t.contains("field \"owner-changes\" is empty"), "{t}");
 }
 
 /// Code review round 2, B3: a fully quoted diagram with a `%%{…}%%` directive is green.
@@ -476,5 +658,102 @@ fn a_signed_character_reference_is_text() {
     for (body, named) in [("A -->|x &#+34; y| B", r#"write |"x &#+34; y"|"#), ("A -->|x &#x+22; y| B", r#"write |"x &#x+22; y"|"#)] {
         let (ok, t) = verify(p, "f.html", &flowchart(body));
         assert!(!ok && t.contains(named), "{body}: {t}");
+    }
+}
+
+/// E-DOCSPLIT.W2 review round 1: a text field of another type is red, never green as ready; a data
+/// file with nested anchors (billion laughs) is refused at once, by path and in the no-path run.
+#[test]
+fn a_wrong_typed_field_is_red_and_a_billion_laughs_data_file_is_refused_at_once() {
+    let d = repo();
+    let p = d.path();
+    std::fs::write(p.join("docs/a.html"), page_of(10, None)).unwrap();
+    for (from, to) in [("status: ready", "status: true"), ("id: E-X.W1", "id: 7"), ("epic: E-X", "epic: [E-X]")] {
+        std::fs::write(p.join("docs/a.yaml"), wu_plan_data("a.html", "").replace(from, to)).unwrap();
+        let o = keel(p, &["verify-doc", "docs/a.yaml"]);
+        assert!(o.status.code() == Some(1) && text(&o).contains("is the wrong type"), "{to}: {}", text(&o));
+    }
+    let mut lol = wu_plan_data("a.html", "details:\n  a0: &a0 [lol]\n");
+    for i in 1..=12 {
+        lol.push_str(&format!("  a{i}: &a{i} [{}]\n", vec![format!("*a{}", i - 1); 10].join(", ")));
+    }
+    std::fs::write(p.join("docs/a.yaml"), lol).unwrap();
+    let t = std::time::Instant::now();
+    for args in [&["verify-doc", "docs/a.yaml"][..], &["verify-doc"]] {
+        let o = keel(p, args);
+        assert!(o.status.code() == Some(1) && text(&o).contains("docs/a.yaml: the data file uses a YAML anchor or alias"), "{}", text(&o));
+    }
+    assert!(t.elapsed() < std::time::Duration::from_secs(10), "took {:?}", t.elapsed());
+}
+
+/// E-DOCSPLIT.W2 review round 1: with explicit paths (the write hook, the CI docs job) a malformed
+/// .keel/config.toml is a config error, never silently no caps and every .yaml a doc; with no config
+/// file at all, explicit paths are still checked.
+#[test]
+fn a_malformed_config_is_a_config_error_with_explicit_paths_too() {
+    let d = repo();
+    let p = d.path();
+    std::fs::create_dir_all(p.join(".github/workflows")).unwrap();
+    std::fs::write(p.join(".github/workflows/ci.yaml"), "on: [push]\n").unwrap();
+    std::fs::write(p.join("docs/a.html"), page_of(60, None)).unwrap();
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    std::fs::write(p.join(".keel/config.toml"), format!("{cfg}[docs.caps]\n\"docs/**\" = \"500\"\n")).unwrap();
+    for args in [&["verify-doc", ".github/workflows/ci.yaml"][..], &["verify-doc", "docs/a.html"], &["verify-doc"]] {
+        let o = keel(p, args);
+        let t = text(&o);
+        assert!(o.status.code() == Some(1) && t.contains("bad .keel/config.toml") && !t.contains("not valid YAML"), "{args:?}: {t}");
+    }
+    std::fs::remove_file(p.join(".keel/config.toml")).unwrap();
+    let o = keel(p, &["verify-doc", "docs/a.html"]);
+    assert!(o.status.success(), "no config file: the page alone is checked: {}", text(&o));
+}
+
+/// E-DOCSPLIT.W2 review round 1: a [docs.caps] key written as a bare prefix never matches a path, so
+/// it is refused, naming the glob form. Round 3: a key whose last part holds a dot is named as no page.
+#[test]
+fn a_prefix_style_caps_key_is_refused_naming_its_glob() {
+    let d = repo();
+    let p = d.path();
+    std::fs::write(p.join("docs/a.html"), page_of(10, None)).unwrap();
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    let prefix = |key: &str, glob: &str| format!("[docs.caps] key \"{key}\" is a prefix, not a glob: write \"{glob}\"");
+    let no_page = |key: &str, glob: &str| format!("[docs.caps] key \"{key}\" names no page: a cap glob matches .html pages; a folder is \"{glob}\"");
+    for (key, want) in [
+        ("docs/decisions/", prefix("docs/decisions/", "docs/decisions/**")),
+        ("docs/decisions", prefix("docs/decisions", "docs/decisions/**")),
+        ("docs/v1.0", no_page("docs/v1.0", "docs/v1.0/**")),
+        ("docs/a.yaml", no_page("docs/a.yaml", "docs/a.yaml/**")),
+    ] {
+        std::fs::write(p.join(".keel/config.toml"), format!("{cfg}[docs.caps]\n\"{key}\" = 50\n")).unwrap();
+        for args in [&["verify-doc", "docs/a.html"][..], &["verify-doc"]] {
+            let o = keel(p, args);
+            let t = text(&o);
+            assert!(o.status.code() == Some(1) && t.contains(&want), "{key}: {t}");
+        }
+    }
+    for key in ["docs/*.html", "docs/install.html", "docs/**"] {
+        std::fs::write(p.join(".keel/config.toml"), format!("{cfg}[docs.caps]\n\"{key}\" = 50\n")).unwrap();
+        assert!(keel(p, &["verify-doc"]).status.success(), "{key}");
+    }
+}
+
+/// E-DOCSPLIT.W2 review round 2: a data file that starts with a UTF-8 byte-order mark is read like
+/// one without it, green beside its page and red without it; a data file with an artifact and a
+/// second YAML document is red with or without its page.
+#[test]
+fn a_byte_order_mark_or_a_second_document_never_hides_a_data_file() {
+    let d = repo();
+    let p = d.path();
+    std::fs::write(p.join("docs/a.html"), page_of(10, None)).unwrap();
+    std::fs::write(p.join("docs/a.yaml"), format!("\u{feff}{}", wu_plan_data("a.html", ""))).unwrap();
+    let o = keel(p, &["verify-doc", "docs/a.yaml"]);
+    assert!(o.status.success(), "a BOM is not part of the first key: {}", text(&o));
+    std::fs::remove_file(p.join("docs/a.html")).unwrap();
+    for (what, src) in [("a BOM", format!("\u{feff}{}", wu_plan_data("a.html", ""))), ("a second document", wu_plan_data("a.html", "---\nx: 1\n"))] {
+        std::fs::write(p.join("docs/a.yaml"), src).unwrap();
+        for args in [&["verify-doc", "docs/a.yaml"][..], &["verify-doc"]] {
+            let o = keel(p, args);
+            assert!(o.status.code() == Some(1) && text(&o).contains("docs/a.yaml: page a.html is not beside the data file"), "{what} {args:?}: {}", text(&o));
+        }
     }
 }

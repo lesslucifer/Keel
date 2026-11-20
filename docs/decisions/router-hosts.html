@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6afdb66a9f34851f0dfb28cd">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — Decisions: router hosts</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>Decisions: router hosts</h1>
+      <p>The router on DeepSeek Harness and the inbox that wakes it.</p>
+      <div class="meta">T2 · decisions · current truth · 2026-11-18 · Keel · DEC-55, DEC-56, DEC-58</div>
+    </div>
+  </header>
+  <main>
+    <p data-c="how-to-read">Current truth: each record says what stands today, why, and what was rejected. A later decision that changes one is folded in and named. A record replaced whole keeps its id and one line. Ids are never reused; git keeps the history. The router itself and its Claude Code workers are in <a href="router.html">router.html</a>.</p>
+
+    <h2 id="dsh">DeepSeek Harness (DSH)</h2>
+
+    <h3 id="dec-55">DEC-55 · A DSH worker is a workspace-rooted session whose report is its transcript</h3>
+    <table data-c="dec-55">
+      <tr><th>Choice</th><td>A DSH worker is the session <code>worker_spawn</code> starts in the worktree it names: the workspace is the worktree, the prompt is the brief, the name is its handle. Follow-up is one <code>worker_send</code>, queued and taken at the worker's next step. <code>worker_list</code> is the fleet view, <code>worker_status</code> the state (running, idle, ready, stopped), <code>worker_stop</code> the end: idempotent, and a stopped worker is never revived. A worker posts a short report to the inbox and the router's armed watch is the wake (<a href="#dec-58">DEC-58</a>); its transcript, read with <code>worker_output</code> at every wake and before every ask, is the evidence, and its claims are verified against git. The persona is the worktree's <code>AGENTS.md</code> and the skills; there is no per-worker preset, so the brief carries the goal, the hard rules and the report protocol in full. These shapes sit in one dated table in <code>keel-router/SKILL.md</code> (a row per mechanism, a column per host). The Claude Code recipe (<a href="router.html#dec-44">DEC-44</a>) is unchanged.</td></tr>
+      <tr><th>Why</th><td>On DSH a session's workspace root is the directory it was created in and never changes, and a subagent inherits its parent's directory: it would work in the router's checkout, and a <code>cd</code> does not carry between Bash calls. So a subagent cannot be a worker.</td></tr>
+      <tr><th>Rejected</th><td>A DSH subagent as a worker. A per-host skill fork, or DSH prose in any other skill (a content test asserts no other shipped skill names a DSH tool). A project-scoped agent definition or per-worker preset (DSH presets and settings are user-level).</td></tr>
+    </table>
+
+    <h3 id="dec-56">DEC-56 · A Keel DSH session runs under Always Auto Review</h3>
+    <table data-c="dec-56">
+      <tr><th>Choice</th><td>Every Keel DSH session, router and worker, runs under Always Auto Review (0.5.0): the owner's standing decision, and the DSH cell of the transport table's permission row. A worker in a linked git worktree runs <code>danger-full-access</code>, because the git directory lives outside the workspace; one in a plain directory runs <code>workspace-write</code>. A denial is final: surface the exact command to the owner, never retry it, never hand it to another session. The preset is never the owner's approval: <code>keel mr</code>, a merge, a push and a tag stay manual. The router's tool whitelist is unenforced on DSH until a guard plugin exists (backlog D2); the skill is the only guard, and the router says enforcement is missing and never uses the gap to do the work itself. The router template has a "Harness and permissions" block stating the preset.</td></tr>
+      <tr><th>Why</th><td>With approvals off, a DSH session rejects every call nothing decides, so an unattended agent could not add, commit or mint. Auto Review decides each call itself (a medium call runs, a high-risk call is denied) and offers no prompt. The preset is a session fact; settings are user-level and a project cannot pin its own.</td></tr>
+      <tr><th>Rejected</th><td>Asking the owner to approve each call (an unattended session stalls, and the owner is the scarcest resource). A per-worker or per-project preset. Approvals off with no decider.</td></tr>
+    </table>
+
+    <h2 id="inbox">The inbox</h2>
+
+    <h3 id="dec-58">DEC-58 · A worker's report is a post to a file inbox; the router's armed watch is the wake</h3>
+    <table data-c="dec-58">
+      <tr><th>Choice</th><td><code>scripts/router-inbox.sh</code> (POSIX <code>sh</code>) keeps one message per file under <code>&lt;main checkout&gt;/.router/inbox</code>, resolved from the git common dir so a copy in any worktree posts to the main checkout. <code>init</code> makes it and its <code>read/</code>. <code>post &lt;from&gt; &lt;kind&gt; &lt;text|stdin&gt;</code> writes a dotfile, renames it into place and prints <code>POSTED id=&lt;epoch&gt;-&lt;random&gt;</code>. <code>watch &lt;seconds&gt;</code> checks at once, then polls, prints one <code>MSG id=… from=… kind=… age=…s bytes=…</code> line plus the indented body (at most 4,000 bytes and 80 lines, control characters as <code>?</code>) and exits 0, or prints <code>TIMEOUT kind=inbox</code> and exits 1 at its bound. <code>consume &lt;id&gt;</code> moves the file to <code>read/</code> (<code>CONSUMED</code>, then <code>CONSUMED-ALREADY</code>); <code>status</code> counts pending, read, orphan and junk files. No verb deletes (the host's auto review denies a script that does). A worker posts a short report (at most 4,000 bytes; the full report stays its final transcript message) and quotes the id; the router arms <code>watch 6600</code> as a background command (<code>timeout: 7200000</code>), reads and records the message, then consumes it. On Claude Code the router guard admits <code>init|status|watch &lt;seconds&gt;|consume &lt;id&gt;</code> and never <code>post</code> (free text). A message is a regular, never-followed file with a valid id name, a matching <code>id:</code> line, a sender name and one of five kinds; anything else is junk, skipped and counted, never printed. Limits: no authentication (any local process can claim any <code>from</code>); delivery is at-least-once, so a duplicate is possible and a loss is not; <code>.router/</code> is git-ignored and unbacked. A DSH worker in a plain-directory workspace cannot post, and a Claude Code worker cannot until its sandbox <code>allowWrite</code> adds the inbox, which would weaken <a href="router.html#dec-46">DEC-46</a>. A worker that posts nothing wakes nobody (no wedge detection); while a watcher is armed its bound (110 minutes at most) is the longest silence, about 13 wakes a day.</td></tr>
+      <tr><th>Why</th><td>Nothing woke the router when a WU finished, and the fleet-wake reminder cost a full model pass every tick, 144 a day at 10 minutes, whether or not anyone had news. A file channel was proven on DSH (the owner approved a probe on 2026-11-14): one wake per post.</td></tr>
+      <tr><th>Rejected</th><td>A reminder or timer for reports. A DSH watchdog posting into the inbox (a second model session that only reports the silence the router already sees). A router-side poll loop (the owner's 2026-11-11 ruling). A network or message channel (a dependency and a credential, and DSH has no sender). A <code>.router-ready.&lt;name&gt;</code> marker (the timer again). Sender authentication (the channel trusts the machine).</td></tr>
+    </table>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

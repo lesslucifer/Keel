@@ -19,6 +19,7 @@ const SKILLS: &[(&str, &str)] = &[
     ("keel-distill/SKILL.md", include_str!("../skills/keel-distill/SKILL.md")),
     ("keel-write/SKILL.md", include_str!("../skills/keel-write/SKILL.md")),
     ("keel-write/references/example.html", include_str!("../skills/keel-write/references/example.html")),
+    ("keel-write/references/example.yaml", include_str!("../skills/keel-write/references/example.yaml")),
     ("keel-router/SKILL.md", include_str!("../skills/keel-router/SKILL.md")),
     ("keel-router/references/brief-skeleton.md", include_str!("../skills/keel-router/references/brief-skeleton.md")),
     ("keel-router/references/checklists.md", include_str!("../skills/keel-router/references/checklists.md")),
@@ -586,6 +587,23 @@ mod tests {
         let first = NEXT_STEPS.find("git commit --no-verify").unwrap();
         assert!(setup < first, "{NEXT_STEPS}");
         assert!(NEXT_STEPS.contains("git add .keel "), "the roster under .keel/ rides the first commit");
+    }
+
+    /// E-DOCSPLIT.W4: the embedded list names each path once, and ships keel-write's example as a
+    /// pair - its data file a ready epic plan whose page is the shipped example.html.
+    #[test]
+    fn the_skills_name_each_path_once_and_ship_the_example_pair() {
+        let mut seen = std::collections::HashSet::new();
+        for (p, _) in SKILLS {
+            assert!(seen.insert(*p), "{p} is listed twice");
+        }
+        let file = |p: &str| SKILLS.iter().find(|(s, _)| *s == p).map(|(_, b)| *b).unwrap_or_else(|| panic!("{p} is not embedded"));
+        file("keel-write/references/example.html");
+        let docs = yaml_rust2::YamlLoader::load_from_str(file("keel-write/references/example.yaml")).expect("the example data file is no YAML");
+        let [data] = docs.as_slice() else { panic!("the example data file holds {} documents", docs.len()) };
+        assert_eq!(data["artifact"].as_str(), Some("epic-plan"));
+        assert_eq!(data["status"].as_str(), Some("ready"));
+        assert_eq!(data["page"].as_str(), Some("example.html"));
     }
 
     #[test]

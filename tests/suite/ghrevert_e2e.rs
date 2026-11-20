@@ -108,8 +108,8 @@ fn ghrevert_a_typed_sign_off_a_local_merge_and_a_push_carry_an_epic_to_main() {
     git(p, &["switch", "-q", "-c", "wu/e/a"]);
     write(p, "src/a.py", "def a():\n    return 1\n");
     write(p, "tests/test_a.py", "def test_a():\n    assert 1\n");
-    write(p, WU_PLAN, "<html data-artifact=\"wu-plan\"><p>plan</p></html>");
-    write(p, WU_RESULT, "<html data-artifact=\"wu-result\"><p>wu a: done</p></html>");
+    common::doc_pair(p, WU_PLAN, "wu-plan", "<html><p>plan</p></html>");
+    common::doc_pair(p, WU_RESULT, "wu-result", "<html><p>wu a: done</p></html>");
     let wu = commit(p, "feat(e2e.W1): a returns one");
     ok(keel(p, &["notes", "write", "test"], r#"{"integration":{"files":["tests/test_a.py"],"covers":"a returns one"}}"#));
     ok(keel(p, &["notes", "write", "doc"], ""));
@@ -130,9 +130,10 @@ fn ghrevert_a_typed_sign_off_a_local_merge_and_a_push_carry_an_epic_to_main() {
     ok(run("git", p, &["merge", "-q", "--no-ff", "-m", "Merge E2E.W1: a returns one", "wu/e/a"], ""));
 
     // ── 3. the close: archive, epic notes, typed epic sign-off, merge into main, push ──────────
-    git(p, &["rm", "-q", WU_PLAN, WU_RESULT]);
+    let data = |page: &str| page.replace(".html", ".yaml");
+    git(p, &["rm", "-q", WU_PLAN, &data(WU_PLAN), WU_RESULT, &data(WU_RESULT)]);
     write(p, "docs/decisions/close.html", "<p>what the epic taught</p>");
-    write(p, EPIC_RESULT, "<html data-artifact=\"epic-result\"><p>epic e: done</p></html>");
+    common::doc_pair(p, EPIC_RESULT, "epic-result", "<html><p>epic e: done</p></html>");
     git(p, &["add", "docs/decisions/close.html"]);
     git(p, &["commit", "-qm", "docs(E2E close): archive the working docs, distilled to the T2 set"]);
     ok(keel(p, &["notes", "write", "test"], r#"{"e2e":{"files":["tests/test_a.py"],"covers":"the WU, the close and the merge into main"}}"#));

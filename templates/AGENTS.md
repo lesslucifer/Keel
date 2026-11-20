@@ -42,8 +42,10 @@ print it, stop: `keel mr confirm wu|epic <tip> --as <id>` (WU/epic tip) ·
 
 ## Documentation
 
-All project docs are HTML via the **htmldoc** skill, never markdown (this file
-and skill files are infrastructure). Tiers (skill `keel-distill`): **T0** this file
+Pages a person reads are HTML via the **htmldoc** skill, never markdown (this
+file and skill files are infrastructure); a plan or result also has a YAML
+data file beside it (skill `keel-plan`), and use cases, the backlog and the
+indexes are data files alone. Tiers (skill `keel-distill`): **T0** this file
 · **T1** `docs/*` shape + process · **T2** `docs/use-cases/` (what),
 `docs/decisions/` (why), `docs/backlog/` (next) — index-first · **T3**
 `docs/work/` scratch, distill then archive · **T4** code, the truth. Decide a

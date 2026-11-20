@@ -34,13 +34,18 @@ T1 = ["docs/*"]
 T2 = ["docs/use-cases/**", "docs/decisions/**", "docs/backlog/**"]
 T3 = ["docs/work/**", "docs/.archive/**"]
 
+[docs.caps]   # a ready page's word cap by its path (glob = words; a page several match takes the smallest). A plan or result is capped by its data file's role instead.
+"docs/decisions/*.html" = 5000
+"docs/architecture.html" = 3000
+"docs/install.html" = 1500
+
 [tests]
 # adapter = "python"   # rust | ts | python | go | regex; default: by file extension
 # pattern = "..."      # test-declaration regex, for the regex adapter
 
 [mr]
 tiers = ["email", "username", "key"]   # accepted .keel/mr-allowed tiers; ["key"] = signatures only (email/username are a string match)
-report = "required"   # required | optional | none: must a WU/epic sign-off attest its result report (data-artifact wu-result / epic-result)
+report = "required"   # required | optional | none: must a WU/epic sign-off attest its result report (the page whose data file has artifact wu-result / epic-result)
 
 [review]   # max_rounds is read by the CLI from the target branch's committed copy; the rest by the keel-code-review skill
 # max_rounds = 5             # the review cap: rounds 1-2 review the whole range, later rounds only the last fix

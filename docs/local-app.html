@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>Keel — the local app</h1>
       <p>A desktop app on your Mac that tells you what waits on you, shows the work, and runs your sign-off and merge on a click you confirm. Designed, not built: this page is the build epics' source until the app exists.</p>
-      <div class="meta">T1 · 2026-11-19 · Keel · distilled from E-LOCALTOOL (epic plan v3, W1 – W5 results, archived at its close) · why: <a href="decisions/workflow-gates.html#dec-70">DEC-70</a> · the epics: <a href="backlog/local-app.html">backlog local-app</a></div>
+      <div class="meta">T1 · 2026-11-19 · Keel · distilled from E-LOCALTOOL (epic plan v3, W1 – W5 results, archived at its close) · why: <a href="decisions/workflow-gates.html#dec-70">DEC-70</a> · the epics: <code>backlog/local-app.yaml</code></div>
     </div>
   </header>
   <main>
@@ -202,7 +202,7 @@ flowchart LR
     <tr><td>K15</td><td>The watchdog writes each changed worker and the router's heartbeat line, at most one per worker per tick</td><td>A3</td></tr>
   </tbody>
 </table>
-<p data-c="later">Later, with no epic yet: L1 message the router (n8), L2 alerts when away (n9), L3 a home other than GitHub (n10), L4 the app on DeepSeek Harness. Rows: <a href="backlog/local-app.html">backlog local-app</a>.</p>
+<p data-c="later">Later, with no epic yet: L1 message the router (n8), L2 alerts when away (n9), L3 a home other than GitHub (n10), L4 the app on DeepSeek Harness. Rows: <code>backlog/local-app.yaml</code>.</p>
 
 <h2 id="github">GitHub</h2>
 <p data-c="github">Its flow is dropped: the checks, the sign-off by approval, auto-merge, the bot, the watch, the docs site, the settings check. E-GHREVERT reverts it first, after you switch your GitHub settings off. Two things stay: releases (<code>release.yml</code> on a version tag, with no pull-request run) and your own pushes of main, the epics, the notes and the tags. E-GHSETUP is closed.</p>
@@ -210,7 +210,7 @@ flowchart LR
 <h2 id="read-next">Read next</h2>
 <ul data-c="read-next">
   <li><a href="decisions/workflow-gates.html#dec-70">DEC-70</a>: why, and what was rejected.</li>
-  <li><a href="backlog/local-app.html">backlog local-app</a>: the five epics and the later rows.</li>
+  <li><code>backlog/local-app.yaml</code>: the five epics and the later rows.</li>
   <li><a href="architecture.html">architecture.html</a>: keel itself, which the app only reads and runs.</li>
   <li>The design in full, archived at the E-LOCALTOOL close: <code>git show 90ee37b:docs/work/&lt;doc&gt;</code> for the epic plan (<code>2026-11-17-e-localtool-plan.html</code>) and the W1 – W5 results (<code>2026-11-18-e-localtool-w1-needs-result.html</code>, <code>…-w2-app-result.html</code>, <code>…-w3-screens-result.html</code>, <code>…-w4-handoff-result.html</code>, <code>2026-11-19-e-localtool-w5-retire-result.html</code>).</li>
 </ul>

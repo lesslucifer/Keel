@@ -2,7 +2,7 @@
 //! the commit-msg `Reviewed-By` check (UC-MR-1/2, DEC-47). Ported from Trawler's xtask/src/mr.rs
 //! (DEC-9/10/27): stock `ssh-keygen -Y` signatures, verified offline against the roster.
 use crate::notes::{self, sha256, CrNote, MrNote};
-use crate::{gate, git, git_dir, no_git_env, review, short, verify_doc, Config, ReportPolicy};
+use crate::{gate, git, git_dir, git_raw, no_git_env, ok_bytes, review, short, verify_doc, Config, ReportPolicy};
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -333,19 +333,41 @@ fn positionals<'a>(args: &[&'a str]) -> Vec<&'a str> {
     pos
 }
 
-/// The docs whose `data-artifact` carries the level's result role: html under docs.root changed in
-/// base..tip and present at the tip. Never an untracked or archived file: an epic whose report is
-/// archived out of git by sign-off time names it with `--report` (owner ruling, DEC-40).
+/// The result reports this range could attest (DEC-69, E-DOCSPLIT.W3): the pages under docs.root
+/// the range changes, by the page or by its data file (`verify_doc::pages_of`), whose page and data
+/// file are both at the tip and whose data file's `artifact` carries the level's result role. Page
+/// paths: the page is what the signer reads and attests. A page with no data file is never one,
+/// whatever tag it carries. Never an untracked or archived file: an epic whose report is archived
+/// out of git by sign-off time names it with `--report` (owner ruling, DEC-40).
 fn report_candidates(repo: &Path, cfg: &Config, base: &str, tip: &str, epic: bool) -> Result<Vec<String>, String> {
     let role = verify_doc::result_role(epic);
     let root = cfg.docs.root.trim_end_matches('/');
+    let names = notes::names(repo, base, tip, &[root.to_string()])?;
+    let in_docs = verify_doc::under_root(root);
     let mut found = vec![];
-    for n in notes::names(repo, base, tip, &[root.to_string()])?.iter().filter(|n| n.ends_with(".html")) {
-        if git(repo, &["show", &format!("{tip}:{n}")], &[]).is_ok_and(|body| verify_doc::has_role(&body, role)) {
-            found.push(n.clone());
+    for page in verify_doc::pages_of(&names, &in_docs) {
+        let Some(data) = verify_doc::pair_named(Path::new(&page), &in_docs).and_then(|p| p.data) else { continue };
+        if !notes::at_tip(repo, tip, &page) {
+            continue;
+        }
+        let roles = data_blob(repo, &format!("{tip}:{}", data.display())).and_then(|b| verify_doc::data_roles(b).ok()).unwrap_or_default();
+        if roles.iter().any(|r| r == role) {
+            found.push(page);
         }
     }
     Ok(found)
+}
+
+/// A committed data file's bytes as they are (`<rev>:<path>`), the size asked first: `None` when it
+/// is not there, cannot be read, or is over the doc check's size bound (`verify_doc::size_problem`).
+/// Never trimmed or decoded here: `verify_doc::data_roles` reads them as the doc check reads the file.
+fn data_blob(repo: &Path, spec: &str) -> Option<Vec<u8>> {
+    let size: u64 = git(repo, &["cat-file", "-s", spec], &[]).ok()?.parse().ok()?;
+    if verify_doc::size_problem(size).is_some() {
+        return None;
+    }
+    let args = ["cat-file", "blob", spec];
+    ok_bytes(&args, git_raw(repo, &args, None).ok()?).ok()
 }
 
 /// The report this sign-off attests under `[mr] report`, or `Err((what, fix))` refusing the confirm.
@@ -361,6 +383,15 @@ fn pick_report(repo: &Path, cfg: &Config, args: &[&str], base: &str, tip: &str, 
         };
     }
     if let Some(r) = given {
+        // A typed report is taken wherever it is (no docs.root condition): every .yaml names a data file.
+        if let Some(verify_doc::Pair { page, data: Some(data) }) = verify_doc::pair_named(Path::new(r), |_| true) {
+            if data == Path::new(r) {
+                return Err((
+                    format!("--report {r} names a data file: the report is the page beside it, the one you read and sign"),
+                    format!("keel mr confirm ... --report {}", page.display()),
+                ));
+            }
+        }
         return Ok(Some(r.to_string()));
     }
     let role = verify_doc::result_role(epic);
@@ -370,16 +401,16 @@ fn pick_report(repo: &Path, cfg: &Config, args: &[&str], base: &str, tip: &str, 
         [] if cfg.mr.report == ReportPolicy::Optional => Ok(None),
         [] => Err((
             format!(
-                "[mr] report = \"required\", and no {role} doc (data-artifact=\"{role}\") under {} is committed in this {}'s diff {}..{}",
+                "[mr] report = \"required\", and no {role} report (a page with a data file whose artifact is {role}) under {} is committed in this {}'s diff {}..{}",
                 cfg.docs.root,
                 if epic { "epic" } else { "WU" },
                 short(base),
                 short(tip)
             ),
-            format!("commit the {role} report (skill keel-plan) on the tip, then keel mr confirm again - or name the one you read: keel mr confirm ... --report <path>"),
+            format!("commit the {role} report, a page and its data file (skill keel-plan), on the tip, then keel mr confirm again - or name the one you read: keel mr confirm ... --report <path>"),
         )),
         several => Err((
-            format!("{} {role} docs could be the report: {}", several.len(), several.join(", ")),
+            format!("{} {role} reports could be the one (pages whose data file says {role}): {}", several.len(), several.join(", ")),
             "name the one you read: keel mr confirm ... --report <path>".into(),
         )),
     }
