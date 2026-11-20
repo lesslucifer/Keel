@@ -31,6 +31,7 @@ mod notify_owner;
 mod release;
 mod review;
 mod router;
+mod router_app;
 mod router_inbox;
 mod seed3_e2e;
 mod verify_doc;
