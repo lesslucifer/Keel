@@ -132,13 +132,36 @@ fn real(prog: &str) -> String {
 /// runs once the lock is taken and before it writes anything, marks `ready` and then blocks on a fifo
 /// until `release` writes to it; every later `date` is the real one. No clock is involved: the test
 /// waits for the mark, and the writer for the test.
+///
+/// Review round 3: the writer starts in a process group of its own, with HUP, INT and TERM at their
+/// defaults whatever the launch (a signal the test process inherited as ignored - INT under
+/// `cargo test &`, HUP under nohup - would reach it ignored, and a non-interactive sh cannot trap
+/// it), and with no stdin. A test that fails before `release` drops it: the group (the writer, its
+/// date shim, sed) is killed then, so nothing outlives the test binary. The shim forks nothing once it
+/// marks `ready` (a builtin `read` waits on the fifo, no `cat`): a process still being forked when the
+/// group is killed can miss the signal, and a `cat` that did would wait on the fifo for ever.
 struct Paused {
-    child: Child,
+    child: Option<Child>,
+    pid: u32,
     gate: PathBuf,
+}
+
+/// The two C calls the harness needs, from the libc every unix Rust binary links (no crate added).
+mod sys {
+    extern "C" {
+        pub fn signal(sig: i32, handler: usize) -> usize;
+        pub fn kill(pid: i32, sig: i32) -> i32;
+    }
+    pub const SIGHUP: i32 = 1;
+    pub const SIGINT: i32 = 2;
+    pub const SIGKILL: i32 = 9;
+    pub const SIGTERM: i32 = 15;
+    pub const SIG_DFL: usize = 0;
 }
 
 impl Paused {
     fn spawn(a: &App, args: &[&str]) -> Paused {
+        use std::os::unix::process::CommandExt;
         let gate = a.d.path().join("gate");
         std::fs::create_dir_all(&gate).unwrap();
         let o = common::cmd("mkfifo").arg(gate.join("fifo")).output().unwrap();
@@ -148,31 +171,58 @@ impl Paused {
         shim(
             &shims,
             "date",
-            &format!("if mkdir {g}/paused 2>/dev/null; then : > {g}/ready; cat {g}/fifo >/dev/null; fi\nexec {} \"$@\"", common::sh_quote(&real("date"))),
+            &format!("if mkdir {g}/paused 2>/dev/null; then : > {g}/ready; read -r go < {g}/fifo; fi\nexec {} \"$@\"", common::sh_quote(&real("date"))),
         );
-        let mut child = a.cmd_shimmed(&shims, args).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        let mut c = a.cmd_shimmed(&shims, args);
+        c.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).process_group(0);
+        // SAFETY: signal(2) is async-signal-safe and touches nothing of the parent's in the forked child
+        unsafe {
+            c.pre_exec(|| {
+                for s in [sys::SIGHUP, sys::SIGINT, sys::SIGTERM] {
+                    sys::signal(s, sys::SIG_DFL);
+                }
+                Ok(())
+            });
+        }
+        let child = c.spawn().unwrap();
+        let mut p = Paused { pid: child.id(), child: Some(child), gate };
         let t = Instant::now();
-        while !gate.join("ready").exists() {
-            if child.try_wait().unwrap().is_some() {
-                let o = child.wait_with_output().unwrap();
+        while !p.gate.join("ready").exists() {
+            if p.child.as_mut().unwrap().try_wait().unwrap().is_some() {
+                let o = p.child.take().unwrap().wait_with_output().unwrap();
                 panic!("{args:?} ended before it held the lock: {}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
             }
             assert!(t.elapsed() < Duration::from_secs(30), "{args:?} never took the lock");
             std::thread::sleep(Duration::from_millis(5));
         }
-        Paused { child, gate }
+        p
     }
 
-    /// The writer's pid: the shell that runs the script, whose `$$` names its lock's mark.
+    /// The writer's pid: the shell that runs the script, whose `$$` names its lock's mark; also its
+    /// process group's id.
     fn pid(&self) -> String {
-        self.child.id().to_string()
+        self.pid.to_string()
     }
 
     /// Lets the writer go on and waits for it.
-    fn release(self) -> std::process::Output {
+    fn release(mut self) -> std::process::Output {
         use std::io::Write;
         std::fs::OpenOptions::new().write(true).open(self.gate.join("fifo")).unwrap().write_all(b"go\n").unwrap();
-        self.child.wait_with_output().unwrap()
+        self.child.take().unwrap().wait_with_output().unwrap()
+    }
+}
+
+impl Drop for Paused {
+    /// Unreleased (a test failed first): the writer's whole group is killed and the writer reaped. The
+    /// writer is unreaped until then, so its pid, the group's id, names no other process; the writer
+    /// is also killed by its pid, so the wait never hangs, whatever became of the group.
+    fn drop(&mut self) {
+        if let Some(mut c) = self.child.take() {
+            // SAFETY: kill(2) on the group this Paused started
+            unsafe { sys::kill(-(self.pid as i32), sys::SIGKILL) };
+            let _ = c.kill();
+            let _ = c.wait();
+        }
     }
 }
 
@@ -641,6 +691,30 @@ fn a_writer_stopped_by_a_signal_releases_its_lock_and_writes_nothing() {
     }
 }
 
+/// Review round 3 (nit): a test that fails before it releases a paused writer leaves no process. The
+/// writer, its date shim (waiting on the fifo) and sed share the writer's process group; dropping the
+/// unreleased Paused kills that group, so it empties (the orphans are reaped by init: a bounded wait),
+/// and the killed writer wrote nothing.
+#[test]
+fn a_paused_writer_dropped_unreleased_leaves_no_process() {
+    let a = App::new();
+    a.start("r1");
+    let before = a.bytes();
+    let p = Paused::spawn(&a, &["set", "worker/w1", "1"]);
+    let group = -(p.pid as i32);
+    // SAFETY: kill(2) with signal 0 only asks after the group. It is gone at ESRCH alone: a group whose
+    // last members are being torn down answers EPERM for a moment.
+    let gone = || unsafe { sys::kill(group, 0) } == -1 && std::io::Error::last_os_error().raw_os_error() == Some(3);
+    assert!(!gone(), "the paused writer's group is empty");
+    drop(p);
+    let t = Instant::now();
+    while !gone() {
+        assert!(t.elapsed() < Duration::from_secs(30), "a process of the dropped writer's group {} lives on", -group);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(a.bytes() == before, "a dropped writer wrote");
+}
+
 /// Review round 2 (nit): the links are checked again once the lock is held. .router, .router/app or
 /// a file replaced by a link while a writer waits for the lock is refused then: nothing is written
 /// through the link, the link stays, and the lock is released.
@@ -953,29 +1027,36 @@ fn a_writer_that_fails_between_its_writes_leaves_a_gap_never_a_repeat() {
 /// run, n, values or alerts or holding them as the wrong type - is a file error: exit 1 naming the state
 /// and the way out (start again), and nothing is written; a start then begins a new run. An empty file,
 /// two JSON values or a fractional n are not refused today: follow-up N2 (the result report).
+/// Review round 3 (nit): each shape is sent with the verb that would get past it were its own check
+/// gone - a state with no n through a set (null + 1 is 1), values that are an array through an alert
+/// (an alert never reads them).
 #[test]
 fn a_state_of_the_wrong_shape_is_refused_until_a_start() {
     let a = App::new();
     a.start("r1");
+    let set: &[&str] = &["set", "worker/w1", "1"];
+    let alert: &[&str] = &["alert", r#"{"headline":"h","lines":["a"]}"#];
     let bad = [
-        "not json",
-        "[]",
-        r#""x""#,
-        "{}",
-        r#"{"run":"r","n":1}"#,
-        r#"{"run":"r","n":"1","values":{},"alerts":[]}"#,
-        r#"{"run":1,"n":1,"values":{},"alerts":[]}"#,
-        r#"{"run":"r","n":1,"values":[],"alerts":[]}"#,
-        r#"{"run":"r","n":1,"values":{},"alerts":{}}"#,
+        ("not json", set),
+        ("[]", set),
+        (r#""x""#, set),
+        ("{}", set),
+        (r#"{"run":"r","n":1}"#, set),
+        (r#"{"run":"r","values":{},"alerts":[]}"#, set),
+        (r#"{"run":"r","n":"1","values":{},"alerts":[]}"#, set),
+        (r#"{"run":1,"n":1,"values":{},"alerts":[]}"#, set),
+        (r#"{"run":"r","n":1,"values":[],"alerts":[]}"#, set),
+        (r#"{"run":"r","n":1,"values":[],"alerts":[]}"#, alert),
+        (r#"{"run":"r","n":1,"values":{},"alerts":{}}"#, set),
     ];
-    for state in bad {
+    for (state, args) in bad {
         std::fs::write(a.state_path(), state).unwrap();
         let before = a.bytes();
-        let (code, out) = a.run(&["set", "worker/w1", "1"]);
-        assert_eq!(code, Some(1), "state {state:?}: {out}");
-        assert!(out.contains("router-app: cannot read ") && out.contains("start again"), "state {state:?}: {out}");
-        assert!(a.bytes() == before, "state {state:?}: a file changed");
-        assert_eq!(a.names(), ["log.jsonl", "state.json"], "state {state:?}: a file or the lock was left");
+        let (code, out) = a.run(args);
+        assert_eq!(code, Some(1), "state {state:?} under {args:?}: {out}");
+        assert!(out.contains("router-app: cannot read ") && out.contains("start again"), "state {state:?} under {args:?}: {out}");
+        assert!(a.bytes() == before, "state {state:?} under {args:?}: a file changed");
+        assert_eq!(a.names(), ["log.jsonl", "state.json"], "state {state:?} under {args:?}: a file or the lock was left");
     }
     a.start("r2");
     a.ok(&["set", "worker/w1", "1"]);
