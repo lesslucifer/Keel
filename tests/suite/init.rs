@@ -915,6 +915,8 @@ fn a_foreign_keel_on_path_makes_init_warn_and_a_git_hook_refuse() {
     assert!(t.contains("is not Keel") && t.contains("docs/install.html"), "{t}");
 
     let keel_first = format!("{}:{path}", Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().display());
+    // Nothing is committed yet: the staged rules judge the first commit (E-KEELFIX.W1).
+    ok(p, &["add", ".keel/config.toml"]);
     let o = commit(&keel_first);
     assert!(o.status.success(), "with Keel first the hook runs: {}", text(&o));
 }
