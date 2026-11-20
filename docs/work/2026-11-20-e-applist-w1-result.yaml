@@ -1,0 +1,125 @@
+artifact: wu-result
+status: ready
+id: E-APPLIST.W1
+epic: E-APPLIST
+title: "E-APPLIST.W1 · The router's update log"
+date: "2026-11-20"
+page: 2026-11-20-e-applist-w1-result.html
+outcome: >-
+  Delivered. scripts/router-app.sh is the one writer of <main checkout>/.router/app/log.jsonl and state.json: start
+  wipes both and begins a new run (run id <router-name>.<YYYYMMDD-HHMMSS>.<pid>); stage, set, del and alert each
+  write one numbered line, keys in the contract's order (run, n, at, op, key, value), and fold it into the state
+  under one mkdir lock; sixteen writers at once keep the numbers whole; past 2,000 lines a file holding only the
+  new line replaces the log; a refused call exits 2 and writes nothing. scripts/router-guard.jq admits exactly the
+  router's plain-word shapes (start <name>, stage <wu> <stage> [<tip>], del question/<id>, del wu/<wu>/stage) and
+  denies set, alert and every other form; .claude/settings.json allows the same three shapes; .claude/agents/router.md
+  names them. The four rule files landed in the owner's one typed commit 83b393d. An independent re-gate on 83b393d
+  was GREEN: cargo test 137 unit and 361 suite pass (10 ignored), fmt, clippy and keel check green, no blocker, no
+  important finding, six nits.
+deviations:
+  - >-
+    Write order: the state first, then the log. The plan's details.order and details.rotation say the log is written
+    before the state. The script renames the new state into place and then appends (or rotates) the log. Why: a
+    writer killed between the two then leaves a gap (the state ahead of the log), which the app already handles by
+    reading the state once (docs/local-app.html "Applying a line"); log-first would leave a line the state lacks, and
+    the next writer would read the old n and repeat that number. start also writes the state first. The re-gate
+    judged this departure right. The plan YAML's order and rotation text are left as written (a T3 plan, archived at
+    the close); this entry records the change.
+  - >-
+    The tests took two commits, not one: d46a271 (the tests, red first) and 09f5cf4 (a refused call before start
+    once left an empty .state.* temp file behind; the refused calls and the sixteen writers now assert .router/app
+    holds only log.jsonl and state.json). The script creates its temp files only once nothing can refuse the change.
+  - >-
+    The worker could not write .claude/settings.json or .claude/agents/router.md in its worktree (the sandbox denies
+    them); their intended diff went to the router as a file and the owner applied it in the typed commit. Before
+    that, the worker's tree was green except the two tests that read those files (settings entries, router.md's
+    posture): suite 359 passed, 2 failed.
+  - >-
+    docs/local-app.html "Where it travels" lists start, set, del and alert, not stage: a T1/T2 doc, changed at the
+    epic close by distillation, not in this WU.
+evidence:
+  commits:
+    - "7b0a40e docs: the WU plan pair"
+    - "d46a271 test: tests/suite/router_app.rs (new), tests/suite/router.rs, tests/suite/main.rs - red first"
+    - "09f5cf4 test: a writer leaves its two files and nothing else"
+    - "83b393d rules: the owner's typed commit (keel mr commit, Reviewed-By trailer) of scripts/router-app.sh, scripts/router-guard.jq, .claude/settings.json, .claude/agents/router.md"
+    - "this result pair: plain commit; test note and doc note on the tip, --target epic/E-APPLIST"
+  baseline: "epic/E-APPLIST 1f96ca3"
+  red-before: >-
+    At d46a271 (no script, no guard shape, no settings entry), cargo test --test suite router: 16 failed, every test the WU adds or changes;
+    1 passed, router_app::compiled_file, the layout marker every suite file carries (router_app:: tests: the script is missing, ENOENT at router_app.rs:34; router::
+    settings_allow_exactly_the_app_shapes_the_guard_admits, the_guard_and_the_app_script_take_the_same_words,
+    router_guard_admits_the_update_log_in_plain_words_only, router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag,
+    keels_router_security_files_are_rule_bearing, router_text_names_what_the_launcher_prints_and_no_retired_mechanism).
+  worker-tree-before-commit: "the four rule files in the worktree, settings.json and router.md denied by the sandbox: unit 137 passed; suite 359 passed, 2 failed (the two tests reading those files), 10 ignored."
+  green-after: "The re-gate at 83b393d: cargo test unit 137 passed; suite 361 passed, 10 ignored; cargo fmt --check and cargo clippy -D warnings clean; keel check green."
+  re-gate: >-
+    A fresh read-only worker (opus, high effort) on 83b393d: GREEN. The four files read against the review checklists
+    (security path for router-app.sh and router-guard.jq: one lock, every value through jq, writes only .router/app,
+    symlinks refused, fail-closed guard admitting only the four shapes, the guard and the script agreeing; settings
+    entries equal to the guard's shapes; router.md's tools line equal to the guard's). No blocker, no important
+    finding; six nits (follow-ups below), none re-committed.
+  by-hand-run: >-
+    The script copied into a scratch git repo under TMPDIR: start keel-1c -> OK n=1; stage E-APPLIST.W1 plan-to-read
+    83b393d -> OK n=2, line {"run":"keel-1c.20261120-123337.46108","n":2,"at":"2026-11-20T12:33:38+08:00","op":"set",
+    "key":"wu/E-APPLIST.W1/stage","value":{"stage":"plan to read","tip":"83b393d"}}; del question/q1 -> OK n=3;
+    stage E-APPLIST.W1 shipped -> exit 2 "the stage must be ...", nothing written; state.json n 3 holding the stage;
+    .router/app holds only log.jsonl and state.json. The guard, fed router PreToolUse events: the stage and del
+    shapes allowed; alert {}, set router x and a stage with extra words denied.
+  tests-added:
+    integration:
+      - tests/suite/router_app.rs (new) start_wipes_both_files_and_begins_a_new_run
+      - tests/suite/router_app.rs each_verb_writes_one_line_with_the_next_number_and_the_state_folds_it
+      - tests/suite/router_app.rs a_stage_line_is_the_contract_the_app_reads (snapshot)
+      - tests/suite/router_app.rs sixteen_writers_at_once_keep_the_numbers_whole
+      - tests/suite/router_app.rs the_2001st_line_restarts_the_log_from_the_state
+      - tests/suite/router_app.rs a_refused_call_writes_nothing
+      - tests/suite/router_app.rs a_held_lock_makes_a_writer_wait_and_a_stale_one_refuse
+      - tests/suite/router_app.rs a_symlinked_app_dir_or_file_is_refused
+      - tests/suite/router_app.rs a_worktree_copy_writes_the_main_checkouts_log
+      - tests/suite/router_app.rs text_with_a_newline_or_quote_stays_one_escaped_line
+      - tests/suite/router.rs router_guard_admits_the_update_log_in_plain_words_only (new)
+      - tests/suite/router.rs the_guard_and_the_app_script_take_the_same_words (new)
+      - tests/suite/router.rs settings_allow_exactly_the_app_shapes_the_guard_admits (new)
+      - tests/suite/router.rs router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag (learns router-app.sh)
+      - tests/suite/router.rs keels_router_security_files_are_rule_bearing (learns router-app.sh)
+      - tests/suite/router.rs router_text_names_what_the_launcher_prints_and_no_retired_mechanism (learns router-app.sh)
+    unit: "waived: a shell script and a jq filter have no unit layer in this repo"
+    e2e: "none at the WU: the epic test at the close runs the real script's start and stage lines"
+  docs: "this result pair (new); the plan pair at 7b0a40e; no other doc touched"
+distillation: >-
+  Nothing in W1. At the epic close: UC-ROUTE-8 (new: the router's update log) and UC-ROUTE-6 (amended: the guard
+  admits the update command in plain words); docs/local-app.html "Where it travels" gains stage and the state-first
+  write order, per the epic's distillation plan.
+follow-ups:
+  - >-
+    N1 (nit) router-app.sh:119-121: a hardlinked log.jsonl or state.json passes the regular-file check (needs a
+    same-user write). Fix idea: refuse a link count over 1. Taken by: a later small WU of E-APPLIST, or the A5 epic
+    (the router's own follow-ups), the owner's choice.
+  - >-
+    N2 (nit) :162-181: a hand-corrupted state.json holding two JSON values, or a non-integer .n, garbles the parse or
+    is carried on. Fix idea: read it with jq -s and check n is a whole number. Taken by: the same WU as N1.
+  - >-
+    N3 (nit) :33: an exported CDPATH makes the script fail closed (exit 1). Fix idea: HERE=$(CDPATH= cd -P -- ...).
+    Taken by: the same WU as N1.
+  - >-
+    N4 (nit) :131-138: a signal between mkdir and the trap leaves a stale lock; any mkdir failure (an unwritable dir)
+    reports LOCKED after 5 s. Fix idea: set the trap before the loop; fail at once when the dir is not writable.
+    Taken by: the same WU as N1.
+  - >-
+    N5 (nit) :55: the alert link grammar (the plan's) admits keel://../../etc. alert is not reachable by the router.
+    Fix idea: tighten the grammar (no .. segment) in the script, or check it in the app's link handler. Taken by: W3
+    (the sender writes alerts) or the app's link handler, in E-APPLIST.
+  - "N6 (nit) the guard is stricter than the script for a name containing --ou: safe, no fix. Taken by: none needed."
+  - "docs/local-app.html 'Where it travels' lacks stage: E-APPLIST's close, distillation."
+  - "The code review of tests/, the owner's sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
+details:
+  base: "wu/E-APPLIST/w1-update-log off epic/E-APPLIST at 1f96ca3"
+  files:
+    plain-commits: [tests/suite/router_app.rs (new), tests/suite/router.rs, tests/suite/main.rs, docs/work/2026-11-20-e-applist-w1-plan.*, docs/work/2026-11-20-e-applist-w1-result.*]
+    rule-bearing: [scripts/router-app.sh (new), scripts/router-guard.jq, .claude/settings.json, .claude/agents/router.md]
+  code-review-scope: "tests/ only: scripts/ and .claude/ are not code paths; the rule files were read by the re-gate and carry the owner's Reviewed-By trailer"
+  known: "What the tests and the re-gate prove: the contract lines, the numbering under 16 writers, rotation, refusals, the lock wait, symlink refusal, the guard and settings shapes."
+  not-known: "Not yet shown: the app reading these files (W4 onward and the epic test); the router calling the shapes in a live run (the keel-router skill text is W3's); hardlinks and a corrupted state (N1, N2) are untested."
+  htmldoc:
+    id: 6affcd5c9f34851f0dfb2af5
