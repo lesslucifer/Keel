@@ -40,7 +40,7 @@ struct MrCfg {
     #[serde(default)]
     report: ReportPolicy,
 }
-/// The default policy, which mr owns: every tier that signs (E-GHREVERT.W1, keep 3).
+/// The default policy, which mr owns: every known tier.
 fn known_tiers() -> Vec<String> {
     mr::default_tiers()
 }
@@ -1007,7 +1007,7 @@ mod tests {
             assert_eq!(super::validate(&cfg(&format!("[\"{t}\"]"))), Ok(()), "{t}");
         }
         assert_eq!(super::validate(&cfg("[]")), Ok(()));
-        for bad in ["usrname", "Key", "", "key "] {
+        for bad in ["usrname", "Key", "", "key ", "github"] {
             let e = super::validate(&cfg(&format!("[\"key\", \"{bad}\"]"))).unwrap_err();
             assert!(e.contains(&format!("unknown mr tier '{bad}'")), "{e}");
         }

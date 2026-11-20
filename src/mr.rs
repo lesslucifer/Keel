@@ -11,25 +11,13 @@ use std::process::{Command, Stdio};
 const NAMESPACE: &str = "keel-mr";
 const TRAILER: &str = "Reviewed-By";
 const ROSTER: &str = ".keel/mr-allowed";
-pub(crate) const KNOWN_TIERS: &[&str] = &["email", "username", "key", "github"];
-/// A tier keel reads and never signs by (E-GHREVERT.W1, keep 3): the GitHub flow that signed by it is
-/// reverted, but a roster or policy still carrying it (E-DOCSPLIT's, until it is on main) must read.
-const GITHUB: &str = "github";
+/// The signer tiers keel knows, each of which signs. A roster line of any other tier is refused by
+/// its line number, and `[mr] tiers` naming another is refused as unknown (`validate`).
+pub(crate) const KNOWN_TIERS: &[&str] = &["email", "username", "key"];
 
-/// Whether a tier signs: every tier but github. The one rule `tier_of`, `signer`, `typed_refusal`
-/// and the default policy read.
-fn signs_tier(tier: &str) -> bool {
-    tier != GITHUB
-}
-
-/// Whether a roster line can sign (its tier signs).
-fn signs(e: &Entry) -> bool {
-    signs_tier(&e.tier)
-}
-
-/// The policy when `[mr] tiers` names none: every known tier that signs, as before the GitHub flow.
+/// The policy when `[mr] tiers` names none: every known tier.
 pub(crate) fn default_tiers() -> Vec<String> {
-    KNOWN_TIERS.iter().filter(|t| signs_tier(t)).map(|t| t.to_string()).collect()
+    KNOWN_TIERS.iter().map(|t| t.to_string()).collect()
 }
 const NOT_AUTHORISED: &str = "A HUMAN must review this and confirm - an AI agent MUST NOT self-authorise.
       after the human has read the change and said yes:
@@ -44,16 +32,6 @@ struct Entry {
     key: Option<String>,
 }
 
-/// A GitHub login as GitHub allows one: letters, digits and single inner hyphens, 1 to 39 characters.
-fn valid_login(s: &str) -> bool {
-    (1..=39).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') && !s.starts_with('-') && !s.ends_with('-') && !s.contains("--")
-}
-
-/// A GitHub user id: decimal digits, no leading zero, at most 19 (so it fits a u64).
-fn valid_user_id(s: &str) -> bool {
-    (1..=19).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_digit()) && !s.starts_with('0')
-}
-
 /// Restricted so an identity can never carry allowed_signers pattern syntax (`*?,!"`) or whitespace.
 fn valid_identity(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "@._+-".contains(c))
@@ -64,23 +42,25 @@ fn roster_lines(text: &str) -> impl Iterator<Item = (usize, &str)> {
     text.lines().map(str::trim).enumerate().filter(|(_, l)| !l.is_empty() && !l.starts_with('#'))
 }
 
-/// `<tier>: <identity>`, `key: <identity> <keytype> <base64> [comment]` or `github: <user id> <login>`
-/// lines, read from `src`. A github line is read so a roster carrying one still parses; it signs
-/// nothing (`tier_of`). Lines whose tier is not in `tiers` authorise nothing; a malformed line is an error, never skipped.
+/// `<tier>: <identity>` or `key: <identity> <keytype> <base64> [comment]` lines, read from `src`, the
+/// tier one of `KNOWN_TIERS`. Lines of a known tier that `tiers` leaves out authorise nothing; a line
+/// of a tier keel does not know, or of the wrong shape, is an error naming its line, never skipped.
 fn parse_roster(text: &str, tiers: &[String], src: &str) -> Result<Vec<Entry>, String> {
     let mut out = vec![];
     for (n, line) in roster_lines(text) {
-        let bad = || format!("keel: {src} line {}: expected `<tier>: <identity>`, `key: <identity> <ssh-pubkey>` or `github: <user id> <login>`", n + 1);
+        let bad =
+            || format!("keel: {src} line {}: expected `<tier>: <identity>` or `key: <identity> <ssh-pubkey>`, tier one of {}", n + 1, KNOWN_TIERS.join(", "));
         let (tier, rest) = line.split_once(':').ok_or_else(bad)?;
         let tier = tier.trim();
+        if !KNOWN_TIERS.contains(&tier) {
+            return Err(bad());
+        }
         let mut f = rest.split_whitespace();
         let identity = f.next().filter(|i| valid_identity(i)).ok_or_else(bad)?;
         let key = match (tier, f.next(), f.next()) {
             // Only a real key type: an options field (cert-authority, ...) never reaches allowed_signers.
             ("key", Some(t), Some(b)) if ["ssh-", "ecdsa-", "sk-"].iter().any(|p| t.starts_with(p)) => Some(format!("{t} {b}")),
             ("key", ..) => return Err(bad()),
-            (GITHUB, Some(login), None) if valid_user_id(identity) && valid_login(login) => None,
-            (GITHUB, ..) => return Err(bad()),
             (_, None, _) => None,
             _ => return Err(bad()),
         };
@@ -127,42 +107,13 @@ fn roster_change(old: &str, new: &str) -> Vec<String> {
 }
 
 /// The tier that authorises `id` to sign (`keel mr setup`, `commit`, `confirm`, a `Reviewed-By`
-/// trailer, check 8): every tier but github, which signs nothing. `key` wins, so a key holder can
-/// never sign off unsigned.
+/// trailer, check 8): any tier that lists it. `key` wins, so a key holder can never sign off unsigned.
 ///
 /// "Signed" means "a key listed in the target's committed roster signed", not "a human reviewed":
 /// that a key needs a human's touch or passphrase is the owner's setup, which Keel cannot see (DEC-48).
 fn tier_of<'a>(allowed: &'a [Entry], id: &str) -> Option<&'a str> {
-    let mine = || allowed.iter().filter(|e| signs(e) && e.identity == id);
+    let mine = || allowed.iter().filter(|e| e.identity == id);
     mine().find(|e| e.key.is_some()).or_else(|| mine().next()).map(|e| e.tier.as_str())
-}
-
-/// Why `id`, which no signing tier lists, cannot sign, when `src` lists it under the github tier
-/// only: the cause and the fix, one wording for a sign-off (`typed_refusal`) and for check 8. The fix
-/// names only the tiers the policy (`tiers`) accepts that sign. `None` when no github line names it.
-fn github_only(allowed: &[Entry], tiers: &[String], src: &str, id: &str) -> Option<(String, String)> {
-    if !allowed.iter().any(|e| e.tier == GITHUB && e.identity == id) {
-        return None;
-    }
-    let names: Vec<&str> = tiers.iter().map(String::as_str).filter(|t| signs_tier(t)).collect();
-    let fix = match names.split_last() {
-        None => "add a tier that signs to [mr] tiers in .keel/config.toml, then list the signer under it".to_string(),
-        Some((last, [])) => format!("sign as an identity listed under the {last} tier"),
-        Some((last, rest)) => format!("sign as an identity listed under the {} or {last} tier", rest.join(", ")),
-    };
-    Some((
-        format!("{id} is listed in {src} under the github tier only, which signs nothing: the sign-off is typed, by an identity listed under another tier"),
-        fix,
-    ))
-}
-
-/// The refusal for a sign-off by `id`, which no signing tier lists: listed under the github tier
-/// only (`github_only`), or not at all.
-fn typed_refusal(allowed: &[Entry], tiers: &[String], src: &str, id: &str) -> String {
-    match github_only(allowed, tiers, src, id) {
-        Some((cause, fix)) => format!("keel mr: refused - {cause}\n  fix -> {fix}"),
-        None => unlisted(src, id),
-    }
 }
 
 fn keys_of<'a>(allowed: &'a [Entry], id: &str) -> Vec<&'a str> {
@@ -499,12 +450,12 @@ fn flag<'a>(args: &[&'a str], k: &str) -> Option<&'a str> {
     args.windows(2).find(|w| w[0] == k).map(|w| w[1])
 }
 
-/// `--as`, else the roster's only identity that can sign (a github line signs nothing).
+/// `--as`, else the roster's only identity.
 fn signer(allowed: &[Entry], src: &str, args: &[&str]) -> Result<String, String> {
     if let Some(id) = flag(args, "--as") {
         return Ok(id.into());
     }
-    let mut ids: Vec<&str> = allowed.iter().filter(|e| signs(e)).map(|e| e.identity.as_str()).collect();
+    let mut ids: Vec<&str> = allowed.iter().map(|e| e.identity.as_str()).collect();
     ids.sort();
     ids.dedup();
     match ids[..] {
@@ -590,7 +541,7 @@ fn commit(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     let (allowed, src) = roster(repo, cfg, "HEAD", "")?;
     let id = signer(&allowed, &src, args)?;
     let Some(tier) = tier_of(&allowed, &id) else {
-        eprintln!("{}", typed_refusal(&allowed, &cfg.mr.tiers, &src, &id));
+        eprintln!("{}", unlisted(&src, &id));
         return Ok(1);
     };
     let body = format!("{}\n\n{TRAILER}: {tier} {id}\n", msg.trim_end());
@@ -652,7 +603,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     let (allowed, src) = roster(repo, cfg, &target, &tip)?;
     let id = signer(&allowed, &src, args)?;
     let Some(tier) = tier_of(&allowed, &id).map(String::from) else {
-        eprintln!("{}", typed_refusal(&allowed, &cfg.mr.tiers, &src, &id));
+        eprintln!("{}", unlisted(&src, &id));
         return Ok(1);
     };
     // The one point a roster edit made inside a branch meets the signer, who reads a report, not the diff.
@@ -856,9 +807,6 @@ pub(crate) fn manual_review(
     let (allowed, roster) = roster(repo, cfg, target, tip).map_err(|e| (e, NOT_AUTHORISED.into()))?;
     match tier_of(&allowed, &n.signer) {
         None => {
-            if let Some((cause, fix)) = github_only(&allowed, &cfg.mr.tiers, &roster, &n.signer) {
-                return Err((format!("{t} is signed off by {}, but {cause}", n.signer), format!("{fix}\n      {NOT_AUTHORISED}")));
-            }
             return Err((
                 format!("{t} is signed off by {}, whom {roster} does not list (under tiers {:?})", n.signer, cfg.mr.tiers),
                 format!("a signer is added by landing their line in {ROSTER} on {target}, signed off by a signer it already lists\n      {NOT_AUTHORISED}"),
@@ -1055,8 +1003,8 @@ pub fn run(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        default_tiers, landed, parse_roster, payload, positionals, printable, roster_change, rule_bearing, sha256, signer, stale_change, tier_of,
-        typed_refusal, waive_reason, waiver_code, waiver_drift, waiver_listing,
+        default_tiers, landed, parse_roster, payload, positionals, printable, roster_change, rule_bearing, sha256, signer, stale_change, tier_of, unlisted,
+        waive_reason, waiver_code, waiver_drift, waiver_listing, KNOWN_TIERS,
     };
     use crate::notes::CrNote;
 
@@ -1103,79 +1051,66 @@ mod tests {
         }
     }
 
-    /// E-GHREVERT.W1, keep 3: a github line is a numeric id and a login, read under any policy.
+    /// E-KEELFIX.W3: keel knows three tiers; a roster line of any other tier - the old
+    /// `github: <user id> <login>` line among them - is refused with its line number, whatever the
+    /// policy, and the refusal names no github shape.
     #[test]
-    fn a_github_line_is_a_numeric_id_and_a_login_and_nothing_else() {
-        let all = tiers(&["username", "key", "github"]);
-        let got = parse_roster("github: 5499546 lesslucifer\nusername: vu\n", &all, "r").unwrap();
-        assert_eq!(got.iter().map(|e| (e.tier.as_str(), e.identity.as_str())).collect::<Vec<_>>(), [("github", "5499546"), ("username", "vu")]);
-        let typed = parse_roster("username: vu\ngithub: 5499546 lesslucifer\n", &tiers(&["username", "key"]), "r").unwrap();
-        assert_eq!(typed.iter().map(|e| e.tier.as_str()).collect::<Vec<_>>(), ["username"], "a policy without the tier reads the line and ignores it");
-        for bad in [
-            "github: 5499546",
-            "github: lesslucifer 5499546",
-            "github: 05499546 lesslucifer",
-            "github: 5499546 less_lucifer",
-            "github: 5499546 -less",
-            "github: 5499546 less-",
-            "github: 5499546 le--ss",
-            "github: 5499546 lesslucifer extra",
-            "github: 12345678901234567890 x",
-            &format!("github: 1 {}", "a".repeat(40)),
-        ] {
-            let e = parse_roster(&format!("{bad}\n"), &all, "HEAD:.keel/mr-allowed").err().unwrap_or_else(|| panic!("{bad} parsed"));
-            assert!(e.contains("line 1") && e.contains("github: <user id> <login>"), "{bad}: {e}");
+    fn a_roster_line_of_a_tier_keel_does_not_know_is_refused_with_its_line_number() {
+        let policies: Vec<Vec<String>> =
+            (0..8u32).map(|m| KNOWN_TIERS.iter().enumerate().filter(|(i, _)| m & (1 << i) != 0).map(|(_, t)| t.to_string()).collect()).collect();
+        for policy in &policies {
+            for bad in ["github: 5499546 lesslucifer", "github: 5499546", "usrname: vu", "Key: vu ssh-ed25519 AAAA", ": vu"] {
+                let e = parse_roster(&format!("username: vu\n{bad}\n"), policy, "HEAD:.keel/mr-allowed")
+                    .err()
+                    .unwrap_or_else(|| panic!("{bad} parsed under {policy:?}"));
+                assert!(e.contains("HEAD:.keel/mr-allowed line 2"), "{bad}: {e}");
+                assert!(e.contains("tier one of email, username, key") && !e.contains("github"), "{bad}: {e}");
+            }
         }
-        // generated lines (seeded LCG): a github line parses exactly when its id is digits without a
-        // leading zero (1 to 19 of them) and its login is GitHub's shape
-        let alphabet = b"0123456789az-_Z";
-        let mut x: u64 = 0x9e7;
+        // generated rosters (seeded LCG) over known and unknown tiers and every line shape: a roster
+        // parses exactly when each line's tier is known and its shape is that tier's; else the
+        // refusal names the first bad line
+        let pool = ["email", "username", "key", "github", "usrname", "gitlab", "Key", ""];
+        let mut x: u64 = 0x3e1;
         for _ in 0..2000 {
-            let mut word = |n: u64| -> String { (0..(lcg(&mut x) % n)).map(|_| alphabet[(lcg(&mut x) % alphabet.len() as u64) as usize] as char).collect() };
-            let (id, login) = (word(22), word(42));
-            let id_ok = (1..=19).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_digit()) && !id.starts_with('0');
-            let login_ok = (1..=39).contains(&login.len())
-                && login.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-                && !login.starts_with('-')
-                && !login.ends_with('-')
-                && !login.contains("--");
-            let parsed = parse_roster(&format!("github: {id} {login}\n"), &all, "r");
-            assert_eq!(parsed.is_ok(), id_ok && login_ok, "github: {id} {login}");
+            let policy = &policies[(lcg(&mut x) % 8) as usize];
+            let mut first_bad = None;
+            let roster: String = (1..=1 + lcg(&mut x) % 5)
+                .map(|n| {
+                    let tier = pool[(lcg(&mut x) % pool.len() as u64) as usize];
+                    let shape = lcg(&mut x) % 3;
+                    let rest = ["u1@x.y", "u2 ssh-ed25519 AAAA", "5499546 lesslucifer"][shape as usize];
+                    let ok = KNOWN_TIERS.contains(&tier) && shape == if tier == "key" { 1 } else { 0 };
+                    if !ok && first_bad.is_none() {
+                        first_bad = Some(n);
+                    }
+                    format!("{tier}: {rest}\n")
+                })
+                .collect();
+            match (parse_roster(&roster, policy, "r"), first_bad) {
+                (Ok(_), None) => {}
+                (Err(e), Some(n)) => assert!(e.starts_with(&format!("keel: r line {n}:")) && !e.contains("github"), "{roster}: {e}"),
+                (got, want) => panic!("{roster:?} under {policy:?}: parsed {}, first bad line {want:?}", got.is_ok()),
+            }
         }
     }
 
-    /// Keep 3: the github tier signs nothing - an id listed only there has no signing tier and is
-    /// told so; an id listed under another tier too signs by that one.
+    /// E-KEELFIX.W3: every tier keel knows signs - the default policy is all three, a listed id is
+    /// found by its tier and is the one signer, an unlisted id is told it is not listed.
     #[test]
-    fn a_github_id_never_signs() {
-        let r = parse_roster("github: 77 owner\nusername: vu\nusername: 88\ngithub: 88 both\n", &tiers(&["username", "github"]), "r").unwrap();
-        assert_eq!(tier_of(&r, "77"), None);
+    fn every_known_tier_signs() {
+        assert_eq!(KNOWN_TIERS, ["email", "username", "key"]);
+        assert_eq!(default_tiers(), KNOWN_TIERS);
+        let r = parse_roster("email: a@b.c\nusername: vu\nkey: k ssh-ed25519 AAAA\nusername: k\n", &default_tiers(), "r").unwrap();
+        assert_eq!(tier_of(&r, "a@b.c"), Some("email"));
         assert_eq!(tier_of(&r, "vu"), Some("username"));
-        assert_eq!(tier_of(&r, "88"), Some("username"), "listed twice: the typed line signs");
-        let policy = tiers(&["username", "github"]);
-        assert!(typed_refusal(&r, &policy, "r", "77").contains("github tier only"));
-        assert!(typed_refusal(&r, &policy, "r", "99").contains("is not listed in r"));
-        // E-GHREVERT epic review round 1, the nit: a roster of github lines only names nobody who signs.
-        let only = parse_roster("github: 77 owner\n", &policy, "r").unwrap();
-        assert!(signer(&only, "r", &[]).unwrap_err().contains("r lists nobody who signs by typing"));
+        assert_eq!(tier_of(&r, "k"), Some("key"), "a key holder never signs off unsigned");
+        assert_eq!(tier_of(&r, "99"), None);
+        let one = parse_roster("username: vu\n", &default_tiers(), "r").unwrap();
+        assert_eq!(signer(&one, "r", &[]).unwrap(), "vu");
         assert_eq!(signer(&r, "r", &[]).unwrap_err(), "keel mr: several identities are listed - pass --as <identity>");
-    }
-
-    /// W1 review round 1, nits 1 and 3: the default policy is every known tier that signs, and the
-    /// github-only refusal advises only the tiers the policy accepts that sign.
-    #[test]
-    fn the_github_only_refusal_names_only_the_policys_signing_tiers() {
-        assert_eq!(default_tiers(), ["email", "username", "key"]);
-        let r = parse_roster("github: 77 owner\nkey: vu ssh-ed25519 AAAA\n", &tiers(&["key", "github"]), "r").unwrap();
-        let fix = |policy: &[&str]| {
-            let t = typed_refusal(&r, &tiers(policy), "r", "77");
-            assert!(t.contains("github tier only"), "{t}");
-            t.split_once("fix -> ").unwrap().1.to_string()
-        };
-        assert_eq!(fix(&["key", "github"]), "sign as an identity listed under the key tier");
-        assert_eq!(fix(&["username", "key", "github"]), "sign as an identity listed under the username or key tier");
-        assert_eq!(fix(&["email", "username", "key", "github"]), "sign as an identity listed under the email, username or key tier");
-        assert!(fix(&["github"]).starts_with("add a tier that signs to [mr] tiers"));
+        assert!(signer(&[], "r", &[]).unwrap_err().contains("r lists nobody who signs by typing"));
+        assert!(unlisted("r", "99").starts_with("keel mr: refused - 99 is not listed in r"));
     }
 
     #[test]
