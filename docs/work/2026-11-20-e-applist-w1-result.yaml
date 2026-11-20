@@ -15,7 +15,9 @@ outcome: >-
   denies set, alert and every other form; .claude/settings.json allows the same three shapes; .claude/agents/router.md
   names them. The four rule files landed in the owner's one typed commit 83b393d. An independent re-gate on 83b393d
   was GREEN: cargo test 137 unit and 361 suite pass (10 ignored), fmt, clippy and keel check green, no blocker, no
-  important finding, six nits.
+  important finding, six nits. Code review round 1 on 3509e4c FAILED (0 blockers, 6 importants, 4 nits waived, 1
+  refuted): six contract clauses the tests did not pin, the script right. The fix commit 17c505f adds the tests that
+  pin them (scripts/ unchanged): unit 137, suite 367 pass (10 ignored).
 deviations:
   - >-
     Write order: the state first, then the log. The plan's details.order and details.rotation say the log is written
@@ -43,7 +45,9 @@ evidence:
     - "d46a271 test: tests/suite/router_app.rs (new), tests/suite/router.rs, tests/suite/main.rs - red first"
     - "09f5cf4 test: a writer leaves its two files and nothing else"
     - "83b393d rules: the owner's typed commit (keel mr commit, Reviewed-By trailer) of scripts/router-app.sh, scripts/router-guard.jq, .claude/settings.json, .claude/agents/router.md"
-    - "this result pair: plain commit; test note and doc note on the tip, --target epic/E-APPLIST"
+    - "3509e4c docs: this result pair (review round 1 judged this tip: FAIL)"
+    - "17c505f test: review round 1's six importants pinned, four nits taken (tests/ only)"
+    - "this result pair, updated for round 1: plain commit; test note and doc note on the tip, --target epic/E-APPLIST"
   baseline: "epic/E-APPLIST 1f96ca3"
   red-before: >-
     At d46a271 (no script, no guard shape, no settings entry), cargo test --test suite router: 16 failed, every test the WU adds or changes;
@@ -52,7 +56,19 @@ evidence:
     router_guard_admits_the_update_log_in_plain_words_only, router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag,
     keels_router_security_files_are_rule_bearing, router_text_names_what_the_launcher_prints_and_no_retired_mechanism).
   worker-tree-before-commit: "the four rule files in the worktree, settings.json and router.md denied by the sandbox: unit 137 passed; suite 359 passed, 2 failed (the two tests reading those files), 10 ignored."
-  green-after: "The re-gate at 83b393d: cargo test unit 137 passed; suite 361 passed, 10 ignored; cargo fmt --check and cargo clippy -D warnings clean; keel check green."
+  green-after: "The re-gate at 83b393d: cargo test unit 137 passed; suite 361 passed, 10 ignored; cargo fmt --check and cargo clippy -D warnings clean; keel check green. After the round-1 fix at 17c505f: unit 137 passed; suite 367 passed, 10 ignored; fmt, clippy and keel check green."
+  review-round-1: >-
+    FAIL on 3509e4c (cr note): 0 blockers, 6 importants, 4 nits (waived), 1 refuted (the INT/TERM trap, equivalent
+    under bash 3.2's sh). Every important was a test that did not pin a contract clause; the reviewer's mutants
+    survived. Fixed in 17c505f, tests/ only, each new assertion red against its mutant in a scratch copy and green on
+    the shipped script: I1 rotation at 1,999 lines (kills -ge 1999, -ge 1000); I2 a 1,024-byte line taken, 1,025
+    refused (kills cap 1300, cap 1000, measuring the value only); I3 an inherited GIT_DIR, GIT_WORK_TREE and
+    GIT_COMMON_DIR naming a decoy repo (kills dropping the GIT_* unset); I4 a mv shim failing a writer between its
+    writes: no line ahead of the state, no repeated number (kills log-first); I5 a sleep shim counting 99-100 polls
+    of 0.05 s (kills a 10 s wait, a 0.1 s poll); I6 state.json's inode changes on every verb (kills writing it in
+    place). The four nits were taken too: a symlinked .router, the shebang and mode, umask 077 (dirs 0700, files
+    0600 under a caller's umask 022), router.md's set and alert sentence (each killed its mutant). Round 2 reviews
+    the fix.
   re-gate: >-
     A fresh read-only worker (opus, high effort) on 83b393d: GREEN. The four files read against the review checklists
     (security path for router-app.sh and router-guard.jq: one lock, every value through jq, writes only .router/app,
@@ -83,7 +99,15 @@ evidence:
       - tests/suite/router.rs settings_allow_exactly_the_app_shapes_the_guard_admits (new)
       - tests/suite/router.rs router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag (learns router-app.sh)
       - tests/suite/router.rs keels_router_security_files_are_rule_bearing (learns router-app.sh)
-      - tests/suite/router.rs router_text_names_what_the_launcher_prints_and_no_retired_mechanism (learns router-app.sh)
+      - tests/suite/router.rs router_text_names_what_the_launcher_prints_and_no_retired_mechanism (learns router-app.sh; round 1 - set and alert are the watchdog's and the sender's)
+      - tests/suite/router_app.rs a_log_of_1999_lines_takes_the_2000th_before_it_restarts (review round 1, I1)
+      - tests/suite/router_app.rs a_line_of_exactly_1024_bytes_is_taken_and_one_byte_more_refused (round 1, I2)
+      - tests/suite/router_app.rs an_inherited_git_dir_never_moves_the_log (round 1, I3)
+      - tests/suite/router_app.rs a_writer_that_fails_between_its_writes_leaves_a_gap_never_a_repeat (round 1, I4)
+      - tests/suite/router_app.rs a_held_lock_makes_a_writer_wait_and_a_stale_one_refuse (round 1, I5 - polls counted by a sleep shim)
+      - tests/suite/router_app.rs the_state_is_replaced_by_a_rename_never_rewritten_in_place (round 1, I6)
+      - tests/suite/router_app.rs the_script_runs_by_its_shebang_and_keeps_the_log_private (round 1 nits)
+      - tests/suite/router_app.rs a_symlinked_app_dir_or_file_is_refused (round 1 nit - .router itself)
     unit: "waived: a shell script and a jq filter have no unit layer in this repo"
     e2e: "none at the WU: the epic test at the close runs the real script's start and stage lines"
   docs: "this result pair (new); the plan pair at 7b0a40e; no other doc touched"
@@ -112,14 +136,14 @@ follow-ups:
     (the sender writes alerts) or the app's link handler, in E-APPLIST.
   - "N6 (nit) the guard is stricter than the script for a name containing --ou: safe, no fix. Taken by: none needed."
   - "docs/local-app.html 'Where it travels' lacks stage: E-APPLIST's close, distillation."
-  - "The code review of tests/, the owner's sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
+  - "Code review round 2 on the fix, the owner's sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
 details:
   base: "wu/E-APPLIST/w1-update-log off epic/E-APPLIST at 1f96ca3"
   files:
     plain-commits: [tests/suite/router_app.rs (new), tests/suite/router.rs, tests/suite/main.rs, docs/work/2026-11-20-e-applist-w1-plan.*, docs/work/2026-11-20-e-applist-w1-result.*]
     rule-bearing: [scripts/router-app.sh (new), scripts/router-guard.jq, .claude/settings.json, .claude/agents/router.md]
   code-review-scope: "tests/ only: scripts/ and .claude/ are not code paths; the rule files were read by the re-gate and carry the owner's Reviewed-By trailer"
-  known: "What the tests and the re-gate prove: the contract lines, the numbering under 16 writers, rotation, refusals, the lock wait, symlink refusal, the guard and settings shapes."
+  known: "What the tests and the re-gate prove: the contract lines, the numbering under 16 writers, rotation at its boundary, the 1,024-byte line cap, refusals, the lock wait's polls, symlink refusal, the state-first order and rename, an inherited GIT_DIR ignored, the guard and settings shapes."
   not-known: "Not yet shown: the app reading these files (W4 onward and the epic test); the router calling the shapes in a live run (the keel-router skill text is W3's); hardlinks and a corrupted state (N1, N2) are untested."
   htmldoc:
     id: 6affcd5c9f34851f0dfb2af5
