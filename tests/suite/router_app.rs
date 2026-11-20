@@ -133,30 +133,39 @@ fn real(prog: &str) -> String {
 /// until `release` writes to it; every later `date` is the real one. No clock is involved: the test
 /// waits for the mark, and the writer for the test.
 ///
-/// Review round 3: the writer starts in a process group of its own, with HUP, INT and TERM at their
-/// defaults whatever the launch (a signal the test process inherited as ignored - INT under
-/// `cargo test &`, HUP under nohup - would reach it ignored, and a non-interactive sh cannot trap
-/// it), and with no stdin. A test that fails before `release` drops it: the group (the writer, its
-/// date shim, sed) is killed then, so nothing outlives the test binary. The shim forks nothing once it
-/// marks `ready` (a builtin `read` waits on the fifo, no `cat`): a process still being forked when the
-/// group is killed can miss the signal, and a `cat` that did would wait on the fifo for ever.
+/// Review round 3: the writer starts with HUP, INT and TERM at their defaults whatever the launch (a
+/// signal the test process inherited as ignored - INT under `cargo test &`, HUP under nohup - would
+/// reach it ignored, and a non-interactive sh cannot trap it), and with no stdin.
+///
+/// Review round 4: the writer stays in the test binary's process group, so a ^C or a kill of that
+/// group reaches the writer, its $(...) subshell, the date shim and sed, as it reaches the binary. A
+/// test that fails before `release` drops it: the writer is killed by its pid and reaped, then the
+/// shim is let go through the fifo; with the writer dead, the shim's date and sed end on the broken
+/// pipe, so nothing outlives the test. The shim opens the fifo read-write before it marks `ready`
+/// (an open that does not wait for a writer), so the fifo has a reader whenever `release` or Drop
+/// writes to it, and it forks nothing while it waits (a builtin `read`, no `cat`).
 struct Paused {
     child: Option<Child>,
     pid: u32,
     gate: PathBuf,
 }
 
-/// The two C calls the harness needs, from the libc every unix Rust binary links (no crate added).
+/// The C calls the harness needs, from the libc every unix Rust binary links (no crate added).
 mod sys {
     extern "C" {
         pub fn signal(sig: i32, handler: usize) -> usize;
-        pub fn kill(pid: i32, sig: i32) -> i32;
+        pub fn getpgid(pid: i32) -> i32;
+        pub fn getpgrp() -> i32;
     }
     pub const SIGHUP: i32 = 1;
     pub const SIGINT: i32 = 2;
-    pub const SIGKILL: i32 = 9;
     pub const SIGTERM: i32 = 15;
     pub const SIG_DFL: usize = 0;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub const O_NONBLOCK: i32 = 0o4000;
+    /// macOS and the BSDs
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    pub const O_NONBLOCK: i32 = 0x4;
 }
 
 impl Paused {
@@ -171,10 +180,13 @@ impl Paused {
         shim(
             &shims,
             "date",
-            &format!("if mkdir {g}/paused 2>/dev/null; then : > {g}/ready; read -r go < {g}/fifo; fi\nexec {} \"$@\"", common::sh_quote(&real("date"))),
+            &format!(
+                "if mkdir {g}/paused 2>/dev/null; then exec 3<>{g}/fifo; : > {g}/ready; read -r go <&3; exec 3<&-; fi\nexec {} \"$@\"",
+                common::sh_quote(&real("date"))
+            ),
         );
         let mut c = a.cmd_shimmed(&shims, args);
-        c.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).process_group(0);
+        c.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
         // SAFETY: signal(2) is async-signal-safe and touches nothing of the parent's in the forked child
         unsafe {
             c.pre_exec(|| {
@@ -198,8 +210,7 @@ impl Paused {
         p
     }
 
-    /// The writer's pid: the shell that runs the script, whose `$$` names its lock's mark; also its
-    /// process group's id.
+    /// The writer's pid: the shell that runs the script, whose `$$` names its lock's mark.
     fn pid(&self) -> String {
         self.pid.to_string()
     }
@@ -213,15 +224,20 @@ impl Paused {
 }
 
 impl Drop for Paused {
-    /// Unreleased (a test failed first): the writer's whole group is killed and the writer reaped. The
-    /// writer is unreaped until then, so its pid, the group's id, names no other process; the writer
-    /// is also killed by its pid, so the wait never hangs, whatever became of the group.
+    /// Unreleased (a test failed first): the writer is killed by its pid, unreaped until then so the pid
+    /// is its own, and reaped, so it writes nothing more; then the shim, still the fifo's reader, is let
+    /// go by a write through an open that never waits. Its date and sed then end on the dead writer's
+    /// pipe.
     fn drop(&mut self) {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
         if let Some(mut c) = self.child.take() {
-            // SAFETY: kill(2) on the group this Paused started
-            unsafe { sys::kill(-(self.pid as i32), sys::SIGKILL) };
             let _ = c.kill();
             let _ = c.wait();
+            let fifo = std::fs::OpenOptions::new().read(true).write(true).custom_flags(sys::O_NONBLOCK).open(self.gate.join("fifo"));
+            if let Ok(mut f) = fifo {
+                let _ = f.write_all(b"go\n");
+            }
         }
     }
 }
@@ -446,8 +462,9 @@ fn sixteen_writers_at_once_keep_the_numbers_whole() {
             (i, c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap())
         })
         .collect();
-    for (i, c) in children {
-        let o = c.wait_with_output().unwrap();
+    // review round 4: every writer is waited for before any is judged, so a failing one leaves none running
+    let outputs: Vec<(usize, std::process::Output)> = children.into_iter().map(|(i, c)| (i, c.wait_with_output().unwrap())).collect();
+    for (i, o) in outputs {
         assert!(o.status.success(), "writer {i}: {}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
     }
     let lines = a.lines();
@@ -691,26 +708,34 @@ fn a_writer_stopped_by_a_signal_releases_its_lock_and_writes_nothing() {
     }
 }
 
-/// Review round 3 (nit): a test that fails before it releases a paused writer leaves no process. The
-/// writer, its date shim (waiting on the fifo) and sed share the writer's process group; dropping the
-/// unreleased Paused kills that group, so it empties (the orphans are reaped by init: a bounded wait),
-/// and the killed writer wrote nothing.
+/// Review round 3 (nit): a test that fails before it releases a paused writer leaves no process, and
+/// the killed writer wrote nothing. Review round 4: "gone" does not wait on any reaping (a group's id
+/// outlives its members while a PID 1 leaves them unreaped). Every process of the writer's tree - the
+/// writer, its $(...) subshell, the date shim waiting on the fifo, sed - holds the writer's stderr,
+/// and an exited process holds no fd, reaped or not: the pipe's EOF says they have all exited. The
+/// writer shares the test binary's process group, so a ^C or a group kill of the binary reaches it.
 #[test]
 fn a_paused_writer_dropped_unreleased_leaves_no_process() {
+    use std::io::Read;
+    use std::sync::mpsc;
     let a = App::new();
     a.start("r1");
     let before = a.bytes();
-    let p = Paused::spawn(&a, &["set", "worker/w1", "1"]);
-    let group = -(p.pid as i32);
-    // SAFETY: kill(2) with signal 0 only asks after the group. It is gone at ESRCH alone: a group whose
-    // last members are being torn down answers EPERM for a moment.
-    let gone = || unsafe { sys::kill(group, 0) } == -1 && std::io::Error::last_os_error().raw_os_error() == Some(3);
-    assert!(!gone(), "the paused writer's group is empty");
+    let mut p = Paused::spawn(&a, &["set", "worker/w1", "1"]);
+    // SAFETY: getpgid(2) and getpgrp(2) only read; the writer is unreaped, so its pid is its own
+    let (theirs, ours) = unsafe { (sys::getpgid(p.pid as i32), sys::getpgrp()) };
+    assert_eq!(theirs, ours, "the paused writer is not in the test binary's process group");
+    let mut err = p.child.as_mut().unwrap().stderr.take().unwrap();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut b = Vec::new();
+        let _ = tx.send(err.read_to_end(&mut b).map(|_| b));
+    });
+    assert!(matches!(rx.recv_timeout(Duration::from_millis(50)), Err(mpsc::RecvTimeoutError::Timeout)), "the paused writer's tree let go of its stderr");
     drop(p);
-    let t = Instant::now();
-    while !gone() {
-        assert!(t.elapsed() < Duration::from_secs(30), "a process of the dropped writer's group {} lives on", -group);
-        std::thread::sleep(Duration::from_millis(5));
+    match rx.recv_timeout(Duration::from_secs(30)) {
+        Ok(r) => drop(r.unwrap()),
+        Err(_) => panic!("a process of the dropped writer's tree lives on: the writer's stderr is still open"),
     }
     assert!(a.bytes() == before, "a dropped writer wrote");
 }
