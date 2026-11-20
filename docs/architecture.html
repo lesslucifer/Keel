@@ -47,7 +47,7 @@ flowchart LR
 </table>
 
 <h2 id="cli">The CLI</h2>
-<p>One binary, <code>keel</code> (<code>src/main.rs</code>). How each command fits the flow is skill <code>keel-workflow</code>. <code>keel hook …</code> is for git, not a person.</p>
+<p>One binary, <code>keel</code> (<code>src/main.rs</code>). How each command fits the flow is skill <code>keel-workflow</code>. <code>keel hook …</code> is for git, not a person. <code>--help</code> or <code>-h</code> on any command prints its usage and writes nothing (<code>src/help.rs</code>); the words after <code>keel hook &lt;name&gt;</code> are git's, never help. <code>verify-dod</code>, <code>preflight</code> and <code>notes write</code> refuse an argument they do not know before reading anything.</p>
 <table data-c="cli">
   <thead><tr><th>Command</th><th>What it does</th><th>Notes</th></tr></thead>
   <tbody>
@@ -56,7 +56,7 @@ flowchart LR
     <tr><td><code>keel hooks install [--force]</code></td><td>Writes the seven hooks into the common git dir and points <code>core.hooksPath</code> at them.</td><td>Refuses another hook manager unless <code>--force</code>.</td></tr>
     <tr><td><code>keel lint</code>, <code>keel check</code></td><td>Runs <code>[check] lint</code>; <code>check</code> runs lint then test, skipped when the tree and both commands match the last green run.</td><td></td></tr>
     <tr><td><code>keel verify-doc [path…]</code></td><td>Checks a doc's form: a plan's or result's data-file fields, the page's word cap, relative links, Mermaid label quoting.</td><td>Skill <code>keel-plan</code> §5. No path: every doc under <code>[docs] root</code>.</td></tr>
-    <tr><td><code>keel verify-dod wu|epic &lt;tip&gt; [--target R]</code></td><td>The merge gate; green writes a <code>dod/v1</code> receipt unless the range is exempt.</td><td>The target is <a href="#targets">resolved, never guessed</a>.</td></tr>
+    <tr><td><code>keel verify-dod wu|epic &lt;tip&gt; [--target R] [--no-receipt]</code></td><td>The merge gate; green writes a <code>dod/v1</code> receipt unless the range is exempt or <code>--no-receipt</code> asks for a dry run.</td><td>The target is <a href="#targets">resolved, never guessed</a>.</td></tr>
     <tr><td><code>keel verify-dod commit|range|hook</code></td><td>The standalone commit gate, the walk of a pushed range, and the gate as <code>pre-merge-commit</code> runs it.</td><td></td></tr>
     <tr><td><code>keel preflight wu|epic &lt;tip&gt; [--target R]</code></td><td>The review's first step: the hooks, a clean checkout of the tip, <code>keel check</code>, checks 1–2, the round cap.</td><td>An exempt range stops early.</td></tr>
     <tr><td><code>keel notes write test|doc|cr</code></td><td>Writes <code>test/v1</code>, <code>doc/v1</code> and <code>cr/v1</code> (<a href="#evidence">the evidence</a>).</td><td>Counts and ranges are derived, never typed.</td></tr>
@@ -86,8 +86,8 @@ flowchart LR
 <table data-c="hooks">
   <thead><tr><th>Hook</th><th>What it enforces</th></tr></thead>
   <tbody>
-    <tr><td><code>pre-commit</code></td><td>No non-merge commit on <code>main</code>; gates a conflicted merge finished by <code>git commit</code>; lints a staged code change.</td></tr>
-    <tr><td><code>commit-msg</code></td><td>A staged <code>rule_bearing</code> path needs a <code>Reviewed-By</code> trailer naming a roster signer.</td></tr>
+    <tr><td><code>pre-commit</code></td><td>By <code>HEAD</code>'s committed policy: no non-merge commit on <code>main</code>; gates a conflicted merge finished by <code>git commit</code>; lints a staged code change; refuses a staged policy it cannot read.</td></tr>
+    <tr><td><code>commit-msg</code></td><td>By <code>HEAD</code>'s committed policy and roster: a staged <code>rule_bearing</code> path needs a <code>Reviewed-By</code> trailer naming a roster signer.</td></tr>
     <tr><td><code>pre-merge-commit</code></td><td>By the target's committed policy: into <code>epic/*</code> the WU gate, into <code>main</code> the epic gate, then <code>keel check</code>.</td></tr>
     <tr><td><code>pre-push</code></td><td><code>keel check</code> on every pushed tree; <code>verify-dod range</code> on <code>main</code> and <code>epic/*</code>; then pushes the notes.</td></tr>
     <tr><td><code>post-checkout</code></td><td>Sets <code>merge.ff=false</code>; copies <code>.gitworktreecopy</code> entries into a new worktree.</td></tr>
@@ -97,13 +97,13 @@ flowchart LR
 <p>Each hook is a shim. It refuses when the first <code>keel</code> on <code>PATH</code> is missing or lacks Keel's marker, then runs the command; the two doc hooks exit 0 instead. The hooks: skill <code>keel-workflow</code> §7; the marker: <a href="install.html">install</a> §1.</p>
 
 <h2 id="config">The config keys</h2>
-<p><code>.keel/config.toml</code> is read twice. The pre-merge-commit hook reads the copy committed on the target, so a branch cannot change the rules that judge its own merge; by-hand commands read the working copy. Defaults and comments: <code>templates/config.toml</code>. <code>[review] modules</code>, <code>rubric</code> and <code>[router]</code> are read by the review skill and the launcher, never the CLI; the launcher reads <code>[router]</code> strictly, from <code>HEAD</code> (DEC-39).</p>
+<p><code>.keel/config.toml</code> is read three ways. The pre-merge-commit hook reads the copy committed on the target, so a branch cannot change the rules that judge its own merge. The pre-commit and commit-msg hooks and <code>keel mr commit</code> read the copy committed at <code>HEAD</code>, so an uncommitted edit changes no commit; where <code>HEAD</code> has none, the staged copy judges and says so (DEC-24). By-hand commands and the pre-push hook read the working copy (accepted, backlog local-app A7). Defaults and comments: <code>templates/config.toml</code>. <code>[review] modules</code>, <code>rubric</code> and <code>[router]</code> are read by the review skill and the launcher, never the CLI; the launcher reads <code>[router]</code> strictly, from <code>HEAD</code> (DEC-39).</p>
 <table data-c="config">
   <thead><tr><th>Key</th><th>Default / example</th><th>Read by</th><th>What it decides</th></tr></thead>
   <tbody>
     <tr><td><code>code_paths</code></td><td><code>["src/", "tests/"]</code></td><td>Gate, <code>notes write</code></td><td>Which paths are code: the review binding, the test levels, the exemption.</td></tr>
     <tr><td><code>infra_paths</code></td><td>unset</td><td>Gate</td><td>Narrows the exemption to the non-code paths it matches.</td></tr>
-    <tr><td><code>rule_bearing</code></td><td><code>["AGENTS.md", "docs/*.html"]</code></td><td><code>commit-msg</code></td><td>Paths whose commit needs a <code>Reviewed-By</code> trailer; <code>.keel/mr-allowed</code> always.</td></tr>
+    <tr><td><code>rule_bearing</code></td><td><code>["AGENTS.md", "docs/*.html"]</code></td><td><code>commit-msg</code>, <code>mr commit</code></td><td>Paths whose commit needs a <code>Reviewed-By</code> trailer; <code>.keel/mr-allowed</code> always.</td></tr>
     <tr><td><code>[check] lint</code>, <code>test</code></td><td>detected</td><td><code>lint</code>, <code>check</code>, hooks</td><td>The lint and test commands.</td></tr>
     <tr><td><code>[branches] main</code>, <code>epic_prefix</code>, <code>wu_prefix</code></td><td><code>"main"</code>, <code>"epic/"</code>, <code>"wu/"</code></td><td>Gate, hooks, launcher</td><td>Branch names. <code>main</code> is merge-only; a WU's target is the epic its name carries.</td></tr>
     <tr><td><code>[paths] worktrees</code></td><td><code>".claude/worktrees/"</code></td><td><code>keel init</code></td><td>Appended to <code>.gitignore</code>.</td></tr>
@@ -111,7 +111,7 @@ flowchart LR
     <tr><td><code>[docs.tiers]</code></td><td>T0 – T3 globs</td><td>Doc note, check 6</td><td>A path's tier; T3 is tried first.</td></tr>
     <tr><td><code>[docs.caps]</code></td><td>unset</td><td><code>verify-doc</code></td><td>A word cap per page path, for a page no plan or result data file governs.</td></tr>
     <tr><td><code>[tests] adapter</code>, <code>pattern</code></td><td>by file extension</td><td><code>notes write test</code></td><td>How a test declaration is counted.</td></tr>
-    <tr><td><code>[mr] tiers</code></td><td><code>["email", "username", "key"]</code></td><td><code>mr setup</code>, <code>mr commit</code>, <code>mr confirm</code>, <code>commit-msg</code></td><td>Which roster line tiers authorise anything. An unknown tier is an error. <code>key</code> means a signature; <code>email</code>/<code>username</code> are a string match. A <code>github</code> tier and a <code>github: &lt;user id&gt; &lt;login&gt;</code> roster line are still read and sign nothing; E-KEELFIX removes them (<code>backlog/local-app.yaml</code> A2).</td></tr>
+    <tr><td><code>[mr] tiers</code></td><td><code>["email", "username", "key"]</code></td><td><code>mr setup</code>, <code>mr commit</code>, <code>mr confirm</code>, <code>commit-msg</code>, check 8</td><td>Which roster line tiers authorise anything. Keel knows three: <code>email</code>, <code>username</code>, <code>key</code>; an unknown tier here is an error, and a roster line of any other tier (the old <code>github:</code> line among them) is refused by its line number. <code>key</code> means a signature; <code>email</code>/<code>username</code> are a string match. A known tier the policy leaves out authorises nothing.</td></tr>
     <tr><td><code>[mr] report</code></td><td><code>"required"</code></td><td><code>mr confirm</code>, check 8</td><td>Whether a sign-off attests the result report, found by its data file's role.</td></tr>
     <tr><td><code>[review] max_rounds</code></td><td>5</td><td><code>preflight</code>, <code>notes write cr</code></td><td>The review round cap, read from the target.</td></tr>
     <tr><td><code>[review] modules</code>, <code>rubric</code></td><td><code>["src/*"]</code>, <code>".keel/rubric.md"</code></td><td><code>keel-code-review</code></td><td>The finder's modules; an optional rubric.</td></tr>
