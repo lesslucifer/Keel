@@ -4250,6 +4250,12 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
     for shape in ["scripts/router-app.sh", "start <name>", "stage <wu> <stage> [<tip>]", "del question/<id>", "del wu/<wu>/stage"] {
         assert!(body.contains(shape), "router.md's Bash posture omits {shape:?}");
     }
+    // and the two verbs it never runs are named as the watchdog's and the sender's (review round 1 nit)
+    let flat = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains("its `set` and `alert` carry free JSON and are the watchdog's and the sender's, never the router's"),
+        "router.md does not give set and alert to the watchdog and the sender"
+    );
 
     let policy: toml::Value = read(".keel/config.toml").parse().unwrap();
     let tiers: Vec<String> = policy["mr"]["tiers"].as_array().unwrap().iter().map(|t| format!("{t}")).collect();

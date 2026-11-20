@@ -5,6 +5,7 @@
 //! the last line's number folded in, and only this script writes them, under one lock.
 compiled!();
 use std::collections::BTreeMap;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -64,6 +65,13 @@ impl App {
         self.cmd_at(&self.main(), args)
     }
 
+    /// `cmd` with the programs in `shims` (a `mv`, a `sleep`) found before the real ones.
+    fn cmd_shimmed(&self, shims: &Path, args: &[&str]) -> Command {
+        let mut c = self.cmd(args);
+        c.env("PATH", common::test_path(&common::path_with(self.d.path().join("shim")), Some(shims)));
+        c
+    }
+
     /// One call: its exit code and both streams.
     fn run(&self, args: &[&str]) -> (Option<i32>, String) {
         let o = self.cmd(args).output().unwrap();
@@ -108,6 +116,36 @@ impl App {
         v.sort();
         v
     }
+}
+
+/// `<dir>/<prog>`: a shell script of `body` that a writer run by `cmd_shimmed(dir, ..)` finds first.
+fn shim(dir: &Path, prog: &str, body: &str) {
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(dir.join(prog), format!("#!/bin/sh\n{body}\n")).unwrap();
+    std::fs::set_permissions(dir.join(prog), PermissionsExt::from_mode(0o755)).unwrap();
+}
+
+/// The real `prog` on the test PATH, for a shim that hands most calls on.
+fn real(prog: &str) -> String {
+    let o = common::cmd("sh").args(["-c", &format!("command -v {prog}")]).output().unwrap();
+    String::from_utf8(o.stdout).unwrap().trim().to_string()
+}
+
+/// A log of lines 1..=`last` in run `run` (a start, then sets of 50 worker keys) and the state that
+/// folds it, written in place of the ones `start` made; returns the state's values.
+fn seed(a: &App, run: &str, last: u64) -> serde_json::Map<String, serde_json::Value> {
+    let at = a.lines()[0]["at"].clone();
+    let mut log = String::new();
+    let mut values = serde_json::Map::new();
+    log.push_str(&format!("{}\n", serde_json::json!({"run": run, "n": 1, "at": at, "op": "start"})));
+    for n in 2..=last {
+        let key = format!("worker/w{}", n % 50);
+        log.push_str(&format!("{}\n", serde_json::json!({"run": run, "n": n, "at": at, "op": "set", "key": key, "value": n})));
+        values.insert(key, n.into());
+    }
+    std::fs::write(a.log(), log).unwrap();
+    std::fs::write(a.state_path(), serde_json::json!({"run": run, "n": last, "at": at, "values": values, "alerts": []}).to_string()).unwrap();
+    values
 }
 
 /// The date the app reads: local time with the offset as +hh:mm.
@@ -309,17 +347,7 @@ fn sixteen_writers_at_once_keep_the_numbers_whole() {
 fn the_2001st_line_restarts_the_log_from_the_state() {
     let a = App::new();
     let run = a.start("r1");
-    let at = a.lines()[0]["at"].clone();
-    let mut log = String::new();
-    let mut values = serde_json::Map::new();
-    log.push_str(&format!("{}\n", serde_json::json!({"run": run, "n": 1, "at": at, "op": "start"})));
-    for n in 2..=2000u64 {
-        let key = format!("worker/w{}", n % 50);
-        log.push_str(&format!("{}\n", serde_json::json!({"run": run, "n": n, "at": at, "op": "set", "key": key, "value": n})));
-        values.insert(key, n.into());
-    }
-    std::fs::write(a.log(), log).unwrap();
-    std::fs::write(a.state_path(), serde_json::json!({"run": run, "n": 2000, "at": at, "values": values, "alerts": []}).to_string()).unwrap();
+    let mut values = seed(&a, &run, 2000);
 
     a.ok(&["set", "question/q1", r#""new""#]);
     let lines = a.lines();
@@ -334,6 +362,26 @@ fn the_2001st_line_restarts_the_log_from_the_state() {
     let ns: Vec<u64> = a.lines().iter().map(|l| l["n"].as_u64().unwrap()).collect();
     assert_eq!(ns, [2001, 2002], "the restarted log does not go on");
     assert_eq!(a.state()["n"], 2002);
+}
+
+/// Review round 1 (I1): the log restarts only past 2,000 lines. A log of 1,999 takes its 2,000th line
+/// as an append; only the line after it restarts the log.
+#[test]
+fn a_log_of_1999_lines_takes_the_2000th_before_it_restarts() {
+    let a = App::new();
+    let run = a.start("r1");
+    seed(&a, &run, 1999);
+
+    a.ok(&["set", "question/q1", r#""last""#]);
+    let ns: Vec<u64> = a.lines().iter().map(|l| l["n"].as_u64().unwrap()).collect();
+    assert_eq!(ns, (1..=2000).collect::<Vec<u64>>(), "the 2,000th line did not append to the log");
+    assert_state_is_the_log_folded(&a);
+
+    a.ok(&["set", "question/q1", r#""first""#]);
+    let lines = a.lines();
+    assert_eq!(lines.len(), 1, "the 2,001st line did not restart the log");
+    assert_eq!(lines[0]["n"], 2001);
+    assert_eq!(a.state()["n"], 2001);
 }
 
 #[test]
@@ -438,20 +486,40 @@ fn a_held_lock_makes_a_writer_wait_and_a_stale_one_refuse() {
     assert!(o.status.success(), "the writer failed once the lock was free: {}", String::from_utf8_lossy(&o.stderr));
     assert_eq!(a.lines().len(), 2);
 
+    // review round 1 (I5): the wait is pinned by its polls, not by the clock - a `sleep` that only
+    // records its argument shows every poll and how long each would have slept
     std::fs::create_dir(&lock).unwrap();
     let before = a.bytes();
+    let shims = a.d.path().join("sleep-counts");
+    let polls = a.d.path().join("polls");
+    shim(&shims, "sleep", &format!("printf '%s\\n' \"$*\" >> {}", common::sh_quote(polls.to_str().unwrap())));
     let t = Instant::now();
-    let (code, out) = a.run(&["set", "worker/w1", "2"]);
+    let o = a.cmd_shimmed(&shims, &["set", "worker/w1", "2"]).output().unwrap();
     let took = t.elapsed();
-    assert_eq!(code, Some(1), "a held lock did not fail the writer: {out}");
+    let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    assert_eq!(o.status.code(), Some(1), "a held lock did not fail the writer: {out}");
     assert!(out.contains("LOCKED") && out.contains(lock.to_str().unwrap()), "the refusal does not name the lock: {out}");
-    assert!(took >= Duration::from_secs(4) && took < Duration::from_secs(15), "the writer waited {took:?}, not about 5 s");
+    let polls = std::fs::read_to_string(&polls).unwrap_or_default();
+    let polls: Vec<&str> = polls.lines().collect();
+    assert!(polls.iter().all(|p| *p == "0.05"), "a poll did not sleep 0.05 s: {polls:?}");
+    assert!((99..=100).contains(&polls.len()), "the writer slept {} times 0.05 s, not 5 s in all", polls.len());
+    assert!(took < Duration::from_secs(4), "the writer slept in a real sleep, not the shim: {took:?}");
     assert!(a.bytes() == before, "a writer that never got the lock wrote");
     assert!(lock.is_dir(), "the writer broke a lock it never held");
 }
 
 #[test]
 fn a_symlinked_app_dir_or_file_is_refused() {
+    // .router itself (review round 1 nit): nothing is made through it
+    let a = App::new();
+    let elsewhere = a.d.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, a.main().join(".router")).unwrap();
+    let (code, out) = a.run(&["start", "r1"]);
+    assert_eq!(code, Some(2), "a symlinked .router was written through: {out}");
+    assert!(out.contains("symlink"), "{out}");
+    assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0, "the link's target was written");
+
     // the directory
     let a = App::new();
     let elsewhere = a.d.path().join("elsewhere");
@@ -522,4 +590,162 @@ fn text_with_a_newline_or_quote_stays_one_escaped_line() {
         assert_eq!(code, Some(2), "{args:?}: {out}");
     }
     assert_eq!(a.lines().len(), 3);
+}
+
+/// The line an alert of `alert` makes at its longest, as the script measures it before the lock (it
+/// cannot know n or the time yet): the longest run id (a 32-byte name, its 15-byte date and a 10-digit
+/// pid: 59 bytes), a 12-digit n and the 25-byte date.
+fn longest_alert_line(alert: &str) -> usize {
+    format!(r#"{{"run":"{}","n":999999999999,"at":"{}","op":"alert","value":{alert}}}"#, "x".repeat(59), "x".repeat(25)).len()
+}
+
+/// Review round 1 (I2): the cap is 1,024 bytes of the whole line, not of the value. An alert of two
+/// lines of 140 euro signs (420 bytes each) and a headline sized to make the line exactly 1,024 bytes
+/// goes through; one byte more is refused, and nothing written is over the cap.
+#[test]
+fn a_line_of_exactly_1024_bytes_is_taken_and_one_byte_more_refused() {
+    let a = App::new();
+    a.start("r1");
+    let e = "€".repeat(140);
+    let alert = |h: usize| format!(r#"{{"headline":"{}","lines":["{e}","{e}"]}}"#, "h".repeat(h));
+    let fit = 1024 - longest_alert_line(&alert(0));
+    assert!((1..80).contains(&fit), "the headline that fits is {fit} bytes");
+    assert_eq!(longest_alert_line(&alert(fit)), 1024);
+    assert!(alert(fit + 1).len() < 1024, "the value alone is under the cap, so only the whole line can refuse it");
+
+    let before = a.bytes();
+    let (code, out) = a.run(&["alert", &alert(fit + 1)]);
+    assert_eq!(code, Some(2), "a 1,025-byte line was not refused: {out}");
+    assert!(out.contains("1025") && out.contains("1024"), "the refusal does not name the size and the cap: {out}");
+    assert!(a.bytes() == before, "a refused alert changed a file");
+
+    a.ok(&["alert", &alert(fit)]);
+    let lines = a.lines();
+    assert_eq!(lines.last().unwrap()["value"], serde_json::from_str::<serde_json::Value>(&alert(fit)).unwrap());
+    for l in std::fs::read_to_string(a.log()).unwrap().lines() {
+        assert!(l.len() <= 1024, "a written line is {} bytes", l.len());
+    }
+}
+
+/// Review round 1 (I3): a router or watchdog started from another repository's git hook inherits
+/// GIT_DIR, GIT_WORK_TREE and GIT_COMMON_DIR naming that repository. The script clears them, so the
+/// log is still the main checkout's and the other repository gets nothing.
+#[test]
+fn an_inherited_git_dir_never_moves_the_log() {
+    let a = App::new();
+    let decoy = a.d.path().join("decoy");
+    std::fs::create_dir_all(&decoy).unwrap();
+    git(&decoy, &["init", "-q", "-b", "main"]);
+    std::fs::write(decoy.join("f"), "x").unwrap();
+    git(&decoy, &["add", "f"]);
+    git(&decoy, &["commit", "-qm", "other"]);
+    let o = decoy.display();
+    let hostile = [
+        ("GIT_DIR", format!("{o}/.git")),
+        ("GIT_WORK_TREE", o.to_string()),
+        ("GIT_COMMON_DIR", format!("{o}/.git")),
+        ("GIT_INDEX_FILE", format!("{o}/.git/index")),
+    ];
+    for args in [&["start", "r1"][..], &["stage", "E-X.W1", "building"]] {
+        let out = a.cmd(args).envs(hostile.iter().map(|(k, v)| (k, v))).output().unwrap();
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    }
+    assert!(!decoy.join(".router").exists(), "the inherited GIT_DIR moved the log into the other repository");
+    let ns: Vec<u64> = a.lines().iter().map(|l| l["n"].as_u64().unwrap()).collect();
+    assert_eq!(ns, [1, 2], "the main checkout's log did not get both lines");
+}
+
+/// Review round 1 (I4): the state is written before the log, so a reader that meets line n and reads
+/// the state finds n in it, and a writer that fails between its two writes leaves a gap the app reads
+/// the state for, never a repeated number. A `mv` that fails on one file stops a writer at that write.
+#[test]
+fn a_writer_that_fails_between_its_writes_leaves_a_gap_never_a_repeat() {
+    let mv_fails_on = |a: &App, file: &str| -> PathBuf {
+        let shims = a.d.path().join(format!("mv-fails-{file}"));
+        shim(
+            &shims,
+            "mv",
+            &format!("case \"$*\" in */{file}) echo 'mv: the test refuses {file}' >&2; exit 1 ;; esac\nexec {} \"$@\"", common::sh_quote(&real("mv"))),
+        );
+        shims
+    };
+    let ns = |a: &App| -> Vec<u64> { a.lines().iter().map(|l| l["n"].as_u64().unwrap()).collect() };
+    let no_line_ahead_of_the_state = |a: &App| {
+        let n = a.state()["n"].as_u64().unwrap();
+        let ahead: Vec<u64> = ns(a).into_iter().filter(|&l| l > n).collect();
+        assert!(ahead.is_empty(), "the log holds lines {ahead:?} the state (n={n}) has not folded");
+    };
+
+    // the state's rename fails: nothing is written, and the next writer takes the next number
+    let a = App::new();
+    a.start("r1");
+    a.ok(&["set", "worker/w1", "1"]);
+    let o = a.cmd_shimmed(&mv_fails_on(&a, "state.json"), &["set", "worker/w1", "2"]).output().unwrap();
+    assert_eq!(o.status.code(), Some(1), "{}", String::from_utf8_lossy(&o.stderr));
+    no_line_ahead_of_the_state(&a);
+    a.ok(&["set", "worker/w1", "3"]);
+    a.ok(&["del", "worker/w1"]);
+    let got = ns(&a);
+    assert!(got.windows(2).all(|w| w[0] < w[1]), "a number repeated after a failed writer: {got:?}");
+    assert_eq!(got, [1, 2, 3, 4]);
+    assert_state_is_the_log_folded(&a);
+
+    // the log's write fails after the state's (a restart, which renames): the state is ahead by one
+    // line, and the next writer leaves that number out
+    let a = App::new();
+    let run = a.start("r1");
+    seed(&a, &run, 2000);
+    let o = a.cmd_shimmed(&mv_fails_on(&a, "log.jsonl"), &["set", "worker/w1", r#""x""#]).output().unwrap();
+    assert_eq!(o.status.code(), Some(1), "{}", String::from_utf8_lossy(&o.stderr));
+    no_line_ahead_of_the_state(&a);
+    assert_eq!((a.state()["n"].as_u64(), ns(&a).last().copied()), (Some(2001), Some(2000)), "the state was not written first");
+    a.ok(&["del", "worker/w1"]);
+    assert_eq!(ns(&a), [2002], "the line after the gap");
+    assert_eq!(a.state()["n"], 2002);
+}
+
+/// Review round 1 (I6): every write replaces state.json by a rename, so a reader holding the old file
+/// reads it whole and the path names a new file; a state rewritten in place would keep its inode.
+#[test]
+fn the_state_is_replaced_by_a_rename_never_rewritten_in_place() {
+    use std::io::Read;
+    let a = App::new();
+    a.start("r1");
+    let alert = r#"{"headline":"h","lines":["a"]}"#;
+    for args in [&["set", "worker/w1", "1"][..], &["stage", "E-X.W1", "building"], &["del", "worker/w1"], &["alert", alert], &["start", "r2"]] {
+        let mut old = std::fs::File::open(a.state_path()).unwrap();
+        let (ino, bytes) = (old.metadata().unwrap().ino(), std::fs::read(a.state_path()).unwrap());
+        a.ok(args);
+        assert_ne!(std::fs::metadata(a.state_path()).unwrap().ino(), ino, "{args:?} rewrote state.json in place");
+        let mut held = Vec::new();
+        old.read_to_end(&mut held).unwrap();
+        assert_eq!(held, bytes, "{args:?}: a reader holding the old state saw it change");
+    }
+}
+
+/// Review round 1 nits: the router runs the script by its path, so its shebang and mode are part of the
+/// contract; and it sets umask 077 whatever its caller's, so the update log is the owner's alone.
+#[test]
+fn the_script_runs_by_its_shebang_and_keeps_the_log_private() {
+    let shipped = root().join("scripts/router-app.sh");
+    assert!(std::fs::read_to_string(&shipped).unwrap().starts_with("#!/bin/sh\n"), "the script lost its shebang");
+    assert_eq!(std::fs::metadata(&shipped).unwrap().mode() & 0o111, 0o111, "the script is not executable");
+    let a = App::new();
+    let script = a.main().join("scripts/router-app.sh");
+    for args in [&["start", "r1"][..], &["stage", "E-X.W1", "building"]] {
+        let o = common::cmd("sh")
+            .args(["-c", "umask 022; exec \"$0\" \"$@\""])
+            .arg(&script)
+            .args(args)
+            .env("PATH", common::path_with(a.d.path().join("shim")))
+            .current_dir(a.d.path())
+            .output()
+            .unwrap();
+        assert!(o.status.success(), "{args:?} run by its path: {}", String::from_utf8_lossy(&o.stderr));
+    }
+    assert_eq!(a.lines().len(), 2);
+    for (p, want) in [(a.main().join(".router"), 0o700), (a.dir(), 0o700), (a.log(), 0o600), (a.state_path(), 0o600)] {
+        let mode = std::fs::metadata(&p).unwrap().mode() & 0o777;
+        assert_eq!(mode, want, "{} is {mode:o} under a caller's umask 022", p.display());
+    }
 }
