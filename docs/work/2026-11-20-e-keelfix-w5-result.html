@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6affb9709f34851f0dfb2ac3">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-KEELFIX.W5 result: the merged tree green again</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-KEELFIX.W5 · The merged tree green again</h1>
+      <p>Every test passes on the epic again. The help guard learned one line, and nothing else changed.</p>
+      <div class="meta">T3 · WU result · 2026-11-20 · Keel · epic E-KEELFIX · delivered</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="happened">What happened</h2>
+<p data-c="happened">Main's check of which doc kinds may share a file now sits on the guard's reviewed list, word for word, with its reason. The guard's test failed on the merged epic and passes now. Its rules did not change.</p>
+
+<h2 id="checks">How you'll know it worked</h2>
+<table data-c="checks">
+  <thead><tr><th>Check from the plan</th><th>Met?</th></tr></thead>
+  <tbody>
+    <tr><td>The guard's test passes on the merged epic.</td><td><b>Met.</b> Red before the entry, green after.</td></tr>
+    <tr><td>With W3's plan in, all tests pass, with the same skipped ones as before.</td><td><b>Met.</b> No test fails; the same 10 are skipped.</td></tr>
+    <tr><td>Changing one word in main's line makes the guard red again.</td><td><b>Met.</b> Adding a command word inside the line is red too. Adding one in front of it is not: see below.</td></tr>
+    <tr><td>The guard's rules are unchanged; only its reviewed list grows by one.</td><td><b>Met.</b></td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">The main case, run for real</h2>
+<ol data-c="example">
+  <li>The epic, with W3's plan in, was merged into W5's branch.</li>
+  <li>All tests ran: one failed, the guard, naming main's line as a command it could not place.</li>
+  <li>The line joined the reviewed list.</li>
+  <li>All tests ran again: none failed.</li>
+  <li>In a scratch copy, four planned tricks were tried one at a time. Each turned the guard red: one word changed in main's line, a command word added inside it, a new command handler in the same file, and a new command under <code>mr</code>.</li>
+</ol>
+
+<h2 id="diff">Differences from the plan</h2>
+<ul data-c="diff">
+  <li><b>An edit at the start of the line passes.</b> The guard skips any line that <em>contains</em> a reviewed line. A command word put in front of main's line is not caught. This is how the list has always worked: the same trick on an older entry passes too. Fixing it changes the guard's rules, which this part does not do.</li>
+  <li>The formatter spreads the new entry over five lines. Its text is unchanged.</li>
+</ul>
+
+<h2 id="left">What is left, and who takes it</h2>
+<table data-c="left">
+  <thead><tr><th>What</th><th>Who</th></tr></thead>
+  <tbody>
+    <tr><td>Make the reviewed list match whole lines only, so text added before or after one is caught.</td><td>A backlog row at this epic's close, beside the plan's open point 3. Or a part of this epic, if you prefer.</td></tr>
+    <tr><td>Review, your sign-off, and the merge into the epic. W3's code waits for it.</td><td>The router starts the review; you sign.</td></tr>
+  </tbody>
+</table>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

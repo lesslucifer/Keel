@@ -1,0 +1,98 @@
+artifact: wu-plan
+status: ready
+id: E-KEELFIX.W5
+epic: E-KEELFIX
+title: The merged tree green again
+date: "2026-11-20"
+page: 2026-11-20-e-keelfix-w5-plan.html
+requirement: >-
+  On epic/E-KEELFIX after main's merge (fb97430), W2's dispatch guard reads main's one role-check line
+  as a reviewed non-command, so unit help::tests::every_dispatched_command_has_its_own_usage passes -
+  with the guard's rules and its round 1-4 mutants unchanged.
+maps-to: >-
+  Epic E-KEELFIX, its W5 block (added by this plan's commit). Repairs the merge of main 6c3ee00
+  (E-DOCSPLIT) into the epic: W2's guard against E-DOCSPLIT's combination_problem (commit 4a2cd48).
+  No use case changes. The other red test after the merge (fact 2, two dangling backlog links) is
+  W3's, by commit 03973c4 on wu/E-KEELFIX/w3-github-tier (router keel-1c, 2026-11-20).
+expected:
+  - "unit help::tests::every_dispatched_command_has_its_own_usage passes on the merged tree; it failed at fb97430"
+  - "the guard's rules (its fns, BEFORE/AFTER, DISPATCHERS, the refusals) are byte-for-byte unchanged; NOT_COMMANDS gains exactly one entry"
+  - "a mutant of the reviewed line (one word changed, or an added [\"tip\"] alternative) turns the guard red again"
+  - "once W3's plan is in the epic and W5 has taken the epic in: cargo test --no-fail-fast 0 failed, 10 ignored as at fb97430; keel verify-doc exit 0"
+  - "cargo fmt --check, cargo clippy --all-targets -- -D warnings and keel check green"
+test-plan:
+  unit: >-
+    The existing guard test is the red: it fails at fb97430 with "unreadable dispatch at verify_doc.rs:559:
+    a dispatch outside every dispatcher in DISPATCHERS", and passes after the NOT_COMMANDS entry. No new
+    unit test: the guard's logic does not change. Mutants run by hand and recorded in the result, each
+    red against the new list and each reverted after its run: (1) the reviewed line with "wu-plan" changed
+    to "tip"; (2) the same line with an added | ["tip"] alternative; (3) round 3's mutant, a ["doctor", ..]
+    dispatcher fn in verify_doc.rs; (4) round 2's ["tip", ..] arm in mr::run.
+  integration: >-
+    none: no test file changes; the WU's test note waives the layer. The suite's doc test
+    (verify_doc::every_doc_in_docs_and_the_writing_example_pass_the_checks) stays red on the two backlog
+    links until W3's plan (03973c4) is merged into the epic and W5 takes the epic in; then it is green, and
+    the result records the full run.
+  e2e: "none: the epic test (tests/suite/keelfix_e2e.rs) is not touched; a WU's level is integration"
+details:
+  base: "epic/E-KEELFIX at fb97430 (the owner's merge of main 6c3ee00 into the epic); pre-merge control b148c50 is green"
+  baseline-at-fb97430: >-
+    CARGO_TARGET_DIR in a scratch dir, cargo test --no-fail-fast: unit 152 passed, 1 failed (the guard);
+    suite 366 passed, 1 failed (the doc test, on the two links), 10 ignored. keel verify-doc: exit 1,
+    "dangling relative link: ../backlog/local-app.html#a2" on docs/work/2026-11-19-e-keelfix-plan.html and
+    docs/work/2026-11-19-e-keelfix-w2-plan.html.
+  fact-1:
+    where: "src/verify_doc.rs:553-562, fn combination_problem(roles: &[&str]), from main's E-DOCSPLIT commit 4a2cd48"
+    line: '[_] | ["epic-plan", "wu-plan"] | ["epic-result", "wu-result"] => None,'
+    why-red: >-
+      The guard refuses a slice pattern holding a literal word outside every dispatcher in DISPATCHERS,
+      anywhere in production code. combination_problem matches a doc's sorted, deduplicated artifact roles:
+      a role check, not argv. Its parameter is `roles`, so it is no argv reader, and the line is read as a
+      dispatch with no dispatcher.
+    change: >-
+      src/help.rs, tests module, NOT_COMMANDS: one entry appended,
+      ("verify_doc.rs", r#"[_] | ["epic-plan", "wu-plan"] | ["epic-result", "wu-result"] => None,"#,
+      "a doc's sorted artifact roles: a one-part epic's pairs, not argv"). The text is the whole line, so
+      any edit to it drops the match and the guard refuses it again. Nothing else in help.rs changes; the
+      comment block's rule (c) already covers it. src/verify_doc.rs is not touched.
+    rejected:
+      - >-
+        A rule exempting slice patterns outside argv readers: it weakens the fail-closed rule "refused
+        anywhere". A dispatch in a fn whose argv parameter has another name (argv, words, cmd) or that
+        matches on an inline .as_slice() would pass unseen; round 2's "same module added to the read list"
+        and round 3's "dispatcher in verify_doc.rs after its #[cfg(test)] fns" mutants rely on that rule and
+        could turn green.
+      - >-
+        Rewriting combination_problem with == comparisons instead of a slice pattern: it edits main's product
+        code to please a test guard, and hides the role check from the reviewed list.
+      - "Adding combination_problem to DISPATCHERS: its words would become command paths needing usage rows."
+  fact-2: >-
+    Not in W5 (router keel-1c, 2026-11-20). Commit 03973c4 on wu/E-KEELFIX/w3-github-tier re-points both
+    links to ../backlog/local-app.yaml; it reaches the epic with W3's plan. W5 touches neither page's link
+    line; its epic-plan edit adds the W5 block and open point 10 only.
+  order-of-landing:
+    - "1. This plan and W3's plan are approved."
+    - "2. W3's plan (with 03973c4) merges into epic/E-KEELFIX."
+    - "3. W5's branch merges the epic in, then commits the NOT_COMMANDS entry; the whole suite is green on that tip."
+    - "4. W5's result, review, sign-off and merge into the epic."
+    - "5. W3's code starts on the epic with W5 in."
+    - "If step 2 is late, W5 can land at step 4 with only the doc test red on the two links, the result saying so; default: wait for step 2."
+  htmldoc:
+    new-page-id: 6affb7179f34851f0dfb2aa6
+    epic-plan-id: 6afef2eb9f34851f0dfb2a1e (kept; snapshot 2026-11-20T02-57-28-674Z before the W5 block)
+  commits:
+    - "plan (this): the W5 pair and the epic plan's W5 block; test note waived (plan only), doc note, --target epic/E-KEELFIX"
+    - "WU: merge of the epic (step 3), then the src/help.rs NOT_COMMANDS entry; test note (unit counted: src/help.rs; integration waived: no test file changes)"
+    - "WU result pair, then review, sign-off and merge into epic/E-KEELFIX before W3's code starts"
+  files:
+    - src/help.rs
+  open-questions:
+    - q: "How does the guard learn the line is no command?"
+      a: "A reviewed NOT_COMMANDS entry holding the whole line"
+      why: "the guard's rules and every round 1-4 mutant stay as they are; an edit to the line is refused again"
+    - q: "Does W5 wait for W3's plan to reach the epic before it lands?"
+      a: "Yes, so W5's tip is fully green"
+      why: "the gap is one merge; landing earlier leaves the doc test red on the epic for no gain"
+    - q: "Should a unit test check every NOT_COMMANDS entry still matches a production line?"
+      a: "Not in W5; a backlog row at the epic close if wanted"
+      why: "a stale entry is unused, not unsafe today; W5 stays the smallest change that makes the tree green"

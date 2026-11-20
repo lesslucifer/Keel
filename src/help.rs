@@ -222,6 +222,11 @@ mod tests {
         ("notes.rs", r#"verdict != "PASS""#, "the cr writer's --verdict value"),
         ("help.rs", r#"args.first() == Some(&"hook")"#, "help's exemption for git's hook arguments; `hook` has its row"),
         ("mr.rs", r#"[t, b, ..] if ["ssh-", "ecdsa-", "sk-"]"#, "mr setup reads a public key's type prefix, not argv"),
+        (
+            "verify_doc.rs",
+            r#"[_] | ["epic-plan", "wu-plan"] | ["epic-result", "wu-result"] => None,"#,
+            "a doc's sorted artifact roles: a one-part epic's pairs, not argv",
+        ),
     ];
 
     /// The string literals on a line: the offset of each opening quote, and the text between.

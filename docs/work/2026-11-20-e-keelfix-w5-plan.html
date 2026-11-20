@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6affb7179f34851f0dfb2aa6">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-KEELFIX.W5 plan: the merged tree green again</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-KEELFIX.W5 · The merged tree green again</h1>
+      <p>Your merge of main into this epic left the help guard's test red. This part makes it green and changes nothing else.</p>
+      <div class="meta">T3 · WU plan · 2026-11-20 · Keel · epic E-KEELFIX · lands before W3's code</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">Main and this epic each pass their tests alone. Merged, two fail:</p>
+<ol data-c="facts">
+  <li><b>The help guard (W5's).</b> W2 added a test that reads keel's own code and refuses any word match it cannot place under a command. Main added one such match: it checks which kinds of doc may share one file. It is not a command, but the test cannot tell.</li>
+  <li><b>Two broken links (W3's).</b> This epic's plan and its W2 plan link to the local-app backlog page, which main replaced with a data file. W3's plan already fixes both links. W5 leaves them alone.</li>
+</ol>
+
+<h2 id="get">What you get</h2>
+<table data-c="get">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>All tests run on the epic</td><td>Two fail</td><td>All pass, once W3's plan is in too</td></tr>
+    <tr><td>Someone later edits main's line</td><td>(red today)</td><td>The guard refuses it again until reviewed</td></tr>
+  </tbody>
+</table>
+
+<h2 id="how">How it works</h2>
+<p data-c="how">The guard keeps a short list of reviewed lines that match words yet pick no command, each with its reason. Main's line joins that list, word for word. The guard's rules do not change, so every trick W2's four review rounds caught is still caught.</p>
+<p>Order of landing:</p>
+<ol data-c="order">
+  <li>You approve this plan and W3's plan.</li>
+  <li>W3's plan, with the link fix, merges into the epic.</li>
+  <li>W5 takes the epic in, then adds the list entry. Every test passes there.</li>
+  <li>W5 is reviewed, signed and merged into the epic.</li>
+  <li>W3's code starts.</li>
+</ol>
+
+<h2 id="makes">What it makes</h2>
+<ul data-c="makes">
+  <li>One entry in the guard's reviewed list.</li>
+  <li>No new test. The failing guard test is the proof: red before, green after.</li>
+</ul>
+
+<h2 id="decide">What you decide</h2>
+<p>Work goes on at these answers. Comment to overrule.</p>
+<table data-c="open-points">
+  <thead><tr><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>How does the guard learn the line is no command?</td><td><b>The line joins the reviewed list.</b></td><td>A rule that skips such matches everywhere outside commands would weaken the guard. Two of W2's review tricks could slip through it.</td></tr>
+    <tr><td>Does W5 wait for W3's plan to reach the epic?</td><td><b>Yes.</b></td><td>Then W5 lands with every test green. The wait is one merge.</td></tr>
+    <tr><td>Should a test also flag reviewed lines that no longer exist?</td><td><b>Not here.</b> A backlog row at the epic close, if you want it.</td><td>An unused entry is harmless today. W5 stays the smallest fix.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="know">How you'll know it worked</h2>
+<ul data-c="know">
+  <li>The guard's test passes on the merged epic.</li>
+  <li>With W3's plan in, all tests pass, with the same skipped ones as before.</li>
+  <li>Changing one word in main's line makes the guard red again.</li>
+  <li>The guard's rules are unchanged; only its reviewed list grows by one.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
