@@ -1,0 +1,109 @@
+artifact: wu-result
+status: ready
+id: E-KEELFIX.W3
+epic: E-KEELFIX
+title: The GitHub signer line removed
+date: "2026-11-20"
+page: 2026-11-20-e-keelfix-w3-result.html
+outcome: >-
+  Delivered. keel knows three signer tiers (email, username, key). parse_roster refuses a line of any other tier
+  by its line number, before the policy filter, so every reader of a committed or working roster refuses the
+  `github: <user id> <login>` line: keel mr setup, commit, confirm, the commit-msg hook and check 8. `[mr] tiers`
+  naming github is refused as "unknown mr tier 'github'" (validate reads KNOWN_TIERS). GITHUB, signs_tier,
+  signs, valid_login, valid_user_id, github_only and typed_refusal are gone; unlisted stays. A known tier the
+  policy leaves out still authorises nothing. An old github-tier sign-off is red at check 8 with "does not
+  list". cargo test is green: 152 unit, 367 suite, 10 ignored.
+deviations:
+  - >-
+    The plan's expected "git grep -n -i github -- src/ is empty" does not hold to the letter, and could not: the
+    plan's own untouched list keeps src/main.rs's and src/init.rs's github.com install URLs, and its test plan puts
+    the github line and the "github" tier into the new unit tests (src/mr.rs tests module, src/main.rs's
+    validate test). What holds: no non-test code in src/ names the github tier; the remaining hits are the
+    install URLs and the tests that refuse the tier.
+  - >-
+    The plan says the three new integration tests are red on the old code. Two are (the roster test and the
+    policy test). an_old_sign_off_under_the_github_tier_is_red_at_check_8 is green on the old code too: on a clean
+    roster (no github line) the old check 8 already said "does not list"; "github tier only" came only when the
+    roster listed the id under github, which W3 now refuses outright. The test stays as a guard on the new
+    wording.
+  - >-
+    tests/suite/ghrevert_e2e.rs: the two github refusals are dropped as planned; the "nothing written" assert
+    that followed the WU's refusal is kept, unchanged (the plan says "the rest unchanged"). It now checks that
+    no mr note exists before the typed sign-off.
+  - >-
+    The unknown-tier refusal is caught by the unit layer only. Mutant 1 (the KNOWN_TIERS check in parse_roster
+    removed) is red on the unit a_roster_line_of_a_tier_keel_does_not_know_is_refused_with_its_line_number and
+    green on the suite: the plan's two-field `github: 5499546 lesslucifer` line still fails the identity-tier
+    shape check without it. The one-field `github: 5499546` and `usrname: vu` lines, which only that check
+    refuses, are in the unit test. Levels compose; noted, not changed.
+  - >-
+    The page's example comes from the integration-test run, not a by-hand run: a by-hand keel mr demo in a
+    scratch repo was denied by the sandbox (the brief forbids keel mr), and not routed around.
+evidence:
+  commits:
+    - "8c3c91b merge of epic/E-KEELFIX (708e8f4, W5's guard entry) into this branch"
+    - "b1b8bc8 feat: src/mr.rs and src/main.rs, the three-tier rule and its units"
+    - "504f60b test: tests/suite/mr.rs and tests/suite/ghrevert_e2e.rs, the integration layer"
+    - "this result pair: test note and doc note on the tip"
+  baseline: "At 8c3c91b, cargo test: unit 153 passed; suite 367 passed, 10 ignored."
+  red-before-unit: >-
+    New units on the old src (before b1b8bc8's code change), cargo test --bin keel: 149 passed, 3 failed -
+    every_known_tier_signs (left ["email", "username", "key", "github"], right ["email", "username", "key"]),
+    a_roster_line_of_a_tier_keel_does_not_know_is_refused_with_its_line_number ("github: 5499546 lesslucifer
+    parsed under []"), validate_refuses_exactly_the_tiers_keel_does_not_know (unwrap_err on Ok for "github").
+  red-before-integration: >-
+    git archive 8c3c91b into a scratch dir (mktemp -d under TMPDIR, own CARGO_TARGET_DIR), the new
+    tests/suite/mr.rs and ghrevert_e2e.rs copied in, cargo test --test suite -- mr:: ghrevert: 44 passed, 2
+    failed - a_roster_with_a_github_line_is_refused_by_its_line_number (tests/suite/mr.rs:1301, confirm not
+    refused by line 2) and a_policy_naming_github_is_refused_as_an_unknown_tier (tests/suite/mr.rs:1329).
+  green-after: >-
+    At 504f60b: cargo test unit 152 passed; suite 367 passed, 10 ignored. cargo fmt --check clean, cargo clippy
+    --all-targets -- -D warnings clean, keel check green. The dispatch guard (help.rs) green, unchanged.
+  mutants: >-
+    In a scratch copy (mktemp -d under TMPDIR, own CARGO_TARGET_DIR): (1) the KNOWN_TIERS check in parse_roster
+    removed: unit red (the unknown-tier unit), suite mr::/ghrevert green (deviation 4). (2) "github" put back into
+    KNOWN_TIERS: unit red, 4 failed (every_known_tier_signs, the unknown-tier unit, validate's test,
+    mr_report_parses_its_three_values...).
+  tests-added:
+    unit:
+      - src/mr.rs a_roster_line_of_a_tier_keel_does_not_know_is_refused_with_its_line_number
+      - src/mr.rs every_known_tier_signs
+      - src/main.rs validate_refuses_exactly_the_tiers_keel_does_not_know (github added to its bad list)
+    integration:
+      - tests/suite/mr.rs a_roster_with_a_github_line_is_refused_by_its_line_number
+      - tests/suite/mr.rs a_policy_naming_github_is_refused_as_an_unknown_tier
+      - tests/suite/mr.rs an_old_sign_off_under_the_github_tier_is_red_at_check_8
+      - tests/suite/ghrevert_e2e.rs ghrevert_a_typed_sign_off_a_local_merge_and_a_push_carry_an_epic_to_main (roster and policy without github)
+    removed:
+      - src/mr.rs a_github_line_is_a_numeric_id_and_a_login_and_nothing_else, a_github_id_never_signs, the_github_only_refusal_names_only_the_policys_signing_tiers
+      - tests/suite/mr.rs a_github_line_is_read_and_signs_nothing, check_8_on_a_github_only_signer_names_the_github_tier, a_github_line_under_a_policy_without_the_tier_is_read_and_ignored
+  docs: "this result pair (new); no other doc touched; no rule-bearing file touched"
+  verify-doc: "keel verify-doc: exit 0 on the tree with this pair ready"
+distillation: >-
+  Nothing in W3. The durable truth (keel knows three tiers; any other roster line is refused by its line
+  number) goes to docs/architecture.html's [mr] tiers row in the epic's one rule-file commit at the close, and
+  to DEC-70's amendment row, per the plan.
+follow-ups:
+  - >-
+    docs/architecture.html line 114, the [mr] tiers row: E-KEELFIX's close, in the epic's one rule-file commit
+    (epic open point 9), by the owner's keel mr commit.
+  - >-
+    docs/decisions/workflow-gates.html DEC-70 amendment row ("removed by E-KEELFIX.W3") and
+    docs/backlog/local-app.yaml A2 marked done: E-KEELFIX's close, plain commits.
+  - >-
+    The epic test's step 5 (a roster with a GitHub line refused by line number): E-KEELFIX's close,
+    tests/suite/keelfix_e2e.rs.
+details:
+  base: "epic/E-KEELFIX at 708e8f4 (merged into this branch at 8c3c91b)"
+  files:
+    - src/mr.rs
+    - src/main.rs
+    - tests/suite/mr.rs
+    - tests/suite/ghrevert_e2e.rs
+  refusal-text: "keel: <src> line <n>: expected `<tier>: <identity>` or `key: <identity> <ssh-pubkey>`, tier one of email, username, key"
+  removed-fns: [GITHUB, signs_tier, signs, valid_login, valid_user_id, github_only, typed_refusal]
+  unchanged-on-purpose: ".keel/, templates/, skills/, AGENTS.md, docs/architecture.html (the close's), the 15 github-tier mr/v1 notes"
+  denied:
+    - "a by-hand demo in a scratch repo running target/debug/keel mr setup and keel mr commit: denied by the permission layer (the brief forbids keel mr); not retried"
+  htmldoc:
+    id: 6affbdda9f34851f0dfb2ae1
