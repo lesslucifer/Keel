@@ -97,6 +97,17 @@ impl App {
     fn bytes(&self) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
         (std::fs::read(self.log()).ok(), std::fs::read(self.state_path()).ok())
     }
+
+    /// Every name in the app's directory: a writer leaves its two files and nothing else (no temp
+    /// file, no lock).
+    fn names(&self) -> Vec<String> {
+        let mut v: Vec<String> = match std::fs::read_dir(self.dir()) {
+            Ok(d) => d.map(|e| e.unwrap().file_name().into_string().unwrap()).collect(),
+            Err(_) => Vec::new(),
+        };
+        v.sort();
+        v
+    }
 }
 
 /// The date the app reads: local time with the offset as +hh:mm.
@@ -291,7 +302,7 @@ fn sixteen_writers_at_once_keep_the_numbers_whole() {
     assert_eq!(ns, (1..=17).collect::<Vec<u64>>(), "numbers skipped or repeated");
     assert_state_is_the_log_folded(&a);
     assert_eq!(a.state()["values"].as_object().unwrap().len(), 16);
-    assert!(!a.dir().join(".lock").exists(), "a writer left its lock");
+    assert_eq!(a.names(), ["log.jsonl", "state.json"], "a writer left a temp file or its lock");
 }
 
 #[test]
@@ -334,6 +345,7 @@ fn a_refused_call_writes_nothing() {
         assert_eq!(code, Some(2), "{args:?} before start: {out}");
         assert!(out.contains("no run; start first"), "{args:?}: {out}");
         assert_eq!(a.bytes(), (None, None), "{args:?} before start wrote a file");
+        assert_eq!(a.names(), Vec::<String>::new(), "{args:?} before start left a file");
     }
     a.start("r1");
     a.ok(&["stage", "E-X.W1", "building"]);
@@ -401,6 +413,7 @@ fn a_refused_call_writes_nothing() {
         assert_eq!(code, Some(2), "{args:?} was not refused: {out}");
         assert!(out.starts_with("router-app: "), "{args:?} gave no reason: {out:?}");
         assert!(a.bytes() == before, "{args:?} changed a file");
+        assert_eq!(a.names(), ["log.jsonl", "state.json"], "{args:?} left a file");
     }
     let (_, out) = a.run(&["alert", &oversize]);
     assert!(out.contains("1024"), "the oversize refusal does not name the cap: {out}");
