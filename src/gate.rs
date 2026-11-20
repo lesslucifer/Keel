@@ -339,7 +339,8 @@ fn guard_hooks(repo: &Path, r: &mut Report) {
 
 /// Verify, print, and on a full green wu/epic write the dod/v1 receipt. `guard`: run guard D
 /// (verify-dod wu|epic by hand; the hook, range and commit gates run from Keel's hooks by construction).
-fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, guard: bool) -> Result<i32, String> {
+/// `receipt`: false for `--no-receipt` (K2), which runs the same gate and writes nothing.
+fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, guard: bool, receipt: bool) -> Result<i32, String> {
     let mut r = verify(repo, cfg, level, tip_ref, target)?;
     if guard {
         guard_hooks(repo, &mut r);
@@ -359,6 +360,10 @@ fn run(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &str, gua
         return Ok(1);
     }
     if !r.exempt && level != Level::Commit {
+        if !receipt {
+            println!("no receipt written (--no-receipt)");
+            return Ok(0);
+        }
         let diff_hash = notes::diff_hash(repo, &r.base, &r.tip, &[])?;
         let branch = (r.tip_ref != r.tip).then(|| r.tip_ref.clone());
         let note = DodNote {
@@ -439,7 +444,7 @@ fn hook(repo: &Path, cfg: &Config) -> Result<i32, String> {
             Ok(0)
         }
         [tip] => {
-            let code = run(repo, cfg, level, tip, "HEAD", false)?;
+            let code = run(repo, cfg, level, tip, "HEAD", false, true)?;
             if code != 0 || level == Level::Wu {
                 return Ok(code);
             }
@@ -588,8 +593,24 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
     Ok(!r.failures.is_empty() as i32)
 }
 
-const USAGE: &str =
-    "usage: keel verify-dod <wu|epic> <tip> [--target R] | commit <sha> | hook | range <old> <new>\n       keel preflight <wu|epic> <tip> [--target R]";
+pub(crate) const USAGE: &str =
+    "usage: keel verify-dod <wu|epic> <tip> [--target R] [--no-receipt] | commit <sha> | hook | range <old> <new>\n       keel preflight <wu|epic> <tip> [--target R]";
+
+/// The gate's options after `<level> <tip>` (K2), checked before anything runs: `--target R` on both,
+/// `--no-receipt` on `verify-dod` (`receipt_ok`); the strict reader is `notes::args_problem`, so a
+/// typo is refused and never writes. `Ok(receipt)`: false under `--no-receipt`.
+fn opts(cmd: &str, tip: &str, rest: &[&str], receipt_ok: bool) -> Result<bool, String> {
+    let bare: &[&str] = if receipt_ok { &["--no-receipt"] } else { &[] };
+    let problem = if tip.starts_with('-') {
+        Some(format!("'{tip}' is not a tip: give the WU or epic tip before any option"))
+    } else {
+        notes::args_problem(rest, &[notes::TARGET], bare, &[])
+    };
+    match problem {
+        Some(what) => Err(format!("keel: {cmd} refused - {what}\n{USAGE}")),
+        None => Ok(!rest.contains(&"--no-receipt")),
+    }
+}
 
 fn level_of(s: &str) -> Result<Level, String> {
     match s {
@@ -639,12 +660,13 @@ fn target_of(repo: &Path, cfg: &Config, level: Level, tip: &str, rest: &[&str]) 
 
 pub fn verify_dod(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     match args {
-        ["commit", sha] => run(repo, cfg, Level::Commit, sha, &format!("{sha}^"), false),
+        ["commit", sha] => run(repo, cfg, Level::Commit, sha, &format!("{sha}^"), false, true),
         ["hook"] => hook(repo, cfg),
         ["range", old, new] => range(repo, cfg, old, new, new),
         [lvl, tip, rest @ ..] => {
             let level = level_of(lvl)?;
-            run(repo, cfg, level, tip, &target_of(repo, cfg, level, tip, rest)?, true)
+            let receipt = opts("verify-dod", tip, rest, true)?;
+            run(repo, cfg, level, tip, &target_of(repo, cfg, level, tip, rest)?, true, receipt)
         }
         _ => Err(USAGE.into()),
     }
@@ -654,6 +676,7 @@ pub fn preflight_cmd(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, St
     match args {
         [lvl, tip, rest @ ..] => {
             let level = level_of(lvl)?;
+            opts("preflight", tip, rest, false)?;
             preflight(repo, cfg, level, tip, &target_of(repo, cfg, level, tip, rest)?)
         }
         _ => Err(USAGE.into()),
@@ -664,7 +687,7 @@ pub fn preflight_cmd(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, St
 mod tests {
     use super::inert;
     use super::review_verdict as review;
-    use super::{judged_as, note_range, Level, NoteRange};
+    use super::{judged_as, note_range, opts, Level, NoteRange};
     use crate::notes::CrNote;
 
     #[test]
@@ -731,6 +754,34 @@ mod tests {
             let (what, fix) = review(&cr(v, w)).unwrap_err();
             assert!(what.contains(needle) && !fix.is_empty(), "{v} {w:?}: {what}");
             assert!(!fix.contains("--verdict WAIVED"), "no fix line tells an agent to write a waiver: {fix}");
+        }
+    }
+
+    #[test]
+    fn opts_take_a_target_and_no_receipt_once_each_in_either_order() {
+        let ok = |rest: &[&str], receipt_ok| opts("verify-dod", "wu/e/a", rest, receipt_ok).unwrap();
+        assert!(ok(&[], true));
+        assert!(!ok(&["--no-receipt"], true));
+        assert!(!ok(&["--target", "epic/e", "--no-receipt"], true));
+        assert!(!ok(&["--no-receipt", "--target", "epic/e"], true));
+        assert!(ok(&["--target", "epic/e"], false), "preflight takes --target");
+    }
+
+    #[test]
+    fn opts_refuse_anything_else_naming_it_with_the_usage() {
+        for (tip, rest, receipt_ok, needle) in [
+            ("wu/e/a", &["--no-reciept"][..], true, "unknown argument '--no-reciept'"),
+            ("wu/e/a", &["stray"], true, "unknown argument 'stray'"),
+            ("wu/e/a", &["--target=epic/e"], true, "unknown argument '--target=epic/e'"),
+            ("wu/e/a", &["--target"], true, "--target needs a value"),
+            ("wu/e/a", &["--target", "--no-receipt"], true, "--target needs a value"),
+            ("wu/e/a", &["--target", "a", "--target", "b"], true, "--target given twice"),
+            ("wu/e/a", &["--no-receipt", "--no-receipt"], true, "--no-receipt given twice"),
+            ("wu/e/a", &["--no-receipt"], false, "unknown argument '--no-receipt'"),
+            ("--target", &["epic/e"], true, "'--target' is not a tip"),
+        ] {
+            let e = opts("verify-dod", tip, rest, receipt_ok).unwrap_err();
+            assert!(e.starts_with("keel: verify-dod refused - ") && e.contains(needle) && e.ends_with(super::USAGE), "{rest:?}: {e}");
         }
     }
 }

@@ -157,8 +157,8 @@ check 7 judges it on them (§4). Notes sync to the remote on every push
 ## 4 · The gate — `keel verify-dod`
 
 ```
-keel verify-dod wu <tip> [--target R]   # target from the branch name; a bare tip's holder branches, or a refusal; --target overrides
-keel verify-dod epic <tip> [--target R] # target defaults to main
+keel verify-dod wu <tip> [--target R] [--no-receipt]   # target from the branch name; a bare tip's holder branches, or a refusal; --target overrides
+keel verify-dod epic <tip> [--target R] [--no-receipt] # target defaults to main
 keel verify-dod commit <sha>            # standalone commit
 keel verify-dod hook                    # what pre-merge-commit runs
 keel verify-dod range <old> <new>       # what pre-push runs on main/epic updates
@@ -184,6 +184,12 @@ keel lint                               # check.lint only
 Green ⇒ exit 0 and, for a non-exempt wu/epic, the `dod/v1` receipt. Red ⇒ exit 1, one
 `FAIL <check> … fix -> …` block per failure, nothing written. Do what the
 `fix ->` line says; never bypass.
+
+To ask "would it pass now?" without leaving a receipt, add `--no-receipt`: the
+same checks, output and exit code, the last line `no receipt written
+(--no-receipt)`, nothing written. `verify-dod`, `preflight` and `notes write`
+refuse an argument they do not know, before anything is read or written.
+`--help` or `-h` on any command prints its usage and writes nothing.
 
 ## 5 · Waivers
 
@@ -285,10 +291,10 @@ off: `keel preflight` and `keel verify-dod wu|epic` are red on `0·hooks`,
 
 | Hook | Enforces |
 |---|---|
-| `pre-commit` | refuses non-merge commits on `branches.main` (merge-only) · runs `keel lint` when the staged diff touches a `code_paths` path (lint only, never tests) · with `MERGE_HEAD` present (a merge finished by hand with `git commit`) runs the gate `pre-merge-commit` would have run, because git skips that hook then |
-| `commit-msg` | a staged change to a `rule_bearing` path needs a `Reviewed-By` trailer naming a listed signer; merge commits skipped |
+| `pre-commit` | judged by `HEAD`'s **committed** `.keel/config.toml` (the staged one, with one bootstrap line, only where `HEAD` commits none), so an uncommitted edit of the folder's rules changes nothing: refuses non-merge commits on `branches.main` (merge-only) · runs `keel lint` when the staged diff touches a `code_paths` path (lint only, never tests) · refuses a staged `.keel/config.toml` that does not parse or names an unknown signer tier · with `MERGE_HEAD` present (a merge finished by hand with `git commit`) runs the gate `pre-merge-commit` would have run, because git skips that hook then |
+| `commit-msg` | judged by `HEAD`'s committed config and roster, as `keel mr commit` is: a staged change to a `rule_bearing` path needs a `Reviewed-By` trailer naming a listed signer; merge commits skipped |
 | `pre-merge-commit` | `keel verify-dod hook`, judged by the target's **committed** `.keel/config.toml`: into `epic/*` ⇒ wu gate, into main ⇒ epic gate then `keel check` on the merged tree; other targets ungated; a back-merge of landed history into an epic passes; an octopus or an unknowable merge head (`git pull`) is refused — fetch, then `git merge --no-ff <branch>` |
-| `pre-push` | `keel check` on every pushed tree (clean HEAD in place, others in a scratch worktree) · `verify-dod range` on main/`epic/*` updates (on an epic branch: commits already on main skipped; a plain commit with epic-range notes judged on them over the epic, like check 7's archive commit — inside the range only when it changes no code, as the pushed tip even when it changes code; review and sign-off stay at the merge into main) · pushes `refs/notes/*` |
+| `pre-push` | `keel check` on every pushed tree (clean HEAD in place, others in a scratch worktree) · `verify-dod range` on main/`epic/*` updates (on an epic branch: commits already on main skipped; a plain commit with epic-range notes judged on them over the epic, like check 7's archive commit — inside the range only when it changes no code, as the pushed tip even when it changes code; review and sign-off stay at the merge into main) · pushes `refs/notes/*` · reads the folder's `.keel/config.toml`, as by-hand commands do |
 | `post-checkout` | heals `merge.ff=false` · copies `.gitworktreecopy` entries into a new worktree |
 | `verify-doc-post` · `verify-doc-stop` | shell hooks: `keel verify-doc <path>` on each first-party write or edit of a page or a data file, and `keel verify-doc` over all docs at turn end; a red doc feeds the problem lines back and the turn does not close until it is green (skill `keel-plan`) |
 | doc check · no shell hooks | a host plugin runs the same two checks at the same points: a red write returns failed with the problem lines, and at turn end the problems are steered back so the turn takes another step; exit 0 is silent, and a draft is silent |

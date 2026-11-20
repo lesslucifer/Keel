@@ -44,9 +44,15 @@ areas:
           With hooks installed, a non-merge commit on `branches.main` is refused with branch guidance. A commit whose
           staged diff touches a `code_paths` path runs `keel lint` first and is refused while it is red, on any branch;
           a commit touching no code path runs no lint, and tests never run at commit. A merge commit on main is allowed
-          and judged by the gate (UC-GATE-2).
+          and judged by the gate (UC-GATE-2). The commit hooks judge by the `.keel/config.toml` committed at `HEAD`
+          (main's name, `code_paths`, the lint), never the folder's copy, so an uncommitted edit of the rules changes
+          nothing. Where `HEAD` commits none, the staged copy judges and keel prints one bootstrap line; with neither,
+          the commit is refused, its fix line naming how to stage or restore the file. A commit that stages a rules file
+          keel cannot judge by (one that does not parse, or names an unknown signer tier) is refused before it lands; a
+          rules file at `HEAD` keel cannot read refuses every commit, its fix line naming the recovery.
         failure: >-
-          a direct commit lands on main, or a code commit lands with red lint.
+          a direct commit lands on main, a code commit lands with red lint, or a commit is judged by rules the folder
+          edited and never committed.
       - id: UC-GATE-2
         title: "a merge needs bound evidence"
         expected: >-
@@ -61,9 +67,13 @@ areas:
           `mr/v1`), and has neither field when the sign-off attested none. A WU tip given as a bare commit id is
           measured against the epic branch a local `wu/<e>/…` branch that holds it names, else the one local `epic/<e>`
           branch that holds it; no holder, or two epics, is a refusal whose fix line asks for `--target`. The gate never
-          guesses `main` for a bare id.
+          guesses `main` for a bare id. Run by hand, `keel verify-dod wu|epic <tip> --no-receipt` runs the same checks
+          with the same output and exit code, its last line `no receipt written (--no-receipt)` in place of the
+          receipt's, and writes nothing. `keel verify-dod` and `keel preflight` refuse an argument they do not know, a
+          flag given twice and a flag with no value (exit 1), before anything is read or written.
         failure: >-
-          a merge lands with missing, stale or unbound evidence, or under a policy the incoming branch rewrote.
+          a merge lands with missing, stale or unbound evidence, or under a policy the incoming branch rewrote; a
+          `--no-receipt` run, or a mistyped flag, writes a note.
       - id: UC-GATE-3
         title: "the epic gate re-walks every seam"
         expected: >-
@@ -116,7 +126,14 @@ areas:
           distillation target that is not a T1/T2 doc tracked at the tip, and an empty range. A target is read from the
           branch a tip sits on. A tip that names no local branch — a bare commit id, `HEAD` on a detached checkout — is
           resolved from the branches that hold it, or refused; the writer is unaffected because it always writes on
-          `HEAD`'s branch.
+          `HEAD`'s branch. The writer refuses an argument its kind does not know (test: `--target`; doc: `--target`,
+          `--distill`; cr: its own flags), a flag given twice, and a flag whose value is another known flag, exit 1,
+          before the range is read. Help: `--help` or `-h` anywhere on any keel command prints that command's usage on
+          stdout and exits 0, inside a repository or outside one, and changes no ref, note, index or file (a sign-off
+          signs nothing, a commit commits nothing); a message reading `--help` is help too. The one exception: the
+          words after `keel hook <name>` are git's (a remote may be named `-h`), so a hook still runs its gate.
+        failure: >-
+          a help request or a mistyped flag writes anything; a hook reads git's arguments as a help request.
   - area: UC-MR
     title: "human sign-off"
     use-cases:
@@ -166,11 +183,12 @@ areas:
         expected: >-
           A commit whose staged diff touches a `rule_bearing` path needs a `Reviewed-By` trailer naming a signer listed
           in `HEAD`'s committed roster (`keel mr commit` adds it), so a commit that edits the roster is judged by the
-          one it replaces; only when `HEAD` has no roster does the staged one count. `.keel/mr-allowed` is rule-bearing
+          one it replaces; only when `HEAD` has no roster does the staged one count. `rule_bearing` and `[mr] tiers`
+          are read from `HEAD`'s committed `.keel/config.toml` (UC-GATE-1), by the commit-msg hook and `keel mr commit`
+          alike, so widening the folder's tiers lets no new signer sign. `.keel/mr-allowed` is rule-bearing
           whatever `rule_bearing` lists. `keel mr setup --as <id> [--key <path>]` writes the working roster file and
           prints the commit that lands it; it authorises nothing until committed. Merge commits are skipped. Known gap
-          (DEC-24): the trailer is typed text, the hook reads `rule_bearing` from the working tree, and nothing
-          downstream re-checks trailers.
+          (DEC-24): the trailer is typed text, and nothing downstream re-checks trailers.
   - area: UC-DOC
     title: "documentation"
     use-cases:

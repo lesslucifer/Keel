@@ -1,9 +1,9 @@
-//! E-GHREVERT epic e2e: Keel back to before GitHub. A project whose main still carries a roster with
-//! a github line and a policy with the github tier (as E-DOCSPLIT's do until it is on main) works
-//! the pre-GitHub way: a WU signed by typing (the github id is refused, the username signs), merged
-//! locally into its epic through the real merge hook; the epic closed, signed by typing, merged into
-//! main and pushed to a bare local remote through the real push hook, the notes riding along. The
-//! GitHub flow's commands are gone. A scratch repo in a temp dir, no network.
+//! E-GHREVERT epic e2e: Keel back to before GitHub. A project with a typed roster and a policy of
+//! the username and key tiers (E-KEELFIX.W3: keel no longer reads a github line or tier) works the
+//! pre-GitHub way: a WU signed by typing, merged locally into its epic through the real merge hook;
+//! the epic closed, signed by typing, merged into main and pushed to a bare local remote through the
+//! real push hook, the notes riding along. The GitHub flow's commands are gone. A scratch repo in a
+//! temp dir, no network.
 compiled!();
 
 use std::path::Path;
@@ -64,13 +64,13 @@ fn commit(d: &Path, msg: &str) -> String {
     git(d, &["rev-parse", "HEAD"])
 }
 
-/// The roster E-DOCSPLIT commits: a typed line and a github line.
-const ROSTER: &str = "username: t\ngithub: 5499546 lesslucifer\n";
+/// The roster: one typed line.
+const ROSTER: &str = "username: t\n";
 const WU_PLAN: &str = "docs/work/2026-11-19-e2e-wu-a-plan.html";
 const WU_RESULT: &str = "docs/work/2026-11-19-e2e-wu-a-result.html";
 const EPIC_RESULT: &str = "docs/.archive/2026-11-19-e2e-epic-result.html";
 
-/// A project set up by `keel init` on main, its policy accepting the username, key and github tiers
+/// A project set up by `keel init` on main, its policy accepting the username and key tiers
 /// and its roster above, the base pushed to a bare local remote (returned to keep it alive).
 fn init_project() -> (TempDir, TempDir) {
     let d = TempDir::new().unwrap();
@@ -81,7 +81,7 @@ fn init_project() -> (TempDir, TempDir) {
     write(
         p,
         ".keel/config.toml",
-        "code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n[mr]\ntiers = [\"username\", \"key\", \"github\"]\n",
+        "code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n[mr]\ntiers = [\"username\", \"key\"]\n",
     );
     write(p, ".keel/mr-allowed", ROSTER);
     write(p, "README", "a project keel adopted\n");
@@ -103,7 +103,7 @@ fn ghrevert_a_typed_sign_off_a_local_merge_and_a_push_carry_an_epic_to_main() {
     let p = d.path();
     assert_eq!(std::fs::read_to_string(p.join(".keel/mr-allowed")).unwrap(), ROSTER, "keel init kept the roster");
 
-    // ── 1. a WU with code, signed by typing: the github id refused, the username written ───────
+    // ── 1. a WU with code, signed by typing: the username written ─────────────────────────────
     git(p, &["switch", "-q", "-c", "epic/e"]);
     git(p, &["switch", "-q", "-c", "wu/e/a"]);
     write(p, "src/a.py", "def a():\n    return 1\n");
@@ -114,8 +114,6 @@ fn ghrevert_a_typed_sign_off_a_local_merge_and_a_push_carry_an_epic_to_main() {
     ok(keel(p, &["notes", "write", "test"], r#"{"integration":{"files":["tests/test_a.py"],"covers":"a returns one"}}"#));
     ok(keel(p, &["notes", "write", "doc"], ""));
     ok(keel(p, &["notes", "write", "cr", "--verdict", "PASS"], ""));
-    let o = keel(p, &["mr", "confirm", "wu", "--as", "5499546"], "");
-    assert!(!o.status.success() && text(&o).contains("github tier only"), "the github id signs nothing: {}", text(&o));
     assert!(!run("git", p, &["notes", "--ref=mr", "show", &wu], "").status.success(), "nothing written");
     ok(keel(p, &["mr", "confirm", "wu", "--as", "t"], ""));
     assert!(git(p, &["notes", "--ref=mr", "show", &wu]).contains("\"tier\":\"username\""));
@@ -144,8 +142,6 @@ fn ghrevert_a_typed_sign_off_a_local_merge_and_a_push_carry_an_epic_to_main() {
     }
     ok(keel(p, &doc, ""));
     ok(keel(p, &["notes", "write", "cr", "--verdict", "PASS"], ""));
-    let o = keel(p, &["mr", "confirm", "epic", "--as", "5499546", "--report", EPIC_RESULT], "");
-    assert!(!o.status.success() && text(&o).contains("github tier only"), "{}", text(&o));
     ok(keel(p, &["mr", "confirm", "epic", "--as", "t", "--report", EPIC_RESULT], ""));
     let tip = git(p, &["rev-parse", "HEAD"]);
     git(p, &["switch", "-q", "main"]);

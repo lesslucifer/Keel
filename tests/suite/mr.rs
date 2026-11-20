@@ -1230,13 +1230,12 @@ fn the_review_history_keeps_every_row_when_git_log_shows_signatures() {
     }
 }
 
-// E-GHREVERT.W1, keeps 3 and 4: R50 (keel mr checks its checkout's git links before any git call)
-// and the github tier read but never signing, until E-DOCSPLIT is on main. R50's tests came from
-// the deleted sign-off suite, unchanged in what they assert.
+// R50 (keel mr checks its checkout's git links before any git call; E-GHREVERT.W1, keep 4), its
+// tests from the deleted sign-off suite, unchanged in what they assert; and E-KEELFIX.W3: a roster
+// line or a policy naming a tier keel does not know, the old github tier among them, is refused.
 
 const KEEL: &str = env!("CARGO_BIN_EXE_keel");
-const GH_FIXTURE: &str = "mr github line read";
-const GH_ROSTER: &str = "username: vu\ngithub: 5499546 lesslucifer\n";
+const TYPED_FIXTURE: &str = "mr typed roster";
 
 /// `prog` with `a` in `d` on `path` (a test's own shims first), committing as the tester.
 fn command(prog: &str, d: &Path, a: &[&str], path: &str) -> std::process::Command {
@@ -1249,20 +1248,20 @@ fn run_with(prog: &str, d: &Path, a: &[&str], path: &str) -> Output {
     command(prog, d, a, path).output().unwrap()
 }
 
-/// main (a policy accepting the username, key and github tiers; a roster with a username and a
-/// github line, as E-DOCSPLIT's) → epic/e → wu/e/a with code, a test and a result report; hooks
-/// installed; HEAD on wu/e/a, no notes yet.
-fn github_fixture() -> TempDir {
-    common::fixture(GH_FIXTURE, |p| {
+/// main (a policy accepting the username and key tiers; a roster listing the username vu) →
+/// epic/e → wu/e/a with code, a test and a result report; hooks installed; HEAD on wu/e/a, no
+/// notes yet.
+fn typed_fixture() -> TempDir {
+    common::fixture(TYPED_FIXTURE, |p| {
         git(p, &["init", "-q", "-b", "main"]);
         git(p, &["config", "user.email", "t@t"]);
         git(p, &["config", "user.name", "t"]);
         write(
             p,
             ".keel/config.toml",
-            "code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n[mr]\ntiers = [\"username\", \"key\", \"github\"]\n",
+            "code_paths = [\"src/\", \"tests/\"]\n[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n[mr]\ntiers = [\"username\", \"key\"]\n",
         );
-        write(p, ".keel/mr-allowed", GH_ROSTER);
+        write(p, ".keel/mr-allowed", "username: vu\n");
         write(p, "README", "x");
         commit(p, "base");
         ok(keel(p, &["hooks", "install"]));
@@ -1275,64 +1274,76 @@ fn github_fixture() -> TempDir {
     })
 }
 
-/// Keep 3: a github line and the github tier are read, and sign nothing - a typed sign-off, a
-/// typed commit and a trailer by the github id are refused, and the username signs as before (it
-/// is the only typed identity, so it needs no --as) with check 8 green.
-#[test]
-fn a_github_line_is_read_and_signs_nothing() {
-    let d = github_fixture();
-    let p = d.path();
-    notes(p, &["test", "doc", "cr"]);
-    let o = keel(p, &["mr", "confirm", "wu", "--as", "5499546"]);
-    let t = text(&o);
-    assert!(!o.status.success() && t.contains("github tier only") && t.contains("fix ->"), "{t}");
-    assert!(mr_note(p, "wu/e/a").is_none());
-    write(p, ".keel/mr-allowed", &format!("{GH_ROSTER}# touched\n"));
+/// Commit `path` = `body` on epic/e, hooks skipped as a hand edit would, then merge epic/e into
+/// wu/e/a: the target, and the tip, now carry it. HEAD back on wu/e/a.
+fn land_on_epic(p: &Path, path: &str, body: &str) {
+    git(p, &["switch", "-q", "epic/e"]);
+    write(p, path, body);
     git(p, &["add", "-A"]);
-    let o = keel(p, &["mr", "commit", "-m", "x", "--as", "5499546"]);
-    assert!(!o.status.success() && text(&o).contains("github tier only"), "{}", text(&o));
-    let o = run("git", p, &["commit", "-q", "-m", "x\n\nReviewed-By: github 5499546"]);
-    assert!(!o.status.success() && text(&o).contains("Reviewed-By"), "a typed trailer naming the github id: {}", text(&o));
-    git(p, &["reset", "-q", "--hard"]);
-    ok(keel(p, &["mr", "confirm", "wu"]));
-    let n = mr_note(p, "wu/e/a").unwrap();
-    assert_eq!((n["signer"].as_str(), n["tier"].as_str()), (Some("vu"), Some("username")));
-    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    git(p, &["commit", "-q", "--no-verify", "-m", "a hand edit of the target"]);
+    git(p, &["switch", "-q", "wu/e/a"]);
+    git(p, &["merge", "-q", "--no-ff", "--no-verify", "-m", "sync", "epic/e"]);
 }
 
-/// Keep 3 at the gate (E-GHREVERT epic review round 1): check 8 on a sign-off by an id the roster
-/// lists under the github tier only - an approval-era note, as a pending E-DOCSPLIT seam carries -
-/// is red with the same cause and fix as a typed sign-off by that id, never "does not list".
+/// E-KEELFIX.W3: a committed roster holding the old `github: <user id> <login>` line on line 2 is
+/// refused by every reader, each naming line 2 - a sign-off, a typed commit, a rule-file commit
+/// with a trailer, setup on the working file and check 8 - and nothing is written.
 #[test]
-fn check_8_on_a_github_only_signer_names_the_github_tier() {
-    let d = github_fixture();
+fn a_roster_with_a_github_line_is_refused_by_its_line_number() {
+    let d = typed_fixture();
+    let p = d.path();
+    let roster = "username: vu\ngithub: 5499546 lesslucifer\n";
+    land_on_epic(p, ".keel/mr-allowed", roster);
+    notes(p, &["test", "doc", "cr"]);
+    let head = git(p, &["rev-parse", "HEAD"]);
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "vu"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("epic/e:.keel/mr-allowed line 2") && !t.contains("github"), "{t}");
+    assert!(mr_note(p, "wu/e/a").is_none());
+    write(p, ".keel/mr-allowed", &format!("{roster}# touched\n"));
+    git(p, &["add", "-A"]);
+    let o = keel(p, &["mr", "commit", "-m", "x", "--as", "vu"]);
+    assert!(!o.status.success() && text(&o).contains("HEAD:.keel/mr-allowed line 2"), "{}", text(&o));
+    let o = run("git", p, &["commit", "-q", "-m", "x\n\nReviewed-By: username vu"]);
+    assert!(!o.status.success() && text(&o).contains("HEAD:.keel/mr-allowed line 2"), "a rule-file commit with a trailer: {}", text(&o));
+    assert_eq!(git(p, &["rev-parse", "HEAD"]), head, "no commit written");
+    let o = keel(p, &["mr", "setup", "--as", "other"]);
+    assert!(!o.status.success() && text(&o).contains(".keel/mr-allowed line 2"), "{}", text(&o));
+    assert_eq!(std::fs::read_to_string(p.join(".keel/mr-allowed")).unwrap(), format!("{roster}# touched\n"), "setup wrote nothing");
+    git(p, &["reset", "-q", "--hard"]);
+    forge(p, "wu/e/a", "epic/e", "vu", "username", None);
+    assert_red8(p, "epic/e:.keel/mr-allowed line 2");
+}
+
+/// E-KEELFIX.W3: a committed policy naming github is refused as an unknown tier - by a sign-off,
+/// which writes nothing, and by check 8.
+#[test]
+fn a_policy_naming_github_is_refused_as_an_unknown_tier() {
+    let d = typed_fixture();
+    let p = d.path();
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap().replace("[\"username\", \"key\"]", "[\"username\", \"key\", \"github\"]");
+    assert!(cfg.contains("\"github\""));
+    land_on_epic(p, ".keel/config.toml", &cfg);
+    notes(p, &["test", "doc", "cr"]);
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "vu"]);
+    assert!(!o.status.success() && text(&o).contains("unknown mr tier 'github'"), "{}", text(&o));
+    assert!(mr_note(p, "wu/e/a").is_none());
+    forge(p, "wu/e/a", "epic/e", "vu", "username", None);
+    assert_red8(p, "unknown mr tier 'github'");
+}
+
+/// E-KEELFIX.W3: an approval-era sign-off under the github tier (signer 5499546, as 14 tips on
+/// main carry) on a clean roster is red at check 8 as any unlisted signer is, never "github tier
+/// only".
+#[test]
+fn an_old_sign_off_under_the_github_tier_is_red_at_check_8() {
+    let d = typed_fixture();
     let p = d.path();
     notes(p, &["test", "doc", "cr"]);
     forge(p, "wu/e/a", "epic/e", "5499546", "github", None);
-    assert_red8(p, "5499546 is listed in epic/e:.keel/mr-allowed under the github tier only, which signs nothing");
-    assert_red8(p, "fix -> sign as an identity listed under the username or key tier");
+    assert_red8(p, "signed off by 5499546, whom epic/e:.keel/mr-allowed does not list");
     let t = text(&keel(p, &["verify-dod", "wu", "wu/e/a"]));
-    assert!(!t.contains("does not list") && !t.contains("land their line"), "{t}");
-}
-
-/// Keep 3, the policy at 8d48a44 (no github tier) under a roster that still holds a github line, as
-/// on E-DOCSPLIT after it merges main: the line is read, authorises nothing, and the username signs.
-#[test]
-fn a_github_line_under_a_policy_without_the_tier_is_read_and_ignored() {
-    let d = github_fixture();
-    let p = d.path();
-    git(p, &["switch", "-q", "epic/e"]);
-    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap().replace("\"username\", \"key\", \"github\"", "\"username\", \"key\"");
-    write(p, ".keel/config.toml", &cfg);
-    git(p, &["add", "-A"]);
-    git(p, &["commit", "-q", "--no-verify", "-m", "the target's policy, no github tier"]);
-    git(p, &["switch", "-q", "wu/e/a"]);
-    git(p, &["merge", "-q", "--no-ff", "--no-verify", "-m", "sync", "epic/e"]);
-    notes(p, &["test", "doc", "cr"]);
-    let o = keel(p, &["mr", "confirm", "wu", "--as", "5499546"]);
-    assert!(!o.status.success() && text(&o).contains("not listed"), "{}", text(&o));
-    ok(keel(p, &["mr", "confirm", "wu", "--as", "vu"]));
-    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    assert!(!t.contains("github tier only"), "{t}");
 }
 
 /// A git on PATH that records every call and fails: `keel mr` must make none on a refused checkout.
@@ -1356,7 +1367,7 @@ fn logging_git(dir: &Path, last: &str) -> (String, std::path::PathBuf) {
 /// checkout's root only (code review round 2): a subdirectory is refused, tampered or not.
 #[test]
 fn keel_mr_refuses_a_checkout_whose_git_links_git_did_not_make_and_runs_no_git() {
-    let d = github_fixture();
+    let d = typed_fixture();
     let p = d.path();
     notes(p, &["test", "doc", "cr"]);
     git(p, &["switch", "-q", "main"]);
@@ -1462,7 +1473,7 @@ fn refused_before_git(dir: &Path, fake: &str, log: &Path, why: &str, needle: &st
 /// such a dir is refused as a cwd, and as a .git it is no repository of its own.
 #[test]
 fn keel_mr_refuses_a_planted_head_and_commondir_dir_and_runs_no_git() {
-    let d = github_fixture();
+    let d = typed_fixture();
     let p = d.path();
     let scratch = TempDir::new().unwrap();
     let (fake, log) = recording_git(scratch.path());
@@ -1482,7 +1493,7 @@ fn keel_mr_refuses_a_planted_head_and_commondir_dir_and_runs_no_git() {
 /// refused at once; before, `keel mr` blocked for ever in open().
 #[test]
 fn keel_mr_refuses_a_fifo_in_the_git_links_without_hanging() {
-    let d = github_fixture();
+    let d = typed_fixture();
     let p = d.path();
     let scratch = TempDir::new().unwrap();
     let (fake, log) = recording_git(scratch.path());
@@ -1535,7 +1546,7 @@ fn plant_dotdot(wt: &Path, admin: &Path, marker: &Path) -> String {
 /// path resolved through its links must be the path as written - so neither layout runs any git,
 /// and the planted fsmonitor never fires.
 fn a_dotdot_through_a_symlink_is_refused(nested: bool) {
-    let d = github_fixture();
+    let d = typed_fixture();
     let p = d.path();
     let scratch = TempDir::new().unwrap();
     let (gitp, log) = passthrough_git(scratch.path());
@@ -1570,7 +1581,7 @@ fn keel_mr_refuses_a_dotdot_through_a_symlink_in_a_sibling_worktrees_git_link() 
 /// makes it; R50 refuses any symbolic link in the admin dir's path.
 #[test]
 fn keel_mr_refuses_a_symlink_in_the_admin_dirs_path_and_runs_no_git() {
-    let d = github_fixture();
+    let d = typed_fixture();
     let p = d.path();
     let scratch = TempDir::new().unwrap();
     let (fake, log) = recording_git(scratch.path());
@@ -1592,7 +1603,7 @@ fn keel_mr_refuses_a_symlink_in_the_admin_dirs_path_and_runs_no_git() {
 /// in the checkout. A linked worktree inside its own main checkout, run from its root, passes.
 #[test]
 fn keel_mr_runs_only_from_the_checkout_root_and_runs_no_git_elsewhere() {
-    let d = github_fixture();
+    let d = typed_fixture();
     let p = d.path();
     let scratch = TempDir::new().unwrap();
     let (fake, log) = recording_git(scratch.path());
