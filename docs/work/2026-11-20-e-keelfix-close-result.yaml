@@ -31,17 +31,35 @@ deviations:
   - >-
     No T3 doc is archived here. The archive commit (git rm of every docs/work/ pair and page, with keel notes write
     doc --distill) is the epic close's part 2, on the epic branch after this WU merges.
+  - >-
+    Review round 1 (cr FAIL on f59655a: 0 blockers, 3 importants, 3 nits) found three e2e assertions a mutant
+    survives; the production code was right. Fix commit dbce3bc changes tests/suite/keelfix_e2e.rs only: (1) step
+    2's keel mr commit --as t@t must print its own "t@t is not listed in HEAD:.keel/mr-allowed" and no hook's
+    "commit refused"; (2) step 2, the folder's tiers still widened, a raw git commit with "Reviewed-By: email t@t"
+    is refused by the commit-msg hook naming docs/rules.html; (3) step 5's keel mr commit stderr starts with its
+    own "keel: HEAD:.keel/mr-allowed line 2" and holds no "commit refused". The nits are taken too: two-space
+    needles "FAIL  1·"/"FAIL  6·" plus a positive "FAIL  8·manual-review", the step-3 state message names a red
+    run and the two help requests, and the WU-into-epic merge asserts the hook's "verify-dod wu green on <tip>".
+    Review round 2 is next, on the fix.
 evidence:
   commits:
     - "36d78e9 test: the epic e2e, tests/suite/keelfix_e2e.rs (+213), registered in tests/suite/main.rs (+1)"
     - "5523e3c docs: the T2 distillation - docs/use-cases/workflow.yaml, docs/decisions/workflow-gates.html, docs/backlog/local-app.yaml, docs/backlog/backlog-index.yaml"
     - "26c4731 docs (owner's rule-file commit, Reviewed-By username vuluu): docs/architecture.html, docs/local-app.html, skills/keel-workflow/SKILL.md, .claude/skills/keel-workflow/SKILL.md"
-    - "this commit: this result pair; backlog local-app A10 gains N1 to N5"
+    - "f59655a docs: this result pair; backlog local-app A10 gains N1 to N5"
+    - "dbce3bc test: review round 1 fix, tests/suite/keelfix_e2e.rs (+19 -6)"
+    - "this commit: this result pair records round 1 and its fix"
   e2e: >-
     tests/suite/keelfix_e2e.rs, one test,
     keelfix_commits_follow_the_committed_rules_and_nothing_is_written_unless_asked. Red first on main 6c3ee00 at
     step 1; on epic 708e8f4 (W1, W2, W5; before W3) steps 1 to 4 pass and step 5 fails. Green on 6abc010's code.
-  keel-check: "keel check green on the working tree before this commit: cargo fmt, clippy -D warnings, cargo test (suite 369 passed, 0 failed, 10 ignored)"
+    After the round-1 fix, each strengthened assertion is red against its mutant in a scratch copy and the f59655a
+    test green on every one: M2a (mr commit on the folder's rules) red at :136; M2b (the commit-msg hook on the
+    folder's rules) red at :141, the commit lands; M5c (mr commit running git commit past a roster error) red at
+    :222, the hook's "keel: commit refused - keel: HEAD:.keel/mr-allowed line 2" in its output; N3 (the merge
+    hook passing merges into an epic ungated) red at :184. Green on the real code.
+  keel-check: "keel check green on the working tree before f59655a and again after dbce3bc: cargo fmt, clippy -D warnings, cargo test (unit 152 passed; suite 369 passed, 0 failed, 10 ignored)"
+  review: "round 1 FAIL on f59655a (0 blockers, 3 importants, 3 nits waived), fixed in dbce3bc; round 2 on the fix is the router's next step"
   independent-read: >-
     26c4731 read against the code and T2 docs: GREEN. Wording nits, none changing a rule: N1 the architecture CLI
     paragraph's "before reading anything" is too strong; N2 the pre-commit row's "cannot read" should be "cannot
@@ -61,6 +79,7 @@ follow-ups:
   - "The dispatch guard's substring match (W5's follow-up): backlog local-app A8."
   - "A bad roster line committed by mr commit locks the branch out: backlog local-app A9."
   - "Review the plan-WU flow: backlog local-app A6."
+  - "Review round 2 on the fix dbce3bc: the router starts it; then the owner's sign-off and the merge into epic/E-KEELFIX."
   - "The archive commit, the epic result report, the epic review and the epic sign-off: E-KEELFIX's close, part 2, on epic/E-KEELFIX after this WU merges."
 details:
   base: "epic/E-KEELFIX at 6abc010"
