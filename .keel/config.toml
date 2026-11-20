@@ -3,7 +3,7 @@
 
 # Path prefixes the gate treats as code (cr binds them). A diff touching none is
 # docs/infra-only and exempt from test/cr/doc evidence. Adjust to your layout.
-code_paths = ["src/", "tests/"]
+code_paths = ["src/", "tests/", "app/"]
 
 # Optional: narrow that exemption to paths matching these globs (and outside
 # code_paths). Unset = every non-code path is docs/infra.
@@ -11,7 +11,7 @@ code_paths = ["src/", "tests/"]
 
 # Commits touching these need a Reviewed-By trailer (`keel mr commit`).
 # A trailing / is a prefix; otherwise a glob (* and ? within a segment, ** across).
-rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json", "scripts/router-guard.jq", "scripts/router-inbox.sh", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", ".claude/agents/"]
+rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json", "scripts/router-guard.jq", "scripts/router-inbox.sh", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", "scripts/router-app.sh", "scripts/notify-owner.py", ".claude/agents/"]
 
 [check]
 lint = "cargo fmt --check && cargo clippy --all-targets -- -D warnings"
