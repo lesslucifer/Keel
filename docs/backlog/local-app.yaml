@@ -107,7 +107,8 @@ open:
     proposal: >-
       Take any of them when the file is next edited.
     source: >-
-      E-KEELFIX.W1 review rounds 1 to 3, W2 review round 1 and its result's follow-ups, W3 review round 1.
+      E-KEELFIX.W1 review rounds 1 to 3, W2 review round 1 and its result's follow-ups, W3 review round 1, and the
+      independent read of the close's rule-file commit 26c4731 (GREEN, wording nits N1 to N5).
     taken-by: "unowned: the next WU that edits the named file"
     items:
       - "`src/main.rs` `run()`: the top and `init` usage texts are literals beside `src/help.rs`'s `TOP` and `INIT`; point them at those (W2 nit, owed by W3, not done)."
@@ -120,6 +121,11 @@ open:
       - "`every_known_tier_signs` lists `key: k` before `username: k`, so a first-match `tier_of` passes too; swap the lines (W3 round 1)."
       - "The unknown-tier unit hard-codes the policy subsets as `0..8`; derive them from `KNOWN_TIERS` (W3 round 1)."
       - "`tests/suite/ghrevert_e2e.rs`: the kept nothing-written assert now follows the cr note write, not a refusal; drop or move it (W3 round 1)."
+      - "N1 `docs/architecture.html` CLI paragraph: \"refuse an argument they do not know before reading anything\" is too strong; say before anything is written, or before the tip is judged (close read of 26c4731)."
+      - "N2 `docs/architecture.html` pre-commit row: \"refuses a staged policy it cannot read\" should say \"cannot judge by\" (one that does not parse or names an unknown signer tier), as UC-GATE-1 does (close read of 26c4731)."
+      - "N3 `docs/architecture.html` config table: the `rule_bearing` row lists `mr commit` as a reader, but `keel mr commit` never reads `rule_bearing`; drop it or say what it reads (close read of 26c4731)."
+      - "N4 both `keel-workflow` SKILL.md copies, section 4: the last line `no receipt written (--no-receipt)` prints only on a green, non-exempt run, not on every `--no-receipt` run; say so (close read of 26c4731)."
+      - "N5 optional: a note in both `keel-workflow` copies' hook table, beside the CLI paragraph's line in architecture, that the words after `keel hook <name>` are git's, never help (close read of 26c4731)."
 
   - id: L1
     title: "Message the router from the app"
