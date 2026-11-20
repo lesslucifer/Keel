@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6affb5c39f34851f0dfb2a99">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-APPLIST epic plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-APPLIST · Alerts and your list</h1>
+      <p>The first part of the local app: an alert at your desk and one list of what waits on you. It only reads.</p>
+      <div class="meta">T3 · epic plan · 2026-11-20 · Keel · its data file, 2026-11-20-e-applist-plan.yaml, sits beside this page · the design: <a href="../local-app.html">local-app.html</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">What waits on you reaches you by Telegram or the router's terminal, or you ask the router. Nothing alerts you at your desk. Nothing lists what waits on you in one place.</p>
+
+<h2 id="for-you">What changes for you</h2>
+<table data-c="for-you">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>Something waits on you</td><td>Telegram, or the router's terminal</td><td>An alert on your Mac; a click opens the item. Telegram still comes</td></tr>
+    <tr><td>What waits on you?</td><td>You ask the router</td><td>One list: yours, not yours, sent</td></tr>
+    <tr><td>You read a plan or result</td><td>You open the path you were sent</td><td>Open: the page as committed, in your browser</td></tr>
+    <tr><td>The router goes quiet</td><td>You notice late</td><td>A bar says "router not heard" after 15 minutes</td></tr>
+    <tr><td>Setting up</td><td>Nothing</td><td>Install the app once; one typed rules commit first</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">Example: a plan to read</h2>
+<ol data-c="example">
+  <li>A worker finishes a plan.</li>
+  <li>The router notes "plan to read" in its update log and messages you.</li>
+  <li>Your Mac shows an alert. You click it.</li>
+  <li>The list shows the plan. You click Open and read it.</li>
+  <li>You approve it to the router. The item leaves the list.</li>
+</ol>
+
+<h2 id="terms">Terms</h2>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Update log</td><td>A file where the router writes one line per change the app needs. Only the router and its watchdog write it.</td></tr>
+    <tr><td>Watchdog</td><td>The session that checks the workers every 5 minutes.</td></tr>
+    <tr><td>Router not heard</td><td>Three watchdog checks passed with no line.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="work">The parts, in build order</h2>
+<div class="diagram" data-c="order">
+<pre class="mermaid">
+flowchart LR
+  W1["W1 The update log"] --> W2["W2 Watchdog lines"]
+  W1 --> W3["W3 Stages, alerts, link"]
+  W1 --> W5["W5 Read and alert"]
+  W4["W4 The app's frame"] --> W5
+  W5 --> W6["W6 Your list and Open"]
+</pre>
+<div class="caption">An arrow means "starts after". W1 and W4 start together.</div>
+</div>
+<table data-c="parts">
+  <thead><tr><th>Part</th><th>What it builds</th><th>What you get</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>W1 · The update log</td><td>The router's command that writes numbered lines and the current state.</td><td>One place the app reads the router.</td><td>—</td></tr>
+    <tr><td>W2 · Watchdog lines</td><td>Each check writes changed workers and a heartbeat.</td><td>Workers waiting on you; "router not heard".</td><td>W1</td></tr>
+    <tr><td>W3 · Stages, alerts, link</td><td>The router writes each stage and every alert; Telegram gets the app's link.</td><td>"Plan to read", questions and alerts.</td><td>W1</td></tr>
+    <tr><td>W4 · The app's frame</td><td>The locked-down app, its settings, one project, a signed build, a test alert.</td><td>The app installed on your Mac.</td><td>—</td></tr>
+    <tr><td>W5 · Read and alert</td><td>Reads git and the log, survives restarts, alerts once per line.</td><td>The alert at your desk.</td><td>W1, W4</td></tr>
+    <tr><td>W6 · Your list and Open</td><td>The list and its items; Open copies the committed page.</td><td>One list of what waits on you.</td><td>W5</td></tr>
+  </tbody>
+</table>
+
+<h2 id="decide">What you decide</h2>
+<table data-c="decide">
+  <thead><tr><th>#</th><th>Question</th><th>Answer, and why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Where does the app's code live?</td><td><b>In this repository, under the gate.</b> One review; the app only reads keel.</td></tr>
+    <tr><td>2</td><td>How is it tested?</td><td><b>By Node's own test runner, nothing to install.</b> The usual checks stay quick.</td></tr>
+    <tr><td>3</td><td>Is the desk alert written when Telegram fails?</td><td><b>Yes, first.</b> A failed send never loses it.</td></tr>
+    <tr><td>4</td><td>Are "gate failed" and "merge conflict" on the list?</td><td><b>No.</b> Nothing records them yet; the fleet epic adds them.</td></tr>
+    <tr><td>5</td><td>Buy Apple's developer membership?</td><td><b>Only if the free signature shows no alert.</b> W4 tells; yours to decide then.</td></tr>
+  </tbody>
+</table>
+<p>Four more points, with their answers, are in the data file.</p>
+
+<h2 id="done">How you'll know it worked</h2>
+<ul data-c="done">
+  <li>A router alert shows once on your Mac, and its click opens the item, even after an app restart.</li>
+  <li>Each item leaves the list when its sign-off, merge or router line appears.</li>
+  <li>Open shows the committed page, not a newer working file.</li>
+  <li>After a router restart, or 15 silent minutes, the app says so.</li>
+  <li>With the app closed, everything works as today.</li>
+</ul>
+
+<h2 id="not">Not in this epic</h2>
+<ul data-c="not">
+  <li>Any button that signs, merges, commits or pushes (the next app epic).</li>
+  <li>The fleet, epic and worker screens; many projects.</li>
+  <li>A message to the router; alerts when away.</li>
+  <li>Any change to keel itself.</li>
+</ul>
+<p>For agents: the data file holds each part's files and tests, the rule files and their reviews, the overlap with E-KEELFIX, the end-to-end test and the distillation plan.</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
