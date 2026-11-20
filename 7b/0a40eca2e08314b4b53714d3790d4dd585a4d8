@@ -1,0 +1,1 @@
+{"schema":"test/v1","tip":"7b0a40eca2e08314b4b53714d3790d4dd585a4d8","base":"1f96ca3d24b52e5dc3cb78874db52c46cbcf7df4","branch":"wu/E-APPLIST/w1-update-log","committer":"vuluu <quangvu.luu92@gmail.com>","timestamp":1795145177,"unit":null,"integration":{"waived":"plan only: the W1 plan pair under docs/work/, no code; the WU test commit carries the integration tests"},"e2e":null}
