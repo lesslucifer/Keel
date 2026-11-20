@@ -78,11 +78,13 @@ impl App {
         (o.status.code(), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
     }
 
-    /// A call that must succeed; returns its `OK run=<run> n=<n>` line.
+    /// A call that must succeed; returns its `OK run=<run> n=<n>` line, printed on stdout alone.
     fn ok(&self, args: &[&str]) -> String {
-        let (code, out) = self.run(args);
-        assert_eq!(code, Some(0), "{args:?} failed: {out}");
+        let o = self.cmd(args).output().unwrap();
+        let (out, err) = (String::from_utf8_lossy(&o.stdout).into_owned(), String::from_utf8_lossy(&o.stderr));
+        assert_eq!(o.status.code(), Some(0), "{args:?} failed: {out}{err}");
         assert!(out.starts_with("OK run=") && out.contains(" n="), "{args:?} printed no OK line: {out:?}");
+        assert!(err.is_empty(), "{args:?} printed on stderr: {err:?}");
         out
     }
 
@@ -109,12 +111,7 @@ impl App {
     /// Every name in the app's directory: a writer leaves its two files and nothing else (no temp
     /// file, no lock).
     fn names(&self) -> Vec<String> {
-        let mut v: Vec<String> = match std::fs::read_dir(self.dir()) {
-            Ok(d) => d.map(|e| e.unwrap().file_name().into_string().unwrap()).collect(),
-            Err(_) => Vec::new(),
-        };
-        v.sort();
-        v
+        listing(&self.dir())
     }
 }
 
@@ -129,6 +126,64 @@ fn shim(dir: &Path, prog: &str, body: &str) {
 fn real(prog: &str) -> String {
     let o = common::cmd("sh").args(["-c", &format!("command -v {prog}")]).output().unwrap();
     String::from_utf8(o.stdout).unwrap().trim().to_string()
+}
+
+/// Review round 2: a writer stopped while it holds the lock. Its first `date`, the first program it
+/// runs once the lock is taken and before it writes anything, marks `ready` and then blocks on a fifo
+/// until `release` writes to it; every later `date` is the real one. No clock is involved: the test
+/// waits for the mark, and the writer for the test.
+struct Paused {
+    child: Child,
+    gate: PathBuf,
+}
+
+impl Paused {
+    fn spawn(a: &App, args: &[&str]) -> Paused {
+        let gate = a.d.path().join("gate");
+        std::fs::create_dir_all(&gate).unwrap();
+        let o = common::cmd("mkfifo").arg(gate.join("fifo")).output().unwrap();
+        assert!(o.status.success(), "mkfifo: {}", String::from_utf8_lossy(&o.stderr));
+        let g = common::sh_quote(gate.to_str().unwrap());
+        let shims = a.d.path().join("date-pauses");
+        shim(
+            &shims,
+            "date",
+            &format!("if mkdir {g}/paused 2>/dev/null; then : > {g}/ready; cat {g}/fifo >/dev/null; fi\nexec {} \"$@\"", common::sh_quote(&real("date"))),
+        );
+        let mut child = a.cmd_shimmed(&shims, args).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        let t = Instant::now();
+        while !gate.join("ready").exists() {
+            if child.try_wait().unwrap().is_some() {
+                let o = child.wait_with_output().unwrap();
+                panic!("{args:?} ended before it held the lock: {}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+            }
+            assert!(t.elapsed() < Duration::from_secs(30), "{args:?} never took the lock");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        Paused { child, gate }
+    }
+
+    /// The writer's pid: the shell that runs the script, whose `$$` names its lock's mark.
+    fn pid(&self) -> String {
+        self.child.id().to_string()
+    }
+
+    /// Lets the writer go on and waits for it.
+    fn release(self) -> std::process::Output {
+        use std::io::Write;
+        std::fs::OpenOptions::new().write(true).open(self.gate.join("fifo")).unwrap().write_all(b"go\n").unwrap();
+        self.child.wait_with_output().unwrap()
+    }
+}
+
+/// The names inside `dir`, sorted (empty when it is absent).
+fn listing(dir: &Path) -> Vec<String> {
+    let mut v: Vec<String> = match std::fs::read_dir(dir) {
+        Ok(d) => d.map(|e| e.unwrap().file_name().into_string().unwrap()).collect(),
+        Err(_) => Vec::new(),
+    };
+    v.sort();
+    v
 }
 
 /// A log of lines 1..=`last` in run `run` (a start, then sets of 50 worker keys) and the state that
@@ -198,7 +253,9 @@ fn assert_state_is_the_log_folded(a: &App) {
 #[test]
 fn start_wipes_both_files_and_begins_a_new_run() {
     let a = App::new();
-    let run = a.start("keel-1c");
+    let out = a.ok(&["start", "keel-1c"]);
+    let run = out.trim().strip_prefix("OK run=").unwrap().split(' ').next().unwrap().to_string();
+    assert_eq!(out, format!("OK run={run} n=1\n"), "start's OK line");
     assert!(regex::Regex::new(r"^keel-1c\.\d{8}-\d{6}\.\d+$").unwrap().is_match(&run), "run id {run:?}");
     let lines = a.lines();
     assert_eq!(lines.len(), 1, "{lines:?}");
@@ -213,6 +270,14 @@ fn start_wipes_both_files_and_begins_a_new_run() {
     assert_eq!(state["values"], serde_json::json!({}));
     assert_eq!(state["alerts"], serde_json::json!([]));
     assert!(is_at(&state["at"]), "{state}");
+    let raw_state = std::fs::read_to_string(a.state_path()).unwrap();
+    assert!(raw_state.starts_with(&format!(r#"{{"run":"{run}","n":1,"at":""#)), "start's state keys are not run, n, at first: {raw_state}");
+    assert_eq!(state.as_object().unwrap().keys().collect::<Vec<_>>(), ["run", "n", "at", "values", "alerts"]);
+    // at is local time: its offset is this machine's
+    let z = common::cmd("date").arg("+%z").output().unwrap();
+    let z = String::from_utf8(z.stdout).unwrap();
+    let offset = format!("{}:{}", &z.trim()[..3], &z.trim()[3..]);
+    assert!(lines[0]["at"].as_str().unwrap().ends_with(&offset), "{} is not local time ({offset})", lines[0]["at"]);
 
     a.ok(&["stage", "E-X.W1", "building"]);
     a.ok(&["set", "worker/w1", r#"{"state":"busy"}"#]);
@@ -400,6 +465,8 @@ fn a_refused_call_writes_nothing() {
     let before = a.bytes();
     let big = format!(r#""{}""#, "x".repeat(511));
     let wide = "€".repeat(200);
+    // 202 characters but 602 bytes: the 512 cap counts bytes
+    let wide_value = format!(r#""{wide}""#);
     let oversize = format!(r#"{{"headline":"h","lines":["{wide}","{wide}"]}}"#);
     let long_head = format!(r#"{{"headline":"{}","lines":["a"]}}"#, "h".repeat(81));
     let long_line = format!(r#"{{"headline":"h","lines":["{}"]}}"#, "l".repeat(201));
@@ -419,6 +486,8 @@ fn a_refused_call_writes_nothing() {
         vec!["stage", "E-X.W1", "done"],
         vec!["stage", "E-X.W1", "plan to read"],
         vec!["stage", "E-x.W1", "building"],
+        vec!["stage", "E-XYW1", "building"],
+        vec!["set", "wu/E-XYW1/stage", "1"],
         vec!["stage", "E-X.W1", "building", "1A2B3C4"],
         vec!["stage", "E-X.W1", "building", "1a2b3c"],
         vec!["stage", "E-X.W1", "building", "1a2b3c4", "extra"],
@@ -435,6 +504,7 @@ fn a_refused_call_writes_nothing() {
         vec!["set", "worker/w1", "null"],
         vec!["set", "worker/w1", "nan"],
         vec!["set", "worker/w1", &big],
+        vec!["set", "worker/w1", &wide_value],
         vec!["del"],
         vec!["del", "nokey"],
         vec!["del", "worker/w1", "extra"],
@@ -457,16 +527,22 @@ fn a_refused_call_writes_nothing() {
         vec!["alert", r#"{"headline":"h","lines":["a"]}"#, "extra"],
     ];
     for args in &refused {
-        let (code, out) = a.run(args);
-        assert_eq!(code, Some(2), "{args:?} was not refused: {out}");
-        assert!(out.starts_with("router-app: "), "{args:?} gave no reason: {out:?}");
+        // review round 2 (sweep): the reason goes to stderr alone, so a caller reading stdout for the
+        // OK line never takes a refusal for one
+        let o = a.cmd(args).output().unwrap();
+        let (out, err) = (String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+        assert_eq!(o.status.code(), Some(2), "{args:?} was not refused: {out}{err}");
+        assert!(out.is_empty(), "{args:?} printed its refusal on stdout: {out:?}");
+        assert!(err.starts_with("router-app: "), "{args:?} gave no reason: {err:?}");
         assert!(a.bytes() == before, "{args:?} changed a file");
         assert_eq!(a.names(), ["log.jsonl", "state.json"], "{args:?} left a file");
     }
     let (_, out) = a.run(&["alert", &oversize]);
     assert!(out.contains("1024"), "the oversize refusal does not name the cap: {out}");
-    let (_, out) = a.run(&["set", "worker/w1", &big]);
-    assert!(out.contains("512"), "the value refusal does not name the cap: {out}");
+    for v in [&big, &wide_value] {
+        let (_, out) = a.run(&["set", "worker/w1", v]);
+        assert!(out.contains("512"), "the value refusal does not name the cap: {out}");
+    }
     // the largest value a set takes still goes through
     a.ok(&["set", "worker/w1", &format!(r#""{}""#, "x".repeat(510))]);
 }
@@ -476,15 +552,30 @@ fn a_held_lock_makes_a_writer_wait_and_a_stale_one_refuse() {
     let a = App::new();
     a.start("r1");
     let lock = a.dir().join(".lock");
+    let q = |p: &Path| common::sh_quote(p.to_str().unwrap());
+
+    // review round 2 (nit): no real sleep. A `sleep` shim records each poll with the lines the log
+    // holds then, and the third poll frees the lock: the writer waited three polls with the log
+    // untouched, then took the lock and wrote.
     std::fs::create_dir(&lock).unwrap();
-    let mut w = a.cmd(&["set", "worker/w1", "1"]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
-    std::thread::sleep(Duration::from_secs(1));
-    assert!(w.try_wait().unwrap().is_none(), "the writer did not wait for the held lock");
-    assert_eq!(a.lines().len(), 1, "the writer wrote under another's lock");
-    std::fs::remove_dir(&lock).unwrap();
-    let o = w.wait_with_output().unwrap();
+    let shims = a.d.path().join("sleep-frees");
+    let polls = a.d.path().join("polls-frees");
+    shim(
+        &shims,
+        "sleep",
+        &format!(
+            "printf '%s %s\\n' \"$*\" \"$(wc -l < {log} | tr -d ' ')\" >> {polls}\n[ \"$(wc -l < {polls} | tr -d ' ')\" -lt 3 ] || rmdir {lock}",
+            log = q(&a.log()),
+            polls = q(&polls),
+            lock = q(&lock)
+        ),
+    );
+    let o = a.cmd_shimmed(&shims, &["set", "worker/w1", "1"]).output().unwrap();
     assert!(o.status.success(), "the writer failed once the lock was free: {}", String::from_utf8_lossy(&o.stderr));
+    let got = std::fs::read_to_string(&polls).unwrap_or_default();
+    assert_eq!(got.lines().collect::<Vec<_>>(), ["0.05 1"; 3], "the writer did not wait, or wrote under another's lock");
     assert_eq!(a.lines().len(), 2);
+    assert_eq!(a.names(), ["log.jsonl", "state.json"], "the writer left its lock");
 
     // review round 1 (I5): the wait is pinned by its polls, not by the clock - a `sleep` that only
     // records its argument shows every poll and how long each would have slept
@@ -492,20 +583,98 @@ fn a_held_lock_makes_a_writer_wait_and_a_stale_one_refuse() {
     let before = a.bytes();
     let shims = a.d.path().join("sleep-counts");
     let polls = a.d.path().join("polls");
-    shim(&shims, "sleep", &format!("printf '%s\\n' \"$*\" >> {}", common::sh_quote(polls.to_str().unwrap())));
-    let t = Instant::now();
+    shim(&shims, "sleep", &format!("printf '%s\\n' \"$*\" >> {}", q(&polls)));
     let o = a.cmd_shimmed(&shims, &["set", "worker/w1", "2"]).output().unwrap();
-    let took = t.elapsed();
     let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
     assert_eq!(o.status.code(), Some(1), "a held lock did not fail the writer: {out}");
-    assert!(out.contains("LOCKED") && out.contains(lock.to_str().unwrap()), "the refusal does not name the lock: {out}");
+    assert!(out.starts_with("router-app: LOCKED ") && out.contains(lock.to_str().unwrap()), "the refusal does not name the lock: {out}");
     let polls = std::fs::read_to_string(&polls).unwrap_or_default();
     let polls: Vec<&str> = polls.lines().collect();
     assert!(polls.iter().all(|p| *p == "0.05"), "a poll did not sleep 0.05 s: {polls:?}");
     assert!((99..=100).contains(&polls.len()), "the writer slept {} times 0.05 s, not 5 s in all", polls.len());
-    assert!(took < Duration::from_secs(4), "the writer slept in a real sleep, not the shim: {took:?}");
     assert!(a.bytes() == before, "a writer that never got the lock wrote");
     assert!(lock.is_dir(), "the writer broke a lock it never held");
+}
+
+/// Review round 2 (I3): the lock holds a directory named for its holder's pid, and a writer releases
+/// only a lock still holding its own mark. The owner removes a lock and another holder takes it while
+/// a writer is stopped inside it: the writer finishes, and the new lock - bare, or holding another
+/// pid's mark - is still there.
+#[test]
+fn a_writer_releases_only_the_lock_that_still_holds_its_mark() {
+    for other in [None, Some("1")] {
+        let a = App::new();
+        a.start("r1");
+        let lock = a.dir().join(".lock");
+        let p = Paused::spawn(&a, &["set", "worker/w1", "1"]);
+        assert_eq!(listing(&lock), [p.pid()], "the held lock does not hold the writer's pid");
+        std::fs::remove_dir(lock.join(p.pid())).unwrap();
+        std::fs::remove_dir(&lock).unwrap();
+        std::fs::create_dir(&lock).unwrap();
+        if let Some(m) = other {
+            std::fs::create_dir(lock.join(m)).unwrap();
+        }
+        let o = p.release();
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+        assert!(lock.is_dir(), "the writer removed a lock it no longer held ({other:?})");
+        assert_eq!(listing(&lock), other.into_iter().collect::<Vec<_>>(), "the writer changed another's lock");
+        assert_eq!(a.lines().len(), 2);
+    }
+}
+
+/// The plan's lock clause: the lock is released by a trap on EXIT, INT and TERM. A writer stopped by
+/// one of those signals while it holds the lock exits 1, writes nothing and leaves no lock.
+#[test]
+fn a_writer_stopped_by_a_signal_releases_its_lock_and_writes_nothing() {
+    for sig in ["TERM", "INT", "HUP"] {
+        let a = App::new();
+        a.start("r1");
+        a.ok(&["set", "worker/w1", "1"]);
+        let before = a.bytes();
+        let p = Paused::spawn(&a, &["set", "worker/w1", "2"]);
+        let k = common::cmd("kill").args([&format!("-{sig}"), &p.pid()]).output().unwrap();
+        assert!(k.status.success(), "kill -{sig}: {}", String::from_utf8_lossy(&k.stderr));
+        let o = p.release();
+        assert_eq!(o.status.code(), Some(1), "{sig}: the writer did not exit 1 by its trap: {}", String::from_utf8_lossy(&o.stderr));
+        assert!(a.bytes() == before, "{sig}: a stopped writer changed a file");
+        assert_eq!(a.names(), ["log.jsonl", "state.json"], "{sig}: a stopped writer left its lock or a file");
+    }
+}
+
+/// Review round 2 (nit): the links are checked again once the lock is held. .router, .router/app or
+/// a file replaced by a link while a writer waits for the lock is refused then: nothing is written
+/// through the link, the link stays, and the lock is released.
+#[test]
+fn a_link_made_while_a_writer_waits_is_refused_under_the_lock() {
+    for rel in [".router", ".router/app", ".router/app/log.jsonl", ".router/app/state.json"] {
+        let a = App::new();
+        a.start("r1");
+        a.ok(&["set", "worker/w1", "1"]);
+        let lock = a.dir().join(".lock");
+        std::fs::create_dir(&lock).unwrap();
+        let (path, target) = (a.main().join(rel), a.d.path().join("target"));
+        // read through the link once it is made: the files, wherever they now live
+        let before = a.bytes();
+        let q = |p: &Path| common::sh_quote(p.to_str().unwrap());
+        let shims = a.d.path().join("sleep-links");
+        shim(
+            &shims,
+            "sleep",
+            &format!(
+                "[ -L {path} ] || {{ mv {path} {target} && ln -s {target} {path}; }}\nrmdir {lock}",
+                path = q(&path),
+                target = q(&target),
+                lock = q(&lock)
+            ),
+        );
+        let o = a.cmd_shimmed(&shims, &["set", "worker/w1", "2"]).output().unwrap();
+        let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+        assert_eq!(o.status.code(), Some(2), "{rel} linked while the writer waited: {out}");
+        assert!(out.starts_with("router-app: ") && out.contains("symlink"), "{out}");
+        assert!(path.is_symlink(), "{rel}: the link was replaced");
+        assert!(a.bytes() == before, "{rel}: a file was written through the link");
+        assert_eq!(a.names(), ["log.jsonl", "state.json"], "{rel}: the refused writer left its lock or a file");
+    }
 }
 
 #[test]
@@ -547,6 +716,49 @@ fn a_symlinked_app_dir_or_file_is_refused() {
             assert_eq!(std::fs::read(&target).unwrap(), want, "{f}'s target was written");
             assert_eq!(std::fs::read(&other).unwrap(), other_bytes, "{args:?} wrote the other file");
             assert!(a.dir().join(f).is_symlink(), "the link was replaced");
+        }
+    }
+}
+
+/// Review round 2 (sweep): the script writes only inside a checkout's .router/app. A copy outside any
+/// git checkout exits 1 naming it and makes nothing, beside itself or where it was called from; and a
+/// log or state that is not a regular file (a directory here) is a file error: exit 1, nothing written.
+#[test]
+fn a_copy_outside_a_checkout_or_a_file_that_is_not_regular_is_refused() {
+    let a = App::new();
+    let loose = a.d.path().join("loose");
+    let cwd = a.d.path().join("cwd");
+    std::fs::create_dir_all(loose.join("scripts")).unwrap();
+    std::fs::create_dir_all(&cwd).unwrap();
+    std::fs::copy(a.main().join("scripts/router-app.sh"), loose.join("scripts/router-app.sh")).unwrap();
+    // git looks no higher than the test's own directory, wherever the temp dir lives
+    let shims = a.d.path().join("git-ceiling");
+    let ceiling = common::sh_quote(a.d.path().to_str().unwrap());
+    shim(&shims, "git", &format!("GIT_CEILING_DIRECTORIES={ceiling} exec {} \"$@\"", common::sh_quote(a.d.path().join("shim/git").to_str().unwrap())));
+    let mut c = a.cmd_at(&loose, &["start", "r1"]);
+    c.current_dir(&cwd).env("PATH", common::test_path(&common::path_with(a.d.path().join("shim")), Some(&shims)));
+    let o = c.output().unwrap();
+    let out = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(1), "a copy outside a checkout went on: {out}");
+    assert!(out.contains("router-app: not inside a git checkout"), "{out}");
+    assert_eq!(listing(&cwd), Vec::<String>::new(), "a copy outside a checkout wrote where it was called from");
+    assert_eq!(listing(&loose), ["scripts"], "a copy outside a checkout wrote beside itself");
+
+    for f in ["log.jsonl", "state.json"] {
+        let a = App::new();
+        a.start("r1");
+        a.ok(&["set", "worker/w1", "1"]);
+        let (file, other) = (a.dir().join(f), if f == "log.jsonl" { a.state_path() } else { a.log() });
+        let other_bytes = std::fs::read(&other).unwrap();
+        std::fs::remove_file(&file).unwrap();
+        std::fs::create_dir(&file).unwrap();
+        for args in [&["set", "worker/w1", "2"][..], &["start", "r2"]] {
+            let (code, out) = a.run(args);
+            assert_eq!(code, Some(1), "{f} a directory: {args:?} went on: {out}");
+            assert!(out.starts_with("router-app: ") && out.contains("not a regular file"), "{out}");
+            assert_eq!(std::fs::read(&other).unwrap(), other_bytes, "{f} a directory: {args:?} wrote the other file");
+            assert_eq!(listing(&file), Vec::<String>::new(), "{f} a directory: {args:?} wrote into it");
+            assert_eq!(a.names(), ["log.jsonl", "state.json"], "{args:?} left its lock or a file");
         }
     }
 }
@@ -702,25 +914,109 @@ fn a_writer_that_fails_between_its_writes_leaves_a_gap_never_a_repeat() {
     a.ok(&["del", "worker/w1"]);
     assert_eq!(ns(&a), [2002], "the line after the gap");
     assert_eq!(a.state()["n"], 2002);
+
+    // review round 2 (I2): a start writes its state first too. Its state's rename fails: neither
+    // file changes, so the log never shows the new run's line 1 beside the old run's state
+    let a = App::new();
+    let old_run = a.start("r1");
+    a.ok(&["set", "worker/w1", "1"]);
+    let before = a.bytes();
+    let o = a.cmd_shimmed(&mv_fails_on(&a, "state.json"), &["start", "r2"]).output().unwrap();
+    assert_eq!(o.status.code(), Some(1), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(a.bytes() == before, "a start that could not place its state changed a file");
+    no_line_ahead_of_the_state(&a);
+    // its log's rename fails: the state is the new run's, and the log still the old run's, so the app
+    // meets another run and reads the state
+    let o = a.cmd_shimmed(&mv_fails_on(&a, "log.jsonl"), &["start", "r2"]).output().unwrap();
+    assert_eq!(o.status.code(), Some(1), "{}", String::from_utf8_lossy(&o.stderr));
+    let state = a.state();
+    assert!(state["run"] != old_run.as_str() && state["n"] == 1, "a start did not write its state first: {state}");
+    assert_eq!(state["values"], serde_json::json!({}));
+    assert_eq!(a.bytes().0, before.0, "a start that could not place its log changed it");
+    let run = a.start("r3");
+    assert_eq!(ns(&a), [1]);
+    assert_eq!(a.state()["run"], run.as_str());
+    assert_state_is_the_log_folded(&a);
+
+    // the first start's log rename fails: a state and no log; the next writer makes the log, with a
+    // gap where line 1 would be
+    let a = App::new();
+    let o = a.cmd_shimmed(&mv_fails_on(&a, "log.jsonl"), &["start", "r1"]).output().unwrap();
+    assert_eq!(o.status.code(), Some(1), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!((a.bytes().0, a.state()["n"].as_u64()), (None, Some(1)), "a first start did not write its state first");
+    a.ok(&["set", "worker/w1", "1"]);
+    assert_eq!(ns(&a), [2], "the writer after a lost log line");
+    assert_eq!(a.state()["n"], 2);
+}
+
+/// Review round 2 (sweep): a state.json of the wrong shape - not JSON, not an object, or one missing
+/// run, n, values or alerts or holding them as the wrong type - is a file error: exit 1 naming the state
+/// and the way out (start again), and nothing is written; a start then begins a new run. An empty file,
+/// two JSON values or a fractional n are not refused today: follow-up N2 (the result report).
+#[test]
+fn a_state_of_the_wrong_shape_is_refused_until_a_start() {
+    let a = App::new();
+    a.start("r1");
+    let bad = [
+        "not json",
+        "[]",
+        r#""x""#,
+        "{}",
+        r#"{"run":"r","n":1}"#,
+        r#"{"run":"r","n":"1","values":{},"alerts":[]}"#,
+        r#"{"run":1,"n":1,"values":{},"alerts":[]}"#,
+        r#"{"run":"r","n":1,"values":[],"alerts":[]}"#,
+        r#"{"run":"r","n":1,"values":{},"alerts":{}}"#,
+    ];
+    for state in bad {
+        std::fs::write(a.state_path(), state).unwrap();
+        let before = a.bytes();
+        let (code, out) = a.run(&["set", "worker/w1", "1"]);
+        assert_eq!(code, Some(1), "state {state:?}: {out}");
+        assert!(out.contains("router-app: cannot read ") && out.contains("start again"), "state {state:?}: {out}");
+        assert!(a.bytes() == before, "state {state:?}: a file changed");
+        assert_eq!(a.names(), ["log.jsonl", "state.json"], "state {state:?}: a file or the lock was left");
+    }
+    a.start("r2");
+    a.ok(&["set", "worker/w1", "1"]);
+    assert_state_is_the_log_folded(&a);
 }
 
 /// Review round 1 (I6): every write replaces state.json by a rename, so a reader holding the old file
 /// reads it whole and the path names a new file; a state rewritten in place would keep its inode.
+/// Review round 2 (I1): the same holds for log.jsonl wherever it is replaced rather than appended to -
+/// a start, and the restart past 2,000 lines.
 #[test]
 fn the_state_is_replaced_by_a_rename_never_rewritten_in_place() {
     use std::io::Read;
+    /// `path` opened before `write` runs: the path names a new file after it, and the open file still
+    /// reads as it was.
+    fn replaced(path: &Path, what: &str, write: impl FnOnce()) {
+        let mut old = std::fs::File::open(path).unwrap();
+        let (ino, bytes) = (old.metadata().unwrap().ino(), std::fs::read(path).unwrap());
+        write();
+        assert_ne!(std::fs::metadata(path).unwrap().ino(), ino, "{what} rewrote {} in place", path.display());
+        let mut held = Vec::new();
+        old.read_to_end(&mut held).unwrap();
+        assert_eq!(held, bytes, "{what}: a reader holding the old {} saw it change", path.display());
+    }
     let a = App::new();
     a.start("r1");
     let alert = r#"{"headline":"h","lines":["a"]}"#;
     for args in [&["set", "worker/w1", "1"][..], &["stage", "E-X.W1", "building"], &["del", "worker/w1"], &["alert", alert], &["start", "r2"]] {
-        let mut old = std::fs::File::open(a.state_path()).unwrap();
-        let (ino, bytes) = (old.metadata().unwrap().ino(), std::fs::read(a.state_path()).unwrap());
-        a.ok(args);
-        assert_ne!(std::fs::metadata(a.state_path()).unwrap().ino(), ino, "{args:?} rewrote state.json in place");
-        let mut held = Vec::new();
-        old.read_to_end(&mut held).unwrap();
-        assert_eq!(held, bytes, "{args:?}: a reader holding the old state saw it change");
+        replaced(&a.state_path(), &format!("{args:?}"), || {
+            a.ok(args);
+        });
     }
+    replaced(&a.log(), "start", || {
+        a.start("r3");
+    });
+    let run = a.lines()[0]["run"].as_str().unwrap().to_string();
+    seed(&a, &run, 2000);
+    replaced(&a.log(), "the restart past 2,000 lines", || {
+        a.ok(&["set", "worker/w1", "2"]);
+    });
+    assert_eq!(a.lines().len(), 1);
 }
 
 /// Review round 1 nits: the router runs the script by its path, so its shebang and mode are part of the
