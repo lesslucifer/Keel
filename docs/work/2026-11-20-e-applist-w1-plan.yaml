@@ -1,0 +1,121 @@
+artifact: wu-plan
+status: ready
+id: E-APPLIST.W1
+epic: E-APPLIST
+title: "E-APPLIST.W1 · The router's update log"
+date: "2026-11-20"
+page: 2026-11-20-e-applist-w1-plan.html
+requirement: >-
+  After W1, scripts/router-app.sh is the one writer of <main checkout>/.router/app/log.jsonl and state.json: start
+  wipes both and begins a new run; set, del, alert and the router's stage shape each append exactly one numbered
+  line in the form docs/local-app.html gives and fold it into the state, under one lock, so concurrent writers never
+  skip or repeat a number; past 2,000 lines the log restarts from the state; and the router guard admits exactly the
+  router's plain-word shapes (start <name>, stage <wu> <stage> [<tip>], del question/<id>, del wu/<wu>/stage) and
+  denies every other form of the command.
+maps-to: >-
+  E-APPLIST, its W1 summary (docs/work/2026-11-20-e-applist-plan.html and .yaml): K14; UC-ROUTE-8 (new, recorded at
+  the close), UC-ROUTE-6 (amended: the guard admits the update command in plain words); docs/local-app.html "Two
+  sources" (router data: where it travels, one line one change, applying a line, refetch) and design principle 12.
+owner-changes:
+  - when: "The router starts, or a work unit moves on"
+    today: "Nothing is written down; only the router's memory and your Telegram know"
+    after: "One numbered line in the router's update log, and the current state beside it"
+  - when: "Before this part can land"
+    today: "-"
+    after: "One typed commit of the four rule files, then an independent re-check of them"
+expected:
+  - "In a temp checkout, start leaves log.jsonl holding one line (n 1, op start) and state.json with that run, n 1, no values and no alerts; a second start gives a different run id."
+  - "stage, set, del and alert each add one line whose n is the last plus one; the state's n equals the last line's n and its values and alerts are the log folded in order (alerts: the last 20)."
+  - "A stage line has exactly the keys run, n, at, op, key, value in that order, as the contract in docs/local-app.html shows (snapshot-locked)."
+  - "Sixteen writers started at once leave sixteen new lines numbered without a gap or a repeat, each a whole JSON line."
+  - "With 2,000 lines in the log, the next write leaves a log of one line (n 2001) and a state holding every earlier value."
+  - "A refused call (unknown verb or key, bad JSON, a null value, a line over 1,024 bytes, no run yet, a symlinked file) exits 2 and leaves both files byte-equal."
+  - "The router guard admits the four router shapes and denies set, alert, any other key, a quote, a redirect, an extra word or an env prefix; the guard and the script accept the same words."
+  - "cargo test, cargo fmt --check, cargo clippy -D warnings, keel check and keel verify-doc are green on the tip."
+test-plan:
+  unit: "none: waived. A shell script and a jq filter have no unit layer in this repo; every case is an integration test through the process boundary (the epic plan's test-layers)."
+  integration: >-
+    tests/suite/router_app.rs (new; each test copies the shipped script into its own temp git repo and runs it as a
+    process, hermetic and parallel): start_wipes_both_files_and_begins_a_new_run;
+    each_verb_writes_one_line_with_the_next_number_and_the_state_folds_it (stage, set worker/<n>, del, 21 alerts:
+    the state keeps the last 20); a_stage_line_is_the_contract_the_app_reads (snapshot of the key order and value
+    shape, at only checked present); sixteen_writers_at_once_keep_the_numbers_whole;
+    the_2001st_line_restarts_the_log_from_the_state (log and state seeded to n 2000);
+    a_refused_call_writes_nothing (unknown verb, unknown key, bad JSON, null, oversize, no run, extra words);
+    a_held_lock_makes_a_writer_wait_and_a_stale_one_refuse (released after 1 s: the write lands; held: exit 1
+    naming the lock within the 5 s wait); a_symlinked_app_dir_or_file_is_refused;
+    a_worktree_copy_writes_the_main_checkouts_log; text_with_a_newline_or_quote_stays_one_escaped_line.
+    tests/suite/router.rs: router_guard_admits_the_update_log_in_plain_words_only (new);
+    the_guard_and_the_app_script_take_the_same_words (new: each probe gets the same verdict from both, as the inbox
+    pair does); settings_allow_exactly_the_app_shapes_the_guard_admits (new);
+    router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag (its allow-entry mapping learns
+    the three router-app.sh entries; its deny message names router-app.sh);
+    keels_router_security_files_are_rule_bearing (scripts/router-app.sh joins its list);
+    router_text_names_what_the_launcher_prints_and_no_retired_mechanism (router.md's body names the three verbs).
+    tests/suite/main.rs: mod router_app. Red first: committed before the rule files, every new test fails (no
+    script, no guard shape, no settings entry).
+  e2e: "none at the WU: the epic test app/test/applist.e2e.test.ts, written at the close, runs the real script's start and stage lines."
+details:
+  base: "wu/E-APPLIST/w1-update-log off epic/E-APPLIST at 1f96ca3 (the approved epic plan and the owner's opening rules commit: scripts/router-app.sh is already rule-bearing)"
+  files:
+    plain-commits: [tests/suite/router_app.rs (new), tests/suite/router.rs, tests/suite/main.rs, "this plan pair and the result pair under docs/work/"]
+    rule-bearing: [scripts/router-app.sh (new), scripts/router-guard.jq, .claude/settings.json, .claude/agents/router.md]
+    against-the-epic-file-map: ".claude/settings.json is added: without Bash(scripts/router-app.sh <verb> *) in permissions.allow, each router call prompts the owner, as every router script before it needed (E-RGUARD.W2, W3)."
+  the-script:
+    path: "scripts/router-app.sh, /bin/sh, set -eu, every GIT_* unset, LC_ALL=C, umask 077; jq for all JSON."
+    where: "<main checkout>/.router/app/ (the parent of git rev-parse --git-common-dir from the script's own directory, as router-inbox.sh finds its inbox); no environment override. .router/ is git-ignored. The directory and both files must not be symlinks (refused, exit 2)."
+    verbs:
+      start: "start <router-name> ([a-z0-9][a-z0-9-]{0,31}, the watchdog's rule): under the lock, writes state.json {run, n: 1, at, values: {}, alerts: []} and replaces log.jsonl with one line {run, n: 1, at, op: start}. Run id <router-name>.<YYYYMMDD-HHMMSS>.<pid>."
+      stage: "stage <wu-id> <plan-in-work|plan-to-read|plan-approved|building|in-review> [<tip, 7-40 lowercase hex>]: the router's shape for set wu/<id>/stage {stage: 'plan to read', tip?}."
+      set: "set <key> <json>: any JSON value but null, compact form at most 512 bytes. For programs (W2's watchdog, W3's sender) with a fixed argv, never the router's Bash."
+      del: "del <key>: removes one key (an absent key still writes the line: the app applies it as a no-op)."
+      alert: "alert <json object>: headline (1-80 chars), lines (1 or 2 strings, each 1-200 chars), wu (optional, wu-id grammar), link (optional, keel://[A-Za-z0-9._/-]{1,200}); no other field. For W3's sender only."
+    keys: "router, wu/<wu-id>/stage, wu/<wu-id>/conflict, epic/<E-id>/paused, question/<id>, worker/<name>, worker/<name>/report, facts (the whole list the contract gives, so W2, W3 and A5 need no script change). wu-id E-[A-Z0-9]{1,16}.W[0-9]{1,3}; E-id E-[A-Z0-9]{1,16}; id and name [a-z0-9][a-z0-9-]{0,40}."
+    line: >-
+      One compact JSON object built by jq -nc, keys in this order: run, n, at, op, then key (set, del), then value
+      (set, alert). at is local time with the offset as +07:00. At most 1,024 bytes, else refused before the lock.
+      Example: {"run":"keel-1c.20261120-102530.48213","n":7,"at":"2026-11-20T10:31:02+07:00","op":"set","key":"wu/E-APPLIST.W1/stage","value":{"stage":"plan to read","tip":"1f96ca3"}}
+    state: "state.json = {run, n, at, values: {key: value}, alerts: [the last 20 alert values, each with its n and at]}; written to a mktemp file in .router/app/ and renamed over, so a reader never sees half of it."
+    order: "check the words and build the line (no lock, nothing written) -> take the lock -> read n from state.json (no state: exit 2 'no run; start first') -> append the line to the log (or rotate) -> rename the new state into place -> release -> print 'OK run=<run> n=<n>'."
+    lock: "mkdir .router/app/.lock with the holder's pid inside; released by a trap on EXIT, INT and TERM. A writer waits up to 5 s (polls every 0.05 s), then exits 1 'LOCKED <path>: remove it if no router-app.sh runs'. No automatic break of a stale lock (two breakers can each remove the other's live lock); the script holds it for milliseconds, so only a killed writer leaves one."
+    rotation: "before appending line n, if log.jsonl already has 2,000 lines, a file holding only line n is renamed over it. The app sees a missing number and reads the state once (docs/local-app.html 'Applying a line'); the log is written before the state, so a state read after the line holds it, and one read before is followed by the line."
+    exits: "0 OK; 2 refused, nothing written; 1 lock or file error."
+  the-guard:
+    admitted: >-
+      scripts/router-app\.sh (start [a-z0-9][a-z0-9-]{0,31}|stage E-[A-Z0-9]{1,16}\.W[0-9]{1,3}
+      (plan-in-work|plan-to-read|plan-approved|building|in-review)( [0-9a-f]{7,40})?|del
+      (question/[a-z0-9][a-z0-9-]{0,40}|wu/E-[A-Z0-9]{1,16}\.W[0-9]{1,3}/stage)) - one more alternative in
+      bash_ok, under the existing plain-word charset, the --ou and the scripts/..  checks.
+    denied: "set and alert (their JSON is free text: no plain-word guard can admit it, as the inbox's post), del of router, worker/*, facts or any other key, start without a name, any extra word, a quote, $, a redirect or a separator, an env prefix (X=1 scripts/router-app.sh ...), a path with .., any other verb."
+    deny-message: "the Bash whitelist text gains 'scripts/router-app.sh start <name>|stage <wu> <stage> [<tip>]|del question/<id>|del wu/<wu>/stage (the update log)'."
+    settings: ".claude/settings.json permissions.allow gains Bash(scripts/router-app.sh start *), Bash(scripts/router-app.sh stage *), Bash(scripts/router-app.sh del *); never Bash(scripts/router-app.sh *)."
+    router-md: ".claude/agents/router.md: its Bash paragraph names the three router-app.sh shapes and says set and alert are the watchdog's and the sender's; the tools: line is unchanged (the guard's tools list is unchanged)."
+  how-the-router-calls-it:
+    - "At its start, once: scripts/router-app.sh start keel-1c (its own name, as ListAgents shows it)."
+    - "When a work unit moves on: scripts/router-app.sh stage E-APPLIST.W1 plan-to-read 1a2b3c4 (plan in work, plan to read, plan approved, building, in review; K4)."
+    - "When you answer a question: scripts/router-app.sh del question/<id>."
+    - "When those moments come is the keel-router skill's text, which W3 writes (K4, K10); W1 gives only the shapes and router.md names them."
+  order:
+    - "1. This plan pair, plain commit; test note (integration waived: plan only) and doc note with --target epic/E-APPLIST. The owner approves the plan."
+    - "2. The tests, red first, plain commit: tests/suite/router_app.rs, tests/suite/router.rs, tests/suite/main.rs (lint green, the new tests red)."
+    - "3. The worker writes the four rule files in the worktree, runs cargo test green on the working tree, stages only those four and stops; the router stages the owner's command and watches it (router-watch.sh commit)."
+    - "4. The owner's typed commit: keel mr commit -m '<E-APPLIST.W1: the update log ...>' --as vuluu, with exactly the four rule files staged (Reviewed-By trailer)."
+    - "5. The independent re-gate on the new tip, by a fresh read-only worker on opus at high effort: keel check and the suite green; the four files read by review-checklists: security path for router-app.sh (one lock, every value through jq, writes only .router/app/, symlinks refused) and router-guard.jq (fail-closed, admits only the four shapes, the guard and the script agree), the settings entries equal to the guard's shapes, router.md's tools line equal to the guard's. A fix to a rule file goes back through steps 3 to 5."
+    - "6. The result pair, plain commit; test note (integration: router_app.rs and router.rs; unit waived; e2e none), doc note."
+    - "7. keel preflight wu, then the code review (the cr gate binds tests/ only in this WU: scripts/ is not a code path), then keel verify-dod wu red only on 8."
+    - "8. The owner signs: keel mr confirm wu <tip> --as vuluu --target epic/E-APPLIST --report docs/work/2026-11-20-e-applist-w1-result.html, then merges into epic/E-APPLIST."
+  open-points:
+    - "The four rule files in one typed commit, or four? One, with nothing else staged. They only work together (a guard shape for a missing script, a settings entry the guard refuses), and E-RGUARD.W3 landed its script, guard and settings the same way. The epic plan's 'each rule-bearing file is committed alone' is read as apart from code. Four commits is the alternative: four typed commands, the same review."
+    - "Add .claude/settings.json to W1 (the epic file map lacks it)? Yes: without the allow entries each router call asks you."
+    - "A lock left by a killed writer: break it automatically? No. Writers wait 5 s, then fail naming it; you remove the directory. An automatic break can remove a live lock."
+    - "Run id: <router-name>.<time>.<pid>? Yes: two starts in one second still differ, and the app sees a new run. The contract's example keeps its shape."
+    - "The router's shapes: start, stage, del of a question or a stage only? Yes. set and alert carry free text and are for programs called without a shell (W2, W3), like the inbox's post."
+    - "A stage's tip optional? Yes: when absent, the app shows what git proves."
+    - "Caps: 1,024 bytes a line, 512 a value, the last 20 alerts in the state? Yes, from the contract's 'about 200 bytes' with room for an alert."
+    - "Deny router-app.sh to workers? Not in W1: the worker sandbox already bounds writes to the worktree, so a worker's copy cannot reach the main checkout's .router/app/. W2 changes the launcher anyway; it adds scripts/router-app.sh to the worker deny list as intent."
+  baseline: "epic/E-APPLIST 1f96ca3; the W1 result records the suite counts at its own tip"
+  sources:
+    - docs/work/2026-11-20-e-applist-plan.yaml (W1 summary, files, rule-bearing-and-unreviewed)
+    - docs/local-app.html ("Two sources", K14, principle 12)
+    - scripts/router-guard.jq, scripts/router-inbox.sh (the root rule, the post precedent), scripts/router-worker.sh (the lock precedent)
+    - .claude/settings.json, .claude/agents/router.md, tests/suite/router.rs, tests/suite/router_inbox.rs
