@@ -50,7 +50,7 @@
 
 <h2 id="work">The work</h2>
 <p data-item="requirement" data-c="requirement"><code>keel verify-dod wu|epic &lt;tip&gt; --no-receipt</code> prints the same checks and exit code as without it and writes nothing; <code>--help</code> or <code>-h</code> anywhere on any keel command prints that command's usage on stdout, exits 0 and changes no ref, note, index, file or config; an argument that <code>verify-dod</code>, <code>preflight</code> or <code>notes write</code> does not know is refused, exit 1, before anything is read or written.</p>
-<p data-item="maps-to" data-c="maps-to">Epic <code>E-KEELFIX</code>, its W2 block and open points 5 and 6 · backlog <a href="../backlog/local-app.html#a2">local-app A2</a>, K2 and the help fix · UC-GATE-2 and UC-NOTE-1 amended at the close.</p>
+<p data-item="maps-to" data-c="maps-to">Epic <code>E-KEELFIX</code>, its W2 block and open points 5 and 6 · backlog <a href="../backlog/local-app.yaml">local-app A2</a>, K2 and the help fix · UC-GATE-2 and UC-NOTE-1 amended at the close.</p>
 
 <h3 id="part-1">Part 1 · The gate's dry run (<code>src/gate.rs</code>)</h3>
 <p><b>In short:</b> the gate reads its options with one strict parser. <code>--no-receipt</code> skips the one write a gate run by hand makes. Everything else stays as it is.</p>
