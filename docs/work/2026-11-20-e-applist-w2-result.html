@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b01ae599f34851f0dfb2b69">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-APPLIST.W2 result: the watchdog's lines</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-APPLIST.W2 · The watchdog's lines</h1>
+      <p>Every five minutes the watchdog now writes down what changed about each worker, and that the router is alive.</p>
+      <div class="meta">WU result · v1 · 2026-11-21 · T3 · Keel · W2 of <a href="2026-11-20-e-applist-plan.html">the epic plan</a> · its plan: <a href="2026-11-20-e-applist-w2-plan.html">W2 plan</a> · its data file sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="happened">What happened</h2>
+<p data-c="happened">The watchdog writes one line for each worker that changed, one line for each worker that ended, and a "router alive" line. Its message to the router is the same as before, byte for byte. Workers may no longer run the update command. You committed the launcher with one typed command. A fresh worker re-checked it: no blocker, two small findings. You chose to fix both, in a second typed command. Every new test failed first. The code review passed in its first round; its five small notes on the tests are fixed.</p>
+
+<h2 id="checks">How you'll know it worked</h2>
+<table data-c="checks">
+  <thead><tr><th>Check from the plan</th><th>Met?</th></tr></thead>
+  <tbody>
+    <tr><td>A first tick writes each worker, then the "alive" line.</td><td><b>Met.</b></td></tr>
+    <tr><td>A quiet tick writes only the "alive" line.</td><td><b>Met.</b></td></tr>
+    <tr><td>One changed worker writes one line; an ended one is removed once.</td><td><b>Met.</b> Each of the seven fields tested alone.</td></tr>
+    <tr><td>A blocked or broken log leaves the router's message byte for byte as today.</td><td><b>Met.</b> A held lock costs one short wait, not one per worker.</td></tr>
+    <tr><td>Tests, lint and the doc check are green.</td><td><b>Met.</b> One no-write case, a damaged git folder, holds by how the step runs. No test covers it yet.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">The main case, run for real</h2>
+<p data-c="example-intro">The tests run the real launcher and update command, with a fake list of sessions:</p>
+<ol data-c="example">
+  <li>The router starts a run. Workers w1 and w2 are live.</li>
+  <li>A tick: one line for w1, one for w2, then "alive" naming two workers.</li>
+  <li>A tick with nothing changed: only "alive".</li>
+  <li>w1 makes a commit: one line for w1, then "alive".</li>
+  <li>w2 ends: one line removes it, then "alive".</li>
+  <li>The router restarts: the next tick writes every worker again.</li>
+</ol>
+<p data-c="example-note">A run by hand in a scratch project was refused by this session's permission check. The router has the command.</p>
+
+<h2 id="diff">Differences from the plan</h2>
+<ul data-c="diff">
+  <li><b>A partly readable session list now writes nothing.</b> The re-check found it removed the live workers listed after a bad entry.</li>
+  <li><b>A line too long for the update command is shortened, not skipped.</b> Skipping left a worker's old line standing.</li>
+  <li><b>Two test commits, not one.</b> The second holds the tests for the two fixes, also failing first.</li>
+</ul>
+
+<h2 id="left">What is left, and who takes it</h2>
+<table data-c="left">
+  <thead><tr><th>What</th><th>Who</th></tr></thead>
+  <tbody>
+    <tr><td>Seven faults the re-check planted that no test caught. Two are now caught; five remain, plus two small test and guard notes.</td><td>The backlog row for hardening the router's scripts, with W1's notes. Your choice when.</td></tr>
+    <tr><td>The local-app page and the router's use case learn the watchdog's lines.</td><td>This epic's close.</td></tr>
+    <tr><td>A reviewer confirms the five test fixes, then your sign-off and the merge.</td><td>The router starts it; you sign.</td></tr>
+  </tbody>
+</table>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

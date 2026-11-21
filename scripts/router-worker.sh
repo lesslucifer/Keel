@@ -15,7 +15,9 @@
 # would loop it on a red doc) and defines its agent inline; the router's name reaches it only inside
 # its two hook commands (a background session has no launcher environment). It is never resumed (a
 # resume of a running session starts a copy): it auto-compacts, and facts stops it once the router
-# is gone.
+# is gone. Each facts run also writes the update log the local app reads (E-APPLIST.W2, K15): one line
+# per live worker that changed, a del per worker gone and the router's heartbeat, only through
+# scripts/router-app.sh; its block and the router's message stay as they are whatever those writes do.
 # A worker is a native background session (E-ROUTER3.W10, DEC-44): `claude --bg -n <name> --agent
 # worker`, run in its worktree, listed by `claude agents --json` while it lives. It reports to the
 # router by SendMessage and stays alive idle; a follow-up task is the router's own SendMessage, so
@@ -206,7 +208,8 @@ EOF
 }
 # One block per live worker for the watchdog's prompt hook; never fails (a hook that fails would
 # drop the tick). Live worker: a background session in a registered worktree of this repository other
-# than this checkout and the main one, exactly where spawn may put a worker.
+# than this checkout and the main one, exactly where spawn may put a worker. The block is printed
+# first, whole; then app_lines writes the update log from the same read.
 facts() {
   set +e  # a hook that fails would drop the tick: one worker's failed read never ends the fleet
   list=$("$C" agents --json 2>/dev/null) || { printf 'Report to %s.\nThe session list cannot be read (claude agents --json).\n' "$rn"; exit 0; }
@@ -223,13 +226,18 @@ facts() {
   main=$(printf '%s\n' "$wts" | sed -n 1p)
   common_dir || gd=
   now=$(date +%s)
-  # control characters (the separator among them) are blanked first, so a row is one line of five fields
-  printf '%s\n' "$list" | jq -r '.[] | select(.kind == "background") | [.name, .sessionId, .cwd, (.status // .state), .waitingFor]
-    | map(. // "" | tostring | gsub("[[:cntrl:]]"; " ")) | join("\u001f")' 2>/dev/null |
+  # control characters (the separator among them) are blanked first, so a row is one line of five fields.
+  # A list jq cannot read to its end (a row that is not an object) keeps the rows read before it, as
+  # the block always has, and sets w_bad: app_lines then writes nothing, since a worker after that
+  # row would read as gone (E-APPLIST.W2 review L1).
+  w_bad=
+  w_list=$(printf '%s\n' "$list" | jq -r '.[] | select(.kind == "background") | [.name, .sessionId, .cwd, (.status // .state), .waitingFor]
+    | map(. // "" | tostring | gsub("[[:cntrl:]]"; " ")) | join("\u001f")' 2>/dev/null) || w_bad=1
+  w_rows=$({ [ -z "$w_list" ] || printf '%s\n' "$w_list"; } |
   while IFS=$US read -r w_name w_sid w_cwd w_state w_wait; do
-    case "$w_name" in watchdog|watchdog-*) continue;; esac
+    case "$w_name" in (watchdog|watchdog-*) continue;; esac
     [ "$w_cwd" != "$ROOT" ] && [ "$w_cwd" != "$main" ] && printf '%s\n' "$wts" | grep -Fxq -- "$w_cwd" || continue
-    quiet= t=
+    quiet= t= newest=
     if expr "$w_sid" : '^[0-9a-f-]\{1,64\}$' > /dev/null; then
       for t in "$HOME"/.claude/projects/*/"$w_sid".jsonl; do [ -f "$t" ] && break; t=; done
     fi
@@ -237,7 +245,7 @@ facts() {
       # one listing of the transcript and its subagents, newest first: one stat however many there are
       f=$(ls -t "$t" "${t%.jsonl}"/subagents/*.jsonl 2>/dev/null | head -1)
       newest=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null)
-      case "$newest" in ""|*[!0-9]*) ;; *) quiet=$(( (now - newest) / 60 )); [ "$quiet" -ge 0 ] || quiet=0;; esac
+      case "$newest" in (""|*[!0-9]*) ;; (*) quiet=$(( (now - newest) / 60 )); [ "$quiet" -ge 0 ] || quiet=0;; esac
       # the last 64 KB; a first line the window cut is dropped
       items=$(if [ "$(wc -c < "$t")" -gt 65536 ]; then tail -c 65536 "$t" | sed 1d; else cat "$t"; fi |
         jq -R 'fromjson? | select(.type == "assistant") | .message.content[]? |
@@ -250,24 +258,78 @@ facts() {
       tip=$(git -c core.fsmonitor=false -C "$w_cwd" log -1 --format='%h %s' 2>/dev/null) || tip=
       # --no-optional-locks: never take the worker's index.lock (its own git add/commit would fail)
       dirty=$(git -c core.fsmonitor=false --no-optional-locks -C "$w_cwd" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
-    else br="unlinked .git, not read" tip= dirty=?; fi
+      lbr=$br
+    else br="unlinked .git, not read" tip= dirty=? lbr=; fi
+    # name and value: the worker's line in the update log (K15), from this same read; the name only
+    # when it is a key router-app.sh takes (spawn's name rule). A value over router-app.sh's 512-byte
+    # cap loses a character at a time from its longest of branch, waiting and state, so a line is
+    # never refused and left stale (review L2).
     jq -n -c --arg name "$w_name" --arg st "$w_state" --arg wf "$w_wait" --arg q "$quiet" --arg br "${br:-detached}" \
-      --arg tip "$tip" --arg dirty "$dirty" --argjson items "${items:-[]}" '
+      --arg tip "$tip" --arg dirty "$dirty" --argjson items "${items:-[]}" --arg sid "$w_sid" --arg lbr "$lbr" --arg act "$newest" '
       def clean($n): tostring | gsub("[[:cntrl:]]"; " ") | .[0:$n];
+      def fit: until((tojson | utf8bytelength) <= 512 or ([.branch, .waiting, .state] | all(. == null or . == ""));
+        ([("branch", "waiting", "state") as $k | select((.[$k] // "") != "") | {k: $k, b: (.[$k] | utf8bytelength)}] | max_by(.b).k) as $k
+        | .[$k] |= .[:-1]);
       ($st | if . == "working" then "busy" elif . == "done" then "idle" else . end) as $s
+      | ($tip | split(" ") | .[0] // "") as $h
       | (if $s == "idle" then "DONE"
          elif $s == "busy" then (if $q != "" and ($q | tonumber) >= 15 then "STUCK (quiet \($q)m)" else "busy" end)
          else "STUCK (\(if $wf != "" then $wf elif $s != "" then $s else "unknown" end | clean(60)))" end) as $state
       | {rank: (if $state == "busy" then 1 else 0 end),
          text: (["\($name | clean(60)): \($state) · quiet \(if $q == "" then "?" else $q + "m" end) · \($br | clean(80)) · \($tip | clean(120)) · dirty \($dirty)"]
            + ($items | map("  - " + clean(200)))
-           | until((join("\n") | utf8bytelength) <= 2000; .[:1] + .[2:]) | join("\n"))}'
-  done | jq -r -s --arg h "Report to $rn." '
+           | until((join("\n") | utf8bytelength) <= 2000; .[:1] + .[2:]) | join("\n")),
+         name: (if $name | test("^[a-z0-9][a-z0-9-]{0,40}$") then $name else null end),
+         value: ({state: (if $s == "" then "unknown" else $s end | clean(20))}
+           + (if $wf != "" then {waiting: ($wf | clean(60))} else {} end)
+           + (if $sid | test("^[0-9a-f-]{1,64}$") then {session: $sid} else {} end)
+           + (if $lbr != "" then {branch: ($lbr | clean(120))} else {} end)
+           + (if $h | test("^[0-9a-f]{4,40}$") then {tip: $h} else {} end)
+           + (if $dirty | test("^[0-9]+$") then {dirty: ($dirty | tonumber)} else {} end)
+           + (if $act | test("^[0-9]+$") then {active: ($act | tonumber | todate)} else {} end) | fit)}'
+  done)
+  printf '%s\n' "$w_rows" | jq -r -s --arg h "Report to $rn." '
     if length == 0 then "\($h)\nNo live worker." else
     sort_by(.rank) as $b
     | reduce $b[] as $x ({out: $h, k: 0, full: false};
         if .full then . elif ((.out + "\n" + $x.text) | utf8bytelength) + 40 < 9000 then .out += "\n" + $x.text | .k += 1 else .full = true end)
     | if .k < ($b | length) then .out + "\n\(($b | length) - .k) more workers not shown." else .out end end'
+  app_lines
+}
+# The update log's lines for this tick (E-APPLIST.W2, K15), after the block is printed: compared with
+# the log's own state (a router restart empties it, so the next tick writes every worker), a set per
+# live worker whose value changed, a del per worker line whose worker is gone, then the router's
+# heartbeat, at most one line per key. Only through router-app.sh, each value one argv word built by
+# jq, its output discarded; nothing with no run (a run is the router's), a state it cannot read or a
+# session list facts could not read to its end.
+# A refused line (exit 2) is skipped; any other failure (a held lock, no script) ends the tick's
+# writes, so a tick waits on the lock once at most. Never fails: the facts still exit 0.
+app_lines() {
+  [ -n "$gd" ] && [ -z "$w_bad" ] || return 0
+  ad=$(dirname "$gd")/.router/app
+  [ ! -L "${ad%/app}" ] && [ ! -L "$ad" ] && [ ! -L "$ad/state.json" ] && [ -f "$ad/state.json" ] || return 0
+  old=$(jq -c '.values | if type == "object" then with_entries(select(.key | test("^worker/[a-z0-9][a-z0-9-]{0,40}$")))
+    else error("no values") end' "$ad/state.json" 2>/dev/null) || return 0
+  rs=$(printf '%s\n' "$list" | jq -r --arg n "$rn" 'first(.[] | select(.name == $n) | (.status // .state)) // "" | tostring' 2>/dev/null) || rs=
+  plan=$(printf '%s\n' "$w_rows" | jq -r -s --argjson old "$old" --arg rn "$rn" --arg rs "$rs" '
+    def clean($n): tostring | gsub("[[:cntrl:]]"; " ") | .[0:$n];
+    length as $count
+    | (reduce (.[] | select(.name != null)) as $r ({}; if has($r.name) then . else .[$r.name] = $r.value end)) as $live
+    | ($live | to_entries[] | select($old["worker/" + .key] != .value) | ["set", "worker/" + .key, (.value | tojson)]),
+      ($old | keys_unsorted[] | select(ltrimstr("worker/") as $k | $live | has($k) | not) | ["del", ., ""]),
+      ["set", "router", ({name: $rn, state: ($rs | if . == "working" then "busy" elif . == "done" then "idle" elif . == "" then "unknown" else . end
+        | clean(20)), workers: $count} | tojson)]
+    | join("\u001f")' 2>/dev/null) || return 0
+  printf '%s\n' "$plan" | while IFS=$US read -r op key val; do
+    case "$op" in
+      set) "$ROOT/scripts/router-app.sh" set "$key" "$val" < /dev/null > /dev/null 2>&1 ;;
+      del) "$ROOT/scripts/router-app.sh" del "$key" < /dev/null > /dev/null 2>&1 ;;
+      *) continue ;;
+    esac
+    rc=$?
+    [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ] || break
+  done
+  return 0
 }
 mode=${1:-}; [ $# -ge 1 ] && shift
 # before any other git in any mode; the watchdog's facts, which never fail, report it instead
@@ -492,7 +554,7 @@ set -- "$@" --disallowedTools
 for c in "keel mr" "cargo run" "keel init" "keel hooks" "cargo install" "cargo publish" "cargo login" \
   "git push" "git config" "git update-ref" "git symbolic-ref" "git stash" "git notes" "git switch" "git checkout" \
   "git rebase" "git worktree add" "git worktree remove" "git worktree move" "git worktree prune" "git -C" \
-  "git --git-dir" "git --work-tree" "claude" "scripts/router-worker.sh"; do
+  "git --git-dir" "git --work-tree" "claude" "scripts/router-worker.sh" "scripts/router-app.sh"; do
   set -- "$@" "Bash($c)" "Bash($c *)"; done
 set -- "$@" "Bash(git --git-dir=*)" "Bash(git --work-tree=*)"
 # The Read tool is also denied the sandbox's denyRead paths by rule (the file guard's realpath check is
