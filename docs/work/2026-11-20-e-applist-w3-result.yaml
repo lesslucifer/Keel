@@ -22,7 +22,7 @@ outcome: >-
   and every low but the last round's one is fixed, each testable one with a failing test first. Code review round 1
   on 81c483f (tests/ is the code path) FAILED with 7 importants, all test gaps, and a verifier found one sender
   defect (the 4,096 cap checked on the raw body, header lines included); the tests are in fae22bc and 018cf32 and
-  the sender fix is H, staged for the owner's typed commit. Re-gate on a4c0ed5:
+  the sender fix is H 7f91553, the owner's typed commit. Re-gate on a4c0ed5:
   cargo test unit 137 passed, suite 404 passed, 0 failed, 14 ignored (port-bound); keel check green.
 deviations:
   - >-
@@ -155,7 +155,7 @@ evidence:
       valid id; no format character in the blanking test; the sender's id grammars not tied to router-app.sh's; the
       skill test checked no moment and fed no command to the guard; its stages and header keys were literals, not read
       from the guard and the sender. A verifier also reproduced the raw-body cap defect. Fixed: tests in fae22bc
-      (red first) and 018cf32 (each by a mutant), the sender in H (staged). Nits waived by the review, none taken.
+      (red first) and 018cf32 (each by a mutant), the sender in H 7f91553. Nits waived by the review, none taken.
   commits:
     - "477949f plan pair (signed, merged into the epic)"
     - "610ffb5 back-merge of epic/E-APPLIST at 1494748"
@@ -177,8 +177,9 @@ evidence:
     - "4a846d9, 81c483f result pair updates"
     - "fae22bc tests for code review round 1, red first"
     - "018cf32 tests for code review round 1's test gaps"
-    - "H, staged and not yet committed: scripts/notify-owner.py, the 4,096 cap on the message (the owner's typed commit)"
-  re-gate: "018cf32 with H in the working tree: cargo test unit 137 passed; suite 409 passed, 0 failed, 14 ignored; fmt and clippy green; keel check 'check green - cached'. Earlier, a4c0ed5: suite 404; 7603745: suite 400."
+    - "14030a9 result pair update"
+    - "7f91553 rule H: scripts/notify-owner.py, the 4,096 cap on the message, not the raw body (owner)"
+  re-gate: "7f91553: cargo test unit 137 passed; suite 409 passed, 0 failed, 14 ignored. keel check: one run red ('check red - lint/tests failed; not cached') with its failing test not captured, the next run green ('check green - cached'), so a timing-sensitive test is suspected (the held-lock case of a_log_that_cannot_be_written_still_tries_the_send_and_says_so once failed under load the same way). Earlier, a4c0ed5: suite 404; 7603745: suite 400."
   guard-check: "Every router-app.sh shape B names, filled with sample values, run through scripts/router-guard.jq as the router: all admitted (start, the five stages with and without a tip, del wu/<wu>/stage, del question/<id>, notify-owner.py --send)."
   docs-touched: "docs/work/2026-11-20-e-applist-w3-plan.* (T3), this result pair (T3)."
 distillation: >-
