@@ -93,6 +93,11 @@ deviations:
     runs. A window's life is windowLife() (window-options.ts): a reload (dom-ready) makes a gone renderer alive
     again. After the answer a left job's output is read up to LATE_OUTPUT_CAP (1 MiB) per stream, then paused. Nits:
     toolProblem answers "not found" for a folder removed mid-check. Commits e2dcdb9, cc6c9b7, 4400b28, c53e7b1.
+  - >-
+    Review round 4 (cr note on a643308, FAIL: 0 blockers, 1 important): the late-output test did not guard the bound
+    (it passed with the bound removed). Its job now writes with shell builtins only, stops after 4000 writes, and the
+    test needs its count unchanged for a whole second before judging it against the bound. capture's comment on what
+    a left job keeps alive is corrected. Commits c60e1e3, aaa2ff9.
 evidence:
   commits:
     - "1029dcb chore: the app's skeleton - package.json, tsconfig, ignores, test support"
@@ -131,9 +136,11 @@ evidence:
     - "cc6c9b7 fix: after the answer, a left job's output is read only up to a bound (red first: a nonstop writer kept advancing, 1188 writes of 8 KiB)"
     - "4400b28 fix: a window whose renderer a reload brought back is shown, not replaced (red first: windowLife)"
     - "c53e7b1 fix: a folder removed mid-check is not found; the hung-git test calls remove (nits)"
+    - "c60e1e3 test: the late-output test fails when capture drains a left job forever (review round 4; red with the bound a no-op 5/5 and 20/20 under load, red with a6f40a8's capture 6/6, green at the tip 100/100 under load)"
+    - "aaa2ff9 docs: capture's comment says what a left job keeps alive (nit; comment only)"
   runs-2026-11-21:
     node: "cd app && node --test 'test/**/*.test.ts': tests 176, pass 176, fail 0 (unit 103 in 15 files, integration 73 in 6 files), after review round 3's fixes"
-    stability: "run.test.ts and login-path.test.ts 100 times, 6 at a time, with 6 and then 14 CPU burners on 14 cores: 100/100 green each; the kill tests alone on bb3fb5f's capture(): 30/30 red. After round 2's fixes: the same 100 runs green with 6 and with 14 burners, and handlers, app-folder and no-leak 30/30 green with 14 burners. After round 3's fixes: the same, 100/100, 100/100 and 30/30 green"
+    stability: "run.test.ts and login-path.test.ts 100 times, 6 at a time, with 6 and then 14 CPU burners on 14 cores: 100/100 green each; the kill tests alone on bb3fb5f's capture(): 30/30 red. After round 2's fixes: the same 100 runs green with 6 and with 14 burners, and handlers, app-folder and no-leak 30/30 green with 14 burners. After round 3's fixes: the same, 100/100, 100/100 and 30/30 green. After round 4's fix: the late-output test alone 100/100 and run.test + login-path 100/100, each with 14 burners"
     cargo: "cargo test: unit 137 passed; suite 373 passed, 10 ignored (again after round 3's fixes)"
     keel-check: "green (exit 0; tree unchanged since the last green run, which ran cargo test and the node tests)"
     typecheck: "cd app && npx tsc --noEmit: exit 0"
@@ -177,7 +184,8 @@ follow-ups:
   - "The packaged build's live checks again at the close, the signing rung recorded as ad-hoc (rung 1), and the distillation above. Taken by: E-APPLIST.W9."
   - "Apple's paid membership is not needed for the alert (rung 1 showed it): recorded when A3 closes. Taken by: backlog row local-app A3, at E-APPLIST's close."
   - "A tool reached through a chain of links whose middle hop is inside a project (/usr/local/bin/git -> <proj>/bin/git -> /outside/git) is still accepted, as before this WU; fix by walking each link hop (round 3's refuted candidate). Taken by: the epic backlog, row local-app."
-  - "Review round 4 (round 3's fix), the owner's sign-off and the merge into epic/E-APPLIST: the router starts it; the owner signs."
+  - "After a left job that wrote past LATE_OUTPUT_CAP ends, its paused pipe is never read to its end, so the app keeps that pipe and the capture's answer until it quits (round 4's waived nit commands.ts:177; bounded, at most the login-shell read once per launch). Taken by: the epic backlog, row local-app."
+  - "A fresh check of round 4's fix (the fix-PASS on c60e1e3's range), the owner's sign-off and the merge into epic/E-APPLIST: the router starts it; the owner signs."
 details:
   base: "wu/E-APPLIST/w7-app-shell off epic/E-APPLIST at bf4cf5e (the replan's merge); epic/E-APPLIST has since moved to 1494748 (W3's merge)"
   versions:
