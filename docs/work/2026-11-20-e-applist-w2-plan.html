@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b019e9d9f34851f0dfb2b50">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-APPLIST.W2 plan: the watchdog's lines</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-APPLIST.W2 · The watchdog's lines</h1>
+      <p>Every five minutes the watchdog also writes down what changed about each worker, and that the router is alive.</p>
+      <div class="meta">WU plan · v1 · 2026-11-21 · T3 · Keel · W2 of <a href="2026-11-20-e-applist-plan.html">the epic plan</a> · its data file sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">The app will show each worker and warn you when the router goes quiet. Only the watchdog sees the workers, every five minutes. Today it tells the router and writes nothing down, so the app has nothing to read.</p>
+
+<h2 id="for-you">What you get</h2>
+<table data-c="for-you">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>A worker changes</td><td>Only the router hears it</td><td>One line in the update log for that worker</td></tr>
+    <tr><td>Nothing changes</td><td>—</td><td>One short "router alive" line, nothing more</td></tr>
+    <tr><td>A worker ends</td><td>—</td><td>One line removes it</td></tr>
+    <tr><td>The log cannot be written</td><td>—</td><td>The router's message comes exactly as today</td></tr>
+  </tbody>
+</table>
+
+<h2 id="how">How it works</h2>
+<ol data-c="example">
+  <li>The watchdog wakes. It reads the workers as it does today and sends the router the same message.</li>
+  <li>It compares each worker with the log's current state: its state, what it waits for, its session, branch, last commit, uncommitted files, last activity.</li>
+  <li>Worker A made a commit: one line for A. Worker B did nothing: no line.</li>
+  <li>Worker C has ended: one line removes C.</li>
+  <li>Last, one "router alive" line. After three silent ticks the app says the router is not heard.</li>
+  <li>After a router restart the log starts empty, so the next tick writes every worker again.</li>
+</ol>
+
+<h2 id="approve">How you approve</h2>
+<ol data-c="approve">
+  <li>Tests first, written to fail.</li>
+  <li>One rule file, staged alone: the worker launcher, which holds the watchdog. You commit it with one typed command.</li>
+  <li>A fresh worker re-checks that file and the tests on your commit.</li>
+  <li>The result report, the code review, then your sign-off and merge.</li>
+</ol>
+
+<h2 id="work">What it makes</h2>
+<table data-c="work">
+  <thead><tr><th>Where</th><th>What</th></tr></thead>
+  <tbody>
+    <tr><td>The watchdog's step</td><td>Writes changed workers, removals and the "alive" line, only through the update command. Its message is unchanged.</td></tr>
+    <tr><td>Workers' limits</td><td>Workers may not run the update command.</td></tr>
+    <tr><td>Tests</td><td>The watchdog's step with a fake session list: each case, and many random fleets.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="decide">What you decide</h2>
+<p>Work goes on at these answers. Comment to overrule.</p>
+<table data-c="decide">
+  <thead><tr><th>#</th><th>Question</th><th>Answer, and why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Does the watchdog keep its own memory of the last tick?</td><td><b>No.</b> It compares with the log's state. A router restart empties it, so every worker is written again.</td></tr>
+    <tr><td>2</td><td>Last activity: minutes quiet, or a time?</td><td><b>A time.</b> Minutes quiet change every tick and would write every worker every time.</td></tr>
+    <tr><td>3</td><td>Write anything when the router is gone or the list cannot be read?</td><td><b>No.</b> The app then says "not heard" after 15 minutes, which is true.</td></tr>
+    <tr><td>4</td><td>Tell the router when a log write fails?</td><td><b>No.</b> Its message stays as it is; the app's bar shows the silence.</td></tr>
+  </tbody>
+</table>
+<p data-c="more">Nine more points, with their answers, are in the data file.</p>
+
+<h2 id="done">How you'll know it worked</h2>
+<ul data-c="done">
+  <li>A first tick writes each worker, then the "alive" line.</li>
+  <li>A quiet tick writes only the "alive" line.</li>
+  <li>One changed worker writes one line; an ended one is removed once.</li>
+  <li>A blocked or broken log leaves the router's message byte for byte as today.</li>
+  <li>Tests, lint and the doc check are green.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
