@@ -87,27 +87,27 @@ test('refused calls run nothing: an unknown name, a foreign page, a subframe, an
 
 test('with no window open every call is refused and nothing runs', async () => {
   let ran = false;
-  const handlers = Object.fromEntries(Object.keys(REQUESTS).map((n) => [n, () => { ran = true; }])) as Handlers;
+  const handlers = Object.fromEntries(Object.keys(REQUESTS).map((n) => [n, () => { ran = true; }])) as unknown as Handlers;
   const ask = dispatcher(() => null, handlers);
   assert.deepEqual(await ask(own, { name: 'state.get', args: {} }), { ok: false, refused: 'no-window' });
   assert.equal(ran, false);
 });
 
 test('every string a handler answers reaches the window through plain()', async () => {
-  const handlers = Object.fromEntries(Object.keys(REQUESTS).map((n) => [n, () => ({ why: 'bad\u202e name\n', list: ['a\u0007'] })])) as Handlers;
+  const handlers = Object.fromEntries(Object.keys(REQUESTS).map((n) => [n, () => ({ why: 'bad\u202e name\n', list: ['a\u0007'] })])) as unknown as Handlers;
   const ask = dispatcher(() => expected, handlers);
   assert.deepEqual(await ask(own, { name: 'state.get', args: {} }), { ok: true, value: { why: 'bad  name ', list: ['a '] } });
 });
 
 test('a handler that throws answers failed with its message made plain, and never throws to the window', async () => {
-  const handlers = Object.fromEntries(Object.keys(REQUESTS).map((n) => [n, () => { throw new Error('disk\u0007 full\n'); }])) as Handlers;
+  const handlers = Object.fromEntries(Object.keys(REQUESTS).map((n) => [n, () => { throw new Error('disk\u0007 full\n'); }])) as unknown as Handlers;
   const ask = dispatcher(() => expected, handlers);
   assert.deepEqual(await ask(own, { name: 'alert.test', args: {} }), { ok: false, failed: 'disk  full ' });
 });
 
 test('a dispatcher must be given exactly one handler per request name', () => {
-  assert.throws(() => dispatcher(() => expected, { 'state.get': () => 1 } as Handlers), /handlers/);
-  const extra = Object.fromEntries([...Object.keys(REQUESTS), 'shell.run'].map((n) => [n, () => 1])) as Handlers;
+  assert.throws(() => dispatcher(() => expected, { 'state.get': () => 1 } as unknown as Handlers), /handlers/);
+  const extra = Object.fromEntries([...Object.keys(REQUESTS), 'shell.run'].map((n) => [n, () => 1])) as unknown as Handlers;
   assert.throws(() => dispatcher(() => expected, extra), /handlers/);
 });
 

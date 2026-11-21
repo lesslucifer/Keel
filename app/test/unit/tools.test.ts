@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { toolShapeOk, inside, PATH_CAP } from '../../src/main/tools.ts';
+import type { Tool } from '../../src/shared/contract.ts';
 
 test('a tool path\'s shape: absolute, under the cap, no control character, its last part the tool\'s name', () => {
   assert.equal(PATH_CAP, 1024);
   assert.ok(toolShapeOk('git', '/usr/bin/git'));
   assert.ok(toolShapeOk('claude', '/Users/me/.local/bin/claude'));
   assert.ok(toolShapeOk('keel', '/Users/me/.cargo/bin/keel'));
-  const bad: Array<[string, unknown]> = [
+  const bad: Array<[Tool, unknown]> = [
     ['git', 'git'], ['git', '/usr/bin/git/'], ['git', '/usr/bin/gitx'], ['keel', '/usr/bin/git'], ['git', '/usr/bin/\u0000git'], ['git', '/usr/bin\n/git'],
     ['git', ''], ['git', `/${'a'.repeat(PATH_CAP)}/git`], ['git', 7], ['git', null],
   ];
