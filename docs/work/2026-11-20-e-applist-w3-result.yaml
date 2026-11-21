@@ -22,8 +22,10 @@ outcome: >-
   and every low but the last round's one is fixed, each testable one with a failing test first. Code review round 1
   on 81c483f (tests/ is the code path) FAILED with 7 importants, all test gaps, and a verifier found one sender
   defect (the 4,096 cap checked on the raw body, header lines included); the tests are in fae22bc and 018cf32 and
-  the sender fix is H 7f91553, the owner's typed commit. Re-gate on a4c0ed5:
-  cargo test unit 137 passed, suite 404 passed, 0 failed, 14 ignored (port-bound); keel check green.
+  the sender fix is H 7f91553, the owner's typed commit. An independent review of H found two lows (backlog R47
+  W3-3 and S3). Code review round 2 on 89e8df8 FAILED with 3 importants, all tests: a lock test flaky under load,
+  the raw bound unpinned, the ids' character classes unprobed; fixed in 4c9cae9. Re-gate on the final tip: see
+  evidence.re-gate.
 deviations:
   - >-
     Port-bound tests ignored in the worker's run. The worker sandbox refuses a loopback bind and a loopback connect
@@ -99,7 +101,8 @@ evidence:
       the_writer_never_sees_the_credential_or_the_test_seam, a_sender_ended_by_term_ends_its_hung_writer_and_frees_the_lock,
       a_sender_ended_by_hup_ends_its_hung_writer_and_frees_the_lock, a_dry_run_with_stdout_closed_still_succeeds,
       a_mistyped_header_key_sends_nothing_and_writes_nothing, the_4096_cap_is_checked_on_the_message_with_its_link,
-      a_raw_body_far_past_any_message_is_refused_before_it_is_read, the_sender_and_the_app_script_take_the_same_ids.
+      a_raw_body_past_its_bound_is_refused_before_it_is_parsed (named ..._before_it_is_read until 4c9cae9),
+      the_sender_and_the_app_script_take_the_same_ids.
       tests/suite/init.rs, router_skill_names_each_stage_and_its_moment rewritten: the stages read from the guard's
       app_shapes, each command's moment, every command fed to scripts/router-guard.jq as the router, the header keys
       read from the sender's HEADER and the skill's example header read by parse_body.
@@ -115,6 +118,7 @@ evidence:
     - "249957d against the plan-tip scripts: 19 failed (9 parse units: AttributeError, no parse_body; 8 notify integration: no line written, no link; 2 init: commands.md names no router-app.sh shape, project-router omits 4 rule files), 4 passed (the copies-equal guard among them), 4 new ignored."
     - "191516f against c47f692: 4 failed (UnicodeEncodeError on \\udcff; the dry run exited 1; a hung writer's child outlived the sender; TELEGRAM_STATE_DIR and TELEGRAM_BOT_TOKEN reached the writer)."
     - "90421ce against 7603745: 2 failed ('Wu: E-A.W1' read as body text; a mistyped key sent, alert line n 2)."
+    - "4c9cae9 (code review round 2): the leftover-lock case failed 3 of 6 full suites run 3 at a time at 89e8df8 ('router-app.sh did not answer within 10 s'); with a sleep shim recording router-app.sh's polls (99 to 100 of 0.05 s) it passed 9 of 9 under the same load. The check_body deletion mutant fails the raw-bound test ('a 65537-character body was accepted'); the widened-class mutants fail the id probe ('aB', 'E-A-B.W1'). The sender restored byte-equal."
     - "fae22bc against 81c483f: 1 failed (the_4096_cap_is_checked_on_the_message_with_its_link: 'question: link-scheme' plus 4,090 H refused as 'the message is 4112 characters'). With H, the mutant that drops the check of the message (text = message_text(parsed)) fails it ('a 4,097-character message with its link was accepted')."
     - "018cf32 (test gaps, green on arrival), each pinned by its mutant failing: fullmatch -> match in parse_body; 'Cf' dropped from plain(); the sender's grammars widened ({1,32}, W[0-9]{1,4}, {0,60}): 'disagree on the work unit E-ABCDEFGHIJKLMNOPQ.W1'; commands.md's When cells blanked; a guard stage renamed: 'no row for the guard's stage constructing'; the sender's HEADER key renamed. Files restored byte-equal."
     - "f6e5557 against 2d1a7d4: 2 failed ('Question: keep keel:// as the link?', 'Questions: two for you' and the line-3 'Question: keep keel://?' each refused; ' wu:', 'wu :' and a tab each quoted as 'wu:')."
@@ -156,6 +160,15 @@ evidence:
       skill test checked no moment and fed no command to the guard; its stages and header keys were literals, not read
       from the guard and the sender. A verifier also reproduced the raw-body cap defect. Fixed: tests in fae22bc
       (red first) and 018cf32 (each by a mutant), the sender in H 7f91553. Nits waived by the review, none taken.
+    - >-
+      Independent review of rule commit H (7f91553): two lows, by the rules follow-ups: the raw bound's refusal says
+      "read" where it means "accepted" (R47 W3-3), and Telegram may count UTF-16 code units, not code points (R47
+      S3, found again).
+    - >-
+      Code review round 2 on 89e8df8 (cr note, scope full): FAIL, 0 blockers, 3 importants, 5 nits waived, 2 refuted;
+      every round-1 fix held. The importants: the leftover-lock case raced router-app.sh's 5 s of polls against the
+      sender's 10 s timeout and flaked under load; the raw-body test passed without check_body; the id probe tested
+      no character class inside an id. Fixed in 4c9cae9 (tests only). Nit taken: the raw-bound test's name.
   commits:
     - "477949f plan pair (signed, merged into the epic)"
     - "610ffb5 back-merge of epic/E-APPLIST at 1494748"
@@ -179,9 +192,11 @@ evidence:
     - "018cf32 tests for code review round 1's test gaps"
     - "14030a9 result pair update"
     - "7f91553 rule H: scripts/notify-owner.py, the 4,096 cap on the message, not the raw body (owner)"
-  re-gate: "7f91553: cargo test unit 137 passed; suite 409 passed, 0 failed, 14 ignored. keel check: one run red ('check red - lint/tests failed; not cached') with its failing test not captured, the next run green ('check green - cached'), so a timing-sensitive test is suspected (the held-lock case of a_log_that_cannot_be_written_still_tries_the_send_and_says_so once failed under load the same way). Earlier, a4c0ed5: suite 404; 7603745: suite 400."
+    - "89e8df8 result pair update"
+    - "4c9cae9 tests for code review round 2"
+  re-gate: "4c9cae9 (same code as the final tip): 9 full suites, 3 at a time, each 409 passed, 0 failed, 14 ignored. On 7f91553 one keel check run had been red with no failure captured; code review round 2 then showed that leftover-lock case failing under load, fixed in 4c9cae9."
   guard-check: "Every router-app.sh shape B names, filled with sample values, run through scripts/router-guard.jq as the router: all admitted (start, the five stages with and without a tip, del wu/<wu>/stage, del question/<id>, notify-owner.py --send)."
-  docs-touched: "docs/work/2026-11-20-e-applist-w3-plan.* (T3), this result pair (T3)."
+  docs-touched: "docs/work/2026-11-20-e-applist-w3-plan.* (T3), this result pair (T3), docs/backlog/e-router-v2.yaml (T2: R47 gains W3-1 to W3-3)."
 distillation: >-
   Nothing citable now: the line forms, the header and the link are distilled at the epic's close (W9) into
   docs/local-app.html, per the epic's distillation plan. The router's moments already live in their T1 home, the
@@ -197,12 +212,16 @@ follow-ups:
     'Question: yes', 'Question: none') is refused as a mistyped header; it fails safe and the refusal quotes the text.
     The review offered two fixes: (a) one sentence in commands.md, both copies: "...is text; `Questions: 2` (one
     lowercase word) is read as a mistyped header: write `2 questions`"; or (b) in mistyped_header, refuse the plural
-    `questions` only when the line ends in an id containing a `-` or a digit. Taken by: docs/backlog/e-router-v2.yaml R47 (the router scripts' open lows; its S1 to S3 are this
-    sender's), as a new item.
+    `questions` only when the line ends in an id containing a `-` or a digit. Taken by: docs/backlog/e-router-v2.yaml
+    R47, item W3-1 (added by this WU).
   - >-
     The review's out-of-scope note: a format character such as U+202E or U+200B before 'wu:' makes the line pass as
     body text, as in D (the header parse matches the raw line; only the alert lines are blanked). Taken by:
-    docs/backlog/e-router-v2.yaml R47, beside its L3 (the hidden characters the inbox cleaner passes).
+    docs/backlog/e-router-v2.yaml R47, item W3-2 (added by this WU), beside its L3.
+  - >-
+    The independent review of H's two lows: the raw bound's refusal says "at most 65536 are read" where it means
+    accepted; Telegram's 4,096 may count UTF-16 code units, the sender code points (len(text.encode('utf-16-le')) //
+    2). Taken by: docs/backlog/e-router-v2.yaml R47, item W3-3 (added by this WU), which notes S3 found again.
 details:
   example-run: >-
     7603745's scripts in a temp git repo, router-app.sh start keel-demo, the body
