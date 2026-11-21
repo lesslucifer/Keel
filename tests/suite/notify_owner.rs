@@ -1044,3 +1044,31 @@ fn a_mistyped_header_key_sends_nothing_and_writes_nothing() {
     assert_eq!(std::fs::read_to_string(&body).unwrap(), "Wu: E-X.W2\nPlan to read: E-X.W2\n");
     assert_no_credential(&out);
 }
+
+// Review round 2 of B to E: the mistyped-key refusal holds only when what follows the colon is a
+// header's value, so a headline that starts with "Question" stays text; the refusal quotes what
+// was typed.
+
+#[test]
+fn a_headline_that_starts_with_question_stays_text() {
+    for (text, headline) in [
+        ("Question: keep keel:// as the link?\nReply yes or no\n", "Question: keep keel:// as the link?"),
+        ("Questions: two for you\nOne: the link\n", "Questions: two for you"),
+        ("wu: E-A.W1\nquestion: q1\nQuestion: keep keel://?\nReply yes or no\n", "Question: keep keel://?"),
+    ] {
+        let got = parse(text);
+        assert!(got.get("error").is_none(), "{text:?} was refused: {got}");
+        assert_eq!(got["alert"]["headline"], headline, "{text:?}");
+    }
+}
+
+#[test]
+fn a_mistyped_header_refusal_quotes_what_was_typed() {
+    for (text, typed) in
+        [(" wu: E-A.W1\nHead\n", "' wu:'"), ("wu : E-A.W1\nHead\n", "'wu :'"), ("\twu: E-A.W1\nHead\n", r"'\twu:'"), ("Question: q1\nHead\n", "'Question:'")]
+    {
+        let got = parse(text);
+        let error = got["error"].as_str().unwrap_or_else(|| panic!("{text:?} was not refused: {got}"));
+        assert!(error.contains(typed), "{text:?}: the refusal does not quote {typed}: {error}");
+    }
+}
