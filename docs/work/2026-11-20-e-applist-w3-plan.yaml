@@ -1,0 +1,190 @@
+artifact: wu-plan
+status: ready
+id: E-APPLIST.W3
+epic: E-APPLIST
+title: "E-APPLIST.W3 · The alert and stage lines, and the app's link"
+date: "2026-11-21"
+page: 2026-11-20-e-applist-w3-plan.html
+requirement: >-
+  After W3, scripts/notify-owner.py --send reads optional header lines at the top of the body (wu: <wu-id>, question:
+  <id>), writes through its sibling scripts/router-app.sh a question line (set question/<id>) when the body names a
+  question and one alert line (headline, one or two lines, and the work unit and keel://wu/<wu-id> when the body names
+  one) before it calls Telegram, sends the body without its header lines plus the link as the last line when a work
+  unit is named, and still sends when the line cannot be written; and the keel-router skill, its two copies equal,
+  tells the router when to write each stage (plan in work, plan to read, plan approved, building, in review), when to
+  start the log, when to delete a stage and a question, and how to head a body.
+maps-to: >-
+  Epic E-APPLIST, its W3 summary (docs/work/2026-11-20-e-applist-plan.yaml): K4 (the router writes a work unit's
+  stage), K10 (the alert line, written by the same step that feeds Telegram), K12 on the router's side (the link in
+  the alert line and in the Telegram message); UC-ROUTE-8 (new: the router tells the app what only it knows),
+  UC-APP-1 (new: something waits on you and the app alerts you; the app side is W5's). Epic open questions taken as
+  answered: the link scheme keel://, the alert line before Telegram, the question on the alert's body.
+owner-changes:
+  - when: "The router sends you a Telegram message about a work unit"
+    today: "Plain text"
+    after: "The same text, its last line a keel://wu/<id> link; one alert line in the router's update log, written first"
+  - when: "The router asks you a question"
+    today: "A Telegram message only"
+    after: "The same message, plus a question line the app lists until the router deletes it on your answer"
+  - when: "Before this part can land"
+    today: "-"
+    after: "Three typed rules commits, each re-read by a fresh read-only reviewer"
+expected:
+  - "With a loopback fake Telegram API and a temp git repo holding copies of both scripts and a started log, --send of a body headed wu: E-X.W2 appends exactly one alert line {headline, lines, wu: E-X.W2, link: keel://wu/E-X.W2}, and that line is in the log when the fake API receives the request."
+  - "The message Telegram receives is the body without its header lines, its last line keel://wu/E-X.W2."
+  - "A body with no wu: line writes an alert line with no wu and no link, and the message carries no link."
+  - "A body headed question: <id> writes set question/<id> before the alert line; the question's value holds the headline and lines."
+  - "A failed send (HTTP 500, a timeout, a closed port) still leaves the alert line, exits 1 and keeps the body."
+  - "A log write that fails (no run started, no router-app.sh beside the sender, a held lock) still sends: id N on stdout, one line on stderr naming why no desk alert was written, exit 0."
+  - "A malformed header (wu: with a bad id, question: with a bad id, either twice) sends nothing and writes nothing, exit 1, one line."
+  - "--dry-run writes no line, sends nothing and prints the message with its link and the alert line it would write."
+  - "A long or multibyte body is cut so each line router-app.sh writes fits its 1,024 bytes; neither the token nor the chat id is in any line."
+  - "Every send test runs copies of the scripts in a temp git repo, so no test writes to a real checkout's log."
+  - "Both keel-router copies name the five stage shapes and each one's moment, start, del of a stage and a question, and the two header lines; every file under skills/keel-router equals its .claude/skills copy; project-router's rule-file list names every rule_bearing entry of .keel/config.toml."
+  - "cargo test, cargo fmt --check, cargo clippy -D warnings, keel check and keel verify-doc are green on the tip."
+test-plan:
+  unit: >-
+    tests/suite/notify_owner.rs, a group driving one Python function: python3 loads scripts/notify-owner.py by path
+    (importlib; its __main__ guard keeps main from running) and prints parse_body(text) as JSON for each case, red first
+    (no parse_body). Cases: wu: only; question: only; both, either order; no header; a header line after body text is
+    body text; a bad wu id, a bad question id, a repeated header (each refused naming the line); a headline only (lines
+    default); CRLF endings; control characters blanked; a headline over 80 and a line over 200 characters cut with an
+    ellipsis; a multibyte body shrunk until the alert value fits its byte budget; the link built only from the wu id.
+  integration: >-
+    tests/suite/notify_owner.rs: a new harness copies scripts/notify-owner.py and scripts/router-app.sh into
+    <temp repo>/scripts/ (git init, as router_app.rs does), runs router-app.sh start test-router there, and runs the copy;
+    every existing --send test moves onto it (dry-run and --check may keep the checkout's script: they write no line).
+    New, red first: a_send_writes_one_alert_line_before_the_message (the fake API reads the temp log when the request
+    arrives); the_message_ends_with_the_link_when_the_body_names_a_work_unit; a_body_naming_no_work_unit_has_no_link;
+    a_question_header_writes_the_question_line_before_the_alert; a_failed_send_still_leaves_the_alert_line (500,
+    timeout, closed port); a_log_that_cannot_be_written_still_sends_and_says_so (no run, no router-app.sh, a held
+    lock); a_bad_header_sends_nothing_and_writes_nothing; dry_run_writes_no_line_and_shows_the_link;
+    a_long_multibyte_body_fits_the_line; no_line_carries_the_credential_or_the_chat.
+    tests/suite/init.rs: router_skill_names_each_stage_and_its_moment (both copies of SKILL.md and
+    references/commands.md: the five stage shapes, start, del wu/<wu>/stage, del question/<id>, the wu: and question:
+    header lines; red first); every_keel_router_file_equals_its_self_hosted_copy (extends the two-file check to every
+    file under skills/keel-router; a guard, green at the start); project_router_names_every_rule_file (each rule_bearing
+    entry of .keel/config.toml appears in project-router's rule-file list; red first: four are missing).
+  e2e: >-
+    none at the WU: the epic test (W9) runs the real sender against a loopback fake API and checks one alert per alert
+    line on screen. The one live Telegram test (does a keel:// line open the app on the owner's Mac) needs W5's link
+    handler and is recorded by W6.
+details:
+  base: "wu/E-APPLIST/w3-alert-lines off epic/E-APPLIST at bf4cf5e (W1 merged: scripts/router-app.sh exists and is rule-bearing; the replan merged)"
+  files:
+    plain-commits:
+      - tests/suite/notify_owner.rs
+      - tests/suite/init.rs
+      - "this plan pair and the result pair under docs/work/"
+    rule-bearing:
+      - "commit A: scripts/notify-owner.py"
+      - "commit B: skills/keel-router/SKILL.md, skills/keel-router/references/commands.md and their copies under .claude/skills/keel-router/ (one file twice: the copies must stay equal, so they land together)"
+      - "commit C: .claude/skills/project-router/SKILL.md"
+    unchanged: "scripts/router-app.sh, scripts/router-guard.jq, .claude/settings.json, .claude/agents/router.md: the guard already admits notify-owner.py --send|--dry-run|--check and the router's router-app.sh shapes; the sender calls router-app.sh with no shell, outside the guard."
+    against-the-epic-file-map: "tests/suite/init.rs as listed; tests/suite/router.rs is not touched (its retired-word test reads both copies and still passes)."
+  how-the-body-is-read-today: >-
+    notify-owner.py reads the body (the --send argument, else .router/notify/owner.md), checks it is not empty and at
+    most 4,096 characters, checks the file is writable, reads the chat, and posts it unchanged as sendMessage text.
+    It parses nothing in the body: W3 adds the header parse.
+  the-body:
+    form: >-
+      Optional header lines first, each exactly 'wu: <E-[A-Z0-9]{1,16}.W[0-9]{1,3}>' or 'question: <[a-z0-9][a-z0-9-]{0,40}>'
+      (router-app.sh's grammars), each at most once, in either order. The header ends at the first other line. A line
+      starting 'wu:' or 'question:' in the header that does not match is refused (exit 1, nothing written or sent). The
+      first non-empty line after the header is the headline; the next one or two non-empty lines are the alert's lines.
+    example: |
+      wu: E-APPLIST.W3
+      question: link-scheme
+      Plan to read: E-APPLIST.W3, the alert lines
+      Open the plan; one question: keep keel:// as the link?
+      cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-APPLIST-w3-alert-lines && open docs/work/2026-11-20-e-applist-w3-plan.html
+    function: "parse_body(text) -> {wu, question, headline, lines, text}: text is the body without its header lines; raises NotifyError naming the line. Name is a default."
+  the-lines-it-writes:
+    question: >-
+      scripts/router-app.sh set question/<id> <json>, value {"headline": <headline>, "lines": [<1 or 2>], "wu"?: <wu-id>}
+      compact, cut to at most 480 bytes (router-app.sh's 512-byte value cap, with room for jq's escapes).
+    alert: >-
+      scripts/router-app.sh alert <json>, value {"headline": 1-80 chars, "lines": [1 or 2 strings of 1-200 chars],
+      "wu"?: <wu-id>, "link"?: "keel://wu/<wu-id>"} (router-app.sh's alert_ok), compact, cut to at most 800 bytes so
+      the line stays under 1,024 with the longest run id, n and date. Cutting: the second line dropped first, then
+      lines and headline shortened at a character boundary ending with an ellipsis. A body with no line after the
+      headline gives lines ["See Telegram."] (a default).
+    example-line: '{"run":"keel-1c.20261121-091500.48213","n":42,"at":"2026-11-21T09:31:02+07:00","op":"alert","value":{"headline":"Plan to read: E-APPLIST.W3, the alert lines","lines":["Open the plan; one question: keep keel:// as the link?","cd /Users/…/Keel-E-APPLIST-w3-alert-lines && open docs/work/2026-11-20-e-applist-w3-plan.html"],"wu":"E-APPLIST.W3","link":"keel://wu/E-APPLIST.W3"}}'
+    how-run: >-
+      The sibling of the resolved script path (Path(__file__).resolve().parent / 'router-app.sh'), run with an argv list
+      (no shell), stdin closed, a 10 s timeout (router-app.sh waits 5 s for its lock), its output captured; the token
+      and the chat are never in its argv or environment. router-app.sh finds the main checkout's .router/app/ from its
+      own directory, so the router's sender writes the router's log and a test's copy writes its temp repo's.
+    output: "stdout: 'desk alert n=<n>' then 'id <message id>' (a default); a failed log write: stderr 'notify-owner: no desk alert: <router-app.sh's line or the reason>', and the send goes on."
+  order-in-send: >-
+    Read and check the body, the writable check, the chat (as today) -> parse the header (a bad header stops here,
+    nothing written) -> build the message (header lines dropped, the link appended; the 4,096 cap checked on the
+    result) -> write the question line, then the alert line -> sendMessage -> clear the body file -> print. --dry-run
+    stops before the writes and prints the message and both lines as they would be written. --check is unchanged.
+  the-link:
+    form: "keel://wu/<wu-id>, e.g. keel://wu/E-APPLIST.W3; built only from the parsed wu id, so it can hold no .. and no other path"
+    where: "the alert line's link field, and the Telegram message's last line, alone on it (plain text, no entities)"
+    when-none: "a body with no wu: line: no wu, no link in either"
+    who-opens-it: "the app's link handler (W5); the scheme is declared in W7's Forge config"
+    live-test: >-
+      One message to the owner's Telegram on his Mac: is the keel:// line clickable, and does a click open the app at
+      that work unit? It needs W5's handler, so it is run and recorded at W6's close (the epic plan's owner steps: W3/W6).
+      If the plain line is not clickable, W6 records it and the owner decides (keep the line as text to copy, or a
+      text_link entity, if Telegram's API accepts the scheme).
+  the-skill-text:
+    where: "keel-router SKILL.md, its push-channel bullet (the header lines, what the sender writes); references/commands.md, a new 'Router: the update log' block (every router-app.sh shape and its moment). Both copies, byte-equal."
+    moments:
+      start: "scripts/router-app.sh start <router-name>: once at session start, before any stage; then write the stage of every live WU again (the log is wiped)"
+      plan-in-work: "stage <wu> plan-in-work: the turn the planning worker is dispatched"
+      plan-to-read: "stage <wu> plan-to-read <tip>: the turn the plan is verified at its tip and the read-and-approve ask is sent"
+      plan-approved: "stage <wu> plan-approved <tip>: the turn the owner approves the plan (his word, or his sign-off of the plan)"
+      building: "stage <wu> building: the turn the build worker is dispatched"
+      in-review: "stage <wu> in-review <tip>: the turn the review of the WU's tip starts"
+      del-stage: "del wu/<wu>/stage: the turn the watch reports the WU merged into its epic (git then proves its state)"
+      del-question: "del question/<id>: the turn the owner's answer to that question is read"
+      header: "every owner message about one work unit starts with 'wu: <id>'; a message that asks a question adds 'question: <id>' (a short kebab name)"
+    conditional: "Generic text, so it holds in any project: 'where the project ships scripts/router-app.sh'; Keel's own facts (the router name, the main checkout) stay in project-router."
+    project-router: "the router-checkout row names scripts/router-app.sh and scripts/notify-owner.py; the rule-file list in 'WU with a rule-bearing file' is brought equal to .keel/config.toml's rule_bearing (adds scripts/router-inbox.sh, scripts/router-file-guard.sh, scripts/router-app.sh, scripts/notify-owner.py)."
+  order-of-commits:
+    - "1. This plan pair, plain commit; test note (integration waived: plan only) and doc note, --target epic/E-APPLIST. The owner approves and signs the plan; it merges into the epic."
+    - "2. The tests, red first, plain commit: tests/suite/notify_owner.rs (the temp-repo harness, the moved send tests, the new integration and unit cases) and tests/suite/init.rs. Lint green; the new tests red, the red run recorded in the result."
+    - "3. Rule commit A. The worker writes scripts/notify-owner.py, runs cargo test (the notify tests green), stages only that file and stops. The owner types: keel mr commit -m 'feat(E-APPLIST.W3): the sender writes the alert line before Telegram' --as vuluu. A fresh read-only reviewer (opus, high) reads it by the security path: no token or chat printed or passed on, the line written before the send, a bad header writes and sends nothing, router-app.sh run with no shell and a timeout, a log failure never blocks the send."
+    - "4. Rule commit B. The worker writes both keel-router copies (SKILL.md, references/commands.md), checks they are equal, runs cargo test, stages only those four paths and stops. The owner types: keel mr commit -m 'docs(E-APPLIST.W3): the router writes each stage and heads its messages' --as vuluu. A fresh read-only reviewer reads it by the skills checklist (section G) and checks the copies equal and every shape the text names is one the guard admits."
+    - "5. Rule commit C. The worker writes .claude/skills/project-router/SKILL.md, runs cargo test (the suite green), stages only it and stops. The owner types: keel mr commit -m 'docs(E-APPLIST.W3): project-router names the update log and every rule file' --as vuluu. A fresh read-only reviewer reads it by the skills checklist (section G)."
+    - "A fix to any rule file goes back through its own step. Each review runs before the WU's sign-off."
+    - "6. Re-gate on the last tip: keel check and the full suite green."
+    - "7. The result pair, plain commit; test note (integration and unit: tests/suite/notify_owner.rs, tests/suite/init.rs; e2e none), doc note."
+    - "8. keel preflight wu, the code review (the cr gate binds tests/ only: scripts/ and skills are not code paths), keel verify-dod wu red only on 8."
+    - "9. The owner signs: keel mr confirm wu <tip> --as vuluu --target epic/E-APPLIST --report docs/work/2026-11-20-e-applist-w3-result.html, then merges into epic/E-APPLIST."
+  open-points:
+    - q: "How does the sender know the work unit and the question?"
+      a: "Header lines at the top of the body, wu: and question:, dropped from the Telegram text. Guessing an id from free text could pick the epic or a second id; a typo in a header is refused at once rather than dropping the link quietly."
+    - q: "Is the desk alert written when Telegram fails?"
+      a: "Yes: the alert line is written first, as the epic plan says. A retry after a failed send writes a second line, so the app may alert twice for one message; rare, and cheaper than the sender keeping its own record."
+    - q: "Does the message still go when the alert line cannot be written?"
+      a: "Yes, with id N and one stderr line saying why. Telegram is the channel that works today; the router sees the line and can start the log."
+    - q: "What is the link?"
+      a: "keel://wu/<id>, alone on the message's last line, plain text. Short and readable; built only from the checked id."
+    - q: "Is the link in every message?"
+      a: "Only when the body names a work unit. An epic link waits for the app's epic screen (A5)."
+    - q: "Tighten router-app.sh's link grammar (W1's follow-up N5, keel://../..)?"
+      a: "Not in W3: the sender builds only keel://wu/<checked id>, and W5's link handler refuses any other form. Tightening means a fourth rules commit; say so to take it here."
+    - q: "One rule file per commit?"
+      a: "Yes, three typed commits, each reviewed. The two keel-router copies are one file twice and land together, or the equality test is red between them."
+    - q: "When does a stage line get deleted?"
+      a: "When the WU merges into its epic: git then proves its state, and a stale 'building' never lingers."
+    - q: "Which byte budgets?"
+      a: "Alert value 800 bytes, question value 480: under router-app.sh's 1,024-byte line and 512-byte value caps with room for jq's escapes. Checked by a multibyte test."
+    - q: "Where does the Python unit test live?"
+      a: "In tests/suite/notify_owner.rs, driving parse_body through python3, so keel check runs it with no new runner. The function's name is a default."
+    - q: "When is the Telegram link tested live?"
+      a: "At W6's close, once the app handles the link; W3 ships the line."
+  sandbox: "The worker runs cargo test and keel check; the tests use loopback only and temp repos. No network beyond htmldoc.wfomobile.com for the page id. Telegram itself is never reached by a test."
+  sources:
+    - docs/work/2026-11-20-e-applist-plan.yaml (W3 summary, files, rule-bearing rows, open questions)
+    - docs/local-app.html ("Two sources", the alert screen, K4, K10, K12)
+    - docs/decisions/app.html (DEC-71 - DEC-77)
+    - docs/work/2026-11-20-e-applist-w1-plan.yaml and -w1-result.yaml (the line form, the shapes, follow-up N5)
+    - scripts/notify-owner.py, scripts/router-app.sh, scripts/router-guard.jq
+    - tests/suite/notify_owner.rs, tests/suite/router_app.rs, tests/suite/init.rs
+    - .claude/skills/keel-router/SKILL.md, references/commands.md, references/messages.md, .claude/skills/project-router/SKILL.md
