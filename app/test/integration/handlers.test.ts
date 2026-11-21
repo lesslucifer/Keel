@@ -213,6 +213,7 @@ test('state.get, remove and reset answer while projects.add waits on a git that 
   const state = (await bounded(3_000, 'state.get while git hangs', w.call('state.get'))) as { ok: true; value: { projects: unknown[] } };
   assert.deepEqual(state.value.projects, []);
   assert.deepEqual(await bounded(3_000, 'settings.reset while git hangs', w.call('settings.reset', { tool: 'keel' })), { ok: true, value: { done: true } });
+  assert.deepEqual(await bounded(3_000, 'projects.remove while git hangs', w.call('projects.remove', { project: 'p00000000' })), { ok: true, value: { done: false, why: 'no such project' } });
   end();
   const r = (await adding) as { ok: true; value: { done: boolean } };
   assert.equal(r.value.done, false);

@@ -33,14 +33,25 @@ export async function toolProblem(tool: Tool, p: string, projects: readonly stri
   } catch {
     return 'not found';
   }
-  if (!(await stat(real)).isFile()) return 'not a file';
+  let file: boolean;
+  try {
+    file = (await stat(real)).isFile();
+  } catch {
+    return 'not found';
+  }
+  if (!file) return 'not a file';
   try {
     await access(real, constants.X_OK);
   } catch {
     return 'not executable';
   }
   // The path itself with every folder above it resolved, the last part left as named (it may be a link).
-  const viaRealFolder = path.join(await realpath(path.dirname(p)), path.basename(p));
+  let viaRealFolder: string;
+  try {
+    viaRealFolder = path.join(await realpath(path.dirname(p)), path.basename(p));
+  } catch {
+    return 'not found';
+  }
   for (const project of projects) {
     if (inside(p, project) || inside(viaRealFolder, project) || inside(real, project)) return `inside the project ${path.basename(project)}`;
   }
