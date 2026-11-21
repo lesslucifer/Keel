@@ -665,6 +665,7 @@ fn build_launcher(base: &Path) {
     std::fs::copy(root().join("scripts/router-worker.sh"), main.join("scripts/router-worker.sh")).unwrap();
     std::fs::copy(root().join("scripts/router-guard.jq"), main.join("scripts/router-guard.jq")).unwrap();
     std::fs::copy(root().join("scripts/router-file-guard.sh"), main.join("scripts/router-file-guard.sh")).unwrap();
+    std::fs::copy(root().join("scripts/router-app.sh"), main.join("scripts/router-app.sh")).unwrap();
     std::fs::write(main.join(".gitignore"), ".router/\n/target/\n").unwrap();
     std::fs::create_dir_all(main.join(".claude/agents")).unwrap();
     std::fs::write(main.join(".claude/agents/worker.md"), "---\nname: worker\n---\nworker\n").unwrap();
@@ -1043,7 +1044,7 @@ const WORKER_GRANTS: [&str; 11] = [
     "keel check",
 ];
 /// Denied to every worker, each as `Bash(c)` and `Bash(c *)` (E-ROUTER3.W8, DEC-46).
-const WORKER_DENIES: [&str; 25] = [
+const WORKER_DENIES: [&str; 26] = [
     "keel mr",
     "cargo run",
     "keel init",
@@ -1069,6 +1070,7 @@ const WORKER_DENIES: [&str; 25] = [
     "git --work-tree",
     "claude",
     "scripts/router-worker.sh",
+    "scripts/router-app.sh",
 ];
 
 fn bash_pairs<'a>(cmds: impl IntoIterator<Item = &'a str>) -> Vec<String> {
@@ -3660,6 +3662,402 @@ fn watchdog_facts_keep_the_fleet_when_a_transcript_cannot_be_read() {
     let b = blocks(&out);
     assert_eq!(b.len(), 3, "{out}");
     assert!(b.iter().all(|x| x.contains(": busy · quiet ? · ")), "{out}");
+}
+
+// E-APPLIST.W2 (K15): each facts run also writes, through scripts/router-app.sh, one line per live
+// worker that changed against the update log's state, a del for a worker gone, then the router's
+// heartbeat; the facts block stays as it is whatever those writes do.
+
+/// The router's start, through the fixture's copy of scripts/router-app.sh: a new run.
+fn start_run(l: &Launcher) {
+    let o = common::cmd(l.main.join("scripts/router-app.sh")).args(["start", "r1"]).current_dir(&l.main).output().unwrap();
+    assert!(o.status.success(), "{o:?}");
+}
+
+/// Every line of the main checkout's update log, parsed.
+fn log_lines(l: &Launcher) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(l.main.join(".router/app/log.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .map(|x| serde_json::from_str(x).unwrap_or_else(|e| panic!("{e}: {x:?}")))
+        .collect()
+}
+
+/// The update log's state: every value as it stands.
+fn app_values(l: &Launcher) -> serde_json::Map<String, serde_json::Value> {
+    let s: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(l.main.join(".router/app/state.json")).unwrap()).unwrap();
+    s["values"].as_object().unwrap().clone()
+}
+
+/// One facts run with `env` added: its output and the lines it added to the log.
+fn tick_env(l: &Launcher, home: &Path, env: &[(&str, &str)]) -> (String, Vec<serde_json::Value>) {
+    let before = log_lines(l).len();
+    let mut e = vec![("HOME", home.to_str().unwrap())];
+    e.extend_from_slice(env);
+    let (ok, out) = l.run_env(&["watchdog", "facts", "r1"], &e);
+    assert!(ok, "{out}");
+    let after = log_lines(l);
+    assert!(after.len() >= before, "the log shrank: {after:?}");
+    (out, after[before..].to_vec())
+}
+
+fn tick(l: &Launcher, home: &Path) -> (String, Vec<serde_json::Value>) {
+    tick_env(l, home, &[])
+}
+
+/// "<op> <key>" of each line.
+fn ops(lines: &[serde_json::Value]) -> Vec<String> {
+    lines.iter().map(|x| format!("{} {}", x["op"].as_str().unwrap(), x["key"].as_str().unwrap_or(""))).collect()
+}
+
+/// A background session `name` in `cwd` with no transcript (its block reads "quiet ?", the same on
+/// every run).
+fn bare_worker(name: &str, n: u64, cwd: &Path, status: serde_json::Value) -> serde_json::Value {
+    let mut r = serde_json::json!({"id": &sid(n)[..8], "sessionId": sid(n), "name": name, "cwd": cwd, "kind": "background"});
+    for (k, v) in status.as_object().unwrap() {
+        r[k] = v.clone();
+    }
+    r
+}
+
+/// The router r1's row, as watchdog_launcher lists it.
+fn router_row(l: &Launcher) -> serde_json::Value {
+    serde_json::json!({"id": "r100", "sessionId": "r100-x", "name": "r1", "cwd": l.main, "kind": "background", "status": "idle"})
+}
+
+/// The session list with `f` applied to every row named `name`.
+fn edit_row(l: &Launcher, name: &str, f: impl Fn(&mut serde_json::Value)) {
+    let mut rows = l.sessions();
+    for r in rows.iter_mut().filter(|r| r["name"] == name) {
+        f(r);
+    }
+    l.set_sessions(&rows);
+}
+
+/// w1 (waiting on a permission, transcript 5 minutes old) in wt and w2 (busy, 1 minute) in wt2.
+fn two_workers(l: &Launcher, h: &Path) {
+    let mut rows = vec![router_row(l)];
+    rows.push(worker_row(l, h, "w1", &sid(1), serde_json::json!({"status": "waiting", "waitingFor": "permission prompt"}), Some(5), &[]));
+    let mut w2 = worker_row(l, h, "w2", &sid(2), serde_json::json!({"status": "busy"}), Some(1), &[]);
+    w2["cwd"] = l.wt2.to_str().unwrap().into();
+    rows.push(w2);
+    l.set_sessions(&rows);
+}
+
+fn tip_of(wt: &Path) -> String {
+    String::from_utf8(git(wt, &["log", "-1", "--format=%h"]).stdout).unwrap().trim().to_string()
+}
+
+fn keys_of(v: &serde_json::Value) -> Vec<String> {
+    v.as_object().unwrap_or_else(|| panic!("not an object: {v}")).keys().cloned().collect()
+}
+
+#[test]
+fn watchdog_tick_writes_each_live_worker_and_then_the_heartbeat() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    two_workers(&l, h);
+    let no_run = facts(&l, h);
+    start_run(&l);
+    let (out, lines) = tick(&l, h);
+    assert_eq!(out, no_run, "the facts block changed");
+    assert_eq!(ops(&lines), ["set worker/w1", "set worker/w2", "set router"], "{lines:?}");
+    // the values the app reads, snapshot-locked: key names and order; active only checked present
+    let iso = regex::Regex::new(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$").unwrap();
+    let mut w1 = lines[0]["value"].clone();
+    assert_eq!(keys_of(&w1), ["state", "waiting", "session", "branch", "tip", "dirty", "active"], "{w1}");
+    let active = w1.as_object_mut().unwrap().remove("active").unwrap();
+    assert!(iso.is_match(active.as_str().unwrap()), "{active}");
+    assert_eq!(w1, serde_json::json!({"state": "waiting", "waiting": "permission prompt", "session": sid(1), "branch": "w", "tip": tip_of(&l.wt), "dirty": 0}));
+    let mut w2 = lines[1]["value"].clone();
+    assert_eq!(keys_of(&w2), ["state", "session", "branch", "tip", "dirty", "active"], "{w2}");
+    w2.as_object_mut().unwrap().remove("active");
+    assert_eq!(w2, serde_json::json!({"state": "busy", "session": sid(2), "branch": "w2", "tip": tip_of(&l.wt2), "dirty": 0}));
+    assert_eq!(keys_of(&lines[2]["value"]), ["name", "state", "workers"]);
+    assert_eq!(lines[2]["value"], serde_json::json!({"name": "r1", "state": "idle", "workers": 2}));
+    assert!(!out.contains("OK run="), "router-app.sh's output reached the facts: {out}");
+}
+
+#[test]
+fn an_unchanged_tick_writes_only_the_heartbeat() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    two_workers(&l, h);
+    start_run(&l);
+    assert_eq!(tick(&l, h).1.len(), 3);
+    for _ in 0..2 {
+        let (_, lines) = tick(&l, h);
+        assert_eq!(ops(&lines), ["set router"], "{lines:?}");
+        assert_eq!(lines[0]["value"], serde_json::json!({"name": "r1", "state": "idle", "workers": 2}));
+    }
+}
+
+#[test]
+fn each_changed_field_writes_one_line_for_its_worker() {
+    type Change = fn(&Launcher, &Path);
+    let cases: [(&str, Change); 7] = [
+        ("state", |l, _| edit_row(l, "w1", |r| r["status"] = "idle".into())),
+        ("waiting-for", |l, _| edit_row(l, "w1", |r| r["waitingFor"] = "plan approval".into())),
+        ("session", |l, _| edit_row(l, "w1", |r| r["sessionId"] = sid(9).into())),
+        ("branch", |l, _| {
+            git(&l.wt, &["branch", "-m", "w", "w-renamed"]);
+        }),
+        ("tip", |l, _| {
+            git(&l.wt, &["commit", "-q", "--allow-empty", "-m", "next"]);
+        }),
+        ("uncommitted count", |l, _| std::fs::write(l.wt.join("new.txt"), "x\n").unwrap()),
+        ("last activity", |_, h| {
+            let t = std::fs::File::options().write(true).open(h.join(format!(".claude/projects/-p/{}.jsonl", sid(1)))).unwrap();
+            t.set_modified(std::time::SystemTime::now() - Duration::from_secs(120)).unwrap();
+        }),
+    ];
+    for (field, change) in cases {
+        let l = watchdog_launcher();
+        let home = TempDir::new().unwrap();
+        let h = home.path();
+        two_workers(&l, h);
+        start_run(&l);
+        assert_eq!(tick(&l, h).1.len(), 3, "{field}");
+        let before = app_values(&l)["worker/w1"].clone();
+        change(&l, h);
+        let (_, lines) = tick(&l, h);
+        assert_eq!(ops(&lines), ["set worker/w1", "set router"], "{field}: {lines:?}");
+        assert_ne!(lines[0]["value"], before, "{field}");
+    }
+}
+
+#[test]
+fn a_gone_worker_is_deleted_once() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    two_workers(&l, h);
+    start_run(&l);
+    assert_eq!(tick(&l, h).1.len(), 3);
+    // a key of the same worker that is not its line (A5's report) is never the watchdog's to delete
+    let o = common::cmd(l.main.join("scripts/router-app.sh")).args(["set", "worker/w2/report", "\"done\""]).current_dir(&l.main).output().unwrap();
+    assert!(o.status.success(), "{o:?}");
+    let rows: Vec<serde_json::Value> = l.sessions().into_iter().filter(|r| r["name"] != "w2").collect();
+    l.set_sessions(&rows);
+    let (_, lines) = tick(&l, h);
+    assert_eq!(ops(&lines), ["del worker/w2", "set router"], "{lines:?}");
+    let values = app_values(&l);
+    assert!(!values.contains_key("worker/w2") && values.contains_key("worker/w2/report"), "{values:?}");
+    assert_eq!(ops(&tick(&l, h).1), ["set router"]);
+    // a worker that left this repository's worktrees is gone too
+    edit_row(&l, "w1", |r| r["cwd"] = "/elsewhere".into());
+    let (_, lines) = tick(&l, h);
+    assert_eq!(ops(&lines), ["del worker/w1", "set router"], "{lines:?}");
+    assert_eq!(lines[1]["value"]["workers"], 0);
+}
+
+#[test]
+fn a_router_restart_rewrites_every_worker() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    two_workers(&l, h);
+    start_run(&l);
+    assert_eq!(tick(&l, h).1.len(), 3);
+    assert_eq!(ops(&tick(&l, h).1), ["set router"]);
+    let old = log_lines(&l)[0]["run"].clone();
+    start_run(&l);
+    let (_, lines) = tick(&l, h);
+    assert_eq!(ops(&lines), ["set worker/w1", "set worker/w2", "set router"], "{lines:?}");
+    assert!(lines.iter().all(|x| x["run"] != old), "{lines:?}");
+}
+
+/// Invariant over generated fleets: whatever sessions come and go, move, repeat a name or change,
+/// one facts run names each key at most once, writes the heartbeat once and last, and leaves the
+/// state's worker lines equal to the live workers, each holding its first-listed session.
+#[test]
+fn every_tick_writes_each_key_at_most_once_and_the_heartbeat_last() {
+    use std::collections::{BTreeMap, HashSet};
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    start_run(&l);
+    let mut rng = Rng(0x2545_f491_4f6c_dd1d);
+    let statuses = [
+        serde_json::json!({"status": "busy"}),
+        serde_json::json!({"status": "idle"}),
+        serde_json::json!({"status": "waiting", "waitingFor": "permission prompt"}),
+        serde_json::json!({"state": "blocked"}),
+    ];
+    for t in 0..14u64 {
+        let mut rows = vec![router_row(&l)];
+        let mut live: BTreeMap<String, String> = BTreeMap::new();
+        let mut live_rows = 0;
+        for i in 0..6u64 {
+            let name = format!("p{i}");
+            for c in 0..rng.next() % 3 {
+                let cwd = match rng.next() % 4 {
+                    0 => PathBuf::from("/elsewhere"),
+                    1 => l.wt2.clone(),
+                    _ => l.wt.clone(),
+                };
+                let n = if rng.next().is_multiple_of(2) { i } else { 1000 + t * 100 + i * 10 + c };
+                rows.push(bare_worker(&name, n, &cwd, statuses[(rng.next() % 4) as usize].clone()));
+                if cwd != Path::new("/elsewhere") {
+                    live_rows += 1;
+                    live.entry(name.clone()).or_insert_with(|| sid(n));
+                }
+            }
+        }
+        l.set_sessions(&rows);
+        let (out, lines) = tick(&l, h);
+        let keys: Vec<&str> = lines.iter().map(|x| x["key"].as_str().unwrap()).collect();
+        assert_eq!(keys.iter().collect::<HashSet<_>>().len(), keys.len(), "tick {t}: a key twice: {keys:?}");
+        assert_eq!(keys.last(), Some(&"router"), "tick {t}: {keys:?}\n{out}");
+        let values = app_values(&l);
+        let in_state: BTreeMap<String, String> =
+            values.iter().filter_map(|(k, v)| k.strip_prefix("worker/").map(|n| (n.to_string(), v["session"].as_str().unwrap_or("").to_string()))).collect();
+        assert_eq!(in_state, live, "tick {t}");
+        assert_eq!(values["router"]["workers"], live_rows, "tick {t}");
+    }
+}
+
+#[test]
+fn no_run_a_gone_router_or_an_unreadable_list_writes_nothing() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let w1 = bare_worker("w1", 1, &l.wt, serde_json::json!({"status": "busy"}));
+    l.set_sessions(&[router_row(&l), w1.clone()]);
+    // no run: the watchdog never starts one, and makes nothing
+    assert!(facts(&l, h).contains("w1: busy"));
+    assert!(!l.main.join(".router/app").exists(), "facts made the app dir with no run");
+    start_run(&l);
+    let n0 = log_lines(&l).len();
+    // the router gone: nothing, not even the heartbeat
+    l.set_sessions(std::slice::from_ref(&w1));
+    assert!(facts(&l, h).contains("is gone"));
+    assert_eq!(log_lines(&l).len(), n0, "router gone");
+    // the session list unreadable, then not JSON
+    l.set_sessions(&[router_row(&l), w1.clone()]);
+    std::fs::write(l.state.join("agents-ok"), "0").unwrap();
+    assert!(facts(&l, h).contains("cannot be read"));
+    assert_eq!(log_lines(&l).len(), n0, "list unreadable");
+    std::fs::remove_file(l.state.join("agents-ok")).unwrap();
+    std::fs::write(l.state.join("sessions.json"), "not json\n").unwrap();
+    assert!(facts(&l, h).contains("cannot be read"));
+    assert_eq!(log_lines(&l).len(), n0, "list not JSON");
+    // the worktree list unreadable (a git that fails on it, and only on it)
+    l.set_sessions(&[router_row(&l), w1.clone()]);
+    let real = common::on_path(common::path(), "git", |p| p.is_file()).unwrap();
+    let shim = l.state.join("nowt");
+    std::fs::create_dir_all(&shim).unwrap();
+    std::fs::write(shim.join("git"), format!("#!/bin/sh\ncase \" $* \" in *\" worktree list \"*) exit 1;; esac\nexec '{}' \"$@\"\n", real.display())).unwrap();
+    std::fs::set_permissions(shim.join("git"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let path = common::path_with(&shim);
+    let (out, lines) = tick_env(&l, h, &[("PATH", &path)]);
+    assert!(out.starts_with("Report to r1.\n") && blocks(&out).is_empty(), "{out}");
+    assert!(lines.is_empty(), "worktree list unreadable: {lines:?}");
+    // and a whole tick writes again
+    assert_eq!(ops(&tick(&l, h).1), ["set worker/w1", "set router"]);
+}
+
+#[test]
+fn a_failing_log_write_never_drops_the_facts_block() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let fleet = |w1: &str| {
+        vec![
+            router_row(&l),
+            bare_worker("w1", 1, &l.wt, serde_json::json!({"status": w1})),
+            bare_worker("w2", 2, &l.wt2, serde_json::json!({"status": "idle"})),
+        ]
+    };
+    // the block the changed fleet prints, taken before any run
+    l.set_sessions(&fleet("idle"));
+    let block = facts(&l, h);
+    l.set_sessions(&fleet("busy"));
+    start_run(&l);
+    assert_eq!(ops(&tick(&l, h).1), ["set worker/w1", "set worker/w2", "set router"]);
+    l.set_sessions(&fleet("idle"));
+    let app = l.main.join(".router/app");
+    let log = std::fs::read(app.join("log.jsonl")).unwrap();
+
+    // a held lock: one writer waits it out (an instant, counting sleep), and the tick calls no other
+    let shim = l.state.join("countsleep");
+    std::fs::create_dir_all(&shim).unwrap();
+    std::fs::write(shim.join("sleep"), format!("#!/bin/sh\necho \"$1\" >> '{}'\n", l.state.join("sleeps").display())).unwrap();
+    std::fs::set_permissions(shim.join("sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    std::fs::create_dir_all(app.join(".lock/99999")).unwrap();
+    let path = common::path_with(&shim);
+    let (out, lines) = tick_env(&l, h, &[("PATH", &path)]);
+    assert_eq!(out, block, "held lock");
+    assert!(lines.is_empty());
+    let sleeps = std::fs::read_to_string(l.state.join("sleeps")).unwrap_or_default().lines().count();
+    assert!((1..=100).contains(&sleeps), "{sleeps} polls: not exactly one writer waited on the lock");
+    std::fs::remove_dir_all(app.join(".lock")).unwrap();
+
+    // the app dir a symlink: nothing read or written through it
+    let real = l.main.join(".router/app.real");
+    std::fs::rename(&app, &real).unwrap();
+    std::os::unix::fs::symlink(&real, &app).unwrap();
+    let (ok, out) = l.run_env(&["watchdog", "facts", "r1"], &[("HOME", h.to_str().unwrap())]);
+    assert!(ok && out == block, "symlinked app dir: {out}");
+    assert_eq!(std::fs::read(real.join("log.jsonl")).unwrap(), log, "written through the link");
+    std::fs::remove_file(&app).unwrap();
+    std::fs::rename(&real, &app).unwrap();
+
+    // no router-app.sh in the router's checkout
+    let script = l.main.join("scripts/router-app.sh");
+    let off = l.main.join("scripts/router-app.sh.off");
+    std::fs::rename(&script, &off).unwrap();
+    let (out, lines) = tick(&l, h);
+    assert_eq!(out, block, "no script");
+    assert!(lines.is_empty());
+    std::fs::rename(&off, &script).unwrap();
+
+    // every failure gone, the change is written
+    assert_eq!(ops(&tick(&l, h).1), ["set worker/w1", "set router"]);
+
+    // a line the script refuses (a value over 512 bytes) costs that worker its line, never the rest
+    let l = watchdog_launcher();
+    let wide = "\u{1f600}".repeat(50);
+    git(&l.wt, &["branch", "-m", "w", &format!("{wide}/{wide}")]);
+    let rows = vec![
+        router_row(&l),
+        bare_worker("w1", 1, &l.wt, serde_json::json!({"status": "\u{1f600}".repeat(30), "waitingFor": "\u{1f600}".repeat(80)})),
+        bare_worker("w2", 2, &l.wt2, serde_json::json!({"status": "idle"})),
+    ];
+    l.set_sessions(&rows);
+    let block = facts(&l, h);
+    start_run(&l);
+    let (out, lines) = tick(&l, h);
+    assert_eq!(out, block, "refused line");
+    assert_eq!(ops(&lines), ["set worker/w2", "set router"], "{lines:?}");
+    assert_eq!(lines[1]["value"]["workers"], 2);
+}
+
+#[test]
+fn worker_text_reaches_the_log_as_one_escaped_line() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    git(&l.wt, &["branch", "-m", "w", "odd\"quote'x"]);
+    let wait = format!("say \"hi\"\nnow\t\u{1}{}", "x".repeat(300));
+    l.set_sessions(&[
+        router_row(&l),
+        bare_worker("w1", 1, &l.wt, serde_json::json!({"status": "waiting", "waitingFor": wait})),
+        bare_worker("Bad_Name", 2, &l.wt2, serde_json::json!({"status": "busy"})),
+    ]);
+    start_run(&l);
+    let (out, lines) = tick(&l, h);
+    assert!(blocks(&out).iter().any(|b| b.starts_with("Bad_Name: busy")), "{out}");
+    assert_eq!(ops(&lines), ["set worker/w1", "set router"], "{lines:?}");
+    let want: String = wait.chars().map(|c| if c.is_control() { ' ' } else { c }).take(60).collect();
+    assert_eq!(lines[0]["value"]["waiting"], want.as_str());
+    assert_eq!(lines[0]["value"]["branch"], "odd\"quote'x");
+    assert_eq!(lines[1]["value"]["workers"], 2);
+    let raw = std::fs::read_to_string(l.main.join(".router/app/log.jsonl")).unwrap();
+    assert_eq!(raw.lines().count(), 3, "{raw}");
+    assert!(!raw.chars().any(|c| c.is_control() && c != '\n'), "{raw:?}");
 }
 
 /// The one spawn run dir of `name` under the fixture's .router/runs.
