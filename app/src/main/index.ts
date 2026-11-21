@@ -34,6 +34,8 @@ const allowedPages = pages(where);
 const rendererRoot = path.join(__dirname, '..', 'renderer', MAIN_WINDOW_VITE_NAME);
 
 let mainWindow: BrowserWindow | null = null;
+/** Whether mainWindow has painted its first frame; until then it is not shown, so no blank window flashes. */
+let mainPainted = false;
 let started = false;
 
 function liveWindow(): BrowserWindow | null {
@@ -89,6 +91,8 @@ function refusePermissions(): void {
 function openMain(): void {
   const open = liveWindow();
   if (onActivate({ windowOpen: open !== null }) === 'show' && open !== null) {
+    // Not painted yet: ready-to-show shows it.
+    if (!mainPainted) return;
     if (open.isMinimized()) open.restore();
     open.show();
     open.focus();
@@ -96,11 +100,20 @@ function openMain(): void {
   }
   const win = new BrowserWindow(windowOptions(path.join(__dirname, 'preload.cjs')));
   mainWindow = win;
-  win.once('ready-to-show', () => win.show());
+  mainPainted = false;
+  win.once('ready-to-show', () => {
+    if (mainWindow === win) mainPainted = true;
+    win.show();
+  });
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });
-  void win.loadURL(devServer ?? APP_PAGE);
+  // An aborted load (a reload or a navigation replacing it) is no failure; any other is shown, not left unhandled.
+  win.loadURL(devServer ?? APP_PAGE).catch((e: unknown) => {
+    const code = (e as { code?: unknown }).code;
+    if (code === 'ERR_ABORTED' || win.isDestroyed()) return;
+    dialog.showErrorBox('Keel could not load its window', plain(e instanceof Error ? e.message : String(e), 500));
+  });
 }
 
 async function showOpen(options: OpenDialogOptions): Promise<string | null> {
