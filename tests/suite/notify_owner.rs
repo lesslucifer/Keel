@@ -1000,3 +1000,47 @@ fn a_dry_run_with_stdout_closed_still_succeeds() {
     assert!(out.status.success(), "a dry run with stdout closed failed: {}", stderr(&out));
     assert_no_credential(&out);
 }
+
+// Review round 1 of B and C, M1: a leading line that is a header with a mistyped key (its case, a
+// space, a one-letter slip in "question") is refused like a bad value, never sent as body text.
+
+#[test]
+fn parse_refuses_a_mistyped_header_key_naming_the_line() {
+    for (text, line) in [
+        ("Wu: E-A.W1\nHead\n", "line 1"),
+        ("WU: E-A.W1\nHead\n", "line 1"),
+        ("wu : E-A.W1\nHead\n", "line 1"),
+        (" wu: E-A.W1\nHead\n", "line 1"),
+        ("Question: q1\nHead\n", "line 1"),
+        ("qestion: q1\nHead\n", "line 1"),
+        ("wu: E-A.W1\nquestoin: q1\nHead\n", "line 2"),
+        ("wu: E-A.W1\nquestion : q1\nHead\n", "line 2"),
+    ] {
+        let got = parse(text);
+        let error = got["error"].as_str().unwrap_or_else(|| panic!("{text:?} was read as body text: {got}"));
+        assert!(error.contains(line), "{text:?}: the refusal does not name {line}: {error}");
+    }
+    // an ordinary headline with a colon is body text, not a header
+    for text in ["Plan to read: E-A.W1\nOpen it\n", "Sign-off ready: E-A.W1\n", "Merged: E-A.W1 into the epic\n", "Note: the log is wiped\n"] {
+        let got = parse(text);
+        assert!(got.get("error").is_none(), "{text:?} was refused: {got}");
+        assert_eq!(got["parsed"]["wu"], serde_json::Value::Null, "{text:?}");
+    }
+}
+
+#[test]
+fn a_mistyped_header_key_sends_nothing_and_writes_nothing() {
+    let dir = started();
+    let before = std::fs::read(log_path(&dir)).unwrap();
+    let body = write_body(&dir, "Wu: E-X.W2\nPlan to read: E-X.W2\n");
+    let out = run(&dir, &["--send"], UNREACHED);
+    assert!(!out.status.success(), "a mistyped header key was sent");
+    let problem = stderr(&out);
+    assert_eq!(problem.lines().count(), 1, "{problem:?}");
+    assert!(problem.contains("line 1"), "{problem}");
+    assert!(!problem.contains("Telegram API"), "a mistyped header key reached the send: {problem}");
+    assert!(stdout(&out).is_empty());
+    assert_eq!(std::fs::read(log_path(&dir)).unwrap(), before, "a mistyped header key wrote to the log");
+    assert_eq!(std::fs::read_to_string(&body).unwrap(), "Wu: E-X.W2\nPlan to read: E-X.W2\n");
+    assert_no_credential(&out);
+}
