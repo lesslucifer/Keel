@@ -9,7 +9,7 @@ and "Talking to the owner" are the long form; this file never replaces them.
 
 1. **Enforcement.** Is a guard loaded here? Claude Code: the project's `PreToolUse`
    guard and `"agent": "router"`. A host with no hook surface (DSH): say so in your
-   first message, in one line, and work through 2-6 by hand (7 closes that
+   first message, in one line, and work through 2-7 by hand (8 closes that
    message). Cost of skipping: everything below is advice with nothing behind it.
 2. **Hands off.** Every call: is this on the whitelist? Read tools are for
    dispatching, verifying a claim and relaying, never for deriving the substance.
@@ -31,7 +31,7 @@ and "Talking to the owner" are the long form; this file never replaces them.
    on the wrong model, or one nobody retires.
 5. **Briefs and rulings.** Read `<ROOT>/.router/briefs/` and, if it exists,
    `<ROOT>/.router/rulings.md` (one line per ruling: date, what, why). You do not
-   create it: your only write is a brief, so a ruling you are given goes into the
+   create it: your only write is a brief or the owner message body (the `Write` tool), so a ruling you are given goes into the
    next brief and a missing log is a line in your message, for the owner to start.
    A brief whose tip or router name is stale is a finding to fix, never a template.
    Cost: a worker briefed on a dead tip (K14).
@@ -42,7 +42,12 @@ and "Talking to the owner" are the long form; this file never replaces them.
    ships an inbox script, armed before the first dispatch (`worker-ops.md` "The
    report channel (DSH)"); with none, your message says only the owner can wake
    you. Cost: a fleet that finishes into silence, or a watchdog guarding nothing.
-7. **Close the first message** with `What you need to do now:` naming the one task,
+7. **Update log.** Where the project ships `scripts/router-app.sh`: at a first start
+   or after a restart (never after a compaction: the log survives it), run
+   `scripts/router-app.sh start <router-name>`, then write every live WU's stage
+   again (`commands.md` "Router: the update log"). Cost: the app shows a dead run,
+   or a compaction wipes the sender's question and alert lines.
+8. **Close the first message** with `What you need to do now:` naming the one task,
    or `nothing`.
 
 ## WAKE — on every wake, before any tool call

@@ -14,6 +14,15 @@ cannot resend it. A body that is not writable fails before sending (nothing is
 sent); a clear that fails after the send names the sent id and the file, and
 prints no `id N`.
 
+The body may start with header lines (E-APPLIST.W3): `wu: <E-CODE.Wn>` names the work unit
+it is about, `question: <name>` a question it asks. They are dropped from the message. Before
+it sends, `--send` writes through its sibling scripts/router-app.sh the question line (set
+question/<name>, when one is named) and one alert line (headline, one or two lines, and the work
+unit and its keel://wu/<id> link when one is named), so a failed send never loses the desk
+alert; the message then ends with that link. A mistyped header sends and writes nothing. A log
+that cannot be written does not stop the send: one stderr line says why. `--dry-run` prints the
+lines it would write and writes none.
+
 No command-line argument can choose a file, credential, chat or endpoint. The
 KEEL_NOTIFY_ENV, KEEL_NOTIFY_ACCESS, KEEL_NOTIFY_API_BASE and
 KEEL_NOTIFY_TIMEOUT variables are the test seam: a normal invocation sets none.
@@ -22,8 +31,12 @@ KEEL_NOTIFY_TIMEOUT variables are the test seam: a normal invocation sets none.
 import argparse
 import json
 import os
+import re
+import signal
 import socket
+import subprocess
 import sys
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -36,8 +49,30 @@ DEFAULT_API_BASE = "https://api.telegram.org"
 DEFAULT_TIMEOUT = 15.0
 TOKEN_KEY = "TELEGRAM_BOT_TOKEN"
 MAX_TEXT = 4096
+# The raw body is only bounded far above any message, so a huge input is refused before it is parsed;
+# the 4,096 cap is the message's, checked once its header lines are dropped and its link added.
+MAX_BODY = 16 * MAX_TEXT
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 USE_FILE = object()
+
+# The update log (E-APPLIST.W3): router-app.sh beside this file, its grammars and caps.
+APP = Path(__file__).resolve().parent / "router-app.sh"
+APP_TIMEOUT = 10
+WU = re.compile(r"E-[A-Z0-9]{1,16}\.W[0-9]{1,3}")
+QUESTION = re.compile(r"[a-z0-9][a-z0-9-]{0,40}")
+HEADER = re.compile(r"(wu|question):(.*)")
+# A leading line shaped like a header (a word, a colon, then a header's value) whose key is wu or
+# question in another case or spacing, or one slip from question: a mistyped header, refused rather
+# than sent as text. A headline such as "Question: keep the link?" has no header's value: text.
+HEADER_LIKE = re.compile(r"\s*([A-Za-z]+)\s*:(.*)")
+HEADLINE_MAX = 80
+LINE_MAX = 200
+# The alert's value stays under router-app.sh's 1,024-byte line (with its longest run id, n and
+# date); the question's under its 512-byte value cap; both with room for jq's own escapes.
+ALERT_BUDGET = 800
+QUESTION_BUDGET = 480
+NO_MORE = "See Telegram."
+ELLIPSIS = "\u2026"
 
 
 class NotifyError(Exception):
@@ -51,6 +86,216 @@ def one_line(value):
 def fail(message):
     print("notify-owner: " + one_line(message), file=sys.stderr)
     return 1
+
+
+def plain(value):
+    """One line of text: every control, format (a bidi override), line-separator or lone surrogate
+    (a byte that is not UTF-8, as Python decodes an argument) a space, runs of space one."""
+    shown = "".join(" " if unicodedata.category(c) in ("Cc", "Cf", "Cs", "Zl", "Zp") else c for c in value)
+    return " ".join(shown.split())
+
+
+def cut(value, most):
+    return value if len(value) <= most else value[: most - 1].rstrip() + ELLIPSIS
+
+
+def one_slip(word, target):
+    """True when word is target with one letter dropped, added, changed, or two neighbours swapped."""
+    if word == target or abs(len(word) - len(target)) > 1:
+        return word == target
+    if len(word) == len(target):
+        diff = [i for i, (a, b) in enumerate(zip(word, target)) if a != b]
+        return len(diff) == 1 or (len(diff) == 2 and diff[1] == diff[0] + 1 and word[diff[0]] == target[diff[1]] and word[diff[1]] == target[diff[0]])
+    short, long = (word, target) if len(word) < len(target) else (target, word)
+    return any(long[:i] + long[i + 1 :] == short for i in range(len(long)))
+
+
+def mistyped_header(line):
+    """What was typed up to the colon of a leading line that looks like a wu: or question: header,
+    its value included, but is not one; or None."""
+    match = HEADER_LIKE.fullmatch(line.rstrip("\r\n"))
+    if not match:
+        return None
+    key, value = match.group(1).lower(), match.group(2).strip()
+    if key == "wu":
+        grammar = WU
+    elif one_slip(key, "question"):
+        grammar = QUESTION
+    else:
+        return None
+    return line[: match.start(2)] if grammar.fullmatch(value) else None
+
+
+def parse_body(text):
+    """The body's header lines, its headline and next lines, and the text to send without the header."""
+    kept = text.splitlines(keepends=True)
+    found = {}
+    at = 0
+    while at < len(kept):
+        match = HEADER.fullmatch(kept[at].rstrip("\r\n"))
+        if not match:
+            typed = mistyped_header(kept[at])
+            if typed is not None:
+                raise NotifyError(f"line {at + 1}: {typed!r} looks like a header but is not 'wu:' or 'question:' at the start of the line; nothing was sent")
+            break
+        name, value = match.group(1), match.group(2).strip()
+        grammar = WU if name == "wu" else QUESTION
+        if name in found:
+            raise NotifyError(f"line {at + 1}: a second '{name}:' header; nothing was sent")
+        if not grammar.fullmatch(value):
+            want = "a work unit E-<CODE>.W<n>" if name == "wu" else "a short name of a-z, 0-9 and -"
+            raise NotifyError(f"line {at + 1}: '{name}:' needs {want}; nothing was sent")
+        found[name] = value
+        at += 1
+    rest = "".join(kept[at:])
+    shown = [line for line in (plain(raw) for raw in rest.splitlines()) if line]
+    if not shown:
+        raise NotifyError("the message is empty")
+    return {
+        "wu": found.get("wu"),
+        "question": found.get("question"),
+        "headline": cut(shown[0], HEADLINE_MAX),
+        "lines": [cut(line, LINE_MAX) for line in shown[1:3]] or [NO_MORE],
+        "text": rest if at else text,
+    }
+
+
+def link(parsed):
+    return f"keel://wu/{parsed['wu']}" if parsed["wu"] else None
+
+
+def compact(value):
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def fit(value, budget):
+    """value, its second line dropped and then its longer text shortened, until its JSON fits budget bytes."""
+    value = dict(value, lines=list(value["lines"]))
+    while len(compact(value).encode("utf-8")) > budget:
+        if len(value["lines"]) > 1:
+            value["lines"].pop()
+            continue
+        headline, line = value["headline"], value["lines"][0]
+        if max(len(headline), len(line)) <= 2:
+            break
+        if len(headline) >= len(line):
+            value["headline"] = cut(headline, len(headline) * 9 // 10)
+        else:
+            value["lines"][0] = cut(line, len(line) * 9 // 10)
+    return value
+
+
+def alert_value(parsed):
+    value = {"headline": parsed["headline"], "lines": parsed["lines"]}
+    if parsed["wu"]:
+        value.update(wu=parsed["wu"], link=link(parsed))
+    return fit(value, ALERT_BUDGET)
+
+
+def question_value(parsed):
+    if not parsed["question"]:
+        return None
+    value = {"headline": parsed["headline"], "lines": parsed["lines"]}
+    if parsed["wu"]:
+        value["wu"] = parsed["wu"]
+    return fit(value, QUESTION_BUDGET)
+
+
+def message_text(parsed):
+    """The text Telegram gets: the body without its header, then the link alone on the last line."""
+    if not parsed["wu"]:
+        return parsed["text"]
+    return parsed["text"].rstrip("\r\n") + "\n" + link(parsed)
+
+
+def writer_env():
+    """The environment router-app.sh runs with: ours, minus the credential's names and the test seam."""
+    return {key: value for key, value in os.environ.items() if not key.startswith(("KEEL_NOTIFY_", "TELEGRAM_")) and key != TOKEN_KEY}
+
+
+def stop(child):
+    """End a writer that outran its time, with every process it started: TERM to its group (its trap
+    releases the lock), then KILL to whatever is left; the child is collected either way, and a pipe
+    some stray process still holds never keeps the sender waiting."""
+    for sig, grace in ((signal.SIGTERM, 1), (signal.SIGKILL, 5)):
+        try:
+            os.killpg(child.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            child.communicate(timeout=grace)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+    child.kill()
+    try:
+        child.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def ended(signum, frame):
+    """TERM or HUP while a writer runs: end the sender through SystemExit, so the writer is stopped first."""
+    sys.exit(128 + signum)
+
+
+def write_line(args):
+    """Run router-app.sh with args (no shell string), in a session of its own; its line number, or None and why.
+
+    That session no longer hears a signal sent to ours, so while it runs a TERM or HUP to the sender
+    (one not ignored at its start) is turned into SystemExit, which stops the writer and its group
+    (its lock released) before the sender ends; the previous handlers are restored after."""
+    previous = {}
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        if signal.getsignal(sig) == signal.SIG_DFL:
+            previous[sig] = signal.signal(sig, ended)
+    try:
+        try:
+            child = subprocess.Popen(
+                ["/bin/sh", str(APP), *args],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                encoding="utf-8",
+                errors="replace",
+                env=writer_env(),
+                start_new_session=True,
+            )
+        except OSError as error:
+            return None, f"cannot run /bin/sh: {error.strerror or error.__class__.__name__}"
+        try:
+            out, err = child.communicate(timeout=APP_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            stop(child)
+            return None, f"router-app.sh did not answer within {APP_TIMEOUT} s"
+        except BaseException:
+            stop(child)
+            raise
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler if handler is not None else signal.SIG_DFL)
+    if child.returncode != 0:
+        said = [line for line in err.splitlines() if line.strip()]
+        why = one_line(said[-1]) if said else f"router-app.sh exited {child.returncode}"
+        return None, why.removeprefix("router-app: ")
+    match = re.search(r"\bn=([0-9]+)", out)
+    return (match.group(1) if match else "?"), None
+
+
+def write_lines(parsed):
+    """The question line, then the alert line; the alert's number, or None. Each failure is one stderr line."""
+    if not APP.is_file():
+        print(f"notify-owner: no desk alert: {APP.name} is not beside the sender", file=sys.stderr)
+        return None
+    question = question_value(parsed)
+    if question is not None:
+        _, why = write_line(["set", f"question/{parsed['question']}", compact(question)])
+        if why:
+            print("notify-owner: no question line: " + one_line(why), file=sys.stderr)
+    number, why = write_line(["alert", compact(alert_value(parsed))])
+    if why:
+        print("notify-owner: no desk alert: " + one_line(why), file=sys.stderr)
+    return number
 
 
 def check_api_base(value):
@@ -116,6 +361,14 @@ def read_body(path):
     except OSError as error:
         raise NotifyError(f"cannot read {path}: {error.strerror or error}; write the message there first") from None
     return body
+
+
+def check_body(text):
+    if not text or not text.strip():
+        raise NotifyError("the message is empty")
+    if len(text) > MAX_BODY:
+        raise NotifyError(f"the body is {len(text)} characters; at most {MAX_BODY} are read (a message is at most {MAX_TEXT})")
+    return text
 
 
 def check_text(text):
@@ -192,17 +445,33 @@ def main(argv):
     from_file = text is USE_FILE
     if from_file:
         text = read_body(DEFAULT_BODY)
-    text = check_text(text)
+    text = check_body(text)
     if from_file and not os.access(DEFAULT_BODY, os.W_OK):
         raise NotifyError(f"cannot clear {DEFAULT_BODY}: it is not writable; the message was not sent")
     chat = read_chat(os.environ.get("KEEL_NOTIFY_ACCESS", str(DEFAULT_ACCESS)))
+    parsed = parse_body(text)
+    text = check_text(message_text(parsed))
 
     if args.dry_run is not None:
+        # a byte that is not UTF-8 reaches the text as a lone surrogate: show it escaped, never fail on
+        # it; a closed stdout (sys.stdout None) prints nothing and is no failure
+        if sys.stdout is not None and hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(errors="backslashreplace")
         print(f"dry-run: valid sendMessage request ({len(text)} chars, {len(text.splitlines())} lines); no request sent")
         print(text, end="" if text.endswith("\n") else "\n")
+        question = question_value(parsed)
+        if question is not None:
+            print(f"dry-run: would write set question/{parsed['question']} {compact(question)}")
+        print(f"dry-run: would write alert {compact(alert_value(parsed))}")
         return 0
 
-    result = request("sendMessage", token, api_base, {"chat_id": chat, "text": text}, timeout)
+    number = write_lines(parsed)
+    try:
+        result = request("sendMessage", token, api_base, {"chat_id": chat, "text": text}, timeout)
+    except NotifyError as error:
+        if number is None:
+            raise
+        raise NotifyError(f"{error}; the desk alert was written (n {number})") from None
     message_id = result.get("message_id") if isinstance(result, dict) else None
     if message_id is None:
         raise NotifyError("Telegram did not return a message id")
@@ -213,6 +482,8 @@ def main(argv):
             raise NotifyError(
                 f"the message was sent (id {message_id}), but {DEFAULT_BODY} could not be cleared: {error.strerror or error}; a later bare --send would resend it"
             ) from None
+    if number is not None:
+        print(f"desk alert n={number}")
     print(f"id {message_id}")
     return 0
 
