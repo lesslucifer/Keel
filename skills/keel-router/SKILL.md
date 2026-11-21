@@ -195,7 +195,7 @@ just saving it. Never author substantive content yourself."
   adds `question: <id>`: the sender writes the desk alert first and ends the
   message with the app's link. Where the project ships `scripts/router-app.sh`
   (the update log the local app reads), write each work unit's stage, and
-  delete each stage and each answered question, at the moments
+  delete each stage and each answered or defaulted question, at the moments
   `references/commands.md` "Router: the update log" lists, in the same turn.
 - **Watch, never wait to be told.** Never end on "tell me when done": for every
   owner action you stage, arm in the same turn a watch on its observable state

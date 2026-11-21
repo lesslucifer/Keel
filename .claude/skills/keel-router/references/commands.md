@@ -94,7 +94,7 @@ never the router's.
 
 | When | Command |
 |---|---|
-| Once per router session name: at its first start and after a restart, before any stage; then every live WU's stage again (start wipes the log). Never after a compaction: the log survives it | `scripts/router-app.sh start <router-name>` |
+| Once per router session (its first start, or after a restart or reboot), before any stage; then every live WU's stage again (start wipes the log). Never after a compaction, even one that renamed you: the log survives it | `scripts/router-app.sh start <router-name>` |
 | The turn the planning worker is dispatched | `scripts/router-app.sh stage <wu> plan-in-work` |
 | The turn the plan is verified at its tip and the read-and-approve ask is sent | `scripts/router-app.sh stage <wu> plan-to-read <tip>` |
 | The turn the owner approves the plan (his word, or his sign-off of it) | `scripts/router-app.sh stage <wu> plan-approved <tip>` |
@@ -110,19 +110,21 @@ Type the values: the router guard admits exactly these shapes, one command per
 call. `OK run=… n=…` is success; a refusal exits 2 and writes nothing.
 `LOCKED <path>` means a writer was killed while it held the lock, or a live one
 held it past 5 s. The lock is a directory holding one directory named for its
-holder's pid: once no `router-app.sh` runs, stage `rmdir <path>/* <path>` for
-the owner (the `<path>` exactly as the line prints it).
+holder's pid: once no `router-app.sh` runs, stage for the owner `rmdir "<path>"/*`
+then `rmdir "<path>"` (only the second when the lock is empty), the `<path>`
+quoted, as the line prints it without its trailing colon.
 
-**The owner message's header.** Where the project's sender reads one
-(`scripts/notify-owner.py`), a message about one work unit starts with the line
+**The owner message's header.** Where the project-router skill says the sender
+reads one (`scripts/notify-owner.py`), a message about one work unit starts with the line
 `wu: <wu-id>`, and a message that asks a question adds `question: <id>`, the
 name its later `del question/<id>` uses (a re-ask keeps the same id): at the
 very top, each once, either order, nothing else on the line. The sender drops them from the message, writes
 the question line and one desk-alert line before it sends, and ends the message
 with the link `keel://wu/<wu-id>`. A mistyped header (a bad id, a repeated
 line, or a key in another case or spacing such as `Wu:` or `wu :`, or one slip
-from `question`) sends and writes nothing (exit 1, naming the line): fix it and
-send again. `desk alert n=<n>` before
+from `question`, followed by a header's value) sends and writes nothing (exit 1,
+quoting what was typed and naming the line): fix it and send again. A headline
+such as `Question: keep the link?` is text, not a header. `desk alert n=<n>` before
 `id N` means the alert was written; `no desk alert: <why>` on stderr means only
 the message went out (`no run` there: run `start`); `no question line: <why>`
 means the question was not listed, though the alert may still be. `--dry-run`
