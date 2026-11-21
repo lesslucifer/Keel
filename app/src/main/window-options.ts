@@ -153,7 +153,14 @@ export function quitWhenAllClosed(): boolean {
   return false;
 }
 
-/** activate (the Dock icon clicked): open the window again when none is open, else bring it forward. */
-export function onActivate(state: { windowOpen: boolean }): 'open' | 'show' {
-  return state.windowOpen ? 'show' : 'open';
+/**
+ * activate (the Dock icon clicked) or a second launch: open the window when none is open; replace a
+ * window whose renderer is gone (crashed, killed, or never started), painted or not, for it can
+ * never show the page; leave a live window that has not painted yet to its own first paint
+ * (ready-to-show shows it, with no blank flash); else bring it forward.
+ */
+export function onActivate(state: { windowOpen: boolean; painted: boolean; rendererGone: boolean }): 'open' | 'show' | 'wait' | 'replace' {
+  if (!state.windowOpen) return 'open';
+  if (state.rendererGone) return 'replace';
+  return state.painted ? 'show' : 'wait';
 }

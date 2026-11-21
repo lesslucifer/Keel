@@ -79,8 +79,19 @@ test('every permission request and check is denied', () => {
 
 test('closing the last window leaves the app running, and the Dock opens the window again or brings it forward', () => {
   assert.equal(quitWhenAllClosed(), false);
-  assert.equal(onActivate({ windowOpen: false }), 'open');
-  assert.equal(onActivate({ windowOpen: true }), 'show');
+  assert.equal(onActivate({ windowOpen: false, painted: false, rendererGone: false }), 'open');
+  assert.equal(onActivate({ windowOpen: true, painted: true, rendererGone: false }), 'show');
+});
+
+test('activate or a second launch never leaves the app with no window it can show: a window whose renderer is gone is replaced, painted or not; a live unpainted one is left to its first paint', () => {
+  for (const painted of [false, true]) {
+    for (const rendererGone of [false, true]) {
+      assert.equal(onActivate({ windowOpen: false, painted, rendererGone }), 'open', `closed ${painted} ${rendererGone}`);
+    }
+    assert.equal(onActivate({ windowOpen: true, painted, rendererGone: true }), 'replace', `gone, painted ${painted}`);
+  }
+  assert.equal(onActivate({ windowOpen: true, painted: false, rendererGone: false }), 'wait');
+  assert.equal(onActivate({ windowOpen: true, painted: true, rendererGone: false }), 'show');
 });
 
 test('Forge\'s dev URL is taken only when not packaged, as the page URL the window reports (with its root slash)', () => {

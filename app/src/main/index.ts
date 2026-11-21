@@ -36,6 +36,8 @@ const rendererRoot = path.join(__dirname, '..', 'renderer', MAIN_WINDOW_VITE_NAM
 let mainWindow: BrowserWindow | null = null;
 /** Whether mainWindow has painted its first frame; until then it is not shown, so no blank window flashes. */
 let mainPainted = false;
+/** Whether mainWindow's renderer is gone (crashed or killed): such a window never paints or shows the page again. */
+let mainRendererGone = false;
 let started = false;
 
 function liveWindow(): BrowserWindow | null {
@@ -90,20 +92,31 @@ function refusePermissions(): void {
 
 function openMain(): void {
   const open = liveWindow();
-  if (onActivate({ windowOpen: open !== null }) === 'show' && open !== null) {
+  const gone = open !== null && (mainRendererGone || open.webContents.isCrashed());
+  const action = onActivate({ windowOpen: open !== null, painted: mainPainted, rendererGone: gone });
+  if (open !== null) {
     // Not painted yet: ready-to-show shows it.
-    if (!mainPainted) return;
-    if (open.isMinimized()) open.restore();
-    open.show();
-    open.focus();
-    return;
+    if (action === 'wait') return;
+    if (action === 'show') {
+      if (open.isMinimized()) open.restore();
+      open.show();
+      open.focus();
+      return;
+    }
+    // 'replace': its renderer is gone, so it would stay hidden or blank for ever; a new window takes its place.
+    mainWindow = null;
+    open.destroy();
   }
   const win = new BrowserWindow(windowOptions(path.join(__dirname, 'preload.cjs')));
   mainWindow = win;
   mainPainted = false;
+  mainRendererGone = false;
   win.once('ready-to-show', () => {
     if (mainWindow === win) mainPainted = true;
     win.show();
+  });
+  win.webContents.on('render-process-gone', () => {
+    if (mainWindow === win) mainRendererGone = true;
   });
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
