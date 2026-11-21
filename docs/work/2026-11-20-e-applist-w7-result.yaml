@@ -13,7 +13,7 @@ outcome: >-
   plain object with exactly its slot keys; each value an enum or the project id) before anything runs; and on() for
   the one listed push event state.changed on keel:push, sent only to the app's window, every string through plain().
   git runs only as the three fixed commands (toplevel, common-dir, has-config), each prefixed -c
-  core.fsmonitor=false --no-optional-locks, no shell, stdin closed, an environment built from nothing (the login
+  core.fsmonitor=false --no-optional-locks --no-lazy-fetch, no shell, stdin closed, an environment built from nothing (the login
   PATH plus HOME, USER, LOGNAME, LANG, TMPDIR: no GIT_*). The PATH is read once from the login shell (-ilc, markers,
   5 s) with a fallback that says why. Settings and a one-project list live in the app's own folder (Electron's
   userData: settings.json, projects.json), written atomically; a project's files and git status are unchanged by add,
@@ -21,7 +21,7 @@ outcome: >-
   it again (DEC-77). The main part's tests run on node --test with nothing installed, and keel check runs them beside
   cargo test since the owner's two [check] commits (7beb242, edd11d6). Live on the owner's Mac (2026-11-21): npm run
   make with the ad-hoc signature (rung 1) built Keel.app, it opened, showed the bare page, and the test alert showed;
-  Apple's paid membership is not needed for the alert. Node 143 tests pass (unit 98, integration 45); cargo test 137
+  Apple's paid membership is not needed for the alert. Node 161 tests pass (unit 99, integration 62); cargo test 137
   unit and 373 suite pass (10 ignored); npm run typecheck green.
 deviations:
   - >-
@@ -66,6 +66,16 @@ deviations:
   - >-
     The shell also prevents will-redirect (the plan names will-navigate, will-frame-navigate and
     will-attach-webview) and refuses device permissions with the rest. Commit 6d60d72.
+  - >-
+    Review round 1 (cr note on bb3fb5f, FAIL: 4 blockers, 3 importants) changed four things the plan fixed. has-config
+    is 'git -C <project> ls-tree --full-tree HEAD -- .keel/config.toml' and must show one regular file (mode 100644 or
+    100755, a blob), not the plan's 'cat-file -e HEAD:.keel/config.toml', which accepted a folder (a link and a
+    submodule are refused too). The locked flags gain --no-lazy-fetch, so a partial clone is never fetched into; a git
+    older than 2.44 is refused by name. capture() answers a program that exits by itself from its own exit code after a
+    200 ms grace for its pipes and kills nothing after that exit; after a timeout it answers once the group is gone
+    (bounded 2 s). The two dialogs run outside the request queue, in a queue of their own. Also: a git inside the
+    folder being added is refused before it runs; the nits index.ts:93, :103, handlers.ts:82, :103 and the tools.ts:42
+    link test are taken. Commits eac3028, ee9fd7b, a908043, 7e6602d, 7105837, 72c70b3, d6616a7.
 evidence:
   commits:
     - "1029dcb chore: the app's skeleton - package.json, tsconfig, ignores, test support"
@@ -88,9 +98,17 @@ evidence:
     - "6d60d72 feat: the Electron shell and the preload entry (not unit-tested: needs Electron; checked live)"
     - "64f319a feat: the Forge build - Vite, the fuses, the ad-hoc signature (electron-forge package green at the time)"
     - "964e552 test: guards - electron only in the shell and the preload; exact pins (red on a planted electron import and a ^8.3.8 pin)"
+    - "eac3028 fix: capture answers from the program's own exit (review round 1; red first: 4 new tests - two zsh .zshrc jobs, two capture fakes; the kill tests 30/30 red under load, then 200/200 green)"
+    - "ee9fd7b fix: --no-lazy-fetch on every fixed command (red first: the locked-flags snapshot, the recorded argv, the old-git name)"
+    - "a908043 fix: HEAD must commit .keel/config.toml as a regular file (red first: a folder and a link at that path, commitsConfig)"
+    - "7e6602d fix: a git inside the folder being added is refused before it runs (red first: 2 tests, the shim never runs)"
+    - "7105837 fix: an open dialog no longer holds the request queue (red first: state.get while each dialog is open)"
+    - "72c70b3 test: a link inside a project pointing outside it is refused by its own path (kills the real-path-only mutant)"
+    - "d6616a7 fix: the shell shows only a painted window and handles a failed page load (no unit test: needs Electron)"
   runs-2026-11-21:
-    node: "cd app && node --test 'test/**/*.test.ts': tests 143, pass 143, fail 0 (unit 98 in 15 files, integration 45 in 6 files)"
-    cargo: "cargo test: unit 137 passed; suite 373 passed, 10 ignored"
+    node: "cd app && node --test 'test/**/*.test.ts': tests 161, pass 161, fail 0 (unit 99 in 15 files, integration 62 in 6 files), after review round 1's fixes"
+    stability: "run.test.ts and login-path.test.ts 100 times, 6 at a time, with 6 and then 14 CPU burners on 14 cores: 100/100 green each; the kill tests alone on bb3fb5f's capture(): 30/30 red"
+    cargo: "cargo test: unit 137 passed; suite 373 passed, 10 ignored (again after round 1's fixes)"
     keel-check: "green (exit 0; tree unchanged since the last green run, which ran cargo test and the node tests)"
     typecheck: "cd app && npx tsc --noEmit: exit 0"
     package: >-
@@ -101,11 +119,11 @@ evidence:
   tests:
     integration:
       - "test/integration/bridge.test.ts (11): the wire contract locked (two channels, six names with slots, one push event); every name and slot reaches its handler once; refusals run nothing (unknown name, foreign page, subframe, another window, missing frame, free text, extra key); no window - every call refused; handler strings through plain(); a throwing handler answers failed; one handler per name; a listed push reaches only the app window; an unlisted push or a payload refused; no or destroyed window - dropped; the pusher reads the window per push (Dock reopen)"
-      - "test/integration/run.test.ts (7): a fake git gets the locked flags first, the slot whole, no shell, no GIT_* (GIT_DIR, GIT_CONFIG_PARAMETERS, GIT_EXTERNAL_DIFF set; \"$(touch pwned); x\" arrives whole, creates nothing); non-zero reported; a hang killed with its group; cannot start reported; output capped; a relative git refused; real git answers from the project, not GIT_DIR"
-      - "test/integration/login-path.test.ts (5): profile noise around the markers; a hang killed with its children and the fallback says why; non-zero falls back; no markers or no absolute folder falls back; cannot start falls back"
-      - "test/integration/app-folder.test.ts (10): atomic owner-only writes; a broken file set aside, defaults loaded; settings round-trip, one push per change; refused tool paths save and push nothing; links; PATH lookup skipping a listed project; a main checkout added with its files and git status unchanged through add, settings writes and remove; subfolder and link; linked worktree, plain folder, working-tree-only config, missing folder and a second project refused; unknown id refused"
-      - "test/integration/handlers.test.ts (8): state.get; projects.add through the dialog, one push, remove leaves the files; add refused before any dialog while one is listed or git is missing; cancel changes nothing; settings.choose and reset; alert.test answers; changes one at a time (two adds list one); prepare() order"
-      - "test/integration/no-leak.test.ts (4): a hung fake's group is gone within 3 s after its test process dies by SIGINT, an uncaught throw, a failed assertion, SIGKILL"
+      - "test/integration/run.test.ts (9): a fake git gets the locked flags first, the slot whole, no shell, no GIT_* (GIT_DIR, GIT_CONFIG_PARAMETERS, GIT_EXTERNAL_DIFF set; \"$(touch pwned); x\" arrives whole, creates nothing); non-zero reported; a hang killed with its group; cannot start reported; output capped; a relative git refused; real git answers from the project, not GIT_DIR; a program that exits while a job that left its group holds its output is answered from its exit; one whose own background job holds it answers its code and the job is never killed"
+      - "test/integration/login-path.test.ts (7): profile noise around the markers; a hang killed with its children and the fallback says why; non-zero falls back; no markers or no absolute folder falls back; cannot start falls back; real /bin/zsh with a .zshrc job that left the group (setpgrp) or a plain one still gives the PATH, the job not killed"
+      - "test/integration/app-folder.test.ts (13): atomic owner-only writes; a broken file set aside, defaults loaded; settings round-trip, one push per change; refused tool paths save and push nothing; links; PATH lookup skipping a listed project; a main checkout added with its files and git status unchanged through add, settings writes and remove; subfolder and link; linked worktree, plain folder, working-tree-only config, missing folder and a second project refused; unknown id refused; a link inside a project pointing out refused; a folder or link at .keel/config.toml refused; a git inside the folder refused before it runs; a git older than 2.44 named"
+      - "test/integration/handlers.test.ts (10): state.get; projects.add through the dialog, one push, remove leaves the files; add refused before any dialog while one is listed or git is missing; cancel changes nothing; settings.choose and reset; alert.test answers; changes one at a time (two adds list one); a git inside the folder, set or on the PATH, refused before it runs; state.get answers while either dialog stays open; prepare() order"
+      - "test/integration/no-leak.test.ts (12): a hung fake's group, and a background job from holder() that left its group or not, is gone within 3 s after its test process dies by SIGINT, an uncaught throw, a failed assertion, SIGKILL"
     unit:
       - "test/unit/bridge.test.ts (19): slots (enum, project id, types, length cap, controls), a seeded generated-input slot test, the sender check, call shape, names incl. inherited ones, args keys, frozen tables, pushable(), plainDeep() (depth, __proto__, non-plain data, generated payloads)"
       - "test/unit/preload-bridge.test.ts (7): exactly ask and on, frozen; ask sends {name, args}; on() refuses an unlisted event, payload only, a copy per callback, separate unsubscribes"
@@ -114,7 +132,7 @@ evidence:
       - "test/unit/commands.test.ts (10): the lock prefix; the three shapes; 10 s reads; the project slot; unknown or missing slots; --no-ext-diff --no-textconv placement; the child environment; generated environments - no GIT_*"
       - "test/unit/login-path.test.ts (8): the fixed script, 5 s, between(), entries(), the fallback, shellOf()"
       - "test/unit/text.test.ts (6): plain() - C0, DEL, C1, bidi and separators blanked; printable kept; the cap; lone surrogates; generated hostile strings"
-      - "test/unit/settings.test.ts (3), projects.test.ts (5), store.test.ts (2), tools.test.ts (2): parses (half file, unknown version, extra keys), one project, minted ids, set-aside names, the 1 MiB cap, the tool shape, inside()"
+      - "test/unit/settings.test.ts (3), projects.test.ts (6), store.test.ts (2), tools.test.ts (2): parses (half file, unknown version, extra keys), one project, minted ids, set-aside names, the 1 MiB cap, the tool shape, inside(), commitsConfig()"
       - "test/unit/alert.test.ts (5): the alert text and its 5 s wait; shown, not-shown, show() throws, not supported"
       - "test/unit/package-options.test.ts (6): Keel, dev.keel.app, the asar, the keel scheme; the seven fuses; ad-hoc by default; a named identity with the hardened runtime; a control character refused; the JIT entitlement only on the app"
       - "test/unit/page.test.ts (2): the page carries the packaged CSP and one module script"
@@ -124,7 +142,7 @@ evidence:
 distillation: >-
   Nothing in W7. At the epic close (W9), per the epic's distillation plan: docs/local-app.html gains the shell as
   built (the two channels, the six requests and state.changed, the fixed commands, the login PATH, the app's folder,
-  running with no window); docs/install.html how to build and install (npm ci && npm run make, ad-hoc by default,
+  running with no window; its locked-git line gains --no-lazy-fetch, and has-config is ls-tree); docs/install.html how to build and install (npm ci && npm run make, ad-hoc by default,
   KEEL_SIGN_IDENTITY, the first run downloading Electron); docs/architecture.html app/'s place; the next free DEC
   record: app/ under the gate, the main part on node --test, the ad-hoc signature enough for the alert.
 follow-ups:
@@ -132,7 +150,7 @@ follow-ups:
   - "The keel: link scheme is declared by the build but handled by nothing yet; the waiting list's requests and push events join contract.ts and its snapshot. The owner's lsregister dump showed keel: claimed in several entries with no owner listed: W5's link handling checks which app owns the scheme. Taken by: E-APPLIST.W5."
   - "The packaged build's live checks again at the close, the signing rung recorded as ad-hoc (rung 1), and the distillation above. Taken by: E-APPLIST.W9."
   - "Apple's paid membership is not needed for the alert (rung 1 showed it): recorded when A3 closes. Taken by: backlog row local-app A3, at E-APPLIST's close."
-  - "The code review, the owner's sign-off and the merge into epic/E-APPLIST: the router starts a fresh reviewer; the owner signs."
+  - "Review round 2 (the whole range), the owner's sign-off and the merge into epic/E-APPLIST: the router starts it; the owner signs."
 details:
   base: "wu/E-APPLIST/w7-app-shell off epic/E-APPLIST at bf4cf5e (the replan's merge); epic/E-APPLIST has since moved to 1494748 (W3's merge)"
   versions:

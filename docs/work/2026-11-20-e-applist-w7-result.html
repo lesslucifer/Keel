@@ -24,8 +24,8 @@
   <tbody>
     <tr><td>The app opens, finds keel, git and claude, and says its PATH came from your login shell.</td><td><b>Met.</b> You checked it.</td></tr>
     <tr><td>The test alert shows, or the result names the signature that failed.</td><td><b>Met.</b> It showed with the free signature.</td></tr>
-    <tr><td>With the window closed, the app stays in the Dock.</td><td><b>Met.</b> You checked it; the Dock brings the window back.</td></tr>
-    <tr><td>The usual checks run the core's tests, with nothing installed.</td><td><b>Met.</b> Since your two rules commits. 143 tests pass.</td></tr>
+    <tr><td>With the window closed, the app stays in the Dock.</td><td><b>Met.</b> You checked it.</td></tr>
+    <tr><td>The usual checks run the core's tests, with nothing installed.</td><td><b>Met.</b> 161 tests pass.</td></tr>
     <tr><td>Tests prove the refusals: an unknown request, a stranger's request, free text, an unlisted signal, an inherited git setting.</td><td><b>Met.</b> Every new test failed first.</td></tr>
   </tbody>
 </table>
@@ -33,13 +33,13 @@
 <h2 id="example">The main case, run for real</h2>
 <p data-c="example-intro">On your Mac, 2026-11-21, as you reported:</p>
 <ol data-c="example">
-  <li>You built the app with the free signature. The first build spent about 3 minutes downloading Electron.</li>
+  <li>You built the app with the free signature.</li>
   <li>You copied it to Applications and opened it.</li>
   <li>The page showed version 0.1.0, the three tools and "PATH from your login shell".</li>
   <li>You sent the test alert. It showed.</li>
   <li>You closed the window, then clicked the Dock icon. The window came back.</li>
   <li>The app's locked switches read as planned.</li>
-  <li>The app's link scheme shows in several places, owners not listed. You said all good.</li>
+  <li>The app's link scheme shows in several places. You said all good.</li>
 </ol>
 
 <h2 id="diff">Differences from the plan</h2>
@@ -47,9 +47,10 @@
   <li><b>A stuck program is stopped with all its children.</b> The planned way stopped only the program itself.</li>
   <li><b>The page has more buttons</b>, to pick a tool or a project. Without them, nobody could check the two pickers live.</li>
   <li><b>More guard tests.</b> Only the app's two entry files may load Electron. Every package has one exact version.</li>
-  <li><b>Your rules change took two commits.</b> The second makes the check fail when the test folders are empty.</li>
-  <li><b>Small build fixes</b>, for the live-reload run and a sandboxed build. Six type errors in early tests are fixed; no test changed what it checks.</li>
-  <li><b>The worker's own rebuild was blocked today.</b> The sandbox refused the Electron download. Your build is the evidence.</li>
+  <li><b>Your rules change took two commits</b>; the second fails the check on empty test folders.</li>
+  <li><b>Small build fixes</b>, and six type errors in early tests fixed; no test changed what it checks.</li>
+  <li><b>The worker could not rebuild the app</b>: the sandbox refused the Electron download.</li>
+  <li><b>Review round 1 failed; all its findings are fixed</b>, each with a test that failed first. Among them: a startup job in your shell could stall the app, and a git inside the folder you add could run there.</li>
 </ul>
 
 <h2 id="left">What is left, and who takes it</h2>
@@ -60,7 +61,7 @@
     <tr><td>Links that open the app, and which app owns the link scheme.</td><td>W5.</td></tr>
     <tr><td>The packaged build checked again, and the docs updated.</td><td>W9, at the epic's close.</td></tr>
     <tr><td>Record that the paid membership is not needed.</td><td>The app backlog row, at the epic's close.</td></tr>
-    <tr><td>A fresh code review, then your sign-off and the merge.</td><td>The router starts it; you sign.</td></tr>
+    <tr><td>Review round 2, then your sign-off and the merge.</td><td>The router starts it; you sign.</td></tr>
   </tbody>
 </table>
 
