@@ -95,24 +95,29 @@ test('a job the program left that writes without stopping is read only up to a b
   const count = path.join(dir, 'count');
   const pidFile = path.join(dir, 'job');
   endHolder(t, pidFile);
-  // 8 KiB per write; the job counts its writes and ends within 0.1 s of this test process's death, or after 30 s.
-  // It starts after the answer (0.5 s; the answer comes 0.2 s after the program's exit).
-  const job = `s=$(/usr/bin/printf '%08192d' 0); /bin/sleep 0.5; echo $$ > ${pidFile}; n=0; end=$(( $(/bin/date +%s) + 30 )); while kill -0 ${process.pid} 2>/dev/null && [ $(/bin/date +%s) -lt $end ]; do printf '%s\\n' "$s"; n=$((n+1)); echo $n > ${count}; done`;
+  // 8 KiB per write, shell builtins only (no fork per write, so it writes as fast as it is read). It
+  // counts its writes, stops after 4000 (32 MiB, far past the bound), and ends within 0.1 s of this
+  // test process's death. It starts 0.5 s after launch, after the answer (0.2 s after the program's exit).
+  const job = `s=$(/usr/bin/printf '%08192d' 0); /bin/sleep 0.5; echo $$ > ${pidFile}; n=0; while kill -0 ${process.pid} 2>/dev/null && [ $n -lt 4000 ]; do printf '%s\\n' "$s"; n=$((n+1)); echo $n > ${count}; done`;
   const fake = program(path.join(dir, 'fake'), `#!/bin/sh\n/bin/sh -c '${job}' &\necho done\n`);
   const r = await capture(fake, [], { PATH: '/usr/bin:/bin' }, 5_000);
   assert.deepEqual([r.code, r.timedOut, r.stdout], [0, false, 'done\n']);
   const writes = () => Number(existsSync(count) ? readFileSync(count, 'utf8').trim() || '0' : '0');
-  // The job stops advancing (its writes block once the pipe is full) ...
+  // The job stops advancing: its count stays the same for a whole second (its writes block on the
+  // full pipe). Read forever, it would run on to 4000 writes before it stood still.
   let last = -1;
-  const still = await within(8_000, () => {
+  let since = Date.now();
+  const still = await within(20_000, () => {
     const n = writes();
-    const same = n === last && n > 0;
-    last = n;
-    return same;
+    if (n !== last) {
+      last = n;
+      since = Date.now();
+    }
+    return n > 0 && Date.now() - since >= 1_000;
   });
-  assert.ok(still, `the job kept writing after the answer (${writes()} writes of 8 KiB)`);
-  // ... after at most the late-output bound plus what the pipe holds, and it is still alive.
-  assert.ok(writes() * 8192 <= LATE_OUTPUT_CAP + 512 * 1024, `${writes()} writes read after the answer`);
+  assert.ok(still, `the job never stood still (${writes()} writes of 8 KiB)`);
+  // It stood still within the late-output bound plus what the pipe holds, and it is alive.
+  assert.ok(writes() * 8192 <= LATE_OUTPUT_CAP + 512 * 1024, `${writes()} writes of 8 KiB were read after the answer`);
   assert.ok(alive(Number(readFileSync(pidFile, 'utf8'))), 'the job was killed');
 });
 
