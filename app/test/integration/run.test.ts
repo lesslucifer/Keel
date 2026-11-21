@@ -31,10 +31,12 @@ test('a fake git gets the locked flags first, the slot whole, no shell, and no G
   assert.deepEqual(seen.argv.slice(0, LOCKED.length), LOCKED);
   assert.ok(!existsSync(path.join(dir, 'pwned')) && !existsSync(path.join('/', 'pwned')) && !existsSync(path.join(dir, 'pwned2')), 'a shell ran the slot');
   assert.equal(seen.env.PATH, '/usr/bin:/bin');
+  // git's messages in English whatever the Mac's language: the app reads some of them.
+  assert.equal(seen.env.LC_ALL, 'C');
   // __CF_USER_TEXT_ENCODING is set by macOS's CoreFoundation inside the child itself (env -i node shows it too).
   for (const key of Object.keys(seen.env)) {
     assert.ok(!key.startsWith('GIT_'), `${key} reached git`);
-    assert.ok(['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'TMPDIR', '__CF_USER_TEXT_ENCODING'].includes(key), `${key} reached git`);
+    assert.ok(['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'TMPDIR', 'LC_ALL', '__CF_USER_TEXT_ENCODING'].includes(key), `${key} reached git`);
   }
 });
 
@@ -159,7 +161,7 @@ test('real git answers from the project named, not from the GIT_DIR the app inhe
   const top = await run(git, 'toplevel', { project: a }, opts);
   assert.equal(top.code, 0, top.stderr);
   assert.equal(top.stdout.trim(), a);
-  assert.equal((await run(git, 'common-dir', { project: a }, opts)).stdout.trim(), path.join(a, '.git'));
+  assert.equal(path.resolve(a, (await run(git, 'common-dir', { project: a }, opts)).stdout.trim()), path.join(a, '.git'));
   const hasConfig = async (project: string) => {
     const r = await run(git, 'has-config', { project }, opts);
     return r.code === 0 && commitsConfig(r.stdout);

@@ -12,7 +12,7 @@ import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { ProjectEntry } from '../shared/contract.ts';
 import { PROJECT_ID } from './bridge.ts';
-import { run, lacksNoLazyFetch, MIN_GIT, type Captured, type RunOptions } from './commands.ts';
+import { run, refusedFlag, MIN_GIT, OLDEST_GIT, type Captured, type RunOptions } from './commands.ts';
 import { load, writeAtomic } from './store.ts';
 import { plain } from './text.ts';
 import { toolProblem } from './tools.ts';
@@ -102,7 +102,9 @@ export async function checkProject(folder: string, git: string, opts: RunOptions
   const gitWhy = await toolProblem('git', git, [dir]);
   if (gitWhy !== null) return { ok: false, why: `git is ${gitWhy}: choose a git outside it in the settings` };
   let top = await run(git, 'toplevel', { project: dir }, opts);
-  if (lacksNoLazyFetch(top)) {
+  const refused = refusedFlag(top);
+  if (refused === '--no-optional-locks') return { ok: false, why: `this git is older than ${OLDEST_GIT}: choose a newer git in the settings` };
+  if (refused === '--no-lazy-fetch') {
     // A git older than 2.45: it may read this folder only if nothing in it can be fetched lazily.
     const before245: RunOptions = { ...opts, before245: true };
     const promisor = await run(git, 'promisor-config', { project: dir }, before245);
@@ -121,7 +123,10 @@ export async function checkProject(folder: string, git: string, opts: RunOptions
   const common = await run(git, 'common-dir', { project: dir }, opts);
   const commonFailed = gitFailed(common);
   if (commonFailed !== null) return { ok: false, why: commonFailed };
-  if (common.code !== 0 || (await real(common.stdout.trim())) !== path.join(dir, '.git')) {
+  // One line: the common git folder, absolute or relative to the folder git ran in (the project).
+  const line = common.stdout.endsWith('\n') ? common.stdout.slice(0, -1) : common.stdout;
+  if (common.code === 0 && (line === '' || line.includes('\n'))) return { ok: false, why: 'git did not name the folder\'s git folder' };
+  if (common.code !== 0 || (await real(path.resolve(dir, line))) !== path.join(dir, '.git')) {
     return { ok: false, why: 'a linked worktree or a submodule: add its main checkout' };
   }
   const config = await run(git, 'has-config', { project: dir }, opts);

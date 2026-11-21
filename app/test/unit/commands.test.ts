@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LOCKED, LOCKED_BEFORE_2_45, MIN_GIT, NO_EXTERNAL, ENV_KEYS, READ_TIMEOUT_MS, COMMANDS, argv, lock, childEnv, lacksNoLazyFetch } from '../../src/main/commands.ts';
+import { LOCKED, LOCKED_BEFORE_2_45, MIN_GIT, NO_EXTERNAL, ENV_KEYS, READ_TIMEOUT_MS, COMMANDS, argv, lock, childEnv, refusedFlag } from '../../src/main/commands.ts';
 import { seeded, hostileString, pick } from '../support/seeded.ts';
 
 test('every fixed command starts with -c core.fsmonitor=false --no-optional-locks --no-lazy-fetch', () => {
@@ -15,7 +15,8 @@ test('the fixed commands of W7 are exactly the plan\'s three lines and, for a gi
     '-c', 'core.fsmonitor=false', '--no-optional-locks', '-C', '/Users/me/Keel', 'config', '--get-regexp', '^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$',
   ]);
   assert.deepEqual(argv('toplevel', { project: '/Users/me/Keel' }), [...LOCKED, '-C', '/Users/me/Keel', 'rev-parse', '--show-toplevel']);
-  assert.deepEqual(argv('common-dir', { project: '/Users/me/Keel' }), [...LOCKED, '-C', '/Users/me/Keel', 'rev-parse', '--path-format=absolute', '--git-common-dir']);
+  // No --path-format (git 2.31): the app resolves a relative answer against the project itself.
+  assert.deepEqual(argv('common-dir', { project: '/Users/me/Keel' }), [...LOCKED, '-C', '/Users/me/Keel', 'rev-parse', '--git-common-dir']);
   assert.deepEqual(argv('has-config', { project: '/Users/me/Keel' }), [...LOCKED, '-C', '/Users/me/Keel', 'ls-tree', '--full-tree', 'HEAD', '--', '.keel/config.toml']);
 });
 
@@ -55,24 +56,24 @@ test('lock() puts --no-ext-diff --no-textconv right after a diff, show or log -p
   assert.deepEqual(lock(['-C', '/p', 'rev-parse', 'HEAD']), [...LOCKED, '-C', '/p', 'rev-parse', 'HEAD']);
 });
 
-test('the child environment holds only PATH (the login PATH) and HOME, USER, LOGNAME, LANG, TMPDIR from the app', () => {
+test('the child environment holds only PATH (the login PATH), LC_ALL=C, and HOME, USER, LOGNAME, LANG, TMPDIR from the app', () => {
   assert.deepEqual(ENV_KEYS, ['HOME', 'USER', 'LOGNAME', 'LANG', 'TMPDIR']);
   const env = childEnv(['/opt/homebrew/bin', '/usr/bin'], {
     HOME: '/Users/me', USER: 'me', LOGNAME: 'me', LANG: 'en_US.UTF-8', TMPDIR: '/tmp/x', PATH: '/evil',
     GIT_DIR: '/x', GIT_CONFIG_PARAMETERS: "'core.pager'='sh'", GIT_EXTERNAL_DIFF: '/x', NODE_OPTIONS: '--require /x', DYLD_INSERT_LIBRARIES: '/x', ELECTRON_RUN_AS_NODE: '1',
   });
-  assert.deepEqual(env, { PATH: '/opt/homebrew/bin:/usr/bin', HOME: '/Users/me', USER: 'me', LOGNAME: 'me', LANG: 'en_US.UTF-8', TMPDIR: '/tmp/x' });
+  assert.deepEqual(env, { PATH: '/opt/homebrew/bin:/usr/bin', LC_ALL: 'C', HOME: '/Users/me', USER: 'me', LOGNAME: 'me', LANG: 'en_US.UTF-8', TMPDIR: '/tmp/x' });
   assert.equal(Object.getPrototypeOf(env), Object.prototype);
 });
 
 test('the child environment skips an unset or empty key rather than passing it empty', () => {
-  assert.deepEqual(childEnv(['/usr/bin'], { HOME: '/h', USER: '' }), { PATH: '/usr/bin', HOME: '/h' });
+  assert.deepEqual(childEnv(['/usr/bin'], { HOME: '/h', USER: '', LC_ALL: 'de_DE.UTF-8', LANGUAGE: 'de' }), { PATH: '/usr/bin', LC_ALL: 'C', HOME: '/h' });
 });
 
-test('generated environments: no key outside the six ever reaches the child, and no GIT_* at all', () => {
+test('generated environments: no key outside the seven ever reaches the child, and no GIT_* at all', () => {
   const rng = seeded(0x617e07);
   const names = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_CONFIG', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_SSH_COMMAND', 'GIT_PAGER', 'git_dir', 'HOME', 'USER', 'PATH', 'LANG', 'LC_ALL', 'TMPDIR', 'SHELL', 'PAGER', 'EDITOR', 'NODE_OPTIONS'];
-  const allowed = new Set(['PATH', ...ENV_KEYS]);
+  const allowed = new Set(['PATH', 'LC_ALL', ...ENV_KEYS]);
   for (let i = 0; i < 1000; i++) {
     const source: Record<string, string> = {};
     for (let k = 0; k < 8; k++) source[pick(rng, names) + (rng() < 0.3 ? hostileString(rng, 3, ['_', 'X', '0']) : '')] = hostileString(rng, 6);
@@ -92,12 +93,15 @@ test('a git older than 2.45 runs the same lines without --no-lazy-fetch, and onl
   assert.deepEqual(lock(['show', 'HEAD'], true), [...LOCKED_BEFORE_2_45, 'show', ...NO_EXTERNAL, 'HEAD']);
 });
 
-test('git refused --no-lazy-fetch only on exit 129 with its "unknown option" line, as git 2.39 prints it', () => {
+test('the locked flag an old git refused is read from exit 129 and the flag named in stderr, in any language or case', () => {
   const usage = 'usage: git [--version] [--help] [-C <path>] [-c <name>=<value>]\n';
   const r = (code: number | null, stderr: string) => ({ code, stderr, stdout: '', timedOut: false, startError: null });
-  assert.equal(lacksNoLazyFetch(r(129, `unknown option: --no-lazy-fetch\n${usage}`)), true);
-  assert.equal(lacksNoLazyFetch(r(128, 'unknown option: --no-lazy-fetch\n')), false);
-  assert.equal(lacksNoLazyFetch(r(129, `unknown option: --no-optional-locks\n${usage}`)), false);
-  assert.equal(lacksNoLazyFetch(r(129, 'error: unknown option: --no-lazy-fetchy\n')), false);
-  assert.equal(lacksNoLazyFetch(r(null, 'unknown option: --no-lazy-fetch\n')), false);
+  for (const line of ['unknown option: --no-lazy-fetch', 'Unknown option: --no-lazy-fetch', 'Unbekannte Option: --no-lazy-fetch', 'option inconnue : --no-lazy-fetch']) {
+    assert.equal(refusedFlag(r(129, `${line}\n${usage}`)), '--no-lazy-fetch', line);
+  }
+  assert.equal(refusedFlag(r(129, `Unknown option: --no-optional-locks\n${usage}`)), '--no-optional-locks');
+  assert.equal(refusedFlag(r(128, 'unknown option: --no-lazy-fetch\n')), null);
+  assert.equal(refusedFlag(r(null, 'unknown option: --no-lazy-fetch\n')), null);
+  assert.equal(refusedFlag(r(129, 'error: unknown option: --no-lazy-fetchy\n')), null);
+  assert.equal(refusedFlag(r(129, `unknown option: --frobnicate\n${usage}`)), null);
 });

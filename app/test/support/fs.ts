@@ -30,21 +30,37 @@ export function recorder(file: string, record: string, code = 0, stdout = ''): s
   );
 }
 
+/** Which old git a fake stands for: its version, and the language its messages come in. */
+export interface OldGitAs {
+  /** 2.39 and 2.30: "unknown option: %s"; 2.16: "Unknown option: %s"; 2.14: has no --no-optional-locks either; 2.30 and 2.16: no rev-parse --path-format. */
+  version?: '2.39' | '2.30' | '2.16' | '2.14';
+  /** The translation git's gettext picked (git before 2.45 wraps the line in _()). */
+  lang?: 'en' | 'de' | 'fr';
+}
+
 /**
- * A fake git older than 2.45 (Apple's stock 2.39): given --no-lazy-fetch it answers as git 2.39's
- * git.c does - "unknown option", the usage text, exit 129; else it runs `real` with the same argv
- * and environment. Each call appends {argv, env} as one JSON line to `record`.
+ * A fake git older than 2.45: the first locked flag it does not know (--no-lazy-fetch, or before
+ * 2.15 --no-optional-locks) is answered as that git's git.c does - its "unknown option" line in its
+ * language and case, the usage text, exit 129. Before 2.31 rev-parse does not know --path-format and
+ * echoes it as an argument, as git 2.30's rev-parse does. Else it runs `real` with the same argv and
+ * environment. Each call appends {argv, env} as one JSON line to `record`.
  */
-export function oldGit(file: string, record: string, real: string): string {
+export function oldGit(file: string, record: string, real: string, as: OldGitAs = {}): string {
+  const version = as.version ?? '2.39';
   const usage = 'usage: git [--version] [--help] [-C <path>] [-c <name>=<value>]\n           [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]\n';
+  const line = { en: version === '2.16' || version === '2.14' ? 'Unknown option: %s' : 'unknown option: %s', de: 'Unbekannte Option: %s', fr: 'option inconnue : %s' }[as.lang ?? 'en'];
+  const unknown = version === '2.14' ? ['--no-optional-locks', '--no-lazy-fetch'] : ['--no-lazy-fetch'];
+  const noPathFormat = version === '2.30' || version === '2.16' || version === '2.14';
   return program(
     file,
     [
       `#!${process.execPath}`,
       `const fs = require('node:fs');`,
-      `const argv = process.argv.slice(2);`,
+      `let argv = process.argv.slice(2);`,
       `fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify({ argv, env: process.env }) + '\\n');`,
-      `if (argv.includes('--no-lazy-fetch')) { process.stderr.write('unknown option: --no-lazy-fetch\\n' + ${JSON.stringify(usage)}); process.exit(129); }`,
+      `const bad = argv.find((a) => ${JSON.stringify(unknown)}.includes(a));`,
+      `if (bad !== undefined) { process.stderr.write(${JSON.stringify(line)}.replace('%s', bad) + '\\n' + ${JSON.stringify(usage)}); process.exit(129); }`,
+      `if (${noPathFormat} && argv.includes('rev-parse') && argv.includes('--path-format=absolute')) { process.stdout.write('--path-format=absolute\\n'); argv = argv.filter((a) => a !== '--path-format=absolute'); }`,
       `const r = require('node:child_process').spawnSync(${JSON.stringify(real)}, argv, { stdio: 'inherit', env: process.env });`,
       `process.exit(r.status === null ? 1 : r.status);`,
     ].join('\n') + '\n',

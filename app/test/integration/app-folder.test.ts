@@ -9,7 +9,7 @@ import { readJson, writeAtomic, load } from '../../src/main/store.ts';
 import { loadSettings, chooseTool, resetTool, SETTINGS_FILE } from '../../src/main/settings.ts';
 import { loadProjects, addProject, removeProject, PROJECTS_FILE } from '../../src/main/projects.ts';
 import { lookup, toolStates, toolProblem } from '../../src/main/tools.ts';
-import { tempDir, program, realGit, sh, snapshot, mk, recorder, oldGit, records } from '../support/fs.ts';
+import { tempDir, program, realGit, sh, snapshot, mk, recorder, oldGit, records, type OldGitAs } from '../support/fs.ts';
 
 const GIT = realGit();
 const PATH = [path.dirname(GIT), '/usr/bin', '/bin'];
@@ -305,10 +305,45 @@ test('a git older than 2.45 (no --no-lazy-fetch) adds a project that is not a pa
     [...base, '--no-lazy-fetch', '-C', project, 'rev-parse', '--show-toplevel'],
     [...base, '-C', project, 'config', '--get-regexp', '^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$'],
     [...base, '-C', project, 'rev-parse', '--show-toplevel'],
-    [...base, '-C', project, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+    [...base, '-C', project, 'rev-parse', '--git-common-dir'],
     [...base, '-C', project, 'ls-tree', '--full-tree', 'HEAD', '--', '.keel/config.toml'],
   ]);
   for (const x of seen) for (const key of Object.keys(x.env)) assert.ok(!key.startsWith('GIT_'), `${key} reached git`);
+});
+
+test('a git older than 2.45 is recognised whatever the language or case of its "unknown option" line', async (t) => {
+  const dir = tempDir(t, 'projects');
+  const home = mk(path.join(dir, 'home'));
+  const cases: Array<[string, OldGitAs]> = [['de', { lang: 'de' }], ['fr', { lang: 'fr' }], ['2.16', { version: '2.16' }]];
+  for (const [name, as] of cases) {
+    const project = keelRepo(path.join(dir, `proj-${name}`));
+    const git = oldGit(path.join(mk(path.join(dir, `old-${name}`)), 'git'), path.join(dir, `record-${name}.jsonl`), GIT, as);
+    const r = await addProject(path.join(dir, `app-${name}`), project, git, opts(home));
+    assert.equal(r.ok, true, `${name}: ${r.ok ? '' : r.why}`);
+  }
+});
+
+test('a git 2.17 to 2.30, whose rev-parse has no --path-format, adds a real main checkout and still refuses a linked worktree', async (t) => {
+  const dir = tempDir(t, 'projects');
+  const home = mk(path.join(dir, 'home'));
+  const project = keelRepo(path.join(dir, 'proj'));
+  sh(GIT, project, ['worktree', 'add', '-q', path.join(dir, 'linked')]);
+  const git = oldGit(path.join(mk(path.join(dir, 'old')), 'git'), path.join(dir, 'record.jsonl'), GIT, { version: '2.30' });
+  const linked = await addProject(path.join(dir, 'app-folder'), path.join(dir, 'linked'), git, opts(home));
+  assert.match(linked.ok ? 'accepted' : linked.why, /linked worktree/);
+  const r = await addProject(path.join(dir, 'app-folder'), project, git, opts(home));
+  assert.equal(r.ok, true, r.ok ? '' : r.why);
+});
+
+test('a git older than 2.15 (no --no-optional-locks) is refused by name', async (t) => {
+  const dir = tempDir(t, 'projects');
+  const home = mk(path.join(dir, 'home'));
+  const project = keelRepo(path.join(dir, 'proj'));
+  const record = path.join(dir, 'record.jsonl');
+  const git = oldGit(path.join(mk(path.join(dir, 'old')), 'git'), record, GIT, { version: '2.14' });
+  const r = await addProject(path.join(dir, 'app-folder'), project, git, opts(home));
+  assert.match(r.ok ? 'accepted' : r.why, /^this git is older than 2\.15/);
+  assert.equal(records(record).length, 1);
 });
 
 test('a git older than 2.45 is refused for a partial clone, by name, and runs nothing past the config read', async (t) => {

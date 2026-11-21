@@ -3,8 +3,10 @@
 // partial clone a read never fetches a missing object into the project's .git). A git older than
 // 2.45 has no --no-lazy-fetch and refuses the line (exit 129): such a git runs the line without it
 // (LOCKED_BEFORE_2_45), and only on a project with no promisor setting, so it has nothing to fetch
-// (checkProject decides). A diff, show or log -p shape gets --no-ext-diff --no-textconv; git runs with no shell, stdin closed, and an environment
-// built from nothing but the login PATH and five account variables, so no inherited GIT_* reaches it.
+// (checkProject decides); a git older than 2.15 (no --no-optional-locks) is refused. A diff, show or
+// log -p shape gets --no-ext-diff --no-textconv. git runs with no shell, stdin closed, and an
+// environment built from nothing but the login PATH, LC_ALL=C (its messages in English, whatever the
+// Mac's language: the app reads one of them) and five account variables, so no inherited GIT_* reaches it.
 // capture() is the one way the main part spawns anything (login-path.ts uses it too).
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -18,6 +20,9 @@ export const LOCKED_BEFORE_2_45: readonly string[] = Object.freeze(['-c', 'core.
 
 /** The first git with --no-lazy-fetch (2.45.0); an older one may read only a project that is not a partial clone. */
 export const MIN_GIT = '2.45';
+
+/** The oldest git the app runs: --no-optional-locks came in 2.15; every other option and output it reads is older. */
+export const OLDEST_GIT = '2.15';
 
 /** The settings that make a repository a partial clone (git config names, lower-cased as --get-regexp matches them). */
 export const PROMISOR_KEYS = '^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$';
@@ -40,7 +45,8 @@ const PROJECT: Token = Object.freeze({ slot: 'project' as const });
 export const COMMANDS: Readonly<Record<string, readonly Token[]>> = Object.freeze(
   Object.assign(Object.create(null) as Record<string, readonly Token[]>, {
     toplevel: Object.freeze(['-C', PROJECT, 'rev-parse', '--show-toplevel']),
-    'common-dir': Object.freeze(['-C', PROJECT, 'rev-parse', '--path-format=absolute', '--git-common-dir']),
+    // No --path-format (git 2.31): checkProject resolves a relative answer against the project, as git means it.
+    'common-dir': Object.freeze(['-C', PROJECT, 'rev-parse', '--git-common-dir']),
     // ls-tree, not cat-file -e: the mode shows a regular file, not a folder, a link or a submodule.
     'has-config': Object.freeze(['-C', PROJECT, 'ls-tree', '--full-tree', 'HEAD', '--', '.keel/config.toml']),
     // Run only by a git older than 2.45, to learn whether the project is a partial clone; reads no object.
@@ -87,7 +93,7 @@ export function argv(name: string, slots: Record<string, string>, before245 = fa
 
 /** A child's environment: PATH from `pathEntries`, and only ENV_KEYS (set and not empty) from `source`. */
 export function childEnv(pathEntries: readonly string[], source: Record<string, string | undefined> = process.env): Record<string, string> {
-  const env: Record<string, string> = { PATH: pathEntries.join(':') };
+  const env: Record<string, string> = { PATH: pathEntries.join(':'), LC_ALL: 'C' };
   for (const k of ENV_KEYS) {
     const v = source[k];
     if (typeof v === 'string' && v !== '') env[k] = v;
@@ -222,9 +228,18 @@ export interface RunOptions {
   before245?: boolean;
 }
 
-/** Whether git refused the line for --no-lazy-fetch, as a git older than 2.45 does ("unknown option", the usage, exit 129). */
-export function lacksNoLazyFetch(r: Captured): boolean {
-  return r.code === 129 && /^unknown option: --no-lazy-fetch$/m.test(r.stderr);
+/** The locked flags an older git may not know, newest first. */
+const NEWER_FLAGS = ['--no-lazy-fetch', '--no-optional-locks'] as const;
+
+/**
+ * The locked flag git refused, if it did: exit 129 (usage) with the flag named in stderr. Only the
+ * flag is matched, in any case and in any language around it: a git before 2.45 translates its
+ * "unknown option" line (LC_ALL=C makes it English, but a git built without that locale, or one
+ * that ignores it, may not), and git 2.15-2.16 capitalised it.
+ */
+export function refusedFlag(r: Captured): (typeof NEWER_FLAGS)[number] | null {
+  if (r.code !== 129) return null;
+  return NEWER_FLAGS.find((flag) => new RegExp(`${flag}(?![\\w-])`, 'i').test(r.stderr)) ?? null;
 }
 
 /** Run a named fixed command with `git` (an absolute path). Never throws for git's own failure. */
