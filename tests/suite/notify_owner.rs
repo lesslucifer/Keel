@@ -1108,3 +1108,72 @@ fn a_raw_body_far_past_any_message_is_refused_before_it_is_read() {
     assert_eq!(problem.lines().count(), 1, "{problem:?}");
     assert!(problem.contains("70000"), "{problem}");
 }
+
+#[test]
+fn parse_refuses_a_header_value_that_runs_past_its_id() {
+    // a value that starts with a valid id and goes on is no id: the link is built only from a whole one
+    for text in [
+        "wu: E-A.W1x\nHead\n",
+        "wu: E-A.W1/../x\nHead\n",
+        "wu: E-A.W1 x\nHead\n",
+        "question: q1/../x\nHead\n",
+        "question: q1 x\nHead\n",
+        "question: q1.\nHead\n",
+    ] {
+        let got = parse(text);
+        let error = got["error"].as_str().unwrap_or_else(|| panic!("{text:?} was accepted: {got}"));
+        assert!(error.contains("line 1"), "{text:?}: {error}");
+    }
+}
+
+#[test]
+fn parse_blanks_format_characters_in_the_alert() {
+    let got = parse("wu: E-A.W1\nHead\u{202e}evil\nzero\u{200b}width\n");
+    assert_eq!(got["alert"]["headline"], "Head evil", "a bidi override reached the headline: {got}");
+    assert_eq!(got["alert"]["lines"], serde_json::json!(["zero width"]), "a zero-width space reached a line: {got}");
+}
+
+/// The sender's id grammars are router-app.sh's: every edge id gets the same verdict from the sender's
+/// header parse and from the script, so an id the sender takes never loses its desk alert.
+#[test]
+fn the_sender_and_the_app_script_take_the_same_ids() {
+    let dir = started();
+    let script = |args: &[&str]| -> bool {
+        let o = app(&dir).args(args).output().unwrap();
+        assert!(matches!(o.status.code(), Some(0) | Some(2)), "router-app.sh {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+        o.status.code() == Some(0)
+    };
+    let sixteen = "ABCDEFGHIJKLMNOP";
+    let wus = [
+        "E-A.W1".to_string(),
+        format!("E-{sixteen}.W1"),
+        format!("E-{sixteen}Q.W1"),
+        "E-A.W999".to_string(),
+        "E-A.W1000".to_string(),
+        "E-A.W".to_string(),
+        "E-.W1".to_string(),
+        "e-A.W1".to_string(),
+        "E-A.w1".to_string(),
+        "E-A1.W01".to_string(),
+    ];
+    for wu in &wus {
+        let sender = parse(&format!("wu: {wu}\nHead\n")).get("error").is_none();
+        assert_eq!(sender, script(&["stage", wu, "building"]), "the sender and router-app.sh disagree on the work unit {wu:?}");
+    }
+    let questions = [
+        "a".to_string(),
+        "1".to_string(),
+        "a".repeat(40),
+        "a".repeat(41),
+        "a".repeat(42),
+        "-a".to_string(),
+        "a-".to_string(),
+        "A".to_string(),
+        "a_b".to_string(),
+        "q-1".to_string(),
+    ];
+    for id in &questions {
+        let sender = parse(&format!("question: {id}\nHead\n")).get("error").is_none();
+        assert_eq!(sender, script(&["del", &format!("question/{id}")]), "the sender and router-app.sh disagree on the question id {id:?}");
+    }
+}
