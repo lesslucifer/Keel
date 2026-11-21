@@ -165,7 +165,9 @@ export function capture(file: string, args: readonly string[], env: Record<strin
       }
       child?.unref();
       const answer = { code, startError, timedOut, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') };
-      // The output is copied into the answer: nothing a left job keeps alive holds it.
+      // The output is copied into the answer, so its chunks are dropped here. While a left job keeps the
+      // pipes open, the still-attached data listeners keep this closure, and so the answer, reachable:
+      // at most twice OUTPUT_CAP per such capture, freed when the pipes close (a paused one: at quit).
       out.length = 0;
       err.length = 0;
       resolve(answer);
