@@ -1,7 +1,9 @@
 // The fixed commands: the only git the main part runs. Each is a named shape with typed slots; the
 // line always starts with the locked flags (no fsmonitor, no optional locks, no lazy fetch: in a
-// partial clone a read never fetches a missing object into the project's .git); a diff, show or log -p
-// shape gets --no-ext-diff --no-textconv; git runs with no shell, stdin closed, and an environment
+// partial clone a read never fetches a missing object into the project's .git). A git older than
+// 2.45 has no --no-lazy-fetch and refuses the line (exit 129): such a git runs the line without it
+// (LOCKED_BEFORE_2_45), and only on a project with no promisor setting, so it has nothing to fetch
+// (checkProject decides). A diff, show or log -p shape gets --no-ext-diff --no-textconv; git runs with no shell, stdin closed, and an environment
 // built from nothing but the login PATH and five account variables, so no inherited GIT_* reaches it.
 // capture() is the one way the main part spawns anything (login-path.ts uses it too).
 
@@ -11,8 +13,15 @@ import path from 'node:path';
 
 export const LOCKED: readonly string[] = Object.freeze(['-c', 'core.fsmonitor=false', '--no-optional-locks', '--no-lazy-fetch']);
 
-/** The first git with --no-lazy-fetch; an older one refuses every fixed command. */
-export const MIN_GIT = '2.44';
+/** The locked flags a git older than 2.45 takes: no --no-lazy-fetch, which it does not know. */
+export const LOCKED_BEFORE_2_45: readonly string[] = Object.freeze(['-c', 'core.fsmonitor=false', '--no-optional-locks']);
+
+/** The first git with --no-lazy-fetch (2.45.0); an older one may read only a project that is not a partial clone. */
+export const MIN_GIT = '2.45';
+
+/** The settings that make a repository a partial clone (git config names, lower-cased as --get-regexp matches them). */
+export const PROMISOR_KEYS = '^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$';
+
 export const NO_EXTERNAL: readonly string[] = Object.freeze(['--no-ext-diff', '--no-textconv']);
 
 /** The variables a child takes from the app's environment, besides PATH (which is the login PATH). */
@@ -34,10 +43,12 @@ export const COMMANDS: Readonly<Record<string, readonly Token[]>> = Object.freez
     'common-dir': Object.freeze(['-C', PROJECT, 'rev-parse', '--path-format=absolute', '--git-common-dir']),
     // ls-tree, not cat-file -e: the mode shows a regular file, not a folder, a link or a submodule.
     'has-config': Object.freeze(['-C', PROJECT, 'ls-tree', '--full-tree', 'HEAD', '--', '.keel/config.toml']),
+    // Run only by a git older than 2.45, to learn whether the project is a partial clone; reads no object.
+    'promisor-config': Object.freeze(['-C', PROJECT, 'config', '--get-regexp', PROMISOR_KEYS]),
   }),
 );
 
-export type CommandName = 'toplevel' | 'common-dir' | 'has-config';
+export type CommandName = 'toplevel' | 'common-dir' | 'has-config' | 'promisor-config';
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 
@@ -45,26 +56,33 @@ function projectOk(v: unknown): v is string {
   return typeof v === 'string' && path.isAbsolute(v) && !CONTROL.test(v);
 }
 
-/** The locked flags, then `shape`, with --no-ext-diff --no-textconv right after a diff, show or log -p subcommand. */
-export function lock(shape: readonly string[]): string[] {
+/**
+ * The locked flags (LOCKED_BEFORE_2_45 for a git older than 2.45), then `shape`, with --no-ext-diff
+ * --no-textconv right after a diff, show or log -p subcommand.
+ */
+export function lock(shape: readonly string[], before245 = false): string[] {
+  const locked = before245 ? LOCKED_BEFORE_2_45 : LOCKED;
   let i = 0;
   while (i < shape.length && shape[i] === '-C') i += 2;
   const sub = shape[i];
   const rest = shape.slice(i + 1);
   const patch = sub === 'diff' || sub === 'show' || (sub === 'log' && rest.some((a) => a === '-p' || a === '--patch' || a === '-u'));
-  if (!patch) return [...LOCKED, ...shape];
-  return [...LOCKED, ...shape.slice(0, i + 1), ...NO_EXTERNAL, ...rest];
+  if (!patch) return [...locked, ...shape];
+  return [...locked, ...shape.slice(0, i + 1), ...NO_EXTERNAL, ...rest];
 }
 
 /** The full git argv for a named command and its slots; throws on an unknown name or a bad slot. */
-export function argv(name: string, slots: Record<string, string>): string[] {
+export function argv(name: string, slots: Record<string, string>, before245 = false): string[] {
   if (!Object.hasOwn(COMMANDS, name)) throw new Error(`unknown fixed command: ${JSON.stringify(name)}`);
   const shape = COMMANDS[name] as readonly Token[];
   const wanted = [...new Set(shape.flatMap((t) => (typeof t === 'string' ? [] : [t.slot])))].sort();
   const given = Object.keys(slots).sort();
   if (wanted.length !== given.length || wanted.some((k, i) => k !== given[i])) throw new Error(`${name} takes the slots ${wanted.join(', ')}`);
   if (!projectOk(slots.project)) throw new Error(`${name}: the project must be an absolute path with no control character`);
-  return lock(shape.map((t) => (typeof t === 'string' ? t : (slots[t.slot] as string))));
+  return lock(
+    shape.map((t) => (typeof t === 'string' ? t : (slots[t.slot] as string))),
+    before245,
+  );
 }
 
 /** A child's environment: PATH from `pathEntries`, and only ENV_KEYS (set and not empty) from `source`. */
@@ -200,10 +218,17 @@ export interface RunOptions {
   timeoutMs?: number;
   /** Where the account variables come from; the app's own environment by default. */
   source?: Record<string, string | undefined>;
+  /** A git older than 2.45: run with LOCKED_BEFORE_2_45. Only checkProject sets it, after its promisor check. */
+  before245?: boolean;
+}
+
+/** Whether git refused the line for --no-lazy-fetch, as a git older than 2.45 does ("unknown option", the usage, exit 129). */
+export function lacksNoLazyFetch(r: Captured): boolean {
+  return r.code === 129 && /^unknown option: --no-lazy-fetch$/m.test(r.stderr);
 }
 
 /** Run a named fixed command with `git` (an absolute path). Never throws for git's own failure. */
 export async function run(git: string, name: CommandName, slots: Record<string, string>, opts: RunOptions): Promise<Captured> {
   if (typeof git !== 'string' || !path.isAbsolute(git)) throw new Error('git must be an absolute path');
-  return capture(git, argv(name, slots), childEnv(opts.path, opts.source), opts.timeoutMs ?? READ_TIMEOUT_MS);
+  return capture(git, argv(name, slots, opts.before245 === true), childEnv(opts.path, opts.source), opts.timeoutMs ?? READ_TIMEOUT_MS);
 }

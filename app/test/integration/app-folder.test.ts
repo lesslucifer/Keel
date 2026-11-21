@@ -3,13 +3,13 @@
 // and its git status are the same before and after add, remove and every settings write.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, symlinkSync, chmodSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, symlinkSync, chmodSync, existsSync, appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { readJson, writeAtomic, load } from '../../src/main/store.ts';
 import { loadSettings, chooseTool, resetTool, SETTINGS_FILE } from '../../src/main/settings.ts';
 import { loadProjects, addProject, removeProject, PROJECTS_FILE } from '../../src/main/projects.ts';
 import { lookup, toolStates, toolProblem } from '../../src/main/tools.ts';
-import { tempDir, program, realGit, sh, snapshot, mk, recorder } from '../support/fs.ts';
+import { tempDir, program, realGit, sh, snapshot, mk, recorder, oldGit, records } from '../support/fs.ts';
 
 const GIT = realGit();
 const PATH = [path.dirname(GIT), '/usr/bin', '/bin'];
@@ -291,11 +291,62 @@ test('a tool link inside a project, named through a linked parent folder, is ref
   assert.equal(await lookup('git', [path.join(dir, 'alias', 'proj', 'bin')], [project]), null);
 });
 
-test('a git too old for --no-lazy-fetch is named, not reported as a folder that is not a git checkout', async (t) => {
+test('a git older than 2.45 (no --no-lazy-fetch) adds a project that is not a partial clone: the three reads run again without the flag', async (t) => {
   const dir = tempDir(t, 'projects');
   const home = mk(path.join(dir, 'home'));
   const project = keelRepo(path.join(dir, 'proj'));
-  const old = program(path.join(mk(path.join(dir, 'old')), 'git'), "#!/bin/sh\necho 'unknown option: --no-lazy-fetch' >&2\nexit 129\n");
-  const r = await addProject(path.join(dir, 'app-folder'), project, old, opts(home));
-  assert.match(r.ok ? 'accepted' : r.why, /older than 2\.44/);
+  const record = path.join(dir, 'record.jsonl');
+  const git = oldGit(path.join(mk(path.join(dir, 'old')), 'git'), record, GIT);
+  const r = await addProject(path.join(dir, 'app-folder'), project, git, opts(home));
+  assert.equal(r.ok, true, r.ok ? '' : r.why);
+  const seen = records(record);
+  const base = ['-c', 'core.fsmonitor=false', '--no-optional-locks'];
+  assert.deepEqual(seen.map((x) => x.argv), [
+    [...base, '--no-lazy-fetch', '-C', project, 'rev-parse', '--show-toplevel'],
+    [...base, '-C', project, 'config', '--get-regexp', '^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$'],
+    [...base, '-C', project, 'rev-parse', '--show-toplevel'],
+    [...base, '-C', project, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+    [...base, '-C', project, 'ls-tree', '--full-tree', 'HEAD', '--', '.keel/config.toml'],
+  ]);
+  for (const x of seen) for (const key of Object.keys(x.env)) assert.ok(!key.startsWith('GIT_'), `${key} reached git`);
+});
+
+test('a git older than 2.45 is refused for a partial clone, by name, and runs nothing past the config read', async (t) => {
+  const dir = tempDir(t, 'projects');
+  const home = mk(path.join(dir, 'home'));
+  for (const [i, lines] of [
+    ['[remote "origin"]', '\tpromisor = true'],
+    ['[remote "origin"]', '\tpartialclonefilter = blob:none'],
+    ['[core]', '\trepositoryformatversion = 1', '[extensions]', '\tpartialClone = origin'],
+  ].entries()) {
+    const project = keelRepo(path.join(dir, `proj${i}`));
+    appendFileSync(path.join(project, '.git', 'config'), `${lines.join('\n')}\n`);
+    const before = snapshot(project);
+    const record = path.join(dir, `record${i}.jsonl`);
+    const git = oldGit(path.join(mk(path.join(dir, `old${i}`)), 'git'), record, GIT);
+    const r = await addProject(path.join(dir, 'app-folder'), project, git, opts(home));
+    assert.match(r.ok ? 'accepted' : r.why, /^a partial clone needs git 2\.45 or later/, lines.join(' '));
+    const base = ['-c', 'core.fsmonitor=false', '--no-optional-locks'];
+    assert.deepEqual(records(record).map((x) => x.argv), [
+      [...base, '--no-lazy-fetch', '-C', project, 'rev-parse', '--show-toplevel'],
+      [...base, '-C', project, 'config', '--get-regexp', '^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$'],
+    ]);
+    assert.deepEqual(snapshot(project), before);
+  }
+});
+
+test('a git 2.45 or later never reads the config: the three reads carry --no-lazy-fetch', async (t) => {
+  const dir = tempDir(t, 'projects');
+  const home = mk(path.join(dir, 'home'));
+  const project = keelRepo(path.join(dir, 'proj'));
+  const record = path.join(dir, 'record.jsonl');
+  const git = program(
+    path.join(mk(path.join(dir, 'new')), 'git'),
+    `#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(record)}, JSON.stringify({ argv: process.argv.slice(2), env: {} }) + '\\n');\nconst r = require('node:child_process').spawnSync(${JSON.stringify(GIT)}, process.argv.slice(2), { stdio: 'inherit', env: process.env });\nprocess.exit(r.status ?? 1);\n`,
+  );
+  const r = await addProject(path.join(dir, 'app-folder'), project, git, opts(home));
+  assert.equal(r.ok, true, r.ok ? '' : r.why);
+  const seen = records(record).map((x) => x.argv);
+  assert.equal(seen.length, 3);
+  for (const argv of seen) assert.equal(argv[3], '--no-lazy-fetch', argv.join(' '));
 });

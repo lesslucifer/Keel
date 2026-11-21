@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LOCKED, NO_EXTERNAL, ENV_KEYS, READ_TIMEOUT_MS, COMMANDS, argv, lock, childEnv } from '../../src/main/commands.ts';
+import { LOCKED, LOCKED_BEFORE_2_45, MIN_GIT, NO_EXTERNAL, ENV_KEYS, READ_TIMEOUT_MS, COMMANDS, argv, lock, childEnv, lacksNoLazyFetch } from '../../src/main/commands.ts';
 import { seeded, hostileString, pick } from '../support/seeded.ts';
 
 test('every fixed command starts with -c core.fsmonitor=false --no-optional-locks --no-lazy-fetch', () => {
@@ -9,8 +9,11 @@ test('every fixed command starts with -c core.fsmonitor=false --no-optional-lock
   for (const name of Object.keys(COMMANDS)) assert.deepEqual(argv(name, { project: '/p' }).slice(0, 4), LOCKED, name);
 });
 
-test('the fixed commands of W7 are exactly the plan\'s three lines', () => {
-  assert.deepEqual(Object.keys(COMMANDS).sort(), ['common-dir', 'has-config', 'toplevel']);
+test('the fixed commands of W7 are exactly the plan\'s three lines and, for a git older than 2.45, the promisor read', () => {
+  assert.deepEqual(Object.keys(COMMANDS).sort(), ['common-dir', 'has-config', 'promisor-config', 'toplevel']);
+  assert.deepEqual(argv('promisor-config', { project: '/Users/me/Keel' }, true), [
+    '-c', 'core.fsmonitor=false', '--no-optional-locks', '-C', '/Users/me/Keel', 'config', '--get-regexp', '^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$',
+  ]);
   assert.deepEqual(argv('toplevel', { project: '/Users/me/Keel' }), [...LOCKED, '-C', '/Users/me/Keel', 'rev-parse', '--show-toplevel']);
   assert.deepEqual(argv('common-dir', { project: '/Users/me/Keel' }), [...LOCKED, '-C', '/Users/me/Keel', 'rev-parse', '--path-format=absolute', '--git-common-dir']);
   assert.deepEqual(argv('has-config', { project: '/Users/me/Keel' }), [...LOCKED, '-C', '/Users/me/Keel', 'ls-tree', '--full-tree', 'HEAD', '--', '.keel/config.toml']);
@@ -78,4 +81,23 @@ test('generated environments: no key outside the six ever reaches the child, and
       assert.ok(!key.toUpperCase().startsWith('GIT_'), key);
     }
   }
+});
+
+test('a git older than 2.45 runs the same lines without --no-lazy-fetch, and only that flag is dropped', () => {
+  assert.equal(MIN_GIT, '2.45');
+  assert.deepEqual(LOCKED_BEFORE_2_45, ['-c', 'core.fsmonitor=false', '--no-optional-locks']);
+  for (const name of Object.keys(COMMANDS)) {
+    assert.deepEqual(argv(name, { project: '/p' }, true), argv(name, { project: '/p' }).filter((a) => a !== '--no-lazy-fetch'), name);
+  }
+  assert.deepEqual(lock(['show', 'HEAD'], true), [...LOCKED_BEFORE_2_45, 'show', ...NO_EXTERNAL, 'HEAD']);
+});
+
+test('git refused --no-lazy-fetch only on exit 129 with its "unknown option" line, as git 2.39 prints it', () => {
+  const usage = 'usage: git [--version] [--help] [-C <path>] [-c <name>=<value>]\n';
+  const r = (code: number | null, stderr: string) => ({ code, stderr, stdout: '', timedOut: false, startError: null });
+  assert.equal(lacksNoLazyFetch(r(129, `unknown option: --no-lazy-fetch\n${usage}`)), true);
+  assert.equal(lacksNoLazyFetch(r(128, 'unknown option: --no-lazy-fetch\n')), false);
+  assert.equal(lacksNoLazyFetch(r(129, `unknown option: --no-optional-locks\n${usage}`)), false);
+  assert.equal(lacksNoLazyFetch(r(129, 'error: unknown option: --no-lazy-fetchy\n')), false);
+  assert.equal(lacksNoLazyFetch(r(null, 'unknown option: --no-lazy-fetch\n')), false);
 });

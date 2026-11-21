@@ -12,7 +12,7 @@ import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { ProjectEntry } from '../shared/contract.ts';
 import { PROJECT_ID } from './bridge.ts';
-import { run, MIN_GIT, type Captured, type RunOptions } from './commands.ts';
+import { run, lacksNoLazyFetch, MIN_GIT, type Captured, type RunOptions } from './commands.ts';
 import { load, writeAtomic } from './store.ts';
 import { plain } from './text.ts';
 import { toolProblem } from './tools.ts';
@@ -87,11 +87,9 @@ export function fullWhy(list: ProjectList): string {
   return `this version keeps one project: remove ${list.projects[0]?.name ?? 'it'} first`;
 }
 
-/** Why a git run did not answer, if it did not: timed out, or a git too old for the locked flags. */
+/** Why a git run did not answer, if it did not. */
 function gitFailed(r: Captured): string | null {
-  if (r.timedOut) return 'git did not answer';
-  if (r.code === 129 && r.stderr.includes('--no-lazy-fetch')) return `this git is older than ${MIN_GIT}: choose a newer git in the settings`;
-  return null;
+  return r.timedOut ? 'git did not answer' : null;
 }
 
 /** The folder's real path when it is a Keel project's main checkout, else why not. Reads only. */
@@ -103,8 +101,21 @@ export async function checkProject(folder: string, git: string, opts: RunOptions
   // Before any run: a git inside the folder would be the folder's own program run on it.
   const gitWhy = await toolProblem('git', git, [dir]);
   if (gitWhy !== null) return { ok: false, why: `git is ${gitWhy}: choose a git outside it in the settings` };
-  const top = await run(git, 'toplevel', { project: dir }, opts);
+  let top = await run(git, 'toplevel', { project: dir }, opts);
+  if (lacksNoLazyFetch(top)) {
+    // A git older than 2.45: it may read this folder only if nothing in it can be fetched lazily.
+    const before245: RunOptions = { ...opts, before245: true };
+    const promisor = await run(git, 'promisor-config', { project: dir }, before245);
+    const promisorFailed = gitFailed(promisor);
+    if (promisorFailed !== null) return { ok: false, why: promisorFailed };
+    if (promisor.code === 0) return { ok: false, why: `a partial clone needs git ${MIN_GIT} or later: choose a newer git in the settings` };
+    // 1 is "no such setting"; anything else, and the folder's git settings could not be read.
+    if (promisor.code !== 1) return { ok: false, why: "git could not read the folder's git settings" };
+    opts = before245;
+    top = await run(git, 'toplevel', { project: dir }, opts);
+  }
   const topFailed = gitFailed(top);
+
   if (topFailed !== null) return { ok: false, why: topFailed };
   if (top.code !== 0) return { ok: false, why: 'not a git checkout' };
   if ((await real(top.stdout.trim())) !== dir) return { ok: false, why: 'not the top folder of its git checkout' };

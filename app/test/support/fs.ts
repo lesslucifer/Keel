@@ -31,6 +31,33 @@ export function recorder(file: string, record: string, code = 0, stdout = ''): s
 }
 
 /**
+ * A fake git older than 2.45 (Apple's stock 2.39): given --no-lazy-fetch it answers as git 2.39's
+ * git.c does - "unknown option", the usage text, exit 129; else it runs `real` with the same argv
+ * and environment. Each call appends {argv, env} as one JSON line to `record`.
+ */
+export function oldGit(file: string, record: string, real: string): string {
+  const usage = 'usage: git [--version] [--help] [-C <path>] [-c <name>=<value>]\n           [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]\n';
+  return program(
+    file,
+    [
+      `#!${process.execPath}`,
+      `const fs = require('node:fs');`,
+      `const argv = process.argv.slice(2);`,
+      `fs.appendFileSync(${JSON.stringify(record)}, JSON.stringify({ argv, env: process.env }) + '\\n');`,
+      `if (argv.includes('--no-lazy-fetch')) { process.stderr.write('unknown option: --no-lazy-fetch\\n' + ${JSON.stringify(usage)}); process.exit(129); }`,
+      `const r = require('node:child_process').spawnSync(${JSON.stringify(real)}, argv, { stdio: 'inherit', env: process.env });`,
+      `process.exit(r.status === null ? 1 : r.status);`,
+    ].join('\n') + '\n',
+  );
+}
+
+/** The JSON lines a recorder appended, in order. */
+export function records(file: string): Array<{ argv: string[]; env: Record<string, string> }> {
+  if (!existsSync(file)) return [];
+  return readFileSync(file, 'utf8').split('\n').filter((l) => l !== '').map((l) => JSON.parse(l) as { argv: string[]; env: Record<string, string> });
+}
+
+/**
  * Shell lines that block "forever" but never outlive the process that spawned this script: the
  * loop ends within a tenth of a second of that parent's death, however the parent died.
  */
