@@ -1,0 +1,164 @@
+artifact: wu-result
+status: ready
+id: E-APPLIST.W7
+epic: E-APPLIST
+title: "E-APPLIST.W7 · The app shell"
+date: "2026-11-21"
+page: 2026-11-20-e-applist-w7-result.html
+outcome: >-
+  Delivered. app/ holds an Electron 45 app built by Electron Forge 8 with Vite 8 and a bare React 19 page. The window
+  reaches the main part only through window.keel (the preload's makeBridge): ask() on the request channel keel:ask
+  with six named requests (state.get, projects.add, projects.remove, settings.choose, settings.reset, alert.test),
+  each judged by bridge.check (sender = the app window's main frame on the app's own page; name in the table; args a
+  plain object with exactly its slot keys; each value an enum or the project id) before anything runs; and on() for
+  the one listed push event state.changed on keel:push, sent only to the app's window, every string through plain().
+  git runs only as the three fixed commands (toplevel, common-dir, has-config), each prefixed -c
+  core.fsmonitor=false --no-optional-locks, no shell, stdin closed, an environment built from nothing (the login
+  PATH plus HOME, USER, LOGNAME, LANG, TMPDIR: no GIT_*). The PATH is read once from the login shell (-ilc, markers,
+  5 s) with a fallback that says why. Settings and a one-project list live in the app's own folder (Electron's
+  userData: settings.json, projects.json), written atomically; a project's files and git status are unchanged by add,
+  settings writes and remove; a second project is refused. Closing the window leaves the app running; the Dock opens
+  it again (DEC-77). The main part's tests run on node --test with nothing installed, and keel check runs them beside
+  cargo test since the owner's two [check] commits (7beb242, edd11d6). Live on the owner's Mac (2026-11-21): npm run
+  make with the ad-hoc signature (rung 1) built Keel.app, it opened, showed the bare page, and the test alert showed;
+  Apple's paid membership is not needed for the alert. Node 143 tests pass (unit 98, integration 45); cargo test 137
+  unit and 373 suite pass (10 ignored); npm run typecheck green.
+deviations:
+  - >-
+    Spawning: the plan says execFile with a timeout. capture() in src/main/commands.ts spawns each child detached as
+    the leader of its own process group and kills the whole group at the timeout. Why: execFile's timeout kills only
+    the direct child, then waits on pipes a grandchild (a login shell's children) still holds. Cost: a terminal ^C
+    does not reach that group, so the tests' hanging fakes poll their parent (test/support/fs.ts HANG), and a test
+    the plan did not list holds it (test/integration/no-leak.test.ts, four exit paths). Commits 4838f25, b24973d,
+    e6acc3a.
+  - >-
+    The dev content policy is swapped in by a Vite plugin (keel:dev-csp in vite.renderer.config.ts, through the pure
+    withCsp() in window-options.ts) only while Vite serves under electron-forge start; the page ships with the
+    packaged policy in its meta tag and a unit test pins both. Also added: devServerOf(), because Forge hands the main
+    part its dev URL without the root slash and the sender check would refuse every request under forge start. Commit
+    565c2ef.
+  - >-
+    ELECTRON_CACHE is passed to the packager as download.cacheRoot in forge.config.ts, because @electron/get no longer
+    reads the variable and a sandboxed build cannot write ~/Library/Caches. Commit 64f319a.
+  - >-
+    The bare page has more than the plan's: a Choose and a Use-the-PATH button per tool and Add and Remove for the one
+    project, so the live check reaches the main part's two dialogs, which no hermetic test can. W8 replaces the page.
+    Commit eb37626.
+  - >-
+    Guards beyond the plan's two: the sink guard reads all of app/src, not only app/src/window/ (a superset); only
+    src/main/index.ts and src/preload/index.ts import electron, and the window imports no node: module, no electron
+    and nothing from the main part; every package is pinned to one exact version with the lockfile beside it. Each
+    guard's reader has a self-test. Commits 5d19913, 964e552.
+  - >-
+    The handlers and the test alert live in pure modules (src/main/handlers.ts, src/main/alert.ts), not in the shell
+    as the plan's layout says, so the integration test reaches them through the same dispatcher the shell hands to
+    ipcMain.handle, with the dialogs, the Notification and the push injected. settings.ts and projects.ts call a
+    changed callback once per saved change. The packager's values, the fuses and the signing rung live in
+    src/build/package-options.ts, unit-pinned, because forge.config.ts needs npm to load. Commits 2fc8766, 6b28904,
+    67f4917.
+  - >-
+    Step 2's tests were written before npm install, so tsc first read them at step 5 and found six type errors in two
+    test files, none in a source. c5c62b6 fixes them (casts through unknown for deliberately partial handler tables;
+    Tool, not string); no assertion changed.
+  - >-
+    The owner's rules change took two typed commits, not one: 7beb242 makes keel check run the app's tests, edd11d6
+    makes it fail when the app's test folders hold no test (the ls guard before node --test).
+  - >-
+    The shell also prevents will-redirect (the plan names will-navigate, will-frame-navigate and
+    will-attach-webview) and refuses device permissions with the rest. Commit 6d60d72.
+evidence:
+  commits:
+    - "1029dcb chore: the app's skeleton - package.json, tsconfig, ignores, test support"
+    - "fa86395 feat: the wire contract, plain() and the bridge (red first: 28 of 29 red, the one pass the frozen tables)"
+    - "2e1a4b3 feat: the preload's bridge factory (red first: 7 of 7)"
+    - "5d19913 test: static guards - no HTML or code sink, node tests reach only node: and relative .ts (red: with no app/src; 2 of 4 on a planted innerHTML and an electron import)"
+    - "23fa2b7 feat: the window's options and policies, the app:// resolver (red first: 14 of 14)"
+    - "4838f25 feat: the fixed git commands and the login PATH (red first: 30 of 30)"
+    - "b24973d test: a hung fake never outlives its test process (red: 4 of 4 with a fake that does not watch its parent)"
+    - "2fc8766 feat: settings, the tools and the one-project list (red first: 22 of 22)"
+    - "e6acc3a test: the no-leak test as four top-level tests (green 4 of 4)"
+    - "7beb242 chore: [check] test runs the app's main-part tests (the owner's typed commit, Reviewed-By: username vuluu)"
+    - "edd11d6 chore: [check] test fails when the app's test folders hold no test (the owner's typed commit, Reviewed-By: username vuluu)"
+    - "6b28904 feat: the six requests' handlers and the test alert (red first: 13 - 8 integration, 5 unit)"
+    - "67f4917 feat: the packager's options, the fuses and the signing rung (red first: 6)"
+    - "c5c62b6 test: the step-2 tests pass the type check (no assertion changed)"
+    - "565c2ef feat: the dev server's page URL and the page's CSP swap (red first: 3)"
+    - "0c41af8 chore: the app's packages, pinned exactly, and its scripts"
+    - "eb37626 feat: the bare React page and the window's one bridge module (red first: the 2 page tests)"
+    - "6d60d72 feat: the Electron shell and the preload entry (not unit-tested: needs Electron; checked live)"
+    - "64f319a feat: the Forge build - Vite, the fuses, the ad-hoc signature (electron-forge package green at the time)"
+    - "964e552 test: guards - electron only in the shell and the preload; exact pins (red on a planted electron import and a ^8.3.8 pin)"
+  runs-2026-11-21:
+    node: "cd app && node --test 'test/**/*.test.ts': tests 143, pass 143, fail 0 (unit 98 in 15 files, integration 45 in 6 files)"
+    cargo: "cargo test: unit 137 passed; suite 373 passed, 10 ignored"
+    keel-check: "green (exit 0; tree unchanged since the last green run, which ran cargo test and the node tests)"
+    typecheck: "cd app && npx tsc --noEmit: exit 0"
+    package: >-
+      Re-run by this worker with ELECTRON_CACHE and npm_config_cache under $TMPDIR: the three Vite bundles built,
+      then packaging failed 'fetch failed' - the sandbox denied release-assets.githubusercontent.com:443; the re-run
+      with that host in allowed_domains was denied by the auto-mode classifier and not retried. The packaged build's
+      evidence is the step-5 worker's green electron-forge package (64f319a) and the owner's npm run make below.
+  tests:
+    integration:
+      - "test/integration/bridge.test.ts (11): the wire contract locked (two channels, six names with slots, one push event); every name and slot reaches its handler once; refusals run nothing (unknown name, foreign page, subframe, another window, missing frame, free text, extra key); no window - every call refused; handler strings through plain(); a throwing handler answers failed; one handler per name; a listed push reaches only the app window; an unlisted push or a payload refused; no or destroyed window - dropped; the pusher reads the window per push (Dock reopen)"
+      - "test/integration/run.test.ts (7): a fake git gets the locked flags first, the slot whole, no shell, no GIT_* (GIT_DIR, GIT_CONFIG_PARAMETERS, GIT_EXTERNAL_DIFF set; \"$(touch pwned); x\" arrives whole, creates nothing); non-zero reported; a hang killed with its group; cannot start reported; output capped; a relative git refused; real git answers from the project, not GIT_DIR"
+      - "test/integration/login-path.test.ts (5): profile noise around the markers; a hang killed with its children and the fallback says why; non-zero falls back; no markers or no absolute folder falls back; cannot start falls back"
+      - "test/integration/app-folder.test.ts (10): atomic owner-only writes; a broken file set aside, defaults loaded; settings round-trip, one push per change; refused tool paths save and push nothing; links; PATH lookup skipping a listed project; a main checkout added with its files and git status unchanged through add, settings writes and remove; subfolder and link; linked worktree, plain folder, working-tree-only config, missing folder and a second project refused; unknown id refused"
+      - "test/integration/handlers.test.ts (8): state.get; projects.add through the dialog, one push, remove leaves the files; add refused before any dialog while one is listed or git is missing; cancel changes nothing; settings.choose and reset; alert.test answers; changes one at a time (two adds list one); prepare() order"
+      - "test/integration/no-leak.test.ts (4): a hung fake's group is gone within 3 s after its test process dies by SIGINT, an uncaught throw, a failed assertion, SIGKILL"
+    unit:
+      - "test/unit/bridge.test.ts (19): slots (enum, project id, types, length cap, controls), a seeded generated-input slot test, the sender check, call shape, names incl. inherited ones, args keys, frozen tables, pushable(), plainDeep() (depth, __proto__, non-plain data, generated payloads)"
+      - "test/unit/preload-bridge.test.ts (7): exactly ask and on, frozen; ask sends {name, args}; on() refuses an unlisted event, payload only, a copy per callback, separate unsubscribes"
+      - "test/unit/window-options.test.ts (13): every webPreferences value; the window options; the packaged CSP exactly; the dev CSP only when not packaged; a non-localhost dev server refused; the pages a sender may show; navigation, new windows, webviews and permissions refused; window-all-closed keeps the app; devServerOf(); withCsp()"
+      - "test/unit/assets.test.ts (4): the app:// resolver - climbing raw or encoded, absolute, NUL and controls, other host or type, a relative root refused"
+      - "test/unit/commands.test.ts (10): the lock prefix; the three shapes; 10 s reads; the project slot; unknown or missing slots; --no-ext-diff --no-textconv placement; the child environment; generated environments - no GIT_*"
+      - "test/unit/login-path.test.ts (8): the fixed script, 5 s, between(), entries(), the fallback, shellOf()"
+      - "test/unit/text.test.ts (6): plain() - C0, DEL, C1, bidi and separators blanked; printable kept; the cap; lone surrogates; generated hostile strings"
+      - "test/unit/settings.test.ts (3), projects.test.ts (5), store.test.ts (2), tools.test.ts (2): parses (half file, unknown version, extra keys), one project, minted ids, set-aside names, the 1 MiB cap, the tool shape, inside()"
+      - "test/unit/alert.test.ts (5): the alert text and its 5 s wait; shown, not-shown, show() throws, not supported"
+      - "test/unit/package-options.test.ts (6): Keel, dev.keel.app, the asar, the keel scheme; the seven fuses; ad-hoc by default; a named identity with the hardened runtime; a control character refused; the JIT entitlement only on the app"
+      - "test/unit/page.test.ts (2): the page carries the packaged CSP and one module script"
+      - "test/unit/guards.test.ts (6): no HTML or code sink in app/src and its reader's self-test; node tests import only node: and relative .ts and its reader's self-test; electron only in the shell and the preload entry; exact pins and the lockfile"
+    e2e: "none at the WU: the epic test (Playwright on the unpackaged app, DEC-75) is W9's"
+  docs: "this result pair (new); the plan pair is on the epic since the replan; no other doc touched"
+distillation: >-
+  Nothing in W7. At the epic close (W9), per the epic's distillation plan: docs/local-app.html gains the shell as
+  built (the two channels, the six requests and state.changed, the fixed commands, the login PATH, the app's folder,
+  running with no window); docs/install.html how to build and install (npm ci && npm run make, ad-hoc by default,
+  KEEL_SIGN_IDENTITY, the first run downloading Electron); docs/architecture.html app/'s place; the next free DEC
+  record: app/ under the gate, the main part on node --test, the ad-hoc signature enough for the alert.
+follow-ups:
+  - "The real window replaces the bare page and its extra buttons: screen 6 on Keel's tokens, the fake bridge through provideBridge(), browser mode, the Vitest harness, the dev:browser, lint and test:window scripts. Taken by: E-APPLIST.W8."
+  - "The keel: link scheme is declared by the build but handled by nothing yet; the waiting list's requests and push events join contract.ts and its snapshot. The owner's lsregister dump showed keel: claimed in several entries with no owner listed: W5's link handling checks which app owns the scheme. Taken by: E-APPLIST.W5."
+  - "The packaged build's live checks again at the close, the signing rung recorded as ad-hoc (rung 1), and the distillation above. Taken by: E-APPLIST.W9."
+  - "Apple's paid membership is not needed for the alert (rung 1 showed it): recorded when A3 closes. Taken by: backlog row local-app A3, at E-APPLIST's close."
+  - "The code review, the owner's sign-off and the merge into epic/E-APPLIST: the router starts a fresh reviewer; the owner signs."
+details:
+  base: "wu/E-APPLIST/w7-app-shell off epic/E-APPLIST at bf4cf5e (the replan's merge); epic/E-APPLIST has since moved to 1494748 (W3's merge)"
+  versions:
+    node-local: "v24 (seen v24.18.0 on 2026-11-20)"
+    pinned-exact: "electron 45.4.1; @electron-forge/cli, maker-zip, plugin-fuses, plugin-vite 8.0.1; @electron/fuses 2.1.3; typescript 7.0.2; vite 8.3.8; react and react-dom 19.3.1; @vitejs/plugin-react 6.3.0; @types/react and @types/react-dom 19.3.0; @types/node 24.19.2"
+  open-points-decided:
+    - "What window does W7 ship? A bare React page (plus the dialog buttons, deviation 4)."
+    - "How does the main part tell the window? One push channel, one event, state.changed; the window asks again."
+    - "Which React major? 19 (19.3.1), the current major at the first install."
+    - "npm or pnpm? npm; package-lock.json committed, npm ci only."
+    - "Does the dev build loosen the content policy? Only when not packaged, only for Vite's dev server on localhost; the packaged policy unit-pinned."
+    - "How many projects? One; a second refused."
+    - "Which signature first? Ad-hoc; it showed the alert, so rungs 2 and 3 were not tried."
+    - "Does keel check type-check app/? No; the worker ran npm run typecheck (green)."
+    - "Bundle id? dev.keel.app."
+    - "Where do the app's files live? Electron's userData (~/Library/Application Support/Keel): settings.json, projects.json."
+    - "Is W4's code reused? No; re-derived, each test red first."
+  live-checks:
+    by: "the owner, on his Mac, reported to the router 2026-11-21; the worker did not run them"
+    steps:
+      - "1. cd app && npm ci && npm run make, KEEL_SIGN_IDENTITY unset (ad-hoc): built. The first run spent about 3 minutes downloading the Electron binary (Forge showed it as 'Copying files'; the cache was empty), then packaged, signed ad-hoc and made a zip. The router read the streamed log: no errors."
+      - "2. Installed to /Applications and opened. The owner reports 'all good' for the whole checklist: the bare page (Version 0.1.0, the three tools, 'PATH from your login shell'), the test alert, close window and Dock reopen, codesign, npm start (the dev run)."
+      - "3. npx @electron/fuses read --app /Applications/Keel.app (the owner's paste): RunAsNode Disabled; EnableCookieEncryption Enabled; EnableNodeOptionsEnvironmentVariable Disabled; EnableNodeCliInspectArguments Disabled; EnableEmbeddedAsarIntegrityValidation Enabled; OnlyLoadAppFromAsar Enabled; LoadBrowserProcessSpecificV8Snapshot Disabled; GrantFileProtocolExtraPrivileges Disabled; WasmTrapHandlers Enabled. The seven planned fuses match (the worker's comparison); the build sets neither of the other two."
+      - "4. lsregister -dump | grep -i 'keel:' (the owner's paste): several entries, owners not listed; the owner reported all good."
+      - "5. The signing rung that worked: rung 1, ad-hoc. Apple's membership is not needed (the alert showed)."
+  known: "Proven by tests: the refusals (unknown name, foreign or sub frame, another window, free text, extra key, unlisted push), the fixed commands' argv and environment, the login PATH and its fallbacks, the app folder's round-trips and the untouched project, the pinned window options, CSP and fuses. Proven live by the owner: the packaged app opens, finds the tools, the PATH source, the alert, the Dock reopen, the fuses."
+  not-known: "The shell (src/main/index.ts) and the preload entry have no automated test: they need Electron; the epic test (W9, Playwright) drives them. Which entries hold the keel: scheme was not shown (W5)."
+  htmldoc:
+    id: 6b01a5e39f34851f0dfb2b64
