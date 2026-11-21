@@ -1,0 +1,220 @@
+artifact: wu-plan
+status: ready
+id: E-APPLIST.W8
+epic: E-APPLIST
+title: "E-APPLIST.W8 · The window's foundation"
+date: "2026-11-22"
+page: 2026-11-22-e-applist-w8-plan.html
+requirement: >-
+  The app's window is drawn only from Keel's own closed Tailwind tokens (palette, spacing, type, radius; light and dark
+  from the Mac; the system font), held by a lint rule that refuses an off-list class, an arbitrary value, a class built
+  at run time and the dark: variant; it reaches window.keel only through one bridge module with a React context and
+  hooks over it; it runs in a browser with no Electron against a fake bridge built from fixtures that answers every
+  name in the wire contract and never enters the shipped page; and its first real screen, screen 6 (the project, Add,
+  Remove, each tool's path, Choose, Use the PATH, the PATH's source, the test alert, the version), replaces W7's bare
+  page - all developed and tested with no packaged build.
+maps-to: >-
+  Epic E-APPLIST, its W8 summary (wu-maps-to: local-app.html 'The screens' 6 and 'The design principles'; DEC-71,
+  DEC-72, DEC-73, DEC-74). DEC-71 (React; Trawler's patterns, not its look: one injectable bridge, hooks and context),
+  DEC-72 (closed tokens, the lint rule, light and dark from the Mac, the system font), DEC-73 (Vitest with jsdom and
+  Testing Library, by hand, never in keel check), DEC-74 (browser mode on a fake window.keel; no packaging per UI
+  change). W7's follow-up 1 ("the real window replaces the bare page"). No use case is recorded by W8: UC-APP-1 and
+  UC-APP-2 are W5's and W6's; screen 6 is set-up, not a use case.
+expected:
+  - "Screen 6 replaces the bare page: the one project (name and main checkout) with Remove, or Add a project when none; keel, git and claude each with its path, its source (set in Keel, found on the PATH, missing), its problem, Choose and, when set, Use the PATH; the PATH's source (login shell, or the fallback and why); Send a test alert and its outcome; the version."
+  - "Each control sends exactly its request and slot through the bridge (projects.remove with the project id, settings.choose and settings.reset with the tool); while one runs every control is off; a state.changed push redraws the screen from a new state.get; a refused or failed answer shows as text, never as markup."
+  - "Every colour, space, type size and radius on screen comes from Keel's token config; Tailwind's default scales are gone; light and dark follow the Mac with no dark: class anywhere; no font file ships and the packaged content policy is unchanged."
+  - "npm run lint fails on a file with an off-list class (text-sm, bg-red-500), an arbitrary value (p-[13px]), a class built at run time ('p-' + n) or a dark: class, and passes on the window's own code."
+  - "npm run dev:browser draws screen 6 in a browser from fixtures (?state=one-project, no-project, tool-missing, path-fallback, refusing, failing, slow), with no Electron and no main part; the fake answers every request in the contract (a test fails when the contract gains a name the fake lacks); nothing reachable from the shipped page imports the fake or the browser entry."
+  - "No step of W8, its tests or its live look builds or packages the app: the window's tests run on Vitest from source, the lint on ESLint, the browser mode on Vite's dev server. keel check is unchanged and never runs them (DEC-73)."
+test-plan:
+  unit: >-
+    Vitest (app/test-window/unit/*.test.ts(x)), each a top-level test( so keel's ts counter counts it, red first
+    against an empty export, the red run noted in the result. Covered: the answer and change texts (ok, refused,
+    failed; done, not done and why) and the alert outcomes; useAppState (asks state.get on mount, again on each
+    state.changed, unsubscribes on unmount, an error answer kept as text) and useAction (busy while running, one at a
+    time, the outcome text) against the stub bridge; BridgeProvider and useBridge (the provided bridge wins; with
+    none, window.keel; with neither, a thrown error naming it); the fake's fixtures (each AppState fixture passes the
+    contract's shapes; each named scenario exists); the token parity (every colour in tailwind.config.js has its CSS
+    variable in both the light and the dark block of styles.css, and no variable is unused); the closed config
+    (every scale the rule reads is declared, none inherits Tailwind's default); the rule's helpers ported from Trawler
+    (stripVariants, arbitraryValue, classify, collectClasses over JSX attributes, clsx-style calls and template
+    literals, the dark: refusal). Node guard additions in app/test/unit/guards.test.ts (node --test, so keel check
+    runs them, nothing installed): only src/window/bridge.ts reads window.keel or globalThis.keel; only
+    src/window/browser.tsx and app/test-window/ import src/window/fake/; nothing reachable from src/window/main.tsx by
+    static import reaches fake/ or browser.tsx (each guard with its reader's self-test, as W7's).
+  integration: >-
+    Vitest with jsdom and Testing Library (app/test-window/integration/*.test.tsx), red first. (1) screen 6 against
+    the stub bridge, which records each ask and lets the test push: on mount one state.get and the fixture drawn;
+    Remove sends projects.remove with the project id; Choose and Use the PATH send settings.choose and settings.reset
+    with the tool, for each of the three tools; Add sends projects.add with no arguments; Send a test alert sends
+    alert.test and shows each of the three outcomes in words; every control is off while a request is pending and on
+    after; a state.changed push causes one new state.get and the new state is drawn; a refused and a failed answer
+    each show as text; a path holding markup (<b>x</b>) is shown as its own
+    characters; the loading and could-not-read states. (2) the fake bridge: it answers every name in REQUESTS and lists
+    every event in PUSH_EVENTS (iterated from contract.ts, so a new name fails until the fake has it); a change
+    (add, remove, choose, reset) pushes state.changed once and the next state.get shows it; the refusing scenario
+    refuses each name; a malformed call (unknown name, extra slot) is refused like the main part. (3) the browser
+    entry: rendering it against the fake draws screen 6 from ?state=no-project, and Add then shows the project. (4) the
+    lint, through ESLint's own API on fixture files under app/test-window/lint-fixtures/: an off-list class, an
+    arbitrary value, a modifier step not on its scale, a class built from fragments and a dark: class each report
+    their message; a clean fixture and the whole of src/window report nothing; Trawler's reconcile check: every whole
+    class the window authors is in the rule's class list and in the CSS Tailwind emits for the closed config (run
+    through Tailwind's PostCSS plugin in memory, no app build). Recorded in the result: the command, the counts, the
+    red-first runs.
+  e2e: >-
+    none: a WU's level is integration; the epic test (Playwright on the unpackaged app, DEC-75) is W9's and drives
+    screen 6 and W6's screens. What no test reaches here (the real dialogs, the Mac's appearance switch, the window in
+    Electron) is the owner's live look (details.live-checks), with no build.
+details:
+  base: "wu/E-APPLIST/w8-window-foundation off epic/E-APPLIST at 3cfa216 (W1, W2, W3 and W7 merged)"
+  outer-loop: >-
+    The owner: "we shouldn't build it all the times just for testing". W8 never runs npm run package or make. Its
+    inner loop is: npm run test:window (Vitest from source, seconds), npm run lint (ESLint), npm run dev:browser (Vite
+    serves the window alone on localhost against the fake; live reload), npm start (electron-forge start: the whole
+    app unpackaged, live reload) only to see the real dialogs. The shipped-page guards are static import walks in node
+    --test, not a build. The packaged build is seen again only at W9 (DEC-74).
+  versions:
+    rule: "Each new package pinned exactly (save-exact) at the first install, lockfile committed, npm ci afterwards; W7's exact-pin guard holds them. Seen on the registry 2026-11-22; the worker records what it installs."
+    add:
+      tailwindcss: "3.4.19 (the v3-lts tag; open point 1)"
+      postcss: "8.5.33 (Tailwind 3's PostCSS plugin runs inside Vite's CSS pipeline; no autoprefixer: one Chromium)"
+      eslint: "10.15.0"
+      typescript-eslint: "8.73.0 (its parser; peer typescript >=4.8.4 <6.1.0)"
+      vitest: "5.1.1 (peer vite ^6 || ^7 || ^8: W7's vite 8.3.8)"
+      jsdom: "31.0.1"
+      "@testing-library/react": "16.3.3 (peer react ^18 || ^19, @testing-library/dom ^10)"
+      "@testing-library/dom": "10.4.2"
+      "@testing-library/jest-dom": "8.0.0"
+      "@testing-library/user-event": "14.6.13"
+    change:
+      typescript: >-
+        7.0.2 -> 6.0.3 (open point 2). typescript-eslint's parser loads the package named typescript through its
+        JavaScript API; 7.0.2's main export is only lib/version.cjs (its API is under ./unstable/*), so the lint cannot
+        parse a .tsx file with 7 installed. Nothing else in the lockfile depends on typescript (Forge loads its config
+        through jiti; Vite and Node strip types themselves). Step 1 runs npm run typecheck on 6.0.3 over all of app/:
+        if it is red on W7's code, the fallback is open point 2's option b, recorded as a deviation.
+    spike-2026-11-22: >-
+      In a scratch folder under $TMPDIR, not in the repo: ESLint 10.15.0 with typescript-eslint 8.73.0 on typescript
+      6.0.3 parsed a .tsx file and a custom rule saw its className attribute; typescript 7.0.2 installed beside it as
+      the alias typescript-7 ran its own tsc (Version 7.0.2), but node_modules/.bin/tsc then pointed at 6.0.3. Tailwind
+      3.4.19 with a closed config (Trawler's emptying of every inherited scale) listed p-2, bg-ink, opacity-50 and flex
+      and refused p-3, bg-red-500, opacity-37, z-7, border-3, grid-cols-7, duration-150, scale-90, order-3 and
+      text-sm. Tailwind 4.3.5 with '@theme { --*: initial }' and only Keel's tokens closed the theme-backed scales (p-13,
+      bg-red-500, text-sm, rounded-lg, font-bold emit nothing) but still emitted opacity-37, z-7, border-3, bg-ink/37,
+      grid-cols-7, duration-150, scale-90, rotate-45, order-3, line-clamp-2, col-span-3, translate-x-2 and fractions:
+      every bare-number utility stays open, and its class oracle is the unstable __unstable__loadDesignSystem.
+  layout:
+    app/package.json: >-
+      scripts added: test:window (vitest run), test:window:watch (vitest), lint (eslint .), dev:browser (vite
+      --config vite.renderer.config.ts, serving src/window/browser.html). start, typecheck and test:main unchanged;
+      package and make untouched by W8. devDependencies as details.versions.
+    app/vitest.config.ts: >-
+      environment jsdom, include test-window/**/*.test.{ts,tsx} only (never test/), setupFiles
+      test-window/support/setup.ts (jest-dom matchers, cleanup), React plugin; no globals (tests import from vitest).
+    app/tsconfig.json: "include gains test-window/**/*.ts(x) and the eslint-rules/*.js checked with // @ts-check; types stay explicit"
+    app/tailwind.config.js: >-
+      Tailwind 3, the closed vocabulary: content src/window/**/*.{html,ts,tsx}; darkMode 'media' (unused: the lint
+      refuses dark:); theme replaces, never extends: colors (each 'rgb(var(--<name>) / <alpha-value>)'), spacing,
+      fontSize, fontFamily, fontWeight, lineHeight, borderRadius, borderWidth, opacity, and every other scale the
+      window draws from; the rule empties any scale left inheriting Tailwind's default (Trawler's closedContext).
+    app/src/window/styles.css: >-
+      @tailwind base, components, utilities; the colour tokens as CSS variables (R G B triplets) under :root and again
+      under @media (prefers-color-scheme: dark); color-scheme: light dark; font-family the system stack
+      (system-ui, -apple-system); no @font-face, no url().
+    app/src/window/main.tsx: "imports styles.css; renders <BridgeProvider><App/></BridgeProvider> with the preload's window.keel"
+    app/src/window/bridge.ts: >-
+      stays the one reader of window.keel; gains BridgeProvider and useBridge (React context, the provided bridge
+      first, else window.keel); ask and onPush take the bridge; W7's module-level provideBridge is replaced by the
+      context (its two callers are W7's page and W8's tests).
+    app/src/window/hooks.ts: "useAppState() -> {state, error, loading}; useAction() -> {busy, note, run(request)}; answerText, changeText, alertText"
+    app/src/window/App.tsx: "the frame: a top bar (Keel, the project's name or 'No project') and one screen, screen 6; W6 adds the other screens and moving between them"
+    app/src/window/screens/Projects.tsx: "screen 6, in sections: Project, Tools, PATH, Alerts; the version at the foot; the outcome line (role=status) and the error line (role=alert)"
+    app/src/window/ui/: "the few shared pieces screen 6 needs (Button, Section, Row, Path, Badge for set/PATH/missing), drawn only from tokens; W6 adds its own"
+    app/src/window/fake/fake.ts: >-
+      makeFakeBridge(scenario) -> KeelBridge: an in-memory AppState; a handler per RequestName in a table typed
+      {[N in RequestName]: ...} so tsc fails too when the contract grows; the main part's checks mirrored (unknown
+      name, extra or missing slot refused); projects.add adds the next fixture project (no dialog in a browser);
+      settings.choose sets a fixture path; alert.test answers 'shown'; each change pushes state.changed.
+    app/src/window/fake/fixtures.ts: "named scenarios: one-project (default), no-project, tool-missing, path-fallback, refusing, failing, slow (each answer after 800 ms); paths shaped like a real Mac's (/opt/homebrew/bin/git)"
+    app/src/window/browser.html, app/src/window/browser.tsx: >-
+      the browser mode's page and entry: the same CSP meta as index.html (the dev plugin swaps in the dev policy while
+      serving), reads ?state=, renders App inside BridgeProvider with makeFakeBridge(scenario) and a small fixed
+      banner 'Browser mode: fixtures, not your Mac'. Never a build input: the renderer's build input is index.html
+      alone, and the node guard proves main.tsx's import graph never reaches it.
+    app/eslint.config.js: >-
+      ESLint 10 flat config: typescript-eslint's parser for src/window/**/*.{ts,tsx}; the plugin design with one rule,
+      vocabulary, at error; test files and lint fixtures excluded from src/window's block (the fixtures are linted
+      only by their own tests).
+    app/eslint-rules/: >-
+      classes.js and vocabulary.js ported from Trawler's ui/eslint-rules (logic only, read 2026-11-22): the closed
+      context and its emittable class list, the per-scale modifier steps, the variant strip, the arbitrary value, the
+      runtime-fragment report; plus one rule of Keel's own: a dark: variant is refused (dark lives in the tokens).
+      Trawler's design-allow pragma is not ported (no escape hatch). reconcile.mjs becomes the integration test (4).
+    app/test-window/: "unit/, integration/, support/ (setup.ts, stub-bridge.ts), lint-fixtures/; outside app/test/, so keel check's node --test glob never reaches a Vitest file"
+    app/test/unit/guards.test.ts: "the three node guards in test-plan.unit, beside W7's"
+  tokens-first-cut:
+    note: "The worker's starting set, changed only by the result's design rules; values are Keel's own, not Trawler's."
+    colors: "canvas, surface, line, ink, ink-muted, accent (a muted blue), ok (green: done or passing), wait (amber: waits on someone), fail (red: failed or stuck) - the meanings W3's screens drew"
+    spacing: "0, px, 1 (4px), 2 (8px), 3 (12px), 4 (16px), 6 (24px), 8 (32px), plus named sizes only when a control needs one (control: 24px)"
+    type: "caption 11px, body 13px (the Mac's body size), title 15px, heading 20px; weights regular, medium, semibold; mono for paths (ui-monospace)"
+    radius: "control 6px, panel 8px"
+  design-rules:
+    where: "Written in W8's result data file (details.design-rules) while the epic runs; distilled into docs/local-app.html beside 'The design principles' at W9 (the epic's distillation plan)."
+    first-cut:
+      - "Every value from a token; a new size or colour is a token change in tailwind.config.js and styles.css, never a class."
+      - "Dark lives in the tokens: a colour variable flips under the Mac's dark setting; no dark: class."
+      - "Text the main part sends is shown as text, never as markup; a path is shown whole, in mono, and may wrap."
+      - "Green, amber and red mean done, waits on someone, failed; nothing else uses them."
+      - "One action in progress at a time: every button is off while a request runs; the outcome is a sentence."
+      - "Actions first; what you rarely read folded (local-app.html's principles hold on every screen)."
+  live-checks:
+    by: "the owner on his Mac, about five minutes, after the worker's result is committed and before the sign-off; no package or make"
+    steps:
+      - "1. cd app && npm ci && npm run dev:browser: screen 6 in your browser from fixtures; try ?state=no-project, tool-missing, path-fallback, refusing, slow."
+      - "2. Switch the Mac's appearance (System Settings > Appearance): the page turns light or dark with it."
+      - "3. npm start (unpackaged): screen 6 in the app with your real tools; Choose… opens the macOS dialog; Send a test alert answers."
+    worker-tries-first: >-
+      The worker runs dev:browser and npm start in its sandbox first. A refused port bind or Electron launch goes to
+      the router with the exact command, not around it; the owner's look then stands as the check.
+  leaves-to:
+    E-APPLIST.W5: >-
+      The Reader, the Watcher, the Alerter and the waiting list's requests and push events in contract.ts. Each new
+      request or event must also get a fake handler and fixture: W8's coverage test fails until it does.
+    E-APPLIST.W6: >-
+      Screens 1 and 2 and Open, the top bar's other screens and moving between them, the list's fixtures per kind, and
+      screen 6's two fields that need the Reader (6.4 the counts as links, 6.5 the last change), all on W8's tokens,
+      hooks, fake and harness.
+    E-APPLIST.W9: >-
+      The Playwright epic test on the unpackaged app; screen 6 and the built CSS under the packaged content policy,
+      seen live on the signed build; the design rules into docs/local-app.html; the next DEC record carrying W8's
+      Tailwind and TypeScript choices.
+  commit-order:
+    - "1. chore: the window's packages pinned exactly (details.versions), typescript to 6.0.3, the scripts, vitest.config.ts, tsconfig's include; npm run typecheck green on 6.0.3 (or the fallback); one red-first smoke test in test-window/unit."
+    - "2. feat: Keel's tokens - tailwind.config.js closed, styles.css light and dark, imported by main.tsx (red first: the parity and closed-config unit tests)."
+    - "3. feat: the lint rule - eslint-rules/ ported from Trawler plus the dark: refusal, eslint.config.js (red first: the helpers' unit tests, then the fixture and reconcile integration tests)."
+    - "4. feat: the bridge context and hooks - BridgeProvider, useBridge, useAppState, useAction, the answer texts; the stub bridge; the window.keel guard (red first)."
+    - "5. feat: the fake bridge and its fixtures, with the contract-coverage test and the fake-import guard (red first)."
+    - "6. feat: browser mode - browser.html, browser.tsx, dev:browser; the shipped-graph guard (red first)."
+    - "7. feat: screen 6 on the tokens, replacing W7's bare page (red first: the screen's integration tests); npm run lint green over src/window."
+    - "8. docs: the W8 result pair - the runs, the design rules, the live look."
+  sandbox:
+    - "npm installs reach registry.npmjs.org per call (allowed_domains) with npm_config_cache under $TMPDIR; a refusal goes to the router with the exact command."
+    - "Vitest and ESLint run in-process: no port. dev:browser binds a localhost port and npm start launches Electron: either may be refused in the sandbox (report it)."
+  sources:
+    - "docs/work/2026-11-20-e-applist-plan.yaml (W8's summary, the replan's open points: Tailwind 3 unless 4 carries; design rules in W8's result)"
+    - "docs/decisions/app.html (DEC-71 - DEC-77)"
+    - "docs/work/2026-11-20-e-applist-w7-result.yaml (follow-up 1; the versions; the six requests; app/src/window/bridge.ts)"
+    - "docs/local-app.html ('The screens' 6; 'The design principles'); git show 7401665:docs/work/2026-11-18-e-localtool-w3-screens-fields.html (screen 6's fields 6.1 to 6.5)"
+    - "Trawler, read only: ui/tailwind.config.js, ui/eslint-rules/ (classes.js, vocabulary.js, reconcile.mjs), ui/eslint.config.js, ui/vite.config.ts (Vitest), ui/src/apiStub.ts, ui/src/coreStub.ts, ui/src/setup-tests.ts"
+  open-points:
+    - "Which Tailwind? 3 (3.4.19, its long-term-support line). Its closed config closes every scale, so Trawler's rule ports almost as is. 4 closes the theme scales but leaves every number-taking utility open (opacity-37, z-7, border-3, bg-ink/37 emit: the spike), so its rule would need a hand-kept list on an unstable API. Option: 4.3.5."
+    - "Which TypeScript? One, 6.0.3, for the type check and the lint. typescript-eslint cannot read 7. Options: (a) 6.0.3 for both, recommended; (b) 6.0.3 for the lint and 7.0.2 kept for the type check under another name (works in the spike; npx tsc then means 6); (c) keep 7 alone and parse the window for the lint some other way (more code of our own). Back to 7 when typescript-eslint supports it: a follow-up for the backlog row local-app."
+    - "How does dark mode work? Colour tokens flip by the Mac's setting; the lint refuses dark: so no screen can disagree with the tokens."
+    - "Which accent colour? A muted blue. It is one token; comment to change it."
+    - "Does the owner look before sign-off? Yes, about five minutes, no build: browser mode, the Mac's appearance switch, npm start (details.live-checks)."
+    - "Where do the window's tests live? app/test-window/, outside app/test/, so keel check's node --test never picks up a Vitest file."
+    - "Is screen 6's Remove confirmed? No: it changes only the app's own list, never the project; Add again restores it."
+    - "Is Trawler's design-allow pragma ported? No: Keel's rule has no escape hatch; a needed value becomes a token."
+  htmldoc:
+    id: 6b01db1a9f34851f0dfb2b9a
