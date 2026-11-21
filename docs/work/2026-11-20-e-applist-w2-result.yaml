@@ -1,0 +1,107 @@
+artifact: wu-result
+status: ready
+id: E-APPLIST.W2
+epic: E-APPLIST
+title: "E-APPLIST.W2 · The watchdog's lines"
+date: "2026-11-21"
+page: 2026-11-20-e-applist-w2-result.html
+outcome: >-
+  Delivered against the requirement. Each run of the watchdog's facts step now writes, only through
+  scripts/router-app.sh with a fixed argv, one set worker/<name> per live worker whose value changed against the
+  update log's state, one del worker/<name> per worker gone, then set router as the heartbeat; at most one line per
+  key; nothing with no run, a gone router or an unreadable list; and its printed block, its exit 0 and the router's
+  message are byte-equal to before. The worker deny list gains scripts/router-app.sh. The owner landed the launcher
+  in two typed commits: 95c16af (the change) and cd16ede (the independent review's two LOW findings, fixed at the
+  owner's choice). One plan check is met by construction rather than by a test: a red git-dir check writes nothing
+  because that path ends the run before the facts step starts; no test starts a run first and then trips it.
+deviations:
+  - >-
+    Review L1, beyond the plan: a session list that is JSON but not readable to its end (a row that is not an
+    object) now writes nothing that tick, not even the heartbeat. Before the fix it wrote a del for every live worker
+    listed after the bad row. The block keeps the rows read before the bad row, as it always has, so it is
+    byte-equal to before for every list (the router's two suggested fixes would each have changed the block for
+    some list: skipping non-objects adds workers after the bad row; refusing any non-object turns a null row, read
+    whole today, into 'cannot be read').
+  - >-
+    Review L2 replaces open point 11: a value over router-app.sh's 512-byte cap is no longer refused and skipped.
+    It loses one character at a time from the longest (by bytes) of branch, waiting and state until it fits
+    (509-512 bytes), so a worker's line is never left stale. The character clips (20, 60, 120) stay. The exit-2 skip
+    in the write loop stays as a guard; the watchdog no longer sends a value it can trigger with.
+  - "Two case patterns inside the new command substitution take POSIX's leading parenthesis, (watchdog|watchdog-*) and (\"\"|*[!0-9]*): macOS /bin/sh (bash 3.2.57) cannot parse them inside $( ) otherwise. Same behaviour; sh -n and dash -n clean."
+  - "Two red-first test commits, not one: 25c6009 (the nine planned tests) and 142ed86 (the review's fixes and test gaps), each before its rule commit. Thirteen new tests in all, and the refused-line case of an existing new test changed by L2."
+  - "The epic branch (1494748, holding the W2 and W3 plans) was merged into this branch (548fc1f) before the build, at the router's request, so the WU builds on the signed plan."
+  - "The main case could not be run by hand in a scratch project: the session's permission check denied the command (a scratch git repo with a worktree, the real launcher and router-app.sh, a stub session list). The example on the page is the integration tests' run of the same real scripts."
+evidence:
+  commits:
+    - "f86005a docs: the plan pair (signed and merged into epic/E-APPLIST as ce0b277)"
+    - "548fc1f merge of epic/E-APPLIST (1494748) into the branch"
+    - "25c6009 test: the nine planned integration tests, red first; the fixture copies scripts/router-app.sh; WORKER_DENIES 25 -> 26"
+    - "95c16af the owner's typed keel mr commit: scripts/router-worker.sh (the facts step writes the log; the deny entry)"
+    - "142ed86 test: review fixes L1 and L2 red first; the review's test gaps pinned"
+    - "cd16ede the owner's typed keel mr commit: scripts/router-worker.sh (L1, L2)"
+    - "this result pair, plain commit"
+  tests-added: >-
+    tests/suite/router.rs: watchdog_tick_writes_each_live_worker_and_then_the_heartbeat,
+    an_unchanged_tick_writes_only_the_heartbeat, each_changed_field_writes_one_line_for_its_worker,
+    a_gone_worker_is_deleted_once, a_router_restart_rewrites_every_worker,
+    every_tick_writes_each_key_at_most_once_and_the_heartbeat_last,
+    no_run_a_gone_router_or_an_unreadable_list_writes_nothing, a_failing_log_write_never_drops_the_facts_block,
+    worker_text_reaches_the_log_as_one_escaped_line, a_partly_readable_session_list_deletes_nothing,
+    a_value_over_the_cap_is_clipped_by_bytes_never_refused, a_worker_lines_strings_are_clipped_to_their_lengths,
+    the_facts_block_is_printed_before_the_first_log_write. Changed: the launcher fixture copies scripts/router-app.sh;
+    WORKER_DENIES gains scripts/router-app.sh (checked by argv_with_root in every spawn test).
+  expected-one-by-one:
+    - {check: "first tick: each worker, then set router; value shapes locked", met: "yes", by: "watchdog_tick_writes_each_live_worker_and_then_the_heartbeat"}
+    - {check: "unchanged tick: only set router", met: "yes", by: "an_unchanged_tick_writes_only_the_heartbeat"}
+    - {check: "each of the seven fields: one line for its worker", met: "yes", by: "each_changed_field_writes_one_line_for_its_worker (state, waiting-for, session, branch, tip, uncommitted count, last activity)"}
+    - {check: "a gone worker: one del, then only the heartbeat", met: "yes", by: "a_gone_worker_is_deleted_once (dropped from the list; moved out of the worktrees; worker/<name>/report kept)"}
+    - {check: "generated fleets: each key once, heartbeat last, state equals the live set", met: "yes", by: "every_tick_writes_each_key_at_most_once_and_the_heartbeat_last (14 ticks, repeated names, moves)"}
+    - {check: "a router restart rewrites every worker", met: "yes", by: "a_router_restart_rewrites_every_worker"}
+    - {check: "no run, gone router, unreadable list, red git-dir check: nothing written", met: "yes, the git-dir case by construction", by: "no_run_a_gone_router_or_an_unreadable_list_writes_nothing (no run: no app dir made; router gone; agents fail; list not JSON; worktree list fails) and a_partly_readable_session_list_deletes_nothing; the git-dir check exits before facts, untested with a run started"}
+    - {check: "held lock, symlinked dir, missing script: exit 0, same block, one lock wait", met: "yes", by: "a_failing_log_write_never_drops_the_facts_block (at most 100 polls of a counting sleep) and the_facts_block_is_printed_before_the_first_log_write"}
+    - {check: "worker text: one escaped line; a bad name keeps its block, no line", met: "yes", by: "worker_text_reaches_the_log_as_one_escaped_line and a_worker_lines_strings_are_clipped_to_their_lengths"}
+    - {check: "the deny list gains scripts/router-app.sh", met: "yes", by: "argv_with_root in the nine spawn tests"}
+    - {check: "cargo test, fmt, clippy, keel check, keel verify-doc green; old facts tests unchanged", met: "yes", by: "the runs below"}
+  red-first:
+    at-25c6009: "against the unchanged launcher, router:: 62 passed, 18 failed: the nine new tests, each at its first line-written assertion (no_run... at its closing whole-tick control; its no-write cases already held), and nine spawn tests on the deny list"
+    at-142ed86: "against 95c16af, router:: 81 passed, 3 failed: a_partly_readable... (it wrote del worker/w2 and set router, the reviewer's L1), a_value_over_the_cap... (no worker line, L2), a_failing_log_write... (its changed case). The two pins (clip lengths, block before writes) held at 95c16af: they pin behaviour that already existed."
+    mutants: "at 142ed86, each fix broken in a scratch copy: the writes moved before the block (the review's M7), the L1 guard dropped, the byte fit dropped; each made its test red; the file was restored"
+  runs-at-cd16ede:
+    cargo-test: "unit 137 passed; suite 386 passed, 0 failed, 10 ignored (373 before W2; 13 new)"
+    keel-check: "green (tree unchanged since the run on the staged fix)"
+    fmt-clippy: "clean"
+    flakiness: "the nine planned tests 8 of 8 runs green; the six fix-related tests 5 of 5"
+    sandbox-skipped-by-the-reviewer: "keels_router_security_files_are_rule_bearing and epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end, which the independent reviewer's sandbox could not run, ran here in the full suite at cd16ede: both ok"
+  independent-review: >-
+    A fresh read-only worker reviewed scripts/router-worker.sh at 95c16af (security path): no blocker, two LOW
+    findings. L1: a list valid as JSON but not readable to its end cut the rows short, and the step then deleted every
+    live worker listed after the bad row (proven with [r1, w1, 5, w2]). L2: a value over 512 bytes was refused, so
+    the worker's last line stood stale while it lived (a worker can cause it with git branch -m). The owner chose to
+    fix both now: cd16ede, tests 142ed86. Its test gaps were pinned in the same test commit: the clip lengths and
+    the block printed before the first write (its mutant M7). No further independent review of cd16ede (the router's
+    note: its lows are follow-ups, done).
+  docs: "this result pair (new); the plan pair at f86005a; no other doc touched"
+distillation: >-
+  Nothing in W2. At the epic close (W9): UC-ROUTE-8 names the watchdog as the update log's second writer;
+  docs/local-app.html "Where it travels" gains the worker line's value (state, waiting, session, branch, tip, dirty,
+  active), the router heartbeat's value and the no-write cases, per the epic's distillation plan.
+follow-ups:
+  - >-
+    The independent review's surviving mutants M10, M11, M12, M15, M19 and M20 of scripts/router-worker.sh: their
+    details are in the router's relay of that review, not in this worker's hands; each to be judged for a test or
+    marked equivalent. Taken by: docs/backlog/local-app.yaml, in the row the router opens for the router scripts'
+    hardening (with W1's N1-N5), the owner's choice of when.
+  - >-
+    A test that starts a run and then trips the git-dir check, to pin that nothing is written then (met by
+    construction today). Taken by: the same backlog row, or this WU's code review if it asks for it.
+  - >-
+    A per-worker jq that failed would drop that worker's row, and the write step would then delete its line. No
+    input is known to make it fail (every argument is checked or defaulted); a guard would mark the tick unreadable
+    instead. Taken by: the same backlog row.
+details:
+  base: "wu/E-APPLIST/w2-watchdog-lines off epic/E-APPLIST at bf4cf5e; the plan merged as ce0b277; the epic at 1494748 merged back as 548fc1f"
+  value-shapes:
+    worker: '{"state": "waiting", "waiting": "permission prompt", "session": "<uuid>", "branch": "w", "tip": "<abbrev>", "dirty": 0, "active": "2026-11-21T03:31:02Z"}'
+    router: '{"name": "r1", "state": "idle", "workers": 2}'
+  htmldoc:
+    id: 6b01ae599f34851f0dfb2b69
