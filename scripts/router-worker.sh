@@ -226,9 +226,14 @@ facts() {
   main=$(printf '%s\n' "$wts" | sed -n 1p)
   common_dir || gd=
   now=$(date +%s)
-  # control characters (the separator among them) are blanked first, so a row is one line of five fields
-  w_rows=$(printf '%s\n' "$list" | jq -r '.[] | select(.kind == "background") | [.name, .sessionId, .cwd, (.status // .state), .waitingFor]
-    | map(. // "" | tostring | gsub("[[:cntrl:]]"; " ")) | join("\u001f")' 2>/dev/null |
+  # control characters (the separator among them) are blanked first, so a row is one line of five fields.
+  # A list jq cannot read to its end (a row that is not an object) keeps the rows read before it, as
+  # the block always has, and sets w_bad: app_lines then writes nothing, since a worker after that
+  # row would read as gone (E-APPLIST.W2 review L1).
+  w_bad=
+  w_list=$(printf '%s\n' "$list" | jq -r '.[] | select(.kind == "background") | [.name, .sessionId, .cwd, (.status // .state), .waitingFor]
+    | map(. // "" | tostring | gsub("[[:cntrl:]]"; " ")) | join("\u001f")' 2>/dev/null) || w_bad=1
+  w_rows=$({ [ -z "$w_list" ] || printf '%s\n' "$w_list"; } |
   while IFS=$US read -r w_name w_sid w_cwd w_state w_wait; do
     case "$w_name" in (watchdog|watchdog-*) continue;; esac
     [ "$w_cwd" != "$ROOT" ] && [ "$w_cwd" != "$main" ] && printf '%s\n' "$wts" | grep -Fxq -- "$w_cwd" || continue
@@ -256,10 +261,15 @@ facts() {
       lbr=$br
     else br="unlinked .git, not read" tip= dirty=? lbr=; fi
     # name and value: the worker's line in the update log (K15), from this same read; the name only
-    # when it is a key router-app.sh takes (spawn's name rule)
+    # when it is a key router-app.sh takes (spawn's name rule). A value over router-app.sh's 512-byte
+    # cap loses a character at a time from its longest of branch, waiting and state, so a line is
+    # never refused and left stale (review L2).
     jq -n -c --arg name "$w_name" --arg st "$w_state" --arg wf "$w_wait" --arg q "$quiet" --arg br "${br:-detached}" \
       --arg tip "$tip" --arg dirty "$dirty" --argjson items "${items:-[]}" --arg sid "$w_sid" --arg lbr "$lbr" --arg act "$newest" '
       def clean($n): tostring | gsub("[[:cntrl:]]"; " ") | .[0:$n];
+      def fit: until((tojson | utf8bytelength) <= 512 or ([.branch, .waiting, .state] | all(. == null or . == ""));
+        ([("branch", "waiting", "state") as $k | select((.[$k] // "") != "") | {k: $k, b: (.[$k] | utf8bytelength)}] | max_by(.b).k) as $k
+        | .[$k] |= .[:-1]);
       ($st | if . == "working" then "busy" elif . == "done" then "idle" else . end) as $s
       | ($tip | split(" ") | .[0] // "") as $h
       | (if $s == "idle" then "DONE"
@@ -276,7 +286,7 @@ facts() {
            + (if $lbr != "" then {branch: ($lbr | clean(120))} else {} end)
            + (if $h | test("^[0-9a-f]{4,40}$") then {tip: $h} else {} end)
            + (if $dirty | test("^[0-9]+$") then {dirty: ($dirty | tonumber)} else {} end)
-           + (if $act | test("^[0-9]+$") then {active: ($act | tonumber | todate)} else {} end))}'
+           + (if $act | test("^[0-9]+$") then {active: ($act | tonumber | todate)} else {} end) | fit)}'
   done)
   printf '%s\n' "$w_rows" | jq -r -s --arg h "Report to $rn." '
     if length == 0 then "\($h)\nNo live worker." else
@@ -290,11 +300,12 @@ facts() {
 # the log's own state (a router restart empties it, so the next tick writes every worker), a set per
 # live worker whose value changed, a del per worker line whose worker is gone, then the router's
 # heartbeat, at most one line per key. Only through router-app.sh, each value one argv word built by
-# jq, its output discarded; nothing with no run (a run is the router's) or a state it cannot read.
+# jq, its output discarded; nothing with no run (a run is the router's), a state it cannot read or a
+# session list facts could not read to its end.
 # A refused line (exit 2) is skipped; any other failure (a held lock, no script) ends the tick's
 # writes, so a tick waits on the lock once at most. Never fails: the facts still exit 0.
 app_lines() {
-  [ -n "$gd" ] || return 0
+  [ -n "$gd" ] && [ -z "$w_bad" ] || return 0
   ad=$(dirname "$gd")/.router/app
   [ ! -L "${ad%/app}" ] && [ ! -L "$ad" ] && [ ! -L "$ad/state.json" ] && [ -f "$ad/state.json" ] || return 0
   old=$(jq -c '.values | if type == "object" then with_entries(select(.key | test("^worker/[a-z0-9][a-z0-9-]{0,40}$")))
