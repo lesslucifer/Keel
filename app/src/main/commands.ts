@@ -38,6 +38,9 @@ export const READ_TIMEOUT_MS = 10_000;
 /** The most output kept from each stream; the rest is dropped. */
 export const OUTPUT_CAP = 1024 * 1024;
 
+/** The most a stream is read, and dropped, after the answer; then it is paused (its writer waits, unharmed). */
+export const LATE_OUTPUT_CAP = 1024 * 1024;
+
 type Token = string | { readonly slot: 'project' };
 const PROJECT: Token = Object.freeze({ slot: 'project' as const });
 
@@ -132,9 +135,10 @@ function groupGone(pgid: number): boolean {
  * The answer comes from the program's own exit, never from the pipes alone: a background job or a
  * process that left the group may hold them open for ever. Once the program has exited by itself,
  * the pipes get EXIT_GRACE_MS for its last output, then it is answered with its code; nothing is
- * killed after that exit (what it left running is the owner's), and the pipes stay open and are
- * drained, unread, until whatever holds them closes them, so a job that writes later is not killed
- * by SIGPIPE. If the program has not exited at the timeout, its whole process group - a shell's
+ * killed after that exit (what it left running is the owner's), and the pipes stay open: what a
+ * left job writes later is read and dropped up to LATE_OUTPUT_CAP per stream, then the stream is
+ * paused, so the job waits on a full pipe instead of dying of SIGPIPE, and a job that writes
+ * without stopping costs the app nothing more. If the program has not exited at the timeout, its whole process group - a shell's
  * children too - is killed, and the answer waits (at most GROUP_GONE_MS) until the group is gone.
  * A program that cannot start (ENOENT, EACCES, EMFILE, ...) is answered with the reason. Never
  * throws or rejects for the program's own failure.
@@ -155,12 +159,22 @@ export function capture(file: string, args: readonly string[], env: Record<strin
       settled = true;
       clearTimeout(timer);
       clearTimeout(grace);
-      // The pipes stay open and keep draining (data after this is dropped); they no longer keep the app's loop alive.
+      // The pipes stay open, read and dropped up to LATE_OUTPUT_CAP, then paused; they no longer keep the app's loop alive.
       for (const stream of [child?.stdout, child?.stderr]) {
         if (stream instanceof Socket) stream.unref();
       }
       child?.unref();
-      resolve({ code, startError, timedOut, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') });
+      const answer = { code, startError, timedOut, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') };
+      // The output is copied into the answer: nothing a left job keeps alive holds it.
+      out.length = 0;
+      err.length = 0;
+      resolve(answer);
+    };
+    const late = { out: 0, err: 0 };
+    /** After the answer: count and drop; past the cap, stop reading (the writer waits on a full pipe). */
+    const lateData = (key: 'out' | 'err', stream: NodeJS.ReadableStream, b: Buffer) => {
+      late[key] += b.length;
+      if (late[key] > LATE_OUTPUT_CAP) stream.pause();
     };
     try {
       child = spawn(file, args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'], env, cwd: '/', detached: true });
@@ -172,13 +186,14 @@ export function capture(file: string, args: readonly string[], env: Record<strin
     // First, before anything that can throw: when spawn fails (EMFILE, ENFILE) the child has no pipes and only this event says why.
     started.on('error', (e: NodeJS.ErrnoException) => done(null, e.code ?? e.message));
     if (!started.stdout || !started.stderr) return;
-    started.stdout.on('data', (b: Buffer) => {
-      if (settled) return;
+    const { stdout, stderr } = started;
+    stdout.on('data', (b: Buffer) => {
+      if (settled) return lateData('out', stdout, b);
       if (size.out < OUTPUT_CAP) out.push(b.subarray(0, OUTPUT_CAP - size.out));
       size.out += b.length;
     });
-    started.stderr.on('data', (b: Buffer) => {
-      if (settled) return;
+    stderr.on('data', (b: Buffer) => {
+      if (settled) return lateData('err', stderr, b);
       if (size.err < OUTPUT_CAP) err.push(b.subarray(0, OUTPUT_CAP - size.err));
       size.err += b.length;
     });
