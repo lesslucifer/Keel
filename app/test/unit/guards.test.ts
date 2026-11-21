@@ -104,3 +104,26 @@ test('the import reader sees every import form, so the guard above cannot be dod
   ].join('\n');
   assert.deepEqual(imports(text).sort(), ['../c.ts', './b.ts', './d.ts', './gh.ts', './side.ts', './star.ts', 'child_process', 'electron', 'node:fs'].sort());
 });
+
+test('only the shell (src/main/index.ts) and the preload entry import electron; the window imports no node: module, no electron and nothing from the main part', () => {
+  const sources = walk(SRC).filter((f) => /\.(ts|tsx)$/.test(f));
+  const electron = sources.filter((f) => imports(readFileSync(f, 'utf8')).some((s) => s === 'electron' || s.startsWith('electron/')));
+  assert.deepEqual(electron.map((f) => path.relative(SRC, f)).sort(), ['main/index.ts', 'preload/index.ts']);
+  const window = sources.filter((f) => f.startsWith(path.join(SRC, 'window') + path.sep));
+  assert.ok(window.length > 0, 'app/src/window holds no source');
+  for (const f of window) {
+    for (const spec of imports(readFileSync(f, 'utf8'))) {
+      const where = `${path.relative(APP, f)} imports ${spec}`;
+      assert.ok(!spec.startsWith('node:') && spec !== 'electron' && !spec.startsWith('electron/'), where);
+      if (spec.startsWith('.')) assert.ok(!path.resolve(path.dirname(f), spec).startsWith(path.join(SRC, 'main') + path.sep), where);
+    }
+  }
+});
+
+test('every package is pinned to one exact version, and the lockfile is committed beside package.json', () => {
+  const pkg = JSON.parse(readFileSync(path.join(APP, 'package.json'), 'utf8')) as Record<string, Record<string, string> | undefined>;
+  const pins = { ...pkg.dependencies, ...pkg.devDependencies };
+  assert.ok(Object.keys(pins).length > 0, 'no package listed');
+  for (const [name, v] of Object.entries(pins)) assert.match(v, /^\d+\.\d+\.\d+$/, name);
+  assert.ok(existsSync(path.join(APP, 'package-lock.json')), 'no package-lock.json');
+});
