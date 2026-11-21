@@ -32,6 +32,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -81,8 +82,9 @@ def fail(message):
 
 
 def plain(value):
-    """One line of text: every control, format (a bidi override) or line-separator character a space, runs of space one."""
-    shown = "".join(" " if unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") else c for c in value)
+    """One line of text: every control, format (a bidi override), line-separator or lone surrogate
+    (a byte that is not UTF-8, as Python decodes an argument) a space, runs of space one."""
+    shown = "".join(" " if unicodedata.category(c) in ("Cc", "Cf", "Cs", "Zl", "Zp") else c for c in value)
     return " ".join(shown.split())
 
 
@@ -169,29 +171,60 @@ def message_text(parsed):
     return parsed["text"].rstrip("\r\n") + "\n" + link(parsed)
 
 
-def write_line(args):
-    """Run router-app.sh with args (no shell); its line number, or None and why it wrote nothing."""
-    env = {key: value for key, value in os.environ.items() if not key.startswith("KEEL_NOTIFY_")}
+def writer_env():
+    """The environment router-app.sh runs with: ours, minus the credential's names and the test seam."""
+    return {key: value for key, value in os.environ.items() if not key.startswith(("KEEL_NOTIFY_", "TELEGRAM_")) and key != TOKEN_KEY}
+
+
+def stop(child):
+    """End a writer that outran its time, with every process it started: TERM to its group (its trap
+    releases the lock), then KILL to whatever is left; the child is collected either way, and a pipe
+    some stray process still holds never keeps the sender waiting."""
+    for sig, grace in ((signal.SIGTERM, 1), (signal.SIGKILL, 5)):
+        try:
+            os.killpg(child.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            child.communicate(timeout=grace)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+    child.kill()
     try:
-        done = subprocess.run(
+        child.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def write_line(args):
+    """Run router-app.sh with args (no shell string), in a session of its own; its line number, or None and why."""
+    try:
+        child = subprocess.Popen(
             ["/bin/sh", str(APP), *args],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             encoding="utf-8",
             errors="replace",
-            timeout=APP_TIMEOUT,
-            env=env,
-            check=False,
+            env=writer_env(),
+            start_new_session=True,
         )
-    except subprocess.TimeoutExpired:
-        return None, f"router-app.sh did not answer within {APP_TIMEOUT} s"
     except OSError as error:
         return None, f"cannot run /bin/sh: {error.strerror or error.__class__.__name__}"
-    if done.returncode != 0:
-        said = [line for line in done.stderr.splitlines() if line.strip()]
-        why = one_line(said[-1]) if said else f"router-app.sh exited {done.returncode}"
+    try:
+        out, err = child.communicate(timeout=APP_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        stop(child)
+        return None, f"router-app.sh did not answer within {APP_TIMEOUT} s"
+    except BaseException:
+        stop(child)
+        raise
+    if child.returncode != 0:
+        said = [line for line in err.splitlines() if line.strip()]
+        why = one_line(said[-1]) if said else f"router-app.sh exited {child.returncode}"
         return None, why.removeprefix("router-app: ")
-    match = re.search(r"\bn=([0-9]+)", done.stdout)
+    match = re.search(r"\bn=([0-9]+)", out)
     return (match.group(1) if match else "?"), None
 
 
@@ -358,6 +391,8 @@ def main(argv):
     text = check_text(message_text(parsed))
 
     if args.dry_run is not None:
+        # a byte that is not UTF-8 reaches the text as a lone surrogate: show it escaped, never fail on it
+        sys.stdout.reconfigure(errors="backslashreplace")
         print(f"dry-run: valid sendMessage request ({len(text)} chars, {len(text.splitlines())} lines); no request sent")
         print(text, end="" if text.endswith("\n") else "\n")
         question = question_value(parsed)
