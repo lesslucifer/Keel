@@ -58,9 +58,10 @@ APP_TIMEOUT = 10
 WU = re.compile(r"E-[A-Z0-9]{1,16}\.W[0-9]{1,3}")
 QUESTION = re.compile(r"[a-z0-9][a-z0-9-]{0,40}")
 HEADER = re.compile(r"(wu|question):(.*)")
-# A leading line shaped like a header (a word, then a colon) whose key is wu or question in another
-# case or spacing, or one slip from question: a mistyped header, refused rather than sent as text.
-HEADER_LIKE = re.compile(r"\s*([A-Za-z]+)\s*:")
+# A leading line shaped like a header (a word, a colon, then a header's value) whose key is wu or
+# question in another case or spacing, or one slip from question: a mistyped header, refused rather
+# than sent as text. A headline such as "Question: keep the link?" has no header's value: text.
+HEADER_LIKE = re.compile(r"\s*([A-Za-z]+)\s*:(.*)")
 HEADLINE_MAX = 80
 LINE_MAX = 200
 # The alert's value stays under router-app.sh's 1,024-byte line (with its longest run id, n and
@@ -107,12 +108,19 @@ def one_slip(word, target):
 
 
 def mistyped_header(line):
-    """The key of a leading line that looks like a wu: or question: header but is not one, or None."""
-    match = HEADER_LIKE.match(line)
+    """What was typed up to the colon of a leading line that looks like a wu: or question: header,
+    its value included, but is not one; or None."""
+    match = HEADER_LIKE.fullmatch(line.rstrip("\r\n"))
     if not match:
         return None
-    key = match.group(1).lower()
-    return match.group(1) if key == "wu" or one_slip(key, "question") else None
+    key, value = match.group(1).lower(), match.group(2).strip()
+    if key == "wu":
+        grammar = WU
+    elif one_slip(key, "question"):
+        grammar = QUESTION
+    else:
+        return None
+    return line[: match.start(2)] if grammar.fullmatch(value) else None
 
 
 def parse_body(text):
@@ -123,9 +131,9 @@ def parse_body(text):
     while at < len(kept):
         match = HEADER.fullmatch(kept[at].rstrip("\r\n"))
         if not match:
-            key = mistyped_header(kept[at])
-            if key is not None:
-                raise NotifyError(f"line {at + 1}: '{key}:' looks like a header but is not 'wu:' or 'question:' at the start of the line; nothing was sent")
+            typed = mistyped_header(kept[at])
+            if typed is not None:
+                raise NotifyError(f"line {at + 1}: {typed!r} looks like a header but is not 'wu:' or 'question:' at the start of the line; nothing was sent")
             break
         name, value = match.group(1), match.group(2).strip()
         grammar = WU if name == "wu" else QUESTION
