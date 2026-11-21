@@ -1097,3 +1097,59 @@ fn harness_hooks_exit_0_and_never_call_verify_doc_on_a_foreign_keel() {
         std::fs::remove_file(&log).unwrap();
     }
 }
+
+/// E-APPLIST.W3 (K4): the router skill, in both copies, says how the router writes the update log -
+/// each stage shape, the start, the deletes - and how it heads an owner message (the sender's two
+/// header lines). Each shape must be one the router guard admits (scripts/router-guard.jq).
+#[test]
+fn router_skill_names_each_stage_and_its_moment() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for dir in ["skills/keel-router", ".claude/skills/keel-router"] {
+        let skill = std::fs::read_to_string(root.join(dir).join("SKILL.md")).unwrap();
+        let commands = std::fs::read_to_string(root.join(dir).join("references/commands.md")).unwrap();
+        let mut said = vec!["scripts/router-app.sh start <router-name>".to_string()];
+        for stage in ["plan-in-work", "plan-to-read", "plan-approved", "building", "in-review"] {
+            said.push(format!("scripts/router-app.sh stage <wu> {stage}"));
+        }
+        said.extend(["scripts/router-app.sh del wu/<wu>/stage".to_string(), "scripts/router-app.sh del question/<id>".to_string()]);
+        for s in &said {
+            assert!(commands.contains(s), "{dir}/references/commands.md does not name `{s}`");
+        }
+        for header in ["wu: <wu-id>", "question: <id>"] {
+            assert!(skill.contains(header) && commands.contains(header), "{dir} does not teach the header line `{header}`");
+        }
+        assert!(
+            skill.contains("scripts/router-app.sh") && skill.contains("references/commands.md"),
+            "{dir}/SKILL.md does not point at the update log's moments"
+        );
+    }
+}
+
+/// The self-hosted router skill is the shipped one: every file under skills/keel-router is
+/// byte-equal to its copy under .claude/skills/keel-router, and neither has a file the other lacks.
+#[test]
+fn every_keel_router_file_equals_its_self_hosted_copy() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let (mut shipped, mut hosted) = (BTreeMap::new(), BTreeMap::new());
+    files(&root.join("skills/keel-router"), &root.join("skills/keel-router"), &mut shipped);
+    files(&root.join(".claude/skills/keel-router"), &root.join(".claude/skills/keel-router"), &mut hosted);
+    assert!(shipped.len() >= 9, "the shipped router skill has {} files", shipped.len());
+    assert_eq!(shipped.keys().collect::<Vec<_>>(), hosted.keys().collect::<Vec<_>>(), "the two copies hold different files");
+    for (f, body) in &shipped {
+        assert!(hosted.get(f) == Some(body), "skills/keel-router/{f} and .claude/skills/keel-router/{f} differ");
+    }
+}
+
+/// project-router's rule-file list is the committed config's: every `rule_bearing` entry of
+/// .keel/config.toml is named in its "WU with a rule-bearing file" line.
+#[test]
+fn project_router_names_every_rule_file() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let config: toml::Value = toml::from_str(&std::fs::read_to_string(root.join(".keel/config.toml")).unwrap()).unwrap();
+    let rules: Vec<&str> = config["rule_bearing"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+    assert!(rules.len() >= 10, "{rules:?}");
+    let skill = std::fs::read_to_string(root.join(".claude/skills/project-router/SKILL.md")).unwrap();
+    let line = skill.lines().find(|l| l.starts_with("- **WU with a rule-bearing file**")).expect("project-router has no rule-file line");
+    let missing: Vec<&&str> = rules.iter().filter(|r| !line.contains(&format!("`{r}`"))).collect();
+    assert!(missing.is_empty(), "project-router's rule-file line omits {missing:?}");
+}
