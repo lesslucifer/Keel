@@ -3,13 +3,13 @@
 // in temp projects and fake tools in temp folders.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readdirSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { dispatcher, type EventLike } from '../../src/main/bridge.ts';
 import { makeHandlers, prepare, type Parts } from '../../src/main/handlers.ts';
 import { loadSettings } from '../../src/main/settings.ts';
 import type { AlertOutcome, LoginPathState, Tool } from '../../src/shared/contract.ts';
-import { tempDir, program, realGit, sh, snapshot, mk, recorder, bounded, within } from '../support/fs.ts';
+import { tempDir, program, realGit, sh, snapshot, mk, recorder, bounded, within, HANG } from '../support/fs.ts';
 
 const GIT = realGit();
 const PAGE = 'app://keel/index.html';
@@ -192,6 +192,30 @@ test('state.get answers while a folder or file dialog stays open; the change goe
   answerFile(keel);
   assert.deepEqual(await choosing, { ok: true, value: { done: true } });
   assert.equal(w.seen.pushes, 2);
+});
+
+test('state.get, remove and reset answer while projects.add waits on a git that hangs', async (t) => {
+  const w = world(t);
+  const project = keelRepo(path.join(w.dir, 'proj'));
+  const pidFile = path.join(w.dir, 'git-pid');
+  program(path.join(w.bin, 'git'), `#!/bin/sh\necho $$ > ${pidFile}\n${HANG}\n`);
+  const end = () => {
+    try {
+      process.kill(-Number(readFileSync(pidFile, 'utf8')), 'SIGKILL');
+    } catch {
+      // gone
+    }
+  };
+  t.after(end);
+  w.answers.folder = project;
+  const adding = w.call('projects.add');
+  assert.ok(await within(5_000, () => existsSync(pidFile) && readFileSync(pidFile, 'utf8').trim() !== ''), 'git never ran');
+  const state = (await bounded(3_000, 'state.get while git hangs', w.call('state.get'))) as { ok: true; value: { projects: unknown[] } };
+  assert.deepEqual(state.value.projects, []);
+  assert.deepEqual(await bounded(3_000, 'settings.reset while git hangs', w.call('settings.reset', { tool: 'keel' })), { ok: true, value: { done: true } });
+  end();
+  const r = (await adding) as { ok: true; value: { done: boolean } };
+  assert.equal(r.value.done, false);
 });
 
 test('prepare() loads the settings, then reads the PATH with the set tools\' folders for its fallback', async (t) => {

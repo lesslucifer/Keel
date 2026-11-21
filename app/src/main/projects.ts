@@ -115,7 +115,6 @@ export async function checkProject(folder: string, git: string, opts: RunOptions
     top = await run(git, 'toplevel', { project: dir }, opts);
   }
   const topFailed = gitFailed(top);
-
   if (topFailed !== null) return { ok: false, why: topFailed };
   if (top.code !== 0) return { ok: false, why: 'not a git checkout' };
   if ((await real(top.stdout.trim())) !== dir) return { ok: false, why: 'not the top folder of its git checkout' };
@@ -132,6 +131,25 @@ export async function checkProject(folder: string, git: string, opts: RunOptions
   return { ok: true, path: dir };
 }
 
+/**
+ * Save the checked project `dir` (checkProject's real path) when the list still has room and does
+ * not hold it; only reads and writes the app's folder, so it is quick enough to hold a lock across.
+ */
+export async function saveProject(
+  appDir: string,
+  dir: string,
+  changed: () => void = () => undefined,
+): Promise<{ ok: true; list: ProjectList; project: Project } | { ok: false; why: string }> {
+  const list = (await loadProjects(appDir)).value;
+  if (list.projects.length >= MAX_PROJECTS) return { ok: false, why: fullWhy(list) };
+  if (list.projects.some((p) => p.path === dir)) return { ok: false, why: 'already listed' };
+  const project: Project = { id: mintId(list.projects.map((p) => p.id)), path: dir, name: plain(path.basename(dir), NAME_CAP) };
+  const next: ProjectList = { version: 1, projects: [...list.projects, project] };
+  await writeAtomic(path.join(appDir, PROJECTS_FILE), next);
+  changed();
+  return { ok: true, list: next, project };
+}
+
 /** Add `folder` (from the main part's dialog) when the list has room and the checks pass. */
 export async function addProject(
   appDir: string,
@@ -145,12 +163,7 @@ export async function addProject(
   if (list.projects.length >= MAX_PROJECTS) return { ok: false, why: fullWhy(list) };
   const c = await checkProject(folder, git, opts);
   if (!c.ok) return c;
-  if (list.projects.some((p) => p.path === c.path)) return { ok: false, why: 'already listed' };
-  const project: Project = { id: mintId(list.projects.map((p) => p.id)), path: c.path, name: plain(path.basename(c.path), NAME_CAP) };
-  const next: ProjectList = { version: 1, projects: [...list.projects, project] };
-  await writeAtomic(path.join(appDir, PROJECTS_FILE), next);
-  changed();
-  return { ok: true, list: next, project };
+  return saveProject(appDir, c.path, changed);
 }
 
 /** Drop a project from the list; its folder is not touched. */

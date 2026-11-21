@@ -44,7 +44,6 @@ export async function toolProblem(tool: Tool, p: string, projects: readonly stri
   for (const project of projects) {
     if (inside(p, project) || inside(viaRealFolder, project) || inside(real, project)) return `inside the project ${path.basename(project)}`;
   }
-
   return null;
 }
 
@@ -58,17 +57,17 @@ export async function lookup(tool: Tool, entries: readonly string[], projects: r
   return null;
 }
 
-/** Each tool's state: a set path checked where it is; an unset one looked up on the PATH. */
+/** One tool's state: a set path checked where it is; an unset one looked up on the PATH. */
+export async function toolState(tool: Tool, settings: Settings, entries: readonly string[], projects: readonly string[]): Promise<ToolState> {
+  const set = settings.tools[tool];
+  if (set !== undefined) return { path: set, source: 'set', problem: await toolProblem(tool, set, projects) };
+  const found = await lookup(tool, entries, projects);
+  return found === null ? { path: null, source: 'missing', problem: 'not found on the PATH' } : { path: found, source: 'path', problem: null };
+}
+
+/** Each tool's state, as toolState. */
 export async function toolStates(settings: Settings, entries: readonly string[], projects: readonly string[]): Promise<Record<Tool, ToolState>> {
   const out = {} as Record<Tool, ToolState>;
-  for (const tool of TOOL_NAMES) {
-    const set = settings.tools[tool];
-    if (set !== undefined) {
-      out[tool] = { path: set, source: 'set', problem: await toolProblem(tool, set, projects) };
-    } else {
-      const found = await lookup(tool, entries, projects);
-      out[tool] = found === null ? { path: null, source: 'missing', problem: 'not found on the PATH' } : { path: found, source: 'path', problem: null };
-    }
-  }
+  for (const tool of TOOL_NAMES) out[tool] = await toolState(tool, settings, entries, projects);
   return out;
 }

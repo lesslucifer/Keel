@@ -1,18 +1,18 @@
 // The six requests' handlers: everything the shell does for the window except Electron itself. The
 // shell hands in its parts (the app folder, the PATH it read at start, its two dialogs, its test
 // alert and its push); the handlers read and write only the app folder, run git only through the
-// fixed commands, and run their reads and writes one at a time, so two changes never interleave. An
-// open dialog holds no place in that queue (state.get, a reload's, answers while it is open): the
-// work before it and the work after it each queue on their own, and the dialogs take turns in a
-// queue of their own. The dispatcher (bridge.ts) checks every call before a handler runs and passes
+// fixed commands, and run their reads and writes one at a time, so two changes never interleave.
+// Nothing slow holds that queue: neither an open dialog nor a project's git checks (state.get, a
+// reload's, answers meanwhile). The reads before them and the checks and write after them each
+// queue on their own, and the dialog flows take turns in a queue of their own. The dispatcher (bridge.ts) checks every call before a handler runs and passes
 // every string in the answer through plain().
 
 import path from 'node:path';
 import { TOOL_NAMES, type AlertOutcome, type AppState, type Change, type LoginPathState, type PushEvent, type Tool } from '../shared/contract.ts';
 import type { Handlers } from './bridge.ts';
 import { loadSettings, chooseTool, resetTool } from './settings.ts';
-import { loadProjects, addProject, removeProject, fullWhy, MAX_PROJECTS } from './projects.ts';
-import { toolStates } from './tools.ts';
+import { loadProjects, checkProject, saveProject, removeProject, fullWhy, MAX_PROJECTS } from './projects.ts';
+import { toolState, toolStates } from './tools.ts';
 
 /** What the Electron shell hands the handlers. */
 export interface Parts {
@@ -81,23 +81,27 @@ export function makeHandlers(parts: Parts): Handlers {
       }),
 
     // Refused before the dialog when the list is full or git is unusable: the owner picks nothing for nothing.
-    // After the dialog, git is read again (a setting may have changed while it was open) and addProject checks the list again.
+    // After the dialog, git is read again (a setting may have changed while it was open); the folder's git
+    // checks run outside the queue (each may take up to git's timeout); saveProject checks the list again.
     'projects.add': () =>
       dialogs(async (): Promise<Change> => {
         const usableGit = async (): Promise<Change | string> => {
-          const { projects, tools } = await read();
+          const settings = (await loadSettings(appDir)).value;
+          const projects = (await loadProjects(appDir)).value.projects;
           if (projects.length >= MAX_PROJECTS) return notDone(fullWhy({ version: 1, projects }));
-          const git = tools.git;
+          const git = await toolState('git', settings, parts.loginPath.entries, projects.map((p) => p.path));
           return git.path === null || git.problem !== null ? notDone('git was not found: choose it in the settings first') : git.path;
         };
         const before = await queue(usableGit);
         if (typeof before !== 'string') return before;
         const folder = await parts.chooseFolder();
         if (folder === null) return notDone('cancelled');
+        const git = await queue(usableGit);
+        if (typeof git !== 'string') return git;
+        const c = await checkProject(folder, git, runOpts());
+        if (!c.ok) return notDone(c.why);
         return queue(async (): Promise<Change> => {
-          const git = await usableGit();
-          if (typeof git !== 'string') return git;
-          const r = await addProject(appDir, folder, git, runOpts(), changed);
+          const r = await saveProject(appDir, c.path, changed);
           return r.ok ? DONE : notDone(r.why);
         });
       }),
