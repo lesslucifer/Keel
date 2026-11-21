@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { run, capture, LOCKED, OUTPUT_CAP } from '../../src/main/commands.ts';
-import { tempDir, recorder, program, realGit, sh, HANG, groupGone } from '../support/fs.ts';
+import { tempDir, recorder, program, realGit, sh, HANG, groupGone, holder, endHolder, bounded, alive, within } from '../support/fs.ts';
 
 // The app's own environment carries git settings that would redirect or hijack git if they reached it.
 process.env.GIT_DIR = '/nonexistent/hijack/.git';
@@ -46,6 +46,30 @@ test('a git that hangs is killed at the timeout with its whole process group, an
   const r = await run(git, 'toplevel', { project: dir }, { path: ['/usr/bin', '/bin'], timeoutMs: 300 });
   assert.deepEqual([r.timedOut, r.code], [true, null]);
   assert.ok(groupGone(Number(readFileSync(path.join(dir, 'pid'), 'utf8'))), 'the hung git or its child is still running');
+});
+
+test('a program that exits while a descendant that left its process group still holds its output is answered from its own exit, within the timeout', async (t) => {
+  const dir = tempDir(t, 'run');
+  const pidFile = path.join(dir, 'holder');
+  endHolder(t, pidFile);
+  const fake = program(path.join(dir, 'fake'), `#!/bin/sh\necho answer\n${holder(pidFile, true)}\nexit 0\n`);
+  const r = await bounded(6_000, 'capture', capture(fake, [], { PATH: '/usr/bin:/bin' }, 2_000));
+  assert.deepEqual([r.code, r.timedOut, r.startError, r.stdout], [0, false, null, 'answer\n']);
+});
+
+test('a program that exits 0 while its own background job holds its output is answered with its exit code, and the job is never killed', async (t) => {
+  const dir = tempDir(t, 'run');
+  const pidFile = path.join(dir, 'holder');
+  endHolder(t, pidFile);
+  const fake = program(path.join(dir, 'fake'), `#!/bin/sh\necho answer\n${holder(pidFile, false)}\nexit 0\n`);
+  const start = Date.now();
+  const r = await capture(fake, [], { PATH: '/usr/bin:/bin' }, 1_500);
+  assert.deepEqual([r.code, r.timedOut, r.startError, r.stdout], [0, false, null, 'answer\n']);
+  assert.ok(await within(3_000, () => existsSync(pidFile) && readFileSync(pidFile, 'utf8').trim() !== ''), 'the background job never started');
+  const pid = Number(readFileSync(pidFile, 'utf8'));
+  // Past the timeout the program had: its group is never killed after it exited by itself.
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, start + 2_000 - Date.now())));
+  assert.ok(alive(pid), 'the background job was killed after the program had exited by itself');
 });
 
 test('a git that cannot start is reported with the reason, not thrown', async (t) => {

@@ -1,6 +1,7 @@
 // Temp folders, fake programs and snapshots for the integration tests. Everything lives under
 // os.tmpdir() and is removed when its test ends. A fake that can hang never outlives the test
-// process: it polls its parent and exits once the parent is gone (a panic, a failed assertion, ^C).
+// process: it polls its parent and exits once the parent is gone (a panic, a failed assertion, ^C);
+// a background job from holder() polls the test process itself, since its parent is meant to exit first.
 import { mkdtempSync, realpathSync, rmSync, writeFileSync, chmodSync, existsSync, readdirSync, lstatSync, readlinkSync, readFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -34,6 +35,67 @@ export function recorder(file: string, record: string, code = 0, stdout = ''): s
  * loop ends within a tenth of a second of that parent's death, however the parent died.
  */
 export const HANG = 'while kill -0 "$PPID" 2>/dev/null; do /bin/sleep 0.1; done';
+
+/** Wait until `done()` holds, checking every 20 ms, for at most `ms`; whether it held. */
+export async function within(ms: number, done: () => boolean): Promise<boolean> {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (done()) return true;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  return done();
+}
+
+/** `p`, or a rejection naming `what` once `ms` pass first: a hang fails the test instead of stalling it. */
+export function bounded<T>(ms: number, what: string, p: Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what}: still pending after ${ms} ms`)), ms);
+  });
+  return Promise.race([p, late]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * A shell line that starts a background job holding the script's stdout and stderr, as an rc file's
+ * `cmd &` does. The job writes its pid to `pidFile` and ends within a tenth of a second of this test
+ * process's death, or after 30 s, whichever comes first, so it never outlives the test. With `escape`
+ * it first leaves the script's process group (perl's setpgrp, as `setsid cmd &` would), so a group
+ * kill cannot reach it. Register `endHolder(t, pidFile)` to end it at the test's end.
+ */
+export function holder(pidFile: string, escape: boolean): string {
+  const loop = `echo $$ > ${pidFile}; n=0; while kill -0 ${process.pid} 2>/dev/null && [ $n -lt 300 ]; do /bin/sleep 0.1; n=$((n+1)); done`;
+  return escape ? `/usr/bin/perl -e 'setpgrp(0,0); exec "/bin/sh", "-c", $ARGV[0] or die' '${loop}' &` : `/bin/sh -c '${loop}' &`;
+}
+
+/** At the test's end, kill the holder in `pidFile` and its group, if still there. */
+export function endHolder(t: { after: (fn: () => void) => void }, pidFile: string): void {
+  t.after(() => {
+    let pid: number;
+    try {
+      pid = Number(readFileSync(pidFile, 'utf8'));
+    } catch {
+      return;
+    }
+    if (!Number.isInteger(pid) || pid <= 1) return;
+    for (const target of [-pid, pid]) {
+      try {
+        process.kill(target, 'SIGKILL');
+      } catch {
+        // already gone
+      }
+    }
+  });
+}
+
+/** Whether process `pid` is still running. */
+export function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
 
 /** Whether no process is left in the process group `pgid` (a detached child's group is its pid). */
 export function groupGone(pgid: number): boolean {

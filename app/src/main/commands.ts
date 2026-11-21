@@ -81,10 +81,30 @@ export interface Captured {
   startError: string | null;
 }
 
+/** How long the pipes may stay open once the program itself has exited, for its last output to arrive. */
+export const EXIT_GRACE_MS = 200;
+
+/** The longest the answer waits, after the timeout's group kill, for every process in the group to be gone. */
+export const GROUP_GONE_MS = 2_000;
+
+/** Whether no process is left in the process group `pgid`. EPERM is not gone: macOS answers it while a killed member is still exiting. */
+function groupGone(pgid: number): boolean {
+  try {
+    process.kill(-pgid, 0);
+    return false;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code !== 'EPERM';
+  }
+}
+
 /**
  * Run `file` with `args` and exactly `env`: never a shell, stdin closed, cwd /, each stream capped.
- * The child leads its own process group, so at the timeout the whole group - a shell's children
- * too - is killed before the answer returns. Never throws for the program's own failure.
+ * The answer comes from the program's own exit, never from the pipes alone: a background job or a
+ * process that left the group may hold them open for ever. Once the program has exited by itself,
+ * the pipes get EXIT_GRACE_MS for its last output, then are closed and it is answered with its code;
+ * nothing is killed after that exit (what it left running is the owner's). If the program has not
+ * exited at the timeout, its whole process group - a shell's children too - is killed, and the
+ * answer waits (at most GROUP_GONE_MS) until the group is gone. Never throws for the program's own failure.
  */
 export function capture(file: string, args: readonly string[], env: Record<string, string>, timeoutMs: number): Promise<Captured> {
   return new Promise((resolve) => {
@@ -93,13 +113,18 @@ export function capture(file: string, args: readonly string[], env: Record<strin
     const size = { out: 0, err: 0 };
     let timedOut = false;
     let settled = false;
+    let grace: NodeJS.Timeout | undefined;
+    const child = spawn(file, args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'], env, cwd: '/', detached: true });
     const done = (code: number | null, startError: string | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(grace);
+      // Whatever still holds the pipes, the app stops reading them.
+      child.stdout.destroy();
+      child.stderr.destroy();
       resolve({ code, startError, timedOut, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') });
     };
-    const child = spawn(file, args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'], env, cwd: '/', detached: true });
     child.stdout.on('data', (b: Buffer) => {
       if (size.out < OUTPUT_CAP) out.push(b.subarray(0, OUTPUT_CAP - size.out));
       size.out += b.length;
@@ -117,11 +142,26 @@ export function capture(file: string, args: readonly string[], env: Record<strin
       }
     }, timeoutMs);
     child.on('error', (e: NodeJS.ErrnoException) => done(null, e.code ?? e.message));
-    // After a timeout, answer at exit: the group is dead, but nothing waits on pipes it may have passed on.
-    child.on('exit', () => {
-      if (timedOut) done(null, null);
+    child.on('exit', (code) => {
+      if (timedOut) {
+        // Killed with its group: answer once no process is left in it (a killed member may still be exiting).
+        const pgid = child.pid;
+        const until = Date.now() + GROUP_GONE_MS;
+        const check = () => {
+          if (pgid === undefined || groupGone(pgid) || Date.now() >= until) done(null, null);
+          else setTimeout(check, 10);
+        };
+        check();
+        return;
+      }
+      // Exited by itself: no group kill from here on; the pipes get a short grace, then its own code answers.
+      clearTimeout(timer);
+      grace = setTimeout(() => setImmediate(() => done(code, null)), EXIT_GRACE_MS);
     });
-    child.on('close', (code) => done(timedOut ? null : code, null));
+    // After a timeout only the exit's wait above answers: the pipes close as the group dies, before every member is gone.
+    child.on('close', (code) => {
+      if (!timedOut) done(code, null);
+    });
   });
 }
 

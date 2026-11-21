@@ -1,10 +1,10 @@
 // The PATH read at its real boundary, a spawned login shell; fake shells stand in for the owner's.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { readLoginPath, SYSTEM_PATH } from '../../src/main/login-path.ts';
-import { tempDir, program, HANG, groupGone } from '../support/fs.ts';
+import { tempDir, program, HANG, groupGone, holder, endHolder, bounded, alive, mk, within } from '../support/fs.ts';
 
 process.env.GIT_DIR = '/nonexistent/.git';
 process.env.KEEL_TEST_SECRET = 'must-not-leak';
@@ -60,4 +60,27 @@ test('a login shell that cannot start falls back', async (t) => {
   const r = await readLoginPath({ shell: path.join(dir, 'missing-shell') });
   assert.equal(r.source, 'fallback');
   assert.match(r.reason ?? '', /^the login shell could not start/);
+});
+
+/** The owner's real zsh with HOME at a temp folder whose .zshrc sets PATH, then starts `job`. */
+async function zshWith(t: { after: (fn: () => void) => void }, escape: boolean) {
+  const dir = tempDir(t, 'login');
+  const home = mk(path.join(dir, 'home'));
+  const pidFile = path.join(dir, 'holder');
+  endHolder(t, pidFile);
+  writeFileSync(path.join(home, '.zshrc'), `export PATH=/opt/keel-test/bin:/usr/bin:/bin\n${holder(pidFile, escape)}\n`);
+  const r = await bounded(8_000, 'readLoginPath', readLoginPath({ shell: '/bin/zsh', source: { HOME: home } }));
+  return { r, pidFile };
+}
+
+test('a .zshrc whose background job left the process group (setpgrp) still gives the PATH, within the timeout', async (t) => {
+  const { r } = await zshWith(t, true);
+  assert.deepEqual(r, { entries: ['/opt/keel-test/bin', '/usr/bin', '/bin'], source: 'login-shell', reason: null });
+});
+
+test('a .zshrc that leaves a plain background job holding the output gives the PATH, and the job is not killed', async (t) => {
+  const { r, pidFile } = await zshWith(t, false);
+  assert.deepEqual(r, { entries: ['/opt/keel-test/bin', '/usr/bin', '/bin'], source: 'login-shell', reason: null });
+  assert.ok(await within(3_000, () => existsSync(pidFile) && readFileSync(pidFile, 'utf8').trim() !== ''), 'the background job never started');
+  assert.ok(alive(Number(readFileSync(pidFile, 'utf8'))), "the owner's background job was killed");
 });
