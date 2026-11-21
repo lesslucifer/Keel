@@ -635,7 +635,9 @@ fn no_line_carries_the_credential_or_the_chat() {
 }
 
 // The body's header parse, as a unit: python3 loads the checkout's script by path (its __main__
-// guard keeps main from running) and prints what parse_body and its builders make of a body.
+// guard keeps main from running) and prints what parse_body and its builders make of a body. The
+// bytes are decoded as Python decodes an argument (surrogateescape), and any lone surrogate left
+// in the result is shown as U+FFFD, so the JSON stays valid for serde.
 
 const DRIVE: &str = r#"
 import importlib.util, json, sys
@@ -643,16 +645,28 @@ sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("notify_owner", sys.argv[1])
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
-text = sys.stdin.buffer.read().decode("utf-8")
+text = sys.stdin.buffer.read().decode("utf-8", "surrogateescape")
+def shown(v):
+    if isinstance(v, str):
+        return v.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+    if isinstance(v, dict):
+        return {k: shown(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [shown(x) for x in v]
+    return v
 try:
     p = m.parse_body(text)
     out = {"parsed": p, "alert": m.alert_value(p), "question": m.question_value(p), "message": m.message_text(p)}
 except m.NotifyError as error:
     out = {"error": str(error)}
-print(json.dumps(out))
+print(json.dumps(shown(out)))
 "#;
 
 fn parse(text: &str) -> serde_json::Value {
+    parse_bytes(text.as_bytes())
+}
+
+fn parse_bytes(text: &[u8]) -> serde_json::Value {
     let mut child = common::cmd("python3")
         .args(["-c", DRIVE])
         .arg(root().join("scripts/notify-owner.py"))
@@ -662,7 +676,7 @@ fn parse(text: &str) -> serde_json::Value {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(text.as_bytes()).unwrap();
+    child.stdin.take().unwrap().write_all(text).unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success(), "python3 could not drive parse_body: {}", String::from_utf8_lossy(&out.stderr));
     serde_json::from_slice(&out.stdout).unwrap()
@@ -778,4 +792,116 @@ fn parse_shrinks_a_multibyte_body_to_its_byte_budgets() {
         }
     }
     assert_eq!(got["alert"]["link"], "keel://wu/E-A.W1");
+}
+
+// Review round of rule commit A (c47f692): a byte that is not UTF-8, a writer that hangs, and what
+// the writer's environment holds.
+
+#[test]
+fn parse_blanks_a_byte_that_is_not_utf8() {
+    let got = parse_bytes(b"question: q1\nwu: E-X.W1\nHead\xff line\nnext\xfe\n");
+    assert!(got.get("error").is_none(), "a byte that is not UTF-8 was refused: {got}");
+    assert_eq!(got["alert"]["headline"], "Head line");
+    assert_eq!(got["alert"]["lines"], serde_json::json!(["next"]));
+    assert_eq!(got["question"]["headline"], "Head line");
+}
+
+#[test]
+fn a_byte_that_is_not_utf8_in_the_argument_still_previews_and_writes() {
+    use std::os::unix::ffi::OsStrExt;
+    let dir = started();
+    let text = std::ffi::OsStr::from_bytes(b"wu: E-X.W1\nHead\xff line\n");
+    // a strict UTF-8 locale: Python's stdout then refuses a lone surrogate unless the sender escapes it
+    let strict = |args: &[&std::ffi::OsStr], base: &str| {
+        sender(dir.path())
+            .args(args)
+            .env("KEEL_NOTIFY_ENV", dir.path().join(".env"))
+            .env("KEEL_NOTIFY_ACCESS", dir.path().join("access.json"))
+            .env("KEEL_NOTIFY_API_BASE", base)
+            .env("LC_ALL", "en_US.UTF-8")
+            .env_remove("PYTHONUTF8")
+            .env_remove("PYTHONIOENCODING")
+            .current_dir(dir.path())
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let preview = strict(&[std::ffi::OsStr::new("--dry-run"), text], UNREACHED);
+    assert!(preview.status.success(), "a non-UTF-8 byte broke the dry run: {}", stderr(&preview));
+    assert!(stdout(&preview).contains(r#""headline":"Head line""#), "{}", stdout(&preview));
+    let out = strict(&[std::ffi::OsStr::new("--send"), text], UNREACHED);
+    assert_send_was_tried(&out);
+    let alerts = alert_lines(&dir);
+    assert_eq!(alerts.len(), 1, "no alert line for a non-UTF-8 byte: {}", stderr(&out));
+    assert_eq!(alerts[0]["value"]["headline"], "Head line");
+}
+
+/// Every pid a fake writer recorded is killed when the test ends, pass or fail.
+struct Reap(PathBuf);
+
+impl Drop for Reap {
+    fn drop(&mut self) {
+        for pid in std::fs::read_to_string(&self.0).unwrap_or_default().split_whitespace() {
+            let _ = common::cmd("kill").args(["-KILL", pid]).stderr(Stdio::null()).status();
+        }
+    }
+}
+
+fn alive(pid: &str) -> bool {
+    common::cmd("kill").args(["-0", pid]).stderr(Stdio::null()).status().unwrap().success()
+}
+
+/// Replace the temp repo's router-app.sh with `body` (a /bin/sh script).
+fn fake_app(dir: &TempDir, body: &str) {
+    std::fs::write(dir.path().join("scripts/router-app.sh"), body).unwrap();
+}
+
+#[test]
+fn a_writer_that_hangs_is_killed_with_its_children_and_its_lock_released() {
+    let dir = started();
+    let pids = dir.path().join(".router/app/pids");
+    let _reap = Reap(pids.clone());
+    // holds the lock, starts a child, and waits; its TERM trap releases the lock as router-app.sh's does
+    fake_app(
+        &dir,
+        r#"d=$(cd "$(dirname "$0")/.." && pwd -P)/.router/app
+mkdir "$d/.lock" || exit 1
+trap 'rmdir "$d/.lock"; exit 1' TERM
+echo $$ > "$d/pids"
+sleep 300 &
+echo $! >> "$d/pids"
+wait
+"#,
+    );
+    let started_at = Instant::now();
+    let out = run(&dir, &["--send", "wu: E-X.W2\nPlan to read\n"], UNREACHED);
+    assert!(started_at.elapsed() < Duration::from_secs(20), "the sender waited {:?}", started_at.elapsed());
+    assert_send_was_tried(&out);
+    assert!(stderr(&out).contains("no desk alert") && stderr(&out).contains("did not answer"), "{}", stderr(&out));
+    let recorded = std::fs::read_to_string(&pids).unwrap();
+    assert_eq!(recorded.split_whitespace().count(), 2, "the fake did not record its pids: {recorded:?}");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while recorded.split_whitespace().any(alive) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let left: Vec<&str> = recorded.split_whitespace().filter(|p| alive(p)).collect();
+    assert!(left.is_empty(), "the stalled writer's processes outlived the sender: {left:?}");
+    assert!(!dir.path().join(".router/app/.lock").exists(), "the stalled writer's lock was left behind");
+}
+
+#[test]
+fn the_writer_never_sees_the_credential_or_the_test_seam() {
+    let dir = started();
+    fake_app(
+        &dir,
+        r#"env > "$(cd "$(dirname "$0")/.." && pwd -P)/.router/app/env"
+echo "OK run=fake n=2"
+"#,
+    );
+    let out = run_with(&dir, &["--send", "wu: E-X.W2\nPlan to read\n"], UNREACHED, &[("TELEGRAM_BOT_TOKEN", TOKEN), ("TELEGRAM_STATE_DIR", "/x")]);
+    assert_send_was_tried(&out);
+    let env = std::fs::read_to_string(dir.path().join(".router/app/env")).unwrap();
+    let leaked: Vec<&str> = env.lines().filter(|l| l.starts_with("TELEGRAM_") || l.starts_with("KEEL_NOTIFY_")).map(|l| l.split('=').next().unwrap()).collect();
+    assert!(leaked.is_empty(), "router-app.sh was handed {leaked:?}");
+    assert!(!env.contains(TOKEN), "router-app.sh was handed the credential");
 }
