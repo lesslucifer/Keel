@@ -22,7 +22,8 @@ test('a fake git gets the locked flags first, the slot whole, no shell, and no G
   const r = await run(git, 'toplevel', { project }, { path: ['/usr/bin', '/bin'] });
   assert.deepEqual([r.code, r.stdout, r.timedOut, r.startError], [0, '/somewhere\n', false, null]);
   const seen = JSON.parse(readFileSync(record, 'utf8')) as { argv: string[]; env: Record<string, string> };
-  assert.deepEqual(seen.argv, [...LOCKED, '-C', project, 'rev-parse', '--show-toplevel']);
+  assert.deepEqual(seen.argv, ['-c', 'core.fsmonitor=false', '--no-optional-locks', '--no-lazy-fetch', '-C', project, 'rev-parse', '--show-toplevel']);
+  assert.deepEqual(seen.argv.slice(0, LOCKED.length), LOCKED);
   assert.ok(!existsSync(path.join(dir, 'pwned')) && !existsSync(path.join('/', 'pwned')) && !existsSync(path.join(dir, 'pwned2')), 'a shell ran the slot');
   assert.equal(seen.env.PATH, '/usr/bin:/bin');
   // __CF_USER_TEXT_ENCODING is set by macOS's CoreFoundation inside the child itself (env -i node shows it too).

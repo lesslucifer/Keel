@@ -10,7 +10,7 @@ import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { ProjectEntry } from '../shared/contract.ts';
 import { PROJECT_ID } from './bridge.ts';
-import { run, type RunOptions } from './commands.ts';
+import { run, MIN_GIT, type Captured, type RunOptions } from './commands.ts';
 import { load, writeAtomic } from './store.ts';
 import { plain } from './text.ts';
 
@@ -74,6 +74,13 @@ async function real(p: string): Promise<string | null> {
   }
 }
 
+/** Why a git run did not answer, if it did not: timed out, or a git too old for the locked flags. */
+function gitFailed(r: Captured): string | null {
+  if (r.timedOut) return 'git did not answer';
+  if (r.code === 129 && r.stderr.includes('--no-lazy-fetch')) return `this git is older than ${MIN_GIT}: choose a newer git in the settings`;
+  return null;
+}
+
 /** The folder's real path when it is a Keel project's main checkout, else why not. Reads only. */
 export async function checkProject(folder: string, git: string, opts: RunOptions): Promise<{ ok: true; path: string } | { ok: false; why: string }> {
   if (typeof folder !== 'string' || !path.isAbsolute(folder)) return { ok: false, why: 'the folder must be an absolute path' };
@@ -81,16 +88,19 @@ export async function checkProject(folder: string, git: string, opts: RunOptions
   if (dir === null) return { ok: false, why: 'not found' };
   if (!(await stat(dir)).isDirectory()) return { ok: false, why: 'not a folder' };
   const top = await run(git, 'toplevel', { project: dir }, opts);
-  if (top.timedOut) return { ok: false, why: 'git did not answer' };
+  const topFailed = gitFailed(top);
+  if (topFailed !== null) return { ok: false, why: topFailed };
   if (top.code !== 0) return { ok: false, why: 'not a git checkout' };
   if ((await real(top.stdout.trim())) !== dir) return { ok: false, why: 'not the top folder of its git checkout' };
   const common = await run(git, 'common-dir', { project: dir }, opts);
-  if (common.timedOut) return { ok: false, why: 'git did not answer' };
+  const commonFailed = gitFailed(common);
+  if (commonFailed !== null) return { ok: false, why: commonFailed };
   if (common.code !== 0 || (await real(common.stdout.trim())) !== path.join(dir, '.git')) {
     return { ok: false, why: 'a linked worktree or a submodule: add its main checkout' };
   }
   const config = await run(git, 'has-config', { project: dir }, opts);
-  if (config.timedOut) return { ok: false, why: 'git did not answer' };
+  const configFailed = gitFailed(config);
+  if (configFailed !== null) return { ok: false, why: configFailed };
   if (config.code !== 0) return { ok: false, why: 'its HEAD does not commit .keel/config.toml' };
   return { ok: true, path: dir };
 }

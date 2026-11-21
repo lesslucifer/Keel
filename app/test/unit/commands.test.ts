@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { LOCKED, NO_EXTERNAL, ENV_KEYS, READ_TIMEOUT_MS, COMMANDS, argv, lock, childEnv } from '../../src/main/commands.ts';
 import { seeded, hostileString, pick } from '../support/seeded.ts';
 
-test('every fixed command starts with -c core.fsmonitor=false --no-optional-locks', () => {
-  assert.deepEqual(LOCKED, ['-c', 'core.fsmonitor=false', '--no-optional-locks']);
-  for (const name of Object.keys(COMMANDS)) assert.deepEqual(argv(name, { project: '/p' }).slice(0, 3), LOCKED, name);
+test('every fixed command starts with -c core.fsmonitor=false --no-optional-locks --no-lazy-fetch', () => {
+  // --no-lazy-fetch: in a partial clone a read never fetches a missing object into the project's .git.
+  assert.deepEqual(LOCKED, ['-c', 'core.fsmonitor=false', '--no-optional-locks', '--no-lazy-fetch']);
+  for (const name of Object.keys(COMMANDS)) assert.deepEqual(argv(name, { project: '/p' }).slice(0, 4), LOCKED, name);
 });
 
 test('the fixed commands of W7 are exactly the plan\'s three lines', () => {
@@ -21,8 +22,8 @@ test('a read times out after 10 s', () => {
 
 test('a project slot is one absolute path, passed as one argument whatever shell characters it holds', () => {
   const p = '/Users/me/a b/$(touch pwned); x`id`|&>*';
-  assert.equal(argv('toplevel', { project: p })[4], p);
-  assert.equal(argv('toplevel', { project: p }).length, 7);
+  assert.equal(argv('toplevel', { project: p })[LOCKED.length + 1], p);
+  assert.equal(argv('toplevel', { project: p }).length, LOCKED.length + 4);
 });
 
 test('a project slot refuses a relative path, an empty one, NUL, a control character, a leading dash, a home shorthand', () => {

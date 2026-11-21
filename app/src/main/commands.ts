@@ -1,5 +1,6 @@
 // The fixed commands: the only git the main part runs. Each is a named shape with typed slots; the
-// line always starts with the locked flags (no fsmonitor, no optional locks); a diff, show or log -p
+// line always starts with the locked flags (no fsmonitor, no optional locks, no lazy fetch: in a
+// partial clone a read never fetches a missing object into the project's .git); a diff, show or log -p
 // shape gets --no-ext-diff --no-textconv; git runs with no shell, stdin closed, and an environment
 // built from nothing but the login PATH and five account variables, so no inherited GIT_* reaches it.
 // capture() is the one way the main part spawns anything (login-path.ts uses it too).
@@ -7,7 +8,10 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
-export const LOCKED: readonly string[] = Object.freeze(['-c', 'core.fsmonitor=false', '--no-optional-locks']);
+export const LOCKED: readonly string[] = Object.freeze(['-c', 'core.fsmonitor=false', '--no-optional-locks', '--no-lazy-fetch']);
+
+/** The first git with --no-lazy-fetch; an older one refuses every fixed command. */
+export const MIN_GIT = '2.44';
 export const NO_EXTERNAL: readonly string[] = Object.freeze(['--no-ext-diff', '--no-textconv']);
 
 /** The variables a child takes from the app's environment, besides PATH (which is the login PATH). */

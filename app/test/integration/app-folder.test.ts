@@ -228,3 +228,12 @@ test('removing an id not on the list is refused, changes nothing and pushes noth
   assert.equal(c.n, 0);
   assert.deepEqual(readdirSync(app), []);
 });
+
+test('a git too old for --no-lazy-fetch is named, not reported as a folder that is not a git checkout', async (t) => {
+  const dir = tempDir(t, 'projects');
+  const home = mk(path.join(dir, 'home'));
+  const project = keelRepo(path.join(dir, 'proj'));
+  const old = program(path.join(mk(path.join(dir, 'old')), 'git'), "#!/bin/sh\necho 'unknown option: --no-lazy-fetch' >&2\nexit 129\n");
+  const r = await addProject(path.join(dir, 'app-folder'), project, old, opts(home));
+  assert.match(r.ok ? 'accepted' : r.why, /older than 2\.44/);
+});
