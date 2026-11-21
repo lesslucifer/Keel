@@ -87,10 +87,13 @@ distillation: >-
   active), the router heartbeat's value and the no-write cases, per the epic's distillation plan.
 follow-ups:
   - >-
-    The independent review's surviving mutants M10, M11, M12, M15, M19 and M20 of scripts/router-worker.sh: their
-    details are in the router's relay of that review, not in this worker's hands; each to be judged for a test or
-    marked equivalent. Taken by: docs/backlog/local-app.yaml, in the row the router opens for the router scripts'
-    hardening (with W1's N1-N5), the owner's choice of when.
+    The independent review's surviving mutants of scripts/router-worker.sh at 95c16af, watchdog tests that did not
+    pin: M10 (the write calls lose their </dev/null), M11 (app_lines loses its symlink check), M12 (app_lines loses
+    its name check), M15a (no clip of a worker's state), M15b (no clip of its branch), M19 (no gd guard), M20 (a
+    state whose values are not an object read as {}). M15a and M15b are now pinned by
+    a_worker_lines_strings_are_clipped_to_their_lengths (142ed86): each mutant, applied to cd16ede in a scratch copy,
+    turns it red. The other five each want a test or an equivalence note. Taken by: docs/backlog/local-app.yaml, in
+    the row the router opens for the router scripts' hardening (with W1's N1-N5), the owner's choice of when.
   - >-
     A test that starts a run and then trips the git-dir check, to pin that nothing is written then (met by
     construction today). Taken by: the same backlog row, or this WU's code review if it asks for it.
