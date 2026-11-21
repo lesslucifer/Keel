@@ -183,7 +183,13 @@ just saving it. Never author substantive content yourself."
   `scripts/notify-owner.py --send` in the same turn; it prints `id N`
   (`--send "<text>"` where the host allows it). `--check` reaches the API and
   names the bot; `--dry-run` validates the body and prints the request, sending
-  nothing and reaching nothing.
+  nothing and reaching nothing. Where the sender reads a header, a message about
+  one work unit starts with the line `wu: <wu-id>`, and one that asks a question
+  adds `question: <id>`: the sender writes the desk alert first and ends the
+  message with the app's link. Where the project ships `scripts/router-app.sh`
+  (the update log the local app reads), write each work unit's stage, and
+  delete each stage and each answered question, at the moments
+  `references/commands.md` "Router: the update log" lists, in the same turn.
 - **Watch, never wait to be told.** Never end on "tell me when done": for every
   owner action you stage, arm in the same turn a watch on its observable state
   (commit, note, merge, origin, tag; run, draft, doc comments:

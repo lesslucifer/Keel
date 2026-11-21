@@ -84,6 +84,51 @@ PUSHED is true only once origin's main contains `$T`, so it is safe to arm when
 the action is staged (an equality check against local `main` fires at once, and
 one against `$T` never fires: the `--no-ff` merge pushes a new commit).
 
+## Router: the update log
+
+Where the project ships `scripts/router-app.sh` (the update log the local app
+reads, `.router/app/` in the main checkout), the router writes what only it
+knows: one plain-word command per moment, run in the turn the moment comes.
+Its `set` and `alert` carry free JSON and are the watchdog's and the sender's,
+never the router's.
+
+| When | Command |
+|---|---|
+| Session start, once, before any stage; then every live WU's stage again (start wipes the log) | `scripts/router-app.sh start <router-name>` |
+| The turn the planning worker is dispatched | `scripts/router-app.sh stage <wu> plan-in-work` |
+| The turn the plan is verified at its tip and the read-and-approve ask is sent | `scripts/router-app.sh stage <wu> plan-to-read <tip>` |
+| The turn the owner approves the plan (his word, or his sign-off of it) | `scripts/router-app.sh stage <wu> plan-approved <tip>` |
+| The turn the build worker is dispatched | `scripts/router-app.sh stage <wu> building` |
+| The turn the review of the WU's tip starts | `scripts/router-app.sh stage <wu> in-review <tip>` |
+| The turn the watch reports the WU merged into its epic (git then proves its state) | `scripts/router-app.sh del wu/<wu>/stage` |
+| The turn the owner's answer to that question is read | `scripts/router-app.sh del question/<id>` |
+
+`<router-name>` is the session's name as the fleet list shows it
+(`[a-z0-9][a-z0-9-]{0,31}`), `<wu>` the WU id (`E-APPLIST.W3`), `<tip>` 7 to 40
+lowercase hex, `<id>` the question's short name (`[a-z0-9][a-z0-9-]{0,40}`).
+Type the values: the router guard admits exactly these shapes, one command per
+call. `OK run=… n=…` is success; a refusal exits 2 and writes nothing;
+`LOCKED <path>` means a killed writer left its lock, which the owner removes.
+
+**The owner message's header.** Where the project's sender reads one
+(`scripts/notify-owner.py`), a message about one work unit starts with the line
+`wu: <wu-id>`, and a message that asks a question adds `question: <id>`, the
+name its later `del question/<id>` uses: at the very top, each once, either
+order, nothing else on the line. The sender drops them from the message, writes
+the question line and one desk-alert line before it sends, and ends the message
+with the link `keel://wu/<wu-id>`. A mistyped header sends and writes nothing
+(exit 1, naming the line): fix it and send again. `desk alert n=<n>` before
+`id N` means the alert was written; `no desk alert: <why>` on stderr means only
+the message went out (`no run` there: run `start`). `--dry-run` shows the
+message and the lines it would write.
+```
+wu: E-APPLIST.W3
+question: link-scheme
+Plan to read: E-APPLIST.W3, the alert lines
+Open the plan; one question: keep keel:// as the link?
+cd <abs worktree> && open docs/work/<date>-<epic>-w3-plan.html
+```
+
 ## Router: worktree for an epic or a WU
 ```sh
 <launcher> worktree add wu/$E/$W        # or epic/$E; prints WORKTREE path=… branch=… base=… tip=…
