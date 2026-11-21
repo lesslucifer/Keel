@@ -82,6 +82,11 @@ export function commitsConfig(out: string): boolean {
   return /^100(644|755) blob ([0-9a-f]{40}|[0-9a-f]{64})\t\.keel\/config\.toml\n$/.test(out);
 }
 
+/** The refusal while the list is full. */
+export function fullWhy(list: ProjectList): string {
+  return `this version keeps one project: remove ${list.projects[0]?.name ?? 'it'} first`;
+}
+
 /** Why a git run did not answer, if it did not: timed out, or a git too old for the locked flags. */
 function gitFailed(r: Captured): string | null {
   if (r.timedOut) return 'git did not answer';
@@ -126,9 +131,7 @@ export async function addProject(
 ): Promise<{ ok: true; list: ProjectList; project: Project } | { ok: false; why: string }> {
   if (typeof folder !== 'string' || !path.isAbsolute(folder)) return { ok: false, why: 'the folder must be an absolute path' };
   const list = (await loadProjects(appDir)).value;
-  if (list.projects.length >= MAX_PROJECTS) {
-    return { ok: false, why: `this version keeps one project: remove ${list.projects[0]?.name ?? 'it'} first` };
-  }
+  if (list.projects.length >= MAX_PROJECTS) return { ok: false, why: fullWhy(list) };
   const c = await checkProject(folder, git, opts);
   if (!c.ok) return c;
   if (list.projects.some((p) => p.path === c.path)) return { ok: false, why: 'already listed' };

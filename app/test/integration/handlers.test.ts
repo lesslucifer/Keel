@@ -9,7 +9,7 @@ import { dispatcher, type EventLike } from '../../src/main/bridge.ts';
 import { makeHandlers, prepare, type Parts } from '../../src/main/handlers.ts';
 import { loadSettings } from '../../src/main/settings.ts';
 import type { AlertOutcome, LoginPathState, Tool } from '../../src/shared/contract.ts';
-import { tempDir, program, realGit, sh, snapshot, mk, recorder } from '../support/fs.ts';
+import { tempDir, program, realGit, sh, snapshot, mk, recorder, bounded, within } from '../support/fs.ts';
 
 const GIT = realGit();
 const PAGE = 'app://keel/index.html';
@@ -167,6 +167,31 @@ test('projects.add refuses a git inside the folder being added, set or found on 
   assert.match(found.value.why, /^git is inside the project proj/);
   assert.ok(!existsSync(record), 'the git found on the PATH was run on the folder');
   assert.deepEqual((await w.call('state.get') as { ok: true; value: { projects: unknown[] } }).value.projects, []);
+});
+
+test('state.get answers while a folder or file dialog stays open; the change goes on when the dialog answers', async (t) => {
+  const w = world(t);
+  const project = keelRepo(path.join(w.dir, 'proj'));
+  const keel = program(path.join(mk(path.join(w.dir, 'other')), 'keel'), '#!/bin/sh\n');
+  let answerFolder: (v: string | null) => void = () => undefined;
+  let answerFile: (v: string | null) => void = () => undefined;
+  let open = 0;
+  w.parts.chooseFolder = () => { open++; return new Promise((r) => { answerFolder = r; }); };
+  w.parts.chooseFile = () => { open++; return new Promise((r) => { answerFile = r; }); };
+  t.after(() => { answerFolder(null); answerFile(null); });
+  const adding = w.call('projects.add');
+  assert.ok(await within(5_000, () => open === 1), 'the folder dialog never opened');
+  const during = (await bounded(3_000, 'state.get while the folder dialog is open', w.call('state.get'))) as { ok: true; value: { projects: unknown[] } };
+  assert.deepEqual(during.value.projects, []);
+  answerFolder(project);
+  assert.deepEqual(await adding, { ok: true, value: { done: true } });
+  const choosing = w.call('settings.choose', { tool: 'keel' });
+  assert.ok(await within(5_000, () => open === 2), 'the file dialog never opened');
+  const again = (await bounded(3_000, 'state.get while the file dialog is open', w.call('state.get'))) as { ok: true; value: { projects: unknown[] } };
+  assert.equal(again.value.projects.length, 1);
+  answerFile(keel);
+  assert.deepEqual(await choosing, { ok: true, value: { done: true } });
+  assert.equal(w.seen.pushes, 2);
 });
 
 test('prepare() loads the settings, then reads the PATH with the set tools\' folders for its fallback', async (t) => {

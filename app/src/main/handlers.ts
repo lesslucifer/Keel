@@ -1,15 +1,17 @@
 // The six requests' handlers: everything the shell does for the window except Electron itself. The
 // shell hands in its parts (the app folder, the PATH it read at start, its two dialogs, its test
 // alert and its push); the handlers read and write only the app folder, run git only through the
-// fixed commands, and run one request at a time, so two changes never interleave their reads and
-// writes. The dispatcher (bridge.ts) checks every call before a handler runs and passes every
-// string in the answer through plain().
+// fixed commands, and run their reads and writes one at a time, so two changes never interleave. An
+// open dialog holds no place in that queue (state.get, a reload's, answers while it is open): the
+// work before it and the work after it each queue on their own, and the dialogs take turns in a
+// queue of their own. The dispatcher (bridge.ts) checks every call before a handler runs and passes
+// every string in the answer through plain().
 
 import path from 'node:path';
 import { TOOL_NAMES, type AlertOutcome, type AppState, type Change, type LoginPathState, type PushEvent, type Tool } from '../shared/contract.ts';
 import type { Handlers } from './bridge.ts';
 import { loadSettings, chooseTool, resetTool } from './settings.ts';
-import { loadProjects, addProject, removeProject, MAX_PROJECTS } from './projects.ts';
+import { loadProjects, addProject, removeProject, fullWhy, MAX_PROJECTS } from './projects.ts';
 import { toolStates } from './tools.ts';
 
 /** What the Electron shell hands the handlers. */
@@ -59,6 +61,8 @@ export async function prepare(appDir: string, readPath: (toolDirs: readonly stri
 export function makeHandlers(parts: Parts): Handlers {
   const { appDir } = parts;
   const queue = serial();
+  // One dialog flow at a time, outside `queue`: a dialog may stay open as long as the owner likes.
+  const dialogs = serial();
   const changed = () => parts.push('state.changed');
   const runOpts = () => ({ path: parts.loginPath.entries, ...(parts.env === undefined ? {} : { source: parts.env }) });
 
@@ -77,16 +81,25 @@ export function makeHandlers(parts: Parts): Handlers {
       }),
 
     // Refused before the dialog when the list is full or git is unusable: the owner picks nothing for nothing.
+    // After the dialog, git is read again (a setting may have changed while it was open) and addProject checks the list again.
     'projects.add': () =>
-      queue(async (): Promise<Change> => {
-        const { projects, tools } = await read();
-        if (projects.length >= MAX_PROJECTS) return notDone(`this version keeps one project: remove ${projects[0]?.name ?? 'it'} first`);
-        const git = tools.git;
-        if (git.path === null || git.problem !== null) return notDone('git was not found: choose it in the settings first');
+      dialogs(async (): Promise<Change> => {
+        const usableGit = async (): Promise<Change | string> => {
+          const { projects, tools } = await read();
+          if (projects.length >= MAX_PROJECTS) return notDone(fullWhy({ version: 1, projects }));
+          const git = tools.git;
+          return git.path === null || git.problem !== null ? notDone('git was not found: choose it in the settings first') : git.path;
+        };
+        const before = await queue(usableGit);
+        if (typeof before !== 'string') return before;
         const folder = await parts.chooseFolder();
         if (folder === null) return notDone('cancelled');
-        const r = await addProject(appDir, folder, git.path, runOpts(), changed);
-        return r.ok ? DONE : notDone(r.why);
+        return queue(async (): Promise<Change> => {
+          const git = await usableGit();
+          if (typeof git !== 'string') return git;
+          const r = await addProject(appDir, folder, git, runOpts(), changed);
+          return r.ok ? DONE : notDone(r.why);
+        });
       }),
 
     'projects.remove': (args) =>
@@ -96,13 +109,16 @@ export function makeHandlers(parts: Parts): Handlers {
       }),
 
     'settings.choose': (args) =>
-      queue(async (): Promise<Change> => {
+      dialogs(async (): Promise<Change> => {
         const tool = args.tool as Tool;
         const file = await parts.chooseFile(tool);
         if (file === null) return notDone('cancelled');
-        const { projects } = await read();
-        const r = await chooseTool(appDir, tool, file, projects.map((p) => p.path), changed);
-        return r.ok ? DONE : notDone(r.why);
+        return queue(async (): Promise<Change> => {
+          // Only the listed projects' paths are needed: the tool check refuses a tool inside one.
+          const projects = (await loadProjects(appDir)).value.projects;
+          const r = await chooseTool(appDir, tool, file, projects.map((p) => p.path), changed);
+          return r.ok ? DONE : notDone(r.why);
+        });
       }),
 
     'settings.reset': (args) =>
