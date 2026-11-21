@@ -15,7 +15,7 @@ rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", "
 
 [check]
 lint = "cargo fmt --check && cargo clippy --all-targets -- -D warnings"
-test = "cargo test"
+test = "cargo test && ls app/test/unit/*.test.ts app/test/integration/*.test.ts >/dev/null && node --test 'app/test/**/*.test.ts'"
 
 [branches]
 main = "main"

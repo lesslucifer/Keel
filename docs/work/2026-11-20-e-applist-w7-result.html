@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b01a5e39f34851f0dfb2b64">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-APPLIST.W7 result: the app shell</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-APPLIST.W7 · The app shell</h1>
+      <p>Keel.app is built, closed to the text it reads, and its test alert shows with the free signature.</p>
+      <div class="meta">T3 · WU result · 2026-11-21 · Keel · epic E-APPLIST · delivered · its data file sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="happened">What happened</h2>
+<p data-c="happened">The app is built. Its window can ask the app's core for six named things and nothing else. The core tells the window only that something changed. It runs git with fixed lines, no shell and no inherited git settings. It reads your PATH once from your login shell. Its settings and one project live in its own folder. You built it on your Mac with the free signature. It opened, and the test alert showed. So you do not need Apple's paid membership for alerts.</p>
+
+<h2 id="checks">How you'll know it worked</h2>
+<table data-c="checks">
+  <thead><tr><th>Check from the plan</th><th>Met?</th></tr></thead>
+  <tbody>
+    <tr><td>The app opens, finds keel, git and claude, and says its PATH came from your login shell.</td><td><b>Met.</b> You checked it.</td></tr>
+    <tr><td>The test alert shows, or the result names the signature that failed.</td><td><b>Met.</b> It showed with the free signature.</td></tr>
+    <tr><td>With the window closed, the app stays in the Dock.</td><td><b>Met.</b> You checked it.</td></tr>
+    <tr><td>The usual checks run the core's tests, with nothing installed.</td><td><b>Met.</b> 176 tests pass.</td></tr>
+    <tr><td>Tests prove the refusals: an unknown request, a stranger's request, free text, an unlisted signal, an inherited git setting.</td><td><b>Met.</b> Every new test failed first.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">The main case, run for real</h2>
+<p data-c="example-intro">On your Mac, 2026-11-21, as you reported:</p>
+<ol data-c="example">
+  <li>You built the app with the free signature.</li>
+  <li>You copied it to Applications and opened it.</li>
+  <li>The page showed version 0.1.0, the three tools and "PATH from your login shell".</li>
+  <li>You sent the test alert. It showed.</li>
+  <li>You closed the window, then clicked the Dock icon. The window came back.</li>
+  <li>The app's locked switches read as planned.</li>
+  <li>The app's link scheme shows in several places. You said all good.</li>
+</ol>
+
+<h2 id="diff">Differences from the plan</h2>
+<ul data-c="diff">
+  <li><b>A stuck program is stopped with all its children.</b> The planned way stopped only the program itself.</li>
+  <li><b>The page has more buttons</b>, to pick a tool or a project. Without them, nobody could check the two pickers live.</li>
+  <li><b>More guard tests.</b> Only the app's two entry files may load Electron. Every package has one exact version.</li>
+  <li><b>Your rules change took two commits</b>; the second fails the check on empty test folders.</li>
+  <li><b>Small build fixes</b>, and six type errors in early tests fixed; no test changed what it checks.</li>
+  <li><b>The worker could not rebuild the app</b>: the sandbox refused the Electron download.</li>
+  <li><b>Reviews 1 to 4 failed; all their findings are fixed</b>, each with a test that failed first. Among them: a startup job in your shell could stall the app, and an older or non-English git could add no project.</li>
+</ul>
+
+<h2 id="left">What is left, and who takes it</h2>
+<table data-c="left">
+  <thead><tr><th>What</th><th>Who</th></tr></thead>
+  <tbody>
+    <tr><td>The real window, drawn on Keel's own look, replaces this bare page.</td><td>W8.</td></tr>
+    <tr><td>Links that open the app, and which app owns the link scheme.</td><td>W5.</td></tr>
+    <tr><td>The packaged build checked again, and the docs updated.</td><td>W9, at the epic's close.</td></tr>
+    <tr><td>Record that the paid membership is not needed; refuse a tool linked via a project.</td><td>The app backlog.</td></tr>
+    <tr><td>A last-fix check, your sign-off, the merge.</td><td>The router starts it; you sign.</td></tr>
+  </tbody>
+</table>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
