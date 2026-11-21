@@ -19,7 +19,10 @@ outcome: >-
   f435eb1 and d6cedce, B 31b0199 (both keel-router copies), C 7603745 (project-router), then the fixes of the reviews
   of B to E: D 2d1a7d4 and F 63b2be2 (the sender), E b929e89 and G a4c0ed5 (the skills). Five independent read-only
   review rounds (two of the sender, three of B to E) found 5 medium and 16 low items and one hardening; every medium
-  and every low but the last round's one is fixed, each testable one with a failing test first. Re-gate on a4c0ed5:
+  and every low but the last round's one is fixed, each testable one with a failing test first. Code review round 1
+  on 81c483f (tests/ is the code path) FAILED with 7 importants, all test gaps, and a verifier found one sender
+  defect (the 4,096 cap checked on the raw body, header lines included); the tests are in fae22bc and 018cf32 and
+  the sender fix is H, staged for the owner's typed commit. Re-gate on a4c0ed5:
   cargo test unit 137 passed, suite 404 passed, 0 failed, 14 ignored (port-bound); keel check green.
 deviations:
   - >-
@@ -67,7 +70,13 @@ deviations:
   - "The back-merge of epic/E-APPLIST (1494748) made a merge commit, 610ffb5, not a fast-forward."
   - >-
     Process slip: a temp-copy run in round B shared this worktree's target dir, so the next local run used a suite
-    binary pointing at a deleted temp dir (13 false failures); repaired by cargo clean -p keel. No effect on any commit.
+    binary pointing at a deleted temp dir (13 false failures); repaired by cargo clean -p keel. In code review round
+    1's mutant runs, a commands.md restored with cp -p kept its old mtime, so the keel binary still embedded the
+    mutant and 3 init tests failed; repaired by cargo clean -p keel. No effect on any commit.
+  - >-
+    H bounds the raw body at 65,536 characters (16 times the message cap), refused before it is parsed, and checks
+    the 4,096 cap only on the message after its header lines are dropped and its link added, as the plan's order says;
+    A had checked the raw body against 4,096 too, so a headed body whose message fits was refused (a verifier's find).
 evidence:
   tests:
     unit: >-
@@ -78,7 +87,8 @@ evidence:
       parse_gives_a_headline_only_body_its_default_line, parse_reads_crlf_and_blanks_control_characters,
       parse_cuts_a_long_headline_and_line_with_an_ellipsis, parse_shrinks_a_multibyte_body_to_its_byte_budgets,
       parse_blanks_a_byte_that_is_not_utf8, parse_refuses_a_mistyped_header_key_naming_the_line,
-      a_headline_that_starts_with_question_stays_text, a_mistyped_header_refusal_quotes_what_was_typed.
+      a_headline_that_starts_with_question_stays_text, a_mistyped_header_refusal_quotes_what_was_typed,
+      parse_refuses_a_header_value_that_runs_past_its_id, parse_blanks_format_characters_in_the_alert.
     integration-runnable: >-
       tests/suite/notify_owner.rs (each case a temp git repo with copies of both scripts): a_body_naming_no_work_unit_has_no_link,
       a_question_header_writes_the_question_line_before_the_alert, a_failed_send_still_leaves_the_alert_line,
@@ -88,7 +98,11 @@ evidence:
       a_writer_that_hangs_is_killed_with_its_children_and_its_lock_released,
       the_writer_never_sees_the_credential_or_the_test_seam, a_sender_ended_by_term_ends_its_hung_writer_and_frees_the_lock,
       a_sender_ended_by_hup_ends_its_hung_writer_and_frees_the_lock, a_dry_run_with_stdout_closed_still_succeeds,
-      a_mistyped_header_key_sends_nothing_and_writes_nothing.
+      a_mistyped_header_key_sends_nothing_and_writes_nothing, the_4096_cap_is_checked_on_the_message_with_its_link,
+      a_raw_body_far_past_any_message_is_refused_before_it_is_read, the_sender_and_the_app_script_take_the_same_ids.
+      tests/suite/init.rs, router_skill_names_each_stage_and_its_moment rewritten: the stages read from the guard's
+      app_shapes, each command's moment, every command fed to scripts/router-guard.jq as the router, the header keys
+      read from the sender's HEADER and the skill's example header read by parse_body.
       tests/suite/init.rs: router_skill_names_each_stage_and_its_moment, every_keel_router_file_equals_its_self_hosted_copy,
       project_router_names_every_rule_file.
     integration-ignored: >-
@@ -101,6 +115,8 @@ evidence:
     - "249957d against the plan-tip scripts: 19 failed (9 parse units: AttributeError, no parse_body; 8 notify integration: no line written, no link; 2 init: commands.md names no router-app.sh shape, project-router omits 4 rule files), 4 passed (the copies-equal guard among them), 4 new ignored."
     - "191516f against c47f692: 4 failed (UnicodeEncodeError on \\udcff; the dry run exited 1; a hung writer's child outlived the sender; TELEGRAM_STATE_DIR and TELEGRAM_BOT_TOKEN reached the writer)."
     - "90421ce against 7603745: 2 failed ('Wu: E-A.W1' read as body text; a mistyped key sent, alert line n 2)."
+    - "fae22bc against 81c483f: 1 failed (the_4096_cap_is_checked_on_the_message_with_its_link: 'question: link-scheme' plus 4,090 H refused as 'the message is 4112 characters'). With H, the mutant that drops the check of the message (text = message_text(parsed)) fails it ('a 4,097-character message with its link was accepted')."
+    - "018cf32 (test gaps, green on arrival), each pinned by its mutant failing: fullmatch -> match in parse_body; 'Cf' dropped from plain(); the sender's grammars widened ({1,32}, W[0-9]{1,4}, {0,60}): 'disagree on the work unit E-ABCDEFGHIJKLMNOPQ.W1'; commands.md's When cells blanked; a guard stage renamed: 'no row for the guard's stage constructing'; the sender's HEADER key renamed. Files restored byte-equal."
     - "f6e5557 against 2d1a7d4: 2 failed ('Question: keep keel:// as the link?', 'Questions: two for you' and the line-3 'Question: keep keel://?' each refused; ' wu:', 'wu :' and a tab each quoted as 'wu:')."
     - "ecf0c10 against f435eb1: 3 failed (TERM and HUP each left the writer and its child; a dry run with stdout closed exited 1). The strict-encoding test passed on f435eb1 and failed on a mutant without the reconfigure."
   reviews:
@@ -133,6 +149,13 @@ evidence:
       short headline whose word after the colon fits the id grammar ('Questions: 2', 'Question: yes', 'Question:
       none') is still refused as a mistyped header. It fails safe (nothing sent, the refusal quotes the text). By the
       review table only lows remain: done, no fix, no new round.
+    - >-
+      Code review round 1 on 81c483f (cr note, scope full): FAIL, 0 blockers, 7 importants, 10 nits waived, 1
+      refuted. The importants, all test gaps: no test near the 4,096 cap after the link; a header value running past a
+      valid id; no format character in the blanking test; the sender's id grammars not tied to router-app.sh's; the
+      skill test checked no moment and fed no command to the guard; its stages and header keys were literals, not read
+      from the guard and the sender. A verifier also reproduced the raw-body cap defect. Fixed: tests in fae22bc
+      (red first) and 018cf32 (each by a mutant), the sender in H (staged). Nits waived by the review, none taken.
   commits:
     - "477949f plan pair (signed, merged into the epic)"
     - "610ffb5 back-merge of epic/E-APPLIST at 1494748"
@@ -151,7 +174,11 @@ evidence:
     - "f6e5557 tests for review round 2, red first"
     - "63b2be2 rule F: a headline that starts with Question stays text; the refusal quotes what was typed (owner)"
     - "a4c0ed5 rule G: both keel-router copies, review round 2 (owner)"
-  re-gate: "a4c0ed5: cargo test unit 137 passed; suite 404 passed, 0 failed, 14 ignored; keel check 'check green - cached'. Earlier, 7603745: suite 400 passed, 14 ignored."
+    - "4a846d9, 81c483f result pair updates"
+    - "fae22bc tests for code review round 1, red first"
+    - "018cf32 tests for code review round 1's test gaps"
+    - "H, staged and not yet committed: scripts/notify-owner.py, the 4,096 cap on the message (the owner's typed commit)"
+  re-gate: "018cf32 with H in the working tree: cargo test unit 137 passed; suite 409 passed, 0 failed, 14 ignored; fmt and clippy green; keel check 'check green - cached'. Earlier, a4c0ed5: suite 404; 7603745: suite 400."
   guard-check: "Every router-app.sh shape B names, filled with sample values, run through scripts/router-guard.jq as the router: all admitted (start, the five stages with and without a tip, del wu/<wu>/stage, del question/<id>, notify-owner.py --send)."
   docs-touched: "docs/work/2026-11-20-e-applist-w3-plan.* (T3), this result pair (T3)."
 distillation: >-
