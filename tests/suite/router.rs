@@ -4017,7 +4017,8 @@ fn a_failing_log_write_never_drops_the_facts_block() {
     // every failure gone, the change is written
     assert_eq!(ops(&tick(&l, h).1), ["set worker/w1", "set router"]);
 
-    // a line the script refuses (a value over 512 bytes) costs that worker its line, never the rest
+    // a value over router-app.sh's 512-byte cap (review L2) is clipped by bytes, never refused: the
+    // worker keeps its line, the longest strings shortened first
     let l = watchdog_launcher();
     let wide = "\u{1f600}".repeat(50);
     git(&l.wt, &["branch", "-m", "w", &format!("{wide}/{wide}")]);
@@ -4030,9 +4031,15 @@ fn a_failing_log_write_never_drops_the_facts_block() {
     let block = facts(&l, h);
     start_run(&l);
     let (out, lines) = tick(&l, h);
-    assert_eq!(out, block, "refused line");
-    assert_eq!(ops(&lines), ["set worker/w2", "set router"], "{lines:?}");
-    assert_eq!(lines[1]["value"]["workers"], 2);
+    assert_eq!(out, block, "clipped line");
+    assert_eq!(ops(&lines), ["set worker/w1", "set worker/w2", "set router"], "{lines:?}");
+    let v = &lines[0]["value"];
+    let n = serde_json::to_string(v).unwrap().len();
+    assert!((509..=512).contains(&n), "{n} bytes: {v}");
+    assert_eq!(v["state"], "\u{1f600}".repeat(20), "the shortest string kept whole");
+    assert!(format!("{wide}/{wide}").starts_with(v["branch"].as_str().unwrap()));
+    assert!("\u{1f600}".repeat(80).starts_with(v["waiting"].as_str().unwrap()));
+    assert_eq!(lines[2]["value"]["workers"], 2);
 }
 
 #[test]
@@ -4058,6 +4065,114 @@ fn worker_text_reaches_the_log_as_one_escaped_line() {
     let raw = std::fs::read_to_string(l.main.join(".router/app/log.jsonl")).unwrap();
     assert_eq!(raw.lines().count(), 3, "{raw}");
     assert!(!raw.chars().any(|c| c.is_control() && c != '\n'), "{raw:?}");
+}
+
+/// Review L1: a session list that is JSON but not wholly readable (a row that is not an object)
+/// writes nothing, so no worker listed after that row is deleted; the block stays as it always was.
+#[test]
+fn a_partly_readable_session_list_deletes_nothing() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let w1 = bare_worker("w1", 1, &l.wt, serde_json::json!({"status": "busy"}));
+    let w2 = bare_worker("w2", 2, &l.wt2, serde_json::json!({"status": "busy"}));
+    l.set_sessions(&[router_row(&l), w1.clone(), w2.clone()]);
+    start_run(&l);
+    assert_eq!(tick(&l, h).1.len(), 3);
+    for (what, bad) in [("a number", serde_json::json!(5)), ("a string", serde_json::json!("x")), ("an array", serde_json::json!([1]))] {
+        l.set_sessions(&[router_row(&l), w1.clone(), bad, w2.clone()]);
+        let (out, lines) = tick(&l, h);
+        assert!(lines.is_empty(), "{what}: {lines:?}");
+        // the block is the one the step has always printed: the rows read before the bad one
+        let b = blocks(&out);
+        assert!(b.len() == 1 && b[0].starts_with("w1: busy"), "{what}: {out}");
+        assert!(app_values(&l).contains_key("worker/w2"), "{what}");
+    }
+    // a null row is skipped, as the block has always skipped it: the tick is whole
+    l.set_sessions(&[router_row(&l), w1.clone(), serde_json::Value::Null, w2.clone()]);
+    let (out, lines) = tick(&l, h);
+    assert_eq!(blocks(&out).len(), 2, "{out}");
+    assert_eq!(ops(&lines), ["set router"], "{lines:?}");
+}
+
+/// Review L2: a value over router-app.sh's 512-byte cap is clipped by bytes, so a worker's line is
+/// never refused and never left stale while the worker lives.
+#[test]
+fn a_value_over_the_cap_is_clipped_by_bytes_never_refused() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    l.set_sessions(&[router_row(&l), bare_worker("w1", 1, &l.wt, serde_json::json!({"status": "busy"}))]);
+    start_run(&l);
+    assert_eq!(tick(&l, h).1.len(), 2);
+    let wide = "\u{1f600}".repeat(60);
+    let branch = format!("{wide}/{wide}");
+    git(&l.wt, &["branch", "-m", "w", &branch]);
+    let (_, lines) = tick(&l, h);
+    assert_eq!(ops(&lines), ["set worker/w1", "set router"], "{lines:?}");
+    let v = &lines[0]["value"];
+    let n = serde_json::to_string(v).unwrap().len();
+    assert!((509..=512).contains(&n), "{n} bytes: {v}");
+    let b = v["branch"].as_str().unwrap();
+    assert!(!b.is_empty() && branch.starts_with(b), "{b}");
+    assert_eq!(v["state"], "busy");
+    assert_eq!(app_values(&l)["worker/w1"]["branch"], b);
+    assert_eq!(ops(&tick(&l, h).1), ["set router"], "a clipped value is the same each tick");
+}
+
+/// The character clips of the lines (review test gap): a worker's state 20, waiting 60, branch 120;
+/// the router's state 20.
+#[test]
+fn a_worker_lines_strings_are_clipped_to_their_lengths() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    git(&l.wt, &["branch", "-m", "w", &"b".repeat(150)]);
+    let mut router = router_row(&l);
+    router["status"] = "r".repeat(30).into();
+    l.set_sessions(&[router, bare_worker("w1", 1, &l.wt, serde_json::json!({"status": "s".repeat(30), "waitingFor": "w".repeat(100)}))]);
+    start_run(&l);
+    let (_, lines) = tick(&l, h);
+    assert_eq!(ops(&lines), ["set worker/w1", "set router"], "{lines:?}");
+    let v = &lines[0]["value"];
+    assert_eq!(v["state"], "s".repeat(20));
+    assert_eq!(v["waiting"], "w".repeat(60));
+    assert_eq!(v["branch"], "b".repeat(120));
+    assert_eq!(lines[1]["value"]["state"], "r".repeat(20));
+}
+
+/// The facts block is whole on the hook's stdout before the first log write (review mutant M7: the
+/// writes moved ahead of the block survived the suite).
+#[test]
+fn the_facts_block_is_printed_before_the_first_log_write() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    l.set_sessions(&[
+        router_row(&l),
+        bare_worker("w1", 1, &l.wt, serde_json::json!({"status": "busy"})),
+        bare_worker("w2", 2, &l.wt2, serde_json::json!({"status": "idle"})),
+    ]);
+    let block = facts(&l, h);
+    start_run(&l);
+    // the fixture's router-app.sh, first called, keeps a copy of what the facts had printed by then
+    let script = l.main.join("scripts/router-app.sh");
+    let real = l.main.join("scripts/router-app-real.sh");
+    std::fs::rename(&script, &real).unwrap();
+    let (out, seen) = (l.state.join("facts.out"), l.state.join("seen"));
+    std::fs::write(&script, format!("#!/bin/sh\n[ -e '{}' ] || cp \"$FACTS_OUT\" '{}'\nexec '{}' \"$@\"\n", seen.display(), seen.display(), real.display()))
+        .unwrap();
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let status = l
+        .cmd(&["watchdog", "facts", "r1"], &[("HOME", h.to_str().unwrap()), ("FACTS_OUT", out.to_str().unwrap())])
+        .stdout(std::fs::File::create(&out).unwrap())
+        .stderr(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    assert_eq!(std::fs::read_to_string(&out).unwrap(), block);
+    assert_eq!(std::fs::read_to_string(&seen).unwrap(), block, "a log write ran before the block was printed whole");
+    assert_eq!(log_lines(&l).len(), 4, "start, two workers, the heartbeat");
 }
 
 /// The one spawn run dir of `name` under the fixture's .router/runs.
