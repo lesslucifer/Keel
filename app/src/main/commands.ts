@@ -5,7 +5,8 @@
 // built from nothing but the login PATH and five account variables, so no inherited GIT_* reaches it.
 // capture() is the one way the main part spawns anything (login-path.ts uses it too).
 
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { Socket } from 'node:net';
 import path from 'node:path';
 
 export const LOCKED: readonly string[] = Object.freeze(['-c', 'core.fsmonitor=false', '--no-optional-locks', '--no-lazy-fetch']);
@@ -106,10 +107,13 @@ function groupGone(pgid: number): boolean {
  * Run `file` with `args` and exactly `env`: never a shell, stdin closed, cwd /, each stream capped.
  * The answer comes from the program's own exit, never from the pipes alone: a background job or a
  * process that left the group may hold them open for ever. Once the program has exited by itself,
- * the pipes get EXIT_GRACE_MS for its last output, then are closed and it is answered with its code;
- * nothing is killed after that exit (what it left running is the owner's). If the program has not
- * exited at the timeout, its whole process group - a shell's children too - is killed, and the
- * answer waits (at most GROUP_GONE_MS) until the group is gone. Never throws for the program's own failure.
+ * the pipes get EXIT_GRACE_MS for its last output, then it is answered with its code; nothing is
+ * killed after that exit (what it left running is the owner's), and the pipes stay open and are
+ * drained, unread, until whatever holds them closes them, so a job that writes later is not killed
+ * by SIGPIPE. If the program has not exited at the timeout, its whole process group - a shell's
+ * children too - is killed, and the answer waits (at most GROUP_GONE_MS) until the group is gone.
+ * A program that cannot start (ENOENT, EACCES, EMFILE, ...) is answered with the reason. Never
+ * throws or rejects for the program's own failure.
  */
 export function capture(file: string, args: readonly string[], env: Record<string, string>, timeoutMs: number): Promise<Captured> {
   return new Promise((resolve) => {
@@ -117,40 +121,60 @@ export function capture(file: string, args: readonly string[], env: Record<strin
     const err: Buffer[] = [];
     const size = { out: 0, err: 0 };
     let timedOut = false;
+    let exited = false;
     let settled = false;
+    let timer: NodeJS.Timeout | undefined;
     let grace: NodeJS.Timeout | undefined;
-    const child = spawn(file, args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'], env, cwd: '/', detached: true });
+    let child: ChildProcess | undefined;
     const done = (code: number | null, startError: string | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       clearTimeout(grace);
-      // Whatever still holds the pipes, the app stops reading them.
-      child.stdout.destroy();
-      child.stderr.destroy();
+      // The pipes stay open and keep draining (data after this is dropped); they no longer keep the app's loop alive.
+      for (const stream of [child?.stdout, child?.stderr]) {
+        if (stream instanceof Socket) stream.unref();
+      }
+      child?.unref();
       resolve({ code, startError, timedOut, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') });
     };
-    child.stdout.on('data', (b: Buffer) => {
+    try {
+      child = spawn(file, args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'], env, cwd: '/', detached: true });
+    } catch (e) {
+      done(null, (e as NodeJS.ErrnoException).code ?? String(e));
+      return;
+    }
+    const started = child;
+    // First, before anything that can throw: when spawn fails (EMFILE, ENFILE) the child has no pipes and only this event says why.
+    started.on('error', (e: NodeJS.ErrnoException) => done(null, e.code ?? e.message));
+    if (!started.stdout || !started.stderr) return;
+    started.stdout.on('data', (b: Buffer) => {
+      if (settled) return;
       if (size.out < OUTPUT_CAP) out.push(b.subarray(0, OUTPUT_CAP - size.out));
       size.out += b.length;
     });
-    child.stderr.on('data', (b: Buffer) => {
+    started.stderr.on('data', (b: Buffer) => {
+      if (settled) return;
       if (size.err < OUTPUT_CAP) err.push(b.subarray(0, OUTPUT_CAP - size.err));
       size.err += b.length;
     });
-    const timer = setTimeout(() => {
-      timedOut = true;
-      try {
-        if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
-      } catch {
-        child.kill('SIGKILL');
-      }
+    timer = setTimeout(() => {
+      // One more turn first: an exit that arrived while the loop was blocked is read before anything is killed.
+      setImmediate(() => {
+        if (exited || settled) return;
+        timedOut = true;
+        try {
+          if (started.pid !== undefined) process.kill(-started.pid, 'SIGKILL');
+        } catch {
+          started.kill('SIGKILL');
+        }
+      });
     }, timeoutMs);
-    child.on('error', (e: NodeJS.ErrnoException) => done(null, e.code ?? e.message));
-    child.on('exit', (code) => {
+    started.on('exit', (code) => {
+      exited = true;
       if (timedOut) {
         // Killed with its group: answer once no process is left in it (a killed member may still be exiting).
-        const pgid = child.pid;
+        const pgid = started.pid;
         const until = Date.now() + GROUP_GONE_MS;
         const check = () => {
           if (pgid === undefined || groupGone(pgid) || Date.now() >= until) done(null, null);
@@ -164,7 +188,7 @@ export function capture(file: string, args: readonly string[], env: Record<strin
       grace = setTimeout(() => setImmediate(() => done(code, null)), EXIT_GRACE_MS);
     });
     // After a timeout only the exit's wait above answers: the pipes close as the group dies, before every member is gone.
-    child.on('close', (code) => {
+    started.on('close', (code) => {
       if (!timedOut) done(code, null);
     });
   });

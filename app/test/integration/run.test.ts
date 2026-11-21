@@ -2,11 +2,15 @@
 // environment; real git in temp repos answers from the repo named, never from an inherited GIT_*.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, readFile } from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { run, capture, LOCKED, OUTPUT_CAP } from '../../src/main/commands.ts';
 import { commitsConfig } from '../../src/main/projects.ts';
 import { tempDir, recorder, program, realGit, sh, HANG, groupGone, holder, endHolder, bounded, alive, within } from '../support/fs.ts';
+
+const COMMANDS = pathToFileURL(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'main', 'commands.ts')).href;
 
 // The app's own environment carries git settings that would redirect or hijack git if they reached it.
 process.env.GIT_DIR = '/nonexistent/hijack/.git';
@@ -72,6 +76,55 @@ test('a program that exits 0 while its own background job holds its output is an
   // Past the timeout the program had: its group is never killed after it exited by itself.
   await new Promise((resolve) => setTimeout(resolve, Math.max(0, start + 2_000 - Date.now())));
   assert.ok(alive(pid), 'the background job was killed after the program had exited by itself');
+});
+
+test('a background job the program left keeps writing to its output after the answer: the pipes are drained, never closed under it', async (t) => {
+  const dir = tempDir(t, 'run');
+  const after = path.join(dir, 'after');
+  // The job ends by itself within half a second; SIGPIPE on a closed pipe would end it before 'after'.
+  const fake = program(path.join(dir, 'fake'), `#!/bin/sh\n( /bin/sleep 0.5; echo late; echo late >&2; echo late; /usr/bin/touch ${after} ) &\necho done\n`);
+  const r = await capture(fake, [], { PATH: '/usr/bin:/bin' }, 5_000);
+  assert.deepEqual([r.code, r.timedOut, r.stdout], [0, false, 'done\n']);
+  assert.ok(await within(5_000, () => existsSync(after)), "the job died writing to the program's output after the answer");
+});
+
+test('a program that exits while the event loop is blocked past its timeout is answered from its exit, not killed and reported timed out', async (t) => {
+  const dir = tempDir(t, 'run');
+  const fake = program(path.join(dir, 'fake'), '#!/bin/sh\n/bin/sleep 0.05\necho quick\n');
+  const p = capture(fake, [], { PATH: '/usr/bin:/bin' }, 150);
+  // Block the loop inside an I/O callback: the program exits meanwhile, and on the next turn the
+  // timer comes due before the poll that reads that exit.
+  await new Promise<void>((resolve) =>
+    readFile('/dev/null', () => {
+      const until = Date.now() + 500;
+      while (Date.now() < until) {
+        // blocked
+      }
+      resolve();
+    }),
+  );
+  const r = await p;
+  assert.deepEqual([r.code, r.timedOut, r.stdout], [0, false, 'quick\n']);
+});
+
+test('with no file descriptor left, a program that cannot start is reported (EMFILE), never a crash', async (t) => {
+  const dir = tempDir(t, 'run');
+  const script = [
+    `import { capture } from ${JSON.stringify(COMMANDS)};`,
+    `import { openSync, writeSync } from 'node:fs';`,
+    `setInterval(() => { try { process.kill(${process.pid}, 0); } catch { process.exit(1); } }, 100).unref();`,
+    // The answer goes out through a file opened before the descriptors run out.
+    `const outFd = openSync(${JSON.stringify(path.join(dir, 'answer.json'))}, 'w');`,
+    `const say = (v) => { writeSync(outFd, JSON.stringify(v)); process.exit(0); };`,
+    `process.on('uncaughtException', (e) => say({ crash: String(e) }));`,
+    `process.on('unhandledRejection', (e) => say({ crash: String(e) }));`,
+    `const held = [];`,
+    `try { for (;;) held.push(openSync('/dev/null', 'r')); } catch {}`,
+    `const r = await capture('/bin/echo', ['x'], { PATH: '/usr/bin:/bin' }, 2000);`,
+    `say({ code: r.code, startError: r.startError, timedOut: r.timedOut });`,
+  ].join('\n');
+  execFileSync('/bin/sh', ['-c', `ulimit -n 128 && exec "$0" --input-type=module -e "$1"`, process.execPath, script], { cwd: dir, stdio: 'ignore', timeout: 20_000 });
+  assert.deepEqual(JSON.parse(readFileSync(path.join(dir, 'answer.json'), 'utf8')), { code: null, startError: 'EMFILE', timedOut: false });
 });
 
 test('a git that cannot start is reported with the reason, not thrown', async (t) => {
