@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { run, capture, LOCKED, OUTPUT_CAP } from '../../src/main/commands.ts';
+import { commitsConfig } from '../../src/main/projects.ts';
 import { tempDir, recorder, program, realGit, sh, HANG, groupGone, holder, endHolder, bounded, alive, within } from '../support/fs.ts';
 
 // The app's own environment carries git settings that would redirect or hijack git if they reached it.
@@ -106,11 +107,15 @@ test('real git answers from the project named, not from the GIT_DIR the app inhe
   assert.equal(top.code, 0, top.stderr);
   assert.equal(top.stdout.trim(), a);
   assert.equal((await run(git, 'common-dir', { project: a }, opts)).stdout.trim(), path.join(a, '.git'));
-  assert.notEqual((await run(git, 'has-config', { project: a }, opts)).code, 0);
+  const hasConfig = async (project: string) => {
+    const r = await run(git, 'has-config', { project }, opts);
+    return r.code === 0 && commitsConfig(r.stdout);
+  };
+  assert.equal(await hasConfig(a), false);
   mkdirSync(path.join(a, '.keel'));
   writeFileSync(path.join(a, '.keel', 'config.toml'), 'code_paths = []\n');
   sh(git, a, ['add', '.keel/config.toml']);
   sh(git, a, ['commit', '-q', '-m', 'keel']);
-  assert.equal((await run(git, 'has-config', { project: a }, opts)).code, 0);
-  assert.notEqual((await run(git, 'has-config', { project: b }, opts)).code, 0);
+  assert.equal(await hasConfig(a), true);
+  assert.equal(await hasConfig(b), false);
 });

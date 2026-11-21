@@ -13,7 +13,7 @@ test('the fixed commands of W7 are exactly the plan\'s three lines', () => {
   assert.deepEqual(Object.keys(COMMANDS).sort(), ['common-dir', 'has-config', 'toplevel']);
   assert.deepEqual(argv('toplevel', { project: '/Users/me/Keel' }), [...LOCKED, '-C', '/Users/me/Keel', 'rev-parse', '--show-toplevel']);
   assert.deepEqual(argv('common-dir', { project: '/Users/me/Keel' }), [...LOCKED, '-C', '/Users/me/Keel', 'rev-parse', '--path-format=absolute', '--git-common-dir']);
-  assert.deepEqual(argv('has-config', { project: '/Users/me/Keel' }), [...LOCKED, '-C', '/Users/me/Keel', 'cat-file', '-e', 'HEAD:.keel/config.toml']);
+  assert.deepEqual(argv('has-config', { project: '/Users/me/Keel' }), [...LOCKED, '-C', '/Users/me/Keel', 'ls-tree', '--full-tree', 'HEAD', '--', '.keel/config.toml']);
 });
 
 test('a read times out after 10 s', () => {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseProjects, mintId, MAX_PROJECTS, PROJECTS_FILE, defaultProjects } from '../../src/main/projects.ts';
+import { parseProjects, mintId, MAX_PROJECTS, PROJECTS_FILE, defaultProjects, commitsConfig } from '../../src/main/projects.ts';
 import { seeded } from '../support/seeded.ts';
 
 test('the project list lives in projects.json and starts empty', () => {
@@ -42,4 +42,24 @@ test('a minted id is p and 8 hex digits, never one already taken', () => {
   let calls = 0;
   const stuck = (n: number) => (calls++ < 3 ? Buffer.alloc(n, 0) : Buffer.alloc(n, 1));
   assert.equal(mintId(['p00000000'], stuck), 'p01010101');
+});
+
+test('HEAD commits .keel/config.toml only as a regular file: ls-tree shows mode 100644 or 100755 and a blob, and nothing else', () => {
+  const sha1 = 'a'.repeat(40);
+  const sha256 = 'b'.repeat(64);
+  assert.equal(commitsConfig(`100644 blob ${sha1}\t.keel/config.toml\n`), true);
+  assert.equal(commitsConfig(`100755 blob ${sha256}\t.keel/config.toml\n`), true);
+  for (const out of [
+    '',
+    `040000 tree ${sha1}\t.keel/config.toml\n`,
+    `120000 blob ${sha1}\t.keel/config.toml\n`,
+    `160000 commit ${sha1}\t.keel/config.toml\n`,
+    `100644 blob ${sha1}\t.keel/config.tom\n`,
+    `100644 blob ${sha1}\t.keel/config.toml`,
+    `100644 blob ${sha1}\t.keel/config.toml\n100644 blob ${sha1}\t.keel/config.toml\n`,
+    `100644 blob ${'a'.repeat(39)}\t.keel/config.toml\n`,
+    `100644 tree ${sha1}\t.keel/config.toml\n`,
+  ]) {
+    assert.equal(commitsConfig(out), false, JSON.stringify(out));
+  }
 });

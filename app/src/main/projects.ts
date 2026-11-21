@@ -1,7 +1,8 @@
 // projects.json in the app's folder: {version: 1, projects: [{id, path, name}]}. A project is a
 // Keel project's main checkout, judged only by reading git with the fixed commands: its top folder
 // is the folder chosen, its common git folder is that folder's .git (not a linked worktree or a
-// submodule), and its HEAD commits .keel/config.toml. The app never writes inside a project.
+// submodule), and its HEAD commits .keel/config.toml as a regular file. The app never writes
+// inside a project.
 // E-APPLIST keeps one project; the file already holds a list, so A5 lifts the cap with no migration.
 // Each change saved calls `changed` once (the shell pushes state.changed); a refusal saves nothing.
 
@@ -74,6 +75,11 @@ async function real(p: string): Promise<string | null> {
   }
 }
 
+/** Whether `ls-tree HEAD -- .keel/config.toml` printed exactly one entry: that path, a regular file (mode 100644 or 100755). */
+export function commitsConfig(out: string): boolean {
+  return /^100(644|755) blob ([0-9a-f]{40}|[0-9a-f]{64})\t\.keel\/config\.toml\n$/.test(out);
+}
+
 /** Why a git run did not answer, if it did not: timed out, or a git too old for the locked flags. */
 function gitFailed(r: Captured): string | null {
   if (r.timedOut) return 'git did not answer';
@@ -101,7 +107,7 @@ export async function checkProject(folder: string, git: string, opts: RunOptions
   const config = await run(git, 'has-config', { project: dir }, opts);
   const configFailed = gitFailed(config);
   if (configFailed !== null) return { ok: false, why: configFailed };
-  if (config.code !== 0) return { ok: false, why: 'its HEAD does not commit .keel/config.toml' };
+  if (config.code !== 0 || !commitsConfig(config.stdout)) return { ok: false, why: 'its HEAD does not commit .keel/config.toml' };
   return { ok: true, path: dir };
 }
 

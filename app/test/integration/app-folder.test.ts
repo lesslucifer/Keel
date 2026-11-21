@@ -229,6 +229,25 @@ test('removing an id not on the list is refused, changes nothing and pushes noth
   assert.deepEqual(readdirSync(app), []);
 });
 
+test('a HEAD whose .keel/config.toml is a folder or a link is refused: the project must commit it as a file', async (t) => {
+  const dir = tempDir(t, 'projects');
+  const home = mk(path.join(dir, 'home'));
+  const folder = path.join(dir, 'folder');
+  mkdirSync(path.join(folder, '.keel', 'config.toml'), { recursive: true });
+  writeFileSync(path.join(folder, '.keel', 'config.toml', 'x'), 'x\n');
+  const link = path.join(dir, 'link');
+  mkdirSync(path.join(link, '.keel'), { recursive: true });
+  writeFileSync(path.join(link, 'real.toml'), 'code_paths = []\n');
+  symlinkSync('../real.toml', path.join(link, '.keel', 'config.toml'));
+  for (const repo of [folder, link]) {
+    sh(GIT, repo, ['init', '-q']);
+    sh(GIT, repo, ['add', '.']);
+    sh(GIT, repo, ['commit', '-q', '-m', 'init']);
+    const r = await addProject(path.join(dir, `app-${path.basename(repo)}`), repo, GIT, opts(home));
+    assert.match(r.ok ? 'accepted' : r.why, /HEAD does not commit \.keel\/config\.toml/, repo);
+  }
+});
+
 test('a git too old for --no-lazy-fetch is named, not reported as a folder that is not a git checkout', async (t) => {
   const dir = tempDir(t, 'projects');
   const home = mk(path.join(dir, 'home'));

@@ -31,7 +31,8 @@ export const COMMANDS: Readonly<Record<string, readonly Token[]>> = Object.freez
   Object.assign(Object.create(null) as Record<string, readonly Token[]>, {
     toplevel: Object.freeze(['-C', PROJECT, 'rev-parse', '--show-toplevel']),
     'common-dir': Object.freeze(['-C', PROJECT, 'rev-parse', '--path-format=absolute', '--git-common-dir']),
-    'has-config': Object.freeze(['-C', PROJECT, 'cat-file', '-e', 'HEAD:.keel/config.toml']),
+    // ls-tree, not cat-file -e: the mode shows a regular file, not a folder, a link or a submodule.
+    'has-config': Object.freeze(['-C', PROJECT, 'ls-tree', '--full-tree', 'HEAD', '--', '.keel/config.toml']),
   }),
 );
 
