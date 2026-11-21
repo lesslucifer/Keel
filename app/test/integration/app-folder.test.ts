@@ -8,7 +8,7 @@ import path from 'node:path';
 import { readJson, writeAtomic, load } from '../../src/main/store.ts';
 import { loadSettings, chooseTool, resetTool, SETTINGS_FILE } from '../../src/main/settings.ts';
 import { loadProjects, addProject, removeProject, PROJECTS_FILE } from '../../src/main/projects.ts';
-import { lookup, toolStates } from '../../src/main/tools.ts';
+import { lookup, toolStates, toolProblem } from '../../src/main/tools.ts';
 import { tempDir, program, realGit, sh, snapshot, mk, recorder } from '../support/fs.ts';
 
 const GIT = realGit();
@@ -267,6 +267,28 @@ test('a git inside the folder being added is refused before it ever runs', async
     assert.match(r.ok ? 'accepted' : r.why, /^git is inside the project proj/, git);
     assert.ok(!existsSync(record), `${git} was run on the folder`);
   }
+});
+
+test('a tool link inside a project, named through a linked parent folder, is refused, and such a git never runs on the folder', async (t) => {
+  const dir = tempDir(t, 'projects');
+  const home = mk(path.join(dir, 'home'));
+  const project = keelRepo(path.join(dir, 'proj'));
+  const record = path.join(dir, 'record.json');
+  // The program is outside the project; the link to it sits inside the project's bin.
+  const outside = recorder(path.join(mk(path.join(dir, 'outside')), 'git'), record, 0, `${project}\n`);
+  symlinkSync(outside, path.join(mk(path.join(project, 'bin')), 'git'));
+  // An alias of the parent folder (as /tmp is of /private/tmp), and one of the project's bin.
+  symlinkSync(dir, path.join(dir, 'alias'));
+  symlinkSync(path.join(project, 'bin'), path.join(dir, 'bin-alias'));
+  const spellings = [path.join(dir, 'alias', 'proj', 'bin', 'git'), path.join(dir, 'bin-alias', 'git')];
+  for (const git of spellings) {
+    assert.match((await toolProblem('git', git, [project])) ?? 'accepted', /inside the project proj/, git);
+    const r = await addProject(path.join(dir, 'app-folder'), project, git, opts(home));
+    assert.match(r.ok ? 'accepted' : r.why, /^git is inside the project proj/, git);
+    assert.ok(!existsSync(record), `${git} was run on the folder`);
+  }
+  // Found on a login-PATH entry spelled through the alias: skipped, as a listed project's own git.
+  assert.equal(await lookup('git', [path.join(dir, 'alias', 'proj', 'bin')], [project]), null);
 });
 
 test('a git too old for --no-lazy-fetch is named, not reported as a folder that is not a git checkout', async (t) => {

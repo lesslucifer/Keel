@@ -1,7 +1,8 @@
 // The three tools the app runs or reports: keel, git, claude. A path is taken as the owner gave it
 // (a link's own path, so claude's versioned target still checks) and checked: absolute, named for
-// its tool, an existing regular file, executable, and not inside a listed project by its path or its
-// real path, so a project's own files never become the program the app runs.
+// its tool, an existing regular file, executable, and not inside a listed project by its path, by
+// its folder's real path (a link inside a project, named through a linked parent folder such as /tmp)
+// or by its real path, so a project's own files never become the program the app runs.
 
 import { stat, realpath, access, constants } from 'node:fs/promises';
 import path from 'node:path';
@@ -38,9 +39,12 @@ export async function toolProblem(tool: Tool, p: string, projects: readonly stri
   } catch {
     return 'not executable';
   }
+  // The path itself with every folder above it resolved, the last part left as named (it may be a link).
+  const viaRealFolder = path.join(await realpath(path.dirname(p)), path.basename(p));
   for (const project of projects) {
-    if (inside(p, project) || inside(real, project)) return `inside the project ${path.basename(project)}`;
+    if (inside(p, project) || inside(viaRealFolder, project) || inside(real, project)) return `inside the project ${path.basename(project)}`;
   }
+
   return null;
 }
 
