@@ -103,6 +103,11 @@ test('a tool path that is relative, a folder, not executable, misnamed, missing 
     const r = await chooseTool(app, 'git', file, [project], c.push);
     assert.match(r.ok ? 'accepted' : r.why, why, file);
   }
+  // A link named git inside the project whose target is outside it: judged by its own path too.
+  const linkIn = path.join(mk(path.join(project, 'links')), 'git');
+  symlinkSync(GIT, linkIn);
+  const viaOwnPath = await chooseTool(app, 'git', linkIn, [project], c.push);
+  assert.match(viaOwnPath.ok ? 'accepted' : viaOwnPath.why, /inside the project/);
   // A link named git, outside the project, whose target is inside it: judged by its real path too.
   symlinkSync(inProject, path.join(dir, 'folder', 'git', 'git'));
   const viaLink = await chooseTool(app, 'git', path.join(dir, 'folder', 'git', 'git'), [project], c.push);
