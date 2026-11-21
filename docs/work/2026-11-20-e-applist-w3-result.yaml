@@ -167,8 +167,9 @@ follow-ups:
   - >-
     Review round 3's low: a short headline whose word after the colon fits the id grammar ('Questions: 2',
     'Question: yes', 'Question: none') is refused as a mistyped header; it fails safe and the refusal quotes the text.
-    The review offered two fixes; they were not relayed to this worker and are to be copied from the round-3 review
-    into the row. Taken by: docs/backlog/e-router-v2.yaml R47 (the router scripts' open lows; its S1 to S3 are this
+    The review offered two fixes: (a) one sentence in commands.md, both copies: "...is text; `Questions: 2` (one
+    lowercase word) is read as a mistyped header: write `2 questions`"; or (b) in mistyped_header, refuse the plural
+    `questions` only when the line ends in an id containing a `-` or a digit. Taken by: docs/backlog/e-router-v2.yaml R47 (the router scripts' open lows; its S1 to S3 are this
     sender's), as a new item.
   - >-
     The review's out-of-scope note: a format character such as U+202E or U+200B before 'wu:' makes the line pass as
