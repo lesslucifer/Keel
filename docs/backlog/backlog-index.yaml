@@ -25,8 +25,9 @@ files:
     file: local-app.yaml
     scope: >-
       The local app's later needs: message the router (L1), alerts when away (L2), a home other than GitHub (L3),
-      DeepSeek Harness (L4); E-GHSETUP's install script re-pointed (L5).
-    next-free: L6
+      DeepSeek Harness (L4); E-GHSETUP's install script re-pointed (L5). From E-APPLIST's replan: the window's tests
+      in keel check (L6), a dev middleware (L7), design specimens (L8), tray, menu and login item (L9).
+    next-free: L10
   - letter: D
     file: dsh.yaml
     scope: >-
