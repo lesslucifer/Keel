@@ -49,6 +49,9 @@ DEFAULT_API_BASE = "https://api.telegram.org"
 DEFAULT_TIMEOUT = 15.0
 TOKEN_KEY = "TELEGRAM_BOT_TOKEN"
 MAX_TEXT = 4096
+# The raw body is only bounded far above any message, so a huge input is refused before it is parsed;
+# the 4,096 cap is the message's, checked once its header lines are dropped and its link added.
+MAX_BODY = 16 * MAX_TEXT
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 USE_FILE = object()
 
@@ -360,6 +363,14 @@ def read_body(path):
     return body
 
 
+def check_body(text):
+    if not text or not text.strip():
+        raise NotifyError("the message is empty")
+    if len(text) > MAX_BODY:
+        raise NotifyError(f"the body is {len(text)} characters; at most {MAX_BODY} are read (a message is at most {MAX_TEXT})")
+    return text
+
+
 def check_text(text):
     if not text or not text.strip():
         raise NotifyError("the message is empty")
@@ -434,7 +445,7 @@ def main(argv):
     from_file = text is USE_FILE
     if from_file:
         text = read_body(DEFAULT_BODY)
-    text = check_text(text)
+    text = check_body(text)
     if from_file and not os.access(DEFAULT_BODY, os.W_OK):
         raise NotifyError(f"cannot clear {DEFAULT_BODY}: it is not writable; the message was not sent")
     chat = read_chat(os.environ.get("KEEL_NOTIFY_ACCESS", str(DEFAULT_ACCESS)))
