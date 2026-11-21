@@ -39,7 +39,10 @@ evidence:
     - "95c16af the owner's typed keel mr commit: scripts/router-worker.sh (the facts step writes the log; the deny entry)"
     - "142ed86 test: review fixes L1 and L2 red first; the review's test gaps pinned"
     - "cd16ede the owner's typed keel mr commit: scripts/router-worker.sh (L1, L2)"
-    - "this result pair, plain commit"
+    - "9bec509 docs: this result pair"
+    - "b545459 docs: the review's surviving mutants as follow-ups (code review round 1: PASS here)"
+    - "5ac92b4 test: round 1's five nits, taken under a fix-PASS"
+    - "this update of the result pair, plain commit"
   tests-added: >-
     tests/suite/router.rs: watchdog_tick_writes_each_live_worker_and_then_the_heartbeat,
     an_unchanged_tick_writes_only_the_heartbeat, each_changed_field_writes_one_line_for_its_worker,
@@ -48,7 +51,9 @@ evidence:
     no_run_a_gone_router_or_an_unreadable_list_writes_nothing, a_failing_log_write_never_drops_the_facts_block,
     worker_text_reaches_the_log_as_one_escaped_line, a_partly_readable_session_list_deletes_nothing,
     a_value_over_the_cap_is_clipped_by_bytes_never_refused, a_worker_lines_strings_are_clipped_to_their_lengths,
-    the_facts_block_is_printed_before_the_first_log_write. Changed: the launcher fixture copies scripts/router-app.sh;
+    the_facts_block_is_printed_before_the_first_log_write, a_worker_line_holds_only_what_the_step_read (5ac92b4).
+    Helpers: app() runs router-app.sh behind common::git_shim; worker_row plus at(cwd) is the one row builder;
+    router_row is the r1 row everywhere it was inline. Changed: the launcher fixture copies scripts/router-app.sh;
     WORKER_DENIES gains scripts/router-app.sh (checked by argv_with_root in every spawn test).
   expected-one-by-one:
     - {check: "first tick: each worker, then set router; value shapes locked", met: "yes", by: "watchdog_tick_writes_each_live_worker_and_then_the_heartbeat"}
@@ -67,7 +72,7 @@ evidence:
     at-142ed86: "against 95c16af, router:: 81 passed, 3 failed: a_partly_readable... (it wrote del worker/w2 and set router, the reviewer's L1), a_value_over_the_cap... (no worker line, L2), a_failing_log_write... (its changed case). The two pins (clip lengths, block before writes) held at 95c16af: they pin behaviour that already existed."
     mutants: "at 142ed86, each fix broken in a scratch copy: the writes moved before the block (the review's M7), the L1 guard dropped, the byte fit dropped; each made its test red; the file was restored"
   runs-at-cd16ede:
-    cargo-test: "unit 137 passed; suite 386 passed, 0 failed, 10 ignored (373 before W2; 13 new)"
+    cargo-test: "unit 137 passed; suite 386 passed, 0 failed, 10 ignored (373 before W2; 13 new); at 5ac92b4 suite 387 (14 new)"
     keel-check: "green (tree unchanged since the run on the staged fix)"
     fmt-clippy: "clean"
     flakiness: "the nine planned tests 8 of 8 runs green; the six fix-related tests 5 of 5"
@@ -80,7 +85,18 @@ evidence:
     fix both now: cd16ede, tests 142ed86. Its test gaps were pinned in the same test commit: the clip lengths and
     the block printed before the first write (its mutant M7). No further independent review of cd16ede (the router's
     note: its lows are follow-ups, done).
-  docs: "this result pair (new); the plan pair at f86005a; no other doc touched"
+  code-review:
+    round-1: "PASS on b545459, the whole range 1494748..b545459, tests/suite/router.rs (the cr gate's code path): 0 blockers, 0 importants, seven nits; two waived by the reviewer (no test makes router-app.sh refuse a line: the watchdog can no longer send a refusable value; the byte-clip case's placement), five marked to fix under a fix-PASS."
+    nits-taken: >-
+      5ac92b4, tests/ only: the byte clip pinned longest first (branch and waiting within 4 bytes); the value's
+      untouched branches (status working, done, none read busy, idle, unknown for a worker and the heartbeat; a
+      non-hex sessionId gives no session key; an unlinked .git no branch, tip or dirty); start_run and the direct
+      router-app.sh call behind the git shim; one row builder; router_row for every r1 row. Each new assertion red
+      against a launcher mutant in a scratch copy (a fixed-order fit, the raw worker state, lbr from br, any
+      sessionId, the raw router state), green on cd16ede's launcher; the copy restored and compared. No launcher
+      change was needed.
+    next: "a fresh reviewer writes the fix-PASS (--fixes b545459)"
+  docs: "this result pair (new; updated after round 1); the plan pair at f86005a; no other doc touched"
 distillation: >-
   Nothing in W2. At the epic close (W9): UC-ROUTE-8 names the watchdog as the update log's second writer;
   docs/local-app.html "Where it travels" gains the worker line's value (state, waiting, session, branch, tip, dirty,
