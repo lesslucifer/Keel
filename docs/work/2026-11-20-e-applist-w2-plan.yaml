@@ -1,0 +1,143 @@
+artifact: wu-plan
+status: ready
+id: E-APPLIST.W2
+epic: E-APPLIST
+title: "E-APPLIST.W2 · The watchdog's lines"
+date: "2026-11-21"
+page: 2026-11-20-e-applist-w2-plan.html
+requirement: >-
+  After W2, each run of the watchdog's facts step (scripts/router-worker.sh watchdog facts <router>) also writes,
+  only through scripts/router-app.sh with a fixed argv: one set worker/<name> for each live worker whose state,
+  waiting-for, session, branch, tip, uncommitted count or last activity differs from the update log's state, one
+  del worker/<name> for each worker that state holds and the run no longer sees live, then one set router as the
+  heartbeat; at most one line per worker per run, nothing when there is no run, the router is gone or a list cannot
+  be read; and its printed facts block, its exit 0 and its message to the router stay byte-equal to today's
+  whatever the log writes do.
+maps-to: >-
+  E-APPLIST, its W2 summary (docs/work/2026-11-20-e-applist-plan.html and .yaml): K15; UC-ROUTE-8 (new, recorded at
+  the close: the watchdog is the update log's second writer); docs/local-app.html "Two sources" ("Refetch": the
+  watchdog's next tick writes each live worker; "Defaults": three silent watchdog ticks turn on 'router not heard').
+owner-changes:
+  - when: "Every five minutes, while the router runs"
+    today: "The watchdog tells the router about each worker; nothing is written down"
+    after: "The same message, plus one line per changed worker and one heartbeat line in the update log"
+  - when: "Before this part can land"
+    today: "-"
+    after: "One typed commit of the launcher, then an independent re-check of it"
+expected:
+  - "With a run started and two live workers, one facts run adds three lines to log.jsonl: set worker/<name> for each (the value's keys snapshot-locked) and set router last."
+  - "A second facts run with nothing changed adds exactly one line, set router."
+  - "A change to one worker's state, waiting-for, session, branch, tip, uncommitted count or last activity adds exactly two lines: that worker's set and the heartbeat."
+  - "A worker gone from the list, or from this repository's worktrees, adds one del worker/<name>; the run after adds only the heartbeat."
+  - "Over generated fleets and changes, every facts run's new lines name each key at most once, end with set router, and leave the state's worker/* keys equal to the live workers."
+  - "After router-app.sh start (a router restart), the next facts run writes every live worker again."
+  - "No run, a gone router, an unreadable session or worktree list, or a red git-dir check: no line is written and the output is today's."
+  - "A held lock, a symlinked .router/app, or a missing router-app.sh: facts exits 0, prints the same block byte for byte, and waits on the lock at most once."
+  - "Worker-written text (waiting-for, a branch name) reaches the log as one escaped JSON line, control characters blanked; a session name outside the key grammar gets no line and keeps its block."
+  - "The worker deny list gains Bash(scripts/router-app.sh) and Bash(scripts/router-app.sh *)."
+  - "cargo test, cargo fmt --check, cargo clippy -D warnings, keel check and keel verify-doc are green on the tip; every existing facts test is unchanged and green."
+test-plan:
+  unit: "none: waived. A shell script has no unit layer in this repo; every case is an integration test through the process boundary (the epic plan's test-layers)."
+  integration: >-
+    tests/suite/router.rs, on the launcher fixture (its template also copies scripts/router-app.sh into main/scripts;
+    each test starts a run with that copy's start r1, then runs facts with the stub claude's session list, as the
+    existing facts tests do): watchdog_tick_writes_each_live_worker_and_then_the_heartbeat (the value shapes
+    snapshot-locked: key names and order, active only checked present and ISO-shaped; the facts output byte-equal to
+    the same tick with no run); an_unchanged_tick_writes_only_the_heartbeat;
+    each_changed_field_writes_one_line_for_its_worker (table over the seven fields: status, waitingFor, sessionId, a
+    branch switch, a commit, an untracked file, a transcript write); a_gone_worker_is_deleted_once (dropped from the
+    list, then moved to a cwd outside the worktrees; the next tick only the heartbeat; worker/<name>/report keys never
+    deleted); a_router_restart_rewrites_every_worker; every_tick_writes_each_key_at_most_once_and_the_heartbeat_last
+    (generated fleets and changes over several ticks, the existing xorshift Rng: each tick's new lines have distinct
+    keys, router once and last, the state's worker/* keys equal the live set);
+    no_run_a_gone_router_or_an_unreadable_list_writes_nothing (no state.json: .router/app not created; the router
+    gone; agents-ok 0; a checkout git cannot list); a_failing_log_write_never_drops_the_facts_block (a held lock with
+    an instant sleep on PATH: one wait of at most 100 polls, then no further call; .router/app a symlink; router-app.sh
+    removed from the fixture: each exits 0 and prints the no-log block byte for byte);
+    worker_text_reaches_the_log_as_one_escaped_line (quotes, a newline, control characters and 300 characters in
+    waitingFor; an odd branch name; a name outside the key grammar: block kept, no line). Changed: the
+    shared spawn argv check argv_with_root (used by launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validated_mode
+    and the other spawn tests): WORKER_DENIES gains scripts/router-app.sh, 25 -> 26 entries.
+    Red first: committed before the launcher change, every new test and the changed deny list fail (no line is
+    written, no deny entry); every existing facts test stays green.
+  e2e: "none at the WU: the epic test (app/e2e/applist.e2e.spec.ts, W9) runs this facts step with a fake claude session list writing worker lines and the heartbeat."
+details:
+  base: "wu/E-APPLIST/w2-watchdog-lines off epic/E-APPLIST at bf4cf5e (W1 merged: scripts/router-app.sh as built; the replan merged)"
+  files:
+    plain-commits: [tests/suite/router.rs, "this plan pair and the result pair under docs/work/"]
+    rule-bearing: [scripts/router-worker.sh]
+    against-the-epic-file-map: "none: the epic lists exactly scripts/router-worker.sh and tests/suite/router.rs. No guard, settings or persona change: the watchdog calls router-app.sh from its prompt hook, not from a tool call the guard judges."
+  what-the-facts-step-knows-each-tick:
+    from-the-session-list: "name, sessionId, cwd, status (or state when no status), waitingFor, kind; the router's own row (name == the router's name)"
+    from-the-transcript: "the newest write time of the transcript and its subagents (one ls -t, one stat), today turned into quiet minutes; the last six assistant items (free text)"
+    from-git: "branch (branch --show-current), tip (log -1 --format='%h %s'), uncommitted count (status --porcelain | wc -l, --no-optional-locks), each only when the worktree's .git link passes linked_ok"
+    live: "kind background, not watchdog or watchdog-*, cwd a registered worktree of this repository other than the router's checkout and the main one (unchanged)"
+  the-lines:
+    worker:
+      key: "worker/<name>; only a name matching [a-z0-9][a-z0-9-]{0,40} (router-app.sh's key grammar, the same as spawn's name rule); the first listed row per name"
+      value: >-
+        {"state": <busy|idle|the raw status or state word, clipped to 20, 'unknown' when empty>, "waiting": <waitingFor, clipped to 60;
+        omitted when empty>, "session": <sessionId when it matches [0-9a-f-]{1,64}; else omitted>, "branch": <clipped to 120;
+        omitted when detached or unread>, "tip": <the abbreviated hash, the first word of the facts step's own log -1;
+        omitted when unread>, "dirty": <the count as a number; omitted when unread>, "active": <the newest write time,
+        UTC ISO from jq todate, e.g. "2026-11-21T03:31:02Z"; omitted when no transcript or no stat>}; every string has
+        control characters blanked first, as the block does; keys in this order.
+      example: '{"run":"keel-1c.20261121-101500.4821","n":12,"at":"2026-11-21T10:20:02+07:00","op":"set","key":"worker/w2-plan","value":{"state":"busy","session":"6b0a...-...","branch":"wu/E-APPLIST/w2-watchdog-lines","tip":"bf4cf5e","dirty":0,"active":"2026-11-21T03:19:40Z"}}'
+      not-in-it: "the quiet minutes (they change every tick: the app derives them from active), the STUCK/DONE verdict (the app derives it), the tip's subject and the last six items (free text, and over the 512-byte cap)"
+    del: "del worker/<name> for each key in the state matching ^worker/[a-z0-9][a-z0-9-]{0,40}$ whose name is not a live worker this tick; worker/<name>/report and every other key are never touched"
+    heartbeat: >-
+      set router {"name": <the router's name>, "state": <the router's row, mapped as a worker's state>, "workers":
+      <the live count>}, every full tick, after the worker lines, even when unchanged (router-app.sh writes a line per
+      call, so the app sees a fresh at and n each tick).
+    per-tick-bound: "at most one line per worker (a set or a del, never both: a live worker is never gone) plus the heartbeat; a steady fleet writes one line per busy worker (its transcript grows) plus the heartbeat"
+  the-change-test: >-
+    The facts step reads <main checkout>/.router/app/state.json once per tick (the main checkout = the parent of
+    git's common dir, as router-app.sh finds it; refused unread when .router, .router/app or the file is a symlink
+    or not a regular file): its run and its values' worker/* entries. A worker's new value differs when jq's == says
+    so (key order ignored). No memory file of its own: a router restart (start) wipes the state, so the next tick
+    writes every live worker, as docs/local-app.html "Refetch" says. A start between the read and the writes delays
+    the unchanged workers by one tick. Two facts runs at once (rare) may each write the same change: a set is
+    idempotent for the app.
+  how-the-watchdog-calls-router-app:
+    - "\"$ROOT/scripts/router-app.sh\" set worker/<name> <json>, ... del worker/<name>, ... set router <json>: the copy in the router's checkout (the router runs that same copy), executed directly with a fixed argv, one call per line, in order, never in the background; every value one argv element built by jq -c, never through a shell string."
+    - "stdout and stderr of each call go to /dev/null: its 'OK run= n=' line never enters the watchdog's prompt."
+    - "exit 0: next line. exit 2 (refused: a value over 512 bytes, a bad key): that line is skipped, the rest go on. Any other exit (1 a lock or file error, 126/127 no script): no further call this tick, so a held lock costs one 5-second wait, never one per worker, and the hook's 60-second timeout is never near."
+    - "No state.json, the router gone, the session or worktree list unreadable, the git-dir check red, gd unknown: no call at all (no start: a run is the router's)."
+  facts-block-kept: >-
+    The block is built from the same per-worker read (no second git call, no second transcript read) and printed
+    before the first call, whole; the facts function keeps set +e and exit 0; the router's message comes from the
+    block, so it is unchanged. Every existing facts test stays as it is and green (none starts a run, so none sees a
+    line).
+  worker-deny: "the launcher's --disallowedTools list gains \"scripts/router-app.sh\" (Bash(c) and Bash(c *)), after scripts/router-worker.sh: intent, refused at once with a reason; the worker sandbox (writes bounded to its worktree and the git dir) is the bound, so a worker's copy never reaches the main checkout's .router/app (W1 open point 8)."
+  order:
+    - "1. This plan pair, plain commit; test note (integration waived: plan only) and doc note with --target epic/E-APPLIST; preflight and verify-dod red only on 8. The router verifies; the owner signs the plan and merges it into epic/E-APPLIST."
+    - "2. The tests, red first, plain commit: tests/suite/router.rs (the fixture copies router-app.sh; the new tests; WORKER_DENIES); lint green, the new tests and the deny-list test red, the rest green."
+    - "3. The worker writes scripts/router-worker.sh in the worktree, runs cargo test green on the working tree, stages only that file and stops; the router stages the owner's command and watches it (router-watch.sh commit)."
+    - "4. The owner's typed commit: keel mr commit -m 'feat(E-APPLIST.W2): the watchdog writes its workers and heartbeat to the update log' --as vuluu, only scripts/router-worker.sh staged (Reviewed-By trailer)."
+    - "5. The independent re-gate on the new tip, by a fresh read-only worker on opus at high effort: keel check and the suite green; router-worker.sh read by review-checklists, security path: facts never fails and always exits 0; the block printed before any call and byte-equal; writes only through router-app.sh, fixed argv, values built by jq, cleaned and clipped, keys checked before the call, output discarded; at most one lock wait per tick; no new git call or git flag in a worker's worktree; no process left in the background; the deny entry present. A fix goes back through steps 3 to 5."
+    - "6. The result pair, plain commit; test note (integration: tests/suite/router.rs; unit waived; e2e none), doc note."
+    - "7. keel preflight wu, then the code review (the cr gate binds tests/ only: scripts/ is not a code path), then keel verify-dod wu red only on 8."
+    - "8. The owner signs: keel mr confirm wu <tip> --as vuluu --target epic/E-APPLIST --report docs/work/2026-11-20-e-applist-w2-result.html, then merges into epic/E-APPLIST."
+  open-points:
+    - "Where does the watchdog learn what changed? From the update log's own state, read once a tick; no memory file. A router restart wipes the state, so the next tick writes every worker, as the contract asks; nothing else to keep in step."
+    - "What is 'last activity'? The transcript's newest write time, in UTC (active). Not the quiet minutes: they change every tick and would write every worker every tick. A busy worker still writes one line a tick, since its transcript grows."
+    - "Which fields go in a worker line? state, waiting, session, branch, tip, dirty, active; a field the step could not read is left out. The last six actions and the tip's subject stay in the message only: free text, and over the 512-byte cap."
+    - "What is the heartbeat? set router {name, state, workers}, every full tick, last. The router's own state comes free from the same session list; screen 5 (A5) shows it."
+    - "Is anything written when the tick is partial (no run, router gone, a list unreadable)? No line, not even the heartbeat. The app then says 'router not heard' after 15 minutes, which is true: nothing is heard."
+    - "Does the message or the facts block say a log write failed? No. K15 keeps the message as it is; the silence shows in the app's bar. Alternative: one line at the block's end, which the watchdog would relay."
+    - "A write that fails: skip or stop? A refused line (exit 2) is skipped; any other failure stops the tick's writes. A lock or file error repeats for every call; stopping bounds the tick to one 5-second wait."
+    - "Deny router-app.sh to workers? Yes, in the launcher's deny list, as W1 planned. Intent only: the sandbox already keeps a worker's copy out of the main checkout."
+    - "Write the facts key (the whole block)? No. It is over the 512-byte cap, and the screen that shows it is A5's."
+    - "The tip: abbreviated or full? Abbreviated, the first word of the facts step's own git call: no new git call in a worker's worktree. The app resolves it."
+    - "Clip lengths: state 20, waiting 60, branch 120 characters? Yes. A value still over 512 bytes (multi-byte text) is refused; that worker gets no line that tick and the rest go on."
+    - "A session name outside the key grammar? In the block, no line. Spawn's name rule is the same grammar, so only a session the launcher did not start is affected."
+    - "One typed commit with only router-worker.sh? Yes: it is the only rule file this WU changes."
+  baseline: "epic/E-APPLIST bf4cf5e; the W2 result records the suite counts at its own tip"
+  htmldoc:
+    id: 6b019e9d9f34851f0dfb2b50
+  sources:
+    - docs/work/2026-11-20-e-applist-plan.yaml (W2 summary, files, rule-bearing-and-unreviewed)
+    - docs/work/2026-11-20-e-applist-w1-plan.yaml and -w1-result.yaml (the contract as built)
+    - docs/local-app.html ("Two sources": Refetch, Defaults; K15)
+    - scripts/router-worker.sh (facts, the deny list), scripts/router-app.sh (verbs, keys, exits, caps)
+    - tests/suite/router.rs (stub_claude, launcher fixture, worker_row, the facts tests, WORKER_DENIES)
