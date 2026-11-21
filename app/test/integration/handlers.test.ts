@@ -3,13 +3,13 @@
 // in temp projects and fake tools in temp folders.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { dispatcher, type EventLike } from '../../src/main/bridge.ts';
 import { makeHandlers, prepare, type Parts } from '../../src/main/handlers.ts';
 import { loadSettings } from '../../src/main/settings.ts';
 import type { AlertOutcome, LoginPathState, Tool } from '../../src/shared/contract.ts';
-import { tempDir, program, realGit, sh, snapshot, mk } from '../support/fs.ts';
+import { tempDir, program, realGit, sh, snapshot, mk, recorder } from '../support/fs.ts';
 
 const GIT = realGit();
 const PAGE = 'app://keel/index.html';
@@ -145,6 +145,28 @@ test('changes run one at a time: two projects.add at once list one project', asy
   const state = (await w.call('state.get')) as { ok: true; value: { projects: unknown[] } };
   assert.equal(state.value.projects.length, 1);
   assert.equal(w.seen.pushes, 1);
+});
+
+test('projects.add refuses a git inside the folder being added, set or found on the PATH, before it runs there', async (t) => {
+  const w = world(t);
+  const project = keelRepo(path.join(w.dir, 'proj'));
+  const record = path.join(w.dir, 'record.json');
+  const shim = recorder(path.join(mk(path.join(project, 'bin')), 'git'), record, 0, `${project}\n`);
+  w.answers.folder = project;
+  // Set while nothing is listed: the tool check passes, for no project holds it yet.
+  w.answers.file = shim;
+  assert.deepEqual(await w.call('settings.choose', { tool: 'git' }), { ok: true, value: { done: true } });
+  const set = (await w.call('projects.add')) as { ok: true; value: { done: false; why: string } };
+  assert.equal(set.value.done, false);
+  assert.match(set.value.why, /^git is inside the project proj/);
+  assert.ok(!existsSync(record), 'the set git was run on the folder');
+  // Unset, and found first on a PATH entry inside the folder.
+  await w.call('settings.reset', { tool: 'git' });
+  w.loginPath.entries.unshift(path.dirname(shim));
+  const found = (await w.call('projects.add')) as { ok: true; value: { done: false; why: string } };
+  assert.match(found.value.why, /^git is inside the project proj/);
+  assert.ok(!existsSync(record), 'the git found on the PATH was run on the folder');
+  assert.deepEqual((await w.call('state.get') as { ok: true; value: { projects: unknown[] } }).value.projects, []);
 });
 
 test('prepare() loads the settings, then reads the PATH with the set tools\' folders for its fallback', async (t) => {

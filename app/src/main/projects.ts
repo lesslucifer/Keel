@@ -1,8 +1,9 @@
 // projects.json in the app's folder: {version: 1, projects: [{id, path, name}]}. A project is a
 // Keel project's main checkout, judged only by reading git with the fixed commands: its top folder
 // is the folder chosen, its common git folder is that folder's .git (not a linked worktree or a
-// submodule), and its HEAD commits .keel/config.toml as a regular file. The app never writes
-// inside a project.
+// submodule), and its HEAD commits .keel/config.toml as a regular file. The git that reads it must
+// not be inside the folder: a project's own files never become the program the app runs. The app
+// never writes inside a project.
 // E-APPLIST keeps one project; the file already holds a list, so A5 lifts the cap with no migration.
 // Each change saved calls `changed` once (the shell pushes state.changed); a refusal saves nothing.
 
@@ -14,6 +15,7 @@ import { PROJECT_ID } from './bridge.ts';
 import { run, MIN_GIT, type Captured, type RunOptions } from './commands.ts';
 import { load, writeAtomic } from './store.ts';
 import { plain } from './text.ts';
+import { toolProblem } from './tools.ts';
 
 export const PROJECTS_FILE = 'projects.json';
 export const MAX_PROJECTS = 1;
@@ -93,6 +95,9 @@ export async function checkProject(folder: string, git: string, opts: RunOptions
   const dir = await real(folder);
   if (dir === null) return { ok: false, why: 'not found' };
   if (!(await stat(dir)).isDirectory()) return { ok: false, why: 'not a folder' };
+  // Before any run: a git inside the folder would be the folder's own program run on it.
+  const gitWhy = await toolProblem('git', git, [dir]);
+  if (gitWhy !== null) return { ok: false, why: `git is ${gitWhy}: choose a git outside it in the settings` };
   const top = await run(git, 'toplevel', { project: dir }, opts);
   const topFailed = gitFailed(top);
   if (topFailed !== null) return { ok: false, why: topFailed };

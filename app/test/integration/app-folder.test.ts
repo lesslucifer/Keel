@@ -3,13 +3,13 @@
 // and its git status are the same before and after add, remove and every settings write.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, symlinkSync, chmodSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, symlinkSync, chmodSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { readJson, writeAtomic, load } from '../../src/main/store.ts';
 import { loadSettings, chooseTool, resetTool, SETTINGS_FILE } from '../../src/main/settings.ts';
 import { loadProjects, addProject, removeProject, PROJECTS_FILE } from '../../src/main/projects.ts';
 import { lookup, toolStates } from '../../src/main/tools.ts';
-import { tempDir, program, realGit, sh, snapshot, mk } from '../support/fs.ts';
+import { tempDir, program, realGit, sh, snapshot, mk, recorder } from '../support/fs.ts';
 
 const GIT = realGit();
 const PATH = [path.dirname(GIT), '/usr/bin', '/bin'];
@@ -245,6 +245,22 @@ test('a HEAD whose .keel/config.toml is a folder or a link is refused: the proje
     sh(GIT, repo, ['commit', '-q', '-m', 'init']);
     const r = await addProject(path.join(dir, `app-${path.basename(repo)}`), repo, GIT, opts(home));
     assert.match(r.ok ? 'accepted' : r.why, /HEAD does not commit \.keel\/config\.toml/, repo);
+  }
+});
+
+test('a git inside the folder being added is refused before it ever runs', async (t) => {
+  const dir = tempDir(t, 'projects');
+  const home = mk(path.join(dir, 'home'));
+  const project = keelRepo(path.join(dir, 'proj'));
+  const record = path.join(dir, 'record.json');
+  const shim = recorder(path.join(mk(path.join(project, 'bin')), 'git'), record, 0, `${project}\n`);
+  const linked = path.join(dir, 'link-bin');
+  mkdirSync(linked);
+  symlinkSync(shim, path.join(linked, 'git'));
+  for (const git of [shim, path.join(linked, 'git')]) {
+    const r = await addProject(path.join(dir, 'app-folder'), project, git, opts(home));
+    assert.match(r.ok ? 'accepted' : r.why, /^git is inside the project proj/, git);
+    assert.ok(!existsSync(record), `${git} was run on the folder`);
   }
 });
 
