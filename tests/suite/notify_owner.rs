@@ -540,14 +540,28 @@ fn a_log_that_cannot_be_written_still_tries_the_send_and_says_so() {
     // a lock a killed writer left
     let locked = started();
     std::fs::create_dir(locked.path().join(".router/app/.lock")).unwrap();
-    for (dir, why) in [(&none, "no run"), (&alone, "router-app.sh"), (&locked, "LOCKED")] {
-        let out = run(dir, &["--send", "wu: E-X.W2\nPlan to read\n"], UNREACHED);
+    // the leftover lock is waited out by router-app.sh's polls, not by the clock: a `sleep` on its PATH
+    // only records each poll, so the 5 s wait never races the sender's 10 s timeout under load
+    let shims = locked.path().join(".sleep-shim");
+    let polls = locked.path().join(".polls");
+    std::fs::create_dir(&shims).unwrap();
+    std::fs::write(shims.join("sleep"), format!("#!/bin/sh\nprintf '%s\\n' \"$*\" >> {}\n", common::sh_quote(polls.to_str().unwrap()))).unwrap();
+    std::fs::set_permissions(shims.join("sleep"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let shimmed = common::test_path(&common::path_with(locked.path().join(".shim")), Some(&shims));
+    for (dir, why, path) in [(&none, "no run", None), (&alone, "router-app.sh", None), (&locked, "LOCKED", Some(shimmed.as_str()))] {
+        let extra: Vec<(&str, &str)> = path.map(|p| ("PATH", p)).into_iter().collect();
+        let out = run_with(dir, &["--send", "wu: E-X.W2\nPlan to read\n"], UNREACHED, &extra);
         assert_send_was_tried(&out);
         let problem = stderr(&out);
         assert!(problem.contains("no desk alert") && problem.contains(why), "the stderr does not say why no desk alert ({why}): {problem}");
         assert!(alert_lines(dir).is_empty(), "an alert line was written");
         assert_no_credential(&out);
     }
+    let polls = std::fs::read_to_string(&polls).unwrap_or_default();
+    let polls: Vec<&str> = polls.lines().collect();
+    assert!(polls.iter().all(|p| *p == "0.05"), "a poll did not sleep 0.05 s: {polls:?}");
+    assert!((99..=100).contains(&polls.len()), "router-app.sh polled {} times, not its 5 s of 0.05 s polls", polls.len());
+    assert!(locked.path().join(".router/app/.lock").is_dir(), "the leftover lock was broken");
 }
 
 #[test]
@@ -1100,13 +1114,19 @@ fn the_4096_cap_is_checked_on_the_message_with_its_link() {
 }
 
 #[test]
-fn a_raw_body_far_past_any_message_is_refused_before_it_is_read() {
-    let dir = started();
-    let out = preview(&dir, &"H".repeat(70_000));
-    assert!(!out.status.success(), "a 70,000-character body was accepted");
-    let problem = stderr(&out);
-    assert_eq!(problem.lines().count(), 1, "{problem:?}");
-    assert!(problem.contains("70000"), "{problem}");
+fn a_raw_body_past_its_bound_is_refused_before_it_is_parsed() {
+    let dir = channel();
+    // a padded header line: the message is "H" and its link, the raw body is the bound or one past it
+    let padded = |raw: usize| format!("wu:{}E-A.W1\nH", " ".repeat(raw - "wu:E-A.W1\nH".len()));
+    let at_bound = preview(&dir, &padded(65_536));
+    assert!(at_bound.status.success(), "a 65,536-character body with a small message was refused: {}", stderr(&at_bound));
+    for (raw, text) in [(65_537, padded(65_537)), (70_000, "H".repeat(70_000))] {
+        let out = preview(&dir, &text);
+        assert!(!out.status.success(), "a {raw}-character body was accepted");
+        let problem = stderr(&out);
+        assert_eq!(problem.lines().count(), 1, "{problem:?}");
+        assert!(problem.contains(&format!("the body is {raw} characters")) && problem.contains("65536"), "the refusal is not the raw body's bound: {problem}");
+    }
 }
 
 #[test]
@@ -1155,6 +1175,11 @@ fn the_sender_and_the_app_script_take_the_same_ids() {
         "e-A.W1".to_string(),
         "E-A.w1".to_string(),
         "E-A1.W01".to_string(),
+        "E-A-B.W1".to_string(),
+        "E-A.B.W1".to_string(),
+        "E-a.W1".to_string(),
+        "E-A_B.W1".to_string(),
+        "E-A.W1a".to_string(),
     ];
     for wu in &wus {
         let sender = parse(&format!("wu: {wu}\nHead\n")).get("error").is_none();
@@ -1171,6 +1196,10 @@ fn the_sender_and_the_app_script_take_the_same_ids() {
         "A".to_string(),
         "a_b".to_string(),
         "q-1".to_string(),
+        "aB".to_string(),
+        "a.b".to_string(),
+        "a-B".to_string(),
+        "aé".to_string(),
     ];
     for id in &questions {
         let sender = parse(&format!("question: {id}\nHead\n")).get("error").is_none();
