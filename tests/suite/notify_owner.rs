@@ -819,8 +819,9 @@ fn a_byte_that_is_not_utf8_in_the_argument_still_previews_and_writes() {
             .env("KEEL_NOTIFY_ACCESS", dir.path().join("access.json"))
             .env("KEEL_NOTIFY_API_BASE", base)
             .env("LC_ALL", "en_US.UTF-8")
+            // strict even where en_US.UTF-8 is not installed (Python would fall back to UTF-8 mode)
+            .env("PYTHONIOENCODING", "utf-8:strict")
             .env_remove("PYTHONUTF8")
-            .env_remove("PYTHONIOENCODING")
             .current_dir(dir.path())
             .stdin(Stdio::null())
             .output()
@@ -836,13 +837,13 @@ fn a_byte_that_is_not_utf8_in_the_argument_still_previews_and_writes() {
     assert_eq!(alerts[0]["value"]["headline"], "Head line");
 }
 
-/// Every pid a fake writer recorded is killed when the test ends, pass or fail.
+/// Every pid (or -group) a test recorded is killed when the test ends, pass or fail.
 struct Reap(PathBuf);
 
 impl Drop for Reap {
     fn drop(&mut self) {
         for pid in std::fs::read_to_string(&self.0).unwrap_or_default().split_whitespace() {
-            let _ = common::cmd("kill").args(["-KILL", pid]).stderr(Stdio::null()).status();
+            let _ = common::cmd("kill").args(["-KILL", "--", pid]).stderr(Stdio::null()).status();
         }
     }
 }
@@ -904,4 +905,98 @@ echo "OK run=fake n=2"
     let leaked: Vec<&str> = env.lines().filter(|l| l.starts_with("TELEGRAM_") || l.starts_with("KEEL_NOTIFY_")).map(|l| l.split('=').next().unwrap()).collect();
     assert!(leaked.is_empty(), "router-app.sh was handed {leaked:?}");
     assert!(!env.contains(TOKEN), "router-app.sh was handed the credential");
+}
+
+// Re-review of f435eb1: the sender ended by TERM or HUP while a writer hangs, and a closed stdout.
+
+/// A fake router-app.sh that takes the lock, starts a child and waits; its TERM trap releases the
+/// lock as the real one's does. It records its pid and its child's in `<log dir>/pids`.
+const HANGING_WRITER: &str = r#"d=$(cd "$(dirname "$0")/.." && pwd -P)/.router/app
+mkdir "$d/.lock" || exit 1
+trap 'rmdir "$d/.lock"; exit 1' TERM
+sleep 300 &
+echo "$$ $!" > "$d/pids.tmp" && mv "$d/pids.tmp" "$d/pids"
+wait
+"#;
+
+fn ended_by(signal: &str) {
+    use std::os::unix::process::CommandExt;
+    let dir = started();
+    let pids = dir.path().join(".router/app/pids");
+    fake_app(&dir, HANGING_WRITER);
+    // TERM and HUP reset to their defaults before the sender's exec, whatever the suite's launch
+    // ignores (nohup, cargo test &): an ignored signal is inherited, and the sender keeps it ignored
+    let mut command = common::cmd("python3");
+    command
+        .args(["-c", "import os, signal, sys\nfor s in (signal.SIGTERM, signal.SIGHUP): signal.signal(s, signal.SIG_DFL)\nos.execv(sys.argv[1], sys.argv[1:])"])
+        .arg(dir.path().join("scripts/notify-owner.py"))
+        .env("HOME", dir.path())
+        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .env("PATH", common::path_with(dir.path().join(".shim")))
+        .args(["--send", "wu: E-X.W2\nPlan to read\n"])
+        .env("KEEL_NOTIFY_ENV", dir.path().join(".env"))
+        .env("KEEL_NOTIFY_ACCESS", dir.path().join("access.json"))
+        .env("KEEL_NOTIFY_API_BASE", UNREACHED)
+        .current_dir(dir.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .process_group(0);
+    let mut sender = command.spawn().unwrap();
+    let group = sender.id().to_string();
+    // the sender's group is killed on every exit path, after the writer's recorded pids
+    let _sender_reap = Reap(dir.path().join(".router/app/sender"));
+    std::fs::write(dir.path().join(".router/app/sender"), format!("-{group}")).unwrap();
+    let _reap = Reap(pids.clone());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !pids.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let recorded = std::fs::read_to_string(&pids).expect("the fake writer never started");
+    assert_eq!(recorded.split_whitespace().count(), 2, "{recorded:?}");
+    let sent = common::cmd("kill").args([&format!("-{signal}"), "--", &format!("-{group}")]).status().unwrap();
+    assert!(sent.success(), "kill -{signal} of the sender's group failed");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while sender.try_wait().unwrap().is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(sender.try_wait().unwrap().is_some(), "the sender outlived {signal}");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while recorded.split_whitespace().any(alive) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let left: Vec<&str> = recorded.split_whitespace().filter(|p| alive(p)).collect();
+    assert!(left.is_empty(), "{signal} to the sender left its writer's processes: {left:?}");
+    assert!(!dir.path().join(".router/app/.lock").exists(), "{signal} to the sender left the writer's lock");
+}
+
+#[test]
+fn a_sender_ended_by_term_ends_its_hung_writer_and_frees_the_lock() {
+    ended_by("TERM");
+}
+
+#[test]
+fn a_sender_ended_by_hup_ends_its_hung_writer_and_frees_the_lock() {
+    ended_by("HUP");
+}
+
+#[test]
+fn a_dry_run_with_stdout_closed_still_succeeds() {
+    let dir = started();
+    let script = dir.path().join("scripts/notify-owner.py");
+    let out = common::cmd("sh")
+        .args(["-c", r#"exec "$0" "$@" >&-"#])
+        .arg(&script)
+        .args(["--dry-run", "wu: E-X.W2\nPlan to read\n"])
+        .env("HOME", dir.path())
+        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .env("KEEL_NOTIFY_ENV", dir.path().join(".env"))
+        .env("KEEL_NOTIFY_ACCESS", dir.path().join("access.json"))
+        .env("KEEL_NOTIFY_API_BASE", UNREACHED)
+        .current_dir(dir.path())
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "a dry run with stdout closed failed: {}", stderr(&out));
+    assert_no_credential(&out);
 }
