@@ -13,10 +13,14 @@ outcome: >-
   never stops the send; a mistyped header writes and sends nothing; --dry-run shows the message and the lines it would
   write. The keel-router skill (both copies, byte-equal) names each stage's moment, the log's start, the deletes of a
   stage and a question, and the two header lines; project-router names the update log and every rule file in the
-  committed config. Rule commits, each the owner's typed keel mr commit: A c47f692 (the sender), its review fixes
-  f435eb1 and d6cedce, B 31b0199 (both keel-router copies), C 7603745 (project-router). Two independent read-only
-  reviews of the sender found five low items and one hardening, all fixed with a failing test first. Re-gate on
-  7603745: cargo test unit 137 passed, suite 400 passed, 0 failed, 14 ignored (port-bound); keel check green.
+  committed config. A leading line that looks like a header with a mistyped key (Wu:, wu :, one slip from
+  question) followed by a header's value is refused, quoting what was typed; a headline such as "Question: keep the
+  link?" stays text. Rule commits, each the owner's typed keel mr commit: A c47f692 (the sender), its review fixes
+  f435eb1 and d6cedce, B 31b0199 (both keel-router copies), C 7603745 (project-router), then the fixes of the reviews
+  of B to E: D 2d1a7d4 and F 63b2be2 (the sender), E b929e89 and G a4c0ed5 (the skills). Five independent read-only
+  review rounds (two of the sender, three of B to E) found 5 medium and 16 low items and one hardening; every medium
+  and every low but the last round's one is fixed, each testable one with a failing test first. Re-gate on a4c0ed5:
+  cargo test unit 137 passed, suite 404 passed, 0 failed, 14 ignored (port-bound); keel check green.
 deviations:
   - >-
     Port-bound tests ignored in the worker's run. The worker sandbox refuses a loopback bind and a loopback connect
@@ -51,6 +55,15 @@ deviations:
     b34ae50 -> 249957d (message only: the ignored count corrected from 6 to 4) and e9f4315 -> ecf0c10 (the TERM and
     HUP tests gained a python3 shim that resets both signals to their defaults before the sender's exec, re-run red).
     Neither was signed or pushed; nothing signed was touched. No amend since.
+  - >-
+    Plan details.the-body.form (plan.yaml line 92) says the header ends at the first other line. D (2d1a7d4) refuses
+    a first other line that looks like a mistyped header instead: a key that is wu in another case or spacing, or one
+    slip from question, followed by a value that fits that key's grammar (F 63b2be2 added the value condition).
+    Why: review round 1 of B and C (M1) found a mistyped key sent as text with no link and exit 0, against the
+    plan's promise that a typo in a header is refused.
+  - >-
+    The result pair was committed (4ef1756) with its notes and a green preflight before the router's change of order
+    (park it, fix review round 1 of B and C first) arrived. It was kept, not reset, and is updated by this commit.
   - "The back-merge of epic/E-APPLIST (1494748) made a merge commit, 610ffb5, not a fast-forward."
   - >-
     Process slip: a temp-copy run in round B shared this worktree's target dir, so the next local run used a suite
@@ -64,7 +77,8 @@ evidence:
       parse_reads_a_header_like_line_after_the_text_as_text, parse_refuses_a_bad_or_repeated_header_naming_the_line,
       parse_gives_a_headline_only_body_its_default_line, parse_reads_crlf_and_blanks_control_characters,
       parse_cuts_a_long_headline_and_line_with_an_ellipsis, parse_shrinks_a_multibyte_body_to_its_byte_budgets,
-      parse_blanks_a_byte_that_is_not_utf8.
+      parse_blanks_a_byte_that_is_not_utf8, parse_refuses_a_mistyped_header_key_naming_the_line,
+      a_headline_that_starts_with_question_stays_text, a_mistyped_header_refusal_quotes_what_was_typed.
     integration-runnable: >-
       tests/suite/notify_owner.rs (each case a temp git repo with copies of both scripts): a_body_naming_no_work_unit_has_no_link,
       a_question_header_writes_the_question_line_before_the_alert, a_failed_send_still_leaves_the_alert_line,
@@ -73,7 +87,8 @@ evidence:
       no_line_carries_the_credential_or_the_chat, a_byte_that_is_not_utf8_in_the_argument_still_previews_and_writes,
       a_writer_that_hangs_is_killed_with_its_children_and_its_lock_released,
       the_writer_never_sees_the_credential_or_the_test_seam, a_sender_ended_by_term_ends_its_hung_writer_and_frees_the_lock,
-      a_sender_ended_by_hup_ends_its_hung_writer_and_frees_the_lock, a_dry_run_with_stdout_closed_still_succeeds.
+      a_sender_ended_by_hup_ends_its_hung_writer_and_frees_the_lock, a_dry_run_with_stdout_closed_still_succeeds,
+      a_mistyped_header_key_sends_nothing_and_writes_nothing.
       tests/suite/init.rs: router_skill_names_each_stage_and_its_moment, every_keel_router_file_equals_its_self_hosted_copy,
       project_router_names_every_rule_file.
     integration-ignored: >-
@@ -85,6 +100,8 @@ evidence:
   red-first:
     - "249957d against the plan-tip scripts: 19 failed (9 parse units: AttributeError, no parse_body; 8 notify integration: no line written, no link; 2 init: commands.md names no router-app.sh shape, project-router omits 4 rule files), 4 passed (the copies-equal guard among them), 4 new ignored."
     - "191516f against c47f692: 4 failed (UnicodeEncodeError on \\udcff; the dry run exited 1; a hung writer's child outlived the sender; TELEGRAM_STATE_DIR and TELEGRAM_BOT_TOKEN reached the writer)."
+    - "90421ce against 7603745: 2 failed ('Wu: E-A.W1' read as body text; a mistyped key sent, alert line n 2)."
+    - "f6e5557 against 2d1a7d4: 2 failed ('Question: keep keel:// as the link?', 'Questions: two for you' and the line-3 'Question: keep keel://?' each refused; ' wu:', 'wu :' and a tab each quoted as 'wu:')."
     - "ecf0c10 against f435eb1: 3 failed (TERM and HUP each left the writer and its child; a dry run with stdout closed exited 1). The strict-encoding test passed on f435eb1 and failed on a mutant without the reconfigure."
   reviews:
     - >-
@@ -97,7 +114,25 @@ evidence:
       longer reached the writer's own session, leaving it hung with its lock. L2: --dry-run with stdout closed
       exited 1. L3: the non-UTF-8 test caught its mutant only where en_US.UTF-8 is installed. L1 and L2 fixed in
       d6cedce, L3 in the test commit ecf0c10 (red first there).
-    - "d6cedce: no further review (the owner's rule: low items are follow-ups). B (31b0199) and C (7603745): no review is recorded in this worker's session; the router records any."
+    - "d6cedce: no further review (the owner's rule: low items are follow-ups)."
+    - >-
+      Review round 1 of B and C (to 7603745), independent and read-only: 4 medium, 5 low. M1: a mistyped header key
+      (Wu:, wu :) was sent as text, against the plan. M2: start 'once at session start' contradicted the START
+      checklist (a compaction would wipe the sender's lines). M3: the in-review moment was vague. M4: a question
+      deleted only on an answer, not on its default. L1 to L5: project-router's main note, the header clause's owner,
+      the 'no question line' error, LOCKED's removal, the posture's Bash list and 'only Write'. Fixed: M1 in D 2d1a7d4
+      (red first in 90421ce), the rest in E b929e89 (patch applied by the owner).
+    - >-
+      Review round 2 of B to E (to b929e89): 1 medium, 5 low; every round-1 finding fixed, L2 in part. Medium: the
+      one-slip rule refused real headlines ('Question: keep keel:// as the link?'). Lows: the refusal named the key,
+      not what was typed; 'once per router session name' versus a renaming compaction; 'answered' versus 'answered or
+      defaulted'; the header clause's owner (L2's rest); the lock's rmdir unquoted and failing in zsh when empty.
+      Fixed: the sender in F 63b2be2 (red first in f6e5557), the text in G a4c0ed5.
+    - >-
+      Review round 3 of B to E (b929e89..a4c0ed5): every round-2 finding fixed; one new low (below, a follow-up): a
+      short headline whose word after the colon fits the id grammar ('Questions: 2', 'Question: yes', 'Question:
+      none') is still refused as a mistyped header. It fails safe (nothing sent, the refusal quotes the text). By the
+      review table only lows remain: done, no fix, no new round.
   commits:
     - "477949f plan pair (signed, merged into the epic)"
     - "610ffb5 back-merge of epic/E-APPLIST at 1494748"
@@ -109,7 +144,14 @@ evidence:
     - "d6cedce rule A fix: L1, L2 (owner)"
     - "31b0199 rule B: both keel-router copies, SKILL.md and references/commands.md (owner)"
     - "7603745 rule C: .claude/skills/project-router/SKILL.md (owner)"
-  re-gate: "7603745: cargo test unit 137 passed; suite 400 passed, 0 failed, 14 ignored; keel check 'check green - cached'."
+    - "4ef1756 result pair, first version"
+    - "90421ce tests for review round 1 of B and C, red first"
+    - "2d1a7d4 rule D: the sender refuses a mistyped header key (owner)"
+    - "b929e89 rule E: both keel-router copies and project-router, review round 1 (owner)"
+    - "f6e5557 tests for review round 2, red first"
+    - "63b2be2 rule F: a headline that starts with Question stays text; the refusal quotes what was typed (owner)"
+    - "a4c0ed5 rule G: both keel-router copies, review round 2 (owner)"
+  re-gate: "a4c0ed5: cargo test unit 137 passed; suite 404 passed, 0 failed, 14 ignored; keel check 'check green - cached'. Earlier, 7603745: suite 400 passed, 14 ignored."
   guard-check: "Every router-app.sh shape B names, filled with sample values, run through scripts/router-guard.jq as the router: all admitted (start, the five stages with and without a tip, del wu/<wu>/stage, del question/<id>, notify-owner.py --send)."
   docs-touched: "docs/work/2026-11-20-e-applist-w3-plan.* (T3), this result pair (T3)."
 distillation: >-
@@ -122,6 +164,16 @@ follow-ups:
   - "W1's N5 (the log's link grammar admits keel://../..): not taken here; the sender builds only keel://wu/<checked id>. Taken by: W5's link handler (refuse every other form)."
   - "The live Telegram test (is the keel:// line clickable, does it open the app): Taken by: W6's close."
   - "A retry after a failed send writes a second alert line (accepted in the plan). Taken by: none needed now; W5 may fold equal alerts if the owner asks."
+  - >-
+    Review round 3's low: a short headline whose word after the colon fits the id grammar ('Questions: 2',
+    'Question: yes', 'Question: none') is refused as a mistyped header; it fails safe and the refusal quotes the text.
+    The review offered two fixes; they were not relayed to this worker and are to be copied from the round-3 review
+    into the row. Taken by: docs/backlog/e-router-v2.yaml R47 (the router scripts' open lows; its S1 to S3 are this
+    sender's), as a new item.
+  - >-
+    The review's out-of-scope note: a format character such as U+202E or U+200B before 'wu:' makes the line pass as
+    body text, as in D (the header parse matches the raw line; only the alert lines are blanked). Taken by:
+    docs/backlog/e-router-v2.yaml R47, beside its L3 (the hidden characters the inbox cleaner passes).
 details:
   example-run: >-
     7603745's scripts in a temp git repo, router-app.sh start keel-demo, the body

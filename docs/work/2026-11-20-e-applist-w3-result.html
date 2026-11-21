@@ -16,7 +16,7 @@
   <main>
 
 <h2 id="happened">What happened</h2>
-<p data-c="happened">Delivered. The sender reads two optional first lines, the work unit and a question's name. It writes the question line and the alert line, then sends to Telegram with the app's link last. The router skill, in both copies, names the moment for each stage. You made five typed rules commits. Two fresh reviews of the sender found five small problems and one hardening; each was fixed with a failing test first.</p>
+<p data-c="happened">Delivered. The sender reads two optional first lines, the work unit and a question's name. It writes the question line and the alert line, then sends to Telegram with the app's link last. The router skill, in both copies, names the moment for each stage. You made nine typed rules commits. Five fresh review rounds found five medium and sixteen small problems; all are fixed but one small one, which fails safe.</p>
 
 <h2 id="checks">How you'll know it worked</h2>
 <table data-c="checks">
@@ -43,6 +43,7 @@
 <ul data-c="diff">
   <li>Tests that need a network port cannot run in the worker's sandbox. They run when you run them; the rest send to an address that fails, after the lines are written.</li>
   <li>The reviews added: a stuck log writer is stopped with everything it started, and its lock freed. Stopping the sender stops the writer first. The writer never sees the bot's settings. Odd bytes in a message are blanked or escaped.</li>
+  <li>A first line that looks like a mistyped header, such as <code>Wu: E-APPLIST.W3</code>, is refused rather than sent as text. A headline such as "Question: keep the link?" stays text.</li>
   <li>You copied the skill files under <code>.claude</code>: the sandbox refuses the worker there.</li>
   <li>The worker amended two of its own unsigned commits, against the rules. Nothing signed was touched; no amend since.</li>
 </ul>
@@ -52,6 +53,7 @@
   <li>Re-run the port tests on the final tip before you sign: you.</li>
   <li>Start the update log and write the live stages: the router, at this merge.</li>
   <li>Refuse any link but a work unit's: W5's link handler.</li>
+  <li>"Question: yes" is still refused, and a hidden character can hide a header: the router scripts' backlog row R47.</li>
   <li>Does the link open the app from Telegram? W6's close.</li>
 </ul>
 
