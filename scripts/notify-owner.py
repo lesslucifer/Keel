@@ -197,29 +197,46 @@ def stop(child):
         pass
 
 
+def ended(signum, frame):
+    """TERM or HUP while a writer runs: end the sender through SystemExit, so the writer is stopped first."""
+    sys.exit(128 + signum)
+
+
 def write_line(args):
-    """Run router-app.sh with args (no shell string), in a session of its own; its line number, or None and why."""
+    """Run router-app.sh with args (no shell string), in a session of its own; its line number, or None and why.
+
+    That session no longer hears a signal sent to ours, so while it runs a TERM or HUP to the sender
+    (one not ignored at its start) is turned into SystemExit, which stops the writer and its group
+    (its lock released) before the sender ends; the previous handlers are restored after."""
+    previous = {}
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        if signal.getsignal(sig) == signal.SIG_DFL:
+            previous[sig] = signal.signal(sig, ended)
     try:
-        child = subprocess.Popen(
-            ["/bin/sh", str(APP), *args],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            encoding="utf-8",
-            errors="replace",
-            env=writer_env(),
-            start_new_session=True,
-        )
-    except OSError as error:
-        return None, f"cannot run /bin/sh: {error.strerror or error.__class__.__name__}"
-    try:
-        out, err = child.communicate(timeout=APP_TIMEOUT)
-    except subprocess.TimeoutExpired:
-        stop(child)
-        return None, f"router-app.sh did not answer within {APP_TIMEOUT} s"
-    except BaseException:
-        stop(child)
-        raise
+        try:
+            child = subprocess.Popen(
+                ["/bin/sh", str(APP), *args],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                encoding="utf-8",
+                errors="replace",
+                env=writer_env(),
+                start_new_session=True,
+            )
+        except OSError as error:
+            return None, f"cannot run /bin/sh: {error.strerror or error.__class__.__name__}"
+        try:
+            out, err = child.communicate(timeout=APP_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            stop(child)
+            return None, f"router-app.sh did not answer within {APP_TIMEOUT} s"
+        except BaseException:
+            stop(child)
+            raise
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler if handler is not None else signal.SIG_DFL)
     if child.returncode != 0:
         said = [line for line in err.splitlines() if line.strip()]
         why = one_line(said[-1]) if said else f"router-app.sh exited {child.returncode}"
@@ -391,8 +408,10 @@ def main(argv):
     text = check_text(message_text(parsed))
 
     if args.dry_run is not None:
-        # a byte that is not UTF-8 reaches the text as a lone surrogate: show it escaped, never fail on it
-        sys.stdout.reconfigure(errors="backslashreplace")
+        # a byte that is not UTF-8 reaches the text as a lone surrogate: show it escaped, never fail on
+        # it; a closed stdout (sys.stdout None) prints nothing and is no failure
+        if sys.stdout is not None and hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(errors="backslashreplace")
         print(f"dry-run: valid sendMessage request ({len(text)} chars, {len(text.splitlines())} lines); no request sent")
         print(text, end="" if text.endswith("\n") else "\n")
         question = question_value(parsed)
