@@ -1072,3 +1072,39 @@ fn a_mistyped_header_refusal_quotes_what_was_typed() {
         assert!(error.contains(typed), "{text:?}: the refusal does not quote {typed}: {error}");
     }
 }
+
+// Code review round 1 on 81c483f: the 4,096 cap is the message's, checked after the header lines are
+// dropped and the link added; the raw body is only bounded far above it.
+
+fn preview(dir: &TempDir, text: &str) -> Output {
+    run(dir, &["--dry-run", text], UNREACHED)
+}
+
+#[test]
+fn the_4096_cap_is_checked_on_the_message_with_its_link() {
+    let dir = started();
+    // no header: 4,096 characters pass
+    let plain = preview(&dir, &"H".repeat(4096));
+    assert!(plain.status.success(), "a 4,096-character message was refused: {}", stderr(&plain));
+    // a header and the link: 4,079 + "\n" + "keel://wu/E-A.W1" (16) = 4,096 pass, one more is refused
+    let at_cap = preview(&dir, &format!("wu: E-A.W1\n{}", "H".repeat(4079)));
+    assert!(at_cap.status.success(), "a 4,096-character message with its link was refused: {}", stderr(&at_cap));
+    assert!(stdout(&at_cap).contains("(4096 chars"), "{}", stdout(&at_cap).lines().next().unwrap_or(""));
+    let over = preview(&dir, &format!("wu: E-A.W1\n{}", "H".repeat(4080)));
+    assert!(!over.status.success(), "a 4,097-character message with its link was accepted");
+    assert!(stderr(&over).contains("4097") && stderr(&over).contains("4096"), "{}", stderr(&over));
+    // a raw body over 4,096 whose message fits once its header lines are dropped
+    let headed = preview(&dir, &format!("question: link-scheme\n{}", "H".repeat(4090)));
+    assert!(headed.status.success(), "a 4,090-character message was refused for its header lines: {}", stderr(&headed));
+    assert!(stdout(&headed).contains("(4090 chars"), "{}", stdout(&headed).lines().next().unwrap_or(""));
+}
+
+#[test]
+fn a_raw_body_far_past_any_message_is_refused_before_it_is_read() {
+    let dir = started();
+    let out = preview(&dir, &"H".repeat(70_000));
+    assert!(!out.status.success(), "a 70,000-character body was accepted");
+    let problem = stderr(&out);
+    assert_eq!(problem.lines().count(), 1, "{problem:?}");
+    assert!(problem.contains("70000"), "{problem}");
+}
