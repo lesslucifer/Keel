@@ -46,6 +46,35 @@ export function csp(where: Where): string {
   ].join('; ');
 }
 
+/**
+ * Forge's MAIN_WINDOW_VITE_DEV_SERVER_URL as the page URL the window reports (root slash added), and
+ * only when not packaged; undefined in a build. Anything but http on localhost with a port throws.
+ */
+export function devServerOf(packaged: boolean, raw: string | undefined): string | undefined {
+  if (packaged || raw === undefined) return undefined;
+  let href: string;
+  try {
+    href = new URL(raw).href;
+  } catch {
+    throw new Error(`refused dev server: ${JSON.stringify(raw)}`);
+  }
+  devPort(href);
+  return href;
+}
+
+const CSP_META = /(<meta\s+http-equiv="Content-Security-Policy"\s+content=")([^"]*)("\s*\/?>)/gi;
+
+/**
+ * `html` with its one CSP meta tag's content set to `policy`. The page ships with the packaged CSP;
+ * the renderer's Vite config swaps in the dev one only while serving under electron-forge start.
+ */
+export function withCsp(html: string, policy: string): string {
+  if (/["<>&\u0000-\u001f\u007f]/.test(policy)) throw new Error('refused policy: it holds a double quote, a bracket, an ampersand or a control character');
+  const found = html.match(CSP_META)?.length ?? 0;
+  if (found !== 1) throw new Error(`the page must hold one CSP meta tag; it holds ${found}`);
+  return html.replace(CSP_META, (_m, open: string, _old: string, close: string) => `${open}${policy}${close}`);
+}
+
 /** The pages the window may show and ask from: the app page; unpackaged under Vite, the dev server's page instead. */
 export function pages(where: Where): string[] {
   if (where.packaged || where.devServer === undefined) return [APP_PAGE];

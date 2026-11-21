@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { APP_PAGE, CSP, csp, pages, webPreferences, windowOptions, mayNavigate, openWindow, mayAttachWebview, permissionRequest, permissionCheck, quitWhenAllClosed, onActivate } from '../../src/main/window-options.ts';
+import { APP_PAGE, CSP, csp, pages, withCsp, devServerOf, webPreferences, windowOptions, mayNavigate, openWindow, mayAttachWebview, permissionRequest, permissionCheck, quitWhenAllClosed, onActivate } from '../../src/main/window-options.ts';
 
 test('webPreferences pin every security value of Electron\'s checklist', () => {
   assert.deepEqual(webPreferences('/app/.vite/build/preload.cjs'), {
@@ -81,4 +81,28 @@ test('closing the last window leaves the app running, and the Dock opens the win
   assert.equal(quitWhenAllClosed(), false);
   assert.equal(onActivate({ windowOpen: false }), 'open');
   assert.equal(onActivate({ windowOpen: true }), 'show');
+});
+
+test('Forge\'s dev URL is taken only when not packaged, as the page URL the window reports (with its root slash)', () => {
+  assert.equal(devServerOf(false, 'http://localhost:5173'), 'http://localhost:5173/');
+  assert.equal(devServerOf(false, 'http://localhost:5173/'), 'http://localhost:5173/');
+  assert.equal(devServerOf(true, 'http://localhost:5173'), undefined);
+  assert.equal(devServerOf(false, undefined), undefined);
+  for (const bad of ['http://evil.example:5173', 'https://localhost:5173', 'http://localhost:5173/x', 'http://user@localhost:5173', 'not a url']) {
+    assert.throws(() => devServerOf(false, bad), /dev server/, bad);
+  }
+});
+
+const PAGE = (policy: string) => `<!doctype html>\n<html>\n<head>\n<meta http-equiv="Content-Security-Policy" content="${policy}" />\n<title>Keel</title>\n</head>\n<body></body>\n</html>\n`;
+
+test('withCsp() sets the page\'s one CSP meta to the policy and changes nothing else', () => {
+  const dev = csp({ packaged: false, devServer: 'http://localhost:5173/' });
+  assert.equal(withCsp(PAGE(CSP), dev), PAGE(dev));
+  assert.equal(withCsp(PAGE(dev), CSP), PAGE(CSP));
+});
+
+test('withCsp() refuses a page with no CSP meta or more than one, and a policy that could break out of the attribute', () => {
+  assert.throws(() => withCsp('<html><head></head></html>', CSP), /one CSP meta/);
+  assert.throws(() => withCsp(PAGE(CSP) + PAGE(CSP), CSP), /one CSP meta/);
+  for (const bad of ['a" onload="x', 'a<b', 'a>b', 'a&b', 'a\nb']) assert.throws(() => withCsp(PAGE(CSP), bad), /policy/, bad);
 });
