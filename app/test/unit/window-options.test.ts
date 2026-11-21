@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { APP_PAGE, CSP, csp, pages, withCsp, devServerOf, webPreferences, windowOptions, mayNavigate, openWindow, mayAttachWebview, permissionRequest, permissionCheck, quitWhenAllClosed, onActivate } from '../../src/main/window-options.ts';
+import { APP_PAGE, CSP, csp, pages, withCsp, devServerOf, webPreferences, windowOptions, mayNavigate, openWindow, mayAttachWebview, permissionRequest, permissionCheck, quitWhenAllClosed, onActivate, windowLife } from '../../src/main/window-options.ts';
 
 test('webPreferences pin every security value of Electron\'s checklist', () => {
   assert.deepEqual(webPreferences('/app/.vite/build/preload.cjs'), {
@@ -92,6 +92,20 @@ test('activate or a second launch never leaves the app with no window it can sho
   }
   assert.equal(onActivate({ windowOpen: true, painted: false, rendererGone: false }), 'wait');
   assert.equal(onActivate({ windowOpen: true, painted: true, rendererGone: false }), 'show');
+});
+
+test('a window whose crashed renderer a reload brought back is shown, never replaced; one still gone is replaced', () => {
+  const life = windowLife();
+  assert.equal(onActivate({ windowOpen: true, ...life.state() }), 'wait');
+  life.painted();
+  assert.equal(onActivate({ windowOpen: true, ...life.state() }), 'show');
+  life.gone();
+  assert.equal(onActivate({ windowOpen: true, ...life.state() }), 'replace');
+  life.loaded();
+  assert.equal(onActivate({ windowOpen: true, ...life.state() }), 'show');
+  const early = windowLife();
+  early.gone();
+  assert.equal(onActivate({ windowOpen: true, ...early.state() }), 'replace');
 });
 
 test('Forge\'s dev URL is taken only when not packaged, as the page URL the window reports (with its root slash)', () => {

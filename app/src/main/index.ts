@@ -11,7 +11,7 @@ import path from 'node:path';
 import { ASK_CHANNEL, type Tool } from '../shared/contract.ts';
 import { dispatcher, pusher, type Expected } from './bridge.ts';
 import { resolveAsset } from './assets.ts';
-import { APP_PAGE, CSP, devServerOf, mayAttachWebview, mayNavigate, onActivate, openWindow, pages, permissionCheck, permissionRequest, quitWhenAllClosed, windowOptions } from './window-options.ts';
+import { APP_PAGE, CSP, devServerOf, windowLife, mayAttachWebview, mayNavigate, onActivate, openWindow, pages, permissionCheck, permissionRequest, quitWhenAllClosed, windowOptions } from './window-options.ts';
 import { readLoginPath } from './login-path.ts';
 import { makeHandlers, prepare } from './handlers.ts';
 import { ALERT_BODY, ALERT_TITLE, testAlert } from './alert.ts';
@@ -34,10 +34,8 @@ const allowedPages = pages(where);
 const rendererRoot = path.join(__dirname, '..', 'renderer', MAIN_WINDOW_VITE_NAME);
 
 let mainWindow: BrowserWindow | null = null;
-/** Whether mainWindow has painted its first frame; until then it is not shown, so no blank window flashes. */
-let mainPainted = false;
-/** Whether mainWindow's renderer is gone (crashed or killed): such a window never paints or shows the page again. */
-let mainRendererGone = false;
+/** mainWindow's life: painted (until then it is not shown, so no blank window flashes), and whether its renderer is gone. */
+let mainLife = windowLife();
 let started = false;
 
 function liveWindow(): BrowserWindow | null {
@@ -92,8 +90,9 @@ function refusePermissions(): void {
 
 function openMain(): void {
   const open = liveWindow();
-  const gone = open !== null && (mainRendererGone || open.webContents.isCrashed());
-  const action = onActivate({ windowOpen: open !== null, painted: mainPainted, rendererGone: gone });
+  const now = mainLife.state();
+  const gone = open !== null && (now.rendererGone || open.webContents.isCrashed());
+  const action = onActivate({ windowOpen: open !== null, painted: now.painted, rendererGone: gone });
   if (open !== null) {
     // Not painted yet: ready-to-show shows it.
     if (action === 'wait') return;
@@ -108,16 +107,16 @@ function openMain(): void {
     open.destroy();
   }
   const win = new BrowserWindow(windowOptions(path.join(__dirname, 'preload.cjs')));
+  const life = windowLife();
   mainWindow = win;
-  mainPainted = false;
-  mainRendererGone = false;
+  mainLife = life;
   win.once('ready-to-show', () => {
-    if (mainWindow === win) mainPainted = true;
+    life.painted();
     win.show();
   });
-  win.webContents.on('render-process-gone', () => {
-    if (mainWindow === win) mainRendererGone = true;
-  });
+  win.webContents.on('render-process-gone', () => life.gone());
+  // A new renderer has the page again (Reload from the View menu after a crash): the window is alive.
+  win.webContents.on('dom-ready', () => life.loaded());
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });

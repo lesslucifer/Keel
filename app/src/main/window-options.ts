@@ -164,3 +164,25 @@ export function onActivate(state: { windowOpen: boolean; painted: boolean; rende
   if (state.rendererGone) return 'replace';
   return state.painted ? 'show' : 'wait';
 }
+
+/**
+ * One window's life, as onActivate reads it: painted once its first frame is ready (ready-to-show);
+ * its renderer gone on render-process-gone, and alive again once a new renderer has a page (dom-ready,
+ * as after Reload from the View menu), so a recovered window is shown, never replaced.
+ */
+export function windowLife(): { painted(): void; gone(): void; loaded(): void; state(): { painted: boolean; rendererGone: boolean } } {
+  let painted = false;
+  let rendererGone = false;
+  return {
+    painted: () => {
+      painted = true;
+    },
+    gone: () => {
+      rendererGone = true;
+    },
+    loaded: () => {
+      rendererGone = false;
+    },
+    state: () => ({ painted, rendererGone }),
+  };
+}
