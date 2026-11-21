@@ -23,39 +23,45 @@ async function within(ms: number, done: () => boolean): Promise<boolean> {
   return done();
 }
 
-for (const how of ['SIGINT', 'throw', 'assert', 'SIGKILL'] as const) {
-  test(`a hung fake's process group is gone soon after its test process dies by ${how}`, async (t) => {
-    const dir = tempDir(t, 'leak');
-    const fake = program(path.join(dir, 'fake'), `#!/bin/sh\necho $$ > ${dir}/pid\n${HANG}\n`);
-    const script = [
-      `import { capture } from ${JSON.stringify(COMMANDS)};`,
-      `import assert from 'node:assert/strict';`,
-      `import { existsSync } from 'node:fs';`,
-      // Should the outer test die first, this child follows it within 100 ms.
-      `setInterval(() => { try { process.kill(${process.pid}, 0); } catch { process.exit(1); } }, 100);`,
-      `capture(${JSON.stringify(fake)}, [], { PATH: '/usr/bin:/bin' }, 60_000);`,
-      `const wait = setInterval(() => {`,
-      `  if (!existsSync(${JSON.stringify(path.join(dir, 'pid'))})) return;`,
-      `  clearInterval(wait);`,
-      `  process.stdout.write('ready\\n');`,
-      `  if (${JSON.stringify(how)} === 'throw') setTimeout(() => { throw new Error('panic'); }, 10);`,
-      `  if (${JSON.stringify(how)} === 'assert') setTimeout(() => assert.equal(1, 2), 10);`,
-      `}, 10);`,
-    ].join('\n');
-    const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
-    t.after(() => {
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    });
-    const exited = once(child, 'exit');
-    let out = '';
-    child.stdout.setEncoding('utf8');
-    child.stdout.on('data', (s: string) => { out += s; });
-    assert.ok(await within(10_000, () => out.includes('ready')), 'the child never started its fake');
-    const pid = Number(readFileSync(path.join(dir, 'pid'), 'utf8'));
-    assert.ok(!groupGone(pid), 'the fake is not running');
-    if (how === 'SIGINT' || how === 'SIGKILL') child.kill(how);
-    const [code, signal] = await exited;
-    assert.ok(code !== 0 || signal !== null, 'the child did not die');
-    assert.ok(await within(3_000, () => groupGone(pid)), `the fake's group ${pid} outlived its test process`);
+type How = 'SIGINT' | 'throw' | 'assert' | 'SIGKILL';
+
+/** Spawn a child node that starts a hung fake through capture(), end the child by `how`, and hold the fake's group gone. */
+async function dies(t: { after: (fn: () => void) => void }, how: How): Promise<void> {
+  const dir = tempDir(t, 'leak');
+  const fake = program(path.join(dir, 'fake'), `#!/bin/sh\necho $$ > ${dir}/pid\n${HANG}\n`);
+  const script = [
+    `import { capture } from ${JSON.stringify(COMMANDS)};`,
+    `import assert from 'node:assert/strict';`,
+    `import { existsSync } from 'node:fs';`,
+    // Should the outer test die first, this child follows it within 100 ms.
+    `setInterval(() => { try { process.kill(${process.pid}, 0); } catch { process.exit(1); } }, 100);`,
+    `capture(${JSON.stringify(fake)}, [], { PATH: '/usr/bin:/bin' }, 60_000);`,
+    `const wait = setInterval(() => {`,
+    `  if (!existsSync(${JSON.stringify(path.join(dir, 'pid'))})) return;`,
+    `  clearInterval(wait);`,
+    `  process.stdout.write('ready\\n');`,
+    `  if (${JSON.stringify(how)} === 'throw') setTimeout(() => { throw new Error('panic'); }, 10);`,
+    `  if (${JSON.stringify(how)} === 'assert') setTimeout(() => assert.equal(1, 2), 10);`,
+    `}, 10);`,
+  ].join('\n');
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
   });
+  const exited = once(child, 'exit');
+  let out = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (s: string) => { out += s; });
+  assert.ok(await within(10_000, () => out.includes('ready')), 'the child never started its fake');
+  const pid = Number(readFileSync(path.join(dir, 'pid'), 'utf8'));
+  assert.ok(!groupGone(pid), 'the fake is not running');
+  if (how === 'SIGINT' || how === 'SIGKILL') child.kill(how);
+  const [code, signal] = await exited;
+  assert.ok(code !== 0 || signal !== null, 'the child did not die');
+  assert.ok(await within(3_000, () => groupGone(pid)), `the fake's group ${pid} outlived its test process`);
 }
+
+test('a hung fake\'s process group is gone soon after its test process dies by ^C (SIGINT)', (t) => dies(t, 'SIGINT'));
+test('a hung fake\'s process group is gone soon after its test process dies by an uncaught throw (a panic)', (t) => dies(t, 'throw'));
+test('a hung fake\'s process group is gone soon after its test process dies by a failed assertion', (t) => dies(t, 'assert'));
+test('a hung fake\'s process group is gone soon after its test process dies by SIGKILL', (t) => dies(t, 'SIGKILL'));
