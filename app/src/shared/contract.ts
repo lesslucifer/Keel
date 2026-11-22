@@ -156,6 +156,12 @@ export interface GitFacts {
    */
   merged: Record<string, string[]>;
   worktrees: GitWorktree[];
+  /**
+   * W6: the open branches the list draws from, by the reader's one rule (reader/git.ts openSets): keel's
+   * names only; an epic main does not hold (or holds while it has no commit of its own); a work unit of an
+   * open epic whose read says it does not hold it; a task of an open work unit whose read says the same.
+   */
+  open: { epics: string[]; units: string[]; tasks: string[] };
   /** W6: per tip in notes.cr, its review note's verdict. */
   reviews: Record<string, Review>;
   /** W6: per tip the list shows (main, the open epics, work units and tasks), its commit time (ISO 8601). */

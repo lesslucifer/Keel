@@ -92,6 +92,7 @@ function viewProblems(v: View): string[] {
   if (v.focus !== null && ((v.focus.wu !== null && !WU.test(v.focus.wu)) || !Number.isInteger(v.focus.seq))) out.push('focus');
   if (v.git !== null) {
     for (const tip of Object.keys(v.git.reviews)) if (!v.git.notes.cr.includes(tip)) out.push(`review ${tip} without a cr note`);
+    for (const b of [...v.git.open.epics, ...v.git.open.units, ...v.git.open.tasks]) if (!v.git.branches.some((x) => x.name === b)) out.push(`open ${b} is no branch`);
     for (const [tip, at] of Object.entries(v.git.times)) if (!SHA.test(tip) || !iso(at)) out.push(`time ${tip}`);
   }
   if (v.changedAt !== null && !iso(v.changedAt)) out.push('changedAt');

@@ -235,3 +235,10 @@ test('W6: each open tip\'s review note is read for its verdict, again when the n
   assert.deepEqual(timed, [rev(dir, 'main'), rev(dir, 'epic/E-A'), w2, rev(dir, 'wu/E-A/w2_probe')].sort());
   for (const at of Object.values(facts.times)) assert.match(at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:Z|[+-]\d\d:\d\d)$/);
 });
+
+test('W6 review round 1 (items.ts:82): the reader publishes the open sets the list draws from; a task whose name keel does not name is never listed, merged or not', async (t) => {
+  const { root, dir } = world(t);
+  sh(GIT, dir, ['branch', 'wu/E-A/w2_café', 'wu/E-A/w2']);
+  const facts = await new GitReader(dir, opts(root)).read(GIT);
+  assert.deepEqual(facts.open, { epics: ['epic/E-A'], units: ['wu/E-A/w2'], tasks: ['wu/E-A/w2_probe'] });
+});

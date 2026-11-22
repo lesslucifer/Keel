@@ -80,6 +80,7 @@ function liveView(): View {
         { path: '/Users/you/code/keel', branch: 'main', tip: MAIN_TIP },
         { path: '/Users/you/code/keel-w5', branch: 'wu/E-APPLIST/w5-reader-watcher', tip: WU_TIP },
       ],
+      open: { epics: ['epic/E-APPLIST'], units: ['wu/E-APPLIST/w5-reader-watcher'], tasks: [] },
       reviews: { [WU_TIP]: { verdict: 'PASS', blockers: 0, importants: 0 } },
       times: { [MAIN_TIP]: '2026-11-22T08:30:00+08:00', [EPIC_TIP]: '2026-11-22T08:10:00+08:00', [WU_TIP]: '2026-11-22T08:41:00+08:00' },
       problem: null,
@@ -132,6 +133,12 @@ function everyKindView(): View {
   );
   git.notes = { mr: [WU_TIP], cr: [EPIC2_TIP, WU_TIP, W6_TIP], dod: [] };
   git.merged = { main: [], 'epic/E-APPLIST': [], 'epic/E-KEELFIX': [], 'wu/E-APPLIST/w10-pnpm': [] };
+  // As the reader's openSets lists them from these branches and merged reads.
+  git.open = {
+    epics: ['epic/E-APPLIST', 'epic/E-KEELFIX'],
+    units: ['wu/E-APPLIST/w5-reader-watcher', 'wu/E-APPLIST/w6-list-screens', 'wu/E-APPLIST/w8-window-foundation', 'wu/E-APPLIST/w9-close', 'wu/E-APPLIST/w10-pnpm'],
+    tasks: ['wu/E-APPLIST/w10-pnpm_lockfile'],
+  };
   git.reviews = {
     [EPIC2_TIP]: { verdict: 'PASS', blockers: 0, importants: 0 },
     [WU_TIP]: { verdict: 'PASS', blockers: 0, importants: 0 },

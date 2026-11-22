@@ -1,7 +1,7 @@
 // The git reader's parsers, each on fabricated output as git prints it, and the targets whose merges it reads.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, onMainLine, mayBeFresh, NOTE_TIPS, parseReview, parseTime, timeTips, TIME_TIPS } from '../../src/main/reader/git.ts';
+import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, onMainLine, mayBeFresh, NOTE_TIPS, parseReview, parseTime, timeTips, TIME_TIPS, openSets } from '../../src/main/reader/git.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -149,4 +149,21 @@ test('the tips whose times the list shows: main, each open epic, each open work 
   const r = timeTips([b('epic/E-A', 'e'.repeat(40)), ...many], {});
   assert.equal(r.tips.length, TIME_TIPS);
   assert.equal(r.over, true);
+});
+
+test('W6 review round 1 (items.ts:82): the open sets the list draws from, by the reader\'s one rule - keel\'s names only, and a unit or task only when its target was read', () => {
+  const names = ['main', 'epic/E-A', 'epic/E-B', 'epic/E-C', 'wu/E-A/w1', 'wu/E-A/w2', 'wu/E-A/w1_probe', 'wu/E-A/w1_caf\u00e9', 'wu/E-A/w1_done', 'wu/E-B/w1', 'wu/E-C/w1', 'wu/E-A/w\u00e9', 'feature/x'];
+  const merged = { main: ['epic/E-B'], 'epic/E-A': ['wu/E-A/w2'], 'wu/E-A/w1': ['wu/E-A/w1_done'], 'epic/E-B': [] };
+  assert.deepEqual(openSets(names, merged), {
+    epics: ['epic/E-A', 'epic/E-C'],
+    units: ['wu/E-A/w1'],
+    tasks: ['wu/E-A/w1_probe'],
+  }, 'E-C: its epic read failed, so its unit is not listed; a name keel does not name is never listed; a held task is not');
+  // A fresh epic main holds (no commit of its own) stays open, as the notes read has it.
+  assert.deepEqual(openSets(names, { ...merged, 'epic/E-B': [] }, new Set(['epic/E-B'])).epics, ['epic/E-A', 'epic/E-B', 'epic/E-C']);
+  // Main's read failed: no epic is listed as open; with no main at all, every epic is.
+  assert.deepEqual(openSets(names, { 'epic/E-A': [] }), { epics: [], units: [], tasks: [] });
+  assert.deepEqual(openSets(names.filter((n) => n !== 'main'), { 'epic/E-A': [] }).epics, ['epic/E-A', 'epic/E-B', 'epic/E-C']);
+  // A unit with a task whose own read failed lists no task.
+  assert.deepEqual(openSets(names, { main: [], 'epic/E-A': [], 'epic/E-B': [], 'epic/E-C': [] }).tasks, []);
 });

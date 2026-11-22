@@ -1,4 +1,5 @@
 // The item rules (docs/local-app.html 'The hand-off'; E-APPLIST.W6): which items the view's facts make,
+// from the open branches the reader lists (GitFacts.open, one rule in reader/git.ts),
 // their group, their words, and when each leaves. Pure: no import but the contract's types, so the main
 // part draws the list with it on every read and the window's fixtures draw theirs the same way.
 //
@@ -24,9 +25,6 @@ const SUBJECT = /^[A-Za-z0-9._-]{1,41}$/;
 const HEX = /^[0-9a-f]{7,}$/;
 const EPIC_BRANCH = /^epic\/(E-[A-Z0-9]{1,16})$/;
 const WU_BRANCH = /^wu\/(E-[A-Z0-9]{1,16})\/w([0-9]{1,3})(?:[-_]|$)/;
-/** A work unit's branch (wu/<epic>/<slug>) and a task's (wu/<epic>/<unit>_<task>), keel's naming. */
-const UNIT = /^wu\/[^/]+\/[^/_]+$/;
-const TASK = /^(wu\/[^/]+\/[^/_]+)_[^/_]+$/;
 const WU_ID = /^E-[A-Z0-9]{1,16}\.W[0-9]{1,3}$/;
 const SESSION = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
@@ -78,21 +76,6 @@ export function countsOf(items: readonly Item[]): ItemCounts {
   return { yours: n('yours'), notYours: n('not-yours'), sent: n('sent') };
 }
 
-/** The open epics and work units, as git says (W5's rules: main holds an epic unless it has no commit of its own yet; an epic holds its units). */
-function openBranches(git: GitFacts): { epics: Set<string>; units: Set<string> } {
-  const names = git.branches.map((b) => b.name);
-  const inMain = new Set(git.merged.main ?? []);
-  const epics = new Set(names.filter((n) => EPIC_BRANCH.test(n) && (!inMain.has(n) || Object.hasOwn(git.merged, n))));
-  const units = new Set(
-    names.filter((n) => {
-      if (!UNIT.test(n)) return false;
-      const epic = `epic/${n.split('/')[1] as string}`;
-      return epics.has(epic) && !(git.merged[epic] ?? []).includes(n);
-    }),
-  );
-  return { epics, units };
-}
-
 /** The router's workers: name, and its value when it is an object. */
 function workers(values: Record<string, unknown>): Array<[string, Record<string, unknown>]> {
   return Object.entries(values)
@@ -141,13 +124,18 @@ export function itemsOf(input: ItemInput): Item[] {
   const values = heard ? router.values : {};
   const ws = workers(values);
   const workerOn = (branch: string): string | null => ws.find(([, v]) => v.branch === branch)?.[0] ?? null;
+  // A work unit's branch: an open one the reader lists, by keel's naming.
   const branchOf = (wu: string): { name: string; tip: string } | null => {
-    const found = (git?.branches ?? []).filter((b) => UNIT.test(b.name) && wuOfBranch(b.name) === wu).sort((a, b) => (a.name < b.name ? -1 : 1))[0];
+    const units = new Set(git?.open.units ?? []);
+    const found = (git?.branches ?? []).filter((b) => units.has(b.name) && wuOfBranch(b.name) === wu).sort((a, b) => (a.name < b.name ? -1 : 1))[0];
     return found === undefined ? null : found;
   };
 
   if (git !== null) {
-    const { epics, units } = openBranches(git);
+    // The reader's open sets (reader/git.ts openSets): the one rule for what is open.
+    const epics = new Set(git.open.epics);
+    const units = new Set(git.open.units);
+    const tasks = new Set(git.open.tasks);
     out.push(...resultItems(git, epics, units, workerOn));
 
     const main = git.branches.find((b) => b.name === 'main');
@@ -157,10 +145,8 @@ export function itemsOf(input: ItemInput): Item[] {
     }
 
     for (const b of git.branches) {
-      const m = TASK.exec(b.name);
-      if (m === null) continue;
-      const unit = m[1] as string;
-      if (!units.has(unit) || (git.merged[unit] ?? []).includes(b.name)) continue;
+      if (!tasks.has(b.name)) continue;
+      const unit = b.name.slice(0, b.name.lastIndexOf('_'));
       if (heard && ws.some(([, v]) => v.branch === b.name && v.state === 'busy')) continue;
       const first = heard ? 'No worker is busy on it.' : 'The router is not heard, so a worker may still be on it.';
       const wu = wuOfBranch(unit);

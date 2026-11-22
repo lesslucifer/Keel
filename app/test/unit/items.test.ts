@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { itemsOf, countsOf, wuOfBranch, epicOfBranch, itemId, shortHash, type ItemInput } from '../../src/shared/items.ts';
 import { ITEM_ID_SOURCE, SLOT_CAP, type GitFacts, type Item, type RouterView } from '../../src/shared/contract.ts';
+import { openSets } from '../../src/main/reader/git.ts';
 import { seeded, pick, type Rng } from '../support/seeded.ts';
 
 const T = (c: string) => c.repeat(40);
@@ -13,8 +14,18 @@ const W1 = T('1');
 const W2 = T('2');
 const TASK = T('3');
 
-function git(over: Partial<GitFacts> = {}): GitFacts {
+/** Facts as the reader gives them: its open sets drawn by its own rule (git.ts openSets) from the branches and merged reads. */
+function withOpen(g: Omit<GitFacts, 'open'> & { open?: GitFacts['open'] }, fresh: ReadonlySet<string> = new Set()): GitFacts {
+  return { ...g, open: openSets(g.branches.map((b) => b.name), g.merged, fresh) };
+}
+
+function git(over: Partial<GitFacts> = {}, fresh: ReadonlySet<string> = new Set()): GitFacts {
+  return withOpen(rawGit(over), fresh);
+}
+
+function rawGit(over: Partial<GitFacts> = {}): GitFacts {
   return {
+    open: { epics: [], units: [], tasks: [] },
     branches: [
       { name: 'main', tip: MAIN, upstream: 'origin/main', ahead: 0, behind: 0, gone: false },
       { name: 'epic/E-A', tip: EPIC, upstream: null, ahead: 0, behind: 0, gone: false },
@@ -95,7 +106,7 @@ test('a result enters on a PASS review note on an open work unit\'s tip, turns t
   assert.equal(signed.why, 'Signed. The merge into epic/E-A is yours, in your terminal.');
   assert.equal(signed.line, 'git merge --no-ff --no-edit wu/E-A/w1-reader');
   assert.equal(signed.id, sign.id, 'the same tip is the same item');
-  assert.deepEqual(itemsOf(input({ git: { ...reviewed, merged: { main: [], 'epic/E-A': ['wu/E-A/w1-reader'] } } })), []);
+  assert.deepEqual(itemsOf(input({ git: withOpen({ ...reviewed, merged: { main: [], 'epic/E-A': ['wu/E-A/w1-reader'] } }) })), []);
 });
 
 test('a waived review is still yours to sign, saying what is open; a failed or unreadable one is its worker\'s, naming the worker', () => {
@@ -119,9 +130,9 @@ test('an epic result enters on a PASS note on an open epic\'s tip, turns to merg
   const signed = only(itemsOf(input({ git: { ...reviewed, notes: { mr: [EPIC], cr: [EPIC], dod: [] } } })));
   assert.deepEqual([signed.title, signed.why, signed.line], ['Epic result to merge', 'Signed. The merge into main is yours, in your terminal.', 'git merge --no-ff --no-edit epic/E-A']);
   // Main holds it: closed (its units too).
-  assert.deepEqual(itemsOf(input({ git: { ...reviewed, merged: { main: ['epic/E-A'] } } })), []);
+  assert.deepEqual(itemsOf(input({ git: withOpen({ ...reviewed, merged: { main: ['epic/E-A'] } }) })), []);
   // Main holds it only because it has no commit of its own yet: still open (W5's fresh epic: a key in merged).
-  assert.equal(itemsOf(input({ git: { ...reviewed, merged: { main: ['epic/E-A'], 'epic/E-A': [] } } })).length, 1);
+  assert.equal(itemsOf(input({ git: withOpen({ ...reviewed, merged: { main: ['epic/E-A'], 'epic/E-A': [] } }, new Set(['epic/E-A'])) })).length, 1);
 });
 
 test('a plan to read enters on the router\'s stage, leaves on plan approved, on its removal, or when the branch moves past the plan\'s tip', () => {
@@ -185,10 +196,10 @@ test('main not pushed enters while main is ahead of a live upstream, with the pu
 
 test('a task waits on the owner while its tip is outside its open work unit and no busy worker is on it; it leaves once merged', () => {
   const g = (held: string[]) => {
-    const f = git({ merged: { main: [], 'epic/E-A': [], 'wu/E-A/w1-reader': held } });
+    const f = rawGit({ merged: { main: [], 'epic/E-A': [], 'wu/E-A/w1-reader': held } });
     f.branches.push({ name: 'wu/E-A/w1-reader_probe', tip: TASK, upstream: null, ahead: 0, behind: 0, gone: false });
     f.times[TASK] = '2026-11-22T08:25:00Z';
-    return f;
+    return withOpen(f);
   };
   const t = only(itemsOf(input({ git: g([]) })));
   assert.deepEqual([t.kind, t.group, t.title, t.wu, t.branch, t.tip, t.line, t.since], ['task', 'yours', 'Task into its work unit', 'E-A.W1', 'wu/E-A/w1-reader_probe', '3333333', 'git merge --no-ff wu/E-A/w1-reader_probe', '2026-11-22T08:25:00Z']);
@@ -223,7 +234,7 @@ test('a sent mark moves a plan or a question to Sent; it never moves another ite
   assert.deepEqual(sent.map((i) => [i.kind, i.group]), [['result', 'yours'], ['question', 'sent'], ['plan', 'sent']]);
   assert.equal(sent.find((i) => i.kind === 'plan')?.why, 'You marked it sent: it leaves when the router moves the stage on.');
   assert.equal(sent.find((i) => i.kind === 'question')?.why, 'You marked it sent: it leaves when the router removes the question.');
-  const moved = itemsOf(input({ git: git({ branches: [...git().branches.filter((b) => b.name !== 'wu/E-A/w1-reader'), { name: 'wu/E-A/w1-reader', tip: W2, upstream: null, ahead: 0, behind: 0, gone: false }] }), router: router({ 'wu/E-A.W1/stage': { stage: 'plan to read', tip: '2222222' } }), sent: new Set(ids) }));
+  const moved = itemsOf(input({ git: git({ branches: [...rawGit().branches.filter((b) => b.name !== 'wu/E-A/w1-reader'), { name: 'wu/E-A/w1-reader', tip: W2, upstream: null, ahead: 0, behind: 0, gone: false }] }), router: router({ 'wu/E-A.W1/stage': { stage: 'plan to read', tip: '2222222' } }), sent: new Set(ids) }));
   assert.deepEqual(moved.map((i) => i.group), ['yours']);
 });
 
@@ -278,7 +289,8 @@ function generated(rng: Rng): ItemInput {
   for (const w of ['w-a', 'w-b']) if (rng() < 0.5) values[`worker/${w}`] = { state: pick(rng, ['busy', 'idle', 'waiting']), waiting: pick(rng, ['', 'a prompt', 3]), branch: pick(rng, names.length > 0 ? names : ['main']), session: pick(rng, ['abc-123', 'x y']) };
   const heard = rng() < 0.7;
   const run = rng() < 0.85 ? 'keel-1c.20261122-080000.1' : null;
-  const g: GitFacts = { branches, notes: { mr: some(cr), cr, dod: [] }, merged, worktrees: [], reviews, times: Object.fromEntries(some(tips).map((t) => [t, '2026-11-22T08:00:00Z'])), problem: null };
+  const fresh = new Set(names.filter((n) => n.startsWith('epic/') && rng() < 0.2));
+  const g: GitFacts = withOpen({ branches, notes: { mr: some(cr), cr, dod: [] }, merged, worktrees: [], reviews, times: Object.fromEntries(some(tips).map((t) => [t, '2026-11-22T08:00:00Z'])), problem: null }, fresh);
   return { git: rng() < 0.95 ? g : null, router: { run, n: run === null ? 0 : 5, values: run === null ? {} : values, heard: run !== null && heard, lastAt: null, problem: null }, sent: new Set() };
 }
 
@@ -323,4 +335,12 @@ test('generated views: every item names a branch the view lists, or a key the ro
     // Marks change groups only: the same items, the same ids.
     assert.deepEqual(items.map((x) => x.id).sort(), first.map((x) => x.id).sort());
   }
+});
+
+test('W6 review round 1 (items.ts:82): the list draws only the reader\'s open sets; a branch they leave out makes no item, whatever the merged reads say', () => {
+  const g = rawGit({ notes: { mr: [], cr: [W1, EPIC], dod: [] }, reviews: { [W1]: { verdict: 'PASS', blockers: 0, importants: 0 }, [EPIC]: { verdict: 'PASS', blockers: 0, importants: 0 } } });
+  g.branches.push({ name: 'wu/E-A/w1-reader_probe', tip: TASK, upstream: null, ahead: 0, behind: 0, gone: false });
+  assert.deepEqual(itemsOf(input({ git: { ...g, open: { epics: [], units: [], tasks: [] } } })), []);
+  const all = itemsOf(input({ git: { ...g, open: { epics: ['epic/E-A'], units: ['wu/E-A/w1-reader'], tasks: ['wu/E-A/w1-reader_probe'] } } }));
+  assert.deepEqual(all.map((i) => i.kind), ['result', 'epic-result', 'task']);
 });

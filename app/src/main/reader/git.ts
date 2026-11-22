@@ -156,6 +156,29 @@ export function parseTime(out: string): string | null {
   return /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:Z|[+-]\d\d:\d\d)$/.test(line) ? line : null;
 }
 
+/**
+ * The open branches the list draws its items from (W6), by the one rule: keel's names only (refOk); the
+ * open epics as openEpics has them, none while main is listed but its read failed; a work unit of an open
+ * epic only when that epic's read succeeded and does not hold it; a task of an open unit only when that
+ * unit's read succeeded and does not hold it.
+ */
+export function openSets(names: readonly string[], merged: Readonly<Record<string, readonly string[]>>, fresh: ReadonlySet<string> = new Set()): { epics: string[]; units: string[]; tasks: string[] } {
+  if (names.includes('main') && merged.main === undefined) return { epics: [], units: [], tasks: [] };
+  const epics = openEpics(names, merged.main, fresh);
+  const units = named(names).filter((n) => {
+    if (!WU.test(n)) return false;
+    const epic = `epic/${n.split('/')[1] as string}`;
+    return epics.includes(epic) && merged[epic] !== undefined && !(merged[epic] as readonly string[]).includes(n);
+  });
+  const tasks = named(names).filter((n) => {
+    const at = n.lastIndexOf('_');
+    if (at < 0 || WU.test(n)) return false;
+    const unit = n.slice(0, at);
+    return units.includes(unit) && merged[unit] !== undefined && !(merged[unit] as readonly string[]).includes(n);
+  });
+  return { epics, units, tasks };
+}
+
 /** The most tips whose commit times one read asks. */
 export const TIME_TIPS = 60;
 
@@ -180,7 +203,7 @@ function failed(r: Captured, what: string): string | null {
 }
 
 /** No git facts, and why. */
-export const noFacts = (problem: string): GitFacts => ({ branches: [], notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], reviews: {}, times: {}, problem });
+export const noFacts = (problem: string): GitFacts => ({ branches: [], notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], open: { epics: [], units: [], tasks: [] }, reviews: {}, times: {}, problem });
 
 /** One project's git reader; read(git) reads it all again with that git. */
 export class GitReader {
@@ -226,7 +249,7 @@ export class GitReader {
     const refsWhy = failed(refs, 'its branches');
     if (refsWhy !== null) return noFacts(refsWhy);
     const { branches, noteKinds } = parseRefs(refs.stdout);
-    const facts: GitFacts = { branches, notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], reviews: {}, times: {}, problem: null };
+    const facts: GitFacts = { branches, notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], open: { epics: [], units: [], tasks: [] }, reviews: {}, times: {}, problem: null };
     const problems: string[] = [];
     const take = (r: Captured | string, what: string): string | null => {
       const why = typeof r === 'string' ? r : failed(r, what);
@@ -272,6 +295,7 @@ export class GitReader {
     const epics = openEpics(names, facts.merged.main, fresh);
     for (const epic of epics) await holds(epic);
     for (const unit of openUnits(names, epics, facts.merged)) if (names.some((n) => n.startsWith(`${unit}_`))) await holds(unit);
+    facts.open = openSets(names, facts.merged, fresh);
     const open = openTips(branches, facts.merged, fresh);
     if (open.over) problems.push(`more than ${NOTE_TIPS} open branches: notes read for the first ${NOTE_TIPS} only`);
     const crNotes = new Map<string, string>();
