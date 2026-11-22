@@ -1,0 +1,117 @@
+artifact: wu-result
+status: ready
+id: E-APPLIST.W9
+epic: E-APPLIST
+title: "E-APPLIST.W9 result · The epic test and the close"
+date: "2026-11-23"
+page: 2026-11-23-e-applist-w9-result.html
+outcome: >-
+  Delivered, the owner's packaged live check pending. The epic test app/e2e/applist.e2e.spec.ts drives the
+  unpackaged app (Vite's three bundles made by Forge's own Vite plugin, pnpm build:e2e; nothing packaged or signed)
+  in a temp app folder (the new KEEL_APP_DIR seam) through eleven named steps on a temp keel project written by the
+  real router-app.sh, the watchdog's facts step and notify-owner.py --send; the owner's second run (on 2347864) passed every step in 2.1 minutes (evidence.e2e-runs). Its fast twin,
+  test/integration/e2e-world.test.ts, walks the same world through the real reader, alerter, marks and Open in keel
+  check with no Electron and no port. A3's two app items are fixed, red first: a second launch says 'Keel is already
+  running: this launch quits; quit the other first' on stderr before it quits; the test alert's 'not shown' text
+  names Notifications > Keel when packaged and Notifications > Electron under pnpm start (state.get carries
+  packaged). T2 distilled and committed: UC-APP-1 and UC-APP-2 (docs/use-cases/app.yaml, new), UC-ROUTE-8 and the
+  amended UC-ROUTE-6, DEC-78, backlog A3 closed with its open follow-ups on A11 and two live-check questions on A4.
+  T1 written for the owner's rule-file commits, not committed by the worker: docs/local-app.html,
+  docs/architecture.html, docs/install.html. node 406 tests (405 pass, 1 skipped in the worker's sandbox: fs.watch),
+  Vitest 232, typecheck, lint and keel check green before every commit.
+deviations:
+  - >-
+    The epic test was run by the owner, not in the worker's session: the worker's sandbox refused the local port
+    probe (listen EPERM on 127.0.0.1 port 0) although the worktree's settings allow local binding, and the owner ruled
+    that the sandbox stays as it is (a later epic reviews it); Playwright reaches Electron through a debugging port.
+    The plan's open point 1 answer (a) became option (b): the owner runs pnpm e2e, the router relays the log.
+  - >-
+    The worker could not install @playwright/test: pnpm refused with ERR_PNPM_UNEXPECTED_STORE (the global store
+    ~/Library/pnpm/store is not writable in the sandbox, so pnpm chose a store in the worktree); the owner ran pnpm add
+    -D -E @playwright/test@1.65.1, and the worker committed the lockfile it left (only @playwright/test, playwright
+    and playwright-core).
+  - >-
+    The app folder: the plan's first try, Chromium's --user-data-dir, could not be tried (no launch in the worker's
+    sandbox), so the fourth seam KEEL_APP_DIR was added at once (absolute, no control character, never the root,
+    ignored when packaged), setting userData before the single-instance lock.
+  - >-
+    The build helper is two files: e2e/build.ts (the logic, a Listr stand-in running only the Vite plugin's
+    prePackage hook) and e2e/build-bundles.ts (pnpm build:e2e's entry, which imports forge.config.ts): the app's guard
+    forbids any node test from reaching a package, so no test imports forge.config.ts; the unit test reads its text.
+    The preload output is .vite/build/preload.cjs (the plan said preload.js; Forge 8 emits .cjs and index.ts loads it).
+  - >-
+    Order: the two A3 fixes (5b, 5c) were committed before the spec (5), so the first owner run covers step 6's
+    stderr line. The build:e2e and e2e scripts came with the Playwright commit (2), the build helper itself with 3.
+  - >-
+    The owner's first run (5a6f089) failed at step 2: the temp project had no .router/app/ when the app listed it,
+    so the app saw the router's first start at its minute's re-read (watcher/watch.ts, by design), past the step's
+    20 s. The test now waits up to 75 s there and ticks again (2347864); a failed step prints the window's text, both
+    sinks and the router's state. Watching the project folder until .router/app/ exists is on backlog A11.
+  - >-
+    The new backlog row is A11, not A6 (the owner's answer to open point 4 named A6): A6 - A10 are taken on main by
+    E-KEELFIX, and ids are never reused.
+  - >-
+    Step 2 of the walk shows work in motion on a second unit (E-A.W2, building), since a busy worker on the plan's own
+    unit would leave 'Plan being written' only through stages the walk also uses; every other step is as planned.
+evidence:
+  commits:
+    - "9e6225c chore: Playwright 1.65.1 pinned (installed by the owner), playwright.config.ts, tsconfig's e2e include, the build:e2e and e2e scripts"
+    - "0c1d2b6 test then feat: the build helper (Vite's bundles through Forge's own plugin, prePackage only) and the KEEL_APP_DIR seam"
+    - "b5b09bf test: the world builder and its fast twin in keel check; the sink reader and the wait"
+    - "57b7ee1 test then fix: A3 fix 1, the second launch's stderr line"
+    - "eccf79b test then fix: A3 fix 2, Notifications > Keel or > Electron, packaged through state.get"
+    - "5a6f089 test: the epic test, eleven named steps"
+    - "2347864 fix: the epic test's step 2 waits for the router's first start at the minute re-read; a failed step prints what it saw"
+    - "98fe90b docs: the T2 distillation (use cases, DEC-78, backlog A3 closed, A11, A4)"
+    - "and the commit carrying this result pair"
+  red-green:
+    - "0c1d2b6: red, e2e-build.test.ts not loading (no e2e/build.ts) and 2 seams cases failing -> green node 397 (1 skipped), Vitest 230"
+    - "b5b09bf: red, e2e-helpers.test.ts and e2e-world.test.ts both failing with world.ts set aside -> green node 403 (1 skipped)"
+    - "57b7ee1: red, instance.test.ts not loading -> green node 405 (1 skipped)"
+    - "eccf79b: red, node 2 failing (state.get's value, its key list), Vitest 2 failing (alertText, screen 6) -> green node 406 (1 skipped), Vitest 232"
+    - "Before every commit: pnpm typecheck, pnpm lint, pnpm test:main, pnpm test:window, keel check, all green (a chain that stops on the first red)."
+  tests-added:
+    unit:
+      - "app/test/unit/e2e-build.test.ts (6): the entry hands forge.config.ts's one Vite plugin to the helper; the outputs the shell reads; no Vite plugin or two refused; only prePackage runs, no packager, maker, fuse or signing step; a missing output named; the Listr stand-in"
+      - "app/test/unit/e2e-helpers.test.ts (5): the sink line reader (whole lines, a seeded property over cut appends), the wait, the PATH lookup"
+      - "app/test/unit/instance.test.ts (2): the second launch's words pinned; the shell calls it where the lock is refused"
+      - "app/test/unit/alerts.test.ts (+1): KEEL_APP_DIR read only when not packaged, normalised, never the root"
+      - "app/test-window/unit/hooks.test.tsx (+1): alertText names Keel or Electron"
+    integration:
+      - "app/test/integration/e2e-world.test.ts (1): the walk's world through the real scripts and the real ViewReader, Alerter (file sink), SentMarks and Open, step by step"
+      - "app/test/integration/handlers.test.ts (+1, 1 changed): state.get carries packaged, its key list"
+      - "app/test-window/integration/projects.test.tsx (+1): screen 6's not-shown text per packaged or not"
+    e2e:
+      - "app/e2e/applist.e2e.spec.ts (1 test, eleven steps and a closing check), run by hand by the owner: passed on 2347864 (evidence.e2e-runs)"
+  e2e-runs:
+    command: 'cd app && pnpm e2e > "$HOME/keel-w9-e2e.log" 2>&1; echo "exit=$?" >> "$HOME/keel-w9-e2e.log" (the owner, on his Mac; the log read by the worker)'
+    run-1: "5a6f089, 2026-11-23: the build made the three bundles, Electron 45.4.1's binary downloaded; step 1 passed, step 2 failed at e2e/applist.e2e.spec.ts:97 ('Building' under Not yours not found within 20 s; the window still said the router had not started). Cause: no .router/app/ to watch when the project was added, so the router's first start is read at the minute's re-read (by design). Exit 1."
+    run-2: "2347864, 2026-11-23 00:32: exit=0, '1 passed (2.1m)'. Steps: 1 launch and Add (824 ms); 2 router start, building, the worker named (1.0 m, the minute's re-read); 3 plan to read and one alert line with the project as subtitle (1.7 s); 4 Open's committed bytes (117 ms); 5 Mark sent across a relaunch, no alert again (1.2 s); 6 the second launch's stderr line, the first window stays (155 ms); 7 plan approved (1.5 s); 8 result to sign, to merge, merged (4.2 s); 9 a question shown and deleted, one more alert (3.0 s); 10 main not pushed, a router restart (2.8 s); 11 45 s of silence: router not heard, one heartbeat clears it (48.3 s); throughout: no content-policy refusal or page error, the page app://keel/ (25 ms)."
+    covered-code: "The app tree of 2347864 is the tip's: every later commit changes docs/ only."
+  docs: "docs/use-cases/app.yaml (new), router.yaml, use-cases-index.yaml; docs/decisions/app.html (DEC-78), decisions-index.yaml; docs/backlog/local-app.yaml (A3 closed, A11 new, A4), backlog-index.yaml; this result pair. Written, not committed (the owner's rule-file commits): docs/local-app.html, docs/architecture.html, docs/install.html"
+distillation: >-
+  T2, committed (98fe90b): UC-APP-1 and UC-APP-2 in docs/use-cases/app.yaml (new) with the UC-APP area indexed;
+  UC-ROUTE-8 new and UC-ROUTE-6 amended in docs/use-cases/router.yaml; DEC-78 in docs/decisions/app.html (next free
+  DEC-79, checked on every branch); backlog local-app A3 closed to one line, its open follow-ups on A11, the
+  ?diff=latest and Telegram-link questions on A4. T1, written for the owner's three rule-file commits after an
+  independent read: docs/local-app.html (A3 as built: the update log and its writers, the alerts, the list, Open, Mark
+  sent, the window's stack and design rules, the three test loops and the seams; A3 marked built), docs/architecture.html
+  (app/ in the repo's map, what keel check runs for it, the update log and the sender among the router's tools),
+  docs/install.html (build, sign ad-hoc, install, first launch, the app's folder).
+follow-ups:
+  - "The owner's packaged live check (details.live-check, about twenty minutes): the banner with its subtitle and its click, keel://, the Telegram link, screens 2 and 6, ?diff=latest from Terminal, the real-watch test. Taken by: the owner, before the W9 sign-off; its answers on ?diff=latest and the Telegram link go to backlog local-app A4 at E-APPLIST's close."
+  - "The three T1 pages (docs/local-app.html, docs/architecture.html, docs/install.html): an independent read each, then the owner's keel mr commit each. Taken by: the router (the read) and the owner (the commits), before the W9 sign-off."
+  - "Watch the project folder until .router/app/ exists, so the router's first start is seen in a second, not a minute. Taken by: docs/backlog/local-app.yaml row A11."
+  - "The epic close: merge main into epic/E-APPLIST (main moved: E-KEELFIX, E-LOOPBIND; backlog and decision indexes will conflict), re-run pnpm e2e on the merged tip if app/ or the router scripts changed, the archive of every T3 doc with its lineage, the epic result pair, the epic test note, preflight, review and verify-dod epic, the owner's sign-off, merge and push. Taken by: E-APPLIST's close (details.left-to-the-close in the plan)."
+  - "The code review of this WU, the owner's sign-off and the merge into epic/E-APPLIST. Taken by: the router starts the review; the owner signs."
+details:
+  base: "wu/E-APPLIST/w9-e2e-package off epic/E-APPLIST at e90132b"
+  live-check: "The plan's details.live-check, steps 0 to 8, unchanged: docs/work/2026-11-22-e-applist-w9-plan.yaml."
+  sandbox:
+    - "Port probe, 2026-11-22: node listen on 127.0.0.1 port 0 under a perl setpgrp/alarm group: ERR EPERM listen EPERM: operation not permitted 127.0.0.1; the group gone (kill -0: no such process)."
+    - "pnpm add -D -E @playwright/test@1.65.1: ERR_PNPM_UNEXPECTED_STORE; the 8K store it left removed; not re-run in any form."
+    - "One command was denied by the permission review: setting the commit-3 files aside (a patch, a git checkout of two files, rm) to gate the Playwright commit alone; not re-run; the gate ran on the working tree holding both."
+    - "One read was denied: printing core.hooksPath with git config; not re-run."
+    - "pnpm build:e2e ran in the sandbox (no port): the three bundles built, the group gone."
+  htmldoc:
+    id: 6b03190e9f34851f0dfb2c29
