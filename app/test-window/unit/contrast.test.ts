@@ -1,10 +1,12 @@
 // Contrast in both worlds, computed from styles.css's tokens (WCAG AA): every text colour the window
 // uses reaches 4.5:1 on each ground it sits on, words on every badge included, and every button's edge
 // (the black pill, the outline pill) reaches 3:1 against the ground it stands on (non-text, 1.4.11).
-// A text colour a window file draws with and this file does not measure fails the last test.
+// A text colour a window file draws with and this file does not measure fails the last test; the
+// grounds each one is drawn on are checked in test-window/integration/grounds.test.tsx.
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from 'vitest';
+import { PAIRS } from '../support/pairs.ts';
 
 const WINDOW = path.resolve(import.meta.dirname, '..', '..', 'src', 'window');
 const css = readFileSync(path.join(WINDOW, 'styles.css'), 'utf8');
@@ -30,18 +32,6 @@ function contrast(a: [number, number, number], b: [number, number, number]): num
   return (x + 0.05) / (y + 0.05);
 }
 
-const PAIRS: Array<[string, string]> = [
-  ['ink', 'canvas'],
-  ['ink', 'card'],
-  ['ink-secondary', 'canvas'],
-  ['ink-secondary', 'card'],
-  ['on-primary', 'primary'],
-  ['on-set', 'set'],
-  ['on-found', 'found'],
-  ['on-missing', 'missing'],
-  ['problem', 'canvas'],
-  ['problem', 'card'],
-];
 
 /** Button edges against the grounds they stand on: 3:1, the non-text minimum. */
 const EDGES: Array<[string, string]> = [
