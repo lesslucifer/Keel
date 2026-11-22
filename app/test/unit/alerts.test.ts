@@ -218,3 +218,22 @@ test('property: a link\'s work unit is exactly what the log takes as an alert\'s
     assert.equal(parseLink(`keel://wu/${id}`) !== null, WU_ID.test(id) && `keel://wu/${id}`.length <= LINK_CAP, id);
   }
 });
+
+test('every take moves its run to the newest end, a look back with nothing new too: runs are let go least recently looked at (review round 4, alerts.ts:105)', () => {
+  const runId = (i: number) => `keel-1c.20261122-0900${String(i).padStart(2, '0')}.1`;
+  const lines = [alert(1), alert(2), alert(3)];
+  let record = decide(emptyRecord(), RUN, lines, S(true)).record;
+  for (let i = 0; i < RUNS_KEPT - 1; i++) record = decide(record, runId(i), [], S()).record;
+  assert.equal(record.runs[0]?.run, RUN, 'A is the least recently looked at');
+  const back = decide(record, RUN, lines, S());
+  assert.deepEqual(back.show, []);
+  assert.equal(back.record.runs.at(-1)?.run, RUN, 'the look back moves A to the newest end');
+  record = decide(back.record, runId(99), [], S()).record;
+  assert.ok(record.runs.some((x) => x.run === RUN), 'one more run lets the oldest go, not A');
+  assert.deepEqual(decide(record, RUN, lines, S()).show, [], 'the next look at A shows nothing');
+});
+
+test('a take of the run already at the newest end, with nothing new, leaves the record as it is (no write)', () => {
+  const kept = rec([OLD, [], 'S2'], [RUN, [1], 'S2']);
+  assert.equal(decide(kept, RUN, [alert(1)], S()).record, kept);
+});

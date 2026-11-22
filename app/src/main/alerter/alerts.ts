@@ -93,7 +93,8 @@ export function summaryOf(k: number, look: 'start' | 'look'): ShownAlert {
  * For the run's alert lines: the record after them, and what to show. A run whose entry does not
  * carry this session's id is at its first look in the session: the lines not yet shown make one
  * summary when there are two or more (owner answer 1a), titled by why (Look); after that each new
- * line is its own alert. The entry is stamped with the session and moved to the newest end.
+ * line is its own alert. Every take stamps the entry with the session and moves it to the newest end
+ * (unchanged only when it is already there and nothing is new), so runs are let go least recently looked at.
  */
 export function decide(record: AlertRecord, run: string | null, alerts: readonly StoredAlert[], session: Session): { record: AlertRecord; show: ShownAlert[] } {
   if (run === null) return { record, show: [] };
@@ -102,7 +103,9 @@ export function decide(record: AlertRecord, run: string | null, alerts: readonly
   const look: Look = looked ? null : session.first ? 'start' : 'look';
   const shown = entry?.shown ?? [];
   const unseen = alerts.filter((a) => !shown.includes(a.n)).sort((a, b) => a.n - b.n);
-  if (unseen.length === 0 && looked) return { record, show: [] };
+  // Nothing new on a run this session looked at: unchanged only when it is already the newest; else it moves there,
+  // so the record lets go the run least recently looked at, as RUNS_KEPT says.
+  if (unseen.length === 0 && looked && record.runs.at(-1)?.run === run) return { record, show: [] };
   const next = [...new Set([...shown, ...unseen.map((a) => a.n)])].sort((a, b) => a - b).slice(-RECORD_CAP);
   const runs = [...record.runs.filter((r) => r.run !== run), { run, shown: next, session: session.id }].slice(-RUNS_KEPT);
   const show = look !== null && unseen.length > 1 ? [summaryOf(unseen.length, look)] : unseen.map(alertOf);
