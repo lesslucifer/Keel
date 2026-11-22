@@ -1,8 +1,8 @@
 // The git facts the list needs, read with the fixed commands only (commands.ts): every local branch
 // with its tip and where it stands against its upstream (no fetch: the app never fetches), which
 // open branches' tips carry a sign-off (mr), review (cr) or gate (dod) note (one tip at a time), what
-// main, each epic not in main and each open work unit with a task holds (main read first, so closed
-// history costs no read), and the worktrees. Reads only; never a note's body, a diff or a fetch.
+// main, each open epic (not in main, or in main with no commit of its own yet) and each open work unit
+// with a task holds (main read first, so closed history costs no read), and the worktrees. Reads only; never a note's body, a diff or a fetch.
 // A git older than 2.45 reads a project only when it is not a partial clone, as checkProject decides:
 // the reader asks the project's config once per git and remembers the answer.
 
@@ -66,24 +66,35 @@ const WU = /^wu\/[^/]+\/[^/_]+$/;
 /** keel's branch names among `names` (main, epics, work units, tasks). */
 const named = (names: readonly string[]) => names.filter((n) => refOk(`${HEADS}${n}`));
 
-/** The epics not yet in main (`inMain`, what main holds; every epic when there is no main read). */
-export function openEpics(names: readonly string[], inMain: readonly string[] | undefined): string[] {
-  return named(names).filter((n) => EPIC.test(n) && !(inMain ?? []).includes(n));
+/**
+ * The open epics: those main does not hold (`inMain`; every epic when there is no main read), and
+ * those it holds only because the epic has no commit of its own yet (`fresh`: its tip on main's own
+ * line, as when it is cut and its plan's work unit is open). A merged epic is closed.
+ */
+export function openEpics(names: readonly string[], inMain: readonly string[] | undefined, fresh: ReadonlySet<string> = new Set()): string[] {
+  const held = new Set(inMain ?? []);
+  return named(names).filter((n) => EPIC.test(n) && (!held.has(n) || fresh.has(n)));
+}
+
+/** name-rev's name for a tip: on main's own line when it is main or main~k (no ^: not reached through a merge). */
+export function onMainLine(out: string): boolean {
+  return /^main(?:~\d+)?$/.test(out.trim());
 }
 
 /** The work units of an open epic not yet in it: a unit whose epic is in main, or gone, is closed however long it is kept. */
 export function openUnits(names: readonly string[], epics: readonly string[], merged: Readonly<Record<string, readonly string[]>>): string[] {
+  const open = new Set(epics);
   return named(names).filter((n) => {
     if (!WU.test(n)) return false;
     const epic = `epic/${n.split('/')[1] as string}`;
-    return epics.includes(epic) && !(merged[epic] ?? []).includes(n);
+    return open.has(epic) && !(merged[epic] ?? []).includes(n);
   });
 }
 
 /** Of `names`, the ones `target` is read for: main the epics, an epic its work units, a work unit its tasks. */
 export function heldBy(target: string, names: readonly string[]): string[] {
   const all = named(names);
-  if (target === 'main') return all.filter((n) => EPIC.test(n));
+  if (target === 'main') return all.filter((n) => EPIC.test(n) || WU.test(n));
   if (EPIC.test(target)) return all.filter((n) => n.startsWith(`wu/${target.slice('epic/'.length)}/`));
   return all.filter((n) => n.startsWith(`${target}_`));
 }
@@ -97,9 +108,9 @@ export const NOTE_TIPS = 40;
  * closed). At most NOTE_TIPS; `over` says more were open. So the notes read is bounded by the open
  * branches, never by history.
  */
-export function openTips(branches: readonly GitBranch[], merged: Readonly<Record<string, readonly string[]>>): { tips: string[]; over: boolean } {
+export function openTips(branches: readonly GitBranch[], merged: Readonly<Record<string, readonly string[]>>, fresh: ReadonlySet<string> = new Set()): { tips: string[]; over: boolean } {
   const names = branches.map((b) => b.name);
-  const epics = openEpics(names, merged.main);
+  const epics = openEpics(names, merged.main, fresh);
   const open = new Set([...epics, ...openUnits(names, epics, merged)]);
   const tips: string[] = [];
   for (const b of branches) if (open.has(b.name) && !tips.includes(b.tip)) tips.push(b.tip);
@@ -122,6 +133,8 @@ export const noFacts = (problem: string): GitFacts => ({ branches: [], notes: { 
 export class GitReader {
   /** Per git path: whether it is older than 2.45 (true), or why it may not read this project. */
   private old = new Map<string, true | string>();
+  /** Per epic tip main holds: whether it sits on main's own line (no commit of its own). Never changes for a tip; kept only for the tips last asked about. */
+  private mainLine = new Map<string, boolean>();
 
   private readonly project: string;
   private readonly opts: Omit<RunOptions, 'before245' | 'timeoutMs'>;
@@ -172,10 +185,33 @@ export class GitReader {
     };
     // Main first, then only what is still open: a closed epic, and its kept units and tasks, cost no read.
     if (names.includes('main')) await holds('main');
-    const epics = openEpics(names, facts.merged.main);
+    // An epic main holds is closed, unless it has no commit of its own yet (its tip on main's own line)
+    // while one of its work units is outside main: asked only then, once per tip.
+    const fresh = new Set<string>();
+    const inMain = new Set(facts.merged.main ?? []);
+    const asked = new Map<string, boolean>();
+    for (const b of branches) {
+      if (!EPIC.test(b.name) || !inMain.has(b.name) || !refOk(`${HEADS}${b.name}`)) continue;
+      const prefix = `wu/${b.name.slice('epic/'.length)}/`;
+      if (!names.some((n) => n.startsWith(prefix) && WU.test(n) && !inMain.has(n))) continue;
+      let line = this.mainLine.get(b.tip) ?? asked.get(b.tip);
+      if (line === undefined) {
+        const r = await this.run(git, 'main-name', { object: b.tip });
+        const out = take(r, `where main holds ${b.name}`);
+        if (out === null) {
+          fresh.add(b.name);
+          continue;
+        }
+        line = onMainLine(out);
+      }
+      asked.set(b.tip, line);
+      if (line) fresh.add(b.name);
+    }
+    this.mainLine = asked;
+    const epics = openEpics(names, facts.merged.main, fresh);
     for (const epic of epics) await holds(epic);
     for (const unit of openUnits(names, epics, facts.merged)) if (names.some((n) => n.startsWith(`${unit}_`))) await holds(unit);
-    const open = openTips(branches, facts.merged);
+    const open = openTips(branches, facts.merged, fresh);
     if (open.over) problems.push(`more than ${NOTE_TIPS} open branches: notes read for the first ${NOTE_TIPS} only`);
     for (const kind of NOTE_KINDS) {
       if (!noteKinds.has(kind)) continue;

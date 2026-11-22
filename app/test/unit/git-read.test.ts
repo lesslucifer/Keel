@@ -1,7 +1,7 @@
 // The git reader's parsers, each on fabricated output as git prints it, and the targets whose merges it reads.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, NOTE_TIPS } from '../../src/main/reader/git.ts';
+import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, onMainLine, NOTE_TIPS } from '../../src/main/reader/git.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -57,9 +57,9 @@ test('the worktree list gives each worktree\'s path, branch and tip; a detached 
   assert.deepEqual(parseWorktrees('worktree relative/path\n\n'), []);
 });
 
-test('what each target holds is read for its own kind: main the epics, an epic its work units, a work unit its tasks', () => {
+test('what each target holds is read for its own kind: main the epics and work units, an epic its work units, a work unit its tasks', () => {
   const names = ['main', 'epic/E-A', 'epic/E-B', 'wu/E-A/w1', 'wu/E-A/w1_look-variants', 'wu/E-A/w2', 'wu/E-B/w1', 'topic', 'epic/bad name'];
-  assert.deepEqual(heldBy('main', names), ['epic/E-A', 'epic/E-B']);
+  assert.deepEqual(heldBy('main', names), ['epic/E-A', 'epic/E-B', 'wu/E-A/w1', 'wu/E-A/w2', 'wu/E-B/w1']);
   assert.deepEqual(heldBy('epic/E-A', names), ['wu/E-A/w1', 'wu/E-A/w1_look-variants', 'wu/E-A/w2']);
   assert.deepEqual(heldBy('wu/E-A/w1', names), ['wu/E-A/w1_look-variants']);
 });
@@ -68,6 +68,8 @@ test('the open epics are those not in main (all of them when there is no main); 
   const names = ['main', 'epic/E-A', 'epic/E-B', 'wu/E-A/w1', 'wu/E-A/w2', 'wu/E-A/w2_task', 'wu/E-B/w1', 'wu/E-C/w1', 'epic/bad name'];
   assert.deepEqual(openEpics(names, ['epic/E-B']), ['epic/E-A']);
   assert.deepEqual(openEpics(names, undefined), ['epic/E-A', 'epic/E-B']);
+  // An epic main holds but whose tip sits on main's own line has no commit of its own yet: it is open.
+  assert.deepEqual(openEpics(names, ['epic/E-A', 'epic/E-B'], new Set(['epic/E-B'])), ['epic/E-B']);
   assert.deepEqual(openUnits(names, ['epic/E-A'], { 'epic/E-A': ['wu/E-A/w1'] }), ['wu/E-A/w2']);
   assert.deepEqual(openUnits(names, ['epic/E-A', 'epic/E-B'], {}), ['wu/E-A/w1', 'wu/E-A/w2', 'wu/E-B/w1']);
 });
@@ -91,4 +93,18 @@ test('past NOTE_TIPS open branches, only the first are read, and it says so', ()
   const r = openTips(many, {});
   assert.equal(r.tips.length, NOTE_TIPS);
   assert.equal(r.over, true);
+});
+
+test('a fresh epic main holds (its tip on main\'s own line) stays open, and so does its work unit, whose notes are read', () => {
+  const M = 'm'.replace('m', '1').repeat(40);
+  const W = '2'.repeat(40);
+  const branches = [br('main', M), br('epic/E-X', M), br('wu/E-X/plan', W)];
+  const merged = { main: ['epic/E-X'] };
+  assert.deepEqual(openTips(branches, merged, new Set(['epic/E-X'])), { tips: [M, W], over: false });
+  assert.deepEqual(openTips(branches, merged), { tips: [], over: false }, 'without the fresh set the epic reads as closed');
+});
+
+test('name-rev\'s answer: main or main~k is on main\'s own line (no commit of its own); a ^ means reached through a merge (merged in)', () => {
+  for (const n of ['main', 'main~1', 'main~42']) assert.equal(onMainLine(`${n}\n`), true, n);
+  for (const n of ['main~3^2', 'main^2', 'main~2^2~1', '', 'undefined', 'other~1', 'main~x']) assert.equal(onMainLine(`${n}\n`), false, n);
 });

@@ -11,6 +11,7 @@ const SLOTS: Record<string, Record<string, string>> = {
   'promisor-config': { project: '/p' },
   refs: { project: '/p' },
   'note-of': { project: '/p', kind: 'mr', object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+  'main-name': { project: '/p', object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
   merged: { project: '/p', ref: 'refs/heads/epic/E-APPLIST' },
   worktrees: { project: '/p' },
 };
@@ -22,7 +23,7 @@ test('every fixed command starts with -c core.fsmonitor=false --no-optional-lock
 });
 
 test('the fixed commands of W7 are exactly the plan\'s three lines and, for a git older than 2.45, the promisor read; W5 adds four reads', () => {
-  assert.deepEqual(Object.keys(COMMANDS).sort(), ['common-dir', 'has-config', 'merged', 'note-of', 'promisor-config', 'refs', 'toplevel', 'worktrees']);
+  assert.deepEqual(Object.keys(COMMANDS).sort(), ['common-dir', 'has-config', 'main-name', 'merged', 'note-of', 'promisor-config', 'refs', 'toplevel', 'worktrees']);
   assert.deepEqual(argv('promisor-config', { project: '/Users/me/Keel' }, true), [
     '-c', 'core.fsmonitor=false', '--no-optional-locks', '-C', '/Users/me/Keel', 'config', '--get-regexp', '^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$',
   ]);
@@ -125,6 +126,7 @@ test('W5\'s four reads are exactly these lines: the branches and notes refs, one
   assert.deepEqual(argv('note-of', { project: P, kind: 'cr', object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }), [...LOCKED, '-C', P, 'notes', '--ref=refs/notes/cr', 'list', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']);
   assert.deepEqual(argv('merged', { project: P, ref: 'refs/heads/wu/E-APPLIST/w5-reader-watcher' }), [...LOCKED, '-C', P, 'for-each-ref', '--merged=refs/heads/wu/E-APPLIST/w5-reader-watcher', '--format=%(refname)', 'refs/heads/']);
   assert.deepEqual(argv('worktrees', { project: P }), [...LOCKED, '-C', P, 'worktree', 'list', '--porcelain']);
+  assert.deepEqual(argv('main-name', { project: P, object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }), [...LOCKED, '-C', P, 'name-rev', '--name-only', '--no-undefined', '--refs=refs/heads/main', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']);
 });
 
 test('a note kind is one of mr, cr, dod; a ref is main, an epic or a work unit branch by keel\'s naming, nothing else', () => {

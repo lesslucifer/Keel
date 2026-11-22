@@ -158,10 +158,34 @@ test('closed history costs no read: an epic in main gets no merged read, and its
   const facts = await new GitReader(dir, opts(root)).read(counting);
   assert.equal(facts.problem, null);
   assert.deepEqual(Object.keys(facts.merged).sort(), ['epic/E-A', 'main', 'wu/E-A/w2']);
-  assert.deepEqual(facts.merged.main, ['epic/E-OLD']);
+  assert.deepEqual(facts.merged.main, ['epic/E-OLD', 'wu/E-GONE/w1'], 'main lists the epics and work units it holds');
   assert.deepEqual(facts.notes.cr, [rev(dir, 'wu/E-A/w2')], 'the kept work unit of a closed epic has its note unread');
   const runs = readFileSync(rec, 'utf8');
   assert.doesNotMatch(runs, /--merged=refs\/heads\/(epic\/E-OLD|wu\/E-OLD)/);
   assert.doesNotMatch(runs, new RegExp(`list ${rev(dir, 'wu/E-OLD/w9')}`));
   assert.doesNotMatch(runs, new RegExp(`list ${rev(dir, 'wu/E-GONE/w1')}`), 'a work unit whose epic branch is gone is not open');
+});
+
+test('a fresh epic cut at main (no commit of its own yet) is open while main moves on: its open work unit\'s notes are read, then once (review round 3, git.ts:79)', async (t) => {
+  const { root, dir } = world(t);
+  sh(GIT, dir, ['branch', 'epic/E-NEW', 'main']);
+  sh(GIT, dir, ['switch', '-q', '-c', 'wu/E-NEW/plan', 'epic/E-NEW']);
+  sh(GIT, dir, ['commit', '-q', '--allow-empty', '-m', 'the plan']);
+  sh(GIT, dir, ['notes', '--ref=cr', 'add', '-m', '{}', 'wu/E-NEW/plan']);
+  sh(GIT, dir, ['switch', '-q', 'main']);
+  const rec = path.join(root, 'runs.txt');
+  const counting = program(path.join(mk(path.join(root, 'counting')), 'git'), `#!/bin/sh\necho "$*" >> ${rec}\nexec ${GIT} "$@"\n`);
+  const reader = new GitReader(dir, opts(root));
+  let facts = await reader.read(counting);
+  assert.equal(facts.problem, null);
+  assert.ok(facts.notes.cr.includes(rev(dir, 'wu/E-NEW/plan')), 'the plan unit is open: its review note is read');
+  assert.deepEqual(facts.merged['epic/E-NEW'], [], 'the fresh epic gets its merged read');
+  // main moves on (another epic merged): the fresh epic's tip is now behind main, still on its own line.
+  sh(GIT, dir, ['merge', '-q', '--no-ff', '-m', 'merge E-A', 'epic/E-A']);
+  facts = await reader.read(counting);
+  assert.ok(facts.notes.cr.includes(rev(dir, 'wu/E-NEW/plan')), 'still open behind main');
+  assert.ok(!('epic/E-A' in facts.merged), 'a merged epic with its own commits is closed');
+  const names = readFileSync(rec, 'utf8').split('\n').filter((l) => l.includes(' name-rev '));
+  const third = (await reader.read(counting), readFileSync(rec, 'utf8').split('\n').filter((l) => l.includes(' name-rev ')));
+  assert.equal(third.length, names.length, 'an epic tip\'s answer is asked once: the next read spawns no name-rev');
 });

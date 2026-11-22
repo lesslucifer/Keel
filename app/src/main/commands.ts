@@ -81,10 +81,14 @@ export const COMMANDS: Readonly<Record<string, readonly Token[]>> = Object.freez
     // W5: the local branches whose tips a branch holds; the ref joined to its option, so it is never read as one.
     merged: Object.freeze(['-C', PROJECT, 'for-each-ref', Object.freeze({ slot: 'ref' as const, prefix: '--merged=' }), '--format=%(refname)', 'refs/heads/']),
     worktrees: Object.freeze(['-C', PROJECT, 'worktree', 'list', '--porcelain']),
+    // W5: the name main gives a tip: main or main~k when it sits on main's own (first-parent) line, a
+    // name with ^ when main reached it through a merge. Run only for an epic main holds that still has a
+    // work unit outside main, once per tip (the answer never changes: main is merge-only).
+    'main-name': Object.freeze(['-C', PROJECT, 'name-rev', '--name-only', '--no-undefined', '--refs=refs/heads/main', Object.freeze({ slot: 'object' as const })]),
   }),
 );
 
-export type CommandName = 'toplevel' | 'common-dir' | 'has-config' | 'promisor-config' | 'refs' | 'note-of' | 'merged' | 'worktrees';
+export type CommandName = 'toplevel' | 'common-dir' | 'has-config' | 'promisor-config' | 'refs' | 'note-of' | 'merged' | 'worktrees' | 'main-name';
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 
