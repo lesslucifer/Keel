@@ -36,6 +36,16 @@ test('a well-formed line with an unknown key is a skip that still holds its numb
   assert.deepEqual(parseLine(line({ n: 7, op: 'rename', key: 'router' })), { run: RUN, n: 7, at: AT, op: 'skip' });
 });
 
+test('the caps count code points, as the writers do (jq length, Python len): 80 emoji is a headline, 200 a line; one more is not', () => {
+  const at = (headline: string, lines: string[]) => parseLine(line({ n: 2, op: 'alert', value: { headline, lines } }));
+  assert.equal(at('😀'.repeat(80), ['😀'.repeat(200)])?.op, 'alert');
+  assert.equal(at('漢'.repeat(80), ['é'.repeat(200)])?.op, 'alert');
+  assert.equal(at('😀'.repeat(81), ['l']), null);
+  assert.equal(at('h', ['😀'.repeat(201)]), null);
+  const state = parseState({ run: RUN, n: 2, at: AT, values: {}, alerts: [{ n: 2, at: AT, headline: '😀'.repeat(80), lines: ['😀'.repeat(200)] }] });
+  assert.equal(state?.alerts.length, 1);
+});
+
 test('anything else is no line: not JSON, half a line, not an object, a run, n or at of the wrong type, a null value, a bad alert', () => {
   const bad = [
     '', 'x', '{"run":', line({ n: 1, op: 'start' }).slice(0, 20), '[]', '7', 'null',

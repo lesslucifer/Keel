@@ -15,6 +15,7 @@
 import { lstat, open, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { RouterView } from '../../shared/contract.ts';
+import { codePoints } from '../text.ts';
 
 /** Three silent watchdog ticks. */
 export const SILENCE_MS = 15 * 60 * 1000;
@@ -77,7 +78,8 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-const str = (v: unknown, lo: number, hi: number): v is string => typeof v === 'string' && v.length >= lo && v.length <= hi;
+/** A string of `lo` to `hi` code points: the writers count code points (router-app.sh's jq length, notify-owner.py's len). */
+const str = (v: unknown, lo: number, hi: number): v is string => typeof v === 'string' && codePoints(v) >= lo && codePoints(v) <= hi;
 const count = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1;
 
 /** An alert's value as router-app.sh's alert_ok takes it, or null. */

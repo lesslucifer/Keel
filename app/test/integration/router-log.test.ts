@@ -113,6 +113,17 @@ test('a half-written line waits for its end, then is applied once', async (t) =>
   assert.equal(await log.refresh(), false);
 });
 
+test('alerts the writer takes at its caps in code points (an 80-emoji headline; a 200-character line with emoji) are folded, not lost', async (t) => {
+  const dir = project(t);
+  routerApp(dir, 'start', 'keel-1c');
+  routerApp(dir, 'alert', JSON.stringify({ headline: '😀'.repeat(80), lines: ['l'] }));
+  routerApp(dir, 'alert', JSON.stringify({ headline: 'h', lines: ['a'.repeat(190) + '😀'.repeat(10)] }));
+  const log = new RouterLog({ root: dir });
+  await log.refresh();
+  assert.equal(state(dir).alerts.length, 2);
+  assert.deepEqual(log.alerts(), state(dir).alerts);
+});
+
 test('a line with an unknown key is skipped: its value never shows and the state is not read for it', async (t) => {
   const dir = project(t);
   routerApp(dir, 'start', 'keel-1c');
