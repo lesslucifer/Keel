@@ -36,12 +36,16 @@ test('the copy takes regular files under docs/ only: no link, no submodule, no p
     e('docs/a\u0007b.html'),
     e('docs/big.bin', OUTPUT_CAP + 1),
   ]);
-  assert.deepEqual(plan.files.map((f) => f.path), ['docs/work/x-plan.html', 'docs/run.sh']);
+  assert.deepEqual(plan.files.map((f) => f.path), ['docs/run.sh', 'docs/work/x-plan.html']);
   assert.equal(plan.skipped.length, 9);
-  const many = Array.from({ length: 20 }, (_, i) => e(`docs/f${i}.html`, Math.floor(COPY_CAP / 10)));
-  const capped = copyPlan(many);
-  assert.ok(capped.files.reduce((n, f) => n + (f.size ?? 0), 0) <= COPY_CAP);
-  assert.equal(capped.files.length + capped.skipped.length, 20);
+  assert.ok(COPY_CAP >= 8 * 1024 * 1024);
+});
+
+test('W6 review round 1 (docs.ts:52): the copy order puts the files named first (the data file, then the page) before the rest, the rest by path; the cap is charged on what is copied, not here', () => {
+  const e = (p: string, size = 10) => ({ mode: '100644', type: 'blob', oid: O('a'), size, path: p });
+  const many = [e('docs/a/1.html', OUTPUT_CAP), e('docs/a/2.html', OUTPUT_CAP), e('docs/work/p.html'), e('docs/work/p.yaml'), e('docs/b.html')];
+  assert.deepEqual(copyPlan(many, ['docs/work/p.yaml', 'docs/work/p.html']).files.map((f) => f.path), ['docs/work/p.yaml', 'docs/work/p.html', 'docs/a/1.html', 'docs/a/2.html', 'docs/b.html']);
+  assert.deepEqual(copyPlan(many, ['docs/none.html']).files.length, 5, 'a first name not in the tree changes nothing');
 });
 
 test('generated paths: no path the copy keeps can leave its folder', () => {

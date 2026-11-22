@@ -155,3 +155,72 @@ test('the open sink appends each URL Open would hand the browser as one JSON lin
   for (const l of lines) assert.ok(!Number.isNaN(Date.parse(l.at)));
   assert.equal(statSync(file).mode & 0o777, 0o600);
 });
+
+/** Commit `files` on the checked-out branch: each path with its bytes. */
+function commitFiles(dir: string, files: Record<string, string | Buffer>, message: string) {
+  for (const [p, bytes] of Object.entries(files)) {
+    mkdirSync(path.dirname(path.join(dir, p)), { recursive: true });
+    writeFileSync(path.join(dir, p), bytes);
+  }
+  sh(GIT, dir, ['add', '.']);
+  sh(GIT, dir, ['commit', '-q', '-m', message]);
+}
+
+const planItem = async (w: ReturnType<typeof world>, tip: string): Promise<{ plan: Item; facts: GitFacts }> => {
+  const facts = await w.facts();
+  return { plan: itemsOf({ git: facts, router: heard({ 'wu/E-A.W1/stage': { stage: 'plan to read', tip: tip.slice(0, 7) } }), sent: new Set() }).find((i) => i.kind === 'plan') as Item, facts };
+};
+
+test('W6 review round 1 (docs.ts:52): the copy cap counts only what is copied, and the page and its data file are copied first: docs that sort before them and pass 8 MiB never crowd them out', async (t) => {
+  const w = world(t);
+  // Eight docs of 1 MiB each sort first and fill the 8 MiB cap exactly; a binary before them counted too, before.
+  const big = 'x'.repeat(1024 * 1024 - 1) + '\n';
+  const files: Record<string, string | Buffer> = { 'docs/a-binary.bin': Buffer.alloc(900_000, 0xff) };
+  for (let i = 0; i < 8; i++) files[`docs/a-big/f${i}.html`] = big;
+  files['docs/work/2026-11-22-e-a-w1-result.yaml'] = RESULT_YAML;
+  files['docs/work/2026-11-22-e-a-w1-result.html'] = '<p>The result.</p>\n';
+  commitFiles(w.dir, files, 'big docs');
+  const tip = rev(w.dir, 'wu/E-A/w1-reader');
+  const { plan, facts } = await planItem(w, tip);
+  assert.deepEqual(await openItem(plan, facts, w.parts), { done: true });
+  assert.equal(readFileSync(fileURLToPath(w.opened[0] as string), 'utf8'), PLAN_PAGE);
+  const copy = path.join(w.appDir, 'open', 'p0a1b2c3d', tip);
+  const size = (d: string): number => readdirSync(d, { withFileTypes: true }).reduce((n, e) => n + (e.isDirectory() ? size(path.join(d, e.name)) : statSync(path.join(d, e.name)).size), 0);
+  assert.ok(size(path.join(copy, 'docs')) <= 8 * 1024 * 1024, 'within the cap');
+  assert.equal(existsSync(path.join(copy, 'docs', 'a-binary.bin')), false, 'a binary is not copied and not counted');
+  // The result's page sorts after the big docs: the copy skipped it under the cap; its Open adds it to the same copy.
+  sh(GIT, w.dir, ['notes', '--ref=cr', 'add', '-m', '{"schema":"cr/v1","verdict":"PASS","blockers":0,"importants":0}', 'wu/E-A/w1-reader']);
+  const facts2 = await w.facts();
+  const result = itemsOf({ git: facts2, router: heard({}), sent: new Set() }).find((i) => i.kind === 'result') as Item;
+  assert.deepEqual(await openItem(result, facts2, w.parts), { done: true });
+  assert.equal(readFileSync(fileURLToPath(w.opened[1] as string), 'utf8'), '<p>The result.</p>\n');
+  assert.ok(size(path.join(copy, 'docs')) <= 8 * 1024 * 1024 + 2 * 1024 * 1024, 'at most the page and its data file over the cap');
+});
+
+test('W6 review round 1 (docs.ts:52): a copy whose page could not be copied is never kept as complete; Open says so and tries again next time', async (t) => {
+  const w = world(t);
+  commitFiles(w.dir, { 'docs/work/2026-11-22-e-a-w1-plan.html': Buffer.from([0x3c, 0x70, 0x3e, 0xff, 0xfe, 0x0a]) }, 'a page that is not UTF-8');
+  const tip = rev(w.dir, 'wu/E-A/w1-reader');
+  const { plan, facts } = await planItem(w, tip);
+  assert.deepEqual(await openItem(plan, facts, w.parts), { done: false, why: 'the wu-plan page for E-A.W1 could not be copied as text' });
+  assert.equal(existsSync(path.join(w.appDir, 'open', 'p0a1b2c3d', tip, '.complete')), false);
+  assert.deepEqual(readdirSync(path.join(w.appDir, 'open', 'p0a1b2c3d')), [], 'nothing kept');
+  assert.equal(w.opened.length, 0);
+});
+
+test('W6 review round 1 (open.ts:100): paths that differ only in case (one file, or a file and a folder) do not throw the copy away on a case-insensitive disk: the colliding path is skipped', async (t) => {
+  const w = world(t);
+  const scratch = mk(path.join(w.root, 'blobs'));
+  const blob = (name: string, text: string) => {
+    writeFileSync(path.join(scratch, name), text);
+    return sh(GIT, w.dir, ['hash-object', '-w', path.join(scratch, name)]).trim();
+  };
+  for (const [p, text] of [['docs/A.md', 'upper\n'], ['docs/a.md', 'lower\n'], ['docs/X', 'a file\n'], ['docs/x/inside.md', 'in a folder\n']] as const) {
+    sh(GIT, w.dir, ['update-index', '--add', '--cacheinfo', `100644,${blob(p.replaceAll('/', '_'), text)},${p}`]);
+  }
+  sh(GIT, w.dir, ['commit', '-q', '-m', 'case twins']);
+  const tip = rev(w.dir, 'wu/E-A/w1-reader');
+  const { plan, facts } = await planItem(w, tip);
+  assert.deepEqual(await openItem(plan, facts, w.parts), { done: true });
+  assert.equal(readFileSync(fileURLToPath(w.opened[0] as string), 'utf8'), PLAN_PAGE);
+});

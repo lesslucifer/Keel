@@ -10,8 +10,8 @@ import { mkdir, readdir, readFile, rename, rm, stat, lstat, utimes, writeFile } 
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { Change, GitFacts, Item } from '../../shared/contract.ts';
-import { run, OUTPUT_CAP, type Captured, type RunOptions } from '../commands.ts';
-import { copyPlan, dataHead, fileUrlInside, findPage, parseTree, roleOf, HEAD_CAP, type DataHead } from './docs.ts';
+import { run, type Captured, type RunOptions } from '../commands.ts';
+import { copyPlan, dataHead, fileUrlInside, findPage, parseTree, roleOf, COPY_CAP, HEAD_CAP, type DataHead } from './docs.ts';
 
 /** The most copies kept per project; the least recently opened go first. */
 export const KEPT_COPIES = 8;
@@ -73,41 +73,99 @@ async function prune(base: string, keep: string): Promise<void> {
   for (const { n } of timed.slice(KEPT_COPIES - 1)) await rm(path.join(base, n), { recursive: true, force: true });
 }
 
-/** The copy of `tip`'s docs/ in the app folder, made once (all or nothing), or why not. */
-async function copyOf(parts: OpenParts, tip: string): Promise<string | Change> {
+/** Bytes under `dir`. */
+async function sizeOf(dir: string): Promise<number> {
+  let n = 0;
+  for (const e of await readdir(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    n += e.isDirectory() ? await sizeOf(p) : (await lstat(p)).size;
+  }
+  return n;
+}
+
+/** Whether `code` says the path is taken already or a part of it is a file (a case twin on a case-insensitive disk). */
+const collides = (e: unknown) => ['EEXIST', 'ENOTDIR', 'EISDIR'].includes((e as NodeJS.ErrnoException).code ?? '');
+
+/**
+ * The copy of `tip`'s docs/ in the app folder holding the `role` page for `id`, and that page's path.
+ * Made once per tip, all or nothing, and kept complete only with the page in it. The data file and the
+ * page are copied first and the cap is charged on what is written (review round 1, docs.ts:52); a path
+ * that collides with one already written (a case twin) is skipped, never fatal (open.ts:100). A copy kept
+ * complete by an earlier Open but missing this page (skipped under the cap) gets the page added.
+ */
+async function copyOf(parts: OpenParts, tip: string, role: string, id: string): Promise<{ dir: string; page: string } | Change> {
   const base = path.join(parts.appDir, 'open', parts.project.id);
   const final = path.join(base, tip);
   await mkdir(base, { recursive: true, mode: 0o700 });
-  if (await exists(path.join(final, COMPLETE))) {
-    const now = new Date();
-    await utimes(final, now, now);
-    return final;
+  const complete = await exists(path.join(final, COMPLETE));
+  if (complete) {
+    const page = findPage(await headsIn(final), role, id);
+    if (page !== null && (await exists(path.join(final, page)))) {
+      const now = new Date();
+      await utimes(final, now, now);
+      return { dir: final, page };
+    }
   }
   const read = (name: 'ls-docs' | 'blob', object: string) => run(parts.git, name, { project: parts.project.path, object }, parts.runOptions);
   const tree = await read('ls-docs', tip);
   const why = failed(tree, 'the docs at the tip');
   if (why !== null) return notDone(why);
   const { files } = copyPlan(parseTree(tree.stdout));
-  const tmp = path.join(base, `.tmp-${process.pid}-${randomBytes(4).toString('hex')}`);
-  await mkdir(tmp, { mode: 0o700 });
+  // Each file read whole and as text, or not at all: a cut answer, or bytes that are not UTF-8, would not be the committed file.
+  const texts = new Map<string, string>();
+  const text = async (f: (typeof files)[number]): Promise<string | null> => {
+    if (texts.has(f.path)) return texts.get(f.path) as string;
+    const blob = await read('blob', f.oid);
+    if (failed(blob, f.path) !== null || Buffer.byteLength(blob.stdout, 'utf8') !== f.size || blob.stdout.includes('\uFFFD')) return null;
+    texts.set(f.path, blob.stdout);
+    return blob.stdout;
+  };
+  const heads: Array<{ path: string; head: DataHead }> = [];
+  for (const f of files) {
+    if (!f.path.endsWith('.yaml') || (f.size as number) > HEAD_CAP) continue;
+    const t = await text(f);
+    if (t !== null) heads.push({ path: f.path, head: dataHead(t) });
+  }
+  const page = findPage(heads, role, id);
+  if (page === null) return notDone(`no ${role} page for ${id} at its tip`);
+  const data = heads.find((h) => h.head.page !== null && path.posix.join(path.posix.dirname(h.path), h.head.page) === page)?.path ?? '';
+  const order = copyPlan(parseTree(tree.stdout), [data, page]).files;
+  const target = complete ? final : path.join(base, `.tmp-${process.pid}-${randomBytes(4).toString('hex')}`);
+  if (!complete) await mkdir(target, { mode: 0o700 });
+  let total = complete ? await sizeOf(path.join(final, 'docs')).catch(() => 0) : 0;
   try {
-    for (const f of files) {
-      const blob = await read('blob', f.oid);
-      // Only a file read whole and as text is copied: a cut answer, or bytes that are not UTF-8, would not be the committed file.
-      if (failed(blob, f.path) !== null || blob.stdout.length > OUTPUT_CAP || Buffer.byteLength(blob.stdout, 'utf8') !== f.size || blob.stdout.includes('�')) continue;
-      const target = path.join(tmp, f.path);
-      await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
-      await writeFile(target, blob.stdout, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    for (const f of complete ? order.filter((x) => x.path === data || x.path === page) : order) {
+      const dest = path.join(target, f.path);
+      if (await exists(dest)) continue;
+      const first = f.path === data || f.path === page;
+      if (!first && total + (f.size as number) > COPY_CAP) continue;
+      const t = await text(f);
+      if (t === null) continue;
+      try {
+        await mkdir(path.dirname(dest), { recursive: true, mode: 0o700 });
+        await writeFile(dest, t, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      } catch (e) {
+        if (collides(e)) continue;
+        throw e;
+      }
+      total += f.size as number;
     }
-    await writeFile(path.join(tmp, COMPLETE), `${tip}\n`, { mode: 0o600, flag: 'wx' });
-    if (await exists(final)) await rm(final, { recursive: true, force: true });
-    await rename(tmp, final);
+    // Never kept complete without the page: the next Open tries again.
+    if (!(await exists(path.join(target, page)))) {
+      if (!complete) await rm(target, { recursive: true, force: true });
+      return notDone(`the ${role} page for ${id} could not be copied as text`);
+    }
+    if (!complete) {
+      await writeFile(path.join(target, COMPLETE), `${tip}\n`, { mode: 0o600, flag: 'wx' });
+      if (await exists(final)) await rm(final, { recursive: true, force: true });
+      await rename(target, final);
+    }
   } catch (e) {
-    await rm(tmp, { recursive: true, force: true });
+    if (!complete) await rm(target, { recursive: true, force: true });
     throw e;
   }
   await prune(base, tip);
-  return final;
+  return { dir: final, page };
 }
 
 /** An epic result, in place: the epic's worktree's docs/.archive/, the page its data file names. */
@@ -148,11 +206,9 @@ export async function openItem(item: Item, facts: GitFacts | null, parts: OpenPa
   if (id === null || branch === undefined || item.tip === null || !branch.tip.startsWith(item.tip)) {
     return notDone('its tip moved since the list was drawn: the list shows it as it is now');
   }
-  const copy = await copyOf(parts, branch.tip);
-  if (typeof copy !== 'string') return copy;
-  const page = findPage(await headsIn(copy), role, id);
-  if (page === null) return notDone(`no ${role} page for ${id} at its tip`);
-  const file = path.join(copy, page);
+  const copy = await copyOf(parts, branch.tip, role, id);
+  if ('done' in copy) return copy;
+  const file = path.join(copy.dir, copy.page);
   const url = (await exists(file)) ? fileUrlInside(file, [path.join(parts.appDir, 'open')]) : null;
   if (url === null) return notDone(`the ${role} page for ${id} could not be copied as text`);
   await parts.openUrl(url);

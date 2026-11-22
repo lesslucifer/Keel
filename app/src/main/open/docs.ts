@@ -42,20 +42,22 @@ function docsPath(p: string): boolean {
   return p.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
 }
 
-/** The files a copy takes: regular files under docs/ (no link, no submodule), each within the output cap, all within COPY_CAP. */
-export function copyPlan(entries: readonly TreeEntry[]): { files: TreeEntry[]; skipped: string[] } {
+/**
+ * The files a copy takes, in the order it copies them: regular files under docs/ (no link, no submodule),
+ * each within the output cap; the paths named in `first` (the data file, then the page) before the rest,
+ * the rest by path. The copy cap is charged on what is written (open.ts), so a file the copy drops
+ * (a binary) never counts, and the page is never crowded out (review round 1, docs.ts:52).
+ */
+export function copyPlan(entries: readonly TreeEntry[], first: readonly string[] = []): { files: TreeEntry[]; skipped: string[] } {
   const files: TreeEntry[] = [];
   const skipped: string[] = [];
-  let total = 0;
   for (const e of entries) {
     const regular = e.type === 'blob' && (e.mode === '100644' || e.mode === '100755') && e.size !== null;
-    if (!regular || !docsPath(e.path) || (e.size as number) > OUTPUT_CAP || total + (e.size as number) > COPY_CAP) {
-      skipped.push(e.path);
-      continue;
-    }
-    total += e.size as number;
-    files.push(e);
+    if (!regular || !docsPath(e.path) || (e.size as number) > OUTPUT_CAP) skipped.push(e.path);
+    else files.push(e);
   }
+  const rank = (p: string) => (first.includes(p) ? first.indexOf(p) : first.length);
+  files.sort((x, y) => rank(x.path) - rank(y.path) || (x.path < y.path ? -1 : x.path > y.path ? 1 : 0));
   return { files, skipped };
 }
 
