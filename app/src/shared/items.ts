@@ -177,7 +177,7 @@ export function itemsOf(input: ItemInput): Item[] {
           // The backstop: the branch moved past the plan's tip.
           if (branch !== null && tip !== null && !branch.tip.startsWith(tip)) continue;
           const since = branch !== null && tip !== null ? (git?.times[branch.tip] ?? null) : null;
-          out.push(item({ id: itemId('plan', wu, tip ?? `${router.run as string}\n${JSON.stringify(value)}`), kind: 'plan', title: 'Plan to read', wu, epic, branch: branch?.name ?? null, tip: tip === null ? null : tip.slice(0, 7), since, why: 'The router waits for your word on the plan.', open: 'page', markable: true }));
+          out.push(item({ id: itemId('plan', wu, tip ?? `${router.run as string}\n${JSON.stringify(value)}`), kind: 'plan', title: 'Plan to read', wu, epic, branch: branch?.name ?? null, tip: tip === null ? null : tip.slice(0, 7), since, why: tip === null ? 'The router waits for your word on the plan. It named no tip, so there is no page to open: ask it for the plan.' : 'The router waits for your word on the plan.', open: tip === null ? 'none' : 'page', markable: true }));
         } else if (Object.hasOwn(MOTION, value.stage) && !resultWus.has(wu)) {
           const words = MOTION[value.stage] as { title: string; why: string };
           out.push(item({ id: itemId('motion', wu, `${router.run as string}\n${JSON.stringify(value)}`), kind: 'motion', group: 'not-yours', ...words, wu, epic, branch: branch?.name ?? null, tip: branch === null ? null : branch.tip.slice(0, 7), since: branch === null ? null : (git?.times[branch.tip] ?? null), worker: branch === null ? null : workerOn(branch.name) }));

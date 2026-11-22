@@ -202,3 +202,10 @@ test('the view says when a read last found a change; a read that finds the same 
   assert.equal(await w.reader.read(), true);
   assert.ok((w.reader.view().changedAt ?? '') >= (first ?? ''));
 });
+
+test('W6 review round 1 (open.ts:148): a plan the router stages with no tip is listed with no Open', async (t) => {
+  const w = world(t);
+  routerApp(w.dir, 'stage', 'E-A.W2', 'plan-to-read');
+  const plan = (await w.list()).find((i) => i.kind === 'plan') as Item;
+  assert.deepEqual([plan.tip, plan.open], [null, 'none']);
+});

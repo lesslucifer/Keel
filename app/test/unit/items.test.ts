@@ -400,3 +400,9 @@ test('W6 review round 1 (items.ts:115): two branches of one work unit on the sam
   assert.equal(new Set(items.map((i) => i.id)).size, 2);
   for (const i of items) assert.match(i.id, /^result\/E-A\.W1-[0-9a-f]{8}@111111111111$/);
 });
+
+test('W6 review round 1 (open.ts:148): a plan staged with no tip is listed, markable, but offers no Open: there is no tip to open it at', () => {
+  const plan = only(itemsOf(input({ router: router({ 'wu/E-A.W1/stage': { stage: 'plan to read' } }) })));
+  assert.deepEqual([plan.kind, plan.tip, plan.open, plan.markable], ['plan', null, 'none', true]);
+  assert.equal(plan.why, 'The router waits for your word on the plan. It named no tip, so there is no page to open: ask it for the plan.');
+});
