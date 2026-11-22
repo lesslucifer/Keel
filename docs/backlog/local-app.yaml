@@ -40,14 +40,18 @@ open:
     taken-by: "E-APPSIGN"
     follow-ups:
       - >-
-        "What changed" on a page reads htmldoc's ?diff=latest: the owner's E-APPLIST.W6 live check found it works on
-        the page Open copied, typed in the browser's address bar; whether `open 'file://...?diff=latest'` from Terminal
-        keeps the query is E-APPLIST.W9's packaged live check, step 7, recorded here at E-APPLIST's close. Source:
-        E-APPLIST.W6 live check; W9 plan. Taken by: this row.
+        "What changed" on a page can open with htmldoc's ?diff=latest: the owner's E-APPLIST.W9 packaged live check
+        (2026-11-23, step 7) found that `open 'file://...?diff=latest'` from Terminal keeps the query and opens
+        htmldoc's diff mode, as W6 found for the address bar. A4's diff link may use it. Source: E-APPLIST.W6 live
+        check; E-APPLIST.W9 live check, step 7. Taken by: this row.
       - >-
-        Whether the keel:// link at the end of a router's Telegram message opens Keel on the owner's Mac (E-APPLIST.W9's
-        packaged live check, step 5); a no becomes a row of its own. Source: E-APPLIST.W3 and W6 results. Taken by:
-        this row.
+        The keel:// link at the end of a router's Telegram message opens Keel on the owner's Mac: yes, the owner's
+        E-APPLIST.W9 packaged live check (2026-11-23, step 5). No row of its own is needed. Source: E-APPLIST.W3 and
+        W6 results; W9 live check, step 5. Taken by: this row (answered).
+      - >-
+        The desk alerts were silent during the live check only because macOS's Sleep focus was on: the owner's finding
+        of 2026-11-23, no app defect. A screen that says why an alert did not show could name a focus as a cause.
+        Source: the owner, E-APPLIST.W9 live check. Taken by: this row.
 
   - id: A5
     title: "E-APPFLEET · Fleet, epics, many projects"
@@ -73,7 +77,8 @@ open:
       One small WU, or any item taken by A4 (E-APPSIGN) or A5 (E-APPFLEET) where it touches their work; each item says
       its fix and its source. Waits on: E-APPLIST's merge.
     source: >-
-      Backlog A3's open follow-ups at E-APPLIST's close (moved here by E-APPLIST.W9), and the W9 epic test's first run.
+      Backlog A3's open follow-ups at E-APPLIST's close (moved here by E-APPLIST.W9), the W9 epic test's first run, W9's
+      review nits and its live check.
     taken-by: "no epic yet; A4 or A5 may take any item"
     follow-ups:
       - >-
@@ -120,6 +125,28 @@ open:
         Ship PP Editorial Old, Inter or DM Sans in place of New York and the system sans, only if the owner overrules
         DEC-72 (none planned): a token change in app/tailwind.config.js and a font-src in the packaged content policy.
         Source: E-APPLIST.W8 result. Taken by: this row, on the owner's ruling.
+      - >-
+        No screen draws the keel:// owner line: the main part computes view.scheme (the app macOS opens keel:// links
+        with) and the window never reads it, so screen 6 shows no 'Keel owns keel://' line; W9's live-check step 1
+        expected one by mistake. Draw it on screen 6, or drop the field. Source: E-APPLIST.W9 live check, step 1 (the
+        owner's ruling of 2026-11-23: backlog). Taken by: this row.
+      - >-
+        app/e2e/applist.e2e.spec.ts:42: when a check after electron.launch fails (firstWindow, the h1 or the app://
+        URL), launch() never sets the app as running, so the finally block skips app.close and the temp root is removed
+        under a live Electron; only a failed run is touched. Close the launched app inside launch() on that failure.
+        Source: E-APPLIST.W9 review round 1, nit (cr note on a2201a7). Taken by: this row.
+      - >-
+        app/playwright.config.ts:19: outputDir is one fixed name under the OS temp folder, which Playwright empties at
+        each start, so two runs at once (two worktrees) delete each other's failure traces. Use a name per run or per
+        worktree. Source: E-APPLIST.W9 review round 1, nit (cr note on a2201a7). Taken by: this row.
+      - >-
+        app/e2e/world.ts:63: waitFor is exported and unit-tested but nothing calls it. Remove it and its unit cases, or
+        use it. Source: E-APPLIST.W9 review round 1, nit (cr note on a2201a7). Taken by: this row.
+      - >-
+        app/test/integration/e2e-world.test.ts:51: the keel-check twin re-reads the whole view with nothing changed
+        between reads and ticks twice where nothing it asserts depends on it: about 2 s of a 14 s test on every keel
+        check. Derive the rows from the view already read and drop the two ticks. Source: E-APPLIST.W9 review round 1,
+        nit (cr note on a2201a7). Taken by: this row.
 
   - id: L1
     title: "Message the router from the app"
