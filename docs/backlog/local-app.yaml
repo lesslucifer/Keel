@@ -100,6 +100,21 @@ open:
         so the item shows no time (app/src/shared/items.ts). Fix: keep the time of the line that set each key in the
         log reader (app/src/main/reader/log.ts) and show it. Source: E-APPLIST.W6 result, follow-ups. Taken by: this
         row; at E-APPLIST's close (W9) it moves to a row of its own if still open.
+      - >-
+        app/src/main/open/open.ts:186: a data file whose head-pass read failed is read from git a second time, so the
+        comment at :157 ("no file is read twice") holds only for valid files. Fix: keep the failed read's answer, or
+        narrow the comment. Source: E-APPLIST.W6 review round 4, nit; recorded by the E-APPLIST.W9 plan. Taken by:
+        this row; at E-APPLIST's close (W9) it moves to a row of its own if still open.
+      - >-
+        app/src/main/open/open.ts:142: on reuse, each matching kept data file is read from disk twice (once as bytes
+        for blobIdOf, then as UTF-8 text). Fix: read the bytes once and decode them. Source: E-APPLIST.W6 review
+        round 4, nit; recorded by the E-APPLIST.W9 plan. Taken by: this row; at E-APPLIST's close (W9) it moves to a
+        row of its own if still open.
+      - >-
+        The owner's W6 live-check answer (2026-11-22): htmldoc's ?diff=latest works on the page Open copied, typed in
+        the browser's address bar. Still open: whether open 'file://...?diff=latest' from Terminal keeps the query
+        (A4's "what changed" button depends on it). Source: E-APPLIST.W6 live check; recorded by the E-APPLIST.W9 plan.
+        Taken by: E-APPLIST.W9's live check (step 7); the answer goes to row A4 at E-APPLIST's close.
 
   - id: A4
     title: "E-APPSIGN · Sign off and merge from the app"
