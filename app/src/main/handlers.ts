@@ -139,8 +139,9 @@ export function makeHandlers(parts: Parts): Handlers {
       queue(async (): Promise<Change> => {
         const r = await removeProject(appDir, args.project as string, changed);
         if (!r.ok) return notDone(r.why);
-        // W6 (review round 1, open.ts:78): its copies of committed docs go with it. The id passed the project-id slot.
-        await rm(path.join(appDir, 'open', args.project as string), { recursive: true, force: true });
+        // W6 (review round 1, open.ts:78): its copies of committed docs go with it, through the Opens' queue so an
+        // Open in flight finishes first (round 2, handlers.ts:143). The id passed the project-id slot.
+        await opens(() => rm(path.join(appDir, 'open', args.project as string), { recursive: true, force: true }));
         return DONE;
       }),
 
