@@ -49,7 +49,7 @@ test('the reader gives the branches with their upstreams, the sign-off and revie
   assert.equal(facts.problem, null);
   const byName = Object.fromEntries(facts.branches.map((b) => [b.name, b]));
   assert.deepEqual(Object.keys(byName).sort(), ['epic/E-A', 'main', 'wu/E-A/w1', 'wu/E-A/w2', 'wu/E-A/w2_probe']);
-  assert.deepEqual(byName.main, { name: 'main', tip: rev(dir, 'main'), upstream: 'origin/main', ahead: 1, behind: 0, gone: false });
+  assert.deepEqual(byName.main, { name: 'main', tip: rev(dir, 'main'), upstream: 'origin/main', ahead: 1, behind: 0, gone: false, remote: 'origin' });
   assert.deepEqual(byName['epic/E-A'], { name: 'epic/E-A', tip: rev(dir, 'epic/E-A'), upstream: null, ahead: 0, behind: 0, gone: false });
   // wu/E-A/w1 is merged into its epic: its item has left, so its notes are not read. wu/E-A/w2 is open.
   assert.deepEqual(facts.notes, { mr: [], cr: [rev(dir, 'wu/E-A/w2')], dod: [] });
@@ -241,4 +241,16 @@ test('W6 review round 1 (items.ts:82): the reader publishes the open sets the li
   sh(GIT, dir, ['branch', 'wu/E-A/w2_café', 'wu/E-A/w2']);
   const facts = await new GitReader(dir, opts(root)).read(GIT);
   assert.deepEqual(facts.open, { epics: ['epic/E-A'], units: ['wu/E-A/w2'], tasks: ['wu/E-A/w2_probe'] });
+});
+
+test('W6 review round 2 (items.ts:153): the reader gives main\'s upstream remote from branch.main.remote; a local upstream is ., none is null', async (t) => {
+  const { root, dir } = world(t);
+  const reader = new GitReader(dir, opts(root));
+  assert.equal((await reader.read(GIT)).branches.find((b) => b.name === 'main')?.remote, 'origin');
+  sh(GIT, dir, ['branch', 'develop', 'main~1']);
+  sh(GIT, dir, ['branch', '--set-upstream-to=develop', 'main']);
+  const local = (await reader.read(GIT)).branches.find((b) => b.name === 'main');
+  assert.deepEqual([local?.upstream, local?.remote, local?.ahead], ['develop', '.', 1]);
+  sh(GIT, dir, ['branch', '--unset-upstream', 'main']);
+  assert.equal((await reader.read(GIT)).branches.find((b) => b.name === 'main')?.remote, null);
 });

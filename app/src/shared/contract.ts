@@ -127,6 +127,8 @@ export interface GitBranch {
   behind: number;
   /** The upstream is configured but its branch is gone. */
   gone: boolean;
+  /** W6, main only: its upstream's remote as git has it (branch.main.remote): '.' for a local upstream; null when none; absent when not read. */
+  remote?: string | null;
 }
 
 export interface GitWorktree {

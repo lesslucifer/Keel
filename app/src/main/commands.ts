@@ -86,12 +86,14 @@ export const COMMANDS: Readonly<Record<string, readonly Token[]>> = Object.freez
     blob: Object.freeze(['-C', PROJECT, 'cat-file', 'blob', Object.freeze({ slot: 'object' as const })]),
     // W6: one commit's committer time, ISO 8601: since when an item waits.
     'commit-time': Object.freeze(['-C', PROJECT, 'log', '-1', '--no-walk', '--format=%cI', Object.freeze({ slot: 'object' as const })]),
+    // W6: main's upstream remote, as git has it (a remote with a slash whole; '.' for a local upstream); exit 1 when unset.
+    'main-remote': Object.freeze(['-C', PROJECT, 'config', '--get', 'branch.main.remote']),
     // W6, Open: a commit's docs/ tree, each entry with its mode, type, id and size (open/docs.ts).
     'ls-docs': Object.freeze(['-C', PROJECT, 'ls-tree', '-r', '-z', '-l', '--full-tree', Object.freeze({ slot: 'object' as const }), '--', 'docs/']),
   }),
 );
 
-export type CommandName = 'toplevel' | 'common-dir' | 'has-config' | 'promisor-config' | 'refs' | 'note-of' | 'merged' | 'worktrees' | 'main-name' | 'blob' | 'commit-time' | 'ls-docs';
+export type CommandName = 'toplevel' | 'common-dir' | 'has-config' | 'promisor-config' | 'refs' | 'note-of' | 'merged' | 'worktrees' | 'main-name' | 'blob' | 'commit-time' | 'ls-docs' | 'main-remote';
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 

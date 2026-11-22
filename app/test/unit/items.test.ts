@@ -185,7 +185,7 @@ test('a worker waiting on the owner is yours, with the attach line as text; a wo
 });
 
 test('main not pushed enters while main is ahead of a live upstream, with the push line, and leaves when it matches', () => {
-  const ahead = (n: number, over: object = {}) => git({ branches: [{ name: 'main', tip: MAIN, upstream: 'origin/main', ahead: n, behind: 0, gone: false, ...over }] });
+  const ahead = (n: number, over: object = {}) => git({ branches: [{ name: 'main', tip: MAIN, upstream: 'origin/main', remote: 'origin', ahead: n, behind: 0, gone: false, ...over }] });
   const p = only(itemsOf(input({ git: ahead(1) })));
   assert.deepEqual([p.id, p.kind, p.title, p.why, p.line, p.branch, p.since], ['push/main@999999999999', 'push', 'Main not pushed', 'main is 1 commit ahead of origin/main.', 'git push origin main', 'main', '2026-11-22T08:00:00Z']);
   assert.equal(only(itemsOf(input({ git: ahead(3) }))).why, 'main is 3 commits ahead of origin/main.');
@@ -385,7 +385,7 @@ test('W6 review round 1 (items.ts:167): a task or result line quotes its branch,
   const evil = 'wu/E-A/w1-reader_$(touch${IFS}p)';
   const g = rawGit({ merged: { main: [], 'epic/E-A': [], 'wu/E-A/w1-reader': [] } });
   g.branches.push({ name: evil, tip: TASK, upstream: null, ahead: 0, behind: 0, gone: false });
-  g.branches[0] = { name: 'main', tip: MAIN, upstream: 'o$(x)/main', ahead: 1, behind: 0, gone: false };
+  g.branches[0] = { name: 'main', tip: MAIN, upstream: 'o$(x)/main', remote: 'o$(x)', ahead: 1, behind: 0, gone: false };
   const items = itemsOf(input({ git: { ...g, open: { epics: ['epic/E-A'], units: ['wu/E-A/w1-reader'], tasks: [evil] } } }));
   assert.equal(items.find((i) => i.kind === 'task')?.line, `git merge --no-ff '${evil}'`);
   assert.equal(items.find((i) => i.kind === 'push')?.line, "git push 'o$(x)' main");
@@ -430,4 +430,14 @@ test('W6 review round 2 (items.ts:180): a plan with a tip but no open branch of 
   const g = git({ merged: { main: [] } });
   const unread = only(itemsOf(input({ git: g, router: router({ 'wu/E-A.W1/stage': { stage: 'plan to read', tip: '1111111' } }) })));
   assert.deepEqual([unread.branch, unread.open], [null, 'none']);
+});
+
+test('W6 review round 2 (items.ts:153): the push line names main\'s upstream remote as git has it - a remote with a slash whole; no line for a local upstream (.) or an unknown remote', () => {
+  const main = (over: object) => git({ branches: [{ name: 'main', tip: MAIN, upstream: 'team/origin/main', ahead: 1, behind: 0, gone: false, ...over }] });
+  assert.equal(only(itemsOf(input({ git: main({ remote: 'team/origin' }) }))).line, 'git push team/origin main');
+  const local = only(itemsOf(input({ git: main({ upstream: 'develop', remote: '.' }) })));
+  assert.equal(local.line, null);
+  assert.equal(local.why, 'main is 1 commit ahead of develop, a local branch: nothing to push from here.');
+  assert.equal(only(itemsOf(input({ git: main({ remote: null }) }))).line, null);
+  assert.equal(only(itemsOf(input({ git: main({}) }))).line, null, 'a remote the reader did not read gives no line');
 });

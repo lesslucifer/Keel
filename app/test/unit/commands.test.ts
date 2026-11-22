@@ -17,6 +17,7 @@ const SLOTS: Record<string, Record<string, string>> = {
   blob: { project: '/p', object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
   'commit-time': { project: '/p', object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
   'ls-docs': { project: '/p', object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+  'main-remote': { project: '/p' },
 };
 
 test('every fixed command starts with -c core.fsmonitor=false --no-optional-locks --no-lazy-fetch', () => {
@@ -26,7 +27,7 @@ test('every fixed command starts with -c core.fsmonitor=false --no-optional-lock
 });
 
 test('the fixed commands of W7 are exactly the plan\'s three lines and, for a git older than 2.45, the promisor read; W5 adds four reads', () => {
-  assert.deepEqual(Object.keys(COMMANDS).sort(), ['blob', 'commit-time', 'common-dir', 'has-config', 'ls-docs', 'main-name', 'merged', 'note-of', 'promisor-config', 'refs', 'toplevel', 'worktrees']);
+  assert.deepEqual(Object.keys(COMMANDS).sort(), ['blob', 'commit-time', 'common-dir', 'has-config', 'ls-docs', 'main-name', 'main-remote', 'merged', 'note-of', 'promisor-config', 'refs', 'toplevel', 'worktrees']);
   assert.deepEqual(argv('promisor-config', { project: '/Users/me/Keel' }, true), [
     '-c', 'core.fsmonitor=false', '--no-optional-locks', '-C', '/Users/me/Keel', 'config', '--get-regexp', '^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$',
   ]);
@@ -181,4 +182,8 @@ test('Open\'s tree read lists one commit\'s docs/ only, with sizes, by a full id
   const O = 'a'.repeat(40);
   assert.deepEqual(argv('ls-docs', { project: '/p', object: O }), [...LOCKED, '-C', '/p', 'ls-tree', '-r', '-z', '-l', '--full-tree', O, '--', 'docs/']);
   for (const object of ['HEAD', 'main', '--name-only', `${O}:docs`, '']) assert.throws(() => argv('ls-docs', { project: '/p', object }), /object/, object);
+});
+
+test('W6 review round 2 (items.ts:153): main\'s upstream remote is read from its own setting, branch.main.remote, which any git the app runs knows', () => {
+  assert.deepEqual(argv('main-remote', { project: '/p' }), [...LOCKED, '-C', '/p', 'config', '--get', 'branch.main.remote']);
 });

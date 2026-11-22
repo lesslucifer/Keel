@@ -258,6 +258,18 @@ export class GitReader {
       return why === null && typeof r !== 'string' ? r.stdout : null;
     };
     const names = branches.map((b) => b.name);
+    // W6 (review round 2, items.ts:153): main's upstream remote, for the push line; exit 1: none set.
+    const main = branches.find((b) => b.name === 'main');
+    if (main !== undefined) {
+      main.remote = null;
+      if (main.upstream !== null) {
+        const r = await this.run(git, 'main-remote', {});
+        if (typeof r !== 'string' && r.code === 0 && !r.cut) {
+          const remote = r.stdout.replace(/\n$/, '');
+          main.remote = remote !== '' && remote.length <= 200 && !/[\u0000-\u001f\u007f-\u009f]/.test(remote) ? remote : null;
+        }
+      }
+    }
     const holds = async (target: string): Promise<string[] | null> => {
       const out = take(await this.run(git, 'merged', { ref: `${HEADS}${target}` }), `what ${target} holds`);
       if (out === null) return null;

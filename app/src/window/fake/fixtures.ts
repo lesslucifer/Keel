@@ -70,7 +70,7 @@ function liveView(): View {
     project: { id: 'p0a1b2c3d', name: 'keel' },
     git: {
       branches: [
-        { name: 'main', tip: MAIN_TIP, upstream: 'origin/main', ahead: 1, behind: 0, gone: false },
+        { name: 'main', tip: MAIN_TIP, upstream: 'origin/main', remote: 'origin', ahead: 1, behind: 0, gone: false },
         { name: 'epic/E-APPLIST', tip: EPIC_TIP, upstream: null, ahead: 0, behind: 0, gone: false },
         { name: 'wu/E-APPLIST/w5-reader-watcher', tip: WU_TIP, upstream: null, ahead: 0, behind: 0, gone: false },
       ],
