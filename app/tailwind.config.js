@@ -77,10 +77,11 @@ export default {
       control: '32px',
     },
     // The scales Tailwind derives from spacing, each declared (the lint empties an undeclared one):
-    // padding, gap and height draw on the spacing tokens; the others hold only what the window uses.
+    // padding and gap draw on the spacing tokens, height on them and full; the others hold only what the window uses.
     padding: ({ theme }) => theme('spacing'),
     gap: ({ theme }) => theme('spacing'),
-    height: ({ theme }) => theme('spacing'),
+    // Height also holds full, for the page's root (html, body: styles.css).
+    height: ({ theme }) => ({ ...theme('spacing'), full: '100%' }),
     margin: {
       0: '0px',
       auto: 'auto',

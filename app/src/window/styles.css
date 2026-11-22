@@ -3,7 +3,8 @@
    MiniMax's colour: docs/work/2026-11-22-e-applist-w8-design-mistral.md and -minimax.md). Light is
    its day world; the Mac's dark setting flips every one to its night world (no dark: class anywhere,
    DEC-72). hover-alpha sets how strong an outline pill's hover wash is in each world.
-   No font file and no remote resource: the window draws in the Mac's own fonts. */
+   No font file and no remote resource: the window draws in the Mac's own fonts. Every other value
+   comes from a token by @apply: the CSS check (eslint-rules/emitted.js) refuses any raw declaration. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -55,14 +56,11 @@
   html,
   body,
   #root {
-    min-height: 100%;
+    @apply min-h-full;
   }
   html,
   body {
-    height: 100%;
-    margin: 0;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-    -webkit-font-smoothing: antialiased;
+    @apply m-0 h-full font-sans antialiased;
   }
   body {
     @apply bg-canvas text-body font-regular text-ink;

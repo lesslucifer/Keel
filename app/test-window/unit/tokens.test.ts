@@ -179,12 +179,13 @@ test('the window\'s entry imports styles.css', () => {
   expect(readFileSync(path.join(APP, 'src', 'window', 'main.tsx'), 'utf8')).toMatch(/^import '\.\/styles\.css';$/m);
 });
 
-test('the spacing-derived scales the window uses are declared with exactly their members; padding, gap and height draw on the spacing tokens', () => {
+test('the spacing-derived scales the window uses are declared with exactly their members; padding and gap draw on the spacing tokens, height on them and full', () => {
   const theme = config.theme as Record<string, unknown>;
   expect(theme.width).toEqual({ full: '100%', sm: '12px' });
   expect(theme.minWidth).toEqual({ 0: '0px' });
   expect(theme.minHeight).toEqual({ full: '100%' });
   expect(theme.margin).toEqual({ 0: '0px', auto: 'auto' });
   const ours = resolveConfig(config).theme as Record<string, unknown>;
-  for (const scale of ['padding', 'gap', 'height']) expect(ours[scale], scale).toEqual(ours.spacing);
+  for (const scale of ['padding', 'gap']) expect(ours[scale], scale).toEqual(ours.spacing);
+  expect(ours.height).toEqual({ ...(ours.spacing as object), full: '100%' });
 });
