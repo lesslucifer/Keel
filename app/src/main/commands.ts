@@ -3,7 +3,7 @@
 // partial clone a read never fetches a missing object into the project's .git). A git older than
 // 2.45 has no --no-lazy-fetch and refuses the line (exit 129): such a git runs the line without it
 // (LOCKED_BEFORE_2_45), and only on a project with no promisor setting, so it has nothing to fetch
-// (checkProject decides); a git older than 2.15 (no --no-optional-locks) is refused. A diff, show or
+// (checkProject decides, and the git reader for its reads); a git older than 2.15 (no --no-optional-locks) is refused. A diff, show or
 // log -p shape gets --no-ext-diff --no-textconv. git runs with no shell, stdin closed, and an
 // environment built from nothing but the login PATH, LC_ALL=C (its messages in English, whatever the
 // Mac's language: the app reads one of them) and five account variables, so no inherited GIT_* reaches it.
@@ -41,10 +41,25 @@ export const OUTPUT_CAP = 1024 * 1024;
 /** The most a stream is read, and dropped, after the answer; then it is paused (its writer waits, unharmed). */
 export const LATE_OUTPUT_CAP = 1024 * 1024;
 
-type Token = string | { readonly slot: 'project' };
+type SlotName = 'project' | 'kind' | 'ref';
+/** A word of a command: fixed text, or a slot's value (after a fixed prefix, as one argument). */
+type Token = string | { readonly slot: SlotName; readonly prefix?: string };
 const PROJECT: Token = Object.freeze({ slot: 'project' as const });
 
-/** The W7 commands, each a git line with its slots. */
+/** The note kinds a notes read takes (contract.ts NOTE_KINDS). */
+const KINDS: readonly string[] = Object.freeze(['mr', 'cr', 'dod']);
+
+/** One part of a branch name: no leading dash or dot, no '..', not ending in '.' or '.lock' (git check-ref-format, narrowed). */
+const SEG = '[A-Za-z0-9][A-Za-z0-9._-]{0,99}';
+/** A branch the merged read takes: main, an epic or a work unit (a task too) by keel's naming, as a full ref. */
+const REF = new RegExp(`^refs/heads/(?:main|epic/${SEG}|wu/${SEG}/${SEG})$`);
+
+/** Whether `v` is a ref the merged read may name. */
+export function refOk(v: unknown): v is string {
+  return typeof v === 'string' && REF.test(v) && !v.includes('..') && !/\.(?:lock)?(?:\/|$)/.test(v);
+}
+
+/** The W7 commands and W5's four reads, each a git line with its slots. */
 export const COMMANDS: Readonly<Record<string, readonly Token[]>> = Object.freeze(
   Object.assign(Object.create(null) as Record<string, readonly Token[]>, {
     toplevel: Object.freeze(['-C', PROJECT, 'rev-parse', '--show-toplevel']),
@@ -54,10 +69,17 @@ export const COMMANDS: Readonly<Record<string, readonly Token[]>> = Object.freez
     'has-config': Object.freeze(['-C', PROJECT, 'ls-tree', '--full-tree', 'HEAD', '--', '.keel/config.toml']),
     // Run only by a git older than 2.45, to learn whether the project is a partial clone; reads no object.
     'promisor-config': Object.freeze(['-C', PROJECT, 'config', '--get-regexp', PROMISOR_KEYS]),
+    // W5: every local branch with its tip and where it stands against its upstream (no fetch), and the notes refs that exist.
+    refs: Object.freeze(['-C', PROJECT, 'for-each-ref', '--format=%(refname)%00%(objectname)%00%(upstream:short)%00%(upstream:track,nobracket)', 'refs/heads/', 'refs/notes/']),
+    // W5: one kind's notes, as note and annotated object pairs; run only for a notes ref the refs read listed.
+    'notes-list': Object.freeze(['-C', PROJECT, 'notes', Object.freeze({ slot: 'kind' as const, prefix: '--ref=refs/notes/' }), 'list']),
+    // W5: the local branches whose tips a branch holds; the ref joined to its option, so it is never read as one.
+    merged: Object.freeze(['-C', PROJECT, 'for-each-ref', Object.freeze({ slot: 'ref' as const, prefix: '--merged=' }), '--format=%(refname)', 'refs/heads/']),
+    worktrees: Object.freeze(['-C', PROJECT, 'worktree', 'list', '--porcelain']),
   }),
 );
 
-export type CommandName = 'toplevel' | 'common-dir' | 'has-config' | 'promisor-config';
+export type CommandName = 'toplevel' | 'common-dir' | 'has-config' | 'promisor-config' | 'refs' | 'notes-list' | 'merged' | 'worktrees';
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 
@@ -88,8 +110,10 @@ export function argv(name: string, slots: Record<string, string>, before245 = fa
   const given = Object.keys(slots).sort();
   if (wanted.length !== given.length || wanted.some((k, i) => k !== given[i])) throw new Error(`${name} takes the slots ${wanted.join(', ')}`);
   if (!projectOk(slots.project)) throw new Error(`${name}: the project must be an absolute path with no control character`);
+  if ('kind' in slots && !KINDS.includes(slots.kind as string)) throw new Error(`${name}: the note kind must be one of ${KINDS.join(', ')}`);
+  if ('ref' in slots && !refOk(slots.ref)) throw new Error(`${name}: the ref must be main, an epic or a work unit branch, as refs/heads/...`);
   return lock(
-    shape.map((t) => (typeof t === 'string' ? t : (slots[t.slot] as string))),
+    shape.map((t) => (typeof t === 'string' ? t : `${t.prefix ?? ''}${slots[t.slot] as string}`)),
     before245,
   );
 }
