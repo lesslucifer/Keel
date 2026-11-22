@@ -85,7 +85,7 @@ test('a result enters on a PASS review note on an open work unit\'s tip, turns t
   const reviewed = git({ notes: { mr: [], cr: [W1], dod: [] }, reviews: { [W1]: { verdict: 'PASS', blockers: 0, importants: 0 } } });
   const sign = only(itemsOf(input({ git: reviewed })));
   assert.deepEqual(sign, {
-    id: 'result/E-A.W1@111111111111',
+    id: itemId('result', `E-A.W1-${shortHash('wu/E-A/w1-reader')}`, W1),
     kind: 'result',
     group: 'yours',
     wu: 'E-A.W1',
@@ -390,4 +390,13 @@ test('W6 review round 1 (items.ts:167): a task or result line quotes its branch,
   assert.equal(items.find((i) => i.kind === 'task')?.line, `git merge --no-ff '${evil}'`);
   assert.equal(items.find((i) => i.kind === 'push')?.line, "git push 'o$(x)' main");
   for (const i of items) if (i.line !== null) for (const word of i.line.split(/ (?=(?:[^']*'[^']*')*[^']*$)/)) assert.notEqual(shellWord(word), null, i.line);
+});
+
+test('W6 review round 1 (items.ts:115): two branches of one work unit on the same reviewed tip are two items with two ids', () => {
+  const g = rawGit({ notes: { mr: [], cr: [W1], dod: [] }, reviews: { [W1]: { verdict: 'PASS', blockers: 0, importants: 0 } } });
+  g.branches.push({ name: 'wu/E-A/w1-other', tip: W1, upstream: null, ahead: 0, behind: 0, gone: false });
+  const items = itemsOf(input({ git: withOpen(g) }));
+  assert.deepEqual(items.map((i) => i.branch).sort(), ['wu/E-A/w1-other', 'wu/E-A/w1-reader']);
+  assert.equal(new Set(items.map((i) => i.id)).size, 2);
+  for (const i of items) assert.match(i.id, /^result\/E-A\.W1-[0-9a-f]{8}@111111111111$/);
 });

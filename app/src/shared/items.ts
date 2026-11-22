@@ -103,7 +103,9 @@ function resultItems(git: GitFacts, epics: Set<string>, units: Set<string>, work
     const wu = isEpic ? null : wuOfBranch(b.name);
     const epic = isEpic ? epicOfBranch(b.name) : (epicOfBranch(`epic/${b.name.split('/')[1] as string}`) ?? null);
     const target = isEpic ? 'main' : `epic/${b.name.split('/')[1] as string}`;
-    const base = { id: itemId(kind, (isEpic ? epic : wu) ?? b.name, b.tip), kind, wu, epic, branch: b.name, tip: b.tip.slice(0, 7), since: git.times[b.tip] ?? null };
+    // A work unit's id carries its branch (two branches of one unit may share a tip); an epic's branch is its id.
+    const subject = isEpic ? (epic ?? b.name) : wu === null ? b.name : `${wu}-${shortHash(b.name)}`;
+    const base = { id: itemId(kind, subject, b.tip), kind, wu, epic, branch: b.name, tip: b.tip.slice(0, 7), since: git.times[b.tip] ?? null };
     if (review === undefined || review.verdict === null) {
       out.push(item({ ...base, group: 'not-yours', title: 'Review note unreadable', why: 'Keel cannot read the review note on this tip.', worker: workerOn(b.name) }));
     } else if (review.verdict === 'FAIL') {
