@@ -29,13 +29,13 @@ test('arbitraryValue finds the bracketed value in the utility, not in a variant'
 });
 
 test('classify: Keel\'s tokens and structural utilities are legal', () => {
-  for (const cls of ['p-xs', 'px-md', 'gap-sm', 'bg-canvas', 'bg-card', 'text-ink', 'text-ink-secondary', 'text-body', 'font-ui', 'font-display', 'rounded-pill', 'border-t', 'border-line', 'h-control', 'max-w-column', 'font-mono', 'flex', 'items-center', 'break-all', 'uppercase', 'bg-tint/tint', 'hover:bg-tint/tint-hover', 'disabled:opacity-disabled', 'focus-visible:outline']) {
+  for (const cls of ['p-xs', 'px-md', 'gap-sm', 'bg-canvas', 'bg-card', 'text-ink', 'text-ink-secondary', 'text-body', 'font-ui', 'font-serif', 'text-section', 'rounded-pill', 'rounded-card', 'border-edge', 'bg-set', 'text-on-missing', 'text-problem', 'border-t', 'border-line', 'h-control', 'max-w-column', 'font-mono', 'flex', 'items-center', 'break-all', 'uppercase', 'hover:bg-ink/hover', 'disabled:opacity-disabled', 'focus-visible:outline']) {
     expect(classify(cls), cls).toEqual({ legal: true });
   }
 });
 
 test('classify: an off-list class from a closed scale or from Tailwind\'s default is refused as off-list', () => {
-  for (const cls of ['text-sm', 'bg-red-500', 'p-5', 'p-2', 'rounded-2xl', 'font-bold', 'font-semibold', 'leading-7', 'border-2', 'opacity-50', 'z-10', 'duration-150', 'shadow-lg', 'text-blue', 'text-ok', 'bg-surface']) {
+  for (const cls of ['text-sm', 'bg-red-500', 'p-5', 'p-2', 'rounded-2xl', 'font-bold', 'font-semibold', 'leading-7', 'border-2', 'opacity-50', 'z-10', 'duration-150', 'shadow-lg', 'text-blue', 'text-ok', 'bg-surface', 'bg-gradient-to-r', 'from-primary', 'eyebrow', 'text-eyebrow', 'bg-tint']) {
     expect(classify(cls), cls).toMatchObject({ legal: false, kind: 'offlist' });
   }
 });
@@ -46,7 +46,7 @@ test('classify: an arbitrary value is refused as arbitrary, with its value', () 
 });
 
 test('classify: a modifier step not on its owner\'s scale is refused as modifier, naming the steps', () => {
-  expect(classify('bg-ink/50')).toMatchObject({ legal: false, kind: 'modifier', value: '50', owner: 'bg-ink', steps: ['disabled', 'tint', 'tint-hover'] });
+  expect(classify('bg-ink/50')).toMatchObject({ legal: false, kind: 'modifier', value: '50', owner: 'bg-ink', steps: ['disabled', 'hover'] });
 });
 
 test('classify: the dark: variant is refused anywhere in the variant chain, even on a legal utility', () => {

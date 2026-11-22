@@ -170,7 +170,7 @@ test('could not read: a first state.get that is refused says so, as text', async
   expect(screen.queryByRole('button')).not.toBeInTheDocument();
 });
 
-test('the design file\'s button rules: at most one solid primary button per section, every button a capsule', async () => {
+test('mx3a\'s button rules: at most one solid black primary pill per section, every button a pill with a 1px edge', async () => {
   for (const state of [sampleState(), sampleState({ projects: [] })]) {
     draw({ 'state.get': () => ok(state) });
     await ready();
@@ -180,15 +180,61 @@ test('the design file\'s button rules: at most one solid primary button per sect
       const solid = [...section.querySelectorAll('button')].filter((b) => b.className.split(/\s+/).includes('bg-primary'));
       expect(solid.length, section.textContent ?? '').toBeLessThanOrEqual(1);
     }
-    for (const b of buttons()) expect(b.className, b.textContent ?? '').toMatch(/\brounded-(pill|xl)\b/);
+    for (const b of buttons()) expect(b.className.split(/\s+/), b.textContent ?? '').toEqual(expect.arrayContaining(['rounded-pill', 'border']));
     cleanup();
   }
 });
 
-test('with no project, Add a project is the screen\'s one solid primary button; every other button is a translucent pill', async () => {
+test('with no project, Add a project is the screen\'s one solid primary pill; every other button is an outline pill with no fill', async () => {
   draw({ 'state.get': () => ok(sampleState({ projects: [] })) });
   await ready();
   const solid = buttons().filter((b) => b.className.split(/\s+/).includes('bg-primary'));
   expect(solid.map((b) => b.textContent)).toEqual(['Add a project…']);
-  for (const b of buttons().filter((x) => !solid.includes(x))) expect(b.className, b.textContent ?? '').toMatch(/\bbg-tint\/tint\b/);
+  for (const b of buttons().filter((x) => !solid.includes(x))) {
+    const cls = b.className.split(/\s+/);
+    expect(cls, b.textContent ?? '').toContain('border-outline');
+    expect(cls.filter((c) => c.startsWith('bg-')), b.textContent ?? '').toEqual([]);
+  }
+});
+
+test('Mistral\'s type: the screen title and every section head in New York, in sentence case, never uppercase', async () => {
+  draw();
+  await ready();
+  const heads = [screen.getByRole('heading', { level: 1 }), ...screen.getAllByRole('heading', { level: 2 })];
+  expect(heads.map((h) => h.textContent)).toEqual(['Projects', 'Project', 'Tools', 'PATH', 'Alerts']);
+  for (const h of heads) {
+    expect(h.className.split(/\s+/), h.textContent ?? '').toContain('font-serif');
+    expect(h.className.split(/\s+/), h.textContent ?? '').not.toContain('uppercase');
+  }
+});
+
+test('a plain white title bar over a 1px hairline: the canvas, not a coloured band', async () => {
+  draw();
+  await ready();
+  const bar = screen.getByRole('banner').className.split(/\s+/);
+  expect(bar).toEqual(expect.arrayContaining(['bg-canvas', 'border-b', 'border-edge']));
+});
+
+test('every card is white on a hairline: the card ground, a 1px edge, 12px corners', async () => {
+  draw();
+  await ready();
+  for (const section of document.querySelectorAll('section')) {
+    const card = section.querySelector('h2 + div');
+    expect(card?.className.split(/\s+/), section.textContent ?? '').toEqual(expect.arrayContaining(['bg-card', 'border', 'border-edge', 'rounded-card']));
+  }
+});
+
+test('no state by colour alone: each source badge says its state in words, each in its own pair of colours', async () => {
+  draw();
+  await ready();
+  const badge = (t: string, words: string) => within(tool(t)).getByText(words).className.split(/\s+/);
+  expect(badge('git', 'set in Keel')).toEqual(expect.arrayContaining(['bg-set', 'text-on-set']));
+  expect(badge('keel', 'found on the PATH')).toEqual(expect.arrayContaining(['bg-found', 'text-on-found']));
+  expect(badge('claude', 'missing')).toEqual(expect.arrayContaining(['bg-missing', 'text-on-missing']));
+});
+
+test('a problem, a fallback and an error are words in the problem colour', async () => {
+  draw({ 'state.get': () => ok(sampleState({ path: { entries: ['/usr/bin'], source: 'fallback', reason: 'no answer' } })) });
+  expect((await screen.findByText('A fallback: no answer.')).className.split(/\s+/)).toContain('text-problem');
+  expect(within(tool('claude')).getByText('not found on the PATH').className.split(/\s+/)).toContain('text-problem');
 });

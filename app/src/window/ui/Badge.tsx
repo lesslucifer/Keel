@@ -1,13 +1,12 @@
-// A small capsule naming a state, always in words, so no state is told by colour alone. The design
-// file keeps status greens and oranges out of the chrome, so a badge's tone is only how loud it is:
-// 'choice' (a value you set: the indigo tint of the actions), 'quiet' (fine as it is: a faint ink
-// wash), 'strong' (needs you: the polarity flipped, ink fill and canvas text, in both worlds).
+// A small pill naming a tool's source, always in words, so no state is told by colour alone; the colour
+// only repeats what the words say: 'set' (set in Keel, blue), 'found' (found on the PATH, green),
+// 'missing' (red, white words). Each pair reaches AA in both worlds (test-window/unit/contrast.test.ts).
 import type { ReactNode } from 'react';
 
 const TONE = {
-  choice: 'bg-tint/tint text-ink',
-  quiet: 'bg-ink/tint text-ink-secondary',
-  strong: 'bg-ink text-canvas',
+  set: 'bg-set text-on-set',
+  found: 'bg-found text-on-found',
+  missing: 'bg-missing text-on-missing',
 } as const;
 
 export type Tone = keyof typeof TONE;

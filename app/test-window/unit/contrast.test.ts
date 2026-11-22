@@ -1,6 +1,7 @@
-// Text contrast in both worlds (WCAG AA, 4.5:1 for body text), computed from styles.css's tokens:
-// every text colour the window uses passes on every ground it sits on. Indigo fails as small text on
-// a card, so no window file draws text in the primary colour (review round 2, browser.tsx:23).
+// Contrast in both worlds, computed from styles.css's tokens (WCAG AA): every text colour the window
+// uses reaches 4.5:1 on each ground it sits on, words on every badge included, and every button's edge
+// (the black pill, the outline pill) reaches 3:1 against the ground it stands on (non-text, 1.4.11).
+// A text colour a window file draws with and this file does not measure fails the last test.
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from 'vitest';
@@ -35,7 +36,19 @@ const PAIRS: Array<[string, string]> = [
   ['ink-secondary', 'canvas'],
   ['ink-secondary', 'card'],
   ['on-primary', 'primary'],
-  ['canvas', 'ink'],
+  ['on-set', 'set'],
+  ['on-found', 'found'],
+  ['on-missing', 'missing'],
+  ['problem', 'canvas'],
+  ['problem', 'card'],
+];
+
+/** Button edges against the grounds they stand on: 3:1, the non-text minimum. */
+const EDGES: Array<[string, string]> = [
+  ['primary', 'canvas'],
+  ['primary', 'card'],
+  ['outline', 'canvas'],
+  ['outline', 'card'],
 ];
 
 test('every text colour the window uses reaches 4.5:1 on its ground, by day and by night', () => {
@@ -44,9 +57,20 @@ test('every text colour the window uses reaches 4.5:1 on its ground, by day and 
   }
 });
 
-test('indigo is below 4.5:1 as text on a card, so no window file draws text in the primary colour', () => {
-  expect(contrast(rgb(light, 'primary'), rgb(light, 'card'))).toBeLessThan(4.5);
+test('every button edge reaches 3:1 on its ground, by day and by night', () => {
+  for (const [world, block] of [['light', light], ['dark', dark]] as const) {
+    for (const [fg, bg] of EDGES) expect(contrast(rgb(block, fg), rgb(block, bg)), `${world}: ${fg} on ${bg}`).toBeGreaterThanOrEqual(3);
+  }
+});
+
+test('each text colour a window file draws with is one this file measures', () => {
   const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
-  const users = walk(WINDOW).filter((f) => /\.(tsx?|html)$/.test(f) && /\btext-primary\b/.test(readFileSync(f, 'utf8')));
-  expect(users.map((f) => path.relative(WINDOW, f))).toEqual([]);
+  const colours = new Set([...css.matchAll(/--([a-z-]+):\s*\d+ \d+ \d+;/g)].map((m) => m[1] as string));
+  const used = new Set<string>();
+  for (const f of walk(WINDOW).filter((x) => /\.(tsx?|html)$/.test(x))) {
+    for (const m of readFileSync(f, 'utf8').matchAll(/(?<![\w-])text-([a-z-]+)(?![\w-])/g)) if (colours.has(m[1] as string)) used.add(m[1] as string);
+  }
+  expect(used.size).toBeGreaterThan(0);
+  const measured = new Set(PAIRS.map(([fg]) => fg));
+  expect([...used].filter((c) => !measured.has(c)).sort()).toEqual([]);
 });

@@ -1,8 +1,11 @@
 // @ts-check
-// Keel's tokens: the window's whole visual vocabulary (DEC-72), valued from the owner's design file
-// (docs/work/2026-11-22-e-applist-w8-design.md, Mercury's design system) and fitted to a desktop
-// settings window. Its day world is the light appearance and its night world the dark one; the Mac
-// picks (styles.css flips each colour). Every scale below REPLACES Tailwind's default instead of
+// Keel's tokens: the window's whole visual vocabulary (DEC-72), valued from the look the owner chose on
+// 2026-11-22, mx3a Spectrum Plain: Mistral's type (docs/work/2026-11-22-e-applist-w8-design-mistral.md)
+// on MiniMax's colour (docs/work/2026-11-22-e-applist-w8-design-minimax.md) - a white canvas, deep
+// black ink, a black pill for the main action and outline pills for the rest, white 12px cards on
+// hairlines, a plain white title bar over a hairline, no gradient anywhere. System fonts only: New
+// York stands in for PP Editorial Old, the system sans for Inter and DM Sans. Its day world is the
+// light appearance and its night world the dark one; the Mac picks (styles.css flips each colour). Every scale below REPLACES Tailwind's default instead of
 // extending it, so a value that is not a token emits no CSS; the lint rule (eslint-rules/vocabulary.js)
 // empties every scale left undeclared and refuses any class outside this list, an arbitrary value, a
 // class built at run time and the dark: variant. A new size or colour is a change here (and, for a
@@ -22,34 +25,47 @@ export default {
   // Unused: dark lives in the tokens (styles.css flips each variable), and the lint refuses dark:.
   darkMode: 'media',
   theme: {
-    // No breakpoint: one window, no responsive variants (the design file's breakpoints are a website's).
+    // No breakpoint: one window, no responsive variants (the design files' breakpoints are a website's).
     screens: {},
     colors: {
       transparent: 'transparent',
       current: 'currentColor',
-      // The window's ground: canvas by day, night by night.
+      // The window's ground and the title bar: white by day, near-black by night.
       canvas: token('canvas'),
-      // A card, one step of fill off the canvas (no border): lavender by day, night-raised by night.
+      // A card: white on white by day (it stands off by its edge), one step up by night.
       card: token('card'),
-      // A 1px rule between rows inside a card: fog by day, slate by night.
+      // A 1px rule between rows inside a card.
       line: token('line'),
-      // Text: ink and ink-secondary by day, on-dark and fog by night.
+      // The hairline round a card and under the title bar.
+      edge: token('edge'),
+      // Text: deep black and its quieter grey by day, off-white and grey by night.
       ink: token('ink'),
       'ink-secondary': token('ink-secondary'),
-      // The one saturated action colour, Mercury Indigo, and the label on it.
+      // The main action: a black pill by day, a white one by night, and the words on it.
       primary: token('primary'),
       'on-primary': token('on-primary'),
-      // The translucent pill's colour (indigo by day, periwinkle by night), always used at the
-      // opacity step tint or tint-hover, whose strength flips with the world too.
-      tint: token('tint'),
+      // Every other action's 1px edge: an outline pill with no fill.
+      outline: token('outline'),
+      // The three state badges, each a fill and the words on it (words always, never colour alone):
+      // set in Keel (blue), found on the PATH (green), missing (red).
+      set: token('set'),
+      'on-set': token('on-set'),
+      found: token('found'),
+      'on-found': token('on-found'),
+      missing: token('missing'),
+      'on-missing': token('on-missing'),
+      // A problem, a fallback or an error, always in words.
+      problem: token('problem'),
     },
-    // The design file's 8px scale, a 4px half step for tight inline gaps, and two heights.
+    // An 8px scale, a 4px half step for tight inline gaps, mx3a's 14px row, and two heights.
     spacing: {
       0: '0px',
       px: '1px',
       half: '4px',
       xs: '8px',
       sm: '12px',
+      // A row's vertical padding inside a card, and the title bar's.
+      row: '14px',
       md: '16px',
       lg: '20px',
       xl: '24px',
@@ -57,7 +73,7 @@ export default {
       huge: '40px',
       // A state label's height.
       badge: '22px',
-      // A button's height: the design file's small pill, sized for a window.
+      // A button's height: a small pill, sized for a window.
       control: '32px',
     },
     // The scales Tailwind derives from spacing, each declared (the lint empties an undeclared one):
@@ -71,6 +87,8 @@ export default {
     },
     width: {
       full: '100%',
+      // The brand mark's side.
+      sm: '12px',
     },
     minWidth: {
       0: '0px',
@@ -85,31 +103,32 @@ export default {
       column: '720px',
     },
     fontFamily: {
-      // The Mac's own font (DEC-72): no font file ships. SF Pro is variable, so the design file's light
-      // weights (360-480) render; its Inter substitute is not shipped.
+      // The Mac's own font (DEC-72): no font file ships. The system sans stands in for Inter and DM Sans.
       sans: ['system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+      // The screen title and section heads: New York (ui-serif), standing in for PP Editorial Old.
+      serif: ['ui-serif', 'New York', 'Georgia', 'serif'],
       // Paths.
       mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
     },
-    // The design file's type scale, sized for a window: no display or stat sizes.
+    // Mistral's type scale, sized for a window: no display or stat sizes.
     fontSize: {
-      // Small uppercase section labels (the only uppercase).
-      eyebrow: ['11px', { lineHeight: '14px', letterSpacing: '0.06em' }],
       legal: ['12px', { lineHeight: '17px', letterSpacing: '0.02em' }],
       'ui-sm': ['13px', { lineHeight: '16px', letterSpacing: '0.005em' }],
       ui: ['14px', { lineHeight: '16px' }],
       body: ['14px', { lineHeight: '20px' }],
       'body-lg': ['15px', { lineHeight: '21px' }],
+      // The wordmark in the title bar.
       title: ['17px', { lineHeight: '22px', letterSpacing: '0.01em' }],
-      heading: ['22px', { lineHeight: '27px', letterSpacing: '0.42px' }],
+      // A section head, in sentence case, in New York.
+      section: ['20px', { lineHeight: '26px', letterSpacing: '-0.2px' }],
+      // The screen title, in New York.
+      heading: ['34px', { lineHeight: '38px', letterSpacing: '-0.5px' }],
     },
-    // Light weights: body 360-400, UI 420, headings 480, eyebrows 500; nothing above 500.
+    // Three weights: 400 for text and the serif heads, 500 for controls and names, 600 for a problem.
     fontWeight: {
-      light: '360',
       regular: '400',
-      ui: '420',
-      display: '480',
-      medium: '500',
+      ui: '500',
+      medium: '600',
     },
     lineHeight: {
       none: '1',
@@ -117,33 +136,31 @@ export default {
     },
     letterSpacing: {
       normal: '0',
-      eyebrow: '0.06em',
     },
-    // The design file's rounded scale: capsules for actions, soft corners for cards.
+    // Pills for every button and badge, 12px corners for a card, 3px for the brand mark.
     borderRadius: {
       none: '0px',
-      xs: '4px',
-      sm: '8px',
-      md: '12px',
-      lg: '16px',
-      xl: '32px',
-      pill: '40px',
-      full: '9999px',
+      mark: '3px',
+      card: '12px',
+      pill: '9999px',
     },
     borderWidth: {
       DEFAULT: '1px',
       0: '0px',
     },
-    // Depth is tonal: no shadow.
+    // No gradient anywhere: both scales are declared empty, so no bg-gradient-* and no from-, via- or
+    // to- stop emits CSS.
+    backgroundImage: {},
+    gradientColorStops: {},
+    // Depth is a hairline: no shadow.
     boxShadow: {
       none: 'none',
     },
     opacity: {
       // A control that is off.
       disabled: '0.45',
-      // The translucent pill and its hover: 10% and 16% by day, 20% and 30% by night (styles.css).
-      tint: 'var(--tint-alpha)',
-      'tint-hover': 'var(--tint-hover-alpha)',
+      // An outline pill's hover, a wash of ink: 6% by day, 10% by night (styles.css).
+      hover: 'var(--hover-alpha)',
     },
     // Scales with no magnitude, declared anyway: an undeclared scale is emptied by the lint rule, so
     // each holds exactly the members the window draws from.

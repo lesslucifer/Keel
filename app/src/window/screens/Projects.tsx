@@ -2,9 +2,9 @@
 // there is none; keel, git and claude each with its path, its source, its problem, Choose and, when
 // set in Keel, Use the PATH; where the PATH came from; the test alert; the version at the foot. Each
 // control sends one request through useAction; while one runs every control is off. Every value is
-// React text, never markup. The look follows the owner's design file: cards by fill, one solid
-// primary button at most per card, every other action a translucent pill, states in words with a
-// badge whose tone is loudness, never a status colour.
+// React text, never markup. The look is mx3a (the owner's choice, 2026-11-22): white cards on
+// hairlines, one solid black pill at most per card, every other action an outline pill, states in
+// words on a badge whose colour only repeats them, problems in words in the problem colour.
 
 import type { AppState, Tool, ToolState } from '../../shared/contract.ts';
 import { TOOL_NAMES } from '../../shared/contract.ts';
@@ -16,9 +16,9 @@ import { Row } from '../ui/Row.tsx';
 import { Section } from '../ui/Section.tsx';
 
 const SOURCE: Record<ToolState['source'], { words: string; tone: Tone }> = {
-  set: { words: 'set in Keel', tone: 'choice' },
-  path: { words: 'found on the PATH', tone: 'quiet' },
-  missing: { words: 'missing', tone: 'strong' },
+  set: { words: 'set in Keel', tone: 'set' },
+  path: { words: 'found on the PATH', tone: 'found' },
+  missing: { words: 'missing', tone: 'missing' },
 };
 
 function ToolRow({ tool, t, action }: { tool: Tool; t: ToolState; action: ActionView }) {
@@ -43,7 +43,7 @@ function ToolRow({ tool, t, action }: { tool: Tool; t: ToolState; action: Action
         <Badge tone={SOURCE[t.source].tone}>{SOURCE[t.source].words}</Badge>
         {t.path === null ? <span className="text-ui-sm text-ink-secondary">not found</span> : <Path path={t.path} />}
       </div>
-      {t.problem === null ? null : <span className="font-medium text-ink">{t.problem}</span>}
+      {t.problem === null ? null : <span className="font-medium text-problem">{t.problem}</span>}
     </Row>
   );
 }
@@ -52,7 +52,7 @@ export function Projects({ state, action, error }: { state: AppState; action: Ac
   const { busy, run, note } = action;
   const project = state.projects[0];
   return (
-    <div className="flex flex-col gap-xl">
+    <div className="flex flex-col gap-xxl">
       <Section title="Project">
         {project === undefined ? (
           <Row
@@ -62,7 +62,7 @@ export function Projects({ state, action, error }: { state: AppState; action: Ac
               </Button>
             }
           >
-            <span className="text-body-lg font-display text-ink">No project yet.</span>
+            <span className="text-body-lg font-ui text-ink">No project yet.</span>
             <span className="text-ink-secondary">Add the main checkout of a repository set up for Keel.</span>
           </Row>
         ) : (
@@ -73,7 +73,7 @@ export function Projects({ state, action, error }: { state: AppState; action: Ac
               </Button>
             }
           >
-            <span className="text-body-lg font-display text-ink">{project.name}</span>
+            <span className="text-body-lg font-ui text-ink">{project.name}</span>
             <Path path={project.path} />
           </Row>
         )}
@@ -86,11 +86,11 @@ export function Projects({ state, action, error }: { state: AppState; action: Ac
       </Section>
 
       <Section title="PATH">
-        <div className="flex flex-col gap-xs py-md">
+        <div className="flex flex-col gap-xs py-row">
           {state.path.source === 'login-shell' ? (
             <span className="text-ink">From your login shell.</span>
           ) : (
-            <span className="font-medium text-ink">{`A fallback: ${(state.path.reason ?? 'no reason given').replace(/\.$/, '')}.`}</span>
+            <span className="font-medium text-problem">{`A fallback: ${(state.path.reason ?? 'no reason given').replace(/\.$/, '')}.`}</span>
           )}
           <details className="text-ink-secondary">
             <summary className="cursor-pointer font-ui text-ui-sm">The folders ({state.path.entries.length})</summary>
@@ -124,7 +124,7 @@ export function Projects({ state, action, error }: { state: AppState; action: Ac
           </p>
         )}
         {error === '' ? null : (
-          <p role="alert" className="m-0 font-medium text-ink">
+          <p role="alert" className="m-0 font-medium text-problem">
             {error}
           </p>
         )}

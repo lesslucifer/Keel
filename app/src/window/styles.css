@@ -1,38 +1,53 @@
 /* Keel's colour tokens as R G B triplets, read by tailwind.config.js through rgb(var(--name)),
-   valued from the owner's design file (docs/work/2026-11-22-e-applist-w8-design.md). Light is its
-   day world; the Mac's dark setting flips every one to its night world (no dark: class anywhere,
-   DEC-72). The two alpha values set how strong a translucent pill is in each world.
-   No font file and no remote resource: the window draws in the Mac's own font. */
+   valued from the look the owner chose on 2026-11-22, mx3a Spectrum Plain (Mistral's type on
+   MiniMax's colour: docs/work/2026-11-22-e-applist-w8-design-mistral.md and -minimax.md). Light is
+   its day world; the Mac's dark setting flips every one to its night world (no dark: class anywhere,
+   DEC-72). hover-alpha sets how strong an outline pill's hover wash is in each world.
+   No font file and no remote resource: the window draws in the Mac's own fonts. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
   color-scheme: light dark;
-  --canvas: 251 252 253;
-  --card: 237 236 251;
-  --line: 195 195 204;
-  --ink: 40 37 59;
-  --ink-secondary: 85 78 123;
-  --primary: 82 102 235;
+  --canvas: 255 255 255;
+  --card: 255 255 255;
+  --line: 238 238 240;
+  --edge: 226 226 230;
+  --ink: 17 17 17;
+  --ink-secondary: 88 88 96;
+  --primary: 17 17 17;
   --on-primary: 255 255 255;
-  --tint: 82 102 235;
-  --tint-alpha: 0.1;
-  --tint-hover-alpha: 0.16;
+  --outline: 17 17 17;
+  --set: 219 232 255;
+  --on-set: 22 64 190;
+  --found: 223 245 230;
+  --on-found: 22 101 52;
+  --missing: 214 52 36;
+  --on-missing: 255 255 255;
+  --problem: 190 40 40;
+  --hover-alpha: 0.06;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --canvas: 23 23 33;
-    --card: 30 30 42;
-    --line: 112 112 125;
-    --ink: 237 237 243;
-    --ink-secondary: 195 195 204;
-    --primary: 82 102 235;
-    --on-primary: 255 255 255;
-    --tint: 156 180 232;
-    --tint-alpha: 0.2;
-    --tint-hover-alpha: 0.3;
+    --canvas: 16 16 16;
+    --card: 27 27 27;
+    --line: 46 46 53;
+    --edge: 56 56 64;
+    --ink: 244 244 246;
+    --ink-secondary: 172 172 182;
+    --primary: 244 244 246;
+    --on-primary: 16 16 16;
+    --outline: 200 200 208;
+    --set: 30 54 120;
+    --on-set: 196 214 255;
+    --found: 22 72 44;
+    --on-found: 186 240 204;
+    --missing: 214 52 36;
+    --on-missing: 255 255 255;
+    --problem: 255 138 128;
+    --hover-alpha: 0.1;
   }
 }
 

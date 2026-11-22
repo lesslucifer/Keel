@@ -14,7 +14,7 @@ import { classify } from './classes.js';
 
 const STYLES = path.join(import.meta.dirname, '..', 'src', 'window', 'styles.css');
 
-/** The class names in a CSS selector, unescaped (.hover\:bg-tint\/tint-hover:hover -> hover:bg-tint/tint-hover). */
+/** The class names in a CSS selector, unescaped (.hover\:bg-ink\/hover:hover -> hover:bg-ink/hover). */
 function classesIn(/** @type {string} */ selector) {
   return [...selector.matchAll(/\.((?:\\.|[^\s{},:>~+[\]().#*="'|^$])+)/g)].map((m) => /** @type {string} */ (m[1]).replace(/\\(.)/g, '$1'));
 }

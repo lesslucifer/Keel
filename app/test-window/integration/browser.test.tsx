@@ -30,3 +30,23 @@ test('the page says it runs on fixtures, names the scenario and links each one',
   }
   expect(within(nav).getByRole('link', { name: 'tool-missing' })).toHaveAttribute('aria-current', 'page');
 });
+
+test('?scheme=dark and ?scheme=light force one world on the page\'s root; no ?scheme= follows the Mac', () => {
+  const { unmount } = render(<BrowserApp search="?state=tool-missing&scheme=dark" />);
+  expect(document.documentElement.dataset.scheme).toBe('dark');
+  unmount();
+  render(<BrowserApp search="?scheme=light" />).unmount();
+  expect(document.documentElement.dataset.scheme).toBe('light');
+  render(<BrowserApp search="?scheme=sepia" />);
+  expect(document.documentElement.dataset.scheme).toBeUndefined();
+});
+
+test('the appearance links keep the scenario, and the scenario links keep the forced world', () => {
+  render(<BrowserApp search="?state=tool-missing&scheme=dark" />);
+  const looks = screen.getByRole('navigation', { name: 'Appearance' });
+  expect(within(looks).getByRole('link', { name: 'Follow the Mac' })).toHaveAttribute('href', '?state=tool-missing');
+  expect(within(looks).getByRole('link', { name: 'Light' })).toHaveAttribute('href', '?state=tool-missing&scheme=light');
+  expect(within(looks).getByRole('link', { name: 'Dark' })).toHaveAttribute('aria-current', 'page');
+  const states = screen.getByRole('navigation', { name: 'Fixture states' });
+  expect(within(states).getByRole('link', { name: 'no-project' })).toHaveAttribute('href', '?state=no-project&scheme=dark');
+});
