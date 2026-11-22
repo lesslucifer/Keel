@@ -8,7 +8,7 @@
 <body>
   <header class="doc-hero">
     <div class="inner">
-      <h1>E-APPLIST.W5 · Read, watch and alert: done</h1>
+      <h1>E-APPLIST.W5 · Read, watch and alert: built</h1>
       <p>The app now reads git and the router's update log, keeps it current, and alerts you once per alert.</p>
       <div class="meta">T3 · WU result · 2026-11-22 · Keel · its data file, 2026-11-22-e-applist-w5-result.yaml, sits beside this page · the plan: <a href="2026-11-22-e-applist-w5-plan.html">E-APPLIST.W5 plan</a></div>
     </div>
@@ -16,14 +16,14 @@
   <main>
 
 <h2 id="happened">What happened</h2>
-<p data-c="happened">Built as planned, on your four answers. The app's core reads your project's branches, sign-offs, merges and worktrees, and the router's update log. It rereads a second after a change and once a minute anyway. Each new alert line becomes one macOS alert. Nothing was packaged. Your five-minute live check is still to come.</p>
+<p data-c="happened">Built as planned, on your four answers. The app's core reads your project's branches, sign-offs, merges and worktrees, and the router's update log. It rereads a second after a change and once a minute anyway. Each new alert line becomes one alert. The first review found six problems; all are fixed. Your Mac shows no banner for the app run from source, so your live check writes alerts to a file instead. Nothing was packaged.</p>
 
 <h2 id="checks">How you'll know it worked</h2>
 <table data-c="checks">
   <thead><tr><th>Check</th><th>Met?</th></tr></thead>
   <tbody>
-    <tr><td>With the app run from source, an alert line shows one macOS alert; its click opens the window.</td><td>Your live check. The same code, run on a test project, showed it.</td></tr>
-    <tr><td>After a restart, the alert does not come back.</td><td>Yes, in tests and in the run below.</td></tr>
+    <tr><td>With the app run from source, an alert line shows one macOS alert; its click opens the window.</td><td>Partly. Your run gave one alert per line, in the file. The banner and the click wait for the signed app (W9).</td></tr>
+    <tr><td>After a restart, the alert does not come back.</td><td>Yes, in tests and in the run below. Your restart step needs a rerun: the app was still running.</td></tr>
     <tr><td>Tests drive the real router script: restarts, gaps, silence, git changes, a refused link.</td><td>Yes. One test needs real file events, which the worker's sandbox refuses; it runs on your Mac.</td></tr>
     <tr><td>Keel's usual checks run those tests; nothing was built for testing.</td><td>Yes, green before every commit.</td></tr>
   </tbody>
@@ -45,14 +45,16 @@
   <li>One line written while the app was closed is shown as itself; the summary is for two or more.</li>
   <li>An alert's title is its headline, not "Keel": macOS already names the app.</li>
   <li>The main branch is taken to be "main", as in Keel.</li>
-  <li>You run the live check: the worker's sandbox cannot start the app.</li>
+  <li>You run the live check: the worker's sandbox cannot start the app. It writes alerts to a file, since your Mac lists no notifications for the app run from source.</li>
+  <li>The review's fixes: alert lengths counted as the router counts them; a cut git answer is a problem; notes are read only for open branches; the one summary also covers a project switched in.</li>
 </ul>
 
 <h2 id="left">What is left, and who takes it</h2>
 <ul data-c="left">
-  <li>Your live check, about five minutes, and the file-event test on your Mac: you, before signing. The steps are in the data file.</li>
+  <li>Your restart step, with the app quit first, and the file-event test on your Mac: you, before signing. The steps are in the data file.</li>
+  <li>Moving the app from npm to pnpm: the next small part, right after this one merges.</li>
   <li>The list, its screens, and the window following a click: W6.</li>
-  <li>The epic test, and the alert and link on the signed app: W9.</li>
+  <li>The epic test, and the banner, click and link on the signed app: W9.</li>
   <li>The code review: the router starts it; you sign.</li>
 </ul>
 

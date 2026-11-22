@@ -70,6 +70,19 @@ open:
         keeps that pipe and the capture's answer until it quits (W7 review round 4's waived nit, app/src/main/commands.ts:177;
         bounded, at most the login-shell read once per launch). Source: E-APPLIST.W7 result, follow-ups (791eca7).
         Taken by: this row; at E-APPLIST's close (W9) it moves to a row of its own if still open.
+      - >-
+        A second launch that loses the single-instance lock quits silently (app/src/main/index.ts, where
+        app.requestSingleInstanceLock() fails), so an npm start while another Keel runs (the packaged app keeps running
+        with no window, DEC-77) hands its window to the old build with no word in the terminal. Fix: print "Keel is
+        already running: this launch quits; quit the other first" to stderr before app.quit(); W9's Playwright test
+        checks a second launch shows no old window. Source: the E-APPLIST.W5 live check (2026-11-22), the worker's
+        trace. Taken by: this row; at E-APPLIST's close (W9) it moves to a row of its own if still open.
+      - >-
+        The test alert's "not shown" text says "Check System Settings > Notifications > Keel" (app/src/window/hooks.ts),
+        right for the packaged app; under npm start the unpackaged app is Electron.app, and macOS files its
+        notifications under "Electron" (on the owner's Mac it had no entry at all). Fix: name the right place for each
+        (the main part knows app.isPackaged). Source: the E-APPLIST.W5 live check (2026-11-22). Taken by: this row;
+        at E-APPLIST's close (W9) it moves to a row of its own if still open.
 
   - id: A4
     title: "E-APPSIGN · Sign off and merge from the app"
