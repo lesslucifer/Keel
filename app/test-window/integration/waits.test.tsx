@@ -119,7 +119,7 @@ test('a click on an alert brings Waits on you forward with that work unit\'s ite
   view = { ...view, focus: { wu: 'E-APPLIST.W5', seq: 1 } };
   act(() => void stub.push('waiting.changed'));
   await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Waits on you'));
-  expect(within(row('Result to sign')[0] as HTMLElement).getByText('From your alert')).toBeInTheDocument();
+  expect(await within(row('Result to sign')[0] as HTMLElement).findByText('From your alert')).toBeInTheDocument();
   expect(within(row('Main not pushed')[0] as HTMLElement).queryByText('From your alert')).not.toBeInTheDocument();
   view = { ...view, focus: { wu: 'E-APPLIST.W9', seq: 2 } };
   act(() => void stub.push('waiting.changed'));
@@ -130,7 +130,8 @@ test('a click on an alert brings Waits on you forward with that work unit\'s ite
 test('a launch by a link (a focus already set) opens on that work unit', async () => {
   draw(VIEWS.focus);
   await ready();
-  expect(within(row('Result to sign')[0] as HTMLElement).getByText('From your alert')).toBeInTheDocument();
+  // The focus is acted on after the list is drawn (an effect), so it is awaited, not read at once.
+  expect(await within(row('Result to sign')[0] as HTMLElement).findByText('From your alert')).toBeInTheDocument();
 });
 
 test('a silent router: a line says its items are hidden and what git shows is listed; with no run it says the router has not started', async () => {
