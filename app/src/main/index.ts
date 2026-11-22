@@ -215,6 +215,9 @@ async function start(): Promise<void> {
       if (event === 'state.changed') void watcher?.kick();
     },
     view: () => reader.view(),
+    // Wired by the next steps of E-APPLIST.W6 (Open, then Mark sent).
+    open: async () => ({ done: false, why: 'Open is not built yet' }),
+    mark: async () => ({ done: false, why: 'Mark sent is not built yet' }),
   });
   ipcMain.handle(ASK_CHANNEL, dispatcher(expected, handlers));
   started = true;

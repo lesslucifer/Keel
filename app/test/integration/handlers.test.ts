@@ -1,4 +1,4 @@
-// The six requests' handlers at their real boundary: through the dispatcher the shell hands to
+// The nine requests' handlers at their real boundary: through the dispatcher the shell hands to
 // ipcMain.handle, with the shell's parts faked (the two dialogs, the test alert, the push), real git
 // in temp projects and fake tools in temp folders.
 import { test } from 'node:test';
@@ -8,7 +8,7 @@ import path from 'node:path';
 import { dispatcher, type EventLike } from '../../src/main/bridge.ts';
 import { makeHandlers, prepare, readerParts, type Parts } from '../../src/main/handlers.ts';
 import { loadSettings } from '../../src/main/settings.ts';
-import type { AlertOutcome, LoginPathState, Tool, View } from '../../src/shared/contract.ts';
+import type { AlertOutcome, Item, LoginPathState, Tool, View } from '../../src/shared/contract.ts';
 import { emptyView } from '../../src/main/reader/view.ts';
 import { tempDir, program, realGit, sh, snapshot, mk, recorder, bounded, within, HANG } from '../support/fs.ts';
 
@@ -32,7 +32,7 @@ function world(t: { after: (fn: () => void) => void }) {
   const keel = program(path.join(bin, 'keel'), '#!/bin/sh\n');
   const claude = program(path.join(bin, 'claude'), '#!/bin/sh\n');
   const loginPath: LoginPathState = { entries: [bin, path.dirname(GIT)], source: 'login-shell', reason: null };
-  const seen = { folders: 0, files: [] as Tool[], pushes: 0, alerts: 0 };
+  const seen = { folders: 0, files: [] as Tool[], pushes: 0, alerts: 0, opened: [] as string[], marked: [] as Array<[string, boolean]> };
   const answers = { folder: null as string | null, file: null as string | null, alert: 'shown' as AlertOutcome, view: emptyView() as View };
   const parts: Parts = {
     appDir: path.join(dir, 'app-folder'),
@@ -44,6 +44,8 @@ function world(t: { after: (fn: () => void) => void }) {
     testAlert: async () => { seen.alerts++; return answers.alert; },
     push: () => { seen.pushes++; },
     view: () => answers.view,
+    open: async (item) => { seen.opened.push(item.id); return { done: true }; },
+    mark: async (item, sent) => { seen.marked.push([item.id, sent]); return { done: true }; },
   };
   const ask = dispatcher(() => ({ contentsId: 1, pages: [PAGE] }), makeHandlers(parts));
   const call = (name: string, args: Record<string, string> = {}) => ask(own, { name, args });
@@ -147,6 +149,46 @@ test('waiting.get answers the reader\'s view as it stands, every worker string t
   assert.deepEqual(a.value.router.values, { 'question/q1': { headline: 'Merge  now? ', lines: ['a b'] } });
   assert.equal(w.seen.pushes, 0);
   assert.equal(existsSync(w.parts.appDir), false);
+});
+
+/** An item as the view lists it, for the handlers' lookups. */
+function item(over: Partial<Item> & Pick<Item, 'id' | 'kind' | 'open' | 'markable'>): Item {
+  return { group: 'yours', wu: null, epic: null, title: 'An item', branch: null, tip: null, since: null, why: 'Why.', worker: null, line: null, text: [], ...over };
+}
+
+test('item.open opens only an item the view lists now, and only a page or an epic result; a gone, moved, text or empty item opens nothing', async (t) => {
+  const w = world(t);
+  const view = emptyView();
+  view.items = [
+    item({ id: 'result/E-A.W1@0f1e2d3', kind: 'result', open: 'page', markable: false }),
+    item({ id: 'epic-result/E-A@a1b2c3d', kind: 'epic-result', open: 'archive', markable: false }),
+    item({ id: 'question/q1@a1b2c3d4', kind: 'question', open: 'text', markable: true }),
+    item({ id: 'push/main@9a8b7c6', kind: 'push', open: 'none', markable: false }),
+  ];
+  w.answers.view = view;
+  assert.deepEqual(await w.call('item.open', { item: 'result/E-A.W1@0f1e2d3' }), { ok: true, value: { done: true } });
+  assert.deepEqual(await w.call('item.open', { item: 'epic-result/E-A@a1b2c3d' }), { ok: true, value: { done: true } });
+  assert.deepEqual(w.seen.opened, ['result/E-A.W1@0f1e2d3', 'epic-result/E-A@a1b2c3d']);
+  const left = (await w.call('item.open', { item: 'result/E-A.W1@1111111' })) as { ok: true; value: { done: false; why: string } };
+  assert.equal(left.value.done, false);
+  assert.match(left.value.why, /left the list or moved on/);
+  assert.deepEqual(await w.call('item.open', { item: 'question/q1@a1b2c3d4' }), { ok: true, value: { done: false, why: 'a question shows its text in the list itself' } });
+  assert.deepEqual(await w.call('item.open', { item: 'push/main@9a8b7c6' }), { ok: true, value: { done: false, why: 'this item has nothing to open' } });
+  assert.deepEqual(await w.call('item.open', { item: '../../etc/passwd' }), { ok: false, refused: 'bad-slot:item' });
+  assert.deepEqual(w.seen.opened, ['result/E-A.W1@0f1e2d3', 'epic-result/E-A@a1b2c3d']);
+});
+
+test('item.mark marks only a markable item the view lists now, yes or no', async (t) => {
+  const w = world(t);
+  const view = emptyView();
+  view.items = [item({ id: 'plan/E-A.W2@0f1e2d3', kind: 'plan', open: 'page', markable: true }), item({ id: 'result/E-A.W1@0f1e2d3', kind: 'result', open: 'page', markable: false })];
+  w.answers.view = view;
+  assert.deepEqual(await w.call('item.mark', { item: 'plan/E-A.W2@0f1e2d3', sent: 'yes' }), { ok: true, value: { done: true } });
+  assert.deepEqual(await w.call('item.mark', { item: 'plan/E-A.W2@0f1e2d3', sent: 'no' }), { ok: true, value: { done: true } });
+  assert.deepEqual(await w.call('item.mark', { item: 'result/E-A.W1@0f1e2d3', sent: 'yes' }), { ok: true, value: { done: false, why: 'only a plan to read or a question can be marked sent' } });
+  const left = (await w.call('item.mark', { item: 'plan/E-A.W2@1111111', sent: 'yes' })) as { ok: true; value: { done: boolean } };
+  assert.equal(left.value.done, false);
+  assert.deepEqual(w.seen.marked, [['plan/E-A.W2@0f1e2d3', true], ['plan/E-A.W2@0f1e2d3', false]]);
 });
 
 test('the reader\'s parts give the listed project with its main checkout, and the usable git; none while unlisted or unusable', async (t) => {

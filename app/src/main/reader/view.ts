@@ -19,6 +19,9 @@ export function emptyView(): View {
     focus: null,
     scheme: null,
     readAt: null,
+    changedAt: null,
+    items: [],
+    counts: { yours: 0, notYours: 0, sent: 0 },
   };
 }
 
@@ -50,9 +53,9 @@ export function viewAlert(a: StoredAlert, shown: boolean): RouterAlert {
   return { n: a.n, at: a.at, headline: a.headline, lines: [...a.lines], wu: a.wu ?? null, link: a.link ?? null, shown };
 }
 
-/** The view without the time it was read: two reads that found the same are no change. */
+/** The view without the times it was read and last changed: two reads that found the same are no change. */
 function same(a: View, b: View): boolean {
-  return JSON.stringify({ ...a, readAt: null }) === JSON.stringify({ ...b, readAt: null });
+  return JSON.stringify({ ...a, readAt: null, changedAt: null }) === JSON.stringify({ ...b, readAt: null, changedAt: null });
 }
 
 export class ViewReader {
@@ -93,7 +96,7 @@ export class ViewReader {
       this.log = null;
       // No project: still the alerter's take, with no run, so the session's first take is spent here, not at a later Add.
       await this.parts.alerter?.take(null, []);
-      next = { ...emptyView(), focus: this.parts.focus?.() ?? null, scheme: this.parts.scheme?.() ?? null };
+      next = { ...emptyView(), focus: this.parts.focus?.() ?? null, scheme: this.parts.scheme?.() ?? null, changedAt: this.current.changedAt };
     } else {
       if (p.path !== this.root || this.git === null || this.log === null) {
         this.root = p.path;
@@ -114,10 +117,14 @@ export class ViewReader {
         focus: this.parts.focus?.() ?? null,
         scheme: this.parts.scheme?.() ?? null,
         readAt: new Date(this.now()).toISOString(),
+        changedAt: this.current.changedAt,
+        items: [],
+        counts: { yours: 0, notYours: 0, sent: 0 },
       };
     }
     const changed = !same(next, this.current);
-    this.current = next;
+    // The last change: when a read found the view changed (the first read included), as the clock says.
+    this.current = changed ? { ...next, changedAt: new Date(this.now()).toISOString() } : next;
     return changed;
   }
 }

@@ -18,6 +18,8 @@ export interface Args {
   'settings.reset': { tool: Tool };
   'alert.test': Record<string, never>;
   'waiting.get': Record<string, never>;
+  'item.open': { item: string };
+  'item.mark': { item: string; sent: 'yes' | 'no' };
 }
 
 /** One request with its arguments, as a value a button can hold. */

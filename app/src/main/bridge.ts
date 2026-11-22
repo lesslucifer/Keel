@@ -5,10 +5,11 @@
 // Push: the main part sends only an event name in the contract's list, only to the app's window,
 // with every string passed through plain(). Pure: the shell (index.ts) hands Electron's objects in.
 
-import { REQUESTS, PUSH_EVENTS, PUSH_CHANNEL, PROJECT_ID_SOURCE, SLOT_CAP, type Answer, type RequestName, type Slot, type PushEvent, type PushMessage } from '../shared/contract.ts';
+import { REQUESTS, PUSH_EVENTS, PUSH_CHANNEL, PROJECT_ID_SOURCE, ITEM_ID_SOURCE, SLOT_CAP, type Answer, type RequestName, type Slot, type PushEvent, type PushMessage } from '../shared/contract.ts';
 import { plain } from './text.ts';
 
 export const PROJECT_ID = new RegExp(PROJECT_ID_SOURCE);
+export const ITEM_ID = new RegExp(ITEM_ID_SOURCE);
 
 /** A frame as Electron's WebFrameMain shows it: its URL, and its parent (null for a main frame). */
 export interface FrameLike {
@@ -33,7 +34,8 @@ const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 /** Whether `v` is a value `slot` allows: a string, not empty, within the cap, no control character, then the slot's own rule. */
 export function slotAccepts(slot: Slot, v: unknown): boolean {
   if (typeof v !== 'string' || v.length === 0 || v.length > SLOT_CAP || CONTROL.test(v)) return false;
-  return slot.kind === 'enum' ? slot.values.includes(v) : PROJECT_ID.test(v);
+  if (slot.kind === 'enum') return slot.values.includes(v);
+  return slot.kind === 'project-id' ? PROJECT_ID.test(v) : ITEM_ID.test(v);
 }
 
 /** Why the sender is refused, or null when it is the app window's main frame on the app's page. */
@@ -161,7 +163,7 @@ export function contract(): { requests: Record<string, Record<string, string>>; 
   for (const name of Object.keys(REQUESTS).sort()) {
     const desc: Record<string, string> = {};
     for (const [k, s] of Object.entries(REQUESTS[name as RequestName])) {
-      desc[k] = s.kind === 'enum' ? `one of ${s.values.join('|')}` : `project-id ${PROJECT_ID_SOURCE}`;
+      desc[k] = s.kind === 'enum' ? `one of ${s.values.join('|')}` : s.kind === 'project-id' ? `project-id ${PROJECT_ID_SOURCE}` : `item-id ${ITEM_ID_SOURCE}`;
     }
     requests[name] = desc;
   }

@@ -33,7 +33,8 @@ export function alertText(a: Answer<AlertOutcome>): string {
 }
 
 /** What each change says when it was done. */
-const DONE_TEXT: Record<Exclude<RequestName, 'state.get' | 'alert.test' | 'waiting.get'>, string> = {
+const DONE_TEXT: Record<Exclude<RequestName, 'state.get' | 'alert.test' | 'waiting.get' | 'item.mark'>, string> = {
+  'item.open': 'Opened in your browser.',
   'projects.add': 'Project added.',
   'projects.remove': 'Project removed from the list. Add brings it back.',
   'settings.choose': 'Saved: Keel uses the chosen file.',
@@ -48,6 +49,8 @@ function outcomeText(request: Request, a: Answer): string {
       return answerText(a);
     case 'alert.test':
       return alertText(a as Answer<AlertOutcome>);
+    case 'item.mark':
+      return changeText(a as Answer<Change>, request.args.sent === 'yes' ? 'Marked sent: it waits for a sign under Sent.' : 'Back on your list.');
     default:
       return changeText(a as Answer<Change>, DONE_TEXT[request.name]);
   }

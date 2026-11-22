@@ -1,5 +1,6 @@
 // The browser mode's entry (pnpm dev:browser, DEC-74): the window's screens in a plain browser, no
-// Electron and no main part, against the fake bridge built from fixtures. ?state= picks the scenario;
+// Electron and no main part, against the fake bridge built from fixtures. ?state= picks the scenario,
+// ?view= the waiting view (fixtures.ts VIEW_NAMES) in place of the scenario's own;
 // ?scheme=light|dark forces one world (data-scheme on the page's root, fake/scheme.css) so the owner
 // sees both without changing the Mac; without it the Mac picks, as in the shipped page.
 // Never part of the shipped page: the renderer's build input is index.html alone, and a node guard
@@ -11,7 +12,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
 import { BridgeProvider } from './bridge.ts';
 import { makeFakeBridge } from './fake/fake.ts';
-import { SCENARIO_NAMES, scenarioOf } from './fake/fixtures.ts';
+import { SCENARIO_NAMES, VIEW_NAMES, scenarioOf, viewOf, type ViewName } from './fake/fixtures.ts';
 
 const SCHEMES = ['light', 'dark'] as const;
 type Scheme = (typeof SCHEMES)[number];
@@ -21,9 +22,9 @@ function schemeOf(value: string | null): Scheme | null {
   return value === 'light' || value === 'dark' ? value : null;
 }
 
-/** A browser-mode link keeping both choices: the scenario, and the forced world when there is one. */
-function hrefOf(state: string, scheme: Scheme | null): string {
-  return `?state=${state}${scheme === null ? '' : `&scheme=${scheme}`}`;
+/** A browser-mode link keeping every choice: the scenario, the view when one is named, and the forced world when there is one. */
+function hrefOf(state: string, scheme: Scheme | null, view: ViewName | null = null): string {
+  return `?state=${state}${view === null ? '' : `&view=${view}`}${scheme === null ? '' : `&scheme=${scheme}`}`;
 }
 
 const CURRENT = 'font-medium text-ink';
@@ -34,7 +35,8 @@ export function BrowserApp({ search }: { search: string }) {
   const params = new URLSearchParams(search);
   const scenario = scenarioOf(params.get('state'));
   const scheme = schemeOf(params.get('scheme'));
-  const bridge = useMemo(() => makeFakeBridge(scenario), [scenario]);
+  const view = viewOf(params.get('view'));
+  const bridge = useMemo(() => makeFakeBridge(scenario, { view }), [scenario, view]);
   useLayoutEffect(() => {
     const root = document.documentElement;
     if (scheme === null) delete root.dataset.scheme;
@@ -46,14 +48,21 @@ export function BrowserApp({ search }: { search: string }) {
         <span className="font-medium text-ink">Browser mode: fixtures, not your Mac</span>
         <nav aria-label="Fixture states" className="flex flex-wrap gap-sm">
           {SCENARIO_NAMES.map((name) => (
-            <a key={name} href={hrefOf(name, scheme)} aria-current={name === scenario ? 'page' : undefined} className={name === scenario ? CURRENT : LINK}>
+            <a key={name} href={hrefOf(name, scheme, view)} aria-current={name === scenario ? 'page' : undefined} className={name === scenario ? CURRENT : LINK}>
               {name}
+            </a>
+          ))}
+        </nav>
+        <nav aria-label="Fixture views" className="flex flex-wrap gap-sm">
+          {[null, ...VIEW_NAMES].map((id) => (
+            <a key={id ?? 'own'} href={hrefOf(scenario, scheme, id)} aria-current={id === view ? 'page' : undefined} className={id === view ? CURRENT : LINK}>
+              {id ?? 'its own view'}
             </a>
           ))}
         </nav>
         <nav aria-label="Appearance" className="flex flex-wrap gap-sm">
           {[null, ...SCHEMES].map((id) => (
-            <a key={id ?? 'mac'} href={hrefOf(scenario, id)} aria-current={id === scheme ? 'page' : undefined} className={id === scheme ? CURRENT : LINK}>
+            <a key={id ?? 'mac'} href={hrefOf(scenario, id, view)} aria-current={id === scheme ? 'page' : undefined} className={id === scheme ? CURRENT : LINK}>
               {id === null ? 'Follow the Mac' : id === 'light' ? 'Light' : 'Dark'}
             </a>
           ))}

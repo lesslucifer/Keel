@@ -140,7 +140,7 @@ function failed(r: Captured, what: string): string | null {
 }
 
 /** No git facts, and why. */
-export const noFacts = (problem: string): GitFacts => ({ branches: [], notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], problem });
+export const noFacts = (problem: string): GitFacts => ({ branches: [], notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], reviews: {}, times: {}, problem });
 
 /** One project's git reader; read(git) reads it all again with that git. */
 export class GitReader {
@@ -182,7 +182,7 @@ export class GitReader {
     const refsWhy = failed(refs, 'its branches');
     if (refsWhy !== null) return noFacts(refsWhy);
     const { branches, noteKinds } = parseRefs(refs.stdout);
-    const facts: GitFacts = { branches, notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], problem: null };
+    const facts: GitFacts = { branches, notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], reviews: {}, times: {}, problem: null };
     const problems: string[] = [];
     const take = (r: Captured | string, what: string): string | null => {
       const why = typeof r === 'string' ? r : failed(r, what);
