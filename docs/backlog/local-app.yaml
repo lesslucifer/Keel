@@ -41,6 +41,20 @@ open:
     source: >-
       E-LOCALTOOL.W5 result, P4 to P6, and the close; the owner's replan of 2026-11-20 (DEC-71 - DEC-77).
     taken-by: "E-APPLIST"
+    follow-ups:
+      - >-
+        Simplify the lint helper (app/eslint-rules/classes.js) to an advisory for honest code and leave the guarantee
+        to the emitted-CSS check (app/eslint-rules/emitted.js); close the four round-5 findings W8 was signed with,
+        its review at the 5-round cap (cr note on 796fb29, WAIVED: 2 blockers, 2 importants open; none ships anything
+        wrong): classes.js:283 (blocker: the taint rule refuses honest code - a non-literal string binding or a table
+        handed to an imported or a rest-parameter helper is reported unread); classes.js:362 (blocker: a table changed
+        in a local helper through arguments[0], forEach, new, an array, a spread, a tag or an object wrapper is read
+        as its declared value); emitted.js:149 (important: a stylesheet in a package that is not a runtime dependency,
+        reached by a relative node_modules path, ships with lint green); emitted.js:182 (important: the import and
+        injection scans are regexes over raw text, so honest JSX text, a comment or an SVG icon fails lint). Source:
+        E-APPLIST.W8 result and its cr note; recorded by the E-APPLIST.W5 plan. Taken by: E-APPLIST.W6 if the helper
+        refuses its honest screen code, else this row at E-APPLIST's close (W9), which re-points it to a row of its
+        own if still open.
 
   - id: A4
     title: "E-APPSIGN · Sign off and merge from the app"
