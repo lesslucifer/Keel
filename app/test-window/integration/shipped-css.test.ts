@@ -30,6 +30,18 @@ const REFUSED: Array<[string, string, RegExp]> = [
   ['a media query other than the dark one', '@media (min-width: 100px) { :root { --canvas: 1 2 3; } }', /min-width/],
   ['a layer other than Tailwind\'s three', '@layer rogue { p { @apply p-xs; } }', /rogue/],
   ['an !important on an @apply', 'p { @apply p-xs !important; }', /!important/],
+  // Review round 4 (emitted.js:191) and its siblings: each context holds exactly its own shape.
+  ['an @apply on body inside the dark block', '@media (prefers-color-scheme: dark) { body { @apply bg-primary text-ink-secondary; } }', /body/],
+  ['an @apply on :root inside the dark block', '@media (prefers-color-scheme: dark) { :root { @apply text-ink; } }', /@apply/],
+  ['color-scheme inside the dark block', '@media (prefers-color-scheme: dark) { :root { color-scheme: dark; } }', /color-scheme/],
+  ['a media query nested in the dark block', '@media (prefers-color-scheme: dark) { @media (prefers-color-scheme: dark) { :root { --ink: 1 2 3; } } }', /@media/],
+  ['an @apply on an element other than the page roots', '@layer base { section { @apply bg-primary; } }', /section/],
+  ['an @apply outside @layer base', 'body { @apply bg-canvas; }', /body/],
+  ['an @apply in another Tailwind layer', '@layer utilities { body { @apply p-xs; } }', /utilities/],
+  ['a token not in the config', ':root { --tw-bg-opacity: 1; }', /--tw-bg-opacity/],
+  ['a token rule on another selector', ':root, body { --ink: 1 2 3; }', /:root, body/],
+  ['color-scheme outside :root', '@layer base { html { color-scheme: dark; } }', /color-scheme/],
+  ['an @apply on :root at the top level', ':root { @apply text-ink; }', /@apply/],
 ];
 
 for (const [what, css, named] of REFUSED) {

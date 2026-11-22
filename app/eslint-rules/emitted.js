@@ -5,9 +5,11 @@
 //    finds every stylesheet the page pulls in (a side-effect import, ?inline, ?url, one inside a
 //    package), and no file it loads may name another for new URL; index.html may carry no <link>,
 //    <style> or style= and loads main.tsx alone. Anything but src/window/styles.css is refused.
-// 2. styles.css judged at source, declaration by declaration: Tailwind's three directives, its three
-//    layers, the one dark media query, colour tokens valued as numbers, color-scheme, and @apply of
-//    legal classes; nothing else (no raw property, no @import, no font). It must be judged before
+// 2. styles.css judged at source against an exact grammar: Tailwind's three directives; one :root
+//    rule of tokens (variables the config reads, as numbers) and color-scheme; the dark media query
+//    holding only :root rules of tokens; @layer base holding only @apply of legal classes on html,
+//    body and #root. Nothing else (no raw property, no other selector, @import, font, media or
+//    layer). It must be judged before
 //    Tailwind runs: compiled, a raw div{margin:7px} and an @apply of a token look alike.
 // 3. The emitted classes. Tailwind writes CSS only for whole class names it finds written out in its
 //    content files, however a string is built later, so styles.css through Tailwind's PostCSS plugin
@@ -163,62 +165,95 @@ const TAILWIND_PARTS = new Set(['base', 'components', 'utilities']);
 const COLOR_SCHEMES = new Set(['light dark', 'dark light', 'light', 'dark']);
 /** A token's value: an R G B triplet or an alpha, numbers only. */
 const TOKEN_VALUE = /^\d+(?:\.\d+)?(?:\s+\d+(?:\.\d+)?)*$/;
+/** The variables the config reads (rgb(var(--ink) ...), var(--hover-alpha)): the only tokens styles.css may set. */
+const TOKEN_NAMES = new Set([...JSON.stringify(tailwindConfig.theme ?? {}).matchAll(/var\(--([a-z][a-z0-9-]*)\)/g)].map((m) => `--${m[1]}`));
+/** The page's roots, the only elements styles.css may style, and only by @apply of tokens. */
+const PAGE_ROOTS = new Set(['html', 'body', '#root']);
 
 /**
- * Every construct in `css` (styles.css's text) outside what it may hold: Tailwind's directives and
- * layers, the dark media query, colour tokens as numbers, color-scheme, and @apply of legal classes.
+ * Every construct in `css` (styles.css's text) outside its grammar, which is exact per context:
+ * - top level: @tailwind base, components or utilities; one :root rule of tokens (variables the config
+ *   reads, valued as numbers) and color-scheme; @media (prefers-color-scheme: dark); @layer base;
+ * - in the dark media query: :root rules of tokens only (it flips the tokens, nothing else);
+ * - in @layer base: rules on the page's roots (html, body, #root) holding only @apply of legal classes.
+ * Nothing else: no raw property, no other selector, no import rule, no font, no other media or layer.
  * @param {string} css
  */
 export function stylesheetProblems(css) {
   /** @type {string[]} */
   const problems = [];
   const say = (/** @type {string} */ what) => problems.push(`design/css: styles.css holds ${what}`);
-  const visit = (/** @type {any} */ node) => {
-    if (node.type === 'comment') return;
-    if (node.type === 'atrule') {
-      const params = String(node.params).trim().replace(/\s+/g, ' ');
-      if (node.name === 'tailwind') {
-        if (!TAILWIND_PARTS.has(params) || node.parent?.type !== 'root') say(`@tailwind ${params}`);
-        return;
-      }
-      if (node.name === 'layer') {
-        if (!TAILWIND_PARTS.has(params) || node.parent?.type !== 'root') say(`@layer ${params}`);
-        else node.each(visit);
-        return;
-      }
-      if (node.name === 'media') {
-        if (params !== '(prefers-color-scheme: dark)') say(`@media ${params}; only (prefers-color-scheme: dark) may flip the tokens`);
-        else node.each(visit);
-        return;
-      }
-      if (node.name === 'apply') {
-        if (node.parent?.type !== 'rule') say(`@apply ${params} outside a rule`);
-        for (const cls of params.split(' ')) {
-          if (cls.startsWith('!') || cls.endsWith('!') || cls === '!important') say(`@apply ${cls}: no !important`);
-          else if (!classify(cls).legal) say(`@apply ${cls}, which is not in the closed vocabulary (app/tailwind.config.js)`);
-        }
-        return;
-      }
-      say(`@${node.name} ${params}`.trim());
-      return;
-    }
-    if (node.type === 'rule') {
-      node.each(visit);
-      return;
-    }
-    if (node.type === 'decl') {
+  const params = (/** @type {any} */ node) => String(node.params).trim().replace(/\s+/g, ' ');
+  const selector = (/** @type {any} */ rule) => String(rule.selector).trim().replace(/\s+/g, ' ');
+  const where = (/** @type {any} */ node) => (node.type === 'rule' ? selector(node) : node.type === 'atrule' ? `@${node.name} ${params(node)}`.trim() : node.type === 'decl' ? `${node.prop}: ${node.value}` : node.type);
+
+  /** A :root rule of tokens; `scheme` allows color-scheme too (the top-level one). */
+  const tokenRule = (/** @type {any} */ rule, /** @type {boolean} */ scheme, /** @type {string} */ context) => {
+    rule.each((/** @type {any} */ node) => {
+      if (node.type === 'comment') return;
+      if (node.type !== 'decl') return say(`${where(node)} in ${context}; only tokens go there`);
       const value = String(node.value).trim();
-      if (node.important) say(`${node.prop}: ${value} !important`);
-      else if (node.prop.startsWith('--')) {
-        if (!TOKEN_VALUE.test(value) || node.parent?.selector !== ':root') say(`${node.prop}: ${value}; a token is numbers on :root (an R G B triplet or an alpha)`);
-      } else if (node.prop === 'color-scheme') {
+      if (node.important) return say(`${node.prop}: ${value} !important`);
+      if (node.prop === 'color-scheme' && scheme) {
         if (!COLOR_SCHEMES.has(value)) say(`color-scheme: ${value}`);
-      } else {
-        say(`${node.prop}: ${value} under ${node.parent?.selector ?? 'the root'}; a value comes from a token, by @apply`);
+        return;
       }
-    }
+      if (!node.prop.startsWith('--')) return say(`${node.prop}: ${value} in ${context}; only tokens go there, and a value comes from a token by @apply on the page's roots`);
+      if (!TOKEN_NAMES.has(node.prop)) return say(`${node.prop} in ${context}, which tailwind.config.js never reads`);
+      if (!TOKEN_VALUE.test(value)) say(`${node.prop}: ${value}; a token is numbers (an R G B triplet or an alpha)`);
+    });
   };
-  postcss.parse(css).each(visit);
+
+  /** A rule on the page's roots in @layer base, holding only @apply of legal classes. */
+  const rootRule = (/** @type {any} */ rule) => {
+    const parts = selector(rule).split(',').map((p) => p.trim());
+    if (!parts.every((p) => PAGE_ROOTS.has(p))) say(`a rule on ${selector(rule)} in @layer base; only html, body and #root may be styled there`);
+    body(rule);
+  };
+
+  /** A rule's contents: only @apply of legal classes, never a raw declaration or !important. */
+  const body = (/** @type {any} */ rule) => {
+    rule.each((/** @type {any} */ node) => {
+      if (node.type === 'comment') return;
+      if (node.type !== 'atrule' || node.name !== 'apply') return say(`${where(node)} under ${selector(rule)}; a value comes from a token, by @apply`);
+      for (const cls of params(node).split(' ')) {
+        if (cls.startsWith('!') || cls.endsWith('!') || cls === '!important') say(`@apply ${cls}: no !important`);
+        else if (!classify(cls).legal) say(`@apply ${cls}, which is not in the closed vocabulary (app/tailwind.config.js)`);
+      }
+    });
+  };
+
+  let roots = 0;
+  postcss.parse(css).each((/** @type {any} */ node) => {
+    if (node.type === 'comment') return;
+    if (node.type === 'atrule' && node.name === 'tailwind') {
+      if (!TAILWIND_PARTS.has(params(node))) say(`@tailwind ${params(node)}`);
+      return;
+    }
+    if (node.type === 'rule' && selector(node) === ':root') {
+      roots += 1;
+      if (roots > 1) say('a second top-level :root rule');
+      return tokenRule(node, true, 'the :root rule');
+    }
+    if (node.type === 'atrule' && node.name === 'media') {
+      if (params(node) !== '(prefers-color-scheme: dark)') return say(`@media ${params(node)}; only (prefers-color-scheme: dark) may flip the tokens`);
+      return node.each((/** @type {any} */ inner) => {
+        if (inner.type === 'comment') return;
+        if (inner.type === 'rule' && selector(inner) === ':root') return tokenRule(inner, false, 'the dark media query');
+        say(`${where(inner)} in the dark media query; it holds only :root rules of tokens`);
+      });
+    }
+    if (node.type === 'atrule' && node.name === 'layer') {
+      if (params(node) !== 'base') return say(`@layer ${params(node)}; only @layer base, for the page's roots`);
+      return node.each((/** @type {any} */ inner) => {
+        if (inner.type === 'comment') return;
+        if (inner.type === 'rule') return rootRule(inner);
+        say(`${where(inner)} in @layer base; it holds only rules on html, body and #root`);
+      });
+    }
+    say(`${where(node)} at the top level`);
+    if (node.type === 'rule') body(node);
+  });
   return problems;
 }
 
