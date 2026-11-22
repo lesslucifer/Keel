@@ -44,5 +44,19 @@ dsh plugin --profile &lt;name&gt; add &lt;path&gt;/dsh-worker-workspace   # a wo
 <p>Scripts and CI must pass <code>-f</code> / <code>--force</code>: without it, end of input means "no", so an unattended run updates nothing. <code>-f</code> touches only <code>.claude/skills/keel-*</code>; the config, <code>AGENTS.md</code>, <code>.codex/hooks.json</code> and <code>project-router</code> are never overwritten.</p>
 <p><code>keel init</code> and <code>keel hooks install</code> never replace another hook manager: init writes its files, then exits non-zero with Keel's hooks not installed. You decide, then run <code>keel hooks install --force</code> (init's <code>-f</code> does not imply it).</p>
 
+<h2 id="app">The local app (macOS, optional)</h2>
+<p>The app alerts you at your desk and lists what waits on you (<a href="local-app.html">local-app.html</a>). It is built from this repository's <code>app/</code> folder, once per version; nothing installs it for you.</p>
+<pre>cd app
+pnpm install --frozen-lockfile   # pnpm 11.18.0, as package.json pins; Node 24 or later
+pnpm make                        # Vite's bundles, the packaged Keel.app, signed ad-hoc, and a zip</pre>
+<p>The first <code>pnpm make</code> downloads Electron once, which takes a few minutes.</p>
+<ol>
+<li><b>Signature.</b> With <code>KEEL_SIGN_IDENTITY</code> unset, the app is signed ad-hoc. That is enough for macOS alerts on your own Mac: Apple's paid membership is not needed (backlog <code>local-app</code> A3). Set it to a named identity only to sign with a certificate.</li>
+<li><b>Install.</b> Quit any running Keel (it keeps running with its window closed: Keel &gt; Quit Keel, or Cmd-Q). Copy <code>out/Keel-darwin-&lt;arch&gt;/Keel.app</code> to <code>/Applications</code>, replacing the old one, and open it.</li>
+<li><b>First launch.</b> On Projects, Add your project's main checkout (a repository whose <code>HEAD</code> commits <code>.keel/config.toml</code>). Send a test alert. If it does not show, allow it in System Settings &gt; Notifications &gt; Keel.</li>
+<li><b>Where it keeps its files.</b> <code>~/Library/Application Support/Keel</code>: settings, the project list, the alerts shown, your marks and the copies Open makes. It writes nothing into a project.</li>
+</ol>
+<p>Working on the app: <code>pnpm start</code> runs it unpackaged (its alerts are filed under Notifications &gt; Electron), <code>pnpm dev:browser</code> draws the window on a fake bridge, and <code>pnpm test:main</code>, <code>test:window</code>, <code>lint</code>, <code>typecheck</code> and <code>e2e</code> are its checks.</p>
+
 </body>
 </html>

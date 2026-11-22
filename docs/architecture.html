@@ -9,8 +9,8 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>Keel — architecture</h1>
-      <p>What Keel is now: its commands, what setup installs, the policy keys, the evidence, the router tools and the close. Each rule lives in one skill or decision; this page points to it.</p>
-      <div class="meta">T1 · 2026-11-19 · Keel · current shape only; history is in git</div>
+      <p>What Keel is now: its commands, what setup installs, the policy keys, the evidence, the router tools, the local app and the close. Each rule lives in one skill or decision; this page points to it.</p>
+      <div class="meta">T1 · 2026-11-23 · Keel · current shape only; history is in git</div>
     </div>
   </header>
   <main>
@@ -141,9 +141,25 @@ flowchart LR
     <tr><td><b>Watch</b> <code>scripts/router-watch.sh</code></td><td>Wait for the owner's commit, sign-off, merge, push or tag and print one line. Its only write is <code>git fetch origin</code>.</td><td>Update a local ref, merge, push or tag.</td></tr>
     <tr><td><b>Router guard</b> <code>scripts/router-guard.jq</code></td><td>Allows the router read tools, its briefs, a fixed Bash whitelist and messages to a named session; a <code>jq</code> error denies (DEC-30).</td><td>No Agent, Edit, general Bash or direct <code>claude</code>.</td></tr>
     <tr><td><b>Worker file guard</b> <code>scripts/router-file-guard.sh</code></td><td>Lets a worker edit only under its own worktree.</td><td>No edit of <code>.git</code> or the settings files, or through a hard link. Known gaps were accepted on 2026-11-12.</td></tr>
+    <tr><td><b>Update log</b> <code>scripts/router-app.sh</code></td><td>Write one numbered line per change to <code>.router/app/log.jsonl</code> and fold it into <code>state.json</code>, under one lock: start, stage, set, del, alert (UC-ROUTE-8). The router runs start, stage and del; the watchdog's facts step runs set and del; the sender runs set and alert.</td><td>Write outside the main checkout's <code>.router/app/</code>, follow a link there, or let the router pass free JSON.</td></tr>
+    <tr><td><b>Owner sender</b> <code>scripts/notify-owner.py</code></td><td>Send the router's message to the paired Telegram bot; write the question line and the alert line first, and end the message with <code>keel://wu/&lt;id&gt;</code> when it names a work unit.</td><td>Print the token or the chat; take a file, chat or endpoint from its arguments.</td></tr>
   </tbody>
 </table>
 <p>On DeepSeek Harness, the worker plugin (a host package, not in this repository) starts, steers, reads and stops worker sessions; a worker's report is its transcript (UC-DSH-1 – UC-DSH-4, DEC-55, DEC-56).</p>
+
+<h2 id="app">The local app</h2>
+<p>A read-only desktop app (Electron) that alerts the owner at the desk and lists what waits on him (<a href="local-app.html">local-app.html</a>; <a href="decisions/app.html">decisions DEC-71 – DEC-78</a>). Its code is <code>app/</code>, a code path of the gate, built with pnpm. It reads git and the router's update log, and writes only its own folder.</p>
+<table data-c="app-parts">
+  <thead><tr><th>Part</th><th>Where</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><td>Main part</td><td><code>app/src/main/</code></td><td>The shell (<code>index.ts</code>, the only file that imports Electron) and pure modules: the reader of git and the log, the watcher, the alerter, the item rules' inputs, Open, the settings and the project list, the fixed git commands.</td></tr>
+    <tr><td>Preload</td><td><code>app/src/preload/</code></td><td>The bridge the window reaches the main part through: one request channel and one push channel.</td></tr>
+    <tr><td>Window</td><td><code>app/src/window/</code></td><td>React screens (Waits on you, Projects), the hooks over the bridge, and the fake bridge browser mode draws on.</td></tr>
+    <tr><td>Shared</td><td><code>app/src/shared/</code></td><td>The wire contract (request names and argument slots, the answers' types), the item rules and keel's branch names, read by both sides.</td></tr>
+    <tr><td>Tests</td><td><code>app/test/</code>, <code>app/test-window/</code>, <code>app/e2e/</code></td><td>Node's runner for the main part (in <code>keel check</code>), Vitest for the window and Playwright for the epic (both by hand).</td></tr>
+  </tbody>
+</table>
+<p><code>keel check</code> runs <code>node --test 'app/test/**/*.test.ts'</code> after <code>cargo test</code>, with no package installed: a node test may import only Node's own modules and the app's own files. The app reads one script's files: <code>scripts/router-app.sh</code>'s log and state, fed by the router, its watchdog's facts step (<code>scripts/router-worker.sh</code>) and <code>scripts/notify-owner.py</code>. Building and installing it: <a href="install.html#app">install.html</a>.</p>
 
 <h2 id="close">The epic close</h2>
 <p>An epic closes on its own branch, then lands on main. The code enforces the evidence at each step; the owner signs, merges and pushes. In full: skill <code>keel-workflow</code> §2, and skill <code>keel-distill</code> for distilling.</p>
@@ -180,6 +196,7 @@ flowchart LR
   <li><b>Whether a follow-up names a real destination.</b></li>
   <li><b>The router guard on DeepSeek Harness.</b> A skill rule only; the router must say enforcement is missing.</li>
   <li><b>The <code>keel</code> binary itself.</b> The hooks refuse an old or foreign one; nothing installs the right one for you.</li>
+  <li><b>The app's window tests and its epic test.</b> Vitest and Playwright run by hand and are recorded in a result; <code>keel check</code> runs only the main part's node tests (DEC-73, DEC-75).</li>
 </ul>
 
 <h2 id="next">Read next</h2>
@@ -189,7 +206,8 @@ flowchart LR
   <li><a href="decisions/review-docs.html">Decisions: reviews and docs</a> — the review schedule, the doc tiers and the doc check.</li>
   <li><a href="decisions/distribution.html">Decisions: distribution</a> — the binary carries the rules; the skills lock.</li>
   <li><a href="decisions/router.html">Decisions: router</a> and <a href="decisions/router-hosts.html">router hosts</a>.</li>
-  <li><a href="install.html">Installing Keel</a> and <a href="local-app.html">the local app</a>, as designed.</li>
+  <li><a href="install.html">Installing Keel</a> and <a href="local-app.html">the local app</a>: its first part built, the rest designed.</li>
+  <li>Use cases: the router in <code>use-cases/router.yaml</code>, the app in <code>use-cases/app.yaml</code> (data, no page).</li>
   <li>Backlog, in <code>backlog/backlog-index.yaml</code> (data, no page).</li>
 </ul>
 
