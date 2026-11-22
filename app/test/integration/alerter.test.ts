@@ -137,7 +137,7 @@ test('a project switched in while the app runs: its stored lines make one summar
   assert.deepEqual(app.shown.map((s) => s.title), ['A one']);
   current = b;
   await app.reader.read();
-  assert.deepEqual(app.shown.map((s) => s.title), ['A one', '3 alerts while Keel was closed']);
+  assert.deepEqual(app.shown.map((s) => s.title), ['A one', '3 new alerts'], 'Keel was running: a neutral title');
   current = a;
   await app.reader.read();
   assert.equal(app.shown.length, 2, 'back on the first project: nothing again');
@@ -154,4 +154,62 @@ test('an app restart with one line written while it was closed shows that line a
   const again = launch(dir, appDir);
   await again.reader.read();
   assert.deepEqual(again.shown.map(({ title, wu }) => ({ title, wu })), [{ title: 'While closed', wu: 'E-A.W2' }]);
+});
+
+/** A launch on a project the test can switch, as remove then add does while the app runs. */
+function switchable(appDir: string, first: string) {
+  let current = first;
+  const app = launch(() => current, appDir);
+  return { app, to: (dir: string) => (current = dir) };
+}
+
+test('a known run switched in after another project spent the app\'s first look gets one summary for its new lines (review round 2, alerts.ts:80)', async (t) => {
+  const a = routerProject(t, 'alerter-ka');
+  const b = routerProject(t, 'alerter-kb');
+  const appDir = path.join(tempDir(t, 'alerter-app'), 'Keel');
+  routerApp(a, 'start', 'keel-1c');
+  routerApp(b, 'start', 'other-router');
+  alertLine(a, 'A seen');
+  alertLine(b, 'B seen');
+  const one = switchable(appDir, b);
+  await one.app.reader.read();
+  one.to(a);
+  await one.app.reader.read();
+  assert.deepEqual(one.app.shown.map((s) => s.title), ['B seen', 'A seen'], 'session 1 knows both runs');
+  for (const h of ['B two', 'B three', 'B four']) alertLine(b, h);
+  const two = switchable(appDir, a);
+  await two.app.reader.read();
+  assert.equal(two.app.shown.length, 0, 'session 2 starts on A: nothing new there');
+  two.to(b);
+  await two.app.reader.read();
+  assert.deepEqual(two.app.shown.map(({ title, wu }) => ({ title, wu })), [{ title: '3 new alerts', wu: null }]);
+});
+
+test('a launch on a project with no router run does not spend the first look: a known run switched in then summarises its lines written while closed (review round 2, alerts.ts:124)', async (t) => {
+  const a = routerProject(t, 'alerter-na');
+  const quiet = routerProject(t, 'alerter-quiet');
+  const appDir = path.join(tempDir(t, 'alerter-app'), 'Keel');
+  routerApp(a, 'start', 'keel-1c');
+  alertLine(a, 'One');
+  const first = launch(a, appDir);
+  await first.reader.read();
+  for (const h of ['Two', 'Three', 'Four']) alertLine(a, h);
+  const s = switchable(appDir, quiet);
+  await s.app.reader.read();
+  assert.equal(s.app.reader.view().router.run, null, 'the quiet project has no run');
+  s.to(a);
+  await s.app.reader.read();
+  assert.deepEqual(s.app.shown.map(({ title, wu }) => ({ title, wu })), [{ title: '3 alerts while Keel was closed', wu: null }]);
+});
+
+test('a router restart that writes two lines before the app\'s next read gives one summary that does not say Keel was closed (review round 2, alerts.ts:68)', async (t) => {
+  const dir = routerProject(t, 'alerter-restart2');
+  const app = launch(dir, path.join(tempDir(t, 'alerter-app'), 'Keel'));
+  routerApp(dir, 'start', 'keel-1c');
+  await app.reader.read();
+  routerApp(dir, 'start', 'keel-1c');
+  alertLine(dir, 'After restart 1');
+  alertLine(dir, 'After restart 2');
+  await app.reader.read();
+  assert.deepEqual(app.shown.map((x) => x.title), ['2 new alerts']);
 });

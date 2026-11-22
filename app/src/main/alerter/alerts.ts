@@ -1,10 +1,11 @@
 // The Alerter (local-app.html 'The stack'): one macOS alert per alert line the router writes, never
 // the same line twice, across an app restart too. What was shown is recorded in the app's own folder
-// (alerts.json: per run, the numbers shown, written atomically by store.ts) before it is shown. At a
-// first look at a run (the app's first since it started, or a run first seen while it runs: a project
-// switched in, a router restart), the lines already there make one summary alert (the owner's answer
-// of 2026-11-22), each recorded shown; a single such line is shown as itself. After that each new
-// line is its own alert. The record keeps the last few runs, so switching back alerts nothing again. A click points the
+// (alerts.json: per run, the numbers shown, written atomically by store.ts) before it is shown. At
+// this app session's first look at a run (any run: one an earlier session knew too; a take with no
+// run spends nothing), the lines not yet shown make one summary alert (the owner's answer of
+// 2026-11-22), each recorded shown; a single such line is shown as itself. Its title says Keel was
+// closed only at the session's first look at any run; otherwise it says how many are new. After that
+// each new line is its own alert. The record keeps the last few runs, so switching back alerts nothing. A click points the
 // window at the line's work unit, or at the list when it names none. The shell hands in the sink
 // (Electron's Notification, or the file sink W9's test uses) and what a click does.
 
@@ -63,27 +64,33 @@ export function alertOf(a: StoredAlert): ShownAlert {
   return { title: plain(a.headline, 200), body: a.lines.map((l) => plain(l, 400)).join('\n'), wu: a.wu ?? null };
 }
 
-/** The one alert for `k` lines written while the app was closed; its click opens the list. */
-export function summaryOf(k: number): ShownAlert {
-  return { title: `${k} alerts while Keel was closed`, body: 'The list shows each one.', wu: null };
+/**
+ * Why a take is a first look at its run in this app session: 'start', the session's first look at
+ * any run (the lines were written while Keel was closed); 'look', a run first looked at while Keel
+ * runs (a project switched in, a router restart); null, a run this session has looked at already.
+ */
+export type Look = 'start' | 'look' | null;
+
+/** The one alert for `k` lines already there at a first look; its click opens the list. Only at the start was Keel closed. */
+export function summaryOf(k: number, look: 'start' | 'look'): ShownAlert {
+  return { title: look === 'start' ? `${k} alerts while Keel was closed` : `${k} new alerts`, body: 'The list shows each one.', wu: null };
 }
 
 /**
- * For the run's alert lines: the record after them, and what to show. A first look at a run (the
- * app's first since it started, `first`, or a run the record does not hold: a project switched in, a
- * router restart) shows the lines already there as one summary when there are two or more (owner
- * answer 1a); after that, each new line is its own alert.
+ * For the run's alert lines: the record after them, and what to show. At a first look at the run in
+ * this app session (`look`), the lines not yet shown make one summary when there are two or more
+ * (owner answer 1a), whether or not an earlier session knew the run; after that, each new line is
+ * its own alert.
  */
-export function decide(record: AlertRecord, run: string | null, alerts: readonly StoredAlert[], first: boolean): { record: AlertRecord; show: ShownAlert[] } {
+export function decide(record: AlertRecord, run: string | null, alerts: readonly StoredAlert[], look: Look): { record: AlertRecord; show: ShownAlert[] } {
   if (run === null) return { record, show: [] };
   const entry = record.runs.find((r) => r.run === run);
-  const look = first || entry === undefined;
   const shown = entry?.shown ?? [];
   const unseen = alerts.filter((a) => !shown.includes(a.n)).sort((a, b) => a.n - b.n);
   if (unseen.length === 0 && entry !== undefined) return { record, show: [] };
   const next = [...new Set([...shown, ...unseen.map((a) => a.n)])].sort((a, b) => a - b).slice(-RECORD_CAP);
   const runs = [...record.runs.filter((r) => r.run !== run), { run, shown: next }].slice(-RUNS_KEPT);
-  const show = look && unseen.length > 1 ? [summaryOf(unseen.length)] : unseen.map(alertOf);
+  const show = look !== null && unseen.length > 1 ? [summaryOf(unseen.length, look)] : unseen.map(alertOf);
   return { record: { version: 2, runs }, show };
 }
 
@@ -110,7 +117,8 @@ export interface AlerterOptions {
 
 export class Alerter {
   private record: AlertRecord | null = null;
-  private started = false;
+  /** The runs this app session has looked at; a take with no run spends nothing. */
+  private readonly looked = new Set<string>();
   private readonly opts: AlerterOptions;
 
   constructor(opts: AlerterOptions) {
@@ -121,9 +129,12 @@ export class Alerter {
   async take(run: string | null, alerts: readonly StoredAlert[]): Promise<Set<number>> {
     const file = path.join(this.opts.appDir, RECORD_FILE);
     if (this.record === null) this.record = (await load(file, parseRecord, emptyRecord)).value;
-    const first = !this.started;
-    this.started = true;
-    const { record, show } = decide(this.record, run, alerts, first);
+    let look: Look = null;
+    if (run !== null && !this.looked.has(run)) {
+      look = this.looked.size === 0 ? 'start' : 'look';
+      this.looked.add(run);
+    }
+    const { record, show } = decide(this.record, run, alerts, look);
     if (record !== this.record) {
       try {
         await writeAtomic(file, record);
