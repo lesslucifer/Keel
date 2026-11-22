@@ -7,7 +7,7 @@ date: "2026-11-22"
 page: 2026-11-22-e-applist-w6-result.html
 outcome: >-
   Delivered, the owner's live check pending; review round 1 (FAIL: 7 blockers, 4 importants) fixed in nine
-  commits (details.review-round-1). With a project listed the window opens on screen 2, Waits on you: the
+  commits (details.review-round-1), round 2 (FAIL: 6 blockers, 1 important, 2 nits) in seven (details.review-round-2). With a project listed the window opens on screen 2, Waits on you: the
   main part draws every item of this epic's kinds from W5's view on each read (src/shared/items.ts), in three groups
   (yours, not yours, sent) with its work unit, branch, tip, since when, why and who acts, entering and leaving on its
   source with no click, drawn only from the open branches the reader lists (GitFacts.open, one rule) - a work unit's result on a PASS or WAIVED review note with no sign-off, to merge on the
@@ -22,7 +22,7 @@ outcome: >-
   row. Mark sent and Not sent move a plan or a question to and from Sent, kept in sent.json in the app's folder
   across a restart. A click on an alert or a keel:// link brings Waits on you forward with that work unit's items
   marked; a project switch clears the focus. The macOS alert names the project as its subtitle. Screen 6 shows the
-  counts, each a way to the list, and the last change seen. node --test 374 (373 pass, 1 skipped in the worker's
+  counts, each a way to the list, and the last change seen. node --test 385 (384 pass, 1 skipped in the worker's
   sandbox, as at W5), Vitest 230, typecheck, lint and keel check green. Nothing was built or packaged; the owner's
   live check (browser mode, then pnpm start) waits for him, the sandbox refusing the port both bind.
 deviations:
@@ -30,6 +30,7 @@ deviations:
   - "The plan's note-show read is the blob read (cat-file blob <id>) on the note id W5's note-of already answers, so a rewritten review note (FAIL then WAIVED on one tip) is read again by its new id; doc-heads is the same blob read over the copy's data files, read from the copy on disk. Three new fixed reads in all: blob, commit-time and ls-docs. No cat-file --batch: the fixed commands run with stdin closed."
   - "Review round 1 moved the open rule into the reader: GitFacts.open (reader/git.ts openSets) lists the open epics, units and tasks, keel's names only, a unit or task only when its target's read succeeded; the item rules draw from it (the plan had the rules derive it)."
   - "Review round 1: a work unit's result id carries its branch (result/<wu>-<branch hash>@<tip>); every name in a pasted line is one shell word (shQuote); a plan staged with no tip has no Open; an alert's click carries its project; a new window keeps the focus only when a click or a link opened it; item.open runs one at a time; the copy writes the page first, charges the cap on what it writes, is never kept complete without the page and skips case twins; a crash's temp folder and a removed project's copies are removed."
+  - "Review round 2: one grammar for keel's branch names (src/shared/names.ts) read by the ref check, the reader and the item rules; a unit or epic whose name carries no keel id (wu/E-KEELFIX/close) is listed with no Open and a true reason; a plan with no open branch here has no Open; the push line's remote is read from branch.main.remote (a fourth new fixed read, main-remote), no line for a local upstream; a reload starts with no delivered focus; a kept copy is reused only while its page and data file hold the blobs' bytes, else rebuilt through a temp folder; Open takes project, item and facts from one view; a removed project's copies go through the Opens' queue."
   - "The plan's commit 4 named the doc-heads read; it came with Open (commit 5), where it is used. The order is otherwise the plan's, plus one test fix (cfa49cd: a focus badge read before its effect ran, flaky in bd1cb17, which was committed while that test was red: the chained command did not stop on it)."
   - "Open copies only files that read whole as UTF-8 text (the fixed reads answer text): a binary file under docs/ would not be copied. Keel's docs are HTML, YAML and Markdown today; recorded on backlog row A3."
   - "A question has no 'since': the router's state keeps each key's value, not when it was set (the plan said the router line's time). A worker waiting shows its last activity; recorded on backlog row A3."
@@ -53,6 +54,8 @@ evidence:
     - "25fdc97 feat: screen 6's fields 6.4 and 6.5"
     - "7ff5adb docs: the result pair; backlog row A3's two follow-ups"
     - "review round 1: 0d3e14c (items.ts:82), 94bc090 (items.ts:167), f2451b2 (items.ts:115), f33b3d1 (open.ts:148), b20d4bc (index.ts:191), 5b2e32f (App.tsx:24), 95a09bd (handlers.ts:167), bd73c1e (docs.ts:52, open.ts:100), 136df08 (open.ts:70, open.ts:78)"
+    - "54f1609 docs: the result pair records round 1"
+    - "review round 2: 4c947e0 (items.ts:103), 6baa841 (items.ts:180), c47b466 (items.ts:153), 4bb4038 (App.tsx:24), 0b7d3c5 (open.ts:117, open.ts:151, nit open.ts:134), d43df59 (index.ts:233), cc601a4 (nit handlers.ts:143)"
     - "and the commit carrying this update"
   tests-added:
     unit:
@@ -75,7 +78,7 @@ evidence:
       - "app/test-window/integration/waits.test.tsx (new, 11), nav.test.tsx (new, 3); projects.test.tsx (+2, and its draws on the Projects tab); fake.test.ts (+3); browser.test.tsx (+1, and its default case); grounds.test.tsx draws every view and screen 6's list field"
   red-first: "Each step's tests ran red before its code: bridge tests 4 failing on the old bridge (c3fd0b3); items.test.ts not loading (652b22a); commands 3 failing, git-read not loading, items-flow 5 of 6 failing (42b2caa); doc-find and open not loading (ad8d008); sent not loading (5067369); alerts 2 and focus 2 failing (d39e63a); waits, nav and hooks 15 failing on the previous frame (bd1cb17); projects 2 failing (25fdc97)."
   runs:
-    test-main: "pnpm test:main: 374 tests, 373 pass, 1 skipped (watch-view's real fs.watch test: EMFILE in the worker's sandbox, as at W5); baseline 297"
+    test-main: "pnpm test:main: 385 tests, 384 pass, 1 skipped (watch-view's real fs.watch test: EMFILE in the worker's sandbox, as at W5); baseline 297"
     test-window: "pnpm test:window: 230 passed (24 files), run three times green; baseline 207"
     lint: "pnpm lint: green (ESLint and the emitted-CSS check)"
     typecheck: "pnpm typecheck: green"
@@ -124,6 +127,18 @@ details:
       - {finding: "open.ts:100 (blocker)", fix: "a write or folder that collides (EEXIST, ENOTDIR, EISDIR) is skipped", commit: bd73c1e, test: "open.test.ts case twins built with git plumbing"}
       - {finding: "open.ts:70 (important)", fix: "a crash's .tmp-* removed before a copy", commit: 136df08, test: "open.test.ts"}
       - {finding: "open.ts:78 (important)", fix: "copies of unlisted projects removed before a copy; projects.remove removes the project's copies", commit: 136df08, test: "open.test.ts; handlers.test.ts"}
+  review-round-2:
+    note: "cr note on 54f1609: FAIL, 6 blockers, 1 important, 2 nits; every round-1 fix held but App.tsx:24 on a reload. Each fix had its failing test first; every commit passed the gate first."
+    fixes:
+      - {finding: "items.ts:103 (blocker)", fix: "src/shared/names.ts: one grammar (keelBranch, isEpicBranch, isUnitBranch, isTaskBranch, wuOfBranch, epicOfBranch) for commands.refOk, reader openSets and items; a branch with no keel id is listed with open 'none' and why", commit: 4c947e0, test: "git-read.test.ts seeded property refOk == keelBranch; items.test.ts wu/E-A/reader and epic/foo"}
+      - {finding: "items.ts:180 (blocker)", fix: "a plan with a tip but no open branch here has open 'none' and says so", commit: 6baa841, test: "items.test.ts (no branch; an epic whose read failed)"}
+      - {finding: "items.ts:153 (blocker)", fix: "GitBranch.remote for main from branch.main.remote; the push line names it whole, none for '.' or unknown", commit: c47b466, test: "commands.test.ts; items.test.ts team/origin, '.', null; git-facts.test.ts origin, a local upstream, none"}
+      - {finding: "App.tsx:24 (blocker)", fix: "Focus.loaded(first) on each dom-ready: a reload drops a delivered focus, keeps an undelivered click", commit: 4bb4038, test: "alerts.test.ts the sequence"}
+      - {finding: "open.ts:117 (blocker)", fix: "the page and data file are found from blobs; a kept copy is reused only while both hold the blobs' bytes, else rebuilt", commit: 0b7d3c5, test: "open.test.ts a result and a case twin (git plumbing), the twin sorting first"}
+      - {finding: "open.ts:151 (blocker)", fix: "a copy is only ever built in a temp folder and renamed over; never written into", commit: 0b7d3c5, test: "open.test.ts a truncated page in the kept copy: the committed bytes served, the copy rebuilt (a sentinel gone)"}
+      - {finding: "index.ts:233 (important)", fix: "openListed: project, item and facts from the one view item.open looked the item up in; a project no longer listed opens nothing", commit: d43df59, test: "open.test.ts"}
+      - {finding: "open.ts:134 (nit)", fix: "only the head pass keeps texts, dropped once the page is found", commit: 0b7d3c5, test: "none: memory only"}
+      - {finding: "handlers.ts:143 (nit)", fix: "the rm of a removed project's copies runs in the Opens' queue", commit: cc601a4, test: "handlers.test.ts the copies stay while an Open runs"}
   owner-answers: "1a, 2a, 3a, 4a, 5a, all as recommended (recorded in the plan pair, 6bc96b3)"
   layout:
     new: [app/src/shared/items.ts, app/src/main/open/docs.ts, app/src/main/open/open.ts, app/src/main/items/sent.ts, app/src/window/screens/Nav.tsx, app/src/window/screens/Waits.tsx, app/src/window/ui/ItemRow.tsx]
@@ -132,6 +147,7 @@ details:
     blob: "git cat-file blob <full id>: a review note by its note id; each committed doc by its blob id"
     commit-time: "git log -1 --no-walk --format=%cI <full id>: since when an item waits; at most 60 tips a read, cached by tip"
     ls-docs: "git ls-tree -r -z -l --full-tree <full id> -- docs/: the docs Open copies"
+    main-remote: "git config --get branch.main.remote: the push line's remote (round 2; %(upstream:remotename) needs git 2.16)"
   contract:
     requests: "item.open {item: item-id}; item.mark {item: item-id, sent: yes|no}; both answer Change"
     slot: "item-id: ^(?:result|epic-result|plan|question|worker|task|push|motion)/[A-Za-z0-9._-]{1,41}@[0-9a-f]{7,12}$ within SLOT_CAP 64"
