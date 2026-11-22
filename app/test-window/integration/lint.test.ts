@@ -16,6 +16,7 @@ import tailwindConfig from '../../tailwind.config.js';
 
 const APP = path.resolve(import.meta.dirname, '..', '..');
 const FIXTURES = path.join(APP, 'test-window', 'lint-fixtures');
+const CONFIG = path.join(APP, 'eslint.config.js');
 
 /** ESLint with the vocabulary rule alone, on the fixtures (the real config never reads them). */
 const fixtureLinter = () =>
@@ -86,13 +87,13 @@ test('an eslint-disable comment turns nothing off: each class under one is still
 });
 
 test('the real eslint.config.js has inline config off, and npm run lint fails on any warning', async () => {
-  const eslint = new ESLint({ cwd: APP });
+  const eslint = new ESLint({ cwd: APP, overrideConfigFile: CONFIG });
   const code = 'export const A = () => (\n  // eslint-disable-next-line design/vocabulary\n  <p className="text-sm">a</p>\n);\n';
   const [result] = await eslint.lintText(code, { filePath: path.join(APP, 'src', 'window', 'planted.tsx') });
   expect(result?.messages.filter((m) => m.ruleId === 'design/vocabulary').map((m) => m.messageId)).toEqual(['offlist']);
   expect(result?.warningCount ?? 0).toBeGreaterThan(0);
   const pkg = JSON.parse(readFileSync(path.join(APP, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
-  expect(pkg.scripts.lint).toBe('eslint --max-warnings 0 .');
+  expect(pkg.scripts.lint).toBe('eslint -c eslint.config.js --max-warnings 0 . && node eslint-rules/check-css.js');
 });
 
 test('class=, a prop ending in ClassName and a spread object\'s className are each read; an unreadable spread is reported', async () => {
@@ -121,20 +122,20 @@ test('the clean fixture reports nothing', async () => {
 });
 
 test('the real eslint.config.js holds the rule on src/window: a planted off-list class there is an error', async () => {
-  const eslint = new ESLint({ cwd: APP });
+  const eslint = new ESLint({ cwd: APP, overrideConfigFile: CONFIG });
   const [result] = await eslint.lintText('export const A = () => <p className="text-sm">a</p>;\n', { filePath: path.join(APP, 'src', 'window', 'planted.tsx') });
   expect(result?.messages.map((m) => [m.ruleId, m.severity, m.messageId])).toEqual([['design/vocabulary', 2, 'offlist']]);
 });
 
 test('the real eslint.config.js reports nothing on the whole of src/window', async () => {
-  const eslint = new ESLint({ cwd: APP });
+  const eslint = new ESLint({ cwd: APP, overrideConfigFile: CONFIG });
   const results = await eslint.lintFiles(['src/window']);
   expect(results.length).toBeGreaterThan(0);
   expect(results.flatMap((r) => r.messages.map((m) => `${path.relative(APP, r.filePath)}:${m.line} ${m.message}`))).toEqual([]);
 });
 
 test('reconcile: every whole class the window and the clean fixture author is legal to the rule exactly when Tailwind emits it', async () => {
-  const eslint = new ESLint({ cwd: APP });
+  const eslint = new ESLint({ cwd: APP, overrideConfigFile: CONFIG });
   const files = (await eslint.lintFiles(['src/window'])).map((r) => r.filePath).filter((f) => /\.tsx?$/.test(f));
   files.push(path.join(FIXTURES, 'clean.tsx'));
   const authored = new Set<string>();

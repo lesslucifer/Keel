@@ -8,6 +8,7 @@
 // class built at run time and the dark: variant. A new size or colour is a change here (and, for a
 // colour, in src/window/styles.css), never a class.
 import path from 'node:path';
+import { SOURCE_GLOBS } from './window-sources.js';
 
 const here = import.meta.dirname;
 
@@ -16,7 +17,8 @@ const token = (/** @type {string} */ name) => `rgb(var(--${name}) / <alpha-value
 
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: [path.join(here, 'src', 'window', '**', '*.{html,ts,tsx}')],
+  // The one source list (window-sources.js): what Tailwind scans is what the CSS check reads.
+  content: SOURCE_GLOBS.map((g) => path.join(here, g)),
   // Unused: dark lives in the tokens (styles.css flips each variable), and the lint refuses dark:.
   darkMode: 'media',
   theme: {

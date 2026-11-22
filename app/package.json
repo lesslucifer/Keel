@@ -17,7 +17,7 @@
     "test:main": "node --test 'test/**/*.test.ts'",
     "test:window": "vitest run",
     "test:window:watch": "vitest",
-    "lint": "eslint --max-warnings 0 .",
+    "lint": "eslint -c eslint.config.js --max-warnings 0 . && node eslint-rules/check-css.js",
     "dev:browser": "vite --config vite.renderer.config.ts"
   },
   "dependencies": {
