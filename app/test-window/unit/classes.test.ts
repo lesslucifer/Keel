@@ -144,3 +144,13 @@ test('collectClasses reports an imported name or a parameter reaching a class as
 test('collectClasses reads every value a reassigned binding takes', () => {
   expect(classes(`let m = 'flex';\nm = 'p-xs';\nconst A = () => <i className={m} />;`)).toEqual(['flex', 'p-xs']);
 });
+
+test('the scales Tailwind derives from spacing are closed too: no default fraction, keyword or spacing step leaks through them', () => {
+  for (const cls of ['w-1/3', 'w-xs', 'h-screen', 'min-h-screen', 'size-full', 'inset-1/2', '-top-full', 'top-0', 'translate-x-1/2', 'basis-1/2', 'mt-xs', 'space-x-xs', 'scroll-m-xs', 'indent-xs']) {
+    expect(classify(cls), cls).toMatchObject({ legal: false, kind: 'offlist' });
+  }
+});
+
+test('the members the window draws from those scales stay legal', () => {
+  for (const cls of ['w-full', 'min-w-0', 'min-h-full', 'mx-auto', 'm-0', 'h-control', 'h-badge', 'p-xs', 'px-xxl', 'pt-xs', 'pl-xl', 'gap-sm', 'gap-half']) expect(classify(cls), cls).toEqual({ legal: true });
+});

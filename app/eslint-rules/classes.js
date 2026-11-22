@@ -20,8 +20,13 @@ const resolved = /** @type {Record<string, unknown>} */ (resolveConfig(tailwindC
 // every scale it leaves undeclared and unchanged is emptied here.
 const stock = /** @type {Record<string, unknown>} */ (resolveConfig({ content: [] }).theme);
 const declared = new Set(Object.keys(theme));
+// A scale Tailwind derives from spacing (width, height, inset, margin, translate, basis...) differs
+// from stock once spacing is Keel's, yet still carries Tailwind's own fractions and keywords (w-1/3,
+// h-screen, inset-1/2): every undeclared one is emptied too. Found by probing, not listed by hand.
+const probe = /** @type {Record<string, unknown>} */ (resolveConfig({ content: [], theme: { spacing: { 'keel-probe': '1px' } } }).theme);
+export const spacingDerived = Object.keys(probe).filter((key) => key !== 'spacing' && JSON.stringify(probe[key]).includes('keel-probe'));
 export const inheritedScales = Object.keys(stock).filter(
-  (key) => !declared.has(key) && JSON.stringify(resolved[key]) === JSON.stringify(stock[key]),
+  (key) => !declared.has(key) && (JSON.stringify(resolved[key]) === JSON.stringify(stock[key]) || spacingDerived.includes(key)),
 );
 
 /**

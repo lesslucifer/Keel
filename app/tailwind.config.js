@@ -58,6 +58,24 @@ export default {
       // A button's height: the design file's small pill, sized for a window.
       control: '32px',
     },
+    // The scales Tailwind derives from spacing, each declared (the lint empties an undeclared one):
+    // padding, gap and height draw on the spacing tokens; the others hold only what the window uses.
+    padding: ({ theme }) => theme('spacing'),
+    gap: ({ theme }) => theme('spacing'),
+    height: ({ theme }) => theme('spacing'),
+    margin: {
+      0: '0px',
+      auto: 'auto',
+    },
+    width: {
+      full: '100%',
+    },
+    minWidth: {
+      0: '0px',
+    },
+    minHeight: {
+      full: '100%',
+    },
     // The widest a screen's column gets, so a line stays readable in a wide window.
     maxWidth: {
       none: 'none',
