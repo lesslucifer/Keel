@@ -95,6 +95,13 @@ test('the real eslint.config.js has inline config off, and npm run lint fails on
   expect(pkg.scripts.lint).toBe('eslint --max-warnings 0 .');
 });
 
+test('class=, a prop ending in ClassName and a spread object\'s className are each read; an unreadable spread is reported', async () => {
+  const got = await messagesOf('props.tsx');
+  expect(got.map((m) => m.id).sort()).toEqual(['arbitrary', 'offlist', 'offlist', 'unread']);
+  const text = got.map((m) => m.text).join('\n');
+  for (const cls of ['p-[7px]', 'text-sm', 'bg-red-500', '{...rest}']) expect(text).toContain(cls);
+});
+
 test('the clean fixture reports nothing', async () => {
   expect(await messagesOf('clean.tsx')).toEqual([]);
 });

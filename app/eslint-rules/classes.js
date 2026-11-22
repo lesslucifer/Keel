@@ -10,7 +10,7 @@ import contextUtils from 'tailwindcss/lib/lib/setupContextUtils.js';
 import tailwindConfig from '../tailwind.config.js';
 
 /** @typedef {{ type: string, [key: string]: any }} Node */
-/** @typedef {{ cls: string, offset: number, node: Node, partial: boolean }} Found */
+/** @typedef {{ cls: string, offset: number, node: Node, partial: boolean, unread?: boolean }} Found */
 
 const theme = /** @type {Record<string, unknown>} */ (tailwindConfig.theme ?? {});
 const resolved = /** @type {Record<string, unknown>} */ (resolveConfig(tailwindConfig).theme);
@@ -131,6 +131,17 @@ export function classify(cls) {
 
 // ---- Finding the classes in a file ----
 
+/** A prop or key that carries classes to the page: class, className, or any name ending in ClassName. */
+const CLASS_PROP = /^(?:class|className)$|ClassName$/;
+
+/** The name of a JSX attribute or an object key, when it is a plain name or a string. */
+function keyName(/** @type {Node | undefined} */ key) {
+  if (!key) return undefined;
+  if (key.type === 'Identifier' || key.type === 'JSXIdentifier') return key.name;
+  if (key.type === 'Literal' && typeof key.value === 'string') return key.value;
+  return undefined;
+}
+
 /** The functions whose arguments are classes (clsx and its kin). */
 const CLASS_CALLS = new Set(['cx', 'clsx', 'classNames']);
 
@@ -183,7 +194,7 @@ const notAValue = (/** @type {Node} */ node) =>
   node.type === 'ImportDeclaration' ||
   node.type === 'JSXText' ||
   (node.type.startsWith('TS') && !VALUE_WRAPPERS.has(node.type)) ||
-  (node.type === 'JSXAttribute' && node.name?.name !== 'className');
+  (node.type === 'JSXAttribute' && !CLASS_PROP.test(keyName(node.name) ?? ''));
 
 /**
  * Visit `node` and its descendants, skipping what `skip` refuses and, when skipping, the keys that hold no value.
@@ -260,6 +271,8 @@ export function collectClasses(program, source = {}) {
   const declarations = new Map();
   /** @type {Node[]} */
   const seeds = [];
+  /** @type {Node[]} */
+  const unreadable = [];
   const wanted = new Set();
 
   // Every declaration of a name is kept: two functions each holding `const cls = ...` are both read.
@@ -272,9 +285,21 @@ export function collectClasses(program, source = {}) {
   walk(program, (node) => {
     if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && node.init) declare(node.id.name, node.init);
     if (node.type === 'FunctionDeclaration' && node.id) declare(node.id.name, node.body);
-    if (node.type === 'JSXAttribute' && node.name?.name === 'className' && node.value) {
+    if (node.type === 'JSXAttribute' && CLASS_PROP.test(keyName(node.name) ?? '') && node.value) {
       seeds.push(node.value);
       referencedNames(node.value).forEach((n) => wanted.add(n));
+    }
+    // A class-carrying key in any object literal: a spread object, createElement's props, a props table.
+    if (node.type === 'ObjectExpression') {
+      for (const prop of node.properties) {
+        if (prop.type !== 'Property' || prop.computed || !CLASS_PROP.test(keyName(prop.key) ?? '')) continue;
+        seeds.push(prop.value);
+        referencedNames(prop.value).forEach((n) => wanted.add(n));
+      }
+    }
+    // A spread of anything but an object literal may carry a className no one can read.
+    if (node.type === 'JSXSpreadAttribute' && node.argument?.type !== 'ObjectExpression') {
+      unreadable.push(node);
     }
   });
 
@@ -294,6 +319,7 @@ export function collectClasses(program, source = {}) {
   /** @type {Found[]} */
   const found = [];
   const visited = new Set();
+  const unread = (/** @type {Node} */ node) => found.push({ cls: quote(node), offset: node.range[0], node, partial: true, unread: true });
   const quote = (/** @type {Node} */ node) =>
     source.text !== undefined ? source.text.slice(node.range[0], node.range[1]) : sourceOf(node);
   const skip = (/** @type {Node} */ node) => {
@@ -307,6 +333,7 @@ export function collectClasses(program, source = {}) {
     }
     return false;
   };
+  unreadable.forEach((node) => unread(node));
   roots.forEach((root) =>
     walk(
       root,
@@ -335,13 +362,16 @@ export function collectClasses(program, source = {}) {
   return found;
 }
 
-/** A + expression rebuilt from its parts when the file's text is not at hand (strings quoted as written). */
+/** An expression rebuilt from its parts when the file's text is not at hand (strings quoted as written). */
 function sourceOf(/** @type {Node} */ node) {
   /** @param {Node} n @returns {string} */
   const text = (n) => {
     if (n.type === 'BinaryExpression') return `${text(n.left)} ${n.operator} ${text(n.right)}`;
     if (n.type === 'Literal') return n.raw ?? JSON.stringify(n.value);
     if (n.type === 'Identifier') return n.name;
+    if (n.type === 'JSXSpreadAttribute') return `{...${text(n.argument)}}`;
+    if (n.type === 'MemberExpression') return n.computed ? `${text(n.object)}[${text(n.property)}]` : `${text(n.object)}.${text(n.property)}`;
+    if (n.type === 'CallExpression') return `${text(n.callee)}(…)`;
     return '…';
   };
   return text(node);

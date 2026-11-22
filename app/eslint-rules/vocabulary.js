@@ -24,6 +24,8 @@ export default {
         '`{{cls}}` modifies `{{owner}}` with `/{{value}}`, a step that scale does not carry ({{steps}}). Tailwind emits no CSS for the pair, not even `{{owner}}`.',
       unresolvable:
         '`{{cls}}` is built from pieces while the app runs, so no check can read it. Write whole class names, chosen with a condition or a lookup table.',
+      unread:
+        '`{{cls}}` can carry classes to the page, but the rule cannot read them (a spread, an import, a parameter, a call it does not know). Write the classes in this file as whole strings, chosen with a condition or a lookup table.',
       dark: '`{{cls}}` uses the dark: variant. Dark lives in the tokens: each colour flips by the Mac\'s setting in src/window/styles.css.',
       variant:
         '`{{cls}}` uses the variant `{{value}}:`, which the closed config does not have (no breakpoints, no arbitrary variants).',
@@ -34,10 +36,10 @@ export default {
     const sourceCode = context.sourceCode;
     return {
       'Program:exit'(program) {
-        for (const { cls, node, offset, partial } of collectClasses(/** @type {any} */ (program), { text: sourceCode.text })) {
+        for (const { cls, node, offset, partial, unread } of collectClasses(/** @type {any} */ (program), { text: sourceCode.text })) {
           const loc = { start: sourceCode.getLocFromIndex(offset), end: sourceCode.getLocFromIndex(offset + cls.length) };
           if (partial) {
-            context.report({ node: /** @type {any} */ (node), loc, messageId: 'unresolvable', data: { cls } });
+            context.report({ node: /** @type {any} */ (node), loc, messageId: unread ? 'unread' : 'unresolvable', data: { cls } });
             continue;
           }
           const verdict = classify(cls);

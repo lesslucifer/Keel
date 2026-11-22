@@ -99,3 +99,27 @@ test('collectClasses reads a table through as const, satisfies, as T and the non
   expect(classes(`const T: Record<string, string | undefined> = { a: 'p-lg' };\nconst A = ({ k }) => <i className={T[k]!} />;`)).toEqual(['p-lg']);
   expect(classes(`const A = ({ on }) => <i className={(on ? 'p-xl' : 'p-xxl') as string} />;`)).toEqual(['p-xl', 'p-xxl']);
 });
+
+test('collectClasses reads through an old-style <T> type assertion in a .ts file', () => {
+  const found = collectClasses(parseSource(`const T = <Record<string, string>>{ a: 'p-huge' };\nexport const el = { className: T.a };`, false)).map((f: { cls: string }) => f.cls);
+  expect(found).toContain('p-huge');
+});
+
+/** Every finding in `code` as kind:cls (whole, partial or unread), sorted. */
+const findings = (code: string) =>
+  collectClasses(parseSource(code))
+    .map((f: { cls: string; partial: boolean; unread?: boolean }) => `${f.unread ? 'unread' : f.partial ? 'partial' : 'whole'}:${f.cls}`)
+    .sort();
+
+test('collectClasses seeds from class=, className= and any prop ending in ClassName', () => {
+  expect(classes(`const A = () => <B class="p-xs" innerClassName="p-sm" labelClassName={'p-md'} title="p-9" />;`)).toEqual(['p-md', 'p-sm', 'p-xs']);
+});
+
+test('collectClasses seeds from a className key in any object literal: a spread object, createElement\'s props', () => {
+  expect(classes(`const A = () => <i {...{ className: 'p-xs', title: 'p-9' }} />;`)).toEqual(['p-xs']);
+  expect(classes(`const A = () => createElement('i', { className: 'p-sm', 'innerClassName': 'p-md' });`)).toEqual(['p-md', 'p-sm']);
+});
+
+test('collectClasses reports a spread it cannot read as unread, whole', () => {
+  expect(findings(`const A = (props) => <i {...props} />;`)).toEqual(['unread:{...props}']);
+});
