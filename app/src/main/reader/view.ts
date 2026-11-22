@@ -43,11 +43,13 @@ export interface ViewReaderParts {
   now?: () => number;
   silenceMs?: number;
   /** Shows what is new among the run's alert lines; answers the numbers shown so far (alerter/alerts.ts). */
-  alerter?: { take(run: string | null, alerts: readonly StoredAlert[]): Promise<Set<number>> };
+  alerter?: { take(run: string | null, alerts: readonly StoredAlert[], project?: string): Promise<Set<number>> };
   /** Where a click or a link points the window. */
   focus?: () => Focus | null;
   /** The app macOS opens keel:// links with. */
   scheme?: () => string | null;
+  /** W6: called when the listed project changes (another, or none), not at the first read: the shell clears the focus. */
+  projectChanged?: () => void;
   /** W6: the item ids the owner marked sent for this project (items/sent.ts); none when not given. */
   sent?: (project: string) => Promise<ReadonlySet<string>>;
 }
@@ -69,6 +71,8 @@ export class ViewReader {
   private log: RouterLog | null = null;
   private readonly parts: ViewReaderParts;
   private readonly now: () => number;
+  /** The project the last read listed: undefined before the first read. */
+  private lastProject: string | null | undefined = undefined;
 
   constructor(parts: ViewReaderParts) {
     this.parts = parts;
@@ -93,6 +97,9 @@ export class ViewReader {
   /** Read it all again; whether the view changed. */
   async read(): Promise<boolean> {
     const p = await this.parts.project();
+    const id = p?.id ?? null;
+    if (this.lastProject !== undefined && this.lastProject !== id) this.parts.projectChanged?.();
+    this.lastProject = id;
     let next: View;
     if (p === null) {
       this.root = null;
@@ -112,7 +119,7 @@ export class ViewReader {
       await this.log.refresh();
       const router = this.log.view();
       const stored = this.log.alerts();
-      const shown = this.parts.alerter === undefined ? new Set<number>() : await this.parts.alerter.take(router.run, stored);
+      const shown = this.parts.alerter === undefined ? new Set<number>() : await this.parts.alerter.take(router.run, stored, p.name);
       const sent = this.parts.sent === undefined ? new Set<string>() : await this.parts.sent(p.id);
       const items = itemsOf({ git: facts, router, sent });
       next = {

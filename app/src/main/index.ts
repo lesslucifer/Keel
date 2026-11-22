@@ -174,7 +174,7 @@ function pointed(): void {
 function alertSink(): AlertSink {
   if (seams.alertSink !== null) return fileSink(seams.alertSink);
   if (!Notification.isSupported()) return { show: () => undefined };
-  return heldSink((a) => new Notification({ title: a.title, body: a.body }));
+  return heldSink((a) => new Notification({ title: a.title, ...(a.subtitle === undefined ? {} : { subtitle: a.subtitle }), body: a.body }));
 }
 
 async function start(): Promise<void> {
@@ -200,6 +200,7 @@ async function start(): Promise<void> {
     ...(seams.silenceMs === null ? {} : { silenceMs: seams.silenceMs }),
     alerter,
     focus: () => focus.get(),
+    projectChanged: () => focus.clear(),
     scheme: () => schemeText(app.getApplicationNameForProtocol('keel://')),
   });
   watcher = new Watcher({

@@ -237,3 +237,21 @@ test('a take of the run already at the newest end, with nothing new, leaves the 
   const kept = rec([OLD, [], 'S2'], [RUN, [1], 'S2']);
   assert.equal(decide(kept, RUN, [alert(1)], S()).record, kept);
 });
+
+test('W6, screen 1: an alert names the listed project as its subtitle (macOS shows the time); a summary does too; no project, no subtitle', () => {
+  const r = decide(rec([RUN, [], 'S2']), RUN, [alert(4, { wu: 'E-A.W1', lines: ['one'] })], S(), 'keel');
+  assert.deepEqual(r.show, [{ title: 'h4', subtitle: 'keel', body: 'one', wu: 'E-A.W1' }]);
+  const summary = decide(rec(), RUN, [alert(1), alert(2)], S(true), 'keel');
+  assert.deepEqual(summary.show, [{ title: '2 alerts while Keel was closed', subtitle: 'keel', body: 'The list shows each one.', wu: null }]);
+  assert.deepEqual(decide(rec([RUN, [], 'S2']), RUN, [alert(5)], S(), '').show, [{ title: 'h5', body: 'l5', wu: null }]);
+  assert.deepEqual(alertOf(alert(6), 'a\u202eb'), { title: 'h6', subtitle: 'a b', body: 'l6', wu: null }, 'the subtitle is made plain');
+});
+
+test('W6: a project switch clears the focus; the next click points it again, its count still growing', () => {
+  const f = new Focus();
+  f.point('E-A.W1');
+  f.clear();
+  assert.equal(f.get(), null);
+  f.point('E-B.W2');
+  assert.deepEqual(f.get(), { wu: 'E-B.W2', seq: 2 });
+});

@@ -39,12 +39,17 @@ export interface Session {
   first: boolean;
 }
 
-/** One alert as the sink shows it: a title, a body, and the work unit a click opens (null: the list). */
+/** One alert as the sink shows it: a title, the project (W6, screen 1: macOS shows the time), a body, and the work unit a click opens (null: the list). */
 export interface ShownAlert {
   title: string;
+  /** The listed project's name; absent when none was given. */
+  subtitle?: string;
   body: string;
   wu: string | null;
 }
+
+/** The subtitle field: the project's name, made plain, when there is one. */
+const subtitleOf = (project: string): { subtitle?: string } => (project === '' ? {} : { subtitle: plain(project, 120) });
 
 export interface AlertSink {
   show(alert: ShownAlert, onClick: () => void): void;
@@ -72,9 +77,9 @@ export function parseRecord(v: unknown): AlertRecord | null {
   return { version: 2, runs };
 }
 
-/** An alert line as an alert: its headline over its lines, every string made plain. */
-export function alertOf(a: StoredAlert): ShownAlert {
-  return { title: plain(a.headline, 200), body: a.lines.map((l) => plain(l, 400)).join('\n'), wu: a.wu ?? null };
+/** An alert line as an alert: its headline over its lines, the project as its subtitle, every string made plain. */
+export function alertOf(a: StoredAlert, project = ''): ShownAlert {
+  return { title: plain(a.headline, 200), ...subtitleOf(project), body: a.lines.map((l) => plain(l, 400)).join('\n'), wu: a.wu ?? null };
 }
 
 /**
@@ -85,8 +90,8 @@ export function alertOf(a: StoredAlert): ShownAlert {
 export type Look = 'start' | 'look' | null;
 
 /** The one alert for `k` lines already there at a first look; its click opens the list. Only at the start was Keel closed. */
-export function summaryOf(k: number, look: 'start' | 'look'): ShownAlert {
-  return { title: look === 'start' ? `${k} alerts while Keel was closed` : `${k} new alerts`, body: 'The list shows each one.', wu: null };
+export function summaryOf(k: number, look: 'start' | 'look', project = ''): ShownAlert {
+  return { title: look === 'start' ? `${k} alerts while Keel was closed` : `${k} new alerts`, ...subtitleOf(project), body: 'The list shows each one.', wu: null };
 }
 
 /**
@@ -96,7 +101,7 @@ export function summaryOf(k: number, look: 'start' | 'look'): ShownAlert {
  * line is its own alert. Every take stamps the entry with the session and moves it to the newest end
  * (unchanged only when it is already there and nothing is new), so runs are let go least recently looked at.
  */
-export function decide(record: AlertRecord, run: string | null, alerts: readonly StoredAlert[], session: Session): { record: AlertRecord; show: ShownAlert[] } {
+export function decide(record: AlertRecord, run: string | null, alerts: readonly StoredAlert[], session: Session, project = ''): { record: AlertRecord; show: ShownAlert[] } {
   if (run === null) return { record, show: [] };
   const entry = record.runs.find((r) => r.run === run);
   const looked = entry?.session === session.id;
@@ -108,20 +113,28 @@ export function decide(record: AlertRecord, run: string | null, alerts: readonly
   if (unseen.length === 0 && looked && record.runs.at(-1)?.run === run) return { record, show: [] };
   const next = [...new Set([...shown, ...unseen.map((a) => a.n)])].sort((a, b) => a - b).slice(-RECORD_CAP);
   const runs = [...record.runs.filter((r) => r.run !== run), { run, shown: next, session: session.id }].slice(-RUNS_KEPT);
-  const show = look !== null && unseen.length > 1 ? [summaryOf(unseen.length, look)] : unseen.map(alertOf);
+  const show = look !== null && unseen.length > 1 ? [summaryOf(unseen.length, look, project)] : unseen.map((a) => alertOf(a, project));
   return { record: { version: 2, runs }, show };
 }
 
 /** Where a click points the window; seq grows on each point, so the window sees a second click on the same unit. */
 export class Focus {
   private current: FocusPoint | null = null;
+  /** Every point counts on, across a clear too, so the window always sees a new click as new. */
+  private seq = 0;
 
   point(wu: string | null): void {
-    this.current = { wu, seq: (this.current?.seq ?? 0) + 1 };
+    this.seq += 1;
+    this.current = { wu, seq: this.seq };
   }
 
   get(): FocusPoint | null {
     return this.current === null ? null : { ...this.current };
+  }
+
+  /** No focus (W6: the listed project changed, so a focus never names another project's work unit). */
+  clear(): void {
+    this.current = null;
   }
 }
 
@@ -148,13 +161,13 @@ export class Alerter {
     this.session = opts.session ?? `${Date.now().toString(36)}-${randomBytes(6).toString('hex')}`;
   }
 
-  /** Show what is new among the run's alert lines, recorded first; the numbers shown so far in this run. */
-  async take(run: string | null, alerts: readonly StoredAlert[]): Promise<Set<number>> {
+  /** Show what is new among the run's alert lines, recorded first, each naming `project`; the numbers shown so far in this run. */
+  async take(run: string | null, alerts: readonly StoredAlert[], project = ''): Promise<Set<number>> {
     const file = path.join(this.opts.appDir, RECORD_FILE);
     if (this.record === null) this.record = (await load(file, parseRecord, emptyRecord)).value;
     const first = !this.took;
     this.took = true;
-    const { record, show } = decide(this.record, run, alerts, { id: this.session, first });
+    const { record, show } = decide(this.record, run, alerts, { id: this.session, first }, project);
     if (record !== this.record) {
       try {
         await writeAtomic(file, record);
