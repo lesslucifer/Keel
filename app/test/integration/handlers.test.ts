@@ -349,7 +349,7 @@ test('W6 review round 1 (open.ts:78): removing a project removes its copies of c
   assert.equal(existsSync(path.join(w.parts.appDir, 'open', 'p99999999')), true, 'only that project\'s copies');
 });
 
-test('W6 review round 2 (handlers.ts:143): removing a project waits for an Open in flight before removing its copies, so the two never race', async (t) => {
+test('W6 review rounds 2 and 3 (handlers.ts:143, :144): removing a project removes its copies only after an Open in flight ends, and never holds the settings queue while it waits', async (t) => {
   const w = world(t);
   const project = keelRepo(path.join(w.dir, 'proj'));
   w.answers.folder = project;
@@ -361,25 +361,24 @@ test('W6 review round 2 (handlers.ts:143): removing a project waits for an Open 
   const view = emptyView();
   view.items = [item({ id: 'result/E-A.W1@0f1e2d3', kind: 'result', open: 'page', markable: false })];
   w.answers.view = view;
+  // An explicit hold: the Open ends only when the test releases it.
   let release: () => void = () => undefined;
-  const seen: boolean[] = [];
+  const held = new Promise<void>((resolve) => (release = resolve));
   w.parts.open = async () => {
-    await new Promise<void>((resolve) => (release = resolve));
-    seen.push(existsSync(copies));
+    await held;
     return { done: true };
   };
   const opening = w.call('item.open', { item: 'result/E-A.W1@0f1e2d3' });
-  await new Promise((r) => setImmediate(r));
   const removing = w.call('projects.remove', { project: id });
-  // Wait until the project is gone from the list on disk (the rm comes after it), a bounded wait, then let the Open end.
-  const list = path.join(w.parts.appDir, 'projects.json');
-  for (let i = 0; i < 200 && readFileSync(list, 'utf8').includes(id); i++) await new Promise((r) => setTimeout(r, 10));
-  assert.equal(readFileSync(list, 'utf8').includes(id), false, 'the project left the list');
-  // Room for a removal that does not wait to run (as before the fix); the fixed one waits for the Open whatever the time.
-  await new Promise((r) => setTimeout(r, 50));
+  // The settings queue answers while the Open is held: the removal's wait is outside it.
+  const bound = new Promise<'held'>((resolve) => setTimeout(() => resolve('held'), 3000));
+  const answered = await Promise.race([w.call('state.get').then((a) => (a as { ok: boolean }).ok), bound]);
+  assert.equal(answered, true, 'state.get answered with the Open still held');
+  const listed = (await w.call('state.get')) as { ok: true; value: { projects: unknown[] } };
+  assert.deepEqual(listed.value.projects, [], 'the project left the list');
+  assert.equal(existsSync(copies), true, 'its copies wait for the Open in flight');
   release();
   await opening;
   assert.deepEqual(await removing, { ok: true, value: { done: true } });
-  assert.deepEqual(seen, [true], 'the copies were still there while the Open ran');
   assert.equal(existsSync(copies), false);
 });

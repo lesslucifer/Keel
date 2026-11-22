@@ -135,15 +135,15 @@ export function makeHandlers(parts: Parts): Handlers {
         });
       }),
 
-    'projects.remove': (args) =>
-      queue(async (): Promise<Change> => {
-        const r = await removeProject(appDir, args.project as string, changed);
-        if (!r.ok) return notDone(r.why);
-        // W6 (review round 1, open.ts:78): its copies of committed docs go with it, through the Opens' queue so an
-        // Open in flight finishes first (round 2, handlers.ts:143). The id passed the project-id slot.
-        await opens(() => rm(path.join(appDir, 'open', args.project as string), { recursive: true, force: true }));
-        return DONE;
-      }),
+    'projects.remove': async (args): Promise<Change> => {
+      const r = await queue(() => removeProject(appDir, args.project as string, changed));
+      if (!r.ok) return notDone(r.why);
+      // W6 (review round 1, open.ts:78): its copies of committed docs go with it, through the Opens' queue so an
+      // Open in flight finishes first (round 2, handlers.ts:143), and outside `queue`, which nothing slow may hold
+      // (round 3, handlers.ts:144). The id passed the project-id slot.
+      await opens(() => rm(path.join(appDir, 'open', args.project as string), { recursive: true, force: true }));
+      return DONE;
+    },
 
     'settings.choose': (args) =>
       dialogs(async (): Promise<Change> => {
