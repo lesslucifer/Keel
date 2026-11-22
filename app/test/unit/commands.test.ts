@@ -16,6 +16,7 @@ const SLOTS: Record<string, Record<string, string>> = {
   worktrees: { project: '/p' },
   blob: { project: '/p', object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
   'commit-time': { project: '/p', object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+  'ls-docs': { project: '/p', object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
 };
 
 test('every fixed command starts with -c core.fsmonitor=false --no-optional-locks --no-lazy-fetch', () => {
@@ -25,7 +26,7 @@ test('every fixed command starts with -c core.fsmonitor=false --no-optional-lock
 });
 
 test('the fixed commands of W7 are exactly the plan\'s three lines and, for a git older than 2.45, the promisor read; W5 adds four reads', () => {
-  assert.deepEqual(Object.keys(COMMANDS).sort(), ['blob', 'commit-time', 'common-dir', 'has-config', 'main-name', 'merged', 'note-of', 'promisor-config', 'refs', 'toplevel', 'worktrees']);
+  assert.deepEqual(Object.keys(COMMANDS).sort(), ['blob', 'commit-time', 'common-dir', 'has-config', 'ls-docs', 'main-name', 'merged', 'note-of', 'promisor-config', 'refs', 'toplevel', 'worktrees']);
   assert.deepEqual(argv('promisor-config', { project: '/Users/me/Keel' }, true), [
     '-c', 'core.fsmonitor=false', '--no-optional-locks', '-C', '/Users/me/Keel', 'config', '--get-regexp', '^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$',
   ]);
@@ -174,4 +175,10 @@ test('W6 adds two reads by object id: one blob\'s bytes (a review note, a commit
     for (const object of ['HEAD', 'main', '-p', '--output=/tmp/x', O.slice(1), `${O}:docs/x.html`, '']) assert.throws(() => argv(name, { project: '/p', object }), /object/, `${name} ${object}`);
     assert.throws(() => argv(name, { project: '/p', object: O, kind: 'cr' }), /slots/);
   }
+});
+
+test('Open\'s tree read lists one commit\'s docs/ only, with sizes, by a full id', () => {
+  const O = 'a'.repeat(40);
+  assert.deepEqual(argv('ls-docs', { project: '/p', object: O }), [...LOCKED, '-C', '/p', 'ls-tree', '-r', '-z', '-l', '--full-tree', O, '--', 'docs/']);
+  for (const object of ['HEAD', 'main', '--name-only', `${O}:docs`, '']) assert.throws(() => argv('ls-docs', { project: '/p', object }), /object/, object);
 });

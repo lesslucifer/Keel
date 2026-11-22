@@ -148,13 +148,13 @@ test('the scheme\'s owner in words: the app\'s name, plain; none or empty is unk
 });
 
 test('the seams for W9\'s test are read only when the app is not packaged; packaged, they are ignored', () => {
-  const env = { KEEL_APP_ALERT_SINK: '/tmp/x/alerts.jsonl', KEEL_APP_SILENCE_MS: '2000' };
-  assert.deepEqual(seamsOf(env, false), { alertSink: '/tmp/x/alerts.jsonl', silenceMs: 2000 });
-  assert.deepEqual(seamsOf(env, true), { alertSink: null, silenceMs: null });
-  assert.deepEqual(seamsOf({}, false), { alertSink: null, silenceMs: null });
-  for (const [k, v] of [['KEEL_APP_ALERT_SINK', 'relative.jsonl'], ['KEEL_APP_ALERT_SINK', '/a\nb'], ['KEEL_APP_SILENCE_MS', '0'], ['KEEL_APP_SILENCE_MS', '-5'], ['KEEL_APP_SILENCE_MS', '1e3'], ['KEEL_APP_SILENCE_MS', '900001']]) {
+  const env = { KEEL_APP_ALERT_SINK: '/tmp/x/alerts.jsonl', KEEL_APP_SILENCE_MS: '2000', KEEL_APP_OPEN_SINK: '/tmp/x/opened.jsonl' };
+  assert.deepEqual(seamsOf(env, false), { alertSink: '/tmp/x/alerts.jsonl', silenceMs: 2000, openSink: '/tmp/x/opened.jsonl' });
+  assert.deepEqual(seamsOf(env, true), { alertSink: null, silenceMs: null, openSink: null });
+  assert.deepEqual(seamsOf({}, false), { alertSink: null, silenceMs: null, openSink: null });
+  for (const [k, v] of [['KEEL_APP_ALERT_SINK', 'relative.jsonl'], ['KEEL_APP_ALERT_SINK', '/a\nb'], ['KEEL_APP_SILENCE_MS', '0'], ['KEEL_APP_SILENCE_MS', '-5'], ['KEEL_APP_SILENCE_MS', '1e3'], ['KEEL_APP_SILENCE_MS', '900001'], ['KEEL_APP_OPEN_SINK', 'opened.jsonl'], ['KEEL_APP_OPEN_SINK', '/a\u0007b']]) {
     const s = seamsOf({ [k as string]: v }, false);
-    assert.deepEqual(s, { alertSink: null, silenceMs: null }, `${k}=${v}`);
+    assert.deepEqual(s, { alertSink: null, silenceMs: null, openSink: null }, `${k}=${v}`);
   }
 });
 

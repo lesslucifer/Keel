@@ -7,7 +7,7 @@
 // keel:// link (claimed only when packaged). The app keeps running with no window (DEC-77), so alerts
 // still come. Checked live on the owner's Mac.
 
-import { app, BrowserWindow, dialog, ipcMain, Notification, protocol, session, type OpenDialogOptions, type WebContents } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Notification, protocol, session, shell, type OpenDialogOptions, type WebContents } from 'electron';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ASK_CHANNEL, type Tool } from '../shared/contract.ts';
@@ -22,7 +22,9 @@ import { ViewReader } from './reader/view.ts';
 import { Watcher } from './watcher/watch.ts';
 import { Alerter, Focus, heldSink, type AlertSink } from './alerter/alerts.ts';
 import { openLink, schemeText } from './alerter/link.ts';
-import { fileSink, seamsOf } from './alerter/seams.ts';
+import { fileSink, openFileSink, seamsOf } from './alerter/seams.ts';
+import { openItem } from './open/open.ts';
+import { loadProjects } from './projects.ts';
 
 // Set by Forge's Vite plugin: the dev server's URL under electron-forge start (undefined in a
 // build), and the renderer's name, which names its build folder.
@@ -189,8 +191,9 @@ async function start(): Promise<void> {
       pointed();
     },
   });
+  const parts = readerParts({ appDir, loginPath });
   const reader = new ViewReader({
-    ...readerParts({ appDir, loginPath }),
+    ...parts,
     ...(seams.silenceMs === null ? {} : { silenceMs: seams.silenceMs }),
     alerter,
     focus: () => focus.get(),
@@ -215,8 +218,21 @@ async function start(): Promise<void> {
       if (event === 'state.changed') void watcher?.kick();
     },
     view: () => reader.view(),
-    // Wired by the next steps of E-APPLIST.W6 (Open, then Mark sent).
-    open: async () => ({ done: false, why: 'Open is not built yet' }),
+    // Open: a copy of the committed docs (or an epic result in place) to the browser; W9's sink in its place when set.
+    open: async (item) => {
+      const project = (await loadProjects(appDir)).value.projects[0];
+      const git = await parts.git();
+      if (project === undefined || git === null) return { done: false, why: 'no project is listed, or git was not found' };
+      const sink = seams.openSink === null ? null : openFileSink(seams.openSink);
+      return openItem(item, reader.view().git, {
+        appDir,
+        project: { id: project.id, path: project.path },
+        git,
+        runOptions: parts.runOptions,
+        openUrl: async (url) => (sink === null ? shell.openExternal(url) : sink(url)),
+      });
+    },
+    // Wired by the next step of E-APPLIST.W6 (Mark sent).
     mark: async () => ({ done: false, why: 'Mark sent is not built yet' }),
   });
   ipcMain.handle(ASK_CHANNEL, dispatcher(expected, handlers));
