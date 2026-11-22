@@ -234,5 +234,18 @@ details:
       separated by fill, tonal depth, its 8px spacing, weights 360-500. The system font stays (the earlier ruling,
       DEC-72): the file's Inter substitute is not shipped, reported to the owner as the one conflict. Its breakpoints
       and marketing components do not apply. The tokens, the lint's vocabulary and screen 6 are redone to it.
+  owner-decision-mx3a:
+    date: "2026-11-22"
+    decision: >-
+      The owner rejected the Mercury look and every variant shown in browser mode (built on the scratch branch
+      wu/E-APPLIST/w8-window-foundation_look-variants, tip 67e1bda, never merged) and chose look mx3a, Spectrum
+      Plain: Mistral's typography (docs/work/2026-11-22-e-applist-w8-design-mistral.md; New York, ui-serif, for the
+      screen title and section heads, sentence case, its type scale) on MiniMax's colour
+      (docs/work/2026-11-22-e-applist-w8-design-minimax.md; a white canvas, deep black ink, a black pill main action,
+      outline pill secondaries), white 12px cards on hairlines, a plain white title bar over a 1px hairline, no
+      gradient anywhere, and its night world as built on that branch, following the Mac. System fonts only (DEC-72):
+      New York stands in for PP Editorial Old, the system sans for Inter and DM Sans. The two design files are byte
+      copies of the branch's (fbd953c, 8d9d15c). docs/work/2026-11-22-e-applist-w8-design.md (Mercury) stays as
+      history; owner-instruction-design above is superseded.
   htmldoc:
     id: 6b01db1a9f34851f0dfb2b9a
