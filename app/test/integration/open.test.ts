@@ -12,7 +12,7 @@ import { openFileSink } from '../../src/main/alerter/seams.ts';
 import { GitReader } from '../../src/main/reader/git.ts';
 import { itemsOf } from '../../src/shared/items.ts';
 import type { GitFacts, Item, RouterView } from '../../src/shared/contract.ts';
-import { realGit, sh, tempDir, mk, snapshot } from '../support/fs.ts';
+import { realGit, sh, tempDir, mk, snapshot, program } from '../support/fs.ts';
 
 const GIT = realGit();
 const rev = (dir: string, ref: string) => sh(GIT, dir, ['rev-parse', ref]).trim();
@@ -297,4 +297,24 @@ test('W6 review round 2 (index.ts:233): Open takes the project with the item and
   const listed = [{ id: 'p0a1b2c3d', path: w.dir, name: 'proj' }, ...switched];
   assert.deepEqual(await openListed(plan, view, listed, rest), { done: true });
   assert.ok((w.opened[0] as string).includes('/open/p0a1b2c3d/'));
+});
+
+test('W6 review round 3 (open.ts:124, nit :143): reusing a kept copy costs one git call (the tree read), its files checked against the tree\'s blob ids in-process; a fresh copy reads each file from git once', async (t) => {
+  const w = world(t);
+  const log = path.join(w.root, 'git-calls.log');
+  const wrapper = program(path.join(mk(path.join(w.root, 'bin')), 'git'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexec '${GIT}' "$@"\n`);
+  const parts = { ...w.parts, git: wrapper };
+  commitFiles(w.dir, { 'docs/work/2026-11-22-e-a-w1-result.yaml': RESULT_YAML, 'docs/work/2026-11-22-e-a-w1-result.html': '<p>The result.</p>\n', 'docs/work/notes.yaml': 'artifact: none\n' }, 'more docs');
+  const tip = rev(w.dir, 'wu/E-A/w1-reader');
+  const { plan, facts } = await planItem(w, tip);
+  assert.deepEqual(await openItem(plan, facts, parts), { done: true });
+  const fresh = readFileSync(log, 'utf8').trim().split('\n');
+  const blobs = fresh.filter((l) => / cat-file blob /.test(l));
+  assert.equal(new Set(blobs).size, blobs.length, 'no file read twice in a fresh copy');
+  writeFileSync(log, '');
+  assert.deepEqual(await openItem(plan, facts, parts), { done: true });
+  const reuse = readFileSync(log, 'utf8').trim().split('\n').filter((l) => l !== '');
+  assert.equal(reuse.length, 1, reuse.join('\n'));
+  assert.match(reuse[0] as string, / ls-tree /);
+  assert.equal(readFileSync(fileURLToPath(w.opened[1] as string), 'utf8'), PLAN_PAGE);
 });

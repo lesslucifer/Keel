@@ -7,7 +7,7 @@
 // shell.openExternal, or W9's file sink) is handed in.
 
 import { mkdir, readdir, readFile, rename, rm, stat, lstat, utimes, writeFile } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { Change, GitFacts, Item, ProjectEntry, View } from '../../shared/contract.ts';
 import { run, type Captured, type RunOptions } from '../commands.ts';
@@ -99,6 +99,14 @@ async function sizeOf(dir: string): Promise<number> {
 /** Whether `code` says the path is taken already or a part of it is a file (a case twin on a case-insensitive disk). */
 const collides = (e: unknown) => ['EEXIST', 'ENOTDIR', 'EISDIR'].includes((e as NodeJS.ErrnoException).code ?? '');
 
+/** A file's bytes as git ids them (a blob's id: sha-1, or sha-256 for a 64-digit id), or null when it is no regular file. */
+async function blobIdOf(file: string, idLength: number): Promise<string | null> {
+  const st = await lstat(file).catch(() => null);
+  if (st === null || !st.isFile()) return null;
+  const bytes = await readFile(file);
+  return createHash(idLength === 64 ? 'sha256' : 'sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+}
+
 /** Whether `file` is a regular file holding exactly `text`. */
 async function holds(file: string, text: string): Promise<boolean> {
   const st = await lstat(file).catch(() => null);
@@ -125,17 +133,37 @@ async function copyOf(parts: OpenParts, tip: string, role: string, id: string): 
   const why = failed(tree, 'the docs at the tip');
   if (why !== null) return notDone(why);
   const { files } = copyPlan(parseTree(tree.stdout));
+  // A kept copy is reused when its data file and page are the tree's blobs, checked in-process against the
+  // ids the tree read gave (review round 3, open.ts:124): one git call per reuse, a blob read only on a rebuild.
+  if (await exists(path.join(final, COMPLETE))) {
+    const kept: Array<{ path: string; head: DataHead }> = [];
+    for (const f of files) {
+      if (!f.path.endsWith('.yaml') || (f.size as number) > HEAD_CAP) continue;
+      if ((await blobIdOf(path.join(final, f.path), f.oid.length)) === f.oid) kept.push({ path: f.path, head: dataHead(await readFile(path.join(final, f.path), 'utf8')) });
+    }
+    const keptPage = findPage(kept, role, id);
+    const entry = keptPage === null ? undefined : files.find((f) => f.path === keptPage);
+    if (keptPage !== null && entry !== undefined && (await blobIdOf(path.join(final, keptPage), entry.oid.length)) === entry.oid) {
+      const now = new Date();
+      await utimes(final, now, now);
+      return { dir: final, page: keptPage };
+    }
+  }
   // A file read whole and as text, or not at all: a cut answer, or bytes that are not UTF-8, would not be the committed file.
   const text = async (f: (typeof files)[number]): Promise<string | null> => {
     const blob = await read('blob', f.oid);
     return failed(blob, f.path) !== null || Buffer.byteLength(blob.stdout, 'utf8') !== f.size || blob.stdout.includes('\uFFFD') ? null : blob.stdout;
   };
-  // The head pass: each data file's text, kept only until the page is found (nit, open.ts:134).
+  // The head pass: each data file's text, kept until the copy loop writes it (round 3 nit, open.ts:143), so no file is read twice.
   const heads: Array<{ path: string; head: DataHead; text: string }> = [];
+  const texts = new Map<string, string>();
   for (const f of files) {
     if (!f.path.endsWith('.yaml') || (f.size as number) > HEAD_CAP) continue;
     const t = await text(f);
-    if (t !== null) heads.push({ path: f.path, head: dataHead(t), text: t });
+    if (t !== null) {
+      heads.push({ path: f.path, head: dataHead(t), text: t });
+      texts.set(f.path, t);
+    }
   }
   const page = findPage(heads, role, id);
   if (page === null) return notDone(`no ${role} page for ${id} at its tip`);
@@ -145,15 +173,8 @@ async function copyOf(parts: OpenParts, tip: string, role: string, id: string): 
   const pageText = pageEntry === undefined ? null : await text(pageEntry);
   if (dataHeadOf === undefined || pageText === null) return notDone(`the ${role} page for ${id} could not be copied as text`);
   const data = dataHeadOf.path;
-  const firsts = new Map([
-    [data, dataHeadOf.text],
-    [page, pageText],
-  ]);
-  if ((await exists(path.join(final, COMPLETE))) && (await holds(path.join(final, data), dataHeadOf.text)) && (await holds(path.join(final, page), pageText))) {
-    const now = new Date();
-    await utimes(final, now, now);
-    return { dir: final, page };
-  }
+  texts.set(page, pageText);
+  const firsts = new Set([data, page]);
   const tmp = path.join(base, `.tmp-${process.pid}-${randomBytes(4).toString('hex')}`);
   await mkdir(tmp, { mode: 0o700 });
   let total = 0;
@@ -161,9 +182,9 @@ async function copyOf(parts: OpenParts, tip: string, role: string, id: string): 
     for (const f of copyPlan(parseTree(tree.stdout), [data, page]).files) {
       const dest = path.join(tmp, f.path);
       if (await exists(dest)) continue;
-      const first = firsts.get(f.path);
-      if (first === undefined && total + (f.size as number) > COPY_CAP) continue;
-      const t = first ?? (await text(f));
+      if (!firsts.has(f.path) && total + (f.size as number) > COPY_CAP) continue;
+      const t = texts.get(f.path) ?? (await text(f));
+      texts.delete(f.path);
       if (t === null) continue;
       try {
         await mkdir(path.dirname(dest), { recursive: true, mode: 0o700 });
