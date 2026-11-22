@@ -23,7 +23,7 @@ import { Watcher } from './watcher/watch.ts';
 import { Alerter, Focus, heldSink, type AlertSink } from './alerter/alerts.ts';
 import { openLink, schemeText } from './alerter/link.ts';
 import { fileSink, openFileSink, seamsOf } from './alerter/seams.ts';
-import { openItem } from './open/open.ts';
+import { openListed } from './open/open.ts';
 import { SentMarks } from './items/sent.ts';
 import { loadProjects } from './projects.ts';
 
@@ -236,16 +236,13 @@ async function start(): Promise<void> {
     },
     view: () => reader.view(),
     // Open: a copy of the committed docs (or an epic result in place) to the browser; W9's sink in its place when set.
-    open: async (item) => {
-      const project = (await loadProjects(appDir)).value.projects[0];
+    // The project, the item and the facts from one view (open.ts openListed).
+    open: async (item, view) => {
       const git = await parts.git();
-      if (project === undefined || git === null) return { done: false, why: 'no project is listed, or git was not found' };
+      if (git === null) return { done: false, why: 'git was not found: choose it in the settings' };
       const sink = seams.openSink === null ? null : openFileSink(seams.openSink);
-      const listed = (await loadProjects(appDir)).value.projects.map((p) => p.id);
-      return openItem(item, reader.view().git, {
+      return openListed(item, view, (await loadProjects(appDir)).value.projects, {
         appDir,
-        listed,
-        project: { id: project.id, path: project.path },
         git,
         runOptions: parts.runOptions,
         openUrl: async (url) => (sink === null ? shell.openExternal(url) : sink(url)),

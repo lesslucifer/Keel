@@ -35,8 +35,8 @@ export interface Parts {
   push(event: PushEvent): void;
   /** The reader's view as it stands (reader/view.ts); reading it runs nothing. */
   view(): View;
-  /** W6: open an item's page or epic result in the owner's browser (open/open.ts); the item is one the view lists now. */
-  open(item: Item): Promise<Change>;
+  /** W6: open an item's page or epic result in the owner's browser (open/open.ts); the item is one `view` lists, and `view` is the one to open it by. */
+  open(item: Item, view: View): Promise<Change>;
   /** W6: mark a markable item sent, or not (items/sent.ts), then read the view again. */
   mark(item: Item, sent: boolean): Promise<Change>;
 }
@@ -172,11 +172,12 @@ export function makeHandlers(parts: Parts): Handlers {
     // W6. In its own queue: it reads git and writes only under the app folder's open/, apart from the files `queue` guards.
     'item.open': (args) =>
       opens(async (): Promise<Change> => {
-        const item = listed(parts.view(), args.item as string);
+        const view = parts.view();
+        const item = listed(view, args.item as string);
         if (typeof item === 'string') return notDone(item);
         if (item.open === 'text') return notDone('a question shows its text in the list itself');
         if (item.open === 'none') return notDone('this item has nothing to open');
-        return parts.open(item);
+        return parts.open(item, view);
       }),
 
     'item.mark': (args) =>

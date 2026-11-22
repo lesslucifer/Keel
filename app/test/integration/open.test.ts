@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openItem, KEPT_COPIES } from '../../src/main/open/open.ts';
+import { openItem, openListed, KEPT_COPIES } from '../../src/main/open/open.ts';
+import { emptyView } from '../../src/main/reader/view.ts';
 import { openFileSink } from '../../src/main/alerter/seams.ts';
 import { GitReader } from '../../src/main/reader/git.ts';
 import { itemsOf } from '../../src/shared/items.ts';
@@ -279,4 +280,21 @@ test('W6 review round 2 (open.ts:151): a kept copy whose page is not the committ
   assert.equal(readFileSync(fileURLToPath(w.opened[1] as string), 'utf8'), '<p>The result, whole.</p>\n');
   assert.equal(existsSync(path.join(copy, 'sentinel')), false, 'the copy was rebuilt and renamed over, not written into');
   assert.deepEqual(readdirSync(path.join(w.appDir, 'open', 'p0a1b2c3d')), [tip], 'no temp folder left');
+});
+
+test('W6 review round 2 (index.ts:233): Open takes the project with the item and the facts from one view; a view of a project no longer listed opens nothing and says so', async (t) => {
+  const w = world(t);
+  const tip = rev(w.dir, 'wu/E-A/w1-reader');
+  const { plan, facts } = await planItem(w, tip);
+  const view = { ...emptyView(), project: { id: 'p0a1b2c3d', name: 'proj' }, git: facts, items: [plan] };
+  const { project: _p, ...rest } = w.parts;
+  void _p;
+  const switched = [{ id: 'p11111111', path: path.join(w.root, 'other'), name: 'other' }];
+  assert.deepEqual(await openListed(plan, view, switched, rest), { done: false, why: 'the list is of a project no longer listed: it shows the listed one at its next read' });
+  assert.deepEqual(await openListed(plan, { ...view, project: null }, switched, rest), { done: false, why: 'no project is listed' });
+  assert.equal(w.opened.length, 0);
+  assert.equal(existsSync(path.join(w.appDir, 'open', 'p11111111')), false, 'nothing filed under the other project');
+  const listed = [{ id: 'p0a1b2c3d', path: w.dir, name: 'proj' }, ...switched];
+  assert.deepEqual(await openListed(plan, view, listed, rest), { done: true });
+  assert.ok((w.opened[0] as string).includes('/open/p0a1b2c3d/'));
 });

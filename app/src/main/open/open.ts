@@ -9,7 +9,7 @@
 import { mkdir, readdir, readFile, rename, rm, stat, lstat, utimes, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import type { Change, GitFacts, Item } from '../../shared/contract.ts';
+import type { Change, GitFacts, Item, ProjectEntry, View } from '../../shared/contract.ts';
 import { run, type Captured, type RunOptions } from '../commands.ts';
 import { copyPlan, dataHead, fileUrlInside, findPage, parseTree, roleOf, COPY_CAP, HEAD_CAP, type DataHead } from './docs.ts';
 
@@ -235,4 +235,17 @@ export async function openItem(item: Item, facts: GitFacts | null, parts: OpenPa
   if (url === null) return notDone(`the ${role} page for ${id} could not be copied as text`);
   await parts.openUrl(url);
   return DONE;
+}
+
+/**
+ * Open `item` as `view` lists it: the project, the item and the facts all from that one view (review round
+ * 2, index.ts:233), the project's checkout from `projects` (projects.json). A view of a project no longer
+ * listed (a switch the reader has not read yet) opens nothing and says so.
+ */
+export async function openListed(item: Item, view: View, projects: readonly ProjectEntry[], parts: Omit<OpenParts, 'project' | 'listed'>): Promise<Change> {
+  if (view.project === null) return notDone('no project is listed');
+  const id = view.project.id;
+  const project = projects.find((p) => p.id === id);
+  if (project === undefined) return notDone('the list is of a project no longer listed: it shows the listed one at its next read');
+  return openItem(item, view.git, { ...parts, project: { id, path: project.path }, listed: projects.map((p) => p.id) });
 }
