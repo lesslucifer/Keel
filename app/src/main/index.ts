@@ -24,6 +24,7 @@ import { Alerter, Focus, heldSink, type AlertSink } from './alerter/alerts.ts';
 import { openLink, schemeText } from './alerter/link.ts';
 import { fileSink, openFileSink, seamsOf } from './alerter/seams.ts';
 import { openItem } from './open/open.ts';
+import { SentMarks } from './items/sent.ts';
 import { loadProjects } from './projects.ts';
 
 // Set by Forge's Vite plugin: the dev server's URL under electron-forge start (undefined in a
@@ -192,8 +193,10 @@ async function start(): Promise<void> {
     },
   });
   const parts = readerParts({ appDir, loginPath });
+  const marks = new SentMarks(appDir);
   const reader = new ViewReader({
     ...parts,
+    sent: (project) => marks.get(project),
     ...(seams.silenceMs === null ? {} : { silenceMs: seams.silenceMs }),
     alerter,
     focus: () => focus.get(),
@@ -232,8 +235,14 @@ async function start(): Promise<void> {
         openUrl: async (url) => (sink === null ? shell.openExternal(url) : sink(url)),
       });
     },
-    // Wired by the next step of E-APPLIST.W6 (Mark sent).
-    mark: async () => ({ done: false, why: 'Mark sent is not built yet' }),
+    // Mark sent: the mark in the app folder, then a read now, so the window gets waiting.changed.
+    mark: async (item, sent) => {
+      const view = reader.view();
+      if (view.project === null) return { done: false, why: 'no project is listed' };
+      await marks.set(view.project.id, item.id, sent, new Set(view.items.filter((i) => i.markable).map((i) => i.id)));
+      await watcher?.kick();
+      return { done: true };
+    },
   });
   ipcMain.handle(ASK_CHANNEL, dispatcher(expected, handlers));
   started = true;
