@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b02e3539f34851f0dfb2baf">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-APPLIST.W6 plan: your list and Open</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-APPLIST.W6 · Your list and Open</h1>
+      <p>The app shows what waits on you, and opens each plan or result as committed.</p>
+      <div class="meta">T3 · WU plan · 2026-11-22 · Keel · its data file, 2026-11-22-e-applist-w6-plan.yaml, sits beside this page · the epic: <a href="2026-11-20-e-applist-plan.html">E-APPLIST plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">The app alerts you, but its window shows only your settings. You still ask the router what waits on you, and open plans by the path it gives.</p>
+
+<h2 id="get">What you get</h2>
+<ul data-c="get">
+  <li><b>Waits on you</b>, the screen the app opens on. Three groups: yours, not yours (a worker acts), and sent.</li>
+  <li>Items arrive and leave by themselves: a result to sign, then to merge; a plan to read; a router question; a worker waiting on you; main not pushed; a task to merge into its work unit.</li>
+  <li><b>Open</b>: the plan or result exactly as committed, in your browser, even while someone edits the file.</li>
+  <li><b>Mark sent</b> on a plan or question you answered. It survives a restart.</li>
+  <li>A click on an alert shows that work unit's items. The alert names the project.</li>
+</ul>
+
+<h2 id="how">How it works</h2>
+<ol data-c="how">
+  <li>The router sets a work unit's stage to "plan to read".</li>
+  <li>The plan appears under Yours, with its tip and time.</li>
+  <li>You click Open. The app copies the committed docs into its own folder and opens the page in your browser.</li>
+  <li>You tell the router "approved" and click Mark sent. The item moves to Sent.</li>
+  <li>The router writes "plan approved". The item leaves.</li>
+</ol>
+<p>When the router is silent, a bar says so, and its items hide.</p>
+
+<h2 id="makes">What it makes</h2>
+<ul data-c="makes">
+  <li>The list and its rules, in the app's main part.</li>
+  <li>Screen 2, a tab bar, and two fields on the Projects screen: the counts and the last change. All in the chosen look.</li>
+  <li>Open and Mark sent. Neither writes into your project.</li>
+  <li>Sample data for each item, to see the screen in a browser first.</li>
+</ul>
+<p>Nothing is built or packaged. The epic test and the signed-app checks wait for W9.</p>
+
+<h2 id="decide">What you decide</h2>
+<p>Nothing blocks the work; the defaults go ahead.</p>
+<table data-c="open-points">
+  <thead><tr><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>What goes under "not yours"?</td><td><b>Work in motion</b>: plan being written, building, in review, review failed. It names the worker.</td><td>Failed checks and conflicts come later, in A5. Without this the group stays empty.</td></tr>
+    <tr><td>When does a task wait on you?</td><td><b>When its work is not merged and no worker is busy on it.</b></td><td>Nothing else says a task is done.</td></tr>
+    <tr><td>How does Open reach your browser?</td><td><b>Through the Mac's default app for web pages.</b></td><td>Normally your browser. A setting can follow if not.</td></tr>
+    <tr><td>Read a project's own main-branch name?</td><td><b>Not now.</b> "main" only.</td><td>Keel uses main. Many projects come with A5.</td></tr>
+    <tr><td>If the class checker refuses honest screen code?</td><td><b>It becomes a warning</b>. The CSS check stays the guard.</td><td>Your backlog row already plans this.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="know">How you'll know it worked</h2>
+<ul data-c="know">
+  <li>In browser mode, every item draws in its group, and the buttons answer.</li>
+  <li>Running on your Keel checkout, the list shows what really waits.</li>
+  <li>Open shows the committed text after you edit the file.</li>
+  <li>A sent mark is still there after a quit and restart.</li>
+  <li>You record whether a link ending in <code>?diff=latest</code> opens the changes view.</li>
+  <li>The four app checks pass: main tests, window tests, lint, type check.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
