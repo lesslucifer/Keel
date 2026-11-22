@@ -37,6 +37,7 @@ function world(t: { after: (fn: () => void) => void }) {
   const parts: Parts = {
     appDir: path.join(dir, 'app-folder'),
     version: '0.1.0',
+    packaged: false,
     loginPath,
     env: { HOME: mk(path.join(dir, 'home')), LANG: 'C' },
     chooseFolder: async () => { seen.folders++; return answers.folder; },
@@ -52,12 +53,13 @@ function world(t: { after: (fn: () => void) => void }) {
   return { dir, bin, keel, claude, loginPath, seen, answers, parts, call };
 }
 
-test('state.get answers the version, the PATH and its source, each tool\'s state and the project list', async (t) => {
+test('state.get answers the version, whether the app is packaged, the PATH and its source, each tool\'s state and the project list', async (t) => {
   const w = world(t);
   assert.deepEqual(await w.call('state.get'), {
     ok: true,
     value: {
       version: '0.1.0',
+      packaged: false,
       path: w.loginPath,
       tools: {
         keel: { path: w.keel, source: 'path', problem: null },
@@ -67,6 +69,16 @@ test('state.get answers the version, the PATH and its source, each tool\'s state
       projects: [],
     },
   });
+});
+
+test('W9: state.get says whether the app is packaged as the shell gives it, so the window names the place macOS files its alerts (Keel or Electron)', async (t) => {
+  const w = world(t);
+  w.parts.packaged = true;
+  const packaged = (await w.call('state.get')) as { ok: true; value: Record<string, unknown> };
+  assert.equal(packaged.value.packaged, true);
+  assert.deepEqual(Object.keys(packaged.value).sort(), ['packaged', 'path', 'projects', 'tools', 'version']);
+  w.parts.packaged = false;
+  assert.equal(((await w.call('state.get')) as { ok: true; value: Record<string, unknown> }).value.packaged, false);
 });
 
 test('projects.add opens the folder dialog, lists a Keel main checkout, pushes once; state.get shows it; remove takes it off and leaves its files', async (t) => {

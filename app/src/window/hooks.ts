@@ -22,15 +22,21 @@ export function changeText(a: Answer<Change>, done = 'Done.'): string {
   return a.value.done ? done : sentence(`Not done: ${a.value.why}`);
 }
 
-const ALERT_TEXT: Record<AlertOutcome, string> = {
-  shown: 'The test alert was shown.',
-  'not-shown': 'The test alert was not shown within 5 s. Check System Settings > Notifications > Keel.',
-  'not-supported': 'This Mac does not support alerts from Keel.',
-};
+/** The test alert's outcome in words; not shown names where macOS files the app's alerts (W9): Keel when packaged, Electron under pnpm start. */
+function alertWords(outcome: AlertOutcome, packaged: boolean): string {
+  switch (outcome) {
+    case 'shown':
+      return 'The test alert was shown.';
+    case 'not-shown':
+      return `The test alert was not shown within 5 s. Check System Settings > Notifications > ${packaged ? 'Keel' : 'Electron'}.`;
+    case 'not-supported':
+      return 'This Mac does not support alerts from Keel.';
+  }
+}
 
-/** The test alert's outcome in words. */
-export function alertText(a: Answer<AlertOutcome>): string {
-  return a.ok ? ALERT_TEXT[a.value] : answerText(a);
+/** The test alert's outcome in words, for the packaged app or not (the state's packaged). */
+export function alertText(a: Answer<AlertOutcome>, packaged = true): string {
+  return a.ok ? alertWords(a.value, packaged) : answerText(a);
 }
 
 /** What each change says when it was done. */
@@ -42,14 +48,14 @@ const DONE_TEXT: Record<Exclude<RequestName, 'state.get' | 'alert.test' | 'waiti
   'settings.reset': 'Saved: Keel uses the one on the PATH.',
 };
 
-/** The sentence a request's answer becomes. */
-function outcomeText(request: Request, a: Answer): string {
+/** The sentence a request's answer becomes; `packaged` as the state says (the test alert's settings place). */
+function outcomeText(request: Request, a: Answer, packaged: boolean): string {
   switch (request.name) {
     case 'state.get':
     case 'waiting.get':
       return answerText(a);
     case 'alert.test':
-      return alertText(a as Answer<AlertOutcome>);
+      return alertText(a as Answer<AlertOutcome>, packaged);
     case 'item.mark':
       return changeText(a as Answer<Change>, request.args.sent === 'yes' ? 'Marked sent: it waits for a sign under Sent.' : 'Back on your list.');
     default:
@@ -152,12 +158,14 @@ export interface ActionView {
   run(request: Request): Promise<void>;
 }
 
-/** One request at a time, and its outcome as a sentence. */
-export function useAction(): ActionView {
+/** One request at a time, and its outcome as a sentence; `packaged` from the state (true until it is read). */
+export function useAction(packaged = true): ActionView {
   const bridge = useBridge();
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
   const running = useRef(false);
+  const isPackaged = useRef(packaged);
+  isPackaged.current = packaged;
 
   const run = useCallback(
     async (request: Request) => {
@@ -166,7 +174,7 @@ export function useAction(): ActionView {
       setBusy(true);
       try {
         const a = (await bridge.ask(request.name, request.args as Record<string, string>)) as Answer;
-        setNote(outcomeText(request, a));
+        setNote(outcomeText(request, a, isPackaged.current));
       } catch (e) {
         setNote(answerText({ ok: false, failed: e instanceof Error ? e.message : String(e) }));
       } finally {

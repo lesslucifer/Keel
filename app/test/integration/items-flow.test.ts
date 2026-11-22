@@ -52,6 +52,7 @@ function world(t: { after: (fn: () => void) => void }) {
     makeHandlers({
       appDir: path.join(tempDir(t, 'items-flow-app'), 'Keel'),
       version: '0.1.0',
+      packaged: false,
       loginPath: { entries: [path.dirname(GIT)], source: 'login-shell', reason: null },
       chooseFolder: async () => null,
       chooseFile: async () => null,

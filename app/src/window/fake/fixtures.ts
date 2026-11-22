@@ -34,6 +34,7 @@ const onPath = (tool: Tool): ToolState => ({ path: ON_PATH[tool], source: 'path'
 function base(): AppState {
   return {
     version: '0.1.0',
+    packaged: true,
     path: { entries: [...LOGIN_PATH], source: 'login-shell', reason: null },
     tools: { keel: onPath('keel'), git: onPath('git'), claude: onPath('claude') },
     projects: [{ id: 'p0a1b2c3d', path: '/Users/you/code/keel', name: 'keel' }],

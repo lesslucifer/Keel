@@ -233,6 +233,7 @@ async function start(): Promise<void> {
   const handlers = makeHandlers({
     appDir,
     version: app.getVersion(),
+    packaged: app.isPackaged,
     loginPath,
     chooseFolder,
     chooseFile,
