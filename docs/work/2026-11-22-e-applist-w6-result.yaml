@@ -6,10 +6,11 @@ title: "E-APPLIST.W6 · Your list and Open"
 date: "2026-11-22"
 page: 2026-11-22-e-applist-w6-result.html
 outcome: >-
-  Delivered, the owner's live check pending. With a project listed the window opens on screen 2, Waits on you: the
+  Delivered, the owner's live check pending; review round 1 (FAIL: 7 blockers, 4 importants) fixed in nine
+  commits (details.review-round-1). With a project listed the window opens on screen 2, Waits on you: the
   main part draws every item of this epic's kinds from W5's view on each read (src/shared/items.ts), in three groups
   (yours, not yours, sent) with its work unit, branch, tip, since when, why and who acts, entering and leaving on its
-  source with no click - a work unit's result on a PASS or WAIVED review note with no sign-off, to merge on the
+  source with no click, drawn only from the open branches the reader lists (GitFacts.open, one rule) - a work unit's result on a PASS or WAIVED review note with no sign-off, to merge on the
   sign-off, gone with the merge (a FAIL or unreadable note is its worker's); an epic's result the same against main;
   a plan to read on the router's stage, gone on plan approved, its removal or the branch moving past the plan's tip;
   a question on its router line; a worker waiting while the watchdog says so; main not pushed while main is ahead of
@@ -21,12 +22,14 @@ outcome: >-
   row. Mark sent and Not sent move a plan or a question to and from Sent, kept in sent.json in the app's folder
   across a restart. A click on an alert or a keel:// link brings Waits on you forward with that work unit's items
   marked; a project switch clears the focus. The macOS alert names the project as its subtitle. Screen 6 shows the
-  counts, each a way to the list, and the last change seen. node --test 354 (353 pass, 1 skipped in the worker's
+  counts, each a way to the list, and the last change seen. node --test 374 (373 pass, 1 skipped in the worker's
   sandbox, as at W5), Vitest 230, typecheck, lint and keel check green. Nothing was built or packaged; the owner's
   live check (browser mode, then pnpm start) waits for him, the sandbox refusing the port both bind.
 deviations:
   - "The item rules live in app/src/shared/items.ts, not app/src/main/items/ as planned: the window may import nothing from the main part, and the fake's fixtures draw their lists with the same rules, so browser mode cannot drift from the app (commit 652b22a)."
   - "The plan's note-show read is the blob read (cat-file blob <id>) on the note id W5's note-of already answers, so a rewritten review note (FAIL then WAIVED on one tip) is read again by its new id; doc-heads is the same blob read over the copy's data files, read from the copy on disk. Three new fixed reads in all: blob, commit-time and ls-docs. No cat-file --batch: the fixed commands run with stdin closed."
+  - "Review round 1 moved the open rule into the reader: GitFacts.open (reader/git.ts openSets) lists the open epics, units and tasks, keel's names only, a unit or task only when its target's read succeeded; the item rules draw from it (the plan had the rules derive it)."
+  - "Review round 1: a work unit's result id carries its branch (result/<wu>-<branch hash>@<tip>); every name in a pasted line is one shell word (shQuote); a plan staged with no tip has no Open; an alert's click carries its project; a new window keeps the focus only when a click or a link opened it; item.open runs one at a time; the copy writes the page first, charges the cap on what it writes, is never kept complete without the page and skips case twins; a crash's temp folder and a removed project's copies are removed."
   - "The plan's commit 4 named the doc-heads read; it came with Open (commit 5), where it is used. The order is otherwise the plan's, plus one test fix (cfa49cd: a focus badge read before its effect ran, flaky in bd1cb17, which was committed while that test was red: the chained command did not stop on it)."
   - "Open copies only files that read whole as UTF-8 text (the fixed reads answer text): a binary file under docs/ would not be copied. Keel's docs are HTML, YAML and Markdown today; recorded on backlog row A3."
   - "A question has no 'since': the router's state keeps each key's value, not when it was set (the plan said the router line's time). A worker waiting shows its last activity; recorded on backlog row A3."
@@ -48,7 +51,9 @@ evidence:
     - "bd1cb17 feat: screen 2, the tabs, the focus followed"
     - "cfa49cd test: the alert's badge awaited (flaky read)"
     - "25fdc97 feat: screen 6's fields 6.4 and 6.5"
-    - "and the commit carrying this result pair and backlog row A3's two follow-ups"
+    - "7ff5adb docs: the result pair; backlog row A3's two follow-ups"
+    - "review round 1: 0d3e14c (items.ts:82), 94bc090 (items.ts:167), f2451b2 (items.ts:115), f33b3d1 (open.ts:148), b20d4bc (index.ts:191), 5b2e32f (App.tsx:24), 95a09bd (handlers.ts:167), bd73c1e (docs.ts:52, open.ts:100), 136df08 (open.ts:70, open.ts:78)"
+    - "and the commit carrying this update"
   tests-added:
     unit:
       - "app/test/unit/items.test.ts (new, 17): each kind's enter, move and leave rule, groups and order, ids; two seeded properties over 400 generated views each (ids unique, well formed, within the cap, the same in any branch order; every item names a listed branch or a router key; no router item while not heard; marks move only markable items)"
@@ -70,7 +75,7 @@ evidence:
       - "app/test-window/integration/waits.test.tsx (new, 11), nav.test.tsx (new, 3); projects.test.tsx (+2, and its draws on the Projects tab); fake.test.ts (+3); browser.test.tsx (+1, and its default case); grounds.test.tsx draws every view and screen 6's list field"
   red-first: "Each step's tests ran red before its code: bridge tests 4 failing on the old bridge (c3fd0b3); items.test.ts not loading (652b22a); commands 3 failing, git-read not loading, items-flow 5 of 6 failing (42b2caa); doc-find and open not loading (ad8d008); sent not loading (5067369); alerts 2 and focus 2 failing (d39e63a); waits, nav and hooks 15 failing on the previous frame (bd1cb17); projects 2 failing (25fdc97)."
   runs:
-    test-main: "pnpm test:main: 354 tests, 353 pass, 1 skipped (watch-view's real fs.watch test: EMFILE in the worker's sandbox, as at W5); baseline 297"
+    test-main: "pnpm test:main: 374 tests, 373 pass, 1 skipped (watch-view's real fs.watch test: EMFILE in the worker's sandbox, as at W5); baseline 297"
     test-window: "pnpm test:window: 230 passed (24 files), run three times green; baseline 207"
     lint: "pnpm lint: green (ESLint and the emitted-CSS check)"
     typecheck: "pnpm typecheck: green"
@@ -105,6 +110,20 @@ follow-ups:
   - "The code review, the owner's sign-off and the merge into epic/E-APPLIST. Taken by: the router starts the review; the owner signs."
 details:
   base: "wu/E-APPLIST/w6-list-screens off epic/E-APPLIST at 8232d92"
+  review-round-1:
+    note: "cr note on 7ff5adb: FAIL, 7 blockers, 4 importants. Each fix had its failing test first; every commit passed typecheck, lint, test:main and test:window first (a gate that stops on the first red)."
+    fixes:
+      - {finding: "items.ts:82 (blocker)", fix: "GitFacts.open from reader/git.ts openSets; items.ts draws from it", commit: 0d3e14c, test: "git-read.test.ts openSets; items.test.ts open sets; git-facts.test.ts café task never listed"}
+      - {finding: "items.ts:167 (blocker)", fix: "shQuote on every name in a pasted line; task names only from the refOk-filtered open sets", commit: 94bc090, test: "items.test.ts shQuote cases, a seeded property (one shell word holding the name), quoted task and push lines"}
+      - {finding: "items.ts:115 (important)", fix: "a result id carries its branch's hash", commit: f2451b2, test: "items.test.ts two branches of one unit on one tip"}
+      - {finding: "open.ts:148 (blocker)", fix: "a tipless plan has open 'none' and says why", commit: f33b3d1, test: "items.test.ts; items-flow.test.ts through the real router-app.sh"}
+      - {finding: "index.ts:191 (blocker)", fix: "Focus.point(wu, project); the alert's click carries its project; Focus.get(project)", commit: b20d4bc, test: "alerts.test.ts; focus.test.ts held alert clicked after a switch"}
+      - {finding: "App.tsx:24 (important)", fix: "Focus.opened(made): a new window keeps the focus only when a click or link opened it; view() answers the focus as it stands", commit: 5b2e32f, test: "alerts.test.ts; focus.test.ts"}
+      - {finding: "handlers.ts:167 (blocker)", fix: "item.open in its own serial queue", commit: 95a09bd, test: "handlers.test.ts two Opens never overlap"}
+      - {finding: "docs.ts:52 (blocker)", fix: "copy order data file, page, rest; cap charged on bytes written; never complete without the page; a complete copy missing the page gets it added", commit: bd73c1e, test: "open.test.ts eight 1 MiB docs sorting first; a non-UTF-8 page; doc-find.test.ts order"}
+      - {finding: "open.ts:100 (blocker)", fix: "a write or folder that collides (EEXIST, ENOTDIR, EISDIR) is skipped", commit: bd73c1e, test: "open.test.ts case twins built with git plumbing"}
+      - {finding: "open.ts:70 (important)", fix: "a crash's .tmp-* removed before a copy", commit: 136df08, test: "open.test.ts"}
+      - {finding: "open.ts:78 (important)", fix: "copies of unlisted projects removed before a copy; projects.remove removes the project's copies", commit: 136df08, test: "open.test.ts; handlers.test.ts"}
   owner-answers: "1a, 2a, 3a, 4a, 5a, all as recommended (recorded in the plan pair, 6bc96b3)"
   layout:
     new: [app/src/shared/items.ts, app/src/main/open/docs.ts, app/src/main/open/open.ts, app/src/main/items/sent.ts, app/src/window/screens/Nav.tsx, app/src/window/screens/Waits.tsx, app/src/window/ui/ItemRow.tsx]
