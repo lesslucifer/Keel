@@ -17,5 +17,5 @@
     "skipLibCheck": true,
     "allowJs": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test-window/**/*.ts", "test-window/**/*.tsx", "*.ts", "*.js", "eslint-rules/*.js", "eslint-rules/*.d.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "e2e/**/*.ts", "test-window/**/*.ts", "test-window/**/*.tsx", "*.ts", "*.js", "eslint-rules/*.js", "eslint-rules/*.d.ts"]
 }
