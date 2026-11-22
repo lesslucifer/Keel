@@ -26,7 +26,9 @@ export const ALERTS_KEPT = 20;
 /** The most of the log or the state the reader reads at once: the writer keeps 2,000 lines of at most 1,024 bytes. */
 export const READ_CAP = 4 * 1024 * 1024;
 
-const WU = 'E-[A-Z0-9]{1,16}\\.W[0-9]{1,3}';
+/** A work unit id, E-<CODE>.W<m>: router-app.sh's wu, and the one pattern the app's keel:// link takes too. */
+export const WU_SOURCE = 'E-[A-Z0-9]{1,16}\\.W[0-9]{1,3}';
+const WU = WU_SOURCE;
 const ID = '[a-z0-9][a-z0-9-]{0,40}';
 /** The keys router-app.sh accepts, its key_ok. */
 export const KEY = new RegExp(`^(?:router|facts|wu/${WU}/(?:stage|conflict)|epic/E-[A-Z0-9]{1,16}/paused|question/${ID}|worker/${ID}(?:/report)?)$`);

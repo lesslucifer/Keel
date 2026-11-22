@@ -4,9 +4,10 @@
 // Any program may open a keel:// link, so a link only points the window at a work unit: it runs nothing.
 
 import { plain } from '../text.ts';
+import { WU_SOURCE } from '../reader/log.ts';
 
 export const LINK_CAP = 64;
-const LINK = /^keel:\/\/wu\/(E-[A-Z0-9]{1,16}\.W[0-9]{1,3})$/;
+const LINK = new RegExp(`^keel://wu/(${WU_SOURCE})$`);
 
 /** The work unit a link names, or null for anything but keel://wu/E-<CODE>.W<m>. */
 export function parseLink(url: unknown): { wu: string } | null {

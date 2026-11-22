@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { decide, alertOf, summaryOf, parseRecord, emptyRecord, Focus, RECORD_CAP, RUNS_KEPT, heldSink, HELD_CAP, type Clickable, type AlertRecord } from '../../src/main/alerter/alerts.ts';
 import { parseLink, openLink, schemeText, LINK_CAP } from '../../src/main/alerter/link.ts';
 import { seamsOf } from '../../src/main/alerter/seams.ts';
-import type { StoredAlert } from '../../src/main/reader/log.ts';
+import { WU_ID, WU_SOURCE, type StoredAlert } from '../../src/main/reader/log.ts';
 import { seeded, hostileString, pick } from '../support/seeded.ts';
 
 const RUN = 'keel-1c.20261122-083000.4242';
@@ -194,4 +194,14 @@ test('the sink holds at most its cap, dropping the oldest; a make that throws sh
   });
   assert.doesNotThrow(() => broken.show({ title: 't', body: 'b', wu: null }, () => undefined));
   assert.equal(broken.held(), 0);
+});
+
+test('property: a link\'s work unit is exactly what the log takes as an alert\'s wu (one pattern, WU_SOURCE)', () => {
+  assert.equal(WU_ID.source, `^${WU_SOURCE}$`);
+  const rng = seeded(0x3b);
+  const chars = [...'EAW.-019Z'.repeat(3), 'a', '_', '/'];
+  for (let i = 0; i < 3000; i++) {
+    const id = pick(rng, ['E-', 'E-', '']) + hostileString(rng, 20, chars);
+    assert.equal(parseLink(`keel://wu/${id}`) !== null, WU_ID.test(id) && `keel://wu/${id}`.length <= LINK_CAP, id);
+  }
 });

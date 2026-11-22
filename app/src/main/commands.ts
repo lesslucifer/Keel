@@ -12,6 +12,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { Socket } from 'node:net';
 import path from 'node:path';
+import { NOTE_KINDS } from '../shared/contract.ts';
 
 export const LOCKED: readonly string[] = Object.freeze(['-c', 'core.fsmonitor=false', '--no-optional-locks', '--no-lazy-fetch']);
 
@@ -46,8 +47,8 @@ type SlotName = 'project' | 'kind' | 'ref' | 'object';
 type Token = string | { readonly slot: SlotName; readonly prefix?: string };
 const PROJECT: Token = Object.freeze({ slot: 'project' as const });
 
-/** The note kinds a notes read takes (contract.ts NOTE_KINDS). */
-const KINDS: readonly string[] = Object.freeze(['mr', 'cr', 'dod']);
+/** The note kinds a notes read takes: the contract's, one list. */
+const KINDS: readonly string[] = NOTE_KINDS;
 
 /** One part of a branch name: no leading dash or dot, no '..', not ending in '.' or '.lock' (git check-ref-format, narrowed). */
 const SEG = '[A-Za-z0-9][A-Za-z0-9._-]{0,99}';
