@@ -552,6 +552,46 @@ open:
     source: >-
       E-GHFLOW.W3 result, security review round 2 (the shared git dir, left after R33's fix; DEC-37, amended). For the next router epic.
     taken-by: "unowned: the next router epic"
+  - id: R52
+    title: "Hardening the update log's writers (router-app.sh, the watchdog's app lines)"
+    status: "open: nits and test gaps, nothing known to fail in use"
+    problem: >-
+      E-APPLIST.W1 and W2 left four nits in scripts/router-app.sh and seven surviving mutants plus two test gaps in
+      the watchdog's app lines (scripts/router-worker.sh), each needing a hand edit, an odd environment or a
+      not-yet-seen input to matter. Both scripts are rule-bearing: each fix is the owner's typed commit.
+    proposal: >-
+      One small router WU: the four script fixes below, each with a failing test first; for each surviving mutant a
+      test that turns it red, or a note of why it is equivalent.
+    source: >-
+      E-APPLIST.W1 result, follow-ups N1 - N4 (b0cb60d); E-APPLIST.W2 result, follow-ups (7c6ac22), the independent
+      review of scripts/router-worker.sh at 95c16af. Recorded by the E-APPLIST.W5 plan's follow-up.
+    taken-by: "unowned: the next router epic, or a small WU of E-APPLIST before its close, the owner's choice"
+    items:
+      - >-
+        W1 N1, router-app.sh:119-121: a hardlinked log.jsonl or state.json passes the regular-file check (needs a
+        same-user write). Fix: refuse a link count over 1.
+      - >-
+        W1 N2, router-app.sh:162-181: a hand-corrupted state.json holding two JSON values, or a non-integer .n,
+        garbles the parse or is carried on; an empty state.json makes each writer exit 0, append an empty line and
+        write a blank state until a start. Fix: read it with jq -s, check it holds exactly one value and n is a whole
+        number; the wrong-shape test takes the three cases.
+      - >-
+        W1 N3, router-app.sh:33: an exported CDPATH makes the script fail closed (exit 1). Fix:
+        HERE=$(CDPATH= cd -P -- ...).
+      - >-
+        W1 N4, router-app.sh:131-138: a signal between mkdir and the trap leaves a stale lock; any mkdir failure (an
+        unwritable dir) reports LOCKED after 5 s. Fix: set the trap before the loop; fail at once when the dir is not
+        writable.
+      - >-
+        W2, surviving mutants of router-worker.sh at 95c16af that no watchdog test pins: M10 (the write calls lose
+        their </dev/null), M11 (app_lines loses its symlink check), M12 (app_lines loses its name check), M19 (no gd
+        guard), M20 (a state whose values are not an object read as {}). M15a and M15b are pinned since 142ed86.
+      - >-
+        W2, a test that starts a run and then trips the git-dir check, to pin that nothing is written then (met by
+        construction today).
+      - >-
+        W2, a per-worker jq that failed would drop that worker's row, and the write step would then delete its line;
+        no input is known to make it fail. Fix: a guard that marks the tick unreadable instead.
 closed:
   - id: R1
     title: "Worker persona missing in branches without it"

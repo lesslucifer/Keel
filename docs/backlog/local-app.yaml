@@ -55,6 +55,21 @@ open:
         E-APPLIST.W8 result and its cr note; recorded by the E-APPLIST.W5 plan. Taken by: E-APPLIST.W6 if the helper
         refuses its honest screen code, else this row at E-APPLIST's close (W9), which re-points it to a row of its
         own if still open.
+      - >-
+        Back to TypeScript 7 when typescript-eslint can read it: W8 pinned one TypeScript, 6.0.3, for both the type
+        check and the lint, because typescript-eslint cannot parse 7 (W8 plan open point 2, the owner's answer of
+        2026-11-22). Source: E-APPLIST.W8 result, follow-ups (796fb29). Taken by: this row; at E-APPLIST's close (W9)
+        it moves to a row of its own if typescript-eslint still cannot read 7.
+      - >-
+        A tool reached through a chain of links whose middle hop is inside a project (/usr/local/bin/git ->
+        <proj>/bin/git -> /outside/git) is still accepted; fix by walking each link hop (W7 review round 3's refuted
+        candidate). Source: E-APPLIST.W7 result, follow-ups (791eca7). Taken by: this row; at E-APPLIST's close (W9)
+        it moves to a row of its own if still open.
+      - >-
+        After a left job that wrote past LATE_OUTPUT_CAP ends, its paused pipe is never read to its end, so the app
+        keeps that pipe and the capture's answer until it quits (W7 review round 4's waived nit, app/src/main/commands.ts:177;
+        bounded, at most the login-shell read once per launch). Source: E-APPLIST.W7 result, follow-ups (791eca7).
+        Taken by: this row; at E-APPLIST's close (W9) it moves to a row of its own if still open.
 
   - id: A4
     title: "E-APPSIGN · Sign off and merge from the app"
