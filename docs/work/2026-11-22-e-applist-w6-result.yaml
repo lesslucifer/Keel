@@ -7,7 +7,7 @@ date: "2026-11-22"
 page: 2026-11-22-e-applist-w6-result.html
 outcome: >-
   Delivered, the owner's live check pending; review round 1 (FAIL: 7 blockers, 4 importants) fixed in nine
-  commits (details.review-round-1), round 2 (FAIL: 6 blockers, 1 important, 2 nits) in seven (details.review-round-2). With a project listed the window opens on screen 2, Waits on you: the
+  commits (details.review-round-1), round 2 (FAIL: 6 blockers, 1 important, 2 nits) in seven (details.review-round-2), round 3 (FAIL: 2 blockers, 2 importants, 1 nit) in four (details.review-round-3). With a project listed the window opens on screen 2, Waits on you: the
   main part draws every item of this epic's kinds from W5's view on each read (src/shared/items.ts), in three groups
   (yours, not yours, sent) with its work unit, branch, tip, since when, why and who acts, entering and leaving on its
   source with no click, drawn only from the open branches the reader lists (GitFacts.open, one rule) - a work unit's result on a PASS or WAIVED review note with no sign-off, to merge on the
@@ -22,7 +22,7 @@ outcome: >-
   row. Mark sent and Not sent move a plan or a question to and from Sent, kept in sent.json in the app's folder
   across a restart. A click on an alert or a keel:// link brings Waits on you forward with that work unit's items
   marked; a project switch clears the focus. The macOS alert names the project as its subtitle. Screen 6 shows the
-  counts, each a way to the list, and the last change seen. node --test 385 (384 pass, 1 skipped in the worker's
+  counts, each a way to the list, and the last change seen. node --test 390 (389 pass, 1 skipped in the worker's
   sandbox, as at W5), Vitest 230, typecheck, lint and keel check green. Nothing was built or packaged; the owner's
   live check (browser mode, then pnpm start) waits for him, the sandbox refusing the port both bind.
 deviations:
@@ -56,6 +56,8 @@ evidence:
     - "review round 1: 0d3e14c (items.ts:82), 94bc090 (items.ts:167), f2451b2 (items.ts:115), f33b3d1 (open.ts:148), b20d4bc (index.ts:191), 5b2e32f (App.tsx:24), 95a09bd (handlers.ts:167), bd73c1e (docs.ts:52, open.ts:100), 136df08 (open.ts:70, open.ts:78)"
     - "54f1609 docs: the result pair records round 1"
     - "review round 2: 4c947e0 (items.ts:103), 6baa841 (items.ts:180), c47b466 (items.ts:153), 4bb4038 (App.tsx:24), 0b7d3c5 (open.ts:117, open.ts:151, nit open.ts:134), d43df59 (index.ts:233), cc601a4 (nit handlers.ts:143)"
+    - "81b6dc9 docs: the result pair records round 2"
+    - "review round 3: aec27ee (items.ts:155, git.ts:350), ffdec96 (handlers.ts:144), d290812 (alerts.ts:152), f3a7cd9 (open.ts:124, nit open.ts:143)"
     - "and the commit carrying this update"
   tests-added:
     unit:
@@ -78,7 +80,7 @@ evidence:
       - "app/test-window/integration/waits.test.tsx (new, 11), nav.test.tsx (new, 3); projects.test.tsx (+2, and its draws on the Projects tab); fake.test.ts (+3); browser.test.tsx (+1, and its default case); grounds.test.tsx draws every view and screen 6's list field"
   red-first: "Each step's tests ran red before its code: bridge tests 4 failing on the old bridge (c3fd0b3); items.test.ts not loading (652b22a); commands 3 failing, git-read not loading, items-flow 5 of 6 failing (42b2caa); doc-find and open not loading (ad8d008); sent not loading (5067369); alerts 2 and focus 2 failing (d39e63a); waits, nav and hooks 15 failing on the previous frame (bd1cb17); projects 2 failing (25fdc97)."
   runs:
-    test-main: "pnpm test:main: 385 tests, 384 pass, 1 skipped (watch-view's real fs.watch test: EMFILE in the worker's sandbox, as at W5); baseline 297"
+    test-main: "pnpm test:main: 390 tests, 389 pass, 1 skipped (watch-view's real fs.watch test: EMFILE in the worker's sandbox, as at W5); baseline 297"
     test-window: "pnpm test:window: 230 passed (24 files), run three times green; baseline 207"
     lint: "pnpm lint: green (ESLint and the emitted-CSS check)"
     typecheck: "pnpm typecheck: green"
@@ -154,6 +156,14 @@ details:
     view: "View gains items, counts and changedAt; GitFacts gains reviews and times"
   seams-for-w9:
     KEEL_APP_OPEN_SINK: "an absolute file; each URL Open would hand the browser is appended as {url, at}; read only when not packaged"
+  review-round-3:
+    note: "cr note on 81b6dc9: FAIL, 2 blockers, 2 importants, 1 nit, all from round-2 fixes; every round-2 fix held. Each fix had its failing test first; every commit passed the gate first."
+    fixes:
+      - {finding: "alerts.ts:152 (blocker)", fix: "Focus.read(seq), reported by waiting.get (Parts.seen); a new window or a reload drops only a focus a page has read, so a click during a reload survives (the pending flag is gone)", commit: d290812, test: "alerts.test.ts the real order point, opened(false), loaded(false); focus.test.ts; handlers.test.ts waiting.get reports the seq it handed out"}
+      - {finding: "items.ts:155 (blocker)", fix: "parseRemote drops a remote starting with '-'; the item rules refuse one too: no push line", commit: aec27ee, test: "git-read.test.ts parseRemote; items.test.ts"}
+      - {finding: "handlers.ts:144 (important)", fix: "projects.remove lets the settings queue go once the project is removed, then waits on the Opens' queue for the rm", commit: ffdec96, test: "handlers.test.ts with an explicit hold on the Open: state.get answers while it is held, the copies wait for it (the 50 ms sleep is gone)"}
+      - {finding: "open.ts:124 (important)", fix: "a kept copy's data files and page are checked in-process against the tree read's blob ids (git's blob hash); a reuse is one git call", commit: f3a7cd9, test: "open.test.ts a logging git wrapper: one call (ls-tree) on reuse"}
+      - {finding: "open.ts:143 (nit)", fix: "the head pass's texts are kept until the copy loop writes them", commit: f3a7cd9, test: "open.test.ts no blob read twice in a fresh copy"}
   live-checks:
     by: "the owner on his Mac, about ten minutes, from this worktree's app folder; no build"
     steps:
