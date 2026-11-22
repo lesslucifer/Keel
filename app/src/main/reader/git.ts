@@ -6,7 +6,7 @@
 // the reader asks the project's config once per git and remembers the answer.
 
 import { NOTE_KINDS, type GitBranch, type GitFacts, type GitWorktree, type NoteKind } from '../../shared/contract.ts';
-import { run, refusedFlag, refOk, MIN_GIT, OLDEST_GIT, type Captured, type CommandName, type RunOptions } from '../commands.ts';
+import { run, refusedFlag, refOk, MIN_GIT, OLDEST_GIT, OUTPUT_CAP, type Captured, type CommandName, type RunOptions } from '../commands.ts';
 
 const ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const HEADS = 'refs/heads/';
@@ -95,6 +95,7 @@ function failed(r: Captured, what: string): string | null {
   if (r.startError !== null) return `git could not start (${r.startError})`;
   if (r.timedOut) return `git did not answer (${what})`;
   if (r.code !== 0) return `git could not read the project (${what}, exit ${r.code ?? 'killed'})`;
+  if (r.cut) return `git's answer was cut at ${OUTPUT_CAP / 1024 / 1024} MiB (${what}): not read`;
   return null;
 }
 

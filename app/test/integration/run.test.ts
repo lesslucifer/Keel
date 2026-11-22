@@ -172,6 +172,17 @@ test('output past the cap is dropped, and the run still ends', async (t) => {
   const r = await capture(big, [], { PATH: '/usr/bin:/bin' }, 10_000);
   assert.equal(r.code, 0);
   assert.equal(r.stdout.length, OUTPUT_CAP);
+  assert.equal(r.cut, true, 'a cut answer says so: a reader must not take it as whole');
+});
+
+test('an answer within the cap is not cut, on stdout or stderr; one past it on stderr is', async (t) => {
+  const dir = tempDir(t, 'run');
+  const small = program(path.join(dir, 'small'), '#!/bin/sh\necho out; echo err >&2\n');
+  assert.equal((await capture(small, [], { PATH: '/usr/bin:/bin' }, 10_000)).cut, false);
+  const exact = program(path.join(dir, 'exact'), `#!/bin/sh\n/usr/bin/head -c ${OUTPUT_CAP} /dev/zero\n`);
+  assert.equal((await capture(exact, [], { PATH: '/usr/bin:/bin' }, 10_000)).cut, false);
+  const noisy = program(path.join(dir, 'noisy'), `#!/bin/sh\n/usr/bin/head -c ${OUTPUT_CAP + 1} /dev/zero >&2\n`);
+  assert.equal((await capture(noisy, [], { PATH: '/usr/bin:/bin' }, 10_000)).cut, true);
 });
 
 test('a git path that is not absolute is refused before anything runs', async () => {

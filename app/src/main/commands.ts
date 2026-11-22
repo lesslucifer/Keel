@@ -136,6 +136,8 @@ export interface Captured {
   timedOut: boolean;
   /** Why it never started (ENOENT, EACCES, ...), else null. */
   startError: string | null;
+  /** A stream passed OUTPUT_CAP and was cut: the answer is not whole, and a reader must not take it as whole. */
+  cut: boolean;
 }
 
 /** How long the pipes may stay open once the program itself has exited, for its last output to arrive. */
@@ -188,7 +190,7 @@ export function capture(file: string, args: readonly string[], env: Record<strin
         if (stream instanceof Socket) stream.unref();
       }
       child?.unref();
-      const answer = { code, startError, timedOut, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') };
+      const answer = { code, startError, timedOut, cut: size.out > OUTPUT_CAP || size.err > OUTPUT_CAP, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') };
       // The output is copied into the answer, so its chunks are dropped here. While a left job keeps the
       // pipes open, the still-attached data listeners keep this closure, and so the answer, reachable:
       // at most twice OUTPUT_CAP per such capture, freed when the pipes close (a paused one: at quit).

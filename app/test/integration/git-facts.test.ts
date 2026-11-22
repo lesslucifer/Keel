@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { GitReader } from '../../src/main/reader/git.ts';
+import { OUTPUT_CAP } from '../../src/main/commands.ts';
 import { tempDir, realGit, sh, snapshot, mk, oldGit, records, program } from '../support/fs.ts';
 
 const GIT = realGit();
@@ -105,4 +106,15 @@ test('a git that fails says why and reads nothing; the next read with a good git
   assert.deepEqual([facts.branches, facts.worktrees], [[], []]);
   assert.match(facts.problem ?? '', /git/);
   assert.equal((await reader.read(GIT)).problem, null);
+});
+
+test('a git answer cut at the output cap is a problem, never read as whole: no branch, merge or note from half an answer', async (t) => {
+  const { root, dir } = world(t);
+  const row = `refs/heads/wu/E-A/w${'x'.repeat(60)}\u0000${'a'.repeat(40)}\u0000\u0000\n`;
+  const rows = path.join(root, 'rows.txt');
+  writeFileSync(rows, row.repeat(Math.ceil((OUTPUT_CAP + 1) / Buffer.byteLength(row))));
+  const big = program(path.join(mk(path.join(root, 'big')), 'git'), `#!/bin/sh\ncat ${rows}\n`);
+  const facts = await new GitReader(dir, opts(root)).read(big);
+  assert.deepEqual(facts.branches, []);
+  assert.match(facts.problem ?? '', /cut/);
 });

@@ -108,7 +108,7 @@ test('a git older than 2.45 runs the same lines without --no-lazy-fetch, and onl
 
 test('the locked flag an old git refused is read from exit 129 and the flag named in stderr, in any language or case', () => {
   const usage = 'usage: git [--version] [--help] [-C <path>] [-c <name>=<value>]\n';
-  const r = (code: number | null, stderr: string) => ({ code, stderr, stdout: '', timedOut: false, startError: null });
+  const r = (code: number | null, stderr: string) => ({ code, stderr, stdout: '', timedOut: false, startError: null, cut: false });
   for (const line of ['unknown option: --no-lazy-fetch', 'Unknown option: --no-lazy-fetch', 'Unbekannte Option: --no-lazy-fetch', 'option inconnue : --no-lazy-fetch']) {
     assert.equal(refusedFlag(r(129, `${line}\n${usage}`)), '--no-lazy-fetch', line);
   }
