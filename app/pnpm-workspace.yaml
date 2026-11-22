@@ -1,0 +1,8 @@
+# pnpm's settings for the app (E-APPLIST.W10). pnpm 11 reads them here, not from .npmrc.
+# A flat node_modules, as npm laid it out: Electron Forge's packager copies node_modules into the app and
+# needs a flat tree under pnpm.
+nodeLinker: hoisted
+# pnpm 11 fails an install on any build script not listed here. fsevents ships its binary prebuilt: its
+# rebuild never runs. Electron 45 has no install script (it fetches its binary on first run).
+allowBuilds:
+  fsevents: false

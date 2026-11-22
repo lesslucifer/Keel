@@ -479,7 +479,7 @@ export function contentProblems(globs, sources) {
 // ---- The whole check ----
 
 /**
- * Every problem the four parts find in the shipped CSS, as npm run lint prints them; empty when the
+ * Every problem the four parts find in the shipped CSS, as pnpm lint prints them; empty when the
  * guarantee holds. `content` replaces Tailwind's content list (a test's probe).
  * @param {{ content?: unknown[] }} [options]
  */

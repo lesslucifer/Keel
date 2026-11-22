@@ -1,4 +1,4 @@
-// The browser mode's entry (npm run dev:browser, DEC-74): the window's screens in a plain browser, no
+// The browser mode's entry (pnpm dev:browser, DEC-74): the window's screens in a plain browser, no
 // Electron and no main part, against the fake bridge built from fixtures. ?state= picks the scenario;
 // ?scheme=light|dark forces one world (data-scheme on the page's root, fake/scheme.css) so the owner
 // sees both without changing the Mac; without it the Mac picks, as in the shipped page.
