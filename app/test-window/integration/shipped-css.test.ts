@@ -5,11 +5,11 @@
 // <link>, <style> and style=; anything but styles.css is refused. styles.css is judged at source,
 // declaration by declaration: once compiled, a raw div{margin:7px} and an @apply of a token look
 // alike. And it fails closed: content matching nothing, or Tailwind emitting no class, is refused.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expect, test } from 'vitest';
-import { contentProblems, emittedClasses, graphProblems, htmlProblems, shippedCssProblems, stylesheetProblems } from '../../eslint-rules/emitted.js';
+import { configProblems, contentProblems, emittedClasses, graphProblems, htmlProblems, packageProblems, shippedCssProblems, shippedSources, sourceProblems, stylesheetProblems } from '../../eslint-rules/emitted.js';
 import { SOURCE_GLOBS } from '../../window-sources.js';
 
 const APP = path.resolve(import.meta.dirname, '..', '..');
@@ -107,4 +107,141 @@ test('fail closed: Tailwind emitting no class at all is refused', async () => {
 
 test('the whole check on the real tree finds nothing', async () => {
   expect(await shippedCssProblems()).toEqual([]);
+}, 20_000);
+
+// Review round 4 (emitted.js:130): a template dynamic import puts Vite's virtual
+// '\0vite/dynamic-import-helper.js' in the graph; the walk read it as a file and crashed lint.
+test('a template dynamic import is honest: the walk skips virtual ids and finds nothing', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'keel-css-'));
+  try {
+    mkdirSync(path.join(dir, 'ui'));
+    writeFileSync(path.join(dir, 'index.html'), '<!doctype html><script type="module" src="./main.ts"></script>');
+    writeFileSync(path.join(dir, 'styles.css'), 'p { color: black; }');
+    writeFileSync(path.join(dir, 'ui', 'a.ts'), 'export const a = 1;\n');
+    writeFileSync(path.join(dir, 'main.ts'), "import './styles.css';\nconst n = 'a';\nexport const load = () => import(`./ui/${n}.ts`);\n");
+    expect(await graphProblems({ root: dir, configFile: false, entry: '/main.ts', allowed: path.join(dir, 'styles.css'), namer: path.join(dir, 'main.ts') })).toEqual([]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 20_000);
+
+// Review round 4 (emitted.js:97): the walk shared node_modules/.vite with vitest and crashed with
+// ERR_OUTDATED_OPTIMIZED_DEP when both ran at once. Each walk now owns a fresh cache, removed after.
+test('each walk uses its own cache directory outside app/, fresh per run and removed after', async () => {
+  const dirs: string[] = [];
+  expect(await graphProblems({ onCacheDir: (d: string) => dirs.push(d) })).toEqual([]);
+  expect(await graphProblems({ onCacheDir: (d: string) => dirs.push(d) })).toEqual([]);
+  expect(dirs.length).toBe(2);
+  expect(dirs[0]).not.toBe(dirs[1]);
+  for (const d of dirs) {
+    expect(realpathSync(path.dirname(d))).toBe(realpathSync(os.tmpdir()));
+    expect(d.startsWith(APP)).toBe(false);
+    expect(existsSync(d)).toBe(false);
+  }
+}, 40_000);
+
+// Review round 4 (emitted.js:105): a CommonJS package's require('./x.css') never shows in Vite's dev
+// graph, yet the build ships it. The rule for packages is simpler and complete: the shipped sources
+// may import only packages listed in package.json's dependencies, and no package in their installed
+// closure (dependencies, optional and peer, followed) may hold a stylesheet file at all, however it is
+// reached (require, import, ?inline, ?raw).
+function fakeApp(deps: Record<string, string>, packages: Record<string, Record<string, string>>): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'keel-pkg-'));
+  writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'probe', dependencies: deps }));
+  for (const [name, files] of Object.entries(packages)) {
+    for (const [file, text] of Object.entries(files)) {
+      const at = path.join(dir, 'node_modules', name, file);
+      mkdirSync(path.dirname(at), { recursive: true });
+      writeFileSync(at, text);
+    }
+  }
+  return dir;
+}
+
+test('a stylesheet anywhere in a runtime dependency\'s closure is refused: a CommonJS require, a nested dependency', () => {
+  const dir = fakeApp({ 'rogue-cjs': '1.0.0' }, {
+    'rogue-cjs': { 'package.json': JSON.stringify({ name: 'rogue-cjs', main: 'index.js', dependencies: { 'deep-dep': '1.0.0' } }), 'index.js': "require('./x.css');\n", 'x.css': 'div { margin: 7px; }' },
+    'deep-dep': { 'package.json': JSON.stringify({ name: 'deep-dep' }), 'lib/y.scss': 'p { color: red; }' },
+  });
+  try {
+    const text = packageProblems(dir).join('\n');
+    expect(text).toMatch(/rogue-cjs.*x\.css/);
+    expect(text).toMatch(/deep-dep.*y\.scss/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a symlinked node_modules (a copy, a pnpm-style store) is followed: a nested dependency is still found and judged', () => {
+  const dir = fakeApp({ host: '1.0.0' }, {
+    host: { 'package.json': JSON.stringify({ name: 'host', dependencies: { inner: '1.0.0' } }), 'index.js': '' },
+    inner: { 'package.json': JSON.stringify({ name: 'inner' }), 'z.css': 'p { color: red; }' },
+  });
+  const store = mkdtempSync(path.join(os.tmpdir(), 'keel-store-'));
+  try {
+    renameSync(path.join(dir, 'node_modules'), path.join(store, 'node_modules'));
+    symlinkSync(path.join(store, 'node_modules'), path.join(dir, 'node_modules'));
+    const problems = packageProblems(dir);
+    expect(problems.join('\n')).toMatch(/inner.*z\.css/);
+    expect(problems.join('\n')).not.toMatch(/not installed/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(store, { recursive: true, force: true });
+  }
+});
+
+test('the real runtime dependencies (react, react-dom and their closure) hold no stylesheet', () => {
+  expect(packageProblems()).toEqual([]);
+});
+
+test('a shipped source may import only a runtime dependency: a dev dependency or an unlisted package is refused, a type-only import is not', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'keel-src-'));
+  try {
+    const file = path.join(dir, 'a.tsx');
+    writeFileSync(file, "import { createRoot } from 'react-dom/client';\nimport type { Plugin } from 'vite';\nimport x from 'rogue-cjs';\nconst y = require('@scope/pkg/sub');\nconst z = await import('left-pad');\nexport { x, y, z, createRoot };\n");
+    const text = sourceProblems([file]).join('\n');
+    expect(text).toMatch(/rogue-cjs/);
+    expect(text).toMatch(/@scope\/pkg/);
+    expect(text).toMatch(/left-pad/);
+    expect(text).not.toMatch(/react-dom|vite/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a shipped source may name no stylesheet and inject no style: require, ?raw, new URL, a style element, a constructed sheet', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'keel-src-'));
+  try {
+    const file = path.join(dir, 'b.tsx');
+    writeFileSync(file, "const a = require('./a.css');\nimport raw from './b.css?raw';\nconst u = new URL('./c.css', import.meta.url);\nconst s = document.createElement('style');\nconst t = new CSSStyleSheet();\ndocument.adoptedStyleSheets = [t];\nexport const E = () => <style>{raw}</style>;\nexport { a, u, s };\n");
+    const text = sourceProblems([file]).join('\n');
+    for (const named of [/a\.css/, /b\.css\?raw/, /c\.css/, /createElement\('style'\)/, /CSSStyleSheet/, /adoptedStyleSheets/, /<style/]) expect(text).toMatch(named);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the shipped sources are every file under src/window but browser mode\'s, and src/shared; the only stylesheet among them is styles.css', () => {
+  const files = shippedSources().map((f: string) => path.relative(APP, f));
+  expect(files).toContain(path.join('src', 'window', 'main.tsx'));
+  expect(files).toContain(path.join('src', 'window', 'ui', 'Badge.tsx'));
+  expect(files).toContain(path.join('src', 'shared', 'contract.ts'));
+  expect(files.filter((f: string) => f.includes('browser') || f.includes(`${path.sep}fake${path.sep}`))).toEqual([]);
+  expect(files.filter((f: string) => /\.(css|scss|less)$/.test(f))).toEqual([path.join('src', 'window', 'styles.css')]);
+  expect(sourceProblems(shippedSources())).toEqual([]);
+});
+
+test('the renderer config adds no plugin and no CSS step the check has not judged', async () => {
+  expect(await configProblems()).toEqual([]);
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'keel-cfg-'));
+  try {
+    const cfg = path.join(dir, 'vite.config.mjs');
+    writeFileSync(cfg, "export default { plugins: [{ name: 'rogue:inject-style', transformIndexHtml: (h) => h }], css: { postcss: { plugins: [] }, preprocessorOptions: { scss: { additionalData: 'p{}' } } } };\n");
+    const text = (await configProblems(cfg)).join('\n');
+    expect(text).toMatch(/rogue:inject-style/);
+    expect(text).toMatch(/preprocessorOptions/);
+    expect(text).toMatch(/postcss/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }, 20_000);
