@@ -1,14 +1,15 @@
 // Screen 6, Projects (docs/local-app.html 'The screens'): the one project with Remove, or Add when
 // there is none; keel, git and claude each with its path, its source, its problem, Choose and, when
-// set in Keel, Use the PATH; where the PATH came from; the test alert; the version at the foot. Each
+// set in Keel, Use the PATH; where the PATH came from; the test alert; the version at the foot. W6: the
+// project's list field (6.4, the counts, each a way to Waits on you; 6.5, when Keel last saw a change). Each
 // control sends one request through useAction; while one runs every control is off. Every value is
 // React text, never markup. The look is mx3a (the owner's choice, 2026-11-22): white cards on
 // hairlines, one solid black pill at most per card, every other action an outline pill, states in
 // words on a badge whose colour only repeats them, problems in words in the problem colour.
 
-import type { AppState, Tool, ToolState } from '../../shared/contract.ts';
+import type { AppState, Tool, ToolState, View } from '../../shared/contract.ts';
 import { TOOL_NAMES } from '../../shared/contract.ts';
-import type { ActionView } from '../hooks.ts';
+import { sinceText, type ActionView } from '../hooks.ts';
 import { Badge, type Tone } from '../ui/Badge.tsx';
 import { Button } from '../ui/Button.tsx';
 import { Path } from '../ui/Path.tsx';
@@ -48,7 +49,27 @@ function ToolRow({ tool, t, action }: { tool: Tool; t: ToolState; action: Action
   );
 }
 
-export function Projects({ state, action, error }: { state: AppState; action: ActionView; error: string }) {
+/** Fields 6.4 and 6.5: how many wait on you, are a worker's and are sent, each a way to the list; and when Keel last saw a change. */
+function ListField({ waiting, onShowWaits }: { waiting: View | null; onShowWaits: () => void }) {
+  const counts = waiting === null || waiting.project === null ? null : waiting.counts;
+  const last = waiting?.changedAt == null ? '' : sinceText(waiting.changedAt).replace(/^since /, '');
+  return (
+    <Row label="The list">
+      {counts === null ? (
+        <span className="text-ink-secondary">Not read yet.</span>
+      ) : (
+        <div className="flex flex-wrap gap-xs">
+          <Button disabled={false} onClick={onShowWaits}>{`${counts.yours} wait on you`}</Button>
+          <Button disabled={false} onClick={onShowWaits}>{`${counts.notYours} not yours`}</Button>
+          <Button disabled={false} onClick={onShowWaits}>{`${counts.sent} sent`}</Button>
+        </div>
+      )}
+      {last === '' ? null : <span className="text-ui-sm text-ink-secondary">{`Last change seen ${last}`}</span>}
+    </Row>
+  );
+}
+
+export function Projects({ state, action, error, waiting = null, onShowWaits = () => undefined }: { state: AppState; action: ActionView; error: string; waiting?: View | null; onShowWaits?: () => void }) {
   const { busy, run, note } = action;
   const project = state.projects[0];
   return (
@@ -77,6 +98,7 @@ export function Projects({ state, action, error }: { state: AppState; action: Ac
             <Path path={project.path} />
           </Row>
         )}
+        {project === undefined ? null : <ListField waiting={waiting} onShowWaits={onShowWaits} />}
       </Section>
 
       <Section title="Tools">

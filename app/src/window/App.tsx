@@ -63,7 +63,7 @@ export function App({ start }: { start?: Screen } = {}) {
         ) : screen === 'waits' ? (
           <Waits view={waiting.view} error={waiting.error} action={action} focus={focus} />
         ) : (
-          <Projects state={state} action={action} error={error} />
+          <Projects state={state} action={action} error={error} waiting={waiting.view} onShowWaits={() => pick('waits')} />
         )}
       </main>
       {state === null ? null : <footer className="px-xxl pb-xl text-legal text-ink-secondary">{`Keel ${state.version}`}</footer>}

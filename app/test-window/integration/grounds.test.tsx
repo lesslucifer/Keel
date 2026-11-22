@@ -75,6 +75,12 @@ test('every text, its colour inherited or its own, is drawn only on grounds the 
     for (const pair of pairsIn(document.body)) drawn.add(pair);
     cleanup();
   }
+  // Screen 6 with a project listed, its list field (6.4, 6.5) drawn, through its tab.
+  render(<BrowserApp search="?state=one-project&view=every-kind" />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Projects' }));
+  await screen.findByRole('group', { name: 'The list' });
+  for (const pair of pairsIn(document.body)) drawn.add(pair);
+  cleanup();
   expect(drawn.size).toBeGreaterThan(5);
   expect([...drawn].filter((p) => !measured.has(p)).sort()).toEqual([]);
 });

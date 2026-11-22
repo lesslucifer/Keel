@@ -9,6 +9,7 @@ import { TOOL_NAMES, type Answer } from '../../src/shared/contract.ts';
 import { App } from '../../src/window/App.tsx';
 import { BridgeProvider } from '../../src/window/bridge.ts';
 import { deferred, makeStub, ok, sampleState, type Handler, type Stub } from '../support/stub-bridge.ts';
+import { VIEWS, noProjectView } from '../../src/window/fake/fixtures.ts';
 
 function draw(handlers: Parameters<typeof makeStub>[0] = {}): Stub {
   const stub = makeStub(handlers);
@@ -242,4 +243,28 @@ test('a problem, a fallback and an error are words in the problem colour', async
   draw({ 'state.get': () => ok(sampleState({ path: { entries: ['/usr/bin'], source: 'fallback', reason: 'no answer' } })) });
   expect((await screen.findByText('A fallback: no answer.')).className.split(/\s+/)).toContain('text-problem');
   expect(within(tool('claude')).getByText('not found on the PATH').className.split(/\s+/)).toContain('text-problem');
+});
+
+test('W6, fields 6.4 and 6.5: the project shows how many wait, each count a way to Waits on you, and when Keel last saw a change', async () => {
+  const view = structuredClone(VIEWS['every-kind']);
+  view.changedAt = new Date().toISOString();
+  draw({ 'waiting.get': () => ok(view) });
+  await ready();
+  const counts = await screen.findByRole('group', { name: 'The list' });
+  expect(within(counts).getByRole('button', { name: `${view.counts.yours} wait on you` })).toBeInTheDocument();
+  expect(within(counts).getByRole('button', { name: `${view.counts.notYours} not yours` })).toBeInTheDocument();
+  expect(within(counts).getByRole('button', { name: `${view.counts.sent} sent` })).toBeInTheDocument();
+  expect(within(counts).getByText(/^Last change seen \S/)).toBeInTheDocument();
+  await userEvent.click(within(counts).getByRole('button', { name: `${view.counts.notYours} not yours` }));
+  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Waits on you');
+});
+
+test('W6: with no list read yet the project says so; with no project there is no list field', async () => {
+  draw({ 'waiting.get': (): Answer => ({ ok: false, refused: 'fixture' }) });
+  await ready();
+  expect(within(screen.getByRole('group', { name: 'The list' })).getByText('Not read yet.')).toBeInTheDocument();
+  cleanup();
+  draw({ 'state.get': () => ok(sampleState({ projects: [] })), 'waiting.get': () => ok(noProjectView()) });
+  await ready();
+  expect(screen.queryByRole('group', { name: 'The list' })).not.toBeInTheDocument();
 });
