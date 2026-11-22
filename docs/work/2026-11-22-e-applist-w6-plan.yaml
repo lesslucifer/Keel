@@ -71,6 +71,15 @@ test-plan:
     browser, the ?diff=latest hand-off - is the owner's live check (details.live-checks), browser mode first, then
     pnpm start, with no build.
 details:
+  owner-answers:
+    date: "2026-11-22"
+    via: "the router keel-1c: the owner took all five as recommended (1a, 2a, 3a, 4a, 5a)"
+    answers:
+      - "1a. Not yours holds work in motion: plan in work, building, in review, a failed review; it names the worker."
+      - "2a. A task waits on the owner when its tip is outside its work unit and no busy worker is on its branch."
+      - "3a. Open hands the file:// URL to shell.openExternal: the Mac's default app for web pages."
+      - "4a. Main is 'main' only; the project's own [branches] main stays with backlog A5."
+      - "5a. If the lint helper refuses honest screen code, it becomes advisory; emitted.js stays the guard."
   base: "wu/E-APPLIST/w6-list-screens off epic/E-APPLIST at 8232d92 (W1, W2, W3, W5, W7, W8 and W10 merged)"
   inner-loop: >-
     No build, no package, ever, in W6: pnpm test:main (node --test from source), pnpm typecheck, pnpm test:window and
