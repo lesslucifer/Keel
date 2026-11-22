@@ -278,19 +278,67 @@ export function collectClasses(parsed) {
   /** @type {Map<any, boolean>} */
   const taintCache = new Map();
   /** Whether a name holds only strings (or other primitives): nothing done to it later can change them. */
-  const primitive = (/** @type {any} */ variable) =>
-    variable.references.every((/** @type {any} */ ref) => {
-      if (!ref.writeExpr) return true;
-      const w = ref.writeExpr;
-      return w.type === 'Literal' || w.type === 'TemplateLiteral';
-    });
+  const primitive = (/** @type {any} */ variable) => {
+    const writes = variable.references.filter((/** @type {any} */ ref) => ref.writeExpr);
+    return writes.length > 0 && writes.every((/** @type {any} */ ref) => ref.writeExpr.type === 'Literal' || ref.writeExpr.type === 'TemplateLiteral');
+  };
+  /** The function a callee names when its body is in this file and the name is never reassigned, 'global' for an unresolved name, else null. */
+  const functionOf = (/** @type {any} */ callee) => {
+    if (callee.type === 'FunctionExpression' || callee.type === 'ArrowFunctionExpression') return callee;
+    if (callee.type !== 'Identifier') return null;
+    const variable = refOf.get(callee)?.resolved;
+    // Unresolved, or a library global with no declaration here (TypeScript's lib: Object, String).
+    if (!variable || variable.defs.length === 0) return 'global';
+    const def = variable.defs[0];
+    if (def?.type === 'FunctionName') return def.node;
+    const writes = variable.references.filter((/** @type {any} */ ref) => ref.writeExpr);
+    if (def?.type === 'Variable' && writes.length === 1 && /^(?:Arrow)?Function(?:Expression)?$/.test(writes[0].writeExpr.type)) return writes[0].writeExpr;
+    return null;
+  };
+  /** Whether a call changes the table it is handed at argument `at`. */
+  const callChanges = (/** @type {any} */ call, /** @type {number} */ at) => {
+    const callee = call.callee;
+    const dotted = calleeName(callee).dotted;
+    if (MUTATING_CALLS.has(dotted)) return at === 0;
+    // A mutating method borrowed: Array.prototype.push.call(t, ...), [].push.apply(t, ...), Reflect.apply(Array.prototype.push, t, ...).
+    if (callee.type === 'MemberExpression' && ['call', 'apply'].includes(calleeName(callee).last) && callee.object.type === 'MemberExpression') {
+      if (MUTATING_METHODS.has(calleeName(callee.object).last)) return at === 0;
+    }
+    if (dotted === 'Reflect.apply') {
+      const fn = call.arguments[0];
+      return at === 1 && fn?.type === 'MemberExpression' && MUTATING_METHODS.has(calleeName(fn).last);
+    }
+    if (callee.type === 'MemberExpression') {
+      // A method of a global (console.info, JSON.stringify) reads; of a local or imported object, its body is unseen.
+      let root = callee;
+      while (root.type === 'MemberExpression') root = root.object;
+      const owner = root.type === 'Identifier' ? refOf.get(root)?.resolved : undefined;
+      return !(root.type === 'Identifier' && (!owner || owner.defs.length === 0));
+    }
+    const fn = functionOf(callee);
+    if (fn === 'global') return false;
+    if (fn === null) return true;
+    // Its parameter at `at`, followed: changed there (or anything a pattern or rest takes from it) changes the table.
+    for (let i = 0; i < fn.params.length; i += 1) {
+      const param = fn.params[i];
+      if (i > at && param.type !== 'RestElement') break;
+      if (i !== at && param.type !== 'RestElement') continue;
+      const [start, end] = param.range;
+      const vars = scopeManager.getDeclaredVariables(fn).filter((/** @type {any} */ v) => v.defs.some((/** @type {any} */ d) => d.name.range[0] >= start && d.name.range[1] <= end));
+      if (param.type === 'RestElement') return true;
+      return vars.some((/** @type {any} */ v) => tainted(v));
+    }
+    return false;
+  };
   /**
    * Whether a variable's table or array is changed after its declaration, so its values cannot be read:
-   * a member written, updated or deleted, a mutating method called on it or on a member, or the table
-   * handed to a call that writes into its first argument (Object.assign and kin) - directly or through
-   * an alias. A string is never changed, and every other use (a read-only call, String(), a method that
-   * returns, an alias nobody writes, a function it is handed to) is a read: the CSS check is the
-   * guarantee, so the helper errs toward silence on honest code (review round 3).
+   * a member written, updated or deleted, a mutating method called on it or on a member (or borrowed:
+   * Array.prototype.push.call, [].push.apply, Reflect.apply), the table handed to a call that writes
+   * into its first argument (Object.assign and kin), to a local function whose parameter is changed
+   * (followed through), or to a function whose body is not in this file (an import, a parameter, a
+   * method on a local or imported object) - directly or through an alias. A string is never changed;
+   * a global (console, JSON, String), a local function that only reads, and an alias nobody writes are
+   * reads, so honest code stays silent (review rounds 3 and 4; DEC-72 refuses classes built at run time).
    */
   const tainted = (/** @type {any} */ variable) => {
     if (taintCache.has(variable)) return /** @type {boolean} */ (taintCache.get(variable));
@@ -311,8 +359,8 @@ export function collectClasses(parsed) {
         if (up.type === 'AssignmentExpression' && up.left === cur) bad = true;
         else if (up.type === 'UpdateExpression' || (up.type === 'UnaryExpression' && up.operator === 'delete')) bad = true;
         else if (up.type === 'CallExpression' && up.callee === cur && MUTATING_METHODS.has(calleeName(cur).last)) bad = true;
-      } else if (up.type === 'CallExpression' && up.arguments[0] === cur && MUTATING_CALLS.has(calleeName(up.callee).dotted)) {
-        bad = true;
+      } else if (up.type === 'CallExpression' && up.arguments.includes(cur)) {
+        if (callChanges(up, up.arguments.indexOf(cur))) bad = true;
       } else if (up.type === 'VariableDeclarator' && up.init === cur && up.id.type === 'Identifier') {
         // An alias: a read, unless the alias itself is changed.
         const alias = scopeManager.getDeclaredVariables(up)[0];

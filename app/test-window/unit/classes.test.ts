@@ -245,3 +245,33 @@ test('a known mutation still makes a table unread: a mutating method, Object.def
   expect(findings(`const o = { k: 'flex' };\nReflect.set(o, 'k', 'p-sm');\nconst C = () => <i className={o.k} />;`)).toEqual(['unread:o.k']);
   expect(findings(`const o = { n: { k: 'flex' } };\no.n.k = 'p-sm';\nconst C = () => <i className={o.n.k} />;`)).toEqual(['unread:o.n.k']);
 });
+
+// Review round 4 (classes.js:314): a table changed out of sight read as its declared value. A table
+// handed to a local function whose parameter is changed (followed through any depth), to an imported
+// function or to a function value it cannot see (a parameter, an alias, a method on a local or
+// imported object), or changed by a mutating method borrowed through call, apply or Reflect.apply, is
+// unread. A function it can read that only reads, and a global (console, JSON), stay reads.
+test('a table changed in a local helper is unread, directly and through another helper', () => {
+  expect(findings(`function set(o, s) { o.k = 'p-' + s; }\nconst A = { k: 'p-xs' };\nset(A, 'sm');\nconst C = () => <i className={A.k} />;`)).toEqual(['unread:A.k']);
+  expect(findings(`const set = (o) => { Object.assign(o, { k: 'p-sm' }); };\nconst A = { k: 'p-xs' };\nset(A);\nconst C = () => <i className={A.k} />;`)).toEqual(['unread:A.k']);
+  expect(findings(`function inner(o) { o.k = 'p-sm'; }\nfunction outer(x) { inner(x); }\nconst A = { k: 'p-xs' };\nouter(A);\nconst C = () => <i className={A.k} />;`)).toEqual(['unread:A.k']);
+  expect(findings(`function set(...xs) { xs[0].k = 'p-sm'; }\nconst A = { k: 'p-xs' };\nset(A);\nconst C = () => <i className={A.k} />;`)).toEqual(['unread:A.k']);
+});
+
+test('a borrowed mutating method changes a table: X.prototype.push.call, [].push.apply, Reflect.apply', () => {
+  expect(findings(`const B = ['flex'];\nArray.prototype.push.call(B, 'p-sm');\nconst C = () => <i className={B.join(' ')} />;`)).toEqual(['unread:B']);
+  expect(findings(`const B = ['flex'];\n[].push.apply(B, ['p-sm']);\nconst C = () => <i className={B.join(' ')} />;`)).toEqual(['unread:B']);
+  expect(findings(`const B = ['flex'];\nReflect.apply(Array.prototype.push, B, ['p-sm']);\nconst C = () => <i className={B.join(' ')} />;`)).toEqual(['unread:B']);
+});
+
+test('a table handed to a function whose body is not in the file is unread: an import, a parameter, a method on an object', () => {
+  expect(findings(`import { fill } from './fill.ts';\nconst A = { k: 'p-xs' };\nfill(A);\nconst C = () => <i className={A.k} />;`)).toEqual(['unread:A.k']);
+  expect(findings(`import * as lib from './lib.ts';\nconst A = { k: 'p-xs' };\nlib.fill(A);\nconst C = () => <i className={A.k} />;`)).toEqual(['unread:A.k']);
+  expect(findings(`const A = { k: 'p-xs' };\nconst C = ({ onPick }) => { onPick(A); return <i className={A.k} />; };`)).toEqual(['unread:A.k']);
+});
+
+test('a table handed to a local function that only reads it, or to a global, stays read', () => {
+  expect(findings(`function show(o) { return Object.keys(o).join(','); }\nconst A = { k: 'p-xs' };\nshow(A);\nconst C = () => <i className={A.k} title={show(A)} />;`)).toEqual(['whole:p-xs']);
+  expect(findings(`const A = { k: 'p-xs' };\nconsole.info(A);\nJSON.stringify(A);\nconst C = () => <i className={A.k} />;`)).toEqual(['whole:p-xs']);
+  expect(findings(`const look = 'p-xs';\nimport { fill } from './fill.ts';\nfill(look);\nconst C = () => <i className={look} />;`)).toEqual(['whole:p-xs']);
+});
