@@ -140,6 +140,17 @@ wu-summaries:
       a branch or note change is seen within the debounce and pushed to the window. Unit: the apply step, the
       defaults, the link parse.
     wu-deps: [E-APPLIST.W1, E-APPLIST.W7]
+  - wu: E-APPLIST.W10
+    wu-summary: >-
+      Added after W5 (deviation): the owner's ruling of 2026-11-22, "we must use pnpm". The app moves from npm to
+      pnpm at one pinned version: pnpm-lock.yaml in place of package-lock.json with the same exact versions, a
+      hoisted node_modules for Forge, pnpm's build approval, and every guard, test and current doc that named npm.
+    wu-maps-to: "No use case: the app's tooling; the owner's ruling of 2026-11-22, recorded as a follow-up in the W5 result. Reverses W7's open point 'npm or pnpm?'."
+    wu-expected: >-
+      Integration (node --test): the committed lockfile's importer lists exactly package.json's pins and no script
+      calls npm. Unit: the guards ask for pnpm's lockfile and settings. Recorded: pnpm install --frozen-lockfile, then
+      pnpm test:main, test:window, lint and typecheck green.
+    wu-deps: [E-APPLIST.W5]
   - wu: E-APPLIST.W6
     wu-summary: >-
       Outline, planned when W5 and W8 merge. Screens 1 and 2 and Open, on W8's foundation: the alert's layout; the
@@ -162,7 +173,7 @@ wu-summaries:
     wu-expected: >-
       The epic test passes, run by hand and recorded; the live checks are recorded in the epic result; every T3 doc
       is archived with its lineage.
-    wu-deps: [E-APPLIST.W1, E-APPLIST.W2, E-APPLIST.W3, E-APPLIST.W5, E-APPLIST.W6, E-APPLIST.W7, E-APPLIST.W8]
+    wu-deps: [E-APPLIST.W1, E-APPLIST.W2, E-APPLIST.W3, E-APPLIST.W5, E-APPLIST.W6, E-APPLIST.W7, E-APPLIST.W8, E-APPLIST.W10]
 e2e-plan: >-
   One Playwright test (DEC-75), app/e2e/applist.e2e.spec.ts, run by hand at W9 and recorded (not in keel check,
   DEC-73): _electron.launch on the unpackaged build, hermetic: a temp git repo set up as a keel project with an epic
@@ -200,8 +211,12 @@ details:
   replan:
     date: "2026-11-20"
     why: "The owner paused the epic and ruled DEC-71 - DEC-77; this replan WU (wu/E-APPLIST/replan) carries them into this plan."
-    build-order: "W1 (merged) -> W2, W3 (router side, parallel). W7 -> W8. W1 + W7 -> W5. W5 + W8 -> W6. All -> W9."
+    build-order: "W1 (merged) -> W2, W3 (router side, parallel). W7 -> W8. W1 + W7 -> W5. W5 + W8 -> W6. W5 -> W10 (added 2026-11-22). All -> W9."
     planned-now: "W7 (its plan replaces W4's). W2, W3 keep their summaries and get their plans when started; W5, W6, W8, W9 are outlines, each planned when its deps merge."
+  deviations:
+    - >-
+      2026-11-22, after W5: E-APPLIST.W10 added on the owner's ruling "we must use pnpm" (the W5 result's
+      follow-up). W9 waits on it too; any WU merged after it installs and runs the app with pnpm.
   epic-branch-opening:
     what: >-
       Done (1f96ca3), before W1 and W4 were cut: the owner's typed `keel mr commit` on epic/E-APPLIST, only
@@ -220,6 +235,7 @@ details:
     W8: [app/src/window/, app/src/window/fake/, app/tailwind.config.*, app/eslint.config.js, app/eslint-rules/, app/vitest.config.ts or the renderer's Vite config, app/package.json, app/package-lock.json]
     W5: [app/src/main/reader/, app/src/main/watcher/, app/src/main/alerter/, app/src/shared/contract.ts, app/test/]
     W6: [app/src/window/, app/src/window/fake/, app/src/main/items/, app/src/main/open/, app/test/]
+    W10: [app/package.json, app/pnpm-lock.yaml (new), app/package-lock.json (removed), app/pnpm-workspace.yaml (new), app/test/unit/guards.test.ts, app/test/integration/lockfile.test.ts (new), comments naming npm run in app/, docs/backlog/local-app.yaml (A3 follow-ups)]
     W9: [app/e2e/applist.e2e.spec.ts, app/playwright.config.ts, the distillation docs above]
   rule-bearing-and-unreviewed:
     note: >-

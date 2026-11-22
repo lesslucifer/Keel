@@ -86,7 +86,7 @@ test('an eslint-disable comment turns nothing off: each class under one is still
   expect(messages.filter((m) => m.ruleId === null).length).toBeGreaterThanOrEqual(3);
 });
 
-test('the real eslint.config.js has inline config off, and npm run lint fails on any warning', async () => {
+test('the real eslint.config.js has inline config off, and pnpm lint fails on any warning', async () => {
   const eslint = new ESLint({ cwd: APP, overrideConfigFile: CONFIG });
   const code = 'export const A = () => (\n  // eslint-disable-next-line design/vocabulary\n  <p className="text-sm">a</p>\n);\n';
   const [result] = await eslint.lintText(code, { filePath: path.join(APP, 'src', 'window', 'planted.tsx') });

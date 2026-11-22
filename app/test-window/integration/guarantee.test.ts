@@ -2,7 +2,7 @@
 // class names it finds written out in its content files, however a string is later built, so the
 // check reads what Tailwind emits - styles.css through Tailwind's PostCSS plugin with the shipped
 // config, over the one content list (window-sources.js) - and refuses every emitted class outside
-// the closed vocabulary. npm run lint runs it after ESLint (eslint-rules/check-css.js). Each probe
+// the closed vocabulary. pnpm lint runs it after ESLint (eslint-rules/check-css.js). Each probe
 // below is a route review round 2 found past the AST reader: the classes it would ship are caught,
 // or it ships no CSS at all (pieces Tailwind never sees whole).
 import { spawnSync } from 'node:child_process';
@@ -23,7 +23,7 @@ test('the real content set ships only Keel\'s vocabulary', async () => {
   expect(all).toContain('rounded-pill');
 });
 
-test('npm run lint\'s CSS step exits 0 on the real tree and prints nothing', () => {
+test('pnpm lint\'s CSS step exits 0 on the real tree and prints nothing', () => {
   const run = spawnSync(process.execPath, [path.join(APP, 'eslint-rules', 'check-css.js')], { cwd: APP, encoding: 'utf8' });
   expect([run.status, run.stdout, run.stderr]).toEqual([0, '', '']);
 });

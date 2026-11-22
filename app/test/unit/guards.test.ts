@@ -65,7 +65,7 @@ function imports(text: string): string[] {
   return out;
 }
 
-test('every module a node test reaches imports only node: built-ins and relative .ts files inside app/, so keel check needs no npm', () => {
+test('every module a node test reaches imports only node: built-ins and relative .ts files inside app/, so keel check needs no package install', () => {
   const queue = walk(path.join(APP, 'test')).filter((f) => f.endsWith('.ts'));
   const seen = new Set<string>();
   while (queue.length > 0) {
@@ -120,12 +120,31 @@ test('only the shell (src/main/index.ts) and the preload entry import electron; 
   }
 });
 
-test('every package is pinned to one exact version, and the lockfile is committed beside package.json', () => {
+test('every package is pinned to one exact version, and pnpm\'s lockfile is committed beside package.json, npm\'s is not', () => {
   const pkg = JSON.parse(readFileSync(path.join(APP, 'package.json'), 'utf8')) as Record<string, Record<string, string> | undefined>;
   const pins = { ...pkg.dependencies, ...pkg.devDependencies };
   assert.ok(Object.keys(pins).length > 0, 'no package listed');
   for (const [name, v] of Object.entries(pins)) assert.match(v, /^\d+\.\d+\.\d+$/, name);
-  assert.ok(existsSync(path.join(APP, 'package-lock.json')), 'no package-lock.json');
+  assert.ok(existsSync(path.join(APP, 'pnpm-lock.yaml')), 'no pnpm-lock.yaml');
+  assert.ok(!existsSync(path.join(APP, 'package-lock.json')), 'package-lock.json is still there: the app installs with pnpm');
+});
+
+test('package.json pins pnpm to one exact version in packageManager', () => {
+  const pkg = JSON.parse(readFileSync(path.join(APP, 'package.json'), 'utf8')) as { packageManager?: unknown };
+  assert.match(String(pkg.packageManager), /^pnpm@\d+\.\d+\.\d+$/);
+});
+
+test('pnpm-workspace.yaml lays node_modules out flat (Forge packages it) and names each build it allows, each a locked package', () => {
+  const file = path.join(APP, 'pnpm-workspace.yaml');
+  assert.ok(existsSync(file), 'no pnpm-workspace.yaml');
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /^nodeLinker: hoisted$/m);
+  const block = /^allowBuilds:\n((?: {2}.+\n?)+)/m.exec(text);
+  assert.ok(block, 'no allowBuilds block');
+  const entries = [...(block[1] as string).matchAll(/^ {2}'?([^':\s]+)'?: (true|false)$/gm)].map((m) => m[1] as string);
+  assert.ok(entries.length > 0, 'allowBuilds names no package');
+  const lock = readFileSync(path.join(APP, 'pnpm-lock.yaml'), 'utf8');
+  for (const name of entries) assert.ok(lock.includes(`\n  ${name}@`) || lock.includes(`\n  '${name}@`), `${name} is not in pnpm-lock.yaml`);
 });
 
 // Each form is spelled in pieces in the self-test below, so this file's own text reads none of them.
