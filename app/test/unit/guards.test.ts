@@ -189,3 +189,50 @@ test('only src/window/browser.tsx (and app/test-window/, outside this walk) impo
   const windowTests = walk(path.join(APP, 'test-window')).filter((f) => /\.(ts|tsx)$/.test(f));
   assert.ok(windowTests.some((f) => imports(readFileSync(f, 'utf8')).some((s) => s.includes('/window/fake/'))), 'no window test imports the fake');
 });
+
+const WINDOW = path.join(SRC, 'window');
+
+/** Every file reachable from `entry` by relative static imports (and side-effect imports such as a stylesheet). */
+function staticGraph(entry: string): string[] {
+  const seen = new Set<string>();
+  const queue = [entry];
+  while (queue.length > 0) {
+    const f = queue.pop() as string;
+    if (seen.has(f)) continue;
+    seen.add(f);
+    if (!/\.(ts|tsx)$/.test(f)) continue;
+    for (const spec of imports(readFileSync(f, 'utf8'))) {
+      if (!spec.startsWith('.')) continue;
+      const target = path.resolve(path.dirname(f), spec);
+      assert.ok(existsSync(target), `${path.relative(APP, f)} imports ${spec}, which does not exist`);
+      queue.push(target);
+    }
+  }
+  return [...seen].map((f) => path.relative(APP, f)).sort();
+}
+
+test('the shipped page never reaches the fake or the browser entry: index.html loads main.tsx, whose static imports reach neither, and the renderer builds index.html alone', () => {
+  const html = readFileSync(path.join(WINDOW, 'index.html'), 'utf8');
+  assert.match(html, /<script type="module" src="\.\/main\.tsx"><\/script>/);
+  const graph = staticGraph(path.join(WINDOW, 'main.tsx'));
+  for (const part of ['main.tsx', 'App.tsx', 'bridge.ts', 'hooks.ts', 'styles.css']) assert.ok(graph.includes(path.join('src', 'window', part)), `the walk reached src/window/${part}`);
+  const leaks = graph.filter((f) => f.startsWith(path.join('src', 'window', 'fake') + path.sep) || f === path.join('src', 'window', 'browser.tsx'));
+  assert.deepEqual(leaks, []);
+  assert.doesNotMatch(readFileSync(path.join(APP, 'vite.renderer.config.ts'), 'utf8'), /rollupOptions|browser\.(html|tsx)/);
+});
+
+test('the graph walk follows each relative import, a stylesheet included, so the guard above sees a leak', () => {
+  const graph = staticGraph(path.join(WINDOW, 'browser.tsx'));
+  for (const part of ['browser.tsx', 'styles.css', path.join('fake', 'fake.ts'), path.join('fake', 'fixtures.ts'), 'App.tsx']) assert.ok(graph.includes(path.join('src', 'window', part)), part);
+});
+
+test('the browser mode\'s page carries the same CSP meta as the shipped page and loads only browser.tsx', () => {
+  const page = readFileSync(path.join(WINDOW, 'browser.html'), 'utf8');
+  const shipped = readFileSync(path.join(WINDOW, 'index.html'), 'utf8');
+  const meta = (html: string) => [...html.matchAll(/<meta\s+http-equiv="Content-Security-Policy"[^>]*>/gi)].map((m) => m[0]);
+  assert.deepEqual(meta(page), meta(shipped));
+  assert.equal(meta(page).length, 1);
+  const scripts = [...page.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
+  assert.equal(scripts.length, 1);
+  assert.match(scripts[0]?.[1] ?? '', /^\s*type="module"\s+src="\.\/browser\.tsx"\s*$/);
+});
