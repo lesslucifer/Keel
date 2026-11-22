@@ -1,0 +1,121 @@
+artifact: wu-result
+status: ready
+id: E-APPLIST.W5
+epic: E-APPLIST
+title: "E-APPLIST.W5 · The Reader, the Watcher and the Alerter"
+date: "2026-11-22"
+page: 2026-11-22-e-applist-w5-result.html
+outcome: >-
+  Delivered, the owner's live check pending. The app's main part keeps one view of the listed project:
+  reader/git.ts reads the local branches with their upstream standing, the tips carrying an mr, cr or dod note,
+  what main, each epic and each work unit with a task holds, and the worktrees, through four new fixed reads
+  (refs, notes-list, merged, worktrees) behind the locked flags; reader/log.ts folds <main checkout>/.router/app/
+  by the log's rules (new run, next number, seen, missing number reads the state once, half line, unknown key) and
+  says the router is not heard 15 minutes after its newest line; reader/view.ts builds the view and says whether it
+  changed. watcher/watch.ts watches the git folder's refs and .router/app/, reads a second after a burst and once a
+  minute anyway, never two reads at once, and re-arms after each read. alerter/alerts.ts shows one macOS alert per
+  new alert line, recorded first in alerts.json in the app's folder by run and number; at the app's start, lines
+  written while it was closed make one summary alert (owner answer 1a). alerter/link.ts opens only
+  keel://wu/E-<CODE>.W<m>. The contract gains waiting.get and waiting.changed; the fake bridge answers waiting.get
+  from five views. index.ts wires it all; only the packaged app claims keel://. node --test 262 tests (261 pass,
+  1 skipped in the worker's sandbox: fs.watch gets no events there), Vitest 207, typecheck, lint and keel check
+  green before every commit. Nothing was built or packaged.
+deviations:
+  - "Run records and the inbox listing are not read, by the owner's answer 2a: the epic plan's W5 summary names them; no item kind in E-APPLIST uses them, the fleet screens of A5 do (plan pair: details.owner-answers.departure-from-epic-summary)."
+  - "At the app's start, a single alert line written while it was closed is shown as itself; the summary ('N alerts while Keel was closed') is for two or more. A summary of one says less than the line (answer 1a, read so)."
+  - "An alert's title is its headline and its body its lines, not the plan's 'title Keel': macOS already names the app above the title, so 'Keel' twice said nothing."
+  - "The view has no 'defaulted' field: a key the router has not written is absent (at its default), and run null means no run was read. Fewer fields saying the same."
+  - "The refs read lists refs/notes/ beside refs/heads/, and a kind's notes are listed only when its notes ref exists; the merged read joins the ref to its option (--merged=<ref>), so it is never read as one. The plan named them as separate shapes."
+  - "The main branch is taken to be 'main' (as in Keel), not read from the project's [branches] main; a project naming another main shows no merges into it."
+  - "Two helpers the plan's layout did not name, each to keep index.ts free of logic: handlers.ts readerParts (the listed project and the usable git, from the app's folder) and alerts.ts heldSink (each Notification held until clicked, closed or failed, so its click is not lost); each has its test."
+  - "The window's typing gains waiting.get (src/window/bridge.ts Args, hooks.ts's answer text); no screen changes. The router-app.sh test helpers moved to app/test/support/router.ts, shared by four integration files."
+  - "In the worker's sandbox fs.watch answers EMFILE (the file-event service is closed to it): the real-watch integration test checks for file events first and skips with that reason; it runs on the owner's Mac (keel check, pre-push). The watch-off test (the minute's re-read) runs everywhere. The watcher closes a failed watch and tries again after each read."
+  - "The live check was not run by the worker: Electron's binary is not downloaded in this worktree and npm start binds Vite's port, which the sandbox refuses. Its steps were tried short of the app (a temp project, the real router-app.sh lines) and the main part was run for real on that project with a recording sink (details.example-run)."
+evidence:
+  commits:
+    - "2bb1ac5 docs: the plan pair and W8's lint follow-up on backlog row A3"
+    - "a34f283 docs: the dangling follow-ups on A3 and new row R52"
+    - "fe8dfec docs: the owner's answers in the plan pair"
+    - "b86e4c1 feat: the contract - waiting.get, waiting.changed, the View types, the fake's views"
+    - "8b5a0a3 feat: the log reader"
+    - "ef16a3b feat: the git reader"
+    - "201aa4a feat: the watcher and the view reader"
+    - "e469fbc feat: the alerter and the link"
+    - "ef0938e feat: the shell's wiring"
+  red-green:
+    - "commit b86e4c1: red node 175 run, 7 failing (snapshot, handlers, view, imports); Vitest 4 failing of 207 -> green node 187, Vitest 207"
+    - "commit 8b5a0a3: red, both new files fail (no module) -> green node 210"
+    - "commit ef16a3b: red, 5 failing (the commands' lines, the parsers, the real-git file) -> green node 224"
+    - "commit 201aa4a: red, both new files fail -> green node 239 (238 pass, 1 skipped); the real-watch test first caught the watches armed before the project was read (fixed: armed after each read)"
+    - "commit e469fbc: red, both new files fail -> green node 259 (258, 1 skipped)"
+    - "commit ef0938e: red, two files fail (heldSink, readerParts) -> green node 262 (261, 1 skipped)"
+    - "Before every commit: npx tsc --noEmit, node --test, vitest run (207), npm run lint and keel check (cargo 137 unit, 423 suite, 14 ignored; node) all green."
+  tests-added:
+    unit:
+      - "app/test/unit/log.test.ts: line shapes, keys, apply rules, state shape, whole lines, heard, a seeded property test (dropped, repeated and cut lines fold to the writer's state)"
+      - "app/test/unit/git-read.test.ts: refs, notes, merged and worktree parsers; merge targets"
+      - "app/test/unit/watch.test.ts: debounce, minute re-read, no overlap, re-arm, stop, relevant git files (fake timers, fake watch)"
+      - "app/test/unit/alerts.test.ts: what is shown when, the record, plain text, the link (cases and a seeded property), the focus, the scheme's owner, the seams, heldSink"
+      - "app/test/unit/view.test.ts: the empty view"
+      - "app/test/unit/commands.test.ts: the four new lines, the kind and ref slots, a seeded property of the ref slot"
+      - "app/test-window/unit/fixtures.test.ts: the five views pass the View's shapes; each scenario carries one"
+    integration:
+      - "app/test/integration/router-log.test.ts: the real router-app.sh: fold equals state, follow, app restart, router restart, a gap, a half line, an unknown key, a replaced log, silence, links, a broken state"
+      - "app/test/integration/git-facts.test.ts: real git: branches and upstream, notes on tips, merges, a task, worktrees, nothing written; a git older than 2.45; a failing git"
+      - "app/test/integration/watch-view.test.ts: the view; no project; git not found; silence turns heard off; real fs.watch on a commit, a note, a merge, a worktree, a router line (skipped where file events are refused); the minute's re-read with the watch off"
+      - "app/test/integration/alerter.test.ts: one alert per line, once; the record owner-only in the app folder; restart; the summary; click and link focus; a new run; the file sink"
+      - "app/test/integration/handlers.test.ts: waiting.get through the dispatcher, plain strings; readerParts"
+      - "app/test/integration/bridge.test.ts: the snapshot names seven requests and two push events"
+      - "app/test-window/integration/fake.test.ts: waiting.get answers the scenario's view, a copy, no push"
+  docs: "docs/work/2026-11-22-e-applist-w5-plan.* (plan, owner answers), docs/backlog/local-app.yaml (A3 follow-ups), docs/backlog/e-router-v2.yaml (R52), docs/backlog/backlog-index.yaml (R53 next), this result pair"
+distillation: >-
+  Nothing citable yet: the apply rules as built, the keel:// form the app opens, the alert policy (one per line,
+  the start summary) and the view's shape go to docs/local-app.html at E-APPLIST's close (W9, the epic's
+  distillation-plan).
+follow-ups:
+  - "The owner's live check (details.live-checks), about five minutes, npm start only: one alert, its click opens the window, no repeat after a restart, one summary for lines written while closed. Taken by: the owner, before the W5 sign-off."
+  - "Run the real-watch test on the Mac (cd app && node --test test/integration/watch-view.test.ts: 5 tests, none skipped); keel check runs it at pre-push too. Taken by: the owner, with the live check."
+  - "The items drawn from the view (which kinds enter and leave), screens 1 and 2, the window following the focus, Open, Mark sent, built on the fake's five views. Taken by: E-APPLIST.W6."
+  - "Read the project's [branches] main when it is not 'main' (main not pushed, epics merged into main). Taken by: E-APPLIST.W6, if its items need it for a project other than Keel; else docs/backlog/local-app.yaml row A5 (many projects)."
+  - "Run records and the inbox listing (owner answer 2a). Taken by: docs/backlog/local-app.yaml row A5 (E-APPFLEET)."
+  - "The Playwright epic test through the seams (KEEL_APP_ALERT_SINK, KEEL_APP_SILENCE_MS); the alert, its click and keel:// on the signed build; the scheme's owner seen there (W7's follow-up); the apply rules and link scheme into docs/local-app.html. Taken by: E-APPLIST.W9."
+  - "The code review (keel preflight is green at the tip), the owner's sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
+details:
+  base: "wu/E-APPLIST/w5-reader-watcher off epic/E-APPLIST at 7a5d00a"
+  layout:
+    new: [app/src/main/reader/log.ts, app/src/main/reader/git.ts, app/src/main/reader/view.ts, app/src/main/watcher/watch.ts, app/src/main/alerter/alerts.ts, app/src/main/alerter/link.ts, app/src/main/alerter/seams.ts, app/test/support/router.ts]
+    changed: [app/src/shared/contract.ts, app/src/main/commands.ts, app/src/main/handlers.ts, app/src/main/index.ts, app/src/window/fake/fake.ts, app/src/window/fake/fixtures.ts, app/src/window/bridge.ts, app/src/window/hooks.ts]
+  example-run:
+    what: "The main part (ViewReader, Alerter, Focus, openLink) on a temp project written by the real router-app.sh, a recording sink in place of macOS's alert, run with node on 2026-11-22; output verbatim."
+    output:
+      - "launch 1: alerts shown: [\"3 alerts while Keel was closed (opens the list)\"]"
+      - "  view: run=owner-check.20261122-173005.25754 n=4 heard=true branches=main alerts=2:true,3:true,4:true"
+      - "  after its click: focus={\"wu\":null,\"seq\":1}"
+      - "  keel://wu/E-APPLIST.W2 taken: true; keel://../.. taken: false"
+      - "launch 2 (restart): alerts shown: []"
+      - "  a line written while running: alerts shown: [\"Result to sign: E-APPLIST.W5 (opens E-APPLIST.W5)\"]"
+      - "  after its click: focus={\"wu\":\"E-APPLIST.W5\",\"seq\":1}"
+      - "launch 3 (restart): alerts shown: []"
+  live-checks:
+    by: "the owner on his Mac, about five minutes, npm start only (no package or make), from the W5 worktree"
+    steps:
+      - "1. cd /Users/nguyenvanluong/Documents/proj/misc/Keel-E-APPLIST-w5-reader-watcher/app && npm ci (if npm start then says Electron failed to install: node node_modules/electron/install.js)"
+      - "2. A scratch project, so your router's real log is untouched: T=$HOME/keel-w5-live; mkdir -p $T/.keel $T/scripts && printf 'code_paths = [\"src/\"]\\n' > $T/.keel/config.toml && cp ../scripts/router-app.sh $T/scripts/ && (cd $T && git init -q -b main && git add . && git commit -q -m init && ./scripts/router-app.sh start owner-check)"
+      - "3. npm start. On the project screen: Remove your listed project if there is one (Add brings it back), then Add and choose ~/keel-w5-live."
+      - "4. In a second terminal: ~/keel-w5-live/scripts/router-app.sh alert '{\"headline\":\"W5 live check\",\"lines\":[\"One alert at your desk.\"],\"wu\":\"E-APPLIST.W5\"}' - within a second (a minute at most) one macOS alert, 'W5 live check' over 'One alert at your desk.', from Electron (the unpackaged app's name). If macOS asks, allow Electron's notifications."
+      - "5. Close the window (the app keeps running). Click the alert (in Notification Centre if it has gone): the window opens. What it points at is drawn by W6."
+      - "6. Quit (Ctrl-C in the npm start terminal) and npm start again: no alert."
+      - "7. Quit; then for i in 1 2; do ~/keel-w5-live/scripts/router-app.sh alert \"{\\\"headline\\\":\\\"While closed $i\\\",\\\"lines\\\":[\\\"line $i\\\"]}\"; done; npm start: one alert, '2 alerts while Keel was closed'."
+      - "8. node --test test/integration/watch-view.test.ts: 5 tests pass, none skipped (real file events)."
+    reset: "Quit the app; npm start, Remove keel-w5-live and Add your Keel checkout back; quit; rm -rf ~/keel-w5-live. The app's alerts.json in its folder (~/Library/Application Support/Keel) may stay: it is keyed by the scratch run."
+    worker-tried: >-
+      Steps 2 and 4's lines through the real router-app.sh in a temp project: OK run=owner-check... n=1 to n=4, the
+      state holding the three alerts. npm start was not run: Electron's binary is not in this worktree and the
+      sandbox refuses the port Vite's dev server binds (the router's note). The main part itself was run on that
+      project (example-run).
+  sandbox:
+    - "fs.watch answers EMFILE in the worker's sandbox, flat and recursive (a node probe in a temp folder): the real-watch test skips there."
+    - "A one-line git probe in a temp folder (notes list on a missing ref, --merged as a separate word) was denied by the permission review; it was not re-run in any form. The integration tests on real git settle the same behaviour."
+    - "npm ci reached registry.npmjs.org; one EPERM on a package's .vscode/launch.json, harmless; Electron's install script did not fetch its binary."
+  htmldoc:
+    id: 6b02b6559f34851f0dfb2bad
