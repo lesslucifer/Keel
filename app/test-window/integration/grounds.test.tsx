@@ -1,11 +1,12 @@
-// Review round 3's nit (contrast.test.ts:74): the contrast test measured text colours, never the
-// ground each one sits on, so a known colour on a new ground (ink on the black pill) would pass. Here
-// every fixture state is drawn in browser mode (screen 6 and the banner), and every element with a
-// text colour is paired with its ground - its own background, else its nearest ancestor's, else the
-// canvas; each pair drawn must be one the contrast test measures.
+// Every rendered text sits on a ground the contrast test measures. Each fixture state is drawn in
+// browser mode (screen 6 and the banner), and every text node is paired by inheritance, as the
+// browser draws it (review round 4, grounds.test.tsx:42): its colour is the nearest text-<token> on
+// it or an ancestor, else body's (styles.css: @apply ... text-ink); its ground the nearest
+// bg-<token>, else body's (bg-canvas). Each pair drawn must be one the contrast test measures.
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import postcss from 'postcss';
 import { expect, test } from 'vitest';
 import { BrowserApp } from '../../src/window/browser.tsx';
 import { SCENARIO_NAMES } from '../../src/window/fake/fixtures.ts';
@@ -13,48 +14,74 @@ import { PAIRS } from '../support/pairs.ts';
 
 const css = readFileSync(path.resolve(import.meta.dirname, '..', '..', 'src', 'window', 'styles.css'), 'utf8');
 const COLOURS = new Set([...css.matchAll(/--([a-z-]+):\s*\d+ \d+ \d+;/g)].map((m) => m[1] as string));
+// Every class styles.css applies to body, through any rule whose selector list names it, in order.
+const BODY: string[] = [];
+postcss.parse(css).walkRules((rule) => {
+  if (!rule.selector.split(',').map((x) => x.trim()).includes('body')) return;
+  rule.walkAtRules('apply', (at) => {
+    BODY.push(...at.params.trim().split(/\s+/));
+  });
+});
+const BODY_TEXT = BODY.map((c) => /^text-([a-z-]+)$/.exec(c)?.[1]).findLast((c) => c !== undefined && COLOURS.has(c));
+const BODY_GROUND = BODY.map((c) => /^bg-([a-z-]+)$/.exec(c)?.[1]).findLast((c) => c !== undefined && COLOURS.has(c));
 
 /** The colour token an element's plain `prefix-<token>` class names (variants like hover: ignored). */
 function colourOf(el: Element, prefix: 'text' | 'bg'): string | undefined {
-  for (const cls of el.className && typeof el.className === 'string' ? el.className.split(/\s+/) : []) {
+  for (const cls of typeof el.className === 'string' ? el.className.split(/\s+/) : []) {
     const m = new RegExp(`^${prefix}-([a-z-]+)$`).exec(cls);
     if (m && COLOURS.has(m[1] as string)) return m[1];
   }
   return undefined;
 }
 
-/** The ground an element's text sits on. */
-function groundOf(el: Element): string {
-  for (let cur: Element | null = el; cur !== null; cur = cur.parentElement) {
-    const bg = colourOf(cur, 'bg');
-    if (bg !== undefined) return bg;
+/** The nearest `prefix` colour on `el` or an ancestor, else body's. */
+function inherited(el: Element | null, prefix: 'text' | 'bg'): string | undefined {
+  for (let cur = el; cur !== null; cur = cur.parentElement) {
+    const c = colourOf(cur, prefix);
+    if (c !== undefined) return c;
   }
-  return 'canvas';
+  return prefix === 'text' ? BODY_TEXT : BODY_GROUND;
 }
 
-test('every text colour is drawn only on grounds the contrast test measures, in every fixture state', async () => {
+/** Every pair drawn under `root`: each non-blank text node's inherited colour on its inherited ground. */
+function pairsIn(root: Element): Set<string> {
+  const out = new Set<string>();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    if ((node.textContent ?? '').trim() === '') continue;
+    out.add(`${inherited(node.parentElement, 'text')} on ${inherited(node.parentElement, 'bg')}`);
+  }
+  return out;
+}
+
+test('body\'s own colours are read from styles.css: ink on canvas', () => {
+  expect([BODY_TEXT, BODY_GROUND]).toEqual(['ink', 'canvas']);
+});
+
+test('every text, its colour inherited or its own, is drawn only on grounds the contrast test measures, in every fixture state', async () => {
   const measured = new Set(PAIRS.map(([fg, bg]) => `${fg} on ${bg}`));
   const drawn = new Set<string>();
   for (const name of SCENARIO_NAMES) {
     render(<BrowserApp search={`?state=${name}`} />);
     await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
-    for (const el of document.body.querySelectorAll('*')) {
-      const fg = colourOf(el, 'text');
-      if (fg !== undefined) drawn.add(`${fg} on ${groundOf(el)}`);
-    }
+    for (const pair of pairsIn(document.body)) drawn.add(pair);
     cleanup();
   }
   expect(drawn.size).toBeGreaterThan(5);
   expect([...drawn].filter((p) => !measured.has(p)).sort()).toEqual([]);
 });
 
-test('the pairing sees a known colour on an unmeasured ground', () => {
-  render(
-    <div className="bg-primary">
-      <span className="text-ink">x</span>
+test('the reviewer\'s probe is caught: a span on bg-primary inheriting text-ink draws ink on primary, which is not measured', () => {
+  const { container } = render(
+    <div className="text-ink">
+      <span className="bg-primary">probe</span>
     </div>,
   );
-  const span = screen.getByText('x');
-  expect(`${colourOf(span, 'text')} on ${groundOf(span)}`).toBe('ink on primary');
+  expect([...pairsIn(container)]).toEqual(['ink on primary']);
   expect(PAIRS.some(([fg, bg]) => fg === 'ink' && bg === 'primary')).toBe(false);
+});
+
+test('a text with no text class of its own on no ground of its own inherits body\'s: ink on canvas', () => {
+  const { container } = render(<p>plain</p>);
+  expect([...pairsIn(container)]).toEqual(['ink on canvas']);
 });
