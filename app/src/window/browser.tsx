@@ -20,7 +20,7 @@ export function BrowserApp({ search }: { search: string }) {
         <span className="font-medium text-ink">Browser mode: fixtures, not your Mac</span>
         <nav aria-label="Fixture states" className="flex flex-wrap gap-sm">
           {SCENARIO_NAMES.map((name) => (
-            <a key={name} href={`?state=${name}`} aria-current={name === scenario ? 'page' : undefined} className={name === scenario ? 'font-medium text-ink' : 'text-primary underline'}>
+            <a key={name} href={`?state=${name}`} aria-current={name === scenario ? 'page' : undefined} className={name === scenario ? 'font-medium text-ink' : 'text-ink underline'}>
               {name}
             </a>
           ))}
