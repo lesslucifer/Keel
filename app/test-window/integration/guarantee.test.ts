@@ -78,3 +78,7 @@ test('ESLint runs from the one pinned config: no other eslint config exists unde
   expect(found).toEqual(['eslint.config.js']);
   expect(existsSync(path.join(APP, 'eslint.config.js'))).toBe(true);
 });
+
+test('the group and peer markers and their variants pass the CSS check', async () => {
+  expect(await offVocabulary({ content: tsx('<i className="group group-hover:text-ink peer peer-checked:bg-primary" />') })).toEqual([]);
+});

@@ -64,10 +64,11 @@ export default {
         else if (method === 'setAttribute' && (attr === null || attr === 'class' || attr === 'style')) dom(node, callee);
       },
       'Program:exit'(program) {
-        for (const { cls, node, offset, partial, unread } of collectClasses(/** @type {any} */ (program), { text: sourceCode.text })) {
+        const parsed = { ast: /** @type {any} */ (program), scopeManager: sourceCode.scopeManager, text: sourceCode.text };
+        for (const { cls, node, offset, partial, unread, style } of collectClasses(parsed)) {
           const loc = { start: sourceCode.getLocFromIndex(offset), end: sourceCode.getLocFromIndex(offset + cls.length) };
           if (partial) {
-            context.report({ node: /** @type {any} */ (node), loc, messageId: unread ? 'unread' : 'unresolvable', data: { cls } });
+            context.report({ node: /** @type {any} */ (node), loc, messageId: style ? 'style' : unread ? 'unread' : 'unresolvable', data: { cls } });
             continue;
           }
           const verdict = classify(cls);

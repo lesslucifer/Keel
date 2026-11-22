@@ -117,6 +117,10 @@ test('an inline style and a hand-written className, classList or class/style att
   for (const what of ['style', 'el.className', 'el.classList.add', 'el.setAttribute']) expect(text).toContain(what);
 });
 
+test('honest code is not refused: helper bodies, group and peer markers, a same-named variable elsewhere', async () => {
+  expect(await messagesOf('honest.tsx')).toEqual([]);
+});
+
 test('the clean fixture reports nothing', async () => {
   expect(await messagesOf('clean.tsx')).toEqual([]);
 });

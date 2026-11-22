@@ -1,16 +1,18 @@
 // @ts-check
-// The class vocabulary's reader, ported from Trawler's ui/eslint-rules/classes.js (logic only, read
-// 2026-11-22) onto Keel's tokens (../tailwind.config.js). Keel's own additions: a variant the closed
-// config lacks is refused, and the dark: variant above all (dark lives in the tokens, DEC-72); a
-// class built with + is reported like one cut by a template's interpolation; a cx() or clsx()
-// call's arguments are read as classes. Trawler's design-allow pragma is not ported: no escape hatch.
+// The class vocabulary and the lint's class reader. classify() and the closed context are ported from
+// Trawler's ui/eslint-rules/classes.js (logic only, read 2026-11-22) onto Keel's tokens
+// (../tailwind.config.js), with Keel's additions: a variant the closed config lacks is refused, and
+// the dark: variant above all (dark lives in the tokens, DEC-72). classify() is also what the CSS
+// check (emitted.js) judges every emitted class by - that check is the guarantee. collectClasses()
+// is the lint's fast helper for honest code: it reads class values through ESLint's scope analysis
+// and reports what it cannot read; it is not the guarantee (review round 2). No escape hatch.
 
 import resolveConfig from 'tailwindcss/resolveConfig.js';
 import contextUtils from 'tailwindcss/lib/lib/setupContextUtils.js';
 import tailwindConfig from '../tailwind.config.js';
 
 /** @typedef {{ type: string, [key: string]: any }} Node */
-/** @typedef {{ cls: string, offset: number, node: Node, partial: boolean, unread?: boolean }} Found */
+/** @typedef {{ cls: string, offset: number, node: Node, partial: boolean, unread?: boolean, style?: boolean }} Found */
 
 const theme = /** @type {Record<string, unknown>} */ (tailwindConfig.theme ?? {});
 const resolved = /** @type {Record<string, unknown>} */ (resolveConfig(tailwindConfig).theme);
@@ -68,6 +70,9 @@ const VARIANTS = new Set([...context.variantMap.keys()].filter((k) => typeof k =
 
 const ARBITRARY = /\[([^\]]*)\]/;
 
+/** group, peer, and a named one (group/item), when the closed config has their variants. */
+const MARKER = new RegExp(`^(?:${['group', 'peer'].filter((m) => VARIANTS.has(`${m}-hover`)).join('|') || '(?!)'})(?:/[a-z][a-z0-9-]*)?$`);
+
 /** The top-level colon positions of `cls`, outside brackets. */
 function colons(/** @type {string} */ cls) {
   const at = [];
@@ -118,6 +123,8 @@ export function classify(cls) {
 
   const base = stripVariants(cls);
   if (base === '' || EMITTABLE.has(base)) return { legal: true };
+  // The group and peer markers emit no CSS of their own; their variants (group-hover:...) need them.
+  if (MARKER.test(base)) return { legal: true };
 
   const arbitrary = ARBITRARY.exec(base);
   if (arbitrary) return { legal: false, kind: 'arbitrary', value: /** @type {string} */ (arbitrary[1]) };
@@ -136,10 +143,27 @@ export function classify(cls) {
 
 // ---- Finding the classes in a file ----
 
+/** @typedef {{ ast: Node, scopeManager: any, text: string }} Parsed */
+
 /** A prop or key that carries classes to the page: class, className, or any name ending in ClassName. */
 const CLASS_PROP = /^(?:class|className)$|ClassName$/;
 
-/** The name of a JSX attribute or an object key, when it is a plain name or a string. */
+/** The functions whose arguments are classes (clsx and its kin). */
+const CLASS_CALLS = new Set(['cx', 'clsx', 'classNames']);
+
+/** The calls that take a props object (React's createElement and cloneElement, the JSX runtime's jsx). */
+const PROPS_CALLS = new Map([['createElement', 1], ['cloneElement', 1], ['jsx', 1], ['jsxs', 1], ['jsxDEV', 1]]);
+
+/** The TypeScript nodes that wrap a value (x as const, x satisfies T, x as T, <T>x, x!): read through. */
+const VALUE_WRAPPERS = new Set(['TSAsExpression', 'TSSatisfiesExpression', 'TSTypeAssertion', 'TSNonNullExpression']);
+
+/** Calls that only read a table they are handed. */
+const READ_ONLY_CALLS = new Set(['Object.keys', 'Object.values', 'Object.entries', 'Object.freeze', 'Object.isFrozen']);
+
+/** Methods that only read the array or table they are called on. */
+const READ_ONLY_METHODS = new Set(['join', 'includes', 'indexOf', 'at', 'toString']);
+
+/** The name of an object key or a JSX attribute, when it is a plain name or a string. */
 function keyName(/** @type {Node | undefined} */ key) {
   if (!key) return undefined;
   if (key.type === 'Identifier' || key.type === 'JSXIdentifier') return key.name;
@@ -147,114 +171,14 @@ function keyName(/** @type {Node | undefined} */ key) {
   return undefined;
 }
 
-/** The functions whose arguments are classes (clsx and its kin). */
-const CLASS_CALLS = new Set(['cx', 'clsx', 'classNames']);
-
-const isClassCall = (/** @type {Node} */ node) =>
-  node.type === 'CallExpression' && node.callee?.type === 'Identifier' && CLASS_CALLS.has(node.callee.name);
-
-// A string becomes a class only by being rendered, so the search follows value positions and stops at
-// the ones that cannot produce one (a condition's test, a call's arguments, a key, a property name).
-/** @type {Record<string, string[]>} */
-const NON_VALUE_KEYS = {
-  ConditionalExpression: ['test'],
-  IfStatement: ['test'],
-  SwitchStatement: ['discriminant'],
-  SwitchCase: ['test'],
-  WhileStatement: ['test'],
-  DoWhileStatement: ['test'],
-  ForStatement: ['test'],
-  CallExpression: ['arguments'],
-  NewExpression: ['arguments'],
-  Property: ['key'],
-  MemberExpression: ['property'],
-  // A value wrapped in a type (x as const, x satisfies T, x as T, <T>x) is read; the type is not.
-  TSAsExpression: ['typeAnnotation'],
-  TSSatisfiesExpression: ['typeAnnotation'],
-  TSTypeAssertion: ['typeAnnotation'],
-  TSNonNullExpression: [],
-  // A function's parameters and name hold no value; its body does.
-  FunctionDeclaration: ['params', 'id', 'returnType', 'typeParameters'],
-  FunctionExpression: ['params', 'id', 'returnType', 'typeParameters'],
-  ArrowFunctionExpression: ['params', 'returnType', 'typeParameters'],
-};
-
-/** The names a pattern binds (a parameter, a destructuring). */
-function patternNames(/** @type {Node | null | undefined} */ p, /** @type {Set<string>} */ out) {
-  if (!p) return out;
-  if (p.type === 'Identifier') out.add(p.name);
-  else if (p.type === 'ObjectPattern') p.properties.forEach((/** @type {Node} */ q) => patternNames(q.type === 'RestElement' ? q.argument : q.value, out));
-  else if (p.type === 'ArrayPattern') p.elements.forEach((/** @type {Node} */ q) => patternNames(q, out));
-  else if (p.type === 'AssignmentPattern') patternNames(p.left, out);
-  else if (p.type === 'RestElement') patternNames(p.argument, out);
-  else if (p.type === 'TSParameterProperty') patternNames(p.parameter, out);
-  return out;
-}
-
-/** The identifier a member chain starts from (a in a.b[c].d), or null. */
-function rootOf(/** @type {Node} */ node) {
-  let n = node;
-  while (n.type === 'MemberExpression' || VALUE_WRAPPERS.has(n.type)) n = n.type === 'MemberExpression' ? n.object : n.expression;
-  return n.type === 'Identifier' ? n : null;
-}
-
-/** The TypeScript nodes that wrap a value: walked into (their .expression), never skipped. */
-const VALUE_WRAPPERS = new Set(['TSAsExpression', 'TSSatisfiesExpression', 'TSTypeAssertion', 'TSNonNullExpression']);
-
-/** The keys of `node` the search does not follow; a class call's arguments are followed. */
-function ignoredKeys(/** @type {Node} */ node) {
-  if (isClassCall(node)) return ['callee', 'typeArguments'];
-  // a && 'p-xs' renders a only when it is falsy, which is never a class: a is a test.
-  if (node.type === 'LogicalExpression' && node.operator === '&&') return ['left'];
-  if (VALUE_WRAPPERS.has(node.type)) return ['typeAnnotation', 'typeArguments', 'typeParameters'];
-  return NON_VALUE_KEYS[node.type] ?? [];
-}
-
-/** A + that builds a string: one side (or a nested +) holds a string or a template literal. */
-function isConcat(/** @type {Node} */ node) {
-  if (node.type !== 'BinaryExpression' || node.operator !== '+') return false;
-  /** @param {Node} n @returns {boolean} */
-  const stringy = (n) =>
-    (n.type === 'Literal' && typeof n.value === 'string') || n.type === 'TemplateLiteral' || isConcat(n);
-  return stringy(node.left) || stringy(node.right);
-}
-
-const notAValue = (/** @type {Node} */ node) =>
-  (node.type === 'BinaryExpression' && !isConcat(node)) ||
-  node.type === 'ImportDeclaration' ||
-  node.type === 'JSXText' ||
-  (node.type.startsWith('TS') && !VALUE_WRAPPERS.has(node.type)) ||
-  (node.type === 'JSXAttribute' && !CLASS_PROP.test(keyName(node.name) ?? ''));
-
-/**
- * Visit `node` and its descendants, skipping what `skip` refuses and, when skipping, the keys that hold no value.
- * @param {Node | null | undefined} node
- * @param {(n: Node) => void} visit
- * @param {(n: Node) => boolean} [skip]
- */
-function walk(node, visit, skip) {
-  if (!node || typeof node.type !== 'string') return;
-  if (skip?.(node)) return;
-  visit(node);
-  const ignored = skip ? ignoredKeys(node) : [];
-  for (const key of Object.keys(node)) {
-    if (key === 'parent' || ignored.includes(key)) continue;
-    const child = node[key];
-    if (Array.isArray(child)) child.forEach((c) => walk(c, visit, skip));
-    else walk(child, visit, skip);
+/** The name a callee is called by: f, or obj.f (last part), and its dotted form for Object.keys. */
+function calleeName(/** @type {Node} */ callee) {
+  if (callee.type === 'Identifier') return { last: callee.name, dotted: callee.name };
+  if (callee.type === 'MemberExpression' && !callee.computed && callee.property.type === 'Identifier') {
+    const obj = callee.object.type === 'Identifier' ? `${callee.object.name}.` : '';
+    return { last: callee.property.name, dotted: `${obj}${callee.property.name}` };
   }
-}
-
-function referencedNames(/** @type {Node} */ node) {
-  const names = new Set();
-  walk(
-    node,
-    (n) => {
-      if (n.type === 'Identifier') names.add(n.name);
-    },
-    notAValue,
-  );
-  return names;
+  return { last: '', dotted: '' };
 }
 
 /** The whitespace-separated tokens of `text`, each with its offset in the file. */
@@ -269,184 +193,293 @@ function tokensOf(/** @type {string} */ text, /** @type {number} */ textStart) {
   return found;
 }
 
-// A class the rule cannot resolve is reported, never skipped: a quasi running into an interpolation
-// holds half a class name, and half a class name is how an off-list value hides from a static check.
-/** @returns {Found[]} */
-function templateTokens(/** @type {Node} */ node) {
-  /** @type {Found[]} */
-  const found = [];
-  node.quasis.forEach((/** @type {Node} */ quasi, /** @type {number} */ i) => {
-    const text = quasi.value.cooked ?? quasi.value.raw;
-    const tokens = tokensOf(text, quasi.range[0] + 1);
-    const openEnd = i < node.quasis.length - 1 && !/\s$/.test(text);
-    const openStart = i > 0 && !/^\s/.test(text);
-    tokens.forEach((token, j) => {
-      const partial = (openStart && j === 0) || (openEnd && j === tokens.length - 1);
-      found.push({ ...token, node: quasi, partial });
-    });
-  });
-  return found;
+/** The values a function returns: its concise body, or each return in its body (not in a nested function). */
+function returnsOf(/** @type {Node} */ fn) {
+  if (fn.body?.type !== 'BlockStatement') return fn.body ? [fn.body] : [];
+  /** @type {Node[]} */
+  const out = [];
+  const visit = (/** @type {any} */ node) => {
+    if (!node || typeof node.type !== 'string') return;
+    if (node !== fn.body && /Function/.test(node.type)) return;
+    if (node.type === 'ReturnStatement') {
+      if (node.argument) out.push(node.argument);
+      return;
+    }
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') continue;
+      const child = node[key];
+      if (Array.isArray(child)) child.forEach(visit);
+      else if (child && typeof child.type === 'string') visit(child);
+    }
+  };
+  visit(fn.body);
+  return out;
 }
 
 /**
- * Every class token a file can render: className values seed the search, each name they reach is
- * followed to its declarations, transitively (classes held in constants and lookup tables count).
- * A class cut by an interpolation or built with + comes back with partial: true.
- * @param {Node} program
- * @param {{ text?: string }} [source] the file's text, to quote a + expression whole
+ * Every class token a file can render, and what the reader cannot read. Class values are found from
+ * each class-carrying JSX attribute, JSX spread, props object (createElement, cloneElement) and
+ * class-keyed object literal; every name is resolved through the scope manager (shadowing, parameters,
+ * imports and catch variables included) and read with every value written to it; a function is read
+ * by what it returns. Found entries: a whole class (partial false); a class built from pieces
+ * (partial true: a + or an interpolation glued to text or to another one); a value the reader cannot
+ * read (unread: an import, a parameter, a global, a call it does not know, a table written after its
+ * declaration, this., a props object by reference, a spread); a style in a props object (style).
+ * @param {Parsed} parsed
  * @returns {Found[]}
  */
-export function collectClasses(program, source = {}) {
-  /** @type {Map<string, Node[]>} */
-  const declarations = new Map();
+export function collectClasses(parsed) {
+  const { ast, scopeManager, text } = parsed;
+  /** @type {Map<Node, Node | null>} */
+  const parents = new Map();
   /** @type {Node[]} */
-  const seeds = [];
-  /** @type {Node[]} */
-  const unreadable = [];
-  const wanted = new Set();
-
-  // Every declaration of a name is kept: two functions each holding `const cls = ...` are both read.
-  const declare = (/** @type {string} */ name, /** @type {Node} */ node) => {
-    const bound = declarations.get(name);
-    if (bound) bound.push(node);
-    else declarations.set(name, [node]);
+  const all = [];
+  const index = (/** @type {any} */ node, /** @type {any} */ parent) => {
+    if (!node || typeof node.type !== 'string' || parents.has(node)) return;
+    parents.set(node, parent);
+    all.push(node);
+    for (const key of Object.keys(node)) {
+      if (key === 'parent' || key === 'loc' || key === 'range') continue;
+      const child = node[key];
+      if (Array.isArray(child)) child.forEach((c) => index(c, node));
+      else if (child && typeof child.type === 'string') index(child, node);
+    }
   };
+  index(ast, null);
 
-  /** Names bound by a parameter or an import: their values come from outside this file. */
-  const outside = new Set();
-
-  walk(program, (node) => {
-    if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && node.init) declare(node.id.name, node.init);
-    // A reassigned binding is read with every value it takes.
-    if (node.type === 'AssignmentExpression' && node.left.type === 'Identifier') declare(node.left.name, node.right);
-    if (node.type === 'ImportDeclaration') node.specifiers.forEach((/** @type {Node} */ sp) => outside.add(sp.local.name));
-    if (/^(FunctionDeclaration|FunctionExpression|ArrowFunctionExpression)$/.test(node.type)) node.params.forEach((/** @type {Node} */ p) => patternNames(p, outside));
-    if (node.type === 'FunctionDeclaration' && node.id) declare(node.id.name, node.body);
-    if (node.type === 'JSXAttribute' && CLASS_PROP.test(keyName(node.name) ?? '') && node.value) {
-      seeds.push(node.value);
-      referencedNames(node.value).forEach((n) => wanted.add(n));
-    }
-    // A class-carrying key in any object literal: a spread object, createElement's props, a props table.
-    if (node.type === 'ObjectExpression') {
-      for (const prop of node.properties) {
-        if (prop.type !== 'Property' || prop.computed || !CLASS_PROP.test(keyName(prop.key) ?? '')) continue;
-        seeds.push(prop.value);
-        referencedNames(prop.value).forEach((n) => wanted.add(n));
-      }
-    }
-    // A spread of anything but an object literal may carry a className no one can read.
-    if (node.type === 'JSXSpreadAttribute' && node.argument?.type !== 'ObjectExpression') {
-      unreadable.push(node);
-    }
-  });
-
-  const roots = [...seeds];
-  const followed = new Set();
-  const pending = [...wanted];
-  while (pending.length > 0) {
-    const name = pending.pop();
-    if (followed.has(name)) continue;
-    followed.add(name);
-    const bound = declarations.get(name);
-    if (!bound) continue;
-    roots.push(...bound);
-    bound.forEach((init) => pending.push(...[...referencedNames(init)].filter((n) => !followed.has(n))));
-  }
+  /** @type {Map<Node, any>} */
+  const refOf = new Map();
+  for (const scope of scopeManager.scopes) for (const ref of scope.references) refOf.set(ref.identifier, ref);
 
   /** @type {Found[]} */
   const found = [];
-  const visited = new Set();
-  const unread = (/** @type {Node} */ node) => found.push({ cls: quote(node), offset: node.range[0], node, partial: true, unread: true });
-  const quote = (/** @type {Node} */ node) =>
-    source.text !== undefined ? source.text.slice(node.range[0], node.range[1]) : sourceOf(node);
-  /** Whether a name's value can be read in this file: declared here, and not a parameter or an import. */
-  const readable = (/** @type {string} */ name) => name === 'undefined' || (declarations.has(name) && !outside.has(name));
-  /** Whether a call's result can be read: a class call, a function declared here, or an array's join. */
-  const readableCall = (/** @type {Node} */ node) => {
-    if (isClassCall(node)) return true;
-    const callee = node.callee;
-    if (callee.type === 'Identifier') return readable(callee.name);
-    if (callee.type === 'MemberExpression' && !callee.computed && callee.property.name === 'join') {
-      const root = rootOf(callee.object);
-      return callee.object.type === 'ArrayExpression' || (root !== null && readable(root.name));
-    }
-    return false;
+  const quote = (/** @type {Node} */ node) => text.slice(node.range[0], node.range[1]);
+  const piece = (/** @type {Node} */ node) => {
+    found.push({ cls: quote(node), offset: node.range[0], node, partial: true });
   };
-  /** Nodes the walk below must not enter: a class call's object of conditions, an interpolation glued to a class. */
-  const skipNodes = new Set();
-  const skip = (/** @type {Node} */ node) => {
-    if (notAValue(node) || skipNodes.has(node)) return true;
-    if (visited.has(node)) return false;
-    // What the rule cannot read is reported, never skipped.
-    const cannot =
-      (node.type === 'CallExpression' && !readableCall(node)) ||
-      (node.type === 'MemberExpression' && rootOf(node) !== null && !readable(/** @type {Node} */ (rootOf(node)).name)) ||
-      (node.type === 'Identifier' && !readable(node.name));
-    if (cannot) {
-      visited.add(node);
-      unread(node);
-      return true;
-    }
-    if (isConcat(node)) {
-      if (!visited.has(node)) {
-        visited.add(node);
-        found.push({ cls: quote(node), offset: node.range[0], node, partial: true });
-      }
-      return true;
-    }
-    return false;
+  const unread = (/** @type {Node} */ node) => {
+    found.push({ cls: quote(node), offset: node.range[0], node, partial: true, unread: true });
   };
-  unreadable.forEach((node) => unread(node));
-  roots.forEach((root) =>
-    walk(
-      root,
-      (node) => {
-        if (visited.has(node)) return;
-        visited.add(node);
-        if (isClassCall(node)) {
-          for (const arg of node.arguments) {
-            if (arg.type !== 'ObjectExpression') continue;
-            // The keys are classes; the values are only conditions.
-            skipNodes.add(arg);
-            for (const prop of arg.properties) {
-              if (prop.type === 'Property' && prop.key.type === 'Literal' && typeof prop.key.value === 'string') {
-                tokensOf(prop.key.value, prop.key.range[0] + 1).forEach((t) => found.push({ ...t, node: prop.key, partial: false }));
-              }
-            }
-          }
-        } else if (node.type === 'Literal' && typeof node.value === 'string') {
-          if (node.parent?.type === 'Property' && node.parent.key === node && isClassCall(node.parent.parent?.parent ?? {})) return;
-          tokensOf(node.value, node.range[0] + 1).forEach((t) => found.push({ ...t, node, partial: false }));
-        } else if (node.type === 'TemplateLiteral') {
-          templateTokens(node).forEach((t) => found.push(t));
-          // An interpolation glued to a class (p-${n}) is already reported as that partial class.
-          const last = node.quasis.length - 1;
-          node.expressions.forEach((/** @type {Node} */ e, /** @type {number} */ i) => {
-            const before = node.quasis[i].value.cooked ?? node.quasis[i].value.raw;
-            const after = node.quasis[i + 1].value.cooked ?? node.quasis[i + 1].value.raw;
-            const gluedBefore = before === '' ? i > 0 : !/\s$/.test(before);
-            const gluedAfter = after === '' ? i + 1 < last : !/^\s/.test(after);
-            if (gluedBefore || gluedAfter) skipNodes.add(e);
-          });
-        }
-      },
-      skip,
-    ),
-  );
-  return found;
-}
+  const style = (/** @type {Node} */ node) => {
+    found.push({ cls: quote(node), offset: node.range[0], node, partial: true, style: true });
+  };
+  const whole = (/** @type {string} */ value, /** @type {number} */ start, /** @type {Node} */ node) =>
+    tokensOf(value, start).forEach((t) => found.push({ ...t, node, partial: false }));
 
-/** An expression rebuilt from its parts when the file's text is not at hand (strings quoted as written). */
-function sourceOf(/** @type {Node} */ node) {
-  /** @param {Node} n @returns {string} */
-  const text = (n) => {
-    if (n.type === 'BinaryExpression') return `${text(n.left)} ${n.operator} ${text(n.right)}`;
-    if (n.type === 'Literal') return n.raw ?? JSON.stringify(n.value);
-    if (n.type === 'Identifier') return n.name;
-    if (n.type === 'JSXSpreadAttribute') return `{...${text(n.argument)}}`;
-    if (n.type === 'MemberExpression') return n.computed ? `${text(n.object)}[${text(n.property)}]` : `${text(n.object)}.${text(n.property)}`;
-    if (n.type === 'CallExpression') return `${text(n.callee)}(…)`;
-    return '…';
+  /** @type {Map<any, boolean>} */
+  const taintCache = new Map();
+  /** Whether a variable's table or array is changed or handed on after its declaration, so its values cannot be read. */
+  const tainted = (/** @type {any} */ variable) => {
+    if (taintCache.has(variable)) return taintCache.get(variable);
+    let bad = false;
+    for (const ref of variable.references) {
+      if (ref.isWrite()) continue;
+      let cur = ref.identifier;
+      let up = parents.get(cur);
+      while (up && (up.type === 'MemberExpression' && up.object === cur || VALUE_WRAPPERS.has(up.type))) {
+        cur = up;
+        up = parents.get(cur);
+      }
+      if (!up) continue;
+      if (cur !== ref.identifier && cur.type === 'MemberExpression') {
+        if (up.type === 'AssignmentExpression' && up.left === cur) bad = true;
+        else if (up.type === 'UpdateExpression' || (up.type === 'UnaryExpression' && up.operator === 'delete')) bad = true;
+        else if (up.type === 'CallExpression' && up.callee === cur && !READ_ONLY_METHODS.has(calleeName(cur).last)) bad = true;
+      } else if (up.type === 'CallExpression' && up.arguments.includes(cur)) {
+        if (!READ_ONLY_CALLS.has(calleeName(up.callee).dotted) && !CLASS_CALLS.has(calleeName(up.callee).last)) bad = true;
+      } else if ((up.type === 'VariableDeclarator' && up.init === cur) || (up.type === 'AssignmentExpression' && up.right === cur)) {
+        bad = true;
+      }
+      if (bad) break;
+    }
+    taintCache.set(variable, bad);
+    return bad;
   };
-  return text(node);
+
+  /** The values a name can hold, or null when they cannot be read here. */
+  const valuesOf = (/** @type {Node} */ id) => {
+    if (id.name === 'undefined') return [];
+    const variable = refOf.get(id)?.resolved;
+    if (!variable || variable.defs.length === 0) return null;
+    const def = variable.defs[0];
+    // A declared function with no body (declare function tw) returns nothing the reader can see.
+    if (def.type === 'FunctionName') return def.node.body ? [def.node] : null;
+    if (def.type !== 'Variable') return null;
+    const declarator = def.node;
+    if (declarator.id.type !== 'Identifier') return null;
+    const loop = parents.get(parents.get(declarator) ?? declarator);
+    if (loop && (loop.type === 'ForOfStatement' || loop.type === 'ForInStatement')) return null;
+    if (tainted(variable)) return null;
+    /** @type {Node[]} */
+    const values = [];
+    for (const ref of variable.references) {
+      if (!ref.writeExpr) continue;
+      const assign = parents.get(ref.writeExpr);
+      if (assign?.type === 'AssignmentExpression' && assign.operator !== '=') return null;
+      values.push(ref.writeExpr);
+    }
+    return values;
+  };
+
+  const seen = new Set();
+
+  /** Read `node`, which sits where its value becomes classes. @type {(node: any) => void} */
+  const read = (node) => {
+    if (!node || seen.has(node)) return;
+    seen.add(node);
+    if (VALUE_WRAPPERS.has(node.type) || node.type === 'ChainExpression' || node.type === 'JSXExpressionContainer') return read(node.expression);
+    switch (node.type) {
+      case 'JSXEmptyExpression':
+        return;
+      case 'Literal':
+        if (typeof node.value === 'string') whole(node.value, node.range[0] + 1, node);
+        return;
+      case 'TemplateLiteral':
+        return readTemplate(node);
+      case 'ConditionalExpression':
+        read(node.consequent);
+        return read(node.alternate);
+      case 'LogicalExpression':
+        // a && 'p-xs' renders a only when it is falsy, never a class: a is a test.
+        if (node.operator !== '&&') read(node.left);
+        return read(node.right);
+      case 'BinaryExpression':
+        if (node.operator === '+') piece(node);
+        return;
+      case 'UnaryExpression':
+      case 'UpdateExpression':
+        return;
+      case 'SequenceExpression':
+        return read(node.expressions[node.expressions.length - 1]);
+      case 'AssignmentExpression':
+        return node.operator === '=' ? read(node.right) : piece(node);
+      case 'ArrayExpression':
+        for (const el of node.elements) read(el?.type === 'SpreadElement' ? el.argument : el);
+        return;
+      case 'ObjectExpression':
+        // A table: its values are classes, its keys are not.
+        for (const prop of node.properties) {
+          if (prop.type === 'SpreadElement') read(prop.argument);
+          else read(prop.value);
+        }
+        return;
+      case 'Identifier': {
+        const values = valuesOf(node);
+        if (values === null) return unread(node);
+        values.forEach(read);
+        return;
+      }
+      case 'MemberExpression': {
+        let root = node;
+        while (root.type === 'MemberExpression' || VALUE_WRAPPERS.has(root.type)) root = root.type === 'MemberExpression' ? root.object : root.expression;
+        if (root.type !== 'Identifier') return unread(node);
+        const values = valuesOf(root);
+        if (values === null) return unread(node);
+        values.forEach(read);
+        return;
+      }
+      case 'CallExpression':
+        return readCall(node);
+      case 'FunctionDeclaration':
+      case 'FunctionExpression':
+      case 'ArrowFunctionExpression':
+        returnsOf(node).forEach(read);
+        return;
+      default:
+        return unread(node);
+    }
+  };
+
+  /** @type {(node: any) => void} */
+  const readTemplate = (node) => {
+    const last = node.quasis.length - 1;
+    node.quasis.forEach((/** @type {any} */ quasi, /** @type {number} */ i) => {
+      const value = quasi.value.cooked ?? quasi.value.raw;
+      const tokens = tokensOf(value, quasi.range[0] + 1);
+      const openEnd = i < last && !/\s$/.test(value);
+      const openStart = i > 0 && !/^\s/.test(value);
+      tokens.forEach((t, j) => {
+        const partial = (openStart && j === 0) || (openEnd && j === tokens.length - 1);
+        found.push({ ...t, node: quasi, partial });
+      });
+    });
+    node.expressions.forEach((/** @type {any} */ expr, /** @type {number} */ i) => {
+      const before = node.quasis[i].value.cooked ?? node.quasis[i].value.raw;
+      const after = node.quasis[i + 1].value.cooked ?? node.quasis[i + 1].value.raw;
+      const textGlued = (before !== '' && !/\s$/.test(before)) || (after !== '' && !/^\s/.test(after));
+      const exprGlued = (before === '' && i > 0) || (after === '' && i + 1 < last);
+      // Glued to text, the text's partial token already says so; glued only to another interpolation, say it here.
+      if (textGlued) return;
+      if (exprGlued) return piece(expr);
+      read(expr);
+    });
+  };
+
+  /** @type {(node: any) => void} */
+  const readCall = (node) => {
+    const { last } = calleeName(node.callee);
+    if (node.callee.type === 'Identifier' && CLASS_CALLS.has(last)) {
+      for (const arg of node.arguments) {
+        if (arg.type !== 'ObjectExpression') {
+          read(arg.type === 'SpreadElement' ? arg.argument : arg);
+          continue;
+        }
+        // The keys are classes; the values are only conditions.
+        for (const prop of arg.properties) {
+          if (prop.type === 'SpreadElement') unread(prop);
+          else if (prop.computed) read(prop.key);
+          else if (prop.key.type === 'Identifier') whole(prop.key.name, prop.key.range[0], prop.key);
+          else if (prop.key.type === 'Literal' && typeof prop.key.value === 'string') whole(prop.key.value, prop.key.range[0] + 1, prop.key);
+        }
+      }
+      return;
+    }
+    if (node.callee.type === 'Identifier') {
+      const values = valuesOf(node.callee);
+      if (values === null || values.length === 0) return unread(node);
+      values.forEach(read);
+      return;
+    }
+    if (node.callee.type === 'MemberExpression' && last === 'join') return read(node.callee.object);
+    return unread(node);
+  };
+
+  /** A props object: its class keys are read, a style is reported, a spread or computed key it cannot read is unread. */
+  const readProps = (/** @type {any} */ obj) => {
+    for (const prop of obj.properties) {
+      if (prop.type === 'SpreadElement') {
+        if (prop.argument.type === 'ObjectExpression') readProps(prop.argument);
+        else unread(prop);
+      } else if (prop.computed && prop.key.type !== 'Literal') {
+        unread(prop);
+      } else if (prop.computed && !CLASS_PROP.test(keyName(prop.key) ?? '') && keyName(prop.key) !== 'style') {
+        continue;
+      } else if (prop.computed) {
+        unread(prop);
+      } else if (CLASS_PROP.test(keyName(prop.key) ?? '')) {
+        read(prop.value);
+      } else if (keyName(prop.key) === 'style') {
+        style(prop);
+      }
+    }
+  };
+
+  for (const node of /** @type {any[]} */ (all)) {
+    if (node.type === 'JSXAttribute' && CLASS_PROP.test(keyName(node.name) ?? '') && node.value) read(node.value);
+    else if (node.type === 'JSXSpreadAttribute') {
+      if (node.argument.type === 'ObjectExpression') readProps(node.argument);
+      else unread(node);
+    } else if (node.type === 'CallExpression' && PROPS_CALLS.has(calleeName(node.callee).last)) {
+      const props = node.arguments[/** @type {number} */ (PROPS_CALLS.get(calleeName(node.callee).last))];
+      if (!props || (props.type === 'Literal' && props.value === null) || (props.type === 'Identifier' && props.name === 'undefined')) continue;
+      if (props.type === 'ObjectExpression') readProps(props);
+      else unread(props);
+    } else if (node.type === 'ObjectExpression') {
+      // A class-carrying key in any other object literal (a props table handed on later).
+      for (const prop of node.properties) {
+        if (prop.type === 'Property' && !prop.computed && CLASS_PROP.test(keyName(prop.key) ?? '')) read(prop.value);
+      }
+    }
+  }
+  return found;
 }
