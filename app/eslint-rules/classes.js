@@ -157,11 +157,20 @@ const PROPS_CALLS = new Map([['createElement', 1], ['cloneElement', 1], ['jsx', 
 /** The TypeScript nodes that wrap a value (x as const, x satisfies T, x as T, <T>x, x!): read through. */
 const VALUE_WRAPPERS = new Set(['TSAsExpression', 'TSSatisfiesExpression', 'TSTypeAssertion', 'TSNonNullExpression']);
 
-/** Calls that only read a table they are handed. */
-const READ_ONLY_CALLS = new Set(['Object.keys', 'Object.values', 'Object.entries', 'Object.freeze', 'Object.isFrozen']);
+/** Calls that write into the table handed to them as their first argument. */
+const MUTATING_CALLS = new Set([
+  'Object.assign',
+  'Object.defineProperty',
+  'Object.defineProperties',
+  'Object.setPrototypeOf',
+  'Reflect.set',
+  'Reflect.defineProperty',
+  'Reflect.deleteProperty',
+  'Reflect.setPrototypeOf',
+]);
 
-/** Methods that only read the array or table they are called on. */
-const READ_ONLY_METHODS = new Set(['join', 'includes', 'indexOf', 'at', 'toString']);
+/** Methods that change the array, map or set they are called on. */
+const MUTATING_METHODS = new Set(['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill', 'copyWithin', 'set', 'add', 'delete', 'clear']);
 
 /** The name of an object key or a JSX attribute, when it is a plain name or a string. */
 function keyName(/** @type {Node | undefined} */ key) {
@@ -268,15 +277,32 @@ export function collectClasses(parsed) {
 
   /** @type {Map<any, boolean>} */
   const taintCache = new Map();
-  /** Whether a variable's table or array is changed or handed on after its declaration, so its values cannot be read. */
+  /** Whether a name holds only strings (or other primitives): nothing done to it later can change them. */
+  const primitive = (/** @type {any} */ variable) =>
+    variable.references.every((/** @type {any} */ ref) => {
+      if (!ref.writeExpr) return true;
+      const w = ref.writeExpr;
+      return w.type === 'Literal' || w.type === 'TemplateLiteral';
+    });
+  /**
+   * Whether a variable's table or array is changed after its declaration, so its values cannot be read:
+   * a member written, updated or deleted, a mutating method called on it or on a member, or the table
+   * handed to a call that writes into its first argument (Object.assign and kin) - directly or through
+   * an alias. A string is never changed, and every other use (a read-only call, String(), a method that
+   * returns, an alias nobody writes, a function it is handed to) is a read: the CSS check is the
+   * guarantee, so the helper errs toward silence on honest code (review round 3).
+   */
   const tainted = (/** @type {any} */ variable) => {
-    if (taintCache.has(variable)) return taintCache.get(variable);
+    if (taintCache.has(variable)) return /** @type {boolean} */ (taintCache.get(variable));
+    // Provisionally clean, so an alias cycle (A = B, B = A) ends.
+    taintCache.set(variable, false);
+    if (primitive(variable)) return false;
     let bad = false;
     for (const ref of variable.references) {
       if (ref.isWrite()) continue;
       let cur = ref.identifier;
       let up = parents.get(cur);
-      while (up && (up.type === 'MemberExpression' && up.object === cur || VALUE_WRAPPERS.has(up.type))) {
+      while (up && ((up.type === 'MemberExpression' && up.object === cur) || VALUE_WRAPPERS.has(up.type) || up.type === 'ChainExpression')) {
         cur = up;
         up = parents.get(cur);
       }
@@ -284,11 +310,16 @@ export function collectClasses(parsed) {
       if (cur !== ref.identifier && cur.type === 'MemberExpression') {
         if (up.type === 'AssignmentExpression' && up.left === cur) bad = true;
         else if (up.type === 'UpdateExpression' || (up.type === 'UnaryExpression' && up.operator === 'delete')) bad = true;
-        else if (up.type === 'CallExpression' && up.callee === cur && !READ_ONLY_METHODS.has(calleeName(cur).last)) bad = true;
-      } else if (up.type === 'CallExpression' && up.arguments.includes(cur)) {
-        if (!READ_ONLY_CALLS.has(calleeName(up.callee).dotted) && !CLASS_CALLS.has(calleeName(up.callee).last)) bad = true;
-      } else if ((up.type === 'VariableDeclarator' && up.init === cur) || (up.type === 'AssignmentExpression' && up.right === cur)) {
+        else if (up.type === 'CallExpression' && up.callee === cur && MUTATING_METHODS.has(calleeName(cur).last)) bad = true;
+      } else if (up.type === 'CallExpression' && up.arguments[0] === cur && MUTATING_CALLS.has(calleeName(up.callee).dotted)) {
         bad = true;
+      } else if (up.type === 'VariableDeclarator' && up.init === cur && up.id.type === 'Identifier') {
+        // An alias: a read, unless the alias itself is changed.
+        const alias = scopeManager.getDeclaredVariables(up)[0];
+        if (alias && tainted(alias)) bad = true;
+      } else if (up.type === 'AssignmentExpression' && up.right === cur && up.left.type === 'Identifier') {
+        const alias = refOf.get(up.left)?.resolved;
+        if (alias && tainted(alias)) bad = true;
       }
       if (bad) break;
     }

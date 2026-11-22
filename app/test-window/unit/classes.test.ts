@@ -215,3 +215,33 @@ test('props passed by reference are unread; a style in a props object is reporte
   expect(findings(`const A = () => <div {...{ style: { color: '#f00' } }} />;`)).toEqual(["style:style: { color: '#f00' }"]);
   expect(findings(`const S = {};\nconst A = () => createElement('div', { style: S });`)).toEqual(['style:style: S']);
 });
+
+// Review round 3 (classes.js:287): honest code the helper refused. With the CSS check as the guarantee,
+// the helper reads a name unless the name is truly changed: a string never is, an alias or a call that
+// only reads is a read, and only a known mutation (a member write, a mutating method, Object.assign
+// and kin, Reflect's writers) makes a table unread - through an alias too.
+test('a string-valued name is never unread: an alias of it, String() of it, a method on it, a template of it into title or aria', () => {
+  expect(findings(`const A = 'flex';\nexport const B = A;\nconst C = () => <i className={A} />;`)).toEqual(['whole:flex']);
+  expect(findings(`const look = 'flex p-xs';\nconst C = () => <i className={look} title={String(look)} />;`)).toEqual(['whole:flex', 'whole:p-xs']);
+  expect(findings(`const look = 'p-xs';\nconst LOUD = look.toUpperCase();\nconst C = () => <i className={look} aria-label={\`\${look} box\`} />;`)).toEqual(['whole:p-xs']);
+  expect(findings(`let look = 'p-xs';\nfoo(look);\nconst C = () => <i className={look} />;`)).toEqual(['whole:p-xs']);
+});
+
+test('a table only read is read: Object.hasOwn, the in test, handed to a function, used in two places', () => {
+  expect(findings(`const TONE = { a: 'p-xs' };\nconst C = ({ k }) => <i className={Object.hasOwn(TONE, k) ? TONE[k] : 'flex'} />;`)).toEqual(['whole:flex', 'whole:p-xs']);
+  expect(findings(`const TONE = { a: 'p-xs' };\nlog(TONE);\nconst C = ({ k }) => <i className={TONE[k]} />;\nconst D = ({ k }) => <b className={TONE[k]} />;`)).toEqual(['whole:p-xs']);
+  expect(findings(`const TONE = { a: 'p-xs' };\nconst KEYS = Object.keys(TONE).map((k) => k.toUpperCase());\nconst C = ({ k }) => <i className={TONE[k]} />;`)).toEqual(['whole:p-xs']);
+});
+
+test('an alias of a table is a read unless the alias itself is written', () => {
+  expect(findings(`const A = { a: 'p-xs' };\nexport const B = A;\nconst C = ({ k }) => <i className={A[k]} />;`)).toEqual(['whole:p-xs']);
+  expect(findings(`const A = { a: 'p-xs' };\nconst B = A;\nB.a = 'p-sm';\nconst C = ({ k }) => <i className={A[k]} />;`)).toEqual(['unread:A[k]']);
+  expect(findings(`const A = ['flex'];\nconst B = A;\nB.push('p-sm');\nconst C = () => <i className={A.join(' ')} />;`)).toEqual(['unread:A']);
+});
+
+test('a known mutation still makes a table unread: a mutating method, Object.defineProperty, Reflect.set, a nested member write', () => {
+  expect(findings(`const parts = ['flex'];\nparts.splice(0, 1, 'p-sm');\nconst C = () => <i className={parts.join(' ')} />;`)).toEqual(['unread:parts']);
+  expect(findings(`const o = { k: 'flex' };\nObject.defineProperty(o, 'k', { value: 'p-sm' });\nconst C = () => <i className={o.k} />;`)).toEqual(['unread:o.k']);
+  expect(findings(`const o = { k: 'flex' };\nReflect.set(o, 'k', 'p-sm');\nconst C = () => <i className={o.k} />;`)).toEqual(['unread:o.k']);
+  expect(findings(`const o = { n: { k: 'flex' } };\no.n.k = 'p-sm';\nconst C = () => <i className={o.n.k} />;`)).toEqual(['unread:o.n.k']);
+});
