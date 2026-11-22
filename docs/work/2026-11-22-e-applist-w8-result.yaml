@@ -11,21 +11,32 @@ outcome: >-
   Keel's closed Tailwind 3.4.19 tokens valued from that file: its day world is the light appearance, its night world
   the dark one, still following the Mac (rgb(var(--name)) with R G B triplets in src/window/styles.css under :root and
   again under prefers-color-scheme: dark); one indigo action colour, translucent tinted pills, capsule radii, cards by
-  fill, no shadow, weights 360-500; the system font, no font file, no url(). design/vocabulary (app/eslint-rules/,
-  ported from Trawler, hardened after review round 1) refuses an off-list class, an arbitrary value, a modifier step
-  off its scale, a class built at run time, the dark: variant and any variant the closed config lacks; it reads class
-  tables through TypeScript wrappers, seeds from every class-carrying prop, reports what it cannot read, an inline
-  style and classes written to the DOM by hand; inline eslint-disable comments are off; every scale Tailwind derives
-  from spacing is closed. npm run lint is green over src/window. bridge.ts stays the one reader of
+  fill, no shadow, weights 360-500; the system font, no font file, no url(). The guarantee that only Keel's
+  vocabulary reaches the shipped CSS is a check on the CSS Tailwind emits (details.guarantee), run by npm run lint
+  after ESLint from one pinned config over one source list; design/vocabulary (app/eslint-rules/, ported from
+  Trawler) is the fast helper: it refuses an off-list class, an arbitrary value, a modifier step off its scale, the
+  dark: variant and any variant the closed config lacks, reads class values through ESLint's scope analysis, reports
+  a class built from pieces and what it cannot read, an inline style and classes written to the DOM by hand, and
+  refuses no honest helper code. Inline eslint-disable comments are off; every scale Tailwind derives from spacing is
+  closed. npm run lint is green over src/window. bridge.ts stays the one reader of
   window.keel, now with BridgeProvider and useBridge; hooks.ts holds useAppState, useAction and the answer texts. The
   fake bridge (src/window/fake/) answers every request in the contract from seven fixture scenarios and never reaches
   the shipped page (node guards). npm run dev:browser serves /browser.html on the fake. Screen 6 (Project, Tools,
-  PATH, Alerts, the version) replaces W7's bare page. Vitest 109 tests (unit 65, integration 44) and node 184 tests
+  PATH, Alerts, the version) replaces W7's bare page. Vitest 138 tests (unit 77, integration 61) and node 184 tests
   pass; npm run typecheck green on TypeScript 6.0.3 (no fallback needed); keel check green at every commit but two
   (deviations). Nothing
   was built or packaged. The sandbox refused the port both dev:browser and npm start bind, so the owner's look
   (details.live-checks) is the live check; he has run browser mode on the first look only.
 deviations:
+  - >-
+    Where the guarantee lives (review round 2, FAIL: 8 blockers, 4 importants, most of them routes past the
+    hand-written class reader). The plan puts it in the lint rule (requirement: 'held by a lint rule'; expected:
+    'npm run lint fails on ...'). It now lives in a check on the CSS Tailwind emits, which npm run lint runs after
+    ESLint; the plan's promise holds unchanged: npm run lint still fails on each class the plan names, and there is no
+    escape hatch. Why: Tailwind writes CSS only for whole class names it finds written out in its content files, so a
+    check on what it emits sees every route however a string is built, while an AST reader must model every way
+    JavaScript can build or move a string, and each round found more. The plan pair is otherwise unchanged
+    (details.guarantee holds the design and the per-finding outcome). Commit c5ad1f9.
   - >-
     The look: the owner rejected the first look after trying browser mode ("terribly bad & ugly") and ruled on
     2026-11-22 that it follows docs/work/2026-11-22-e-applist-w8-design.md (a byte copy of his DESIGN.md, Mercury's
@@ -62,6 +73,12 @@ deviations:
     are declared (64892b3; the emittable list falls to 996 classes). The sibling check adds an inline style and classes
     written to the DOM by hand (1a18513), and the waived nit on import.meta.glob became a node guard (8d941b1). The
     content-glob nit stays waived.
+  - >-
+    Review round 2 (cr note on 62cd3f8, FAIL: 8 blockers, 4 importants), each answered in details.guarantee.findings:
+    c5ad1f9 the CSS check, one source list, the pinned config; 89edf8f the helper rebuilt on ESLint's scope manager
+    (no false reports on helper bodies, group and peer markers or same-named variables; the AST-visible routes
+    reported); 621b2d2 the browser-mode link contrast. The lint fixtures' and src/window's own test files are now
+    linted too (the test-file ignore is gone: there are none in src/window).
   - >-
     Commit 1f7ab58's message names the wrong three of screen 6's tests as passing against W7's bare page (it says
     loading, the PATH-absent check and the refused and failed texts). Reading the tests against that page, the three
@@ -119,10 +136,14 @@ evidence:
     - "64892b3 fix: spacing-derived scales closed (red first: 2 unit)"
     - "1a18513 fix: inline style and hand-written DOM classes reported (red first: 1 fixture)"
     - "8d941b1 test: no import.meta.glob under src/window (red 1 of 14 on a plant)"
+    - "62cd3f8 docs: the result pair (redesign and round 1)"
+    - "c5ad1f9 fix: the guarantee is the CSS check, one source list, a pinned config (red first: guarantee.test.ts failed to load with no emitted.js; the pinned-script test red)"
+    - "89edf8f fix: the helper on ESLint's scope manager (red first: 11 unit, the honest.tsx fixture and the group/peer CSS test; older collectClasses tests red only on the new parse API)"
+    - "621b2d2 fix: browser-mode links in ink (red first: the text-primary test on browser.tsx)"
   runs-2026-11-22:
-    vitest: "cd app && npm run test:window: 11 files, 109 tests pass (unit 65 in 6 files, integration 44 in 5 files)"
+    vitest: "cd app && npm run test:window: 13 files, 138 tests pass (unit 77 in 7 files, integration 61 in 6 files; 9 of the integration tests are guarantee.test.ts's probe loop)"
     node: "cd app && npm run test:main: tests 184, pass 184, fail 0 (W7's 176 plus 8 guards)"
-    lint: "cd app && npm run lint (eslint --max-warnings 0 .): exit 0, no message"
+    lint: "cd app && npm run lint (eslint -c eslint.config.js --max-warnings 0 . && node eslint-rules/check-css.js): exit 0, no message"
     typecheck: "cd app && npm run typecheck: exit 0 on typescript 6.0.3"
     keel-check: "green after each commit except 73d7367 and 668aee9 (see deviations); green at the tip"
     package: "not run (W8 never packages or makes)"
@@ -145,9 +166,39 @@ follow-ups:
   - "Each request or event W5 adds to contract.ts needs a fake handler and fixture (fake.test.ts fails until it has one). Taken by: E-APPLIST.W5."
   - "Screens 1 and 2, the top bar's other screens, and screen 6's fields 6.4 and 6.5, on these tokens, hooks and the fake. Taken by: E-APPLIST.W6."
   - "The Playwright epic test; screen 6 and the built CSS under the packaged content policy, seen on the signed build; the design rules into docs/local-app.html. Taken by: E-APPLIST.W9."
-  - "Review round 2 over the whole range, the sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
+  - "Review round 3 on the last fix, the sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
 details:
   base: "wu/E-APPLIST/w8-window-foundation off epic/E-APPLIST at 3cfa216"
+  guarantee:
+    claim: "Only Keel's closed vocabulary reaches the shipped CSS; npm run lint fails otherwise, with no escape hatch."
+    where: >-
+      app/eslint-rules/emitted.js, run as npm run lint's second step (eslint-rules/check-css.js) and by
+      test-window/integration/guarantee.test.ts: src/window/styles.css through Tailwind's PostCSS plugin with the
+      shipped tailwind.config.js (as vite.renderer.config.ts runs it), over the content list app/window-sources.js;
+      every class in an emitted selector must pass classify() (the closed vocabulary), else exit 1 naming it.
+    why: >-
+      Tailwind emits CSS only for whole class names written out in its content files. Whatever route a string takes
+      at run time (a +, interpolations, tables written later, imports, this., props by reference, nested ESLint
+      configs, html pages), either its whole class name is written somewhere in the content set, and the check sees
+      it emitted, or it is not, and Tailwind ships no CSS for it. The AST rule cannot reach that bound: each review
+      round found routes it did not model.
+    one-list: "window-sources.js: SOURCE_GLOBS is Tailwind's content; SCRIPT_GLOBS (the same minus html) is ESLint's files; the html pages are read by the CSS check only."
+    pinned-config: "npm run lint runs eslint -c eslint.config.js; the tests use overrideConfigFile; guarantee.test.ts refuses any other eslint.config.* or .eslintrc* under app/. Probe run by hand: a nested eslint.config.js plus Bad.tsx under src/window/probe/sub, npm run lint exit 1, 3 errors (removed after)."
+    helper: "design/vocabulary stays at error for fast feedback on honest code: scope-resolved, reads helpers by their returns, reports pieces and what it cannot read; refusing correct code is a bug."
+    inline-style: "Inline styles are not Tailwind CSS: the packaged CSP (style-src 'self', no 'unsafe-inline') blocks style attributes, and the helper reports a JSX style and a style in a props object."
+    findings:
+      - "classes.js:427 adjacent interpolations - moot by the CSS check (probe: an imported PAD = 'p-[13px]' beside ${b}: p-[13px] caught; ${'p-'}${'[14px]'}: no CSS emitted) and fixed in the helper (each glued interpolation reported)."
+      - "classes.js:223 a + of two names - moot (probe WHOLE + MORE: dark:bg-ink, p-[13px] caught) and fixed (any + reported as pieces)."
+      - "eslint.config.js:10 a nested config - fixed (eslint -c, overrideConfigFile, the config guard; hand probe exit 1) and moot (the CSS check reads no ESLint config: dark:bg-ink, p-[3px] caught)."
+      - "classes.js:408 cx identifier, computed and spread keys - moot (blur, grow, transition, p-[15px] caught; the computed piece ships no CSS) and fixed (identifier keys read, computed key read, spread unread)."
+      - "classes.js:309 names without scope - fixed (scope manager: shadowing, for-of and catch unread; no false report on a same-named variable or text elsewhere) and moot for the evasion (p-[25px] caught)."
+      - "classes.js:321 member writes, push, Object.assign - moot (p-[21px], p-[22px], dark:bg-ink, z-10 caught) and fixed (a table written or handed on after its declaration is unread)."
+      - "classes.js:324 a helper's whole body read - fixed (a function is read by its returns; honest.tsx: throw, text constant, exhaustive switch, no report)."
+      - "classes.js:120 group and peer markers refused - fixed (legal where their variants are; the CSS check passes group group-hover:text-ink peer peer-checked:bg-primary)."
+      - "eslint.config.js:14 content set vs lint set - fixed (one list) and moot (the CSS check reads the html: z-50, p-[13px], dark:bg-ink, grid-cols-3 caught)."
+      - "classes.js:195 this. chains - moot (p-[23px] caught) and fixed (this.look, this.props.className unread)."
+      - "classes.js:330 props by reference and style in props - moot (p-[24px] caught) and fixed (createElement/cloneElement with a reference, a spread inside a spread literal, a computed key: unread; a style key: reported)."
+      - "browser.tsx:23 link contrast - fixed (ink links; a contrast test over both worlds, text-primary refused in window files)."
   design-source: "docs/work/2026-11-22-e-applist-w8-design.md (the owner's DESIGN.md, Mercury), adapted to a settings window"
   design-rules:
     - "Every value from a token; a new size or colour is a token change in tailwind.config.js (and styles.css for a colour), never a class, an inline style or a hand-written DOM class."
