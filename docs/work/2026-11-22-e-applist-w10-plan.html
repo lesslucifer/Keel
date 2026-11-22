@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="3f9a61c07be24d8e5a1c94b2">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-APPLIST.W10 plan: the app moves to pnpm</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-APPLIST.W10 · The app moves to pnpm</h1>
+      <p>One package tool for the app, the one you chose: pnpm.</p>
+      <div class="meta">T3 · WU plan · 2026-11-22 · Keel · its data file, 2026-11-22-e-applist-w10-plan.yaml, sits beside this page · the epic: <a href="2026-11-20-e-applist-plan.html">E-APPLIST plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">The app installs and runs with npm. You ruled on 2026-11-22 that it must use pnpm. Until it moves, every command you run for the app says npm, and the tests insist on npm's lockfile.</p>
+
+<h2 id="get">What you get</h2>
+<ul data-c="get">
+  <li>In the app folder: <code>pnpm install</code>, <code>pnpm start</code>, <code>pnpm test:main</code> and the rest. No npm.</li>
+  <li>The same package versions as today, to the last digit.</li>
+  <li>One pnpm version, written in the app's package file. Yours from Homebrew already matches.</li>
+</ul>
+
+<h2 id="how">How it works</h2>
+<ol data-c="how">
+  <li>pnpm turns today's npm lockfile into its own, with the same versions. The npm lockfile goes.</li>
+  <li>pnpm lays the packages out flat, as npm did. The app builder needs that to package the app.</li>
+  <li>pnpm refuses package install scripts you have not approved. One package has one; it ships its binary ready, so its script stays off.</li>
+  <li>The tests that checked for npm's lockfile now check for pnpm's. A new test checks the lockfile holds exactly the pinned versions.</li>
+  <li>Comments and open backlog notes that say "npm run" say "pnpm" instead. Past results stay as written.</li>
+</ol>
+
+<h2 id="makes">What it makes</h2>
+<ul data-c="makes">
+  <li>The pnpm lockfile and a small pnpm settings file in the app folder.</li>
+  <li>The updated checks and one new one.</li>
+  <li>This part added to the epic plan, as a change you ruled after W5.</li>
+</ul>
+<p>Keel's own checks run no package tool, so no rule file changes. Nothing is packaged.</p>
+
+<h2 id="decide">What you decide</h2>
+<p>Nothing blocks the work. The defaults below go ahead unless you say otherwise.</p>
+<table data-c="open-points">
+  <thead><tr><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Which pnpm, and how do you get it?</td><td><b>11.18.0, from Homebrew.</b></td><td>You have it already. No extra tool is needed.</td></tr>
+    <tr><td>Flat or linked package folder?</td><td><b>Flat.</b></td><td>The app builder needs it. It also keeps today's layout.</td></tr>
+    <tr><td>Run the one package's install script?</td><td><b>No.</b></td><td>It ships its binary ready to use.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="know">How you'll know it worked</h2>
+<ul data-c="know">
+  <li>The app folder has a pnpm lockfile and no npm lockfile.</li>
+  <li>A fresh <code>pnpm install</code> finishes with no warning about refused scripts.</li>
+  <li>The four app checks pass under pnpm: main tests, window tests, lint, type check.</li>
+  <li>Keel's usual checks still pass and still install nothing.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

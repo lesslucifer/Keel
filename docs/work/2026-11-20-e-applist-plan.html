@@ -62,6 +62,7 @@ flowchart LR
   W5 --> W6["W6 Your list and Open"]
   W8 --> W6
   W6 --> W9["W9 Epic test and close"]
+  W5 --> W10["W10 pnpm"]
 </pre>
 <div class="caption">An arrow means "starts after". W9 waits for all.</div>
 </div>
@@ -74,11 +75,12 @@ flowchart LR
     <tr><td>W7 · The app shell</td><td>The locked-down core, its two-way link to the window, a signed build, a test alert.</td><td>The app installed on your Mac.</td><td>—</td></tr>
     <tr><td>W8 · The window's base</td><td>Keel's own look, browser mode, the window's tests, the project screen.</td><td>Screens checked without packaging.</td><td>W7</td></tr>
     <tr><td>W5 · Read and alert</td><td>Reads git and the log; alerts once per line.</td><td>The alert at your desk.</td><td>W1, W7</td></tr>
+    <tr><td>W10 · Move to pnpm</td><td>The app on pnpm.</td><td>No npm.</td><td>W5</td></tr>
     <tr><td>W6 · Your list and Open</td><td>The alert's layout, the list, Open of the committed page.</td><td>One list of what waits on you.</td><td>W5, W8</td></tr>
     <tr><td>W9 · Epic test and close</td><td>A test that drives the real window; live checks; docs.</td><td>Proof the flow works.</td><td>all</td></tr>
   </tbody>
 </table>
-<p>W4, the first app frame, is dropped; W7 and W8 replace it. Only W7 is planned in full now.</p>
+<p>W7 and W8 replace the dropped W4. You added W10.</p>
 
 <h2 id="decide">What you decide</h2>
 <table data-c="decide">
