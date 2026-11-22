@@ -216,5 +216,13 @@ details:
     - "Where do the window's tests live? app/test-window/, outside app/test/, so keel check's node --test never picks up a Vitest file."
     - "Is screen 6's Remove confirmed? No: it changes only the app's own list, never the project; Add again restores it."
     - "Is Trawler's design-allow pragma ported? No: Keel's rule has no escape hatch; a needed value becomes a token."
+  owner-answers:
+    date: "2026-11-22"
+    answers: >-
+      All five recommendations taken: Tailwind 3.4.19; one TypeScript, 6.0.3, for the type check and the lint (option
+      a; option b only if 6.0.3 rejects W7's code at step 1, reported as a deviation; back to 7 is a follow-up in the
+      backlog row local-app); a muted blue accent; the owner looks before the sign-off (details.live-checks); Remove
+      does not ask. The data file's defaults stand: dark mode only in the tokens (the lint refuses dark:), the
+      window's tests in app/test-window/, Trawler's pragma not ported.
   htmldoc:
     id: 6b01db1a9f34851f0dfb2b9a
