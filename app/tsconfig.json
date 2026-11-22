@@ -14,7 +14,8 @@
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "allowJs": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test-window/**/*.ts", "test-window/**/*.tsx", "*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test-window/**/*.ts", "test-window/**/*.tsx", "*.ts", "tailwind.config.js"]
 }

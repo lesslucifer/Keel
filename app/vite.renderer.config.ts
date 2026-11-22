@@ -2,6 +2,8 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from 'tailwindcss';
+import tailwindConfig from './tailwind.config.js';
 import { csp, withCsp } from './src/main/window-options.ts';
 
 // https://vitejs.dev/config
@@ -27,5 +29,7 @@ const devCsp: Plugin = {
 export default defineConfig({
   root: path.join(app, 'src', 'window'),
   build: { outDir: path.join(app, '.vite', 'renderer', 'main_window'), emptyOutDir: true },
+  // Keel's tokens (tailwind.config.js) through Tailwind's PostCSS plugin; no autoprefixer: one Chromium.
+  css: { postcss: { plugins: [tailwindcss(tailwindConfig)] } },
   plugins: [react(), devCsp],
 });

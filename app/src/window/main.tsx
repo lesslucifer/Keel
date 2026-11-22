@@ -1,4 +1,5 @@
 // The window's entry: React renders the bare page into #root. W8 replaces the page with screen 6.
+import './styles.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';

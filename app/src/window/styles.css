@@ -1,0 +1,46 @@
+/* Keel's colour tokens as R G B triplets, read by tailwind.config.js through rgb(var(--name)).
+   Light first; the Mac's dark setting flips every one below (no dark: class anywhere, DEC-72).
+   No font file and no remote resource: the window draws in the Mac's own font. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+  --canvas: 246 246 247;
+  --surface: 255 255 255;
+  --line: 222 222 226;
+  --ink: 29 29 31;
+  --ink-muted: 102 102 108;
+  --accent: 61 99 153;
+  --on-accent: 255 255 255;
+  --ok: 36 122 68;
+  --wait: 156 98 0;
+  --fail: 186 52 40;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: 30 30 32;
+    --surface: 42 42 45;
+    --line: 62 62 66;
+    --ink: 236 236 238;
+    --ink-muted: 160 160 166;
+    --accent: 124 158 207;
+    --on-accent: 20 24 31;
+    --ok: 96 186 126;
+    --wait: 226 170 70;
+    --fail: 236 110 98;
+  }
+}
+
+@layer base {
+  html,
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  body {
+    @apply bg-canvas text-ink text-body;
+  }
+}
