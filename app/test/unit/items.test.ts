@@ -406,3 +406,18 @@ test('W6 review round 1 (open.ts:148): a plan staged with no tip is listed, mark
   assert.deepEqual([plan.kind, plan.tip, plan.open, plan.markable], ['plan', null, 'none', true]);
   assert.equal(plan.why, 'The router waits for your word on the plan. It named no tip, so there is no page to open: ask it for the plan.');
 });
+
+test('W6 review round 2 (items.ts:103): an open unit or epic whose name carries no keel id (wu/E-A/reader, epic/foo) is listed with a true reason and no Open, never an Open that fails', () => {
+  const OTHER = T('4');
+  const g = rawGit({ notes: { mr: [], cr: [OTHER, T('5')], dod: [] }, reviews: { [OTHER]: { verdict: 'PASS', blockers: 0, importants: 0 }, [T('5')]: { verdict: 'PASS', blockers: 0, importants: 0 } } });
+  g.branches.push({ name: 'wu/E-A/reader', tip: OTHER, upstream: null, ahead: 0, behind: 0, gone: false });
+  g.branches.push({ name: 'epic/foo', tip: T('5'), upstream: null, ahead: 0, behind: 0, gone: false });
+  g.merged = { main: [], 'epic/E-A': [], 'epic/foo': [] };
+  const items = itemsOf(input({ git: withOpen(g) }));
+  const unit = items.find((i) => i.branch === 'wu/E-A/reader') as Item;
+  assert.deepEqual([unit.kind, unit.wu, unit.open, unit.title], ['result', null, 'none', 'Result to sign']);
+  assert.equal(unit.why, 'The review passed. Your sign-off is missing. Its branch name carries no work unit number (wu/<epic>/w<n>-...), so Keel cannot find its result page: open it from its folder.');
+  const epic = items.find((i) => i.branch === 'epic/foo') as Item;
+  assert.deepEqual([epic.kind, epic.epic, epic.open], ['epic-result', null, 'none']);
+  assert.match(epic.why, /Its branch name carries no epic id \(epic\/E-<CODE>\), so Keel cannot find its result page/);
+});

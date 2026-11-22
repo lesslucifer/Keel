@@ -9,6 +9,7 @@
 // the reader asks the project's config once per git and remembers the answer.
 
 import { NOTE_KINDS, type GitBranch, type GitFacts, type GitWorktree, type NoteKind, type Review } from '../../shared/contract.ts';
+import { isEpicBranch, isTaskBranch, isUnitBranch, keelBranch, unitOfTask } from '../../shared/names.ts';
 import { run, refusedFlag, refOk, MIN_GIT, OLDEST_GIT, OUTPUT_CAP, type Captured, type CommandName, type RunOptions } from '../commands.ts';
 
 const ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -62,11 +63,12 @@ export function parseWorktrees(out: string): GitWorktree[] {
   return list;
 }
 
-const EPIC = /^epic\/[^/]+$/;
-const WU = /^wu\/[^/]+\/[^/_]+$/;
+// Keel's names, one grammar (shared/names.ts): an epic, a work unit; named() keeps keel's branches only.
+const EPIC = { test: isEpicBranch };
+const WU = { test: isUnitBranch };
 
 /** keel's branch names among `names` (main, epics, work units, tasks). */
-const named = (names: readonly string[]) => names.filter((n) => refOk(`${HEADS}${n}`));
+const named = (names: readonly string[]) => names.filter(keelBranch);
 
 /**
  * The open epics: those main does not hold (`inMain`; every epic when there is no main read), and
@@ -157,7 +159,7 @@ export function parseTime(out: string): string | null {
 }
 
 /**
- * The open branches the list draws its items from (W6), by the one rule: keel's names only (refOk); the
+ * The open branches the list draws its items from (W6), by the one rule: keel's names only (shared/names.ts); the
  * open epics as openEpics has them, none while main is listed but its read failed; a work unit of an open
  * epic only when that epic's read succeeded and does not hold it; a task of an open unit only when that
  * unit's read succeeded and does not hold it.
@@ -171,9 +173,8 @@ export function openSets(names: readonly string[], merged: Readonly<Record<strin
     return epics.includes(epic) && merged[epic] !== undefined && !(merged[epic] as readonly string[]).includes(n);
   });
   const tasks = named(names).filter((n) => {
-    const at = n.lastIndexOf('_');
-    if (at < 0 || WU.test(n)) return false;
-    const unit = n.slice(0, at);
+    if (!isTaskBranch(n)) return false;
+    const unit = unitOfTask(n);
     return units.includes(unit) && merged[unit] !== undefined && !(merged[unit] as readonly string[]).includes(n);
   });
   return { epics, units, tasks };

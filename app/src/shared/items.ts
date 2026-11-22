@@ -1,7 +1,8 @@
 // The item rules (docs/local-app.html 'The hand-off'; E-APPLIST.W6): which items the view's facts make,
 // from the open branches the reader lists (GitFacts.open, one rule in reader/git.ts),
 // their group, their words, and when each leaves. Pure: no import but the contract's types, so the main
-// part draws the list with it on every read and the window's fixtures draw theirs the same way.
+// part draws the list with it on every read and the window's fixtures draw theirs the same way. Branch
+// names are read by one grammar (names.ts); a branch whose name carries no keel id is listed with no Open.
 //
 // A result enters on a PASS or WAIVED review note on an open work unit's (or epic's) tip with no sign-off
 // note, turns to merge on the sign-off note, and leaves when its target holds the tip; a failed or
@@ -12,6 +13,9 @@
 // (a tip, or a short hash of what the router said), so a moved tip or a new question is a new item.
 
 import { ITEM_ID_SOURCE, SLOT_CAP, type GitFacts, type Item, type ItemCounts, type ItemGroup, type ItemKind, type Review, type RouterView } from './contract.ts';
+import { epicOfBranch, unitOfTask, wuOfBranch } from './names.ts';
+
+export { epicOfBranch, wuOfBranch };
 
 export interface ItemInput {
   git: GitFacts | null;
@@ -23,8 +27,6 @@ export interface ItemInput {
 const ITEM_ID = new RegExp(ITEM_ID_SOURCE);
 const SUBJECT = /^[A-Za-z0-9._-]{1,41}$/;
 const HEX = /^[0-9a-f]{7,}$/;
-const EPIC_BRANCH = /^epic\/(E-[A-Z0-9]{1,16})$/;
-const WU_BRANCH = /^wu\/(E-[A-Z0-9]{1,16})\/w([0-9]{1,3})(?:[-_]|$)/;
 const WU_ID = /^E-[A-Z0-9]{1,16}\.W[0-9]{1,3}$/;
 const SESSION = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
@@ -53,17 +55,6 @@ export function itemId(kind: ItemKind, subject: string, version: string): string
   const plainId = SUBJECT.test(subject) ? `${kind}/${subject}@${v}` : null;
   const id = plainId !== null && plainId.length <= SLOT_CAP && ITEM_ID.test(plainId) ? plainId : `${kind}/${shortHash(subject)}@${v}`;
   return id;
-}
-
-/** The work unit a branch names by keel's naming (wu/E-APPLIST/w6-list-screens: E-APPLIST.W6), or null. */
-export function wuOfBranch(branch: string): string | null {
-  const m = WU_BRANCH.exec(branch);
-  return m === null ? null : `${m[1] as string}.W${Number(m[2])}`;
-}
-
-/** The epic a branch names (epic/E-APPLIST: E-APPLIST), or null. */
-export function epicOfBranch(branch: string): string | null {
-  return EPIC_BRANCH.exec(branch)?.[1] ?? null;
 }
 
 const GROUPS: readonly ItemGroup[] = ['yours', 'not-yours', 'sent'];
@@ -102,6 +93,13 @@ function resultItems(git: GitFacts, epics: Set<string>, units: Set<string>, work
     const kind: ItemKind = isEpic ? 'epic-result' : 'result';
     const wu = isEpic ? null : wuOfBranch(b.name);
     const epic = isEpic ? epicOfBranch(b.name) : (epicOfBranch(`epic/${b.name.split('/')[1] as string}`) ?? null);
+    // Open finds the page by the id the name carries (review round 2, items.ts:103): with none, no Open, and why.
+    const unnamed = isEpic ? epic === null : wu === null;
+    const noPage = isEpic
+      ? ' Its branch name carries no epic id (epic/E-<CODE>), so Keel cannot find its result page: open it from its folder.'
+      : ' Its branch name carries no work unit number (wu/<epic>/w<n>-...), so Keel cannot find its result page: open it from its folder.';
+    const opens = (open: 'page' | 'archive') => (unnamed ? 'none' : open);
+    const suffix = unnamed ? noPage : '';
     const target = isEpic ? 'main' : `epic/${b.name.split('/')[1] as string}`;
     // A work unit's id carries its branch (two branches of one unit may share a tip); an epic's branch is its id.
     const subject = isEpic ? (epic ?? b.name) : wu === null ? b.name : `${wu}-${shortHash(b.name)}`;
@@ -111,10 +109,10 @@ function resultItems(git: GitFacts, epics: Set<string>, units: Set<string>, work
     } else if (review.verdict === 'FAIL') {
       out.push(item({ ...base, group: 'not-yours', title: 'Review failed', why: `${plural(review.blockers, 'blocker')} and ${plural(review.importants, 'important')} open: its worker fixes them.`, worker: workerOn(b.name) }));
     } else if (git.notes.mr.includes(b.tip)) {
-      out.push(item({ ...base, title: isEpic ? 'Epic result to merge' : 'Result to merge', why: `Signed. The merge into ${target} is yours, in your terminal.`, open: isEpic ? 'archive' : 'page', line: `git merge --no-ff --no-edit ${shQuote(b.name)}` }));
+      out.push(item({ ...base, title: isEpic ? 'Epic result to merge' : 'Result to merge', why: `Signed. The merge into ${target} is yours, in your terminal.${suffix}`, open: opens(isEpic ? 'archive' : 'page'), line: `git merge --no-ff --no-edit ${shQuote(b.name)}` }));
     } else {
       const why = review.verdict === 'PASS' ? 'The review passed. Your sign-off is missing.' : `The review was waived with ${plural(review.blockers, 'blocker')} and ${plural(review.importants, 'important')} open. Your sign-off is missing.`;
-      out.push(item({ ...base, title: isEpic ? 'Epic result to sign' : 'Result to sign', why, open: isEpic ? 'archive' : 'page' }));
+      out.push(item({ ...base, title: isEpic ? 'Epic result to sign' : 'Result to sign', why: `${why}${suffix}`, open: opens(isEpic ? 'archive' : 'page') }));
     }
   }
   return out;
@@ -156,7 +154,7 @@ export function itemsOf(input: ItemInput): Item[] {
 
     for (const b of git.branches) {
       if (!tasks.has(b.name)) continue;
-      const unit = b.name.slice(0, b.name.lastIndexOf('_'));
+      const unit = unitOfTask(b.name);
       if (heard && ws.some(([, v]) => v.branch === b.name && v.state === 'busy')) continue;
       const first = heard ? 'No worker is busy on it.' : 'The router is not heard, so a worker may still be on it.';
       const wu = wuOfBranch(unit);

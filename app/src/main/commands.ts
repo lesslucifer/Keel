@@ -13,6 +13,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { Socket } from 'node:net';
 import path from 'node:path';
 import { NOTE_KINDS } from '../shared/contract.ts';
+import { keelBranch } from '../shared/names.ts';
 
 export const LOCKED: readonly string[] = Object.freeze(['-c', 'core.fsmonitor=false', '--no-optional-locks', '--no-lazy-fetch']);
 
@@ -50,17 +51,13 @@ const PROJECT: Token = Object.freeze({ slot: 'project' as const });
 /** The note kinds a notes read takes: the contract's, one list. */
 const KINDS: readonly string[] = NOTE_KINDS;
 
-/** One part of a branch name: no leading dash or dot, no '..', not ending in '.' or '.lock' (git check-ref-format, narrowed). */
-const SEG = '[A-Za-z0-9][A-Za-z0-9._-]{0,99}';
-/** A branch the merged read takes: main, an epic or a work unit (a task too) by keel's naming, as a full ref. */
-const REF = new RegExp(`^refs/heads/(?:main|epic/${SEG}|wu/${SEG}/${SEG})$`);
 
 /** A full object id, sha-1 or sha-256: the one form a note read takes for its object. */
 const OBJECT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 /** Whether `v` is a ref the merged read may name. */
 export function refOk(v: unknown): v is string {
-  return typeof v === 'string' && REF.test(v) && !v.includes('..') && !/\.(?:lock)?(?:\/|$)/.test(v);
+  return typeof v === 'string' && v.startsWith('refs/heads/') && keelBranch(v.slice('refs/heads/'.length));
 }
 
 /** The W7 commands, W5's reads and W6's, each a git line with its slots. */

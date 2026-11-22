@@ -1,6 +1,9 @@
 // The git reader's parsers, each on fabricated output as git prints it, and the targets whose merges it reads.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { refOk } from '../../src/main/commands.ts';
+import { keelBranch, isEpicBranch, isUnitBranch, isTaskBranch } from '../../src/shared/names.ts';
+import { seeded, pick } from '../support/seeded.ts';
 import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, onMainLine, mayBeFresh, NOTE_TIPS, parseReview, parseTime, timeTips, TIME_TIPS, openSets } from '../../src/main/reader/git.ts';
 
 const A = 'a'.repeat(40);
@@ -166,4 +169,19 @@ test('W6 review round 1 (items.ts:82): the open sets the list draws from, by the
   assert.deepEqual(openSets(names.filter((n) => n !== 'main'), { 'epic/E-A': [] }).epics, ['epic/E-A', 'epic/E-B', 'epic/E-C']);
   // A unit with a task whose own read failed lists no task.
   assert.deepEqual(openSets(names, { main: [], 'epic/E-A': [], 'epic/E-B': [], 'epic/E-C': [] }).tasks, []);
+});
+
+test('W6 review round 2 (items.ts:103): one grammar for keel\'s branch names: the fixed commands\' ref check and the reader\'s open sets both read src/shared/names.ts', () => {
+  const rng = seeded(0xb4a7);
+  const parts = ['main', 'epic/', 'wu/', 'E-A', 'w1', '-x', '_t', '/', '.', '..', '.lock', 'é', ' ', 'a'];
+  for (let i = 0; i < 3000; i++) {
+    const name = Array.from({ length: 1 + Math.floor(rng() * 6) }, () => pick(rng, parts)).join('');
+    assert.equal(refOk(`refs/heads/${name}`), keelBranch(name), name);
+    const sets = openSets(['main', name], { main: [] });
+    if (sets.epics.includes(name)) assert.ok(isEpicBranch(name), name);
+  }
+  for (const n of ['epic/E-A', 'epic/foo']) assert.ok(isEpicBranch(n), n);
+  for (const n of ['wu/E-A/w1-x', 'wu/E-A/reader']) assert.ok(isUnitBranch(n) && !isTaskBranch(n), n);
+  for (const n of ['wu/E-A/w1-x_probe']) assert.ok(isTaskBranch(n) && !isUnitBranch(n), n);
+  for (const n of ['wu/E-A/w1_a_b', 'wu/E-A/caf\u00e9', 'epic/a/b', 'main']) assert.ok(!isUnitBranch(n) && !isTaskBranch(n) && !isEpicBranch(n), n);
 });
