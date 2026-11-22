@@ -1,0 +1,116 @@
+artifact: wu-result
+status: ready
+id: E-APPLIST.W8
+epic: E-APPLIST
+title: "E-APPLIST.W8 · The window's foundation"
+date: "2026-11-22"
+page: 2026-11-22-e-applist-w8-result.html
+outcome: >-
+  Delivered, live look pending. The window is drawn only from Keel's closed Tailwind 3.4.19 tokens
+  (app/tailwind.config.js replaces every scale it draws from; colours are rgb(var(--name)) with R G B triplets in
+  src/window/styles.css under :root and again under prefers-color-scheme: dark; the system font; no font file, no
+  url()). design/vocabulary (app/eslint-rules/, ported from Trawler) refuses an off-list class, an arbitrary value, a
+  modifier step off its scale, a class built at run time (a template interpolation or a +), the dark: variant and any
+  variant the closed config lacks; npm run lint is green over src/window. bridge.ts stays the one reader of
+  window.keel, now with BridgeProvider and useBridge; hooks.ts holds useAppState, useAction and the answer texts. The
+  fake bridge (src/window/fake/) answers every request in the contract from seven fixture scenarios and never reaches
+  the shipped page (node guards). npm run dev:browser serves /browser.html on the fake. Screen 6 (Project, Tools,
+  PATH, Alerts, the version) replaces W7's bare page. Vitest 84 tests (unit 48, integration 36) and node 182 tests
+  pass; npm run typecheck green on TypeScript 6.0.3 (no fallback needed); keel check green at every commit. Nothing
+  was built or packaged. The sandbox refused the port both dev:browser and npm start bind, so the owner's look
+  (details.live-checks) is the live check, not yet run.
+deviations:
+  - >-
+    Commit 1f7ab58's message names the wrong three of screen 6's tests as passing against W7's bare page (it says
+    loading, the PATH-absent check and the refused and failed texts). Reading the tests against that page, the three
+    are loading, Remove and the alert outcomes. The re-run that would have shown it (restoring the old App.tsx
+    in the working tree) was denied by the sandbox's permission check and not retried. The 12-of-15 red count stands
+    (from the run itself).
+  - >-
+    The lint rule does more than the plan's list: it refuses any variant the closed config lacks (md:, an arbitrary
+    [&>*]:), not only dark:, because with no breakpoints Tailwind emits nothing for md:p-2 while the plain strip
+    would call it legal. It reports a class built with + (Trawler skipped every BinaryExpression), and it reads a
+    cx()/clsx() call's strings and object keys (Trawler skipped call arguments). Commit dbf1ac8.
+  - >-
+    Tokens beyond the first cut: on-accent (text on the accent button), maxWidth column (640px), lineHeight none and
+    body, opacity disabled, borderWidth DEFAULT and 0, no screens; and flex 1, flexShrink 0 and cursor pointer, each
+    declared because the lint refused flex-1, shrink-0 and cursor-pointer from undeclared scales. Commits 0300250,
+    1f7ab58.
+  - >-
+    One test the plan did not list: test-window/integration/styles.test.ts runs Vite's own CSS transform of
+    styles.css through vite.renderer.config.ts in middleware mode (no websocket, no port, no build), so a renderer
+    config that drops Tailwind fails a test (red with it removed). Commit 1f7ab58.
+  - >-
+    Node guards beyond the plan's three: the import-graph walk's self-test, and browser.html carries the shipped
+    page's CSP meta and loads only browser.tsx. Commits d6d291a.
+  - >-
+    The browser banner also links each fixture state (aria-current on the open one), so the owner switches states
+    by a click. The refusing scenario refuses state.get too (the screen shows Keel could not read its state); the
+    failing one reads state and fails every change, so both kinds of text are seen. Commits 41d7143, d6d291a.
+  - >-
+    Type plumbing the plan did not name: tsconfig allowJs with tailwind.config.js, eslint.config.js and
+    eslint-rules/*.js checked (// @ts-check); src/window/env.d.ts declares CSS imports;
+    eslint-rules/tailwind-internals.d.ts types the one Tailwind internal the rule reads; test-window/support/parse.ts
+    types the parser for the tests.
+  - >-
+    Tried live in the sandbox: npm ci green (366 packages; one EPERM warning writing
+    node_modules/xmlbuilder/.vscode/launch.json, harmless). npm run dev:browser: refused, listen EPERM ::1:5199 (and
+    ::1:5173 under npm start, Forge's Vite server). Not routed around. Electron's binary downloads on the first npm
+    start (electron 45 has no install script), so the owner's first npm start downloads it.
+evidence:
+  commits:
+    - "80a776d docs: the plan pair records the owner's answers (all five recommendations)"
+    - "0f4d91e chore: packages pinned exactly, typescript 7.0.2 -> 6.0.3 (typecheck green, no fallback), scripts, Vitest (red first: the smoke test 2 of 2 with an empty setup file)"
+    - "0300250 feat: Keel's tokens, closed config, light and dark (red first: tokens.test.ts 6 of 10; 4 passed on empty sets)"
+    - "dbf1ac8 feat: the lint rule (red first: helpers 15 of 15; fixtures, real config and reconcile 9 of 9)"
+    - "0006abe feat: BridgeProvider, useBridge, useAppState, useAction, the stub bridge (red first: 16 of 16; the window.keel guard red 1 of 8 on a plant)"
+    - "41d7143 feat: the fake bridge and fixtures (red first: 13 of 13; the fake-import guard red 1 of 9 on a plant)"
+    - "d6d291a feat: browser mode (red first: 3 of 3; the shipped-graph guards red 2 of 12 on a plant)"
+    - "1f7ab58 feat: screen 6 (red first: 12 of 15 against W7's bare page; styles.test.ts red with Tailwind taken out of the renderer config)"
+  runs-2026-11-22:
+    vitest: "cd app && npm run test:window: 11 files, 84 tests pass (unit 48 in 6 files, integration 36 in 5 files)"
+    node: "cd app && npm run test:main: tests 182, pass 182, fail 0 (W7's 176 plus 6 guards)"
+    lint: "cd app && npm run lint: exit 0, no message"
+    typecheck: "cd app && npm run typecheck: exit 0 on typescript 6.0.3"
+    keel-check: "green after each commit"
+    package: "not run (W8 never packages or makes)"
+  installed:
+    - "tailwindcss 3.4.19, postcss 8.5.33, eslint 10.15.0, typescript-eslint 8.73.0, vitest 5.1.1, jsdom 31.0.1"
+    - "@testing-library/react 16.3.3, @testing-library/dom 10.4.2, @testing-library/jest-dom 8.0.0, @testing-library/user-event 14.6.13"
+    - "typescript 6.0.3 (was 7.0.2); each saved exact, package-lock.json committed"
+  tests-added:
+    unit: "test-window/unit/{smoke,tokens,classes,bridge,hooks,fixtures}.test.ts(x); app/test/unit/guards.test.ts gains 6 node tests"
+    integration: "test-window/integration/{lint,fake,browser,projects,styles}.test.ts(x)"
+distillation: >-
+  Nothing in W8. At the epic close (W9), per the epic's distillation plan: details.design-rules into
+  docs/local-app.html beside 'The design principles'; the next DEC record carries Tailwind 3 (closed config, the
+  lint rule), TypeScript 6.0.3 for the lint, and browser mode on the fake bridge.
+follow-ups:
+  - "The owner's live look (details.live-checks): browser mode, the Mac's appearance switch, npm start with the real Choose dialog and the test alert. Taken by: the owner, before the W8 sign-off."
+  - "Back to TypeScript 7 when typescript-eslint can read it. Taken by: the backlog row local-app."
+  - "Each request or event W5 adds to contract.ts needs a fake handler and fixture (fake.test.ts fails until it has one). Taken by: E-APPLIST.W5."
+  - "Screens 1 and 2, the top bar's other screens, and screen 6's fields 6.4 and 6.5, on these tokens, hooks and the fake. Taken by: E-APPLIST.W6."
+  - "The Playwright epic test; screen 6 and the built CSS under the packaged content policy, seen on the signed build; the design rules into docs/local-app.html. Taken by: E-APPLIST.W9."
+  - "The code review of this WU, the sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
+details:
+  base: "wu/E-APPLIST/w8-window-foundation off epic/E-APPLIST at 3cfa216"
+  design-rules:
+    - "Every value from a token; a new size or colour is a token change in tailwind.config.js (and styles.css for a colour), never a class."
+    - "Dark lives in the tokens: a colour variable flips under the Mac's dark setting; no dark: class (the lint refuses it)."
+    - "A scale with no magnitude (flex, cursor) is declared with exactly the members the window draws from; an undeclared scale is empty."
+    - "Text the main part sends is shown as text, never as markup; a path is shown whole, in mono, and may wrap."
+    - "Green, amber and red mean done, waits on someone, failed; the accent means a choice you made; nothing else uses them."
+    - "One action in progress at a time: every button is off while a request runs; the outcome is a sentence (role=status); a failed read is a sentence (role=alert)."
+    - "Actions first; what you rarely read folded (the PATH's folders)."
+    - "A row that names a thing (a tool) is a named group, so a screen reader and a test find its buttons by that name."
+  tokens: "colours canvas, surface, line, ink, ink-muted, accent (light 61 99 153, dark 124 158 207), on-accent, ok, wait, fail; spacing 0, px, 1-4, 6, 8 (4px steps), control 24px; type caption 11, body 13, title 15, heading 20 px; weights regular, medium, semibold; radius control 6, panel 8, full; mono ui-monospace"
+  live-checks:
+    by: "the owner on his Mac, about five minutes, before the sign-off; no package or make"
+    steps:
+      - "1. cd app && npm ci (about a minute)."
+      - "2. npm run dev:browser, then open http://localhost:5173/browser.html (Vite prints the URL; if 5173 is taken it picks the next port). Screen 6 on fixtures under an amber 'Browser mode: fixtures, not your Mac' line. Switch states by the links in that line, or ?state=one-project, no-project, tool-missing, path-fallback, refusing, failing, slow. Try: no-project then Add a project...; tool-missing (claude missing, git with a problem); path-fallback (the fallback and why); refusing (Keel could not read its state); failing (any button says The request failed); slow (every button off for 0.8 s)."
+      - "3. With the page open, System Settings > Appearance: Light, then Dark. The page turns with it, no reload."
+      - "4. Ctrl-C the dev server. npm start (the app unpackaged; the first run downloads Electron). Screen 6 with your real tools; Choose... opens the macOS file dialog; Use the PATH appears for a tool you set; Send a test alert shows the alert and its sentence."
+    worker-tried: "npm ci green. dev:browser and npm start both refused by the sandbox: listen EPERM on ::1 (ports 5199 and 5173)."
+  htmldoc:
+    id: ec75f044a7cb5de9d4812932
