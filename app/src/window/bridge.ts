@@ -1,9 +1,13 @@
-// The window's one way to the main part. Nothing else in the window reads window.keel: every screen
-// asks through this module, so W8's tests and its browser mode hand in a fake bridge with
-// provideBridge() and the screens never know. Typed from the wire contract.
+// The window's one way to the main part, and the one reader of window.keel. A screen never touches
+// the bridge itself: it gets it from useBridge(), which answers the bridge a BridgeProvider was
+// given (a test's stub, the browser mode's fake) or else the preload's window.keel. ask and onPush
+// take that bridge. Typed from the wire contract.
 
+import { createContext, createElement, useContext, type ReactNode } from 'react';
 import type { Answer, PushEvent, Replies, RequestName, Tool } from '../shared/contract.ts';
 import type { KeelBridge } from '../preload/bridge.ts';
+
+export type { KeelBridge };
 
 /** Each request's arguments, as the contract's slots take them. */
 export interface Args {
@@ -15,26 +19,31 @@ export interface Args {
   'alert.test': Record<string, never>;
 }
 
-let injected: KeelBridge | null = null;
+/** One request with its arguments, as a value a button can hold. */
+export type Request = { [N in RequestName]: { name: N; args: Args[N] } }[RequestName];
 
-/** Use `bridge` in place of the preload's window.keel (a test's or the browser mode's fake). */
-export function provideBridge(bridge: KeelBridge | null): void {
-  injected = bridge;
+const BridgeContext = createContext<KeelBridge | null>(null);
+
+/** Hands `bridge` to every screen below it; with none, the screens use the preload's window.keel. */
+export function BridgeProvider({ bridge, children }: { bridge?: KeelBridge; children?: ReactNode }) {
+  return createElement(BridgeContext.Provider, { value: bridge ?? null }, children);
 }
 
-function current(): KeelBridge {
-  if (injected !== null) return injected;
+/** The bridge the screens ask through: the provided one, else window.keel; neither is an error. */
+export function useBridge(): KeelBridge {
+  const provided = useContext(BridgeContext);
+  if (provided !== null) return provided;
   const exposed = (globalThis as { keel?: KeelBridge }).keel;
-  if (exposed === undefined) throw new Error('no bridge: the page runs outside Keel');
+  if (exposed === undefined) throw new Error('no bridge: no BridgeProvider was given one and there is no window.keel (the page runs outside Keel)');
   return exposed;
 }
 
 /** Ask the main part; the answer is its value, a refusal (nothing ran) or a failure. */
-export function ask<N extends RequestName>(name: N, args: Args[N]): Promise<Answer<Replies[N]>> {
-  return current().ask(name, args as Record<string, string>) as Promise<Answer<Replies[N]>>;
+export function ask<N extends RequestName>(bridge: KeelBridge, name: N, args: Args[N]): Promise<Answer<Replies[N]>> {
+  return bridge.ask(name, args as Record<string, string>) as Promise<Answer<Replies[N]>>;
 }
 
 /** Call `callback` on each `event` the main part pushes; returns the unsubscribe. */
-export function onPush(event: PushEvent, callback: () => void): () => void {
-  return current().on(event, () => callback());
+export function onPush(bridge: KeelBridge, event: PushEvent, callback: () => void): () => void {
+  return bridge.on(event, () => callback());
 }

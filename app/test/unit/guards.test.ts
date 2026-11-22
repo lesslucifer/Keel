@@ -127,3 +127,47 @@ test('every package is pinned to one exact version, and the lockfile is committe
   for (const [name, v] of Object.entries(pins)) assert.match(v, /^\d+\.\d+\.\d+$/, name);
   assert.ok(existsSync(path.join(APP, 'package-lock.json')), 'no package-lock.json');
 });
+
+// Each form is spelled in pieces in the self-test below, so this file's own text reads none of them.
+const KEEL_READS: readonly RegExp[] = [
+  /\b(?:window|globalThis|self)\s*(?:\?\.|\.)\s*keel\b/,
+  /\b(?:window|globalThis|self)\s*(?:\?\.)?\s*\[\s*['"`]keel['"`]\s*\]/,
+  /\(\s*(?:window|globalThis|self)\b[^()]*\)\s*(?:\?\.|\.)\s*keel\b/,
+  /\(\s*(?:window|globalThis|self)\b[^()]*\)\s*(?:\?\.)?\s*\[\s*['"`]keel['"`]\s*\]/,
+  /\{[^{}]*\bkeel\b[^{}]*\}\s*=\s*(?:window|globalThis|self)\b/,
+  /\bReflect\s*\.\s*get\s*\(\s*(?:window|globalThis|self)\b/,
+];
+
+/** Whether `text` reads the preload's bridge off the page's global object, in any of the forms above. */
+function readsKeel(text: string): boolean {
+  return KEEL_READS.some((re) => re.test(text));
+}
+
+test('only src/window/bridge.ts reads window.keel or globalThis.keel; it does, so the guard is not vacuous', () => {
+  const readers = walk(SRC)
+    .filter((f) => /\.(ts|tsx)$/.test(f) && f.startsWith(path.join(SRC, 'window') + path.sep))
+    .filter((f) => readsKeel(readFileSync(f, 'utf8')))
+    .map((f) => path.relative(SRC, f));
+  assert.deepEqual(readers, [path.join('window', 'bridge.ts')]);
+});
+
+test('the window.keel reader sees each form of reading it, and not a tool named keel', () => {
+  const [w, g, s, k] = ['win' + 'dow', 'global' + 'This', 'se' + 'lf', 'ke' + 'el'];
+  for (const text of [
+    `${w}.${k}.ask()`,
+    `${g}?.${k}`,
+    `${s}.${k}`,
+    `${w}['${k}']`,
+    `${g}["${k}"]`,
+    `(${g} as { ${k}?: KeelBridge }).${k}`,
+    `(${w} as any)['${k}']`,
+    `const { ${k} } = ${w};`,
+    `const { ${k}: b } = ${g};`,
+    `Reflect.get(${g}, '${k}')`,
+  ]) {
+    assert.equal(readsKeel(text), true, text);
+  }
+  for (const text of [`state.tools.${k}`, `TOOL_NAMES.includes('${k}')`, `${w}.addEventListener('x', f)`, `const ${k} = 1;`]) {
+    assert.equal(readsKeel(text), false, text);
+  }
+});

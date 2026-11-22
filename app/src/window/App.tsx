@@ -1,65 +1,13 @@
-// The bare page, unstyled: the three tools and their state, the PATH's source, the project, the
-// version and the test alert, each from the main part through ./bridge.ts, asked again on
-// state.changed. Strings are rendered as React text, never as markup. W8 replaces it with screen 6.
+// The bare page, unstyled, now on the hooks: the three tools and their state, the PATH's source, the
+// project, the version and the test alert, asked again on state.changed. Strings are rendered as
+// React text, never as markup. Screen 6 replaces it (E-APPLIST.W8, step 7).
 
-import { useCallback, useEffect, useState } from 'react';
-import { TOOL_NAMES, type AlertOutcome, type Answer, type AppState, type Change, type Tool } from '../shared/contract.ts';
-import { ask, onPush } from './bridge.ts';
-
-const ALERT_TEXT: Record<AlertOutcome, string> = {
-  shown: 'The test alert was shown.',
-  'not-shown': 'The test alert was not shown within 5 s. Check System Settings > Notifications > Keel.',
-  'not-supported': 'This Mac does not support alerts from Keel.',
-};
-
-function problemOf(a: Answer): string {
-  return a.ok ? '' : 'refused' in a ? `refused: ${a.refused}` : `failed: ${a.failed}`;
-}
-
-function changeText(a: Answer<Change>): string {
-  if (!a.ok) return problemOf(a);
-  return a.value.done ? 'Done.' : `Not done: ${a.value.why}.`;
-}
+import { TOOL_NAMES } from '../shared/contract.ts';
+import { useAction, useAppState } from './hooks.ts';
 
 export function App() {
-  const [state, setState] = useState<AppState | null>(null);
-  const [error, setError] = useState('');
-  const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const refresh = useCallback(async () => {
-    const a = await ask('state.get', {});
-    if (a.ok) {
-      setState(a.value);
-      setError('');
-    } else {
-      setError(problemOf(a));
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-    return onPush('state.changed', () => void refresh());
-  }, [refresh]);
-
-  const act = async (run: () => Promise<string>) => {
-    setBusy(true);
-    try {
-      setNote(await run());
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const testAlert = () =>
-    act(async () => {
-      const a = await ask('alert.test', {});
-      return a.ok ? ALERT_TEXT[a.value] : problemOf(a);
-    });
-  const choose = (tool: Tool) => act(async () => changeText(await ask('settings.choose', { tool })));
-  const reset = (tool: Tool) => act(async () => changeText(await ask('settings.reset', { tool })));
-  const addProject = () => act(async () => changeText(await ask('projects.add', {})));
-  const removeProject = (project: string) => act(async () => changeText(await ask('projects.remove', { project })));
+  const { state, error } = useAppState();
+  const { busy, note, run } = useAction();
 
   if (state === null) return <main>{error === '' ? <p>Loading…</p> : <p>Keel could not read its state ({error}).</p>}</main>;
 
@@ -76,11 +24,11 @@ export function App() {
             <li key={tool}>
               {tool}: {t.path ?? 'not found'} ({t.source === 'set' ? 'set in Keel' : t.source === 'path' ? 'found on the PATH' : 'missing'})
               {t.problem === null ? '' : ` - ${t.problem}`}{' '}
-              <button type="button" disabled={busy} onClick={() => void choose(tool)}>
+              <button type="button" disabled={busy} onClick={() => void run({ name: 'settings.choose', args: { tool } })}>
                 Choose…
               </button>{' '}
               {t.source === 'set' ? (
-                <button type="button" disabled={busy} onClick={() => void reset(tool)}>
+                <button type="button" disabled={busy} onClick={() => void run({ name: 'settings.reset', args: { tool } })}>
                   Use the PATH
                 </button>
               ) : null}
@@ -96,7 +44,7 @@ export function App() {
       {state.projects.length === 0 ? (
         <p>
           No project.{' '}
-          <button type="button" disabled={busy} onClick={() => void addProject()}>
+          <button type="button" disabled={busy} onClick={() => void run({ name: 'projects.add', args: {} })}>
             Add a project…
           </button>
         </p>
@@ -105,7 +53,7 @@ export function App() {
           {state.projects.map((p) => (
             <li key={p.id}>
               {p.name} ({p.path}){' '}
-              <button type="button" disabled={busy} onClick={() => void removeProject(p.id)}>
+              <button type="button" disabled={busy} onClick={() => void run({ name: 'projects.remove', args: { project: p.id } })}>
                 Remove from the list
               </button>
             </li>
@@ -115,7 +63,7 @@ export function App() {
 
       <h2>Alerts</h2>
       <p>
-        <button type="button" disabled={busy} onClick={() => void testAlert()}>
+        <button type="button" disabled={busy} onClick={() => void run({ name: 'alert.test', args: {} })}>
           Send a test alert
         </button>
       </p>
