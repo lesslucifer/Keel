@@ -6,20 +6,62 @@ title: "E-APPLIST.W8 · The window's foundation"
 date: "2026-11-22"
 page: 2026-11-22-e-applist-w8-result.html
 outcome: >-
-  Delivered, live look pending. The window is drawn only from Keel's closed Tailwind 3.4.19 tokens
-  (app/tailwind.config.js replaces every scale it draws from; colours are rgb(var(--name)) with R G B triplets in
-  src/window/styles.css under :root and again under prefers-color-scheme: dark; the system font; no font file, no
-  url()). design/vocabulary (app/eslint-rules/, ported from Trawler) refuses an off-list class, an arbitrary value, a
-  modifier step off its scale, a class built at run time (a template interpolation or a +), the dark: variant and any
-  variant the closed config lacks; npm run lint is green over src/window. bridge.ts stays the one reader of
+  Delivered, the owner's second look pending. The owner rejected the first look in browser mode and ruled that the
+  look follows his design file (docs/work/2026-11-22-e-applist-w8-design.md, Mercury). The window is drawn only from
+  Keel's closed Tailwind 3.4.19 tokens valued from that file: its day world is the light appearance, its night world
+  the dark one, still following the Mac (rgb(var(--name)) with R G B triplets in src/window/styles.css under :root and
+  again under prefers-color-scheme: dark); one indigo action colour, translucent tinted pills, capsule radii, cards by
+  fill, no shadow, weights 360-500; the system font, no font file, no url(). design/vocabulary (app/eslint-rules/,
+  ported from Trawler, hardened after review round 1) refuses an off-list class, an arbitrary value, a modifier step
+  off its scale, a class built at run time, the dark: variant and any variant the closed config lacks; it reads class
+  tables through TypeScript wrappers, seeds from every class-carrying prop, reports what it cannot read, an inline
+  style and classes written to the DOM by hand; inline eslint-disable comments are off; every scale Tailwind derives
+  from spacing is closed. npm run lint is green over src/window. bridge.ts stays the one reader of
   window.keel, now with BridgeProvider and useBridge; hooks.ts holds useAppState, useAction and the answer texts. The
   fake bridge (src/window/fake/) answers every request in the contract from seven fixture scenarios and never reaches
   the shipped page (node guards). npm run dev:browser serves /browser.html on the fake. Screen 6 (Project, Tools,
-  PATH, Alerts, the version) replaces W7's bare page. Vitest 84 tests (unit 48, integration 36) and node 182 tests
-  pass; npm run typecheck green on TypeScript 6.0.3 (no fallback needed); keel check green at every commit. Nothing
+  PATH, Alerts, the version) replaces W7's bare page. Vitest 109 tests (unit 65, integration 44) and node 184 tests
+  pass; npm run typecheck green on TypeScript 6.0.3 (no fallback needed); keel check green at every commit but two
+  (deviations). Nothing
   was built or packaged. The sandbox refused the port both dev:browser and npm start bind, so the owner's look
-  (details.live-checks) is the live check, not yet run.
+  (details.live-checks) is the live check; he has run browser mode on the first look only.
 deviations:
+  - >-
+    The look: the owner rejected the first look after trying browser mode ("terribly bad & ugly") and ruled on
+    2026-11-22 that it follows docs/work/2026-11-22-e-applist-w8-design.md (a byte copy of his DESIGN.md, Mercury's
+    website design system), recorded in the plan pair (73d7367). 668aee9 redoes the tokens, the vocabulary and screen
+    6 to it, adapted to a settings window: no always-dark nav bar (light and dark follow the Mac, so the day and night
+    worlds are the two appearances); type sized for a window (eyebrow 11px to heading 22px, no 52-60px display or stat
+    sizes); a 4px half step beside its 8px scale for tight inline gaps; 32px buttons (its small pill) and 22px badges;
+    cards padded 24px, not 32px. Left out as a website's, not a window's: the breakpoints and touch targets, the nav
+    bar and nav links, the footer band, the pricing card and tier columns, the logo strip, stat and quote blocks, the
+    email capture, the toggle switch, the accordion's icons and chevrons, hero photography and glowing illustrations,
+    the soft-stack shadow, and its example surfaces (ex-*).
+  - >-
+    The one conflict with the design file: its font (arcadia, or Inter as the open substitute) is not shipped. The
+    owner's earlier ruling (DEC-72) is the system font and no font file; SF Pro is variable, so the file's light weights
+    (360, 400, 420, 480, 500) render. The owner may overrule.
+  - >-
+    The design file keeps status greens and oranges out of the chrome, so the ok, wait and fail colour tokens are gone.
+    A tool's state is a word in a capsule badge whose tone is only loudness: 'set in Keel' on the indigo tint (a choice
+    you made, like the actions), 'found on the PATH' on a faint ink wash, 'missing' polarity-flipped (ink fill, canvas
+    text) in both worlds; a tool's problem, the PATH fallback and a failed read are ink at weight 500. No state is told
+    by colour alone.
+  - >-
+    keel check was red at 73d7367 and 668aee9: the plan page linked the .md design file, and keel check's cargo suite
+    (verify_doc::every_doc_in_docs_and_the_writing_example_pass_the_checks) copies the doc pages without it, so the link
+    dangled there. The pre-commit hook runs lint only, and a grep in the worker's command let 668aee9 commit after a red
+    check. 127cddc names the file as text; green since.
+  - >-
+    Review round 1 (cr note on 73d7367, FAIL: 2 blockers, 3 importants) hardened the lint, each fix with its failing
+    test first: it reads class tables through as const, satisfies, as T and ! (a7c99ac); inline config is off and npm
+    run lint is eslint --max-warnings 0 . (e7e78b2); class=, any ...ClassName prop and a class key in any object literal
+    seed the search, an unreadable spread is reported (5d7776d); an unknown call, an import or a parameter reaching a
+    class is reported as unread and a reassigned binding is read with every value (d458d14); every scale Tailwind
+    derives from spacing is emptied unless declared, and padding, gap, height, margin, width, minWidth and minHeight
+    are declared (64892b3; the emittable list falls to 996 classes). The sibling check adds an inline style and classes
+    written to the DOM by hand (1a18513), and the waived nit on import.meta.glob became a node guard (8d941b1). The
+    content-glob nit stays waived.
   - >-
     Commit 1f7ab58's message names the wrong three of screen 6's tests as passing against W7's bare page (it says
     loading, the PATH-absent check and the refused and failed texts). Reading the tests against that page, the three
@@ -32,10 +74,9 @@ deviations:
     would call it legal. It reports a class built with + (Trawler skipped every BinaryExpression), and it reads a
     cx()/clsx() call's strings and object keys (Trawler skipped call arguments). Commit dbf1ac8.
   - >-
-    Tokens beyond the first cut: on-accent (text on the accent button), maxWidth column (640px), lineHeight none and
-    body, opacity disabled, borderWidth DEFAULT and 0, no screens; and flex 1, flexShrink 0 and cursor pointer, each
-    declared because the lint refused flex-1, shrink-0 and cursor-pointer from undeclared scales. Commits 0300250,
-    1f7ab58.
+    Tokens beyond the plan's first cut, before the redesign: on-accent, a max width, flex, flexShrink and cursor
+    (the lint refused flex-1, shrink-0 and cursor-pointer from undeclared scales). The redesign replaced the colour,
+    type, spacing and radius tokens (668aee9); flex, flexShrink and cursor stay.
   - >-
     One test the plan did not list: test-window/integration/styles.test.ts runs Vite's own CSS transform of
     styles.css through vite.renderer.config.ts in middleware mode (no websocket, no port, no build), so a renderer
@@ -67,12 +108,23 @@ evidence:
     - "41d7143 feat: the fake bridge and fixtures (red first: 13 of 13; the fake-import guard red 1 of 9 on a plant)"
     - "d6d291a feat: browser mode (red first: 3 of 3; the shipped-graph guards red 2 of 12 on a plant)"
     - "1f7ab58 feat: screen 6 (red first: 12 of 15 against W7's bare page; styles.test.ts red with Tailwind taken out of the renderer config)"
+    - "6df2fe7 docs: the result pair (first look)"
+    - "73d7367 docs: the design file (byte copy) and the owner's instruction in the plan pair"
+    - "668aee9 feat: the look follows the design file (red first: 17 of 91 against the old tokens, then 91 of 91)"
+    - "127cddc docs: the plan page names the design file as text (keel check green again)"
+    - "a7c99ac fix: tables through TS wrappers (red first: 2 unit, 1 fixture)"
+    - "e7e78b2 fix: no inline config, --max-warnings 0 (red first: the real-config test)"
+    - "5d7776d fix: every class-carrying prop seeds, unreadable spread reported (red first: 4 unit, 1 fixture)"
+    - "d458d14 fix: unread calls, imports and parameters reported, reassignments read (red first: 3 unit, 1 fixture)"
+    - "64892b3 fix: spacing-derived scales closed (red first: 2 unit)"
+    - "1a18513 fix: inline style and hand-written DOM classes reported (red first: 1 fixture)"
+    - "8d941b1 test: no import.meta.glob under src/window (red 1 of 14 on a plant)"
   runs-2026-11-22:
-    vitest: "cd app && npm run test:window: 11 files, 84 tests pass (unit 48 in 6 files, integration 36 in 5 files)"
-    node: "cd app && npm run test:main: tests 182, pass 182, fail 0 (W7's 176 plus 6 guards)"
-    lint: "cd app && npm run lint: exit 0, no message"
+    vitest: "cd app && npm run test:window: 11 files, 109 tests pass (unit 65 in 6 files, integration 44 in 5 files)"
+    node: "cd app && npm run test:main: tests 184, pass 184, fail 0 (W7's 176 plus 8 guards)"
+    lint: "cd app && npm run lint (eslint --max-warnings 0 .): exit 0, no message"
     typecheck: "cd app && npm run typecheck: exit 0 on typescript 6.0.3"
-    keel-check: "green after each commit"
+    keel-check: "green after each commit except 73d7367 and 668aee9 (see deviations); green at the tip"
     package: "not run (W8 never packages or makes)"
   installed:
     - "tailwindcss 3.4.19, postcss 8.5.33, eslint 10.15.0, typescript-eslint 8.73.0, vitest 5.1.1, jsdom 31.0.1"
@@ -86,29 +138,35 @@ distillation: >-
   docs/local-app.html beside 'The design principles'; the next DEC record carries Tailwind 3 (closed config, the
   lint rule), TypeScript 6.0.3 for the lint, and browser mode on the fake bridge.
 follow-ups:
-  - "The owner's live look (details.live-checks): browser mode, the Mac's appearance switch, npm start with the real Choose dialog and the test alert. Taken by: the owner, before the W8 sign-off."
+  - "The owner's live look at the new design (details.live-checks): browser mode, the Mac's appearance switch, npm start with the real Choose dialog and the test alert. Taken by: the owner, before the W8 sign-off."
+  - "Ship Inter (or the design file's own font) instead of the system font, if the owner overrules DEC-72. Taken by: the owner's ruling; a token change in tailwind.config.js and a font-src in the packaged CSP, at E-APPLIST.W9."
+  - "The design file's light weights rendered in the system font, and the two worlds' contrast, seen on the owner's Mac. Taken by: the owner's look, before the W8 sign-off."
   - "Back to TypeScript 7 when typescript-eslint can read it. Taken by: the backlog row local-app."
   - "Each request or event W5 adds to contract.ts needs a fake handler and fixture (fake.test.ts fails until it has one). Taken by: E-APPLIST.W5."
   - "Screens 1 and 2, the top bar's other screens, and screen 6's fields 6.4 and 6.5, on these tokens, hooks and the fake. Taken by: E-APPLIST.W6."
   - "The Playwright epic test; screen 6 and the built CSS under the packaged content policy, seen on the signed build; the design rules into docs/local-app.html. Taken by: E-APPLIST.W9."
-  - "The code review of this WU, the sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
+  - "Review round 2 over the whole range, the sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
 details:
   base: "wu/E-APPLIST/w8-window-foundation off epic/E-APPLIST at 3cfa216"
+  design-source: "docs/work/2026-11-22-e-applist-w8-design.md (the owner's DESIGN.md, Mercury), adapted to a settings window"
   design-rules:
-    - "Every value from a token; a new size or colour is a token change in tailwind.config.js (and styles.css for a colour), never a class."
-    - "Dark lives in the tokens: a colour variable flips under the Mac's dark setting; no dark: class (the lint refuses it)."
-    - "A scale with no magnitude (flex, cursor) is declared with exactly the members the window draws from; an undeclared scale is empty."
+    - "Every value from a token; a new size or colour is a token change in tailwind.config.js (and styles.css for a colour), never a class, an inline style or a hand-written DOM class."
+    - "Two worlds, chosen by the Mac: the design file's day world is light, its night world dark; a colour variable flips, no dark: class (the lint refuses it)."
+    - "One saturated colour, indigo, for the most important action: at most one solid primary button per card; every other action a translucent tinted pill (indigo 10% by day, periwinkle 20% by night)."
+    - "Actions are capsules (xl 32px for the primary, pill 40px for the rest); cards are rounded md (12px) and stand off the canvas by fill alone; rows inside a card are split by 1px rules; no shadow."
+    - "Type is light: body 400, UI 420, headings 480, eyebrows 500; nothing above 500; uppercase only for small eyebrows."
+    - "No status greens, ambers or reds: a state is a word in a badge whose tone is loudness (choice, quiet, strong); a problem is ink at 500."
+    - "A scale with no magnitude (flex, cursor) or derived from spacing (width, margin) is declared with exactly the members the window draws from; an undeclared scale is empty."
     - "Text the main part sends is shown as text, never as markup; a path is shown whole, in mono, and may wrap."
-    - "Green, amber and red mean done, waits on someone, failed; the accent means a choice you made; nothing else uses them."
     - "One action in progress at a time: every button is off while a request runs; the outcome is a sentence (role=status); a failed read is a sentence (role=alert)."
     - "Actions first; what you rarely read folded (the PATH's folders)."
     - "A row that names a thing (a tool) is a named group, so a screen reader and a test find its buttons by that name."
-  tokens: "colours canvas, surface, line, ink, ink-muted, accent (light 61 99 153, dark 124 158 207), on-accent, ok, wait, fail; spacing 0, px, 1-4, 6, 8 (4px steps), control 24px; type caption 11, body 13, title 15, heading 20 px; weights regular, medium, semibold; radius control 6, panel 8, full; mono ui-monospace"
+  tokens: "colours canvas, card, line, ink, ink-secondary, primary #5266eb, on-primary, tint (day: #fbfcfd, #edecfb, fog, #28253b, #554e7b, indigo at 10%; night: #171721, #1e1e2a, slate, #ededf3, fog, periwinkle at 20%); spacing half 4, xs 8, sm 12, md 16, lg 20, xl 24, xxl 32, huge 40, badge 22, control 32 px; type eyebrow 11, legal 12, ui-sm 13, ui 14, body 14, body-lg 15, title 17, heading 22 px; weights 360, 400, 420, 480, 500; radius xs 4, sm 8, md 12, lg 16, xl 32, pill 40, full; no shadow; mono ui-monospace"
   live-checks:
     by: "the owner on his Mac, about five minutes, before the sign-off; no package or make"
     steps:
       - "1. cd app && npm ci (about a minute)."
-      - "2. npm run dev:browser, then open http://localhost:5173/browser.html (Vite prints the URL; if 5173 is taken it picks the next port). Screen 6 on fixtures under an amber 'Browser mode: fixtures, not your Mac' line. Switch states by the links in that line, or ?state=one-project, no-project, tool-missing, path-fallback, refusing, failing, slow. Try: no-project then Add a project...; tool-missing (claude missing, git with a problem); path-fallback (the fallback and why); refusing (Keel could not read its state); failing (any button says The request failed); slow (every button off for 0.8 s)."
+      - "2. npm run dev:browser, then open http://localhost:5173/browser.html (Vite prints the URL; if 5173 is taken it picks the next port). Screen 6 on fixtures under a lavender 'Browser mode: fixtures, not your Mac' line. Switch states by the links in that line, or ?state=one-project, no-project, tool-missing, path-fallback, refusing, failing, slow. Try: no-project then Add a project...; tool-missing (claude missing, git with a problem); path-fallback (the fallback and why); refusing (Keel could not read its state); failing (any button says The request failed); slow (every button off for 0.8 s)."
       - "3. With the page open, System Settings > Appearance: Light, then Dark. The page turns with it, no reload."
       - "4. Ctrl-C the dev server. npm start (the app unpackaged; the first run downloads Electron). Screen 6 with your real tools; Choose... opens the macOS file dialog; Use the PATH appears for a tool you set; Send a test alert shows the alert and its sentence."
     worker-tried: "npm ci green. dev:browser and npm start both refused by the sandbox: listen EPERM on ::1 (ports 5199 and 5173)."
