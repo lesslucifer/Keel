@@ -3,7 +3,7 @@
 // the main part does (src/main/bridge.ts check: the name in the contract's table, args exactly its
 // slots, each value one its slot allows), answers every request with a handler from a table typed
 // by RequestName (a name the contract gains fails tsc here too), and pushes state.changed once per
-// change. Never part of the shipped page: only browser.tsx and the window's tests import fake/.
+// change. waiting.get answers the scenario's view (fixtures.ts VIEWS); nothing here pushes waiting.changed. Never part of the shipped page: only browser.tsx and the window's tests import fake/.
 
 import { PROJECT_ID_SOURCE, PUSH_EVENTS, REQUESTS, SLOT_CAP, type AlertOutcome, type Answer, type AppState, type Change, type Replies, type RequestName, type Slot, type Tool } from '../../shared/contract.ts';
 import type { KeelBridge } from '../bridge.ts';
@@ -74,6 +74,7 @@ export function makeFakeBridge(name: ScenarioName, options: FakeOptions = {}): K
       return DONE;
     },
     'alert.test': (): AlertOutcome => 'shown',
+    'waiting.get': () => structuredClone(scenario.view),
   };
 
   const answer = (request: string, args: Record<string, string>): Answer => {
@@ -83,7 +84,7 @@ export function makeFakeBridge(name: ScenarioName, options: FakeOptions = {}): K
     if (scenario.answers === 'refuse') return { ok: false, refused: 'fixture: the refusing scenario refuses every request' };
     if (scenario.answers === 'fail' && n !== 'state.get') return { ok: false, failed: 'fixture: the failing scenario fails every change' };
     const value = handlers[n](args);
-    if (n !== 'state.get' && n !== 'alert.test' && (value as Change).done) changed();
+    if (n !== 'state.get' && n !== 'alert.test' && n !== 'waiting.get' && (value as Change).done) changed();
     return { ok: true, value };
   };
 

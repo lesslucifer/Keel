@@ -16,6 +16,7 @@ import { readLoginPath } from './login-path.ts';
 import { makeHandlers, prepare } from './handlers.ts';
 import { ALERT_BODY, ALERT_TITLE, testAlert } from './alert.ts';
 import { plain } from './text.ts';
+import { emptyView } from './reader/view.ts';
 
 // Set by Forge's Vite plugin: the dev server's URL under electron-forge start (undefined in a
 // build), and the renderer's name, which names its build folder.
@@ -161,6 +162,7 @@ async function start(): Promise<void> {
     chooseFile,
     testAlert: notify,
     push: (event) => void push(event),
+    view: emptyView,
   });
   ipcMain.handle(ASK_CHANNEL, dispatcher(expected, handlers));
   started = true;

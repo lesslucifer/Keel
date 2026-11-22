@@ -1,4 +1,4 @@
-// The six requests' handlers: everything the shell does for the window except Electron itself. The
+// The seven requests' handlers: everything the shell does for the window except Electron itself. The
 // shell hands in its parts (the app folder, the PATH it read at start, its two dialogs, its test
 // alert and its push); the handlers read and write only the app folder, run git only through the
 // fixed commands, and run their reads and writes one at a time, so two changes never interleave.
@@ -8,7 +8,7 @@
 // every string in the answer through plain().
 
 import path from 'node:path';
-import { TOOL_NAMES, type AlertOutcome, type AppState, type Change, type LoginPathState, type PushEvent, type Tool } from '../shared/contract.ts';
+import { TOOL_NAMES, type AlertOutcome, type AppState, type Change, type LoginPathState, type PushEvent, type Tool, type View } from '../shared/contract.ts';
 import type { Handlers } from './bridge.ts';
 import { loadSettings, chooseTool, resetTool } from './settings.ts';
 import { loadProjects, checkProject, saveProject, removeProject, fullWhy, MAX_PROJECTS } from './projects.ts';
@@ -31,6 +31,8 @@ export interface Parts {
   testAlert(): Promise<AlertOutcome>;
   /** Push an event to the app's window (bridge.ts's pusher). */
   push(event: PushEvent): void;
+  /** The reader's view as it stands (reader/view.ts); reading it runs nothing. */
+  view(): View;
 }
 
 /** A queue: each job starts once the one before it has settled, passed or failed. */
@@ -133,5 +135,8 @@ export function makeHandlers(parts: Parts): Handlers {
 
     // Not queued: it touches no file, and a change need not wait 5 s behind an unseen alert.
     'alert.test': () => parts.testAlert(),
+
+    // Not queued: the reader holds the view in memory; asking for it reads no file and runs no git.
+    'waiting.get': () => parts.view(),
   };
 }

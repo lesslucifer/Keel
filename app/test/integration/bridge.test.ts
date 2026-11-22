@@ -23,6 +23,7 @@ function recorded() {
     'settings.choose': h('settings.choose'),
     'settings.reset': h('settings.reset'),
     'alert.test': h('alert.test'),
+    'waiting.get': h('waiting.get'),
   };
   return { calls, ask: dispatcher(() => expected, handlers) };
 }
@@ -38,9 +39,10 @@ const GOOD: Array<[string, Record<string, string>]> = [
   ['settings.reset', { tool: 'git' }],
   ['settings.reset', { tool: 'claude' }],
   ['alert.test', {}],
+  ['waiting.get', {}],
 ];
 
-test('the wire contract is locked: two channels, six request names with their slots, one push event (a change here changes what the window may do)', () => {
+test('the wire contract is locked: two channels, seven request names with their slots, two push events (a change here changes what the window may do)', () => {
   assert.equal(ASK_CHANNEL, 'keel:ask');
   assert.equal(PUSH_CHANNEL, 'keel:push');
   assert.deepEqual(contract(), {
@@ -51,8 +53,9 @@ test('the wire contract is locked: two channels, six request names with their sl
       'settings.choose': { tool: 'one of keel|git|claude' },
       'settings.reset': { tool: 'one of keel|git|claude' },
       'state.get': {},
+      'waiting.get': {},
     },
-    push: { 'state.changed': 'none' },
+    push: { 'state.changed': 'none', 'waiting.changed': 'none' },
   });
   assert.deepEqual(Object.keys(REQUESTS).sort(), Object.keys(contract().requests));
   assert.deepEqual(Object.keys(PUSH_EVENTS).sort(), Object.keys(contract().push));
@@ -127,7 +130,8 @@ test('a listed push event reaches only the app window, on the push channel, as {
   const other = windowRecorder();
   const push = pusher(() => app.win);
   assert.equal(push('state.changed'), 'sent');
-  assert.deepEqual(app.sent, [['keel:push', { event: 'state.changed', payload: null }]]);
+  assert.equal(push('waiting.changed'), 'sent');
+  assert.deepEqual(app.sent, [['keel:push', { event: 'state.changed', payload: null }], ['keel:push', { event: 'waiting.changed', payload: null }]]);
   assert.deepEqual(other.sent, []);
 });
 
@@ -136,6 +140,7 @@ test('an unlisted push event, or a payload on an event that carries none, is ref
   const push = pusher(() => app.win);
   for (const e of ['state.get', 'projects.changed', '__proto__', '', 7]) assert.equal(push(e), 'refused', String(e));
   assert.equal(push('state.changed', { path: '/x' }), 'refused');
+  assert.equal(push('waiting.changed', { wu: 'E-X.W1' }), 'refused');
   assert.deepEqual(app.sent, []);
 });
 

@@ -5,7 +5,7 @@
 import { expect, test } from 'vitest';
 import { PUSH_EVENTS, REQUESTS, SLOT_CAP, type Answer, type AppState, type RequestName, type Slot } from '../../src/shared/contract.ts';
 import { makeFakeBridge } from '../../src/window/fake/fake.ts';
-import { SCENARIO_NAMES } from '../../src/window/fake/fixtures.ts';
+import { SCENARIOS, SCENARIO_NAMES } from '../../src/window/fake/fixtures.ts';
 
 const now = () => Promise.resolve();
 
@@ -127,4 +127,15 @@ test('every scenario answers state.get through its wait, slow after 800 ms', asy
     await bridge.ask('state.get', {});
   }
   expect(waited).toEqual(SCENARIO_NAMES.map((n) => (n === 'slow' ? 800 : 0)));
+});
+
+test('waiting.get answers the scenario\'s view as a copy, changes nothing and pushes nothing', async () => {
+  const bridge = makeFakeBridge('one-project', { wait: now });
+  let pushes = 0;
+  for (const event of Object.keys(PUSH_EVENTS)) bridge.on(event, () => (pushes += 1));
+  const a = (await bridge.ask('waiting.get', {})) as Answer<{ alerts: unknown[] }>;
+  expect(a).toEqual({ ok: true, value: SCENARIOS['one-project'].view });
+  if (a.ok) a.value.alerts.length = 0;
+  expect(await bridge.ask('waiting.get', {})).toEqual({ ok: true, value: SCENARIOS['one-project'].view });
+  expect(pushes).toBe(0);
 });
