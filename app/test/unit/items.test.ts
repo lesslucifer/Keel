@@ -143,7 +143,7 @@ test('a plan to read enters on the router\'s stage, leaves on plan approved, on 
   assert.deepEqual(itemsOf(input({ router: stage({ stage: 'plan approved', tip: '1111111' }) })), []);
   assert.deepEqual(itemsOf(input({ router: router() })), []);
   assert.deepEqual(itemsOf(input({ router: stage({ stage: 'plan to read', tip: '2222222' }) })), [], 'the branch moved past the plan');
-  // A plan whose branch is not here stays (the router said so), with no time.
+  // A plan whose branch is not here stays (the router said so), with no time and no Open (round 2, below).
   const away = only(itemsOf(input({ router: router({ 'wu/E-A.W7/stage': { stage: 'plan to read', tip: 'abcdef0' } }) })));
   assert.deepEqual([away.wu, away.branch, away.since, away.tip], ['E-A.W7', null, null, 'abcdef0']);
 });
@@ -420,4 +420,14 @@ test('W6 review round 2 (items.ts:103): an open unit or epic whose name carries 
   const epic = items.find((i) => i.branch === 'epic/foo') as Item;
   assert.deepEqual([epic.kind, epic.epic, epic.open], ['epic-result', null, 'none']);
   assert.match(epic.why, /Its branch name carries no epic id \(epic\/E-<CODE>\), so Keel cannot find its result page/);
+});
+
+test('W6 review round 2 (items.ts:180): a plan with a tip but no open branch of its work unit here offers no Open, and says so', () => {
+  const away = only(itemsOf(input({ router: router({ 'wu/E-A.W7/stage': { stage: 'plan to read', tip: 'abcdef0' } }) })));
+  assert.deepEqual([away.branch, away.tip, away.open, away.markable], [null, 'abcdef0', 'none', true]);
+  assert.equal(away.why, 'The router waits for your word on the plan. No open branch of E-A.W7 is here, so there is no page to open: ask it for the plan.');
+  // Its epic's read failed: the unit is not open, so no Open either.
+  const g = git({ merged: { main: [] } });
+  const unread = only(itemsOf(input({ git: g, router: router({ 'wu/E-A.W1/stage': { stage: 'plan to read', tip: '1111111' } }) })));
+  assert.deepEqual([unread.branch, unread.open], [null, 'none']);
 });
