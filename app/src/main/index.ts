@@ -138,8 +138,14 @@ function openMain(): void {
     win.show();
   });
   win.webContents.on('render-process-gone', () => life.gone());
-  // A new renderer has the page again (Reload from the View menu after a crash): the window is alive.
-  win.webContents.on('dom-ready', () => life.loaded());
+  // A new renderer has the page again (Reload from the View menu after a crash): the window is alive. A
+  // reload (any load after the first) starts with no focus already delivered (alerts.ts Focus.loaded).
+  let loads = 0;
+  win.webContents.on('dom-ready', () => {
+    life.loaded();
+    focus.loaded(loads === 0);
+    loads += 1;
+  });
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });

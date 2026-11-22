@@ -144,6 +144,15 @@ export class Focus {
     this.pending = false;
   }
 
+  /**
+   * The window's page loaded: its first load (`first`), or a reload of the same window (View > Reload, or
+   * after a crash; review round 2, App.tsx:24). A reload starts with no focus already handed to a window;
+   * a click not yet handed to one stays.
+   */
+  loaded(first: boolean): void {
+    if (!first && !this.pending) this.current = null;
+  }
+
   /** The focus as `project` sees it: none when it was pointed for another project (review round 1, index.ts:191). */
   get(project?: string | null): FocusPoint | null {
     if (this.current === null) return null;

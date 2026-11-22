@@ -279,3 +279,19 @@ test('W6 review round 1 (App.tsx:24): a new window gets the focus only when a cl
   f.opened(true);
   assert.equal(f.get('p0a1b2c3d'), null, 'and a window re-created after it starts with none');
 });
+
+test('W6 review round 2 (App.tsx:24): a reload of the same window (View > Reload, or after a crash) starts with no focus it was already given; its first load keeps the click that opened it', () => {
+  const f = new Focus();
+  f.point('E-A.W1', 'p0a1b2c3d');
+  f.opened(true);
+  f.loaded(true);
+  assert.deepEqual(f.get('p0a1b2c3d'), { wu: 'E-A.W1', seq: 1 }, 'the first load of the window the click opened');
+  f.loaded(false);
+  assert.equal(f.get('p0a1b2c3d'), null, 'a reload: the focus was delivered already');
+  f.point('E-A.W2', 'p0a1b2c3d');
+  f.loaded(false);
+  assert.deepEqual(f.get('p0a1b2c3d'), { wu: 'E-A.W2', seq: 2 }, 'a click not yet handed to any window survives a reload');
+  f.opened(false);
+  f.loaded(false);
+  assert.equal(f.get('p0a1b2c3d'), null);
+});
