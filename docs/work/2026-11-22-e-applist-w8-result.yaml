@@ -28,7 +28,7 @@ outcome: >-
   window.keel, now with BridgeProvider and useBridge; hooks.ts holds useAppState, useAction and the answer texts. The
   fake bridge (src/window/fake/) answers every request in the contract from seven fixture scenarios and never reaches
   the shipped page (node guards). npm run dev:browser serves /browser.html on the fake. Screen 6 (Project, Tools,
-  PATH, Alerts, the version) replaces W7's bare page. Vitest 177 tests (unit 88, integration 89) and node 184 tests
+  PATH, Alerts, the version) replaces W7's bare page. Vitest 203 tests (unit 92, integration 111) and node 184 tests
   pass; npm run typecheck green on TypeScript 6.0.3 (no fallback needed); keel check green at every commit but two
   (deviations). Nothing
   was built or packaged. The sandbox refused the port both dev:browser and npm start bind, so the owner's look
@@ -51,6 +51,25 @@ deviations:
   - >-
     The fonts: mx3a's files name PP Editorial Old, Inter and DM Sans. None ships (DEC-72): New York (ui-serif) stands
     in for PP Editorial Old, the system sans for Inter and DM Sans. The owner may overrule.
+  - >-
+    Review round 4 (cr note on aed697a, FAIL: 5 blockers, 1 important; both round-3 blockers fixed). emitted.js:105
+    (a CommonJS package's require('./x.css') unseen by the dev graph): 2e1f550 judges packages whole - shipped
+    sources may import only package.json dependencies, and no package in their installed closure (dependencies,
+    optional, peer, a symlinked node_modules followed) may hold a stylesheet file; chosen as the simplest complete
+    rule, since it holds however a package reaches its CSS, where walking requires would chase each module system.
+    emitted.js:130 (lint crashed on Vite's virtual dynamic-import helper): virtual and file-less ids are walked
+    through, never read. emitted.js:97 (shared node_modules/.vite with vitest): a private cache per walk, removed
+    after, and pre-bundled deps are never opened. Siblings in 2e1f550: every shipped source (src/window but browser
+    mode's, and src/shared) is scanned for stylesheet files, named stylesheets (require, ?raw, ?inline, new URL, a
+    worker's import, files reached only by a template import) and run-time injection (a style element, a
+    constructed sheet, a JSX style or link); the graph may load nothing outside them; the renderer config may add
+    no unjudged plugin and no CSS step but Tailwind. emitted.js:191 (any @apply passed inside the dark block):
+    41fbe6b judges styles.css against an exact grammar per context (dark block: :root tokens only; @layer base:
+    @apply on html, body, #root only; tokens: variables the config reads). classes.js:314 (a table changed in a
+    local helper or by a borrowed mutator read as declared): 18ac11b follows a table into a local function's
+    parameter, matches X.prototype.push.call/apply and Reflect.apply, and takes a table handed to an imported
+    function (body unseen) as unread - decided so for DEC-72, honest forms still silent. grounds.test.tsx:42
+    (inherited colour unpaired): 4777403 pairs every text node by inheritance.
   - >-
     Review round 3 (cr note on f699d74, FAIL: 2 blockers, 0 importants, 2 nits waived; all 12 round-2 findings
     fixed). Blocker emitted.js:28, the CSS check saw styles.css's emitted class names only: 15b14dc makes it four
@@ -184,12 +203,18 @@ evidence:
     - "1321594 fix: the helper reads a name unless it is truly changed (red first: 3 unit tests and the honest.tsx fixture - an exported alias, String(look), Object.hasOwn(TONE, k), look.toUpperCase(), a table handed to a function; the known-mutation test green before and after)"
     - "15b14dc fix: the CSS check judges every stylesheet the page loads and every declaration in styles.css, and fails closed (red first: shipped-css.test.ts 19 of 19 with no such exports; then the real styles.css red on its raw base declarations until they became @apply. Hand probes on the real tree, each planted alone and restored: import './rogue.css' in main.tsx, @import './rogue2.css' in styles.css, a <link> in index.html, h2{@apply p-[13px]} and h1{font-size:77px} in styles.css, content globs matching nothing - each npm run lint CSS step exit 1, naming it; the reviewer saw exit 0 on the first four)"
     - "440ac4c test: rendered text-on-ground pairs (green at once: no unmeasured pair today, as the verifier found; its self-test shows ink on the primary pill caught)"
+    - "aed697a docs: the result pair (round 3)"
+    - "18ac11b fix: a table changed out of sight is unread (red first: 3 unit tests - local helper, borrowed mutator, unseen function; hand probe: the reviewer's set(A, s) and Array.prototype.push.call(B, ...) in a window file, eslint exit 1 with two unread errors)"
+    - "41fbe6b fix: styles.css's exact grammar (red first: 11 of 30 in shipped-css.test.ts, the dark-block @apply among them)"
+    - "2e1f550 fix: packages judged whole, every shipped source, the config, a private cache, virtual ids (red first: 10 of 38, the template dynamic import with the reviewer's TypeError, then the symlinked node_modules case red 1 of 1. Hand probes on the real tree, each planted alone and restored, check-css exit 1 naming it: a CommonJS package's require('./x.css') imported from main.tsx (unlisted, then listed in dependencies), the ESM twin, a file reached only by a template import naming a stylesheet, a local .cjs require, ?raw and ?inline, a worker's import, a JSON style injected by createElement('style'), body @apply in the dark block, a plugin added to the renderer config; the honest template import exit 0)"
+    - "4777403 test: grounds paired by inheritance (red: the reviewer's span on bg-primary planted after the header passes the old test, fails the new one naming 'ink on primary'; clean tree green)"
   runs-2026-11-22:
-    vitest: "cd app && npm run test:window: 16 files, 177 tests pass (unit 88 in 8 files, integration 89 in 8 files; 9 of the integration tests are guarantee.test.ts's probe loop, 10 shipped-css.test.ts's refused-stylesheet loop)"
+    vitest: "cd app && npm run test:window: 16 files, 203 tests pass (unit 92 in 8 files, integration 111 in 8 files; 9 of the integration tests are guarantee.test.ts's probe loop, 21 shipped-css.test.ts's refused-stylesheet loop)"
     node: "cd app && npm run test:main: tests 184, pass 184, fail 0 (W7's 176 plus 8 guards)"
     lint: "cd app && npm run lint (eslint -c eslint.config.js --max-warnings 0 . && node eslint-rules/check-css.js): exit 0, no message"
     typecheck: "cd app && npm run typecheck: exit 0 on typescript 6.0.3"
-    keel-check: "green after each commit except 73d7367 and 668aee9 (see deviations); green at b3f42e3, 448e054, 1321594, 15b14dc, 440ac4c and the tip"
+    keel-check: "green after each commit except 73d7367 and 668aee9 (see deviations); green at b3f42e3, 448e054, 1321594, 15b14dc, 440ac4c, 18ac11b, 41fbe6b, 2e1f550, 4777403 and the tip"
+    parallel: "lint beside vitest on fresh copies of app/: 41fbe6b 0 of 20 failed (10 on the shared node_modules/.vite, 10 on a fresh one per copy; the reviewer's crash did not reproduce here), the fixed tree 0 of 21"
     package: "not run (W8 never packages or makes)"
   installed:
     - "tailwindcss 3.4.19, postcss 8.5.33, eslint 10.15.0, typescript-eslint 8.73.0, vitest 5.1.1, jsdom 31.0.1"
@@ -210,32 +235,34 @@ follow-ups:
   - "Each request or event W5 adds to contract.ts needs a fake handler and fixture (fake.test.ts fails until it has one). Taken by: E-APPLIST.W5."
   - "Screens 1 and 2, the top bar's other screens, and screen 6's fields 6.4 and 6.5, on these tokens, hooks and the fake. Taken by: E-APPLIST.W6."
   - "The Playwright epic test; screen 6 and the built CSS under the packaged content policy, seen on the signed build; the design rules into docs/local-app.html. Taken by: E-APPLIST.W9."
-  - "Review round 4 on the round 3 fix (1321594, 15b14dc, 440ac4c), the sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
+  - "Review round 5, the last, on the round 4 fix (18ac11b, 41fbe6b, 2e1f550, 4777403), the sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
+  - "The CSS check's config allowlist names plugin-react 6.3.0's plugins: an upgrade that renames them turns lint red until the list is reviewed. Taken by: whoever upgrades @vitejs/plugin-react, in that change."
 details:
   base: "wu/E-APPLIST/w8-window-foundation off epic/E-APPLIST at 3cfa216"
   guarantee:
     claim: "Only Keel's closed vocabulary reaches the shipped CSS; npm run lint fails otherwise, with no escape hatch."
     where: >-
       app/eslint-rules/emitted.js, run as npm run lint's second step (eslint-rules/check-css.js) and by
-      test-window/integration/guarantee.test.ts and shipped-css.test.ts, in four parts (review round 3). 1. One
-      stylesheet: Vite's module graph, walked from main.tsx in middleware mode with the renderer config (no port, no
-      build, no dependency scan; a stylesheet's own dependencies, Tailwind's content files, not followed), lists every
-      stylesheet the page loads, and no loaded file may name one but main.tsx's './styles.css'; index.html carries no
-      <link>, <style> or style= and loads main.tsx alone. 2. styles.css at source: only @tailwind base, components and
-      utilities, @layer of those, @media (prefers-color-scheme: dark), --tokens valued as numbers on :root,
-      color-scheme, and @apply of classes classify() passes; any other declaration or at-rule is refused. 3. The
-      emitted classes: styles.css through Tailwind's PostCSS plugin with the shipped tailwind.config.js, over
-      window-sources.js; every class in an emitted selector must pass classify(). 4. Fail closed: content globs
-      matching no file or missing a window module the page loads, and no emitted class, are refused. Exit 1 naming
-      each problem.
+      test-window/integration/guarantee.test.ts and shipped-css.test.ts, in four parts. 1. One stylesheet, five
+      checks: Vite's module graph from main.tsx (middleware mode, a private cache, no port, no build; packages and
+      virtual ids not opened) lists the stylesheets the local modules load; the shipped sources (src/window but
+      browser mode's, and src/shared) hold no stylesheet file but styles.css, name none, inject none, and import only
+      package.json dependencies, and the graph loads nothing outside them; no package in the installed closure of
+      those dependencies holds a stylesheet file; index.html carries no <link>, <style> or style= and loads main.tsx
+      alone; the renderer config adds no unjudged plugin and no CSS step but Tailwind. 2. styles.css against an
+      exact grammar: Tailwind's directives; one :root rule of tokens (variables the config reads, as numbers) and
+      color-scheme; the dark media query holding only :root token rules; @layer base holding only @apply of legal
+      classes on html, body and #root. 3. The emitted classes: styles.css through Tailwind with the shipped config,
+      over window-sources.js; every class in an emitted selector must pass classify(). 4. Fail closed: content
+      globs matching no file or missing a loaded window module, and no emitted class. Exit 1 naming each problem.
     why: >-
       Tailwind emits CSS only for whole class names written out in its content files: whatever route a string takes
       at run time, either its whole class name is written in the content set, and part 3 sees it emitted, or Tailwind
       ships no CSS for it; what Tailwind writes for a legal class, and its preflight, is valued from the closed
       tokens, so the selector is what is judged. What Tailwind does not write is judged where it can be told apart:
       other stylesheets by Vite's resolver (the one that decides what ships), and authored declarations at source,
-      since compiled, a raw declaration and an @apply of a token look alike. A renderer build was not used: the owner
-      keeps builds out of the inner loop.
+      since compiled, a raw declaration and an @apply of a token look alike; packages whole, since a dev graph never
+      shows a CommonJS require. A renderer build was not used: the owner keeps builds out of the inner loop.
     one-list: "window-sources.js: SOURCE_GLOBS is Tailwind's content; SCRIPT_GLOBS (the same minus html) is ESLint's files; the html pages are read by the CSS check only."
     pinned-config: "npm run lint runs eslint -c eslint.config.js; the tests use overrideConfigFile; guarantee.test.ts refuses any other eslint.config.* or .eslintrc* under app/. Probe run by hand: a nested eslint.config.js plus Bad.tsx under src/window/probe/sub, npm run lint exit 1, 3 errors (removed after)."
     helper: "design/vocabulary stays at error for fast feedback on honest code: scope-resolved, reads helpers by their returns, reports pieces and what it cannot read; a name is unread only when truly changed (a known mutation, through an alias too), never a string; refusing correct code is a bug."
