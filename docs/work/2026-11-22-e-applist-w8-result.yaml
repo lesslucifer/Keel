@@ -6,12 +6,18 @@ title: "E-APPLIST.W8 · The window's foundation"
 date: "2026-11-22"
 page: 2026-11-22-e-applist-w8-result.html
 outcome: >-
-  Delivered, the owner's second look pending. The owner rejected the first look in browser mode and ruled that the
-  look follows his design file (docs/work/2026-11-22-e-applist-w8-design.md, Mercury). The window is drawn only from
-  Keel's closed Tailwind 3.4.19 tokens valued from that file: its day world is the light appearance, its night world
-  the dark one, still following the Mac (rgb(var(--name)) with R G B triplets in src/window/styles.css under :root and
-  again under prefers-color-scheme: dark); one indigo action colour, translucent tinted pills, capsule radii, cards by
-  fill, no shadow, weights 360-500; the system font, no font file, no url(). The guarantee that only Keel's
+  Delivered, the owner's look at mx3a pending. The owner rejected the first look, then the Mercury look
+  (docs/work/2026-11-22-e-applist-w8-design.md, kept as history) and a round of variants, and chose mx3a, Spectrum
+  Plain, on 2026-11-22: Mistral's type (docs/work/2026-11-22-e-applist-w8-design-mistral.md) on MiniMax's colour
+  (docs/work/2026-11-22-e-applist-w8-design-minimax.md). The window is drawn only from Keel's closed Tailwind 3.4.19
+  tokens valued from mx3a: a white canvas, deep black ink, a black pill main action and outline pill secondaries,
+  white 12px cards on hairlines, a plain white title bar over a 1px hairline, New York (ui-serif) for the screen
+  title and section heads in sentence case, state badges in words on blue, green and red, problems in words in the
+  problem colour, no gradient (backgroundImage and gradientColorStops declared empty); its night world follows the
+  Mac (rgb(var(--name)) with R G B triplets in src/window/styles.css under :root and again under
+  prefers-color-scheme: dark); system fonts, no font file, no url(). Every text pair reaches AA (4.5:1) and every
+  button edge 3:1 in both worlds.
+  The guarantee that only Keel's
   vocabulary reaches the shipped CSS is a check on the CSS Tailwind emits (details.guarantee), run by npm run lint
   after ESLint from one pinned config over one source list; design/vocabulary (app/eslint-rules/, ported from
   Trawler) is the fast helper: it refuses an off-list class, an arbitrary value, a modifier step off its scale, the
@@ -22,12 +28,29 @@ outcome: >-
   window.keel, now with BridgeProvider and useBridge; hooks.ts holds useAppState, useAction and the answer texts. The
   fake bridge (src/window/fake/) answers every request in the contract from seven fixture scenarios and never reaches
   the shipped page (node guards). npm run dev:browser serves /browser.html on the fake. Screen 6 (Project, Tools,
-  PATH, Alerts, the version) replaces W7's bare page. Vitest 138 tests (unit 77, integration 61) and node 184 tests
+  PATH, Alerts, the version) replaces W7's bare page. Vitest 152 tests (unit 84, integration 68) and node 184 tests
   pass; npm run typecheck green on TypeScript 6.0.3 (no fallback needed); keel check green at every commit but two
   (deviations). Nothing
   was built or packaged. The sandbox refused the port both dev:browser and npm start bind, so the owner's look
-  (details.live-checks) is the live check; he has run browser mode on the first look only.
+  (details.live-checks) is the live check; he has seen mx3a in browser mode on the look-variants branch.
 deviations:
+  - >-
+    The look is mx3a, the owner's choice of 2026-11-22 (plan pair: details.owner-decision-mx3a), replacing Mercury.
+    The variants round, in one line: on the scratch branch wu/E-APPLIST/w8-window-foundation_look-variants (tip
+    67e1bda, never merged) the owner compared sixteen browser-mode looks (a, b, a2-a5, m1, m2, x1, x2, mx1-mx3,
+    mx3a-mx3c) and turned down all but mx3a. b3f42e3 ports mx3a's values into the one design and takes nothing of
+    the look switch (no looks.css, looks.ts, ?look= or variant tests); the branch's tokens are by role and from CSS
+    variables per look, W8's stay closed and concrete. Some values are cleaned of the branch's per-look nudges that
+    kept looks apart (canvas and card 255 255 248 -> 255 255 255, primary 17 17 12 -> 17 17 17; by night canvas 16
+    16 14 -> 16 16 16, primary 244 244 241 -> 244 244 246, on-primary 16 16 19 -> 16 16 16), each indistinguishable
+    by eye. The brand mark (a 12px black square, 3px corners) comes over as built. Badges carry colour again (set
+    blue, found green, missing red, white words), always with their words, so no state is told by colour alone; the
+    Mercury deviation below on colourless badges is superseded. Browser mode gains ?scheme=light|dark (links in its
+    top line), from src/window/fake/scheme.css, held equal to the shipped tokens by test-window/unit/scheme.test.ts
+    and imported by browser.tsx only.
+  - >-
+    The fonts: mx3a's files name PP Editorial Old, Inter and DM Sans. None ships (DEC-72): New York (ui-serif) stands
+    in for PP Editorial Old, the system sans for Inter and DM Sans. The owner may overrule.
   - >-
     Where the guarantee lives (review round 2, FAIL: 8 blockers, 4 importants, most of them routes past the
     hand-written class reader). The plan puts it in the lint rule (requirement: 'held by a lint rule'; expected:
@@ -49,11 +72,11 @@ deviations:
     email capture, the toggle switch, the accordion's icons and chevrons, hero photography and glowing illustrations,
     the soft-stack shadow, and its example surfaces (ex-*).
   - >-
-    The one conflict with the design file: its font (arcadia, or Inter as the open substitute) is not shipped. The
+    (Superseded by mx3a.) The one conflict with the design file: its font (arcadia, or Inter as the open substitute) is not shipped. The
     owner's earlier ruling (DEC-72) is the system font and no font file; SF Pro is variable, so the file's light weights
     (360, 400, 420, 480, 500) render. The owner may overrule.
   - >-
-    The design file keeps status greens and oranges out of the chrome, so the ok, wait and fail colour tokens are gone.
+    (Superseded by mx3a: badges carry colour with their words.) The design file keeps status greens and oranges out of the chrome, so the ok, wait and fail colour tokens are gone.
     A tool's state is a word in a capsule badge whose tone is only loudness: 'set in Keel' on the indigo tint (a choice
     you made, like the actions), 'found on the PATH' on a faint ink wash, 'missing' polarity-flipped (ink fill, canvas
     text) in both worlds; a tool's problem, the PATH fallback and a failed read are ink at weight 500. No state is told
@@ -140,33 +163,36 @@ evidence:
     - "c5ad1f9 fix: the guarantee is the CSS check, one source list, a pinned config (red first: guarantee.test.ts failed to load with no emitted.js; the pinned-script test red)"
     - "89edf8f fix: the helper on ESLint's scope manager (red first: 11 unit, the honest.tsx fixture and the group/peer CSS test; older collectClasses tests red only on the new parse API)"
     - "621b2d2 fix: browser-mode links in ink (red first: the text-primary test on browser.tsx)"
+    - "38f5c33 docs: the result pair (where the guarantee lives, round 2)"
+    - "b3f42e3 feat: the window wears mx3a, ?scheme in browser mode (red first: 30 of 148 against the Mercury tokens - tokens 13, projects 7, contrast 3, classes 3, browser 2, styles 1, the clean lint fixture 1 - and scheme.test.ts failed to load with no scheme.css; the from-primary refusal red until gradientColorStops was emptied; then 152 of 152)"
+    - "448e054 docs: the Mistral and MiniMax design files (byte copies of fbd953c and 8d9d15c, cmp identical) and the owner's mx3a decision in the plan pair"
   runs-2026-11-22:
-    vitest: "cd app && npm run test:window: 13 files, 138 tests pass (unit 77 in 7 files, integration 61 in 6 files; 9 of the integration tests are guarantee.test.ts's probe loop)"
+    vitest: "cd app && npm run test:window: 14 files, 152 tests pass (unit 84 in 8 files, integration 68 in 6 files; 9 of the integration tests are guarantee.test.ts's probe loop)"
     node: "cd app && npm run test:main: tests 184, pass 184, fail 0 (W7's 176 plus 8 guards)"
     lint: "cd app && npm run lint (eslint -c eslint.config.js --max-warnings 0 . && node eslint-rules/check-css.js): exit 0, no message"
     typecheck: "cd app && npm run typecheck: exit 0 on typescript 6.0.3"
-    keel-check: "green after each commit except 73d7367 and 668aee9 (see deviations); green at the tip"
+    keel-check: "green after each commit except 73d7367 and 668aee9 (see deviations); green at b3f42e3, 448e054 and the tip"
     package: "not run (W8 never packages or makes)"
   installed:
     - "tailwindcss 3.4.19, postcss 8.5.33, eslint 10.15.0, typescript-eslint 8.73.0, vitest 5.1.1, jsdom 31.0.1"
     - "@testing-library/react 16.3.3, @testing-library/dom 10.4.2, @testing-library/jest-dom 8.0.0, @testing-library/user-event 14.6.13"
     - "typescript 6.0.3 (was 7.0.2); each saved exact, package-lock.json committed"
   tests-added:
-    unit: "test-window/unit/{smoke,tokens,classes,bridge,hooks,fixtures}.test.ts(x); app/test/unit/guards.test.ts gains 6 node tests"
+    unit: "test-window/unit/{smoke,tokens,classes,contrast,scheme,bridge,hooks,fixtures}.test.ts(x); app/test/unit/guards.test.ts gains 6 node tests"
     integration: "test-window/integration/{lint,fake,browser,projects,styles}.test.ts(x)"
 distillation: >-
   Nothing in W8. At the epic close (W9), per the epic's distillation plan: details.design-rules into
   docs/local-app.html beside 'The design principles'; the next DEC record carries Tailwind 3 (closed config, the
   lint rule), TypeScript 6.0.3 for the lint, and browser mode on the fake bridge.
 follow-ups:
-  - "The owner's live look at the new design (details.live-checks): browser mode, the Mac's appearance switch, npm start with the real Choose dialog and the test alert. Taken by: the owner, before the W8 sign-off."
-  - "Ship Inter (or the design file's own font) instead of the system font, if the owner overrules DEC-72. Taken by: the owner's ruling; a token change in tailwind.config.js and a font-src in the packaged CSP, at E-APPLIST.W9."
-  - "The design file's light weights rendered in the system font, and the two worlds' contrast, seen on the owner's Mac. Taken by: the owner's look, before the W8 sign-off."
+  - "The owner's live look at mx3a on this branch (details.live-checks): browser mode in both worlds (?scheme= or the Mac's switch), npm start with the real Choose dialog and the test alert. Taken by: the owner, before the W8 sign-off."
+  - "Ship PP Editorial Old, Inter or DM Sans instead of New York and the system sans, if the owner overrules DEC-72. Taken by: the owner's ruling; a token change in tailwind.config.js and a font-src in the packaged CSP, at E-APPLIST.W9."
+  - "The scratch branch wu/E-APPLIST/w8-window-foundation_look-variants is not merged; deleting it is the owner's call once W8 is signed. Taken by: the owner, after the W8 sign-off."
   - "Back to TypeScript 7 when typescript-eslint can read it. Taken by: the backlog row local-app."
   - "Each request or event W5 adds to contract.ts needs a fake handler and fixture (fake.test.ts fails until it has one). Taken by: E-APPLIST.W5."
   - "Screens 1 and 2, the top bar's other screens, and screen 6's fields 6.4 and 6.5, on these tokens, hooks and the fake. Taken by: E-APPLIST.W6."
   - "The Playwright epic test; screen 6 and the built CSS under the packaged content policy, seen on the signed build; the design rules into docs/local-app.html. Taken by: E-APPLIST.W9."
-  - "Review round 3 on the last fix, the sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
+  - "Review round 3 over everything since 62cd3f8 (the round 2 fixes and mx3a), the sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
 details:
   base: "wu/E-APPLIST/w8-window-foundation off epic/E-APPLIST at 3cfa216"
   guarantee:
@@ -198,27 +224,28 @@ details:
       - "eslint.config.js:14 content set vs lint set - fixed (one list) and moot (the CSS check reads the html: z-50, p-[13px], dark:bg-ink, grid-cols-3 caught)."
       - "classes.js:195 this. chains - moot (p-[23px] caught) and fixed (this.look, this.props.className unread)."
       - "classes.js:330 props by reference and style in props - moot (p-[24px] caught) and fixed (createElement/cloneElement with a reference, a spread inside a spread literal, a computed key: unread; a style key: reported)."
-      - "browser.tsx:23 link contrast - fixed (ink links; a contrast test over both worlds, text-primary refused in window files)."
-  design-source: "docs/work/2026-11-22-e-applist-w8-design.md (the owner's DESIGN.md, Mercury), adapted to a settings window"
+      - "browser.tsx:23 link contrast - fixed (ink links; a contrast test over both worlds; since mx3a, any text colour a window file uses that the test does not measure, text-primary among them, fails it)."
+  design-source: "mx3a, Spectrum Plain (the owner's choice, 2026-11-22): Mistral's type (docs/work/2026-11-22-e-applist-w8-design-mistral.md) on MiniMax's colour (docs/work/2026-11-22-e-applist-w8-design-minimax.md), as built on 67e1bda, adapted to a settings window. Mercury (docs/work/2026-11-22-e-applist-w8-design.md) is history."
   design-rules:
     - "Every value from a token; a new size or colour is a token change in tailwind.config.js (and styles.css for a colour), never a class, an inline style or a hand-written DOM class."
-    - "Two worlds, chosen by the Mac: the design file's day world is light, its night world dark; a colour variable flips, no dark: class (the lint refuses it)."
-    - "One saturated colour, indigo, for the most important action: at most one solid primary button per card; every other action a translucent tinted pill (indigo 10% by day, periwinkle 20% by night)."
-    - "Actions are capsules (xl 32px for the primary, pill 40px for the rest); cards are rounded md (12px) and stand off the canvas by fill alone; rows inside a card are split by 1px rules; no shadow."
-    - "Type is light: body 400, UI 420, headings 480, eyebrows 500; nothing above 500; uppercase only for small eyebrows."
-    - "No status greens, ambers or reds: a state is a word in a badge whose tone is loudness (choice, quiet, strong); a problem is ink at 500."
+    - "Two worlds, chosen by the Mac: day is light, night is dark; a colour variable flips, no dark: class (the lint refuses it)."
+    - "One solid action per card, the primary pill (black by day, white by night); every other action an outline pill with no fill, whose hover is an ink wash (6% by day, 10% by night)."
+    - "Every button and badge a pill; cards white with a 1px hairline and 12px corners; rows inside a card split by 1px rules; the title bar the canvas over a 1px hairline; no shadow, no gradient."
+    - "Mistral's type: the screen title (34px) and section heads (20px) in New York at 400, tracked in, in sentence case; the system sans for the rest at 400, controls and names at 500, a problem at 600."
+    - "A state is a word on a badge whose colour repeats it (set blue, found green, missing red with white words); a problem is words in the problem colour; no state by colour alone."
+    - "Contrast: every text pair 4.5:1 and every button edge 3:1 in both worlds; a text colour the window uses that the contrast test does not measure fails it."
     - "A scale with no magnitude (flex, cursor) or derived from spacing (width, margin) is declared with exactly the members the window draws from; an undeclared scale is empty."
     - "Text the main part sends is shown as text, never as markup; a path is shown whole, in mono, and may wrap."
     - "One action in progress at a time: every button is off while a request runs; the outcome is a sentence (role=status); a failed read is a sentence (role=alert)."
     - "Actions first; what you rarely read folded (the PATH's folders)."
     - "A row that names a thing (a tool) is a named group, so a screen reader and a test find its buttons by that name."
-  tokens: "colours canvas, card, line, ink, ink-secondary, primary #5266eb, on-primary, tint (day: #fbfcfd, #edecfb, fog, #28253b, #554e7b, indigo at 10%; night: #171721, #1e1e2a, slate, #ededf3, fog, periwinkle at 20%); spacing half 4, xs 8, sm 12, md 16, lg 20, xl 24, xxl 32, huge 40, badge 22, control 32 px; type eyebrow 11, legal 12, ui-sm 13, ui 14, body 14, body-lg 15, title 17, heading 22 px; weights 360, 400, 420, 480, 500; radius xs 4, sm 8, md 12, lg 16, xl 32, pill 40, full; no shadow; mono ui-monospace"
+  tokens: "colours (day / night, R G B): canvas 255 255 255 / 16 16 16, card 255 255 255 / 27 27 27, line 238 238 240 / 46 46 53, edge 226 226 230 / 56 56 64, ink 17 17 17 / 244 244 246, ink-secondary 88 88 96 / 172 172 182, primary 17 17 17 / 244 244 246, on-primary 255 255 255 / 16 16 16, outline 17 17 17 / 200 200 208, set 219 232 255 / 30 54 120, on-set 22 64 190 / 196 214 255, found 223 245 230 / 22 72 44, on-found 22 101 52 / 186 240 204, missing 214 52 36 and on-missing 255 255 255 in both, problem 190 40 40 / 255 138 128; hover-alpha 0.06 / 0.1; spacing half 4, xs 8, sm 12, row 14, md 16, lg 20, xl 24, xxl 32, huge 40, badge 22, control 32 px; type legal 12, ui-sm 13, ui 14, body 14, body-lg 15, title 17, section 20, heading 34 px; weights 400, 500, 600; radius mark 3, card 12, pill 9999 px; no shadow, no gradient; faces sans system-ui, serif ui-serif (New York), mono ui-monospace"
   live-checks:
     by: "the owner on his Mac, about five minutes, before the sign-off; no package or make"
     steps:
       - "1. cd app && npm ci (about a minute)."
-      - "2. npm run dev:browser, then open http://localhost:5173/browser.html (Vite prints the URL; if 5173 is taken it picks the next port). Screen 6 on fixtures under a lavender 'Browser mode: fixtures, not your Mac' line. Switch states by the links in that line, or ?state=one-project, no-project, tool-missing, path-fallback, refusing, failing, slow. Try: no-project then Add a project...; tool-missing (claude missing, git with a problem); path-fallback (the fallback and why); refusing (Keel could not read its state); failing (any button says The request failed); slow (every button off for 0.8 s)."
-      - "3. With the page open, System Settings > Appearance: Light, then Dark. The page turns with it, no reload."
+      - "2. npm run dev:browser, then open http://localhost:5173/browser.html (Vite prints the URL; if 5173 is taken it picks the next port). Screen 6 on fixtures under a 'Browser mode: fixtures, not your Mac' line. Switch states by the links in that line, or ?state=one-project, no-project, tool-missing, path-fallback, refusing, failing, slow. Try: no-project then Add a project...; tool-missing (claude missing, git with a problem); path-fallback (the fallback and why); refusing (Keel could not read its state); failing (any button says The request failed); slow (every button off for 0.8 s)."
+      - "3. With the page open, System Settings > Appearance: Light, then Dark. The page turns with it, no reload. Or the Light, Dark and Follow the Mac links in the top line (?scheme=light|dark), which force one world without the Mac."
       - "4. Ctrl-C the dev server. npm start (the app unpackaged; the first run downloads Electron). Screen 6 with your real tools; Choose... opens the macOS file dialog; Use the PATH appears for a tool you set; Send a test alert shows the alert and its sentence."
     worker-tried: "npm ci green. dev:browser and npm start both refused by the sandbox: listen EPERM on ::1 (ports 5199 and 5173)."
   htmldoc:
