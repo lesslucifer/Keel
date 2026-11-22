@@ -26,6 +26,7 @@ import { openLink, schemeText } from './alerter/link.ts';
 import { fileSink, openFileSink, seamsOf } from './alerter/seams.ts';
 import { openListed } from './open/open.ts';
 import { SentMarks } from './items/sent.ts';
+import { secondLaunch } from './instance.ts';
 import { loadProjects } from './projects.ts';
 
 // Set by Forge's Vite plugin: the dev server's URL under electron-forge start (undefined in a
@@ -272,6 +273,7 @@ async function start(): Promise<void> {
 }
 
 if (!app.requestSingleInstanceLock()) {
+  secondLaunch((text) => process.stderr.write(text));
   app.quit();
 } else {
   app.on('web-contents-created', (_event, contents) => lockDown(contents));
