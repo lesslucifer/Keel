@@ -1,7 +1,7 @@
 # Keel decision index: data only, no page (DEC-69). Read it first, then open only the decision page you need.
 # Per record: id, title, the page that holds it, live or replaced-by. Ids are never reused: check every live
 # branch before minting next-free. Trawler lineage: git history of decisions-index.html; backlog B5 holds what is open.
-next-free: DEC-78
+next-free: DEC-79
 removed: >-
   Never reused: DEC-60 - DEC-68 were GitHub's flow (E-GHFLOW, E-GHFLOW2). E-GHREVERT removed them with the flow (the
   owner's ruling of 2026-11-19, DEC-70, amended); git history keeps their text.
@@ -37,9 +37,10 @@ pages:
   - file: app.html
     title: "Decisions: the local app's build"
     scope: >-
-      How the local app's window is built, styled, tested and developed, and what E-APPLIST leaves out. Why the app
-      exists and what it may do stays DEC-70, in workflow-gates.html.
-    topics: ["The window", "E-APPLIST's scope"]
+      How the local app's window is built, styled, tested and developed, what E-APPLIST leaves out, and how the app
+      and the router's update log were built. Why the app exists and what it may do stays DEC-70, in
+      workflow-gates.html.
+    topics: ["The window", "E-APPLIST's scope", "How E-APPLIST built it"]
 records:
   - id: DEC-1
     title: "One project-agnostic Rust CLI, extracted from Trawler"
@@ -311,5 +312,9 @@ records:
     status: live
   - id: DEC-77
     title: "No tray, menu or login item in E-APPLIST"
+    file: app.html
+    status: live
+  - id: DEC-78
+    title: "The app lives in this repo under the gate; the router's lines reach it first"
     file: app.html
     status: live

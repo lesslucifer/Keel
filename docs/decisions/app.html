@@ -10,11 +10,11 @@
     <div class="inner">
       <h1>Decisions: the local app's build</h1>
       <p>How the local app's window is built, styled, tested and developed, and what E-APPLIST leaves out. Why the app exists and what it may do is <a href="workflow-gates.html#dec-70">DEC-70</a>.</p>
-      <div class="meta">T2 · decisions · current truth · 2026-11-20 · Keel · DEC-71 – DEC-77 · the design: <a href="../local-app.html">local-app.html</a></div>
+      <div class="meta">T2 · decisions · current truth · 2026-11-23 · Keel · DEC-71 – DEC-78 · the design: <a href="../local-app.html">local-app.html</a></div>
     </div>
   </header>
   <main>
-    <p data-c="how-to-read">Current truth: each record says what stands today, why, and what was rejected. A later decision that changes one is folded in and named. Ids are never reused. The owner ruled on all seven on 2026-11-20, after he paused E-APPLIST ("we ran too fast on the app") and studied Trawler, a Tauri app whose window is React, Tailwind and Vite. Keel's app stays Electron (DEC-70).</p>
+    <p data-c="how-to-read">Current truth: each record says what stands today, why, and what was rejected. A later decision that changes one is folded in and named. Ids are never reused. The owner ruled on DEC-71 – DEC-77 on 2026-11-20, after he paused E-APPLIST ("we ran too fast on the app") and studied Trawler, a Tauri app whose window is React, Tailwind and Vite. Keel's app stays Electron (DEC-70). DEC-78 records the rest of E-APPLIST's choices at its close.</p>
 
     <h2 id="window">The window</h2>
     <h3 id="dec-71">DEC-71 · The window is React with Vite; Trawler's patterns, not its look</h3>
@@ -65,6 +65,14 @@
       <tr><th>Choice</th><td>E-APPLIST builds no tray (menu-bar) icon, no menu of its own and no start at login. The app keeps running when its window is closed, so alerts still come.</td></tr>
       <tr><th>Why</th><td>An alert needs only the app running, with no window open. The three are conveniences: backlog local-app L9.</td></tr>
       <tr><th>Rejected</th><td>Building them in this epic.</td></tr>
+    </table>
+
+    <h2 id="built">How E-APPLIST built it</h2>
+    <h3 id="dec-78">DEC-78 · The app lives in this repo under the gate; the router's lines reach it first</h3>
+    <table data-c="dec-78">
+      <tr><th>Choice</th><td>The app's code is <code>app/</code> in Keel's repository, a code path of the gate. Its main part is tested by Node's own runner inside <code>keel check</code>, with no package installed; its window by Vitest and the epic by Playwright, both by hand (DEC-73, DEC-75). The router tells the app what only it knows through one update log (UC-ROUTE-8). The sender writes the alert line before it sends to Telegram. A question travels on the alert's body; the router deletes its line once answered. Only the packaged app claims <code>keel://</code>, and it opens only <code>keel://wu/&lt;id&gt;</code>. Four file seams (<code>KEEL_APP_ALERT_SINK</code>, <code>KEEL_APP_OPEN_SINK</code>, <code>KEEL_APP_SILENCE_MS</code>, <code>KEEL_APP_DIR</code>) let the epic test drive the unpackaged app; the packaged app ignores them.</td></tr>
+      <tr><th>Why</th><td>One repository gives one review and one gate, and the app only reads keel's CLI and git. Tests that need no install keep <code>keel check</code> fast and whole. A Telegram failure must never lose the desk alert. A question on the alert's body adds no free-text path past the router's guard. A development run must never make Electron the owner of the link. Seams that only an unpackaged app reads cannot change what the owner's app does.</td></tr>
+      <tr><th>Rejected</th><td>A separate repository for the app. The window's tests or the epic test inside <code>keel check</code> (backlog L6). A new free-text channel for questions. <code>keel://</code> claimed by every run. Test hooks compiled into the packaged app.</td></tr>
     </table>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
