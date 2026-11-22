@@ -34,6 +34,7 @@ export function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => voi
 export function sampleState(over: Partial<AppState> = {}): AppState {
   return {
     version: '0.1.0',
+    packaged: true,
     path: { entries: ['/opt/homebrew/bin', '/usr/bin', '/bin'], source: 'login-shell', reason: null },
     tools: {
       keel: { path: '/opt/homebrew/bin/keel', source: 'path', problem: null },

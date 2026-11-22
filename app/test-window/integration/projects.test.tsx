@@ -107,6 +107,16 @@ test('Send a test alert sends alert.test and shows each of the three outcomes in
   }
 });
 
+test('W9: under pnpm start (the state says not packaged) a test alert not shown names Notifications > Electron; packaged, Notifications > Keel', async () => {
+  for (const [packaged, place] of [[false, 'Electron'], [true, 'Keel']] as const) {
+    draw({ 'state.get': () => ok(sampleState({ packaged })), 'alert.test': () => ok('not-shown') });
+    await ready();
+    await userEvent.click(screen.getByRole('button', { name: 'Send a test alert' }));
+    expect((await screen.findByRole('status')).textContent).toBe(`The test alert was not shown within 5 s. Check System Settings > Notifications > ${place}.`);
+    cleanup();
+  }
+});
+
 test('every control is off while a request is pending, and on again after its answer', async () => {
   const held = deferred<Answer>();
   draw({ 'settings.choose': () => held.promise });

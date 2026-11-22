@@ -21,6 +21,8 @@ export interface Parts {
   /** The app's own folder (Electron's userData). */
   appDir: string;
   version: string;
+  /** Whether the app is packaged (Electron's app.isPackaged): state.get passes it on to the window. */
+  packaged: boolean;
   /** The PATH read once at start: git runs with it and unset tools are looked up on it. */
   loginPath: LoginPathState;
   /** Where git takes HOME, USER, LOGNAME, LANG and TMPDIR from; the app's own environment when unset. */
@@ -108,7 +110,7 @@ export function makeHandlers(parts: Parts): Handlers {
     'state.get': () =>
       queue(async (): Promise<AppState> => {
         const { projects, tools } = await read();
-        return { version: parts.version, path: parts.loginPath, tools, projects };
+        return { version: parts.version, packaged: parts.packaged, path: parts.loginPath, tools, projects };
       }),
 
     // Refused before the dialog when the list is full or git is unusable: the owner picks nothing for nothing.

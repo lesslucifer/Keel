@@ -103,6 +103,8 @@ export interface ProjectEntry {
 /** state.get's value. */
 export interface AppState {
   version: string;
+  /** W9: the packaged Keel.app (true), or the unpackaged app under pnpm start (false): macOS files their alerts under Keel or Electron. */
+  packaged: boolean;
   path: LoginPathState;
   tools: Record<Tool, ToolState>;
   projects: ProjectEntry[];

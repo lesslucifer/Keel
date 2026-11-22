@@ -8,6 +8,7 @@
 // still come. Checked live on the owner's Mac.
 
 import { app, BrowserWindow, dialog, ipcMain, Notification, protocol, session, shell, type OpenDialogOptions, type WebContents } from 'electron';
+import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ASK_CHANNEL, type Tool } from '../shared/contract.ts';
@@ -25,6 +26,7 @@ import { openLink, schemeText } from './alerter/link.ts';
 import { fileSink, openFileSink, seamsOf } from './alerter/seams.ts';
 import { openListed } from './open/open.ts';
 import { SentMarks } from './items/sent.ts';
+import { secondLaunch } from './instance.ts';
 import { loadProjects } from './projects.ts';
 
 // Set by Forge's Vite plugin: the dev server's URL under electron-forge start (undefined in a
@@ -49,6 +51,12 @@ const focus = new Focus();
 let watcher: Watcher | null = null;
 // W9's seams (alerter/seams.ts): read only when not packaged.
 const seams = seamsOf(process.env, app.isPackaged);
+// The epic test's own app folder (KEEL_APP_DIR), set before ready and before the single-instance lock,
+// which lives in it: the test never touches the owner's folder nor meets a running Keel's lock.
+if (seams.appDir !== null) {
+  mkdirSync(seams.appDir, { recursive: true, mode: 0o700 });
+  app.setPath('userData', seams.appDir);
+}
 
 let mainWindow: BrowserWindow | null = null;
 /** mainWindow's life: painted (until then it is not shown, so no blank window flashes), and whether its renderer is gone. */
@@ -225,6 +233,7 @@ async function start(): Promise<void> {
   const handlers = makeHandlers({
     appDir,
     version: app.getVersion(),
+    packaged: app.isPackaged,
     loginPath,
     chooseFolder,
     chooseFile,
@@ -265,6 +274,7 @@ async function start(): Promise<void> {
 }
 
 if (!app.requestSingleInstanceLock()) {
+  secondLaunch((text) => process.stderr.write(text));
   app.quit();
 } else {
   app.on('web-contents-created', (_event, contents) => lockDown(contents));

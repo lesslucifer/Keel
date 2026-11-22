@@ -19,7 +19,9 @@
     "test:window": "vitest run",
     "test:window:watch": "vitest",
     "lint": "eslint -c eslint.config.js --max-warnings 0 . && node eslint-rules/check-css.js",
-    "dev:browser": "vite --config vite.renderer.config.ts"
+    "dev:browser": "vite --config vite.renderer.config.ts",
+    "build:e2e": "node e2e/build-bundles.ts",
+    "e2e": "pnpm build:e2e && playwright test"
   },
   "dependencies": {
     "react": "19.3.1",
@@ -31,6 +33,7 @@
     "@electron-forge/plugin-fuses": "8.0.1",
     "@electron-forge/plugin-vite": "8.0.1",
     "@electron/fuses": "2.1.3",
+    "@playwright/test": "1.65.1",
     "@testing-library/dom": "10.4.2",
     "@testing-library/jest-dom": "8.0.0",
     "@testing-library/react": "16.3.3",

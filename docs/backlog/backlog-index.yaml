@@ -19,8 +19,9 @@ files:
     file: local-app.yaml
     scope: >-
       From the E-LOCALTOOL close: back to before GitHub (A1, done by E-GHREVERT), keel fixes (A2), the app's three
-      build epics (A3 - A5), in order.
-    next-free: A6
+      build epics (A3 - A5, A3 done by E-APPLIST), in order; the app's open ends after E-APPLIST (A11). A6 - A10 are
+      taken on main (E-KEELFIX).
+    next-free: A12
   - letter: L
     file: local-app.yaml
     scope: >-

@@ -16,7 +16,7 @@ const TITLE: Record<Screen, string> = { waits: 'Waits on you', projects: 'Projec
 export function App({ start }: { start?: Screen } = {}) {
   const { state, error } = useAppState();
   const waiting = useWaiting();
-  const action = useAction();
+  const action = useAction(state?.packaged ?? true);
   const project = state?.projects[0];
   const [picked, setPicked] = useState<Screen | null>(start ?? null);
   // The focus a click set, once the window has acted on it: a newer count acts again.

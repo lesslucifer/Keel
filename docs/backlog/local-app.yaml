@@ -23,84 +23,6 @@ open:
       E-LOCALTOOL.W5 result, P4 to P6, and the close.
     taken-by: "E-KEELFIX"
 
-  - id: A3
-    title: "E-APPLIST · Alerts and your list"
-    status: after A1; replanned 2026-11-20 (DEC-71 - DEC-77)
-    problem: >-
-      First use: an alert at your desk (n1) and one list of what waits on you (n2). Read-only.
-    proposal: >-
-      Parts: the router's update log (K14) and the watchdog's lines (K15), with their defaults and the "router not
-      heard" bar, tested by an app restart and a router restart; the router's stage lines (K4) and alert line (K10);
-      the app shell (Electron's main part, a preload bridge with a request and a push channel, the security checklist,
-      the PATH setting, one project, a Forge build, Apple's membership decided at its signed build); the window's
-      foundation (React with Vite, Tailwind on Keel's own closed tokens and a lint rule, a browser mode on a fake
-      bridge, Vitest run by hand); the Reader, Watcher and Alerter on the two sources, with the app reading the local
-      epic branch; screens 1, 2 and 6, and Open with a copy of the committed page; the alert's link and one Telegram
-      test (K12); `?diff=latest` on a file link checked; the epic test on Playwright, driving the unpackaged app. No
-      tray, menu or login item (L9). Waits on: A1.
-    source: >-
-      E-LOCALTOOL.W5 result, P4 to P6, and the close; the owner's replan of 2026-11-20 (DEC-71 - DEC-77).
-    taken-by: "E-APPLIST"
-    follow-ups:
-      - >-
-        Simplify the lint helper (app/eslint-rules/classes.js) to an advisory for honest code and leave the guarantee
-        to the emitted-CSS check (app/eslint-rules/emitted.js); close the four round-5 findings W8 was signed with,
-        its review at the 5-round cap (cr note on 796fb29, WAIVED: 2 blockers, 2 importants open; none ships anything
-        wrong): classes.js:283 (blocker: the taint rule refuses honest code - a non-literal string binding or a table
-        handed to an imported or a rest-parameter helper is reported unread); classes.js:362 (blocker: a table changed
-        in a local helper through arguments[0], forEach, new, an array, a spread, a tag or an object wrapper is read
-        as its declared value); emitted.js:149 (important: a stylesheet in a package that is not a runtime dependency,
-        reached by a relative node_modules path, ships with lint green); emitted.js:182 (important: the import and
-        injection scans are regexes over raw text, so honest JSX text, a comment or an SVG icon fails lint). Source:
-        E-APPLIST.W8 result and its cr note; recorded by the E-APPLIST.W5 plan. Taken by: E-APPLIST.W6 if the helper
-        refuses its honest screen code, else this row at E-APPLIST's close (W9), which re-points it to a row of its
-        own if still open.
-      - >-
-        Back to TypeScript 7 when typescript-eslint can read it: W8 pinned one TypeScript, 6.0.3, for both the type
-        check and the lint, because typescript-eslint cannot parse 7 (W8 plan open point 2, the owner's answer of
-        2026-11-22). Source: E-APPLIST.W8 result, follow-ups (796fb29). Taken by: this row; at E-APPLIST's close (W9)
-        it moves to a row of its own if typescript-eslint still cannot read 7.
-      - >-
-        A tool reached through a chain of links whose middle hop is inside a project (/usr/local/bin/git ->
-        <proj>/bin/git -> /outside/git) is still accepted; fix by walking each link hop (W7 review round 3's refuted
-        candidate). Source: E-APPLIST.W7 result, follow-ups (791eca7). Taken by: this row; at E-APPLIST's close (W9)
-        it moves to a row of its own if still open.
-      - >-
-        After a left job that wrote past LATE_OUTPUT_CAP ends, its paused pipe is never read to its end, so the app
-        keeps that pipe and the capture's answer until it quits (W7 review round 4's waived nit, app/src/main/commands.ts:177;
-        bounded, at most the login-shell read once per launch). Source: E-APPLIST.W7 result, follow-ups (791eca7).
-        Taken by: this row; at E-APPLIST's close (W9) it moves to a row of its own if still open.
-      - >-
-        A second launch that loses the single-instance lock quits silently (app/src/main/index.ts, where
-        app.requestSingleInstanceLock() fails), so a pnpm start while another Keel runs (the packaged app keeps running
-        with no window, DEC-77) hands its window to the old build with no word in the terminal. Fix: print "Keel is
-        already running: this launch quits; quit the other first" to stderr before app.quit(); W9's Playwright test
-        checks a second launch shows no old window. Source: the E-APPLIST.W5 live check (2026-11-22), the worker's
-        trace. Taken by: this row; at E-APPLIST's close (W9) it moves to a row of its own if still open.
-      - >-
-        The test alert's "not shown" text says "Check System Settings > Notifications > Keel" (app/src/window/hooks.ts),
-        right for the packaged app; under pnpm start the unpackaged app is Electron.app, and macOS files its
-        notifications under "Electron" (on the owner's Mac it had no entry at all). Fix: name the right place for each
-        (the main part knows app.isPackaged). Source: the E-APPLIST.W5 live check (2026-11-22). Taken by: this row;
-        at E-APPLIST's close (W9) it moves to a row of its own if still open.
-      - >-
-        W5's one open review item: app/src/shared/contract.ts:129-131 against app/src/main/reader/git.ts:89 (mayBeFresh):
-        state the narrowing (none of its units main holds sits at a tip other than the epic's) or count such a unit as
-        merged only when name-rev puts it off main's line. Source: E-APPLIST.W5's review, its cr note WAIVED at the
-        round cap on 7a5bd13; recorded by the E-APPLIST.W10 plan. Taken by: this row; at E-APPLIST's close (W9) it
-        moves to a row of its own if still open.
-      - >-
-        Open copies only the docs that read whole as UTF-8 text (app/src/main/open/open.ts): the fixed reads answer
-        text, so a binary file under docs/ (an image a page shows) is not copied and the copied page shows it broken.
-        Keel's docs are HTML, YAML and Markdown today. Fix when a doc first carries one: a byte-exact blob read
-        (capture answering a Buffer). Source: E-APPLIST.W6 result, follow-ups. Taken by: this row; at E-APPLIST's
-        close (W9) it moves to a row of its own if still open.
-      - >-
-        A question on the list has no 'since': the router's state keeps each key's value, not the time it was set,
-        so the item shows no time (app/src/shared/items.ts). Fix: keep the time of the line that set each key in the
-        log reader (app/src/main/reader/log.ts) and show it. Source: E-APPLIST.W6 result, follow-ups. Taken by: this
-        row; at E-APPLIST's close (W9) it moves to a row of its own if still open.
-
   - id: A4
     title: "E-APPSIGN · Sign off and merge from the app"
     status: after A2, A3
@@ -116,6 +38,16 @@ open:
     source: >-
       E-LOCALTOOL.W5 result, P4 to P6, and the close's walk-through.
     taken-by: "E-APPSIGN"
+    follow-ups:
+      - >-
+        "What changed" on a page reads htmldoc's ?diff=latest: the owner's E-APPLIST.W6 live check found it works on
+        the page Open copied, typed in the browser's address bar; whether `open 'file://...?diff=latest'` from Terminal
+        keeps the query is E-APPLIST.W9's packaged live check, step 7, recorded here at E-APPLIST's close. Source:
+        E-APPLIST.W6 live check; W9 plan. Taken by: this row.
+      - >-
+        Whether the keel:// link at the end of a router's Telegram message opens Keel on the owner's Mac (E-APPLIST.W9's
+        packaged live check, step 5); a no becomes a row of its own. Source: E-APPLIST.W3 and W6 results. Taken by:
+        this row.
 
   - id: A5
     title: "E-APPFLEET · Fleet, epics, many projects"
@@ -130,6 +62,64 @@ open:
     source: >-
       E-LOCALTOOL.W5 result, P4 to P6, and the close's walk-through.
     taken-by: "E-APPFLEET"
+
+  - id: A11
+    title: "The app's open ends after E-APPLIST"
+    status: open (the owner's answer to E-APPLIST.W9's open point 4, 2026-11-22)
+    problem: >-
+      E-APPLIST left about a dozen small items in the app: none is wrong for the owner today, each is a sharper edge
+      or a fix waiting for a first real need. Kept together so they are read and picked up at once.
+    proposal: >-
+      One small WU, or any item taken by A4 (E-APPSIGN) or A5 (E-APPFLEET) where it touches their work; each item says
+      its fix and its source. Waits on: E-APPLIST's merge.
+    source: >-
+      Backlog A3's open follow-ups at E-APPLIST's close (moved here by E-APPLIST.W9), and the W9 epic test's first run.
+    taken-by: "no epic yet; A4 or A5 may take any item"
+    follow-ups:
+      - >-
+        Simplify the lint helper (app/eslint-rules/classes.js) to an advisory for honest code and leave the guarantee
+        to the emitted-CSS check (app/eslint-rules/emitted.js); close the four round-5 findings W8 was signed with
+        (cr note on 796fb29, WAIVED: classes.js:283, classes.js:362, emitted.js:149, emitted.js:182; none ships anything
+        wrong). E-APPLIST.W6's honest screen code passed the helper, so it was not needed there. Source: E-APPLIST.W8
+        result and its cr note; W6 result. Taken by: this row.
+      - >-
+        Back to TypeScript 7 when typescript-eslint can read it (W8 pinned 6.0.3 for both the type check and the lint).
+        Source: E-APPLIST.W8 result (796fb29). Taken by: this row.
+      - >-
+        A tool reached through a chain of links whose middle hop is inside a project (/usr/local/bin/git ->
+        <proj>/bin/git -> /outside/git) is still accepted; fix by walking each link hop. Source: E-APPLIST.W7 review
+        round 3 (791eca7). Taken by: this row.
+      - >-
+        After a left job that wrote past LATE_OUTPUT_CAP ends, its paused pipe is never read to its end, so the app
+        keeps that pipe until it quits (app/src/main/commands.ts:177; bounded, the login-shell read once per launch).
+        Source: E-APPLIST.W7 review round 4, waived nit (791eca7). Taken by: this row.
+      - >-
+        app/src/shared/contract.ts:129-131 against app/src/main/reader/git.ts:89 (mayBeFresh): state the narrowing, or
+        count a unit main holds as merged only when name-rev puts it off main's line. Source: E-APPLIST.W5 review, its
+        cr note WAIVED at the round cap on 7a5bd13. Taken by: this row.
+      - >-
+        Open copies only docs that read whole as UTF-8 text (app/src/main/open/open.ts), so a binary file under docs/
+        would show broken; fix with a byte-exact blob read when a doc first carries one. Source: E-APPLIST.W6 result.
+        Taken by: this row.
+      - >-
+        A question on the list has no 'since' (the router's state keeps each key's value, not its time); keep the
+        setting line's time in app/src/main/reader/log.ts and show it. Source: E-APPLIST.W6 result. Taken by: this row.
+      - >-
+        app/src/main/open/open.ts:186: a data file whose head-pass read failed is read from git a second time (the :157
+        comment holds only for valid files); keep the failed read's answer or narrow the comment. Source: E-APPLIST.W6
+        review round 4, nit. Taken by: this row.
+      - >-
+        app/src/main/open/open.ts:142: on reuse each matching kept data file is read from disk twice (bytes for
+        blobIdOf, then UTF-8); read once and decode. Source: E-APPLIST.W6 review round 4, nit. Taken by: this row.
+      - >-
+        A project listed before the router's first start has no .router/app/ to watch, so the app sees that first start
+        at its minute's re-read, not within a second (app/src/main/watcher/watch.ts, as designed); fix by watching the
+        project folder until .router/app/ exists. Source: E-APPLIST.W9, the epic test's first run (step 2). Taken by:
+        this row.
+      - >-
+        Ship PP Editorial Old, Inter or DM Sans in place of New York and the system sans, only if the owner overrules
+        DEC-72 (none planned): a token change in app/tailwind.config.js and a font-src in the packaged content policy.
+        Source: E-APPLIST.W8 result. Taken by: this row, on the owner's ruling.
 
   - id: L1
     title: "Message the router from the app"
@@ -239,6 +229,14 @@ open:
     taken-by: "no epic yet"
 
 closed:
+  - id: A3
+    title: "E-APPLIST · Alerts and your list"
+    closed: >-
+      done by E-APPLIST (W1 - W3 and W5 - W10; W4 dropped, DEC-76), closed at its sign-off: the router's update log
+      and the watchdog's lines (UC-ROUTE-8), the app's alert at your desk and your list with Open and Mark sent
+      (UC-APP-1, UC-APP-2), the epic test app/e2e/applist.e2e.spec.ts; Apple's paid membership is not needed, since
+      the free ad-hoc signature showed the alert (W7, rung 1); its open follow-ups moved to A11, its two live-check
+      questions to A4. Result: the E-APPLIST epic result (archived).
   - id: A1
     title: "E-GHREVERT · Back to before GitHub"
     closed: >-

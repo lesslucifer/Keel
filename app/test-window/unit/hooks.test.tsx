@@ -33,6 +33,13 @@ test('alertText: each of the three outcomes in words, and a refusal', () => {
   expect(alertText({ ok: false, refused: 'busy' })).toBe('Keel refused the request (busy).');
 });
 
+test('alertText (W9): not shown names the place macOS files the alerts - Notifications > Keel when packaged, Notifications > Electron under pnpm start', () => {
+  expect(alertText(ok('not-shown'), true)).toBe('The test alert was not shown within 5 s. Check System Settings > Notifications > Keel.');
+  expect(alertText(ok('not-shown'), false)).toBe('The test alert was not shown within 5 s. Check System Settings > Notifications > Electron.');
+  expect(alertText(ok('shown'), false)).toBe('The test alert was shown.');
+  expect(alertText(ok('not-supported'), false)).toBe('This Mac does not support alerts from Keel.');
+});
+
 test('useAppState asks state.get once on mount, loading until the answer, then holds the state', async () => {
   const stub = makeStub();
   const { result } = renderHook(() => useAppState(), within(stub));

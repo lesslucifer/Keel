@@ -1,0 +1,205 @@
+artifact: wu-plan
+status: ready
+id: E-APPLIST.W9
+epic: E-APPLIST
+title: "E-APPLIST.W9 · The epic test and the close"
+date: "2026-11-22"
+page: 2026-11-22-e-applist-w9-plan.html
+requirement: >-
+  One Playwright test, run by hand with `pnpm e2e` and recorded, launches the unpackaged app (Vite's bundles, never
+  packaged or signed) on a temp keel project and a temp app folder, drives the real scripts/router-app.sh,
+  scripts/notify-owner.py --send and the watchdog's facts step, and sees on screen, through the seams
+  KEEL_APP_ALERT_SINK, KEEL_APP_OPEN_SINK and KEEL_APP_SILENCE_MS, each step of the epic's flow (a plan to read enters
+  and leaves, one alert per alert line with the project as subtitle, Open hands over the committed page, Mark sent
+  survives a restart, a result to sign leaves on its sign-off and merge, an app restart alerts nothing again, a router
+  restart drops the router's values, silence shows 'router not heard'), with no content-policy refusal on the shipped
+  page; the owner checks the packaged, ad-hoc-signed build once at his Mac (the real alert, its click, keel://, the
+  Telegram link, screens 2 and 6, ?diff=latest from Terminal); and the epic's truth is distilled into its T2 docs (by
+  the worker) and T1 pages (written by the worker, committed by the owner), leaving only the archive and the sign-off
+  to the epic's close. Two small app fixes (the owner's answer to open point 3): a second launch that loses the
+  single-instance lock says so on stderr before it quits, and the test alert's 'not shown' text names the place macOS
+  files the app's alerts (Notifications > Keel when packaged, Notifications > Electron under pnpm start).
+maps-to: >-
+  Epic E-APPLIST, its W9 summary (wu-maps-to: E-APPLIST's e2e-plan and distillation-plan; DEC-75). Carries the
+  follow-ups the merged WUs left to W9: W5 (the epic test through the alert sink and the silence seam; the real
+  banner, its click and keel:// on the signed build; the scheme's owner seen there; the apply rules and link scheme
+  into docs/local-app.html; the real-watch test on the Mac), W6 (the epic test through screen 2 and the open sink; the
+  real alert with its subtitle and its click; keel:// and the Telegram link test on the signed build; screen 2 and
+  Open under the packaged content policy; the item kinds, Open, Mark sent and UC-APP-2 distilled; ?diff=latest from
+  Terminal), W7 (the packaged build again at the close, rung 1 recorded; Apple's membership not needed, onto A3), W8
+  (the epic test; screen 6 and the built CSS under the packaged policy; the design rules into docs/local-app.html),
+  and backlog A3's follow-ups (two fixed here, the silent second launch and the test alert's settings place, by the
+  owner's answer to open point 3; the rest kept, moved at the close). UC-APP-1 and UC-APP-2 recorded in
+  docs/use-cases/app.yaml; UC-ROUTE-8 new and UC-ROUTE-6 amended in docs/use-cases/router.yaml.
+expected:
+  - "`cd app && pnpm e2e` builds Vite's three bundles into app/.vite/ (no package, no signature, no Electron copy) and runs one Playwright test file that passes, in about two minutes, beside a running Keel.app without touching its folder or its single-instance lock."
+  - "The test walks, on screen, the steps in details.e2e-walk; a step fails the test when the screen, the alert sink or the open sink does not show it within its wait."
+  - "No page the test visits logs a content-policy refusal: the shipped page runs from app:// under the packaged policy."
+  - "pnpm test:main, test:window, lint, typecheck and keel check stay green; none of them builds the app, and keel check does not run the epic test (DEC-73, DEC-75)."
+  - "The owner's live check on one packaged build (details.live-check) is recorded step by step in the result: the banner with its subtitle, its click, keel://, the Telegram link, screens 2 and 6, ?diff=latest from Terminal, the real-watch test."
+  - "A second `pnpm start` while another Keel runs prints 'Keel is already running: this launch quits; quit the other first' to stderr and quits; the first window stays (e2e step 6 reads the line)."
+  - "The test alert's 'not shown' text names Notifications > Keel in the packaged app and Notifications > Electron under pnpm start (the main part knows app.isPackaged)."
+  - "docs/use-cases/app.yaml (new) holds UC-APP-1 and UC-APP-2, indexed; router.yaml holds UC-ROUTE-8 and the amended UC-ROUTE-6; one new decision record holds the epic's remaining choices; backlog A3 is closed to one line and every open follow-up sits on a row that takes it."
+  - "docs/local-app.html, docs/architecture.html and docs/install.html carry the app as built (details.distillation), each in its own owner-typed rule-file commit after an independent read."
+test-plan:
+  unit: >-
+    node --test (app/test/unit/), red first, the red run noted in the result. e2e-build.test.ts: the build helper
+    picks Forge's own Vite plugin from forge.config.ts and names the outputs the shell reads (.vite/build/main.cjs,
+    .vite/build/preload.js, .vite/renderer/main_window/index.html); no packager, maker or signing step is reached. If
+    the app folder seam is needed (details.app-folder), seams.test.ts gains it: absolute, no control character,
+    ignored when packaged. Pure helpers of the e2e (the sink line reader, the wait-for-line helper) get their cases
+    here. The two A3 fixes (details.a3-fixes), red first: the second-launch line (a pure text in the main part, its
+    exact words pinned); the 'not shown' text per packaged or not. Vitest unit (test-window/, by hand, recorded):
+    the alert text hook names Keel or Electron from the state it is given.
+  integration: >-
+    node --test (app/test/integration/e2e-world.test.ts), red first, in keel check, no Electron and no port: the
+    test's world builder (app/e2e/world.ts) makes the temp keel project (main, an epic, a work unit with its plan
+    pair committed, a worktree; scripts/router-app.sh copied in), runs the real router-app.sh start and stage lines,
+    the watchdog's facts step with a fake claude session list, and notify-owner.py --send with KEEL_NOTIFY_API_BASE
+    on a loopback port nothing listens on (the alert line is written before the send, W3); the real ViewReader on
+    that world then holds exactly the items and the alert line the e2e expects at each step. It catches a drift in
+    the router scripts or the reader before the slow test runs. bridge.test.ts: state.get carries whether the app is
+    packaged, and the contract snapshot names it; fake.test.ts green with the fake's value. Window, Vitest (by hand,
+    recorded): projects.test.tsx shows the 'not shown' text with Electron when the state says unpackaged, Keel when
+    packaged.
+  e2e: >-
+    app/e2e/applist.e2e.spec.ts, Playwright's _electron.launch on the unpackaged build (DEC-75), one test with named
+    steps (details.e2e-walk), hermetic: the world builder above, a temp app folder, the three seams; run by hand with
+    `pnpm e2e` (build, then test), not in keel check; the command, the count and the output's last lines recorded in
+    the result, then in the epic's e2e test note at the close. What no test reaches - the macOS banner and its click,
+    Launch Services (keel://), Telegram's own link handling, the packaged look - is the owner's live check on one
+    packaged build (details.live-check).
+details:
+  base: "wu/E-APPLIST/w9-e2e-package off epic/E-APPLIST at e90132b (W1, W2, W3, W5, W6, W7, W8, W10 merged; W4 dropped, DEC-76)"
+  e2e-walk:
+    - "1. Launch with the three seams and a temp app folder. Screen 6: Add, the folder dialog answered in the main part through electronApp.evaluate (no real dialog); the window moves to Waits on you, empty."
+    - "2. router-app.sh start; the watchdog's facts step (fake claude: one busy worker on the WU's branch) writes the worker and the heartbeat: work in motion under Not yours, naming the worker."
+    - "3. Stage plan-to-read on the WU; notify-owner.py --send with a body naming it: 'Plan to read' under Yours; the alert sink gains exactly one line, subtitle the project's name, wu the WU."
+    - "4. Edit the plan's working page, then Open: the open sink gains one file:// URL under the temp app folder, and that file's bytes equal git show <tip>:<page>."
+    - "5. Mark sent: the item moves to Sent. Quit and relaunch on the same app folder: still under Sent, and the alert sink gains no line."
+    - "6. A second launch on the same app folder while the first runs: it prints 'Keel is already running: this launch quits; quit the other first' to stderr and exits; the first window stays."
+    - "7. Stage plan-approved: the item leaves."
+    - "8. A review note (cr/v1 PASS) on the WU's tip: 'Result to sign'; a sign-off note (mr/v1): 'to merge'; the merge into the epic: it leaves. Notes written with git notes add in the temp repo, as W6's tests do."
+    - "9. A question line, then its deletion: the question enters (Show the question gives its text) and leaves."
+    - "10. router-app.sh start again (a router restart): the worker and the stage are gone, the rest stays."
+    - "11. No heartbeat past KEEL_APP_SILENCE_MS (set to a few seconds): the 'router not heard' bar, the router's items hidden; one heartbeat: the bar goes."
+    - "Throughout: no console message of a content-policy refusal on Waits on you or Projects; the page's URL is app://keel/."
+  build: >-
+    `pnpm build:e2e` (app/e2e/build.ts) runs the build and buildRenderer steps of the VitePlugin instance in
+    forge.config.ts, so the bundles are made by Forge's own config (main.cjs with MAIN_WINDOW_VITE_DEV_SERVER_URL
+    undefined, so the shell serves app://keel/ with the packaged policy). VitePlugin's ViteConfigGenerator is not
+    exported (its package exports '.' only), so the helper goes through the plugin's public build methods. If those
+    need Forge's hook state, the fallback is one `electron-forge package` before the run and the .vite/ it leaves;
+    the result records which. `pnpm e2e` = build:e2e then `playwright test`. The inner loop (test:main, test:window,
+    lint, typecheck, dev:browser, start) never runs it.
+  app-folder: >-
+    The test needs a temp app folder (Electron's userData), so it never reads or writes ~/Library/Application
+    Support/Keel and never meets a running Keel.app's single-instance lock. First tried: Chromium's --user-data-dir
+    switch on the launch. If app.getPath('userData') does not follow it, a fourth seam KEEL_APP_DIR (an absolute
+    path, read only when not packaged, like the other three) is added in alerter/seams.ts and index.ts, red first.
+  playwright:
+    package: "@playwright/test, pinned to one exact version (the current one at install) in devDependencies; no browser download (the Electron launcher uses the app's own electron 45.4.1); pnpm-lock.yaml updated; any build script it carries listed in pnpm-workspace.yaml's allowBuilds (approved or refused, with why)."
+    config: "app/playwright.config.ts: testDir e2e, one worker, no retries, a timeout per step, outputDir and traces under the OS temp folder (no new ignore entry), trace kept on failure only."
+    files: "tsconfig.json include gains e2e/**/*.ts; ESLint already lints the app folder (its ignores unchanged)."
+    who-installs: "The worker adds the package with pnpm through the per-call permission review; if the registry or Electron's first-run download is refused, the router passes the owner the exact command (pnpm add -D -E @playwright/test@<v>; pnpm exec install-electron) and the worker commits the lockfile it leaves."
+    sandbox: "Playwright reaches Electron through a local debugging port (--remote-debugging-port=0, --inspect=0), which the worker's sandbox refuses (W5, W8, E-LOOPBIND). Open point 1 settles where the test runs while W9 is built."
+  live-check:
+    by: "the owner, on his Mac, about twenty minutes, one packaged build at the end of W9 (never in the inner loop)"
+    steps:
+      - "0. Quit every Keel. From this worktree's app folder: pnpm make (ad-hoc signature, rung 1); replace /Applications/Keel.app with the one under out/; open it. It keeps your project list."
+      - "1. Projects (screen 6): your Keel checkout listed; the link line says Keel owns keel://; Send a test alert shows a banner."
+      - "2. From your Keel checkout: scripts/router-app.sh alert '{\"headline\":\"W9 live check\",\"lines\":[\"One alert.\"],\"wu\":\"E-APPLIST.W9\"}'. A banner: title W9 live check, subtitle Keel, body One alert. Click it: Keel opens on Waits on you with E-APPLIST.W9's items marked, or a line that nothing of it waits."
+      - "3. Close the window (Keel keeps running), send the alert again: the banner comes; its click brings the window back."
+      - "4. In Terminal: open 'keel://wu/E-APPLIST.W9'. Keel comes forward with the same focus."
+      - "5. The router sends one real Telegram message naming E-APPLIST.W9. In Telegram on this Mac, click the keel:// link at its end: does Keel open? (yes or no, recorded; a no is a backlog row, not a fail)"
+      - "6. Waits on you and Projects, light and dark: drawn, no blank or unstyled screen. Open on a plan: your browser shows the committed page."
+      - "7. In Terminal: open 'file://<that page's path>?diff=latest'. Does the browser keep the query and open htmldoc's diff mode? (W6 found that typing it in the address bar works.)"
+      - "8. cd app && node --test test/integration/watch-view.test.ts: 5 tests, none skipped (W5's follow-up)."
+    reset: "Nothing to undo: the build stays installed; rm -rf app/out to drop the build."
+  commits:
+    - "1. docs: this plan pair; backlog A3 gains the two W6 round-4 nits and the owner's ?diff=latest answer (a separate commit)."
+    - "2. chore: @playwright/test pinned, the lockfile, playwright.config.ts, tsconfig's include, the build:e2e and e2e scripts."
+    - "3. test then feat: the build helper (app/e2e/build.ts) and its unit test, red first; the app-folder seam only if needed."
+    - "4. test: the world builder (app/e2e/world.ts) and e2e-world.test.ts, red first."
+    - "5. test: app/e2e/applist.e2e.spec.ts, step by step; pnpm e2e green, run recorded."
+    - "5b. test then fix: the second launch's stderr line, red first (A3 fix 1)."
+    - "5c. test then fix: the test alert's settings place per packaged or not, through state.get, the fake and screen 6, red first (A3 fix 2)."
+    - "6. docs (T2, by the worker): use cases, the decision record, the backlog (details.distillation)."
+    - "7. docs (T1, rule files): the worker writes docs/local-app.html, docs/architecture.html and docs/install.html in the worktree; each gets an independent read; the owner commits each with keel mr commit."
+    - "8. The owner's live check on one packaged build; then docs: the result pair."
+  distillation:
+    local-app: >-
+      docs/local-app.html (T1): A3's parts as built - the update line, its verbs (start, set, del, alert), the
+      folded state and the 2,000-line restart; the watchdog's lines and the 15-minute 'router not heard'; the alert
+      line written before Telegram, its project subtitle, the record that keeps one alert per line across restarts and
+      the summary; keel:// and the scheme claimed only when packaged; the waiting kinds and when each enters and
+      leaves, the three groups, Open (a copy of the tip's docs, an epic result in place), Mark sent; the window's
+      stack (React, Vite, Tailwind on Keel's closed tokens, the lint and the emitted-CSS check, browser mode on the
+      fake bridge) and its design rules (from W8's result and mx3a); the three test loops (node --test in keel
+      check, Vitest by hand, Playwright by hand) and the unpackaged seams. The build-order section marks A3 built.
+    architecture: "docs/architecture.html (T1): app/ in the repo's map - main part, preload, window, shared contract; what keel check runs for it; the two router scripts the app reads."
+    install: "docs/install.html (T1): build and install the app - pnpm 11.18.0, pnpm install --frozen-lockfile, pnpm make, the ad-hoc signature (no Apple membership needed, W7 rung 1), first launch, Notifications > Keel, where it keeps its folder."
+    use-cases: "docs/use-cases/app.yaml (new, T2): UC-APP-1 (an alert at your desk) and UC-APP-2 (open a waiting item) at contract level; use-cases-index.yaml gains the UC-APP area; docs/use-cases/router.yaml: UC-ROUTE-8 new (the router tells the app what only it knows), UC-ROUTE-6 amended (the guard admits the update command)."
+    decisions: "docs/decisions/app.html: one record for the epic's remaining choices (app/ in this repo under the gate; the main part on node --test inside keel check; keel:// claimed only when packaged; the alert line written before Telegram; questions on the alert body; the unpackaged seams), at the next free DEC id checked on every live branch first (the index says DEC-78; distribution.html on this branch already names DEC-83, so the check matters); decisions-index.yaml."
+    backlog: "docs/backlog/local-app.yaml: A3 closed to one line (how it closed); its open follow-ups to the row(s) open point 4 settles; Apple's membership not needed (W7 rung 1) recorded; the Telegram link answer and ?diff=latest from Terminal recorded on A4 (its 'what changed' button); backlog-index.yaml."
+  left-to-the-close:
+    - "Merge main into epic/E-APPLIST (main moved: E-KEELFIX, E-LOOPBIND); re-run pnpm e2e on the merged tip if app/ or the router scripts changed."
+    - "The archive commit: every T3 doc of the epic (the epic plan pair, W1-W3, W5-W10 plans and results, W8's three design notes) copied to docs/.archive/ and git rm'd, one keel notes write doc --distill per doc naming the targets above."
+    - "The epic result pair in docs/.archive/, the epic's e2e test note (app/e2e/applist.e2e.spec.ts), keel preflight epic, the epic review against main, keel verify-dod epic."
+    - "The owner's keel mr confirm epic --report, the merge into main and the push."
+  backlog-a3-additions:
+    - "app/src/main/open/open.ts:186 - a data file whose head-pass read failed is read from git a second time; the :157 comment 'no file is read twice' holds only for valid files (W6 review round 4, nit)."
+    - "app/src/main/open/open.ts:142 - on reuse each matching kept data file is read from disk twice (blobIdOf on the bytes, then as utf8) (W6 review round 4, nit)."
+    - "The owner's W6 live-check answer: htmldoc's ?diff=latest works on the opened page typed in the address bar; whether open 'file://...?diff=latest' from Terminal keeps the query is W9's live check, step 7."
+  rule-files:
+    - {file: docs/local-app.html, kind: "rule-bearing (docs/*.html)", by: "worker writes, independent read, owner's keel mr commit"}
+    - {file: docs/architecture.html, kind: "rule-bearing (docs/*.html)", by: "worker writes, independent read, owner's keel mr commit"}
+    - {file: docs/install.html, kind: "rule-bearing (docs/*.html)", by: "worker writes, independent read, owner's keel mr commit"}
+  not-in-w9:
+    - "Any other change to what the app does for the owner: A3's other follow-ups move to a backlog row at the close (open point 4)."
+    - "A load or soak run; the epic test inside keel check (DEC-73, DEC-75; backlog L6)."
+    - "Fonts other than New York and the system sans (only if the owner overrules DEC-72; none planned)."
+    - "Deleting the scratch branch wu/E-APPLIST/w8-window-foundation_look-variants (the owner's call)."
+  open-points:
+    - question: "Where does the epic test run while W9 is built?"
+      answer: "In the W9 worker's session, with local ports allowed for that worktree only (sandbox.network.allowLocalBinding: true in its settings, yours to set)."
+      why: "Playwright reaches Electron through a local port the sandbox refuses. Without it the worker writes the test blind and you run every round."
+      options: ["a. allow local ports for the W9 worker (recommended)", "b. you run pnpm e2e each round and the router relays the output", "c. the worker writes it blind; you run it once at the end"]
+      status: "answered by the owner, 2026-11-22: a (all recommended); the owner sets allowLocalBinding in this worktree's .claude/settings.local.json"
+    - question: "How is the app built for the test?"
+      answer: "Vite's three bundles only, through Forge's own plugin, on each pnpm e2e run: seconds, never packaged or signed."
+      why: "Your rule: build only where a check needs it. The bundles are what the packaged app ships, so the test also sees the packaged content policy."
+      options: ["a. Vite bundles only (recommended)", "b. electron-forge package before each run"]
+      status: "answered by the owner, 2026-11-22: a (all recommended)"
+    - question: "Fix A3's two small app items in W9 (a second launch quits with no word; the test alert names the wrong settings place under pnpm start)?"
+      answer: "Yes, fix both in W9 (the owner's comment on the plan page, 2026-11-22: 'yes, fix it'). Each red first, under W9's review (details.a3-fixes)."
+      why: "Both are small and the owner sees both; the epic test reads the second launch's line. The plan had recommended the backlog; the owner chose otherwise."
+      options: ["a. no, to the backlog (the plan's first recommendation)", "b. fix both in W9, red first, under W9's review (chosen)"]
+      status: "answered by the owner, 2026-11-22"
+    - question: "Where do A3's open follow-ups go when A3 closes?"
+      answer: "One new row, A6 'The app's open ends after E-APPLIST', each follow-up with its source."
+      why: "About a dozen small items; one row is read and picked up at once, and A4 or A5 can take any."
+      options: ["a. one row A6 (recommended)", "b. one row per follow-up, as A3's text says"]
+      status: "answered by the owner, 2026-11-22: a (all recommended)"
+  a3-fixes:
+    second-launch: >-
+      app/src/main/index.ts: where app.requestSingleInstanceLock() fails, write one line to stderr before app.quit():
+      'Keel is already running: this launch quits; quit the other first'. The text lives in a tested main-part module
+      (index.ts holds no logic). Backlog A3's follow-up (the W5 live check); its row line re-pointed to this WU.
+    alert-place: >-
+      app/src/window/hooks.ts ALERT_TEXT 'not-shown': 'Check System Settings > Notifications > Keel' is right only for
+      the packaged app; under pnpm start macOS files the alerts under Electron. The main part adds whether it is
+      packaged to state.get's answer (contract.ts, its snapshot, the fake's fixture), and the window names Keel or
+      Electron. Backlog A3's follow-up (the W5 live check); its row line re-pointed to this WU.
+  sources:
+    - docs/work/2026-11-20-e-applist-plan.yaml (W9's summary, e2e-plan, distillation-plan, the replan)
+    - docs/work/2026-11-22-e-applist-w5-result.yaml, -w6-result.yaml, -w8-result.yaml, -w10-result.yaml; docs/work/2026-11-20-e-applist-w7-result.yaml (follow-ups)
+    - docs/decisions/app.html (DEC-71 to DEC-77)
+    - docs/backlog/local-app.yaml (A3)
+    - app/src/main/index.ts, app/src/main/alerter/seams.ts, app/src/main/window-options.ts, app/forge.config.ts, app/vite.renderer.config.ts
+    - "app/node_modules/@electron-forge/plugin-vite (8.0.1): VitePlugin's public build and buildRenderer; ViteConfigGenerator not exported"
+    - scripts/notify-owner.py (KEEL_NOTIFY_API_BASE, the alert line before the send), scripts/router-worker.sh (watchdog facts, ROUTER_CLAUDE), app/test/support/router.ts
+    - .claude/skills/project-router/SKILL.md (epic close), .claude/skills/keel-distill/SKILL.md
+  node-modules: "Absent when this plan began; the owner ran pnpm install --frozen-lockfile in app/ during planning (the router's message). Electron's binary is not downloaded yet (electron 45 fetches it on first run)."
+  htmldoc:
+    id: 6b030c019f34851f0dfb2be9

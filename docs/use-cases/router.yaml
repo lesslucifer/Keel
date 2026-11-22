@@ -4,7 +4,7 @@ title: "the router"
 about: >-
   The standard itself is the `keel-router` skill (`skills/keel-router/`); this file holds only the contract. Why the
   router is shaped this way: decisions/router.html (DEC-30 – DEC-37, DEC-39, DEC-42 – DEC-46, DEC-48, DEC-55, DEC-56,
-  DEC-58).
+  DEC-58); the update log the app reads (UC-ROUTE-8): decisions/app.html (DEC-78).
 areas:
   - area: UC-ROUTE
     title: "routing"
@@ -183,15 +183,18 @@ areas:
           matching the whitelist (read-only git, gh with named query flags only, ps, the launcher's shapes: spawn,
           stop, `worktree add|remove <epic/E or wu/E/slug>` and `watchdog start|stop <router-name>`, the five
           `router-watch.sh` kinds, the owner sender's three plain shapes (`scripts/notify-owner.py
-          --send|--dry-run|--check`) and the inbox's `init|status|watch <seconds>|consume <id>`, never `post`
-          (DEC-58),  each word validated so none starts with `-`); `Write` also to the owner body
+          --send|--dry-run|--check`), the inbox's `init|status|watch <seconds>|consume <id>`, never `post`
+          (DEC-58), and the update log's plain shapes (UC-ROUTE-8: `scripts/router-app.sh start <router-name>`,
+          `stage <wu> plan-in-work|plan-to-read|plan-approved|building|in-review [<tip>]`, `del question/<id>`, `del
+          wu/<wu>/stage`, never `set` or `alert`), each word validated so none starts with `-`); `Write` also to the owner body
           `<cwd>/.router/notify/owner.md`. A guard error denies. Other agent types pass untouched. Run with `--arg
           watchdog_to <router-name>` (the watchdog session's only tool hook, DEC-45) it allows only `CronCreate` and
           a `SendMessage` to that router, for any agent type. Watch probes it stages fire only on the real event
           (PUSHED = the tip is in `origin/<b>`). Tests: `tests/suite/router.rs`, among them
           `router_guard_allows_the_owner_sender_only_as_a_plain_shape`,
-          `router_guard_admits_the_inbox_watcher_and_consume_but_never_post` and
-          `the_guard_and_the_inbox_script_take_the_same_ids_and_seconds`. On DSH: Nothing enforces this posture: DSH
+          `router_guard_admits_the_inbox_watcher_and_consume_but_never_post`,
+          `the_guard_and_the_inbox_script_take_the_same_ids_and_seconds` and
+          `the_guard_and_the_app_script_take_the_same_words`. On DSH: Nothing enforces this posture: DSH
           has no shell-hook surface, so until a guard plugin exists (a backlog row) the skill is the only guard. The
           router holds itself to the same whitelist, says that enforcement is missing, and never treats the gap as
           licence to do the work itself (DEC-55). The permission preset decides, not the owner (UC-DSH-4, DEC-56): a
@@ -213,3 +216,28 @@ areas:
           the router; gh pointed at another host; a hook error or timeout that allows the call; a watcher that fires
           before the owner acted; a `SendMessage` to a named session refused, or one with no named recipient allowed
           (DEC-42).
+      - id: UC-ROUTE-8
+        title: "the router tells the app what only it knows"
+        trigger: >-
+          The router starts, stages a work unit or deletes a question; its watchdog ticks; its sender sends the owner
+          a message.
+        expected: >-
+          Each change is one numbered JSON line in `<main checkout>/.router/app/log.jsonl`, folded into `state.json`
+          beside it, written only by `scripts/router-app.sh` under one lock (verbs `start`, `stage`, `set`, `del`,
+          `alert`; the state first, then the line, so a reader never meets a repeated number). `start` wipes both
+          files and begins a new run; past 2,000 lines the log restarts from the state. The router runs only `start`,
+          `stage` and `del`, in the plain shapes UC-ROUTE-6 admits; `set` and `alert` carry free JSON and only fixed
+          programs run them: each watchdog tick writes a `set` per worker whose facts changed, a `del` per worker gone,
+          then the router's heartbeat, and never drops its facts block for a failed write; `notify-owner.py --send`
+          writes the question line and the alert line (with `keel://wu/<id>` when the body names a work unit) before
+          it sends. A refused call writes nothing and exits 2. The local app reads the two files (UC-APP-1, UC-APP-2).
+          Tests: `tests/suite/router_app.rs`; in `tests/suite/router.rs`
+          `watchdog_tick_writes_each_live_worker_and_then_the_heartbeat`,
+          `a_failing_log_write_never_drops_the_facts_block` and `the_guard_and_the_app_script_take_the_same_words`;
+          `tests/suite/notify_owner.rs` (`a_send_writes_one_alert_line_before_the_message`,
+          `a_failed_send_still_leaves_the_alert_line`); app/test/integration/router-log.test.ts and e2e-world.test.ts
+          read lines the real script wrote.
+        failure: >-
+          Two writers interleaving or repeating a number; a symlinked or hardlinked file followed out of
+          `.router/app/`; a half-written line read as whole; the router writing free text into the log through its own
+          command; a watchdog tick that loses its facts block, or deletes a live worker's line, because a write failed.
