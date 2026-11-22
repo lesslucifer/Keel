@@ -2,10 +2,10 @@
 // reader, shown through a recording sink in place of macOS's alert, the record in a temp app folder.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, statSync, existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { ViewReader } from '../../src/main/reader/view.ts';
-import { Alerter, Focus, RECORD_FILE, type ShownAlert } from '../../src/main/alerter/alerts.ts';
+import { Alerter, Focus, RECORD_FILE, RUNS_KEPT, type ShownAlert } from '../../src/main/alerter/alerts.ts';
 import { openLink } from '../../src/main/alerter/link.ts';
 import { fileSink } from '../../src/main/alerter/seams.ts';
 import { realGit, tempDir } from '../support/fs.ts';
@@ -185,7 +185,7 @@ test('a known run switched in after another project spent the app\'s first look 
   assert.deepEqual(two.app.shown.map(({ title, wu }) => ({ title, wu })), [{ title: '3 new alerts', wu: null }]);
 });
 
-test('a launch on a project with no router run does not spend the first look: a known run switched in then summarises its lines written while closed (review round 2, alerts.ts:124)', async (t) => {
+test('a launch on a project with no router run: a known run switched in then summarises its lines not yet shown in one alert (review rounds 2 and 3)', async (t) => {
   const a = routerProject(t, 'alerter-na');
   const quiet = routerProject(t, 'alerter-quiet');
   const appDir = path.join(tempDir(t, 'alerter-app'), 'Keel');
@@ -199,7 +199,8 @@ test('a launch on a project with no router run does not spend the first look: a 
   assert.equal(s.app.reader.view().router.run, null, 'the quiet project has no run');
   s.to(a);
   await s.app.reader.read();
-  assert.deepEqual(s.app.shown.map(({ title, wu }) => ({ title, wu })), [{ title: '3 alerts while Keel was closed', wu: null }]);
+  // The session's first take was the quiet project's (no run): this summary is a later first look, so it says new, not closed.
+  assert.deepEqual(s.app.shown.map(({ title, wu }) => ({ title, wu })), [{ title: '3 new alerts', wu: null }]);
 });
 
 test('a router restart that writes two lines before the app\'s next read gives one summary that does not say Keel was closed (review round 2, alerts.ts:68)', async (t) => {
@@ -212,4 +213,78 @@ test('a router restart that writes two lines before the app\'s next read gives o
   alertLine(dir, 'After restart 2');
   await app.reader.read();
   assert.deepEqual(app.shown.map((x) => x.title), ['2 new alerts']);
+});
+
+test('the reviewer\'s probe: A\'s lines shown, then eight router restarts on B, then back to A: no line twice; past the record\'s bound, one summary (review round 3, alerts.ts:133)', async (t) => {
+  const a = routerProject(t, 'alerter-pa');
+  const b = routerProject(t, 'alerter-pb');
+  const appDir = path.join(tempDir(t, 'alerter-app'), 'Keel');
+  routerApp(a, 'start', 'keel-1c');
+  const s = switchable(appDir, a);
+  await s.app.reader.read();
+  for (const h of ['A1', 'A2', 'A3']) alertLine(a, h);
+  await s.app.reader.read();
+  assert.deepEqual(s.app.shown.map((x) => x.title), ['A1', 'A2', 'A3']);
+  s.to(b);
+  for (let i = 0; i < 8; i++) {
+    routerApp(b, 'start', 'other-router');
+    await s.app.reader.read();
+  }
+  s.to(a);
+  await s.app.reader.read();
+  assert.deepEqual(s.app.shown.map((x) => x.title), ['A1', 'A2', 'A3'], 'back on A after 8 restarts: nothing again');
+  s.to(b);
+  for (let i = 0; i < RUNS_KEPT; i++) {
+    routerApp(b, 'start', 'other-router');
+    await s.app.reader.read();
+  }
+  s.to(a);
+  await s.app.reader.read();
+  assert.deepEqual(s.app.shown.map((x) => x.title), ['A1', 'A2', 'A3', '3 new alerts'], 'past the bound: one summary, never A1-A3 again one by one');
+});
+
+test('the router starting while the app runs, after takes with no run, gives "N new alerts", not "while Keel was closed" (review round 3, alerts.ts:134)', async (t) => {
+  const dir = routerProject(t, 'alerter-late');
+  const app = launch(dir, path.join(tempDir(t, 'alerter-app'), 'Keel'));
+  await app.reader.read();
+  await app.reader.read();
+  assert.equal(app.reader.view().router.run, null);
+  routerApp(dir, 'start', 'keel-1c');
+  alertLine(dir, 'Late 1');
+  alertLine(dir, 'Late 2');
+  await app.reader.read();
+  assert.deepEqual(app.shown.map((x) => x.title), ['2 new alerts']);
+});
+
+test('a first read with no project listed is the session\'s first take: lines found after Add are "new", not "while Keel was closed"', async (t) => {
+  const dir = routerProject(t, 'alerter-noproj');
+  routerApp(dir, 'start', 'keel-1c');
+  alertLine(dir, 'Before add 1');
+  alertLine(dir, 'Before add 2');
+  let listed = false;
+  const shown: string[] = [];
+  const alerter = new Alerter({ appDir: path.join(tempDir(t, 'alerter-app'), 'Keel'), sink: { show: (a) => shown.push(a.title) }, onClick: () => undefined });
+  const reader = new ViewReader({
+    project: async () => (listed ? { id: 'p0a1b2c3d', name: 'proj', path: dir } : null),
+    git: async () => GIT,
+    runOptions: { path: [path.dirname(GIT), '/usr/bin', '/bin'], source: { HOME: dir, LANG: 'C' } },
+    alerter,
+  });
+  await reader.read();
+  listed = true;
+  await reader.read();
+  assert.deepEqual(shown, ['2 new alerts']);
+});
+
+test('a record set aside (broken) loses what was shown: the next session\'s first look summarises, never pops each stored line', async (t) => {
+  const dir = routerProject(t, 'alerter-broken');
+  const appDir = path.join(tempDir(t, 'alerter-app'), 'Keel');
+  routerApp(dir, 'start', 'keel-1c');
+  for (const h of ['S1', 'S2', 'S3']) alertLine(dir, h);
+  const first = launch(dir, appDir);
+  await first.reader.read();
+  writeFileSync(path.join(appDir, RECORD_FILE), '{ broken');
+  const again = launch(dir, appDir);
+  await again.reader.read();
+  assert.deepEqual(again.shown.map((x) => x.title), ['3 alerts while Keel was closed']);
 });

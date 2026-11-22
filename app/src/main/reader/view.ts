@@ -91,6 +91,8 @@ export class ViewReader {
       this.root = null;
       this.git = null;
       this.log = null;
+      // No project: still the alerter's take, with no run, so the session's first take is spent here, not at a later Add.
+      await this.parts.alerter?.take(null, []);
       next = { ...emptyView(), focus: this.parts.focus?.() ?? null, scheme: this.parts.scheme?.() ?? null };
     } else {
       if (p.path !== this.root || this.git === null || this.log === null) {

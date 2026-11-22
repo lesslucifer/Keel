@@ -13,65 +13,76 @@ const AT = '2026-11-22T08:30:00+08:00';
 const alert = (n: number, o: Partial<StoredAlert> = {}): StoredAlert => ({ n, at: AT, headline: `h${n}`, lines: [`l${n}`], ...o });
 
 const OLD = 'keel-1c.20261122-070000.1';
-const rec = (...runs: Array<[string, number[]]>): AlertRecord => ({ version: 2, runs: runs.map(([run, shown]) => ({ run, shown })) });
+/** A record: each run with its shown numbers and the session that last looked at it (none: an earlier version's entry). */
+const rec = (...runs: Array<[string, number[], string?]>): AlertRecord => ({ version: 2, runs: runs.map(([run, shown, session]) => ({ run, shown, ...(session === undefined ? {} : { session }) })) });
+/** This app session: S2; `first` when this is its first take. */
+const S = (first = false) => ({ id: 'S2', first });
 
-test('a new alert line is shown once, as its headline over its lines, with its work unit; then it is in the record', () => {
-  const r = decide(rec([RUN, []]), RUN, [alert(4, { wu: 'E-A.W1', lines: ['one', 'two'] })], null);
+test('a new alert line on a run this session has looked at is shown once, as its headline over its lines, with its work unit', () => {
+  const r = decide(rec([RUN, [], 'S2']), RUN, [alert(4, { wu: 'E-A.W1', lines: ['one', 'two'] })], S());
   assert.deepEqual(r.show, [{ title: 'h4', body: 'one\ntwo', wu: 'E-A.W1' }]);
-  assert.deepEqual(r.record, rec([RUN, [4]]));
-  assert.deepEqual(decide(r.record, RUN, [alert(4, { wu: 'E-A.W1' })], null).show, []);
+  assert.deepEqual(r.record, rec([RUN, [4], 'S2']));
+  assert.deepEqual(decide(r.record, RUN, [alert(4, { wu: 'E-A.W1' })], S()).show, []);
 });
 
 test('each new line is its own alert, oldest first; lines already shown are not shown again', () => {
-  const r = decide(rec([RUN, [1, 2]]), RUN, [alert(1), alert(2), alert(3), alert(5)], null);
+  const r = decide(rec([RUN, [1, 2], 'S2']), RUN, [alert(1), alert(2), alert(3), alert(5)], S());
   assert.deepEqual(r.show.map((s) => s.title), ['h3', 'h5']);
-  assert.deepEqual(r.record, rec([RUN, [1, 2, 3, 5]]));
+  assert.deepEqual(r.record, rec([RUN, [1, 2, 3, 5], 'S2']));
 });
 
-test('at the app\'s start, lines written while it was closed make one summary alert, each recorded as shown (owner answer 1a)', () => {
-  const r = decide(rec([RUN, [1]]), RUN, [alert(1), alert(2), alert(3), alert(4)], 'start');
+test('the session\'s first take, on a run an earlier session looked at: lines written while closed make one summary saying so (owner answer 1a)', () => {
+  const r = decide(rec([RUN, [1], 'S1']), RUN, [alert(1), alert(2), alert(3), alert(4)], S(true));
   assert.deepEqual(r.show, [summaryOf(3, 'start')]);
   assert.deepEqual(summaryOf(3, 'start'), { title: '3 alerts while Keel was closed', body: 'The list shows each one.', wu: null });
-  assert.deepEqual(r.record, rec([RUN, [1, 2, 3, 4]]));
+  assert.deepEqual(r.record, rec([RUN, [1, 2, 3, 4], 'S2']));
 });
 
 test('at the start, a single line written while closed is shown as itself: a summary of one says less', () => {
-  assert.deepEqual(decide(emptyRecord(), RUN, [alert(7, { wu: 'E-A.W2' })], 'start').show, [{ title: 'h7', body: 'l7', wu: 'E-A.W2' }]);
+  assert.deepEqual(decide(emptyRecord(), RUN, [alert(7, { wu: 'E-A.W2' })], S(true)).show, [{ title: 'h7', body: 'l7', wu: 'E-A.W2' }]);
 });
 
-test('a run first looked at while the app runs (a project switched in) gets one summary, titled neutrally: Keel was not closed', () => {
-  const r = decide(rec([OLD, [1, 2, 3]]), RUN, [alert(1), alert(2), alert(3), alert(4), alert(5)], 'look');
+test('a run first looked at later in the session (a project switched in, a router restart) gets one summary, titled neutrally', () => {
+  const r = decide(rec([OLD, [1, 2, 3], 'S2']), RUN, [alert(1), alert(2), alert(3), alert(4), alert(5)], S());
   assert.deepEqual(r.show, [summaryOf(5, 'look')]);
   assert.deepEqual(summaryOf(5, 'look'), { title: '5 new alerts', body: 'The list shows each one.', wu: null });
-  assert.deepEqual(r.record, rec([OLD, [1, 2, 3]], [RUN, [1, 2, 3, 4, 5]]));
+  assert.deepEqual(r.record, rec([OLD, [1, 2, 3], 'S2'], [RUN, [1, 2, 3, 4, 5], 'S2']));
 });
 
-test('switching back to a run already in the record shows nothing again; its new lines are each shown', () => {
-  const r = decide(rec([RUN, [1, 2]], [OLD, [1]]), RUN, [alert(1), alert(2)], null);
+test('a known run an earlier session looked at, switched in later in this session: one summary for its lines not yet shown', () => {
+  const r = decide(rec([RUN, [1], 'S1'], [OLD, [], 'S2']), RUN, [alert(1), alert(2), alert(3), alert(4)], S());
+  assert.deepEqual(r.show, [summaryOf(3, 'look')]);
+});
+
+test('switching back to a run this session looked at shows nothing again; its new lines are each shown', () => {
+  const r = decide(rec([RUN, [1, 2], 'S2'], [OLD, [1], 'S2']), RUN, [alert(1), alert(2)], S());
   assert.deepEqual(r.show, []);
-  assert.deepEqual(decide(r.record, RUN, [alert(1), alert(2), alert(3)], null).show.map((s) => s.title), ['h3']);
+  assert.deepEqual(decide(r.record, RUN, [alert(1), alert(2), alert(3)], S()).show.map((s) => s.title), ['h3']);
 });
 
-test('a run first seen with nothing stored yet (a router restart seen at once) enters the record; its lines then come one by one', () => {
-  const r = decide(rec([OLD, [1, 2]]), RUN, [], 'look');
-  assert.deepEqual([r.show, r.record], [[], rec([OLD, [1, 2]], [RUN, []])]);
-  assert.deepEqual(decide(r.record, RUN, [alert(2)], null).show.map((s) => s.title), ['h2']);
+test('a run first looked at with nothing stored yet (a router restart seen at once) enters the record, stamped; its lines then come one by one', () => {
+  const r = decide(rec([OLD, [1, 2], 'S2']), RUN, [], S());
+  assert.deepEqual([r.show, r.record], [[], rec([OLD, [1, 2], 'S2'], [RUN, [], 'S2'])]);
+  assert.deepEqual(decide(r.record, RUN, [alert(2)], S()).show.map((s) => s.title), ['h2']);
 });
 
 test('no run: nothing is shown and the record is kept as it is', () => {
-  const kept = rec([RUN, [1]]);
-  assert.deepEqual(decide(kept, null, [], 'start'), { record: kept, show: [] });
+  const kept = rec([RUN, [1], 'S2']);
+  assert.deepEqual(decide(kept, null, [], S(true)), { record: kept, show: [] });
 });
 
-test('the record keeps only the newest numbers per run, and only the newest runs', () => {
+test('the record is the one bound: the newest numbers per run, the newest runs; a run it lets go and that comes back is a first look, one summary, never its lines again one by one', () => {
   const many = Array.from({ length: RECORD_CAP + 10 }, (_, i) => alert(i + 1));
-  const r = decide(rec([RUN, []]), RUN, many, null);
+  const r = decide(rec([RUN, [], 'S2']), RUN, many, S());
   assert.equal(r.record.runs[0]?.shown.length, RECORD_CAP);
   assert.equal(r.record.runs[0]?.shown[0], 11);
-  let record = emptyRecord();
-  for (let i = 0; i < RUNS_KEPT + 3; i++) record = decide(record, `keel-1c.20261122-0800${String(i).padStart(2, '0')}.1`, [], 'look').record;
+  const lines = [alert(1), alert(2), alert(3)];
+  let record = decide(rec([RUN, [], 'S2']), RUN, lines, S()).record;
+  const runId = (i: number) => `keel-1c.20261122-0800${String(i).padStart(2, '0')}.1`;
+  for (let i = 0; i < RUNS_KEPT; i++) record = decide(record, runId(i), [], S()).record;
   assert.equal(record.runs.length, RUNS_KEPT);
-  assert.equal(record.runs.at(-1)?.run, `keel-1c.20261122-0800${String(RUNS_KEPT + 2).padStart(2, '0')}.1`);
+  assert.ok(!record.runs.some((x) => x.run === RUN), 'let go after RUNS_KEPT other runs');
+  assert.deepEqual(decide(record, RUN, lines, S()).show, [summaryOf(3, 'look')]);
 });
 
 test('an alert\'s text is made plain: control and bidi characters blanked, so a worker\'s text cannot reorder or split it', () => {
@@ -79,7 +90,8 @@ test('an alert\'s text is made plain: control and bidi characters blanked, so a 
 });
 
 test('the record parses only its own shape; anything else, version 1\'s included, is no record', () => {
-  assert.deepEqual(parseRecord(rec([RUN, [1, 2]], [OLD, []])), rec([RUN, [1, 2]], [OLD, []]));
+  assert.deepEqual(parseRecord(rec([RUN, [1, 2], 'S1'], [OLD, []])), rec([RUN, [1, 2], 'S1'], [OLD, []]));
+  assert.equal(parseRecord({ version: 2, runs: [{ run: RUN, shown: [], session: 7 }] }), null);
   assert.deepEqual(parseRecord({ version: 2, runs: [] }), emptyRecord());
   for (const bad of [null, [], { version: 1, run: RUN, shown: [] }, { version: 2 }, { version: 2, runs: {} }, { version: 2, runs: [{ run: 7, shown: [] }] }, { version: 2, runs: [{ run: RUN, shown: [0] }] }, { version: 2, runs: [{ run: RUN, shown: ['1'] }] }, { version: 2, runs: [{ run: RUN }] }]) {
     assert.equal(parseRecord(bad), null, JSON.stringify(bad));

@@ -1,15 +1,17 @@
 // The Alerter (local-app.html 'The stack'): one macOS alert per alert line the router writes, never
 // the same line twice, across an app restart too. What was shown is recorded in the app's own folder
-// (alerts.json: per run, the numbers shown, written atomically by store.ts) before it is shown. At
-// this app session's first look at a run (any run: one an earlier session knew too; a take with no
-// run spends nothing), the lines not yet shown make one summary alert (the owner's answer of
-// 2026-11-22), each recorded shown; a single such line is shown as itself. Its title says Keel was
-// closed only at the session's first look at any run; otherwise it says how many are new. After that
-// each new line is its own alert. The record keeps the last few runs, so switching back alerts nothing. A click points the
+// (alerts.json, written atomically by store.ts) before it is shown. One model: per run, the numbers
+// shown and the app session that last looked at it, the 16 runs last looked at kept. At this session's
+// first look at a run (its entry lacks this session's id: a known run too, or one the record let go),
+// the lines not yet shown make one summary alert (the owner's answer of 2026-11-22), each recorded
+// shown; a single such line is shown as itself. The summary says Keel was closed only on the session's
+// first take (a take with no run counts); otherwise it says how many are new. After that each new line
+// is its own alert. A click points the
 // window at the line's work unit, or at the list when it names none. The shell hands in the sink
 // (Electron's Notification, or the file sink W9's test uses) and what a click does.
 
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import type { Focus as FocusPoint } from '../../shared/contract.ts';
 import type { StoredAlert } from '../reader/log.ts';
 import { load, writeAtomic } from '../store.ts';
@@ -18,13 +20,23 @@ import { plain } from '../text.ts';
 export const RECORD_FILE = 'alerts.json';
 /** The most numbers kept per run: the router's state keeps 20 alerts, so older numbers never come back. */
 export const RECORD_CAP = 64;
-/** The most runs the record keeps: a project switched away from and back keeps its run's record. */
-export const RUNS_KEPT = 8;
+/** The most runs the record keeps, the least recently looked at let go first. It is the alerter's one bound. */
+export const RUNS_KEPT = 16;
 
-/** What was shown, per run (oldest first): a run's numbers mean nothing in another run. */
+/**
+ * The alerter's one model: per run (least recently looked at first), the numbers shown and the app
+ * session that last looked at it. "This session has looked at the run" is exactly "its entry carries
+ * this session's id", so letting a run go and having looked at it can never disagree.
+ */
 export interface AlertRecord {
   version: 2;
-  runs: Array<{ run: string; shown: number[] }>;
+  runs: Array<{ run: string; shown: number[]; session?: string }>;
+}
+
+/** One app session as decide() sees it: its id, and whether this take is its first (a take with no run included). */
+export interface Session {
+  id: string;
+  first: boolean;
 }
 
 /** One alert as the sink shows it: a title, a body, and the work unit a click opens (null: the list). */
@@ -52,9 +64,10 @@ export function parseRecord(v: unknown): AlertRecord | null {
   const runs: AlertRecord['runs'] = [];
   for (const x of r.runs as unknown[]) {
     if (typeof x !== 'object' || x === null) return null;
-    const { run, shown } = x as Record<string, unknown>;
+    const { run, shown, session } = x as Record<string, unknown>;
     if (typeof run !== 'string' || !Array.isArray(shown) || !shown.every(whole)) return null;
-    runs.push({ run, shown: [...(shown as number[])] });
+    if (session !== undefined && typeof session !== 'string') return null;
+    runs.push({ run, shown: [...(shown as number[])], ...(session === undefined ? {} : { session }) });
   }
   return { version: 2, runs };
 }
@@ -65,9 +78,9 @@ export function alertOf(a: StoredAlert): ShownAlert {
 }
 
 /**
- * Why a take is a first look at its run in this app session: 'start', the session's first look at
- * any run (the lines were written while Keel was closed); 'look', a run first looked at while Keel
- * runs (a project switched in, a router restart); null, a run this session has looked at already.
+ * Why a take is a first look at its run in this app session: 'start', on the session's first take
+ * (the lines were written while Keel was closed); 'look', a run first looked at later (a project
+ * switched in, a router restart, a run the record had let go); null, a run this session has looked at.
  */
 export type Look = 'start' | 'look' | null;
 
@@ -77,19 +90,21 @@ export function summaryOf(k: number, look: 'start' | 'look'): ShownAlert {
 }
 
 /**
- * For the run's alert lines: the record after them, and what to show. At a first look at the run in
- * this app session (`look`), the lines not yet shown make one summary when there are two or more
- * (owner answer 1a), whether or not an earlier session knew the run; after that, each new line is
- * its own alert.
+ * For the run's alert lines: the record after them, and what to show. A run whose entry does not
+ * carry this session's id is at its first look in the session: the lines not yet shown make one
+ * summary when there are two or more (owner answer 1a), titled by why (Look); after that each new
+ * line is its own alert. The entry is stamped with the session and moved to the newest end.
  */
-export function decide(record: AlertRecord, run: string | null, alerts: readonly StoredAlert[], look: Look): { record: AlertRecord; show: ShownAlert[] } {
+export function decide(record: AlertRecord, run: string | null, alerts: readonly StoredAlert[], session: Session): { record: AlertRecord; show: ShownAlert[] } {
   if (run === null) return { record, show: [] };
   const entry = record.runs.find((r) => r.run === run);
+  const looked = entry?.session === session.id;
+  const look: Look = looked ? null : session.first ? 'start' : 'look';
   const shown = entry?.shown ?? [];
   const unseen = alerts.filter((a) => !shown.includes(a.n)).sort((a, b) => a.n - b.n);
-  if (unseen.length === 0 && entry !== undefined) return { record, show: [] };
+  if (unseen.length === 0 && looked) return { record, show: [] };
   const next = [...new Set([...shown, ...unseen.map((a) => a.n)])].sort((a, b) => a - b).slice(-RECORD_CAP);
-  const runs = [...record.runs.filter((r) => r.run !== run), { run, shown: next }].slice(-RUNS_KEPT);
+  const runs = [...record.runs.filter((r) => r.run !== run), { run, shown: next, session: session.id }].slice(-RUNS_KEPT);
   const show = look !== null && unseen.length > 1 ? [summaryOf(unseen.length, look)] : unseen.map(alertOf);
   return { record: { version: 2, runs }, show };
 }
@@ -113,28 +128,30 @@ export interface AlerterOptions {
   sink: AlertSink;
   /** What a click does: point the focus at `wu` (null: the list) and open the window. */
   onClick(wu: string | null): void;
+  /** This app session's id; a fresh random one when not given. */
+  session?: string;
 }
 
 export class Alerter {
   private record: AlertRecord | null = null;
-  /** The runs this app session has looked at; a take with no run spends nothing. */
-  private readonly looked = new Set<string>();
+  /** This app session's id, stamped on each run it looks at (the record holds the rest). */
+  private readonly session: string;
+  /** Whether this session has taken once (a take with no run counts: only the first take is the start). */
+  private took = false;
   private readonly opts: AlerterOptions;
 
   constructor(opts: AlerterOptions) {
     this.opts = opts;
+    this.session = opts.session ?? `${Date.now().toString(36)}-${randomBytes(6).toString('hex')}`;
   }
 
   /** Show what is new among the run's alert lines, recorded first; the numbers shown so far in this run. */
   async take(run: string | null, alerts: readonly StoredAlert[]): Promise<Set<number>> {
     const file = path.join(this.opts.appDir, RECORD_FILE);
     if (this.record === null) this.record = (await load(file, parseRecord, emptyRecord)).value;
-    let look: Look = null;
-    if (run !== null && !this.looked.has(run)) {
-      look = this.looked.size === 0 ? 'start' : 'look';
-      this.looked.add(run);
-    }
-    const { record, show } = decide(this.record, run, alerts, look);
+    const first = !this.took;
+    this.took = true;
+    const { record, show } = decide(this.record, run, alerts, { id: this.session, first });
     if (record !== this.record) {
       try {
         await writeAtomic(file, record);
