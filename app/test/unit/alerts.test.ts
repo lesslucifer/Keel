@@ -265,3 +265,17 @@ test('W6 review round 1 (index.ts:191): a focus pointed for a project is seen on
   f.point('E-B.W2');
   assert.deepEqual(f.get('p11111111'), { wu: 'E-B.W2', seq: 2 });
 });
+
+test('W6 review round 1 (App.tsx:24): a new window gets the focus only when a click or a link made it; a window re-created later (the Dock, after a close) starts with none', () => {
+  const f = new Focus();
+  f.point('E-A.W1', 'p0a1b2c3d');
+  f.opened(true);
+  assert.deepEqual(f.get('p0a1b2c3d'), { wu: 'E-A.W1', seq: 1 }, 'the click opened this window: it gets the focus');
+  f.opened(true);
+  assert.equal(f.get('p0a1b2c3d'), null, 'a window made later, with no click: no old focus');
+  f.point('E-A.W2', 'p0a1b2c3d');
+  f.opened(false);
+  assert.deepEqual(f.get('p0a1b2c3d'), { wu: 'E-A.W2', seq: 2 }, 'a click on a window already open keeps the focus for it');
+  f.opened(true);
+  assert.equal(f.get('p0a1b2c3d'), null, 'and a window re-created after it starts with none');
+});

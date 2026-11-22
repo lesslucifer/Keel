@@ -112,8 +112,12 @@ function openMain(): void {
   const action = onActivate({ windowOpen: open !== null, painted: now.painted, rendererGone: gone });
   if (open !== null) {
     // Not painted yet: ready-to-show shows it.
-    if (action === 'wait') return;
+    if (action === 'wait') {
+      focus.opened(false);
+      return;
+    }
     if (action === 'show') {
+      focus.opened(false);
       if (open.isMinimized()) open.restore();
       open.show();
       open.focus();
@@ -123,6 +127,8 @@ function openMain(): void {
     mainWindow = null;
     open.destroy();
   }
+  // A new window keeps the focus only when a click or a link opened it (alerts.ts Focus.opened).
+  focus.opened(true);
   const win = new BrowserWindow(windowOptions(path.join(__dirname, 'preload.cjs')));
   const life = windowLife();
   mainWindow = win;

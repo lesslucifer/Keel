@@ -124,11 +124,24 @@ export class Focus {
   private project: string | null = null;
   /** Every point counts on, across a clear too, so the window always sees a new click as new. */
   private seq = 0;
+  /** A point not yet handed to a window: the window a click opens is the one it is for. */
+  private pending = false;
 
   point(wu: string | null, project: string | null = null): void {
     this.seq += 1;
     this.current = { wu, seq: this.seq };
     this.project = project;
+    this.pending = true;
+  }
+
+  /**
+   * The shell opened (`made`: a new window) or brought forward a window (review round 1, App.tsx:24). A new
+   * window keeps the focus only when a click or a link is why it opened; a window made later (the Dock,
+   * after a close) starts with none, so it never acts on an old click again.
+   */
+  opened(made: boolean): void {
+    if (made && !this.pending) this.current = null;
+    this.pending = false;
   }
 
   /** The focus as `project` sees it: none when it was pointed for another project (review round 1, index.ts:191). */

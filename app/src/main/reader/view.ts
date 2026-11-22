@@ -79,9 +79,11 @@ export class ViewReader {
     this.now = parts.now ?? Date.now;
   }
 
-  /** The view as last read; a copy. */
+  /** The view as last read, a copy, with the focus as it stands now (a window made since the last read sees no old focus). */
   view(): View {
-    return structuredClone(this.current);
+    const v = structuredClone(this.current);
+    if (this.parts.focus !== undefined) v.focus = this.parts.focus(v.project?.id ?? null);
+    return v;
   }
 
   /** What the watcher watches: the listed project's git folder and update log folder, or nothing. */
