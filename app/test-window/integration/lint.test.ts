@@ -25,6 +25,7 @@ const fixtureLinter = () =>
     overrideConfig: [
       {
         files: ['test-window/lint-fixtures/*.tsx'],
+        linterOptions: { noInlineConfig: true, reportUnusedDisableDirectives: 'error' },
         languageOptions: { parser: tseslint.parser, parserOptions: { ecmaFeatures: { jsx: true } } },
         plugins: { design: { rules: { vocabulary } } },
         rules: { 'design/vocabulary': 'error' },
@@ -75,6 +76,23 @@ test('classes in tables wrapped in as const, satisfies, as T and ! are each read
   expect(got.map((m) => m.id).sort()).toEqual(['arbitrary', 'dark', 'offlist', 'offlist']);
   const text = got.map((m) => m.text).join('\n');
   for (const cls of ['bg-red-500', 'text-sm', 'p-[13px]', 'dark:bg-card']) expect(text).toContain(cls);
+});
+
+test('an eslint-disable comment turns nothing off: each class under one is still refused, and the comment itself is flagged', async () => {
+  const [result] = await fixtureLinter().lintFiles([path.join(FIXTURES, 'disabled.tsx')]);
+  const messages = result?.messages ?? [];
+  expect(messages.filter((m) => m.ruleId === 'design/vocabulary').map((m) => m.messageId).sort()).toEqual(['arbitrary', 'dark', 'offlist']);
+  expect(messages.filter((m) => m.ruleId === null).length).toBeGreaterThanOrEqual(3);
+});
+
+test('the real eslint.config.js has inline config off, and npm run lint fails on any warning', async () => {
+  const eslint = new ESLint({ cwd: APP });
+  const code = 'export const A = () => (\n  // eslint-disable-next-line design/vocabulary\n  <p className="text-sm">a</p>\n);\n';
+  const [result] = await eslint.lintText(code, { filePath: path.join(APP, 'src', 'window', 'planted.tsx') });
+  expect(result?.messages.filter((m) => m.ruleId === 'design/vocabulary').map((m) => m.messageId)).toEqual(['offlist']);
+  expect(result?.warningCount ?? 0).toBeGreaterThan(0);
+  const pkg = JSON.parse(readFileSync(path.join(APP, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
+  expect(pkg.scripts.lint).toBe('eslint --max-warnings 0 .');
 });
 
 test('the clean fixture reports nothing', async () => {
