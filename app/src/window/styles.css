@@ -36,7 +36,13 @@
 
 @layer base {
   html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+  html,
   body {
+    height: 100%;
     margin: 0;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   }

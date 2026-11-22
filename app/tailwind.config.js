@@ -91,6 +91,17 @@ export default {
       // A control that is off.
       disabled: '0.45',
     },
+    // Scales with no magnitude, declared anyway: an undeclared scale is emptied by the lint rule, so
+    // each holds exactly the members the window draws from.
+    flex: {
+      1: '1 1 0%',
+    },
+    flexShrink: {
+      0: '0',
+    },
+    cursor: {
+      pointer: 'pointer',
+    },
   },
   plugins: [],
 };
