@@ -306,3 +306,29 @@ test('prepare() loads the settings, then reads the PATH with the set tools\' fol
   assert.deepEqual(given, [path.dirname(other)]);
   assert.deepEqual(loginPath, { entries: ['/usr/bin'], source: 'fallback', reason: 'test' });
 });
+
+test('W6 review round 1 (handlers.ts:167): item.open runs one at a time in the main part, so two Opens of one tip (a reloaded window) never copy at once', async (t) => {
+  const w = world(t);
+  const view = emptyView();
+  view.items = [item({ id: 'result/E-A.W1@0f1e2d3', kind: 'result', open: 'page', markable: false })];
+  w.answers.view = view;
+  const events: string[] = [];
+  let release: () => void = () => undefined;
+  let calls = 0;
+  w.parts.open = async (it) => {
+    calls += 1;
+    const n = calls;
+    events.push(`start ${n}`);
+    if (n === 1) await new Promise<void>((resolve) => (release = resolve));
+    events.push(`end ${n} ${it.id}`);
+    return { done: true };
+  };
+  const first = w.call('item.open', { item: 'result/E-A.W1@0f1e2d3' });
+  const second = w.call('item.open', { item: 'result/E-A.W1@0f1e2d3' });
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(events, ['start 1'], 'the second waits for the first');
+  release();
+  assert.deepEqual(await Promise.all([first, second]), [{ ok: true, value: { done: true } }, { ok: true, value: { done: true } }]);
+  assert.deepEqual(events, ['start 1', 'end 1 result/E-A.W1@0f1e2d3', 'start 2', 'end 2 result/E-A.W1@0f1e2d3']);
+});

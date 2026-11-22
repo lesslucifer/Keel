@@ -89,6 +89,8 @@ export function makeHandlers(parts: Parts): Handlers {
   const queue = serial();
   // One dialog flow at a time, outside `queue`: a dialog may stay open as long as the owner likes.
   const dialogs = serial();
+  // One Open at a time (review round 1, handlers.ts:167): a copy of a tip is made once, never by two at once; outside `queue`, so a copy holds up no setting.
+  const opens = serial();
   const changed = () => parts.push('state.changed');
   const runOpts = () => ({ path: parts.loginPath.entries, ...(parts.env === undefined ? {} : { source: parts.env }) });
 
@@ -163,14 +165,15 @@ export function makeHandlers(parts: Parts): Handlers {
     // Not queued: the reader holds the view in memory; asking for it reads no file and runs no git.
     'waiting.get': () => parts.view(),
 
-    // W6. Not queued: it reads git and writes only under the app folder's open/, apart from the files the queue guards.
-    'item.open': async (args): Promise<Change> => {
-      const item = listed(parts.view(), args.item as string);
-      if (typeof item === 'string') return notDone(item);
-      if (item.open === 'text') return notDone('a question shows its text in the list itself');
-      if (item.open === 'none') return notDone('this item has nothing to open');
-      return parts.open(item);
-    },
+    // W6. In its own queue: it reads git and writes only under the app folder's open/, apart from the files `queue` guards.
+    'item.open': (args) =>
+      opens(async (): Promise<Change> => {
+        const item = listed(parts.view(), args.item as string);
+        if (typeof item === 'string') return notDone(item);
+        if (item.open === 'text') return notDone('a question shows its text in the list itself');
+        if (item.open === 'none') return notDone('this item has nothing to open');
+        return parts.open(item);
+      }),
 
     'item.mark': (args) =>
       queue(async (): Promise<Change> => {
