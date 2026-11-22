@@ -160,6 +160,16 @@ details:
     - "4. The W8 lint follow-up: in W5? No: W5 writes no window markup, only the fake's data; it goes to the backlog row A3. W6 is the first WU to write screens and may take it if the helper refuses its honest code. Options: (a) backlog row A3, W6 may take it, recommended; (b) a commit in W5; (c) W9."
     - "5. Does a dev run claim keel://? No: only the packaged app registers it, so Electron.app never becomes the handler on your Mac."
     - "6. 'Router not heard' counts from the newest line's own time, 15 minutes, any line (the watchdog writes a heartbeat each tick)."
+  owner-answers:
+    date: "2026-11-22"
+    answers: >-
+      All four recommendations taken, relayed by the router: 1a, one summary alert for lines written while the app was
+      closed, each line recorded as shown; 2a, run records and the inbox listing left to A5; 3a, one alert per line, no
+      folding; 4a, the W8 lint follow-up stays on backlog row A3.
+    departure-from-epic-summary: >-
+      The epic plan's W5 summary names run records and the inbox listing among the Reader's sources (wu-summaries,
+      E-APPLIST.W5). By the owner's answer 2a, W5 reads neither: no item kind in E-APPLIST uses them; the fleet and
+      worker screens of A5 (E-APPFLEET) do. Recorded in the W5 result's deviations, for the epic result and A5's plan.
   sources:
     - "docs/work/2026-11-20-e-applist-plan.yaml (W5's summary, the files row, the e2e-plan's seams)"
     - "docs/local-app.html ('The stack: Electron', 'Two sources', 'The hand-off')"
