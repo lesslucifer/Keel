@@ -62,9 +62,11 @@ open:
       Parts: screens 4 and 5 (one epic, one worker); Attach (K13); your note to a worker through the router's inbox
       (K11); the router's conflict and paused-epic lines (K6, K7) and a worker's last report line (K8); many projects
       on screen 6, with "Add a project" listing what is missing first (E-GHSETUP W6's idea). From the close's
-      walk-through: an alert about an epic opens that epic's view, not the list. Waits on: A3, A4.
+      walk-through: an alert about an epic opens that epic's view, not the list. From E-APPLIST.W6: the list reads a
+      project's own main branch name ([branches] main; Keel's is main) for "main not pushed" and epics merged into
+      main, and shows a work unit's title. Waits on: A3, A4.
     source: >-
-      E-LOCALTOOL.W5 result, P4 to P6, and the close's walk-through.
+      E-LOCALTOOL.W5 result, P4 to P6, and the close's walk-through; E-APPLIST.W5 and W6 results.
     taken-by: "E-APPFLEET"
 
   - id: A11
