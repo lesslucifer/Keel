@@ -13,6 +13,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { Socket } from 'node:net';
 import path from 'node:path';
 import { NOTE_KINDS } from '../shared/contract.ts';
+import { keelBranch } from '../shared/names.ts';
 
 export const LOCKED: readonly string[] = Object.freeze(['-c', 'core.fsmonitor=false', '--no-optional-locks', '--no-lazy-fetch']);
 
@@ -50,20 +51,16 @@ const PROJECT: Token = Object.freeze({ slot: 'project' as const });
 /** The note kinds a notes read takes: the contract's, one list. */
 const KINDS: readonly string[] = NOTE_KINDS;
 
-/** One part of a branch name: no leading dash or dot, no '..', not ending in '.' or '.lock' (git check-ref-format, narrowed). */
-const SEG = '[A-Za-z0-9][A-Za-z0-9._-]{0,99}';
-/** A branch the merged read takes: main, an epic or a work unit (a task too) by keel's naming, as a full ref. */
-const REF = new RegExp(`^refs/heads/(?:main|epic/${SEG}|wu/${SEG}/${SEG})$`);
 
 /** A full object id, sha-1 or sha-256: the one form a note read takes for its object. */
 const OBJECT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 /** Whether `v` is a ref the merged read may name. */
 export function refOk(v: unknown): v is string {
-  return typeof v === 'string' && REF.test(v) && !v.includes('..') && !/\.(?:lock)?(?:\/|$)/.test(v);
+  return typeof v === 'string' && v.startsWith('refs/heads/') && keelBranch(v.slice('refs/heads/'.length));
 }
 
-/** The W7 commands and W5's four reads, each a git line with its slots. */
+/** The W7 commands, W5's reads and W6's, each a git line with its slots. */
 export const COMMANDS: Readonly<Record<string, readonly Token[]>> = Object.freeze(
   Object.assign(Object.create(null) as Record<string, readonly Token[]>, {
     toplevel: Object.freeze(['-C', PROJECT, 'rev-parse', '--show-toplevel']),
@@ -85,10 +82,18 @@ export const COMMANDS: Readonly<Record<string, readonly Token[]>> = Object.freez
     // name with ^ when main reached it through a merge. Run only for an epic main holds that still has a
     // work unit outside main, once per tip (the answer never changes: main is merge-only).
     'main-name': Object.freeze(['-C', PROJECT, 'name-rev', '--name-only', '--no-undefined', '--refs=refs/heads/main', Object.freeze({ slot: 'object' as const })]),
+    // W6: one blob's bytes by its full id: a review note (its id from note-of), a committed doc (its id from the tree).
+    blob: Object.freeze(['-C', PROJECT, 'cat-file', 'blob', Object.freeze({ slot: 'object' as const })]),
+    // W6: one commit's committer time, ISO 8601: since when an item waits.
+    'commit-time': Object.freeze(['-C', PROJECT, 'log', '-1', '--no-walk', '--format=%cI', Object.freeze({ slot: 'object' as const })]),
+    // W6: main's upstream remote, as git has it (a remote with a slash whole; '.' for a local upstream); exit 1 when unset.
+    'main-remote': Object.freeze(['-C', PROJECT, 'config', '--get', 'branch.main.remote']),
+    // W6, Open: a commit's docs/ tree, each entry with its mode, type, id and size (open/docs.ts).
+    'ls-docs': Object.freeze(['-C', PROJECT, 'ls-tree', '-r', '-z', '-l', '--full-tree', Object.freeze({ slot: 'object' as const }), '--', 'docs/']),
   }),
 );
 
-export type CommandName = 'toplevel' | 'common-dir' | 'has-config' | 'promisor-config' | 'refs' | 'note-of' | 'merged' | 'worktrees' | 'main-name';
+export type CommandName = 'toplevel' | 'common-dir' | 'has-config' | 'promisor-config' | 'refs' | 'note-of' | 'merged' | 'worktrees' | 'main-name' | 'blob' | 'commit-time' | 'ls-docs' | 'main-remote';
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 

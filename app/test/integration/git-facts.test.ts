@@ -49,7 +49,7 @@ test('the reader gives the branches with their upstreams, the sign-off and revie
   assert.equal(facts.problem, null);
   const byName = Object.fromEntries(facts.branches.map((b) => [b.name, b]));
   assert.deepEqual(Object.keys(byName).sort(), ['epic/E-A', 'main', 'wu/E-A/w1', 'wu/E-A/w2', 'wu/E-A/w2_probe']);
-  assert.deepEqual(byName.main, { name: 'main', tip: rev(dir, 'main'), upstream: 'origin/main', ahead: 1, behind: 0, gone: false });
+  assert.deepEqual(byName.main, { name: 'main', tip: rev(dir, 'main'), upstream: 'origin/main', ahead: 1, behind: 0, gone: false, remote: 'origin' });
   assert.deepEqual(byName['epic/E-A'], { name: 'epic/E-A', tip: rev(dir, 'epic/E-A'), upstream: null, ahead: 0, behind: 0, gone: false });
   // wu/E-A/w1 is merged into its epic: its item has left, so its notes are not read. wu/E-A/w2 is open.
   assert.deepEqual(facts.notes, { mr: [], cr: [rev(dir, 'wu/E-A/w2')], dod: [] });
@@ -215,3 +215,43 @@ test('when main\'s merged read fails, the next good read asks no name-rev again 
   await reader.read(flaky);
   assert.equal(count(), asked, 'the failed read kept what was known');
 });
+
+test('W6: each open tip\'s review note is read for its verdict, again when the note is rewritten on the same tip; the list\'s tips carry their commit times', async (t) => {
+  const { root, dir } = world(t);
+  const reader = new GitReader(dir, opts(root));
+  const w2 = rev(dir, 'wu/E-A/w2');
+  sh(GIT, dir, ['notes', '--ref=cr', 'add', '-f', '-m', '{"schema":"cr/v1","verdict":"FAIL","blockers":2,"importants":1}', 'wu/E-A/w2']);
+  let facts = await reader.read(GIT);
+  assert.deepEqual(facts.reviews, { [w2]: { verdict: 'FAIL', blockers: 2, importants: 1 } });
+  // The sign-off's waiver rewrites the review note on the same tip: read again, by the note's new id.
+  sh(GIT, dir, ['notes', '--ref=cr', 'add', '-f', '-m', '{"schema":"cr/v1","verdict":"WAIVED","waiver":"cap","blockers":2,"importants":1}', 'wu/E-A/w2']);
+  facts = await reader.read(GIT);
+  assert.deepEqual(facts.reviews, { [w2]: { verdict: 'WAIVED', blockers: 2, importants: 1 } });
+  // A note that is not a review reads as no verdict.
+  sh(GIT, dir, ['notes', '--ref=cr', 'add', '-f', '-m', 'not json', 'wu/E-A/w2']);
+  assert.deepEqual((await reader.read(GIT)).reviews, { [w2]: { verdict: null, blockers: 0, importants: 0 } });
+  // Times: main, the open epic, the open unit and its task; not the unit merged into its epic.
+  const timed = Object.keys(facts.times).sort();
+  assert.deepEqual(timed, [rev(dir, 'main'), rev(dir, 'epic/E-A'), w2, rev(dir, 'wu/E-A/w2_probe')].sort());
+  for (const at of Object.values(facts.times)) assert.match(at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:Z|[+-]\d\d:\d\d)$/);
+});
+
+test('W6 review round 1 (items.ts:82): the reader publishes the open sets the list draws from; a task whose name keel does not name is never listed, merged or not', async (t) => {
+  const { root, dir } = world(t);
+  sh(GIT, dir, ['branch', 'wu/E-A/w2_café', 'wu/E-A/w2']);
+  const facts = await new GitReader(dir, opts(root)).read(GIT);
+  assert.deepEqual(facts.open, { epics: ['epic/E-A'], units: ['wu/E-A/w2'], tasks: ['wu/E-A/w2_probe'] });
+});
+
+test('W6 review round 2 (items.ts:153): the reader gives main\'s upstream remote from branch.main.remote; a local upstream is ., none is null', async (t) => {
+  const { root, dir } = world(t);
+  const reader = new GitReader(dir, opts(root));
+  assert.equal((await reader.read(GIT)).branches.find((b) => b.name === 'main')?.remote, 'origin');
+  sh(GIT, dir, ['branch', 'develop', 'main~1']);
+  sh(GIT, dir, ['branch', '--set-upstream-to=develop', 'main']);
+  const local = (await reader.read(GIT)).branches.find((b) => b.name === 'main');
+  assert.deepEqual([local?.upstream, local?.remote, local?.ahead], ['develop', '.', 1]);
+  sh(GIT, dir, ['branch', '--unset-upstream', 'main']);
+  assert.equal((await reader.read(GIT)).branches.find((b) => b.name === 'main')?.remote, null);
+});
+

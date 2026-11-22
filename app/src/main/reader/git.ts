@@ -2,11 +2,14 @@
 // with its tip and where it stands against its upstream (no fetch: the app never fetches), which
 // open branches' tips carry a sign-off (mr), review (cr) or gate (dod) note (one tip at a time), what
 // main, each open epic (not in main, or in main with no commit of its own yet) and each open work unit
-// with a task holds (main read first, so closed history costs no read), and the worktrees. Reads only; never a note's body, a diff or a fetch.
+// with a task holds (main read first, so closed history costs no read), and the worktrees. W6: each open
+// tip's review note's verdict (its body, read by the note's own id, so a rewritten note is read again) and
+// the commit times the list shows. Reads only; never a diff or a fetch.
 // A git older than 2.45 reads a project only when it is not a partial clone, as checkProject decides:
 // the reader asks the project's config once per git and remembers the answer.
 
-import { NOTE_KINDS, type GitBranch, type GitFacts, type GitWorktree, type NoteKind } from '../../shared/contract.ts';
+import { NOTE_KINDS, type GitBranch, type GitFacts, type GitWorktree, type NoteKind, type Review } from '../../shared/contract.ts';
+import { isEpicBranch, isTaskBranch, isUnitBranch, keelBranch, unitOfTask } from '../../shared/names.ts';
 import { run, refusedFlag, refOk, MIN_GIT, OLDEST_GIT, OUTPUT_CAP, type Captured, type CommandName, type RunOptions } from '../commands.ts';
 
 const ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -60,11 +63,12 @@ export function parseWorktrees(out: string): GitWorktree[] {
   return list;
 }
 
-const EPIC = /^epic\/[^/]+$/;
-const WU = /^wu\/[^/]+\/[^/_]+$/;
+// Keel's names, one grammar (shared/names.ts): an epic, a work unit; named() keeps keel's branches only.
+const EPIC = { test: isEpicBranch };
+const WU = { test: isUnitBranch };
 
 /** keel's branch names among `names` (main, epics, work units, tasks). */
-const named = (names: readonly string[]) => names.filter((n) => refOk(`${HEADS}${n}`));
+const named = (names: readonly string[]) => names.filter(keelBranch);
 
 /**
  * The open epics: those main does not hold (`inMain`; every epic when there is no main read), and
@@ -130,6 +134,75 @@ export function openTips(branches: readonly GitBranch[], merged: Readonly<Record
   return { tips: tips.slice(0, NOTE_TIPS), over: tips.length > NOTE_TIPS };
 }
 
+const VERDICTS = ['PASS', 'FAIL', 'WAIVED'] as const;
+const count = (v: unknown): number => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : 0);
+
+/** A review note's body (cr/v1 JSON): its verdict and open counts; anything else reads as no verdict. */
+export function parseReview(out: string): Review {
+  const none: Review = { verdict: null, blockers: 0, importants: 0 };
+  let v: unknown;
+  try {
+    v = JSON.parse(out);
+  } catch {
+    return none;
+  }
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return none;
+  const r = v as Record<string, unknown>;
+  if (r.schema !== 'cr/v1' || !(VERDICTS as readonly unknown[]).includes(r.verdict)) return none;
+  return { verdict: r.verdict as Review['verdict'], blockers: count(r.blockers), importants: count(r.importants) };
+}
+
+/** A commit-time answer: its one ISO 8601 line, or null. */
+export function parseTime(out: string): string | null {
+  const line = out.replace(/\n$/, '');
+  return /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:Z|[+-]\d\d:\d\d)$/.test(line) ? line : null;
+}
+
+/**
+ * The open branches the list draws its items from (W6), by the one rule: keel's names only (shared/names.ts); the
+ * open epics as openEpics has them, none while main is listed but its read failed; a work unit of an open
+ * epic only when that epic's read succeeded and does not hold it; a task of an open unit only when that
+ * unit's read succeeded and does not hold it.
+ */
+export function openSets(names: readonly string[], merged: Readonly<Record<string, readonly string[]>>, fresh: ReadonlySet<string> = new Set()): { epics: string[]; units: string[]; tasks: string[] } {
+  if (names.includes('main') && merged.main === undefined) return { epics: [], units: [], tasks: [] };
+  const epics = openEpics(names, merged.main, fresh);
+  const units = named(names).filter((n) => {
+    if (!WU.test(n)) return false;
+    const epic = `epic/${n.split('/')[1] as string}`;
+    return epics.includes(epic) && merged[epic] !== undefined && !(merged[epic] as readonly string[]).includes(n);
+  });
+  const tasks = named(names).filter((n) => {
+    if (!isTaskBranch(n)) return false;
+    const unit = unitOfTask(n);
+    return units.includes(unit) && merged[unit] !== undefined && !(merged[unit] as readonly string[]).includes(n);
+  });
+  return { epics, units, tasks };
+}
+
+/**
+ * main's upstream remote, as the config read answers it (W6): none for one starting with '-' (it would read
+ * as an option to git push: review round 3, git.ts:350), a control character, empty or over 200 characters.
+ */
+export function parseRemote(out: string): string | null {
+  const remote = out.replace(/\n$/, '');
+  return remote !== '' && !remote.startsWith('-') && remote.length <= 200 && !/[\u0000-\u001f\u007f-\u009f]/.test(remote) ? remote : null;
+}
+
+/** The most tips whose commit times one read asks. */
+export const TIME_TIPS = 60;
+
+/** The tips whose times the list shows, each once: main, each open epic, each open work unit and each task of one. At most TIME_TIPS. */
+export function timeTips(branches: readonly GitBranch[], merged: Readonly<Record<string, readonly string[]>>, fresh: ReadonlySet<string> = new Set()): { tips: string[]; over: boolean } {
+  const names = branches.map((b) => b.name);
+  const epics = openEpics(names, merged.main, fresh);
+  const units = openUnits(names, epics, merged);
+  const open = new Set(['main', ...epics, ...units, ...named(names).filter((n) => units.some((u) => n.startsWith(`${u}_`)))]);
+  const tips: string[] = [];
+  for (const b of branches) if (open.has(b.name) && !tips.includes(b.tip)) tips.push(b.tip);
+  return { tips: tips.slice(0, TIME_TIPS), over: tips.length > TIME_TIPS };
+}
+
 /** Why a run gave no answer to read, or null. */
 function failed(r: Captured, what: string): string | null {
   if (r.startError !== null) return `git could not start (${r.startError})`;
@@ -140,7 +213,7 @@ function failed(r: Captured, what: string): string | null {
 }
 
 /** No git facts, and why. */
-export const noFacts = (problem: string): GitFacts => ({ branches: [], notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], problem });
+export const noFacts = (problem: string): GitFacts => ({ branches: [], notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], open: { epics: [], units: [], tasks: [] }, reviews: {}, times: {}, problem });
 
 /** One project's git reader; read(git) reads it all again with that git. */
 export class GitReader {
@@ -148,6 +221,10 @@ export class GitReader {
   private old = new Map<string, true | string>();
   /** Per epic tip main holds: whether it sits on main's own line (no commit of its own). Never changes for a tip; kept only for the tips last asked about. */
   private mainLine = new Map<string, boolean>();
+  /** W6: per review note id (a rewritten note is a new id), its verdict; kept only for the notes last read. */
+  private reviewOf = new Map<string, Review>();
+  /** W6: per tip, its commit time (never changes); kept only for the tips last asked about. */
+  private timeOf = new Map<string, string>();
 
   private readonly project: string;
   private readonly opts: Omit<RunOptions, 'before245' | 'timeoutMs'>;
@@ -182,7 +259,7 @@ export class GitReader {
     const refsWhy = failed(refs, 'its branches');
     if (refsWhy !== null) return noFacts(refsWhy);
     const { branches, noteKinds } = parseRefs(refs.stdout);
-    const facts: GitFacts = { branches, notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], problem: null };
+    const facts: GitFacts = { branches, notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], open: { epics: [], units: [], tasks: [] }, reviews: {}, times: {}, problem: null };
     const problems: string[] = [];
     const take = (r: Captured | string, what: string): string | null => {
       const why = typeof r === 'string' ? r : failed(r, what);
@@ -190,6 +267,15 @@ export class GitReader {
       return why === null && typeof r !== 'string' ? r.stdout : null;
     };
     const names = branches.map((b) => b.name);
+    // W6 (review round 2, items.ts:153): main's upstream remote, for the push line; exit 1: none set.
+    const main = branches.find((b) => b.name === 'main');
+    if (main !== undefined) {
+      main.remote = null;
+      if (main.upstream !== null) {
+        const r = await this.run(git, 'main-remote', {});
+        if (typeof r !== 'string' && r.code === 0 && !r.cut) main.remote = parseRemote(r.stdout);
+      }
+    }
     const holds = async (target: string): Promise<string[] | null> => {
       const out = take(await this.run(git, 'merged', { ref: `${HEADS}${target}` }), `what ${target} holds`);
       if (out === null) return null;
@@ -228,17 +314,51 @@ export class GitReader {
     const epics = openEpics(names, facts.merged.main, fresh);
     for (const epic of epics) await holds(epic);
     for (const unit of openUnits(names, epics, facts.merged)) if (names.some((n) => n.startsWith(`${unit}_`))) await holds(unit);
+    facts.open = openSets(names, facts.merged, fresh);
     const open = openTips(branches, facts.merged, fresh);
     if (open.over) problems.push(`more than ${NOTE_TIPS} open branches: notes read for the first ${NOTE_TIPS} only`);
+    const crNotes = new Map<string, string>();
     for (const kind of NOTE_KINDS) {
       if (!noteKinds.has(kind)) continue;
       for (const tip of open.tips) {
         const r = await this.run(git, 'note-of', { kind, object: tip });
         // Exit 1 is "no note found for object": the tip carries none.
         if (typeof r !== 'string' && r.code === 1 && !r.timedOut && !r.cut) continue;
-        if (take(r, `the ${kind} note on ${tip.slice(0, 7)}`) !== null) facts.notes[kind].push(tip);
+        const out = take(r, `the ${kind} note on ${tip.slice(0, 7)}`);
+        if (out === null) continue;
+        facts.notes[kind].push(tip);
+        // note-of answers the note's own id: the review's body is read by it.
+        if (kind === 'cr' && ID.test(out.trim())) crNotes.set(tip, out.trim());
       }
     }
+    // W6: each review's verdict, read once per note (a rewritten note has a new id).
+    const reviewOf = new Map<string, Review>();
+    for (const [tip, note] of crNotes) {
+      let review = this.reviewOf.get(note) ?? reviewOf.get(note);
+      if (review === undefined) {
+        const out = take(await this.run(git, 'blob', { object: note }), `the review note on ${tip.slice(0, 7)}`);
+        if (out === null) continue;
+        review = parseReview(out);
+      }
+      reviewOf.set(note, review);
+      facts.reviews[tip] = review;
+    }
+    this.reviewOf = reviewOf;
+    // W6: since when each item waits, once per tip.
+    const timed = timeTips(branches, facts.merged, fresh);
+    const timeOf = new Map<string, string>();
+    for (const tip of timed.tips) {
+      let at = this.timeOf.get(tip);
+      if (at === undefined) {
+        const out = take(await this.run(git, 'commit-time', { object: tip }), `the time of ${tip.slice(0, 7)}`);
+        const parsed = out === null ? null : parseTime(out);
+        if (parsed === null) continue;
+        at = parsed;
+      }
+      timeOf.set(tip, at);
+      facts.times[tip] = at;
+    }
+    this.timeOf = timeOf;
     const wt = take(await this.run(git, 'worktrees', {}), 'its worktrees');
     if (wt !== null) facts.worktrees = parseWorktrees(wt);
     facts.problem = problems.length === 0 ? null : problems.join('; ');

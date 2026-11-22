@@ -1,0 +1,187 @@
+artifact: wu-plan
+status: ready
+id: E-APPLIST.W6
+epic: E-APPLIST
+title: "E-APPLIST.W6 · Your list and Open"
+date: "2026-11-22"
+page: 2026-11-22-e-applist-w6-plan.html
+requirement: >-
+  For the one listed project, the app's window opens on screen 2, Waits on you: every item of this epic's kinds
+  (a work unit's result to sign, then to merge; an epic's result to sign, then to merge into main; a plan to read; a
+  question from the router; a worker waiting on you; main not pushed; a task into its work unit), drawn by the main
+  part from W5's view, grouped yours, not yours, sent, entering and leaving on its source with no click; Open shows a
+  plan or result as committed at the item's tip in the owner's browser (an epic result in place) and a question as
+  text; Mark sent and Not sent move a plan or question to and from the sent group, kept in the app's folder across a
+  restart; a click on an alert or a keel:// link brings that work unit's items into view; the macOS alert names the
+  project; nothing the window does runs a command that writes into a project.
+maps-to: >-
+  Epic E-APPLIST, its W6 summary (wu-maps-to: local-app.html 'The screens' 1, 2, 'The hand-off' item table;
+  UC-APP-2, new; backlog A3's Open and ?diff=latest). UC-APP-2 (you open a waiting item; its committed doc opens in
+  your browser, and the item leaves when its note, merge or router line appears). Carries W5's follow-ups (the items,
+  screens 1 and 2, the window following the focus, Open, Mark sent; main's name only if needed; the focus across a
+  project switch), W8's (screens 1 and 2, the top bar's other screens, screen 6's fields 6.4 and 6.5) and, only if
+  the lint helper refuses honest screen code, backlog A3's first follow-up (the helper made advisory).
+expected:
+  - "With a project listed, the window opens on Waits on you; each kind of this epic appears in its group (yours, not yours, sent) with its work unit, tip, since when and why, and the top bar says how many wait on you."
+  - "An item enters and leaves with no click: a result to sign enters on a PASS or WAIVED review note on the work unit's tip with no sign-off note, turns to 'to merge' on the sign-off note and leaves when the epic holds the tip; an epic's result the same against main; a plan to read on the router's 'plan to read' stage, leaving on 'plan approved', a removed stage or the branch moving past the plan's tip; a question on its router line, leaving when the router removes it; a worker waiting on you while the watchdog says so; main not pushed while main is ahead of its upstream; a task while its tip is outside its work unit and no busy worker is on its branch."
+  - "Work in motion (plan in work, building, in review, a review that failed) shows under not yours, naming the worker on its branch when the router says one is there."
+  - "Open on a plan or a work unit's result copies the tip's docs/ from git into the app's folder and opens that page in the browser: the bytes are the committed ones even while the working file differs. Open on an epic result opens the file in the epic's folder's docs/.archive/ in place. Open on a question shows its text in the window. An item that left or moved is refused, nothing opened."
+  - "Mark sent moves a plan or a question to the sent group; Not sent moves it back; both survive an app restart; the mark goes when the item leaves and does not carry to a new tip or a new question."
+  - "A click on an alert or a keel://wu/<id> link opens the window on Waits on you with that work unit's items marked and in view, or a line saying nothing of it waits on you; a project switch clears the focus."
+  - "The router-not-heard bar shows when the router is silent; router-told items (plan to read, question, worker waiting) are then not shown, and the list says so."
+  - "The macOS alert reads: title the headline, subtitle the project, body the lines; the summary alert keeps its title."
+  - "Screen 6 shows the counts (as links to Waits on you) and the last change. The fake bridge's fixtures draw every kind in browser mode. No step builds or packages the app."
+test-plan:
+  unit: >-
+    node --test (app/test/unit/*.test.ts) for the main part, each a top-level test( so keel check runs it, red first,
+    the red run noted in the result. items.test.ts: each kind's enter, move and leave rule on hand-made views; the
+    groups and their order; a seeded property (test/support/seeded.ts): for any generated view, every item's id is
+    unique and stable across a re-read of the same facts, every item names a branch or key present in the view, no
+    router-told item appears when the router is not heard, and a sent mark never shows on an item it was not made for.
+    sent.test.ts: the marks store (owner-only file, a broken file set aside, marks for gone items pruned). doc-find.test.ts:
+    the data-file head reader (top-level artifact and id lines only; an anchor, an alias or a missing field refused)
+    and the page it names. open.test.ts: the copy plan (paths under docs/ only, no .., no symlink entry, a size cap)
+    and the file URL built under the app's folder only. git-read.test.ts gains the new fixed reads' lines (locked
+    flags, each slot checked). alert.test.ts gains the subtitle. The contract's item-id slot: generated strings,
+    .. and %2e%2e included, refused unless they match. Vitest unit (test-window/unit/, by hand, DEC-73): the item row's
+    texts per kind, the since-when text, the counts.
+  integration: >-
+    node --test (app/test/integration/*.test.ts), red first, hermetic, as W5's: a temp git repo set up as a keel
+    project (main with an upstream, an epic, two work units and a task branch, worktrees), notes written with git
+    notes add from fixed JSON (cr/v1 PASS, FAIL and WAIVED bodies; an mr body), a temp app folder, the update log
+    written by the real scripts/router-app.sh. (1) items.flow.test.ts: each kind enters and leaves through
+    waiting.get on the real dispatcher - a cr PASS note, then an mr note, then a merge; the same for the epic against
+    main; stage plan-to-read then plan-approved, and the branch moving past the tip; a question set then del; a
+    worker line with waiting then without; main ahead then equal; a task outside then merged; a router restart drops
+    every router-told item and keeps the rest. (2) open.test.ts: Open copies the tip's docs/ while the working file
+    differs and the copy matches git show <tip>:<path> byte for byte; links between the copied docs resolve; an epic
+    result opens in place; Open on an item that left is refused; the opener is a recording seam (no browser). (3)
+    sent.test.ts: Mark sent, an app restart (a new reader on the same folders), the mark still there; the stage moves
+    on and the mark is gone. (4) focus.test.ts: an alert click on a work unit then waiting.get gives the focus; a
+    project switch clears it. (5) bridge.test.ts: the contract snapshot names item.open, item.mark and the item-id
+    slot. Window, Vitest (test-window/integration/, by hand, recorded): waits.test.tsx - the list drawn from the
+    bridge stub for each fixture view, the groups and their counts, Open and Mark sent sent with their slots, a
+    refusal shown as text, a waiting.changed push redraws, the focus marks and scrolls to its items, the not-heard
+    bar; nav.test.tsx - the top bar moves between Waits on you and Projects, the app opens on Projects with no project;
+    projects.test.tsx gains the counts and last change; fake.test.ts green with the new requests and fixtures;
+    grounds and contrast tests cover the new screen. Recorded in the result: the commands, the counts, the red runs.
+  e2e: >-
+    none: a WU's level is integration; the epic test (Playwright on the unpackaged app, DEC-75) is W9's and walks a
+    plan to read and a result to sign through this screen. What no test reaches here - the page in the owner's
+    browser, the ?diff=latest hand-off - is the owner's live check (details.live-checks), browser mode first, then
+    pnpm start, with no build.
+details:
+  owner-answers:
+    date: "2026-11-22"
+    via: "the router keel-1c: the owner took all five as recommended (1a, 2a, 3a, 4a, 5a)"
+    answers:
+      - "1a. Not yours holds work in motion: plan in work, building, in review, a failed review; it names the worker."
+      - "2a. A task waits on the owner when its tip is outside its work unit and no busy worker is on its branch."
+      - "3a. Open hands the file:// URL to shell.openExternal: the Mac's default app for web pages."
+      - "4a. Main is 'main' only; the project's own [branches] main stays with backlog A5."
+      - "5a. If the lint helper refuses honest screen code, it becomes advisory; emitted.js stays the guard."
+  base: "wu/E-APPLIST/w6-list-screens off epic/E-APPLIST at 8232d92 (W1, W2, W3, W5, W7, W8 and W10 merged)"
+  inner-loop: >-
+    No build, no package, ever, in W6: pnpm test:main (node --test from source), pnpm typecheck, pnpm test:window and
+    pnpm lint for any window change, pnpm dev:browser to draw a screen on the fake, pnpm start only for the owner's
+    live check. Every rule lives in a pure module with its parts injected (git runner, clock, opener, app folder);
+    src/main/index.ts keeps only wiring.
+  install: >-
+    app/node_modules is missing in this worktree. The build worker needs it before any pnpm check: the owner runs
+    cd app && pnpm install --frozen-lockfile in this worktree (the sandbox may refuse a package's .vscode write, as at
+    W10), or the worker tries it once and reports a refusal.
+  item-model:
+    shape: >-
+      Item {id, kind, group (yours|not-yours|sent), wu|null, epic|null, title, tip|null, since|null, why, open
+      (page|archive|text|none), markable, worker|null, text|null}; View gains items: Item[] and counts {yours,
+      notYours, sent}; drawn in the main part (app/src/main/items/), never in the window, on every view build.
+    id: >-
+      A stable, checkable string: <kind>/<subject>@<tip or run.n>, e.g. result/E-APPLIST.W6@0f1e2d3 or
+      question/merge-order@keel-1c.20261122-083000.4242.41; pattern held in contract.ts as ITEM_ID_SOURCE (at most 64
+      characters, the slot cap), so a moved tip or a new question is a new item and an old click is refused.
+    kinds:
+      result-wu: "enter: an open work unit's tip carries a cr note PASS or WAIVED and no mr note; phase 'to sign'. move: an mr note on the tip, phase 'to merge'. leave: the epic holds the tip. FAIL, or a note not readable: not yours, 'review failed, its worker fixes' / 'review note unreadable'. Open: the wu-result page at the tip (copy)."
+      result-epic: "as result-wu for an open epic against main; Open: the epic-result page in the epic's worktree's docs/.archive/, in place (found through its data file there)."
+      plan: "enter: wu/<id>/stage is 'plan to read' with a tip. leave: the stage moves on or is removed, or the work unit's branch tip is no longer that tip (backstop). Open: the wu-plan page at the stage's tip (copy). Markable."
+      question: "enter: question/<id> is set. leave: it is removed. Open: its headline and lines, shown in the row (text). Markable. Its work unit, if it names one, links the focus."
+      worker-waits: "enter: worker/<name> has a non-empty waiting. leave: it has none, or the line is removed. Why: the waiting text and the attach line as text (claude attach <session>, when the line carries one); no button (Attach is A5's)."
+      main-push: "enter: main's ahead count against its upstream is above 0 and the upstream is not gone. leave: ahead is 0. Why: 'main is N commits ahead of <upstream>' and the push line as text (git push is the owner's, by hand; Push... is A4's)."
+      task: "enter: a branch wu/<E>/<wu>_<task> whose work unit is open, whose tip the work unit does not hold, and no worker line with state busy names that branch. leave: the work unit holds the tip. Why: the merge line the router stages, as text; Open: none (the task's diff page is A4's)."
+      in-motion: "not yours: wu/<id>/stage is plan in work, building or in review; the worker is the worker line naming that work unit's branch, if any. No button."
+    router-told: "plan, question, worker-waits and in-motion come only from the router's values: when the router is not heard or has no run, they are not drawn and the list says 'The router is not heard: its items are hidden'."
+    since: "result: the cr note's commit time is not kept by git notes, so the tip's commit time (git log -1 --format=%cI, a fixed read); plan: the stage tip's commit time; question and worker: the router line's at; main: main's tip time; task: the task tip's time."
+  new-fixed-reads:
+    - "note-show: git notes --ref=<cr|mr> show <tip> (tip 40 hex), JSON parsed for verdict, blockers, importants only; asked only for open tips already in notes.cr, once per tip and cached by tip."
+    - "commit-time: git log -1 --no-walk --format=%cI <tip>, once per tip, cached."
+    - "doc-heads: git ls-tree -r -z --name-only <tip> -- docs/work/ then git cat-file --batch on its .yaml files' blobs, capped at 64 files and 64 KiB each, for the data file whose top-level artifact and id match; its page line names the page."
+    - "docs-copy: git ls-tree -r -z <tip> -- docs/ and git cat-file --batch on its blobs (regular files only, no symlink or submodule entry, 8 MiB in all), written under <appDir>/open/<project-id>/<tip>/; the last 8 copies kept."
+  contract-changes:
+    requests:
+      item.open: "{item: item-id}: re-derives the item from the current view; refused when it is gone or its tip moved; page and archive open in the browser, text returns nothing to open (the window shows it). Value: Change."
+      item.mark: "{item: item-id, sent: enum yes|no}: only a markable item. Value: Change."
+    slot: "item-id: a new slot kind in contract.ts and bridge.ts, checked against ITEM_ID_SOURCE after SLOT_CAP; no path, no free text."
+    view: "View gains items and counts; RouterAlert unchanged; Focus unchanged."
+    snapshot: "test/integration/bridge.test.ts updated in the same commit; fake.test.ts fails until the fake answers both requests."
+  open-rules:
+    opener: "shell.openExternal on a file:// URL inside <appDir>/open/ or, for an epic result, inside a worktree the view lists; any other URL refused before the call. A seam replaces it in tests and when not packaged under KEEL_APP_OPEN_SINK (one JSON line per open), as W5's alert sink."
+    archive: "An epic result is untracked (docs/.archive/), so it opens where keel hashes it: the epic's worktree from git worktree list, its data file found by artifact epic-result and id; no copy."
+    diff-latest: "Checked once by the owner (live check step 6): whether the copied page opened with ?diff=latest shows htmldoc's diff, typed in the address bar and handed from Terminal; recorded in the result. W6 builds no diff button: a 'what changed' button is A4's, and the result says whether it can link straight or needs a small redirect page."
+  focus:
+    rule: "The window keeps the last focus seq it acted on; a larger seq switches to Waits on you, marks the work unit's items and scrolls the first into view; a work unit with no item gets the line 'Nothing of <id> waits on you'; wu null shows the list's top."
+    project-switch: "Focus.clear() when projects.add or projects.remove changes the listed project (main part), so a focus never names another project's work unit."
+  alert-layout: "Screen 1: Notification {title: headline, subtitle: the project's name, body: the lines}; macOS shows the time. The summary alert keeps W5's titles and gains the subtitle. The click and the summary are unchanged."
+  screens:
+    nav: "The top bar under the title bar: Waits on you (with the yours count) · Projects. Screens 3 to 5 are A5's and get no tab. The app opens on Waits on you with a project listed, else on Projects."
+    waits: "Screen 2 on mx3a (W8's tokens, ui/ parts: Section, Row, Badge, Button, Path): sections Yours, Not yours (a worker acts), Sent - waiting for a sign; each row: kind badge, work unit and title, tip, since, why; Open as the pill main action, Mark sent / Not sent as outline; empty sections say so in words; the not-heard bar above the list in the problem colour, in words."
+    projects: "Screen 6 gains 6.4 (the counts, each a link to Waits on you) and 6.5 (the last change: the view's readAt and what changed last, from the newest branch, note or router line time)."
+    title: "A work unit's title from the epic plan's wu-summaries is not read in W6 (the item shows its id and branch); the title read is A5's with screen 3."
+  lint-helper: >-
+    If app/eslint-rules/classes.js refuses honest screen code, W6 takes backlog A3's first follow-up in its own
+    commit: the helper becomes advisory (warns, never fails) for honest code and the guarantee stays with
+    emitted.js; the four round-5 findings are answered in the result. Otherwise the follow-up stays on A3 for W9.
+  commits:
+    - "1. docs(E-APPLIST.W6): the plan pair."
+    - "2. feat: the contract - item.open, item.mark, the item-id slot, View.items and counts; the fake's handlers and a fixture per kind (red first: bridge.test.ts, fake.test.ts)."
+    - "3. feat: the item rules - app/src/main/items/ (pure), unit tests and the seeded property (red first)."
+    - "4. feat: the reader's new fixed reads (note-show, commit-time, doc-heads) and the items in the view; items.flow integration test."
+    - "5. feat: Open - the docs copy, the data-file finder, the opener seam, the epic result in place; open integration test."
+    - "6. feat: Mark sent - the marks store in the app's folder and item.mark; sent integration test."
+    - "7. feat: the alert's subtitle and the focus cleared on a project switch; focus integration test."
+    - "8. feat: the window - the top bar, screen 2, the focus followed, the not-heard bar; Vitest (red first)."
+    - "9. feat: screen 6's counts and last change; Vitest."
+    - "(only if needed) refactor: the lint helper made advisory (backlog A3's first follow-up)."
+    - "10. docs(E-APPLIST.W6): the result pair."
+  layout:
+    new: [app/src/main/items/items.ts, app/src/main/items/sent.ts, app/src/main/open/docs.ts, app/src/main/open/open.ts, app/src/window/screens/Waits.tsx, app/src/window/screens/Nav.tsx, app/src/window/ui/ItemRow.tsx, app/test/unit/items.test.ts, app/test/unit/sent.test.ts, app/test/unit/doc-find.test.ts, app/test/unit/open.test.ts, app/test/integration/items-flow.test.ts, app/test/integration/open.test.ts, app/test/integration/sent.test.ts, app/test/integration/focus.test.ts, app/test-window/integration/waits.test.tsx, app/test-window/integration/nav.test.tsx]
+    changed: [app/src/shared/contract.ts, app/src/main/bridge.ts, app/src/main/commands.ts, app/src/main/handlers.ts, app/src/main/index.ts, app/src/main/reader/git.ts, app/src/main/reader/view.ts, app/src/main/alerter/alerts.ts, app/src/main/alerter/seams.ts, app/src/window/App.tsx, app/src/window/hooks.ts, app/src/window/screens/Projects.tsx, app/src/window/fake/fake.ts, app/src/window/fake/fixtures.ts, app/test/integration/bridge.test.ts, app/test/unit/git-read.test.ts, app/test/unit/alert.test.ts, app/test-window/integration/projects.test.tsx, app/test-window/integration/fake.test.ts]
+    maybe: [app/eslint-rules/classes.js, app/test-window/unit/classes.test.ts]
+  live-checks:
+    by: "the owner on his Mac, about ten minutes, browser mode first, then pnpm start from this worktree's app folder; no build"
+    steps:
+      - "1. cd app && pnpm dev:browser; open /browser.html?state=one-project&view=<each of the new views>: each kind in its group; Open, Mark sent and Not sent answer; ?view=focus marks E-APPLIST.W5's items; ?view=not-heard shows the bar and hides the router's items; ?scheme=dark too."
+      - "2. Quit every Keel (W5's step 0), then KEEL_APP_ALERT_SINK=$HOME/keel-w6-alerts.jsonl pnpm start with your Keel checkout listed: the window opens on Waits on you with what waits now (e.g. main not pushed if main is ahead; this work unit when the router stages it)."
+      - "3. Open on a plan or result: your browser shows the page from the app's folder; edit the working file and Open again: still the committed text."
+      - "4. Mark sent on a plan or question; quit and start again: still under Sent; Not sent moves it back."
+      - "5. ~/…/scripts/router-app.sh alert with a wu: the sink line carries the subtitle (the project's name)."
+      - "6. ?diff=latest: in the browser's address bar, append ?diff=latest to the opened page: htmldoc's diff mode or not; then from Terminal, open 'file://<that page>?diff=latest': does the browser keep the query? Both recorded in the result."
+    reset: "Quit the app; rm -f ~/keel-w6-alerts.jsonl; optionally rm -rf ~/Library/Application Support/Keel/open and sent.json."
+  left-to-w9:
+    - "The Playwright epic test through this screen (a plan to read enters and leaves; a result to sign leaves on the sign-off note; Open's copy) through the seams KEEL_APP_ALERT_SINK, KEEL_APP_SILENCE_MS and the new KEEL_APP_OPEN_SINK."
+    - "The real macOS alert with its subtitle and its click, keel:// and the Telegram link test (the owner's one test message) on the signed build: only the packaged app claims keel://."
+    - "Screen 2 and Open under the packaged content policy, seen on the signed build."
+    - "The item kinds, Open and Mark sent into docs/local-app.html; UC-APP-2 into docs/use-cases/app.yaml."
+    - "Backlog A3's lint-helper follow-up, if W6 did not need it."
+  left-to-others:
+    - "Read the project's own main name ([branches] main): backlog local-app A5 (many projects); Keel names main."
+    - "Rule-file commit to sign, gate failed, merge conflict, screens 3 to 5, Attach, a work unit's title: A5; every button that runs a command and the code-changes page: A4."
+  sandbox-for-the-build: "The worker's sandbox refuses Vite's and Electron's port (W8, W5): pnpm dev:browser and pnpm start are the owner's live check; fs.watch gets EMFILE there (W5): the real-watch test skips."
+  sources:
+    - docs/work/2026-11-20-e-applist-plan.yaml (W6's summary, the replan)
+    - docs/work/2026-11-22-e-applist-w5-result.yaml, -w8-result.yaml, -w10-result.yaml (follow-ups)
+    - docs/decisions/app.html (DEC-71 to DEC-77)
+    - docs/local-app.html ('Two sources', 'The screens', 'The hand-off')
+    - "git show 7401665:docs/work/2026-11-18-e-localtool-w3-screens-result.html and -fields.html (screen 2's 20 fields, screen 6's 6.4 and 6.5)"
+    - docs/work/2026-11-22-e-applist-w8-design-mistral.md and -minimax.md (mx3a)
+    - app/src/shared/contract.ts, app/src/window/fake/fixtures.ts, app/src/main/reader/, scripts/router-app.sh, src/notes.rs (cr/v1)
+  htmldoc:
+    id: 6b02e3539f34851f0dfb2baf

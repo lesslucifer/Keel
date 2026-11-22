@@ -7,6 +7,7 @@ import { dispatcher, pusher, contract, type EventLike, type Expected, type Handl
 import { REQUESTS, PUSH_EVENTS, ASK_CHANNEL, PUSH_CHANNEL } from '../../src/shared/contract.ts';
 
 const PAGE = 'app://keel/index.html';
+const ITEM = '^(?:result|epic-result|plan|question|worker|task|push|motion)/[A-Za-z0-9._-]{1,41}@[0-9a-f]{7,12}$';
 const expected: Expected = { contentsId: 3, pages: [PAGE] };
 const own: EventLike = { sender: { id: 3 }, senderFrame: { url: PAGE, parent: null } };
 
@@ -24,6 +25,8 @@ function recorded() {
     'settings.reset': h('settings.reset'),
     'alert.test': h('alert.test'),
     'waiting.get': h('waiting.get'),
+    'item.open': h('item.open'),
+    'item.mark': h('item.mark'),
   };
   return { calls, ask: dispatcher(() => expected, handlers) };
 }
@@ -38,16 +41,22 @@ const GOOD: Array<[string, Record<string, string>]> = [
   ['settings.reset', { tool: 'keel' }],
   ['settings.reset', { tool: 'git' }],
   ['settings.reset', { tool: 'claude' }],
+  ['item.open', { item: 'result/E-APPLIST.W6@0f1e2d3' }],
+  ['item.open', { item: 'question/merge-order@a1b2c3d4' }],
+  ['item.mark', { item: 'plan/E-APPLIST.W6@0f1e2d3c4b5a', sent: 'yes' }],
+  ['item.mark', { item: 'plan/E-APPLIST.W6@0f1e2d3c4b5a', sent: 'no' }],
   ['alert.test', {}],
   ['waiting.get', {}],
 ];
 
-test('the wire contract is locked: two channels, seven request names with their slots, two push events (a change here changes what the window may do)', () => {
+test('the wire contract is locked: two channels, nine request names with their slots, two push events (a change here changes what the window may do)', () => {
   assert.equal(ASK_CHANNEL, 'keel:ask');
   assert.equal(PUSH_CHANNEL, 'keel:push');
   assert.deepEqual(contract(), {
     requests: {
       'alert.test': {},
+      'item.mark': { item: `item-id ${ITEM}`, sent: 'one of yes|no' },
+      'item.open': { item: `item-id ${ITEM}` },
       'projects.add': {},
       'projects.remove': { project: 'project-id ^p[0-9a-f]{8}$' },
       'settings.choose': { tool: 'one of keel|git|claude' },
@@ -81,6 +90,11 @@ test('refused calls run nothing: an unknown name, a foreign page, a subframe, an
     [own, { name: 'settings.choose', args: { tool: 7 } }, 'bad-slot:tool'],
     [own, { name: 'projects.remove', args: { project: 'p00c0ffee', path: '/' } }, 'bad-args'],
     [own, { name: 'alert.test', args: { body: 'hi' } }, 'bad-args'],
+    [own, { name: 'item.open', args: { item: '/Users/owner/code/keel/docs/x.html' } }, 'bad-slot:item'],
+    [own, { name: 'item.open', args: { item: 'result/../../etc@0f1e2d3' } }, 'bad-slot:item'],
+    [own, { name: 'item.open', args: { item: 'shell/E-APPLIST.W6@0f1e2d3' } }, 'bad-slot:item'],
+    [own, { name: 'item.mark', args: { item: 'plan/E-APPLIST.W6@0f1e2d3', sent: 'maybe' } }, 'bad-slot:sent'],
+    [own, { name: 'item.mark', args: { item: 'plan/E-APPLIST.W6@0f1e2d3' } }, 'bad-args'],
   ];
   for (const [event, call, refused] of cases) {
     assert.deepEqual(await ask(event, structuredClone(call)), { ok: false, refused }, refused);

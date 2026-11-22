@@ -4,9 +4,9 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { expect, test } from 'vitest';
-import type { Answer, Change } from '../../src/shared/contract.ts';
+import type { Answer, Change, View } from '../../src/shared/contract.ts';
 import { BridgeProvider } from '../../src/window/bridge.ts';
-import { alertText, answerText, changeText, useAction, useAppState } from '../../src/window/hooks.ts';
+import { alertText, answerText, changeText, sinceText, useAction, useAppState, useWaiting } from '../../src/window/hooks.ts';
 import { deferred, makeStub, ok, sampleState, type Stub } from '../support/stub-bridge.ts';
 
 const within = (stub: Stub) => ({ wrapper: ({ children }: { children: ReactNode }) => <BridgeProvider bridge={stub.bridge}>{children}</BridgeProvider> });
@@ -130,4 +130,29 @@ test('useAction says each request\'s outcome in its own words, and a bridge that
   stub.answer('alert.test', () => Promise.reject(new Error('the bridge is gone')));
   await act(() => result.current.run({ name: 'alert.test', args: {} }));
   expect(result.current).toMatchObject({ busy: false, note: 'The request failed: the bridge is gone.' });
+});
+
+test('sinceText: the time today, the day and time on another day, nothing for none or nonsense', () => {
+  const now = new Date(2026, 10, 22, 12, 0, 0);
+  const today = sinceText(new Date(2026, 10, 22, 8, 41, 0).toISOString(), now);
+  expect(today).toMatch(/^since \S*08.41/);
+  const earlier = sinceText(new Date(2026, 10, 20, 9, 5, 0).toISOString(), now);
+  expect(earlier).toMatch(/^since .+, \S*09.05/);
+  expect(earlier).not.toBe(today);
+  expect(sinceText(null, now)).toBe('');
+  expect(sinceText('yesterday', now)).toBe('');
+});
+
+test('useWaiting: one waiting.get on mount, one more per waiting.changed; a failure keeps the last view and says why', async () => {
+  const view = { project: null } as unknown as View;
+  let answer: Answer<View> = ok(view);
+  const stub = makeStub({ 'waiting.get': () => answer });
+  const { result } = renderHook(() => useWaiting(), { wrapper: ({ children }: { children: ReactNode }) => <BridgeProvider bridge={stub.bridge}>{children}</BridgeProvider> });
+  await waitFor(() => expect(result.current.view).toEqual(view));
+  expect(stub.names()).toEqual(['waiting.get']);
+  answer = { ok: false, failed: 'gone' };
+  act(() => void stub.push('waiting.changed'));
+  await waitFor(() => expect(result.current.error).toBe('The request failed: gone.'));
+  expect(result.current.view).toEqual(view);
+  expect(stub.names()).toEqual(['waiting.get', 'waiting.get']);
 });

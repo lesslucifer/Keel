@@ -1,4 +1,4 @@
-// The seven requests' handlers: everything the shell does for the window except Electron itself. The
+// The nine requests' handlers: everything the shell does for the window except Electron itself. The
 // shell hands in its parts (the app folder, the PATH it read at start, its two dialogs, its test
 // alert and its push); the handlers read and write only the app folder, run git only through the
 // fixed commands, and run their reads and writes one at a time, so two changes never interleave.
@@ -7,8 +7,9 @@
 // queue on their own, and the dialog flows take turns in a queue of their own. The dispatcher (bridge.ts) checks every call before a handler runs and passes
 // every string in the answer through plain().
 
+import { rm } from 'node:fs/promises';
 import path from 'node:path';
-import { TOOL_NAMES, type AlertOutcome, type AppState, type Change, type LoginPathState, type PushEvent, type Tool, type View } from '../shared/contract.ts';
+import { TOOL_NAMES, type AlertOutcome, type AppState, type Change, type Item, type LoginPathState, type PushEvent, type Tool, type View } from '../shared/contract.ts';
 import type { Handlers } from './bridge.ts';
 import { loadSettings, chooseTool, resetTool } from './settings.ts';
 import { loadProjects, checkProject, saveProject, removeProject, fullWhy, MAX_PROJECTS } from './projects.ts';
@@ -34,6 +35,12 @@ export interface Parts {
   push(event: PushEvent): void;
   /** The reader's view as it stands (reader/view.ts); reading it runs nothing. */
   view(): View;
+  /** W6: open an item's page or epic result in the owner's browser (open/open.ts); the item is one `view` lists, and `view` is the one to open it by. */
+  open(item: Item, view: View): Promise<Change>;
+  /** W6: the focus count waiting.get handed the window's page (alerts.ts Focus.read). */
+  seen?(seq: number): void;
+  /** W6: mark a markable item sent, or not (items/sent.ts), then read the view again. */
+  mark(item: Item, sent: boolean): Promise<Change>;
 }
 
 /** A queue: each job starts once the one before it has settled, passed or failed. */
@@ -48,6 +55,11 @@ export function serial(): <T>(job: () => Promise<T>) => Promise<T> {
 
 const DONE: Change = Object.freeze({ done: true });
 const notDone = (why: string): Change => ({ done: false, why });
+
+/** Why an item id the window sent is not one it may act on now, or the item. A moved tip is a new id, so an old click finds nothing. */
+export function listed(view: View, id: string): Item | string {
+  return view.items.find((i) => i.id === id) ?? 'that item has left the list or moved on: the list shows it as it is now';
+}
 
 /** The set tools' folders: what the PATH's fallback adds to the system PATH. */
 function toolDirs(tools: Partial<Record<Tool, string>>): string[] {
@@ -80,6 +92,8 @@ export function makeHandlers(parts: Parts): Handlers {
   const queue = serial();
   // One dialog flow at a time, outside `queue`: a dialog may stay open as long as the owner likes.
   const dialogs = serial();
+  // One Open at a time (review round 1, handlers.ts:167): a copy of a tip is made once, never by two at once; outside `queue`, so a copy holds up no setting.
+  const opens = serial();
   const changed = () => parts.push('state.changed');
   const runOpts = () => ({ path: parts.loginPath.entries, ...(parts.env === undefined ? {} : { source: parts.env }) });
 
@@ -123,11 +137,15 @@ export function makeHandlers(parts: Parts): Handlers {
         });
       }),
 
-    'projects.remove': (args) =>
-      queue(async (): Promise<Change> => {
-        const r = await removeProject(appDir, args.project as string, changed);
-        return r.ok ? DONE : notDone(r.why);
-      }),
+    'projects.remove': async (args): Promise<Change> => {
+      const r = await queue(() => removeProject(appDir, args.project as string, changed));
+      if (!r.ok) return notDone(r.why);
+      // W6 (review round 1, open.ts:78): its copies of committed docs go with it, through the Opens' queue so an
+      // Open in flight finishes first (round 2, handlers.ts:143), and outside `queue`, which nothing slow may hold
+      // (round 3, handlers.ts:144). The id passed the project-id slot.
+      await opens(() => rm(path.join(appDir, 'open', args.project as string), { recursive: true, force: true }));
+      return DONE;
+    },
 
     'settings.choose': (args) =>
       dialogs(async (): Promise<Change> => {
@@ -152,6 +170,30 @@ export function makeHandlers(parts: Parts): Handlers {
     'alert.test': () => parts.testAlert(),
 
     // Not queued: the reader holds the view in memory; asking for it reads no file and runs no git.
-    'waiting.get': () => parts.view(),
+    'waiting.get': () => {
+      const view = parts.view();
+      // The page acts on the focus it is handed: a reload or a new window later drops only that one (round 3, alerts.ts:152).
+      if (view.focus !== null) parts.seen?.(view.focus.seq);
+      return view;
+    },
+
+    // W6. In its own queue: it reads git and writes only under the app folder's open/, apart from the files `queue` guards.
+    'item.open': (args) =>
+      opens(async (): Promise<Change> => {
+        const view = parts.view();
+        const item = listed(view, args.item as string);
+        if (typeof item === 'string') return notDone(item);
+        if (item.open === 'text') return notDone('a question shows its text in the list itself');
+        if (item.open === 'none') return notDone('this item has nothing to open');
+        return parts.open(item, view);
+      }),
+
+    'item.mark': (args) =>
+      queue(async (): Promise<Change> => {
+        const item = listed(parts.view(), args.item as string);
+        if (typeof item === 'string') return notDone(item);
+        if (!item.markable) return notDone('only a plan to read or a question can be marked sent');
+        return parts.mark(item, args.sent === 'yes');
+      }),
   };
 }

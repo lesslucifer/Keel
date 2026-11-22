@@ -1,8 +1,8 @@
 // The fake's fixtures: every scenario the browser mode names exists, and each one's AppState has
 // the shapes the contract gives state.get, so the screens are drawn from data the main part could send.
 import { expect, test } from 'vitest';
-import { NOTE_KINDS, PROJECT_ID_SOURCE, TOOL_NAMES, type AppState, type View } from '../../src/shared/contract.ts';
-import { SCENARIOS, SCENARIO_NAMES, VIEWS, VIEW_NAMES, scenarioOf } from '../../src/window/fake/fixtures.ts';
+import { ITEM_ID_SOURCE, ITEM_KINDS, NOTE_KINDS, PROJECT_ID_SOURCE, SLOT_CAP, TOOL_NAMES, type AppState, type View } from '../../src/shared/contract.ts';
+import { SCENARIOS, SCENARIO_NAMES, VIEWS, VIEW_NAMES, scenarioOf, viewOf } from '../../src/window/fake/fixtures.ts';
 
 /** Every way `s` departs from the contract's AppState, in words. */
 function problems(s: AppState): string[] {
@@ -90,11 +90,35 @@ function viewProblems(v: View): string[] {
     if (a.wu !== null && !WU.test(a.wu)) out.push(`alert ${a.n} wu`);
   }
   if (v.focus !== null && ((v.focus.wu !== null && !WU.test(v.focus.wu)) || !Number.isInteger(v.focus.seq))) out.push('focus');
+  if (v.git !== null) {
+    for (const tip of Object.keys(v.git.reviews)) if (!v.git.notes.cr.includes(tip)) out.push(`review ${tip} without a cr note`);
+    for (const b of [...v.git.open.epics, ...v.git.open.units, ...v.git.open.tasks]) if (!v.git.branches.some((x) => x.name === b)) out.push(`open ${b} is no branch`);
+    for (const [tip, at] of Object.entries(v.git.times)) if (!SHA.test(tip) || !iso(at)) out.push(`time ${tip}`);
+  }
+  if (v.changedAt !== null && !iso(v.changedAt)) out.push('changedAt');
+  const ids = new Set<string>();
+  for (const i of v.items) {
+    if (!new RegExp(ITEM_ID_SOURCE).test(i.id) || i.id.length > SLOT_CAP || ids.has(i.id)) out.push(`item ${i.id}`);
+    ids.add(i.id);
+    if (!(ITEM_KINDS as readonly string[]).includes(i.kind) || !i.id.startsWith(`${i.kind}/`)) out.push(`item ${i.id} kind`);
+    if (i.wu !== null && !WU.test(i.wu)) out.push(`item ${i.id} wu`);
+    if (i.since !== null && !iso(i.since)) out.push(`item ${i.id} since`);
+    if (i.tip !== null && !/^[0-9a-f]{7}$/.test(i.tip)) out.push(`item ${i.id} tip`);
+    if (i.title === '' || i.why === '') out.push(`item ${i.id} words`);
+    if ((i.open === 'text') !== (i.text.length > 0)) out.push(`item ${i.id} text`);
+    if (i.markable !== (i.kind === 'plan' || i.kind === 'question')) out.push(`item ${i.id} markable`);
+    if (i.group === 'sent' && !i.markable) out.push(`item ${i.id} sent`);
+  }
+  const order = ['yours', 'not-yours', 'sent'];
+  if (v.items.some((x, k) => k > 0 && order.indexOf(x.group) < order.indexOf((v.items[k - 1] as { group: string }).group))) out.push('items order');
+  const c = { yours: v.items.filter((i) => i.group === 'yours').length, notYours: v.items.filter((i) => i.group === 'not-yours').length, sent: v.items.filter((i) => i.group === 'sent').length };
+  if (JSON.stringify(c) !== JSON.stringify(v.counts)) out.push('counts');
+  if (!v.router.heard && v.items.some((i) => ['plan', 'question', 'worker', 'motion'].includes(i.kind))) out.push('router items while not heard');
   return out;
 }
 
-test('the views are exactly the five the fixtures name, and each passes the contract\'s shapes', () => {
-  expect([...VIEW_NAMES]).toEqual(['live', 'no-run', 'not-heard', 'after-restart', 'focus']);
+test('the views are exactly the seven the fixtures name, and each passes the contract\'s shapes', () => {
+  expect([...VIEW_NAMES]).toEqual(['live', 'every-kind', 'nothing-waits', 'no-run', 'not-heard', 'after-restart', 'focus']);
   expect(Object.keys(VIEWS).sort()).toEqual([...VIEW_NAMES].sort());
   for (const name of VIEW_NAMES) expect(viewProblems(VIEWS[name]), name).toEqual([]);
 });
@@ -116,4 +140,13 @@ test('each scenario carries a view: no-project the view with no project, every o
     if (name === 'no-project') expect(SCENARIOS[name].view.project, name).toBeNull();
     else expect(SCENARIOS[name].view, name).toEqual(VIEWS.live);
   }
+});
+
+test('every-kind holds each item kind in its group, nothing-waits holds none, and ?view= names a view or none', () => {
+  const kinds = new Set(VIEWS['every-kind'].items.map((i) => i.kind));
+  expect([...kinds].sort()).toEqual([...ITEM_KINDS].sort());
+  expect(new Set(VIEWS['every-kind'].items.map((i) => i.group))).toEqual(new Set(['yours', 'not-yours', 'sent']));
+  expect(VIEWS['nothing-waits'].items).toEqual([]);
+  expect(viewOf('every-kind')).toBe('every-kind');
+  for (const v of [null, '', 'x', 'constructor', '<b>live</b>']) expect(viewOf(v)).toBeNull();
 });

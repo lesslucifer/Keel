@@ -7,7 +7,7 @@
 // keel:// link (claimed only when packaged). The app keeps running with no window (DEC-77), so alerts
 // still come. Checked live on the owner's Mac.
 
-import { app, BrowserWindow, dialog, ipcMain, Notification, protocol, session, type OpenDialogOptions, type WebContents } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Notification, protocol, session, shell, type OpenDialogOptions, type WebContents } from 'electron';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ASK_CHANNEL, type Tool } from '../shared/contract.ts';
@@ -22,7 +22,10 @@ import { ViewReader } from './reader/view.ts';
 import { Watcher } from './watcher/watch.ts';
 import { Alerter, Focus, heldSink, type AlertSink } from './alerter/alerts.ts';
 import { openLink, schemeText } from './alerter/link.ts';
-import { fileSink, seamsOf } from './alerter/seams.ts';
+import { fileSink, openFileSink, seamsOf } from './alerter/seams.ts';
+import { openListed } from './open/open.ts';
+import { SentMarks } from './items/sent.ts';
+import { loadProjects } from './projects.ts';
 
 // Set by Forge's Vite plugin: the dev server's URL under electron-forge start (undefined in a
 // build), and the renderer's name, which names its build folder.
@@ -109,8 +112,12 @@ function openMain(): void {
   const action = onActivate({ windowOpen: open !== null, painted: now.painted, rendererGone: gone });
   if (open !== null) {
     // Not painted yet: ready-to-show shows it.
-    if (action === 'wait') return;
+    if (action === 'wait') {
+      focus.opened(false);
+      return;
+    }
     if (action === 'show') {
+      focus.opened(false);
       if (open.isMinimized()) open.restore();
       open.show();
       open.focus();
@@ -120,6 +127,8 @@ function openMain(): void {
     mainWindow = null;
     open.destroy();
   }
+  // A new window keeps the focus only when a click or a link opened it (alerts.ts Focus.opened).
+  focus.opened(true);
   const win = new BrowserWindow(windowOptions(path.join(__dirname, 'preload.cjs')));
   const life = windowLife();
   mainWindow = win;
@@ -129,8 +138,14 @@ function openMain(): void {
     win.show();
   });
   win.webContents.on('render-process-gone', () => life.gone());
-  // A new renderer has the page again (Reload from the View menu after a crash): the window is alive.
-  win.webContents.on('dom-ready', () => life.loaded());
+  // A new renderer has the page again (Reload from the View menu after a crash): the window is alive. A
+  // reload (any load after the first) starts with no focus already delivered (alerts.ts Focus.loaded).
+  let loads = 0;
+  win.webContents.on('dom-ready', () => {
+    life.loaded();
+    focus.loaded(loads === 0);
+    loads += 1;
+  });
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });
@@ -171,7 +186,7 @@ function pointed(): void {
 function alertSink(): AlertSink {
   if (seams.alertSink !== null) return fileSink(seams.alertSink);
   if (!Notification.isSupported()) return { show: () => undefined };
-  return heldSink((a) => new Notification({ title: a.title, body: a.body }));
+  return heldSink((a) => new Notification({ title: a.title, ...(a.subtitle === undefined ? {} : { subtitle: a.subtitle }), body: a.body }));
 }
 
 async function start(): Promise<void> {
@@ -184,16 +199,21 @@ async function start(): Promise<void> {
   const alerter = new Alerter({
     appDir,
     sink: alertSink(),
-    onClick: (wu) => {
-      focus.point(wu);
+    // The alert's project goes with its click: a click made after a switch points nothing there.
+    onClick: (wu, project) => {
+      focus.point(wu, project);
       pointed();
     },
   });
+  const parts = readerParts({ appDir, loginPath });
+  const marks = new SentMarks(appDir);
   const reader = new ViewReader({
-    ...readerParts({ appDir, loginPath }),
+    ...parts,
+    sent: (project) => marks.get(project),
     ...(seams.silenceMs === null ? {} : { silenceMs: seams.silenceMs }),
     alerter,
-    focus: () => focus.get(),
+    focus: (project) => focus.get(project),
+    projectChanged: () => focus.clear(),
     scheme: () => schemeText(app.getApplicationNameForProtocol('keel://')),
   });
   watcher = new Watcher({
@@ -215,6 +235,28 @@ async function start(): Promise<void> {
       if (event === 'state.changed') void watcher?.kick();
     },
     view: () => reader.view(),
+    seen: (seq) => focus.read(seq),
+    // Open: a copy of the committed docs (or an epic result in place) to the browser; W9's sink in its place when set.
+    // The project, the item and the facts from one view (open.ts openListed).
+    open: async (item, view) => {
+      const git = await parts.git();
+      if (git === null) return { done: false, why: 'git was not found: choose it in the settings' };
+      const sink = seams.openSink === null ? null : openFileSink(seams.openSink);
+      return openListed(item, view, (await loadProjects(appDir)).value.projects, {
+        appDir,
+        git,
+        runOptions: parts.runOptions,
+        openUrl: async (url) => (sink === null ? shell.openExternal(url) : sink(url)),
+      });
+    },
+    // Mark sent: the mark in the app folder, then a read now, so the window gets waiting.changed.
+    mark: async (item, sent) => {
+      const view = reader.view();
+      if (view.project === null) return { done: false, why: 'no project is listed' };
+      await marks.set(view.project.id, item.id, sent, new Set(view.items.filter((i) => i.markable).map((i) => i.id)));
+      await watcher?.kick();
+      return { done: true };
+    },
   });
   ipcMain.handle(ASK_CHANNEL, dispatcher(expected, handlers));
   started = true;

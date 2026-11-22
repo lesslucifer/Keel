@@ -26,6 +26,27 @@ test('a project-id slot takes p and 8 lowercase hex digits and nothing else', ()
   }
 });
 
+const ITEM: Slot = { kind: 'item-id' };
+
+test('an item-id slot takes kind/subject@version and nothing else: no path, no dot-dot segment, no other kind, nothing over the cap', () => {
+  for (const v of ['result/E-APPLIST.W6@0f1e2d3', 'epic-result/E-APPLIST@0123456789ab', 'plan/E-X.W1@abcdef0', 'question/merge-order@a1b2c3d4', 'worker/e-applist-w6@deadbeef', 'push/main@9a8b7c6', 'task/1a2b3c4d@0f1e2d3', 'motion/E-X.W2@a1b2c3d4']) {
+    assert.ok(slotAccepts(ITEM, v), v);
+  }
+  for (const v of ['', 'result/E-X.W1', 'result/E-X.W1@', 'result/@0f1e2d3', 'result/E-X.W1@0F1E2D3', 'result/E-X.W1@0f1e2d', 'result/E-X.W1@0f1e2d3c4b5a6', 'result/a/b@0f1e2d3', 'result/../x@0f1e2d3', '/etc/passwd', 'shell/E-X.W1@0f1e2d3', 'RESULT/E-X.W1@0f1e2d3', 'result/E X@0f1e2d3', `result/${'a'.repeat(42)}@0f1e2d3`, `epic-result/${'a'.repeat(41)}@0f1e2d3c4b5a`, ' result/E-X.W1@0f1e2d3', 'result/E-X.W1@0f1e2d3\n']) {
+    assert.ok(!slotAccepts(ITEM, v), JSON.stringify(v));
+  }
+});
+
+test('generated inputs: no random string passes the item-id slot unless it matches the item id and fits the cap', () => {
+  const rng = seeded(0x17e3);
+  const pattern = /^(?:result|epic-result|plan|question|worker|task|push|motion)\/[A-Za-z0-9._-]{1,41}@[0-9a-f]{7,12}$/;
+  const parts = ['result/', 'plan/', 'question/', '@', '/', '.', '..', '-', '_', 'E-X.W1', '0f1e2d3', 'a', 'F', ' ', '%2e', '\u0000'];
+  for (let i = 0; i < 3000; i++) {
+    const v = rng() < 0.5 ? hostileString(rng, 70) : Array.from({ length: 1 + Math.floor(rng() * 6) }, () => pick(rng, parts)).join('');
+    assert.equal(slotAccepts(ITEM, v), v.length <= SLOT_CAP && pattern.test(v), JSON.stringify(v));
+  }
+});
+
 test('a slot refuses every value that is not a string', () => {
   for (const v of [undefined, null, 1, 0, true, {}, [], ['git'], { toString: () => 'git' }, new String('git'), Symbol('git'), 1n]) {
     assert.ok(!slotAccepts(TOOL, v));

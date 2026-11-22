@@ -1,9 +1,10 @@
 // The screens' hooks over the bridge, and the sentences an answer becomes. useAppState holds the
-// main part's state, asked on mount and again on each state.changed; useAction runs one request at
-// a time and says its outcome. Every text here is shown as React text, never as markup.
+// main part's state, asked on mount and again on each state.changed; useWaiting (W6) holds the waiting
+// view, asked on mount and again on each waiting.changed; useAction runs one request at a time and
+// says its outcome. Every text here is shown as React text, never as markup.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AlertOutcome, Answer, AppState, Change, RequestName } from '../shared/contract.ts';
+import type { AlertOutcome, Answer, AppState, Change, RequestName, View } from '../shared/contract.ts';
 import { ask, onPush, useBridge, type Request } from './bridge.ts';
 
 /** A sentence ends with one full stop. */
@@ -33,7 +34,8 @@ export function alertText(a: Answer<AlertOutcome>): string {
 }
 
 /** What each change says when it was done. */
-const DONE_TEXT: Record<Exclude<RequestName, 'state.get' | 'alert.test' | 'waiting.get'>, string> = {
+const DONE_TEXT: Record<Exclude<RequestName, 'state.get' | 'alert.test' | 'waiting.get' | 'item.mark'>, string> = {
+  'item.open': 'Opened in your browser.',
   'projects.add': 'Project added.',
   'projects.remove': 'Project removed from the list. Add brings it back.',
   'settings.choose': 'Saved: Keel uses the chosen file.',
@@ -48,6 +50,8 @@ function outcomeText(request: Request, a: Answer): string {
       return answerText(a);
     case 'alert.test':
       return alertText(a as Answer<AlertOutcome>);
+    case 'item.mark':
+      return changeText(a as Answer<Change>, request.args.sent === 'yes' ? 'Marked sent: it waits for a sign under Sent.' : 'Back on your list.');
     default:
       return changeText(a as Answer<Change>, DONE_TEXT[request.name]);
   }
@@ -90,6 +94,53 @@ export function useAppState(): AppStateView {
   }, [bridge]);
 
   return view;
+}
+
+export interface WaitingView {
+  /** The last view the main part gave; null until the first. */
+  view: View | null;
+  /** The last ask's refusal or failure in words; '' once an ask succeeds. */
+  error: string;
+}
+
+/** The waiting view (the list): asked on mount and on each waiting.changed; the newest ask wins. */
+export function useWaiting(): WaitingView {
+  const bridge = useBridge();
+  const [waiting, setWaiting] = useState<WaitingView>({ view: null, error: '' });
+  const latest = useRef(0);
+
+  useEffect(() => {
+    let live = true;
+    const refresh = async () => {
+      const mine = (latest.current += 1);
+      let a: Answer<View>;
+      try {
+        a = await ask(bridge, 'waiting.get', {});
+      } catch (e) {
+        a = { ok: false, failed: e instanceof Error ? e.message : String(e) };
+      }
+      if (!live || mine !== latest.current) return;
+      setWaiting((w) => (a.ok ? { view: a.value, error: '' } : { view: w.view, error: answerText(a) }));
+    };
+    void refresh();
+    const off = onPush(bridge, 'waiting.changed', () => void refresh());
+    return () => {
+      live = false;
+      off();
+    };
+  }, [bridge]);
+
+  return waiting;
+}
+
+/** When an item has waited since, in words: the time today, else the day and the time. */
+export function sinceText(iso: string | null, now: Date = new Date()): string {
+  if (iso === null) return '';
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '';
+  const time = at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const today = at.toDateString() === now.toDateString();
+  return today ? `since ${time}` : `since ${at.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}, ${time}`;
 }
 
 export interface ActionView {

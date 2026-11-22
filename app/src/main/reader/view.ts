@@ -1,10 +1,12 @@
 // The view waiting.get answers: the one listed project's git facts, the router's values, its alerts
 // and where a click points the window. ViewReader rebuilds it on each read (the watcher's), from the
 // project list, the git reader and the update log's reader, and says whether it changed; the view
-// is read from memory, so waiting.get runs nothing.
+// is read from memory, so waiting.get runs nothing. W6: the list, drawn from those facts by the item rules
+// (src/shared/items.ts) with the owner's sent marks, on every read.
 
 import type { Focus, RouterAlert, View } from '../../shared/contract.ts';
 import type { RunOptions } from '../commands.ts';
+import { countsOf, itemsOf } from '../../shared/items.ts';
 import { GitReader, noFacts } from './git.ts';
 import { RouterLog, type StoredAlert } from './log.ts';
 import { projectTargets, type WatchTarget } from '../watcher/watch.ts';
@@ -19,6 +21,9 @@ export function emptyView(): View {
     focus: null,
     scheme: null,
     readAt: null,
+    changedAt: null,
+    items: [],
+    counts: { yours: 0, notYours: 0, sent: 0 },
   };
 }
 
@@ -38,11 +43,15 @@ export interface ViewReaderParts {
   now?: () => number;
   silenceMs?: number;
   /** Shows what is new among the run's alert lines; answers the numbers shown so far (alerter/alerts.ts). */
-  alerter?: { take(run: string | null, alerts: readonly StoredAlert[]): Promise<Set<number>> };
-  /** Where a click or a link points the window. */
-  focus?: () => Focus | null;
+  alerter?: { take(run: string | null, alerts: readonly StoredAlert[], project?: { id: string; name: string } | null): Promise<Set<number>> };
+  /** Where a click or a link points the window, as the listed project (or none) sees it. */
+  focus?: (project: string | null) => Focus | null;
   /** The app macOS opens keel:// links with. */
   scheme?: () => string | null;
+  /** W6: called when the listed project changes (another, or none), not at the first read: the shell clears the focus. */
+  projectChanged?: () => void;
+  /** W6: the item ids the owner marked sent for this project (items/sent.ts); none when not given. */
+  sent?: (project: string) => Promise<ReadonlySet<string>>;
 }
 
 /** A stored alert as the view shows it; whether it was shown is the alerter's to say. */
@@ -50,9 +59,9 @@ export function viewAlert(a: StoredAlert, shown: boolean): RouterAlert {
   return { n: a.n, at: a.at, headline: a.headline, lines: [...a.lines], wu: a.wu ?? null, link: a.link ?? null, shown };
 }
 
-/** The view without the time it was read: two reads that found the same are no change. */
+/** The view without the times it was read and last changed: two reads that found the same are no change. */
 function same(a: View, b: View): boolean {
-  return JSON.stringify({ ...a, readAt: null }) === JSON.stringify({ ...b, readAt: null });
+  return JSON.stringify({ ...a, readAt: null, changedAt: null }) === JSON.stringify({ ...b, readAt: null, changedAt: null });
 }
 
 export class ViewReader {
@@ -62,15 +71,19 @@ export class ViewReader {
   private log: RouterLog | null = null;
   private readonly parts: ViewReaderParts;
   private readonly now: () => number;
+  /** The project the last read listed: undefined before the first read. */
+  private lastProject: string | null | undefined = undefined;
 
   constructor(parts: ViewReaderParts) {
     this.parts = parts;
     this.now = parts.now ?? Date.now;
   }
 
-  /** The view as last read; a copy. */
+  /** The view as last read, a copy, with the focus as it stands now (a window made since the last read sees no old focus). */
   view(): View {
-    return structuredClone(this.current);
+    const v = structuredClone(this.current);
+    if (this.parts.focus !== undefined) v.focus = this.parts.focus(v.project?.id ?? null);
+    return v;
   }
 
   /** What the watcher watches: the listed project's git folder and update log folder, or nothing. */
@@ -86,6 +99,9 @@ export class ViewReader {
   /** Read it all again; whether the view changed. */
   async read(): Promise<boolean> {
     const p = await this.parts.project();
+    const id = p?.id ?? null;
+    if (this.lastProject !== undefined && this.lastProject !== id) this.parts.projectChanged?.();
+    this.lastProject = id;
     let next: View;
     if (p === null) {
       this.root = null;
@@ -93,7 +109,7 @@ export class ViewReader {
       this.log = null;
       // No project: still the alerter's take, with no run, so the session's first take is spent here, not at a later Add.
       await this.parts.alerter?.take(null, []);
-      next = { ...emptyView(), focus: this.parts.focus?.() ?? null, scheme: this.parts.scheme?.() ?? null };
+      next = { ...emptyView(), focus: this.parts.focus?.(null) ?? null, scheme: this.parts.scheme?.() ?? null, changedAt: this.current.changedAt };
     } else {
       if (p.path !== this.root || this.git === null || this.log === null) {
         this.root = p.path;
@@ -105,19 +121,25 @@ export class ViewReader {
       await this.log.refresh();
       const router = this.log.view();
       const stored = this.log.alerts();
-      const shown = this.parts.alerter === undefined ? new Set<number>() : await this.parts.alerter.take(router.run, stored);
+      const shown = this.parts.alerter === undefined ? new Set<number>() : await this.parts.alerter.take(router.run, stored, { id: p.id, name: p.name });
+      const sent = this.parts.sent === undefined ? new Set<string>() : await this.parts.sent(p.id);
+      const items = itemsOf({ git: facts, router, sent });
       next = {
         project: { id: p.id, name: p.name },
         git: facts,
         router,
         alerts: stored.map((a) => viewAlert(a, shown.has(a.n))),
-        focus: this.parts.focus?.() ?? null,
+        focus: this.parts.focus?.(p.id) ?? null,
         scheme: this.parts.scheme?.() ?? null,
         readAt: new Date(this.now()).toISOString(),
+        changedAt: this.current.changedAt,
+        items,
+        counts: countsOf(items),
       };
     }
     const changed = !same(next, this.current);
-    this.current = next;
+    // The last change: when a read found the view changed (the first read included), as the clock says.
+    this.current = changed ? { ...next, changedAt: new Date(this.now()).toISOString() } : next;
     return changed;
   }
 }

@@ -2,7 +2,8 @@
 // from. Each state has the contract's shapes (test-window/unit/fixtures.test.ts) and paths shaped like
 // a real Mac's. Never part of the shipped page: only browser.tsx and the window's tests import fake/.
 
-import type { AppState, Tool, ToolState, View } from '../../shared/contract.ts';
+import type { AppState, GitFacts, Tool, ToolState, View } from '../../shared/contract.ts';
+import { countsOf, itemId, itemsOf } from '../../shared/items.ts';
 
 export const SCENARIO_NAMES = Object.freeze(['one-project', 'no-project', 'tool-missing', 'path-fallback', 'refusing', 'failing', 'slow'] as const);
 export type ScenarioName = (typeof SCENARIO_NAMES)[number];
@@ -47,7 +48,7 @@ const with_ = (change: (s: AppState) => void): AppState => {
 
 // ---- The waiting view (waiting.get): named views the tests draw from; each scenario carries one. ----
 
-export const VIEW_NAMES = Object.freeze(['live', 'no-run', 'not-heard', 'after-restart', 'focus'] as const);
+export const VIEW_NAMES = Object.freeze(['live', 'every-kind', 'nothing-waits', 'no-run', 'not-heard', 'after-restart', 'focus'] as const);
 export type ViewName = (typeof VIEW_NAMES)[number];
 
 const RUN = 'keel-1c.20261122-083000.4242';
@@ -55,12 +56,21 @@ const EPIC_TIP = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 const WU_TIP = '0f1e2d3c4b5a69788796a5b4c3d2e1f001234567';
 const MAIN_TIP = '9a8b7c6d5e4f30211203f4e5d6c7b8a998765432';
 
+const NO_COUNTS = Object.freeze({ yours: 0, notYours: 0, sent: 0 });
+
+/** `v` with its list drawn by the main part's own rules (src/shared/items.ts), `sent` the ids marked sent. */
+export function withItems(v: View, sent: readonly string[] = []): View {
+  v.items = itemsOf({ git: v.git, router: v.router, sent: new Set(sent) });
+  v.counts = countsOf(v.items);
+  return v;
+}
+
 function liveView(): View {
-  return {
+  return withItems({
     project: { id: 'p0a1b2c3d', name: 'keel' },
     git: {
       branches: [
-        { name: 'main', tip: MAIN_TIP, upstream: 'origin/main', ahead: 1, behind: 0, gone: false },
+        { name: 'main', tip: MAIN_TIP, upstream: 'origin/main', remote: 'origin', ahead: 1, behind: 0, gone: false },
         { name: 'epic/E-APPLIST', tip: EPIC_TIP, upstream: null, ahead: 0, behind: 0, gone: false },
         { name: 'wu/E-APPLIST/w5-reader-watcher', tip: WU_TIP, upstream: null, ahead: 0, behind: 0, gone: false },
       ],
@@ -70,6 +80,9 @@ function liveView(): View {
         { path: '/Users/you/code/keel', branch: 'main', tip: MAIN_TIP },
         { path: '/Users/you/code/keel-w5', branch: 'wu/E-APPLIST/w5-reader-watcher', tip: WU_TIP },
       ],
+      open: { epics: ['epic/E-APPLIST'], units: ['wu/E-APPLIST/w5-reader-watcher'], tasks: [] },
+      reviews: { [WU_TIP]: { verdict: 'PASS', blockers: 0, importants: 0 } },
+      times: { [MAIN_TIP]: '2026-11-22T08:30:00+08:00', [EPIC_TIP]: '2026-11-22T08:10:00+08:00', [WU_TIP]: '2026-11-22T08:41:00+08:00' },
       problem: null,
     },
     router: {
@@ -92,17 +105,82 @@ function liveView(): View {
     focus: null,
     scheme: 'Keel',
     readAt: '2026-11-22T08:45:01+08:00',
+    changedAt: '2026-11-22T08:44:01+08:00',
+    items: [],
+    counts: { ...NO_COUNTS },
+  });
+}
+
+// Every kind at once: one more epic, four more work units, a task, a worker waiting, a sent plan.
+const EPIC2_TIP = 'b2c3d4e5f60718293a4b5c6d7e8f901234567891';
+const W6_TIP = '1e2d3c4b5a69788796a5b4c3d2e1f00123456789';
+const W8_TIP = '2d3c4b5a69788796a5b4c3d2e1f0012345678901';
+const W9_TIP = '3c4b5a69788796a5b4c3d2e1f001234567890123';
+const W10_TIP = '4b5a69788796a5b4c3d2e1f00123456789012345';
+const TASK_TIP = '5a69788796a5b4c3d2e1f0012345678901234567';
+
+function everyKindView(): View {
+  const v = liveView();
+  const git = v.git as GitFacts;
+  git.branches.find((b) => b.name === 'main')!.ahead = 2;
+  git.branches.push(
+    { name: 'epic/E-KEELFIX', tip: EPIC2_TIP, upstream: null, ahead: 0, behind: 0, gone: false },
+    { name: 'wu/E-APPLIST/w6-list-screens', tip: W6_TIP, upstream: null, ahead: 0, behind: 0, gone: false },
+    { name: 'wu/E-APPLIST/w8-window-foundation', tip: W8_TIP, upstream: null, ahead: 0, behind: 0, gone: false },
+    { name: 'wu/E-APPLIST/w9-close', tip: W9_TIP, upstream: null, ahead: 0, behind: 0, gone: false },
+    { name: 'wu/E-APPLIST/w10-pnpm', tip: W10_TIP, upstream: null, ahead: 0, behind: 0, gone: false },
+    { name: 'wu/E-APPLIST/w10-pnpm_lockfile', tip: TASK_TIP, upstream: null, ahead: 0, behind: 0, gone: false },
+  );
+  git.notes = { mr: [WU_TIP], cr: [EPIC2_TIP, WU_TIP, W6_TIP], dod: [] };
+  git.merged = { main: [], 'epic/E-APPLIST': [], 'epic/E-KEELFIX': [], 'wu/E-APPLIST/w10-pnpm': [] };
+  // As the reader's openSets lists them from these branches and merged reads.
+  git.open = {
+    epics: ['epic/E-APPLIST', 'epic/E-KEELFIX'],
+    units: ['wu/E-APPLIST/w5-reader-watcher', 'wu/E-APPLIST/w6-list-screens', 'wu/E-APPLIST/w8-window-foundation', 'wu/E-APPLIST/w9-close', 'wu/E-APPLIST/w10-pnpm'],
+    tasks: ['wu/E-APPLIST/w10-pnpm_lockfile'],
   };
+  git.reviews = {
+    [EPIC2_TIP]: { verdict: 'PASS', blockers: 0, importants: 0 },
+    [WU_TIP]: { verdict: 'PASS', blockers: 0, importants: 0 },
+    [W6_TIP]: { verdict: 'FAIL', blockers: 2, importants: 1 },
+  };
+  Object.assign(git.times, {
+    [EPIC2_TIP]: '2026-11-22T07:50:00+08:00',
+    [W6_TIP]: '2026-11-22T08:35:00+08:00',
+    [W8_TIP]: '2026-11-22T08:20:00+08:00',
+    [W9_TIP]: '2026-11-22T08:05:00+08:00',
+    [W10_TIP]: '2026-11-22T08:15:00+08:00',
+    [TASK_TIP]: '2026-11-22T08:25:00+08:00',
+  });
+  Object.assign(v.router.values, {
+    'wu/E-APPLIST.W6/stage': { stage: 'in review', tip: '1e2d3c4' },
+    'wu/E-APPLIST.W8/stage': { stage: 'plan to read', tip: '2d3c4b5' },
+    'wu/E-APPLIST.W9/stage': { stage: 'plan to read', tip: '3c4b5a6' },
+    'wu/E-APPLIST.W10/stage': { stage: 'building' },
+    'worker/e-applist-w10': { state: 'busy', branch: 'wu/E-APPLIST/w10-pnpm', tip: '4b5a697', dirty: 2, active: '2026-11-22T08:43:00Z' },
+    'worker/e-applist-w6-fix': { state: 'waiting', waiting: 'a permission prompt', session: 'b7c1e2d4-5f60-4a1b-9c3d-2e1f00123456', branch: 'wu/E-APPLIST/w6-list-screens', active: '2026-11-22T08:42:00Z' },
+  });
+  // The W9 plan is marked sent.
+  return withItems(v, [itemId('plan', 'E-APPLIST.W9', '3c4b5a6')]);
 }
 
 const viewWith = (change: (v: View) => void): View => {
   const v = liveView();
   change(v);
-  return v;
+  return withItems(v);
 };
 
 export const VIEWS: Readonly<Record<ViewName, View>> = Object.freeze({
   live: liveView(),
+  'every-kind': everyKindView(),
+  'nothing-waits': viewWith((v) => {
+    const git = v.git as GitFacts;
+    git.branches.find((b) => b.name === 'main')!.ahead = 0;
+    git.notes.cr = [];
+    git.reviews = {};
+    delete v.router.values['question/merge-order'];
+    delete v.router.values['wu/E-APPLIST.W5/stage'];
+  }),
   'no-run': viewWith((v) => {
     v.router = { run: null, n: 0, values: {}, heard: false, lastAt: null, problem: null };
     v.alerts = [];
@@ -118,9 +196,25 @@ export const VIEWS: Readonly<Record<ViewName, View>> = Object.freeze({
   focus: viewWith((v) => (v.focus = { wu: 'E-APPLIST.W5', seq: 1 })),
 });
 
+/** The view a ?view= value names, or null for the scenario's own. */
+export function viewOf(value: string | null): ViewName | null {
+  return (VIEW_NAMES as readonly string[]).includes(value ?? '') ? (value as ViewName) : null;
+}
+
 /** The view with no project listed: nothing read. */
 export function noProjectView(): View {
-  return { project: null, git: null, router: { run: null, n: 0, values: {}, heard: false, lastAt: null, problem: null }, alerts: [], focus: null, scheme: 'Keel', readAt: null };
+  return {
+    project: null,
+    git: null,
+    router: { run: null, n: 0, values: {}, heard: false, lastAt: null, problem: null },
+    alerts: [],
+    focus: null,
+    scheme: 'Keel',
+    readAt: null,
+    changedAt: null,
+    items: [],
+    counts: { ...NO_COUNTS },
+  };
 }
 
 export const SCENARIOS: Readonly<Record<ScenarioName, Scenario>> = Object.freeze({

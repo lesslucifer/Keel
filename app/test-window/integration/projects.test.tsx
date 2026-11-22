@@ -9,25 +9,31 @@ import { TOOL_NAMES, type Answer } from '../../src/shared/contract.ts';
 import { App } from '../../src/window/App.tsx';
 import { BridgeProvider } from '../../src/window/bridge.ts';
 import { deferred, makeStub, ok, sampleState, type Handler, type Stub } from '../support/stub-bridge.ts';
+import { VIEWS, noProjectView } from '../../src/window/fake/fixtures.ts';
 
 function draw(handlers: Parameters<typeof makeStub>[0] = {}): Stub {
   const stub = makeStub(handlers);
   render(
     <BridgeProvider bridge={stub.bridge}>
-      <App />
+      <App start="projects" />
     </BridgeProvider>,
   );
   return stub;
 }
 
+/** The asks screen 6 made: the frame's own waiting.get (W6, for the tab's count) left out. */
+const own = (stub: Stub) => stub.asks.filter((a) => a.name !== 'waiting.get');
+const names = (stub: Stub) => own(stub).map((a) => a.name);
+
 const ready = () => screen.findByRole('heading', { name: 'Project' });
 const tool = (name: string) => screen.getByRole('group', { name });
-const buttons = () => screen.getAllByRole('button');
+/** The screen's own buttons, in <main>: the frame's tabs (W6) are not the screen's controls. */
+const buttons = () => within(screen.getByRole('main')).getAllByRole('button');
 
 test('on mount: one state.get, and the fixture drawn - the project, each tool with its path, source and problem, the PATH\'s source, the version', async () => {
   const stub = draw();
   await ready();
-  expect(stub.names()).toEqual(['state.get']);
+  expect(names(stub)).toEqual(['state.get']);
   expect(screen.getByRole('banner')).toHaveTextContent('Keel');
   expect(screen.getByRole('banner')).toHaveTextContent('keel');
   expect(screen.getByText('/Users/owner/code/keel')).toBeInTheDocument();
@@ -50,7 +56,7 @@ test('Remove sends projects.remove with the project\'s id, and says what happene
   const stub = draw({ 'projects.remove': () => ok({ done: true }) });
   await ready();
   await userEvent.click(screen.getByRole('button', { name: 'Remove from the list' }));
-  expect(stub.asks.slice(1)).toEqual([{ name: 'projects.remove', args: { project: 'p0a1b2c3d' } }]);
+  expect(own(stub).slice(1)).toEqual([{ name: 'projects.remove', args: { project: 'p0a1b2c3d' } }]);
   expect(await screen.findByRole('status')).toHaveTextContent('Project removed from the list. Add brings it back.');
 });
 
@@ -60,7 +66,7 @@ test('with no project, the screen says so and Add sends projects.add with no arg
   expect(screen.getByRole('banner')).toHaveTextContent('No project');
   expect(screen.queryByRole('button', { name: 'Remove from the list' })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Add a project…' }));
-  expect(stub.asks.slice(1)).toEqual([{ name: 'projects.add', args: {} }]);
+  expect(own(stub).slice(1)).toEqual([{ name: 'projects.add', args: {} }]);
   expect(await screen.findByRole('status')).toHaveTextContent('Not done: cancelled.');
 });
 
@@ -68,7 +74,7 @@ test('Choose sends settings.choose with its tool, for each of the three tools', 
   const stub = draw({ 'settings.choose': () => ok({ done: true }) });
   await ready();
   for (const name of TOOL_NAMES) await userEvent.click(within(tool(name)).getByRole('button', { name: 'Choose…' }));
-  expect(stub.asks.slice(1)).toEqual(TOOL_NAMES.map((t) => ({ name: 'settings.choose', args: { tool: t } })));
+  expect(own(stub).slice(1)).toEqual(TOOL_NAMES.map((t) => ({ name: 'settings.choose', args: { tool: t } })));
 });
 
 test('Use the PATH shows only for a tool set in Keel and sends settings.reset with its tool, for each of the three tools', async () => {
@@ -77,7 +83,7 @@ test('Use the PATH shows only for a tool set in Keel and sends settings.reset wi
   const stub = draw({ 'state.get': () => ok(allSet), 'settings.reset': () => ok({ done: true }) });
   await ready();
   for (const name of TOOL_NAMES) await userEvent.click(within(tool(name)).getByRole('button', { name: 'Use the PATH' }));
-  expect(stub.asks.slice(1)).toEqual(TOOL_NAMES.map((t) => ({ name: 'settings.reset', args: { tool: t } })));
+  expect(own(stub).slice(1)).toEqual(TOOL_NAMES.map((t) => ({ name: 'settings.reset', args: { tool: t } })));
 });
 
 test('Use the PATH is absent for a tool found on the PATH or missing', async () => {
@@ -94,7 +100,7 @@ test('Send a test alert sends alert.test and shows each of the three outcomes in
     const stub = draw({ 'alert.test': () => ok(outcome) });
     await ready();
     await userEvent.click(screen.getByRole('button', { name: 'Send a test alert' }));
-    expect(stub.names()).toEqual(['state.get', 'alert.test']);
+    expect(names(stub)).toEqual(['state.get', 'alert.test']);
     expect(await screen.findByRole('status')).toHaveTextContent(words);
     expect(screen.getByRole('status').textContent).toBe(words);
     cleanup();
@@ -119,7 +125,7 @@ test('a state.changed push causes exactly one new state.get, and the new state i
   stub.answer('state.get', () => ok(sampleState({ projects: [{ id: 'p11111111', path: '/Users/owner/code/other', name: 'other' }] })));
   act(() => void stub.push('state.changed'));
   expect(await screen.findByText('/Users/owner/code/other')).toBeInTheDocument();
-  expect(stub.names()).toEqual(['state.get', 'state.get']);
+  expect(names(stub)).toEqual(['state.get', 'state.get']);
   expect(screen.queryByText('/Users/owner/code/keel')).not.toBeInTheDocument();
 });
 
@@ -130,7 +136,7 @@ test('a refused and a failed answer each show as text', async () => {
   expect(await screen.findByRole('status')).toHaveTextContent('Keel refused the request (bad-slot:tool).');
   await userEvent.click(screen.getByRole('button', { name: 'Send a test alert' }));
   await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('The request failed: no Notification.'));
-  expect(stub.names()).toEqual(['state.get', 'settings.reset', 'alert.test']);
+  expect(names(stub)).toEqual(['state.get', 'settings.reset', 'alert.test']);
 });
 
 test('a later state.get that fails keeps the screen and shows the error as text', async () => {
@@ -237,4 +243,28 @@ test('a problem, a fallback and an error are words in the problem colour', async
   draw({ 'state.get': () => ok(sampleState({ path: { entries: ['/usr/bin'], source: 'fallback', reason: 'no answer' } })) });
   expect((await screen.findByText('A fallback: no answer.')).className.split(/\s+/)).toContain('text-problem');
   expect(within(tool('claude')).getByText('not found on the PATH').className.split(/\s+/)).toContain('text-problem');
+});
+
+test('W6, fields 6.4 and 6.5: the project shows how many wait, each count a way to Waits on you, and when Keel last saw a change', async () => {
+  const view = structuredClone(VIEWS['every-kind']);
+  view.changedAt = new Date().toISOString();
+  draw({ 'waiting.get': () => ok(view) });
+  await ready();
+  const counts = await screen.findByRole('group', { name: 'The list' });
+  expect(within(counts).getByRole('button', { name: `${view.counts.yours} wait on you` })).toBeInTheDocument();
+  expect(within(counts).getByRole('button', { name: `${view.counts.notYours} not yours` })).toBeInTheDocument();
+  expect(within(counts).getByRole('button', { name: `${view.counts.sent} sent` })).toBeInTheDocument();
+  expect(within(counts).getByText(/^Last change seen \S/)).toBeInTheDocument();
+  await userEvent.click(within(counts).getByRole('button', { name: `${view.counts.notYours} not yours` }));
+  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Waits on you');
+});
+
+test('W6: with no list read yet the project says so; with no project there is no list field', async () => {
+  draw({ 'waiting.get': (): Answer => ({ ok: false, refused: 'fixture' }) });
+  await ready();
+  expect(within(screen.getByRole('group', { name: 'The list' })).getByText('Not read yet.')).toBeInTheDocument();
+  cleanup();
+  draw({ 'state.get': () => ok(sampleState({ projects: [] })), 'waiting.get': () => ok(noProjectView()) });
+  await ready();
+  expect(screen.queryByRole('group', { name: 'The list' })).not.toBeInTheDocument();
 });

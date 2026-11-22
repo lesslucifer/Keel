@@ -1,7 +1,10 @@
 // The git reader's parsers, each on fabricated output as git prints it, and the targets whose merges it reads.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, onMainLine, mayBeFresh, NOTE_TIPS } from '../../src/main/reader/git.ts';
+import { refOk } from '../../src/main/commands.ts';
+import { keelBranch, isEpicBranch, isUnitBranch, isTaskBranch } from '../../src/shared/names.ts';
+import { seeded, pick } from '../support/seeded.ts';
+import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, onMainLine, mayBeFresh, NOTE_TIPS, parseReview, parseTime, timeTips, TIME_TIPS, openSets, parseRemote } from '../../src/main/reader/git.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -123,4 +126,69 @@ test('an epic main holds may be fresh only while one of its units is outside mai
   assert.equal(mayBeFresh('epic/E-X', [br('epic/E-X', M), br('wu/E-X/w1', U)], new Set(['wu/E-X/w1'])), false);
   // a task is not a unit.
   assert.equal(mayBeFresh('epic/E-X', [br('epic/E-X', M), br('wu/E-X/w1_task', W)], new Set()), false);
+});
+
+test('a review note reads as its verdict and open counts; anything else reads as no verdict', () => {
+  assert.deepEqual(parseReview('{"schema":"cr/v1","verdict":"PASS","blockers":0,"importants":0,"code_diff_hash":"x"}\n'), { verdict: 'PASS', blockers: 0, importants: 0 });
+  assert.deepEqual(parseReview('{"schema":"cr/v1","verdict":"FAIL","blockers":2,"importants":1}'), { verdict: 'FAIL', blockers: 2, importants: 1 });
+  assert.deepEqual(parseReview('{"schema":"cr/v1","verdict":"WAIVED","waiver":"cap","blockers":1,"importants":0}'), { verdict: 'WAIVED', blockers: 1, importants: 0 });
+  for (const out of ['', 'not json', '[]', 'null', '{"schema":"cr/v1","verdict":"pass"}', '{"schema":"mr/v1","verdict":"PASS"}', '{"verdict":"PASS"}', '{"schema":"cr/v1","verdict":7}']) {
+    assert.deepEqual(parseReview(out), { verdict: null, blockers: 0, importants: 0 }, out);
+  }
+  assert.deepEqual(parseReview('{"schema":"cr/v1","verdict":"FAIL","blockers":-1,"importants":1.5}'), { verdict: 'FAIL', blockers: 0, importants: 0 }, 'odd counts read as 0');
+});
+
+test('a commit time reads as its ISO 8601 line; anything else as none', () => {
+  assert.equal(parseTime('2026-11-22T08:20:00+07:00\n'), '2026-11-22T08:20:00+07:00');
+  for (const out of ['', 'yesterday', '2026-11-22', '2026-11-22T08:20:00+07:00\nmore']) assert.equal(parseTime(out), null, out);
+});
+
+test('the tips whose times the list shows: main, each open epic, each open work unit and each task of one, once each, at most TIME_TIPS', () => {
+  const b = (name: string, tip: string) => ({ name, tip, upstream: null, ahead: 0, behind: 0, gone: false });
+  const branches = [b('main', 'm'.repeat(40)), b('epic/E-A', 'e'.repeat(40)), b('epic/E-B', 'f'.repeat(40)), b('wu/E-A/w1', '1'.repeat(40)), b('wu/E-A/w1_t', '2'.repeat(40)), b('wu/E-A/w2', '3'.repeat(40)), b('wu/E-B/w1', '4'.repeat(40)), b('feature/x', '5'.repeat(40)), b('wu/E-A/w3', '1'.repeat(40))];
+  const merged = { main: ['epic/E-B'], 'epic/E-A': ['wu/E-A/w2'], 'wu/E-A/w1': [] };
+  assert.deepEqual(timeTips(branches, merged), { tips: ['m'.repeat(40), 'e'.repeat(40), '1'.repeat(40), '2'.repeat(40)], over: false });
+  const many = Array.from({ length: TIME_TIPS + 5 }, (_, i) => b(`wu/E-A/w${i + 1}`, i.toString(16).padStart(40, '0')));
+  const r = timeTips([b('epic/E-A', 'e'.repeat(40)), ...many], {});
+  assert.equal(r.tips.length, TIME_TIPS);
+  assert.equal(r.over, true);
+});
+
+test('W6 review round 1 (items.ts:82): the open sets the list draws from, by the reader\'s one rule - keel\'s names only, and a unit or task only when its target was read', () => {
+  const names = ['main', 'epic/E-A', 'epic/E-B', 'epic/E-C', 'wu/E-A/w1', 'wu/E-A/w2', 'wu/E-A/w1_probe', 'wu/E-A/w1_caf\u00e9', 'wu/E-A/w1_done', 'wu/E-B/w1', 'wu/E-C/w1', 'wu/E-A/w\u00e9', 'feature/x'];
+  const merged = { main: ['epic/E-B'], 'epic/E-A': ['wu/E-A/w2'], 'wu/E-A/w1': ['wu/E-A/w1_done'], 'epic/E-B': [] };
+  assert.deepEqual(openSets(names, merged), {
+    epics: ['epic/E-A', 'epic/E-C'],
+    units: ['wu/E-A/w1'],
+    tasks: ['wu/E-A/w1_probe'],
+  }, 'E-C: its epic read failed, so its unit is not listed; a name keel does not name is never listed; a held task is not');
+  // A fresh epic main holds (no commit of its own) stays open, as the notes read has it.
+  assert.deepEqual(openSets(names, { ...merged, 'epic/E-B': [] }, new Set(['epic/E-B'])).epics, ['epic/E-A', 'epic/E-B', 'epic/E-C']);
+  // Main's read failed: no epic is listed as open; with no main at all, every epic is.
+  assert.deepEqual(openSets(names, { 'epic/E-A': [] }), { epics: [], units: [], tasks: [] });
+  assert.deepEqual(openSets(names.filter((n) => n !== 'main'), { 'epic/E-A': [] }).epics, ['epic/E-A', 'epic/E-B', 'epic/E-C']);
+  // A unit with a task whose own read failed lists no task.
+  assert.deepEqual(openSets(names, { main: [], 'epic/E-A': [], 'epic/E-B': [], 'epic/E-C': [] }).tasks, []);
+});
+
+test('W6 review round 2 (items.ts:103): one grammar for keel\'s branch names: the fixed commands\' ref check and the reader\'s open sets both read src/shared/names.ts', () => {
+  const rng = seeded(0xb4a7);
+  const parts = ['main', 'epic/', 'wu/', 'E-A', 'w1', '-x', '_t', '/', '.', '..', '.lock', 'é', ' ', 'a'];
+  for (let i = 0; i < 3000; i++) {
+    const name = Array.from({ length: 1 + Math.floor(rng() * 6) }, () => pick(rng, parts)).join('');
+    assert.equal(refOk(`refs/heads/${name}`), keelBranch(name), name);
+    const sets = openSets(['main', name], { main: [] });
+    if (sets.epics.includes(name)) assert.ok(isEpicBranch(name), name);
+  }
+  for (const n of ['epic/E-A', 'epic/foo']) assert.ok(isEpicBranch(n), n);
+  for (const n of ['wu/E-A/w1-x', 'wu/E-A/reader']) assert.ok(isUnitBranch(n) && !isTaskBranch(n), n);
+  for (const n of ['wu/E-A/w1-x_probe']) assert.ok(isTaskBranch(n) && !isUnitBranch(n), n);
+  for (const n of ['wu/E-A/w1_a_b', 'wu/E-A/caf\u00e9', 'epic/a/b', 'main']) assert.ok(!isUnitBranch(n) && !isTaskBranch(n) && !isEpicBranch(n), n);
+});
+
+test('W6 review round 3 (git.ts:350): main\'s remote as the config read answers it; none for one starting with -, a control character, empty or overlong', () => {
+  assert.equal(parseRemote('origin\n'), 'origin');
+  assert.equal(parseRemote('team/origin\n'), 'team/origin');
+  assert.equal(parseRemote('.\n'), '.');
+  for (const out of ['--receive-pack=touch p\n', '-x\n', '\n', '', 'a\u0007b\n', `${'a'.repeat(201)}\n`]) assert.equal(parseRemote(out), null, JSON.stringify(out));
 });

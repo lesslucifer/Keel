@@ -3,15 +3,18 @@
 // contract gains fails here until the fake has it), each change pushes state.changed once and the
 // next state.get shows it, and it refuses what the main part refuses.
 import { expect, test } from 'vitest';
-import { PUSH_EVENTS, REQUESTS, SLOT_CAP, type Answer, type AppState, type RequestName, type Slot } from '../../src/shared/contract.ts';
+import { PUSH_EVENTS, REQUESTS, SLOT_CAP, type Answer, type AppState, type RequestName, type Slot, type View } from '../../src/shared/contract.ts';
 import { makeFakeBridge } from '../../src/window/fake/fake.ts';
-import { SCENARIOS, SCENARIO_NAMES } from '../../src/window/fake/fixtures.ts';
+import { SCENARIOS, SCENARIO_NAMES, VIEWS } from '../../src/window/fake/fixtures.ts';
 
 const now = () => Promise.resolve();
 
-/** Arguments every slot of `name` accepts, built from the contract's table. */
+/** Arguments every slot of `name` accepts, built from the contract's table; an item slot takes the live view's first page item. */
 function validArgs(name: RequestName, projectId: string): Record<string, string> {
-  return Object.fromEntries(Object.entries(REQUESTS[name]).map(([k, slot]: [string, Slot]) => [k, slot.kind === 'enum' ? (slot.values[0] as string) : projectId]));
+  const item = SCENARIOS['one-project'].view.items.find((i) => i.open === 'page')?.id ?? '';
+  return Object.fromEntries(
+    Object.entries(REQUESTS[name]).map(([k, slot]: [string, Slot]) => [k, slot.kind === 'enum' ? (slot.values[0] as string) : slot.kind === 'item-id' ? item : projectId]),
+  );
 }
 
 async function stateOf(bridge: ReturnType<typeof makeFakeBridge>): Promise<AppState> {
@@ -112,6 +115,8 @@ test('a malformed call is refused like the main part refuses it, and nothing cha
     ['settings.choose', { tool: 7 }, 'bad-slot:tool'],
     ['projects.remove', { project: '/Users/owner/code/keel' }, 'bad-slot:project'],
     ['projects.remove', { project: 'p'.repeat(SLOT_CAP + 1) }, 'bad-slot:project'],
+    ['item.open', { item: '/Users/owner/code/keel/docs/x.html' }, 'bad-slot:item'],
+    ['item.mark', { item: 'plan/E-APPLIST.W8@2d3c4b5', sent: 'maybe' }, 'bad-slot:sent'],
   ];
   for (const [name, args, refused] of cases) {
     expect(await bridge.ask(name, args as Record<string, string>), `${name} ${JSON.stringify(args)}`).toEqual({ ok: false, refused });
@@ -138,4 +143,48 @@ test('waiting.get answers the scenario\'s view as a copy, changes nothing and pu
   if (a.ok) a.value.alerts.length = 0;
   expect(await bridge.ask('waiting.get', {})).toEqual({ ok: true, value: SCENARIOS['one-project'].view });
   expect(pushes).toBe(0);
+});
+
+test('item.open answers as the main part would: done for a listed page or epic result, why not for a gone, text or empty item; it pushes nothing', async () => {
+  const bridge = makeFakeBridge('one-project', { wait: now, view: 'every-kind' });
+  let pushes = 0;
+  for (const event of Object.keys(PUSH_EVENTS)) bridge.on(event, () => (pushes += 1));
+  const idOf = (kind: string) => VIEWS['every-kind'].items.find((i) => i.kind === kind)?.id ?? '';
+  expect(await bridge.ask('item.open', { item: idOf('result') })).toEqual({ ok: true, value: { done: true } });
+  expect(await bridge.ask('item.open', { item: idOf('epic-result') })).toEqual({ ok: true, value: { done: true } });
+  expect(await bridge.ask('item.open', { item: idOf('question') })).toEqual({ ok: true, value: { done: false, why: expect.stringMatching(/in the list itself/) } });
+  expect(await bridge.ask('item.open', { item: idOf('push') })).toEqual({ ok: true, value: { done: false, why: expect.stringMatching(/nothing to open/) } });
+  expect(await bridge.ask('item.open', { item: 'result/E-APPLIST.W5@1111111' })).toEqual({ ok: true, value: { done: false, why: expect.stringMatching(/left the list/) } });
+  expect(pushes).toBe(0);
+});
+
+test('item.mark moves a plan to Sent and back, recounts, and pushes waiting.changed once per change; a result is not markable', async () => {
+  const bridge = makeFakeBridge('one-project', { wait: now, view: 'every-kind' });
+  let waiting = 0;
+  let state = 0;
+  bridge.on('waiting.changed', () => (waiting += 1));
+  bridge.on('state.changed', () => (state += 1));
+  const view = async () => {
+    const a = (await bridge.ask('waiting.get', {})) as Answer<View>;
+    if (!a.ok) throw new Error('waiting.get did not answer');
+    return a.value;
+  };
+  const before = (await view()).counts;
+  expect(await bridge.ask('item.mark', { item: 'plan/E-APPLIST.W8@2d3c4b5', sent: 'yes' })).toEqual({ ok: true, value: { done: true } });
+  expect(waiting).toBe(1);
+  let after = await view();
+  expect(after.items.find((i) => i.id === 'plan/E-APPLIST.W8@2d3c4b5')?.group).toBe('sent');
+  expect(after.counts).toEqual({ yours: before.yours - 1, notYours: before.notYours, sent: before.sent + 1 });
+  expect(await bridge.ask('item.mark', { item: 'plan/E-APPLIST.W8@2d3c4b5', sent: 'no' })).toEqual({ ok: true, value: { done: true } });
+  after = await view();
+  expect(after.items.find((i) => i.id === 'plan/E-APPLIST.W8@2d3c4b5')?.group).toBe('yours');
+  expect(after.counts).toEqual(before);
+  expect(await bridge.ask('item.mark', { item: VIEWS['every-kind'].items.find((i) => i.kind === 'result')?.id ?? '', sent: 'yes' })).toEqual({ ok: true, value: { done: false, why: expect.stringMatching(/only a plan/) } });
+  expect(waiting).toBe(2);
+  expect(state).toBe(0);
+});
+
+test('a view named in the options replaces the scenario\'s own', async () => {
+  const a = (await makeFakeBridge('one-project', { wait: now, view: 'every-kind' }).ask('waiting.get', {})) as Answer<View>;
+  expect(a).toEqual({ ok: true, value: VIEWS['every-kind'] });
 });
