@@ -89,6 +89,17 @@ open:
         merged only when name-rev puts it off main's line. Source: E-APPLIST.W5's review, its cr note WAIVED at the
         round cap on 7a5bd13; recorded by the E-APPLIST.W10 plan. Taken by: this row; at E-APPLIST's close (W9) it
         moves to a row of its own if still open.
+      - >-
+        Open copies only the docs that read whole as UTF-8 text (app/src/main/open/open.ts): the fixed reads answer
+        text, so a binary file under docs/ (an image a page shows) is not copied and the copied page shows it broken.
+        Keel's docs are HTML, YAML and Markdown today. Fix when a doc first carries one: a byte-exact blob read
+        (capture answering a Buffer). Source: E-APPLIST.W6 result, follow-ups. Taken by: this row; at E-APPLIST's
+        close (W9) it moves to a row of its own if still open.
+      - >-
+        A question on the list has no 'since': the router's state keeps each key's value, not the time it was set,
+        so the item shows no time (app/src/shared/items.ts). Fix: keep the time of the line that set each key in the
+        log reader (app/src/main/reader/log.ts) and show it. Source: E-APPLIST.W6 result, follow-ups. Taken by: this
+        row; at E-APPLIST's close (W9) it moves to a row of its own if still open.
 
   - id: A4
     title: "E-APPSIGN · Sign off and merge from the app"
