@@ -1,47 +1,14 @@
 // The router's update log at its real boundary: a temp project whose .router/app/ is written by the
-// real scripts/router-app.sh (copied in, as the router runs it from its checkout), read by the
-// reader the app runs. Needs sh, git and jq, as the Rust suite's router tests do.
+// real scripts/router-app.sh (test/support/router.ts), read by the reader the app runs.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFileSync, chmodSync, readFileSync, writeFileSync, appendFileSync, renameSync, symlinkSync, mkdirSync, existsSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync, appendFileSync, renameSync, symlinkSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { RouterLog, SILENCE_MS } from '../../src/main/reader/log.ts';
-import { tempDir, realGit, sh, mk, snapshot } from '../support/fs.ts';
+import { mk, snapshot } from '../support/fs.ts';
+import { routerProject, routerApp, appDir, routerState as state } from '../support/router.ts';
 
-const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const SCRIPT = path.join(REPO, 'scripts', 'router-app.sh');
-const GIT = realGit();
-
-function onPath(name: string): string {
-  for (const dir of (process.env.PATH ?? '').split(':')) {
-    if (dir.startsWith('/') && existsSync(path.join(dir, name))) return path.join(dir, name);
-  }
-  throw new Error(`no ${name} on PATH: the router's update log needs it`);
-}
-const JQ = onPath('jq');
-
-/** A temp main checkout holding a copy of router-app.sh, as a project the router runs in. */
-function project(t: { after: (fn: () => void) => void }): string {
-  const dir = mk(path.join(tempDir(t, 'router-log'), 'proj'));
-  sh(GIT, dir, ['init', '-q']);
-  mk(path.join(dir, 'scripts'));
-  copyFileSync(SCRIPT, path.join(dir, 'scripts', 'router-app.sh'));
-  chmodSync(path.join(dir, 'scripts', 'router-app.sh'), 0o755);
-  return dir;
-}
-
-/** Run the project's router-app.sh with `args`, as the router or the watchdog does. */
-function routerApp(dir: string, ...args: string[]): string {
-  return execFileSync(path.join(dir, 'scripts', 'router-app.sh'), args, {
-    encoding: 'utf8',
-    env: { PATH: [path.dirname(JQ), path.dirname(GIT), '/usr/bin', '/bin'].join(':'), HOME: dir, LANG: 'C' },
-  });
-}
-
-const appDir = (dir: string) => path.join(dir, '.router', 'app');
-const state = (dir: string) => JSON.parse(readFileSync(path.join(appDir(dir), 'state.json'), 'utf8')) as { run: string; n: number; at: string; values: Record<string, unknown>; alerts: unknown[] };
+const project = (t: { after: (fn: () => void) => void }) => routerProject(t, 'router-log');
 
 /** A started log with a stage, a worker, a question, an alert and a delete. */
 function busyLog(dir: string): void {

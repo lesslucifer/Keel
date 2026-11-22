@@ -98,7 +98,8 @@ function failed(r: Captured, what: string): string | null {
   return null;
 }
 
-const noFacts = (problem: string): GitFacts => ({ branches: [], notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], problem });
+/** No git facts, and why. */
+export const noFacts = (problem: string): GitFacts => ({ branches: [], notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], problem });
 
 /** One project's git reader; read(git) reads it all again with that git. */
 export class GitReader {

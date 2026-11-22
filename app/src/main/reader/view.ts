@@ -1,7 +1,13 @@
 // The view waiting.get answers: the one listed project's git facts, the router's values, its alerts
-// and where a click points the window. The reader builds it; until it has read anything, this.
+// and where a click points the window. ViewReader rebuilds it on each read (the watcher's), from the
+// project list, the git reader and the update log's reader, and says whether it changed; the view
+// is read from memory, so waiting.get runs nothing.
 
-import type { View } from '../../shared/contract.ts';
+import type { RouterAlert, View } from '../../shared/contract.ts';
+import type { RunOptions } from '../commands.ts';
+import { GitReader, noFacts } from './git.ts';
+import { RouterLog, type StoredAlert } from './log.ts';
+import { projectTargets, type WatchTarget } from '../watcher/watch.ts';
 
 /** What waiting.get answers before anything is read: no project, no git, no router run, not heard. */
 export function emptyView(): View {
@@ -14,4 +20,93 @@ export function emptyView(): View {
     scheme: null,
     readAt: null,
   };
+}
+
+export interface ListedProject {
+  id: string;
+  name: string;
+  /** Its main checkout. */
+  path: string;
+}
+
+export interface ViewReaderParts {
+  /** The one listed project, or null (projects.json in the app's folder). */
+  project(): Promise<ListedProject | null>;
+  /** The git to read with (set in Keel, or found on the PATH), or null when none is usable. */
+  git(): Promise<string | null>;
+  runOptions: Omit<RunOptions, 'before245' | 'timeoutMs'>;
+  now?: () => number;
+  silenceMs?: number;
+}
+
+/** A stored alert as the view shows it; whether it was shown is the alerter's to say. */
+export function viewAlert(a: StoredAlert, shown: boolean): RouterAlert {
+  return { n: a.n, at: a.at, headline: a.headline, lines: [...a.lines], wu: a.wu ?? null, link: a.link ?? null, shown };
+}
+
+/** The view without the time it was read: two reads that found the same are no change. */
+function same(a: View, b: View): boolean {
+  return JSON.stringify({ ...a, readAt: null }) === JSON.stringify({ ...b, readAt: null });
+}
+
+export class ViewReader {
+  private current: View = emptyView();
+  private root: string | null = null;
+  private git: GitReader | null = null;
+  private log: RouterLog | null = null;
+  private readonly parts: ViewReaderParts;
+  private readonly now: () => number;
+
+  constructor(parts: ViewReaderParts) {
+    this.parts = parts;
+    this.now = parts.now ?? Date.now;
+  }
+
+  /** The view as last read; a copy. */
+  view(): View {
+    return structuredClone(this.current);
+  }
+
+  /** What the watcher watches: the listed project's git folder and update log folder, or nothing. */
+  targets(): WatchTarget[] {
+    return this.root === null ? [] : projectTargets(this.root);
+  }
+
+  /** The listed project's update log reader, or null (the alerter reads its alerts). */
+  routerLog(): RouterLog | null {
+    return this.log;
+  }
+
+  /** Read it all again; whether the view changed. */
+  async read(): Promise<boolean> {
+    const p = await this.parts.project();
+    let next: View;
+    if (p === null) {
+      this.root = null;
+      this.git = null;
+      this.log = null;
+      next = emptyView();
+    } else {
+      if (p.path !== this.root || this.git === null || this.log === null) {
+        this.root = p.path;
+        this.git = new GitReader(p.path, this.parts.runOptions);
+        this.log = new RouterLog({ root: p.path, now: this.now, ...(this.parts.silenceMs === undefined ? {} : { silenceMs: this.parts.silenceMs }) });
+      }
+      const git = await this.parts.git();
+      const facts = git === null ? noFacts('git was not found: choose it in the settings') : await this.git.read(git);
+      await this.log.refresh();
+      next = {
+        project: { id: p.id, name: p.name },
+        git: facts,
+        router: this.log.view(),
+        alerts: this.log.alerts().map((a) => viewAlert(a, false)),
+        focus: null,
+        scheme: null,
+        readAt: new Date(this.now()).toISOString(),
+      };
+    }
+    const changed = !same(next, this.current);
+    this.current = next;
+    return changed;
+  }
 }
