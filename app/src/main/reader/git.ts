@@ -1,6 +1,7 @@
 // The git facts the list needs, read with the fixed commands only (commands.ts): every local branch
 // with its tip and where it stands against its upstream (no fetch: the app never fetches), which
-// tips carry a sign-off (mr), review (cr) or gate (dod) note, what main, each epic and each work unit
+// open branches' tips carry a sign-off (mr), review (cr) or gate (dod) note (one tip at a time, so the
+// cost never grows with history), what main, each epic and each work unit
 // with a task holds, and the worktrees. Reads only; never a note's body, a diff or a fetch.
 // A git older than 2.45 reads a project only when it is not a partial clone, as checkProject decides:
 // the reader asks the project's config once per git and remembers the answer.
@@ -37,17 +38,6 @@ export function parseRefs(out: string): { branches: GitBranch[]; noteKinds: Set<
     });
   }
   return { branches, noteKinds };
-}
-
-/** A notes list ("<note> <object>" per line): the annotated objects that are in `tips`, in the list's order. */
-export function parseNotes(out: string, tips: ReadonlySet<string>): string[] {
-  const found: string[] = [];
-  for (const line of out.split('\n')) {
-    const [note, object, extra] = line.split(' ');
-    if (extra !== undefined || note === undefined || object === undefined || !ID.test(note) || !ID.test(object)) continue;
-    if (tips.has(object) && !found.includes(object)) found.push(object);
-  }
-  return found;
 }
 
 /** A merged read: the branch names it lists. */
@@ -88,6 +78,24 @@ export function heldBy(target: string, names: readonly string[]): string[] {
   if (target === 'main') return named.filter((n) => EPIC.test(n));
   if (EPIC.test(target)) return named.filter((n) => n.startsWith(`wu/${target.slice('epic/'.length)}/`));
   return named.filter((n) => n.startsWith(`${target}_`));
+}
+
+/** The most open branches whose tips' notes one read asks about. */
+export const NOTE_TIPS = 40;
+
+/**
+ * The tips whose notes the list needs, each once: each work unit not yet merged into its epic, each
+ * epic not yet merged into main (a merged one's item has left the list). At most NOTE_TIPS; `over`
+ * says more were open. So the notes read is bounded by the open branches, never by history.
+ */
+export function openTips(branches: readonly GitBranch[], merged: Readonly<Record<string, readonly string[]>>): { tips: string[]; over: boolean } {
+  const open: string[] = [];
+  for (const b of branches) {
+    if (!refOk(`${HEADS}${b.name}`)) continue;
+    const isOpen = EPIC.test(b.name) ? !(merged.main ?? []).includes(b.name) : WU.test(b.name) ? !(merged[`epic/${b.name.split('/')[1] as string}`] ?? []).includes(b.name) : false;
+    if (isOpen && !open.includes(b.tip)) open.push(b.tip);
+  }
+  return { tips: open.slice(0, NOTE_TIPS), over: open.length > NOTE_TIPS };
 }
 
 /** Why a run gave no answer to read, or null. */
@@ -147,18 +155,23 @@ export class GitReader {
       if (why !== null) problems.push(why);
       return why === null && typeof r !== 'string' ? r.stdout : null;
     };
-    const tips = new Set(branches.map((b) => b.tip));
-    for (const kind of NOTE_KINDS) {
-      if (!noteKinds.has(kind)) continue;
-      const out = take(await this.run(git, 'notes-list', { kind }), `its ${kind} notes`);
-      if (out !== null) facts.notes[kind] = parseNotes(out, tips);
-    }
     const names = branches.map((b) => b.name);
     for (const target of mergeTargets(names)) {
       const out = take(await this.run(git, 'merged', { ref: `${HEADS}${target}` }), `what ${target} holds`);
       if (out === null) continue;
       const listed = new Set(parseMerged(out));
       facts.merged[target] = heldBy(target, names).filter((n) => listed.has(n));
+    }
+    const open = openTips(branches, facts.merged);
+    if (open.over) problems.push(`more than ${NOTE_TIPS} open branches: notes read for the first ${NOTE_TIPS} only`);
+    for (const kind of NOTE_KINDS) {
+      if (!noteKinds.has(kind)) continue;
+      for (const tip of open.tips) {
+        const r = await this.run(git, 'note-of', { kind, object: tip });
+        // Exit 1 is "no note found for object": the tip carries none.
+        if (typeof r !== 'string' && r.code === 1 && !r.timedOut && !r.cut) continue;
+        if (take(r, `the ${kind} note on ${tip.slice(0, 7)}`) !== null) facts.notes[kind].push(tip);
+      }
     }
     const wt = take(await this.run(git, 'worktrees', {}), 'its worktrees');
     if (wt !== null) facts.worktrees = parseWorktrees(wt);

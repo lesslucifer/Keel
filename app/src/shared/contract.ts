@@ -122,7 +122,7 @@ export interface GitWorktree {
 /** What git says, read with the fixed commands only. */
 export interface GitFacts {
   branches: GitBranch[];
-  /** Per kind, the tips (full ids) that carry a note of that kind. */
+  /** Per kind, the open branches' tips (full ids: work units not in their epic, epics not in main) that carry a note of that kind. */
   notes: Record<NoteKind, string[]>;
   /** Per target branch (main, each epic, each work unit with a task), the branches whose tips it holds. */
   merged: Record<string, string[]>;

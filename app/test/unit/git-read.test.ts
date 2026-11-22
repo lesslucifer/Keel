@@ -1,7 +1,7 @@
 // The git reader's parsers, each on fabricated output as git prints it, and the targets whose merges it reads.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRefs, parseNotes, parseMerged, parseWorktrees, mergeTargets, heldBy } from '../../src/main/reader/git.ts';
+import { parseRefs, parseMerged, parseWorktrees, mergeTargets, heldBy, openTips, NOTE_TIPS } from '../../src/main/reader/git.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -36,13 +36,6 @@ test('a refs row that is not four fields, or a tip that is not a full id, is dro
   assert.deepEqual(parseRefs('').branches, []);
 });
 
-test('a notes list gives the annotated objects that are branch tips, nothing else', () => {
-  const n1 = '1'.repeat(40);
-  const out = `${n1} ${A}\n${n1} ${C}\n${n1} ${'e'.repeat(40)}\nbad line\n`;
-  assert.deepEqual(parseNotes(out, new Set([A, B, C])), [A, C]);
-  assert.deepEqual(parseNotes('', new Set([A])), []);
-});
-
 test('a merged read gives the branch names, refs outside refs/heads/ dropped', () => {
   assert.deepEqual(parseMerged('refs/heads/main\nrefs/heads/epic/E-X\nrefs/remotes/o/x\n\n'), ['main', 'epic/E-X']);
 });
@@ -71,4 +64,22 @@ test('the merge targets are main, each epic and each work unit that has a task b
   assert.deepEqual(heldBy('epic/E-A', names), ['wu/E-A/w1', 'wu/E-A/w1_look-variants', 'wu/E-A/w2']);
   assert.deepEqual(heldBy('wu/E-A/w1', names), ['wu/E-A/w1_look-variants']);
   assert.deepEqual(mergeTargets(['epic/E-A']), ['epic/E-A']);
+});
+
+const br = (name: string, tip: string) => ({ name, tip, upstream: null, ahead: 0, behind: 0, gone: false });
+
+test('the tips whose notes are read: each work unit not yet in its epic, each epic not yet in main, each tip once; not tasks, main or other branches', () => {
+  const D = 'd'.repeat(40);
+  const E = 'e'.repeat(40);
+  const branches = [br('main', A), br('epic/E-A', B), br('epic/E-B', C), br('wu/E-A/w1', D), br('wu/E-A/w2', E), br('wu/E-A/w2_task', A), br('wu/E-C/w1', B), br('topic', C)];
+  const merged = { main: ['epic/E-B'], 'epic/E-A': ['wu/E-A/w1'] };
+  assert.deepEqual(openTips(branches, merged), { tips: [B, E], over: false });
+  assert.equal(NOTE_TIPS, 40);
+});
+
+test('past NOTE_TIPS open branches, only the first are read, and it says so', () => {
+  const many = Array.from({ length: NOTE_TIPS + 3 }, (_, i) => br(`wu/E-A/w${i}`, i.toString(16).padStart(40, '0')));
+  const r = openTips(many, {});
+  assert.equal(r.tips.length, NOTE_TIPS);
+  assert.equal(r.over, true);
 });

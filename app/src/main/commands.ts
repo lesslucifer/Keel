@@ -41,7 +41,7 @@ export const OUTPUT_CAP = 1024 * 1024;
 /** The most a stream is read, and dropped, after the answer; then it is paused (its writer waits, unharmed). */
 export const LATE_OUTPUT_CAP = 1024 * 1024;
 
-type SlotName = 'project' | 'kind' | 'ref';
+type SlotName = 'project' | 'kind' | 'ref' | 'object';
 /** A word of a command: fixed text, or a slot's value (after a fixed prefix, as one argument). */
 type Token = string | { readonly slot: SlotName; readonly prefix?: string };
 const PROJECT: Token = Object.freeze({ slot: 'project' as const });
@@ -53,6 +53,9 @@ const KINDS: readonly string[] = Object.freeze(['mr', 'cr', 'dod']);
 const SEG = '[A-Za-z0-9][A-Za-z0-9._-]{0,99}';
 /** A branch the merged read takes: main, an epic or a work unit (a task too) by keel's naming, as a full ref. */
 const REF = new RegExp(`^refs/heads/(?:main|epic/${SEG}|wu/${SEG}/${SEG})$`);
+
+/** A full object id, sha-1 or sha-256: the one form a note read takes for its object. */
+const OBJECT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 /** Whether `v` is a ref the merged read may name. */
 export function refOk(v: unknown): v is string {
@@ -71,15 +74,16 @@ export const COMMANDS: Readonly<Record<string, readonly Token[]>> = Object.freez
     'promisor-config': Object.freeze(['-C', PROJECT, 'config', '--get-regexp', PROMISOR_KEYS]),
     // W5: every local branch with its tip and where it stands against its upstream (no fetch), and the notes refs that exist.
     refs: Object.freeze(['-C', PROJECT, 'for-each-ref', '--format=%(refname)%00%(objectname)%00%(upstream:short)%00%(upstream:track,nobracket)', 'refs/heads/', 'refs/notes/']),
-    // W5: one kind's notes, as note and annotated object pairs; run only for a notes ref the refs read listed.
-    'notes-list': Object.freeze(['-C', PROJECT, 'notes', Object.freeze({ slot: 'kind' as const, prefix: '--ref=refs/notes/' }), 'list']),
+    // W5: whether one tip carries a note of one kind (exit 0 and the note's id; exit 1: none); run only for a
+    // notes ref the refs read listed, and only for an open branch's tip, so the cost never grows with history.
+    'note-of': Object.freeze(['-C', PROJECT, 'notes', Object.freeze({ slot: 'kind' as const, prefix: '--ref=refs/notes/' }), 'list', Object.freeze({ slot: 'object' as const })]),
     // W5: the local branches whose tips a branch holds; the ref joined to its option, so it is never read as one.
     merged: Object.freeze(['-C', PROJECT, 'for-each-ref', Object.freeze({ slot: 'ref' as const, prefix: '--merged=' }), '--format=%(refname)', 'refs/heads/']),
     worktrees: Object.freeze(['-C', PROJECT, 'worktree', 'list', '--porcelain']),
   }),
 );
 
-export type CommandName = 'toplevel' | 'common-dir' | 'has-config' | 'promisor-config' | 'refs' | 'notes-list' | 'merged' | 'worktrees';
+export type CommandName = 'toplevel' | 'common-dir' | 'has-config' | 'promisor-config' | 'refs' | 'note-of' | 'merged' | 'worktrees';
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 
@@ -112,6 +116,7 @@ export function argv(name: string, slots: Record<string, string>, before245 = fa
   if (!projectOk(slots.project)) throw new Error(`${name}: the project must be an absolute path with no control character`);
   if ('kind' in slots && !KINDS.includes(slots.kind as string)) throw new Error(`${name}: the note kind must be one of ${KINDS.join(', ')}`);
   if ('ref' in slots && !refOk(slots.ref)) throw new Error(`${name}: the ref must be main, an epic or a work unit branch, as refs/heads/...`);
+  if ('object' in slots && !OBJECT.test(slots.object as string)) throw new Error(`${name}: the object must be a full object id`);
   return lock(
     shape.map((t) => (typeof t === 'string' ? t : `${t.prefix ?? ''}${slots[t.slot] as string}`)),
     before245,

@@ -2,7 +2,7 @@
 // epic, work units, a task, notes, a worktree), read through the fixed commands only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { GitReader } from '../../src/main/reader/git.ts';
 import { OUTPUT_CAP } from '../../src/main/commands.ts';
@@ -51,7 +51,8 @@ test('the reader gives the branches with their upstreams, the sign-off and revie
   assert.deepEqual(Object.keys(byName).sort(), ['epic/E-A', 'main', 'wu/E-A/w1', 'wu/E-A/w2', 'wu/E-A/w2_probe']);
   assert.deepEqual(byName.main, { name: 'main', tip: rev(dir, 'main'), upstream: 'origin/main', ahead: 1, behind: 0, gone: false });
   assert.deepEqual(byName['epic/E-A'], { name: 'epic/E-A', tip: rev(dir, 'epic/E-A'), upstream: null, ahead: 0, behind: 0, gone: false });
-  assert.deepEqual(facts.notes, { mr: [rev(dir, 'wu/E-A/w1')], cr: [rev(dir, 'wu/E-A/w2')], dod: [] });
+  // wu/E-A/w1 is merged into its epic: its item has left, so its notes are not read. wu/E-A/w2 is open.
+  assert.deepEqual(facts.notes, { mr: [], cr: [rev(dir, 'wu/E-A/w2')], dod: [] });
   assert.deepEqual(facts.merged, { main: [], 'epic/E-A': ['wu/E-A/w1'], 'wu/E-A/w2': [] });
   assert.deepEqual(facts.worktrees, [
     { path: dir, branch: 'main', tip: rev(dir, 'main') },
@@ -68,8 +69,10 @@ test('a merge, a sign-off note and a task merged into its work unit each show at
   sh(GIT, path.join(root, 'wt-w2'), ['merge', '-q', '--no-ff', '-m', 'task in', 'wu/E-A/w2_probe']);
   const facts = await reader.read(GIT);
   assert.deepEqual(facts.merged['wu/E-A/w2'], ['wu/E-A/w2_probe']);
-  // The work unit's tip moved past its note: the note stays on the old tip, not on the branch.
-  assert.deepEqual(facts.notes.mr, [rev(dir, 'wu/E-A/w1')]);
+  // The work unit's tip moved past its note (the merge of its task): the note stays on the old tip, not on the branch.
+  assert.deepEqual(facts.notes.mr, []);
+  sh(GIT, dir, ['notes', '--ref=mr', 'add', '-m', '{}', 'wu/E-A/w2']);
+  assert.deepEqual((await reader.read(GIT)).notes.mr, [rev(dir, 'wu/E-A/w2')], 'a sign-off note on an open work unit\'s tip shows');
   sh(GIT, dir, ['push', '-q', 'origin', 'main']);
   assert.deepEqual((await reader.read(GIT)).branches.find((b) => b.name === 'main')?.ahead, 0);
 });
@@ -117,4 +120,23 @@ test('a git answer cut at the output cap is a problem, never read as whole: no b
   const facts = await new GitReader(dir, opts(root)).read(big);
   assert.deepEqual(facts.branches, []);
   assert.match(facts.problem ?? '', /cut/);
+});
+
+test('the notes read is bounded by the open branches, not by history: many old notes add no git run and no answer', async (t) => {
+  const { root, dir } = world(t);
+  const rec = path.join(root, 'git-runs.txt');
+  const counting = program(path.join(mk(path.join(root, 'counting')), 'git'), `#!/bin/sh\necho "$*" >> ${rec}\nexec ${GIT} "$@"\n`);
+  const reader = new GitReader(dir, opts(root));
+  const before = await reader.read(counting);
+  const notesRuns = () => readFileSync(rec, 'utf8').split('\n').filter((l) => l.includes(' notes ')).length;
+  const first = notesRuns();
+  for (let i = 0; i < 30; i++) {
+    sh(GIT, dir, ['commit', '-q', '--allow-empty', '-m', `old ${i}`]);
+    sh(GIT, dir, ['notes', '--ref=cr', 'add', '-m', '{}', 'HEAD']);
+    sh(GIT, dir, ['notes', '--ref=mr', 'add', '-m', '{}', 'HEAD']);
+  }
+  sh(GIT, dir, ['reset', '-q', '--hard', 'HEAD~30']);
+  const after = await reader.read(counting);
+  assert.equal(notesRuns() - first, first, 'the same number of notes runs as before the 60 old notes');
+  assert.deepEqual(after.notes, before.notes);
 });

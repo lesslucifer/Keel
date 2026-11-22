@@ -10,7 +10,7 @@ const SLOTS: Record<string, Record<string, string>> = {
   'has-config': { project: '/p' },
   'promisor-config': { project: '/p' },
   refs: { project: '/p' },
-  'notes-list': { project: '/p', kind: 'mr' },
+  'note-of': { project: '/p', kind: 'mr', object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
   merged: { project: '/p', ref: 'refs/heads/epic/E-APPLIST' },
   worktrees: { project: '/p' },
 };
@@ -22,7 +22,7 @@ test('every fixed command starts with -c core.fsmonitor=false --no-optional-lock
 });
 
 test('the fixed commands of W7 are exactly the plan\'s three lines and, for a git older than 2.45, the promisor read; W5 adds four reads', () => {
-  assert.deepEqual(Object.keys(COMMANDS).sort(), ['common-dir', 'has-config', 'merged', 'notes-list', 'promisor-config', 'refs', 'toplevel', 'worktrees']);
+  assert.deepEqual(Object.keys(COMMANDS).sort(), ['common-dir', 'has-config', 'merged', 'note-of', 'promisor-config', 'refs', 'toplevel', 'worktrees']);
   assert.deepEqual(argv('promisor-config', { project: '/Users/me/Keel' }, true), [
     '-c', 'core.fsmonitor=false', '--no-optional-locks', '-C', '/Users/me/Keel', 'config', '--get-regexp', '^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$',
   ]);
@@ -119,17 +119,20 @@ test('the locked flag an old git refused is read from exit 129 and the flag name
   assert.equal(refusedFlag(r(129, `unknown option: --frobnicate\n${usage}`)), null);
 });
 
-test('W5\'s four reads are exactly these lines: the branches and notes refs, one kind\'s notes, what a branch holds, the worktrees', () => {
+test('W5\'s four reads are exactly these lines: the branches and notes refs, one tip\'s note of one kind, what a branch holds, the worktrees', () => {
   const P = '/Users/me/Keel';
   assert.deepEqual(argv('refs', { project: P }), [...LOCKED, '-C', P, 'for-each-ref', '--format=%(refname)%00%(objectname)%00%(upstream:short)%00%(upstream:track,nobracket)', 'refs/heads/', 'refs/notes/']);
-  assert.deepEqual(argv('notes-list', { project: P, kind: 'cr' }), [...LOCKED, '-C', P, 'notes', '--ref=refs/notes/cr', 'list']);
+  assert.deepEqual(argv('note-of', { project: P, kind: 'cr', object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }), [...LOCKED, '-C', P, 'notes', '--ref=refs/notes/cr', 'list', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']);
   assert.deepEqual(argv('merged', { project: P, ref: 'refs/heads/wu/E-APPLIST/w5-reader-watcher' }), [...LOCKED, '-C', P, 'for-each-ref', '--merged=refs/heads/wu/E-APPLIST/w5-reader-watcher', '--format=%(refname)', 'refs/heads/']);
   assert.deepEqual(argv('worktrees', { project: P }), [...LOCKED, '-C', P, 'worktree', 'list', '--porcelain']);
 });
 
 test('a note kind is one of mr, cr, dod; a ref is main, an epic or a work unit branch by keel\'s naming, nothing else', () => {
-  for (const kind of ['mr', 'cr', 'dod']) assert.doesNotThrow(() => argv('notes-list', { project: '/p', kind }), kind);
-  for (const kind of ['test', 'doc', '', 'MR', '../mr', 'mr list', '-m']) assert.throws(() => argv('notes-list', { project: '/p', kind }), /kind/, kind);
+  const O = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  for (const kind of ['mr', 'cr', 'dod']) assert.doesNotThrow(() => argv('note-of', { project: '/p', kind, object: O }), kind);
+  for (const kind of ['test', 'doc', '', 'MR', '../mr', 'mr list', '-m']) assert.throws(() => argv('note-of', { project: '/p', kind, object: O }), /kind/, kind);
+  for (const object of ['b'.repeat(64), O]) assert.doesNotThrow(() => argv('note-of', { project: '/p', kind: 'mr', object }), object);
+  for (const object of ['HEAD', 'main', '-p', O.slice(1), O.toUpperCase(), `${O} x`, '', 'g'.repeat(40)]) assert.throws(() => argv('note-of', { project: '/p', kind: 'mr', object }), /object/, object);
   for (const ref of ['refs/heads/main', 'refs/heads/epic/E-APPLIST', 'refs/heads/wu/E-APPLIST/w5-reader-watcher', 'refs/heads/wu/E-APPLIST/w8-window-foundation_look-variants']) {
     assert.doesNotThrow(() => argv('merged', { project: '/p', ref }), ref);
   }
