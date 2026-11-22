@@ -168,14 +168,39 @@ const NON_VALUE_KEYS = {
   TSSatisfiesExpression: ['typeAnnotation'],
   TSTypeAssertion: ['typeAnnotation'],
   TSNonNullExpression: [],
+  // A function's parameters and name hold no value; its body does.
+  FunctionDeclaration: ['params', 'id', 'returnType', 'typeParameters'],
+  FunctionExpression: ['params', 'id', 'returnType', 'typeParameters'],
+  ArrowFunctionExpression: ['params', 'returnType', 'typeParameters'],
 };
+
+/** The names a pattern binds (a parameter, a destructuring). */
+function patternNames(/** @type {Node | null | undefined} */ p, /** @type {Set<string>} */ out) {
+  if (!p) return out;
+  if (p.type === 'Identifier') out.add(p.name);
+  else if (p.type === 'ObjectPattern') p.properties.forEach((/** @type {Node} */ q) => patternNames(q.type === 'RestElement' ? q.argument : q.value, out));
+  else if (p.type === 'ArrayPattern') p.elements.forEach((/** @type {Node} */ q) => patternNames(q, out));
+  else if (p.type === 'AssignmentPattern') patternNames(p.left, out);
+  else if (p.type === 'RestElement') patternNames(p.argument, out);
+  else if (p.type === 'TSParameterProperty') patternNames(p.parameter, out);
+  return out;
+}
+
+/** The identifier a member chain starts from (a in a.b[c].d), or null. */
+function rootOf(/** @type {Node} */ node) {
+  let n = node;
+  while (n.type === 'MemberExpression' || VALUE_WRAPPERS.has(n.type)) n = n.type === 'MemberExpression' ? n.object : n.expression;
+  return n.type === 'Identifier' ? n : null;
+}
 
 /** The TypeScript nodes that wrap a value: walked into (their .expression), never skipped. */
 const VALUE_WRAPPERS = new Set(['TSAsExpression', 'TSSatisfiesExpression', 'TSTypeAssertion', 'TSNonNullExpression']);
 
 /** The keys of `node` the search does not follow; a class call's arguments are followed. */
 function ignoredKeys(/** @type {Node} */ node) {
-  if (isClassCall(node)) return [];
+  if (isClassCall(node)) return ['callee', 'typeArguments'];
+  // a && 'p-xs' renders a only when it is falsy, which is never a class: a is a test.
+  if (node.type === 'LogicalExpression' && node.operator === '&&') return ['left'];
   if (VALUE_WRAPPERS.has(node.type)) return ['typeAnnotation', 'typeArguments', 'typeParameters'];
   return NON_VALUE_KEYS[node.type] ?? [];
 }
@@ -282,8 +307,15 @@ export function collectClasses(program, source = {}) {
     else declarations.set(name, [node]);
   };
 
+  /** Names bound by a parameter or an import: their values come from outside this file. */
+  const outside = new Set();
+
   walk(program, (node) => {
     if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && node.init) declare(node.id.name, node.init);
+    // A reassigned binding is read with every value it takes.
+    if (node.type === 'AssignmentExpression' && node.left.type === 'Identifier') declare(node.left.name, node.right);
+    if (node.type === 'ImportDeclaration') node.specifiers.forEach((/** @type {Node} */ sp) => outside.add(sp.local.name));
+    if (/^(FunctionDeclaration|FunctionExpression|ArrowFunctionExpression)$/.test(node.type)) node.params.forEach((/** @type {Node} */ p) => patternNames(p, outside));
     if (node.type === 'FunctionDeclaration' && node.id) declare(node.id.name, node.body);
     if (node.type === 'JSXAttribute' && CLASS_PROP.test(keyName(node.name) ?? '') && node.value) {
       seeds.push(node.value);
@@ -322,8 +354,34 @@ export function collectClasses(program, source = {}) {
   const unread = (/** @type {Node} */ node) => found.push({ cls: quote(node), offset: node.range[0], node, partial: true, unread: true });
   const quote = (/** @type {Node} */ node) =>
     source.text !== undefined ? source.text.slice(node.range[0], node.range[1]) : sourceOf(node);
+  /** Whether a name's value can be read in this file: declared here, and not a parameter or an import. */
+  const readable = (/** @type {string} */ name) => name === 'undefined' || (declarations.has(name) && !outside.has(name));
+  /** Whether a call's result can be read: a class call, a function declared here, or an array's join. */
+  const readableCall = (/** @type {Node} */ node) => {
+    if (isClassCall(node)) return true;
+    const callee = node.callee;
+    if (callee.type === 'Identifier') return readable(callee.name);
+    if (callee.type === 'MemberExpression' && !callee.computed && callee.property.name === 'join') {
+      const root = rootOf(callee.object);
+      return callee.object.type === 'ArrayExpression' || (root !== null && readable(root.name));
+    }
+    return false;
+  };
+  /** Nodes the walk below must not enter: a class call's object of conditions, an interpolation glued to a class. */
+  const skipNodes = new Set();
   const skip = (/** @type {Node} */ node) => {
-    if (notAValue(node)) return true;
+    if (notAValue(node) || skipNodes.has(node)) return true;
+    if (visited.has(node)) return false;
+    // What the rule cannot read is reported, never skipped.
+    const cannot =
+      (node.type === 'CallExpression' && !readableCall(node)) ||
+      (node.type === 'MemberExpression' && rootOf(node) !== null && !readable(/** @type {Node} */ (rootOf(node)).name)) ||
+      (node.type === 'Identifier' && !readable(node.name));
+    if (cannot) {
+      visited.add(node);
+      unread(node);
+      return true;
+    }
     if (isConcat(node)) {
       if (!visited.has(node)) {
         visited.add(node);
@@ -343,6 +401,8 @@ export function collectClasses(program, source = {}) {
         if (isClassCall(node)) {
           for (const arg of node.arguments) {
             if (arg.type !== 'ObjectExpression') continue;
+            // The keys are classes; the values are only conditions.
+            skipNodes.add(arg);
             for (const prop of arg.properties) {
               if (prop.type === 'Property' && prop.key.type === 'Literal' && typeof prop.key.value === 'string') {
                 tokensOf(prop.key.value, prop.key.range[0] + 1).forEach((t) => found.push({ ...t, node: prop.key, partial: false }));
@@ -354,6 +414,15 @@ export function collectClasses(program, source = {}) {
           tokensOf(node.value, node.range[0] + 1).forEach((t) => found.push({ ...t, node, partial: false }));
         } else if (node.type === 'TemplateLiteral') {
           templateTokens(node).forEach((t) => found.push(t));
+          // An interpolation glued to a class (p-${n}) is already reported as that partial class.
+          const last = node.quasis.length - 1;
+          node.expressions.forEach((/** @type {Node} */ e, /** @type {number} */ i) => {
+            const before = node.quasis[i].value.cooked ?? node.quasis[i].value.raw;
+            const after = node.quasis[i + 1].value.cooked ?? node.quasis[i + 1].value.raw;
+            const gluedBefore = before === '' ? i > 0 : !/\s$/.test(before);
+            const gluedAfter = after === '' ? i + 1 < last : !/^\s/.test(after);
+            if (gluedBefore || gluedAfter) skipNodes.add(e);
+          });
         }
       },
       skip,

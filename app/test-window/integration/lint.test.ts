@@ -102,6 +102,13 @@ test('class=, a prop ending in ClassName and a spread object\'s className are ea
   for (const cls of ['p-[7px]', 'text-sm', 'bg-red-500', '{...rest}']) expect(text).toContain(cls);
 });
 
+test('an unknown call, an imported name and a parameter reaching a class are each reported unread; a reassigned binding is read', async () => {
+  const got = await messagesOf('unread.tsx');
+  expect(got.map((m) => m.id).sort()).toEqual(['offlist', 'unread', 'unread', 'unread']);
+  const text = got.map((m) => m.text).join('\n');
+  for (const cls of ["tw('p-[3px]')", 'SCENARIO_NAMES[0]', 'props.className', 'bg-red-500']) expect(text).toContain(cls);
+});
+
 test('the clean fixture reports nothing', async () => {
   expect(await messagesOf('clean.tsx')).toEqual([]);
 });

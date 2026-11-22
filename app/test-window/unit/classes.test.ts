@@ -123,3 +123,24 @@ test('collectClasses seeds from a className key in any object literal: a spread 
 test('collectClasses reports a spread it cannot read as unread, whole', () => {
   expect(findings(`const A = (props) => <i {...props} />;`)).toEqual(['unread:{...props}']);
 });
+
+test('collectClasses reports an unknown call reaching a class as unread: tw(), a method on a value', () => {
+  expect(findings(`const A = () => <i className={tw('p-[3px] text-sm')} />;`)).toEqual(['unread:tw(…)']);
+  expect(findings(`const x = 'p-xs';\nconst A = () => <i className={x.trim()} />;`)).toEqual(['unread:x.trim(…)', 'whole:p-xs']);
+});
+
+test('collectClasses reads a local function\'s strings and an array literal\'s join, and reports neither as unread', () => {
+  expect(findings(`function pick(on) { return on ? 'p-xs' : 'p-sm'; }\nconst A = () => <i className={pick(true)} />;`)).toEqual(['whole:p-sm', 'whole:p-xs']);
+  expect(findings(`const A = () => <i className={['p-xs', 'p-sm'].join(' ')} />;`)).toEqual(['whole:p-sm', 'whole:p-xs']);
+});
+
+test('collectClasses reports an imported name or a parameter reaching a class as unread, whole', () => {
+  expect(findings(`import { LOOK } from './look.ts';\nconst A = () => <i className={LOOK.bad} />;`)).toEqual(['unread:LOOK.bad']);
+  expect(findings(`const A = ({ cls }) => <i className={cls} />;`)).toEqual(['unread:cls']);
+  expect(findings(`const A = (props) => <i className={props.className} />;`)).toEqual(['unread:props.className']);
+  expect(findings(`const A = ({ on }) => <i className={on ? 'p-xs' : undefined} />;`)).toEqual(['whole:p-xs']);
+});
+
+test('collectClasses reads every value a reassigned binding takes', () => {
+  expect(classes(`let m = 'flex';\nm = 'p-xs';\nconst A = () => <i className={m} />;`)).toEqual(['flex', 'p-xs']);
+});
