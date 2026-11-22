@@ -152,11 +152,20 @@ const NON_VALUE_KEYS = {
   NewExpression: ['arguments'],
   Property: ['key'],
   MemberExpression: ['property'],
+  // A value wrapped in a type (x as const, x satisfies T, x as T, <T>x) is read; the type is not.
+  TSAsExpression: ['typeAnnotation'],
+  TSSatisfiesExpression: ['typeAnnotation'],
+  TSTypeAssertion: ['typeAnnotation'],
+  TSNonNullExpression: [],
 };
+
+/** The TypeScript nodes that wrap a value: walked into (their .expression), never skipped. */
+const VALUE_WRAPPERS = new Set(['TSAsExpression', 'TSSatisfiesExpression', 'TSTypeAssertion', 'TSNonNullExpression']);
 
 /** The keys of `node` the search does not follow; a class call's arguments are followed. */
 function ignoredKeys(/** @type {Node} */ node) {
   if (isClassCall(node)) return [];
+  if (VALUE_WRAPPERS.has(node.type)) return ['typeAnnotation', 'typeArguments', 'typeParameters'];
   return NON_VALUE_KEYS[node.type] ?? [];
 }
 
@@ -173,7 +182,7 @@ const notAValue = (/** @type {Node} */ node) =>
   (node.type === 'BinaryExpression' && !isConcat(node)) ||
   node.type === 'ImportDeclaration' ||
   node.type === 'JSXText' ||
-  node.type.startsWith('TS') ||
+  (node.type.startsWith('TS') && !VALUE_WRAPPERS.has(node.type)) ||
   (node.type === 'JSXAttribute' && node.name?.name !== 'className');
 
 /**

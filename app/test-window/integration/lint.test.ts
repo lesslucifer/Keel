@@ -70,6 +70,13 @@ test('a dark: class is reported as dark even on a legal token', async () => {
   expect(got[0]?.text).toContain('dark:bg-card');
 });
 
+test('classes in tables wrapped in as const, satisfies, as T and ! are each read and refused', async () => {
+  const got = await messagesOf('wrapped.tsx');
+  expect(got.map((m) => m.id).sort()).toEqual(['arbitrary', 'dark', 'offlist', 'offlist']);
+  const text = got.map((m) => m.text).join('\n');
+  for (const cls of ['bg-red-500', 'text-sm', 'p-[13px]', 'dark:bg-card']) expect(text).toContain(cls);
+});
+
 test('the clean fixture reports nothing', async () => {
   expect(await messagesOf('clean.tsx')).toEqual([]);
 });

@@ -91,3 +91,11 @@ test('collectClasses reports a class built with + as partial, whole, once', () =
   expect(classes(`const A = ({ n }) => <i className={'p-' + n} />;`)).toEqual([`~'p-' + n`]);
   expect(classes(`const cls = 'bg-' + 'accent';\nconst A = () => <i className={cls} />;`)).toEqual([`~'bg-' + 'accent'`]);
 });
+
+test('collectClasses reads a table through as const, satisfies, as T and the non-null !, never the type itself', () => {
+  expect(classes(`const T = { a: 'p-xs' } as const;\nconst A = ({ k }) => <i className={T[k]} />;`)).toEqual(['p-xs']);
+  expect(classes(`const T = { a: 'p-sm' } satisfies Record<string, 'x-type'>;\nconst A = ({ k }) => <i className={T[k]} />;`)).toEqual(['p-sm']);
+  expect(classes(`const T = { a: 'p-md' } as Record<string, 'x-type'>;\nconst A = ({ k }) => <i className={T[k]} />;`)).toEqual(['p-md']);
+  expect(classes(`const T: Record<string, string | undefined> = { a: 'p-lg' };\nconst A = ({ k }) => <i className={T[k]!} />;`)).toEqual(['p-lg']);
+  expect(classes(`const A = ({ on }) => <i className={(on ? 'p-xl' : 'p-xxl') as string} />;`)).toEqual(['p-xl', 'p-xxl']);
+});
