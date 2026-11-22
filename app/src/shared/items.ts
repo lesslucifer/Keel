@@ -29,6 +29,14 @@ const WU_ID = /^E-[A-Z0-9]{1,16}\.W[0-9]{1,3}$/;
 const SESSION = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 
+/**
+ * One POSIX shell word meaning exactly `s`, for a line the owner pastes (review round 1, items.ts:167):
+ * a plain name as it is, anything else in single quotes, a quote inside as '\''.
+ */
+export function shQuote(s: string): string {
+  return /^[A-Za-z0-9._/@%+=:,-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`;
+}
+
 /** FNV-1a over the string's UTF-16 units, as 8 hex digits: an id's short hash, not a secret. */
 export function shortHash(s: string): string {
   let h = 0x811c9dc5;
@@ -101,7 +109,7 @@ function resultItems(git: GitFacts, epics: Set<string>, units: Set<string>, work
     } else if (review.verdict === 'FAIL') {
       out.push(item({ ...base, group: 'not-yours', title: 'Review failed', why: `${plural(review.blockers, 'blocker')} and ${plural(review.importants, 'important')} open: its worker fixes them.`, worker: workerOn(b.name) }));
     } else if (git.notes.mr.includes(b.tip)) {
-      out.push(item({ ...base, title: isEpic ? 'Epic result to merge' : 'Result to merge', why: `Signed. The merge into ${target} is yours, in your terminal.`, open: isEpic ? 'archive' : 'page', line: `git merge --no-ff --no-edit ${b.name}` }));
+      out.push(item({ ...base, title: isEpic ? 'Epic result to merge' : 'Result to merge', why: `Signed. The merge into ${target} is yours, in your terminal.`, open: isEpic ? 'archive' : 'page', line: `git merge --no-ff --no-edit ${shQuote(b.name)}` }));
     } else {
       const why = review.verdict === 'PASS' ? 'The review passed. Your sign-off is missing.' : `The review was waived with ${plural(review.blockers, 'blocker')} and ${plural(review.importants, 'important')} open. Your sign-off is missing.`;
       out.push(item({ ...base, title: isEpic ? 'Epic result to sign' : 'Result to sign', why, open: isEpic ? 'archive' : 'page' }));
@@ -141,7 +149,7 @@ export function itemsOf(input: ItemInput): Item[] {
     const main = git.branches.find((b) => b.name === 'main');
     if (main !== undefined && main.upstream !== null && !main.gone && main.ahead > 0) {
       const remote = main.upstream.split('/')[0] as string;
-      out.push(item({ id: itemId('push', 'main', main.tip), kind: 'push', title: 'Main not pushed', branch: 'main', tip: main.tip.slice(0, 7), since: git.times[main.tip] ?? null, why: `main is ${plural(main.ahead, 'commit')} ahead of ${main.upstream}.`, line: `git push ${remote} main` }));
+      out.push(item({ id: itemId('push', 'main', main.tip), kind: 'push', title: 'Main not pushed', branch: 'main', tip: main.tip.slice(0, 7), since: git.times[main.tip] ?? null, why: `main is ${plural(main.ahead, 'commit')} ahead of ${main.upstream}.`, line: `git push ${shQuote(remote)} main` }));
     }
 
     for (const b of git.branches) {
@@ -150,7 +158,7 @@ export function itemsOf(input: ItemInput): Item[] {
       if (heard && ws.some(([, v]) => v.branch === b.name && v.state === 'busy')) continue;
       const first = heard ? 'No worker is busy on it.' : 'The router is not heard, so a worker may still be on it.';
       const wu = wuOfBranch(unit);
-      out.push(item({ id: itemId('task', b.name, b.tip), kind: 'task', title: 'Task into its work unit', wu, epic: wu === null ? null : (wu.split('.')[0] as string), branch: b.name, tip: b.tip.slice(0, 7), since: git.times[b.tip] ?? null, why: `${first} The merge into ${unit} is yours, in its folder.`, line: `git merge --no-ff ${b.name}` }));
+      out.push(item({ id: itemId('task', b.name, b.tip), kind: 'task', title: 'Task into its work unit', wu, epic: wu === null ? null : (wu.split('.')[0] as string), branch: b.name, tip: b.tip.slice(0, 7), since: git.times[b.tip] ?? null, why: `${first} The merge into ${unit} is yours, in its folder.`, line: `git merge --no-ff ${shQuote(b.name)}` }));
     }
   }
 
@@ -189,7 +197,7 @@ export function itemsOf(input: ItemInput): Item[] {
       const branch = typeof v.branch === 'string' && v.branch.length <= 200 && !CONTROL.test(v.branch) && v.branch !== '' ? v.branch : null;
       const session = typeof v.session === 'string' && SESSION.test(v.session) ? v.session : null;
       const wu = branch === null ? null : wuOfBranch(branch);
-      out.push(item({ id: itemId('worker', name, `${name}\n${waiting}\n${session ?? ''}`), kind: 'worker', title: 'Worker waits on you', wu, epic: wu === null ? null : (wu.split('.')[0] as string), branch, since: iso(v.active), why: `Waits on ${waiting.replace(/[.\s]+$/, '')}: answer it in its session.`, worker: name, line: session === null ? null : `claude attach ${session}` }));
+      out.push(item({ id: itemId('worker', name, `${name}\n${waiting}\n${session ?? ''}`), kind: 'worker', title: 'Worker waits on you', wu, epic: wu === null ? null : (wu.split('.')[0] as string), branch, since: iso(v.active), why: `Waits on ${waiting.replace(/[.\s]+$/, '')}: answer it in its session.`, worker: name, line: session === null ? null : `claude attach ${shQuote(session)}` }));
     }
   }
 

@@ -2,7 +2,7 @@
 // it leaves; on hand-made views, and a seeded property over generated ones.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { itemsOf, countsOf, wuOfBranch, epicOfBranch, itemId, shortHash, type ItemInput } from '../../src/shared/items.ts';
+import { itemsOf, countsOf, wuOfBranch, epicOfBranch, itemId, shortHash, shQuote, type ItemInput } from '../../src/shared/items.ts';
 import { ITEM_ID_SOURCE, SLOT_CAP, type GitFacts, type Item, type RouterView } from '../../src/shared/contract.ts';
 import { openSets } from '../../src/main/reader/git.ts';
 import { seeded, pick, type Rng } from '../support/seeded.ts';
@@ -343,4 +343,51 @@ test('W6 review round 1 (items.ts:82): the list draws only the reader\'s open se
   assert.deepEqual(itemsOf(input({ git: { ...g, open: { epics: [], units: [], tasks: [] } } })), []);
   const all = itemsOf(input({ git: { ...g, open: { epics: ['epic/E-A'], units: ['wu/E-A/w1-reader'], tasks: ['wu/E-A/w1-reader_probe'] } } }));
   assert.deepEqual(all.map((i) => i.kind), ['result', 'epic-result', 'task']);
+});
+
+/** What a POSIX shell makes of one word: plain characters as they are, '...' literally, \\x as x. */
+function shellWord(word: string): string | null {
+  let out = '';
+  for (let i = 0; i < word.length; i++) {
+    const c = word[i] as string;
+    if (c === "'") {
+      const end = word.indexOf("'", i + 1);
+      if (end < 0) return null;
+      out += word.slice(i + 1, end);
+      i = end;
+    } else if (c === '\\') {
+      out += word[i + 1] ?? '';
+      i += 1;
+    } else if (/[A-Za-z0-9._\/@%+=:,-]/.test(c)) out += c;
+    else return null;
+  }
+  return out;
+}
+
+test('W6 review round 1 (items.ts:167): a name in a line the owner pastes is one shell word that means exactly the name; a plain name stays as it is', () => {
+  assert.equal(shQuote('wu/E-A/w1-reader_probe'), 'wu/E-A/w1-reader_probe');
+  assert.equal(shQuote('wu/E-X/w1-a_$(touch${IFS}p)'), "'wu/E-X/w1-a_$(touch${IFS}p)'");
+  assert.equal(shQuote("it's"), "'it'\\''s'");
+});
+
+test('W6 review round 1: generated names: shQuote always gives one shell word holding the name', () => {
+  const rng = seeded(0x7a11);
+  const alphabet = ['a', 'Z', '0', '/', '_', '-', '.', '$', '(', ')', '{', '}', ';', '|', '&', '`', ' ', "'", '"', '\\', '*', '?', '~', '!', '#', '<', '>', '\n', 'é'];
+  for (let i = 0; i < 3000; i++) {
+    const n = 1 + Math.floor(rng() * 24);
+    let name = '';
+    for (let k = 0; k < n; k++) name += pick(rng, alphabet);
+    assert.equal(shellWord(shQuote(name)), name, JSON.stringify(name));
+  }
+});
+
+test('W6 review round 1 (items.ts:167): a task or result line quotes its branch, and the push line its remote, should the facts ever carry a name the shell reads', () => {
+  const evil = 'wu/E-A/w1-reader_$(touch${IFS}p)';
+  const g = rawGit({ merged: { main: [], 'epic/E-A': [], 'wu/E-A/w1-reader': [] } });
+  g.branches.push({ name: evil, tip: TASK, upstream: null, ahead: 0, behind: 0, gone: false });
+  g.branches[0] = { name: 'main', tip: MAIN, upstream: 'o$(x)/main', ahead: 1, behind: 0, gone: false };
+  const items = itemsOf(input({ git: { ...g, open: { epics: ['epic/E-A'], units: ['wu/E-A/w1-reader'], tasks: [evil] } } }));
+  assert.equal(items.find((i) => i.kind === 'task')?.line, `git merge --no-ff '${evil}'`);
+  assert.equal(items.find((i) => i.kind === 'push')?.line, "git push 'o$(x)' main");
+  for (const i of items) if (i.line !== null) for (const word of i.line.split(/ (?=(?:[^']*'[^']*')*[^']*$)/)) assert.notEqual(shellWord(word), null, i.line);
 });
