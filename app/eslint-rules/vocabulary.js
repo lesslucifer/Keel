@@ -26,6 +26,9 @@ export default {
         '`{{cls}}` is built from pieces while the app runs, so no check can read it. Write whole class names, chosen with a condition or a lookup table.',
       unread:
         '`{{cls}}` can carry classes to the page, but the rule cannot read them (a spread, an import, a parameter, a call it does not know). Write the classes in this file as whole strings, chosen with a condition or a lookup table.',
+      style:
+        'An inline style draws values outside Keel\'s tokens, and the packaged content policy blocks it. Use classes from app/tailwind.config.js.',
+      dom: '`{{what}}` writes a class or a style by hand, where the rule cannot read it. Render the class through className in JSX.',
       dark: '`{{cls}}` uses the dark: variant. Dark lives in the tokens: each colour flips by the Mac\'s setting in src/window/styles.css.',
       variant:
         '`{{cls}}` uses the variant `{{value}}:`, which the closed config does not have (no breakpoints, no arbitrary variants).',
@@ -34,7 +37,32 @@ export default {
 
   create(context) {
     const sourceCode = context.sourceCode;
+    const text = (/** @type {any} */ node) => sourceCode.getText(node);
+    /** @param {any} node */
+    const dom = (node, /** @type {any} */ what) => context.report({ node, messageId: 'dom', data: { what: text(what) } });
     return {
+      /** @param {any} node */
+      JSXAttribute(node) {
+        if (node.name?.type === 'JSXIdentifier' && node.name.name === 'style') context.report({ node, messageId: 'style' });
+      },
+      /** @param {any} node */
+      AssignmentExpression(node) {
+        const left = node.left;
+        if (left.type !== 'MemberExpression') return;
+        const named = (/** @type {any} */ m, /** @type {string} */ name) => m.type === 'MemberExpression' && !m.computed && m.property.name === name;
+        if (named(left, 'className') || named(left.object, 'style') || named(left, 'style')) dom(node, left);
+      },
+      /** @param {any} node */
+      CallExpression(node) {
+        const callee = node.callee;
+        if (callee.type !== 'MemberExpression' || callee.computed) return;
+        const method = callee.property.name;
+        const onClassList = callee.object.type === 'MemberExpression' && !callee.object.computed && callee.object.property.name === 'classList';
+        const first = node.arguments[0];
+        const attr = first?.type === 'Literal' && typeof first.value === 'string' ? first.value.toLowerCase() : null;
+        if (onClassList && ['add', 'remove', 'toggle', 'replace'].includes(method)) dom(node, callee);
+        else if (method === 'setAttribute' && (attr === null || attr === 'class' || attr === 'style')) dom(node, callee);
+      },
       'Program:exit'(program) {
         for (const { cls, node, offset, partial, unread } of collectClasses(/** @type {any} */ (program), { text: sourceCode.text })) {
           const loc = { start: sourceCode.getLocFromIndex(offset), end: sourceCode.getLocFromIndex(offset + cls.length) };

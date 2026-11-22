@@ -109,6 +109,13 @@ test('an unknown call, an imported name and a parameter reaching a class are eac
   for (const cls of ["tw('p-[3px]')", 'SCENARIO_NAMES[0]', 'props.className', 'bg-red-500']) expect(text).toContain(cls);
 });
 
+test('an inline style and a hand-written className, classList or class/style attribute are each reported', async () => {
+  const got = await messagesOf('siblings.tsx');
+  expect(got.map((m) => m.id).sort()).toEqual(['dom', 'dom', 'dom', 'dom', 'style']);
+  const text = got.map((m) => m.text).join('\n');
+  for (const what of ['style', 'el.className', 'el.classList.add', 'el.setAttribute']) expect(text).toContain(what);
+});
+
 test('the clean fixture reports nothing', async () => {
   expect(await messagesOf('clean.tsx')).toEqual([]);
 });
