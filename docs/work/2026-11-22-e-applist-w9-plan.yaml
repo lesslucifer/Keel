@@ -16,7 +16,9 @@ requirement: >-
   page; the owner checks the packaged, ad-hoc-signed build once at his Mac (the real alert, its click, keel://, the
   Telegram link, screens 2 and 6, ?diff=latest from Terminal); and the epic's truth is distilled into its T2 docs (by
   the worker) and T1 pages (written by the worker, committed by the owner), leaving only the archive and the sign-off
-  to the epic's close.
+  to the epic's close. Two small app fixes (the owner's answer to open point 3): a second launch that loses the
+  single-instance lock says so on stderr before it quits, and the test alert's 'not shown' text names the place macOS
+  files the app's alerts (Notifications > Keel when packaged, Notifications > Electron under pnpm start).
 maps-to: >-
   Epic E-APPLIST, its W9 summary (wu-maps-to: E-APPLIST's e2e-plan and distillation-plan; DEC-75). Carries the
   follow-ups the merged WUs left to W9: W5 (the epic test through the alert sink and the silence seam; the real
@@ -26,7 +28,8 @@ maps-to: >-
   Open under the packaged content policy; the item kinds, Open, Mark sent and UC-APP-2 distilled; ?diff=latest from
   Terminal), W7 (the packaged build again at the close, rung 1 recorded; Apple's membership not needed, onto A3), W8
   (the epic test; screen 6 and the built CSS under the packaged policy; the design rules into docs/local-app.html),
-  and backlog A3's follow-ups (each kept, moved to a row of its own at the close). UC-APP-1 and UC-APP-2 recorded in
+  and backlog A3's follow-ups (two fixed here, the silent second launch and the test alert's settings place, by the
+  owner's answer to open point 3; the rest kept, moved at the close). UC-APP-1 and UC-APP-2 recorded in
   docs/use-cases/app.yaml; UC-ROUTE-8 new and UC-ROUTE-6 amended in docs/use-cases/router.yaml.
 expected:
   - "`cd app && pnpm e2e` builds Vite's three bundles into app/.vite/ (no package, no signature, no Electron copy) and runs one Playwright test file that passes, in about two minutes, beside a running Keel.app without touching its folder or its single-instance lock."
@@ -34,6 +37,8 @@ expected:
   - "No page the test visits logs a content-policy refusal: the shipped page runs from app:// under the packaged policy."
   - "pnpm test:main, test:window, lint, typecheck and keel check stay green; none of them builds the app, and keel check does not run the epic test (DEC-73, DEC-75)."
   - "The owner's live check on one packaged build (details.live-check) is recorded step by step in the result: the banner with its subtitle, its click, keel://, the Telegram link, screens 2 and 6, ?diff=latest from Terminal, the real-watch test."
+  - "A second `pnpm start` while another Keel runs prints 'Keel is already running: this launch quits; quit the other first' to stderr and quits; the first window stays (e2e step 6 reads the line)."
+  - "The test alert's 'not shown' text names Notifications > Keel in the packaged app and Notifications > Electron under pnpm start (the main part knows app.isPackaged)."
   - "docs/use-cases/app.yaml (new) holds UC-APP-1 and UC-APP-2, indexed; router.yaml holds UC-ROUTE-8 and the amended UC-ROUTE-6; one new decision record holds the epic's remaining choices; backlog A3 is closed to one line and every open follow-up sits on a row that takes it."
   - "docs/local-app.html, docs/architecture.html and docs/install.html carry the app as built (details.distillation), each in its own owner-typed rule-file commit after an independent read."
 test-plan:
@@ -43,7 +48,9 @@ test-plan:
     .vite/build/preload.js, .vite/renderer/main_window/index.html); no packager, maker or signing step is reached. If
     the app folder seam is needed (details.app-folder), seams.test.ts gains it: absolute, no control character,
     ignored when packaged. Pure helpers of the e2e (the sink line reader, the wait-for-line helper) get their cases
-    here. No Vitest change: W9 changes no screen.
+    here. The two A3 fixes (details.a3-fixes), red first: the second-launch line (a pure text in the main part, its
+    exact words pinned); the 'not shown' text per packaged or not. Vitest unit (test-window/, by hand, recorded):
+    the alert text hook names Keel or Electron from the state it is given.
   integration: >-
     node --test (app/test/integration/e2e-world.test.ts), red first, in keel check, no Electron and no port: the
     test's world builder (app/e2e/world.ts) makes the temp keel project (main, an epic, a work unit with its plan
@@ -51,7 +58,10 @@ test-plan:
     the watchdog's facts step with a fake claude session list, and notify-owner.py --send with KEEL_NOTIFY_API_BASE
     on a loopback port nothing listens on (the alert line is written before the send, W3); the real ViewReader on
     that world then holds exactly the items and the alert line the e2e expects at each step. It catches a drift in
-    the router scripts or the reader before the slow test runs.
+    the router scripts or the reader before the slow test runs. bridge.test.ts: state.get carries whether the app is
+    packaged, and the contract snapshot names it; fake.test.ts green with the fake's value. Window, Vitest (by hand,
+    recorded): projects.test.tsx shows the 'not shown' text with Electron when the state says unpackaged, Keel when
+    packaged.
   e2e: >-
     app/e2e/applist.e2e.spec.ts, Playwright's _electron.launch on the unpackaged build (DEC-75), one test with named
     steps (details.e2e-walk), hermetic: the world builder above, a temp app folder, the three seams; run by hand with
@@ -67,7 +77,7 @@ details:
     - "3. Stage plan-to-read on the WU; notify-owner.py --send with a body naming it: 'Plan to read' under Yours; the alert sink gains exactly one line, subtitle the project's name, wu the WU."
     - "4. Edit the plan's working page, then Open: the open sink gains one file:// URL under the temp app folder, and that file's bytes equal git show <tip>:<page>."
     - "5. Mark sent: the item moves to Sent. Quit and relaunch on the same app folder: still under Sent, and the alert sink gains no line."
-    - "6. A second launch on the same app folder while the first runs: it exits; the first window stays."
+    - "6. A second launch on the same app folder while the first runs: it prints 'Keel is already running: this launch quits; quit the other first' to stderr and exits; the first window stays."
     - "7. Stage plan-approved: the item leaves."
     - "8. A review note (cr/v1 PASS) on the WU's tip: 'Result to sign'; a sign-off note (mr/v1): 'to merge'; the merge into the epic: it leaves. Notes written with git notes add in the temp repo, as W6's tests do."
     - "9. A question line, then its deletion: the question enters (Show the question gives its text) and leaves."
@@ -112,6 +122,8 @@ details:
     - "3. test then feat: the build helper (app/e2e/build.ts) and its unit test, red first; the app-folder seam only if needed."
     - "4. test: the world builder (app/e2e/world.ts) and e2e-world.test.ts, red first."
     - "5. test: app/e2e/applist.e2e.spec.ts, step by step; pnpm e2e green, run recorded."
+    - "5b. test then fix: the second launch's stderr line, red first (A3 fix 1)."
+    - "5c. test then fix: the test alert's settings place per packaged or not, through state.get, the fake and screen 6, red first (A3 fix 2)."
     - "6. docs (T2, by the worker): use cases, the decision record, the backlog (details.distillation)."
     - "7. docs (T1, rule files): the worker writes docs/local-app.html, docs/architecture.html and docs/install.html in the worktree; each gets an independent read; the owner commits each with keel mr commit."
     - "8. The owner's live check on one packaged build; then docs: the result pair."
@@ -144,7 +156,7 @@ details:
     - {file: docs/architecture.html, kind: "rule-bearing (docs/*.html)", by: "worker writes, independent read, owner's keel mr commit"}
     - {file: docs/install.html, kind: "rule-bearing (docs/*.html)", by: "worker writes, independent read, owner's keel mr commit"}
   not-in-w9:
-    - "Any change to what the app does for the owner (A3's small fixes wait on open point 3)."
+    - "Any other change to what the app does for the owner: A3's other follow-ups move to a backlog row at the close (open point 4)."
     - "A load or soak run; the epic test inside keel check (DEC-73, DEC-75; backlog L6)."
     - "Fonts other than New York and the system sans (only if the owner overrules DEC-72; none planned)."
     - "Deleting the scratch branch wu/E-APPLIST/w8-window-foundation_look-variants (the owner's call)."
@@ -158,13 +170,24 @@ details:
       why: "Your rule: build only where a check needs it. The bundles are what the packaged app ships, so the test also sees the packaged content policy."
       options: ["a. Vite bundles only (recommended)", "b. electron-forge package before each run"]
     - question: "Fix A3's two small app items in W9 (a second launch quits with no word; the test alert names the wrong settings place under pnpm start)?"
-      answer: "No. W9 changes nothing the app does; both move to a backlog row."
-      why: "The test should check the app as reviewed. Both are messages, not faults; the test still checks a second launch leaves the first window."
-      options: ["a. no, to the backlog (recommended)", "b. fix both in W9, red first, under W9's review"]
+      answer: "Yes, fix both in W9 (the owner's comment on the plan page, 2026-11-22: 'yes, fix it'). Each red first, under W9's review (details.a3-fixes)."
+      why: "Both are small and the owner sees both; the epic test reads the second launch's line. The plan had recommended the backlog; the owner chose otherwise."
+      options: ["a. no, to the backlog (the plan's first recommendation)", "b. fix both in W9, red first, under W9's review (chosen)"]
+      status: "answered by the owner, 2026-11-22"
     - question: "Where do A3's open follow-ups go when A3 closes?"
       answer: "One new row, A6 'The app's open ends after E-APPLIST', each follow-up with its source."
       why: "About a dozen small items; one row is read and picked up at once, and A4 or A5 can take any."
       options: ["a. one row A6 (recommended)", "b. one row per follow-up, as A3's text says"]
+  a3-fixes:
+    second-launch: >-
+      app/src/main/index.ts: where app.requestSingleInstanceLock() fails, write one line to stderr before app.quit():
+      'Keel is already running: this launch quits; quit the other first'. The text lives in a tested main-part module
+      (index.ts holds no logic). Backlog A3's follow-up (the W5 live check); its row line re-pointed to this WU.
+    alert-place: >-
+      app/src/window/hooks.ts ALERT_TEXT 'not-shown': 'Check System Settings > Notifications > Keel' is right only for
+      the packaged app; under pnpm start macOS files the alerts under Electron. The main part adds whether it is
+      packaged to state.get's answer (contract.ts, its snapshot, the fake's fixture), and the window names Keel or
+      Electron. Backlog A3's follow-up (the W5 live check); its row line re-pointed to this WU.
   sources:
     - docs/work/2026-11-20-e-applist-plan.yaml (W9's summary, e2e-plan, distillation-plan, the replan)
     - docs/work/2026-11-22-e-applist-w5-result.yaml, -w6-result.yaml, -w8-result.yaml, -w10-result.yaml; docs/work/2026-11-20-e-applist-w7-result.yaml (follow-ups)
