@@ -441,3 +441,9 @@ test('W6 review round 2 (items.ts:153): the push line names main\'s upstream rem
   assert.equal(only(itemsOf(input({ git: main({ remote: null }) }))).line, null);
   assert.equal(only(itemsOf(input({ git: main({}) }))).line, null, 'a remote the reader did not read gives no line');
 });
+
+test('W6 review round 3 (items.ts:155): a remote whose name starts with - would read as an option to git push: no line for it', () => {
+  const main = (remote: string) => git({ branches: [{ name: 'main', tip: MAIN, upstream: `${remote}/main`, remote, ahead: 1, behind: 0, gone: false }] });
+  for (const remote of ['--receive-pack=touch p', '-x']) assert.equal(only(itemsOf(input({ git: main(remote) }))).line, null, remote);
+  assert.equal(only(itemsOf(input({ git: main('origin-2') }))).line, 'git push origin-2 main');
+});

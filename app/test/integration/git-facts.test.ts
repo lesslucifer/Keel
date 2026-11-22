@@ -254,3 +254,4 @@ test('W6 review round 2 (items.ts:153): the reader gives main\'s upstream remote
   sh(GIT, dir, ['branch', '--unset-upstream', 'main']);
   assert.equal((await reader.read(GIT)).branches.find((b) => b.name === 'main')?.remote, null);
 });
+

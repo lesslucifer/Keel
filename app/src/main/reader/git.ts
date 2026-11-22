@@ -180,6 +180,15 @@ export function openSets(names: readonly string[], merged: Readonly<Record<strin
   return { epics, units, tasks };
 }
 
+/**
+ * main's upstream remote, as the config read answers it (W6): none for one starting with '-' (it would read
+ * as an option to git push: review round 3, git.ts:350), a control character, empty or over 200 characters.
+ */
+export function parseRemote(out: string): string | null {
+  const remote = out.replace(/\n$/, '');
+  return remote !== '' && !remote.startsWith('-') && remote.length <= 200 && !/[\u0000-\u001f\u007f-\u009f]/.test(remote) ? remote : null;
+}
+
 /** The most tips whose commit times one read asks. */
 export const TIME_TIPS = 60;
 
@@ -264,10 +273,7 @@ export class GitReader {
       main.remote = null;
       if (main.upstream !== null) {
         const r = await this.run(git, 'main-remote', {});
-        if (typeof r !== 'string' && r.code === 0 && !r.cut) {
-          const remote = r.stdout.replace(/\n$/, '');
-          main.remote = remote !== '' && remote.length <= 200 && !/[\u0000-\u001f\u007f-\u009f]/.test(remote) ? remote : null;
-        }
+        if (typeof r !== 'string' && r.code === 0 && !r.cut) main.remote = parseRemote(r.stdout);
       }
     }
     const holds = async (target: string): Promise<string[] | null> => {

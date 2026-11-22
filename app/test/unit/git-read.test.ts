@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { refOk } from '../../src/main/commands.ts';
 import { keelBranch, isEpicBranch, isUnitBranch, isTaskBranch } from '../../src/shared/names.ts';
 import { seeded, pick } from '../support/seeded.ts';
-import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, onMainLine, mayBeFresh, NOTE_TIPS, parseReview, parseTime, timeTips, TIME_TIPS, openSets } from '../../src/main/reader/git.ts';
+import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, onMainLine, mayBeFresh, NOTE_TIPS, parseReview, parseTime, timeTips, TIME_TIPS, openSets, parseRemote } from '../../src/main/reader/git.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -184,4 +184,11 @@ test('W6 review round 2 (items.ts:103): one grammar for keel\'s branch names: th
   for (const n of ['wu/E-A/w1-x', 'wu/E-A/reader']) assert.ok(isUnitBranch(n) && !isTaskBranch(n), n);
   for (const n of ['wu/E-A/w1-x_probe']) assert.ok(isTaskBranch(n) && !isUnitBranch(n), n);
   for (const n of ['wu/E-A/w1_a_b', 'wu/E-A/caf\u00e9', 'epic/a/b', 'main']) assert.ok(!isUnitBranch(n) && !isTaskBranch(n) && !isEpicBranch(n), n);
+});
+
+test('W6 review round 3 (git.ts:350): main\'s remote as the config read answers it; none for one starting with -, a control character, empty or overlong', () => {
+  assert.equal(parseRemote('origin\n'), 'origin');
+  assert.equal(parseRemote('team/origin\n'), 'team/origin');
+  assert.equal(parseRemote('.\n'), '.');
+  for (const out of ['--receive-pack=touch p\n', '-x\n', '\n', '', 'a\u0007b\n', `${'a'.repeat(201)}\n`]) assert.equal(parseRemote(out), null, JSON.stringify(out));
 });

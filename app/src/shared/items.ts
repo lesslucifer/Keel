@@ -149,7 +149,8 @@ export function itemsOf(input: ItemInput): Item[] {
     const main = git.branches.find((b) => b.name === 'main');
     if (main !== undefined && main.upstream !== null && !main.gone && main.ahead > 0) {
       // The remote as git has it (review round 2, items.ts:153): a local upstream (.) or none gives no line.
-      const remote = typeof main.remote === 'string' && main.remote !== '' ? main.remote : null;
+      // A leading '-' would read as an option to git push (review round 3, items.ts:155): no line for it.
+      const remote = typeof main.remote === 'string' && main.remote !== '' && !main.remote.startsWith('-') ? main.remote : null;
       const local = remote === '.';
       const why = local ? `main is ${plural(main.ahead, 'commit')} ahead of ${main.upstream}, a local branch: nothing to push from here.` : `main is ${plural(main.ahead, 'commit')} ahead of ${main.upstream}.`;
       out.push(item({ id: itemId('push', 'main', main.tip), kind: 'push', title: 'Main not pushed', branch: 'main', tip: main.tip.slice(0, 7), since: git.times[main.tip] ?? null, why, line: remote === null || local ? null : `git push ${shQuote(remote)} main` }));
