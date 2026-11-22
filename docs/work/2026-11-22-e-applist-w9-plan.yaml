@@ -165,10 +165,12 @@ details:
       answer: "In the W9 worker's session, with local ports allowed for that worktree only (sandbox.network.allowLocalBinding: true in its settings, yours to set)."
       why: "Playwright reaches Electron through a local port the sandbox refuses. Without it the worker writes the test blind and you run every round."
       options: ["a. allow local ports for the W9 worker (recommended)", "b. you run pnpm e2e each round and the router relays the output", "c. the worker writes it blind; you run it once at the end"]
+      status: "answered by the owner, 2026-11-22: a (all recommended); the owner sets allowLocalBinding in this worktree's .claude/settings.local.json"
     - question: "How is the app built for the test?"
       answer: "Vite's three bundles only, through Forge's own plugin, on each pnpm e2e run: seconds, never packaged or signed."
       why: "Your rule: build only where a check needs it. The bundles are what the packaged app ships, so the test also sees the packaged content policy."
       options: ["a. Vite bundles only (recommended)", "b. electron-forge package before each run"]
+      status: "answered by the owner, 2026-11-22: a (all recommended)"
     - question: "Fix A3's two small app items in W9 (a second launch quits with no word; the test alert names the wrong settings place under pnpm start)?"
       answer: "Yes, fix both in W9 (the owner's comment on the plan page, 2026-11-22: 'yes, fix it'). Each red first, under W9's review (details.a3-fixes)."
       why: "Both are small and the owner sees both; the epic test reads the second launch's line. The plan had recommended the backlog; the owner chose otherwise."
@@ -178,6 +180,7 @@ details:
       answer: "One new row, A6 'The app's open ends after E-APPLIST', each follow-up with its source."
       why: "About a dozen small items; one row is read and picked up at once, and A4 or A5 can take any."
       options: ["a. one row A6 (recommended)", "b. one row per follow-up, as A3's text says"]
+      status: "answered by the owner, 2026-11-22: a (all recommended)"
   a3-fixes:
     second-launch: >-
       app/src/main/index.ts: where app.requestSingleInstanceLock() fails, write one line to stderr before app.quit():
