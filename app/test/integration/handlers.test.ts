@@ -332,3 +332,19 @@ test('W6 review round 1 (handlers.ts:167): item.open runs one at a time in the m
   assert.deepEqual(await Promise.all([first, second]), [{ ok: true, value: { done: true } }, { ok: true, value: { done: true } }]);
   assert.deepEqual(events, ['start 1', 'end 1 result/E-A.W1@0f1e2d3', 'start 2', 'end 2 result/E-A.W1@0f1e2d3']);
 });
+
+test('W6 review round 1 (open.ts:78): removing a project removes its copies of committed docs from the app folder', async (t) => {
+  const w = world(t);
+  const project = keelRepo(path.join(w.dir, 'proj'));
+  w.answers.folder = project;
+  await w.call('projects.add');
+  const state = (await w.call('state.get')) as { ok: true; value: { projects: Array<{ id: string }> } };
+  const id = state.value.projects[0]?.id as string;
+  const copies = path.join(w.parts.appDir, 'open', id, 'a'.repeat(40));
+  mkdirSync(copies, { recursive: true });
+  writeFileSync(path.join(copies, 'x.html'), 'x\n');
+  mkdirSync(path.join(w.parts.appDir, 'open', 'p99999999'), { recursive: true });
+  assert.deepEqual(await w.call('projects.remove', { project: id }), { ok: true, value: { done: true } });
+  assert.equal(existsSync(path.join(w.parts.appDir, 'open', id)), false);
+  assert.equal(existsSync(path.join(w.parts.appDir, 'open', 'p99999999')), true, 'only that project\'s copies');
+});

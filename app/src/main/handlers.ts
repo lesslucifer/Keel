@@ -7,6 +7,7 @@
 // queue on their own, and the dialog flows take turns in a queue of their own. The dispatcher (bridge.ts) checks every call before a handler runs and passes
 // every string in the answer through plain().
 
+import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { TOOL_NAMES, type AlertOutcome, type AppState, type Change, type Item, type LoginPathState, type PushEvent, type Tool, type View } from '../shared/contract.ts';
 import type { Handlers } from './bridge.ts';
@@ -137,7 +138,10 @@ export function makeHandlers(parts: Parts): Handlers {
     'projects.remove': (args) =>
       queue(async (): Promise<Change> => {
         const r = await removeProject(appDir, args.project as string, changed);
-        return r.ok ? DONE : notDone(r.why);
+        if (!r.ok) return notDone(r.why);
+        // W6 (review round 1, open.ts:78): its copies of committed docs go with it. The id passed the project-id slot.
+        await rm(path.join(appDir, 'open', args.project as string), { recursive: true, force: true });
+        return DONE;
       }),
 
     'settings.choose': (args) =>

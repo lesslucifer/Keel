@@ -30,6 +30,19 @@ export interface OpenParts {
   runOptions: Omit<RunOptions, 'before245' | 'timeoutMs'>;
   /** Hand a file URL to the owner's browser. */
   openUrl(url: string): Promise<void>;
+  /** The ids of the projects listed now: copies of any other project's docs are removed (review round 1, open.ts:78). */
+  listed?: readonly string[];
+}
+
+/**
+ * Before a copy: a temp folder under the project's copies is a crash's leftover (Opens run one at a time,
+ * handlers.ts), so it goes (review round 1, open.ts:70); and the copies of a project no longer listed go.
+ */
+async function sweep(parts: OpenParts, base: string): Promise<void> {
+  for (const n of await readdir(base)) if (n.startsWith('.tmp-')) await rm(path.join(base, n), { recursive: true, force: true });
+  if (parts.listed === undefined) return;
+  const open = path.dirname(base);
+  for (const n of await readdir(open)) if (!parts.listed.includes(n) && n !== parts.project.id) await rm(path.join(open, n), { recursive: true, force: true });
 }
 
 /** Why a read gave no whole answer, or null. */
@@ -97,6 +110,7 @@ async function copyOf(parts: OpenParts, tip: string, role: string, id: string): 
   const base = path.join(parts.appDir, 'open', parts.project.id);
   const final = path.join(base, tip);
   await mkdir(base, { recursive: true, mode: 0o700 });
+  await sweep(parts, base);
   const complete = await exists(path.join(final, COMPLETE));
   if (complete) {
     const page = findPage(await headsIn(final), role, id);

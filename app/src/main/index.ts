@@ -235,8 +235,10 @@ async function start(): Promise<void> {
       const git = await parts.git();
       if (project === undefined || git === null) return { done: false, why: 'no project is listed, or git was not found' };
       const sink = seams.openSink === null ? null : openFileSink(seams.openSink);
+      const listed = (await loadProjects(appDir)).value.projects.map((p) => p.id);
       return openItem(item, reader.view().git, {
         appDir,
+        listed,
         project: { id: project.id, path: project.path },
         git,
         runOptions: parts.runOptions,

@@ -224,3 +224,18 @@ test('W6 review round 1 (open.ts:100): paths that differ only in case (one file,
   assert.deepEqual(await openItem(plan, facts, w.parts), { done: true });
   assert.equal(readFileSync(fileURLToPath(w.opened[0] as string), 'utf8'), PLAN_PAGE);
 });
+
+test('W6 review round 1 (open.ts:70, open.ts:78): an Open removes a temp folder a crash left, and the copies of projects no longer listed', async (t) => {
+  const w = world(t);
+  const open = path.join(w.appDir, 'open');
+  const stale = mk(path.join(open, 'p0a1b2c3d', '.tmp-123-abcd1234'));
+  writeFileSync(path.join(stale, 'half.html'), 'half\n');
+  const gone = mk(path.join(open, 'p99999999', 'a'.repeat(40)));
+  writeFileSync(path.join(gone, 'x.html'), 'x\n');
+  const tip = rev(w.dir, 'wu/E-A/w1-reader');
+  const { plan, facts } = await planItem(w, tip);
+  assert.deepEqual(await openItem(plan, facts, { ...w.parts, listed: ['p0a1b2c3d'] }), { done: true });
+  assert.equal(existsSync(stale), false, 'the crash\'s temp folder is gone');
+  assert.deepEqual(readdirSync(open), ['p0a1b2c3d'], 'a project no longer listed keeps no copies');
+  assert.deepEqual(readdirSync(path.join(open, 'p0a1b2c3d')), [tip]);
+});
