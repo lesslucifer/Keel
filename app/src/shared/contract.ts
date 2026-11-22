@@ -122,9 +122,14 @@ export interface GitWorktree {
 /** What git says, read with the fixed commands only. */
 export interface GitFacts {
   branches: GitBranch[];
-  /** Per kind, the open branches' tips (full ids: open epics, their work units not yet in them) that carry a note of that kind. */
+  /** Per kind, the tips of the open epics and open work units (as `merged` says) that carry a note of that kind. */
   notes: Record<NoteKind, string[]>;
-  /** Per target branch (main: the epics and work units it holds; each open epic: its units; each open work unit with a task: its tasks), the branches whose tips it holds. An epic main holds is open while it has no commit of its own. */
+  /**
+   * Per target branch, the branches whose tips it holds: main, the epics it holds; each open epic, its
+   * work units; each open work unit with a task, its tasks. An epic is open when main does not hold it,
+   * or while it has no commit of its own and one of its work units is outside main (then it is both in
+   * main's list and a key here). A work unit is open when its epic is open and does not hold it.
+   */
   merged: Record<string, string[]>;
   worktrees: GitWorktree[];
   /** Why git could not be read, or null. */

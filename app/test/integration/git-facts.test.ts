@@ -2,7 +2,7 @@
 // epic, work units, a task, notes, a worktree), read through the fixed commands only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { GitReader } from '../../src/main/reader/git.ts';
 import { OUTPUT_CAP } from '../../src/main/commands.ts';
@@ -144,6 +144,10 @@ test('the notes read is bounded by the open branches, not by history: many old n
 test('closed history costs no read: an epic in main gets no merged read, and its kept work units and tasks no notes or task read (review round 2, git.ts:95 and :159)', async (t) => {
   const { root, dir } = world(t);
   sh(GIT, dir, ['branch', 'epic/E-OLD', 'main']);
+  sh(GIT, dir, ['switch', '-q', '-c', 'wu/E-OLD/w1', 'epic/E-OLD']);
+  sh(GIT, dir, ['commit', '-q', '--allow-empty', '-m', 'merged unit']);
+  sh(GIT, dir, ['switch', '-q', 'epic/E-OLD']);
+  sh(GIT, dir, ['merge', '-q', '--no-ff', '-m', 'w1 in', 'wu/E-OLD/w1']);
   sh(GIT, dir, ['switch', '-q', '-c', 'wu/E-OLD/w9', 'epic/E-OLD']);
   sh(GIT, dir, ['commit', '-q', '--allow-empty', '-m', 'kept, never merged']);
   sh(GIT, dir, ['branch', 'wu/E-OLD/w9_probe']);
@@ -158,12 +162,13 @@ test('closed history costs no read: an epic in main gets no merged read, and its
   const facts = await new GitReader(dir, opts(root)).read(counting);
   assert.equal(facts.problem, null);
   assert.deepEqual(Object.keys(facts.merged).sort(), ['epic/E-A', 'main', 'wu/E-A/w2']);
-  assert.deepEqual(facts.merged.main, ['epic/E-OLD', 'wu/E-GONE/w1'], 'main lists the epics and work units it holds');
+  assert.deepEqual(facts.merged.main, ['epic/E-OLD'], 'the view publishes the epics main holds');
   assert.deepEqual(facts.notes.cr, [rev(dir, 'wu/E-A/w2')], 'the kept work unit of a closed epic has its note unread');
   const runs = readFileSync(rec, 'utf8');
   assert.doesNotMatch(runs, /--merged=refs\/heads\/(epic\/E-OLD|wu\/E-OLD)/);
   assert.doesNotMatch(runs, new RegExp(`list ${rev(dir, 'wu/E-OLD/w9')}`));
   assert.doesNotMatch(runs, new RegExp(`list ${rev(dir, 'wu/E-GONE/w1')}`), 'a work unit whose epic branch is gone is not open');
+  assert.doesNotMatch(runs, / name-rev /, 'a closed epic with a merged unit costs no name-rev, though it keeps a unit outside main (review round 4, git.ts:196)');
 });
 
 test('a fresh epic cut at main (no commit of its own yet) is open while main moves on: its open work unit\'s notes are read, then once (review round 3, git.ts:79)', async (t) => {
@@ -188,4 +193,25 @@ test('a fresh epic cut at main (no commit of its own yet) is open while main mov
   const names = readFileSync(rec, 'utf8').split('\n').filter((l) => l.includes(' name-rev '));
   const third = (await reader.read(counting), readFileSync(rec, 'utf8').split('\n').filter((l) => l.includes(' name-rev ')));
   assert.equal(third.length, names.length, 'an epic tip\'s answer is asked once: the next read spawns no name-rev');
+});
+
+test('when main\'s merged read fails, the next good read asks no name-rev again for tips it already knew', async (t) => {
+  const { root, dir } = world(t);
+  sh(GIT, dir, ['branch', 'epic/E-NEW', 'main']);
+  sh(GIT, dir, ['switch', '-q', '-c', 'wu/E-NEW/plan', 'epic/E-NEW']);
+  sh(GIT, dir, ['commit', '-q', '--allow-empty', '-m', 'the plan']);
+  sh(GIT, dir, ['switch', '-q', 'main']);
+  const rec = path.join(root, 'runs.txt');
+  const flag = path.join(root, 'fail-main');
+  const flaky = program(path.join(mk(path.join(root, 'flaky')), 'git'), `#!/bin/sh\necho "$*" >> ${rec}\ncase "$*" in *--merged=refs/heads/main*) [ -f ${flag} ] && exit 128;; esac\nexec ${GIT} "$@"\n`);
+  const reader = new GitReader(dir, opts(root));
+  await reader.read(flaky);
+  const count = () => readFileSync(rec, 'utf8').split('\n').filter((l) => l.includes(' name-rev ')).length;
+  const asked = count();
+  assert.equal(asked, 1);
+  writeFileSync(flag, '');
+  assert.match((await reader.read(flaky)).problem ?? '', /main/);
+  rmSync(flag);
+  await reader.read(flaky);
+  assert.equal(count(), asked, 'the failed read kept what was known');
 });

@@ -1,7 +1,7 @@
 // The git reader's parsers, each on fabricated output as git prints it, and the targets whose merges it reads.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, onMainLine, NOTE_TIPS } from '../../src/main/reader/git.ts';
+import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, onMainLine, mayBeFresh, NOTE_TIPS } from '../../src/main/reader/git.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -59,7 +59,7 @@ test('the worktree list gives each worktree\'s path, branch and tip; a detached 
 
 test('what each target holds is read for its own kind: main the epics and work units, an epic its work units, a work unit its tasks', () => {
   const names = ['main', 'epic/E-A', 'epic/E-B', 'wu/E-A/w1', 'wu/E-A/w1_look-variants', 'wu/E-A/w2', 'wu/E-B/w1', 'topic', 'epic/bad name'];
-  assert.deepEqual(heldBy('main', names), ['epic/E-A', 'epic/E-B', 'wu/E-A/w1', 'wu/E-A/w2', 'wu/E-B/w1']);
+  assert.deepEqual(heldBy('main', names), ['epic/E-A', 'epic/E-B', 'wu/E-A/w1', 'wu/E-A/w2', 'wu/E-B/w1'], 'main is read for both; the view publishes only its epics');
   assert.deepEqual(heldBy('epic/E-A', names), ['wu/E-A/w1', 'wu/E-A/w1_look-variants', 'wu/E-A/w2']);
   assert.deepEqual(heldBy('wu/E-A/w1', names), ['wu/E-A/w1_look-variants']);
 });
@@ -107,4 +107,20 @@ test('a fresh epic main holds (its tip on main\'s own line) stays open, and so d
 test('name-rev\'s answer: main or main~k is on main\'s own line (no commit of its own); a ^ means reached through a merge (merged in)', () => {
   for (const n of ['main', 'main~1', 'main~42']) assert.equal(onMainLine(`${n}\n`), true, n);
   for (const n of ['main~3^2', 'main^2', 'main~2^2~1', '', 'undefined', 'other~1', 'main~x']) assert.equal(onMainLine(`${n}\n`), false, n);
+});
+
+test('an epic main holds may be fresh only while one of its units is outside main and none of its units main holds has a tip of its own: else no name-rev is asked (review round 4, git.ts:196)', () => {
+  const M = '1'.repeat(40);
+  const W = '2'.repeat(40);
+  const U = '3'.repeat(40);
+  const fresh = [br('epic/E-X', M), br('wu/E-X/plan', W), br('wu/E-X/w2', M)];
+  // plan is outside main; w2 is in main but at the epic's own tip (cut from it, no commit): still may be fresh.
+  assert.equal(mayBeFresh('epic/E-X', fresh, new Set(['wu/E-X/w2'])), true);
+  // a unit main holds with a tip of its own was merged into the epic: the epic has commits of its own, closed.
+  const closed = [br('epic/E-X', M), br('wu/E-X/w1', U), br('wu/E-X/w9', W)];
+  assert.equal(mayBeFresh('epic/E-X', closed, new Set(['wu/E-X/w1'])), false);
+  // no unit outside main: nothing open to read, no question.
+  assert.equal(mayBeFresh('epic/E-X', [br('epic/E-X', M), br('wu/E-X/w1', U)], new Set(['wu/E-X/w1'])), false);
+  // a task is not a unit.
+  assert.equal(mayBeFresh('epic/E-X', [br('epic/E-X', M), br('wu/E-X/w1_task', W)], new Set()), false);
 });

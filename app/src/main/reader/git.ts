@@ -76,6 +76,19 @@ export function openEpics(names: readonly string[], inMain: readonly string[] | 
   return named(names).filter((n) => EPIC.test(n) && (!held.has(n) || fresh.has(n)));
 }
 
+/**
+ * Whether an epic main holds may still be fresh (no commit of its own), so worth asking name-rev:
+ * only while one of its work units is outside main (else nothing open hangs on it), and none of its
+ * units main holds has a tip of its own (a unit merged into the epic gave it commits: closed, no spawn).
+ */
+export function mayBeFresh(epic: string, branches: readonly GitBranch[], mainUnits: ReadonlySet<string>): boolean {
+  const tip = branches.find((b) => b.name === epic)?.tip;
+  const prefix = `wu/${epic.slice('epic/'.length)}/`;
+  const units = branches.filter((b) => b.name.startsWith(prefix) && WU.test(b.name) && refOk(`${HEADS}${b.name}`));
+  if (!units.some((u) => !mainUnits.has(u.name))) return false;
+  return !units.some((u) => mainUnits.has(u.name) && u.tip !== tip);
+}
+
 /** name-rev's name for a tip: on main's own line when it is main or main~k (no ^: not reached through a merge). */
 export function onMainLine(out: string): boolean {
   return /^main(?:~\d+)?$/.test(out.trim());
@@ -177,23 +190,26 @@ export class GitReader {
       return why === null && typeof r !== 'string' ? r.stdout : null;
     };
     const names = branches.map((b) => b.name);
-    const holds = async (target: string) => {
+    const holds = async (target: string): Promise<string[] | null> => {
       const out = take(await this.run(git, 'merged', { ref: `${HEADS}${target}` }), `what ${target} holds`);
-      if (out === null) return;
+      if (out === null) return null;
       const listed = new Set(parseMerged(out));
-      facts.merged[target] = heldBy(target, names).filter((n) => listed.has(n));
+      const held = heldBy(target, names).filter((n) => listed.has(n));
+      // main is read for its epics and units; the view publishes only the epics (the units stay here).
+      facts.merged[target] = target === 'main' ? held.filter((n) => EPIC.test(n)) : held;
+      return held;
     };
     // Main first, then only what is still open: a closed epic, and its kept units and tasks, cost no read.
-    if (names.includes('main')) await holds('main');
-    // An epic main holds is closed, unless it has no commit of its own yet (its tip on main's own line)
-    // while one of its work units is outside main: asked only then, once per tip.
+    const mainHeld = names.includes('main') ? await holds('main') : null;
+    const mainUnits = new Set((mainHeld ?? []).filter((n) => WU.test(n)));
+    // An epic main holds is open while it has no commit of its own (its tip on main's own line) and one
+    // of its work units is outside main; name-rev is asked only when mayBeFresh, once per tip.
     const fresh = new Set<string>();
     const inMain = new Set(facts.merged.main ?? []);
     const asked = new Map<string, boolean>();
     for (const b of branches) {
       if (!EPIC.test(b.name) || !inMain.has(b.name) || !refOk(`${HEADS}${b.name}`)) continue;
-      const prefix = `wu/${b.name.slice('epic/'.length)}/`;
-      if (!names.some((n) => n.startsWith(prefix) && WU.test(n) && !inMain.has(n))) continue;
+      if (!mayBeFresh(b.name, branches, mainUnits)) continue;
       let line = this.mainLine.get(b.tip) ?? asked.get(b.tip);
       if (line === undefined) {
         const r = await this.run(git, 'main-name', { object: b.tip });
@@ -207,7 +223,8 @@ export class GitReader {
       asked.set(b.tip, line);
       if (line) fresh.add(b.name);
     }
-    this.mainLine = asked;
+    // A failed main read asked nothing: keep what was known for the next good read.
+    if (mainHeld !== null) this.mainLine = asked;
     const epics = openEpics(names, facts.merged.main, fresh);
     for (const epic of epics) await holds(epic);
     for (const unit of openUnits(names, epics, facts.merged)) if (names.some((n) => n.startsWith(`${unit}_`))) await holds(unit);
