@@ -10,7 +10,7 @@
 
 import { test, expect, _electron as electron, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -64,55 +64,90 @@ function item(page: Page, where: 'Yours' | 'Not yours' | 'Sent', title: string):
   return group(page, where).getByRole('group', { name: title, exact: true });
 }
 
+/** The router's state as the project holds it: run, last number and keys, for a failed step's printout. */
+function routerState(w: World): string {
+  const file = path.join(w.project, '.router', 'app', 'state.json');
+  if (!existsSync(file)) return '(no state.json: the router has not started)';
+  try {
+    const st = JSON.parse(readFileSync(file, 'utf8')) as { run?: unknown; n?: unknown; values?: Record<string, unknown> };
+    return JSON.stringify({ run: st.run, n: st.n, values: st.values ?? {} });
+  } catch (e) {
+    return `(unreadable: ${e instanceof Error ? e.message : String(e)})`;
+  }
+}
+
 test('E-APPLIST: from a router line to the item on screen and out again, alerts, Open, Mark sent, restarts and silence', async () => {
   const w = makeWorld('e2e-walk');
   const refusals: string[] = [];
   let running: Running | null = null;
   const alerts = () => sinkLines(w.alertSink);
+  let page: Page | null = null;
+  /** One named step; when it fails, what the window shows, the two sinks and the router's state are printed with the error. */
+  const step = (title: string, body: () => Promise<void>) =>
+    test.step(title, async () => {
+      try {
+        await body();
+      } catch (e) {
+        const shown = page === null ? '(no window)' : await page.locator('body').innerText({ timeout: 2_000 }).catch((err: unknown) => `(unreadable: ${String(err)})`);
+        console.error(
+          [`--- step ${title.split(' ')[0]} failed; the window shows:`, shown, '--- alert sink:', JSON.stringify(alerts()), '--- open sink:', JSON.stringify(sinkLines(w.openSink)), '--- router state:', routerState(w), '---'].join('\n'),
+        );
+        throw e;
+      }
+    });
+  /** The window, once step 1 has launched it. */
+  const win = (): Page => {
+    if (page === null) throw new Error('no window: step 1 did not launch the app');
+    return page;
+  };
   try {
-    let page!: Page;
     const planTip = w.tip(PLAN_UNIT.branch);
 
-    await test.step('1. Launch on a temp app folder; Projects: Add (the folder dialog answered in the main part); Waits on you, empty', async () => {
+    await step('1. Launch on a temp app folder; Projects: Add (the folder dialog answered in the main part); Waits on you, empty', async () => {
       running = await launch(w, refusals);
       page = running.page;
       await running.app.evaluate(({ dialog }, dir) => {
         dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [dir] })) as unknown as typeof dialog.showOpenDialog;
       }, w.project);
-      await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
-      await page.getByRole('button', { name: 'Add a project…' }).click();
-      await expect(page.getByText('Project added.')).toBeVisible();
-      await expect(page.getByText(w.name, { exact: true }).first()).toBeVisible();
-      await page.getByRole('button', { name: /^Waits on you/ }).click();
-      await expect(page.getByRole('heading', { level: 1, name: 'Waits on you' })).toBeVisible();
-      await expect(page.getByText(/^The router has not started here/)).toBeVisible();
-      await expect(page.getByRole('heading', { level: 2, name: 'Yours (0)' })).toBeVisible();
+      await expect(win().getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
+      await win().getByRole('button', { name: 'Add a project…' }).click();
+      await expect(win().getByText('Project added.')).toBeVisible();
+      await expect(win().getByText(w.name, { exact: true }).first()).toBeVisible();
+      await win().getByRole('button', { name: /^Waits on you/ }).click();
+      await expect(win().getByRole('heading', { level: 1, name: 'Waits on you' })).toBeVisible();
+      await expect(win().getByText(/^The router has not started here/)).toBeVisible();
+      await expect(win().getByRole('heading', { level: 2, name: 'Yours (0)' })).toBeVisible();
     });
 
-    await test.step('2. Router start; the watchdog\'s tick (one busy worker on E-A.W2) and the stage building: work in motion under Not yours, naming the worker', async () => {
+    await step('2. Router start; the watchdog\'s tick (one busy worker on E-A.W2) and the stage building: work in motion under Not yours, naming the worker', async () => {
       w.routerApp('start', ROUTER);
       w.routerApp('stage', WORKER_UNIT.wu, 'building');
       w.tick();
-      const building = item(page, 'Not yours', 'Building');
+      // The project had no .router/app/ when it was added, so nothing watched for it: the app reads the router's
+      // first start at its minute's re-read (watcher/watch.ts), then watches the folder. A fresh heartbeat after
+      // that read, since the minute may outlast KEEL_APP_SILENCE_MS.
+      await expect(win().getByText(/^The router has not started here/)).toHaveCount(0, { timeout: 75_000 });
+      w.tick();
+      const building = item(win(), 'Not yours', 'Building');
       await expect(building).toBeVisible();
       await expect(building).toContainText(`Its worker: ${WORKER_UNIT.worker}`);
       await expect(building).toContainText(WORKER_UNIT.wu);
     });
 
-    await test.step('3. Plan to read on E-A.W1, and the sender\'s message: under Yours; exactly one alert line, the project as subtitle', async () => {
+    await step('3. Plan to read on E-A.W1, and the sender\'s message: under Yours; exactly one alert line, the project as subtitle', async () => {
       w.tick();
       w.routerApp('stage', PLAN_UNIT.wu, 'plan-to-read', planTip.slice(0, 7));
       const sent = w.send(`wu: ${PLAN_UNIT.wu}\nPlan to read: ${PLAN_UNIT.wu}\nThe plan is committed.`);
       expect(sent.stderr).toMatch(/the desk alert was written \(n \d+\)/);
-      await expect(item(page, 'Yours', 'Plan to read')).toBeVisible();
+      await expect(item(win(), 'Yours', 'Plan to read')).toBeVisible();
       await expect.poll(() => alerts().length).toBe(1);
       expect(alerts()[0]).toMatchObject({ title: `Plan to read: ${PLAN_UNIT.wu}`, subtitle: w.name, body: 'The plan is committed.', wu: PLAN_UNIT.wu });
     });
 
-    await test.step('4. The plan\'s working page edited, then Open: one file URL under the app folder, holding the page as committed', async () => {
+    await step('4. The plan\'s working page edited, then Open: one file URL under the app folder, holding the page as committed', async () => {
       w.editPlanPage(EDITED_HTML);
-      await item(page, 'Yours', 'Plan to read').getByRole('button', { name: 'Open the plan' }).click();
-      await expect(page.getByText('Opened in your browser.')).toBeVisible();
+      await item(win(), 'Yours', 'Plan to read').getByRole('button', { name: 'Open the plan' }).click();
+      await expect(win().getByText('Opened in your browser.')).toBeVisible();
       await expect.poll(() => sinkLines(w.openSink).length).toBe(1);
       const url = sinkLines(w.openSink)[0]?.url as string;
       expect(url).toMatch(/^file:\/\//);
@@ -121,22 +156,22 @@ test('E-APPLIST: from a router line to the item on screen and out again, alerts,
       expect(readFileSync(file).equals(w.committedPage(PLAN_UNIT.branch))).toBe(true);
     });
 
-    await test.step('5. Mark sent: under Sent. Quit and launch again on the same app folder: still under Sent, and no alert again', async () => {
+    await step('5. Mark sent: under Sent. Quit and launch again on the same app folder: still under Sent, and no alert again', async () => {
       w.tick();
-      await item(page, 'Yours', 'Plan to read').getByRole('button', { name: 'Mark sent' }).click();
-      await expect(item(page, 'Sent', 'Plan to read')).toBeVisible();
+      await item(win(), 'Yours', 'Plan to read').getByRole('button', { name: 'Mark sent' }).click();
+      await expect(item(win(), 'Sent', 'Plan to read')).toBeVisible();
       await (running as Running).app.close();
       running = null;
       w.tick();
       running = await launch(w, refusals);
       page = running.page;
-      await expect(page.getByRole('heading', { level: 1, name: 'Waits on you' })).toBeVisible();
-      await expect(item(page, 'Sent', 'Plan to read')).toBeVisible();
-      await expect(item(page, 'Not yours', 'Building')).toBeVisible();
+      await expect(win().getByRole('heading', { level: 1, name: 'Waits on you' })).toBeVisible();
+      await expect(item(win(), 'Sent', 'Plan to read')).toBeVisible();
+      await expect(item(win(), 'Not yours', 'Building')).toBeVisible();
       expect(alerts()).toHaveLength(1);
     });
 
-    await test.step('6. A second launch on the same app folder while the first runs: it says so on stderr and quits; the first window stays', async () => {
+    await step('6. A second launch on the same app folder while the first runs: it says so on stderr and quits; the first window stays', async () => {
       const electronPath = createRequire(import.meta.url)('electron') as string;
       const second = spawn(electronPath, [APP_ROOT], { cwd: APP_ROOT, env: appEnv(w), stdio: ['ignore', 'pipe', 'pipe'] });
       let stderr = '';
@@ -152,33 +187,33 @@ test('E-APPLIST: from a router line to the item on screen and out again, alerts,
       if (!exited) second.kill('SIGKILL');
       expect(exited, 'the second launch quits within 30 s').toBe(true);
       expect(stderr).toContain(SECOND_LAUNCH);
-      await expect(page.getByRole('heading', { level: 1, name: 'Waits on you' })).toBeVisible();
-      await expect(item(page, 'Sent', 'Plan to read')).toBeVisible();
+      await expect(win().getByRole('heading', { level: 1, name: 'Waits on you' })).toBeVisible();
+      await expect(item(win(), 'Sent', 'Plan to read')).toBeVisible();
     });
 
-    await test.step('7. Plan approved: the plan leaves', async () => {
+    await step('7. Plan approved: the plan leaves', async () => {
       w.tick();
       w.routerApp('stage', PLAN_UNIT.wu, 'plan-approved', planTip.slice(0, 7));
-      await expect(page.getByRole('heading', { level: 2, name: 'Sent, waiting for a sign (0)' })).toBeVisible();
-      await expect(page.getByRole('group', { name: 'Plan to read', exact: true })).toHaveCount(0);
+      await expect(win().getByRole('heading', { level: 2, name: 'Sent, waiting for a sign (0)' })).toBeVisible();
+      await expect(win().getByRole('group', { name: 'Plan to read', exact: true })).toHaveCount(0);
     });
 
-    await test.step('8. A PASS review note on E-A.W1\'s tip: result to sign; the sign-off note: to merge; the merge into the epic: it leaves', async () => {
+    await step('8. A PASS review note on E-A.W1\'s tip: result to sign; the sign-off note: to merge; the merge into the epic: it leaves', async () => {
       w.tick();
       w.git('notes', '--ref=cr', 'add', '-m', JSON.stringify({ schema: 'cr/v1', verdict: 'PASS', blockers: 0, importants: 0, code_diff_hash: 'x' }), PLAN_UNIT.branch);
-      await expect(item(page, 'Yours', 'Result to sign')).toBeVisible();
+      await expect(item(win(), 'Yours', 'Result to sign')).toBeVisible();
       w.git('notes', '--ref=mr', 'add', '-m', '{"schema":"mr/v1"}', PLAN_UNIT.branch);
-      await expect(item(page, 'Yours', 'Result to merge')).toBeVisible();
+      await expect(item(win(), 'Yours', 'Result to merge')).toBeVisible();
       w.merge(PLAN_UNIT.branch, 'epic/E-A');
-      await expect(page.getByRole('group', { name: /^Result to (sign|merge)$/ })).toHaveCount(0);
-      await expect(page.getByRole('heading', { level: 2, name: 'Yours (0)' })).toBeVisible();
+      await expect(win().getByRole('group', { name: /^Result to (sign|merge)$/ })).toHaveCount(0);
+      await expect(win().getByRole('heading', { level: 2, name: 'Yours (0)' })).toBeVisible();
     });
 
-    await test.step('9. A question by the sender: it enters, Show the question gives its text; one more alert line; the router deletes it: it leaves', async () => {
+    await step('9. A question by the sender: it enters, Show the question gives its text; one more alert line; the router deletes it: it leaves', async () => {
       w.tick();
       const asked = w.send(`question: ${QUESTION.name}\n${QUESTION.headline}\n${QUESTION.lines[0]}`);
       expect(asked.stderr).toMatch(/the desk alert was written \(n \d+\)/);
-      const question = item(page, 'Yours', 'Question from the router');
+      const question = item(win(), 'Yours', 'Question from the router');
       await expect(question).toBeVisible();
       await expect(question).toContainText(QUESTION.headline);
       await question.getByRole('button', { name: 'Show the question' }).click();
@@ -186,35 +221,35 @@ test('E-APPLIST: from a router line to the item on screen and out again, alerts,
       await expect.poll(() => alerts().length).toBe(2);
       expect(alerts()[1]).toMatchObject({ title: QUESTION.headline, subtitle: w.name, body: QUESTION.lines[0], wu: null });
       w.routerApp('del', `question/${QUESTION.name}`);
-      await expect(page.getByRole('group', { name: 'Question from the router', exact: true })).toHaveCount(0);
+      await expect(win().getByRole('group', { name: 'Question from the router', exact: true })).toHaveCount(0);
     });
 
-    await test.step('10. Main moves (not pushed); the router restarts: the worker and the stage are gone, git\'s item stays', async () => {
+    await step('10. Main moves (not pushed); the router restarts: the worker and the stage are gone, git\'s item stays', async () => {
       w.tick();
       w.git('commit', '-q', '--allow-empty', '-m', 'on main');
-      await expect(item(page, 'Yours', 'Main not pushed')).toBeVisible();
+      await expect(item(win(), 'Yours', 'Main not pushed')).toBeVisible();
       w.routerApp('start', ROUTER);
-      await expect(page.getByRole('heading', { level: 2, name: 'Not yours: a worker acts (0)' })).toBeVisible();
-      await expect(item(page, 'Yours', 'Main not pushed')).toBeVisible();
+      await expect(win().getByRole('heading', { level: 2, name: 'Not yours: a worker acts (0)' })).toBeVisible();
+      await expect(item(win(), 'Yours', 'Main not pushed')).toBeVisible();
       expect(alerts()).toHaveLength(2);
     });
 
-    await test.step(`11. No router line for ${SILENCE_MS / 1000} s (KEEL_APP_SILENCE_MS): 'router not heard'; one heartbeat: the bar goes`, async () => {
-      const notHeard = page.getByText(/^The router is not heard/);
-      await page.waitForTimeout(SILENCE_MS + 1_000);
+    await step(`11. No router line for ${SILENCE_MS / 1000} s (KEEL_APP_SILENCE_MS): 'router not heard'; one heartbeat: the bar goes`, async () => {
+      const notHeard = win().getByText(/^The router is not heard/);
+      await win().waitForTimeout(SILENCE_MS + 1_000);
       // A branch the list does not show, so the app reads now rather than at its minute's re-read.
       w.git('branch', 'e2e-nudge');
       await expect(notHeard).toBeVisible();
-      await expect(item(page, 'Yours', 'Main not pushed')).toBeVisible();
+      await expect(item(win(), 'Yours', 'Main not pushed')).toBeVisible();
       w.tick();
       await expect(notHeard).toHaveCount(0);
       expect(alerts()).toHaveLength(2);
     });
 
-    await test.step('Throughout: no content-policy refusal or page error; the page is app://keel/', async () => {
-      expect(page.url()).toMatch(PAGE);
-      await page.getByRole('button', { name: 'Projects' }).click();
-      await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
+    await step('Throughout: no content-policy refusal or page error; the page is app://keel/', async () => {
+      expect(win().url()).toMatch(PAGE);
+      await win().getByRole('button', { name: 'Projects' }).click();
+      await expect(win().getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
       expect(refusals).toEqual([]);
     });
   } finally {
