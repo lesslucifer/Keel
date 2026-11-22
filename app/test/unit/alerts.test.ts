@@ -2,7 +2,7 @@
 // was shown, the keel:// link, the scheme's owner in words, the focus, and the seams W9's test uses.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decide, alertOf, summaryOf, parseRecord, emptyRecord, Focus, RECORD_CAP, heldSink, HELD_CAP, type Clickable } from '../../src/main/alerter/alerts.ts';
+import { decide, alertOf, summaryOf, parseRecord, emptyRecord, Focus, RECORD_CAP, RUNS_KEPT, heldSink, HELD_CAP, type Clickable, type AlertRecord } from '../../src/main/alerter/alerts.ts';
 import { parseLink, openLink, schemeText, LINK_CAP } from '../../src/main/alerter/link.ts';
 import { seamsOf } from '../../src/main/alerter/seams.ts';
 import type { StoredAlert } from '../../src/main/reader/log.ts';
@@ -12,56 +12,75 @@ const RUN = 'keel-1c.20261122-083000.4242';
 const AT = '2026-11-22T08:30:00+08:00';
 const alert = (n: number, o: Partial<StoredAlert> = {}): StoredAlert => ({ n, at: AT, headline: `h${n}`, lines: [`l${n}`], ...o });
 
+const OLD = 'keel-1c.20261122-070000.1';
+const rec = (...runs: Array<[string, number[]]>): AlertRecord => ({ version: 2, runs: runs.map(([run, shown]) => ({ run, shown })) });
+
 test('a new alert line is shown once, as its headline over its lines, with its work unit; then it is in the record', () => {
-  const r = decide(emptyRecord(), RUN, [alert(4, { wu: 'E-A.W1', lines: ['one', 'two'] })], false);
+  const r = decide(rec([RUN, []]), RUN, [alert(4, { wu: 'E-A.W1', lines: ['one', 'two'] })], false);
   assert.deepEqual(r.show, [{ title: 'h4', body: 'one\ntwo', wu: 'E-A.W1' }]);
-  assert.deepEqual(r.record, { version: 1, run: RUN, shown: [4] });
+  assert.deepEqual(r.record, rec([RUN, [4]]));
   assert.deepEqual(decide(r.record, RUN, [alert(4, { wu: 'E-A.W1' })], false).show, []);
 });
 
 test('each new line is its own alert, oldest first; lines already shown are not shown again', () => {
-  const r = decide({ version: 1, run: RUN, shown: [1, 2] }, RUN, [alert(1), alert(2), alert(3), alert(5)], false);
+  const r = decide(rec([RUN, [1, 2]]), RUN, [alert(1), alert(2), alert(3), alert(5)], false);
   assert.deepEqual(r.show.map((s) => s.title), ['h3', 'h5']);
-  assert.deepEqual(r.record.shown, [1, 2, 3, 5]);
+  assert.deepEqual(r.record, rec([RUN, [1, 2, 3, 5]]));
 });
 
 test('at the app\'s start, lines written while it was closed make one summary alert, each recorded as shown (owner answer 1a)', () => {
-  const r = decide({ version: 1, run: RUN, shown: [1] }, RUN, [alert(1), alert(2), alert(3), alert(4)], true);
+  const r = decide(rec([RUN, [1]]), RUN, [alert(1), alert(2), alert(3), alert(4)], true);
   assert.deepEqual(r.show, [summaryOf(3)]);
   assert.deepEqual(summaryOf(3), { title: '3 alerts while Keel was closed', body: 'The list shows each one.', wu: null });
-  assert.deepEqual(r.record.shown, [1, 2, 3, 4]);
+  assert.deepEqual(r.record, rec([RUN, [1, 2, 3, 4]]));
 });
 
 test('at the start, a single line written while closed is shown as itself: a summary of one says less', () => {
   assert.deepEqual(decide(emptyRecord(), RUN, [alert(7, { wu: 'E-A.W2' })], true).show, [{ title: 'h7', body: 'l7', wu: 'E-A.W2' }]);
 });
 
-test('a new run starts a new record: its lines are new even when their numbers were shown in the old run', () => {
-  const r = decide({ version: 1, run: 'keel-1c.20261122-070000.1', shown: [1, 2, 3] }, RUN, [alert(2), alert(3)], false);
-  assert.deepEqual(r.show.map((s) => s.title), ['h2', 'h3']);
-  assert.deepEqual(r.record, { version: 1, run: RUN, shown: [2, 3] });
+test('a run first seen while the app runs (a project switched in) gets the same one summary, not one alert per stored line', () => {
+  const r = decide(rec([OLD, [1, 2, 3]]), RUN, [alert(1), alert(2), alert(3), alert(4), alert(5)], false);
+  assert.deepEqual(r.show, [summaryOf(5)]);
+  assert.deepEqual(r.record, rec([OLD, [1, 2, 3]], [RUN, [1, 2, 3, 4, 5]]));
+});
+
+test('switching back to a run already in the record shows nothing again; its new lines are each shown', () => {
+  const r = decide(rec([RUN, [1, 2]], [OLD, [1]]), RUN, [alert(1), alert(2)], false);
+  assert.deepEqual(r.show, []);
+  assert.deepEqual(decide(r.record, RUN, [alert(1), alert(2), alert(3)], false).show.map((s) => s.title), ['h3']);
+});
+
+test('a run first seen with nothing stored yet (a router restart seen at once) enters the record; its lines then come one by one', () => {
+  const r = decide(rec([OLD, [1, 2]]), RUN, [], false);
+  assert.deepEqual([r.show, r.record], [[], rec([OLD, [1, 2]], [RUN, []])]);
+  assert.deepEqual(decide(r.record, RUN, [alert(2)], false).show.map((s) => s.title), ['h2']);
 });
 
 test('no run: nothing is shown and the record is kept as it is', () => {
-  const rec = { version: 1 as const, run: RUN, shown: [1] };
-  assert.deepEqual(decide(rec, null, [], true), { record: rec, show: [] });
+  const kept = rec([RUN, [1]]);
+  assert.deepEqual(decide(kept, null, [], true), { record: kept, show: [] });
 });
 
-test('the record keeps only the newest numbers', () => {
+test('the record keeps only the newest numbers per run, and only the newest runs', () => {
   const many = Array.from({ length: RECORD_CAP + 10 }, (_, i) => alert(i + 1));
-  const r = decide(emptyRecord(), RUN, many, false);
-  assert.equal(r.record.shown.length, RECORD_CAP);
-  assert.equal(r.record.shown[0], 11);
+  const r = decide(rec([RUN, []]), RUN, many, false);
+  assert.equal(r.record.runs[0]?.shown.length, RECORD_CAP);
+  assert.equal(r.record.runs[0]?.shown[0], 11);
+  let record = emptyRecord();
+  for (let i = 0; i < RUNS_KEPT + 3; i++) record = decide(record, `keel-1c.20261122-0800${String(i).padStart(2, '0')}.1`, [], false).record;
+  assert.equal(record.runs.length, RUNS_KEPT);
+  assert.equal(record.runs.at(-1)?.run, `keel-1c.20261122-0800${String(RUNS_KEPT + 2).padStart(2, '0')}.1`);
 });
 
 test('an alert\'s text is made plain: control and bidi characters blanked, so a worker\'s text cannot reorder or split it', () => {
-  assert.deepEqual(alertOf(alert(1, { headline: 'Sign‮ now\n', lines: ['a\u0007b', 'c d'] })), { title: 'Sign  now ', body: 'a b\nc d', wu: null });
+  assert.deepEqual(alertOf(alert(1, { headline: 'Sign\u202e now\n', lines: ['a\u0007b', 'c\u2028d'] })), { title: 'Sign  now ', body: 'a b\nc d', wu: null });
 });
 
-test('the record parses only its own shape; anything else is no record', () => {
-  assert.deepEqual(parseRecord({ version: 1, run: RUN, shown: [1, 2] }), { version: 1, run: RUN, shown: [1, 2] });
-  assert.deepEqual(parseRecord({ version: 1, run: null, shown: [] }), { version: 1, run: null, shown: [] });
-  for (const bad of [null, [], { version: 2, run: RUN, shown: [] }, { version: 1, run: 7, shown: [] }, { version: 1, run: RUN, shown: [0] }, { version: 1, run: RUN, shown: ['1'] }, { version: 1, run: RUN }]) {
+test('the record parses only its own shape; anything else, version 1\'s included, is no record', () => {
+  assert.deepEqual(parseRecord(rec([RUN, [1, 2]], [OLD, []])), rec([RUN, [1, 2]], [OLD, []]));
+  assert.deepEqual(parseRecord({ version: 2, runs: [] }), emptyRecord());
+  for (const bad of [null, [], { version: 1, run: RUN, shown: [] }, { version: 2 }, { version: 2, runs: {} }, { version: 2, runs: [{ run: 7, shown: [] }] }, { version: 2, runs: [{ run: RUN, shown: [0] }] }, { version: 2, runs: [{ run: RUN, shown: ['1'] }] }, { version: 2, runs: [{ run: RUN }] }]) {
     assert.equal(parseRecord(bad), null, JSON.stringify(bad));
   }
 });

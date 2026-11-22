@@ -1,9 +1,10 @@
 // The Alerter (local-app.html 'The stack'): one macOS alert per alert line the router writes, never
 // the same line twice, across an app restart too. What was shown is recorded in the app's own folder
-// (alerts.json: the run and the numbers shown, written atomically by store.ts) before it is shown.
-// At the app's start, lines written while it was closed make one summary alert (the owner's answer
+// (alerts.json: per run, the numbers shown, written atomically by store.ts) before it is shown. At a
+// first look at a run (the app's first since it started, or a run first seen while it runs: a project
+// switched in, a router restart), the lines already there make one summary alert (the owner's answer
 // of 2026-11-22), each recorded shown; a single such line is shown as itself. After that each new
-// line is its own alert. A new run (the router restarted) starts a new record. A click points the
+// line is its own alert. The record keeps the last few runs, so switching back alerts nothing again. A click points the
 // window at the line's work unit, or at the list when it names none. The shell hands in the sink
 // (Electron's Notification, or the file sink W9's test uses) and what a click does.
 
@@ -14,13 +15,15 @@ import { load, writeAtomic } from '../store.ts';
 import { plain } from '../text.ts';
 
 export const RECORD_FILE = 'alerts.json';
-/** The most numbers the record keeps: the router's state keeps 20 alerts, so older numbers never come back. */
+/** The most numbers kept per run: the router's state keeps 20 alerts, so older numbers never come back. */
 export const RECORD_CAP = 64;
+/** The most runs the record keeps: a project switched away from and back keeps its run's record. */
+export const RUNS_KEPT = 8;
 
+/** What was shown, per run (oldest first): a run's numbers mean nothing in another run. */
 export interface AlertRecord {
-  version: 1;
-  run: string | null;
-  shown: number[];
+  version: 2;
+  runs: Array<{ run: string; shown: number[] }>;
 }
 
 /** One alert as the sink shows it: a title, a body, and the work unit a click opens (null: the list). */
@@ -35,16 +38,24 @@ export interface AlertSink {
 }
 
 export function emptyRecord(): AlertRecord {
-  return { version: 1, run: null, shown: [] };
+  return { version: 2, runs: [] };
 }
 
-/** The record, or null for any shape the app does not know (store.ts sets it aside). */
+const whole = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1;
+
+/** The record, or null for any shape the app does not know, version 1's included (store.ts sets it aside). */
 export function parseRecord(v: unknown): AlertRecord | null {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return null;
   const r = v as Record<string, unknown>;
-  if (r.version !== 1 || !(r.run === null || typeof r.run === 'string') || !Array.isArray(r.shown)) return null;
-  if (!r.shown.every((n) => typeof n === 'number' && Number.isInteger(n) && n >= 1)) return null;
-  return { version: 1, run: r.run, shown: [...(r.shown as number[])] };
+  if (r.version !== 2 || !Array.isArray(r.runs)) return null;
+  const runs: AlertRecord['runs'] = [];
+  for (const x of r.runs as unknown[]) {
+    if (typeof x !== 'object' || x === null) return null;
+    const { run, shown } = x as Record<string, unknown>;
+    if (typeof run !== 'string' || !Array.isArray(shown) || !shown.every(whole)) return null;
+    runs.push({ run, shown: [...(shown as number[])] });
+  }
+  return { version: 2, runs };
 }
 
 /** An alert line as an alert: its headline over its lines, every string made plain. */
@@ -57,15 +68,23 @@ export function summaryOf(k: number): ShownAlert {
   return { title: `${k} alerts while Keel was closed`, body: 'The list shows each one.', wu: null };
 }
 
-/** For the run's alert lines: the record after them, and what to show (`first`: the app's first look since it started). */
+/**
+ * For the run's alert lines: the record after them, and what to show. A first look at a run (the
+ * app's first since it started, `first`, or a run the record does not hold: a project switched in, a
+ * router restart) shows the lines already there as one summary when there are two or more (owner
+ * answer 1a); after that, each new line is its own alert.
+ */
 export function decide(record: AlertRecord, run: string | null, alerts: readonly StoredAlert[], first: boolean): { record: AlertRecord; show: ShownAlert[] } {
   if (run === null) return { record, show: [] };
-  const shown = record.run === run ? record.shown : [];
+  const entry = record.runs.find((r) => r.run === run);
+  const look = first || entry === undefined;
+  const shown = entry?.shown ?? [];
   const unseen = alerts.filter((a) => !shown.includes(a.n)).sort((a, b) => a.n - b.n);
-  if (unseen.length === 0) return { record: record.run === run ? record : { version: 1, run, shown: [] }, show: [] };
+  if (unseen.length === 0 && entry !== undefined) return { record, show: [] };
   const next = [...new Set([...shown, ...unseen.map((a) => a.n)])].sort((a, b) => a - b).slice(-RECORD_CAP);
-  const show = first && unseen.length > 1 ? [summaryOf(unseen.length)] : unseen.map(alertOf);
-  return { record: { version: 1, run, shown: next }, show };
+  const runs = [...record.runs.filter((r) => r.run !== run), { run, shown: next }].slice(-RUNS_KEPT);
+  const show = look && unseen.length > 1 ? [summaryOf(unseen.length)] : unseen.map(alertOf);
+  return { record: { version: 2, runs }, show };
 }
 
 /** Where a click points the window; seq grows on each point, so the window sees a second click on the same unit. */
@@ -120,7 +139,7 @@ export class Alerter {
         // A sink that fails shows nothing; the line stays in the list.
       }
     }
-    return new Set(run !== null && record.run === run ? record.shown : []);
+    return new Set(record.runs.find((r) => r.run === run)?.shown ?? []);
   }
 }
 

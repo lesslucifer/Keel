@@ -14,14 +14,15 @@ import { routerProject, routerApp } from '../support/router.ts';
 const GIT = realGit();
 
 /** One app launch: a view reader with an alerter on `appDir`, its alerts recorded, its clicks pressed by hand. */
-function launch(dir: string, appDir: string) {
+function launch(dir: string | (() => string), appDir: string) {
+  const root = typeof dir === 'string' ? () => dir : dir;
   const shown: Array<ShownAlert & { click: () => void }> = [];
   const focus = new Focus();
   const alerter = new Alerter({ appDir, sink: { show: (a, onClick) => shown.push({ ...a, click: onClick }) }, onClick: (wu) => focus.point(wu) });
   const reader = new ViewReader({
-    project: async () => ({ id: 'p0a1b2c3d', name: 'proj', path: dir }),
+    project: async () => ({ id: 'p0a1b2c3d', name: 'proj', path: root() }),
     git: async () => GIT,
-    runOptions: { path: [path.dirname(GIT), '/usr/bin', '/bin'], source: { HOME: dir, LANG: 'C' } },
+    runOptions: { path: [path.dirname(GIT), '/usr/bin', '/bin'], source: { HOME: root(), LANG: 'C' } },
     alerter,
     focus: () => focus.get(),
     scheme: () => 'Keel',
@@ -121,4 +122,23 @@ test('the file sink (W9\'s seam) appends each alert as one JSON line', async (t)
   sink.show({ title: 'C', body: 'd', wu: null }, () => undefined);
   const lines = readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>);
   assert.deepEqual(lines.map(({ title, body, wu }) => ({ title, body, wu })), [{ title: 'A', body: 'b', wu: 'E-A.W1' }, { title: 'C', body: 'd', wu: null }]);
+});
+
+test('a project switched in while the app runs: its stored lines make one summary; switching back shows nothing again', async (t) => {
+  const a = routerProject(t, 'alerter-a');
+  const b = routerProject(t, 'alerter-b');
+  routerApp(a, 'start', 'keel-1c');
+  routerApp(b, 'start', 'other-router');
+  alertLine(a, 'A one');
+  for (const h of ['B one', 'B two', 'B three']) alertLine(b, h);
+  let current = a;
+  const app = launch(() => current, path.join(tempDir(t, 'alerter-app'), 'Keel'));
+  await app.reader.read();
+  assert.deepEqual(app.shown.map((s) => s.title), ['A one']);
+  current = b;
+  await app.reader.read();
+  assert.deepEqual(app.shown.map((s) => s.title), ['A one', '3 alerts while Keel was closed']);
+  current = a;
+  await app.reader.read();
+  assert.equal(app.shown.length, 2, 'back on the first project: nothing again');
 });
