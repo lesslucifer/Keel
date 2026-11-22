@@ -171,3 +171,21 @@ test('the window.keel reader sees each form of reading it, and not a tool named 
     assert.equal(readsKeel(text), false, text);
   }
 });
+
+const FAKE = path.join(SRC, 'window', 'fake');
+const inside = (f: string, dir: string) => f.startsWith(dir + path.sep);
+
+/** The files under app/src and app/test whose imports resolve into src/window/fake/, fake/ itself left out. */
+function fakeImporters(): string[] {
+  const sources = [...walk(SRC), ...walk(path.join(APP, 'test'))].filter((f) => /\.(ts|tsx)$/.test(f) && !inside(f, FAKE));
+  return sources
+    .filter((f) => imports(readFileSync(f, 'utf8')).some((s) => s.startsWith('.') && (path.resolve(path.dirname(f), s) === FAKE || inside(path.resolve(path.dirname(f), s), FAKE))))
+    .map((f) => path.relative(APP, f));
+}
+
+test('only src/window/browser.tsx (and app/test-window/, outside this walk) imports src/window/fake/; the window\'s tests do, so the fake exists', () => {
+  assert.deepEqual(fakeImporters().filter((f) => f !== path.join('src', 'window', 'browser.tsx')), []);
+  assert.ok(existsSync(path.join(FAKE, 'fake.ts')), 'src/window/fake/fake.ts is missing');
+  const windowTests = walk(path.join(APP, 'test-window')).filter((f) => /\.(ts|tsx)$/.test(f));
+  assert.ok(windowTests.some((f) => imports(readFileSync(f, 'utf8')).some((s) => s.includes('/window/fake/'))), 'no window test imports the fake');
+});
