@@ -3,13 +3,13 @@
 // browser draws it (review round 4, grounds.test.tsx:42): its colour is the nearest text-<token> on
 // it or an ancestor, else body's (styles.css: @apply ... text-ink); its ground the nearest
 // bg-<token>, else body's (bg-canvas). Each pair drawn must be one the contrast test measures.
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import postcss from 'postcss';
 import { expect, test } from 'vitest';
 import { BrowserApp } from '../../src/window/browser.tsx';
-import { SCENARIO_NAMES } from '../../src/window/fake/fixtures.ts';
+import { SCENARIO_NAMES, VIEW_NAMES } from '../../src/window/fake/fixtures.ts';
 import { PAIRS } from '../support/pairs.ts';
 
 const css = readFileSync(path.resolve(import.meta.dirname, '..', '..', 'src', 'window', 'styles.css'), 'utf8');
@@ -64,6 +64,14 @@ test('every text, its colour inherited or its own, is drawn only on grounds the 
   for (const name of SCENARIO_NAMES) {
     render(<BrowserApp search={`?state=${name}`} />);
     await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
+    for (const pair of pairsIn(document.body)) drawn.add(pair);
+    cleanup();
+  }
+  // W6: screen 2 in each waiting view, the question's text shown and an alert's badge among them.
+  for (const view of VIEW_NAMES) {
+    render(<BrowserApp search={`?state=one-project&view=${view}`} />);
+    await screen.findByRole('heading', { level: 2, name: /^Yours/ });
+    for (const b of screen.queryAllByRole('button', { name: 'Show the question' })) fireEvent.click(b);
     for (const pair of pairsIn(document.body)) drawn.add(pair);
     cleanup();
   }

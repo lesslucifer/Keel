@@ -15,8 +15,10 @@ test('?state=no-project draws the screen with no project, and Add then shows the
   expect(screen.queryByRole('button', { name: /add a project/i })).not.toBeInTheDocument();
 });
 
-test('no ?state= draws the default, one project', async () => {
+test('no ?state= draws the default, one project: it opens on Waits on you, and the Projects tab shows the project', async () => {
   render(<BrowserApp search="" />);
+  expect(await screen.findByRole('heading', { level: 1, name: 'Waits on you' })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Projects' }));
   expect(await screen.findByText(/\/Users\/you\/code\/keel/)).toBeInTheDocument();
 });
 
