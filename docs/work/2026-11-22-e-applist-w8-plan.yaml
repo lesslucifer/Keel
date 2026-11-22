@@ -224,5 +224,15 @@ details:
       backlog row local-app); a muted blue accent; the owner looks before the sign-off (details.live-checks); Remove
       does not ask. The data file's defaults stand: dark mode only in the tokens (the lint refuses dark:), the
       window's tests in app/test-window/, Trawler's pragma not ported.
+  owner-instruction-design:
+    date: "2026-11-22"
+    instruction: >-
+      After trying browser mode the owner rejected the first look and ruled that the window's look follows
+      docs/work/2026-11-22-e-applist-w8-design.md (a byte copy of his DESIGN.md, Mercury's website design system),
+      adapted to a desktop settings window: its day world is the light appearance and its night world the dark one,
+      still following the Mac; one indigo action colour, translucent tinted pills for the rest, capsule radii, cards
+      separated by fill, tonal depth, its 8px spacing, weights 360-500. The system font stays (the earlier ruling,
+      DEC-72): the file's Inter substitute is not shipped, reported to the owner as the one conflict. Its breakpoints
+      and marketing components do not apply. The tokens, the lint's vocabulary and screen 6 are redone to it.
   htmldoc:
     id: 6b01db1a9f34851f0dfb2b9a
