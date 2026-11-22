@@ -2,7 +2,7 @@
 // was shown, the keel:// link, the scheme's owner in words, the focus, and the seams W9's test uses.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decide, alertOf, summaryOf, parseRecord, emptyRecord, Focus, RECORD_CAP } from '../../src/main/alerter/alerts.ts';
+import { decide, alertOf, summaryOf, parseRecord, emptyRecord, Focus, RECORD_CAP, heldSink, HELD_CAP, type Clickable } from '../../src/main/alerter/alerts.ts';
 import { parseLink, openLink, schemeText, LINK_CAP } from '../../src/main/alerter/link.ts';
 import { seamsOf } from '../../src/main/alerter/seams.ts';
 import type { StoredAlert } from '../../src/main/reader/log.ts';
@@ -124,4 +124,55 @@ test('the seams for W9\'s test are read only when the app is not packaged; packa
     const s = seamsOf({ [k as string]: v }, false);
     assert.deepEqual(s, { alertSink: null, silenceMs: null }, `${k}=${v}`);
   }
+});
+
+/** A notification as Electron's: its listeners, shown or not, and fire() for what macOS does. */
+function fakeNote() {
+  const on: Record<string, Array<() => void>> = {};
+  const n: Clickable & { shown: boolean; fire(e: string): void } = {
+    shown: false,
+    on(event, listener) {
+      (on[event] ??= []).push(listener);
+      return n;
+    },
+    show() {
+      n.shown = true;
+    },
+    fire(e) {
+      for (const l of on[e] ?? []) l();
+    },
+  };
+  return n;
+}
+
+test('the notification sink shows each alert and holds it until it is clicked, closed or fails, so its click is never lost', () => {
+  const made: Array<ReturnType<typeof fakeNote>> = [];
+  const sink = heldSink(() => {
+    const n = fakeNote();
+    made.push(n);
+    return n;
+  });
+  const clicks: string[] = [];
+  sink.show({ title: 'a', body: 'b', wu: 'E-A.W1' }, () => clicks.push('a'));
+  sink.show({ title: 'c', body: 'd', wu: null }, () => clicks.push('c'));
+  sink.show({ title: 'e', body: 'f', wu: null }, () => clicks.push('e'));
+  assert.deepEqual(made.map((n) => n.shown), [true, true, true]);
+  assert.equal(sink.held(), 3);
+  made[0]?.fire('click');
+  assert.deepEqual(clicks, ['a']);
+  assert.equal(sink.held(), 2);
+  made[1]?.fire('close');
+  made[2]?.fire('failed');
+  assert.equal(sink.held(), 0);
+});
+
+test('the sink holds at most its cap, dropping the oldest; a make that throws shows nothing and throws nothing', () => {
+  const sink = heldSink(() => fakeNote());
+  for (let i = 0; i < HELD_CAP + 5; i++) sink.show({ title: `t${i}`, body: 'b', wu: null }, () => undefined);
+  assert.equal(sink.held(), HELD_CAP);
+  const broken = heldSink(() => {
+    throw new Error('no notification');
+  });
+  assert.doesNotThrow(() => broken.show({ title: 't', body: 'b', wu: null }, () => undefined));
+  assert.equal(broken.held(), 0);
 });

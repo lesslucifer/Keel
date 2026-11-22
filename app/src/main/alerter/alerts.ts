@@ -123,3 +123,40 @@ export class Alerter {
     return new Set(run !== null && record.run === run ? record.shown : []);
   }
 }
+
+/** The part of Electron's Notification the sink uses. */
+export interface Clickable {
+  on(event: 'click' | 'close' | 'failed', listener: () => void): unknown;
+  show(): void;
+}
+
+/** The most notifications the sink holds at once. */
+export const HELD_CAP = 20;
+
+/**
+ * A sink over notifications `make` builds (the shell's Electron Notification): each is held until it
+ * is clicked, closed or fails, since one that is collected before its click loses the click; past
+ * HELD_CAP the oldest is let go. A make or show that throws shows nothing.
+ */
+export function heldSink(make: (alert: ShownAlert) => Clickable): AlertSink & { held(): number } {
+  const held = new Set<Clickable>();
+  return {
+    show(alert, onClick) {
+      try {
+        const n = make(alert);
+        held.add(n);
+        if (held.size > HELD_CAP) held.delete(held.values().next().value as Clickable);
+        n.on('click', () => {
+          held.delete(n);
+          onClick();
+        });
+        n.on('close', () => held.delete(n));
+        n.on('failed', () => held.delete(n));
+        n.show();
+      } catch {
+        // Shown nothing; the line stays in the list.
+      }
+    },
+    held: () => held.size,
+  };
+}

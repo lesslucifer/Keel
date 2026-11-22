@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync, mkdirSync, readdirSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { dispatcher, type EventLike } from '../../src/main/bridge.ts';
-import { makeHandlers, prepare, type Parts } from '../../src/main/handlers.ts';
+import { makeHandlers, prepare, readerParts, type Parts } from '../../src/main/handlers.ts';
 import { loadSettings } from '../../src/main/settings.ts';
 import type { AlertOutcome, LoginPathState, Tool, View } from '../../src/shared/contract.ts';
 import { emptyView } from '../../src/main/reader/view.ts';
@@ -147,6 +147,22 @@ test('waiting.get answers the reader\'s view as it stands, every worker string t
   assert.deepEqual(a.value.router.values, { 'question/q1': { headline: 'Merge  now? ', lines: ['a b'] } });
   assert.equal(w.seen.pushes, 0);
   assert.equal(existsSync(w.parts.appDir), false);
+});
+
+test('the reader\'s parts give the listed project with its main checkout, and the usable git; none while unlisted or unusable', async (t) => {
+  const w = world(t);
+  const rp = readerParts({ appDir: w.parts.appDir, loginPath: w.loginPath, env: w.parts.env as Record<string, string> });
+  assert.equal(await rp.project(), null);
+  assert.equal(await rp.git(), GIT);
+  assert.deepEqual(rp.runOptions, { path: w.loginPath.entries, source: w.parts.env });
+  const project = keelRepo(path.join(w.dir, 'proj'));
+  w.answers.folder = project;
+  await w.call('projects.add');
+  const listed = await rp.project();
+  assert.deepEqual(listed && { name: listed.name, path: listed.path }, { name: 'proj', path: project });
+  assert.match(listed?.id ?? '', /^p[0-9a-f]{8}$/);
+  const unusable = readerParts({ appDir: w.parts.appDir, loginPath: { entries: [w.bin], source: 'login-shell', reason: null } });
+  assert.equal(await unusable.git(), null, 'no git on that PATH');
 });
 
 test('changes run one at a time: two projects.add at once list one project', async (t) => {

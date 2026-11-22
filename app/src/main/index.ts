@@ -3,7 +3,9 @@
 // served by the asset resolver (never file://); one window built from window-options; every
 // navigation, new window, webview and permission refused; the request channel through the bridge's
 // dispatcher, and the push channel to the app's window only; the two dialogs and the Notification
-// handed to the handlers. The app keeps running with no window (DEC-77). Checked live on the owner's Mac.
+// handed to the handlers. W5: the view reader, its watcher and the alerter on the listed project; the
+// keel:// link (claimed only when packaged). The app keeps running with no window (DEC-77), so alerts
+// still come. Checked live on the owner's Mac.
 
 import { app, BrowserWindow, dialog, ipcMain, Notification, protocol, session, type OpenDialogOptions, type WebContents } from 'electron';
 import { readFile } from 'node:fs/promises';
@@ -13,10 +15,14 @@ import { dispatcher, pusher, type Expected } from './bridge.ts';
 import { resolveAsset } from './assets.ts';
 import { APP_PAGE, CSP, devServerOf, windowLife, mayAttachWebview, mayNavigate, onActivate, openWindow, pages, permissionCheck, permissionRequest, quitWhenAllClosed, windowOptions } from './window-options.ts';
 import { readLoginPath } from './login-path.ts';
-import { makeHandlers, prepare } from './handlers.ts';
+import { makeHandlers, prepare, readerParts } from './handlers.ts';
 import { ALERT_BODY, ALERT_TITLE, testAlert } from './alert.ts';
 import { plain } from './text.ts';
-import { emptyView } from './reader/view.ts';
+import { ViewReader } from './reader/view.ts';
+import { Watcher } from './watcher/watch.ts';
+import { Alerter, Focus, heldSink, type AlertSink } from './alerter/alerts.ts';
+import { openLink, schemeText } from './alerter/link.ts';
+import { fileSink, seamsOf } from './alerter/seams.ts';
 
 // Set by Forge's Vite plugin: the dev server's URL under electron-forge start (undefined in a
 // build), and the renderer's name, which names its build folder.
@@ -33,6 +39,13 @@ const devServer = devServerOf(app.isPackaged, typeof MAIN_WINDOW_VITE_DEV_SERVER
 const where = { packaged: app.isPackaged, ...(devServer === undefined ? {} : { devServer }) };
 const allowedPages = pages(where);
 const rendererRoot = path.join(__dirname, '..', 'renderer', MAIN_WINDOW_VITE_NAME);
+
+/** Where a click on an alert or a keel:// link points the window; set before start, too (a link that launched the app). */
+const focus = new Focus();
+/** The reader's watcher, once started; a project or setting change and a click make it read now. */
+let watcher: Watcher | null = null;
+// W9's seams (alerter/seams.ts): read only when not packaged.
+const seams = seamsOf(process.env, app.isPackaged);
 
 let mainWindow: BrowserWindow | null = null;
 /** mainWindow's life: painted (until then it is not shown, so no blank window flashes), and whether its renderer is gone. */
@@ -149,11 +162,46 @@ function notify() {
   return testAlert(Notification.isSupported(), () => new Notification({ title: ALERT_TITLE, body: ALERT_BODY }));
 }
 
+/** A click (an alert's, or a keel:// link's): the window opens and the reader reads now, so the window gets the focus. */
+function pointed(): void {
+  if (started) openMain();
+  void watcher?.kick();
+}
+
+function alertSink(): AlertSink {
+  if (seams.alertSink !== null) return fileSink(seams.alertSink);
+  if (!Notification.isSupported()) return { show: () => undefined };
+  return heldSink((a) => new Notification({ title: a.title, body: a.body }));
+}
+
 async function start(): Promise<void> {
   serveApp();
   refusePermissions();
+  // Only the packaged app claims keel://, so a dev run never makes Electron.app the scheme's owner.
+  if (app.isPackaged) app.setAsDefaultProtocolClient('keel');
   const appDir = app.getPath('userData');
   const loginPath = await prepare(appDir, (toolDirs) => readLoginPath({ toolDirs }));
+  const alerter = new Alerter({
+    appDir,
+    sink: alertSink(),
+    onClick: (wu) => {
+      focus.point(wu);
+      pointed();
+    },
+  });
+  const reader = new ViewReader({
+    ...readerParts({ appDir, loginPath }),
+    ...(seams.silenceMs === null ? {} : { silenceMs: seams.silenceMs }),
+    alerter,
+    focus: () => focus.get(),
+    scheme: () => schemeText(app.getApplicationNameForProtocol('keel://')),
+  });
+  watcher = new Watcher({
+    targets: () => reader.targets(),
+    read: async () => {
+      if (await reader.read()) push('waiting.changed');
+    },
+  });
   const handlers = makeHandlers({
     appDir,
     version: app.getVersion(),
@@ -161,12 +209,17 @@ async function start(): Promise<void> {
     chooseFolder,
     chooseFile,
     testAlert: notify,
-    push: (event) => void push(event),
-    view: emptyView,
+    push: (event) => {
+      push(event);
+      // A project added or removed, or git chosen: what the reader reads may have changed.
+      if (event === 'state.changed') void watcher?.kick();
+    },
+    view: () => reader.view(),
   });
   ipcMain.handle(ASK_CHANNEL, dispatcher(expected, handlers));
   started = true;
   openMain();
+  await watcher.start();
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -184,8 +237,11 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     if (quitWhenAllClosed()) app.quit();
   });
-  // The keel link scheme is declared in the bundle now and handled in W5; until then a link opens nothing.
-  app.on('open-url', (event) => event.preventDefault());
+  // keel://wu/<id> only (alerter/link.ts): it points the window at that work unit; any other link opens nothing.
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    if (openLink(url, focus)) pointed();
+  });
   app
     .whenReady()
     .then(start)
