@@ -236,3 +236,21 @@ test('the browser mode\'s page carries the same CSP meta as the shipped page and
   assert.equal(scripts.length, 1);
   assert.match(scripts[0]?.[1] ?? '', /^\s*type="module"\s+src="\.\/browser\.tsx"\s*$/);
 });
+
+/** Whether `text` asks Vite to glob modules in (import.meta.glob, in any spacing), which a static walk cannot follow. */
+function globsModules(text: string): boolean {
+  return /\bimport\s*\.\s*meta\s*\.\s*glob/.test(text);
+}
+
+test('no file in the window globs modules in, so the static walk above sees every import the shipped page makes', () => {
+  const globbers = walk(WINDOW)
+    .filter((f) => /\.(ts|tsx)$/.test(f) && globsModules(readFileSync(f, 'utf8')))
+    .map((f) => path.relative(APP, f));
+  assert.deepEqual(globbers, []);
+});
+
+test('the glob reader sees import.meta.glob in each spacing, and not a word that merely contains it', () => {
+  const [I, M, G] = ['imp' + 'ort', 'me' + 'ta', 'gl' + 'ob'];
+  for (const text of [`${I}.${M}.${G}('./fake/*.ts', { eager: true })`, `${I} . ${M} . ${G}Eager('./x')`, `${I}.${M}.${G}<Mod>('./y')`]) assert.equal(globsModules(text), true, text);
+  for (const text of [`${I}.${M}.url`, `const ${G}al = 1`, `${M}.${G}`]) assert.equal(globsModules(text), false, text);
+});
