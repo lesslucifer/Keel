@@ -188,7 +188,7 @@ test('W6 review round 1 (docs.ts:52): the copy cap counts only what is copied, a
   const size = (d: string): number => readdirSync(d, { withFileTypes: true }).reduce((n, e) => n + (e.isDirectory() ? size(path.join(d, e.name)) : statSync(path.join(d, e.name)).size), 0);
   assert.ok(size(path.join(copy, 'docs')) <= 8 * 1024 * 1024, 'within the cap');
   assert.equal(existsSync(path.join(copy, 'docs', 'a-binary.bin')), false, 'a binary is not copied and not counted');
-  // The result's page sorts after the big docs: the copy skipped it under the cap; its Open adds it to the same copy.
+  // The result's page sorts after the big docs: its Open finds it whole in the kept copy, or rebuilds the copy with it first (round 2).
   sh(GIT, w.dir, ['notes', '--ref=cr', 'add', '-m', '{"schema":"cr/v1","verdict":"PASS","blockers":0,"importants":0}', 'wu/E-A/w1-reader']);
   const facts2 = await w.facts();
   const result = itemsOf({ git: facts2, router: heard({}), sent: new Set() }).find((i) => i.kind === 'result') as Item;
@@ -238,4 +238,45 @@ test('W6 review round 1 (open.ts:70, open.ts:78): an Open removes a temp folder 
   assert.equal(existsSync(stale), false, 'the crash\'s temp folder is gone');
   assert.deepEqual(readdirSync(open), ['p0a1b2c3d'], 'a project no longer listed keeps no copies');
   assert.deepEqual(readdirSync(path.join(open, 'p0a1b2c3d')), [tip]);
+});
+
+test('W6 review round 2 (open.ts:117): reusing a copy never serves a case twin: the page and its data file are checked against their blobs, and a copy that differs is rebuilt', async (t) => {
+  const w = world(t);
+  const scratch = mk(path.join(w.root, 'blobs2'));
+  const add = (p: string, text: string) => {
+    const f = path.join(scratch, p.replaceAll('/', '_'));
+    writeFileSync(f, text);
+    sh(GIT, w.dir, ['update-index', '--add', '--cacheinfo', `100644,${sh(GIT, w.dir, ['hash-object', '-w', f]).trim()},${p}`]);
+  };
+  // The result's page and a twin differing only in its folder's case; the twin sorts first.
+  add('docs/Work/2026-11-22-e-a-w1-result.html', '<p>A TWIN, not the committed page.</p>\n');
+  add('docs/work/2026-11-22-e-a-w1-result.yaml', RESULT_YAML);
+  add('docs/work/2026-11-22-e-a-w1-result.html', '<p>The committed result.</p>\n');
+  sh(GIT, w.dir, ['commit', '-q', '-m', 'a result and a case twin']);
+  const tip = rev(w.dir, 'wu/E-A/w1-reader');
+  const { plan, facts } = await planItem(w, tip);
+  assert.deepEqual(await openItem(plan, facts, w.parts), { done: true }, 'the plan\'s copy is made first');
+  sh(GIT, w.dir, ['notes', '--ref=cr', 'add', '-m', '{"schema":"cr/v1","verdict":"PASS","blockers":0,"importants":0}', 'wu/E-A/w1-reader']);
+  const facts2 = await w.facts();
+  const result = itemsOf({ git: facts2, router: heard({}), sent: new Set() }).find((i) => i.kind === 'result') as Item;
+  assert.deepEqual(await openItem(result, facts2, w.parts), { done: true });
+  assert.equal(readFileSync(fileURLToPath(w.opened[1] as string), 'utf8'), '<p>The committed result.</p>\n');
+});
+
+test('W6 review round 2 (open.ts:151): a kept copy whose page is not the committed bytes (a write cut short) is never served: it is rebuilt through a temp folder and renamed over, never written into in place', async (t) => {
+  const w = world(t);
+  commitFiles(w.dir, { 'docs/work/2026-11-22-e-a-w1-result.yaml': RESULT_YAML, 'docs/work/2026-11-22-e-a-w1-result.html': '<p>The result, whole.</p>\n' }, 'the result');
+  const tip = rev(w.dir, 'wu/E-A/w1-reader');
+  const { plan, facts } = await planItem(w, tip);
+  assert.deepEqual(await openItem(plan, facts, w.parts), { done: true });
+  const copy = path.join(w.appDir, 'open', 'p0a1b2c3d', tip);
+  writeFileSync(path.join(copy, 'docs', 'work', '2026-11-22-e-a-w1-result.html'), '<p>The res');
+  writeFileSync(path.join(copy, 'sentinel'), 'left in the kept copy\n');
+  sh(GIT, w.dir, ['notes', '--ref=cr', 'add', '-m', '{"schema":"cr/v1","verdict":"PASS","blockers":0,"importants":0}', 'wu/E-A/w1-reader']);
+  const facts2 = await w.facts();
+  const result = itemsOf({ git: facts2, router: heard({}), sent: new Set() }).find((i) => i.kind === 'result') as Item;
+  assert.deepEqual(await openItem(result, facts2, w.parts), { done: true });
+  assert.equal(readFileSync(fileURLToPath(w.opened[1] as string), 'utf8'), '<p>The result, whole.</p>\n');
+  assert.equal(existsSync(path.join(copy, 'sentinel')), false, 'the copy was rebuilt and renamed over, not written into');
+  assert.deepEqual(readdirSync(path.join(w.appDir, 'open', 'p0a1b2c3d')), [tip], 'no temp folder left');
 });
