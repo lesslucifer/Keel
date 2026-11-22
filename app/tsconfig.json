@@ -17,5 +17,5 @@
     "skipLibCheck": true,
     "allowJs": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test-window/**/*.ts", "test-window/**/*.tsx", "*.ts", "tailwind.config.js"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test-window/**/*.ts", "test-window/**/*.tsx", "*.ts", "*.js", "eslint-rules/*.js", "eslint-rules/*.d.ts"]
 }
