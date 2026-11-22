@@ -148,14 +148,20 @@ test('the scheme\'s owner in words: the app\'s name, plain; none or empty is unk
 });
 
 test('the seams for W9\'s test are read only when the app is not packaged; packaged, they are ignored', () => {
-  const env = { KEEL_APP_ALERT_SINK: '/tmp/x/alerts.jsonl', KEEL_APP_SILENCE_MS: '2000', KEEL_APP_OPEN_SINK: '/tmp/x/opened.jsonl' };
-  assert.deepEqual(seamsOf(env, false), { alertSink: '/tmp/x/alerts.jsonl', silenceMs: 2000, openSink: '/tmp/x/opened.jsonl' });
-  assert.deepEqual(seamsOf(env, true), { alertSink: null, silenceMs: null, openSink: null });
-  assert.deepEqual(seamsOf({}, false), { alertSink: null, silenceMs: null, openSink: null });
-  for (const [k, v] of [['KEEL_APP_ALERT_SINK', 'relative.jsonl'], ['KEEL_APP_ALERT_SINK', '/a\nb'], ['KEEL_APP_SILENCE_MS', '0'], ['KEEL_APP_SILENCE_MS', '-5'], ['KEEL_APP_SILENCE_MS', '1e3'], ['KEEL_APP_SILENCE_MS', '900001'], ['KEEL_APP_OPEN_SINK', 'opened.jsonl'], ['KEEL_APP_OPEN_SINK', '/a\u0007b']]) {
+  const env = { KEEL_APP_ALERT_SINK: '/tmp/x/alerts.jsonl', KEEL_APP_SILENCE_MS: '2000', KEEL_APP_OPEN_SINK: '/tmp/x/opened.jsonl', KEEL_APP_DIR: '/tmp/x/Keel' };
+  const none = { alertSink: null, silenceMs: null, openSink: null, appDir: null };
+  assert.deepEqual(seamsOf(env, false), { alertSink: '/tmp/x/alerts.jsonl', silenceMs: 2000, openSink: '/tmp/x/opened.jsonl', appDir: '/tmp/x/Keel' });
+  assert.deepEqual(seamsOf(env, true), none);
+  assert.deepEqual(seamsOf({}, false), none);
+  for (const [k, v] of [['KEEL_APP_ALERT_SINK', 'relative.jsonl'], ['KEEL_APP_ALERT_SINK', '/a\nb'], ['KEEL_APP_SILENCE_MS', '0'], ['KEEL_APP_SILENCE_MS', '-5'], ['KEEL_APP_SILENCE_MS', '1e3'], ['KEEL_APP_SILENCE_MS', '900001'], ['KEEL_APP_OPEN_SINK', 'opened.jsonl'], ['KEEL_APP_OPEN_SINK', '/a\u0007b'], ['KEEL_APP_DIR', 'Keel'], ['KEEL_APP_DIR', ''], ['KEEL_APP_DIR', '/a\tb'], ['KEEL_APP_DIR', '/']]) {
     const s = seamsOf({ [k as string]: v }, false);
-    assert.deepEqual(s, { alertSink: null, silenceMs: null, openSink: null }, `${k}=${v}`);
+    assert.deepEqual(s, none, `${k}=${v}`);
   }
+});
+
+test('KEEL_APP_DIR (W9): the epic test\'s own app folder, so it never reads or writes the owner\'s nor meets a running Keel\'s single-instance lock; normalised, never the root', () => {
+  assert.equal(seamsOf({ KEEL_APP_DIR: '/tmp/x/../y/Keel/' }, false).appDir, '/tmp/y/Keel');
+  assert.equal(seamsOf({ KEEL_APP_DIR: '/tmp/y/Keel' }, true).appDir, null);
 });
 
 /** A notification as Electron's: its listeners, shown or not, and fire() for what macOS does. */

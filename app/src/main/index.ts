@@ -8,6 +8,7 @@
 // still come. Checked live on the owner's Mac.
 
 import { app, BrowserWindow, dialog, ipcMain, Notification, protocol, session, shell, type OpenDialogOptions, type WebContents } from 'electron';
+import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ASK_CHANNEL, type Tool } from '../shared/contract.ts';
@@ -49,6 +50,12 @@ const focus = new Focus();
 let watcher: Watcher | null = null;
 // W9's seams (alerter/seams.ts): read only when not packaged.
 const seams = seamsOf(process.env, app.isPackaged);
+// The epic test's own app folder (KEEL_APP_DIR), set before ready and before the single-instance lock,
+// which lives in it: the test never touches the owner's folder nor meets a running Keel's lock.
+if (seams.appDir !== null) {
+  mkdirSync(seams.appDir, { recursive: true, mode: 0o700 });
+  app.setPath('userData', seams.appDir);
+}
 
 let mainWindow: BrowserWindow | null = null;
 /** mainWindow's life: painted (until then it is not shown, so no blank window flashes), and whether its renderer is gone. */
