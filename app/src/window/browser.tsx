@@ -16,11 +16,11 @@ export function BrowserApp({ search }: { search: string }) {
   const bridge = useMemo(() => makeFakeBridge(scenario), [scenario]);
   return (
     <>
-      <div className="flex flex-wrap items-center gap-3 border-b border-line bg-surface px-4 py-1 text-caption text-ink-muted">
-        <span className="font-semibold text-wait">Browser mode: fixtures, not your Mac</span>
-        <nav aria-label="Fixture states" className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-sm bg-card px-xxl py-xs text-ui-sm text-ink-secondary">
+        <span className="font-medium text-ink">Browser mode: fixtures, not your Mac</span>
+        <nav aria-label="Fixture states" className="flex flex-wrap gap-sm">
           {SCENARIO_NAMES.map((name) => (
-            <a key={name} href={`?state=${name}`} aria-current={name === scenario ? 'page' : undefined} className={name === scenario ? 'font-semibold text-ink' : 'text-accent underline'}>
+            <a key={name} href={`?state=${name}`} aria-current={name === scenario ? 'page' : undefined} className={name === scenario ? 'font-medium text-ink' : 'text-primary underline'}>
               {name}
             </a>
           ))}

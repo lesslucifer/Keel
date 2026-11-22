@@ -12,10 +12,11 @@ test('vite.renderer.config.ts runs Tailwind on styles.css: tokens in, defaults o
   try {
     const out = await server.transformRequest('/styles.css?direct');
     const css = out?.code ?? '';
-    expect(css).toContain('--accent:');
+    expect(css).toContain('--primary: 82 102 235');
+    expect(css).toContain('--tint-alpha: 0.2');
     expect(css).toMatch(/prefers-color-scheme:\s*dark/);
-    for (const cls of ['.bg-canvas', '.text-body', '.rounded-panel', '.h-control', '.max-w-column', '.disabled\\:opacity-disabled:disabled']) expect(css, cls).toContain(cls);
-    for (const cls of ['.text-sm', '.bg-red-500', '.rounded-lg', '.p-5', '.dark\\:']) expect(css, cls).not.toContain(cls);
+    for (const cls of ['.bg-canvas', '.bg-card', '.text-body', '.rounded-md', '.rounded-pill', '.h-control', '.max-w-column', '.disabled\\:opacity-disabled:disabled', '.bg-tint\\/tint']) expect(css, cls).toContain(cls);
+    for (const cls of ['.text-sm', '.bg-red-500', '.rounded-2xl', '.p-5', '.dark\\:', '.shadow-lg', '.font-bold']) expect(css, cls).not.toContain(cls);
     expect(css).not.toMatch(/@font-face|url\(/);
   } finally {
     await server.close();

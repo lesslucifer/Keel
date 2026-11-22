@@ -2,7 +2,9 @@
 // there is none; keel, git and claude each with its path, its source, its problem, Choose and, when
 // set in Keel, Use the PATH; where the PATH came from; the test alert; the version at the foot. Each
 // control sends one request through useAction; while one runs every control is off. Every value is
-// React text, never markup.
+// React text, never markup. The look follows the owner's design file: cards by fill, one solid
+// primary button at most per card, every other action a translucent pill, states in words with a
+// badge whose tone is loudness, never a status colour.
 
 import type { AppState, Tool, ToolState } from '../../shared/contract.ts';
 import { TOOL_NAMES } from '../../shared/contract.ts';
@@ -14,9 +16,9 @@ import { Row } from '../ui/Row.tsx';
 import { Section } from '../ui/Section.tsx';
 
 const SOURCE: Record<ToolState['source'], { words: string; tone: Tone }> = {
-  set: { words: 'set in Keel', tone: 'accent' },
-  path: { words: 'found on the PATH', tone: 'ok' },
-  missing: { words: 'missing', tone: 'fail' },
+  set: { words: 'set in Keel', tone: 'choice' },
+  path: { words: 'found on the PATH', tone: 'quiet' },
+  missing: { words: 'missing', tone: 'strong' },
 };
 
 function ToolRow({ tool, t, action }: { tool: Tool; t: ToolState; action: ActionView }) {
@@ -37,11 +39,11 @@ function ToolRow({ tool, t, action }: { tool: Tool; t: ToolState; action: Action
         </>
       }
     >
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-xs">
         <Badge tone={SOURCE[t.source].tone}>{SOURCE[t.source].words}</Badge>
-        {t.path === null ? <span className="text-ink-muted">not found</span> : <Path path={t.path} />}
+        {t.path === null ? <span className="text-ui-sm text-ink-secondary">not found</span> : <Path path={t.path} />}
       </div>
-      {t.problem === null ? null : <span className="text-fail">{t.problem}</span>}
+      {t.problem === null ? null : <span className="font-medium text-ink">{t.problem}</span>}
     </Row>
   );
 }
@@ -50,7 +52,7 @@ export function Projects({ state, action, error }: { state: AppState; action: Ac
   const { busy, run, note } = action;
   const project = state.projects[0];
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-xl">
       <Section title="Project">
         {project === undefined ? (
           <Row
@@ -60,8 +62,8 @@ export function Projects({ state, action, error }: { state: AppState; action: Ac
               </Button>
             }
           >
-            <span className="text-ink">No project yet.</span>
-            <span className="text-ink-muted">Add the main checkout of a repository set up for Keel.</span>
+            <span className="text-body-lg font-display text-ink">No project yet.</span>
+            <span className="text-ink-secondary">Add the main checkout of a repository set up for Keel.</span>
           </Row>
         ) : (
           <Row
@@ -71,7 +73,7 @@ export function Projects({ state, action, error }: { state: AppState; action: Ac
               </Button>
             }
           >
-            <span className="font-semibold text-ink">{project.name}</span>
+            <span className="text-body-lg font-display text-ink">{project.name}</span>
             <Path path={project.path} />
           </Row>
         )}
@@ -84,17 +86,23 @@ export function Projects({ state, action, error }: { state: AppState; action: Ac
       </Section>
 
       <Section title="PATH">
-        <span className="text-ink">{state.path.source === 'login-shell' ? 'From your login shell.' : `A fallback: ${(state.path.reason ?? 'no reason given').replace(/\.$/, '')}.`}</span>
-        <details className="text-ink-muted">
-          <summary className="cursor-pointer">The folders ({state.path.entries.length})</summary>
-          <ol className="mt-2 flex flex-col gap-1">
+        <div className="flex flex-col gap-xs py-md">
+          {state.path.source === 'login-shell' ? (
+            <span className="text-ink">From your login shell.</span>
+          ) : (
+            <span className="font-medium text-ink">{`A fallback: ${(state.path.reason ?? 'no reason given').replace(/\.$/, '')}.`}</span>
+          )}
+          <details className="text-ink-secondary">
+            <summary className="cursor-pointer font-ui text-ui-sm">The folders ({state.path.entries.length})</summary>
+            <ol className="m-0 flex flex-col gap-half pl-xl pt-xs">
             {state.path.entries.map((entry, i) => (
-              <li key={`${i}:${entry}`}>
-                <Path path={entry} />
-              </li>
-            ))}
-          </ol>
-        </details>
+                <li key={`${i}:${entry}`}>
+                  <Path path={entry} />
+                </li>
+              ))}
+            </ol>
+          </details>
+        </div>
       </Section>
 
       <Section title="Alerts">
@@ -105,18 +113,18 @@ export function Projects({ state, action, error }: { state: AppState; action: Ac
             </Button>
           }
         >
-          <span className="text-ink-muted">Shows one macOS alert from Keel, to check that alerts reach you.</span>
+          <span className="text-ink-secondary">Shows one macOS alert from Keel, to check that alerts reach you.</span>
         </Row>
       </Section>
 
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-half px-half">
         {note === '' ? null : (
           <p role="status" className="m-0 text-ink">
             {note}
           </p>
         )}
         {error === '' ? null : (
-          <p role="alert" className="m-0 text-fail">
+          <p role="alert" className="m-0 font-medium text-ink">
             {error}
           </p>
         )}

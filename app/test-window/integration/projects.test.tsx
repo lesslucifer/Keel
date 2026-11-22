@@ -169,3 +169,26 @@ test('could not read: a first state.get that is refused says so, as text', async
   expect(await screen.findByRole('alert')).toHaveTextContent('Keel could not read its state. Keel refused the request (other-page).');
   expect(screen.queryByRole('button')).not.toBeInTheDocument();
 });
+
+test('the design file\'s button rules: at most one solid primary button per section, every button a capsule', async () => {
+  for (const state of [sampleState(), sampleState({ projects: [] })]) {
+    draw({ 'state.get': () => ok(state) });
+    await ready();
+    const sections = [...document.querySelectorAll('section')];
+    expect(sections.length).toBe(4);
+    for (const section of sections) {
+      const solid = [...section.querySelectorAll('button')].filter((b) => b.className.split(/\s+/).includes('bg-primary'));
+      expect(solid.length, section.textContent ?? '').toBeLessThanOrEqual(1);
+    }
+    for (const b of buttons()) expect(b.className, b.textContent ?? '').toMatch(/\brounded-(pill|xl)\b/);
+    cleanup();
+  }
+});
+
+test('with no project, Add a project is the screen\'s one solid primary button; every other button is a translucent pill', async () => {
+  draw({ 'state.get': () => ok(sampleState({ projects: [] })) });
+  await ready();
+  const solid = buttons().filter((b) => b.className.split(/\s+/).includes('bg-primary'));
+  expect(solid.map((b) => b.textContent)).toEqual(['Add a project…']);
+  for (const b of buttons().filter((x) => !solid.includes(x))) expect(b.className, b.textContent ?? '').toMatch(/\bbg-tint\/tint\b/);
+});

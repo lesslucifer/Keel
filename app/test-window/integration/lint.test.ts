@@ -67,7 +67,7 @@ test('a class built with + and one cut by an interpolation are each reported as 
 test('a dark: class is reported as dark even on a legal token', async () => {
   const got = await messagesOf('dark.tsx');
   expect(got.map((m) => m.id)).toEqual(['dark']);
-  expect(got[0]?.text).toContain('dark:bg-surface');
+  expect(got[0]?.text).toContain('dark:bg-card');
 });
 
 test('the clean fixture reports nothing', async () => {

@@ -1,17 +1,17 @@
-// A small label for a state. Its tone carries a meaning: accent for a choice you made, ok for done or
-// passing, wait for waits on someone, fail for failed or missing; muted for none of those.
+// A small capsule naming a state, always in words, so no state is told by colour alone. The design
+// file keeps status greens and oranges out of the chrome, so a badge's tone is only how loud it is:
+// 'choice' (a value you set: the indigo tint of the actions), 'quiet' (fine as it is: a faint ink
+// wash), 'strong' (needs you: the polarity flipped, ink fill and canvas text, in both worlds).
 import type { ReactNode } from 'react';
 
 const TONE = {
-  accent: 'border-accent text-accent',
-  ok: 'border-ok text-ok',
-  wait: 'border-wait text-wait',
-  fail: 'border-fail text-fail',
-  muted: 'border-line text-ink-muted',
+  choice: 'bg-tint/tint text-ink',
+  quiet: 'bg-ink/tint text-ink-secondary',
+  strong: 'bg-ink text-canvas',
 } as const;
 
 export type Tone = keyof typeof TONE;
 
 export function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
-  return <span className={`inline-flex items-center rounded-full border px-2 text-caption font-medium ${TONE[tone]}`}>{children}</span>;
+  return <span className={`inline-flex h-badge shrink-0 items-center rounded-pill px-xs font-ui text-ui-sm ${TONE[tone]}`}>{children}</span>;
 }
