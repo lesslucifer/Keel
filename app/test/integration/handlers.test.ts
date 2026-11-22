@@ -382,3 +382,15 @@ test('W6 review rounds 2 and 3 (handlers.ts:143, :144): removing a project remov
   assert.deepEqual(await removing, { ok: true, value: { done: true } });
   assert.equal(existsSync(copies), false);
 });
+
+test('W6 review round 3 (alerts.ts:152): waiting.get tells the shell which focus it handed the page, so a reload or a new window clears only a focus a page has read', async (t) => {
+  const w = world(t);
+  const seen: number[] = [];
+  w.parts.seen = (seq) => seen.push(seq);
+  await w.call('waiting.get');
+  const view = emptyView();
+  view.focus = { wu: 'E-A.W1', seq: 4 };
+  w.answers.view = view;
+  await w.call('waiting.get');
+  assert.deepEqual(seen, [4], 'only a focus the answer carried');
+});

@@ -83,6 +83,7 @@ test('W6 review round 1 (App.tsx:24): waiting.get\'s focus is the focus as it st
   w.focus.opened(true);
   await w.reader.read();
   assert.deepEqual(w.reader.view().focus, { wu: 'E-A.W1', seq: 1 });
+  w.focus.read(1);
   w.focus.opened(true);
   assert.equal(w.reader.view().focus, null, 'no read between: the view answers the focus now');
 });

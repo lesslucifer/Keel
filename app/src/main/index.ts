@@ -235,6 +235,7 @@ async function start(): Promise<void> {
       if (event === 'state.changed') void watcher?.kick();
     },
     view: () => reader.view(),
+    seen: (seq) => focus.read(seq),
     // Open: a copy of the committed docs (or an epic result in place) to the browser; W9's sink in its place when set.
     // The project, the item and the facts from one view (open.ts openListed).
     open: async (item, view) => {

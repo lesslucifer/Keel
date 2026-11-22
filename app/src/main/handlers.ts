@@ -37,6 +37,8 @@ export interface Parts {
   view(): View;
   /** W6: open an item's page or epic result in the owner's browser (open/open.ts); the item is one `view` lists, and `view` is the one to open it by. */
   open(item: Item, view: View): Promise<Change>;
+  /** W6: the focus count waiting.get handed the window's page (alerts.ts Focus.read). */
+  seen?(seq: number): void;
   /** W6: mark a markable item sent, or not (items/sent.ts), then read the view again. */
   mark(item: Item, sent: boolean): Promise<Change>;
 }
@@ -168,7 +170,12 @@ export function makeHandlers(parts: Parts): Handlers {
     'alert.test': () => parts.testAlert(),
 
     // Not queued: the reader holds the view in memory; asking for it reads no file and runs no git.
-    'waiting.get': () => parts.view(),
+    'waiting.get': () => {
+      const view = parts.view();
+      // The page acts on the focus it is handed: a reload or a new window later drops only that one (round 3, alerts.ts:152).
+      if (view.focus !== null) parts.seen?.(view.focus.seq);
+      return view;
+    },
 
     // W6. In its own queue: it reads git and writes only under the app folder's open/, apart from the files `queue` guards.
     'item.open': (args) =>

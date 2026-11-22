@@ -124,33 +124,41 @@ export class Focus {
   private project: string | null = null;
   /** Every point counts on, across a clear too, so the window always sees a new click as new. */
   private seq = 0;
-  /** A point not yet handed to a window: the window a click opens is the one it is for. */
-  private pending = false;
+  /** The newest count waiting.get handed a window's page (review round 3, alerts.ts:152). */
+  private seen = 0;
 
   point(wu: string | null, project: string | null = null): void {
     this.seq += 1;
     this.current = { wu, seq: this.seq };
     this.project = project;
-    this.pending = true;
+  }
+
+  /** waiting.get handed the focus counted `seq` to a window's page, which acts on it. */
+  read(seq: number): void {
+    if (seq > this.seen) this.seen = seq;
+  }
+
+  /** Whether a page has read the focus as it stands: only that one is dropped for a new window or a reload. */
+  private delivered(): boolean {
+    return this.current !== null && this.current.seq <= this.seen;
   }
 
   /**
-   * The shell opened (`made`: a new window) or brought forward a window (review round 1, App.tsx:24). A new
-   * window keeps the focus only when a click or a link is why it opened; a window made later (the Dock,
-   * after a close) starts with none, so it never acts on an old click again.
+   * The shell made a new window (`made`) or brought one forward (review round 1, App.tsx:24). A new window
+   * starts with no focus a page has read already (the Dock, after a close); a click no page has read yet
+   * is the new window's.
    */
   opened(made: boolean): void {
-    if (made && !this.pending) this.current = null;
-    this.pending = false;
+    if (made && this.delivered()) this.current = null;
   }
 
   /**
    * The window's page loaded: its first load (`first`), or a reload of the same window (View > Reload, or
-   * after a crash; review round 2, App.tsx:24). A reload starts with no focus already handed to a window;
-   * a click not yet handed to one stays.
+   * after a crash; round 2). A reload starts with no focus a page has read already; a click made during
+   * the reload, read by no page yet, stays (round 3, alerts.ts:152).
    */
   loaded(first: boolean): void {
-    if (!first && !this.pending) this.current = null;
+    if (!first && this.delivered()) this.current = null;
   }
 
   /** The focus as `project` sees it: none when it was pointed for another project (review round 1, index.ts:191). */

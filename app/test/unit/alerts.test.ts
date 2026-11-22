@@ -266,32 +266,48 @@ test('W6 review round 1 (index.ts:191): a focus pointed for a project is seen on
   assert.deepEqual(f.get('p11111111'), { wu: 'E-B.W2', seq: 2 });
 });
 
-test('W6 review round 1 (App.tsx:24): a new window gets the focus only when a click or a link made it; a window re-created later (the Dock, after a close) starts with none', () => {
+test('W6 review round 1 (App.tsx:24): a new window gets a focus no page has read yet; a window re-created later (the Dock, after a close) starts with none', () => {
   const f = new Focus();
   f.point('E-A.W1', 'p0a1b2c3d');
   f.opened(true);
   assert.deepEqual(f.get('p0a1b2c3d'), { wu: 'E-A.W1', seq: 1 }, 'the click opened this window: it gets the focus');
+  f.read(1);
   f.opened(true);
-  assert.equal(f.get('p0a1b2c3d'), null, 'a window made later, with no click: no old focus');
+  assert.equal(f.get('p0a1b2c3d'), null, 'a window made later, after a page read it: no old focus');
   f.point('E-A.W2', 'p0a1b2c3d');
   f.opened(false);
   assert.deepEqual(f.get('p0a1b2c3d'), { wu: 'E-A.W2', seq: 2 }, 'a click on a window already open keeps the focus for it');
+  f.read(2);
   f.opened(true);
   assert.equal(f.get('p0a1b2c3d'), null, 'and a window re-created after it starts with none');
 });
 
-test('W6 review round 2 (App.tsx:24): a reload of the same window (View > Reload, or after a crash) starts with no focus it was already given; its first load keeps the click that opened it', () => {
+test('W6 review round 2 (App.tsx:24): a reload of the same window (View > Reload, or after a crash) starts with no focus a page already read; the first load keeps the click that opened it', () => {
   const f = new Focus();
   f.point('E-A.W1', 'p0a1b2c3d');
   f.opened(true);
   f.loaded(true);
   assert.deepEqual(f.get('p0a1b2c3d'), { wu: 'E-A.W1', seq: 1 }, 'the first load of the window the click opened');
+  f.read(1);
   f.loaded(false);
-  assert.equal(f.get('p0a1b2c3d'), null, 'a reload: the focus was delivered already');
+  assert.equal(f.get('p0a1b2c3d'), null, 'a reload: the page read it already');
+});
+
+test('W6 review round 3 (alerts.ts:152): a click made during a reload of the same window survives it, in the order the app runs: point, then openMain\'s opened(false), then the reload\'s loaded(false)', () => {
+  const f = new Focus();
+  f.point('E-A.W1', 'p0a1b2c3d');
+  f.opened(true);
+  f.loaded(true);
+  f.read(1);
   f.point('E-A.W2', 'p0a1b2c3d');
-  f.loaded(false);
-  assert.deepEqual(f.get('p0a1b2c3d'), { wu: 'E-A.W2', seq: 2 }, 'a click not yet handed to any window survives a reload');
   f.opened(false);
   f.loaded(false);
-  assert.equal(f.get('p0a1b2c3d'), null);
+  assert.deepEqual(f.get('p0a1b2c3d'), { wu: 'E-A.W2', seq: 2 }, 'no page has read it yet');
+  f.read(2);
+  f.loaded(false);
+  assert.equal(f.get('p0a1b2c3d'), null, 'once read, the next reload drops it');
+  f.read(1);
+  f.point('E-A.W3', 'p0a1b2c3d');
+  f.loaded(false);
+  assert.deepEqual(f.get('p0a1b2c3d'), { wu: 'E-A.W3', seq: 3 }, 'an older read never counts for a newer click');
 });
