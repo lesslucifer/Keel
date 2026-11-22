@@ -43,9 +43,9 @@ export interface ViewReaderParts {
   now?: () => number;
   silenceMs?: number;
   /** Shows what is new among the run's alert lines; answers the numbers shown so far (alerter/alerts.ts). */
-  alerter?: { take(run: string | null, alerts: readonly StoredAlert[], project?: string): Promise<Set<number>> };
-  /** Where a click or a link points the window. */
-  focus?: () => Focus | null;
+  alerter?: { take(run: string | null, alerts: readonly StoredAlert[], project?: { id: string; name: string } | null): Promise<Set<number>> };
+  /** Where a click or a link points the window, as the listed project (or none) sees it. */
+  focus?: (project: string | null) => Focus | null;
   /** The app macOS opens keel:// links with. */
   scheme?: () => string | null;
   /** W6: called when the listed project changes (another, or none), not at the first read: the shell clears the focus. */
@@ -107,7 +107,7 @@ export class ViewReader {
       this.log = null;
       // No project: still the alerter's take, with no run, so the session's first take is spent here, not at a later Add.
       await this.parts.alerter?.take(null, []);
-      next = { ...emptyView(), focus: this.parts.focus?.() ?? null, scheme: this.parts.scheme?.() ?? null, changedAt: this.current.changedAt };
+      next = { ...emptyView(), focus: this.parts.focus?.(null) ?? null, scheme: this.parts.scheme?.() ?? null, changedAt: this.current.changedAt };
     } else {
       if (p.path !== this.root || this.git === null || this.log === null) {
         this.root = p.path;
@@ -119,7 +119,7 @@ export class ViewReader {
       await this.log.refresh();
       const router = this.log.view();
       const stored = this.log.alerts();
-      const shown = this.parts.alerter === undefined ? new Set<number>() : await this.parts.alerter.take(router.run, stored, p.name);
+      const shown = this.parts.alerter === undefined ? new Set<number>() : await this.parts.alerter.take(router.run, stored, { id: p.id, name: p.name });
       const sent = this.parts.sent === undefined ? new Set<string>() : await this.parts.sent(p.id);
       const items = itemsOf({ git: facts, router, sent });
       next = {
@@ -127,7 +127,7 @@ export class ViewReader {
         git: facts,
         router,
         alerts: stored.map((a) => viewAlert(a, shown.has(a.n))),
-        focus: this.parts.focus?.() ?? null,
+        focus: this.parts.focus?.(p.id) ?? null,
         scheme: this.parts.scheme?.() ?? null,
         readAt: new Date(this.now()).toISOString(),
         changedAt: this.current.changedAt,

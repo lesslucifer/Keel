@@ -120,16 +120,22 @@ export function decide(record: AlertRecord, run: string | null, alerts: readonly
 /** Where a click points the window; seq grows on each point, so the window sees a second click on the same unit. */
 export class Focus {
   private current: FocusPoint | null = null;
+  /** The project the point was made for (an alert's), or null for any (a keel:// link names none). */
+  private project: string | null = null;
   /** Every point counts on, across a clear too, so the window always sees a new click as new. */
   private seq = 0;
 
-  point(wu: string | null): void {
+  point(wu: string | null, project: string | null = null): void {
     this.seq += 1;
     this.current = { wu, seq: this.seq };
+    this.project = project;
   }
 
-  get(): FocusPoint | null {
-    return this.current === null ? null : { ...this.current };
+  /** The focus as `project` sees it: none when it was pointed for another project (review round 1, index.ts:191). */
+  get(project?: string | null): FocusPoint | null {
+    if (this.current === null) return null;
+    if (this.project !== null && project !== undefined && project !== this.project) return null;
+    return { ...this.current };
   }
 
   /** No focus (W6: the listed project changed, so a focus never names another project's work unit). */
@@ -142,8 +148,8 @@ export interface AlerterOptions {
   /** The app's own folder (Electron's userData). */
   appDir: string;
   sink: AlertSink;
-  /** What a click does: point the focus at `wu` (null: the list) and open the window. */
-  onClick(wu: string | null): void;
+  /** What a click does: point the focus at `wu` (null: the list) for `project` (the one the alert was shown for), and open the window. */
+  onClick(wu: string | null, project: string | null): void;
   /** This app session's id; a fresh random one when not given. */
   session?: string;
 }
@@ -161,13 +167,13 @@ export class Alerter {
     this.session = opts.session ?? `${Date.now().toString(36)}-${randomBytes(6).toString('hex')}`;
   }
 
-  /** Show what is new among the run's alert lines, recorded first, each naming `project`; the numbers shown so far in this run. */
-  async take(run: string | null, alerts: readonly StoredAlert[], project = ''): Promise<Set<number>> {
+  /** Show what is new among the run's alert lines, recorded first, each naming `project` and carrying it to its click; the numbers shown so far in this run. */
+  async take(run: string | null, alerts: readonly StoredAlert[], project: { id: string; name: string } | null = null): Promise<Set<number>> {
     const file = path.join(this.opts.appDir, RECORD_FILE);
     if (this.record === null) this.record = (await load(file, parseRecord, emptyRecord)).value;
     const first = !this.took;
     this.took = true;
-    const { record, show } = decide(this.record, run, alerts, { id: this.session, first }, project);
+    const { record, show } = decide(this.record, run, alerts, { id: this.session, first }, project?.name ?? '');
     if (record !== this.record) {
       try {
         await writeAtomic(file, record);
@@ -178,7 +184,7 @@ export class Alerter {
     }
     for (const a of show) {
       try {
-        this.opts.sink.show(a, () => this.opts.onClick(a.wu));
+        this.opts.sink.show(a, () => this.opts.onClick(a.wu, project?.id ?? null));
       } catch {
         // A sink that fails shows nothing; the line stays in the list.
       }

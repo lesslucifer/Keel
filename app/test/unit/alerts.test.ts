@@ -255,3 +255,13 @@ test('W6: a project switch clears the focus; the next click points it again, its
   f.point('E-B.W2');
   assert.deepEqual(f.get(), { wu: 'E-B.W2', seq: 2 });
 });
+
+test('W6 review round 1 (index.ts:191): a focus pointed for a project is seen only by that project; one pointed for none (a keel:// link) by any', () => {
+  const f = new Focus();
+  f.point('E-A.W1', 'p0a1b2c3d');
+  assert.deepEqual(f.get('p0a1b2c3d'), { wu: 'E-A.W1', seq: 1 });
+  assert.equal(f.get('p11111111'), null);
+  assert.equal(f.get(null), null);
+  f.point('E-B.W2');
+  assert.deepEqual(f.get('p11111111'), { wu: 'E-B.W2', seq: 2 });
+});

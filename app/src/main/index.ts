@@ -187,8 +187,9 @@ async function start(): Promise<void> {
   const alerter = new Alerter({
     appDir,
     sink: alertSink(),
-    onClick: (wu) => {
-      focus.point(wu);
+    // The alert's project goes with its click: a click made after a switch points nothing there.
+    onClick: (wu, project) => {
+      focus.point(wu, project);
       pointed();
     },
   });
@@ -199,7 +200,7 @@ async function start(): Promise<void> {
     sent: (project) => marks.get(project),
     ...(seams.silenceMs === null ? {} : { silenceMs: seams.silenceMs }),
     alerter,
-    focus: () => focus.get(),
+    focus: (project) => focus.get(project),
     projectChanged: () => focus.clear(),
     scheme: () => schemeText(app.getApplicationNameForProtocol('keel://')),
   });

@@ -20,13 +20,13 @@ function launch(t: { after: (fn: () => void) => void }) {
   let current: { id: string; name: string; path: string } | null = { id: 'p0a1b2c3d', name: 'proj-a', path: a };
   const shown: Array<ShownAlert & { click: () => void }> = [];
   const focus = new Focus();
-  const alerter = new Alerter({ appDir: path.join(tempDir(t, 'focus-app'), 'Keel'), sink: { show: (x, onClick) => shown.push({ ...x, click: onClick }) }, onClick: (wu) => focus.point(wu) });
+  const alerter = new Alerter({ appDir: path.join(tempDir(t, 'focus-app'), 'Keel'), sink: { show: (x, onClick) => shown.push({ ...x, click: onClick }) }, onClick: (wu, project) => focus.point(wu, project) });
   const reader = new ViewReader({
     project: async () => current,
     git: async () => GIT,
     runOptions: { path: [path.dirname(GIT), '/usr/bin', '/bin'], source: { HOME: a, LANG: 'C' } },
     alerter,
-    focus: () => focus.get(),
+    focus: (project) => focus.get(project),
     projectChanged: () => focus.clear(),
   });
   return { a, b, shown, focus, reader, switchTo: (p: typeof current) => (current = p) };
@@ -59,4 +59,20 @@ test('a project switch clears the focus; reading the same project again keeps it
   w.switchTo(null);
   await w.reader.read();
   assert.equal(w.reader.view().focus, null, 'removing the project clears it too');
+});
+
+test('W6 review round 1 (index.ts:191): a click on an alert shown for one project, made after a switch to another, points no focus there', async (t) => {
+  const w = launch(t);
+  await w.reader.read();
+  routerApp(w.a, 'alert', JSON.stringify({ headline: 'Result to sign', lines: ['E-A.W1 passed review.'], wu: 'E-A.W1', link: 'keel://wu/E-A.W1' }));
+  await w.reader.read();
+  w.switchTo({ id: 'p11111111', name: 'proj-b', path: w.b });
+  await w.reader.read();
+  w.shown[0]?.click();
+  await w.reader.read();
+  assert.equal(w.reader.view().focus, null, 'project A\'s alert names A\'s work unit, not one of B\'s');
+  // A keel:// link names no project: it points the listed one.
+  openLink('keel://wu/E-B.W1', w.focus);
+  await w.reader.read();
+  assert.deepEqual(w.reader.view().focus, { wu: 'E-B.W1', seq: 2 });
 });
