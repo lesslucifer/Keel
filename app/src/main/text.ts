@@ -14,3 +14,10 @@ export function plain(s: string, cap: number = TEXT_CAP): string {
   const points = Array.from(blanked);
   return points.length <= cap ? blanked : points.slice(0, Math.max(0, cap)).join('');
 }
+
+/** `s`'s length in code points (an astral character is one), as jq's length and Python's len count it. */
+export function codePoints(s: string): number {
+  let n = 0;
+  for (const _ of s) n++;
+  return n;
+}

@@ -6,9 +6,10 @@ import assert from 'node:assert/strict';
 import { writeFileSync, mkdirSync, readdirSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { dispatcher, type EventLike } from '../../src/main/bridge.ts';
-import { makeHandlers, prepare, type Parts } from '../../src/main/handlers.ts';
+import { makeHandlers, prepare, readerParts, type Parts } from '../../src/main/handlers.ts';
 import { loadSettings } from '../../src/main/settings.ts';
-import type { AlertOutcome, LoginPathState, Tool } from '../../src/shared/contract.ts';
+import type { AlertOutcome, LoginPathState, Tool, View } from '../../src/shared/contract.ts';
+import { emptyView } from '../../src/main/reader/view.ts';
 import { tempDir, program, realGit, sh, snapshot, mk, recorder, bounded, within, HANG } from '../support/fs.ts';
 
 const GIT = realGit();
@@ -32,7 +33,7 @@ function world(t: { after: (fn: () => void) => void }) {
   const claude = program(path.join(bin, 'claude'), '#!/bin/sh\n');
   const loginPath: LoginPathState = { entries: [bin, path.dirname(GIT)], source: 'login-shell', reason: null };
   const seen = { folders: 0, files: [] as Tool[], pushes: 0, alerts: 0 };
-  const answers = { folder: null as string | null, file: null as string | null, alert: 'shown' as AlertOutcome };
+  const answers = { folder: null as string | null, file: null as string | null, alert: 'shown' as AlertOutcome, view: emptyView() as View };
   const parts: Parts = {
     appDir: path.join(dir, 'app-folder'),
     version: '0.1.0',
@@ -42,6 +43,7 @@ function world(t: { after: (fn: () => void) => void }) {
     chooseFile: async (tool) => { seen.files.push(tool); return answers.file; },
     testAlert: async () => { seen.alerts++; return answers.alert; },
     push: () => { seen.pushes++; },
+    view: () => answers.view,
   };
   const ask = dispatcher(() => ({ contentsId: 1, pages: [PAGE] }), makeHandlers(parts));
   const call = (name: string, args: Record<string, string> = {}) => ask(own, { name, args });
@@ -131,6 +133,36 @@ test('alert.test answers what the shell\'s alert answered', async (t) => {
     assert.deepEqual(await w.call('alert.test'), { ok: true, value: outcome });
   }
   assert.equal(w.seen.alerts, 3);
+});
+
+test('waiting.get answers the reader\'s view as it stands, every worker string through plain(), and changes nothing', async (t) => {
+  const w = world(t);
+  assert.deepEqual(await w.call('waiting.get'), { ok: true, value: emptyView() });
+  const view = emptyView();
+  view.router.run = 'keel-1c.20261122-090000.42';
+  view.router.values = { 'question/q1': { headline: 'Merge\u202e now?\n', lines: ['a\u0007b'] } };
+  w.answers.view = view;
+  const a = (await w.call('waiting.get')) as { ok: true; value: View };
+  assert.equal(a.value.router.run, 'keel-1c.20261122-090000.42');
+  assert.deepEqual(a.value.router.values, { 'question/q1': { headline: 'Merge  now? ', lines: ['a b'] } });
+  assert.equal(w.seen.pushes, 0);
+  assert.equal(existsSync(w.parts.appDir), false);
+});
+
+test('the reader\'s parts give the listed project with its main checkout, and the usable git; none while unlisted or unusable', async (t) => {
+  const w = world(t);
+  const rp = readerParts({ appDir: w.parts.appDir, loginPath: w.loginPath, env: w.parts.env as Record<string, string> });
+  assert.equal(await rp.project(), null);
+  assert.equal(await rp.git(), GIT);
+  assert.deepEqual(rp.runOptions, { path: w.loginPath.entries, source: w.parts.env });
+  const project = keelRepo(path.join(w.dir, 'proj'));
+  w.answers.folder = project;
+  await w.call('projects.add');
+  const listed = await rp.project();
+  assert.deepEqual(listed && { name: listed.name, path: listed.path }, { name: 'proj', path: project });
+  assert.match(listed?.id ?? '', /^p[0-9a-f]{8}$/);
+  const unusable = readerParts({ appDir: w.parts.appDir, loginPath: { entries: [w.bin], source: 'login-shell', reason: null } });
+  assert.equal(await unusable.git(), null, 'no git on that PATH');
 });
 
 test('changes run one at a time: two projects.add at once list one project', async (t) => {

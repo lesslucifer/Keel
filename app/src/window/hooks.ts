@@ -33,7 +33,7 @@ export function alertText(a: Answer<AlertOutcome>): string {
 }
 
 /** What each change says when it was done. */
-const DONE_TEXT: Record<Exclude<RequestName, 'state.get' | 'alert.test'>, string> = {
+const DONE_TEXT: Record<Exclude<RequestName, 'state.get' | 'alert.test' | 'waiting.get'>, string> = {
   'projects.add': 'Project added.',
   'projects.remove': 'Project removed from the list. Add brings it back.',
   'settings.choose': 'Saved: Keel uses the chosen file.',
@@ -44,6 +44,7 @@ const DONE_TEXT: Record<Exclude<RequestName, 'state.get' | 'alert.test'>, string
 function outcomeText(request: Request, a: Answer): string {
   switch (request.name) {
     case 'state.get':
+    case 'waiting.get':
       return answerText(a);
     case 'alert.test':
       return alertText(a as Answer<AlertOutcome>);

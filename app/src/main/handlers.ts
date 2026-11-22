@@ -1,4 +1,4 @@
-// The six requests' handlers: everything the shell does for the window except Electron itself. The
+// The seven requests' handlers: everything the shell does for the window except Electron itself. The
 // shell hands in its parts (the app folder, the PATH it read at start, its two dialogs, its test
 // alert and its push); the handlers read and write only the app folder, run git only through the
 // fixed commands, and run their reads and writes one at a time, so two changes never interleave.
@@ -8,11 +8,12 @@
 // every string in the answer through plain().
 
 import path from 'node:path';
-import { TOOL_NAMES, type AlertOutcome, type AppState, type Change, type LoginPathState, type PushEvent, type Tool } from '../shared/contract.ts';
+import { TOOL_NAMES, type AlertOutcome, type AppState, type Change, type LoginPathState, type PushEvent, type Tool, type View } from '../shared/contract.ts';
 import type { Handlers } from './bridge.ts';
 import { loadSettings, chooseTool, resetTool } from './settings.ts';
 import { loadProjects, checkProject, saveProject, removeProject, fullWhy, MAX_PROJECTS } from './projects.ts';
 import { toolState, toolStates } from './tools.ts';
+import type { ViewReaderParts } from './reader/view.ts';
 
 /** What the Electron shell hands the handlers. */
 export interface Parts {
@@ -31,6 +32,8 @@ export interface Parts {
   testAlert(): Promise<AlertOutcome>;
   /** Push an event to the app's window (bridge.ts's pusher). */
   push(event: PushEvent): void;
+  /** The reader's view as it stands (reader/view.ts); reading it runs nothing. */
+  view(): View;
 }
 
 /** A queue: each job starts once the one before it has settled, passed or failed. */
@@ -55,6 +58,20 @@ function toolDirs(tools: Partial<Record<Tool, string>>): string[] {
 export async function prepare(appDir: string, readPath: (toolDirs: readonly string[]) => Promise<LoginPathState>): Promise<LoginPathState> {
   const s = await loadSettings(appDir);
   return readPath(toolDirs(s.value.tools));
+}
+
+/** What the view reader needs from the app's folder: the listed project, the usable git, and git's run options. */
+export function readerParts(p: Pick<Parts, 'appDir' | 'loginPath' | 'env'>): ViewReaderParts {
+  return {
+    project: async () => (await loadProjects(p.appDir)).value.projects[0] ?? null,
+    git: async () => {
+      const settings = (await loadSettings(p.appDir)).value;
+      const projects = (await loadProjects(p.appDir)).value.projects;
+      const git = await toolState('git', settings, p.loginPath.entries, projects.map((x) => x.path));
+      return git.problem === null ? git.path : null;
+    },
+    runOptions: { path: p.loginPath.entries, ...(p.env === undefined ? {} : { source: p.env }) },
+  };
 }
 
 /** The handlers the dispatcher runs once a call has passed its checks. */
@@ -133,5 +150,8 @@ export function makeHandlers(parts: Parts): Handlers {
 
     // Not queued: it touches no file, and a change need not wait 5 s behind an unseen alert.
     'alert.test': () => parts.testAlert(),
+
+    // Not queued: the reader holds the view in memory; asking for it reads no file and runs no git.
+    'waiting.get': () => parts.view(),
   };
 }

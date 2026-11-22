@@ -17,6 +17,7 @@ export interface Args {
   'settings.choose': { tool: Tool };
   'settings.reset': { tool: Tool };
   'alert.test': Record<string, never>;
+  'waiting.get': Record<string, never>;
 }
 
 /** One request with its arguments, as a value a button can hold. */

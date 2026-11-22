@@ -254,3 +254,14 @@ test('the glob reader sees import.meta.glob in each spacing, and not a word that
   for (const text of [`${I}.${M}.${G}('./fake/*.ts', { eager: true })`, `${I} . ${M} . ${G}Eager('./x')`, `${I}.${M}.${G}<Mod>('./y')`]) assert.equal(globsModules(text), true, text);
   for (const text of [`${I}.${M}.url`, `const ${G}al = 1`, `${M}.${G}`]) assert.equal(globsModules(text), false, text);
 });
+
+test('one source per grammar: commands.ts takes the note kinds from the contract, link.ts the work-unit pattern from the log reader; neither writes its own copy', () => {
+  const commands = readFileSync(path.join(SRC, 'main', 'commands.ts'), 'utf8');
+  // The import forms are spelled in pieces, so the import reader above does not take them for this file's own imports.
+  const importOf = (name: string, file: string) => new RegExp(String.raw`import \{[^}]*\b${name}\b[^}]*\} ` + 'fr' + `om '${file.replace(/[./]/g, (c) => `\\${c}`)}'`);
+  assert.match(commands, importOf('NOTE_KINDS', '../shared/contract.ts'));
+  assert.doesNotMatch(commands, /\[\s*'mr'\s*,\s*'cr'\s*,\s*'dod'\s*\]/);
+  const link = readFileSync(path.join(SRC, 'main', 'alerter', 'link.ts'), 'utf8');
+  assert.match(link, importOf('WU_SOURCE', '../reader/log.ts'));
+  assert.doesNotMatch(link, /E-\[A-Z0-9\]\{1,16\}/);
+});

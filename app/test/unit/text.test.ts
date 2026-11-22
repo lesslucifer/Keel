@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { plain, TEXT_CAP } from '../../src/main/text.ts';
+import { codePoints, plain, TEXT_CAP } from '../../src/main/text.ts';
 import { seeded, hostileString } from '../support/seeded.ts';
 
 const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2028\u2029\u2066-\u2069]/u;
@@ -46,4 +46,12 @@ test('generated hostile strings: plain() leaves no control, holds the cap, is we
     assert.ok(out.isWellFormed());
     if (!UNSAFE.test(s) && s.isWellFormed() && [...s].length <= cap) assert.equal(out, s);
   }
+});
+
+test('codePoints counts what a reader sees as characters: an astral one is one, as jq and Python count', () => {
+  assert.equal(codePoints(''), 0);
+  assert.equal(codePoints('abc'), 3);
+  assert.equal(codePoints('😀😀'), 2);
+  assert.equal('😀😀'.length, 4);
+  assert.equal(codePoints('é漢\ud800'), 3);
 });
