@@ -215,3 +215,23 @@ test('when main\'s merged read fails, the next good read asks no name-rev again 
   await reader.read(flaky);
   assert.equal(count(), asked, 'the failed read kept what was known');
 });
+
+test('W6: each open tip\'s review note is read for its verdict, again when the note is rewritten on the same tip; the list\'s tips carry their commit times', async (t) => {
+  const { root, dir } = world(t);
+  const reader = new GitReader(dir, opts(root));
+  const w2 = rev(dir, 'wu/E-A/w2');
+  sh(GIT, dir, ['notes', '--ref=cr', 'add', '-f', '-m', '{"schema":"cr/v1","verdict":"FAIL","blockers":2,"importants":1}', 'wu/E-A/w2']);
+  let facts = await reader.read(GIT);
+  assert.deepEqual(facts.reviews, { [w2]: { verdict: 'FAIL', blockers: 2, importants: 1 } });
+  // The sign-off's waiver rewrites the review note on the same tip: read again, by the note's new id.
+  sh(GIT, dir, ['notes', '--ref=cr', 'add', '-f', '-m', '{"schema":"cr/v1","verdict":"WAIVED","waiver":"cap","blockers":2,"importants":1}', 'wu/E-A/w2']);
+  facts = await reader.read(GIT);
+  assert.deepEqual(facts.reviews, { [w2]: { verdict: 'WAIVED', blockers: 2, importants: 1 } });
+  // A note that is not a review reads as no verdict.
+  sh(GIT, dir, ['notes', '--ref=cr', 'add', '-f', '-m', 'not json', 'wu/E-A/w2']);
+  assert.deepEqual((await reader.read(GIT)).reviews, { [w2]: { verdict: null, blockers: 0, importants: 0 } });
+  // Times: main, the open epic, the open unit and its task; not the unit merged into its epic.
+  const timed = Object.keys(facts.times).sort();
+  assert.deepEqual(timed, [rev(dir, 'main'), rev(dir, 'epic/E-A'), w2, rev(dir, 'wu/E-A/w2_probe')].sort());
+  for (const at of Object.values(facts.times)) assert.match(at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:Z|[+-]\d\d:\d\d)$/);
+});

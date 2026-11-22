@@ -63,7 +63,7 @@ export function refOk(v: unknown): v is string {
   return typeof v === 'string' && REF.test(v) && !v.includes('..') && !/\.(?:lock)?(?:\/|$)/.test(v);
 }
 
-/** The W7 commands and W5's four reads, each a git line with its slots. */
+/** The W7 commands, W5's reads and W6's, each a git line with its slots. */
 export const COMMANDS: Readonly<Record<string, readonly Token[]>> = Object.freeze(
   Object.assign(Object.create(null) as Record<string, readonly Token[]>, {
     toplevel: Object.freeze(['-C', PROJECT, 'rev-parse', '--show-toplevel']),
@@ -85,10 +85,14 @@ export const COMMANDS: Readonly<Record<string, readonly Token[]>> = Object.freez
     // name with ^ when main reached it through a merge. Run only for an epic main holds that still has a
     // work unit outside main, once per tip (the answer never changes: main is merge-only).
     'main-name': Object.freeze(['-C', PROJECT, 'name-rev', '--name-only', '--no-undefined', '--refs=refs/heads/main', Object.freeze({ slot: 'object' as const })]),
+    // W6: one blob's bytes by its full id: a review note (its id from note-of), a committed doc (its id from the tree).
+    blob: Object.freeze(['-C', PROJECT, 'cat-file', 'blob', Object.freeze({ slot: 'object' as const })]),
+    // W6: one commit's committer time, ISO 8601: since when an item waits.
+    'commit-time': Object.freeze(['-C', PROJECT, 'log', '-1', '--no-walk', '--format=%cI', Object.freeze({ slot: 'object' as const })]),
   }),
 );
 
-export type CommandName = 'toplevel' | 'common-dir' | 'has-config' | 'promisor-config' | 'refs' | 'note-of' | 'merged' | 'worktrees' | 'main-name';
+export type CommandName = 'toplevel' | 'common-dir' | 'has-config' | 'promisor-config' | 'refs' | 'note-of' | 'merged' | 'worktrees' | 'main-name' | 'blob' | 'commit-time';
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 

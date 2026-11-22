@@ -1,7 +1,7 @@
 // The git reader's parsers, each on fabricated output as git prints it, and the targets whose merges it reads.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, onMainLine, mayBeFresh, NOTE_TIPS } from '../../src/main/reader/git.ts';
+import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, onMainLine, mayBeFresh, NOTE_TIPS, parseReview, parseTime, timeTips, TIME_TIPS } from '../../src/main/reader/git.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -123,4 +123,30 @@ test('an epic main holds may be fresh only while one of its units is outside mai
   assert.equal(mayBeFresh('epic/E-X', [br('epic/E-X', M), br('wu/E-X/w1', U)], new Set(['wu/E-X/w1'])), false);
   // a task is not a unit.
   assert.equal(mayBeFresh('epic/E-X', [br('epic/E-X', M), br('wu/E-X/w1_task', W)], new Set()), false);
+});
+
+test('a review note reads as its verdict and open counts; anything else reads as no verdict', () => {
+  assert.deepEqual(parseReview('{"schema":"cr/v1","verdict":"PASS","blockers":0,"importants":0,"code_diff_hash":"x"}\n'), { verdict: 'PASS', blockers: 0, importants: 0 });
+  assert.deepEqual(parseReview('{"schema":"cr/v1","verdict":"FAIL","blockers":2,"importants":1}'), { verdict: 'FAIL', blockers: 2, importants: 1 });
+  assert.deepEqual(parseReview('{"schema":"cr/v1","verdict":"WAIVED","waiver":"cap","blockers":1,"importants":0}'), { verdict: 'WAIVED', blockers: 1, importants: 0 });
+  for (const out of ['', 'not json', '[]', 'null', '{"schema":"cr/v1","verdict":"pass"}', '{"schema":"mr/v1","verdict":"PASS"}', '{"verdict":"PASS"}', '{"schema":"cr/v1","verdict":7}']) {
+    assert.deepEqual(parseReview(out), { verdict: null, blockers: 0, importants: 0 }, out);
+  }
+  assert.deepEqual(parseReview('{"schema":"cr/v1","verdict":"FAIL","blockers":-1,"importants":1.5}'), { verdict: 'FAIL', blockers: 0, importants: 0 }, 'odd counts read as 0');
+});
+
+test('a commit time reads as its ISO 8601 line; anything else as none', () => {
+  assert.equal(parseTime('2026-11-22T08:20:00+07:00\n'), '2026-11-22T08:20:00+07:00');
+  for (const out of ['', 'yesterday', '2026-11-22', '2026-11-22T08:20:00+07:00\nmore']) assert.equal(parseTime(out), null, out);
+});
+
+test('the tips whose times the list shows: main, each open epic, each open work unit and each task of one, once each, at most TIME_TIPS', () => {
+  const b = (name: string, tip: string) => ({ name, tip, upstream: null, ahead: 0, behind: 0, gone: false });
+  const branches = [b('main', 'm'.repeat(40)), b('epic/E-A', 'e'.repeat(40)), b('epic/E-B', 'f'.repeat(40)), b('wu/E-A/w1', '1'.repeat(40)), b('wu/E-A/w1_t', '2'.repeat(40)), b('wu/E-A/w2', '3'.repeat(40)), b('wu/E-B/w1', '4'.repeat(40)), b('feature/x', '5'.repeat(40)), b('wu/E-A/w3', '1'.repeat(40))];
+  const merged = { main: ['epic/E-B'], 'epic/E-A': ['wu/E-A/w2'], 'wu/E-A/w1': [] };
+  assert.deepEqual(timeTips(branches, merged), { tips: ['m'.repeat(40), 'e'.repeat(40), '1'.repeat(40), '2'.repeat(40)], over: false });
+  const many = Array.from({ length: TIME_TIPS + 5 }, (_, i) => b(`wu/E-A/w${i + 1}`, i.toString(16).padStart(40, '0')));
+  const r = timeTips([b('epic/E-A', 'e'.repeat(40)), ...many], {});
+  assert.equal(r.tips.length, TIME_TIPS);
+  assert.equal(r.over, true);
 });

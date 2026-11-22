@@ -14,6 +14,8 @@ const SLOTS: Record<string, Record<string, string>> = {
   'main-name': { project: '/p', object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
   merged: { project: '/p', ref: 'refs/heads/epic/E-APPLIST' },
   worktrees: { project: '/p' },
+  blob: { project: '/p', object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+  'commit-time': { project: '/p', object: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
 };
 
 test('every fixed command starts with -c core.fsmonitor=false --no-optional-locks --no-lazy-fetch', () => {
@@ -23,7 +25,7 @@ test('every fixed command starts with -c core.fsmonitor=false --no-optional-lock
 });
 
 test('the fixed commands of W7 are exactly the plan\'s three lines and, for a git older than 2.45, the promisor read; W5 adds four reads', () => {
-  assert.deepEqual(Object.keys(COMMANDS).sort(), ['common-dir', 'has-config', 'main-name', 'merged', 'note-of', 'promisor-config', 'refs', 'toplevel', 'worktrees']);
+  assert.deepEqual(Object.keys(COMMANDS).sort(), ['blob', 'commit-time', 'common-dir', 'has-config', 'main-name', 'merged', 'note-of', 'promisor-config', 'refs', 'toplevel', 'worktrees']);
   assert.deepEqual(argv('promisor-config', { project: '/Users/me/Keel' }, true), [
     '-c', 'core.fsmonitor=false', '--no-optional-locks', '-C', '/Users/me/Keel', 'config', '--get-regexp', '^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$',
   ]);
@@ -162,4 +164,14 @@ test('generated refs: every one the slot takes is a whole keel branch ref with n
     }
   }
   assert.ok(accepted > 50, `only ${accepted} generated refs accepted: the property is too thin`);
+});
+
+test('W6 adds two reads by object id: one blob\'s bytes (a review note, a committed doc) and one commit\'s time; each takes a full id only', () => {
+  const O = 'a'.repeat(40);
+  assert.deepEqual(argv('blob', { project: '/p', object: O }), [...LOCKED, '-C', '/p', 'cat-file', 'blob', O]);
+  assert.deepEqual(argv('commit-time', { project: '/p', object: O }), [...LOCKED, '-C', '/p', 'log', '-1', '--no-walk', '--format=%cI', O]);
+  for (const name of ['blob', 'commit-time']) {
+    for (const object of ['HEAD', 'main', '-p', '--output=/tmp/x', O.slice(1), `${O}:docs/x.html`, '']) assert.throws(() => argv(name, { project: '/p', object }), /object/, `${name} ${object}`);
+    assert.throws(() => argv(name, { project: '/p', object: O, kind: 'cr' }), /slots/);
+  }
 });

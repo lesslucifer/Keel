@@ -1,10 +1,12 @@
 // The view waiting.get answers: the one listed project's git facts, the router's values, its alerts
 // and where a click points the window. ViewReader rebuilds it on each read (the watcher's), from the
 // project list, the git reader and the update log's reader, and says whether it changed; the view
-// is read from memory, so waiting.get runs nothing.
+// is read from memory, so waiting.get runs nothing. W6: the list, drawn from those facts by the item rules
+// (src/shared/items.ts) with the owner's sent marks, on every read.
 
 import type { Focus, RouterAlert, View } from '../../shared/contract.ts';
 import type { RunOptions } from '../commands.ts';
+import { countsOf, itemsOf } from '../../shared/items.ts';
 import { GitReader, noFacts } from './git.ts';
 import { RouterLog, type StoredAlert } from './log.ts';
 import { projectTargets, type WatchTarget } from '../watcher/watch.ts';
@@ -46,6 +48,8 @@ export interface ViewReaderParts {
   focus?: () => Focus | null;
   /** The app macOS opens keel:// links with. */
   scheme?: () => string | null;
+  /** W6: the item ids the owner marked sent for this project (items/sent.ts); none when not given. */
+  sent?: (project: string) => Promise<ReadonlySet<string>>;
 }
 
 /** A stored alert as the view shows it; whether it was shown is the alerter's to say. */
@@ -109,6 +113,8 @@ export class ViewReader {
       const router = this.log.view();
       const stored = this.log.alerts();
       const shown = this.parts.alerter === undefined ? new Set<number>() : await this.parts.alerter.take(router.run, stored);
+      const sent = this.parts.sent === undefined ? new Set<string>() : await this.parts.sent(p.id);
+      const items = itemsOf({ git: facts, router, sent });
       next = {
         project: { id: p.id, name: p.name },
         git: facts,
@@ -118,8 +124,8 @@ export class ViewReader {
         scheme: this.parts.scheme?.() ?? null,
         readAt: new Date(this.now()).toISOString(),
         changedAt: this.current.changedAt,
-        items: [],
-        counts: { yours: 0, notYours: 0, sent: 0 },
+        items,
+        counts: countsOf(items),
       };
     }
     const changed = !same(next, this.current);
