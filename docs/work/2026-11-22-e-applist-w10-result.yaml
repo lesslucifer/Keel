@@ -6,13 +6,14 @@ title: "E-APPLIST.W10 result · The app moves from npm to pnpm"
 date: "2026-11-22"
 page: 2026-11-22-e-applist-w10-result.html
 outcome: >-
-  Delivered in the tree, not yet run end to end. app/package.json pins packageManager pnpm@11.18.0;
+  Delivered. app/package.json pins packageManager pnpm@11.18.0;
   app/pnpm-lock.yaml (pnpm import of the committed package-lock.json) replaces package-lock.json and holds the same
   393 packages at the same versions; app/pnpm-workspace.yaml sets nodeLinker hoisted and allowBuilds fsevents false.
   pnpm install --frozen-lockfile accepted the lockfile ("Lockfile passes supply-chain policies (393 entries)") and
   then failed writing the files: the sandbox refuses any write under a .vscode folder, and xmlbuilder 15.1.1 ships
-  .vscode/launch.json. So pnpm test:window, pnpm lint and pnpm typecheck were not run here; the owner runs them
-  (details.owner-run). The main tests (node --test, the same command as pnpm test:main) and keel check are green.
+  .vscode/launch.json. The owner then ran the whole chain on his Mac (details.owner-run, 2026-11-22): the install
+  finished with no "Ignored build scripts" line, and pnpm test:main, test:window, lint and typecheck all passed. On
+  his install the worker re-ran the four, all green (evidence.owner-run). keel check is green.
 deviations:
   - >-
     The four pnpm checks were to be green before each commit. Only test:main's command (node --test, run directly)
@@ -36,13 +37,19 @@ evidence:
   red-first: "node --test test/unit/guards.test.ts test/integration/lockfile.test.ts before the switch: 4 failing (the three guards and the importer test)."
   green: "node --test 'test/**/*.test.ts' in app/: 297 tests, 296 pass, 1 skipped, 0 fail. keel check: green."
   versions: "Every name@version in the old package-lock.json (393) is in pnpm-lock.yaml's packages, and none more."
-  not-run: "pnpm install to the end, pnpm test:window, pnpm lint, pnpm typecheck (sandbox, above)."
+  owner-run: >-
+    The owner, in the W10 worktree's app/ with pnpm 11.18.0 from Homebrew, ran details.owner-run; the && chain
+    reached its end. His pasted tail: Vitest "Test Files 16 passed (16) / Tests 207 passed (207)"; "$ eslint -c
+    eslint.config.js --max-warnings 0 . && node eslint-rules/check-css.js" and "$ tsc --noEmit" with no output. No
+    "Ignored build scripts" line.
+  worker-rerun: >-
+    On the owner's node_modules, offline, at 4e64084's tree: pnpm test:main 297 tests, 296 pass, 1 skipped, 0 fail;
+    pnpm test:window 16 files, 207 tests passed; pnpm lint exit 0, no output; pnpm typecheck exit 0, no output.
   docs: "this result pair; the plan pair; the epic plan pair (W10 added); docs/backlog/local-app.yaml (A3: W5's open review item, npm start -> pnpm start)"
 distillation: >-
   Nothing citable yet: the app's build and install steps reach docs/install.html and docs/local-app.html at the
   epic's close (W9's distillation plan), now as pnpm.
 follow-ups:
-  - "The owner's run of details.owner-run on his Mac, its output recorded before this WU's sign-off. Taken by: E-APPLIST.W10 (this WU), before its sign-off."
   - "W5's open review item (contract.ts:129-131 vs git.ts:89). Taken by: docs/backlog/local-app.yaml row A3 (recorded)."
 details:
   owner-run: >-

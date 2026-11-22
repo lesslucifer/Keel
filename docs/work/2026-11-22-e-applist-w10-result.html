@@ -9,40 +9,38 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>E-APPLIST.W10 result · The app moves to pnpm</h1>
-      <p>Done in the files. One run on your Mac is left.</p>
+      <p>Done. Your run on your Mac passed.</p>
       <div class="meta">T3 · WU result · 2026-11-22 · Keel · its data file, 2026-11-22-e-applist-w10-result.yaml, sits beside this page · the plan: <a href="2026-11-22-e-applist-w10-plan.html">W10 plan</a></div>
     </div>
   </header>
   <main>
 
 <h2 id="happened">What happened</h2>
-<p data-c="happened">The app now names pnpm 11.18.0 as its tool. pnpm's lockfile replaced npm's, with the same 393 package versions. pnpm accepted the lockfile, then the worker's sandbox stopped the install: it refuses to write any file inside a folder named <code>.vscode</code>, and one package ships one. So the window tests, lint and type check could not run here.</p>
+<p data-c="happened">The app now names pnpm 11.18.0 as its tool. pnpm's lockfile replaced npm's, with the same 393 package versions. pnpm accepted the lockfile, then the worker's sandbox stopped the install: it refuses to write any file inside a folder named <code>.vscode</code>, and one package ships one. You ran the install and all four checks on your Mac. All passed. The worker then re-ran the four on your install: all green.</p>
 
 <h2 id="checks">The plan's checks</h2>
 <ul data-c="checks">
   <li>Met: the app folder has a pnpm lockfile and no npm lockfile.</li>
-  <li>Not yet: a fresh <code>pnpm install</code> with no refused-script warning. It passed the lockfile check, then hit the sandbox.</li>
-  <li>Partly: the main tests pass. Window tests, lint and type check wait for your run.</li>
+  <li>Met, on your Mac: a fresh <code>pnpm install</code> with no refused-script warning.</li>
+  <li>Met: main tests (296 pass, 1 skipped), window tests (207 pass), lint and type check all pass under pnpm.</li>
   <li>Met: Keel's usual checks pass and install nothing.</li>
 </ul>
 
-<h2 id="example">Run it on your Mac</h2>
+<h2 id="example">Your run on your Mac</h2>
 <ol data-c="example">
   <li>In the app folder: <code>rm -rf node_modules</code>, to drop npm's folder.</li>
-  <li><code>pnpm install --frozen-lockfile</code>. It should finish with no error.</li>
-  <li><code>pnpm test:main</code>, <code>pnpm test:window</code>, <code>pnpm lint</code>, <code>pnpm typecheck</code>. Each should pass.</li>
-  <li>Send the output to the router. It goes in this result before you sign.</li>
+  <li><code>pnpm install --frozen-lockfile</code>. It finished with no error and no refused-script line.</li>
+  <li><code>pnpm test:main</code>, <code>pnpm test:window</code>, <code>pnpm lint</code>, <code>pnpm typecheck</code>. Each passed: 16 window test files, 207 tests; lint and type check silent.</li>
 </ol>
 
 <h2 id="diff">Differences from the plan</h2>
 <ul data-c="diff">
-  <li>The four pnpm checks were to pass before each commit. Only the main tests ran, run directly.</li>
+  <li>The four pnpm checks were to pass before each commit. The sandbox stopped the install, so only the main tests ran then. Your run and the re-run close this.</li>
   <li>pnpm put a temporary store in the worker's folder. It was deleted; nothing of it is committed.</li>
 </ul>
 
 <h2 id="left">What is left, and who takes it</h2>
 <ul data-c="left">
-  <li>Your run above. This part, before its sign-off.</li>
   <li>W5's open review point. The backlog's app row, recorded.</li>
 </ul>
 
