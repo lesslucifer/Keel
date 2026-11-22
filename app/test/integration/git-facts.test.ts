@@ -140,3 +140,28 @@ test('the notes read is bounded by the open branches, not by history: many old n
   assert.equal(notesRuns() - first, first, 'the same number of notes runs as before the 60 old notes');
   assert.deepEqual(after.notes, before.notes);
 });
+
+test('closed history costs no read: an epic in main gets no merged read, and its kept work units and tasks no notes or task read (review round 2, git.ts:95 and :159)', async (t) => {
+  const { root, dir } = world(t);
+  sh(GIT, dir, ['branch', 'epic/E-OLD', 'main']);
+  sh(GIT, dir, ['switch', '-q', '-c', 'wu/E-OLD/w9', 'epic/E-OLD']);
+  sh(GIT, dir, ['commit', '-q', '--allow-empty', '-m', 'kept, never merged']);
+  sh(GIT, dir, ['branch', 'wu/E-OLD/w9_probe']);
+  sh(GIT, dir, ['notes', '--ref=cr', 'add', '-m', '{}', 'wu/E-OLD/w9']);
+  sh(GIT, dir, ['switch', '-q', 'epic/E-OLD']);
+  sh(GIT, dir, ['commit', '-q', '--allow-empty', '-m', 'epic work']);
+  sh(GIT, dir, ['switch', '-q', 'main']);
+  sh(GIT, dir, ['merge', '-q', '--no-ff', '-m', 'close E-OLD', 'epic/E-OLD']);
+  sh(GIT, dir, ['branch', 'wu/E-GONE/w1', 'main']);
+  const rec = path.join(root, 'runs.txt');
+  const counting = program(path.join(mk(path.join(root, 'counting')), 'git'), `#!/bin/sh\necho "$*" >> ${rec}\nexec ${GIT} "$@"\n`);
+  const facts = await new GitReader(dir, opts(root)).read(counting);
+  assert.equal(facts.problem, null);
+  assert.deepEqual(Object.keys(facts.merged).sort(), ['epic/E-A', 'main', 'wu/E-A/w2']);
+  assert.deepEqual(facts.merged.main, ['epic/E-OLD']);
+  assert.deepEqual(facts.notes.cr, [rev(dir, 'wu/E-A/w2')], 'the kept work unit of a closed epic has its note unread');
+  const runs = readFileSync(rec, 'utf8');
+  assert.doesNotMatch(runs, /--merged=refs\/heads\/(epic\/E-OLD|wu\/E-OLD)/);
+  assert.doesNotMatch(runs, new RegExp(`list ${rev(dir, 'wu/E-OLD/w9')}`));
+  assert.doesNotMatch(runs, new RegExp(`list ${rev(dir, 'wu/E-GONE/w1')}`), 'a work unit whose epic branch is gone is not open');
+});

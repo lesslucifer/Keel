@@ -122,9 +122,9 @@ export interface GitWorktree {
 /** What git says, read with the fixed commands only. */
 export interface GitFacts {
   branches: GitBranch[];
-  /** Per kind, the open branches' tips (full ids: work units not in their epic, epics not in main) that carry a note of that kind. */
+  /** Per kind, the open branches' tips (full ids: epics not in main, their work units not yet in them) that carry a note of that kind. */
   notes: Record<NoteKind, string[]>;
-  /** Per target branch (main, each epic, each work unit with a task), the branches whose tips it holds. */
+  /** Per target branch (main, each epic not in main, each open work unit with a task), the branches whose tips it holds. */
   merged: Record<string, string[]>;
   worktrees: GitWorktree[];
   /** Why git could not be read, or null. */

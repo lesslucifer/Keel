@@ -1,8 +1,8 @@
 // The git facts the list needs, read with the fixed commands only (commands.ts): every local branch
 // with its tip and where it stands against its upstream (no fetch: the app never fetches), which
-// open branches' tips carry a sign-off (mr), review (cr) or gate (dod) note (one tip at a time, so the
-// cost never grows with history), what main, each epic and each work unit
-// with a task holds, and the worktrees. Reads only; never a note's body, a diff or a fetch.
+// open branches' tips carry a sign-off (mr), review (cr) or gate (dod) note (one tip at a time), what
+// main, each epic not in main and each open work unit with a task holds (main read first, so closed
+// history costs no read), and the worktrees. Reads only; never a note's body, a diff or a fetch.
 // A git older than 2.45 reads a project only when it is not a partial clone, as checkProject decides:
 // the reader asks the project's config once per git and remembers the answer.
 
@@ -63,39 +63,47 @@ export function parseWorktrees(out: string): GitWorktree[] {
 const EPIC = /^epic\/[^/]+$/;
 const WU = /^wu\/[^/]+\/[^/_]+$/;
 
-/** The branches whose merges the list reads: main, each epic, each work unit that has a task branch (wu/<e>/<w>_<task>). */
-export function mergeTargets(names: readonly string[]): string[] {
-  return names.filter((n) => {
-    if (!refOk(`${HEADS}${n}`)) return false;
-    if (n === 'main' || EPIC.test(n)) return true;
-    return WU.test(n) && names.some((m) => m.startsWith(`${n}_`));
+/** keel's branch names among `names` (main, epics, work units, tasks). */
+const named = (names: readonly string[]) => names.filter((n) => refOk(`${HEADS}${n}`));
+
+/** The epics not yet in main (`inMain`, what main holds; every epic when there is no main read). */
+export function openEpics(names: readonly string[], inMain: readonly string[] | undefined): string[] {
+  return named(names).filter((n) => EPIC.test(n) && !(inMain ?? []).includes(n));
+}
+
+/** The work units of an open epic not yet in it: a unit whose epic is in main, or gone, is closed however long it is kept. */
+export function openUnits(names: readonly string[], epics: readonly string[], merged: Readonly<Record<string, readonly string[]>>): string[] {
+  return named(names).filter((n) => {
+    if (!WU.test(n)) return false;
+    const epic = `epic/${n.split('/')[1] as string}`;
+    return epics.includes(epic) && !(merged[epic] ?? []).includes(n);
   });
 }
 
 /** Of `names`, the ones `target` is read for: main the epics, an epic its work units, a work unit its tasks. */
 export function heldBy(target: string, names: readonly string[]): string[] {
-  const named = names.filter((n) => refOk(`${HEADS}${n}`));
-  if (target === 'main') return named.filter((n) => EPIC.test(n));
-  if (EPIC.test(target)) return named.filter((n) => n.startsWith(`wu/${target.slice('epic/'.length)}/`));
-  return named.filter((n) => n.startsWith(`${target}_`));
+  const all = named(names);
+  if (target === 'main') return all.filter((n) => EPIC.test(n));
+  if (EPIC.test(target)) return all.filter((n) => n.startsWith(`wu/${target.slice('epic/'.length)}/`));
+  return all.filter((n) => n.startsWith(`${target}_`));
 }
 
 /** The most open branches whose tips' notes one read asks about. */
 export const NOTE_TIPS = 40;
 
 /**
- * The tips whose notes the list needs, each once: each work unit not yet merged into its epic, each
- * epic not yet merged into main (a merged one's item has left the list). At most NOTE_TIPS; `over`
- * says more were open. So the notes read is bounded by the open branches, never by history.
+ * The tips whose notes the list needs, each once: each epic not yet in main, each work unit of such
+ * an epic not yet in it (a merged one's item has left the list; a unit of a closed or gone epic is
+ * closed). At most NOTE_TIPS; `over` says more were open. So the notes read is bounded by the open
+ * branches, never by history.
  */
 export function openTips(branches: readonly GitBranch[], merged: Readonly<Record<string, readonly string[]>>): { tips: string[]; over: boolean } {
-  const open: string[] = [];
-  for (const b of branches) {
-    if (!refOk(`${HEADS}${b.name}`)) continue;
-    const isOpen = EPIC.test(b.name) ? !(merged.main ?? []).includes(b.name) : WU.test(b.name) ? !(merged[`epic/${b.name.split('/')[1] as string}`] ?? []).includes(b.name) : false;
-    if (isOpen && !open.includes(b.tip)) open.push(b.tip);
-  }
-  return { tips: open.slice(0, NOTE_TIPS), over: open.length > NOTE_TIPS };
+  const names = branches.map((b) => b.name);
+  const epics = openEpics(names, merged.main);
+  const open = new Set([...epics, ...openUnits(names, epics, merged)]);
+  const tips: string[] = [];
+  for (const b of branches) if (open.has(b.name) && !tips.includes(b.tip)) tips.push(b.tip);
+  return { tips: tips.slice(0, NOTE_TIPS), over: tips.length > NOTE_TIPS };
 }
 
 /** Why a run gave no answer to read, or null. */
@@ -156,12 +164,17 @@ export class GitReader {
       return why === null && typeof r !== 'string' ? r.stdout : null;
     };
     const names = branches.map((b) => b.name);
-    for (const target of mergeTargets(names)) {
+    const holds = async (target: string) => {
       const out = take(await this.run(git, 'merged', { ref: `${HEADS}${target}` }), `what ${target} holds`);
-      if (out === null) continue;
+      if (out === null) return;
       const listed = new Set(parseMerged(out));
       facts.merged[target] = heldBy(target, names).filter((n) => listed.has(n));
-    }
+    };
+    // Main first, then only what is still open: a closed epic, and its kept units and tasks, cost no read.
+    if (names.includes('main')) await holds('main');
+    const epics = openEpics(names, facts.merged.main);
+    for (const epic of epics) await holds(epic);
+    for (const unit of openUnits(names, epics, facts.merged)) if (names.some((n) => n.startsWith(`${unit}_`))) await holds(unit);
     const open = openTips(branches, facts.merged);
     if (open.over) problems.push(`more than ${NOTE_TIPS} open branches: notes read for the first ${NOTE_TIPS} only`);
     for (const kind of NOTE_KINDS) {

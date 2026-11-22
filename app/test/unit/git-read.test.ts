@@ -1,7 +1,7 @@
 // The git reader's parsers, each on fabricated output as git prints it, and the targets whose merges it reads.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRefs, parseMerged, parseWorktrees, mergeTargets, heldBy, openTips, NOTE_TIPS } from '../../src/main/reader/git.ts';
+import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, NOTE_TIPS } from '../../src/main/reader/git.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -57,28 +57,37 @@ test('the worktree list gives each worktree\'s path, branch and tip; a detached 
   assert.deepEqual(parseWorktrees('worktree relative/path\n\n'), []);
 });
 
-test('the merge targets are main, each epic and each work unit that has a task branch; each holds only its own kind', () => {
+test('what each target holds is read for its own kind: main the epics, an epic its work units, a work unit its tasks', () => {
   const names = ['main', 'epic/E-A', 'epic/E-B', 'wu/E-A/w1', 'wu/E-A/w1_look-variants', 'wu/E-A/w2', 'wu/E-B/w1', 'topic', 'epic/bad name'];
-  assert.deepEqual(mergeTargets(names), ['main', 'epic/E-A', 'epic/E-B', 'wu/E-A/w1']);
   assert.deepEqual(heldBy('main', names), ['epic/E-A', 'epic/E-B']);
   assert.deepEqual(heldBy('epic/E-A', names), ['wu/E-A/w1', 'wu/E-A/w1_look-variants', 'wu/E-A/w2']);
   assert.deepEqual(heldBy('wu/E-A/w1', names), ['wu/E-A/w1_look-variants']);
-  assert.deepEqual(mergeTargets(['epic/E-A']), ['epic/E-A']);
+});
+
+test('the open epics are those not in main (all of them when there is no main); the open work units are those of an open epic not yet in it', () => {
+  const names = ['main', 'epic/E-A', 'epic/E-B', 'wu/E-A/w1', 'wu/E-A/w2', 'wu/E-A/w2_task', 'wu/E-B/w1', 'wu/E-C/w1', 'epic/bad name'];
+  assert.deepEqual(openEpics(names, ['epic/E-B']), ['epic/E-A']);
+  assert.deepEqual(openEpics(names, undefined), ['epic/E-A', 'epic/E-B']);
+  assert.deepEqual(openUnits(names, ['epic/E-A'], { 'epic/E-A': ['wu/E-A/w1'] }), ['wu/E-A/w2']);
+  assert.deepEqual(openUnits(names, ['epic/E-A', 'epic/E-B'], {}), ['wu/E-A/w1', 'wu/E-A/w2', 'wu/E-B/w1']);
 });
 
 const br = (name: string, tip: string) => ({ name, tip, upstream: null, ahead: 0, behind: 0, gone: false });
 
-test('the tips whose notes are read: each work unit not yet in its epic, each epic not yet in main, each tip once; not tasks, main or other branches', () => {
+test('the tips whose notes are read: each epic not yet in main, each work unit of such an epic not yet in it, each tip once; not tasks, main or other branches', () => {
   const D = 'd'.repeat(40);
   const E = 'e'.repeat(40);
-  const branches = [br('main', A), br('epic/E-A', B), br('epic/E-B', C), br('wu/E-A/w1', D), br('wu/E-A/w2', E), br('wu/E-A/w2_task', A), br('wu/E-C/w1', B), br('topic', C)];
+  const F = 'f'.repeat(40);
+  const G = '9'.repeat(40);
+  const branches = [br('main', A), br('epic/E-A', B), br('epic/E-B', C), br('wu/E-A/w1', D), br('wu/E-A/w2', E), br('wu/E-A/w2_task', A), br('wu/E-C/w1', F), br('wu/E-B/w7', G), br('topic', C)];
   const merged = { main: ['epic/E-B'], 'epic/E-A': ['wu/E-A/w1'] };
+  // wu/E-C/w1 has no epic branch, wu/E-B/w7 belongs to an epic already in main: neither is open, however long kept.
   assert.deepEqual(openTips(branches, merged), { tips: [B, E], over: false });
   assert.equal(NOTE_TIPS, 40);
 });
 
 test('past NOTE_TIPS open branches, only the first are read, and it says so', () => {
-  const many = Array.from({ length: NOTE_TIPS + 3 }, (_, i) => br(`wu/E-A/w${i}`, i.toString(16).padStart(40, '0')));
+  const many = [br('epic/E-A', 'e'.repeat(40)), ...Array.from({ length: NOTE_TIPS + 3 }, (_, i) => br(`wu/E-A/w${i}`, i.toString(16).padStart(40, '0')))];
   const r = openTips(many, {});
   assert.equal(r.tips.length, NOTE_TIPS);
   assert.equal(r.over, true);
