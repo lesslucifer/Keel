@@ -6,19 +6,21 @@ title: "E-APPLIST.W5 · The Reader, the Watcher and the Alerter"
 date: "2026-11-22"
 page: 2026-11-22-e-applist-w5-result.html
 outcome: >-
-  Delivered; review round 1 (FAIL: 2 blockers, 4 importants) fixed in six commits; the owner's live check runs
-  through the test sink, its restart step to redo. The app's main part keeps one view of the listed project:
+  Delivered; review round 1 (FAIL: 2 blockers, 4 importants) fixed in six commits, round 2 (FAIL: 2 blockers,
+  3 importants) in two; the owner's live check runs through the test sink, to rerun after round 3. The app's main part keeps one view of the listed project:
   reader/git.ts reads the local branches with their upstream standing, which open branches' tips carry an mr, cr
-  or dod note, what main, each epic and each work unit with a task holds, and the worktrees, through four new
-  fixed reads (refs, note-of, merged, worktrees) behind the locked flags, a cut answer taken as a problem; reader/log.ts folds <main checkout>/.router/app/
+  or dod note, what main, each epic not in main and each open work unit with a task holds (main read first, so closed
+  history costs no read), and the worktrees, through four new fixed reads (refs, note-of, merged, worktrees)
+  behind the locked flags, a cut answer taken as a problem; reader/log.ts folds <main checkout>/.router/app/
   by the log's rules (new run, next number, seen, missing number reads the state once, half line, unknown key) and
   says the router is not heard 15 minutes after its newest line; reader/view.ts builds the view and says whether it
   changed. watcher/watch.ts watches the git folder's refs and .router/app/, reads a second after a burst and once a
   minute anyway, never two reads at once, and re-arms after each read. alerter/alerts.ts shows one macOS alert per
-  new alert line, recorded first in alerts.json in the app's folder per run; at a first look at a run (the app's
-  start, a project switched in), the lines already there make one summary alert (owner answer 1a). alerter/link.ts opens only
+  new alert line, recorded first in alerts.json in the app's folder per run; at this app session's first look at
+  a run (any run, a project switched in included), the lines not yet shown make one summary alert (owner answer
+  1a), titled "N alerts while Keel was closed" only at the session's first look at any run, else "N new alerts". alerter/link.ts opens only
   keel://wu/E-<CODE>.W<m>. The contract gains waiting.get and waiting.changed; the fake bridge answers waiting.get
-  from five views. index.ts wires it all; only the packaged app claims keel://. node --test 275 tests (274 pass,
+  from five views. index.ts wires it all; only the packaged app claims keel://. node --test 280 tests (279 pass,
   1 skipped in the worker's sandbox: fs.watch gets no events there), Vitest 207, typecheck, lint and keel check
   green before every commit. Nothing was built or packaged. The owner's Mac has no "Electron" entry in its
   notification settings, so the unpackaged app shows no banner; the live check uses the file sink instead, and
@@ -29,7 +31,10 @@ deviations:
   - "An alert's title is its headline and its body its lines, not the plan's 'title Keel': macOS already names the app above the title, so 'Keel' twice said nothing."
   - "The view has no 'defaulted' field: a key the router has not written is absent (at its default), and run null means no run was read. Fewer fields saying the same."
   - "The refs read lists refs/notes/ beside refs/heads/; the merged read joins the ref to its option (--merged=<ref>), so it is never read as one. The notes read is note-of (git notes --ref=<kind> list <tip>), run per open branch's tip (work units not in their epic, epics not in main, at most 40) and only for a kind whose notes ref exists, so GitFacts.notes holds open tips only: review round 1 found the plan's whole-kind list grows with history and is cut past the output cap."
-  - "alerts.json keeps what was shown per run (version 2, the last 8 runs), not one run: a project switched away and back alerts nothing again (review round 1, with the first-look rule). A version-1 file from the live check is set aside once."
+  - "alerts.json keeps what was shown per run (version 2, the last 8 runs), not one run: a project switched away and back alerts nothing again (review round 1). A version-1 file from the live check is set aside once."
+  - "The first look is per run in this app session (review round 2): the alerter keeps the runs it has looked at since the app started, and a take with no run spends nothing; a known run switched in after another project, or after a launch on a project with no run, gets one summary. The summary's title says Keel was closed only at the session's first look at any run, else 'N new alerts' (the plan had one title)."
+  - "A work unit is open only when its epic branch exists and is not in main; main is read first and only epics not in main, and open units with a task, get a merged read (review round 2): kept branches of closed epics cost no spawn."
+
   - "Captured (commands.ts) gains cut: a stream that passed the 1 MiB output cap; the git reader takes a cut answer as a problem (review round 1)."
   - "text.ts gains codePoints(): the log reader's alert caps count code points, as the writers do (review round 1)."
 
@@ -58,6 +63,9 @@ evidence:
     - "28cd621 fix: the summary at every first look at a run, a record per run (round 1 important alerts.ts:67)"
     - "e7aec06 refactor: NOTE_KINDS and WU_SOURCE, one source each (round 1 importants commands.ts:50, link.ts:9)"
     - "4fbe141 test: a restart with one line written while closed shows it as itself (passes as written)"
+    - "dede374 docs: the result pair after round 1 (review round 2 ran on this tip: FAIL, 2 blockers, 3 importants)"
+    - "10eca44 fix: the first look per run in this session; the neutral summary title (round 2 blockers alerts.ts:80, :124; important alerts.ts:68)"
+    - "c473bb2 fix: main first, only open epics and units read (round 2 importants git.ts:95, :159, and the task-read sibling)"
   red-green:
     - "commit b86e4c1: red node 175 run, 7 failing (snapshot, handlers, view, imports); Vitest 4 failing of 207 -> green node 187, Vitest 207"
     - "commit 8b5a0a3: red, both new files fail (no module) -> green node 210"
@@ -71,6 +79,8 @@ evidence:
     - "28cd621: red, the alerts unit file and the two-project integration fail -> green node 272"
     - "e7aec06: red, the one-source guard and the pattern property fail -> green node 274"
     - "4fbe141: the restart one-line case passes as written (the owner's misread was not a code fault) -> node 275"
+    - "10eca44: red, 5 failing (the switched-in title, both reviewer reproductions, a router restart's title, the unit title) -> green node 278"
+    - "c473bb2: red, the git-read unit file (openEpics, openUnits) and the closed-history integration fail -> green node 280"
     - "Before every commit: npx tsc --noEmit, node --test, vitest run (207), npm run lint and keel check (cargo 137 unit, 423 suite, 14 ignored; node) all green."
   tests-added:
     unit:
@@ -101,6 +111,7 @@ follow-ups:
   - "The real macOS banner, its click and keel:// on the signed build (the unpackaged app has no notification entry on the owner's Mac). Taken by: E-APPLIST.W9."
   - "Move the app from npm to pnpm (owner ruling 2026-11-22), in a small WU right after W5 merges; not in W5. Taken by: the next E-APPLIST WU."
   - "A second launch that loses the single-instance lock quits silently; the test alert's 'Notifications > Keel' text is wrong for the unpackaged app ('Electron'). Taken by: docs/backlog/local-app.yaml row A3 (two follow-ups, recorded)."
+  - "Review round 2's nit (log.ts:290: refresh() serialises the fold twice for a flag the view reader drops) is not taken; waived on the cr note. Taken by: none needed now."
   - "Review round 1's four nits (handlers.ts:64 projects.json read twice per view read; watch.ts:43 the recursive .git watch wakes on objects; log.ts:229 lstat then open with no O_NOFOLLOW; git.ts:65 a null id taken as a tip) are not taken in W5; waived on the cr note. Taken by: none needed now; a later W5 review round may ask."
   - "Run the real-watch test on the Mac (cd app && node --test test/integration/watch-view.test.ts: 5 tests, none skipped); keel check runs it at pre-push too. Taken by: the owner, with the live check."
   - "The items drawn from the view (which kinds enter and leave), screens 1 and 2, the window following the focus, Open, Mark sent, built on the fake's five views. Taken by: E-APPLIST.W6."
