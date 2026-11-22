@@ -2,7 +2,8 @@
 // from. Each state has the contract's shapes (test-window/unit/fixtures.test.ts) and paths shaped like
 // a real Mac's. Never part of the shipped page: only browser.tsx and the window's tests import fake/.
 
-import type { AppState, GitFacts, Item, ItemCounts, Tool, ToolState, View } from '../../shared/contract.ts';
+import type { AppState, GitFacts, Tool, ToolState, View } from '../../shared/contract.ts';
+import { countsOf, itemId, itemsOf } from '../../shared/items.ts';
 
 export const SCENARIO_NAMES = Object.freeze(['one-project', 'no-project', 'tool-missing', 'path-fallback', 'refusing', 'failing', 'slow'] as const);
 export type ScenarioName = (typeof SCENARIO_NAMES)[number];
@@ -57,23 +58,15 @@ const MAIN_TIP = '9a8b7c6d5e4f30211203f4e5d6c7b8a998765432';
 
 const NO_COUNTS = Object.freeze({ yours: 0, notYours: 0, sent: 0 });
 
-/** An item as the main part lists it; the fields a fixture leaves out take these values. */
-export function fixtureItem(over: Partial<Item> & Pick<Item, 'id' | 'kind' | 'title' | 'why'>): Item {
-  return { group: 'yours', wu: null, epic: null, branch: null, tip: null, since: null, open: 'none', markable: false, worker: null, line: null, text: [], ...over };
-}
-
-/** The counts a list holds. */
-export function countsOf(items: readonly Item[]): ItemCounts {
-  return { yours: items.filter((i) => i.group === 'yours').length, notYours: items.filter((i) => i.group === 'not-yours').length, sent: items.filter((i) => i.group === 'sent').length };
+/** `v` with its list drawn by the main part's own rules (src/shared/items.ts), `sent` the ids marked sent. */
+export function withItems(v: View, sent: readonly string[] = []): View {
+  v.items = itemsOf({ git: v.git, router: v.router, sent: new Set(sent) });
+  v.counts = countsOf(v.items);
+  return v;
 }
 
 function liveView(): View {
-  const items: Item[] = [
-    fixtureItem({ id: 'result/E-APPLIST.W5@0f1e2d3c4b5a', kind: 'result', title: 'Result to sign', wu: 'E-APPLIST.W5', epic: 'E-APPLIST', branch: 'wu/E-APPLIST/w5-reader-watcher', tip: '0f1e2d3', since: '2026-11-22T08:41:00+08:00', why: 'The review passed. Your sign-off is missing.', open: 'page' }),
-    fixtureItem({ id: 'question/merge-order@5d41402a', kind: 'question', title: 'Question from the router', wu: 'E-APPLIST.W5', since: '2026-11-22T08:44:00+08:00', why: 'Merge W5 before W6?', open: 'text', markable: true, text: ['W6 builds on W5.'] }),
-    fixtureItem({ id: 'push/main@9a8b7c6d5e4f', kind: 'push', title: 'Main not pushed', branch: 'main', tip: '9a8b7c6', since: '2026-11-22T08:30:00+08:00', why: 'main is 1 commit ahead of origin/main.', line: 'git push origin main' }),
-  ];
-  return {
+  return withItems({
     project: { id: 'p0a1b2c3d', name: 'keel' },
     git: {
       branches: [
@@ -112,9 +105,9 @@ function liveView(): View {
     scheme: 'Keel',
     readAt: '2026-11-22T08:45:01+08:00',
     changedAt: '2026-11-22T08:44:01+08:00',
-    items,
-    counts: countsOf(items),
-  };
+    items: [],
+    counts: { ...NO_COUNTS },
+  });
 }
 
 // Every kind at once: one more epic, four more work units, a task, a worker waiting, a sent plan.
@@ -160,33 +153,14 @@ function everyKindView(): View {
     'worker/e-applist-w10': { state: 'busy', branch: 'wu/E-APPLIST/w10-pnpm', tip: '4b5a697', dirty: 2, active: '2026-11-22T08:43:00Z' },
     'worker/e-applist-w6-fix': { state: 'waiting', waiting: 'a permission prompt', session: 'b7c1e2d4-5f60-4a1b-9c3d-2e1f00123456', branch: 'wu/E-APPLIST/w6-list-screens', active: '2026-11-22T08:42:00Z' },
   });
-  const items: Item[] = [
-    fixtureItem({ id: 'result/E-APPLIST.W5@0f1e2d3c4b5a', kind: 'result', title: 'Result to merge', wu: 'E-APPLIST.W5', epic: 'E-APPLIST', branch: 'wu/E-APPLIST/w5-reader-watcher', tip: '0f1e2d3', since: '2026-11-22T08:41:00+08:00', why: 'Signed. The merge into epic/E-APPLIST is yours, in your terminal.', open: 'page', line: 'git merge --no-ff --no-edit wu/E-APPLIST/w5-reader-watcher' }),
-    fixtureItem({ id: 'epic-result/E-KEELFIX@b2c3d4e5f607', kind: 'epic-result', title: 'Epic result to sign', epic: 'E-KEELFIX', branch: 'epic/E-KEELFIX', tip: 'b2c3d4e', since: '2026-11-22T07:50:00+08:00', why: 'The review passed. Your sign-off is missing.', open: 'archive' }),
-    ...v.items.filter((i) => i.kind === 'question'),
-    fixtureItem({ id: 'plan/E-APPLIST.W8@2d3c4b5', kind: 'plan', title: 'Plan to read', wu: 'E-APPLIST.W8', epic: 'E-APPLIST', branch: 'wu/E-APPLIST/w8-window-foundation', tip: '2d3c4b5', since: '2026-11-22T08:20:00+08:00', why: 'The router waits for your word on the plan.', open: 'page', markable: true }),
-    fixtureItem({ id: 'worker/e-applist-w6-fix@7c1d9e2a', kind: 'worker', title: 'Worker waits on you', wu: 'E-APPLIST.W6', epic: 'E-APPLIST', branch: 'wu/E-APPLIST/w6-list-screens', since: '2026-11-22T08:42:00Z', why: 'Waits on a permission prompt: answer it in its session.', worker: 'e-applist-w6-fix', line: 'claude attach b7c1e2d4-5f60-4a1b-9c3d-2e1f00123456' }),
-    fixtureItem({ id: 'task/9f3a1c2e@5a6978879', kind: 'task', title: 'Task into its work unit', wu: 'E-APPLIST.W10', epic: 'E-APPLIST', branch: 'wu/E-APPLIST/w10-pnpm_lockfile', tip: '5a69788', since: '2026-11-22T08:25:00+08:00', why: 'No worker is busy on it. The merge into wu/E-APPLIST/w10-pnpm is yours, in its folder.', line: 'git merge --no-ff wu/E-APPLIST/w10-pnpm_lockfile' }),
-    fixtureItem({ ...(v.items.find((i) => i.kind === 'push') as Item), why: 'main is 2 commits ahead of origin/main.' }),
-    fixtureItem({ id: 'result/E-APPLIST.W6@1e2d3c4b5a69', kind: 'result', group: 'not-yours', title: 'Review failed', wu: 'E-APPLIST.W6', epic: 'E-APPLIST', branch: 'wu/E-APPLIST/w6-list-screens', tip: '1e2d3c4', since: '2026-11-22T08:35:00+08:00', why: '2 blockers and 1 important open: its worker fixes them.', worker: 'e-applist-w6-fix' }),
-    fixtureItem({ id: 'motion/E-APPLIST.W10@1b2c3d4e', kind: 'motion', group: 'not-yours', title: 'Building', wu: 'E-APPLIST.W10', epic: 'E-APPLIST', branch: 'wu/E-APPLIST/w10-pnpm', tip: '4b5a697', since: '2026-11-22T08:15:00+08:00', why: 'Its worker builds it.', worker: 'e-applist-w10' }),
-    fixtureItem({ id: 'plan/E-APPLIST.W9@3c4b5a6', kind: 'plan', group: 'sent', title: 'Plan to read', wu: 'E-APPLIST.W9', epic: 'E-APPLIST', branch: 'wu/E-APPLIST/w9-close', tip: '3c4b5a6', since: '2026-11-22T08:05:00+08:00', why: 'You marked it sent: it leaves when the router moves the stage on.', open: 'page', markable: true }),
-  ];
-  v.items = items;
-  v.counts = countsOf(items);
-  return v;
+  // The W9 plan is marked sent.
+  return withItems(v, [itemId('plan', 'E-APPLIST.W9', '3c4b5a6')]);
 }
 
 const viewWith = (change: (v: View) => void): View => {
   const v = liveView();
   change(v);
-  return v;
-};
-
-/** The router-told items (plan, question, worker, motion) leave the list when the router is not heard. */
-const persistentOnly = (v: View) => {
-  v.items = v.items.filter((i) => i.kind !== 'question' && i.kind !== 'plan' && i.kind !== 'worker' && i.kind !== 'motion');
-  v.counts = countsOf(v.items);
+  return withItems(v);
 };
 
 export const VIEWS: Readonly<Record<ViewName, View>> = Object.freeze({
@@ -198,23 +172,19 @@ export const VIEWS: Readonly<Record<ViewName, View>> = Object.freeze({
     git.notes.cr = [];
     git.reviews = {};
     delete v.router.values['question/merge-order'];
-    v.items = [];
-    v.counts = { ...NO_COUNTS };
+    delete v.router.values['wu/E-APPLIST.W5/stage'];
   }),
   'no-run': viewWith((v) => {
     v.router = { run: null, n: 0, values: {}, heard: false, lastAt: null, problem: null };
     v.alerts = [];
-    persistentOnly(v);
   }),
   'not-heard': viewWith((v) => {
     v.router.heard = false;
     v.router.lastAt = '2026-11-22T08:20:00+08:00';
-    persistentOnly(v);
   }),
   'after-restart': viewWith((v) => {
     v.router = { run: 'keel-1c.20261122-090000.4343', n: 1, values: {}, heard: true, lastAt: '2026-11-22T09:00:00+08:00', problem: null };
     v.alerts = [];
-    persistentOnly(v);
   }),
   focus: viewWith((v) => (v.focus = { wu: 'E-APPLIST.W5', seq: 1 })),
 });

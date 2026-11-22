@@ -149,10 +149,11 @@ test('item.open answers as the main part would: done for a listed page or epic r
   const bridge = makeFakeBridge('one-project', { wait: now, view: 'every-kind' });
   let pushes = 0;
   for (const event of Object.keys(PUSH_EVENTS)) bridge.on(event, () => (pushes += 1));
-  expect(await bridge.ask('item.open', { item: 'result/E-APPLIST.W5@0f1e2d3c4b5a' })).toEqual({ ok: true, value: { done: true } });
-  expect(await bridge.ask('item.open', { item: 'epic-result/E-KEELFIX@b2c3d4e5f607' })).toEqual({ ok: true, value: { done: true } });
-  expect(await bridge.ask('item.open', { item: 'question/merge-order@5d41402a' })).toEqual({ ok: true, value: { done: false, why: expect.stringMatching(/in the list itself/) } });
-  expect(await bridge.ask('item.open', { item: 'push/main@9a8b7c6d5e4f' })).toEqual({ ok: true, value: { done: false, why: expect.stringMatching(/nothing to open/) } });
+  const idOf = (kind: string) => VIEWS['every-kind'].items.find((i) => i.kind === kind)?.id ?? '';
+  expect(await bridge.ask('item.open', { item: idOf('result') })).toEqual({ ok: true, value: { done: true } });
+  expect(await bridge.ask('item.open', { item: idOf('epic-result') })).toEqual({ ok: true, value: { done: true } });
+  expect(await bridge.ask('item.open', { item: idOf('question') })).toEqual({ ok: true, value: { done: false, why: expect.stringMatching(/in the list itself/) } });
+  expect(await bridge.ask('item.open', { item: idOf('push') })).toEqual({ ok: true, value: { done: false, why: expect.stringMatching(/nothing to open/) } });
   expect(await bridge.ask('item.open', { item: 'result/E-APPLIST.W5@1111111' })).toEqual({ ok: true, value: { done: false, why: expect.stringMatching(/left the list/) } });
   expect(pushes).toBe(0);
 });
@@ -178,7 +179,7 @@ test('item.mark moves a plan to Sent and back, recounts, and pushes waiting.chan
   after = await view();
   expect(after.items.find((i) => i.id === 'plan/E-APPLIST.W8@2d3c4b5')?.group).toBe('yours');
   expect(after.counts).toEqual(before);
-  expect(await bridge.ask('item.mark', { item: 'result/E-APPLIST.W5@0f1e2d3c4b5a', sent: 'yes' })).toEqual({ ok: true, value: { done: false, why: expect.stringMatching(/only a plan/) } });
+  expect(await bridge.ask('item.mark', { item: VIEWS['every-kind'].items.find((i) => i.kind === 'result')?.id ?? '', sent: 'yes' })).toEqual({ ok: true, value: { done: false, why: expect.stringMatching(/only a plan/) } });
   expect(waiting).toBe(2);
   expect(state).toBe(0);
 });

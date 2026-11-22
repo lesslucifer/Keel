@@ -5,11 +5,12 @@
 // by RequestName (a name the contract gains fails tsc here too), and pushes state.changed once per
 // change. waiting.get answers the scenario's view (fixtures.ts VIEWS), or the view ?view= names; item.open
 // answers as the main part would (an item listed now, with a page) and opens nothing; item.mark moves an
-// item to Sent and back and pushes waiting.changed. Never part of the shipped page: only browser.tsx and the window's tests import fake/.
+// item to Sent and back (the list drawn again by src/shared/items.ts) and pushes waiting.changed. Never part of the shipped page: only browser.tsx and the window's tests import fake/.
 
 import { ITEM_ID_SOURCE, PROJECT_ID_SOURCE, PUSH_EVENTS, REQUESTS, SLOT_CAP, type AlertOutcome, type Answer, type AppState, type Change, type Item, type Replies, type RequestName, type Slot, type Tool, type View } from '../../shared/contract.ts';
 import type { KeelBridge } from '../bridge.ts';
-import { CHOSEN, NEXT_PROJECT, ON_PATH, SCENARIOS, VIEWS, countsOf, type ScenarioName, type ViewName } from './fixtures.ts';
+import { itemsOf, countsOf } from '../../shared/items.ts';
+import { CHOSEN, NEXT_PROJECT, ON_PATH, SCENARIOS, VIEWS, type ScenarioName, type ViewName } from './fixtures.ts';
 
 export interface FakeOptions {
   /** How the fake waits before each answer; a test passes one that does not. */
@@ -62,6 +63,8 @@ export function makeFakeBridge(name: ScenarioName, options: FakeOptions = {}): K
     for (const cb of [...waitingListeners]) cb(null);
   };
   const listed = (id: string): Item | undefined => view.items.find((i) => i.id === id);
+  // The marks the fixture view starts with, then the owner's; the list is drawn again by the main part's rules.
+  const sent = new Set(view.items.filter((i) => i.group === 'sent').map((i) => i.id));
 
   type Handlers = { [N in RequestName]: (args: Record<string, string>) => Replies[N] };
   const handlers: Handlers = {
@@ -94,13 +97,13 @@ export function makeFakeBridge(name: ScenarioName, options: FakeOptions = {}): K
       if (i.open === 'none') return notDone('this item has nothing to open');
       return DONE;
     },
-    'item.mark': ({ item, sent }) => {
+    'item.mark': ({ item, sent: mark }) => {
       const i = listed(item as string);
       if (i === undefined) return notDone('that item has left the list or moved on: the list shows it as it is now');
       if (!i.markable) return notDone('only a plan to read or a question can be marked sent');
-      i.group = sent === 'yes' ? 'sent' : 'yours';
-      // Sent sits last, as the main part lists it.
-      view.items = [...view.items.filter((x) => x.group !== 'sent'), ...view.items.filter((x) => x.group === 'sent')];
+      if (mark === 'yes') sent.add(i.id);
+      else sent.delete(i.id);
+      view.items = itemsOf({ git: view.git, router: view.router, sent });
       view.counts = countsOf(view.items);
       return DONE;
     },
