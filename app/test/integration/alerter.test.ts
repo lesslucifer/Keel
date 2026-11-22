@@ -142,3 +142,16 @@ test('a project switched in while the app runs: its stored lines make one summar
   await app.reader.read();
   assert.equal(app.shown.length, 2, 'back on the first project: nothing again');
 });
+
+test('an app restart with one line written while it was closed shows that line as itself, on a run it already knows', async (t) => {
+  const dir = routerProject(t, 'alerter-one');
+  const appDir = path.join(tempDir(t, 'alerter-app'), 'Keel');
+  routerApp(dir, 'start', 'keel-1c');
+  alertLine(dir, 'Seen', 'E-A.W1');
+  const first = launch(dir, appDir);
+  await first.reader.read();
+  alertLine(dir, 'While closed', 'E-A.W2');
+  const again = launch(dir, appDir);
+  await again.reader.read();
+  assert.deepEqual(again.shown.map(({ title, wu }) => ({ title, wu })), [{ title: 'While closed', wu: 'E-A.W2' }]);
+});
