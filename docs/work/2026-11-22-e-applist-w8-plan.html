@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b01db1a9f34851f0dfb2b9a">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-APPLIST.W8 plan: the window foundation</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-APPLIST.W8 · The window's foundation</h1>
+      <p>Keel's own look, the way every screen is built and tested, and the first real screen: your project and tools.</p>
+      <div class="meta">T3 · WU plan · 2026-11-22 · Keel · its data file, 2026-11-22-e-applist-w8-plan.yaml, sits beside this page · the epic: <a href="2026-11-20-e-applist-plan.html">E-APPLIST plan</a> · why: <a href="../decisions/app.html">DEC-71 – DEC-77</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">The app shows a bare, unstyled page. The list screens come next, drawn mostly by agents. Without a fixed set of colours and sizes, each screen would invent its own. Without a fast way to see a screen, each change would need a full app build.</p>
+
+<h2 id="get">What you get</h2>
+<ul data-c="get">
+  <li>The project screen: your project, where keel, git and claude are, Choose, the PATH's source and the test alert, in Keel's own look.</li>
+  <li>Light and dark, following your Mac. Your Mac's own font.</li>
+  <li>A browser view of any screen, filled with sample data. No app build.</li>
+</ul>
+
+<h2 id="how">How it works</h2>
+<ol data-c="how">
+  <li>One small set of colours, spacings and text sizes. Nothing else can be drawn.</li>
+  <li>A checker refuses any other value, and refuses a style pieced together while the app runs, because nobody could check it.</li>
+  <li>The screen talks to the app's core in one place. A test or the browser view swaps in a stand-in that answers from sample data.</li>
+  <li>Tests draw the screen against that stand-in, click its buttons, and check what was asked and shown.</li>
+  <li>The stand-in never reaches the app you install; a test proves it.</li>
+</ol>
+
+<h2 id="makes">What it makes</h2>
+<ul data-c="makes">
+  <li>Keel's look as one config, and its checker.</li>
+  <li>The project screen, replacing the bare page.</li>
+  <li>The stand-in, the browser view and the screen tests. The usual checks stay as they are.</li>
+</ul>
+
+<h2 id="decide">What you decide</h2>
+<p>You answered on 2026-11-22: all five as proposed. You then turned down the first look, Mercury's (2026-11-22-e-applist-w8-design.md, kept as history), and the variants, and chose mx3a: Mistral's type on MiniMax's colour (2026-11-22-e-applist-w8-design-mistral.md and 2026-11-22-e-applist-w8-design-minimax.md). It replaces the accent below: black, not blue.</p>
+<table data-c="open-points">
+  <thead><tr><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Which Tailwind, the styling tool?</td><td><b>Version 3.</b></td><td>Its config closes every size. A trial of version 4 left about fifteen kinds of number open.</td></tr>
+    <tr><td>Which TypeScript?</td><td><b>6, not 7.</b></td><td>The checker's reader cannot read 7 yet. Back to 7 when it can.</td></tr>
+    <tr><td>Which accent colour?</td><td><b>A muted blue.</b></td><td>One value; comment to change it.</td></tr>
+    <tr><td>Do you look before signing?</td><td><b>Yes, five minutes, no build.</b></td><td>The browser view, your Mac's appearance switch, then the app run from source.</td></tr>
+    <tr><td>Does Remove ask first?</td><td><b>No.</b></td><td>It only drops the project from the app's list. Add brings it back.</td></tr>
+  </tbody>
+</table>
+<p>Three more points are in the data file.</p>
+
+<h2 id="know">How you'll know it worked</h2>
+<ul data-c="know">
+  <li>The browser view shows the project screen with sample data: none, one project, a missing tool.</li>
+  <li>Switching your Mac to dark turns the screen dark.</li>
+  <li>In the app, Choose opens the macOS dialog and the test alert answers.</li>
+  <li>The checker refuses a planted stray colour, size and pieced style.</li>
+  <li>The screen tests pass, run by hand and recorded in the result. Nothing was packaged.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

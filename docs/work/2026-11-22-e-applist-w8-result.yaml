@@ -1,0 +1,307 @@
+artifact: wu-result
+status: ready
+id: E-APPLIST.W8
+epic: E-APPLIST
+title: "E-APPLIST.W8 · The window's foundation"
+date: "2026-11-22"
+page: 2026-11-22-e-applist-w8-result.html
+outcome: >-
+  Delivered, the owner's look at mx3a pending. The owner rejected the first look, then the Mercury look
+  (docs/work/2026-11-22-e-applist-w8-design.md, kept as history) and a round of variants, and chose mx3a, Spectrum
+  Plain, on 2026-11-22: Mistral's type (docs/work/2026-11-22-e-applist-w8-design-mistral.md) on MiniMax's colour
+  (docs/work/2026-11-22-e-applist-w8-design-minimax.md). The window is drawn only from Keel's closed Tailwind 3.4.19
+  tokens valued from mx3a: a white canvas, deep black ink, a black pill main action and outline pill secondaries,
+  white 12px cards on hairlines, a plain white title bar over a 1px hairline, New York (ui-serif) for the screen
+  title and section heads in sentence case, state badges in words on blue, green and red, problems in words in the
+  problem colour, no gradient (backgroundImage and gradientColorStops declared empty); its night world follows the
+  Mac (rgb(var(--name)) with R G B triplets in src/window/styles.css under :root and again under
+  prefers-color-scheme: dark); system fonts, no font file, no url(). Every text pair reaches AA (4.5:1) and every
+  button edge 3:1 in both worlds.
+  The guarantee that only Keel's
+  vocabulary reaches the shipped CSS is a check on the CSS Tailwind emits (details.guarantee), run by npm run lint
+  after ESLint from one pinned config over one source list; design/vocabulary (app/eslint-rules/, ported from
+  Trawler) is the fast helper: it refuses an off-list class, an arbitrary value, a modifier step off its scale, the
+  dark: variant and any variant the closed config lacks, reads class values through ESLint's scope analysis, reports
+  a class built from pieces and what it cannot read, an inline style and classes written to the DOM by hand, and
+  refuses no honest helper code. Inline eslint-disable comments are off; every scale Tailwind derives from spacing is
+  closed. npm run lint is green over src/window. bridge.ts stays the one reader of
+  window.keel, now with BridgeProvider and useBridge; hooks.ts holds useAppState, useAction and the answer texts. The
+  fake bridge (src/window/fake/) answers every request in the contract from seven fixture scenarios and never reaches
+  the shipped page (node guards). npm run dev:browser serves /browser.html on the fake. Screen 6 (Project, Tools,
+  PATH, Alerts, the version) replaces W7's bare page. Vitest 203 tests (unit 92, integration 111) and node 184 tests
+  pass; npm run typecheck green on TypeScript 6.0.3 (no fallback needed); keel check green at every commit but two
+  (deviations). Nothing
+  was built or packaged. The sandbox refused the port both dev:browser and npm start bind, so the owner's look
+  (details.live-checks) is the live check; he has seen mx3a in browser mode on the look-variants branch.
+deviations:
+  - >-
+    The look is mx3a, the owner's choice of 2026-11-22 (plan pair: details.owner-decision-mx3a), replacing Mercury.
+    The variants round, in one line: on the scratch branch wu/E-APPLIST/w8-window-foundation_look-variants (tip
+    67e1bda, never merged) the owner compared sixteen browser-mode looks (a, b, a2-a5, m1, m2, x1, x2, mx1-mx3,
+    mx3a-mx3c) and turned down all but mx3a. b3f42e3 ports mx3a's values into the one design and takes nothing of
+    the look switch (no looks.css, looks.ts, ?look= or variant tests); the branch's tokens are by role and from CSS
+    variables per look, W8's stay closed and concrete. Some values are cleaned of the branch's per-look nudges that
+    kept looks apart (canvas and card 255 255 248 -> 255 255 255, primary 17 17 12 -> 17 17 17; by night canvas 16
+    16 14 -> 16 16 16, primary 244 244 241 -> 244 244 246, on-primary 16 16 19 -> 16 16 16), each indistinguishable
+    by eye. The brand mark (a 12px black square, 3px corners) comes over as built. Badges carry colour again (set
+    blue, found green, missing red, white words), always with their words, so no state is told by colour alone; the
+    Mercury deviation below on colourless badges is superseded. Browser mode gains ?scheme=light|dark (links in its
+    top line), from src/window/fake/scheme.css, held equal to the shipped tokens by test-window/unit/scheme.test.ts
+    and imported by browser.tsx only.
+  - >-
+    The fonts: mx3a's files name PP Editorial Old, Inter and DM Sans. None ships (DEC-72): New York (ui-serif) stands
+    in for PP Editorial Old, the system sans for Inter and DM Sans. The owner may overrule.
+  - >-
+    Review round 4 (cr note on aed697a, FAIL: 5 blockers, 1 important; both round-3 blockers fixed). emitted.js:105
+    (a CommonJS package's require('./x.css') unseen by the dev graph): 2e1f550 judges packages whole - shipped
+    sources may import only package.json dependencies, and no package in their installed closure (dependencies,
+    optional, peer, a symlinked node_modules followed) may hold a stylesheet file; chosen as the simplest complete
+    rule, since it holds however a package reaches its CSS, where walking requires would chase each module system.
+    emitted.js:130 (lint crashed on Vite's virtual dynamic-import helper): virtual and file-less ids are walked
+    through, never read. emitted.js:97 (shared node_modules/.vite with vitest): a private cache per walk, removed
+    after, and pre-bundled deps are never opened. Siblings in 2e1f550: every shipped source (src/window but browser
+    mode's, and src/shared) is scanned for stylesheet files, named stylesheets (require, ?raw, ?inline, new URL, a
+    worker's import, files reached only by a template import) and run-time injection (a style element, a
+    constructed sheet, a JSX style or link); the graph may load nothing outside them; the renderer config may add
+    no unjudged plugin and no CSS step but Tailwind. emitted.js:191 (any @apply passed inside the dark block):
+    41fbe6b judges styles.css against an exact grammar per context (dark block: :root tokens only; @layer base:
+    @apply on html, body, #root only; tokens: variables the config reads). classes.js:314 (a table changed in a
+    local helper or by a borrowed mutator read as declared): 18ac11b follows a table into a local function's
+    parameter, matches X.prototype.push.call/apply and Reflect.apply, and takes a table handed to an imported
+    function (body unseen) as unread - decided so for DEC-72, honest forms still silent. grounds.test.tsx:42
+    (inherited colour unpaired): 4777403 pairs every text node by inheritance.
+  - >-
+    Review round 3 (cr note on f699d74, FAIL: 2 blockers, 0 importants, 2 nits waived; all 12 round-2 findings
+    fixed). Blocker emitted.js:28, the CSS check saw styles.css's emitted class names only: 15b14dc makes it four
+    parts (details.guarantee): every stylesheet the shipped page loads, found by Vite's own module graph from
+    main.tsx in middleware mode (no port, no build), and index.html's <link>, <style>, style= and scripts - anything
+    but styles.css refused; styles.css judged at source, declaration by declaration; the emitted classes as before;
+    and fail-closed on content matching nothing or missing a loaded module, and on no emitted class. Route chosen
+    over a renderer build (no build in the inner loop) and over a static import guard (Vite's resolver decides what
+    ships); declarations are judged at source because compiled, a raw div{margin:7px} and an @apply of a token look
+    alike. styles.css's base layer became @apply of tokens, and height gained full. Blocker classes.js:287, honest
+    code refused: 1321594 never taints a string-valued name, reads an alias unless the alias itself is changed, and
+    taints a table only on a known mutation (member write, update, delete, a mutating method, Object.assign and kin,
+    Reflect's writers); a table handed to any other function is a read. Nit contrast.test.ts:74 closed by 440ac4c
+    (rendered text-on-ground pairs); nit classes.js:337 (unbounded recursion, fails closed) left as waived.
+  - >-
+    Where the guarantee lives (review round 2, FAIL: 8 blockers, 4 importants, most of them routes past the
+    hand-written class reader). The plan puts it in the lint rule (requirement: 'held by a lint rule'; expected:
+    'npm run lint fails on ...'). It now lives in a check on the CSS Tailwind emits, which npm run lint runs after
+    ESLint; the plan's promise holds unchanged: npm run lint still fails on each class the plan names, and there is no
+    escape hatch. Why: Tailwind writes CSS only for whole class names it finds written out in its content files, so a
+    check on what it emits sees every route however a string is built, while an AST reader must model every way
+    JavaScript can build or move a string, and each round found more. The plan pair is otherwise unchanged
+    (details.guarantee holds the design and the per-finding outcome). Commit c5ad1f9.
+  - >-
+    The look: the owner rejected the first look after trying browser mode ("terribly bad & ugly") and ruled on
+    2026-11-22 that it follows docs/work/2026-11-22-e-applist-w8-design.md (a byte copy of his DESIGN.md, Mercury's
+    website design system), recorded in the plan pair (73d7367). 668aee9 redoes the tokens, the vocabulary and screen
+    6 to it, adapted to a settings window: no always-dark nav bar (light and dark follow the Mac, so the day and night
+    worlds are the two appearances); type sized for a window (eyebrow 11px to heading 22px, no 52-60px display or stat
+    sizes); a 4px half step beside its 8px scale for tight inline gaps; 32px buttons (its small pill) and 22px badges;
+    cards padded 24px, not 32px. Left out as a website's, not a window's: the breakpoints and touch targets, the nav
+    bar and nav links, the footer band, the pricing card and tier columns, the logo strip, stat and quote blocks, the
+    email capture, the toggle switch, the accordion's icons and chevrons, hero photography and glowing illustrations,
+    the soft-stack shadow, and its example surfaces (ex-*).
+  - >-
+    (Superseded by mx3a.) The one conflict with the design file: its font (arcadia, or Inter as the open substitute) is not shipped. The
+    owner's earlier ruling (DEC-72) is the system font and no font file; SF Pro is variable, so the file's light weights
+    (360, 400, 420, 480, 500) render. The owner may overrule.
+  - >-
+    (Superseded by mx3a: badges carry colour with their words.) The design file keeps status greens and oranges out of the chrome, so the ok, wait and fail colour tokens are gone.
+    A tool's state is a word in a capsule badge whose tone is only loudness: 'set in Keel' on the indigo tint (a choice
+    you made, like the actions), 'found on the PATH' on a faint ink wash, 'missing' polarity-flipped (ink fill, canvas
+    text) in both worlds; a tool's problem, the PATH fallback and a failed read are ink at weight 500. No state is told
+    by colour alone.
+  - >-
+    keel check was red at 73d7367 and 668aee9: the plan page linked the .md design file, and keel check's cargo suite
+    (verify_doc::every_doc_in_docs_and_the_writing_example_pass_the_checks) copies the doc pages without it, so the link
+    dangled there. The pre-commit hook runs lint only, and a grep in the worker's command let 668aee9 commit after a red
+    check. 127cddc names the file as text; green since.
+  - >-
+    Review round 1 (cr note on 73d7367, FAIL: 2 blockers, 3 importants) hardened the lint, each fix with its failing
+    test first: it reads class tables through as const, satisfies, as T and ! (a7c99ac); inline config is off and npm
+    run lint is eslint --max-warnings 0 . (e7e78b2); class=, any ...ClassName prop and a class key in any object literal
+    seed the search, an unreadable spread is reported (5d7776d); an unknown call, an import or a parameter reaching a
+    class is reported as unread and a reassigned binding is read with every value (d458d14); every scale Tailwind
+    derives from spacing is emptied unless declared, and padding, gap, height, margin, width, minWidth and minHeight
+    are declared (64892b3; the emittable list falls to 996 classes). The sibling check adds an inline style and classes
+    written to the DOM by hand (1a18513), and the waived nit on import.meta.glob became a node guard (8d941b1). The
+    content-glob nit stays waived.
+  - >-
+    Review round 2 (cr note on 62cd3f8, FAIL: 8 blockers, 4 importants), each answered in details.guarantee.findings:
+    c5ad1f9 the CSS check, one source list, the pinned config; 89edf8f the helper rebuilt on ESLint's scope manager
+    (no false reports on helper bodies, group and peer markers or same-named variables; the AST-visible routes
+    reported); 621b2d2 the browser-mode link contrast. The lint fixtures' and src/window's own test files are now
+    linted too (the test-file ignore is gone: there are none in src/window).
+  - >-
+    Commit 1f7ab58's message names the wrong three of screen 6's tests as passing against W7's bare page (it says
+    loading, the PATH-absent check and the refused and failed texts). Reading the tests against that page, the three
+    are loading, Remove and the alert outcomes. The re-run that would have shown it (restoring the old App.tsx
+    in the working tree) was denied by the sandbox's permission check and not retried. The 12-of-15 red count stands
+    (from the run itself).
+  - >-
+    The lint rule does more than the plan's list: it refuses any variant the closed config lacks (md:, an arbitrary
+    [&>*]:), not only dark:, because with no breakpoints Tailwind emits nothing for md:p-2 while the plain strip
+    would call it legal. It reports a class built with + (Trawler skipped every BinaryExpression), and it reads a
+    cx()/clsx() call's strings and object keys (Trawler skipped call arguments). Commit dbf1ac8.
+  - >-
+    Tokens beyond the plan's first cut, before the redesign: on-accent, a max width, flex, flexShrink and cursor
+    (the lint refused flex-1, shrink-0 and cursor-pointer from undeclared scales). The redesign replaced the colour,
+    type, spacing and radius tokens (668aee9); flex, flexShrink and cursor stay.
+  - >-
+    One test the plan did not list: test-window/integration/styles.test.ts runs Vite's own CSS transform of
+    styles.css through vite.renderer.config.ts in middleware mode (no websocket, no port, no build), so a renderer
+    config that drops Tailwind fails a test (red with it removed). Commit 1f7ab58.
+  - >-
+    Node guards beyond the plan's three: the import-graph walk's self-test, and browser.html carries the shipped
+    page's CSP meta and loads only browser.tsx. Commits d6d291a.
+  - >-
+    The browser banner also links each fixture state (aria-current on the open one), so the owner switches states
+    by a click. The refusing scenario refuses state.get too (the screen shows Keel could not read its state); the
+    failing one reads state and fails every change, so both kinds of text are seen. Commits 41d7143, d6d291a.
+  - >-
+    Type plumbing the plan did not name: tsconfig allowJs with tailwind.config.js, eslint.config.js and
+    eslint-rules/*.js checked (// @ts-check); src/window/env.d.ts declares CSS imports;
+    eslint-rules/tailwind-internals.d.ts types the one Tailwind internal the rule reads; test-window/support/parse.ts
+    types the parser for the tests.
+  - >-
+    Tried live in the sandbox: npm ci green (366 packages; one EPERM warning writing
+    node_modules/xmlbuilder/.vscode/launch.json, harmless). npm run dev:browser: refused, listen EPERM ::1:5199 (and
+    ::1:5173 under npm start, Forge's Vite server). Not routed around. Electron's binary downloads on the first npm
+    start (electron 45 has no install script), so the owner's first npm start downloads it.
+evidence:
+  commits:
+    - "80a776d docs: the plan pair records the owner's answers (all five recommendations)"
+    - "0f4d91e chore: packages pinned exactly, typescript 7.0.2 -> 6.0.3 (typecheck green, no fallback), scripts, Vitest (red first: the smoke test 2 of 2 with an empty setup file)"
+    - "0300250 feat: Keel's tokens, closed config, light and dark (red first: tokens.test.ts 6 of 10; 4 passed on empty sets)"
+    - "dbf1ac8 feat: the lint rule (red first: helpers 15 of 15; fixtures, real config and reconcile 9 of 9)"
+    - "0006abe feat: BridgeProvider, useBridge, useAppState, useAction, the stub bridge (red first: 16 of 16; the window.keel guard red 1 of 8 on a plant)"
+    - "41d7143 feat: the fake bridge and fixtures (red first: 13 of 13; the fake-import guard red 1 of 9 on a plant)"
+    - "d6d291a feat: browser mode (red first: 3 of 3; the shipped-graph guards red 2 of 12 on a plant)"
+    - "1f7ab58 feat: screen 6 (red first: 12 of 15 against W7's bare page; styles.test.ts red with Tailwind taken out of the renderer config)"
+    - "6df2fe7 docs: the result pair (first look)"
+    - "73d7367 docs: the design file (byte copy) and the owner's instruction in the plan pair"
+    - "668aee9 feat: the look follows the design file (red first: 17 of 91 against the old tokens, then 91 of 91)"
+    - "127cddc docs: the plan page names the design file as text (keel check green again)"
+    - "a7c99ac fix: tables through TS wrappers (red first: 2 unit, 1 fixture)"
+    - "e7e78b2 fix: no inline config, --max-warnings 0 (red first: the real-config test)"
+    - "5d7776d fix: every class-carrying prop seeds, unreadable spread reported (red first: 4 unit, 1 fixture)"
+    - "d458d14 fix: unread calls, imports and parameters reported, reassignments read (red first: 3 unit, 1 fixture)"
+    - "64892b3 fix: spacing-derived scales closed (red first: 2 unit)"
+    - "1a18513 fix: inline style and hand-written DOM classes reported (red first: 1 fixture)"
+    - "8d941b1 test: no import.meta.glob under src/window (red 1 of 14 on a plant)"
+    - "62cd3f8 docs: the result pair (redesign and round 1)"
+    - "c5ad1f9 fix: the guarantee is the CSS check, one source list, a pinned config (red first: guarantee.test.ts failed to load with no emitted.js; the pinned-script test red)"
+    - "89edf8f fix: the helper on ESLint's scope manager (red first: 11 unit, the honest.tsx fixture and the group/peer CSS test; older collectClasses tests red only on the new parse API)"
+    - "621b2d2 fix: browser-mode links in ink (red first: the text-primary test on browser.tsx)"
+    - "38f5c33 docs: the result pair (where the guarantee lives, round 2)"
+    - "b3f42e3 feat: the window wears mx3a, ?scheme in browser mode (red first: 30 of 148 against the Mercury tokens - tokens 13, projects 7, contrast 3, classes 3, browser 2, styles 1, the clean lint fixture 1 - and scheme.test.ts failed to load with no scheme.css; the from-primary refusal red until gradientColorStops was emptied; then 152 of 152)"
+    - "448e054 docs: the Mistral and MiniMax design files (byte copies of fbd953c and 8d9d15c, cmp identical) and the owner's mx3a decision in the plan pair"
+    - "f699d74 docs: the result pair (mx3a)"
+    - "1321594 fix: the helper reads a name unless it is truly changed (red first: 3 unit tests and the honest.tsx fixture - an exported alias, String(look), Object.hasOwn(TONE, k), look.toUpperCase(), a table handed to a function; the known-mutation test green before and after)"
+    - "15b14dc fix: the CSS check judges every stylesheet the page loads and every declaration in styles.css, and fails closed (red first: shipped-css.test.ts 19 of 19 with no such exports; then the real styles.css red on its raw base declarations until they became @apply. Hand probes on the real tree, each planted alone and restored: import './rogue.css' in main.tsx, @import './rogue2.css' in styles.css, a <link> in index.html, h2{@apply p-[13px]} and h1{font-size:77px} in styles.css, content globs matching nothing - each npm run lint CSS step exit 1, naming it; the reviewer saw exit 0 on the first four)"
+    - "440ac4c test: rendered text-on-ground pairs (green at once: no unmeasured pair today, as the verifier found; its self-test shows ink on the primary pill caught)"
+    - "aed697a docs: the result pair (round 3)"
+    - "18ac11b fix: a table changed out of sight is unread (red first: 3 unit tests - local helper, borrowed mutator, unseen function; hand probe: the reviewer's set(A, s) and Array.prototype.push.call(B, ...) in a window file, eslint exit 1 with two unread errors)"
+    - "41fbe6b fix: styles.css's exact grammar (red first: 11 of 30 in shipped-css.test.ts, the dark-block @apply among them)"
+    - "2e1f550 fix: packages judged whole, every shipped source, the config, a private cache, virtual ids (red first: 10 of 38, the template dynamic import with the reviewer's TypeError, then the symlinked node_modules case red 1 of 1. Hand probes on the real tree, each planted alone and restored, check-css exit 1 naming it: a CommonJS package's require('./x.css') imported from main.tsx (unlisted, then listed in dependencies), the ESM twin, a file reached only by a template import naming a stylesheet, a local .cjs require, ?raw and ?inline, a worker's import, a JSON style injected by createElement('style'), body @apply in the dark block, a plugin added to the renderer config; the honest template import exit 0)"
+    - "4777403 test: grounds paired by inheritance (red: the reviewer's span on bg-primary planted after the header passes the old test, fails the new one naming 'ink on primary'; clean tree green)"
+  runs-2026-11-22:
+    vitest: "cd app && npm run test:window: 16 files, 203 tests pass (unit 92 in 8 files, integration 111 in 8 files; 9 of the integration tests are guarantee.test.ts's probe loop, 21 shipped-css.test.ts's refused-stylesheet loop)"
+    node: "cd app && npm run test:main: tests 184, pass 184, fail 0 (W7's 176 plus 8 guards)"
+    lint: "cd app && npm run lint (eslint -c eslint.config.js --max-warnings 0 . && node eslint-rules/check-css.js): exit 0, no message"
+    typecheck: "cd app && npm run typecheck: exit 0 on typescript 6.0.3"
+    keel-check: "green after each commit except 73d7367 and 668aee9 (see deviations); green at b3f42e3, 448e054, 1321594, 15b14dc, 440ac4c, 18ac11b, 41fbe6b, 2e1f550, 4777403 and the tip"
+    parallel: "lint beside vitest on fresh copies of app/: 41fbe6b 0 of 20 failed (10 on the shared node_modules/.vite, 10 on a fresh one per copy; the reviewer's crash did not reproduce here), the fixed tree 0 of 21"
+    package: "not run (W8 never packages or makes)"
+  installed:
+    - "tailwindcss 3.4.19, postcss 8.5.33, eslint 10.15.0, typescript-eslint 8.73.0, vitest 5.1.1, jsdom 31.0.1"
+    - "@testing-library/react 16.3.3, @testing-library/dom 10.4.2, @testing-library/jest-dom 8.0.0, @testing-library/user-event 14.6.13"
+    - "typescript 6.0.3 (was 7.0.2); each saved exact, package-lock.json committed"
+  tests-added:
+    unit: "test-window/unit/{smoke,tokens,classes,contrast,scheme,bridge,hooks,fixtures}.test.ts(x); app/test/unit/guards.test.ts gains 6 node tests"
+    integration: "test-window/integration/{lint,fake,browser,projects,styles,guarantee,shipped-css,grounds}.test.ts(x)"
+distillation: >-
+  Nothing in W8. At the epic close (W9), per the epic's distillation plan: details.design-rules into
+  docs/local-app.html beside 'The design principles'; the next DEC record carries Tailwind 3 (closed config, the
+  lint rule), TypeScript 6.0.3 for the lint, and browser mode on the fake bridge.
+follow-ups:
+  - "The owner's live look at mx3a on this branch (details.live-checks): browser mode in both worlds (?scheme= or the Mac's switch), npm start with the real Choose dialog and the test alert. Taken by: the owner, before the W8 sign-off."
+  - "Ship PP Editorial Old, Inter or DM Sans instead of New York and the system sans, if the owner overrules DEC-72. Taken by: the owner's ruling; a token change in tailwind.config.js and a font-src in the packaged CSP, at E-APPLIST.W9."
+  - "The scratch branch wu/E-APPLIST/w8-window-foundation_look-variants is not merged; deleting it is the owner's call once W8 is signed. Taken by: the owner, after the W8 sign-off."
+  - "Back to TypeScript 7 when typescript-eslint can read it. Taken by: the backlog row local-app."
+  - "Each request or event W5 adds to contract.ts needs a fake handler and fixture (fake.test.ts fails until it has one). Taken by: E-APPLIST.W5."
+  - "Screens 1 and 2, the top bar's other screens, and screen 6's fields 6.4 and 6.5, on these tokens, hooks and the fake. Taken by: E-APPLIST.W6."
+  - "The Playwright epic test; screen 6 and the built CSS under the packaged content policy, seen on the signed build; the design rules into docs/local-app.html. Taken by: E-APPLIST.W9."
+  - "Review round 5, the last, on the round 4 fix (18ac11b, 41fbe6b, 2e1f550, 4777403), the sign-off and the merge into epic/E-APPLIST: the router starts the review; the owner signs."
+  - "The CSS check's config allowlist names plugin-react 6.3.0's plugins: an upgrade that renames them turns lint red until the list is reviewed. Taken by: whoever upgrades @vitejs/plugin-react, in that change."
+details:
+  base: "wu/E-APPLIST/w8-window-foundation off epic/E-APPLIST at 3cfa216"
+  guarantee:
+    claim: "Only Keel's closed vocabulary reaches the shipped CSS; npm run lint fails otherwise, with no escape hatch."
+    where: >-
+      app/eslint-rules/emitted.js, run as npm run lint's second step (eslint-rules/check-css.js) and by
+      test-window/integration/guarantee.test.ts and shipped-css.test.ts, in four parts. 1. One stylesheet, five
+      checks: Vite's module graph from main.tsx (middleware mode, a private cache, no port, no build; packages and
+      virtual ids not opened) lists the stylesheets the local modules load; the shipped sources (src/window but
+      browser mode's, and src/shared) hold no stylesheet file but styles.css, name none, inject none, and import only
+      package.json dependencies, and the graph loads nothing outside them; no package in the installed closure of
+      those dependencies holds a stylesheet file; index.html carries no <link>, <style> or style= and loads main.tsx
+      alone; the renderer config adds no unjudged plugin and no CSS step but Tailwind. 2. styles.css against an
+      exact grammar: Tailwind's directives; one :root rule of tokens (variables the config reads, as numbers) and
+      color-scheme; the dark media query holding only :root token rules; @layer base holding only @apply of legal
+      classes on html, body and #root. 3. The emitted classes: styles.css through Tailwind with the shipped config,
+      over window-sources.js; every class in an emitted selector must pass classify(). 4. Fail closed: content
+      globs matching no file or missing a loaded window module, and no emitted class. Exit 1 naming each problem.
+    why: >-
+      Tailwind emits CSS only for whole class names written out in its content files: whatever route a string takes
+      at run time, either its whole class name is written in the content set, and part 3 sees it emitted, or Tailwind
+      ships no CSS for it; what Tailwind writes for a legal class, and its preflight, is valued from the closed
+      tokens, so the selector is what is judged. What Tailwind does not write is judged where it can be told apart:
+      other stylesheets by Vite's resolver (the one that decides what ships), and authored declarations at source,
+      since compiled, a raw declaration and an @apply of a token look alike; packages whole, since a dev graph never
+      shows a CommonJS require. A renderer build was not used: the owner keeps builds out of the inner loop.
+    one-list: "window-sources.js: SOURCE_GLOBS is Tailwind's content; SCRIPT_GLOBS (the same minus html) is ESLint's files; the html pages are read by the CSS check only."
+    pinned-config: "npm run lint runs eslint -c eslint.config.js; the tests use overrideConfigFile; guarantee.test.ts refuses any other eslint.config.* or .eslintrc* under app/. Probe run by hand: a nested eslint.config.js plus Bad.tsx under src/window/probe/sub, npm run lint exit 1, 3 errors (removed after)."
+    helper: "design/vocabulary stays at error for fast feedback on honest code: scope-resolved, reads helpers by their returns, reports pieces and what it cannot read; a name is unread only when truly changed (a known mutation, through an alias too), never a string; refusing correct code is a bug."
+    inline-style: "Inline styles are not Tailwind CSS: the packaged CSP (style-src 'self', no 'unsafe-inline') blocks style attributes, and the helper reports a JSX style and a style in a props object."
+    findings:
+      - "classes.js:427 adjacent interpolations - moot by the CSS check (probe: an imported PAD = 'p-[13px]' beside ${b}: p-[13px] caught; ${'p-'}${'[14px]'}: no CSS emitted) and fixed in the helper (each glued interpolation reported)."
+      - "classes.js:223 a + of two names - moot (probe WHOLE + MORE: dark:bg-ink, p-[13px] caught) and fixed (any + reported as pieces)."
+      - "eslint.config.js:10 a nested config - fixed (eslint -c, overrideConfigFile, the config guard; hand probe exit 1) and moot (the CSS check reads no ESLint config: dark:bg-ink, p-[3px] caught)."
+      - "classes.js:408 cx identifier, computed and spread keys - moot (blur, grow, transition, p-[15px] caught; the computed piece ships no CSS) and fixed (identifier keys read, computed key read, spread unread)."
+      - "classes.js:309 names without scope - fixed (scope manager: shadowing, for-of and catch unread; no false report on a same-named variable or text elsewhere) and moot for the evasion (p-[25px] caught)."
+      - "classes.js:321 member writes, push, Object.assign - moot (p-[21px], p-[22px], dark:bg-ink, z-10 caught) and fixed (a table written or handed on after its declaration is unread)."
+      - "classes.js:324 a helper's whole body read - fixed (a function is read by its returns; honest.tsx: throw, text constant, exhaustive switch, no report)."
+      - "classes.js:120 group and peer markers refused - fixed (legal where their variants are; the CSS check passes group group-hover:text-ink peer peer-checked:bg-primary)."
+      - "eslint.config.js:14 content set vs lint set - fixed (one list) and moot (the CSS check reads the html: z-50, p-[13px], dark:bg-ink, grid-cols-3 caught)."
+      - "classes.js:195 this. chains - moot (p-[23px] caught) and fixed (this.look, this.props.className unread)."
+      - "classes.js:330 props by reference and style in props - moot (p-[24px] caught) and fixed (createElement/cloneElement with a reference, a spread inside a spread literal, a computed key: unread; a style key: reported)."
+      - "browser.tsx:23 link contrast - fixed (ink links; a contrast test over both worlds; since mx3a, any text colour a window file uses that the test does not measure, text-primary among them, fails it)."
+  design-source: "mx3a, Spectrum Plain (the owner's choice, 2026-11-22): Mistral's type (docs/work/2026-11-22-e-applist-w8-design-mistral.md) on MiniMax's colour (docs/work/2026-11-22-e-applist-w8-design-minimax.md), as built on 67e1bda, adapted to a settings window. Mercury (docs/work/2026-11-22-e-applist-w8-design.md) is history."
+  design-rules:
+    - "Every value from a token; a new size or colour is a token change in tailwind.config.js (and styles.css for a colour), never a class, an inline style or a hand-written DOM class."
+    - "Two worlds, chosen by the Mac: day is light, night is dark; a colour variable flips, no dark: class (the lint refuses it)."
+    - "One solid action per card, the primary pill (black by day, white by night); every other action an outline pill with no fill, whose hover is an ink wash (6% by day, 10% by night)."
+    - "Every button and badge a pill; cards white with a 1px hairline and 12px corners; rows inside a card split by 1px rules; the title bar the canvas over a 1px hairline; no shadow, no gradient."
+    - "Mistral's type: the screen title (34px) and section heads (20px) in New York at 400, tracked in, in sentence case; the system sans for the rest at 400, controls and names at 500, a problem at 600."
+    - "A state is a word on a badge whose colour repeats it (set blue, found green, missing red with white words); a problem is words in the problem colour; no state by colour alone."
+    - "Contrast: every text pair 4.5:1 and every button edge 3:1 in both worlds; a text colour the window uses that the contrast test does not measure fails it."
+    - "A scale with no magnitude (flex, cursor) or derived from spacing (width, margin) is declared with exactly the members the window draws from; an undeclared scale is empty."
+    - "Text the main part sends is shown as text, never as markup; a path is shown whole, in mono, and may wrap."
+    - "One action in progress at a time: every button is off while a request runs; the outcome is a sentence (role=status); a failed read is a sentence (role=alert)."
+    - "Actions first; what you rarely read folded (the PATH's folders)."
+    - "A row that names a thing (a tool) is a named group, so a screen reader and a test find its buttons by that name."
+  tokens: "colours (day / night, R G B): canvas 255 255 255 / 16 16 16, card 255 255 255 / 27 27 27, line 238 238 240 / 46 46 53, edge 226 226 230 / 56 56 64, ink 17 17 17 / 244 244 246, ink-secondary 88 88 96 / 172 172 182, primary 17 17 17 / 244 244 246, on-primary 255 255 255 / 16 16 16, outline 17 17 17 / 200 200 208, set 219 232 255 / 30 54 120, on-set 22 64 190 / 196 214 255, found 223 245 230 / 22 72 44, on-found 22 101 52 / 186 240 204, missing 214 52 36 and on-missing 255 255 255 in both, problem 190 40 40 / 255 138 128; hover-alpha 0.06 / 0.1; spacing half 4, xs 8, sm 12, row 14, md 16, lg 20, xl 24, xxl 32, huge 40, badge 22, control 32 px; type legal 12, ui-sm 13, ui 14, body 14, body-lg 15, title 17, section 20, heading 34 px; weights 400, 500, 600; radius mark 3, card 12, pill 9999 px; no shadow, no gradient; faces sans system-ui, serif ui-serif (New York), mono ui-monospace"
+  live-checks:
+    by: "the owner on his Mac, about five minutes, before the sign-off; no package or make"
+    steps:
+      - "1. cd app && npm ci (about a minute)."
+      - "2. npm run dev:browser, then open http://localhost:5173/browser.html (Vite prints the URL; if 5173 is taken it picks the next port). Screen 6 on fixtures under a 'Browser mode: fixtures, not your Mac' line. Switch states by the links in that line, or ?state=one-project, no-project, tool-missing, path-fallback, refusing, failing, slow. Try: no-project then Add a project...; tool-missing (claude missing, git with a problem); path-fallback (the fallback and why); refusing (Keel could not read its state); failing (any button says The request failed); slow (every button off for 0.8 s)."
+      - "3. With the page open, System Settings > Appearance: Light, then Dark. The page turns with it, no reload. Or the Light, Dark and Follow the Mac links in the top line (?scheme=light|dark), which force one world without the Mac."
+      - "4. Ctrl-C the dev server. npm start (the app unpackaged; the first run downloads Electron). Screen 6 with your real tools; Choose... opens the macOS file dialog; Use the PATH appears for a tool you set; Send a test alert shows the alert and its sentence."
+    worker-tried: "npm ci green. dev:browser and npm start both refused by the sandbox: listen EPERM on ::1 (ports 5199 and 5173)."
+  htmldoc:
+    id: ec75f044a7cb5de9d4812932

@@ -127,3 +127,130 @@ test('every package is pinned to one exact version, and the lockfile is committe
   for (const [name, v] of Object.entries(pins)) assert.match(v, /^\d+\.\d+\.\d+$/, name);
   assert.ok(existsSync(path.join(APP, 'package-lock.json')), 'no package-lock.json');
 });
+
+// Each form is spelled in pieces in the self-test below, so this file's own text reads none of them.
+const KEEL_READS: readonly RegExp[] = [
+  /\b(?:window|globalThis|self)\s*(?:\?\.|\.)\s*keel\b/,
+  /\b(?:window|globalThis|self)\s*(?:\?\.)?\s*\[\s*['"`]keel['"`]\s*\]/,
+  /\(\s*(?:window|globalThis|self)\b[^()]*\)\s*(?:\?\.|\.)\s*keel\b/,
+  /\(\s*(?:window|globalThis|self)\b[^()]*\)\s*(?:\?\.)?\s*\[\s*['"`]keel['"`]\s*\]/,
+  /\{[^{}]*\bkeel\b[^{}]*\}\s*=\s*(?:window|globalThis|self)\b/,
+  /\bReflect\s*\.\s*get\s*\(\s*(?:window|globalThis|self)\b/,
+];
+
+/** Whether `text` reads the preload's bridge off the page's global object, in any of the forms above. */
+function readsKeel(text: string): boolean {
+  return KEEL_READS.some((re) => re.test(text));
+}
+
+test('only src/window/bridge.ts reads window.keel or globalThis.keel; it does, so the guard is not vacuous', () => {
+  const readers = walk(SRC)
+    .filter((f) => /\.(ts|tsx)$/.test(f) && f.startsWith(path.join(SRC, 'window') + path.sep))
+    .filter((f) => readsKeel(readFileSync(f, 'utf8')))
+    .map((f) => path.relative(SRC, f));
+  assert.deepEqual(readers, [path.join('window', 'bridge.ts')]);
+});
+
+test('the window.keel reader sees each form of reading it, and not a tool named keel', () => {
+  const [w, g, s, k] = ['win' + 'dow', 'global' + 'This', 'se' + 'lf', 'ke' + 'el'];
+  for (const text of [
+    `${w}.${k}.ask()`,
+    `${g}?.${k}`,
+    `${s}.${k}`,
+    `${w}['${k}']`,
+    `${g}["${k}"]`,
+    `(${g} as { ${k}?: KeelBridge }).${k}`,
+    `(${w} as any)['${k}']`,
+    `const { ${k} } = ${w};`,
+    `const { ${k}: b } = ${g};`,
+    `Reflect.get(${g}, '${k}')`,
+  ]) {
+    assert.equal(readsKeel(text), true, text);
+  }
+  for (const text of [`state.tools.${k}`, `TOOL_NAMES.includes('${k}')`, `${w}.addEventListener('x', f)`, `const ${k} = 1;`]) {
+    assert.equal(readsKeel(text), false, text);
+  }
+});
+
+const FAKE = path.join(SRC, 'window', 'fake');
+const inside = (f: string, dir: string) => f.startsWith(dir + path.sep);
+
+/** The files under app/src and app/test whose imports resolve into src/window/fake/, fake/ itself left out. */
+function fakeImporters(): string[] {
+  const sources = [...walk(SRC), ...walk(path.join(APP, 'test'))].filter((f) => /\.(ts|tsx)$/.test(f) && !inside(f, FAKE));
+  return sources
+    .filter((f) => imports(readFileSync(f, 'utf8')).some((s) => s.startsWith('.') && (path.resolve(path.dirname(f), s) === FAKE || inside(path.resolve(path.dirname(f), s), FAKE))))
+    .map((f) => path.relative(APP, f));
+}
+
+test('only src/window/browser.tsx (and app/test-window/, outside this walk) imports src/window/fake/; the window\'s tests do, so the fake exists', () => {
+  assert.deepEqual(fakeImporters().filter((f) => f !== path.join('src', 'window', 'browser.tsx')), []);
+  assert.ok(existsSync(path.join(FAKE, 'fake.ts')), 'src/window/fake/fake.ts is missing');
+  const windowTests = walk(path.join(APP, 'test-window')).filter((f) => /\.(ts|tsx)$/.test(f));
+  assert.ok(windowTests.some((f) => imports(readFileSync(f, 'utf8')).some((s) => s.includes('/window/fake/'))), 'no window test imports the fake');
+});
+
+const WINDOW = path.join(SRC, 'window');
+
+/** Every file reachable from `entry` by relative static imports (and side-effect imports such as a stylesheet). */
+function staticGraph(entry: string): string[] {
+  const seen = new Set<string>();
+  const queue = [entry];
+  while (queue.length > 0) {
+    const f = queue.pop() as string;
+    if (seen.has(f)) continue;
+    seen.add(f);
+    if (!/\.(ts|tsx)$/.test(f)) continue;
+    for (const spec of imports(readFileSync(f, 'utf8'))) {
+      if (!spec.startsWith('.')) continue;
+      const target = path.resolve(path.dirname(f), spec);
+      assert.ok(existsSync(target), `${path.relative(APP, f)} imports ${spec}, which does not exist`);
+      queue.push(target);
+    }
+  }
+  return [...seen].map((f) => path.relative(APP, f)).sort();
+}
+
+test('the shipped page never reaches the fake or the browser entry: index.html loads main.tsx, whose static imports reach neither, and the renderer builds index.html alone', () => {
+  const html = readFileSync(path.join(WINDOW, 'index.html'), 'utf8');
+  assert.match(html, /<script type="module" src="\.\/main\.tsx"><\/script>/);
+  const graph = staticGraph(path.join(WINDOW, 'main.tsx'));
+  for (const part of ['main.tsx', 'App.tsx', 'bridge.ts', 'hooks.ts', 'styles.css']) assert.ok(graph.includes(path.join('src', 'window', part)), `the walk reached src/window/${part}`);
+  const leaks = graph.filter((f) => f.startsWith(path.join('src', 'window', 'fake') + path.sep) || f === path.join('src', 'window', 'browser.tsx'));
+  assert.deepEqual(leaks, []);
+  assert.doesNotMatch(readFileSync(path.join(APP, 'vite.renderer.config.ts'), 'utf8'), /rollupOptions|browser\.(html|tsx)/);
+});
+
+test('the graph walk follows each relative import, a stylesheet included, so the guard above sees a leak', () => {
+  const graph = staticGraph(path.join(WINDOW, 'browser.tsx'));
+  for (const part of ['browser.tsx', 'styles.css', path.join('fake', 'fake.ts'), path.join('fake', 'fixtures.ts'), 'App.tsx']) assert.ok(graph.includes(path.join('src', 'window', part)), part);
+});
+
+test('the browser mode\'s page carries the same CSP meta as the shipped page and loads only browser.tsx', () => {
+  const page = readFileSync(path.join(WINDOW, 'browser.html'), 'utf8');
+  const shipped = readFileSync(path.join(WINDOW, 'index.html'), 'utf8');
+  const meta = (html: string) => [...html.matchAll(/<meta\s+http-equiv="Content-Security-Policy"[^>]*>/gi)].map((m) => m[0]);
+  assert.deepEqual(meta(page), meta(shipped));
+  assert.equal(meta(page).length, 1);
+  const scripts = [...page.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
+  assert.equal(scripts.length, 1);
+  assert.match(scripts[0]?.[1] ?? '', /^\s*type="module"\s+src="\.\/browser\.tsx"\s*$/);
+});
+
+/** Whether `text` asks Vite to glob modules in (import.meta.glob, in any spacing), which a static walk cannot follow. */
+function globsModules(text: string): boolean {
+  return /\bimport\s*\.\s*meta\s*\.\s*glob/.test(text);
+}
+
+test('no file in the window globs modules in, so the static walk above sees every import the shipped page makes', () => {
+  const globbers = walk(WINDOW)
+    .filter((f) => /\.(ts|tsx)$/.test(f) && globsModules(readFileSync(f, 'utf8')))
+    .map((f) => path.relative(APP, f));
+  assert.deepEqual(globbers, []);
+});
+
+test('the glob reader sees import.meta.glob in each spacing, and not a word that merely contains it', () => {
+  const [I, M, G] = ['imp' + 'ort', 'me' + 'ta', 'gl' + 'ob'];
+  for (const text of [`${I}.${M}.${G}('./fake/*.ts', { eager: true })`, `${I} . ${M} . ${G}Eager('./x')`, `${I}.${M}.${G}<Mod>('./y')`]) assert.equal(globsModules(text), true, text);
+  for (const text of [`${I}.${M}.url`, `const ${G}al = 1`, `${M}.${G}`]) assert.equal(globsModules(text), false, text);
+});

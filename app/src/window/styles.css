@@ -1,0 +1,68 @@
+/* Keel's colour tokens as R G B triplets, read by tailwind.config.js through rgb(var(--name)),
+   valued from the look the owner chose on 2026-11-22, mx3a Spectrum Plain (Mistral's type on
+   MiniMax's colour: docs/work/2026-11-22-e-applist-w8-design-mistral.md and -minimax.md). Light is
+   its day world; the Mac's dark setting flips every one to its night world (no dark: class anywhere,
+   DEC-72). hover-alpha sets how strong an outline pill's hover wash is in each world.
+   No font file and no remote resource: the window draws in the Mac's own fonts. Every other value
+   comes from a token by @apply: the CSS check (eslint-rules/emitted.js) refuses any raw declaration. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+  --canvas: 255 255 255;
+  --card: 255 255 255;
+  --line: 238 238 240;
+  --edge: 226 226 230;
+  --ink: 17 17 17;
+  --ink-secondary: 88 88 96;
+  --primary: 17 17 17;
+  --on-primary: 255 255 255;
+  --outline: 17 17 17;
+  --set: 219 232 255;
+  --on-set: 22 64 190;
+  --found: 223 245 230;
+  --on-found: 22 101 52;
+  --missing: 214 52 36;
+  --on-missing: 255 255 255;
+  --problem: 190 40 40;
+  --hover-alpha: 0.06;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: 16 16 16;
+    --card: 27 27 27;
+    --line: 46 46 53;
+    --edge: 56 56 64;
+    --ink: 244 244 246;
+    --ink-secondary: 172 172 182;
+    --primary: 244 244 246;
+    --on-primary: 16 16 16;
+    --outline: 200 200 208;
+    --set: 30 54 120;
+    --on-set: 196 214 255;
+    --found: 22 72 44;
+    --on-found: 186 240 204;
+    --missing: 214 52 36;
+    --on-missing: 255 255 255;
+    --problem: 255 138 128;
+    --hover-alpha: 0.1;
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    @apply min-h-full;
+  }
+  html,
+  body {
+    @apply m-0 h-full font-sans antialiased;
+  }
+  body {
+    @apply bg-canvas text-body font-regular text-ink;
+  }
+}
