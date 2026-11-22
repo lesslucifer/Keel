@@ -3,7 +3,7 @@
 // project list, the git reader and the update log's reader, and says whether it changed; the view
 // is read from memory, so waiting.get runs nothing.
 
-import type { RouterAlert, View } from '../../shared/contract.ts';
+import type { Focus, RouterAlert, View } from '../../shared/contract.ts';
 import type { RunOptions } from '../commands.ts';
 import { GitReader, noFacts } from './git.ts';
 import { RouterLog, type StoredAlert } from './log.ts';
@@ -37,6 +37,12 @@ export interface ViewReaderParts {
   runOptions: Omit<RunOptions, 'before245' | 'timeoutMs'>;
   now?: () => number;
   silenceMs?: number;
+  /** Shows what is new among the run's alert lines; answers the numbers shown so far (alerter/alerts.ts). */
+  alerter?: { take(run: string | null, alerts: readonly StoredAlert[]): Promise<Set<number>> };
+  /** Where a click or a link points the window. */
+  focus?: () => Focus | null;
+  /** The app macOS opens keel:// links with. */
+  scheme?: () => string | null;
 }
 
 /** A stored alert as the view shows it; whether it was shown is the alerter's to say. */
@@ -85,7 +91,7 @@ export class ViewReader {
       this.root = null;
       this.git = null;
       this.log = null;
-      next = emptyView();
+      next = { ...emptyView(), focus: this.parts.focus?.() ?? null, scheme: this.parts.scheme?.() ?? null };
     } else {
       if (p.path !== this.root || this.git === null || this.log === null) {
         this.root = p.path;
@@ -95,13 +101,16 @@ export class ViewReader {
       const git = await this.parts.git();
       const facts = git === null ? noFacts('git was not found: choose it in the settings') : await this.git.read(git);
       await this.log.refresh();
+      const router = this.log.view();
+      const stored = this.log.alerts();
+      const shown = this.parts.alerter === undefined ? new Set<number>() : await this.parts.alerter.take(router.run, stored);
       next = {
         project: { id: p.id, name: p.name },
         git: facts,
-        router: this.log.view(),
-        alerts: this.log.alerts().map((a) => viewAlert(a, false)),
-        focus: null,
-        scheme: null,
+        router,
+        alerts: stored.map((a) => viewAlert(a, shown.has(a.n))),
+        focus: this.parts.focus?.() ?? null,
+        scheme: this.parts.scheme?.() ?? null,
         readAt: new Date(this.now()).toISOString(),
       };
     }
