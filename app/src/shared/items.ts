@@ -57,7 +57,8 @@ export function itemId(kind: ItemKind, subject: string, version: string): string
 }
 
 const GROUPS: readonly ItemGroup[] = ['yours', 'not-yours', 'sent'];
-const KINDS: readonly ItemKind[] = ['result', 'epic-result', 'question', 'plan', 'worker', 'task', 'push', 'motion'];
+/** Within a group, the order of the kinds: one rank for each of the contract's ITEM_KINDS, none missing (epic review round 1, items.ts:61). */
+export const KIND_ORDER: Readonly<Record<ItemKind, number>> = Object.freeze({ result: 0, 'epic-result': 1, question: 2, plan: 3, worker: 4, task: 5, push: 6, motion: 7 } satisfies Record<ItemKind, number>);
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -217,5 +218,5 @@ export function itemsOf(input: ItemInput): Item[] {
     i.group = 'sent';
     i.why = i.kind === 'plan' ? 'You marked it sent: it leaves when the router moves the stage on.' : 'You marked it sent: it leaves when the router removes the question.';
   }
-  return out.sort((a, b) => GROUPS.indexOf(a.group) - GROUPS.indexOf(b.group) || KINDS.indexOf(a.kind) - KINDS.indexOf(b.kind) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return out.sort((a, b) => GROUPS.indexOf(a.group) - GROUPS.indexOf(b.group) || KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
