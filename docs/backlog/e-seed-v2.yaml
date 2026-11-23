@@ -348,6 +348,20 @@ open:
     proposal: "Share verify_dod.rs's legacy helpers as pub(crate) and drop the copy in mr.rs."
     source: "E-APPLIST.W14 review round 1, nit tests/suite/mr.rs:1638 (cr note on 801712e, 2026-11-23)."
     taken-by: "E-GATEFIX (proposed)"
+
+  - id: B33
+    title: "The code-review skill says keel hashes the plain git diff the reviewers read"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      `skills/keel-code-review/SKILL.md:28-29` (and its copy under `.claude/skills/`) says the reviewed diff
+      `git diff $BASE $HEAD_R -- <code_paths>` is "exactly the bytes `keel notes write cr` will hash into
+      `code_diff_hash`". Since E-APPLIST.W14 keel hashes `git diff --full-index` (UC-REV-1), so the index lines differ:
+      the reviewed code is the same, the hashed bytes are not.
+    proposal: >-
+      Say the reviewers read the same range and paths that `keel notes write cr` binds, hashed in its
+      `--full-index` form. A rule-bearing change: the owner's `keel mr commit`.
+    source: "E-APPLIST close, the W14 archive (2026-11-23): the skill line found while distilling W14."
+    taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
 closed:
   - id: B1
     title: "E-SEED.W10 release pipeline (parked branch)"

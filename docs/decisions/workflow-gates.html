@@ -25,7 +25,7 @@
 
     <h3 id="dec-14">DEC-14 · Evidence is derived from the tree, bound by git hashes</h3>
     <table data-c="dec-14">
-      <tr><th>Choice</th><td><code>keel notes write</code> computes range, identity, tiers and test counts itself; the agent supplies only a judgment (JSON on stdin for <code>test</code>, flags for <code>cr</code>). The cr binding is the git blob hash of <code>git diff base tip -- code_paths</code>, one shared function for writer and gate. Writing from main (an empty range) is refused.</td></tr>
+      <tr><th>Choice</th><td><code>keel notes write</code> computes range, identity, tiers and test counts itself; the agent supplies only a judgment (JSON on stdin for <code>test</code>, flags for <code>cr</code>). The cr binding is the git blob hash of <code>git diff --full-index base tip -- code_paths</code>: full object names, so the hash never depends on the store's size. One binding rule serves writer and gate; it also accepts a note in git's old short form at 7 to 12 characters (UC-REV-1, backlog B29). Writing from main (an empty range) is refused.</td></tr>
       <tr><th>Why</th><td>What the tool can measure, an agent cannot type. Git's own object hash binds the tip already.</td></tr>
       <tr><th>Rejected</th><td>sha256 (<code>diff_sha256</code>) for the cr binding: a new dependency for no gain (hardening in backlog B7). The sign-off's hashes are SHA-256 since <a href="#dec-40">DEC-40</a>.</td></tr>
     </table>

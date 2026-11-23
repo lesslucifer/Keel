@@ -8,7 +8,7 @@ files:
     scope: >-
       Work deferred at the E-SEED, E-SEED2, E-SEED3, E-CRCAP, E-DOCSTYLE and E-TESTOPT closes: release, per-language
       e2e, Trawler re-records, the gate fixes, the notes fetch, accepted limits of the doc check, small follow-ups.
-    next-free: B33
+    next-free: B34
   - letter: R
     file: e-router-v2.yaml
     scope: >-
@@ -62,7 +62,7 @@ order:
   - rank: 3
     epic: E-GATEFIX
     status: proposed
-    rows: "B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14; B30 - B32 (E-APPLIST.W14's review nits)"
+    rows: "B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14; B30 - B32 (E-APPLIST.W14's review nits); B33 (the code-review skill's stale hash sentence, rule-bearing)"
   - rank: 3
     epic: E-MULTILANG
     status: proposed
@@ -77,7 +77,7 @@ order:
   - rank: none
     epic: E-APPLIST · alerts and your list
     status: "closed: the router's update log and the watchdog's lines, the app's alert at your desk and your list with Open and Mark sent; W4 dropped (DEC-76)"
-    rows: local-app A3 done; A11 added (the app's open ends); e-router-v2 R52 to the next router epic; e-seed-v2 B29 done by E-APPLIST.W14 (owner ruling 2026-11-23); e-seed-v2 B30 - B32 added (W14's review nits) to E-GATEFIX
+    rows: local-app A3 done; A11 added (the app's open ends); e-router-v2 R52 to the next router epic; e-seed-v2 B29 done by E-APPLIST.W14 (owner ruling 2026-11-23); e-seed-v2 B30 - B32 added (W14's review nits) and B33 (the code-review skill's stale hash sentence) to E-GATEFIX
   - rank: none
     epic: E-KEELFIX · keel fixes
     status: "closed: the commit level reads the committed rules, a gate run or help writes nothing unless asked, the github tier removed; W4 dropped by the owner's ruling of 2026-11-20"
