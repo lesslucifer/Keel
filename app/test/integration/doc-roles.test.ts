@@ -4,16 +4,13 @@
 // fake keels stand in for the error paths: an older keel, one that does not start, hangs or answers garbage.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { docHeads } from '../../src/main/open/roles.ts';
 import { DOC_ROLES_BATCH } from '../../src/main/commands.ts';
-import { tempDir, program, mk, realGit, sh, HANG, KEEL, noKeel } from '../support/fs.ts';
+import { tempDir, program, mk, realGit, sh, HANG, keel, keelPath, KEEL, REPO } from '../support/fs.ts';
 
-const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const REPO = path.resolve(APP, '..');
 const opts = { path: ['/usr/bin', '/bin'], source: { HOME: '/nonexistent', LANG: 'C' } };
 
 /** Write each text as its own .yaml file in a temp folder; their absolute paths, in order. */
@@ -26,16 +23,16 @@ function files(t: { after: (fn: () => void) => void }, texts: readonly string[])
   });
 }
 
-test('W12 review round 1 (docs.ts:172, docs.ts:127): every case of the shared table gives Open, through keel doc-roles, the roles keel\'s data_roles gives it', { skip: noKeel }, async (t) => {
+test('W12 review round 1 (docs.ts:172, docs.ts:127): every case of the shared table gives Open, through keel doc-roles, the roles keel\'s data_roles gives it', async (t) => {
   const table = JSON.parse(readFileSync(path.join(REPO, 'tests', 'data', 'data-roles.json'), 'utf8')) as { cases: Array<{ src: string; roles: string[]; why: string }> };
   assert.ok(table.cases.length >= 50);
   const paths = files(t, table.cases.map((c) => c.src));
-  const heads = await docHeads(KEEL, paths, opts);
+  const heads = await docHeads(keel(), paths, opts);
   assert.ok(typeof heads !== 'string', String(heads));
   table.cases.forEach((c, i) => assert.deepEqual(heads.get(paths[i] as string)?.artifact, c.roles, `${JSON.stringify(c.src)} (${c.why})`));
 });
 
-test('W12 review round 1 (docs.ts:172): every docs/**/*.yaml data file in the repository\'s history gives Open the roles, id and page keel gives it alone, in batches past DOC_ROLES_BATCH; the four docs the old reader missed have their role', { skip: noKeel }, async (t) => {
+test('W12 review round 1 (docs.ts:172): every docs/**/*.yaml data file in the repository\'s history gives Open the roles, id and page keel gives it alone, in batches past DOC_ROLES_BATCH; the four docs the old reader missed have their role', async (t) => {
   const GIT = realGit();
   const listed = sh(GIT, REPO, ['rev-list', '--all', '--objects'])
     .split('\n')
@@ -44,12 +41,12 @@ test('W12 review round 1 (docs.ts:172): every docs/**/*.yaml data file in the re
   const blobs = [...new Map(listed.map(([sha, p]) => [sha, p])).entries()];
   assert.ok(blobs.length > 0);
   const paths = files(t, blobs.map(([sha]) => sh(GIT, REPO, ['cat-file', 'blob', sha])));
-  const heads = await docHeads(KEEL, paths, opts);
+  const heads = await docHeads(keel(), paths, opts);
   assert.ok(typeof heads !== 'string', String(heads));
   assert.equal(heads.size, paths.length);
   // Each file alone, straight from keel: batching and reading the answer change nothing.
   for (const [i, f] of paths.entries()) {
-    const alone = (JSON.parse(execFileSync(KEEL, ['doc-roles', f], { cwd: '/', encoding: 'utf8' })) as { files: Array<{ roles: string[]; id: string | null; page: string | null }> }).files[0];
+    const alone = (JSON.parse(execFileSync(keel(), ['doc-roles', f], { cwd: '/', encoding: 'utf8' })) as { files: Array<{ roles: string[]; id: string | null; page: string | null }> }).files[0];
     assert.deepEqual(heads.get(f), { artifact: alone?.roles, id: alone?.id, page: alone?.page }, (blobs[i] as [string, string])[1]);
   }
   assert.ok(paths.length > DOC_ROLES_BATCH, 'the history spans more than one batch');
@@ -96,4 +93,42 @@ test('W12: a keel that answers something that is not doc-roles/v1, does not star
   assert.match(String(await docHeads(path.join(dir, 'gone', 'keel'), paths, opts)), /keel could not start \(ENOENT\)/);
   const slow = program(path.join(mk(path.join(dir, 'slow')), 'keel'), `#!/bin/sh\n${HANG}\n`);
   assert.match(String(await docHeads(slow, paths, { ...opts, timeoutMs: 300 })), /keel did not answer/);
+});
+
+test('W12 review round 2 (docs.ts:83): a file whose id keel gives with a control character gives no roles; every other file in the batch keeps its own, and Open is never told to update keel', async (t) => {
+  const paths = files(t, [
+    'artifact: wu-plan\nstatus: draft\nid: "E-A\\tx"\nepic: E-A\npage: 0.html\n',
+    'artifact: wu-result\nstatus: ready\nid: E-A.W1\nepic: E-A\npage: 1.html\n',
+    'artifact: wu-plan\nstatus: draft\nid: E-A.W2\nepic: E-A\npage: "2\\u0001.html"\n',
+  ]);
+  const said = JSON.parse(execFileSync(keel(), ['doc-roles', ...paths], { cwd: '/', encoding: 'utf8' })) as { files: Array<{ id: string | null; page: string | null }> };
+  assert.equal(said.files[0]?.id, 'E-A\tx', 'keel gives the id as written, with its tab');
+  assert.equal(said.files[2]?.page, '2\u0001.html', 'keel gives the page as written, with its control character');
+  const heads = await docHeads(keel(), paths, opts);
+  assert.ok(typeof heads !== 'string', String(heads));
+  assert.deepEqual([...heads], [[paths[1], { artifact: ['wu-result'], id: 'E-A.W1', page: '1.html' }]]);
+});
+
+test('W12 review round 2 (commands.ts:351): a data file whose path keel cannot be asked about (a control character in its name or folder) gives no roles and throws nothing; the others are asked', async (t) => {
+  const dir = tempDir(t, 'doc-roles-ctl');
+  const odd = mk(path.join(dir, 'a\u0007b'));
+  const good = path.join(dir, 'good.yaml');
+  writeFileSync(good, 'artifact: epic-result\nstatus: ready\nid: E-A\npage: good.html\n');
+  const named = path.join(dir, 'x\ny.yaml');
+  const inside = path.join(odd, 'z.yaml');
+  for (const f of [named, inside]) writeFileSync(f, 'artifact: epic-result\nstatus: ready\nid: E-A\npage: z.html\n');
+  const heads = await docHeads(keel(), [named, good, inside], opts);
+  assert.ok(typeof heads !== 'string', String(heads));
+  assert.deepEqual([...heads], [[good, { artifact: ['epic-result'], id: 'E-A', page: 'good.html' }]]);
+  assert.deepEqual(await docHeads(keel(), [named, inside], opts), new Map(), 'none askable: no keel run, no roles, no throw');
+});
+
+test('W12 review round 2 (fs.ts:12): the keel these tests run is found by its decoded path and CARGO_TARGET_DIR, and is built here: a missing keel fails the keel-backed tests, never skips them', () => {
+  assert.equal(keelPath('/Users/a b/café', {}), '/Users/a b/café/target/debug/keel');
+  assert.equal(keelPath('/Users/a b/café', { CARGO_TARGET_DIR: '' }), '/Users/a b/café/target/debug/keel');
+  assert.equal(keelPath('/Users/a b/café', { CARGO_TARGET_DIR: '/var/build/t' }), '/var/build/t/debug/keel');
+  assert.equal(keelPath('/Users/a b/café', { CARGO_TARGET_DIR: 'out' }), '/Users/a b/café/out/debug/keel');
+  assert.ok(existsSync(path.join(REPO, 'Cargo.toml')), `${REPO} is the repository's root`);
+  assert.equal(KEEL, keelPath(REPO, process.env));
+  assert.equal(keel(), KEEL, `keel is built at ${KEEL}`);
 });

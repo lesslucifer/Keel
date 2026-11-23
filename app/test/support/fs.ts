@@ -7,11 +7,31 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-/** The keel cargo test builds (keel check runs cargo test before the node tests), for tests that ask keel itself (keel doc-roles). */
-export const KEEL = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..', '..', 'target', 'debug', 'keel');
-/** A test's skip reason when that keel is not built here, else false. */
-export const noKeel: string | false = existsSync(KEEL) ? false : 'no target/debug/keel here (cargo test builds it; keel check runs it first)';
+/** The repository's root, by this file's real path (a checkout path with a space or a non-ASCII letter included). */
+export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+/**
+ * Where cargo test builds keel for a checkout at `repo`: CARGO_TARGET_DIR's debug/keel when it is set (a
+ * relative one taken from the repository's root, where keel check runs cargo), else target/debug/keel.
+ */
+export function keelPath(repo: string, env: Record<string, string | undefined>): string {
+  const target = env.CARGO_TARGET_DIR;
+  return path.join(target === undefined || target === '' ? path.join(repo, 'target') : path.resolve(repo, target), 'debug', 'keel');
+}
+
+/** The keel cargo test builds (keel check runs cargo test before the node tests). */
+export const KEEL = keelPath(REPO, process.env);
+
+/**
+ * The keel for a test that asks keel itself (keel doc-roles, Open): KEEL, or an error when it is not built,
+ * so such a test fails and is never skipped (W12 review round 2, fs.ts:12).
+ */
+export function keel(): string {
+  if (!existsSync(KEEL)) throw new Error(`no keel at ${KEEL}: build it first (cargo test, which keel check runs before these tests)`);
+  return KEEL;
+}
 
 /** A fresh temp folder by its real path (macOS's /var is /private/var), removed after the test. */
 export function tempDir(t: { after: (fn: () => void) => void }, tag: string): string {
