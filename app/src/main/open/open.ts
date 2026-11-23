@@ -11,7 +11,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { Change, GitFacts, Item, ProjectEntry, View } from '../../shared/contract.ts';
 import { ProjectRunner, type Captured, type RunOptions } from '../commands.ts';
-import { copyPlan, dataHead, fileUrlInside, findPage, parseTree, roleOf, COPY_CAP, HEAD_CAP, type DataHead } from './docs.ts';
+import { copyPlan, fileUrlInside, findPage, parseTree, roleOf, COPY_CAP, HEAD_CAP, type DataHead } from './docs.ts';
+import { docHeads } from './roles.ts';
 
 /** The most copies kept per project; the least recently opened go first. */
 export const KEPT_COPIES = 8;
@@ -27,6 +28,8 @@ export interface OpenParts {
   project: { id: string; path: string };
   /** The git to read with (absolute). */
   git: string;
+  /** The keel that reads each data file's roles (absolute; keel doc-roles, roles.ts). */
+  keel: string;
   runOptions: Omit<RunOptions, 'before245' | 'timeoutMs'>;
   /** Hand a file URL to the owner's browser. */
   openUrl(url: string): Promise<void>;
@@ -63,21 +66,6 @@ async function exists(p: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/** Every data file under `dir`/docs (a copy), with its head. */
-async function headsIn(dir: string): Promise<Array<{ path: string; head: DataHead }>> {
-  const out: Array<{ path: string; head: DataHead }> = [];
-  const walk = async (rel: string): Promise<void> => {
-    for (const name of (await readdir(path.join(dir, rel))).sort()) {
-      const r = path.posix.join(rel, name);
-      const st = await lstat(path.join(dir, r));
-      if (st.isDirectory()) await walk(r);
-      else if (st.isFile() && name.endsWith('.yaml') && st.size <= HEAD_CAP) out.push({ path: r, head: dataHead(await readFile(path.join(dir, r), 'utf8')) });
-    }
-  };
-  if (await exists(path.join(dir, 'docs'))) await walk('docs');
-  return out;
 }
 
 /** Keep the KEPT_COPIES copies opened last (by their folder's time), `keep` among them. */
@@ -141,11 +129,18 @@ async function copyOf(parts: OpenParts, tip: string, role: string, id: string): 
   // A kept copy is reused when its data file and page are the tree's blobs, checked in-process against the
   // ids the tree read gave (review round 3, open.ts:124): one git call per reuse, a blob read only on a rebuild.
   if (await exists(path.join(final, COMPLETE))) {
-    const kept: Array<{ path: string; head: DataHead }> = [];
+    const keptFiles: string[] = [];
     for (const f of files) {
       if (!f.path.endsWith('.yaml') || (f.size as number) > HEAD_CAP) continue;
-      if ((await blobIdOf(path.join(final, f.path), f.oid.length)) === f.oid) kept.push({ path: f.path, head: dataHead(await readFile(path.join(final, f.path), 'utf8')) });
+      if ((await blobIdOf(path.join(final, f.path), f.oid.length)) === f.oid) keptFiles.push(f.path);
     }
+    // Their roles as keel reads them (W12 review round 1, owner ruling 2026-11-23).
+    const keptHeads = keptFiles.length === 0 ? new Map<string, DataHead>() : await docHeads(parts.keel, keptFiles.map((p) => path.join(final, p)), parts.runOptions);
+    if (typeof keptHeads === 'string') return notDone(keptHeads);
+    const kept = keptFiles.flatMap((p) => {
+      const head = keptHeads.get(path.join(final, p));
+      return head === undefined ? [] : [{ path: p, head }];
+    });
     const keptPage = findPage(kept, role, id);
     const entry = keptPage === null ? undefined : files.find((f) => f.path === keptPage);
     if (keptPage !== null && entry !== undefined && (await blobIdOf(path.join(final, keptPage), entry.oid.length)) === entry.oid) {
@@ -160,16 +155,36 @@ async function copyOf(parts: OpenParts, tip: string, role: string, id: string): 
     return typeof blob === 'string' || failed(blob, f.path) !== null || Buffer.byteLength(blob.stdout, 'utf8') !== f.size || blob.stdout.includes('\uFFFD') ? null : blob.stdout;
   };
   // The head pass: each data file's text, kept until the copy loop writes it (round 3 nit, open.ts:143), so no file is read twice.
-  const heads: Array<{ path: string; head: DataHead; text: string }> = [];
+  const yamls: Array<{ path: string; text: string }> = [];
   const texts = new Map<string, string>();
   for (const f of files) {
     if (!f.path.endsWith('.yaml') || (f.size as number) > HEAD_CAP) continue;
     const t = await text(f);
     if (t !== null) {
-      heads.push({ path: f.path, head: dataHead(t), text: t });
+      yamls.push({ path: f.path, text: t });
       texts.set(f.path, t);
     }
   }
+  // keel reads their roles from a temp folder of their own, one flat name each (a sweep removes a crash's
+  // leftover): the app reads no YAML itself (W12 review round 1, owner ruling 2026-11-23).
+  const headsDir = path.join(base, `.tmp-heads-${process.pid}-${randomBytes(4).toString('hex')}`);
+  const named = yamls.map((_, i) => path.join(headsDir, `${i}.yaml`));
+  let asked: Map<string, DataHead> | string = new Map();
+  if (yamls.length > 0) {
+    await mkdir(headsDir, { mode: 0o700 });
+    try {
+      for (const [i, r] of yamls.entries()) await writeFile(named[i] as string, r.text, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      asked = await docHeads(parts.keel, named, parts.runOptions);
+    } finally {
+      await rm(headsDir, { recursive: true, force: true });
+    }
+  }
+  if (typeof asked === 'string') return notDone(asked);
+  const answered = asked;
+  const heads = yamls.flatMap((r, i) => {
+    const head = answered.get(named[i] as string);
+    return head === undefined ? [] : [{ path: r.path, head, text: r.text }];
+  });
   const page = findPage(heads, role, id);
   if (page === null) return notDone(`no ${role} page for ${id} at its tip`);
   const dataHeadOf = heads.find((h) => h.head.page !== null && path.posix.join(path.posix.dirname(h.path), h.head.page) === page);
@@ -229,10 +244,18 @@ async function openArchive(item: Item, facts: GitFacts, parts: OpenParts): Promi
   } catch {
     return notDone(`${branch}'s worktree has no docs/.archive`);
   }
+  const data: string[] = [];
   for (const name of names) {
     if (!name.endsWith('.yaml')) continue;
     const st = await lstat(path.join(dir, name));
-    if (st.isFile() && st.size <= HEAD_CAP) heads.push({ path: name, head: dataHead(await readFile(path.join(dir, name), 'utf8')) });
+    if (st.isFile() && st.size <= HEAD_CAP) data.push(name);
+  }
+  // Their roles as keel reads them, in place (W12 review round 1, owner ruling 2026-11-23).
+  const asked = data.length === 0 ? new Map<string, DataHead>() : await docHeads(parts.keel, data.map((n) => path.join(dir, n)), parts.runOptions);
+  if (typeof asked === 'string') return notDone(asked);
+  for (const name of data) {
+    const head = asked.get(path.join(dir, name));
+    if (head !== undefined) heads.push({ path: name, head });
   }
   const page = findPage(heads, 'epic-result', item.epic ?? '');
   const file = page === null ? null : path.join(dir, page);

@@ -8,6 +8,11 @@ import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 
+/** The keel cargo test builds (keel check runs cargo test before the node tests), for tests that ask keel itself (keel doc-roles). */
+export const KEEL = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..', '..', 'target', 'debug', 'keel');
+/** A test's skip reason when that keel is not built here, else false. */
+export const noKeel: string | false = existsSync(KEEL) ? false : 'no target/debug/keel here (cargo test builds it; keel check runs it first)';
+
 /** A fresh temp folder by its real path (macOS's /var is /private/var), removed after the test. */
 export function tempDir(t: { after: (fn: () => void) => void }, tag: string): string {
   const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), `keel-app-${tag}-`)));

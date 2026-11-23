@@ -16,6 +16,7 @@ import { SentMarks } from '../../src/main/items/sent.ts';
 import { openListed } from '../../src/main/open/open.ts';
 import type { Item, View } from '../../src/shared/contract.ts';
 import { makeWorld, onPath, sinkLines, EDITED_HTML, PLAN_UNIT, QUESTION, ROUTER, WORKER_UNIT } from '../../e2e/world.ts';
+import { KEEL } from '../support/fs.ts';
 
 const SILENCE_MS = 60_000;
 
@@ -73,7 +74,7 @@ test('the epic walk\'s world, read as the app reads it: each step holds exactly 
   // 4. The plan's working page edited, then Open: one file URL under the app folder, holding the committed bytes.
   w.editPlanPage(EDITED_HTML);
   const plan = await item('Plan to read');
-  assert.deepEqual(await openListed(plan, app.reader.view(), [project], { appDir: w.appDir, git, runOptions, openUrl: async (url) => openFileSink(w.openSink)(url) }), { done: true });
+  assert.deepEqual(await openListed(plan, app.reader.view(), [project], { appDir: w.appDir, git, keel: KEEL, runOptions, openUrl: async (url) => openFileSink(w.openSink)(url) }), { done: true });
   const opened = sinkLines(w.openSink);
   assert.equal(opened.length, 1);
   const file = fileURLToPath(opened[0]?.url as string);

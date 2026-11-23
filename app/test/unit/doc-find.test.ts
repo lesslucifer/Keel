@@ -3,14 +3,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { parseTree, copyPlan, dataHead, dataRoles, findPage, fileUrlInside, COPY_CAP, HEAD_CAP, roleOf } from '../../src/main/open/docs.ts';
+import { parseTree, copyPlan, parseDocRoles, docRolesWhy, findPage, fileUrlInside, COPY_CAP, HEAD_CAP, roleOf, DOC_ROLES_SCHEMA } from '../../src/main/open/docs.ts';
+import type { Captured } from '../../src/main/commands.ts';
 import { OUTPUT_CAP } from '../../src/main/commands.ts';
 import { seeded, hostileString } from '../support/seeded.ts';
 
-/** The app's folder: the shared case table sits in the repository's tests/data beside it. */
-const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const O = (c: string) => c.repeat(40);
 const row = (mode: string, type: string, oid: string, size: string, p: string) => `${mode} ${type} ${oid} ${size.padStart(7)}\t${p}\0`;
 
@@ -65,14 +62,38 @@ test('generated paths: no path the copy keeps can leave its folder', () => {
   }
 });
 
-test('a data file\'s head: its top-level artifact (one or a list), id and page; quotes taken off; anchors, aliases and nested keys are not read', () => {
-  assert.deepEqual(dataHead('artifact: wu-plan\nstatus: ready\nid: E-APPLIST.W6\nepic: E-APPLIST\npage: 2026-11-22-e-applist-w6-plan.html\n'), { artifact: ['wu-plan'], id: 'E-APPLIST.W6', page: '2026-11-22-e-applist-w6-plan.html' });
-  assert.deepEqual(dataHead('artifact: [epic-result, wu-result]\nid: "E-A"\npage: \'x-result.html\'\n'), { artifact: ['epic-result', 'wu-result'], id: 'E-A', page: 'x-result.html' });
-  assert.deepEqual(dataHead('details:\n  id: E-B.W1\n  page: y.html\nartifact: wu-result\n'), { artifact: ['wu-result'], id: null, page: null });
-  assert.deepEqual(dataHead('artifact: &a wu-plan\nid: *b\npage: x.html\n'), { artifact: [], id: null, page: 'x.html' });
-  assert.deepEqual(dataHead('artifact: wu-plan\r\nid: E-A.W1\r\npage: x.html\r\n'), { artifact: ['wu-plan'], id: 'E-A.W1', page: 'x.html' });
-  assert.deepEqual(dataHead(''), { artifact: [], id: null, page: null });
+test('W12 (owner ruling 2026-11-23): keel doc-roles\' answer gives each asked file its roles, id and page; any other form is no answer', () => {
+  const asked = ['/a/x.yaml', '/a/y.yaml'];
+  const entry = (p: string, roles: unknown, id: unknown = null, page: unknown = null) => ({ path: p, roles, id, page, problem: null });
+  const answer = (files: unknown[], schema: unknown = DOC_ROLES_SCHEMA) => JSON.stringify({ schema, files });
+  const ok = parseDocRoles(answer([entry('/a/x.yaml', ['wu-plan'], 'E-A.W1', 'x.html'), { ...entry('/a/y.yaml', []), problem: 'no field "artifact"' }]), asked);
+  assert.deepEqual(ok && [...ok], [
+    ['/a/x.yaml', { artifact: ['wu-plan'], id: 'E-A.W1', page: 'x.html' }],
+    ['/a/y.yaml', { artifact: [], id: null, page: null }],
+  ]);
+  const both = [entry('/a/x.yaml', []), entry('/a/y.yaml', [])];
+  for (const bad of [
+    'not json',
+    '[]',
+    answer(both, 'doc-roles/v2'),
+    answer([entry('/a/x.yaml', [])]),
+    answer([entry('/a/y.yaml', []), entry('/a/x.yaml', [])]),
+    answer([entry('/a/x.yaml', [3]), entry('/a/y.yaml', [])]),
+    answer([entry('/a/x.yaml', 'wu-plan'), entry('/a/y.yaml', [])]),
+    answer([entry('/a/x.yaml', [], 7), entry('/a/y.yaml', [])]),
+    answer([entry('/a/x.yaml', [], null, 'a\u0000.html'), entry('/a/y.yaml', [])]),
+    answer([null, entry('/a/y.yaml', [])]),
+  ]) assert.equal(parseDocRoles(bad, asked), null, bad);
   assert.ok(HEAD_CAP >= 16 * 1024);
+});
+
+test('W12 (owner ruling 2026-11-23): why keel gave no answer: it did not start, did not answer, was cut, or is a keel with no doc-roles (update keel)', () => {
+  const r = (over: Partial<Captured>): Captured => ({ code: 0, stdout: '', stderr: '', timedOut: false, startError: null, cut: false, ...over });
+  assert.equal(docRolesWhy(r({})), null);
+  assert.equal(docRolesWhy(r({ code: null, startError: 'ENOENT' })), 'keel could not start (ENOENT)');
+  assert.match(docRolesWhy(r({ code: null, timedOut: true })) ?? '', /^keel did not answer/);
+  assert.match(docRolesWhy(r({ cut: true })) ?? '', /cut/);
+  assert.match(docRolesWhy(r({ code: 1, stderr: 'usage: keel <init [-f] | lint ...>' })) ?? '', /update keel$/);
 });
 
 test('the page a role and an id name: the page line of the data file whose head matches, beside it, a plain .html name; the newest by path when several match', () => {
@@ -103,32 +124,5 @@ test('the only URL handed to the browser is a file URL of a file inside an allow
   assert.equal(fileUrlInside('/Users/me/a b/#x?.html', ['/Users/me/a b']), 'file:///Users/me/a%20b/%23x%3F.html');
   for (const p of ['/Users/me/Library/Keel/open/../secrets.html', '/Users/me/Library/Keel/openx/y.html', 'relative/x.html', '/Users/me/Library/Keel/open']) {
     assert.equal(fileUrlInside(p, ['/Users/me/Library/Keel/open']), null, p);
-  }
-});
-
-test('epic review round 1 (docs.ts:79): a data file gives Open the roles keel verify-doc gives it, case by case from the one table both read (tests/data/data-roles.json)', () => {
-  const table = JSON.parse(readFileSync(path.join(APP_ROOT, '..', 'tests', 'data', 'data-roles.json'), 'utf8')) as { cases: Array<{ src: string; roles: string[]; why: string }> };
-  assert.ok(table.cases.length >= 20);
-  for (const c of table.cases) {
-    assert.deepEqual(dataRoles(c.src), c.roles, `${JSON.stringify(c.src)} (${c.why})`);
-    assert.deepEqual(dataHead(c.src).artifact, c.roles, `the head's roles: ${JSON.stringify(c.src)}`);
-  }
-});
-
-test('epic review round 1 (docs.ts:79): the id and page come from the document holding artifact, read past a byte-order mark, quotes and a comment', () => {
-  assert.deepEqual(dataHead('\ufeffartifact: wu-result\nid: E-A.W1 # its id\npage: "a-result.html"\n'), { artifact: ['wu-result'], id: 'E-A.W1', page: 'a-result.html' });
-  assert.deepEqual(dataHead('id: E-B.W9\npage: b.html\n---\nartifact: [epic-result, wu-result]\nid: E-A\npage: a.html\n'), { artifact: ['epic-result', 'wu-result'], id: 'E-A', page: 'a.html' });
-  assert.deepEqual(dataHead('artifact:\n  - wu-plan\nid: E-A.W2\npage: p.html\n'), { artifact: ['wu-plan'], id: 'E-A.W2', page: 'p.html' });
-});
-
-test('epic review round 1 (docs.ts:79): generated data files: the head never throws, and its roles are known roles that may share one doc', () => {
-  const rng = seeded(0xd0c5);
-  const bits = ['artifact:', ' wu-result', ' epic-result', ' wu-plan', ' [', ']', ',', '\n', '  - ', '---\n', '"', "'", ' #', '&a', '*a', 'id: E-A.W1', 'page: a.html', '﻿', '\t', '|', '>', ':'];
-  for (let i = 0; i < 3000; i++) {
-    const text = i % 3 === 0 ? hostileString(rng, 200) : Array.from({ length: 1 + Math.floor(rng() * 12) }, () => bits[Math.floor(rng() * bits.length)] as string).join('');
-    const head = dataHead(text);
-    const set = [...new Set(head.artifact)].sort().join(' ');
-    assert.ok(['', 'wu-result', 'epic-result', 'wu-plan', 'epic-plan', 'epic-plan wu-plan', 'epic-result wu-result'].includes(set), JSON.stringify(text));
-    assert.deepEqual(head.artifact, dataRoles(text));
   }
 });

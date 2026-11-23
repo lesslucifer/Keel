@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync, mkdirSync, readdirSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { dispatcher, type EventLike } from '../../src/main/bridge.ts';
-import { makeHandlers, prepare, readerParts, type Parts } from '../../src/main/handlers.ts';
+import { makeHandlers, prepare, readerParts, keelOf, type Parts } from '../../src/main/handlers.ts';
 import { loadSettings } from '../../src/main/settings.ts';
 import type { AlertOutcome, Item, LoginPathState, Tool, View } from '../../src/shared/contract.ts';
 import { emptyView } from '../../src/main/reader/view.ts';
@@ -248,6 +248,13 @@ test('the reader\'s parts give the listed project with its main checkout, and th
   assert.match(listed?.id ?? '', /^p[0-9a-f]{8}$/);
   const unusable = readerParts({ appDir: w.parts.appDir, loginPath: { entries: [w.bin], source: 'login-shell', reason: null } });
   assert.equal(await unusable.git(), null, 'no git on that PATH');
+});
+
+test('W12 (owner ruling 2026-11-23): the keel Open asks for doc roles is the usable keel, set or found on the PATH; none when unusable', async (t) => {
+  const w = world(t);
+  assert.equal(await keelOf({ appDir: w.parts.appDir, loginPath: w.loginPath })(), w.keel);
+  const empty = mk(path.join(w.dir, 'empty'));
+  assert.equal(await keelOf({ appDir: w.parts.appDir, loginPath: { entries: [empty], source: 'login-shell', reason: null } })(), null, 'no keel on that PATH');
 });
 
 test('changes run one at a time: two projects.add at once list one project', async (t) => {

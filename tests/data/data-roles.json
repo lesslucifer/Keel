@@ -1,5 +1,5 @@
 {
- "about": "One case table for how a data file's artifact gives its roles: keel verify-doc's data_roles (src/verify_doc.rs) and the app's Open (app/src/main/open/docs.ts dataRoles) both read every case and must give these roles; [] is no role (data_roles' Err). Epic review round 1 of E-APPLIST, docs.ts:79.",
+ "about": "One case table for how a data file's artifact gives its roles: keel verify-doc's data_roles (src/verify_doc.rs) and the app's Open (app/src/main/open/docs.ts dataRoles) both read every case (the app through keel doc-roles since W12 round 2) and must give these roles; [] is no role (data_roles' Err). Epic review round 1 of E-APPLIST, docs.ts:79.",
  "cases": [
   {
    "src": "artifact: wu-result\nstatus: ready\n",
@@ -248,6 +248,73 @@
    "src": "artifact: {a: wu-result}\n",
    "roles": [],
    "why": "a flow mapping is no role"
+  },
+  {
+   "src": "artifact: wu-result\ndetails: |\n  *Bold* text & [&str] and [&>*]\n  &anchor-like *alias-like\n",
+   "roles": [
+    "wu-result"
+   ],
+   "why": "block-scalar text holding * and & is text, not an alias or anchor"
+  },
+  {
+   "src": "artifact: wu-plan\ntitle: \"&x *y\"\nnote: '*z'\n",
+   "roles": [
+    "wu-plan"
+   ],
+   "why": "quoted text starting with & or * is text"
+  },
+  {
+   "src": "artifact: [epic-result,\n  wu-result]\n",
+   "roles": [
+    "epic-result",
+    "wu-result"
+   ],
+   "why": "a flow list wrapped over two lines"
+  },
+  {
+   "src": "artifact: wu-plan\nx: [[1, 2], [3]]\n",
+   "roles": [
+    "wu-plan"
+   ],
+   "why": "a nested flow list in another field"
+  },
+  {
+   "src": "\"artifact\": wu-plan\n",
+   "roles": [
+    "wu-plan"
+   ],
+   "why": "a quoted key"
+  },
+  {
+   "src": "artifact: !!str wu-plan\n",
+   "roles": [
+    "wu-plan"
+   ],
+   "why": "a !!str tag"
+  },
+  {
+   "src": "{artifact: wu-plan, id: E-A.W1}\n",
+   "roles": [
+    "wu-plan"
+   ],
+   "why": "a flow-mapping document"
+  },
+  {
+   "src": "artifact: wu-plan\nartifact: wu-result\n",
+   "roles": [],
+   "why": "a duplicate artifact key is refused"
+  },
+  {
+   "src": "artifact: wu-result\nx:\n- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - a\n",
+   "roles": [],
+   "why": "deeper than MAX_DEPTH (64) is refused"
+  },
+  {
+   "src": "artifact: wu-result\nx:\n- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - a\n",
+   "roles": [
+    "wu-result"
+   ],
+   "why": "exactly MAX_DEPTH levels is read"
   }
  ]
 }

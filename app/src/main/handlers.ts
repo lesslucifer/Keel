@@ -90,6 +90,16 @@ export function readerParts(p: Pick<Parts, 'appDir' | 'loginPath' | 'env'>): Vie
   };
 }
 
+/** The usable keel (set in Keel, or found on the PATH), or null: Open asks it each data file's roles (keel doc-roles; W12 review round 1, owner ruling 2026-11-23). */
+export function keelOf(p: Pick<Parts, 'appDir' | 'loginPath'>): () => Promise<string | null> {
+  return async () => {
+    const settings = (await loadSettings(p.appDir)).value;
+    const projects = (await loadProjects(p.appDir)).value.projects;
+    const keel = await toolState('keel', settings, p.loginPath.entries, projects.map((x) => x.path));
+    return keel.problem === null ? keel.path : null;
+  };
+}
+
 /** The handlers the dispatcher runs once a call has passed its checks. */
 export function makeHandlers(parts: Parts): Handlers {
   const { appDir } = parts;

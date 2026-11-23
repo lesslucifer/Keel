@@ -16,7 +16,7 @@ import { dispatcher, pusher, type Expected } from './bridge.ts';
 import { resolveAsset } from './assets.ts';
 import { APP_PAGE, CSP, devServerOf, windowLife, mayAttachWebview, mayNavigate, onActivate, openWindow, pages, permissionCheck, permissionRequest, quitWhenAllClosed, windowOptions } from './window-options.ts';
 import { readLoginPath } from './login-path.ts';
-import { makeHandlers, prepare, readerParts } from './handlers.ts';
+import { keelOf, makeHandlers, prepare, readerParts } from './handlers.ts';
 import { ALERT_BODY, ALERT_TITLE, testAlert } from './alert.ts';
 import { plain } from './text.ts';
 import { ViewReader } from './reader/view.ts';
@@ -250,10 +250,14 @@ async function start(): Promise<void> {
     open: async (item, view) => {
       const git = await parts.git();
       if (git === null) return { done: false, why: 'git was not found: choose it in the settings' };
+      // Open reads each data file's roles through keel doc-roles (W12 review round 1, owner ruling 2026-11-23).
+      const keel = await keelOf({ appDir, loginPath })();
+      if (keel === null) return { done: false, why: 'keel was not found: choose it in the settings' };
       const sink = seams.openSink === null ? null : openFileSink(seams.openSink);
       return openListed(item, view, (await loadProjects(appDir)).value.projects, {
         appDir,
         git,
+        keel,
         runOptions: parts.runOptions,
         // The reader's runner for the project, so an old git it knows costs Open nothing (W12 review round 1 nit, open.ts:132).
         runnerFor: (root) => reader.runnerFor(root),

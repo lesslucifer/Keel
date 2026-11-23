@@ -7,7 +7,9 @@
 // log -p shape gets --no-ext-diff --no-textconv. git runs with no shell, stdin closed, and an
 // environment built from nothing but the login PATH, LC_ALL=C (its messages in English, whatever the
 // Mac's language: the app reads one of them) and five account variables, so no inherited GIT_* reaches it.
-// capture() is the one way the main part spawns anything (login-path.ts uses it too).
+// capture() is the one way the main part spawns anything (login-path.ts uses it too). Besides git, one keel
+// line: keel doc-roles over data files on disk, so Open reads a doc's roles exactly as keel does (W12 review
+// round 1, owner ruling 2026-11-23); it runs with the same environment and timeout as git.
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { Socket } from 'node:net';
@@ -340,6 +342,22 @@ export class ProjectRunner {
     }
     return this.run(git, name, slots);
   }
+}
+
+/** The most data files one keel doc-roles line names; more are asked in several lines. */
+export const DOC_ROLES_BATCH = 100;
+
+/** keel doc-roles' argv for `files`: each an absolute path to a .yaml file with no control character; 1 to DOC_ROLES_BATCH of them. */
+export function docRolesArgv(files: readonly string[]): string[] {
+  if (files.length === 0 || files.length > DOC_ROLES_BATCH) throw new Error(`doc-roles takes 1 to ${DOC_ROLES_BATCH} files`);
+  for (const f of files) if (!projectOk(f) || !f.endsWith('.yaml')) throw new Error('doc-roles: each file must be an absolute .yaml path with no control character');
+  return ['doc-roles', ...files];
+}
+
+/** Run keel doc-roles with `keel` (an absolute path) on `files`, as git runs: no shell, from /, the locked environment, the read timeout. */
+export async function runDocRoles(keel: string, files: readonly string[], opts: Omit<RunOptions, 'before245'>): Promise<Captured> {
+  if (typeof keel !== 'string' || !path.isAbsolute(keel)) throw new Error('keel must be an absolute path');
+  return capture(keel, docRolesArgv(files), childEnv(opts.path, opts.source), opts.timeoutMs ?? READ_TIMEOUT_MS);
 }
 
 /** Run a named fixed command with `git` (an absolute path). Never throws for git's own failure. */

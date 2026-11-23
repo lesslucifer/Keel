@@ -12,7 +12,10 @@ import { openFileSink } from '../../src/main/alerter/seams.ts';
 import { GitReader } from '../../src/main/reader/git.ts';
 import { itemsOf } from '../../src/shared/items.ts';
 import type { GitFacts, Item, RouterView } from '../../src/shared/contract.ts';
-import { realGit, sh, tempDir, mk, snapshot, program, oldGit, records } from '../support/fs.ts';
+import { realGit, sh, tempDir, mk, snapshot, program, oldGit, records, KEEL, noKeel } from '../support/fs.ts';
+
+/** Open reads each data file's roles through keel doc-roles (W12 review round 1): these tests run with the keel cargo test builds. */
+const openTest = noKeel === false ? test : test.skip;
 
 const GIT = realGit();
 const rev = (dir: string, ref: string) => sh(GIT, dir, ['rev-parse', ref]).trim();
@@ -46,6 +49,7 @@ function world(t: { after: (fn: () => void) => void }) {
     appDir,
     project: { id: 'p0a1b2c3d', path: dir },
     git: GIT,
+    keel: KEEL,
     runOptions: { path: [path.dirname(GIT), '/usr/bin', '/bin'], source: { HOME: root, LANG: 'C' } },
     openUrl: async (url: string) => {
       opened.push(url);
@@ -57,7 +61,7 @@ function world(t: { after: (fn: () => void) => void }) {
 
 const heard = (values: Record<string, unknown>): RouterView => ({ run: 'keel-1c.20261122-080000.1', n: 3, values, heard: true, lastAt: new Date().toISOString(), problem: null });
 
-test('Open on a plan copies the tip\'s docs into the app folder and opens the committed page, even while the working file differs; the links between docs resolve', async (t) => {
+openTest('Open on a plan copies the tip\'s docs into the app folder and opens the committed page, even while the working file differs; the links between docs resolve', async (t) => {
   const w = world(t);
   const tip = rev(w.dir, 'wu/E-A/w1-reader');
   writeFileSync(path.join(w.dir, 'docs', 'work', '2026-11-22-e-a-w1-plan.html'), '<p>An edit nobody committed.</p>\n');
@@ -81,7 +85,7 @@ test('Open on a plan copies the tip\'s docs into the app folder and opens the co
   assert.equal(w.opened[1], w.opened[0]);
 });
 
-test('Open on a result finds the result page through its data file at the tip; with none it says so and opens nothing', async (t) => {
+openTest('Open on a result finds the result page through its data file at the tip; with none it says so and opens nothing', async (t) => {
   const w = world(t);
   sh(GIT, w.dir, ['notes', '--ref=cr', 'add', '-m', '{"schema":"cr/v1","verdict":"PASS","blockers":0,"importants":0}', 'wu/E-A/w1-reader']);
   let facts = await w.facts();
@@ -100,7 +104,7 @@ test('Open on a result finds the result page through its data file at the tip; w
   assert.match(w.opened[0] as string, /\/docs\/work\/2026-11-22-e-a-w1-result\.html$/);
 });
 
-test('Open on an item whose tip moved since it was listed opens nothing', async (t) => {
+openTest('Open on an item whose tip moved since it was listed opens nothing', async (t) => {
   const w = world(t);
   const tip = rev(w.dir, 'wu/E-A/w1-reader');
   const facts = await w.facts();
@@ -111,7 +115,7 @@ test('Open on an item whose tip moved since it was listed opens nothing', async 
   assert.equal(w.opened.length, 0);
 });
 
-test('Open on an epic result opens the page in the epic\'s worktree\'s docs/.archive in place, found through its data file; a page outside it is refused', async (t) => {
+openTest('Open on an epic result opens the page in the epic\'s worktree\'s docs/.archive in place, found through its data file; a page outside it is refused', async (t) => {
   const w = world(t);
   const wt = path.join(w.root, 'epic-wt');
   sh(GIT, w.dir, ['worktree', 'add', '-q', wt, 'epic/E-A']);
@@ -129,7 +133,7 @@ test('Open on an epic result opens the page in the epic\'s worktree\'s docs/.arc
   assert.equal(w.opened.length, 1);
 });
 
-test('the app folder keeps the last KEPT_COPIES copies per project', async (t) => {
+openTest('the app folder keeps the last KEPT_COPIES copies per project', async (t) => {
   const w = world(t);
   const facts0 = await w.facts();
   void facts0;
@@ -172,7 +176,7 @@ const planItem = async (w: ReturnType<typeof world>, tip: string): Promise<{ pla
   return { plan: itemsOf({ git: facts, router: heard({ 'wu/E-A.W1/stage': { stage: 'plan to read', tip: tip.slice(0, 7) } }), sent: new Set() }).find((i) => i.kind === 'plan') as Item, facts };
 };
 
-test('W6 review round 1 (docs.ts:52): the copy cap counts only what is copied, and the page and its data file are copied first: docs that sort before them and pass 8 MiB never crowd them out', async (t) => {
+openTest('W6 review round 1 (docs.ts:52): the copy cap counts only what is copied, and the page and its data file are copied first: docs that sort before them and pass 8 MiB never crowd them out', async (t) => {
   const w = world(t);
   // Eight docs of 1 MiB each sort first and fill the 8 MiB cap exactly; a binary before them counted too, before.
   const big = 'x'.repeat(1024 * 1024 - 1) + '\n';
@@ -198,7 +202,7 @@ test('W6 review round 1 (docs.ts:52): the copy cap counts only what is copied, a
   assert.ok(size(path.join(copy, 'docs')) <= 8 * 1024 * 1024 + 2 * 1024 * 1024, 'at most the page and its data file over the cap');
 });
 
-test('W6 review round 1 (docs.ts:52): a copy whose page could not be copied is never kept as complete; Open says so and tries again next time', async (t) => {
+openTest('W6 review round 1 (docs.ts:52): a copy whose page could not be copied is never kept as complete; Open says so and tries again next time', async (t) => {
   const w = world(t);
   commitFiles(w.dir, { 'docs/work/2026-11-22-e-a-w1-plan.html': Buffer.from([0x3c, 0x70, 0x3e, 0xff, 0xfe, 0x0a]) }, 'a page that is not UTF-8');
   const tip = rev(w.dir, 'wu/E-A/w1-reader');
@@ -209,7 +213,7 @@ test('W6 review round 1 (docs.ts:52): a copy whose page could not be copied is n
   assert.equal(w.opened.length, 0);
 });
 
-test('W6 review round 1 (open.ts:100): paths that differ only in case (one file, or a file and a folder) do not throw the copy away on a case-insensitive disk: the colliding path is skipped', async (t) => {
+openTest('W6 review round 1 (open.ts:100): paths that differ only in case (one file, or a file and a folder) do not throw the copy away on a case-insensitive disk: the colliding path is skipped', async (t) => {
   const w = world(t);
   const scratch = mk(path.join(w.root, 'blobs'));
   const blob = (name: string, text: string) => {
@@ -226,7 +230,7 @@ test('W6 review round 1 (open.ts:100): paths that differ only in case (one file,
   assert.equal(readFileSync(fileURLToPath(w.opened[0] as string), 'utf8'), PLAN_PAGE);
 });
 
-test('W6 review round 1 (open.ts:70, open.ts:78): an Open removes a temp folder a crash left, and the copies of projects no longer listed', async (t) => {
+openTest('W6 review round 1 (open.ts:70, open.ts:78): an Open removes a temp folder a crash left, and the copies of projects no longer listed', async (t) => {
   const w = world(t);
   const open = path.join(w.appDir, 'open');
   const stale = mk(path.join(open, 'p0a1b2c3d', '.tmp-123-abcd1234'));
@@ -241,7 +245,7 @@ test('W6 review round 1 (open.ts:70, open.ts:78): an Open removes a temp folder 
   assert.deepEqual(readdirSync(path.join(open, 'p0a1b2c3d')), [tip]);
 });
 
-test('W6 review round 2 (open.ts:117): reusing a copy never serves a case twin: the page and its data file are checked against their blobs, and a copy that differs is rebuilt', async (t) => {
+openTest('W6 review round 2 (open.ts:117): reusing a copy never serves a case twin: the page and its data file are checked against their blobs, and a copy that differs is rebuilt', async (t) => {
   const w = world(t);
   const scratch = mk(path.join(w.root, 'blobs2'));
   const add = (p: string, text: string) => {
@@ -264,7 +268,7 @@ test('W6 review round 2 (open.ts:117): reusing a copy never serves a case twin: 
   assert.equal(readFileSync(fileURLToPath(w.opened[1] as string), 'utf8'), '<p>The committed result.</p>\n');
 });
 
-test('W6 review round 2 (open.ts:151): a kept copy whose page is not the committed bytes (a write cut short) is never served: it is rebuilt through a temp folder and renamed over, never written into in place', async (t) => {
+openTest('W6 review round 2 (open.ts:151): a kept copy whose page is not the committed bytes (a write cut short) is never served: it is rebuilt through a temp folder and renamed over, never written into in place', async (t) => {
   const w = world(t);
   commitFiles(w.dir, { 'docs/work/2026-11-22-e-a-w1-result.yaml': RESULT_YAML, 'docs/work/2026-11-22-e-a-w1-result.html': '<p>The result, whole.</p>\n' }, 'the result');
   const tip = rev(w.dir, 'wu/E-A/w1-reader');
@@ -282,7 +286,7 @@ test('W6 review round 2 (open.ts:151): a kept copy whose page is not the committ
   assert.deepEqual(readdirSync(path.join(w.appDir, 'open', 'p0a1b2c3d')), [tip], 'no temp folder left');
 });
 
-test('W6 review round 2 (index.ts:233): Open takes the project with the item and the facts from one view; a view of a project no longer listed opens nothing and says so', async (t) => {
+openTest('W6 review round 2 (index.ts:233): Open takes the project with the item and the facts from one view; a view of a project no longer listed opens nothing and says so', async (t) => {
   const w = world(t);
   const tip = rev(w.dir, 'wu/E-A/w1-reader');
   const { plan, facts } = await planItem(w, tip);
@@ -299,7 +303,7 @@ test('W6 review round 2 (index.ts:233): Open takes the project with the item and
   assert.ok((w.opened[0] as string).includes('/open/p0a1b2c3d/'));
 });
 
-test('W6 review round 3 (open.ts:124, nit :143): reusing a kept copy costs one git call (the tree read), its files checked against the tree\'s blob ids in-process; a fresh copy reads each file from git once', async (t) => {
+openTest('W6 review round 3 (open.ts:124, nit :143): reusing a kept copy costs one git call (the tree read), its files checked against the tree\'s blob ids in-process; a fresh copy reads each file from git once', async (t) => {
   const w = world(t);
   const log = path.join(w.root, 'git-calls.log');
   const wrapper = program(path.join(mk(path.join(w.root, 'bin')), 'git'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexec '${GIT}' "$@"\n`);
@@ -319,7 +323,7 @@ test('W6 review round 3 (open.ts:124, nit :143): reusing a kept copy costs one g
   assert.equal(readFileSync(fileURLToPath(w.opened[1] as string), 'utf8'), PLAN_PAGE);
 });
 
-test('epic review round 1 (open.ts:131): with a git older than 2.45, Open reads a project that is not a partial clone without --no-lazy-fetch, after one config read; a partial clone is refused and says why', async (t) => {
+openTest('epic review round 1 (open.ts:131): with a git older than 2.45, Open reads a project that is not a partial clone without --no-lazy-fetch, after one config read; a partial clone is refused and says why', async (t) => {
   const w = world(t);
   const tip = rev(w.dir, 'wu/E-A/w1-reader');
   const facts = await w.facts();
@@ -338,7 +342,7 @@ test('epic review round 1 (open.ts:131): with a git older than 2.45, Open reads 
   assert.match((fresh as { why: string }).why, /partial clone needs git 2\.45/);
 });
 
-test('W12 review round 1 nit (open.ts:132): Open reads through the reader\'s runner for the project, so an old git it already knows costs Open no refused run and no config read', async (t) => {
+openTest('W12 review round 1 nit (open.ts:132): Open reads through the reader\'s runner for the project, so an old git it already knows costs Open no refused run and no config read', async (t) => {
   const w = world(t);
   const tip = rev(w.dir, 'wu/E-A/w1-reader');
   const rec = path.join(w.root, 'old.jsonl');

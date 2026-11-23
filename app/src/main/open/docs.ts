@@ -1,11 +1,12 @@
-// Open's pure parts (E-APPLIST.W6): the tree read of a tip's docs/, the files a copy takes, a data file's
-// head (its roles as keel reads them, its id and page), the page a role and an id name, and the one kind of
+// Open's pure parts (E-APPLIST.W6): the tree read of a tip's docs/, the files a copy takes, keel doc-roles'
+// answer (a data file's roles, id and page as keel reads them: the app reads no YAML itself, W12 review
+// round 1, owner ruling 2026-11-23), the page a role and an id name, and the one kind of
 // URL the app hands the browser: a file URL of a file inside a folder it allows.
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ItemKind } from '../../shared/contract.ts';
-import { OUTPUT_CAP } from '../commands.ts';
+import { OUTPUT_CAP, type Captured } from '../commands.ts';
 
 export interface TreeEntry {
   mode: string;
@@ -19,7 +20,7 @@ export interface TreeEntry {
 /** The most bytes one copy of a tip's docs/ holds. */
 export const COPY_CAP = 8 * 1024 * 1024;
 
-/** The largest data file whose head is read. */
+/** The largest data file whose roles are asked of keel. */
 export const HEAD_CAP = 64 * 1024;
 
 const ROW = /^([0-7]{6}) ([a-z]+) ([0-9a-f]{40}|[0-9a-f]{64}) +([0-9]+|-)\t([\s\S]+)$/;
@@ -67,166 +68,44 @@ export interface DataHead {
   page: string | null;
 }
 
-/** The roles keel knows (verify_doc.rs ROLES), and the two pairs a one-part epic may join (its combination_problem). */
-const ROLES: readonly string[] = ['epic-plan', 'wu-plan', 'wu-result', 'epic-result'];
-const PAIRS: readonly string[] = ['epic-plan wu-plan', 'epic-result wu-result'];
+/** The answer keel doc-roles gives (src/main.rs doc_roles), the one form the app reads. */
+export const DOC_ROLES_SCHEMA = 'doc-roles/v1';
 
-/** A field's value as the head reads it: text, a list (an item that is not text is null), or anything else. */
-type Value = { kind: 'text'; text: string } | { kind: 'list'; items: Array<string | null> } | { kind: 'other' };
-
-/** A value written with no comment after it: ` #` outside quotes starts one. */
-function uncommented(v: string): string {
-  let quote: string | null = null;
-  for (let i = 0; i < v.length; i++) {
-    const c = v[i] as string;
-    if (quote !== null) {
-      if (c === quote) quote = null;
-    } else if (c === '"' || c === "'") quote = c;
-    else if (c === '#' && (i === 0 || /\s/.test(v[i - 1] as string))) return v.slice(0, i).trimEnd();
-  }
-  return v.trimEnd();
+/** Why keel gave no doc-roles answer to read, or null: it did not start or answer, its answer was cut, or it is a keel with no doc-roles. */
+export function docRolesWhy(r: Captured): string | null {
+  if (r.startError !== null) return `keel could not start (${r.startError})`;
+  if (r.timedOut) return "keel did not answer (the docs' roles)";
+  if (r.cut) return "keel's answer was cut (the docs' roles)";
+  if (r.code !== 0) return 'this keel cannot read a doc\'s roles (no keel doc-roles): update keel';
+  return null;
 }
 
-/** Whether a value starts with an anchor or an alias (keel refuses a data file holding either: verify_doc.rs ANCHORS). */
-const anchored = (v: string) => /^[&*]\S/.test(v.trim());
-
-/** One scalar's text: plain, or in quotes; null when it is no text (an anchor, an alias, a collection, an unclosed quote, a mapping). */
-function scalarText(raw: string): string | null {
-  const t = raw.trim();
-  if (t === '' || anchored(t) || /^[[{|>!%@`]/.test(t)) return null;
-  const q = t[0];
-  if (q === '"' || q === "'") {
-    if (t.length < 2 || t[t.length - 1] !== q) return null;
-    const inner = t.slice(1, -1);
-    return q === "'" ? inner.replace(/''/g, "'") : inner;
-  }
-  return /:(\s|$)/.test(t) ? null : t;
-}
-
-/** A flow list's items, `[a, "b"]`: each item's text, or null; null for the whole when it is not one list. */
-function flowList(t: string): Array<string | null> | null {
-  if (!t.startsWith('[') || !t.endsWith(']')) return null;
-  const inner = t.slice(1, -1);
-  if (/[[\]{}]/.test(inner)) return null;
-  if (inner.trim() === '') return [];
-  const parts = inner.split(',');
-  if (parts.length > 1 && (parts.at(-1) as string).trim() === '') parts.pop();
-  return parts.map(scalarText);
-}
-
-const indentOf = (line: string) => line.length - line.trimStart().length;
-const content = (line: string) => line.trim() !== '' && !line.trimStart().startsWith('#');
+const textOrNull = (v: unknown): string | null | undefined => (v === null ? null : typeof v === 'string' && v !== '' && !CONTROL.test(v) ? v : undefined);
 
 /**
- * A data file's documents, each its top-level fields as the head reads them (null: a document that is no
- * mapping), and whether anything in the file is not YAML keel would load or holds an anchor (then no role).
- * Read as keel's loader reads it (epic review round 1, docs.ts:79): a byte-order mark read past; documents
- * split at ---; a value as text (plain or quoted, its continuation lines joined), a flow list or a block
- * list; a first line further in sets the mapping's indent, and a line left of it is not YAML.
+ * keel doc-roles' answer: each asked file's head (its roles, id and page as keel reads them), or null when
+ * the answer is not doc-roles/v1 naming exactly the asked files, each once, with roles that are text.
  */
-function documents(text: string): { docs: Array<Map<string, Value> | null>; refused: boolean } {
-  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
-  const docs: Array<Map<string, Value> | null> = [];
-  let refused = false;
-  let doc: Map<string, Value> | null = new Map();
-  let started = false;
-  let base = 0;
-  let key: string | null = null;
-  let pending: { inline: string; block: string[] } | null = null;
-  const settle = () => {
-    if (pending === null || key === null || doc === null) return;
-    const { inline, block } = pending;
-    pending = null;
-    if (inline === '') {
-      if (block.length === 0) return void doc.set(key, { kind: 'other' });
-      if (!block.every((l) => /^-(\s|$)/.test(l.trimStart()))) return void doc.set(key, { kind: 'other' });
-      return void doc.set(key, { kind: 'list', items: block.map((l) => scalarText(uncommented(l.trimStart().slice(1)))) });
-    }
-    if (inline.startsWith('[')) {
-      const items = block.length === 0 ? flowList(inline) : null;
-      if (items === null) refused = true;
-      return void doc.set(key, items === null ? { kind: 'other' } : { kind: 'list', items });
-    }
-    if (/^[|>]/.test(inline)) return void doc.set(key, block.length === 0 ? { kind: 'other' } : { kind: 'text', text: block.map((l) => l.trim()).join(' ') });
-    const first = scalarText(inline);
-    if (first === null) return void doc.set(key, { kind: 'other' });
-    const quoted = inline.startsWith('"') || inline.startsWith("'");
-    if (quoted && block.length > 0) return void doc.set(key, { kind: 'other' });
-    doc.set(key, { kind: 'text', text: [first, ...block.map((l) => l.trim())].join(' ') });
-  };
-  const close = () => {
-    settle();
-    if (started) docs.push(doc);
-    doc = new Map();
-    started = false;
-    key = null;
-  };
-  for (const line of lines) {
-    if (/^(---|\.\.\.)(\s|$)/.test(line)) {
-      close();
-      continue;
-    }
-    if (!content(line)) continue;
-    const at = indentOf(line);
-    const body = uncommented(line.trim());
-    if (anchored(body.replace(/^(-\s+)+/, '').replace(/^[^\s"'[{][^:]*:\s*/, '')) || /[[,]\s*[&*]\S/.test(body)) refused = true;
-    if (!started) {
-      started = true;
-      base = at;
-    }
-    if (at < base) {
-      refused = true;
-      continue;
-    }
-    if (doc === null) continue;
-    const field = at === base ? /^([A-Za-z_][A-Za-z0-9_-]*)\s*:(?:\s+(.*))?$/.exec(body) : null;
-    if (field !== null) {
-      settle();
-      key = field[1] as string;
-      pending = { inline: field[2] ?? '', block: [] };
-      continue;
-    }
-    if (pending !== null && (at > base || (/^-(\s|$)/.test(body) && pending.inline === ''))) {
-      pending.block.push(line);
-      continue;
-    }
-    // A sequence or a scalar at the top: no mapping. Anything else at the mapping's indent: not YAML keel loads.
-    if (key === null && (/^-(\s|$)/.test(body) || !body.includes(':'))) doc = null;
-    else if (!/^["'][^"']*["']\s*:/.test(body)) refused = true;
+export function parseDocRoles(out: string, asked: readonly string[]): Map<string, DataHead> | null {
+  let v: unknown;
+  try {
+    v = JSON.parse(out);
+  } catch {
+    return null;
   }
-  close();
-  return { docs, refused };
-}
-
-/** The roles a value names, as keel's data_roles reads them: text split on white space, a list's items whole; none on any role problem. */
-function rolesOf(v: Value | undefined): string[] {
-  if (v === undefined || v.kind === 'other') return [];
-  const roles = v.kind === 'text' ? v.text.split(/\s+/).filter((r) => r !== '') : v.items;
-  if (roles.length === 0 || roles.some((r) => r === null || !ROLES.includes(r))) return [];
-  const set = [...new Set(roles as string[])].sort();
-  return set.length === 1 || PAIRS.includes(set.join(' ')) ? (roles as string[]) : [];
-}
-
-/**
- * A data file's roles, exactly as keel verify-doc's data_roles gives them (src/verify_doc.rs): the document
- * holding artifact, its text split on white space or its list; none for a file keel refuses or a role
- * problem. Both read one case table, tests/data/data-roles.json (epic review round 1, docs.ts:79).
- */
-export function dataRoles(text: string): string[] {
-  const { docs, refused } = documents(text);
-  if (refused) return [];
-  return rolesOf(docs.find((d) => d?.has('artifact'))?.get('artifact'));
-}
-
-/** A data file's roles (dataRoles), and the id and page of the document holding artifact; nested keys are not read. */
-export function dataHead(text: string): DataHead {
-  const { docs } = documents(text);
-  const doc = docs.find((d) => d?.has('artifact')) ?? docs.find((d) => d !== null) ?? null;
-  const textOf = (k: string): string | null => {
-    const v = doc?.get(k);
-    return v?.kind === 'text' ? v.text.trim() : null;
-  };
-  return { artifact: dataRoles(text), id: textOf('id'), page: textOf('page') };
+  if (typeof v !== 'object' || v === null || (v as { schema?: unknown }).schema !== DOC_ROLES_SCHEMA) return null;
+  const list = (v as { files?: unknown }).files;
+  if (!Array.isArray(list) || list.length !== asked.length) return null;
+  const heads = new Map<string, DataHead>();
+  for (const [i, f] of list.entries()) {
+    if (typeof f !== 'object' || f === null) return null;
+    const e = f as Record<string, unknown>;
+    const id = textOrNull(e.id);
+    const page = textOrNull(e.page);
+    if (e.path !== asked[i] || !Array.isArray(e.roles) || !e.roles.every((r) => typeof r === 'string') || id === undefined || page === undefined) return null;
+    heads.set(e.path, { artifact: [...(e.roles as string[])], id, page });
+  }
+  return heads;
 }
 
 /** The page a role and an id name: beside the data file whose head matches, a plain .html name; the newest by path when several match. */
