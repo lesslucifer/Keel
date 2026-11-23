@@ -3,10 +3,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { parseTree, copyPlan, dataHead, findPage, fileUrlInside, COPY_CAP, HEAD_CAP, roleOf } from '../../src/main/open/docs.ts';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { parseTree, copyPlan, dataHead, dataRoles, findPage, fileUrlInside, COPY_CAP, HEAD_CAP, roleOf } from '../../src/main/open/docs.ts';
 import { OUTPUT_CAP } from '../../src/main/commands.ts';
 import { seeded, hostileString } from '../support/seeded.ts';
 
+/** The app's folder: the shared case table sits in the repository's tests/data beside it. */
+const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const O = (c: string) => c.repeat(40);
 const row = (mode: string, type: string, oid: string, size: string, p: string) => `${mode} ${type} ${oid} ${size.padStart(7)}\t${p}\0`;
 
@@ -99,5 +103,32 @@ test('the only URL handed to the browser is a file URL of a file inside an allow
   assert.equal(fileUrlInside('/Users/me/a b/#x?.html', ['/Users/me/a b']), 'file:///Users/me/a%20b/%23x%3F.html');
   for (const p of ['/Users/me/Library/Keel/open/../secrets.html', '/Users/me/Library/Keel/openx/y.html', 'relative/x.html', '/Users/me/Library/Keel/open']) {
     assert.equal(fileUrlInside(p, ['/Users/me/Library/Keel/open']), null, p);
+  }
+});
+
+test('epic review round 1 (docs.ts:79): a data file gives Open the roles keel verify-doc gives it, case by case from the one table both read (tests/data/data-roles.json)', () => {
+  const table = JSON.parse(readFileSync(path.join(APP_ROOT, '..', 'tests', 'data', 'data-roles.json'), 'utf8')) as { cases: Array<{ src: string; roles: string[]; why: string }> };
+  assert.ok(table.cases.length >= 20);
+  for (const c of table.cases) {
+    assert.deepEqual(dataRoles(c.src), c.roles, `${JSON.stringify(c.src)} (${c.why})`);
+    assert.deepEqual(dataHead(c.src).artifact, c.roles, `the head's roles: ${JSON.stringify(c.src)}`);
+  }
+});
+
+test('epic review round 1 (docs.ts:79): the id and page come from the document holding artifact, read past a byte-order mark, quotes and a comment', () => {
+  assert.deepEqual(dataHead('\ufeffartifact: wu-result\nid: E-A.W1 # its id\npage: "a-result.html"\n'), { artifact: ['wu-result'], id: 'E-A.W1', page: 'a-result.html' });
+  assert.deepEqual(dataHead('id: E-B.W9\npage: b.html\n---\nartifact: [epic-result, wu-result]\nid: E-A\npage: a.html\n'), { artifact: ['epic-result', 'wu-result'], id: 'E-A', page: 'a.html' });
+  assert.deepEqual(dataHead('artifact:\n  - wu-plan\nid: E-A.W2\npage: p.html\n'), { artifact: ['wu-plan'], id: 'E-A.W2', page: 'p.html' });
+});
+
+test('epic review round 1 (docs.ts:79): generated data files: the head never throws, and its roles are known roles that may share one doc', () => {
+  const rng = seeded(0xd0c5);
+  const bits = ['artifact:', ' wu-result', ' epic-result', ' wu-plan', ' [', ']', ',', '\n', '  - ', '---\n', '"', "'", ' #', '&a', '*a', 'id: E-A.W1', 'page: a.html', '﻿', '\t', '|', '>', ':'];
+  for (let i = 0; i < 3000; i++) {
+    const text = i % 3 === 0 ? hostileString(rng, 200) : Array.from({ length: 1 + Math.floor(rng() * 12) }, () => bits[Math.floor(rng() * bits.length)] as string).join('');
+    const head = dataHead(text);
+    const set = [...new Set(head.artifact)].sort().join(' ');
+    assert.ok(['', 'wu-result', 'epic-result', 'wu-plan', 'epic-plan', 'epic-plan wu-plan', 'epic-result wu-result'].includes(set), JSON.stringify(text));
+    assert.deepEqual(head.artifact, dataRoles(text));
   }
 });

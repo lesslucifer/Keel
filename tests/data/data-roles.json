@@ -1,0 +1,253 @@
+{
+ "about": "One case table for how a data file's artifact gives its roles: keel verify-doc's data_roles (src/verify_doc.rs) and the app's Open (app/src/main/open/docs.ts dataRoles) both read every case and must give these roles; [] is no role (data_roles' Err). Epic review round 1 of E-APPLIST, docs.ts:79.",
+ "cases": [
+  {
+   "src": "artifact: wu-result\nstatus: ready\n",
+   "roles": [
+    "wu-result"
+   ],
+   "why": "one role as text"
+  },
+  {
+   "src": "artifact: epic-result wu-result\n",
+   "roles": [
+    "epic-result",
+    "wu-result"
+   ],
+   "why": "text split on white space"
+  },
+  {
+   "src": "artifact: [epic-result, wu-result]\n",
+   "roles": [
+    "epic-result",
+    "wu-result"
+   ],
+   "why": "a flow list"
+  },
+  {
+   "src": "artifact:\n  - epic-result\n  - wu-result\n",
+   "roles": [
+    "epic-result",
+    "wu-result"
+   ],
+   "why": "a block list"
+  },
+  {
+   "src": "artifact:\n- wu-plan\n- epic-plan\n",
+   "roles": [
+    "wu-plan",
+    "epic-plan"
+   ],
+   "why": "a block list at the key's own indent"
+  },
+  {
+   "src": "﻿artifact: wu-plan\n",
+   "roles": [
+    "wu-plan"
+   ],
+   "why": "a byte-order mark is read past"
+  },
+  {
+   "src": "x: 1\n---\nartifact: wu-result\n",
+   "roles": [
+    "wu-result"
+   ],
+   "why": "the document holding artifact"
+  },
+  {
+   "src": "---\nartifact: epic-result\n",
+   "roles": [
+    "epic-result"
+   ],
+   "why": "a leading document marker"
+  },
+  {
+   "src": "artifact: \"  wu-plan \"\n",
+   "roles": [
+    "wu-plan"
+   ],
+   "why": "quoted text, split on white space"
+  },
+  {
+   "src": "artifact: 'wu-result'\n",
+   "roles": [
+    "wu-result"
+   ],
+   "why": "single-quoted text"
+  },
+  {
+   "src": "artifact: [ \"epic-plan\", 'wu-plan' ]\n",
+   "roles": [
+    "epic-plan",
+    "wu-plan"
+   ],
+   "why": "quoted items in a flow list"
+  },
+  {
+   "src": "artifact: [epic-plan]\n",
+   "roles": [
+    "epic-plan"
+   ],
+   "why": "a one-item flow list"
+  },
+  {
+   "src": "artifact: wu-result # the role\nid: E-A.W1\n",
+   "roles": [
+    "wu-result"
+   ],
+   "why": "a comment after the value"
+  },
+  {
+   "src": "# a data file\nartifact: wu-result\r\nid: E-A.W1\r\n",
+   "roles": [
+    "wu-result"
+   ],
+   "why": "a comment line and CRLF line ends"
+  },
+  {
+   "src": "artifact: notes\n",
+   "roles": [],
+   "why": "an unknown role"
+  },
+  {
+   "src": "artifact: wu-result bogus\n",
+   "roles": [],
+   "why": "an unknown role beside a known one"
+  },
+  {
+   "src": "artifact: [wu-result, bogus]\n",
+   "roles": [],
+   "why": "an unknown role in a list"
+  },
+  {
+   "src": "artifact: wu-result epic-plan\n",
+   "roles": [],
+   "why": "roles that cannot share one doc"
+  },
+  {
+   "src": "artifact: [wu-result\n",
+   "roles": [],
+   "why": "an unclosed flow list is not YAML"
+  },
+  {
+   "src": "status: ready\n",
+   "roles": [],
+   "why": "no artifact field"
+  },
+  {
+   "src": "- artifact\n",
+   "roles": [],
+   "why": "a list is no mapping"
+  },
+  {
+   "src": "",
+   "roles": [],
+   "why": "an empty file"
+  },
+  {
+   "src": "artifact: \"\"\n",
+   "roles": [],
+   "why": "an empty role"
+  },
+  {
+   "src": "artifact: []\n",
+   "roles": [],
+   "why": "an empty list"
+  },
+  {
+   "src": "artifact:\n",
+   "roles": [],
+   "why": "no value"
+  },
+  {
+   "src": "artifact: 3\n",
+   "roles": [],
+   "why": "a number is no role"
+  },
+  {
+   "src": "artifact: [wu-result, 3]\n",
+   "roles": [],
+   "why": "a number in the list"
+  },
+  {
+   "src": "artifact:\n  - wu-result\n  - [x]\n",
+   "roles": [],
+   "why": "a list in the list"
+  },
+  {
+   "src": "a: &x wu-result\nartifact: *x\n",
+   "roles": [],
+   "why": "an alias"
+  },
+  {
+   "src": "artifact: wu-result\nx:\n  - &a [1]\n",
+   "roles": [],
+   "why": "an anchor anywhere in the file"
+  },
+  {
+   "src": "  x: 1\nartifact: wu-result\n",
+   "roles": [],
+   "why": "an indented first line is not YAML"
+  },
+  {
+   "src": "artifact: epic-result\n  wu-result\n",
+   "roles": [
+    "epic-result",
+    "wu-result"
+   ],
+   "why": "plain text on two lines is one text"
+  },
+  {
+   "src": "artifact: |\n  wu-result\n",
+   "roles": [
+    "wu-result"
+   ],
+   "why": "a literal block"
+  },
+  {
+   "src": "artifact: >\n  epic-plan\n  wu-plan\n",
+   "roles": [
+    "epic-plan",
+    "wu-plan"
+   ],
+   "why": "a folded block"
+  },
+  {
+   "src": "  artifact: wu-result\n  id: E-A.W1\n",
+   "roles": [
+    "wu-result"
+   ],
+   "why": "a mapping indented as a whole"
+  },
+  {
+   "src": "artifact: [wu-result, ]\n",
+   "roles": [
+    "wu-result"
+   ],
+   "why": "a trailing comma in a flow list"
+  },
+  {
+   "src": "artifact: [\"epic-plan wu-plan\"]\n",
+   "roles": [],
+   "why": "a list item is one role, never split"
+  },
+  {
+   "src": "artifact: wu-result wu-result\n",
+   "roles": [
+    "wu-result",
+    "wu-result"
+   ],
+   "why": "a role twice is still one role"
+  },
+  {
+   "src": "artifact:\n  sub: wu-result\n",
+   "roles": [],
+   "why": "a mapping is no role"
+  },
+  {
+   "src": "artifact: {a: wu-result}\n",
+   "roles": [],
+   "why": "a flow mapping is no role"
+  }
+ ]
+}
