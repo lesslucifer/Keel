@@ -141,7 +141,7 @@ open:
       its fix and its source. Waits on: E-APPLIST's merge.
     source: >-
       Backlog A3's open follow-ups at E-APPLIST's close (moved here by E-APPLIST.W9), the W9 epic test's first run, W9's
-      review nits and its live check.
+      review nits and its live check, and the five Low nits of E-APPLIST.W12's review round 2.
     taken-by: "no epic yet; A4 or A5 may take any item"
     follow-ups:
       - >-
@@ -210,6 +210,27 @@ open:
         between reads and ticks twice where nothing it asserts depends on it: about 2 s of a 14 s test on every keel
         check. Derive the rows from the view already read and drop the two ticks. Source: E-APPLIST.W9 review round 1,
         nit (cr note on a2201a7). Taken by: this row.
+      - >-
+        app/test/integration/doc-roles.test.ts:39 (:37 at efdda3c): the history test reads git rev-list --all --objects
+        of the live repository and asserts counts, so a shallow or partial clone fails it. Build its blobs in a temp
+        repository, or skip the count asserts when the clone is shallow. Source: E-APPLIST.W12 review round 2, nit (cr
+        note on 835fed0). Taken by: this row.
+      - >-
+        app/test/integration/doc-roles.test.ts:46 (:43 at efdda3c): the history test runs one git cat-file blob per
+        historic blob (about 155, ~11 s). Read them all through one git cat-file --batch. Source: E-APPLIST.W12 review
+        round 2, nit (cr note on 835fed0). Taken by: this row.
+      - >-
+        app/src/main/open/open.ts:170: on a rebuild Open writes each data file twice, once to .tmp-heads for keel and
+        again into the copy. Write the copy first and ask keel about the copy's files. Source: E-APPLIST.W12 review
+        round 2, nit (cr note on 835fed0). Taken by: this row.
+      - >-
+        app/src/main/handlers.ts:94: keelOf copies readerParts.git line for line with only the tool name changed (and
+        projects.add's usableGit is a third form). Make one helper that takes the tool name. Source: E-APPLIST.W12
+        review round 2, nit (cr note on 835fed0). Taken by: this row.
+      - >-
+        app/src/main/commands.ts:306: noAnswer repeats failed()'s wording a third time, and its third branch is dead
+        (its one caller passes only a run that could not start or timed out). Reuse failed()'s words and drop the
+        branch. Source: E-APPLIST.W12 review round 2, nit (cr note on 835fed0). Taken by: this row.
 
   - id: L1
     title: "Message the router from the app"
