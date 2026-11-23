@@ -1,0 +1,66 @@
+artifact: wu-result
+status: ready
+id: E-APPLIST.W13
+epic: E-APPLIST
+title: "E-APPLIST.W13 result · The epic review's round-2 findings fixed"
+date: "2026-11-23"
+page: 2026-11-23-e-applist-w13-result.html
+outcome: >-
+  Delivered. All three findings of the epic review's round 2 (cr note on 96207aa: 1 blocker, 2 importants) are
+  fixed, each pinned by a test that failed on the old code. Open asks keel doc-roles about every data file the copy
+  takes, whatever its size: HEAD_CAP is gone, keel judges the size, and the copy's own read cap (OUTPUT_CAP, 1 MiB)
+  equals keel's MAX_DATA_BYTES, held together by a test with a 1 MiB data file against the real keel. The head files
+  go to keel in batches (headBatches) whose temp folder holds at most HEADS_DISK_CAP (4 MiB) at a time, each removed
+  before the next. The git reader takes the tips of its notes and times reads, and the epics and units it reads for
+  tasks, from openSets, the one open rule (openUnits is gone); main and the epics come first in the times read, which
+  now says when it passes TIME_TIPS. A unit's tasks are named by names.ts isTaskBranch and unitOfTask alone. keel check
+  and tsc and eslint are green on the fix commits. The CSS lint step and the window tests could not run in this
+  sandbox. No Rust code changed, so keel needs no reinstall. The window's code is unchanged.
+deviations:
+  - >-
+    The plan had no problem line for the times read. One was added: a times read past TIME_TIPS says so, as the notes
+    read already did past NOTE_TIPS. The finding named the unreported cut at git.ts:370.
+  - >-
+    A data file's text is kept for the copy loop only while the kept texts stay within COPY_CAP (8 MiB), so the head
+    pass's memory stays bounded now that files up to 1 MiB are read. A data file past that is read again from git if
+    it is the page's own, or if the copy reaches it. Below 8 MiB of data files nothing is read twice (round-3 nit test
+    unchanged).
+  - >-
+    pnpm typecheck, pnpm lint and pnpm test:window were run as their own binaries (node_modules/.bin/tsc, eslint,
+    vitest) through a symlink to the sibling worktree's app/node_modules (package.json, pnpm-lock.yaml and
+    pnpm-workspace.yaml identical). The first pnpm typecheck started pnpm's dependency check, which tried pnpm install
+    and stopped for want of a TTY. pnpm was not run again, and the 8 KiB .pnpm-store it left in this worktree was removed.
+  - >-
+    eslint-rules/check-css.js (lint's second step) and vitest both write a bundled config into node_modules/.vite-temp,
+    which is in the sibling worktree, so the sandbox refused them (EPERM). They were not retried. Neither the window
+    nor its CSS changed. The owner runs pnpm lint and pnpm test:window.
+evidence:
+  commits:
+    - "f0bc96a docs(E-APPLIST.W13): the WU plan"
+    - "0f00002 B1 docs.ts:24 - HEAD_CAP gone; headBatches and HEADS_DISK_CAP; askHeads per batch (open.ts)"
+    - "18dcf1b I1 git.ts:132, I2 git.ts:120 - openTips/timeTips from facts.open; tasksOf by isTaskBranch/unitOfTask; times past TIME_TIPS reported"
+  tests:
+    unit:
+      - "app/test/unit/doc-find.test.ts: headBatches - every data file once and in order, batches within HEADS_DISK_CAP and DOC_ROLES_BATCH, a big file alone never dropped (500 generated inputs); HEADS_DISK_CAP >= OUTPUT_CAP"
+      - "app/test/unit/git-read.test.ts: openTips/timeTips from the open sets - failed main read, failed epic read, merged task; closed branches never crowd NOTE_TIPS or TIME_TIPS; main and epics first; wu/E-A/w1_a_b no task to heldBy, openSets, timeTips; heldBy(unit) equals the task rule on 2000 generated pools; older tests moved from openUnits to openSets"
+    integration:
+      - "app/test/integration/open.test.ts: 100 KiB and 1 MiB data files open fresh, kept and in docs/.archive (real git, real keel); a recording keel shows each temp folder within HEADS_DISK_CAP and gone, with 5 MiB of other data files first and all 6 asked once"
+      - "app/test/integration/git-facts.test.ts: a merged task and two-underscore branches get no time read, w3 with only a two-underscore branch gets no task read, a failed main or epic read asks no note for what it hides; 61 open units report the TIMES and NOTES caps"
+    red-first: >-
+      The two open.test.ts tests ran on f0bc96a's app in a scratch copy and failed: "no wu-plan page for E-A.W1 at its tip"
+      at 100 KiB, and one keel run of 1 file where every data file was due. The four git tests failed on the old git.ts
+      (a time read for the merged task, a task read for w3, over: true from crowding, wu/E-A/w1_a_b in heldBy).
+  checks:
+    keel-check: "green on 18dcf1b's tree: cargo 600 passed, 0 failed; node 445 tests, 444 passed, 0 failed, 1 skipped (fs.watch refused by the sandbox, as before)"
+    typecheck: "node_modules/.bin/tsc --noEmit: exit 0"
+    lint: "eslint --max-warnings 0: exit 0; check-css.js: EPERM in the sandbox, not run"
+    test-window: "vitest run: EPERM in the sandbox, not run"
+  docs:
+    - "docs/use-cases/app.yaml UC-APP-2: Open asks keel about every data file whatever its size"
+  rust: "unchanged: no keel reinstall"
+distillation: >-
+  UC-APP-2 (docs/use-cases/app.yaml) now says Open asks keel doc-roles about every data file whatever its size. DEC-79
+  holds as written. The open rule's single source is code (git.ts openSets), already named in contract.ts.
+follow-ups:
+  - "On the owner's Mac: pnpm typecheck, pnpm lint (its CSS step) and pnpm test:window, then the epic e2e, since app/ changed. Taken by the router before the epic's review round 3."
+  - "The WU's own review, then the epic review's round 3 after the merge. Taken by the router."
