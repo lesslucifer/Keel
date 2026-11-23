@@ -676,10 +676,6 @@ fn pre_commit(repo: &Path, cfg: &Config) -> Result<i32, String> {
     }
 }
 
-/// No paths: every page (`.html`) and data file (`.yaml`) under docs.root, tracked or untracked, not
-/// ignored. Each path checks its pair (`verify_doc::pair_of`), each pair once. A config that is there
-/// but malformed is an error with paths too; with paths and no config file, every path is checked
-/// and no page is capped by path.
 /// `keel doc-roles <data file>...` (E-APPLIST.W12): each named file's roles as the doc check and the
 /// sign-off read them (verify_doc::data_head), with the id and page of its document holding
 /// `artifact`, as one JSON answer on stdout, `doc-roles/v1`; a file that gives no role carries its
@@ -710,6 +706,10 @@ fn doc_roles_of(path: &str) -> serde_json::Value {
     }
 }
 
+/// No paths: every page (`.html`) and data file (`.yaml`) under docs.root, tracked or untracked, not
+/// ignored. Each path checks its pair (`verify_doc::pair_of`), each pair once. A config that is there
+/// but malformed is an error with paths too; with paths and no config file, every path is checked
+/// and no page is capped by path.
 fn verify_doc(repo: &Path, paths: &[&str]) -> Result<i32, String> {
     let cfg = if paths.is_empty() || repo.join(".keel/config.toml").exists() { Some(load_config(repo)?) } else { None };
     if let Some(bad) = cfg.as_ref().and_then(|c| caps_problem(&c.docs.caps)) {

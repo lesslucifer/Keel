@@ -1,5 +1,5 @@
 {
- "about": "One case table for how a data file's artifact gives its roles: keel verify-doc's data_roles (src/verify_doc.rs) and the app's Open (app/src/main/open/docs.ts dataRoles) both read every case (the app through keel doc-roles since W12 round 2) and must give these roles; [] is no role (data_roles' Err). Epic review round 1 of E-APPLIST, docs.ts:79.",
+ "about": "One case table for how a data file's artifact gives its roles: keel verify-doc's data_roles (src/verify_doc.rs) and the app's Open, which asks keel doc-roles (app/test/integration/doc-roles.test.ts; E-APPLIST.W12, owner ruling 2026-11-23), both read every case and must give these roles; [] is no role (data_roles' Err). Epic review round 1 of E-APPLIST, docs.ts:79.",
  "cases": [
   {
    "src": "artifact: wu-result\nstatus: ready\n",
