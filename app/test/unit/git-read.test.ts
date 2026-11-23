@@ -2,9 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { refOk } from '../../src/main/commands.ts';
-import { keelBranch, isEpicBranch, isUnitBranch, isTaskBranch, epicOfUnit, unitPrefix, epicOfWu, routerKey, KEY, WU_ID, WU_SOURCE, EPIC_SOURCE, wuOfBranch, epicOfBranch } from '../../src/shared/names.ts';
+import { keelBranch, isEpicBranch, isUnitBranch, isTaskBranch, epicOfUnit, unitOfTask, unitPrefix, epicOfWu, routerKey, KEY, WU_ID, WU_SOURCE, EPIC_SOURCE, wuOfBranch, epicOfBranch } from '../../src/shared/names.ts';
 import { seeded, pick } from '../support/seeded.ts';
-import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, onMainLine, mayBeFresh, NOTE_TIPS, parseReview, parseTime, timeTips, TIME_TIPS, openSets, parseRemote } from '../../src/main/reader/git.ts';
+import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openTips, onMainLine, mayBeFresh, NOTE_TIPS, parseReview, parseTime, timeTips, TIME_TIPS, openSets, parseRemote } from '../../src/main/reader/git.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -69,14 +69,14 @@ test('what each target holds is read for its own kind: main the epics and work u
   assert.deepEqual(heldBy('wu/E-A/w1', names), ['wu/E-A/w1_look-variants']);
 });
 
-test('the open epics are those not in main (all of them when there is no main); the open work units are those of an open epic not yet in it', () => {
+test('the open epics are those not in main (all of them when there is no main); the open work units are those of an open epic not yet in it, by the open sets', () => {
   const names = ['main', 'epic/E-A', 'epic/E-B', 'wu/E-A/w1', 'wu/E-A/w2', 'wu/E-A/w2_task', 'wu/E-B/w1', 'wu/E-C/w1', 'epic/bad name'];
   assert.deepEqual(openEpics(names, ['epic/E-B']), ['epic/E-A']);
   assert.deepEqual(openEpics(names, undefined), ['epic/E-A', 'epic/E-B']);
   // An epic main holds but whose tip sits on main's own line has no commit of its own yet: it is open.
   assert.deepEqual(openEpics(names, ['epic/E-A', 'epic/E-B'], new Set(['epic/E-B'])), ['epic/E-B']);
-  assert.deepEqual(openUnits(names, ['epic/E-A'], { 'epic/E-A': ['wu/E-A/w1'] }), ['wu/E-A/w2']);
-  assert.deepEqual(openUnits(names, ['epic/E-A', 'epic/E-B'], {}), ['wu/E-A/w1', 'wu/E-A/w2', 'wu/E-B/w1']);
+  assert.deepEqual(openSets(names, { main: ['epic/E-B'], 'epic/E-A': ['wu/E-A/w1'] }).units, ['wu/E-A/w2']);
+  assert.deepEqual(openSets(names.filter((n) => n !== 'main'), { 'epic/E-A': [], 'epic/E-B': [] }).units, ['wu/E-A/w1', 'wu/E-A/w2', 'wu/E-B/w1']);
 });
 
 const br = (name: string, tip: string) => ({ name, tip, upstream: null, ahead: 0, behind: 0, gone: false });
@@ -89,13 +89,13 @@ test('the tips whose notes are read: each epic not yet in main, each work unit o
   const branches = [br('main', A), br('epic/E-A', B), br('epic/E-B', C), br('wu/E-A/w1', D), br('wu/E-A/w2', E), br('wu/E-A/w2_task', A), br('wu/E-C/w1', F), br('wu/E-B/w7', G), br('topic', C)];
   const merged = { main: ['epic/E-B'], 'epic/E-A': ['wu/E-A/w1'] };
   // wu/E-C/w1 has no epic branch, wu/E-B/w7 belongs to an epic already in main: neither is open, however long kept.
-  assert.deepEqual(openTips(branches, merged), { tips: [B, E], over: false });
+  assert.deepEqual(openTips(branches, openSets(branches.map((b) => b.name), merged)), { tips: [B, E], over: false });
   assert.equal(NOTE_TIPS, 40);
 });
 
 test('past NOTE_TIPS open branches, only the first are read, and it says so', () => {
   const many = [br('epic/E-A', 'e'.repeat(40)), ...Array.from({ length: NOTE_TIPS + 3 }, (_, i) => br(`wu/E-A/w${i}`, i.toString(16).padStart(40, '0')))];
-  const r = openTips(many, {});
+  const r = openTips(many, openSets(many.map((b) => b.name), { 'epic/E-A': [] }));
   assert.equal(r.tips.length, NOTE_TIPS);
   assert.equal(r.over, true);
 });
@@ -105,8 +105,9 @@ test('a fresh epic main holds (its tip on main\'s own line) stays open, and so d
   const W = '2'.repeat(40);
   const branches = [br('main', M), br('epic/E-X', M), br('wu/E-X/plan', W)];
   const merged = { main: ['epic/E-X'] };
-  assert.deepEqual(openTips(branches, merged, new Set(['epic/E-X'])), { tips: [M, W], over: false });
-  assert.deepEqual(openTips(branches, merged), { tips: [], over: false }, 'without the fresh set the epic reads as closed');
+  const names = branches.map((b) => b.name);
+  assert.deepEqual(openTips(branches, openSets(names, { ...merged, 'epic/E-X': [] }, new Set(['epic/E-X']))), { tips: [M, W], over: false });
+  assert.deepEqual(openTips(branches, openSets(names, merged)), { tips: [], over: false }, 'without the fresh set the epic reads as closed');
 });
 
 test('name-rev\'s answer: main or main~k is on main\'s own line (no commit of its own); a ^ means reached through a merge (merged in)', () => {
@@ -149,11 +150,29 @@ test('the tips whose times the list shows: main, each open epic, each open work 
   const b = (name: string, tip: string) => ({ name, tip, upstream: null, ahead: 0, behind: 0, gone: false });
   const branches = [b('main', 'm'.repeat(40)), b('epic/E-A', 'e'.repeat(40)), b('epic/E-B', 'f'.repeat(40)), b('wu/E-A/w1', '1'.repeat(40)), b('wu/E-A/w1_t', '2'.repeat(40)), b('wu/E-A/w2', '3'.repeat(40)), b('wu/E-B/w1', '4'.repeat(40)), b('feature/x', '5'.repeat(40)), b('wu/E-A/w3', '1'.repeat(40))];
   const merged = { main: ['epic/E-B'], 'epic/E-A': ['wu/E-A/w2'], 'wu/E-A/w1': [] };
-  assert.deepEqual(timeTips(branches, merged), { tips: ['m'.repeat(40), 'e'.repeat(40), '1'.repeat(40), '2'.repeat(40)], over: false });
+  assert.deepEqual(timeTips(branches, openSets(branches.map((x) => x.name), merged)), { tips: ['m'.repeat(40), 'e'.repeat(40), '1'.repeat(40), '2'.repeat(40)], over: false });
   const many = Array.from({ length: TIME_TIPS + 5 }, (_, i) => b(`wu/E-A/w${i + 1}`, i.toString(16).padStart(40, '0')));
-  const r = timeTips([b('epic/E-A', 'e'.repeat(40)), ...many], {});
+  const all = [b('epic/E-A', 'e'.repeat(40)), ...many];
+  const r = timeTips(all, openSets(all.map((x) => x.name), { 'epic/E-A': [] }));
   assert.equal(r.tips.length, TIME_TIPS);
   assert.equal(r.over, true);
+});
+
+test('epic review round 2 fix (git.ts:369): TIME_TIPS bounds the open branches\' tips, main apart: main and exactly TIME_TIPS open tips are not over, one more is; main sharing an open tip is read once; no main is no main tip', () => {
+  const b = (name: string, tip: string) => ({ name, tip, upstream: null, ahead: 0, behind: 0, gone: false });
+  const tip = (i: number) => i.toString(16).padStart(40, '0');
+  const units = (n: number) => Array.from({ length: n }, (_, i) => b(`wu/E-A/w${i + 1}`, tip(i + 100)));
+  const open = (bs: { name: string }[]) => ({ epics: [], units: bs.map((x) => x.name), tasks: [] });
+  const at = units(TIME_TIPS);
+  assert.deepEqual(timeTips([b('main', tip(1)), ...at], open(at)), { tips: [tip(1), ...at.map((x) => x.tip)], over: false });
+  const past = units(TIME_TIPS + 1);
+  const r = timeTips([b('main', tip(1)), ...past], open(past));
+  assert.deepEqual(r, { tips: [tip(1), ...past.slice(0, TIME_TIPS).map((x) => x.tip)], over: true });
+  // Main on an open epic's tip: that tip once, main's place first.
+  const epic = b('epic/E-A', tip(1));
+  assert.deepEqual(timeTips([b('main', tip(1)), epic, ...at], { epics: ['epic/E-A'], units: at.map((x) => x.name), tasks: [] }), { tips: [tip(1), ...at.slice(0, TIME_TIPS - 1).map((x) => x.tip)], over: true });
+  // No main branch: only the open tips.
+  assert.deepEqual(timeTips(at, open(at)), { tips: at.map((x) => x.tip), over: false });
 });
 
 test('W6 review round 1 (items.ts:82): the open sets the list draws from, by the reader\'s one rule - keel\'s names only, and a unit or task only when its target was read', () => {
@@ -238,5 +257,65 @@ test('epic review round 1 (items.ts:172): a router key is read by the log\'s one
   for (let i = 0; i < 3000; i++) {
     const key = Array.from({ length: 1 + Math.floor(rng() * 4) }, () => pick(rng, parts)).join('');
     assert.equal(routerKey(key) !== null, KEY.test(key), key);
+  }
+});
+
+test('epic review round 2 (git.ts:132): the notes and times reads take their tips from the open sets, the one rule (main too for the times): a failed main read, a failed epic read and a task merged into its unit ask no tip the list does not show', () => {
+  const T = (c: string) => c.repeat(40);
+  const branches = [br('main', T('0')), br('epic/E-A', T('1')), br('epic/E-B', T('2')), br('wu/E-A/w1', T('3')), br('wu/E-A/w1_done', T('4')), br('wu/E-A/w1_probe', T('5')), br('wu/E-B/w1', T('6'))];
+  const names = branches.map((b) => b.name);
+  const tips = (merged: Record<string, string[]>) => {
+    const open = openSets(names, merged);
+    return { notes: openTips(branches, open).tips, times: timeTips(branches, open).tips };
+  };
+  // All read: E-A's unit open with one task, its other task merged into it; E-B's unit open.
+  assert.deepEqual(tips({ main: [], 'epic/E-A': [], 'epic/E-B': [], 'wu/E-A/w1': ['wu/E-A/w1_done'] }), { notes: [T('1'), T('2'), T('3'), T('6')], times: [T('0'), T('1'), T('2'), T('3'), T('6'), T('5')] }, 'the merged task has no time');
+  // Main's read failed: nothing is open, so no note and no time but main's.
+  assert.deepEqual(tips({ 'epic/E-A': [], 'epic/E-B': [], 'wu/E-A/w1': [] }), { notes: [], times: [T('0')] });
+  // E-B's read failed: its unit is not listed, so not read.
+  assert.deepEqual(tips({ main: [], 'epic/E-A': [], 'wu/E-A/w1': [] }), { notes: [T('1'), T('2'), T('3')], times: [T('0'), T('1'), T('2'), T('3'), T('4'), T('5')] });
+  // The open sets in, the tips out: nothing else decides.
+  assert.deepEqual(openTips(branches, { epics: ['epic/E-B'], units: ['wu/E-A/w1'], tasks: ['wu/E-A/w1_probe'] }).tips, [T('2'), T('3')]);
+  assert.deepEqual(timeTips(branches, { epics: [], units: [], tasks: ['wu/E-A/w1_probe', 'nope'] }).tips, [T('0'), T('5')]);
+});
+
+test('epic review round 2 (git.ts:132): branches the list does not show never crowd a shown one out of NOTE_TIPS or TIME_TIPS', () => {
+  const tip = (i: number) => i.toString(16).padStart(40, '0');
+  // E-A's read failed: its NOTE_TIPS + 5 units sort before E-B's open unit and are not listed.
+  const units = Array.from({ length: NOTE_TIPS + 5 }, (_, i) => br(`wu/E-A/w${i + 1}`, tip(i + 10)));
+  const branches = [br('main', tip(1)), br('epic/E-A', tip(2)), br('epic/E-B', tip(3)), ...units, br('wu/E-B/w1', tip(4))];
+  const open = openSets(branches.map((b) => b.name), { main: [], 'epic/E-B': [] });
+  assert.deepEqual(open.units, ['wu/E-B/w1']);
+  assert.deepEqual(openTips(branches, open), { tips: [tip(2), tip(3), tip(4)], over: false });
+  // TIME_TIPS + 5 tasks merged into w1 sort before the open unit w2.
+  const tasks = Array.from({ length: TIME_TIPS + 5 }, (_, i) => br(`wu/E-C/w1_t${i}`, tip(i + 200)));
+  const more = [br('main', tip(1)), br('epic/E-C', tip(5)), br('wu/E-C/w1', tip(6)), ...tasks, br('wu/E-C/w2', tip(7))];
+  const openC = openSets(more.map((b) => b.name), { main: [], 'epic/E-C': [], 'wu/E-C/w1': tasks.map((b) => b.name) });
+  assert.deepEqual(timeTips(more, openC), { tips: [tip(1), tip(5), tip(6), tip(7)], over: false });
+  // Main and the epics come first: a crowd of open tasks never pushes them out.
+  const openTasks = Array.from({ length: TIME_TIPS + 5 }, (_, i) => `wu/E-C/w1_t${i}`);
+  const r = timeTips(more, { epics: ['epic/E-C'], units: ['wu/E-C/w1', 'wu/E-C/w2'], tasks: openTasks });
+  assert.deepEqual(r.tips.slice(0, 4), [tip(1), tip(5), tip(6), tip(7)]);
+  assert.equal(r.tips.length, TIME_TIPS + 1, 'main and TIME_TIPS open tips');
+  assert.equal(r.over, true);
+});
+
+test('epic review round 2 (git.ts:120): a work unit\'s tasks are named by names.ts alone: wu/E-A/w1_a_b is no task of wu/E-A/w1 to heldBy, to the open sets or to the times read', () => {
+  const names = ['main', 'epic/E-A', 'wu/E-A/w1', 'wu/E-A/w1_a', 'wu/E-A/w1_a_b', 'wu/E-A/w10', 'wu/E-A/w1-x_t'];
+  assert.ok(keelBranch('wu/E-A/w1_a_b') && !isTaskBranch('wu/E-A/w1_a_b'));
+  assert.deepEqual(heldBy('wu/E-A/w1', names), ['wu/E-A/w1_a']);
+  assert.deepEqual(heldBy('wu/E-A/w1-x', names), ['wu/E-A/w1-x_t']);
+  const open = openSets(names, { main: [], 'epic/E-A': [], 'wu/E-A/w1': [] });
+  assert.deepEqual(open.tasks, ['wu/E-A/w1_a']);
+  const branches = names.map((n, i) => br(n, i.toString(16).padStart(40, '0')));
+  assert.ok(!timeTips(branches, open).tips.includes(branches[4]?.tip as string), 'no time read for wu/E-A/w1_a_b');
+  // The one rule, on generated names: heldBy(unit) is exactly the names isTaskBranch and unitOfTask give that unit.
+  const rng = seeded(0x7a5c);
+  const parts = ['w1', 'w2', '_', 'a', 'b', '-', 'x', '.', 'é'];
+  for (let i = 0; i < 2000; i++) {
+    const pool = Array.from({ length: 6 }, () => `wu/E-A/${Array.from({ length: 1 + Math.floor(rng() * 5) }, () => pick(rng, parts)).join('')}`);
+    for (const unit of pool.filter(isUnitBranch)) {
+      assert.deepEqual(heldBy(unit, pool), pool.filter((n) => isTaskBranch(n) && unitOfTask(n) === unit), `${unit} in ${pool.join(' ')}`);
+    }
   }
 });

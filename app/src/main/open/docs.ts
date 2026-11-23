@@ -6,7 +6,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ItemKind } from '../../shared/contract.ts';
-import { OUTPUT_CAP, type Captured } from '../commands.ts';
+import { DOC_ROLES_BATCH, OUTPUT_CAP, type Captured } from '../commands.ts';
 
 export interface TreeEntry {
   mode: string;
@@ -20,8 +20,12 @@ export interface TreeEntry {
 /** The most bytes one copy of a tip's docs/ holds. */
 export const COPY_CAP = 8 * 1024 * 1024;
 
-/** The largest data file whose roles are asked of keel. */
-export const HEAD_CAP = 64 * 1024;
+/**
+ * The most bytes the temp folder of data files handed to keel holds at a time (epic review round 2, docs.ts:24).
+ * At least OUTPUT_CAP, so every data file the copy takes fits in a batch; the app never caps a data file's size
+ * itself: keel judges it (its bound, 1 MiB, equals OUTPUT_CAP, the most a copy reads of one file).
+ */
+export const HEADS_DISK_CAP = 4 * 1024 * 1024;
 
 const ROW = /^([0-7]{6}) ([a-z]+) ([0-9a-f]{40}|[0-9a-f]{64}) +([0-9]+|-)\t([\s\S]+)$/;
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
@@ -60,6 +64,31 @@ export function copyPlan(entries: readonly TreeEntry[], first: readonly string[]
   const rank = (p: string) => (first.includes(p) ? first.indexOf(p) : first.length);
   files.sort((x, y) => rank(x.path) - rank(y.path) || (x.path < y.path ? -1 : x.path > y.path ? 1 : 0));
   return { files, skipped };
+}
+
+/**
+ * The data files (.yaml) among a copy's `files`, in their order, in batches for keel doc-roles: each batch at
+ * most `maxFiles` files and, when it holds more than one, at most `maxBytes` bytes; a file over `maxBytes`
+ * (never one the copy takes, which are within OUTPUT_CAP) goes alone. Every data file is in exactly one batch:
+ * none is dropped for its size (epic review round 2, docs.ts:24).
+ */
+export function headBatches(files: readonly TreeEntry[], maxBytes = HEADS_DISK_CAP, maxFiles = DOC_ROLES_BATCH): TreeEntry[][] {
+  const batches: TreeEntry[][] = [];
+  let batch: TreeEntry[] = [];
+  let bytes = 0;
+  for (const f of files) {
+    if (!f.path.endsWith('.yaml')) continue;
+    const size = f.size ?? 0;
+    if (batch.length > 0 && (batch.length >= maxFiles || bytes + size > maxBytes)) {
+      batches.push(batch);
+      batch = [];
+      bytes = 0;
+    }
+    batch.push(f);
+    bytes += size;
+  }
+  if (batch.length > 0) batches.push(batch);
+  return batches;
 }
 
 export interface DataHead {

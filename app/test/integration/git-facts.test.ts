@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { GitReader } from '../../src/main/reader/git.ts';
+import { GitReader, NOTE_TIPS, TIME_TIPS } from '../../src/main/reader/git.ts';
 import { OUTPUT_CAP, ProjectRunner } from '../../src/main/commands.ts';
 import { tempDir, realGit, sh, snapshot, mk, oldGit, records, program } from '../support/fs.ts';
 
@@ -308,4 +308,92 @@ test('epic review round 1 (git.ts:323, git.ts:315): a read with no ref moved run
   const merged = await reader.read(counting);
   assert.deepEqual(merged.merged['wu/E-A/w2'], ['wu/E-A/w2_probe']);
   assert.deepEqual(merged, await fresh());
+});
+
+test('epic review round 2 (git.ts:132, git.ts:120): the reader reads notes, times and tasks only for what the list shows: a task merged into its unit has no time read, a two-underscore branch is no task (no task read for its unit, no time), and a failed main or epic read asks no notes for what it hides', async (t) => {
+  const { root, dir } = world(t);
+  // A task merged into wu/E-A/w2 (in w2's worktree), and a two-underscore branch off it.
+  sh(GIT, dir, ['switch', '-q', '-c', 'wu/E-A/w2_done', 'wu/E-A/w2']);
+  sh(GIT, dir, ['commit', '-q', '--allow-empty', '-m', 'done task']);
+  sh(GIT, dir, ['switch', '-q', '-c', 'wu/E-A/w2_a_b']);
+  sh(GIT, dir, ['commit', '-q', '--allow-empty', '-m', 'two underscores']);
+  sh(GIT, path.join(root, 'wt-w2'), ['merge', '-q', '--no-ff', '-m', 'task in', 'wu/E-A/w2_done']);
+  // An open unit wu/E-A/w3 whose only underscore branch has two underscores.
+  sh(GIT, dir, ['switch', '-q', '-c', 'wu/E-A/w3', 'epic/E-A']);
+  sh(GIT, dir, ['commit', '-q', '--allow-empty', '-m', 'w3']);
+  sh(GIT, dir, ['branch', 'wu/E-A/w3_a_b']);
+  sh(GIT, dir, ['commit', '-q', '--allow-empty', '-m', 'w3 on']);
+  sh(GIT, dir, ['switch', '-q', 'main']);
+  const rec = path.join(root, 'runs.txt');
+  const flag = path.join(root, 'fail');
+  const flaky = program(path.join(mk(path.join(root, 'flaky')), 'git'), `#!/bin/sh\necho "$*" >> ${rec}\nif [ -f ${flag} ]; then case "$*" in *"--merged=refs/heads/$(cat ${flag}) "*) exit 128;; esac; fi\nexec ${GIT} "$@"\n`);
+  const hidden = ['wu/E-A/w2_done', 'wu/E-A/w2_a_b', 'wu/E-A/w3_a_b'].map((b) => rev(dir, b));
+  const facts = await new GitReader(dir, opts(root)).read(flaky);
+  assert.equal(facts.problem, null);
+  assert.deepEqual(facts.open, { epics: ['epic/E-A'], units: ['wu/E-A/w2', 'wu/E-A/w3'], tasks: ['wu/E-A/w2_probe'] });
+  assert.deepEqual(Object.keys(facts.times).sort(), ['main', 'epic/E-A', 'wu/E-A/w2', 'wu/E-A/w3', 'wu/E-A/w2_probe'].map((b) => rev(dir, b)).sort());
+  let runs = readFileSync(rec, 'utf8').split('\n');
+  const timeRuns = runs.filter((l) => l.includes('--format=%cI'));
+  assert.ok(timeRuns.length > 0);
+  for (const tip of hidden) assert.ok(timeRuns.every((l) => !l.includes(tip)), `no time read for ${tip}`);
+  assert.ok(runs.some((l) => l.includes('--merged=refs/heads/wu/E-A/w2 ')), 'w2 has a task: read for it');
+  assert.ok(!runs.some((l) => l.includes('--merged=refs/heads/wu/E-A/w3 ')), 'w3 has no task: its only underscore branch has two');
+  // main's read fails: nothing is listed, and no note is asked.
+  writeFileSync(rec, '');
+  writeFileSync(flag, 'main');
+  const noMain = await new GitReader(dir, opts(root)).read(flaky);
+  assert.match(noMain.problem ?? '', /main/);
+  assert.deepEqual(noMain.open, { epics: [], units: [], tasks: [] });
+  runs = readFileSync(rec, 'utf8').split('\n');
+  assert.ok(!runs.some((l) => l.includes(' notes ')), 'no note read for a branch the list does not show');
+  assert.deepEqual(Object.keys(noMain.times), [rev(dir, 'main')]);
+  // The epic's read fails: its units are not listed, and their notes are not asked.
+  writeFileSync(rec, '');
+  writeFileSync(flag, 'epic/E-A');
+  const noEpic = await new GitReader(dir, opts(root)).read(flaky);
+  assert.deepEqual(noEpic.open, { epics: ['epic/E-A'], units: [], tasks: [] });
+  runs = readFileSync(rec, 'utf8').split('\n');
+  assert.ok(!runs.some((l) => l.includes(` list ${rev(dir, 'wu/E-A/w2')}`)), 'the unit\'s notes are not read');
+  assert.deepEqual(noEpic.notes.cr, []);
+});
+
+test('epic review round 2 (git.ts:132): past TIME_TIPS open branches, the times read says so, as the notes read does past NOTE_TIPS', async (t) => {
+  const { root, dir } = world(t);
+  for (let i = 0; i < TIME_TIPS; i++) sh(GIT, dir, ['branch', `wu/E-A/x${String(i).padStart(2, '0')}`, i % 2 === 0 ? 'wu/E-A/w2' : 'epic/E-A']);
+  // Distinct tips: each new unit gets a commit of its own through commit-tree, no checkout.
+  const tree = sh(GIT, dir, ['rev-parse', 'epic/E-A^{tree}']).trim();
+  for (let i = 0; i < TIME_TIPS; i++) {
+    const name = `wu/E-A/x${String(i).padStart(2, '0')}`;
+    const c = sh(GIT, dir, ['commit-tree', tree, '-p', name, '-m', name]).trim();
+    sh(GIT, dir, ['update-ref', `refs/heads/${name}`, c]);
+  }
+  const facts = await new GitReader(dir, opts(root)).read(GIT);
+  assert.equal(facts.open.units.length, TIME_TIPS + 1);
+  assert.equal(Object.keys(facts.times).length, TIME_TIPS + 1, 'main and TIME_TIPS open tips');
+  assert.match(facts.problem ?? '', new RegExp(`more than ${TIME_TIPS} open branches: times read for the first ${TIME_TIPS} only`));
+  assert.match(facts.problem ?? '', new RegExp(`more than ${NOTE_TIPS} open branches: notes read for the first ${NOTE_TIPS} only`));
+  assert.ok(facts.times[rev(dir, 'main')] !== undefined && facts.times[rev(dir, 'epic/E-A')] !== undefined, 'main and the epic first');
+});
+
+test('epic review round 2 fix (git.ts:369): TIME_TIPS counts open branches, main apart: exactly TIME_TIPS open gives no problem line and every time, one more gives the line', async (t) => {
+  const { root, dir } = world(t);
+  // The world has three open branches on distinct tips: epic/E-A, wu/E-A/w2 and its task wu/E-A/w2_probe.
+  const tree = sh(GIT, dir, ['rev-parse', 'epic/E-A^{tree}']).trim();
+  const unit = (i: number) => {
+    const name = `wu/E-A/y${String(i).padStart(2, '0')}`;
+    const c = sh(GIT, dir, ['commit-tree', tree, '-p', 'epic/E-A', '-m', name]).trim();
+    sh(GIT, dir, ['update-ref', `refs/heads/${name}`, c]);
+  };
+  for (let i = 0; i < TIME_TIPS - 3; i++) unit(i);
+  const at = await new GitReader(dir, opts(root)).read(GIT);
+  const openCount = (f: typeof at) => f.open.epics.length + f.open.units.length + f.open.tasks.length;
+  assert.equal(openCount(at), TIME_TIPS);
+  assert.doesNotMatch(at.problem ?? '', /times read/);
+  assert.equal(Object.keys(at.times).length, TIME_TIPS + 1, 'main and every open branch timed');
+  unit(TIME_TIPS - 3);
+  const past = await new GitReader(dir, opts(root)).read(GIT);
+  assert.equal(openCount(past), TIME_TIPS + 1);
+  assert.match(past.problem ?? '', new RegExp(`more than ${TIME_TIPS} open branches: times read for the first ${TIME_TIPS} only`));
+  assert.equal(Object.keys(past.times).length, TIME_TIPS + 1, 'main and the first TIME_TIPS open branches timed');
+  assert.ok(past.times[rev(dir, 'main')] !== undefined, 'main always timed');
 });

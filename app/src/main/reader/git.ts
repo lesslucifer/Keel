@@ -102,40 +102,38 @@ export function onMainLine(out: string): boolean {
   return /^main(?:~\d+)?$/.test(out.trim());
 }
 
-/** The work units of an open epic not yet in it: a unit whose epic is in main, or gone, is closed however long it is kept. */
-export function openUnits(names: readonly string[], epics: readonly string[], merged: Readonly<Record<string, readonly string[]>>): string[] {
-  const open = new Set(epics);
-  return named(names).filter((n) => {
-    if (!WU.test(n)) return false;
-    const epic = epicOfUnit(n);
-    return open.has(epic) && !(merged[epic] ?? []).includes(n);
-  });
-}
+/** A work unit's tasks among `names`, by names.ts alone (isTaskBranch, unitOfTask: epic review round 2, git.ts:120). */
+const tasksOf = (unit: string, names: readonly string[]): string[] => names.filter((n) => isTaskBranch(n) && unitOfTask(n) === unit);
 
 /** Of `names`, the ones `target` is read for: main the epics, an epic its work units, a work unit its tasks. */
 export function heldBy(target: string, names: readonly string[]): string[] {
   const all = named(names);
   if (target === 'main') return all.filter((n) => EPIC.test(n) || WU.test(n));
   if (EPIC.test(target)) return all.filter((n) => n.startsWith(unitPrefix(target)));
-  return all.filter((n) => n.startsWith(`${target}_`));
+  return tasksOf(target, all);
 }
 
 /** The most open branches whose tips' notes one read asks about. */
 export const NOTE_TIPS = 40;
 
-/**
- * The tips whose notes the list needs, each once: each epic not yet in main, each work unit of such
- * an epic not yet in it (a merged one's item has left the list; a unit of a closed or gone epic is
- * closed). At most NOTE_TIPS; `over` says more were open. So the notes read is bounded by the open
- * branches, never by history.
- */
-export function openTips(branches: readonly GitBranch[], merged: Readonly<Record<string, readonly string[]>>, fresh: ReadonlySet<string> = new Set()): { tips: string[]; over: boolean } {
-  const names = branches.map((b) => b.name);
-  const epics = openEpics(names, merged.main, fresh);
-  const open = new Set([...epics, ...openUnits(names, epics, merged)]);
+/** The tips of the branches named in `wanted`, in that order, each once; at most `cap`, and whether more were wanted. */
+function tipsOf(branches: readonly GitBranch[], wanted: readonly string[], cap: number): { tips: string[]; over: boolean } {
+  const tipOf = new Map(branches.map((b) => [b.name, b.tip]));
   const tips: string[] = [];
-  for (const b of branches) if (open.has(b.name) && !tips.includes(b.tip)) tips.push(b.tip);
-  return { tips: tips.slice(0, NOTE_TIPS), over: tips.length > NOTE_TIPS };
+  for (const n of wanted) {
+    const tip = tipOf.get(n);
+    if (tip !== undefined && !tips.includes(tip)) tips.push(tip);
+  }
+  return { tips: tips.slice(0, cap), over: tips.length > cap };
+}
+
+/**
+ * The tips whose notes the list needs, each once: the open epics' and work units' (`open`, from openSets, the
+ * reader's one rule: epic review round 2, git.ts:132), never a task's, main's or a branch the list does not show.
+ * At most NOTE_TIPS; `over` says more were open. So the notes read is bounded by the open branches, never by history.
+ */
+export function openTips(branches: readonly GitBranch[], open: GitFacts['open']): { tips: string[]; over: boolean } {
+  return tipsOf(branches, [...open.epics, ...open.units], NOTE_TIPS);
 }
 
 const VERDICTS = ['PASS', 'FAIL', 'WAIVED'] as const;
@@ -163,7 +161,8 @@ export function parseTime(out: string): string | null {
 }
 
 /**
- * The open branches the list draws its items from (W6), by the one rule: keel's names only (shared/names.ts); the
+ * The open branches the list draws its items from (W6), and the reader reads tasks, notes and times for
+ * (epic review round 2, git.ts:132), by the one rule: keel's names only (shared/names.ts); the
  * open epics as openEpics has them, none while main is listed but its read failed; a work unit of an open
  * epic only when that epic's read succeeded and does not hold it; a task of an open unit only when that
  * unit's read succeeded and does not hold it.
@@ -193,18 +192,19 @@ export function parseRemote(out: string): string | null {
   return remote !== '' && !remote.startsWith('-') && remote.length <= 200 && !/[\u0000-\u001f\u007f-\u009f]/.test(remote) ? remote : null;
 }
 
-/** The most tips whose commit times one read asks. */
+/** The most open branches' tips whose commit times one read asks, main apart. */
 export const TIME_TIPS = 60;
 
-/** The tips whose times the list shows, each once: main, each open epic, each open work unit and each task of one. At most TIME_TIPS. */
-export function timeTips(branches: readonly GitBranch[], merged: Readonly<Record<string, readonly string[]>>, fresh: ReadonlySet<string> = new Set()): { tips: string[]; over: boolean } {
-  const names = branches.map((b) => b.name);
-  const epics = openEpics(names, merged.main, fresh);
-  const units = openUnits(names, epics, merged);
-  const open = new Set(['main', ...epics, ...units, ...named(names).filter((n) => units.some((u) => n.startsWith(`${u}_`)))]);
-  const tips: string[] = [];
-  for (const b of branches) if (open.has(b.name) && !tips.includes(b.tip)) tips.push(b.tip);
-  return { tips: tips.slice(0, TIME_TIPS), over: tips.length > TIME_TIPS };
+/**
+ * The tips whose times the list shows, each once, in this order: main, then the open epics, work units and tasks
+ * (`open`, from openSets, the reader's one rule: epic review round 2, git.ts:132), so a crowd of tasks never
+ * pushes main or an epic out. Main and at most TIME_TIPS open tips; `over` says more were open, so the problem
+ * line counts open branches alone, as the notes read's does (epic review round 2 fix, git.ts:369).
+ */
+export function timeTips(branches: readonly GitBranch[], open: GitFacts['open']): { tips: string[]; over: boolean } {
+  const main = tipsOf(branches, ['main'], 1).tips;
+  const rest = tipsOf(branches, [...open.epics, ...open.units, ...open.tasks], TIME_TIPS);
+  return { tips: [...main, ...rest.tips.filter((t) => !main.includes(t))], over: rest.over };
 }
 
 /** Why a run gave no answer to read, or null. */
@@ -317,12 +317,13 @@ export class GitReader {
     }
     // A failed main read asked nothing: keep what was known for the next good read.
     if (mainHeld !== null) this.mainLine = asked;
-    const epics = openEpics(names, facts.merged.main, fresh);
-    for (const epic of epics) await holds(epic);
-    for (const unit of openUnits(names, epics, facts.merged)) if (names.some((n) => n.startsWith(`${unit}_`))) await holds(unit);
+    // Each read below, and the notes and times reads after, take what is open from openSets, the one rule
+    // (epic review round 2, git.ts:132): an epic it lists is read for its units, a unit it lists for its tasks.
+    for (const epic of openSets(names, facts.merged, fresh).epics) await holds(epic);
+    for (const unit of openSets(names, facts.merged, fresh).units) if (tasksOf(unit, names).length > 0) await holds(unit);
     this.heldOf = heldOf;
     facts.open = openSets(names, facts.merged, fresh);
-    const open = openTips(branches, facts.merged, fresh);
+    const open = openTips(branches, facts.open);
     if (open.over) problems.push(`more than ${NOTE_TIPS} open branches: notes read for the first ${NOTE_TIPS} only`);
     const crNotes = new Map<string, string>();
     const noteOf = new Map<NoteKind, { ref: string; byTip: Map<string, string | null> }>();
@@ -367,7 +368,8 @@ export class GitReader {
     }
     this.reviewOf = reviewOf;
     // W6: since when each item waits, once per tip.
-    const timed = timeTips(branches, facts.merged, fresh);
+    const timed = timeTips(branches, facts.open);
+    if (timed.over) problems.push(`more than ${TIME_TIPS} open branches: times read for the first ${TIME_TIPS} only`);
     const timeOf = new Map<string, string>();
     for (const tip of timed.tips) {
       let at = this.timeOf.get(tip);
