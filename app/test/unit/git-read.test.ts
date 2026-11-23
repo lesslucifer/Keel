@@ -158,6 +158,23 @@ test('the tips whose times the list shows: main, each open epic, each open work 
   assert.equal(r.over, true);
 });
 
+test('epic review round 2 fix (git.ts:369): TIME_TIPS bounds the open branches\' tips, main apart: main and exactly TIME_TIPS open tips are not over, one more is; main sharing an open tip is read once; no main is no main tip', () => {
+  const b = (name: string, tip: string) => ({ name, tip, upstream: null, ahead: 0, behind: 0, gone: false });
+  const tip = (i: number) => i.toString(16).padStart(40, '0');
+  const units = (n: number) => Array.from({ length: n }, (_, i) => b(`wu/E-A/w${i + 1}`, tip(i + 100)));
+  const open = (bs: { name: string }[]) => ({ epics: [], units: bs.map((x) => x.name), tasks: [] });
+  const at = units(TIME_TIPS);
+  assert.deepEqual(timeTips([b('main', tip(1)), ...at], open(at)), { tips: [tip(1), ...at.map((x) => x.tip)], over: false });
+  const past = units(TIME_TIPS + 1);
+  const r = timeTips([b('main', tip(1)), ...past], open(past));
+  assert.deepEqual(r, { tips: [tip(1), ...past.slice(0, TIME_TIPS).map((x) => x.tip)], over: true });
+  // Main on an open epic's tip: that tip once, main's place first.
+  const epic = b('epic/E-A', tip(1));
+  assert.deepEqual(timeTips([b('main', tip(1)), epic, ...at], { epics: ['epic/E-A'], units: at.map((x) => x.name), tasks: [] }), { tips: [tip(1), ...at.slice(0, TIME_TIPS - 1).map((x) => x.tip)], over: true });
+  // No main branch: only the open tips.
+  assert.deepEqual(timeTips(at, open(at)), { tips: at.map((x) => x.tip), over: false });
+});
+
 test('W6 review round 1 (items.ts:82): the open sets the list draws from, by the reader\'s one rule - keel\'s names only, and a unit or task only when its target was read', () => {
   const names = ['main', 'epic/E-A', 'epic/E-B', 'epic/E-C', 'wu/E-A/w1', 'wu/E-A/w2', 'wu/E-A/w1_probe', 'wu/E-A/w1_caf\u00e9', 'wu/E-A/w1_done', 'wu/E-B/w1', 'wu/E-C/w1', 'wu/E-A/w\u00e9', 'feature/x'];
   const merged = { main: ['epic/E-B'], 'epic/E-A': ['wu/E-A/w2'], 'wu/E-A/w1': ['wu/E-A/w1_done'], 'epic/E-B': [] };
@@ -279,7 +296,7 @@ test('epic review round 2 (git.ts:132): branches the list does not show never cr
   const openTasks = Array.from({ length: TIME_TIPS + 5 }, (_, i) => `wu/E-C/w1_t${i}`);
   const r = timeTips(more, { epics: ['epic/E-C'], units: ['wu/E-C/w1', 'wu/E-C/w2'], tasks: openTasks });
   assert.deepEqual(r.tips.slice(0, 4), [tip(1), tip(5), tip(6), tip(7)]);
-  assert.equal(r.tips.length, TIME_TIPS);
+  assert.equal(r.tips.length, TIME_TIPS + 1, 'main and TIME_TIPS open tips');
   assert.equal(r.over, true);
 });
 

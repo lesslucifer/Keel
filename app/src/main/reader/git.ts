@@ -192,16 +192,19 @@ export function parseRemote(out: string): string | null {
   return remote !== '' && !remote.startsWith('-') && remote.length <= 200 && !/[\u0000-\u001f\u007f-\u009f]/.test(remote) ? remote : null;
 }
 
-/** The most tips whose commit times one read asks. */
+/** The most open branches' tips whose commit times one read asks, main apart. */
 export const TIME_TIPS = 60;
 
 /**
  * The tips whose times the list shows, each once, in this order: main, then the open epics, work units and tasks
  * (`open`, from openSets, the reader's one rule: epic review round 2, git.ts:132), so a crowd of tasks never
- * pushes main or an epic out. At most TIME_TIPS; `over` says more were open.
+ * pushes main or an epic out. Main and at most TIME_TIPS open tips; `over` says more were open, so the problem
+ * line counts open branches alone, as the notes read's does (epic review round 2 fix, git.ts:369).
  */
 export function timeTips(branches: readonly GitBranch[], open: GitFacts['open']): { tips: string[]; over: boolean } {
-  return tipsOf(branches, ['main', ...open.epics, ...open.units, ...open.tasks], TIME_TIPS);
+  const main = tipsOf(branches, ['main'], 1).tips;
+  const rest = tipsOf(branches, [...open.epics, ...open.units, ...open.tasks], TIME_TIPS);
+  return { tips: [...main, ...rest.tips.filter((t) => !main.includes(t))], over: rest.over };
 }
 
 /** Why a run gave no answer to read, or null. */

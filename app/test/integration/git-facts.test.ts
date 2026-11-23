@@ -369,8 +369,31 @@ test('epic review round 2 (git.ts:132): past TIME_TIPS open branches, the times 
   }
   const facts = await new GitReader(dir, opts(root)).read(GIT);
   assert.equal(facts.open.units.length, TIME_TIPS + 1);
-  assert.equal(Object.keys(facts.times).length, TIME_TIPS);
+  assert.equal(Object.keys(facts.times).length, TIME_TIPS + 1, 'main and TIME_TIPS open tips');
   assert.match(facts.problem ?? '', new RegExp(`more than ${TIME_TIPS} open branches: times read for the first ${TIME_TIPS} only`));
   assert.match(facts.problem ?? '', new RegExp(`more than ${NOTE_TIPS} open branches: notes read for the first ${NOTE_TIPS} only`));
   assert.ok(facts.times[rev(dir, 'main')] !== undefined && facts.times[rev(dir, 'epic/E-A')] !== undefined, 'main and the epic first');
+});
+
+test('epic review round 2 fix (git.ts:369): TIME_TIPS counts open branches, main apart: exactly TIME_TIPS open gives no problem line and every time, one more gives the line', async (t) => {
+  const { root, dir } = world(t);
+  // The world has three open branches on distinct tips: epic/E-A, wu/E-A/w2 and its task wu/E-A/w2_probe.
+  const tree = sh(GIT, dir, ['rev-parse', 'epic/E-A^{tree}']).trim();
+  const unit = (i: number) => {
+    const name = `wu/E-A/y${String(i).padStart(2, '0')}`;
+    const c = sh(GIT, dir, ['commit-tree', tree, '-p', 'epic/E-A', '-m', name]).trim();
+    sh(GIT, dir, ['update-ref', `refs/heads/${name}`, c]);
+  };
+  for (let i = 0; i < TIME_TIPS - 3; i++) unit(i);
+  const at = await new GitReader(dir, opts(root)).read(GIT);
+  const openCount = (f: typeof at) => f.open.epics.length + f.open.units.length + f.open.tasks.length;
+  assert.equal(openCount(at), TIME_TIPS);
+  assert.doesNotMatch(at.problem ?? '', /times read/);
+  assert.equal(Object.keys(at.times).length, TIME_TIPS + 1, 'main and every open branch timed');
+  unit(TIME_TIPS - 3);
+  const past = await new GitReader(dir, opts(root)).read(GIT);
+  assert.equal(openCount(past), TIME_TIPS + 1);
+  assert.match(past.problem ?? '', new RegExp(`more than ${TIME_TIPS} open branches: times read for the first ${TIME_TIPS} only`));
+  assert.equal(Object.keys(past.times).length, TIME_TIPS + 1, 'main and the first TIME_TIPS open branches timed');
+  assert.ok(past.times[rev(dir, 'main')] !== undefined, 'main always timed');
 });
