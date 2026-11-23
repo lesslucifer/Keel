@@ -3,7 +3,7 @@
 // partial clone a read never fetches a missing object into the project's .git). A git older than
 // 2.45 has no --no-lazy-fetch and refuses the line (exit 129): such a git runs the line without it
 // (LOCKED_BEFORE_2_45), and only on a project with no promisor setting, so it has nothing to fetch
-// (checkProject decides, and ProjectRunner for the reader's and Open's reads); a git older than 2.15 (no --no-optional-locks) is refused. A diff, show or
+// (ProjectRunner decides, for checkProject, the reader and Open alike); a git older than 2.15 (no --no-optional-locks) is refused. A diff, show or
 // log -p shape gets --no-ext-diff --no-textconv. git runs with no shell, stdin closed, and an
 // environment built from nothing but the login PATH, LC_ALL=C (its messages in English, whatever the
 // Mac's language: the app reads one of them) and five account variables, so no inherited GIT_* reaches it.
@@ -282,7 +282,7 @@ export interface RunOptions {
   timeoutMs?: number;
   /** Where the account variables come from; the app's own environment by default. */
   source?: Record<string, string | undefined>;
-  /** A git older than 2.45: run with LOCKED_BEFORE_2_45. Only checkProject sets it, after its promisor check. */
+  /** A git older than 2.45: run with LOCKED_BEFORE_2_45. Only ProjectRunner sets it, after its promisor read. */
   before245?: boolean;
 }
 
@@ -308,17 +308,17 @@ function noAnswer(r: Captured, what: string): string {
 /**
  * One project's reads with any git the app runs (epic review round 1, open.ts:131): a line a git older
  * than 2.45 refuses for --no-lazy-fetch is run again without it, but only after the project's config
- * shows no promisor setting (as checkProject decides); a git older than 2.15, or a partial clone with an
- * old git, gives why instead. Found once per git, then remembered. The git reader and Open both read
- * through it, so neither can run a line an old git refuses.
+ * shows no promisor setting; a git older than 2.15, or a partial clone with an old git, gives why instead.
+ * Found once per git, then remembered. checkProject, the git reader and Open all read through it, so none
+ * can run a line an old git refuses and each refuses with the same words (W12 review round 1, commands.ts:327).
  */
 export class ProjectRunner {
   /** Per git path: whether it is older than 2.45 (true), or why it may not read this project. */
   private readonly old = new Map<string, true | string>();
   private readonly project: string;
-  private readonly opts: Omit<RunOptions, 'before245' | 'timeoutMs'>;
+  private readonly opts: Omit<RunOptions, 'before245'>;
 
-  constructor(project: string, opts: Omit<RunOptions, 'before245' | 'timeoutMs'>) {
+  constructor(project: string, opts: Omit<RunOptions, 'before245'>) {
     this.project = project;
     this.opts = opts;
   }

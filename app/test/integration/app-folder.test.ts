@@ -8,6 +8,7 @@ import path from 'node:path';
 import { readJson, writeAtomic, load, io } from '../../src/main/store.ts';
 import { loadSettings, chooseTool, resetTool, SETTINGS_FILE } from '../../src/main/settings.ts';
 import { loadProjects, addProject, removeProject, PROJECTS_FILE } from '../../src/main/projects.ts';
+import { ProjectRunner } from '../../src/main/commands.ts';
 import { lookup, toolStates, toolProblem } from '../../src/main/tools.ts';
 import { tempDir, program, realGit, sh, snapshot, mk, recorder, oldGit, records, type OldGitAs } from '../support/fs.ts';
 
@@ -465,4 +466,16 @@ test('epic review round 1 (store.ts:82): a write that fails leaves its file\'s t
   await writeAtomic(file, { ok: 2 });
   assert.deepEqual((await load(file, parseObj, () => ({ ok: 0 }))).value, { ok: 2 });
   assert.deepEqual(readdirSync(dir), ['sent.json'], 'no temp file left');
+});
+
+test('W12 review round 1 (commands.ts:327): adding a project reads through the same old-git runner as the reader and Open, so an old git and a failed settings read give the same answer there', async (t) => {
+  const dir = tempDir(t, 'projects');
+  const home = mk(path.join(dir, 'home'));
+  const project = keelRepo(path.join(dir, 'proj'));
+  // A git older than 2.45 whose config read fails (exit 2): neither "a partial clone" nor "not one".
+  const git = program(path.join(mk(path.join(dir, 'odd')), 'git'), `#!/bin/sh\ncase "$*" in *--no-lazy-fetch*) echo "unknown option: --no-lazy-fetch" >&2; exit 129;; *--get-regexp*) exit 2;; esac\nexec ${GIT} "$@"\n`);
+  const added = await addProject(path.join(dir, 'app-folder'), project, git, opts(home));
+  const read = await new ProjectRunner(project, opts(home)).run(git, 'toplevel', {});
+  assert.equal(typeof read, 'string');
+  assert.deepEqual(added, { ok: false, why: read });
 });
