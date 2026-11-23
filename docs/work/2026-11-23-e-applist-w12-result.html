@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="d8f66c4e2039b3e6a570ad97">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-APPLIST.W12 result: the epic review's fixes</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-APPLIST.W12 result · The epic review's round 1, fixed</h1>
+      <p>Three bugs and seven repeats, each fixed and pinned by a test.</p>
+      <div class="meta">T3 · WU result · 2026-11-23 · Keel · its data file, 2026-11-23-e-applist-w12-result.yaml, sits beside this page · the plan: <a href="2026-11-23-e-applist-w12-plan.html">E-APPLIST.W12 plan</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="happened">What happened</h2>
+<p data-c="happened">All ten findings are fixed. Each bug got a failing test first, then its fix. Keel's checks and the app's main tests pass. The window's code did not change.</p>
+
+<h2 id="checks">The plan's checks</h2>
+<ul data-c="checks">
+  <li>Met: each finding has a test that failed before its fix. One exception: the test that a save made during a read lands after it. Without the fix, that order depends on timing.</li>
+  <li>Met: Keel's checks pass. The app's main tests passed three runs in a row, race tests included.</li>
+  <li>Not yet: the next review round runs after this merges.</li>
+  <li>Not yet: your rerun of the epic's end-to-end test.</li>
+</ul>
+
+<h2 id="example">The main case, run for real</h2>
+<ol data-c="example">
+  <li>A test project holds a committed plan.</li>
+  <li>Open runs with a git that behaves like 2.39: it refuses the newest safety flag.</li>
+  <li>Before the fix: Open failed, "git could not read the docs at the tip".</li>
+  <li>After: Open reads the project's settings once, finds it is not a partial clone, and opens the committed page.</li>
+  <li>With a partial clone, Open refuses and says a newer git is needed.</li>
+</ol>
+
+<h2 id="diff">Differences from the plan</h2>
+<ul data-c="diff">
+  <li>One older test now moves a branch first. The list reader no longer asks git again when nothing moved.</li>
+  <li>One command of mine was refused: a check against the old code. It was not retried. The same check ran read-only instead.</li>
+</ul>
+
+<h2 id="left">What is left, and who takes it</h2>
+<ul data-c="left">
+  <li>On your Mac, in the app folder: the type check and the epic's end-to-end test. The fixes touch the app. Before the epic's sign-off; the router asks you.</li>
+  <li>The epic's review, round 2. After this part merges.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

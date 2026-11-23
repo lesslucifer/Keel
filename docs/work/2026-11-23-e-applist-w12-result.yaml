@@ -1,0 +1,65 @@
+artifact: wu-result
+status: ready
+id: E-APPLIST.W12
+epic: E-APPLIST
+title: "E-APPLIST.W12 result · The epic review's round-1 findings fixed"
+date: "2026-11-23"
+page: 2026-11-23-e-applist-w12-result.html
+outcome: >-
+  Delivered. All ten findings of the epic review's round 1 (cr note on 7d8d346) are fixed, each pinned by a
+  test: Open reads through the old-git runner the list reader uses; item.mark writes in the handlers' queue and
+  rereads after it; loads and writes of one app-folder file take turns and a vanished file reads as missing; the
+  branch, id and router-key grammars live in shared/names.ts only; Open reads a data file's roles as keel
+  verify-doc's data_roles does, both checked on one 40-case table; the sort order is a rank per contract kind; and
+  the git reader asks note-of and --merged only when a ref they depend on moved. keel check and the node suite are
+  green. The window's code is unchanged, so Vitest was not needed.
+deviations:
+  - >-
+    B3's write-order test (a write started during a load lands after it) passes on the old code too, by timing:
+    without the per-file turn, the old order cannot be forced without a sleep. It pins the order under the fix;
+    the two other B3 tests failed on the old code (the second load read while the first held the file; ENOENT).
+  - >-
+    I9/I10 changed one older test's set-up: "when main's merged read fails..." now moves a branch before its
+    failing read, since an unchanged main is no longer asked. Its assertion is unchanged.
+  - >-
+    A command that bundled the I4-I6 guard fix with a check of the guard against the old items.ts was denied (it
+    held a stray git stash list and overwrote a tracked file from git show). It was not re-run; the guard's red on
+    the old code was shown read-only instead: git show 7d8d346 of items.ts, git.ts and log.ts holds 5, 4 and 3 of
+    the copies the guard refuses.
+evidence:
+  commits:
+    - "51d0c8e docs(E-APPLIST.W12): the WU plan"
+    - "06474e2 B1 open.ts:131 - Open reads through ProjectRunner (commands.ts)"
+    - "bffa750 B2 index.ts:266 - item.mark: write in the queue, Parts.reread after it"
+    - "53ec69d B3 store.ts:82 - load/writeAtomic in turn per file; rename ENOENT is missing"
+    - "ddc7896 I4-I6 git.ts:106, items.ts:30, items.ts:172 - one grammar in shared/names.ts"
+    - "6580fe7 I8 items.ts:61 - KIND_ORDER: Record<ItemKind, number>"
+    - "c9f67cb I9-I10 git.ts:323, git.ts:315 - note-of and --merged memos"
+    - "60ffa4b I7 docs.ts:79 - dataRoles on tests/data/data-roles.json, mirrored in src/verify_doc.rs"
+  tests-added:
+    integration:
+      - "app/test/integration/open.test.ts: Open with a git older than 2.45, one config read, no --no-lazy-fetch after it; a partial clone refused with why (B1)"
+      - "app/test/integration/git-facts.test.ts: ProjectRunner's three outcomes (B1); a steady read runs no note-of and no --merged, a moved notes ref or head reads again, facts equal a fresh reader's (I9-I10)"
+      - "app/test/integration/handlers.test.ts: a held read after a mark leaves state.get, settings.reset and projects.remove answering; the mark answers after it (B2)"
+      - "app/test/integration/app-folder.test.ts: two loads of a broken file take turns; a write during a load lands after it; a vanished file is missing; a failed write frees the turn (B3, controlled promises)"
+    unit:
+      - "app/test/unit/git-read.test.ts: epicOfUnit/unitPrefix, the id patterns and routerKey vs KEY as generated-input properties; parseRefs keeps each notes ref's tip"
+      - "app/test/unit/guards.test.ts: no grammar copy outside shared/names.ts; log.ts, items.ts, git.ts and link.ts import it"
+      - "app/test/unit/items.test.ts: KIND_ORDER ranks exactly ITEM_KINDS"
+      - "app/test/unit/doc-find.test.ts: dataRoles and dataHead on the shared table; id and page from the holding document; a generated-input property"
+      - "src/verify_doc.rs: data_roles_gives_each_shared_case_its_roles, the same table"
+  red-first: "Each fix's tests failed before it (B3's write-order test excepted, above); the output is in this session's run log, summarised in each commit message."
+  green: "keel check green on 60ffa4b (cargo test and the node suite). node --test 'test/**/*.test.ts' in app/, 3 runs: 422 tests, 421 pass, 1 skipped, 0 fail each."
+  not-run: "pnpm test:window, lint and typecheck (no node_modules here, installing forbidden); the epic e2e (no port binding here)."
+  docs: "this result pair and the plan pair; no T1 or T2 doc changed"
+distillation: >-
+  Nothing citable for T1 now: local-app.html's queue and Open rules are unchanged and now hold. The shared role
+  table is a test fixture, not a doc. The epic's close distils this pair with the rest after the merge.
+follow-ups:
+  - "The owner reruns the epic e2e and pnpm typecheck in app/ on his Mac before the epic's sign-off: the fixes touch app/src/main and app/src/shared. Taken by: E-APPLIST epic sign-off (the router asks the owner)."
+  - "The next review round of the epic (round 2). Taken by: E-APPLIST, after this WU merges."
+details:
+  owner-run: "cd app && pnpm typecheck && pnpm test:window && pnpm e2e"
+  window-code: "unchanged: shared/names.ts and shared/items.ts change, both pure and run by the node suite; the window imports them through items.ts."
+  htmldoc:
+    id: d8f66c4e2039b3e6a570ad97
