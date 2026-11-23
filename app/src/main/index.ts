@@ -258,13 +258,16 @@ async function start(): Promise<void> {
         openUrl: async (url) => (sink === null ? shell.openExternal(url) : sink(url)),
       });
     },
-    // Mark sent: the mark in the app folder, then a read now, so the window gets waiting.changed.
+    // Mark sent: the mark in the app folder (in the handlers' queue); then the handler asks for a read now,
+    // outside the queue, so the window gets waiting.changed (epic review round 1, index.ts:266).
     mark: async (item, sent) => {
       const view = reader.view();
       if (view.project === null) return { done: false, why: 'no project is listed' };
       await marks.set(view.project.id, item.id, sent, new Set(view.items.filter((i) => i.markable).map((i) => i.id)));
-      await watcher?.kick();
       return { done: true };
+    },
+    reread: async () => {
+      await watcher?.kick();
     },
   });
   ipcMain.handle(ASK_CHANNEL, dispatcher(expected, handlers));

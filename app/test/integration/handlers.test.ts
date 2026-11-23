@@ -32,7 +32,7 @@ function world(t: { after: (fn: () => void) => void }) {
   const keel = program(path.join(bin, 'keel'), '#!/bin/sh\n');
   const claude = program(path.join(bin, 'claude'), '#!/bin/sh\n');
   const loginPath: LoginPathState = { entries: [bin, path.dirname(GIT)], source: 'login-shell', reason: null };
-  const seen = { folders: 0, files: [] as Tool[], pushes: 0, alerts: 0, opened: [] as string[], marked: [] as Array<[string, boolean]> };
+  const seen = { folders: 0, files: [] as Tool[], pushes: 0, alerts: 0, opened: [] as string[], marked: [] as Array<[string, boolean]>, rereads: 0 };
   const answers = { folder: null as string | null, file: null as string | null, alert: 'shown' as AlertOutcome, view: emptyView() as View };
   const parts: Parts = {
     appDir: path.join(dir, 'app-folder'),
@@ -47,6 +47,7 @@ function world(t: { after: (fn: () => void) => void }) {
     view: () => answers.view,
     open: async (item) => { seen.opened.push(item.id); return { done: true }; },
     mark: async (item, sent) => { seen.marked.push([item.id, sent]); return { done: true }; },
+    reread: async () => { seen.rereads++; },
   };
   const ask = dispatcher(() => ({ contentsId: 1, pages: [PAGE] }), makeHandlers(parts));
   const call = (name: string, args: Record<string, string> = {}) => ask(own, { name, args });
@@ -201,6 +202,36 @@ test('item.mark marks only a markable item the view lists now, yes or no', async
   const left = (await w.call('item.mark', { item: 'plan/E-A.W2@1111111', sent: 'yes' })) as { ok: true; value: { done: boolean } };
   assert.equal(left.value.done, false);
   assert.deepEqual(w.seen.marked, [['plan/E-A.W2@0f1e2d3', true], ['plan/E-A.W2@0f1e2d3', false]]);
+  assert.equal(w.seen.rereads, 2, 'a read again after each mark made, none after a refused one');
+});
+
+test('epic review round 1 (index.ts:266): a mark holds the queue only for its write; the read again after it waits outside the queue, and the mark answers once that read is done', async (t) => {
+  const w = world(t);
+  const view = emptyView();
+  view.items = [item({ id: 'plan/E-A.W2@0f1e2d3', kind: 'plan', open: 'page', markable: true })];
+  w.answers.view = view;
+  // An explicit hold: the read after the mark ends only when the test releases it (a watcher read waiting on git).
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let reread = false;
+  w.parts.reread = async () => {
+    reread = true;
+    await held;
+  };
+  let answered = false;
+  const marking = w.call('item.mark', { item: 'plan/E-A.W2@0f1e2d3', sent: 'yes' }).then((a) => {
+    answered = true;
+    return a;
+  });
+  // The queue answers while the read is held: state.get, settings.reset and projects.remove each go through it.
+  assert.equal(((await w.call('state.get')) as { ok: boolean }).ok, true);
+  assert.deepEqual(await w.call('settings.reset', { tool: 'keel' }), { ok: true, value: { done: true } });
+  assert.deepEqual(await w.call('projects.remove', { project: 'p00000000' }), { ok: true, value: { done: false, why: 'no such project' } });
+  assert.deepEqual(w.seen.marked, [['plan/E-A.W2@0f1e2d3', true]], 'the mark was written in the queue');
+  assert.equal(reread, true, 'the read again started');
+  assert.equal(answered, false, 'the mark answers only after that read');
+  release();
+  assert.deepEqual(await marking, { ok: true, value: { done: true } });
 });
 
 test('the reader\'s parts give the listed project with its main checkout, and the usable git; none while unlisted or unusable', async (t) => {
