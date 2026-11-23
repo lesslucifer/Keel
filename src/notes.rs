@@ -212,11 +212,23 @@ pub(crate) fn waiver_reason(raw: Option<&str>) -> Result<String, String> {
 /// `unreviewed`, that note kept under `replaced` as history only (whole but for its own `replaced`:
 /// one level of history, never nested), and only its `walk_waivers`
 /// (they name seams, which a later code change does not move) carried. With no note at all it is
-/// `unreviewed` too, so its 0/0 never reads as a clean review. Err = (what, fix).
-pub(crate) fn waive(existing: Option<Result<CrNote, String>>, id: Identity, reason: Option<&str>, code_diff_hash: String) -> Result<CrNote, (String, String)> {
+/// `unreviewed` too, so its 0/0 never reads as a clean review. `binds`: whether a stored code hash binds
+/// this range's code, the one binding rule (`code_binds`), so a round bound in git's old short form is
+/// this range's round too (B29). Err = (what, fix).
+pub(crate) fn waive(
+    existing: Option<Result<CrNote, String>>,
+    id: Identity,
+    reason: Option<&str>,
+    code_diff_hash: String,
+    binds: &dyn Fn(&str) -> Result<bool, String>,
+) -> Result<CrNote, (String, String)> {
     let t = short(&id.tip).to_string();
     let reason = waiver_reason(reason).map_err(|w| (w, "give the reason in words".to_string()))?;
     let existing = existing.transpose().map_err(|why| unreadable(&t, &why))?;
+    let this_range = match &existing {
+        Some(n) if n.verdict != "PASS" && n.id.base == id.base => binds(&n.code_diff_hash).map_err(|e| (e, "fix the repo state, then re-run".to_string()))?,
+        _ => false,
+    };
     let unreviewed = |replaced: Option<CrNote>| {
         let mut extra = serde_json::Map::new();
         extra.insert("unreviewed".into(), serde_json::Value::Bool(true));
@@ -247,7 +259,7 @@ pub(crate) fn waive(existing: Option<Result<CrNote, String>>, id: Identity, reas
                 "sign it as reviewed (keel mr confirm without --waive-review); if that PASS no longer binds this tip (checks 4-5 red), run a new review on it"
                     .into(),
             )),
-            Some(n) if n.id.base == id.base && n.code_diff_hash == code_diff_hash => n,
+            Some(n) if this_range => n,
             other => unreviewed(other),
         };
     n.schema = "cr/v1".into();
@@ -794,17 +806,67 @@ pub(crate) fn code_diff_hash(repo: &Path, cfg: &Config, base: &str, tip: &str) -
     diff_hash(repo, base, tip, &cfg.code_paths)
 }
 
+/// Check 5's and the waiver's side of `code_diff_hash`: whether a stored cr hash binds `base..tip`'s code (`binds`).
+pub(crate) fn code_binds(repo: &Path, cfg: &Config, base: &str, tip: &str, stored: &str) -> Result<bool, String> {
+    binds(repo, base, tip, &cfg.code_paths, stored, &|text| hash_blob(repo, text))
+}
+
 /// git blob hash of `git diff base tip -- <pathspecs>` (none = the full diff), independent of the
-/// local diff config so every machine hashes the same bytes (cr and dod bindings).
+/// local diff config and of the store's size so every machine hashes the same bytes (cr and dod bindings).
 pub(crate) fn diff_hash(repo: &Path, base: &str, tip: &str, pathspecs: &[String]) -> Result<String, String> {
     hash_blob(repo, &diff_text(repo, base, tip, pathspecs)?)
 }
 
-/// The bytes every diff binding hashes (cr and dod as a git blob, mr as SHA-256): `git diff base tip -- <pathspecs>`, local diff config off.
+/// The bytes every diff binding hashes (cr and dod as a git blob, mr as SHA-256): `git diff base tip -- <pathspecs>`,
+/// local diff config off, full object names in the index lines (`--full-index`), so the text never depends on how
+/// many objects the store holds (B29).
 pub(crate) fn diff_text(repo: &Path, base: &str, tip: &str, pathspecs: &[String]) -> Result<String, String> {
-    let mut a = vec!["diff", "--no-color", "--no-ext-diff", "--no-textconv", base, tip, "--"];
-    a.extend(pathspecs.iter().map(String::as_str));
-    git(repo, &a, &[])
+    diff_text_as(repo, base, tip, pathspecs, None)
+}
+
+/// Git's short-hash lengths a binding written before E-APPLIST.W14 may hash (B29): a keel before it
+/// ran `git diff` with git's automatic abbreviation, whose length grows with the store, one character
+/// per fourfold growth. 7 is git's floor for it; 12 covers stores up to 2^24 (16.7M) objects.
+pub(crate) const LEGACY_ABBREV: std::ops::RangeInclusive<usize> = 7..=12;
+
+/// `diff_text`'s argv for one form: `None` the stable one (`--full-index`), `Some(n)` git's short form of `n`
+/// characters (`--abbrev=n`), which only a binding written before E-APPLIST.W14 hashes.
+fn diff_argv(base: &str, tip: &str, pathspecs: &[String], abbrev: Option<usize>) -> Vec<String> {
+    let ids = abbrev.map_or_else(|| "--full-index".to_string(), |n| format!("--abbrev={n}"));
+    let mut a: Vec<String> = ["diff", "--no-color", "--no-ext-diff", "--no-textconv"].map(String::from).into();
+    a.extend([ids, base.to_string(), tip.to_string(), "--".to_string()]);
+    a.extend(pathspecs.iter().cloned());
+    a
+}
+
+fn diff_text_as(repo: &Path, base: &str, tip: &str, pathspecs: &[String], abbrev: Option<usize>) -> Result<String, String> {
+    let a = diff_argv(base, tip, pathspecs, abbrev);
+    git(repo, &a.iter().map(String::as_str).collect::<Vec<_>>(), &[])
+}
+
+/// The one binding rule, for cr (check 5 and the owner's waiver) and mr (check 8) alike: a stored hash
+/// binds `base..tip -- <pathspecs>` when `hash` of the diff's stable text gives it, or of git's short form
+/// at a length in `LEGACY_ABBREV` (a note written before E-APPLIST.W14, B29). Any other diff fails.
+pub(crate) fn binds(
+    repo: &Path,
+    base: &str,
+    tip: &str,
+    pathspecs: &[String],
+    stored: &str,
+    hash: &dyn Fn(&str) -> Result<String, String>,
+) -> Result<bool, String> {
+    bound(stored, |abbrev| hash(&diff_text_as(repo, base, tip, pathspecs, abbrev)?))
+}
+
+/// `binds`'s order, git aside: the stable form first, then each legacy length, stopping at the first
+/// match, so a binding a current keel wrote costs one diff.
+fn bound(stored: &str, mut form: impl FnMut(Option<usize>) -> Result<String, String>) -> Result<bool, String> {
+    for abbrev in std::iter::once(None).chain(LEGACY_ABBREV.map(Some)) {
+        if form(abbrev)? == stored {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn count_tests(adapter: &str, body: &str, pattern: Option<&str>) -> Result<u32, String> {
@@ -1146,6 +1208,7 @@ pub fn write(repo: &Path, cfg: &Config, kind: &str, args: &[&str]) -> Result<i32
 
 fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), String> {
     let tip = r.id.tip.clone();
+    let base = r.id.base.clone();
     let flag = |k: &str| args.windows(2).find(|w| w[0] == k).map(|w| w[1]);
     let num = |k: &str| flag(k).map(|v| v.parse::<u32>().map_err(|_| format!("keel: {k} needs a number"))).transpose();
     let verdict = flag("--verdict").unwrap_or("");
@@ -1154,7 +1217,7 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
     let lists = cr_lists(args)?;
     let (blockers, importants) = cr_counts(lists.get("findings"), typed_blockers, typed_importants)?;
     let write = cr_verdict(verdict, reason, blockers, importants)?;
-    let code_diff_hash = code_diff_hash(repo, cfg, &r.id.base, &tip)?;
+    let code_diff_hash = code_diff_hash(repo, cfg, &base, &tip)?;
     // The schedule exactly as preflight reads it (review::Schedule, one place for both).
     let schedule = || review::Schedule::read(repo, &r.id.base, &tip, &r.target, &cfg.code_paths);
     let fixes = flag("--fixes").or_else(|| args.contains(&"--fixes").then_some(""));
@@ -1248,7 +1311,11 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
             })?;
             let reason = review::cap(own.as_ref(), &s.earlier, s.max, &tip).or_else(|(what, fix)| refuse(what, &fix))?;
             let said = format!("{reason}: the owner decides at sign-off (keel mr confirm shows the waiver and every round)");
-            (waive(own.map(Ok), r.id, Some(&reason), code_diff_hash).or_else(|(what, fix)| refuse(what, &fix))?, said)
+            (
+                waive(own.map(Ok), r.id, Some(&reason), code_diff_hash, &|h| code_binds(repo, cfg, &base, &tip, h))
+                    .or_else(|(what, fix)| refuse(what, &fix))?,
+                said,
+            )
         }
     };
     store(repo, "cr", &tip, &note)?;
@@ -1297,8 +1364,8 @@ mod tests {
         assert_eq!(changed_text(Err("git failed".into()), "s..t"), "unknown (git failed)");
     }
 
+    use super::{bound, cr_counts, cr_lists, cr_verdict, diff_argv, waive, waiver_reason, CrNote, CrWrite, Identity, LEGACY_ABBREV};
     use super::{changed_text, own_diff_argv, own_diff_commands, parse_batch, shell_quote, union_of_z, OwnDiff};
-    use super::{cr_counts, cr_lists, cr_verdict, waive, waiver_reason, CrNote, CrWrite, Identity};
     use super::{distill_of, half_archived, partner};
     use super::{epic_branch, epic_of, target, target_flag, target_from_holders};
     use super::{known_args, CR_USAGE, DOC_USAGE, NOTES_USAGE, TEST_USAGE};
@@ -1545,12 +1612,13 @@ mod tests {
                 "walk_waivers": [{"seam": "s", "why": "w"}]}))
             .unwrap()
         };
-        let fresh = waive(None, id(), Some("ruling"), "h".into()).unwrap();
+        let eq_h = |h: &str| Ok(h == "h");
+        let fresh = waive(None, id(), Some("ruling"), "h".into(), &eq_h).unwrap();
         assert_eq!((fresh.verdict.as_str(), fresh.waiver(), fresh.blockers, fresh.importants, fresh.unreviewed()), ("WAIVED", Some("ruling"), 0, 0, true));
         assert_eq!(fresh.reason_hash().unwrap(), super::sha256(b"ruling"), "the older keel's hash: the reason's");
         for v in ["FAIL", "WAIVED"] {
             let same = raw(&note(v, "b", "h"));
-            let w = waive(Some(crate::review::parse_note(&same)), id(), Some(" ruling "), "h".into()).unwrap();
+            let w = waive(Some(crate::review::parse_note(&same)), id(), Some(" ruling "), "h".into(), &eq_h).unwrap();
             assert_eq!(
                 (w.waiver(), w.blockers, w.importants, w.code_diff_hash.as_str(), w.id.base.as_str(), w.id.committer.as_str(), w.id.timestamp),
                 (Some("ruling"), 2, 1, "h", "b", "o", 7),
@@ -1562,7 +1630,7 @@ mod tests {
                 assert_eq!(j[f], before[f], "{v}: {f} kept");
             }
             for (base, hash) in [("other", "h"), ("b", "other")] {
-                let stale = waive(stored(&note(v, base, hash)), id(), Some("r"), "h".into()).unwrap();
+                let stale = waive(stored(&note(v, base, hash)), id(), Some("r"), "h".into(), &eq_h).unwrap();
                 let j = serde_json::to_value(&stale).unwrap();
                 assert!(stale.unreviewed() && (stale.blockers, stale.importants) == (0, 0) && stale.open_findings().is_empty(), "{v} {base} {hash}: {j}");
                 assert_eq!(
@@ -1573,17 +1641,74 @@ mod tests {
                 assert_eq!(j["walk_waivers"][0]["seam"], "s", "{v}: seam waivers carried");
             }
         }
-        let once = waive(stored(&note("FAIL", "old", "old")), id(), Some("r"), "h".into()).unwrap();
-        let twice = waive(stored(&once), Identity { base: "newer".into(), ..id() }, Some("r"), "h2".into()).unwrap();
+        let once = waive(stored(&note("FAIL", "old", "old")), id(), Some("r"), "h".into(), &eq_h).unwrap();
+        let twice = waive(stored(&once), Identity { base: "newer".into(), ..id() }, Some("r"), "h2".into(), &|h| Ok(h == "h2")).unwrap();
         let j = serde_json::to_value(&twice).unwrap();
         assert_eq!(j["replaced"]["waiver"], "r", "the last note is kept");
         assert!(j["replaced"].get("replaced").is_none(), "never nested deeper: {j}");
-        let (what, fix) = waive(stored(&note("PASS", "b", "h")), id(), Some("ruling"), "h".into()).unwrap_err();
+        // B29: a round whose hash the binding rule says binds this range (git's old short form) is this
+        // range's round, kept whole and rebound to the stable hash; an error of the rule refuses, writing nothing.
+        let legacy = waive(stored(&note("FAIL", "b", "h7")), id(), Some("r"), "h".into(), &|h| Ok(h == "h" || h == "h7")).unwrap();
+        assert_eq!((legacy.unreviewed(), legacy.blockers, legacy.code_diff_hash.as_str()), (false, 2, "h"), "a legacy-form round is kept");
+        let (what, _) = waive(stored(&note("FAIL", "b", "h7")), id(), Some("r"), "h".into(), &|_| Err("git failed".into())).unwrap_err();
+        assert_eq!(what, "git failed");
+        let asked = std::cell::Cell::new(false);
+        let other_base = waive(stored(&note("FAIL", "other", "h")), id(), Some("r"), "h".into(), &|_| {
+            asked.set(true);
+            Ok(true)
+        })
+        .unwrap();
+        assert!(other_base.unreviewed() && !asked.get(), "another base is another range, whatever its hash");
+        let (what, fix) = waive(stored(&note("PASS", "b", "h")), id(), Some("ruling"), "h".into(), &eq_h).unwrap_err();
         assert!(what.contains("t012345678 is a PASS") && fix.contains("new review"), "{what} / {fix}");
-        assert!(waive(stored(&note("PASS", "old", "old")), id(), Some("r"), "h".into()).is_err(), "a stale PASS is not waived over either");
-        assert!(waive(None, id(), Some("--blockers"), "h".into()).is_err());
-        let (what, _) = waive(Some(crate::review::parse_note("{not json")), id(), Some("r"), "h".into()).unwrap_err();
+        assert!(waive(stored(&note("PASS", "old", "old")), id(), Some("r"), "h".into(), &eq_h).is_err(), "a stale PASS is not waived over either");
+        assert!(waive(None, id(), Some("--blockers"), "h".into(), &eq_h).is_err());
+        let (what, _) = waive(Some(crate::review::parse_note("{not json")), id(), Some("r"), "h".into(), &eq_h).unwrap_err();
         assert!(what.contains("does not parse"), "{what}");
+    }
+
+    /// B29: the stable text names objects in full; a legacy form is git's short form of one length,
+    /// and nothing else in the argv changes with the form.
+    #[test]
+    fn the_diff_argv_is_full_index_for_the_stable_form_and_abbrev_n_for_a_legacy_one() {
+        let paths = vec!["src/".to_string(), "tests/".to_string()];
+        let stable = diff_argv("b", "t", &paths, None);
+        assert_eq!(stable, ["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--full-index", "b", "t", "--", "src/", "tests/"]);
+        for n in LEGACY_ABBREV {
+            let legacy = diff_argv("b", "t", &paths, Some(n));
+            assert_eq!(legacy[4], format!("--abbrev={n}"));
+            assert_eq!((&legacy[..4], &legacy[5..]), (&stable[..4], &stable[5..]), "only the ids' form differs");
+        }
+        assert_eq!(diff_argv("b", "t", &[], None).last().map(String::as_str), Some("--"), "no pathspec: the full diff");
+    }
+
+    /// B29: the rule tries the stable form, then 7..=12 in order, and stops at the first match; a hash
+    /// no form gives (another diff, or a length outside the bound) fails after every form was tried.
+    #[test]
+    fn the_binding_rule_accepts_the_stable_form_or_a_legacy_length_from_7_to_12_and_nothing_else() {
+        assert_eq!(LEGACY_ABBREV, 7..=12);
+        let text = |a: Option<usize>| a.map_or_else(|| "full".to_string(), |n| format!("short{n}"));
+        let run = |stored: &str| {
+            let mut tried = vec![];
+            let ok = bound(stored, |a| {
+                tried.push(a);
+                Ok(text(a))
+            })
+            .unwrap();
+            (ok, tried)
+        };
+        assert_eq!(run("full"), (true, vec![None]), "a current note costs one diff");
+        for n in 7..=12 {
+            let (ok, tried) = run(&format!("short{n}"));
+            assert!(ok, "{n}");
+            assert_eq!(tried, std::iter::once(None).chain((7..=n).map(Some)).collect::<Vec<_>>(), "{n}");
+        }
+        for stored in ["short6", "short13", "short40", "other diff", ""] {
+            let (ok, tried) = run(stored);
+            assert!(!ok, "{stored}");
+            assert_eq!(tried.len(), 7, "{stored}: every form tried");
+        }
+        assert_eq!(bound("x", |_| Err("git failed".to_string())), Err("git failed".to_string()), "an error is an error, never a verdict");
     }
 
     /// B17 (open point 2): the signed waiver covers its reason, counts, review state, open findings and

@@ -160,10 +160,16 @@ fn keygen(dir: &Path, name: &str) -> (String, String) {
 /// An mr/v1 note on `tip` as `signer`, bound like a real one (base, change and report hashes) and
 /// signed with `key` when given: what a session holding only its own key can write by hand.
 fn forge(p: &Path, tip: &str, target: &str, signer: &str, tier: &str, key: Option<&str>) {
+    forge_as(p, tip, target, signer, tier, key, "--full-index");
+}
+
+/// `forge` with the diff's object names in the form `ids` (`--full-index`, keel's since E-APPLIST.W14,
+/// or `--abbrev=<n>`, git's short form a keel before it hashed: B29).
+fn forge_as(p: &Path, tip: &str, target: &str, signer: &str, tier: &str, key: Option<&str>, ids: &str) {
     use sha2::{Digest, Sha256};
     let hash = |b: &[u8]| format!("sha256:{}", Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect::<String>());
     let (tip, base) = (git(p, &["rev-parse", tip]), git(p, &["merge-base", target, tip]));
-    let change = hash(git(p, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", &base, &tip, "--"]).as_bytes());
+    let change = hash(git(p, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", ids, &base, &tip, "--"]).as_bytes());
     let report = "docs/work/a-result.html";
     let report_hash = hash(&run("git", p, &["show", &format!("{tip}:{report}")]).stdout);
     let mut n = json!({"schema": "mr/v1", "tip": tip, "base": base, "level": "wu", "signer": signer, "tier": tier,
@@ -1625,4 +1631,59 @@ fn keel_mr_runs_only_from_the_checkout_root_and_runs_no_git_elsewhere() {
     git(p, &["worktree", "add", "-q", wt.to_str().unwrap(), "wu/e/a"]);
     let o = run_bounded(&wt, &["mr", "setup", "--as", "vu"], &fake);
     assert!(!text(&o).contains("keel mr: refused"), "a linked worktree in its main checkout: {}", text(&o));
+}
+
+/// The git blob hash of `base..tip`'s code-path diff at git's short-hash length `n`: the cr binding
+/// a keel before E-APPLIST.W14 wrote in a store of that size (B29).
+fn legacy_code_hash(p: &Path, n: usize, base: &str, tip: &str) -> String {
+    let abbrev = format!("--abbrev={n}");
+    let diff = ok(run("git", p, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", &abbrev, base, tip, "--", "src/", "tests/"]));
+    let mut c = common::cmd("git");
+    c.current_dir(p).args(["hash-object", "--stdin"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut ch = c.spawn().unwrap();
+    use std::io::Write;
+    ch.stdin.take().unwrap().write_all(String::from_utf8_lossy(&diff.stdout).trim().as_bytes()).unwrap(); // keel hashes git's output trimmed
+    let o = ch.wait_with_output().unwrap();
+    assert!(o.status.success());
+    String::from_utf8(o.stdout).unwrap().trim().to_string()
+}
+
+/// E-APPLIST.W14 (B29): a key-signed sign-off a keel before W14 made binds git's 7-character short
+/// form of the diff, and its signature signs that hash. After the store passes 2^14 objects (git
+/// prints 8 characters) the sign-off still verifies, signature included.
+#[test]
+fn a_key_signed_sign_off_in_the_7_character_form_verifies_after_the_store_grows() {
+    let (d, k) = fixture();
+    let p = d.path();
+    notes(p, &["test", "doc", "cr"]);
+    let (base, tip) = (git(p, &["merge-base", "epic/e", "wu/e/a"]), git(p, &["rev-parse", "wu/e/a"]));
+    assert_eq!(crate::verify_dod::short_hash_len(p, &base, &tip), 7, "a small store: git prints the 7-character form, what a keel before W14 signed");
+    forge_as(p, "wu/e/a", "epic/e", "vu", "key", Some(k.path().join("id").to_str().unwrap()), "--abbrev=7");
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a", "--no-receipt"]));
+    crate::verify_dod::grow_past_2_14(p);
+    assert_eq!(crate::verify_dod::short_hash_len(p, &base, &tip), 8, "the store crossed 2^14 objects");
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a", "--no-receipt"]));
+    // The signature still binds: another change hash, even one the rule would accept, fails its signature.
+    let mut n = mr_note(p, "wu/e/a").unwrap();
+    n["change_hash"] = json!(format!("sha256:{}", "0".repeat(64)));
+    put_note(p, "wu/e/a", &n);
+    assert_red8(p, "changed since the sign-off");
+}
+
+/// E-APPLIST.W14 (B29): the owner's waiver keeps a failed round of this very range when the round's
+/// binding is git's old 7-character form, after the store has grown past it: the round's counts are
+/// kept, never shown as "not reviewed".
+#[test]
+fn an_owner_waiver_keeps_a_failed_round_bound_in_the_old_short_form() {
+    let (d, _k) = fixture();
+    let p = d.path();
+    notes(p, &["test", "doc"]);
+    ok(cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    let (base, tip) = (git(p, &["merge-base", "epic/e", "wu/e/a"]), git(p, &["rev-parse", "wu/e/a"]));
+    let seven = legacy_code_hash(p, 7, &base, &tip);
+    edit_cr(p, |n| n["code_diff_hash"] = json!(seven));
+    crate::verify_dod::grow_past_2_14(p);
+    let preview = keel(p, &["mr", "confirm", "wu", "--waive-review", WAIVER]);
+    let t = text(&preview);
+    assert!(t.contains("open: 1 blockers, 0 importants") && !t.contains("not reviewed") && !t.contains("replaces a"), "{t}");
 }

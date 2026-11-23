@@ -165,7 +165,7 @@ fn check_tip(repo: &Path, cfg: &Config, r: &mut Report, names: &[String], full: 
                 "the target moved since the review - re-run the review against the current base",
             );
         }
-        if cr.code_diff_hash != notes::code_diff_hash(repo, cfg, &r.base, &r.tip)? {
+        if !notes::code_binds(repo, cfg, &r.base, &r.tip, &cr.code_diff_hash)? {
             r.fail(
                 "5·diff-binding",
                 "reviewed code is not byte-identical to the code this tip changes".into(),
