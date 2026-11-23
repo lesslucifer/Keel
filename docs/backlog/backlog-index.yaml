@@ -37,47 +37,47 @@ files:
       the worker plugin's cold resume.
     next-free: D4
 # The ranked open work. Owner ruling 2026-11-10: the proposed epics are proposals, not commitments; the owner
-# orders them. Ranks 1 - 3 drafted by E-LOCALTOOL.W5, after E-GHREVERT and E-KEELFIX (its first two, closed). Rank 4
-# holds the four proposed epics, unordered among themselves.
+# orders them. Ranks 1 - 2 drafted by E-LOCALTOOL.W5, after E-GHREVERT, E-KEELFIX and E-APPLIST (its first three,
+# closed). Rank 3 holds the four proposed epics, unordered among themselves.
 order:
   - rank: 1
-    epic: E-APPLIST · alerts and your list
-    status: proposed; E-GHREVERT and E-KEELFIX closed
-    rows: local-app A3
-  - rank: 2
     epic: E-APPSIGN · sign off and merge from the app
-    status: proposed, after E-APPLIST
+    status: proposed; E-APPLIST closed
     rows: local-app A4
-  - rank: 3
+  - rank: 2
     epic: E-APPFLEET · fleet, epics, many projects
-    status: proposed, after E-APPLIST and E-APPSIGN
+    status: proposed, after E-APPSIGN
     rows: local-app A5
-  - rank: 4
+  - rank: 3
     epic: E-RELEASE
     status: proposed
     rows: >-
       What backlog B1 left before a real release: the owner prerequisites, the owner's `dist plan` / `dist generate`
       check, a prerelease-tag run, the first stable tag, the accepted-risk revisits of DEC-38, and the fixed `keel` on
       `PATH` (DEC-41); local-app L5, the pinned install script, when planned.
-  - rank: 4
+  - rank: 3
     epic: E-LINEAGE
     status: proposed
     rows: B5
-  - rank: 4
+  - rank: 3
     epic: E-GATEFIX
     status: proposed
     rows: "B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14"
-  - rank: 4
+  - rank: 3
     epic: E-MULTILANG
     status: proposed
     rows: "B3: the Python e2e first, then other languages"
-  - rank: 5
+  - rank: 4
     epic: the next router epic
     status: not yet proposed; the owner orders it
     rows: >-
       R5's live part, R6 row 4's note, R7's open rows, R14 (DEC-48 item 4), R20 - R29, R31, R32, R34 - R42, R44 -
-      R48, R51. R40, the live check of `auto`, is owed at the first spawn after E-WMODE's merge; R47's L3 is wanted
-      soon.
+      R48, R51, R52. R40, the live check of `auto`, is owed at the first spawn after E-WMODE's merge; R47's L3 is
+      wanted soon.
+  - rank: none
+    epic: E-APPLIST · alerts and your list
+    status: "closed: the router's update log and the watchdog's lines, the app's alert at your desk and your list with Open and Mark sent; W4 dropped (DEC-76)"
+    rows: local-app A3 done; A11 added (the app's open ends); e-router-v2 R52 to the next router epic
   - rank: none
     epic: E-KEELFIX · keel fixes
     status: "closed: the commit level reads the committed rules, a gate run or help writes nothing unless asked, the github tier removed; W4 dropped by the owner's ruling of 2026-11-20"
@@ -107,4 +107,5 @@ order:
     status: open
     rows: >-
       B24 (an owner pick: A, B, C or E, then an epic), B25, B26 and B27; B21 (accepted limits); B19 (owed by the
-      owner's reinstall); B7's open rows; B2's unbuilt follow-ups, only if asked; local-app A8, A9, A10.
+      owner's reinstall); B7's open rows; B2's unbuilt follow-ups, only if asked; local-app A8, A9, A10, A11 (A4 or
+      A5 may take any item).
