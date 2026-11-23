@@ -3,9 +3,9 @@
 // and its git status are the same before and after add, remove and every settings write.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, symlinkSync, chmodSync, existsSync, appendFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, symlinkSync, chmodSync, existsSync, appendFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { readJson, writeAtomic, load } from '../../src/main/store.ts';
+import { readJson, writeAtomic, load, io } from '../../src/main/store.ts';
 import { loadSettings, chooseTool, resetTool, SETTINGS_FILE } from '../../src/main/settings.ts';
 import { loadProjects, addProject, removeProject, PROJECTS_FILE } from '../../src/main/projects.ts';
 import { lookup, toolStates, toolProblem } from '../../src/main/tools.ts';
@@ -384,4 +384,85 @@ test('a git 2.45 or later never reads the config: the three reads carry --no-laz
   const seen = records(record).map((x) => x.argv);
   assert.equal(seen.length, 3);
   for (const argv of seen) assert.equal(argv[3], '--no-lazy-fetch', argv.join(' '));
+});
+
+/** Hold the store's next readJson of `file`: it answers only when the test releases it (a controlled promise, no sleep). */
+function holdRead(t: { after: (fn: () => void) => void }, file: string) {
+  const real = io.readJson;
+  t.after(() => {
+    io.readJson = real;
+  });
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let reading: () => void = () => undefined;
+  const firstRead = new Promise<void>((resolve) => (reading = resolve));
+  const calls: string[] = [];
+  io.readJson = async (f: string) => {
+    calls.push(f);
+    if (calls.length === 1) {
+      reading();
+      await gate;
+    }
+    return real(f);
+  };
+  return { calls, release, firstRead };
+}
+
+const parseObj = (v: unknown) => (typeof v === 'object' && v !== null && !Array.isArray(v) && 'ok' in v ? (v as { ok: number }) : null);
+
+test('epic review round 1 (store.ts:82): two loads of one broken file run one at a time: the second reads only once the first has set the file aside, both load the defaults, and one file is set aside', async (t) => {
+  const dir = tempDir(t, 'store-race');
+  const file = path.join(dir, 'projects.json');
+  writeFileSync(file, '{"half');
+  const held = holdRead(t, file);
+  const first = load(file, parseObj, () => ({ ok: 0 }));
+  const second = load(file, parseObj, () => ({ ok: 0 }));
+  await held.firstRead;
+  assert.equal(held.calls.length, 1, 'the second load has not read the file while the first holds it');
+  held.release();
+  const [a, b] = await Promise.all([first, second]);
+  assert.deepEqual([a.value, b.value], [{ ok: 0 }, { ok: 0 }]);
+  assert.notEqual(a.setAside, null);
+  assert.equal(b.setAside, null, 'the second found no file: nothing more to set aside');
+  assert.deepEqual(readdirSync(dir).filter((n) => n.includes('.broken-')).length, 1);
+});
+
+test('epic review round 1 (store.ts:82): a write started while a load holds the file lands after it, so a file just written is never set aside', async (t) => {
+  const dir = tempDir(t, 'store-write');
+  const file = path.join(dir, 'projects.json');
+  writeFileSync(file, '{"half');
+  const held = holdRead(t, file);
+  const loading = load(file, parseObj, () => ({ ok: 0 }));
+  const writing = writeAtomic(file, { ok: 1 });
+  await held.firstRead;
+  held.release();
+  await Promise.all([loading, writing]);
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { ok: 1 }, 'the written value stands');
+  assert.deepEqual((await load(file, parseObj, () => ({ ok: 0 }))).value, { ok: 1 });
+});
+
+test('epic review round 1 (store.ts:82): a broken file gone before it is set aside reads as missing: the defaults, nothing set aside, no ENOENT', async (t) => {
+  const dir = tempDir(t, 'store-gone');
+  const file = path.join(dir, 'settings.json');
+  writeFileSync(file, 'not json');
+  const real = io.readJson;
+  t.after(() => {
+    io.readJson = real;
+  });
+  io.readJson = async (f: string) => {
+    const r = await real(f);
+    rmSync(f);
+    return r;
+  };
+  assert.deepEqual(await load(file, parseObj, () => ({ ok: 0 })), { value: { ok: 0 }, setAside: null });
+});
+
+test('epic review round 1 (store.ts:82): a write that fails leaves its file\'s turn: the next load and write of that file still run', async (t) => {
+  const dir = tempDir(t, 'store-fail');
+  const file = path.join(dir, 'sent.json');
+  await assert.rejects(writeAtomic(file, { n: 1n }), TypeError);
+  assert.deepEqual(await load(file, parseObj, () => ({ ok: 0 })), { value: { ok: 0 }, setAside: null });
+  await writeAtomic(file, { ok: 2 });
+  assert.deepEqual((await load(file, parseObj, () => ({ ok: 0 }))).value, { ok: 2 });
+  assert.deepEqual(readdirSync(dir), ['sent.json'], 'no temp file left');
 });
