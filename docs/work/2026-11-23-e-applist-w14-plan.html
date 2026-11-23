@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="5a6333097749b5dd63a4afb1">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-APPLIST.W14 plan: bindings that survive longer short hashes</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-APPLIST.W14 · Bindings that survive git's longer short hashes</h1>
+      <p>A review or sign-off must not go stale because the repository grew.</p>
+      <div class="meta">T3 · WU plan · 2026-11-23 · Keel · its data file, 2026-11-23-e-applist-w14-plan.yaml, sits beside this page · the epic plan is archived</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">A review and a sign-off are tied to the exact text of the change. That text holds short ids of the files. Git makes those ids longer as the repository grows.</p>
+<p>On 23 November the repository passed 16,384 objects. Git's ids went from 7 to 8 characters. Every review and sign-off written before then now reads as stale, though nothing changed. The epic's gate shows 10 such red steps.</p>
+
+<h2 id="get">What you get</h2>
+<ul data-c="get">
+  <li>New reviews and sign-offs use full ids, so the repository's size no longer matters.</li>
+  <li>Old ones still count: keel also accepts the short form, 7 to 12 characters.</li>
+  <li>A real change to the code still turns them red.</li>
+  <li>The epic's 10 stale steps go green with no waiver.</li>
+</ul>
+
+<h2 id="how">How it works</h2>
+<ol data-c="how">
+  <li>A test grows a scratch repository past 16,384 objects between the sign-off and the check. It fails on today's keel.</li>
+  <li>Keel writes the change's text with full ids.</li>
+  <li>To check, keel tries the full form first, then each short length from 7 to 12. One rule serves the review, the receipt and your sign-off.</li>
+  <li>Keel's own gate is run on the epic, read only, to show the 10 steps green.</li>
+</ol>
+
+<h2 id="makes">What it makes</h2>
+<p>A change in keel's note code, its tests, a line in the review use case, the backlog row closed, and this plan and its result. The app does not change.</p>
+
+<h2 id="decide">What you decide</h2>
+<p>Nothing blocks the work.</p>
+<table data-c="open-points">
+  <thead><tr><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Full ids, or a fixed length of 40?</td><td><b>Full ids.</b></td><td>Git's own option for this. It also fits repositories with longer ids.</td></tr>
+    <tr><td>How far back are old notes accepted?</td><td><b>Short ids of 7 to 12 characters.</b></td><td>7 is git's shortest. 12 covers repositories up to 16.7 million objects.</td></tr>
+  </tbody>
+</table>
+<p>After this merges, reinstall keel before you sign anything new.</p>
+
+<h2 id="know">How you'll know it worked</h2>
+<ul data-c="know">
+  <li>The growing-repository test failed on today's keel and passes now.</li>
+  <li>Old short forms pass; a different change fails.</li>
+  <li>The epic's gate shows its 10 walk steps green.</li>
+  <li>Keel's checks pass.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

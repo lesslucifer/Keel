@@ -372,6 +372,12 @@ fn change_hash(repo: &Path, base: &str, tip: &str) -> Result<String, String> {
     Ok(sha256(notes::diff_text(repo, base, tip, &[])?.as_bytes()))
 }
 
+/// Check 8's side of `change_hash`: whether a signed change hash binds the full `base..tip` diff, by
+/// the one binding rule (`notes::binds`, B29).
+fn change_binds(repo: &Path, base: &str, tip: &str, stored: &str) -> Result<bool, String> {
+    notes::binds(repo, base, tip, &[], stored, &|text| Ok(sha256(text.as_bytes())))
+}
+
 /// SHA-256 of the report's exact bytes: the blob at the tip, else (epic only - archived out of
 /// git by then) the raw local file. `Ok(None)` = an epic report found nowhere.
 fn report_hash(repo: &Path, tip: &str, path: &str, epic: bool) -> Result<Option<String>, String> {
@@ -647,7 +653,8 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
         _ if waive.is_some() => {
             let reason = waive.as_deref().unwrap_or_default();
             let ident = notes::identity(repo, tip.clone(), base.clone(), branch.clone())?;
-            let cr = match notes::waive(stored, ident, Some(reason), notes::code_diff_hash(repo, cfg, &base, &tip)?) {
+            let binds = |h: &str| notes::code_binds(repo, cfg, &base, &tip, h);
+            let cr = match notes::waive(stored, ident, Some(reason), notes::code_diff_hash(repo, cfg, &base, &tip)?, &binds) {
                 Ok(cr) => cr,
                 Err((what, fix)) => {
                     eprintln!("mr confirm refused - {what}\n  fix -> {fix}");
@@ -776,10 +783,12 @@ pub(crate) fn manual_review(
     if n.id.base != base {
         return again(format!("signed against base {}, but the merge-base is now {}", short(&n.id.base), short(base)));
     }
-    let change = change_hash(repo, base, tip).map_err(|e| (e, "fix the repo state, then re-run".into()))?;
-    if n.change_hash != change {
+    if !change_binds(repo, base, tip, &n.change_hash).map_err(|e| (e, "fix the repo state, then re-run".into()))? {
         return again(stale_change(&n.change_hash, &format!("{}..{t}", short(base))));
     }
+    // Proven to hash this range (in the stable form or, signed by a keel before E-APPLIST.W14, a legacy
+    // one): the bytes a key-backed signature signed.
+    let change = n.change_hash.clone();
     let read;
     let cr = match cr {
         Some(cr) => Some(cr),

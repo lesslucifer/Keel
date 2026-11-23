@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="4dd6768b85309a40c3e60b8f">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-APPLIST.W14 result: bindings that survive longer short hashes</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-APPLIST.W14 · Result: bindings that survive git's longer short hashes</h1>
+      <p>Reviews and sign-offs no longer go stale when the repository grows.</p>
+      <div class="meta">T3 · WU result · 2026-11-23 · Keel · its data file, 2026-11-23-e-applist-w14-result.yaml, sits beside this page · the plan is 2026-11-23-e-applist-w14-plan.html</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="happened">What happened</h2>
+<p data-c="happened">Delivered. Keel now ties a review or sign-off to the change with full file ids. Old notes, written with git's short ids, still count at 7 to 12 characters. A different change still fails.</p>
+
+<h2 id="checklist">How you'll know: met or not</h2>
+<ul data-c="checklist">
+  <li><b>Met.</b> The growing-repository test failed on the old keel and passes now. So do three more: old short forms, a key-signed sign-off, and your waiver over an old failed round.</li>
+  <li><b>Met.</b> Short forms of 7 to 12 characters pass; 6, 13 and a later code change fail.</li>
+  <li><b>Met.</b> The epic's gate shows its 10 walk steps green, with no waiver.</li>
+  <li><b>Met.</b> Keel's checks pass. One app test is skipped here because the sandbox blocks file watching. It runs on your Mac.</li>
+</ul>
+
+<h2 id="example">The main case, run for real</h2>
+<ol data-c="example">
+  <li>Today's installed keel checks the epic's tip, ffb5cba. 12 checks fail. 10 of them are walk steps whose review no longer matches.</li>
+  <li>Keel built from this work checks the same tip, changing nothing.</li>
+  <li>Only 2 checks fail: the epic has no review yet, and you have not signed. The 10 steps are green.</li>
+</ol>
+
+<h2 id="differences">Differences from the plan</h2>
+<ul data-c="differences">
+  <li>Two older tests that rebuild keel's hash by hand now use full ids too.</li>
+  <li>A quick trial in a scratch shell was refused by the sandbox. The tests prove the growth instead.</li>
+  <li>The first review found one weak test: it never reached the signature check. It now does, and it catches a wrong check that the old test let through.</li>
+</ul>
+
+<h2 id="left">What is left, and who takes it</h2>
+<ul data-c="left">
+  <li><b>You reinstall keel from this tip before this work's review.</b> The old keel does not accept a review or sign-off the new one writes. The new keel accepts the old one's. The router stages the command.</li>
+  <li>Three small tidy-ups from the review go to the gate-fix epic as backlog rows B30 to B32.</li>
+  <li>An old note can still go red in one rare case: git needs more characters to keep a short id unique. Re-record that note. This is an accepted limit with no backlog row, because new notes never hit it.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
