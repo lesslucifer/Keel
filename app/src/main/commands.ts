@@ -347,10 +347,15 @@ export class ProjectRunner {
 /** The most data files one keel doc-roles line names; more are asked in several lines. */
 export const DOC_ROLES_BATCH = 100;
 
-/** keel doc-roles' argv for `files`: each an absolute path to a .yaml file with no control character; 1 to DOC_ROLES_BATCH of them. */
+/** Whether keel doc-roles may be asked about `file`: an absolute path to a .yaml file with no control character. */
+export function docRolesFile(file: string): boolean {
+  return projectOk(file) && file.endsWith('.yaml');
+}
+
+/** keel doc-roles' argv for `files`, each one docRolesFile takes; 1 to DOC_ROLES_BATCH of them. Callers ask only such files (roles.ts). */
 export function docRolesArgv(files: readonly string[]): string[] {
   if (files.length === 0 || files.length > DOC_ROLES_BATCH) throw new Error(`doc-roles takes 1 to ${DOC_ROLES_BATCH} files`);
-  for (const f of files) if (!projectOk(f) || !f.endsWith('.yaml')) throw new Error('doc-roles: each file must be an absolute .yaml path with no control character');
+  for (const f of files) if (!docRolesFile(f)) throw new Error('doc-roles: each file must be an absolute .yaml path with no control character');
   return ['doc-roles', ...files];
 }
 

@@ -80,11 +80,18 @@ export function docRolesWhy(r: Captured): string | null {
   return null;
 }
 
-const textOrNull = (v: unknown): string | null | undefined => (v === null ? null : typeof v === 'string' && v !== '' && !CONTROL.test(v) ? v : undefined);
+/** Whether keel gave an id or a page as JSON text or null: any other type is no doc-roles/v1 answer. */
+const textOrNull = (v: unknown): v is string | null => v === null || typeof v === 'string';
+
+/** Whether the app can use an id or a page keel gave: null, or text that is not empty and holds no control character. */
+const usable = (v: string | null): boolean => v === null || (v !== '' && !CONTROL.test(v));
 
 /**
  * keel doc-roles' answer: each asked file's head (its roles, id and page as keel reads them), or null when
- * the answer is not doc-roles/v1 naming exactly the asked files, each once, with roles that are text.
+ * the answer is not doc-roles/v1 naming exactly the asked files, each once, with roles that are text and
+ * an id and a page that are text or null. A file whose id or page the app cannot use (empty, or holding a
+ * control character, which keel accepts in a draft or an epic's free-text id) gives no head, alone: the
+ * other files keep theirs (W12 review round 2, docs.ts:83).
  */
 export function parseDocRoles(out: string, asked: readonly string[]): Map<string, DataHead> | null {
   let v: unknown;
@@ -98,12 +105,11 @@ export function parseDocRoles(out: string, asked: readonly string[]): Map<string
   if (!Array.isArray(list) || list.length !== asked.length) return null;
   const heads = new Map<string, DataHead>();
   for (const [i, f] of list.entries()) {
-    if (typeof f !== 'object' || f === null) return null;
-    const e = f as Record<string, unknown>;
-    const id = textOrNull(e.id);
-    const page = textOrNull(e.page);
-    if (e.path !== asked[i] || !Array.isArray(e.roles) || !e.roles.every((r) => typeof r === 'string') || id === undefined || page === undefined) return null;
-    heads.set(e.path, { artifact: [...(e.roles as string[])], id, page });
+    const want = asked[i];
+    if (want === undefined || typeof f !== 'object' || f === null) return null;
+    const { path: p, roles, id, page } = f as Record<string, unknown>;
+    if (p !== want || !Array.isArray(roles) || !roles.every((r): r is string => typeof r === 'string') || !textOrNull(id) || !textOrNull(page)) return null;
+    if (usable(id) && usable(page)) heads.set(want, { artifact: [...roles], id, page });
   }
   return heads;
 }

@@ -81,10 +81,42 @@ test('W12 (owner ruling 2026-11-23): keel doc-roles\' answer gives each asked fi
     answer([entry('/a/x.yaml', [3]), entry('/a/y.yaml', [])]),
     answer([entry('/a/x.yaml', 'wu-plan'), entry('/a/y.yaml', [])]),
     answer([entry('/a/x.yaml', [], 7), entry('/a/y.yaml', [])]),
-    answer([entry('/a/x.yaml', [], null, 'a\u0000.html'), entry('/a/y.yaml', [])]),
+    answer([entry('/a/x.yaml', [], null, 7), entry('/a/y.yaml', [])]),
     answer([null, entry('/a/y.yaml', [])]),
   ]) assert.equal(parseDocRoles(bad, asked), null, bad);
   assert.ok(HEAD_CAP >= 16 * 1024);
+});
+
+test('W12 review round 2 (docs.ts:83): a file whose id or page keel gives with a control character, or empty, gives no head; every other file in the answer keeps its own', () => {
+  const asked = ['/a/x.yaml', '/a/y.yaml'];
+  const y = { path: '/a/y.yaml', roles: ['wu-result'], id: 'E-A.W1', page: 'y.html', problem: null };
+  for (const [id, page] of [
+    ['E-A\tx', 'x.html'],
+    ['E-A.W1', 'a\u0000.html'],
+    ['E-A.W1\n', 'x.html'],
+    ['E-A.W1', 'x\u007f.html'],
+    ['E-A.W1', 'x\u0085.html'],
+    ['', 'x.html'],
+    ['E-A.W1', ''],
+  ] as const) {
+    const got = parseDocRoles(JSON.stringify({ schema: DOC_ROLES_SCHEMA, files: [{ path: '/a/x.yaml', roles: ['wu-plan'], id, page, problem: null }, y] }), asked);
+    assert.ok(got !== null, JSON.stringify([id, page]));
+    assert.deepEqual([...got], [['/a/y.yaml', { artifact: ['wu-result'], id: 'E-A.W1', page: 'y.html' }]], JSON.stringify([id, page]));
+  }
+});
+
+test('W12 review round 2 (docs.ts:83), generated answers: an entry is kept exactly when its id and page are null or plain text, whatever its neighbours hold', () => {
+  const rng = seeded(0xd0c83);
+  const alphabet = ['E-A', '.W1', 'x.html', '\u0000', '\t', '\n', '\u007f', '\u009f', 'é', ' '];
+  const value = () => (rng() < 0.2 ? null : rng() < 0.1 ? '' : hostileString(rng, 6, alphabet));
+  const plain = (v: string | null) => v === null || (v !== '' && !/[\u0000-\u001f\u007f-\u009f]/.test(v));
+  for (let n = 0; n < 500; n++) {
+    const asked = Array.from({ length: 1 + Math.floor(rng() * 5) }, (_, i) => `/a/${i}.yaml`);
+    const files = asked.map((p) => ({ path: p, roles: ['wu-plan'], id: value(), page: value(), problem: null }));
+    const got = parseDocRoles(JSON.stringify({ schema: DOC_ROLES_SCHEMA, files }), asked);
+    assert.ok(got !== null);
+    assert.deepEqual([...got.keys()], files.filter((f) => plain(f.id) && plain(f.page)).map((f) => f.path), JSON.stringify(files));
+  }
 });
 
 test('W12 (owner ruling 2026-11-23): why keel gave no answer: it did not start, did not answer, was cut, or is a keel with no doc-roles (update keel)', () => {

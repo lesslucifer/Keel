@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LOCKED, LOCKED_BEFORE_2_45, MIN_GIT, NO_EXTERNAL, ENV_KEYS, READ_TIMEOUT_MS, COMMANDS, argv, lock, childEnv, refusedFlag, docRolesArgv, DOC_ROLES_BATCH } from '../../src/main/commands.ts';
+import { LOCKED, LOCKED_BEFORE_2_45, MIN_GIT, NO_EXTERNAL, ENV_KEYS, READ_TIMEOUT_MS, COMMANDS, argv, lock, childEnv, refusedFlag, docRolesArgv, docRolesFile, DOC_ROLES_BATCH } from '../../src/main/commands.ts';
 import { seeded, hostileString, pick } from '../support/seeded.ts';
 
 /** Good slots for each fixed command: the project, and W5's note kind and branch ref where a command takes them. */
@@ -194,5 +194,13 @@ test('W12 (owner ruling 2026-11-23): the one keel line is keel doc-roles and 1 t
   assert.equal(docRolesArgv(many).length, DOC_ROLES_BATCH + 1);
   for (const bad of [[], [...many, '/a/one-more.yaml'], ['x.yaml'], ['/a/x.html'], ['/a/x\n.yaml'], ['--help'], ['/a/x.yaml', '-h']]) {
     assert.throws(() => docRolesArgv(bad), JSON.stringify(bad));
+  }
+});
+
+test('W12 review round 2 (commands.ts:351): a file keel doc-roles may be asked about is exactly one its argv takes, so the caller filters and the argv never throws', () => {
+  for (const f of ['/a/x.yaml', '/b y/café.yaml']) assert.equal(docRolesFile(f), true, f);
+  for (const f of ['x.yaml', '/a/x.html', '/a/x\n.yaml', '/a\u0007b/x.yaml', '/a/x\u007f.yaml', '/a/x\u0085.yaml', '--help', '']) {
+    assert.equal(docRolesFile(f), false, JSON.stringify(f));
+    assert.throws(() => docRolesArgv([f]), JSON.stringify(f));
   }
 });

@@ -3,14 +3,19 @@
 // reading keel verify-doc and keel mr confirm use - so Open finds the page keel signs and refuses what keel
 // refuses. The app keeps no YAML reader of its own. Asked in batches of DOC_ROLES_BATCH files.
 
-import { runDocRoles, DOC_ROLES_BATCH, type RunOptions } from '../commands.ts';
+import { runDocRoles, docRolesFile, DOC_ROLES_BATCH, type RunOptions } from '../commands.ts';
 import { docRolesWhy, parseDocRoles, type DataHead } from './docs.ts';
 
-/** Each file's head as keel reads it (absolute .yaml paths on disk), or why keel gave none. */
+/**
+ * Each file's head as keel reads it (absolute .yaml paths on disk), or why keel gave none. A file keel may
+ * not be asked about (a control character in its name or its folder's path) and a file whose id or page the
+ * app cannot use give no head, alone; the other files keep theirs (W12 review round 2, docs.ts:83).
+ */
 export async function docHeads(keel: string, files: readonly string[], opts: Omit<RunOptions, 'before245'>): Promise<Map<string, DataHead> | string> {
   const heads = new Map<string, DataHead>();
-  for (let i = 0; i < files.length; i += DOC_ROLES_BATCH) {
-    const batch = files.slice(i, i + DOC_ROLES_BATCH);
+  const askable = files.filter(docRolesFile);
+  for (let i = 0; i < askable.length; i += DOC_ROLES_BATCH) {
+    const batch = askable.slice(i, i + DOC_ROLES_BATCH);
     const r = await runDocRoles(keel, batch, opts);
     const why = docRolesWhy(r);
     if (why !== null) return why;
