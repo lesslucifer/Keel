@@ -680,6 +680,36 @@ fn pre_commit(repo: &Path, cfg: &Config) -> Result<i32, String> {
 /// ignored. Each path checks its pair (`verify_doc::pair_of`), each pair once. A config that is there
 /// but malformed is an error with paths too; with paths and no config file, every path is checked
 /// and no page is capped by path.
+/// `keel doc-roles <data file>...` (E-APPLIST.W12): each named file's roles as the doc check and the
+/// sign-off read them (verify_doc::data_head), with the id and page of its document holding
+/// `artifact`, as one JSON answer on stdout, `doc-roles/v1`; a file that gives no role carries its
+/// problem. Reads only the named files and writes nothing, so the local app's Open finds a page by
+/// keel's own reading, never by a copy of it.
+fn doc_roles(paths: &[&str]) -> Result<i32, String> {
+    if paths.is_empty() {
+        return Err(help::DOC_ROLES.into());
+    }
+    let files: Vec<serde_json::Value> = paths.iter().map(|p| doc_roles_of(p)).collect();
+    println!("{}", serde_json::json!({ "schema": "doc-roles/v1", "files": files }));
+    Ok(0)
+}
+
+/// One file's entry in `keel doc-roles`' answer: path as given, roles, id, page, problem.
+fn doc_roles_of(path: &str) -> serde_json::Value {
+    let read = match std::fs::symlink_metadata(path) {
+        Err(e) => Err(format!("unreadable: {}", e.kind())),
+        Ok(m) if !m.is_file() => Err("not a regular file".to_string()),
+        Ok(m) => match verify_doc::size_problem(m.len()) {
+            Some(p) => Err(p),
+            None => std::fs::read(path).map_err(|e| format!("unreadable: {}", e.kind())).and_then(verify_doc::data_head),
+        },
+    };
+    match read {
+        Ok(h) => serde_json::json!({ "path": path, "roles": h.roles, "id": h.id, "page": h.page, "problem": null }),
+        Err(p) => serde_json::json!({ "path": path, "roles": [], "id": null, "page": null, "problem": p }),
+    }
+}
+
 fn verify_doc(repo: &Path, paths: &[&str]) -> Result<i32, String> {
     let cfg = if paths.is_empty() || repo.join(".keel/config.toml").exists() { Some(load_config(repo)?) } else { None };
     if let Some(bad) = cfg.as_ref().and_then(|c| caps_problem(&c.docs.caps)) {
@@ -790,6 +820,10 @@ fn run() -> Result<i32, String> {
             return Ok(1);
         }
     }
+    // Reads only the files it is given, inside a repository or not: the local app runs it from / (E-APPLIST.W12).
+    if let ["doc-roles", paths @ ..] = args.as_slice() {
+        return doc_roles(paths);
+    }
     let repo = repo_root()?;
     match args.as_slice() {
         ["init", flags @ ..] => match flags {
@@ -818,7 +852,7 @@ fn run() -> Result<i32, String> {
         ["preflight", rest @ ..] => gate::preflight_cmd(&repo, &load_config(&repo)?, rest),
         ["mr", "commit", ..] => mr::run(&repo, &load_config_for_commit(&repo)?, &args[1..]),
         ["mr", rest @ ..] => mr::run(&repo, &load_config(&repo)?, rest),
-        _ => Err("usage: keel <init [-f] | lint | check | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install [--force] | notes write <test|doc|cr>>".into()),
+        _ => Err("usage: keel <init [-f] | lint | check | verify-doc | doc-roles | verify-dod | preflight | mr <setup|commit|confirm> | hooks install [--force] | notes write <test|doc|cr>>".into()),
     }
 }
 
