@@ -23,13 +23,14 @@
   <li>The list reader asks git about notes, times and tasks only for the branches the list shows.</li>
   <li>Every task check uses the app's one naming rule.</li>
 </ul>
-<p>Keel's checks, the type check and the code lint pass. Keel itself did not change, so no reinstall.</p>
+<p>The review of that fix found one more bug: past 60 open branches, the list's warning counted main as a branch, so at exactly 60 it warned wrongly. Main is now counted apart, with a test at 60 and 61 that failed first.</p>
+<p>Keel's checks, the type check, the lint and the window tests pass. Keel itself did not change, so no reinstall.</p>
 
 <h2 id="checks">The plan's checks</h2>
 <ul data-c="checks">
   <li>Met: each finding has a test that failed on the old code and passes now.</li>
   <li>Met: a 100 KB and a 1 MB result open from a fresh copy, a kept copy and the archive.</li>
-  <li>Partly met: Keel's checks, the type check and the code lint pass. The style lint and the window tests could not run here (see below).</li>
+  <li>Met: Keel's checks, the type check, the full lint and the window tests pass.</li>
   <li>Not yet: the next review round, and your rerun of the epic's end-to-end test.</li>
 </ul>
 
@@ -46,12 +47,13 @@
   <li>The times read now says when it skips branches past its limit, as the notes read did.</li>
   <li>Open keeps data files in memory only up to 8 MB. Past that, it reads one again from git when needed.</li>
   <li>The type check and code lint ran through a link to another checkout's packages. My first try started a package install. It stopped by itself, and I did not run it again.</li>
-  <li>The style lint and the window tests were refused by the sandbox: they write into that other checkout. I did not retry them. Neither the window nor its styles changed.</li>
+  <li>The style lint and the window tests were first refused by the sandbox. With packages installed here, both passed on the last fix.</li>
 </ul>
 
 <h2 id="left">What is left, and who takes it</h2>
 <ul data-c="left">
-  <li>On your Mac: the full lint and the window tests, then the epic's end-to-end test. The router asks you.</li>
+  <li>On your Mac: the epic's end-to-end test. The router asks you.</li>
+  <li>Backlog A11, at the epic close: two small review notes (a slow test setup, and a file read twice past 8 MB), plus one possible case where Keel's answer is too long to read.</li>
   <li>This part's review, then the epic's review, round 3, after this part merges.</li>
 </ul>
 
