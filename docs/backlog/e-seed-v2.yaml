@@ -312,6 +312,42 @@ open:
       stay a review question.
     source: "E-DOCSPLIT epic plan, open point 8 (answered: a backlog row, not part of the split)."
     taken-by: "unowned: an epic that owns the doc check"
+
+  - id: B30
+    title: "The waiver writer takes the range's hash and its binding rule as two inputs"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      `notes::waive` takes the stable code hash and the `binds` closure separately, and each caller builds both
+      (`src/mr.rs` confirm, `src/notes.rs` write_cr for the cap). A future caller could pass a hash and a rule that
+      describe different ranges; the kept round's counts would then belong to another range, and no later check
+      reads them.
+    proposal: >-
+      Give waive one value for the range's code (base, tip, code paths) that yields both the stable hash and the
+      rule, so the two cannot disagree.
+    source: "E-APPLIST.W14 review round 1, nit src/notes.rs:222 (cr note on 801712e, 2026-11-23)."
+    taken-by: "E-GATEFIX (proposed)"
+
+  - id: B31
+    title: "Each binding's paths and hash are written twice, in its writer and its checker"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      The cr binding's code paths and git blob hash appear in `code_diff_hash` and again in `code_binds`; the mr
+      binding's full diff and SHA-256 in `change_hash` and again in `change_binds` (`src/notes.rs`, `src/mr.rs`).
+      The integration tests catch a drift at once, but the pairs could still be edited apart.
+    proposal: >-
+      One description per binding (its pathspecs and its hash function) that both the writer and `notes::binds` read.
+    source: "E-APPLIST.W14 review round 1, nit src/notes.rs:810 (cr note on 801712e, 2026-11-23)."
+    taken-by: "E-GATEFIX (proposed)"
+
+  - id: B32
+    title: "Two test helpers rebuild the legacy diff hash"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      `tests/suite/mr.rs` legacy_code_hash re-implements `legacy_diff` and `legacy_hashes` from
+      `tests/suite/verify_dod.rs`, which already shares grow_past_2_14 and short_hash_len with mr.rs.
+    proposal: "Share verify_dod.rs's legacy helpers as pub(crate) and drop the copy in mr.rs."
+    source: "E-APPLIST.W14 review round 1, nit tests/suite/mr.rs:1638 (cr note on 801712e, 2026-11-23)."
+    taken-by: "E-GATEFIX (proposed)"
 closed:
   - id: B1
     title: "E-SEED.W10 release pipeline (parked branch)"

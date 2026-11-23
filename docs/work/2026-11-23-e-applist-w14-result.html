@@ -37,11 +37,13 @@
 <ul data-c="differences">
   <li>Two older tests that rebuild keel's hash by hand now use full ids too.</li>
   <li>A quick trial in a scratch shell was refused by the sandbox. The tests prove the growth instead.</li>
+  <li>The first review found one weak test: it never reached the signature check. It now does, and it catches a wrong check that the old test let through.</li>
 </ul>
 
 <h2 id="left">What is left, and who takes it</h2>
 <ul data-c="left">
   <li><b>You reinstall keel from this tip before this work's review.</b> The old keel does not accept a review or sign-off the new one writes. The new keel accepts the old one's. The router stages the command.</li>
+  <li>Three small tidy-ups from the review go to the gate-fix epic as backlog rows B30 to B32.</li>
   <li>An old note can still go red in one rare case: git needs more characters to keep a short id unique. Re-record that note. This is an accepted limit with no backlog row, because new notes never hit it.</li>
 </ul>
 

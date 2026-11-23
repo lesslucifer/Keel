@@ -1663,11 +1663,16 @@ fn a_key_signed_sign_off_in_the_7_character_form_verifies_after_the_store_grows(
     crate::verify_dod::grow_past_2_14(p);
     assert_eq!(crate::verify_dod::short_hash_len(p, &base, &tip), 8, "the store crossed 2^14 objects");
     ok(keel(p, &["verify-dod", "wu", "wu/e/a", "--no-receipt"]));
-    // The signature still binds: another change hash, even one the rule would accept, fails its signature.
+    // The signature signs the hash it was made over, never any form the rule accepts: the stable
+    // (--full-index) hash of this very range binds the diff, but nobody signed it, so the signature fails.
+    let stable = sha256_of(git(p, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--full-index", &base, &tip, "--"]).as_bytes());
     let mut n = mr_note(p, "wu/e/a").unwrap();
-    n["change_hash"] = json!(format!("sha256:{}", "0".repeat(64)));
+    assert_ne!(n["change_hash"].as_str(), Some(stable.as_str()), "the signed hash is the 7-character form's");
+    n["change_hash"] = json!(stable);
     put_note(p, "wu/e/a", &n);
-    assert_red8(p, "changed since the sign-off");
+    assert_red8(p, "signature by vu does not verify");
+    let t = text(&keel(p, &["verify-dod", "wu", "wu/e/a", "--no-receipt"]));
+    assert!(!t.contains("changed since the sign-off"), "the rule accepts the stable hash; only the signature refuses it: {t}");
 }
 
 /// E-APPLIST.W14 (B29): the owner's waiver keeps a failed round of this very range when the round's
