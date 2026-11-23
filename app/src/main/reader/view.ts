@@ -5,7 +5,7 @@
 // (src/shared/items.ts) with the owner's sent marks, on every read.
 
 import type { Focus, RouterAlert, View } from '../../shared/contract.ts';
-import type { RunOptions } from '../commands.ts';
+import type { ProjectRunner, RunOptions } from '../commands.ts';
 import { countsOf, itemsOf } from '../../shared/items.ts';
 import { GitReader, noFacts } from './git.ts';
 import { RouterLog, type StoredAlert } from './log.ts';
@@ -89,6 +89,11 @@ export class ViewReader {
   /** What the watcher watches: the listed project's git folder and update log folder, or nothing. */
   targets(): WatchTarget[] {
     return this.root === null ? [] : projectTargets(this.root);
+  }
+
+  /** The git runner the reader reads `root` with, when `root` is the project it reads now; Open shares it, so an old git is found out once (W12 review round 1 nit, open.ts:132). */
+  runnerFor(root: string): ProjectRunner | null {
+    return this.git !== null && this.root === root ? this.git.runner : null;
   }
 
   /** The listed project's update log reader, or null (the alerter reads its alerts). */

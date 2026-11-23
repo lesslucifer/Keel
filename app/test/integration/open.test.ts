@@ -337,3 +337,21 @@ test('epic review round 1 (open.ts:131): with a git older than 2.45, Open reads 
   assert.equal(fresh.done, false);
   assert.match((fresh as { why: string }).why, /partial clone needs git 2\.45/);
 });
+
+test('W12 review round 1 nit (open.ts:132): Open reads through the reader\'s runner for the project, so an old git it already knows costs Open no refused run and no config read', async (t) => {
+  const w = world(t);
+  const tip = rev(w.dir, 'wu/E-A/w1-reader');
+  const rec = path.join(w.root, 'old.jsonl');
+  const old = oldGit(path.join(mk(path.join(w.root, 'old')), 'git'), rec, GIT);
+  const reader = new GitReader(w.dir, w.parts.runOptions);
+  const facts = await reader.read(old);
+  const plan = itemsOf({ git: facts, router: heard({ 'wu/E-A.W1/stage': { stage: 'plan to read', tip: tip.slice(0, 7) } }), sent: new Set() }).find((i) => i.kind === 'plan') as Item;
+  const n = records(rec).length;
+  const view = { ...emptyView(), project: { id: 'p0a1b2c3d', name: 'proj' }, git: facts, items: [plan] };
+  const { project: _p, ...rest } = w.parts;
+  const r = await openListed(plan, view, [{ id: 'p0a1b2c3d', name: 'proj', path: w.dir }], { ...rest, git: old, runnerFor: (p) => (p === w.dir ? reader.runner : null) });
+  assert.deepEqual(r, { done: true });
+  const runs = records(rec).slice(n).map((x) => x.argv);
+  assert.ok(runs.length > 0);
+  assert.ok(runs.every((a) => !a.includes('--no-lazy-fetch') && !a.includes('--get-regexp')), JSON.stringify(runs));
+});

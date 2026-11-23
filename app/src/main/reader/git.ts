@@ -221,8 +221,8 @@ export const noFacts = (problem: string): GitFacts => ({ branches: [], notes: { 
 
 /** One project's git reader; read(git) reads it all again with that git. */
 export class GitReader {
-  /** Every read goes through the project's runner, which handles an old git (commands.ts ProjectRunner). */
-  private readonly runner: ProjectRunner;
+  /** Every read goes through the project's runner, which handles an old git (commands.ts ProjectRunner); Open reads through it too (W12 review round 1 nit, open.ts:132). */
+  readonly runner: ProjectRunner;
   /** Per epic tip main holds: whether it sits on main's own line (no commit of its own). Never changes for a tip; kept only for the tips last asked about. */
   private mainLine = new Map<string, boolean>();
   /** W6: per review note id (a rewritten note is a new id), its verdict; kept only for the notes last read. */

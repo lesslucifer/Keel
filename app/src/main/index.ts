@@ -255,6 +255,8 @@ async function start(): Promise<void> {
         appDir,
         git,
         runOptions: parts.runOptions,
+        // The reader's runner for the project, so an old git it knows costs Open nothing (W12 review round 1 nit, open.ts:132).
+        runnerFor: (root) => reader.runnerFor(root),
         openUrl: async (url) => (sink === null ? shell.openExternal(url) : sink(url)),
       });
     },

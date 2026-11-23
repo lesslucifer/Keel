@@ -32,6 +32,8 @@ export interface OpenParts {
   openUrl(url: string): Promise<void>;
   /** The ids of the projects listed now: copies of any other project's docs are removed (review round 1, open.ts:78). */
   listed?: readonly string[];
+  /** The project's runner, shared with the git reader (W12 review round 1 nit, open.ts:132); a new one when not given. */
+  runner?: ProjectRunner;
 }
 
 /**
@@ -129,7 +131,7 @@ async function copyOf(parts: OpenParts, tip: string, role: string, id: string): 
   await mkdir(base, { recursive: true, mode: 0o700 });
   await sweep(parts, base);
   // Through the project's runner, so a git older than 2.45 reads too (epic review round 1, open.ts:131).
-  const runner = new ProjectRunner(parts.project.path, parts.runOptions);
+  const runner = parts.runner ?? new ProjectRunner(parts.project.path, parts.runOptions);
   const read = (name: 'ls-docs' | 'blob', object: string) => runner.run(parts.git, name, { object });
   const tree = await read('ls-docs', tip);
   if (typeof tree === 'string') return notDone(tree);
@@ -266,10 +268,17 @@ export async function openItem(item: Item, facts: GitFacts | null, parts: OpenPa
  * 2, index.ts:233), the project's checkout from `projects` (projects.json). A view of a project no longer
  * listed (a switch the reader has not read yet) opens nothing and says so.
  */
-export async function openListed(item: Item, view: View, projects: readonly ProjectEntry[], parts: Omit<OpenParts, 'project' | 'listed'>): Promise<Change> {
+export async function openListed(
+  item: Item,
+  view: View,
+  projects: readonly ProjectEntry[],
+  parts: Omit<OpenParts, 'project' | 'listed' | 'runner'> & { runnerFor?: (root: string) => ProjectRunner | null },
+): Promise<Change> {
   if (view.project === null) return notDone('no project is listed');
   const id = view.project.id;
   const project = projects.find((p) => p.id === id);
   if (project === undefined) return notDone('the list is of a project no longer listed: it shows the listed one at its next read');
-  return openItem(item, view.git, { ...parts, project: { id, path: project.path }, listed: projects.map((p) => p.id) });
+  const { runnerFor, ...rest } = parts;
+  const runner = runnerFor?.(project.path) ?? undefined;
+  return openItem(item, view.git, { ...rest, project: { id, path: project.path }, listed: projects.map((p) => p.id), ...(runner === undefined ? {} : { runner }) });
 }
