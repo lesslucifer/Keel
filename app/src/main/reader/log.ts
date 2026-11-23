@@ -16,6 +16,7 @@ import { lstat, open, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { RouterView } from '../../shared/contract.ts';
 import { codePoints } from '../text.ts';
+import { KEY, WU_ID, WU_SOURCE } from '../../shared/names.ts';
 
 /** Three silent watchdog ticks. */
 export const SILENCE_MS = 15 * 60 * 1000;
@@ -26,13 +27,8 @@ export const ALERTS_KEPT = 20;
 /** The most of the log or the state the reader reads at once: the writer keeps 2,000 lines of at most 1,024 bytes. */
 export const READ_CAP = 4 * 1024 * 1024;
 
-/** A work unit id, E-<CODE>.W<m>: router-app.sh's wu, and the one pattern the app's keel:// link takes too. */
-export const WU_SOURCE = 'E-[A-Z0-9]{1,16}\\.W[0-9]{1,3}';
-const WU = WU_SOURCE;
-const ID = '[a-z0-9][a-z0-9-]{0,40}';
-/** The keys router-app.sh accepts, its key_ok. */
-export const KEY = new RegExp(`^(?:router|facts|wu/${WU}/(?:stage|conflict)|epic/E-[A-Z0-9]{1,16}/paused|question/${ID}|worker/${ID}(?:/report)?)$`);
-export const WU_ID = new RegExp(`^${WU}$`);
+// The work unit id and router-app.sh's keys (its key_ok): one grammar, shared/names.ts (epic review round 1, items.ts:172).
+export { KEY, WU_ID, WU_SOURCE };
 /** A run id as router-app.sh mints it: <router-name>.<YYYYMMDD-HHMMSS>.<pid>. */
 const RUN = /^[a-z0-9][a-z0-9-]{0,31}\.[0-9]{8}-[0-9]{6}\.[0-9]{1,10}$/;
 const LINK = /^keel:\/\/[A-Za-z0-9._/-]{1,200}$/;

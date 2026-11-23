@@ -9,7 +9,7 @@
 // the project's runner (commands.ts ProjectRunner) asks the project's config once per git and remembers it.
 
 import { NOTE_KINDS, type GitBranch, type GitFacts, type GitWorktree, type NoteKind, type Review } from '../../shared/contract.ts';
-import { isEpicBranch, isTaskBranch, isUnitBranch, keelBranch, unitOfTask } from '../../shared/names.ts';
+import { epicOfUnit, isEpicBranch, isTaskBranch, isUnitBranch, keelBranch, unitOfTask, unitPrefix } from '../../shared/names.ts';
 import { ProjectRunner, refOk, OUTPUT_CAP, type Captured, type CommandName, type RunOptions } from '../commands.ts';
 
 const ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -87,7 +87,7 @@ export function openEpics(names: readonly string[], inMain: readonly string[] | 
  */
 export function mayBeFresh(epic: string, branches: readonly GitBranch[], mainUnits: ReadonlySet<string>): boolean {
   const tip = branches.find((b) => b.name === epic)?.tip;
-  const prefix = `wu/${epic.slice('epic/'.length)}/`;
+  const prefix = unitPrefix(epic);
   const units = branches.filter((b) => b.name.startsWith(prefix) && WU.test(b.name) && refOk(`${HEADS}${b.name}`));
   if (!units.some((u) => !mainUnits.has(u.name))) return false;
   return !units.some((u) => mainUnits.has(u.name) && u.tip !== tip);
@@ -103,7 +103,7 @@ export function openUnits(names: readonly string[], epics: readonly string[], me
   const open = new Set(epics);
   return named(names).filter((n) => {
     if (!WU.test(n)) return false;
-    const epic = `epic/${n.split('/')[1] as string}`;
+    const epic = epicOfUnit(n);
     return open.has(epic) && !(merged[epic] ?? []).includes(n);
   });
 }
@@ -112,7 +112,7 @@ export function openUnits(names: readonly string[], epics: readonly string[], me
 export function heldBy(target: string, names: readonly string[]): string[] {
   const all = named(names);
   if (target === 'main') return all.filter((n) => EPIC.test(n) || WU.test(n));
-  if (EPIC.test(target)) return all.filter((n) => n.startsWith(`wu/${target.slice('epic/'.length)}/`));
+  if (EPIC.test(target)) return all.filter((n) => n.startsWith(unitPrefix(target)));
   return all.filter((n) => n.startsWith(`${target}_`));
 }
 
@@ -169,7 +169,7 @@ export function openSets(names: readonly string[], merged: Readonly<Record<strin
   const epics = openEpics(names, merged.main, fresh);
   const units = named(names).filter((n) => {
     if (!WU.test(n)) return false;
-    const epic = `epic/${n.split('/')[1] as string}`;
+    const epic = epicOfUnit(n);
     return epics.includes(epic) && merged[epic] !== undefined && !(merged[epic] as readonly string[]).includes(n);
   });
   const tasks = named(names).filter((n) => {

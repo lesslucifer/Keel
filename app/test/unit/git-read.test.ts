@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { refOk } from '../../src/main/commands.ts';
-import { keelBranch, isEpicBranch, isUnitBranch, isTaskBranch } from '../../src/shared/names.ts';
+import { keelBranch, isEpicBranch, isUnitBranch, isTaskBranch, epicOfUnit, unitPrefix, epicOfWu, routerKey, KEY, WU_ID, WU_SOURCE, EPIC_SOURCE, wuOfBranch, epicOfBranch } from '../../src/shared/names.ts';
 import { seeded, pick } from '../support/seeded.ts';
 import { parseRefs, parseMerged, parseWorktrees, heldBy, openEpics, openUnits, openTips, onMainLine, mayBeFresh, NOTE_TIPS, parseReview, parseTime, timeTips, TIME_TIPS, openSets, parseRemote } from '../../src/main/reader/git.ts';
 
@@ -191,4 +191,50 @@ test('W6 review round 3 (git.ts:350): main\'s remote as the config read answers 
   assert.equal(parseRemote('team/origin\n'), 'team/origin');
   assert.equal(parseRemote('.\n'), '.');
   for (const out of ['--receive-pack=touch p\n', '-x\n', '\n', '', 'a\u0007b\n', `${'a'.repeat(201)}\n`]) assert.equal(parseRemote(out), null, JSON.stringify(out));
+});
+
+test('epic review round 1 (git.ts:106): a work unit or task branch names its epic branch, and an epic branch the prefix of its units, by one rule each way', () => {
+  assert.equal(epicOfUnit('wu/E-A/w1-x'), 'epic/E-A');
+  assert.equal(epicOfUnit('wu/E-A/w1-x_probe'), 'epic/E-A');
+  assert.equal(unitPrefix('epic/E-A'), 'wu/E-A/');
+  const rng = seeded(0x1d06);
+  const seg = ['E-A', 'E-APPLIST', 'foo', 'x1', 'w2-y'];
+  for (let i = 0; i < 500; i++) {
+    const epic = `epic/${pick(rng, seg)}`;
+    const unit = `${unitPrefix(epic)}${pick(rng, seg)}`;
+    assert.equal(epicOfUnit(unit), epic, unit);
+    assert.ok(heldBy(epic, [unit]).length === (isUnitBranch(unit) ? 1 : 0), unit);
+  }
+});
+
+test('epic review round 1 (items.ts:30): one work unit id pattern: the id, a branch\'s id and an epic\'s id are built from it', () => {
+  assert.equal(WU_ID.source, `^${WU_SOURCE}$`);
+  assert.ok(WU_SOURCE.startsWith(EPIC_SOURCE));
+  const rng = seeded(0x30a1);
+  const parts = ['E-', 'A', 'APPLIST', '0', '.W', 'W', '1', '12', '1234', 'x', '.'];
+  for (let i = 0; i < 2000; i++) {
+    const id = Array.from({ length: 1 + Math.floor(rng() * 5) }, () => pick(rng, parts)).join('');
+    const m = /^(.*)\.W([0-9]+)$/.exec(id);
+    // A branch carries the id exactly when the id is one (its number without leading zeros).
+    if (WU_ID.test(id) && m !== null && String(Number(m[2])) === m[2]) assert.equal(wuOfBranch(`wu/${m[1] as string}/w${m[2] as string}-x`), id, id);
+    if (WU_ID.test(id)) assert.equal(epicOfWu(id), id.slice(0, id.lastIndexOf('.W')), id);
+    assert.equal(epicOfBranch(`epic/${id}`) !== null, new RegExp(`^${EPIC_SOURCE}$`).test(id), id);
+  }
+});
+
+test('epic review round 1 (items.ts:172): a router key is read by the log\'s one grammar: routerKey reads exactly the keys KEY takes, and names what each is about', () => {
+  assert.deepEqual(routerKey('router'), { kind: 'router' });
+  assert.deepEqual(routerKey('facts'), { kind: 'facts' });
+  assert.deepEqual(routerKey('wu/E-A.W2/stage'), { kind: 'stage', wu: 'E-A.W2' });
+  assert.deepEqual(routerKey('wu/E-A.W2/conflict'), { kind: 'conflict', wu: 'E-A.W2' });
+  assert.deepEqual(routerKey('epic/E-A/paused'), { kind: 'paused', epic: 'E-A' });
+  assert.deepEqual(routerKey('question/q-1'), { kind: 'question', name: 'q-1' });
+  assert.deepEqual(routerKey('worker/w1'), { kind: 'worker', name: 'w1' });
+  assert.deepEqual(routerKey('worker/w1/report'), { kind: 'report', name: 'w1' });
+  const rng = seeded(0x4e7);
+  const parts = ['router', 'facts', 'wu/', 'E-A.W1', 'E-A', '/stage', '/conflict', '/paused', 'epic/', 'question/', 'worker/', 'q-1', '/report', 'X', '/', '-'];
+  for (let i = 0; i < 3000; i++) {
+    const key = Array.from({ length: 1 + Math.floor(rng() * 4) }, () => pick(rng, parts)).join('');
+    assert.equal(routerKey(key) !== null, KEY.test(key), key);
+  }
 });
