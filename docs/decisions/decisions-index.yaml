@@ -1,7 +1,7 @@
 # Keel decision index: data only, no page (DEC-69). Read it first, then open only the decision page you need.
 # Per record: id, title, the page that holds it, live or replaced-by. Ids are never reused: check every live
 # branch before minting next-free. Trawler lineage: git history of decisions-index.html; backlog B5 holds what is open.
-next-free: DEC-79
+next-free: DEC-80
 removed: >-
   Never reused: DEC-60 - DEC-68 were GitHub's flow (E-GHFLOW, E-GHFLOW2). E-GHREVERT removed them with the flow (the
   owner's ruling of 2026-11-19, DEC-70, amended); git history keeps their text.
@@ -316,5 +316,9 @@ records:
     status: live
   - id: DEC-78
     title: "The app lives in this repo under the gate; the router's lines reach it first"
+    file: app.html
+    status: live
+  - id: DEC-79
+    title: "Open asks keel for a doc's roles; the app reads no YAML"
     file: app.html
     status: live
