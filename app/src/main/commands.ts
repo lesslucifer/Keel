@@ -3,7 +3,7 @@
 // partial clone a read never fetches a missing object into the project's .git). A git older than
 // 2.45 has no --no-lazy-fetch and refuses the line (exit 129): such a git runs the line without it
 // (LOCKED_BEFORE_2_45), and only on a project with no promisor setting, so it has nothing to fetch
-// (checkProject decides, and the git reader for its reads); a git older than 2.15 (no --no-optional-locks) is refused. A diff, show or
+// (checkProject decides, and ProjectRunner for the reader's and Open's reads); a git older than 2.15 (no --no-optional-locks) is refused. A diff, show or
 // log -p shape gets --no-ext-diff --no-textconv. git runs with no shell, stdin closed, and an
 // environment built from nothing but the login PATH, LC_ALL=C (its messages in English, whatever the
 // Mac's language: the app reads one of them) and five account variables, so no inherited GIT_* reaches it.
@@ -298,6 +298,48 @@ const NEWER_FLAGS = ['--no-lazy-fetch', '--no-optional-locks'] as const;
 export function refusedFlag(r: Captured): (typeof NEWER_FLAGS)[number] | null {
   if (r.code !== 129) return null;
   return NEWER_FLAGS.find((flag) => new RegExp(`${flag}(?![\\w-])`, 'i').test(r.stderr)) ?? null;
+}
+
+/** Why a git run gave no answer at all, in words: it could not start, or it timed out. */
+function noAnswer(r: Captured, what: string): string {
+  return r.startError !== null ? `git could not start (${r.startError})` : r.timedOut ? `git did not answer (${what})` : `git could not read ${what} (exit ${r.code ?? 'killed'})`;
+}
+
+/**
+ * One project's reads with any git the app runs (epic review round 1, open.ts:131): a line a git older
+ * than 2.45 refuses for --no-lazy-fetch is run again without it, but only after the project's config
+ * shows no promisor setting (as checkProject decides); a git older than 2.15, or a partial clone with an
+ * old git, gives why instead. Found once per git, then remembered. The git reader and Open both read
+ * through it, so neither can run a line an old git refuses.
+ */
+export class ProjectRunner {
+  /** Per git path: whether it is older than 2.45 (true), or why it may not read this project. */
+  private readonly old = new Map<string, true | string>();
+  private readonly project: string;
+  private readonly opts: Omit<RunOptions, 'before245' | 'timeoutMs'>;
+
+  constructor(project: string, opts: Omit<RunOptions, 'before245' | 'timeoutMs'>) {
+    this.project = project;
+    this.opts = opts;
+  }
+
+  /** Run a named read on the project (its slot filled here); a string is why this git may not read it. */
+  async run(git: string, name: CommandName, slots: Record<string, string>): Promise<Captured | string> {
+    const known = this.old.get(git);
+    if (typeof known === 'string') return known;
+    const r = await run(git, name, { project: this.project, ...slots }, { ...this.opts, before245: known === true });
+    const refused = refusedFlag(r);
+    if (refused === null || known === true) return r;
+    if (refused === '--no-optional-locks') {
+      this.old.set(git, `this git is older than ${OLDEST_GIT}: choose a newer git in the settings`);
+    } else {
+      const promisor = await run(git, 'promisor-config', { project: this.project }, { ...this.opts, before245: true });
+      if (promisor.code === 1) this.old.set(git, true);
+      else if (promisor.code === 0) this.old.set(git, `a partial clone needs git ${MIN_GIT} or later: choose a newer git in the settings`);
+      else return promisor.startError !== null || promisor.timedOut ? noAnswer(promisor, 'its git settings') : "git could not read the project's git settings";
+    }
+    return this.run(git, name, slots);
+  }
 }
 
 /** Run a named fixed command with `git` (an absolute path). Never throws for git's own failure. */

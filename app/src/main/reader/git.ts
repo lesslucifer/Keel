@@ -6,11 +6,11 @@
 // tip's review note's verdict (its body, read by the note's own id, so a rewritten note is read again) and
 // the commit times the list shows. Reads only; never a diff or a fetch.
 // A git older than 2.45 reads a project only when it is not a partial clone, as checkProject decides:
-// the reader asks the project's config once per git and remembers the answer.
+// the project's runner (commands.ts ProjectRunner) asks the project's config once per git and remembers it.
 
 import { NOTE_KINDS, type GitBranch, type GitFacts, type GitWorktree, type NoteKind, type Review } from '../../shared/contract.ts';
 import { isEpicBranch, isTaskBranch, isUnitBranch, keelBranch, unitOfTask } from '../../shared/names.ts';
-import { run, refusedFlag, refOk, MIN_GIT, OLDEST_GIT, OUTPUT_CAP, type Captured, type CommandName, type RunOptions } from '../commands.ts';
+import { ProjectRunner, refOk, OUTPUT_CAP, type Captured, type CommandName, type RunOptions } from '../commands.ts';
 
 const ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const HEADS = 'refs/heads/';
@@ -217,8 +217,8 @@ export const noFacts = (problem: string): GitFacts => ({ branches: [], notes: { 
 
 /** One project's git reader; read(git) reads it all again with that git. */
 export class GitReader {
-  /** Per git path: whether it is older than 2.45 (true), or why it may not read this project. */
-  private old = new Map<string, true | string>();
+  /** Every read goes through the project's runner, which handles an old git (commands.ts ProjectRunner). */
+  private readonly runner: ProjectRunner;
   /** Per epic tip main holds: whether it sits on main's own line (no commit of its own). Never changes for a tip; kept only for the tips last asked about. */
   private mainLine = new Map<string, boolean>();
   /** W6: per review note id (a rewritten note is a new id), its verdict; kept only for the notes last read. */
@@ -226,31 +226,12 @@ export class GitReader {
   /** W6: per tip, its commit time (never changes); kept only for the tips last asked about. */
   private timeOf = new Map<string, string>();
 
-  private readonly project: string;
-  private readonly opts: Omit<RunOptions, 'before245' | 'timeoutMs'>;
-
   constructor(project: string, opts: Omit<RunOptions, 'before245' | 'timeoutMs'>) {
-    this.project = project;
-    this.opts = opts;
+    this.runner = new ProjectRunner(project, opts);
   }
 
-  /** Run a read; an old git is found out once (its config read), then remembered. */
-  private async run(git: string, name: CommandName, slots: Record<string, string>): Promise<Captured | string> {
-    const known = this.old.get(git);
-    if (typeof known === 'string') return known;
-    const all = { project: this.project, ...slots };
-    const r = await run(git, name, all, { ...this.opts, before245: known === true });
-    const refused = refusedFlag(r);
-    if (refused === null || known === true) return r;
-    if (refused === '--no-optional-locks') {
-      this.old.set(git, `this git is older than ${OLDEST_GIT}: choose a newer git in the settings`);
-    } else {
-      const promisor = await run(git, 'promisor-config', { project: this.project }, { ...this.opts, before245: true });
-      if (promisor.code === 1) this.old.set(git, true);
-      else if (promisor.code === 0) this.old.set(git, `a partial clone needs git ${MIN_GIT} or later: choose a newer git in the settings`);
-      else return failed(promisor, 'its git settings') ?? "git could not read the project's git settings";
-    }
-    return this.run(git, name, slots);
+  private run(git: string, name: CommandName, slots: Record<string, string>): Promise<Captured | string> {
+    return this.runner.run(git, name, slots);
   }
 
   async read(git: string): Promise<GitFacts> {

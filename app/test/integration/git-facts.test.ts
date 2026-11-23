@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { GitReader } from '../../src/main/reader/git.ts';
-import { OUTPUT_CAP } from '../../src/main/commands.ts';
+import { OUTPUT_CAP, ProjectRunner } from '../../src/main/commands.ts';
 import { tempDir, realGit, sh, snapshot, mk, oldGit, records, program } from '../support/fs.ts';
 
 const GIT = realGit();
@@ -255,3 +255,20 @@ test('W6 review round 2 (items.ts:153): the reader gives main\'s upstream remote
   assert.equal((await reader.read(GIT)).branches.find((b) => b.name === 'main')?.remote, null);
 });
 
+
+test('epic review round 1 (open.ts:131): the project runner the reader and Open share runs a line an old git refuses again without --no-lazy-fetch, refuses a git older than 2.15 and a partial clone with why, and remembers each per git', async (t) => {
+  const { root, dir } = world(t);
+  const rec = path.join(root, 'runner.jsonl');
+  const old = oldGit(path.join(mk(path.join(root, 'old')), 'git'), rec, GIT);
+  const older = oldGit(path.join(mk(path.join(root, 'older')), 'git'), rec, GIT, { version: '2.14' });
+  const runner = new ProjectRunner(dir, opts(root));
+  const top = await runner.run(old, 'toplevel', {});
+  assert.equal(typeof top === 'string' ? top : top.code, 0);
+  const n = records(rec).length;
+  await runner.run(old, 'toplevel', {});
+  assert.deepEqual(records(rec).slice(n).map((r) => r.argv.includes('--no-lazy-fetch') || r.argv.includes('--get-regexp')), [false], 'remembered: one run, no config read');
+  assert.match(String(await runner.run(older, 'toplevel', {})), /older than 2\.15/);
+  sh(GIT, dir, ['config', 'remote.origin.promisor', 'true']);
+  assert.match(String(await new ProjectRunner(dir, opts(root)).run(old, 'toplevel', {})), /partial clone needs git 2\.45/);
+  assert.equal(typeof (await new ProjectRunner(dir, opts(root)).run(GIT, 'toplevel', {})), 'object', 'a new git reads a partial clone');
+});

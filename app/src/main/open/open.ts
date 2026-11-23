@@ -10,7 +10,7 @@ import { mkdir, readdir, readFile, rename, rm, stat, lstat, utimes, writeFile } 
 import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { Change, GitFacts, Item, ProjectEntry, View } from '../../shared/contract.ts';
-import { run, type Captured, type RunOptions } from '../commands.ts';
+import { ProjectRunner, type Captured, type RunOptions } from '../commands.ts';
 import { copyPlan, dataHead, fileUrlInside, findPage, parseTree, roleOf, COPY_CAP, HEAD_CAP, type DataHead } from './docs.ts';
 
 /** The most copies kept per project; the least recently opened go first. */
@@ -128,8 +128,11 @@ async function copyOf(parts: OpenParts, tip: string, role: string, id: string): 
   const final = path.join(base, tip);
   await mkdir(base, { recursive: true, mode: 0o700 });
   await sweep(parts, base);
-  const read = (name: 'ls-docs' | 'blob', object: string) => run(parts.git, name, { project: parts.project.path, object }, parts.runOptions);
+  // Through the project's runner, so a git older than 2.45 reads too (epic review round 1, open.ts:131).
+  const runner = new ProjectRunner(parts.project.path, parts.runOptions);
+  const read = (name: 'ls-docs' | 'blob', object: string) => runner.run(parts.git, name, { object });
   const tree = await read('ls-docs', tip);
+  if (typeof tree === 'string') return notDone(tree);
   const why = failed(tree, 'the docs at the tip');
   if (why !== null) return notDone(why);
   const { files } = copyPlan(parseTree(tree.stdout));
@@ -152,7 +155,7 @@ async function copyOf(parts: OpenParts, tip: string, role: string, id: string): 
   // A file read whole and as text, or not at all: a cut answer, or bytes that are not UTF-8, would not be the committed file.
   const text = async (f: (typeof files)[number]): Promise<string | null> => {
     const blob = await read('blob', f.oid);
-    return failed(blob, f.path) !== null || Buffer.byteLength(blob.stdout, 'utf8') !== f.size || blob.stdout.includes('\uFFFD') ? null : blob.stdout;
+    return typeof blob === 'string' || failed(blob, f.path) !== null || Buffer.byteLength(blob.stdout, 'utf8') !== f.size || blob.stdout.includes('\uFFFD') ? null : blob.stdout;
   };
   // The head pass: each data file's text, kept until the copy loop writes it (round 3 nit, open.ts:143), so no file is read twice.
   const heads: Array<{ path: string; head: DataHead; text: string }> = [];

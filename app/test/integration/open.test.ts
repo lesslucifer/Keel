@@ -12,7 +12,7 @@ import { openFileSink } from '../../src/main/alerter/seams.ts';
 import { GitReader } from '../../src/main/reader/git.ts';
 import { itemsOf } from '../../src/shared/items.ts';
 import type { GitFacts, Item, RouterView } from '../../src/shared/contract.ts';
-import { realGit, sh, tempDir, mk, snapshot, program } from '../support/fs.ts';
+import { realGit, sh, tempDir, mk, snapshot, program, oldGit, records } from '../support/fs.ts';
 
 const GIT = realGit();
 const rev = (dir: string, ref: string) => sh(GIT, dir, ['rev-parse', ref]).trim();
@@ -317,4 +317,23 @@ test('W6 review round 3 (open.ts:124, nit :143): reusing a kept copy costs one g
   assert.equal(reuse.length, 1, reuse.join('\n'));
   assert.match(reuse[0] as string, / ls-tree /);
   assert.equal(readFileSync(fileURLToPath(w.opened[1] as string), 'utf8'), PLAN_PAGE);
+});
+
+test('epic review round 1 (open.ts:131): with a git older than 2.45, Open reads a project that is not a partial clone without --no-lazy-fetch, after one config read; a partial clone is refused and says why', async (t) => {
+  const w = world(t);
+  const tip = rev(w.dir, 'wu/E-A/w1-reader');
+  const facts = await w.facts();
+  const plan = itemsOf({ git: facts, router: heard({ 'wu/E-A.W1/stage': { stage: 'plan to read', tip: tip.slice(0, 7) } }), sent: new Set() }).find((i) => i.kind === 'plan') as Item;
+  const rec = path.join(w.root, 'old.jsonl');
+  const old = oldGit(path.join(mk(path.join(w.root, 'old')), 'git'), rec, GIT);
+  assert.deepEqual(await openItem(plan, facts, { ...w.parts, git: old }), { done: true });
+  assert.equal(readFileSync(fileURLToPath(w.opened[0] as string), 'utf8'), PLAN_PAGE);
+  const runs = records(rec).map((r) => r.argv);
+  assert.equal(runs.filter((a) => a.includes('--get-regexp')).length, 1, 'one config read');
+  assert.ok(runs.filter((a) => !a.includes('--get-regexp')).slice(1).every((a) => !a.includes('--no-lazy-fetch')), 'after the first refusal, no line carries --no-lazy-fetch');
+  // A partial clone: an old git may not read it (it could fetch), so Open refuses and says why.
+  sh(GIT, w.dir, ['config', 'remote.origin.promisor', 'true']);
+  const fresh = await openItem(plan, facts, { ...w.parts, git: old, appDir: path.join(w.root, 'Keel2') });
+  assert.equal(fresh.done, false);
+  assert.match((fresh as { why: string }).why, /partial clone needs git 2\.45/);
 });
