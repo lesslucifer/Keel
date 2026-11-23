@@ -56,7 +56,7 @@ function inTurn<T>(file: string, job: () => Promise<T>): Promise<T> {
 
 /** Write `value` as JSON to `file`: its folder made owner-only if new, the file owner-only, all or nothing; in turn with the file's loads. */
 export function writeAtomic(file: string, value: unknown): Promise<void> {
-  return inTurn(file, () => writeNow(file, value));
+  return inTurn(file, () => io.writeNow(file, value));
 }
 
 async function writeNow(file: string, value: unknown): Promise<void> {
@@ -81,8 +81,8 @@ async function writeNow(file: string, value: unknown): Promise<void> {
   }
 }
 
-/** The read load() runs, on one object so a test can hold it with a controlled promise. */
-export const io = { readJson };
+/** The read load() runs and the write writeAtomic() runs in its turn, on one object so a test can hold or watch them with a controlled promise. */
+export const io = { readJson, writeNow };
 
 async function exists(p: string): Promise<boolean> {
   try {

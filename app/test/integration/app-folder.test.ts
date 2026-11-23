@@ -428,18 +428,41 @@ test('epic review round 1 (store.ts:82): two loads of one broken file run one at
   assert.deepEqual(readdirSync(dir).filter((n) => n.includes('.broken-')).length, 1);
 });
 
-test('epic review round 1 (store.ts:82): a write started while a load holds the file lands after it, so a file just written is never set aside', async (t) => {
+test('epic review round 1 (store.ts:82; W12 round 1, app-folder.test.ts:430): a write asked for while a load holds the file, after its read and before it sets the file aside, waits its turn: the broken file goes aside and the written value stands', async (t) => {
   const dir = tempDir(t, 'store-write');
   const file = path.join(dir, 'projects.json');
   writeFileSync(file, '{"half');
-  const held = holdRead(t, file);
+  const real = { readJson: io.readJson, writeNow: io.writeNow };
+  t.after(() => Object.assign(io, real));
+  // The load is held after its read (it has seen the broken file), before it sets the file aside.
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let readDone: () => void = () => undefined;
+  const read = new Promise<void>((resolve) => (readDone = resolve));
+  io.readJson = async (f: string) => {
+    const r = await real.readJson(f);
+    io.readJson = real.readJson;
+    readDone();
+    await gate;
+    return r;
+  };
+  const started: string[] = [];
+  io.writeNow = (f: string, v: unknown) => {
+    started.push(f);
+    return real.writeNow(f, v);
+  };
   const loading = load(file, parseObj, () => ({ ok: 0 }));
+  await read;
   const writing = writeAtomic(file, { ok: 1 });
-  await held.firstRead;
-  held.release();
+  // A write that does not wait its turn has started by now: let it land first, the worst order for the load.
+  if (started.length > 0) await writing;
+  release();
   await Promise.all([loading, writing]);
-  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { ok: 1 }, 'the written value stands');
-  assert.deepEqual((await load(file, parseObj, () => ({ ok: 0 }))).value, { ok: 1 });
+  assert.deepEqual(started, [file], 'the write ran once');
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { ok: 1 }, 'the written value stands, never set aside');
+  const aside = readdirSync(dir).filter((n) => n.includes('.broken-'));
+  assert.equal(aside.length, 1);
+  assert.equal(readFileSync(path.join(dir, aside[0] as string), 'utf8'), '{"half', 'the broken file is the one set aside');
 });
 
 test('epic review round 1 (store.ts:82): a broken file gone before it is set aside reads as missing: the defaults, nothing set aside, no ENOENT', async (t) => {
