@@ -262,7 +262,9 @@ areas:
         title: "the review is bound to the code diff"
         expected: >-
           The `keel-code-review` skill judges only the configured code paths and writes a `cr/v1` verdict bound to the
-          git blob hash of `git diff base tip -- code_paths`. Verified blockers and importants fail it. Verified nits
+          git blob hash of `git diff --full-index base tip -- code_paths`: full object names, so the hash never
+          depends on the store's size. A note written before E-APPLIST.W14 hashed git's short names; it still
+          binds when it matches them at 7 to 12 characters (B29). Verified blockers and importants fail it. Verified nits
           are recorded on the note with a disposition by the skill and do not fail it; no CLI check reads them (DEC-26).
           Every form of the note binds the whole range's code the same way: a review, a fix-PASS and a WAIVED note
           alike, so a code commit after any of them leaves the new tip with no valid review. Each round records its

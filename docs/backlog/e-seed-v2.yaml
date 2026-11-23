@@ -312,24 +312,6 @@ open:
       stay a review question.
     source: "E-DOCSPLIT epic plan, open point 8 (answered: a backlog row, not part of the split)."
     taken-by: "unowned: an epic that owns the doc check"
-
-  - id: B29
-    title: "A diff binding turns red when git lengthens its short hashes"
-    status: "proposed: E-GATEFIX"
-    problem: >-
-      Every diff binding (the cr and dod notes' code_diff_hash, the mr sign-off's change hash) hashes the text of `git
-      diff base tip` (`src/notes.rs` `diff_text`, :804-808, called by `code_diff_hash` :793 and `diff_hash` :799).
-      That text carries each file's `index <old>..<new>` line, whose short hashes git lengthens as the object store
-      grows (past 2^14, then 2^16 objects). So a note written before the change no longer matches the same diff after
-      it, and check 5·diff-binding (or 8 for a sign-off) turns red with nothing changed. Seen on 2026-11-23: W13's cr
-      note on E-APPLIST's 57f1586 went red at 20:17 after git's maintenance packed the loose objects (16,449 in the
-      pack); the same diff with `--abbrev=7` matched the note, and the round was run again on the same tip.
-    proposal: >-
-      Pin the text with `--full-index`, so it no longer depends on the store's size. Accept the old short form for
-      notes already written, or re-record the open notes once. Add a test whose store crosses a length change between
-      the note and the check.
-    source: "E-APPLIST.W13 review round 1, the cr note on 57f1586 (2026-11-23)."
-    taken-by: "E-GATEFIX (proposed)"
 closed:
   - id: B1
     title: "E-SEED.W10 release pipeline (parked branch)"
@@ -376,3 +358,6 @@ closed:
   - id: B23
     title: "A push of an epic branch judges its close commit as a plain commit"
     closed: "done by E-SEED3.W2 (DEC-18)"
+  - id: B29
+    title: "A diff binding turns red when git lengthens its short hashes"
+    closed: "done by E-APPLIST.W14 (owner ruling 2026-11-23): keel hashes `git diff --full-index`, and one rule accepts a note in git's old short form at 7 to 12 characters (UC-REV-1)"
