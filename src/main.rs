@@ -1,4 +1,5 @@
 mod gate;
+mod help;
 mod init;
 mod mr;
 mod notes;
@@ -39,7 +40,7 @@ struct MrCfg {
     #[serde(default)]
     report: ReportPolicy,
 }
-/// The default policy, which mr owns: every tier that signs (E-GHREVERT.W1, keep 3).
+/// The default policy, which mr owns: every known tier.
 fn known_tiers() -> Vec<String> {
     mr::default_tiers()
 }
@@ -121,6 +122,81 @@ fn load_config_at_head(repo: &Path) -> Result<Config, String> {
         "keel: merge refused - the target (HEAD) has no committed .keel/config.toml, so there is no policy to judge this merge\n  fix -> land .keel/config.toml on the target first, outside the gated merge".to_string()
     })?;
     toml::from_str(&text).map_err(|e| format!("keel: bad .keel/config.toml at HEAD: {e}"))
+}
+
+/// The commit level's policy text: HEAD's committed `.keel/config.toml` when it has one (a differing
+/// staged file is never read then), else - bootstrap, `true` - the staged one, else a refusal. Never
+/// the working tree: an uncommitted edit must not pick the rules its own commit is judged by (DEC-24).
+fn committed_config(head: Option<String>, staged: Option<String>) -> Result<(String, bool), String> {
+    match (head, staged) {
+        (Some(text), _) => Ok((text, false)),
+        (None, Some(text)) => Ok((text, true)),
+        (None, None) => Err("keel: commit refused - neither HEAD nor the index holds .keel/config.toml, so no committed rules judge this commit\n  fix -> git add .keel/config.toml if it is in the folder; if a commit deleted it, restore it: git checkout HEAD~1 -- .keel/config.toml (or run keel init to create one)".into()),
+    }
+}
+
+/// The policy of `hook pre-commit`, `hook commit-msg` and `keel mr commit`: HEAD's committed file,
+/// else the staged one with a bootstrap line (as the roster's), else a refusal. The index read is the
+/// one git is committing (a temporary one for `git commit -a`): `git` keeps `GIT_INDEX_FILE`.
+fn load_config_committed(repo: &Path) -> Result<Config, String> {
+    let head = git(repo, &["show", "HEAD:.keel/config.toml"], &[]).ok();
+    let staged = if head.is_none() { git(repo, &["show", ":.keel/config.toml"], &[]).ok() } else { None };
+    let (text, bootstrap) = committed_config(head, staged)?;
+    if bootstrap {
+        eprintln!("keel: HEAD commits no .keel/config.toml - bootstrap: the staged .keel/config.toml judges this commit");
+    }
+    toml::from_str(&text).map_err(|e| {
+        if bootstrap {
+            format!("keel: bad .keel/config.toml staged: {e}\n  fix -> correct .keel/config.toml, git add it, then commit again")
+        } else {
+            format!("keel: bad .keel/config.toml at HEAD: {e}\n  fix -> {HEAD_CONFIG_FIX}")
+        }
+    })
+}
+
+/// How to get past a committed rules file keel cannot judge by (it does not parse, or `validate`
+/// refuses it): nothing at the commit level can judge a commit by it, the repair included.
+pub(crate) const HEAD_CONFIG_FIX: &str = "undo the commit that broke it - git reset --soft HEAD~1 while it is unpublished, else git revert <commit> - then correct .keel/config.toml and commit again; if a hook refuses that too, the owner lands the repaired file by hand outside the hooks (the recovery DEC-47 describes)";
+
+/// What a policy must hold beyond its syntax, the one check its readers share (`mr::roster` runs it
+/// before reading a roster): every `[mr] tiers` entry is a known tier. Returns the reason only.
+pub(crate) fn validate(cfg: &Config) -> Result<(), String> {
+    match cfg.mr.tiers.iter().find(|t| !mr::KNOWN_TIERS.contains(&t.as_str())) {
+        Some(t) => Err(format!("unknown mr tier '{t}' in .keel/config.toml (known: {})", mr::KNOWN_TIERS.join(", "))),
+        None => Ok(()),
+    }
+}
+
+/// A commit must not land a rules file keel cannot judge by - one that does not parse, or that
+/// `validate` refuses: every later commit would be judged by it. `staged` is the index's
+/// `.keel/config.toml` when this commit changes it (None: unchanged or deleted). Run by pre-commit and
+/// `keel mr commit` only: cherry-pick, rebase, revert, a fast-forward and `--no-verify` run no
+/// pre-commit hook, so a bad file can still arrive through them (HEAD_CONFIG_FIX then applies).
+fn staged_config_refusal(staged: Option<&str>) -> Option<String> {
+    let why = match toml::from_str::<Config>(staged?) {
+        Err(e) => format!("does not parse: {e}"),
+        Ok(cfg) => format!("is refused: {}", validate(&cfg).err()?),
+    };
+    Some(format!(
+        "keel: commit refused - the staged .keel/config.toml {}\n  every later commit would be judged by it\n  fix -> correct .keel/config.toml, git add it, then commit again",
+        why.trim_end()
+    ))
+}
+
+/// `staged_config_refusal` for the commit being made, read from the index git is committing.
+fn check_staged_config(repo: &Path) -> Result<(), String> {
+    let changed = !git(repo, &["diff", "--cached", "--name-only", "--no-renames", "-z", "--", ".keel/config.toml"], &[])?.is_empty();
+    let staged = if changed { git(repo, &["show", ":.keel/config.toml"], &[]).ok() } else { None };
+    staged_config_refusal(staged.as_deref()).map_or(Ok(()), Err)
+}
+
+/// The policy of a commit being made (`hook pre-commit`, `keel mr commit`): HEAD's committed rules
+/// (`load_config_committed`), and a staged rules file that keel could not judge by is refused.
+/// `hook commit-msg` takes `load_config_committed` alone: pre-commit has run the check before it.
+fn load_config_for_commit(repo: &Path) -> Result<Config, String> {
+    let cfg = load_config_committed(repo)?;
+    check_staged_config(repo)?;
+    Ok(cfg)
 }
 
 /// `git rev-parse --local-env-vars`: what git exports to its hooks to pin a repository (absolute
@@ -731,20 +807,23 @@ fn run() -> Result<i32, String> {
             }
             check(&repo, &cfg)
         }
-        ["hook", "pre-commit"] => pre_commit(&repo, &load_config(&repo)?),
-        ["hook", "commit-msg", file] => mr::commit_msg(&repo, &load_config(&repo)?, file),
+        // The commit level is judged by HEAD's committed rules, never the folder's file (E-KEELFIX.W1).
+        ["hook", "pre-commit"] => pre_commit(&repo, &load_config_for_commit(&repo)?),
+        ["hook", "commit-msg", file] => mr::commit_msg(&repo, &load_config_committed(&repo)?, file),
         ["hook", "pre-push", remote, ..] => pre_push(&repo, &load_config(&repo)?, remote),
         ["notes", "write", kind, rest @ ..] => notes::write(&repo, &load_config(&repo)?, kind, rest),
         ["verify-doc", paths @ ..] => verify_doc(&repo, paths),
         ["verify-dod", "hook"] => gate::verify_dod(&repo, &load_config_at_head(&repo)?, &["hook"]),
         ["verify-dod", rest @ ..] => gate::verify_dod(&repo, &load_config(&repo)?, rest),
         ["preflight", rest @ ..] => gate::preflight_cmd(&repo, &load_config(&repo)?, rest),
+        ["mr", "commit", ..] => mr::run(&repo, &load_config_for_commit(&repo)?, &args[1..]),
         ["mr", rest @ ..] => mr::run(&repo, &load_config(&repo)?, rest),
         _ => Err("usage: keel <init [-f] | lint | check | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install [--force] | notes write <test|doc|cr>>".into()),
     }
 }
 
 fn main() {
+    help::exit_if_asked();
     std::process::exit(run().unwrap_or_else(|e| {
         eprintln!("{e}");
         1
@@ -891,6 +970,47 @@ mod tests {
     /// The shims' grep and Keel's own `--version` share one marker (open point 6).
     fn foreign_guard() -> String {
         format!("keel --version </dev/null 2>/dev/null | grep -q '^{KEEL_MARK}' || ")
+    }
+
+    #[test]
+    fn committed_config_takes_heads_text_else_the_staged_one_as_a_bootstrap_else_refuses() {
+        let t = |s: &str| Some(s.to_string());
+        assert_eq!(super::committed_config(t("head"), t("staged")), Ok(("head".to_string(), false)), "HEAD wins over a differing staged file");
+        assert_eq!(super::committed_config(t("head"), None), Ok(("head".to_string(), false)));
+        assert_eq!(super::committed_config(None, t("staged")), Ok(("staged".to_string(), true)), "staged alone is a bootstrap");
+        let e = super::committed_config(None, None).unwrap_err();
+        assert!(e.contains("commit refused") && e.contains("fix -> git add .keel/config.toml"), "{e}");
+    }
+
+    #[test]
+    fn a_staged_rules_file_is_refused_only_when_it_does_not_parse() {
+        let good = "[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n";
+        assert_eq!(super::staged_config_refusal(None), None, "unchanged or deleted: nothing to parse");
+        assert_eq!(super::staged_config_refusal(Some(good)), None);
+        for bad in [good.replace("[branches]", "[branches"), good.replace("[docs]\nroot = \"docs/\"\n", ""), "lint = ".into()] {
+            let e = super::staged_config_refusal(Some(&bad)).unwrap_or_else(|| panic!("{bad:?} passed"));
+            assert!(e.contains("does not parse") && e.contains("fix -> "), "{e}");
+        }
+        let e = super::staged_config_refusal(Some(&format!("{good}[mr]\ntiers = [\"usrname\", \"key\"]\n"))).expect("an unknown tier is refused");
+        assert!(e.contains("unknown mr tier 'usrname'") && e.contains("fix -> "), "{e}");
+    }
+
+    #[test]
+    fn validate_refuses_exactly_the_tiers_keel_does_not_know() {
+        let cfg = |tiers: &str| {
+            toml::from_str::<super::Config>(&format!(
+                "[check]\nlint = \"true\"\ntest = \"true\"\n[branches]\nmain = \"main\"\n[docs]\nroot = \"docs/\"\n[mr]\ntiers = {tiers}\n"
+            ))
+            .unwrap()
+        };
+        for t in crate::mr::KNOWN_TIERS {
+            assert_eq!(super::validate(&cfg(&format!("[\"{t}\"]"))), Ok(()), "{t}");
+        }
+        assert_eq!(super::validate(&cfg("[]")), Ok(()));
+        for bad in ["usrname", "Key", "", "key ", "github"] {
+            let e = super::validate(&cfg(&format!("[\"key\", \"{bad}\"]"))).unwrap_err();
+            assert!(e.contains(&format!("unknown mr tier '{bad}'")), "{e}");
+        }
     }
 
     #[test]

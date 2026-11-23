@@ -10,19 +10,6 @@ about: >-
   under "The build order"; the needs n1 - n10 are listed there too. Distilled from E-LOCALTOOL (W5 result, P4 to P6,
   and the close).
 open:
-  - id: A2
-    title: "E-KEELFIX · Keel fixes"
-    status: next; A1 done
-    problem: >-
-      First use: your rule-file commit runs the committed rules, and the gate can run with nothing written (n3).
-    proposal: >-
-      Parts: K9, the commit hooks read the committed `.keel/config.toml`, not the folder's file; K2, `keel verify-dod
-      … --no-receipt`; `keel notes write … --help` prints help and writes no note; the github tier's reading removed
-      once E-DOCSPLIT is on main (E-LOCALTOOL is). Waits on: A1 (done).
-    source: >-
-      E-LOCALTOOL.W5 result, P4 to P6, and the close.
-    taken-by: "E-KEELFIX"
-
   - id: A4
     title: "E-APPSIGN · Sign off and merge from the app"
     status: after A2, A3
@@ -68,6 +55,80 @@ open:
     source: >-
       E-LOCALTOOL.W5 result, P4 to P6, and the close's walk-through; E-APPLIST.W5 and W6 results.
     taken-by: "E-APPFLEET"
+
+  - id: A6
+    title: "Review the plan-WU flow"
+    status: open (the owner's ruling of 2026-11-20)
+    problem: >-
+      A WU plan is written on its own WU branch, signed and merged into the epic early, before the WU's code; E-KEELFIX
+      ran it four times (W1, W2, W3, W5). The owner wants the flow looked at as a whole.
+    proposal: >-
+      A later epic reviews the plan-WU flow: what the early plan merge buys, what it costs (an extra sign-off and
+      merge per WU, a plan WU waiting on the owner), and what replaces it, if anything.
+    source: >-
+      The owner's ruling of 2026-11-20, at the E-KEELFIX close.
+    taken-by: "unowned: a later epic, not yet proposed (the owner orders it)"
+
+  - id: A8
+    title: "The dispatch guard's reviewed lines match by substring"
+    status: open
+    problem: >-
+      The guard that every dispatched command has its own usage skips a line that contains a reviewed entry's text
+      (`NOT_COMMANDS` in `src/help.rs`), so an alternative added before or after a reviewed line passes unseen; it
+      holds for all ten entries. Nothing checks that every entry still matches a line of the production code.
+    proposal: >-
+      Match a reviewed entry against the whole trimmed line, not a substring; add a test that every `NOT_COMMANDS`
+      entry still matches exactly one production line.
+    source: >-
+      E-KEELFIX.W5 result (deviation 1, follow-up) and its plan's open point 3; refuted as pre-existing by W5's review.
+    taken-by: "unowned: the next epic or WU that edits `src/help.rs`"
+
+  - id: A9
+    title: "A bad roster line committed through keel mr commit locks the branch out"
+    status: open
+    problem: >-
+      A staged `.keel/mr-allowed` is not checked before it lands, as a staged `.keel/config.toml` is. A line keel
+      cannot read (an unknown tier, a typo, a leftover `github:` line) can land through `keel mr commit` or a merge
+      signed with `--roster-change`; then every later rule-bearing commit and sign-off on that branch is refused, the
+      repair included, with the bare parse error and no fix line. Recovery is by hand (DEC-47).
+    proposal: >-
+      Parse the staged roster at pre-commit and in `keel mr commit` when the commit changes it, and refuse with a fix
+      line; give the HEAD-roster parse error a recovery line, as `.keel/config.toml`'s has.
+    source: >-
+      E-KEELFIX.W3 review round 1 (two refuted candidates: pre-existing, lock-out accepted by the W3 plan's open
+      point 2).
+    taken-by: "unowned: an epic that owns `keel mr`"
+
+  - id: A10
+    title: "E-KEELFIX's small follow-ups"
+    status: open
+    problem: >-
+      Review nits and result follow-ups left by E-KEELFIX's work units, none changing a result.
+    proposal: >-
+      Take any of them when the file is next edited.
+    source: >-
+      E-KEELFIX.W1 review rounds 1 to 3, W2 review round 1 and its result's follow-ups, W3 review round 1, the
+      independent read of the close's rule-file commit 26c4731 (GREEN, wording nits N1 to N5), and the epic review
+      (PASS round 1 on 00653f1, three nits waived).
+    taken-by: "unowned: the next WU that edits the named file"
+    items:
+      - "`src/main.rs` `run()`: the top and `init` usage texts are literals beside `src/help.rs`'s `TOP` and `INIT`; share one const, as gate, mr and notes do (W2 nit, owed by W3, not done; raised again as an epic review nit)."
+      - "`tests/suite/cli.rs` `keel_mr_commit_accepts_only_the_committed_tiers`: its first assertion also passes when `keel mr commit` reads the folder's rules (the commit-msg hook refuses anyway), so its message claims a cause it does not tell apart; reword it or drop it (epic review nit; the later asserts and the epic e2e catch that mutant)."
+      - "`notes::args_problem` is a general argument reader that `src/gate.rs` uses too, but it lives in `src/notes.rs`; move it to a shared module at the next refactor (epic review nit)."
+      - "The pre-push hook's notes sync runs `git push --no-verify --quiet <remote> …`, so a remote named `-h` reads as git's option and the sync fails with a warning; the gate itself runs (W2 result)."
+      - "`keel mr setup|commit|confirm` do not refuse an unknown option, as `verify-dod`, `preflight` and `notes write` now do (W2 plan, open point 4)."
+      - "`HEAD_CONFIG_FIX` says `git reset --soft HEAD~1`, which may undo an unrelated commit when the bad rules landed around the hooks; name the commit that broke it (W1 round 3)."
+      - "The no-rules refusal's `git checkout HEAD~1 -- .keel/config.toml` fails when the deletion came with later commits around the hooks; name the deleting commit (W1 round 3)."
+      - "`validate` checks only mr's tier rule but lives in `src/main.rs`; move it beside `mr::KNOWN_TIERS` (W1 round 3)."
+      - "pre-commit's merge path reads `HEAD:.keel/config.toml` again; the bootstrap path re-runs the staged diff and parse (W1 rounds 1 and 2, efficiency)."
+      - "`every_known_tier_signs` lists `key: k` before `username: k`, so a first-match `tier_of` passes too; swap the lines (W3 round 1)."
+      - "The unknown-tier unit hard-codes the policy subsets as `0..8`; derive them from `KNOWN_TIERS` (W3 round 1)."
+      - "`tests/suite/ghrevert_e2e.rs`: the kept nothing-written assert now follows the cr note write, not a refusal; drop or move it (W3 round 1)."
+      - "N1 `docs/architecture.html` CLI paragraph: \"refuse an argument they do not know before reading anything\" is too strong; say before anything is written, or before the tip is judged (close read of 26c4731)."
+      - "N2 `docs/architecture.html` pre-commit row: \"refuses a staged policy it cannot read\" should say \"cannot judge by\" (one that does not parse or names an unknown signer tier), as UC-GATE-1 does (close read of 26c4731)."
+      - "N3 `docs/architecture.html` config table: the `rule_bearing` row lists `mr commit` as a reader, but `keel mr commit` never reads `rule_bearing`; drop it or say what it reads (close read of 26c4731)."
+      - "N4 both `keel-workflow` SKILL.md copies, section 4: the last line `no receipt written (--no-receipt)` prints only on a green, non-exempt run, not on every `--no-receipt` run; say so (close read of 26c4731)."
+      - "N5 optional: a note in both `keel-workflow` copies' hook table, beside the CLI paragraph's line in architecture, that the words after `keel hook <name>` are git's, never help (close read of 26c4731)."
 
   - id: A11
     title: "The app's open ends after E-APPLIST"
@@ -266,6 +327,19 @@ closed:
       (UC-APP-1, UC-APP-2), the epic test app/e2e/applist.e2e.spec.ts; Apple's paid membership is not needed, since
       the free ad-hoc signature showed the alert (W7, rung 1); its open follow-ups moved to A11, its two live-check
       questions to A4. Result: the E-APPLIST epic result (archived).
+  - id: A2
+    title: "E-KEELFIX · Keel fixes"
+    closed: >-
+      done by E-KEELFIX: the commit hooks and `keel mr commit` read the committed rules (K9, W1); `keel verify-dod
+      … --no-receipt`, help on every command and unknown flags refused (K2, W2); the github tier and line removed,
+      refused by line number (W3); the merged tree green again (W5). W4 (the push hook) dropped by the owner's
+      ruling of 2026-11-20 (A7). Records: UC-GATE-1, UC-GATE-2, UC-NOTE-1, UC-MR-2; DEC-24, DEC-70.
+  - id: A7
+    title: "The push hook reads the folder's rules"
+    closed: >-
+      accepted, not a bug (the owner's ruling of 2026-11-20; E-KEELFIX.W4 dropped): the pre-push hook reads the
+      folder's `.keel/config.toml` to choose which pushes it gates and the lint and test it runs on each pushed tree;
+      the merge into main is still judged by main's committed rules (DEC-24 gap 3).
   - id: A1
     title: "E-GHREVERT · Back to before GitHub"
     closed: >-
