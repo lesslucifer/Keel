@@ -1311,8 +1311,8 @@ mod tests {
     /// Epic review round 1 (E-DOCSPLIT close, important): the sign-off's report finder reads the
     /// roles the doc check accepts, or none - a data file red at the doc check is never a report.
     /// Epic review round 1 (E-APPLIST, docs.ts:79): the app's Open reads a data file's roles too, so
-    /// both readers run one case table, tests/data/data-roles.json; app/test/unit/doc-find.test.ts reads
-    /// the same file through the app's dataRoles. An empty list is no role (an Err here).
+    /// both readers run one case table, tests/data/data-roles.json; app/test/integration/doc-roles.test.ts
+    /// reads the same file through keel doc-roles. An empty list is no role (an Err here).
     #[test]
     fn data_roles_gives_each_shared_case_its_roles() {
         let table: serde_json::Value = serde_json::from_str(include_str!("../tests/data/data-roles.json")).expect("the case table is JSON");
