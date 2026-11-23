@@ -12,7 +12,7 @@ import { openFileSink } from '../../src/main/alerter/seams.ts';
 import { GitReader } from '../../src/main/reader/git.ts';
 import { itemsOf } from '../../src/shared/items.ts';
 import type { GitFacts, Item, RouterView } from '../../src/shared/contract.ts';
-import { realGit, sh, tempDir, mk, snapshot, program } from '../support/fs.ts';
+import { realGit, sh, tempDir, mk, snapshot, program, oldGit, records, keel } from '../support/fs.ts';
 
 const GIT = realGit();
 const rev = (dir: string, ref: string) => sh(GIT, dir, ['rev-parse', ref]).trim();
@@ -46,6 +46,7 @@ function world(t: { after: (fn: () => void) => void }) {
     appDir,
     project: { id: 'p0a1b2c3d', path: dir },
     git: GIT,
+    keel: keel(),
     runOptions: { path: [path.dirname(GIT), '/usr/bin', '/bin'], source: { HOME: root, LANG: 'C' } },
     openUrl: async (url: string) => {
       opened.push(url);
@@ -127,6 +128,31 @@ test('Open on an epic result opens the page in the epic\'s worktree\'s docs/.arc
   sh(GIT, w.dir, ['worktree', 'remove', '--force', wt]);
   assert.deepEqual(await openItem(epic, await w.facts(), w.parts), { done: false, why: 'epic/E-A has no worktree here, so its result in docs/.archive cannot be found' });
   assert.equal(w.opened.length, 1);
+});
+
+test('W12 review round 2 (docs.ts:83): a data file whose id keel gives with a control character costs only its own roles: a fresh copy, a kept copy and docs/.archive still open, never "update keel"', async (t) => {
+  const w = world(t);
+  const draft = 'artifact: wu-plan\nstatus: draft\nid: "E-A\\tx"\nepic: E-A\npage: "draft\\u0001.html"\n';
+  writeFileSync(path.join(w.dir, 'docs', 'work', '0-draft.yaml'), draft);
+  sh(GIT, w.dir, ['add', '.']);
+  sh(GIT, w.dir, ['commit', '-q', '-m', 'a draft whose id holds a tab']);
+  const tip = rev(w.dir, 'wu/E-A/w1-reader');
+  const facts = await w.facts();
+  const plan = itemsOf({ git: facts, router: heard({ 'wu/E-A.W1/stage': { stage: 'plan to read', tip: tip.slice(0, 7) } }), sent: new Set() }).find((i) => i.kind === 'plan') as Item;
+  assert.deepEqual(await openItem(plan, facts, w.parts), { done: true }, 'a fresh copy');
+  assert.deepEqual(await openItem(plan, facts, w.parts), { done: true }, 'the kept copy');
+  assert.equal(w.opened.length, 2);
+  for (const url of w.opened) assert.equal(readFileSync(fileURLToPath(url), 'utf8'), PLAN_PAGE);
+  const wt = path.join(w.root, 'epic-wt');
+  sh(GIT, w.dir, ['worktree', 'add', '-q', wt, 'epic/E-A']);
+  const archive = mk(path.join(wt, 'docs', '.archive'));
+  writeFileSync(path.join(archive, '2026-11-22-e-a-result.yaml'), 'artifact: epic-result\nstatus: ready\nid: E-A\npage: 2026-11-22-e-a-result.html\n');
+  writeFileSync(path.join(archive, '2026-11-22-e-a-result.html'), '<p>The epic result.</p>\n');
+  writeFileSync(path.join(archive, '0-draft.yaml'), draft);
+  writeFileSync(path.join(archive, '1-\u0007.yaml'), 'artifact: epic-result\nstatus: ready\nid: E-A\npage: 2026-11-22-e-a-result.html\n');
+  const epic: Item = { id: 'epic-result/E-A@aaaaaaaaaaaa', kind: 'epic-result', group: 'yours', wu: null, epic: 'E-A', title: 'Epic result to sign', branch: 'epic/E-A', tip: rev(w.dir, 'epic/E-A').slice(0, 7), since: null, why: 'x', open: 'archive', markable: false, worker: null, line: null, text: [] };
+  assert.deepEqual(await openItem(epic, await w.facts(), w.parts), { done: true }, 'an archive name with a control character is no throw');
+  assert.equal(fileURLToPath(w.opened[2] as string), path.join(archive, '2026-11-22-e-a-result.html'));
 });
 
 test('the app folder keeps the last KEPT_COPIES copies per project', async (t) => {
@@ -317,4 +343,41 @@ test('W6 review round 3 (open.ts:124, nit :143): reusing a kept copy costs one g
   assert.equal(reuse.length, 1, reuse.join('\n'));
   assert.match(reuse[0] as string, / ls-tree /);
   assert.equal(readFileSync(fileURLToPath(w.opened[1] as string), 'utf8'), PLAN_PAGE);
+});
+
+test('epic review round 1 (open.ts:131): with a git older than 2.45, Open reads a project that is not a partial clone without --no-lazy-fetch, after one config read; a partial clone is refused and says why', async (t) => {
+  const w = world(t);
+  const tip = rev(w.dir, 'wu/E-A/w1-reader');
+  const facts = await w.facts();
+  const plan = itemsOf({ git: facts, router: heard({ 'wu/E-A.W1/stage': { stage: 'plan to read', tip: tip.slice(0, 7) } }), sent: new Set() }).find((i) => i.kind === 'plan') as Item;
+  const rec = path.join(w.root, 'old.jsonl');
+  const old = oldGit(path.join(mk(path.join(w.root, 'old')), 'git'), rec, GIT);
+  assert.deepEqual(await openItem(plan, facts, { ...w.parts, git: old }), { done: true });
+  assert.equal(readFileSync(fileURLToPath(w.opened[0] as string), 'utf8'), PLAN_PAGE);
+  const runs = records(rec).map((r) => r.argv);
+  assert.equal(runs.filter((a) => a.includes('--get-regexp')).length, 1, 'one config read');
+  assert.ok(runs.filter((a) => !a.includes('--get-regexp')).slice(1).every((a) => !a.includes('--no-lazy-fetch')), 'after the first refusal, no line carries --no-lazy-fetch');
+  // A partial clone: an old git may not read it (it could fetch), so Open refuses and says why.
+  sh(GIT, w.dir, ['config', 'remote.origin.promisor', 'true']);
+  const fresh = await openItem(plan, facts, { ...w.parts, git: old, appDir: path.join(w.root, 'Keel2') });
+  assert.equal(fresh.done, false);
+  assert.match((fresh as { why: string }).why, /partial clone needs git 2\.45/);
+});
+
+test('W12 review round 1 nit (open.ts:132): Open reads through the reader\'s runner for the project, so an old git it already knows costs Open no refused run and no config read', async (t) => {
+  const w = world(t);
+  const tip = rev(w.dir, 'wu/E-A/w1-reader');
+  const rec = path.join(w.root, 'old.jsonl');
+  const old = oldGit(path.join(mk(path.join(w.root, 'old')), 'git'), rec, GIT);
+  const reader = new GitReader(w.dir, w.parts.runOptions);
+  const facts = await reader.read(old);
+  const plan = itemsOf({ git: facts, router: heard({ 'wu/E-A.W1/stage': { stage: 'plan to read', tip: tip.slice(0, 7) } }), sent: new Set() }).find((i) => i.kind === 'plan') as Item;
+  const n = records(rec).length;
+  const view = { ...emptyView(), project: { id: 'p0a1b2c3d', name: 'proj' }, git: facts, items: [plan] };
+  const { project: _p, ...rest } = w.parts;
+  const r = await openListed(plan, view, [{ id: 'p0a1b2c3d', name: 'proj', path: w.dir }], { ...rest, git: old, runnerFor: (p) => (p === w.dir ? reader.runner : null) });
+  assert.deepEqual(r, { done: true });
+  const runs = records(rec).slice(n).map((x) => x.argv);
+  assert.ok(runs.length > 0);
+  assert.ok(runs.every((a) => !a.includes('--no-lazy-fetch') && !a.includes('--get-regexp')), JSON.stringify(runs));
 });

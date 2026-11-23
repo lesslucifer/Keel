@@ -4,7 +4,7 @@
 // Any program may open a keel:// link, so a link only points the window at a work unit: it runs nothing.
 
 import { plain } from '../text.ts';
-import { WU_SOURCE } from '../reader/log.ts';
+import { WU_SOURCE } from '../../shared/names.ts';
 
 export const LINK_CAP = 64;
 const LINK = new RegExp(`^keel://wu/(${WU_SOURCE})$`);

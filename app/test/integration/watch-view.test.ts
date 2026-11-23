@@ -144,3 +144,15 @@ test('with the file watch off, the minute\'s re-read still finds the change', as
   routerApp(dir, 'stage', 'E-A.W1', 'building');
   assert.ok(await within(5_000, () => pushes() > 0 && 'wu/E-A.W1/stage' in r.view().router.values));
 });
+
+test('W12 review round 1 nit (open.ts:132): the reader names its git runner for the project it reads now, the same one each read, and none for another folder or before a read', async (t) => {
+  const dir = keelProject(t);
+  const r = reader(dir);
+  assert.equal(r.runnerFor(dir), null, 'nothing read yet');
+  await r.read();
+  const runner = r.runnerFor(dir);
+  assert.notEqual(runner, null);
+  await r.read();
+  assert.equal(r.runnerFor(dir), runner, 'one runner per project, kept across reads');
+  assert.equal(r.runnerFor(path.join(dir, 'other')), null);
+});

@@ -41,8 +41,10 @@ export interface Parts {
   open(item: Item, view: View): Promise<Change>;
   /** W6: the focus count waiting.get handed the window's page (alerts.ts Focus.read). */
   seen?(seq: number): void;
-  /** W6: mark a markable item sent, or not (items/sent.ts), then read the view again. */
+  /** W6: mark a markable item sent, or not (items/sent.ts): the write only, run in the queue. */
   mark(item: Item, sent: boolean): Promise<Change>;
+  /** Read the view again now (the watcher's kick), after a mark: slow (git), so never run in the queue (epic review round 1, index.ts:266). */
+  reread?(): Promise<void>;
 }
 
 /** A queue: each job starts once the one before it has settled, passed or failed. */
@@ -85,6 +87,16 @@ export function readerParts(p: Pick<Parts, 'appDir' | 'loginPath' | 'env'>): Vie
       return git.problem === null ? git.path : null;
     },
     runOptions: { path: p.loginPath.entries, ...(p.env === undefined ? {} : { source: p.env }) },
+  };
+}
+
+/** The usable keel (set in Keel, or found on the PATH), or null: Open asks it each data file's roles (keel doc-roles; W12 review round 1, owner ruling 2026-11-23). */
+export function keelOf(p: Pick<Parts, 'appDir' | 'loginPath'>): () => Promise<string | null> {
+  return async () => {
+    const settings = (await loadSettings(p.appDir)).value;
+    const projects = (await loadProjects(p.appDir)).value.projects;
+    const keel = await toolState('keel', settings, p.loginPath.entries, projects.map((x) => x.path));
+    return keel.problem === null ? keel.path : null;
   };
 }
 
@@ -190,12 +202,17 @@ export function makeHandlers(parts: Parts): Handlers {
         return parts.open(item, view);
       }),
 
-    'item.mark': (args) =>
-      queue(async (): Promise<Change> => {
+    // The mark is written in the queue; the read again after it waits outside the queue, which nothing slow
+    // may hold (epic review round 1, index.ts:266), and the answer comes after it, with the list redrawn.
+    'item.mark': async (args): Promise<Change> => {
+      const r = await queue(async (): Promise<Change> => {
         const item = listed(parts.view(), args.item as string);
         if (typeof item === 'string') return notDone(item);
         if (!item.markable) return notDone('only a plan to read or a question can be marked sent');
         return parts.mark(item, args.sent === 'yes');
-      }),
+      });
+      if (r.done) await parts.reread?.();
+      return r;
+    },
   };
 }

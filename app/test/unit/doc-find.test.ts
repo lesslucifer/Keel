@@ -3,7 +3,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { parseTree, copyPlan, dataHead, findPage, fileUrlInside, COPY_CAP, HEAD_CAP, roleOf } from '../../src/main/open/docs.ts';
+import { parseTree, copyPlan, parseDocRoles, docRolesWhy, findPage, fileUrlInside, COPY_CAP, HEAD_CAP, roleOf, DOC_ROLES_SCHEMA } from '../../src/main/open/docs.ts';
+import type { Captured } from '../../src/main/commands.ts';
 import { OUTPUT_CAP } from '../../src/main/commands.ts';
 import { seeded, hostileString } from '../support/seeded.ts';
 
@@ -61,14 +62,70 @@ test('generated paths: no path the copy keeps can leave its folder', () => {
   }
 });
 
-test('a data file\'s head: its top-level artifact (one or a list), id and page; quotes taken off; anchors, aliases and nested keys are not read', () => {
-  assert.deepEqual(dataHead('artifact: wu-plan\nstatus: ready\nid: E-APPLIST.W6\nepic: E-APPLIST\npage: 2026-11-22-e-applist-w6-plan.html\n'), { artifact: ['wu-plan'], id: 'E-APPLIST.W6', page: '2026-11-22-e-applist-w6-plan.html' });
-  assert.deepEqual(dataHead('artifact: [epic-result, wu-result]\nid: "E-A"\npage: \'x-result.html\'\n'), { artifact: ['epic-result', 'wu-result'], id: 'E-A', page: 'x-result.html' });
-  assert.deepEqual(dataHead('details:\n  id: E-B.W1\n  page: y.html\nartifact: wu-result\n'), { artifact: ['wu-result'], id: null, page: null });
-  assert.deepEqual(dataHead('artifact: &a wu-plan\nid: *b\npage: x.html\n'), { artifact: [], id: null, page: 'x.html' });
-  assert.deepEqual(dataHead('artifact: wu-plan\r\nid: E-A.W1\r\npage: x.html\r\n'), { artifact: ['wu-plan'], id: 'E-A.W1', page: 'x.html' });
-  assert.deepEqual(dataHead(''), { artifact: [], id: null, page: null });
+test('W12 (owner ruling 2026-11-23): keel doc-roles\' answer gives each asked file its roles, id and page; any other form is no answer', () => {
+  const asked = ['/a/x.yaml', '/a/y.yaml'];
+  const entry = (p: string, roles: unknown, id: unknown = null, page: unknown = null) => ({ path: p, roles, id, page, problem: null });
+  const answer = (files: unknown[], schema: unknown = DOC_ROLES_SCHEMA) => JSON.stringify({ schema, files });
+  const ok = parseDocRoles(answer([entry('/a/x.yaml', ['wu-plan'], 'E-A.W1', 'x.html'), { ...entry('/a/y.yaml', []), problem: 'no field "artifact"' }]), asked);
+  assert.deepEqual(ok && [...ok], [
+    ['/a/x.yaml', { artifact: ['wu-plan'], id: 'E-A.W1', page: 'x.html' }],
+    ['/a/y.yaml', { artifact: [], id: null, page: null }],
+  ]);
+  const both = [entry('/a/x.yaml', []), entry('/a/y.yaml', [])];
+  for (const bad of [
+    'not json',
+    '[]',
+    answer(both, 'doc-roles/v2'),
+    answer([entry('/a/x.yaml', [])]),
+    answer([entry('/a/y.yaml', []), entry('/a/x.yaml', [])]),
+    answer([entry('/a/x.yaml', [3]), entry('/a/y.yaml', [])]),
+    answer([entry('/a/x.yaml', 'wu-plan'), entry('/a/y.yaml', [])]),
+    answer([entry('/a/x.yaml', [], 7), entry('/a/y.yaml', [])]),
+    answer([entry('/a/x.yaml', [], null, 7), entry('/a/y.yaml', [])]),
+    answer([null, entry('/a/y.yaml', [])]),
+  ]) assert.equal(parseDocRoles(bad, asked), null, bad);
   assert.ok(HEAD_CAP >= 16 * 1024);
+});
+
+test('W12 review round 2 (docs.ts:83): a file whose id or page keel gives with a control character, or empty, gives no head; every other file in the answer keeps its own', () => {
+  const asked = ['/a/x.yaml', '/a/y.yaml'];
+  const y = { path: '/a/y.yaml', roles: ['wu-result'], id: 'E-A.W1', page: 'y.html', problem: null };
+  for (const [id, page] of [
+    ['E-A\tx', 'x.html'],
+    ['E-A.W1', 'a\u0000.html'],
+    ['E-A.W1\n', 'x.html'],
+    ['E-A.W1', 'x\u007f.html'],
+    ['E-A.W1', 'x\u0085.html'],
+    ['', 'x.html'],
+    ['E-A.W1', ''],
+  ] as const) {
+    const got = parseDocRoles(JSON.stringify({ schema: DOC_ROLES_SCHEMA, files: [{ path: '/a/x.yaml', roles: ['wu-plan'], id, page, problem: null }, y] }), asked);
+    assert.ok(got !== null, JSON.stringify([id, page]));
+    assert.deepEqual([...got], [['/a/y.yaml', { artifact: ['wu-result'], id: 'E-A.W1', page: 'y.html' }]], JSON.stringify([id, page]));
+  }
+});
+
+test('W12 review round 2 (docs.ts:83), generated answers: an entry is kept exactly when its id and page are null or plain text, whatever its neighbours hold', () => {
+  const rng = seeded(0xd0c83);
+  const alphabet = ['E-A', '.W1', 'x.html', '\u0000', '\t', '\n', '\u007f', '\u009f', 'é', ' '];
+  const value = () => (rng() < 0.2 ? null : rng() < 0.1 ? '' : hostileString(rng, 6, alphabet));
+  const plain = (v: string | null) => v === null || (v !== '' && !/[\u0000-\u001f\u007f-\u009f]/.test(v));
+  for (let n = 0; n < 500; n++) {
+    const asked = Array.from({ length: 1 + Math.floor(rng() * 5) }, (_, i) => `/a/${i}.yaml`);
+    const files = asked.map((p) => ({ path: p, roles: ['wu-plan'], id: value(), page: value(), problem: null }));
+    const got = parseDocRoles(JSON.stringify({ schema: DOC_ROLES_SCHEMA, files }), asked);
+    assert.ok(got !== null);
+    assert.deepEqual([...got.keys()], files.filter((f) => plain(f.id) && plain(f.page)).map((f) => f.path), JSON.stringify(files));
+  }
+});
+
+test('W12 (owner ruling 2026-11-23): why keel gave no answer: it did not start, did not answer, was cut, or is a keel with no doc-roles (update keel)', () => {
+  const r = (over: Partial<Captured>): Captured => ({ code: 0, stdout: '', stderr: '', timedOut: false, startError: null, cut: false, ...over });
+  assert.equal(docRolesWhy(r({})), null);
+  assert.equal(docRolesWhy(r({ code: null, startError: 'ENOENT' })), 'keel could not start (ENOENT)');
+  assert.match(docRolesWhy(r({ code: null, timedOut: true })) ?? '', /^keel did not answer/);
+  assert.match(docRolesWhy(r({ cut: true })) ?? '', /cut/);
+  assert.match(docRolesWhy(r({ code: 1, stderr: 'usage: keel <init [-f] | lint ...>' })) ?? '', /update keel$/);
 });
 
 test('the page a role and an id name: the page line of the data file whose head matches, beside it, a plain .html name; the newest by path when several match', () => {

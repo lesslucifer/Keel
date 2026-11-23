@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { GitReader } from '../../src/main/reader/git.ts';
-import { OUTPUT_CAP } from '../../src/main/commands.ts';
+import { OUTPUT_CAP, ProjectRunner } from '../../src/main/commands.ts';
 import { tempDir, realGit, sh, snapshot, mk, oldGit, records, program } from '../support/fs.ts';
 
 const GIT = realGit();
@@ -210,6 +210,8 @@ test('when main\'s merged read fails, the next good read asks no name-rev again 
   const asked = count();
   assert.equal(asked, 1);
   writeFileSync(flag, '');
+  // A new branch, so main's merged read is asked again: its answer is kept only while no tip it reads moves (epic review round 1, git.ts:315).
+  sh(GIT, dir, ['branch', 'wu/E-A/w3', 'epic/E-A']);
   assert.match((await reader.read(flaky)).problem ?? '', /main/);
   rmSync(flag);
   await reader.read(flaky);
@@ -255,3 +257,55 @@ test('W6 review round 2 (items.ts:153): the reader gives main\'s upstream remote
   assert.equal((await reader.read(GIT)).branches.find((b) => b.name === 'main')?.remote, null);
 });
 
+
+test('epic review round 1 (open.ts:131): the project runner the reader and Open share runs a line an old git refuses again without --no-lazy-fetch, refuses a git older than 2.15 and a partial clone with why, and remembers each per git', async (t) => {
+  const { root, dir } = world(t);
+  const rec = path.join(root, 'runner.jsonl');
+  const old = oldGit(path.join(mk(path.join(root, 'old')), 'git'), rec, GIT);
+  const older = oldGit(path.join(mk(path.join(root, 'older')), 'git'), rec, GIT, { version: '2.14' });
+  const runner = new ProjectRunner(dir, opts(root));
+  const top = await runner.run(old, 'toplevel', {});
+  assert.equal(typeof top === 'string' ? top : top.code, 0);
+  const n = records(rec).length;
+  await runner.run(old, 'toplevel', {});
+  assert.deepEqual(records(rec).slice(n).map((r) => r.argv.includes('--no-lazy-fetch') || r.argv.includes('--get-regexp')), [false], 'remembered: one run, no config read');
+  assert.match(String(await runner.run(older, 'toplevel', {})), /older than 2\.15/);
+  sh(GIT, dir, ['config', 'remote.origin.promisor', 'true']);
+  assert.match(String(await new ProjectRunner(dir, opts(root)).run(old, 'toplevel', {})), /partial clone needs git 2\.45/);
+  assert.equal(typeof (await new ProjectRunner(dir, opts(root)).run(GIT, 'toplevel', {})), 'object', 'a new git reads a partial clone');
+});
+
+test('epic review round 1 (git.ts:323, git.ts:315): a read with no ref moved runs no note-of and no --merged; a moved notes ref reads its kind again, a moved head reads what holds it again, and the facts match a fresh reader', async (t) => {
+  const { root, dir } = world(t);
+  const rec = path.join(root, 'memo-runs.txt');
+  const counting = program(path.join(mk(path.join(root, 'memo')), 'git'), `#!/bin/sh\necho "$*" >> ${rec}\nexec ${GIT} "$@"\n`);
+  const runs = () => readFileSync(rec, 'utf8').split('\n');
+  const count = (from: number, what: string) => runs().slice(from).filter((l) => l.includes(what)).length;
+  const reader = new GitReader(dir, opts(root));
+  const fresh = async () => new GitReader(dir, opts(root)).read(GIT);
+  const first = await reader.read(counting);
+  assert.ok(count(0, ' notes ') > 0 && count(0, '--merged=') > 0, 'the first read asks both');
+  let mark = runs().length;
+  assert.deepEqual(await reader.read(counting), first);
+  assert.deepEqual([count(mark, ' notes '), count(mark, '--merged=')], [0, 0], 'nothing moved: no note-of, no --merged');
+  // A new sign-off note: the mr ref moved, so mr is asked again (cr is not); no head moved.
+  sh(GIT, dir, ['notes', '--ref=mr', 'add', '-m', '{}', 'wu/E-A/w2']);
+  mark = runs().length;
+  const signed = await reader.read(counting);
+  assert.deepEqual(signed.notes.mr, [rev(dir, 'wu/E-A/w2')]);
+  assert.ok(count(mark, '--ref=refs/notes/mr') > 0);
+  assert.deepEqual([count(mark, '--ref=refs/notes/cr'), count(mark, '--merged=')], [0, 0]);
+  assert.deepEqual(signed, await fresh());
+  // A commit on wu/E-A/w2: what holds it is read again, and its new tip's notes are asked.
+  sh(GIT, path.join(root, 'wt-w2'), ['commit', '-q', '--allow-empty', '-m', 'more']);
+  mark = runs().length;
+  const moved = await reader.read(counting);
+  assert.ok(count(mark, '--merged=refs/heads/epic/E-A') === 1 && count(mark, '--merged=refs/heads/wu/E-A/w2') === 1);
+  assert.ok(count(mark, ' notes ') > 0);
+  assert.deepEqual(moved, await fresh());
+  // The task merged into its unit by a commit elsewhere: the unit's read answers the new truth.
+  sh(GIT, path.join(root, 'wt-w2'), ['merge', '-q', '--no-ff', '-m', 'task in', 'wu/E-A/w2_probe']);
+  const merged = await reader.read(counting);
+  assert.deepEqual(merged.merged['wu/E-A/w2'], ['wu/E-A/w2_probe']);
+  assert.deepEqual(merged, await fresh());
+});

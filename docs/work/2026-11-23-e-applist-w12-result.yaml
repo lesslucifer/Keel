@@ -1,0 +1,139 @@
+artifact: wu-result
+status: ready
+id: E-APPLIST.W12
+epic: E-APPLIST
+title: "E-APPLIST.W12 result · The epic review's round-1 findings fixed"
+date: "2026-11-23"
+page: 2026-11-23-e-applist-w12-result.html
+outcome: >-
+  Delivered. All ten findings of the epic review's round 1 (cr note on 7d8d346) are fixed, each pinned by a
+  test: Open reads through the old-git runner the list reader uses; item.mark writes in the handlers' queue and
+  rereads after it; loads and writes of one app-folder file take turns and a vanished file reads as missing; the
+  branch, id and router-key grammars live in shared/names.ts only; the sort order is a rank per contract kind;
+  and the git reader asks note-of and --merged only when a ref they depend on moved. I7 (a data file's roles)
+  ended where the owner ruled on 2026-11-23: Open asks keel itself, through a new read-only keel doc-roles, and
+  the app keeps no YAML reader. This WU's own review, round 1 (cr note on 9b02970: 2 blockers, 3 importants, 2
+  nits), is fixed too, each finding by its own commit and test. Its round 2 (cr note on 835fed0: 1 blocker, 1
+  important, 6 nits) and the owner's failed typecheck on 835fed0 are fixed as well: one data file keel gives
+  with a control character costs only its own roles, the keel-backed tests fail rather than skip without keel,
+  and pnpm typecheck passes. keel check, pnpm typecheck, pnpm lint and pnpm test:window are green on 8c3c68e.
+  Five of round 2's nits are Low and go to backlog A11 as follow-ups. The window's code is unchanged.
+deviations:
+  - >-
+    I7 changed course. The plan had the app read a data file's roles as keel does, both held to one case table.
+    The WU review's round 1 showed a hand-written copy still disagrees with keel on valid YAML (9 of the repo's
+    historic data files, quoted keys, tags, flow mappings, depth). The owner ruled on 2026-11-23 that Open asks
+    keel: keel gains a read-only subcommand, keel doc-roles, and the app's YAML reader, ROLES and PAIRS go. Open
+    now needs a usable keel (set in the settings or found on the login PATH); with none it says to choose one,
+    and with an older keel, one with no doc-roles, it says to update keel.
+  - >-
+    B3's write-order test first passed with the per-file turn removed (the WU review's round 1,
+    app-folder.test.ts:430). 816b1fa holds the load after its read and before it sets the file aside; with
+    writeAtomic's turn removed in a scratch copy the test now fails 3 of 3 (the just-written projects.json is
+    set aside), and passes 3 of 3 at the fix.
+  - >-
+    I9/I10 changed one older test's set-up: "when main's merged read fails..." now moves a branch before its
+    failing read, since an unchanged main is no longer asked. Its assertion is unchanged.
+  - >-
+    The owner's pnpm typecheck failed on 835fed0 (docs.ts(106,15) TS2345: an unknown passed as a string). The
+    round-1 fix was written where app/node_modules was missing, so tsc never ran. parseDocRoles now keys each
+    head by the asked path it has checked (23b870b), and pnpm typecheck and pnpm lint are run before each
+    commit from this round on.
+  - >-
+    Round 2's nits are not fixed here: the owner's rule sends a Low finding to a follow-up. The one exception is
+    verify_doc.rs:1313's stale doc comment, one line in a file this WU already touches (8c3c68e).
+  - >-
+    A command that bundled the I4-I6 guard fix with a check of the guard against the old items.ts was denied (it
+    held a stray git stash list and overwrote a tracked file from git show). It was not re-run; the guard's red on
+    the old code was shown read-only instead: git show 7d8d346 of items.ts, git.ts and log.ts holds 5, 4 and 3 of
+    the copies the guard refuses.
+evidence:
+  commits:
+    - "51d0c8e docs(E-APPLIST.W12): the WU plan"
+    - "06474e2 B1 open.ts:131 - Open reads through ProjectRunner (commands.ts)"
+    - "bffa750 B2 index.ts:266 - item.mark: write in the queue, Parts.reread after it"
+    - "53ec69d B3 store.ts:82 - load/writeAtomic in turn per file; rename ENOENT is missing"
+    - "ddc7896 I4-I6 git.ts:106, items.ts:30, items.ts:172 - one grammar in shared/names.ts"
+    - "6580fe7 I8 items.ts:61 - KIND_ORDER: Record<ItemKind, number>"
+    - "c9f67cb I9-I10 git.ts:323, git.ts:315 - note-of and --merged memos"
+    - "60ffa4b I7 docs.ts:79 - dataRoles on tests/data/data-roles.json, mirrored in src/verify_doc.rs (replaced by a02b51d)"
+    - "9b02970 docs(E-APPLIST.W12): the WU result, before the WU review"
+  review-round-1:
+    cr-note: "9b02970, FAIL: 2 blockers, 3 importants, 2 nits"
+    fixes:
+      - finding: "important commands.ts:327 - the old-git rule lived twice (checkProject and ProjectRunner) and the copies disagreed"
+        commit: "63ec2fb checkProject reads through ProjectRunner"
+        test: "app/test/integration/app-folder.test.ts: W12 review round 1 (commands.ts:327): adding a project reads through the same old-git runner as the reader and Open"
+      - finding: "important app-folder.test.ts:430 - the write-order test held the load before its read, so it passed with the turn removed"
+        commit: "816b1fa the load is held after its read; io.writeNow is watchable"
+        test: "app/test/integration/app-folder.test.ts: a write asked for while a load holds the file, after its read and before it sets the file aside, waits its turn"
+      - finding: "nit open.ts:132 - a new ProjectRunner per Open"
+        commit: "0ee9e7f Open takes the reader's runner for the project (ViewReader.runnerFor)"
+        test: "app/test/integration/open.test.ts: Open reads through the reader's runner; app/test/integration/watch-view.test.ts: the reader names its runner for the project it reads"
+      - finding: "blockers docs.ts:172 and docs.ts:127 - the app's YAML reader refused or misread YAML keel accepts and gave roles keel refuses"
+        commit: "582cf27 keel doc-roles <data file>... prints doc-roles/v1 (verify_doc::data_head, data_roles built on it); a02b51d Open asks it (open/roles.ts docHeads, commands.ts runDocRoles, handlers.ts keelOf)"
+        test: "src/verify_doc.rs data_head_gives_the_roles_data_roles_gives_and_the_holding_documents_id_and_page; tests/suite/verify_doc.rs doc_roles_answers_each_files_roles_id_and_page_outside_a_repository; app/test/integration/doc-roles.test.ts: the shared table's 50 cases and all 152 historic docs/**/*.yaml blobs through Open's path with target/debug/keel"
+      - finding: "important docs.ts:71 - ROLES and PAIRS restated keel's role table by hand"
+        commit: "a02b51d ROLES and PAIRS removed: keel answers the roles"
+        test: "app/test/integration/doc-roles.test.ts (as above); app/test/unit/doc-find.test.ts: parseDocRoles and docRolesWhy"
+      - finding: "nit docs.ts:229 - dataHead parsed each file twice"
+        commit: "a02b51d dataHead removed: one keel doc-roles line per batch of 100 files"
+        test: "app/test/integration/doc-roles.test.ts: batches past DOC_ROLES_BATCH"
+  review-round-2:
+    cr-note: "835fed0, FAIL: 1 blocker, 1 important, 6 nits"
+    owner-typecheck: "835fed0: src/main/open/docs.ts(106,15): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'string'. Fixed in 23b870b; pnpm typecheck exit 0 on 8c3c68e."
+    fixes:
+      - finding: "blocker docs.ts:83 - one file's control character in keel's answer (an id or page keel accepts) nulled the whole doc-roles batch: every Open at that tip said 'update keel'; a control character in an archive name or worktree path made docRolesArgv throw into item.open (commands.ts:351)"
+        commit: "23b870b parseDocRoles drops alone an entry whose id or page is empty or holds a control character, and keeps null only for an answer that is not doc-roles/v1; docHeads asks keel only about files docRolesFile takes, so docRolesArgv never throws on Open's path"
+        test: "app/test/unit/doc-find.test.ts: a file whose id or page keel gives with a control character, or empty, gives no head, every other file keeps its own (doc-find.test.ts:84's case moved here), and its generated-input property; app/test/unit/commands.test.ts: docRolesFile takes exactly what docRolesArgv takes; app/test/integration/doc-roles.test.ts: real keel, a tab in one id and a control character in one page, the other file keeps its roles, and a control character in a file's name or folder gives no roles and throws nothing; app/test/integration/open.test.ts: a fresh copy, a kept copy and docs/.archive still open beside such a file"
+      - finding: "important fs.ts:12 - the keel-backed tests skipped silently when target/debug/keel was missing (CARGO_TARGET_DIR, an app-only run), and KEEL came from URL.pathname, not decoded, so a checkout path with a space or non-ASCII letter skipped all 17"
+        commit: "81a2a33 REPO by fileURLToPath; keelPath honours CARGO_TARGET_DIR (a relative one from the repository's root); keel() throws when keel is not built; openTest, noKeel and every skip go"
+        test: "app/test/integration/doc-roles.test.ts: keelPath on a path with a space and an accent, with and without CARGO_TARGET_DIR, and keel() is built here; probe: with CARGO_TARGET_DIR at an empty folder, doc-roles.test.ts and open.test.ts fail 21 of 25 with 'no keel at ...', 0 skipped"
+      - finding: "nit verify_doc.rs:1313 - the doc comment named doc-find.test.ts and the removed dataRoles"
+        commit: "8c3c68e the comment names app/test/integration/doc-roles.test.ts and keel doc-roles"
+        test: "none: a comment"
+    red-first: "Before 23b870b the five new round-2 tests failed: 'update keel' for the batch (doc-roles, open, doc-find x2) and 'doc-roles: each file must be an absolute .yaml path with no control character' thrown (doc-roles)."
+  owner-ruling: "2026-11-23: Open gets a doc's roles by asking keel (keel doc-roles), never by a copy of keel's YAML reading."
+  tests-added:
+    integration:
+      - "app/test/integration/open.test.ts: Open with a git older than 2.45, one config read, no --no-lazy-fetch after it; a partial clone refused with why (B1); Open reads through the reader's runner (nit open.ts:132)"
+      - "app/test/integration/git-facts.test.ts: ProjectRunner's three outcomes (B1); a steady read runs no note-of and no --merged, a moved notes ref or head reads again, facts equal a fresh reader's (I9-I10)"
+      - "app/test/integration/handlers.test.ts: a held read after a mark leaves state.get, settings.reset and projects.remove answering; the mark answers after it (B2); keelOf gives the usable keel or none"
+      - "app/test/integration/app-folder.test.ts: two loads of a broken file take turns; a write during a load, after its read, lands after it; a vanished file is missing; a failed write frees the turn (B3); adding a project answers as ProjectRunner does (commands.ts:327)"
+      - "app/test/integration/doc-roles.test.ts: the shared table and every historic data file through keel doc-roles; the locked environment, from /; an older keel says update keel; a wrong answer, no start or no answer gives why"
+      - "app/test/integration/watch-view.test.ts: runnerFor names the reader's runner for the project it reads"
+      - "tests/suite/verify_doc.rs: doc_roles_answers_each_files_roles_id_and_page_outside_a_repository"
+    unit:
+      - "app/test/unit/git-read.test.ts: epicOfUnit/unitPrefix, the id patterns and routerKey vs KEY as generated-input properties; parseRefs keeps each notes ref's tip"
+      - "app/test/unit/guards.test.ts: no grammar copy outside shared/names.ts; log.ts, items.ts, git.ts and link.ts import it"
+      - "app/test/unit/items.test.ts: KIND_ORDER ranks exactly ITEM_KINDS"
+      - "app/test/unit/doc-find.test.ts: parseDocRoles reads doc-roles/v1 for exactly the asked files; docRolesWhy for no start, no answer, a cut answer and an older keel"
+      - "app/test/unit/commands.test.ts: the one keel line is doc-roles and 1 to DOC_ROLES_BATCH absolute .yaml paths"
+      - "src/verify_doc.rs: data_roles_gives_each_shared_case_its_roles and data_head_gives_the_roles_data_roles_gives_and_the_holding_documents_id_and_page, on the 50-case table"
+  red-first: "Each fix's tests failed before it, summarised in each commit message; the old YAML reader failed the new table shapes and 9 historic blobs."
+  green-round-2: "8c3c68e: keel check green (cargo test 154 + 446 pass, 14 ignored, 0 fail; node suite 437 tests, 436 pass, 1 skipped: real fs.watch, the sandbox gives no file events, 0 fail); pnpm typecheck exit 0; pnpm lint exit 0; pnpm test:window 18 files, 232 tests pass; handlers, open, doc-roles, app-folder and watch tests 3 runs of 81, all pass."
+  green: "keel check green on a02b51d: cargo test 154 + 446 pass (14 ignored), 0 fail; node suite 430 tests, 429 pass, 1 skipped (real fs.watch: the sandbox gives no file events), 0 fail."
+  not-run: "the epic e2e (no port binding here; e2e runs are the owner's). pnpm typecheck and pnpm test:window ran from round 2 on, once the owner installed app/node_modules."
+  docs-round-2: "this result pair; docs/use-cases/app.yaml UC-APP-2 says one file whose id or page the app cannot use gives no role, alone."
+  docs: "this result pair and the plan pair; DEC-79 (docs/decisions/app.html, decisions-index.yaml) and docs/local-app.html are staged for the owner's keel mr commit"
+distillation: >-
+  DEC-79 in docs/decisions/app.html (and its row in decisions-index.yaml): the app runs one read-only keel
+  command, keel doc-roles, for Open's roles, so it agrees exactly with verify-doc. docs/local-app.html: Open
+  reads roles through keel doc-roles, and an older keel answers "update keel". Both are rule-bearing, staged
+  uncommitted for the owner's keel mr commit. The epic's close distils this pair with the rest after the merge.
+follow-ups:
+  - "Round 2 nit, doc-roles.test.ts:39: the history test reads git rev-list --all --objects of the live repository and asserts counts, so a shallow or partial clone fails it; not hermetic. Taken by: backlog A11 (local-app), at the E-APPLIST close."
+  - "Round 2 nit, doc-roles.test.ts:46: the history test runs one git cat-file blob per historic blob (about 155, ~11 s); one git cat-file --batch would read them in one process. Taken by: backlog A11 (local-app), at the E-APPLIST close."
+  - "Round 2 nit, open.ts:170: on a rebuild Open writes each data file twice, once to .tmp-heads for keel and again into the copy. Taken by: backlog A11 (local-app), at the E-APPLIST close."
+  - "Round 2 nit, handlers.ts:94: keelOf copies readerParts.git line for line with only the tool name changed; one helper taking the tool name would serve both (projects.add's usableGit is a third form). Taken by: backlog A11 (local-app), at the E-APPLIST close."
+  - "Round 2 nit, commands.ts:306: noAnswer repeats failed()'s wording a third time, and its third branch is dead. Taken by: backlog A11 (local-app), at the E-APPLIST close."
+  - "The owner reruns pnpm typecheck in app/ on 8c3c68e or later (his run on 835fed0 failed; it passes here). The Rust change of this round is one doc comment in a test, so the installed keel needs no reinstall for it. Taken by: E-APPLIST.W12, before its review round 3 (the router asks the owner)."
+  - "The owner's epic e2e on an installed keel with doc-roles. Taken by: E-APPLIST epic sign-off (the router asks the owner)."
+  - "This WU's review, round 3. Taken by: E-APPLIST.W12 (the router starts it)."
+  - "The next review round of the epic (round 2). Taken by: E-APPLIST, after this WU merges."
+details:
+  owner-run: "cargo install --path . (repository root), then: cd app && pnpm typecheck && pnpm test:window && pnpm e2e"
+  window-code: "unchanged: shared/names.ts and shared/items.ts change, both pure and run by the node suite; the window imports them through items.ts. The review fix rounds touch app/src/main and app/test only."
+  keel-doc-roles: "keel doc-roles <data file>... prints {schema: doc-roles/v1, files: [{path, roles, id, page, problem}]}; reads only the named files, needs no repository, writes nothing. The app runs it with no shell, from /, the locked environment and the read timeout, in batches of 100 (commands.ts runDocRoles, DOC_ROLES_BATCH)."
+  htmldoc:
+    id: d8f66c4e2039b3e6a570ad97

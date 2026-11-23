@@ -2,8 +2,8 @@
 // it leaves; on hand-made views, and a seeded property over generated ones.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { itemsOf, countsOf, wuOfBranch, epicOfBranch, itemId, shortHash, shQuote, type ItemInput } from '../../src/shared/items.ts';
-import { ITEM_ID_SOURCE, SLOT_CAP, type GitFacts, type Item, type RouterView } from '../../src/shared/contract.ts';
+import { itemsOf, countsOf, wuOfBranch, epicOfBranch, itemId, shortHash, shQuote, KIND_ORDER, type ItemInput } from '../../src/shared/items.ts';
+import { ITEM_ID_SOURCE, ITEM_KINDS, SLOT_CAP, type GitFacts, type Item, type RouterView } from '../../src/shared/contract.ts';
 import { openSets } from '../../src/main/reader/git.ts';
 import { seeded, pick, type Rng } from '../support/seeded.ts';
 
@@ -446,4 +446,13 @@ test('W6 review round 3 (items.ts:155): a remote whose name starts with - would 
   const main = (remote: string) => git({ branches: [{ name: 'main', tip: MAIN, upstream: `${remote}/main`, remote, ahead: 1, behind: 0, gone: false }] });
   for (const remote of ['--receive-pack=touch p', '-x']) assert.equal(only(itemsOf(input({ git: main(remote) }))).line, null, remote);
   assert.equal(only(itemsOf(input({ git: main('origin-2') }))).line, 'git push origin-2 main');
+});
+
+test('epic review round 1 (items.ts:61): the sort order ranks every kind the contract lists, each once, and nothing else; results first, motion last', () => {
+  assert.deepEqual(Object.keys(KIND_ORDER).sort(), [...ITEM_KINDS].sort());
+  const ranks = Object.values(KIND_ORDER);
+  assert.equal(new Set(ranks).size, ranks.length, 'no two kinds share a rank');
+  assert.ok(ranks.every((r) => Number.isInteger(r)));
+  assert.equal(Math.min(...ranks), KIND_ORDER.result);
+  assert.equal(Math.max(...ranks), KIND_ORDER.motion);
 });

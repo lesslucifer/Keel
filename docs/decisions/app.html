@@ -74,6 +74,12 @@
       <tr><th>Why</th><td>One repository gives one review and one gate, and the app only reads keel's CLI and git. Tests that need no install keep <code>keel check</code> fast and whole. A Telegram failure must never lose the desk alert. A question on the alert's body adds no free-text path past the router's guard. A development run must never make Electron the owner of the link. Seams that only an unpackaged app reads cannot change what the owner's app does.</td></tr>
       <tr><th>Rejected</th><td>A separate repository for the app. The window's tests or the epic test inside <code>keel check</code> (backlog L6). A new free-text channel for questions. <code>keel://</code> claimed by every run. Test hooks compiled into the packaged app.</td></tr>
     </table>
+    <h3 id="dec-79">DEC-79 · Open asks keel for a doc's roles; the app reads no YAML</h3>
+    <table data-c="dec-79">
+      <tr><th>Choice</th><td>To find the page to open, Open asks keel which roles, id and page each data file in its copy has. The app runs one read-only keel command for this, <code>keel doc-roles &lt;data file&gt;…</code>: no shell, from <code>/</code>, git's locked environment and read timeout, at most 100 files a run. It reads only a <code>doc-roles/v1</code> answer. Any other answer gives no role. A keel with no <code>doc-roles</code> makes Open say "update keel". No keel found makes it ask you to choose one. The app keeps no YAML reader.</td></tr>
+      <tr><th>Why</th><td>Exact agreement with <code>keel verify-doc</code>: Open finds the page keel checks and the sign-off attests, and refuses what keel refuses. A copy of keel's reading in the app disagreed on valid YAML, even when held to a shared case table. It missed 9 of this repository's historic data files, and nothing tied it to a role keel adds. Owner ruling of 2026-11-23, after E-APPLIST.W12's review round 1.</td></tr>
+      <tr><th>Rejected</th><td>The app's own YAML reader, held to keel by a shared case table (W12's first fix). A YAML package in the app: another reader that can drift, and an install. Finding a doc's role from its file name.</td></tr>
+    </table>
   </main>
   <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
 </body>

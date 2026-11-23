@@ -274,13 +274,30 @@ test('the glob reader sees import.meta.glob in each spacing, and not a word that
   for (const text of [`${I}.${M}.url`, `const ${G}al = 1`, `${M}.${G}`]) assert.equal(globsModules(text), false, text);
 });
 
-test('one source per grammar: commands.ts takes the note kinds from the contract, link.ts the work-unit pattern from the log reader; neither writes its own copy', () => {
+test('one source per grammar: commands.ts takes the note kinds from the contract, link.ts the work-unit pattern from shared/names.ts; neither writes its own copy', () => {
   const commands = readFileSync(path.join(SRC, 'main', 'commands.ts'), 'utf8');
   // The import forms are spelled in pieces, so the import reader above does not take them for this file's own imports.
   const importOf = (name: string, file: string) => new RegExp(String.raw`import \{[^}]*\b${name}\b[^}]*\} ` + 'fr' + `om '${file.replace(/[./]/g, (c) => `\\${c}`)}'`);
   assert.match(commands, importOf('NOTE_KINDS', '../shared/contract.ts'));
   assert.doesNotMatch(commands, /\[\s*'mr'\s*,\s*'cr'\s*,\s*'dod'\s*\]/);
   const link = readFileSync(path.join(SRC, 'main', 'alerter', 'link.ts'), 'utf8');
-  assert.match(link, importOf('WU_SOURCE', '../reader/log.ts'));
+  assert.match(link, importOf('WU_SOURCE', '../../shared/names.ts'));
   assert.doesNotMatch(link, /E-\[A-Z0-9\]\{1,16\}/);
+});
+
+test('epic review round 1 (git.ts:106, items.ts:30, items.ts:172): the id patterns, the router keys and the epic of a work unit are written in shared/names.ts only; the log reader, the git reader and the item rules import them', () => {
+  // Each copy as it was written before, spelled in pieces so this file holds none of them.
+  const copies = ['E-[A-Z0-9]' + '{1,16}', '[a-z0-9][a-z0-9-]' + '{0,40}', "split('/')" + '[1]', "split('.')" + '[0]', "slice('epic/'" + '.length)', "startsWith('wor" + "ker/')"];
+  const holders = walk(SRC)
+    .filter((f) => /\.(ts|tsx)$/.test(f) && f !== path.join(SRC, 'shared', 'names.ts'))
+    .flatMap((f) => copies.filter((c) => readFileSync(f, 'utf8').includes(c)).map((c) => `${path.relative(APP, f)}: ${c}`));
+  assert.deepEqual(holders, []);
+  const names = readFileSync(path.join(SRC, 'shared', 'names.ts'), 'utf8');
+  for (const c of copies.slice(0, 2)) assert.ok(names.includes(c), c);
+  const source = (file: string) => readFileSync(path.join(SRC, file), 'utf8');
+  // The import form spelled in pieces, as above, so the import reader does not take it for this file's own.
+  const imports = (names: string[], file: string) => new RegExp(String.raw`import \{[^}]*` + names.map((n) => String.raw`\b${n}\b`).join('[^}]*') + String.raw`[^}]*\} ` + 'fr' + `om '${file.replace(/[./]/g, (c) => `\\${c}`)}'`);
+  assert.match(source('main/reader/log.ts'), imports(['KEY', 'WU_ID', 'WU_SOURCE'], '../../shared/names.ts'));
+  assert.match(source('shared/items.ts'), imports(['epicOfUnit', 'epicOfWu', 'routerKey', 'WU_ID'], './names.ts'));
+  assert.match(source('main/reader/git.ts'), imports(['epicOfUnit', 'unitPrefix'], '../../shared/names.ts'));
 });

@@ -13,7 +13,7 @@
 // (a tip, or a short hash of what the router said), so a moved tip or a new question is a new item.
 
 import { ITEM_ID_SOURCE, SLOT_CAP, type GitFacts, type Item, type ItemCounts, type ItemGroup, type ItemKind, type Review, type RouterView } from './contract.ts';
-import { epicOfBranch, unitOfTask, wuOfBranch } from './names.ts';
+import { epicOfBranch, epicOfUnit, epicOfWu, routerKey, unitOfTask, wuOfBranch, WU_ID } from './names.ts';
 
 export { epicOfBranch, wuOfBranch };
 
@@ -27,7 +27,6 @@ export interface ItemInput {
 const ITEM_ID = new RegExp(ITEM_ID_SOURCE);
 const SUBJECT = /^[A-Za-z0-9._-]{1,41}$/;
 const HEX = /^[0-9a-f]{7,}$/;
-const WU_ID = /^E-[A-Z0-9]{1,16}\.W[0-9]{1,3}$/;
 const SESSION = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 
@@ -58,7 +57,8 @@ export function itemId(kind: ItemKind, subject: string, version: string): string
 }
 
 const GROUPS: readonly ItemGroup[] = ['yours', 'not-yours', 'sent'];
-const KINDS: readonly ItemKind[] = ['result', 'epic-result', 'question', 'plan', 'worker', 'task', 'push', 'motion'];
+/** Within a group, the order of the kinds: one rank for each of the contract's ITEM_KINDS, none missing (epic review round 1, items.ts:61). */
+export const KIND_ORDER: Readonly<Record<ItemKind, number>> = Object.freeze({ result: 0, 'epic-result': 1, question: 2, plan: 3, worker: 4, task: 5, push: 6, motion: 7 } satisfies Record<ItemKind, number>);
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -78,8 +78,10 @@ export function countsOf(items: readonly Item[]): ItemCounts {
 /** The router's workers: name, and its value when it is an object. */
 function workers(values: Record<string, unknown>): Array<[string, Record<string, unknown>]> {
   return Object.entries(values)
-    .filter(([k, v]) => k.startsWith('worker/') && !k.endsWith('/report') && isObject(v))
-    .map(([k, v]) => [k.slice('worker/'.length), v as Record<string, unknown>] as [string, Record<string, unknown>])
+    .flatMap(([k, v]): Array<[string, Record<string, unknown>]> => {
+      const key = routerKey(k);
+      return key?.kind === 'worker' && isObject(v) ? [[key.name, v]] : [];
+    })
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
@@ -92,7 +94,7 @@ function resultItems(git: GitFacts, epics: Set<string>, units: Set<string>, work
     const review: Review | undefined = git.reviews[b.tip];
     const kind: ItemKind = isEpic ? 'epic-result' : 'result';
     const wu = isEpic ? null : wuOfBranch(b.name);
-    const epic = isEpic ? epicOfBranch(b.name) : (epicOfBranch(`epic/${b.name.split('/')[1] as string}`) ?? null);
+    const epic = isEpic ? epicOfBranch(b.name) : epicOfBranch(epicOfUnit(b.name));
     // Open finds the page by the id the name carries (review round 2, items.ts:103): with none, no Open, and why.
     const unnamed = isEpic ? epic === null : wu === null;
     const noPage = isEpic
@@ -100,7 +102,7 @@ function resultItems(git: GitFacts, epics: Set<string>, units: Set<string>, work
       : ' Its branch name carries no work unit number (wu/<epic>/w<n>-...), so Keel cannot find its result page: open it from its folder.';
     const opens = (open: 'page' | 'archive') => (unnamed ? 'none' : open);
     const suffix = unnamed ? noPage : '';
-    const target = isEpic ? 'main' : `epic/${b.name.split('/')[1] as string}`;
+    const target = isEpic ? 'main' : epicOfUnit(b.name);
     // A work unit's id carries its branch (two branches of one unit may share a tip); an epic's branch is its id.
     const subject = isEpic ? (epic ?? b.name) : wu === null ? b.name : `${wu}-${shortHash(b.name)}`;
     const base = { id: itemId(kind, subject, b.tip), kind, wu, epic, branch: b.name, tip: b.tip.slice(0, 7), since: git.times[b.tip] ?? null };
@@ -162,17 +164,17 @@ export function itemsOf(input: ItemInput): Item[] {
       if (heard && ws.some(([, v]) => v.branch === b.name && v.state === 'busy')) continue;
       const first = heard ? 'No worker is busy on it.' : 'The router is not heard, so a worker may still be on it.';
       const wu = wuOfBranch(unit);
-      out.push(item({ id: itemId('task', b.name, b.tip), kind: 'task', title: 'Task into its work unit', wu, epic: wu === null ? null : (wu.split('.')[0] as string), branch: b.name, tip: b.tip.slice(0, 7), since: git.times[b.tip] ?? null, why: `${first} The merge into ${unit} is yours, in its folder.`, line: `git merge --no-ff ${shQuote(b.name)}` }));
+      out.push(item({ id: itemId('task', b.name, b.tip), kind: 'task', title: 'Task into its work unit', wu, epic: wu === null ? null : epicOfWu(wu), branch: b.name, tip: b.tip.slice(0, 7), since: git.times[b.tip] ?? null, why: `${first} The merge into ${unit} is yours, in its folder.`, line: `git merge --no-ff ${shQuote(b.name)}` }));
     }
   }
 
   if (heard) {
     const resultWus = new Set(out.filter((i) => i.kind === 'result').map((i) => i.wu));
     for (const [key, value] of Object.entries(values)) {
-      const stage = /^wu\/(E-[A-Z0-9]{1,16}\.W[0-9]{1,3})\/stage$/.exec(key);
-      if (stage !== null && isObject(value) && typeof value.stage === 'string') {
-        const wu = stage[1] as string;
-        const epic = wu.split('.')[0] as string;
+      const parsed = routerKey(key);
+      if (parsed?.kind === 'stage' && isObject(value) && typeof value.stage === 'string') {
+        const wu = parsed.wu;
+        const epic = epicOfWu(wu);
         const branch = branchOf(wu);
         const tip = typeof value.tip === 'string' && /^[0-9a-f]{7,40}$/.test(value.tip) ? value.tip : null;
         if (value.stage === 'plan to read') {
@@ -193,13 +195,12 @@ export function itemsOf(input: ItemInput): Item[] {
         }
         continue;
       }
-      const question = /^question\/([a-z0-9][a-z0-9-]{0,40})$/.exec(key);
-      if (question !== null && isObject(value)) {
+      if (parsed?.kind === 'question' && isObject(value)) {
         const headline = text(value.headline);
         if (headline === null) continue;
         const lines = Array.isArray(value.lines) ? value.lines.filter((l): l is string => typeof l === 'string' && l !== '') : [];
         const wu = typeof value.wu === 'string' && WU_ID.test(value.wu) ? value.wu : null;
-        out.push(item({ id: itemId('question', question[1] as string, `${router.run as string}\n${JSON.stringify(value)}`), kind: 'question', title: 'Question from the router', wu, epic: wu === null ? null : (wu.split('.')[0] as string), why: headline, open: lines.length > 0 ? 'text' : 'none', markable: true, text: lines }));
+        out.push(item({ id: itemId('question', parsed.name, `${router.run as string}\n${JSON.stringify(value)}`), kind: 'question', title: 'Question from the router', wu, epic: wu === null ? null : epicOfWu(wu), why: headline, open: lines.length > 0 ? 'text' : 'none', markable: true, text: lines }));
       }
     }
     for (const [name, v] of ws) {
@@ -208,7 +209,7 @@ export function itemsOf(input: ItemInput): Item[] {
       const branch = typeof v.branch === 'string' && v.branch.length <= 200 && !CONTROL.test(v.branch) && v.branch !== '' ? v.branch : null;
       const session = typeof v.session === 'string' && SESSION.test(v.session) ? v.session : null;
       const wu = branch === null ? null : wuOfBranch(branch);
-      out.push(item({ id: itemId('worker', name, `${name}\n${waiting}\n${session ?? ''}`), kind: 'worker', title: 'Worker waits on you', wu, epic: wu === null ? null : (wu.split('.')[0] as string), branch, since: iso(v.active), why: `Waits on ${waiting.replace(/[.\s]+$/, '')}: answer it in its session.`, worker: name, line: session === null ? null : `claude attach ${shQuote(session)}` }));
+      out.push(item({ id: itemId('worker', name, `${name}\n${waiting}\n${session ?? ''}`), kind: 'worker', title: 'Worker waits on you', wu, epic: wu === null ? null : epicOfWu(wu), branch, since: iso(v.active), why: `Waits on ${waiting.replace(/[.\s]+$/, '')}: answer it in its session.`, worker: name, line: session === null ? null : `claude attach ${shQuote(session)}` }));
     }
   }
 
@@ -217,5 +218,5 @@ export function itemsOf(input: ItemInput): Item[] {
     i.group = 'sent';
     i.why = i.kind === 'plan' ? 'You marked it sent: it leaves when the router moves the stage on.' : 'You marked it sent: it leaves when the router removes the question.';
   }
-  return out.sort((a, b) => GROUPS.indexOf(a.group) - GROUPS.indexOf(b.group) || KINDS.indexOf(a.kind) - KINDS.indexOf(b.kind) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return out.sort((a, b) => GROUPS.indexOf(a.group) - GROUPS.indexOf(b.group) || KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }

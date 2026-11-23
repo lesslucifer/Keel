@@ -757,3 +757,38 @@ fn a_byte_order_mark_or_a_second_document_never_hides_a_data_file() {
         }
     }
 }
+
+/// E-APPLIST.W12 (`keel doc-roles`, the local app's Open): run outside any repository, it answers
+/// each named file's roles, id and page as one doc-roles/v1 JSON answer, a problem for a file that
+/// gives no role, and its usage with no file; it writes nothing.
+#[test]
+fn doc_roles_answers_each_files_roles_id_and_page_outside_a_repository() {
+    let d = TempDir::new().unwrap();
+    let w = |n: &str, s: &str| {
+        std::fs::write(d.path().join(n), s).unwrap();
+        d.path().join(n).to_string_lossy().into_owned()
+    };
+    let good = w("a.yaml", "\u{feff}artifact: [epic-result, wu-result]\nid: E-A\npage: a.html\n");
+    let block = w("b.yaml", "artifact: wu-plan\nid: E-A.W1\npage: b.html\ndetails: |\n  *Bold* & [&str]\n");
+    let dup = w("c.yaml", "artifact: wu-plan\nartifact: wu-result\n");
+    let missing = d.path().join("none.yaml").to_string_lossy().into_owned();
+    let folder = d.path().to_string_lossy().into_owned();
+    let before: Vec<_> = std::fs::read_dir(d.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+    let o = keel(Path::new("/"), &["doc-roles", &good, &block, &dup, &missing, &folder]);
+    assert!(o.status.success(), "{}", text(&o));
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["schema"], "doc-roles/v1");
+    let files = v["files"].as_array().unwrap();
+    assert_eq!(files.len(), 5);
+    assert_eq!(files[0], serde_json::json!({ "path": good, "roles": ["epic-result", "wu-result"], "id": "E-A", "page": "a.html", "problem": null }));
+    assert_eq!(files[1], serde_json::json!({ "path": block, "roles": ["wu-plan"], "id": "E-A.W1", "page": "b.html", "problem": null }));
+    for (f, why) in files[2..].iter().zip(["duplicate", "unreadable", "not a regular file"]) {
+        assert_eq!((f["roles"].as_array().unwrap().len(), f["id"].is_null(), f["page"].is_null()), (0, true, true), "{f}");
+        assert!(f["problem"].as_str().unwrap().contains(why), "{f} should say {why}");
+    }
+    let after: Vec<_> = std::fs::read_dir(d.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert_eq!(before, after, "nothing written");
+    let none = keel(Path::new("/"), &["doc-roles"]);
+    assert_eq!(none.status.code(), Some(1));
+    assert!(text(&none).contains("usage: keel doc-roles <data file>..."), "{}", text(&none));
+}

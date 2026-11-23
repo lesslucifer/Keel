@@ -42,11 +42,14 @@ areas:
           watchdog's waiting state; main against its upstream; a task's tip against its unit. Open copies the tip's
           `docs/` from git into the app's folder and opens the page its data file names in the browser: the committed
           bytes, even while the working file differs; an epic result opens in place from its worktree's
-          `docs/.archive/`. Mark sent moves a plan or a question under Sent, kept across a restart, until its source
+          `docs/.archive/`. Open learns each data file's roles, id and page from keel doc-roles, keel's own reading, never
+          its own; a keel with no doc-roles makes Open answer "update keel", and with no usable keel it asks the owner to
+          choose one. A data file whose id or page the app cannot use (empty, or a control character), or whose path
+          holds a control character, gives no role alone; every other file keeps its own. Mark sent moves a plan or a question under Sent, kept across a restart, until its source
           moves it on. While the router is not heard (15 minutes with no line) its items are hidden and a line says so;
           a router restart drops its values. The app writes nothing into a project. Tests: app/test/unit/items.test.ts;
-          app/test/integration/items-flow.test.ts, open.test.ts, sent.test.ts, e2e-world.test.ts; the window's
+          app/test/integration/items-flow.test.ts, open.test.ts, doc-roles.test.ts, sent.test.ts, e2e-world.test.ts; the window's
           waits.test.tsx (Vitest, by hand); the epic test (steps 2 to 11).
         failure: >-
           An item that stays after its source says it left, or leaves before; Open showing a working file or a page
-          outside the copy; a router item shown while the router is not heard; any file written inside a project.
+          outside the copy, or a page keel doc-roles does not name; a router item shown while the router is not heard; any file written inside a project.

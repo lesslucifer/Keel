@@ -263,24 +263,42 @@ pub fn result_role(epic: bool) -> &'static str {
 /// the doc check refuses. `src` is the file's bytes as they are - never trimmed, never decoded
 /// lossily - so the sign-off reads a committed data file as the doc check reads it on disk.
 pub fn data_roles(src: impl AsRef<[u8]>) -> Result<Vec<String>, String> {
+    data_head(src).map(|h| h.roles)
+}
+
+/// What a data file tells a reader looking for a page (E-APPLIST.W12, `keel doc-roles`): its roles,
+/// exactly as `data_roles` gives them, and the `id` and `page` of the document holding `artifact`,
+/// each when it is text (trimmed, not empty).
+#[derive(Debug, PartialEq, Eq)]
+pub struct DataHead {
+    pub roles: Vec<String>,
+    pub id: Option<String>,
+    pub page: Option<String>,
+}
+
+/// A data file's roles, id and page, loaded once; `Err` exactly when `data_roles` is one, and why.
+pub fn data_head(src: impl AsRef<[u8]>) -> Result<DataHead, String> {
     let bytes = src.as_ref();
     if let Some(p) = size_problem(bytes.len() as u64) {
         return Err(p);
     }
     let src = std::str::from_utf8(bytes).map_err(|_| "the data file is not UTF-8 text".to_string())?;
     let docs = load_data(src)?;
-    let Some(a) = holding_artifact(&docs).and_then(|d| d.as_hash()).and_then(|h| h.get(&Yaml::String("artifact".into()))) else {
+    let Some(h) = holding_artifact(&docs).and_then(|d| d.as_hash()) else {
         return Err("no field \"artifact\"".into());
     };
+    let get = |k: &str| h.get(&Yaml::String(k.into()));
+    let a = get("artifact").ok_or_else(|| "no field \"artifact\"".to_string())?;
     let roles: Vec<String> = artifact_roles(a)
         .map_err(|other| format!("artifact {} is neither text nor a list", shown(other)))?
         .into_iter()
         .map(|r| r.map_err(|r| format!("artifact holds {}, not a role", shown(r))))
         .collect::<Result<_, _>>()?;
-    match role_problem(&roles) {
-        Some(p) => Err(p),
-        None => Ok(roles),
+    if let Some(p) = role_problem(&roles) {
+        return Err(p);
     }
+    let text = |k: &str| get(k).and_then(Yaml::as_str).map(str::trim).filter(|s| !s.is_empty()).map(String::from);
+    Ok(DataHead { roles, id: text("id"), page: text("page") })
 }
 
 /// A data file's text as YAML documents: a byte-order mark read past; its shape read first
@@ -1264,8 +1282,8 @@ fn scan(s: &str, out: &mut Vec<Hit>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        data_roles, decode, decode_mapped, fields, hits, page_words, pages_of, pair_named, pair_of, partner_named, read_data, result_role, role_cap,
-        role_fields, size_problem, tags, under_root, unquoted_labels, Data, Pair, ANCHORS, LIST_FIELDS, MAX_DATA_BYTES, MAX_DEPTH, ROLES,
+        data_head, data_roles, decode, decode_mapped, fields, hits, page_words, pages_of, pair_named, pair_of, partner_named, read_data, result_role, role_cap,
+        role_fields, size_problem, tags, under_root, unquoted_labels, Data, DataHead, Pair, ANCHORS, LIST_FIELDS, MAX_DATA_BYTES, MAX_DEPTH, ROLES,
     };
     use std::path::Path;
 
@@ -1292,6 +1310,46 @@ mod tests {
 
     /// Epic review round 1 (E-DOCSPLIT close, important): the sign-off's report finder reads the
     /// roles the doc check accepts, or none - a data file red at the doc check is never a report.
+    /// Epic review round 1 (E-APPLIST, docs.ts:79): the app's Open reads a data file's roles too, so
+    /// both readers run one case table, tests/data/data-roles.json; app/test/integration/doc-roles.test.ts
+    /// reads the same file through keel doc-roles. An empty list is no role (an Err here).
+    #[test]
+    fn data_roles_gives_each_shared_case_its_roles() {
+        let table: serde_json::Value = serde_json::from_str(include_str!("../tests/data/data-roles.json")).expect("the case table is JSON");
+        let cases = table["cases"].as_array().expect("cases");
+        assert!(cases.len() >= 20, "{} cases", cases.len());
+        for case in cases {
+            let src = case["src"].as_str().expect("src");
+            let roles: Vec<String> = case["roles"].as_array().expect("roles").iter().map(|r| r.as_str().expect("a role").to_string()).collect();
+            match data_roles(src) {
+                Ok(got) => assert_eq!(got, roles, "{src:?} ({})", case["why"]),
+                Err(e) => assert!(roles.is_empty(), "{src:?} ({}): no role ({e}), the table says {roles:?}", case["why"]),
+            }
+        }
+    }
+
+    /// E-APPLIST.W12 (`keel doc-roles`): data_head gives data_roles' roles - the same Ok or Err on
+    /// every case of the shared table - and the id and page of the document holding artifact.
+    #[test]
+    fn data_head_gives_the_roles_data_roles_gives_and_the_holding_documents_id_and_page() {
+        let table: serde_json::Value = serde_json::from_str(include_str!("../tests/data/data-roles.json")).expect("the case table is JSON");
+        for case in table["cases"].as_array().expect("cases") {
+            let src = case["src"].as_str().expect("src");
+            assert_eq!(data_head(src).map(|h| h.roles), data_roles(src), "{src:?}");
+        }
+        let head = |src: &str| data_head(src).unwrap();
+        assert_eq!(
+            head("artifact: wu-plan\nid: E-A.W1\npage: a-plan.html\n"),
+            DataHead { roles: vec!["wu-plan".into()], id: Some("E-A.W1".into()), page: Some("a-plan.html".into()) }
+        );
+        let other = head("id: E-B.W9\npage: b.html\n---\nartifact: [epic-result, wu-result]\nid: \" E-A \"\npage: 'a.html'\n");
+        assert_eq!((other.id.as_deref(), other.page.as_deref()), (Some("E-A"), Some("a.html")), "the holding document's, trimmed");
+        let none = head("artifact: wu-plan\nid: [E-A]\npage: \"  \"\n");
+        assert_eq!((none.id, none.page), (None, None), "a list or blank text is no id or page");
+        assert_eq!(head("{artifact: wu-result, id: E-A.W2, page: r.html}\n").page.as_deref(), Some("r.html"));
+        assert!(data_head("status: ready\n").is_err_and(|e| e == "no field \"artifact\""));
+    }
+
     #[test]
     fn data_roles_gives_no_role_where_the_doc_check_finds_a_role_problem() {
         let err = |src: &str| data_roles(src).unwrap_err();

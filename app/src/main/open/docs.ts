@@ -1,11 +1,12 @@
-// Open's pure parts (E-APPLIST.W6): the tree read of a tip's docs/, the files a copy takes, a data file's
-// head (its top-level artifact, id and page lines), the page a role and an id name, and the one kind of
+// Open's pure parts (E-APPLIST.W6): the tree read of a tip's docs/, the files a copy takes, keel doc-roles'
+// answer (a data file's roles, id and page as keel reads them: the app reads no YAML itself, W12 review
+// round 1, owner ruling 2026-11-23), the page a role and an id name, and the one kind of
 // URL the app hands the browser: a file URL of a file inside a folder it allows.
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ItemKind } from '../../shared/contract.ts';
-import { OUTPUT_CAP } from '../commands.ts';
+import { OUTPUT_CAP, type Captured } from '../commands.ts';
 
 export interface TreeEntry {
   mode: string;
@@ -19,7 +20,7 @@ export interface TreeEntry {
 /** The most bytes one copy of a tip's docs/ holds. */
 export const COPY_CAP = 8 * 1024 * 1024;
 
-/** The largest data file whose head is read. */
+/** The largest data file whose roles are asked of keel. */
 export const HEAD_CAP = 64 * 1024;
 
 const ROW = /^([0-7]{6}) ([a-z]+) ([0-9a-f]{40}|[0-9a-f]{64}) +([0-9]+|-)\t([\s\S]+)$/;
@@ -67,32 +68,50 @@ export interface DataHead {
   page: string | null;
 }
 
-/** A scalar with its quotes taken off; null for an anchor or an alias, which the app does not follow. */
-function scalar(v: string): string | null {
-  const t = v.trim();
-  if (t === '' || t.startsWith('&') || t.startsWith('*')) return null;
-  const q = /^"([^"]*)"$/.exec(t) ?? /^'([^']*)'$/.exec(t);
-  return q === null ? t : (q[1] as string);
+/** The answer keel doc-roles gives (src/main.rs doc_roles), the one form the app reads. */
+export const DOC_ROLES_SCHEMA = 'doc-roles/v1';
+
+/** Why keel gave no doc-roles answer to read, or null: it did not start or answer, its answer was cut, or it is a keel with no doc-roles. */
+export function docRolesWhy(r: Captured): string | null {
+  if (r.startError !== null) return `keel could not start (${r.startError})`;
+  if (r.timedOut) return "keel did not answer (the docs' roles)";
+  if (r.cut) return "keel's answer was cut (the docs' roles)";
+  if (r.code !== 0) return 'this keel cannot read a doc\'s roles (no keel doc-roles): update keel';
+  return null;
 }
 
-/** A data file's top-level artifact (one, or a [list]), id and page; nested keys are not read. */
-export function dataHead(text: string): DataHead {
-  const head: DataHead = { artifact: [], id: null, page: null };
-  const seen = new Set<string>();
-  for (const line of text.split(/\r?\n/)) {
-    const m = /^(artifact|id|page):(.*)$/.exec(line);
-    if (m === null || seen.has(m[1] as string)) continue;
-    seen.add(m[1] as string);
-    const raw = (m[2] as string).trim();
-    if (m[1] === 'artifact') {
-      const list = /^\[(.*)\]$/.exec(raw);
-      const parts = list === null ? [raw] : (list[1] as string).split(',');
-      const values = parts.map(scalar);
-      head.artifact = values.every((x): x is string => x !== null) ? values : [];
-    } else if (m[1] === 'id') head.id = scalar(raw);
-    else head.page = scalar(raw);
+/** Whether keel gave an id or a page as JSON text or null: any other type is no doc-roles/v1 answer. */
+const textOrNull = (v: unknown): v is string | null => v === null || typeof v === 'string';
+
+/** Whether the app can use an id or a page keel gave: null, or text that is not empty and holds no control character. */
+const usable = (v: string | null): boolean => v === null || (v !== '' && !CONTROL.test(v));
+
+/**
+ * keel doc-roles' answer: each asked file's head (its roles, id and page as keel reads them), or null when
+ * the answer is not doc-roles/v1 naming exactly the asked files, each once, with roles that are text and
+ * an id and a page that are text or null. A file whose id or page the app cannot use (empty, or holding a
+ * control character, which keel accepts in a draft or an epic's free-text id) gives no head, alone: the
+ * other files keep theirs (W12 review round 2, docs.ts:83).
+ */
+export function parseDocRoles(out: string, asked: readonly string[]): Map<string, DataHead> | null {
+  let v: unknown;
+  try {
+    v = JSON.parse(out);
+  } catch {
+    return null;
   }
-  return head;
+  if (typeof v !== 'object' || v === null || (v as { schema?: unknown }).schema !== DOC_ROLES_SCHEMA) return null;
+  const list = (v as { files?: unknown }).files;
+  if (!Array.isArray(list) || list.length !== asked.length) return null;
+  const heads = new Map<string, DataHead>();
+  for (const [i, f] of list.entries()) {
+    const want = asked[i];
+    if (want === undefined || typeof f !== 'object' || f === null) return null;
+    const { path: p, roles, id, page } = f as Record<string, unknown>;
+    if (p !== want || !Array.isArray(roles) || !roles.every((r): r is string => typeof r === 'string') || !textOrNull(id) || !textOrNull(page)) return null;
+    if (usable(id) && usable(page)) heads.set(want, { artifact: [...roles], id, page });
+  }
+  return heads;
 }
 
 /** The page a role and an id name: beside the data file whose head matches, a plain .html name; the newest by path when several match. */

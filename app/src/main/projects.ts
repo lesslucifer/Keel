@@ -12,7 +12,7 @@ import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { ProjectEntry } from '../shared/contract.ts';
 import { PROJECT_ID } from './bridge.ts';
-import { run, refusedFlag, MIN_GIT, OLDEST_GIT, type Captured, type RunOptions } from './commands.ts';
+import { ProjectRunner, type Captured, type RunOptions } from './commands.ts';
 import { load, writeAtomic } from './store.ts';
 import { plain } from './text.ts';
 import { toolProblem } from './tools.ts';
@@ -101,26 +101,17 @@ export async function checkProject(folder: string, git: string, opts: RunOptions
   // Before any run: a git inside the folder would be the folder's own program run on it.
   const gitWhy = await toolProblem('git', git, [dir]);
   if (gitWhy !== null) return { ok: false, why: `git is ${gitWhy}: choose a git outside it in the settings` };
-  let top = await run(git, 'toplevel', { project: dir }, opts);
-  const refused = refusedFlag(top);
-  if (refused === '--no-optional-locks') return { ok: false, why: `this git is older than ${OLDEST_GIT}: choose a newer git in the settings` };
-  if (refused === '--no-lazy-fetch') {
-    // A git older than 2.45: it may read this folder only if nothing in it can be fetched lazily.
-    const before245: RunOptions = { ...opts, before245: true };
-    const promisor = await run(git, 'promisor-config', { project: dir }, before245);
-    const promisorFailed = gitFailed(promisor);
-    if (promisorFailed !== null) return { ok: false, why: promisorFailed };
-    if (promisor.code === 0) return { ok: false, why: `a partial clone needs git ${MIN_GIT} or later: choose a newer git in the settings` };
-    // 1 is "no such setting"; anything else, and the folder's git settings could not be read.
-    if (promisor.code !== 1) return { ok: false, why: "git could not read the folder's git settings" };
-    opts = before245;
-    top = await run(git, 'toplevel', { project: dir }, opts);
-  }
+  // Through the old-git runner the reader and Open use (W12 review round 1, commands.ts:327): one rule for
+  // a git older than 2.45 (no promisor setting, so nothing to fetch) and one refusal text for each case.
+  const runner = new ProjectRunner(dir, opts);
+  const top = await runner.run(git, 'toplevel', {});
+  if (typeof top === 'string') return { ok: false, why: top };
   const topFailed = gitFailed(top);
   if (topFailed !== null) return { ok: false, why: topFailed };
   if (top.code !== 0) return { ok: false, why: 'not a git checkout' };
   if ((await real(top.stdout.trim())) !== dir) return { ok: false, why: 'not the top folder of its git checkout' };
-  const common = await run(git, 'common-dir', { project: dir }, opts);
+  const common = await runner.run(git, 'common-dir', {});
+  if (typeof common === 'string') return { ok: false, why: common };
   const commonFailed = gitFailed(common);
   if (commonFailed !== null) return { ok: false, why: commonFailed };
   // One line: the common git folder, absolute or relative to the folder git ran in (the project).
@@ -129,7 +120,8 @@ export async function checkProject(folder: string, git: string, opts: RunOptions
   if (common.code !== 0 || (await real(path.resolve(dir, line))) !== path.join(dir, '.git')) {
     return { ok: false, why: 'a linked worktree or a submodule: add its main checkout' };
   }
-  const config = await run(git, 'has-config', { project: dir }, opts);
+  const config = await runner.run(git, 'has-config', {});
+  if (typeof config === 'string') return { ok: false, why: config };
   const configFailed = gitFailed(config);
   if (configFailed !== null) return { ok: false, why: configFailed };
   if (config.code !== 0 || !commitsConfig(config.stdout)) return { ok: false, why: 'its HEAD does not commit .keel/config.toml' };
