@@ -7,6 +7,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlin
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openItem, openListed, KEPT_COPIES } from '../../src/main/open/open.ts';
+import { HEADS_DISK_CAP } from '../../src/main/open/docs.ts';
 import { emptyView } from '../../src/main/reader/view.ts';
 import { openFileSink } from '../../src/main/alerter/seams.ts';
 import { GitReader } from '../../src/main/reader/git.ts';
@@ -380,4 +381,67 @@ test('W12 review round 1 nit (open.ts:132): Open reads through the reader\'s run
   const runs = records(rec).slice(n).map((x) => x.argv);
   assert.ok(runs.length > 0);
   assert.ok(runs.every((a) => !a.includes('--no-lazy-fetch') && !a.includes('--get-regexp')), JSON.stringify(runs));
+});
+
+/** `yaml` padded with a YAML comment to exactly `bytes` bytes. */
+const padded = (yaml: string, bytes: number): string => `${yaml}# ${'x'.repeat(bytes - Buffer.byteLength(yaml) - 3)}\n`;
+
+test('epic review round 2 (docs.ts:24): a data file keel accepts opens whatever its size, up to keel\'s own bound: 100 KiB and exactly 1 MiB, from a fresh copy, a kept copy and docs/.archive', async (t) => {
+  const w = world(t);
+  const archiveItem = (epic: string): Item => ({ id: 'epic-result/E-A@aaaaaaaaaaaa', kind: 'epic-result', group: 'yours', wu: null, epic, title: 'Epic result to sign', branch: 'epic/E-A', tip: rev(w.dir, 'epic/E-A').slice(0, 7), since: null, why: 'x', open: 'archive', markable: false, worker: null, line: null, text: [] });
+  const wt = path.join(w.root, 'epic-wt');
+  sh(GIT, w.dir, ['worktree', 'add', '-q', wt, 'epic/E-A']);
+  const archive = mk(path.join(wt, 'docs', '.archive'));
+  for (const bytes of [100 * 1024, 1024 * 1024]) {
+    const yaml = padded(PLAN_YAML, bytes);
+    assert.equal(Buffer.byteLength(yaml), bytes);
+    commitFiles(w.dir, { 'docs/work/2026-11-22-e-a-w1-plan.yaml': yaml }, `a plan data file of ${bytes} bytes`);
+    const tip = rev(w.dir, 'wu/E-A/w1-reader');
+    const { plan, facts } = await planItem(w, tip);
+    const n = w.opened.length;
+    assert.deepEqual(await openItem(plan, facts, w.parts), { done: true }, `a fresh copy, ${bytes} bytes`);
+    assert.deepEqual(await openItem(plan, facts, w.parts), { done: true }, `the kept copy, ${bytes} bytes`);
+    for (const url of w.opened.slice(n)) assert.equal(readFileSync(fileURLToPath(url), 'utf8'), PLAN_PAGE);
+    assert.equal(readFileSync(path.join(w.appDir, 'open', 'p0a1b2c3d', tip, 'docs', 'work', '2026-11-22-e-a-w1-plan.yaml'), 'utf8'), yaml, 'the data file copied whole');
+    const epic = `E-S${bytes}`.slice(0, 18);
+    writeFileSync(path.join(archive, `${epic}-result.yaml`), padded(`artifact: epic-result\nstatus: ready\nid: ${epic}\npage: ${epic}-result.html\n`, bytes));
+    writeFileSync(path.join(archive, `${epic}-result.html`), '<p>The epic result.</p>\n');
+    assert.deepEqual(await openItem(archiveItem(epic), await w.facts(), w.parts), { done: true }, `docs/.archive, ${bytes} bytes`);
+    assert.equal(fileURLToPath(w.opened.at(-1) as string), path.join(archive, `${epic}-result.html`));
+  }
+});
+
+test('epic review round 2 (docs.ts:24): the temp folder of data files Open hands keel holds at most HEADS_DISK_CAP bytes at a time and is gone after each run, while every data file at the tip is asked about, so a page whose data file comes after 5 MiB of others still opens', async (t) => {
+  const w = world(t);
+  const log = path.join(w.root, 'keel-runs.jsonl');
+  const real = w.parts.keel;
+  const wrapper = program(
+    path.join(mk(path.join(w.root, 'keel-bin')), 'keel'),
+    [
+      `#!${process.execPath}`,
+      `const fs = require('node:fs'), path = require('node:path');`,
+      `const files = process.argv.slice(3);`,
+      `const dirs = [...new Set(files.map((f) => path.dirname(f)))];`,
+      `const bytes = dirs.reduce((n, d) => n + fs.readdirSync(d).reduce((m, x) => m + fs.statSync(path.join(d, x)).size, 0), 0);`,
+      `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ dirs, files: files.length, bytes }) + '\\n');`,
+      `const r = require('node:child_process').spawnSync(${JSON.stringify(real)}, process.argv.slice(2), { stdio: 'inherit', env: process.env });`,
+      `process.exit(r.status === null ? 1 : r.status);`,
+    ].join('\n') + '\n',
+  );
+  const others: Record<string, string> = {};
+  for (let i = 0; i < 5; i++) others[`docs/a-${i}.yaml`] = padded(`artifact: wu-plan\nstatus: draft\nid: E-Z.W${i + 1}\nepic: E-Z\npage: z.html\n`, 1024 * 1024 - 64);
+  commitFiles(w.dir, others, '5 MiB of other data files, sorted before the plan\'s');
+  const tip = rev(w.dir, 'wu/E-A/w1-reader');
+  const { plan, facts } = await planItem(w, tip);
+  assert.deepEqual(await openItem(plan, facts, { ...w.parts, keel: wrapper }), { done: true });
+  assert.equal(readFileSync(fileURLToPath(w.opened[0] as string), 'utf8'), PLAN_PAGE);
+  const runs = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { dirs: string[]; files: number; bytes: number });
+  assert.ok(runs.length >= 2, `more than one batch: ${JSON.stringify(runs)}`);
+  for (const r of runs) {
+    assert.equal(r.dirs.length, 1);
+    assert.match(path.basename(r.dirs[0] as string), /^\.tmp-heads-/);
+    assert.ok(r.bytes <= HEADS_DISK_CAP, `${r.bytes} bytes in one run's temp folder`);
+    assert.equal(existsSync(r.dirs[0] as string), false, 'each temp folder is gone after its run');
+  }
+  assert.equal(runs.reduce((n, r) => n + r.files, 0), 6, 'every data file at the tip asked about, once');
 });

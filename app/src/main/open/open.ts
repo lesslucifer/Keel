@@ -11,7 +11,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { Change, GitFacts, Item, ProjectEntry, View } from '../../shared/contract.ts';
 import { ProjectRunner, type Captured, type RunOptions } from '../commands.ts';
-import { copyPlan, fileUrlInside, findPage, parseTree, roleOf, COPY_CAP, HEAD_CAP, type DataHead } from './docs.ts';
+import { copyPlan, fileUrlInside, findPage, headBatches, parseTree, roleOf, COPY_CAP, type DataHead } from './docs.ts';
 import { docHeads } from './roles.ts';
 
 /** The most copies kept per project; the least recently opened go first. */
@@ -104,6 +104,31 @@ async function holds(file: string, text: string): Promise<boolean> {
 }
 
 /**
+ * keel's reading of `read` (data files' texts from git, by their tree paths): written into a temp folder of
+ * their own, one flat name each, asked of keel doc-roles, and the folder removed before this returns, so the
+ * folder holds one batch at most (headBatches: HEADS_DISK_CAP bytes; epic review round 2, docs.ts:24). A
+ * sweep removes a crash's leftover. The app reads no YAML itself (W12 review round 1, owner ruling 2026-11-23).
+ */
+async function askHeads(parts: OpenParts, base: string, read: ReadonlyArray<{ path: string; text: string }>): Promise<Array<{ path: string; head: DataHead }> | string> {
+  const dir = path.join(base, `.tmp-heads-${process.pid}-${randomBytes(4).toString('hex')}`);
+  const named = read.map((_, i) => path.join(dir, `${i}.yaml`));
+  await mkdir(dir, { mode: 0o700 });
+  let asked: Map<string, DataHead> | string;
+  try {
+    for (const [i, r] of read.entries()) await writeFile(named[i] as string, r.text, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    asked = await docHeads(parts.keel, named, parts.runOptions);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+  if (typeof asked === 'string') return asked;
+  const answered = asked;
+  return read.flatMap((r, i) => {
+    const head = answered.get(named[i] as string);
+    return head === undefined ? [] : [{ path: r.path, head }];
+  });
+}
+
+/**
  * The copy of `tip`'s docs/ in the app folder holding the `role` page for `id`, and that page's path.
  * The page and its data file are found from git's blobs, never from the copy on disk. A kept copy is
  * reused only while its data file and page hold exactly those blobs' bytes (a case twin on a
@@ -111,7 +136,8 @@ async function holds(file: string, text: string): Promise<boolean> {
  * rebuilt whole in a temp folder and renamed over the kept one, never written into in place (open.ts:151).
  * The data file and the page are written first and the cap is charged on what is written (round 1,
  * docs.ts:52); a path that collides with one already written (a case twin) is skipped (round 1, open.ts:100);
- * a copy without its page is never kept.
+ * a copy without its page is never kept. Every data file the copy takes is asked of keel, whatever its size:
+ * keel judges it (epic review round 2, docs.ts:24).
  */
 async function copyOf(parts: OpenParts, tip: string, role: string, id: string): Promise<{ dir: string; page: string } | Change> {
   const base = path.join(parts.appDir, 'open', parts.project.id);
@@ -131,7 +157,7 @@ async function copyOf(parts: OpenParts, tip: string, role: string, id: string): 
   if (await exists(path.join(final, COMPLETE))) {
     const keptFiles: string[] = [];
     for (const f of files) {
-      if (!f.path.endsWith('.yaml') || (f.size as number) > HEAD_CAP) continue;
+      if (!f.path.endsWith('.yaml')) continue;
       if ((await blobIdOf(path.join(final, f.path), f.oid.length)) === f.oid) keptFiles.push(f.path);
     }
     // Their roles as keel reads them (W12 review round 1, owner ruling 2026-11-23).
@@ -154,45 +180,39 @@ async function copyOf(parts: OpenParts, tip: string, role: string, id: string): 
     const blob = await read('blob', f.oid);
     return typeof blob === 'string' || failed(blob, f.path) !== null || Buffer.byteLength(blob.stdout, 'utf8') !== f.size || blob.stdout.includes('\uFFFD') ? null : blob.stdout;
   };
-  // The head pass: each data file's text, kept until the copy loop writes it (round 3 nit, open.ts:143), so no file is read twice.
-  const yamls: Array<{ path: string; text: string }> = [];
+  // The head pass, batch by batch (headBatches): each data file's text, kept until the copy loop writes it
+  // (round 3 nit, open.ts:143) while the kept texts stay within COPY_CAP, so no file the copy takes is read twice
+  // and memory stays bounded; keel reads each batch from a temp folder of its own (askHeads).
   const texts = new Map<string, string>();
-  for (const f of files) {
-    if (!f.path.endsWith('.yaml') || (f.size as number) > HEAD_CAP) continue;
-    const t = await text(f);
-    if (t !== null) {
-      yamls.push({ path: f.path, text: t });
-      texts.set(f.path, t);
+  let held = 0;
+  const heads: Array<{ path: string; head: DataHead }> = [];
+  for (const batch of headBatches(files)) {
+    const read: Array<{ path: string; text: string }> = [];
+    for (const f of batch) {
+      const t = await text(f);
+      if (t === null) continue;
+      read.push({ path: f.path, text: t });
+      if (held + (f.size as number) <= COPY_CAP) {
+        texts.set(f.path, t);
+        held += f.size as number;
+      }
     }
+    if (read.length === 0) continue;
+    const asked = await askHeads(parts, base, read);
+    if (typeof asked === 'string') return notDone(asked);
+    heads.push(...asked);
   }
-  // keel reads their roles from a temp folder of their own, one flat name each (a sweep removes a crash's
-  // leftover): the app reads no YAML itself (W12 review round 1, owner ruling 2026-11-23).
-  const headsDir = path.join(base, `.tmp-heads-${process.pid}-${randomBytes(4).toString('hex')}`);
-  const named = yamls.map((_, i) => path.join(headsDir, `${i}.yaml`));
-  let asked: Map<string, DataHead> | string = new Map();
-  if (yamls.length > 0) {
-    await mkdir(headsDir, { mode: 0o700 });
-    try {
-      for (const [i, r] of yamls.entries()) await writeFile(named[i] as string, r.text, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-      asked = await docHeads(parts.keel, named, parts.runOptions);
-    } finally {
-      await rm(headsDir, { recursive: true, force: true });
-    }
-  }
-  if (typeof asked === 'string') return notDone(asked);
-  const answered = asked;
-  const heads = yamls.flatMap((r, i) => {
-    const head = answered.get(named[i] as string);
-    return head === undefined ? [] : [{ path: r.path, head, text: r.text }];
-  });
   const page = findPage(heads, role, id);
   if (page === null) return notDone(`no ${role} page for ${id} at its tip`);
-  const dataHeadOf = heads.find((h) => h.head.page !== null && path.posix.join(path.posix.dirname(h.path), h.head.page) === page);
+  const dataPath = heads.find((h) => h.head.page !== null && path.posix.join(path.posix.dirname(h.path), h.head.page) === page)?.path;
   heads.length = 0;
+  const dataEntry = dataPath === undefined ? undefined : files.find((f) => f.path === dataPath);
+  const dataText = dataPath === undefined ? null : (texts.get(dataPath) ?? (dataEntry === undefined ? null : await text(dataEntry)));
   const pageEntry = files.find((f) => f.path === page);
   const pageText = pageEntry === undefined ? null : await text(pageEntry);
-  if (dataHeadOf === undefined || pageText === null) return notDone(`the ${role} page for ${id} could not be copied as text`);
-  const data = dataHeadOf.path;
+  if (dataPath === undefined || dataText === null || pageText === null) return notDone(`the ${role} page for ${id} could not be copied as text`);
+  const data = dataPath;
+  texts.set(data, dataText);
   texts.set(page, pageText);
   const firsts = new Set([data, page]);
   const tmp = path.join(base, `.tmp-${process.pid}-${randomBytes(4).toString('hex')}`);
@@ -216,7 +236,7 @@ async function copyOf(parts: OpenParts, tip: string, role: string, id: string): 
       total += f.size as number;
     }
     // Never kept without its page and data file, exactly as committed.
-    if (!(await holds(path.join(tmp, page), pageText)) || !(await holds(path.join(tmp, data), dataHeadOf.text))) {
+    if (!(await holds(path.join(tmp, page), pageText)) || !(await holds(path.join(tmp, data), dataText))) {
       await rm(tmp, { recursive: true, force: true });
       return notDone(`the ${role} page for ${id} could not be copied as text`);
     }
@@ -248,7 +268,8 @@ async function openArchive(item: Item, facts: GitFacts, parts: OpenParts): Promi
   for (const name of names) {
     if (!name.endsWith('.yaml')) continue;
     const st = await lstat(path.join(dir, name));
-    if (st.isFile() && st.size <= HEAD_CAP) data.push(name);
+    // Whatever its size: keel judges it (epic review round 2, docs.ts:24).
+    if (st.isFile()) data.push(name);
   }
   // Their roles as keel reads them, in place (W12 review round 1, owner ruling 2026-11-23).
   const asked = data.length === 0 ? new Map<string, DataHead>() : await docHeads(parts.keel, data.map((n) => path.join(dir, n)), parts.runOptions);

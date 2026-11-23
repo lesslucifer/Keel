@@ -3,9 +3,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { parseTree, copyPlan, parseDocRoles, docRolesWhy, findPage, fileUrlInside, COPY_CAP, HEAD_CAP, roleOf, DOC_ROLES_SCHEMA } from '../../src/main/open/docs.ts';
+import { parseTree, copyPlan, parseDocRoles, docRolesWhy, findPage, fileUrlInside, COPY_CAP, HEADS_DISK_CAP, headBatches, roleOf, DOC_ROLES_SCHEMA, type TreeEntry } from '../../src/main/open/docs.ts';
 import type { Captured } from '../../src/main/commands.ts';
-import { OUTPUT_CAP } from '../../src/main/commands.ts';
+import { OUTPUT_CAP, DOC_ROLES_BATCH } from '../../src/main/commands.ts';
 import { seeded, hostileString } from '../support/seeded.ts';
 
 const O = (c: string) => c.repeat(40);
@@ -84,7 +84,6 @@ test('W12 (owner ruling 2026-11-23): keel doc-roles\' answer gives each asked fi
     answer([entry('/a/x.yaml', [], null, 7), entry('/a/y.yaml', [])]),
     answer([null, entry('/a/y.yaml', [])]),
   ]) assert.equal(parseDocRoles(bad, asked), null, bad);
-  assert.ok(HEAD_CAP >= 16 * 1024);
 });
 
 test('W12 review round 2 (docs.ts:83): a file whose id or page keel gives with a control character, or empty, gives no head; every other file in the answer keeps its own', () => {
@@ -157,4 +156,34 @@ test('the only URL handed to the browser is a file URL of a file inside an allow
   for (const p of ['/Users/me/Library/Keel/open/../secrets.html', '/Users/me/Library/Keel/openx/y.html', 'relative/x.html', '/Users/me/Library/Keel/open']) {
     assert.equal(fileUrlInside(p, ['/Users/me/Library/Keel/open']), null, p);
   }
+});
+
+test('epic review round 2 (docs.ts:24): the data files of a copy go to keel in batches of at most HEADS_DISK_CAP bytes and DOC_ROLES_BATCH files, each in exactly one batch and in order, none dropped for its size', () => {
+  assert.ok(HEADS_DISK_CAP >= OUTPUT_CAP, 'every data file the copy takes fits in a batch');
+  const e = (p: string, size: number): TreeEntry => ({ mode: '100644', type: 'blob', oid: O('a'), size, path: p });
+  // Over 64 KiB, the old cap, and exactly OUTPUT_CAP: both asked.
+  const big = [e('docs/a.yaml', 100 * 1024), e('docs/b.html', OUTPUT_CAP), e('docs/c.yaml', OUTPUT_CAP)];
+  assert.deepEqual(headBatches(big).map((b) => b.map((f) => f.path)), [['docs/a.yaml', 'docs/c.yaml']]);
+  assert.deepEqual(headBatches([]), []);
+  // Five files of 1 MiB with a 4 MiB batch: four, then one.
+  const five = Array.from({ length: 5 }, (_, i) => e(`docs/${i}.yaml`, OUTPUT_CAP));
+  assert.deepEqual(headBatches(five).map((b) => b.length), [4, 1]);
+  // A file over the batch's bytes goes alone, never dropped.
+  assert.deepEqual(headBatches([e('docs/s.yaml', 1), e('docs/l.yaml', 10), e('docs/t.yaml', 1)], 5, 100).map((b) => b.map((f) => f.path)), [['docs/s.yaml'], ['docs/l.yaml'], ['docs/t.yaml']]);
+  const rng = seeded(0x24da);
+  for (let n = 0; n < 500; n++) {
+    const maxBytes = 1 + Math.floor(rng() * 5000);
+    const maxFiles = 1 + Math.floor(rng() * 8);
+    const files = Array.from({ length: Math.floor(rng() * 40) }, (_, i) => e(`docs/${i}.${rng() < 0.7 ? 'yaml' : 'html'}`, Math.floor(rng() * 6000)));
+    const batches = headBatches(files, maxBytes, maxFiles);
+    assert.deepEqual(batches.flat(), files.filter((f) => f.path.endsWith('.yaml')), 'every data file once, in order');
+    for (const [i, b] of batches.entries()) {
+      const bytes = b.reduce((s, f) => s + (f.size as number), 0);
+      assert.ok(b.length >= 1 && b.length <= maxFiles);
+      assert.ok(b.length === 1 || bytes <= maxBytes, `batch ${i}: ${bytes} > ${maxBytes}`);
+      const next = batches[i + 1]?.[0];
+      if (next !== undefined && b.length < maxFiles) assert.ok(bytes + (next.size as number) > maxBytes, 'a batch closes only when the next file would not fit');
+    }
+  }
+  assert.equal(DOC_ROLES_BATCH, 100);
 });
