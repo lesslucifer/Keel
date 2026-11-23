@@ -16,10 +16,11 @@ const ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const HEADS = 'refs/heads/';
 const NOTES = 'refs/notes/';
 
-/** The refs read: each local branch, and the note kinds whose notes ref exists. */
-export function parseRefs(out: string): { branches: GitBranch[]; noteKinds: Set<NoteKind> } {
+/** The refs read: each local branch, the note kinds whose notes ref exists, and each such ref's tip (epic review round 1, git.ts:323). */
+export function parseRefs(out: string): { branches: GitBranch[]; noteKinds: Set<NoteKind>; noteTips: Map<NoteKind, string> } {
   const branches: GitBranch[] = [];
   const noteKinds = new Set<NoteKind>();
+  const noteTips = new Map<NoteKind, string>();
   for (const row of out.split('\n')) {
     const f = row.split('\u0000');
     if (f.length !== 4) continue;
@@ -27,7 +28,10 @@ export function parseRefs(out: string): { branches: GitBranch[]; noteKinds: Set<
     if (!ID.test(tip)) continue;
     if (ref.startsWith(NOTES)) {
       const kind = ref.slice(NOTES.length);
-      if ((NOTE_KINDS as readonly string[]).includes(kind)) noteKinds.add(kind as NoteKind);
+      if ((NOTE_KINDS as readonly string[]).includes(kind)) {
+        noteKinds.add(kind as NoteKind);
+        noteTips.set(kind as NoteKind, tip);
+      }
       continue;
     }
     if (!ref.startsWith(HEADS) || ref.length === HEADS.length) continue;
@@ -40,7 +44,7 @@ export function parseRefs(out: string): { branches: GitBranch[]; noteKinds: Set<
       gone: track === 'gone',
     });
   }
-  return { branches, noteKinds };
+  return { branches, noteKinds, noteTips };
 }
 
 /** A merged read: the branch names it lists. */
@@ -225,6 +229,17 @@ export class GitReader {
   private reviewOf = new Map<string, Review>();
   /** W6: per tip, its commit time (never changes); kept only for the tips last asked about. */
   private timeOf = new Map<string, string>();
+  /**
+   * Per note kind: its notes ref's tip at the last read, and per open tip the note's id there (null: none).
+   * A tip's note changes only with its notes ref, so an unmoved ref asks nothing (epic review round 1, git.ts:323).
+   */
+  private noteOf = new Map<NoteKind, { ref: string; byTip: Map<string, string | null> }>();
+  /**
+   * Per target read for what it holds: the key it was read under (its tip and the tips of the branches it is
+   * read for) and what it held. Whether a tip holds another changes only when one of the two moves, so an
+   * unchanged key asks nothing (epic review round 1, git.ts:315). Kept only for the targets last read.
+   */
+  private heldOf = new Map<string, { key: string; held: string[] }>();
 
   constructor(project: string, opts: Omit<RunOptions, 'before245' | 'timeoutMs'>) {
     this.runner = new ProjectRunner(project, opts);
@@ -239,7 +254,7 @@ export class GitReader {
     if (typeof refs === 'string') return noFacts(refs);
     const refsWhy = failed(refs, 'its branches');
     if (refsWhy !== null) return noFacts(refsWhy);
-    const { branches, noteKinds } = parseRefs(refs.stdout);
+    const { branches, noteTips } = parseRefs(refs.stdout);
     const facts: GitFacts = { branches, notes: { mr: [], cr: [], dod: [] }, merged: {}, worktrees: [], open: { epics: [], units: [], tasks: [] }, reviews: {}, times: {}, problem: null };
     const problems: string[] = [];
     const take = (r: Captured | string, what: string): string | null => {
@@ -257,11 +272,21 @@ export class GitReader {
         if (typeof r !== 'string' && r.code === 0 && !r.cut) main.remote = parseRemote(r.stdout);
       }
     }
+    const tipOf = new Map(branches.map((b) => [b.name, b.tip]));
+    const heldOf = new Map<string, { key: string; held: string[] }>();
     const holds = async (target: string): Promise<string[] | null> => {
-      const out = take(await this.run(git, 'merged', { ref: `${HEADS}${target}` }), `what ${target} holds`);
-      if (out === null) return null;
-      const listed = new Set(parseMerged(out));
-      const held = heldBy(target, names).filter((n) => listed.has(n));
+      const candidates = heldBy(target, names);
+      const key = JSON.stringify([tipOf.get(target) ?? null, candidates.map((n) => [n, tipOf.get(n) ?? null])]);
+      const known = this.heldOf.get(target);
+      let held: string[];
+      if (known !== undefined && known.key === key) held = known.held;
+      else {
+        const out = take(await this.run(git, 'merged', { ref: `${HEADS}${target}` }), `what ${target} holds`);
+        if (out === null) return null;
+        const listed = new Set(parseMerged(out));
+        held = candidates.filter((n) => listed.has(n));
+      }
+      heldOf.set(target, { key, held });
       // main is read for its epics and units; the view publishes only the epics (the units stay here).
       facts.merged[target] = target === 'main' ? held.filter((n) => EPIC.test(n)) : held;
       return held;
@@ -295,23 +320,39 @@ export class GitReader {
     const epics = openEpics(names, facts.merged.main, fresh);
     for (const epic of epics) await holds(epic);
     for (const unit of openUnits(names, epics, facts.merged)) if (names.some((n) => n.startsWith(`${unit}_`))) await holds(unit);
+    this.heldOf = heldOf;
     facts.open = openSets(names, facts.merged, fresh);
     const open = openTips(branches, facts.merged, fresh);
     if (open.over) problems.push(`more than ${NOTE_TIPS} open branches: notes read for the first ${NOTE_TIPS} only`);
     const crNotes = new Map<string, string>();
+    const noteOf = new Map<NoteKind, { ref: string; byTip: Map<string, string | null> }>();
     for (const kind of NOTE_KINDS) {
-      if (!noteKinds.has(kind)) continue;
+      const ref = noteTips.get(kind);
+      if (ref === undefined) continue;
+      const known = this.noteOf.get(kind);
+      const kept = known !== undefined && known.ref === ref ? known.byTip : undefined;
+      const byTip = new Map<string, string | null>();
       for (const tip of open.tips) {
-        const r = await this.run(git, 'note-of', { kind, object: tip });
-        // Exit 1 is "no note found for object": the tip carries none.
-        if (typeof r !== 'string' && r.code === 1 && !r.timedOut && !r.cut) continue;
-        const out = take(r, `the ${kind} note on ${tip.slice(0, 7)}`);
-        if (out === null) continue;
+        let note = kept?.get(tip);
+        if (note === undefined) {
+          const r = await this.run(git, 'note-of', { kind, object: tip });
+          // Exit 1 is "no note found for object": the tip carries none.
+          if (typeof r !== 'string' && r.code === 1 && !r.timedOut && !r.cut) note = null;
+          else {
+            const out = take(r, `the ${kind} note on ${tip.slice(0, 7)}`);
+            if (out === null) continue;
+            note = out.trim();
+          }
+        }
+        byTip.set(tip, note);
+        if (note === null) continue;
         facts.notes[kind].push(tip);
         // note-of answers the note's own id: the review's body is read by it.
-        if (kind === 'cr' && ID.test(out.trim())) crNotes.set(tip, out.trim());
+        if (kind === 'cr' && ID.test(note)) crNotes.set(tip, note);
       }
+      noteOf.set(kind, { ref, byTip });
     }
+    this.noteOf = noteOf;
     // W6: each review's verdict, read once per note (a rewritten note has a new id).
     const reviewOf = new Map<string, Review>();
     for (const [tip, note] of crNotes) {

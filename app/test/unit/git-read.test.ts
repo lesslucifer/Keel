@@ -30,6 +30,8 @@ test('the refs read gives each local branch with its tip, upstream and where it 
     { name: 'topic', tip: A, upstream: 'origin/topic', ahead: 0, behind: 3, gone: false },
   ]);
   assert.deepEqual([...r.noteKinds].sort(), ['cr', 'mr']);
+  // Epic review round 1 (git.ts:323): each known notes ref's tip is kept, so an unmoved ref asks nothing again.
+  assert.deepEqual([...r.noteTips].sort(), [['cr', C], ['mr', B]]);
 });
 
 test('a refs row that is not four fields, or a tip that is not a full id, is dropped; a sha-256 id is kept', () => {
