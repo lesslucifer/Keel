@@ -565,7 +565,7 @@ open:
     source: >-
       E-APPLIST.W1 result, follow-ups N1 - N4 (b0cb60d); E-APPLIST.W2 result, follow-ups (7c6ac22), the independent
       review of scripts/router-worker.sh at 95c16af. Recorded by the E-APPLIST.W5 plan's follow-up.
-    taken-by: "unowned: the next router epic, or a small WU of E-APPLIST before its close, the owner's choice"
+    taken-by: "unowned: the next router epic (E-APPLIST closed without it)"
     items:
       - >-
         W1 N1, router-app.sh:119-121: a hardlinked log.jsonl or state.json passes the regular-file check (needs a
