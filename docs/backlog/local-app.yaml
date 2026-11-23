@@ -141,7 +141,8 @@ open:
       its fix and its source. Waits on: E-APPLIST's merge.
     source: >-
       Backlog A3's open follow-ups at E-APPLIST's close (moved here by E-APPLIST.W9), the W9 epic test's first run, W9's
-      review nits and its live check, and the five Low nits of E-APPLIST.W12's review round 2.
+      review nits and its live check, the five Low nits of E-APPLIST.W12's review round 2, and E-APPLIST.W13's two
+      review nits and one refuted candidate.
     taken-by: "no epic yet; A4 or A5 may take any item"
     follow-ups:
       - >-
@@ -231,6 +232,24 @@ open:
         app/src/main/commands.ts:306: noAnswer repeats failed()'s wording a third time, and its third branch is dead
         (its one caller passes only a run that could not start or timed out). Reuse failed()'s words and drop the
         branch. Source: E-APPLIST.W12 review round 2, nit (cr note on 835fed0). Taken by: this row.
+      - >-
+        app/test/integration/git-facts.test.ts:362 (:361-367 at 321e4d4): the TIME_TIPS test builds its branches with
+        181 serial git spawns (git branch, rev-parse, then commit-tree and update-ref per branch). Make each commit with
+        commit-tree -p wu/E-A/w2 or epic/E-A and write all refs with one update-ref --stdin: the same refs in about 62.
+        Source: E-APPLIST.W13 review round 1, nit (cr note on 57f1586). Taken by: this row.
+      - >-
+        app/src/main/open/open.ts:195: the head pass keeps a data file's text only while the kept texts stay within
+        COPY_CAP, and the copy loop charges another budget in another order (:220-236), so past COPY_CAP of data files a
+        blob is read from git twice (:210, :226) and the comment at :183-185 ("no file the copy takes is read twice") is
+        false; results stay correct. Charge one budget in the copy's order, or narrow the comment. Source: E-APPLIST.W13
+        review round 1, nit (cr note on 57f1586). Taken by: this row.
+      - >-
+        Candidate, refuted as pre-existing: app/src/main/open/docs.ts:28: nothing keeps one keel doc-roles answer within
+        OUTPUT_CAP (1 MiB). Batches are bounded by input bytes (HEADS_DISK_CAP) and count (DOC_ROLES_BATCH), and keel
+        echoes each id and page unbounded, so data files with ids or pages of tens of KiB can cut the answer and every
+        Open at that tip fails, as a named notDone. Bound a batch by its answer too (split and ask again on a cut
+        answer), or have keel refuse an id or page past a small cap. Source: E-APPLIST.W13 review round 1, refuted
+        candidate (cr note on 57f1586). Taken by: this row.
 
   - id: L1
     title: "Message the router from the app"
