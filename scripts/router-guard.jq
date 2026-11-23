@@ -30,10 +30,14 @@ def skills: ["keel-router", "project-router", "keel-workflow", "keel-plan", "kee
 # (gh reads "-label" as -l with value "abel"), a short one only as one letter, and a
 # value never starting with "-" (so it can never be read as, or hide, a flag of its own).
 def gh_args: "( ((--(json|state|limit|author|base|head|label|search)|-(L|s|A|B|H|l|S))[ =][A-Za-z0-9._,/][A-Za-z0-9._,/-]*|[A-Za-z0-9][A-Za-z0-9._/-]*))*";
+# The update log (E-APPLIST.W1, K14): the router's three shapes of scripts/router-app.sh, the words
+# that script takes (tests/suite/router.rs ties the two). set and alert carry free JSON, which no
+# plain-word guard can admit (the inbox's post precedent): only the watchdog and the sender run them.
+def app_shapes: "scripts/router-app\\.sh (start [a-z0-9][a-z0-9-]{0,31}|stage E-[A-Z0-9]{1,16}\\.W[0-9]{1,3} (plan-in-work|plan-to-read|plan-approved|building|in-review)( [0-9a-f]{7,40})?|del (question/[a-z0-9][a-z0-9-]{0,40}|wu/E-[A-Z0-9]{1,16}\\.W[0-9]{1,3}/stage))";
 def bash_ok:
   test("^[A-Za-z0-9 ._/:=@%,+^~-]*$")
   and (test("--ou") | not)
-  and test("^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)" + gh_args + "|ps (aux|-ef)|scripts/router-worker\\.sh (spawn|stop) [A-Za-z0-9._/ -]+|scripts/router-worker\\.sh worktree (add|remove) (epic|wu)/[A-Za-z0-9._/-]+|scripts/router-worker\\.sh watchdog (start|stop) [a-z0-9][a-z0-9-]{0,31}|scripts/router-watch\\.sh (commit|signed|merged|pushed|tagged)( [.]*[A-Za-z0-9_][A-Za-z0-9._/-]*)+|scripts/notify-owner\\.py (--check|--send|--dry-run)|scripts/router-inbox\\.sh (init|status|watch [0-9]{1,7}|consume [A-Za-z0-9][A-Za-z0-9._-]*))$")
+  and test("^(git (status|log|diff|show)( .*)?|git branch (-v|-vv|-a|-av|-va|-a -v|--all|--all -v)|gh pr (view|list|status)" + gh_args + "|ps (aux|-ef)|scripts/router-worker\\.sh (spawn|stop) [A-Za-z0-9._/ -]+|scripts/router-worker\\.sh worktree (add|remove) (epic|wu)/[A-Za-z0-9._/-]+|scripts/router-worker\\.sh watchdog (start|stop) [a-z0-9][a-z0-9-]{0,31}|scripts/router-watch\\.sh (commit|signed|merged|pushed|tagged)( [.]*[A-Za-z0-9_][A-Za-z0-9._/-]*)+|scripts/notify-owner\\.py (--check|--send|--dry-run)|scripts/router-inbox\\.sh (init|status|watch [0-9]{1,7}|consume [A-Za-z0-9][A-Za-z0-9._-]*)|" + app_shapes + ")$")
   and ((test("^scripts/") and test("\\.\\.")) | not);
 
 if $ARGS.named.watchdog_to != null then
@@ -51,7 +55,7 @@ elif .tool_name == "Bash" then
   (.tool_input.command // "") as $c
   # length first: it bounds the regex work below (an unbounded trim once ran past the hook timeout)
   | if ($c | length) > 1000 or ($c | sub("^ +"; "") | sub(" +$"; "") | bash_ok | not)
-    then deny("Bash whitelist: git status/log/diff/show, git branch -v/-a, gh pr view/list/status (no -R), ps aux/-ef, scripts/router-worker.sh spawn|stop, scripts/router-worker.sh worktree add|remove <epic/E or wu/E/slug>, scripts/router-worker.sh watchdog start|stop <router-name>, scripts/router-watch.sh commit|signed|merged|pushed|tagged <args not starting with -> (read-only owner-action watch), scripts/notify-owner.py --send|--dry-run|--check (the owner message body lives in .router/notify/owner.md), scripts/router-inbox.sh init|status|watch <seconds>|consume <id> (the worker report channel; the router never posts); one command of plain words, no quotes/$/globs/pipes/redirects, no --output")
+    then deny("Bash whitelist: git status/log/diff/show, git branch -v/-a, gh pr view/list/status (no -R), ps aux/-ef, scripts/router-worker.sh spawn|stop, scripts/router-worker.sh worktree add|remove <epic/E or wu/E/slug>, scripts/router-worker.sh watchdog start|stop <router-name>, scripts/router-watch.sh commit|signed|merged|pushed|tagged <args not starting with -> (read-only owner-action watch), scripts/notify-owner.py --send|--dry-run|--check (the owner message body lives in .router/notify/owner.md), scripts/router-inbox.sh init|status|watch <seconds>|consume <id> (the worker report channel; the router never posts), scripts/router-app.sh start <name>|stage <wu> <stage> [<tip>]|del question/<id>|del wu/<wu>/stage (the update log); one command of plain words, no quotes/$/globs/pipes/redirects, no --output")
     else empty end
 elif .tool_name == "Write" then
   .cwd as $d | (.tool_input.file_path // "") as $p

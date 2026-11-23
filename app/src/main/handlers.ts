@@ -1,0 +1,218 @@
+// The nine requests' handlers: everything the shell does for the window except Electron itself. The
+// shell hands in its parts (the app folder, the PATH it read at start, its two dialogs, its test
+// alert and its push); the handlers read and write only the app folder, run git only through the
+// fixed commands, and run their reads and writes one at a time, so two changes never interleave.
+// Nothing slow holds that queue: neither an open dialog nor a project's git checks (state.get, a
+// reload's, answers meanwhile). The reads before them and the checks and write after them each
+// queue on their own, and the dialog flows take turns in a queue of their own. The dispatcher (bridge.ts) checks every call before a handler runs and passes
+// every string in the answer through plain().
+
+import { rm } from 'node:fs/promises';
+import path from 'node:path';
+import { TOOL_NAMES, type AlertOutcome, type AppState, type Change, type Item, type LoginPathState, type PushEvent, type Tool, type View } from '../shared/contract.ts';
+import type { Handlers } from './bridge.ts';
+import { loadSettings, chooseTool, resetTool } from './settings.ts';
+import { loadProjects, checkProject, saveProject, removeProject, fullWhy, MAX_PROJECTS } from './projects.ts';
+import { toolState, toolStates } from './tools.ts';
+import type { ViewReaderParts } from './reader/view.ts';
+
+/** What the Electron shell hands the handlers. */
+export interface Parts {
+  /** The app's own folder (Electron's userData). */
+  appDir: string;
+  version: string;
+  /** Whether the app is packaged (Electron's app.isPackaged): state.get passes it on to the window. */
+  packaged: boolean;
+  /** The PATH read once at start: git runs with it and unset tools are looked up on it. */
+  loginPath: LoginPathState;
+  /** Where git takes HOME, USER, LOGNAME, LANG and TMPDIR from; the app's own environment when unset. */
+  env?: Record<string, string | undefined>;
+  /** The main part's folder dialog: an absolute path, or null when cancelled. */
+  chooseFolder(): Promise<string | null>;
+  /** The main part's file dialog for `tool`: an absolute path, or null when cancelled. */
+  chooseFile(tool: Tool): Promise<string | null>;
+  /** One test notification, and what became of it. */
+  testAlert(): Promise<AlertOutcome>;
+  /** Push an event to the app's window (bridge.ts's pusher). */
+  push(event: PushEvent): void;
+  /** The reader's view as it stands (reader/view.ts); reading it runs nothing. */
+  view(): View;
+  /** W6: open an item's page or epic result in the owner's browser (open/open.ts); the item is one `view` lists, and `view` is the one to open it by. */
+  open(item: Item, view: View): Promise<Change>;
+  /** W6: the focus count waiting.get handed the window's page (alerts.ts Focus.read). */
+  seen?(seq: number): void;
+  /** W6: mark a markable item sent, or not (items/sent.ts): the write only, run in the queue. */
+  mark(item: Item, sent: boolean): Promise<Change>;
+  /** Read the view again now (the watcher's kick), after a mark: slow (git), so never run in the queue (epic review round 1, index.ts:266). */
+  reread?(): Promise<void>;
+}
+
+/** A queue: each job starts once the one before it has settled, passed or failed. */
+export function serial(): <T>(job: () => Promise<T>) => Promise<T> {
+  let tail: Promise<unknown> = Promise.resolve();
+  return <T>(job: () => Promise<T>): Promise<T> => {
+    const next = tail.then(job, job);
+    tail = next.catch(() => undefined);
+    return next;
+  };
+}
+
+const DONE: Change = Object.freeze({ done: true });
+const notDone = (why: string): Change => ({ done: false, why });
+
+/** Why an item id the window sent is not one it may act on now, or the item. A moved tip is a new id, so an old click finds nothing. */
+export function listed(view: View, id: string): Item | string {
+  return view.items.find((i) => i.id === id) ?? 'that item has left the list or moved on: the list shows it as it is now';
+}
+
+/** The set tools' folders: what the PATH's fallback adds to the system PATH. */
+function toolDirs(tools: Partial<Record<Tool, string>>): string[] {
+  return TOOL_NAMES.map((t) => tools[t]).filter((x): x is string => x !== undefined).map((x) => path.dirname(x));
+}
+
+/** At start: load the settings, then read the PATH, handing it the set tools' folders for its fallback. */
+export async function prepare(appDir: string, readPath: (toolDirs: readonly string[]) => Promise<LoginPathState>): Promise<LoginPathState> {
+  const s = await loadSettings(appDir);
+  return readPath(toolDirs(s.value.tools));
+}
+
+/** What the view reader needs from the app's folder: the listed project, the usable git, and git's run options. */
+export function readerParts(p: Pick<Parts, 'appDir' | 'loginPath' | 'env'>): ViewReaderParts {
+  return {
+    project: async () => (await loadProjects(p.appDir)).value.projects[0] ?? null,
+    git: async () => {
+      const settings = (await loadSettings(p.appDir)).value;
+      const projects = (await loadProjects(p.appDir)).value.projects;
+      const git = await toolState('git', settings, p.loginPath.entries, projects.map((x) => x.path));
+      return git.problem === null ? git.path : null;
+    },
+    runOptions: { path: p.loginPath.entries, ...(p.env === undefined ? {} : { source: p.env }) },
+  };
+}
+
+/** The usable keel (set in Keel, or found on the PATH), or null: Open asks it each data file's roles (keel doc-roles; W12 review round 1, owner ruling 2026-11-23). */
+export function keelOf(p: Pick<Parts, 'appDir' | 'loginPath'>): () => Promise<string | null> {
+  return async () => {
+    const settings = (await loadSettings(p.appDir)).value;
+    const projects = (await loadProjects(p.appDir)).value.projects;
+    const keel = await toolState('keel', settings, p.loginPath.entries, projects.map((x) => x.path));
+    return keel.problem === null ? keel.path : null;
+  };
+}
+
+/** The handlers the dispatcher runs once a call has passed its checks. */
+export function makeHandlers(parts: Parts): Handlers {
+  const { appDir } = parts;
+  const queue = serial();
+  // One dialog flow at a time, outside `queue`: a dialog may stay open as long as the owner likes.
+  const dialogs = serial();
+  // One Open at a time (review round 1, handlers.ts:167): a copy of a tip is made once, never by two at once; outside `queue`, so a copy holds up no setting.
+  const opens = serial();
+  const changed = () => parts.push('state.changed');
+  const runOpts = () => ({ path: parts.loginPath.entries, ...(parts.env === undefined ? {} : { source: parts.env }) });
+
+  async function read() {
+    const settings = (await loadSettings(appDir)).value;
+    const projects = (await loadProjects(appDir)).value.projects;
+    const tools = await toolStates(settings, parts.loginPath.entries, projects.map((p) => p.path));
+    return { projects, tools };
+  }
+
+  return {
+    'state.get': () =>
+      queue(async (): Promise<AppState> => {
+        const { projects, tools } = await read();
+        return { version: parts.version, packaged: parts.packaged, path: parts.loginPath, tools, projects };
+      }),
+
+    // Refused before the dialog when the list is full or git is unusable: the owner picks nothing for nothing.
+    // After the dialog, git is read again (a setting may have changed while it was open); the folder's git
+    // checks run outside the queue (each may take up to git's timeout); saveProject checks the list again.
+    'projects.add': () =>
+      dialogs(async (): Promise<Change> => {
+        const usableGit = async (): Promise<Change | string> => {
+          const settings = (await loadSettings(appDir)).value;
+          const projects = (await loadProjects(appDir)).value.projects;
+          if (projects.length >= MAX_PROJECTS) return notDone(fullWhy({ version: 1, projects }));
+          const git = await toolState('git', settings, parts.loginPath.entries, projects.map((p) => p.path));
+          return git.path === null || git.problem !== null ? notDone('git was not found: choose it in the settings first') : git.path;
+        };
+        const before = await queue(usableGit);
+        if (typeof before !== 'string') return before;
+        const folder = await parts.chooseFolder();
+        if (folder === null) return notDone('cancelled');
+        const git = await queue(usableGit);
+        if (typeof git !== 'string') return git;
+        const c = await checkProject(folder, git, runOpts());
+        if (!c.ok) return notDone(c.why);
+        return queue(async (): Promise<Change> => {
+          const r = await saveProject(appDir, c.path, changed);
+          return r.ok ? DONE : notDone(r.why);
+        });
+      }),
+
+    'projects.remove': async (args): Promise<Change> => {
+      const r = await queue(() => removeProject(appDir, args.project as string, changed));
+      if (!r.ok) return notDone(r.why);
+      // W6 (review round 1, open.ts:78): its copies of committed docs go with it, through the Opens' queue so an
+      // Open in flight finishes first (round 2, handlers.ts:143), and outside `queue`, which nothing slow may hold
+      // (round 3, handlers.ts:144). The id passed the project-id slot.
+      await opens(() => rm(path.join(appDir, 'open', args.project as string), { recursive: true, force: true }));
+      return DONE;
+    },
+
+    'settings.choose': (args) =>
+      dialogs(async (): Promise<Change> => {
+        const tool = args.tool as Tool;
+        const file = await parts.chooseFile(tool);
+        if (file === null) return notDone('cancelled');
+        return queue(async (): Promise<Change> => {
+          // Only the listed projects' paths are needed: the tool check refuses a tool inside one.
+          const projects = (await loadProjects(appDir)).value.projects;
+          const r = await chooseTool(appDir, tool, file, projects.map((p) => p.path), changed);
+          return r.ok ? DONE : notDone(r.why);
+        });
+      }),
+
+    'settings.reset': (args) =>
+      queue(async (): Promise<Change> => {
+        await resetTool(appDir, args.tool as Tool, changed);
+        return DONE;
+      }),
+
+    // Not queued: it touches no file, and a change need not wait 5 s behind an unseen alert.
+    'alert.test': () => parts.testAlert(),
+
+    // Not queued: the reader holds the view in memory; asking for it reads no file and runs no git.
+    'waiting.get': () => {
+      const view = parts.view();
+      // The page acts on the focus it is handed: a reload or a new window later drops only that one (round 3, alerts.ts:152).
+      if (view.focus !== null) parts.seen?.(view.focus.seq);
+      return view;
+    },
+
+    // W6. In its own queue: it reads git and writes only under the app folder's open/, apart from the files `queue` guards.
+    'item.open': (args) =>
+      opens(async (): Promise<Change> => {
+        const view = parts.view();
+        const item = listed(view, args.item as string);
+        if (typeof item === 'string') return notDone(item);
+        if (item.open === 'text') return notDone('a question shows its text in the list itself');
+        if (item.open === 'none') return notDone('this item has nothing to open');
+        return parts.open(item, view);
+      }),
+
+    // The mark is written in the queue; the read again after it waits outside the queue, which nothing slow
+    // may hold (epic review round 1, index.ts:266), and the answer comes after it, with the list redrawn.
+    'item.mark': async (args): Promise<Change> => {
+      const r = await queue(async (): Promise<Change> => {
+        const item = listed(parts.view(), args.item as string);
+        if (typeof item === 'string') return notDone(item);
+        if (!item.markable) return notDone('only a plan to read or a question can be marked sent');
+        return parts.mark(item, args.sent === 'yes');
+      });
+      if (r.done) await parts.reread?.();
+      return r;
+    },
+  };
+}

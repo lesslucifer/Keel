@@ -34,7 +34,12 @@ areas:
     scope: >-
       router: owner/worker split, epic branch first, substance from workers, shipped skill, worker modes and
       launcher, enforced posture on Claude Code, an unenforced posture on DSH, the moment-of-action checklists, the
-      report channel and the owner sender
+      report channel and the owner sender, the update log the local app reads
+  - area: UC-APP
+    file: app.yaml
+    scope: >-
+      the local app: an alert at your desk, your list of what waits on you and Open (E-APPLIST); UC-APP-3 to
+      UC-APP-6 come with A4, A5 and L1
   - area: UC-DSH
     file: dsh.yaml
     scope: >-
@@ -113,6 +118,15 @@ use-cases:
   - id: UC-ROUTE-6
     title: "the router posture is enforced, fail-closed"
     file: router.yaml
+  - id: UC-ROUTE-8
+    title: "the router tells the app what only it knows"
+    file: router.yaml
+  - id: UC-APP-1
+    title: "something waits on you, and the app alerts you at your desk"
+    file: app.yaml
+  - id: UC-APP-2
+    title: "you open a waiting item and see its committed doc"
+    file: app.yaml
   - id: UC-DSH-1
     title: "init gives DSH the skills through one shared root"
     file: dsh.yaml

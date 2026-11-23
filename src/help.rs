@@ -6,13 +6,15 @@
 use crate::{gate, mr, notes};
 
 /// `run()`'s own usage errors print these; `tests/suite/verify_dod.rs` keeps the copies equal.
-const TOP: &str = "usage: keel <init [-f] | lint | check | verify-doc | verify-dod | preflight | mr <setup|commit|confirm> | hooks install [--force] | notes write <test|doc|cr>>";
+const TOP: &str = "usage: keel <init [-f] | lint | check | verify-doc | doc-roles | verify-dod | preflight | mr <setup|commit|confirm> | hooks install [--force] | notes write <test|doc|cr>>";
 const INIT: &str = "usage: keel init [--force | -f]";
 const HOOKS: &str = "usage: keel hooks install [--force]";
 const LINT: &str = "usage: keel lint";
 const CHECK: &str = "usage: keel check";
 const HOOK: &str = "usage: keel hook <pre-commit | commit-msg <file> | pre-push <remote> <url>>\n       (git's hooks run these; you do not)";
 const VERIFY_DOC: &str = "usage: keel verify-doc [<path>...]";
+/// `keel doc-roles`' usage, also its own error with no path (main.rs).
+pub(crate) const DOC_ROLES: &str = "usage: keel doc-roles <data file>...\n       (prints each data file's roles, id and page as JSON, doc-roles/v1)";
 
 /// Each command's leading words and its usage; the longest match wins, no match is the top usage.
 /// Every command keel dispatches has its own row here: the test
@@ -30,6 +32,7 @@ const TABLE: &[(&[&str], &str)] = &[
     (&["hook", "commit-msg"], HOOK),
     (&["hook", "pre-push"], HOOK),
     (&["verify-doc"], VERIFY_DOC),
+    (&["doc-roles"], DOC_ROLES),
     (&["verify-dod"], gate::USAGE),
     (&["verify-dod", "commit"], gate::USAGE),
     (&["verify-dod", "hook"], gate::USAGE),
@@ -86,6 +89,7 @@ mod tests {
         (&["check"], super::CHECK),
         (&["hook"], super::HOOK),
         (&["verify-doc", "docs/a.html"], super::VERIFY_DOC),
+        (&["doc-roles", "docs/a.yaml"], super::DOC_ROLES),
         (&["verify-dod", "wu", "wu/e/a", "--target", "epic/e", "--no-receipt"], gate::USAGE),
         (&["preflight", "epic", "epic/e"], gate::USAGE),
         (&["notes", "write"], notes::NOTES_USAGE),

@@ -4,28 +4,12 @@ title: "Backlog: the local app"
 letters: [A, L]
 about: >-
   Going back to before GitHub's flow, then building the desktop app in place of it: five epics in order (A1 - A5),
-  then four later needs and one re-pointed idea (L1 - L5). E-LOCALTOOL closed on 2026-11-19 with a design and no code:
+  then later needs and one re-pointed idea (L1 - L9). E-LOCALTOOL closed on 2026-11-19 with a design and no code:
   docs/local-app.html is the app as designed, and DEC-70 records why. Each epic waits only on the ones before it and is
   useful on its own. Its parts and K-numbers (the keel or router changes the app needs) are in docs/local-app.html,
   under "The build order"; the needs n1 - n10 are listed there too. Distilled from E-LOCALTOOL (W5 result, P4 to P6,
   and the close).
 open:
-  - id: A3
-    title: "E-APPLIST · Alerts and your list"
-    status: after A1
-    problem: >-
-      First use: an alert at your desk (n1) and one list of what waits on you (n2). Read-only.
-    proposal: >-
-      Parts: the app's frame; the Reader, Watcher and Alerter on the two sources; screens 1, 2 and one project on 6;
-      the router's update log (K14) and the watchdog's lines (K15), with their defaults and the "router not heard"
-      bar, tested by an app restart and a router restart; the router's stage lines (K4) and alert line (K10); Open with
-      a copy of the committed page, and the PATH setting; the alert's link and one Telegram test (K12); `?diff=latest`
-      on a file link checked; the app reads the local epic branch; Apple's membership decided at the first signed
-      build. Waits on: A1.
-    source: >-
-      E-LOCALTOOL.W5 result, P4 to P6, and the close.
-    taken-by: "E-APPLIST"
-
   - id: A4
     title: "E-APPSIGN · Sign off and merge from the app"
     status: after A2, A3
@@ -41,6 +25,20 @@ open:
     source: >-
       E-LOCALTOOL.W5 result, P4 to P6, and the close's walk-through.
     taken-by: "E-APPSIGN"
+    follow-ups:
+      - >-
+        "What changed" on a page can open with htmldoc's ?diff=latest: the owner's E-APPLIST.W9 packaged live check
+        (2026-11-23, step 7) found that `open 'file://...?diff=latest'` from Terminal keeps the query and opens
+        htmldoc's diff mode, as W6 found for the address bar. A4's diff link may use it. Source: E-APPLIST.W6 live
+        check; E-APPLIST.W9 live check, step 7. Taken by: this row.
+      - >-
+        The keel:// link at the end of a router's Telegram message opens Keel on the owner's Mac: yes, the owner's
+        E-APPLIST.W9 packaged live check (2026-11-23, step 5). No row of its own is needed. Source: E-APPLIST.W3 and
+        W6 results; W9 live check, step 5. Taken by: this row (answered).
+      - >-
+        The desk alerts were silent during the live check only because macOS's Sleep focus was on: the owner's finding
+        of 2026-11-23, no app defect. A screen that says why an alert did not show could name a focus as a cause.
+        Source: the owner, E-APPLIST.W9 live check. Taken by: this row.
 
   - id: A5
     title: "E-APPFLEET · Fleet, epics, many projects"
@@ -51,9 +49,11 @@ open:
       Parts: screens 4 and 5 (one epic, one worker); Attach (K13); your note to a worker through the router's inbox
       (K11); the router's conflict and paused-epic lines (K6, K7) and a worker's last report line (K8); many projects
       on screen 6, with "Add a project" listing what is missing first (E-GHSETUP W6's idea). From the close's
-      walk-through: an alert about an epic opens that epic's view, not the list. Waits on: A3, A4.
+      walk-through: an alert about an epic opens that epic's view, not the list. From E-APPLIST.W6: the list reads a
+      project's own main branch name ([branches] main; Keel's is main) for "main not pushed" and epics merged into
+      main, and shows a work unit's title. Waits on: A3, A4.
     source: >-
-      E-LOCALTOOL.W5 result, P4 to P6, and the close's walk-through.
+      E-LOCALTOOL.W5 result, P4 to P6, and the close's walk-through; E-APPLIST.W5 and W6 results.
     taken-by: "E-APPFLEET"
 
   - id: A6
@@ -130,6 +130,127 @@ open:
       - "N4 both `keel-workflow` SKILL.md copies, section 4: the last line `no receipt written (--no-receipt)` prints only on a green, non-exempt run, not on every `--no-receipt` run; say so (close read of 26c4731)."
       - "N5 optional: a note in both `keel-workflow` copies' hook table, beside the CLI paragraph's line in architecture, that the words after `keel hook <name>` are git's, never help (close read of 26c4731)."
 
+  - id: A11
+    title: "The app's open ends after E-APPLIST"
+    status: open (the owner's answer to E-APPLIST.W9's open point 4, 2026-11-22)
+    problem: >-
+      E-APPLIST left about a dozen small items in the app: none is wrong for the owner today, each is a sharper edge
+      or a fix waiting for a first real need. Kept together so they are read and picked up at once.
+    proposal: >-
+      One small WU, or any item taken by A4 (E-APPSIGN) or A5 (E-APPFLEET) where it touches their work; each item says
+      its fix and its source. Waits on: E-APPLIST's merge.
+    source: >-
+      Backlog A3's open follow-ups at E-APPLIST's close (moved here by E-APPLIST.W9), the W9 epic test's first run, W9's
+      review nits and its live check, the five Low nits of E-APPLIST.W12's review round 2, and E-APPLIST.W13's two
+      review nits and one refuted candidate.
+    taken-by: "no epic yet; A4 or A5 may take any item"
+    follow-ups:
+      - >-
+        Simplify the lint helper (app/eslint-rules/classes.js) to an advisory for honest code and leave the guarantee
+        to the emitted-CSS check (app/eslint-rules/emitted.js); close the four round-5 findings W8 was signed with
+        (cr note on 796fb29, WAIVED: classes.js:283, classes.js:362, emitted.js:149, emitted.js:182; none ships anything
+        wrong). E-APPLIST.W6's honest screen code passed the helper, so it was not needed there. Source: E-APPLIST.W8
+        result and its cr note; W6 result. Taken by: this row.
+      - >-
+        Back to TypeScript 7 when typescript-eslint can read it (W8 pinned 6.0.3 for both the type check and the lint).
+        Source: E-APPLIST.W8 result (796fb29). Taken by: this row.
+      - >-
+        A tool reached through a chain of links whose middle hop is inside a project (/usr/local/bin/git ->
+        <proj>/bin/git -> /outside/git) is still accepted; fix by walking each link hop. Source: E-APPLIST.W7 review
+        round 3 (791eca7). Taken by: this row.
+      - >-
+        After a left job that wrote past LATE_OUTPUT_CAP ends, its paused pipe is never read to its end, so the app
+        keeps that pipe until it quits (app/src/main/commands.ts:177; bounded, the login-shell read once per launch).
+        Source: E-APPLIST.W7 review round 4, waived nit (791eca7). Taken by: this row.
+      - >-
+        app/src/shared/contract.ts:129-131 against app/src/main/reader/git.ts:89 (mayBeFresh): state the narrowing, or
+        count a unit main holds as merged only when name-rev puts it off main's line. Source: E-APPLIST.W5 review, its
+        cr note WAIVED at the round cap on 7a5bd13. Taken by: this row.
+      - >-
+        Open copies only docs that read whole as UTF-8 text (app/src/main/open/open.ts), so a binary file under docs/
+        would show broken; fix with a byte-exact blob read when a doc first carries one. Source: E-APPLIST.W6 result.
+        Taken by: this row.
+      - >-
+        A question on the list has no 'since' (the router's state keeps each key's value, not its time); keep the
+        setting line's time in app/src/main/reader/log.ts and show it. Source: E-APPLIST.W6 result. Taken by: this row.
+      - >-
+        app/src/main/open/open.ts:186: a data file whose head-pass read failed is read from git a second time (the :157
+        comment holds only for valid files); keep the failed read's answer or narrow the comment. Source: E-APPLIST.W6
+        review round 4, nit. Taken by: this row.
+      - >-
+        app/src/main/open/open.ts:142: on reuse each matching kept data file is read from disk twice (bytes for
+        blobIdOf, then UTF-8); read once and decode. Source: E-APPLIST.W6 review round 4, nit. Taken by: this row.
+      - >-
+        A project listed before the router's first start has no .router/app/ to watch, so the app sees that first start
+        at its minute's re-read, not within a second (app/src/main/watcher/watch.ts, as designed); fix by watching the
+        project folder until .router/app/ exists. Source: E-APPLIST.W9, the epic test's first run (step 2). Taken by:
+        this row.
+      - >-
+        Ship PP Editorial Old, Inter or DM Sans in place of New York and the system sans, only if the owner overrules
+        DEC-72 (none planned): a token change in app/tailwind.config.js and a font-src in the packaged content policy.
+        Source: E-APPLIST.W8 result. Taken by: this row, on the owner's ruling.
+      - >-
+        No screen draws the keel:// owner line: the main part computes view.scheme (the app macOS opens keel:// links
+        with) and the window never reads it, so screen 6 shows no 'Keel owns keel://' line; W9's live-check step 1
+        expected one by mistake. Draw it on screen 6, or drop the field. Source: E-APPLIST.W9 live check, step 1 (the
+        owner's ruling of 2026-11-23: backlog). Taken by: this row.
+      - >-
+        app/e2e/applist.e2e.spec.ts:42: when a check after electron.launch fails (firstWindow, the h1 or the app://
+        URL), launch() never sets the app as running, so the finally block skips app.close and the temp root is removed
+        under a live Electron; only a failed run is touched. Close the launched app inside launch() on that failure.
+        Source: E-APPLIST.W9 review round 1, nit (cr note on a2201a7). Taken by: this row.
+      - >-
+        app/playwright.config.ts:19: outputDir is one fixed name under the OS temp folder, which Playwright empties at
+        each start, so two runs at once (two worktrees) delete each other's failure traces. Use a name per run or per
+        worktree. Source: E-APPLIST.W9 review round 1, nit (cr note on a2201a7). Taken by: this row.
+      - >-
+        app/e2e/world.ts:63: waitFor is exported and unit-tested but nothing calls it. Remove it and its unit cases, or
+        use it. Source: E-APPLIST.W9 review round 1, nit (cr note on a2201a7). Taken by: this row.
+      - >-
+        app/test/integration/e2e-world.test.ts:51: the keel-check twin re-reads the whole view with nothing changed
+        between reads and ticks twice where nothing it asserts depends on it: about 2 s of a 14 s test on every keel
+        check. Derive the rows from the view already read and drop the two ticks. Source: E-APPLIST.W9 review round 1,
+        nit (cr note on a2201a7). Taken by: this row.
+      - >-
+        app/test/integration/doc-roles.test.ts:39 (:37 at efdda3c): the history test reads git rev-list --all --objects
+        of the live repository and asserts counts, so a shallow or partial clone fails it. Build its blobs in a temp
+        repository, or skip the count asserts when the clone is shallow. Source: E-APPLIST.W12 review round 2, nit (cr
+        note on 835fed0). Taken by: this row.
+      - >-
+        app/test/integration/doc-roles.test.ts:46 (:43 at efdda3c): the history test runs one git cat-file blob per
+        historic blob (about 155, ~11 s). Read them all through one git cat-file --batch. Source: E-APPLIST.W12 review
+        round 2, nit (cr note on 835fed0). Taken by: this row.
+      - >-
+        app/src/main/open/open.ts:170: on a rebuild Open writes each data file twice, once to .tmp-heads for keel and
+        again into the copy. Write the copy first and ask keel about the copy's files. Source: E-APPLIST.W12 review
+        round 2, nit (cr note on 835fed0). Taken by: this row.
+      - >-
+        app/src/main/handlers.ts:94: keelOf copies readerParts.git line for line with only the tool name changed (and
+        projects.add's usableGit is a third form). Make one helper that takes the tool name. Source: E-APPLIST.W12
+        review round 2, nit (cr note on 835fed0). Taken by: this row.
+      - >-
+        app/src/main/commands.ts:306: noAnswer repeats failed()'s wording a third time, and its third branch is dead
+        (its one caller passes only a run that could not start or timed out). Reuse failed()'s words and drop the
+        branch. Source: E-APPLIST.W12 review round 2, nit (cr note on 835fed0). Taken by: this row.
+      - >-
+        app/test/integration/git-facts.test.ts:362 (:361-367 at 321e4d4): the TIME_TIPS test builds its branches with
+        181 serial git spawns (git branch, rev-parse, then commit-tree and update-ref per branch). Make each commit with
+        commit-tree -p wu/E-A/w2 or epic/E-A and write all refs with one update-ref --stdin: the same refs in about 62.
+        Source: E-APPLIST.W13 review round 1, nit (cr note on 57f1586). Taken by: this row.
+      - >-
+        app/src/main/open/open.ts:195: the head pass keeps a data file's text only while the kept texts stay within
+        COPY_CAP, and the copy loop charges another budget in another order (:220-236), so past COPY_CAP of data files a
+        blob is read from git twice (:210, :226) and the comment at :183-185 ("no file the copy takes is read twice") is
+        false; results stay correct. Charge one budget in the copy's order, or narrow the comment. Source: E-APPLIST.W13
+        review round 1, nit (cr note on 57f1586). Taken by: this row.
+      - >-
+        Candidate, refuted as pre-existing: app/src/main/open/docs.ts:28: nothing keeps one keel doc-roles answer within
+        OUTPUT_CAP (1 MiB). Batches are bounded by input bytes (HEADS_DISK_CAP) and count (DOC_ROLES_BATCH), and keel
+        echoes each id and page unbounded, so data files with ids or pages of tens of KiB can cut the answer and every
+        Open at that tip fails, as a named notDone. Bound a batch by its answer too (split and ask again on a cut
+        answer), or have keel refuse an id or page past a small cap. Source: E-APPLIST.W13 review round 1, refuted
+        candidate (cr note on 57f1586). Taken by: this row.
+
   - id: L1
     title: "Message the router from the app"
     status: later
@@ -187,7 +308,65 @@ open:
     source: >-
       E-GHSETUP W3, at its close (2026-11-19).
     taken-by: "E-RELEASE"
+  - id: L6
+    title: "The window's tests in keel check"
+    status: later
+    problem: >-
+      The window's Vitest tests run only by hand (DEC-73): keel check runs the main part's node --test alone,
+      because Vitest needs npm packages and keel check installs nothing. A window test nobody ran can go red unseen.
+    proposal: >-
+      Revisit once the window has tests worth guarding: keel check runs them from a committed lockfile with a cached
+      install, or a WU gate reads a recorded run. Decide which when E-APPLIST closes.
+    source: >-
+      The owner's replan of E-APPLIST, 2026-11-20 (DEC-73).
+    taken-by: "no epic yet"
+
+  - id: L7
+    title: "A dev middleware over the real main-part handlers"
+    status: later
+    problem: >-
+      The window's browser mode answers from fixtures through a fake bridge (DEC-74), so a screen can look right
+      against data the real handlers never return.
+    proposal: >-
+      A dev-only Vite middleware that calls the real main-part handlers on a temp project; never built into the
+      shipped app, which keeps no port. Added only if the fixtures prove too thin.
+    source: >-
+      The owner's replan of E-APPLIST, 2026-11-20 (DEC-74).
+    taken-by: "no epic yet"
+
+  - id: L8
+    title: "Design specimens for the window"
+    status: later
+    problem: >-
+      Agents draw most of the window. If they keep redrawing the same component a different way, the closed tokens
+      alone will not stop it.
+    proposal: >-
+      Specimen pages and short design-run docs, as Trawler keeps, added only if that happens.
+    source: >-
+      The owner's replan of E-APPLIST, 2026-11-20; Trawler's specimens and design-run docs.
+    taken-by: "no epic yet"
+
+  - id: L9
+    title: "Tray, menu and login item"
+    status: later
+    problem: >-
+      E-APPLIST's app has no tray (menu-bar) icon, no menu of its own and no start at login (DEC-77). Alerts need only
+      the app running, so these are conveniences.
+    proposal: >-
+      A tray icon with the waiting count, a menu, and an opt-in start at login, in a later app epic.
+    source: >-
+      The owner's replan of E-APPLIST, 2026-11-20 (DEC-77).
+    taken-by: "no epic yet"
+
 closed:
+  - id: A3
+    title: "E-APPLIST · Alerts and your list"
+    closed: >-
+      done by E-APPLIST (W1 - W3 and W5 - W10; W4 dropped, DEC-76), closed at its sign-off: the router's update log
+      and the watchdog's lines (UC-ROUTE-8), the app's alert at your desk and your list with Open and Mark sent
+      (UC-APP-1, UC-APP-2), the epic test app/e2e/applist.e2e.spec.ts; Apple's paid membership is not needed, since
+      the free ad-hoc signature showed the alert (W7, rung 1); its open follow-ups moved to A11, its two live-check
+      questions to A4. Result: the E-APPLIST epic result (archived).
   - id: A2
     title: "E-KEELFIX · Keel fixes"
     closed: >-

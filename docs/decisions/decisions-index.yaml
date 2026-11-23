@@ -1,7 +1,7 @@
 # Keel decision index: data only, no page (DEC-69). Read it first, then open only the decision page you need.
 # Per record: id, title, the page that holds it, live or replaced-by. Ids are never reused: check every live
 # branch before minting next-free. Trawler lineage: git history of decisions-index.html; backlog B5 holds what is open.
-next-free: DEC-71
+next-free: DEC-80
 removed: >-
   Never reused: DEC-60 - DEC-68 were GitHub's flow (E-GHFLOW, E-GHFLOW2). E-GHREVERT removed them with the flow (the
   owner's ruling of 2026-11-19, DEC-70, amended); git history keeps their text.
@@ -34,6 +34,13 @@ pages:
     scope: >-
       The router on DeepSeek Harness and the inbox that wakes it.
     topics: ["DeepSeek Harness (DSH)", "The inbox"]
+  - file: app.html
+    title: "Decisions: the local app's build"
+    scope: >-
+      How the local app's window is built, styled, tested and developed, what E-APPLIST leaves out, and how the app
+      and the router's update log were built. Why the app exists and what it may do stays DEC-70, in
+      workflow-gates.html.
+    topics: ["The window", "E-APPLIST's scope", "How E-APPLIST built it"]
 records:
   - id: DEC-1
     title: "One project-agnostic Rust CLI, extracted from Trawler"
@@ -278,4 +285,40 @@ records:
   - id: DEC-70
     title: "A desktop app shows the flow and runs only the owner's commands; GitHub's flow is dropped"
     file: workflow-gates.html
+    status: live
+  - id: DEC-71
+    title: "The window is React with Vite; Trawler's patterns, not its look"
+    file: app.html
+    status: live
+  - id: DEC-72
+    title: "Tailwind with Keel's own closed tokens, held by a lint rule"
+    file: app.html
+    status: live
+  - id: DEC-73
+    title: "Window tests run on Vitest, by hand; keel check keeps node --test for the main part"
+    file: app.html
+    status: live
+  - id: DEC-74
+    title: "The window is developed without packaging the app"
+    file: app.html
+    status: live
+  - id: DEC-75
+    title: "The window's end-to-end test is Playwright on an unpackaged build"
+    file: app.html
+    status: live
+  - id: DEC-76
+    title: "W4's code is dropped; W1 stays"
+    file: app.html
+    status: live
+  - id: DEC-77
+    title: "No tray, menu or login item in E-APPLIST"
+    file: app.html
+    status: live
+  - id: DEC-78
+    title: "The app lives in this repo under the gate; the router's lines reach it first"
+    file: app.html
+    status: live
+  - id: DEC-79
+    title: "Open asks keel for a doc's roles; the app reads no YAML"
+    file: app.html
     status: live

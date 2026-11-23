@@ -9,8 +9,8 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>Keel — the local app</h1>
-      <p>A desktop app on your Mac that tells you what waits on you, shows the work, and runs your sign-off and merge on a click you confirm. Designed, not built: this page is the build epics' source until the app exists.</p>
-      <div class="meta">T1 · 2026-11-19 · Keel · distilled from E-LOCALTOOL (epic plan v3, W1 – W5 results, archived at its close) · why: <a href="decisions/workflow-gates.html#dec-70">DEC-70</a> · the epics: <code>backlog/local-app.yaml</code></div>
+      <p>A desktop app on your Mac that tells you what waits on you, shows the work, and runs your sign-off and merge on a click you confirm. The first part is built (A3, E-APPLIST): an alert at your desk and one list of what waits on you, read-only. The rest is designed, not built: this page is the next epics' source.</p>
+      <div class="meta">T1 · 2026-11-23 · Keel · distilled from E-LOCALTOOL (the design) and E-APPLIST (A3 as built), each archived at its close · why: <a href="decisions/workflow-gates.html#dec-70">DEC-70</a> · how it is built: <a href="decisions/app.html">DEC-71 – DEC-78</a> · use cases: <code>use-cases/app.yaml</code> · the epics: <code>backlog/local-app.yaml</code></div>
     </div>
   </header>
   <main>
@@ -68,9 +68,9 @@ flowchart LR
   <tbody>
     <tr><td>Window</td><td>Shows the screens. Asks the main part by about ten named requests, each naming an item.</td><td>Reads or writes a file, runs a command, opens a web page, passes free text to a command</td></tr>
     <tr><td>Bridge</td><td>The named requests, each checked in the main part: the waiting list, one work unit, one epic, one worker, the fleet, the projects, open an item's doc, run an item's command, Attach, send a note.</td><td>Takes a command, a path or a commit from the window</td></tr>
-    <tr><td>Reader</td><td>Reads branches, notes, worktrees, run records and the inbox's listing as files or by <code>git</code>; holds the router's data in memory by the log's keys.</td><td>Runs <code>claude</code>; consumes an inbox report; runs a writing command</td></tr>
-    <tr><td>Watcher</td><td>Watches the git folder's branch and note files, waits a second for the burst, re-reads; re-reads once a minute anyway. Follows the update log by whole lines.</td><td>Trusts a file watch alone</td></tr>
-    <tr><td>Alerter</td><td>One macOS alert per alert line the router writes; a click opens the item.</td><td>Alerts on its own; shows a line twice</td></tr>
+    <tr><td>Reader</td><td>Reads branches, notes, worktrees (A3), run records and the inbox's listing (A5) as files or by <code>git</code>; holds the router's data in memory by the log's keys.</td><td>Runs <code>claude</code>; consumes an inbox report; runs a writing command</td></tr>
+    <tr><td>Watcher</td><td>Watches the git folder's refs and <code>.router/app/</code>, waits a second for the burst, re-reads; re-reads once a minute anyway, so a missed event costs a minute at most. A <code>.router/app/</code> that does not exist yet (before the router's first start) is watched from the next minute's read. Reads never overlap.</td><td>Trusts a file watch alone</td></tr>
+    <tr><td>Alerter</td><td>One macOS alert per alert line the router writes, the project's name as its subtitle; a click opens the list on its work unit.</td><td>Alerts on its own; shows a line twice</td></tr>
     <tr><td>Project list</td><td>One list per Mac, in the app's own folder: each project's main checkout, set up for keel.</td><td>Stores anything inside a project</td></tr>
   </tbody>
 </table>
@@ -92,13 +92,13 @@ flowchart LR
   </tbody>
 </table>
 <ul data-c="router-data">
-  <li><b>Where it travels.</b> Two files in the main checkout's <code>.router/app/</code>, untracked: <code>log.jsonl</code>, one numbered line per change, and <code>state.json</code>, every value as it stands with the number of the last line folded in. Only the router's command (<code>scripts/router-app.sh</code>: start, set, del, alert; K14) and its watchdog (K15) write them, under a lock. The app only reads them.</li>
+  <li><b>Where it travels.</b> Two files in the main checkout's <code>.router/app/</code>, untracked: <code>log.jsonl</code>, one numbered line per change, and <code>state.json</code>, every value as it stands with the number of the last line folded in. Only <code>scripts/router-app.sh</code> writes them (K14, K15, K10); who runs which of its verbs is <code>use-cases/router.yaml</code> UC-ROUTE-8. The app only reads them.</li>
   <li><b>One line, one change.</b> About 200 bytes, never a snapshot. <code>set</code> replaces one key; <code>del</code> removes it; <code>alert</code> carries a headline, one or two lines, an optional work unit and a link (the state keeps the last 20). Keys: <code>router</code>, <code>wu/&lt;id&gt;/stage</code>, <code>wu/&lt;id&gt;/conflict</code>, <code>epic/&lt;id&gt;/paused</code>, <code>question/&lt;id&gt;</code>, <code>worker/&lt;name&gt;</code>, <code>worker/&lt;name&gt;/report</code>, <code>facts</code>. The line's form, a contract between the router and the app:
 <pre>{"run":"keel-1c.20261118-203011","n":104,"at":"2026-11-18T20:39:53+07:00",
  "op":"set","key":"wu/E-LOCALTOOL.W3/stage","value":{"stage":"plan to read","tip":"6834699"}}</pre></li>
   <li><b>Applying a line.</b> A new run: drop every router value and read the state. The next number: apply it. A number already seen: skip it. A missing number (the log restarts from the state past 2,000 lines): read the state once. A half-written line or an unknown key: skip it.</li>
   <li><b>Refetch.</b> On start the app reads git, then the state once, then follows the log; it asks no one. When the router starts, it wipes both files and begins a new run; the watchdog's next tick writes each live worker, and the router writes each stage it knows.</li>
-  <li><b>Defaults.</b> A router field the router has not written shows its persistent part, else "not heard", grey: a stage shows what the notes and git prove (signed, merged, waits for your sign-off), else "last run: plan"; questions and conflicts are not shown and the top bar says the router is not heard; after three silent watchdog ticks (15 minutes) live states go grey and Attach is off.</li>
+  <li><b>Defaults.</b> A router field the router has not written shows its persistent part, else "not heard", grey: a stage shows what the notes and git prove (signed, merged, waits for your sign-off), else "last run: plan"; questions and conflicts are not shown and the top bar says the router is not heard; after three silent watchdog ticks (15 minutes) live states go grey and Attach is off. A3 built the list's part, and A4 and A5 build on it: the router is heard while its newest line is under 15 minutes old on the app's clock; when it is not, or has not started, the list hides the router's items and a line says why, and what git shows stays. The grey states above are for the screens A4 and A5 add, which show one item's router fields (screens 3 to 5).</li>
 </ul>
 
 <h2 id="screens">The screens</h2>
@@ -141,7 +141,8 @@ flowchart LR
     <tr><td>Plan to read</td><td>you, by a message to the router</td><td>The plan page</td><td>Mark sent</td><td>Enters on the router's stage line; leaves on "plan approved" (backstop: the branch moves past the plan)</td></tr>
     <tr><td>Question from the router</td><td>you, by a message</td><td>The question, as text</td><td>Mark sent</td><td>The router removes its question line</td></tr>
     <tr><td>Worker waits on a permission</td><td>you</td><td>—</td><td>Attach</td><td>The watchdog's worker line no longer says it waits</td></tr>
-    <tr><td>Gate failed · merge conflict</td><td>its worker</td><td>Screen 3</td><td>none</td><td>The FAIL lines are gone · the branch holds its target</td></tr>
+    <tr><td>Work in motion: plan being written · building · in review</td><td>its worker</td><td>—</td><td>none</td><td>The router's stage moves on; a PASS or WAIVED review note on the tip replaces it</td></tr>
+    <tr><td>Gate failed · merge conflict (A5, with K6)</td><td>its worker</td><td>Screen 3</td><td>none</td><td>The FAIL lines are gone · the branch holds its target</td></tr>
     <tr><td>Main not pushed</td><td>you</td><td>—</td><td>Push… (after E-GHREVERT, A4); until then the line as text</td><td>main matches its upstream</td></tr>
     <tr><td>Task into its work unit</td><td>you, on your Mac</td><td>The task's diff page</td><td>Merge task… (A4)</td><td>The task tip is in its work unit</td></tr>
   </tbody>
@@ -171,13 +172,44 @@ flowchart LR
   <li><b>Not designed:</b> signing with a key (no terminal for a passphrase; your username signs) and a sign-off that waives a review (you type <code>--waive-review</code>, then <code>--confirm-waiver</code>, in the terminal); both are A4's.</li>
 </ul>
 
+<h2 id="built">A3 as built (E-APPLIST)</h2>
+<p>The app's code is <code>app/</code> in this repository, under the gate (<a href="decisions/app.html#dec-78">DEC-78</a>). It is read-only: it runs git's fixed reads and one read-only keel command (<code>keel doc-roles</code>, for Open), reads your login shell's PATH once at start, opens pages, and writes only its own folder (<code>~/Library/Application Support/Keel</code>: settings, the project list, the alerts shown, the marks, the copies Open makes).</p>
+<h3 id="built-alerts">An alert at your desk (n1, UC-APP-1)</h3>
+<p data-c="built-alerts">One macOS alert per alert line the router's sender writes, before it sends to Telegram, shown once across restarts; a click opens the list on its work unit. The contract is <code>use-cases/app.yaml</code> UC-APP-1, the choices <a href="decisions/app.html#dec-78">DEC-78</a>.</p>
+<h3 id="built-list">Your list, Open and Mark sent (n2, UC-APP-2)</h3>
+<p data-c="built-list">Waits on you shows three groups (yours, not yours, sent), every kind in the hand-off table but the rule-file commit, gate failed and merge conflict; Open shows the committed page, and Mark sent holds a plan or a question under Sent. Open reads each doc's roles through <code>keel doc-roles</code>, so it opens the page keel checks and signs. An older keel, with no <code>doc-roles</code>, makes Open answer "update keel" (<a href="decisions/app.html#dec-79">DEC-79</a>). The contract is <code>use-cases/app.yaml</code> UC-APP-2. Screen 6, Projects, holds one project, each tool's path, the test alert, the counts and the last change seen.</p>
+<h3 id="built-window">The window</h3>
+<p>React in strict TypeScript, built by Vite through Electron Forge's Vite plugin (<a href="decisions/app.html#dec-71">DEC-71</a>). It reaches the main part only through one bridge, by nine named requests, each checked in the main part, and two push events. Tailwind 3 on Keel's own closed tokens (<a href="decisions/app.html#dec-72">DEC-72</a>): a lint helper refuses an off-list class, an arbitrary value or a class built at run time, and a check on the CSS Tailwind emits is the guarantee. Browser mode draws the window on a fake bridge with no Electron (<code>pnpm dev:browser</code>, <a href="decisions/app.html#dec-74">DEC-74</a>). The design rules, from the look the owner chose on 2026-11-22:</p>
+<ol data-c="design-rules">
+  <li>Every value comes from a token; a new size or colour is a token change, never a class or an inline style.</li>
+  <li>Two worlds, chosen by the Mac: day is light, night is dark; a colour variable flips.</li>
+  <li>One solid action per card, a black pill by day; every other action an outline pill.</li>
+  <li>Buttons and badges are pills; cards are white by day and one step up from the canvas by night, on a 1px hairline with 12px corners; no shadow, no gradient.</li>
+  <li>The screen title and section heads in New York, in sentence case; the system sans for the rest.</li>
+  <li>A state is a word on a badge whose colour repeats it; a problem is words in the problem colour; nothing by colour alone.</li>
+  <li>Every text pair reaches 4.5:1 and every button edge 3:1, in both worlds.</li>
+  <li>Text from the main part is shown as text, never as markup; a path is shown whole, in mono.</li>
+  <li>One action at a time: every button is off while a request runs, and its outcome is a sentence.</li>
+  <li>Actions first; what you rarely read is folded.</li>
+</ol>
+<h3 id="built-tests">Three test loops and the seams</h3>
+<table data-c="built-tests">
+  <thead><tr><th>Loop</th><th>What it tests</th><th>Runs</th></tr></thead>
+  <tbody>
+    <tr><td><code>node --test</code></td><td>The main part, its contract and the router's lines read for real</td><td>In <code>keel check</code>, with no package installed</td></tr>
+    <tr><td>Vitest</td><td>The window on a stub bridge</td><td>By hand, <code>pnpm test:window</code> (<a href="decisions/app.html#dec-73">DEC-73</a>)</td></tr>
+    <tr><td>Playwright</td><td>The epic's flow on the unpackaged app, from a router line to the item on screen and out again</td><td>By hand, <code>pnpm e2e</code>: Vite's bundles, then the test (<a href="decisions/app.html#dec-75">DEC-75</a>)</td></tr>
+  </tbody>
+</table>
+<p data-c="seams">The epic test drives the unpackaged app through four <code>KEEL_APP_*</code> variables the packaged app ignores (<a href="decisions/app.html#dec-78">DEC-78</a>). What no test reaches, the real banner, <code>keel://</code>, Telegram's link and the packaged look, you check on one packaged build at the epic's close (<a href="decisions/app.html#dec-75">DEC-75</a>).</p>
+
 <h2 id="build">The build order</h2>
 <table data-c="epics">
   <thead><tr><th>#</th><th>Epic</th><th>First use</th><th>K-numbers</th><th>Waits on</th></tr></thead>
   <tbody>
     <tr><td>A1</td><td>E-GHREVERT · back to before GitHub</td><td>n3: typed sign-off, local merge, your pushes</td><td>—</td><td>—</td></tr>
     <tr><td>A2</td><td>E-KEELFIX · keel fixes</td><td>n3: safe rule-file commits; the gate with nothing written</td><td>K9, K2</td><td>A1</td></tr>
-    <tr><td>A3</td><td>E-APPLIST · alerts and your list</td><td>n1, n2, read-only</td><td>K14, K15, K4, K10, K12</td><td>A1</td></tr>
+    <tr><td>A3</td><td>E-APPLIST · alerts and your list: <b>built</b> (<a href="#built">as built</a>)</td><td>n1, n2, read-only</td><td>K14, K15, K4, K10, K12</td><td>A1</td></tr>
     <tr><td>A4</td><td>E-APPSIGN · sign off and merge from the app</td><td>n3 from the app, n6</td><td>K1, K5</td><td>A1, A2, A3</td></tr>
     <tr><td>A5</td><td>E-APPFLEET · fleet, epics, many projects</td><td>n4, n5, n7</td><td>K6, K7, K8, K11, K13</td><td>A3, A4</td></tr>
   </tbody>
@@ -210,7 +242,9 @@ flowchart LR
 <h2 id="read-next">Read next</h2>
 <ul data-c="read-next">
   <li><a href="decisions/workflow-gates.html#dec-70">DEC-70</a>: why, and what was rejected.</li>
-  <li><code>backlog/local-app.yaml</code>: the five epics and the later rows.</li>
+  <li><code>backlog/local-app.yaml</code>: the five epics, the app's open ends after E-APPLIST (A11) and the later rows.</li>
+  <li><a href="decisions/app.html">Decisions: the local app's build</a> (DEC-71 – DEC-78), and <code>use-cases/app.yaml</code> (UC-APP-1, UC-APP-2).</li>
+  <li><a href="install.html#app">Installing the app</a>: build it, sign it, open it.</li>
   <li><a href="architecture.html">architecture.html</a>: keel itself, which the app only reads and runs.</li>
   <li>The design in full, archived at the E-LOCALTOOL close: <code>git show 90ee37b:docs/work/&lt;doc&gt;</code> for the epic plan (<code>2026-11-17-e-localtool-plan.html</code>) and the W1 – W5 results (<code>2026-11-18-e-localtool-w1-needs-result.html</code>, <code>…-w2-app-result.html</code>, <code>…-w3-screens-result.html</code>, <code>…-w4-handoff-result.html</code>, <code>2026-11-19-e-localtool-w5-retire-result.html</code>).</li>
 </ul>

@@ -1,0 +1,55 @@
+{
+  "name": "keel-app",
+  "productName": "Keel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Keel's local app: the owner's alerts and list.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@11.18.0",
+  "main": ".vite/build/main.cjs",
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "typecheck": "tsc --noEmit",
+    "test:main": "node --test 'test/**/*.test.ts'",
+    "test:window": "vitest run",
+    "test:window:watch": "vitest",
+    "lint": "eslint -c eslint.config.js --max-warnings 0 . && node eslint-rules/check-css.js",
+    "dev:browser": "vite --config vite.renderer.config.ts",
+    "build:e2e": "node e2e/build-bundles.ts",
+    "e2e": "pnpm build:e2e && playwright test"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "8.0.1",
+    "@electron-forge/maker-zip": "8.0.1",
+    "@electron-forge/plugin-fuses": "8.0.1",
+    "@electron-forge/plugin-vite": "8.0.1",
+    "@electron/fuses": "2.1.3",
+    "@playwright/test": "1.65.1",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/jest-dom": "8.0.0",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.13",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "electron": "45.4.1",
+    "eslint": "10.15.0",
+    "jsdom": "31.0.1",
+    "postcss": "8.5.33",
+    "tailwindcss": "3.4.19",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.73.0",
+    "vite": "8.3.8",
+    "vitest": "5.1.1"
+  }
+}

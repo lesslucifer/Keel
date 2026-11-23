@@ -1,0 +1,55 @@
+# Keel use cases: the local app. Data only, no page (DEC-69). Contract level: trigger, expected, failure.
+# Ids are never reused. Index: use-cases-index.yaml.
+title: "the local app"
+about: >-
+  The app as designed and built: local-app.html. Why it exists and what it may do: DEC-70 (decisions/workflow-gates.html);
+  how it is built: DEC-71 - DEC-78 (decisions/app.html). UC-APP-3 to UC-APP-6 stay unrecorded until A4, A5 and L1 plan
+  them (backlog local-app). What the router writes for the app is UC-ROUTE-8 (router.yaml).
+areas:
+  - area: UC-APP
+    title: "the local app"
+    use-cases:
+      - id: UC-APP-1
+        title: "something waits on you, and the app alerts you at your desk"
+        trigger: >-
+          The router's sender (`scripts/notify-owner.py --send`) writes an alert line to the listed project's update
+          log (UC-ROUTE-8), while the app runs or while it is closed. The app needs no window open (DEC-77).
+        expected: >-
+          One macOS alert per alert line: the line's headline as its title, the project's name as its subtitle, its
+          one or two lines as its body. The app records each line it shows in its own folder before it shows it, so a
+          line never alerts twice, across an app restart too. Lines written while the app was closed make one summary
+          ("N alerts while Keel was closed") when there are two or more, else the line itself. A router restart is a new
+          run: only its own lines alert. A click on an alert, or a `keel://wu/<id>` link (claimed only by the packaged
+          app), brings Waits on you forward with that work unit's items marked, or says nothing of it waits; a click
+          made after a project switch points nowhere. The sender writes the alert line before it sends, so a failed
+          Telegram send still alerts. Tests: app/test/integration/alerter.test.ts, focus.test.ts, router-log.test.ts,
+          e2e-world.test.ts; tests/suite/notify_owner.rs; the epic test app/e2e/applist.e2e.spec.ts (steps 3, 5, 9,
+          10), run by hand. The real banner, its click and keel:// are the owner's live check on the packaged build.
+        failure: >-
+          A line alerting twice, or not at all because Telegram failed; a click pointing at another project's items;
+          any link but `keel://wu/<id>` doing something; the unpackaged app claiming `keel://`; the packaged app
+          reading a test seam (`KEEL_APP_*`).
+      - id: UC-APP-2
+        title: "you open a waiting item and see its committed doc"
+        trigger: >-
+          Something in the listed project waits on the owner or on a worker: a work unit's or an epic's result to sign
+          or merge, a plan to read, a question, a worker waiting on a permission, main not pushed, a task not yet in
+          its work unit, or work in motion (a plan being written, building, in review).
+        expected: >-
+          Waits on you lists each in one of three groups, yours, not yours (a worker acts) and sent, with its work
+          unit, branch, tip, since when, why and who acts. Each enters and leaves on its own source with no click: a
+          review note and a sign-off note on the tip, then the merge; the router's stage line; its question line; the
+          watchdog's waiting state; main against its upstream; a task's tip against its unit. Open copies the tip's
+          `docs/` from git into the app's folder and opens the page its data file names in the browser: the committed
+          bytes, even while the working file differs; an epic result opens in place from its worktree's
+          `docs/.archive/`. Open learns each data file's roles, id and page from keel doc-roles, keel's own reading, never
+          its own, and asks it about every data file whatever its size (keel judges that too); a keel with no doc-roles makes Open answer "update keel", and with no usable keel it asks the owner to
+          choose one. A data file whose id or page the app cannot use (empty, or a control character), or whose path
+          holds a control character, gives no role alone; every other file keeps its own. Mark sent moves a plan or a question under Sent, kept across a restart, until its source
+          moves it on. While the router is not heard (15 minutes with no line) its items are hidden and a line says so;
+          a router restart drops its values. The app writes nothing into a project. Tests: app/test/unit/items.test.ts;
+          app/test/integration/items-flow.test.ts, open.test.ts, doc-roles.test.ts, sent.test.ts, e2e-world.test.ts; the window's
+          waits.test.tsx (Vitest, by hand); the epic test (steps 2 to 11).
+        failure: >-
+          An item that stays after its source says it left, or leaves before; Open showing a working file or a page
+          outside the copy, or a page keel doc-roles does not name; a router item shown while the router is not heard; any file written inside a project.

@@ -457,10 +457,12 @@ open:
     problem: >-
       What the inbox channel (DEC-58, `scripts/router-inbox.sh`) left open when E-RGUARD closed on 2026-11-15. R47
       holds the four lows of E-RGUARD.W3's independent review, five script observations from the epic's code review,
-      and one judgment the owner has not made; L3 is wanted soon. The ten sub-items are in `items`.
+      and one judgment the owner has not made; L3 is wanted soon. The ten sub-items are in `items`. E-APPLIST.W3 added
+      three lows of `scripts/notify-owner.py`'s header parse and message (W3-1 to W3-3) and found S3 again.
     source: >-
       E-RGUARD.W3 independent review (L1 - L4 and the judgment it raised); the E-RGUARD epic code review round 1,
-      outside its code scope (S1 - S5); E-RGUARD close.
+      outside its code scope (S1 - S5); E-RGUARD close. W3-1 to W3-3: E-APPLIST.W3's independent reviews (round 3 of
+      its skill and sender fixes; rule commit H, 7f91553).
     taken-by: "unowned"
     items:
       - >-
@@ -507,6 +509,23 @@ open:
         times a day with no news. The owner approved the channel on 2026-11-14; no ruling accepts those idle wakes
         beyond that approval. The owner rules: accept them, or ask for a longer bound or a wake on a worker's turn
         end (dsh D2 item 3).
+      - >-
+        W3-1 (a short headline read as a mistyped header): the sender refuses a first line whose key is one slip from
+        `question` when the word after the colon fits the id grammar, so `Questions: 2`, `Question: yes` and
+        `Question: none` are refused as mistyped headers (nothing sent; the refusal quotes the text, so it fails
+        safe). Fix direction, one of the review's two: (a) a sentence in the keel-router skill's commands.md, both
+        copies: "`Questions: 2` (one lowercase word) is read as a mistyped header: write `2 questions`"; or (b) in
+        `mistyped_header`, refuse the plural `questions` only when the line ends in an id holding a `-` or a digit.
+      - >-
+        W3-2 (a format character hides a header): a format character such as U+202E or U+200B before `wu:` makes the
+        line pass as body text, since the header parse reads the raw line and only the alert lines are blanked. Fix
+        direction: blank format characters in a leading line before it is judged a header, with a test per character
+        range (beside L3).
+      - >-
+        W3-3 (the raw bound's wording): the refusal of a body past 65,536 characters says "at most 65536 are read",
+        but the body was read and is refused before it is parsed. Fix direction: say "accepted" (or "parsed").
+        Found with it: S3 again (Telegram's 4,096 may count UTF-16 code units while the sender counts code points);
+        fix direction unchanged, `len(text.encode('utf-16-le')) // 2` on the message after its link.
   - id: R48
     title: "A Claude Code worker cannot post"
     status: "open: owner change"
@@ -533,6 +552,46 @@ open:
     source: >-
       E-GHFLOW.W3 result, security review round 2 (the shared git dir, left after R33's fix; DEC-37, amended). For the next router epic.
     taken-by: "unowned: the next router epic"
+  - id: R52
+    title: "Hardening the update log's writers (router-app.sh, the watchdog's app lines)"
+    status: "open: nits and test gaps, nothing known to fail in use"
+    problem: >-
+      E-APPLIST.W1 and W2 left four nits in scripts/router-app.sh and seven surviving mutants plus two test gaps in
+      the watchdog's app lines (scripts/router-worker.sh), each needing a hand edit, an odd environment or a
+      not-yet-seen input to matter. Both scripts are rule-bearing: each fix is the owner's typed commit.
+    proposal: >-
+      One small router WU: the four script fixes below, each with a failing test first; for each surviving mutant a
+      test that turns it red, or a note of why it is equivalent.
+    source: >-
+      E-APPLIST.W1 result, follow-ups N1 - N4 (b0cb60d); E-APPLIST.W2 result, follow-ups (7c6ac22), the independent
+      review of scripts/router-worker.sh at 95c16af. Recorded by the E-APPLIST.W5 plan's follow-up.
+    taken-by: "unowned: the next router epic (E-APPLIST closed without it)"
+    items:
+      - >-
+        W1 N1, router-app.sh:119-121: a hardlinked log.jsonl or state.json passes the regular-file check (needs a
+        same-user write). Fix: refuse a link count over 1.
+      - >-
+        W1 N2, router-app.sh:162-181: a hand-corrupted state.json holding two JSON values, or a non-integer .n,
+        garbles the parse or is carried on; an empty state.json makes each writer exit 0, append an empty line and
+        write a blank state until a start. Fix: read it with jq -s, check it holds exactly one value and n is a whole
+        number; the wrong-shape test takes the three cases.
+      - >-
+        W1 N3, router-app.sh:33: an exported CDPATH makes the script fail closed (exit 1). Fix:
+        HERE=$(CDPATH= cd -P -- ...).
+      - >-
+        W1 N4, router-app.sh:131-138: a signal between mkdir and the trap leaves a stale lock; any mkdir failure (an
+        unwritable dir) reports LOCKED after 5 s. Fix: set the trap before the loop; fail at once when the dir is not
+        writable.
+      - >-
+        W2, surviving mutants of router-worker.sh at 95c16af that no watchdog test pins: M10 (the write calls lose
+        their </dev/null), M11 (app_lines loses its symlink check), M12 (app_lines loses its name check), M19 (no gd
+        guard), M20 (a state whose values are not an object read as {}). M15a and M15b are pinned since 142ed86.
+      - >-
+        W2, a test that starts a run and then trips the git-dir check, to pin that nothing is written then (met by
+        construction today).
+      - >-
+        W2, a per-worker jq that failed would drop that worker's row, and the write step would then delete its line;
+        no input is known to make it fail. Fix: a guard that marks the tick unreadable instead.
 closed:
   - id: R1
     title: "Worker persona missing in branches without it"

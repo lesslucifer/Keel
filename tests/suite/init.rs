@@ -1099,3 +1099,151 @@ fn harness_hooks_exit_0_and_never_call_verify_doc_on_a_foreign_keel() {
         std::fs::remove_file(&log).unwrap();
     }
 }
+
+/// E-APPLIST.W3 (K4): the router skill, in both copies, says how the router writes the update log and
+/// when. The stages are the router guard's own (`app_shapes` in scripts/router-guard.jq), each with
+/// its row in commands.md's table and that row's moment; every router-app.sh command of the table,
+/// its placeholders filled, is one the guard admits for the router. The header keys are the sender's
+/// own (`HEADER` in scripts/notify-owner.py), and the skill's example header is one the sender reads.
+#[test]
+fn router_skill_names_each_stage_and_its_moment() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let guard = std::fs::read_to_string(root.join("scripts/router-guard.jq")).unwrap();
+    let shapes = guard.lines().find(|l| l.starts_with("def app_shapes:")).expect("the guard has no app_shapes");
+    let stages: Vec<String> = regex::Regex::new(r"stage E-\S+ \(([a-z|-]+)\)").unwrap().captures(shapes).expect("app_shapes holds no stage words")[1]
+        .split('|')
+        .map(str::to_string)
+        .collect();
+    assert!(stages.len() >= 5, "{stages:?}");
+    // each command's moment: words its When cell must carry (a stage the guard gains needs a row here)
+    let moment = |command: &str| -> &'static [&'static str] {
+        match command {
+            "start <router-name>" => &["first start", "restart", "compaction"],
+            "stage <wu> plan-in-work" => &["planning worker", "dispatched"],
+            "stage <wu> plan-to-read <tip>" => &["plan is verified", "ask"],
+            "stage <wu> plan-approved <tip>" => &["owner approves the plan"],
+            "stage <wu> building" => &["build worker", "dispatched"],
+            "stage <wu> in-review <tip>" => &["review worker", "every round"],
+            "del wu/<wu>/stage" => &["merged into its epic"],
+            "del question/<id>" => &["answer", "default"],
+            other => panic!("commands.md names a router-app.sh command with no expected moment: {other:?}"),
+        }
+    };
+    let (keys, example_reads) = sender_reads_the_skills_header(root);
+    for dir in ["skills/keel-router", ".claude/skills/keel-router"] {
+        let skill = std::fs::read_to_string(root.join(dir).join("SKILL.md")).unwrap();
+        let commands = std::fs::read_to_string(root.join(dir).join("references/commands.md")).unwrap();
+        let mut rows = std::collections::BTreeMap::new();
+        for line in commands.lines().filter(|l| l.starts_with("| ") && l.contains("| `scripts/router-app.sh ")) {
+            let (when, command) = line.trim_end_matches(" |").rsplit_once(" | ").unwrap();
+            let command = command.trim_matches('`').strip_prefix("scripts/router-app.sh ").unwrap();
+            rows.insert(command.to_string(), when.trim_start_matches("| ").to_string());
+        }
+        let mut expected = vec!["start <router-name>".to_string(), "del wu/<wu>/stage".to_string(), "del question/<id>".to_string()];
+        for stage in &stages {
+            let row = rows
+                .keys()
+                .find(|c| c.starts_with(&format!("stage <wu> {stage}")))
+                .unwrap_or_else(|| panic!("{dir}/references/commands.md has no row for the guard's stage {stage}"));
+            expected.push(row.clone());
+        }
+        assert_eq!(rows.len(), expected.len(), "{dir}: the table's router-app.sh rows {:?} are not the guard's {expected:?}", rows.keys().collect::<Vec<_>>());
+        for (command, when) in &rows {
+            assert!(expected.contains(command), "{dir}: the table names {command:?}, not one of {expected:?}");
+            for word in moment(command) {
+                assert!(when.contains(word), "{dir}: the moment of `{command}` does not say {word:?}: {when:?}");
+            }
+            let filled = format!("scripts/router-app.sh {command}")
+                .replace("<router-name>", "keel-1c")
+                .replace("<wu>", "E-APPLIST.W3")
+                .replace("<tip>", "477949f")
+                .replace("<id>", "link-scheme");
+            assert!(router_guard_admits(root, &filled), "{dir}: the router guard denies the table's command {filled:?}");
+        }
+        for key in &keys {
+            let line = format!("`{key}: <");
+            assert!(skill.contains(&line) && commands.contains(&line), "{dir} does not teach the sender's header key {key:?}");
+        }
+        assert!(
+            skill.contains("scripts/router-app.sh") && skill.contains("references/commands.md"),
+            "{dir}/SKILL.md does not point at the update log's moments"
+        );
+    }
+    assert!(example_reads, "the sender does not read the skill's example header as a work unit and a question");
+}
+
+/// The router guard's verdict on one Bash command run by the router: true when admitted.
+fn router_guard_admits(root: &Path, command: &str) -> bool {
+    let event = serde_json::json!({"agent_type": "router", "tool_name": "Bash", "tool_input": {"command": command}, "cwd": "/r"});
+    let mut p = common::cmd("jq")
+        .args(["-c", "-f"])
+        .arg(root.join("scripts/router-guard.jq"))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(&mut p.stdin.take().unwrap(), event.to_string().as_bytes()).unwrap();
+    let o = p.wait_with_output().unwrap();
+    assert!(o.status.success(), "the guard errored on {command:?}: {}", String::from_utf8_lossy(&o.stderr));
+    o.stdout.iter().all(u8::is_ascii_whitespace)
+}
+
+/// The sender's header keys, read from its `HEADER` pattern, and whether it reads the shipped skill's
+/// example header (commands.md's example block) as a work unit and a question.
+fn sender_reads_the_skills_header(root: &Path) -> (Vec<String>, bool) {
+    let commands = std::fs::read_to_string(root.join("skills/keel-router/references/commands.md")).unwrap();
+    let at = commands.find("```\nwu: ").expect("commands.md has no example header block") + 4;
+    let example = &commands[at..at + commands[at..].find("```").unwrap()];
+    let drive = "import importlib.util, json, sys\nsys.dont_write_bytecode = True\nspec = importlib.util.spec_from_file_location('notify_owner', sys.argv[1])\nm = importlib.util.module_from_spec(spec)\nspec.loader.exec_module(m)\np = m.parse_body(sys.stdin.read())\nprint(json.dumps({'pattern': m.HEADER.pattern, 'wu': p['wu'], 'question': p['question']}))";
+    let mut p = common::cmd("python3")
+        .args(["-c", drive])
+        .arg(root.join("scripts/notify-owner.py"))
+        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(&mut p.stdin.take().unwrap(), example.as_bytes()).unwrap();
+    let o = p.wait_with_output().unwrap();
+    assert!(o.status.success(), "the sender could not read the skill's example header: {}", String::from_utf8_lossy(&o.stderr));
+    let got: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    let pattern = got["pattern"].as_str().unwrap();
+    let keys: Vec<String> =
+        regex::Regex::new(r"^\(([a-z|]+)\):").unwrap().captures(pattern).unwrap_or_else(|| panic!("the sender's HEADER is not (key|key):: {pattern}"))[1]
+            .split('|')
+            .map(str::to_string)
+            .collect();
+    assert!(keys.len() >= 2, "{keys:?}");
+    (keys, got["wu"].is_string() && got["question"].is_string())
+}
+
+/// The self-hosted router skill is the shipped one: every file under skills/keel-router is
+/// byte-equal to its copy under .claude/skills/keel-router, and neither has a file the other lacks.
+#[test]
+fn every_keel_router_file_equals_its_self_hosted_copy() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let (mut shipped, mut hosted) = (BTreeMap::new(), BTreeMap::new());
+    files(&root.join("skills/keel-router"), &root.join("skills/keel-router"), &mut shipped);
+    files(&root.join(".claude/skills/keel-router"), &root.join(".claude/skills/keel-router"), &mut hosted);
+    assert!(shipped.len() >= 9, "the shipped router skill has {} files", shipped.len());
+    assert_eq!(shipped.keys().collect::<Vec<_>>(), hosted.keys().collect::<Vec<_>>(), "the two copies hold different files");
+    for (f, body) in &shipped {
+        assert!(hosted.get(f) == Some(body), "skills/keel-router/{f} and .claude/skills/keel-router/{f} differ");
+    }
+}
+
+/// project-router's rule-file list is the committed config's: every `rule_bearing` entry of
+/// .keel/config.toml is named in its "WU with a rule-bearing file" line.
+#[test]
+fn project_router_names_every_rule_file() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let config: toml::Value = toml::from_str(&std::fs::read_to_string(root.join(".keel/config.toml")).unwrap()).unwrap();
+    let rules: Vec<&str> = config["rule_bearing"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+    assert!(rules.len() >= 10, "{rules:?}");
+    let skill = std::fs::read_to_string(root.join(".claude/skills/project-router/SKILL.md")).unwrap();
+    let line = skill.lines().find(|l| l.starts_with("- **WU with a rule-bearing file**")).expect("project-router has no rule-file line");
+    let missing: Vec<&&str> = rules.iter().filter(|r| !line.contains(&format!("`{r}`"))).collect();
+    assert!(missing.is_empty(), "project-router's rule-file line omits {missing:?}");
+}

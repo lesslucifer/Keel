@@ -8,27 +8,28 @@ files:
     scope: >-
       Work deferred at the E-SEED, E-SEED2, E-SEED3, E-CRCAP, E-DOCSTYLE and E-TESTOPT closes: release, per-language
       e2e, Trawler re-records, the gate fixes, the notes fetch, accepted limits of the doc check, small follow-ups.
-    next-free: B29
+    next-free: B34
   - letter: R
     file: e-router-v2.yaml
     scope: >-
       Router work deferred at the E-ROUTER close and since: the launcher, the worker environment and sandbox, the
       watchdog, the report channel, the shared git dir; rows for the next router epic.
-    next-free: R52
+    next-free: R53
   - letter: A
     file: local-app.yaml
     scope: >-
       From the E-LOCALTOOL close: back to before GitHub (A1, done by E-GHREVERT), keel fixes (A2, done by
-      E-KEELFIX), the app's three build epics (A3 - A5), in order. From the E-KEELFIX close: the plan-WU flow review
-      (A6), the push hook's rules (A7, accepted), the dispatch guard (A8), the roster lock-out (A9), small follow-ups
-      (A10).
-    next-free: A11
+      E-KEELFIX), the app's three build epics (A3 - A5, A3 done by E-APPLIST), in order. From the E-KEELFIX close: the
+      plan-WU flow review (A6), the push hook's rules (A7, accepted), the dispatch guard (A8), the roster lock-out (A9),
+      small follow-ups (A10). From the E-APPLIST close: the app's open ends (A11).
+    next-free: A12
   - letter: L
     file: local-app.yaml
     scope: >-
       The local app's later needs: message the router (L1), alerts when away (L2), a home other than GitHub (L3),
-      DeepSeek Harness (L4); E-GHSETUP's install script re-pointed (L5).
-    next-free: L6
+      DeepSeek Harness (L4); E-GHSETUP's install script re-pointed (L5). From E-APPLIST's replan: the window's tests
+      in keel check (L6), a dev middleware (L7), design specimens (L8), tray, menu and login item (L9).
+    next-free: L10
   - letter: D
     file: dsh.yaml
     scope: >-
@@ -36,47 +37,47 @@ files:
       the worker plugin's cold resume.
     next-free: D4
 # The ranked open work. Owner ruling 2026-11-10: the proposed epics are proposals, not commitments; the owner
-# orders them. Ranks 1 - 3 drafted by E-LOCALTOOL.W5, after E-GHREVERT and E-KEELFIX (its first two, closed). Rank 4
-# holds the four proposed epics, unordered among themselves.
+# orders them. Ranks 1 - 2 drafted by E-LOCALTOOL.W5, after E-GHREVERT, E-KEELFIX and E-APPLIST (its first three,
+# closed). Rank 3 holds the four proposed epics, unordered among themselves.
 order:
   - rank: 1
-    epic: E-APPLIST · alerts and your list
-    status: proposed; E-GHREVERT and E-KEELFIX closed
-    rows: local-app A3
-  - rank: 2
     epic: E-APPSIGN · sign off and merge from the app
-    status: proposed, after E-APPLIST
+    status: proposed; E-APPLIST closed
     rows: local-app A4
-  - rank: 3
+  - rank: 2
     epic: E-APPFLEET · fleet, epics, many projects
-    status: proposed, after E-APPLIST and E-APPSIGN
+    status: proposed, after E-APPSIGN
     rows: local-app A5
-  - rank: 4
+  - rank: 3
     epic: E-RELEASE
     status: proposed
     rows: >-
       What backlog B1 left before a real release: the owner prerequisites, the owner's `dist plan` / `dist generate`
       check, a prerelease-tag run, the first stable tag, the accepted-risk revisits of DEC-38, and the fixed `keel` on
       `PATH` (DEC-41); local-app L5, the pinned install script, when planned.
-  - rank: 4
+  - rank: 3
     epic: E-LINEAGE
     status: proposed
     rows: B5
-  - rank: 4
+  - rank: 3
     epic: E-GATEFIX
     status: proposed
-    rows: "B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14"
-  - rank: 4
+    rows: "B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14; B30 - B32 (E-APPLIST.W14's review nits); B33 (the code-review skill's stale hash sentence, rule-bearing)"
+  - rank: 3
     epic: E-MULTILANG
     status: proposed
     rows: "B3: the Python e2e first, then other languages"
-  - rank: 5
+  - rank: 4
     epic: the next router epic
     status: not yet proposed; the owner orders it
     rows: >-
       R5's live part, R6 row 4's note, R7's open rows, R14 (DEC-48 item 4), R20 - R29, R31, R32, R34 - R42, R44 -
-      R48, R51. R40, the live check of `auto`, is owed at the first spawn after E-WMODE's merge; R47's L3 is wanted
-      soon.
+      R48, R51, R52. R40, the live check of `auto`, is owed at the first spawn after E-WMODE's merge; R47's L3 is
+      wanted soon.
+  - rank: none
+    epic: E-APPLIST · alerts and your list
+    status: "closed: the router's update log and the watchdog's lines, the app's alert at your desk and your list with Open and Mark sent; W4 dropped (DEC-76)"
+    rows: local-app A3 done; A11 added (the app's open ends); e-router-v2 R52 to the next router epic; e-seed-v2 B29 done by E-APPLIST.W14 (owner ruling 2026-11-23); e-seed-v2 B30 - B32 added (W14's review nits) and B33 (the code-review skill's stale hash sentence) to E-GATEFIX
   - rank: none
     epic: E-KEELFIX · keel fixes
     status: "closed: the commit level reads the committed rules, a gate run or help writes nothing unless asked, the github tier removed; W4 dropped by the owner's ruling of 2026-11-20"
@@ -106,4 +107,5 @@ order:
     status: open
     rows: >-
       B24 (an owner pick: A, B, C or E, then an epic), B25, B26 and B27; B21 (accepted limits); B19 (owed by the
-      owner's reinstall); B7's open rows; B2's unbuilt follow-ups, only if asked; local-app A8, A9, A10.
+      owner's reinstall); B7's open rows; B2's unbuilt follow-ups, only if asked; local-app A8, A9, A10, A11 (A4 or
+      A5 may take any item).

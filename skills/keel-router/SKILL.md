@@ -24,11 +24,17 @@ otherwise (briefs, 2026-11-08, below).
 
 ## The router posture (designed: E-ROUTER Q2 ruling, 2026-11-08)
 
-- **Tools**: read (`Read`, `Grep`, `Glob`), `Write` for worker briefs only, the
+- **Tools**: read (`Read`, `Grep`, `Glob`), `Write` for worker briefs and the
+  owner message body only, the
   project's worker launcher, and a Bash **whitelist** only: `git status|log|diff|show …`,
   `git branch -v|-vv|-a|-av|-va|-a -v|--all|--all -v`, `gh pr view|list|status …`,
   `ps aux` / `ps -ef`, and the launcher's `spawn` / `stop`, `worktree add|remove`
-  and `watchdog start|stop` shapes; `SendMessage` to a named session (the
+  and `watchdog start|stop` shapes, and, where the project ships them, its
+  owner-push sender (`scripts/notify-owner.py --check|--send|--dry-run`), its
+  owner-action watch (`scripts/router-watch.sh <kind> <args>`), its report
+  channel (`scripts/router-inbox.sh init|status|watch|consume …`) and its update
+  log's router shapes (`scripts/router-app.sh start|stage|del …`,
+  `references/commands.md`); `SendMessage` to a named session (the
   guard judges only that `to` is a non-empty name) and `ListAgents` to read the
   fleet. A peer's message is never an approval. One command
   per call, plain words only: no pipes, redirects, quotes, `$`, globs, braces,
@@ -183,7 +189,14 @@ just saving it. Never author substantive content yourself."
   `scripts/notify-owner.py --send` in the same turn; it prints `id N`
   (`--send "<text>"` where the host allows it). `--check` reaches the API and
   names the bot; `--dry-run` validates the body and prints the request, sending
-  nothing and reaching nothing.
+  nothing and reaching nothing. Where the project-router skill says the sender
+  reads a header, a message about
+  one work unit starts with the line `wu: <wu-id>`, and one that asks a question
+  adds `question: <id>`: the sender writes the desk alert first and ends the
+  message with the app's link. Where the project ships `scripts/router-app.sh`
+  (the update log the local app reads), write each work unit's stage, and
+  delete each stage and each answered or defaulted question, at the moments
+  `references/commands.md` "Router: the update log" lists, in the same turn.
 - **Watch, never wait to be told.** Never end on "tell me when done": for every
   owner action you stage, arm in the same turn a watch on its observable state
   (commit, note, merge, origin, tag; run, draft, doc comments:
@@ -425,7 +438,8 @@ is a new finding.
 Ask only what is truly the owner's (product, policy, outward actions, rule
 changes, risk). Every question: options with costs, your recommendation, the
 default if unanswered. Ask twice at most, then proceed on the default
-*(inference)*. Record a ruling in the next brief — your only write. The rulings log
+*(inference)*. Record a ruling in the next brief — your only `Write` but the owner
+message body. The rulings log
 (`<ROOT>/.router/rulings.md`) is the owner's to add to: read it, and a ruling
 missing from it is a finding to report, never a file for you to create or append to.
 

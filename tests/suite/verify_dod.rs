@@ -1330,7 +1330,7 @@ fn preflight_names_the_round_and_its_scope_the_whole_range_then_the_last_fix() {
     ok(write_cr(p, &["--verdict", "PASS"]));
     let n = note(p, "cr", "HEAD");
     assert_eq!((n["round"].as_u64(), n["scope"].as_str()), (Some(3), Some(format!("since {c2}").as_str())), "{n}");
-    let full = |a: &str, b: &str| git(p, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", a, b, "--", "src/", "tests/"]);
+    let full = |a: &str, b: &str| git(p, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--full-index", a, b, "--", "src/", "tests/"]);
     let hash = run("git", p, &["hash-object", "--stdin"], &full(&b, &c3));
     assert_eq!(n["code_diff_hash"].as_str(), Some(String::from_utf8_lossy(&hash.stdout).trim()), "a narrow round still binds the whole range");
 }
@@ -1357,7 +1357,7 @@ fn a_fix_pass_after_a_nits_only_round_is_accepted_by_the_merge_check_and_listed_
     let n = note(p, "cr", "HEAD");
     assert_eq!((n["verdict"].as_str(), n["fixes"].as_str(), n["round"].as_u64()), (Some("PASS"), Some(c1.as_str()), Some(1)), "{n}");
     assert_eq!((n["answers"]["importants"].as_u64(), n["answers"]["nits"].as_u64()), (Some(0), Some(1)), "{n}");
-    let fix = git(p, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", &c1, &c2, "--", "src/", "tests/"]);
+    let fix = git(p, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--full-index", &c1, &c2, "--", "src/", "tests/"]);
     let hash = run("git", p, &["hash-object", "--stdin"], &fix);
     assert_eq!(n["fix_diff_hash"].as_str(), Some(String::from_utf8_lossy(&hash.stdout).trim()), "the fix's own code hash");
 
@@ -2262,4 +2262,103 @@ fn each_usage_error_prints_the_help_text() {
         assert!(!e.status.success() && h.status.success(), "{error:?}: {}{}", text(&e), text(&h));
         assert_eq!(stderr(&e), stdout(&h), "{error:?} and {help:?} print one text");
     }
+}
+
+/// e-seed-v2 B29: grow `p`'s object store past 2^14 objects, one pack of small blobs written by
+/// git fast-import, as git's maintenance packed Keel's own store on 2026-11-23. Git's automatic
+/// short hash is 7 characters below 2^14 objects and 8 from there.
+pub(crate) fn grow_past_2_14(p: &Path) {
+    let blobs: String = (0..16_400).map(|i| format!("blob\ndata {}\nfiller {i:05}\n\n", "filler 00000\n".len())).collect();
+    let o = run("git", p, &["fast-import", "--quiet"], &blobs);
+    assert!(o.status.success(), "fast-import: {}", text(&o));
+}
+
+/// The length of the first short hash git prints in `base..tip`'s diff, with its automatic abbreviation.
+pub(crate) fn short_hash_len(p: &Path, base: &str, tip: &str) -> usize {
+    let diff = git(p, &["diff", "--no-color", base, tip, "--"]);
+    let index = diff.lines().find_map(|l| l.strip_prefix("index ")).expect("a diff with an index line");
+    index.split("..").next().unwrap().len()
+}
+
+/// The diff text a keel before E-APPLIST.W14 hashed, at git's short-hash length `n` (B29): trimmed, as keel reads it.
+fn legacy_diff(p: &Path, n: usize, base: &str, tip: &str, paths: &[&str]) -> String {
+    let abbrev = format!("--abbrev={n}");
+    let a = [&["diff", "--no-color", "--no-ext-diff", "--no-textconv", abbrev.as_str(), base, tip, "--"][..], paths].concat();
+    let o = run("git", p, &a, "");
+    assert!(o.status.success(), "{}", text(&o));
+    String::from_utf8(o.stdout).unwrap().trim().to_string() // keel hashes git's output trimmed
+}
+
+/// The cr binding (a git blob hash of the code paths' diff) and the mr binding (SHA-256 of the
+/// full diff) of the texts `code` and `full`.
+fn legacy_hashes(p: &Path, code: &str, full: &str) -> (String, String) {
+    use sha2::{Digest, Sha256};
+    let o = run("git", p, &["hash-object", "--stdin"], code);
+    assert!(o.status.success(), "{}", text(&o));
+    let blob = String::from_utf8(o.stdout).unwrap().trim().to_string();
+    (blob, format!("sha256:{}", Sha256::digest(full.as_bytes()).iter().map(|x| format!("{x:02x}")).collect::<String>()))
+}
+
+/// E-APPLIST.W14 (B29): a review and a sign-off written below 2^14 objects bind the same diff after
+/// the store passes 2^14 and git's short hashes grow from 7 to 8 characters.
+#[test]
+fn a_review_and_sign_off_still_bind_after_git_lengthens_its_short_hashes() {
+    let d = fixture();
+    let p = d.path();
+    bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
+    let (base, tip) = (git(p, &["merge-base", "epic/e", "wu/e/a"]), git(p, &["rev-parse", "wu/e/a"]));
+    assert_eq!(short_hash_len(p, &base, &tip), 7, "a small store: git's 7-character short hashes");
+    let green = keel(p, &["verify-dod", "wu", "wu/e/a", "--no-receipt"]);
+    assert!(green.status.success(), "{}", text(&green));
+
+    grow_past_2_14(p);
+    assert_eq!(short_hash_len(p, &base, &tip), 8, "past 2^14 objects git prints 8 characters: the store really crossed");
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a", "--no-receipt"]);
+    assert!(o.status.success(), "nothing changed but the store's size: {}", text(&o));
+}
+
+/// E-APPLIST.W14 (B29): a note a keel before W14 wrote hashes git's short form at the length its
+/// store had then. The binding accepts that form at every length from git's floor, 7, to 12 (2^24
+/// objects) and at none outside it, and a hash of another diff still fails.
+#[test]
+fn a_binding_in_git_s_old_short_form_holds_from_7_to_12_characters_and_no_other_diff_passes() {
+    let d = fixture();
+    let p = d.path();
+    bless(p, WU_TESTS, "PASS");
+    sign(p, "wu", "docs/a.html");
+    grow_past_2_14(p);
+    let (base, tip) = (git(p, &["merge-base", "epic/e", "wu/e/a"]), git(p, &["rev-parse", "wu/e/a"]));
+    let set = |n: usize, base: &str, tip: &str| {
+        let (cr, mr) = legacy_hashes(p, &legacy_diff(p, n, base, tip, &["src/", "tests/"]), &legacy_diff(p, n, base, tip, &[]));
+        edit_note(p, "cr", "wu/e/a", |j| j["code_diff_hash"] = json!(cr));
+        edit_note(p, "mr", "wu/e/a", |j| j["change_hash"] = json!(mr));
+    };
+    for n in 7..=12 {
+        set(n, &base, &tip);
+        let o = keel(p, &["verify-dod", "wu", "wu/e/a", "--no-receipt"]);
+        assert!(o.status.success(), "the {n}-character form binds: {}", text(&o));
+    }
+    for n in [6, 13] {
+        set(n, &base, &tip);
+        let o = keel(p, &["verify-dod", "wu", "wu/e/a", "--no-receipt"]);
+        assert_red(&o, "5·diff-binding");
+        assert_red(&o, "8·manual-review");
+    }
+    // The 7-character form of another range (the WU's diff without its last commit's code) never binds this one.
+    set(7, &base, &tip);
+    write(p, "src/a.py", "def a():\n    return 2\n");
+    commit(p, "a code change after the notes");
+    let moved = git(p, &["rev-parse", "HEAD"]);
+    for (kind, from) in [("cr", &tip), ("mr", &tip)] {
+        let mut n = note(p, kind, from);
+        n["tip"] = json!(moved);
+        git(p, &["notes", &format!("--ref={kind}"), "add", "-f", "-m", &n.to_string(), "HEAD"]);
+    }
+    for (args, input) in [(&["notes", "write", "test"][..], WU_TESTS), (&["notes", "write", "doc"][..], "")] {
+        assert!(run(env!("CARGO_BIN_EXE_keel"), p, args, input).status.success());
+    }
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a", "--no-receipt"]);
+    assert_red(&o, "5·diff-binding");
+    assert_red(&o, "8·manual-review");
 }
