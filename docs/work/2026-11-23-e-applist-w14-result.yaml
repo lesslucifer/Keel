@@ -1,0 +1,59 @@
+artifact: wu-result
+status: ready
+id: E-APPLIST.W14
+epic: E-APPLIST
+title: "E-APPLIST.W14 result · Bindings that survive git's longer short hashes"
+date: "2026-11-23"
+page: 2026-11-23-e-applist-w14-result.html
+outcome: >-
+  Delivered. keel hashes `git diff --full-index` for every diff binding (cr code_diff_hash, dod diff_hash, mr
+  change_hash), so the text no longer depends on the object store's size. One rule, notes::binds, judges a stored
+  hash for check 5, check 8 (a key signature verifies over the stored hash once the rule proved it) and the owner's
+  review waiver: the stable form, else git's short form at --abbrev=N, N in LEGACY_ABBREV = 7..=12, in that order.
+  A hash of another diff, or of a length outside 7..=12, fails. keel verify-dod epic ffb5cba, built from this
+  branch, shows all 10 stale walk seams green, with no walk waiver; its only reds are 1·notes and 8·manual-review.
+deviations: >-
+  One addition: two older suite tests that recompute keel's hash by hand (verify_dod.rs, the narrow round and the
+  fix-PASS tests) now pass --full-index, and mr.rs forge takes the form (forge_as), so the forged sign-offs stay
+  "bound like a real one". A prototype of the store growth in a scratch shell was refused by the permission layer;
+  the growth is proven inside the tests instead (git fast-import, short hash asserted 7 then 8).
+evidence:
+  commits:
+    - "09f65bb docs(E-APPLIST.W14): the WU plan pair"
+    - "11a921f fix(E-APPLIST.W14): --full-index, notes::binds and LEGACY_ABBREV, used by gate.rs check 5, mr.rs check 8 and notes::waive; the tests"
+    - "f010f51 docs(E-APPLIST.W14): UC-REV-1, backlog B29 closed"
+  red-first: >-
+    On the code before 11a921f all four integration tests failed: the three verify-dod and sign-off tests at
+    5·diff-binding and 8·manual-review ("the diff ... changed since the sign-off"), the waiver test with "open: not
+    reviewed" and "replaces a FAIL note ... that judged another range". The store-crossing asserts (short hash 7
+    before, 8 after) passed on both codes.
+  integration:
+    - "tests/suite/verify_dod.rs a_review_and_sign_off_still_bind_after_git_lengthens_its_short_hashes"
+    - "tests/suite/verify_dod.rs a_binding_in_git_s_old_short_form_holds_from_7_to_12_characters_and_no_other_diff_passes"
+    - "tests/suite/mr.rs a_key_signed_sign_off_in_the_7_character_form_verifies_after_the_store_grows"
+    - "tests/suite/mr.rs an_owner_waiver_keeps_a_failed_round_bound_in_the_old_short_form"
+  unit:
+    - "src/notes.rs the_diff_argv_is_full_index_for_the_stable_form_and_abbrev_n_for_a_legacy_one"
+    - "src/notes.rs the_binding_rule_accepts_the_stable_form_or_a_legacy_length_from_7_to_12_and_nothing_else"
+    - "src/notes.rs the_one_waiver_writer_keeps_this_ranges_round_whole_marks_anything_else_unreviewed_and_never_replaces_a_pass (extended: legacy round kept, rule error refuses, another base never asks the rule)"
+  epic-gate: >-
+    target/debug/keel verify-dod epic ffb5cba: exit 1, FAIL 1·notes (no cr/v1 note on ffb5cba084) and FAIL
+    8·manual-review only; 7684685 and 7a5d00a print as WAIVED 3·review (their review-cap waivers, unchanged). The
+    installed keel on the same tip: 12 failed, the 10 seams 7372bd6, 088f084, e90132b, 8232d92, 7684685, 7a5d00a,
+    3cfa216, e6a27dd, ce111d7, 0e739e5 at 7·walk·5·diff-binding.
+  checks: "keel check green: cargo fmt and clippy; cargo test 156 unit and 450 suite (14 ignored); node --test 446 pass, 1 skipped (fs.watch, refused by the sandbox: the owner's Mac)"
+  docs: "docs/use-cases/workflow.yaml UC-REV-1; docs/backlog/e-seed-v2.yaml B29 closed; docs/backlog/backlog-index.yaml"
+distillation: >-
+  UC-REV-1 (T2) now names the stable form and the 7..=12 legacy acceptance; backlog B29 closed as done by
+  E-APPLIST.W14. No skill or T0 doc names the hash's exact form, so no rule-bearing file changes.
+follow-ups:
+  - "The owner reinstalls keel from this tip (cargo install --path .) before this WU's review: a cr or mr written by the new keel is red under the old one (it hashes git's short form); the old keel's notes are accepted by the new one. Taken by: the owner, at E-APPLIST.W14's sign-off (router keel-1c stages it)."
+  - "A legacy hash is rebuilt against today's store: an object that became ambiguous at N characters since the note was written makes git print it longer, and that note turns red (re-record it). Accepted limit, no row: no binding a keel writes from now on depends on it."
+details:
+  design:
+    stable: "--full-index, not --abbrev=40: git's documented flag for full names in index lines, the hash algorithm's own length (64 in a SHA-256 repository, where --abbrev=40 would cut it)"
+    legacy-bound: "7 is git's floor for the automatic length; each character covers a store four times larger; 12 covers 2^24 (16.7M) objects"
+    cost: "a binding a current keel wrote costs one git diff; a legacy or red one up to seven"
+  owner-reinstall: "cargo install --path . from the tip, before the review runs or anything is signed or merged after it"
+  htmldoc:
+    id: 4dd6768b85309a40c3e60b8f
