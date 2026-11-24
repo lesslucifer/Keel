@@ -1,0 +1,1 @@
+{"schema":"test/v1","tip":"b1555648696a91ef6ace003eb630a04cdf827b7b","base":"560a3506f5de94df5f2e6ffdd265198602877a1b","branch":null,"committer":"vuluu <quangvu.luu92@gmail.com>","timestamp":1795519010,"unit":{"waived":"test-only: the e2e configured schedule derived from DEFAULTS; covered by the epic tip e2e note"},"integration":null,"e2e":null}
