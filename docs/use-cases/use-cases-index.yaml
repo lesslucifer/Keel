@@ -28,7 +28,7 @@ areas:
   - area: UC-REV
     file: workflow.yaml
     scope: >-
-      code review bound to the code diff, a waived review says so, the 5-round schedule
+      code review bound to the code diff, a waived review says so, the review schedule from the target's [review] settings
   - area: UC-ROUTE
     file: router.yaml
     scope: >-
@@ -98,7 +98,7 @@ use-cases:
     title: "a waived review says so"
     file: workflow.yaml
   - id: UC-REV-3
-    title: "the review follows a fixed schedule"
+    title: "the review follows the target's schedule"
     file: workflow.yaml
   - id: UC-ROUTE-1
     title: "the router coordinates, the owner acts"
