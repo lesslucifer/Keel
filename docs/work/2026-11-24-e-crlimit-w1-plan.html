@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="63d2b7ffe208d3fb453064a1">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-CRLIMIT.W1 plan: the review schedule as settings</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-CRLIMIT.W1 · The review schedule as three settings</h1>
+      <p>The tool runs your 3-round review, and each project can set its own.</p>
+      <div class="meta">T3 · WU plan · 2026-11-24 · Keel · its data file, 2026-11-24-e-crlimit-w1-plan.yaml, sits beside this page · the epic plan is <a href="2026-11-24-e-crlimit-plan.html">here</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">The tool counts review rounds on the old 5-round table. Its numbers are fixed in the code: a project can move only the cap. A wrong cap is found only when a review starts.</p>
+
+<h2 id="get">What you get</h2>
+<ul data-c="get">
+  <li>Round 1 reads the whole work. Round 2 reads only the fix.</li>
+  <li>Round 3 runs only after round 2 found a blocker. Medium findings in round 2 are fixed and recorded, with no new round.</li>
+  <li>A blocker still open in round 3 ends in the cap's waiver, which you accept or not at sign-off.</li>
+  <li>Three settings in the project's rules file change this: the cap, how many rounds read the whole work, and from which round only a blocker earns another.</li>
+  <li>A wrong setting is refused at the commit that adds it, and when a review starts.</li>
+</ul>
+
+<h2 id="how">How it works</h2>
+<ol data-c="how">
+  <li>Tests are written first and fail on today's tool.</li>
+  <li>The tool reads the three settings from the rules file committed on the branch the work merges into, never from the work itself. A setting left out takes its default.</li>
+  <li>One rule checks the settings, in four places: the review start, the review record, the commit hook and the owner's rule-file commit.</li>
+  <li>Old review records stay valid. Nothing is rewritten.</li>
+  <li>The use case and the decision are updated in place.</li>
+</ol>
+
+<h2 id="makes">What it makes</h2>
+<p>A change in the tool's review code and its tests, the epic's end-to-end test moved to the new schedule, two use cases and one decision updated, and this plan and its result. No instruction file changes: that is the next part.</p>
+
+<h2 id="decide">What you decide</h2>
+<p>Nothing blocks the work.</p>
+<table data-c="open-points">
+  <thead><tr><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Does a bad setting already landed block your sign-off?</td><td><b>No.</b></td><td>It blocks the review, which names the fix. A sign-off reads the signer list, not the schedule.</td></tr>
+    <tr><td>How is this part's own review counted?</td><td><b>By hand, on the new table.</b></td><td>The installed tool still counts 5 rounds until you reinstall it.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="know">How you'll know it worked</h2>
+<ul data-c="know">
+  <li>With no setting, a review runs at most 3 rounds, as above.</li>
+  <li>A project with its own settings gets exactly that schedule.</li>
+  <li>Each wrong setting is refused, and names itself.</li>
+  <li>Reviews recorded under the old table still pass.</li>
+  <li>Keel's checks pass.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
