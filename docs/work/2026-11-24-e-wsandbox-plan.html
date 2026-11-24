@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b0586bf9f34851f0dfb2c72">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-WSANDBOX epic plan: what a worker may do</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-WSANDBOX · What a worker may do</h1>
+      <p>A review of the limits on background workers: local ports, app packages, websites and the automatic reviewer.</p>
+      <div class="meta">T3 · epic plan · 2026-11-24 · Keel · its data file, 2026-11-24-e-wsandbox-plan.yaml, sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">Workers keep stopping on their own limits, and you do the step by hand. They cannot open a port on this machine, so you ran the app's end-to-end test and 14 tests are switched off. They cannot finish installing the app's packages, so you installed them. The automatic reviewer refused 36 worker commands, many of them harmless scratch work. Some limits keep your machine safe; some only cost your time. Nobody has looked at them together.</p>
+
+<h2 id="for-you">What changes for you</h2>
+<table data-c="for-you">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>Work needs a local port</td><td>Refused; you run it and send the log</td><td>As you rule: still yours, or a named part gets it, held to this machine</td></tr>
+    <tr><td>App packages change</td><td>You install them</td><td>As you rule: you install, or the worker installs only the locked versions</td></tr>
+    <tr><td>A worker makes a scratch repository</td><td>The reviewer may refuse; the step comes to you</td><td>One allowed way to do it</td></tr>
+    <tr><td>A worker wants a new website</td><td>The reviewer may allow it for one command</td><td>Only the sites you list</td></tr>
+    <tr><td>You ask what a worker may do</td><td>Spread over scripts and decisions</td><td>One table: each limit, why, what widening exposes</td></tr>
+  </tbody>
+</table>
+
+<h2 id="terms">Terms</h2>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Worker</td><td>A background session doing one part in its own folder.</td></tr>
+    <tr><td>Sandbox</td><td>The fence around a worker's shell: what it may write and which websites it reaches.</td></tr>
+    <tr><td>Reviewer</td><td>The model that approves or refuses each worker command outside its fixed list.</td></tr>
+    <tr><td>Local port</td><td>An address on this machine that a test or the app listens on.</td></tr>
+    <tr><td>Lane</td><td>A step you run by hand: one command, one log.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="work">The parts, in build order</h2>
+<div class="diagram" data-c="order">
+<pre class="mermaid">
+flowchart LR
+  W1["W1 Findings"] --> R{"You rule"}
+  R --> W2["W2 Local ports"]
+  R --> W4["W4 Websites and reviewer"]
+  W4 --> W3["W3 App packages"]
+</pre>
+<div class="caption">An arrow means "starts after". A point you rule "keep as is" drops its part.</div>
+</div>
+<table data-c="parts">
+  <thead><tr><th>Part</th><th>What it builds</th><th>What you get</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>W1 · Findings</td><td>Tests what this plan could not check, such as why your per-folder port setting did not work. Changes no rule.</td><td>A short report with sharper questions.</td><td>—</td></tr>
+    <tr><td>W2 · Local ports</td><td>Ports as you rule, or your lane written down.</td><td>Port steps leave your desk, or become one known command.</td><td>W1</td></tr>
+    <tr><td>W4 · Websites and reviewer</td><td>The site list as the only bound; one allowed way to do scratch work.</td><td>Fewer refusals; no website you did not list.</td><td>W1</td></tr>
+    <tr><td>W3 · App packages</td><td>Locked installs by the worker, or your lane written down.</td><td>No hand installs, or one known command.</td><td>W4</td></tr>
+  </tbody>
+</table>
+<p>Each part that changes a rule file waits for your typed commit, one per part.</p>
+
+<h2 id="decide">What you decide</h2>
+<table data-c="decide">
+  <thead><tr><th>#</th><th>Question</th><th>Answer, and why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Should a worker open a local port?</td><td><b>Not by default.</b> A part may get one only if W1 shows it stays on this machine and away from the sandbox's own web relay. The plain switch, tried on 2026-11-15, opened every local service.</td></tr>
+    <tr><td>2</td><td>Who runs the 14 switched-off tests?</td><td><b>You, in a lane, when an epic touches the alert sender.</b> Rewriting them changes a rule file.</td></tr>
+    <tr><td>3</td><td>Should a worker install app packages?</td><td><b>Yes, locked versions only, into its own folder</b>, if W1 gets past a write block in one package. Adding a package stays yours.</td></tr>
+    <tr><td>4</td><td>May the reviewer open a website for one command?</td><td><b>No, if the tool allows switching it off.</b> Today it can, so what a worker reads it could send.</td></tr>
+    <tr><td>5</td><td>How do we stop harmless refusals?</td><td><b>One fixed scratch helper the reviewer no longer judges.</b> Asking you instead leaves a worker waiting.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="done">How you'll know it worked</h2>
+<ul data-c="done">
+  <li>W1's report settles every unchecked fact, with the raw output.</li>
+  <li>Every ruling, "keep as is" too, is recorded with what it exposes and its limit.</li>
+  <li>A fresh worker runs the same probes, and each result matches your ruling.</li>
+  <li>No change gives a worker your keys, the router's powers or open internet.</li>
+</ul>
+
+<h2 id="not">Not in this epic</h2>
+<ul data-c="not">
+  <li>Tightening the shared git folder (its own backlog row).</li>
+  <li>GitHub's command-line tool in a worker.</li>
+  <li>The router's own limits, and the other host program.</li>
+  <li>Packaging or signing the app.</li>
+</ul>
+<p>For agents: the data file holds the facts per point with file and line, the options with cost and risk, the incidents, the rule files per part, and what is unverified.</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    // keep diagram source readable for the diff layer (mermaid replaces it with SVG)
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

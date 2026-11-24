@@ -1,0 +1,207 @@
+artifact: epic-plan
+status: ready
+id: E-WSANDBOX
+title: "What a worker may do: local ports, app packages, hosts and the auto reviewer"
+date: "2026-11-24"
+page: 2026-11-24-e-wsandbox-plan.html
+intent: >-
+  Background workers stop on their own limits, and the owner does the step by hand: a worker cannot bind a local
+  port (14 notify_owner tests carry #[ignore]; the app's Playwright e2e and pnpm start ran on the owner's Mac), cannot
+  finish a pnpm install (the owner installed app/node_modules), and auto mode's classifier refused 36 calls in 34
+  sessions, many of them harmless scratch work. Some limits keep the owner's machine safe; others only cost
+  the owner's time. No one has reviewed them together. This is a review epic: W1 establishes the facts the plan
+  could not verify, the owner rules on each point, and only the changes the owner approves are built. Why now: the
+  app (E-APPLIST, A-series) makes ports and packages routine, and every app WU so far needed an owner run.
+owner-changes:
+  - {when: "A worker's work needs a local port (the app's end-to-end test, a test server)", today: "Refused; you run it and send the log", after: "As you rule: still yours, or a named WU gets it under a stated bound"}
+  - {when: "A WU changes the app's packages", today: "You install them by hand", after: "As you rule: you install, or the worker installs only the locked versions"}
+  - {when: "A worker makes a scratch repository or similar harmless setup", today: "The auto reviewer may refuse it; the step comes to you", after: "One allowed way to do scratch work"}
+  - {when: "A worker wants a website outside its list", today: "The auto reviewer may allow it for one command", after: "Only the sites you list, if the tool can enforce that"}
+  - {when: "You want to know what a worker may do", today: "Spread over a script, a guard and two decisions", after: "One table: each limit, why, and what a widening exposes"}
+use-cases:
+  - "UC-ROUTE-5, amended (W2 - W4, only as the owner rules): the worker's environment - what its shell writes, the hosts it reaches, local ports, the fixed grant, and what auto's reviewer judges."
+  - "No other use case. W1 changes none (a findings report)."
+expected:
+  - "A findings page (W1) answers every point this plan marks unverified, each with the raw probe output or the file:line that settles it."
+  - "Each open question carries the owner's ruling, recorded in DEC-46 or DEC-37 as an Amended row naming what the change exposes and its bound; a point ruled 'keep as is' is recorded the same way and its WU dropped."
+  - "A fresh worker spawned after the last change runs the probe list (bind 127.0.0.1:0, a frozen pnpm install, a curl to a host outside the list, a scratch keel init under $TMPDIR, a Write outside the worktree) and each result matches the ruling."
+  - "No change gives a worker the owner's keys, the router's powers or an unbounded network; the epic review checks every widening against its stated bound."
+  - "The project-router skill's Workers section and docs/install.html say who runs the port and package steps after this epic."
+non-goals:
+  - "The shared git dir's allow list (backlog R51) and the other residuals of DEC-37 (R31 - R39, R41) unless a ruling here touches them."
+  - "gh in a worker (backlog R21) and the router's own guard or whitelist."
+  - "The DSH host's preset (Always Auto Review); this epic is Claude Code's launcher only."
+  - "Packaging, signing or notarising the app."
+  - "Any grant of the owner's keys, tokens, push or sign-off to a worker."
+wu-summaries:
+  - wu: E-WSANDBOX.W1
+    wu-summary: >-
+      Findings, no rule change. A fresh worker (opus, high) re-reads the limits and runs the probes the plan could not:
+      why the W9 worktree's settings.local.json allowLocalBinding did not take (precedence of --settings over the
+      local source, or the key); whether binding can be held to 127.0.0.1 and kept off the sandbox's local proxy;
+      whether a Unix socket is allowed (a seam for notify_owner's tests); whether Claude Code's own write denies
+      (.vscode, the worktree's .claude/skills and .claude/hooks) can be changed; whether per-call host widening under
+      auto (the Bash allowed_domains review) can be switched off; whether the classifier takes project guidance; and
+      the state of backlog R40 (the live check of auto). Probes that need a settings file a worker cannot write run in
+      the probe clone (Keel-probe) with the owner's step, as the project-router skill's live-probe recipe says. Output:
+      a findings pair under docs/work/ that sharpens each open question; the owner rules on it.
+    wu-maps-to: "The owner's request (review the worker sandbox on three points); no use case."
+    wu-expected: >-
+      Integration and e2e: none (no code). The findings pair passes keel verify-doc; every 'unverified' line in this
+      plan's details is confirmed or corrected with raw output; each open question has a sharpened default.
+    wu-deps: none
+  - wu: E-WSANDBOX.W2
+    wu-summary: >-
+      Local ports, as ruled. Default ruling: ports stay off for every worker by default; an app WU named in its plan
+      may get loopback binding only if W1 shows a bound that keeps it on 127.0.0.1 and off the local proxy (a spawn
+      option the committed policy allows, never a default); else the owner-run lane is written down (one command, one
+      log path) and the 14 ignored tests run in it at the close of any epic that touches scripts/notify-owner.py.
+      Rule-bearing: scripts/router-worker.sh (and .keel/config.toml if a policy key), tests/suite/router.rs pins
+      it; an owner keel mr commit for the rule-bearing files.
+    wu-maps-to: "Point 1 of the owner's request; UC-ROUTE-5 (amended)."
+    wu-expected: >-
+      Integration: the launcher's sandbox pin test shows the ruled network keys and nothing else changed; a spawn
+      without the option carries no binding. E-2e: a live spawn of each kind binds or is refused as ruled.
+    wu-deps: [E-WSANDBOX.W1]
+  - wu: E-WSANDBOX.W4
+    wu-summary: >-
+      Hosts, grants and the auto reviewer, as ruled. Default ruling: the five hosts are the bound and per-call
+      widening is switched off if W1 finds the setting (else recorded as a residual with the classifier as the only
+      check); one fixed scratch helper for work under $TMPDIR (a temp repo, keel init in it) on the worker's grant, so
+      the classifier no longer judges that shape; the worker persona and the brief skeleton say what the reviewer
+      refuses and how to report it. The mode stays auto. Rule-bearing: scripts/router-worker.sh, a new scripts/ helper
+      (added to rule_bearing), .claude/agents/worker.md, the keel-router skill (skills/ and .claude/skills/ mirrors),
+      .keel/config.toml; an owner keel mr commit for the rule-bearing files.
+    wu-maps-to: "Point 3 of the owner's request; UC-ROUTE-5 (amended)."
+    wu-expected: >-
+      Integration: the sandbox pin test shows the ruled host list and the grant holds the helper's two shapes and
+      nothing wider; the helper refuses any path outside a fresh mktemp dir. E-2e: a live worker's scratch keel init
+      through the helper is not denied; a host outside the list is refused at once.
+    wu-deps: [E-WSANDBOX.W1]
+  - wu: E-WSANDBOX.W3
+    wu-summary: >-
+      App packages, as ruled. Default ruling: a worker may run only pnpm install --frozen-lockfile, against
+      registry.npmjs.org added to the fixed hosts, with pnpm's store inside the worktree (never the shared
+      ~/Library/pnpm/store), and only if W1 shows the .vscode write deny can be lifted or avoided; pnpm add and any
+      lockfile change stay the owner's. Else the owner-run install lane is written down (one command, one log path)
+      and briefs say node_modules is the owner's. Rule-bearing: scripts/router-worker.sh, docs/install.html; app/
+      config (code, gated); an owner keel mr commit for the rule-bearing files.
+    wu-maps-to: "Point 2 of the owner's request; UC-ROUTE-5 (amended)."
+    wu-expected: >-
+      Integration: the sandbox pin test shows the ruled host and write keys and nothing else; app/'s config pins the
+      store path inside the worktree. E-2e: a live worker's frozen install succeeds and writes nothing outside its
+      worktree, and a pnpm add is refused, as ruled.
+    wu-deps: [E-WSANDBOX.W1, E-WSANDBOX.W4]
+e2e-plan: >-
+  After the last change WU, a fresh worker spawned by the launcher in this epic's worktree runs the probe list from
+  W1 (bind 127.0.0.1:0, a frozen pnpm install, a curl with a 10 s timeout to a host outside the list, a scratch keel
+  init through the helper, a Write outside the worktree, a Read of ~/.ssh) and reports raw output; each line must
+  match the ruling. A point ruled 'keep as is' keeps its probe and expects today's refusal. If every point is ruled
+  'keep as is', the e2e is the W1 probe list itself, waived for change by the owner's rulings.
+distillation-plan:
+  - "docs/decisions/router.html: DEC-46 (the worker's environment: ports, hosts, writes) and DEC-37 (grant, mode, the reviewer) take Amended rows, one per ruling, each with what it exposes and its bound."
+  - "docs/use-cases/router.yaml: UC-ROUTE-5's environment sentence."
+  - "The project-router skill's Workers section and the keel-router skill's brief skeleton: the new limits and who runs the owner lanes."
+  - "docs/install.html and docs/local-app.html (the three test loops): who installs and who runs the e2e."
+  - "docs/backlog/e-router-v2.yaml: R40, R41, R42 and R49's ignored tests updated or closed; docs/backlog/local-app.yaml if an app row changes."
+open-questions:
+  - "Should a worker be able to open a local port? Default: no, for every worker by default. An app WU named in its plan may get loopback-only binding if W1 proves the bound (127.0.0.1 only, the local proxy unreachable); else you keep running the e2e. The 2026-11-15 review found the plain key opens every interface and every local service, the sandbox's proxy included."
+  - "What happens to the 14 ignored notify_owner tests? Default: they run in your lane (one command, one log) at the close of any epic that touches the sender. A Unix-socket seam is the alternative if W1 finds sockets allowed; it changes the rule-bearing sender."
+  - "Should a worker install the app's packages? Default: yes, only pnpm install --frozen-lockfile, from registry.npmjs.org as a fixed host, into a store inside its worktree, if W1 finds a way past the .vscode write deny. The lockfile's hashes bound what arrives; pnpm add stays yours. If not, the install stays yours, written down as a lane."
+  - "May the auto reviewer open a website for one command? Default: no, if the tool lets us switch it off: the fixed list is the bound and a new host is your commit. Today any host can be approved per call, so what a worker reads it can send (R41)."
+  - "How do we stop harmless scratch work being refused? Default: one fixed helper for a temp repo under $TMPDIR, on the worker's grant, so the reviewer no longer judges it. Keep auto: acceptEdits turns each refusal into a prompt only you can answer, and a background worker waits."
+  - "Do changes land in one owner commit or one per part? Default: one per part, each WU's rule-bearing files staged alone, so you can rule 'keep as is' on any point and drop its part."
+details:
+  status-of-this-plan: "Written by worker e-wsandbox-plan (opus, high) on epic/E-WSANDBOX off main 39d9a5c. Facts below come from the files at that tip, git history, .router/briefs/ in the main checkout, the worker transcripts under ~/.claude/projects (denial texts only), and three local probes in this worker's own sandbox (it is a launcher-spawned worker, mode auto). 'unverified' marks what W1 must settle."
+  facts:
+    point-1-local-ports:
+      today: >-
+        Refused. The launcher's sandbox (scripts/router-worker.sh:534-543) sets network.allowedDomains only; no
+        allowLocalBinding key, so Claude Code's default (off) holds. Probe 2026-11-24 in this worker: python
+        socket.bind(('127.0.0.1', 0)) -> PermissionError [Errno 1] Operation not permitted.
+      history:
+        - "E-LOOPBIND.W1 (83f434a, owner-signed) added network.allowLocalBinding: true. An independent review found it lets a worker listen on every interface and reach every service listening locally, the sandbox's own filtering proxy included, which gets around the host allowlist. The owner dropped it (2026-11-15); branch wu/E-LOOPBIND/w1-local-bind is not merged (git merge-base: not an ancestor of main)."
+        - "E-LOOPBIND.W2 (0d901e6): the ten loopback tests in tests/suite/notify_owner.rs got #[ignore] by owner ruling ('just drop the tests that require loopbind'). Today 14 tests carry that #[ignore] (tests/suite/notify_owner.rs:216, 231, 246, 263, 279, 305, 325, 364, 388, 401, 435, 458, 518, 568)."
+        - "E-APPLIST.W9: the owner wrote the W9 worktree's .claude/settings.local.json as {\"sandbox\":{\"network\":{\"allowLocalBinding\":true}}}; the worker still got listen EPERM on 127.0.0.1 port 0 (W9 result, details.sandbox, commit 9c7d0c9). Cause unverified: --settings may override the local source's network object, or the key is read elsewhere."
+      incidents:
+        - "Playwright reaches Electron through a debugging port: the W9 epic test ran on the owner's Mac (log $HOME/keel-w9-e2e.log, run 2347864 passed)."
+        - "E-APPLIST.W6: the live check (browser mode, pnpm start) went to the owner, the sandbox refusing the port (7ff5adb)."
+        - "E-APPLIST.W12 / W13 checks: the owner ran them, logging to $HOME/keel-w12-check.log and $HOME/keel-w13-check.log (named in briefs and transcripts); W13 notes check-css and test:window refused by the sandbox (57f1586)."
+      unverified:
+        - "Whether a binding can be limited to 127.0.0.1 and the local proxy kept unreachable."
+        - "Whether Unix domain sockets are allowed in the worker's sandbox (allowUnixSockets or similar)."
+        - "Why the per-worktree local settings key did not take."
+    point-2-npm-registry:
+      today: >-
+        Not a fixed host: allowedDomains is htmldoc.wfomobile.com, crates.io, index.crates.io, static.crates.io,
+        github.com (scripts/router-worker.sh:542). But under auto the Bash tool takes an allowed_domains list that the
+        classifier reviews per call: in E-APPLIST.W10 a call without it failed (CONNECT tunnel failed, response 403);
+        calls declaring allowed_domains ["registry.npmjs.org"] were approved and pnpm downloaded packages (W10
+        transcript). So the registry is reachable at the reviewer's discretion, not by a rule.
+      what-actually-blocked:
+        - "W10 (f0b2886): pnpm install --frozen-lockfile accepted the lockfile, then failed writing xmlbuilder 15.1.1's .vscode/launch.json: Claude Code's sandbox refuses writes under a .vscode folder in the worktree. Probe 2026-11-24: a write to <worktree>/x/.vscode/launch.json -> operation not permitted; the same under $TMPDIR -> allowed. Not a launcher rule (no .vscode in scripts/router-worker.sh): Claude Code's own."
+        - "W9 (9c7d0c9): pnpm add refused with ERR_PNPM_UNEXPECTED_STORE: the global store ~/Library/pnpm/store is not writable (probe 2026-11-24: touch -> Operation not permitted); pnpm then put a 190 MB store in the worktree (W10) and ignored npm_config_store_dir."
+        - "pnpm test:main / typecheck first run pnpm's dependency check, which starts pnpm install when node_modules is missing or differs (W10; E-APPLIST epic-review fix: a node_modules symlinked from a sibling worktree started an install that stopped for want of a TTY, and a lint write through that symlink was refused)."
+      incidents:
+        - "The owner ran pnpm install --frozen-lockfile and the app checks for W10, W12, W13 and the epic close; pnpm add -D -E @playwright/test@1.65.1 for W9."
+        - "Backlog R42: an acceptEdits planner (E-CRCAP) ran npm install from registry.npmjs.org; cause unverified (consistent with a per-call approval or a local settings file)."
+      unverified:
+        - "Whether the .vscode deny (and the worktree's .claude/skills and .claude/hooks denies seen in this worker's sandbox listing) can be configured off for a path."
+        - "Whether pnpm can keep node_modules outside the worktree for the app's tools (Electron Forge, Vite) without breaking them."
+    point-3-writes-hosts-guard-mode:
+      shell-writes: >-
+        scripts/router-worker.sh:534-541. allowWrite: the shared git dir and ~/.cargo registry, git, .package-cache,
+        .package-cache-mutate, .global-cache(-journal, -wal, -shm). The worktree is writable as the session's working
+        directory and $TMPDIR (/tmp/claude-502) by Claude Code's defaults (seen in this worker's sandbox listing).
+        denyWrite: git dir config, hooks, keel-hooks, info, commondir, config.worktree; every admin dir's commondir,
+        gitdir, config.worktree (by name and by glob); the worktree's .git, .claude/settings.json,
+        .claude/settings.local.json; ~/.claude.json. denyRead: ~/.ssh, ~/.claude/channels. Claude Code adds its own
+        denies (the worktree's .claude/skills, .claude/hooks, .vscode; ~/.claude config dirs) - the cause of the
+        'worker sandbox cannot write .claude/skills/' steps the owner did in E-CRCAP.W1/W3, E-DOCSPLIT.W4, E-GHFLOW2.W4.
+      hosts: "Five fixed (scripts/router-worker.sh:542); widened per call by auto's review of allowed_domains, or by the worktree's own .claude/settings.local.json, which --setting-sources project,local loads (DEC-37, DEC-46 point 6)."
+      file-guard: >-
+        scripts/router-file-guard.sh, a fail-closed PreToolUse hook on every tool (router-worker.sh:520, 543):
+        Edit, Write, MultiEdit, NotebookEdit only under the resolved worktree, never its .git or the two settings
+        files, never a multi-link file (lines 83-94); Read, Grep, Glob denied ~/.ssh and ~/.claude/channels (96-100);
+        every other tool passes (line 70; R34). So the Write tool cannot write a scratch file under $TMPDIR, though
+        the shell can.
+      grant-and-deny: "--allowedTools cargo build|test|check|clippy|fmt, keel preflight|verify-doc|verify-dod|notes write|lint|check (router-worker.sh:546-549); --disallowedTools DEC-46 point 10 plus scripts/router-app.sh (553-559), Read(~/.ssh/**), Read(~/.claude/channels/**) (564), the cr note for authors or edit tools and git add/commit for a review worker (565-566)."
+      mode: "worker_permission_mode = \"auto\" (.keel/config.toml:57), read from the router checkout's HEAD (router-worker.sh:181-208), only narrowed by --permission-mode (473-479). DEC-37."
+      classifier-denials: >-
+        36 denials by 'the Claude Code auto mode classifier' in 34 sessions under ~/.claude/projects/*Keel*
+        (2026-11-08 to 2026-11-24; workers, plus one in the main checkout). Labels counted where the text parsed: Undermining Oversight 18, Auto-Mode Bypass 4,
+        Unauthorized Access 2, Credential Exploration 1, Irreversible Local Destruction 1, Create Public Surface 1.
+        Examples from the workers' own reports: a scratch repo with git init and keel init under $TMPDIR (E-DOCSPLIT),
+        a scratch git init and keel mr setup --as zz (E-GHFLOW2), a long compound mktemp-and-loop line (E-TESTOPT.W5),
+        a local build's keel verify-dod (E-APPLIST planning), keel notes write cr by an epic review worker with
+        zero findings (E-APPLIST), setting files aside with a patch and git checkout (E-APPLIST.W9). Some were plausible
+        refusals (a credential-helper probe in E-GHFLOW2). Each denial is final by the briefs' rule, so the step was
+        skipped or passed to the owner.
+      permission-prompts: "Under acceptEdits a call outside the grant waits for the owner (claude attach; DEC-44); the watchdog reports it as STUCK (permission prompt). How often a worker sat on one under auto is unverified (two 'waiting for permission' strings in the transcripts)."
+      open-backlog: "R21 (gh), R22 (a worker editing its worktree's settings), R40 (live check of auto, still 'owed' in the backlog: unverified whether it ran), R41 (residuals, incl. under auto what a worker reads it may send), R42 (the npm host), R48 (a worker cannot post to the inbox), R51 (git dir deny list)."
+  options:
+    point-1:
+      - "Keep as is: no exposure; cost: you run every port step and the 14 tests stay unrun unless you run them."
+      - "allowLocalBinding for all workers: rejected 2026-11-15 - every interface, every local service, the proxy around the host list."
+      - "Per-WU loopback opt-in (a spawn option the committed policy allows, named in the WU plan): exposes local services for that worker only; needs W1 to prove a loopback-only, proxy-safe bound, else not offered."
+      - "Owner lane, written down: one command and one log path per kind (e2e, app start, ignored tests); cost: your time, bounded and predictable."
+      - "Remove the need: notify_owner tests over a Unix socket or a stub transport; changes the rule-bearing sender; Electron's debugging port still needs a port."
+    point-2:
+      - "Keep as is (you install): no exposure; cost: an owner step after every lockfile change."
+      - "Fixed host plus frozen install into a worktree-local store: exposes registry content, bounded by the lockfile's integrity hashes; pnpm 11 runs no build script unless allowed (app/pnpm-workspace.yaml allowBuilds); blocked today by the .vscode deny."
+      - "Shared store writable (~/Library/pnpm/store): rejected - a worker could change packages your own installs then use (owner code execution, the ~/.cargo/registry/src class)."
+      - "Owner lane, written down: one command, one log path; workers never start an install (briefs check node_modules first)."
+    point-3:
+      - "Keep as is: the classifier stays the only check on extra hosts and on scratch work."
+      - "Pin the hosts (no per-call widening) if the CLI allows: closes R41's 'reads it may send' channel; a new host is an owner commit."
+      - "A fixed scratch helper on the grant: fewer denials; exposes only what the helper does, in a fresh mktemp dir."
+      - "Mode acceptEdits: each refusal becomes your prompt; a background worker waits (DEC-37 rejected default for this reason)."
+      - "Mode bypassPermissions or dontAsk: refused by the launcher (DEC-37); not proposed."
+  rule-bearing-by-wu:
+    W1: "none (docs/work/ only)"
+    W2: "scripts/router-worker.sh; .keel/config.toml if a policy key; tests/suite/router.rs (code)"
+    W3: "scripts/router-worker.sh; docs/install.html; app/ config (code)"
+    W4: "scripts/router-worker.sh; a new scripts/ helper (and rule_bearing in .keel/config.toml); .claude/agents/worker.md; skills/keel-router and .claude/skills/keel-router; .claude/skills/project-router"
+  sign-off: "Each WU with a rule-bearing file: only those files staged -> the owner's keel mr commit -> a fresh worker re-gates -> the owner confirms and merges (project-router 'Sign-off sequences')."
+  htmldoc:
+    id: 6b0586bf9f34851f0dfb2c72
