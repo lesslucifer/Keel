@@ -984,7 +984,7 @@ fn cr(p: &Path, args: &[&str]) -> Output {
 }
 
 /// A tool's waiver on HEAD: a failed round made WAIVED by hand. The writer has no reasoned form
-/// (B18) and the real cap needs five rounds (tests/suite/verify_dod.rs runs them); the sign-off reads the
+/// (B18) and the real cap needs max_rounds rounds (tests/suite/verify_dod.rs runs them); the sign-off reads the
 /// same note either way.
 fn plant_waiver(p: &Path, reason: &str) {
     ok(cr(p, &["--verdict", "FAIL", "--blockers", "1"]));

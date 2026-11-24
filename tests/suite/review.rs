@@ -1,5 +1,6 @@
-//! E-CRCAP epic e2e: the 5-round review schedule ends in a fix-PASS or an owner-accepted waiver, and
-//! both merge through the real hooks of a repo `keel init` set up (UC-REV-2, UC-REV-3).
+//! E-CRLIMIT epic e2e (E-CRCAP's before it): the review schedule - the target's `[review]` settings,
+//! the default schedule when it sets none - ends in a fix-PASS or an owner-accepted waiver, and both merge
+//! through the real hooks of a repo `keel init` set up (UC-REV-2, UC-REV-3, UC-GATE-1).
 compiled!();
 
 use serde_json::Value;
@@ -7,7 +8,7 @@ use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;
 
-use crate::common;
+use crate::common::{self, round_pair, Sched, DEFAULTS};
 
 fn run(prog: &str, d: &Path, a: &[&str], input: &str) -> Output {
     use std::io::Write;
@@ -89,15 +90,123 @@ fn code(o: &Output, flag: &str) -> String {
     re.captures(&text(o)).unwrap_or_else(|| panic!("no {flag} code: {}", text(o)))[1].to_string()
 }
 
-fn whole(n: u32, base: &str, tip: &str) -> String {
-    format!("review round {n} of 5 - scope: the whole range, {base}..{tip}")
-}
-
-fn last_fix(n: u32, since: &str, tip: &str) -> String {
-    format!("review round {n} of 5 - scope: the last fix, {since}..{tip}")
-}
-
 const RESULT: &str = "<html><p>done</p></html>";
+
+/// The schedule the epic commits for its later WUs: each setting one above its default, so none is a
+/// default value whatever the defaults are, and a valid default schedule (no key above max_rounds)
+/// gives a valid one.
+const SET: Sched = Sched { max: DEFAULTS.max + 1, whole: DEFAULTS.whole + 1, from: DEFAULTS.from + 1 };
+
+/// WU `name` cut off the epic: its code, its test, its result report, and the test and doc notes on
+/// its first commit. Returns that commit and the WU's test judgment.
+fn start_wu(p: &Path, name: &str) -> (String, String) {
+    git(p, &["switch", "-q", "-c", &format!("wu/e/{name}")]);
+    write(p, &format!("src/{name}.py"), &format!("def {name}():\n    return 1\n"));
+    write(p, &format!("tests/test_{name}.py"), &format!("def test_{name}():\n    pass\n"));
+    common::doc_pair(p, &format!("docs/work/{name}-result.html"), "wu-result", RESULT);
+    let first = commit(p, &format!("wu {name}"));
+    let tests = format!(r#"{{"integration":{{"files":["tests/test_{name}.py"],"covers":"{name} works"}}}}"#);
+    notes(p, &tests, &[]);
+    (first, tests)
+}
+
+/// A fix of WU `name`'s last round, with its notes: returns the fix commit.
+fn fix(p: &Path, name: &str, n: u32, tests: &str) -> String {
+    write(p, &format!("src/{name}.py"), &format!("def {name}():\n    return {n}\n"));
+    let c = commit(p, &format!("fix round {}", n - 1));
+    notes(p, tests, &[]);
+    c
+}
+
+fn preflight(p: &Path, name: &str) -> Output {
+    keel(p, &["preflight", "wu", &format!("wu/e/{name}")])
+}
+
+fn merge(p: &Path, name: &str) {
+    git(p, &["switch", "-q", "epic/e"]);
+    ok(run("git", p, &["merge", "--no-ff", "-m", &format!("merge wu {name}"), &format!("wu/e/{name}")], ""));
+}
+
+/// WU `name` under schedule `s`, every round finding importants and no blocker: rounds run up to
+/// fix_importants_from, no round follows it, and a fix-PASS answers it; signed and merged.
+fn importants_wu(p: &Path, name: &str, s: Sched) {
+    let (first, tests) = start_wu(p, name);
+    let base = git(p, &["merge-base", "epic/e", "HEAD"]);
+    let mut tips = vec![first];
+    for n in 1..=s.from {
+        let (prev, tip) = round_pair(&tips, n);
+        assert!(text(&ok(preflight(p, name))).contains(&s.announce(n, &base, &prev, &tip)), "{s:?} round {n}");
+        ok(cr(p, &["--verdict", "FAIL", "--importants", "1"]));
+        tips.push(fix(p, name, n + 1, &tests));
+        if n < s.from {
+            refused(&cr(p, &["--verdict", "PASS", "--fixes", &tip]), &[&format!("round {n}"), "importants"]);
+        }
+    }
+    let (prev, rf) = round_pair(&tips, s.from);
+    refused(&preflight(p, name), &["0·review-cap", &s.no_round(s.from), &format!("--fixes {rf}")]);
+    refused(&cr(p, &["--verdict", "FAIL", "--blockers", "1"]), &[&format!("round {}", s.from + 1)]);
+    ok(cr(p, &["--verdict", "PASS", "--fixes", &rf]));
+    red_only_on_8(&keel(p, &["verify-dod", "wu", &format!("wu/e/{name}")]));
+    let t = text(&ok(keel(p, &["mr", "confirm", "wu", "--as", "vu"])));
+    assert!(t.contains(&format!("fix-PASS of round {} on {}", s.from, &rf[..10])) && t.contains(&s.tag(s.from, &prev)), "{s:?}: {t}");
+    merge(p, name);
+}
+
+/// WU `name` under schedule `s`, every round finding a blocker: rounds run up to max_rounds and the
+/// last ends in the cap's waiver, which the owner accepts; signed and merged. Returns the waiver.
+fn blockers_wu(p: &Path, name: &str, s: Sched) -> String {
+    let (first, tests) = start_wu(p, name);
+    let base = git(p, &["merge-base", "epic/e", "HEAD"]);
+    let blocker = format!(r#"[{{"location": "src/{name}.py:2", "claim": "{name}() is wrong", "severity": "blocker", "evidence": "e"}}]"#);
+    let mut tips = vec![first];
+    for n in 1..=s.max {
+        let (prev, tip) = round_pair(&tips, n);
+        assert!(text(&ok(preflight(p, name))).contains(&s.announce(n, &base, &prev, &tip)), "{s:?} round {n}");
+        let o = ok(cr(p, &["--verdict", "FAIL", "--findings", &blocker]));
+        if n == s.max {
+            assert!(text(&o).contains("review cap reached") && text(&o).contains(&s.cap(1)), "{}", text(&o));
+        } else {
+            tips.push(fix(p, name, n + 1, &tests));
+        }
+    }
+    let last = tips[s.max as usize - 1].clone();
+    ok(cr(p, &["--verdict", "WAIVED"]));
+    let cap = s.cap(1);
+    assert_eq!(note(p, "cr", &last)["waiver"], cap.as_str());
+
+    // No round past the cap: a further fix, tried off the branch.
+    let branch = format!("wu/e/{name}");
+    git(p, &["switch", "-q", "--detach"]);
+    write(p, &format!("src/{name}.py"), &format!("def {name}():\n    return 0\n"));
+    commit(p, "a fix past the cap");
+    notes(p, &tests, &["--target", "epic/e"]);
+    refused(&keel(p, &["preflight", "wu", "HEAD", "--target", "epic/e"]), &["0·review-cap", &s.no_round(s.max)]);
+    git(p, &["switch", "-q", &branch]);
+
+    let o = keel(p, &["verify-dod", "wu", &branch]);
+    red_only_on_8(&o);
+    assert!(text(&o).contains(&format!("WAIVED 3·review: {cap}")), "{}", text(&o));
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "vu"]);
+    let mut needles = vec![cap.clone(), "--accept-waiver".into(), format!("blocker src/{name}.py:2: {name}() is wrong")];
+    needles.extend((1..=s.max).map(|n| s.tag(n, &round_pair(&tips, n).0)));
+    refused(&o, &needles.iter().map(String::as_str).collect::<Vec<_>>());
+    assert!(run("git", p, &["notes", "--ref=mr", "show", &last], "").status.code() != Some(0), "a refused sign-off writes nothing");
+    let accept = code(&o, "--accept-waiver");
+    ok(keel(p, &["mr", "confirm", "wu", "--as", "vu", "--accept-waiver", &accept]));
+    ok(keel(p, &["verify-dod", "wu", &branch]));
+
+    // Rewording the waiver after the sign-off is red; the signed wording is green again.
+    let signed = git(p, &["notes", "--ref=cr", "show", &last]);
+    let mut n: Value = serde_json::from_str(&signed).unwrap();
+    n["waiver"] = Value::from(s.cap(0));
+    git(p, &["notes", "--ref=cr", "add", "-f", "-m", &n.to_string(), &last]);
+    let o = keel(p, &["verify-dod", "wu", &branch]);
+    assert!(!o.status.success() && text(&o).contains("8·manual-review") && text(&o).contains("changed after"), "{}", text(&o));
+    git(p, &["notes", "--ref=cr", "add", "-f", "-m", &signed, &last]);
+    ok(keel(p, &["verify-dod", "wu", &branch]));
+    merge(p, name);
+    cap
+}
 
 #[test]
 fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver() {
@@ -133,118 +242,73 @@ fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver()
     common::doc_pair(p, "docs/work/e-plan.html", "epic-plan", "<html><p>plan</p></html>");
     commit(p, "epic plan");
 
-    // WU A: round 1 finds only nits; the fix gets a fix-PASS, no new round.
-    git(p, &["switch", "-q", "-c", "wu/e/a"]);
-    write(p, "src/a.py", "def a():\n    return 1\n");
-    write(p, "tests/test_a.py", "def test_a():\n    pass\n");
-    common::doc_pair(p, "docs/work/a-result.html", "wu-result", RESULT);
-    let a1 = commit(p, "wu a");
-    let a_tests = r#"{"integration":{"files":["tests/test_a.py"],"covers":"a works"}}"#;
-    notes(p, a_tests, &[]);
+    // The default values (no schedule key). WU A - round 1 finds only nits; the fix gets a fix-PASS.
+    let (a1, a_tests) = start_wu(p, "a");
     let a_base = git(p, &["merge-base", "epic/e", "HEAD"]);
-    assert!(text(&ok(keel(p, &["preflight", "wu", "wu/e/a"]))).contains(&whole(1, &a_base, &a1)));
+    assert!(text(&ok(preflight(p, "a"))).contains(&DEFAULTS.announce(1, &a_base, "", &a1)));
     ok(cr(p, &["--verdict", "PASS", "--nits", r#"[{"location": "src/a.py:1", "finding": "a() is one()", "fixed": "renamed, in a fix-PASS"}]"#]));
     write(p, "src/a.py", "def one():\n    return 1\n");
     let a2 = commit(p, "fix the nit");
-    notes(p, a_tests, &[]);
+    notes(p, &a_tests, &[]);
     ok(cr(p, &["--verdict", "PASS", "--fixes", &a1]));
     red_only_on_8(&keel(p, &["verify-dod", "wu", "wu/e/a"]));
     let o = ok(keel(p, &["mr", "confirm", "wu", "--as", "vu"]));
     assert!(text(&o).contains(&format!("fix-PASS of round 1 on {}", &a1[..10])) && text(&o).contains("changed: src/a.py"), "{}", text(&o));
     assert_eq!(note(p, "mr", &a2)["tip"], a2.as_str());
-    git(p, &["switch", "-q", "epic/e"]);
-    ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"], ""));
+    merge(p, "a");
+    // WU B: importants only; WU C: blockers to the cap.
+    importants_wu(p, "b", DEFAULTS);
+    let cap_c = blockers_wu(p, "c", DEFAULTS);
 
-    // WU B: five rounds; round 2's importants are never fixed without a round; round 5 ends at the cap.
-    git(p, &["switch", "-q", "-c", "wu/e/b"]);
-    write(p, "src/b.py", "def b():\n    return 1\n");
-    write(p, "tests/test_b.py", "def test_b():\n    pass\n");
-    common::doc_pair(p, "docs/work/b-result.html", "wu-result", RESULT);
-    let mut tips = vec![commit(p, "wu b")];
-    let b_tests = r#"{"integration":{"files":["tests/test_b.py"],"covers":"b works"}}"#;
-    notes(p, b_tests, &[]);
-    let b_base = git(p, &["merge-base", "epic/e", "HEAD"]);
-    for n in 1..=5u32 {
-        let tip = tips.last().unwrap().clone();
-        let scope = if n <= 2 { whole(n, &b_base, &tip) } else { last_fix(n, &tips[tips.len() - 2], &tip) };
-        let o = ok(keel(p, &["preflight", "wu", "wu/e/b"]));
-        assert!(text(&o).contains(&scope), "round {n}: {}", text(&o));
-        let o = match n {
-            2 => ok(cr(p, &["--verdict", "FAIL", "--importants", "1"])),
-            5 => ok(cr(
-                p,
-                &["--verdict", "FAIL", "--findings", r#"[{"location": "src/b.py:2", "claim": "b() returns 6", "severity": "blocker", "evidence": "e"}]"#],
-            )),
-            _ => ok(cr(p, &["--verdict", "FAIL", "--blockers", "1"])),
-        };
-        if n == 5 {
-            assert!(text(&o).contains("review cap reached"), "{}", text(&o));
-            break;
-        }
-        write(p, "src/b.py", &format!("def b():\n    return {}\n", n + 1));
-        tips.push(commit(p, &format!("fix round {n}")));
-        notes(p, b_tests, &[]);
-        if n == 2 {
-            refused(&cr(p, &["--verdict", "PASS", "--fixes", &tips[1]]), &["round 2", "importants"]);
-        }
+    // A schedule the epic sets: a bad one is refused at its commit, a good one lands.
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    assert!(cfg.lines().any(|l| l.starts_with("[review]")), "keel init writes a [review] table: {cfg}");
+    let with = |keys: &str| -> String {
+        cfg.lines().flat_map(|l| if l.starts_with("[review]") { vec![l, keys] } else { vec![l] }).map(|l| format!("{l}\n")).collect()
+    };
+    let before = git(p, &["rev-parse", "HEAD"]);
+    let bad = format!("max_rounds = {}\nwhole_range_rounds = {}", SET.max, SET.max + 1);
+    write(p, ".keel/config.toml", &with(&bad));
+    git(p, &["add", "-A"]);
+    let o = run("git", p, &["commit", "-qm", "a bad schedule"], "");
+    assert!(!o.status.success() && text(&o).contains(&format!("whole_range_rounds = {}", SET.max + 1)) && text(&o).contains("fix ->"), "{}", text(&o));
+    assert_eq!(git(p, &["rev-parse", "HEAD"]), before, "nothing landed");
+    write(p, ".keel/config.toml", &with(SET.lines().trim_end()));
+    commit(p, "the epic's review schedule");
+    // WUs D and E, cut after it, follow it.
+    importants_wu(p, "d", SET);
+    let cap_e = blockers_wu(p, "e", SET);
+
+    // The epic: its own round 1 on main's default values (its WUs' rounds are theirs), the walk shows
+    // WUs C and E waived, then main.
+    let wus = ["a", "b", "c", "d", "e"];
+    let mut archived: Vec<String> = vec!["docs/work/e-plan.html".into(), "docs/work/e-plan.yaml".into()];
+    for w in wus {
+        archived.push(format!("docs/work/{w}-result.html"));
+        archived.push(format!("docs/work/{w}-result.yaml"));
     }
-    let b5 = tips[4].clone();
-    ok(cr(p, &["--verdict", "WAIVED"]));
-    let cap = "review cap: 5 rounds, 1 blockers open";
-    assert_eq!(note(p, "cr", &b5)["waiver"], cap);
-
-    // Round 6 is refused: a further fix, tried off the branch.
-    git(p, &["switch", "-q", "--detach"]);
-    write(p, "src/b.py", "def b():\n    return 7\n");
-    commit(p, "fix round 5");
-    notes(p, b_tests, &["--target", "epic/e"]);
-    let o = keel(p, &["preflight", "wu", "HEAD", "--target", "epic/e"]);
-    refused(&o, &["0·review-cap", "round 6"]);
-    git(p, &["switch", "-q", "wu/e/b"]);
-
-    let o = keel(p, &["verify-dod", "wu", "wu/e/b"]);
-    red_only_on_8(&o);
-    assert!(text(&o).contains(&format!("WAIVED 3·review: {cap}")), "{}", text(&o));
-    let o = keel(p, &["mr", "confirm", "wu", "--as", "vu"]);
-    refused(&o, &[cap, "--accept-waiver", "blocker src/b.py:2: b() returns 6", "[round 5, since", "[round 1, full]"]);
-    assert!(run("git", p, &["notes", "--ref=mr", "show", &b5], "").status.code() != Some(0), "a refused sign-off writes nothing");
-    let accept = code(&o, "--accept-waiver");
-    ok(keel(p, &["mr", "confirm", "wu", "--as", "vu", "--accept-waiver", &accept]));
-    ok(keel(p, &["verify-dod", "wu", "wu/e/b"]));
-
-    // Rewording the waiver after the sign-off is red; the signed wording is green again.
-    let signed = git(p, &["notes", "--ref=cr", "show", &b5]);
-    let mut n: Value = serde_json::from_str(&signed).unwrap();
-    n["waiver"] = Value::from("review cap: 5 rounds, 0 blockers open");
-    git(p, &["notes", "--ref=cr", "add", "-f", "-m", &n.to_string(), &b5]);
-    let o = keel(p, &["verify-dod", "wu", "wu/e/b"]);
-    assert!(!o.status.success() && text(&o).contains("8·manual-review") && text(&o).contains("changed after"), "{}", text(&o));
-    git(p, &["notes", "--ref=cr", "add", "-f", "-m", &signed, &b5]);
-    ok(keel(p, &["verify-dod", "wu", "wu/e/b"]));
-    git(p, &["switch", "-q", "epic/e"]);
-    ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu b", "wu/e/b"], ""));
-
-    // The epic: its own round 1 (its WUs' rounds are theirs), the walk shows WU B waived, then main.
-    git(p, &["rm", "-q", "docs/work/e-plan.html", "docs/work/a-result.html", "docs/work/b-result.html"]);
-    git(p, &["rm", "-q", "docs/work/e-plan.yaml", "docs/work/a-result.yaml", "docs/work/b-result.yaml"]);
+    git(p, &[&["rm", "-q"][..], &archived.iter().map(String::as_str).collect::<Vec<_>>()].concat());
     write(p, "docs/use-cases/review.html", "<p>UC-REV-3: the review schedule</p>");
     let e = commit(p, "distill and archive");
     common::doc_pair(p, "docs/.archive/e-result.html", "epic-result", "<html><p>done</p></html>");
+    let e2e_files: Vec<String> = wus.iter().map(|w| format!("\"tests/test_{w}.py\"")).collect();
     ok(run(
         env!("CARGO_BIN_EXE_keel"),
         p,
         &["notes", "write", "test"],
-        r#"{"e2e":{"files":["tests/test_a.py","tests/test_b.py"],"covers":"a and b, through the schedule"}}"#,
+        &format!(r#"{{"e2e":{{"files":[{}],"covers":"a to e, through the schedule"}}}}"#, e2e_files.join(",")),
     ));
-    let distill: Vec<String> = ["e-plan", "a-result", "b-result"].iter().map(|f| format!("docs/work/{f}.html=docs/use-cases/review.html")).collect();
+    let mut distill: Vec<String> = vec!["docs/work/e-plan.html=docs/use-cases/review.html".into()];
+    distill.extend(wus.iter().map(|w| format!("docs/work/{w}-result.html=docs/use-cases/review.html")));
     ok(keel(p, &[&["notes", "write", "doc"][..], &distill.iter().flat_map(|d| ["--distill", d.as_str()]).collect::<Vec<_>>()].concat()));
     let e_base = git(p, &["merge-base", "main", "HEAD"]);
-    assert!(text(&ok(keel(p, &["preflight", "epic", "epic/e"]))).contains(&whole(1, &e_base, &e)));
+    assert!(text(&ok(keel(p, &["preflight", "epic", "epic/e"]))).contains(&DEFAULTS.announce(1, &e_base, "", &e)), "main sets no schedule");
     ok(cr(p, &["--verdict", "PASS"]));
     assert_eq!(note(p, "cr", &e)["round"], 1);
     let o = keel(p, &["verify-dod", "epic", "epic/e"]);
     red_only_on_8(&o);
-    assert!(text(&o).contains("WAIVED 7·walk") && text(&o).contains(&format!("3·review: {cap}")), "{}", text(&o));
+    let t = text(&o);
+    assert!(t.contains("WAIVED 7·walk") && t.contains(&format!("3·review: {cap_c}")) && t.contains(&format!("3·review: {cap_e}")), "{t}");
     ok(keel(p, &["mr", "confirm", "epic", "--as", "vu", "--report", "docs/.archive/e-result.html"]));
     git(p, &["switch", "-q", "main"]);
     ok(run("git", p, &["merge", "--no-ff", "-m", "merge epic e", "epic/e"], ""));

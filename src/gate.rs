@@ -571,9 +571,7 @@ fn preflight(repo: &Path, cfg: &Config, level: Level, tip_ref: &str, target: &st
         r.fail("0·tree", "keel check is red on the tip".into(), "get lint and tests green before the review runs");
     }
     check_tip(repo, cfg, &mut r, &names, false, true)?;
-    let schedule =
-        review::Schedule::read(repo, &r.base, &r.tip, target, &cfg.code_paths).map_err(|e| (e, "fix the repo state, then preflight again".to_string()));
-    match schedule.and_then(|s| s.next()) {
+    match review::Schedule::read(repo, &r.base, &r.tip, target, &cfg.code_paths).and_then(|s| s.next()) {
         Ok(next) => {
             let (commands, changed) = match &next.since {
                 Some(since) => {

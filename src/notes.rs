@@ -1219,7 +1219,10 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
     let write = cr_verdict(verdict, reason, blockers, importants)?;
     let code_diff_hash = code_diff_hash(repo, cfg, &base, &tip)?;
     // The schedule exactly as preflight reads it (review::Schedule, one place for both).
-    let schedule = || review::Schedule::read(repo, &r.id.base, &tip, &r.target, &cfg.code_paths);
+    let schedule = || {
+        review::Schedule::read(repo, &r.id.base, &tip, &r.target, &cfg.code_paths)
+            .or_else(|(what, fix)| refuse(what.trim_start_matches("keel: ").to_string(), &fix))
+    };
     let fixes = flag("--fixes").or_else(|| args.contains(&"--fixes").then_some(""));
     if fixes.is_some() && verdict != "PASS" {
         return refuse("--fixes given with a verdict other than PASS".into(), "a fix-PASS is --verdict PASS --fixes <reviewed commit>");
@@ -1250,7 +1253,7 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
                     "the owner repairs that note in place, then write the fix-PASS again",
                 )
             })?;
-            let fix = review::fix_pass(own.as_ref(), &s.earlier, &sha, s.max, |c| s.unchanged(c)).or_else(|(what, fix)| refuse(what, &fix))?;
+            let fix = review::fix_pass(own.as_ref(), &s.earlier, &sha, &s.policy, |c| s.unchanged(c)).or_else(|(what, fix)| refuse(what, &fix))?;
             let said = format!("fix-PASS of round {} on {}: no reviewers run, no new round", fix.round, short(&sha));
             let schedule = ScheduleFields {
                 round: Some(fix.round),
@@ -1294,9 +1297,9 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
             let said = format!(
                 "review round {} of {} recorded ({})\n  next -> {}",
                 next.round,
-                s.max,
+                s.policy.max_rounds,
                 next.scope(),
-                review::next_step(&note, next.round, s.max, &tip)
+                review::next_step(&note, next.round, &s.policy, &tip)
             );
             (note, said)
         }
@@ -1309,7 +1312,7 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
                 let (what, fix) = unreadable(short(&tip), &why);
                 refuse(what, &fix)
             })?;
-            let reason = review::cap(own.as_ref(), &s.earlier, s.max, &tip).or_else(|(what, fix)| refuse(what, &fix))?;
+            let reason = review::cap(own.as_ref(), &s.earlier, &s.policy, &tip).or_else(|(what, fix)| refuse(what, &fix))?;
             let said = format!("{reason}: the owner decides at sign-off (keel mr confirm shows the waiver and every round)");
             (
                 waive(own.map(Ok), r.id, Some(&reason), code_diff_hash, &|h| code_binds(repo, cfg, &base, &tip, h))

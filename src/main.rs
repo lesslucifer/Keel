@@ -167,18 +167,21 @@ pub(crate) fn validate(cfg: &Config) -> Result<(), String> {
     }
 }
 
-/// A commit must not land a rules file keel cannot judge by - one that does not parse, or that
-/// `validate` refuses: every later commit would be judged by it. `staged` is the index's
-/// `.keel/config.toml` when this commit changes it (None: unchanged or deleted). Run by pre-commit and
-/// `keel mr commit` only: cherry-pick, rebase, revert, a fast-forward and `--no-verify` run no
-/// pre-commit hook, so a bad file can still arrive through them (HEAD_CONFIG_FIX then applies).
+/// A commit must not land a rules file keel cannot judge by - one that does not parse, that
+/// `validate` refuses, or whose review schedule `review::policy_in` refuses (UC-GATE-1): every later
+/// commit, or review, would be judged by it. `staged` is the index's `.keel/config.toml` when this
+/// commit changes it (None: unchanged or deleted). Run by pre-commit and `keel mr commit` only:
+/// cherry-pick, rebase, revert, a fast-forward and `--no-verify` run no pre-commit hook, so a bad file
+/// can still arrive through them (HEAD_CONFIG_FIX then applies; a bad schedule on a target is red
+/// 0·review-cap at preflight and refused by the cr writer).
 fn staged_config_refusal(staged: Option<&str>) -> Option<String> {
-    let why = match toml::from_str::<Config>(staged?) {
+    let text = staged?;
+    let why = match toml::from_str::<Config>(text) {
         Err(e) => format!("does not parse: {e}"),
-        Ok(cfg) => format!("is refused: {}", validate(&cfg).err()?),
+        Ok(cfg) => format!("is refused: {}", validate(&cfg).and_then(|()| review::policy_in(text).map(drop)).err()?),
     };
     Some(format!(
-        "keel: commit refused - the staged .keel/config.toml {}\n  every later commit would be judged by it\n  fix -> correct .keel/config.toml, git add it, then commit again",
+        "keel: commit refused - the staged .keel/config.toml {}\n  every later commit, or review, would be judged by it\n  fix -> correct .keel/config.toml, git add it, then commit again",
         why.trim_end()
     ))
 }
@@ -1027,6 +1030,26 @@ mod tests {
         }
         let e = super::staged_config_refusal(Some(&format!("{good}[mr]\ntiers = [\"usrname\", \"key\"]\n"))).expect("an unknown tier is refused");
         assert!(e.contains("unknown mr tier 'usrname'") && e.contains("fix -> "), "{e}");
+        // E-CRLIMIT.W1 (UC-GATE-1): a review schedule review::policy_in refuses is refused staged, by
+        // the one rule the target read uses; a good one, or a cap set alone below a default, lands.
+        for ok in
+            ["[review]\nmax_rounds = 5\nwhole_range_rounds = 2\nfix_importants_from = 4\n", "[review]\nmax_rounds = 1\n", "[review]\nmodules = [\"src/*\"]\n"]
+        {
+            assert_eq!(super::staged_config_refusal(Some(&format!("{good}{ok}"))), None, "{ok}");
+        }
+        for (bad, says) in [
+            ("[review]\nmax_rounds = 0\n", "[review] max_rounds = 0 must be a whole number"),
+            ("[review]\nmax_rounds = 3\nwhole_range_rounds = 4\n", "whole_range_rounds = 4 is above max_rounds = 3"),
+            ("[review]\nfix_importants_from = \"2\"\n", "fix_importants_from = \"2\" must be"),
+            ("[review]\nwhole_range = 2\n", "[review] whole_range is not a key keel knows"),
+        ] {
+            let e = super::staged_config_refusal(Some(&format!("{good}{bad}"))).unwrap_or_else(|| panic!("{bad:?} passed"));
+            assert!(e.contains("the staged .keel/config.toml is refused") && e.contains(says) && e.contains("fix -> "), "{e}");
+        }
+        // A key above an unset max_rounds names the cap it is judged by as the default one.
+        let cap = crate::review::Policy::DEFAULT.max_rounds;
+        let e = super::staged_config_refusal(Some(&format!("{good}[review]\nwhole_range_rounds = {}\n", cap + 1))).expect("above the default cap");
+        assert!(e.contains(&format!("whole_range_rounds = {} is above max_rounds = {cap}, the default cap (max_rounds is not set)", cap + 1)), "{e}");
     }
 
     #[test]

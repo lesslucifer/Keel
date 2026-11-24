@@ -48,8 +48,9 @@ areas:
           (main's name, `code_paths`, the lint), never the folder's copy, so an uncommitted edit of the rules changes
           nothing. Where `HEAD` commits none, the staged copy judges and keel prints one bootstrap line; with neither,
           the commit is refused, its fix line naming how to stage or restore the file. A commit that stages a rules file
-          keel cannot judge by (one that does not parse, or names an unknown signer tier) is refused before it lands; a
-          rules file at `HEAD` keel cannot read refuses every commit, its fix line naming the recovery.
+          keel cannot judge by (one that does not parse, names an unknown signer tier, or sets a review schedule UC-REV-3
+          refuses) is refused before it lands, by the pre-commit hook and by `keel mr commit`; a rules file at `HEAD`
+          keel cannot read refuses every commit, its fix line naming the recovery.
         failure: >-
           a direct commit lands on main, a code commit lands with red lint, or a commit is judged by rules the folder
           edited and never committed.
@@ -305,32 +306,41 @@ areas:
         failure: >-
           a waived review reads as PASS anywhere; a waiver lands without the owner's explicit acceptance (DEC-49).
       - id: UC-REV-3
-        title: "the review follows a fixed schedule"
+        title: "the review follows the target's schedule"
         expected: >-
-          A round is a reviewed cr note (PASS or FAIL, or a WAIVED note that kept a reviewed round of this range) on a
+          The schedule is three settings in the target's committed `.keel/config.toml` `[review]`: `max_rounds` (the
+          cap), `whole_range_rounds` (rounds up to it review the whole range) and `fix_importants_from` (from that round
+          on, importants with no blocker are fixed under a fix-PASS and only a blocker earns another round). Another
+          round follows round n when n < max_rounds and (n < fix_importants_from or round n found a blocker). A key left
+          out takes its default value (3, 1 and 2; keel's review::Policy::DEFAULT). A set key must be a whole number of
+          1 or more; an explicit `whole_range_rounds` or `fix_importants_from` above `max_rounds` and an unknown
+          `[review]` key (known: the three, `modules`, `rubric`) are refused; a default above a lowered `max_rounds` is
+          lowered to it. A round is a reviewed cr note (PASS or FAIL, or a WAIVED note that kept a reviewed round of this range) on a
           first-parent commit of base..tip; a fix-PASS and an `unreviewed` WAIVED are not rounds. The tip's own note
           never counts, so a re-run on the same commit is the same round; an epic counts only its own line, never its
-          WUs'. `keel preflight wu|epic` prints `review round n of N` and the scope: the whole range in rounds 1–2; from
-          round 3 the branch's own changes in `<since>..<tip>` on the code paths, `since` being the last reviewed
+          WUs'. `keel preflight wu|epic` prints `review round n of N` and the scope: the whole range up to
+          `whole_range_rounds`; after it the branch's own changes in `<since>..<tip>` on the code paths, `since` being the last reviewed
           commit: each first-parent commit against its first parent, a merge against git's automatic merge of its
           parents, so what a back-merge brought from its second parent is never "the last fix" (git 2.40 or later; an
           older git is refused). Preflight prints the commands that show that diff and the files it changed. It is red
-          `0·review-cap` for a round past the cap, a round 5 or later after a round with no blocker, an unreadable
-          earlier note, and a `max_rounds` that is not a whole number of 1 or more. The cap is `[review] max_rounds` in
-          the target's committed config (default 5). `keel notes write cr` applies the same refusals, stamps `round` and
+          `0·review-cap` for a round past the cap, a round after a round from `fix_importants_from` on that found no
+          blocker, an unreadable earlier note, and a schedule the rule above refuses, naming the key. `keel notes write
+          cr` applies the same refusals, stamps `round` and
           `scope` (`full` or `since <sha>`), still binds the whole range's code, and prints the next step. A fix-PASS
           (`--verdict PASS --fixes <reviewed commit>`, full commit name) runs no reviewers and records `fixes`, `round`,
           `fix_diff_hash` and `answers`. It is allowed only for the latest round, only when the branch itself changed a
           code path since a failed round (a back-merge alone changes nothing of its own), and only for findings that
-          need no new round: nits in any round; importants with no blocker from round 4, or in the last round when the
-          cap is below 4. A FAIL with nothing counted (for example `keel check` red) gets no fix-PASS. A later commit
+          need no new round: nits in any round; importants with no blocker from `fix_importants_from`, or in the last
+          round when the cap is below it. A FAIL with nothing counted (for example `keel check` red) gets no fix-PASS. A later commit
           that changes no code path of its own (the result report, a clean back-merge) gets a fix-PASS for the same
           round where one is allowed, even on top of a fix-PASS; a second code fix on top of a fix-PASS is refused:
-          before round 4 it needs the next round, from round 4 or at the cap only the owner's waiver. A fix-PASS never
+          before `fix_importants_from` it needs the next round, from it or at the cap only the owner's waiver. A fix-PASS never
           replaces the tip's own reviewed note. When round N fails with a blocker, the writer says the cap is reached;
           `--verdict WAIVED` with no reason, on that tip only, writes `review cap: N rounds, <b> blockers open` and
-          keeps the round's findings. The merge check reads a fix-PASS as PASS; its rules live in the writer, and the
-          owner sees each one at sign-off (DEC-50).
+          keeps the round's findings. The merge check reads a fix-PASS as PASS and never counts rounds, so notes
+          written under an earlier schedule stay valid; its rules live in the writer, and the owner sees each one at
+          sign-off, the history tagging rounds by the target's settings (the defaults, with a line, when they are
+          refused: a bad schedule blocks the review, never the sign-off) (DEC-50).
         failure: >-
           a round the table does not reach runs, or a fix-PASS answers what needs a round. The history tag of a fix-PASS
           names the recorded round it answers, and a fix-PASS written over the owner's waiver prints that it stands on a

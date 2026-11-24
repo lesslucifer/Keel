@@ -27,7 +27,7 @@ changes no code path asks for no review, no note and no finders.
   `HEAD_R=$(git rev-parse <head>)`. Merge-base, not the base tip.
 - The reviewed diff is `git diff $BASE $HEAD_R -- <code_paths…>` — exactly the
   bytes `keel notes write cr` will hash into `code_diff_hash`.
-- **From round 3, the round reviews only the last fix** (the schedule, §5):
+- **A round past `whole_range_rounds` reviews only the last fix** (the schedule, §5):
   the branch's own changes since `SINCE`, the last reviewed commit. Preflight
   (§2) prints the commands that show them, one `git diff-tree -p` per commit
   of the branch's own line, oldest first, and finders and verifiers get their
@@ -53,17 +53,18 @@ fleet again. It refuses on exactly:
   already passed) is red.
 - **`1·notes` / `2·manifest`** — the tip's `test/v1` note (the one the finders
   read) is missing, malformed, lacks the level's layer, or names another tip.
-- **`0·review-cap`** — the schedule (§5) has no such round: past the cap, a
-  round 5 or later after a round that found no blocker, an earlier cr note
-  on the branch that does not parse (it names the commit), or a
-  `[review] max_rounds` on the target that is not a whole number of 1 or more.
+- **`0·review-cap`** — the schedule (§5) has no such round: past
+  `max_rounds`, a round after one from `fix_importants_from` on that found no
+  blocker, an earlier cr note on the branch that does not parse (it names the
+  commit), or a `[review]` on the target that the tool refuses (§5).
 - **Nothing else**: no cr (this run writes it), no doc note, no `mr/v1` (the
   human signs last).
 
 On green it prints the round and its scope:
-`review round <n> of <N> - scope: the whole range, <base>..<tip>` (rounds 1–2)
-or `… scope: the last fix, <since>..<tip>: this branch's own changes, …: <commands>;
-changed: <files>` (from round 3). Use that range, and from round 3 those commands (§1).
+`review round <n> of <max_rounds> - scope: the whole range, <base>..<tip>`
+(rounds up to `whole_range_rounds`) or `… scope: the last fix, <since>..<tip>:
+this branch's own changes, …: <commands>; changed: <files>` (later rounds). Use
+that range, and in a later round those commands (§1).
 
 Non-zero exit ⇒ stop, report its blocks to the caller, spawn nothing, write
 nothing. An **exempt** diff (no code path) prints `exempt`: report that and
@@ -93,9 +94,10 @@ dimension, each on an explicitly named model. Each prompt contains exactly:
 - its dimension, and the instruction to read `rubric.md` (this skill's
   directory) and the project rubric if it exists — its dimension row, the
   principles, the exclusions;
-- the scope (`$BASE..$HEAD_R`, or from round 3 `$SINCE..$HEAD_R` with
-  preflight's own-changes command, §1, plus the working tree if in scope) —
-  the finder runs `git diff` (from round 3, that command) itself, may read any
+- the scope (`$BASE..$HEAD_R`, or in a round past `whole_range_rounds`
+  `$SINCE..$HEAD_R` with preflight's own-changes command, §1, plus the working
+  tree if in scope) — the finder runs `git diff` (in such a round, that
+  command) itself, may read any
   file, and reads the tip's test note
   (`git log -1 --no-show-signature --no-notes --notes=test --format=%N $HEAD_R`;
   a review session may run no `git notes` command, reads included): a declared
@@ -208,30 +210,52 @@ mentioned in one line to the caller.
 recorded as a PASS or FAIL cr note. Re-running on the same commit is the same
 round. `keel preflight` and `keel notes write cr` count the rounds from the cr
 notes on the branch's own first-parent line (an epic never counts its WUs'),
-refuse any round the table does not reach, and the writer prints the next
+refuse any round the schedule does not reach, and the writer prints the next
 step after each round.
 
-| Round | Reviews | Only nits | Importants, no blocker | A blocker |
-|---|---|---|---|---|
-| 1, 2 | the whole range | PASS; nits fixed after it under a fix-PASS | fix, next round | fix, next round |
-| 3 | the last fix | same | fix, next round | fix, next round |
-| 4 | the last fix | same | fix under a fix-PASS, done | fix, round 5 |
-| 5, the cap | the last fix | same | fix under a fix-PASS, done | stop: the cap's WAIVED; the owner decides at sign-off |
+Three settings in `[review]` of the target's committed `.keel/config.toml`
+shape the schedule; a branch never sets its own:
 
-`[review] max_rounds` in the target's committed `.keel/config.toml` moves the
-cap (default 5). From round 4 only a blocker earns another round. When
-`max_rounds` is below 4, the last round's importants are also fixed under a
-fix-PASS.
+| Setting | What it decides |
+|---|---|
+| `max_rounds` | the cap: no round runs past it |
+| `whole_range_rounds` | rounds up to this one review the whole range; later rounds only the last fix (§1) |
+| `fix_importants_from` | from this round on, importants with no blocker are fixed under a fix-PASS, and only a blocker earns another round |
+
+What follows round `n`:
+
+| Round `n` found | Then |
+|---|---|
+| only nits | PASS; nits fixed after it under a fix-PASS |
+| importants, no blocker | before `fix_importants_from`: fix, round `n+1`; from it on: fix under a fix-PASS, done |
+| a blocker | before `max_rounds`: fix, round `n+1`; in round `max_rounds`: stop, the cap's WAIVED; the owner decides at sign-off |
+
+**The defaults** — a key the target does not set takes its value here. This
+is the only place the rules give them:
+
+| `max_rounds` | `whole_range_rounds` | `fix_importants_from` |
+|---|---|---|
+| 3 | 1 | 2 |
+
+That is: round 1 reviews the whole range, round 2 the last fix, and round 3
+runs only after a round-2 blocker.
+
+A set key is a whole number of 1 or more. `whole_range_rounds` or
+`fix_importants_from` set above `max_rounds` (set or default) is refused, and
+so is a `[review]` key other than these three, `modules` and `rubric`. A
+default above a set `max_rounds` is lowered to it. A refused `[review]` is red
+`0·review-cap` at preflight, refused by the writer, and refused staged by the
+pre-commit hook and `keel mr commit`; it never blocks the owner's sign-off.
 
 - **Fix-PASS**: after the fix is committed and its test and doc notes are
   written, `keel notes write cr --verdict PASS --fixes <reviewed commit>`. No
   reviewers run. The tool allows it only for the latest round, only for the
-  findings the table fixes without a round (importants: from round 4, or in
-  the last round when `max_rounds` is below 4), and never on top of another
-  fix-PASS when code changed since it (a second fix needs a round: before
-  round 4 the next round; from round 4, or at the cap, where no round follows
-  a round without a blocker, only the owner's waiver — so write the fix-PASS
-  only on the final fix). It records
+  findings the schedule fixes without a round (importants: from
+  `fix_importants_from`), and never on top of another fix-PASS when code
+  changed since it (a second fix needs a round: before `fix_importants_from`
+  the next round; from it on, where no round follows a round without a
+  blocker, only the owner's waiver — so write the fix-PASS only on the final
+  fix). It records
   `fixes`, `round`, `fix_diff_hash` and `answers`, and the sign-off lists it
   with the files changed since the reviewed commit. Only a session allowed to
   write cr notes writes it.
@@ -240,10 +264,10 @@ fix-PASS.
   fix-PASS answering the same round where the schedule allows one, even on
   top of a fix-PASS. Otherwise it gets the round preflight names. A failed
   round stays failed: a docs-only commit after it fixes nothing.
-- **The cap**: when round N fails with a blocker, the writer says
+- **The cap**: when round `max_rounds` fails with a blocker, the writer says
   `review cap reached`. On the same tip, run `keel notes write cr --verdict
-  WAIVED`: the tool writes the reason (`review cap: N rounds, <b> blockers
-  open`) and keeps the round's findings on the waiver. It is refused anywhere
+  WAIVED`: the tool writes the reason (`review cap: <max_rounds> rounds, <b>
+  blockers open`) and keeps the round's findings on the waiver. It is refused anywhere
   else, and the writer refuses `--reason` with any verdict. The owner accepts
   it, or not, at sign-off (`--accept-waiver`, typed by the owner only).
 
