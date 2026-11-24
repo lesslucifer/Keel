@@ -92,8 +92,10 @@ fn code(o: &Output, flag: &str) -> String {
 
 const RESULT: &str = "<html><p>done</p></html>";
 
-/// The schedule the epic commits for its later WUs: none of its settings is a default value.
-const SET: Sched = Sched { max: 4, whole: 2, from: 3 };
+/// The schedule the epic commits for its later WUs: each setting one above its default, so none is a
+/// default value whatever the defaults are, and a valid default schedule (no key above max_rounds)
+/// gives a valid one.
+const SET: Sched = Sched { max: DEFAULTS.max + 1, whole: DEFAULTS.whole + 1, from: DEFAULTS.from + 1 };
 
 /// WU `name` cut off the epic: its code, its test, its result report, and the test and doc notes on
 /// its first commit. Returns that commit and the WU's test judgment.
