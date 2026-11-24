@@ -1219,7 +1219,10 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
     let write = cr_verdict(verdict, reason, blockers, importants)?;
     let code_diff_hash = code_diff_hash(repo, cfg, &base, &tip)?;
     // The schedule exactly as preflight reads it (review::Schedule, one place for both).
-    let schedule = || review::Schedule::read(repo, &r.id.base, &tip, &r.target, &cfg.code_paths).or_else(|(what, fix)| refuse(what, &fix));
+    let schedule = || {
+        review::Schedule::read(repo, &r.id.base, &tip, &r.target, &cfg.code_paths)
+            .or_else(|(what, fix)| refuse(what.trim_start_matches("keel: ").to_string(), &fix))
+    };
     let fixes = flag("--fixes").or_else(|| args.contains(&"--fixes").then_some(""));
     if fixes.is_some() && verdict != "PASS" {
         return refuse("--fixes given with a verdict other than PASS".into(), "a fix-PASS is --verdict PASS --fixes <reviewed commit>");
