@@ -20,6 +20,7 @@ deviations:
   - "DEC-26's sentence on what the CLI reads from [review] was amended too, and the use-case index's UC-REV-3 title follows the new title. Not in the distillation plan; the code wins."
   - "A history tag for a round recorded under another schedule names both recorded fields ('; the note records round n, full')."
   - "Rework round (owner feedback 2026-11-24): the first plan and tests were written around the default values. The plan, the result and every schedule test were rewritten in terms of the settings; the code needed no logic change (its audit found only doc lines restating the values, an old-plan citation and one fix line naming 'round 1')."
+  - "Code review round 1 (FAIL, 0 blockers, 2 importants, 3 nits), fixed: the tests' default schedule is one DEFAULTS in tests/common (keel is a binary crate, so the test crate cannot read review::Policy::DEFAULT); the fix-PASS test asks the schedule whether round 2 follows and also runs fix_importants_from = 1; fixable's clamp is a debug_assert; a key above an unset max_rounds is refused as above the default cap; the e2e's doc names no default value."
   - "The real-run example: a scratch-repo run was denied by the sandbox's permission check and not retried; the page's example is the flow the tests run through the real binary and hooks."
 evidence:
   commits:
