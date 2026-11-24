@@ -2,61 +2,50 @@ artifact: wu-plan
 status: ready
 id: E-CRLIMIT.W1
 epic: E-CRLIMIT
-title: "E-CRLIMIT.W1 · The review schedule as three settings"
+title: "E-CRLIMIT.W1 · The review schedule, set by three settings"
 date: "2026-11-24"
 page: 2026-11-24-e-crlimit-w1-plan.html
 requirement: >-
-  keel preflight, keel notes write cr and the sign-off's review history read the code-review schedule as a
-  review::Policy {max_rounds, whole_range_rounds, fix_importants_from} from the target's committed
-  .keel/config.toml [review] (defaults 3, 1, 2), with round_follows = round < max_rounds && (round <
-  fix_importants_from || blockers > 0) and rounds above whole_range_rounds scoped to the last fix; a bad schedule
-  (a key that is no integer of 1 or more fitting u32, an explicit whole_range_rounds or fix_importants_from above
-  max_rounds, an unknown [review] key) is red 0·review-cap at preflight, refused by the cr writer, and refused
-  staged by the pre-commit hook and keel mr commit, while a default above a lowered max_rounds is clamped to it.
+  keel preflight, keel notes write cr and the sign-off's review history run the code-review schedule that the
+  target's committed .keel/config.toml [review] sets - max_rounds, whole_range_rounds, fix_importants_from - and
+  nothing else: round n is followed by round n+1 exactly when n < max_rounds and (n < fix_importants_from or round
+  n found a blocker); a round n > whole_range_rounds reviews only the change since round n-1; a blocker in round
+  max_rounds ends in the cap's waiver 'review cap: <max_rounds> rounds, <b> blockers open'; a set key that is not a
+  whole number of 1 or more fitting u32, an explicit whole_range_rounds or fix_importants_from above max_rounds, or
+  an unknown [review] key is refused (red 0·review-cap at preflight, refused by the cr writer, refused staged by the
+  pre-commit hook and keel mr commit); a key left out takes its default value, lowered to max_rounds when above it.
 maps-to: >-
-  Epic E-CRLIMIT, W1 of its plan (wu-summaries E-CRLIMIT.W1); the owner's rulings of 2026-11-24 (the 3-round
-  schedule; the schedule configurable in [review]); UC-REV-3 and UC-GATE-1 amended; DEC-50 amended in place.
+  Epic E-CRLIMIT, W1 of its plan (wu-summaries E-CRLIMIT.W1); the owner's rulings of 2026-11-24 (the schedule is
+  the project's [review] settings, not constants); UC-REV-3 and UC-GATE-1 amended; DEC-50 amended in place.
 expected:
-  - "With no [review] schedule key on the target, preflight announces 'review round 1 of 3 - scope: the whole range', then after a round-1 FAIL 'review round 2 of 3 - scope: the last fix, <round-1>..<tip>', and the round-2 note records scope 'since <round-1>'."
-  - "After a round 2 with importants and no blocker, preflight is red 0·review-cap ('review round 3 runs only after round 2 found a blocker'), the writer refuses a round-3 verdict, and --verdict PASS --fixes <round-2> is written and verify-dod reads it as a PASS."
-  - "After a round-2 blocker round 3 runs on the last fix; a round-3 blocker prints 'review cap reached' and the cap's waiver reads 'review cap: 3 rounds, 1 blockers open'."
-  - "A target committing max_rounds = 4, whole_range_rounds = 2, fix_importants_from = 3 announces round 2 over the whole range and 'of 4', lets round-2 importants earn round 3, and refuses round 4 after a round 3 with no blocker; the branch's own committed settings never apply; the sign-off history tags that round 2 'full'."
-  - "Bad values on the target (0, -1, \"3\", 2.5, a too-large integer, whole_range_rounds = 4 or fix_importants_from = 5 with max_rounds = 3, a misspelt key) are red 0·review-cap naming the key; the same staged are refused by the pre-commit hook and keel mr commit; max_rounds = 1 or 2 alone is accepted (defaults clamped)."
-  - "A branch carrying three rounds recorded under the 5-round schedule gets no round 4, and its fix line names the owner's waiver or the fix-PASS; old notes still pass checks 3-5."
+  - "For any schedule (max_rounds, whole_range_rounds, fix_importants_from) the target commits, preflight announces 'review round n of <max_rounds>', scoped to the whole range while n <= whole_range_rounds and to the last fix after it, and the writer records the same round and scope."
+  - "After a round n that found a blocker, round n+1 runs while n < max_rounds; after round max_rounds the writer says the cap is reached and the cap's waiver reads 'review cap: <max_rounds> rounds, <b> blockers open'; no round max_rounds+1 runs."
+  - "After a round n that found only importants: round n+1 runs while n < fix_importants_from; from fix_importants_from on, preflight is red 0·review-cap naming why, the writer refuses the round, and a fix-PASS answering round n is written and the merge check reads it as a PASS."
+  - "The branch's own settings never apply; a target that sets no key gets the default values; the sign-off history tags each round by the target's settings."
+  - "Each bad value (0, -1, a string, a float, a too-large integer, a key above max_rounds, a misspelt key) is refused naming its key: at preflight, by the writer, and staged by the pre-commit hook and keel mr commit. A bad schedule already on the target blocks the review, never the sign-off."
+  - "Rounds recorded under another schedule stay valid and are counted on the target's current settings."
 test-plan:
   unit: >-
-    src/review.rs: the Policy reader (policy_in / policy_at) - defaults, each key, every refusal naming its key,
-    the clamp under a lowered max_rounds, unknown keys, a target naming no commit; round_follows / then /
-    next_round / fixable / fix_pass / cap / next_step / tags on the defaults and on a configured Policy (the old
-    5-2-4 table included). src/main.rs: staged_config_refusal refuses a bad [review] schedule and accepts a good one.
+    src/review.rs: every expectation computed from the Policy over six schedules, the default values among them
+    (next_round, then, fixable, fix_pass, cap, next_step, tags); the reader's refusals and the lowering of a default
+    above a set cap, for each schedule; an exhaustive check over 1..6 x 1..7 x 1..7 that a schedule is accepted
+    exactly when its keys fit the cap and that no round breaks it. src/main.rs: the staged check refuses a bad
+    schedule.
   integration: >-
-    tests/suite/verify_dod.rs, red first on the old code: the default 3-round schedule through preflight and the
-    writer (scope, round-3 rule, fix-PASS from round 2, cap at 3); a configured target schedule (4/2/3) and the
-    branch's own settings ignored; bad target values red 0·review-cap and refused by the writer; bad values staged
-    refused by the pre-commit hook and keel mr commit; old 5-schedule notes; the sign-off history tags by the
-    target's Policy. The existing 5-round tests are moved to the defaults or to an explicit 5-2-4 target.
+    tests/suite/verify_dod.rs: each behaviour test runs four schedules - the default values (no key) and three the
+    target sets (5/2/4, 2/1/2, 4/3/3) - with expectations computed from the schedule: rounds to the cap with
+    blockers (scope, cap waiver, history tags, no round past the cap, the branch's own settings ignored); rounds
+    with importants to fix_importants_from (no further round, fix-PASS, second fix refused); the fix lines, the
+    code-fix rule, back-merge scope and old-schedule notes. Bad values on the target and staged; max_rounds alone.
   e2e: >-
-    tests/suite/review.rs, the epic e2e per the epic plan's e2e-plan: WU A (nits, fix-PASS), WU B (round-2
-    importants, no round 3, fix-PASS), WU C (cap at round 3, accepted waiver), a staged bad [review] refused by the
-    real pre-commit hook, then a configured 4/2/3 schedule driving WU D, and the epic merge into main.
+    tests/suite/review.rs, through the real hooks: a WU with importants and a WU with blockers on the default
+    values, a bad staged [review] refused, then the same two WUs on a schedule the epic commits (4/2/3), expectations
+    computed from each schedule, and the epic merged into main.
 details:
+  default-values: "max_rounds 3, whole_range_rounds 1, fix_importants_from 2: review::Policy::DEFAULT, the only place in the code; tests name them once (DEFAULTS)."
   design:
-    policy: >-
-      review::Policy {max_rounds, whole_range_rounds, fix_importants_from}, all u32; Policy::DEFAULT = 3/1/2.
-      review::policy(repo, target) replaces review::max_rounds (same target read: rev-parse, peel to commit,
-      ls-tree, cat-file blob); policy_at keeps the 'names no commit' error; policy_in(text) parses the TOML and
-      applies the one rule. review::schedule_problem(text) gives the bare reason for the staged check.
-    rule: >-
-      Each set key a TOML integer >= 1 that fits u32; [review] itself a table when present; known keys
-      max_rounds, whole_range_rounds, fix_importants_from, modules, rubric; an explicit whole_range_rounds or
-      fix_importants_from above the effective max_rounds refused; an unset one defaults then clamps to max_rounds.
-    callers: >-
-      Schedule::read carries policy (replacing max); next_round, then, fixable, fix_pass, cap, next_step,
-      no_round_after, round_follows take &Policy or Policy; Next keeps max for the announce line and gets
-      since from round > whole_range_rounds. review::tags takes the Policy; src/mr.rs review_history reads the
-      target's Policy (the sign-off knows its target). src/notes.rs prints s.policy.max_rounds.
-      src/main.rs staged_config_refusal adds review::schedule_problem after validate (validate itself, also used
-      by mr::roster, is not widened: a landed bad schedule never blocks a sign-off).
+    policy: "review::Policy read by review::policy from the target's committed config; review::policy_in is the one rule, shared with main::staged_config_refusal."
+    callers: "Schedule::read carries the Policy; next_round, then, fixable, fix_pass, cap, next_step and tags take it; gate.rs preflight and notes.rs write_cr use Schedule; mr.rs review_history reads the target's Policy and falls back to the default values, with a line, when it is refused."
   files: [src/review.rs, src/main.rs, src/mr.rs, src/notes.rs, src/gate.rs, tests/suite/verify_dod.rs, tests/suite/review.rs, tests/suite/mr.rs, docs/use-cases/workflow.yaml, docs/decisions/review-docs.html, docs/decisions/decisions-index.yaml, docs/use-cases/use-cases-index.yaml]
   not-touched: "No rule-bearing file: skills/, .claude/, templates/, .keel/, AGENTS.md, docs/*.html are W2's."
-  own-review: "The installed keel still counts 5 rounds; this WU's review runs on the new table by hand (round 1 the whole range, round 2 the last fix, round 3 only after a round-2 blocker)."
+  own-review: "The installed keel still runs the old schedule; this WU's review follows the settings' default values by hand."

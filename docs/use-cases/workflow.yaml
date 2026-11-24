@@ -309,10 +309,10 @@ areas:
         title: "the review follows the target's schedule"
         expected: >-
           The schedule is three settings in the target's committed `.keel/config.toml` `[review]`: `max_rounds` (the
-          cap, default 3), `whole_range_rounds` (rounds up to it review the whole range, default 1) and
-          `fix_importants_from` (from that round on, importants with no blocker are fixed under a fix-PASS and only a
-          blocker earns another round, default 2). The defaults: round 1 the whole range, round 2 the last fix, round 3
-          only after a round-2 blocker; 5, 2 and 4 restore the old 5-round schedule. A set key must be a whole number of
+          cap), `whole_range_rounds` (rounds up to it review the whole range) and `fix_importants_from` (from that round
+          on, importants with no blocker are fixed under a fix-PASS and only a blocker earns another round). Another
+          round follows round n when n < max_rounds and (n < fix_importants_from or round n found a blocker). A key left
+          out takes its default value (3, 1 and 2; keel's review::Policy::DEFAULT). A set key must be a whole number of
           1 or more; an explicit `whole_range_rounds` or `fix_importants_from` above `max_rounds` and an unknown
           `[review]` key (known: the three, `modules`, `rubric`) are refused; a default above a lowered `max_rounds` is
           lowered to it. A round is a reviewed cr note (PASS or FAIL, or a WAIVED note that kept a reviewed round of this range) on a
