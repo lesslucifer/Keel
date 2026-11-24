@@ -159,10 +159,16 @@ type Row = (String, Result<CrNote, String>, String);
 /// number of git processes through plumbing only (review::line), so no display config can change or
 /// drop a row. A note git cannot print or parse is a row of its own (`Err`), never dropped: the
 /// signer must see that a round exists. A fix-PASS row names the files its commit changed. `own`: the
-/// tip's note when the gate already read it, never read twice (B16).
-fn review_history(repo: &Path, base: &str, tip: &str, own: Option<CrNote>) -> Result<Vec<Row>, String> {
+/// tip's note when the gate already read it, never read twice (B16). Rounds are tagged by `target`'s
+/// committed schedule (`review::policy`); a schedule it refuses blocks the review, never the sign-off:
+/// the tags then follow the defaults, and a line says so.
+fn review_history(repo: &Path, base: &str, tip: &str, target: &str, own: Option<CrNote>) -> Result<Vec<Row>, String> {
     let entries = review::line(repo, base, tip, own)?;
-    let tags = review::tags(&entries, |from, to| notes::own_names(repo, from, to, &[]));
+    let policy = review::policy(repo, target).unwrap_or_else(|(what, _)| {
+        eprintln!("keel: {}; the review history below tags its rounds by the default schedule", what.trim_start_matches("keel: "));
+        review::Policy::DEFAULT
+    });
+    let tags = review::tags(&entries, &policy, |from, to| notes::own_names(repo, from, to, &[]));
     Ok(entries.into_iter().zip(tags).map(|(e, tag)| (e.commit, e.note, tag)).collect())
 }
 
@@ -646,7 +652,7 @@ fn confirm(repo: &Path, cfg: &Config, args: &[&str]) -> Result<i32, String> {
     // The review history, read once with the tip's cr note in it - the gate's read when it judged the
     // review (B16): the note the owner's waiver is written over (the writer refuses one it cannot
     // parse), and the waiver the tool wrote, if any.
-    let history = review_history(repo, &base, &tip, judged)?;
+    let history = review_history(repo, &base, &tip, &target, judged)?;
     let stored = history.first().filter(|(c, ..)| *c == tip).map(|(_, n, _)| n.clone());
     let tool_waiver = stored.as_ref().and_then(|n| n.as_ref().ok()).filter(|n| n.waiver().is_some()).cloned();
     let waiver = match tool_waiver {

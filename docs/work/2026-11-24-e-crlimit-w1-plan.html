@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="63d2b7ffe208d3fb453064a1">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-CRLIMIT.W1 plan: the review schedule as settings</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-CRLIMIT.W1 · The review schedule, set by three settings</h1>
+      <p>Each project sets how its code reviews run. The tool follows the settings.</p>
+      <div class="meta">T3 · WU plan · 2026-11-24 · Keel · its data file, 2026-11-24-e-crlimit-w1-plan.yaml, sits beside this page · the epic plan is <a href="2026-11-24-e-crlimit-plan.html">here</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">The tool counts review rounds by numbers fixed in its code. A project can change only the cap. A wrong cap is found only when a review starts.</p>
+
+<h2 id="get">What you get</h2>
+<p>Three settings in the project's rules file decide the schedule:</p>
+<table data-c="settings">
+  <thead><tr><th>Setting</th><th>What it decides</th></tr></thead>
+  <tbody>
+    <tr><td>The cap</td><td>The most rounds a review runs. A blocker still open in the last round ends in the cap's waiver, which you accept or not at sign-off.</td></tr>
+    <tr><td>Whole-work rounds</td><td>How many rounds read the whole work. Later rounds read only the last fix.</td></tr>
+    <tr><td>Blocker-only from</td><td>From this round on, medium findings are fixed and recorded with no new round. Only a blocker earns another.</td></tr>
+  </tbody>
+</table>
+<ul data-c="get">
+  <li>The rules file used is the one on the branch the work merges into, never the work's own.</li>
+  <li>A setting left out takes its default value. The default values sit in one place in the code.</li>
+  <li>A wrong setting is refused when it is committed and when a review starts. It names itself.</li>
+</ul>
+
+<h2 id="how">How it works</h2>
+<ol data-c="how">
+  <li>Tests are written first and fail on today's tool.</li>
+  <li>Each test runs several schedules: the default values and three others. What it expects is worked out from the settings, never typed for one schedule.</li>
+  <li>One rule checks the settings, in four places: the review start, the review record, the commit hook and your rule-file commit.</li>
+  <li>Old review records stay valid. Nothing is rewritten.</li>
+  <li>The use case and the decision are updated in place.</li>
+</ol>
+
+<h2 id="makes">What it makes</h2>
+<p>A change in the tool's review code and its tests, the epic's end-to-end test, two use cases and one decision, and this plan and its result. No instruction file changes: that is the next part.</p>
+
+<h2 id="decide">What you decide</h2>
+<table data-c="open-points">
+  <thead><tr><th>Question</th><th>Answer</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Does a wrong setting already landed block your sign-off?</td><td><b>No.</b></td><td>It blocks the review, which names the fix. Your sign-off then lists rounds by the default values and says so.</td></tr>
+    <tr><td>How is this part's own review counted?</td><td><b>By hand, on the default values.</b></td><td>The installed tool still runs the old schedule until you reinstall it.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="know">How you'll know it worked</h2>
+<ul data-c="know">
+  <li>For every schedule tested, reviews run exactly as its three settings say.</li>
+  <li>A project that sets nothing gets the default values.</li>
+  <li>Each wrong setting is refused, and names itself.</li>
+  <li>Reviews recorded under another schedule still pass.</li>
+  <li>Keel's checks pass.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

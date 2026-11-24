@@ -405,3 +405,81 @@ pub fn doc_pair_data(dir: &Path, page: &str, body: &str, data: &str) -> String {
     }
     yaml
 }
+
+/// Preflight's round line for a whole-range round `n` of `of`, on `base..tip`.
+pub fn whole(n: u32, of: u32, base: &str, tip: &str) -> String {
+    format!("review round {n} of {of} - scope: the whole range, {base}..{tip}")
+}
+
+/// Preflight's round line for a last-fix round `n` of `of`, on `since..tip`.
+pub fn last_fix(n: u32, of: u32, since: &str, tip: &str) -> String {
+    format!("review round {n} of {of} - scope: the last fix, {since}..{tip}")
+}
+
+/// A review schedule as the tests drive it: the target's three `[review]` settings.
+#[derive(Clone, Copy, Debug)]
+pub struct Sched {
+    pub max: u32,
+    pub whole: u32,
+    pub from: u32,
+}
+
+/// The default values: the schedule of a target that sets no key. The one place the tests write them;
+/// it must equal keel's `review::Policy::DEFAULT`, which this test crate cannot reach (keel is a binary
+/// crate), so a change of the defaults is that line and this one.
+pub const DEFAULTS: Sched = Sched { max: 3, whole: 1, from: 2 };
+
+impl Sched {
+    /// The `[review]` table's lines that set this schedule.
+    pub fn lines(&self) -> String {
+        format!("max_rounds = {}\nwhole_range_rounds = {}\nfix_importants_from = {}\n", self.max, self.whole, self.from)
+    }
+
+    /// Preflight's line for round `n` on `tip`: the whole range up to `whole`, else the change since
+    /// `prev`, the round before.
+    pub fn announce(&self, n: u32, base: &str, prev: &str, tip: &str) -> String {
+        if n <= self.whole {
+            whole(n, self.max, base, tip)
+        } else {
+            last_fix(n, self.max, prev, tip)
+        }
+    }
+
+    /// The `scope` a round-`n` note records.
+    pub fn scope(&self, n: u32, prev: &str) -> String {
+        if n <= self.whole {
+            "full".into()
+        } else {
+            format!("since {prev}")
+        }
+    }
+
+    /// The sign-off history's tag of round `n`.
+    pub fn tag(&self, n: u32, prev: &str) -> String {
+        if n <= self.whole {
+            format!("[round {n}, full]")
+        } else {
+            format!("[round {n}, since {}]", &prev[..10])
+        }
+    }
+
+    /// Whether a round follows round `n` that found `blockers`: keel's rule, below the cap and before
+    /// fix_importants_from or on a blocker.
+    pub fn follows(&self, n: u32, blockers: u32) -> bool {
+        n < self.max && (n < self.from || blockers > 0)
+    }
+
+    /// Why no round follows round `n` when it found no blocker.
+    pub fn no_round(&self, n: u32) -> String {
+        if n >= self.max {
+            format!("no review round {} runs: the cap is {} rounds", n + 1, self.max)
+        } else {
+            format!("review round {} runs only after round {n} found a blocker", n + 1)
+        }
+    }
+
+    /// The cap's waiver reason.
+    pub fn cap(&self, blockers: u32) -> String {
+        format!("review cap: {} rounds, {blockers} blockers open", self.max)
+    }
+}
