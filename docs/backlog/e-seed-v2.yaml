@@ -174,9 +174,9 @@ open:
       fix-PASS or WAIVED note was written on its commits.
     proposal: >-
       After E-CRCAP merges and the owner reinstalls keel from main, the first real review checks it: `keel preflight`
-      prints `review round n of 5` with its scope; a fix-PASS is written and the gate accepts it; the writer stores
+      prints `review round n of N` with its scope (N the target's `[review] max_rounds`, since E-CRLIMIT); a fix-PASS is written and the gate accepts it; the writer stores
       `--findings`, `--refuted`, `--nits`, `--fleet`; the first real round 2 exercises the earlier-notes reader end to
-      end (E-CRCAP.W3's smoke check ran the jq filters only); `keel mr confirm` shows the history rows.
+      end (E-CRCAP.W3's smoke check ran the jq filters only); `keel mr confirm` shows the history rows. The same reinstall runs `keel init` once in a scratch repo and commits its config through the installed hook, the template check E-CRLIMIT.W2 could not run.
     source: "E-CRCAP epic plan open point 11; W2 and W3 results."
     taken-by: "unowned: owed by the owner's reinstall, then the first real review (stays in the backlog)"
 
@@ -362,6 +362,78 @@ open:
       `--full-index` form. A rule-bearing change: the owner's `keel mr commit`.
     source: "E-APPLIST close, the W14 archive (2026-11-23): the skill line found while distilling W14."
     taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
+
+  - id: B34
+    title: "The code-review skill states the default schedule twice"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      `skills/keel-code-review/SKILL.md` section 5 (and its copy under `.claude/skills/`) shows the default schedule in
+      the table under "The defaults", then restates it as rounds in the sentence below the table ("round 1 reviews
+      the whole range, round 2 the last fix, ..."). E-CRLIMIT meant the defaults to be written in one place.
+    proposal: >-
+      The owner rules: drop the sentence, or keep it as part of the one defaults block. A rule-bearing change: the
+      owner's `keel mr commit`.
+    source: "E-CRLIMIT.W2 independent review, nit N1 (2026-11-24); the W2 result's first deviation."
+    taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
+
+  - id: B35
+    title: "The code-review skill lists only some of what the round cap check refuses"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      `skills/keel-code-review/SKILL.md` sections 2 and 5 (and the `.claude/skills/` copy) list what preflight's
+      `0·review-cap` refuses. The tool also refuses a target that names no commit, a config git cannot read, a
+      target config that does not parse, a `[review]` that is not a table, and a key too large for a 32-bit number.
+      None of these is named.
+    proposal: "Name the missing refusals in both lists. A rule-bearing change: the owner's `keel mr commit`."
+    source: "E-CRLIMIT.W2 independent review, nit N2 (2026-11-24)."
+    taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
+
+  - id: B36
+    title: "The review settings' comments omit where a staged change is checked"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      The `[review]` row of `docs/architecture.html` and the `[review]` comments in `templates/config.toml` and
+      `.keel/config.toml` do not say that a staged change to the schedule is checked by the pre-commit hook and
+      `keel mr commit`, nor that `keel mr confirm` tags the rounds in its history by the target's settings.
+    proposal: "Add both facts to the three places. A rule-bearing change: the owner's `keel mr commit`."
+    source: "E-CRLIMIT.W2 independent review, nit N3 (2026-11-24)."
+    taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
+
+  - id: B37
+    title: "The independent-review prompt nests one placeholder inside another"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      In `skills/keel-router/references/messages.md` (and the `.claude/skills/` copy) the independent-review prompt's
+      scope line reads `<rounds up to <whole_range_rounds>: ... | later rounds: ...>`, a placeholder inside a
+      placeholder. A router filling it in can misread where each part ends.
+    proposal: "Split the scope line into two plain lines, one per case. A rule-bearing change: the owner's `keel mr commit`."
+    source: "E-CRLIMIT.W2 independent review, nit N4 (2026-11-24)."
+    taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
+
+  - id: B38
+    title: "The keel-write example writes a review default a second time"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      `skills/keel-write/references/example.yaml` (and the `.claude/skills/` copy) says "`[review] max_rounds`,
+      default 3". The default is written in the code-review skill's defaults table; this is a second place that can
+      drift from it.
+    proposal: "Name the key and point to the code-review skill, without the value. A rule-bearing change: the owner's `keel mr commit`."
+    source: "E-CRLIMIT.W2 independent review, nit N5 (2026-11-24)."
+    taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
+
+  - id: B39
+    title: "The sign-off does not warn when the branch's code paths differ from the target's"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      The merge hook judges a merge by the target's committed `.keel/config.toml`. When a branch changes `code_paths`,
+      its own notes and sign-off are made against its own list, and the merge into the target is then judged by the
+      old one. Nothing says so before the merge. Found at the E-APPLIST merge; the owner landed E-APPCFG on main first
+      to resolve it.
+    proposal: >-
+      `keel mr confirm` and `keel verify-dod` warn when the branch's `.keel/config.toml` `code_paths` differ from the
+      target's committed ones, naming both lists.
+    source: "The E-APPLIST merge into main and E-APPCFG (583187ca), 2026-11-23; carried at the E-CRLIMIT close."
+    taken-by: "E-GATEFIX (proposed)"
 closed:
   - id: B1
     title: "E-SEED.W10 release pipeline (parked branch)"
