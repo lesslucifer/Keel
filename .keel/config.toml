@@ -46,7 +46,7 @@ T3 = ["docs/work/**", "docs/.archive/**"]
 [mr]
 tiers = ["username", "key"]   # accepted .keel/mr-allowed tiers; key-only is deferred by owner ruling 2026-11-12 (DEC-48)
 
-[review]   # read by the keel-code-review skill, not by the CLI
+[review]   # modules, rubric: read by the keel-code-review skill; max_rounds, whole_range_rounds, fix_importants_from: by the CLI from the target's committed copy (unset here, so the defaults apply)
 modules = ["src/*"]          # each match of a glob's * is one module (altitude finder)
 rubric = ".keel/rubric.md"   # optional project-local rubric
 

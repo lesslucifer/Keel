@@ -1,0 +1,83 @@
+artifact: wu-plan
+status: ready
+id: E-CRLIMIT.W2
+epic: E-CRLIMIT
+title: "E-CRLIMIT.W2 · The rules name the review settings"
+date: "2026-11-24"
+page: 2026-11-24-e-crlimit-w2-plan.html
+requirement: >-
+  The shipped rules (skills/ and their .claude/skills/ copies, templates/config.toml, docs/architecture.html, and
+  .keel/config.toml's comment) describe the code-review schedule as the target's [review] settings max_rounds,
+  whole_range_rounds and fix_importants_from: the rule is stated once, in skills/keel-code-review/SKILL.md section 5,
+  in terms of the three keys; their default values are written once, in that section, labelled as the defaults; every
+  other place names the keys or points to that section, and no rule-bearing file states another schedule number.
+maps-to: >-
+  Epic E-CRLIMIT, W2 of its plan (wu-summaries E-CRLIMIT.W2); the owner's rulings of 2026-11-24 (the schedule is the
+  project's [review] settings, not constants; the rules name the keys and give the defaults in one place only;
+  docs/architecture.html carries no number); UC-REV-3 as W1 amended it; skills keel-code-review, keel-workflow,
+  keel-router.
+expected:
+  - "keel-code-review section 5 states the rule in the keys: round n reviews the whole range while n <= whole_range_rounds, else only the last fix; round n+1 runs exactly when n < max_rounds and (n < fix_importants_from or round n found a blocker); from fix_importants_from on, importants with no blocker are fixed under a fix-PASS; a blocker in round max_rounds ends in the cap's waiver; the refusals of a bad [review] (W1's policy_in) are listed; one table labelled 'The defaults' gives each key's default value."
+  - "No other place in the rule-bearing files states a round number of the schedule, a default value or a '5-round' schedule: each names a key or points to keel-code-review section 5 (the list in details.places)."
+  - "skills/ and .claude/skills/ hold the same bytes for the three edited skills (diff -r empty)."
+  - "templates/config.toml names the three keys, commented out, with what each decides and a pointer to the defaults; keel init's copy, as written, is accepted by W1's refusals (no key set, so the defaults apply)."
+  - "docs/architecture.html carries no schedule number: its config-keys row names the three keys and points to [review] and the template; .keel/config.toml's [review] comment says which keys the CLI reads, and sets no key."
+  - "keel check is green on the new tip (the skills and the template are embedded by include_str!)."
+test-plan:
+  unit: "none: the WU changes no code path (src/, tests/, app/ untouched); keel check still runs the full suite on the new tip."
+  integration: "none: no code path changes; the schedule's behaviour is W1's, tested there."
+  e2e: "none: the epic e2e is tests/suite/review.rs (W1); this WU's text is checked by the read-only review and the grep below."
+  checks:
+    - "git grep -n -i -E '5-round|five rounds|rounds? [0-9]|[0-9]+(st|nd|rd|th)? (review )?rounds?|default [0-9]|at most [0-9]|from round [0-9]' -- skills .claude/skills templates docs/architecture.html .keel/config.toml: hits only in the defaults table of keel-code-review section 5 (both copies) and the places details.allowed-hits lists."
+    - "git grep -n -E 'max_rounds|whole_range_rounds|fix_importants_from' over the same paths: every place in details.places names a key or points to keel-code-review section 5."
+    - "diff -r skills/keel-code-review .claude/skills/keel-code-review; the same for keel-workflow and keel-router: empty."
+    - "keel check green on the new tip; keel verify-doc green."
+    - "Template: in a scratch repo under mktemp -d, keel init writes templates/config.toml; it parses, its [review] sets no schedule key, and a commit staging it passes the pre-commit hook (W1's staged check)."
+    - "An independent read-only review (opus, high effort, fresh per round) reads the rule text against W1's tool (src/review.rs) on the schedule of keel-code-review section 5."
+details:
+  places:
+    skills/keel-code-review/SKILL.md (and .claude/skills/ copy, same lines):
+      - "30-39 section 1: 'From round 3, the round reviews only the last fix' -> 'A round past whole_range_rounds reviews only the last fix (section 5)'."
+      - "56-59 section 2, 0·review-cap: 'past the cap, a round 5 or later after a round that found no blocker ... a [review] max_rounds ... not a whole number' -> past max_rounds; a round after one from fix_importants_from on that found no blocker; an unreadable earlier cr note; a [review] schedule on the target the tool refuses (section 5)."
+      - "63-66 section 2, the announce lines: '(rounds 1-2)' / '(from round 3)' / 'from round 3 those commands' -> 'while the round is at most whole_range_rounds' / 'in a later round'."
+      - "96-98 section 3, the finder prompt: 'or from round 3 $SINCE..$HEAD_R' and '(from round 3, that command)' -> 'in a round past whole_range_rounds'."
+      - "207-223 section 5, the schedule: the 5-row table and the 'max_rounds ... (default 5). From round 4 ... When max_rounds is below 4' paragraph -> the rule in the three keys (a table by condition, not by round number: round n <= whole_range_rounds or later; n < fix_importants_from or not; n < max_rounds or the last), the refusals of a bad [review] and where they fire, the lowering of a default above a set max_rounds, and one table labelled 'The defaults' (the only place the values appear in the rules)."
+      - "226-234 section 5, fix-PASS: 'importants: from round 4, or in the last round when max_rounds is below 4' and 'before round 4 the next round; from round 4' -> 'importants: from fix_importants_from' (fix_importants_from never exceeds max_rounds, so the below-4 clause goes) and 'before fix_importants_from the next round; from it on'."
+      - "243-245 section 5, the cap: 'when round N fails with a blocker' -> 'when round max_rounds fails with a blocker'; the waiver text 'review cap: N rounds' -> 'review cap: <max_rounds> rounds'."
+    skills/keel-workflow/SKILL.md (and .claude/skills/ copy):
+      - "135 cr/v1 row: 'from round 3 a round reviews only the last fix' -> 'a round past [review] whole_range_rounds reviews only the last fix'."
+      - "174 0·review-cap row: '(the target's committed config, default 5; ...) no round 5 or later after a round with no blocker' -> names max_rounds and fix_importants_from, 'a [review] schedule the tool refuses is red too', points to keel-code-review section 5; no number."
+    skills/keel-router/SKILL.md (and .claude/skills/ copy):
+      - "414-426 independent review: 'These rounds follow the 5-round schedule in the table below' and the 5-row table -> these rounds follow the code-review schedule (keel-code-review section 5) on the project's [review] settings; the router-specific rules kept as sentences, no round numbers: a later round past whole_range_rounds reports only on changes since the last reviewed tip and may read any file; lows are fixed or recorded; a fix round is a fresh worker, a new tip and a re-gate; where a medium would earn the next round the owner may pick 'sign and record'; a blocker/high in round max_rounds holds the sign-off and goes to the owner. The severity mapping (lines 417-420) stays."
+    skills/keel-router/references/messages.md (and .claude/skills/ copy):
+      - "40 'Round <n> of at most 5.' -> 'Round <n> of at most <max_rounds>.'"
+      - "41 'rounds 1-2: ... | rounds 3-5: ...' -> 'rounds up to <whole_range_rounds>: ... | later rounds: ...'."
+    skills/keel-router/references/brief-skeleton.md (and .claude/skills/ copy):
+      - "72 review worker row: '(the 5-round schedule, keel-code-review §5)' -> '(the target's [review] schedule, keel-code-review §5)'."
+      - "75 review fix round row: 'for a second fix from round 4' -> 'for a second fix from fix_importants_from on'."
+    templates/config.toml:
+      - "50 [review] comment: 'max_rounds is read by the CLI ...; the rest by the keel-code-review skill' -> 'max_rounds, whole_range_rounds and fix_importants_from are read by the CLI from the target branch's committed copy; modules and rubric by the keel-code-review skill'."
+      - "51 '# max_rounds = 5  # the review cap: rounds 1-2 review the whole range, ...' -> three commented lines, one per key, each saying what it decides; a key left out takes its default (keel-code-review section 5); no value."
+    docs/architecture.html:
+      - "117 config-keys row '[review] max_rounds | 5 | ... The review round cap' -> one row '[review] max_rounds, whole_range_rounds, fix_importants_from | unset | preflight, notes write cr, the pre-commit hook, mr commit | The review schedule, read from the target; see templates/config.toml'. No number. Line 62 ('the round cap') and line 101 stay: they carry no number."
+    .keel/config.toml:
+      - "49 '[review]   # read by the keel-code-review skill, not by the CLI' -> '[review]   # modules and rubric: the keel-code-review skill; the schedule keys, unset here (the defaults): the CLI, from the target's committed copy'. No key set."
+  allowed-hits:
+    - "skills/keel-code-review/SKILL.md section 5, the defaults table (both copies): the one place."
+    - "skills/keel-code-review/SKILL.md:149 '(round 1)': no earlier notes means round 1 under any settings."
+    - "skills/keel-code-review/rubric.md:25 '1 in 198 rounds': corpus lineage, not the schedule."
+    - "skills/keel-router/references/lessons.md:43 'E-PKG2.W5 round 1': history."
+    - "skills/keel-write/SKILL.md:51-74,99 and references/example.html:19,34-35, example.yaml:8,22,45,47: a writing example about a made-up review limit, not a rule; untouched (an open point)."
+  not-touched:
+    - "src/, tests/, app/: no code path (W1 holds the code)."
+    - "docs/decisions/review-docs.html DEC-50 (it records the decision, defaults included), docs/use-cases/: W1's T2 distillation; DEC-51 line 42 names no round."
+    - "skills/keel-write/ examples (above); docs/backlog/ rows naming E-CRCAP's 5 rounds (history); other skills (keel-plan, keel-distill) and project-router (no schedule text)."
+    - "Keel's own .keel/config.toml sets no schedule key."
+  staging:
+    - "1. The worker edits the 13 rule-bearing files and the result pair is not yet written. It stages only those 13 files, checks the greps and diff -r above, and reports the staged diff (git diff --cached --stat and its hash) to the router. It does not commit."
+    - "2. The owner commits them: keel mr commit --as vuluu (one commit)."
+    - "3. A fresh worker re-gates the new tip: keel check, keel notes write test (all levels waived: no code path) and doc, keel preflight (exempt), keel verify-dod."
+    - "4. An independent read-only review (opus, high, fresh per round, keel-router 'Independent review') of the owner's commit against W1's src/review.rs, round by round on the default schedule. A fix goes back to step 1 as a new staged set and a new owner commit, then step 3 again."
+    - "5. The worker writes and commits the WU result pair (docs/work, not rule-bearing), its notes are written, verify-dod green; the owner signs the WU (keel mr confirm wu <tip> --as vuluu --target epic/E-CRLIMIT) and merges."
+  files: [skills/keel-code-review/SKILL.md, skills/keel-workflow/SKILL.md, skills/keel-router/SKILL.md, skills/keel-router/references/messages.md, skills/keel-router/references/brief-skeleton.md, .claude/skills/keel-code-review/SKILL.md, .claude/skills/keel-workflow/SKILL.md, .claude/skills/keel-router/SKILL.md, .claude/skills/keel-router/references/messages.md, .claude/skills/keel-router/references/brief-skeleton.md, templates/config.toml, docs/architecture.html, .keel/config.toml]
+  deviation-from-epic-plan: "The epic plan's W2 summary also showed the defaults as the template's commented values. The owner's ruling of 2026-11-24 (defaults in one place only) moves them out of the template; the template points to keel-code-review section 5. An open point on the page."
