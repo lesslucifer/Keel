@@ -1,0 +1,59 @@
+artifact: wu-result
+status: ready
+id: E-CRLIMIT.W1
+epic: E-CRLIMIT
+title: "E-CRLIMIT.W1 result · The review schedule as three settings"
+date: "2026-11-24"
+page: 2026-11-24-e-crlimit-w1-result.html
+outcome: >-
+  Delivered. keel preflight, keel notes write cr and the sign-off's review history read review::Policy
+  {max_rounds, whole_range_rounds, fix_importants_from} from the target's committed .keel/config.toml [review],
+  defaults 3, 1, 2 (5, 2, 4 restore E-CRCAP's schedule); round_follows = round < max_rounds && (round <
+  fix_importants_from || blockers > 0); rounds past whole_range_rounds review the last fix. One rule
+  (review::policy_in) refuses a key that is no integer >= 1 fitting u32, an explicit whole_range_rounds or
+  fix_importants_from above max_rounds, a non-table [review] and an unknown key, and lowers a default above a lowered
+  cap: red 0·review-cap at preflight naming the key, refused by the cr writer, refused staged by the pre-commit hook
+  and keel mr commit (main::staged_config_refusal). Old notes still pass checks 3-5 and are counted on the new
+  settings. Every expected line of the plan is met by a test.
+deviations:
+  - "The sign-off's history (src/mr.rs review_history) does not refuse when the target's schedule is refused: it tags rounds by the defaults and prints one line naming the refusal. A bad schedule blocks the review (preflight, writer), never the owner's sign-off or waiver; the plan named only 'history tags read the target's Policy'. main::validate, which mr::roster also runs, is not widened for the same reason."
+  - "review::Schedule::read and review::policy return (what, fix) pairs, so a refused schedule carries its own fix line (correct [review] on the target) instead of preflight's generic 'fix the repo state'; src/notes.rs maps it through its refuse()."
+  - "DEC-26's sentence on what the CLI reads from [review] was amended too (it named max_rounds only), and the use-case index's UC-REV-3 title follows the new title ('the review follows the target's schedule'). Not in the distillation plan; the code wins."
+  - "A history tag for a round recorded under the old schedule reads '[round 2, since <c>; the note records round 2, full]' (both recorded fields, as tags already printed), not '...records full'."
+  - "The plan's real-run example was to be run in a scratch repo; that command was denied by the sandbox's permission check and not retried. The page's example is the same flow as the integration and e2e tests run it through the real binary and hooks."
+evidence:
+  commits:
+    - "f25b05cc docs(E-CRLIMIT.W1): WU plan"
+    - "5fc20d91 feat(E-CRLIMIT.W1): the review schedule as the target's [review] settings"
+    - "d72cff17 docs(E-CRLIMIT.W1): distil - UC-REV-3, UC-GATE-1 and DEC-50"
+  unit: >-
+    src/review.rs tests: the_schedule_comes_from_review_and_each_key_defaults_or_is_refused_by_name,
+    the_policy_of_a_target_naming_no_commit_is_an_error,
+    every_schedule_is_accepted_exactly_when_its_rounds_fit_the_cap_and_no_round_breaks_it (exhaustive over 1..6 x 1..7
+    x 1..7), round_3_follows_only_a_round_2_blocker_and_nothing_follows_the_cap,
+    a_configured_schedule_and_the_old_one_follow_their_own_settings, what_follows_a_round_is_decided_in_one_place
+    (defaults, 4/2/3, 5/2/4), fixable/fix_pass/cap/next_step/tags tests moved to the Policy. src/main.rs
+    a_staged_rules_file_is_refused_only_when_it_does_not_parse (schedule cases added).
+  integration: >-
+    tests/suite/verify_dod.rs, red first on the old code (8 of 9 failed; the 5/2/4 one passed, as it pins the old
+    schedule): the_default_schedule_reviews_the_whole_range_in_round_1_and_the_last_fix_from_round_2,
+    round_2_importants_earn_no_round_3_and_are_fixed_under_a_fix_pass,
+    a_round_2_blocker_earns_round_3_round_4_never_runs_and_a_round_3_blocker_ends_in_the_cap_waiver,
+    a_schedule_the_target_commits_sets_the_cap_the_whole_range_rounds_and_when_only_a_blocker_earns_a_round,
+    the_old_five_round_schedule_returns_with_its_three_settings,
+    a_cap_of_1_or_2_alone_is_accepted_and_a_bad_schedule_on_the_target_is_red_naming_its_key,
+    a_bad_schedule_staged_is_refused_by_the_pre_commit_hook_and_keel_mr_commit,
+    rounds_recorded_under_the_old_schedule_count_on_the_new_one_and_still_pass_the_gate; the older schedule tests moved
+    to the defaults.
+  e2e: >-
+    tests/suite/review.rs epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver: WUs A-C on the
+    defaults, a bad staged [review] refused by the real pre-commit hook, WU D on a committed 4/2/3 schedule, the epic
+    merged into main.
+  checks: "cargo fmt --check, cargo clippy --all-targets -D warnings, cargo test (158 unit, 455 integration, 14 ignored as before), keel check, keel verify-doc: green."
+distillation:
+  - "docs/use-cases/workflow.yaml: UC-REV-3 (the three settings, defaults, refusals, clamp, old notes, the history) and UC-GATE-1 (the staged schedule check)."
+  - "docs/decisions/review-docs.html: DEC-50 amended in place (title, choice, why with both rulings, rejected); DEC-26's CLI sentence; the page's scope line."
+  - "docs/decisions/decisions-index.yaml and docs/use-cases/use-cases-index.yaml: scope lines, DEC-50's title, UC-REV-3's title."
+follow-ups:
+  - "E-CRLIMIT.W2: the rule-bearing text - the skills, their .claude copies, templates/config.toml (its uncommented [review] header and stale 'rounds 1-2' comment), docs/architecture.html, .keel/config.toml's comment."
+  - "E-CRLIMIT close: the owner reinstalls keel from main so later reviews count on the new schedule; until then this epic's reviews count by hand."
