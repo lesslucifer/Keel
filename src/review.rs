@@ -329,9 +329,10 @@ impl<'a> Schedule<'a> {
 }
 
 /// Whether a round's findings may be fixed with no new round: only nits (a PASS), in any round;
-/// importants and no blocker from `fix_importants_from` (never later than the cap's round).
+/// importants and no blocker from `fix_importants_from` (never above the cap: `policy_in` refuses it).
 pub(crate) fn fixable(note: &CrNote, round: u32, p: &Policy) -> Result<(), String> {
-    let from = p.fix_importants_from.min(p.max_rounds);
+    let from = p.fix_importants_from;
+    debug_assert!(from <= p.max_rounds, "policy_in keeps fix_importants_from within max_rounds: {p:?}");
     match (note.verdict.as_str(), note.blockers, note.importants) {
         ("PASS", ..) => Ok(()),
         ("FAIL", 0, i) if i > 0 && round >= from => Ok(()),
