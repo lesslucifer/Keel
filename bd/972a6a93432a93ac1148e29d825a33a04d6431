@@ -1,0 +1,1 @@
+{"schema":"test/v1","tip":"bd972a6a93432a93ac1148e29d825a33a04d6431","base":"b1555648696a91ef6ace003eb630a04cdf827b7b","branch":null,"committer":"vuluu <quangvu.luu92@gmail.com>","timestamp":1795519010,"unit":{"waived":"wording only: the cr writer refusal prefix; no unit test pins this path; covered by cargo test at the tip"},"integration":null,"e2e":null}
