@@ -6,7 +6,7 @@ use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;
 
-use crate::common::{self, last_fix, whole, Sched, DEFAULTS};
+use crate::common::{self, last_fix, round_pair, whole, Sched, DEFAULTS};
 
 fn path_with_keel() -> String {
     let bin = Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().to_owned();
@@ -1323,12 +1323,6 @@ fn on_target(p: &Path, set: Option<Sched>) -> Sched {
         }
         None => DEFAULTS,
     }
-}
-
-/// The commit of round `n` (1-based) and of the round before it ("" for round 1).
-fn round_pair(tips: &[String], n: u32) -> (String, String) {
-    let prev = if n > 1 { tips[n as usize - 2].clone() } else { String::new() };
-    (prev, tips[n as usize - 1].clone())
 }
 
 #[test]

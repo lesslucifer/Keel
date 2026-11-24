@@ -416,6 +416,13 @@ pub fn last_fix(n: u32, of: u32, since: &str, tip: &str) -> String {
     format!("review round {n} of {of} - scope: the last fix, {since}..{tip}")
 }
 
+/// The commit of round `n` (1-based) of `tips`, the rounds' commits in order, and of the round
+/// before it ("" for round 1).
+pub fn round_pair(tips: &[String], n: u32) -> (String, String) {
+    let prev = if n > 1 { tips[n as usize - 2].clone() } else { String::new() };
+    (prev, tips[n as usize - 1].clone())
+}
+
 /// A review schedule as the tests drive it: the target's three `[review]` settings.
 #[derive(Clone, Copy, Debug)]
 pub struct Sched {

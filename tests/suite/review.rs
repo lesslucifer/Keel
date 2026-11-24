@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;
 
-use crate::common::{self, Sched, DEFAULTS};
+use crate::common::{self, round_pair, Sched, DEFAULTS};
 
 fn run(prog: &str, d: &Path, a: &[&str], input: &str) -> Output {
     use std::io::Write;
@@ -125,12 +125,6 @@ fn preflight(p: &Path, name: &str) -> Output {
 fn merge(p: &Path, name: &str) {
     git(p, &["switch", "-q", "epic/e"]);
     ok(run("git", p, &["merge", "--no-ff", "-m", &format!("merge wu {name}"), &format!("wu/e/{name}")], ""));
-}
-
-/// The commit of round `n` and of the round before it ("" for round 1).
-fn round_pair(tips: &[String], n: u32) -> (String, String) {
-    let prev = if n > 1 { tips[n as usize - 2].clone() } else { String::new() };
-    (prev, tips[n as usize - 1].clone())
 }
 
 /// WU `name` under schedule `s`, every round finding importants and no blocker: rounds run up to
