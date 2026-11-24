@@ -1046,6 +1046,10 @@ mod tests {
             let e = super::staged_config_refusal(Some(&format!("{good}{bad}"))).unwrap_or_else(|| panic!("{bad:?} passed"));
             assert!(e.contains("the staged .keel/config.toml is refused") && e.contains(says) && e.contains("fix -> "), "{e}");
         }
+        // A key above an unset max_rounds names the cap it is judged by as the default one.
+        let cap = crate::review::Policy::DEFAULT.max_rounds;
+        let e = super::staged_config_refusal(Some(&format!("{good}[review]\nwhole_range_rounds = {}\n", cap + 1))).expect("above the default cap");
+        assert!(e.contains(&format!("whole_range_rounds = {} is above max_rounds = {cap}, the default cap (max_rounds is not set)", cap + 1)), "{e}");
     }
 
     #[test]

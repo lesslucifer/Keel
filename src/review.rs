@@ -139,9 +139,11 @@ pub(crate) fn policy_in(text: &str) -> Result<Policy, String> {
         Some(toml::Value::Integer(n)) if *n >= 1 => u32::try_from(*n).map(Some).map_err(|_| format!("[review] {k} = {n} is too large")),
         Some(other) => Err(format!("[review] {k} = {other} must be a whole number of rounds, 1 or more")),
     };
-    let max = key("max_rounds")?.unwrap_or(Policy::DEFAULT.max_rounds);
+    let set = key("max_rounds")?;
+    let max = set.unwrap_or(Policy::DEFAULT.max_rounds);
+    let which = if set.is_some() { "" } else { ", the default cap (max_rounds is not set)" };
     let under_cap = |k: &str, default: u32| match key(k)? {
-        Some(n) if n > max => Err(format!("[review] {k} = {n} is above max_rounds = {max}: no round runs past the cap")),
+        Some(n) if n > max => Err(format!("[review] {k} = {n} is above max_rounds = {max}{which}: no round runs past the cap")),
         Some(n) => Ok(n),
         None => Ok(default.min(max)),
     };
@@ -1033,7 +1035,8 @@ mod tests {
             }
         }
         let e = policy_in(&format!("[review]\nwhole_range_rounds = {}\n", d.max_rounds + 1)).unwrap_err();
-        assert!(e.contains(&format!("is above max_rounds = {}", d.max_rounds)), "an explicit key is judged against the default cap when none is set: {e}");
+        let says = format!("is above max_rounds = {}, the default cap (max_rounds is not set)", d.max_rounds);
+        assert!(e.contains(&says), "an explicit key is judged against the default cap when none is set, and says so: {e}");
         for (bad, says) in [
             ("[review]\nmax_rounds = 0\n", "[review] max_rounds = 0 must be a whole number of rounds, 1 or more"),
             ("[review]\nmax_rounds = -1\n", "max_rounds = -1 must be"),
