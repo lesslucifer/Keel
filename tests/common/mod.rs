@@ -463,6 +463,12 @@ impl Sched {
         }
     }
 
+    /// Whether a round follows round `n` that found `blockers`: keel's rule, below the cap and before
+    /// fix_importants_from or on a blocker.
+    pub fn follows(&self, n: u32, blockers: u32) -> bool {
+        n < self.max && (n < self.from || blockers > 0)
+    }
+
     /// Why no round follows round `n` when it found no blocker.
     pub fn no_round(&self, n: u32) -> String {
         if n >= self.max {

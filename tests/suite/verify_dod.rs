@@ -1785,7 +1785,8 @@ fn no_fix_line_names_a_round_the_schedule_refuses() {
 
 #[test]
 fn a_fix_pass_answers_a_failed_round_only_with_a_code_fix_and_never_replaces_a_reviewed_note() {
-    for set in SCHEDULES {
+    // And a schedule whose fix_importants_from is 1, where no round follows a round 1 without a blocker.
+    for set in SCHEDULES.into_iter().chain([Some(Sched { max: 3, whole: 1, from: 1 })]) {
         // Code review round 2, B1: a docs-only commit after a FAIL with importants in round
         // fix_importants_from fixed nothing.
         let d = fixture();
@@ -1806,8 +1807,9 @@ fn a_fix_pass_answers_a_failed_round_only_with_a_code_fix_and_never_replaces_a_r
         step(p, s.from + 1);
         ok(write_cr(p, &["--verdict", "PASS", "--fixes", &rf]));
 
-        // B2: the tip's own reviewed note is the latest round; a fix-PASS never overwrites it.
-        if s.max < 2 {
+        // B2: the tip's own reviewed note is the latest round; a fix-PASS never overwrites it. It
+        // needs a round 2 after a round 1 that found no blocker.
+        if !s.follows(1, 0) {
             continue;
         }
         let d = fixture();
