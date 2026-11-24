@@ -6,7 +6,7 @@ use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;
 
-use crate::common;
+use crate::common::{self, last_fix, whole, Sched, DEFAULTS};
 
 fn path_with_keel() -> String {
     let bin = Path::new(env!("CARGO_BIN_EXE_keel")).parent().unwrap().to_owned();
@@ -1292,82 +1292,15 @@ fn base(p: &Path) -> String {
     git(p, &["merge-base", "epic/e", "HEAD"])
 }
 
-fn whole(n: u32, of: u32, base: &str, tip: &str) -> String {
-    format!("review round {n} of {of} - scope: the whole range, {base}..{tip}")
-}
-
-fn last_fix(n: u32, of: u32, since: &str, tip: &str) -> String {
-    format!("review round {n} of {of} - scope: the last fix, {since}..{tip}")
-}
-
 /// The history row of `sha` in a sign-off's output.
 fn row(t: &str, sha: &str) -> String {
     t.lines().find(|l| l.trim_start().starts_with(&sha[..10])).map(String::from).unwrap_or_else(|| panic!("no history row for {}: {t}", &sha[..10]))
 }
 
-/// A review schedule as the tests drive it: the target's three `[review]` settings.
-#[derive(Clone, Copy, Debug)]
-struct Sched {
-    max: u32,
-    whole: u32,
-    from: u32,
-}
-
-/// The default values: the schedule of a target that sets no key. The only place the tests write them.
-const DEFAULTS: Sched = Sched { max: 3, whole: 1, from: 2 };
-
 /// The schedules each behaviour test runs: the default values (the target sets nothing) and three a
 /// target sets. Every expectation is computed from the schedule, never typed for one of them.
 const SCHEDULES: [Option<Sched>; 4] =
     [None, Some(Sched { max: 5, whole: 2, from: 4 }), Some(Sched { max: 2, whole: 1, from: 2 }), Some(Sched { max: 4, whole: 3, from: 3 })];
-
-impl Sched {
-    fn lines(&self) -> String {
-        format!("max_rounds = {}\nwhole_range_rounds = {}\nfix_importants_from = {}\n", self.max, self.whole, self.from)
-    }
-
-    /// Preflight's line for round `n` on `tip`: the whole range up to `whole`, else the change since
-    /// `prev`, the round before.
-    fn announce(&self, n: u32, base: &str, prev: &str, tip: &str) -> String {
-        if n <= self.whole {
-            whole(n, self.max, base, tip)
-        } else {
-            last_fix(n, self.max, prev, tip)
-        }
-    }
-
-    /// The `scope` a round-`n` note records.
-    fn scope(&self, n: u32, prev: &str) -> String {
-        if n <= self.whole {
-            "full".into()
-        } else {
-            format!("since {prev}")
-        }
-    }
-
-    /// The sign-off history's tag of round `n`.
-    fn tag(&self, n: u32, prev: &str) -> String {
-        if n <= self.whole {
-            format!("[round {n}, full]")
-        } else {
-            format!("[round {n}, since {}]", &prev[..10])
-        }
-    }
-
-    /// Why no round follows round `n` when it found no blocker.
-    fn no_round(&self, n: u32) -> String {
-        if n >= self.max {
-            format!("no review round {} runs: the cap is {} rounds", n + 1, self.max)
-        } else {
-            format!("review round {} runs only after round {n} found a blocker", n + 1)
-        }
-    }
-
-    /// The cap's waiver reason.
-    fn cap(&self, blockers: u32) -> String {
-        format!("review cap: {} rounds, {blockers} blockers open", self.max)
-    }
-}
 
 /// The target's committed `[review]` table: `lines` under it, appended to epic/e's rules file. The
 /// commit skips the hooks, so a schedule the pre-commit hook refuses can land on the target as by

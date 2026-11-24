@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process::{Output, Stdio};
 use tempfile::TempDir;
 
-use crate::common;
+use crate::common::{self, Sched, DEFAULTS};
 
 fn run(prog: &str, d: &Path, a: &[&str], input: &str) -> Output {
     use std::io::Write;
@@ -90,67 +90,10 @@ fn code(o: &Output, flag: &str) -> String {
     re.captures(&text(o)).unwrap_or_else(|| panic!("no {flag} code: {}", text(o)))[1].to_string()
 }
 
-fn whole(n: u32, of: u32, base: &str, tip: &str) -> String {
-    format!("review round {n} of {of} - scope: the whole range, {base}..{tip}")
-}
-
-fn last_fix(n: u32, of: u32, since: &str, tip: &str) -> String {
-    format!("review round {n} of {of} - scope: the last fix, {since}..{tip}")
-}
-
 const RESULT: &str = "<html><p>done</p></html>";
-
-/// A review schedule as the test drives it: the target's three `[review]` settings.
-#[derive(Clone, Copy, Debug)]
-struct Sched {
-    max: u32,
-    whole: u32,
-    from: u32,
-}
-
-/// The default values: the schedule of a target that sets no key. The only place the test writes them.
-const DEFAULTS: Sched = Sched { max: 3, whole: 1, from: 2 };
 
 /// The schedule the epic commits for its later WUs: none of its settings is a default value.
 const SET: Sched = Sched { max: 4, whole: 2, from: 3 };
-
-impl Sched {
-    fn keys(&self) -> String {
-        format!("max_rounds = {}\nwhole_range_rounds = {}\nfix_importants_from = {}", self.max, self.whole, self.from)
-    }
-
-    /// Preflight's line for round `n` on `tip`: the whole range up to `whole`, else the change since
-    /// `prev`, the round before.
-    fn announce(&self, n: u32, base: &str, prev: &str, tip: &str) -> String {
-        if n <= self.whole {
-            whole(n, self.max, base, tip)
-        } else {
-            last_fix(n, self.max, prev, tip)
-        }
-    }
-
-    /// The sign-off history's tag of round `n`.
-    fn tag(&self, n: u32, prev: &str) -> String {
-        if n <= self.whole {
-            format!("[round {n}, full]")
-        } else {
-            format!("[round {n}, since {}]", &prev[..10])
-        }
-    }
-
-    /// Why no round follows round `n` when it found no blocker.
-    fn no_round(&self, n: u32) -> String {
-        if n >= self.max {
-            format!("no review round {} runs: the cap is {} rounds", n + 1, self.max)
-        } else {
-            format!("review round {} runs only after round {n} found a blocker", n + 1)
-        }
-    }
-
-    fn cap(&self, blockers: u32) -> String {
-        format!("review cap: {} rounds, {blockers} blockers open", self.max)
-    }
-}
 
 /// WU `name` cut off the epic: its code, its test, its result report, and the test and doc notes on
 /// its first commit. Returns that commit and the WU's test judgment.
@@ -334,7 +277,7 @@ fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver()
     let o = run("git", p, &["commit", "-qm", "a bad schedule"], "");
     assert!(!o.status.success() && text(&o).contains(&format!("whole_range_rounds = {}", SET.max + 1)) && text(&o).contains("fix ->"), "{}", text(&o));
     assert_eq!(git(p, &["rev-parse", "HEAD"]), before, "nothing landed");
-    write(p, ".keel/config.toml", &with(&SET.keys()));
+    write(p, ".keel/config.toml", &with(SET.lines().trim_end()));
     commit(p, "the epic's review schedule");
     // WUs D and E, cut after it, follow it.
     importants_wu(p, "d", SET);
