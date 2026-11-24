@@ -1,17 +1,37 @@
 //! The review schedule (UC-REV-3): rounds counted from the cr notes on a branch's own first-parent
 //! line, the scope each round reviews, which fixes need no new round (a fix-PASS), and the cap.
 //! Derived from the notes every time, never typed: a fresh session counts what the branch recorded.
+//! Its shape is the target's committed `[review]` settings (`Policy`, DEC-50).
 use crate::notes::{self, CrNote, OWNER_WAIVES};
 use crate::{git, short};
 use std::collections::HashMap;
 use std::path::Path;
 
-/// The cap when the target's committed config sets none.
-pub(crate) const DEFAULT_MAX_ROUNDS: u32 = 5;
-/// Rounds up to this one review the whole range; later rounds only the last fix.
-const WHOLE_RANGE_ROUNDS: u32 = 2;
-/// From this round on importants are fixed under a fix-PASS, and only a blocker earns another round.
-const FIX_IMPORTANTS_FROM: u32 = 4;
+/// The schedule's shape: the target's committed `[review]` settings, each defaulting to `DEFAULT`'s.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Policy {
+    /// `max_rounds`, the cap: no round runs past it, and a blocker open in its last round ends in the
+    /// cap's waiver.
+    pub max_rounds: u32,
+    /// `whole_range_rounds`: rounds up to this one review the whole range; later rounds only the
+    /// branch's own changes since the last reviewed commit.
+    pub whole_range_rounds: u32,
+    /// `fix_importants_from`: from this round on importants with no blocker are fixed under a fix-PASS,
+    /// and only a blocker earns another round; before it, importants earn the next round.
+    pub fix_importants_from: u32,
+}
+
+impl Policy {
+    /// The owner's schedule (ruling 2026-11-24): round 1 the whole range, round 2 the last fix, round
+    /// 3 only after a round-2 blocker, cap 3. E-CRCAP's was 5, 2 and 4.
+    pub(crate) const DEFAULT: Policy = Policy { max_rounds: 3, whole_range_rounds: 1, fix_importants_from: 2 };
+}
+
+/// The `[review]` keys keel knows: the schedule's three, and the two the keel-code-review skill reads.
+const KNOWN_KEYS: [&str; 5] = ["max_rounds", "whole_range_rounds", "fix_importants_from", "modules", "rubric"];
+
+/// How to get past a schedule `policy_in` refuses.
+const POLICY_FIX: &str = "correct [review] in .keel/config.toml on the target branch (each key a whole number of rounds, 1 or more, none above max_rounds; a key left out takes its default), then run again";
 
 /// One cr note on the line: its commit, and the note, or why it cannot be read.
 pub(crate) struct Entry {
@@ -70,15 +90,16 @@ pub(crate) fn parse_note(body: &str) -> Result<CrNote, String> {
     serde_json::from_str(body).map_err(|e| format!("it does not parse as cr/v1 ({e})"))
 }
 
-/// `[review] max_rounds` in the target's committed `.keel/config.toml`: the policy a branch is
-/// judged by, never one it or the working tree carries. Unset, or a target that holds no config: the
-/// default. A target that names no commit, or a config git cannot read, is an error, never the default.
-pub(crate) fn max_rounds(repo: &Path, target: &str) -> Result<u32, String> {
+/// The schedule in the target's committed `.keel/config.toml` `[review]`: the policy a branch is
+/// judged by, never one it or the working tree carries. A target that holds no config, or a key left
+/// out: the default. A target that names no commit, a config git cannot read, or a schedule
+/// `policy_in` refuses is an error with its fix line, never the default.
+pub(crate) fn policy(repo: &Path, target: &str) -> Result<Policy, (String, String)> {
     // Resolved first, then peeled: a suffix on `:/<text>` would join the text it searches for.
     let commit = git(repo, &["rev-parse", "--verify", "-q", "--end-of-options", target], &[])
         .and_then(|obj| git(repo, &["rev-parse", "--verify", "-q", &format!("{obj}^{{commit}}")], &[]))
         .ok();
-    max_rounds_at(target, commit.as_deref(), |commit| {
+    policy_at(target, commit.as_deref(), |commit| {
         if git(repo, &["ls-tree", "--name-only", commit, "--", ".keel/config.toml"], &[])?.is_empty() {
             return Ok(None);
         }
@@ -86,23 +107,49 @@ pub(crate) fn max_rounds(repo: &Path, target: &str) -> Result<u32, String> {
     })
 }
 
-/// `max_rounds`' rule on what git resolved: `commit`, the target's commit (`None`: it names none, an
+/// `policy`'s rule on what git resolved: `commit`, the target's commit (`None`: it names none, an
 /// error), and `config`, the `.keel/config.toml` that commit holds (`None`: none, the default).
-fn max_rounds_at(target: &str, commit: Option<&str>, config: impl FnOnce(&str) -> Result<Option<String>, String>) -> Result<u32, String> {
-    let commit = commit.ok_or_else(|| format!("keel: the target {target} names no commit, so its [review] max_rounds cannot be read"))?;
-    match config(commit)? {
-        None => Ok(DEFAULT_MAX_ROUNDS),
-        Some(text) => max_rounds_in(&text),
+fn policy_at(target: &str, commit: Option<&str>, config: impl FnOnce(&str) -> Result<Option<String>, String>) -> Result<Policy, (String, String)> {
+    let commit = commit.ok_or_else(|| {
+        (
+            format!("keel: the target {target} names no commit, so its [review] settings cannot be read"),
+            "give --target a branch or commit that exists".to_string(),
+        )
+    })?;
+    match config(commit).map_err(|e| (e, "fix the repo state (git fsck names what is broken), then run again".to_string()))? {
+        None => Ok(Policy::DEFAULT),
+        Some(text) => policy_in(&text).map_err(|why| (format!("the review schedule on the target {target} is refused: {why}"), POLICY_FIX.to_string())),
     }
 }
 
-fn max_rounds_in(text: &str) -> Result<u32, String> {
-    let v: toml::Value = text.parse().map_err(|e| format!("keel: bad .keel/config.toml on the target: {e}"))?;
-    match v.get("review").and_then(|r| r.get("max_rounds")) {
-        None => Ok(DEFAULT_MAX_ROUNDS),
-        Some(toml::Value::Integer(n)) if *n >= 1 => u32::try_from(*n).map_err(|_| format!("keel: [review] max_rounds = {n} is too large")),
-        Some(other) => Err(format!("keel: [review] max_rounds on the target must be a whole number of rounds, 1 or more (it is {other})")),
+/// The schedule a `.keel/config.toml` sets, or why it is refused (the reason only). One rule for the
+/// target's committed file and a staged one (`main::staged_config_refusal`): each schedule key, when
+/// set, a whole number of rounds, 1 or more, that fits u32; an explicit `whole_range_rounds` or
+/// `fix_importants_from` not above `max_rounds`; no `[review]` key keel does not know. A default above
+/// a lowered `max_rounds` is lowered to it, so a cap set alone below a default still works.
+pub(crate) fn policy_in(text: &str) -> Result<Policy, String> {
+    let v: toml::Value = text.parse().map_err(|e| format!(".keel/config.toml does not parse: {e}"))?;
+    let Some(review) = v.get("review") else { return Ok(Policy::DEFAULT) };
+    let t = review.as_table().ok_or_else(|| format!("review = {review} must be a table, [review]"))?;
+    if let Some(k) = t.keys().find(|k| !KNOWN_KEYS.contains(&k.as_str())) {
+        return Err(format!("[review] {k} is not a key keel knows (known: {})", KNOWN_KEYS.join(", ")));
     }
+    let key = |k: &str| match t.get(k) {
+        None => Ok(None),
+        Some(toml::Value::Integer(n)) if *n >= 1 => u32::try_from(*n).map(Some).map_err(|_| format!("[review] {k} = {n} is too large")),
+        Some(other) => Err(format!("[review] {k} = {other} must be a whole number of rounds, 1 or more")),
+    };
+    let max = key("max_rounds")?.unwrap_or(Policy::DEFAULT.max_rounds);
+    let under_cap = |k: &str, default: u32| match key(k)? {
+        Some(n) if n > max => Err(format!("[review] {k} = {n} is above max_rounds = {max}: no round runs past the cap")),
+        Some(n) => Ok(n),
+        None => Ok(default.min(max)),
+    };
+    Ok(Policy {
+        max_rounds: max,
+        whole_range_rounds: under_cap("whole_range_rounds", Policy::DEFAULT.whole_range_rounds)?,
+        fix_importants_from: under_cap("fix_importants_from", Policy::DEFAULT.fix_importants_from)?,
+    })
 }
 
 /// The rounds among `earlier` (the line below the tip, newest first), each with its commit. An
@@ -132,11 +179,11 @@ fn rounds(earlier: &[Entry]) -> Result<Vec<(&str, &CrNote)>, (String, String)> {
 pub(crate) struct Next {
     pub round: u32,
     pub max: u32,
-    /// From round 3: the last reviewed commit; the round reviews only the code changed since.
+    /// Past `whole_range_rounds`: the last reviewed commit; the round reviews only the code changed since.
     pub since: Option<String>,
 }
 
-/// A note's `scope` field: `full`, or `since <commit>` from round 3.
+/// A note's `scope` field: `full`, or `since <commit>` past `whole_range_rounds`.
 fn scope_of(since: Option<&str>) -> String {
     since.map_or("full".to_string(), |s| format!("since {s}"))
 }
@@ -147,8 +194,8 @@ impl Next {
         scope_of(self.since.as_deref())
     }
 
-    /// Preflight's line: the round and the exact range the reviewers read (full SHAs). From round 3
-    /// that is the branch's own changes since the last reviewed commit: `commands` prints them
+    /// Preflight's line: the round and the exact range the reviewers read (full SHAs). Past
+    /// `whole_range_rounds` that is the branch's own changes since the last reviewed commit: `commands` prints them
     /// (`notes::own_diff_commands`), and `changed` is the ready text of their files
     /// (`notes::changed_text` over `notes::diff_names`, one argv for both).
     pub(crate) fn announce(&self, base: &str, tip: &str, commands: &str, changed: &str) -> String {
@@ -177,20 +224,20 @@ pub(crate) enum Then {
     Owner,
 }
 
-/// Whether another review round runs after round `round`: within the cap, and from round 5 only after
-/// a blocker.
-fn round_follows(note: &CrNote, round: u32, max: u32) -> bool {
-    round < max && (round < FIX_IMPORTANTS_FROM || note.blockers > 0)
+/// Whether another review round runs after round `round`: within the cap, and after a round from
+/// `fix_importants_from` on only when it found a blocker.
+fn round_follows(note: &CrNote, round: u32, p: &Policy) -> bool {
+    round < p.max_rounds && (round < p.fix_importants_from || note.blockers > 0)
 }
 
 /// What follows round `round` (see `Then`). A FAIL with nothing counted (plan open point 4) needs a
 /// round like any other failed round, and where none follows, the owner decides.
-pub(crate) fn then(note: &CrNote, round: u32, max: u32) -> Then {
-    if fixable(note, round, max).is_ok() {
+pub(crate) fn then(note: &CrNote, round: u32, p: &Policy) -> Then {
+    if fixable(note, round, p).is_ok() {
         Then::FixPass
-    } else if round_follows(note, round, max) {
+    } else if round_follows(note, round, p) {
         Then::Round(round + 1)
-    } else if note.verdict == "FAIL" && note.blockers > 0 && round == max {
+    } else if note.verdict == "FAIL" && note.blockers > 0 && round == p.max_rounds {
         Then::Cap
     } else {
         Then::Owner
@@ -199,8 +246,8 @@ pub(crate) fn then(note: &CrNote, round: u32, max: u32) -> Then {
 
 /// The fix line for a tip past round `round` on `c` when no round follows it: the cap's waiver belongs
 /// on that round's own commit, so a later tip has only the owner's.
-fn no_round_after(note: &CrNote, round: u32, max: u32, c: &str) -> String {
-    match then(note, round, max) {
+fn no_round_after(note: &CrNote, round: u32, p: &Policy, c: &str) -> String {
+    match then(note, round, p) {
         Then::Cap => format!(
             "round {round} on {} is the last and found {} blockers: the review stopped. The cap's waiver goes on that commit itself (keel notes write cr --verdict WAIVED, before any later commit); for this tip, {OWNER_WAIVES}",
             short(c),
@@ -212,23 +259,25 @@ fn no_round_after(note: &CrNote, round: u32, max: u32, c: &str) -> String {
 
 /// The round the tip's review would be, from `earlier` (the line below the tip, newest first: the
 /// tip's own note never counts, so a re-run on the same commit is the same round). Refused past the
-/// cap, and from round 5 unless the round before found a blocker; the fix line is `then`'s.
+/// cap, and after a round from `fix_importants_from` on unless it found a blocker; the fix line is
+/// `then`'s.
 /// `unchanged(c)`: no code path changed between commit `c` and the tip (fix_pass's carry-over rule,
 /// so the two name one way out).
-pub(crate) fn next_round(earlier: &[Entry], max: u32, unchanged: &dyn Fn(&str) -> Result<bool, String>) -> Result<Next, (String, String)> {
+pub(crate) fn next_round(earlier: &[Entry], p: &Policy, unchanged: &dyn Fn(&str) -> Result<bool, String>) -> Result<Next, (String, String)> {
     let rounds = rounds(earlier)?;
+    let max = p.max_rounds;
     let Some(&(c, note)) = rounds.first() else { return Ok(Next { round: 1, max, since: None }) };
     let (last, n) = (rounds.len() as u32, rounds.len() as u32 + 1);
-    if round_follows(note, last, max) {
-        return Ok(Next { round: n, max, since: (n > WHOLE_RANGE_ROUNDS).then(|| c.to_string()) });
+    if round_follows(note, last, p) {
+        return Ok(Next { round: n, max, since: (n > p.whole_range_rounds).then(|| c.to_string()) });
     }
     let what = if n > max {
         format!("no review round {n} runs: the cap is {max} rounds, and round {last} ran on {}", short(c))
     } else {
         format!("review round {n} runs only after round {last} found a blocker, and round {last} on {} found none", short(c))
     };
-    if then(note, last, max) != Then::FixPass {
-        return Err((what, no_round_after(note, last, max, c)));
+    if then(note, last, p) != Then::FixPass {
+        return Err((what, no_round_after(note, last, p, c)));
     }
     let newest_fix = earlier.iter().take_while(|e| e.commit != c).find(|e| e.note.as_ref().is_ok_and(|n| kind(n) == Kind::FixPass));
     let fixed_and_changed = match newest_fix {
@@ -251,17 +300,19 @@ pub(crate) struct Schedule<'a> {
     /// The cr notes below the tip, newest first (the tip's own note never counts: a re-run on the same
     /// commit is the same round).
     pub earlier: Vec<Entry>,
-    /// The target's cap.
-    pub max: u32,
+    /// The target's schedule.
+    pub policy: Policy,
     repo: &'a Path,
     tip: &'a str,
     code_paths: &'a [String],
 }
 
 impl<'a> Schedule<'a> {
-    pub(crate) fn read(repo: &'a Path, base: &str, tip: &'a str, target: &str, code_paths: &'a [String]) -> Result<Self, String> {
-        let (own, earlier) = split_own(line(repo, base, tip, None)?, tip);
-        Ok(Schedule { own, earlier, max: max_rounds(repo, target)?, repo, tip, code_paths })
+    /// Refused, with its fix line, when the line cannot be read or the target's schedule is refused.
+    pub(crate) fn read(repo: &'a Path, base: &str, tip: &'a str, target: &str, code_paths: &'a [String]) -> Result<Self, (String, String)> {
+        let line = line(repo, base, tip, None).map_err(|e| (e, "fix the repo state, then run again".to_string()))?;
+        let (own, earlier) = split_own(line, tip);
+        Ok(Schedule { own, earlier, policy: policy(repo, target)?, repo, tip, code_paths })
     }
 
     /// The branch itself changed no code path between commit `c` and the tip (`notes::own_names`: a
@@ -273,14 +324,14 @@ impl<'a> Schedule<'a> {
 
     /// The round about to run on the tip.
     pub(crate) fn next(&self) -> Result<Next, (String, String)> {
-        next_round(&self.earlier, self.max, &|c: &str| self.unchanged(c))
+        next_round(&self.earlier, &self.policy, &|c: &str| self.unchanged(c))
     }
 }
 
 /// Whether a round's findings may be fixed with no new round: only nits (a PASS), in any round;
-/// importants and no blocker from round 4, or in the last round when the cap comes before round 4.
-pub(crate) fn fixable(note: &CrNote, round: u32, max: u32) -> Result<(), String> {
-    let from = FIX_IMPORTANTS_FROM.min(max);
+/// importants and no blocker from `fix_importants_from` (never later than the cap's round).
+pub(crate) fn fixable(note: &CrNote, round: u32, p: &Policy) -> Result<(), String> {
+    let from = p.fix_importants_from.min(p.max_rounds);
     match (note.verdict.as_str(), note.blockers, note.importants) {
         ("PASS", ..) => Ok(()),
         ("FAIL", 0, i) if i > 0 && round >= from => Ok(()),
@@ -317,7 +368,7 @@ pub(crate) fn fix_pass(
     own: Option<&CrNote>,
     earlier: &[Entry],
     fixes: &str,
-    max: u32,
+    p: &Policy,
     unchanged: impl Fn(&str) -> Result<bool, String>,
 ) -> Result<Fix, (String, String)> {
     let rounds = rounds(earlier)?;
@@ -359,19 +410,19 @@ pub(crate) fn fix_pass(
     };
     if let Some(e) = newest_fix {
         let what = format!("the fix-PASS on {} already answers round {round}, and code changed since; a second fix needs a new round", short(&e.commit));
-        return Err(match then(note, round, max) {
-            _ if round_follows(note, round, max) => (what, format!("run review round {} on the tip", round + 1)),
-            // From round 4 (or at the cap) no round follows a round without a blocker: nothing is left but the owner.
+        return Err(match then(note, round, p) {
+            _ if round_follows(note, round, p) => (what, format!("run review round {} on the tip", round + 1)),
+            // From fix_importants_from (or at the cap) no round follows a round without a blocker: nothing is left but the owner.
             Then::FixPass => (
                 format!("{what}, and no round {} follows round {round}", round + 1),
                 format!("write a fix-PASS only on the final fix; for this tip, {OWNER_WAIVES}"),
             ),
-            _ => (format!("{what}, and no round {} follows round {round}", round + 1), no_round_after(note, round, max, latest)),
+            _ => (format!("{what}, and no round {} follows round {round}", round + 1), no_round_after(note, round, p, latest)),
         });
     }
-    fixable(note, round, max).map_err(|why| match then(note, round, max) {
+    fixable(note, round, p).map_err(|why| match then(note, round, p) {
         Then::Round(n) => (why, format!("fix the findings, then run review round {n} on the fix")),
-        _ => (why, no_round_after(note, round, max, latest)),
+        _ => (why, no_round_after(note, round, p, latest)),
     })?;
     if note.verdict != "PASS" && unchanged(latest).map_err(unknown)? {
         return Err((
@@ -391,10 +442,11 @@ pub(crate) fn cap_reason(max: u32, blockers: u32) -> String {
 
 /// The cap's waiver on the tip, with the reason the tool fixes: only over the last round's FAIL with
 /// a blocker. `own`: the tip's own note.
-pub(crate) fn cap(own: Option<&CrNote>, earlier: &[Entry], max: u32, tip: &str) -> Result<String, (String, String)> {
+pub(crate) fn cap(own: Option<&CrNote>, earlier: &[Entry], p: &Policy, tip: &str) -> Result<String, (String, String)> {
     let round = rounds(earlier)?.len() as u32 + 1;
+    let max = p.max_rounds;
     match own {
-        Some(n) if kind(n) == Kind::Round && then(n, round, max) == Then::Cap => Ok(cap_reason(max, n.blockers)),
+        Some(n) if kind(n) == Kind::Round && then(n, round, p) == Then::Cap => Ok(cap_reason(max, n.blockers)),
         _ => {
             let on_tip = match own {
                 Some(n) if kind(n) == Kind::Round => format!("its review, round {round} of {max}, is {} with {} blockers", n.verdict, n.blockers),
@@ -409,9 +461,10 @@ pub(crate) fn cap(own: Option<&CrNote>, earlier: &[Entry], max: u32, tip: &str) 
 }
 
 /// What the schedule says after a reviewed round is recorded on `tip`: `then`'s step, in words.
-pub(crate) fn next_step(note: &CrNote, round: u32, max: u32, tip: &str) -> String {
+pub(crate) fn next_step(note: &CrNote, round: u32, p: &Policy, tip: &str) -> String {
     let t = short(tip);
-    match then(note, round, max) {
+    let max = p.max_rounds;
+    match then(note, round, p) {
         Then::FixPass if note.verdict == "PASS" => format!("done. A later commit that only fixes this round's nits: keel notes write cr --verdict PASS --fixes {t}   (no new round)"),
         Then::FixPass => format!("fix the importants, then on the fix commit: keel notes write cr --verdict PASS --fixes {t}   (no new round)"),
         Then::Round(n) => format!("fix the findings (a correctness bug gets its failing test first), then review round {n} on the fix commit"),
@@ -427,10 +480,10 @@ pub(crate) fn next_step(note: &CrNote, round: u32, max: u32, tip: &str) -> Strin
 /// The history's tag per entry (newest first, as `line` gives them): `[round n, full]`,
 /// `[round n, since <commit>]`, `[fix-PASS of round n on <commit>; no reviewers ran; changed: ...]`,
 /// or nothing. Rounds are numbered from the oldest under `rounds`' rule: an unreadable note stops the
-/// count, so a round above it shows as not counted. A note that records another round or scope than
-/// the line gives it says so. `files` lists what a fix-PASS commit changed, as `notes::diff_names` does;
+/// count, so a round above it shows as not counted; a round's scope is `p`'s (the target's
+/// `whole_range_rounds`). A note that records another round or scope than the line gives it says so. `files` lists what a fix-PASS commit changed, as `notes::diff_names` does;
 /// `notes::changed_text` renders it, as for preflight.
-pub(crate) fn tags(entries: &[Entry], files: impl Fn(&str, &str) -> Result<Vec<Vec<u8>>, String>) -> Vec<String> {
+pub(crate) fn tags(entries: &[Entry], p: &Policy, files: impl Fn(&str, &str) -> Result<Vec<Vec<u8>>, String>) -> Vec<String> {
     let mut numbered: HashMap<&str, u32> = HashMap::new();
     let mut previous: Option<&str> = None;
     let mut stopped = false;
@@ -445,7 +498,7 @@ pub(crate) fn tags(entries: &[Entry], files: impl Fn(&str, &str) -> Result<Vec<V
             Ok(n) if kind(n) == Kind::Round => {
                 let round = numbered.len() as u32 + 1;
                 numbered.insert(&e.commit, round);
-                let since = previous.filter(|_| round > WHOLE_RANGE_ROUNDS);
+                let since = previous.filter(|_| round > p.whole_range_rounds);
                 let (scope, recorded_scope) = (scope_of(since.map(short)), scope_of(since));
                 previous = Some(&e.commit);
                 let (r, s) = (n.schedule.round, n.schedule.scope.as_deref());
@@ -484,10 +537,21 @@ pub(crate) fn tags(entries: &[Entry], files: impl Fn(&str, &str) -> Result<Vec<V
 #[cfg(test)]
 mod tests {
     use super::{
-        cap, fix_pass, fixable, max_rounds_at, max_rounds_in, next_round, next_step, parse_note, split_own, tags, then, with_own, Entry, Fix, Kind, Next, Then,
+        cap, fix_pass, fixable, next_round, next_step, parse_note, policy_at, policy_in, split_own, tags, then, with_own, Entry, Fix, Kind, Next, Policy, Then,
     };
     use crate::notes::{full_sha, CrNote};
     use serde_json::json;
+
+    /// The defaults: cap 3, round 1 the whole range, importants fixed under a fix-PASS from round 2.
+    const D: Policy = Policy::DEFAULT;
+    /// E-CRCAP's schedule, as the three settings restore it.
+    const OLD: Policy = Policy { max_rounds: 5, whole_range_rounds: 2, fix_importants_from: 4 };
+    /// A configured schedule: cap 4, two whole-range rounds, importants earn a round up to round 3.
+    const SET: Policy = Policy { max_rounds: 4, whole_range_rounds: 2, fix_importants_from: 3 };
+
+    fn cap_of(max_rounds: u32, p: Policy) -> Policy {
+        Policy { max_rounds, ..p }
+    }
 
     fn note(verdict: &str, blockers: u32, importants: u32, extra: serde_json::Value) -> CrNote {
         let mut j = json!({"schema": "cr/v1", "tip": "t", "base": "b", "branch": null, "committer": "c", "timestamp": 0,
@@ -517,6 +581,10 @@ mod tests {
         (1..=n).rev().map(|i| fail(&format!("r{i}"), 1, 0)).collect()
     }
 
+    fn never(_: &str) -> Result<bool, String> {
+        Ok(false)
+    }
+
     #[test]
     fn a_round_is_a_review_that_ran_and_nothing_else() {
         assert_eq!(super::kind(&note("PASS", 0, 0, json!({}))), Kind::Round);
@@ -527,96 +595,165 @@ mod tests {
     }
 
     #[test]
-    fn the_round_counts_the_reviews_below_the_tip_and_rounds_3_on_review_the_last_fix() {
-        assert_eq!(next_round(&[], 5, &|_| Ok(false)), Ok(Next { round: 1, max: 5, since: None }));
-        let two = vec![fail("r2", 1, 0), fix_of("f1", "r1"), at("w", note("WAIVED", 0, 0, json!({"waiver": "x", "unreviewed": true}))), fail("r1", 0, 1)];
+    fn the_round_counts_the_reviews_below_the_tip_and_rounds_past_whole_range_rounds_review_the_last_fix() {
+        assert_eq!(next_round(&[], &D, &never), Ok(Next { round: 1, max: 3, since: None }));
+        let one = vec![fix_of("f1", "r1"), at("w", note("WAIVED", 0, 0, json!({"waiver": "x", "unreviewed": true}))), fail("r1", 0, 1)];
         assert_eq!(
-            next_round(&two, 5, &|_| Ok(false)),
-            Ok(Next { round: 3, max: 5, since: Some("r2".into()) }),
-            "a fix-PASS or an unreviewed waiver is no round"
+            next_round(&one, &D, &never),
+            Ok(Next { round: 2, max: 3, since: Some("r1".into()) }),
+            "a fix-PASS or an unreviewed waiver is no round; round 2 reviews the last fix"
         );
-        assert_eq!(next_round(&two[1..], 5, &|_| Ok(false)).unwrap().since, None, "round 2 reviews the whole range");
-        assert_eq!(next_round(&failed_rounds(4), 5, &|_| Ok(false)), Ok(Next { round: 5, max: 5, since: Some("r4".into()) }));
-        let n = Next { round: 3, max: 5, since: Some("s".into()) };
-        assert_eq!((n.scope(), Next { round: 1, max: 5, since: None }.scope()), ("since s".to_string(), "full".to_string()));
+        assert_eq!(next_round(&one, &SET, &never).unwrap().since, None, "under whole_range_rounds = 2, round 2 reviews the whole range");
+        let two = vec![fail("r2", 1, 0), fix_of("f1", "r1"), fail("r1", 0, 1)];
+        assert_eq!(next_round(&two, &D, &never), Ok(Next { round: 3, max: 3, since: Some("r2".into()) }), "a round-2 blocker earns round 3");
+        assert_eq!(next_round(&two, &OLD, &never), Ok(Next { round: 3, max: 5, since: Some("r2".into()) }));
+        assert_eq!(next_round(&failed_rounds(4), &OLD, &never), Ok(Next { round: 5, max: 5, since: Some("r4".into()) }));
+        let n = Next { round: 2, max: 3, since: Some("s".into()) };
+        assert_eq!((n.scope(), Next { round: 1, max: 3, since: None }.scope()), ("since s".to_string(), "full".to_string()));
         let a = n.announce("b", "t", "git diff-tree X", "src/a.rs");
-        assert!(a.starts_with("review round 3 of 5 - scope: the last fix, s..t: this branch's own changes"), "{a}");
+        assert!(a.starts_with("review round 2 of 3 - scope: the last fix, s..t: this branch's own changes"), "{a}");
         assert!(a.contains("its parents: git diff-tree X; changed: src/a.rs ("), "{a}");
-        assert_eq!(Next { round: 2, max: 5, since: None }.announce("b", "t", "", ""), "review round 2 of 5 - scope: the whole range, b..t");
+        assert_eq!(Next { round: 1, max: 3, since: None }.announce("b", "t", "", ""), "review round 1 of 3 - scope: the whole range, b..t");
     }
 
     #[test]
-    fn round_5_follows_only_a_blocker_and_nothing_follows_the_cap() {
-        let mut no_blocker = failed_rounds(4);
-        no_blocker[0] = fail("r4", 0, 2);
-        let (what, fix) = next_round(&no_blocker, 5, &|_| Ok(false)).unwrap_err();
-        assert!(what.contains("round 5 runs only after round 4 found a blocker") && fix.contains("--fixes r4"), "{what} / {fix}");
-        let mut fixed = vec![fix_of("f4", "r4")];
-        fixed.extend(no_blocker);
-        let (what, fix) = next_round(&fixed, 5, &|_| Ok(false)).unwrap_err();
+    fn round_3_follows_only_a_round_2_blocker_and_nothing_follows_the_cap() {
+        let no_blocker = vec![fail("r2", 0, 2), fail("r1", 1, 0)];
+        let (what, fix) = next_round(&no_blocker, &D, &never).unwrap_err();
         assert!(
-            what.contains("fix-PASS on f4 already answers it") && fix.contains("--waive-review") && !fix.contains("--fixes"),
+            what.contains("review round 3 runs only after round 2 found a blocker, and round 2 on r2 found none") && fix.contains("--fixes r2"),
+            "{what} / {fix}"
+        );
+        let mut fixed = vec![fix_of("f2", "r2")];
+        fixed.extend(no_blocker);
+        let (what, fix) = next_round(&fixed, &D, &never).unwrap_err();
+        assert!(
+            what.contains("fix-PASS on f2 already answers it") && fix.contains("--waive-review") && !fix.contains("--fixes"),
             "a second fix: {what} / {fix}"
         );
-        let (_, fix) = next_round(&fixed, 5, &|c| Ok(c == "f4")).unwrap_err();
-        assert!(fix.contains("--fixes r4"), "no code since the fix-PASS: it carries over: {fix}");
-        let (what, fix) = next_round(&failed_rounds(5), 5, &|_| Ok(false)).unwrap_err();
-        assert!(what.contains("no review round 6") && fix.contains("--verdict WAIVED") && fix.contains("--waive-review"), "{what} / {fix}");
-        assert_eq!(next_round(&failed_rounds(5), 6, &|_| Ok(false)).unwrap().round, 6, "max_rounds moves the cap");
-        let mut six = failed_rounds(5);
-        six[0] = fail("r5", 0, 1);
-        assert!(next_round(&six, 6, &|_| Ok(false)).is_err(), "from round 4 on, only a blocker earns another round, whatever the cap");
-        assert!(next_round(&failed_rounds(2), 2, &|_| Ok(false)).is_err() && next_round(&failed_rounds(1), 2, &|_| Ok(false)).is_ok());
+        let (_, fix) = next_round(&fixed, &D, &|c| Ok(c == "f2")).unwrap_err();
+        assert!(fix.contains("--fixes r2"), "no code since the fix-PASS: it carries over: {fix}");
+        let (what, fix) = next_round(&failed_rounds(3), &D, &never).unwrap_err();
+        assert!(
+            what.contains("no review round 4 runs: the cap is 3 rounds") && fix.contains("--verdict WAIVED") && fix.contains("--waive-review"),
+            "{what} / {fix}"
+        );
+        assert_eq!(next_round(&failed_rounds(3), &cap_of(4, D), &never).unwrap().round, 4, "max_rounds moves the cap");
+        let mut four = failed_rounds(3);
+        four[0] = fail("r3", 0, 1);
+        assert!(next_round(&four, &cap_of(4, D), &never).is_err(), "from fix_importants_from on, only a blocker earns another round, whatever the cap");
+        assert!(next_round(&failed_rounds(2), &cap_of(2, D), &never).is_err() && next_round(&failed_rounds(1), &cap_of(2, D), &never).is_ok());
         let unreadable = vec![fail("r2", 1, 0), Entry { commit: "0123456789ab".into(), note: Err("it does not parse".into()) }];
-        let (what, fix) = next_round(&unreadable, 5, &|_| Ok(false)).unwrap_err();
+        let (what, fix) = next_round(&unreadable, &D, &never).unwrap_err();
         assert!(what.contains("0123456789 is unreadable") && fix.contains("repairs"), "{what}");
     }
 
     #[test]
-    fn a_fix_pass_answers_nits_in_any_round_and_importants_from_round_4() {
+    fn a_configured_schedule_and_the_old_one_follow_their_own_settings() {
+        // SET: round-2 importants earn round 3; round-3 importants earn no round 4, a blocker does.
+        let r2 = vec![fail("r2", 0, 1), fail("r1", 0, 1)];
+        assert_eq!(next_round(&r2, &SET, &never), Ok(Next { round: 3, max: 4, since: Some("r2".into()) }));
+        assert!(next_round(&r2, &D, &never).is_err(), "on the defaults the same round 2 earns no round 3");
+        let (what, fix) = next_round(&[fail("r3", 0, 1), fail("r2", 0, 1), fail("r1", 0, 1)], &SET, &never).unwrap_err();
+        assert!(what.contains("review round 4 runs only after round 3 found a blocker") && fix.contains("--fixes r3"), "{what} / {fix}");
+        assert_eq!(next_round(&[fail("r3", 1, 0), fail("r2", 0, 1), fail("r1", 0, 1)], &SET, &never).unwrap().round, 4);
+        // OLD: rounds 1-2 the whole range, importants earn rounds up to round 4, round 5 only after a blocker.
+        assert_eq!(next_round(&[fail("r1", 0, 1)], &OLD, &never).unwrap().since, None);
+        let mut four = failed_rounds(4);
+        four[0] = fail("r4", 0, 2);
+        let (what, fix) = next_round(&four, &OLD, &never).unwrap_err();
+        assert!(what.contains("round 5 runs only after round 4 found a blocker") && fix.contains("--fixes r4"), "{what} / {fix}");
+        assert_eq!(next_round(&failed_rounds(5), &cap_of(6, OLD), &never).unwrap().round, 6);
+        let mut six = failed_rounds(5);
+        six[0] = fail("r5", 0, 1);
+        assert!(next_round(&six, &cap_of(6, OLD), &never).is_err());
+    }
+
+    /// Invariant: every schedule whose rounds fit its cap is accepted as written, every other one is
+    /// refused, and none lets a round run past its cap, read the whole range past whole_range_rounds,
+    /// or follow a round from fix_importants_from on that found no blocker.
+    #[test]
+    fn every_schedule_is_accepted_exactly_when_its_rounds_fit_the_cap_and_no_round_breaks_it() {
+        for m in 1..=6u32 {
+            for w in 1..=7u32 {
+                for f in 1..=7u32 {
+                    let text = format!("[review]\nmax_rounds = {m}\nwhole_range_rounds = {w}\nfix_importants_from = {f}\n");
+                    let Ok(p) = policy_in(&text) else {
+                        assert!(w > m || f > m, "{text}");
+                        continue;
+                    };
+                    assert!(w <= m && f <= m, "{text}");
+                    assert_eq!(p, Policy { max_rounds: m, whole_range_rounds: w, fix_importants_from: f });
+                    for done in 0..=m + 1 {
+                        for (blockers, importants) in [(0, 0), (0, 1), (1, 0)] {
+                            let mut line = failed_rounds(done);
+                            if let Some(top) = line.first_mut() {
+                                *top = fail(&format!("r{done}"), blockers, importants);
+                            }
+                            if let Ok(n) = next_round(&line, &p, &never) {
+                                assert!(n.round == done + 1 && n.round <= m, "{text} after {done}");
+                                assert_eq!(n.since.is_some(), n.round > w, "{text} round {}", n.round);
+                                assert!(done == 0 || done < f || blockers > 0, "{text} after {done}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_fix_pass_answers_nits_in_any_round_and_importants_from_fix_importants_from() {
         let pass_nits = note("PASS", 0, 0, json!({"nits": [{"finding": "n"}, {"finding": "m"}]}));
-        assert_eq!(fixable(&pass_nits, 1, 5), Ok(()));
+        assert_eq!(fixable(&pass_nits, 1, &D), Ok(()));
+        let imp = note("FAIL", 0, 2, json!({}));
+        assert!(fixable(&imp, 1, &D).unwrap_err().contains("before round 2 importants need a new round"));
+        for round in 2..=3 {
+            assert_eq!(fixable(&imp, round, &D), Ok(()), "{round}");
+        }
         for round in 1..=3 {
-            assert!(fixable(&note("FAIL", 0, 2, json!({})), round, 5).unwrap_err().contains("importants"), "{round}");
+            assert!(fixable(&imp, round, &OLD).unwrap_err().contains("importants"), "{round}");
         }
         for round in 4..=5 {
-            assert_eq!(fixable(&note("FAIL", 0, 2, json!({})), round, 5), Ok(()), "{round}");
+            assert_eq!(fixable(&imp, round, &OLD), Ok(()), "{round}");
         }
-        assert_eq!(fixable(&note("FAIL", 0, 2, json!({})), 3, 3), Ok(()), "the last round when the cap comes before round 4");
-        for round in 1..=5 {
-            assert!(fixable(&note("FAIL", 1, 0, json!({})), round, 5).unwrap_err().contains("blocker"), "{round}");
+        assert_eq!(fixable(&imp, 3, &cap_of(3, OLD)), Ok(()), "the last round when the cap comes before fix_importants_from");
+        for round in 1..=3 {
+            assert!(fixable(&note("FAIL", 1, 0, json!({})), round, &D).unwrap_err().contains("blocker"), "{round}");
         }
-        assert!(fixable(&note("FAIL", 0, 0, json!({})), 4, 5).is_err(), "a FAIL with nothing counted needs a round");
-        assert!(fixable(&note("WAIVED", 0, 1, json!({"waiver": "w"})), 4, 5).is_err());
+        assert!(fixable(&note("FAIL", 0, 0, json!({})), 2, &D).is_err(), "a FAIL with nothing counted needs a round");
+        assert!(fixable(&note("WAIVED", 0, 1, json!({"waiver": "w"})), 2, &D).is_err());
 
         let line = vec![at("r1", pass_nits)];
-        let changed = |_: &str| Ok(false);
-        assert_eq!(fix_pass(None, &line, "r1", 5, changed), Ok(Fix { round: 1, importants: 0, nits: 2 }));
-        let mut four = failed_rounds(4);
-        four[0] = fail("r4", 0, 3);
-        assert_eq!(fix_pass(None, &four, "r4", 5, changed), Ok(Fix { round: 4, importants: 3, nits: 0 }));
-        assert!(fix_pass(None, &four, "r3", 5, changed).unwrap_err().0.contains("latest review round on this branch is round 4 on r4"));
-        assert!(fix_pass(None, &[], "r1", 5, changed).is_err(), "nothing to answer");
-        let mut stacked = vec![fix_of("f5", "r4"), fix_of("f4", "r4")];
-        stacked.extend(four);
-        let (what, fix) = fix_pass(None, &stacked, "r4", 5, changed).unwrap_err();
-        assert!(what.contains("fix-PASS on f5 already answers round 4, and code changed since") && what.contains("no round 5 follows"), "{what}");
-        assert!(fix.contains("--waive-review") && !fix.contains("run review round"), "no round 5 after a round 4 without a blocker: {fix}");
-        let two = vec![fix_of("f2", "r2"), fix_of("f1", "r2"), at("r2", note("PASS", 0, 0, json!({}))), fail("r1", 1, 0)];
-        let (_, fix) = fix_pass(None, &two, "r2", 5, changed).unwrap_err();
-        assert_eq!(fix, "run review round 3 on the tip", "before round 4 a second fix gets its round");
+        assert_eq!(fix_pass(None, &line, "r1", &D, never), Ok(Fix { round: 1, importants: 0, nits: 2 }));
+        let two = || vec![fail("r2", 0, 3), fail("r1", 1, 0)];
+        assert_eq!(fix_pass(None, &two(), "r2", &D, never), Ok(Fix { round: 2, importants: 3, nits: 0 }));
+        assert!(fix_pass(None, &two(), "r1", &D, never).unwrap_err().0.contains("latest review round on this branch is round 2 on r2"));
+        assert!(fix_pass(None, &[], "r1", &D, never).is_err(), "nothing to answer");
+        let mut stacked = vec![fix_of("f3", "r2"), fix_of("f2", "r2")];
+        stacked.extend(two());
+        let (what, fix) = fix_pass(None, &stacked, "r2", &D, never).unwrap_err();
+        assert!(what.contains("fix-PASS on f3 already answers round 2, and code changed since") && what.contains("no round 3 follows"), "{what}");
+        assert!(fix.contains("--waive-review") && !fix.contains("run review round"), "no round 3 after a round 2 without a blocker: {fix}");
+        let early = vec![fix_of("f2", "r1"), fix_of("f1", "r1"), at("r1", note("PASS", 0, 0, json!({})))];
+        let (_, fix) = fix_pass(None, &early, "r1", &D, never).unwrap_err();
+        assert_eq!(fix, "run review round 2 on the tip", "before fix_importants_from a second fix gets its round");
         assert_eq!(
-            fix_pass(None, &stacked, "r4", 5, |c| Ok(c == "f5")),
-            Ok(Fix { round: 4, importants: 3, nits: 0 }),
+            fix_pass(None, &stacked, "r2", &D, |c| Ok(c == "f3")),
+            Ok(Fix { round: 2, importants: 3, nits: 0 }),
             "no code since the newest fix-PASS: it carries over"
         );
-        assert!(fix_pass(None, &stacked, "r4", 5, |c| Ok(c == "f4")).is_err(), "only the newest fix-PASS counts: code changed since it");
+        assert!(fix_pass(None, &stacked, "r2", &D, |c| Ok(c == "f2")).is_err(), "only the newest fix-PASS counts: code changed since it");
         // Epic code review round 2, I2: when keel cannot tell what changed, it refuses, never guessing.
         let broken = |_: &str| -> Result<bool, String> { Err("git failed".into()) };
-        let (what, _) = fix_pass(None, &stacked, "r4", 5, broken).unwrap_err();
+        let (what, _) = fix_pass(None, &stacked, "r2", &D, broken).unwrap_err();
         assert!(what.contains("cannot tell what this branch changed") && what.contains("git failed"), "{what}");
-        let one_failed = vec![fail("r4", 0, 2), fail("r3", 1, 0), fail("r2", 1, 0), fail("r1", 1, 0)];
-        assert!(fix_pass(None, &one_failed, "r4", 5, broken).unwrap_err().0.contains("cannot tell"), "a failed round is never answered unproven");
+        assert!(fix_pass(None, &two(), "r2", &D, broken).unwrap_err().0.contains("cannot tell"), "a failed round is never answered unproven");
+        // OLD: importants are fixed under a fix-PASS only from round 4.
+        let mut four = failed_rounds(4);
+        four[0] = fail("r4", 0, 3);
+        assert_eq!(fix_pass(None, &four, "r4", &OLD, never), Ok(Fix { round: 4, importants: 3, nits: 0 }));
+        assert!(fix_pass(None, &[fail("r3", 0, 1), fail("r2", 1, 0), fail("r1", 1, 0)], "r3", &OLD, never).unwrap_err().0.contains("importants"));
     }
 
     #[test]
@@ -624,23 +761,33 @@ mod tests {
         let (pass, imp, blk, none) =
             (note("PASS", 0, 0, json!({})), note("FAIL", 0, 2, json!({})), note("FAIL", 1, 0, json!({})), note("FAIL", 0, 0, json!({})));
         let waived = note("WAIVED", 1, 0, json!({"waiver": "owner"}));
-        for (n, round, max, want) in [
-            (&pass, 1, 5, Then::FixPass),
-            (&pass, 5, 5, Then::FixPass),
-            (&imp, 3, 5, Then::Round(4)),
-            (&imp, 4, 5, Then::FixPass),
-            (&imp, 2, 2, Then::FixPass),
-            (&blk, 1, 5, Then::Round(2)),
-            (&blk, 4, 5, Then::Round(5)),
-            (&blk, 5, 5, Then::Cap),
-            (&blk, 5, 6, Then::Round(6)),
-            (&none, 2, 5, Then::Round(3)),
-            (&none, 4, 5, Then::Owner),
-            (&none, 5, 5, Then::Owner),
-            (&waived, 2, 5, Then::Round(3)),
-            (&waived, 5, 5, Then::Owner),
+        for (n, round, p, want) in [
+            (&pass, 1, D, Then::FixPass),
+            (&pass, 3, D, Then::FixPass),
+            (&imp, 1, D, Then::Round(2)),
+            (&imp, 2, D, Then::FixPass),
+            (&imp, 3, D, Then::FixPass),
+            (&blk, 1, D, Then::Round(2)),
+            (&blk, 2, D, Then::Round(3)),
+            (&blk, 3, D, Then::Cap),
+            (&blk, 3, cap_of(4, D), Then::Round(4)),
+            (&none, 1, D, Then::Round(2)),
+            (&none, 2, D, Then::Owner),
+            (&none, 3, D, Then::Owner),
+            (&waived, 1, D, Then::Round(2)),
+            (&waived, 3, D, Then::Owner),
+            (&imp, 2, SET, Then::Round(3)),
+            (&imp, 3, SET, Then::FixPass),
+            (&blk, 3, SET, Then::Round(4)),
+            (&blk, 4, SET, Then::Cap),
+            (&imp, 3, OLD, Then::Round(4)),
+            (&imp, 4, OLD, Then::FixPass),
+            (&imp, 2, cap_of(2, OLD), Then::FixPass),
+            (&blk, 4, OLD, Then::Round(5)),
+            (&blk, 5, OLD, Then::Cap),
+            (&none, 4, OLD, Then::Owner),
         ] {
-            assert_eq!(then(n, round, max), want, "{} {}/{} round {round} of {max}", n.verdict, n.blockers, n.importants);
+            assert_eq!(then(n, round, &p), want, "{} {}/{} round {round} on {p:?}", n.verdict, n.blockers, n.importants);
         }
     }
 
@@ -675,44 +822,43 @@ mod tests {
 
     #[test]
     fn no_fix_line_names_a_round_that_cannot_run() {
-        // Code review round 1, B2: a round-5 blocker at the cap ends in the cap's waiver, never a round 6.
-        let (what, fix) = fix_pass(None, &failed_rounds(5), "r5", 5, |_| Ok(false)).unwrap_err();
-        assert!(fix.contains("--verdict WAIVED") && fix.contains("--waive-review") && !fix.contains("round 6"), "{what} / {fix}");
-        // B3: a round-4 FAIL with nothing counted: no round 5, no fix-PASS; only the owner.
-        let mut nothing = failed_rounds(4);
-        nothing[0] = fail("r4", 0, 0);
-        let (what, fix) = next_round(&nothing, 5, &|_| Ok(false)).unwrap_err();
+        // Code review round 1, B2: a blocker in the last round ends in the cap's waiver, never a round past the cap.
+        let (what, fix) = fix_pass(None, &failed_rounds(3), "r3", &D, never).unwrap_err();
+        assert!(fix.contains("--verdict WAIVED") && fix.contains("--waive-review") && !fix.contains("round 4"), "{what} / {fix}");
+        // B3: a round-2 FAIL with nothing counted: no round 3, no fix-PASS; only the owner.
+        let nothing = vec![fail("r2", 0, 0), fail("r1", 1, 0)];
+        let (what, fix) = next_round(&nothing, &D, &never).unwrap_err();
         assert!(fix.contains("--waive-review") && !fix.contains("--fixes"), "{what} / {fix}");
-        let (what, fix) = fix_pass(None, &nothing, "r4", 5, |_| Ok(false)).unwrap_err();
-        assert!(fix.contains("--waive-review") && !fix.contains("review round 5"), "{what} / {fix}");
-        assert!(next_step(&note("FAIL", 0, 0, json!({})), 4, 5, "t").contains("--waive-review"));
+        let (what, fix) = fix_pass(None, &nothing, "r2", &D, never).unwrap_err();
+        assert!(fix.contains("--waive-review") && !fix.contains("review round 3"), "{what} / {fix}");
+        assert!(next_step(&note("FAIL", 0, 0, json!({})), 2, &D, "t").contains("--waive-review"));
     }
 
     #[test]
     fn a_second_fix_and_a_lowered_cap_name_the_step_and_round_that_hold() {
-        // Code review round 2, I2: a second fix above a round-5 blocker names the cap's way out, never
-        // a fix-PASS that fixable refuses.
-        let mut stacked = vec![fix_of("f5", "r5")];
-        stacked.extend(failed_rounds(5));
-        let (what, fix) = fix_pass(None, &stacked, "r5", 5, |_| Ok(false)).unwrap_err();
+        // Code review round 2, I2: a second fix above a blocker at the cap names the cap's way out,
+        // never a fix-PASS that fixable refuses.
+        let mut stacked = vec![fix_of("f3", "r3")];
+        stacked.extend(failed_rounds(3));
+        let (what, fix) = fix_pass(None, &stacked, "r3", &D, never).unwrap_err();
         assert!(!fix.contains("write a fix-PASS") && fix.contains("--verdict WAIVED") && fix.contains("--waive-review"), "{what} / {fix}");
         // I3: a target that lowers the cap below the rounds recorded names the last round as it is.
-        let (what, _) = next_round(&failed_rounds(5), 3, &|_| Ok(false)).unwrap_err();
+        let (what, _) = next_round(&failed_rounds(5), &D, &never).unwrap_err();
         assert!(what.contains("round 5 ran on r5") && !what.contains("round 3 ran on r5"), "{what}");
     }
 
     #[test]
     fn the_cap_waiver_stops_only_the_last_rounds_blocker_and_names_the_reason() {
-        let four = failed_rounds(4);
-        assert_eq!(cap(Some(&note("FAIL", 2, 1, json!({}))), &four, 5, "tip"), Ok("review cap: 5 rounds, 2 blockers open".into()));
-        assert_eq!(cap(Some(&note("FAIL", 1, 0, json!({}))), &failed_rounds(5), 6, "tip"), Ok("review cap: 6 rounds, 1 blockers open".into()));
+        assert_eq!(cap(Some(&note("FAIL", 2, 1, json!({}))), &failed_rounds(2), &D, "tip"), Ok("review cap: 3 rounds, 2 blockers open".into()));
+        assert_eq!(cap(Some(&note("FAIL", 1, 0, json!({}))), &failed_rounds(4), &OLD, "tip"), Ok("review cap: 5 rounds, 1 blockers open".into()));
+        assert_eq!(cap(Some(&note("FAIL", 1, 0, json!({}))), &failed_rounds(5), &cap_of(6, OLD), "tip"), Ok("review cap: 6 rounds, 1 blockers open".into()));
         for (own, earlier, needle) in [
-            (Some(note("FAIL", 1, 0, json!({}))), failed_rounds(3), "round 4 of 5"),
-            (Some(note("FAIL", 0, 2, json!({}))), failed_rounds(4), "round 5 of 5, is FAIL with 0 blockers"),
-            (Some(note("PASS", 0, 0, json!({}))), failed_rounds(4), "is PASS"),
-            (None, failed_rounds(4), "no review of round 5"),
+            (Some(note("FAIL", 1, 0, json!({}))), failed_rounds(1), "round 2 of 3"),
+            (Some(note("FAIL", 0, 2, json!({}))), failed_rounds(2), "round 3 of 3, is FAIL with 0 blockers"),
+            (Some(note("PASS", 0, 0, json!({}))), failed_rounds(2), "is PASS"),
+            (None, failed_rounds(2), "no review of round 3"),
         ] {
-            let (what, fix) = cap(own.as_ref(), &earlier, 5, "0123456789ab").unwrap_err();
+            let (what, fix) = cap(own.as_ref(), &earlier, &D, "0123456789ab").unwrap_err();
             assert!(what.contains("cap is not reached on 0123456789") && what.contains(needle), "{what}");
             assert!(fix.contains("--waive-review") && !fix.contains("--verdict WAIVED"), "never points an agent at a waiver: {fix}");
         }
@@ -721,16 +867,17 @@ mod tests {
     #[test]
     fn each_recorded_round_names_the_schedules_next_step() {
         let t = "0123456789ab";
-        assert!(next_step(&note("PASS", 0, 0, json!({})), 1, 5, t).contains("--fixes 0123456789"));
-        assert!(next_step(&note("FAIL", 0, 1, json!({})), 2, 5, t).contains("review round 3"));
-        assert!(next_step(&note("FAIL", 0, 1, json!({})), 4, 5, t).contains("--verdict PASS --fixes"));
-        assert!(next_step(&note("FAIL", 1, 0, json!({})), 4, 5, t).contains("review round 5"));
-        let capped = next_step(&note("FAIL", 2, 0, json!({})), 5, 5, t);
+        assert!(next_step(&note("PASS", 0, 0, json!({})), 1, &D, t).contains("--fixes 0123456789"));
+        assert!(next_step(&note("FAIL", 0, 1, json!({})), 1, &D, t).contains("review round 2"));
+        assert!(next_step(&note("FAIL", 0, 1, json!({})), 2, &D, t).contains("--verdict PASS --fixes"));
+        assert!(next_step(&note("FAIL", 0, 1, json!({})), 2, &SET, t).contains("review round 3"));
+        assert!(next_step(&note("FAIL", 1, 0, json!({})), 2, &D, t).contains("review round 3"));
+        let capped = next_step(&note("FAIL", 2, 0, json!({})), 3, &D, t);
         assert!(
-            capped.contains("review cap reached") && capped.contains("--verdict WAIVED") && capped.contains("review cap: 5 rounds, 2 blockers open"),
+            capped.contains("review cap reached") && capped.contains("--verdict WAIVED") && capped.contains("review cap: 3 rounds, 2 blockers open"),
             "{capped}"
         );
-        assert!(next_step(&note("FAIL", 0, 0, json!({})), 5, 5, t).contains("--waive-review"));
+        assert!(next_step(&note("FAIL", 0, 0, json!({})), 3, &D, t).contains("--waive-review"));
     }
 
     #[test]
@@ -743,7 +890,7 @@ mod tests {
             at("w0", note("WAIVED", 0, 0, json!({"waiver": "w", "unreviewed": true}))),
             fail("r1", 1, 0),
         ];
-        let got = tags(&line, |from, to| Ok(vec![format!("{from}->{to}").into_bytes()]));
+        let got = tags(&line, &D, |from, to| Ok(vec![format!("{from}->{to}").into_bytes()]));
         // Code review round 2, I1: an unreadable note stops the count, as it stops preflight and the writer.
         assert_eq!(
             got,
@@ -751,19 +898,25 @@ mod tests {
                 " [fix-PASS of a round past an unreadable note on r3; no reviewers ran; changed: r3->f3]",
                 " [round not counted: an unreadable note below it]",
                 "",
-                " [round 2, full]",
+                " [round 2, since r1]",
                 "",
                 " [round 1, full]"
             ]
         );
+        // The scope follows the target's whole_range_rounds.
+        let three = [fail("r3", 0, 1), fail("r2", 0, 1), fail("r1", 0, 1)];
+        assert_eq!(tags(&three, &SET, |_, _| Ok(vec![])), [" [round 3, since r2]", " [round 2, full]", " [round 1, full]"]);
+        assert_eq!(tags(&three, &D, |_, _| Ok(vec![])), [" [round 3, since r2]", " [round 2, since r1]", " [round 1, full]"]);
         // A note that records another round or scope than the line gives it says so.
         let recorded =
             vec![at("r2", note("FAIL", 1, 0, json!({"round": 3, "scope": "since r0"}))), at("r1", note("FAIL", 1, 0, json!({"round": 1, "scope": "full"})))];
-        assert_eq!(tags(&recorded, |_, _| Ok(vec![])), [" [round 2, full; the note records round 3, since r0]", " [round 1, full]"]);
+        assert_eq!(tags(&recorded, &D, |_, _| Ok(vec![])), [" [round 2, since r1; the note records round 3, since r0]", " [round 1, full]"]);
+        let old = vec![at("r2", note("FAIL", 1, 0, json!({"round": 2, "scope": "full"}))), fail("r1", 1, 0)];
+        assert_eq!(tags(&old, &D, |_, _| Ok(vec![]))[0], " [round 2, since r1; the note records round 2, full]", "a round recorded under the old schedule");
         // Epic code review round 5, I1: a fix-PASS that changed no file says so, as preflight does.
-        let empty = tags(&[fix_of("f1", "r1"), at("r1", note("PASS", 0, 0, json!({})))], |_, _| Ok(vec![]));
+        let empty = tags(&[fix_of("f1", "r1"), at("r1", note("PASS", 0, 0, json!({})))], &D, |_, _| Ok(vec![]));
         assert_eq!(empty[0], " [fix-PASS of round 1 on r1; no reviewers ran; changed: nothing]");
-        let orphan = tags(&[fix_of("f", "elsewhere")], |_, _| Err("gone".into()));
+        let orphan = tags(&[fix_of("f", "elsewhere")], &D, |_, _| Err("gone".into()));
         assert_eq!(orphan, [" [fix-PASS of a round not on this line on elsewhere; no reviewers ran; changed: unknown (gone)]"]);
         // B16: a fix-PASS whose note records another round than the line gives it says so too.
         let mut off = fix_of("f2", "r2");
@@ -771,7 +924,7 @@ mod tests {
         let mut right = fix_of("f1", "r1");
         right.note.as_mut().unwrap().schedule.round = Some(1);
         let line = [off, fail("r2", 0, 1), right, fail("r1", 0, 1)];
-        let got = tags(&line, |_, _| Ok(vec![]));
+        let got = tags(&line, &D, |_, _| Ok(vec![]));
         assert_eq!(got[0], " [fix-PASS of round 2 on r2; the note records round 4; no reviewers ran; changed: nothing]");
         assert_eq!(got[2], " [fix-PASS of round 1 on r1; no reviewers ran; changed: nothing]");
     }
@@ -794,39 +947,57 @@ mod tests {
         assert_eq!(read[0].note.as_ref().unwrap().blockers, 2, "the caller's note, not a second read");
     }
 
-    /// B16: a target that names no commit is an error, never the default cap.
+    /// B16: a target that names no commit is an error, never the default schedule.
     #[test]
-    fn the_cap_of_a_target_naming_no_commit_is_an_error() {
-        let e = max_rounds_at("no-such-ref", None, |_| panic!("no config is read for a target naming no commit")).unwrap_err();
-        assert!(e.contains("no-such-ref") && e.contains("names no commit"), "{e}");
-        assert_eq!(max_rounds_at("t", Some("c"), |_| Ok(None)), Ok(5), "a target holding no config: the default");
-        assert_eq!(max_rounds_at("t", Some("c"), |c| Ok(Some(format!("[review]\nmax_rounds = {}\n", c.len() + 6)))), Ok(7));
-        assert!(max_rounds_at("t", Some("c"), |_| Err("git failed".into())).is_err(), "a config git cannot read is an error");
+    fn the_policy_of_a_target_naming_no_commit_is_an_error() {
+        let (what, fix) = policy_at("no-such-ref", None, |_| panic!("no config is read for a target naming no commit")).unwrap_err();
+        assert!(what.contains("no-such-ref") && what.contains("names no commit") && fix.contains("--target"), "{what} / {fix}");
+        assert_eq!(policy_at("t", Some("c"), |_| Ok(None)), Ok(D), "a target holding no config: the defaults");
+        assert_eq!(policy_at("t", Some("c"), |c| Ok(Some(format!("[review]\nmax_rounds = {}\n", c.len() + 6)))).map(|p| p.max_rounds), Ok(7));
+        assert!(policy_at("t", Some("c"), |_| Err("git failed".into())).is_err(), "a config git cannot read is an error");
+        let (what, fix) = policy_at("epic/e", Some("c"), |_| Ok(Some("[review]\nmax_rounds = 0\n".into()))).unwrap_err();
+        assert!(what.contains("the target epic/e is refused") && what.contains("max_rounds = 0") && fix.contains("[review]"), "{what} / {fix}");
     }
 
     /// B16: a fix-PASS over the owner's waiver says what that note is and where the fix goes.
     #[test]
     fn a_fix_pass_over_the_owners_waiver_names_it_and_the_way_on() {
         let owner = note("WAIVED", 0, 0, json!({"waiver": "owner ruling", "unreviewed": true}));
-        let (what, fix) = fix_pass(Some(&owner), &failed_rounds(1), "r1", 5, |_| Ok(false)).unwrap_err();
+        let (what, fix) = fix_pass(Some(&owner), &failed_rounds(1), "r1", &D, never).unwrap_err();
         assert!(what.contains("owner's waiver") && what.contains("no review under it"), "{what}");
         assert!(fix.contains("later commit") && fix.contains("keel preflight") && fix.contains("--waive-review"), "{fix}");
         assert!(!fix.contains("the step the writer printed"), "the writer printed no step for the owner's waiver: {fix}");
     }
 
     #[test]
-    fn the_cap_comes_from_review_max_rounds_and_defaults_to_5() {
-        assert_eq!(max_rounds_in("[check]\nlint = \"x\"\n"), Ok(5));
-        assert_eq!(max_rounds_in("[review]\nmodules = [\"src/*\"]\n"), Ok(5));
-        assert_eq!(max_rounds_in("[review]\nmax_rounds = 6\n"), Ok(6));
-        for bad in [
-            "[review]\nmax_rounds = 0\n",
-            "[review]\nmax_rounds = -1\n",
-            "[review]\nmax_rounds = \"5\"\n",
-            "[review]\nmax_rounds = 99999999999\n",
-            "not toml [",
+    fn the_schedule_comes_from_review_and_each_key_defaults_or_is_refused_by_name() {
+        assert_eq!(policy_in("[check]\nlint = \"x\"\n"), Ok(D));
+        assert_eq!(policy_in("[review]\nmodules = [\"src/*\"]\nrubric = \"r.md\"\n"), Ok(D), "the skill's keys are known");
+        assert_eq!(policy_in("[review]\nmax_rounds = 5\nwhole_range_rounds = 2\nfix_importants_from = 4\n"), Ok(OLD), "the old schedule returns");
+        assert_eq!(policy_in("[review]\nmax_rounds = 6\n"), Ok(cap_of(6, D)));
+        assert_eq!(policy_in("[review]\nwhole_range_rounds = 3\n"), Ok(Policy { whole_range_rounds: 3, ..D }), "up to the cap");
+        // A default above a lowered cap is lowered to it; only a value the project writes is refused.
+        assert_eq!(policy_in("[review]\nmax_rounds = 1\n"), Ok(Policy { max_rounds: 1, whole_range_rounds: 1, fix_importants_from: 1 }));
+        assert_eq!(policy_in("[review]\nmax_rounds = 2\n"), Ok(Policy { max_rounds: 2, whole_range_rounds: 1, fix_importants_from: 2 }));
+        for (bad, says) in [
+            ("[review]\nmax_rounds = 0\n", "[review] max_rounds = 0 must be a whole number of rounds, 1 or more"),
+            ("[review]\nmax_rounds = -1\n", "max_rounds = -1 must be"),
+            ("[review]\nwhole_range_rounds = \"3\"\n", "whole_range_rounds = \"3\" must be"),
+            ("[review]\nfix_importants_from = 2.5\n", "fix_importants_from = 2.5 must be"),
+            ("[review]\nmax_rounds = true\n", "max_rounds = true must be"),
+            ("[review]\nmax_rounds = 99999999999\n", "max_rounds = 99999999999 is too large"),
+            ("[review]\nwhole_range_rounds = 4\n", "whole_range_rounds = 4 is above max_rounds = 3"),
+            ("[review]\nmax_rounds = 3\nfix_importants_from = 5\n", "fix_importants_from = 5 is above max_rounds = 3"),
+            ("[review]\nmax_rounds = 1\nfix_importants_from = 2\n", "fix_importants_from = 2 is above max_rounds = 1"),
+            (
+                "[review]\nmax_round = 3\n",
+                "[review] max_round is not a key keel knows (known: max_rounds, whole_range_rounds, fix_importants_from, modules, rubric)",
+            ),
+            ("review = 3\n", "review = 3 must be a table"),
+            ("not toml [", "does not parse"),
         ] {
-            assert!(max_rounds_in(bad).is_err(), "{bad}");
+            let e = policy_in(bad).unwrap_err();
+            assert!(e.contains(says), "{bad}: {e}");
         }
     }
 }

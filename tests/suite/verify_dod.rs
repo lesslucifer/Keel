@@ -1249,7 +1249,7 @@ fn the_review_history_lists_every_round_intact_whatever_the_log_encoding_and_sho
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
-// E-CRCAP.W2: the 5-round review schedule (UC-REV-3).
+// E-CRCAP.W2, E-CRLIMIT.W1: the review schedule, the target's [review] settings (UC-REV-3).
 
 fn ok(o: Output) -> Output {
     assert!(o.status.success(), "{}", text(&o));
@@ -1306,27 +1306,28 @@ fn row(t: &str, sha: &str) -> String {
 }
 
 #[test]
-fn preflight_names_the_round_and_its_scope_the_whole_range_then_the_last_fix() {
+fn the_default_schedule_reviews_the_whole_range_in_round_1_and_the_last_fix_from_round_2() {
     let d = fixture();
     let p = d.path();
     test_note(p);
     let (b, c1) = (base(p), head(p));
-    assert!(text(&ok(preflight(p))).contains(&whole(1, 5, &b, &c1)), "round 1");
+    assert!(text(&ok(preflight(p))).contains(&whole(1, 3, &b, &c1)), "round 1");
     ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
     // A re-run on the same commit is the same round.
-    assert!(text(&ok(preflight(p))).contains(&whole(1, 5, &b, &c1)), "a re-run is round 1 again");
+    assert!(text(&ok(preflight(p))).contains(&whole(1, 3, &b, &c1)), "a re-run is round 1 again");
     ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
     let n = note(p, "cr", "HEAD");
     assert_eq!((n["round"].as_u64(), n["scope"].as_str()), (Some(1), Some("full")), "{n}");
 
     let c2 = step(p, 2);
-    assert!(text(&ok(preflight(p))).contains(&whole(2, 5, &b, &c2)), "round 2 still reviews the whole range");
-    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "1"]));
-    assert_eq!((note(p, "cr", "HEAD")["round"].as_u64(), note(p, "cr", "HEAD")["scope"].as_str()), (Some(2), Some("full")));
+    let t = text(&ok(preflight(p)));
+    assert!(t.contains(&last_fix(2, 3, &c1, &c2)) && !t.contains("whole range"), "round 2 reviews only the last fix: {t}");
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    let n = note(p, "cr", "HEAD");
+    assert_eq!((n["round"].as_u64(), n["scope"].as_str()), (Some(2), Some(format!("since {c1}").as_str())), "{n}");
 
     let c3 = step(p, 3);
-    let t = text(&ok(preflight(p)));
-    assert!(t.contains(&last_fix(3, 5, &c2, &c3)) && !t.contains("whole range"), "round 3 reviews only the last fix: {t}");
+    assert!(text(&ok(preflight(p))).contains(&last_fix(3, 3, &c2, &c3)), "a round-2 blocker earns round 3");
     ok(write_cr(p, &["--verdict", "PASS"]));
     let n = note(p, "cr", "HEAD");
     assert_eq!((n["round"].as_u64(), n["scope"].as_str()), (Some(3), Some(format!("since {c2}").as_str())), "{n}");
@@ -1374,7 +1375,7 @@ fn a_fix_pass_after_a_nits_only_round_is_accepted_by_the_merge_check_and_listed_
 }
 
 #[test]
-fn a_fix_pass_answers_only_findings_that_need_no_new_round() {
+fn round_2_importants_earn_no_round_3_and_are_fixed_under_a_fix_pass() {
     let d = fixture();
     let p = d.path();
     test_note(p);
@@ -1383,92 +1384,159 @@ fn a_fix_pass_answers_only_findings_that_need_no_new_round() {
     step(p, 2);
     refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c1]), &["round 1", "importants"]);
     assert!(!has_note(p, "cr", "HEAD"), "a refused fix-PASS writes nothing");
-    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "1"]));
-    let c2 = head(p);
-    step(p, 3);
-    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c2]), &["round 2", "importants"]);
-    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c1]), &["latest"]);
-    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1", "--importants", "1"]));
-    let c3 = head(p);
-    step(p, 4);
-    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c3]), &["blocker"]);
     ok(write_cr(p, &["--verdict", "FAIL", "--importants", "2"]));
-    let c4 = head(p);
-    let c5 = step(p, 5);
+    let c2 = head(p);
+    let c3 = step(p, 3);
 
-    // Round 4 found no blocker: there is no round 5, and its importants are fixed under a fix-PASS.
+    // Round 2 found no blocker: there is no round 3, and its importants are fixed under a fix-PASS.
     let o = preflight(p);
     assert_red(&o, "0·review-cap");
-    assert!(text(&o).contains("round 5") && text(&o).contains("round 4"), "{}", text(&o));
-    refused(&write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]), &["round 5"]);
+    assert!(text(&o).contains("review round 3 runs only after round 2 found a blocker") && text(&o).contains(&format!("--fixes {c2}")), "{}", text(&o));
+    refused(&write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]), &["round 3"]);
     assert!(!has_note(p, "cr", "HEAD"));
-    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c4]));
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c1]), &["latest"]);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c2]));
     let n = note(p, "cr", "HEAD");
-    assert_eq!((n["fixes"].as_str(), n["round"].as_u64(), n["answers"]["importants"].as_u64()), (Some(c4.as_str()), Some(4), Some(2)), "{n}");
+    assert_eq!((n["fixes"].as_str(), n["round"].as_u64(), n["answers"]["importants"].as_u64()), (Some(c2.as_str()), Some(2), Some(2)), "{n}");
+    doc_note(p);
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    assert_red(&o, "8·manual-review");
+    assert!(text(&o).contains("- 1 failed"), "the merge check reads the fix-PASS as a PASS: {}", text(&o));
 
-    // A second fix needs a round.
-    step(p, 6);
-    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c4]), &["fix-PASS", &c5[..10]]);
-    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c5]), &["latest"]);
+    // A second fix has no round to go to.
+    step(p, 4);
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c2]), &["fix-PASS", &c3[..10], "--waive-review"]);
     assert!(!has_note(p, "cr", "HEAD"));
 }
 
 #[test]
-fn round_5_follows_only_a_round_4_blocker_round_6_never_runs_and_a_round_5_blocker_ends_in_the_cap_waiver() {
+fn a_round_2_blocker_earns_round_3_round_4_never_runs_and_a_round_3_blocker_ends_in_the_cap_waiver() {
     let d = fixture();
     let p = d.path();
     test_note(p);
     doc_note(p);
     let mut tips = vec![head(p)];
-    for n in 1..=4 {
-        ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
-        if n == 4 {
-            let o = write_cr(p, &["--verdict", "WAIVED"]);
-            refused(&o, &["review cap", "round 4 of 5"]);
+    for n in 1..=2 {
+        ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1", "--importants", "1"]));
+        if n == 2 {
+            refused(&write_cr(p, &["--verdict", "WAIVED"]), &["review cap", "round 2 of 3"]);
             assert_eq!(note(p, "cr", "HEAD")["verdict"], "FAIL", "below the cap no waiver is written");
         }
         tips.push(step(p, n + 1));
         doc_note(p);
+        if n == 2 {
+            refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &tips[1]]), &["blocker"]);
+        }
     }
-    assert!(text(&ok(preflight(p))).contains(&last_fix(5, 5, &tips[3], &tips[4])));
-    let findings = r#"[{"location": "src/a.py:2", "claim": "a() returns 5", "severity": "blocker", "evidence": "e"},
+    assert!(text(&ok(preflight(p))).contains(&last_fix(3, 3, &tips[1], &tips[2])));
+    let findings = r#"[{"location": "src/a.py:2", "claim": "a() returns 3", "severity": "blocker", "evidence": "e"},
         {"location": "src/a.py:1", "claim": "a() has no contract", "severity": "blocker", "evidence": "e"},
         {"location": "src/a.py:1", "claim": "named badly", "severity": "important", "evidence": "e", "waived": "owner: fine"}]"#;
     let o = ok(write_cr(p, &["--verdict", "FAIL", "--findings", findings]));
     assert!(text(&o).contains("review cap reached") && text(&o).contains("keel notes write cr --verdict WAIVED"), "{}", text(&o));
     let n = note(p, "cr", "HEAD");
-    assert_eq!((n["blockers"].as_u64(), n["importants"].as_u64(), n["round"].as_u64()), (Some(2), Some(0), Some(5)), "counts come from the findings: {n}");
+    assert_eq!((n["blockers"].as_u64(), n["importants"].as_u64(), n["round"].as_u64()), (Some(2), Some(0), Some(3)), "counts come from the findings: {n}");
     ok(write_cr(p, &["--verdict", "WAIVED"]));
     let n = note(p, "cr", "HEAD");
     assert_eq!(
         (n["verdict"].as_str(), n["waiver"].as_str(), n["blockers"].as_u64(), n["round"].as_u64()),
-        (Some("WAIVED"), Some("review cap: 5 rounds, 2 blockers open"), Some(2), Some(5)),
+        (Some("WAIVED"), Some("review cap: 3 rounds, 2 blockers open"), Some(2), Some(3)),
         "{n}"
     );
-    assert_eq!(n["findings"][0]["claim"], "a() returns 5", "the round's findings stay on the waiver: {n}");
+    assert_eq!(n["findings"][0]["claim"], "a() returns 3", "the round's findings stay on the waiver: {n}");
 
     let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
     assert_red(&o, "8·manual-review");
-    assert!(text(&o).contains("WAIVED 3·review: review cap: 5 rounds, 2 blockers open") && text(&o).contains("- 1 failed"), "{}", text(&o));
+    assert!(text(&o).contains("WAIVED 3·review: review cap: 3 rounds, 2 blockers open") && text(&o).contains("- 1 failed"), "{}", text(&o));
     let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"]);
-    refused(&o, &["review cap: 5 rounds, 2 blockers open", "--accept-waiver", "blocker src/a.py:2: a() returns 5"]);
+    refused(&o, &["review cap: 3 rounds, 2 blockers open", "--accept-waiver", "blocker src/a.py:2: a() returns 3"]);
     let t = text(&o);
-    assert!(row(&t, &tips[4]).contains(&format!("[round 5, since {}]", &tips[3][..10])), "{t}");
     assert!(row(&t, &tips[2]).contains(&format!("[round 3, since {}]", &tips[1][..10])), "{t}");
-    assert!(row(&t, &tips[1]).contains("[round 2, full]") && row(&t, &tips[0]).contains("[round 1, full]"), "{t}");
+    assert!(row(&t, &tips[1]).contains(&format!("[round 2, since {}]", &tips[0][..10])), "{t}");
+    assert!(row(&t, &tips[0]).contains("[round 1, full]"), "{t}");
     sign_waived(p, "wu", "docs/a.html");
     ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
 
-    // Round 6 never runs, not even under a higher cap the branch commits for itself.
+    // Round 4 never runs, not even under a higher cap the branch commits for itself.
     let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
-    write(p, ".keel/config.toml", &format!("{cfg}[review]\nmax_rounds = 9\n"));
-    commit(p, "a cap of the branch's own");
-    step(p, 6);
+    write(p, ".keel/config.toml", &format!("{cfg}[review]\nmax_rounds = 9\nfix_importants_from = 9\n"));
+    commit(p, "a schedule of the branch's own");
+    step(p, 4);
     let o = preflight(p);
     assert_red(&o, "0·review-cap");
-    assert!(text(&o).contains("round 6"), "{}", text(&o));
-    refused(&write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]), &["round 6"]);
+    assert!(text(&o).contains("no review round 4 runs: the cap is 3 rounds"), "{}", text(&o));
+    refused(&write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]), &["round 4"]);
     assert!(!has_note(p, "cr", "HEAD"));
+}
+
+/// The target's committed `[review]` table: `lines` under it, appended to epic/e's rules file. The
+/// commit skips the hooks, so a schedule the pre-commit hook refuses can land on the target as by
+/// `--no-verify`. HEAD back on wu/e/a.
+fn target_schedule(p: &Path, lines: &str) {
+    git(p, &["switch", "-q", "epic/e"]);
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    write(p, ".keel/config.toml", &format!("{cfg}[review]\n{lines}"));
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-q", "--no-verify", "-m", "the target's review schedule"]);
+    git(p, &["switch", "-q", "wu/e/a"]);
+}
+
+/// E-CRCAP's schedule, restored by the settings.
+const OLD_SCHEDULE: &str = "max_rounds = 5\nwhole_range_rounds = 2\nfix_importants_from = 4\n";
+
+#[test]
+fn a_schedule_the_target_commits_sets_the_cap_the_whole_range_rounds_and_when_only_a_blocker_earns_a_round() {
+    let d = fixture();
+    let p = d.path();
+    target_schedule(p, "max_rounds = 4\nwhole_range_rounds = 2\nfix_importants_from = 3\n");
+    test_note(p);
+    let (b, c1) = (base(p), head(p));
+    assert!(text(&ok(preflight(p))).contains(&whole(1, 4, &b, &c1)));
+    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "1"]));
+    let c2 = step(p, 2);
+    assert!(text(&ok(preflight(p))).contains(&whole(2, 4, &b, &c2)), "round 2 reads the whole range");
+    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "1"]));
+    assert_eq!(note(p, "cr", "HEAD")["scope"], "full");
+    let c3 = step(p, 3);
+    assert!(text(&ok(preflight(p))).contains(&last_fix(3, 4, &c2, &c3)), "round-2 importants earn round 3");
+    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "1"]));
+    let c4 = step(p, 4);
+    let o = preflight(p);
+    assert_red(&o, "0·review-cap");
+    assert!(text(&o).contains("review round 4 runs only after round 3 found a blocker"), "{}", text(&o));
+    refused(&write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]), &["round 4"]);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c3]));
+    doc_note(p);
+    let t = text(&ok(keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"])));
+    assert!(row(&t, &c2).contains("[round 2, full]") && !row(&t, &c2).contains("the note records"), "the history tags by the target's settings: {t}");
+    assert!(row(&t, &c3).contains(&format!("[round 3, since {}]", &c2[..10])), "{t}");
+    assert!(row(&t, &c4).contains(&format!("[fix-PASS of round 3 on {}", &c3[..10])), "{t}");
+}
+
+#[test]
+fn the_old_five_round_schedule_returns_with_its_three_settings() {
+    let d = fixture();
+    let p = d.path();
+    target_schedule(p, OLD_SCHEDULE);
+    test_note(p);
+    let (b, c1) = (base(p), head(p));
+    assert!(text(&ok(preflight(p))).contains(&whole(1, 5, &b, &c1)));
+    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "1"]));
+    let c2 = step(p, 2);
+    assert!(text(&ok(preflight(p))).contains(&whole(2, 5, &b, &c2)));
+    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "1"]));
+    let c3 = step(p, 3);
+    assert!(text(&ok(preflight(p))).contains(&last_fix(3, 5, &c2, &c3)));
+    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "1"]));
+    refused(&write_cr(p, &["--verdict", "WAIVED"]), &["round 3 of 5"]);
+    let c4 = step(p, 4);
+    assert!(text(&ok(preflight(p))).contains(&last_fix(4, 5, &c3, &c4)), "round-3 importants earn round 4");
+    ok(write_cr(p, &["--verdict", "FAIL", "--importants", "2"]));
+    step(p, 5);
+    let o = preflight(p);
+    assert_red(&o, "0·review-cap");
+    assert!(text(&o).contains("review round 5 runs only after round 4 found a blocker"), "{}", text(&o));
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c4]));
 }
 
 #[test]
@@ -1495,11 +1563,107 @@ fn max_rounds_on_the_target_moves_the_cap() {
     // Code review round 2, N5: a target git names another way still reads its committed cap; only a
     // config the target does not hold falls back to the default.
     let o = ok(keel(p, &["preflight", "wu", "wu/e/a", "--target", ":/the target's cap"]));
-    assert!(!text(&o).contains("of 5"), "{}", text(&o));
+    assert!(!text(&o).contains("of 3"), "{}", text(&o));
     // B16: a target naming no commit is an error that names it (here the merge-base meets it first;
-    // max_rounds' own rule is pinned by its unit test, the_cap_of_a_target_naming_no_commit_is_an_error).
+    // the policy reader's own rule is pinned by its unit test, the_policy_of_a_target_naming_no_commit_is_an_error).
     let o = keel(p, &["preflight", "wu", "wu/e/a", "--target", "no-such-ref"]);
     assert!(!o.status.success() && !text(&o).contains("review round") && text(&o).contains("no-such-ref"), "{}", text(&o));
+}
+
+/// A lowered cap needs no other key: the defaults above it are lowered to it.
+#[test]
+fn a_cap_of_1_or_2_alone_is_accepted_and_a_bad_schedule_on_the_target_is_red_naming_its_key() {
+    for (lines, want) in [
+        ("max_rounds = 1\n", "review round 1 of 1"),
+        ("max_rounds = 2\n", "review round 1 of 2"),
+        ("modules = [\"src/*\"]\nrubric = \"r.md\"\n", "review round 1 of 3"),
+    ] {
+        let d = fixture();
+        let p = d.path();
+        target_schedule(p, lines);
+        test_note(p);
+        assert!(text(&ok(preflight(p))).contains(want), "{lines}");
+    }
+    for (lines, key) in [
+        ("max_rounds = 0\n", "max_rounds = 0"),
+        ("max_rounds = -1\n", "max_rounds = -1"),
+        ("whole_range_rounds = \"3\"\n", "whole_range_rounds = \"3\""),
+        ("fix_importants_from = 2.5\n", "fix_importants_from = 2.5"),
+        ("max_rounds = 99999999999\n", "max_rounds = 99999999999"),
+        ("max_rounds = 3\nwhole_range_rounds = 4\n", "whole_range_rounds = 4"),
+        ("max_rounds = 3\nfix_importants_from = 5\n", "fix_importants_from = 5"),
+        ("max_round = 3\n", "max_round"),
+    ] {
+        let d = fixture();
+        let p = d.path();
+        target_schedule(p, lines);
+        test_note(p);
+        let o = preflight(p);
+        assert_red(&o, "0·review-cap");
+        assert!(text(&o).contains(key) && !text(&o).contains("review round 1"), "{lines}: {}", text(&o));
+        refused(&write_cr(p, &["--verdict", "PASS"]), &[key]);
+        assert!(!has_note(p, "cr", "HEAD"), "{lines}");
+        if lines == "max_rounds = 0\n" {
+            // It blocks the review, never the owner's sign-off: the history then tags by the defaults.
+            doc_note(p);
+            let o = ok(waive_at_sign_off(p, "wu", "docs/a.html", RULING));
+            assert!(text(&o).contains("max_rounds = 0") && text(&o).contains("tags its rounds by the default schedule"), "{}", text(&o));
+            ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+        }
+    }
+}
+
+/// UC-GATE-1: a bad schedule never lands through a commit keel judges.
+#[test]
+fn a_bad_schedule_staged_is_refused_by_the_pre_commit_hook_and_keel_mr_commit() {
+    let d = fixture();
+    let p = d.path();
+    git(p, &["switch", "-q", "epic/e"]);
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    let before = head(p);
+    for (lines, key) in [
+        ("max_rounds = 0\n", "max_rounds = 0"),
+        ("max_rounds = 3\nwhole_range_rounds = 4\n", "whole_range_rounds = 4"),
+        ("fix_importants_from = 9\n", "fix_importants_from = 9"),
+        ("whole_range = 2\n", "whole_range"),
+    ] {
+        write(p, ".keel/config.toml", &format!("{cfg}[review]\n{lines}"));
+        git(p, &["add", "-A"]);
+        let o = run("git", p, &["commit", "-qm", "a bad schedule"], "");
+        assert!(!o.status.success() && text(&o).contains("the staged .keel/config.toml is refused") && text(&o).contains(key), "{lines}: {}", text(&o));
+        let o = keel(p, &["mr", "commit", "-m", "a bad schedule", "--as", "t"]);
+        assert!(!o.status.success() && text(&o).contains(key) && text(&o).contains("fix ->"), "{lines}: {}", text(&o));
+        assert_eq!(head(p), before, "{lines}: nothing landed");
+    }
+    write(p, ".keel/config.toml", &format!("{cfg}[review]\nmax_rounds = 2\n"));
+    git(p, &["add", "-A"]);
+    ok(run("git", p, &["commit", "-qm", "a lowered cap"], ""));
+}
+
+/// Old notes stay as written: a branch whose rounds were recorded under the 5-round schedule counts
+/// them on the target's current settings, and the gate never reads round or scope.
+#[test]
+fn rounds_recorded_under_the_old_schedule_count_on_the_new_one_and_still_pass_the_gate() {
+    let d = fixture();
+    let p = d.path();
+    test_note(p);
+    let c1 = head(p);
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    let c2 = step(p, 2);
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    edit_note(p, "cr", &c2, |n| n["scope"] = json!("full"));
+    step(p, 3);
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    step(p, 4);
+    doc_note(p);
+    let o = preflight(p);
+    assert_red(&o, "0·review-cap");
+    let t = text(&o);
+    assert!(t.contains("no review round 4 runs: the cap is 3 rounds") && t.contains("--waive-review") && !t.contains("--fixes"), "{t}");
+    let preview = text(&keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING]));
+    assert!(row(&preview, &c2).contains(&format!("[round 2, since {}; the note records round 2, full]", &c1[..10])), "{preview}");
+    ok(waive_at_sign_off(p, "wu", "docs/a.html", RULING));
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
 }
 
 #[test]
@@ -1523,7 +1687,7 @@ fn a_merged_wus_rounds_do_not_count_for_its_epic() {
     commit(p, "close epic");
     ok(run(env!("CARGO_BIN_EXE_keel"), p, &["notes", "write", "test"], EPIC_TESTS));
     let o = ok(keel(p, &["preflight", "epic", "epic/e"]));
-    assert!(text(&o).contains(&whole(1, 5, &git(p, &["merge-base", "main", "HEAD"]), &head(p))), "{}", text(&o));
+    assert!(text(&o).contains(&whole(1, 3, &git(p, &["merge-base", "main", "HEAD"]), &head(p))), "{}", text(&o));
     ok(write_cr(p, &["--verdict", "PASS"]));
     assert_eq!(note(p, "cr", "HEAD")["round"], 1);
 }
@@ -1622,60 +1786,57 @@ fn a_cr_note_whose_fixes_names_no_full_commit_is_unreadable_and_never_reaches_gi
 
 #[test]
 fn no_fix_line_names_a_round_the_schedule_refuses() {
-    // Code review round 1, B2: after a round-5 blocker a fix-PASS named round 6, which never runs.
+    // Code review round 1, B2: after a blocker in the last round a fix-PASS named a round past the
+    // cap, which never runs.
     let d = fixture();
     let p = d.path();
     test_note(p);
     let mut tips = vec![head(p)];
-    for n in 1..=5 {
+    for n in 1..=3 {
         ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
         tips.push(step(p, n + 1));
     }
-    let o = write_cr(p, &["--verdict", "PASS", "--fixes", &tips[4]]);
-    refused(&o, &["--verdict WAIVED", &tips[4][..10], "--waive-review"]);
-    assert!(!text(&o).contains("round 6 on the fix"), "{}", text(&o));
+    let o = write_cr(p, &["--verdict", "PASS", "--fixes", &tips[2]]);
+    refused(&o, &["--verdict WAIVED", &tips[2][..10], "--waive-review"]);
+    assert!(!text(&o).contains("round 4 on the fix"), "{}", text(&o));
 
-    // B3: a round-4 FAIL with nothing counted. No round 5 follows it and no fix-PASS answers it, so
+    // B3: a round-2 FAIL with nothing counted. No round 3 follows it and no fix-PASS answers it, so
     // every refusal names the owner's waiver.
     let d = fixture();
     let p = d.path();
     test_note(p);
-    for n in 1..=3 {
-        ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
-        step(p, n + 1);
-    }
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    step(p, 2);
     let o = ok(write_cr(p, &["--verdict", "FAIL"]));
     assert!(text(&o).contains("--waive-review"), "{}", text(&o));
-    let c4 = head(p);
-    step(p, 5);
+    let c2 = head(p);
+    step(p, 3);
     doc_note(p);
     let o = preflight(p);
     assert_red(&o, "0·review-cap");
     assert!(text(&o).contains("--waive-review") && !text(&o).contains("--fixes"), "{}", text(&o));
-    let o = write_cr(p, &["--verdict", "PASS", "--fixes", &c4]);
+    let o = write_cr(p, &["--verdict", "PASS", "--fixes", &c2]);
     refused(&o, &["--waive-review"]);
-    assert!(!text(&o).contains("round 5 on the fix"), "{}", text(&o));
+    assert!(!text(&o).contains("round 3 on the fix"), "{}", text(&o));
 }
 
 #[test]
 fn a_fix_pass_answers_a_failed_round_only_with_a_code_fix_and_never_replaces_a_reviewed_note() {
-    // Code review round 2, B1: a docs-only commit after a round-4 FAIL with importants fixed nothing.
+    // Code review round 2, B1: a docs-only commit after a round-2 FAIL with importants fixed nothing.
     let d = fixture();
     let p = d.path();
     test_note(p);
-    for n in 1..=3 {
-        ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
-        step(p, n + 1);
-    }
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    step(p, 2);
     ok(write_cr(p, &["--verdict", "FAIL", "--importants", "2"]));
-    let r4 = head(p);
+    let r2 = head(p);
     write(p, "docs/a.html", "<p>a, reworded</p>");
     commit(p, "docs only");
     test_note(p);
-    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &r4]), &["no code path changed", &r4[..10]]);
+    refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &r2]), &["no code path changed", &r2[..10]]);
     assert!(!has_note(p, "cr", "HEAD"), "a refused fix-PASS writes nothing");
-    step(p, 5);
-    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &r4]));
+    step(p, 3);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &r2]));
 
     // B2: the tip's own reviewed note is the latest round; a fix-PASS never overwrites it.
     let d = fixture();
@@ -1778,25 +1939,24 @@ fn a_commit_that_changes_no_code_after_a_failed_round_gets_no_fix_pass_it_could_
     refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c1]), &["round 1", "importants"]);
 }
 
-/// Independent text review round 2, I1: from round 4 a second code fix after a fix-PASS has no round
-/// to go to, so the refusal names the owner's waiver, never a round preflight would refuse.
+/// Independent text review round 2, I1: from `fix_importants_from` (round 2 by default) a second code
+/// fix after a fix-PASS has no round to go to, so the refusal names the owner's waiver, never a round
+/// preflight would refuse.
 #[test]
-fn a_second_code_fix_after_a_round_4_fix_pass_points_at_the_owners_waiver_not_a_refused_round() {
+fn a_second_code_fix_after_a_round_2_fix_pass_points_at_the_owners_waiver_not_a_refused_round() {
     let d = fixture();
     let p = d.path();
     test_note(p);
-    for n in 1..=3 {
-        ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
-        step(p, n + 1);
-    }
+    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    step(p, 2);
     ok(write_cr(p, &["--verdict", "FAIL", "--importants", "1"]));
-    let r4 = head(p);
-    step(p, 5);
-    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &r4]));
-    step(p, 6);
-    let o = write_cr(p, &["--verdict", "PASS", "--fixes", &r4]);
+    let r2 = head(p);
+    step(p, 3);
+    ok(write_cr(p, &["--verdict", "PASS", "--fixes", &r2]));
+    step(p, 4);
+    let o = write_cr(p, &["--verdict", "PASS", "--fixes", &r2]);
     refused(&o, &["second fix", "--waive-review"]);
-    assert!(!text(&o).contains("run review round 5"), "round 5 does not exist here: {}", text(&o));
+    assert!(!text(&o).contains("run review round 3"), "round 3 does not exist here: {}", text(&o));
     // Preflight's refusal names the same way out, never the fix-PASS the writer refuses here.
     let o = preflight(p);
     assert_red(&o, "0·review-cap");
@@ -1846,26 +2006,25 @@ fn a_back_merge_of_the_epic_is_no_fix_of_this_wu_and_no_part_of_its_last_fix() {
     test_note(p);
     refused(&write_cr(p, &["--verdict", "PASS", "--fixes", &c1]), &["second fix"]);
 
-    // From round 3 the scope names only the branch's own changes since the last reviewed commit.
+    // From round 2 (past whole_range_rounds) the scope names only the branch's own changes since the
+    // last reviewed commit.
     let d = fixture();
     let p = d.path();
     test_note(p);
     ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+    let r1 = head(p);
     step(p, 2);
-    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
-    let c2 = head(p);
-    step(p, 3);
     epic_code(p, "src/b.py");
     git(p, &["merge", "-q", "--no-ff", "-m", "back-merge the epic", "epic/e"]);
     test_note(p);
     let tip = head(p);
     let t = text(&ok(preflight(p)));
-    assert!(t.contains(&last_fix(3, 5, &c2, &tip)), "{t}");
+    assert!(t.contains(&last_fix(2, 3, &r1, &tip)), "{t}");
     assert!(t.contains("changed: src/a.py") && !t.contains("src/b.py"), "the scope is the WU's own fix, never the merged code: {t}");
     let fix = git(p, &["rev-parse", "HEAD^1"]);
     assert!(
         t.contains(&format!(
-            "git diff-tree -r --no-renames -p --end-of-options {c2} {fix} -- src/ tests/ ; git diff-tree -r --no-renames -p --end-of-options "
+            "git diff-tree -r --no-renames -p --end-of-options {r1} {fix} -- src/ tests/ ; git diff-tree -r --no-renames -p --end-of-options "
         )),
         "{t}"
     );
@@ -1917,7 +2076,7 @@ fn a_clean_back_merge_into_a_file_the_wu_also_changed_is_no_change_of_its_own() 
     doc_note(p);
     ok(write_cr(p, &["--verdict", "PASS", "--fixes", &c1]));
 
-    // From round 3 the scope's files are those of the diff it prints: the WU's fix, not the merge.
+    // From round 2 the scope's files are those of the diff it prints: the WU's fix, not the merge.
     let d = fixture();
     let p = d.path();
     shared_file(p);
@@ -1926,8 +2085,6 @@ fn a_clean_back_merge_into_a_file_the_wu_also_changed_is_no_change_of_its_own() 
     test_note(p);
     ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
     step(p, 2);
-    ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
-    step(p, 3);
     epic_edits_shared_and_back_merge(p);
     test_note(p);
     let t = text(&ok(preflight(p)));
