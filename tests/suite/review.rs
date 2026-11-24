@@ -1,5 +1,5 @@
 //! E-CRLIMIT epic e2e (E-CRCAP's before it): the review schedule - the target's `[review]` settings,
-//! the 3-round schedule by default - ends in a fix-PASS or an owner-accepted waiver, and both merge
+//! the default schedule when it sets none - ends in a fix-PASS or an owner-accepted waiver, and both merge
 //! through the real hooks of a repo `keel init` set up (UC-REV-2, UC-REV-3, UC-GATE-1).
 compiled!();
 
