@@ -20,7 +20,7 @@ pages:
   - file: review-docs.html
     title: "Decisions: reviews and docs"
     scope: >-
-      How code is reviewed (scope, waivers, the review schedule and its [review] settings, nits) and how docs are written, checked and kept
+      How code is reviewed (scope, waivers, the review schedule per level and its [review] settings, nits) and how docs are written, checked and kept
       short. Check here before "fixing" anything that looks deliberate.
     topics: ["Code review", "Documentation"]
   - file: router.html
@@ -239,7 +239,7 @@ records:
     file: review-docs.html
     status: live
   - id: DEC-50
-    title: "The review follows a schedule set in the target's [review] settings, which the tool derives from the notes"
+    title: "The review follows a schedule set per level in the target's [review] settings, which the tool derives from the notes"
     file: review-docs.html
     status: live
   - id: DEC-51

@@ -168,7 +168,7 @@ pub(crate) fn validate(cfg: &Config) -> Result<(), String> {
 }
 
 /// A commit must not land a rules file keel cannot judge by - one that does not parse, that
-/// `validate` refuses, or whose review schedule `review::policy_in` refuses (UC-GATE-1): every later
+/// `validate` refuses, or whose review schedule `review::policy_in` refuses at either level (UC-GATE-1): every later
 /// commit, or review, would be judged by it. `staged` is the index's `.keel/config.toml` when this
 /// commit changes it (None: unchanged or deleted). Run by pre-commit and `keel mr commit` only:
 /// cherry-pick, rebase, revert, a fast-forward and `--no-verify` run no pre-commit hook, so a bad file
@@ -1032,9 +1032,14 @@ mod tests {
         assert!(e.contains("unknown mr tier 'usrname'") && e.contains("fix -> "), "{e}");
         // E-CRLIMIT.W1 (UC-GATE-1): a review schedule review::policy_in refuses is refused staged, by
         // the one rule the target read uses; a good one, or a cap set alone below a default, lands.
-        for ok in
-            ["[review]\nmax_rounds = 5\nwhole_range_rounds = 2\nfix_importants_from = 4\n", "[review]\nmax_rounds = 1\n", "[review]\nmodules = [\"src/*\"]\n"]
-        {
+        for ok in [
+            "[review]\nmax_rounds = 5\nwhole_range_rounds = 2\nfix_importants_from = 4\n",
+            "[review]\nmax_rounds = 1\n",
+            "[review]\nmodules = [\"src/*\"]\n",
+            // E-CRLEVEL: the level tables and fix_blockers_from, by the same rule.
+            "[review]\nmodules = [\"src/*\"]\n[review.wu]\nmax_rounds = 1\nfix_blockers_from = 1\n",
+            "[review.epic]\nmax_rounds = 5\nfix_blockers_from = 5\n",
+        ] {
             assert_eq!(super::staged_config_refusal(Some(&format!("{good}{ok}"))), None, "{ok}");
         }
         for (bad, says) in [
@@ -1042,6 +1047,11 @@ mod tests {
             ("[review]\nmax_rounds = 3\nwhole_range_rounds = 4\n", "whole_range_rounds = 4 is above max_rounds = 3"),
             ("[review]\nfix_importants_from = \"2\"\n", "fix_importants_from = \"2\" must be"),
             ("[review]\nwhole_range = 2\n", "[review] whole_range is not a key keel knows"),
+            ("[review.wu]\nmax_rounds = 0\n", "[review.wu] max_rounds = 0 must be a whole number"),
+            ("[review.epic]\nmax_rounds = 2\nfix_blockers_from = 3\n", "[review.epic] fix_blockers_from = 3 is above max_rounds = 2"),
+            ("[review.wu]\nmodules = [\"src/*\"]\n", "[review.wu] modules is not a schedule key"),
+            ("[review.close]\nmax_rounds = 1\n", "[review.close] is not a table keel knows"),
+            ("[review]\nwu = 1\n", "[review] wu = 1 must be a table"),
         ] {
             let e = super::staged_config_refusal(Some(&format!("{good}{bad}"))).unwrap_or_else(|| panic!("{bad:?} passed"));
             assert!(e.contains("the staged .keel/config.toml is refused") && e.contains(says) && e.contains("fix -> "), "{e}");

@@ -38,8 +38,9 @@ the terminal message, report the id.
 Independent READ-ONLY review (very thorough) of <what>, which the automated gate does not bind.
 Worktree <abs>, branch <b>, tip <sha>; base <sha>. Do not edit, run <reserved commands: keel mr, merges>, push, tag, or execute
 downloaded binaries; git/grep/read and read-only gh api only. Round <n> of at most <max_rounds>.
-Scope: <rounds up to <whole_range_rounds>: `git diff <base> HEAD -- <paths>` + <files> | later rounds: `git diff <last reviewed sha> HEAD -- <paths>`;
-read any file, report only on these changes>.
+Scope, for a round up to whole_range_rounds: `git diff <base> HEAD -- <paths>` + <files>.
+Scope, for a later round: `git diff <last reviewed sha> HEAD -- <paths>`. (Keep the one scope line that applies.)
+Read any file; report only on these changes.
 Rules: <decision docs>. Earlier rounds' findings (fixed, recorded or refuted): <list, or "none">. A finding is a repeat
 only when it is surely the same defect in the same code. A repeat of a fixed one is refuted unless you show, at this
 tip, that the fix does not hold: name the failing case. A repeat of a recorded or refuted one is refuted only while the

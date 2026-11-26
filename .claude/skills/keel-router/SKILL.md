@@ -411,8 +411,9 @@ data: a read-only subagent on the strongest model (explicit), fresh per round;
 hold the sign-off until it is in and say why. Checklists:
 `references/review-checklists.md`.
 
-These rounds follow the code-review schedule (skill `keel-code-review` §5) on
-the project's `[review]` settings, as committed on the target. No tool counts
+These rounds follow the code-review schedule (skill `keel-code-review` §5) at
+the level of the work they review (`[review.wu]` or `[review.epic]` over
+`[review]`), as committed on the target. No tool counts
 them, so you do: write each round's number and its findings into the item's
 next brief or review prompt, never only in your memory (routers get renamed).
 Severities map: blocker/high = blocker, medium = important, low = nit. A
@@ -426,8 +427,8 @@ file. After a round:
 | It found | Then |
 |---|---|
 | only lows | fix or record as follow-ups; done |
-| mediums, no blocker/high | before `fix_importants_from`: fix round, then the next round (or the owner picks "sign and record"); from it on: fix round, done, no new round |
-| a blocker/high | before `max_rounds`: fix round (fresh worker, new tip, re-gate), then the next round; in round `max_rounds`: stop, hold the sign-off and give the owner the open findings to decide |
+| mediums, no blocker/high | before `fix_importants_from` and `fix_blockers_from`: fix round, then the next round (or the owner picks "sign and record"); from either on: fix round, done, no new round |
+| a blocker/high | from `fix_blockers_from` on: fix round, done, no new round; the owner reads the fix at sign-off. Before it (or with it unset), before `max_rounds`: fix round (fresh worker, new tip, re-gate), then the next round; in round `max_rounds`: stop, hold the sign-off and give the owner the open findings to decide |
 
 Each prompt lists the earlier rounds' findings: fixed, recorded or refuted
 (`references/messages.md`). A finding counts as a repeat only when it is surely
