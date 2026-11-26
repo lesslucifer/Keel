@@ -423,23 +423,42 @@ pub fn round_pair(tips: &[String], n: u32) -> (String, String) {
     (prev, tips[n as usize - 1].clone())
 }
 
-/// A review schedule as the tests drive it: the target's three `[review]` settings.
+/// A review schedule as the tests drive it: the settings of a level's table or of `[review]`.
 #[derive(Clone, Copy, Debug)]
 pub struct Sched {
     pub max: u32,
     pub whole: u32,
     pub from: u32,
+    /// `fix_blockers_from` (E-CRLEVEL): `None` leaves it unset.
+    pub fb: Option<u32>,
 }
 
 /// The default values: the schedule of a target that sets no key. The one place the tests write them;
 /// it must equal keel's `review::Policy::DEFAULT`, which this test crate cannot reach (keel is a binary
 /// crate), so a change of the defaults is that line and this one.
-pub const DEFAULTS: Sched = Sched { max: 3, whole: 1, from: 2 };
+pub const DEFAULTS: Sched = Sched { max: 3, whole: 1, from: 2, fb: None };
 
 impl Sched {
-    /// The `[review]` table's lines that set this schedule.
+    /// The `[review]` table's lines that set this schedule (fix_blockers_from only when set).
     pub fn lines(&self) -> String {
-        format!("max_rounds = {}\nwhole_range_rounds = {}\nfix_importants_from = {}\n", self.max, self.whole, self.from)
+        let fb = self.fb.map(|f| format!("fix_blockers_from = {f}\n")).unwrap_or_default();
+        format!("max_rounds = {}\nwhole_range_rounds = {}\nfix_importants_from = {}\n{fb}", self.max, self.whole, self.from)
+    }
+
+    /// Table `name` (`review`, `review.wu`, `review.epic`) setting this schedule.
+    pub fn table(&self, name: &str) -> String {
+        format!("[{name}]\n{}", self.lines())
+    }
+
+    /// The schedule a level gets when its table sets only `max_rounds = max` over this one: every
+    /// other key inherited and lowered to the cap.
+    pub fn capped(&self, max: u32) -> Sched {
+        Sched { max, whole: self.whole.min(max), from: self.from.min(max), fb: self.fb.map(|f| f.min(max)) }
+    }
+
+    /// Round `n` is from fix_blockers_from on: a fix-PASS answers every finding, no round follows.
+    pub fn answers_all(&self, n: u32) -> bool {
+        self.fb.is_some_and(|f| n >= f)
     }
 
     /// Preflight's line for round `n` on `tip`: the whole range up to `whole`, else the change since
@@ -470,16 +489,18 @@ impl Sched {
         }
     }
 
-    /// Whether a round follows round `n` that found `blockers`: keel's rule, below the cap and before
-    /// fix_importants_from or on a blocker.
+    /// Whether a round follows round `n` that found `blockers`: keel's rule, below the cap, before
+    /// fix_blockers_from, and before fix_importants_from or on a blocker.
     pub fn follows(&self, n: u32, blockers: u32) -> bool {
-        n < self.max && (n < self.from || blockers > 0)
+        n < self.max && !self.answers_all(n) && (n < self.from || blockers > 0)
     }
 
-    /// Why no round follows round `n` when it found no blocker.
+    /// Why no round follows round `n` when it found no blocker, or any finding from fix_blockers_from on.
     pub fn no_round(&self, n: u32) -> String {
         if n >= self.max {
             format!("no review round {} runs: the cap is {} rounds", n + 1, self.max)
+        } else if let Some(f) = self.fb.filter(|_| self.answers_all(n)) {
+            format!("no review round {} runs: from round {f} on (fix_blockers_from)", n + 1)
         } else {
             format!("review round {} runs only after round {n} found a blocker", n + 1)
         }

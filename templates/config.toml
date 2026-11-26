@@ -47,10 +47,16 @@ T3 = ["docs/work/**", "docs/.archive/**"]
 tiers = ["email", "username", "key"]   # accepted .keel/mr-allowed tiers; ["key"] = signatures only (email/username are a string match)
 report = "required"   # required | optional | none: must a WU/epic sign-off attest its result report (the page whose data file has artifact wu-result / epic-result)
 
-[review]   # the schedule keys are read by the CLI from the target branch's committed copy; modules and rubric by the keel-code-review skill
-# a schedule key left out takes its default (keel-code-review skill, section 5); a set key is a whole number of rounds, 1 or more, none above max_rounds
+[review]   # the schedule keys are read by the CLI from the target branch's committed copy, at the review's level; modules and rubric by the keel-code-review skill
+# the rule: keel-code-review skill, section 5. A schedule key left out takes [review]'s, else its default; a set key is a whole number of rounds, 1 or more, none above its table's max_rounds
+# a staged change is checked by the pre-commit hook and keel mr commit; keel mr confirm tags the review history's rounds by the target's settings
 # max_rounds = <n>           # the cap: no review round runs past it
 # whole_range_rounds = <n>   # rounds up to this one review the whole range; later rounds only the last fix
 # fix_importants_from = <n>  # from this round on, importants with no blocker are fixed under a fix-PASS; only a blocker earns another round
+# fix_blockers_from = <n>    # unset: off. From this round on every finding, blockers too, is fixed under a fix-PASS: no round follows, no cap waiver
 modules = ["src/*"]          # each match of a glob's * is one module (altitude finder)
 rubric = ".keel/rubric.md"   # optional project-local rubric
+# [review.wu]                # a WU review (its target is not main): any schedule key above, over [review]
+# max_rounds = <n>
+# [review.epic]              # an epic review (its target is main): any schedule key above, over [review]
+# max_rounds = <n>
