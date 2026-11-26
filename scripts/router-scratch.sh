@@ -32,12 +32,15 @@ case $1 in
     [ ! -L "$2" ] || die "a symlink is not a fresh scratch dir: $2"
     real=$(cd -P "$2" 2>/dev/null && pwd -P) || die "cannot resolve: $2"
     base=$(cd -P "$tmp" 2>/dev/null && pwd -P) || die "cannot resolve the temp folder: $tmp"
-    case $real in
-      "$base"/keel-scratch.????????) ;;
+    # the name check is on the basename (a `?` in a case pattern would match `/` on a full path)
+    case ${real##*/} in
+      keel-scratch.[[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]][[:alnum:]]) ;;
       *) die "$2 is not a fresh helper scratch dir under $base" ;;
     esac
+    [ "${real%/*}" = "$base" ] || die "$2 is not a direct child of $base"
     [ "$real" != "$base" ] || die "$2 is the temp folder itself"
     [ -f "$real/$marker" ] && [ ! -L "$real/$marker" ] || die "$2 was not made by router-scratch.sh new"
+    [ -d "$real/.git" ] && [ ! -L "$real/.git" ] || die "$2 has no real .git directory"
     for e in "$real"/* "$real"/.[!.]* "$real"/..?*; do
       [ -e "$e" ] || [ -L "$e" ] || continue
       case ${e##*/} in
