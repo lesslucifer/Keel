@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b080b339f34851f0dfb2cc8">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-WSANDBOX.W1 findings: what a worker may do</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-WSANDBOX.W1 · What a worker may do: the facts</h1>
+      <p>What the tool really allows, so you can rule on the six open questions.</p>
+      <div class="meta">T3 · WU result · 2026-11-26 · Keel · its data file, 2026-11-26-e-wsandbox-w1-findings.yaml, sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="happened">What happened</h2>
+<p data-c="happened">All seven unproven points are settled from the tool's code or a test. Two plan facts were wrong: a folder's own settings cannot widen websites or ports, and the auto-mode live check did run (12 November). You ruled all six on 26 November.</p>
+
+<h2 id="answers">Your six questions</h2>
+<table data-c="answers">
+  <thead><tr><th>Question</th><th>Example</th><th>Answer</th></tr></thead>
+  <tbody>
+    <tr><td>A local port?</td><td>A dev server: refused today. See the network table.</td><td><strong>Ruled: yes</strong> (owner, 2026-11-26).</td></tr>
+    <tr><td>The 14 skipped tests?</td><td>Each needs a port.</td><td><strong>Ruled: remove them</strong> (owner, 2026-11-26), in a later part.</td></tr>
+    <tr><td>Workers add packages?</td><td>cargo works today. pnpm needs registry.npmjs.org listed, and xmlbuilder fails: it ships a <code>.vscode</code> folder.</td><td><strong>Ruled: yes, pnpm or cargo</strong> (owner, 2026-11-26). Part 3 fixes pnpm.</td></tr>
+    <tr><td>A website for one command?</td><td>Not WebSearch: a shell command (curl, pnpm) asks once for an unlisted site. The reviewer may allow it; the worker could then send there what it read.</td><td><strong>Ruled: no list; the reviewer decides each site</strong> (owner, 2026-11-26).</td></tr>
+    <tr><td>Scratch work refused?</td><td>No damage risk: the sandbox holds scratch. The risk is the reviewer refusing a harmless command, so the worker stalls.</td><td><strong>Ruled: allowed</strong> (owner, 2026-11-26), through the fixed helper.</td></tr>
+    <tr><td>One commit or one per part?</td><td>Parts 2 to 4 all change the launcher.</td><td><strong>Ruled: one commit</strong> (owner, 2026-11-26).</td></tr>
+  </tbody>
+</table>
+
+<div class="callout" data-c="vscode"><strong>Why <code>.vscode</code> is refused:</strong> your editor runs what it says (tasks, launch setups) when you open the project, outside any sandbox. A worker writing there could run code with your rights. So the sandbox always refuses it in the worker's folder (tested), as it does <code>.idea</code> and <code>.git/hooks</code>; scratch is fine.</div>
+
+<h2 id="network">Network: what a worker can do</h2>
+<table data-c="network">
+  <thead><tr><th>A worker tries to</th><th>Today</th><th>As ruled (owner, 2026-11-26)</th></tr></thead>
+  <tbody>
+    <tr><td>Reach a site from a shell command</td><td>Listed ones (github.com, crates.io); others if the reviewer allows</td><td>The reviewer decides every site</td></tr>
+    <tr><td>Serve on a port</td><td>No</td><td>Yes, any port and address; one on 0.0.0.0 is reachable from your network</td></tr>
+    <tr><td>Connect to a local service (a database, another session's proxy)</td><td>No (tested)</td><td>Yes, any port</td></tr>
+    <tr><td>WebSearch</td><td>Yes; it runs at Anthropic</td><td>Same</td></tr>
+    <tr><td>WebFetch</td><td>The reviewer judges</td><td>Same</td></tr>
+  </tbody>
+</table>
+
+<h2 id="git">Git from a worker's folder</h2>
+<ul data-c="git">
+  <li>The launcher lets a worker write the main checkout's <code>.git</code>, so commit, branch and notes work; this part's commit proves it.</li>
+  <li>Refused on purpose: that <code>.git</code>'s config and hooks, and the worker folders' link files.</li>
+  </ul>
+
+<h2 id="router">The router and the watchdog</h2>
+<ul data-c="router">
+  <li>Neither runs in a sandbox; a guard on every tool call bounds them. The router runs fixed plain commands and writes only briefs and your message file; the watchdog only sends messages.</li>
+  <li>This part covers workers only (owner, 2026-11-26); they get their own parts.</li>
+</ul>
+
+<h2 id="checks">The plan's checks</h2>
+<ul data-c="checks">
+  <li>Unproven points settled, sharper defaults, doc check green: all <strong>met</strong>.</li>
+</ul>
+
+<h2 id="differences">Differences from the plan</h2>
+<ul data-c="differences">
+  <li>No separate part plan: this part changes no code.</li>
+  <li>The tool's version command ran once, against the brief.</li>
+</ul>
+
+<h2 id="left">What is left</h2>
+<ul data-c="left">
+  <li>Parts 2 to 4 as ruled, in one commit.</li>
+  <li>Removing the tests; the router and watchdog parts: the router places them.</li>
+  <li>The stale backlog row and the wrong settings sentence: epic close.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
