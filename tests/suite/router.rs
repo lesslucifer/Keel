@@ -2202,7 +2202,7 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     // the launcher reads [router] from the clone's HEAD: carry the working tree's policy over
     std::fs::copy(root().join(".keel/config.toml"), c.join(".keel/config.toml")).unwrap();
     git(&c, &["add", ".keel/config.toml"]);
-    git(&c, &["commit", "-qm", "policy"]);
+    git(&c, &["commit", "-qm", "policy", "--allow-empty"]);
     let keel = Path::new(env!("CARGO_BIN_EXE_keel"));
     assert!(common::cmd(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
     let other = base.join("other");
