@@ -1,0 +1,122 @@
+artifact: wu-plan
+status: ready
+id: E-WSANDBOX.W2
+epic: E-WSANDBOX
+title: "E-WSANDBOX.W2 plan: ports, sites and packages in one ruled change"
+date: "2026-11-26"
+page: 2026-11-26-e-wsandbox-w2-plan.html
+requirement: >-
+  A worker serves and connects on any local port and address, sets up a throwaway repo only through one fixed
+  helper, installs packages with pnpm or cargo through a store outside its worktree, and the 14 #[ignore] tests in
+  tests/suite/notify_owner.rs are gone - all three parts in one ruled change on one branch.
+maps-to: "Point 1, 2 and 3 of the owner's request; the q1, q2, q3, q4, q5 and q6 rulings; UC-ROUTE-5 (amended)."
+expected: >-
+  The launcher's sandbox pin test shows allowLocalBinding true, the five-host base plus registry.npmjs.org, no
+  strictAllowlist, and the scratch helper's grant, and nothing wider; the helper refuses any path that is not a
+  fresh mktemp directory of its own; no #[ignore] attribute remains in tests/suite/notify_owner.rs; the launcher
+  gives a worker pnpm's package tree and store in the temp folder (with app/node_modules linked at it); the
+  rule-bearing files are staged together for one owner keel mr commit.
+test-plan:
+  unit: >-
+    tests/suite/router.rs: the scratch helper creates a fresh mktemp repo dir with its marker, and refuses a path
+    outside a fresh scratch dir (a plain temp dir, a path under $HOME, a symlink, a dir it did not make).
+  integration: >-
+    tests/suite/router.rs: the launcher's --settings pin shows sandbox.network.allowLocalBinding true, the exact filesystem
+    and network keys (five hosts + registry.npmjs.org, no strictAllowlist), and the worker grant with the two
+    scripts/router-scratch.sh shapes; the pin is red on the old launcher before it is edited. The 14 #[ignore] tests
+    and their now-unused mock helpers are deleted from tests/suite/notify_owner.rs. The launcher puts pnpm's
+    modules dir under the temp folder, links a fresh worktree's git-ignored app/node_modules at it, leaves a real
+    install alone, and widens no sandbox write path (tests/suite/router.rs::launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree).
+  e2e: >-
+    Deferred, live in a later turn after the owner commit: a fresh worker binds 127.0.0.1:0 and 0.0.0.0:0 and
+    connects to a local listener; a frozen pnpm install of xmlbuilder 15.1.1 succeeds and writes nothing under the
+    worktree's .vscode; a pnpm add and a cargo add succeed; a scratch keel init through the helper is allowed; one
+    site the reviewer allows is reached and one it refuses is refused by the reviewer; the empty-allowedDomains
+    probe (not run: the five hosts stay as the base).
+details:
+  parts:
+    W2-ports: >-
+      scripts/router-worker.sh: sandbox.network.allowLocalBinding = true; serve and connect on any port and address. The
+      known cost stands: the key makes the profile bind every interface and reach every local listener. The 14
+      #[ignore] tests in tests/suite/notify_owner.rs are deleted with their unused mock helpers (mock, mock_seeing,
+      serve, Served, stalled_server, closed_base, sent_payload and the imports only they used), no replacement.
+    W4-sites-scratch: >-
+      No strictAllowlist (absent, pinned by the exact settings equality). allowedDomains keeps the five hosts as the
+      base: W1 could not verify what an empty list does, so the reviewer widens each call and the empty-list probe is
+      deferred to the epic's e2e. New scripts/router-scratch.sh: new creates one fresh mktemp -d under $TMPDIR with a
+      marker and a git repo; init <dir> runs keel init only in a dir with that marker, resolved under $TMPDIR, holding
+      nothing else. Added to the worker's grant (both Bash shapes) and to rule_bearing; .claude/agents/worker.md and
+      the keel-router skill name it. Mode stays auto. WebFetch stays with the auto reviewer (in-process, not gated by
+      allowedDomains) and is recorded under backlog R41.
+    W3-packages: >-
+      registry.npmjs.org joins the launcher's host base (six). Review round 1's blocker corrected the store route:
+      moving the content-addressable store alone still materialised the package tree (xmlbuilder 15.1.1's
+      .vscode/launch.json) inside the worktree, where the sandbox denies **/.vscode/** at any depth (W1 finding d).
+      So the launcher sets pnpm's modules dir to a folder in the temp folder (pnpm 11 reads
+      pnpm_config_modules_dir from the environment; probed in a scratch dir), adds that folder to
+      filesystem.allowWrite (the worker's sandbox reaches only its cwd, its own temp and that list), and links the
+      worktree's git-ignored app/node_modules at it, while PNPM_HOME keeps the store beside it. The whole package tree, .vscode included,
+      is then outside every worktree and the owner's ~/Library/pnpm is untouched. pnpm-workspace.yaml keeps
+      nodeLinker: hoisted and its allowBuilds list. Trade-off: Forge's packager needs a real tree, so `pnpm make`
+      stays an owner install; the test loops (pnpm test:main, typecheck, Vite) resolve through the link. A worktree
+      that already holds a real app/node_modules is left alone, never replaced. cargo needs no launcher change.
+      docs/install.html records both the worker install and the packaging lane. The frozen install of the real app
+      lockfile under the launcher is the deferred live proof.
+  rulings-implemented:
+    q1: "allowLocalBinding true in the launcher's --settings sandbox; serve and connect on any port and address."
+    q2: "The 14 #[ignore] tests in tests/suite/notify_owner.rs deleted completely, no replacement."
+    q3: "registry.npmjs.org on the host base; pnpm's store outside the worktree (PNPM_HOME in the temp folder); cargo as today."
+    q4: "No pinned site list and no strictAllowlist; the auto reviewer decides each site. The five hosts stay as the base because what an empty list does is unverified."
+    q5: "One fixed scratch helper on the grant for a temp repo under $TMPDIR (keel init in it); mode stays auto."
+    q6: "Parts 2 - 4 on one branch, one review, one signature, one owner keel mr commit."
+  one-owner-commit:
+    shape: >-
+      One WU branch (wu/E-WSANDBOX/w2-ports) with three parts in code order: W2 ports, W4 sites and scratch, W3
+      packages. The worker commits everything not rule-bearing (docs/work pair, docs/backlog, tests). The
+      rule-bearing files are staged together and the owner runs one keel mr commit; the owner then re-gates on the new
+      tip and merges --no-ff into epic/E-WSANDBOX. Review round 1's one blocker (the store move alone left the
+      package tree in the worktree) was fixed on the same branch: the corrected launcher, install page and
+      project-router facts are staged for a second owner keel mr commit, then the tip is re-gated again.
+    staged-by-worker:
+      - "scripts/router-worker.sh (allowLocalBinding, PNPM_HOME, registry.npmjs.org, the helper grant)"
+      - "scripts/router-scratch.sh (new, and its rule_bearing entry in .keel/config.toml)"
+      - ".keel/config.toml (rule_bearing gains scripts/router-scratch.sh)"
+      - ".claude/agents/worker.md (the scratch helper and the ruled environment)"
+      - "skills/keel-router/SKILL.md and .claude/skills/keel-router/SKILL.md (the ruled environment and the helper)"
+      - ".claude/skills/project-router/SKILL.md (the launcher facts: ports, hosts, store, helper)"
+      - "docs/install.html (the worker runs the install)"
+  tests:
+    files:
+      - tests/suite/router.rs
+      - tests/suite/notify_owner.rs
+    integration:
+      pin: tests/suite/router.rs::worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache
+      grant: tests/suite/router.rs::argv_of (WORKER_GRANTS) via the launcher tests
+      helper-grant: tests/suite/router.rs::launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validated_mode
+      store: tests/suite/router.rs::launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree
+    unit:
+      - tests/suite/router.rs::the_scratch_helper_makes_a_fresh_repo_dir_and_marker
+      - tests/suite/router.rs::the_scratch_helper_refuses_a_path_outside_a_fresh_scratch_dir
+  open-items:
+    - "What an empty allowedDomains does is still unverified (owner step 1's remaining half): deferred live e2e; the five hosts stay as the base meanwhile."
+    - "The live port proof (bind 127.0.0.1:0 and 0.0.0.0:0, connect to a local listener) is deferred to the epic's e2e; the launcher's owner step 2 is what it ships against."
+    - "The frozen pnpm install of the real app lockfile (xmlbuilder 15.1.1 included) and a pnpm add / cargo add are deferred live proofs; the modules-dir + app/node_modules link is the fixed route."
+    - "A scratch keel init through the helper, a reviewer-allowed and a reviewer-refused site are deferred live proofs."
+    - "The DEC-37 and DEC-46 Amended rows, UC-ROUTE-5, the project-router Workers section and docs/local-app.html are epic-close distillation (the epic plan's distillation-plan), not this WU."
+    - "Package installs are reviewer-judged (no new grant entry, as the plan rules); if a live proof is refused, the grant entry is the follow-up."
+    - "Forge packaging (`pnpm make`) needs a real, non-linked node_modules: it stays the owner's lane, while the worker's test loops and Vite resolve through the link."
+    - "A worktree that already holds a real app/node_modules is left alone, never replaced: the launcher's link applies to a fresh worktree, which is what a WU worktree is."
+    - "The git rule for other worktrees of the repo stays open (owner has not ruled); resume, the two context ceilings, the warm-cache definition and fix-to-fresh are other WUs and are untouched."
+  independent-review: >-
+    Independent review of the rule files and the security path after b04d4a88: FAIL, 2 blockers and 5 nits. B1: the
+    port key sat at sandbox.allowLocalBinding instead of sandbox.network.allowLocalBinding, so 2.1.288 dropped it.
+    B2: the pnpm tree was outside the worker sandbox's writable roots, so the install would have hit EPERM; the home
+    is now an allowWrite root. Nits 3-7: the helper's basename/.git checks, the security-file test list, the
+    project-router code_paths and script list, this pair's fix-PASS line, and an accepted helper run of keel init.
+  review-round-1: >-
+    Verdict FAIL on 707bb5a2, one blocker (scripts/router-worker.sh:575-578): the store move alone left pnpm's
+    package tree inside the worktree, so xmlbuilder's .vscode path still hit the sandbox deny. The fix moves the
+    modules dir (pnpm_config_modules_dir) and links app/node_modules at it; the helper was refuted and is unchanged.
+  gates:
+    - "After each part and once before staging: keel check; cargo test on the touched suites."
+    - "keel verify-doc on this pair; keel preflight and keel verify-dod are owed after the owner commit (they bind the tip)."

@@ -259,6 +259,14 @@ then for short one-shot read-only checks, reviews and watches. On DSH neither
 mode applies: a worker is a host session in a worktree, dispatched by the table
 below. Say which mode you used and why when it is not the standard.
 
+A worker's environment is ruled (E-WSANDBOX, owner 2026-11-26; DEC-37 and DEC-46 take the
+Amended rows at the epic's close): local ports on any address (it binds every interface and
+reaches every local listener), packages by pnpm or cargo with pnpm's store outside its
+worktree, every site decided per call by the auto reviewer (no pinned list, no lock), and a
+throwaway repo only through `scripts/router-scratch.sh` (`new`, then `init <dir>`) - never a
+hand-rolled `mktemp`/`git init`/`keel init` line. Name the helper in a brief whose task needs
+a scratch repo.
+
 | | In-session subagent | Background session (`claude --bg`), long-running |
 |---|---|---|
 | spawn | `Agent` (`name`, explicit `model`) | `<launcher> spawn …` (project-router names it) |

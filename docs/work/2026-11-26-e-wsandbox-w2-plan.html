@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b0836da9f34851f0dfb2d69">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-WSANDBOX.W2 plan: ports, sites and packages</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-WSANDBOX.W2 · Ports, sites and packages in one ruled change</h1>
+      <p>Parts 2–4 of the epic: the worker serves ports, sets up scratch work through one helper, and installs packages — one branch, one review, one commit.</p>
+      <div class="meta">T3 · WU plan · 2026-11-26 · Keel · its data file, 2026-11-26-e-wsandbox-w2-plan.yaml, sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">Workers stop on their own limits and the step comes to you: no local port (14 tests switched off), no package install, the automatic reviewer refusing harmless scratch work, and a pinned list of sites for you to keep. On 26 November you ruled every point. This WU builds parts 2–4 as one change.</p>
+
+<h2 id="get">What you get</h2>
+<table data-c="get">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>Work needs a local port</td><td>You run it</td><td>The worker serves and connects on any address; it binds every interface and reaches every local listener — your accepted cost</td></tr>
+    <tr><td>A package is needed</td><td>You install it</td><td>pnpm or cargo, by the worker; pnpm's packages sit outside its worktree</td></tr>
+    <tr><td>A worker makes a scratch repo</td><td>The reviewer may refuse it</td><td>One fixed helper, on the grant</td></tr>
+    <tr><td>A worker wants a website</td><td>You keep a list</td><td>No list and no lock: the reviewer decides each site</td></tr>
+    <tr><td>The 14 switched-off tests</td><td>Never run</td><td>Deleted, nothing in their place</td></tr>
+  </tbody>
+</table>
+
+<h2 id="how">How it works</h2>
+<ul data-c="how">
+  <li>The launcher's sandbox gains <code>allowLocalBinding</code>.</li>
+  <li>The five hosts stay as the base because what an empty list does is still unproven, so <code>registry.npmjs.org</code> joins them; no lock is added, so the reviewer widens each call. A site it allows can receive what the worker read.</li>
+  <li>The launcher moves pnpm's store and its whole package tree into the temp folder and links the worktree's <code>app/node_modules</code> at it, so no package unpacks into the blocked <code>.vscode</code> path and your own store is never touched. Packaging (<code>pnpm make</code>) needs a real install.</li>
+  <li>A new helper, <code>scripts/router-scratch.sh</code>, makes the throwaway repo; it refuses any path that is not a fresh temp dir it made itself. Mode stays auto; WebFetch stays with the reviewer and is recorded.</li>
+</ul>
+
+<h2 id="approve">How you approve</h2>
+<p data-c="approve">One branch carries parts 2–4. I commit the tests and docs; the rule-bearing files — the launcher, the helper, the config, the persona, the skills, the install page — are staged together for your one <code>keel mr commit</code>. Then one review, one signature, one <code>--no-ff</code> merge.</p>
+
+<h2 id="makes">What it makes</h2>
+<p data-c="makes">A worker session that serves a port, adds a package, or sets up a scratch repo on its own, with no step for you — within the bounds written above.</p>
+
+<h2 id="decide">What you decide</h2>
+<table data-c="decide">
+  <thead><tr><th>Question</th><th>Answer first</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Empty the host list?</td><td>No, keep the five</td><td>Nobody has seen what an empty list does; the probe is a deferred live test</td></tr>
+    <tr><td>Package commands on the fixed grant?</td><td>No</td><td>The plan adds no grant entry; the reviewer judges an install. If a live proof is refused, a grant entry is the follow-up</td></tr>
+    <tr><td>Run the live proofs now?</td><td>No, later</td><td>Ports, the frozen install, a site allowed and refused, and the helper's <code>keel init</code> need a spawned worker after your commit</td></tr>
+  </tbody>
+</table>
+
+<h2 id="know">How you'll know it worked</h2>
+<p data-c="know">The launcher's pin test shows the ruled sandbox keys, no lock, and the helper's grant and nothing wider; the helper's unit test refuses paths outside its own temp dir; the 14 tests are gone; <code>keel check</code> is green. The live proofs are listed for the epic's e2e.</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

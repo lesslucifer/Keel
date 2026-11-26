@@ -50,6 +50,7 @@ dsh plugin --profile &lt;name&gt; add &lt;path&gt;/dsh-worker-workspace   # a wo
 pnpm install --frozen-lockfile   # pnpm 11.18.0, as package.json pins; Node 24 or later
 pnpm make                        # Vite's bundles, the packaged Keel.app, signed ad-hoc, and a zip</pre>
 <p>The first <code>pnpm make</code> downloads Electron once, which takes a few minutes.</p>
+<p>A worker session runs its own install (E-WSANDBOX.W3): it adds packages with pnpm or cargo, and the launcher moves pnpm's store and its whole package tree under the temp folder and links the worktree's <code>app/node_modules</code> at it, so nothing lands in its worktree and your own <code>~/Library/pnpm</code> is not touched. Packaging the app (<code>pnpm make</code>) still needs a real <code>node_modules</code>: run it yourself as above, not inside a worker session.</p>
 <ol>
 <li><b>Signature.</b> With <code>KEEL_SIGN_IDENTITY</code> unset, the app is signed ad-hoc. That is enough for macOS alerts on your own Mac: Apple's paid membership is not needed (backlog <code>local-app</code> A3). Set it to a named identity only to sign with a certificate.</li>
 <li><b>Install.</b> Quit any running Keel (it keeps running with its window closed: Keel &gt; Quit Keel, or Cmd-Q). Copy <code>out/Keel-darwin-&lt;arch&gt;/Keel.app</code> to <code>/Applications</code>, replacing the old one, and open it.</li>

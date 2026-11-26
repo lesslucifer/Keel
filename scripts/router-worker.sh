@@ -511,12 +511,18 @@ snapshot
 # (E-WMODE round 2, H3: never ~/.cargo/env, config, credentials or bin; probed with a fresh
 # CARGO_HOME: fetch, build and test write .global-cache, .package-cache, .package-cache-mutate and
 # registry/; git/ holds git dependencies, the -journal/-wal/-shm names are SQLite's); ~/.claude.json
-# is named for intent (no allowWrite reaches it). Five hosts, widened by a permission decision (the
-# owner's prompt, or auto's per-call review) or by the worktree's own local settings, which merge
-# with these (DEC-37); no retry outside it. The worker file guard (scripts/router-file-guard.sh) is a
-# PreToolUse hook on every tool, fail-closed: the file tools edit only this worktree and read
-# neither ~/.ssh nor ~/.claude/channels (DEC-37). A hook is not a deny rule, so it feeds no sandbox
-# path (review round 2, H1).
+# is named for intent (no allowWrite reaches it). Ports are open (E-WSANDBOX.W2, owner q1):
+# sandbox.network.allowLocalBinding true makes the profile bind and accept on every interface and reach
+# every local listener - the ruling's known cost, with no narrower key in 2.1.288 (the key belongs in
+# the network object; a top-level field is not in the schema and is dropped). The host base is widened only
+# by a permission decision (auto's per-call review; E-WSANDBOX.W4, owner q4: no pinned site list and
+# no strictAllowlist): htmldoc.wfomobile.com, crates.io, index.crates.io, static.crates.io and
+# github.com, plus registry.npmjs.org for package installs (W3, owner q3). A worktree's own
+# .claude/settings.local.json cannot widen the hosts or the ports under the launcher's
+# allowUnsandboxedCommands false (W1 findings a and e; DEC-37's older sentence was wrong). The worker
+# file guard (scripts/router-file-guard.sh) is a PreToolUse hook on every tool, fail-closed: the file
+# tools edit only this worktree and read neither ~/.ssh nor ~/.claude/channels (DEC-37). A hook is
+# not a deny rule, so it feeds no sandbox path (review round 2, H1).
 hook="sh '$guard' '$wt' '$HOME' || { echo 'worker file guard: failed - tool call denied' >&2; exit 2; }"
 # The git dir's commondir and config.worktree, and every worktree's admin commondir, gitdir and
 # config.worktree, are not the worker's either (backlog R33,
@@ -531,20 +537,52 @@ for d in "$gd"/worktrees/*; do
   [ "$d" != "$admin" ] || continue
   others=$(printf '%s' "$others" | jq -c --arg d "$d" '. + [$d + "/commondir", $d + "/gitdir", $d + "/config.worktree"]')
 done
-sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --argjson o "$others" --arg hook "$hook" '{sandbox: {enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
-  filesystem: {allowWrite: [$g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
-      "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
+# E-WSANDBOX.W3 (owner q3), corrected after the independent review: the worker's sandbox reaches only
+# its cwd, its own temp and this settings' allowWrite, so the package tree the launcher keeps outside
+# the worktree must itself be an allowWrite root - and pnpm materialises the whole package tree
+# (xmlbuilder 15.1.1's .vscode/launch.json included) in its modules dir, which the cwd-anchored deny
+# makes lethal inside the worktree (W1 finding d). pnpm 11 reads pnpm_config_modules_dir from the
+# environment; the worktree's git-ignored app/node_modules links at the modules dir, so pnpm scripts,
+# Node and Vite resolve through it. PNPM_HOME keeps the content store beside it and the owner's
+# ~/Library/pnpm is never touched. A fixed name is safe only inside the user's own $TMPDIR; without one
+# the home is a mktemp dir, and either way it must be a real directory this user owns. Trade-off:
+# Forge's packager needs a real tree, so `pnpm make` stays an owner install; a worktree that already
+# holds a real app/node_modules is left alone, never replaced.
+pnpm_home= pnpm_modules=
+if [ -e "$wt/app" ] || [ -L "$wt/app" ]; then
+  # a worker can replace its app directory with a symlink (it may write anywhere in its worktree);
+  # following it would create node_modules in another worktree with the launcher's owner rights, so
+  # app must be a real directory inside this worktree (E-WSANDBOX.W3, independent review round 2).
+  [ -d "$wt/app" ] && [ ! -L "$wt/app" ] || die "the worktree's app is not a real directory: $wt/app"
+  app_real=$(cd -P "$wt/app" 2>/dev/null && pwd -P) || die "cannot resolve $wt/app"
+  [ "$app_real" = "$wt/app" ] || die "the worktree's app resolves outside it: $wt/app -> $app_real"
+  pnpm_tmp=${TMPDIR:-}
+  if [ -n "$pnpm_tmp" ]; then
+    pnpm_tmp=$(cd -P "$pnpm_tmp" 2>/dev/null && pwd -P) || die "cannot resolve the temp folder ${TMPDIR:-}"
+    pnpm_home=$pnpm_tmp/keel-worker-pnpm
+    mkdir -p "$pnpm_home" || die "cannot create the worker's pnpm home $pnpm_home"
+    [ -d "$pnpm_home" ] && [ ! -L "$pnpm_home" ] && [ -O "$pnpm_home" ] || die "the worker's pnpm home $pnpm_home is not a directory this user owns"
+  else
+    pnpm_home=$(mktemp -d /tmp/keel-worker-pnpm.XXXXXXXX) || die "cannot create the worker's pnpm home"
+    pnpm_home=$(cd -P "$pnpm_home" && pwd -P) || die "cannot resolve the worker's pnpm home"
+  fi
+  pnpm_modules=$pnpm_home/modules-$(printf '%s\n' "$wt" | cksum | cut -d' ' -f1)
+fi
+sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --argjson o "$others" --arg hook "$hook" --arg ph "$pnpm_home" '{sandbox: {enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
+  filesystem: {allowWrite: ([$g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
+      "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"]
+      + (if $ph == "" then [] else [$ph] end)),
     denyWrite: ([$g + "/config", $g + "/hooks", $g + "/keel-hooks", $g + "/info", $g + "/commondir", $g + "/config.worktree",
         $a + "/commondir", $a + "/gitdir", $a + "/config.worktree"] + $o
       + [$g + "/worktrees/*/commondir", $g + "/worktrees/*/gitdir", $g + "/worktrees/*/config.worktree"]
       + [$w + "/.git", $w + "/.claude/settings.json", $w + "/.claude/settings.local.json", "~/.claude.json"]),
     denyRead: ["~/.ssh", "~/.claude/channels"]},
-  network: {allowedDomains: ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}},
+  network: {allowLocalBinding: true, allowedDomains: ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com", "registry.npmjs.org"]}},
   hooks: {PreToolUse: [{matcher: "*", hooks: [{type: "command", command: $hook, timeout: 10}]}]}}')
 set -- --bg -n "$name" --model "$model" --effort "$effort" --agent worker --setting-sources project,local --strict-mcp-config \
   --settings "$sandbox" --allowedTools
 for c in "cargo build" "cargo test" "cargo check" "cargo clippy" "cargo fmt" "keel preflight" \
-  "keel verify-doc" "keel verify-dod" "keel notes write" "keel lint" "keel check"; do
+  "keel verify-doc" "keel verify-dod" "keel notes write" "keel lint" "keel check" "scripts/router-scratch.sh"; do
   set -- "$@" "Bash($c)" "Bash($c *)"; done
 [ -z "$review" ] || set -- "$@" "Bash(keel notes write cr)" "Bash(keel notes write cr *)"
 # The deny list states intent and refuses at once with a reason; the sandbox is the bound (a wrapper
@@ -566,6 +604,14 @@ if [ -n "$review" ]; then set -- "$@" "Bash(git add)" "Bash(git add *)" "Bash(gi
 else set -- "$@" "Bash(keel notes write cr)" "Bash(keel notes write cr *)"; fi
 # the prompt follows a single-valued option: after a list option it would be read as a tool name
 set -- "$@" --permission-mode "$pm" "You are a fresh worker session. Read $f in full and do exactly what it says. When your work is finished, send one self-contained report by SendMessage to the router your brief names, then end your turn; you stay alive for follow-up tasks. First action: git rev-parse --show-toplevel must print $wt (if it prints anything else, report that and stop); then git branch --show-current, git log --oneline -6, git status --short. Your shell runs in a sandbox: give every network command a timeout (a host outside the sandbox makes it wait), and report a refusal or \"Operation not permitted\", never route around it."
+if [ -n "$pnpm_home" ]; then
+  export PNPM_HOME=$pnpm_home pnpm_config_modules_dir=$pnpm_modules
+  if [ -e "$wt/app/node_modules" ] && [ ! -L "$wt/app/node_modules" ]; then
+    : # a real install is never replaced
+  else
+    ln -sfn "$pnpm_modules" "$wt/app/node_modules" || die "cannot link $wt/app/node_modules"
+  fi
+fi
 cd "$wt"
 rc=0; started=$("$C" "$@" 2>&1) || rc=$?
 lr=1; [ "$rc" -ne 0 ] || { listed && lr=0 || lr=$?; }
